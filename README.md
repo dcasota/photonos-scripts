@@ -1,2 +1,2 @@
 # photonosonazure
-Provisioning PhotonOS on Azure with preinstalled Powershell and PowerCLI
+Provisioning VMware PhotonOS 3.0 on Microsoft Azure with preinstalled Microsoft Powershell and VMware PowerCLI
