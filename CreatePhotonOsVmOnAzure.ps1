@@ -5,6 +5,7 @@
 # 0.1  21.08.2019   dcasota  Initial release
 # 0.2  04.09.2019   dcasota  replace new-azvm with az vm create
 # 0.3  08.09.2019   dcasota  custom-data bash file added
+# 0.4  09.09.2019   dcasota  mono+nuget+powershell+PowerCLI installation added
 #
 # related weblinks
 # https://vmware.github.io/photon/assets/files/html/3.0/photon_installation/setting-up-azure-storage-and-uploading-the-vhd.html
@@ -203,75 +204,3 @@ $vmList.Name
 # powershell/pwsh
 #  $PSVersionTable
 #  get-module -name VMware.PowerCLI -listavailable
-
-
-# via docker mono + nuget?
-# docker pull mono
-
-# lokales mono + nuget
-# wget https://download.mono-project.com/sources/mono/mono-6.0.0.313.tar.xz
-# tar -xvf mono-6.0.0.313.tar.xz
-# curl https://download.mono-project.com/repo/centos7-stable.repo | tee /etc/yum.repos.d/mono-centos7-stable.repo
-# yum install mono-complete
-# tdnf install linux-api-headers
-# tdnf install gcc glibc-devel binutils
-# tdnf install cmake
-# yum install bison gettext glib2 freetype fontconfig libpng libpng-devel
-# yum install java unzip gcc gcc-c++ automake autoconf libtool make bzip2 wget
-# cd ~/dotnet/mono-6.0.0.313
-# ./configure --prefix=/usr/local
-# make
-# make install
-# https://unix.stackexchange.com/questions/120248/install-mono-and-monodevelop-on-a-new-redhat-6-5-workstation
-
-# curl -o /usr/local/bin/nuget.exe https://dist.nuget.org/win-x86-commandline/latest/nuget.exe
-# alias nuget="mono /usr/local/bin/nuget.exe"
-
-# dotnet nuget hat noch keine parameter list oder install!
-# tdnf -y install lttng-ust libcurl openssl-libs krb5-libs libicu zlib
-# wget https://dot.net/v1/dotnet-install.sh
-# chmod a+x ./dotnet-install.sh
-# ./dotnet-install.sh -version latest
-# wget https://download.visualstudio.microsoft.com/download/pr/daf57b64-36b6-405e-9e12-0a8627b46951/07c100dd9aed24440e9147daf79f2aa2/dotnet-runtime-3.0.0-preview9-19423-09-linux-x64.tar.gz
-# mkdir ~/dotnet
-# tar -xvf dotnet-runtime-3.0.0-preview9-19423-09-linux-x64.tar.gz -C ~/dotnet
-# wget https://download.visualstudio.microsoft.com/download/pr/9f21e352-9d2c-4e3b-af45-915da89158db/0e8a7ea83cc08d4bcf417a927a36ed6f/dotnet-runtime-2.2.6-linux-x64.tar.gz
-# tar -xvf dotnet-runtime-2.2.6-linux-x64.tar.gz
-# https://download.visualstudio.microsoft.com/download/pr/228832ea-805f-45ab-8c88-fa36165701b9/16ce29a06031eeb09058dee94d6f5330/dotnet-sdk-2.2.401-linux-x64.tar.gz
-# tar -xvf dotnet-sdk-2.2.401-linux-x64.tar.gz
-# ~/dotnet/dotnet nuget --help
-
-
-
-# wget https://github.com/dcasota/photonosonazure/archive/master.zip
-# unzip master.zip
-# root/photonosonazure-master> ./CreatePhotonOsVmOnAzure.ps1
-
-
-#https://github.com/vmware/photon/issues/815
-
-#https://unix.stackexchange.com/questions/120248/install-mono-and-monodevelop-on-a-new-redhat-6-5-workstation
-#https://stackoverflow.com/questions/38118548/how-to-install-nuget-from-command-line-on-linux
-#https://stackoverflow.com/questions/41387467/how-to-install-nuget-on-amazon-linux
-#https://download.mono-project.com/sources/mono/
-#https://vmware.github.io/photon/assets/files/html/3.0/photon_admin/compiling-c-code-on-the-minimal-version-of-photon-os.html
-
-#wget https://download.mono-project.com/sources/mono/mono-6.0.0.313.tar.xz
-#mkdir ~/mono
-#tar -xvf mono-6.0.0.313.tar.xz -C ~/mono
-#yum install mono-complete
-#tdnf install linux-api-headers cmake gcc glibc-devel binutils
-#yum install bison gettext glib2 freetype fontconfig libpng libpng-devel
-#yum install java unzip gcc gcc-c++ automake autoconf libtool make bzip2 wget
-#cd ~/mono
-#./configure --prefix=/usr/local
-#make
-#make install
-#curl -o /usr/local/bin/nuget.exe https://dist.nuget.org/win-x86-commandline/latest/nuget.exe
-#mono /usr/local/bin/nuget.exe sources Add -Name PSGallery -Source "https://www.powershellgallery.com/api/v2"
-
-#wget https://github.com/PowerShell/PowerShell/releases/download/v7.0.0-preview.3/powershell-7.0.0-preview.3-linux-x64.tar.gz
-#mkdir ~/powershell
-#tar -xvf ./powershell-7.0.0-preview.3-linux-x64.tar.gz -C ~/powershell
-#powershell/pwsh
-# get-psrepository
