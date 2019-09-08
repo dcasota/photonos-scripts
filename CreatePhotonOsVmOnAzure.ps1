@@ -134,42 +134,42 @@ if (([string]::IsNullOrEmpty($nic)))
 }
 
 # create custom data file for az vm create --custom-data
-$BashFileName="simple_bash.sh"
-$BashFile=${env:TMP}+"\"+${BashFileName}
-if (Test-path($Bashfile)) {remove-item $Bashfile -Force}
-(echo '#!/bin/sh')>$BashFile
-(echo 'echo "this has been written via cloud-init" + $(date) >> /tmp/myScript.txt')>>$BashFile
-(echo 'whoami >> /tmp/myScript.txt')>>$BashFile
-(echo 'tdnf -y update >> /tmp/myScript.txt')>>$BashFile
-(echo 'tdnf -y install tar icu libunwind unzip wget >> /tmp/myScript.txt')>>$BashFile
-(echo 'wget https://download.mono-project.com/sources/mono/mono-6.0.0.313.tar.xz >> /tmp/myScript.txt')>>$BashFile
-(echo 'mkdir ~/mono >> /tmp/myScript.txt')>>$BashFile
-(echo 'tar -xvf mono-6.0.0.313.tar.xz -C ~/mono >> /tmp/myScript.txt')>>$BashFile
-(echo 'yum install mono-complete >> /tmp/myScript.txt')>>$BashFile
-(echo 'tdnf install linux-api-headers cmake gcc glibc-devel binutils >> /tmp/myScript.txt')>>$BashFile
-(echo 'yum install bison gettext glib2 freetype fontconfig libpng libpng-devel >> /tmp/myScript.txt')>>$BashFile
-(echo 'yum install java unzip gcc gcc-c++ automake autoconf libtool make bzip2 wget >> /tmp/myScript.txt')>>$BashFile
-(echo 'cd ~/mono >> /tmp/myScript.txt')>>$BashFile
-(echo './configure --prefix=/usr/local >> /tmp/myScript.txt')>>$BashFile
-(echo 'make >> /tmp/myScript.txt')>>$BashFile
-(echo 'make install >> /tmp/myScript.txt')>>$BashFile
-(echo 'curl -o /usr/local/bin/nuget.exe https://dist.nuget.org/win-x86-commandline/latest/nuget.exe >> /tmp/myScript.txt')>>$BashFile
-(echo 'mono /usr/local/bin/nuget.exe sources Add -Name PSGallery -Source "https://www.powershellgallery.com/api/v2" >> /tmp/myScript.txt')>>$BashFile
-(echo 'wget https://github.com/PowerShell/PowerShell/releases/download/v7.0.0-preview.3/powershell-7.0.0-preview.3-linux-x64.tar.gz >> /tmp/myScript.txt')>>$BashFile
-(echo 'wget https://vdc-download.vmware.com/vmwb-repository/dcr-public/db25b92c-4abe-42dc-9745-06c6aec452f1/d15f15e7-4395-4b4c-abcf-e673d047fd29/VMware-PowerCLI-11.4.0-14413515.zip >> /tmp/myScript.txt')>>$BashFile
-(echo 'mkdir ~/powershell >> /tmp/myScript.txt')>>$BashFile
-(echo 'mkdir -p ~/.local/share/powershell/Modules >> /tmp/myScript.txt')>>$BashFile
-(echo 'tar -xvf ./powershell-7.0.0-preview.3-linux-x64.tar.gz  -C ~/powershell >> /tmp/myScript.txt')>>$BashFile
-(echo 'unzip VMware-PowerCLI-11.4.0-14413515.zip -d ~/.local/share/powershell/Modules >> /tmp/myScript.txt')>>$BashFile
-(echo 'echo "this has been written via cloud-init" + $(date) >> /tmp/myScript.txt')>>$BashFile
-(echo 'powershell/pwsh >> /tmp/myScript.txt')>>$BashFile
-(echo '$PSVersionTable >> /tmp/myScript.txt')>>$BashFile
-(echo 'get-module -name VMware.PowerCLI -listavailable >> /tmp/myScript.txt')>>$BashFile
-(echo 'exit >> /tmp/myScript.txt')>>$BashFile
+$BashfileName="simple_bash.sh"
+$Bashfile=${env:TMP}+"\"+${BashFileName}
+if (Test-path(${Bashfile})) {remove-item ${Bashfile} -Force}
+(echo '#!/bin/sh')>${Bashfile}
+(echo 'echo "this has been written via cloud-init" + $(date) >> /tmp/myScript.txt')>>${Bashfile}
+(echo 'whoami >> /tmp/myScript.txt')>>${Bashfile}
+(echo 'tdnf -y update >> /tmp/myScript.txt')>>${Bashfile}
+(echo 'tdnf -y install tar icu libunwind unzip wget >> /tmp/myScript.txt')>>${Bashfile}
+(echo 'wget https://download.mono-project.com/sources/mono/mono-6.0.0.313.tar.xz >> /tmp/myScript.txt')>>${Bashfile}
+(echo 'mkdir ~/mono >> /tmp/myScript.txt')>>${Bashfile}
+(echo 'tar -xvf mono-6.0.0.313.tar.xz -C ~/mono >> /tmp/myScript.txt')>>${Bashfile}
+(echo 'yum install mono-complete >> /tmp/myScript.txt')>>${Bashfile}
+(echo 'tdnf install linux-api-headers cmake gcc glibc-devel binutils >> /tmp/myScript.txt')>>${Bashfile}
+(echo 'yum install bison gettext glib2 freetype fontconfig libpng libpng-devel >> /tmp/myScript.txt')>>${Bashfile}
+(echo 'yum install java unzip gcc gcc-c++ automake autoconf libtool make bzip2 wget >> /tmp/myScript.txt')>>${Bashfile}
+(echo 'cd ~/mono >> /tmp/myScript.txt')>>${Bashfile}
+(echo './configure --prefix=/usr/local >> /tmp/myScript.txt')>>${Bashfile}
+(echo 'make >> /tmp/myScript.txt')>>${Bashfile}
+(echo 'make install >> /tmp/myScript.txt')>>${Bashfile}
+(echo 'curl -o /usr/local/bin/nuget.exe https://dist.nuget.org/win-x86-commandline/latest/nuget.exe >> /tmp/myScript.txt')>>${Bashfile}
+(echo 'mono /usr/local/bin/nuget.exe sources Add -Name PSGallery -Source "https://www.powershellgallery.com/api/v2" >> /tmp/myScript.txt')>>${Bashfile}
+(echo 'wget https://github.com/PowerShell/PowerShell/releases/download/v7.0.0-preview.3/powershell-7.0.0-preview.3-linux-x64.tar.gz >> /tmp/myScript.txt')>>${Bashfile}
+(echo 'wget https://vdc-download.vmware.com/vmwb-repository/dcr-public/db25b92c-4abe-42dc-9745-06c6aec452f1/d15f15e7-4395-4b4c-abcf-e673d047fd29/VMware-PowerCLI-11.4.0-14413515.zip >> /tmp/myScript.txt')>>${Bashfile}
+(echo 'mkdir ~/powershell >> /tmp/myScript.txt')>>${Bashfile}
+(echo 'mkdir -p ~/.local/share/powershell/Modules >> /tmp/myScript.txt')>>${Bashfile}
+(echo 'tar -xvf ./powershell-7.0.0-preview.3-linux-x64.tar.gz  -C ~/powershell >> /tmp/myScript.txt')>>${Bashfile}
+(echo 'unzip VMware-PowerCLI-11.4.0-14413515.zip -d ~/.local/share/powershell/Modules >> /tmp/myScript.txt')>>${Bashfile}
+(echo 'echo "this has been written via cloud-init" + $(date) >> /tmp/myScript.txt')>>${Bashfile}
+(echo 'powershell/pwsh >> /tmp/myScript.txt')>>${Bashfile}
+(echo '$PSVersionTable >> /tmp/myScript.txt')>>${Bashfile}
+(echo 'get-module -name VMware.PowerCLI -listavailable >> /tmp/myScript.txt')>>${Bashfile}
+(echo 'exit >> /tmp/myScript.txt')>>${Bashfile}
 
 #save and reapply location info
 $locationstack=get-location
-set-location -Path $psscriptroot
+set-location -Path ${env:TMP}
 # az vm create
 az vm create --resource-group $ResourceGroupName --location $LocationName --name $vmName `
 --size $VMSize `
@@ -183,7 +183,7 @@ az vm create --resource-group $ResourceGroupName --location $LocationName --name
 --computer-name $computerName `
 --nics $nic.Id `
 --generate-ssh-keys `
---custom-data $BashFileName
+--custom-data $BashfileName
 set-location -path $locationstack
 
 # enable boot diagnostics for serial console option
