@@ -11,6 +11,8 @@
 # https://vmware.github.io/photon/assets/files/html/3.0/photon_installation/setting-up-azure-storage-and-uploading-the-vhd.html
 # https://www.virtuallyghetto.com/2019/01/powershell-for-photonos-on-raspberry-pi-3.html#more-163856
 
+$ScriptPath=$PSScriptRoot
+
 # Requires Run as Administrator
 # Get the ID and security principal of the current user account
 $myWindowsID=[System.Security.Principal.WindowsIdentity]::GetCurrent()
@@ -134,8 +136,8 @@ if (([string]::IsNullOrEmpty($nic)))
 }
 
 # create custom data file for az vm create --custom-data
-$BashfileName="simple_bash.sh"
-$Bashfile=${env:TMP}+"\"+${BashFileName}
+$BashfileName="custom_bash.sh"
+$Bashfile=${ScriptPath}+"\"+$BashFileName
 if (Test-path(${Bashfile})) {remove-item ${Bashfile} -Force}
 (echo '#!/bin/sh')>${Bashfile}
 (echo 'echo "this has been written via cloud-init" + $(date) >> /tmp/myScript.txt')>>${Bashfile}
@@ -166,11 +168,13 @@ if (Test-path(${Bashfile})) {remove-item ${Bashfile} -Force}
 (echo '$PSVersionTable >> /tmp/myScript.txt')>>${Bashfile}
 (echo 'get-module -name VMware.PowerCLI -listavailable >> /tmp/myScript.txt')>>${Bashfile}
 (echo 'exit >> /tmp/myScript.txt')>>${Bashfile}
+Get-ChildItem ${Bashfile} | % { $x = get-content -raw -path $_.fullname; $x -replace "`r`n","`n" | set-content -path $_.fullname }
 
+# az vm create
 #save and reapply location info
 $locationstack=get-location
-set-location -Path ${env:TMP}
-# az vm create
+set-location -Path ${ScriptPath}
+
 az vm create --resource-group $ResourceGroupName --location $LocationName --name $vmName `
 --size $VMSize `
 --admin-username $VMLocalAdminUser --admin-password $VMLocalAdminPassword `
@@ -183,7 +187,7 @@ az vm create --resource-group $ResourceGroupName --location $LocationName --name
 --computer-name $computerName `
 --nics $nic.Id `
 --generate-ssh-keys `
---custom-data $BashfileName
+--custom-data $Bashfilename
 set-location -path $locationstack
 
 # enable boot diagnostics for serial console option
