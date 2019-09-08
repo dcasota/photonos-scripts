@@ -27,3 +27,4 @@ powershell/pwsh >> /tmp/myScript.txt
 $PSVersionTable >> /tmp/myScript.txt
 get-module -name VMware.PowerCLI -listavailable >> /tmp/myScript.txt
 exit >> /tmp/myScript.txt
+
