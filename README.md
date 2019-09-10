@@ -1,4 +1,4 @@
-# photonosonazure
+Photon OS on Azure
 
 Photon OS, a VMware's operating system,  is an open source Linux container host for cloud-native applications. The OS is the preferred platform for IoT edge engineering. It runs docker containers, supports a resource foot print hardened setup, comes with a driver development kit for device drivers, and has package-based lifecycle management systems.
 More information: https://vmware.github.io/photon/
@@ -56,11 +56,11 @@ VMware Photon OS doesn't include any Microsoft Windows .net and/or powershell pa
 
 
 Releases installed:
-Photon OS 3.0 
-Mono 6.0.0.313
-Nuget latest
-Powershell 7.0.0 preview 3
-Packagemanagement and Powershellget powershell modules latest
-Az powershell module latest
-VMware PowerCLI powershell module latest
+- Photon OS 3.0 
+- Mono 6.0.0.313
+- Nuget latest
+- Powershell 7.0.0 preview 3
+- Packagemanagement and Powershellget powershell modules latest
+- Az powershell module latest
+- VMware PowerCLI powershell module latest
 
