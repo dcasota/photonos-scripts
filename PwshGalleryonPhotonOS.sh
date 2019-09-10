@@ -25,6 +25,7 @@ powershell/pwsh -c '$PSVersionTable' >> /tmp/myScript.txt
 powershell/pwsh -c 'install-module packagemanagement -force' >> /tmp/myScript.txt
 powershell/pwsh -c 'install-module powershellget -force' >> /tmp/myScript.txt
 powershell/pwsh -c 'install-module Az -force' >> /tmp/myScript.txt
+powershell/pwsh -c 'install-module VMware.PowerCLI -force' >> /tmp/myScript.txt
 # powershell/pwsh -c 'Set-PSRepository -Name PSGallery -InstallationPolicy Trusted'
 echo "$(date) + Installation finished." >> /tmp/myScript.txt
 
