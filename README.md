@@ -3,7 +3,7 @@ Photon OS on Azure
 Photon OS, a VMware's operating system,  is an open source Linux container host for cloud-native applications. The OS is the preferred platform for IoT edge engineering. It runs docker containers, supports a resource foot print hardened setup, comes with a driver development kit for device drivers, and has package-based lifecycle management systems.
 More information: https://vmware.github.io/photon/
 
-This repo contains several scripts I've wrote to simplify using Photon OS on Azure. Prerequisites are:
+This repo contains several scripts to simplify installation of Photon OS on Azure and the use of the powershellgallery packages. Prerequisites are:
 - a Microsoft Azure account
 - Windows Powershell with installed Az module
 
