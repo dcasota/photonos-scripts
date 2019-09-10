@@ -53,7 +53,7 @@ VMware Photon OS doesn't include any Microsoft Windows .net and/or powershell pa
 - Microsoft Az powershell module https://github.com/Azure/azure-powershell
 - The VMware PowerCLI powershell module https://www.powershellgallery.com/packages/VMware.PowerCLI
 
-
+Don't wonder - the full installation takes quite some time!
 
 Releases installed:
 - Photon OS 3.0 
@@ -63,4 +63,5 @@ Releases installed:
 - Packagemanagement and Powershellget powershell modules latest
 - Az powershell module latest
 - VMware PowerCLI powershell module latest
+
 
