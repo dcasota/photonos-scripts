@@ -17,9 +17,9 @@ Connected to Azure it checks/creates
 - storage account/container/blob
 - vm network settings
 
-A local user account will be created during provisioning. It is created without root permissions. there are some limitation on username and password to know.
-$VMLocalAdminUser = "adminuser" #all small letters
-$VMLocalAdminPassword = "PhotonOs123!" #pwd must be 7-12 characters
+A local user account will be created during provisioning. It is created without root permissions. there are some conventions on username and password to know.
+- $VMLocalAdminUser = "adminuser" #all small letters
+- $VMLocalAdminPassword = "PhotonOs123!" #pwd must be 7-12 characters
 
 The Photon OS image in localfilepath must include name and full drive path of the untar'ed .vhd.
 More information: https://github.com/vmware/photon/wiki/Downloading-Photon-OS
