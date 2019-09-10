@@ -43,7 +43,7 @@ whoami
 
 pwshgalleryonphotonos.sh
 -
-VMware Photon OS doesn't include any Microsoft Windows .net and/or powershell package providers per default. To enable interaction with .net and package libraries the toolchain script pwshgalleryonphotonos.sh installs:
+VMware Photon OS doesn't include any Microsoft Windows .net and/or powershell package providers per default. To enable interaction with .net and package libraries the script pwshgalleryonphotonos.sh straightforward installs:
 - Photon OS updates
 - Mono, an open source implementation of Microsoft's .NET Framework https://www.mono-project.com/
 - Nuget, a Microsoft .NET foundation Windows x86 package manager CLI https://www.nuget.org/
