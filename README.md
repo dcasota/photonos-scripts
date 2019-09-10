@@ -9,7 +9,7 @@ This repo contains several scripts to automate the installation and to simplify 
 
 CreatePhotonOSVMOnAzure.ps1
 -
-CreatePhotonOSVMOnAzure.ps1 provisions VMware PhotonOS on Microsoft Azure. Just download it and edit the script variables for location, resourcegroup, network setting, base image and vm settings. 
+CreatePhotonOSVMOnAzure.ps1 provisions VMware Photon OS on Microsoft Azure. Just download it and edit the script variables for location, resourcegroup, network setting, base image and vm settings. 
 
 Connected to Azure it checks/creates
 - resource group
