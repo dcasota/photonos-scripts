@@ -6,6 +6,7 @@
 # 0.2  04.09.2019   dcasota  replace new-azvm with az vm create
 # 0.3  08.09.2019   dcasota  custom-data bash file added
 # 0.4  09.09.2019   dcasota  mono+nuget+powershell+PowerCLI installation added
+# 0.5  10.09.2019   dcasota  Azure Powershell installation added, added connectivity to Powershellgallery
 #
 # related weblinks
 # https://vmware.github.io/photon/assets/files/html/3.0/photon_installation/setting-up-azure-storage-and-uploading-the-vhd.html
@@ -140,34 +141,17 @@ $BashfileName="custom_bash.sh"
 $Bashfile=${ScriptPath}+"\"+$BashFileName
 if (Test-path(${Bashfile})) {remove-item ${Bashfile} -Force}
 (echo '#!/bin/sh')>${Bashfile}
-(echo 'echo "this has been written via cloud-init" + $(date) >> /tmp/myScript.txt')>>${Bashfile}
-(echo 'whoami >> /tmp/myScript.txt')>>${Bashfile}
-(echo 'tdnf -y update >> /tmp/myScript.txt')>>${Bashfile}
+(echo 'echo $(date) + "Cloud-init custom data installing ..." >> /tmp/myScript.txt')>>${Bashfile}
+(echo 'whoami >> /tmp/myScript.txt >> /tmp/myScript.txt')>>${Bashfile}
+(echo 'tdnf -y update >> /tmp/myScript.txt >> /tmp/myScript.txt')>>${Bashfile}
 (echo 'tdnf -y install tar icu libunwind unzip wget >> /tmp/myScript.txt')>>${Bashfile}
-(echo 'wget https://download.mono-project.com/sources/mono/mono-6.0.0.313.tar.xz >> /tmp/myScript.txt')>>${Bashfile}
-(echo 'mkdir ~/mono >> /tmp/myScript.txt')>>${Bashfile}
-(echo 'tar -xvf mono-6.0.0.313.tar.xz -C ~/mono >> /tmp/myScript.txt')>>${Bashfile}
-(echo 'yum install mono-complete >> /tmp/myScript.txt')>>${Bashfile}
-(echo 'tdnf install linux-api-headers cmake gcc glibc-devel binutils >> /tmp/myScript.txt')>>${Bashfile}
-(echo 'yum install bison gettext glib2 freetype fontconfig libpng libpng-devel >> /tmp/myScript.txt')>>${Bashfile}
-(echo 'yum install java unzip gcc gcc-c++ automake autoconf libtool make bzip2 wget >> /tmp/myScript.txt')>>${Bashfile}
-(echo 'cd ~/mono >> /tmp/myScript.txt')>>${Bashfile}
-(echo './configure --prefix=/usr/local >> /tmp/myScript.txt')>>${Bashfile}
-(echo 'make >> /tmp/myScript.txt')>>${Bashfile}
-(echo 'make install >> /tmp/myScript.txt')>>${Bashfile}
-(echo 'curl -o /usr/local/bin/nuget.exe https://dist.nuget.org/win-x86-commandline/latest/nuget.exe >> /tmp/myScript.txt')>>${Bashfile}
-(echo 'mono /usr/local/bin/nuget.exe sources Add -Name PSGallery -Source "https://www.powershellgallery.com/api/v2" >> /tmp/myScript.txt')>>${Bashfile}
-(echo 'wget https://github.com/PowerShell/PowerShell/releases/download/v7.0.0-preview.3/powershell-7.0.0-preview.3-linux-x64.tar.gz >> /tmp/myScript.txt')>>${Bashfile}
-(echo 'wget https://vdc-download.vmware.com/vmwb-repository/dcr-public/db25b92c-4abe-42dc-9745-06c6aec452f1/d15f15e7-4395-4b4c-abcf-e673d047fd29/VMware-PowerCLI-11.4.0-14413515.zip >> /tmp/myScript.txt')>>${Bashfile}
-(echo 'mkdir ~/powershell >> /tmp/myScript.txt')>>${Bashfile}
-(echo 'mkdir -p ~/.local/share/powershell/Modules >> /tmp/myScript.txt')>>${Bashfile}
-(echo 'tar -xvf ./powershell-7.0.0-preview.3-linux-x64.tar.gz  -C ~/powershell >> /tmp/myScript.txt')>>${Bashfile}
-(echo 'unzip VMware-PowerCLI-11.4.0-14413515.zip -d ~/.local/share/powershell/Modules >> /tmp/myScript.txt')>>${Bashfile}
-(echo 'echo "this has been written via cloud-init" + $(date) >> /tmp/myScript.txt')>>${Bashfile}
-(echo 'powershell/pwsh >> /tmp/myScript.txt')>>${Bashfile}
-(echo '$PSVersionTable >> /tmp/myScript.txt')>>${Bashfile}
-(echo 'get-module -name VMware.PowerCLI -listavailable >> /tmp/myScript.txt')>>${Bashfile}
-(echo 'exit >> /tmp/myScript.txt')>>${Bashfile}
+(echo 'mkdir ~/photonosonazure >> /tmp/myScript.txt')>>${Bashfile}
+(echo 'wget https://github.com/dcasota/photonosonazure/archive/master.zip >> /tmp/myScript.txt')>>${Bashfile}
+(echo 'unzip master.zip -d ~/photonosonazure >> /tmp/myScript.txt')>>${Bashfile}
+(echo 'cd ~/photonosonazure/photonosonazure-master >> /tmp/myScript.txt')>>${Bashfile}
+(echo 'chmod a+x ./PwshGalleryonPhotonOS.sh >> /tmp/myScript.txt')>>${Bashfile}
+(echo './PwshGalleryonPhotonOS.sh >> /tmp/myScript.txt')>>${Bashfile}
+(echo 'echo $(date) + "Cloud-init custom data installed." >> /tmp/myScript.txt')>>${Bashfile}
 Get-ChildItem ${Bashfile} | % { $x = get-content -raw -path $_.fullname; $x -replace "`r`n","`n" | set-content -path $_.fullname }
 
 # az vm create
