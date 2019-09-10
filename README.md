@@ -45,13 +45,13 @@ pwshgalleryonphotonos.sh
 -
 VMware Photon OS doesn't include any Microsoft Windows .net and/or powershell package providers per default. To enable interaction with .net and package libraries the toolchain script pwshgalleryonphotonos.sh installs:
 - Photon OS updates
-- Mono, an open source implementation of Microsoft's .NET Framework
-- Nuget, a Microsoft .NET foundation Windows x86 package manager CLI
-- Windows Packagemanagement (formerly OneGet) and Powershellget, a package management provider based on NuGet provider
-- Windows PowershellCore
+- Mono, an open source implementation of Microsoft's .NET Framework https://www.mono-project.com/
+- Nuget, a Microsoft .NET foundation Windows x86 package manager CLI https://www.nuget.org/
+- Windows Packagemanagement (formerly OneGet) and Powershellget, a package management provider based on NuGet provider https://github.com/PowerShell/PowerShellGet/releases
+- Windows PowershellCore https://github.com/PowerShell/PowerShell
 - packageproviders (nuget, powershellgallery)
-- Microsoft Az powershell module
-- The VMware PowerCLI powershell module
+- Microsoft Az powershell module https://github.com/Azure/azure-powershell
+- The VMware PowerCLI powershell module https://www.powershellgallery.com/packages/VMware.PowerCLI
 
 
 
