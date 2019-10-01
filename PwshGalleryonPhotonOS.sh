@@ -6,10 +6,11 @@ tdnf -y install tar icu libunwind unzip wget >> /tmp/myScript.txt
 tdnf -y install linux-api-headers cmake gcc glibc-devel binutils >> /tmp/myScript.txt
 yum -y install bison gettext glib2 freetype fontconfig libpng libpng-devel >> /tmp/myScript.txt
 yum -y install gcc automake autoconf libtool make bzip2 >> /tmp/myScript.txt
-wget https://download.mono-project.com/sources/mono/mono-6.0.0.313.tar.xz >> /tmp/myScript.txt
+# wget https://download.mono-project.com/sources/mono/mono-6.0.0.313.tar.xz >> /tmp/myScript.txt
+wget https://download.mono-project.com/sources/mono/mono-5.18.1.28.tar.bz2 >> /tmp/myScript.txt
 mkdir ~/mono >> /tmp/myScript.txt
-tar -xvf mono-6.0.0.313.tar.xz -C ~/mono >> /tmp/myScript.txt
-cd ~/mono/mono-6.0.0.313 >> /tmp/myScript.txt
+tar xfvj mono-5.18.1.28.tar.bz2 -C ~/mono >> /tmp/myScript.txt
+cd ~/mono/mono-5.18.1.28 >> /tmp/myScript.txt
 ./configure --prefix=/usr/local >> /tmp/myScript.txt
 make >> /tmp/myScript.txt
 make install >> /tmp/myScript.txt
