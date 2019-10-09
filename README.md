@@ -57,14 +57,10 @@ The tool called nuget.exe is Windowsx86-commandline-only. See https://docs.micro
 This scripts downloads all necessary prerequisites (tools, Mono, Nuget.exe) to register the PowerShell Gallery. The registration is a oneliner:
 ```mono /usr/local/bin/nuget.exe sources Add -Name PSGallery -Source "https://www.powershellgallery.com/api/v2"```
  
- After the Powershell Core installation, VMware PowerCLI is installed.
+After the Powershell Core installation, VMware PowerCLI is installed.
 
- Remark:
- I didn't figure out how to avoid the storage overload of Mono with nuget.exe.
- In reference to https://www.mono-project.com/docs/tools+libraries/tools/mkbundle/ an avoidance may be possible:
- "Mono can turn .NET applications (executable code and its dependencies) into self-contained executables that do not rely on Mono being installed on the system to simplify deployment of.NET Applications."
 
-During custom-data of ```CreatePhotonOSVMOnAzure.ps1```, ```pwshgalleryonphotonos.sh``` is processed. Don't wonder - the full installation takes quite some time. Briefly what it installs
+During custom-data of ```CreatePhotonOSVMOnAzure.ps1```, ```pwshgalleryonphotonos.sh``` is processed. Don't wonder - the full installation takes quite some time. As said, it installs
 - Photon OS updates
 - Mono, an open source implementation of Microsoft's .NET Framework https://www.mono-project.com/
 - Nuget, a Microsoft .NET foundation Windows x86 package manager CLI https://www.nuget.org/
@@ -73,5 +69,5 @@ During custom-data of ```CreatePhotonOSVMOnAzure.ps1```, ```pwshgalleryonphotono
 - Windows PowershellCore https://github.com/PowerShell/PowerShell
 - The VMware PowerCLI powershell module https://www.powershellgallery.com/packages/VMware.PowerCLI
 
-
-
+Remark:
+In reference to https://www.mono-project.com/docs/tools+libraries/tools/mkbundle/ : "Mono can turn .NET applications (executable code and its dependencies) into self-contained executables that do not rely on Mono being installed on the system to simplify deployment of.NET Applications."
