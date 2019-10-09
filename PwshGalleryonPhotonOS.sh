@@ -46,7 +46,7 @@ tdnf -y install linux-api-headers cmake gcc glibc-devel binutils >> /tmp/myScrip
 yum -y install bison gettext glib2 freetype fontconfig libpng libpng-devel >> /tmp/myScript.txt
 yum -y install gcc automake autoconf libtool make bzip2 >> /tmp/myScript.txt
 
-cd /tmp >> /tmp/myScript.txt
+cd ~/ >> /tmp/myScript.txt
 wget $monourl >> /tmp/myScript.txt
 mkdir ~/mono >> /tmp/myScript.txt
 tar -xvf $monofile -C ~/mono >> /tmp/myScript.txt
@@ -55,12 +55,12 @@ cd ~/mono/$monodir >> /tmp/myScript.txt
 make >> /tmp/myScript.txt
 make install >> /tmp/myScript.txt
 
-cd /tmp >> /tmp/myScript.txt
+cd ~/ >> /tmp/myScript.txt
 curl -o /usr/local/bin/nuget.exe https://dist.nuget.org/win-x86-commandline/latest/nuget.exe >> /tmp/myScript.txt
 mono /usr/local/bin/nuget.exe sources Add -Name PSGallery -Source "https://www.powershellgallery.com/api/v2" >> /tmp/myScript.txt
 mono /usr/local/bin/nuget.exe sources Add -Name nuget.org -Source "https://www.nuget.org/api/v2" >> /tmp/myScript.txt
 
-cd /tmp >> /tmp/myScript.txt
+cd ~/ >> /tmp/myScript.txt
 wget $powershellurl >> /tmp/myScript.txt
 mkdir $powershelldir >> /tmp/myScript.txt
 mkdir -p ~/.local/share/powershell/Modules >> /tmp/myScript.txt
