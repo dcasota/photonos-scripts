@@ -17,7 +17,7 @@ Connected to Azure it checks/creates
 - storage account/container/blob
 - vm network settings
 
-A local user account will be created during provisioning. It is created without root permissions. there are some conventions on username and password to know.
+A local user account on Photon OS will be created during provisioning. It is created without root permissions. there are some conventions on username and password to know.
 - $VMLocalAdminUser = "adminuser" #all small letters
 - $VMLocalAdminPassword = "PhotonOs123!" #pwd must be 7-12 characters
 
@@ -27,7 +27,7 @@ For the uploaded .vhd a separate storage account, storage container and storage 
 
 The ```az vm create``` parameter ```--custom-data``` is a user exit for a post-provisioning process. In this script it is used to pass a bash file. If the custom data file does not exist, nevertheless the creation successfully completes. The bash script is used to:
 - install the latest Photon OS updates
-- optional install ```pwshgalleryonphotonos.sh```
+- install VMware PowerCLI from the Powershell Gallery
 
 The script finishes with enabling Azure boot-diagnostics for the serial console option.
 
@@ -44,25 +44,16 @@ whoami
 
 ```pwshgalleryonphotonos.sh```
 -
-VMware Photon OS doesn't include any Microsoft Windows .net and/or powershell package providers. Enable and prepackage Microsoft Windows .net and/or powershell package providers on Photon OS is not supported by VMware and you might consider running docker containers instead of this. Again, not for production purposes, however from developer's perspective to enable interaction with .net and package libraries the script pwshgalleryonphotonos.sh installs:
+VMware Photon OS doesn't include any Microsoft Windows .net and/or powershell package providers. Enable and prepackage Microsoft Windows .net and/or powershell package providers on Photon OS afaik is not supported by VMware. You might consider running docker containers instead of this. Not for production purposes, however from developer's perspective to enable interaction with .net and package libraries , during custom-data the script ```pwshgalleryonphotonos.sh``` is processed.
+
+Briefly what it installs
 - Photon OS updates
 - Mono, an open source implementation of Microsoft's .NET Framework https://www.mono-project.com/
 - Nuget, a Microsoft .NET foundation Windows x86 package manager CLI https://www.nuget.org/
 - Windows Packagemanagement (formerly OneGet) and Powershellget, a package management provider based on NuGet provider https://github.com/PowerShell/PowerShellGet/releases
+- Packageproviders (nuget, powershellgallery)
 - Windows PowershellCore https://github.com/PowerShell/PowerShell
-- packageproviders (nuget, powershellgallery)
-- Microsoft Az powershell module https://github.com/Azure/azure-powershell
 - The VMware PowerCLI powershell module https://www.powershellgallery.com/packages/VMware.PowerCLI
 
 Don't wonder - the full installation takes quite some time.
-
-Releases installed:
-- Photon OS 3.0 
-- Mono 6.0.0.313
-- Nuget latest
-- Powershell 7.0.0 preview 3
-- Packagemanagement and Powershellget powershell modules latest
-- Az powershell module latest
-- VMware PowerCLI powershell module latest
-
 
