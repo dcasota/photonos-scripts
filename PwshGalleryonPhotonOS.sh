@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# This scripts makes the Microsoft PowerShellGallery available on VMware Photon OS. In addition VMware PowerCLI is installed.
+# This scripts makes the Microsoft PowerShellGallery available and installs VMware PowerCLI on Photon OS.
 # 
 # Installing PowerShell Core on Photon OS does not built-in register PSGallery or nuget.org as source provider.
 # 
@@ -17,7 +17,6 @@
 # After the Powershell Core installation, VMware.PowerCLI is installed.
 #
 # Remark:
-# I didn't figure out how to avoid the storage overload of Mono with nuget.exe.
 # In reference to https://www.mono-project.com/docs/tools+libraries/tools/mkbundle/ an avoidance may be possible:
 # "Mono can turn .NET applications (executable code and its dependencies) into self-contained executables"
 # "that do not rely on Mono being installed on the system to simplify deployment of.NET Applications."
