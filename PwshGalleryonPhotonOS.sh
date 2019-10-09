@@ -50,7 +50,7 @@ yum -y install gcc automake autoconf libtool make bzip2 >> /tmp/myScript.txt
 cd /tmp >> /tmp/myScript.txt
 wget $monourl >> /tmp/myScript.txt
 mkdir ~/mono >> /tmp/myScript.txt
-tar xfvj $monofile -C ~/mono >> /tmp/myScript.txt
+tar -xvf $monofile -C ~/mono >> /tmp/myScript.txt
 cd ~/mono/$monodir >> /tmp/myScript.txt
 ./configure --prefix=/usr/local >> /tmp/myScript.txt
 make >> /tmp/myScript.txt
