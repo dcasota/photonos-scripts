@@ -35,7 +35,7 @@ monodir="mono-6.0.0.334"
 
 powershellfile="powershell-6.2.3-linux-x64.tar.gz"
 powershellurl="https://github.com/PowerShell/PowerShell/releases/download/v6.2.3/powershell-6.2.3-linux-x64.tar.gz"
-powershelldir="~/powershell"
+powershelldir="/root/powershell"
 
 echo "$(date) + Installing ..." >> /tmp/myScript.txt
 whoami >> /tmp/myScript.txt
