@@ -54,9 +54,10 @@ See https://docs.microsoft.com/en-us/nuget/policies/ecosystem, https://docs.micr
 The tool called nuget.exe is Windowsx86-commandline-only. See https://docs.microsoft.com/en-us/nuget/install-nuget-client-tools
 "The nuget.exe CLI, nuget.exe, is the command-line utility for Windows that provides all NuGet capabilities; it can also be run on Mac OSX and Linux using Mono with some limitations."
 
-This scripts downloads all necessary prerequisites (tools, Mono, Nuget.exe) to register the PowerShell Gallery. The registration is the oneliner: ```mono /usr/local/bin/nuget.exe sources Add -Name PSGallery -Source "https://www.powershellgallery.com/api/v2"```
+This scripts downloads all necessary prerequisites (tools, Mono, Nuget.exe) to register the PowerShell Gallery. The registration is a oneliner:
+```mono /usr/local/bin/nuget.exe sources Add -Name PSGallery -Source "https://www.powershellgallery.com/api/v2"```
  
- After the Powershell Core installation, VMware.PowerCLI is installed.
+ After the Powershell Core installation, VMware PowerCLI is installed.
 
  Remark:
  I didn't figure out how to avoid the storage overload of Mono with nuget.exe.
