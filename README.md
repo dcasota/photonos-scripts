@@ -7,9 +7,9 @@ This repo contains several scripts to automate the installation and to simplify 
 - a Microsoft Azure account
 - Windows Powershell with installed Az module
 
-CreatePhotonOSVMOnAzure.ps1
+```CreatePhotonOSVMOnAzure.ps1```
 -
-CreatePhotonOSVMOnAzure.ps1 provisions VMware Photon OS on Microsoft Azure. Just download it and edit the script variables for location, resourcegroup, network setting, base image and vm settings. 
+```CreatePhotonOSVMOnAzure.ps1``` provisions VMware Photon OS on Microsoft Azure. Just download it and edit the script variables for location, resourcegroup, network setting, base image and vm settings. 
 
 Connected to Azure it checks/creates
 - resource group
@@ -25,23 +25,24 @@ The Photon OS image in localfilepath must include name and full drive path of th
 More information: https://github.com/vmware/photon/wiki/Downloading-Photon-OS
 For the uploaded .vhd a separate storage account, storage container and storage blob are created.
 
-The 'az vm create' parameter '--custom-data' is a user exit for a post-provisioning process. In this script it is used to pass a bash file. If the custom data file does not exist, nevertheless the creation successfully completes. The bash script is used to:
+The ```az vm create``` parameter ```--custom-data``` is a user exit for a post-provisioning process. In this script it is used to pass a bash file. If the custom data file does not exist, nevertheless the creation successfully completes. The bash script is used to:
 - install the latest Photon OS updates
-- optional install pwshgalleryonphotonos.sh
+- optional install ```pwshgalleryonphotonos.sh```
 
 The script finishes with enabling Azure boot-diagnostics for the serial console option.
 
 Photon OS on Azure disables the root account after custom data has been processed. Per default ssh PermitRootLogin is disabled too.
 If root access is required, on the vm serial console login with the user credentials defined during setup. Run the following commands:
+```
 whoami
 sudo passwd -u root
 sudo passwd root
  (set new password)
 su -l root
 whoami
+```
 
-
-pwshgalleryonphotonos.sh
+```pwshgalleryonphotonos.sh```
 -
 VMware Photon OS doesn't include any Microsoft Windows .net and/or powershell package providers. Enable and prepackage Microsoft Windows .net and/or powershell package providers on Photon OS is not supported by VMware and you might consider running docker containers instead of this. Again, not for production purposes, however from developer's perspective to enable interaction with .net and package libraries the script pwshgalleryonphotonos.sh installs:
 - Photon OS updates
