@@ -44,9 +44,26 @@ whoami
 
 ```pwshgalleryonphotonos.sh```
 -
-VMware Photon OS doesn't include any Microsoft Windows .net and/or powershell package providers. Enable and prepackage Microsoft Windows .net and/or powershell package providers on Photon OS afaik is not supported by VMware. You might consider running docker containers instead of this. Not for production purposes, however from developer's perspective to enable interaction with .net and package libraries , during custom-data the script ```pwshgalleryonphotonos.sh``` is processed.
 
-Briefly what it installs
+This scripts makes the Microsoft PowerShellGallery available on VMware Photon OS. In addition VMware PowerCLI is installed.
+
+Installing PowerShell Core on Photon OS does not built-in register PSGallery or nuget.org as source provider.
+However this can be accomplished using a tool from the Microsoft open source Nuget ecosystem.
+See https://docs.microsoft.com/en-us/nuget/policies/ecosystem, https://docs.microsoft.com/en-us/nuget/nuget-org/licenses.nuget.org
+
+The tool called nuget.exe is Windowsx86-commandline-only. See https://docs.microsoft.com/en-us/nuget/install-nuget-client-tools
+"The nuget.exe CLI, nuget.exe, is the command-line utility for Windows that provides all NuGet capabilities; it can also be run on Mac OSX and Linux using Mono with some limitations."
+
+This scripts downloads all necessary prerequisites (tools, Mono, Nuget.exe) to register the PowerShell Gallery. The registration is the oneliner: ```mono /usr/local/bin/nuget.exe sources Add -Name PSGallery -Source "https://www.powershellgallery.com/api/v2"```
+ 
+ After the Powershell Core installation, VMware.PowerCLI is installed.
+
+ Remark:
+ I didn't figure out how to avoid the storage overload of Mono with nuget.exe.
+ In reference to https://www.mono-project.com/docs/tools+libraries/tools/mkbundle/ an avoidance may be possible:
+ "Mono can turn .NET applications (executable code and its dependencies) into self-contained executables that do not rely on Mono being installed on the system to simplify deployment of.NET Applications."
+
+During custom-data the script ```pwshgalleryonphotonos.sh``` is processed. Don't wonder - the full installation takes quite some time. Briefly what it installs
 - Photon OS updates
 - Mono, an open source implementation of Microsoft's .NET Framework https://www.mono-project.com/
 - Nuget, a Microsoft .NET foundation Windows x86 package manager CLI https://www.nuget.org/
@@ -55,5 +72,5 @@ Briefly what it installs
 - Windows PowershellCore https://github.com/PowerShell/PowerShell
 - The VMware PowerCLI powershell module https://www.powershellgallery.com/packages/VMware.PowerCLI
 
-Don't wonder - the full installation takes quite some time.
+
 
