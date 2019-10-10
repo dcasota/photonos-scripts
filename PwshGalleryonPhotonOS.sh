@@ -66,9 +66,9 @@ mkdir $powershelldir >> /tmp/myScript.txt
 mkdir -p ~/.local/share/powershell/Modules >> /tmp/myScript.txt
 tar -xvf ./$powershellfile -C $powershelldir >> /tmp/myScript.txt
 ~/powershell/pwsh -c '$PSVersionTable' >> /tmp/myScript.txt
-~/powershell/pwsh -c 'install-module packagemanagement -force' >> /tmp/myScript.txt
-~/powershell/pwsh -c 'install-module powershellget -force' >> /tmp/myScript.txt
-~/powershell/pwsh -c 'install-module VMware.PowerCLI -force' >> /tmp/myScript.txt
+~/powershell/pwsh -c 'install-module packagemanagement -Scope AllUsers -force' >> /tmp/myScript.txt
+~/powershell/pwsh -c 'install-module powershellget -Scope AllUsers -force' >> /tmp/myScript.txt
+~/powershell/pwsh -c 'install-module VMware.PowerCLI -Scope AllUsers -force' >> /tmp/myScript.txt
 # powershell/pwsh -c 'Set-PSRepository -Name PSGallery -InstallationPolicy Trusted'
 
 echo "$(date) + Installation finished." >> /tmp/myScript.txt
