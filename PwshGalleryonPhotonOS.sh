@@ -29,9 +29,9 @@
 #
 # 
 
-monourl="https://download.mono-project.com/sources/mono/mono-6.0.0.334.tar.xz"
-monofile="mono-6.0.0.334.tar.xz"
-monodir="mono-6.0.0.334"
+monourl="https://download.mono-project.com/sources/mono/mono-6.4.0.198.tar.xz"
+monofile="mono-6.4.0.198.tar.xz"
+monodir="mono-6.4.0.198"
 
 powershellfile="powershell-6.2.3-linux-x64.tar.gz"
 powershellurl="https://github.com/PowerShell/PowerShell/releases/download/v6.2.3/powershell-6.2.3-linux-x64.tar.gz"
