@@ -45,7 +45,7 @@ whoami
 ```pwshgalleryonphotonos.sh```
 -
 
-This scripts makes the Microsoft PowerShellGallery available and installs VMware PowerCLI on Photon OS.
+This scripts installs VMware PowerCLI and makes the Microsoft PowerShellGallery available on Photon OS.
 
 Installing PowerShell Core on Photon OS does not built-in register PSGallery or nuget.org as source provider.
 However this can be accomplished using a tool from the Microsoft open source Nuget ecosystem.
