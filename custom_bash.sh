@@ -9,8 +9,7 @@ unzip master.zip -d ~/photonosonazure >> /tmp/myScript.txt
 cd ~/photonosonazure/photonosonazure-master >> /tmp/myScript.txt
 chmod a+x ./PwshGalleryonPhotonOS.sh >> /tmp/myScript.txt
 ./PwshGalleryonPhotonOS.sh >> /tmp/myScript.txt
-cd / >> /tmp/myScript.txt
-rm /master.zip >> /tmp/myScript.txt
-rm -r ~/photonosonazure >> /tmp/myScript.txt
+rm -r /master.zip
+rm -r ~/photonosonazure
 echo $(date) + "Cloud-init custom data installed." >> /tmp/myScript.txt
 
