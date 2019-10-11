@@ -39,7 +39,7 @@
 # ---------
 #
 # Finding #1
-# 1) Mono v6.4.0 with nuget.exe v5.3.0
+# 1) Mono v6.4.0 with nuget.exe prior v2.8.6
 # 2) mkbundle nuget.exe release prior v2.8.6 fails with ERROR: Cannot load assembly (bad file format) Exception of type 'IKVM.Reflection.BadImageFormatException' was thrown.
 #    Show debug information: MONO_LOG_MASK=asm MONO_LOG_LEVEL=debug mkbundle --simple -o /tmp/mononuget /usr/local/bin/nuget.exe
 # 3) n/a
