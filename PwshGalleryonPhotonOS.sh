@@ -71,6 +71,9 @@ tar -xvf ./$powershellfile -C $powershelldir >> /tmp/myScript.txt
 ~/powershell/pwsh -c 'install-module VMware.PowerCLI -Scope AllUsers -force' >> /tmp/myScript.txt
 # powershell/pwsh -c 'Set-PSRepository -Name PSGallery -InstallationPolicy Trusted'
 
+cd ~/ >> /tmp/myScript.txt
+rm ~/$powershellfile
+rm ~/$monofile
 echo "$(date) + Installation finished." >> /tmp/myScript.txt
 
 
