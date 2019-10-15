@@ -19,8 +19,9 @@ tdnf -y update
 # install the requirements
 tdnf install -y \
         less \
-        # locales \
         ca-certificates \
+        curl
+        # locales \
         # libicu63 \
         # libssl1.1 \
         # libc6 \
@@ -28,8 +29,8 @@ tdnf install -y \
         # libgssapi-krb5-2 \
         # liblttng-ust0 \
         # libstdc++6 \
-        # zlib1g \
-        curl
+        # zlib1g
+
 
 # Download the powershell '.tar.gz' archive
 curl -L https://github.com/PowerShell/PowerShell/releases/download/v7.0.0-preview.4/powershell-7.0.0-preview.4-linux-x64.tar.gz -o /tmp/powershell.tar.gz
