@@ -180,3 +180,16 @@ PS /root>
 # 4) See Finding 1)
 #
 #
+# Finding #3
+# 1) Vanilla VMware Photon OS 3.0 GA, run all docker inside commands as of Finding 1)
+# 2) Install a custom Powershellget. See https://github.com/PowerShell/PowerShellGet/issues/350
+# 3) Get-PSRepository fails with
+     WARNING: Unable to find module repositories.
+# 4) It has nothing to do with the location issue described in https://github.com/PowerShell/PowerShellGet/issues/350.
+     However the source src/PowerShellGet/public/psgetfunctions/Register-PSRepository.ps1 needs that PackageManagementProvider "nuget" is recognized. On Photon OS this is not the case.
+     See https://github.com/PowerShell/PowerShellGet/pull/407
+     See https://github.com/PowerShell/PowerShellGet/issues/133
+     See https://github.com/PowerShell/PowerShellGet/issues/499. Latest issue entry was on 14th of September 2019.
+     See Finding 1)
+#
+#
