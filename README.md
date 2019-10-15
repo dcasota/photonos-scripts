@@ -45,7 +45,7 @@ whoami
 ```pwshgalleryonphotonos.sh```
 -
 
-This scripts installs VMware PowerCLI and makes the Microsoft PowerShellGallery available on Photon OS.
+This script installs VMware PowerCLI and makes the Microsoft PowerShellGallery available on Photon OS.
 
 Installing PowerShell Core on Photon OS does not built-in register PSGallery or nuget.org as source provider.
 However this can be accomplished using a tool from the Microsoft open source Nuget ecosystem.
@@ -74,4 +74,4 @@ In reference to https://www.mono-project.com/docs/tools+libraries/tools/mkbundle
 
 ```Pwsh7OnPhotonOS.sh```
 -
-This scripts installs Powershell Core v.7.0.0 (Preview4) on Photon OS.
+This script installs Powershell Core v.7.0.0 (Preview4) on Photon OS.
