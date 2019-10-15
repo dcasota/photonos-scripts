@@ -71,3 +71,7 @@ During custom-data of ```CreatePhotonOSVMOnAzure.ps1```, ```pwshgalleryonphotono
 
 Remark:
 In reference to https://www.mono-project.com/docs/tools+libraries/tools/mkbundle/ : "Mono can turn .NET applications (executable code and its dependencies) into self-contained executables that do not rely on Mono being installed on the system to simplify deployment of.NET Applications."
+
+```Pwsh7OnPhotonOS.sh```
+-
+This scripts installs Powershell Core v.7.0.0 (Preview4) on Photon OS.
