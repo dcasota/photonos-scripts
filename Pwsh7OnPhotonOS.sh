@@ -16,20 +16,19 @@
 
 tdnf -y update
 
-sudo apt-get update
 # install the requirements
-tdnf -y install -y \
+tdnf install -y \
         less \
-        locales \
+        # locales \
         ca-certificates \
-        libicu63 \
-        libssl1.1 \
-        libc6 \
-        libgcc1 \
-        libgssapi-krb5-2 \
-        liblttng-ust0 \
-        libstdc++6 \
-        zlib1g \
+        # libicu63 \
+        # libssl1.1 \
+        # libc6 \
+        # libgcc1 \
+        # libgssapi-krb5-2 \
+        # liblttng-ust0 \
+        # libstdc++6 \
+        # zlib1g \
         curl
 
 # Download the powershell '.tar.gz' archive
