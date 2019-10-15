@@ -6,6 +6,9 @@
 # https://docs.microsoft.com/en-us/powershell/scripting/install/installing-powershell-core-on-linux?view=powershell-7
 #
 #
+# History
+# 0.1  15.10.2019   dcasota  Initial release
+#
 # Prerequisites:
 #    VMware Photon OS 3.0
 #
