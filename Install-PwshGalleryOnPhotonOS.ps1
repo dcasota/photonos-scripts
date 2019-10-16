@@ -180,14 +180,14 @@ function workaround.PwshGalleryPrerequisites
 			}
 			if ($InstallPackagemanagement -eq $true)
 			{
-				LogfileAppend("Installing Packagemanagement release 1.1.7.0 ...")
+				LogfileAppend("Installing Packagemanagement release 1.4.5 ...")
 				if (test-path("/root/.local/share/powershell/Modules/PackageManagement")) {
                     # rm -r -fo "/root/.local/share/powershell/Modules/PackageManagement" #do not delete it might be a previous version without version number in directory name
                 }
-				$rc = workaround.Find-ModuleAllVersions -name packagemanagement -version "1.1.7.0" | workaround.Save-Module -Path "/root/.local/share/powershell/Modules"
-				LogfileAppend("Installing Packagemanagement release 1.1.7.0 : return code $rc")				
+				$rc = workaround.Find-ModuleAllVersions -name packagemanagement -version "1.4.5" | workaround.Save-Module -Path "/root/.local/share/powershell/Modules"
+				LogfileAppend("Installing Packagemanagement release 1.4.5 : return code $rc")				
 				$rc = workaround.Install-NugetPkgOnLinux $rc.name "/root/.local/share/powershell/Modules" "/root/.local/share/powershell/Modules"
-				LogfileAppend("Installing Packagemanagement release 1.1.7.0 done : return code $rc")						
+				LogfileAppend("Installing Packagemanagement release 1.4.5 done : return code $rc")						
 			}		
 			
 			$InstallPowershellget = $false
@@ -197,19 +197,19 @@ function workaround.PwshGalleryPrerequisites
                 $tmpvalue=get-module -name powershellget
                 if (([string]::IsNullOrEmpty($tmpvalue)) -eq $true) {$tmpvalue=get-module -name powershellget -listavailable }
                 try {
-				    if (!(($tmpvalue).version | ? { $_.tostring() -imatch "1.6.0" })) { $InstallPowershellget = $true } #psversiontable = 4 bedingt mit ohne -listavailable
+				    if (!(($tmpvalue).version | ? { $_.tostring() -imatch "2.2.1" })) { $InstallPowershellget = $true } #psversiontable = 4 bedingt mit ohne -listavailable
 				} catch {}
 			}
 			if ($InstallPowershellget -eq $true)
 			{
-				LogfileAppend("Installing Powershellget release 1.6.0 ...")
+				LogfileAppend("Installing Powershellget release 2.2.1 ...")
 				if (test-path("/root/.local/share/powershell/Modules/Powershellget")) {
                     # rm -r -fo "/root/.local/share/powershell/Modules/Powershellget" #do not delete it might be a previous version without version number in directory name
                 }
-				$rc = workaround.Find-ModuleAllVersions -name powershellget -version "1.6.0" | workaround.Save-Module -Path "/root/.local/share/powershell/Modules"
-				LogfileAppend("Installing Powershellget release 1.6.0 : return code $rc")				
+				$rc = workaround.Find-ModuleAllVersions -name powershellget -version "2.2.1" | workaround.Save-Module -Path "/root/.local/share/powershell/Modules"
+				LogfileAppend("Installing Powershellget release 2.2.1 : return code $rc")				
 				$rc = workaround.Install-NugetPkgOnLinux $rc.name "/root/.local/share/powershell/Modules" "/root/.local/share/powershell/Modules"
-				LogfileAppend("Installing Powershellget release 1.6.0 done : return code $rc")				
+				LogfileAppend("Installing Powershellget release 2.2.1 done : return code $rc")				
 			}
 					
 		}
@@ -223,7 +223,9 @@ function workaround.PwshGalleryPrerequisites
 
 # Requires Run with root privileges
 workaround.PwshGalleryPrerequisites
-# Install-Package -Name PowerShellGet -Source https://www.powershellgallery.com/api/v2/ -ProviderName NuGet -MinimumVersion 2.8.5.201 -MaximumVersion 2.8.5.201 -force -confirm $false -ErrorAction SilentlyContinue
+# Now, Install-Package works, because Nuget has version 2.8.5.210. However, Register-PSRepository still fails. To fix that, update powershellget to version 1.6.7.
+# Install-Package -Name PowerShellGet -Source https://www.powershellgallery.com/api/v2/ -ProviderName NuGet -MinimumVersion 1.6.0 -MaximumVersion 1.6.0 -force -confirm:$false
+# The module releases should be now Powershellget 1.6.7, Packagemanagement 1.1.7.0 and Nuget 2.8.5.210
 # get-psrepository
 # Register-PSRepository -Default
 # get-psrepository
