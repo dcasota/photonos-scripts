@@ -134,7 +134,7 @@ function workaround.Install-NugetPkgOnLinux
 
         # TODO assembling directory name by using version number out of packagename or out of leading subdirectory
 		LogfileAppend("Unzipping $Sourcefile to $destinationpath ...")	
-		unzip $Sourcefile -o -d $destinationpath
+		unzip -o $Sourcefile -d $destinationpath
 	
 		LogfileAppend("Removing $sourcefile ...")
 		remove-item -path ($Sourcefile) -force -recurse -confirm:$false
