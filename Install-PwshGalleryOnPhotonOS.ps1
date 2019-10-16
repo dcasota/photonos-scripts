@@ -155,7 +155,7 @@ function workaround.PwshGalleryPrerequisites
 {
 	$PwshGalleryInstalled = $false
 	$PackageManagementVersion="1.1.7.0"
-	$PowershellgetVersion="1.4.0"	
+	$PowershellgetVersion="1.6.0"	
 	try
 	{
 		LogfileAppend("Check get-psrepository ...")
