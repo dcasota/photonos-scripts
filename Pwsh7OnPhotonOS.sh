@@ -49,7 +49,7 @@ sudo chmod +x /opt/microsoft/powershell/7-preview/pwsh
 sudo ln -s /opt/microsoft/powershell/7-preview/pwsh /usr/bin/pwsh-preview
 
 # Start PowerShell
-pwsh-preview -c '$env:DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0; register-psrepository -default -Erroraction SilentlyContinue; if ((Get-PSRepository -name psgallery | %{ $_.InstallationPolicy -match "Untrusted" }) -eq $true) { set-psrepository -name PSGallery -InstallationPolicy Trusted }'
+# pwsh-preview -c '$env:DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0; register-psrepository -default -Erroraction SilentlyContinue; if ((Get-PSRepository -name psgallery | %{ $_.InstallationPolicy -match "Untrusted" }) -eq $true) { set-psrepository -name PSGallery -InstallationPolicy Trusted }'
 
 
 
