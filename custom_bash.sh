@@ -7,7 +7,7 @@ mkdir ~/photonos-scripts >> /tmp/myScript.txt
 wget https://github.com/dcasota/photonos-scripts/archive/master.zip >> /tmp/myScript.txt
 unzip master.zip -d ~/photonos-scripts >> /tmp/myScript.txt
 cd ~/photonos-scripts/photonos-scripts-master >> /tmp/myScript.txt
-chmod a+x ./PwshGalleryonPhotonOS.sh >> /tmp/myScript.txt
+chmod a+x ./*.sh >> /tmp/myScript.txt
 ./PwshGalleryonPhotonOS.sh >> /tmp/myScript.txt
 rm -r /master.zip
 rm -r ~/photonosonazure

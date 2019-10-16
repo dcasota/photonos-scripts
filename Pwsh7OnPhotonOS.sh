@@ -11,7 +11,7 @@
 #
 #
 # History
-# 0.1  15.10.2019   dcasota  Initial release
+# 0.1  16.10.2019   dcasota  Initial release
 #
 # Prerequisites:
 #    VMware Photon OS 3.0
@@ -60,10 +60,10 @@ curl -L https://github.com/dcasota/photonos-scripts/archive/master.zip -o /tmp/m
 sudo mkdir -p /tmp/photonos-scripts
 
 # Expand archive to the target folder
-sudo unzip master.zip -d /tmp/photonos-scripts
+sudo unzip /tmp/master.zip -d /tmp/photonos-scripts
 
 # Run Install-PwshGalleryOnPhotonOS.ps1
-pwsh-preview -file /tmp/photonos-scripts/photonos-scripts-master/Install-PwshGalleryOnPhotonOS.ps1
+pwsh-preview -c "/tmp/photonos-scripts/photonos-scripts-master/Install-PwshGalleryOnPhotonOS.ps1"
 
 # Start PowerShell
 # pwsh-preview
