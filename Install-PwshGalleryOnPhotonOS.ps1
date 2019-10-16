@@ -184,12 +184,12 @@ function workaround.PwshGalleryPrerequisites
 			if ($InstallPackagemanagement -eq $true)
 			{
 				LogfileAppend("Installing Packagemanagement release 1.1.7.0 ...")
-				if (test-path("/opt/microsoft/powershell/Modules/PackageManagement")) {
-                    # rm -r -fo "/opt/microsoft/powershell/Modules/PackageManagement"
+				if (test-path("/root/.local/share/powershell/Modules/PackageManagement")) {
+                    # rm -r -fo "/root/.local/share/powershell/Modules/PackageManagement"
                 }
-				$rc = workaround.Find-ModuleAllVersions -name packagemanagement -version "1.1.7.0" | workaround.Save-Module -Path "/opt/microsoft/powershell/Modules"
+				$rc = workaround.Find-ModuleAllVersions -name packagemanagement -version "1.1.7.0" | workaround.Save-Module -Path "/root/.local/share/powershell/Modules"
 				LogfileAppend("Installing Packagemanagement release 1.1.7.0 : return code $rc")				
-				$rc = workaround.Install-NugetPkgOnLinux $rc.name "/opt/microsoft/powershell/Modules" "/opt/microsoft/powershell/Modules"
+				$rc = workaround.Install-NugetPkgOnLinux $rc.name "/root/.local/share/powershell/Modules" "/root/.local/share/powershell/Modules"
 				LogfileAppend("Installing Packagemanagement release 1.1.7.0 done : return code $rc")						
 			}		
 			
@@ -206,12 +206,12 @@ function workaround.PwshGalleryPrerequisites
 			if ($InstallPowershellget -eq $true)
 			{
 				LogfileAppend("Installing Powershellget release 1.6.0 ...")
-				if (test-path("/opt/microsoft/powershell/Modules/Powershellget")) {
-                    # rm -r -fo "/opt/microsoft/powershell/Modules/Powershellget"
+				if (test-path("/root/.local/share/powershell/Modules/Powershellget")) {
+                    # rm -r -fo "/root/.local/share/powershell/Modules/Powershellget"
                 }
-				$rc = workaround.Find-ModuleAllVersions -name powershellget -version "1.6.0" | workaround.Save-Module -Path "/opt/microsoft/powershell/Modules"
+				$rc = workaround.Find-ModuleAllVersions -name powershellget -version "1.6.0" | workaround.Save-Module -Path "/root/.local/share/powershell/Modules"
 				LogfileAppend("Installing Powershellget release 1.6.0 : return code $rc")				
-				$rc = workaround.Install-NugetPkgOnLinux $rc.name "/opt/microsoft/powershell/Modules" "/opt/microsoft/powershell/Modules"
+				$rc = workaround.Install-NugetPkgOnLinux $rc.name "/root/.local/share/powershell/Modules" "/root/.local/share/powershell/Modules"
 				LogfileAppend("Installing Powershellget release 1.6.0 done : return code $rc")				
 			}
 			
