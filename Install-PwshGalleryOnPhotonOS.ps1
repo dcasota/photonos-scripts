@@ -215,6 +215,29 @@ function workaround.PowerCLIPrerequisitesV10.1.0.8346946_V2
 				LogfileAppend("Installing Powershellget release 1.6.0 done : return code $rc")				
 			}
 			
+			$InstallGAC = $false
+			if (((get-module -name gac -listavailable -ErrorAction SilentlyContinue) -eq $null) -and ((get-module -name gac -ErrorAction SilentlyContinue) -eq $null)) { $InstallGAC = $true }
+			else
+			{
+                $tmpvalue=get-module -name gac
+                if (([string]::IsNullOrEmpty($tmpvalue)) -eq $true) {$tmpvalue=get-module -name gac -listavailable }
+                try {
+				    if (!(($tmpvalue).version | ? { $_.tostring() -imatch "1.0.1" })) { $InstallGAC = $true }
+				} catch {}
+			}
+			if ($InstallGAC -eq $true)
+			{
+				LogfileAppend("Installing GAC release 1.0.1 ...")
+				if (test-path("/opt/microsoft/powershell/7-preview/Modules/Gac")) {
+                    # rm -r -fo "/opt/microsoft/powershell/7-preview/Modules/Gac"
+                }
+				$rc = workaround.Find-ModuleAllVersions -name Gac -version "1.0.1" | workaround.Save-Module -Path "/opt/microsoft/powershell/7-preview/Modules"
+				LogfileAppend("Installing Gac release 1.0.1 : return code $rc")				
+				$rc = workaround.Install-NugetPkgOnLinux $rc.name "/opt/microsoft/powershell/7-preview/Modules" "/opt/microsoft/powershell/7-preview/Modules"
+				LogfileAppend("Installing Gac release 1.0.1 done : return code $rc")				
+			}			
+			
+			
 			$InstallNuget = $false
 			if (((get-packageprovider -name nuget -listavailable) -eq $null) -and ((get-packageprovider -name nuget -listavailable) -eq $null)) { $InstallNuget = $true }
 			else
