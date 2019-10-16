@@ -222,6 +222,7 @@ function workaround.PwshGalleryPrerequisites
 	return ($value)
 }
 
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 # Requires Run with root privileges
 workaround.PwshGalleryPrerequisites
