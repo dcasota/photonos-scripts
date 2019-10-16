@@ -154,8 +154,8 @@ function workaround.Install-NugetPkgOnLinux
 function workaround.PwshGalleryPrerequisites
 {
 	$PwshGalleryInstalled = $false
-	$PackageManagementVersion="1.1.7.0"
-	$PowershellgetVersion="1.6.0"	
+	$PackageManagementVersion="1.4.4"
+	$PowershellgetVersion="2.2.1"	
 	try
 	{
 		LogfileAppend("Check get-psrepository ...")
@@ -228,37 +228,60 @@ function workaround.PwshGalleryPrerequisites
 workaround.PwshGalleryPrerequisites
 
 # Checks
-get-psrepository
+# PS /root/photonos-scripts-master> get-module
+# 
+# ModuleType Version    Name                                ExportedCommands
+# ---------- -------    ----                                ----------------
+# Manifest   6.1.0.0    Microsoft.PowerShell.Management     {Add-Content, Clear-Content, Clear-Item, Clear-ItemProperty...
+# Manifest   6.1.0.0    Microsoft.PowerShell.Utility        {Add-Member, Add-Type, Clear-Variable, Compare-Object...}
+# Script     1.1.7.0    PackageManagement                   {Find-Package, Find-PackageProvider, Get-Package, Get-Packa...
+# Script     1.6.0      PowerShellGet                       {Find-Command, Find-DscResource, Find-Module, Find-RoleCapa...
+# 
+# 
+# PS /root/photonos-scripts-master>
+
+
+# 1) get-psrepository
+# Powershellget 1.6.7, Nuget 2.8.5.210, Packagemanagement 2.2.1
 # PackageManagement\Get-PackageSource : Unable to find module providers (PowerShellGet).
 # At $PSHome/Modules/PowerShellGet.2.2.1/PSModule.psm1:9515 char:31
 # + ... ckageSources = PackageManagement\Get-PackageSource @PSBoundParameters
 # +                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # + CategoryInfo          : InvalidArgument: (Microsoft.Power...etPackageSource:GetPackageSource) [Get-PackageSource], Exception
 # + FullyQualifiedErrorId : UnknownProviders,Microsoft.PowerShell.PackageManagement.Cmdlets.GetPackageSource
-
-# get-packageprovider
+#
+# 2) Register-PSRepository -Name PSGallery -SourceLocation "https://www.powershellgallery.com/api/v2/" -InstallationPolicy Trusted
+# Register-PSRepository : Use 'Register-PSRepository -Default' to register the PSGallery repository.
+# At line:1 char:1
+# + Register-PSRepository -Name PSGallery -SourceLocation "https://www.po ...
+# + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# + CategoryInfo          : InvalidArgument: (PSGallery:String) [Register-PSRepository], ArgumentException
+# + FullyQualifiedErrorId : UseDefaultParameterSetOnRegisterPSRepository,Register-PSRepository
+# 
+# 3) Register-PSRepository -Default
+# PackageManagement\Register-PackageSource : Unable to find module providers (PowerShellGet).
+# At /usr/lib/powershell/Modules/PowerShellGet.1.6.0/PSModule.psm1:4631 char:17
+# + ...     $null = PackageManagement\Register-PackageSource @PSBoundParamete ...
+# +                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# + CategoryInfo          : InvalidArgument: (Microsoft.Power...erPackageSource:RegisterPackageSource) [Register-PackageSource], Exception
+# + FullyQualifiedErrorId : UnknownProviders,Microsoft.PowerShell.PackageManagement.Cmdlets.RegisterPackageSource
+#
+# 4) get-packagesource
+# WARNING: Unable to find package sources.
+#
+# 5) get-packageprovider
 # Name                     Version          DynamicOptions
 # ----                     -------          --------------
-# NuGet                    3.0.0.1          Destination, ExcludeVersion, Scope, SkipDependencies, Headers, FilterOnTag,...
+# NuGet                    2.8.5.210        Destination, ExcludeVersion, Scope, SkipDependencies, Headers, FilterOnTag,...
+#
+# 6) get-module
+# ModuleType Version    Name                                ExportedCommands
+# ---------- -------    ----                                ----------------
+# Manifest   6.1.0.0    Microsoft.PowerShell.Management     {Add-Content, Clear-Content, Clear-Item, Clear-ItemProperty...
+# Manifest   6.1.0.0    Microsoft.PowerShell.Utility        {Add-Member, Add-Type, Clear-Variable, Compare-Object...}
+# Script     1.1.7.0    PackageManagement                   {Find-Package, Find-PackageProvider, Get-Package, Get-Packa...
+# Script     1.6.0      PowerShellGet                       {Find-Command, Find-DscResource, Find-Module, Find-RoleCapa...
+# 
 
-# find-packageprovider nuget -verbose
-# VERBOSE: Using the provider 'Bootstrap' for searching packages.
-# VERBOSE: Finding the package 'Bootstrap::FindPackage' 'nuget','','','''.
-# find-packageprovider : No match was found for the specified search criteria and package name 'nuget'. Try Get-PackageSource to see all available registered package sources.
-# At line:1 char:1
-# + find-packageprovider nuget -verbose
-# + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-# + CategoryInfo          : ObjectNotFound: (Microsoft.Power...PackageProvider:FindPackageProvider) [Find-PackageProvider], Exception
-# + FullyQualifiedErrorId : NoMatchFoundForCriteria,Microsoft.PowerShell.PackageManagement.Cmdlets.FindPackageProvider
 
-# get-packagesource
-# WARNING: Unable to find package sources.
-
-# Install-Package -Name PowerShellGet -Source https://www.powershellgallery.com/api/v2/ -ProviderName NuGet -MinimumVersion 1.6.0 -MaximumVersion 1.6.0 -force -confirm:$false
-# The module releases should be now Powershellget 1.6.7, Packagemanagement 1.1.7.0 and Nuget 2.8.5.210
-# get-psrepository
-# Register-PSRepository -Default
-# get-psrepository
-# Register-PSRepository -Name PSGallery -SourceLocation "https://www.powershellgallery.com/api/v2/" -InstallationPolicy Trusted
-# get-psrepository
-
+# Install-Package -Name PowerShellGet -Source https://www.powershellgallery.com/api/v2/ -ProviderName NuGet -MinimumVersion 2.2.1 -MaximumVersion 2.2.1 -force -confirm:$false
