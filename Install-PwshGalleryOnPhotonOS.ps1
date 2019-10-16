@@ -143,7 +143,7 @@ function workaround.Install-NugetPkgOnLinux
 			$TmpFile = $destinationpath + $PathDelimiter + $_.Name
             try {
 				LogfileAppend("importing-name $TmpFile ...")			
-			    import-module -name $TmpFile -NoClobber -Scope Global -Verbose -force -erroraction silentlycontinue
+			    import-module -name $TmpFile -Scope Global -Verbose -force -erroraction silentlycontinue
             } catch {}
 		}
 	}
