@@ -181,12 +181,12 @@ function workaround.PwshGalleryPrerequisites
 			if ($InstallPackagemanagement -eq $true)
 			{
 				LogfileAppend("Installing Packagemanagement release 1.4.5 ...")
-				if (test-path("/root/.local/share/powershell/Modules/PackageManagement")) {
-                    # rm -r -fo "/root/.local/share/powershell/Modules/PackageManagement" #do not delete it might be a previous version without version number in directory name
+				if (test-path("$PSHome/Modules/PackageManagement")) {
+                    # rm -r -fo "$PSHome/Modules/PackageManagement" #do not delete it might be a previous version without version number in directory name
                 }
-				$rc = workaround.Find-ModuleAllVersions -name packagemanagement -version "1.4.5" | workaround.Save-Module -Path "/root/.local/share/powershell/Modules"
+				$rc = workaround.Find-ModuleAllVersions -name packagemanagement -version "1.4.5" | workaround.Save-Module -Path "$PSHome/Modules"
 				LogfileAppend("Installing Packagemanagement release 1.4.5 : return code $rc")				
-				$rc = workaround.Install-NugetPkgOnLinux $rc.name "/root/.local/share/powershell/Modules" "/root/.local/share/powershell/Modules"
+				$rc = workaround.Install-NugetPkgOnLinux $rc.name "$PSHome/Modules" "$PSHome/Modules"
 				LogfileAppend("Installing Packagemanagement release 1.4.5 done : return code $rc")						
 			}		
 			
@@ -203,12 +203,12 @@ function workaround.PwshGalleryPrerequisites
 			if ($InstallPowershellget -eq $true)
 			{
 				LogfileAppend("Installing Powershellget release 2.2.1 ...")
-				if (test-path("/root/.local/share/powershell/Modules/Powershellget")) {
-                    # rm -r -fo "/root/.local/share/powershell/Modules/Powershellget" #do not delete it might be a previous version without version number in directory name
+				if (test-path("$PSHome/Modules/Powershellget")) {
+                    # rm -r -fo "$PSHome/Modules/Powershellget" #do not delete it might be a previous version without version number in directory name
                 }
-				$rc = workaround.Find-ModuleAllVersions -name powershellget -version "2.2.1" | workaround.Save-Module -Path "/root/.local/share/powershell/Modules"
+				$rc = workaround.Find-ModuleAllVersions -name powershellget -version "2.2.1" | workaround.Save-Module -Path "$PSHome/Modules"
 				LogfileAppend("Installing Powershellget release 2.2.1 : return code $rc")				
-				$rc = workaround.Install-NugetPkgOnLinux $rc.name "/root/.local/share/powershell/Modules" "/root/.local/share/powershell/Modules"
+				$rc = workaround.Install-NugetPkgOnLinux $rc.name "$PSHome/Modules" "$PSHome/Modules"
 				LogfileAppend("Installing Powershellget release 2.2.1 done : return code $rc")				
 			}
 					
@@ -227,7 +227,7 @@ workaround.PwshGalleryPrerequisites
 # Checks
 get-psrepository
 # PackageManagement\Get-PackageSource : Unable to find module providers (PowerShellGet).
-# At /root/.local/share/powershell/Modules/PowerShellGet.2.2.1/PSModule.psm1:9515 char:31
+# At $PSHome/Modules/PowerShellGet.2.2.1/PSModule.psm1:9515 char:31
 # + ... ckageSources = PackageManagement\Get-PackageSource @PSBoundParameters
 # +                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # + CategoryInfo          : InvalidArgument: (Microsoft.Power...etPackageSource:GetPackageSource) [Get-PackageSource], Exception
