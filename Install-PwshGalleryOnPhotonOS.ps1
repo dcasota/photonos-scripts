@@ -23,7 +23,7 @@ function LogfileAppend($text)
 
 function workaround.SaveWMF51
 {
- LogfileAppend("Dummy Function WMF5.1")
+ LogfileAppend("Prerequisite WMF 5.1 not implemented.")
 }
 
 
@@ -103,7 +103,102 @@ function workaround.Save-Module
 	return $rc
 }
 
-
+function workaround.Install-NugetPkg
+{
+	param (
+		[parameter(Mandatory = $true)]
+		[string]$filename,
+		[parameter(Mandatory = $true)]
+		[string]$sourcepath,
+		[parameter(Mandatory = $true)]
+		[string]$destination
+	)
+	$destinationspace = $destination
+	
+	$PathDelimiter="\"
+	if ($PSVersiontable.Platform -eq "Unix") {$PathDelimiter="/"}
+	
+	try
+	{
+		$PackageName = ([System.IO.Path]::GetFileNameWithoutExtension($filename))
+		$NewFileName = $PackageName + ".zip"
+		$SourceFile = $sourcepath + $PathDelimiter + $NewFileName
+		
+		if (test-path ($SourceFile)) {
+			LogfileAppend("$Sourcefile found. Removing $Sourcefile ...")
+			remove-item -path ($SourceFile) -force
+		}
+		
+		LogfileAppend("Do rename item: dir ($sourcepath + $PathDelimiter + $filename) | rename-item -newname { $_.name -replace ".nupkg", ".zip" }")
+		dir ($sourcepath + $PathDelimiter + $filename) | rename-item -newname { $_.name -replace ".nupkg", ".zip" }
+		[io.path]::changeextension($sourcefile, '.zip')
+		
+        $i = 1
+        $VersionString=""
+        for ($i;$i -le (-1 + ($PackageName.split(".")).count);$i++)
+        {
+            if ($Versionstring -eq "") {$Versionstring = ($PackageName.split("."))[$i]}
+            else { $VersionString = $VersionString + "." + ($PackageName.split("."))[$i]}
+        }
+		
+        # Assembling directory name by using version number out of packagename or out of leading subdirectory
+		LogfileAppend("new-object -comobject shell.application")
+		$shell = new-object -comobject shell.application
+		$tmpzip = $shell.namespace($sourcefile)
+		$tmpdir = ""
+		foreach ($item in $tmpzip.items())
+		{
+			if (($item.IsFolder -eq $true) -and (($tmpzip.items()).count -eq 1)) { $tmpdir = $item.name }
+		}
+		if ($tmpdir -ne "")
+		{
+            if ($tmpdir -ne $VersionString)
+            {
+			$destinationspacenew = $destinationspace + $PathDelimiter + ($PackageName.split("."))[0]  + $PathDelimiter + ($tmpdir.split("."))[0]
+			}
+			else
+			{
+				$destinationspacenew = $destinationspace + $PathDelimiter + ($PackageName.split("."))[0]
+			}
+		}
+		else
+		{
+			if ($VersionString -eq "")
+			{ $destinationspacenew = $destinationspace + $PathDelimiter + ($PackageName.split("."))[0] }
+			else
+			{ $destinationspacenew = $destinationspace + $PathDelimiter + ($PackageName.split("."))[0] + $PathDelimiter + $Versionstring }
+		}
+	    LogfileAppend("path is $destinationspacenew")
+		new-item -itemtype directory -force -path $destinationspacenew -ErrorAction SilentlyContinue
+		foreach ($item in $tmpzip.items())
+		{
+			$vOptions = 0x14
+			#TODO
+			# https://stackoverflow.com/questions/27768303/how-to-unzip-a-file-in-powershell
+			# https://stackoverflow.com/questions/45618605/create-extract-zip-file-and-overwrite-existing-files-content
+			# https://vcsjones.com/2012/11/11/unzipping-files-with-powershell-in-server-core-the-new-way/
+			if ($item.isfolder -eq $false) {
+				LogfileAppend("file $item is copied to $destinationspacenew ...")
+				$shell.namespace($destinationspacenew).copyhere($item, $vOptions)
+			}
+            else {
+				LogfileAppend("directory $item.path is created ...")
+				new-item -itemtype directory -force -path $item.path -ErrorAction SilentlyContinue
+			}
+		}
+		LogfileAppend("Removing $sourcefile ...")
+		remove-item -path ($sourcefile) -force -recurse -confirm:$false
+		get-childitem -path $destinationspacenew -recurse -filter *.psd1| ? {
+			$TmpFile = $destinationspacenew + $PathDelimiter + $_.Name
+            try {
+				LogfileAppend("importing-name $TmpFile ...")			
+			    import-module -name $TmpFile -Verbose -force -scope global -erroraction silentlycontinue
+            } catch {}
+		}
+	}
+	catch { }
+	return ($destinationspacenew)
+}
 
 function workaround.PowerCLIPrerequisitesV10.1.0.8346946_V2
 {
