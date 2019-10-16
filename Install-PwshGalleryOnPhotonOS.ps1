@@ -143,7 +143,7 @@ function workaround.Install-NugetPkgOnLinux
 			$TmpFile = $destinationpath + $PathDelimiter + $_.Name
             try {
 				LogfileAppend("importing-name $TmpFile ...")			
-			    import-module -name $TmpFile -NoClobber -Verbose -force -scope global -erroraction silentlycontinue
+			    import-module -name $TmpFile -NoClobber -Verbose -force -erroraction silentlycontinue
             } catch {}
 		}
 	}
@@ -153,15 +153,12 @@ function workaround.Install-NugetPkgOnLinux
 
 function workaround.PwshGalleryPrerequisites
 {
-	$ModuleInstalled = $false
+	$PwshGalleryInstalled = $false
 	try
 	{
-		LogfileAppend("Check VMware.PowerCLI 10.1.0.8346946 ...")
-		if (((get-module -name VMware.PowerCLI -listavailable -ErrorAction SilentlyContinue) -ne $null) -and ((get-module -name VMware.PowerCLI -ErrorAction SilentlyContinue) -ne $null))
-		{
-			if (((get-module -name VMware.PowerCLI -listavailable) | ?{ $_.version.Tostring() -imatch "10.1.0.8346946" })) { $ModuleInstalled = $true }
-		}
-		if ($ModuleInstalled -eq $false)
+		LogfileAppend("Check get-psrepository ...")
+		#TODO
+		if ($PwshGalleryInstalled -eq $false)
 		{
 			
 			LogfileAppend("Check psversion ...")
@@ -225,10 +222,6 @@ function workaround.PwshGalleryPrerequisites
 				    if (!(($tmpvalue).version | ? { $_.tostring() -imatch "1.0.1" })) { $InstallGAC = $true }
 				} catch {}
 			}
-			
-			Register-PSRepository -Name PSGallery -SourceLocation "https://www.powershellgallery.com/api/v2/" -InstallationPolicy Trusted -Default		
-			if ((Get-PSRepository -name psgallery | %{ $_.InstallationPolicy -match "Untrusted" }) -eq $true) { set-psrepository -name PSGallery -InstallationPolicy Trusted }
-
 		}
 	}
 	catch { }
@@ -240,4 +233,9 @@ function workaround.PwshGalleryPrerequisites
 
 # Requires Run as Administrator
 workaround.PwshGalleryPrerequisites
+get-psrepository
+Register-PSRepository -Default
+get-psrepository
+Register-PSRepository -Name PSGallery -SourceLocation "https://www.powershellgallery.com/api/v2/" -InstallationPolicy Trusted
+get-psrepository
 
