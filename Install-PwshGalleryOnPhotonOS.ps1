@@ -21,12 +21,6 @@ function LogfileAppend($text)
 	Write-Host $TimeStamp  $text
 }
 
-function workaround.SaveWMF51
-{
- LogfileAppend("Prerequisite WMF 5.1 not implemented.")
-}
-
-
 function workaround.Find-ModuleAllVersions
 {
 	# https://stackoverflow.com/questions/37486587/powershell-v5-how-to-install-modules-to-a-computer-having-no-internet-connecti
@@ -154,22 +148,14 @@ function workaround.Install-NugetPkgOnLinux
 function workaround.PwshGalleryPrerequisites
 {
 	$PwshGalleryInstalled = $false
-	$PackageManagementVersion="1.4.4"
+	$PackageManagementVersion="1.4.5"
 	$PowershellgetVersion="2.2.1"	
 	try
 	{
 		LogfileAppend("Check get-psrepository ...")
 		#TODO
 		if ($PwshGalleryInstalled -eq $false)
-		{
-			
-			LogfileAppend("Check psversion ...")
-			if ($psversiontable.psversion.major -lt 5)
-			{
-				if ($psversiontable.psversion.minor -lt 1) { workaround.SaveWMF51 }
-			}
-			# https://docs.microsoft.com/en-us/powershell/gallery/psget/get_psget_module
-			
+		{			
 			$InstallPackageManagement = $false
 			if (((get-module -name packagemanagement -listavailable -ErrorAction SilentlyContinue) -eq $null) -and ((get-module -name packagemanagement -ErrorAction SilentlyContinue) -eq $null)) { $InstallPackagemanagement = $true }
 			else
@@ -250,7 +236,7 @@ workaround.PwshGalleryPrerequisites
 # + CategoryInfo          : InvalidArgument: (Microsoft.Power...etPackageSource:GetPackageSource) [Get-PackageSource], Exception
 # + FullyQualifiedErrorId : UnknownProviders,Microsoft.PowerShell.PackageManagement.Cmdlets.GetPackageSource
 #
-# 2) Register-PSRepository -Name PSGallery -SourceLocation "https://www.powershellgallery.com/api/v2/" -InstallationPolicy Trusted
+# 2) Register-PSRepository -Name PSGallery1 -SourceLocation "https://www.powershellgallery.com/api/v2/" -InstallationPolicy Trusted
 # Register-PSRepository : Use 'Register-PSRepository -Default' to register the PSGallery repository.
 # At line:1 char:1
 # + Register-PSRepository -Name PSGallery -SourceLocation "https://www.po ...
@@ -282,6 +268,6 @@ workaround.PwshGalleryPrerequisites
 # Script     1.1.7.0    PackageManagement                   {Find-Package, Find-PackageProvider, Get-Package, Get-Packa...
 # Script     1.6.0      PowerShellGet                       {Find-Command, Find-DscResource, Find-Module, Find-RoleCapa...
 # 
+[System.AppContext]::SetSwitch("System.Net.Http.UseSocketsHttpHandler", $false)
 
-
-# Install-Package -Name PowerShellGet -Source https://www.powershellgallery.com/api/v2/ -ProviderName NuGet -MinimumVersion 2.2.1 -MaximumVersion 2.2.1 -force -confirm:$false
+# Install-Package -Name PowerShellGet -Source https://www.powershellgallery.com/api/v2 -ProviderName NuGet -MinimumVersion 2.2.1 -MaximumVersion 2.2.1 -force -confirm:$false
