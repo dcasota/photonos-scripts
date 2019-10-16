@@ -2,8 +2,12 @@
 # Deploy Powershell7 on VMware Photon OS
 #
 # This script deploys Powershell7 (Preview4) on VMware Photon OS.
+# In addition to enable Powershellgallery registration, Install-PwshGalleryOnPhotonOS.ps1 is downloaded and processed.
+#
 # The reference installation procedure for Pwsh7 on Linux was published on
 # https://docs.microsoft.com/en-us/powershell/scripting/install/installing-powershell-core-on-linux?view=powershell-7
+# 
+#
 #
 #
 # History
@@ -21,6 +25,7 @@ tdnf install -y \
         tar \
         less \
         ca-certificates \
+		unzip \
         curl
         # locales \
         # libicu63 \
@@ -48,12 +53,24 @@ sudo chmod +x /opt/microsoft/powershell/7-preview/pwsh
 # Create the symbolic link that points to pwsh
 sudo ln -s /opt/microsoft/powershell/7-preview/pwsh /usr/bin/pwsh-preview
 
+# Download the Install-PwshGalleryOnPhotonOS.ps1 archive
+curl -L https://github.com/dcasota/photonos-scripts/archive/master.zip -o /tmp/master.zip
+
+# Create the target folder where the archive will be placed
+sudo mkdir -p /tmp/photonos-scripts
+
+# Expand archive to the target folder
+sudo unzip master.zip -d /tmp/photonos-scripts
+
+# Run Install-PwshGalleryOnPhotonOS.ps1
+pwsh-preview -file /tmp/photonos-scripts/Install-PwshGalleryOnPhotonOS.ps1
+
 # Start PowerShell
-# pwsh-preview -c '$env:DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0; register-psrepository -default -Erroraction SilentlyContinue; if ((Get-PSRepository -name psgallery | %{ $_.InstallationPolicy -match "Untrusted" }) -eq $true) { set-psrepository -name PSGallery -InstallationPolicy Trusted }'
-
-
+# pwsh-preview
 
 # Uninstall
+rm /tmp/master.zip
+rm -r /tmp/photonos-scripts
 # rm -r ./opt/microsoft/powershell/7-preview
 # Check if no other powershell release is installed which uses the following directories
 # rm -r ./root/.cache/powershell

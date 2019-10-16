@@ -1,18 +1,19 @@
-# Deploying Powershellgallery modules on VMware Photon OS isn't actually possible out-of-the-box.
-#
-# Deploy Powershell on Photon OS: tdnf -y install powershell 
-# As on September 2019 the latest built-in installable powershell release is 6.1.0-271.
-#
-#
-# The same issue of a non-registered Powershellgallery happened on a Windows OS using WMF5.1 at that time.
-# This script deploys the releases of powershellget and packagemanagement which were/are valid to workaround the non-registered PSGallery issue.
-#
-#
-# History
-# 0.1  15.10.2019   dcasota  UNFINISHED! WORK IN PROGRESS!
+# This script enables Powershellgallery registration on Powershell on VMware Photon OS.
 #
 # Prerequisites:
 #    VMware Photon OS 3.0
+#    Powershell 7.0.0 (Beta4)
+#    No side installation of another powershell release
+#
+# 
+# As on September 2019 the latest built-in installable powershell release is 6.1.0-271. For Powershell on Photon OS simply use: tdnf -y install powershell 
+# However, the package lacks built-in Powershellgallery support on VMware Photon OS. This script provides a workaround.
+# It deploys specific releases of powershellget and packagemanagement which were/are valid to workaround the PSGallery registration issue(s).
+# The download and installation of the packages packagemanagement and powershellget are processed by replacements of powershell built-in functions find-module, save-module, etc.
+#
+# History
+# 0.1  16.10.2019   dcasota  UNFINISHED! WORK IN PROGRESS!
+#
 #
 
 function LogfileAppend($text)
@@ -31,6 +32,7 @@ function workaround.Find-ModuleAllVersions
 		$version)
 	# https://github.com/PowerShell/PowerShell/issues/7827 See comment Iyoumans
 	$env:DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0
+	# [System.AppContext]::SetSwitch("System.Net.Http.UseSocketsHttpHandler", $false)
 	if (($proxy -eq "") -or ($proxy -eq $null))
 	{
 		if (($version -eq "") -or ($version -eq $null))
@@ -83,6 +85,7 @@ function workaround.Save-Module
 	$Path = (Join-Path $Path "$Name.$Version.nupkg")
 	# https://github.com/PowerShell/PowerShell/issues/7827 See comment Iyoumans
 	$env:DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0	
+	# [System.AppContext]::SetSwitch("System.Net.Http.UseSocketsHttpHandler", $false)
 	if ((get-command -name invoke-webrequest) -ne $null)
 	{
 		if (($proxy -eq "") -or ($proxy -eq $null)) { Invoke-WebRequest $Uri -OutFile $Path -SslProtocol Tls -SkipCertificateCheck -ErrorAction SilentlyContinue }
@@ -198,8 +201,7 @@ function workaround.PwshGalleryPrerequisites
 				LogfileAppend("Installing Powershellget release $PowershellgetVersion : return code $rc")				
 				$rc = workaround.Install-NugetPkgOnLinux $rc.name "$PSHome/Modules" "$PSHome/Modules"
 				LogfileAppend("Installing Powershellget release $PowershellgetVersion done : return code $rc")				
-			}
-					
+			}				
 		}
 	}
 	catch { }
@@ -208,27 +210,38 @@ function workaround.PwshGalleryPrerequisites
 	return ($value)
 }
 
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
 # Requires Run with root privileges
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 workaround.PwshGalleryPrerequisites
 
 # Checks
-# PS /root/photonos-scripts-master> get-module
-# 
-# ModuleType Version    Name                                ExportedCommands
-# ---------- -------    ----                                ----------------
-# Manifest   6.1.0.0    Microsoft.PowerShell.Management     {Add-Content, Clear-Content, Clear-Item, Clear-ItemProperty...
-# Manifest   6.1.0.0    Microsoft.PowerShell.Utility        {Add-Member, Add-Type, Clear-Variable, Compare-Object...}
-# Script     1.1.7.0    PackageManagement                   {Find-Package, Find-PackageProvider, Get-Package, Get-Packa...
-# Script     1.6.0      PowerShellGet                       {Find-Command, Find-DscResource, Find-Module, Find-RoleCapa...
+# ------
 # 
 # 
-# PS /root/photonos-scripts-master>
-
-
+# get-module
+# ModuleType Version    PreRelease Name                                ExportedCommands
+# ---------- -------    ---------- ----                                ----------------
+# Manifest   7.0.0.0               Microsoft.PowerShell.Management     {Add-Content, Clear-Content, Clear-Item, Clear-Ite…
+# Manifest   7.0.0.0               Microsoft.PowerShell.Utility        {Add-Member, Add-Type, Clear-Variable, Compare-Obj…
+# Script     1.4.5                 PackageManagement                   {Find-Package, Find-PackageProvider, Get-Package, …
+# Script     2.2.1                 PowerShellGet                       {Find-Command, Find-DscResource, Find-Module, Find…
+# Script     2.0.0      beta5      PSReadLine                          {Get-PSReadLineKeyHandler, Get-PSReadLineOption, R…
+# 
+# get-psrepository
+# Name                      InstallationPolicy   SourceLocation
+# ----                      ------------------   --------------
+# PSGallery                 Untrusted            https://www.powershellgallery.com/api/v2
+# 
+# get-packagesource
+# Name                             ProviderName     IsTrusted  Location
+# ----                             ------------     ---------  --------
+# PSGallery                        PowerShellGet    False      https://www.powershellgallery.com/api/v2
+# 
+# 
+# 
+# Typical Issues without the workaround
+# -------------------------------------
 # 1) get-psrepository
-# Powershellget 1.6.7, Nuget 2.8.5.210, Packagemanagement 2.2.1
 # PackageManagement\Get-PackageSource : Unable to find module providers (PowerShellGet).
 # At $PSHome/Modules/PowerShellGet.2.2.1/PSModule.psm1:9515 char:31
 # + ... ckageSources = PackageManagement\Get-PackageSource @PSBoundParameters
@@ -268,6 +281,5 @@ workaround.PwshGalleryPrerequisites
 # Script     1.1.7.0    PackageManagement                   {Find-Package, Find-PackageProvider, Get-Package, Get-Packa...
 # Script     1.6.0      PowerShellGet                       {Find-Command, Find-DscResource, Find-Module, Find-RoleCapa...
 # 
-[System.AppContext]::SetSwitch("System.Net.Http.UseSocketsHttpHandler", $false)
-
+# 7) Install-Package
 # Install-Package -Name PowerShellGet -Source https://www.powershellgallery.com/api/v2 -ProviderName NuGet -MinimumVersion 2.2.1 -MaximumVersion 2.2.1 -force -confirm:$false
