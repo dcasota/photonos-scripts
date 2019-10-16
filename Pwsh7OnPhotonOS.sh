@@ -18,6 +18,7 @@ tdnf -y update
 
 # install the requirements
 tdnf install -y \
+        tar \
         less \
         ca-certificates \
         curl
