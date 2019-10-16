@@ -212,27 +212,7 @@ function workaround.PwshGalleryPrerequisites
 				LogfileAppend("Installing Powershellget release 1.6.0 done : return code $rc")				
 			}
 			
-			$InstallGAC = $false
-			if (((get-module -name gac -listavailable -ErrorAction SilentlyContinue) -eq $null) -and ((get-module -name gac -ErrorAction SilentlyContinue) -eq $null)) { $InstallGAC = $true }
-			else
-			{
-                $tmpvalue=get-module -name gac
-                if (([string]::IsNullOrEmpty($tmpvalue)) -eq $true) {$tmpvalue=get-module -name gac -listavailable }
-                try {
-				    if (!(($tmpvalue).version | ? { $_.tostring() -imatch "1.0.1" })) { $InstallGAC = $true }
-				} catch {}
-			}
-			if ($InstallGAC -eq $true)
-			{
-				LogfileAppend("Installing Gac release 1.0.1 ...")
-				if (test-path("/root/.local/share/powershell/Modules/Gac")) {
-                    # rm -r -fo "/root/.local/share/powershell/Modules/Gac" #do not delete it might be a previous version without version number in directory name
-                }
-				$rc = workaround.Find-ModuleAllVersions -name Gac -version "1.0.1" | workaround.Save-Module -Path "/root/.local/share/powershell/Modules"
-				LogfileAppend("Installing Gac release 1.0.1 : return code $rc")				
-				$rc = workaround.Install-NugetPkgOnLinux $rc.name "/root/.local/share/powershell/Modules" "/root/.local/share/powershell/Modules"
-				LogfileAppend("Installing Powershellget Gac 1.0.1 done : return code $rc")				
-			}
+			Install-Package -Name PowerShellGet -Source https://www.powershellgallery.com/api/v2/ -ProviderName NuGet -MinimumVersion 2.8.5.201 -MaximumVersion 2.8.5.201 -force -confirm $false -ErrorAction SilentlyContinue
 			
 		}
 	}
