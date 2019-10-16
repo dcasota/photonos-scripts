@@ -130,7 +130,7 @@ function workaround.Install-NugetPkg
 		}
 		
 		LogfileAppend("Do rename item ($sourcepath + $PathDelimiter + $filename).name ...")
-		dir ($sourcepath + $PathDelimiter + $filename) | rename-item -newname { $_.name -replace ".nupkg", ".zip" }
+		dir ($sourcepath + $PathDelimiter + $filename) | rename-item -newname { $_.name -replace ".nupkg"} | rename-item -newname { $_.name -replace ".zip" }
 		[io.path]::changeextension($sourcefile, '.zip')
 		
         $i = 1
