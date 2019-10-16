@@ -131,7 +131,8 @@ function workaround.Install-NugetPkg
 		
 		LogfileAppend("Do rename item ($sourcepath + $PathDelimiter + $filename).name ...")
 		dir ($sourcepath + $PathDelimiter + $filename) | rename-item -newname { $_.name -replace ".nupkg"} | rename-item -newname { $_.name -replace ".zip" }
-		[io.path]::changeextension($sourcefile, '.zip')
+		[System.IO.Path]::changeextension($sourcefile, '.zip')
+		LogfileAppend("Name after renaming : $Sourcefile")
 		
         $i = 1
         $VersionString=""
@@ -145,28 +146,39 @@ function workaround.Install-NugetPkg
 		LogfileAppend("new-object -comobject shell.application")
 		$shell = new-object -comobject shell.application
 		$tmpzip = $shell.namespace($sourcefile)
+		LogfileAppend("Name is $tmpzip")		
 		$tmpdir = ""
 		foreach ($item in $tmpzip.items())
 		{
-			if (($item.IsFolder -eq $true) -and (($tmpzip.items()).count -eq 1)) { $tmpdir = $item.name }
+		    LogfileAppend("Checking $item ...")		
+			if (($item.IsFolder -eq $true) -and (($tmpzip.items()).count -eq 1)) {
+			   LogfileAppend("Set as tmpdir = $item.name ...")	
+				$tmpdir = $item.name 
+			}
 		}
 		if ($tmpdir -ne "")
 		{
             if ($tmpdir -ne $VersionString)
             {
-			$destinationspacenew = $destinationspace + $PathDelimiter + ($PackageName.split("."))[0]  + $PathDelimiter + ($tmpdir.split("."))[0]
+			    LogfileAppend("Set destinationspacenew = $destinationspace + $PathDelimiter + ($PackageName.split("."))[0]  + $PathDelimiter + ($tmpdir.split("."))[0] ...")				
+				$destinationspacenew = $destinationspace + $PathDelimiter + ($PackageName.split("."))[0]  + $PathDelimiter + ($tmpdir.split("."))[0]
 			}
 			else
 			{
+			    LogfileAppend("Set destinationspacenew = $destinationspace + $PathDelimiter + ($PackageName.split("."))[0]	...")
 				$destinationspacenew = $destinationspace + $PathDelimiter + ($PackageName.split("."))[0]
 			}
 		}
 		else
 		{
-			if ($VersionString -eq "")
-			{ $destinationspacenew = $destinationspace + $PathDelimiter + ($PackageName.split("."))[0] }
-			else
-			{ $destinationspacenew = $destinationspace + $PathDelimiter + ($PackageName.split("."))[0] + $PathDelimiter + $Versionstring }
+			if ($VersionString -eq "") {
+				LogfileAppend("Set destinationspacenew = $destinationspace + $PathDelimiter + ($PackageName.split("."))[0] ...")
+				$destinationspacenew = $destinationspace + $PathDelimiter + ($PackageName.split("."))[0]
+			}
+			else {
+				LogfileAppend("Set destinationspacenew = $destinationspace + $PathDelimiter + ($PackageName.split("."))[0] + $PathDelimiter + $Versionstring ...")
+				$destinationspacenew = $destinationspace + $PathDelimiter + ($PackageName.split("."))[0] + $PathDelimiter + $Versionstring
+			}
 		}
 	    LogfileAppend("path is $destinationspacenew")
 		new-item -itemtype directory -force -path $destinationspacenew -ErrorAction SilentlyContinue
@@ -192,7 +204,7 @@ function workaround.Install-NugetPkg
 			$TmpFile = $destinationspacenew + $PathDelimiter + $_.Name
             try {
 				LogfileAppend("importing-name $TmpFile ...")			
-			    import-module -name $TmpFile -Verbose -force -scope global -erroraction silentlycontinue
+			    import-module -name $TmpFile -NoClobber -Verbose -force -scope global -erroraction silentlycontinue
             } catch {}
 		}
 	}
