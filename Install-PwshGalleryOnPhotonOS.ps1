@@ -182,7 +182,7 @@ function workaround.PwshGalleryPrerequisites
 			{
 				LogfileAppend("Installing Packagemanagement release 1.1.7.0 ...")
 				if (test-path("/root/.local/share/powershell/Modules/PackageManagement")) {
-                    # rm -r -fo "/root/.local/share/powershell/Modules/PackageManagement"
+                    # rm -r -fo "/root/.local/share/powershell/Modules/PackageManagement" #do not delete it might be a previous version without version number in directory name
                 }
 				$rc = workaround.Find-ModuleAllVersions -name packagemanagement -version "1.1.7.0" | workaround.Save-Module -Path "/root/.local/share/powershell/Modules"
 				LogfileAppend("Installing Packagemanagement release 1.1.7.0 : return code $rc")				
@@ -204,7 +204,7 @@ function workaround.PwshGalleryPrerequisites
 			{
 				LogfileAppend("Installing Powershellget release 1.6.0 ...")
 				if (test-path("/root/.local/share/powershell/Modules/Powershellget")) {
-                    # rm -r -fo "/root/.local/share/powershell/Modules/Powershellget"
+                    # rm -r -fo "/root/.local/share/powershell/Modules/Powershellget" #do not delete it might be a previous version without version number in directory name
                 }
 				$rc = workaround.Find-ModuleAllVersions -name powershellget -version "1.6.0" | workaround.Save-Module -Path "/root/.local/share/powershell/Modules"
 				LogfileAppend("Installing Powershellget release 1.6.0 : return code $rc")				
@@ -222,6 +222,18 @@ function workaround.PwshGalleryPrerequisites
 				    if (!(($tmpvalue).version | ? { $_.tostring() -imatch "1.0.1" })) { $InstallGAC = $true }
 				} catch {}
 			}
+			if ($InstallGAC -eq $true)
+			{
+				LogfileAppend("Installing Gac release 1.0.1 ...")
+				if (test-path("/root/.local/share/powershell/Modules/Gac")) {
+                    # rm -r -fo "/root/.local/share/powershell/Modules/Gac" #do not delete it might be a previous version without version number in directory name
+                }
+				$rc = workaround.Find-ModuleAllVersions -name Gac -version "1.0.1" | workaround.Save-Module -Path "/root/.local/share/powershell/Modules"
+				LogfileAppend("Installing Gac release 1.0.1 : return code $rc")				
+				$rc = workaround.Install-NugetPkgOnLinux $rc.name "/root/.local/share/powershell/Modules" "/root/.local/share/powershell/Modules"
+				LogfileAppend("Installing Powershellget Gac 1.0.1 done : return code $rc")				
+			}
+			
 		}
 	}
 	catch { }
