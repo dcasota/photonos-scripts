@@ -211,9 +211,7 @@ function workaround.PwshGalleryPrerequisites
 				$rc = workaround.Install-NugetPkgOnLinux $rc.name "/root/.local/share/powershell/Modules" "/root/.local/share/powershell/Modules"
 				LogfileAppend("Installing Powershellget release 1.6.0 done : return code $rc")				
 			}
-			
-			Install-Package -Name PowerShellGet -Source https://www.powershellgallery.com/api/v2/ -ProviderName NuGet -MinimumVersion 2.8.5.201 -MaximumVersion 2.8.5.201 -force -confirm $false -ErrorAction SilentlyContinue
-			
+					
 		}
 	}
 	catch { }
@@ -223,11 +221,12 @@ function workaround.PwshGalleryPrerequisites
 }
 
 
-# Requires Run as Administrator
+# Requires Run with root privileges
 workaround.PwshGalleryPrerequisites
-get-psrepository
-Register-PSRepository -Default
-get-psrepository
-Register-PSRepository -Name PSGallery -SourceLocation "https://www.powershellgallery.com/api/v2/" -InstallationPolicy Trusted
-get-psrepository
+# Install-Package -Name PowerShellGet -Source https://www.powershellgallery.com/api/v2/ -ProviderName NuGet -MinimumVersion 2.8.5.201 -MaximumVersion 2.8.5.201 -force -confirm $false -ErrorAction SilentlyContinue
+# get-psrepository
+# Register-PSRepository -Default
+# get-psrepository
+# Register-PSRepository -Name PSGallery -SourceLocation "https://www.powershellgallery.com/api/v2/" -InstallationPolicy Trusted
+# get-psrepository
 
