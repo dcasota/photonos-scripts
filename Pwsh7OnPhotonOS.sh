@@ -63,7 +63,7 @@ sudo mkdir -p /tmp/photonos-scripts
 sudo unzip master.zip -d /tmp/photonos-scripts
 
 # Run Install-PwshGalleryOnPhotonOS.ps1
-pwsh-preview -file /tmp/photonos-scripts/Install-PwshGalleryOnPhotonOS.ps1
+pwsh-preview -file /tmp/photonos-scripts/photonos-scripts-master/Install-PwshGalleryOnPhotonOS.ps1
 
 # Start PowerShell
 # pwsh-preview
