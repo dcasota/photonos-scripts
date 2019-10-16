@@ -55,7 +55,11 @@ pwsh-preview -c '$env:DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0; register-p
 
 # Uninstall
 # rm -r ./opt/microsoft/powershell/7-preview
-
+# Check if no other powershell release is installed which uses the following directories
+# rm -r ./root/.cache/powershell
+# rm -r ./opt/microsoft/powershell
+# rm -r ./root/.local/share/powershell
+# rm -r ./usr/local/share/powershell
 
 
 
