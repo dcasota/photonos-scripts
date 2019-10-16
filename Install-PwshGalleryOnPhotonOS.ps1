@@ -151,7 +151,7 @@ function workaround.Install-NugetPkgOnLinux
 	return ($destinationpath)
 }
 
-function workaround.PowerCLIPrerequisitesV10.1.0.8346946_V2
+function workaround.PwshGalleryPrerequisites
 {
 	$ModuleInstalled = $false
 	try
@@ -184,12 +184,12 @@ function workaround.PowerCLIPrerequisitesV10.1.0.8346946_V2
 			if ($InstallPackagemanagement -eq $true)
 			{
 				LogfileAppend("Installing Packagemanagement release 1.1.7.0 ...")
-				if (test-path("/opt/microsoft/powershell/7-preview/Modules/PackageManagement")) {
-                    # rm -r -fo "/opt/microsoft/powershell/7-preview/Modules/PackageManagement"
+				if (test-path("/opt/microsoft/powershell/Modules/PackageManagement")) {
+                    # rm -r -fo "/opt/microsoft/powershell/Modules/PackageManagement"
                 }
-				$rc = workaround.Find-ModuleAllVersions -name packagemanagement -version "1.1.7.0" | workaround.Save-Module -Path "/opt/microsoft/powershell/7-preview/Modules"
+				$rc = workaround.Find-ModuleAllVersions -name packagemanagement -version "1.1.7.0" | workaround.Save-Module -Path "/opt/microsoft/powershell/Modules"
 				LogfileAppend("Installing Packagemanagement release 1.1.7.0 : return code $rc")				
-				$rc = workaround.Install-NugetPkgOnLinux $rc.name "/opt/microsoft/powershell/7-preview/Modules" "/opt/microsoft/powershell/7-preview/Modules"
+				$rc = workaround.Install-NugetPkgOnLinux $rc.name "/opt/microsoft/powershell/Modules" "/opt/microsoft/powershell/Modules"
 				LogfileAppend("Installing Packagemanagement release 1.1.7.0 done : return code $rc")						
 			}		
 			
@@ -206,12 +206,12 @@ function workaround.PowerCLIPrerequisitesV10.1.0.8346946_V2
 			if ($InstallPowershellget -eq $true)
 			{
 				LogfileAppend("Installing Powershellget release 1.6.0 ...")
-				if (test-path("/opt/microsoft/powershell/7-preview/Modules/Powershellget")) {
-                    # rm -r -fo "/opt/microsoft/powershell/7-preview/Modules/Powershellget"
+				if (test-path("/opt/microsoft/powershell/Modules/Powershellget")) {
+                    # rm -r -fo "/opt/microsoft/powershell/Modules/Powershellget"
                 }
-				$rc = workaround.Find-ModuleAllVersions -name powershellget -version "1.6.0" | workaround.Save-Module -Path "/opt/microsoft/powershell/7-preview/Modules"
+				$rc = workaround.Find-ModuleAllVersions -name powershellget -version "1.6.0" | workaround.Save-Module -Path "/opt/microsoft/powershell/Modules"
 				LogfileAppend("Installing Powershellget release 1.6.0 : return code $rc")				
-				$rc = workaround.Install-NugetPkgOnLinux $rc.name "/opt/microsoft/powershell/7-preview/Modules" "/opt/microsoft/powershell/7-preview/Modules"
+				$rc = workaround.Install-NugetPkgOnLinux $rc.name "/opt/microsoft/powershell/Modules" "/opt/microsoft/powershell/Modules"
 				LogfileAppend("Installing Powershellget release 1.6.0 done : return code $rc")				
 			}
 			
@@ -225,34 +225,8 @@ function workaround.PowerCLIPrerequisitesV10.1.0.8346946_V2
 				    if (!(($tmpvalue).version | ? { $_.tostring() -imatch "1.0.1" })) { $InstallGAC = $true }
 				} catch {}
 			}
-			if ($InstallGAC -eq $true)
-			{
-				LogfileAppend("Installing GAC release 1.0.1 ...")
-				if (test-path("/opt/microsoft/powershell/7-preview/Modules/Gac")) {
-                    # rm -r -fo "/opt/microsoft/powershell/7-preview/Modules/Gac"
-                }
-				$rc = workaround.Find-ModuleAllVersions -name Gac -version "1.0.1" | workaround.Save-Module -Path "/opt/microsoft/powershell/7-preview/Modules"
-				LogfileAppend("Installing Gac release 1.0.1 : return code $rc")				
-				$rc = workaround.Install-NugetPkgOnLinux $rc.name "/opt/microsoft/powershell/7-preview/Modules" "/opt/microsoft/powershell/7-preview/Modules"
-				LogfileAppend("Installing Gac release 1.0.1 done : return code $rc")				
-			}			
 			
-			
-			$InstallNuget = $false
-			if (((get-packageprovider -name nuget -listavailable) -eq $null) -and ((get-packageprovider -name nuget -listavailable) -eq $null)) { $InstallNuget = $true }
-			else
-			{
-				if (!((get-packageprovider -listavailable -name nuget).version | ? { $_.tostring() -imatch "2.8.5.201" })) { $InstallNuget = $true }
-				
-			}
-			if ($InstallNuget -eq $true)
-			{
-				LogfileAppend("Installing Nuget release 2.8.5.201 ...")
-				$rc = Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -MaximumVersion 2.8.5.201 -Force -Confirm:$false -Scope AllUsers
-				LogfileAppend("Installing Nuget release 2.8.5.201 done : return code $rc")				
-			}
-			
-			# Register-PSRepository -Name PSGallery -SourceLocation "https://www.powershellgallery.com/api/v2/" -InstallationPolicy Trusted -Default		
+			Register-PSRepository -Name PSGallery -SourceLocation "https://www.powershellgallery.com/api/v2/" -InstallationPolicy Trusted -Default		
 			if ((Get-PSRepository -name psgallery | %{ $_.InstallationPolicy -match "Untrusted" }) -eq $true) { set-psrepository -name PSGallery -InstallationPolicy Trusted }
 
 		}
@@ -265,5 +239,5 @@ function workaround.PowerCLIPrerequisitesV10.1.0.8346946_V2
 
 
 # Requires Run as Administrator
-$rc = workaround.PowerCLIPrerequisitesV10.1.0.8346946_V2
+workaround.PwshGalleryPrerequisites
 
