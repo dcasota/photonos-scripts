@@ -75,7 +75,7 @@ If custom-data of ```CreatePhotonOSVMOnAzure.ps1``` is processed, ```pwshgallery
 Remark:
 In reference to https://www.mono-project.com/docs/tools+libraries/tools/mkbundle/ : "Mono can turn .NET applications (executable code and its dependencies) into self-contained executables that do not rely on Mono being installed on the system to simplify deployment of.NET Applications."
 
-Don't wonder - the full installation takes quite some time. As the installation time consumes 1 hour and more (!) and usually you don't wan't a full Mono development environment, it became more a study script. See files Findings_*.
+Don't wonder - the full installation takes quite some time. As the installation consumes 1 hour and more (!) and usually you don't need a full Mono development environment, it became more a study script. If interested, see files Findings_*.
 
 ```Pwsh7OnPhotonOS.sh```
 -
