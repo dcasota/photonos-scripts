@@ -103,7 +103,7 @@ function workaround.Save-Module
 	return $rc
 }
 
-function workaround.Install-NugetPkg
+function workaround.Install-NugetPkgOnLinux
 {
 	param (
 		[parameter(Mandatory = $true)]
@@ -141,9 +141,12 @@ function workaround.Install-NugetPkg
             if ($Versionstring -eq "") {$Versionstring = ($PackageName.split("."))[$i]}
             else { $VersionString = $VersionString + "." + ($PackageName.split("."))[$i]}
         }
+		LogfileAppend("VersionString = $VersionString")
+		
 		
         # Assembling directory name by using version number out of packagename or out of leading subdirectory
 		LogfileAppend("new-object -comobject shell.application")
+ 
 		$shell = new-object -comobject shell.application
 		$tmpzip = $shell.namespace($sourcefile)
 		LogfileAppend("Name is $tmpzip")		
@@ -250,7 +253,7 @@ function workaround.PowerCLIPrerequisitesV10.1.0.8346946_V2
                 }
 				$rc = workaround.Find-ModuleAllVersions -name packagemanagement -version "1.1.7.0" | workaround.Save-Module -Path "/opt/microsoft/powershell/7-preview/Modules"
 				LogfileAppend("Installing Packagemanagement release 1.1.7.0 : return code $rc")				
-				$rc = workaround.Install-NugetPkg $rc.name "/opt/microsoft/powershell/7-preview/Modules" "/opt/microsoft/powershell/7-preview/Modules"
+				$rc = workaround.Install-NugetPkgOnLinux $rc.name "/opt/microsoft/powershell/7-preview/Modules" "/opt/microsoft/powershell/7-preview/Modules"
 				LogfileAppend("Installing Packagemanagement release 1.1.7.0 done : return code $rc")						
 			}		
 			
@@ -272,7 +275,7 @@ function workaround.PowerCLIPrerequisitesV10.1.0.8346946_V2
                 }
 				$rc = workaround.Find-ModuleAllVersions -name powershellget -version "1.6.0" | workaround.Save-Module -Path "/opt/microsoft/powershell/7-preview/Modules"
 				LogfileAppend("Installing Powershellget release 1.6.0 : return code $rc")				
-				$rc = workaround.Install-NugetPkg $rc.name "/opt/microsoft/powershell/7-preview/Modules" "/opt/microsoft/powershell/7-preview/Modules"
+				$rc = workaround.Install-NugetPkgOnLinux $rc.name "/opt/microsoft/powershell/7-preview/Modules" "/opt/microsoft/powershell/7-preview/Modules"
 				LogfileAppend("Installing Powershellget release 1.6.0 done : return code $rc")				
 			}
 			
