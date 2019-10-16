@@ -21,6 +21,11 @@ function LogfileAppend($text)
 	Write-Host $TimeStamp  $text
 }
 
+function workaround.SaveWMF51
+{
+ LogfileAppend("Dummy Function WMF5.1")
+}
+
 
 function workaround.Find-ModuleAllVersions
 {
@@ -128,12 +133,14 @@ function workaround.PowerCLIPrerequisitesV10.1.0.8346946_V2
 			}
 			if ($InstallPackagemanagement -eq $true)
 			{
-				LogfileAppend("Installing packagemanagement ...")
-				if (test-path("C:\Program Files\WindowsPowerShell\Modules\PackageManagement")) {
-                    # rm -r -fo "C:\Program Files\WindowsPowerShell\Modules\PackageManagement"
+				LogfileAppend("Installing Packagemanagement release 1.1.7.0 ...")
+				if (test-path("/opt/microsoft/powershell/7-preview/Modules/PackageManagement")) {
+                    # rm -r -fo "/opt/microsoft/powershell/7-preview/Modules/PackageManagement"
                 }
-				$rc = workaround.Find-ModuleAllVersions -name packagemanagement -version "1.1.7.0" | workaround.Save-Module -Path "C:\Program Files\WindowsPowerShell\Modules"
-				$rc = workaround.Install-NugetPkg $rc.name "C:\Program Files\WindowsPowerShell\Modules" "C:\Program Files\WindowsPowerShell\Modules"
+				$rc = workaround.Find-ModuleAllVersions -name packagemanagement -version "1.1.7.0" | workaround.Save-Module -Path "/opt/microsoft/powershell/7-preview/Modules"
+				LogfileAppend("Installing Packagemanagement release 1.1.7.0 : return code $rc")				
+				$rc = workaround.Install-NugetPkg $rc.name "/opt/microsoft/powershell/7-preview/Modules" "/opt/microsoft/powershell/7-preview/Modules"
+				LogfileAppend("Installing Packagemanagement release 1.1.7.0 done : return code $rc")						
 			}		
 			
 			$InstallPowershellget = $false
@@ -148,12 +155,14 @@ function workaround.PowerCLIPrerequisitesV10.1.0.8346946_V2
 			}
 			if ($InstallPowershellget -eq $true)
 			{
-				LogfileAppend("Installing powershellget ...")
-				if (test-path("C:\Program Files\WindowsPowerShell\Modules\Powershellget")) {
-                    # rm -r -fo "C:\Program Files\WindowsPowerShell\Modules\Powershellget"
+				LogfileAppend("Installing Powershellget release 1.6.0 ...")
+				if (test-path("/opt/microsoft/powershell/7-preview/Modules/Powershellget")) {
+                    # rm -r -fo "/opt/microsoft/powershell/7-preview/Modules/Powershellget"
                 }
-				$rc = workaround.Find-ModuleAllVersions -name powershellget -version "1.6.0" | workaround.Save-Module -Path "C:\Program Files\WindowsPowerShell\Modules"
-				$rc = workaround.Install-NugetPkg $rc.name "C:\Program Files\WindowsPowerShell\Modules" "C:\Program Files\WindowsPowerShell\Modules"
+				$rc = workaround.Find-ModuleAllVersions -name powershellget -version "1.6.0" | workaround.Save-Module -Path "/opt/microsoft/powershell/7-preview/Modules"
+				LogfileAppend("Installing Powershellget release 1.6.0 : return code $rc")				
+				$rc = workaround.Install-NugetPkg $rc.name "/opt/microsoft/powershell/7-preview/Modules" "/opt/microsoft/powershell/7-preview/Modules"
+				LogfileAppend("Installing Powershellget release 1.6.0 done : return code $rc")				
 			}
 			
 			$InstallNuget = $false
@@ -165,7 +174,9 @@ function workaround.PowerCLIPrerequisitesV10.1.0.8346946_V2
 			}
 			if ($InstallNuget -eq $true)
 			{
-				Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -MaximumVersion 2.8.5.201 -Force -Confirm:$false -Scope AllUsers
+				LogfileAppend("Installing Nuget release 2.8.5.201 ...")
+				$rc = Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -MaximumVersion 2.8.5.201 -Force -Confirm:$false -Scope AllUsers
+				LogfileAppend("Installing Nuget release 2.8.5.201 done : return code $rc")				
 			}
 			
 			# Register-PSRepository -Name PSGallery -SourceLocation "https://www.powershellgallery.com/api/v2/" -InstallationPolicy Trusted -Default		
@@ -177,4 +188,21 @@ function workaround.PowerCLIPrerequisitesV10.1.0.8346946_V2
 	$value = 0
 	if ($ModuleInstalled -eq $false) { $value = 1 }
 	return ($value)
+}
+
+
+# Requires Run as Administrator
+# Get the ID and security principal of the current user account
+$myWindowsID=[System.Security.Principal.WindowsIdentity]::GetCurrent()
+$myWindowsPrincipal=new-object System.Security.Principal.WindowsPrincipal($myWindowsID)
+
+# Get the security principal for the Administrator role
+$adminRole=[System.Security.Principal.WindowsBuiltInRole]::Administrator
+if ($myWindowsPrincipal.IsInRole($adminRole))
+{
+	write-host "We are running as Administrator. Import-module VMware.PowerCLI if not already done."
+	$rc = uQc.PowerCLIPrerequisitesV10.1.0.8346946_V2
+	if ($rc -eq 0)
+	{
+	}
 }
