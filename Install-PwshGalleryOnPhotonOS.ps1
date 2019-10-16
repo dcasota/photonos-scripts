@@ -35,18 +35,20 @@ function workaround.Find-ModuleAllVersions
 		$Name,
 		$proxy,
 		$version)
+	# https://github.com/PowerShell/PowerShell/issues/7827 See comment Iyoumans
+	$env:DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0
 	if (($proxy -eq "") -or ($proxy -eq $null))
 	{
 		if (($version -eq "") -or ($version -eq $null))
 		{
-			invoke-restmethod "https://www.powershellgallery.com/api/v2/Packages?`$filter=Id eq '$name'" |
+			invoke-restmethod "https://www.powershellgallery.com/api/v2/Packages?`$filter=Id eq '$name'" -SslProtocol Tls -SkipCertificateCheck |
 			select-Object @{ n = 'Name'; ex = { $_.title.'#text' } },
 						  @{ n = 'Version'; ex = { $_.properties.version } },
 						  @{ n = 'Uri'; ex = { $_.Content.src } }
 		}
 		else
 		{
-			invoke-restmethod "https://www.powershellgallery.com/api/v2/Packages?`$filter=Id eq '$name' and Version eq '$version'" |
+			invoke-restmethod "https://www.powershellgallery.com/api/v2/Packages?`$filter=Id eq '$name' and Version eq '$version'" -SslProtocol Tls -SkipCertificateCheck |
 			select-Object @{ n = 'Name'; ex = { $_.title.'#text' } },
 						  @{ n = 'Version'; ex = { $_.properties.version } },
 						  @{ n = 'Uri'; ex = { $_.Content.src } }
@@ -56,14 +58,14 @@ function workaround.Find-ModuleAllVersions
 	{
 		if (($version -eq "") -or ($version -eq $null))
 		{
-			invoke-restmethod "https://www.powershellgallery.com/api/v2/Packages?`$filter=Id eq '$name'" -proxy $proxy -ProxyUseDefaultCredentials |
+			invoke-restmethod "https://www.powershellgallery.com/api/v2/Packages?`$filter=Id eq '$name'" -proxy $proxy -ProxyUseDefaultCredentials -SslProtocol Tls -SkipCertificateCheck |
 			select-Object @{ n = 'Name'; ex = { $_.title.'#text' } },
 						  @{ n = 'Version'; ex = { $_.properties.version } },
 						  @{ n = 'Uri'; ex = { $_.Content.src } }
 		}
 		else
 		{
-			invoke-restmethod "https://www.powershellgallery.com/api/v2/Packages?`$filter=Id eq '$name' and Version eq '$version'" -proxy $proxy -ProxyUseDefaultCredentials |
+			invoke-restmethod "https://www.powershellgallery.com/api/v2/Packages?`$filter=Id eq '$name' and Version eq '$version'" -proxy $proxy -ProxyUseDefaultCredentials -SslProtocol Tls -SkipCertificateCheck |
 			select-Object @{ n = 'Name'; ex = { $_.title.'#text' } },
 						  @{ n = 'Version'; ex = { $_.properties.version } },
 						  @{ n = 'Uri'; ex = { $_.Content.src } }
@@ -85,10 +87,12 @@ function workaround.Save-Module
 		$proxy
 	)
 	$Path = (Join-Path $Path "$Name.$Version.nupkg")
+	# https://github.com/PowerShell/PowerShell/issues/7827 See comment Iyoumans
+	$env:DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0	
 	if ((get-command -name invoke-webrequest) -ne $null)
 	{
-		if (($proxy -eq "") -or ($proxy -eq $null)) { Invoke-WebRequest $Uri -OutFile $Path -ErrorAction SilentlyContinue }
-		else { Invoke-WebRequest $Uri -OutFile $Path -proxy $proxy -ProxyUseDefaultCredentials -ErrorAction SilentlyContinue}
+		if (($proxy -eq "") -or ($proxy -eq $null)) { Invoke-WebRequest $Uri -OutFile $Path -SslProtocol Tls -SkipCertificateCheck -ErrorAction SilentlyContinue }
+		else { Invoke-WebRequest $Uri -OutFile $Path -proxy $proxy -ProxyUseDefaultCredentials -SslProtocol Tls -SkipCertificateCheck -ErrorAction SilentlyContinue}
 	}
 	else
 	{
@@ -192,17 +196,5 @@ function workaround.PowerCLIPrerequisitesV10.1.0.8346946_V2
 
 
 # Requires Run as Administrator
-# Get the ID and security principal of the current user account
-$myWindowsID=[System.Security.Principal.WindowsIdentity]::GetCurrent()
-$myWindowsPrincipal=new-object System.Security.Principal.WindowsPrincipal($myWindowsID)
+$rc = workaround.PowerCLIPrerequisitesV10.1.0.8346946_V2
 
-# Get the security principal for the Administrator role
-$adminRole=[System.Security.Principal.WindowsBuiltInRole]::Administrator
-if ($myWindowsPrincipal.IsInRole($adminRole))
-{
-	write-host "We are running as Administrator. Import-module VMware.PowerCLI if not already done."
-	$rc = uQc.PowerCLIPrerequisitesV10.1.0.8346946_V2
-	if ($rc -eq 0)
-	{
-	}
-}
