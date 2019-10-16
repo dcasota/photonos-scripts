@@ -143,7 +143,7 @@ function workaround.Install-NugetPkgOnLinux
 			$TmpFile = $destinationpath + $PathDelimiter + $_.Name
             try {
 				LogfileAppend("importing-name $TmpFile ...")			
-			    import-module -name $TmpFile -NoClobber -Verbose -force -erroraction silentlycontinue
+			    import-module -name $TmpFile -NoClobber -Scope Global -Verbose -force -erroraction silentlycontinue
             } catch {}
 		}
 	}
@@ -223,6 +223,31 @@ function workaround.PwshGalleryPrerequisites
 
 # Requires Run with root privileges
 workaround.PwshGalleryPrerequisites
+
+# Checks
+get-psrepository
+# PackageManagement\Get-PackageSource : Unable to find module providers (PowerShellGet).
+# At /root/.local/share/powershell/Modules/PowerShellGet.2.2.1/PSModule.psm1:9515 char:31
+# + ... ckageSources = PackageManagement\Get-PackageSource @PSBoundParameters
+# +                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# + CategoryInfo          : InvalidArgument: (Microsoft.Power...etPackageSource:GetPackageSource) [Get-PackageSource], Exception
+# + FullyQualifiedErrorId : UnknownProviders,Microsoft.PowerShell.PackageManagement.Cmdlets.GetPackageSource
+
+get-packageprovider
+# Name                     Version          DynamicOptions
+# ----                     -------          --------------
+# NuGet                    3.0.0.1          Destination, ExcludeVersion, Scope, SkipDependencies, Headers, FilterOnTag,...
+
+get-module
+# ModuleType Version    Name                                ExportedCommands
+# ---------- -------    ----                                ----------------
+# Manifest   6.1.0.0    Microsoft.PowerShell.Management     {Add-Content, Clear-Content, Clear-Item, Clear-ItemProperty...
+# Manifest   6.1.0.0    Microsoft.PowerShell.Utility        {Add-Member, Add-Type, Clear-Variable, Compare-Object...}
+# Script     1.4.5      PackageManagement                   {Find-Package, Find-PackageProvider, Get-Package, Get-Packa...
+# Script     2.2.1      PowerShellGet                       {Find-Command, Find-DscResource, Find-Module, Find-RoleCapa...
+
+
+
 # Now, Install-Package works, because Nuget has version 2.8.5.210. However, Register-PSRepository still fails. To fix that, update powershellget to version 1.6.7.
 # Install-Package -Name PowerShellGet -Source https://www.powershellgallery.com/api/v2/ -ProviderName NuGet -MinimumVersion 1.6.0 -MaximumVersion 1.6.0 -force -confirm:$false
 # The module releases should be now Powershellget 1.6.7, Packagemanagement 1.1.7.0 and Nuget 2.8.5.210
