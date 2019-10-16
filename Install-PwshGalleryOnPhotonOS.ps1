@@ -154,6 +154,8 @@ function workaround.Install-NugetPkgOnLinux
 function workaround.PwshGalleryPrerequisites
 {
 	$PwshGalleryInstalled = $false
+	$PackageManagementVersion="1.1.7.0"
+	$PowershellgetVersion="1.4.0"	
 	try
 	{
 		LogfileAppend("Check get-psrepository ...")
@@ -175,19 +177,19 @@ function workaround.PwshGalleryPrerequisites
                 $tmpvalue=get-module -name packagemanagement
                 if (([string]::IsNullOrEmpty($tmpvalue)) -eq $true) {$tmpvalue=get-module -name packagemanagement -listavailable }
                 try {
-                    if (!(($tmpvalue).version | ? { $_.tostring() -imatch "1.1.7.0" })) { $InstallPackageManagement = $true } #psversiontable = 4 bedingt mit ohne -listavailable
+                    if (!(($tmpvalue).version | ? { $_.tostring() -imatch "$PackageManagementVersion" })) { $InstallPackageManagement = $true } #psversiontable = 4 bedingt mit ohne -listavailable
 				} catch {}
 			}
 			if ($InstallPackagemanagement -eq $true)
 			{
-				LogfileAppend("Installing Packagemanagement release 1.4.5 ...")
+				LogfileAppend("Installing Packagemanagement release $PackageManagementVersion ...")
 				if (test-path("$PSHome/Modules/PackageManagement")) {
                     # rm -r -fo "$PSHome/Modules/PackageManagement" #do not delete it might be a previous version without version number in directory name
                 }
-				$rc = workaround.Find-ModuleAllVersions -name packagemanagement -version "1.4.5" | workaround.Save-Module -Path "$PSHome/Modules"
-				LogfileAppend("Installing Packagemanagement release 1.4.5 : return code $rc")				
+				$rc = workaround.Find-ModuleAllVersions -name packagemanagement -version "$PackageManagementVersion" | workaround.Save-Module -Path "$PSHome/Modules"
+				LogfileAppend("Installing Packagemanagement release $PackageManagementVersion : return code $rc")				
 				$rc = workaround.Install-NugetPkgOnLinux $rc.name "$PSHome/Modules" "$PSHome/Modules"
-				LogfileAppend("Installing Packagemanagement release 1.4.5 done : return code $rc")						
+				LogfileAppend("Installing Packagemanagement release $PackageManagementVersion done : return code $rc")						
 			}		
 			
 			$InstallPowershellget = $false
@@ -197,19 +199,19 @@ function workaround.PwshGalleryPrerequisites
                 $tmpvalue=get-module -name powershellget
                 if (([string]::IsNullOrEmpty($tmpvalue)) -eq $true) {$tmpvalue=get-module -name powershellget -listavailable }
                 try {
-				    if (!(($tmpvalue).version | ? { $_.tostring() -imatch "2.2.1" })) { $InstallPowershellget = $true } #psversiontable = 4 bedingt mit ohne -listavailable
+				    if (!(($tmpvalue).version | ? { $_.tostring() -imatch "$PowershellgetVersion" })) { $InstallPowershellget = $true } #psversiontable = 4 bedingt mit ohne -listavailable
 				} catch {}
 			}
 			if ($InstallPowershellget -eq $true)
 			{
-				LogfileAppend("Installing Powershellget release 2.2.1 ...")
+				LogfileAppend("Installing Powershellget release $PowershellgetVersion ...")
 				if (test-path("$PSHome/Modules/Powershellget")) {
                     # rm -r -fo "$PSHome/Modules/Powershellget" #do not delete it might be a previous version without version number in directory name
                 }
-				$rc = workaround.Find-ModuleAllVersions -name powershellget -version "2.2.1" | workaround.Save-Module -Path "$PSHome/Modules"
-				LogfileAppend("Installing Powershellget release 2.2.1 : return code $rc")				
+				$rc = workaround.Find-ModuleAllVersions -name powershellget -version "$PowershellgetVersion" | workaround.Save-Module -Path "$PSHome/Modules"
+				LogfileAppend("Installing Powershellget release $PowershellgetVersion : return code $rc")				
 				$rc = workaround.Install-NugetPkgOnLinux $rc.name "$PSHome/Modules" "$PSHome/Modules"
-				LogfileAppend("Installing Powershellget release 2.2.1 done : return code $rc")				
+				LogfileAppend("Installing Powershellget release $PowershellgetVersion done : return code $rc")				
 			}
 					
 		}
@@ -233,22 +235,24 @@ get-psrepository
 # + CategoryInfo          : InvalidArgument: (Microsoft.Power...etPackageSource:GetPackageSource) [Get-PackageSource], Exception
 # + FullyQualifiedErrorId : UnknownProviders,Microsoft.PowerShell.PackageManagement.Cmdlets.GetPackageSource
 
-get-packageprovider
+# get-packageprovider
 # Name                     Version          DynamicOptions
 # ----                     -------          --------------
 # NuGet                    3.0.0.1          Destination, ExcludeVersion, Scope, SkipDependencies, Headers, FilterOnTag,...
 
-get-module
-# ModuleType Version    Name                                ExportedCommands
-# ---------- -------    ----                                ----------------
-# Manifest   6.1.0.0    Microsoft.PowerShell.Management     {Add-Content, Clear-Content, Clear-Item, Clear-ItemProperty...
-# Manifest   6.1.0.0    Microsoft.PowerShell.Utility        {Add-Member, Add-Type, Clear-Variable, Compare-Object...}
-# Script     1.4.5      PackageManagement                   {Find-Package, Find-PackageProvider, Get-Package, Get-Packa...
-# Script     2.2.1      PowerShellGet                       {Find-Command, Find-DscResource, Find-Module, Find-RoleCapa...
+# find-packageprovider nuget -verbose
+# VERBOSE: Using the provider 'Bootstrap' for searching packages.
+# VERBOSE: Finding the package 'Bootstrap::FindPackage' 'nuget','','','''.
+# find-packageprovider : No match was found for the specified search criteria and package name 'nuget'. Try Get-PackageSource to see all available registered package sources.
+# At line:1 char:1
+# + find-packageprovider nuget -verbose
+# + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# + CategoryInfo          : ObjectNotFound: (Microsoft.Power...PackageProvider:FindPackageProvider) [Find-PackageProvider], Exception
+# + FullyQualifiedErrorId : NoMatchFoundForCriteria,Microsoft.PowerShell.PackageManagement.Cmdlets.FindPackageProvider
 
+# get-packagesource
+# WARNING: Unable to find package sources.
 
-
-# Now, Install-Package works, because Nuget has version 2.8.5.210. However, Register-PSRepository still fails. To fix that, update powershellget to version 1.6.7.
 # Install-Package -Name PowerShellGet -Source https://www.powershellgallery.com/api/v2/ -ProviderName NuGet -MinimumVersion 1.6.0 -MaximumVersion 1.6.0 -force -confirm:$false
 # The module releases should be now Powershellget 1.6.7, Packagemanagement 1.1.7.0 and Nuget 2.8.5.210
 # get-psrepository
