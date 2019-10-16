@@ -282,4 +282,4 @@ workaround.PwshGalleryPrerequisites
 # Script     1.6.0      PowerShellGet                       {Find-Command, Find-DscResource, Find-Module, Find-RoleCapa...
 # 
 # 7) Install-Package
-# Install-Package -Name PowerShellGet -Source https://www.powershellgallery.com/api/v2 -ProviderName NuGet -MinimumVersion 2.2.1 -MaximumVersion 2.2.1 -force -confirm:$false
+# Install-Package -Name PackageManagement -Source https://www.powershellgallery.com/api/v2 -ProviderName NuGet -MinimumVersion 1.4.5 -MaximumVersion 1.4.5 -force -confirm:$false

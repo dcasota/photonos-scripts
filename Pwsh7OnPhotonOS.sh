@@ -71,6 +71,7 @@ pwsh-preview -c "/tmp/photonos-scripts/photonos-scripts-master/Install-PwshGalle
 # Uninstall
 rm /tmp/master.zip
 rm -r /tmp/photonos-scripts
+rm /tmp/powershell.tar.gz
 # rm -r ./opt/microsoft/powershell/7-preview
 # Check if no other powershell release is installed which uses the following directories
 # rm -r ./root/.cache/powershell
