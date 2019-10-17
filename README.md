@@ -49,7 +49,7 @@ whoami
 
 ```pwshgalleryonphotonos.sh```
 -
-This study script makes the Microsoft PowerShellGallery available on Photon OS by using Mono with Nuget.
+This study script makes Microsoft Powershell and the Microsoft PowerShellGallery available on Photon OS by using Mono with Nuget.
 
 Installing PowerShell Core on Photon OS does not built-in register PSGallery or nuget.org as source provider.
 One way to accomplish it is using a tool from the Microsoft open source Nuget ecosystem.
@@ -62,16 +62,18 @@ The tool called nuget.exe is Windowsx86-commandline-only. See https://docs.micro
 The script downloads all necessary prerequisites (tools, Mono, Nuget.exe) and builds the Mono software.
 The PowershellGallery registration is a oneliner:
 ```mono /usr/local/bin/nuget.exe sources Add -Name PSGallery -Source "https://www.powershellgallery.com/api/v2"```
+
+The Microsoft Powershell installation is processed in reference to https://github.com/vmware/powerclicore/blob/master/Dockerfile.
  
 If in ```CreatePhotonOSVMOnAzure.ps1``` the variable $postprovisioning="true" is set, ```pwshgalleryonphotonos.sh``` is processed. As said, it installs
 - Photon OS updates
 - Mono, an open source implementation of Microsoft's .NET Framework https://www.mono-project.com/
 - Nuget, a Microsoft .NET foundation Windows x86 package manager CLI https://www.nuget.org/
+- Source packageproviders registration (nuget, powershellgallery)
 - Windows Packagemanagement (formerly OneGet) and Powershellget, a package management provider based on NuGet provider https://github.com/PowerShell/PowerShellGet/releases
-- Packageproviders (nuget, powershellgallery)
-- Windows PowershellCore by Photon OS package provider tdnf and Powershell modules packagemanagement and powershellget
+- Windows PowershellCore by Photon OS package provider tdnf
 
-Don't wonder - the full installation takes quite some time. As the installation consumes 1 hour and more (!) and usually you don't need a full Mono development environment, it became more a learn project. If interested, see files Findings_*.
+Don't wonder - the full installation takes quite some time. As the Mono installation consumes 1 hour and more (!) and usually you don't need a full Mono development environment, it became more a learn project. If interested, see files Findings_*.
 
 ```Pwsh7OnPhotonOS.sh```
 -
