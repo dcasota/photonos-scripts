@@ -69,7 +69,7 @@ If in ```CreatePhotonOSVMOnAzure.ps1``` the variable $postprovisioning="true" is
 - Nuget, a Microsoft .NET foundation Windows x86 package manager CLI https://www.nuget.org/
 - Windows Packagemanagement (formerly OneGet) and Powershellget, a package management provider based on NuGet provider https://github.com/PowerShell/PowerShellGet/releases
 - Packageproviders (nuget, powershellgallery)
-- Photon OS built-in Windows PowershellCore and Powershell modules packagemanagement and powershellget
+- Windows PowershellCore by Photon OS package provider tdnf and Powershell modules packagemanagement and powershellget
 
 Don't wonder - the full installation takes quite some time. As the installation consumes 1 hour and more (!) and usually you don't need a full Mono development environment, it became more a learn project. If interested, see files Findings_*.
 
