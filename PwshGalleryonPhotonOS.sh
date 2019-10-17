@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# This scripts makes the Microsoft PowerShellGallery available and installs VMware PowerCLI on Photon OS.
+# This scripts makes the Microsoft PowerShellGallery available on Photon OS by using Mono with Nuget.
 # 
 # Installing PowerShell Core on Photon OS does not built-in register PSGallery or nuget.org as source provider.
 # 
@@ -14,7 +14,8 @@
 # This scripts downloads all necessary prerequisites (tools, Mono, Nuget.exe) to register the PowerShell Gallery.
 # The registration is the oneliner: mono /usr/local/bin/nuget.exe sources Add -Name PSGallery -Source "https://www.powershellgallery.com/api/v2"
 #
-# After the Powershell Core installation, VMware.PowerCLI is installed.
+# The installation output is /tmp/myScript.txt.
+#
 #
 # Remark:
 # In reference to https://www.mono-project.com/docs/tools+libraries/tools/mkbundle/ an avoidance may be possible:
@@ -25,56 +26,62 @@
 # History
 # 0.1  21.08.2019   dcasota  Initial release
 # 0.2  08.10.2019   dcasota  Installable Powershell 6.2.3 with Mono
+# 0.3  17.10.2018   dcasota  Adding built-in tdnf powershell package. Removing side installation of Powershell 6.2.3
 #
 #
 # 
 
 monourl="https://download.mono-project.com/sources/mono/mono-6.4.0.198.tar.xz"
-monofile="mono-6.4.0.198.tar.xz"
+monofilename="mono-6.4.0.198.tar.xz"
 monodir="mono-6.4.0.198"
 
-powershellfile="powershell-6.2.3-linux-x64.tar.gz"
-powershellurl="https://github.com/PowerShell/PowerShell/releases/download/v6.2.3/powershell-6.2.3-linux-x64.tar.gz"
-powershelldir="/root/powershell"
-
-echo "$(date) + Installing ..." >> /tmp/myScript.txt
+echo "$(date) + Installing Microsoft PowerShellGallery on Photon OS by using Mono with Nuget ..."
+echo "$(date) + Installing Microsoft PowerShellGallery on Photon OS by using Mono with Nuget ..." >> /tmp/myScript.txt
 whoami >> /tmp/myScript.txt
 
-tdnf -y update >> /tmp/myScript.txt
-tdnf -y install tar icu libunwind unzip wget >> /tmp/myScript.txt
+
+echo "$(date) + Installing Prerequisites of Mono ..."
+echo "$(date) + Installing Prerequisites of Mono ..." >> /tmp/myScript.txt
+tdnf -y install tar icu libunwind curl >> /tmp/myScript.txt
 tdnf -y install linux-api-headers cmake gcc glibc-devel binutils >> /tmp/myScript.txt
 yum -y install bison gettext glib2 freetype fontconfig libpng libpng-devel >> /tmp/myScript.txt
 yum -y install gcc automake autoconf libtool make bzip2 >> /tmp/myScript.txt
 
-cd ~/ >> /tmp/myScript.txt
-wget $monourl >> /tmp/myScript.txt
+echo "$(date) + Downloading and installing Mono ..."
+echo "$(date) + Downloading and installing Mono ..." >> /tmp/myScript.txt
 mkdir ~/mono >> /tmp/myScript.txt
-tar -xvf $monofile -C ~/mono >> /tmp/myScript.txt
+cd ~/mono >> /tmp/myScript.txt
+curl -o $monofilename $monourl >> /tmp/myScript.txt
+tar -xvf $monofilename -C ~/mono >> /tmp/myScript.txt
 cd ~/mono/$monodir >> /tmp/myScript.txt
-./configure --prefix=/usr/local >> /tmp/myScript.txt
+# https://www.mono-project.com/docs/compiling-mono/small-footprint/
+./configure --prefix=/usr/local --enable-minimal=aot,profiler --enable-small-config >> /tmp/myScript.txt
 make >> /tmp/myScript.txt
 make install >> /tmp/myScript.txt
 
-cd ~/ >> /tmp/myScript.txt
+echo "$(date) + Downloading and Mono-Nuget-configuring PwshGallery Source ..."
+echo "$(date) + Downloading and Mono-Nuget-configuring PwshGallery Source ..." >> /tmp/myScript.txt
 curl -o /usr/local/bin/nuget.exe https://dist.nuget.org/win-x86-commandline/latest/nuget.exe >> /tmp/myScript.txt
 mono /usr/local/bin/nuget.exe sources Add -Name PSGallery -Source "https://www.powershellgallery.com/api/v2" >> /tmp/myScript.txt
 mono /usr/local/bin/nuget.exe sources Add -Name nuget.org -Source "https://www.nuget.org/api/v2" >> /tmp/myScript.txt
 
-cd ~/ >> /tmp/myScript.txt
-wget $powershellurl >> /tmp/myScript.txt
-mkdir $powershelldir >> /tmp/myScript.txt
-mkdir -p ~/.local/share/powershell/Modules >> /tmp/myScript.txt
-tar -xvf ./$powershellfile -C $powershelldir >> /tmp/myScript.txt
-~/powershell/pwsh -c '$PSVersionTable' >> /tmp/myScript.txt
-~/powershell/pwsh -c 'install-module packagemanagement -Scope AllUsers -force' >> /tmp/myScript.txt
-~/powershell/pwsh -c 'install-module powershellget -Scope AllUsers -force' >> /tmp/myScript.txt
-~/powershell/pwsh -c 'install-module VMware.PowerCLI -Scope AllUsers -force' >> /tmp/myScript.txt
-# powershell/pwsh -c 'Set-PSRepository -Name PSGallery -InstallationPolicy Trusted'
+echo "$(date) + Installing Powershell ..."
+echo "$(date) + Installing Powershell ..." >> /tmp/myScript.txt
+tdnf -y install powershell
 
+echo "$(date) + Installing Powershell modules packagemanagement and powershellget ..."
+echo "$(date) + Installing Powershell modules packagemanagement and powershellget ..." >> /tmp/myScript.txt
+pwsh -c '$PSVersionTable' >> /tmp/myScript.txt
+pwsh -c 'install-module packagemanagement -Scope AllUsers -force' >> /tmp/myScript.txt
+pwsh -c 'install-module powershellget -Scope AllUsers -force' >> /tmp/myScript.txt
+# pwsh -c 'Set-PSRepository -Name PSGallery -InstallationPolicy Trusted' >> /tmp/myScript.txt
+
+echo "$(date) + Cleanup ..."
 cd ~/ >> /tmp/myScript.txt
-rm ~/$powershellfile
-rm ~/$monofile
-echo "$(date) + Installation finished." >> /tmp/myScript.txt
+rm ~/mono/$monofilename >> /tmp/myScript.txt
+
+echo "$(date) + Installing Microsoft PowerShellGallery on Photon OS by using Mono with Nuget finished."
+echo "$(date) + Installing Microsoft PowerShellGallery on Photon OS by using Mono with Nuget finished." >> /tmp/myScript.txt
 
 
 
