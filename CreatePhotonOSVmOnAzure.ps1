@@ -1,16 +1,18 @@
 ﻿#
 # Create a VMware photon OS VM on Microsoft Azure
 #
+# related weblinks
+# https://vmware.github.io/photon/assets/files/html/3.0/photon_installation/setting-up-azure-storage-and-uploading-the-vhd.html
+#
 # History
 # 0.1  21.08.2019   dcasota  Initial release
 # 0.2  04.09.2019   dcasota  replace new-azvm with az vm create
 # 0.3  08.09.2019   dcasota  custom-data bash file added
 # 0.4  09.09.2019   dcasota  mono+nuget+powershell+PowerCLI installation added
 # 0.5  10.09.2019   dcasota  Azure Powershell installation added, added connectivity to Powershellgallery
+# 0.6  17.10.2019   dcasota  Switch true/false for any postprovisioning added
 #
-# related weblinks
-# https://vmware.github.io/photon/assets/files/html/3.0/photon_installation/setting-up-azure-storage-and-uploading-the-vhd.html
-# https://www.virtuallyghetto.com/2019/01/powershell-for-photonos-on-raspberry-pi-3.html#more-163856
+#
 
 $ScriptPath=$PSScriptRoot
 
@@ -21,7 +23,6 @@ $myWindowsPrincipal=new-object System.Security.Principal.WindowsPrincipal($myWin
 # Get the security principal for the Administrator role
 $adminRole=[System.Security.Principal.WindowsBuiltInRole]::Administrator
 if (-not ($myWindowsPrincipal.IsInRole($adminRole))) { return }
-
 
 # Location setting
 $LocationName = "westeurope"
@@ -53,6 +54,9 @@ $VMLocalAdminPassword = "PhotonOs123!" #pwd must be 7-12 characters
 $diskSizeGB = '16' # minimum is 16gb
 $PublicIPDNSName="mypublicdns$(Get-Random)"
 $nsgName = "myNetworkSecurityGroup"
+
+# Postprovisioning with Powershell(+PwshGallery)
+$postprovisioning="$true"
 
 # Create az login object. You get a pop-up prompting you to enter the credentials.
 $cred = Get-Credential -Message "Enter a username and password for az login."
@@ -136,42 +140,63 @@ if (([string]::IsNullOrEmpty($nic)))
         -SubnetId $vnet.Subnets[0].Id -PublicIpAddressId $pip.Id -NetworkSecurityGroupId $nsg.Id
 }
 
-# create custom data file for az vm create --custom-data
-$BashfileName="custom_bash.sh"
-$Bashfile=${ScriptPath}+"\"+$BashFileName
-if (Test-path(${Bashfile})) {remove-item ${Bashfile} -Force}
-(echo '#!/bin/sh')>${Bashfile}
-(echo 'echo $(date) + "Cloud-init custom data installing ..." >> /tmp/myScript.txt')>>${Bashfile}
-(echo 'whoami >> /tmp/myScript.txt >> /tmp/myScript.txt')>>${Bashfile}
-(echo 'tdnf -y update >> /tmp/myScript.txt >> /tmp/myScript.txt')>>${Bashfile}
-(echo 'tdnf -y install tar icu libunwind unzip wget >> /tmp/myScript.txt')>>${Bashfile}
-(echo 'mkdir ~/photonosonazure >> /tmp/myScript.txt')>>${Bashfile}
-(echo 'wget https://github.com/dcasota/photonosonazure/archive/master.zip >> /tmp/myScript.txt')>>${Bashfile}
-(echo 'unzip master.zip -d ~/photonosonazure >> /tmp/myScript.txt')>>${Bashfile}
-(echo 'cd ~/photonosonazure/photonosonazure-master >> /tmp/myScript.txt')>>${Bashfile}
-(echo 'chmod a+x ./PwshGalleryonPhotonOS.sh >> /tmp/myScript.txt')>>${Bashfile}
-(echo './PwshGalleryonPhotonOS.sh >> /tmp/myScript.txt')>>${Bashfile}
-(echo 'echo $(date) + "Cloud-init custom data installed." >> /tmp/myScript.txt')>>${Bashfile}
-Get-ChildItem ${Bashfile} | % { $x = get-content -raw -path $_.fullname; $x -replace "`r`n","`n" | set-content -path $_.fullname }
-
 # az vm create
 #save and reapply location info
 $locationstack=get-location
 set-location -Path ${ScriptPath}
 
-az vm create --resource-group $ResourceGroupName --location $LocationName --name $vmName `
---size $VMSize `
---admin-username $VMLocalAdminUser --admin-password $VMLocalAdminPassword `
---storage-account $StorageAccountName `
---storage-container-name ${ContainerName} `
---os-type linux `
---use-unmanaged-disk `
---os-disk-size-gb $diskSizeGB `
---image $urlOfUploadedVhd `
---computer-name $computerName `
---nics $nic.Id `
---generate-ssh-keys `
---custom-data $Bashfilename
+if ($postprovisioning -eq "true")
+{
+	# create custom data file for az vm create --custom-data
+	# Must have write permission to $Scriptpath
+	$BashfileName="custom_bash.sh"
+	$Bashfile=${ScriptPath}+"\"+$BashFileName
+	if (Test-path(${Bashfile})) {remove-item ${Bashfile} -Force}
+	(echo '#!/bin/sh')>${Bashfile}
+	(echo 'echo $(date) + "Cloud-init custom data installing ..." >> /tmp/myScript.txt')>>${Bashfile}
+	(echo 'whoami >> /tmp/myScript.txt >> /tmp/myScript.txt')>>${Bashfile}
+	(echo 'tdnf -y update >> /tmp/myScript.txt >> /tmp/myScript.txt')>>${Bashfile}
+	(echo 'tdnf -y install tar icu libunwind unzip curl >> /tmp/myScript.txt')>>${Bashfile}
+	(echo 'mkdir ~/photonos-scripts >> /tmp/myScript.txt')>>${Bashfile}
+	(echo 'curl -o ~/photonos-scripts/master.zip  https://github.com/dcasota/photonos-scripts/archive/master.zip >> /tmp/myScript.txt')>>${Bashfile}
+	(echo 'unzip ~/photonos-scripts/master.zip -d ~/photonos-scripts >> /tmp/myScript.txt')>>${Bashfile}
+	(echo 'cd ~/photonos-scripts/photonos-scripts-master >> /tmp/myScript.txt')>>${Bashfile}
+	(echo 'chmod a+x ./*.sh >> /tmp/myScript.txt')>>${Bashfile}
+	(echo './PwshGalleryonPhotonOS.sh >> /tmp/myScript.txt')>>${Bashfile}
+	(echo 'cd ~/ >> /tmp/myScript.txt')>>${Bashfile}
+	(echo 'rm -r ~/photonos-scripts >> /tmp/myScript.txt')>>${Bashfile}
+	(echo 'echo $(date) + "Cloud-init custom data installed." >> /tmp/myScript.txt')>>${Bashfile}
+	Get-ChildItem ${Bashfile} | % { $x = get-content -raw -path $_.fullname; $x -replace "`r`n","`n" | set-content -path $_.fullname }
+
+	az vm create --resource-group $ResourceGroupName --location $LocationName --name $vmName `
+	--size $VMSize `
+	--admin-username $VMLocalAdminUser --admin-password $VMLocalAdminPassword `
+	--storage-account $StorageAccountName `
+	--storage-container-name ${ContainerName} `
+	--os-type linux `
+	--use-unmanaged-disk `
+	--os-disk-size-gb $diskSizeGB `
+	--image $urlOfUploadedVhd `
+	--computer-name $computerName `
+	--nics $nic.Id `
+	--generate-ssh-keys `
+	--custom-data $Bashfilename
+}
+else
+{
+	az vm create --resource-group $ResourceGroupName --location $LocationName --name $vmName `
+	--size $VMSize `
+	--admin-username $VMLocalAdminUser --admin-password $VMLocalAdminPassword `
+	--storage-account $StorageAccountName `
+	--storage-container-name ${ContainerName} `
+	--os-type linux `
+	--use-unmanaged-disk `
+	--os-disk-size-gb $diskSizeGB `
+	--image $urlOfUploadedVhd `
+	--computer-name $computerName `
+	--nics $nic.Id `
+	--generate-ssh-keys
+}
 set-location -path $locationstack
 
 # enable boot diagnostics for serial console option
