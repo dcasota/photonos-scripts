@@ -32,7 +32,7 @@ The ```az vm create``` parameter ```--custom-data``` is a user exit for a post-p
 - install the latest Photon OS updates
 - install VMware PowerCLI from the Powershell Gallery by a predownloaded script called ```pwshgalleryonphotonos.sh``` (see below)
 
-To activate the option simply uncomment the line ```# --custom-data $Bashfilename```. If the custom data file does not exist, nevertheless the creation successfully completes.
+To activate the option simply set the variable $postprovisioning="true" (default). If the custom data file does not exist, nevertheless the creation successfully completes.
 
 The script finishes with enabling Azure boot-diagnostics for the serial console option.
 
@@ -49,31 +49,27 @@ whoami
 
 ```pwshgalleryonphotonos.sh```
 -
-This study script installs VMware PowerCLI and makes the Microsoft PowerShellGallery available on Photon OS by using Mono with Nuget.
+This study script makes the Microsoft PowerShellGallery available on Photon OS by using Mono with Nuget.
 
-Installing PowerShell Core release 7.0.0 and less on Photon OS does not built-in register PSGallery or nuget.org as source provider.
-However this can be accomplished using a tool from the Microsoft open source Nuget ecosystem.
+Installing PowerShell Core on Photon OS does not built-in register PSGallery or nuget.org as source provider.
+One way to accomplish it is using a tool from the Microsoft open source Nuget ecosystem.
 See https://docs.microsoft.com/en-us/nuget/policies/ecosystem, https://docs.microsoft.com/en-us/nuget/nuget-org/licenses.nuget.org
 
 The tool called nuget.exe is Windowsx86-commandline-only. See https://docs.microsoft.com/en-us/nuget/install-nuget-client-tools
-"The nuget.exe CLI, nuget.exe, is the command-line utility for Windows that provides all NuGet capabilities; it can also be run on Mac OSX and Linux using Mono with some limitations."
+"The nuget.exe CLI, nuget.exe, is the command-line utility for Windows that provides all NuGet capabilities;"
+"it can also be run on Mac OSX and Linux using Mono with some limitations."
 
-The script downloads all necessary prerequisites (tools, Mono, Nuget.exe) to register the PowerShell Gallery. The registration is a oneliner:
+The script downloads all necessary prerequisites (tools, Mono, Nuget.exe) and builds the Mono software.
+The PowershellGallery registration is a oneliner:
 ```mono /usr/local/bin/nuget.exe sources Add -Name PSGallery -Source "https://www.powershellgallery.com/api/v2"```
  
-After the Powershell Core installation, VMware PowerCLI is installed.
-
-If custom-data of ```CreatePhotonOSVMOnAzure.ps1``` is processed, ```pwshgalleryonphotonos.sh``` is processed as well. As said, it installs
+If in ```CreatePhotonOSVMOnAzure.ps1``` the variable $postprovisioning="true" is set, ```pwshgalleryonphotonos.sh``` is processed. As said, it installs
 - Photon OS updates
 - Mono, an open source implementation of Microsoft's .NET Framework https://www.mono-project.com/
 - Nuget, a Microsoft .NET foundation Windows x86 package manager CLI https://www.nuget.org/
 - Windows Packagemanagement (formerly OneGet) and Powershellget, a package management provider based on NuGet provider https://github.com/PowerShell/PowerShellGet/releases
 - Packageproviders (nuget, powershellgallery)
-- Windows PowershellCore https://github.com/PowerShell/PowerShell
-- The VMware PowerCLI powershell module https://www.powershellgallery.com/packages/VMware.PowerCLI
-
-Remark:
-In reference to https://www.mono-project.com/docs/tools+libraries/tools/mkbundle/ : "Mono can turn .NET applications (executable code and its dependencies) into self-contained executables that do not rely on Mono being installed on the system to simplify deployment of.NET Applications."
+- Photon OS built-in Windows PowershellCore and Powershell modules packagemanagement and powershellget
 
 Don't wonder - the full installation takes quite some time. As the installation consumes 1 hour and more (!) and usually you don't need a full Mono development environment, it became more a learn project. If interested, see files Findings_*.
 
