@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# This scripts makes the Microsoft PowerShellGallery available on Photon OS by using Mono with Nuget.
+# This study script makes the Microsoft PowerShellGallery available on Photon OS by using Mono with Nuget.
 # 
 # Installing PowerShell Core on Photon OS does not built-in register PSGallery or nuget.org as source provider.
 # One way to accomplish it is using a tool from the Microsoft open source Nuget ecosystem.
@@ -10,7 +10,7 @@
 # "The nuget.exe CLI, nuget.exe, is the command-line utility for Windows that provides all NuGet capabilities;"
 # "it can also be run on Mac OSX and Linux using Mono with some limitations."
 # This scripts downloads all necessary prerequisites (tools, Mono, Nuget.exe) and builds the Mono software.
-# The registration is the oneliner: mono /usr/local/bin/nuget.exe sources Add -Name PSGallery -Source "https://www.powershellgallery.com/api/v2"
+# The  registration is the oneliner: mono /usr/local/bin/nuget.exe sources Add -Name PSGallery -Source "https://www.powershellgallery.com/api/v2"
 #
 # Mono related weblinks:
 # https://www.mono-project.com/docs/compiling-mono/small-footprint/
