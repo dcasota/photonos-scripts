@@ -158,6 +158,7 @@ if ($postprovisioning -eq "true")
 	(echo 'tdnf -y update >> /tmp/myScript.txt >> /tmp/myScript.txt')>>${Bashfile}
 	(echo 'tdnf -y install tar icu libunwind unzip curl >> /tmp/myScript.txt')>>${Bashfile}
 	(echo 'mkdir ~/photonos-scripts >> /tmp/myScript.txt')>>${Bashfile}
+	(echo 'cd ~/photonos-scripts >> /tmp/myScript.txt')>>${Bashfile}
 	(echo 'curl -O -J -L https://github.com/dcasota/photonos-scripts/archive/master.zip >> /tmp/myScript.txt')>>${Bashfile}
 	(echo 'unzip ~/photonos-scripts/photonos-scripts-master.zip -d ~/photonos-scripts >> /tmp/myScript.txt')>>${Bashfile}
 	(echo 'cd ~/photonos-scripts/photonos-scripts-master >> /tmp/myScript.txt')>>${Bashfile}
