@@ -56,7 +56,8 @@ make -j4
 make install
 
 echo "$(date) + Downloading and Configuring PwshGallery Source by Mono with Nuget ..."
-curl -o /usr/local/bin/nuget.exe https://dist.nuget.org/win-x86-commandline/latest/nuget.exe
+# https://www.mono-project.com/docs/about-mono/releases/6.4.0/ See "Bundled NuGet version has been upgraded to 5.2 RTM."
+curl -o /usr/local/bin/nuget.exe https://dist.nuget.org/win-x86-commandline/v5.2.0/nuget.exe
 mono /usr/local/bin/nuget.exe sources Add -Name PSGallery -Source "https://www.powershellgallery.com/api/v2"
 mono /usr/local/bin/nuget.exe sources Add -Name nuget.org -Source "https://www.nuget.org/api/v2"
 
