@@ -93,6 +93,3 @@ rm ~/mono/$monofilename
 # Remove unnecessary installed prerequisites of Mono
 
 echo "$(date) + Installing Microsoft PowerShellGallery on Photon OS by using Mono with Nuget finished."
-
-
-
