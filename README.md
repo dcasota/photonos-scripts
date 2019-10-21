@@ -82,6 +82,6 @@ The Docker image uses Mono with nuget.exe on a Debian OS.
 The mono 6.4.0.198 dockerfile related part original is from https://github.com/mono/docker/blob/master/6.4.0.198/Dockerfile.
 The original installation procedure for Pwsh7 on Linux is from https://docs.microsoft.com/en-us/powershell/scripting/install/installing-powershell-core-on-linux?view=powershell-7
 
-```Pwsh7OnPhotonOS.sh and Install-PwshGalleryOnPhotonOS.ps1```
+```Pwsh7OnPhotonOS.sh + Install-PwshGalleryOnPhotonOS.ps1```
 -
 These scripts are unfinished attempts to install Powershell Core v.7.0.0 (Preview4) and registered PSGallery on Photon OS without the use of Mono with nuget.exe
