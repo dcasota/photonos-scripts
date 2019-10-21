@@ -77,10 +77,11 @@ Don't wonder - the full installation takes quite some time. As the Mono installa
 
 ```Dockerfile```
 -
-This Docker image contains Powershell Core 7.0.0 (Beta4) with registered Powershell Gallery. 
+This Docker image contains Powershell Core 7.0.0 (Beta4) with registered Powershell Gallery.
+
 The Docker image uses Mono with nuget.exe on a Debian OS.
-The mono 6.4.0.198 dockerfile related part original is from https://github.com/mono/docker/blob/master/6.4.0.198/Dockerfile.
-The original installation procedure for Pwsh7 on Linux is from https://docs.microsoft.com/en-us/powershell/scripting/install/installing-powershell-core-on-linux?view=powershell-7
+- The mono 6.4.0.198 dockerfile related part original is from https://github.com/mono/docker/blob/master/6.4.0.198/Dockerfile.
+- The original installation procedure for Pwsh7 on Linux is from https://docs.microsoft.com/en-us/powershell/scripting/install/installing-powershell-core-on-linux?view=powershell-7
 
 ```Pwsh7OnPhotonOS.sh + Install-PwshGalleryOnPhotonOS.ps1```
 -
