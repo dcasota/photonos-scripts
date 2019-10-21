@@ -32,7 +32,7 @@ RUN apt-get update && \
     apt-get install -y binutils curl mono-devel ca-certificates-mono fsharp mono-vbnc nuget referenceassemblies-pcl && \
     rm -rf /var/lib/apt/lists/* /tmp/* && \
     curl -o /usr/local/bin/nuget.exe https://dist.nuget.org/win-x86-commandline/v5.2.0/nuget.exe && \
-    mkdir -p /opt/microsoft/powershell/7-preview && && \
+    mkdir -p /opt/microsoft/powershell/7-preview && \
     tar zxf /tmp/powershell.tar.gz -C /opt/microsoft/powershell/7-preview && \
     chmod +x /opt/microsoft/powershell/7-preview/pwsh && \
     ln -s /opt/microsoft/powershell/7-preview/pwsh /usr/bin/pwsh-preview && \
