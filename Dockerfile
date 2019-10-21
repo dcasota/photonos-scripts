@@ -21,7 +21,7 @@
 #
 #
 # ---------------------------------------------------------------
-FROM microsoft/powershell:ubuntu16.04
+FROM mono:6.4.0.198-slim
 
 RUN apt-get update && apt-get install -y binutils curl mono-devel ca-certificates-mono fsharp mono-vbnc nuget referenceassemblies-pcl && rm -rf /var/lib/apt/lists/* /tmp/*
  
