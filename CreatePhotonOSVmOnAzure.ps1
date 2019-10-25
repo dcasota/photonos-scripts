@@ -163,7 +163,7 @@ if ($postprovisioning -eq "true")
 	(echo 'unzip ~/photonos-scripts/photonos-scripts-master.zip -d ~/photonos-scripts >> /tmp/myScript.txt')>>${Bashfile}
 	(echo 'cd ~/photonos-scripts/photonos-scripts-master >> /tmp/myScript.txt')>>${Bashfile}
 	(echo 'chmod a+x ./*.sh >> /tmp/myScript.txt')>>${Bashfile}
-	(echo './PwshGalleryonPhotonOS.sh >> /tmp/myScript.txt')>>${Bashfile}
+	(echo './DockerPwshGalleryonPhotonOS.sh >> /tmp/myScript.txt')>>${Bashfile}
 	(echo 'cd ~/ >> /tmp/myScript.txt')>>${Bashfile}
 	(echo '# rm -r ~/photonos-scripts >> /tmp/myScript.txt')>>${Bashfile}
 	(echo 'echo $(date) + "Cloud-init custom data installed." >> /tmp/myScript.txt')>>${Bashfile}
