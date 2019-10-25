@@ -59,7 +59,7 @@ docker run -it vmware/powerclicore:ubuntu16.04
 
 ```pwshgalleryonphotonos.sh```
 -
-This study script makes Microsoft Powershell and the Microsoft PowerShellGallery available on Photon OS by using Mono with Nuget. It does not use any docker container.
+This study script makes Microsoft Powershell and the Microsoft PowerShellGallery available on Photon OS by using Mono with Nuget. It does not make use any docker container.
 
 Installing PowerShell Core on Photon OS does not built-in register PSGallery or nuget.org as source provider.
 One way to accomplish it is using a tool from the Microsoft open source Nuget ecosystem.
