@@ -55,6 +55,7 @@ One way to accomplish it is using the VMware PowerCLI Core Dockerfile. It uses a
 
 Simply pull and run:
 ```docker pull vmware/powerclicore:ubuntu16.04```
+
 ```docker run -it vmware/powerclicore:ubuntu16.04```
 
 ```pwshgalleryonphotonos.sh```
