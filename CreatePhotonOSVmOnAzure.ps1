@@ -11,7 +11,7 @@
 # 0.4  09.09.2019   dcasota  mono+nuget+powershell+PowerCLI installation added
 # 0.5  10.09.2019   dcasota  Azure Powershell installation added, added connectivity to Powershellgallery
 # 0.6  17.10.2019   dcasota  Switch true/false for any postprovisioning added
-#
+# 0.7  25.10.2019   dcasota  DockerPwshGalleryonPhotonOS.sh postprovisioning
 #
 
 $ScriptPath=$PSScriptRoot

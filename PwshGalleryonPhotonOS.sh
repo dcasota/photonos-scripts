@@ -1,6 +1,7 @@
 #!/bin/sh
 #
 # This study script makes Microsoft Powershell Core and the PowerShellGallery available on Photon OS by using Mono with Nuget.
+# It does not make use any docker container.
 # 
 # Installing PowerShell Core on Photon OS does not built-in register PSGallery or nuget.org as source provider.
 # One way to accomplish it is using a tool from the Microsoft open source Nuget ecosystem.
@@ -27,7 +28,7 @@
 # 0.1  21.08.2019   dcasota  Initial release
 # 0.2  08.10.2019   dcasota  Installable Powershell 6.2.3 with Mono
 # 0.3  17.10.2018   dcasota  Adding built-in tdnf powershell package. Code cleanup.
-#
+# 0.4  25.10.2019   dcasota  docker container comment added
 #
 # 
 
