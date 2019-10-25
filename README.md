@@ -54,9 +54,8 @@ Installing PowerShell Core on Photon OS does not built-in register PSGallery as 
 One way to accomplish it is using the VMware PowerCLI Core Dockerfile. It uses an Ubuntu 16.04 docker container with Powershell Core 6.x and PowerCLI Core 11.x.
 
 Simply pull and run:
-```docker pull vmware/powerclicore:ubuntu16.04```
-
-```docker run -it vmware/powerclicore:ubuntu16.04```
+- ```docker pull vmware/powerclicore:ubuntu16.04```
+- ```docker run -it vmware/powerclicore:ubuntu16.04```
 
 ```pwshgalleryonphotonos.sh```
 -
