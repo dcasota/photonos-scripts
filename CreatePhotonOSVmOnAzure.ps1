@@ -215,6 +215,4 @@ $vmList.Name
 #  (set new password)
 # su -l root
 # whoami
-# powershell/pwsh
-#  $PSVersionTable
-#  get-module -name VMware.PowerCLI -listavailable
+

@@ -219,3 +219,96 @@
 #    See Finding 1)
 #
 #
+# Finding #4
+# 1) Vanilla VMware Photon OS 3.0 GA
+# 2) Install latest Powershell Core release v7.0.0.-preview.5. See https://github.com/PowerShell/PowerShell/releases/tag/v7.0.0-preview.5
+# 3) Get-PSRepository fails with
+#    WARNING: Unable to find module repositories.
+#
+#
+#    Stacktrace of 2)
+#    PS /root> get-psrepository
+#    WARNING: Unable to find module repositories.
+#    PS /root> register-psrepository -default
+#    
+#    Suggestion [4,General]: The most similar commands are: gzexe, getent.
+# 4) See Finding 1)
+#
+#
+# Finding #5
+# 1) Vanilla VMware Photon OS 3.0 GA
+# 2) Install Powershell Core 6.0.5.
+# 3) Get-PSRepository, find-module, install-module works.
+#
+#
+#    Stacktrace of 2)
+#    get-psrepository
+#    
+#    Name                      InstallationPolicy   SourceLocation
+#    ----                      ------------------   --------------
+#    PSGallery                 Untrusted            https://www.powershellgallery.com/api/v2
+#    
+#    After install-module VMware.PowerCLI:
+#
+#    PS /root> get-packageprovider
+#    Name                     Version          DynamicOptions                                                                                                                                                                                       0----                     -------          --------------                                                                                                                                                                                       ANuGet                    2.8.5.210        Destination, ExcludeVersion, Scope, SkipDependencies, Headers, FilterOnTag, Contains, AllowPrereleaseVersions, ConfigFile, SkipValidate
+#    PowerShellGet            1.6.7.0          PackageManagementProvider, Type, Scope, AllowClobber, SkipPublisherCheck, InstallUpdate, NoPathUpdate, AllowPrereleaseVersions, Filter, Tag, Includes, DscResource, RoleCapability, Command, Accep...
+#    
+#    PS /root> get-module -listavailable
+#        Directory: /opt/microsoft/powershell/6.0.5/Modules
+#    
+#    
+#    ModuleType Version    Name                                ExportedCommands
+#    ---------- -------    ----                                ----------------
+#    Manifest   1.2.2.0    Microsoft.PowerShell.Archive        {Compress-Archive, Expand-Archive}
+#    Manifest   3.0.0.0    Microsoft.PowerShell.Host           {Start-Transcript, Stop-Transcript}
+#    Manifest   3.1.0.0    Microsoft.PowerShell.Management     {Add-Content, Clear-Content, Clear-ItemProperty, Join-Path...}
+#    Manifest   3.0.0.0    Microsoft.PowerShell.Security       {Get-Credential, Get-ExecutionPolicy, Set-ExecutionPolicy, ConvertFrom-SecureString...}
+#    Manifest   3.1.0.0    Microsoft.PowerShell.Utility        {Format-List, Format-Custom, Format-Table, Format-Wide...}
+#    Script     1.1.7.2    PackageManagement                   {Find-Package, Get-Package, Get-PackageProvider, Get-PackageSource...}
+#    Script     1.6.7      PowerShellGet                       {Find-Command, Find-DSCResource, Find-Module, Find-RoleCapability...}
+#    Script     0.0        PSDesiredStateConfiguration         {Get-PSMetaConfigDocumentInstVersionInfo, Write-Log, IsPatternMatched, GetImplementingModulePath...}
+#    Script     1.2        PSReadLine                          {Get-PSReadlineKeyHandler, Set-PSReadlineKeyHandler, Remove-PSReadlineKeyHandler, Get-PSReadlineOption...}
+#     
+#    
+# 4) 6.0.5 is end-of-life according 
+#
+#
+# Finding #6
+# 1) Vanilla VMware Photon OS 3.0 GA
+# 2) Install Powershell Core. Download https://github.com/PowerShell/PowerShell/releases/download/v6.2.3/powershell-6.2.3-linux-x64.tar.gz
+# 3) Get-PSRepository fails with
+#    WARNING: Unable to find module repositories.
+#
+#
+#    Stacktrace of 2)
+#    PS /tmp> get-packageprovider
+#    
+#    Name                     Version          DynamicOptions
+#    ----                     -------          --------------
+#    NuGet                    3.0.0.1          Destination, ExcludeVersion, Scope, SkipDependencies, Headers, FilterOnTag, Contains, AllowPrereleaseVersions, ConfigFile, SkipValidate
+#    PowerShellGet            2.1.3.0          PackageManagementProvider, Type, Scope, AllowClobber, SkipPublisherCheck, InstallUpdate, NoPathUpdate, AllowPrereleaseVersions, Filter, Tag, Includes, DscResource, RoleCapability, Command, AcceptL…
+#    
+#    
+#    PS /tmp> get-module -listavailable
+#    
+#    
+#        Directory: /opt/microsoft/powershell/6.2.3/Modules
+#    
+#    ModuleType Version    Name                                PSEdition ExportedCommands
+#    ---------- -------    ----                                --------- ----------------
+#    Manifest   1.2.3.0    Microsoft.PowerShell.Archive        Desk      {Compress-Archive, Expand-Archive}
+#    Manifest   6.1.0.0    Microsoft.PowerShell.Host           Core      {Start-Transcript, Stop-Transcript}
+#    Manifest   6.1.0.0    Microsoft.PowerShell.Management     Core      {Add-Content, Clear-Content, Clear-ItemProperty, Join-Path…}
+#    Manifest   6.1.0.0    Microsoft.PowerShell.Security       Core      {Get-Credential, Get-ExecutionPolicy, Set-ExecutionPolicy, ConvertFrom-SecureString…}
+#    Manifest   6.1.0.0    Microsoft.PowerShell.Utility        Core      {Export-Alias, Get-Alias, Import-Alias, New-Alias…}
+#    Script     1.3.2      PackageManagement                   Desk      {Find-Package, Get-Package, Get-PackageProvider, Get-PackageSource…}
+#    Script     2.1.3      PowerShellGet                       Desk      {Find-Command, Find-DSCResource, Find-Module, Find-RoleCapability…}
+#    Script     0.0        PSDesiredStateConfiguration         Desk      {Get-MofInstanceName, GetCompositeResource, CheckResourceFound, ThrowError…}
+#    Script     2.0.0      PSReadLine                          Desk      {Get-PSReadLineKeyHandler, Set-PSReadLineKeyHandler, Remove-PSReadLineKeyHandler, Get-PSReadLineOption…}
+#    Binary     1.1.2      ThreadJob                           Desk      Start-ThreadJob
+#    
+#    PS /tmp>
+# 4) See Finding 1)
+#
+#
