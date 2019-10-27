@@ -2,7 +2,7 @@
 #
 # Prerequisites:
 #    VMware Photon OS 3.0
-#    Powershell 7.0.0 (Beta4)
+#    Powershell 6.2.3
 #    No side installation of another powershell release
 #
 # 
@@ -13,7 +13,7 @@
 #
 # History
 # 0.1  16.10.2019   dcasota  UNFINISHED! WORK IN PROGRESS!
-#
+# 0.2  27.10.2019   dcasota  Adopted version to pwsh 6.2.3 UNFINISHED! WORK IN PROGRESS!
 #
 
 function LogfileAppend($text)
@@ -151,8 +151,8 @@ function workaround.Install-NugetPkgOnLinux
 function workaround.PwshGalleryPrerequisites
 {
 	$PwshGalleryInstalled = $false
-	$PackageManagementVersion="1.4.5"
-	$PowershellgetVersion="2.2.1"	
+	$PackageManagementVersion="1.1.7.2"
+	$PowershellgetVersion="1.6.7"	
 	try
 	{
 		LogfileAppend("Check get-psrepository ...")
@@ -213,19 +213,20 @@ function workaround.PwshGalleryPrerequisites
 # Requires Run with root privileges
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 workaround.PwshGalleryPrerequisites
+if ((Get-PSRepository -name psgallery | %{ $_.InstallationPolicy -match "Untrusted" }) -eq $true) { set-psrepository -name PSGallery -InstallationPolicy Trusted }
 
 # Checks
 # ------
 # 
 # 
 # get-module
-# ModuleType Version    PreRelease Name                                ExportedCommands
-# ---------- -------    ---------- ----                                ----------------
-# Manifest   7.0.0.0               Microsoft.PowerShell.Management     {Add-Content, Clear-Content, Clear-Item, Clear-Ite…
-# Manifest   7.0.0.0               Microsoft.PowerShell.Utility        {Add-Member, Add-Type, Clear-Variable, Compare-Obj…
-# Script     1.4.5                 PackageManagement                   {Find-Package, Find-PackageProvider, Get-Package, …
-# Script     2.2.1                 PowerShellGet                       {Find-Command, Find-DscResource, Find-Module, Find…
-# Script     2.0.0      beta5      PSReadLine                          {Get-PSReadLineKeyHandler, Get-PSReadLineOption, R…
+# ModuleType Version    Name                                ExportedCommands
+# ---------- -------    ----                                ----------------
+# Manifest   6.1.0.0    Microsoft.PowerShell.Management     {Add-Content, Clear-Content, Clear-Item, Clear-ItemProperty…}
+# Manifest   6.1.0.0    Microsoft.PowerShell.Utility        {Add-Member, Add-Type, Clear-Variable, Compare-Object…}
+# Script     1.1.7.2    PackageManagement                   {Find-Package, Find-PackageProvider, Get-Package, Get-PackageProvider…}
+# Script     1.6.7      PowerShellGet                       {Find-Command, Find-DscResource, Find-Module, Find-RoleCapability…}
+# Script     2.0.0      PSReadLine                          {Get-PSReadLineKeyHandler, Get-PSReadLineOption, Remove-PSReadLineKeyHandler, Set-PSReadLineKeyHandler…}
 # 
 # get-psrepository
 # Name                      InstallationPolicy   SourceLocation
@@ -268,18 +269,3 @@ workaround.PwshGalleryPrerequisites
 # 4) get-packagesource
 # WARNING: Unable to find package sources.
 #
-# 5) get-packageprovider
-# Name                     Version          DynamicOptions
-# ----                     -------          --------------
-# NuGet                    2.8.5.210        Destination, ExcludeVersion, Scope, SkipDependencies, Headers, FilterOnTag,...
-#
-# 6) get-module
-# ModuleType Version    Name                                ExportedCommands
-# ---------- -------    ----                                ----------------
-# Manifest   6.1.0.0    Microsoft.PowerShell.Management     {Add-Content, Clear-Content, Clear-Item, Clear-ItemProperty...
-# Manifest   6.1.0.0    Microsoft.PowerShell.Utility        {Add-Member, Add-Type, Clear-Variable, Compare-Object...}
-# Script     1.1.7.0    PackageManagement                   {Find-Package, Find-PackageProvider, Get-Package, Get-Packa...
-# Script     1.6.0      PowerShellGet                       {Find-Command, Find-DscResource, Find-Module, Find-RoleCapa...
-# 
-# 7) Install-Package
-# Install-Package -Name PackageManagement -Source https://www.powershellgallery.com/api/v2 -ProviderName NuGet -MinimumVersion 1.4.5 -MaximumVersion 1.4.5 -force -confirm:$false
