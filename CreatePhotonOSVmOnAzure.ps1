@@ -56,7 +56,7 @@ $PublicIPDNSName="mypublicdns$(Get-Random)"
 $nsgName = "myNetworkSecurityGroup"
 
 # Postprovisioning with Powershell(+PwshGallery)
-$postprovisioning=$true
+$postprovisioning=$false
 
 # Create az login object. You get a pop-up prompting you to enter the credentials.
 $cred = Get-Credential -Message "Enter a username and password for az login."
