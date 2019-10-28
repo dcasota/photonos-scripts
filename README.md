@@ -65,6 +65,8 @@ Simply pull and run:
 - ```docker pull vmware/powerclicore:ubuntu16.04```
 - ```docker run -it vmware/powerclicore:ubuntu16.04```
 
+If in ```CreatePhotonOSVMOnAzure.ps1``` the variable $postprovisioning="true" is set, ```dockerpwshgalleryonphotonos.sh``` is processed.
+
 ```pwshgalleryonphotonos.sh```
 -
 This study script makes Microsoft Powershell and the Microsoft PowerShellGallery available on Photon OS by using Mono with Nuget. It does not make use any docker container.
@@ -89,8 +91,7 @@ The PowershellGallery registration is the oneliner:
 ```mono /usr/local/bin/nuget.exe sources Add -Name PSGallery -Source "https://www.powershellgallery.com/api/v2"```
 
 The Microsoft Powershell installation is processed in reference to https://github.com/vmware/powerclicore/blob/master/Dockerfile.
- 
-If in ```CreatePhotonOSVMOnAzure.ps1``` the variable $postprovisioning="true" is set, ```pwshgalleryonphotonos.sh``` is processed.
+
 Don't wonder - the full installation takes quite some time. As the Mono installation consumes 1 hour and more (!) and usually you don't need a full Mono development environment, it became more a learn project. If interested, see files Findings_*.
 
 ```Dockerfile```
