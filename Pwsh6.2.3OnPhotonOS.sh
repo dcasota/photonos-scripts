@@ -52,7 +52,7 @@ if (echo $OUTPUT | grep -q "PSGallery"); then echo "PSGallery is registered.";
 else
 echo "PSGallery not detected as registered. Executing Install-PwshGalleryOnPhotonOs.ps1 ..."
 
-cat >>/tmp/Install-PwshGalleryOnPhotonOs.ps1 <<EOF_pwshfile
+cat <<< '
 function LogfileAppend($text)
 {
 	$TimeStamp = (get-date).ToString('dd.MM.yyyy HH:mm:ss.fff')
@@ -251,7 +251,7 @@ function workaround.PwshGalleryPrerequisites
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 workaround.PwshGalleryPrerequisites
 if ((Get-PSRepository -name psgallery | %{ $_.InstallationPolicy -match "Untrusted" }) -eq $true) { set-psrepository -name PSGallery -InstallationPolicy Trusted }
-EOF_pwshfile
+' >/tmp/Install-PwshGalleryOnPhotonOs.ps1 
 
 $PwshLink -c "/tmp/Install-PwshGalleryOnPhotonOs.ps1"
 
