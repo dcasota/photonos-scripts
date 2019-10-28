@@ -28,8 +28,7 @@ tdnf install -y \
 		userspace-rcu \
 		lttng-ust \
 		icu \
-		dotnet-runtime \
-		powershell
+		dotnet-runtime
 
 cd /tmp
 
@@ -279,7 +278,13 @@ OUTPUT=`$PwshLink -c "get-psrepository"`
 if (echo $OUTPUT | grep -q "PSGallery"); then echo "PSGallery is registered.";
 else
 echo "ERROR: PSGallery not detected as registered. Executing Install-PwshGalleryOnPhotonOs.ps1 failed."
-# if built-in powershell is not installed, even with PSGallery trusted, find-module and install-module does not work.
+fi
+
+# More to test: if Pwsh is installed, even with PSGallery trusted, find-module may not work.
+OUTPUT=`$PwshLink -c "find-module VMware.PowerCLI"`
+if (echo $OUTPUT | grep -q "PSGallery"); then echo "PSGallery is browseable.";
+else
+echo "ERROR: PSGallery not detected as browseable. Executing Install-PwshGalleryOnPhotonOs.ps1 failed."
 fi
 
 fi
@@ -296,7 +301,6 @@ $PwshLink
 # rm /usr/bin/$PwshLink
 # rm -r /opt/microsoft/powershell/$ReleaseDir
 # Check if no other powershell release is installed which uses the following directories
-# tdnf remove -y powershell
 # rm -r /root/.cache/powershell
 # rm -r /opt/microsoft/powershell
 # rm -r /root/.local/share/powershell
