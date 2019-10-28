@@ -21,38 +21,32 @@
 tdnf install -y \
         tar \
         curl
-        # locales \
-        # libicu63 \
-        # libssl1.1 \
-        # libc6 \
-        # libgcc1 \
-        # libgssapi-krb5-2 \
-        # liblttng-ust0 \
-        # libstdc++6 \
-        # zlib1g
-
+		
+$DownloadURL="https://github.com/PowerShell/PowerShell/releases/download/v6.2.3/powershell-6.2.3-linux-x64.tar.gz"
+$ReleaseDir="6.2.3"
+$PwshLink=Pwsh$ReleaseDir
 
 # Download the powershell '.tar.gz' archive
-curl -L https://github.com/PowerShell/PowerShell/releases/download/v6.1.6/powershell-6.1.6-linux-x64.tar.gz -o /tmp/powershell.tar.gz
+curl -L $DownloadURL -o /tmp/powershell.tar.gz
 
 # Create the target folder where powershell will be placed
-sudo mkdir -p /opt/microsoft/powershell/6.2.3
+sudo mkdir -p /opt/microsoft/powershell/$ReleaseDir
 
 # Expand powershell to the target folder
-sudo tar zxf /tmp/powershell.tar.gz -C /opt/microsoft/powershell/6.2.3
+sudo tar zxf /tmp/powershell.tar.gz -C /opt/microsoft/powershell/$ReleaseDir
 
 # Set execute permissions
-sudo chmod +x /opt/microsoft/powershell/6.2.3/pwsh
+sudo chmod +x /opt/microsoft/powershell/$ReleaseDir/pwsh
 
 # Create the symbolic link that points to pwsh
-sudo ln -s /opt/microsoft/powershell/6.2.3/pwsh /usr/bin/pwsh6.2.3
+sudo ln -s /opt/microsoft/powershell/$ReleaseDir/pwsh /usr/bin/$PwshLink
 
-pwsh6.2.3 -c "get-psrepository"
+$PwshLink -c "get-psrepository"
 
 # Uninstall
 rm /tmp/powershell.tar.gz
-# rm /usr/bin/pwsh6.2.3
-# rm -r ./opt/microsoft/powershell/6.2.3
+# rm /usr/bin/$PwshLink
+# rm -r ./opt/microsoft/powershell/$ReleaseDir
 # Check if no other powershell release is installed which uses the following directories
 # rm -r ./root/.cache/powershell
 # rm -r ./opt/microsoft/powershell
