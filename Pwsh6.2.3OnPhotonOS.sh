@@ -30,6 +30,7 @@ cd /tmp
 # First, install powershell 6.0.5
 DownloadURL="https://github.com/PowerShell/PowerShell/releases/download/v6.0.5/powershell-6.0.5-linux-x64.tar.gz"
 ReleaseDir="6.0.5"
+PwshLink=Pwsh$ReleaseDir
 # Download the powershell '.tar.gz' archive
 curl -L $DownloadURL -o /tmp/powershell.tar.gz
 # Create the target folder where powershell will be placed
@@ -40,8 +41,6 @@ tar zxf /tmp/powershell.tar.gz -C /opt/microsoft/powershell/$ReleaseDir
 chmod +x /opt/microsoft/powershell/$ReleaseDir/pwsh
 # Create the symbolic link that points to pwsh
 ln -s /opt/microsoft/powershell/$ReleaseDir/pwsh /usr/bin/$PwshLink
-PwshLink=Pwsh$ReleaseDir
-
 
 echo "Executing Install-PwshGalleryOnPhotonOs.ps1 ..."
 
@@ -272,6 +271,7 @@ if (echo $OUTPUT | grep -q "PSGallery"); then
 	# Then, rollup installation to powershell 6.2.3
 	DownloadURL="https://github.com/PowerShell/PowerShell/releases/download/v6.2.3/powershell-6.2.3-linux-x64.tar.gz"
 	ReleaseDir="6.2.3"
+	PwshLink=Pwsh$ReleaseDir	
 	# Download the powershell '.tar.gz' archive
 	curl -L $DownloadURL -o /tmp/powershell.tar.gz
 	# Create the target folder where powershell will be placed
@@ -282,7 +282,6 @@ if (echo $OUTPUT | grep -q "PSGallery"); then
 	chmod +x /opt/microsoft/powershell/$ReleaseDir/pwsh
 	# Create the symbolic link that points to pwsh
 	ln -s /opt/microsoft/powershell/$ReleaseDir/pwsh /usr/bin/$PwshLink
-	PwshLink=Pwsh$ReleaseDir
 	
 	# Check: PSGallery is registered as "Trusted".
 	OUTPUT=`$PwshLink -c "get-psrepository"`
