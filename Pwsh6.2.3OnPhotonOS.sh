@@ -13,7 +13,7 @@
 #
 # The old Powershell Core 6.0.5 release is the baseline. find-module, get-psrepository and install-module work fine. It uses packagemanagement 1.1.7.2 and powershellget 1.6.7.
 # 
-# Using Powershell Core 6.2.3 built-in packagemanagement and powershellget releases the cmdlets find-module, get-psrepository and install-module produce errors.
+# Using Powershell Core 6.2.3 built-in packagemanagement 1.3.2 and powershellget 2.1.3 releases the cmdlets find-module, get-psrepository and install-module produce errors.
 #
 # This script contains workaround functions to ensure the import of specific modules. The idea is to find a combination of packagemanagement and
 # powershellget releases with workaround functions which re-ensure the use of find-module, get-psrepository and install-module.
@@ -300,8 +300,8 @@ IFS='' read -r -d '' PSContent5 << "EOF5"
 function workaround.PwshGalleryPrerequisites
 {
 	$PwshGalleryInstalled = $false
-	$PackageManagementVersion="1.4.5"
-	$PowershellgetVersion="1.6.7"	
+	$PackageManagementVersion="1.3.2"
+	$PowershellgetVersion="2.1.3"	
 	try
 	{
 		LogfileAppend("Check get-psrepository ...")
