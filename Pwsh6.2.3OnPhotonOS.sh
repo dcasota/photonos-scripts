@@ -185,7 +185,7 @@ function workaround.Install-NugetPkgOnLinux
 			$TmpFile = $destinationpath + $PathDelimiter + $_.Name
             try {
 				LogfileAppend("importing-name $TmpFile ...")			
-			    import-module -name $TmpFile -Prefix $VersionString -Scope Global -Verbose -force -erroraction silentlycontinue
+			    import-module -name $TmpFile -Scope Global -Verbose -force -erroraction silentlycontinue
             } catch {}
 		}
 	}
@@ -273,14 +273,14 @@ EOFHere
 
 $PwshLink -c "/tmp/Install-PwshGalleryOnPhotonOs.ps1"
 
+# Check1: PSGallery is registered as "Trusted".
 OUTPUT=`$PwshLink -c "get-psrepository"`
-
 if (echo $OUTPUT | grep -q "PSGallery"); then echo "PSGallery is registered.";
 else
 echo "ERROR: PSGallery not detected as registered. Executing Install-PwshGalleryOnPhotonOs.ps1 failed."
 fi
 
-# More to test: if Pwsh is installed, even with PSGallery trusted, find-module may not work.
+# Check2: PSGallery is browseable using "find-module".
 OUTPUT=`$PwshLink -c "find-module VMware.PowerCLI"`
 if (echo $OUTPUT | grep -q "PSGallery"); then echo "PSGallery is browseable.";
 else
