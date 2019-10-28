@@ -1,6 +1,6 @@
 Photon OS scripts
 -
-This repo contains several Photon OS related scripts.
+This repo contains several VMware Photon OS related scripts.
 
 Photon OS, a VMware operating system,  is an open source Linux container host for cloud-native applications. The OS is the preferred platform for IoT edge engineering. It runs docker containers, supports a resource foot print hardened setup, comes with a driver development kit for device drivers, and has package-based lifecycle management systems.
 More information: https://vmware.github.io/photon/
