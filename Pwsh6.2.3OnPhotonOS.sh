@@ -52,15 +52,15 @@ if (echo $OUTPUT | grep -q "PSGallery"); then echo "PSGallery is registered.";
 else
 echo "PSGallery not detected as registered. Executing Install-PwshGalleryOnPhotonOs.ps1 ..."
 
-PSContent1='
+PSContent1='@
 function LogfileAppend($text)
 {
 	$TimeStamp = (get-date).ToString('dd.MM.yyyy HH:mm:ss.fff')
 	Write-Host $TimeStamp  $text
 }
-'
+@'
 
-PSContent2='
+PSContent2='@
 function workaround.Find-ModuleAllVersions
 {
 	# https://stackoverflow.com/questions/37486587/powershell-v5-how-to-install-modules-to-a-computer-having-no-internet-connecti
@@ -107,9 +107,9 @@ function workaround.Find-ModuleAllVersions
 		}
 	}
 }
-'
+@'
 
-PSContent3='
+PSContent3='@
 function workaround.Save-Module
 {
 	param (
@@ -140,9 +140,9 @@ function workaround.Save-Module
 	$rc = Get-Item $Path
 	return $rc
 }
-'
+@'
 
-PSContent4='
+PSContent4='@
 function workaround.Install-NugetPkgOnLinux
 {
 	param (
@@ -190,9 +190,9 @@ function workaround.Install-NugetPkgOnLinux
 	catch { }
 	return ($destinationpath)
 }
-'
+@'
 
-PSContent5='
+PSContent5='@
 function workaround.PwshGalleryPrerequisites
 {
 	$PwshGalleryInstalled = $false
@@ -259,9 +259,9 @@ function workaround.PwshGalleryPrerequisites
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 workaround.PwshGalleryPrerequisites
 if ((Get-PSRepository -name psgallery | %{ $_.InstallationPolicy -match "Untrusted" }) -eq $true) { set-psrepository -name PSGallery -InstallationPolicy Trusted }
-'
+@'
 
-cat << \EOF > /tmp/Install-PwshGalleryOnPhotonOs.ps1
+cat <<EOF > /tmp/Install-PwshGalleryOnPhotonOs.ps1
 $PSContent1
 $PSContent2
 $PSContent3
