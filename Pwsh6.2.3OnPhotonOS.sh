@@ -33,7 +33,7 @@ cd /tmp
 
 # Install built-in powershell
 tdnf install -y powershell
-PwshLink=Pwsh
+PwshLink=/usr/bin/pwsh
 
 OUTPUT=`$PwshLink -c "get-psrepository"`
 if (echo $OUTPUT | grep -q "PSGallery"); then echo "PSGallery is registered.";
