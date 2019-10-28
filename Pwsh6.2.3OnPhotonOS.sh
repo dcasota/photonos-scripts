@@ -28,7 +28,8 @@ tdnf install -y \
 		userspace-rcu \
 		lttng-ust \
 		icu \
-		dotnet-runtime
+		dotnet-runtime \
+		powershell
 
 cd /tmp
 
@@ -278,19 +279,24 @@ OUTPUT=`$PwshLink -c "get-psrepository"`
 if (echo $OUTPUT | grep -q "PSGallery"); then echo "PSGallery is registered.";
 else
 echo "ERROR: PSGallery not detected as registered. Executing Install-PwshGalleryOnPhotonOs.ps1 failed."
+# if built-in powershell is not installed, even with PSGallery trusted, find-module and install-module does not work.
 fi
 
 fi
 
 # Cleanup
 rm /tmp/powershell.tar.gz
-# rm /tmp/Install-PwshGalleryOnPhotonOs.ps1
+rm /tmp/Install-PwshGalleryOnPhotonOs.ps1
 tdnf clean all
+
+# Run Powershell
+$PwshLink
 
 # Uninstall
 # rm /usr/bin/$PwshLink
 # rm -r /opt/microsoft/powershell/$ReleaseDir
 # Check if no other powershell release is installed which uses the following directories
+# tdnf remove -y powershell
 # rm -r /root/.cache/powershell
 # rm -r /opt/microsoft/powershell
 # rm -r /root/.local/share/powershell
