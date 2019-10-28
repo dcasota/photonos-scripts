@@ -8,7 +8,7 @@
 #
 #
 # History
-# 0.1  28.10.2019   dcasota  Initial release
+# 0.1  28.10.2019   dcasota  UNFINISHED! WORK IN PROGRESS!
 #
 # Prerequisites:
 #    VMware Photon OS 3.0
@@ -41,7 +41,57 @@ tar zxf /tmp/powershell.tar.gz -C /opt/microsoft/powershell/$ReleaseDir
 chmod +x /opt/microsoft/powershell/$ReleaseDir/pwsh
 # Create the symbolic link that points to pwsh
 ln -s /opt/microsoft/powershell/$ReleaseDir/pwsh /usr/bin/$PwshLink
+# delete downloaded file
+rm /tmp/powershell.tar.gz
 
+OUTPUT=`$PwshLink -c "get-psrepository"`
+if (echo $OUTPUT | grep -q "PSGallery"); then
+	echo "PSGallery is registered."
+	# Check: PSGallery is browseable using "find-module".
+	OUTPUT=`$PwshLink -c "find-module VMware.PowerCLI"`
+	if (echo $OUTPUT | grep -q "PSGallery"); then
+		echo "PSGallery is browseable."
+		echo "$PwshLink: All provisioning tests successfully done."
+	else
+		echo "ERROR: PSGallery not detected as browseable."
+	fi		
+else
+	echo "PSGallery not detected as registered."
+fi
+
+
+# Now side-by-side installation of powershell 6.2.3
+DownloadURL="https://github.com/PowerShell/PowerShell/releases/download/v6.2.3/powershell-6.2.3-linux-x64.tar.gz"
+ReleaseDir="6.2.3"
+PwshLink=Pwsh$ReleaseDir	
+# Download the powershell '.tar.gz' archive
+curl -L $DownloadURL -o /tmp/powershell.tar.gz
+# Create the target folder where powershell will be placed
+mkdir -p /opt/microsoft/powershell/$ReleaseDir
+# Expand powershell to the target folder
+tar zxf /tmp/powershell.tar.gz -C /opt/microsoft/powershell/$ReleaseDir
+# Set execute permissions
+chmod +x /opt/microsoft/powershell/$ReleaseDir/pwsh
+# Create the symbolic link that points to pwsh
+ln -s /opt/microsoft/powershell/$ReleaseDir/pwsh /usr/bin/$PwshLink
+# delete downloaded file
+rm /tmp/powershell.tar.gz
+
+OUTPUT=`$PwshLink -c "get-psrepository"`
+if (echo $OUTPUT | grep -q "PSGallery"); then
+	echo "PSGallery is registered."
+	# Check: PSGallery is browseable using "find-module".
+	OUTPUT=`$PwshLink -c "find-module VMware.PowerCLI"`
+	if (echo $OUTPUT | grep -q "PSGallery"); then
+		echo "PSGallery is browseable."
+		echo "$PwshLink: All provisioning tests successfully done."
+	else
+		echo "ERROR: PSGallery not detected as browseable."
+	fi		
+else
+	echo "PSGallery not detected as registered."
+fi
+	
 echo "Executing Install-PwshGalleryOnPhotonOs.ps1 ..."
 
 IFS='' read -r -d '' PSContent1 << "EOF1"
@@ -267,46 +317,20 @@ $PwshLink -c "/tmp/Install-PwshGalleryOnPhotonOs.ps1"
 
 OUTPUT=`$PwshLink -c "get-psrepository"`
 if (echo $OUTPUT | grep -q "PSGallery"); then
-	echo "PSGallery is registered."
-	# Then, rollup installation to powershell 6.2.3
-	DownloadURL="https://github.com/PowerShell/PowerShell/releases/download/v6.2.3/powershell-6.2.3-linux-x64.tar.gz"
-	ReleaseDir="6.2.3"
-	PwshLink=Pwsh$ReleaseDir	
-	# Download the powershell '.tar.gz' archive
-	curl -L $DownloadURL -o /tmp/powershell.tar.gz
-	# Create the target folder where powershell will be placed
-	mkdir -p /opt/microsoft/powershell/$ReleaseDir
-	# Expand powershell to the target folder
-	tar zxf /tmp/powershell.tar.gz -C /opt/microsoft/powershell/$ReleaseDir
-	# Set execute permissions
-	chmod +x /opt/microsoft/powershell/$ReleaseDir/pwsh
-	# Create the symbolic link that points to pwsh
-	ln -s /opt/microsoft/powershell/$ReleaseDir/pwsh /usr/bin/$PwshLink
-	
-	# Check: PSGallery is registered as "Trusted".
-	OUTPUT=`$PwshLink -c "get-psrepository"`
-	if (echo $OUTPUT | grep -q "PSGallery"); then
-		echo "PSGallery is registered.";
-		# Check: PSGallery is browseable using "find-module".
-		OUTPUT=`$PwshLink -c "find-module VMware.PowerCLI"`
-		if (echo $OUTPUT | grep -q "PSGallery"); then echo "PSGallery is browseable.";
-		else
-		echo "ERROR: PSGallery not detected as browseable. Executing Install-PwshGalleryOnPhotonOs.ps1 failed."
-		fi		
+	echo "PSGallery is registered."	
+	# Check: PSGallery is browseable using "find-module".
+	OUTPUT=`$PwshLink -c "find-module VMware.PowerCLI"`
+	if (echo $OUTPUT | grep -q "PSGallery"); then echo "PSGallery is browseable.";
 	else
-	echo "ERROR: PSGallery not detected as registered. Executing Install-PwshGalleryOnPhotonOs.ps1 failed."
-	fi	
+		echo "ERROR: PSGallery not detected as browseable. Executing Install-PwshGalleryOnPhotonOs.ps1 failed."
+	fi		
 else
 	echo "PSGallery not detected as registered. Executing Install-PwshGalleryOnPhotonOs.ps1 failed."
 fi
 
 # Cleanup
-rm /tmp/powershell.tar.gz
 # rm /tmp/Install-PwshGalleryOnPhotonOs.ps1
 tdnf clean all
-
-# Run Powershell
-$PwshLink
 
 # Uninstall
 # rm /usr/bin/$PwshLink
