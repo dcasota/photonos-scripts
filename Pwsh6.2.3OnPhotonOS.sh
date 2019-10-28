@@ -264,11 +264,11 @@ if ((Get-PSRepository -name psgallery | %{ $_.InstallationPolicy -match "Untrust
 EOF5
 
 cat <<EOFHere > /tmp/Install-PwshGalleryOnPhotonOs.ps1
-echo "$PSContent1"
-echo "$PSContent2"
-echo "$PSContent3"
-echo "$PSContent4"
-echo "$PSContent5"
+$PSContent1
+$PSContent2
+$PSContent3
+$PSContent4
+$PSContent5
 EOFHere
 
 echo sleep
