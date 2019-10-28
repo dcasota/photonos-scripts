@@ -240,8 +240,8 @@ IFS='' read -r -d '' PSContent5 << "EOF5"
 function workaround.PwshGalleryPrerequisites
 {
 	$PwshGalleryInstalled = $false
-	$PackageManagementVersion="1.1.7.2"
-	$PowershellgetVersion="1.6.7"	
+	$PackageManagementVersion="1.4.5"
+	$PowershellgetVersion="2.2.1"	
 	try
 	{
 		LogfileAppend("Check get-psrepository ...")
