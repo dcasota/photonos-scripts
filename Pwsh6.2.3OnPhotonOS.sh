@@ -3,9 +3,6 @@
 #
 # This script deploys Powershell Core 6.2.3 on VMware Photon OS.
 #
-# 
-#
-#
 #
 # History
 # 0.1  28.10.2019   dcasota  UNFINISHED! WORK IN PROGRESS!
@@ -13,7 +10,70 @@
 # Prerequisites:
 #    VMware Photon OS 3.0
 #
+#
+# The old Powershell Core 6.0.5 release is the baseline. find-module, get-psrepository and install-module work fine. It uses packagemanagement 1.1.7.2 and powershellget 1.6.7.
 # 
+# Using Powershell Core 6.2.3 built-in packagemanagement and powershellget releases the cmdlets find-module, get-psrepository and install-module produce errors.
+#
+# This script contains workaround functions to ensure the import of specific modules. The idea is to find a combination of packagemanagement and
+# powershellget releases with workaround functions which re-ensure the use of find-module, get-psrepository and install-module.
+#
+# Powershell Core
+# v7.0.0-preview.5
+# v7.0.0-preview.4
+# v6.2.3
+# v6.1.6
+# v7.0.0-preview.3
+# v7.0.0-preview.2
+# v6.2.2
+# v6.1.5
+# v7.0.0-preview.1
+# v6.2.1
+# 
+# Packagemanagement
+#     1.4.5
+#     1.4.4
+#     1.4.3
+#     1.4.2
+#     1.4.1
+#     1.4
+#     1.3.2
+#     1.3.1
+#     1.2.4
+#     1.2.2
+#     1.1.7.2
+#     1.1.7.0
+#     1.1.6.0
+#     1.1.4.0
+#     1.1.3.0
+#     1.1.1.0
+#     1.1.0.0
+#
+# Powershellget
+#     2.2.1
+#     2.2
+#     2.1.5
+#     2.1.4
+#     2.1.3
+#     2.1.2
+#     2.1.1
+#     2.1.0
+#     2.0.4
+#     2.0.3
+#     2.0.1
+#     2.0.0
+#     1.6.7
+#     1.6.6
+#     1.6.5
+#     1.6.0
+#     1.5.0.0
+#     1.1.3.2
+#     1.1.3.1
+#     1.1.2.0
+#     1.1.1.0
+#     1.1.0.0
+# 
+#
 
 # install the requirements
 tdnf install -y \
@@ -241,7 +301,7 @@ function workaround.PwshGalleryPrerequisites
 {
 	$PwshGalleryInstalled = $false
 	$PackageManagementVersion="1.4.5"
-	$PowershellgetVersion="2.2.1"	
+	$PowershellgetVersion="1.6.7"	
 	try
 	{
 		LogfileAppend("Check get-psrepository ...")
