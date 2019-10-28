@@ -261,7 +261,7 @@ function workaround.PwshGalleryPrerequisites
 # Requires Run with root privileges
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 workaround.PwshGalleryPrerequisites
-if ((Get-PSRepository -name psgallery | %{ $_.InstallationPolicy -match "Untrusted" }) -eq $true) { set-psrepository -name PSGallery -InstallationPolicy Trusted }
+# if ((Get-PSRepository -name psgallery | %{ $_.InstallationPolicy -match "Untrusted" }) -eq $true) { set-psrepository -name PSGallery -InstallationPolicy Trusted }
 EOF5
 
 cat <<EOFHere > /tmp/Install-PwshGalleryOnPhotonOs.ps1
