@@ -261,15 +261,15 @@ function workaround.PwshGalleryPrerequisites
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 workaround.PwshGalleryPrerequisites
 if ((Get-PSRepository -name psgallery | %{ $_.InstallationPolicy -match "Untrusted" }) -eq $true) { set-psrepository -name PSGallery -InstallationPolicy Trusted }
-EOF
+EOF5
 
-cat <<EOF > /tmp/Install-PwshGalleryOnPhotonOs.ps1
+cat <<EOFHere > /tmp/Install-PwshGalleryOnPhotonOs.ps1
 echo "$PSContent1"
 echo "$PSContent2"
 echo "$PSContent3"
 echo "$PSContent4"
 echo "$PSContent5"
-EOF5
+EOFHere
 
 echo sleep
 sleep 1000
