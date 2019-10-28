@@ -7,14 +7,14 @@ More information: https://vmware.github.io/photon/
 
 ```CreatePhotonOSVMOnAzure.ps1```
 -
+```CreatePhotonOSVMOnAzure.ps1``` provisions VMware Photon OS on Microsoft Azure. Just download it and edit the script variables for location, resourcegroup, network setting, base image and vm settings.
+
 Prerequisites are:
 - VMware Photon OS 3.0 GA downloaded and unzipped .vhd
 - Windows Powershell with installed Az module
 - a Microsoft Azure account
 
-```CreatePhotonOSVMOnAzure.ps1``` provisions VMware Photon OS on Microsoft Azure. Just download it and edit the script variables for location, resourcegroup, network setting, base image and vm settings. 
-
-Connected to Azure it checks/creates
+Connected to Azure the script checks/creates
 - resource group
 - virtual network
 - storage account/container/blob
@@ -46,6 +46,12 @@ sudo passwd root
 su -l root
 whoami
 ```
+
+```PowerCLI and Powershell(Gallery) on Photon OS```
+-
+The following scripts are related to PowerCLI and to Powershell(Gallery) on Photon OS as these functionalities are not built-in available, at least as per October 2019. There are a few approaches. The following overview helps to choose the appropriate solution.
+
+![Status Oct19](https://github.com/dcasota/photonos-scripts/blob/master/Status_Oct19.png)
 
 ```dockerpwshgalleryonphotonos.sh```
 -
@@ -93,6 +99,6 @@ The Docker image uses Mono with nuget.exe on a Debian OS.
 - The mono 6.4.0.198 dockerfile related part original is from https://github.com/mono/docker/blob/master/6.4.0.198/Dockerfile.
 - The original installation procedure for Pwsh7 on Linux is from https://docs.microsoft.com/en-us/powershell/scripting/install/installing-powershell-core-on-linux?view=powershell-7
 
-```Pwsh7OnPhotonOS.sh + Install-PwshGalleryOnPhotonOS.ps1```
+```Pwsh6.2.3OnPhotonOS.sh```
 -
-These scripts are unfinished attempts to install Powershell Core v.7.0.0 (Preview4) and registered PSGallery on Photon OS without the use of Mono with nuget.exe
+The script is an unfinished attempt to install Powershell Core v.6.2.3 and registered PSGallery on Photon OS without the use of Mono with nuget.exe. Work still in progress (Install-PwshGalleryOnPhotonOS.ps1, Pwsh7OnPhotonOS.sh, Pwsh6.2.3OnPhotonOS.sh).
