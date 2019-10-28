@@ -15,10 +15,6 @@
 #
 # 
 
-DownloadURL="https://github.com/PowerShell/PowerShell/releases/download/v6.2.3/powershell-6.2.3-linux-x64.tar.gz"
-ReleaseDir="6.2.3"
-
-
 # install the requirements
 tdnf install -y \
         tar \
@@ -31,14 +27,23 @@ tdnf install -y \
 
 cd /tmp
 
-# Install built-in powershell
-tdnf install -y powershell
-PwshLink=/usr/bin/pwsh
+# First, install powershell 6.0.5
+DownloadURL="https://github.com/PowerShell/PowerShell/releases/download/v6.0.5/powershell-6.0.5-linux-x64.tar.gz"
+ReleaseDir="6.0.5"
+# Download the powershell '.tar.gz' archive
+curl -L $DownloadURL -o /tmp/powershell.tar.gz
+# Create the target folder where powershell will be placed
+mkdir -p /opt/microsoft/powershell/$ReleaseDir
+# Expand powershell to the target folder
+tar zxf /tmp/powershell.tar.gz -C /opt/microsoft/powershell/$ReleaseDir
+# Set execute permissions
+chmod +x /opt/microsoft/powershell/$ReleaseDir/pwsh
+# Create the symbolic link that points to pwsh
+ln -s /opt/microsoft/powershell/$ReleaseDir/pwsh /usr/bin/$PwshLink
+PwshLink=Pwsh$ReleaseDir
 
-OUTPUT=`$PwshLink -c "get-psrepository"`
-if (echo $OUTPUT | grep -q "PSGallery"); then echo "PSGallery is registered.";
-else
-echo "PSGallery not detected as registered. Executing Install-PwshGalleryOnPhotonOs.ps1 ..."
+
+echo "Executing Install-PwshGalleryOnPhotonOs.ps1 ..."
 
 IFS='' read -r -d '' PSContent1 << "EOF1"
 function LogfileAppend($text)
@@ -261,37 +266,39 @@ EOFHere
 
 $PwshLink -c "/tmp/Install-PwshGalleryOnPhotonOs.ps1"
 
-# # Download the powershell '.tar.gz' archive
-# curl -L $DownloadURL -o /tmp/powershell.tar.gz
-
-# # Create the target folder where powershell will be placed
-# mkdir -p /opt/microsoft/powershell/$ReleaseDir
-
-# # Expand powershell to the target folder
-# tar zxf /tmp/powershell.tar.gz -C /opt/microsoft/powershell/$ReleaseDir
-
-# # Set execute permissions
-# chmod +x /opt/microsoft/powershell/$ReleaseDir/pwsh
-
-# # Create the symbolic link that points to pwsh
-# ln -s /opt/microsoft/powershell/$ReleaseDir/pwsh /usr/bin/$PwshLink
-
-# PwshLink=Pwsh$ReleaseDir
-
-# Check1: PSGallery is registered as "Trusted".
 OUTPUT=`$PwshLink -c "get-psrepository"`
-if (echo $OUTPUT | grep -q "PSGallery"); then echo "PSGallery is registered.";
+if (echo $OUTPUT | grep -q "PSGallery"); then
+	echo "PSGallery is registered."
+	# Then, rollup installation to powershell 6.2.3
+	DownloadURL="https://github.com/PowerShell/PowerShell/releases/download/v6.2.3/powershell-6.2.3-linux-x64.tar.gz"
+	ReleaseDir="6.2.3"
+	# Download the powershell '.tar.gz' archive
+	curl -L $DownloadURL -o /tmp/powershell.tar.gz
+	# Create the target folder where powershell will be placed
+	mkdir -p /opt/microsoft/powershell/$ReleaseDir
+	# Expand powershell to the target folder
+	tar zxf /tmp/powershell.tar.gz -C /opt/microsoft/powershell/$ReleaseDir
+	# Set execute permissions
+	chmod +x /opt/microsoft/powershell/$ReleaseDir/pwsh
+	# Create the symbolic link that points to pwsh
+	ln -s /opt/microsoft/powershell/$ReleaseDir/pwsh /usr/bin/$PwshLink
+	PwshLink=Pwsh$ReleaseDir
+	
+	# Check: PSGallery is registered as "Trusted".
+	OUTPUT=`$PwshLink -c "get-psrepository"`
+	if (echo $OUTPUT | grep -q "PSGallery"); then
+		echo "PSGallery is registered.";
+		# Check: PSGallery is browseable using "find-module".
+		OUTPUT=`$PwshLink -c "find-module VMware.PowerCLI"`
+		if (echo $OUTPUT | grep -q "PSGallery"); then echo "PSGallery is browseable.";
+		else
+		echo "ERROR: PSGallery not detected as browseable. Executing Install-PwshGalleryOnPhotonOs.ps1 failed."
+		fi		
+	else
+	echo "ERROR: PSGallery not detected as registered. Executing Install-PwshGalleryOnPhotonOs.ps1 failed."
+	fi	
 else
-echo "ERROR: PSGallery not detected as registered. Executing Install-PwshGalleryOnPhotonOs.ps1 failed."
-fi
-
-# Check2: PSGallery is browseable using "find-module".
-OUTPUT=`$PwshLink -c "find-module VMware.PowerCLI"`
-if (echo $OUTPUT | grep -q "PSGallery"); then echo "PSGallery is browseable.";
-else
-echo "ERROR: PSGallery not detected as browseable. Executing Install-PwshGalleryOnPhotonOs.ps1 failed."
-fi
-
+	echo "PSGallery not detected as registered. Executing Install-PwshGalleryOnPhotonOs.ps1 failed."
 fi
 
 # Cleanup
