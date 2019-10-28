@@ -52,13 +52,14 @@ if (echo $OUTPUT | grep -q "PSGallery"); then echo "PSGallery is registered.";
 else
 echo "PSGallery not detected as registered. Executing Install-PwshGalleryOnPhotonOs.ps1 ..."
 
-PowershellContent='
+PowershellContent1='
 function LogfileAppend($text)
 {
 	$TimeStamp = (get-date).ToString('dd.MM.yyyy HH:mm:ss.fff')
 	Write-Host $TimeStamp  $text
 }
-
+'
+PowershellContent2='
 function workaround.Find-ModuleAllVersions
 {
 	# https://stackoverflow.com/questions/37486587/powershell-v5-how-to-install-modules-to-a-computer-having-no-internet-connecti
@@ -105,7 +106,8 @@ function workaround.Find-ModuleAllVersions
 		}
 	}
 }
-
+'
+PowershellContent3='
 function workaround.Save-Module
 {
 	param (
@@ -136,7 +138,8 @@ function workaround.Save-Module
 	$rc = Get-Item $Path
 	return $rc
 }
-
+'
+PowershellContent4='
 function workaround.Install-NugetPkgOnLinux
 {
 	param (
@@ -184,7 +187,8 @@ function workaround.Install-NugetPkgOnLinux
 	catch { }
 	return ($destinationpath)
 }
-
+'
+PowershellContent5='
 function workaround.PwshGalleryPrerequisites
 {
 	$PwshGalleryInstalled = $false
@@ -254,7 +258,11 @@ if ((Get-PSRepository -name psgallery | %{ $_.InstallationPolicy -match "Untrust
 '
 
 cat <<EOF > /tmp/Install-PwshGalleryOnPhotonOs.ps1
-PowershellContent
+$PowershellContent1
+$PowershellContent2
+$PowershellContent3
+$PowershellContent4
+$PowershellContent5
 EOF
 
 $PwshLink -c "/tmp/Install-PwshGalleryOnPhotonOs.ps1"
