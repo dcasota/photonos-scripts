@@ -271,9 +271,6 @@ $PSContent4
 $PSContent5
 EOFHere
 
-echo sleep
-sleep 1000
-
 $PwshLink -c "/tmp/Install-PwshGalleryOnPhotonOs.ps1"
 
 OUTPUT=`$PwshLink -c "get-psrepository"`
