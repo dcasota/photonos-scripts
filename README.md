@@ -49,7 +49,8 @@ whoami
 
 ```PowerCLI and Powershell(Gallery) on Photon OS```
 -
-The following scripts are related to PowerCLI and to Powershell(Gallery) on Photon OS as these functionalities are not built-in available, at least as per October 2019. There are a few approaches. The following overview helps to choose the appropriate solution.
+The described scripts are related to PowerCLI and to Powershell(Gallery) on Photon OS as these two functionalities are not built-in available, at least as per October 2019.
+There are few approaches. The following overview helps to choose the appropriate solution.
 
 ![Status Oct19](https://github.com/dcasota/photonos-scripts/blob/master/Status_Oct19.png)
 
