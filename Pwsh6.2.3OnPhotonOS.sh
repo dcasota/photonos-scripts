@@ -286,7 +286,7 @@ fi
 
 # Cleanup
 rm /tmp/powershell.tar.gz
-rm /tmp/Install-PwshGalleryOnPhotonOs.ps1
+# rm /tmp/Install-PwshGalleryOnPhotonOs.ps1
 tdnf clean all
 
 # Run Powershell
