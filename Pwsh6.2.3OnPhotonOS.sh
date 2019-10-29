@@ -358,7 +358,7 @@ IFS='' read -r -d '' PSContent5 << "EOF5"
                 }
 				$rc = workaround.Find-ModuleAllVersions -name powershellget -version "$PowershellgetVersion" | workaround.Save-Module -Path "$PSHome/Modules"
 				LogfileAppend("Installing Powershellget release $PowershellgetVersion : return code $rc")				
-				$rc = workaround.Install-NugetPkgOnLinux "PackageManagement" "$PackageManagementVersion" $rc.name "$PSHome/Modules" "$PSHome/Modules"
+				$rc = workaround.Install-NugetPkgOnLinux "PowerShellGet" "$PowershellgetVersion" $rc.name "$PSHome/Modules" "$PSHome/Modules"
 				LogfileAppend("Installing Powershellget release $PowershellgetVersion done : return code $rc")				
 			}				
 		}
