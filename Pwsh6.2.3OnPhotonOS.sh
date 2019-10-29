@@ -110,11 +110,11 @@ rm /tmp/powershell.tar.gz
 
 OUTPUT=`$PwshLink -c "get-psrepository"`
 if (echo $OUTPUT | grep -q "PSGallery"); then
-	echo "PSGallery is registered."
+	echo "$PwshLink: PSGallery is registered."
 	# Check: PSGallery is browseable using "find-module".
 	OUTPUT=`$PwshLink -c "find-module VMware.PowerCLI"`
 	if (echo $OUTPUT | grep -q "PSGallery"); then
-		echo "PSGallery is browseable."
+		echo "$PwshLink: PSGallery is browseable."
 		echo "$PwshLink: All provisioning tests successfully processed."
 	else
 		echo "ERROR: PSGallery not detected as browseable."
@@ -126,37 +126,7 @@ fi
 
 # Side-by-side installation of Powershell Core 6.2.3
 # --------------------------------------------------
-
-# 1) Prerequisites 
-# Shared, manually installed Powershell Core modules must be maintained by your own.
-# Hence, all shareable PackageManagement and PowerShellget rollforward releases are installed as prerequisites.
-$PwshLink -c 'install-module -name PackageManagement -RequiredVersion 1.1.7.2 -force -confirm:$false'
-$PwshLink -c 'install-module -name PackageManagement -RequiredVersion 1.2.2 -force -confirm:$false'
-$PwshLink -c 'install-module -name PackageManagement -RequiredVersion 1.2.4 -force -confirm:$false'
-$PwshLink -c 'install-module -name PackageManagement -RequiredVersion 1.3.1 -force -confirm:$false'
-$PwshLink -c 'install-module -name PackageManagement -RequiredVersion 1.3.2 -force -confirm:$false'
-$PwshLink -c 'install-module -name PackageManagement -RequiredVersion 1.4 -force -confirm:$false'
-$PwshLink -c 'install-module -name PackageManagement -RequiredVersion 1.4.1 -force -confirm:$false'
-$PwshLink -c 'install-module -name PackageManagement -RequiredVersion 1.4.2 -force -confirm:$false'
-$PwshLink -c 'install-module -name PackageManagement -RequiredVersion 1.4.3 -force -confirm:$false'
-$PwshLink -c 'install-module -name PackageManagement -RequiredVersion 1.4.4 -force -confirm:$false'
-$PwshLink -c 'install-module -name PackageManagement -RequiredVersion 1.4.5 -force -confirm:$false'
-
-$PwshLink -c 'install-module -name PowerShellGet -RequiredVersion 1.6.7 -force -confirm:$false'
-$PwshLink -c 'install-module -name PowerShellGet -RequiredVersion 2.0.0 -force -confirm:$false'
-$PwshLink -c 'install-module -name PowerShellGet -RequiredVersion 2.0.1 -force -confirm:$false'
-$PwshLink -c 'install-module -name PowerShellGet -RequiredVersion 2.0.3 -force -confirm:$false'
-$PwshLink -c 'install-module -name PowerShellGet -RequiredVersion 2.0.4 -force -confirm:$false'
-$PwshLink -c 'install-module -name PowerShellGet -RequiredVersion 2.1.0 -force -confirm:$false'
-$PwshLink -c 'install-module -name PowerShellGet -RequiredVersion 2.1.1 -force -confirm:$false'
-$PwshLink -c 'install-module -name PowerShellGet -RequiredVersion 2.1.2 -force -confirm:$false'
-$PwshLink -c 'install-module -name PowerShellGet -RequiredVersion 2.1.3 -force -confirm:$false'
-$PwshLink -c 'install-module -name PowerShellGet -RequiredVersion 2.1.4 -force -confirm:$false'
-$PwshLink -c 'install-module -name PowerShellGet -RequiredVersion 2.1.5 -force -confirm:$false'
-$PwshLink -c 'install-module -name PowerShellGet -RequiredVersion 2.2 -force -confirm:$false'
-$PwshLink -c 'install-module -name PowerShellGet -RequiredVersion 2.2.1 -force -confirm:$false'
-
-# 2) Install Powershell 6.2.3 
+# 1) Install Powershell 6.2.3 
 DownloadURL="https://github.com/PowerShell/PowerShell/releases/download/v6.2.3/powershell-6.2.3-linux-x64.tar.gz"
 ReleaseDir="6.2.3"
 PwshLink=Pwsh$ReleaseDir	
@@ -175,11 +145,11 @@ rm /tmp/powershell.tar.gz
 
 OUTPUT=`$PwshLink -c "get-psrepository"`
 if (echo $OUTPUT | grep -q "PSGallery"); then
-	echo "PSGallery is registered."
+	echo "$PwshLink: PSGallery is registered."
 	# Check: PSGallery is browseable using "find-module".
 	OUTPUT=`$PwshLink -c "find-module VMware.PowerCLI"`
 	if (echo $OUTPUT | grep -q "PSGallery"); then
-		echo "PSGallery is browseable."
+		echo "$PwshLink: PSGallery is browseable."
 		echo "$PwshLink: All provisioning tests successfully processed."
 	else
 		echo "ERROR: PSGallery not detected as browseable."
@@ -409,6 +379,66 @@ $PSContent4
 	\$PowershellgetVersion="1.6.7"
 $PSContent5
 EOF1172167
+$PwshLink -c "/tmp/tmp1.ps1"
+
+cat <<EOF145221 > /tmp/tmp2.ps1
+# Post-installation for PowerShell 6.2.3
+$PSContent1
+$PSContent2
+$PSContent3
+$PSContent4
+	\$PackageManagementVersion="1.4.5"
+	\$PowershellgetVersion="2.2.1"
+$PSContent5
+EOF145221
+$PwshLink -c "/tmp/tmp2.ps1"
+
+cat <<EOF132213 > /tmp/tmp3.ps1
+# Post-installation for PowerShell 6.2.3
+$PSContent1
+$PSContent2
+$PSContent3
+$PSContent4
+	\$PackageManagementVersion="1.3.2"
+	\$PowershellgetVersion="2.1.3"
+$PSContent5
+EOF132213
+$PwshLink -c "/tmp/tmp3.ps1"
+
+# Packagemanagement
+#     1.4.5
+#     1.4.4
+#     1.4.3
+#     1.4.2
+#     1.4.1
+#     1.4
+#     1.3.2
+#     1.3.1
+#     1.2.4
+#     1.2.2
+#     1.1.7.2
+#     1.1.7.0
+#     1.1.6.0
+#     1.1.4.0
+#     1.1.3.0
+#     1.1.1.0
+#     1.1.0.0
+#
+# Powershellget
+#     2.2.1
+#     2.2
+#     2.1.5
+#     2.1.4
+#     2.1.3
+#     2.1.2
+#     2.1.1
+#     2.1.0
+#     2.0.4
+#     2.0.3
+#     2.0.1
+#     2.0.0
+#     1.6.7
+
 
 
 
@@ -447,11 +477,11 @@ EOF1172167
 
 OUTPUT=`$PwshLink -c "get-psrepository"`
 if (echo $OUTPUT | grep -q "PSGallery"); then
-	echo "PSGallery is registered."	
+	echo "$PwshLink: PSGallery is registered."	
 	# Check: PSGallery is browseable using "find-module".
 	OUTPUT=`$PwshLink -c "find-module VMware.PowerCLI"`
 	if (echo $OUTPUT | grep -q "PSGallery"); then
-		echo "PSGallery is browseable."
+		echo "$PwshLink: PSGallery is browseable."
 		echo "$PwshLink: All provisioning tests successfully processed."		
 	else
 		echo "ERROR: PSGallery not detected as browseable. Executing Install-PwshGalleryOnPhotonOs.ps1 failed."
