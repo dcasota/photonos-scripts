@@ -13,10 +13,51 @@
 #
 # Powershell Core 6.2.3 on Vmware Photon OS does not built-in provide PSGallery functionality.
 #
-# Using Powershell Core 6.2.3 built-in packagemanagement 1.3.2 and powershellget 2.1.3 releases the cmdlets find-module, get-psrepository and install-module produce errors.
+# Using Powershell Core 6.2.3 built-in packagemanagement 1.3.2 and powershellget 2.1.3 releases the cmdlets find-module, get-psrepository and install-module produce errors. This can be fixed.
 #
-# This can be fixed. The old Powershell Core 6.0.5 release is the baseline. find-module, get-psrepository and install-module work fine. It uses packagemanagement 1.1.7.2 and powershellget 1.6.7.
-# This script installs Powershell Core 6.0.5 with additional packagemanagement and powershellget releases, then it side-by-side installs Powershell Core 6.2.3 to enable PSGallery functionality.
+# In Powershell Core 6.0.5 release the modules find-module, get-psrepository and install-module work fine. The release uses
+# - PackageManagement 1.1.7.2,
+# - PowerShellget 1.6.7,
+# - PackageProvider Nuget 2.8.5.210,
+# - PackageProvider PowerShellGet 1.6.7,
+# - and PSGallery is registered.
+# 
+# 
+# This script installs Powershell Core 6.0.5, then it side-by-side installs Powershell Core 6.2.3. The workaround functions install a working set for
+# - PackageManagement 1.1.7.2, and 1.4.5,
+# - PowerShellget 1.6.7,
+# - PackageProvider Nuget 3.0.0.1,
+# - PackageProvider PowerShellGet 1.6.7,
+# - and registered PSGallery .
+
+get-module -listavailable
+
+
+    Directory: /opt/microsoft/powershell/6.2.3/Modules
+
+ModuleType Version    Name                                PSEdition ExportedCommands
+---------- -------    ----                                --------- ----------------
+Manifest   1.2.3.0    Microsoft.PowerShell.Archive        Desk      {Compress-Archive, Expand-Archive}
+Manifest   6.1.0.0    Microsoft.PowerShell.Host           Core      {Start-Transcript, Stop-Transcript}
+Manifest   6.1.0.0    Microsoft.PowerShell.Management     Core      {Add-Content, Clear-Content, Clear-ItemProperty, Join-Path…}
+Manifest   6.1.0.0    Microsoft.PowerShell.Security       Core      {Get-Credential, Get-ExecutionPolicy, Set-ExecutionPolicy, ConvertFrom-SecureString…}
+Manifest   6.1.0.0    Microsoft.PowerShell.Utility        Core      {Export-Alias, Get-Alias, Import-Alias, New-Alias…}
+Script     1.4.5      PackageManagement                   Desk      {Find-Package, Get-Package, Get-PackageProvider, Get-PackageSource…}
+Script     1.1.7.2    PackageManagement                   Desk      {Find-Package, Get-Package, Get-PackageProvider, Get-PackageSource…}
+Script     1.6.7      PowerShellGet                       Desk      {Find-Command, Find-DSCResource, Find-Module, Find-RoleCapability…}
+Script     0.0        PSDesiredStateConfiguration         Desk      {Node, Get-ComplexResourceQualifier, Get-PSMetaConfigurationProcessed, Get-MofInstanceName…}
+Script     2.0.0      PSReadLine                          Desk      {Get-PSReadLineKeyHandler, Set-PSReadLineKeyHandler, Remove-PSReadLineKeyHandler, Get-PSReadLineOption…}
+Binary     1.1.2      ThreadJob                           Desk      Start-ThreadJob
+
+PS /tmp> get-packageprovider
+
+Name                     Version          DynamicOptions
+----                     -------          --------------
+NuGet                    3.0.0.1          Destination, ExcludeVersion, Scope, SkipDependencies, Headers, FilterOnTag, Contains, AllowPrereleaseVersions, ConfigFile, SkipValidate
+PowerShellGet            1.6.7.0          PackageManagementProvider, Type, Scope, AllowClobber, SkipPublisherCheck, InstallUpdate, NoPathUpdate, AllowPrereleaseVersions, Filter, Tag, Includes, DscResour…
+
+
+
 #
 #
 # This script contains workaround functions to ensure the import of specific modules. The idea is to find a combination of packagemanagement and
@@ -391,7 +432,7 @@ $PSContent5
 EOF1172167
 $PwshLink -c "/tmp/tmp1.ps1"
 
-cat <<EOF145167 > /tmp/tmp1.ps1
+cat <<EOF145167 > /tmp/tmp2.ps1
 # Post-installation for PowerShell 6.2.3
 $PSContent1
 $PSContent2
@@ -401,7 +442,11 @@ $PSContent4
 	\$PowershellgetVersion="1.6.7"
 $PSContent5
 EOF145167
-$PwshLink -c "/tmp/tmp1.ps1"
+$PwshLink -c "/tmp/tmp2.ps1"
+
+# 6.0.5: 	find-packageprovider
+# 		(Get-packageProvider -name nuget).ProviderPath
+# 6.2.3: tmp1
 
 OUTPUT=`$PwshLink -c "get-psrepository"`
 if (echo $OUTPUT | grep -q "PSGallery"); then
