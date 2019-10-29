@@ -333,7 +333,9 @@ function workaround.Install-NugetPkgOnLinux
 		{
 			LogfileAppend("Unzipping $Sourcefile to $destinationpath ...")	
 			unzip -o $Sourcefile -d $destinationpath
-		
+			
+			chmod 755 $destinationpath/*
+			
 			LogfileAppend("Removing $sourcefile ...")
 			remove-item -path ($Sourcefile) -force -recurse -confirm:$false
 			
