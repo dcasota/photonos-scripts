@@ -11,9 +11,13 @@
 #    VMware Photon OS 3.0
 #
 #
-# The old Powershell Core 6.0.5 release is the baseline. find-module, get-psrepository and install-module work fine. It uses packagemanagement 1.1.7.2 and powershellget 1.6.7.
-# 
+# Powershell Core 6.2.3 on Vmware Photon OS does not built-in provide PSGallery functionality.
+#
 # Using Powershell Core 6.2.3 built-in packagemanagement 1.3.2 and powershellget 2.1.3 releases the cmdlets find-module, get-psrepository and install-module produce errors.
+#
+# This can be fixed. The old Powershell Core 6.0.5 release is the baseline. find-module, get-psrepository and install-module work fine. It uses packagemanagement 1.1.7.2 and powershellget 1.6.7.
+# This script installs Powershell Core 6.0.5 with additional packagemanagement and powershellget releases, then it side-by-side installs Powershell Core 6.2.3 to enable PSGallery functionality.
+#
 #
 # This script contains workaround functions to ensure the import of specific modules. The idea is to find a combination of packagemanagement and
 # powershellget releases with workaround functions which re-ensure the use of find-module, get-psrepository and install-module.
@@ -120,11 +124,37 @@ else
 fi
 
 
-# Side-by-side installation of Powershell 6.2.3
-# ----------------------------------------------
-# 1) Prerequisite: Install PackageManagement 1.1.7.2 and PowerShellGet 1.6.7
+# Side-by-side installation of Powershell Core 6.2.3
+# --------------------------------------------------
+
+# 1) Prerequisites 
+# Shared, manually installed Powershell Core modules must be maintained by your own.
+# Hence, all shareable PackageManagement and PowerShellget rollforward releases are installed as prerequisites.
 $PwshLink -c 'install-module -name PackageManagement -RequiredVersion 1.1.7.2 -force -confirm:$false'
-$PwshLink -c 'install-module -name PowershellGet -RequiredVersion 1.6.7 -force -confirm:$false'
+$PwshLink -c 'install-module -name PackageManagement -RequiredVersion 1.2.2 -force -confirm:$false'
+$PwshLink -c 'install-module -name PackageManagement -RequiredVersion 1.2.4 -force -confirm:$false'
+$PwshLink -c 'install-module -name PackageManagement -RequiredVersion 1.3.1 -force -confirm:$false'
+$PwshLink -c 'install-module -name PackageManagement -RequiredVersion 1.3.2 -force -confirm:$false'
+$PwshLink -c 'install-module -name PackageManagement -RequiredVersion 1.4 -force -confirm:$false'
+$PwshLink -c 'install-module -name PackageManagement -RequiredVersion 1.4.1 -force -confirm:$false'
+$PwshLink -c 'install-module -name PackageManagement -RequiredVersion 1.4.2 -force -confirm:$false'
+$PwshLink -c 'install-module -name PackageManagement -RequiredVersion 1.4.3 -force -confirm:$false'
+$PwshLink -c 'install-module -name PackageManagement -RequiredVersion 1.4.4 -force -confirm:$false'
+$PwshLink -c 'install-module -name PackageManagement -RequiredVersion 1.4.5 -force -confirm:$false'
+
+$PwshLink -c 'install-module -name PowerShellGet -RequiredVersion 1.6.7 -force -confirm:$false'
+$PwshLink -c 'install-module -name PowerShellGet -RequiredVersion 2.0.0 -force -confirm:$false'
+$PwshLink -c 'install-module -name PowerShellGet -RequiredVersion 2.0.1 -force -confirm:$false'
+$PwshLink -c 'install-module -name PowerShellGet -RequiredVersion 2.0.3 -force -confirm:$false'
+$PwshLink -c 'install-module -name PowerShellGet -RequiredVersion 2.0.4 -force -confirm:$false'
+$PwshLink -c 'install-module -name PowerShellGet -RequiredVersion 2.1.0 -force -confirm:$false'
+$PwshLink -c 'install-module -name PowerShellGet -RequiredVersion 2.1.1 -force -confirm:$false'
+$PwshLink -c 'install-module -name PowerShellGet -RequiredVersion 2.1.2 -force -confirm:$false'
+$PwshLink -c 'install-module -name PowerShellGet -RequiredVersion 2.1.3 -force -confirm:$false'
+$PwshLink -c 'install-module -name PowerShellGet -RequiredVersion 2.1.4 -force -confirm:$false'
+$PwshLink -c 'install-module -name PowerShellGet -RequiredVersion 2.1.5 -force -confirm:$false'
+$PwshLink -c 'install-module -name PowerShellGet -RequiredVersion 2.2 -force -confirm:$false'
+$PwshLink -c 'install-module -name PowerShellGet -RequiredVersion 2.2.1 -force -confirm:$false'
 
 # 2) Install Powershell 6.2.3 
 DownloadURL="https://github.com/PowerShell/PowerShell/releases/download/v6.2.3/powershell-6.2.3-linux-x64.tar.gz"
@@ -379,10 +409,38 @@ $PSContent4
 	\$PowershellgetVersion="1.6.7"
 $PSContent5
 EOF1172167
-# 3) Post-installation script
-# $PwshLink -c "/tmp/tmp1.ps1"
+
+
+
+# 2) Remove all Powershellget and PackageManagement modules
+#rm -r /opt/microsoft/powershell/6.2.3/Modules/PackageManagement
+#rm -r /opt/microsoft/powershell/6.2.3/Modules/PowerShellGet
+#rm -r /usr/local/share/powershell/Modules/PackageManagement
+#rm -r /usr/local/share/powershell/Modules/PowerShellGet
+#rm -r /root/.cache/powershell/PowerShellGet
+#rm -r /root/.cache/powershell/PackageManagement
+#
+# 3) Install fixed module releases PackageManagement 1.1.7.2 and PowerShellGet 1.6.7
+#mkdir -p /opt/microsoft/powershell/6.2.3/Modules/PackageManagement/1.1.7.2/
+#cp -Rv /opt/microsoft/powershell/6.0.5/Modules/PackageManagement/1.1.7.2/ /opt/microsoft/powershell/6.2.3/Modules/PackageManagement/
+#$PwshLink -c "import-module /opt/microsoft/powershell/6.2.3/Modules/PackageManagement/1.1.7.2/PackageManagement.psd1 -Scope Global -verbose"
+#$PwshLink -c "import-module /opt/microsoft/powershell/6.2.3/Modules/PackageManagement/1.1.7.2/PackageManagement.psd1 -Scope Local -verbose"
+#
+#mkdir -p /opt/microsoft/powershell/6.2.3/Modules/PowerShellGet/1.6.7/
+#cp -Rv /opt/microsoft/powershell/6.0.5/Modules/PowerShellGet/1.6.7/ /opt/microsoft/powershell/6.2.3/Modules/PowerShellGet/
+#$PwshLink -c "import-module /opt/microsoft/powershell/6.2.3/Modules/PowerShellGet/1.6.7/PowerShellGet.psd1 -Scope Global -verbose"
+#$PwshLink -c "import-module /opt/microsoft/powershell/6.2.3/Modules/PowerShellGet/1.6.7/PowerShellGet.psd1 -Scope Local -verbose"
+#
+#mkdir /opt/microsoft/powershell/6.2.3/Modules/PackageManagement
+#mkdir /opt/microsoft/powershell/6.2.3/Modules/PowerShellGet
+#mkdir /usr/local/share/powershell/Modules/PackageManagement
+#mkdir /usr/local/share/powershell/Modules/PowerShellGet
+#$PwshLink -c "/tmp/tmp1.ps1"
+#
+# Get-Module -ListAvailable PowerShellGet,PackageManagement
+#
 # import-packageprovider -name NuGet -RequiredVersion 3.0.0.1
-# rm -r /opt/microsoft/powershell/6.2.3/Modules/PackageManagement
+
 # rm -r /usr/local/share/powershell/Modules/PackageManagement/1.4.5
 # unregister-psrepository -name PSGallery
 # register-psrepository -Default
