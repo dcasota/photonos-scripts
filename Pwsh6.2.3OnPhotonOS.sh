@@ -256,6 +256,10 @@ function workaround.Install-NugetPkgOnLinux
 {
 	param (
 		[parameter(Mandatory = $true)]
+		[string]$PackageName,
+		[parameter(Mandatory = $true)]
+		[string]$PackageVersion,
+		[parameter(Mandatory = $true)]
 		[string]$filename,
 		[parameter(Mandatory = $true)]
 		[string]$sourcepath,
@@ -268,32 +272,34 @@ function workaround.Install-NugetPkgOnLinux
 	
 	try
 	{
-		$PackageName = ([System.IO.Path]::GetFileNameWithoutExtension($filename))
+		$PackageFileName = ([System.IO.Path]::GetFileNameWithoutExtension($filename))
 		$SourceFile = $sourcepath + $PathDelimiter + $filename
-		$destinationpath = $destination + $PathDelimiter + $PackageName
+		$destinationpath = $destination + $PathDelimiter + $PackageName + $PathDelimiter + $PackageVersion
 				
         $i = 1
         $VersionString=""
-        for ($i;$i -le (-1 + ($PackageName.split(".")).count);$i++)
+        for ($i;$i -le (-1 + ($PackageFileName.split(".")).count);$i++)
         {
-            if ($Versionstring -eq "") {$Versionstring = ($PackageName.split("."))[$i]}
-            else { $VersionString = $VersionString + "." + ($PackageName.split("."))[$i]}
+            if ($Versionstring -eq "") {$Versionstring = ($PackageFileName.split("."))[$i]}
+            else { $VersionString = $VersionString + "." + ($PackageFileName.split("."))[$i]}
         }
 		LogfileAppend("VersionString = $VersionString")
-
-        # TODO assembling directory name by using version number out of packagename or out of leading subdirectory
-		LogfileAppend("Unzipping $Sourcefile to $destinationpath ...")	
-		unzip -o $Sourcefile -d $destinationpath
-	
-		LogfileAppend("Removing $sourcefile ...")
-		remove-item -path ($Sourcefile) -force -recurse -confirm:$false
 		
-		get-childitem -path $destinationpath -recurse -filter *.psd1| ? {
-			$TmpFile = $destinationpath + $PathDelimiter + $_.Name
-            try {
-				LogfileAppend("importing-name $TmpFile ...")			
-			    import-module -name $TmpFile -Scope Global -Verbose -force -erroraction silentlycontinue
-            } catch {}
+		if ($VersionString -imatch $PackageVersion)
+		{
+			LogfileAppend("Unzipping $Sourcefile to $destinationpath ...")	
+			unzip -o $Sourcefile -d $destinationpath
+		
+			LogfileAppend("Removing $sourcefile ...")
+			remove-item -path ($Sourcefile) -force -recurse -confirm:$false
+			
+			get-childitem -path $destinationpath -recurse -filter *.psd1| ? {
+				$TmpFile = $destinationpath + $PathDelimiter + $_.Name
+				try {
+					LogfileAppend("importing-name $TmpFile ...")			
+					import-module -name $TmpFile -Scope Global -Verbose -force -erroraction silentlycontinue
+				} catch {}
+			}
 		}
 	}
 	catch { }
@@ -330,7 +336,7 @@ IFS='' read -r -d '' PSContent5 << "EOF5"
                 }
 				$rc = workaround.Find-ModuleAllVersions -name packagemanagement -version "$PackageManagementVersion" | workaround.Save-Module -Path "$PSHome/Modules"
 				LogfileAppend("Installing Packagemanagement release $PackageManagementVersion : return code $rc")				
-				$rc = workaround.Install-NugetPkgOnLinux $rc.name "$PSHome/Modules" "$PSHome/Modules"
+				$rc = workaround.Install-NugetPkgOnLinux "PackageManagement" "$PackageManagementVersion" $rc.name "$PSHome/Modules" "$PSHome/Modules"
 				LogfileAppend("Installing Packagemanagement release $PackageManagementVersion done : return code $rc")						
 			}		
 			
@@ -352,7 +358,7 @@ IFS='' read -r -d '' PSContent5 << "EOF5"
                 }
 				$rc = workaround.Find-ModuleAllVersions -name powershellget -version "$PowershellgetVersion" | workaround.Save-Module -Path "$PSHome/Modules"
 				LogfileAppend("Installing Powershellget release $PowershellgetVersion : return code $rc")				
-				$rc = workaround.Install-NugetPkgOnLinux $rc.name "$PSHome/Modules" "$PSHome/Modules"
+				$rc = workaround.Install-NugetPkgOnLinux "PackageManagement" "$PackageManagementVersion" $rc.name "$PSHome/Modules" "$PSHome/Modules"
 				LogfileAppend("Installing Powershellget release $PowershellgetVersion done : return code $rc")				
 			}				
 		}
