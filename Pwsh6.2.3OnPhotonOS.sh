@@ -158,7 +158,7 @@ else
 	echo "PSGallery not detected as registered."
 fi
 	
-# Prepare post-installation powershell content
+# 2) Prepare post-installation powershell content
 IFS='' read -r -d '' PSContent1 << "EOF1"
 function LogfileAppend($text)
 {
@@ -375,6 +375,10 @@ workaround.PwshGalleryPrerequisites
 # if ((Get-PSRepository -name psgallery | %{ $_.InstallationPolicy -match "Untrusted" }) -eq $true) { set-psrepository -name PSGallery -InstallationPolicy Trusted }
 EOF5
 
+
+# 3) Powershell 6.2.3 needs a working set of Packageprovider {Nuget 3.0.0.1, PowerShellget 1.6.7}, modules PackageManagement {1.1.7.2, 1.4.5} and PowerShellGet 1.6.7 .
+# Hence, install the same set as in Powershell 6.0.5. It is PackageManagement 1.1.7.2 and PowerShellGet 1.6.7. With that, get-psrepository remains fine.
+# find-module, install-module , etc. isn't possible for the moment. The second install (PackageManagement 1.4.5 and PowerShellGet 1.6.7) fixes that as well.
 cat <<EOF1172167 > /tmp/tmp1.ps1
 # Post-installation for PowerShell 6.2.3
 $PSContent1
@@ -387,75 +391,17 @@ $PSContent5
 EOF1172167
 $PwshLink -c "/tmp/tmp1.ps1"
 
-# Packagemanagement
-#     1.4.5
-#     1.4.4
-#     1.4.3
-#     1.4.2
-#     1.4.1
-#     1.4
-#     1.3.2
-#     1.3.1
-#     1.2.4
-#     1.2.2
-#     1.1.7.2
-#     1.1.7.0
-#     1.1.6.0
-#     1.1.4.0
-#     1.1.3.0
-#     1.1.1.0
-#     1.1.0.0
-#
-# Powershellget
-#     2.2.1
-#     2.2
-#     2.1.5
-#     2.1.4
-#     2.1.3
-#     2.1.2
-#     2.1.1
-#     2.1.0
-#     2.0.4
-#     2.0.3
-#     2.0.1
-#     2.0.0
-#     1.6.7
-
-
-
-
-# 2) Remove all Powershellget and PackageManagement modules
-#rm -r /opt/microsoft/powershell/6.2.3/Modules/PackageManagement
-#rm -r /opt/microsoft/powershell/6.2.3/Modules/PowerShellGet
-#rm -r /usr/local/share/powershell/Modules/PackageManagement
-#rm -r /usr/local/share/powershell/Modules/PowerShellGet
-#rm -r /root/.cache/powershell/PowerShellGet
-#rm -r /root/.cache/powershell/PackageManagement
-#
-# 3) Install fixed module releases PackageManagement 1.1.7.2 and PowerShellGet 1.6.7
-#mkdir -p /opt/microsoft/powershell/6.2.3/Modules/PackageManagement/1.1.7.2/
-#cp -Rv /opt/microsoft/powershell/6.0.5/Modules/PackageManagement/1.1.7.2/ /opt/microsoft/powershell/6.2.3/Modules/PackageManagement/
-#$PwshLink -c "import-module /opt/microsoft/powershell/6.2.3/Modules/PackageManagement/1.1.7.2/PackageManagement.psd1 -Scope Global -verbose"
-#$PwshLink -c "import-module /opt/microsoft/powershell/6.2.3/Modules/PackageManagement/1.1.7.2/PackageManagement.psd1 -Scope Local -verbose"
-#
-#mkdir -p /opt/microsoft/powershell/6.2.3/Modules/PowerShellGet/1.6.7/
-#cp -Rv /opt/microsoft/powershell/6.0.5/Modules/PowerShellGet/1.6.7/ /opt/microsoft/powershell/6.2.3/Modules/PowerShellGet/
-#$PwshLink -c "import-module /opt/microsoft/powershell/6.2.3/Modules/PowerShellGet/1.6.7/PowerShellGet.psd1 -Scope Global -verbose"
-#$PwshLink -c "import-module /opt/microsoft/powershell/6.2.3/Modules/PowerShellGet/1.6.7/PowerShellGet.psd1 -Scope Local -verbose"
-#
-#mkdir /opt/microsoft/powershell/6.2.3/Modules/PackageManagement
-#mkdir /opt/microsoft/powershell/6.2.3/Modules/PowerShellGet
-#mkdir /usr/local/share/powershell/Modules/PackageManagement
-#mkdir /usr/local/share/powershell/Modules/PowerShellGet
-#$PwshLink -c "/tmp/tmp1.ps1"
-#
-# Get-Module -ListAvailable PowerShellGet,PackageManagement
-#
-# import-packageprovider -name NuGet -RequiredVersion 3.0.0.1
-
-# rm -r /usr/local/share/powershell/Modules/PackageManagement/1.4.5
-# unregister-psrepository -name PSGallery
-# register-psrepository -Default
+cat <<EOF145167 > /tmp/tmp1.ps1
+# Post-installation for PowerShell 6.2.3
+$PSContent1
+$PSContent2
+$PSContent3
+$PSContent4
+	\$PackageManagementVersion="1.4.5"
+	\$PowershellgetVersion="1.6.7"
+$PSContent5
+EOF145167
+$PwshLink -c "/tmp/tmp1.ps1"
 
 OUTPUT=`$PwshLink -c "get-psrepository"`
 if (echo $OUTPUT | grep -q "PSGallery"); then
