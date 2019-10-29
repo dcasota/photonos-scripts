@@ -16,18 +16,16 @@
 # Using Powershell Core 6.2.3 built-in packagemanagement 1.3.2 and powershellget 2.1.3 releases the cmdlets find-module, get-psrepository and install-module produce errors. This can be fixed.
 #
 # In Powershell Core 6.0.5 release the modules find-module, get-psrepository and install-module work fine. The release uses
-# - PackageManagement 1.1.7.2,
-# - PowerShellget 1.6.7,
-# - PackageProvider Nuget 2.8.5.210,
-# - PackageProvider PowerShellGet 1.6.7,
+# - Modules PackageManagement 1.1.7.2, and PowerShellget 1.6.7,
+# - PackageProvider Nuget 2.8.5.210, and owerShellGet 1.6.7,
 # - and PSGallery is registered.
 # 
 # 
-# This script installs Powershell Core 6.0.5, then it side-by-side installs Powershell Core 6.2.3. The workaround functions install a working set for
-# - PackageManagement 1.1.7.2, and 1.4.5,
-# - PowerShellget 1.6.7,
-# - PackageProvider Nuget 3.0.0.1,
-# - PackageProvider PowerShellGet 1.6.7,
+# This script installs Powershell Core 6.0.5, then it side-by-side installs Powershell Core 6.2.3.
+# The required version in built-in PowerShellGet 2.1.3 is PackageManagement 1.4, however the built-in PackageManagement release is 1.3.2.
+# To resolve this dependency the workaround installs
+# - Modules PackageManagement 1.1.7.2, and 1.4.5, and PowerShellget 1.6.7,
+# - PackageProvider Nuget 3.0.0.1, and PowerShellGet 1.6.7,
 # - and registered PSGallery .
 # 
 # get-module -listavailable
@@ -343,7 +341,7 @@ function workaround.Install-NugetPkgOnLinux
 				$TmpFile = $destinationpath + $PathDelimiter + $_.Name
 				try {
 					LogfileAppend("importing-name $TmpFile ...")			
-					import-module -name $TmpFile -Global -Verbose -force -erroraction silentlycontinue
+					import-module -name $TmpFile -Global -Scope Global -Verbose -force -erroraction silentlycontinue
 				} catch {}
 			}
 		}
@@ -422,10 +420,10 @@ workaround.PwshGalleryPrerequisites
 EOF5
 
 
-# 3) Powershell 6.2.3 needs a working set of Packageprovider {Nuget 3.0.0.1, PowerShellget 1.6.7}, modules PackageManagement {1.1.7.2, 1.4.5} and PowerShellGet 1.6.7 .
-# Hence, install the same set as in Powershell 6.0.5. It is PackageManagement 1.1.7.2 and PowerShellGet 1.6.7. With that, get-psrepository remains fine.
-# find-module, install-module , etc. isn't possible for the moment. The second install (PackageManagement 1.4.5 and PowerShellGet 1.6.7) fixes that as well.
-
+# 3) Powershell 6.2.3 needs a working set of
+#    - Packageprovider {Nuget 3.0.0.1, PowerShellget 1.6.7},
+#    - Modules PackageManagement {1.1.7.2, 1.4.5} and PowerShellGet 1.6.7
+#
 # First the latest and greatest PackageManagement and the Pwsh release-specific PowerShellGet release
 cat <<EOF145167 > /tmp/tmp2.ps1
 # Post-installation for PowerShell 6.2.3
@@ -437,8 +435,7 @@ $PSContent4
 	\$PowershellgetVersion="1.6.7"
 $PSContent5
 EOF145167
-$PwshLink -c "/tmp/tmp2.ps1"
-
+# $PwshLink -c "/tmp/tmp2.ps1"
 # Now downgrade PackageManagement to the working version
 cat <<EOF1172167 > /tmp/tmp1.ps1
 # Post-installation for PowerShell 6.2.3
@@ -450,11 +447,8 @@ $PSContent4
 	\$PowershellgetVersion="1.6.7"
 $PSContent5
 EOF1172167
-$PwshLink -c "/tmp/tmp1.ps1"
+# $PwshLink -c "/tmp/tmp1.ps1"
 
-# 6.0.5: 	find-packageprovider
-# 		(Get-packageProvider -name nuget).ProviderPath
-# 6.2.3: tmp1
 
 OUTPUT=`$PwshLink -c "get-psrepository"`
 if (echo $OUTPUT | grep -q "PSGallery"); then
