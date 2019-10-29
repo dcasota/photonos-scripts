@@ -378,13 +378,14 @@ $PSContent4
 	\$PackageManagementVersion="1.1.7.2"
 	\$PowershellgetVersion="1.6.7"
 $PSContent5
-
-unregister-psrepository -name PSGallery
-register-psrepository -Default
-import-packageprovider -name NuGet -RequiredVersion 3.0.0.1
 EOF1172167
 # 3) Post-installation script
-$PwshLink -c "/tmp/tmp1.ps1"
+# $PwshLink -c "/tmp/tmp1.ps1"
+# import-packageprovider -name NuGet -RequiredVersion 3.0.0.1
+# rm -r /opt/microsoft/powershell/6.2.3/Modules/PackageManagement
+# rm -r /usr/local/share/powershell/Modules/PackageManagement/1.4.5
+# unregister-psrepository -name PSGallery
+# register-psrepository -Default
 
 OUTPUT=`$PwshLink -c "get-psrepository"`
 if (echo $OUTPUT | grep -q "PSGallery"); then
