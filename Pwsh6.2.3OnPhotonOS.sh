@@ -294,19 +294,6 @@ EOF5
 
 
 # 3) Install working set of PackageManagement and PowerShellget
-
-cat <<EOF132213 > /tmp/tmp3.ps1
-# Post-installation for PowerShell 6.2.3
-$PSContent1
-$PSContent2
-$PSContent3
-$PSContent4
-	\$PackageManagementVersion="1.3.2"
-	\$PowershellgetVersion="2.1.3"
-$PSContent5
-EOF132213
-$PwshLink -c "/tmp/tmp3.ps1"
-
 cat <<EOF1172167 > /tmp/tmp1.ps1
 # Post-installation for PowerShell 6.2.3
 $PSContent1
@@ -317,7 +304,7 @@ $PSContent4
 	\$PowershellgetVersion="1.6.7"
 $PSContent5
 EOF1172167
-$PwshLink -c "/tmp/tmp1.ps1"
+# $PwshLink -c "/tmp/tmp1.ps1"
 # rm /tmp/tmp1.ps1
 
 OUTPUT=`$PwshLink -c "get-psrepository"`
