@@ -295,7 +295,7 @@ EOF5
 
 # 3) Install working set of PackageManagement and PowerShellget
 rm -r /opt/microsoft/powershell/6.2.3/Modules/PowerShellGet/
-
+mkdir /opt/microsoft/powershell/6.2.3/Modules/PowerShellGet/
 cat <<EOF1172167 > /tmp/tmp1.ps1
 # Post-installation for PowerShell 6.2.3
 $PSContent1
@@ -336,3 +336,4 @@ tdnf clean all
 # rm -r /root/.cache/powershell
 # rm -r /root/.local/share/powershell
 # rm -r /usr/local/share/powershell
+# rm -r /var/share/powershell
