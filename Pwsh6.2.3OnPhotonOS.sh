@@ -8,114 +8,17 @@
 # 0.1  28.10.2019   dcasota  UNFINISHED! WORK IN PROGRESS!
 #
 # Prerequisites:
-#    VMware Photon OS 3.0
+#    - VMware Photon OS 3.0
+#    - No Powershell release installed
 #
 #
-# Powershell Core 6.2.3 on Vmware Photon OS does not built-in provide PSGallery functionality.
-#
-# Using Powershell Core 6.2.3 built-in packagemanagement 1.3.2 and powershellget 2.1.3 releases the cmdlets find-module, get-psrepository and install-module produce errors. This can be fixed.
-#
-# In Powershell Core 6.0.5 release the modules find-module, get-psrepository and install-module work fine. The release uses
-# - Modules PackageManagement 1.1.7.2, and PowerShellget 1.6.7,
-# - PackageProvider Nuget 2.8.5.210, and owerShellGet 1.6.7,
-# - and PSGallery is registered.
+# "tndf install -y powershell" latest release is 6.1.0 and outdated (October 2019).
+# Simply manually installing Powershell Core 6.2.3, and using its built-in cmdlets find-module, get-psrepository and install-module produces errors.
+# This can be fixed. This script installs Powershell Core 6.2.3.
 # 
-# 
-# This script installs Powershell Core 6.0.5, then it side-by-side installs Powershell Core 6.2.3.
 # The required version in built-in PowerShellGet 2.1.3 is PackageManagement 1.4, however the built-in PackageManagement release is 1.3.2.
-# To resolve this dependency the workaround installs
-# - Modules PackageManagement 1.1.7.2, and 1.4.5, and PowerShellget 1.6.7,
-# - PackageProvider Nuget 3.0.0.1, and PowerShellGet 1.6.7,
-# - and registered PSGallery .
-# 
-# get-module -listavailable
-# 
-# 
-#     Directory: /opt/microsoft/powershell/6.2.3/Modules
-# 
-# ModuleType Version    Name                                PSEdition ExportedCommands
-# ---------- -------    ----                                --------- ----------------
-# Manifest   1.2.3.0    Microsoft.PowerShell.Archive        Desk      {Compress-Archive, Expand-Archive}
-# Manifest   6.1.0.0    Microsoft.PowerShell.Host           Core      {Start-Transcript, Stop-Transcript}
-# Manifest   6.1.0.0    Microsoft.PowerShell.Management     Core      {Add-Content, Clear-Content, Clear-ItemProperty, Join-Path…}
-# Manifest   6.1.0.0    Microsoft.PowerShell.Security       Core      {Get-Credential, Get-ExecutionPolicy, Set-ExecutionPolicy, ConvertFrom-SecureString…}
-# Manifest   6.1.0.0    Microsoft.PowerShell.Utility        Core      {Export-Alias, Get-Alias, Import-Alias, New-Alias…}
-# Script     1.4.5      PackageManagement                   Desk      {Find-Package, Get-Package, Get-PackageProvider, Get-PackageSource…}
-# Script     1.1.7.2    PackageManagement                   Desk      {Find-Package, Get-Package, Get-PackageProvider, Get-PackageSource…}
-# Script     1.6.7      PowerShellGet                       Desk      {Find-Command, Find-DSCResource, Find-Module, Find-RoleCapability…}
-# Script     0.0        PSDesiredStateConfiguration         Desk      {Node, Get-ComplexResourceQualifier, Get-PSMetaConfigurationProcessed, Get-MofInstanceName…}
-# Script     2.0.0      PSReadLine                          Desk      {Get-PSReadLineKeyHandler, Set-PSReadLineKeyHandler, Remove-PSReadLineKeyHandler, Get-PSReadLineOption…}
-# Binary     1.1.2      ThreadJob                           Desk      Start-ThreadJob
-# 
-# PS /tmp> get-packageprovider
-# 
-# Name                     Version          DynamicOptions
-# ----                     -------          --------------
-# NuGet                    3.0.0.1          Destination, ExcludeVersion, Scope, SkipDependencies, Headers, FilterOnTag, Contains, AllowPrereleaseVersions, ConfigFile, SkipValidate
-# PowerShellGet            1.6.7.0          PackageManagementProvider, Type, Scope, AllowClobber, SkipPublisherCheck, InstallUpdate, NoPathUpdate, AllowPrereleaseVersions, Filter, Tag, Includes, DscResour…
-# 
-# 
-# 
-#
-#
-# This script contains workaround functions to ensure the import of specific modules. The idea is to find a combination of packagemanagement and
-# powershellget releases with workaround functions which re-ensure the use of find-module, get-psrepository and install-module.
-#
-# Powershell Core
-# v7.0.0-preview.5
-# v7.0.0-preview.4
-# v6.2.3
-# v6.1.6
-# v7.0.0-preview.3
-# v7.0.0-preview.2
-# v6.2.2
-# v6.1.5
-# v7.0.0-preview.1
-# v6.2.1
-# 
-# Packagemanagement
-#     1.4.5
-#     1.4.4
-#     1.4.3
-#     1.4.2
-#     1.4.1
-#     1.4
-#     1.3.2
-#     1.3.1
-#     1.2.4
-#     1.2.2
-#     1.1.7.2
-#     1.1.7.0
-#     1.1.6.0
-#     1.1.4.0
-#     1.1.3.0
-#     1.1.1.0
-#     1.1.0.0
-#
-# Powershellget
-#     2.2.1
-#     2.2
-#     2.1.5
-#     2.1.4
-#     2.1.3
-#     2.1.2
-#     2.1.1
-#     2.1.0
-#     2.0.4
-#     2.0.3
-#     2.0.1
-#     2.0.0
-#     1.6.7
-#     1.6.6
-#     1.6.5
-#     1.6.0
-#     1.5.0.0
-#     1.1.3.2
-#     1.1.3.1
-#     1.1.2.0
-#     1.1.1.0
-#     1.1.0.0
-# 
+# To resolve this dependency the workaround in this script installs Modules PackageManagement 1.1.7.2 and PowerShellget 1.6.7.
+# As result, PackageProvider Nuget 2.8.5.210 and PowerShellGet 1.6.7.0 is installed, and PSgallery is registered.
 #
 
 # install the requirements
@@ -385,23 +288,7 @@ workaround.PwshGalleryPrerequisites
 EOF5
 
 
-# 3) Powershell 6.2.3 needs a working set of
-#    - Packageprovider {Nuget 3.0.0.1, PowerShellget 1.6.7},
-#    - Modules PackageManagement {1.1.7.2, 1.4.5} and PowerShellGet 1.6.7
-#
-# First the latest and greatest PackageManagement and the Pwsh release-specific PowerShellGet release
-cat <<EOF145167 > /tmp/tmp2.ps1
-# Post-installation for PowerShell 6.2.3
-$PSContent1
-$PSContent2
-$PSContent3
-$PSContent4
-	\$PackageManagementVersion="1.4.5"
-	\$PowershellgetVersion="1.6.7"
-$PSContent5
-EOF145167
-# $PwshLink -c "/tmp/tmp2.ps1"
-# Now downgrade PackageManagement to the working version
+# 3) Downgrade PackageManagement and PowerShellget to the working version
 cat <<EOF1172167 > /tmp/tmp1.ps1
 # Post-installation for PowerShell 6.2.3
 $PSContent1
@@ -412,8 +299,8 @@ $PSContent4
 	\$PowershellgetVersion="1.6.7"
 $PSContent5
 EOF1172167
-# $PwshLink -c "/tmp/tmp1.ps1"
-
+$PwshLink -c "/tmp/tmp1.ps1"
+# rm /tmp/tmp1.ps1
 
 OUTPUT=`$PwshLink -c "get-psrepository"`
 if (echo $OUTPUT | grep -q "PSGallery"); then
@@ -431,14 +318,14 @@ else
 fi
 
 # Cleanup
-# rm /tmp/Install-PwshGalleryOnPhotonOs.ps1
 tdnf clean all
 
 # Uninstall
 # rm /usr/bin/$PwshLink
 # rm -r /opt/microsoft/powershell/$ReleaseDir
-# Check if no other powershell release is installed which uses the following directories
-# rm -r /root/.cache/powershell
+# Uninstall of all powershell releases
+# rm /usr/bin/Pwsh*
 # rm -r /opt/microsoft/powershell
+# rm -r /root/.cache/powershell
 # rm -r /root/.local/share/powershell
 # rm -r /usr/local/share/powershell
