@@ -122,10 +122,10 @@ fi
 
 # Side-by-side installation of Powershell 6.2.3
 # Prerequisite bug: PowerShell 6.2.3 has a bug that its PowerShellget requires 1.4 or 1.4.4 or 1.1.7.0 or 1.1.7.2 however only PackageManagement 1.3.2 is built-in included.
-$PwshLink -c "install-module -name PackageManagement -RequiredVersion 1.4.4 -confirm:\$false"
-$PwshLink -c "install-module -name PackageManagement -RequiredVersion 1.4 -confirm:\$false"
-$PwshLink -c "install-module -name PackageManagement -RequiredVersion 1.1.7.2 -force -confirm:\$false"
-$PwshLink -c "install-module -name PackageManagement -RequiredVersion 1.1.7.0 -confirm:\$false"
+$PwshLink -c 'install-module -name PackageManagement -RequiredVersion 1.4.4 -force -confirm:$false'
+$PwshLink -c 'install-module -name PackageManagement -RequiredVersion 1.4 -force -confirm:$false'
+$PwshLink -c 'install-module -name PackageManagement -RequiredVersion 1.1.7.2 -force -confirm:$false'
+$PwshLink -c 'install-module -name PackageManagement -RequiredVersion 1.1.7.0 -force -confirm:$false'
 
 DownloadURL="https://github.com/PowerShell/PowerShell/releases/download/v6.2.3/powershell-6.2.3-linux-x64.tar.gz"
 ReleaseDir="6.2.3"
@@ -370,7 +370,7 @@ workaround.PwshGalleryPrerequisites
 # if ((Get-PSRepository -name psgallery | %{ $_.InstallationPolicy -match "Untrusted" }) -eq $true) { set-psrepository -name PSGallery -InstallationPolicy Trusted }
 EOF5
 
-cat <<EOF14213 > /tmp/Install-PwshGalleryOnPhotonOs.ps1
+cat <<EOF14213 > /tmp/tmp1.ps1
 $PSContent1
 $PSContent2
 $PSContent3
@@ -379,9 +379,9 @@ $PSContent4
 	\$PowershellgetVersion="2.1.3"
 $PSContent5
 EOF14213
-$PwshLink -c "/tmp/Install-PwshGalleryOnPhotonOs.ps1"
+$PwshLink -c "/tmp/tmp1.ps1"
 
-cat <<EOF1172167 > /tmp/Install-PwshGalleryOnPhotonOs.ps1
+cat <<EOF1172167 > /tmp/tmp2.ps1
 $PSContent1
 $PSContent2
 $PSContent3
@@ -390,7 +390,7 @@ $PSContent4
 	\$PowershellgetVersion="1.6.7"
 $PSContent5
 EOF1172167
-$PwshLink -c "/tmp/Install-PwshGalleryOnPhotonOs.ps1"
+$PwshLink -c "/tmp/tmp2.ps1"
 
 # Post-installation bug: In PowerShell 6.2.3 the packageprovider NuGet is not registered.
 $PwshLink -c "import-packageprovider -name NuGet -RequiredVersion 3.0.0.1"
