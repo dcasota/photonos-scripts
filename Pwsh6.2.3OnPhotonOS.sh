@@ -297,7 +297,7 @@ function workaround.Install-NugetPkgOnLinux
 				$TmpFile = $destinationpath + $PathDelimiter + $_.Name
 				try {
 					LogfileAppend("importing-name $TmpFile ...")			
-					import-module -name $TmpFile -Scope Global -Verbose -force -erroraction silentlycontinue
+					import-module -name $TmpFile -Global -Verbose -force -erroraction silentlycontinue
 				} catch {}
 			}
 		}
@@ -386,30 +386,6 @@ $PSContent4
 $PSContent5
 EOF1172167
 $PwshLink -c "/tmp/tmp1.ps1"
-
-cat <<EOF145221 > /tmp/tmp2.ps1
-# Post-installation for PowerShell 6.2.3
-$PSContent1
-$PSContent2
-$PSContent3
-$PSContent4
-	\$PackageManagementVersion="1.4.5"
-	\$PowershellgetVersion="2.2.1"
-$PSContent5
-EOF145221
-$PwshLink -c "/tmp/tmp2.ps1"
-
-cat <<EOF132213 > /tmp/tmp3.ps1
-# Post-installation for PowerShell 6.2.3
-$PSContent1
-$PSContent2
-$PSContent3
-$PSContent4
-	\$PackageManagementVersion="1.3.2"
-	\$PowershellgetVersion="2.1.3"
-$PSContent5
-EOF132213
-$PwshLink -c "/tmp/tmp3.ps1"
 
 # Packagemanagement
 #     1.4.5
