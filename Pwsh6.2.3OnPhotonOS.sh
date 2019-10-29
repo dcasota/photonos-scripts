@@ -130,41 +130,6 @@ tdnf install -y \
 
 cd /tmp
 
-# First, install powershell 6.0.5
-DownloadURL="https://github.com/PowerShell/PowerShell/releases/download/v6.0.5/powershell-6.0.5-linux-x64.tar.gz"
-ReleaseDir="6.0.5"
-PwshLink=Pwsh$ReleaseDir
-# Download the powershell '.tar.gz' archive
-curl -L $DownloadURL -o /tmp/powershell.tar.gz
-# Create the target folder where powershell will be placed
-mkdir -p /opt/microsoft/powershell/$ReleaseDir
-# Expand powershell to the target folder
-tar zxf /tmp/powershell.tar.gz -C /opt/microsoft/powershell/$ReleaseDir
-# Set execute permissions
-chmod +x /opt/microsoft/powershell/$ReleaseDir/pwsh
-# Create the symbolic link that points to pwsh
-ln -s /opt/microsoft/powershell/$ReleaseDir/pwsh /usr/bin/$PwshLink
-# delete downloaded file
-rm /tmp/powershell.tar.gz
-
-OUTPUT=`$PwshLink -c "get-psrepository"`
-if (echo $OUTPUT | grep -q "PSGallery"); then
-	echo "$PwshLink: PSGallery is registered."
-	# Check: PSGallery is browseable using "find-module".
-	OUTPUT=`$PwshLink -c "find-module VMware.PowerCLI"`
-	if (echo $OUTPUT | grep -q "PSGallery"); then
-		echo "$PwshLink: PSGallery is browseable."
-		echo "$PwshLink: All provisioning tests successfully processed."
-	else
-		echo "ERROR: PSGallery not detected as browseable."
-	fi		
-else
-	echo "PSGallery not detected as registered."
-fi
-
-
-# Side-by-side installation of Powershell Core 6.2.3
-# --------------------------------------------------
 # 1) Install Powershell 6.2.3 
 DownloadURL="https://github.com/PowerShell/PowerShell/releases/download/v6.2.3/powershell-6.2.3-linux-x64.tar.gz"
 ReleaseDir="6.2.3"
