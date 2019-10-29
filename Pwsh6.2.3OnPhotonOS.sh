@@ -29,35 +29,35 @@
 # - PackageProvider Nuget 3.0.0.1,
 # - PackageProvider PowerShellGet 1.6.7,
 # - and registered PSGallery .
-
-get-module -listavailable
-
-
-    Directory: /opt/microsoft/powershell/6.2.3/Modules
-
-ModuleType Version    Name                                PSEdition ExportedCommands
----------- -------    ----                                --------- ----------------
-Manifest   1.2.3.0    Microsoft.PowerShell.Archive        Desk      {Compress-Archive, Expand-Archive}
-Manifest   6.1.0.0    Microsoft.PowerShell.Host           Core      {Start-Transcript, Stop-Transcript}
-Manifest   6.1.0.0    Microsoft.PowerShell.Management     Core      {Add-Content, Clear-Content, Clear-ItemProperty, Join-Path…}
-Manifest   6.1.0.0    Microsoft.PowerShell.Security       Core      {Get-Credential, Get-ExecutionPolicy, Set-ExecutionPolicy, ConvertFrom-SecureString…}
-Manifest   6.1.0.0    Microsoft.PowerShell.Utility        Core      {Export-Alias, Get-Alias, Import-Alias, New-Alias…}
-Script     1.4.5      PackageManagement                   Desk      {Find-Package, Get-Package, Get-PackageProvider, Get-PackageSource…}
-Script     1.1.7.2    PackageManagement                   Desk      {Find-Package, Get-Package, Get-PackageProvider, Get-PackageSource…}
-Script     1.6.7      PowerShellGet                       Desk      {Find-Command, Find-DSCResource, Find-Module, Find-RoleCapability…}
-Script     0.0        PSDesiredStateConfiguration         Desk      {Node, Get-ComplexResourceQualifier, Get-PSMetaConfigurationProcessed, Get-MofInstanceName…}
-Script     2.0.0      PSReadLine                          Desk      {Get-PSReadLineKeyHandler, Set-PSReadLineKeyHandler, Remove-PSReadLineKeyHandler, Get-PSReadLineOption…}
-Binary     1.1.2      ThreadJob                           Desk      Start-ThreadJob
-
-PS /tmp> get-packageprovider
-
-Name                     Version          DynamicOptions
-----                     -------          --------------
-NuGet                    3.0.0.1          Destination, ExcludeVersion, Scope, SkipDependencies, Headers, FilterOnTag, Contains, AllowPrereleaseVersions, ConfigFile, SkipValidate
-PowerShellGet            1.6.7.0          PackageManagementProvider, Type, Scope, AllowClobber, SkipPublisherCheck, InstallUpdate, NoPathUpdate, AllowPrereleaseVersions, Filter, Tag, Includes, DscResour…
-
-
-
+# 
+# get-module -listavailable
+# 
+# 
+#     Directory: /opt/microsoft/powershell/6.2.3/Modules
+# 
+# ModuleType Version    Name                                PSEdition ExportedCommands
+# ---------- -------    ----                                --------- ----------------
+# Manifest   1.2.3.0    Microsoft.PowerShell.Archive        Desk      {Compress-Archive, Expand-Archive}
+# Manifest   6.1.0.0    Microsoft.PowerShell.Host           Core      {Start-Transcript, Stop-Transcript}
+# Manifest   6.1.0.0    Microsoft.PowerShell.Management     Core      {Add-Content, Clear-Content, Clear-ItemProperty, Join-Path…}
+# Manifest   6.1.0.0    Microsoft.PowerShell.Security       Core      {Get-Credential, Get-ExecutionPolicy, Set-ExecutionPolicy, ConvertFrom-SecureString…}
+# Manifest   6.1.0.0    Microsoft.PowerShell.Utility        Core      {Export-Alias, Get-Alias, Import-Alias, New-Alias…}
+# Script     1.4.5      PackageManagement                   Desk      {Find-Package, Get-Package, Get-PackageProvider, Get-PackageSource…}
+# Script     1.1.7.2    PackageManagement                   Desk      {Find-Package, Get-Package, Get-PackageProvider, Get-PackageSource…}
+# Script     1.6.7      PowerShellGet                       Desk      {Find-Command, Find-DSCResource, Find-Module, Find-RoleCapability…}
+# Script     0.0        PSDesiredStateConfiguration         Desk      {Node, Get-ComplexResourceQualifier, Get-PSMetaConfigurationProcessed, Get-MofInstanceName…}
+# Script     2.0.0      PSReadLine                          Desk      {Get-PSReadLineKeyHandler, Set-PSReadLineKeyHandler, Remove-PSReadLineKeyHandler, Get-PSReadLineOption…}
+# Binary     1.1.2      ThreadJob                           Desk      Start-ThreadJob
+# 
+# PS /tmp> get-packageprovider
+# 
+# Name                     Version          DynamicOptions
+# ----                     -------          --------------
+# NuGet                    3.0.0.1          Destination, ExcludeVersion, Scope, SkipDependencies, Headers, FilterOnTag, Contains, AllowPrereleaseVersions, ConfigFile, SkipValidate
+# PowerShellGet            1.6.7.0          PackageManagementProvider, Type, Scope, AllowClobber, SkipPublisherCheck, InstallUpdate, NoPathUpdate, AllowPrereleaseVersions, Filter, Tag, Includes, DscResour…
+# 
+# 
+# 
 #
 #
 # This script contains workaround functions to ensure the import of specific modules. The idea is to find a combination of packagemanagement and
