@@ -21,7 +21,7 @@
 # Powershell Core
 # v7.0.0-preview.5
 # v7.0.0-preview.4
-# v6.2.3
+# v6.2.3             ---> has packagemanagement release 1.3.2 with powershellget 2.1.3 built-in. However, powershellget release 1.3.2 REQUIRES packagemanagement 1.4. (???)
 # v6.1.6
 # v7.0.0-preview.3
 # v7.0.0-preview.2
@@ -50,11 +50,11 @@
 #     1.1.0.0
 #
 # Powershellget
-#     2.2.1
+#     2.2.1 ---> requires packagemanagement release 1.4.4
 #     2.2
 #     2.1.5
 #     2.1.4
-#     2.1.3
+#     2.1.3 ---> requires packagemanagement release 1.4
 #     2.1.2
 #     2.1.1
 #     2.1.0
@@ -111,7 +111,7 @@ if (echo $OUTPUT | grep -q "PSGallery"); then
 	OUTPUT=`$PwshLink -c "find-module VMware.PowerCLI"`
 	if (echo $OUTPUT | grep -q "PSGallery"); then
 		echo "PSGallery is browseable."
-		echo "$PwshLink: All provisioning tests successfully done."
+		echo "$PwshLink: All provisioning tests successfully processed."
 	else
 		echo "ERROR: PSGallery not detected as browseable."
 	fi		
@@ -120,7 +120,11 @@ else
 fi
 
 
-# Now side-by-side installation of powershell 6.2.3
+# Side-by-side installation of Powershell 6.2.3
+# Prerequisite bug: PowerShell 6.2.3 has a bug that its PowerShellget requires PackageManagement 1.4 however only PackageManagement 1.3.2 is built-in included.
+$PwshLink -c "install-module -name PackageManagement -RequiredVersion 1.4"
+
+
 DownloadURL="https://github.com/PowerShell/PowerShell/releases/download/v6.2.3/powershell-6.2.3-linux-x64.tar.gz"
 ReleaseDir="6.2.3"
 PwshLink=Pwsh$ReleaseDir	
@@ -137,6 +141,9 @@ ln -s /opt/microsoft/powershell/$ReleaseDir/pwsh /usr/bin/$PwshLink
 # delete downloaded file
 rm /tmp/powershell.tar.gz
 
+# Post-installation bug: In PowerShell 6.2.3 the packageprovider NuGet is not registered.
+$PwshLink -c "import-packageprovider -name NuGet -RequiredVersion 3.0.0.1"
+
 OUTPUT=`$PwshLink -c "get-psrepository"`
 if (echo $OUTPUT | grep -q "PSGallery"); then
 	echo "PSGallery is registered."
@@ -144,7 +151,7 @@ if (echo $OUTPUT | grep -q "PSGallery"); then
 	OUTPUT=`$PwshLink -c "find-module VMware.PowerCLI"`
 	if (echo $OUTPUT | grep -q "PSGallery"); then
 		echo "PSGallery is browseable."
-		echo "$PwshLink: All provisioning tests successfully done."
+		echo "$PwshLink: All provisioning tests successfully processed."
 	else
 		echo "ERROR: PSGallery not detected as browseable."
 	fi		
@@ -300,7 +307,7 @@ IFS='' read -r -d '' PSContent5 << "EOF5"
 function workaround.PwshGalleryPrerequisites
 {
 	$PwshGalleryInstalled = $false
-	$PackageManagementVersion="1.3.2"
+	$PackageManagementVersion="1.4"
 	$PowershellgetVersion="2.1.3"	
 	try
 	{
@@ -380,7 +387,9 @@ if (echo $OUTPUT | grep -q "PSGallery"); then
 	echo "PSGallery is registered."	
 	# Check: PSGallery is browseable using "find-module".
 	OUTPUT=`$PwshLink -c "find-module VMware.PowerCLI"`
-	if (echo $OUTPUT | grep -q "PSGallery"); then echo "PSGallery is browseable.";
+	if (echo $OUTPUT | grep -q "PSGallery"); then
+		echo "PSGallery is browseable."
+		echo "$PwshLink: All provisioning tests successfully processed."		
 	else
 		echo "ERROR: PSGallery not detected as browseable. Executing Install-PwshGalleryOnPhotonOs.ps1 failed."
 	fi		
