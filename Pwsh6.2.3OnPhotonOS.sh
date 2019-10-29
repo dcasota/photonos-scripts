@@ -20,6 +20,11 @@
 # To resolve this dependency the workaround in this script installs Modules PackageManagement 1.1.7.2 and PowerShellget 1.6.7.
 # As result, PackageProvider Nuget 2.8.5.210 and PowerShellGet 1.6.7.0 is installed, and PSgallery is registered.
 #
+# Limitations:
+# - proxy functionality not tested
+# - 
+#
+#
 
 # install the requirements
 tdnf install -y \
@@ -288,7 +293,9 @@ workaround.PwshGalleryPrerequisites
 EOF5
 
 
-# 3) Downgrade PackageManagement and PowerShellget to the working version
+# 3) Install working set of PackageManagement and PowerShellget
+rm -r /opt/microsoft/powershell/6.2.3/Modules/PowerShellGet/
+
 cat <<EOF1172167 > /tmp/tmp1.ps1
 # Post-installation for PowerShell 6.2.3
 $PSContent1
