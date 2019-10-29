@@ -425,18 +425,8 @@ EOF5
 # 3) Powershell 6.2.3 needs a working set of Packageprovider {Nuget 3.0.0.1, PowerShellget 1.6.7}, modules PackageManagement {1.1.7.2, 1.4.5} and PowerShellGet 1.6.7 .
 # Hence, install the same set as in Powershell 6.0.5. It is PackageManagement 1.1.7.2 and PowerShellGet 1.6.7. With that, get-psrepository remains fine.
 # find-module, install-module , etc. isn't possible for the moment. The second install (PackageManagement 1.4.5 and PowerShellGet 1.6.7) fixes that as well.
-cat <<EOF1172167 > /tmp/tmp1.ps1
-# Post-installation for PowerShell 6.2.3
-$PSContent1
-$PSContent2
-$PSContent3
-$PSContent4
-	\$PackageManagementVersion="1.1.7.2"
-	\$PowershellgetVersion="1.6.7"
-$PSContent5
-EOF1172167
-$PwshLink -c "/tmp/tmp1.ps1"
 
+# First the latest and greatest PackageManagement and the Pwsh release-specific PowerShellGet release
 cat <<EOF145167 > /tmp/tmp2.ps1
 # Post-installation for PowerShell 6.2.3
 $PSContent1
@@ -448,6 +438,19 @@ $PSContent4
 $PSContent5
 EOF145167
 $PwshLink -c "/tmp/tmp2.ps1"
+
+# Now downgrade PackageManagement to the working version
+cat <<EOF1172167 > /tmp/tmp1.ps1
+# Post-installation for PowerShell 6.2.3
+$PSContent1
+$PSContent2
+$PSContent3
+$PSContent4
+	\$PackageManagementVersion="1.1.7.2"
+	\$PowershellgetVersion="1.6.7"
+$PSContent5
+EOF1172167
+$PwshLink -c "/tmp/tmp1.ps1"
 
 # 6.0.5: 	find-packageprovider
 # 		(Get-packageProvider -name nuget).ProviderPath
