@@ -294,8 +294,19 @@ EOF5
 
 
 # 3) Install working set of PackageManagement and PowerShellget
-rm -r /opt/microsoft/powershell/6.2.3/Modules/PowerShellGet/
-mkdir /opt/microsoft/powershell/6.2.3/Modules/PowerShellGet/
+
+cat <<EOF132213 > /tmp/tmp3.ps1
+# Post-installation for PowerShell 6.2.3
+$PSContent1
+$PSContent2
+$PSContent3
+$PSContent4
+	\$PackageManagementVersion="1.3.2"
+	\$PowershellgetVersion="2.1.3"
+$PSContent5
+EOF132213
+$PwshLink -c "/tmp/tmp3.ps1"
+
 cat <<EOF1172167 > /tmp/tmp1.ps1
 # Post-installation for PowerShell 6.2.3
 $PSContent1
