@@ -21,7 +21,7 @@
 # Powershell Core
 # v7.0.0-preview.5
 # v7.0.0-preview.4
-# v6.2.3             ---> has packagemanagement release 1.3.2 with powershellget 2.1.3 built-in. However, powershellget release 1.3.2 REQUIRES packagemanagement 1.4. (???)
+# v6.2.3
 # v6.1.6
 # v7.0.0-preview.3
 # v7.0.0-preview.2
@@ -50,11 +50,11 @@
 #     1.1.0.0
 #
 # Powershellget
-#     2.2.1 ---> requires packagemanagement release 1.4.4
+#     2.2.1
 #     2.2
 #     2.1.5
 #     2.1.4
-#     2.1.3 ---> requires packagemanagement release 1.4
+#     2.1.3
 #     2.1.2
 #     2.1.1
 #     2.1.0
@@ -121,9 +121,11 @@ fi
 
 
 # Side-by-side installation of Powershell 6.2.3
-# Prerequisite bug: PowerShell 6.2.3 has a bug that its PowerShellget requires PackageManagement 1.4 however only PackageManagement 1.3.2 is built-in included.
-$PwshLink -c "install-module -name PackageManagement -RequiredVersion 1.4"
-
+# Prerequisite bug: PowerShell 6.2.3 has a bug that its PowerShellget requires 1.4 or 1.4.4 or 1.1.7.0 however only PackageManagement 1.3.2 is built-in included.
+$PwshLink -c "install-module -name PackageManagement -RequiredVersion 1.4 -confirm:$false"
+$PwshLink -c "install-module -name PackageManagement -RequiredVersion 1.4.4 -confirm:$false"
+$PwshLink -c "install-module -name PackageManagement -RequiredVersion 1.1.7.0 -confirm:$false"
+$PwshLink -c "install-module -name PackageManagement -RequiredVersion 1.1.7.2 -force -confirm:$false"
 
 DownloadURL="https://github.com/PowerShell/PowerShell/releases/download/v6.2.3/powershell-6.2.3-linux-x64.tar.gz"
 ReleaseDir="6.2.3"
@@ -140,9 +142,6 @@ chmod +x /opt/microsoft/powershell/$ReleaseDir/pwsh
 ln -s /opt/microsoft/powershell/$ReleaseDir/pwsh /usr/bin/$PwshLink
 # delete downloaded file
 rm /tmp/powershell.tar.gz
-
-# Post-installation bug: In PowerShell 6.2.3 the packageprovider NuGet is not registered.
-$PwshLink -c "import-packageprovider -name NuGet -RequiredVersion 3.0.0.1"
 
 OUTPUT=`$PwshLink -c "get-psrepository"`
 if (echo $OUTPUT | grep -q "PSGallery"); then
@@ -301,14 +300,13 @@ function workaround.Install-NugetPkgOnLinux
 	catch { }
 	return ($destinationpath)
 }
-EOF4
 
-IFS='' read -r -d '' PSContent5 << "EOF5"
 function workaround.PwshGalleryPrerequisites
 {
 	$PwshGalleryInstalled = $false
-	$PackageManagementVersion="1.4"
-	$PowershellgetVersion="2.1.3"	
+EOF4
+
+IFS='' read -r -d '' PSContent5 << "EOF5"
 	try
 	{
 		LogfileAppend("Check get-psrepository ...")
@@ -372,15 +370,30 @@ workaround.PwshGalleryPrerequisites
 # if ((Get-PSRepository -name psgallery | %{ $_.InstallationPolicy -match "Untrusted" }) -eq $true) { set-psrepository -name PSGallery -InstallationPolicy Trusted }
 EOF5
 
-cat <<EOFHere > /tmp/Install-PwshGalleryOnPhotonOs.ps1
+cat <<EOF14213 > /tmp/Install-PwshGalleryOnPhotonOs.ps1
 $PSContent1
 $PSContent2
 $PSContent3
 $PSContent4
+	$PackageManagementVersion="1.4"
+	$PowershellgetVersion="2.1.3"
 $PSContent5
-EOFHere
-
+EOF14213
 $PwshLink -c "/tmp/Install-PwshGalleryOnPhotonOs.ps1"
+
+cat <<EOF1172167 > /tmp/Install-PwshGalleryOnPhotonOs.ps1
+$PSContent1
+$PSContent2
+$PSContent3
+$PSContent4
+	$PackageManagementVersion="1.1.7.2"
+	$PowershellgetVersion="1.6.7"
+$PSContent5
+EOF1172167
+$PwshLink -c "/tmp/Install-PwshGalleryOnPhotonOs.ps1"
+
+# Post-installation bug: In PowerShell 6.2.3 the packageprovider NuGet is not registered.
+$PwshLink -c "import-packageprovider -name NuGet -RequiredVersion 3.0.0.1"
 
 OUTPUT=`$PwshLink -c "get-psrepository"`
 if (echo $OUTPUT | grep -q "PSGallery"); then
