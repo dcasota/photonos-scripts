@@ -330,11 +330,27 @@ $PSContent5
 get-psrepository
 find-module VMware.PowerCLI       
 EOF1170213
-$PwshLink -c '/tmp/tmp1.ps1' -WorkingDirectory /tmp -NoExit
+$PwshLink -c '/tmp/tmp1.ps1' -WorkingDirectory /tmp
+rm /tmp/tmp1.ps1
 
-# Now import all available modules in the path specified by the PSModulePath environment variable
-# $PwshLink -c 'Get-Module -ListAvailable | Import-Module'
-# rm /tmp/tmp1.ps1
+
+# Save modules functionality workarounds in profile. Each time Pwsh$ReleaseDir is started the profile is loaded as well.
+# #https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_profiles?view=powershell-5.1&redirectedfrom=MSDN
+#
+# Workaround1:
+# https://github.com/PowerShell/PowerShellGet/issues/447#issuecomment-476968923
+# Change to TLS1.2
+# [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+#
+# Workaround2:
+# https://github.com/PowerShell/PowerShell/issues/9495#issuecomment-515592672
+# $env:DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0  
+#
+cat <<EOFProfile > /opt/microsoft/powershell/6.2.3/profile.ps1
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+\$env:DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0     
+EOFProfile
+
 
 OUTPUT=`/opt/microsoft/powershell/$ReleaseDir/pwsh -c 'get-psrepository'`
 if (echo $OUTPUT | grep -q "PSGallery"); then
