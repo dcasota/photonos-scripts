@@ -10,6 +10,7 @@
 # Prerequisites:
 #    - VMware Photon OS 3.0
 #    - No Powershell release installed
+#    - Run as root
 #
 #
 # Description:
@@ -50,9 +51,10 @@
 #    After the installation, the functionality of find-module, install-module, get-psrepository, etc. is back.
 #
 # Limitations / not tested:
-# - side effects with already installed powershell releases
-# - proxy functionality
-# - various constellations with security protocol policies or with cert policies
+# - More restrictive user privileges
+# - Proxy functionality
+# - Constellations with security protocol or certification check enforcement
+# - Side effects with already installed powershell releases
 #
 
 # install the requirements
@@ -90,6 +92,7 @@ fi
 
 	
 # Prepare helper functions content
+# Remark: Embedding the complete powershell script gave some errors. Therefore it is separated in 4 scriptblock variables PSContent1 to PSContent4.
 IFS='' read -r -d '' PSContent1 << "EOF1"
 function workaround.Find-ModuleAllVersions
 {
@@ -224,7 +227,7 @@ function workaround.Install-NugetPkgOnLinux
 			get-childitem -path $destinationpath -recurse -filter *.psd1| ? {
 				$TmpFile = $destinationpath + $PathDelimiter + $_.Name
 				try {		
-					import-module -name $TmpFile -Scope Global -Verbose -force -erroraction silentlycontinue
+					import-module -name $TmpFile -Scope Global -force -erroraction silentlycontinue
 				} catch {}
 			}
 		}
@@ -233,8 +236,6 @@ function workaround.Install-NugetPkgOnLinux
 	return ($destinationpath)
 }
 
-
-# Requires Run with root privileges
 
 # https://powershell.org/forums/topic/is-it-possible-to-enable-tls-1-2-as-default-in-powershell/
 # Verify current TLS support of powershell as after Powershell installation the TLS support is SystemDefault 
