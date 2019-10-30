@@ -308,9 +308,11 @@ Get-Module -ListAvailable | Import-Module
 EOF5
 
 
-# First, the subfolders of (broken builtin) modules are deleted.
-rm -r $PSHome/Modules/PackageManagement
-rm -r $PSHome/Modules/PowerShellGet
+# First, (broken builtin) modules are deleted.
+rm -r /opt/microsoft/powershell/$ReleaseDir/Modules/PackageManagement
+mkdir /opt/microsoft/powershell/$ReleaseDir/Modules/PackageManagement
+rm -r /opt/microsoft/powershell/$ReleaseDir/Modules/PowerShellGet
+mkdir /opt/microsoft/powershell/$ReleaseDir/Modules/owerShellGet
 	
 # PowerShellGet release 2.1.3 has RequiredModules specification of PackageManagement 1.1.7.0. Use the helper functions to install modules.			
 cat <<EOF1170213 > /tmp/tmp1.ps1
