@@ -55,8 +55,22 @@ cd /tmp
 DownloadURL="https://github.com/PowerShell/PowerShell/releases/download/v6.2.3/powershell-6.2.3-linux-x64.tar.gz"
 ReleaseDir="6.2.3"
 PwshLink=Pwsh$ReleaseDir
-OUTPUT=`$PwshLink -c '$PSVersiontable'`
-if (!(echo $OUTPUT | grep -q "$ReleaseDir")); then
+
+ToInstall=$true
+if (`command -v pwsh`); then
+	OUTPUT=`pwsh -c '$PSVersiontable'`
+	if (!(echo $OUTPUT | grep -q "$ReleaseDir")); then
+		ToInstall=$false
+	fi
+fi
+if [ -d /opt/microsoft/powershell/$ReleaseDir/pwsh ]; then
+	OUTPUT=`/opt/microsoft/powershell/$ReleaseDir/pwsh -c '$PSVersiontable'`
+	if (!(echo $OUTPUT | grep -q "$ReleaseDir")); then
+		ToInstall=$false
+	fi
+fi
+
+if ($ToInstall -eq $true); then
 	# Download the powershell '.tar.gz' archive
 	curl -L $DownloadURL -o /tmp/powershell.tar.gz
 	# Create the target folder where powershell will be placed
@@ -69,22 +83,26 @@ if (!(echo $OUTPUT | grep -q "$ReleaseDir")); then
 	ln -s /opt/microsoft/powershell/$ReleaseDir/pwsh /usr/bin/$PwshLink
 	# delete downloaded file
 	rm /tmp/powershell.tar.gz
-
-	OUTPUT=`$PwshLink -c "get-psrepository"`
-	if (echo $OUTPUT | grep -q "PSGallery"); then
-		echo "$PwshLink: PSGallery is registered."
-		# Check: PSGallery is browseable using "find-module".
-		OUTPUT=`$PwshLink -c "find-module VMware.PowerCLI"`
-		if (echo $OUTPUT | grep -q "PSGallery"); then
-			echo "$PwshLink: PSGallery is browseable."
-			echo "$PwshLink: All provisioning tests successfully processed."
-		else
-			echo "ERROR: PSGallery not detected as browseable."
-		fi		
-	else
-		echo "PSGallery not detected as registered."
-	fi
 fi
+
+RunEmbeddedScript=$true
+OUTPUT=`/opt/microsoft/powershell/$ReleaseDir/pwsh -c 'get-psrepository'`
+if (echo $OUTPUT | grep -q "PSGallery"); then
+	echo "$ReleaseDir: PSGallery is registered."
+	# Check: PSGallery is browseable using "find-module".
+	OUTPUT=`/opt/microsoft/powershell/$ReleaseDir/pwsh -c "find-module VMware.PowerCLI"`
+	if (echo $OUTPUT | grep -q "PSGallery"); then
+		echo "$ReleaseDir: PSGallery is browseable."
+		echo "$ReleaseDir: All provisioning tests successfully processed."
+		RunEmbeddedScript=$false
+	else
+		echo "ERROR: PSGallery not detected as browseable."
+	fi		
+else
+	echo "PSGallery not detected as registered."
+fi
+
+if ($RunEmbeddedScript -eq $true); then
 	
 # Prepare helper functions content
 IFS='' read -r -d '' PSContent1 << "EOF1"
@@ -308,35 +326,21 @@ EOF1172167
 # $PwshLink -c "/tmp/tmp1.ps1"
 # rm /tmp/tmp1.ps1
 
-OUTPUT=`$PwshLink -c "get-psrepository"`
-if (echo $OUTPUT | grep -q "PSGallery"); then
-	echo "$PwshLink: PSGallery is registered."	
-	# Check: PSGallery is browseable using "find-module".
-	OUTPUT=`$PwshLink -c "find-module VMware.PowerCLI"`
-	if (echo $OUTPUT | grep -q "PSGallery"); then
-		echo "$PwshLink: PSGallery is browseable."
-		echo "$PwshLink: All provisioning tests successfully processed."		
-	else
-		echo "ERROR: PSGallery not detected as browseable. Executing Install-PwshGalleryOnPhotonOs.ps1 failed."
-	fi		
-else
-	echo "PSGallery not detected as registered. Executing Install-PwshGalleryOnPhotonOs.ps1 failed."
 fi
 
-$PwshLink -c "/tmp/tmp1.ps1"
-OUTPUT=`$PwshLink -c "get-psrepository"`
+OUTPUT=`/opt/microsoft/powershell/$ReleaseDir/pwsh -c 'get-psrepository'`
 if (echo $OUTPUT | grep -q "PSGallery"); then
-	echo "$PwshLink: PSGallery is registered."	
+	echo "$ReleaseDir: PSGallery is registered."	
 	# Check: PSGallery is browseable using "find-module".
-	OUTPUT=`$PwshLink -c "find-module VMware.PowerCLI"`
+	OUTPUT=`/opt/microsoft/powershell/$ReleaseDir/pwsh -c "find-module VMware.PowerCLI"`
 	if (echo $OUTPUT | grep -q "PSGallery"); then
-		echo "$PwshLink: PSGallery is browseable."
-		echo "$PwshLink: All provisioning tests successfully processed."		
+		echo "$ReleaseDir: PSGallery is browseable."
+		echo "$ReleaseDir: All provisioning tests successfully processed."		
 	else
-		echo "ERROR: PSGallery not detected as browseable. Executing Install-PwshGalleryOnPhotonOs.ps1 failed."
+		echo "ERROR: PSGallery not detected as browseable. Workaround failed."
 	fi		
 else
-	echo "PSGallery not detected as registered. Executing Install-PwshGalleryOnPhotonOs.ps1 failed."
+	echo "PSGallery not detected as registered. Workaround failed."
 fi
 
 # Cleanup
