@@ -17,7 +17,7 @@
 # 'tndf install -y powershell' latest release is 6.1.0 and outdated (October 2019).
 #    Powershell Core built-in installs the modules PackageManagement and PowerShellGet. Built-in means that automatic update functionality for its modules is included too.
 #
-# With Powershell Core 6.1.0 release this built-in automatic update functionality is broken. Note that the cmdlets find-module and install-module produces errors.
+# With Powershell Core 6.1.0 and above the built-in automatic update functionality often is broken. Cmdlets find-module, install-module, etc. produces errors.
 #    There are a few workaround possibilities. Keep in mind, applying a workaround means that with specific modules not installed by using install-module, it cannot be updated.
 #    If this is not supported in your environment, use 'tdnf install -y powershell'. Sooner or later newer published releases are available.
 # 
