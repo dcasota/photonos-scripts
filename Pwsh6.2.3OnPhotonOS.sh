@@ -305,9 +305,25 @@ $PSContent4
 \$PowershellgetVersion="2.1.3"
 $PSContent5
 EOF1172167
-$PwshLink -c "/tmp/tmp1.ps1"
+# $PwshLink -c "/tmp/tmp1.ps1"
 # rm /tmp/tmp1.ps1
 
+OUTPUT=`$PwshLink -c "get-psrepository"`
+if (echo $OUTPUT | grep -q "PSGallery"); then
+	echo "$PwshLink: PSGallery is registered."	
+	# Check: PSGallery is browseable using "find-module".
+	OUTPUT=`$PwshLink -c "find-module VMware.PowerCLI"`
+	if (echo $OUTPUT | grep -q "PSGallery"); then
+		echo "$PwshLink: PSGallery is browseable."
+		echo "$PwshLink: All provisioning tests successfully processed."		
+	else
+		echo "ERROR: PSGallery not detected as browseable. Executing Install-PwshGalleryOnPhotonOs.ps1 failed."
+	fi		
+else
+	echo "PSGallery not detected as registered. Executing Install-PwshGalleryOnPhotonOs.ps1 failed."
+fi
+
+$PwshLink -c "/tmp/tmp1.ps1"
 OUTPUT=`$PwshLink -c "get-psrepository"`
 if (echo $OUTPUT | grep -q "PSGallery"); then
 	echo "$PwshLink: PSGallery is registered."	
