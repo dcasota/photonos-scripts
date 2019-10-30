@@ -73,7 +73,7 @@ ReleaseDir="6.2.3"
 PwshLink=Pwsh$ReleaseDir
 
 # Install powershell 6.2.3
-if [ -d /opt/microsoft/powershell/$ReleaseDir/pwsh ]; then
+if ! [ -d /opt/microsoft/powershell/$ReleaseDir/pwsh ]; then
 	# Download the powershell '.tar.gz' archive
 	curl -L $DownloadURL -o /tmp/powershell.tar.gz
 	# Create the target folder where powershell will be placed
