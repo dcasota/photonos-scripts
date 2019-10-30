@@ -103,9 +103,9 @@ function workaround.Find-ModuleAllVersions
 		$proxy,
 		$version)
 		
+	# invoke-restmethod doesn't work correctly without $env:DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0
 	# https://github.com/PowerShell/PowerShell/issues/7827 See comment Iyoumans
 	$env:DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0
-	# [System.AppContext]::SetSwitch("System.Net.Http.UseSocketsHttpHandler", $false)
 	
 	if (([string]::IsNullOrEmpty($proxy)) -eq $true)
 	{
@@ -161,9 +161,9 @@ function workaround.Save-Module
 	)
 	$Path = (Join-Path $Path "$Name.$Version.nupkg")
 	
+	# invoke-webrequest doesn't work correctly without $env:DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0
 	# https://github.com/PowerShell/PowerShell/issues/7827 See comment Iyoumans
-	$env:DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0	
-	# [System.AppContext]::SetSwitch("System.Net.Http.UseSocketsHttpHandler", $false)
+	$env:DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0
 	
 	if ((get-command -name invoke-webrequest) -ne $null)
 	{
@@ -223,7 +223,7 @@ function workaround.Install-NugetPkgOnLinux
 			# Removing $sourcefile
 			remove-item -path ($Sourcefile) -force -recurse -confirm:$false
 			
-			# Parse and import all .psd1 files
+			# Filter and import all .psd1 files
 			get-childitem -path $destinationpath -recurse -filter *.psd1| ? {
 				$TmpFile = $destinationpath + $PathDelimiter + $_.Name
 				try {		
@@ -236,14 +236,13 @@ function workaround.Install-NugetPkgOnLinux
 	return ($destinationpath)
 }
 
-
-# https://powershell.org/forums/topic/is-it-possible-to-enable-tls-1-2-as-default-in-powershell/
+# https://github.com/PowerShell/PowerShellGet/issues/447#issuecomment-476968923 , https://powershell.org/forums/topic/is-it-possible-to-enable-tls-1-2-as-default-in-powershell/
 # Verify current TLS support of powershell as after Powershell installation the TLS support is SystemDefault 
-[Net.ServicePointManager]::SecurityProtocol
+# [Net.ServicePointManager]::SecurityProtocol
 # Change to TLS1.2
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-# Verify again current TLS support of powershell
-[Net.ServicePointManager]::SecurityProtocol
+# Current TLS support of powershell
+# [Net.ServicePointManager]::SecurityProtocol
 EOF3
 
 IFS='' read -r -d '' PSContent4 << "EOF4"
