@@ -262,8 +262,8 @@ function workaround.Install-NugetPkgOnLinux
 # Requires Run with root privileges
 
 #Run first
-get-module
-get-module -listavailable
+#get-module
+#get-module -listavailable
 
 # https://powershell.org/forums/topic/is-it-possible-to-enable-tls-1-2-as-default-in-powershell/
 # Verify current TLS support of powershell as after Powershell installation the TLS support is SystemDefault 
@@ -331,12 +331,13 @@ $PSContent4
 \$PackageManagementVersion="1.1.7.0"
 \$PowerShellGetVersion="2.1.3"
 $PSContent5
-sleep 10
+echo sleep 30 ...
+sleep 30
 get-psrepository
 find-module VMware.PowerCLI
 EOF1170213
-
 $PwshLink -c '/tmp/tmp1.ps1' -WorkingDirectory /tmp
+
 # Now import all available modules in the path specified by the PSModulePath environment variable
 # $PwshLink -c 'Get-Module -ListAvailable | Import-Module'
 # rm /tmp/tmp1.ps1
