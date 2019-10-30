@@ -335,7 +335,7 @@ EOF1170213
 $PwshLink -c "/tmp/tmp1.ps1"
 # rm /tmp/tmp1.ps1
 
-Workaround1170=false
+Workaround1170=true
 OUTPUT=`/opt/microsoft/powershell/$ReleaseDir/pwsh -c 'get-psrepository'`
 if (echo $OUTPUT | grep -q "PSGallery"); then
 	echo "$ReleaseDir: PSGallery is registered."	
@@ -344,7 +344,7 @@ if (echo $OUTPUT | grep -q "PSGallery"); then
 	if (echo $OUTPUT | grep -q "PSGallery"); then
 		echo "$ReleaseDir: PSGallery is browseable."
 		echo "$ReleaseDir with Workaround1170: All provisioning tests successfully processed."
-		Workaround1170=true
+		Workaround1170=false
 	else
 		echo "ERROR: PSGallery not detected as browseable."
 	fi		
@@ -352,7 +352,7 @@ else
 	echo "PSGallery not detected as registered."
 fi
 
-if ("$Workaround1170" = "false"); then
+if ("$Workaround1170" = "true"); then
 
 cat <<EOF1172213 > /tmp/tmp2.ps1
 # Post-installation for PowerShell 6.2.3
