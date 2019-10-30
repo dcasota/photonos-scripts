@@ -1,7 +1,7 @@
 #!/bin/sh
 # Deploy Powershell Core 6.2.3 on VMware Photon OS
 #
-# This script deploys Powershell Core 6.2.3 on VMware Photon OS.
+# This script deploys Powershell Core 6.2.3 on VMware Photon OS. To start Powershell simply enter "Pwsh6.2.3".
 #
 #
 # History
@@ -21,14 +21,17 @@
 # 
 # This script provides a workaround solution. It downloads and installs Powershell Core 6.2.3 release and installs the module PackageManagement 1.1.7.0.
 #
-# The built-in module PowerShellGet release 2.1.3 in Powershell Core 6.2.3 release has a RequiredModules specification of PackageManagement 1.1.7.0.
-# Hence, the script using an embedded powershell script installs PackageManagement 1.1.7.0. The dynamically embedded powershell script has three helper functions
+# Powershell is installed in /opt/microsoft/powershell/6.2.3/ and creates a symbolic link "Pwsh6.2.3" that points to /opt/microsoft/powershell/6.2.3/pwsh.
+#
+# The built-in module PowerShellGet version 2.1.3 in Powershell Core 6.2.3 has a RequiredModules specification of PackageManagement 1.1.7.0.
+# Hence, the script using an embedded powershell script installs PackageManagement 1.1.7.0.
+# The dynamically created powershell script provides three helper functions used as cmdlets workaround:
 # - workaround.Find-ModuleAllVersions
 # - workaround.Save-Module
 # - workaround.Install-NugetPkgOnLinux
-# The helper functions are used as cmdlets workaround. After the installation the functionality of find-module, install-module, get-psrepository, etc. is back.
+# The powershell script allows to specify Package Management and PowerShellGet version. See '\$PackageManagementVersion="1.1.7.0"'.
 #
-# The embedded powershell script allows to specify Package Management and PowerShellGet version. See '\$PackageManagementVersion="1.1.7.0"'.
+# After the installation, the functionality of find-module, install-module, get-psrepository, etc. is back.
 #
 # Limitations:
 # - side effects with already installed powershell releases not tested
@@ -331,6 +334,7 @@ tdnf clean all
 # Uninstall
 # rm /usr/bin/$PwshLink
 # rm -r /opt/microsoft/powershell/$ReleaseDir
+# rm -r /tmp/Microsoft.PackageManagement
 # Uninstall of all powershell releases
 # rm /usr/bin/Pwsh*
 # rm -r /opt/microsoft/powershell
