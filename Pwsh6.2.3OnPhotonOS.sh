@@ -56,21 +56,21 @@ DownloadURL="https://github.com/PowerShell/PowerShell/releases/download/v6.2.3/p
 ReleaseDir="6.2.3"
 PwshLink=Pwsh$ReleaseDir
 
-ToInstall=$true
+ToInstall=true
 if (`command -v pwsh`); then
 	OUTPUT=`pwsh -c '$PSVersiontable'`
 	if (!(echo $OUTPUT | grep -q "$ReleaseDir")); then
-		ToInstall=$false
+		ToInstall=false
 	fi
 fi
 if [ -d /opt/microsoft/powershell/$ReleaseDir/pwsh ]; then
 	OUTPUT=`/opt/microsoft/powershell/$ReleaseDir/pwsh -c '$PSVersiontable'`
 	if (!(echo $OUTPUT | grep -q "$ReleaseDir")); then
-		ToInstall=$false
+		ToInstall=false
 	fi
 fi
 
-if ($ToInstall -eq $true); then
+if ["$ToInstall" = true ]; then
 	# Download the powershell '.tar.gz' archive
 	curl -L $DownloadURL -o /tmp/powershell.tar.gz
 	# Create the target folder where powershell will be placed
@@ -85,7 +85,7 @@ if ($ToInstall -eq $true); then
 	rm /tmp/powershell.tar.gz
 fi
 
-RunEmbeddedScript=$true
+RunEmbeddedScript=true
 OUTPUT=`/opt/microsoft/powershell/$ReleaseDir/pwsh -c 'get-psrepository'`
 if (echo $OUTPUT | grep -q "PSGallery"); then
 	echo "$ReleaseDir: PSGallery is registered."
@@ -94,7 +94,7 @@ if (echo $OUTPUT | grep -q "PSGallery"); then
 	if (echo $OUTPUT | grep -q "PSGallery"); then
 		echo "$ReleaseDir: PSGallery is browseable."
 		echo "$ReleaseDir: All provisioning tests successfully processed."
-		RunEmbeddedScript=$false
+		RunEmbeddedScript=false
 	else
 		echo "ERROR: PSGallery not detected as browseable."
 	fi		
@@ -102,7 +102,7 @@ else
 	echo "PSGallery not detected as registered."
 fi
 
-if ($RunEmbeddedScript -eq $true); then
+if ["$RunEmbeddedScript" = true ]; then
 	
 # Prepare helper functions content
 IFS='' read -r -d '' PSContent1 << "EOF1"
