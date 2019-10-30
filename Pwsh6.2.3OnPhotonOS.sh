@@ -331,8 +331,8 @@ $PSContent4
 \$PackageManagementVersion="1.1.7.0"
 \$PowerShellGetVersion="2.1.3"
 $PSContent5
-echo sleep 30 ...
-sleep 30
+echo sleep 10 ...
+sleep 10
 get-psrepository
 find-module VMware.PowerCLI
 EOF1170213
