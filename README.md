@@ -104,7 +104,7 @@ The Docker image uses Mono with nuget.exe on a Debian OS.
 
 ```Pwsh6.2.3OnPhotonOS.sh```
 -
-This script deploys Powershell Core 6.2.3 on VMware Photon OS. To start Powershell simply enter "Pwsh6.2.3".
+This script deploys Powershell Core 6.2.3 on VMware Photon OS. To start Powershell simply enter ```Pwsh6.2.3```.
 
 With Powershell Core 6.1.0 and above the built-in automatic update functionality often is broken. There are a few workaround possibilities. Keep in mind, applying a workaround means that with specific modules not installed by using install-module, it cannot be updated. If this is not supported in your environment, use ```tdnf install -y powershell```. Sooner or later newer published releases are available.
 
