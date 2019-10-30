@@ -123,10 +123,12 @@ function workaround.Find-ModuleAllVersions
 		$Name,
 		$proxy,
 		$version)
+		
 	# https://github.com/PowerShell/PowerShell/issues/7827 See comment Iyoumans
 	$env:DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0
 	# [System.AppContext]::SetSwitch("System.Net.Http.UseSocketsHttpHandler", $false)
-	if (($proxy -eq "") -or ($proxy -eq $null))
+	
+	if (([string]::IsNullOrEmpty($proxy)) -eq $true)
 	{
 		if (($version -eq "") -or ($version -eq $null))
 		{
@@ -145,7 +147,7 @@ function workaround.Find-ModuleAllVersions
 	}
 	else
 	{
-		if (($version -eq "") -or ($version -eq $null))
+		if (([string]::IsNullOrEmpty($version)) -eq $true)
 		{
 			invoke-restmethod "https://www.powershellgallery.com/api/v2/Packages?`$filter=Id eq '$name'" -proxy $proxy -ProxyUseDefaultCredentials -SslProtocol Tls -SkipCertificateCheck |
 			select-Object @{ n = 'Name'; ex = { $_.title.'#text' } },
@@ -179,12 +181,14 @@ function workaround.Save-Module
 		$proxy
 	)
 	$Path = (Join-Path $Path "$Name.$Version.nupkg")
+	
 	# https://github.com/PowerShell/PowerShell/issues/7827 See comment Iyoumans
 	$env:DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0	
 	# [System.AppContext]::SetSwitch("System.Net.Http.UseSocketsHttpHandler", $false)
+	
 	if ((get-command -name invoke-webrequest) -ne $null)
 	{
-		if (($proxy -eq "") -or ($proxy -eq $null)) { Invoke-WebRequest $Uri -OutFile $Path -SslProtocol Tls -SkipCertificateCheck -ErrorAction SilentlyContinue }
+		if (([string]::IsNullOrEmpty($proxy)) -eq $true) { Invoke-WebRequest $Uri -OutFile $Path -SslProtocol Tls -SkipCertificateCheck -ErrorAction SilentlyContinue }
 		else { Invoke-WebRequest $Uri -OutFile $Path -proxy $proxy -ProxyUseDefaultCredentials -SslProtocol Tls -SkipCertificateCheck -ErrorAction SilentlyContinue}
 	}
 	else
@@ -256,7 +260,14 @@ function workaround.Install-NugetPkgOnLinux
 
 
 # Requires Run with root privileges
+
+# https://powershell.org/forums/topic/is-it-possible-to-enable-tls-1-2-as-default-in-powershell/
+# Verify current TLS support of powershell as after Powershell installation the TLS support is SystemDefault 
+[Net.ServicePointManager]::SecurityProtocol
+# Change to TLS1.2
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+# Verify again current TLS support of powershell
+[Net.ServicePointManager]::SecurityProtocol
 EOF4
 
 IFS='' read -r -d '' PSContent5 << "EOF5"
@@ -301,8 +312,6 @@ try
 	}				
 }
 catch { }
-# Now import all available modules in the path specified by the PSModulePath environment variable
-Get-Module -ListAvailable | Import-Module
 # if ((Get-PSRepository -name psgallery | %{ $_.InstallationPolicy -match "Untrusted" }) -eq $true) { set-psrepository -name PSGallery -InstallationPolicy Trusted }
 EOF5
 
@@ -319,10 +328,11 @@ $PSContent4
 \$PowerShellGetVersion="2.1.3"
 $PSContent5
 EOF1170213
-# $PwshLink -c "/tmp/tmp1.ps1"
+# $PwshLink -c '/tmp/tmp1.ps1'
+# Now import all available modules in the path specified by the PSModulePath environment variable
+# $PwshLink -c 'Get-Module -ListAvailable | Import-Module'
 # rm /tmp/tmp1.ps1
 
-Workaround1170=true
 OUTPUT=`/opt/microsoft/powershell/$ReleaseDir/pwsh -c 'get-psrepository'`
 if (echo $OUTPUT | grep -q "PSGallery"); then
 	echo "$ReleaseDir: PSGallery is registered."	
@@ -330,8 +340,7 @@ if (echo $OUTPUT | grep -q "PSGallery"); then
 	OUTPUT=`/opt/microsoft/powershell/$ReleaseDir/pwsh -c "find-module VMware.PowerCLI"`
 	if (echo $OUTPUT | grep -q "PSGallery"); then
 		echo "$ReleaseDir: PSGallery is browseable."
-		echo "$ReleaseDir with Workaround1170: All provisioning tests successfully processed."
-		Workaround1170=false
+		echo "$ReleaseDir: All provisioning tests successfully processed."
 	else
 		echo "ERROR: PSGallery not detected as browseable."
 	fi		
