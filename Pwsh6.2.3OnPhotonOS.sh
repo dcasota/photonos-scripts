@@ -333,6 +333,8 @@ $PSContent4
 $PSContent5
 get-psrepository
 find-module VMware.PowerCLI
+Get-Module -ListAvailable | Import-Module
+find-module VMware.PowerCLI
 EOF1170213
 $PwshLink -c '/tmp/tmp1.ps1' -WorkingDirectory /tmp
 
