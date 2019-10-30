@@ -328,7 +328,9 @@ $PSContent4
 \$PowerShellGetVersion="2.1.3"
 $PSContent5
 EOF1170213
-# $PwshLink -c '/tmp/tmp1.ps1'
+$PwshLink -c '/tmp/tmp1.ps1' -WorkingDirectory /tmp
+echo "Wait 30 seconds ..."
+sleep 30
 # Now import all available modules in the path specified by the PSModulePath environment variable
 # $PwshLink -c 'Get-Module -ListAvailable | Import-Module'
 # rm /tmp/tmp1.ps1
