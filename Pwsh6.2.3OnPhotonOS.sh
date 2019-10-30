@@ -312,7 +312,7 @@ EOF5
 rm -r /opt/microsoft/powershell/$ReleaseDir/Modules/PackageManagement
 mkdir /opt/microsoft/powershell/$ReleaseDir/Modules/PackageManagement
 rm -r /opt/microsoft/powershell/$ReleaseDir/Modules/PowerShellGet
-mkdir /opt/microsoft/powershell/$ReleaseDir/Modules/owerShellGet
+mkdir /opt/microsoft/powershell/$ReleaseDir/Modules/PowerShellGet
 	
 # PowerShellGet release 2.1.3 has RequiredModules specification of PackageManagement 1.1.7.0. Use the helper functions to install modules.			
 cat <<EOF1170213 > /tmp/tmp1.ps1
