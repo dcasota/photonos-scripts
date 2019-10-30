@@ -13,18 +13,18 @@
 #
 #
 # 'tndf install -y powershell' latest release is 6.1.0 and outdated (October 2019).
-# Powershell Core built-in provisions the modules PackageManagement and PowerShellGet. Built-in means that automatic update functionality for its modules is included too.
+# Powershell Core built-in installs the modules PackageManagement and PowerShellGet. Built-in means that automatic update functionality for its modules is included too.
 #
 # With Powershell Core 6.1.0 release this built-in automatic update functionality is broken. Note that the cmdlets find-module and install-module produces errors.
 # There are a few workaround possibilities. Keep in mind, applying a workaround means that with specific modules not installed by using install-module, it cannot be updated.
-# If this is not supported in your environment, use the 'tdnf install -y powershell' release. Sooner or later newer published releases are available.
+# If this is not supported in your environment, use 'tdnf install -y powershell'. Sooner or later newer published releases are available.
 # 
 # This script provides a workaround solution. It downloads and installs Powershell Core 6.2.3 release and installs the module PackageManagement 1.1.7.0.
 #
-# Powershell is installed in /opt/microsoft/powershell/6.2.3/ and creates a symbolic link "Pwsh6.2.3" that points to /opt/microsoft/powershell/6.2.3/pwsh.
+# Powershell is installed in /opt/microsoft/powershell/6.2.3/ with a symbolic link "Pwsh6.2.3" that points to /opt/microsoft/powershell/6.2.3/pwsh.
 #
 # The built-in module PowerShellGet version 2.1.3 in Powershell Core 6.2.3 has a RequiredModules specification of PackageManagement 1.1.7.0.
-# Hence, the script using an embedded powershell script installs PackageManagement 1.1.7.0.
+# Using an embedded powershell script it installs PackageManagement 1.1.7.0.
 # The dynamically created powershell script provides three helper functions used as cmdlets workaround:
 # - workaround.Find-ModuleAllVersions
 # - workaround.Save-Module
@@ -239,60 +239,55 @@ function workaround.Install-NugetPkgOnLinux
 
 # Requires Run with root privileges
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-$PwshGalleryInstalled = $false
 EOF4
 
 IFS='' read -r -d '' PSContent5 << "EOF5"
 try
 {
-	LogfileAppend("Check get-psrepository ...")
-	#TODO
-	if ($PwshGalleryInstalled -eq $false)
-	{			
-		$InstallPackageManagement = $false
-		if (((get-module -name packagemanagement -listavailable -ErrorAction SilentlyContinue) -eq $null) -and ((get-module -name packagemanagement -ErrorAction SilentlyContinue) -eq $null)) { $InstallPackagemanagement = $true }
-		else
-		{
-			$tmpvalue=get-module -name packagemanagement
-			if (([string]::IsNullOrEmpty($tmpvalue)) -eq $true) {$tmpvalue=get-module -name packagemanagement -listavailable }
-			try {
-				if (!(($tmpvalue).version | ? { $_.tostring() -imatch "$PackageManagementVersion" })) { $InstallPackageManagement = $true } #psversiontable = 4 bedingt mit ohne -listavailable
-			} catch {}
-		}
-		if ($InstallPackagemanagement -eq $true)
-		{
-			LogfileAppend("Installing Packagemanagement release $PackageManagementVersion ...")
-			if (test-path("$PSHome/Modules/PackageManagement")) {
-				# rm -r -fo "$PSHome/Modules/PackageManagement" #do not delete it might be a previous version without version number in directory name
-			}
-			$rc = workaround.Find-ModuleAllVersions -name packagemanagement -version "$PackageManagementVersion" | workaround.Save-Module -Path "$PSHome/Modules"
-			LogfileAppend("Installing Packagemanagement release $PackageManagementVersion : return code $rc")				
-			$rc = workaround.Install-NugetPkgOnLinux "PackageManagement" "$PackageManagementVersion" $rc.name "$PSHome/Modules" "$PSHome/Modules"
-			LogfileAppend("Installing Packagemanagement release $PackageManagementVersion done : return code $rc")						
-		}		
-		
-		$InstallPowershellget = $false
-		if (((get-module -name powershellget -listavailable -ErrorAction SilentlyContinue) -eq $null) -and ((get-module -name powershellget -ErrorAction SilentlyContinue) -eq $null)) { $InstallPowershellget = $true }
-		else
-		{
-			$tmpvalue=get-module -name powershellget
-			if (([string]::IsNullOrEmpty($tmpvalue)) -eq $true) {$tmpvalue=get-module -name powershellget -listavailable }
-			try {
-				if (!(($tmpvalue).version | ? { $_.tostring() -imatch "$PowershellgetVersion" })) { $InstallPowershellget = $true } #psversiontable = 4 bedingt mit ohne -listavailable
-			} catch {}
-		}
-		if ($InstallPowershellget -eq $true)
-		{
-			LogfileAppend("Installing Powershellget release $PowershellgetVersion ...")
-			if (test-path("$PSHome/Modules/Powershellget")) {
-				# rm -r -fo "$PSHome/Modules/Powershellget" #do not delete it might be a previous version without version number in directory name
-			}
-			$rc = workaround.Find-ModuleAllVersions -name powershellget -version "$PowershellgetVersion" | workaround.Save-Module -Path "$PSHome/Modules"
-			LogfileAppend("Installing Powershellget release $PowershellgetVersion : return code $rc")				
-			$rc = workaround.Install-NugetPkgOnLinux "PowerShellGet" "$PowershellgetVersion" $rc.name "$PSHome/Modules" "$PSHome/Modules"
-			LogfileAppend("Installing Powershellget release $PowershellgetVersion done : return code $rc")				
-		}				
+	LogfileAppend("Check get-psrepository ...")		
+	$InstallPackageManagement = $false
+	if (((get-module -name packagemanagement -listavailable -ErrorAction SilentlyContinue) -eq $null) -and ((get-module -name packagemanagement -ErrorAction SilentlyContinue) -eq $null)) { $InstallPackagemanagement = $true }
+	else
+	{
+		$tmpvalue=get-module -name packagemanagement
+		if (([string]::IsNullOrEmpty($tmpvalue)) -eq $true) {$tmpvalue=get-module -name packagemanagement -listavailable }
+		try {
+			if (!(($tmpvalue).version | ? { $_.tostring() -imatch "$PackageManagementVersion" })) { $InstallPackageManagement = $true } #psversiontable = 4 bedingt mit ohne -listavailable
+		} catch {}
 	}
+	if ($InstallPackagemanagement -eq $true)
+	{
+		LogfileAppend("Installing Packagemanagement release $PackageManagementVersion ...")
+		if (test-path("$PSHome/Modules/PackageManagement")) {
+			# rm -r -fo "$PSHome/Modules/PackageManagement" #do not delete it might be a previous version without version number in directory name
+		}
+		$rc = workaround.Find-ModuleAllVersions -name packagemanagement -version "$PackageManagementVersion" | workaround.Save-Module -Path "$PSHome/Modules"
+		LogfileAppend("Installing Packagemanagement release $PackageManagementVersion : return code $rc")				
+		$rc = workaround.Install-NugetPkgOnLinux "PackageManagement" "$PackageManagementVersion" $rc.name "$PSHome/Modules" "$PSHome/Modules"
+		LogfileAppend("Installing Packagemanagement release $PackageManagementVersion done : return code $rc")						
+	}		
+	
+	$InstallPowershellget = $false
+	if (((get-module -name powershellget -listavailable -ErrorAction SilentlyContinue) -eq $null) -and ((get-module -name powershellget -ErrorAction SilentlyContinue) -eq $null)) { $InstallPowershellget = $true }
+	else
+	{
+		$tmpvalue=get-module -name powershellget
+		if (([string]::IsNullOrEmpty($tmpvalue)) -eq $true) {$tmpvalue=get-module -name powershellget -listavailable }
+		try {
+			if (!(($tmpvalue).version | ? { $_.tostring() -imatch "$PowershellgetVersion" })) { $InstallPowershellget = $true } #psversiontable = 4 bedingt mit ohne -listavailable
+		} catch {}
+	}
+	if ($InstallPowershellget -eq $true)
+	{
+		LogfileAppend("Installing Powershellget release $PowershellgetVersion ...")
+		if (test-path("$PSHome/Modules/Powershellget")) {
+			# rm -r -fo "$PSHome/Modules/Powershellget" #do not delete it might be a previous version without version number in directory name
+		}
+		$rc = workaround.Find-ModuleAllVersions -name powershellget -version "$PowershellgetVersion" | workaround.Save-Module -Path "$PSHome/Modules"
+		LogfileAppend("Installing Powershellget release $PowershellgetVersion : return code $rc")				
+		$rc = workaround.Install-NugetPkgOnLinux "PowerShellGet" "$PowershellgetVersion" $rc.name "$PSHome/Modules" "$PSHome/Modules"
+		LogfileAppend("Installing Powershellget release $PowershellgetVersion done : return code $rc")				
+	}				
 }
 catch { }
 # if ((Get-PSRepository -name psgallery | %{ $_.InstallationPolicy -match "Untrusted" }) -eq $true) { set-psrepository -name PSGallery -InstallationPolicy Trusted }
@@ -306,8 +301,8 @@ $PSContent1
 $PSContent2
 $PSContent3
 $PSContent4
-	\$PackageManagementVersion="1.1.7.0"
-	\$PowershellgetVersion="2.1.3"
+\$PackageManagementVersion="1.1.7.0"
+\$PowershellgetVersion="2.1.3"
 $PSContent5
 EOF1172167
 $PwshLink -c "/tmp/tmp1.ps1"
