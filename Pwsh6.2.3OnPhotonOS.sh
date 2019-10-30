@@ -73,7 +73,7 @@ ReleaseDir="6.2.3"
 PwshLink=Pwsh$ReleaseDir
 
 # Install powershell 6.2.3
-if (![ -d /opt/microsoft/powershell/$ReleaseDir/pwsh ]); then
+if [ -d /opt/microsoft/powershell/$ReleaseDir/pwsh ]; then
 	# Download the powershell '.tar.gz' archive
 	curl -L $DownloadURL -o /tmp/powershell.tar.gz
 	# Create the target folder where powershell will be placed
@@ -292,8 +292,7 @@ EOF4
 #
 # Check functionality of powershell 6.2.3
 OUTPUT=`/opt/microsoft/powershell/$ReleaseDir/pwsh -c "find-module VMware.PowerCLI"`
-if (!(echo $OUTPUT | grep -q "PSGallery")); then
-
+	if ! (echo $OUTPUT | grep -q "PSGallery"); then
 	tmpfile=/tmp/tmp1.ps1		
 	cat <<EOF1170213 > $tmpfile
 # 
