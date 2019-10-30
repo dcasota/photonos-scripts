@@ -280,7 +280,7 @@ try
 			# Empiric conclusion: Builtin modules do not have version subfolders.
 			# To avoid side effects, version subfolders of modules are preferred.
 			# This implementation deletes files, but has not a recognition between version subfolders or other subfolders of a module.
-			rm "$PSHome/Modules/PackageManagement/*"
+			rm $PSHome/Modules/PackageManagement/*
 		}
 		$rc = workaround.Find-ModuleAllVersions -name packagemanagement -version "$PackageManagementVersion" | workaround.Save-Module -Path "$PSHome/Modules"
 		LogfileAppend("Installing Packagemanagement release $PackageManagementVersion : return code $rc")				
@@ -305,7 +305,7 @@ try
 			# Empiric conclusion: Builtin modules do not have version subfolders.
 			# To avoid side effects, version subfolders of modules are preferred.
 			# This implementation deletes files, but has not a recognition between version subfolders or other subfolders of a module.
-			rm "$PSHome/Modules/PowerShellGet/*"
+			rm $PSHome/Modules/PowerShellGet/*
 		}
 		$rc = workaround.Find-ModuleAllVersions -name PowerShellGet -version "$PowerShellGetVersion" | workaround.Save-Module -Path "$PSHome/Modules"
 		LogfileAppend("Installing PowerShellGet release $PowerShellGetVersion : return code $rc")				
