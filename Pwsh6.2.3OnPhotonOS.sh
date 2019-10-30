@@ -70,7 +70,7 @@ if [ -d /opt/microsoft/powershell/$ReleaseDir/pwsh ]; then
 	fi
 fi
 
-if ["$ToInstall" = true ]; then
+if ("$ToInstall" = "true"); then
 	# Download the powershell '.tar.gz' archive
 	curl -L $DownloadURL -o /tmp/powershell.tar.gz
 	# Create the target folder where powershell will be placed
@@ -102,7 +102,7 @@ else
 	echo "PSGallery not detected as registered."
 fi
 
-if ["$RunEmbeddedScript" = true ]; then
+if ("$RunEmbeddedScript" = "true"); then
 	
 # Prepare helper functions content
 IFS='' read -r -d '' PSContent1 << "EOF1"
