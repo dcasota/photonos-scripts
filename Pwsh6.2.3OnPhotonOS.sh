@@ -83,26 +83,26 @@ if ("$ToInstall" = "true"); then
 	ln -s /opt/microsoft/powershell/$ReleaseDir/pwsh /usr/bin/$PwshLink
 	# delete downloaded file
 	rm /tmp/powershell.tar.gz
-fi
 
-RunEmbeddedScript=true
-OUTPUT=`/opt/microsoft/powershell/$ReleaseDir/pwsh -c 'get-psrepository'`
-if (echo $OUTPUT | grep -q "PSGallery"); then
-	echo "$ReleaseDir: PSGallery is registered."
-	# Check: PSGallery is browseable using "find-module".
-	OUTPUT=`/opt/microsoft/powershell/$ReleaseDir/pwsh -c "find-module VMware.PowerCLI"`
+
+	RunEmbeddedScript=true
+	OUTPUT=`/opt/microsoft/powershell/$ReleaseDir/pwsh -c 'get-psrepository'`
 	if (echo $OUTPUT | grep -q "PSGallery"); then
-		echo "$ReleaseDir: PSGallery is browseable."
-		echo "$ReleaseDir: All provisioning tests successfully processed."
-		RunEmbeddedScript=false
+		echo "$ReleaseDir: PSGallery is registered."
+		# Check: PSGallery is browseable using "find-module".
+		OUTPUT=`/opt/microsoft/powershell/$ReleaseDir/pwsh -c "find-module VMware.PowerCLI"`
+		if (echo $OUTPUT | grep -q "PSGallery"); then
+			echo "$ReleaseDir: PSGallery is browseable."
+			echo "$ReleaseDir: All provisioning tests successfully processed."
+			RunEmbeddedScript=false
+		else
+			echo "ERROR: PSGallery not detected as browseable."
+		fi		
 	else
-		echo "ERROR: PSGallery not detected as browseable."
-	fi		
-else
-	echo "PSGallery not detected as registered."
-fi
+		echo "PSGallery not detected as registered."
+	fi
 
-if ("$RunEmbeddedScript" = "true"); then
+	if ("$RunEmbeddedScript" = "true"); then
 	
 # Prepare helper functions content
 IFS='' read -r -d '' PSContent1 << "EOF1"
@@ -234,9 +234,9 @@ function workaround.Install-NugetPkgOnLinux
 		if ($VersionString -imatch $PackageVersion)
 		{
 			LogfileAppend("Unzipping $Sourcefile to $destinationpath ...")	
-			unzip -o $Sourcefile -d $destinationpath
-			
-			chmod 755 $destinationpath/*
+			unzip -o $Sourcefile -d $destinationpath		
+			chmod -R 755 $(find $destinationpath -type d)
+			chmod -R 644 $(find $destinationpath -type f)
 			
 			LogfileAppend("Removing $sourcefile ...")
 			remove-item -path ($Sourcefile) -force -recurse -confirm:$false
@@ -262,7 +262,6 @@ EOF4
 IFS='' read -r -d '' PSContent5 << "EOF5"
 try
 {
-	$PackageManagementVersion="1.1.7.0"
 	$InstallPackageManagement = $false
 	if (((get-module -name packagemanagement -listavailable -ErrorAction SilentlyContinue) -eq $null) -and ((get-module -name packagemanagement -ErrorAction SilentlyContinue) -eq $null)) { $InstallPackagemanagement = $true }
 	else
@@ -282,47 +281,6 @@ try
 		LogfileAppend("Installing Packagemanagement release $PackageManagementVersion done : return code $rc")
 	}
 
-	$PackageManagementVersion="1.1.7.2"
-	$InstallPackageManagement = $false
-	if (((get-module -name packagemanagement -listavailable -ErrorAction SilentlyContinue) -eq $null) -and ((get-module -name packagemanagement -ErrorAction SilentlyContinue) -eq $null)) { $InstallPackagemanagement = $true }
-	else
-	{
-		$tmpvalue=get-module -name packagemanagement
-		if (([string]::IsNullOrEmpty($tmpvalue)) -eq $true) {$tmpvalue=get-module -name packagemanagement -listavailable }
-		try {
-			if (!(($tmpvalue).version | ? { $_.tostring() -imatch "$PackageManagementVersion" })) { $InstallPackageManagement = $true } #psversiontable = 4 bedingt mit ohne -listavailable
-		} catch {}
-	}
-	if ($InstallPackagemanagement -eq $true)
-	{
-		LogfileAppend("Installing Packagemanagement release $PackageManagementVersion ...")
-		$rc = workaround.Find-ModuleAllVersions -name packagemanagement -version "$PackageManagementVersion" | workaround.Save-Module -Path "$PSHome/Modules"
-		LogfileAppend("Installing Packagemanagement release $PackageManagementVersion : return code $rc")				
-		$rc = workaround.Install-NugetPkgOnLinux "PackageManagement" "$PackageManagementVersion" $rc.name "$PSHome/Modules" "$PSHome/Modules"
-		LogfileAppend("Installing Packagemanagement release $PackageManagementVersion done : return code $rc")
-	}
-
-	$PackageManagementVersion="1.4.5"
-	$InstallPackageManagement = $false
-	if (((get-module -name packagemanagement -listavailable -ErrorAction SilentlyContinue) -eq $null) -and ((get-module -name packagemanagement -ErrorAction SilentlyContinue) -eq $null)) { $InstallPackagemanagement = $true }
-	else
-	{
-		$tmpvalue=get-module -name packagemanagement
-		if (([string]::IsNullOrEmpty($tmpvalue)) -eq $true) {$tmpvalue=get-module -name packagemanagement -listavailable }
-		try {
-			if (!(($tmpvalue).version | ? { $_.tostring() -imatch "$PackageManagementVersion" })) { $InstallPackageManagement = $true } #psversiontable = 4 bedingt mit ohne -listavailable
-		} catch {}
-	}
-	if ($InstallPackagemanagement -eq $true)
-	{
-		LogfileAppend("Installing Packagemanagement release $PackageManagementVersion ...")
-		$rc = workaround.Find-ModuleAllVersions -name packagemanagement -version "$PackageManagementVersion" | workaround.Save-Module -Path "$PSHome/Modules"
-		LogfileAppend("Installing Packagemanagement release $PackageManagementVersion : return code $rc")				
-		$rc = workaround.Install-NugetPkgOnLinux "PackageManagement" "$PackageManagementVersion" $rc.name "$PSHome/Modules" "$PSHome/Modules"
-		LogfileAppend("Installing Packagemanagement release $PackageManagementVersion done : return code $rc")
-	}	
-	
-	$PowerShellGetVersion="2.1.3"
 	$InstallPowerShellGet = $false
 	if (((get-module -name PowerShellGet -listavailable -ErrorAction SilentlyContinue) -eq $null) -and ((get-module -name PowerShellGet -ErrorAction SilentlyContinue) -eq $null)) { $InstallPowerShellGet = $true }
 	else
@@ -349,11 +307,6 @@ Get-Module -ListAvailable | Import-Module
 EOF5
 
 
-# First, (broken builtin) modules are deleted.
-rm -r /opt/microsoft/powershell/$ReleaseDir/Modules/PackageManagement
-mkdir /opt/microsoft/powershell/$ReleaseDir/Modules/PackageManagement
-rm -r /opt/microsoft/powershell/$ReleaseDir/Modules/PowerShellGet
-mkdir /opt/microsoft/powershell/$ReleaseDir/Modules/PowerShellGet
 	
 # PowerShellGet release 2.1.3 has RequiredModules specification of PackageManagement 1.1.7.0. Use the helper functions to install modules.			
 cat <<EOF1170213 > /tmp/tmp1.ps1
@@ -362,11 +315,11 @@ $PSContent1
 $PSContent2
 $PSContent3
 $PSContent4
-# \$PackageManagementVersion="1.1.7.0"
-# \$PowerShellGetVersion="2.1.3"
+\$PackageManagementVersion="1.1.7.0"
+\$PowerShellGetVersion="2.1.3"
 $PSContent5
 EOF1170213
-$PwshLink -c "/tmp/tmp1.ps1"
+# $PwshLink -c "/tmp/tmp1.ps1"
 # rm /tmp/tmp1.ps1
 
 Workaround1170=true
@@ -386,6 +339,8 @@ else
 	echo "PSGallery not detected as registered."
 fi
 
+
+fi
 
 fi
 
