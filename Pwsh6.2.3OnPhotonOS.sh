@@ -276,12 +276,6 @@ try
 	if ($InstallPackagemanagement -eq $true)
 	{
 		LogfileAppend("Installing Packagemanagement release $PackageManagementVersion ...")
-		if (test-path("$PSHome/Modules/PackageManagement")) {
-			# Empiric conclusion: Builtin modules do not have version subfolders.
-			# To avoid side effects, version subfolders of modules are preferred.
-			# This implementation deletes files, but has not a recognition between version subfolders or other subfolders of a module.
-			rm $PSHome/Modules/PackageManagement/*
-		}
 		$rc = workaround.Find-ModuleAllVersions -name packagemanagement -version "$PackageManagementVersion" | workaround.Save-Module -Path "$PSHome/Modules"
 		LogfileAppend("Installing Packagemanagement release $PackageManagementVersion : return code $rc")				
 		$rc = workaround.Install-NugetPkgOnLinux "PackageManagement" "$PackageManagementVersion" $rc.name "$PSHome/Modules" "$PSHome/Modules"
@@ -301,12 +295,6 @@ try
 	if ($InstallPowerShellGet -eq $true)
 	{
 		LogfileAppend("Installing PowerShellGet release $PowerShellGetVersion ...")
-		if (test-path("$PSHome/Modules/PowerShellGet")) {
-			# Empiric conclusion: Builtin modules do not have version subfolders.
-			# To avoid side effects, version subfolders of modules are preferred.
-			# This implementation deletes files, but has not a recognition between version subfolders or other subfolders of a module.
-			rm $PSHome/Modules/PowerShellGet/*
-		}
 		$rc = workaround.Find-ModuleAllVersions -name PowerShellGet -version "$PowerShellGetVersion" | workaround.Save-Module -Path "$PSHome/Modules"
 		LogfileAppend("Installing PowerShellGet release $PowerShellGetVersion : return code $rc")				
 		$rc = workaround.Install-NugetPkgOnLinux "PowerShellGet" "$PowerShellGetVersion" $rc.name "$PSHome/Modules" "$PSHome/Modules"
@@ -319,9 +307,12 @@ Get-Module -ListAvailable | Import-Module
 # if ((Get-PSRepository -name psgallery | %{ $_.InstallationPolicy -match "Untrusted" }) -eq $true) { set-psrepository -name PSGallery -InstallationPolicy Trusted }
 EOF5
 
-# PowerShellGet release 2.1.3 has RequiredModules specification of PackageManagement 1.1.7.0. Use the helper functions and install PackageManagement 1.1.7.0.
-# Do not change '\$PowerShellGetVersion="2.1.3"'. This is the PowerShellGet module version in Powershell Core 6.2.3.
-			
+
+# First, the subfolders of (broken builtin) modules are deleted.
+rm -r $PSHome/Modules/PackageManagement
+rm -r $PSHome/Modules/PowerShellGet
+	
+# PowerShellGet release 2.1.3 has RequiredModules specification of PackageManagement 1.1.7.0. Use the helper functions to install modules.			
 cat <<EOF1170213 > /tmp/tmp1.ps1
 # Post-installation for PowerShell 6.2.3
 $PSContent1
@@ -352,37 +343,6 @@ else
 	echo "PSGallery not detected as registered."
 fi
 
-if ("$Workaround1170" = "true"); then
-
-cat <<EOF1172213 > /tmp/tmp2.ps1
-# Post-installation for PowerShell 6.2.3
-$PSContent1
-$PSContent2
-$PSContent3
-$PSContent4
-\$PackageManagementVersion="1.1.7.2"
-\$PowerShellGetVersion="2.1.3"
-$PSContent5
-EOF1172213
-$PwshLink -c "/tmp/tmp2.ps1"
-# rm /tmp/tmp1.ps1
-
-OUTPUT=`/opt/microsoft/powershell/$ReleaseDir/pwsh -c 'get-psrepository'`
-if (echo $OUTPUT | grep -q "PSGallery"); then
-	echo "$ReleaseDir: PSGallery is registered."	
-	# Check: PSGallery is browseable using "find-module".
-	OUTPUT=`/opt/microsoft/powershell/$ReleaseDir/pwsh -c "find-module VMware.PowerCLI"`
-	if (echo $OUTPUT | grep -q "PSGallery"); then
-		echo "$ReleaseDir: PSGallery is browseable."
-		echo "$ReleaseDir with Workaround1170 and Workaround1172: All provisioning tests successfully processed."		
-	else
-		echo "ERROR: PSGallery not detected as browseable. Workaround failed."
-	fi		
-else
-	echo "PSGallery not detected as registered. Workaround failed."
-fi
-
-fi
 
 fi
 
