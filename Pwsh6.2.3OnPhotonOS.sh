@@ -262,7 +262,7 @@ EOF4
 IFS='' read -r -d '' PSContent5 << "EOF5"
 try
 {
-	LogfileAppend("Check get-psrepository ...")		
+	$PackageManagementVersion="1.1.7.0"
 	$InstallPackageManagement = $false
 	if (((get-module -name packagemanagement -listavailable -ErrorAction SilentlyContinue) -eq $null) -and ((get-module -name packagemanagement -ErrorAction SilentlyContinue) -eq $null)) { $InstallPackagemanagement = $true }
 	else
@@ -279,9 +279,50 @@ try
 		$rc = workaround.Find-ModuleAllVersions -name packagemanagement -version "$PackageManagementVersion" | workaround.Save-Module -Path "$PSHome/Modules"
 		LogfileAppend("Installing Packagemanagement release $PackageManagementVersion : return code $rc")				
 		$rc = workaround.Install-NugetPkgOnLinux "PackageManagement" "$PackageManagementVersion" $rc.name "$PSHome/Modules" "$PSHome/Modules"
-		LogfileAppend("Installing Packagemanagement release $PackageManagementVersion done : return code $rc")	
-	}		
+		LogfileAppend("Installing Packagemanagement release $PackageManagementVersion done : return code $rc")
+	}
+
+	$PackageManagementVersion="1.1.7.2"
+	$InstallPackageManagement = $false
+	if (((get-module -name packagemanagement -listavailable -ErrorAction SilentlyContinue) -eq $null) -and ((get-module -name packagemanagement -ErrorAction SilentlyContinue) -eq $null)) { $InstallPackagemanagement = $true }
+	else
+	{
+		$tmpvalue=get-module -name packagemanagement
+		if (([string]::IsNullOrEmpty($tmpvalue)) -eq $true) {$tmpvalue=get-module -name packagemanagement -listavailable }
+		try {
+			if (!(($tmpvalue).version | ? { $_.tostring() -imatch "$PackageManagementVersion" })) { $InstallPackageManagement = $true } #psversiontable = 4 bedingt mit ohne -listavailable
+		} catch {}
+	}
+	if ($InstallPackagemanagement -eq $true)
+	{
+		LogfileAppend("Installing Packagemanagement release $PackageManagementVersion ...")
+		$rc = workaround.Find-ModuleAllVersions -name packagemanagement -version "$PackageManagementVersion" | workaround.Save-Module -Path "$PSHome/Modules"
+		LogfileAppend("Installing Packagemanagement release $PackageManagementVersion : return code $rc")				
+		$rc = workaround.Install-NugetPkgOnLinux "PackageManagement" "$PackageManagementVersion" $rc.name "$PSHome/Modules" "$PSHome/Modules"
+		LogfileAppend("Installing Packagemanagement release $PackageManagementVersion done : return code $rc")
+	}
+
+	$PackageManagementVersion="1.4.5"
+	$InstallPackageManagement = $false
+	if (((get-module -name packagemanagement -listavailable -ErrorAction SilentlyContinue) -eq $null) -and ((get-module -name packagemanagement -ErrorAction SilentlyContinue) -eq $null)) { $InstallPackagemanagement = $true }
+	else
+	{
+		$tmpvalue=get-module -name packagemanagement
+		if (([string]::IsNullOrEmpty($tmpvalue)) -eq $true) {$tmpvalue=get-module -name packagemanagement -listavailable }
+		try {
+			if (!(($tmpvalue).version | ? { $_.tostring() -imatch "$PackageManagementVersion" })) { $InstallPackageManagement = $true } #psversiontable = 4 bedingt mit ohne -listavailable
+		} catch {}
+	}
+	if ($InstallPackagemanagement -eq $true)
+	{
+		LogfileAppend("Installing Packagemanagement release $PackageManagementVersion ...")
+		$rc = workaround.Find-ModuleAllVersions -name packagemanagement -version "$PackageManagementVersion" | workaround.Save-Module -Path "$PSHome/Modules"
+		LogfileAppend("Installing Packagemanagement release $PackageManagementVersion : return code $rc")				
+		$rc = workaround.Install-NugetPkgOnLinux "PackageManagement" "$PackageManagementVersion" $rc.name "$PSHome/Modules" "$PSHome/Modules"
+		LogfileAppend("Installing Packagemanagement release $PackageManagementVersion done : return code $rc")
+	}	
 	
+	$PowerShellGetVersion="2.1.3"
 	$InstallPowerShellGet = $false
 	if (((get-module -name PowerShellGet -listavailable -ErrorAction SilentlyContinue) -eq $null) -and ((get-module -name PowerShellGet -ErrorAction SilentlyContinue) -eq $null)) { $InstallPowerShellGet = $true }
 	else
@@ -321,8 +362,8 @@ $PSContent1
 $PSContent2
 $PSContent3
 $PSContent4
-\$PackageManagementVersion="1.1.7.0"
-\$PowerShellGetVersion="2.1.3"
+# \$PackageManagementVersion="1.1.7.0"
+# \$PowerShellGetVersion="2.1.3"
 $PSContent5
 EOF1170213
 $PwshLink -c "/tmp/tmp1.ps1"
