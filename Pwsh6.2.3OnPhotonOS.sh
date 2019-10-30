@@ -307,7 +307,7 @@ EOF1170213
 	$PwshLink -c $tmpfile -WorkingDirectory /tmp
 	rm $tmpfile
 
-	# Two workarounds are necessary to be saved in profile /opt/microsoft/powershell/$ReleaseDir/profile.ps1.
+	# Two workarounds must be saved in profile /opt/microsoft/powershell/$ReleaseDir/profile.ps1.
 	# Each time Pwsh$ReleaseDir is started the saved profile with the workarounds is loaded.
 	# #https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_profiles?view=powershell-5.1&redirectedfrom=MSDN
 	# Show variables of $PROFILE:
