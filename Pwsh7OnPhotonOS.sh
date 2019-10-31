@@ -22,7 +22,8 @@
 # There are a few workaround possibilities. Keep in mind, applying a workaround means that with specific modules not installed by using install-module, it cannot be updated.
 # If this is not supported in your environment, use 'tdnf install -y powershell'. Sooner or later newer published releases are available.
 # 
-# This script provides a workaround solution. It downloads and installs Powershell Core 7p5 release.
+# This script provides a workaround solution. It downloads and installs Powershell Core 7p5 release, and saves necessary prerequisites in profile
+#    /opt/microsoft/powershell/7.0.0-preview.5/profile.ps1.
 #
 #    Powershell is installed in /opt/microsoft/powershell/7.0.0-preview.5/ with a symbolic link "pwsh7p5" that points to /opt/microsoft/powershell/7.0.0-preview.5/pwsh.
 #
