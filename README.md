@@ -51,13 +51,14 @@ whoami
 -
 PowerShell Core on Linux is supported since release 6.x. It is used as platform for VMware PowerCLI Core, too.
 With Powershell Core 6.1.0 and above the automatic update functionality for built-in modules often is broken (as per October 2019).
-Cmdlets find-module, install-module, etc. produces errors, PSGallery connectivity does not work, etc.
+Cmdlets find-module and install-module produces errors, PSGallery connectivity does not work, etc.
 There are a few workaround possibilities. Keep in mind, if it is not supported in your environment, use ```tdnf install -y powershell```. Sooner or later newer published releases are available.
 
 There are few approaches. The following overview helps to choose the appropriate solution.
-- One way to accomplish it is using a tool from the Microsoft open source Nuget ecosystem.
-- A 2nd way is applying a workaround. This means that specific modules, not installed by using install-module, cannot be updated.
-- A 3rd way is using a Dockerfile.
+- Download PowerShell Core and PowerCLI. Simply do not use update-module functionality of Powershell Core.
+- Patch per Powershell release specific modules to bring back PSGallery connectivity and more
+- use a tool from the Microsoft open source Nuget ecosystem to provide more lowlevel compatibility
+- use a Dockerfile with builtin another linux distro
 
 ![Status Oct19](https://github.com/dcasota/photonos-scripts/blob/master/Status_Oct19.png)
 
