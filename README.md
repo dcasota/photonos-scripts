@@ -110,3 +110,7 @@ The Docker image uses Mono with nuget.exe on a Debian OS.
 - The mono 6.4.0.198 dockerfile related part original is from https://github.com/mono/docker/blob/master/6.4.0.198/Dockerfile.
 - The original installation procedure for Pwsh7 on Linux is from https://docs.microsoft.com/en-us/powershell/scripting/install/installing-powershell-core-on-linux?view=powershell-7
 
+Simply build and run:
+- ```cd /yourpathtoDockerfile/```
+- ```docker run -it $(docker build -q .)```
+
