@@ -1,11 +1,12 @@
 #!/bin/sh
 # Deploy Powershell Core 6.2.3 on VMware Photon OS
 #
-# This script deploys Powershell Core 6.2.3 on VMware Photon OS. To start Powershell simply enter "Pwsh6.2.3".
+# This script deploys Powershell Core 6.2.3 on VMware Photon OS. To start Powershell simply enter "pwsh6.2.3".
 #
 #
 # History
 # 0.1  28.10.2019   dcasota  Initial release
+# 0.2  31.10.2019   dcasota  added more information
 #
 # Prerequisites:
 #    - VMware Photon OS 3.0
@@ -18,13 +19,14 @@
 #    Powershell Core built-in installs the modules PackageManagement and PowerShellGet. Built-in means that automatic update functionality for its modules is included too.
 #
 # With Powershell Core 6.1.0 and above the built-in automatic update functionality often is broken. Cmdlets find-module, install-module, etc. produces errors.
+#    Unfortunately these issues are open for Powershell Core 6.2.3, too. 
 #    There are a few workaround possibilities. Keep in mind, applying a workaround means that with specific modules not installed by using install-module, it cannot be updated.
 #    If this is not supported in your environment, use 'tdnf install -y powershell'. Sooner or later newer published releases are available.
 # 
 # This script provides a workaround solution. It downloads and installs Powershell Core 6.2.3 release, installs the module PackageManagement 1.1.7.0 and saves
 #    necessary prerequisites in profile /opt/microsoft/powershell/6.2.3/profile.ps1.
 #
-#    Powershell is installed in /opt/microsoft/powershell/6.2.3/ with a symbolic link "Pwsh6.2.3" that points to /opt/microsoft/powershell/6.2.3/pwsh.
+#    Powershell is installed in /opt/microsoft/powershell/6.2.3/ with a symbolic link "pwsh6.2.3" that points to /opt/microsoft/powershell/6.2.3/pwsh.
 #
 #    The built-in module PowerShellGet version 2.1.3 in Powershell Core 6.2.3 has a RequiredModules specification of PackageManagement 1.1.7.0.
 #    The embedded powershell script installs PackageManagement 1.1.7.0. It provides three helper functions used as cmdlets workaround:
@@ -33,8 +35,8 @@
 #    - workaround.Install-NugetPkgOnLinux
 #    The powershell script allows to specify Package Management and PowerShellGet version. See '\$PackageManagementVersion="1.1.7.0"'.
 #
-#    Two workarounds are necessary to be saved in profile /opt/microsoft/powershell/$ReleaseDir/profile.ps1.
-#       Each time Pwsh$ReleaseDir is started the saved profile with the workarounds is loaded.
+#    Two workarounds are necessary to be saved in profile /opt/microsoft/powershell/6.2.3/profile.ps1.
+#       Each time pwsh6.2.3 is started the saved profile with the workarounds is loaded.
 #       #https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_profiles?view=powershell-5.1&redirectedfrom=MSDN
 #       Show variables of $PROFILE:
 #       $PROFILE | Get-Member -Type NoteProperty
@@ -57,7 +59,29 @@
 # - Side effects with already installed powershell releases
 #
 
-# install the requirements
+export PS_VERSION=6.2.3
+export PACKAGE_VERSION=6.2.3
+export PS_PACKAGE=powershell-${PACKAGE_VERSION}-linux-x64.tar.gz
+export PS_PACKAGE_URL=https://github.com/PowerShell/PowerShell/releases/download/v${PS_VERSION}/${PS_PACKAGE}
+export PS_INSTALL_FOLDER=/opt/microsoft/powershell/$PS_VERSION
+export PS_INSTALL_VERSION=6.2.3
+export PS_SYMLINK=pwsh$PS_INSTALL_VERSION
+
+
+# language setting
+# See https://github.com/vmware/photon/issues/612#issuecomment-287897819
+
+# Define env for localization/globalization
+# See https://github.com/dotnet/corefx/blob/master/Documentation/architecture/globalization-invariant-mode.md
+# Photon dotnet-runtime version is 2.2.0-1.ph3. So this fix isn't needed anymore. See https://github.com/microsoft/msbuild/issues/3066#issuecomment-372104257
+# export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
+# export LC_ALL=en_US.UTF-8
+# export LANG=en_US.UTF-8
+	
+# set a fixed location for the Module analysis cache.
+PSModuleAnalysisCachePath=/var/cache/microsoft/powershell/PSModuleAnalysisCache/ModuleAnalysisCache
+
+# install dependencies
 tdnf install -y \
         tar \
         curl \
@@ -69,25 +93,31 @@ tdnf install -y \
 
 cd /tmp
 
-# install Powershell 6.2.3 
-DownloadURL="https://github.com/PowerShell/PowerShell/releases/download/v6.2.3/powershell-6.2.3-linux-x64.tar.gz"
-ReleaseDir="6.2.3"
-PwshLink=Pwsh$ReleaseDir
-
-# Install powershell 6.2.3
-if ! [ -d /opt/microsoft/powershell/$ReleaseDir/pwsh ]; then
+# Install powershell
+if ! [ -d $PS_INSTALL_FOLDER/pwsh ]; then
 	# Download the powershell '.tar.gz' archive
-	curl -L $DownloadURL -o /tmp/powershell.tar.gz
+	curl -L $PS_PACKAGE_URL -o /tmp/powershell.tar.gz
 	# Create the target folder where powershell will be placed
-	mkdir -p /opt/microsoft/powershell/$ReleaseDir
+	mkdir -p $$PS_INSTALL_FOLDER
 	# Expand powershell to the target folder
-	tar zxf /tmp/powershell.tar.gz -C /opt/microsoft/powershell/$ReleaseDir
+	tar zxf /tmp/powershell.tar.gz -C $$PS_INSTALL_FOLDER
 	# Set execute permissions
-	chmod +x /opt/microsoft/powershell/$ReleaseDir/pwsh
+	chmod +x $PS_INSTALL_FOLDER/pwsh
 	# Create the symbolic link that points to pwsh
-	ln -s /opt/microsoft/powershell/$ReleaseDir/pwsh /usr/bin/$PwshLink
+	ln -s $PS_INSTALL_FOLDER/pwsh /usr/bin/$PS_SYMLINK
 	# delete downloaded file
 	rm /tmp/powershell.tar.gz
+	# Initialize powerShell module analysis cache
+	$PS_SYMLINK \
+        -NoLogo \
+        -NoProfile \
+        -Command " \
+          \$ErrorActionPreference = 'Stop' ; \
+          \$ProgressPreference = 'SilentlyContinue' ; \
+          while(!(Test-Path -Path \$env:PSModuleAnalysisCachePath)) {  \
+            Write-Host "'Waiting for $env:PSModuleAnalysisCachePath'" ; \
+            Start-Sleep -Seconds 6 ; \
+          }"	
 fi
 
 	
@@ -290,8 +320,8 @@ EOF4
 # PowerShellGet release 2.1.3 has RequiredModules specification of PackageManagement 1.1.7.0.
 # The dynamically created powershell script contains helper functions which install the specified releases of the modules.
 #
-# Check functionality of powershell 6.2.3
-OUTPUT=`/opt/microsoft/powershell/$ReleaseDir/pwsh -c "find-module VMware.PowerCLI"`
+# Check functionality of powershell
+OUTPUT=`$PS_INSTALL_FOLDER/pwsh -c "find-module VMware.PowerCLI"`
 	if ! (echo $OUTPUT | grep -q "PSGallery"); then
 	tmpfile=/tmp/tmp1.ps1		
 	cat <<EOF1170213 > $tmpfile
@@ -303,7 +333,7 @@ $PSContent3
 \$PowerShellGetVersion="2.1.3"
 $PSContent4     
 EOF1170213
-	$PwshLink -c $tmpfile -WorkingDirectory /tmp
+	$PS_SYMLINK -c $tmpfile -WorkingDirectory /tmp
 	rm $tmpfile
 
 	# Two workarounds must be saved in profile /opt/microsoft/powershell/$ReleaseDir/profile.ps1.
@@ -321,7 +351,7 @@ EOF1170213
 	# https://github.com/PowerShell/PowerShell/issues/9495#issuecomment-515592672
 	# $env:DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0  
 	#
-	cat <<EOFProfile > /opt/microsoft/powershell/$ReleaseDir/profile.ps1
+	cat <<EOFProfile > $PS_INSTALL_FOLDER/profile.ps1
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 \$env:DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0     
 EOFProfile
@@ -332,13 +362,13 @@ fi
 tdnf clean all
 
 # Uninstall
-# rm /usr/bin/$PwshLink
-# rm -r /opt/microsoft/powershell/$ReleaseDir
-# rm -r /tmp/Microsoft.PackageManagement
+# rm /usr/bin/$PS_SYMLINK
+# rm -r $PS_INSTALL_FOLDER
 # Uninstall of all powershell releases
-# rm /usr/bin/Pwsh*
+# rm /usr/bin/pwsh*
 # rm -r /opt/microsoft/powershell
 # rm -r /root/.cache/powershell
 # rm -r /root/.local/share/powershell
 # rm -r /usr/local/share/powershell
 # rm -r /var/share/powershell
+# rm -r /var/cache/microsoft/powershell
