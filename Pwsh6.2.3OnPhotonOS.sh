@@ -92,9 +92,6 @@ export PS_SYMLINK=pwsh$PS_INSTALL_VERSION
 # export LC_ALL=en_US.UTF-8
 # export LANG=en_US.UTF-8
 	
-# set a fixed location for the Module analysis cache.
-PSModuleAnalysisCachePath=/var/cache/microsoft/powershell/PSModuleAnalysisCache/ModuleAnalysisCache
-
 # install dependencies
 tdnf install -y \
         tar \
@@ -121,11 +118,12 @@ if ! [ -d $PS_INSTALL_FOLDER/pwsh ]; then
 	ln -s $PS_INSTALL_FOLDER/pwsh /usr/bin/$PS_SYMLINK
 	# delete downloaded file
 	rm /tmp/powershell.tar.gz
-	# Initialize powerShell module analysis cache
+	# set a fixed location for the Module analysis cache and initialize powerShell module analysis cache
 	$PS_SYMLINK \
         -NoLogo \
         -NoProfile \
         -Command " \
+		 \$env:PSModuleAnalysisCachePath=/var/cache/microsoft/powershell/PSModuleAnalysisCache/ModuleAnalysisCache ; \
           \$ErrorActionPreference = 'Stop' ; \
           \$ProgressPreference = 'SilentlyContinue' ; \
           while(!(Test-Path -Path \$env:PSModuleAnalysisCachePath)) {  \
