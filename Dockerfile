@@ -1,8 +1,17 @@
-# Dockerfile for Powershell Core 7.0.0 (Beta 4) and with PSGallery
+# Dockerfile for Powershell Core 7.0.0 Preview 4
 #
+# This Dockerfile provisions Powershell Core v7.0.0-preview.4.
+#
+#
+# History
+# 0.1  20.10.2019   dcasota  Initial release
+# 0.2  31.10.2019   dcasota  Some information added
+#
+# Description:
 # PowerShell Core on Linux is supported since release 6.x.
-# Installing PowerShell Core as example on VMware Photon OS does not built-in register PSGallery or nuget.org as source provider.
-# One way to accomplish it is using a tool from the Microsoft open source Nuget ecosystem.
+# With Powershell Core 6.1.0 and above the automatic update functionality for built-in modules often is broken (as per October 2019).
+# Cmdlets find-module, install-module, etc. produces errors.
+# There are a few workaround possibilities. One way to accomplish it is using a tool from the Microsoft open source Nuget ecosystem.
 # See https://docs.microsoft.com/en-us/nuget/policies/ecosystem, https://docs.microsoft.com/en-us/nuget/nuget-org/licenses.nuget.org
 #
 # See https://docs.microsoft.com/en-us/nuget/install-nuget-client-tools
