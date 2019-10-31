@@ -55,6 +55,14 @@ There are few approaches. The following overview helps to choose the appropriate
 
 ![Status Oct19](https://github.com/dcasota/photonos-scripts/blob/master/Status_Oct19.png)
 
+```Pwsh6.2.3OnPhotonOS.sh, Pwsh7OnPhotonOS.sh```
+-
+The scripts deploy Powershell Core on Photon OS,  either 6.2.3 or 7.0.0-preview.5. To start Powershell simply enter ```pwsh6.2.3``` or ```pwsh7p5```.
+
+With Powershell Core 6.1.0 and above the built-in automatic update functionality often is broken. There are a few workaround possibilities. Keep in mind, applying a workaround means that with specific modules not installed by using install-module, it cannot be updated. If this is not supported in your environment, use ```tdnf install -y powershell```. Sooner or later newer published releases are available.
+
+Both scripts provides a workaround solution. See comment inside the scripts.
+
 ```dockerpwshgalleryonphotonos.sh```
 -
 This script makes Microsoft Powershell Core, VMware PowerCLI Core and the PowerShellGallery available on Photon OS.
@@ -102,10 +110,3 @@ The Docker image uses Mono with nuget.exe on a Debian OS.
 - The mono 6.4.0.198 dockerfile related part original is from https://github.com/mono/docker/blob/master/6.4.0.198/Dockerfile.
 - The original installation procedure for Pwsh7 on Linux is from https://docs.microsoft.com/en-us/powershell/scripting/install/installing-powershell-core-on-linux?view=powershell-7
 
-```Pwsh6.2.3OnPhotonOS.sh, Pwsh7OnPhotonOS.sh```
--
-These script deploys Powershell Core on Photon OS,  6.2.3 or 7.0.0-preview.5. To start Powershell simply enter ```pwsh6.2.3``` or ```pwsh7p5```.
-
-With Powershell Core 6.1.0 and above the built-in automatic update functionality often is broken. There are a few workaround possibilities. Keep in mind, applying a workaround means that with specific modules not installed by using install-module, it cannot be updated. If this is not supported in your environment, use ```tdnf install -y powershell```. Sooner or later newer published releases are available.
-
-Both scripts provides a workaround solution. See comment inside the scripts.
