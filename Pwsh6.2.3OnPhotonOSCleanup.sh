@@ -1,6 +1,7 @@
 #!/bin/sh
 
 rm /usr/bin/Pwsh*
+rm /usr/bin/pwsh*
 rm -r /opt/microsoft
 rm -r /tmp/Microsoft.PackageManagement
 rm -r /tmp/photonos-scripts-master
