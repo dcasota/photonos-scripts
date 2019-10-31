@@ -26,8 +26,8 @@
 #
 #    Powershell is installed in /opt/microsoft/powershell/7.0.0-preview.5/ with a symbolic link "pwsh7p5" that points to /opt/microsoft/powershell/7.0.0-preview.5/pwsh.
 #
-#    Two workarounds are necessary to be saved in profile /opt/microsoft/powershell/6.2.3/profile.ps1.
-#       Each time pwsh6.2.3 is started the saved profile with the workarounds is loaded.
+#    Two workarounds are necessary to be saved in profile /opt/microsoft/powershell/7.0.0-preview.5/profile.ps1.
+#       Each time pwsh7p5 is started the saved profile with the workarounds is loaded.
 #       #https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_profiles?view=powershell-5.1&redirectedfrom=MSDN
 #       Show variables of $PROFILE:
 #       $PROFILE | Get-Member -Type NoteProperty
