@@ -5,7 +5,7 @@
 #
 #
 # History
-# 0.1  31.10.2019   dcasota  UNFINISHED! WORKING IN PROGRESS!
+# 0.1  31.10.2019   dcasota  Initial release
 #
 # Prerequisites:
 #    - VMware Photon OS 3.0
@@ -26,8 +26,26 @@
 #
 #    Powershell is installed in /opt/microsoft/powershell/7.0.0-preview.5/ with a symbolic link "pwsh7p5" that points to /opt/microsoft/powershell/7.0.0-preview.5/pwsh.
 #
-#    The reference installation procedure for Pwsh7 on Linux was published on
+#    Two workarounds are necessary to be saved in profile /opt/microsoft/powershell/6.2.3/profile.ps1.
+#       Each time pwsh6.2.3 is started the saved profile with the workarounds is loaded.
+#       #https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_profiles?view=powershell-5.1&redirectedfrom=MSDN
+#       Show variables of $PROFILE:
+#       $PROFILE | Get-Member -Type NoteProperty
+#
+#       Workaround #1
+#       https://github.com/PowerShell/PowerShellGet/issues/447#issuecomment-476968923
+#       Change to TLS1.2
+#       [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+#
+#       Workaround #2
+#       https://github.com/PowerShell/PowerShell/issues/9495#issuecomment-515592672
+#       $env:DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0
+#
+#    The reference installation procedure for pwsh on Linux was published on
 #    https://docs.microsoft.com/en-us/powershell/scripting/install/installing-powershell-core-on-linux?view=powershell-7
+#
+#
+#    After the installation, the functionality of find-module, install-module, get-psrepository, etc. is back.
 #
 #
 # Limitations / not tested:
@@ -106,7 +124,14 @@ if ! [ -d $PS_INSTALL_FOLDER/pwsh ]; then
           }"	
 fi
 
-
+# Check functionality of powershell
+OUTPUT=`$PS_INSTALL_FOLDER/pwsh -c "find-module VMware.PowerCLI"`
+if ! (echo $OUTPUT | grep -q "PSGallery"); then
+	cat <<EOFProfile > $PS_INSTALL_FOLDER/profile.ps1
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+\$env:DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0     
+EOFProfile
+fi
 
 # Cleanup
 tdnf clean all
