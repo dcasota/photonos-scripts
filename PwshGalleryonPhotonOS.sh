@@ -1,10 +1,21 @@
 #!/bin/sh
 #
-# This study script makes Microsoft Powershell Core and the PowerShellGallery available on Photon OS by using Mono with Nuget.
-# It does not make use any docker container.
-# 
-# Installing PowerShell Core on Photon OS does not built-in register PSGallery or nuget.org as source provider.
-# One way to accomplish it is using a tool from the Microsoft open source Nuget ecosystem.
+# This study script makes Microsoft Powershell Core available on Photon OS by using Mono with Nuget.
+#
+# History
+# 0.1  21.08.2019   dcasota  Initial release
+# 0.2  08.10.2019   dcasota  Installable Powershell 6.2.3 with Mono
+# 0.3  17.10.2018   dcasota  Adding built-in tdnf powershell package. Code cleanup.
+# 0.4  25.10.2019   dcasota  docker container comment added
+# 0.5  31.10.2019   dcasota  Some information added
+#
+#
+#
+# Description:
+# PowerShell Core on Linux is supported since release 6.x.
+# With Powershell Core 6.1.0 and above the automatic update functionality for built-in modules often is broken (as per October 2019).
+# Cmdlets find-module, install-module, etc. produces errors, PSGallery connectivity does not work, etc.
+# There are a few workaround possibilities. One way to accomplish it is using a tool from the Microsoft open source Nuget ecosystem.
 # See https://docs.microsoft.com/en-us/nuget/policies/ecosystem, https://docs.microsoft.com/en-us/nuget/nuget-org/licenses.nuget.org
 #
 # The tool called nuget.exe is Windowsx86-commandline-only. See https://docs.microsoft.com/en-us/nuget/install-nuget-client-tools
@@ -12,6 +23,8 @@
 # "it can also be run on Mac OSX and Linux using Mono with some limitations."
 # This scripts downloads all necessary prerequisites (tools, Mono, Nuget.exe) and builds the Mono software.
 # The  registration is the oneliner: mono /usr/local/bin/nuget.exe sources Add -Name PSGallery -Source "https://www.powershellgallery.com/api/v2"
+#
+# Be aware, installing Mono may take fifty minutes and more.. 
 #
 # Mono related weblinks:
 # https://www.mono-project.com/docs/compiling-mono/small-footprint/
@@ -23,14 +36,6 @@
 # In reference to https://www.mono-project.com/docs/tools+libraries/tools/mkbundle/ it could be possible to turn Nuget.exe into
 # a self-contained executable that does not rely on Mono being installed on the system. If interested, see Findings_MkbundledNuget.txt in this repo archive.
 #
-#
-# History
-# 0.1  21.08.2019   dcasota  Initial release
-# 0.2  08.10.2019   dcasota  Installable Powershell 6.2.3 with Mono
-# 0.3  17.10.2018   dcasota  Adding built-in tdnf powershell package. Code cleanup.
-# 0.4  25.10.2019   dcasota  docker container comment added
-#
-# 
 
 monourl="https://download.mono-project.com/sources/mono/mono-6.4.0.198.tar.xz"
 monofilename="mono-6.4.0.198.tar.xz"
