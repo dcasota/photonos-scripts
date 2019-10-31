@@ -49,9 +49,15 @@ whoami
 
 ```PowerCLI and Powershell(Gallery) on Photon OS```
 -
-The described scripts are related to PowerCLI and to Powershell(Gallery) on Photon OS as these two functionalities are not built-in available, at least as per October 2019.
+PowerShell Core on Linux is supported since release 6.x. It is used as platform for VMware PowerCLI Core, too.
+With Powershell Core 6.1.0 and above the automatic update functionality for built-in modules often is broken (as per October 2019).
+Cmdlets find-module, install-module, etc. produces errors, PSGallery connectivity does not work, etc.
+There are a few workaround possibilities. Keep in mind, if it is not supported in your environment, use ```tdnf install -y powershell```. Sooner or later newer published releases are available.
 
 There are few approaches. The following overview helps to choose the appropriate solution.
+- One way to accomplish it is using a tool from the Microsoft open source Nuget ecosystem.
+- A 2nd way is applying a workaround. This means that specific modules, not installed by using install-module, cannot be updated.
+- A 3rd way is using a Dockerfile.
 
 ![Status Oct19](https://github.com/dcasota/photonos-scripts/blob/master/Status_Oct19.png)
 
@@ -59,15 +65,12 @@ There are few approaches. The following overview helps to choose the appropriate
 -
 The scripts deploy Powershell Core on Photon OS,  either 6.2.3 or 7.0.0-preview.5. To start Powershell simply enter ```pwsh6.2.3``` or ```pwsh7p5```.
 
-With Powershell Core 6.1.0 and above the built-in automatic update functionality often is broken. There are a few workaround possibilities. Keep in mind, applying a workaround means that with specific modules not installed by using install-module, it cannot be updated. If this is not supported in your environment, use ```tdnf install -y powershell```. Sooner or later newer published releases are available.
-
 Both scripts provides a workaround solution. See comment inside the scripts.
 
 ```dockerpwshgalleryonphotonos.sh```
 -
 This script makes Microsoft Powershell Core, VMware PowerCLI Core and the PowerShellGallery available on Photon OS.
-Installing PowerShell Core on Photon OS does not built-in register PSGallery as source provider.
-One way to accomplish it is using the VMware PowerCLI Core Dockerfile. It uses an Ubuntu 16.04 docker container with Powershell Core 6.x and PowerCLI Core 11.x.
+It is using the VMware PowerCLI Core Dockerfile. It uses an Ubuntu 16.04 docker container with Powershell Core 6.x and PowerCLI Core 11.x.
 
 Simply pull and run:
 - ```docker pull vmware/powerclicore:ubuntu16.04```
@@ -77,7 +80,7 @@ If in ```CreatePhotonOSVMOnAzure.ps1``` the variable $postprovisioning="true" is
 
 ```pwshgalleryonphotonos.sh```
 -
-This study script makes Microsoft Powershell and the Microsoft PowerShellGallery available on Photon OS by using Mono with Nuget. It does not make use any docker container.
+This study script makes Microsoft Powershell Core available on Photon OS by using Mono with Nuget.
 
 Installing PowerShell Core on Photon OS does not built-in register PSGallery or nuget.org as source provider.
 One way to accomplish it is using a tool from the Microsoft open source Nuget ecosystem.
@@ -100,7 +103,7 @@ The PowershellGallery registration is the oneliner:
 
 The Microsoft Powershell installation is processed in reference to https://github.com/vmware/powerclicore/blob/master/Dockerfile.
 
-Don't wonder - the full installation takes quite some time. As the Mono installation consumes 1 hour and more (!) and usually you don't need a full Mono development environment, it became more a learn project. If interested, see files Findings_*.
+Don't wonder - the full installation takes quite some time. As the Mono installation consumes fifty minutes and more (!) and usually you don't need a full Mono development environment, it became more a learn project. If interested, see files Findings_*.
 
 ```Dockerfile```
 -
