@@ -53,16 +53,6 @@
 #    The reference installation procedure for pwsh on Linux was published on
 #    https://docs.microsoft.com/en-us/powershell/scripting/install/installing-powershell-core-on-linux?view=powershell-7
 #
-#    The methodology to describe PS variables has been adopted from
-#    https://github.com/PowerShell/PowerShell-Docker/blob/master/release/preview/fedora/docker/Dockerfile
-#
-#    Powershell on Linux produces a few log files named with Core* with entries like 'invalid device'. These are from unhandled Module Analysis Cache Path.
-#    On Windows: See https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_windows_powershell_5.1?view=powershell-5.1
-#       By default, this cache is stored in the file ${env:LOCALAPPDATA}\Microsoft\Windows\PowerShell\ModuleAnalysisCache. 
-#    On Linux: See issue https://github.com/PowerShell/PowerShell-Docker/issues/61
-# 	    Set up PowerShell module analysis cache path and wait for its creation after powershell installation
-#       PSModuleAnalysisCachePath=/var/cache/microsoft/powershell/PSModuleAnalysisCache/ModuleAnalysisCache
-#
 #
 #    After the installation, the functionality of find-module, install-module, get-psrepository, etc. is back.
 #
@@ -73,6 +63,8 @@
 # - Side effects with already installed powershell releases
 #
 
+# The methodology to describe PS variables has been adopted from
+# https://github.com/PowerShell/PowerShell-Docker/blob/master/release/preview/fedora/docker/Dockerfile
 export PS_VERSION=6.2.3
 export PACKAGE_VERSION=6.2.3
 export PS_PACKAGE=powershell-${PACKAGE_VERSION}-linux-x64.tar.gz
@@ -91,6 +83,16 @@ export PS_SYMLINK=pwsh$PS_INSTALL_VERSION
 # export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
 # export LC_ALL=en_US.UTF-8
 # export LANG=en_US.UTF-8
+
+
+# set a fixed location for the Module analysis cache
+# Powershell on Linux produces a few log files named with Core* with entries like 'invalid device'. These are from unhandled Module Analysis Cache Path.
+#    On Windows: See https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_windows_powershell_5.1?view=powershell-5.1
+#       By default, this cache is stored in the file ${env:LOCALAPPDATA}\Microsoft\Windows\PowerShell\ModuleAnalysisCache. 
+#    On Linux: See issue https://github.com/PowerShell/PowerShell-Docker/issues/61
+# 	    Set up PowerShell module analysis cache path and wait for its creation after powershell installation
+#       PSModuleAnalysisCachePath=/var/cache/microsoft/powershell/PSModuleAnalysisCache/ModuleAnalysisCache
+export PSModuleAnalysisCachePath=/var/cache/microsoft/powershell/PSModuleAnalysisCache/ModuleAnalysisCache
 	
 # install dependencies
 tdnf install -y \
@@ -116,14 +118,13 @@ if ! [ -d $PS_INSTALL_FOLDER/pwsh ]; then
 	chmod +x $PS_INSTALL_FOLDER/pwsh
 	# Create the symbolic link that points to pwsh
 	ln -s $PS_INSTALL_FOLDER/pwsh /usr/bin/$PS_SYMLINK
-	# delete downloaded file
+	# Delete downloaded file
 	rm /tmp/powershell.tar.gz
-	# set a fixed location for the Module analysis cache and initialize powerShell module analysis cache
+	# Initialize powerShell module analysis cache
 	$PS_SYMLINK \
         -NoLogo \
         -NoProfile \
         -Command " \
-		 \$env:PSModuleAnalysisCachePath=/var/cache/microsoft/powershell/PSModuleAnalysisCache/ModuleAnalysisCache ; \
           \$ErrorActionPreference = 'Stop' ; \
           \$ProgressPreference = 'SilentlyContinue' ; \
           while(!(Test-Path -Path \$env:PSModuleAnalysisCachePath)) {  \
@@ -132,9 +133,12 @@ if ! [ -d $PS_INSTALL_FOLDER/pwsh ]; then
           }"	
 fi
 
+# Check functionality of powershell
+OUTPUT=`$PS_INSTALL_FOLDER/pwsh -c "find-module VMware.PowerCLI"`
+if ! (echo $OUTPUT | grep -q "PSGallery"); then
 	
-# Prepare helper functions content
-# Remark: Embedding the complete powershell script gave some errors. Therefore it is separated in 4 scriptblock variables PSContent1 to PSContent4.
+    # Prepare helper functions content
+    # Remark: Embedding the complete powershell script in one single variable gave some errors. Therefore it is separated in 4 scriptblock variables PSContent1 to PSContent4.
 IFS='' read -r -d '' PSContent1 << "EOF1"
 function workaround.Find-ModuleAllVersions
 {
@@ -329,12 +333,8 @@ catch { }
 EOF4
 
 
-# PowerShellGet release 2.1.3 has RequiredModules specification of PackageManagement 1.1.7.0.
-# The dynamically created powershell script contains helper functions which install the specified releases of the modules.
-#
-# Check functionality of powershell
-OUTPUT=`$PS_INSTALL_FOLDER/pwsh -c "find-module VMware.PowerCLI"`
-	if ! (echo $OUTPUT | grep -q "PSGallery"); then
+	# PowerShellGet release 2.1.3 has RequiredModules specification of PackageManagement 1.1.7.0.
+	# The dynamically created powershell script contains helper functions which install the specified releases of the modules.
 	tmpfile=/tmp/tmp1.ps1		
 	cat <<EOF1170213 > $tmpfile
 # 

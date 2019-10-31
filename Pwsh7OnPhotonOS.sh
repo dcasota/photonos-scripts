@@ -24,20 +24,10 @@
 # 
 # This script provides a workaround solution. It downloads and installs Powershell Core 7p5 release.
 #
+#    Powershell is installed in /opt/microsoft/powershell/7.0.0-preview.5/ with a symbolic link "pwsh7p5" that points to /opt/microsoft/powershell/7.0.0-preview.5/pwsh.
+#
 #    The reference installation procedure for Pwsh7 on Linux was published on
 #    https://docs.microsoft.com/en-us/powershell/scripting/install/installing-powershell-core-on-linux?view=powershell-7
-#
-#    The methodology to describe PS variables has been adopted from
-#    https://github.com/PowerShell/PowerShell-Docker/blob/master/release/preview/fedora/docker/Dockerfile
-#
-#    Powershell on Linux produces a few log files named with Core* with entries like 'invalid device'. These are from unhandled Module Analysis Cache Path.
-#    On Windows: See https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_windows_powershell_5.1?view=powershell-5.1
-#       By default, this cache is stored in the file ${env:LOCALAPPDATA}\Microsoft\Windows\PowerShell\ModuleAnalysisCache. 
-#    On Linux: See issue https://github.com/PowerShell/PowerShell-Docker/issues/61
-# 	    Set up PowerShell module analysis cache path and wait for its creation after powershell installation
-#       PSModuleAnalysisCachePath=/var/cache/microsoft/powershell/PSModuleAnalysisCache/ModuleAnalysisCache
-# 
-#    Powershell is installed in /opt/microsoft/powershell/7.0.0-preview.5/ with a symbolic link "pwsh7p5" that points to /opt/microsoft/powershell/7.0.0-preview.5/pwsh.
 #
 #
 # Limitations / not tested:
@@ -47,7 +37,8 @@
 # - Side effects with already installed powershell releases
 #
 
-
+# The methodology to describe PS variables has been adopted from
+# https://github.com/PowerShell/PowerShell-Docker/blob/master/release/preview/fedora/docker/Dockerfile
 export PS_VERSION=7.0.0-preview.5
 export PACKAGE_VERSION=7.0.0-preview.5
 export PS_PACKAGE=powershell-${PACKAGE_VERSION}-linux-x64.tar.gz
@@ -55,7 +46,6 @@ export PS_PACKAGE_URL=https://github.com/PowerShell/PowerShell/releases/download
 export PS_INSTALL_FOLDER=/opt/microsoft/powershell/$PS_VERSION
 export PS_INSTALL_VERSION=7p5
 export PS_SYMLINK=pwsh$PS_INSTALL_VERSION
-
 
 # language setting
 # See https://github.com/vmware/photon/issues/612#issuecomment-287897819
@@ -66,6 +56,16 @@ export PS_SYMLINK=pwsh$PS_INSTALL_VERSION
 # export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
 # export LC_ALL=en_US.UTF-8
 # export LANG=en_US.UTF-8
+
+
+# set a fixed location for the Module analysis cache
+# Powershell on Linux produces a few log files named with Core* with entries like 'invalid device'. These are from unhandled Module Analysis Cache Path.
+#    On Windows: See https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_windows_powershell_5.1?view=powershell-5.1
+#       By default, this cache is stored in the file ${env:LOCALAPPDATA}\Microsoft\Windows\PowerShell\ModuleAnalysisCache. 
+#    On Linux: See issue https://github.com/PowerShell/PowerShell-Docker/issues/61
+# 	    Set up PowerShell module analysis cache path and wait for its creation after powershell installation
+#       PSModuleAnalysisCachePath=/var/cache/microsoft/powershell/PSModuleAnalysisCache/ModuleAnalysisCache
+export PSModuleAnalysisCachePath=/var/cache/microsoft/powershell/PSModuleAnalysisCache/ModuleAnalysisCache
 	
 # install dependencies
 tdnf install -y \
@@ -98,7 +98,6 @@ if ! [ -d $PS_INSTALL_FOLDER/pwsh ]; then
         -NoLogo \
         -NoProfile \
         -Command " \
-		 \$env:PSModuleAnalysisCachePath=/var/cache/microsoft/powershell/PSModuleAnalysisCache/ModuleAnalysisCache ; \
           \$ErrorActionPreference = 'Stop' ; \
           \$ProgressPreference = 'SilentlyContinue' ; \
           while(!(Test-Path -Path \$env:PSModuleAnalysisCachePath)) {  \
