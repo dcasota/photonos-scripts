@@ -55,7 +55,7 @@ Cmdlets find-module and install-module produces errors, PSGallery connectivity d
 There are a few workaround possibilities. Keep in mind, if it is not supported in your environment, use ```tdnf install -y powershell```. Sooner or later newer published releases are available.
 
 There are few approaches. The following overview helps to choose the appropriate solution.
-- Download PowerShell Core and PowerCLI. Simply do not use update-module functionality of Powershell Core.
+- Download PowerShell Core and PowerCLI. Simply do not use ```update-module``` functionality of Powershell Core.
 - Patch per Powershell release specific modules to bring back PSGallery connectivity and more
 - use a tool from the Microsoft open source Nuget ecosystem to provide more lowlevel compatibility
 - use a Dockerfile with builtin another linux distro
