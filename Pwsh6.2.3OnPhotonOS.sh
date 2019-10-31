@@ -50,6 +50,20 @@
 #       https://github.com/PowerShell/PowerShell/issues/9495#issuecomment-515592672
 #       $env:DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0
 #
+#    The reference installation procedure for pwsh on Linux was published on
+#    https://docs.microsoft.com/en-us/powershell/scripting/install/installing-powershell-core-on-linux?view=powershell-7
+#
+#    The methodology to describe PS variables has been adopted from
+#    https://github.com/PowerShell/PowerShell-Docker/blob/master/release/preview/fedora/docker/Dockerfile
+#
+#    Powershell on Linux produces a few log files named with Core* with entries like 'invalid device'. These are from unhandled Module Analysis Cache Path.
+#    On Windows: See https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_windows_powershell_5.1?view=powershell-5.1
+#       By default, this cache is stored in the file ${env:LOCALAPPDATA}\Microsoft\Windows\PowerShell\ModuleAnalysisCache. 
+#    On Linux: See issue https://github.com/PowerShell/PowerShell-Docker/issues/61
+# 	    Set up PowerShell module analysis cache path and wait for its creation after powershell installation
+#       PSModuleAnalysisCachePath=/var/cache/microsoft/powershell/PSModuleAnalysisCache/ModuleAnalysisCache
+#
+#
 #    After the installation, the functionality of find-module, install-module, get-psrepository, etc. is back.
 #
 # Limitations / not tested:
@@ -98,9 +112,9 @@ if ! [ -d $PS_INSTALL_FOLDER/pwsh ]; then
 	# Download the powershell '.tar.gz' archive
 	curl -L $PS_PACKAGE_URL -o /tmp/powershell.tar.gz
 	# Create the target folder where powershell will be placed
-	mkdir -p $$PS_INSTALL_FOLDER
+	mkdir -p $PS_INSTALL_FOLDER
 	# Expand powershell to the target folder
-	tar zxf /tmp/powershell.tar.gz -C $$PS_INSTALL_FOLDER
+	tar zxf /tmp/powershell.tar.gz -C $PS_INSTALL_FOLDER
 	# Set execute permissions
 	chmod +x $PS_INSTALL_FOLDER/pwsh
 	# Create the symbolic link that points to pwsh

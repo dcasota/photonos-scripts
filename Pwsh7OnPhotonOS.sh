@@ -87,9 +87,9 @@ if ! [ -d $PS_INSTALL_FOLDER/pwsh ]; then
 	# Download the powershell '.tar.gz' archive
 	curl -L $PS_PACKAGE_URL -o /tmp/powershell.tar.gz
 	# Create the target folder where powershell will be placed
-	mkdir -p $$PS_INSTALL_FOLDER
+	mkdir -p $PS_INSTALL_FOLDER
 	# Expand powershell to the target folder
-	tar zxf /tmp/powershell.tar.gz -C $$PS_INSTALL_FOLDER
+	tar zxf /tmp/powershell.tar.gz -C $PS_INSTALL_FOLDER
 	# Set execute permissions
 	chmod +x $PS_INSTALL_FOLDER/pwsh
 	# Create the symbolic link that points to pwsh
