@@ -155,7 +155,7 @@ function workaround.Find-ModuleAllVersions
 	
 	if (([string]::IsNullOrEmpty($proxy)) -eq $true)
 	{
-		if (($version -eq "") -or ($version -eq $null))
+		if (([string]::IsNullOrEmpty($version)) -eq $true)
 		{
 			invoke-restmethod "https://www.powershellgallery.com/api/v2/Packages?`$filter=Id eq '$name'" -SslProtocol Tls -SkipCertificateCheck |
 			select-Object @{ n = 'Name'; ex = { $_.title.'#text' } },
@@ -334,7 +334,7 @@ EOF4
 
 
 	# PowerShellGet release 2.1.3 has RequiredModules specification of PackageManagement 1.1.7.0.
-	# The dynamically created powershell script contains helper functions which install the specified releases of the modules.
+	# The dynamically created powershell script contains helper functions which install the specified release of the modules.
 	tmpfile=/tmp/tmp1.ps1		
 	cat <<EOF1170213 > $tmpfile
 # 
