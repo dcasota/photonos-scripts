@@ -1,8 +1,6 @@
 #!/bin/sh
 
-export WORKDIR=/photon
-mkdir -p $WORKDIR
-cd $WORKDIR
+cd /
 
 tdnf install -y \
 	curl
@@ -23,8 +21,8 @@ tdnf install -y \
 git clone https://github.com/vmware/photon.git
 
 
-mkdir -p $WORKDIR/SPECS/powershell/powershell-6.1.1
-cd $WORKDIR/SPECS/powershell/powershell-6.1.1
+mkdir -p /photon/SPECS/powershell/powershell-6.1.1
+cd /photon/SPECS/powershell/powershell-6.1.1
 
 curl -O -J -L https://github.com/PowerShell/PowerShell/releases/download/v6.1.1/powershell-6.1.1-linux-x64.tar.gz
 cp powershell-6.1.1-linux-x64.tar.gz powershell-6.1.1.tar.gz
@@ -34,7 +32,7 @@ tar -xzvf powershell-6.1.1.tar.gz
 # curl -O -J -L https://github.com/PowerShell/PowerShell/archive/v6.2.0-preview.2.tar.gz
 # tar -xzvf PowerShell-6.2.0-preview.2.tar.gz
 
-$WORKDIR/tools/scripts/build_spec.sh $WORKDIR/SPECS/powershell/powershell.spec
+/photon/tools/scripts/build_spec.sh /photon/SPECS/powershell/powershell.spec
 
 
 # TODO Cleanup
