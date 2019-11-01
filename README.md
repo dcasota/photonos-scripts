@@ -52,7 +52,7 @@ whoami
 PowerShell Core on Linux is supported since release 6.x. It is used as platform for VMware PowerCLI Core, too.
 With Powershell Core 6.1.0 and above the automatic update functionality for built-in modules often is broken (as per October 2019).
 Cmdlets find-module and install-module produces errors, PSGallery connectivity does not work, etc.
-There are a few workaround possibilities. Keep in mind, if it is not supported in your environment, use ```tdnf install -y powershell```. Sooner or later newer published releases are available.
+There are a few workaround possibilities on VMware Photon OS, too. Keep in mind, if it is not supported in your environment, use ```tdnf install -y powershell```. Sooner or later newer published releases are available.
 
 There are few approaches. The following overview helps to choose the appropriate solution.
 - Download PowerShell Core and PowerCLI. Simply do not use ```update-module``` functionality of Powershell Core.
