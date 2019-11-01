@@ -21,13 +21,13 @@ tdnf install -y \
 git clone https://github.com/vmware/photon.git
 
 
-mkdir -p /photon/SPECS/powershell/powershell-6.1.1
-cd /photon/SPECS/powershell/powershell-6.1.1
+mkdir -p /photon/SPECS/powershell/Powershell-6.1.1
+cd /photon/SPECS/powershell/Powershell-6.1.1
 
 curl -O -J -L https://github.com/PowerShell/PowerShell/releases/download/v6.1.1/powershell-6.1.1-linux-x64.tar.gz
-cp powershell-6.1.1-linux-x64.tar.gz powershell-6.1.1.tar.gz
+cp powershell-6.1.1-linux-x64.tar.gz Powershell-6.1.1.tar.gz
 rm powershell-6.1.1-linux-x64.tar.gz
-tar -xzvf powershell-6.1.1.tar.gz
+tar -xzvf Powershell-6.1.1.tar.gz
 
 # curl -O -J -L https://github.com/PowerShell/PowerShell/archive/v6.2.0-preview.2.tar.gz
 # tar -xzvf PowerShell-6.2.0-preview.2.tar.gz
@@ -37,7 +37,28 @@ tar -xzvf powershell-6.1.1.tar.gz
 
 # TODO Cleanup
 
-
+# 1. Create sandbox
+#         Use local build template image OK
+# 2. Prepare build environment
+#         Create source folder OK
+#         Copy sources from /photon/SPECS/powershell OK
+#         Install build requirements OK
+# 3. Build
+#         Run rpmbuild FAIL
+# Sandbox is preserved for analisys. Use 'docker exec -it build_spec /bin/bash'
+# Build failed. See /photon/SPECS/powershell/stage/LOGS/powershell.log for full output
+# 
+# Installing/Updating: subversion-1.10.2-5.ph3.x86_64
+# Installing/Updating: subversion-perl-1.10.2-5.ph3.x86_64
+# Installing/Updating: git-2.23.0-1.ph3.x86_64
+# Installing/Updating: dotnet-sdk-2.1.403-1.ph3.x86_64
+# Installing/Updating: cmake-3.12.1-4.ph3.x86_64
+# Installing/Updating: clang-6.0.1-1.ph3.x86_64
+# Installing/Updating: psmisc-23.2-4.ph3.x86_64
+# 
+# Complete!
+# error: Bad source: /usr/src/photon/SOURCES/powershell-6.1.1.tar.gz: No such file or directory
+# 
 
 # root@photonos [ /work/photon/SPECS/powershell/PowerShell-6.1.1 ]# docker exec -it build_spec /bin/bash
 # root [ / ]# ls /usr/src/photon/SOURCES/
