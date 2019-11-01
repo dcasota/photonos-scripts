@@ -93,8 +93,9 @@ if ! [ -d $PS_INSTALL_FOLDER/pwsh ]; then
             Write-Host "'Waiting for $env:PSModuleAnalysisCachePath'" ; \
             Start-Sleep -Seconds 6 ; \
           }"
-	chmod -R 755 $(find $PS_INSTALL_FOLDER -type d)
-	chmod -R 644 $(find $PS_INSTALL_FOLDER -type f)
+	mkdir $PS_INSTALL_FOLDER/Modules
+	chmod -R 755 $(find $PS_INSTALL_FOLDER/Modules -type d)
+	chmod -R 644 $(find $PS_INSTALL_FOLDER/Modules -type f)
 fi
 
 # Check functionality of powershell
