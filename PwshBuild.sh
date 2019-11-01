@@ -1,11 +1,11 @@
 #!/bin/sh
 
-export WORKDIR=/.
+export WORKDIR=/photon
 
-tndf install -y \
+tdnf install -y \
 	curl
 	
-tndf install -y \
+tdnf install -y \
 	tar \
 	libunwind \
 	userspace-rcu \
@@ -19,7 +19,7 @@ tndf install -y \
 	git \		
 
 git clone https://github.com/vmware/photon.git
-cd $WORKDIR/photon/SPECS/powershell
+cd $WORKDIR/SPECS/powershell
 
 curl -O -J -L https://github.com/PowerShell/PowerShell/releases/download/v6.1.1/powershell-6.1.1-linux-x64.tar.gz
 cp powershell-6.1.1-linux-x64.tar.gz powershell-6.1.1.tar.gz
@@ -29,7 +29,7 @@ tar -xzvf powershell-6.1.1.tar.gz
 curl -O -J -L https://github.com/PowerShell/PowerShell/archive/v6.2.0-preview.2.tar.gz
 tar -xzvf PowerShell-6.2.0-preview.2.tar.gz
 
-$WORKDIR/photon/tools/scripts/build_spec.sh $WORKDIR/photon/SPECS/powershell/powershell.spec
+$WORKDIR/tools/scripts/build_spec.sh $WORKDIR/SPECS/powershell/powershell.spec
 
 
 # TODO Cleanup
