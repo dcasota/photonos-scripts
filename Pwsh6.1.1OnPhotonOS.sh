@@ -14,15 +14,13 @@
 #
 #
 # Description:
-#    The Windows Powershell 6.1.1 version includes modules PowerShellGet 1.6.7 and PackageManagement 1.1.7.2 which is strange as PowerShellGet 1.6.7 has a
-#    RequiredModules specification of PackageManagement 1.1.7.0.
-#    The embedded powershell script installs PackageManagement 1.1.7.0 and PowerShellGet 2.1.3.
-#    This bundle provides the desired functionality of find-module, install-module, get-psrepository, etc.
+#    The Windows Powershell 6.1.1 version includes modules PowerShellGet 1.6.7 and PackageManagement 1.1.7.2. Hence, the embedded powershell script installs
+#    PackageManagement 1.1.7.0 and PowerShellGet 2.1.3 to add the functionality of find-module, install-module, get-psrepository, etc.
 #    The embedded powershell script provides three helper functions used as cmdlets workaround:
 #    - workaround.Find-ModuleAllVersions
 #    - workaround.Save-Module
 #    - workaround.Install-NugetPkgOnLinux
-#    The powershell script allows to specify Package Management and PowerShellGet version. See '\$PackageManagementVersion="1.1.7.0"'.
+#    The powershell script allows to specify Package Management and PowerShellGet version. See '\$PackageManagementVersion="1.1.7.2"'.
 #
 #    Two workarounds are necessary to be saved in $PROFILE (/root/.config/powershell/Microsoft.PowerShell_profile.ps1).
 #       Each time pwsh6.2.3 is started the saved profile with the workarounds is loaded.
@@ -94,9 +92,9 @@ if ! [ -d $PS_INSTALL_FOLDER/pwsh ]; then
           while(!(Test-Path -Path \$env:PSModuleAnalysisCachePath)) {  \
             Write-Host "'Waiting for $env:PSModuleAnalysisCachePath'" ; \
             Start-Sleep -Seconds 6 ; \
-          } ; \
-		  chmod -R 755 \$(find \$PSHome -type d) ; \
-		  chmod -R 644 \$(find \$PSHome -type f)"
+          }"
+	chmod -R 755 $(find $PS_INSTALL_FOLDER -type d)
+	chmod -R 644 $(find $PS_INSTALL_FOLDER -type f)
 fi
 
 # Check functionality of powershell
