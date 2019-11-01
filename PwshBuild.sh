@@ -21,7 +21,10 @@ tdnf install -y \
 	git \		
 
 git clone https://github.com/vmware/photon.git
-cd $WORKDIR/SPECS/powershell
+
+
+mkdir -p $WORKDIR/SPECS/powershell/powershell-6.1.1
+cd $WORKDIR/SPECS/powershell/powershell-6.1.1
 
 curl -O -J -L https://github.com/PowerShell/PowerShell/releases/download/v6.1.1/powershell-6.1.1-linux-x64.tar.gz
 cp powershell-6.1.1-linux-x64.tar.gz powershell-6.1.1.tar.gz
