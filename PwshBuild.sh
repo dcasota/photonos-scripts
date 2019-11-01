@@ -1,6 +1,8 @@
 #!/bin/sh
 
 export WORKDIR=/photon
+mkdir -p $WORKDIR
+cd $WORKDIR
 
 tdnf install -y \
 	curl
@@ -26,8 +28,8 @@ cp powershell-6.1.1-linux-x64.tar.gz powershell-6.1.1.tar.gz
 rm powershell-6.1.1-linux-x64.tar.gz
 tar -xzvf powershell-6.1.1.tar.gz
 
-curl -O -J -L https://github.com/PowerShell/PowerShell/archive/v6.2.0-preview.2.tar.gz
-tar -xzvf PowerShell-6.2.0-preview.2.tar.gz
+# curl -O -J -L https://github.com/PowerShell/PowerShell/archive/v6.2.0-preview.2.tar.gz
+# tar -xzvf PowerShell-6.2.0-preview.2.tar.gz
 
 $WORKDIR/tools/scripts/build_spec.sh $WORKDIR/SPECS/powershell/powershell.spec
 
