@@ -62,11 +62,11 @@ There are few approaches. The following overview helps to choose the appropriate
 
 ![Status Oct19](https://github.com/dcasota/photonos-scripts/blob/master/Status_Oct19.png)
 
-```Pwsh6.2.3OnPhotonOS.sh, Pwsh7OnPhotonOS.sh```
+```Pwsh6.1.1OnPhotonOS.sh, Pwsh6.2.3OnPhotonOS.sh, Pwsh7OnPhotonOS.sh```
 -
-The scripts deploy Powershell Core on Photon OS,  either 6.2.3 or 7.0.0-preview.5. To start Powershell simply enter ```pwsh6.2.3``` or ```pwsh7p5```.
+The scripts deploy Powershell Core on Photon OS,  6.1.1, 6.2.3 or 7.0.0-preview.5. To start Powershell simply enter ```pwsh```, ```pwsh6.2.3``` or ```pwsh7p5```.
 
-Both scripts provides a workaround solution. See comment inside the scripts.
+See comment inside the scripts.
 
 ```dockerpwshgalleryonphotonos.sh```
 -
