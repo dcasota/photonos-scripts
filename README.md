@@ -86,7 +86,7 @@ This study script makes Microsoft Powershell Core available on Photon OS by usin
 It uses a tool from the Microsoft open source Nuget ecosystem.
 See https://docs.microsoft.com/en-us/nuget/policies/ecosystem, https://docs.microsoft.com/en-us/nuget/nuget-org/licenses.nuget.org
 
-The tool called nuget.exe is Windowsx86-commandline-only. See https://docs.microsoft.com/en-us/nuget/install-nuget-client-tools
+The tool called nuget.exe is Windowsx86-commandline-only and is used to support more lowlevel compatibility. See https://docs.microsoft.com/en-us/nuget/install-nuget-client-tools
 "The nuget.exe CLI, nuget.exe, is the command-line utility for Windows that provides ALL NUGET CAPABILITIES;"
 "it can also be run on Mac OSX and Linux using Mono with some limitations."
 
