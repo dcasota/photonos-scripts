@@ -18,7 +18,7 @@
 #    As the modules are highly dependent on lowlevel functions, not every windows version bundle works on a linux distro.
 #
 #    This script installs Powershell Core 6.1.1 release, installs the module PackageManagement 1.1.7.0 with PowerShellGet 2.1.3 and saves
-#    necessary prerequisites in profile /usr/lib/powershell/Microsoft.PowerShell_profile.ps1.
+#    necessary prerequisites in profile /usr/lib/powershell/profile.ps1.
 #
 #    Powershell is installed in /usr/lib/powershell with a symbolic link "pwsh" that points to /usr/lib/powershell/pwsh.
 #
@@ -29,7 +29,7 @@
 #    - workaround.Install-NugetPkgOnLinux
 #    The powershell script allows to specify Package Management and PowerShellGet version. See '\$PackageManagementVersion="1.1.7.0"'.
 #
-#    The necessary prerequisites are saved in profile /usr/lib/powershell/Microsoft.PowerShell_profile.ps1.
+#    The necessary prerequisites are saved in profile /usr/lib/powershell/profile.ps1.
 #       Each time pwsh is started the saved profile with the workarounds is loaded.
 #       #https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_profiles?view=powershell-5.1&redirectedfrom=MSDN
 #       Show variables of $PROFILE:
@@ -331,7 +331,7 @@ EOF1170213
 	$PS_SYMLINK -c $tmpfile -WorkingDirectory /tmp
 	rm $tmpfile
 	
-	# Two prerequisites must be saved in profile /usr/lib/powershell/Microsoft.PowerShell_profile.ps1.
+	# Two prerequisites must be saved in profile /usr/lib/powershell/profile.ps1.
 	# Each time Pwsh is started the saved profile with the workarounds is loaded.
 	# #https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_profiles?view=powershell-5.1&redirectedfrom=MSDN
 	# Show variables of $PROFILE:
@@ -346,7 +346,7 @@ EOF1170213
 	# https://github.com/PowerShell/PowerShell/issues/9495#issuecomment-515592672
 	# $env:DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0  
 	#
-	cat <<EOFProfile > /usr/lib/powershell/Microsoft.PowerShell_profile.ps1
+	cat <<EOFProfile > /usr/lib/powershell/profile.ps1
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 \$env:DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0     
 EOFProfile
