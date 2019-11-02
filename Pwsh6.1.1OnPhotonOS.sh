@@ -14,19 +14,38 @@
 #
 #
 # Description:
-#    The Windows Powershell 6.1.1 version includes modules PowerShellGet 1.6.7 and PackageManagement 1.1.7.2. Hence, the embedded powershell script installs
-#    PackageManagement 1.1.7.0 and PowerShellGet 2.1.3 to add the functionality of find-module, install-module, get-psrepository, etc.
-#    The embedded powershell script provides three helper functions used as cmdlets workaround:
+#    The Windows Powershell 6.1.1 version includes modules PowerShellGet 1.6.7 and PackageManagement 1.1.7.2. On Photon OS Powershell Core 6.1.1 these modules are not included.
+#    As the modules are highly dependent on lowlevel functions, not every windows version bundle works on a linux distro.
+#
+#    This script installs Powershell Core 6.1.1 release, installs the module PackageManagement 1.1.7.0 with PowerShellGet 2.1.3 and saves
+#    necessary prerequisites in profile /usr/lib/powershell/Microsoft.PowerShell_profile.ps1.
+#
+#    Powershell is installed in /usr/lib/powershell with a symbolic link "pwsh" that points to /usr/lib/powershell/pwsh.
+#
+#    The built-in module PowerShellGet version 2.1.3 in Powershell Core 6.2.3 has a RequiredModules specification of PackageManagement 1.1.7.0.
+#    The embedded powershell script installs PackageManagement 1.1.7.0. It provides three helper functions used as cmdlets workaround:
 #    - workaround.Find-ModuleAllVersions
 #    - workaround.Save-Module
 #    - workaround.Install-NugetPkgOnLinux
-#    The powershell script allows to specify Package Management and PowerShellGet version. See '\$PackageManagementVersion="1.1.7.2"'.
+#    The powershell script allows to specify Package Management and PowerShellGet version. See '\$PackageManagementVersion="1.1.7.0"'.
 #
-#    Two workarounds are necessary to be saved in $PROFILE (/root/.config/powershell/Microsoft.PowerShell_profile.ps1).
-#       Each time pwsh6.2.3 is started the saved profile with the workarounds is loaded.
+#    The necessary prerequisites are saved in profile /usr/lib/powershell/Microsoft.PowerShell_profile.ps1.
+#       Each time pwsh is started the saved profile with the workarounds is loaded.
 #       #https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_profiles?view=powershell-5.1&redirectedfrom=MSDN
 #       Show variables of $PROFILE:
 #       $PROFILE | Get-Member -Type NoteProperty
+#              PS /tmp> $PROFILE | Get-Member -Type NoteProperty
+#       
+#       
+#                 TypeName: System.String
+#       
+#              Name                   MemberType   Definition
+#              ----                   ----------   ----------
+#              AllUsersAllHosts       NoteProperty string AllUsersAllHosts=/usr/lib/powershell/profile.ps1
+#              AllUsersCurrentHost    NoteProperty string AllUsersCurrentHost=/usr/lib/powershell/Microsoft.PowerShell_profile.ps1
+#              CurrentUserAllHosts    NoteProperty string CurrentUserAllHosts=/root/.config/powershell/profile.ps1
+#              CurrentUserCurrentHost NoteProperty string CurrentUserCurrentHost=/root/.config/powershell/Microsoft.PowerShell_profile.ps1
+#
 #
 #       Workaround #1
 #       https://github.com/PowerShell/PowerShellGet/issues/447#issuecomment-476968923
@@ -38,7 +57,7 @@
 #       $env:DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0
 #
 #
-#    After the installation, the functionality of find-module, install-module, get-psrepository, etc. is added.
+#    After the installation, the functionality of find-module, install-module, get-psrepository, etc. is back.
 #
 # Limitations / not tested:
 # - More restrictive user privileges
@@ -223,16 +242,15 @@ function workaround.Install-NugetPkgOnLinux
 		
 		if ($VersionString -imatch $PackageVersion)
 		{
-			echo Unzipping $Sourcefile to $destinationpath
-			mkdir -p $destinationpath
+			# Unzipping $Sourcefile to $destinationpath	
 			unzip -o $Sourcefile -d $destinationpath		
 			chmod -R 755 $(find $destinationpath -type d)
 			chmod -R 644 $(find $destinationpath -type f)
 			
-			echo Removing $sourcefile
+			# Removing $sourcefile
 			remove-item -path ($Sourcefile) -force -recurse -confirm:$false
 			
-			echo Filter and import all .psd1 files
+			# Filter and import all .psd1 files
 			get-childitem -path $destinationpath -recurse -filter *.psd1| ? {
 				$TmpFile = $destinationpath + $PathDelimiter + $_.Name
 				try {		
@@ -296,7 +314,7 @@ catch { }
 EOF4
 
 
-	# PowerShellGet release 1.6.7 has RequiredModules specification of PackageManagement 1.1.7.2.
+	# PowerShellGet release 2.1.3 has RequiredModules specification of PackageManagement 1.1.7.0.
 	# The dynamically created powershell script contains helper functions which install the specified release of the modules.
 	tmpfile=/tmp/tmp1.ps1		
 	cat <<EOF1170213 > $tmpfile
@@ -304,12 +322,34 @@ EOF4
 $PSContent1
 $PSContent2
 $PSContent3
-\$PackageManagementVersion="1.1.7.2"
-\$PowerShellGetVersion="1.6.7"
+\$PackageManagementVersion="1.1.7.0"
+\$PowerShellGetVersion="2.1.3"
+mkdir -p \$PSHome/Modules/PackageManagement/\$PackageManagementVersion
+mkdir -p \$PSHome/Modules/PowerShellGet/\$PowerShellGetVersion
 $PSContent4     
 EOF1170213
-	#$PS_SYMLINK -c $tmpfile -WorkingDirectory /tmp
-	#rm $tmpfile
+	$PS_SYMLINK -c $tmpfile -WorkingDirectory /tmp
+	rm $tmpfile
+	
+	# Two prerequisites must be saved in profile /usr/lib/powershell/Microsoft.PowerShell_profile.ps1.
+	# Each time Pwsh is started the saved profile with the workarounds is loaded.
+	# #https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_profiles?view=powershell-5.1&redirectedfrom=MSDN
+	# Show variables of $PROFILE:
+	# $PROFILE | Get-Member -Type NoteProperty
+	#
+	# Workaround #1
+	# https://github.com/PowerShell/PowerShellGet/issues/447#issuecomment-476968923
+	# Change to TLS1.2
+	# [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+	#
+	# Workaround #2
+	# https://github.com/PowerShell/PowerShell/issues/9495#issuecomment-515592672
+	# $env:DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0  
+	#
+	cat <<EOFProfile > /usr/lib/powershell/Microsoft.PowerShell_profile.ps1
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+\$env:DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0     
+EOFProfile
 
 fi
 
