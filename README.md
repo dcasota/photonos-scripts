@@ -68,6 +68,9 @@ The scripts deploy Powershell Core on Photon OS,  6.1.1, 6.2.3 or 7.0.0-preview.
 
 See comment inside the scripts.
 
+Also, a side-by-side-installation seems to work fine.
+![Side-by-side installation](https://github.com/dcasota/photonos-scripts/blob/master/side-side-installation.png)
+
 ```dockerpwshgalleryonphotonos.sh```
 -
 This script makes Microsoft Powershell Core, VMware PowerCLI Core and the PowerShellGallery available on Photon OS.
