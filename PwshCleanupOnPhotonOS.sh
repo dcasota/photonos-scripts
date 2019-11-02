@@ -12,5 +12,7 @@ rm -r /root/.config/powershell/
 rm -r /root/.cache/powershell
 rm -r /root/.local/share/powershell
 rm -r /usr/local/share/powershell
+rm -r /usr/lib/powershell
 rm -r /var/share/powershell
 rm -r /var/cache/microsoft/powershell
+
