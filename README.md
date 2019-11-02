@@ -62,6 +62,13 @@ There are few approaches. The following overview helps to choose the appropriate
 
 ![Status Oct19](https://github.com/dcasota/photonos-scripts/blob/master/Status_Oct19.png)
 
+Limitations:
+You may find Powershellgallery modules which work fine, and others which produces installation errors. Simple as that, many Microsoft Windows-specific lowlevel functions are not cross-compatible yet. Self-contained applications is a development field under construction.
+
+Example (as per October 2019):
+```install-module AzureAD``` or ```install-module DellBIOSProviderX86``` both stops with ```Unable to load shared library 'api-ms-win-core-sysinfo-l1-1-0.dll' or one of its dependencies.``` This seems to be some sort of bottom line for all approaches including 'use a tool from the Microsoft open source Nuget ecosystem to provide more lowlevel compatibility'. 
+
+
 ```Pwsh6.1.1OnPhotonOS.sh, Pwsh6.2.3OnPhotonOS.sh, Pwsh7OnPhotonOS.sh```
 -
 The scripts deploy Powershell Core on Photon OS,  6.1.1, 6.2.3 or 7.0.0-preview.5. To start Powershell simply enter ```pwsh```, ```pwsh6.2.3``` or ```pwsh7p5```.
