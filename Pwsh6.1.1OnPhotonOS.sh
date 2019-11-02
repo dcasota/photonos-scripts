@@ -224,12 +224,13 @@ function workaround.Install-NugetPkgOnLinux
 		if ($VersionString -imatch $PackageVersion)
 		{
 			echo Unzipping $Sourcefile to $destinationpath
+			mkdir -p $destinationpath
 			unzip -o $Sourcefile -d $destinationpath		
 			chmod -R 755 $(find $destinationpath -type d)
 			chmod -R 644 $(find $destinationpath -type f)
 			
 			echo Removing $sourcefile
-			# remove-item -path ($Sourcefile) -force -recurse -confirm:$false
+			remove-item -path ($Sourcefile) -force -recurse -confirm:$false
 			
 			echo Filter and import all .psd1 files
 			get-childitem -path $destinationpath -recurse -filter *.psd1| ? {
