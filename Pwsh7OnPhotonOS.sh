@@ -1,11 +1,12 @@
 #!/bin/sh
 # Deploy Powershell Core v7.0.0-preview.5 on VMware Photon OS
 #
-# This script deploys Powershell Core v7.0.0-preview.5 on VMware Photon OS. To start Powershell simply enter "Pwsh7p5".
+# This script deploys Powershell Core v7.0.0-preview.5 on VMware Photon OS. To start Powershell simply enter "pwsh7p5".
 #
 #
 # History
 # 0.1  31.10.2019   dcasota  Initial release
+# 0.11 19.11.2019   dcasota  comment line start pwsh corrected
 #
 # Prerequisites:
 #    - VMware Photon OS 3.0
