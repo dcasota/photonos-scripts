@@ -55,7 +55,7 @@ You may find cmdlets or Powershellgallery modules which work fine, or powershell
 
 In some situation an alternative functionality method  or a side-by-side installation could be useful. There are few approaches. The following overview helps to choose the appropriate solution.
 - Download and install PowerShell Core and PowerCLI. Simply do not use built-in functions.
-- use a tool from the Microsoft open source Nuget ecosystem to provide more lowlevel compatibility
+- More lowlevel compatibility, eg. use a tool from the Microsoft open source Nuget ecosystem
 - use a Dockerfile with builtin another linux distro
 
 ![Status Nov19](https://github.com/dcasota/photonos-scripts/blob/master/Status_Nov19.png)
@@ -69,11 +69,11 @@ Example (as per October 2019):
 
 ```Pwsh6.1.1OnPhotonOS.sh, Pwsh6.2.3OnPhotonOS.sh, Pwsh7p4OnPhotonOS.sh, Pwsh7p5OnPhotonOS.sh, Pwsh7p6OnPhotonOS.sh```
 -
-The scripts deploy Powershell Core on Photon OS. To start Powershell simply enter ```pwsh```, ```pwsh6.2.3``` or ```pwsh7p5``` or ```pwsh7p6```.
+The scripts deploy Powershell Core on Photon OS. To start Powershell simply enter ```pwsh```, ```pwsh6.2.3``` or ```pwsh7p4``` or ```pwsh7p5``` or ```pwsh7p6```.
 
 See comment inside the scripts.
 
-Also, a side-by-side-installation seems to work fine.
+A side-by-side-installation works fine but not all constellations are tested.
 ![Side-by-side installation](https://github.com/dcasota/photonos-scripts/blob/master/side-side-installation.png)
 
 ```dockerpwshgalleryonphotonos.sh```
