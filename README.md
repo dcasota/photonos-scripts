@@ -10,7 +10,7 @@ More information: https://vmware.github.io/photon/
 ```CreatePhotonOSVMOnAzure.ps1``` provisions VMware Photon OS on Microsoft Azure. Just download it and edit the script variables for location, resourcegroup, network setting, base image and vm settings.
 
 Prerequisites are:
-- VMware Photon OS 3.0 GA downloaded and unzipped .vhd
+- VMware Photon OS on Azure downloaded and unzipped .vhd
 - Windows Powershell with installed Az module
 - a Microsoft Azure account
 
@@ -49,29 +49,27 @@ whoami
 
 ```PowerCLI and Powershell(Gallery) on Photon OS```
 -
-PowerShell Core on Linux is supported since release 6.x. It is used as platform for VMware PowerCLI Core, too.
-With Powershell Core 6.1.0 and above the automatic update functionality for built-in modules often is broken (as per October 2019).
-Cmdlets find-module and install-module produces errors, PSGallery connectivity does not work, etc.
-There are a few workaround possibilities on VMware Photon OS, too. Keep in mind, if it is not supported in your environment, use ```tdnf install -y powershell```. Sooner or later newer published releases are available.
+PowerCLI on Linux is supported since release 6.x and needs as prerequisite a supported PowerShell Core release. To install or update Powershell Core enter ```tdnf install powershell``` or ```tdnf update powershell```. Install or update PowerCLI in a powershell command with ```install-module -name VMware.PowerCLI``` or ```update-module -name VMware.PowerCLI```.
 
-There are few approaches. The following overview helps to choose the appropriate solution.
-- Download PowerShell Core and PowerCLI. Simply do not use ```update-module``` functionality of Powershell Core.
-- Patch per Powershell release specific modules to bring back PSGallery connectivity and more
+You may find cmdlets or Powershellgallery modules which work fine, or powershell releases which produces interoperability errors. Simple as that, many Microsoft Windows-specific lowlevel functions were not or are not cross-compatible. Self-contained applications is a development field under construction.
+
+In some situation an alternative functionality method  or a side-by-side installation could be useful. There are few approaches. The following overview helps to choose the appropriate solution.
+- Download and install PowerShell Core and PowerCLI. Simply do not use built-in functions.
 - use a tool from the Microsoft open source Nuget ecosystem to provide more lowlevel compatibility
 - use a Dockerfile with builtin another linux distro
 
-![Status Oct19](https://github.com/dcasota/photonos-scripts/blob/master/Status_Oct19.png)
+![Status Nov19](https://github.com/dcasota/photonos-scripts/blob/master/Status_Nov19.png)
 
 Limitations:
-You may find Powershellgallery modules which work fine, and others which produces installation errors. Simple as that, many Microsoft Windows-specific lowlevel functions are not cross-compatible yet. Self-contained applications is a development field under construction.
+
 
 Example (as per October 2019):
 ```install-module AzureAD``` or ```install-module DellBIOSProviderX86``` both stops with ```Unable to load shared library 'api-ms-win-core-sysinfo-l1-1-0.dll' or one of its dependencies.``` This seems to be some sort of bottom line for all approaches including 'use a tool from the Microsoft open source Nuget ecosystem to provide more lowlevel compatibility'. 
 
 
-```Pwsh6.1.1OnPhotonOS.sh, Pwsh6.2.3OnPhotonOS.sh, Pwsh7OnPhotonOS.sh```
+```Pwsh6.1.1OnPhotonOS.sh, Pwsh6.2.3OnPhotonOS.sh, Pwsh7p4OnPhotonOS.sh, Pwsh7p5OnPhotonOS.sh, Pwsh7p6OnPhotonOS.sh```
 -
-The scripts deploy Powershell Core on Photon OS,  6.1.1, 6.2.3 or 7.0.0-preview.5. To start Powershell simply enter ```pwsh```, ```pwsh6.2.3``` or ```pwsh7p5```.
+The scripts deploy Powershell Core on Photon OS. To start Powershell simply enter ```pwsh```, ```pwsh6.2.3``` or ```pwsh7p5``` or ```pwsh7p6```.
 
 See comment inside the scripts.
 
