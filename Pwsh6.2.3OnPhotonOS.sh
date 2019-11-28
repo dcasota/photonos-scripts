@@ -1,31 +1,24 @@
 #!/bin/sh
 # Deploy Powershell Core 6.2.3 on VMware Photon OS
 #
-# This script deploys Powershell Core 6.2.3 on VMware Photon OS. To start Powershell simply enter "pwsh6.2.3".
+# This script alternatively deploys Powershell Core 6.2.3 on VMware Photon OS. To start Powershell simply enter "pwsh6.2.3".
 #
 #
 # History
 # 0.1  28.10.2019   dcasota  Initial release
 # 0.2  31.10.2019   dcasota  added more information
+# 0.21 18.11.2019   dcasota  Modified comments as per November 2019 'tndf install -y powershell' release is 6.2.3
 #
 # Prerequisites:
 #    - VMware Photon OS 3.0
-#    - No Powershell release installed
 #    - Run as root
 #
 #
 # Description:
-# 'tndf install -y powershell' latest release is 6.1.0 and outdated (October 2019).
-#    Powershell Core built-in installs the modules PackageManagement and PowerShellGet. Built-in means that automatic update functionality for its modules is included too.
+# 'tndf install -y powershell' release is 6.2.3 or newer. Simply use that package.
 #
-# With Powershell Core 6.1.0 and above the built-in automatic update functionality often is broken. Cmdlets find-module, install-module, etc. produces errors.
-#    Unfortunately these issues are open for Powershell Core 6.2.3, too. 
-#    There are a few workaround possibilities. Keep in mind, applying a workaround means that with specific modules not installed by using install-module, it cannot be updated.
-#    If this is not supported in your environment, use 'tdnf install -y powershell'. Sooner or later newer published releases are available.
-# 
-# This script provides a workaround solution. It downloads and installs Powershell Core 6.2.3 release, installs the module PackageManagement 1.1.7.0 and saves
-#    necessary prerequisites in profile /opt/microsoft/powershell/6.2.3/profile.ps1.
-#
+# This script provides side-by-side installation functionality independently to 'tndf install -y powershell'.
+# It installs the module PackageManagement 1.1.7.0 and saves necessary prerequisites in profile /opt/microsoft/powershell/6.2.3/profile.ps1
 #    Powershell is installed in /opt/microsoft/powershell/6.2.3/ with a symbolic link "pwsh6.2.3" that points to /opt/microsoft/powershell/6.2.3/pwsh.
 #
 #    The built-in module PowerShellGet version 2.1.3 in Powershell Core 6.2.3 has a RequiredModules specification of PackageManagement 1.1.7.0.
@@ -60,7 +53,7 @@
 # - More restrictive user privileges
 # - Proxy functionality
 # - Constellations with security protocol or certification check enforcement
-# - Side effects with already installed powershell releases
+# - All side effects with already installed powershell releases
 #
 
 # The methodology to describe PS variables has been adopted from
