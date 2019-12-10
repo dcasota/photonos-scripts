@@ -58,3 +58,10 @@ umount /esxicd
 rmdir /esxicd
 umount /usbdisk
 rmdir /usbdisk
+
+#cleanup
+rm /root/VMware-VMvisor-Installer-6.7.0.update03-14320388.x86_64-DellEMC_Customized-A00.iso
+tdnf remove -y syslinux dosfstools glibc-iconv wget tar
+tdnf remove -y autoconf automake binutils diffutils gawk gcc glib-devel glibc-devel gzip libtool linux-api-headers make ncurses-devel sed util-linux-devel zlib-devel
+rm -r /root/mtools-4.0.23
+rm /root/mtools-4.0.23.tar.gz
