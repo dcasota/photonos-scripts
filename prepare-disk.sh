@@ -1,4 +1,4 @@
-
+#!/bin/sh
 
 cd /root
 tdnf install -y syslinux dosfstools glibc-iconv wget tar
@@ -58,16 +58,3 @@ umount /esxicd
 rmdir /esxicd
 umount /usbdisk
 rmdir /usbdisk
-
-
-
-
-
-
-
-
-
-
-
-
-
