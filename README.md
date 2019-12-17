@@ -113,6 +113,8 @@ The Microsoft Powershell installation is processed in reference to https://githu
 
 Don't wonder - the full installation takes quite some time. As the Mono installation consumes fifty minutes and more (!) and usually you don't need a full Mono development environment, it became more a learn project. If interested, see files Findings_*.
 
+You can setup nuget.exe with github actions: https://github.com/marketplace/actions/setup-nuget-exe-for-use-with-actions
+
 ```Dockerfile```
 -
 This Docker image contains Powershell Core 7.0.0 (Beta4) with registered Powershell Gallery.
