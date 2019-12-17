@@ -58,7 +58,7 @@ In some situation an alternative functionality method  or a side-by-side install
 - More lowlevel compatibility, eg. use a tool from the Microsoft open source Nuget ecosystem
 - use a Dockerfile with builtin another linux distro
 
-![Status Nov19](https://github.com/dcasota/photonos-scripts/blob/master/Status_Nov19.png)
+![Status Dec19](https://github.com/dcasota/photonos-scripts/blob/master/Status_Dec19.png)
 
 Limitations:
 
