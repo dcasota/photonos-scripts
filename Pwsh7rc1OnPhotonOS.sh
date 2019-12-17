@@ -20,20 +20,6 @@
 #
 #    Powershell is installed in /opt/microsoft/powershell/7.0.0-rc.1/ with a symbolic link "pwsh7rc1" that points to /opt/microsoft/powershell/7.0.0-rc.1/pwsh.
 #
-#    Two workarounds are necessary to be saved in profile /opt/microsoft/powershell/7.0.0-rc.1/profile.ps1.
-#       Each time pwsh7rc1 is started the saved profile with the workarounds is loaded.
-#       #https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_profiles?view=powershell-5.1&redirectedfrom=MSDN
-#       Show variables of $PROFILE:
-#       $PROFILE | Get-Member -Type NoteProperty
-#
-#       Workaround #1
-#       https://github.com/PowerShell/PowerShellGet/issues/447#issuecomment-476968923
-#       Change to TLS1.2
-#       [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-#
-#       Workaround #2
-#       https://github.com/PowerShell/PowerShell/issues/9495#issuecomment-515592672
-#       $env:DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0
 #
 #    The reference installation procedure for pwsh on Linux was published on
 #    https://docs.microsoft.com/en-us/powershell/scripting/install/installing-powershell-core-on-linux?view=powershell-7
@@ -114,15 +100,6 @@ if ! [ -d $PS_INSTALL_FOLDER/pwsh ]; then
             Write-Host "'Waiting for $env:PSModuleAnalysisCachePath'" ; \
             Start-Sleep -Seconds 6 ; \
           }"	
-fi
-
-# Check functionality of powershell
-OUTPUT=`$PS_INSTALL_FOLDER/pwsh -c "find-module VMware.PowerCLI"`
-if ! (echo $OUTPUT | grep -q "PSGallery"); then
-	cat <<EOFProfile > $PS_INSTALL_FOLDER/profile.ps1
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-\$env:DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0     
-EOFProfile
 fi
 
 # Cleanup
