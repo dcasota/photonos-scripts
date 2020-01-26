@@ -67,9 +67,9 @@ Example (as per October 2019):
 ```install-module AzureAD``` or ```install-module DellBIOSProviderX86``` both stops with ```Unable to load shared library 'api-ms-win-core-sysinfo-l1-1-0.dll' or one of its dependencies.``` This seems to be some sort of bottom line for all approaches including 'use a tool from the Microsoft open source Nuget ecosystem to provide more lowlevel compatibility'. 
 
 
-```Pwsh6.1.1OnPhotonOS.sh, Pwsh6.2.3OnPhotonOS.sh, Pwsh7p4OnPhotonOS.sh, Pwsh7p5OnPhotonOS.sh, Pwsh7p6OnPhotonOS.sh, Pwsh7rc1OnPhotonOS.sh```
+```Pwsh6.1.1OnPhotonOS.sh, Pwsh6.2.3OnPhotonOS.sh, Pwsh7p4OnPhotonOS.sh, Pwsh7p5OnPhotonOS.sh, Pwsh7p6OnPhotonOS.sh, Pwsh7rc1OnPhotonOS.sh,Pwsh7rc2OnPhotonOS.sh```
 -
-The scripts deploy Powershell Core on Photon OS. To start Powershell simply enter ```pwsh```, ```pwsh6.2.3``` or ```pwsh7p4``` or ```pwsh7p5``` or ```pwsh7p6```or ```pwsh7rc1```.
+The scripts deploy Powershell Core on Photon OS. To start Powershell simply enter ```pwsh```, ```pwsh6.2.3``` or ```pwsh7p4``` or ```pwsh7p5``` or ```pwsh7p6```or ```pwsh7rc1``` or ```pwsh7rc2```.
 
 See comment inside the scripts.
 
