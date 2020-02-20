@@ -16,6 +16,8 @@ The following scripts creates a Photon OS VM on Azure.
 - https://github.com/dcasota/photonos-scripts/blob/master/CreatePhotonOSVMOnAzure.ps1
 
 ```create-AzImage_GenV2-PhotonOS.ps1``` creates a VMware Photon OS 3.0 Rev2 Azure Generation V2 image.
+
+ 
 Why Generation V2?
 For VMware system engineers knowledge about the virtual hardware version is crucial when it comes to VM capabilities and natural limitations. Latest capabilities like UEFI boot type and virtualization-based security are still evolving. 
 The same begins for cloud virtual hardware like in Azure Generations.
