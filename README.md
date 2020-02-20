@@ -11,10 +11,9 @@ Provisioning, failover and failback of Photon OS on other hypervisors in nowaday
 
 ## Create a Photon OS VM on Azure
 The following scripts creates a Photon OS VM on Azure.
-
-```https://github.com/dcasota/azure-scripts/blob/master/create-AzImage_GenV2-PhotonOS.ps1```
-```https://github.com/dcasota/azure-scripts/blob/master/create-AzVM_FromImage-PhotonOS.ps1```
-```CreatePhotonOSVMOnAzure.ps1```
+- https://github.com/dcasota/azure-scripts/blob/master/create-AzImage_GenV2-PhotonOS.ps1
+- https://github.com/dcasota/azure-scripts/blob/master/create-AzVM_FromImage-PhotonOS.ps1
+- https://github.com/dcasota/photonos-scripts/blob/master/CreatePhotonOSVMOnAzure.ps1
 
 ```create-AzImage_GenV2-PhotonOS.ps1``` creates a VMware Photon OS 3.0 Rev2 Azure Generation V2 image.
 Why Generation V2?
