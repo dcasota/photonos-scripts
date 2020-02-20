@@ -3,14 +3,37 @@ Photon OS scripts
 This repo contains several VMware Photon OS related scripts.
 
 Photon OS, a VMware operating system,  is an open source Linux container host for cloud-native applications. The OS is the preferred platform for IoT edge engineering. It runs docker containers, supports a resource foot print hardened setup, comes with a driver development kit for device drivers, and has package-based lifecycle management systems.
-More information: https://vmware.github.io/photon/
+More information: https://vmware.github.io/photon/.
 
+Photon OS is the foundation of many VMware software products. VMware vCenter Server Appliance and SRM OS bits are made out of Photon OS. Hence, the functions are optimized for workloads on VMware hypervisor vSphere/ESXi.
+
+Provisioning, failover and failback of Photon OS on other hypervisors in nowadays is a niche use case. Provisioning is supported for Amazon Machine Image, Google Compute Engine image, Azure VHD and for Raspberry Pi3 as well. You can find the download bits at https://github.com/vmware/photon/wiki/Downloading-Photon-OS.
+
+## Create a Photon OS VM on Azure
+The following scripts creates a Photon OS VM on Azure.
+
+```https://github.com/dcasota/azure-scripts/blob/master/create-AzImage_GenV2-PhotonOS.ps1```
+```https://github.com/dcasota/azure-scripts/blob/master/create-AzVM_FromImage-PhotonOS.ps1```
 ```CreatePhotonOSVMOnAzure.ps1```
--
-```CreatePhotonOSVMOnAzure.ps1``` provisions VMware Photon OS on Microsoft Azure. Just download it and edit the script variables for location, resourcegroup, network setting, base image and vm settings.
+
+```create-AzImage_GenV2-PhotonOS.ps1``` creates a VMware Photon OS 3.0 Rev2 Azure Generation V2 image.
+Why Generation V2?
+For VMware system engineers knowledge about the virtual hardware version is crucial when it comes to VM capabilities and natural limitations. Latest capabilities like UEFI boot type and virtualization-based security are still evolving. 
+The same begins for cloud virtual hardware like in Azure Generations.
+On Azure VMs with UEFI boot type are not supported yet. However, some downgrade options were made available to migrate such on-premises Windows servers to Azure by converting the boot type of the on-premises servers to BIOS while migrating them.
+
+ Some docs artefacts about
+- https://docs.microsoft.com/en-us/azure/virtual-machines/windows/generation-2#features-and-capabilities
+- https://docs.vmware.com/en/VMware-vSphere/6.7/com.vmware.vsphere.vm_admin.doc/GUID-789C3913-1053-4850-A0F0-E29C3D32B6DA.html
+
+To make use of VMware Photon OS on Azure, the script ```create-AzImage_GenV2-PhotonOS.ps1``` first creates a temporary Windows VM. Inside that Windows VM the VMware Photon OS bits for Azure are downloaded from the VMware download location, the extracted VMware Photon OS .vhd is uploaded as Azure page blob and after the Generation V2 image has been created, the Windows VM is deleted. For study purposes the temporary VM created is Microsoft Windows Server 2019 on a Hyper-V Generation V2 virtual hardware using the offering Standard_E4s_v3.
+The second script ```create-AzVM_FromImage-PhotonOS.ps1``` creates an Azure Generation V2 VM using the Azure image of the Photon OS.
+
+
+```CreatePhotonOSVMOnAzure.ps1``` provisions VMware Photon OS 3.0 (Generation "V1") on Microsoft Azure. Just download it and edit the script variables for location, resourcegroup, network setting, base image and vm settings. You must have locally an extracted Photon OS .vhd file.
 
 Prerequisites are:
-- VMware Photon OS on Azure downloaded and unzipped .vhd
+- VMware Photon OS for Azure downloaded and unzipped .vhd
 - Windows Powershell with installed Az module
 - a Microsoft Azure account
 
