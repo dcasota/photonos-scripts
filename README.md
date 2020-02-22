@@ -16,6 +16,39 @@ Provisioning, failover and failback of Photon OS on other hypervisors in nowaday
 
 You can find the download bits at https://github.com/vmware/photon/wiki/Downloading-Photon-OS.
 
+```Powershell and PowerCLI on Photon OS```
+-
+PowerCLI on Photon OS works since release 6.x and needs as prerequisite a supported PowerShell Core release. To install or update Powershell Core enter ```tdnf install powershell``` or ```tdnf update powershell```. Install or update PowerCLI in a powershell command with ```install-module -name VMware.PowerCLI``` or ```update-module -name VMware.PowerCLI```.
+
+Additionally, the whole bunch of VMware PowerCLI cmdlets are made available as docker container. Run
+```docker pull vmware/powerclicore:latest```
+```docker run -it vmware/powerclicore```
+
+```.NET based PowerCLI cmdlets, flings, apps, etc.```
+-
+You should find more and more PowerCLI cmdlets modules which work fine, but some cmdlets (and Powershellgallery modules) produces interoperability errors. Simple as that, many Microsoft Windows-specific lowlevel functions were not or are not cross-compatible. Self-contained applications is a development field under construction.
+
+In some situation an alternative functionality method  or a side-by-side installation could be useful. There are few approaches:
+- Download and install new PowerShell Core and PowerCLI releases
+- Provide more .NET core lowlevel compatibility for cmdlets on Photon OS
+
+![Status Feb20](https://github.com/dcasota/photonos-scripts/blob/master/Status_Feb20.png)
+
+```Pwsh[Release]OnPhotonOS.sh```
+Each script deploys the specific Powershell Core release on Photon OS.
+Install the actually latest Powershell release 7rc3 using ```Pwsh7rc3OnPhotonOS.ps1```. Simply enter afterwards ```pwsh7rc3```.
+See comment inside the scripts.
+
+A side-by-side-installation works fine but not all constellations are tested.
+![Side-by-side installation](https://github.com/dcasota/photonos-scripts/blob/master/side-side-installation.png)
+
+## Create a Photon OS VM on ESXi
+(no study scripts yet)
+## Create a Photon OS VM on ARM
+(no study scripts yet)
+## Create a Photon OS VM on AWS, Google
+(no study scripts yet)
+
 ## Create a Photon OS VM on Azure
 The following scripts may be helpful when creating a Photon OS VM on Azure.
 - https://github.com/dcasota/azure-scripts/blob/master/create-AzImage_GenV2-PhotonOS.ps1
@@ -78,41 +111,6 @@ The ```az vm create``` parameter ```--custom-data``` is a user exit for a post-p
 To activate the option simply set the variable $postprovisioning="true" (default). If the custom data file does not exist, nevertheless the creation successfully completes.
 Photon OS on Azure disables the root account after custom data has been processed. Per default ssh PermitRootLogin is disabled too.
 The script finishes with enabling Azure boot-diagnostics for the serial console option.
-
-
-```Powershell and PowerCLI on Photon OS```
--
-PowerCLI on Photon OS works since release 6.x and needs as prerequisite a supported PowerShell Core release. To install or update Powershell Core enter ```tdnf install powershell``` or ```tdnf update powershell```. Install or update PowerCLI in a powershell command with ```install-module -name VMware.PowerCLI``` or ```update-module -name VMware.PowerCLI```.
-
-Additionally, the whole bunch of VMware PowerCLI cmdlets are made available as docker container. Run
-```docker pull vmware/powerclicore:latest```
-```docker run -it vmware/powerclicore```
-
-```.NET based PowerCLI cmdlets, flings, apps, etc.```
--
-You should find more and more PowerCLI cmdlets modules which work fine, but some cmdlets (and Powershellgallery modules) produces interoperability errors. Simple as that, many Microsoft Windows-specific lowlevel functions were not or are not cross-compatible. Self-contained applications is a development field under construction.
-
-In some situation an alternative functionality method  or a side-by-side installation could be useful. There are few approaches:
-- Download and install new PowerShell Core and PowerCLI releases
-- Provide more .NET core lowlevel compatibility for cmdlets on Photon OS
-
-![Status Feb20](https://github.com/dcasota/photonos-scripts/blob/master/Status_Feb20.png)
-
-```Pwsh[Release]OnPhotonOS.sh```
-Each script deploys the specific Powershell Core release on Photon OS.
-Install the actually latest Powershell release 7rc3 using ```Pwsh7rc3OnPhotonOS.ps1```. Simply enter afterwards ```pwsh7rc3```.
-See comment inside the scripts.
-
-A side-by-side-installation works fine but not all constellations are tested.
-![Side-by-side installation](https://github.com/dcasota/photonos-scripts/blob/master/side-side-installation.png)
-
-## Create a Photon OS VM on ESXi
-(no study scripts yet)
-## Create a Photon OS VM on ARM
-(no study scripts yet)
-## Create a Photon OS VM on AWS, Google
-(no study scripts yet)
-
 
 Archive
 -
