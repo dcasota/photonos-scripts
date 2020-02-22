@@ -50,8 +50,8 @@ First ```create-AzImage_GenV2-PhotonOS.ps1``` installs Azure CLI and the Powersh
 It creates a temporary Windows VM. Using the AzVMCustomScriptExtension functionality, dynamically created scriptblocks including passed Az-Context are used to postinstall the necessary prerequisites inside that Windows VM. The VMware Photon OS bits for Azure are downloaded from the VMware download location, the extracted VMware Photon OS .vhd is uploaded as Azure page blob and after the Generation V2 image has been created, the Windows VM is deleted. For study purposes the temporary VM created is Microsoft Windows Server 2019 on a Hyper-V Generation V2 virtual hardware using the offering Standard_E4s_v3.
 
 Using ```create-AzVM_FromImage-PhotonOS.ps1``` you can pass Photon OS VM settings. As example, a local user account on Photon OS will be created during provisioning. It is created without root permissions. There are some culprit to know:
-- [string]$VMLocalAdminUser = "LocalAdminUser", # In some Az releases only small caps were supported
-- [string]$VMLocalAdminPwd="Secure2020123!", # 12-123 chars
+```- [string]$VMLocalAdminUser = "LocalAdminUser", ```# In some Az releases only small caps were supported
+```- [string]$VMLocalAdminPwd="Secure2020123!", ```# 12-123 chars
 
 The script checks/creates
 - resource group
@@ -71,14 +71,13 @@ su -l root
 whoami
 ```
 
-```CreatePhotonOSVMOnAzure.ps1```
+
 ```CreatePhotonOSVMOnAzure.ps1``` provisions VMware Photon OS 3.0 (Generation "V1") on Microsoft Azure. Just download it and edit the script variables for location, resourcegroup, network setting, base image and vm settings. You must have locally an extracted Photon OS .vhd file. The Photon OS image in $LocalFilePath must include name and full drive path of the untar'ed .vhd.
 More information: https://github.com/vmware/photon/wiki/Downloading-Photon-OS
 For the uploaded .vhd a separate storage account, storage container and storage blob are created.
 The ```az vm create``` parameter ```--custom-data``` is a user exit for a post-provisioning process. The option is used to process a bash script to:
 - install the latest Photon OS updates
 - install VMware PowerCLI from the Powershell Gallery by a predownloaded script called ```dockerpwshgalleryonphotonos.sh``` (see below)
-
 To activate the option simply set the variable $postprovisioning="true" (default). If the custom data file does not exist, nevertheless the creation successfully completes.
 Photon OS on Azure disables the root account after custom data has been processed. Per default ssh PermitRootLogin is disabled too.
 The script finishes with enabling Azure boot-diagnostics for the serial console option.
