@@ -18,9 +18,13 @@ You can find the download bits at https://github.com/vmware/photon/wiki/Download
 
 ```Powershell and PowerCLI on Photon OS```
 -
-PowerCLI on Photon OS works since release 6.x and needs as prerequisite a supported PowerShell Core release. To install or update Powershell Core enter ```tdnf install powershell``` or ```tdnf update powershell```. Install or update PowerCLI in a powershell command with ```install-module -name VMware.PowerCLI``` or ```update-module -name VMware.PowerCLI```.
+PowerCLI on Photon OS works since release 6.x and needs as prerequisite a supported PowerShell Core release. To install or update Powershell Core enter
+- ```tdnf install powershell``` or ```tdnf update powershell```
 
-Additionally, the whole bunch of VMware PowerCLI cmdlets are made available as docker container. Run
+Install or update PowerCLI in a powershell command enter
+- ```install-module -name VMware.PowerCLI``` or ```update-module -name VMware.PowerCLI```.
+
+Good to know, the whole bunch of VMware PowerCLI cmdlets are made available as docker container. Run
 - ```docker pull vmware/powerclicore:latest```
 - ```docker run -it vmware/powerclicore```
 
