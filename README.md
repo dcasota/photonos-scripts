@@ -7,61 +7,61 @@ More information: https://vmware.github.io/photon/.
 
 Photon OS is the foundation of many VMware software products. VMware vCenter Server Appliance and SRM OS bits are made out of Photon OS. Hence, the functions are optimized for workloads on VMware hypervisor vSphere/ESXi.
 
-Provisioning, failover and failback of Photon OS on other hypervisors in nowadays is a niche use case. Provisioning is supported for Amazon Machine Image, Google Compute Engine image, Azure VHD and for Raspberry Pi3 as well. You can find the download bits at https://github.com/vmware/photon/wiki/Downloading-Photon-OS.
+Provisioning, failover and failback of Photon OS on other hypervisors in nowadays is a niche use case. Provisioning is supported for
+- ISO setup
+- Amazon Machine Image
+- Google Compute Engine image
+- Azure VHD
+- Raspberry Pi3
+
+You can find the download bits at https://github.com/vmware/photon/wiki/Downloading-Photon-OS.
 
 ## Create a Photon OS VM on Azure
-The following scripts creates a Photon OS VM on Azure.
+The following scripts may be helpful when creating a Photon OS VM on Azure.
 - https://github.com/dcasota/azure-scripts/blob/master/create-AzImage_GenV2-PhotonOS.ps1
 - https://github.com/dcasota/azure-scripts/blob/master/create-AzVM_FromImage-PhotonOS.ps1
+
 - https://github.com/dcasota/photonos-scripts/blob/master/CreatePhotonOSVMOnAzure.ps1
 
 ```create-AzImage_GenV2-PhotonOS.ps1``` creates a VMware Photon OS 3.0 Rev2 Azure Generation V2 image.
+```create-AzVM_FromImage-PhotonOS.ps1``` provisions an Azure Generation V2 VM with the Azure image created using ```create-AzImage_GenV2-PhotonOS.ps1```.
+```CreatePhotonOSVMOnAzure.ps1``` provisions VMware Photon OS 3.0 (Generation "V1") on Microsoft Azure.
 
- 
 Why Generation V2?
-For VMware system engineers knowledge about the virtual hardware version is crucial when it comes to VM capabilities and natural limitations. Latest capabilities like UEFI boot type and virtualization-based security are still evolving. 
+For system engineers knowledge about the VMware virtual hardware version is crucial when it comes to VM capabilities and natural limitations. Latest capabilities like UEFI boot type and virtualization-based security are still evolving. 
 The same begins for cloud virtual hardware like in Azure Generations.
-On Azure VMs with UEFI boot type are not supported yet. However, some downgrade options were made available to migrate such on-premises Windows servers to Azure by converting the boot type of the on-premises servers to BIOS while migrating them.
+On Azure, VMs with UEFI boot type are not supported yet. However some downgrade options were made available to migrate such on-premises Windows servers to Azure by converting the boot type of the on-premises servers to BIOS while migrating them.
 
  Some docs artefacts about
 - https://docs.microsoft.com/en-us/azure/virtual-machines/windows/generation-2#features-and-capabilities
 - https://docs.vmware.com/en/VMware-vSphere/6.7/com.vmware.vsphere.vm_admin.doc/GUID-789C3913-1053-4850-A0F0-E29C3D32B6DA.html
 
-To make use of VMware Photon OS on Azure, the script ```create-AzImage_GenV2-PhotonOS.ps1``` first creates a temporary Windows VM. Inside that Windows VM the VMware Photon OS bits for Azure are downloaded from the VMware download location, the extracted VMware Photon OS .vhd is uploaded as Azure page blob and after the Generation V2 image has been created, the Windows VM is deleted. For study purposes the temporary VM created is Microsoft Windows Server 2019 on a Hyper-V Generation V2 virtual hardware using the offering Standard_E4s_v3.
-The second script ```create-AzVM_FromImage-PhotonOS.ps1``` creates an Azure Generation V2 VM using the Azure image of the Photon OS.
-
-
-```CreatePhotonOSVMOnAzure.ps1``` provisions VMware Photon OS 3.0 (Generation "V1") on Microsoft Azure. Just download it and edit the script variables for location, resourcegroup, network setting, base image and vm settings. You must have locally an extracted Photon OS .vhd file.
-
-Prerequisites are:
-- VMware Photon OS for Azure downloaded and unzipped .vhd
-- Windows Powershell with installed Az module
+Download the script ```create-AzImage_GenV2-PhotonOS.ps1``` and ```create-AzVM_FromImage-PhotonOS.ps1```. You can pass a bunch of parameters like Azure login, resourcegroup, location name, storage account, container, image name, etc. The first script passes the download URL of the VMware Photon OS release. More information: https://github.com/vmware/photon/wiki/Downloading-Photon-OS.
+Prerequisites for both scripts are:
+- Windows Powershell with installed Az module, Az CLI
 - a Microsoft Azure account
 
-Connected to Azure the script checks/creates
+First ```create-AzImage_GenV2-PhotonOS.ps1``` installs Azure CLI and the Powershell Az module. It connects to Azure and saves the Az-Context. It checks/creates
 - resource group
 - virtual network
 - storage account/container/blob
-- vm network settings
+- settings for a temporary VM
 
-A local user account on Photon OS will be created during provisioning. It is created without root permissions. there are some default on username and password to know.
-- $VMLocalAdminUser = "adminuser" #all small letters
-- $VMLocalAdminPassword = "PhotonOs123!" #pwd must be 7-12 characters
+It creates a temporary Windows VM. Using the AzVMCustomScriptExtension functionality, dynamically created scriptblocks including passed Az-Context are used to postinstall the necessary prerequisites inside that Windows VM. The VMware Photon OS bits for Azure are downloaded from the VMware download location, the extracted VMware Photon OS .vhd is uploaded as Azure page blob and after the Generation V2 image has been created, the Windows VM is deleted. For study purposes the temporary VM created is Microsoft Windows Server 2019 on a Hyper-V Generation V2 virtual hardware using the offering Standard_E4s_v3.
 
-The Photon OS image in $LocalFilePath must include name and full drive path of the untar'ed .vhd.
-More information: https://github.com/vmware/photon/wiki/Downloading-Photon-OS
-For the uploaded .vhd a separate storage account, storage container and storage blob are created.
+Using ```create-AzVM_FromImage-PhotonOS.ps1``` you can pass Photon OS VM settings. As example, a local user account on Photon OS will be created during provisioning. It is created without root permissions. There are some culprit to know:
+- [string]$VMLocalAdminUser = "LocalAdminUser", # In some Az releases only small caps were supported
+- [string]$VMLocalAdminPwd="Secure2020123!", # 12-123 chars
 
-The ```az vm create``` parameter ```--custom-data``` is a user exit for a post-provisioning process. The option is used to process a bash script to:
-- install the latest Photon OS updates
-- install VMware PowerCLI from the Powershell Gallery by a predownloaded script called ```dockerpwshgalleryonphotonos.sh``` (see below)
+The script checks/creates
+- resource group
+- virtual network
+- storage account/container/blob
+- vm
 
-To activate the option simply set the variable $postprovisioning="true" (default). If the custom data file does not exist, nevertheless the creation successfully completes.
+The script finishes with enabling the Azure boot-diagnostics option.
 
-The script finishes with enabling Azure boot-diagnostics for the serial console option.
-
-Photon OS on Azure disables the root account after custom data has been processed. Per default ssh PermitRootLogin is disabled too.
-If root access is required, on the vm serial console login with the user credentials defined during setup. Run the following commands:
+If root access is required, on the vm serial console login with the user credentials defined during setup, run the following commands:
 ```
 whoami
 sudo passwd -u root
@@ -71,37 +71,56 @@ su -l root
 whoami
 ```
 
-```PowerCLI and Powershell(Gallery) on Photon OS```
+```CreatePhotonOSVMOnAzure.ps1```
+```CreatePhotonOSVMOnAzure.ps1``` provisions VMware Photon OS 3.0 (Generation "V1") on Microsoft Azure. Just download it and edit the script variables for location, resourcegroup, network setting, base image and vm settings. You must have locally an extracted Photon OS .vhd file. The Photon OS image in $LocalFilePath must include name and full drive path of the untar'ed .vhd.
+More information: https://github.com/vmware/photon/wiki/Downloading-Photon-OS
+For the uploaded .vhd a separate storage account, storage container and storage blob are created.
+The ```az vm create``` parameter ```--custom-data``` is a user exit for a post-provisioning process. The option is used to process a bash script to:
+- install the latest Photon OS updates
+- install VMware PowerCLI from the Powershell Gallery by a predownloaded script called ```dockerpwshgalleryonphotonos.sh``` (see below)
+
+To activate the option simply set the variable $postprovisioning="true" (default). If the custom data file does not exist, nevertheless the creation successfully completes.
+Photon OS on Azure disables the root account after custom data has been processed. Per default ssh PermitRootLogin is disabled too.
+The script finishes with enabling Azure boot-diagnostics for the serial console option.
+
+
+```Powershell and PowerCLI on Photon OS```
 -
 PowerCLI on Linux is supported since release 6.x and needs as prerequisite a supported PowerShell Core release. To install or update Powershell Core enter ```tdnf install powershell``` or ```tdnf update powershell```. Install or update PowerCLI in a powershell command with ```install-module -name VMware.PowerCLI``` or ```update-module -name VMware.PowerCLI```.
 
-You may find cmdlets or Powershellgallery modules which work fine, or powershell releases which produces interoperability errors. Simple as that, many Microsoft Windows-specific lowlevel functions were not or are not cross-compatible. Self-contained applications is a development field under construction.
+Additionally, the whole bunch of PowerCLI cmdlets are available as docker container. Run
+```docker pull vmware/powerclicore:latest```
+```docker run -it vmware/powerclicore```
+
+```.NET based PowerCLI cmdlets, flings, apps, etc.```
+-
+You should find more and more PowerCLI cmdlets modules which work fine, but some cmdlets (and Powershellgallery modules) which produces interoperability errors. Simple as that, many Microsoft Windows-specific lowlevel functions were not or are not cross-compatible. Self-contained applications is a development field under construction.
 
 In some situation an alternative functionality method  or a side-by-side installation could be useful. There are few approaches. The following overview helps to choose the appropriate solution.
-- Download and install PowerShell Core and PowerCLI. Simply do not use built-in functions.
-- More lowlevel compatibility, eg. use a tool from the Microsoft open source Nuget ecosystem
-- use a Dockerfile with builtin another linux distro
+- Download and install new PowerShell Core and PowerCLI releases
+- Provide more .NET core lowlevel compatibility for cmdlets
 
-![Status Dec19](https://github.com/dcasota/photonos-scripts/blob/master/Status_Dec19.png)
+![Status Feb20](https://github.com/dcasota/photonos-scripts/blob/master/Status_Feb20.png)
 
-Limitations:
-
-
-Example (as per October 2019):
-```install-module AzureAD``` or ```install-module DellBIOSProviderX86``` both stops with ```Unable to load shared library 'api-ms-win-core-sysinfo-l1-1-0.dll' or one of its dependencies.``` This seems to be some sort of bottom line for all approaches including 'use a tool from the Microsoft open source Nuget ecosystem to provide more lowlevel compatibility'. 
-
-
-```Pwsh6.1.1OnPhotonOS.sh, Pwsh6.2.3OnPhotonOS.sh, Pwsh7p4OnPhotonOS.sh, Pwsh7p5OnPhotonOS.sh, Pwsh7p6OnPhotonOS.sh, Pwsh7rc1OnPhotonOS.sh,Pwsh7rc2OnPhotonOS.sh```
--
-The scripts deploy Powershell Core on Photon OS. To start Powershell simply enter ```pwsh```, ```pwsh6.2.3``` or ```pwsh7p4``` or ```pwsh7p5``` or ```pwsh7p6```or ```pwsh7rc1``` or ```pwsh7rc2```.
-
+```Pwsh[Release]OnPhotonOS.sh```
+Each script deploys the specific Powershell Core release on Photon OS.
+Install the actually latest Powershell release 7rc3 using ```Pwsh7rc3OnPhotonOS.ps1```. Simply enter afterwards ```pwsh7rc3```.
 See comment inside the scripts.
 
 A side-by-side-installation works fine but not all constellations are tested.
 ![Side-by-side installation](https://github.com/dcasota/photonos-scripts/blob/master/side-side-installation.png)
 
-```dockerpwshgalleryonphotonos.sh```
+## Create a Photon OS VM on ESXi
+(no study scripts yet)
+## Create a Photon OS VM on ARM
+(no study scripts yet)
+## Create a Photon OS VM on AWS, Google
+(no study scripts yet)
+
+
+Archive
 -
+```dockerpwshgalleryonphotonos.sh```
 This script makes Microsoft Powershell Core, VMware PowerCLI Core and the PowerShellGallery available on Photon OS.
 It is using the VMware PowerCLI Core Dockerfile. It uses an Ubuntu 16.04 docker container with Powershell Core 6.x and PowerCLI Core 11.x.
 
@@ -112,7 +131,6 @@ Simply pull and run:
 If in ```CreatePhotonOSVMOnAzure.ps1``` the variable $postprovisioning="true" is set, ```dockerpwshgalleryonphotonos.sh``` is processed.
 
 ```pwshgalleryonphotonos.sh```
--
 This study script makes Microsoft Powershell Core available on Photon OS by using Mono with Nuget.
 
 It uses a tool from the Microsoft open source Nuget ecosystem.
@@ -140,9 +158,7 @@ Don't wonder - the full installation takes quite some time. As the Mono installa
 You can setup nuget.exe with github actions: https://github.com/marketplace/actions/setup-nuget-exe-for-use-with-actions
 
 ```Dockerfile```
--
 This Docker image contains Powershell Core 7.0.0 (Beta4) with registered Powershell Gallery.
-
 The Docker image uses Mono with nuget.exe on a Debian OS.
 - The mono 6.4.0.198 dockerfile related part original is from https://github.com/mono/docker/blob/master/6.4.0.198/Dockerfile.
 - The original installation procedure for Pwsh7 on Linux is from https://docs.microsoft.com/en-us/powershell/scripting/install/installing-powershell-core-on-linux?view=powershell-7
@@ -150,4 +166,3 @@ The Docker image uses Mono with nuget.exe on a Debian OS.
 Simply build and run:
 - ```cd /yourpathtoDockerfile/```
 - ```docker run -it $(docker build -q .)```
-
