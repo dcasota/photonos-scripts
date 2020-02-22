@@ -16,6 +16,8 @@ Provisioning, failover and failback of Photon OS on other hypervisors in nowaday
 
 You can find the download bits at https://github.com/vmware/photon/wiki/Downloading-Photon-OS.
 
+
+
 ```Powershell and PowerCLI on Photon OS```
 -
 PowerCLI on Photon OS works since release 6.x and needs as prerequisite a supported PowerShell Core release. To install or update Powershell Core enter
@@ -27,6 +29,8 @@ Install or update PowerCLI in a powershell command enter
 Good to know, the whole bunch of VMware PowerCLI cmdlets are made available as docker container. Run
 - ```docker pull vmware/powerclicore:latest```
 - ```docker run -it vmware/powerclicore```
+
+
 
 ```.NET based PowerCLI cmdlets, flings, apps, etc.```
 -
@@ -40,13 +44,14 @@ There are few approaches:
 - Provide more .NET core lowlevel compatibility for cmdlets on Photon OS
 
 
-```Pwsh[Release]OnPhotonOS.sh```
 Each script ```Pwsh[Release]OnPhotonOS.sh``` deploys the specific Powershell Core release on Photon OS.
 Example: Install the actually latest Powershell release 7rc3 using ```Pwsh7rc3OnPhotonOS.ps1```. Simply enter afterwards ```pwsh7rc3```.
-See comment inside the scripts.
+See comment inside the scripts. A side-by-side-installation works fine but not all constellations are tested.
 
-A side-by-side-installation works fine but not all constellations are tested.
 ![Side-by-side installation](https://github.com/dcasota/photonos-scripts/blob/master/side-side-installation.png)
+
+
+
 
 ## Create a Photon OS VM on ESXi
 (no study scripts yet)
@@ -117,6 +122,8 @@ The ```az vm create``` parameter ```--custom-data``` is a user exit for a post-p
 To activate the option simply set the variable $postprovisioning="true" (default). If the custom data file does not exist, nevertheless the creation successfully completes.
 Photon OS on Azure disables the root account after custom data has been processed. Per default ssh PermitRootLogin is disabled too.
 The script finishes with enabling Azure boot-diagnostics for the serial console option.
+
+
 
 Archive
 -
