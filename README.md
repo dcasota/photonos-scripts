@@ -85,19 +85,19 @@ The script finishes with enabling Azure boot-diagnostics for the serial console 
 
 ```Powershell and PowerCLI on Photon OS```
 -
-PowerCLI on Linux is supported since release 6.x and needs as prerequisite a supported PowerShell Core release. To install or update Powershell Core enter ```tdnf install powershell``` or ```tdnf update powershell```. Install or update PowerCLI in a powershell command with ```install-module -name VMware.PowerCLI``` or ```update-module -name VMware.PowerCLI```.
+PowerCLI on Photon OS works since release 6.x and needs as prerequisite a supported PowerShell Core release. To install or update Powershell Core enter ```tdnf install powershell``` or ```tdnf update powershell```. Install or update PowerCLI in a powershell command with ```install-module -name VMware.PowerCLI``` or ```update-module -name VMware.PowerCLI```.
 
-Additionally, the whole bunch of PowerCLI cmdlets are available as docker container. Run
+Additionally, the whole bunch of VMware PowerCLI cmdlets are made available as docker container. Run
 ```docker pull vmware/powerclicore:latest```
 ```docker run -it vmware/powerclicore```
 
 ```.NET based PowerCLI cmdlets, flings, apps, etc.```
 -
-You should find more and more PowerCLI cmdlets modules which work fine, but some cmdlets (and Powershellgallery modules) which produces interoperability errors. Simple as that, many Microsoft Windows-specific lowlevel functions were not or are not cross-compatible. Self-contained applications is a development field under construction.
+You should find more and more PowerCLI cmdlets modules which work fine, but some cmdlets (and Powershellgallery modules) produces interoperability errors. Simple as that, many Microsoft Windows-specific lowlevel functions were not or are not cross-compatible. Self-contained applications is a development field under construction.
 
-In some situation an alternative functionality method  or a side-by-side installation could be useful. There are few approaches. The following overview helps to choose the appropriate solution.
+In some situation an alternative functionality method  or a side-by-side installation could be useful. There are few approaches:
 - Download and install new PowerShell Core and PowerCLI releases
-- Provide more .NET core lowlevel compatibility for cmdlets
+- Provide more .NET core lowlevel compatibility for cmdlets on Photon OS
 
 ![Status Feb20](https://github.com/dcasota/photonos-scripts/blob/master/Status_Feb20.png)
 
