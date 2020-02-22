@@ -49,9 +49,9 @@ First ```create-AzImage_GenV2-PhotonOS.ps1``` installs Azure CLI and the Powersh
 
 It creates a temporary Windows VM. Using the AzVMCustomScriptExtension functionality, dynamically created scriptblocks including passed Az-Context are used to postinstall the necessary prerequisites inside that Windows VM. The VMware Photon OS bits for Azure are downloaded from the VMware download location, the extracted VMware Photon OS .vhd is uploaded as Azure page blob and after the Generation V2 image has been created, the Windows VM is deleted. For study purposes the temporary VM created is Microsoft Windows Server 2019 on a Hyper-V Generation V2 virtual hardware using the offering Standard_E4s_v3.
 
-Using ```create-AzVM_FromImage-PhotonOS.ps1``` you can pass Photon OS VM settings. As example, a local user account on Photon OS will be created during provisioning. It is created without root permissions. There are some culprit to know:
-```- [string]$VMLocalAdminUser = "LocalAdminUser", ```# In some Az releases only small caps were supported
-```- [string]$VMLocalAdminPwd="Secure2020123!", ```# 12-123 chars
+Using ```create-AzVM_FromImage-PhotonOS.ps1``` you can pass Photon OS VM settings. As example, a local user account on Photon OS will be created during provisioning. It is created without root permissions. There are some culprit to know.
+- ```[string]$VMLocalAdminUser = "LocalAdminUser"``` # Check if uppercase and lowercase is enforced/supported.
+- ```[string]$VMLocalAdminPwd="Secure2020123!"```# 12-123 chars
 
 The script checks/creates
 - resource group
@@ -61,8 +61,7 @@ The script checks/creates
 
 The script finishes with enabling the Azure boot-diagnostics option.
 
-If root access is required, on the vm serial console login with the user credentials defined during setup, run the following commands:
-```
+If root access is required, on the vm serial console login with the user credentials defined during setup, run the following commands: ```
 whoami
 sudo passwd -u root
 sudo passwd root
