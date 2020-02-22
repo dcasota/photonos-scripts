@@ -61,14 +61,12 @@ The script checks/creates
 
 The script finishes with enabling the Azure boot-diagnostics option.
 
-If root access is required, on the vm serial console login with the user credentials defined during setup, run the following commands: ```
-whoami
-sudo passwd -u root
-sudo passwd root
- (set new password)
-su -l root
-whoami
-```
+If root access is required, on the vm serial console login with the user credentials defined during setup, run the following commands: ```whoami``` 
+```sudo passwd -u root``` 
+```sudo passwd root``` 
+```(set new password)``` 
+```su -l root``` 
+```whoami```
 
 
 ```CreatePhotonOSVMOnAzure.ps1``` provisions VMware Photon OS 3.0 (Generation "V1") on Microsoft Azure. Just download it and edit the script variables for location, resourcegroup, network setting, base image and vm settings. You must have locally an extracted Photon OS .vhd file. The Photon OS image in $LocalFilePath must include name and full drive path of the untar'ed .vhd.
