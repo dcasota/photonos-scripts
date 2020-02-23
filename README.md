@@ -44,9 +44,9 @@ There are few approaches:
 - Provide more .NET core lowlevel compatibility for cmdlets on Photon OS
 
 
-Each script ```Pwsh[Release]OnPhotonOS.sh``` deploys the specific Powershell Core release on Photon OS.
+In this repo you find install scripts for Powershell Core release on Photon OS. Each script ```Pwsh[Release]OnPhotonOS.sh``` deploys the specific Powershell Core release on Photon OS.
 Example: Install the actually latest Powershell release 7rc3 using ```Pwsh7rc3OnPhotonOS.ps1```. Simply enter afterwards ```pwsh7rc3```.
-See comment inside the scripts. A side-by-side-installation works fine but not all constellations are tested.
+See comment inside the scripts. A side-by-side-installation works fine but not all constellations are tested. Have a look to the release notes of Powershell Core as well.
 
 ![Side-by-side installation](https://github.com/dcasota/photonos-scripts/blob/master/side-side-installation.png)
 
