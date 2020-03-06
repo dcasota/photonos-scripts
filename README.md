@@ -55,9 +55,9 @@ See comment inside the scripts. A side-by-side-installation works fine but not a
 
 ## Create a Photon OS VM on ESXi
 (no study scripts yet)
-## Create a Photon OS VM on ARM
+## Install Photon OS on ARM
 (no study scripts yet)
-## Create a Photon OS VM on AWS, Google
+## Create a Photon OS VM as AWS AMI machine and as Google Compute machine
 (no study scripts yet)
 
 ## Create a Photon OS VM on Azure
