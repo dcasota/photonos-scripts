@@ -37,7 +37,7 @@ Good to know, the whole bunch of VMware PowerCLI cmdlets are made available as d
 You should find more and more PowerCLI cmdlets modules which work fine, but some cmdlets (and Powershellgallery modules) produces interoperability errors. Simple as that, many Microsoft Windows-specific lowlevel functions were not or are not cross-compatible. Self-contained applications is a development field under construction.
 
 In some situation an alternative functionality method  or a side-by-side installation could be useful. 
-![Status Feb20](https://github.com/dcasota/photonos-scripts/blob/master/Status_Feb20.png)
+![Status March20](https://github.com/dcasota/photonos-scripts/blob/master/Status_March20.png)
 
 There are few approaches:
 - Download and install new PowerShell Core and PowerCLI releases
@@ -45,7 +45,7 @@ There are few approaches:
 
 
 In this repo you find install scripts for Powershell Core release on Photon OS. Each script ```Pwsh[Release]OnPhotonOS.sh``` deploys the specific Powershell Core release on Photon OS.
-Example: Install the actually latest Powershell release 7rc3 using ```Pwsh7rc3OnPhotonOS.ps1```. Simply enter afterwards ```pwsh7rc3```.
+Example: Install the actually latest Powershell release 7.0.0 using ```Pwsh7.0.0OnPhotonOS.ps1```. Simply enter afterwards ```pwsh7```.
 See comment inside the scripts. A side-by-side-installation works fine but not all constellations are tested. Have a look to the release notes of Powershell Core as well.
 
 ![Side-by-side installation](https://github.com/dcasota/photonos-scripts/blob/master/side-side-installation.png)
