@@ -5,7 +5,7 @@
 #
 #
 # History
-# 0.1  06.03.2020   dcasota  Initial release
+# 0.1  08.03.2020   dcasota  Initial release
 #
 # Prerequisites:
 #    - VMware Photon OS 3.0
@@ -17,40 +17,8 @@
 # See blog about PowerShell 7.0 https://devblogs.microsoft.com/powershell/announcing-powershell-7-0/ . There is no differenciation of "Core" anymore.
 #
 # On Photon 'tndf install -y powershell' latest release is 6.2.3.
-# This script downloads and installs Powershell 7 release, and saves necessary prerequisites in profile
-#    /opt/microsoft/powershell/7.0.0/profile.ps1.
-#
+# This script downloads and installs Powershell 7 release.
 #    Powershell is installed in /opt/microsoft/powershell/7.0.0/ with a symbolic link "pwsh7" that points to /opt/microsoft/powershell/7.0.0/pwsh.
-#
-#    Two workarounds are necessary to be saved in profile /opt/microsoft/powershell/7.0.0/profile.ps1. With those your might run into following issues:
-#       find-module VMware.PowerCLI
-#       Find-Package: /opt/microsoft/powershell/7.0.0/Modules/PowerShellGet/PSModule.psm1
-#       Line |
-#       8871 |         PackageManagement\Find-Package @PSBoundParameters | Microsoft.PowerShell.Core\ForEach-Object {
-#            |         ^ No match was found for the specified search criteria and module name 'VMware.PowerCLI'. Try Get-PSRepository to see all
-#            | available registered module repositories.
-#    
-#       get-psrepository
-#       WARNING: Unable to find module repositories.
-#    
-#       Each time pwsh7 is started the saved profile with the workarounds is loaded.
-#       #https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_profiles?view=powershell-5.1&redirectedfrom=MSDN
-#       Show variables of $PROFILE:
-#       $PROFILE | Get-Member -Type NoteProperty
-#
-#       Workaround #1
-#       https://github.com/PowerShell/PowerShellGet/issues/447#issuecomment-476968923
-#       Change to TLS1.2
-#       [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-#
-#       Workaround #2
-#       https://github.com/PowerShell/PowerShell/issues/9495#issuecomment-515592672
-#       $env:DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0
-#
-#    The reference installation procedure for pwsh on Linux was published on
-#    https://docs.microsoft.com/en-us/powershell/scripting/install/installing-powershell-core-on-linux?view=powershell-7
-#
-#
 #
 # Limitations / not tested:
 # - More restrictive user privileges
@@ -68,17 +36,6 @@ export PS_PACKAGE_URL=https://github.com/PowerShell/PowerShell/releases/download
 export PS_INSTALL_FOLDER=/opt/microsoft/powershell/$PS_VERSION
 export PS_INSTALL_VERSION=7
 export PS_SYMLINK=pwsh$PS_INSTALL_VERSION
-
-# language setting
-# See https://github.com/vmware/photon/issues/612#issuecomment-287897819
-
-# Define env for localization/globalization
-# See https://github.com/dotnet/corefx/blob/master/Documentation/architecture/globalization-invariant-mode.md
-# Photon dotnet-runtime version is 2.2.0-1.ph3. So this fix isn't needed anymore. See https://github.com/microsoft/msbuild/issues/3066#issuecomment-372104257
-# export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
-# export LC_ALL=en_US.UTF-8
-# export LANG=en_US.UTF-8
-
 
 # set a fixed location for the Module analysis cache
 # Powershell on Linux produces a few log files named with Core* with entries like 'invalid device'. These are from unhandled Module Analysis Cache Path.
@@ -126,15 +83,6 @@ if ! [ -d $PS_INSTALL_FOLDER/pwsh ]; then
             Write-Host "'Waiting for $env:PSModuleAnalysisCachePath'" ; \
             Start-Sleep -Seconds 6 ; \
           }"	
-fi
-
-# Check functionality of powershell
-OUTPUT=`$PS_INSTALL_FOLDER/pwsh -c "find-module VMware.PowerCLI"`
-if ! (echo $OUTPUT | grep -q "PSGallery"); then
-	cat <<EOFProfile > $PS_INSTALL_FOLDER/profile.ps1
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-\$env:DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0     
-EOFProfile
 fi
 
 # Cleanup
