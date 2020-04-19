@@ -20,7 +20,7 @@ You can find the download bits at https://github.com/vmware/photon/wiki/Download
 
 ```Powershell and PowerCLI on Photon OS```
 -
-PowerCLI on Photon OS works since release 6.x and needs as prerequisite a supported PowerShell Core release. To install or update Powershell Core enter
+PowerCLI on Photon OS needs as prerequisite a supported PowerShell release. To install or update Powershell Core enter
 - ```tdnf install powershell``` or ```tdnf update powershell```
 
 Install or update PowerCLI in a powershell command enter
@@ -37,7 +37,7 @@ Good to know, the whole bunch of VMware PowerCLI cmdlets are made available as d
 You should find more and more PowerCLI cmdlets modules which work fine, but some cmdlets (and Powershellgallery modules) produces interoperability errors. Simple as that, many Microsoft Windows-specific lowlevel functions were not or are not cross-compatible. Self-contained applications is a development field under construction.
 
 In some situation an alternative functionality method  or a side-by-side installation could be useful. 
-![Status March20](https://github.com/dcasota/photonos-scripts/blob/master/Status_March20.png)
+![Status April20](https://github.com/dcasota/photonos-scripts/blob/master/Status_April20.png)
 
 There are few approaches:
 - Download and install new PowerShell Core and PowerCLI releases
