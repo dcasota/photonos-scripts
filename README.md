@@ -16,8 +16,25 @@ Provisioning, failover and failback of Photon OS on other hypervisors in nowaday
 
 You can find the download bits at https://github.com/vmware/photon/wiki/Downloading-Photon-OS.
 
+## Create a Photon OS VM on ESXi
+See https://vmware.github.io/photon/assets/files/html/1.0-2.0/Running-Photon-OS-on-vSphere.html
 
+## Create a Photon OS VM on Azure
+The following scripts may be helpful when creating a Photon OS VM on Azure.
+- https://github.com/dcasota/azure-scripts/blob/master/create-AzImage-PhotonOS.ps1
+- https://github.com/dcasota/azure-scripts/blob/master/create-AzVM_FromImage-PhotonOS.ps1
 
+```create-AzImage-PhotonOS.ps1``` creates per default a VMware Photon OS 3.0 Rev2 Azure Generation V2 image.
+```create-AzVM_FromImage-PhotonOS.ps1``` provisions on Azure a Photon OS VM with the Azure image created using ```create-AzImage-PhotonOS.ps1```.
+
+If root access is required, on the Azure vm serial console login with the user credentials defined during setup, run the following commands:
+ - ```whoami```
+ - ```sudo passwd -u root```
+ - ```sudo passwd root```
+ - ```(set new password)```
+ - ```su -l root```
+ - ```whoami```
+ 
 ```Powershell and PowerCLI on Photon OS```
 -
 PowerCLI on Photon OS needs as prerequisite a supported PowerShell release. To install or update Powershell Core enter
@@ -50,71 +67,17 @@ See comment inside the scripts. A side-by-side-installation works fine but not a
 
 ![Side-by-side installation](https://github.com/dcasota/photonos-scripts/blob/master/side-side-installation.png)
 
-
-
-
-## Create a Photon OS VM on ESXi
-(no study scripts yet)
 ## Install Photon OS on ARM
 (no study scripts yet)
 ## Create a Photon OS VM as AWS AMI machine and as Google Compute machine
 (no study scripts yet)
 
-## Create a Photon OS VM on Azure
-The following scripts may be helpful when creating a Photon OS VM on Azure.
-- https://github.com/dcasota/azure-scripts/blob/master/create-AzImage_GenV2-PhotonOS.ps1
-- https://github.com/dcasota/azure-scripts/blob/master/create-AzVM_FromImage-PhotonOS.ps1
 
-- https://github.com/dcasota/photonos-scripts/blob/master/CreatePhotonOSVMOnAzure.ps1
+Archive
+-
 
-```create-AzImage_GenV2-PhotonOS.ps1``` creates a VMware Photon OS 3.0 Rev2 Azure Generation V2 image.
-```create-AzVM_FromImage-PhotonOS.ps1``` provisions an Azure Generation V2 VM with the Azure image created using ```create-AzImage_GenV2-PhotonOS.ps1```.
-```CreatePhotonOSVMOnAzure.ps1``` provisions VMware Photon OS 3.0 (Generation "V1") on Microsoft Azure.
-
-Why Generation V2?
-For system engineers knowledge about the VMware virtual hardware version is crucial when it comes to VM capabilities and natural limitations. Latest capabilities like UEFI boot type and virtualization-based security are still evolving. 
-The same begins for cloud virtual hardware like in Azure Generations.
-On Azure, VMs with UEFI boot type are not supported yet. However some downgrade options were made available to migrate such on-premises Windows servers to Azure by converting the boot type of the on-premises servers to BIOS while migrating them.
-
- Some docs artefacts about
-- https://docs.microsoft.com/en-us/azure/virtual-machines/windows/generation-2#features-and-capabilities
-- https://docs.vmware.com/en/VMware-vSphere/6.7/com.vmware.vsphere.vm_admin.doc/GUID-789C3913-1053-4850-A0F0-E29C3D32B6DA.html
-
-Download the script ```create-AzImage_GenV2-PhotonOS.ps1``` and ```create-AzVM_FromImage-PhotonOS.ps1```. You can pass a bunch of parameters like Azure login, resourcegroup, location name, storage account, container, image name, etc. The first script passes the download URL of the VMware Photon OS release. More information: https://github.com/vmware/photon/wiki/Downloading-Photon-OS.
-Prerequisites for both scripts are:
-- Windows Powershell with installed Az module, Az CLI
-- a Microsoft Azure account
-
-First ```create-AzImage_GenV2-PhotonOS.ps1``` installs Azure CLI and the Powershell Az module. It connects to Azure and saves the Az-Context. It checks/creates
-- resource group
-- virtual network
-- storage account/container/blob
-- settings for a temporary VM
-
-It creates a temporary Windows VM. Using the AzVMCustomScriptExtension functionality, dynamically created scriptblocks including passed Az-Context are used to postinstall the necessary prerequisites inside that Windows VM. The VMware Photon OS bits for Azure are downloaded from the VMware download location, the extracted VMware Photon OS .vhd is uploaded as Azure page blob and after the Generation V2 image has been created, the Windows VM is deleted. For study purposes the temporary VM created is Microsoft Windows Server 2019 on a Hyper-V Generation V2 virtual hardware using the offering Standard_E4s_v3.
-
-Using ```create-AzVM_FromImage-PhotonOS.ps1``` you can pass Photon OS VM settings. As example, a local user account on Photon OS will be created during provisioning. It is created without root permissions. There are some culprit to know.
-- ```[string]$VMLocalAdminUser = "LocalAdminUser"``` # Check if uppercase and lowercase is enforced/supported.
-- ```[string]$VMLocalAdminPwd="Secure2020123!"```# 12-123 chars
-
-The script checks/creates
-- resource group
-- virtual network
-- storage account/container/blob
-- vm
-
-The script finishes with enabling the Azure boot-diagnostics option.
-
-If root access is required, on the vm serial console login with the user credentials defined during setup, run the following commands:
- - ```whoami```
- - ```sudo passwd -u root```
- - ```sudo passwd root```
- - ```(set new password)```
- - ```su -l root```
- - ```whoami```
-  
-
-```CreatePhotonOSVMOnAzure.ps1``` provisions VMware Photon OS 3.0 (Generation "V1") on Microsoft Azure. Just download it and edit the script variables for location, resourcegroup, network setting, base image and vm settings. You must have locally an extracted Photon OS .vhd file. The Photon OS image in $LocalFilePath must include name and full drive path of the untar'ed .vhd.
+```CreatePhotonOSVMOnAzure.ps1```
+The script provisions VMware Photon OS 3.0 (Generation "V1") on Microsoft Azure. Just download it and edit the script variables for location, resourcegroup, network setting, base image and vm settings. You must have locally an extracted Photon OS .vhd file. The Photon OS image in $LocalFilePath must include name and full drive path of the untar'ed .vhd.
 More information: https://github.com/vmware/photon/wiki/Downloading-Photon-OS
 For the uploaded .vhd a separate storage account, storage container and storage blob are created.
 The ```az vm create``` parameter ```--custom-data``` is a user exit for a post-provisioning process. The option is used to process a bash script to:
@@ -124,10 +87,6 @@ To activate the option simply set the variable $postprovisioning="true" (default
 Photon OS on Azure disables the root account after custom data has been processed. Per default ssh PermitRootLogin is disabled too.
 The script finishes with enabling Azure boot-diagnostics for the serial console option.
 
-
-
-Archive
--
 ```dockerpwshgalleryonphotonos.sh```
 This script makes Microsoft Powershell Core, VMware PowerCLI Core and the PowerShellGallery available on Photon OS.
 It is using the VMware PowerCLI Core Dockerfile. It uses an Ubuntu 16.04 docker container with Powershell Core 6.x and PowerCLI Core 11.x.
