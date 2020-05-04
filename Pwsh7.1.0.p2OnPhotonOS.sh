@@ -1,12 +1,11 @@
 #!/bin/sh
-# Deploy Powershell v7.10.0 Preview1 on VMware Photon OS
+# Deploy Powershell v7.1.0 Preview2 on VMware Photon OS
 #
-# This script deploys Powershell v7.1.0-preview.1 on VMware Photon OS. To start Powershell simply enter "pwsh7.1.0.p1".
+# This script deploys Powershell v7.1.0-preview.2 on VMware Photon OS. To start Powershell simply enter "pwsh7.1.0.p2".
 #
 #
 # History
-# 0.1  17.04.2020   dcasota  Initial release
-# 0.2  04.05.2020   dcasota  comment improvements
+# 0.1  04.05.2020   dcasota  Initial release
 #
 # Prerequisites:
 #    - VMware Photon OS 3.0
@@ -18,8 +17,8 @@
 # See blog about PowerShell 7.0 https://devblogs.microsoft.com/powershell/announcing-powershell-7-0/ . There is no differenciation of "Core" anymore.
 #
 # On Photon 'tndf install -y powershell' latest release is 6.2.3.
-# This script downloads and installs Powershell 7.1.0-preview.1 release.
-#    Powershell is installed in /opt/microsoft/powershell/7.1.0-preview.1/ with a symbolic link "pwsh7.1.0.p1" that points to /opt/microsoft/powershell/7.1.0-preview.1/pwsh.
+# This script downloads and installs Powershell 7.1.0-preview.2 release.
+#    Powershell is installed in /opt/microsoft/powershell/7.1.0-preview.2/ with a symbolic link "pwsh7.1.0.p2" that points to /opt/microsoft/powershell/7.1.0-preview.2/pwsh.
 #
 # Limitations / not tested:
 # - More restrictive user privileges
@@ -30,12 +29,12 @@
 
 # The methodology to describe PS variables has been adopted from
 # https://github.com/PowerShell/PowerShell-Docker/blob/master/release/preview/fedora/docker/Dockerfile
-export PS_VERSION=7.1.0-preview.1
-export PACKAGE_VERSION=7.1.0-preview.1
+export PS_VERSION=7.1.0-preview.2
+export PACKAGE_VERSION=7.1.0-preview.2
 export PS_PACKAGE=powershell-${PACKAGE_VERSION}-linux-x64.tar.gz
 export PS_PACKAGE_URL=https://github.com/PowerShell/PowerShell/releases/download/v${PS_VERSION}/${PS_PACKAGE}
 export PS_INSTALL_FOLDER=/opt/microsoft/powershell/$PS_VERSION
-export PS_INSTALL_VERSION=7.1.0.p1
+export PS_INSTALL_VERSION=7.1.0.p2
 export PS_SYMLINK=pwsh$PS_INSTALL_VERSION
 
 # set a fixed location for the Module analysis cache
