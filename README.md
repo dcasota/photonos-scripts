@@ -62,7 +62,7 @@ There are few approaches:
 
 
 In this repo you find install scripts for Powershell Core release on Photon OS. Each script ```Pwsh[Release]OnPhotonOS.sh``` deploys the specific Powershell Core release on Photon OS.
-Example: Install the actually latest Powershell release 7.0.0 using ```Pwsh7.0.0OnPhotonOS.ps1```. Simply enter afterwards ```pwsh7```.
+Example: Install the actually latest Powershell release 7.0.2 using ```Pwsh7.0.2OnPhotonOS.ps1```. Simply enter afterwards ```pwsh7.0.2```.
 See comment inside the scripts. A side-by-side-installation works fine but not all constellations are tested. Have a look to the release notes of Powershell Core as well.
 
 ![Side-by-side installation](https://github.com/dcasota/photonos-scripts/blob/master/side-side-installation.png)
