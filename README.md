@@ -40,24 +40,19 @@ Good to know, the whole bunch of VMware PowerCLI cmdlets are made available as d
 - ```docker run -it vmware/powerclicore```
 
 
+In this repo you find install scripts for Powershell on Photon OS with focus on fulfilling prerequisites for VMware.PowerCLI. Each script ```Pwsh[Release]OnPhotonOS.sh``` deploys the specific Powershell Core release on Photon OS.
+Example: Install the actually latest Powershell release 7.0.3 using ```Pwsh7.0.3OnPhotonOS.ps1```. Simply enter afterwards ```pwsh7.0.3```.
+![Powershell_on_Photon](https://github.com/dcasota/photonos-scripts/blob/master/Photon2-pwsh-current.png)
 
-```.NET based PowerCLI cmdlets, flings, apps, etc.```
--
-You should find more and more PowerCLI cmdlets modules which work fine, but some cmdlets (and Powershellgallery modules) produces interoperability errors. Simple as that, many Microsoft Windows-specific lowlevel functions were not or are not cross-compatible. Self-contained applications is a development field under construction.
+Afterwards you easily can install VMware.PowerCLI with ```install-module VMware.PowerCLI```.
 
-In some situation an alternative functionality method  or a side-by-side installation could be useful. 
+A side-by-side-installation works fine but not all constellations are tested. Have a look to the release notes of Powershell Core as well.
+![Side-by-side installation](https://github.com/dcasota/photonos-scripts/blob/master/side-side-installation.png)
+
+As consumer you can download and install newer made available releases of .NET, PowerShell and PowerCLI. I've visualized the different options for a PowerCLI installation:
 ![Status July20](https://github.com/dcasota/photonos-scripts/blob/master/Status_July20.png)
 
-There are few approaches:
-- Download and install new PowerShell Core and PowerCLI releases
-- Provide more .NET core lowlevel compatibility for cmdlets on Photon OS
-
-
-In this repo you find install scripts for Powershell Core release on Photon OS. Each script ```Pwsh[Release]OnPhotonOS.sh``` deploys the specific Powershell Core release on Photon OS.
-Example: Install the actually latest Powershell release 7.0.3 using ```Pwsh7.0.3OnPhotonOS.ps1```. Simply enter afterwards ```pwsh7.0.3```.
-See comment inside the scripts. A side-by-side-installation works fine but not all constellations are tested. Have a look to the release notes of Powershell Core as well.
-
-![Side-by-side installation](https://github.com/dcasota/photonos-scripts/blob/master/side-side-installation.png)
+It is expected that you find more and more .NET based cmdlets, modules, etc. which work fine, but there are a lot of cmdlets (and Powershellgallery modules) which produces interoperability errors or are not available. Simple as that, many Microsoft Windows-specific lowlevel functions were not or are not cross-compatible. On MS Windows, Powershell provides a module NetSecurity which isn't made available on Linux, even not with Powershell 7. Hence, cmdlets like ```Test-Netconnection``` are missing.
 
 ## Install Photon OS on ARM
 (no study scripts yet)
