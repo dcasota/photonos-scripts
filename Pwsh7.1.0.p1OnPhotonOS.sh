@@ -127,6 +127,15 @@ if ! [ -d $PS_INSTALL_FOLDER/pwsh ]; then
           }"	
 fi
 
+# Check functionality of powershell
+OUTPUT=`$PS_INSTALL_FOLDER/pwsh -c "find-module VMware.PowerCLI"`
+if ! (echo $OUTPUT | grep -q "PSGallery"); then
+	cat <<EOFProfile > $PS_INSTALL_FOLDER/profile.ps1
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+\$env:DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0     
+EOFProfile
+fi
+
 # Cleanup
 tdnf clean all
 
