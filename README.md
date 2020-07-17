@@ -26,14 +26,6 @@ The following scripts may be helpful when creating a Photon OS VM on Azure.
 
 ```create-AzImage-PhotonOS.ps1``` creates per default a VMware Photon OS 3.0 Rev2 Azure Generation V2 image.
 ```create-AzVM_FromImage-PhotonOS.ps1``` provisions on Azure a Photon OS VM with the Azure image created using ```create-AzImage-PhotonOS.ps1```.
-
-If root access is required, on the Azure vm serial console login with the user credentials defined during setup, run the following commands:
- - ```whoami```
- - ```sudo passwd -u root```
- - ```sudo passwd root```
- - ```(set new password)```
- - ```su -l root```
- - ```whoami```
  
 ```Powershell and PowerCLI on Photon OS```
 -
