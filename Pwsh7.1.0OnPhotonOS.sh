@@ -6,6 +6,7 @@
 #
 # History
 # 0.1  08.11.2020   dcasota  Initial release
+# 0.2  12.01.2021   dcasota  powershell release correction
 #
 # Prerequisites:
 #    - VMware Photon OS 2.0 or above
