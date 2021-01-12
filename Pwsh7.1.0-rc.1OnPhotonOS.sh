@@ -6,6 +6,7 @@
 #
 # History
 # 0.1  30.09.2020   dcasota  Initial release
+# 0.2  12.01.2021   dcasota  powershell release correction
 #
 # Prerequisites:
 #    - VMware Photon OS 3.0 or VMware Photon OS 2.0
@@ -17,7 +18,7 @@
 # See release info https://github.com/PowerShell/PowerShell/releases/tag/v7.1.0-rc.1
 # See blog about PowerShell 7.0 https://devblogs.microsoft.com/powershell/announcing-powershell-7-0/ . There is no differenciation of "Core" anymore.
 #
-# On Photon 3.0 'tdnf install -y powershell' current release is 7.0.0.
+# On Photon 3.0 'tdnf install -y powershell' current release is 7.0.3
 # On Photon 2.0 'tdnf install -y powershell' current release is PowerShell 6.2.0-preview.2-57
 #
 # This script downloads and installs Powershell 7.1.0-rc.1 release.
