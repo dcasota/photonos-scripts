@@ -25,7 +25,7 @@
 # This script downloads and installs Powershell 7.2.0-preview.2 release.
 #    Powershell is installed in /opt/microsoft/powershell/7.2.0-preview.2/ with a symbolic link "pwsh7.2.0-preview.2" that points to /opt/microsoft/powershell/7.2.0-preview.2/pwsh.
 #
-#    Especially when running on Photon OS 2.0, two workarounds are necessary to be saved in profile /opt/microsoft/powershell/7.2.0-preview.2/profile.ps1.
+#    Especially when running on Photon OS 2.0, some workarounds are necessary to be saved in profile /opt/microsoft/powershell/7.2.0-preview.2/profile.ps1.
 #       Without those you might run into following issues:
 #       find-module VMware.PowerCLI
 #       Find-Package: /opt/microsoft/powershell/7.2.0-preview.2/Modules/PowerShellGet/PSModule.psm1
@@ -50,6 +50,11 @@
 #       Workaround #2
 #       https://github.com/PowerShell/PowerShell/issues/9495#issuecomment-515592672
 #       $env:DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0
+#
+#       Workaround #3
+#       https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_character_encoding?view=powershell-7.1
+#       $OutputEncoding = [System.Console]::OutputEncoding = [System.Console]::InputEncoding = [System.Text.Encoding]::UTF8
+#       $PSDefaultParameterValues['*:Encoding'] = 'utf8'
 #
 #    The reference installation procedure for pwsh on Linux was published on
 #    https://docs.microsoft.com/en-us/powershell/scripting/install/installing-powershell-core-on-linux?view=powershell-7
@@ -131,6 +136,8 @@ if ! (echo $OUTPUT | grep -q "PSGallery"); then
 	cat <<EOFProfile > $PS_INSTALL_FOLDER/profile.ps1
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 \$env:DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0     
+$OutputEncoding = [System.Console]::OutputEncoding = [System.Console]::InputEncoding = [System.Text.Encoding]::UTF8
+$PSDefaultParameterValues['*:Encoding'] = 'utf8'
 EOFProfile
 fi
 
