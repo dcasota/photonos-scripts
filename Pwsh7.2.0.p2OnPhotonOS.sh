@@ -138,6 +138,7 @@ if ! (echo $OUTPUT | grep -q "PSGallery"); then
 \$env:DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0     
 \$OutputEncoding = [System.Console]::OutputEncoding = [System.Console]::InputEncoding = [System.Text.Encoding]::UTF8
 \$PSDefaultParameterValues['*:Encoding'] = 'UTF8NoBOM'
+\$env:LC_ALL='C.UTF-8'
 EOFProfile
 fi
 
