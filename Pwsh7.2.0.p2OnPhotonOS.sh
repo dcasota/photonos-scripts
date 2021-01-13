@@ -7,6 +7,7 @@
 # History
 # 0.1  12.01.2021   dcasota  Initial release
 # 0.2  12.01.2021   dcasota  powershell release correction
+# 0.3  13.01.2021   dcasota  provisioning comment modified
 #
 # Prerequisites:
 #    - VMware Photon OS 2.0 or above
@@ -55,10 +56,8 @@
 #
 # Provisioning:
 #  sudo tdnf install -y curl unzip
-#  curl -O -J -L https://github.com/dcasota/photonos-scripts/archive/master.zip
-#  unzip ./photonos-scripts-master.zip 
-#  cd ./photonos-scripts-master
-#  sudo chmod a+x ./*.sh
+#  curl -O -J -L https://raw.githubusercontent.com/dcasota/photonos-scripts/master/Pwsh7.2.0.p2OnPhotonOS.sh
+#  sudo chmod a+x ./Pwsh7.2.0.p2OnPhotonOS.sh
 #  sudo ./pwsh7.2.0-preview.2OnPhotonOS.sh
 #
 # Limitations / not tested:
