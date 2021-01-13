@@ -52,7 +52,7 @@ export -f pathremove pathprepend pathappend
 export HISTSIZE=1000
 # export HISTIGNORE="&:[bf]g:exit"
 # ignores placing the exit command in history
-export HISTIGNORE="&:ls:[bf]g:exit:pwd:clear:mount:umount:[ \t]*"
+export HISTIGNORE='[ \t]*:exit'
 
 # Set some defaults for graphical systems
 export XDG_DATA_DIRS=/usr/share/
