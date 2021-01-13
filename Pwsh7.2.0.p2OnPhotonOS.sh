@@ -54,7 +54,7 @@
 #       Workaround #3
 #       https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_character_encoding?view=powershell-7.1
 #       $OutputEncoding = [System.Console]::OutputEncoding = [System.Console]::InputEncoding = [System.Text.Encoding]::UTF8
-#       $PSDefaultParameterValues['*:Encoding'] = 'utf8'
+#       $PSDefaultParameterValues['*:Encoding'] = 'UTF8NoBOM'
 #
 #    The reference installation procedure for pwsh on Linux was published on
 #    https://docs.microsoft.com/en-us/powershell/scripting/install/installing-powershell-core-on-linux?view=powershell-7
@@ -137,7 +137,7 @@ if ! (echo $OUTPUT | grep -q "PSGallery"); then
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 \$env:DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0     
 \$OutputEncoding = [System.Console]::OutputEncoding = [System.Console]::InputEncoding = [System.Text.Encoding]::UTF8
-\$PSDefaultParameterValues['*:Encoding'] = 'utf8'
+\$PSDefaultParameterValues['*:Encoding'] = 'UTF8NoBOM'
 EOFProfile
 fi
 
