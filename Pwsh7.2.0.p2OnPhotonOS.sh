@@ -51,11 +51,6 @@
 #       https://github.com/PowerShell/PowerShell/issues/9495#issuecomment-515592672
 #       $env:DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0
 #
-#       Workaround #3
-#       https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_character_encoding?view=powershell-7.1
-#       $OutputEncoding = [System.Console]::OutputEncoding = [System.Console]::InputEncoding = [System.Text.Encoding]::UTF8
-#       $PSDefaultParameterValues['*:Encoding'] = 'UTF8NoBOM'
-#
 #    The reference installation procedure for pwsh on Linux was published on
 #    https://docs.microsoft.com/en-us/powershell/scripting/install/installing-powershell-core-on-linux?view=powershell-7
 #
@@ -135,21 +130,7 @@ OUTPUT=`$PS_INSTALL_FOLDER/pwsh -c "find-module VMware.PowerCLI"`
 if ! (echo $OUTPUT | grep -q "PSGallery"); then
 	cat <<EOFProfile > $PS_INSTALL_FOLDER/profile.ps1
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-\$env:DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0     
-\$env:LANG='en_US.UTF-8'
-\$env:LC_CTYPE='en_US.UTF-8'
-\$env:LC_NUMERIC='en_US.UTF-8'
-\$env:LC_TIME='en_US.UTF-8'
-\$env:LC_COLLATE='en_US.UTF-8'
-\$env:LC_MONETARY='en_US.UTF-8'
-\$env:LC_MESSAGES='en_US.UTF-8'
-\$env:LC_PAPER='en_US.UTF-8'
-\$env:LC_NAME='en_US.UTF-8'
-\$env:LC_ADDRESS='en_US.UTF-8'
-\$env:LC_TELEPHONE='en_US.UTF-8'
-\$env:LC_MEASUREMENT='en_US.UTF-8'
-\$env:LC_IDENTIFICATION='en_US.UTF-8'
-\$env:LC_ALL=''
+\$env:DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0
 EOFProfile
 fi
 
