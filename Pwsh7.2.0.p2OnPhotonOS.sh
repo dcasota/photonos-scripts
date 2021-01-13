@@ -136,8 +136,8 @@ if ! (echo $OUTPUT | grep -q "PSGallery"); then
 	cat <<EOFProfile > $PS_INSTALL_FOLDER/profile.ps1
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 \$env:DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0     
-$OutputEncoding = [System.Console]::OutputEncoding = [System.Console]::InputEncoding = [System.Text.Encoding]::UTF8
-$PSDefaultParameterValues['*:Encoding'] = 'utf8'
+\$OutputEncoding = [System.Console]::OutputEncoding = [System.Console]::InputEncoding = [System.Text.Encoding]::UTF8
+\$PSDefaultParameterValues['*:Encoding'] = 'utf8'
 EOFProfile
 fi
 
