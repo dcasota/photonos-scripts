@@ -136,9 +136,20 @@ if ! (echo $OUTPUT | grep -q "PSGallery"); then
 	cat <<EOFProfile > $PS_INSTALL_FOLDER/profile.ps1
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 \$env:DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0     
-\$OutputEncoding = [System.Console]::OutputEncoding = [System.Console]::InputEncoding = [System.Text.Encoding]::UTF8
-\$PSDefaultParameterValues['*:Encoding'] = 'UTF8NoBOM'
-\$env:LC_ALL='C.UTF-8'
+\$env:LANG='en_US.UTF-8'
+\$env:LC_CTYPE='en_US.UTF-8'
+\$env:LC_NUMERIC='en_US.UTF-8'
+\$env:LC_TIME='en_US.UTF-8'
+\$env:LC_COLLATE='en_US.UTF-8'
+\$env:LC_MONETARY='en_US.UTF-8'
+\$env:LC_MESSAGES='en_US.UTF-8'
+\$env:LC_PAPER='en_US.UTF-8'
+\$env:LC_NAME='en_US.UTF-8'
+\$env:LC_ADDRESS='en_US.UTF-8'
+\$env:LC_TELEPHONE='en_US.UTF-8'
+\$env:LC_MEASUREMENT='en_US.UTF-8'
+\$env:LC_IDENTIFICATION='en_US.UTF-8'
+\$env:LC_ALL=''
 EOFProfile
 fi
 
