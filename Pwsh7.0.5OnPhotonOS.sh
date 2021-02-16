@@ -1,12 +1,11 @@
 #!/bin/sh
-# Deploy Powershell v7.0.4 on VMware Photon OS
+# Deploy Powershell v7.0.5 on VMware Photon OS
 #
-# This script deploys Powershell v7.0.4 on VMware Photon OS. To start Powershell simply enter "pwsh7.0.4".
+# This script deploys Powershell v7.0.5 on VMware Photon OS. To start Powershell simply enter "pwsh7.0.5".
 #
 #
 # History
-# 0.1  24.01.2021   dcasota  Initial release
-# 0.2  16.02.2021   dcasota  comment fix
+# 0.1  16.02.2021   dcasota  Initial release
 #
 # Prerequisites:
 #    - VMware Photon OS 2.0 or above
@@ -15,19 +14,19 @@
 #
 # Description:
 #
-# See release info https://github.com/PowerShell/PowerShell/releases/tag/v7.0.4
+# See release info https://github.com/PowerShell/PowerShell/releases/tag/v7.0.5
 # See blog about PowerShell 7.0 https://devblogs.microsoft.com/powershell/announcing-powershell-7-0/ . There is no differenciation of "Core" anymore.
 #
 # On latest Photon 3.0 current powershell release is 7.0.3. Simply use 'tdnf install -y powershell'.
 # On latest Photon 2.0 current powershell release is 6.2.0-preview.2-57. Simply use 'tdnf install -y powershell'.
 #
-# This script downloads and installs Powershell 7.0.4 release.
-#    Powershell is installed in /opt/microsoft/powershell/7.0.4/ with a symbolic link "pwsh7.0.4" that points to /opt/microsoft/powershell/7.0.4/pwsh.
+# This script downloads and installs Powershell 7.0.5 release.
+#    Powershell is installed in /opt/microsoft/powershell/7.0.5/ with a symbolic link "pwsh7.0.5" that points to /opt/microsoft/powershell/7.0.5/pwsh.
 #
-#    Especially when running on Photon OS 2.0, some workarounds are necessary to be saved in profile /opt/microsoft/powershell/7.0.4/profile.ps1.
+#    Especially when running on Photon OS 2.0, some workarounds are necessary to be saved in profile /opt/microsoft/powershell/7.0.5/profile.ps1.
 #       Without those you might run into following issues:
 #       find-module VMware.PowerCLI
-#       Find-Package: /opt/microsoft/powershell/7.0.4/Modules/PowerShellGet/PSModule.psm1
+#       Find-Package: /opt/microsoft/powershell/7.0.5/Modules/PowerShellGet/PSModule.psm1
 #       Line |
 #       8871 |         PackageManagement\Find-Package @PSBoundParameters | Microsoft.PowerShell.Core\ForEach-Object {
 #            |         ^ No match was found for the specified search criteria and module name 'VMware.PowerCLI'. Try Get-PSRepository to see all
@@ -36,7 +35,7 @@
 #       get-psrepository
 #       WARNING: Unable to find module repositories.
 #    
-#       Each time pwsh7.0.4 is started the saved profile with the workarounds is loaded.
+#       Each time pwsh7.0.5 is started the saved profile with the workarounds is loaded.
 #       #https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_profiles?view=powershell-5.1&redirectedfrom=MSDN
 #       Show variables of $PROFILE:
 #       $PROFILE | Get-Member -Type NoteProperty
@@ -55,9 +54,9 @@
 #
 # Provisioning:
 #  sudo tdnf install -y curl unzip
-#  curl -O -J -L https://raw.githubusercontent.com/dcasota/photonos-scripts/master/Pwsh7.0.4OnPhotonOS.sh
-#  sudo chmod a+x ./Pwsh7.0.4OnPhotonOS.sh
-#  sudo ./pwsh7.0.4OnPhotonOS.sh
+#  curl -O -J -L https://raw.githubusercontent.com/dcasota/photonos-scripts/master/Pwsh7.0.5OnPhotonOS.sh
+#  sudo chmod a+x ./Pwsh7.0.5OnPhotonOS.sh
+#  sudo ./pwsh7.0.5OnPhotonOS.sh
 #
 # Limitations / not tested:
 # - More restrictive user privileges
@@ -68,12 +67,12 @@
 
 # The methodology to describe PS variables has been adopted from
 # https://github.com/PowerShell/PowerShell-Docker/blob/master/release/preview/fedora/docker/Dockerfile
-export PS_VERSION=7.0.4
-export PACKAGE_VERSION=7.0.4
+export PS_VERSION=7.0.5
+export PACKAGE_VERSION=7.0.5
 export PS_PACKAGE=powershell-${PACKAGE_VERSION}-linux-x64.tar.gz
 export PS_PACKAGE_URL=https://github.com/PowerShell/PowerShell/releases/download/v${PS_VERSION}/${PS_PACKAGE}
 export PS_INSTALL_FOLDER=/opt/microsoft/powershell/$PS_VERSION
-export PS_INSTALL_VERSION=7.0.4
+export PS_INSTALL_VERSION=7.0.5
 export PS_SYMLINK=pwsh$PS_INSTALL_VERSION
 
 # set a fixed location for the Module analysis cache
