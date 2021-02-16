@@ -37,7 +37,7 @@ Install or update PowerCLI in a powershell command enter
 
 Good to know, the whole bunch of VMware PowerCLI cmdlets are made available as docker container. Run
 - ```docker pull vmware/powerclicore:latest```
-- ```docker run -it vmware/powerclicore```
+- ```docker run -it vmware/powerclicore:latest```
 
 
 In this repo you find install scripts for Powershell on Photon OS with focus on fulfilling prerequisites for VMware.PowerCLI. Each script ```Pwsh[Release]OnPhotonOS.sh``` deploys the specific Powershell Core release on Photon OS.
@@ -49,8 +49,8 @@ Afterwards you easily can install VMware.PowerCLI with ```install-module VMware.
 A side-by-side-installation works fine but not all constellations are tested. Have a look to the release notes of Powershell Core as well.
 ![Side-by-side installation](https://github.com/dcasota/photonos-scripts/blob/master/side-side-installation.png)
 
-As consumer you can download and install newer made available releases of .NET, PowerShell and PowerCLI. I've visualized the different options for a PowerCLI installation:
-![Status July20](https://github.com/dcasota/photonos-scripts/blob/master/Status_July20.png)
+As consumer you can download and install newer made available releases PowerCLI. I've visualized three different options - container, photon os built-in and scripted install - of a PowerCLI installation.
+![Status Feb21_1](https://github.com/dcasota/photonos-scripts/blob/master/Status_Feb21_1.png)
 
 It is expected that you find more and more .NET based cmdlets, modules, etc. which work fine, but there are a lot of cmdlets (and Powershellgallery modules) which produces interoperability errors or are not available. Simple as that, many Microsoft Windows-specific lowlevel functions were not or are not cross-compatible. On MS Windows, Powershell provides a module NetSecurity which isn't made available on Linux, even not with Powershell 7. Hence, cmdlets like ```Test-Netconnection``` are missing.
 
