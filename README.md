@@ -69,8 +69,12 @@ A side-by-side-installation works fine but not all constellations are tested. Ha
 
 
 
+
+
+
 Archive
 -
+This section contains deprecated scripts and hints. DO NOT USE
 
 ```CreatePhotonOSVMOnAzure.ps1```
 The script provisions VMware Photon OS 3.0 (Generation "V1") on Microsoft Azure. Just download it and edit the script variables for location, resourcegroup, network setting, base image and vm settings. You must have locally an extracted Photon OS .vhd file. The Photon OS image in $LocalFilePath must include name and full drive path of the untar'ed .vhd.
