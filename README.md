@@ -9,11 +9,11 @@ The VMware Photon Platform 1.x hit End of General Support on 2019-03-02 accordin
 
 There isn't a customer product SKU Photon Platform 2.x, 3.x or 4.x. Hence you cannot buy official Photon Platform support. 
 
-The open source Photon OS has nothing to do with the VMware customer products in which Photon OS is a part of.
+The open source Photon OS has nothing to do with the VMware customer products in which Photon OS is a part of. VCSA, vSphere Replication, Workstation, vRealize Operations, and much more run on a strict VMware internal ~pipeline for that commercial product.
 
-VCSA, vSphere Replication, Workstation, vRealize Operations, and much more run on a strict VMware internal ~pipeline for that commercial product.
+For the open source product you can find the download bits at https://github.com/vmware/photon/wiki/Downloading-Photon-OS.
 
-The open source Photon OS evolution is highly interesting. Creating a Photon OS VM is simple, and there are different OS appliance flavors for "Generic", "VMware hypervisor optimized", "AWS optimized", "Security hardened" and "Real Time". Provisioning, failover and failback of Photon OS on other platforms and architectures (x86_64 + arm64) in nowadays isn't a niche use case like in 2017.
+The open source Photon OS evolution is highly interesting. There are different OS appliance flavors for "Generic", "VMware hypervisor optimized", "AWS optimized", "Security hardened" and "Real Time". Provisioning, failover and failback of Photon OS on other platforms and architectures (x86_64 + arm64) in nowadays isn't a niche use case like in 2017.
 
 Provisioning is supported for
 - ISO setup
@@ -33,7 +33,7 @@ A major aspect always was/is security. The Security Advisories for 1.x, 2.x, 3.x
 
 With each Linux kernel update trillions of packages permutations are given, in theory it's slightly less architecture specific. A slice of it reflects in Photon OS. You can see which packages are made available from contributors at https://github.com/vmware/photon/commits/dev.
 
-You can find the download bits at https://github.com/vmware/photon/wiki/Downloading-Photon-OS.
+
 
 
 # PowerCLI on Photon OS
