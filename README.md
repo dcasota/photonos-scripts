@@ -57,7 +57,9 @@ Install or update PowerCLI in a powershell command enter
 
 In some use cases it is necessary to have a specific Powershell release. Some PowerCLI cmdlets on Windows do not work yet on Photon OS. Simple as that, many Microsoft Windows-specific lowlevel functions were not or are not cross-compatible.
 In this repo you find install scripts for Powershell on Photon OS with focus on fulfilling prerequisites for VMware.PowerCLI. Each script ```Pwsh[Release]OnPhotonOS.sh``` deploys the specific Powershell Core release on Photon OS.
+
 Example: Install the Powershell release 7.0.3 using ```Pwsh7.0.3OnPhotonOS.ps1```. Simply enter afterwards ```pwsh7.0.3```.
+
 ![Powershell_on_Photon](https://github.com/dcasota/photonos-scripts/blob/master/Photon2-pwsh-current.png)
 
 Afterwards you easily can install VMware.PowerCLI with ```install-module VMware.PowerCLI```.
