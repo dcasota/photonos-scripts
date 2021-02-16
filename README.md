@@ -2,30 +2,40 @@ Photon OS scripts
 -
 This repo contains several VMware Photon OS related scripts. A major part is related to run PowerCLI on Photon OS.
 
-Photon OS, a VMware operating system,  is an open source Linux container host for cloud-native applications. The OS is the preferred platform for IoT edge engineering. It runs docker containers, supports a resource foot print hardened setup, comes with a driver development kit for device drivers, and has package-based lifecycle management systems.
+Photon OS, a VMware operating system,  is an open source Linux container host for cloud-native applications. It runs docker containers, supports a resource foot print hardened setup, comes with a driver development kit for device drivers, and has package-based lifecycle management systems.
 More information: https://vmware.github.io/photon/.
 
-Photon OS is the foundation of many VMware software products. VMware vCenter Server Appliance bits to give an idea are made out of Photon OS. Hence, the functions are optimized for workloads on VMware hypervisor vSphere/ESXi.
+The VMware Photon Platform 1.x hit End of General Support on 2019-03-02 according to https://lifecycle.vmware.com/. There still is an Enterprise Application Policy https://www.vmware.com/support/policies/enterprise-application.html though.
 
-Provisioning, failover and failback of Photon OS on other hypervisors in nowadays is a niche use case. Provisioning is supported for
+There isn't a customer product SKU Photon Platform 2.x, 3.x or 4.x. Hence you cannot buy official Photon Platform support. 
+
+The open source Photon OS has nothing to do with the VMware customer products in which Photon OS is a part of.
+
+VCSA, vSphere Replication, Workstation, vRealize Operations, and much more run on a strict Photon OS ~pipeline for that specific product.
+
+The open source Photon OS evolution is somewhat interesting. There are different OS appliance flavors for "Generic", "VMware hypervisor optimized", "AWS optimized", "Security hardened" and "Real Time". Provisioning, failover and failback of Photon OS on other hypervisors in nowadays is a niche use case.
+
+Provisioning is supported for
 - ISO setup
 - Amazon Machine Image
 - Google Compute Engine image
 - Azure VHD
 - Raspberry Pi
 
-You can find the download bits at https://github.com/vmware/photon/wiki/Downloading-Photon-OS.
-
-## Create a Photon OS VM on Azure
-The following scripts may be helpful when creating a Photon OS VM on Azure.
+Creating a Photon OS VM is simple.
+In a Non-vSphere environment, as example on Azure, the following scripts may be helpful when creating a Photon OS VM.
 - https://github.com/dcasota/azure-scripts/blob/master/create-AzImage-PhotonOS.ps1
 - https://github.com/dcasota/azure-scripts/blob/master/create-AzVM_FromImage-PhotonOS.ps1
-
-```create-AzImage-PhotonOS.ps1``` creates per default a VMware Photon OS 3.0 Rev2 Azure Generation V2 image.
+```create-AzImage-PhotonOS.ps1``` creates an Azure Generation V2 image, per default of VMware Photon OS 3.0 Rev2.
 ```create-AzVM_FromImage-PhotonOS.ps1``` provisions on Azure a Photon OS VM with the Azure image created using ```create-AzImage-PhotonOS.ps1```.
 
+A major aspect always was/is security. The Security Advisories for 1.x, 2.x, 3.x may give an idea of the necessity of chain of packages to be held safe https://github.com/vmware/photon/wiki/Security-Advisories.
 
-```PowerCLI on Photon OS```
+With each Linux kernel update trillions of packages permutations are given, in theory it's slightly less architecture specific. A slice of it reflects in Photon OS. You can see which packages are made available from contributors at https://github.com/vmware/photon/commits/dev.
+
+You can find the download bits at https://github.com/vmware/photon/wiki/Downloading-Photon-OS.
+
+# PowerCLI on Photon OS
 
 As consumer you can download and install newer made available releases of PowerCLI. There are three different options - container-based, photon os built-in and scripted install.
 ![Status Feb21_1](https://github.com/dcasota/photonos-scripts/blob/master/Status_Feb21_1.png)
