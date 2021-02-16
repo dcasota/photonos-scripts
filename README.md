@@ -1,6 +1,6 @@
 Photon OS scripts
 -
-This repo contains several VMware Photon OS related scripts.
+This repo contains several VMware Photon OS related scripts. A major part is related to run PowerCLI on Photon OS.
 
 Photon OS, a VMware operating system,  is an open source Linux container host for cloud-native applications. The OS is the preferred platform for IoT edge engineering. It runs docker containers, supports a resource foot print hardened setup, comes with a driver development kit for device drivers, and has package-based lifecycle management systems.
 More information: https://vmware.github.io/photon/.
@@ -12,12 +12,9 @@ Provisioning, failover and failback of Photon OS on other hypervisors in nowaday
 - Amazon Machine Image
 - Google Compute Engine image
 - Azure VHD
-- Raspberry Pi3
+- Raspberry Pi
 
 You can find the download bits at https://github.com/vmware/photon/wiki/Downloading-Photon-OS.
-
-## Create a Photon OS VM on ESXi
-See https://vmware.github.io/photon/assets/files/html/1.0-2.0/Running-Photon-OS-on-vSphere.html
 
 ## Create a Photon OS VM on Azure
 The following scripts may be helpful when creating a Photon OS VM on Azure.
@@ -26,22 +23,31 @@ The following scripts may be helpful when creating a Photon OS VM on Azure.
 
 ```create-AzImage-PhotonOS.ps1``` creates per default a VMware Photon OS 3.0 Rev2 Azure Generation V2 image.
 ```create-AzVM_FromImage-PhotonOS.ps1``` provisions on Azure a Photon OS VM with the Azure image created using ```create-AzImage-PhotonOS.ps1```.
- 
-```Powershell and PowerCLI on Photon OS```
+
+
+```PowerCLI on Photon OS```
+
+As consumer you can download and install newer made available releases of PowerCLI. There are three different options - container-based, photon os built-in and scripted install.
+![Status Feb21_1](https://github.com/dcasota/photonos-scripts/blob/master/Status_Feb21_1.png)
+
+VMware PowerCLI is available as docker container. Run
+- ```docker pull vmware/powerclicore:latest```
+- ```docker run -it vmware/powerclicore:latest```
+
 -
-PowerCLI on Photon OS needs as prerequisite a supported PowerShell release. To install or update Powershell Core enter
+
+Photon OS built-in supports Powershell so you simply can install the package right before PowerCLI.
+
+To install or update Powershell Core enter
 - ```tdnf install powershell``` or ```tdnf update powershell```
 
 Install or update PowerCLI in a powershell command enter
 - ```install-module -name VMware.PowerCLI``` or ```update-module -name VMware.PowerCLI```.
 
-Good to know, the whole bunch of VMware PowerCLI cmdlets are made available as docker container. Run
-- ```docker pull vmware/powerclicore:latest```
-- ```docker run -it vmware/powerclicore:latest```
 
-
+In some use cases it is necessary to have a specific Powershell release. Some PowerCLI cmdlets on Windows do not work yet on Photon. Simple as that, many Microsoft Windows-specific lowlevel functions were not or are not cross-compatible.
 In this repo you find install scripts for Powershell on Photon OS with focus on fulfilling prerequisites for VMware.PowerCLI. Each script ```Pwsh[Release]OnPhotonOS.sh``` deploys the specific Powershell Core release on Photon OS.
-Example: Install the actually latest Powershell release 7.0.3 using ```Pwsh7.0.3OnPhotonOS.ps1```. Simply enter afterwards ```pwsh7.0.3```.
+Example: Install the Powershell release 7.0.3 using ```Pwsh7.0.3OnPhotonOS.ps1```. Simply enter afterwards ```pwsh7.0.3```.
 ![Powershell_on_Photon](https://github.com/dcasota/photonos-scripts/blob/master/Photon2-pwsh-current.png)
 
 Afterwards you easily can install VMware.PowerCLI with ```install-module VMware.PowerCLI```.
@@ -49,15 +55,8 @@ Afterwards you easily can install VMware.PowerCLI with ```install-module VMware.
 A side-by-side-installation works fine but not all constellations are tested. Have a look to the release notes of Powershell Core as well.
 ![Side-by-side installation](https://github.com/dcasota/photonos-scripts/blob/master/side-side-installation.png)
 
-As consumer you can download and install newer made available releases PowerCLI. I've visualized three different options - container, photon os built-in and scripted install - of a PowerCLI installation.
-![Status Feb21_1](https://github.com/dcasota/photonos-scripts/blob/master/Status_Feb21_1.png)
 
-It is expected that you find more and more .NET based cmdlets, modules, etc. which work fine, but there are a lot of cmdlets (and Powershellgallery modules) which produces interoperability errors or are not available. Simple as that, many Microsoft Windows-specific lowlevel functions were not or are not cross-compatible. On MS Windows, Powershell provides a module NetSecurity which isn't made available on Linux, even not with Powershell 7. Hence, cmdlets like ```Test-Netconnection``` are missing.
 
-## Install Photon OS on ARM
-(no study scripts yet)
-## Create a Photon OS VM as AWS AMI machine and as Google Compute machine
-(no study scripts yet)
 
 
 Archive
@@ -89,6 +88,8 @@ This study script makes Microsoft Powershell Core available on Photon OS by usin
 
 It uses a tool from the Microsoft open source Nuget ecosystem.
 See https://docs.microsoft.com/en-us/nuget/policies/ecosystem, https://docs.microsoft.com/en-us/nuget/nuget-org/licenses.nuget.org
+
+Keep in mind, that only a small set of modules on powershellgallery work on Linux. On MS Windows, Powershell provides a module NetSecurity which isn't made available on Linux, even not with Powershell 7. Hence, cmdlets like ```Test-Netconnection``` are missing.
 
 The tool called nuget.exe is Windowsx86-commandline-only and is used to support more lowlevel compatibility. See https://docs.microsoft.com/en-us/nuget/install-nuget-client-tools
 "The nuget.exe CLI, nuget.exe, is the command-line utility for Windows that provides ALL NUGET CAPABILITIES;"
