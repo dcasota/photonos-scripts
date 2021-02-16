@@ -6,8 +6,7 @@
 #
 # History
 # 0.1  12.01.2021   dcasota  Initial release
-# 0.2  12.01.2021   dcasota  powershell release correction
-# 0.3  13.01.2021   dcasota  provisioning comment modified
+# 0.2  16.02.2021   dcasota  comment fix
 #
 # Prerequisites:
 #    - VMware Photon OS 2.0 or above
@@ -19,13 +18,14 @@
 # See release info https://github.com/PowerShell/PowerShell/releases/tag/v7.2.0-preview.2
 # See blog about PowerShell 7.0 https://devblogs.microsoft.com/powershell/announcing-powershell-7-0/ . There is no differenciation of "Core" anymore.
 #
+# On latest Photon 4.0 current powershell release is 7.0.3. Simply use 'tdnf install -y powershell'.
 # On latest Photon 3.0 current powershell release is 7.0.3. Simply use 'tdnf install -y powershell'.
 # On latest Photon 2.0 current powershell release is 6.2.0-preview.2-57. Simply use 'tdnf install -y powershell'.
 #
 # This script downloads and installs Powershell 7.2.0-preview.2 release.
 #    Powershell is installed in /opt/microsoft/powershell/7.2.0-preview.2/ with a symbolic link "pwsh7.2.0-preview.2" that points to /opt/microsoft/powershell/7.2.0-preview.2/pwsh.
 #
-#    Especially when running on Photon OS 2.0, some workarounds are necessary to be saved in profile /opt/microsoft/powershell/7.2.0-preview.2/profile.ps1.
+#    Especially when running on Photon OS 2.0, two workarounds are necessary to be saved in profile /opt/microsoft/powershell/7.2.0-preview.2/profile.ps1.
 #       Without those you might run into following issues:
 #       find-module VMware.PowerCLI
 #       Find-Package: /opt/microsoft/powershell/7.2.0-preview.2/Modules/PowerShellGet/PSModule.psm1
@@ -58,7 +58,7 @@
 #  sudo tdnf install -y curl unzip
 #  curl -O -J -L https://raw.githubusercontent.com/dcasota/photonos-scripts/master/Pwsh7.2.0.p2OnPhotonOS.sh
 #  sudo chmod a+x ./Pwsh7.2.0.p2OnPhotonOS.sh
-#  sudo ./pwsh7.2.0-preview.2OnPhotonOS.sh
+#  sudo ./Pwsh7.2.0.p2OnPhotonOS.sh
 #
 # Limitations / not tested:
 # - More restrictive user privileges
@@ -130,7 +130,7 @@ OUTPUT=`$PS_INSTALL_FOLDER/pwsh -c "find-module VMware.PowerCLI"`
 if ! (echo $OUTPUT | grep -q "PSGallery"); then
 	cat <<EOFProfile > $PS_INSTALL_FOLDER/profile.ps1
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-\$env:DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0
+\$env:DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0     
 EOFProfile
 fi
 

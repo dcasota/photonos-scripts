@@ -56,7 +56,7 @@
 #  sudo tdnf install -y curl unzip
 #  curl -O -J -L https://raw.githubusercontent.com/dcasota/photonos-scripts/master/Pwsh7.1.2OnPhotonOS.sh
 #  sudo chmod a+x ./Pwsh7.1.2OnPhotonOS.sh
-#  sudo ./pwsh7.1.2OnPhotonOS.sh
+#  sudo ./Pwsh7.1.2OnPhotonOS.sh
 #
 # Limitations / not tested:
 # - More restrictive user privileges
