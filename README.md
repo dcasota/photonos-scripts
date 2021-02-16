@@ -37,7 +37,7 @@ With each Linux kernel update trillions of packages permutations are given, in t
 
 
 # PowerCLI on Photon OS
-As consumer you can download and install newer made available releases of PowerCLI. There are three different options - container-based, photon os built-in and scripted install.
+As consumer you can download and install any release of PowerCLI on VMware Photon OS. There are three different options - container-based, photon os built-in and scripted install.
 ![Status Feb21_1](https://github.com/dcasota/photonos-scripts/blob/master/Status_Feb21_1.png)
 
 VMware PowerCLI is available as docker container. Run
@@ -46,16 +46,16 @@ VMware PowerCLI is available as docker container. Run
 
 
 
-Photon OS built-in supports Powershell so you simply can install the package right before PowerCLI.
+Photon OS built-in supports Powershell since 6.2. so you simply can install the package right before PowerCLI.
 
 To install or update Powershell Core enter
 - ```tdnf install powershell``` or ```tdnf update powershell```
 
 Install or update PowerCLI in a powershell command enter
-- ```install-module -name VMware.PowerCLI``` or ```update-module -name VMware.PowerCLI```.
+- ```install-module -name VMware.PowerCLI``` or ```update-module -name VMware.PowerCLI```
 
 
-In some use cases it is necessary to have a specific Powershell release. Some PowerCLI cmdlets on Windows do not work yet on Photon. Simple as that, many Microsoft Windows-specific lowlevel functions were not or are not cross-compatible.
+In some use cases it is necessary to have a specific Powershell release. Some PowerCLI cmdlets on Windows do not work yet on Photon OS. Simple as that, many Microsoft Windows-specific lowlevel functions were not or are not cross-compatible.
 In this repo you find install scripts for Powershell on Photon OS with focus on fulfilling prerequisites for VMware.PowerCLI. Each script ```Pwsh[Release]OnPhotonOS.sh``` deploys the specific Powershell Core release on Photon OS.
 Example: Install the Powershell release 7.0.3 using ```Pwsh7.0.3OnPhotonOS.ps1```. Simply enter afterwards ```pwsh7.0.3```.
 ![Powershell_on_Photon](https://github.com/dcasota/photonos-scripts/blob/master/Photon2-pwsh-current.png)
