@@ -11,9 +11,9 @@ There isn't a customer product SKU Photon Platform 2.x, 3.x or 4.x. Hence you ca
 
 The open source Photon OS has nothing to do with the VMware customer products in which Photon OS is a part of.
 
-VCSA, vSphere Replication, Workstation, vRealize Operations, and much more run on a strict Photon OS ~pipeline for that specific product.
+VCSA, vSphere Replication, Workstation, vRealize Operations, and much more run on a strict VMware internal ~pipeline for that commercial product.
 
-The open source Photon OS evolution is somewhat interesting. There are different OS appliance flavors for "Generic", "VMware hypervisor optimized", "AWS optimized", "Security hardened" and "Real Time". Provisioning, failover and failback of Photon OS on other hypervisors in nowadays is a niche use case.
+The open source Photon OS evolution is highly interesting. Creating a Photon OS VM is simple, and there are different OS appliance flavors for "Generic", "VMware hypervisor optimized", "AWS optimized", "Security hardened" and "Real Time". Provisioning, failover and failback of Photon OS on other platforms and architectures (x86_64 + arm64) in nowadays isn't a niche use case like in 2017.
 
 Provisioning is supported for
 - ISO setup
@@ -22,7 +22,7 @@ Provisioning is supported for
 - Azure VHD
 - Raspberry Pi
 
-Creating a Photon OS VM is simple.
+
 In a Non-vSphere environment, as example on Azure, the following scripts may be helpful when creating a Photon OS VM.
 - https://github.com/dcasota/azure-scripts/blob/master/create-AzImage-PhotonOS.ps1
 - https://github.com/dcasota/azure-scripts/blob/master/create-AzVM_FromImage-PhotonOS.ps1
@@ -35,8 +35,8 @@ With each Linux kernel update trillions of packages permutations are given, in t
 
 You can find the download bits at https://github.com/vmware/photon/wiki/Downloading-Photon-OS.
 
-# PowerCLI on Photon OS
 
+# PowerCLI on Photon OS
 As consumer you can download and install newer made available releases of PowerCLI. There are three different options - container-based, photon os built-in and scripted install.
 ![Status Feb21_1](https://github.com/dcasota/photonos-scripts/blob/master/Status_Feb21_1.png)
 
@@ -44,7 +44,7 @@ VMware PowerCLI is available as docker container. Run
 - ```docker pull vmware/powerclicore:latest```
 - ```docker run -it vmware/powerclicore:latest```
 
--
+
 
 Photon OS built-in supports Powershell so you simply can install the package right before PowerCLI.
 
