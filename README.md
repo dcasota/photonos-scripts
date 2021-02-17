@@ -78,27 +78,6 @@ Archive
 -
 This section contains deprecated scripts and hints. DO NOT USE
 
-```CreatePhotonOSVMOnAzure.ps1```
-The script provisions VMware Photon OS 3.0 (Generation "V1") on Microsoft Azure. Just download it and edit the script variables for location, resourcegroup, network setting, base image and vm settings. You must have locally an extracted Photon OS .vhd file. The Photon OS image in $LocalFilePath must include name and full drive path of the untar'ed .vhd.
-More information: https://github.com/vmware/photon/wiki/Downloading-Photon-OS
-For the uploaded .vhd a separate storage account, storage container and storage blob are created.
-The ```az vm create``` parameter ```--custom-data``` is a user exit for a post-provisioning process. The option is used to process a bash script to:
-- install the latest Photon OS updates
-- install VMware PowerCLI from the Powershell Gallery by a predownloaded script called ```dockerpwshgalleryonphotonos.sh``` (see below)
-To activate the option simply set the variable $postprovisioning="true" (default). If the custom data file does not exist, nevertheless the creation successfully completes.
-Photon OS on Azure disables the root account after custom data has been processed. Per default ssh PermitRootLogin is disabled too.
-The script finishes with enabling Azure boot-diagnostics for the serial console option.
-
-```dockerpwshgalleryonphotonos.sh```
-This script makes Microsoft Powershell Core, VMware PowerCLI Core and the PowerShellGallery available on Photon OS.
-It is using the VMware PowerCLI Core Dockerfile. It uses an Ubuntu 16.04 docker container with Powershell Core 6.x and PowerCLI Core 11.x.
-
-Simply pull and run:
-- ```docker pull vmware/powerclicore:ubuntu16.04```
-- ```docker run -it vmware/powerclicore:ubuntu16.04```
-
-If in ```CreatePhotonOSVMOnAzure.ps1``` the variable $postprovisioning="true" is set, ```dockerpwshgalleryonphotonos.sh``` is processed.
-
 ```pwshgalleryonphotonos.sh```
 This study script makes Microsoft Powershell Core available on Photon OS by using Mono with Nuget.
 
