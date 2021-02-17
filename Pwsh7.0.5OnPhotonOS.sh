@@ -6,6 +6,7 @@
 #
 # History
 # 0.1  16.02.2021   dcasota  Initial release
+# 0.2  17.02.2021   dcasota  comment changes
 #
 # Prerequisites:
 #    - VMware Photon OS 2.0 or above
@@ -13,17 +14,16 @@
 #
 #
 # Description:
+# 'tndf install -y powershell' installs a Photon OS release specific build.
+# 
+# As alternative, this script downloads and does a scripted install of Powershell Core pwsh7.0.5.
 #
 # See release info https://github.com/PowerShell/PowerShell/releases/tag/v7.0.5
-# See blog about PowerShell 7.0 https://devblogs.microsoft.com/powershell/announcing-powershell-7-0/ . There is no differenciation of "Core" anymore.
+# See blog about PowerShell 7.0 https://devblogs.microsoft.com/powershell/announcing-powershell-7-0/.
 #
-# On latest Photon 3.0 current powershell release is 7.0.3. Simply use 'tdnf install -y powershell'.
-# On latest Photon 2.0 current powershell release is 6.2.0-preview.2-57. Simply use 'tdnf install -y powershell'.
+# Powershell is installed in /opt/microsoft/powershell/7.0.5/ with a symbolic link "pwsh7.0.5" that points to /opt/microsoft/powershell/7.0.5/pwsh.
 #
-# This script downloads and installs Powershell 7.0.5 release.
-#    Powershell is installed in /opt/microsoft/powershell/7.0.5/ with a symbolic link "pwsh7.0.5" that points to /opt/microsoft/powershell/7.0.5/pwsh.
-#
-#    Especially when running on Photon OS 2.0, some workarounds are necessary to be saved in profile /opt/microsoft/powershell/7.0.5/profile.ps1.
+#    Especially when running on Photon OS 2.0, two workarounds are necessary to be saved in profile /opt/microsoft/powershell/7.0.5/profile.ps1.
 #       Without those you might run into following issues:
 #       find-module VMware.PowerCLI
 #       Find-Package: /opt/microsoft/powershell/7.0.5/Modules/PowerShellGet/PSModule.psm1

@@ -1,13 +1,12 @@
 #!/bin/sh
-# Deploy Powershell v7.0.2 on VMware Photon OS
+# Deploy Powershell Core v7.0.0-rc.3 on VMware Photon OS
 #
-# This script deploys Powershell v7.0.2 on VMware Photon OS. To start Powershell simply enter "pwsh7.0.2".
+# This script deploys Powershell Core v7.0.0-rc.3 on VMware Photon OS. To start Powershell simply enter "pwsh7.0.0-rc.3".
 #
 #
 # History
-# 0.1  19.06.2020   dcasota  Initial release
-# 0.2  17.07.2020   dcasota  Added code for Photon OS 2.0
-# 0.3  17.02.2021   dcasota  comment changes
+# 0.1  22.02.2020   dcasota  Initial release
+# 0.2  17.02.2021   dcasota  comment changes
 #
 # Prerequisites:
 #    - VMware Photon OS 2.0 or above
@@ -17,17 +16,17 @@
 # Description:
 # 'tndf install -y powershell' installs a Photon OS release specific build.
 # 
-# As alternative, this script downloads and does a scripted install of Powershell Core pwsh7.0.2.
+# As alternative, this script downloads and does a scripted install of Powershell Core pwsh7.0.0-rc.3.
 #
-# See release info https://github.com/PowerShell/PowerShell/releases/tag/v7.0.2
+# See release info https://github.com/PowerShell/PowerShell/releases/tag/v7.0.0-rc.3
 # See blog about PowerShell 7.0 https://devblogs.microsoft.com/powershell/announcing-powershell-7-0/.
 #
-# Powershell is installed in /opt/microsoft/powershell/7.0.2/ with a symbolic link "pwsh7.0.2" that points to /opt/microsoft/powershell/7.0.2/pwsh.
+# Powershell is installed in /opt/microsoft/powershell/7.0.0-rc.3/ with a symbolic link "pwsh7.0.0-rc.3" that points to /opt/microsoft/powershell/7.0.0-rc.3/pwsh.
 #
-#    Especially when running on Photon OS 2.0, two workarounds are necessary to be saved in profile /opt/microsoft/powershell/7.0.2/profile.ps1.
+#    Especially when running on Photon OS 2.0, two workarounds are necessary to be saved in profile /opt/microsoft/powershell/7.0.0-rc.3/profile.ps1.
 #       Without those you might run into following issues:
 #       find-module VMware.PowerCLI
-#       Find-Package: /opt/microsoft/powershell/7.0.2/Modules/PowerShellGet/PSModule.psm1
+#       Find-Package: /opt/microsoft/powershell/7.0.0-rc.3/Modules/PowerShellGet/PSModule.psm1
 #       Line |
 #       8871 |         PackageManagement\Find-Package @PSBoundParameters | Microsoft.PowerShell.Core\ForEach-Object {
 #            |         ^ No match was found for the specified search criteria and module name 'VMware.PowerCLI'. Try Get-PSRepository to see all
@@ -36,7 +35,7 @@
 #       get-psrepository
 #       WARNING: Unable to find module repositories.
 #    
-#       Each time pwsh7.0.2 is started the saved profile with the workarounds is loaded.
+#       Each time pwsh7.0.0-rc.3 is started the saved profile with the workarounds is loaded.
 #       #https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_profiles?view=powershell-5.1&redirectedfrom=MSDN
 #       Show variables of $PROFILE:
 #       $PROFILE | Get-Member -Type NoteProperty
@@ -55,9 +54,9 @@
 #
 # Provisioning:
 #  sudo tdnf install -y curl unzip
-#  curl -O -J -L https://raw.githubusercontent.com/dcasota/photonos-scripts/master/Pwsh7.0.2OnPhotonOS.sh
-#  sudo chmod a+x ./Pwsh7.0.2OnPhotonOS.sh
-#  sudo ./Pwsh7.0.2OnPhotonOS.sh
+#  curl -O -J -L https://raw.githubusercontent.com/dcasota/photonos-scripts/master/Pwsh7.0.0-rc.3OnPhotonOS.sh
+#  sudo chmod a+x ./Pwsh7.0.0-rc.3OnPhotonOS.sh
+#  sudo ./Pwsh7.0.0-rc.3OnPhotonOS.sh
 #
 # Limitations / not tested:
 # - More restrictive user privileges
@@ -66,15 +65,27 @@
 # - Side effects with already installed powershell releases
 #
 
+
 # The methodology to describe PS variables has been adopted from
 # https://github.com/PowerShell/PowerShell-Docker/blob/master/release/preview/fedora/docker/Dockerfile
-export PS_VERSION=7.0.2
-export PACKAGE_VERSION=7.0.2
+export PS_VERSION=7.0.0-rc.3
+export PACKAGE_VERSION=7.0.0-rc.3
 export PS_PACKAGE=powershell-${PACKAGE_VERSION}-linux-x64.tar.gz
 export PS_PACKAGE_URL=https://github.com/PowerShell/PowerShell/releases/download/v${PS_VERSION}/${PS_PACKAGE}
 export PS_INSTALL_FOLDER=/opt/microsoft/powershell/$PS_VERSION
-export PS_INSTALL_VERSION=7.0.2
+export PS_INSTALL_VERSION=7rc3
 export PS_SYMLINK=pwsh$PS_INSTALL_VERSION
+
+# language setting
+# See https://github.com/vmware/photon/issues/612#issuecomment-287897819
+
+# Define env for localization/globalization
+# See https://github.com/dotnet/corefx/blob/master/Documentation/architecture/globalization-invariant-mode.md
+# Photon dotnet-runtime version is 2.2.0-1.ph3. So this fix isn't needed anymore. See https://github.com/microsoft/msbuild/issues/3066#issuecomment-372104257
+# export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
+# export LC_ALL=en_US.UTF-8
+# export LANG=en_US.UTF-8
+
 
 # set a fixed location for the Module analysis cache
 # Powershell on Linux produces a few log files named with Core* with entries like 'invalid device'. These are from unhandled Module Analysis Cache Path.

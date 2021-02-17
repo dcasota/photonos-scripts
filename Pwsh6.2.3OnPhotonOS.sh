@@ -8,27 +8,35 @@
 # 0.1  28.10.2019   dcasota  Initial release
 # 0.2  31.10.2019   dcasota  added more information
 # 0.21 18.11.2019   dcasota  Modified comments as per November 2019 'tndf install -y powershell' release is 6.2.3
+# 0.3  17.02.2021   dcasota  comment changes
 #
 # Prerequisites:
-#    - VMware Photon OS 3.0
+#    - VMware Photon OS 2.0 or above
 #    - Run as root
 #
 #
 # Description:
-# 'tndf install -y powershell' release is 6.2.3 or newer. Simply use that package.
+# 'tndf install -y powershell' installs a Photon OS release specific build.
+# 
+# As alternative, this script downloads and does a scripted install of Powershell Core pwsh6.2.3.
 #
-# This script provides side-by-side installation functionality independently to 'tndf install -y powershell'.
-# It installs the module PackageManagement 1.1.7.0 and saves necessary prerequisites in profile /opt/microsoft/powershell/6.2.3/profile.ps1
-#    Powershell is installed in /opt/microsoft/powershell/6.2.3/ with a symbolic link "pwsh6.2.3" that points to /opt/microsoft/powershell/6.2.3/pwsh.
+# See release info https://github.com/PowerShell/PowerShell/releases/tag/v6.2.3
+# See blog about PowerShell 7.0 https://devblogs.microsoft.com/powershell/announcing-powershell-7-0/.
 #
-#    The built-in module PowerShellGet version 2.1.3 in Powershell Core 6.2.3 has a RequiredModules specification of PackageManagement 1.1.7.0.
-#    The embedded powershell script installs PackageManagement 1.1.7.0. It provides three helper functions used as cmdlets workaround:
-#    - workaround.Find-ModuleAllVersions
-#    - workaround.Save-Module
-#    - workaround.Install-NugetPkgOnLinux
-#    The powershell script allows to specify Package Management and PowerShellGet version. See '\$PackageManagementVersion="1.1.7.0"'.
+# Powershell is installed in /opt/microsoft/powershell/6.2.3/ with a symbolic link "pwsh6.2.3" that points to /opt/microsoft/powershell/6.2.3/pwsh.
 #
-#    Two workarounds are necessary to be saved in profile /opt/microsoft/powershell/6.2.3/profile.ps1.
+#    Especially when running on Photon OS 2.0, two workarounds are necessary to be saved in profile /opt/microsoft/powershell/6.2.3/profile.ps1.
+#       Without those you might run into following issues:
+#       find-module VMware.PowerCLI
+#       Find-Package: /opt/microsoft/powershell/6.2.3/Modules/PowerShellGet/PSModule.psm1
+#       Line |
+#       8871 |         PackageManagement\Find-Package @PSBoundParameters | Microsoft.PowerShell.Core\ForEach-Object {
+#            |         ^ No match was found for the specified search criteria and module name 'VMware.PowerCLI'. Try Get-PSRepository to see all
+#            | available registered module repositories.
+#    
+#       get-psrepository
+#       WARNING: Unable to find module repositories.
+#    
 #       Each time pwsh6.2.3 is started the saved profile with the workarounds is loaded.
 #       #https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_profiles?view=powershell-5.1&redirectedfrom=MSDN
 #       Show variables of $PROFILE:
@@ -46,14 +54,17 @@
 #    The reference installation procedure for pwsh on Linux was published on
 #    https://docs.microsoft.com/en-us/powershell/scripting/install/installing-powershell-core-on-linux?view=powershell-7
 #
-#
-#    After the installation, the functionality of find-module, install-module, get-psrepository, etc. is back.
+# Provisioning:
+#  sudo tdnf install -y curl unzip
+#  curl -O -J -L https://raw.githubusercontent.com/dcasota/photonos-scripts/master/Pwsh6.2.3OnPhotonOS.sh
+#  sudo chmod a+x ./Pwsh6.2.3OnPhotonOS.sh
+#  sudo ./Pwsh6.2.3OnPhotonOS.sh
 #
 # Limitations / not tested:
 # - More restrictive user privileges
 # - Proxy functionality
 # - Constellations with security protocol or certification check enforcement
-# - All side effects with already installed powershell releases
+# - Side effects with already installed powershell releases
 #
 
 # The methodology to describe PS variables has been adopted from

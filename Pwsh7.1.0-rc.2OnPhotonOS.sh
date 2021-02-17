@@ -7,6 +7,7 @@
 # History
 # 0.1  08.11.2020   dcasota  Initial release
 # 0.2  12.01.2021   dcasota  powershell release correction
+# 0.3  17.02.2021   dcasota  comment changes
 #
 # Prerequisites:
 #    - VMware Photon OS 2.0 or above
@@ -14,15 +15,14 @@
 #
 #
 # Description:
+# 'tndf install -y powershell' installs a Photon OS release specific build.
+# 
+# As alternative, this script downloads and does a scripted install of Powershell Core pwsh7.1.0-rc.2.
 #
 # See release info https://github.com/PowerShell/PowerShell/releases/tag/v7.1.0-rc.2
-# See blog about PowerShell 7.0 https://devblogs.microsoft.com/powershell/announcing-powershell-7-0/ . There is no differenciation of "Core" anymore.
+# See blog about PowerShell 7.0 https://devblogs.microsoft.com/powershell/announcing-powershell-7-0/.
 #
-# On latest Photon 3.0 current powershell release is 7.0.3 Simply use 'tdnf install -y powershell'.
-# On latest Photon 2.0 current powershell release is 6.2.0-preview.2-57. Simply use 'tdnf install -y powershell'.
-#
-# This script downloads and installs Powershell 7.1.0-rc.2 release.
-#    Powershell is installed in /opt/microsoft/powershell/7.1.0-rc.2/ with a symbolic link "pwsh7.1.0-rc.2" that points to /opt/microsoft/powershell/7.1.0-rc.2/pwsh.
+# Powershell is installed in /opt/microsoft/powershell/7.1.0-rc.2/ with a symbolic link "pwsh7.1.0-rc.2" that points to /opt/microsoft/powershell/7.1.0-rc.2/pwsh.
 #
 #    Especially when running on Photon OS 2.0, two workarounds are necessary to be saved in profile /opt/microsoft/powershell/7.1.0-rc.2/profile.ps1.
 #       Without those you might run into following issues:
@@ -55,11 +55,9 @@
 #
 # Provisioning:
 #  sudo tdnf install -y curl unzip
-#  curl -O -J -L https://github.com/dcasota/photonos-scripts/archive/master.zip
-#  unzip ./photonos-scripts-master.zip 
-#  cd ./photonos-scripts-master
-#  sudo chmod a+x ./*.sh
-#  sudo ./pwsh7.1.0-rc.2OnPhotonOS.sh
+#  curl -O -J -L https://raw.githubusercontent.com/dcasota/photonos-scripts/master/Pwsh7.1.0-rc.2OnPhotonOS.sh
+#  sudo chmod a+x ./Pwsh7.1.0-rc.2OnPhotonOS.sh
+#  sudo ./Pwsh7.1.0-rc.2OnPhotonOS.sh
 #
 # Limitations / not tested:
 # - More restrictive user privileges
@@ -67,6 +65,7 @@
 # - Constellations with security protocol or certification check enforcement
 # - Side effects with already installed powershell releases
 #
+
 
 # The methodology to describe PS variables has been adopted from
 # https://github.com/PowerShell/PowerShell-Docker/blob/master/release/preview/fedora/docker/Dockerfile

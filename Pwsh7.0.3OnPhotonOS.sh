@@ -6,22 +6,22 @@
 #
 # History
 # 0.1  17.07.2020   dcasota  Initial release
+# 0.2  17.02.2021   dcasota  comment changes
 #
 # Prerequisites:
-#    - VMware Photon OS 3.0 or VMware Photon OS 2.0
+#    - VMware Photon OS 2.0 or above
 #    - Run as root
 #
 #
 # Description:
+# 'tndf install -y powershell' installs a Photon OS release specific build.
+# 
+# As alternative, this script downloads and does a scripted install of Powershell Core pwsh7.0.3.
 #
 # See release info https://github.com/PowerShell/PowerShell/releases/tag/v7.0.3
-# See blog about PowerShell 7.0 https://devblogs.microsoft.com/powershell/announcing-powershell-7-0/ . There is no differenciation of "Core" anymore.
+# See blog about PowerShell 7.0 https://devblogs.microsoft.com/powershell/announcing-powershell-7-0/.
 #
-# On Photon 3.0 'tdnf install -y powershell' current release is 7.0.0.
-# On Photon 2.0 'tdnf install -y powershell' current release is PowerShell 6.2.0-preview.2-57
-#
-# This script downloads and installs Powershell 7.0.3 release.
-#    Powershell is installed in /opt/microsoft/powershell/7.0.3/ with a symbolic link "pwsh7.0.3" that points to /opt/microsoft/powershell/7.0.3/pwsh.
+# Powershell is installed in /opt/microsoft/powershell/7.0.3/ with a symbolic link "pwsh7.0.3" that points to /opt/microsoft/powershell/7.0.3/pwsh.
 #
 #    Especially when running on Photon OS 2.0, two workarounds are necessary to be saved in profile /opt/microsoft/powershell/7.0.3/profile.ps1.
 #       Without those you might run into following issues:
@@ -54,10 +54,8 @@
 #
 # Provisioning:
 #  sudo tdnf install -y curl unzip
-#  curl -O -J -L https://github.com/dcasota/photonos-scripts/archive/master.zip
-#  unzip ./photonos-scripts-master.zip 
-#  cd ./photonos-scripts-master
-#  sudo chmod a+x ./*.sh
+#  curl -O -J -L https://raw.githubusercontent.com/dcasota/photonos-scripts/master/Pwsh7.0.3OnPhotonOS.sh
+#  sudo chmod a+x ./Pwsh7.0.3OnPhotonOS.sh
 #  sudo ./Pwsh7.0.3OnPhotonOS.sh
 #
 # Limitations / not tested:

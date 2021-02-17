@@ -7,26 +7,27 @@
 # History
 # 0.1  08.03.2020   dcasota  Initial release
 # 0.2  17.07.2020   dcasota  Added code for Photon OS 2.0
+# 0.3  17.02.2021   dcasota  comment changes
 #
 # Prerequisites:
-#    - VMware Photon OS 3.0 or VMware Photon OS 2.0
+#    - VMware Photon OS 2.0 or above
 #    - Run as root
 #
 #
 # Description:
+# 'tndf install -y powershell' installs a Photon OS release specific build.
+# 
+# As alternative, this script downloads and does a scripted install of Powershell Core pwsh7.1.0-preview.1.
 #
-# See blog about PowerShell 7.0 https://devblogs.microsoft.com/powershell/announcing-powershell-7-0/ . There is no differenciation of "Core" anymore.
+# See release info https://github.com/PowerShell/PowerShell/releases/tag/v7.1.0-preview.1
+# See blog about PowerShell 7.0 https://devblogs.microsoft.com/powershell/announcing-powershell-7-0/.
 #
-# On Photon 3.0 'tdnf install -y powershell' current release is 7.0.0.
-# On Photon 2.0 'tdnf install -y powershell' current release is PowerShell 6.2.0-preview.2-57
+# Powershell is installed in /opt/microsoft/powershell/7.1.0-preview.1/ with a symbolic link "pwsh7.1.0-preview.1" that points to /opt/microsoft/powershell/7.1.0-preview.1/pwsh.
 #
-# This script downloads and installs Powershell 7.0.0 release especially on Photon OS 2.0.
-#    Powershell is installed in /opt/microsoft/powershell/7.0.0/ with a symbolic link "pwsh7.0.0" that points to /opt/microsoft/powershell/7.0.0/pwsh.
-#
-#    Especially when running on Photon OS 2.0, two workarounds are necessary to be saved in profile /opt/microsoft/powershell/7.0.0/profile.ps1.
+#    Especially when running on Photon OS 2.0, two workarounds are necessary to be saved in profile /opt/microsoft/powershell/7.1.0-preview.1/profile.ps1.
 #       Without those you might run into following issues:
 #       find-module VMware.PowerCLI
-#       Find-Package: /opt/microsoft/powershell/7.0.0/Modules/PowerShellGet/PSModule.psm1
+#       Find-Package: /opt/microsoft/powershell/7.1.0-preview.1/Modules/PowerShellGet/PSModule.psm1
 #       Line |
 #       8871 |         PackageManagement\Find-Package @PSBoundParameters | Microsoft.PowerShell.Core\ForEach-Object {
 #            |         ^ No match was found for the specified search criteria and module name 'VMware.PowerCLI'. Try Get-PSRepository to see all
@@ -35,7 +36,7 @@
 #       get-psrepository
 #       WARNING: Unable to find module repositories.
 #    
-#       Each time pwsh7.0.0 is started the saved profile with the workarounds is loaded.
+#       Each time pwsh7.1.0-preview.1 is started the saved profile with the workarounds is loaded.
 #       #https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_profiles?view=powershell-5.1&redirectedfrom=MSDN
 #       Show variables of $PROFILE:
 #       $PROFILE | Get-Member -Type NoteProperty
@@ -54,11 +55,9 @@
 #
 # Provisioning:
 #  sudo tdnf install -y curl unzip
-#  curl -O -J -L https://github.com/dcasota/photonos-scripts/archive/master.zip
-#  unzip ./photonos-scripts-master.zip 
-#  cd ./photonos-scripts-master
-#  sudo chmod a+x ./*.sh
-#  sudo ./Pwsh7.0.0OnPhotonOS.sh
+#  curl -O -J -L https://raw.githubusercontent.com/dcasota/photonos-scripts/master/Pwsh7.1.0-preview.1OnPhotonOS.sh
+#  sudo chmod a+x ./Pwsh7.1.0-preview.1OnPhotonOS.sh
+#  sudo ./Pwsh7.1.0-preview.1OnPhotonOS.sh
 #
 # Limitations / not tested:
 # - More restrictive user privileges

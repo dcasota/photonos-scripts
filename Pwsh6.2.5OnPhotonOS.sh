@@ -6,21 +6,25 @@
 #
 # History
 # 0.1  07.02.2020   dcasota  Initial release
+# 0.2  17.02.2021   dcasota  comment changes
 #
 # Prerequisites:
-#    - VMware Photon OS 3.0
+#    - VMware Photon OS 2.0 or above
 #    - Run as root
 #
 #
 # Description:
-# 'tndf install -y powershell' latest release is 6.2.3.
+# 'tndf install -y powershell' installs a Photon OS release specific build.
 # 
-# This script downloads and installs Powershell Core 6.2.5 release, and saves necessary prerequisites in profile
-#    /opt/microsoft/powershell/6.2.5/profile.ps1.
+# As alternative, this script downloads and does a scripted install of Powershell Core pwsh6.2.5.
 #
-#    Powershell is installed in /opt/microsoft/powershell/6.2.5/ with a symbolic link "pwsh6.2.5" that points to /opt/microsoft/powershell/6.2.5/pwsh.
+# See release info https://github.com/PowerShell/PowerShell/releases/tag/v6.2.5
+# See blog about PowerShell 7.0 https://devblogs.microsoft.com/powershell/announcing-powershell-7-0/.
 #
-#    Two workarounds are necessary to be saved in profile /opt/microsoft/powershell/6.2.5/profile.ps1. Without those you might run into following issues:
+# Powershell is installed in /opt/microsoft/powershell/6.2.5/ with a symbolic link "pwsh6.2.5" that points to /opt/microsoft/powershell/6.2.5/pwsh.
+#
+#    Especially when running on Photon OS 2.0, two workarounds are necessary to be saved in profile /opt/microsoft/powershell/6.2.5/profile.ps1.
+#       Without those you might run into following issues:
 #       find-module VMware.PowerCLI
 #       Find-Package: /opt/microsoft/powershell/6.2.5/Modules/PowerShellGet/PSModule.psm1
 #       Line |
@@ -48,13 +52,17 @@
 #    The reference installation procedure for pwsh on Linux was published on
 #    https://docs.microsoft.com/en-us/powershell/scripting/install/installing-powershell-core-on-linux?view=powershell-7
 #
-#
+# Provisioning:
+#  sudo tdnf install -y curl unzip
+#  curl -O -J -L https://raw.githubusercontent.com/dcasota/photonos-scripts/master/Pwsh6.2.5OnPhotonOS.sh
+#  sudo chmod a+x ./Pwsh6.2.5OnPhotonOS.sh
+#  sudo ./Pwsh6.2.5OnPhotonOS.sh
 #
 # Limitations / not tested:
 # - More restrictive user privileges
 # - Proxy functionality
 # - Constellations with security protocol or certification check enforcement
-# - All side effects with already installed powershell releases
+# - Side effects with already installed powershell releases
 #
 
 # The methodology to describe PS variables has been adopted from
