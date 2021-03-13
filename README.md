@@ -34,9 +34,9 @@ A major aspect always was/is security. The Security Advisories for 1.x, 2.x, 3.x
 With each Linux kernel update trillions of packages permutations are given, in theory it's slightly less architecture specific. A slice of it reflects in Photon OS. You can see which packages are made available from contributors at https://github.com/vmware/photon/commits/dev.
 
 # Photon OS Packages
-The Photon OS source consists of a huge amount of packages. Actually there is no interoperability view of packages per release like the VMware vSphere interoperability guide.
+The Photon OS source consists of a huge amount of packages. Most research work begin with 'there is a version of package x in relation to y, which is not or it is integrated to photon release z only.' Actually there is no super easy to use interoperability lookup of packages release/flavor/architecture like the inter-product viewer in VMware vSphere interoperability guide.
 
-The following screenshot depicts the concept idea.
+The following screenshot depicts the first concept idea package to photon version.
 ![Status March21_1](https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report_concept.png)
 
 This script creates the package report. 
