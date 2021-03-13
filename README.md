@@ -26,10 +26,10 @@ Provisioning is supported for
 In a Non-vSphere environment, as example on Azure, the following scripts may be helpful when creating a Photon OS VM.
 - https://github.com/dcasota/azure-scripts/blob/master/create-AzImage-PhotonOS.ps1
 - https://github.com/dcasota/azure-scripts/blob/master/create-AzVM_FromImage-PhotonOS.ps1
-```create-AzImage-PhotonOS.ps1``` creates an Azure Generation V2 image, per default of VMware Photon OS 3.0 Rev2.
+```create-AzImage-PhotonOS.ps1``` creates an Azure Generation V2 image, per default of VMware Photon OS 4.0.
 ```create-AzVM_FromImage-PhotonOS.ps1``` provisions on Azure a Photon OS VM with the Azure image created using ```create-AzImage-PhotonOS.ps1```.
 
-A major aspect always was/is security. The Security Advisories for 1.x, 2.x, 3.x may give an idea of the necessity of chain of packages to be held safe https://github.com/vmware/photon/wiki/Security-Advisories.
+A major aspect always was/is security. The Security Advisories for 1.x, 2.x, 3.x, 4.x may give an idea of the necessity of chain of packages to be held safe https://github.com/vmware/photon/wiki/Security-Advisories.
 
 With each Linux kernel update trillions of packages permutations are given, in theory it's slightly less architecture specific. A slice of it reflects in Photon OS. You can see which packages are made available from contributors at https://github.com/vmware/photon/commits/dev.
 
@@ -38,7 +38,7 @@ With each Linux kernel update trillions of packages permutations are given, in t
 
 # PowerCLI on Photon OS
 As consumer you can download and install any release of PowerCLI on VMware Photon OS. There are three different options - container-based, photon os built-in and scripted install.
-![Status Feb21_1](https://github.com/dcasota/photonos-scripts/blob/master/Status_Feb21_1.png)
+![Status March21_1](https://github.com/dcasota/photonos-scripts/blob/master/Status_March21_1.png)
 
 VMware PowerCLI is available as docker container. Run
 - ```docker pull vmware/powerclicore:latest```
@@ -46,7 +46,7 @@ VMware PowerCLI is available as docker container. Run
 
 
 
-Photon OS built-in supports Powershell since 6.2. so you simply can install the package right before PowerCLI.
+Photon OS supports Powershell since 6.2. so you simply can install the package right before PowerCLI.
 
 To install or update Powershell Core enter
 - ```tdnf install powershell``` or ```tdnf update powershell```
@@ -58,7 +58,7 @@ Install or update PowerCLI in a powershell command enter
 In some use cases it is necessary to have a specific Powershell release. Some PowerCLI cmdlets on Windows do not work yet on Photon OS. Simple as that, many Microsoft Windows-specific lowlevel functions were not or are not cross-compatible.
 In this repo you find install scripts for Powershell on Photon OS with focus on fulfilling prerequisites for VMware.PowerCLI. Each script ```Pwsh[Release]OnPhotonOS.sh``` deploys the specific Powershell Core release on Photon OS.
 
-Example: Install the Powershell release 7.0.3 using ```Pwsh7.0.3OnPhotonOS.ps1```. Simply enter afterwards ```pwsh7.0.3```.
+Example: Install the Powershell release 7.1.3 using ```Pwsh7.1.3OnPhotonOS.ps1```. Simply enter afterwards ```pwsh7.1.3```.
 
 ![Powershell_on_Photon](https://github.com/dcasota/photonos-scripts/blob/master/Photon2-pwsh-current.png)
 
