@@ -36,7 +36,7 @@ With each Linux kernel update trillions of packages permutations are given, in t
 # Photon OS Packages
 The Photon OS source consists of a huge amount of packages. Most research work begin with 'there is a version of package x in relation to y, which is not or it is integrated to photon release z only.' Actually there is no super easy to use interoperability lookup of packages release/flavor/architecture like the inter-product viewer in VMware vSphere interoperability guide.
 
-The following screenshot depicts the first concept idea package to photon version.
+The following screenshot depicts a part of the concept idea.
 ![Status March21_1](https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report_concept.png)
 
 This script creates the package report. 
