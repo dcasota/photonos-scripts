@@ -1,40 +1,28 @@
-Photon OS scripts
--
-This repo contains several VMware Photon OS related scripts. A major part is related to run PowerCLI on Photon OS.
+# What is Photon OS scripts?
+This repo contains a bunch of Photon OS related scripts.  
+Photon OS is a VMware operating system for open source Linux container host for cloud-native applications. It runs on x86_64 + arm64 processors and on several hyperscaler clouds. See https://vmware.github.io/photon .
 
-Photon OS, a VMware operating system,  is an open source Linux container host for cloud-native applications. It runs docker containers, supports a resource foot print hardened setup, comes with a driver development kit for device drivers, and has package-based lifecycle management systems.
-More information: https://vmware.github.io/photon/.
+# Use Case 1 - Photon OS as platform for hosting forensics tools
+"Using the recommendations of the Kernel Self-Protection Project (KSPP), the Photon OS Linux Kernel is secure from the start."
+As for any forensic platform, the availability of Photon OS is highly important for maintenance perspectives. The planned EOL schedule has been specified [here]( https://blogs.vmware.com/vsphere/2022/01/photon-1-x-end-of-support-announcement.html).
 
-The VMware Photon Platform 1.x hit End of General Support on 2019-03-02 according to https://lifecycle.vmware.com/. There still is an Enterprise Application Policy https://www.vmware.com/support/policies/enterprise-application.html though.
+ The actual Photon OS releases are 1:1 related to Linux kernel releases.
+| Linux kernel  |   Photon OS   |
+| ------------- | ------------- |
+|     4.4       |      1.x      |
+|     4.9       |      2.x      |
+|     4.19      |      3.x      |
+|     5.10      |      4.x      |
 
-There isn't a customer product SKU Photon Platform 2.x, 3.x or 4.x. Hence you cannot buy official Photon Platform support. 
+Photon OS supports forensics tools components. As example, it can be configured to read/write different imager formats - here some findings:
+- https://github.com/dcasota/photonos-scripts/wiki/NTFS-mount-on-Photon-OS
+- https://github.com/dcasota/photonos-scripts/wiki/VMFS6-mount-on-Photon-OS
 
-The open source Photon OS has nothing to do with the VMware customer products in which Photon OS is a part of. VCSA, vSphere Replication, Workstation, vRealize Operations, and much more run on a strict VMware internal ~pipeline for that commercial product.
-
-For the open source product you can find the download bits at https://github.com/vmware/photon/wiki/Downloading-Photon-OS.
-
-The open source Photon OS evolution is highly interesting. There are different OS appliance flavors for "Generic", "VMware hypervisor optimized", "AWS optimized", "Security hardened" and "Real Time". Provisioning, failover and failback of Photon OS on other platforms and architectures (x86_64 + arm64) in nowadays isn't a niche use case like in 2017.
-
-Provisioning is supported for
-- ISO setup
-- Amazon Machine Image
-- Google Compute Engine image
-- Azure VHD
-- Raspberry Pi
-
-
-In a Non-vSphere environment, as example on Azure, the following scripts may be helpful when creating a Photon OS VM.
-- https://github.com/dcasota/azure-scripts/blob/master/create-AzImage-PhotonOS.ps1
-- https://github.com/dcasota/azure-scripts/blob/master/create-AzVM_FromImage-PhotonOS.ps1
-```create-AzImage-PhotonOS.ps1``` creates an Azure Generation V2 image, per default of VMware Photon OS 4.0.
-```create-AzVM_FromImage-PhotonOS.ps1``` provisions on Azure a Photon OS VM with the Azure image created using ```create-AzImage-PhotonOS.ps1```.
-
-A major aspect always was/is security. The Security Advisories for 1.x, 2.x, 3.x, 4.x may give an idea of the necessity of chain of packages to be held safe https://github.com/vmware/photon/wiki/Security-Advisories.
+The [Security Advisories](https://github.com/vmware/photon/wiki/Security-Advisories) may give an idea of the necessity of chains of packages to be held safe. It takes time to clearly understand a single mitigation. See some personal progress [here](https://github.com/dcasota/photonos-scripts/wiki/Mitigations-for-CPU-vulnerabilities).
 
 With each Linux kernel update trillions of packages permutations are given, in theory it's slightly less architecture specific. A slice of it reflects in Photon OS. You can see which packages are made available from contributors at https://github.com/vmware/photon/commits/dev.
 
-# Photon OS Packages
-The Photon OS source consists of a huge amount of packages. Most research work begin with 'there is a version of package x in relation to y, which is not or it is integrated to photon release z only.' Actually there is no super easy to use interoperability lookup of packages release/flavor/architecture like the inter-product viewer in VMware vSphere interoperability guide.
+Packages work begin with 'there is a version of package x in relation to y, which is not or it is integrated to photon release z only.' There is no handy interoperability lookup of packages release/flavor/architecture like the inter-product viewer in VMware vSphere interoperability guide though.
 
 The following screenshot depicts a part of the concept idea.
 ![Package Report Concept](https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report_concept.png)
@@ -45,20 +33,29 @@ https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report.
 The comma delimited .prn output file simply lists all Photon OS Github specs names with releases per Photon OS Github Branch. Output file sample:
 https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report.prn
 
+# Use Case 2 - Baremetal installation
+There are different OS installation flavors. Photon OS runs best on vSphere. It runs docker containers, supports a resource foot print hardened setup, and has a package-based lifecycle management system. A secure appliance (virtual hardware v13) installation is built-in VMware hypervisor optimized, and delivered as OVA setup.
 
+Additional installation flavors delivered as ISO setup are "Security hardened" (minimal), "Real Time", and "Generic" (full).  
+  
+Provisioning Photon OS on Raspberry Pi is supported as well, see
+- [Configuring a Raspberry Pi 4 for supporting usb license dongle remoting](https://github.com/dcasota/photonos-scripts/wiki/Configure-a-complete-Raspberry-Pi-Virtualhere-installation)
+- [Adding CH34x serial drivers](https://github.com/dcasota/photonos-scripts/wiki/Add-a-CH34x-serial-driver)
 
+# Use Case 3 - Azure installation with UEFI boot support
+In a Non-vSphere hyperscaler environment, this chapter is Microsoft Azure specific, the following scripts may be helpful when creating a Photon OS virtual machine with  UEFI support.
+- https://github.com/dcasota/azure-scripts/blob/master/create-AzImage-PhotonOS.ps1
+- https://github.com/dcasota/azure-scripts/blob/master/create-AzVM_FromImage-PhotonOS.ps1
+```create-AzImage-PhotonOS.ps1``` creates an Azure Generation V2 image, per default of VMware Photon OS 4.0.
+```create-AzVM_FromImage-PhotonOS.ps1``` provisions on Azure a Photon OS VM with the Azure image created using ```create-AzImage-PhotonOS.ps1```.
 
-# PowerCLI on Photon OS
-As consumer you can download and install any release of PowerCLI on VMware Photon OS. There are three different options - container-based, photon os built-in and scripted install.
-![Status Oct21](https://github.com/dcasota/photonos-scripts/blob/master/Status_Oct21.png)
+# Use Case 4 - PowerCLI on Photon OS
+"VMware PowerCLI is a suite of PowerShell modules to manage VMware products and services. VMware PowerCLI includes over 800 cmdlets to easily manage your infrastructure on a global scale." See the [interoperability matrix](https://developer.vmware.com/docs/14532/compatibility-matrix).
+Actually there is no single package for PowerCLI. Powershell must always have already been installed.
+There are three different installation options - container-based, photon os built-in and scripted install.
 
-VMware PowerCLI is available as docker container. Run
-- ```docker pull vmware/powerclicore:latest```
-- ```docker run -it vmware/powerclicore:latest```
-
-
-
-Photon OS supports Powershell since 6.2. so you simply can install the package right before PowerCLI.
+## package installation (tdnf)
+You can install the powershell package right before PowerCLI. Photon OS 3.0 and above supports Powershell since release 6.2.
 
 To install or update Powershell Core enter
 - ```tdnf install powershell``` or ```tdnf update powershell```
@@ -66,28 +63,51 @@ To install or update Powershell Core enter
 Install or update PowerCLI in a powershell command enter
 - ```install-module -name VMware.PowerCLI``` or ```update-module -name VMware.PowerCLI```
 
+## docker installation
+VMware PowerCLI is available as docker container. Run
+- ```docker pull vmware/powerclicore:latest```
+- ```docker run -it vmware/powerclicore:latest```
 
-In some use cases it is necessary to have a specific Powershell release. Some PowerCLI cmdlets on Windows do not work yet on Photon OS. Simple as that, many Microsoft Windows-specific lowlevel functions were not or are not cross-compatible.
-In this repo you find install scripts for Powershell on Photon OS with focus on fulfilling prerequisites for VMware.PowerCLI. Each script ```Pwsh[Release]OnPhotonOS.sh``` deploys the specific Powershell Core release on Photon OS.
+## scripted install 
+In some scenarios it is helpful to have a specific Powershell release. Some PowerCLI cmdlets on Windows do not work yet on Photon OS. Simple as that, many Microsoft Windows-specific lowlevel functions were not or are not cross-compatible.  
+In [PwshOnPhotonOS](https://github.com/dcasota/photonos-scripts/tree/master/PwshOnPhotonOS) you find install scripts for Powershell on Photon OS with focus on fulfilling prerequisites for VMware.PowerCLI. Each script ```Pwsh[Release]OnPhotonOS.sh``` deploys the specific Powershell Core release on Photon OS.
 
 Example: Install the Powershell release 7.1.3 using ```Pwsh7.1.3OnPhotonOS.ps1```. Simply enter afterwards ```pwsh7.1.3```.
 
-![Powershell_on_Photon](https://github.com/dcasota/photonos-scripts/blob/master/Photon2-pwsh-current.png)
+![Powershell_on_Photon](https://github.com/dcasota/photonos-scripts/blob/master/PwshOnPhotonOS/Photon2-pwsh-current.png)
 
 Afterwards you easily can install VMware.PowerCLI with ```install-module VMware.PowerCLI```.
 
-A side-by-side-installation works fine but not all constellations are tested. Have a look to the release notes of Powershell Core as well.
-![Side-by-side installation](https://github.com/dcasota/photonos-scripts/blob/master/side-side-installation.png)
+### PowerCLI runspace per release - workflow based side-by-side installation testing
+Side-by-side-installations in nowadays work fine. This wasn't always the case, see Powershell 6.x warnings.
+  
+![side-side-installation](https://github.com/dcasota/photonos-scripts/blob/master/PwshOnPhotonOS/side-side-installation.png).
+
+The idea of developing a testing workflow for side-by-side installation combinations using [VMware Tanzu Community Edition](https://tanzucommunityedition.io/) came up as some sort of basics for 'PowerCLI runspace per release'.  
+![Status Oct21](https://github.com/dcasota/photonos-scripts/blob/master/PwshOnPhotonOS/Status_Oct21.png)
+
+# Use Case 5 - Learning from Kube Academy
+[Kube Academy](https://kube.academy) contains a huge bunch of Kubernetes learning videos. The 'setting up the workstation' has been adopted to run the labs on Photon OS, see
+- https://github.com/dcasota/photonos-scripts/wiki/Kube-Academy---setting-up-the-workstation
+- https://github.com/dcasota/photonos-scripts/wiki/Kube-Academy-Scripts
+
+# Use Case 6 - Docker containers
+Docker in most Linux distros has already built-in support. Photon OS' architecture maintains all flavors from security-hardened to hardware-optimized. This combination is highly preferred for some docker container purposes. See some personal progress with [Potree - a WebGL based viewer for large point clouds](https://github.com/dcasota/photonos-scripts/wiki/Configure-Potree,-a-WebGL-based-viewer-for-large-point-clouds,-on-VMware-Photon-OS).
+
+# Use Case 7 - ISO build machine on Photon OS
+From a packages update service perspective, there is always a good moment of creating an ISO binary.
+Photon OS can be used as ISO build platform. Some personal progress using Photon OS as Photon OS ISO build machine has been documented on [How to build the Photon OS ISO file](https://github.com/dcasota/photonos-scripts/wiki/How-to-build-the-Photon-OS-ISO-file). Photon OS could be used to create eg. Microsoft Windows ISO builds from [uupdump.net](https://uupdump.net) as well.
+
+# Photon OS components in commercial products and open-source Photon OS
+The commercial VMware Photon Platform 1.x hit End of General Support on 2019-03-02 according to https://lifecycle.vmware.com/. There still is an Enterprise Application Policy https://www.vmware.com/support/policies/enterprise-application.html though.
+
+There isn't a customer product SKU Photon Platform 2.x, 3.x or 4.x. Hence you cannot buy official Photon Platform support. 
+
+The open source Photon OS has nothing to do with the VMware commercial products in which some Photon OS components are a customized part of. VCSA, vSphere Replication, Workstation, vRealize Operations, and much more run on a strict VMware governance for that commercial product.
 
 
+# Archive
 
-
-
-
-
-
-Archive
--
 This section contains deprecated scripts and hints. DO NOT USE
 
 ```pwshgalleryonphotonos.sh```
