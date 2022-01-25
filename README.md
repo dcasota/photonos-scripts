@@ -27,14 +27,14 @@ Packages work begin with 'there is a version of package x in relation to y, whic
 The following screenshot depicts a part of the concept idea.
 ![Package Report Concept](https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report_concept.png)
 
-This script creates the package report. 
+This powershell script creates the package report. 
 https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report.ps1
 
 The comma delimited .prn output file simply lists all Photon OS Github specs names with releases per Photon OS Github Branch. Output file sample:
 https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report.prn
 
 # Use Case 2 - Baremetal installation
-There are different OS installation flavors. Photon OS runs best on vSphere. It runs docker containers, supports a resource foot print hardened setup, and has a package-based lifecycle management system. A secure appliance (virtual hardware v13) installation is built-in VMware hypervisor optimized, and delivered as OVA setup.
+There are different Photon OS installation flavors. Photon OS runs best on vSphere. It runs docker containers, supports a resource foot print hardened setup, and has a package-based lifecycle management system. The secure appliance (virtual hardware v13) installation is built-in VMware hypervisor optimized, and delivered as OVA setup.
 
 Additional installation flavors delivered as ISO setup are "Security hardened" (minimal), "Real Time", and "Generic" (full).  
   
@@ -43,7 +43,7 @@ Provisioning Photon OS on Raspberry Pi is supported as well, see
 - [Adding CH34x serial drivers](https://github.com/dcasota/photonos-scripts/wiki/Add-a-CH34x-serial-driver)
 
 # Use Case 3 - Azure installation with UEFI boot support
-In a Non-vSphere hyperscaler environment, this chapter is Microsoft Azure specific, the following scripts may be helpful when creating a Photon OS virtual machine with  UEFI support.
+In a Non-vSphere hyperscaler environment - this chapter is Microsoft Azure specific - the following scripts may be helpful when creating a Photon OS virtual machine with UEFI support.
 - https://github.com/dcasota/azure-scripts/blob/master/create-AzImage-PhotonOS.ps1
 - https://github.com/dcasota/azure-scripts/blob/master/create-AzVM_FromImage-PhotonOS.ps1
 ```create-AzImage-PhotonOS.ps1``` creates an Azure Generation V2 image, per default of VMware Photon OS 4.0.
@@ -92,10 +92,11 @@ The idea of developing a testing workflow for side-by-side installation combinat
 - https://github.com/dcasota/photonos-scripts/wiki/Kube-Academy-Scripts
 
 # Use Case 6 - Docker containers
-Docker in most Linux distros has already built-in support. Photon OS' architecture maintains all flavors from security-hardened to hardware-optimized. This combination is highly preferred for some docker container purposes. See some personal progress with [Potree - a WebGL based viewer for large point clouds](https://github.com/dcasota/photonos-scripts/wiki/Configure-Potree,-a-WebGL-based-viewer-for-large-point-clouds,-on-VMware-Photon-OS).
+Docker in most Linux distros has built-in support. Photon OS' architecture strength is the maintenance of all flavors from security-hardened to hardware-optimized. This combination is highly preferred for some container purposes.
+See some personal docker container learning progress with [Potree - a WebGL based viewer for large point clouds](https://github.com/dcasota/photonos-scripts/wiki/Configure-Potree,-a-WebGL-based-viewer-for-large-point-clouds,-on-VMware-Photon-OS).
 
 # Use Case 7 - ISO build machine on Photon OS
-From a packages update service perspective, there is always a good moment of creating an ISO binary.
+From a packages update service consistency perspective, there is always a good moment for creating an ISO binary.
 Photon OS can be used as ISO build platform. Some personal progress using Photon OS as Photon OS ISO build machine has been documented on [How to build the Photon OS ISO file](https://github.com/dcasota/photonos-scripts/wiki/How-to-build-the-Photon-OS-ISO-file). Photon OS could be used to create eg. Microsoft Windows ISO builds from [uupdump.net](https://uupdump.net) as well.
 
 # Photon OS components in commercial products and open-source Photon OS
