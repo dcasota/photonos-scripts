@@ -4,7 +4,7 @@ Photon OS is a VMware operating system for open source Linux container host for 
 
 # Use Case 1 - Photon OS as platform for hosting forensics tools
 "Using the recommendations of the Kernel Self-Protection Project (KSPP), the Photon OS Linux Kernel is secure from the start."
-As for any forensic platform, the availability of Photon OS is highly important for maintenance perspectives. The planned EOL schedule has been specified [here]( https://blogs.vmware.com/vsphere/2022/01/photon-1-x-end-of-support-announcement.html).
+As for any forensic platform, the availability of Photon OS is highly important. The planned EOL schedule has been specified [here]( https://blogs.vmware.com/vsphere/2022/01/photon-1-x-end-of-support-announcement.html).
 
  The actual Photon OS releases are 1:1 related to Linux kernel releases.
 | Linux kernel  |   Photon OS   |
