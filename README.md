@@ -38,9 +38,7 @@ There are different Photon OS installation flavors. Photon OS runs best on vSphe
 
 Additional installation flavors delivered as ISO setup are "Security hardened" (minimal), "Real Time", and "Generic" (full).  
   
-Provisioning Photon OS on Raspberry Pi is supported as well, see
-- [Configuring a Raspberry Pi 4 for supporting usb license dongle remoting](https://github.com/dcasota/photonos-scripts/wiki/Configure-a-complete-Raspberry-Pi-Virtualhere-installation)
-- [Adding CH34x serial drivers](https://github.com/dcasota/photonos-scripts/wiki/Add-a-CH34x-serial-driver)
+Provisioning Photon OS on Raspberry Pi is supported as well, see [Configuring a Raspberry Pi 4 for supporting usb license dongle remoting](https://github.com/dcasota/photonos-scripts/wiki/Configure-a-complete-Raspberry-Pi-Virtualhere-installation).
 
 # Use Case 3 - Azure installation with UEFI boot support
 In a Non-vSphere hyperscaler environment - this chapter is Microsoft Azure specific - the following scripts may be helpful when creating a Photon OS virtual machine with UEFI support.
