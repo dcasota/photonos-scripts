@@ -98,12 +98,12 @@ From a packages update service consistency perspective, there is always a good m
 Photon OS can be used as ISO build platform. Some personal progress using Photon OS as Photon OS ISO build machine has been documented on [How to build the Photon OS ISO file](https://github.com/dcasota/photonos-scripts/wiki/How-to-build-the-Photon-OS-ISO-file). Photon OS could be used to create eg. Microsoft Windows ISO builds from [uupdump.net](https://uupdump.net) as well.
 
 # Photon OS components in commercial products and open-source Photon OS
-The commercial VMware Photon Platform 1.x hit End of General Support on 2019-03-02 according to https://lifecycle.vmware.com/. There still is an Enterprise Application Policy https://www.vmware.com/support/policies/enterprise-application.html though.
+Open source Photon OS has nothing to do with the VMware commercial products in which some Photon OS components are a customized part of. VCSA, vSphere Replication, Workstation, vRealize Operations, and much more run on a strict VMware governance for that commercial product.
 
 There isn't a customer product SKU Photon Platform 2.x, 3.x or 4.x. Hence you cannot buy official Photon Platform support. 
 
-The open source Photon OS has nothing to do with the VMware commercial products in which some Photon OS components are a customized part of. VCSA, vSphere Replication, Workstation, vRealize Operations, and much more run on a strict VMware governance for that commercial product.
-
+Before strictly separating commercial components, there was a VMware Photon Platform 1.x. It hit End of General Support on 2019-03-02.
+For VMware products' Enterprise Application Policy, see https://www.vmware.com/support/policies/enterprise-application.html.
 
 # Archive
 
