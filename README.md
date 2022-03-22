@@ -33,7 +33,7 @@ https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report.
 The comma delimited .prn output file simply lists all Photon OS Github specs names with releases per Photon OS Github Branch. Output file sample:
 https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report.prn
 
-# Use Case 2 - Baremetal installation
+# Use Case 2 - Baremetal installation / staging
 There are different Photon OS installation flavors. Photon OS runs best on vSphere. It runs docker containers, supports a resource foot print hardened setup, and has a package-based lifecycle management system. The secure appliance (virtual hardware v13) installation is built-in VMware hypervisor optimized, and delivered as OVA setup.
 
 Additional installation flavors delivered as ISO setup are "Security hardened" (minimal), "Real Time", and "Generic" (full).  
