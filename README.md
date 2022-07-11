@@ -42,9 +42,9 @@ Provisioning Photon OS on Raspberry Pi is supported as well, see [Configuring a 
 
 # Use Case 3 - Azure installation with UEFI boot support
 In a Non-vSphere hyperscaler environment - this chapter is Microsoft Azure specific - the following scripts may be helpful when creating a Photon OS virtual machine with UEFI support.
-- https://github.com/dcasota/azure-scripts/blob/master/create-AzImage-PhotonOS.ps1
-- https://github.com/dcasota/azure-scripts/blob/master/create-AzVM_FromImage-PhotonOS.ps1
-```create-AzImage-PhotonOS.ps1``` creates an Azure Generation V2 image, per default of VMware Photon OS 4.0.
+- https://github.com/dcasota/azure-scripts/blob/master/PhotonOS/create-AzImage-PhotonOS.ps1
+- https://github.com/dcasota/azure-scripts/blob/master/PhotonOS/create-AzVM_FromImage-PhotonOS.ps1  
+```create-AzImage-PhotonOS.ps1``` creates an Azure Generation V2 image, per default of VMware Photon OS 4.0.  
 ```create-AzVM_FromImage-PhotonOS.ps1``` provisions on Azure a Photon OS VM with the Azure image created using ```create-AzImage-PhotonOS.ps1```.
 
 # Use Case 4 - PowerCLI on Photon OS
