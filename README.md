@@ -15,7 +15,7 @@ As for any forensic platform, the availability of Photon OS is highly important.
 |     5.10      |      4.x      |
 |     6.07      |      5.0 Beta |
 
-Photon OS supports forensics tools components. As example, it can be configured to read/write different imager formats - here some findings:
+Photon OS supports forensics tools components. As example, it can be configured to read/write different filesystem formats - here some findings:
 - https://github.com/dcasota/photonos-scripts/wiki/NTFS-mount-on-Photon-OS
 - https://github.com/dcasota/photonos-scripts/wiki/VMFS6-mount-on-Photon-OS
 
