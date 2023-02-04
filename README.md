@@ -13,6 +13,7 @@ As for any forensic platform, the availability of Photon OS is highly important.
 |     4.9       |      2.x      |
 |     4.19      |      3.x      |
 |     5.10      |      4.x      |
+|     6.07      |      5.0 Beta |
 
 Photon OS supports forensics tools components. As example, it can be configured to read/write different imager formats - here some findings:
 - https://github.com/dcasota/photonos-scripts/wiki/NTFS-mount-on-Photon-OS
@@ -34,11 +35,15 @@ The comma delimited .prn output file simply lists all Photon OS Github specs nam
 https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report.prn
 
 # Use Case 2 - Baremetal installation / staging
-There are different Photon OS installation flavors. Photon OS runs best on vSphere. It runs docker containers, supports a resource foot print hardened setup, and has a package-based lifecycle management system. The secure appliance (virtual hardware v13) installation is built-in VMware hypervisor optimized, and delivered as OVA setup.
+Baremetal environments are technically supported. The focus of Photon OS however isn't primarily to run on baremetal. For security purposes, peripheral devices connectivity is restricted. But you can install Photon OS on any x86_64 and arm64 baremetal.
 
-Additional installation flavors delivered as ISO setup are "Security hardened" (minimal), "Real Time", and "Generic" (full).  
-  
-Provisioning Photon OS on Raspberry Pi is supported as well, see [Configuring a Raspberry Pi 4 for supporting usb license dongle remoting](https://github.com/dcasota/photonos-scripts/wiki/Configure-a-complete-Raspberry-Pi-Virtualhere-installation).
+On x86_64, Photon OS comes with different installation flavors: "Security hardened" (minimal), Developer, Real Time, and as Ostree-Host.
+
+Photon OS runs best on vSphere x86_64. It runs kubernetes, docker containers, supports a resource foot print hardened setup, and has a package-based lifecycle management system. The secure appliance (virtual hardware v13) installation is built-in VMware hypervisor optimized, and delivered as OVA setup.
+
+Also, since 5.0 beta, there is more support for running Photon OS on ESXi on Arm.
+
+Provisioning Photon OS on Raspberry Pi is supported as well, e.g. see [Configuring a Raspberry Pi 4 for supporting usb license dongle remoting](https://github.com/dcasota/photonos-scripts/wiki/Configure-a-complete-Raspberry-Pi-Virtualhere-installation).
 
 # Use Case 3 - Azure installation with UEFI boot support
 In a Non-vSphere hyperscaler environment - this chapter is Microsoft Azure specific - the following scripts may be helpful when creating a Photon OS virtual machine with UEFI support.
@@ -48,7 +53,7 @@ In a Non-vSphere hyperscaler environment - this chapter is Microsoft Azure speci
 ```create-AzVM_FromImage-PhotonOS.ps1``` provisions on Azure a Photon OS VM with the Azure image created using ```create-AzImage-PhotonOS.ps1```.
 
 # Use Case 4 - PowerCLI on Photon OS
-"VMware PowerCLI is a suite of PowerShell modules to manage VMware products and services. VMware PowerCLI includes over 800 cmdlets to easily manage your infrastructure on a global scale." See the [interoperability matrix](https://developer.vmware.com/docs/14532/compatibility-matrix).
+"VMware PowerCLI is a suite of PowerShell modules to manage VMware products and services. VMware PowerCLI includes over 800 cmdlets to easily manage your infrastructure on a global scale." See the [interoperability matrix](https://developer.vmware.com/docs/17472/-compatibility-matrix).
 Actually there is no single package for PowerCLI. Powershell must always have already been installed.
 There are three different installation options - container-based, photon os built-in and scripted install.
 
@@ -98,7 +103,7 @@ From a packages update service consistency perspective, there is always a good m
 Photon OS can be used as ISO build platform. Some personal progress using Photon OS as Photon OS ISO build machine has been documented on [How to build the Photon OS ISO file](https://github.com/dcasota/photonos-scripts/wiki/How-to-build-the-Photon-OS-ISO-file). Photon OS could be used to create eg. Microsoft Windows ISO builds from [uupdump.net](https://uupdump.net) as well.
 
 # Photon OS components in commercial products and open-source Photon OS
-Open source Photon OS has nothing to do with the VMware commercial products in which some Photon OS components are a customized part of. VCSA, vSphere Replication, Workstation, vRealize Operations, and much more run on a strict VMware governance for that commercial product.
+From a paid support perspective, open source Photon OS has nothing to do with the VMware commercial products in which some Photon OS components are a customized part of. VCSA, vSphere Replication, Workstation, vRealize Operations, and much more run on a strict VMware governance for that commercial product.
 
 There isn't a customer product SKU Photon Platform 2.x, 3.x or 4.x. Hence you cannot buy official Photon Platform support. 
 
