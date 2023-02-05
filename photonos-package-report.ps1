@@ -6,7 +6,7 @@
 #   Version:
 #   0.1   06.03.2021   dcasota  First release
 #   0.2   17.04.2021   dcasota  dev added
-#   0.3   04.02.2023   dcasota  5.0 added
+#   0.3   05.02.2023   dcasota  5.0 added, report release x package with a higher version than same release x+1 package
 #
 #  .PREREQUISITES
 #    - Script actually tested only on MS Windows OS with Powershell PSVersion 5.1 or higher
@@ -49,6 +49,66 @@ function ParseDirectory
     }
     return $Packages
 }
+
+function Versioncompare
+{
+	param (
+		[parameter(Mandatory = $true)]
+		$versionA,
+		[parameter(Mandatory = $true)]
+		$versionB
+	)
+    $resultAGtrB=0
+
+        if ([string]::IsNullOrEmpty($versionA)) {break} 
+        $itemA=$versionA.split(".-")[0]
+        if ([string]::IsNullOrEmpty($itemA)) {break}
+        if ($itemA -eq $versionA) {$versionANew=""}
+        elseif ($itemA.length -gt 0) {$versionANew=$versionA.Remove(0,$itemA.length+1)}
+    
+        if ([string]::IsNullOrEmpty($versionB)) {break}
+        $itemB=$versionB.split(".-")[0]
+        if ([string]::IsNullOrEmpty($itemB)) {break}
+        if ($itemB -eq $versionB) {$versionBNew=""}
+        elseif ($itemB.length -gt 0) {$versionBNew=$versionB.Remove(0,$itemB.length+1)}
+
+            if (($null -ne ($itemA -as [int])) -and ($null -ne ($itemB -as [int])))
+            {
+                if ([int]$itemA -gt [int]$itemB)
+                {
+                    $resultAGtrB = 1
+                }
+                elseif ([int]$itemA -eq [int]$itemB)
+                {
+                    if (!(([string]::IsNullOrEmpty($versionANew))) -and (!([string]::IsNullOrEmpty($versionBNew)))) { $resultAGtrB = VersionCompare $versionANew $versionBNew }
+                    elseif (([string]::IsNullOrEmpty($versionANew)) -and ([string]::IsNullOrEmpty($versionBNew))) { $resultAGtrB = 0 }
+                    elseif ([string]::IsNullOrEmpty($versionANew)) { $resultAGtrB = 1 }
+                    elseif ([string]::IsNullOrEmpty($versionBNew)) { $resultAGtrB = 2 }
+                }
+                else
+                {
+                    $resultAGtrB = 2
+                }
+            }
+            else
+            {
+                if ($itemA -gt $itemB)
+                {
+                    $resultAGtrB = 1
+                }
+                elseif ($itemA -eq $itemB)
+                {
+                    $resultAGtrB = VersionCompare $versionANew $versionBNew
+                }
+                else
+                {
+                    $resultAGtrB = 2
+                }
+            }
+
+    return $resultAGtrB
+}
+
 
 # EDIT
 # path with all downloaded and unzipped branch directories of github.com/vmware/photon
@@ -162,12 +222,34 @@ $result | % { $_.Spec+","+$_."photon-1.0"+","+$_."photon-2.0"+","+$_."photon-3.0
 
 # write diff output 4.0 package with a higher version than same 5.0 package
 # output file
-$outputfile="$env:public\photonos-diff-report-4.0-5.0.prn"
-"Spec"+","+"photon-4.0"+","+"photon-5.0"| out-file $outputfile
-$result.foreach({if (($_."photon-4.0" -gt $_."photon-5.0") -and (!([string]::IsNullOrEmpty($_."photon-5.0")))) {$diffspec=[System.String]::Concat($_.spec, ',',$_.'photon-4.0',',',$_.'photon-5.0'); $diffspec | out-file $outputfile -append}})
+$outputfile1="$env:public\photonos-diff-report-4.0-5.0.prn"
+"Spec"+","+"photon-4.0"+","+"photon-5.0"| out-file $outputfile1
+$result | % {
+    write-output $_.spec
+    if ((!([string]::IsNullOrEmpty($_.'photon-4.0'))) -and (!([string]::IsNullOrEmpty($_.'photon-5.0'))))
+    {
+        $VersionCompare1 = VersionCompare $_.'photon-4.0' $_.'photon-5.0'
+        if ($VersionCompare1 -eq 1)
+        {
+            $diffspec1=[System.String]::Concat($_.spec, ',',$_.'photon-4.0',',',$_.'photon-5.0')
+            $diffspec1 | out-file $outputfile1 -append
+        }
+    }
+}
 
 # write diff output 3.0 package with a higher version than same 4.0 package
 # output file
-$outputfile="$env:public\photonos-diff-report-3.0-4.0.prn"
-"Spec"+","+"photon-3.0"+","+"photon-4.0"| out-file $outputfile
-$result.foreach({if (($_."photon-3.0" -gt $_."photon-4.0") -and (!([string]::IsNullOrEmpty($_."photon-4.0")))) {$diffspec=[System.String]::Concat($_.spec, ',',$_.'photon-3.0',',',$_.'photon-4.0');$diffspec | out-file $outputfile -append}})
+$outputfile2="$env:public\photonos-diff-report-3.0-4.0.prn"
+"Spec"+","+"photon-3.0"+","+"photon-4.0"| out-file $outputfile2
+$result | % {
+    write-output $_.spec
+    if ((!([string]::IsNullOrEmpty($_.'photon-3.0'))) -and (!([string]::IsNullOrEmpty($_.'photon-4.0'))))
+    {
+        $VersionCompare2 = VersionCompare $_.'photon-3.0' $_.'photon-4.0'
+        if ($VersionCompare2 -eq 1)
+        {
+            $diffspec2=[System.String]::Concat($_.spec, ',',$_.'photon-3.0',',',$_.'photon-4.0')
+            $diffspec2 | out-file $outputfile2 -append
+        }
+    }
+}
