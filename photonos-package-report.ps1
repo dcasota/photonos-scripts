@@ -7,7 +7,7 @@
 #   0.1   06.03.2021   dcasota  First release
 #   0.2   17.04.2021   dcasota  dev added
 #   0.3   05.02.2023   dcasota  5.0 added, report release x package with a higher version than same release x+1 package
-#   0.4   27.02.2023   dcasota  CheckURLHealth added, timedate stamp in reports' name added 
+#   0.4   27.02.2023   dcasota  CheckURLHealth added, timedate stamp in reports' name added, url health coverage improvements
 #
 #  .PREREQUISITES
 #    - Script actually tested only on MS Windows OS with Powershell PSVersion 5.1 or higher
@@ -54,6 +54,39 @@ function ParseDirectory
 
                 $group=""
                 if ($content -ilike '*Group:*') { $group = (($content | Select-String -Pattern '^Group:')[0].ToString() -ireplace 'Group:', "").Trim() }
+
+                $extra_version=""
+                if ($content -ilike '*define extra_version*') { $extra_version = (($content | Select-String -Pattern '%define extra_version')[0].ToString() -ireplace '%define extra_version', "").Trim() }
+
+                $main_version=""
+                if ($content -ilike '*define main_version*') { $main_version = (($content | Select-String -Pattern '%define main_version')[0].ToString() -ireplace '%define main_version', "").Trim() }
+
+                $byaccdate=""
+                if ($content -ilike '*define byaccdate*') { $byaccdate = (($content | Select-String -Pattern '%define byaccdate')[0].ToString() -ireplace '%define byaccdate', "").Trim() }
+
+                $dialogsubversion=""
+                if ($content -ilike '*define dialogsubversion*') { $dialogsubversion = (($content | Select-String -Pattern '%define dialogsubversion')[0].ToString() -ireplace '%define dialogsubversion', "").Trim() }
+
+                $libedit_release=""
+                if ($content -ilike '*define libedit_release*') { $libedit_release = (($content | Select-String -Pattern '%define libedit_release')[0].ToString() -ireplace '%define libedit_release', "").Trim() }
+
+                $libedit_version=""
+                if ($content -ilike '*define libedit_version*') { $libedit_version = (($content | Select-String -Pattern '%define libedit_version')[0].ToString() -ireplace '%define libedit_version', "").Trim() }
+
+                $ncursessubversion=""
+                if ($content -ilike '*define ncursessubversion*') { $ncursessubversion = (($content | Select-String -Pattern '%define ncursessubversion')[0].ToString() -ireplace '%define ncursessubversion', "").Trim() }
+
+                $cpan_name=""
+                if ($content -ilike '*define cpan_name*') { $ncursessubversion = (($content | Select-String -Pattern '%define cpan_name')[0].ToString() -ireplace '%define cpan_name', "").Trim() }
+
+                $xproto_ver=""
+                if ($content -ilike '*define xproto_ver*') { $xproto_ver = (($content | Select-String -Pattern '%define xproto_ver')[0].ToString() -ireplace '%define xproto_ver', "").Trim() }
+
+                $_url_src=""
+                if ($content -ilike '*define _url_src*') { $_url_src = (($content | Select-String -Pattern '%define _url_src')[0].ToString() -ireplace '%define _url_src', "").Trim() }
+
+                $_url_src=""
+                if ($content -ilike '*define _repo_ver*') { $_repo_ver = (($content | Select-String -Pattern '%define _repo_ver')[0].ToString() -ireplace '%define _repo_ver', "").Trim() }
                 
                 $Packages +=[PSCustomObject]@{
                     Spec = $_.Name
@@ -64,6 +97,17 @@ function ParseDirectory
                     srcname = $srcname
                     gem_name = $gem_name
                     group = $group
+                    extra_version = $extra_version
+                    main_version = $main_version
+                    byaccdate = $byaccdate
+                    dialogsubversion = $dialogsubversion
+                    libedit_release = $libedit_release
+                    libedit_version = $libedit_version
+                    ncursessubversion = $ncursessubversion
+                    cpan_name = $cpan_name
+                    xproto_ver = $xproto_ver
+                    _url_src = $_url_src
+                    _repo_ver = $_repo_ver
                 }
             }
         }
@@ -193,6 +237,7 @@ function CheckURLHealth {
         $Source0 = $_.Source0
 
         # correction for urlnames
+        $replace=""
         if ($_.Spec -ilike 'pmd-nextgen.spec') {$Source0="https://github.com/vmware/pmd/archive/refs/tags/v%{version}.tar.gz"}
         elseif ($_.Spec -ilike 'python-dateutil.spec') {$Source0="https://github.com/dateutil/dateutil/archive/refs/tags/%{version}.tar.gz"}
         elseif ($_.Spec -ilike 'python-alabaster.spec') {$Source0="https://github.com/bitprophet/alabaster/archive/refs/tags/%{version}.tar.gz"}
@@ -453,7 +498,7 @@ function CheckURLHealth {
 
         elseif ($_.Spec -ilike 'json-glib.spec') {$Source0="https://github.com/GNOME/json-glib/archive/refs/tags/%{version}.tar.gz"}
 
-        elseif ($_.Spec -ilike 'kafka.spec') {$Source0="https://github.com/apache/kafka/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'kafka.spec') {$Source0="https://github.com/apache/kafka/archive/refs/tags/%{version}.tar.gz"; $replace="kafka-"}
 
         elseif ($_.Spec -ilike 'lapack.spec') {$Source0="https://github.com/Reference-LAPACK/lapack/archive/refs/tags/v%{version}.tar.gz"}
 
@@ -521,10 +566,18 @@ function CheckURLHealth {
 
         elseif ($_.Spec -ilike 'uwsgi.spec') {$Source0="https://github.com/unbit/uwsgi/archive/refs/tags/%{version}.tar.gz"}
 
+        elseif ($_.Spec -ilike 'mesa.spec') {$Source0="https://gitlab.freedesktop.org/mesa/mesa/-/archive/mesa-%{version}/mesa-mesa-%{version}.tar.gz"}
 
+        elseif ($_.Spec -ilike 'alsa-lib.spec') {$Source0="https://github.com/alsa-project/alsa-lib/archive/refs/tags/v%{version}.tar.gz"}
 
+        elseif ($_.Spec -ilike 'alsa-utils.spec') {$Source0="https://github.com/alsa-project/alsa-utils/archive/refs/tags/v%{version}.tar.gz"}
 
-        if ($Source0 -ilike '*%{name}*') { $Source0 = $Source0 -ireplace '%{name}',$_.Name }
+        elseif ($_.Spec -ilike 'apache-maven.spec') {$Source0="https://github.com/apache/maven/archive/refs/tags/maven-%{version}.tar.gz"}
+
+        elseif ($_.Spec -ilike 'efibootmgr.spec') {$Source0="https://github.com/rhboot/efibootmgr/archive/refs/tags/%{version}.tar.gz"}
+        
+        
+       
 
         # add url path if necessary and possible
         if (($Source0 -notlike '*//*') -and ($_.url -ne ""))
@@ -535,7 +588,7 @@ function CheckURLHealth {
             { $Source0 = [System.String]::Concat(($_.url).Trimend('/'),"/",$Source0) }
         }
 
-
+        if ($Source0 -ilike '*%{name}*') { $Source0 = $Source0 -ireplace '%{name}',$_.Name }
 
 
         # cut last index in $_.version and save value in $version
@@ -551,7 +604,18 @@ function CheckURLHealth {
         if ($Source0 -ilike '*%{url}*') { $Source0 = $Source0 -ireplace '%{url}',$_.url }
         if ($Source0 -ilike '*%{srcname}*') { $Source0 = $Source0 -ireplace '%{srcname}',$_.srcname }
         if ($Source0 -ilike '*%{gem_name}*') { $Source0 = $Source0 -ireplace '%{gem_name}',$_.gem_name }
+        if ($Source0 -ilike '*%{extra_version}*') { $Source0 = $Source0 -ireplace '%{extra_version}',$_.extra_version }
 
+        if ($Source0 -ilike '*%{main_version}*') { $Source0 = $Source0 -ireplace '%{main_version}',$_.main_version }
+        if ($Source0 -ilike '*%{byaccdate}*') { $Source0 = $Source0 -ireplace '%{byaccdate}',$_.byaccdate }
+        if ($Source0 -ilike '*%{dialogsubversion}*') { $Source0 = $Source0 -ireplace '%{dialogsubversion}',$_.dialogsubversion }
+        if ($Source0 -ilike '*%{libedit_release}*') { $Source0 = $Source0 -ireplace '%{libedit_release}',$_.libedit_release }
+        if ($Source0 -ilike '*%{libedit_version}*') { $Source0 = $Source0 -ireplace '%{libedit_version}',$_.libedit_version }
+        if ($Source0 -ilike '*%{ncursessubversion}*') { $Source0 = $Source0 -ireplace '%{ncursessubversion}',$_.ncursessubversion }
+        if ($Source0 -ilike '*%{cpan_name}*') { $Source0 = $Source0 -ireplace '%{cpan_name}',$_.cpan_name }
+        if ($Source0 -ilike '*%{xproto_ver}*') { $Source0 = $Source0 -ireplace '%{xproto_ver}',$_.xproto_ver}
+        if ($Source0 -ilike '*%{_url_src}*') { $Source0 = $Source0 -ireplace '%{_url_src}',$_._url_src }
+        if ($Source0 -ilike '*%{_repo_ver}*') { $Source0 = $Source0 -ireplace '%{_repo_ver}',$_._repo_ver}
 
 
         # different trycatch-combinations to get a healthy Source0 url
@@ -605,7 +669,8 @@ function CheckURLHealth {
                                         if ($urlhealth -ne "200")
                                         {
                                             $Source0=$Source0Save
-                                            $versionnew = $version -ireplace '_','.'
+                                            $versionnew = $version -ireplace 'rel_',''
+                                            $versionnew = $versionnew -ireplace '_','.'
                                             $Source0 = $Source0 -ireplace $version,$versionnew
                                             $urlhealth = urlhealth($Source0)
                                             if ($urlhealth -ne "200")
@@ -731,7 +796,33 @@ function CheckURLHealth {
             $SourceTagURL=$SourceTagURL + "/tags"
             try{
                 $Names = (invoke-restmethod -uri $SourceTagURL -usebasicparsing -headers @{Authorization = "Bearer $accessToken"})
-                $NameLatest = ($Names | sort-object -Property @{Expression={[string]($_.name -replace "\D", "")}} | select -Last 1).Name
+                $Names = ($Names.name) -replace $replace,"" | foreach {echo $_"-zz"}
+                $NameLatest = ($Names | sort-object -unique | select -last 1) -replace "-zz",""
+            }
+            catch{$NameLatest=""}
+            if ($NameLatest -ne "")
+            {
+                if (($Version -ireplace "v","") -lt ($NameLatest -ireplace "v","")) {$UpdateAvailable = $NameLatest}
+            }
+        }
+        elseif ($Source0 -ilike '*freedesktop.org*')
+        {
+            if ($_.spec -ilike 'dbus.spec') {$SourceTagURL="https://gitlab.freedesktop.org/dbus/dbus/-/tags?format=atom"; $replace="dbus-"}
+            elseif ($_.spec -ilike 'dbus-glib.spec') {$SourceTagURL="https://gitlab.freedesktop.org/dbus/dbus-glib/-/tags?format=atom"; $replace="dbus-glib-"}
+            elseif ($_.spec -ilike 'dbus-python.spec') {$SourceTagURL="https://gitlab.freedesktop.org/dbus/dbus-python/-/tags?format=atom"; $replace="dbus-python-"}
+            elseif ($_.spec -ilike 'fontconfig.spec') {$SourceTagURL="https://gitlab.freedesktop.org/fontconfig/fontconfig/-/tags?format=atom"; $replace="fontconfig-"}
+            elseif ($_.spec -ilike 'gstreamer.spec') {$SourceTagURL="https://gitlab.freedesktop.org/gstreamer/gstreamer/-/tags?format=atom"; $replace="gstreamer-"}
+            elseif ($_.spec -ilike 'gstreamer-plugins-base.spec') {$SourceTagURL="https://gitlab.freedesktop.org/gstreamer/gst-plugins-base/-/tags?format=atom"; $replace="gstreamer-plugins-base-"}
+            elseif ($_.spec -ilike 'mesa.spec') {$SourceTagURL="https://gitlab.freedesktop.org/mesa/mesa/-/tags?format=atom"; $replace="mesa-"}
+            elseif ($_.spec -ilike 'modemmanager.spec') {$SourceTagURL="https://gitlab.freedesktop.org/modemmanager/modemmanager/-/tags?format=atom"; $replace="modemmanager-"}
+            elseif ($_.spec -ilike 'pixman.spec') {$SourceTagURL="https://gitlab.freedesktop.org/pixman/pixman/-/tags?format=atom"; $replace="pixman-"}
+            elseif ($_.spec -ilike 'polkit.spec') {$SourceTagURL="https://gitlab.freedesktop.org/polkit/polkit/-/tags?format=atom"; $replace="polkit-"}
+            elseif ($_.spec -ilike 'wayland.spec') {$SourceTagURL="https://gitlab.freedesktop.org/wayland/wayland/-/tags?format=atom"; $replace="wayland-"}
+            elseif ($_.spec -ilike 'wayland-protocols.spec') {$SourceTagURL="https://gitlab.freedesktop.org/wayland/wayland-protocols/-/tags?format=atom"; $replace="wayland-protocols-"}
+
+            try{
+                $Names = (invoke-restmethod -uri $SourceTagURL -usebasicparsing)
+                $NameLatest=($Names.title -replace $replace,"") | sort-object -unique | select -last 1
             }
             catch{$NameLatest=""}
             if ($NameLatest -ne "")
@@ -750,16 +841,16 @@ function CheckURLHealth {
 
 $access = Read-Host -Prompt "Please enter your Github Access Token."
 
-write-output "Generating URLHealth report for Photon OS 3.0 ..."
-GitPhoton -release "3.0"
-$Packages3=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-3.0
-CheckURLHealth -outputfile "$env:public\photonos-urlhealth-3.0_$((get-date).tostring("yyyMMddHHmm")).prn" -accessToken $access -CheckURLHealthPackageObject $Packages3
+# write-output "Generating URLHealth report for Photon OS 3.0 ..."
+# GitPhoton -release "3.0"
+# $Packages3=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-3.0
+# CheckURLHealth -outputfile "$env:public\photonos-urlhealth-3.0_$((get-date).tostring("yyyMMddHHmm")).prn" -accessToken $access -CheckURLHealthPackageObject $Packages3
 
 
-write-output "Generating URLHealth report for Photon OS 4.0 ..."
-GitPhoton -release "4.0"
-$Packages4=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-4.0
-CheckURLHealth -outputfile "$env:public\photonos-urlhealth-4.0_$((get-date).tostring("yyyMMddHHmm")).prn" -accessToken $access -CheckURLHealthPackageObject $Packages4
+# write-output "Generating URLHealth report for Photon OS 4.0 ..."
+# GitPhoton -release "4.0"
+# $Packages4=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-4.0
+# CheckURLHealth -outputfile "$env:public\photonos-urlhealth-4.0_$((get-date).tostring("yyyMMddHHmm")).prn" -accessToken $access -CheckURLHealthPackageObject $Packages4
 
 write-output "Generating URLHealth report for Photon OS 5.0 ..."
 GitPhoton -release "5.0"
