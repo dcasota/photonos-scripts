@@ -841,16 +841,16 @@ function CheckURLHealth {
 
 $access = Read-Host -Prompt "Please enter your Github Access Token."
 
-# write-output "Generating URLHealth report for Photon OS 3.0 ..."
-# GitPhoton -release "3.0"
-# $Packages3=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-3.0
-# CheckURLHealth -outputfile "$env:public\photonos-urlhealth-3.0_$((get-date).tostring("yyyMMddHHmm")).prn" -accessToken $access -CheckURLHealthPackageObject $Packages3
+write-output "Generating URLHealth report for Photon OS 3.0 ..."
+GitPhoton -release "3.0"
+$Packages3=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-3.0
+CheckURLHealth -outputfile "$env:public\photonos-urlhealth-3.0_$((get-date).tostring("yyyMMddHHmm")).prn" -accessToken $access -CheckURLHealthPackageObject $Packages3
 
 
-# write-output "Generating URLHealth report for Photon OS 4.0 ..."
-# GitPhoton -release "4.0"
-# $Packages4=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-4.0
-# CheckURLHealth -outputfile "$env:public\photonos-urlhealth-4.0_$((get-date).tostring("yyyMMddHHmm")).prn" -accessToken $access -CheckURLHealthPackageObject $Packages4
+write-output "Generating URLHealth report for Photon OS 4.0 ..."
+GitPhoton -release "4.0"
+$Packages4=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-4.0
+CheckURLHealth -outputfile "$env:public\photonos-urlhealth-4.0_$((get-date).tostring("yyyMMddHHmm")).prn" -accessToken $access -CheckURLHealthPackageObject $Packages4
 
 write-output "Generating URLHealth report for Photon OS 5.0 ..."
 GitPhoton -release "5.0"
