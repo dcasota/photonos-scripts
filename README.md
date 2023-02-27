@@ -23,16 +23,23 @@ The [Security Advisories](https://github.com/vmware/photon/wiki/Security-Advisor
 
 With each Linux kernel update trillions of packages permutations are given, in theory it's slightly less architecture specific. A slice of it reflects in Photon OS. You can see which packages are made available from contributors at https://github.com/vmware/photon/commits/dev.
 
-Packages work begin with 'there is a version of package x in relation to y, which is not or it is integrated to photon release z only.' There is no handy interoperability lookup of packages release/flavor/architecture like the inter-product viewer in VMware vSphere interoperability guide though.
+Each package is represented by a spec file and it contains manufacturer information e.g. the original download url Source0. 
+Unfortunately, more than half of Source0 url health checks fail because of an old or misspelled url value in the spec file.
+To achieve a higher url health ratio, the Source0 url value has been analyzed, and a spec-file-to-Source0-url-lookup has been implemented as part of a script. For analyzing purposes, the script output file per Photon OS version can be imported as spreadsheet. The comma delimited .prn output file contains spec file name, the Source0 original value, the corrected Source0 url after research, the url health check value (200=ok), and an "UpdateAvailable" signalisation. With those url corrections, the Source0 url health ratio increased significantly. If it fits the quality goals, it can help to correct the Source0 urls. 
+- Sample for Photon OS 3.0
+- Sample for Photon OS 4.0
+- Sample for Photon OS 5.0
 
-The following screenshot depicts a part of the concept idea.
-![Package Report Concept](https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report_concept.png)
-
-This powershell script creates the package report. 
+The following powershell script creates the Source0 url health check reports. It must run on a Windows machine with installed Powershell.
 https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report.ps1
 
-The comma delimited .prn output file simply lists all Photon OS Github specs names with releases per Photon OS Github Branch. Output file sample:
-https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report.prn
+In addition, the powershell script creates: 
+- a package report with all packages per Photon OS release version
+- a difference report of 3.0 packages with a higher version than same 4.0 package
+- a difference report of 4.0 packages with a higher version than same 5.0 package
+
+Packages work begin with 'there is a version of package x in relation to y, which is not or it is integrated to photon release z only.' There is no handy interoperability lookup of packages release/flavor/architecture like the inter-product viewer in VMware vSphere interoperability guide though.
+
 
 # Use Case 2 - Baremetal installation / staging
 Baremetal environments are technically supported. The focus of Photon OS however isn't primarily to run on baremetal. For security purposes, peripheral devices connectivity is restricted. But you can install Photon OS on any x86_64 and arm64 baremetal.
