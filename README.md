@@ -26,17 +26,20 @@ With each Linux kernel update trillions of packages permutations are given, in t
 Each package is represented by a spec file and it contains manufacturer information e.g. the original download url Source0. 
 Unfortunately, more than half of Source0 url health checks fail because of an old or misspelled url value in the spec file.
 To achieve a higher url health ratio, the Source0 url value has been analyzed, and a spec-file-to-Source0-url-lookup has been implemented as part of a script. For analyzing purposes, the script output file per Photon OS version can be imported as spreadsheet. The comma delimited .prn output file contains spec file name, the Source0 original value, the corrected Source0 url after research, the url health check value (200=ok), and an "UpdateAvailable" signalisation. With those url corrections, the Source0 url health ratio increased significantly. If it fits the quality goals, it can help to correct the Source0 urls. 
-- Sample for Photon OS 3.0
-- Sample for Photon OS 4.0
-- Sample for Photon OS 5.0
+- [url health sample report for Photon OS 3.0](https://github.com/dcasota/photonos-scripts/blob/master/photonos-urlhealth-3.0_202302271112.prn)
+- [url health sample report for Photon OS 4.0](https://github.com/dcasota/photonos-scripts/blob/master/photonos-urlhealth-4.0_202302271122.prn)
+- [url health sample report for Photon OS 5.0](https://github.com/dcasota/photonos-scripts/blob/master/photonos-urlhealth-5.0_202302271134.prn)
 
 The following powershell script creates the Source0 url health check reports. It must run on a Windows machine with installed Powershell.
 https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report.ps1
 
 In addition, the powershell script creates: 
-- a package report with all packages per Photon OS release version
-- a difference report of 3.0 packages with a higher version than same 4.0 package
-- a difference report of 4.0 packages with a higher version than same 5.0 package
+- [a package report with all packages per Photon OS release version](https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report_202302271149.prn)
+
+  ![image](https://user-images.githubusercontent.com/14890243/221566691-cb958ea7-e298-4a42-babc-9fd4eec9e12d.png)
+
+- [a difference report of 3.0 packages with a higher version than same 4.0 package](https://github.com/dcasota/photonos-scripts/blob/master/photonos-diff-report-3.0-4.0_202302271149.prn)
+- [a difference report of 4.0 packages with a higher version than same 5.0 package](https://github.com/dcasota/photonos-scripts/blob/master/photonos-diff-report-4.0-5.0_202302271149.prn)
 
 Packages work begin with 'there is a version of package x in relation to y, which is not or it is integrated to photon release z only.' There is no handy interoperability lookup of packages release/flavor/architecture like the inter-product viewer in VMware vSphere interoperability guide though.
 
