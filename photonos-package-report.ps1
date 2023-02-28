@@ -913,12 +913,12 @@ function CheckURLHealth {
 
 $access = Read-Host -Prompt "Please enter your Github Access Token."
 
-$GeneratePh3URLHealthReport=$false
-$GeneratePh4URLHealthReport=$false
+$GeneratePh3URLHealthReport=$true
+$GeneratePh4URLHealthReport=$true
 $GeneratePh5URLHealthReport=$true
-$GeneratePhPackageReport=$false
-$GeneratePh4toPh5DiffHigherPackageVersionReport=$false
-$GeneratePh3toPh4DiffHigherPackageVersionReport=$false
+$GeneratePhPackageReport=$true
+$GeneratePh4toPh5DiffHigherPackageVersionReport=$true
+$GeneratePh3toPh4DiffHigherPackageVersionReport=$true
 
 if ($GeneratePh3URLHealthReport -ieq $true)
 {
