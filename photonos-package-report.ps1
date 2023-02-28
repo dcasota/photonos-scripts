@@ -8,6 +8,7 @@
 #   0.2   17.04.2021   dcasota  dev added
 #   0.3   05.02.2023   dcasota  5.0 added, report release x package with a higher version than same release x+1 package
 #   0.4   27.02.2023   dcasota  CheckURLHealth added, timedate stamp in reports' name added, url health coverage improvements
+#   0.41  28.02.2023   dcasota  url health coverage improvements
 #
 #  .PREREQUISITES
 #    - Script actually tested only on MS Windows OS with Powershell PSVersion 5.1 or higher
@@ -236,195 +237,23 @@ function CheckURLHealth {
     $CheckURLHealthPackageObject | foreach {
         $Source0 = $_.Source0
 
-        # correction for urlnames
+        # --------------------------------------------------------------------------------------------------------------
+        # The following Source0 urls have been detected to be wrong or missspelled.
+        # This can change. Hence, this section has to be verified from time to time.
+        # Until then, before any Source0 url health check the Source0 url value is changed to a manually verified value.
+        # --------------------------------------------------------------------------------------------------------------
         $replace=""
-        if ($_.Spec -ilike 'pmd-nextgen.spec') {$Source0="https://github.com/vmware/pmd/archive/refs/tags/v%{version}.tar.gz"}
-        elseif ($_.Spec -ilike 'python-dateutil.spec') {$Source0="https://github.com/dateutil/dateutil/archive/refs/tags/%{version}.tar.gz"}
-        elseif ($_.Spec -ilike 'python-alabaster.spec') {$Source0="https://github.com/bitprophet/alabaster/archive/refs/tags/%{version}.tar.gz"}
-        elseif ($_.Spec -ilike 'python-altgraph.spec') {$Source0="https://github.com/ronaldoussoren/altgraph/releases/tag/v%{version}.tar.gz"}
-        elseif ($_.Spec -ilike 'python-appdirs.spec') {$Source0="https://github.com/ActiveState/appdirs/archive/refs/tags/%{version}.tar.gz"}
-        elseif ($_.Spec -ilike 'python-argparse.spec') {$Source0="https://github.com/ThomasWaldmann/argparse/archive/refs/tags/r140.tar.gz"} #github archived
-        elseif ($_.Spec -ilike 'python-atomicwrites.spec') {$Source0="https://github.com/untitaker/python-atomicwrites/archive/refs/tags/1.4.1.tar.gz"} #github archived
-        elseif ($_.Spec -ilike 'python-attrs.spec') {$Source0="https://github.com/python-attrs/attrs/archive/refs/tags/%{version}.tar.gz"}
-        elseif ($_.Spec -ilike 'python-autopep8.spec') {$Source0="https://github.com/hhatto/autopep8/archive/refs/tags/v%{version}.tar.gz"}
-        elseif ($_.Spec -ilike 'python-babel.spec') {$Source0="https://github.com/python-babel/babel/archive/refs/tags/v%{version}.tar.gz"}
-        elseif ($_.Spec -ilike 'python-backports.ssl_match_hostname*') {} # see https://github.com/python/typeshed
-        elseif ($_.Spec -ilike 'python-altgraph.spec') {$Source0="https://github.com/ronaldoussoren/altgraph/archive/refs/tags/v%{version}.tar.gz"}
-        elseif ($_.Spec -ilike 'python-bcrypt.spec') {$Source0="https://github.com/pyca/bcrypt/archive/refs/tags/%{version}.tar.gz"}
-        elseif ($_.Spec -ilike 'python-boto3.spec') {$Source0="https://github.com/boto/boto3/archive/refs/tags/%{version}.tar.gz"}
-        elseif ($_.Spec -ilike 'python-botocore.spec') {$Source0="https://github.com/boto/botocore/archive/refs/tags/%{version}.tar.gz"}
-        elseif ($_.Spec -ilike 'python-cachecontrol.spec') {$Source0="https://github.com/ionrock/cachecontrol/archive/refs/tags/v%{version}.tar.gz"}
-        elseif ($_.Spec -ilike 'python-cassandra-driver.spec') {$Source0="https://github.com/datastax/python-driver/archive/refs/tags/%{version}.tar.gz"} 
-        elseif ($_.Spec -ilike 'python-certifi.spec') {$Source0="https://github.com/certifi/python-certifi/archive/refs/tags/%{version}.tar.gz"}
-        elseif ($_.Spec -ilike 'python-chardet.spec') {$Source0="https://github.com/chardet/chardet/archive/refs/tags/%{version}.tar.gz"}
-        elseif ($_.Spec -ilike 'python-charset-normalizer.spec') {$Source0="https://github.com/Ousret/charset_normalizer/archive/refs/tags/%{version}.tar.gz"}
-        elseif ($_.Spec -ilike 'python-click.spec') {$Source0="https://github.com/pallets/click/archive/refs/tags/%{version}.tar.gz"}
-        elseif ($_.Spec -ilike 'python-ConcurrentLogHandler.spec') {$Source0="https://github.com/Preston-Landers/concurrent-log-handler/archive/refs/tags/%{version}.tar.gz"}
-        elseif ($_.Spec -ilike 'python-certifi.spec') {$Source0="https://github.com/certifi/python-certifi/archive/refs/tags/%{version}.tar.gz"}
+        if ($_.Spec -ilike 'alsa-lib.spec') {$Source0="https://github.com/alsa-project/alsa-lib/archive/refs/tags/v%{version}.tar.gz"}
 
-        elseif ($_.Spec -ilike 'python-configparser.spec') {$Source0="https://github.com/jaraco/configparser/archive/refs/tags/v%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-constantly.spec') {$Source0="https://github.com/twisted/constantly/archive/refs/tags/%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-cql.spec') {$Source0="https://github.com/datastax/python-driver/archive/refs/tags/%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-decorator.spec') {$Source0="https://github.com/micheles/decorator/archive/refs/tags/%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-deepmerge.spec') {$Source0="https://github.com/toumorokoshi/deepmerge/archive/refs/tags/v%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-defusedxml.spec') {$Source0="https://github.com/tiran/defusedxml/archive/refs/tags/v%{version}.tar.gz"}   
-
-        elseif ($_.Spec -ilike 'python-distro.spec') {$Source0="https://github.com/python-distro/distro/archive/refs/tags/v%{version}.tar.gz"} 
-
-        elseif ($_.Spec -ilike 'python-docopt.spec') {$Source0="https://github.com/docopt/docopt/archive/refs/tags/%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-email-validator.spec') {$Source0="https://github.com/JoshData/python-email-validator/archive/refs/tags/v%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-ethtool.spec') {$Source0="https://github.com/fedora-python/python-ethtool/archive/refs/tags/v%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-filelock.spec') {$Source0="https://github.com/tox-dev/py-filelock/archive/refs/tags/%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-geomet.spec') {$Source0="https://github.com/geomet/geomet/archive/refs/tags/%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-gevent.spec') {$Source0="https://github.com/gevent/gevent/archive/refs/tags/%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-gevent.spec') {$Source0="https://github.com/gevent/gevent/archive/refs/tags/%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-graphviz.spec') {$Source0="https://github.com/xflr6/graphviz/archive/refs/tags/%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-greenlet.spec') {$Source0="https://github.com/python-greenlet/greenlet/archive/refs/tags/%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-hyperlink.spec') {$Source0="https://github.com/python-hyper/hyperlink/archive/refs/tags/v%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-hypothesis.spec') {$Source0="https://github.com/HypothesisWorks/hypothesis/archive/refs/tags/hypothesis-python-%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-idna.spec') {$Source0="https://github.com/kjd/idna/archive/refs/tags/v%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-imagesize.spec') {$Source0="https://github.com/shibukawa/imagesize_py/archive/refs/tags/%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-incremental.spec') {$Source0="https://github.com/twisted/incremental/archive/refs/tags/incremental-%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-iniparse.spec') {$Source0="https://github.com/candlepin/python-iniparse/archive/refs/tags/%{version}.tar.gz"}   
-
-        elseif ($_.Spec -ilike 'python-ipaddress.spec') {$Source0="https://github.com/phihag/ipaddress/archive/refs/tags/v%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-jinja.spec') {$Source0="https://github.com/pallets/jinja/archive/refs/tags/%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-jmespath.spec') {$Source0="https://github.com/jmespath/jmespath.py/archive/refs/tags/%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-jsonpatch.spec') {$Source0="https://github.com/stefankoegl/python-json-patch/archive/refs/tags/v%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-M2Crypto.spec') {$Source0="https://gitlab.com/m2crypto/m2crypto/-/archive/%{version}/m2crypto-%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-mako.spec') {$Source0="https://github.com/sqlalchemy/mako/archive/refs/tags/%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-markupsafe.spec') {$Source0="https://github.com/pallets/markupsafe/archive/refs/tags/%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-more-itertools.spec') {$Source0="https://github.com/more-itertools/more-itertools/archive/refs/tags/v%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-msgpack.spec') {$Source0="https://github.com/msgpack/msgpack-python/archive/refs/tags/v%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-ndg-httpsclient.spec') {$Source0="https://github.com/cedadev/ndg_httpsclient/archive/refs/tags/%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-ntplib.spec') {$Source0="https://github.com/cf-natali/ntplib/archive/refs/tags/%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-oauthlib.spec') {$Source0="https://github.com/oauthlib/oauthlib/archive/refs/tags/v%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-packaging.spec') {$Source0="https://github.com/pypa/packaging/archive/refs/tags/%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-pam.spec') {$Source0="https://github.com/FirefighterBlu3/python-pam/archive/refs/tags/v%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-pexpect.spec') {$Source0="https://github.com/pexpect/pexpect/archive/refs/tags/%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-pluggy.spec') {$Source0="https://github.com/pytest-dev/pluggy/archive/refs/tags/%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-ply.spec') {$Source0="https://github.com/dabeaz/ply/archive/refs/tags/%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-prometheus_client.spec') {$Source0="https://github.com/prometheus/client_python/archive/refs/tags/v%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-py.spec') {$Source0="https://github.com/pytest-dev/py/archive/refs/tags/%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-pyasn1-modules.spec') {$Source0="https://github.com/etingof/pyasn1-modules/archive/refs/tags/v%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-pycodestyle.spec') {$Source0="https://github.com/FirefighterBlu3/python-pam/archive/refs/tags/v%{version}.tar.gz"} # duplicate of python-pam
-
-        elseif ($_.Spec -ilike 'python-pycryptodomex.spec') {$Source0="https://github.com/Legrandin/pycryptodome/archive/refs/tags/v%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-pyhamcrest.spec') {$Source0="https://github.com/hamcrest/PyHamcrest/archive/refs/tags/V%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-pyinstaller-hooks-contrib.spec') {$Source0="https://github.com/pyinstaller/pyinstaller-hooks-contrib/archive/refs/tags/v%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-pyjwt.spec') {$Source0="https://github.com/jpadilla/pyjwt/archive/refs/tags/%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-pyparsing.spec') {$Source0="https://github.com/pyparsing/pyparsing/archive/refs/tags/pyparsing_%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-pycparser.spec') {$Source0="https://github.com/eliben/pycparser/archive/refs/tags/release_v%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-pycparser.spec') {$Source0="https://github.com/eliben/pycparser/archive/refs/tags/release_v%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-pycryptodome.spec') {$Source0="https://github.com/Legrandin/pycryptodome/archive/refs/tags/v%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-pydantic.spec') {$Source0="https://github.com/pydantic/pydantic/archive/refs/tags/v%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-pyflakes.spec') {$Source0="https://github.com/PyCQA/pyflakes/archive/refs/tags/%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-pygments.spec') {$Source0="https://github.com/pygments/pygments/archive/refs/tags/%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-pyinstaller.spec') {$Source0="https://github.com/pyinstaller/pyinstaller/archive/refs/tags/v%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-pyjsparser.spec') {$Source0="https://github.com/pyinstaller/pyinstaller/archive/refs/tags/v%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-pyopenssl.spec') {$Source0="https://github.com/pyca/pyopenssl/archive/refs/tags/%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-pyrsistent.spec') {$Source0="https://github.com/tobgu/pyrsistent/archive/refs/tags/v%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-pyserial.spec') {$Source0="https://github.com/pyserial/pyserial/archive/refs/tags/v%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-pyserial.spec') {$Source0="https://github.com/pyserial/pyserial/archive/refs/tags/v%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-pytest.spec') {$Source0="https://github.com/pytest-dev/pytest/archive/refs/tags/%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-pyudev.spec') {$Source0="https://github.com/pyudev/pyudev/archive/refs/tags/v%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-pyvmomi.spec') {$Source0="https://github.com/vmware/pyvmomi/archive/refs/tags/v%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-resolvelib.spec') {$Source0="https://github.com/sarugaku/resolvelib/archive/refs/tags/%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-scp.spec') {$Source0="https://github.com/jbardin/scp.py/archive/refs/tags/v%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-service_identity.spec') {$Source0="https://github.com/pyca/service-identity/archive/refs/tags/%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-simplejson.spec') {$Source0="https://github.com/simplejson/simplejson/archive/refs/tags/v%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-sqlalchemy.spec') {$Source0="https://github.com/sqlalchemy/sqlalchemy/archive/refs/tags/%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-subprocess32.spec') {$Source0="https://github.com/google/python-subprocess32/archive/refs/tags/%{version}.tar.gz"} # archived October 27th 2022
-
-        elseif ($_.Spec -ilike 'python-terminaltables.spec') {$Source0="https://github.com/Robpol86/terminaltables/archive/refs/tags/v%{version}.tar.gz"} # archived 7th December 2021
-
-        elseif ($_.Spec -ilike 'python-toml.spec') {$Source0="https://github.com/uiri/toml/archive/refs/tags/%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-vcversioner.spec') {$Source0="https://github.com/habnabit/vcversioner/archive/refs/tags/%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-virtualenv.spec') {$Source0="https://github.com/pypa/virtualenv/archive/refs/tags/%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-webob.spec') {$Source0="https://github.com/Pylons/webob/archive/refs/tags/%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'python-werkzeug.spec') {$Source0="https://github.com/pallets/werkzeug/archive/refs/tags/%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'rabbitmq.spec') {$Source0="https://github.com/rabbitmq/rabbitmq-server/archive/refs/tags/v%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'wavefront-proxy.spec') {$Source0="https://github.com/wavefrontHQ/wavefront-proxy/archive/refs/tags/v%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'wayland.spec') {$Source0="https://gitlab.freedesktop.org/wayland/wayland/-/archive/%{version}/wayland-%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'xinetd.spec') {$Source0="https://github.com/xinetd-org/xinetd/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'alsa-utils.spec') {$Source0="https://github.com/alsa-project/alsa-utils/archive/refs/tags/v%{version}.tar.gz"}
 
         elseif ($_.Spec -ilike 'aufs-util.spec') {$Source0="https://github.com/sfjro/aufs-linux/archive/refs/tags/v%{version}.tar.gz"} # see https://github.com/sfjro for older linux kernels
 
         elseif ($_.Spec -ilike 'ansible.spec') {$Source0="https://github.com/ansible/ansible/archive/refs/tags/v%{version}.tar.gz"}
 
         elseif ($_.Spec -ilike 'apache-ant.spec') {$Source0="https://github.com/apache/ant/archive/refs/tags/rel/%{version}.tar.gz"}
+
+        elseif ($_.Spec -ilike 'apache-maven.spec') {$Source0="https://github.com/apache/maven/archive/refs/tags/maven-%{version}.tar.gz"}
 
         elseif ($_.Spec -ilike 'apache-tomcat-native.spec') {$Source0="https://github.com/apache/tomcat-native/archive/refs/tags/%{version}.tar.gz"}
 
@@ -436,15 +265,19 @@ function CheckURLHealth {
 
         elseif ($_.Spec -ilike 'clang.spec') {$Source0="https://github.com/llvm/llvm-project/releases/download/llvmorg-%{version}/clang-%{version}.src.tar.xz"}
 
+        elseif ($_.Spec -ilike 'chrpath.spec') {$Source0="https://github.com/jwilk-mirrors/chrpath/archive/refs/tags/RELEASE_%{version}.tar.gz"}
+
         elseif ($_.Spec -ilike 'cloud-init.spec') {$Source0="https://github.com/canonical/cloud-init/archive/refs/tags/%{version}.tar.gz"}
 
-        elseif ($_.Spec -ilike 'confd.spec') {$Source0="https://github.com/projectcalico/confd/archive/refs/tags/v%{version}.dev.tar.gz"} # Deprecated, new location https://github.com/projectcalico/calico
+        elseif ($_.Spec -ilike 'confd.spec') {$Source0="https://github.com/projectcalico/confd/archive/refs/tags/v%{version}-0.dev.tar.gz"} # Deprecated, new location https://github.com/projectcalico/calico
     
         elseif ($_.Spec -ilike 'conmon.spec') {$Source0="https://github.com/containers/conmon/archive/refs/tags/v%{version}.tar.gz"}
     
         elseif ($_.Spec -ilike 'conmon.spec') {$Source0="https://github.com/containers/conmon/archive/refs/tags/v%{version}.tar.gz"}
     
         elseif ($_.Spec -ilike 'coredns.spec') {$Source0="https://github.com/coredns/coredns/archive/refs/tags/v%{version}.tar.gz"}
+
+        elseif ($_.Spec -ilike 'cri-tools.spec') {$Source0="https://github.com/kubernetes-sigs/cri-tools/archive/refs/tags/v%{version}.tar.gz"}
 
         elseif ($_.Spec -ilike 'cryptsetup.spec') {$Source0="https://github.com/mbroz/cryptsetup/archive/refs/tags/v%{version}.tar.gz"}
 
@@ -462,11 +295,19 @@ function CheckURLHealth {
 
         elseif ($_.Spec -ilike 'docker-20.10.spec') {$Source0="https://github.com/moby/moby/archive/refs/tags/v%{version}.tar.gz"}
 
+        elseif ($_.Spec -ilike 'efibootmgr.spec') {$Source0="https://github.com/rhboot/efibootmgr/archive/refs/tags/%{version}.tar.gz"}
+
         elseif ($_.Spec -ilike 'erlang-sd_notify.spec') {$Source0="https://github.com/systemd/erlang-sd_notify/archive/refs/tags/v%{version}.tar.gz"}
 
         elseif ($_.Spec -ilike 'fatrace.spec') {$Source0="https://github.com/martinpitt/fatrace/archive/refs/tags/%{version}.tar.gz"}
 
         elseif ($_.Spec -ilike 'flex.spec') {$Source0="https://github.com/westes/flex/archive/refs/tags/v%{version}.tar.gz"}
+
+        elseif ($_.Spec -ilike 'file.spec') {$Source0="http://ftp.astron.com/pub/file/file-%{version}.tar.gz"}
+
+        elseif ($_.Spec -ilike 'fribidi.spec') {$Source0="https://github.com/fribidi/fribidi/archive/refs/tags/v%{version}.tar.gz"}
+
+        elseif ($_.Spec -ilike 'gtest.spec') {$Source0="https://github.com/google/googletest/archive/refs/tags/v%{version}.tar.gz"}
 
         elseif ($_.Spec -ilike 'glib.spec') {$Source0="https://github.com/GNOME/glib/archive/refs/tags/%{version}.tar.gz"}
 
@@ -494,7 +335,9 @@ function CheckURLHealth {
 
         elseif ($_.Spec -ilike 'imagemagick.spec') {$Source0="https://github.com/ImageMagick/ImageMagick/archive/refs/tags/%{version}.tar.gz"} # deprecated on 6th November 2022
 
-        # elseif ($_.Spec -ilike 'inih.spec') {$Source0="https://github.com/benhoyt/inih/archive/refs/tags/%{version}.tar.gz"} # r%{version} ?
+        elseif ($_.Spec -ilike 'inih.spec') {$Source0="https://github.com/benhoyt/inih/archive/refs/tags/r%{version}.tar.gz"}
+
+        elseif ($_.Spec -ilike 'ipmitool.spec') {$Source0="https://github.com/ipmitool/ipmitool/archive/refs/tags/IPMITOOL_%{version}.tar.gz"}
 
         elseif ($_.Spec -ilike 'json-glib.spec') {$Source0="https://github.com/GNOME/json-glib/archive/refs/tags/%{version}.tar.gz"}
 
@@ -506,11 +349,21 @@ function CheckURLHealth {
 
         elseif ($_.Spec -ilike 'libconfig.spec') {$Source0="https://github.com/hyperrealm/libconfig/archive/refs/tags/v%{version}.tar.gz"}
 
+        elseif ($_.Spec -ilike 'libgcrypt.spec') {$Source0="https://gnupg.org/ftp/gcrypt/libgcrypt/libgcrypt-%{version}.tar.bz2"}
+         
+        elseif ($_.Spec -ilike 'libgpg-error.spec') {$Source0="https://gnupg.org/ftp/gcrypt/libgpg-error/libgpg-error-%{version}.tar.bz2"}
+
+        elseif ($_.Spec -ilike 'libXinerama.spec') {$Source0="https://gitlab.freedesktop.org/xorg/lib/libxinerama/-/archive/libXinerama-%{version}/libxinerama-libXinerama-%{version}.tar.gz"}
+
         elseif ($_.Spec -ilike 'libffi.spec') {$Source0="https://github.com/libffi/libffi/archive/refs/tags/v%{version}.tar.gz"}
+
+        elseif ($_.Spec -ilike 'libnl.spec') {$Source0="https://github.com/thom311/libnl/archive/refs/tags/libnl%{version}.tar.gz"}       
 
         elseif ($_.Spec -ilike 'librsync.spec') {$Source0="https://github.com/librsync/librsync/archive/refs/tags/v%{version}.tar.gz"}
 
         elseif ($_.Spec -ilike 'libsigc++.spec') {$Source0="https://github.com/libsigcplusplus/libsigcplusplus/archive/refs/tags/%{version}.tar.gz"}
+
+        elseif ($_.Spec -ilike 'libsoup.spec') {$Source0="https://github.com/GNOME/libsoup/archive/refs/tags/%{version}.tar.gz"}       
 
         elseif ($_.Spec -ilike 'libxml2.spec') {$Source0="https://github.com/GNOME/libxml2/archive/refs/tags/v%{version}.tar.gz"}
 
@@ -521,10 +374,16 @@ function CheckURLHealth {
         elseif ($_.Spec -ilike 'llvm.spec') {$Source0="https://github.com/llvm/llvm-project/releases/download/llvmorg-%{version}/llvm-%{version}.src.tar.xz"}
 
         elseif ($_.Spec -ilike 'lm-sensors.spec') {$Source0="https://github.com/lm-sensors/lm-sensors/archive/refs/tags/V%{version}.tar.gz"}
+
+        elseif ($_.Spec -ilike 'lshw.spec') {$Source0="https://github.com/lyonel/lshw/archive/refs/tags/%{version}.tar.gz"}
+
+        elseif ($_.Spec -ilike 'lasso.spec') {$Source0="https://dev.entrouvert.org/lasso/lasso-%{version}.tar.gz"}
     
         elseif ($_.Spec -ilike 'mariadb.spec') {$Source0="https://github.com/MariaDB/server/archive/refs/tags/mariadb-%{version}.tar.gz"}
 
         elseif ($_.Spec -ilike 'mc.spec') {$Source0="https://github.com/MidnightCommander/mc/archive/refs/tags/%{version}.tar.gz"}
+
+        elseif ($_.Spec -ilike 'mesa.spec') {$Source0="https://gitlab.freedesktop.org/mesa/mesa/-/archive/mesa-%{version}/mesa-mesa-%{version}.tar.gz"}
 
         elseif ($_.Spec -ilike 'mkinitcpio.spec') {$Source0="https://github.com/archlinux/mkinitcpio/archive/refs/tags/v%{version}.tar.gz"}
     
@@ -532,19 +391,129 @@ function CheckURLHealth {
     
         elseif ($_.Spec -ilike 'mysql.spec') {$Source0="https://github.com/mysql/mysql-server/archive/refs/tags/mysql-%{version}.tar.gz"}
 
+        elseif ($_.Spec -ilike 'ncurses.spec') {$Source0="https://github.com/ThomasDickey/ncurses-snapshots/archive/refs/tags/v%{version}.tar.gz"}        
+      
+        elseif ($_.Spec -ilike 'openldap.spec') {$Source0="https://github.com/openldap/openldap/archive/refs/tags/OPENLDAP_REL_ENG_%{version}.tar.gz"}
+
         elseif ($_.Spec -ilike 'ostree.spec') {$Source0="https://github.com/ostreedev/ostree/archive/refs/tags/v%{version}.tar.gz"}
 
         elseif ($_.Spec -ilike 'pam_tacplus.spec') {$Source0="https://github.com/ostreedev/ostree/archive/refs/tags/v%{version}.tar.gz"}
 
         elseif ($_.Spec -ilike 'pandoc.spec') {$Source0="https://github.com/jgm/pandoc/archive/refs/tags/%{version}.tar.gz"}
 
+        elseif ($_.Spec -ilike 'patch.spec') {$Source0="https://ftp.gnu.org/gnu/patch/patch-%{version}.tar.gz"}
+
+        elseif ($_.Spec -ilike 'popt.spec') {$Source0="http://rpm5.org/files/popt/popt-%{version}.tar.gz"}
+
         elseif ($_.Spec -ilike 'powershell.spec') {$Source0="https://github.com/PowerShell/PowerShell/archive/refs/tags/v%{version}.tar.gz"}
+
+        elseif ($_.Spec -ilike 'pth.spec') {$Source0="https://ftp.gnu.org/gnu/pth/pth-%{version}.tar.gz"}
 
         elseif ($_.Spec -ilike 'pycurl.spec') {$Source0="https://github.com/pycurl/pycurl/archive/refs/tags/REL_%{version}.tar.gz"}
 
         elseif ($_.Spec -ilike 'python-requests.spec') {$Source0="https://github.com/psf/requests/archive/refs/tags/v%{version}.tar.gz"}
-
         elseif ($_.Spec -ilike 'python-urllib3.spec') {$Source0="https://github.com/urllib3/urllib3/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'pmd-nextgen.spec') {$Source0="https://github.com/vmware/pmd/archive/refs/tags/v%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-dateutil.spec') {$Source0="https://github.com/dateutil/dateutil/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-alabaster.spec') {$Source0="https://github.com/bitprophet/alabaster/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-altgraph.spec') {$Source0="https://github.com/ronaldoussoren/altgraph/releases/tag/v%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-appdirs.spec') {$Source0="https://github.com/ActiveState/appdirs/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-argparse.spec') {$Source0="https://github.com/ThomasWaldmann/argparse/archive/refs/tags/r140.tar.gz"} #github archived
+        elseif ($_.Spec -ilike 'python-atomicwrites.spec') {$Source0="https://github.com/untitaker/python-atomicwrites/archive/refs/tags/1.4.1.tar.gz"} #github archived
+        elseif ($_.Spec -ilike 'python-attrs.spec') {$Source0="https://github.com/python-attrs/attrs/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-autopep8.spec') {$Source0="https://github.com/hhatto/autopep8/archive/refs/tags/v%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-babel.spec') {$Source0="https://github.com/python-babel/babel/archive/refs/tags/v%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-backports.ssl_match_hostname*') {} # see https://github.com/python/typeshed
+        elseif ($_.Spec -ilike 'python-altgraph.spec') {$Source0="https://github.com/ronaldoussoren/altgraph/archive/refs/tags/v%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-bcrypt.spec') {$Source0="https://github.com/pyca/bcrypt/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-boto3.spec') {$Source0="https://github.com/boto/boto3/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-botocore.spec') {$Source0="https://github.com/boto/botocore/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-cachecontrol.spec') {$Source0="https://github.com/ionrock/cachecontrol/archive/refs/tags/v%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-cassandra-driver.spec') {$Source0="https://github.com/datastax/python-driver/archive/refs/tags/%{version}.tar.gz"} 
+        elseif ($_.Spec -ilike 'python-certifi.spec') {$Source0="https://github.com/certifi/python-certifi/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-chardet.spec') {$Source0="https://github.com/chardet/chardet/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-charset-normalizer.spec') {$Source0="https://github.com/Ousret/charset_normalizer/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-click.spec') {$Source0="https://github.com/pallets/click/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-ConcurrentLogHandler.spec') {$Source0="https://github.com/Preston-Landers/concurrent-log-handler/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-certifi.spec') {$Source0="https://github.com/certifi/python-certifi/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-configparser.spec') {$Source0="https://github.com/jaraco/configparser/archive/refs/tags/v%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-constantly.spec') {$Source0="https://github.com/twisted/constantly/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-cql.spec') {$Source0="https://github.com/datastax/python-driver/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-decorator.spec') {$Source0="https://github.com/micheles/decorator/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-deepmerge.spec') {$Source0="https://github.com/toumorokoshi/deepmerge/archive/refs/tags/v%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-defusedxml.spec') {$Source0="https://github.com/tiran/defusedxml/archive/refs/tags/v%{version}.tar.gz"}   
+        elseif ($_.Spec -ilike 'python-distro.spec') {$Source0="https://github.com/python-distro/distro/archive/refs/tags/v%{version}.tar.gz"} 
+        elseif ($_.Spec -ilike 'python-docopt.spec') {$Source0="https://github.com/docopt/docopt/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-email-validator.spec') {$Source0="https://github.com/JoshData/python-email-validator/archive/refs/tags/v%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-ethtool.spec') {$Source0="https://github.com/fedora-python/python-ethtool/archive/refs/tags/v%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-filelock.spec') {$Source0="https://github.com/tox-dev/py-filelock/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-geomet.spec') {$Source0="https://github.com/geomet/geomet/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-gevent.spec') {$Source0="https://github.com/gevent/gevent/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-gevent.spec') {$Source0="https://github.com/gevent/gevent/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-graphviz.spec') {$Source0="https://github.com/xflr6/graphviz/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-greenlet.spec') {$Source0="https://github.com/python-greenlet/greenlet/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-hyperlink.spec') {$Source0="https://github.com/python-hyper/hyperlink/archive/refs/tags/v%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-hypothesis.spec') {$Source0="https://github.com/HypothesisWorks/hypothesis/archive/refs/tags/hypothesis-python-%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-idna.spec') {$Source0="https://github.com/kjd/idna/archive/refs/tags/v%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-imagesize.spec') {$Source0="https://github.com/shibukawa/imagesize_py/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-incremental.spec') {$Source0="https://github.com/twisted/incremental/archive/refs/tags/incremental-%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-iniparse.spec') {$Source0="https://github.com/candlepin/python-iniparse/archive/refs/tags/%{version}.tar.gz"}   
+        elseif ($_.Spec -ilike 'python-ipaddress.spec') {$Source0="https://github.com/phihag/ipaddress/archive/refs/tags/v%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-jinja.spec') {$Source0="https://github.com/pallets/jinja/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-jmespath.spec') {$Source0="https://github.com/jmespath/jmespath.py/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-jsonpatch.spec') {$Source0="https://github.com/stefankoegl/python-json-patch/archive/refs/tags/v%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-M2Crypto.spec') {$Source0="https://gitlab.com/m2crypto/m2crypto/-/archive/%{version}/m2crypto-%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-mako.spec') {$Source0="https://github.com/sqlalchemy/mako/archive/refs/tags/rel_%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-markupsafe.spec') {$Source0="https://github.com/pallets/markupsafe/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-more-itertools.spec') {$Source0="https://github.com/more-itertools/more-itertools/archive/refs/tags/v%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-msgpack.spec') {$Source0="https://github.com/msgpack/msgpack-python/archive/refs/tags/v%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-ndg-httpsclient.spec') {$Source0="https://github.com/cedadev/ndg_httpsclient/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-jinja2.spec') {$Source0="https://github.com/pallets/jinja/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-ntplib.spec') {$Source0="https://github.com/cf-natali/ntplib/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-oauthlib.spec') {$Source0="https://github.com/oauthlib/oauthlib/archive/refs/tags/v%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-packaging.spec') {$Source0="https://github.com/pypa/packaging/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-pam.spec') {$Source0="https://github.com/FirefighterBlu3/python-pam/archive/refs/tags/v%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-pexpect.spec') {$Source0="https://github.com/pexpect/pexpect/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-pluggy.spec') {$Source0="https://github.com/pytest-dev/pluggy/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-ply.spec') {$Source0="https://github.com/dabeaz/ply/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-prometheus_client.spec') {$Source0="https://github.com/prometheus/client_python/archive/refs/tags/v%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-py.spec') {$Source0="https://github.com/pytest-dev/py/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-pyasn1-modules.spec') {$Source0="https://github.com/etingof/pyasn1-modules/archive/refs/tags/v%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-pycodestyle.spec') {$Source0="https://github.com/FirefighterBlu3/python-pam/archive/refs/tags/v%{version}.tar.gz"} # duplicate of python-pam
+        elseif ($_.Spec -ilike 'python-pycryptodomex.spec') {$Source0="https://github.com/Legrandin/pycryptodome/archive/refs/tags/v%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-pyhamcrest.spec') {$Source0="https://github.com/hamcrest/PyHamcrest/archive/refs/tags/V%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-pyinstaller-hooks-contrib.spec') {$Source0="https://github.com/pyinstaller/pyinstaller-hooks-contrib/archive/refs/tags/v%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-pyjwt.spec') {$Source0="https://github.com/jpadilla/pyjwt/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-pyparsing.spec') {$Source0="https://github.com/pyparsing/pyparsing/archive/refs/tags/pyparsing_%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-pycparser.spec') {$Source0="https://github.com/eliben/pycparser/archive/refs/tags/release_v%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-pycparser.spec') {$Source0="https://github.com/eliben/pycparser/archive/refs/tags/release_v%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-pycryptodome.spec') {$Source0="https://github.com/Legrandin/pycryptodome/archive/refs/tags/v%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-pydantic.spec') {$Source0="https://github.com/pydantic/pydantic/archive/refs/tags/v%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-pyflakes.spec') {$Source0="https://github.com/PyCQA/pyflakes/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-pygments.spec') {$Source0="https://github.com/pygments/pygments/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-pyinstaller.spec') {$Source0="https://github.com/pyinstaller/pyinstaller/archive/refs/tags/v%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-pyjsparser.spec') {$Source0="https://github.com/pyinstaller/pyinstaller/archive/refs/tags/v%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-PyNaCl.spec') {$Source0="https://github.com/pyca/pynacl/archive/refs/tags/%{version}.tar.gz"}      
+        elseif ($_.Spec -ilike 'python-pyopenssl.spec') {$Source0="https://github.com/pyca/pyopenssl/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-pyrsistent.spec') {$Source0="https://github.com/tobgu/pyrsistent/archive/refs/tags/v%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-pyserial.spec') {$Source0="https://github.com/pyserial/pyserial/archive/refs/tags/v%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-pytest.spec') {$Source0="https://github.com/pytest-dev/pytest/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-pyudev.spec') {$Source0="https://github.com/pyudev/pyudev/archive/refs/tags/v%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-pyvmomi.spec') {$Source0="https://github.com/vmware/pyvmomi/archive/refs/tags/v%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-resolvelib.spec') {$Source0="https://github.com/sarugaku/resolvelib/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-scp.spec') {$Source0="https://github.com/jbardin/scp.py/archive/refs/tags/v%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-service_identity.spec') {$Source0="https://github.com/pyca/service-identity/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-simplejson.spec') {$Source0="https://github.com/simplejson/simplejson/archive/refs/tags/v%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-sqlalchemy.spec') {$Source0="https://github.com/sqlalchemy/sqlalchemy/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-subprocess32.spec') {$Source0="https://github.com/google/python-subprocess32/archive/refs/tags/%{version}.tar.gz"} # archived October 27th 2022
+        elseif ($_.Spec -ilike 'python-terminaltables.spec') {$Source0="https://github.com/Robpol86/terminaltables/archive/refs/tags/v%{version}.tar.gz"} # archived 7th December 2021
+        elseif ($_.Spec -ilike 'python-toml.spec') {$Source0="https://github.com/uiri/toml/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-vcversioner.spec') {$Source0="https://github.com/habnabit/vcversioner/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-virtualenv.spec') {$Source0="https://github.com/pypa/virtualenv/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-webob.spec') {$Source0="https://github.com/Pylons/webob/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'python-werkzeug.spec') {$Source0="https://github.com/pallets/werkzeug/archive/refs/tags/%{version}.tar.gz"}
+
+        elseif ($_.Spec -ilike 'rabbitmq.spec') {$Source0="https://github.com/rabbitmq/rabbitmq-server/archive/refs/tags/v%{version}.tar.gz"}
 
         elseif ($_.Spec -ilike 'rpcsvc-proto.spec') {$Source0="https://github.com/thkukuk/rpcsvc-proto/archive/refs/tags/v%{version}.tar.gz"}
 
@@ -566,18 +535,20 @@ function CheckURLHealth {
 
         elseif ($_.Spec -ilike 'uwsgi.spec') {$Source0="https://github.com/unbit/uwsgi/archive/refs/tags/%{version}.tar.gz"}
 
-        elseif ($_.Spec -ilike 'mesa.spec') {$Source0="https://gitlab.freedesktop.org/mesa/mesa/-/archive/mesa-%{version}/mesa-mesa-%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'wavefront-proxy.spec') {$Source0="https://github.com/wavefrontHQ/wavefront-proxy/archive/refs/tags/proxy-%{version}.tar.gz"}
 
-        elseif ($_.Spec -ilike 'alsa-lib.spec') {$Source0="https://github.com/alsa-project/alsa-lib/archive/refs/tags/v%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'wayland.spec') {$Source0="https://gitlab.freedesktop.org/wayland/wayland/-/archive/%{version}/wayland-%{version}.tar.gz"}
 
-        elseif ($_.Spec -ilike 'alsa-utils.spec') {$Source0="https://github.com/alsa-project/alsa-utils/archive/refs/tags/v%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'apache-maven.spec') {$Source0="https://github.com/apache/maven/archive/refs/tags/maven-%{version}.tar.gz"}
-
-        elseif ($_.Spec -ilike 'efibootmgr.spec') {$Source0="https://github.com/rhboot/efibootmgr/archive/refs/tags/%{version}.tar.gz"}
+        elseif ($_.Spec -ilike 'wget.spec') {$Source0="https://ftp.gnu.org/gnu/wget/wget-%{version}.tar.gz"}
         
-        
-       
+        elseif ($_.Spec -ilike 'xerces-c.spec') {$Source0="https://github.com/apache/xerces-c/archive/refs/tags/v%{version}.tar.gz"}   
+
+        elseif ($_.Spec -ilike 'xinetd.spec') {$Source0="https://github.com/xinetd-org/xinetd/archive/refs/tags/xinetd-%{version}.tar.gz"}
+
+
+
+          
+     
 
         # add url path if necessary and possible
         if (($Source0 -notlike '*//*') -and ($_.url -ne ""))
@@ -654,34 +625,40 @@ function CheckURLHealth {
                                 $urlhealth = urlhealth($Source0)
                                 if ($urlhealth -ne "200")
                                 {
+                                    # some versions have a _ in their version number
                                     $Source0=$Source0Save
-
-                                    $Name=""
-                                    $NameArray=($_.Name).split("-")
-                                    if ($NameArray.length -gt 1) { $Name=$NameArray[$NameArray.length -1]}
-
-                                    if ($Name -ne "")
+                                    $versionnew = ([string]$version).Replace("_",".")
+                                    $Source0 = $Source0 -ireplace $version,$versionnew
+                                    $urlhealth = urlhealth($Source0)
+                                    if ($urlhealth -ne "200")
                                     {
-                                        $replace=[System.String]::Concat(('/archive/refs/tags/'),$Name,"-",$version)
-                                        $replacenew=[System.String]::Concat(('/archive/refs/tags/v'),$version)
-                                        $Source0 = $Source0 -ireplace $replace,$replacenew
+                                        # some versions need a - in their version number
+                                        $Source0=$Source0Save
+                                        $versionnew = ([string]$version).Replace(".","-")
+                                        $Source0 = $Source0 -ireplace $version,$versionnew
                                         $urlhealth = urlhealth($Source0)
                                         if ($urlhealth -ne "200")
                                         {
+                                            # some versions need a _ in their version number
                                             $Source0=$Source0Save
-                                            $versionnew = $version -ireplace 'rel_',''
-                                            $versionnew = $versionnew -ireplace '_','.'
+                                            $versionnew = ([string]$version).Replace(".","_")
                                             $Source0 = $Source0 -ireplace $version,$versionnew
                                             $urlhealth = urlhealth($Source0)
                                             if ($urlhealth -ne "200")
                                             {
-                                                $Source0=$Source0Save
-                                                $versionnew = $version -ireplace 'r',''
-                                                $Source0 = $Source0 -ireplace $version,$versionnew
-                                                $urlhealth = urlhealth($Source0)
-                                                if ($urlhealth -ne "200")
+                                                $Name=""
+                                                $NameArray=($_.Name).split("-")
+                                                if ($NameArray.length -gt 0) { $Name=$NameArray[$NameArray.length -1]}
+                                                if ($Name -ne "")
                                                 {
-                                                    $Source0=$Source0Save
+                                                    $replace=[System.String]::Concat(('/archive/refs/tags/'),$Name,"-",$version)
+                                                    $replacenew=[System.String]::Concat(('/archive/refs/tags/v'),$version)
+                                                    $Source0 = $Source0 -ireplace $replace,$replacenew
+                                                    $urlhealth = urlhealth($Source0)
+                                                    if ($urlhealth -ne "200")
+                                                    {
+                                                        $Source0=$Source0Save
+                                                    }
                                                 }
                                             }
                                         }
@@ -796,7 +773,74 @@ function CheckURLHealth {
             $SourceTagURL=$SourceTagURL + "/tags"
             try{
                 $Names = (invoke-restmethod -uri $SourceTagURL -usebasicparsing -headers @{Authorization = "Bearer $accessToken"})
-                $Names = ($Names.name) -replace $replace,"" | foreach {echo $_"-zz"}
+                if ($_.spec -ilike 'bindutils.spec') {$replace="wpk-get-rid-of-up-downgrades-" }
+                elseif ($_.spec -ilike 'apache-maven.spec') {$replace="workspace-v0"}
+                elseif ($_.spec -ilike 'atk.spec') {$replace="Initial"}
+                elseif ($_.spec -ilike 'chrpath.spec') {$replace="RELEASE_"}
+                elseif ($_.spec -ilike 'cloud-init.spec') {$replace="ubuntu-"}
+                elseif ($_.spec -ilike 'colm.spec') {$replace="colm-barracuda-v"}
+                elseif ($_.spec -ilike 'docker-20.10.spec') {$replace="xdocs-v"}
+                elseif ($_.spec -ilike 'dracut.spec') {$replace="RHEL-"}
+                elseif ($_.spec -ilike 'efibootmgr.spec') {$replace="rhel-"}
+                elseif ($_.spec -ilike 'erlang.spec') {$replace="R16B"}
+                elseif ($_.spec -ilike 'frr.spec') {$replace="reindent-master-"}
+                elseif ($_.spec -ilike 'glib-networking.spec') {$replace="glib-"}
+                elseif ($_.spec -ilike 'glslang.spec') {$replace="vulkan-"}
+                elseif ($_.spec -ilike 'gnome-common.spec') {$replace="version_"}
+                elseif ($_.spec -ilike 'gobject-introspection.spec') {$replace="INITIAL_RELEASE"}
+                elseif ($_.spec -ilike 'gstreamer.spec') {$replace="sharp-"}
+                elseif ($_.spec -ilike 'gtk3.spec') {$replace="VIRTUAL_ATOM-22-06-"}
+                elseif ($_.spec -ilike 'iperf.spec') {$replace="trunk"}
+                elseif ($_.spec -ilike 'ipmitool.spec') {$replace="ipmitool"}
+                elseif ($_.spec -ilike 'json-glib.spec') {$replace="json-glib-"}
+                elseif ($_.spec -ilike 'jsoncpp.spec') {$replace="svn-release-"}
+                elseif ($_.spec -ilike 'kubernetes-dns.spec') {$replace="test"}
+                elseif ($_.spec -ilike 'libnl.spec') {$replace="libnl"}
+                elseif ($_.spec -ilike 'libpsl.spec') {$replace="libpsl-"}
+                elseif ($_.spec -ilike 'librepo.spec') {$replace="librepo-"}
+                elseif ($_.spec -ilike 'libsolv.spec') {$replace="BASE-SuSE-Code-13_"}
+                elseif ($_.spec -ilike 'libsoup.spec') {$replace="SOUP_"}
+                elseif ($_.spec -ilike 'libX11.spec') {$replace="xf86-4_4_99_"}
+                elseif ($_.spec -ilike 'mariadb.spec') {$replace="tokumx-1.4.0+hotfix."}
+                elseif ($_.spec -ilike 'mc.spec') {$replace="mc-"}
+                elseif ($_.spec -ilike 'mysql.spec') {$replace="mysql-cluster-"}
+                elseif ($_.spec -ilike 'openldap.spec') {$replace="UTBM_"}
+                elseif ($_.spec -ilike 'pandoc.spec') {$replace="pandoc-server-"}
+                elseif ($_.spec -ilike 'pkg-config.spec') {$replace="pixman-"}
+                elseif ($_.spec -ilike 'python-cassandra-driver.spec') {$replace="3.9-doc-backports-from-3.1"}
+                elseif ($_.spec -ilike 'python-decorator.spec') {$replace="release-"}
+                elseif ($_.spec -ilike 'ragel.spec') {$replace="ragel-pre-colm"}
+                elseif ($_.spec -ilike 'redis.spec') {$replace="with-deprecated-diskstore"}
+                elseif ($_.spec -ilike 'sysdig.spec') {$replace="sysdig-inspect/"}
+                elseif ($_.spec -ilike 'uwsgi.spec') {$replace="no_server_mode"}
+                elseif ($_.spec -ilike 'vulkan-headers.spec') {$replace="vksc"}
+                elseif ($_.spec -ilike 'vulkan-loader.spec') {$replace="windows-rt-"}
+                elseif ($_.spec -ilike 'wavefront-proxy.spec') {$replace="wavefront-"}
+                elseif ($_.spec -ilike 'xinetd.spec') {$replace="xinetd-"}
+                elseif ($_.spec -ilike 'zstd.spec') {$replace="zstd-"}
+
+                $replace1=""
+                if ($_.spec -ilike 'efibootmgr.spec') {$replace1="Revision_"}
+                elseif ($_.spec -ilike 'frr.spec') {$replace1="reindent-"}
+                elseif ($_.spec -ilike 'glslang.spec') {$replace1="untagged-827e5412b9827e5388e"}
+                elseif ($_.spec -ilike 'gstreamer.spec') {$replace1="sharp-"}
+                elseif ($_.spec -ilike 'jsoncpp.spec') {$replace1="svn-import"}
+                elseif ($_.spec -ilike 'libpsl.spec') {$replace1="debian/"}
+                elseif ($_.spec -ilike 'libsolv.spec') {$replace1="BASE-SuSE-Code-12_3-Branch"}
+                elseif ($_.spec -ilike 'libsoup.spec') {$replace1="libsoup-pre214-branch-base"}
+                elseif ($_.spec -ilike 'libX11.spec') {$replace1="xf86-4_4_"}
+                elseif ($_.spec -ilike 'mariadb.spec') {$replace1="tokumx-"}
+                elseif ($_.spec -ilike 'open-vm-tools.spec') {$replace1="stable-"}
+                elseif ($_.spec -ilike 'openldap.spec') {$replace1="URE_"}
+                elseif ($_.spec -ilike 'pandoc.spec') {$replace1="pandoc-lua-engine-"}
+                elseif ($_.spec -ilike 'python-cassandra-driver.spec') {$replace1="-backport-prepared-slack"}
+                elseif ($_.spec -ilike 'python-decorator.spec') {$replace1="decorator-"}
+                elseif ($_.spec -ilike 'sysdig.spec') {$replace1="simpledriver-auto-dragent-20170906"}
+
+                $Names = ($Names.name) -replace $replace,""
+                $Names = $Names -replace $replace1,""
+                $Names = $Names.Where({ $null -ne $_ })
+                $Names = $Names.Where({ "" -ne $_ }) | foreach {echo $_"-zz"}
                 $NameLatest = ($Names | sort-object -unique | select -last 1) -replace "-zz",""
             }
             catch{$NameLatest=""}
@@ -807,22 +851,24 @@ function CheckURLHealth {
         }
         elseif ($Source0 -ilike '*freedesktop.org*')
         {
-            if ($_.spec -ilike 'dbus.spec') {$SourceTagURL="https://gitlab.freedesktop.org/dbus/dbus/-/tags?format=atom"; $replace="dbus-"}
-            elseif ($_.spec -ilike 'dbus-glib.spec') {$SourceTagURL="https://gitlab.freedesktop.org/dbus/dbus-glib/-/tags?format=atom"; $replace="dbus-glib-"}
-            elseif ($_.spec -ilike 'dbus-python.spec') {$SourceTagURL="https://gitlab.freedesktop.org/dbus/dbus-python/-/tags?format=atom"; $replace="dbus-python-"}
-            elseif ($_.spec -ilike 'fontconfig.spec') {$SourceTagURL="https://gitlab.freedesktop.org/fontconfig/fontconfig/-/tags?format=atom"; $replace="fontconfig-"}
-            elseif ($_.spec -ilike 'gstreamer.spec') {$SourceTagURL="https://gitlab.freedesktop.org/gstreamer/gstreamer/-/tags?format=atom"; $replace="gstreamer-"}
-            elseif ($_.spec -ilike 'gstreamer-plugins-base.spec') {$SourceTagURL="https://gitlab.freedesktop.org/gstreamer/gst-plugins-base/-/tags?format=atom"; $replace="gstreamer-plugins-base-"}
-            elseif ($_.spec -ilike 'mesa.spec') {$SourceTagURL="https://gitlab.freedesktop.org/mesa/mesa/-/tags?format=atom"; $replace="mesa-"}
-            elseif ($_.spec -ilike 'modemmanager.spec') {$SourceTagURL="https://gitlab.freedesktop.org/modemmanager/modemmanager/-/tags?format=atom"; $replace="modemmanager-"}
-            elseif ($_.spec -ilike 'pixman.spec') {$SourceTagURL="https://gitlab.freedesktop.org/pixman/pixman/-/tags?format=atom"; $replace="pixman-"}
-            elseif ($_.spec -ilike 'polkit.spec') {$SourceTagURL="https://gitlab.freedesktop.org/polkit/polkit/-/tags?format=atom"; $replace="polkit-"}
-            elseif ($_.spec -ilike 'wayland.spec') {$SourceTagURL="https://gitlab.freedesktop.org/wayland/wayland/-/tags?format=atom"; $replace="wayland-"}
-            elseif ($_.spec -ilike 'wayland-protocols.spec') {$SourceTagURL="https://gitlab.freedesktop.org/wayland/wayland-protocols/-/tags?format=atom"; $replace="wayland-protocols-"}
+            if ($_.spec -ilike 'dbus.spec') {$SourceTagURL="https://gitlab.freedesktop.org/dbus/dbus/-/tags?format=atom"; $replace="dbus-";$ilike="*dbus-*"}
+            elseif ($_.spec -ilike 'dbus-glib.spec') {$SourceTagURL="https://gitlab.freedesktop.org/dbus/dbus-glib/-/tags?format=atom"; $replace="dbus-glib-";$ilike="*dbus-glib-*"}
+            elseif ($_.spec -ilike 'dbus-python.spec') {$SourceTagURL="https://gitlab.freedesktop.org/dbus/dbus-python/-/tags?format=atom"; $replace="dbus-python-";$ilike="*dbus-python-*"}
+            elseif ($_.spec -ilike 'fontconfig.spec') {$SourceTagURL="https://gitlab.freedesktop.org/fontconfig/fontconfig/-/tags?format=atom"; $replace="fontconfig-";$ilike="*fontconfig-*"}
+            elseif ($_.spec -ilike 'gstreamer.spec') {$SourceTagURL="https://gitlab.freedesktop.org/gstreamer/gstreamer/-/tags?format=atom"; $replace="gstreamer-";$ilike="*gstreamer-*"}
+            elseif ($_.spec -ilike 'gstreamer-plugins-base.spec') {$SourceTagURL="https://gitlab.freedesktop.org/gstreamer/gst-plugins-base/-/tags?format=atom"; $replace="gstreamer-plugins-base-";$ilike="*gstreamer-plugins-base-*"}
+            elseif ($_.spec -ilike 'mesa.spec') {$SourceTagURL="https://gitlab.freedesktop.org/mesa/mesa/-/tags?format=atom"; $replace="mesa-";$ilike="*mesa-*"}
+            elseif ($_.spec -ilike 'modemmanager.spec') {$SourceTagURL="https://gitlab.freedesktop.org/modemmanager/modemmanager/-/tags?format=atom"; $replace="modemmanager-";$ilike="*modemmanager-*"}
+            elseif ($_.spec -ilike 'pixman.spec') {$SourceTagURL="https://gitlab.freedesktop.org/pixman/pixman/-/tags?format=atom"; $replace="pixman-";$ilike="*pixman-*"}
+            elseif ($_.spec -ilike 'polkit.spec') {$SourceTagURL="https://gitlab.freedesktop.org/polkit/polkit/-/tags?format=atom"; $replace="polkit-";$ilike="*polkit-*"}
+            elseif ($_.spec -ilike 'wayland.spec') {$SourceTagURL="https://gitlab.freedesktop.org/wayland/wayland/-/tags?format=atom"; $replace="wayland-";$ilike="*wayland-*"}
+            elseif ($_.spec -ilike 'wayland-protocols.spec') {$SourceTagURL="https://gitlab.freedesktop.org/wayland/wayland-protocols/-/tags?format=atom"; $replace="wayland-protocols-";$ilike="*wayland-protocols-*"}
+            elseif ($_.spec -ilike 'libxinerama.spec') {$SourceTagURL="https://gitlab.freedesktop.org/xorg/lib/libxinerama/-/tags?format=atom"; $replace="libxinerama-";$ilike="*libXinerama-*"}
 
             try{
                 $Names = (invoke-restmethod -uri $SourceTagURL -usebasicparsing)
-                $NameLatest=($Names.title -replace $replace,"") | sort-object -unique | select -last 1
+                if ($ilike -eq "") {$NameLatest=($Names.title -replace $replace,"") | sort-object -unique | select -last 1}
+                else { $NameLatest=($Names.title | where-object {$_ -ilike $ilike}) -replace $replace,"" | sort-object -unique | select -last 1 }
             }
             catch{$NameLatest=""}
             if ($NameLatest -ne "")
@@ -830,6 +876,32 @@ function CheckURLHealth {
                 if (($Version -ireplace "v","") -lt ($NameLatest -ireplace "v","")) {$UpdateAvailable = $NameLatest}
             }
         }
+
+        # Archived Github repo signalization
+        $warning="Warning: repo isn't maintained anymore."
+        if ($_.Spec -ilike 'python-argparse.spec') {$UpdateAvailable=$warning}
+        elseif ($_.Spec -ilike 'python-atomicwrites.spec') {$UpdateAvailable=$warning}
+        elseif ($_.Spec -ilike 'python-subprocess32.spec') {$UpdateAvailable=$warning}
+        elseif ($_.Spec -ilike 'python-terminaltables.spec') {$UpdateAvailable=$warning}
+        elseif ($_.Spec -ilike 'confd.spec') {$UpdateAvailable=$warning}
+        elseif ($_.Spec -ilike 'cve-check-tool.spec') {$UpdateAvailable=$warning}
+        elseif ($_.Spec -ilike 'http-parser.spec') {$UpdateAvailable=$warning}
+        elseif ($_.Spec -ilike 'imagemagick.spec') {$UpdateAvailable=$warning}
+
+        $warning="Warning: Cannot detect correlating tags from the repo provided."
+        if (($_.Spec -ilike 'bluez-tools.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
+        elseif (($_.Spec -ilike 'dtb-raspberrypi.spec') -and ($UpdateAvailable="")) {$UpdateAvailable=$warning}
+        elseif (($_.Spec -ilike 'motd.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
+        elseif (($_.Spec -ilike 'pcstat.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
+        elseif (($_.Spec -ilike 'rubygem-aws-sdk-s3.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
+
+        $warning="Warning: duplicate of python-pam.spec"
+        if ($_.Spec -ilike 'python-pycodestyle.spec') {$UpdateAvailable=$warning}
+
+        $warning="Warning: Source0 seems invalid and no other public source has been found."
+        if ($_.Spec -ilike 'cdrkit.spec') {$UpdateAvailable=$warning}
+        elseif ($_.Spec -ilike 'finger.spec') {$UpdateAvailable=$warning}
+        elseif ($_.Spec -ilike 'pcre.spec') {$UpdateAvailable=$warning}
 
         $line=[System.String]::Concat($_.spec, ',',$_.source0,',',$Source0,',',$urlhealth,',',$UpdateAvailable)
         $Lines += $line
@@ -841,76 +913,99 @@ function CheckURLHealth {
 
 $access = Read-Host -Prompt "Please enter your Github Access Token."
 
-write-output "Generating URLHealth report for Photon OS 3.0 ..."
-GitPhoton -release "3.0"
-$Packages3=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-3.0
-CheckURLHealth -outputfile "$env:public\photonos-urlhealth-3.0_$((get-date).tostring("yyyMMddHHmm")).prn" -accessToken $access -CheckURLHealthPackageObject $Packages3
+$GeneratePh3URLHealthReport=$false
+$GeneratePh4URLHealthReport=$false
+$GeneratePh5URLHealthReport=$true
+$GeneratePhPackageReport=$false
+$GeneratePh4toPh5DiffHigherPackageVersionReport=$false
+$GeneratePh3toPh4DiffHigherPackageVersionReport=$false
+
+if ($GeneratePh3URLHealthReport -ieq $true)
+{
+    write-output "Generating URLHealth report for Photon OS 3.0 ..."
+    GitPhoton -release "3.0"
+    $Packages3=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-3.0
+    CheckURLHealth -outputfile "$env:public\photonos-urlhealth-3.0_$((get-date).tostring("yyyMMddHHmm")).prn" -accessToken $access -CheckURLHealthPackageObject $Packages3
+}
 
 
-write-output "Generating URLHealth report for Photon OS 4.0 ..."
-GitPhoton -release "4.0"
-$Packages4=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-4.0
-CheckURLHealth -outputfile "$env:public\photonos-urlhealth-4.0_$((get-date).tostring("yyyMMddHHmm")).prn" -accessToken $access -CheckURLHealthPackageObject $Packages4
+if ($GeneratePh4URLHealthReport -ieq $true)
+{
+    write-output "Generating URLHealth report for Photon OS 4.0 ..."
+    GitPhoton -release "4.0"
+    $Packages4=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-4.0
+    CheckURLHealth -outputfile "$env:public\photonos-urlhealth-4.0_$((get-date).tostring("yyyMMddHHmm")).prn" -accessToken $access -CheckURLHealthPackageObject $Packages4
+}
 
-write-output "Generating URLHealth report for Photon OS 5.0 ..."
-GitPhoton -release "5.0"
-$Packages5=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-5.0
-CheckURLHealth -outputfile "$env:public\photonos-urlhealth-5.0_$((get-date).tostring("yyyMMddHHmm")).prn" -accessToken $access -CheckURLHealthPackageObject $Packages5
+if ($GeneratePh5URLHealthReport -ieq $true)
+{
+    write-output "Generating URLHealth report for Photon OS 5.0 ..."
+    GitPhoton -release "5.0"
+    $Packages5=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-5.0
+    CheckURLHealth -outputfile "$env:public\photonos-urlhealth-5.0_$((get-date).tostring("yyyMMddHHmm")).prn" -accessToken $access -CheckURLHealthPackageObject $Packages5
+}
 
+if ($GeneratePhPackageReport -ieq $true)
+{
+    write-output "Generating Package Report ..."
+    # fetch + merge per branch
+    GitPhoton -release "1.0"
+    GitPhoton -release "2.0"
+    GitPhoton -release master
+    GitPhoton -release dev
+    cd $sourcepath
+    # read all files from branch
+    $Packages1=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-1.0
+    $Packages2=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-2.0
+    $PackagesMaster=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-master
+    $Packages0=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-dev
+    $result = $Packages1,$Packages2,$Packages3,$Packages4,$Packages5,$PackagesMaster| %{$_}|Select Spec,`
+    @{l='photon-1.0';e={if($_.Spec -in $Packages1.Spec) {$Packages1[$Packages1.Spec.IndexOf($_.Spec)].version}}},`
+    @{l='photon-2.0';e={if($_.Spec -in $Packages2.Spec) {$Packages2[$Packages2.Spec.IndexOf($_.Spec)].version}}},`
+    @{l='photon-3.0';e={if($_.Spec -in $Packages3.Spec) {$Packages3[$Packages3.Spec.IndexOf($_.Spec)].version}}},`
+    @{l='photon-4.0';e={if($_.Spec -in $Packages4.Spec) {$Packages4[$Packages4.Spec.IndexOf($_.Spec)].version}}},`
+    @{l='photon-5.0';e={if($_.Spec -in $Packages5.Spec) {$Packages5[$Packages5.Spec.IndexOf($_.Spec)].version}}},`
+    @{l='photon-dev';e={if($_.Spec -in $Packages0.Spec) {$Packages0[$Packages0.Spec.IndexOf($_.Spec)].version}}},`
+    @{l='photon-master';e={if($_.Spec -in $PackagesMaster.Spec) {$PackagesMaster[$PackagesMaster.Spec.IndexOf($_.Spec)].version}}} -Unique | Sort-object Spec
+    $outputfile="$env:public\photonos-package-report_$((get-date).tostring("yyyMMddHHmm")).prn"
+    "Spec"+","+"photon-1.0"+","+"photon-2.0"+","+"photon-3.0"+","+"photon-4.0"+","+"photon-5.0"+","+"photon-dev"+","+"photon-master"| out-file $outputfile
+    $result | % { $_.Spec+","+$_."photon-1.0"+","+$_."photon-2.0"+","+$_."photon-3.0"+","+$_."photon-4.0"+","+$_."photon-5.0"+","+$_."photon-dev"+","+$_."photon-master"} |  out-file $outputfile -append
+}
 
-write-output "Generating Package Report ..."
-# fetch + merge per branch
-GitPhoton -release "1.0"
-GitPhoton -release "2.0"
-GitPhoton -release master
-GitPhoton -release dev
-cd $sourcepath
-# read all files from branch
-$Packages1=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-1.0
-$Packages2=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-2.0
-$PackagesMaster=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-master
-$Packages0=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-dev
-$result = $Packages1,$Packages2,$Packages3,$Packages4,$Packages5,$PackagesMaster| %{$_}|Select Spec,`
-@{l='photon-1.0';e={if($_.Spec -in $Packages1.Spec) {$Packages1[$Packages1.Spec.IndexOf($_.Spec)].version}}},`
-@{l='photon-2.0';e={if($_.Spec -in $Packages2.Spec) {$Packages2[$Packages2.Spec.IndexOf($_.Spec)].version}}},`
-@{l='photon-3.0';e={if($_.Spec -in $Packages3.Spec) {$Packages3[$Packages3.Spec.IndexOf($_.Spec)].version}}},`
-@{l='photon-4.0';e={if($_.Spec -in $Packages4.Spec) {$Packages4[$Packages4.Spec.IndexOf($_.Spec)].version}}},`
-@{l='photon-5.0';e={if($_.Spec -in $Packages5.Spec) {$Packages5[$Packages5.Spec.IndexOf($_.Spec)].version}}},`
-@{l='photon-dev';e={if($_.Spec -in $Packages0.Spec) {$Packages0[$Packages0.Spec.IndexOf($_.Spec)].version}}},`
-@{l='photon-master';e={if($_.Spec -in $PackagesMaster.Spec) {$PackagesMaster[$PackagesMaster.Spec.IndexOf($_.Spec)].version}}} -Unique | Sort-object Spec
-$outputfile="$env:public\photonos-package-report_$((get-date).tostring("yyyMMddHHmm")).prn"
-"Spec"+","+"photon-1.0"+","+"photon-2.0"+","+"photon-3.0"+","+"photon-4.0"+","+"photon-5.0"+","+"photon-dev"+","+"photon-master"| out-file $outputfile
-$result | % { $_.Spec+","+$_."photon-1.0"+","+$_."photon-2.0"+","+$_."photon-3.0"+","+$_."photon-4.0"+","+$_."photon-5.0"+","+$_."photon-dev"+","+$_."photon-master"} |  out-file $outputfile -append
-
-write-output "Generating difference report of 4.0 packages with a higher version than same 5.0 package ..."
-$outputfile1="$env:public\photonos-diff-report-4.0-5.0_$((get-date).tostring("yyyMMddHHmm")).prn"
-"Spec"+","+"photon-4.0"+","+"photon-5.0"| out-file $outputfile1
-$result | % {
-    # write-output $_.spec
-    if ((!([string]::IsNullOrEmpty($_.'photon-4.0'))) -and (!([string]::IsNullOrEmpty($_.'photon-5.0'))))
-    {
-        $VersionCompare1 = VersionCompare $_.'photon-4.0' $_.'photon-5.0'
-        if ($VersionCompare1 -eq 1)
+if ($GeneratePh4toPh5DiffHigherPackageVersionReport -ieq $true)
+{
+    write-output "Generating difference report of 4.0 packages with a higher version than same 5.0 package ..."
+    $outputfile1="$env:public\photonos-diff-report-4.0-5.0_$((get-date).tostring("yyyMMddHHmm")).prn"
+    "Spec"+","+"photon-4.0"+","+"photon-5.0"| out-file $outputfile1
+    $result | % {
+        # write-output $_.spec
+        if ((!([string]::IsNullOrEmpty($_.'photon-4.0'))) -and (!([string]::IsNullOrEmpty($_.'photon-5.0'))))
         {
-            $diffspec1=[System.String]::Concat($_.spec, ',',$_.'photon-4.0',',',$_.'photon-5.0')
-            $diffspec1 | out-file $outputfile1 -append
+            $VersionCompare1 = VersionCompare $_.'photon-4.0' $_.'photon-5.0'
+            if ($VersionCompare1 -eq 1)
+            {
+                $diffspec1=[System.String]::Concat($_.spec, ',',$_.'photon-4.0',',',$_.'photon-5.0')
+                $diffspec1 | out-file $outputfile1 -append
+            }
         }
     }
 }
 
-write-output "Generating difference report of 3.0 packages with a higher version than same 4.0 package ..."
-$outputfile2="$env:public\photonos-diff-report-3.0-4.0_$((get-date).tostring("yyyMMddHHmm")).prn"
-"Spec"+","+"photon-3.0"+","+"photon-4.0"| out-file $outputfile2
-$result | % {
-    # write-output $_.spec
-    if ((!([string]::IsNullOrEmpty($_.'photon-3.0'))) -and (!([string]::IsNullOrEmpty($_.'photon-4.0'))))
-    {
-        $VersionCompare2 = VersionCompare $_.'photon-3.0' $_.'photon-4.0'
-        if ($VersionCompare2 -eq 1)
+if ($GeneratePh3toPh4DiffHigherPackageVersionReport -ieq $true)
+{
+    write-output "Generating difference report of 3.0 packages with a higher version than same 4.0 package ..."
+    $outputfile2="$env:public\photonos-diff-report-3.0-4.0_$((get-date).tostring("yyyMMddHHmm")).prn"
+    "Spec"+","+"photon-3.0"+","+"photon-4.0"| out-file $outputfile2
+    $result | % {
+        # write-output $_.spec
+        if ((!([string]::IsNullOrEmpty($_.'photon-3.0'))) -and (!([string]::IsNullOrEmpty($_.'photon-4.0'))))
         {
-            $diffspec2=[System.String]::Concat($_.spec, ',',$_.'photon-3.0',',',$_.'photon-4.0')
-            $diffspec2 | out-file $outputfile2 -append
+            $VersionCompare2 = VersionCompare $_.'photon-3.0' $_.'photon-4.0'
+            if ($VersionCompare2 -eq 1)
+            {
+                $diffspec2=[System.String]::Concat($_.spec, ',',$_.'photon-3.0',',',$_.'photon-4.0')
+                $diffspec2 | out-file $outputfile2 -append
+            }
         }
     }
 }
-
