@@ -12,6 +12,7 @@
 #   0.42  01.03.2023   dcasota  url health coverage improvements
 #   0.43  06.03.2023   dcasota  url health coverage improvements, updateavailable signalization without alpha/release candidate/pre/dev versions
 #   0.44  17.03.2023   dcasota  url health coverage improvements, updateavailable signalization for rubygems.org and sourceforge.net
+#   0.45  08.05.2023   dcasota  bugfix for zip.spec + unzip.spec
 #
 #  .PREREQUISITES
 #    - Script actually tested only on MS Windows OS with Powershell PSVersion 5.1 or higher
@@ -679,10 +680,10 @@ function CheckURLHealth {
     $Lines=@()
     $CheckURLHealthPackageObject | foreach {
 
-        # if ($_.spec -ilike 'systemd.spec')
-        # {pause}
-        # else
-        # {return}
+        if ($_.spec -ilike 'zip.spec')
+        {pause}
+        else
+        {return}
 
         $currentFile = $_
         $Source0 = $currentFile.Source0
@@ -1710,9 +1711,18 @@ function CheckURLHealth {
             elseif  ($_.spec -ilike 'procps-ng.spec') {$SourceTagURL="http://sourceforge.net/projects/procps-ng/files/Production/"}
             elseif ($_.spec -ilike 'rng-tools.spec') {$SourceTagURL="https://sourceforge.net/projects/gkernel/files/rng-tools"}
             elseif ($_.spec -ilike 'tcl.spec') {$SourceTagURL="https://sourceforge.net/projects/tcl/files/Tcl"}
-            elseif ($_.spec -ilike 'unzip.spec') {$SourceTagURL='https://sourceforge.net/projects/infozip/files/UnZip%206.x%20%28latest%29/UnZip%206.0/'}
+            elseif ($_.spec -ilike 'unzip.spec')
+            {
+                $SourceTagURL='https://sourceforge.net/projects/infozip/files/UnZip%206.x%20%28latest%29/UnZip%206.0/'
+                if ($version -eq "6.0") {$version="60"}
+            }
             elseif  ($_.spec -ilike 'xmlstarlet.spec') {$SourceTagURL='https://sourceforge.net/projects/xmlstar/files/xmlstarlet'}
-            elseif  ($_.spec -ilike 'zip.spec') {$SourceTagURL='https://sourceforge.net/projects/infozip/files/Zip%203.x%20%28latest%29/3.0/'}
+            elseif  ($_.spec -ilike 'zip.spec')
+            {
+                $SourceTagURL='https://sourceforge.net/projects/infozip/files/Zip%203.x%20%28latest%29/3.0/'
+                if ($version -eq "3.0") {$version="30"}
+                $replace += "zip30.zip"
+            }
             try{
                 $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
                 $headers.Add("Authorization", "token $accessToken")
