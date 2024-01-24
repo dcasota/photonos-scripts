@@ -13,10 +13,228 @@
 #   0.43  06.03.2023   dcasota  url health coverage improvements, updateavailable signalization without alpha/release candidate/pre/dev versions
 #   0.44  17.03.2023   dcasota  url health coverage improvements, updateavailable signalization for rubygems.org and sourceforge.net
 #   0.45  08.05.2023   dcasota  bugfix for zip.spec + unzip.spec
+#   0.46  09.05.2023   dcasota  UpdateURL added
+#   0.47  20.05.2023   dcasota  Bugfixes, ModifySpecFile added
+#   0.48  03.06.2023   dcasota  Separated sources_new and specs_new directories, bugfixes packages netfilter + python, Source0 urlhealth check
+#   0.49  24.01.2024   dcasota  fix chrpath host path
 #
 #  .PREREQUISITES
 #    - Script actually tested only on MS Windows OS with Powershell PSVersion 5.1 or higher
 #    - downloaded and unzipped branch directories of github.com/vmware/photon 
+
+
+class HeapSort {
+# Heapsort algorithmus from Doug Finke
+# https://github.com/dfinke/SortingAlgorithms/blob/master/HeapSort.ps1
+# modified to compare concated ascii code values
+    [array] static Sort($targetList) {
+        $heapSize = $targetList.Count
+
+        for ([int]$p = ($heapSize - 1) / 2; $p -ge 0; $p--) {
+            [HeapSort]::MaxHeapify($targetList, $heapSize, $p)
+        }
+
+        for ($i = $targetList.Count - 1; $i -gt 0; $i--) {
+            $temp = $targetList[$i]
+            $targetList[$i] = $targetList[0]
+            $targetList[0] = $temp
+
+            $heapSize--
+            [HeapSort]::MaxHeapify($targetList, $heapSize, 0)
+        }
+        return $targetlist
+    }
+
+    static MaxHeapify($targetList, $heapSize, $index) {
+        $left = ($index + 1) * 2 - 1
+        $right = ($index + 1) * 2
+        $largest = 0
+
+
+       
+
+        if ($left -lt $heapSize -and [int64]([system.string]::concat((([system.Text.Encoding]::Default.GetBytes($targetList[$left])) | % tostring 000))) -gt [int64]([system.string]::concat((([system.Text.Encoding]::Default.GetBytes($targetList[$index])) | % tostring 000)))) {
+            $largest = $left
+        }
+        else {
+            $largest = $index
+        }
+
+        if ($right -lt $heapSize -and [int64]([system.string]::concat((([system.Text.Encoding]::Default.GetBytes($targetList[$right])) | % tostring 000))) -gt [int64]([system.string]::concat((([system.Text.Encoding]::Default.GetBytes($targetList[$largest])) | % tostring 000)))) {
+            $largest = $right
+        }
+
+        if ($largest -ne $index) {
+            $temp = $targetList[$index]
+            $targetList[$index] = $targetList[$largest]
+            $targetList[$largest] = $temp
+
+            [HeapSort]::MaxHeapify($targetList, $heapSize, $largest)
+        }
+    }
+}
+
+function ModifySpecFileOpenJDK8
+{
+	param (
+		[parameter(Mandatory = $true)]
+		[string]$SpecFileName,
+		[parameter(Mandatory = $true)]
+		[string]$Name,
+		[parameter(Mandatory = $true)]
+		[string]$Update,
+		[parameter(Mandatory = $true)]
+		[string]$UpdateDownloadFile,
+		[parameter(Mandatory = $true)]
+		[string]$DownloadNameWithoutExtension
+    )
+    $SpecFile = [system.string]::concat("./SPECS/",$Name,"/",$SpecFileName)
+    $Object=get-content $SpecFile
+
+
+    try
+    { $version = (get-command use-culture).Version.ToString() }
+    catch
+    { install-module -name PowerShellCookbook -AllowClobber -Force -Confirm:$false }
+
+    $sha1=""
+    $sha256=""
+    $sha512=""
+    if ($object -ilike '*%define sha1*') { $certutil = certutil -hashfile $UpdateDownloadFile SHA1 | out-string; $sha1= ($certutil -split "`r`n")[1]  }
+    if ($object -ilike '*%define sha256*') { $certutil = certutil -hashfile $UpdateDownloadFile SHA256 | out-string; $sha256= ($certutil -split "`r`n")[1] }
+    if ($object -ilike '*%define sha512*') { $certutil = certutil -hashfile $UpdateDownloadFile SHA512 | out-string; $sha512= ($certutil -split "`r`n")[1] }
+
+    $DateEntry = use-culture -Culture en-US {(get-date -UFormat "%a") + " " + (get-date).ToString("MMM") + " " + (get-date -UFormat "%d %Y") }
+    $Line1=[system.string]::concat("* ",$DateEntry," ","First Last <flast@vmware.com> ",$Update,"-1")
+
+    $skip=$false
+    $FileModified = @() 
+    Foreach ($Line in $Object)
+    {
+        if ($skip -eq $false)
+        {
+            if ($Line -ilike '*Version:*') {$Line = $Line -replace 'Version:.+$', "Version:        1.8.0.$Update"; $FileModified += $Line}
+            elseif ($Line -ilike '*Release:*') {$Line = $Line -replace 'Release:.+$', 'Release:        1%{?dist}'; $FileModified += $Line}
+            elseif ($Line -ilike '*Source0:*') 
+            {
+                $FileModified += $Line
+                if ($sha1 -ne "") {$FileModified += [system.string]::concat('%define sha1 ',$DownloadNameWithoutExtension,'=',$sha1); $skip=$true }
+                elseif ($sha256 -ne "") {$FileModified += [system.string]::concat('%define sha256 ',$DownloadNameWithoutExtension,'=',$sha256); $skip=$true }
+                elseif ($sha512 -ne "") {$FileModified +=[system.string]::concat('%define sha512 ',$DownloadNameWithoutExtension,'=',$sha512); $skip=$true }
+            }
+            elseif ($Line -ilike '%changelog*') 
+            {
+                $FileModified += $Line
+                #Add Lines after the selected pattern 
+                $FileModified += $Line1
+                $FileModified += '- automatic version bump for testing purposes DO NOT USE'
+            }
+            elseif ($Line -ilike '%define subversion*') 
+            {
+                $FileModified += [system.string]::concat('%define subversion ',$Update)
+            }
+            else {$FileModified += $Line}
+        }
+        else {$skip = $false}
+    }
+    
+    $SpecsNewDirectory=".\SPECS_NEW\$Name"
+    if (!(Test-Path $SpecsNewDirectory)) {New-Item $SpecsNewDirectory -ItemType Directory}
+
+    $filename=[system.string]::concat($SpecsNewDirectory,"\",$Name,"-",$Update,".spec")
+    $FileModified | Set-Content $fileName
+    # awk '{ sub("\r$", ""); print }' ./SPECS/aide/aide.spec > ./SPECS/aide/aide.new
+
+    # #!/bin/bash
+    # cd /root/ph5/photon/SPECS_NEW
+    # for f in $(find ./ -name '*-[[:digit:]]*.spec');
+    #  do
+    #  DirectoryName=$(dirname $f)
+    #  if [ -d "/root/ph5/photon/SPECS/$DirectoryName" ]; then
+    #    awk '{ sub("\r$", ""); print }' $f > /root/ph5/photon/SPECS/$f
+    #    echo $f
+    #  fi
+    # done
+}
+
+function ModifySpecFile
+{
+	param (
+		[parameter(Mandatory = $true)]
+		[string]$SpecFileName,
+		[parameter(Mandatory = $true)]
+		[string]$Name,
+		[parameter(Mandatory = $true)]
+		[string]$Update,
+		[parameter(Mandatory = $true)]
+		[string]$UpdateDownloadFile,
+		[parameter(Mandatory = $true)]
+		[string]$DownloadNameWithoutExtension
+    )
+    $SpecFile = [system.string]::concat("./SPECS/",$Name,"/",$SpecFileName)
+    $Object=get-content $SpecFile
+
+
+    try
+    { $version = (get-command use-culture).Version.ToString() }
+    catch
+    { install-module -name PowerShellCookbook -AllowClobber -Force -Confirm:$false }
+
+    $sha1=""
+    $sha256=""
+    $sha512=""
+    if ($object -ilike '*%define sha1*') { $certutil = certutil -hashfile $UpdateDownloadFile SHA1 | out-string; $sha1= ($certutil -split "`r`n")[1]  }
+    if ($object -ilike '*%define sha256*') { $certutil = certutil -hashfile $UpdateDownloadFile SHA256 | out-string; $sha256= ($certutil -split "`r`n")[1] }
+    if ($object -ilike '*%define sha512*') { $certutil = certutil -hashfile $UpdateDownloadFile SHA512 | out-string; $sha512= ($certutil -split "`r`n")[1] }
+
+    $DateEntry = use-culture -Culture en-US {(get-date -UFormat "%a") + " " + (get-date).ToString("MMM") + " " + (get-date -UFormat "%d %Y") }
+    $Line1=[system.string]::concat("* ",$DateEntry," ","First Last <flast@vmware.com> ",$Update,"-1")
+
+    $skip=$false
+    $FileModified = @() 
+    Foreach ($Line in $Object)
+    {
+        if ($skip -eq $false)
+        {
+            if ($Line -ilike '*Version:*') {$Line = $Line -replace 'Version:.+$', "Version:        $Update"; $FileModified += $Line}
+            elseif ($Line -ilike '*Release:*') {$Line = $Line -replace 'Release:.+$', 'Release:        1%{?dist}'; $FileModified += $Line}
+            elseif ($Line -ilike '*Source0:*') 
+            {
+                $FileModified += $Line
+                if ($sha1 -ne "") {$FileModified += [system.string]::concat('%define sha1 ',$DownloadNameWithoutExtension,'=',$sha1); $skip=$true }
+                elseif ($sha256 -ne "") {$FileModified += [system.string]::concat('%define sha256 ',$DownloadNameWithoutExtension,'=',$sha256); $skip=$true }
+                elseif ($sha512 -ne "") {$FileModified +=[system.string]::concat('%define sha512 ',$DownloadNameWithoutExtension,'=',$sha512); $skip=$true }
+            }
+            elseif ($Line -ilike '%changelog*') 
+            {
+                $FileModified += $Line
+                #Add Lines after the selected pattern 
+                $FileModified += $Line1
+                $FileModified += '- automatic version bump for testing purposes DO NOT USE'
+            }
+            else {$FileModified += $Line}
+        }
+        else {$skip = $false}
+    }
+    
+    $SpecsNewDirectory=".\SPECS_NEW\$Name"
+    if (!(Test-Path $SpecsNewDirectory)) {New-Item $SpecsNewDirectory -ItemType Directory}
+
+    $filename=[system.string]::concat($SpecsNewDirectory,"\",$Name,"-",$Update,".spec")
+    $FileModified | Set-Content $fileName
+    # awk '{ sub("\r$", ""); print }' ./SPECS/aide/aide.spec > ./SPECS/aide/aide.new
+
+    # #!/bin/bash
+    # cd /root/ph5/photon/SPECS_NEW
+    # for f in $(find ./ -name '*-[[:digit:]]*.spec');
+    #  do
+    #  DirectoryName=$(dirname $f)
+    #  if [ -d "/root/ph5/photon/SPECS/$DirectoryName" ]; then
+    #    awk '{ sub("\r$", ""); print }' $f > /root/ph5/photon/SPECS/$f
+    #    echo $f
+    #  fi
+    # done
+}
 
 function ParseDirectory
 {
@@ -49,6 +267,11 @@ function ParseDirectory
 
                 if ($content -ilike '*URL:*') { $url = (($content | Select-String -Pattern "^URL:")[0].ToString() -ireplace "URL:", "").Trim() }
 
+                $SHAName=""
+                if ($content -ilike '*%define sha1*') {$SHAName = $content | %{ if ($_ -ilike '*%define sha1*') {((($_ -split '=')[0]).replace('%define sha1',"")).Trim()}}}
+                elseif ($content -ilike '*%define sha256*') {$SHAName = $content | %{ if ($_ -ilike '*%define sha256*') {((($_ -split '=')[0]).replace('%define sha256',"")).Trim()}}}
+                elseif ($content -ilike '*%define sha512*') {$SHAName = $content | %{ if ($_ -ilike '*%define sha512*') {((($_ -split '=')[0]).replace('%define sha512',"")).Trim()}}}
+
                 $srcname=""
                 if ($content -ilike '*define srcname*') { $srcname = (($content | Select-String -Pattern '%define srcname')[0].ToString() -ireplace '%define srcname', "").Trim() }
                 if ($content -ilike '*global srcname*') { $srcname = (($content | Select-String -Pattern '%global srcname')[0].ToString() -ireplace '%global srcname', "").Trim() }
@@ -65,6 +288,9 @@ function ParseDirectory
 
                 $main_version=""
                 if ($content -ilike '*define main_version*') { $main_version = (($content | Select-String -Pattern '%define main_version')[0].ToString() -ireplace '%define main_version', "").Trim() }
+
+                $subversion=""
+                if ($content -ilike '*define subversion*') { $subversion = (($content | Select-String -Pattern '%define subversion')[0].ToString() -ireplace '%define subversion', "").Trim() }
 
                 $byaccdate=""
                 if ($content -ilike '*define byaccdate*') { $byaccdate = (($content | Select-String -Pattern '%define byaccdate')[0].ToString() -ireplace '%define byaccdate', "").Trim() }
@@ -99,6 +325,7 @@ function ParseDirectory
                     Name = $object.Name
                     Source0 = $Source0
                     url = $url
+                    SHAName = $SHAName
                     srcname = $srcname
                     gem_name = $gem_name
                     group = $group
@@ -106,6 +333,7 @@ function ParseDirectory
                     main_version = $main_version
                     byaccdate = $byaccdate
                     dialogsubversion = $dialogsubversion
+                    subversion = $subversion
                     libedit_release = $libedit_release
                     libedit_version = $libedit_version
                     ncursessubversion = $ncursessubversion
@@ -189,11 +417,46 @@ function urlhealth
     $urlhealthrc=""
     try
     {
-        $rc = Invoke-WebRequest -Uri $Source0 -UseDefaultCredentials -UseBasicParsing -Method Head -TimeoutSec 10 -ErrorAction Stop
+        $rc = Invoke-WebRequest -Uri $checkurl -UseDefaultCredentials -UseBasicParsing -Method Head -TimeoutSec 10 -ErrorAction Stop
         $urlhealthrc = [int]$rc.StatusCode
     }
-    catch {
-        $urlhealthrc = [int]$_.Exception.Response.StatusCode.value__
+    catch
+    {
+        $urlhealthrc = [int]$_.Exception.Response.StatusCode.value__        
+        if ($checkurl -ilike '*netfilter.org*')
+        {
+            $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+            $session.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36"
+            $Referer=""
+            if ($checkurl -ilike '*libnetfilter_conntrack*') {$Referer="https://www.netfilter.org/projects/libnetfilter_conntrack/downloads.html"}
+            elseif ($checkurl -ilike '*libmnl*') {$Referer="https://www.netfilter.org/projects/libmnl/downloads.html"}
+            elseif ($checkurl -ilike '*libnetfilter_cthelper*') {$Referer="https://www.netfilter.org/projects/libnetfilter_cthelper/downloads.html"}
+            elseif ($checkurl -ilike '*libnetfilter_cttimeout*') {$Referer="https://www.netfilter.org/projects/libnetfilter_cttimeout/downloads.html"}
+            elseif ($checkurl -ilike '*libnetfilter_queue*') {$Referer="https://www.netfilter.org/projects/libnetfilter_queue/downloads.html"}
+            elseif ($checkurl -ilike '*libnfnetlink*') {$Referer="https://www.netfilter.org/projects/libnfnetlink/downloads.html"}
+            elseif ($checkurl -ilike '*libnftnl*') {$Referer="https://www.netfilter.org/projects/libnftnl/downloads.html"}
+            elseif ($checkurl -ilike '*nftables*') {$Referer="https://www.netfilter.org/projects/nftables/downloads.html"}
+            elseif ($checkurl -ilike '*conntrack-tools*') {$Referer="https://www.netfilter.org/projects/conntrack-tools/downloads.html"}
+            elseif ($checkurl -ilike '*iptables*') {$Referer="https://www.netfilter.org/projects/iptables/downloads.html"}
+
+            $rc = Invoke-WebRequest -UseBasicParsing -Uri $checkurl -Method Head -TimeoutSec 10 -ErrorAction Stop `
+            -WebSession $session `
+            -Headers @{
+            "Accept"="text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
+              "Accept-Encoding"="gzip, deflate, br"
+              "Accept-Language"="en-US,en;q=0.9"
+              "Referer"="$Referer"
+              "Sec-Fetch-Dest"="document"
+              "Sec-Fetch-Mode"="navigate"
+              "Sec-Fetch-Site"="same-origin"
+              "Sec-Fetch-User"="?1"
+              "Upgrade-Insecure-Requests"="1"
+              "sec-ch-ua"="`"Google Chrome`";v=`"113`", `"Chromium`";v=`"113`", `"Not-A.Brand`";v=`"24`""
+              "sec-ch-ua-mobile"="?0"
+              "sec-ch-ua-platform"="`"Windows`""
+            }
+            $urlhealthrc = [int]$rc.StatusCode
+        }
     }
     return $urlhealthrc
 }
@@ -232,13 +495,15 @@ function Source0Lookup {
 
 $Source0LookupData=@'
 specfile,Source0Lookup
-alsa-lib.spec,https://github.com/alsa-project/alsa-lib/archive/refs/tags/v%{version}.tar.gz
-alsa-utils.spec,https://github.com/alsa-project/alsa-utils/archive/refs/tags/v%{version}.tar.gz
+alsa-lib.spec,https://www.alsa-project.org/files/pub/lib/alsa-lib-%{version}.tar.bz2
+alsa-utils.spec,https://www.alsa-project.org/files/pub/utils/alsa-utils-%{version}.tar.bz2
+amdvlk.spec,https://github.com/GPUOpen-Drivers/AMDVLK/archive/refs/tags/v-%{version}.tar.gz
 ansible.spec,https://github.com/ansible/ansible/archive/refs/tags/v%{version}.tar.gz
 apache-ant.spec,https://github.com/apache/ant/archive/refs/tags/rel/%{version}.tar.gz
 apache-maven.spec,https://github.com/apache/maven/archive/refs/tags/maven-%{version}.tar.gz
 apache-tomcat.spec,https://github.com/apache/tomcat/archive/refs/tags/%{version}.tar.gz
 apache-tomcat-native.spec,https://github.com/apache/tomcat-native/archive/refs/tags/%{version}.tar.gz
+apparmor.spec,https://launchpad.net/apparmor/3.1/%{version}/+download/apparmor-%{version}.tar.gz
 apr.spec,https://github.com/apache/apr/archive/refs/tags/%{version}.tar.gz
 apr-util.spec,https://github.com/apache/apr-util/archive/refs/tags/%{version}.tar.gz
 argon2.spec,https://github.com/P-H-C/phc-winner-argon2/archive/refs/tags/%{version}.tar.gz
@@ -261,17 +526,17 @@ calico-confd.spec,https://github.com/kelseyhightower/confd/archive/refs/tags/v%{
 c-ares.spec,https://github.com/c-ares/c-ares/archive/refs/tags/cares-%{version}.tar.gz
 cassandra.spec,https://github.com/apache/cassandra/archive/refs/tags/cassandra-%{version}.tar.gz   
 chrony.spec,https://github.com/mlichvar/chrony/archive/refs/tags/%{version}.tar.gz
-chrpath.spec,https://github.com/jwilk-mirrors/chrpath/archive/refs/tags/RELEASE_%{version}.tar.gz   
+https://codeberg.org/pere/chrpath/archive/release-%{version}.tar.gz
 clang.spec,https://github.com/llvm/llvm-project/releases/download/llvmorg-%{version}/clang-%{version}.src.tar.xz
 cloud-init.spec,https://github.com/canonical/cloud-init/archive/refs/tags/%{version}.tar.gz
 cloud-utils.spec,https://github.com/canonical/cloud-utils/archive/refs/tags/%{version}.tar.gz
 cmake.spec,https://github.com/Kitware/CMake/releases/download/v%{version}/cmake-%{version}.tar.gz
-cmocka.spec,https://github.com/clibs/cmocka/archive/refs/tags/%{version}.tar.gz  
+cmocka.spec,https://cmocka.org/files/1.1/cmocka-%{version}.tar.xz
 commons-daemon.spec,https://github.com/apache/commons-daemon/archive/refs/tags/commons-daemon-%{version}.tar.gz
 compat-gdbm.spec,https://ftp.gnu.org/gnu/gdbm/gdbm-%{version}.tar.gz
 confd.spec,https://github.com/projectcalico/confd/archive/refs/tags/v%{version}-0.dev.tar.gz
 conmon.spec,https://github.com/containers/conmon/archive/refs/tags/v%{version}.tar.gz
-conntrack-tools.spec,https://www.netfilter.org/pub/conntrack-tools/conntrack-tools-%{version}.tar.bz2
+conntrack-tools.spec,https://www.netfilter.org/projects/conntrack-tools/files/conntrack-tools-%{version}.tar.bz2
 containers-common.spec,https://github.com/containers/common/archive/refs/tags/v%{version}.tar.gz
 coredns.spec,https://github.com/coredns/coredns/archive/refs/tags/v%{version}.tar.gz
 cracklib.spec,https://github.com/cracklib/cracklib/archive/refs/tags/v%{version}.tar.gz        
@@ -283,12 +548,15 @@ cyrus-sasl.spec,https://github.com/cyrusimap/cyrus-sasl/archive/refs/tags/cyrus-
 cython3.spec,https://github.com/cython/cython/archive/refs/tags/%{version}.tar.gz
 device-mapper-multipath.spec,https://github.com/opensvc/multipath-tools/archive/refs/tags/%{version}.tar.gz
 device-mapper-multipath.spec,https://github.com/opensvc/multipath-tools/archive/refs/tags/%{version}.tar.gz
-dialog.spec,https://invisible-island.net/archives/dialog/dialog-%{version}-20160209.tgz
+dialog.spec,https://invisible-island.net/archives/dialog/dialog-%{version}.tgz
+docbook-xml.spec,https://docbook.org/xml/%{version}/docbook-%{version}.zip
 docker-20.10.spec,https://github.com/moby/moby/archive/refs/tags/v%{version}.tar.gz
 docker-pycreds.spec,https://github.com/shin-/dockerpy-creds/archive/refs/tags/%{version}.tar.gz
 dotnet-runtime.spec,https://github.com/dotnet/runtime/archive/refs/tags/v%{version}.tar.gz
 dotnet-sdk.spec,https://github.com/dotnet/sdk/archive/refs/tags/v%{version}.tar.gz
 doxygen.spec,https://github.com/doxygen/doxygen/archive/refs/tags/Release_%{version}.tar.gz
+dracut.spec,https://github.com/dracutdevs/dracut/archive/refs/tags/%{version}.tar.gz
+duktape.spec,https://github.com/svaarala/duktape/archive/refs/tags/v%{version}.tar.gz
 ebtables.spec,https://www.netfilter.org/pub/ebtables/ebtables-%{version}.tar.gz
 ecdsa.spec,https://github.com/tlsfuzzer/python-ecdsa/archive/refs/tags/python-ecdsa-%{version}.tar.gz
 ed.spec,https://ftp.gnu.org/gnu/ed/ed-%{version}.tar.lz
@@ -320,19 +588,21 @@ graphene.spec,https://github.com/ebassi/graphene/archive/refs/tags/%{version}.ta
 gtest.spec,https://github.com/google/googletest/archive/refs/tags/release-%{version}.tar.gz
 gtk3.spec,https://github.com/GNOME/gtk/archive/refs/tags/%{version}.tar.gz
 guile.spec,https://ftp.gnu.org/gnu/guile/guile-%{version}.tar.gz
+haproxy.spec,https://www.haproxy.org/download/2.2/src/haproxy-%{version}.tar.gz
 haproxy-dataplaneapi.spec,https://github.com/haproxytech/dataplaneapi/archive/refs/tags/v%{version}.tar.gz
 haveged.spec,https://github.com/jirka-h/haveged/archive/refs/tags/v%{version}.tar.gz
 hawkey.spec,https://github.com/rpm-software-management/hawkey/archive/refs/tags/hawkey-%{version}.tar.gz
 httpd.spec,https://github.com/apache/httpd/archive/refs/tags/%{version}.tar.gz
 httpd-mod_kj.spec,https://github.com/apache/tomcat-connectors/archive/refs/tags/JK_%{version}.tar.gz
 http-parser.spec,https://github.com/nodejs/http-parser/archive/refs/tags/v%{version}.tar.gz
+icu.spec,https://github.com/unicode-org/icu/releases/download/release-73-1/icu4c-73_1-src.tgz
 imagemagick.spec,https://github.com/ImageMagick/ImageMagick/archive/refs/tags/%{version}.tar.gz
 inih.spec,https://github.com/benhoyt/inih/archive/refs/tags/r%{version}.tar.gz
-intltool.spec,https://launchpad.net/intltool/trunk/%{version}/+download/intltool-%{version}.tar.gz      
+intltool.spec,https://launchpad.net/intltool/trunk/%{version}/+download/intltool-%{version}.tar.gz
 ipcalc.spec,https://gitlab.com/ipcalc/ipcalc/-/archive/%{version}/ipcalc-%{version}.tar.gz
 ipmitool.spec,https://github.com/ipmitool/ipmitool/archive/refs/tags/IPMITOOL_%{version}.tar.gz
-ipset.spec,https://www.netfilter.org/pub/ipset/ipset-%{version}.tar.bz2
-iptables.spec,https://www.netfilter.org/pub/iptables/iptables-%{version}.tar.bz2
+ipset.spec,https://ipset.netfilter.org/ipset-%{version}.tar.bz2
+iptables.spec,https://www.netfilter.org/projects/iptables/files/iptables-%{version}.tar.xz
 iputils.spec,https://github.com/iputils/iputils/archive/refs/tags/s%{version}.tar.gz
 ipxe.spec,https://github.com/ipxe/ipxe/archive/refs/tags/v%{version}.tar.gz
 jansson.spec,https://github.com/akheron/jansson/archive/refs/tags/v%{version}.tar.gz
@@ -350,6 +620,7 @@ libarchive.spec,https://github.com/libarchive/libarchive/archive/refs/tags/v%{ve
 libatomic_ops.spec,https://github.com/ivmai/libatomic_ops/archive/refs/tags/v%{version}.tar.gz
 libconfig.spec,https://github.com/hyperrealm/libconfig/archive/refs/tags/v%{version}.tar.gz
 libdb.spec,https://github.com/berkeleydb/libdb/archive/refs/tags/v%{version}.tar.gz
+libedit.spec,https://www.thrysoee.dk/editline/libedit-20221030-3.1.tar.gz
 libestr.spec,https://github.com/rsyslog/libestr/archive/refs/tags/v%{version}.tar.gz
 libev.spec,http://dist.schmorp.de/libev/Attic/libev-%{version}.tar.gz
 libffi.spec,https://github.com/libffi/libffi/archive/refs/tags/v%{version}.tar.gz
@@ -360,25 +631,27 @@ libgudev.spec,https://github.com/GNOME/libgudev/archive/refs/tags/%{version}.tar
 liblogging.spec,https://github.com/rsyslog/liblogging/archive/refs/tags/v%{version}.tar.gz
 libjpeg-turbo.spec,https://github.com/libjpeg-turbo/libjpeg-turbo/archive/refs/tags/%{version}.tar.gz
 libmetalink.spec,https://launchpad.net/libmetalink/trunk/libmetalink-%{version}/+download/libmetalink-%{version}.tar.bz2
-libmnl.spec,https://www.netfilter.org/pub/libmnl/libmnl-%{version}.tar.bz2
+libmnl.spec,https://netfilter.org/projects/libmnl/files/libmnl-%{version}.tar.bz2
 libmspack.spec,https://github.com/kyz/libmspack/archive/refs/tags/v%{version}.tar.gz
-libnetfilter_conntrack.spec,https://www.netfilter.org/pub/libnetfilter_conntrack/libnetfilter_conntrack-%{version}.tar.bz2
-libnetfilter_cthelper.spec,https://www.netfilter.org/pub/libnetfilter_cthelper/libnetfilter_cthelper-%{version}.tar.bz2
-libnetfilter_cttimeout.spec,https://www.netfilter.org/pub/libnetfilter_cttimeout/libnetfilter_cttimeout-%{version}.tar.bz2
-libnetfilter_queue.spec,https://www.netfilter.org/pub/libnetfilter_queue/libnetfilter_queue-%{version}.tar.bz2
-libnfnetlink.spec,https://www.netfilter.org/pub/libnfnetlink/libnfnetlink-%{version}.tar.bz2
-libnftnl.spec,https://www.netfilter.org/pub/libnftnl/libnftnl-%{version}.tar.bz2
+libnetfilter_conntrack.spec,https://netfilter.org/projects/libnetfilter_conntrack/files/libnetfilter_conntrack-%{version}.tar.bz2
+libnetfilter_cthelper.spec,https://netfilter.org/projects/libnetfilter_cthelper/files/libnetfilter_cthelper-%{version}.tar.bz2
+libnetfilter_cttimeout.spec,https://netfilter.org/projects/libnetfilter_cttimeout/files/libnetfilter_cttimeout-%{version}.tar.bz2
+libnetfilter_queue.spec,https://netfilter.org/projects/libnetfilter_queue/files/libnetfilter_queue-%{version}.tar.bz2
+libnfnetlink.spec,https://netfilter.org/projects/libnfnetlink/files/libnfnetlink-%{version}.tar.bz2
+libnftnl.spec,https://netfilter.org/projects/libnftnl/files/libnftnl-%{version}.tar.xz
 libnl.spec,https://github.com/thom311/libnl/archive/refs/tags/libnl%{version}.tar.gz
-librelp.spec,https://github.com/rsyslog/librelp/archive/refs/tags/v%{version}.tar.gz
+librelp.spec,https://download.rsyslog.com/librelp/librelp-%{version}.tar.gz
 librsync.spec,https://github.com/librsync/librsync/archive/refs/tags/v%{version}.tar.gz
 libpcap.spec,https://github.com/the-tcpdump-group/libpcap/archive/refs/tags/libpcap-%{version}.tar.gz
-libselinux.spec,https://github.com/SELinuxProject/selinux/archive/refs/tags/%{version}.tar.gz
+libselinux.spec,https://github.com/SELinuxProject/selinux/archive/refs/tags/libselinux-%{version}.tar.gz
 libsigc++.spec,https://github.com/libsigcplusplus/libsigcplusplus/archive/refs/tags/%{version}.tar.gz
 libsirp.spec,https://gitlab.freedesktop.org/slirp/libslirp/-/archive/v%{version}/libslirp-v%{version}.tar.gz
 libsoup.spec,https://github.com/GNOME/libsoup/archive/refs/tags/%{version}.tar.gz       
 libssh2.spec,https://github.com/libssh2/libssh2/archive/refs/tags/libssh2-%{version}.tar.gz
 libtar.spec,https://github.com/tklauser/libtar/archive/refs/tags/v%{version}.tar.gz
+libteam.spec,https://github.com/jpirko/libteam/archive/refs/tags/v%{version}.tar.gz
 libvirt.spec,https://github.com/libvirt/libvirt/archive/refs/tags/v%{version}.tar.gz
+libX11.spec,https://gitlab.freedesktop.org/xorg/lib/libx11/-/archive/libX11-%{version}/libx11-libX11-%{version}.tar.gz
 libXinerama.spec,https://gitlab.freedesktop.org/xorg/lib/libxinerama/-/archive/libXinerama-%{version}/libxinerama-libXinerama-%{version}.tar.gz
 libxml2.spec,https://github.com/GNOME/libxml2/archive/refs/tags/v%{version}.tar.gz
 libxslt.spec,https://github.com/GNOME/libxslt/archive/refs/tags/v%{version}.tar.gz
@@ -397,7 +670,7 @@ lttng-tools.spec,https://github.com/lttng/lttng-tools/archive/refs/tags/v%{versi
 lvm2.spec,https://github.com/lvmteam/lvm2/archive/refs/tags/v%{version}.tar.gz
 lxcfs.spec,https://github.com/lxc/lxcfs/archive/refs/tags/lxcfs-%{version}.tar.gz
 man-db.spec,https://gitlab.com/man-db/man-db/-/archive/%{version}/man-db-%{version}.tar.gz
-man-pages.spec,https://mirrors.edge.kernel.org/pub/linux/docs/man-pages/Archive/man-pages-%{version}.tar.gz
+man-pages.spec,https://git.kernel.org/pub/scm/docs/man-pages/man-pages.git/snapshot/man-pages-%{version}.tar.gz
 mariadb.spec,https://github.com/MariaDB/server/archive/refs/tags/mariadb-%{version}.tar.gz
 mc.spec,https://github.com/MidnightCommander/mc/archive/refs/tags/%{version}.tar.gz
 memcached.spec,https://github.com/memcached/memcached/archive/refs/tags/%{version}.tar.gz
@@ -413,10 +686,13 @@ netmgmt.spec,https://github.com/vmware/photonos-netmgr/archive/refs/tags/v%{vers
 net-snmp.spec,https://github.com/net-snmp/net-snmp/archive/refs/tags/v%{version}.tar.gz
 net-tools.spec,https://github.com/ecki/net-tools/archive/refs/tags/v%{version}.tar.gz
 newt.spec,https://github.com/mlichvar/newt/archive/refs/tags/r%{version}.tar.gz
-nftables.spec,https://www.netfilter.org/pub/nftables/nftables-%{version}.tar.bz2
+nftables.spec,https://netfilter.org/projects/nftables/files/nftables-%{version}.tar.bz2
 nginx.spec,https://github.com/nginx/nginx/archive/refs/tags/release-%{version}.tar.gz
 nss-pam-ldapd.spec,https://github.com/arthurdejong/nss-pam-ldapd/archive/refs/tags/%{version}.tar.gz
 nodejs.spec,https://github.com/nodejs/node/archive/refs/tags/v%{version}.tar.gz
+openjdk8.spec,https://github.com/openjdk/jdk8u/archive/refs/tags/jdk8u%{subversion}-ga.tar.gz
+openjdk11.spec,https://github.com/openjdk/jdk11u/archive/refs/tags/jdk-%{version}-ga.tar.gz
+openjdk17.spec,https://github.com/openjdk/jdk17u/archive/refs/tags/jdk-%{version}-ga.tar.gz
 openldap.spec,https://github.com/openldap/openldap/archive/refs/tags/OPENLDAP_REL_ENG_%{version}.tar.gz
 openresty.spec,https://github.com/openresty/openresty/archive/refs/tags/v%{version}.tar.gz
 openssh.spec,https://github.com/openssh/openssh-portable/archive/refs/tags/V_%{version}.tar.gz
@@ -457,6 +733,7 @@ protobuf-c.spec,https://github.com/protobuf-c/protobuf-c/archive/refs/tags/v%{ve
 psmisc.spec,https://gitlab.com/psmisc/psmisc/-/archive/v%{version}/psmisc-v%{version}.tar.gz
 pth.spec,https://ftp.gnu.org/gnu/pth/pth-%{version}.tar.gz
 pycurl.spec,https://github.com/pycurl/pycurl/archive/refs/tags/REL_%{version}.tar.gz
+pygobject.spec,https://gitlab.gnome.org/GNOME/pygobject/-/archive/%{version}/pygobject-%{version}.tar.gz
 python3-distro.spec,https://github.com/python-distro/distro/archive/refs/tags/v%{version}.tar.gz 
 python3-pip.spec,https://github.com/pypa/pip/archive/refs/tags/%{version}.tar.gz
 python3-pyroute2.spec,https://github.com/svinota/pyroute2/archive/refs/tags/%{version}.tar.gz
@@ -478,6 +755,7 @@ python-bcrypt.spec,https://github.com/pyca/bcrypt/archive/refs/tags/%{version}.t
 python-boto.spec,https://github.com/boto/boto/archive/refs/tags/%{version}.tar.gz
 python-boto3.spec,https://github.com/boto/boto3/archive/refs/tags/%{version}.tar.gz
 python-botocore.spec,https://github.com/boto/botocore/archive/refs/tags/%{version}.tar.gz
+python-CacheControl.spec,https://github.com/ionrock/cachecontrol/archive/refs/tags/v%{version}.tar.gz
 python-cachecontrol.spec,https://github.com/ionrock/cachecontrol/archive/refs/tags/v%{version}.tar.gz
 python-cassandra-driver.spec,https://github.com/datastax/python-driver/archive/refs/tags/%{version}.tar.gz
 python-certifi.spec,https://github.com/certifi/python-certifi/archive/refs/tags/%{version}.tar.gz
@@ -485,7 +763,6 @@ python-certifi.spec,https://github.com/certifi/python-certifi/archive/refs/tags/
 python-chardet.spec,https://github.com/chardet/chardet/archive/refs/tags/%{version}.tar.gz
 python-charset-normalizer.spec,https://github.com/Ousret/charset_normalizer/archive/refs/tags/%{version}.tar.gz
 python-click.spec,https://github.com/pallets/click/archive/refs/tags/%{version}.tar.gz
-python-ConcurrentLogHandler.spec,https://github.com/Preston-Landers/concurrent-log-handler/archive/refs/tags/%{version}.tar.gz
 python-ConcurrentLogHandler.spec,https://github.com/Preston-Landers/concurrent-log-handler/archive/refs/tags/%{version}.tar.gz
 python-configobj.spec,https://github.com/DiffSK/configobj/archive/refs/tags/v%{version}.tar.gz
 python-configparser.spec,https://github.com/jaraco/configparser/archive/refs/tags/%{version}.tar.gz
@@ -496,6 +773,7 @@ python-cql.spec,https://github.com/datastax/python-driver/archive/refs/tags/%{ve
 python-cqlsh.spec,hhttps://github.com/jeffwidman/cqlsh/archive/refs/tags/%{version}.tar.gz
 python-cqlsh.spec,https://github.com/jeffwidman/cqlsh/archive/refs/tags/%{version}.tar.gz
 python-cryptography.spec,https://github.com/pyca/cryptography/archive/refs/tags/%{version}.tar.gz
+python-daemon.spec,https://pagure.io/python-daemon/archive/release/%{version}/python-daemon-release/%{version}.tar.gz
 python-dateutil.spec,https://github.com/dateutil/dateutil/archive/refs/tags/%{version}.tar.gz
 python-decorator.spec,https://github.com/micheles/decorator/archive/refs/tags/%{version}.tar.gz
 python-deepmerge.spec,https://github.com/toumorokoshi/deepmerge/archive/refs/tags/v%{version}.tar.gz
@@ -510,6 +788,7 @@ python-email-validator.spec,https://github.com/JoshData/python-email-validator/a
 python-etcd.spec,https://github.com/jplana/python-etcd/archive/refs/tags/%{version}.tar.gz
 python-ethtool.spec,https://github.com/fedora-python/python-ethtool/archive/refs/tags/v%{version}.tar.gz
 python-filelock.spec,https://github.com/tox-dev/py-filelock/archive/refs/tags/v%{version}.tar.gz
+python-flit-core.spec,https://github.com/pypa/flit/archive/refs/tags/%{version}.tar.gz
 python-fuse.spec,https://github.com/libfuse/python-fuse/archive/refs/tags/v%{version}.tar.gz
 python-future.spec,https://github.com/PythonCharmers/python-future/archive/refs/tags/v%{version}.tar.gz
 python-futures.spec,https://github.com/agronholm/pythonfutures/archive/refs/tags/%{version}.tar.gz
@@ -517,17 +796,22 @@ python-geomet.spec,https://github.com/geomet/geomet/archive/refs/tags/%{version}
 python-gevent.spec,https://github.com/gevent/gevent/archive/refs/tags/%{version}.tar.gz
 python-graphviz.spec,https://github.com/xflr6/graphviz/archive/refs/tags/%{version}.tar.gz
 python-greenlet.spec,https://github.com/python-greenlet/greenlet/archive/refs/tags/%{version}.tar.gz
+python-hatch-fancy-pypi-readme.spec,https://github.com/hynek/hatch-fancy-pypi-readme/archive/refs/tags/%{version}.tar.gz
+python-hatch-vcs.spec,https://github.com/ofek/hatch-vcs/archive/refs/tags/v%{version}.tar.gz
+python-hatchling.spec,https://github.com/pypa/hatch/archive/refs/tags/hatchling-v%{version}.tar.gz
 python-hyperlink.spec,https://github.com/python-hyper/hyperlink/archive/refs/tags/v%{version}.tar.gz
 python-hypothesis.spec,https://github.com/HypothesisWorks/hypothesis/archive/refs/tags/hypothesis-python-%{version}.tar.gz
 python-idna.spec,https://github.com/kjd/idna/archive/refs/tags/v%{version}.tar.gz
 python-imagesize.spec,https://github.com/shibukawa/imagesize_py/archive/refs/tags/%{version}.tar.gz
 python-importlib-metadata.spec,https://github.com/python/importlib_metadata/archive/refs/tags/v%{version}.tar.gz
 python-incremental.spec,https://github.com/twisted/incremental/archive/refs/tags/incremental-%{version}.tar.gz
-python-iniparse.spec,https://github.com/candlepin/python-iniparse/archive/refs/tags/%{version}.tar.gz   
+python-iniconfig.spec,https://github.com/pytest-dev/iniconfig/archive/refs/tags/v%{version}.tar.gz
+python-iniparse.spec,https://github.com/candlepin/python-iniparse/archive/refs/tags/%{version}.tar.gz
 python-ipaddress.spec,https://github.com/phihag/ipaddress/archive/refs/tags/v%{version}.tar.gz
 python-jinja.spec,https://github.com/pallets/jinja/archive/refs/tags/%{version}.tar.gz
 python-jinja2.spec,https://github.com/pallets/jinja/archive/refs/tags/%{version}.tar.gz
 python-jmespath.spec,https://github.com/jmespath/jmespath.py/archive/refs/tags/%{version}.tar.gz
+python-Js2Py.spec,https://files.pythonhosted.org/packages/cb/a5/3d8b3e4511cc21479f78f359b1b21f1fb7c640988765ffd09e55c6605e3b/Js2Py-%{version}.tar.gz
 python-jsonpointer.spec,https://github.com/stefankoegl/python-json-pointer/archive/refs/tags/v%{version}.tar.gz
 python-jsonpatch.spec,https://github.com/stefankoegl/python-json-patch/archive/refs/tags/v%{version}.tar.gz
 python-jsonschema.spec,https://github.com/python-jsonschema/jsonschema/archive/refs/tags/v%{version}.tar.gz
@@ -536,15 +820,21 @@ python-macholib.spec,https://github.com/ronaldoussoren/macholib/archive/refs/tag
 python-mako.spec,https://github.com/sqlalchemy/mako/archive/refs/tags/rel_%{version}.tar.gz
 python-markupsafe.spec,https://github.com/pallets/markupsafe/archive/refs/tags/%{version}.tar.gz
 python-mistune.spec,https://github.com/lepture/mistune/archive/refs/tags/v%{version}.tar.gz
+python-mock.spec,https://github.com/testing-cabal/mock/archive/refs/tags/%{version}.tar.gz
 python-more-itertools.spec,https://github.com/more-itertools/more-itertools/archive/refs/tags/%{version}.tar.gz
+python-msgpack.spec,https://github.com/msgpack/msgpack-python/archive/refs/tags/v%{version}.tar.gz
 python-ndg-httpsclient.spec,https://github.com/cedadev/ndg_httpsclient/archive/refs/tags/%{version}.tar.gz
 python-netaddr.spec,https://github.com/netaddr/netaddr/archive/refs/tags/%{version}.tar.gz
 python-netifaces.spec,https://github.com/al45tair/netifaces/archive/refs/tags/release_%{version}.tar.gz
+python-nocasedict.spec,https://github.com/pywbem/nocasedict/archive/refs/tags/%{version}.tar.gz
+python-nocaselist.spec,https://github.com/pywbem/nocaselist/archive/refs/tags/%{version}.tar.gz
 python-ntplib.spec,https://github.com/cf-natali/ntplib/archive/refs/tags/%{version}.tar.gz
 python-numpy.spec,https://github.com/numpy/numpy/archive/refs/tags/v%{version}.tar.gz
 python-oauthlib.spec,https://github.com/oauthlib/oauthlib/archive/refs/tags/v%{version}.tar.gz
 python-packaging.spec,https://github.com/pypa/packaging/archive/refs/tags/%{version}.tar.gz
 python-pam.spec,https://github.com/FirefighterBlu3/python-pam/archive/refs/tags/v%{version}.tar.gz
+python-pathspec.spec,https://github.com/cpburnz/python-pathspec/archive/refs/tags/v%{version}.tar.gz
+python-pbr.spec,https://opendev.org/openstack/pbr/archive/%{version}.tar.gz
 python-pefile.spec,https://github.com/erocarrera/pefile/archive/refs/tags/v%{version}.tar.gz
 python-pexpect.spec,https://github.com/pexpect/pexpect/archive/refs/tags/%{version}.tar.gz
 python-pip.spec,https://github.com/pypa/pip/archive/refs/tags/%{version}.tar.gz
@@ -564,7 +854,9 @@ python-pycryptodome.spec,https://github.com/Legrandin/pycryptodome/archive/refs/
 python-pycryptodomex.spec,https://github.com/Legrandin/pycryptodome/archive/refs/tags/v%{version}.tar.gz
 python-pydantic.spec,https://github.com/pydantic/pydantic/archive/refs/tags/v%{version}.tar.gz
 python-pyflakes.spec,https://github.com/PyCQA/pyflakes/archive/refs/tags/%{version}.tar.gz
+python-Pygments.spec,https://github.com/pygments/pygments/archive/refs/tags/%{version}.tar.gz
 python-pygments.spec,https://github.com/pygments/pygments/archive/refs/tags/%{version}.tar.gz
+python-PyHamcrest.spec,https://github.com/hamcrest/PyHamcrest/archive/refs/tags/V%{version}.tar.gz
 python-pyhamcrest.spec,https://github.com/hamcrest/PyHamcrest/archive/refs/tags/V%{version}.tar.gz
 python-pyinstaller.spec,https://github.com/pyinstaller/pyinstaller/archive/refs/tags/v%{version}.tar.gz
 python-pyinstaller-hooks-contrib.spec,https://github.com/pyinstaller/pyinstaller-hooks-contrib/archive/refs/tags/v%{version}.tar.gz
@@ -580,24 +872,37 @@ python-pyudev.spec,https://github.com/pyudev/pyudev/archive/refs/tags/v%{version
 python-pyvim.spec,https://github.com/prompt-toolkit/pyvim/archive/refs/tags/%{version}.tar.gz
 python-pyvmomi.spec,https://github.com/vmware/pyvmomi/archive/refs/tags/v%{version}.tar.gz
 python-pywbem.spec,https://github.com/pywbem/pywbem/archive/refs/tags/%{version}.tar.gz
+python-pytz.spec,https://github.com/stub42/pytz/archive/refs/tags/release_%{version}.tar.gz
 python-requests.spec,https://github.com/psf/requests/archive/refs/tags/v%{version}.tar.gz
+python-requests-toolbelt.spec,https://github.com/requests/toolbelt/archive/refs/tags/%{version}.tar.gz
 python-resolvelib.spec,https://github.com/sarugaku/resolvelib/archive/refs/tags/%{version}.tar.gz
 python-ruamel-yaml.spec,https://files.pythonhosted.org/packages/17/2f/f38332bf6ba751d1c8124ea70681d2b2326d69126d9058fbd9b4c434d268/ruamel.yaml-%{version}.tar.gz
+python-s3transfer.spec,https://github.com/boto/s3transfer/archive/refs/tags/%{version}.tar.gz
 python-scp.spec,https://github.com/jbardin/scp.py/archive/refs/tags/v%{version}.tar.gz
+python-semantic-version.spec,https://github.com/rbarrois/python-semanticversion/archive/refs/tags/%{version}.tar.gz
 python-service_identity.spec,https://github.com/pyca/service-identity/archive/refs/tags/%{version}.tar.gz
 python-setproctitle.spec,https://github.com/dvarrazzo/py-setproctitle/archive/refs/tags/version-%{version}.tar.gz
 python-setuptools.spec,https://github.com/pypa/setuptools/archive/refs/tags/v%{version}.tar.gz
+python-setuptools-rust.spec,https://github.com/PyO3/setuptools-rust/archive/refs/tags/v%{version}.tar.gz
 python-setuptools_scm.spec,https://github.com/pypa/setuptools_scm/archive/refs/tags/v%{version}.tar.gz
 python-simplejson.spec,https://github.com/simplejson/simplejson/archive/refs/tags/v%{version}.tar.gz
 python-six.spec,https://github.com/benjaminp/six/archive/refs/tags/%{version}.tar.gz
 python-snowballstemmer.spec,https://github.com/snowballstem/snowball/archive/refs/tags/v%{version}.tar.gz
 python-sphinx.spec,https://github.com/sphinx-doc/sphinx/archive/refs/tags/v%{version}.tar.gz
+python-sphinxcontrib-applehelp.spec,https://github.com/sphinx-doc/sphinxcontrib-applehelp/archive/refs/tags/%{version}.tar.gz
+python-sphinxcontrib-devhelp.spec,https://github.com/sphinx-doc/sphinxcontrib-devhelp/archive/refs/tags/%{version}.tar.gz
+python-sphinxcontrib-htmlhelp.spec,https://github.com/sphinx-doc/sphinxcontrib-htmlhelp/archive/refs/tags/%{version}.tar.gz
+python-sphinxcontrib-jsmath.spec,https://github.com/sphinx-doc/sphinxcontrib-jsmath/archive/refs/tags/%{version}.tar.gz
+python-sphinxcontrib-qthelp.spec,https://github.com/sphinx-doc/sphinxcontrib-qthelp/archive/refs/tags/%{version}.tar.gz
+python-sphinxcontrib-serializinghtml.spec,https://github.com/sphinx-doc/sphinxcontrib-serializinghtml/archive/refs/tags/%{version}.tar.gz
 python-sqlalchemy.spec,https://github.com/sqlalchemy/sqlalchemy/archive/refs/tags/rel_%{version}.tar.gz
 python-subprocess32.spec,https://github.com/google/python-subprocess32/archive/refs/tags/%{version}.tar.gz
 python-terminaltables.spec,https://github.com/Robpol86/terminaltables/archive/refs/tags/v%{version}.tar.gz
 python-toml.spec,https://github.com/uiri/toml/archive/refs/tags/%{version}.tar.gz
+python-Twisted.spec,https://github.com/twisted/twisted/archive/refs/tags/twisted-%{version}.tar.gz
 python-typing.spec,https://github.com/python/typing/archive/refs/tags/%{version}.tar.gz
 python-typing-extensions.spec,https://github.com/python/typing_extensions/archive/refs/tags/%{version}.tar.gz
+python-tzlocal.spec,https://github.com/regebro/tzlocal/archive/refs/tags/%{version}.tar.gz
 python-ujson.spec,https://github.com/ultrajson/ultrajson/archive/refs/tags/%{version}.tar.gz
 python-urllib3.spec,https://github.com/urllib3/urllib3/archive/refs/tags/%{version}.tar.gz
 python-vcversioner.spec,https://github.com/habnabit/vcversioner/archive/refs/tags/%{version}.tar.gz
@@ -606,7 +911,9 @@ python-wcwidth.spec,https://github.com/jquast/wcwidth/archive/refs/tags/%{versio
 python-webob.spec,https://github.com/Pylons/webob/archive/refs/tags/%{version}.tar.gz
 python-websocket-client.spec,https://github.com/websocket-client/websocket-client/archive/refs/tags/v%{version}.tar.gz
 python-werkzeug.spec,https://github.com/pallets/werkzeug/archive/refs/tags/%{version}.tar.gz
+python-yamlloader.spec,https://github.com/Phynix/yamlloader/archive/refs/tags/%{version}.tar.gz
 python-zmq.spec,https://github.com/zeromq/pyzmq/archive/refs/tags/v%{version}.tar.gz
+python-zope.event.spec,https://github.com/zopefoundation/zope.event/archive/refs/tags/%{version}.tar.gz
 python-zope.interface.spec,https://github.com/zopefoundation/zope.interface/archive/refs/tags/%{version}.tar.gz
 pyYaml.spec,https://github.com/yaml/pyyaml/archive/refs/tags/%{version}.tar.gz
 rabbitmq.spec,https://github.com/rabbitmq/rabbitmq-server/archive/refs/tags/v%{version}.tar.gz
@@ -627,9 +934,9 @@ slirp4netns.spec,https://github.com/rootless-containers/slirp4netns/archive/refs
 spirv-headers.spec,https://github.com/KhronosGroup/SPIRV-Headers/archive/refs/tags/sdk-%{version}.tar.gz
 spirv-tools.spec,https://github.com/KhronosGroup/SPIRV-Tools/archive/refs/tags/sdk-%{version}.tar.gz
 sqlite.spec,https://github.com/sqlite/sqlite/archive/refs/tags/version-%{version}.tar.gz
-strongswan.spec,https://github.com/strongswan/strongswan/archive/refs/tags/%{version}.tar.gz
+strongswan.spec,https://github.com/strongswan/strongswan/releases/download/%{version}/strongswan-%{version}.tar.bz2
 subversion.spec,https://github.com/apache/subversion/archive/refs/tags/%{version}.tar.gz
-sysstat.spec,https://github.com/sysstat/sysstat/archive/refs/tags/v%{version}.tar.gz
+sysstat.spec,http://pagesperso-orange.fr/sebastien.godard/sysstat-%{version}.tar.xz
 systemd.spec,https://github.com/systemd/systemd-stable/archive/refs/tags/v%{version}.tar.gz
 systemtap.spec,https://sourceware.org/ftp/systemtap/releases/systemtap-%{version}.tar.gz
 tar.spec,https://ftp.gnu.org/gnu/tar/tar-%{version}.tar.xz
@@ -641,10 +948,11 @@ toybox.spec,https://github.com/landley/toybox/archive/refs/tags/%{version}.tar.g
 tpm2-pkcs11.spec,https://github.com/tpm2-software/tpm2-pkcs11/archive/refs/tags/%{version}.tar.gz
 trousers.spec,https://sourceforge.net/projects/trousers/files/trousers/%{version}/trousers-%{version}.tar.gz/download
 u-boot.spec,https://github.com/u-boot/u-boot/archive/refs/tags/v%{version}.tar.gz
-ulogd.spec,https://www.netfilter.org/pub/ulogd/ulogd-%{version}.tar.bz2
+ulogd.spec,https://netfilter.org/pub/ulogd/ulogd-%{version}.tar.bz2
 unbound.spec,https://github.com/NLnetLabs/unbound/archive/refs/tags/release-%{version}.tar.gz
 unixODBC.spec,https://github.com/lurcher/unixODBC/archive/refs/tags/%{version}.tar.gz
 util-linux.spec,https://github.com/util-linux/util-linux/archive/refs/tags/v%{version}.tar.gz
+util-macros.spec,https://ftp.x.org/archive//individual/util/util-macros-%{version}.tar.bz2
 uwsgi.spec,https://github.com/unbit/uwsgi/archive/refs/tags/%{version}.tar.gz
 valgrind.spec,https://sourceware.org/pub/valgrind/valgrind-%{version}.tar.bz2
 vim.spec,https://github.com/vim/vim/archive/refs/tags/v%{version}.tar.gz
@@ -658,6 +966,7 @@ xerces-c.spec,https://github.com/apache/xerces-c/archive/refs/tags/v%{version}.t
 xinetd.spec,https://github.com/xinetd-org/xinetd/archive/refs/tags/xinetd-%{version}.tar.gz
 XML-Parser.spec,https://github.com/toddr/XML-Parser/archive/refs/tags/%{version}.tar.gz
 xml-security-c.spec,https://archive.apache.org/dist/santuario/c-library/xml-security-c-%{version}.tar.gz
+xmlsec1.spec,https://www.aleksey.com/xmlsec/download/xmlsec1-%{version}.tar.gz
 zlib.spec,https://github.com/madler/zlib/archive/refs/tags/v%{version}.tar.gz
 zsh.spec,https://github.com/zsh-users/zsh/archive/refs/tags/zsh-%{version}.tar.gz
 '@
@@ -676,14 +985,14 @@ function CheckURLHealth {
      )
 
     Process{
-    # Check Source0 url health in packages5
+    # Check Source0 url health in packages
     $Lines=@()
     $CheckURLHealthPackageObject | foreach {
 
-        if ($_.spec -ilike 'zip.spec')
-        {pause}
-        else
-        {return}
+        # if ($_.spec -ilike 'apache-tomcat.spec')
+        # {pause}
+        # else
+        # {return}
 
         $currentFile = $_
         $Source0 = $currentFile.Source0
@@ -695,6 +1004,10 @@ function CheckURLHealth {
         {
             $Version=$versionArray[0]
             for ($i=1;$i -lt ($versionArray.length -1);$i++) {$version=$Version + "-"+$versionArray[$i]}
+            if ($versionarray[$versionarray.Length-1] -ilike '*.*')
+            {
+                if ([string]((($_.version).split("-"))[-1]).split(".")[-1] -ne "") {$Version = [System.String]::concat($Version,"-",[string]((($_.version).split("-"))[-1]).split(".")[-1])}
+            }
         }
 
 
@@ -752,6 +1065,7 @@ function CheckURLHealth {
             if ($Source0 -ilike '*%{main_version}*') { $Source0 = $Source0 -ireplace '%{main_version}',$_.main_version }
             if ($Source0 -ilike '*%{byaccdate}*') { $Source0 = $Source0 -ireplace '%{byaccdate}',$_.byaccdate }
             if ($Source0 -ilike '*%{dialogsubversion}*') { $Source0 = $Source0 -ireplace '%{dialogsubversion}',$_.dialogsubversion }
+            if ($Source0 -ilike '*%{subversion}*') { $Source0 = $Source0 -ireplace '%{subversion}',$_.subversion }
             if ($Source0 -ilike '*%{libedit_release}*') { $Source0 = $Source0 -ireplace '%{libedit_release}',$_.libedit_release }
             if ($Source0 -ilike '*%{libedit_version}*') { $Source0 = $Source0 -ireplace '%{libedit_version}',$_.libedit_version }
             if ($Source0 -ilike '*%{ncursessubversion}*') { $Source0 = $Source0 -ireplace '%{ncursessubversion}',$_.ncursessubversion }
@@ -764,6 +1078,7 @@ function CheckURLHealth {
 
         $UpdateAvailable=""
         $urlhealth=""
+        $HealthUpdateURL=""
         $Source0Save=$Source0
         if ($Source0 -like '*{*') {$urlhealth = "substitution_unfinished"}
         else
@@ -929,6 +1244,8 @@ function CheckURLHealth {
         $SourceTagURL=""        
         $replace=@()
         $NameLatest=""
+        $SHAName=""
+        $UpdateDownloadName=""
         # Check UpdateAvailable by github tags detection
         if ($Source0 -ilike '*github.com*')
         {
@@ -974,7 +1291,7 @@ function CheckURLHealth {
                 "python-hypothesis.spec" {$SourceTagURL="https://github.com/HypothesisWorks/hypothesis/tags/"; break}
                 "python3-pyroute2.spec" {$SourceTagURL="https://api.github.com/repos/svinota/pyroute2/tags"; break}
                 "python-pyserial.spec" {$SourceTagURL="https://api.github.com/repos/pyserial/pyserial/tags"; break}
-                "python-setproctitle.spec" {$SourceTagURL="https://github.com/dvarrazzo/py-setproctitle/tags"; break}
+                "python-setproctitle.spec" {$SourceTagURL="https://github.com/dvarrazzo/py-setproctitle/tags"; $replace+="version-"; break}
                 "python-zmq.spec" {$SourceTagURL="https://api.github.com/repos/zeromq/pyzmq/tags"; break}
                 "rpm.spec" {$SourceTagURL="https://api.github.com/repos/rpm-software-management/rpm/tags"; break}
                 "salt3.spec" {$SourceTagURL="https://api.github.com/repos/saltstack/salt/tags"; break}
@@ -1040,9 +1357,16 @@ function CheckURLHealth {
                 switch($_.spec)
                 {
                 "aide.spec" {$replace +="cs.tut.fi.import"; $replace+=".release"; break}
+                "amdvlk.spec" {$replace +="v-"; break}
                 "apache-ant.spec" {$replace +="rel/"; break}
                 "apache-maven.spec" {$replace +="workspace-v0"; $replace +="maven-"; break}
-                "at-spi2-core.spec" {$replace +="AT_SPI2_CORE_"; break}
+                "apache-tomcat.spec"
+                {
+                    if ($outputfile -ilike '*-3.0_*') { $Names = $Names | foreach-object { if ($_ -like '8.*') {$_}}}
+                    elseif ($outputfile -ilike '*-4.0_*') { $Names = $Names | foreach-object { if ($_ -like '8.*') {$_}}}
+                    elseif ($outputfile -ilike '*-5.0_*') { $Names = $Names | foreach-object { if ($_ -like '10.*') {$_}}}
+                }
+                "at-spi2-core.spec" {$replace +="AT_SPI2_CORE_3_6_3"; $replace +="AT_SPI2_CORE_"; break}
                 "atk.spec"
                 {
                     $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'gnome' -simplematch)) {$_}}
@@ -1083,7 +1407,11 @@ function CheckURLHealth {
                     $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'gobject_' -simplematch)) {$_}}
                     break
                 }
-                "glibmm.spec" {$replace +="start"; break}
+                "glibmm.spec"
+                {
+                    $replace +="start"
+                    break
+                }
                 "glib-networking.spec" {$replace +="glib-"; break}
                 "glslang.spec" {
                     $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'untagged-' -simplematch)) {$_}}
@@ -1141,6 +1469,11 @@ function CheckURLHealth {
                 }
                 "libX11.spec" { $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'xf86-' -simplematch)) {$_}} ; break}
                 "libXinerama.spec" {$replace +="XORG-7_1"; break}
+                "libxml2.spec"
+                {
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'LIBXML2' -simplematch)) {$_}}
+                    break
+                }
                 "libxslt.spec" {$replace +="LIXSLT_"; break}
                 "linux-PAM.spec" {$replace +="pam_unix_refactor"; break}
                 "lldb.spec"
@@ -1203,12 +1536,31 @@ function CheckURLHealth {
                     $Names = $Names -ireplace ".a",".0.9991"
                     $Names = $Names -ireplace ".b",".0.9992"
                     $Names = $Names -ireplace ".c",".0.9993"
+                    break
                 }
                 "newt.spec" {$replace +="r"; $Names = $Names -replace "-","."; break}
                 "ninja-build.spec"
                 {
                     $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'release-' -simplematch)) {$_}}
                     break
+                }
+                "openjdk8.spec"
+                {
+                    $Names = $Names | foreach-object { if (($_ | select-string -pattern '-ga' -simplematch)) {$_}}
+                    $replace +="jdk8u"
+                    $replace +="-ga"
+                }
+                "openjdk11.spec"
+                {
+                    $Names = $Names | foreach-object { if (($_ | select-string -pattern '-ga' -simplematch)) {$_}}
+                    $replace +="jdk-"
+                    $replace +="-ga"
+                }
+                "openjdk17.spec"
+                {
+                    $Names = $Names | foreach-object { if (($_ | select-string -pattern '-ga' -simplematch)) {$_}}
+                    $replace +="jdk-"
+                    $replace +="-ga"
                 }
                 "openldap.spec" {$replace +="UTBM_"; $replace +="URE_"; $replace +="UMICH_LDAP_3_3"; $replace +="UCDATA_"; $replace +="TWEB_OL_BASE"; $replace +="SLAPD_BACK_LDAP"; $replace +="PHP3_TOOL_0_0"; $replace +="OPENLDAP_REL_ENG_"; $replace +="LMDB_"; break}
                 "open-vm-tools.spec" {$replace +="stable-"; break}
@@ -1247,6 +1599,7 @@ function CheckURLHealth {
                 "python-setproctitle.spec" {$replace +="version-"; break}
                 "python-sqlalchemy.spec" {$replace +="rel_"; break}
                 "python-webob.spec" {$replace +="sprint-coverage"; break}
+                "python-pytz.spec" {$replace +="release_"; break}
                 "rabbitmq3.10.spec" {
                     $Names = $Names | foreach-object { if ($_ | select-string -pattern 'v3.10.' -simplematch) {$_}}
                     break
@@ -1344,8 +1697,12 @@ function CheckURLHealth {
                     $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.pre1' -simplematch)) {$_}}
 
                     $Names = $Names -ireplace "v",""
-                    $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
-                    $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
+
+                    if ($_.spec -notlike "amdvlk.spec")
+                    {
+                        $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
+                        $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
+                    }
 
                     if ($Names -ilike '*.*')
                     {
@@ -1355,6 +1712,7 @@ function CheckURLHealth {
                     {
                         $NameLatest = ($Names | convertfrom-json | sort-object |select-object -last 1).ToString()
                     }
+                    if (!($Names.contains($NameLatest))) { $NameLatest = ($Names | sort-object |select-object -last 1).ToString() }
             }
             catch{$NameLatest=""}
             if ($NameLatest -ne "")
@@ -1478,6 +1836,7 @@ function CheckURLHealth {
                     $Names = $Names  -replace ".tar.gz",""
                     $Names = $Names  -replace ".tar.bz2",""
                     $Names = $Names  -replace ".tar.xz",""
+                    $Names = $Names  -replace ".tar.lz",""
                     $Names = $Names -ireplace "Python-",""
                     $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
                     $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
@@ -1508,6 +1867,7 @@ function CheckURLHealth {
                 $Names = $Names  -replace ".tar.gz",""
                 $Names = $Names  -replace ".tar.bz2",""
                 $Names = $Names  -replace ".tar.xz",""
+                $Names = $Names  -replace ".tar.lz",""
 
                 if ($_.spec -ilike 'compat-gdbm.spec') {$replace +="gdbm-"}
                 elseif ($_.spec -ilike 'grub2.spec') {$replace +="grub-"}
@@ -1576,6 +1936,7 @@ function CheckURLHealth {
                 {
                     $NameLatest = ($Names | convertfrom-json | sort-object |select-object -last 1).ToString()
                 }
+                if (!($Names.contains($NameLatest))) { $NameLatest = ($Names | sort-object |select-object -last 1).ToString() }
             }
             catch{$NameLatest=""}
             if ($NameLatest -ne "")
@@ -1602,6 +1963,8 @@ function CheckURLHealth {
         # Check UpdateAvailable by rubygems.org tags detection
         elseif ($Source0 -ilike '*rubygems.org*')
         {
+            $Names=@()
+            $replace=@()
             # Autogenerated SourceTagURL from Source0
             $SourceTagURLArray=($Source0).split("-")
             if ($SourceTagURLArray.length -gt 1)
@@ -1660,6 +2023,7 @@ function CheckURLHealth {
                 {
                     $NameLatest = ($Names | convertfrom-json | sort-object | select-object -last 1).ToString()
                 }
+                if (!($Names.contains($NameLatest))) { $NameLatest = ($Names | sort-object |select-object -last 1).ToString() }
             }
             catch{$NameLatest=""}
             if ($NameLatest -ne "")
@@ -1687,7 +2051,8 @@ function CheckURLHealth {
         # Check UpdateAvailable by sourceforge tags detection
         elseif ($Source0 -ilike '*sourceforge.net*')
         {
-
+            $Names=@()
+            $replace=@()
             # Autogenerated SourceTagURL from Source0
             $SourceTagURLArray=($Source0).replace("http://","")
             $SourceTagURLArray=($SourceTagURLArray).replace("https://","")
@@ -1762,6 +2127,7 @@ function CheckURLHealth {
                 $Names = $Names  -replace ".tar.gz",""
                 $Names = $Names  -replace ".tar.bz2",""
                 $Names = $Names  -replace ".tar.xz",""
+                $Names = $Names  -replace ".tar.lz",""
 
                 $replace += $_.Name+"."
                 $replace += $_.Name+"-"
@@ -1805,6 +2171,7 @@ function CheckURLHealth {
                 {
                     $NameLatest = ($Names | convertfrom-json | sort-object |select-object -last 1).ToString()
                 }
+                if (!($Names.contains($NameLatest))) { $NameLatest = ($Names | sort-object |select-object -last 1).ToString() }
             }
             catch{$NameLatest=""}
             if ($NameLatest -ne "")
@@ -1834,13 +2201,14 @@ function CheckURLHealth {
         {
             # Hardcoded SourceTagURL from Source0 because detection from Source0 url would have a worse ratio
             $Names = @()
+            $replace=@()
             if ($_.spec -ilike 'asciidoc3.spec') {$SourceTagURL="https://gitlab.com/asciidoc3/asciidoc3/-/tags?format=atom"}
             elseif ($_.spec -ilike 'cairo.spec') {$SourceTagURL="https://gitlab.freedesktop.org/cairo/cairo/-/tags?format=atom"}
             elseif ($_.spec -ilike 'dbus.spec') {$SourceTagURL="https://gitlab.freedesktop.org/dbus/dbus/-/tags?format=atom"}
             elseif ($_.spec -ilike 'dbus-glib.spec') {$SourceTagURL="https://gitlab.freedesktop.org/dbus/dbus-glib/-/tags?format=atom"}
             elseif ($_.spec -ilike 'dbus-python.spec') {$SourceTagURL="https://gitlab.freedesktop.org/dbus/dbus-python/-/tags?format=atom"}
-            elseif ($_.spec -ilike 'fontconfig.spec') {$SourceTagURL="https://gitlab.freedesktop.org/fontconfig/fontconfig/-/tags?format=atom"}
-            elseif (($_.spec -ilike 'harfbuzz.spec') -or ($_.spec -ilike 'gst-plugins-bad.spec') -or ($_.spec -ilike 'gstreamer-plugins-base.spec') -or ($_.spec -ilike 'libdrm.spec') -or ($_.spec -ilike 'libqmi.spec') -or ($_.spec -ilike 'libxcb.spec') -or ($_.spec -ilike 'ModemManager.spec') -or ($_.spec -ilike 'xcb-proto.spec')) # ausnahmen
+            elseif ($_.spec -ilike 'fontconfig.spec') {$SourceTagURL="https://gitlab.freedesktop.org/fontconfig/fontconfig/-/tags?format=atom"}       
+            elseif (($_.spec -ilike 'harfbuzz.spec') -or ($_.spec -ilike 'gst-plugins-bad.spec') -or ($_.spec -ilike 'gstreamer-plugins-base.spec') -or ($_.spec -ilike 'libdrm.spec') -or ($_.spec -ilike 'libqmi.spec') -or ($_.spec -ilike 'libxcb.spec') -or ($_.spec -ilike 'ModemManager.spec') -or ($_.spec -ilike 'xcb-proto.spec' -or ($_.spec -ilike 'libmbim.spec'))) # ausnahmen
             {
                 if ($_.spec -ilike 'harfbuzz.spec') {$SourceTagURL="https://www.freedesktop.org/software/harfbuzz/release/"}
                 elseif ($_.spec -ilike 'gst-plugins-bad.spec') {$SourceTagURL="https://gstreamer.freedesktop.org/src/gst-plugins-bad"}
@@ -1850,6 +2218,7 @@ function CheckURLHealth {
                 elseif ($_.spec -ilike 'libxcb.spec') {$SourceTagURL="http://xcb.freedesktop.org/dist/"}
                 elseif ($_.spec -ilike 'ModemManager.spec') {$SourceTagURL="https://www.freedesktop.org/software/ModemManager/"}
                 elseif ($_.spec -ilike 'xcb-proto.spec') {$SourceTagURL="http://xcb.freedesktop.org/dist/"}
+                elseif ($_.spec -ilike 'libmbim.spec') {$SourceTagURL="https://www.freedesktop.org/software/libmbim/"}
               
                 $Names = (((invoke-restmethod -uri $SourceTagURL -usebasicparsing -headers @{Authorization = "Bearer $accessToken"}) -split "<tr><td") -split 'a href=') -split '>'
                 $Names = $Names | foreach-object { if ($_ | select-string -pattern '</a' -simplematch) {$_}}
@@ -1861,11 +2230,13 @@ function CheckURLHealth {
                 $Names = $Names  -replace ".tar.gz",""
                 $Names = $Names  -replace ".tar.bz2",""
                 $Names = $Names  -replace ".tar.xz",""
+                $Names = $Names  -replace ".tar.lz",""
             }
             elseif ($_.spec -ilike 'gstreamer.spec') {$SourceTagURL="https://gitlab.freedesktop.org/gstreamer/gstreamer/-/tags?format=atom"} 
             elseif ($_.spec -ilike 'ipcalc.spec') {$SourceTagURL="https://gitlab.com/ipcalc/ipcalc/-/tags?format=atom"}
             elseif ($_.spec -ilike 'libslirp.spec') {$SourceTagURL="https://gitlab.freedesktop.org/slirp/libslirp/-/tags?format=atom"}
             elseif ($_.spec -ilike 'libtiff.spec') {$SourceTagURL="https://gitlab.com/libtiff/libtiff/-/tags?format=atom"}
+            elseif ($_.spec -ilike 'libx11.spec') {$SourceTagURL="https://gitlab.freedesktop.org/xorg/lib/libx11/-/tags?format=atom"}  
             elseif ($_.spec -ilike 'libxinerama.spec') {$SourceTagURL="https://gitlab.freedesktop.org/xorg/lib/libxinerama/-/tags?format=atom"}
             elseif ($_.spec -ilike 'man-db.spec') {$SourceTagURL="https://gitlab.com/man-db/man-db/-/tags?format=atom"}
             elseif ($_.spec -ilike 'mesa.spec') {$SourceTagURL="https://gitlab.freedesktop.org/mesa/mesa/-/tags?format=atom"}
@@ -1875,6 +2246,7 @@ function CheckURLHealth {
             elseif ($_.spec -ilike 'pkg-config.spec') {$SourceTagURL="https://gitlab.freedesktop.org/pkg-config/pkg-config/-/tags?format=atom"}
             elseif ($_.spec -ilike 'polkit.spec') {$SourceTagURL="https://gitlab.freedesktop.org/polkit/polkit/-/tags?format=atom"}
             elseif ($_.spec -ilike 'psmisc.spec') {$SourceTagURL="https://gitlab.com/psmisc/psmisc/-/tags?format=atom"}
+            elseif ($_.spec -ilike 'pygobject.spec') {$SourceTagURL="https://gitlab.gnome.org/GNOME/pygobject/-/tags?format=atom"}
             elseif ($_.spec -ilike 'python-M2Crypto.spec') {$SourceTagURL="https://gitlab.com/m2crypto/m2crypto/-/tags?format=atom"}
             elseif ($_.spec -ilike 'shared-mime-info.spec') {$SourceTagURL="https://gitlab.freedesktop.org/xdg/shared-mime-info/-/tags?format=atom"}
             elseif ($_.spec -ilike 'wayland.spec') {$SourceTagURL="https://gitlab.freedesktop.org/wayland/wayland/-/tags?format=atom"}
@@ -1933,6 +2305,7 @@ function CheckURLHealth {
                     {
                         $NameLatest = ($Names | convertfrom-json | sort-object |select-object -last 1).ToString()
                     }
+                    if (!($Names.contains($NameLatest))) { $NameLatest = ($Names | sort-object |select-object -last 1).ToString() }
                 }
                 catch{$NameLatest=""}
                 if ($NameLatest -ne "")
@@ -1960,12 +2333,13 @@ function CheckURLHealth {
         # Check UpdateAvailable by kernel.org tags detection
         elseif ($Source0 -ilike '*kernel.org*')
         {
+            $Names=@()
+            $replace=@()
             # Hardcoded SourceTagURL from Source0 because detection from Source0 url would have a worse ratio
             if ($_.spec -ilike 'autofs.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/linux/storage/autofs/autofs.git/refs/tags?format=atom"}
             elseif ($_.spec -ilike 'blktrace.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/linux/kernel/git/axboe/blktrace.git/refs/tags?format=atom"}
             elseif ($_.spec -ilike 'bluez.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/bluetooth/bluez.git/refs"} #ausnahme
             elseif ($_.spec -ilike 'bridge-utils.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/network/bridge/bridge-utils.git/refs/tags?format=atom"}
-            elseif ($_.spec -ilike 'dracut.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/boot/dracut/dracut.git/refs/tags?format=atom"}
             elseif ($_.spec -ilike 'dtc.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/utils/dtc/dtc.git/refs/tags?format=atom"}
             elseif ($_.spec -ilike 'ethtool.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/network/ethtool/ethtool.git/refs/tags?format=atom"}
             elseif ($_.spec -ilike 'fio.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/linux/kernel/git/axboe/fio.git/refs/tags?format=atom"}
@@ -1981,9 +2355,9 @@ function CheckURLHealth {
             elseif ($_.spec -ilike 'libtracefs.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/libs/libtrace/libtracefs.git/refs/tags?format=atom"}
             elseif (($_.spec -ilike 'linux-aws.spec') -or ($_.spec -ilike 'linux-esx.spec') -or ($_.spec -ilike 'linux-rt.spec') -or ($_.spec -ilike 'linux-secure.spec') -or ($_.spec -ilike 'linux.spec') -or ($_.spec -ilike 'linux-api-headers.spec'))
             {
-                if ($outputfile -ilike '*-3.0_*') {$SourceTagURL="http://www.kernel.org/pub/linux/kernel/v4.x"}
-                elseif ($outputfile -ilike '*-4.0_*') {$SourceTagURL="http://www.kernel.org/pub/linux/kernel/v5.x"}
-                elseif ($outputfile -ilike '*-5.0_*') {$SourceTagURL="http://www.kernel.org/pub/linux/kernel/v6.x"}
+                if ($outputfile -ilike '*-3.0_*') {$SourceTagURL="http://www.kernel.org/pub/linux/kernel/v4.x"; $replace +="linux-"}
+                elseif ($outputfile -ilike '*-4.0_*') {$SourceTagURL="http://www.kernel.org/pub/linux/kernel/v5.x"; $replace +="linux-"}
+                elseif ($outputfile -ilike '*-5.0_*') {$SourceTagURL="http://www.kernel.org/pub/linux/kernel/v6.x"; $replace +="linux-"}
             }
             elseif ($_.spec -ilike 'linux-firmware.spec') {$SourceTagURL="http://www.kernel.org/pub/linux/kernel/firmware"}
             elseif ($_.spec -ilike 'man-pages.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/docs/man-pages/man-pages.git/refs/tags?format=atom"}
@@ -1994,13 +2368,16 @@ function CheckURLHealth {
             elseif ($_.spec -ilike 'trace-cmd.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/utils/trace-cmd/trace-cmd.git/refs/tags?format=atom"; $replace +="v"}
             elseif ($_.spec -ilike 'usbutils.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/linux/kernel/git/gregkh/usbutils.git/refs/tags?format=atom"}
             elseif ($_.spec -ilike 'xfsprogs.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/fs/xfs/xfsprogs-dev.git/refs/tags?format=atom"; $replace +="xfsprogs-dev-"; $replace +="v"}
+            else
+            {
+                $SourceTagURL=(split-path $Source0 -Parent).Replace("\","/")
+            }
 
             if ($SourceTagURL -ne "")
             {
                 try{
                     $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
                     $headers.Add("Authorization", "token $accessToken")
-                    $Names=@()
                     $Names = (((invoke-restmethod -uri $SourceTagURL -usebasicparsing -headers @{Authorization = "Bearer $accessToken"}) -split "<tr><td") -split 'a href=') -split '>'
                     $Names = $Names | foreach-object { if ($_ | select-string -pattern '</a' -simplematch) {$_}}
                     $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'commit' -simplematch)) {$_}}
@@ -2011,6 +2388,7 @@ function CheckURLHealth {
                     $Names = $Names  -replace ".tar.gz",""
                     $Names = $Names  -replace ".tar.bz2",""
                     $Names = $Names  -replace ".tar.xz",""
+                    $Names = $Names  -replace ".tar.lz",""
 
                     $replace += $_.Name+"."
                     $replace += $_.Name+"-"
@@ -2056,7 +2434,7 @@ function CheckURLHealth {
                     # post check
                     if (($_.spec -ilike 'linux-aws.spec') -or ($_.spec -ilike 'linux-esx.spec') -or ($_.spec -ilike 'linux-rt.spec') -or ($_.spec -ilike 'linux-secure.spec') -or ($_.spec -ilike 'linux.spec') -or ($_.spec -ilike 'linux-api-headers.spec'))
                     {
-                        if ($outputfile -ilike '*-3.0_*') {$Names = $Names | foreach-object { if ($_ | select-string -pattern '4.19.') {$_}}}
+                        if ($outputfile -ilike '*-3.0_*') {$Names = $Names | foreach-object { if ($_ | select-string -pattern '4.19.' -simplematch) {$_}}}
                         elseif ($outputfile -ilike '*-4.0_*') {$Names = $Names | foreach-object { if ($_ | select-string -pattern '5.10.' -simplematch) {$_}}}
                         elseif ($outputfile -ilike '*-5.0_*') {$Names = $Names | foreach-object { if ($_ | select-string -pattern '6.0' -simplematch) {$_}}}
                     }
@@ -2080,6 +2458,7 @@ function CheckURLHealth {
                     {
                         $NameLatest = ($Names | convertfrom-json | sort-object |select-object -last 1).ToString()
                     }
+                    if (!($Names.contains($NameLatest))) { $NameLatest = ($Names | sort-object |select-object -last 1).ToString() }
                 }
                 catch{$NameLatest=""}
                 if ($NameLatest -ne "")
@@ -2103,20 +2482,227 @@ function CheckURLHealth {
                 }
             }
         }
+        elseif (((urlhealth((split-path $Source0 -Parent).Replace("\","/"))) -eq "200") -or `
+        ($_.spec -ilike "apparmor.spec") -or `
+        ($_.spec -ilike "bzr.spec") -or `
+        ($_.spec -ilike "conntrack-tools.spec") -or `
+        ($_.spec -ilike "ebtables.specconntrack-tools.spec") -or `
+        ($_.spec -ilike "eventlog.spec") -or `
+        ($_.spec -ilike "intltool.spec") -or `
+        ($_.spec -ilike "iotop.spec") -or `
+        ($_.spec -ilike "ipset.spec") -or `
+        ($_.spec -ilike "iptables.spec") -or `
+        ($_.spec -ilike "itstool.spec") -or `
+        ($_.spec -ilike "js.spec") -or `
+        ($_.spec -ilike "lasso.spec") -or `
+        ($_.spec -ilike "libmnl.spec") -or `
+        ($_.spec -ilike "libmetalink.spec") -or `
+        ($_.spec -ilike "libnetfilter_conntrack.spec") -or `
+        ($_.spec -ilike "libnetfilter_cthelper.spec") -or `
+        ($_.spec -ilike "libnetfilter_cttimeout.spec") -or `
+        ($_.spec -ilike "libnetfilter_queue.spec") -or `
+        ($_.spec -ilike "libnfnetlink.spec") -or ` 
+        ($_.spec -ilike "libnftnl.spec") -or `
+        ($_.spec -ilike "libteam.spec") -or `
+        ($_.spec -ilike "nftables.spec") -or `
+        ($_.spec -ilike "openvswitch.spec") -or `
+        ($_.spec -ilike "sysstat.spec") -or `
+        ($_.spec -ilike "xmlsec1.spec"))
+        {
+
+            $SourceTagURL=(split-path $Source0 -Parent).Replace("\","/")
+            if ($_.spec -ilike "apparmor.spec") {$SourceTagURL="https://launchpad.net/apparmor/+download"}
+            if ($_.spec -ilike "bzr.spec") {$SourceTagURL="https://launchpad.net/bzr/+download"}
+            if ($_.spec -ilike "ipset.spec") {$SourceTagURL="https://ipset.netfilter.org/install.html"}
+            if ($_.spec -ilike "itstool.spec") {$SourceTagURL="https://itstool.org/download.html"}
+            if ($_.spec -ilike "js.spec") {$SourceTagURL="https://archive.mozilla.org/pub/js/"}
+            if ($_.spec -ilike "openvswitch.spec") {$SourceTagURL="https://www.openvswitch.org/download"}
+            if ($_.spec -ilike "sysstat.spec") {$SourceTagURL="http://sebastien.godard.pagesperso-orange.fr/download.html"}
+            if ($_.spec -ilike "xmlsec1.spec") {$SourceTagURL="https://www.aleksey.com/xmlsec/download/"}
+            $Names=@()
+            $replace=@()
+            $NameLatest=""
+            try{ $Names = ((((invoke-restmethod -uri $SourceTagURL -usebasicparsing) -split "<tr><td") -split 'a href=') -split '>') -split "title=" }
+            catch
+            {
+                try
+                {
+                    $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+                    $session.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36"
+                    $Names = Invoke-WebRequest -UseBasicParsing -Uri $SourceTagURL `
+                    -WebSession $session `
+                    -Headers @{
+                    "Accept"="text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
+                      "Accept-Encoding"="gzip, deflate, br"
+                      "Accept-Language"="en-US,en;q=0.9"
+                      "Cache-Control"="max-age=0"
+                      "Sec-Fetch-Dest"="document"
+                      "Sec-Fetch-Mode"="navigate"
+                      "Sec-Fetch-Site"="none"
+                      "Sec-Fetch-User"="?1"
+                      "Upgrade-Insecure-Requests"="1"
+                      "sec-ch-ua"="`"Google Chrome`";v=`"113`", `"Chromium`";v=`"113`", `"Not-A.Brand`";v=`"24`""
+                      "sec-ch-ua-mobile"="?0"
+                      "sec-ch-ua-platform"="`"Windows`""
+                    }
+                    $Names = $Names.Links.href
+                }
+                catch{}
+            }
+            if ($_.spec -ilike "docbook-xml.spec")
+            {
+                $SourceTagURL="https://docbook.org/xml/"
+                $objtmp=@()
+                $objtmp = (invoke-webrequest -uri $SourceTagURL).Links.href
+                $objtmp = $objtmp | foreach-object { if ($_ -match '\d') {$_}}
+                $objtmp = $objtmp | foreach-object { if (!($_ | select-string -pattern 'CR' -simplematch)) {$_}}
+                $objtmp = $objtmp | foreach-object { if (!($_ | select-string -pattern 'b' -simplematch)) {$_}}
+                $Latest=([HeapSort]::Sort($objtmp) | select-object -last 1).tostring()
+                $SourceTagURL = [system.string]::concat('https://docbook.org/xml/',$Latest)
+                $objtmp = (invoke-webrequest -uri $SourceTagURL).Links.href
+                $Names = $objtmp | foreach-object { if ($_ | select-string -pattern 'docbook-' -simplematch) {$_}}
+                $Names = $Names  -replace "docbook-xml-",""
+                $Names = $Names  -replace "docbook-",""
+                $Names = $Names  -replace ".zip",""
+            }
+            if (!([Object]::ReferenceEquals($Names,$null)))
+            {
+                if ($_.spec -notlike "docbook-xml.spec")
+                {                
+                    if (((($Names | foreach-object { if ($_ | select-string -pattern '.tar.' -simplematch) {$_}}).count) -eq 0) -or ($_.spec -ilike "dialog.spec") -or ($_.spec -ilike "byacc.spec"))
+                    {
+                        $Names = $Names | foreach-object { if ($_ | select-string -pattern '.tgz' -simplematch) {$_}}
+                    }
+                    else
+                    {
+                        $Names = $Names | foreach-object { if ($_ | select-string -pattern '.tar.' -simplematch) {$_}}
+                    }
+                    $Names = ($Names | foreach-object { if (!($_ | select-string -pattern '</a' -simplematch)) {$_}}) -ireplace '"',""
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.tgz.asc' -simplematch)) {$_}}
+                    $Names = $Names  -replace "-src.tar.gz",""
+                    $Names = $Names  -replace ".tar.gz",""
+                    $Names = $Names  -replace ".tar.bz2",""
+                    $Names = $Names  -replace ".tar.xz",""
+                    $Names = $Names  -replace ".tar.lz",""
+                    $Names = $Names  -replace ".tgz",""
+                }
+
+                if (($_.spec -ilike "apparmor.spec") -or ($_.spec -ilike "bzr.spec") -or ($_.spec -ilike "intltool.spec") -or ($_.spec -ilike "libmetalink.spec") -or ($_.spec -ilike "itstool.spec"))
+                {
+                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '/' -simplematch) {($_ -split '/')[-1]}}
+                }
+                elseif ($_.spec -ilike "curl.spec") { $Names = $Names  -replace "download/","" }
+                elseif ($_.spec -ilike "js.spec") { $replace += "/pub/js/"; $replace +="-1.0.0"}
+                elseif ($_.spec -ilike "lsscsi.spec") { $replace += "lsscsi-030" }
+                elseif ($_.spec -ilike "ltrace.spec") { $replace += ".orig" }
+                elseif ($_.spec -ilike "tzdata.spec")
+                {
+                    $Names = $Names | foreach-object { if ($_ | select-string -pattern 'tzdata' -simplematch) {$_}}
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.tar.z' -simplematch)) {$_}}
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.asc' -simplematch)) {$_}}
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.sign' -simplematch)) {$_}}
+                    $replace += "beta"
+                }
+                elseif ($_.spec -ilike "qemu-img.spec") { $replace += "qemu-" }
+                elseif ($_.spec -ilike "python-stevedore.spec") { $replace += "stevedore-" }
+                elseif ($_.spec -ilike "python-antlrpythonruntime.spec") { $replace += "antlr_python_runtime-" }
+                elseif ($_.spec -ilike "openvswitch.spec") { $replace += "https://www.openvswitch.org/releases/openvswitch-" }
+                elseif ($_.spec -ilike "sysstat.spec") { $replace += "href=http://pagesperso-orange.fr/sebastien.godard/sysstat-"; $replace +='<a'; $replace+="moz-do-not-send=true" ; $Names = $Names -replace '\n',""}        
+
+                $replace += $_.Name+"."
+                $replace += $_.Name+"-"
+                $replace += $_.Name+"_"
+                $replace += $_.Name
+                $replace +="ver"
+                $replace +="release_"
+                $replace +="release-"
+                $replace +="release"
+                $i=0; do {$Names = $Names | foreach-object {$_.tolower().replace(($replace[$i]).tolower(),"")}; $i++} while ($i -ne $replace.count-1)
+
+                $Names = $Names.Where({ $null -ne $_ })
+                $Names = $Names.Where({ "" -ne $_ })
+                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^rel/' -simplematch) {$_ -ireplace '^rel/',""} else {$_}}
+                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^v' -simplematch) {$_ -ireplace '^v',""} else {$_}}
+                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^V' -simplematch) {$_ -ireplace '^V',""} else {$_}}
+                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^r' -simplematch) {$_ -ireplace '^r',""} else {$_}}
+                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^R' -simplematch) {$_ -ireplace '^R',""} else {$_}}
+                $Names = $Names | foreach-object { if ($_ | select-string -pattern '_' -simplematch) {$_ -ireplace '_',"."} else {$_}}
+
+                # remove versions developer, release candidates, alpha versions, preview versions and versions without numbers
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'candidate' -simplematch)) {$_}}
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-alpha' -simplematch)) {$_}}
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-beta' -simplematch)) {$_}}
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.beta' -simplematch)) {$_}}
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.0' -simplematch)) {$_}}
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.1' -simplematch)) {$_}}
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.2' -simplematch)) {$_}}
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.3' -simplematch)) {$_}}
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.4' -simplematch)) {$_}}
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc1' -simplematch)) {$_}}
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc2' -simplematch)) {$_}}
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc3' -simplematch)) {$_}}
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc4' -simplematch)) {$_}}
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-preview.' -simplematch)) {$_}}
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-dev.' -simplematch)) {$_}}
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-pre1' -simplematch)) {$_}}
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.pre1' -simplematch)) {$_}}
+
+                    if ($_.spec -notlike "tzdata.spec")
+                    {
+                        $Names = $Names  -replace "v",""
+                        $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
+                        $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
+                    }
+
+                if ($Names -ilike '*.*')
+                {
+                    $NameLatest = ($Names | % {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
+                }
+                else
+                {
+                    
+                    try
+                    {
+                        $NameLatest=([HeapSort]::Sort($Names) | select-object -last 1).ToString()
+                    }
+                    catch{}
+                }
+            }
+            if ($NameLatest -ne "")
+            {
+                if (($NameLatest -ilike '*.*') -and ($version -ilike '*.*'))
+                {
+                    try
+                    {
+                        if ([System.Version]$Version -lt [System.Version]$NameLatest) {$UpdateAvailable = $NameLatest}
+                        elseif ([System.Version]$Version -eq [System.Version]$NameLatest) {$UpdateAvailable = "(same version)" }
+                        else {$UpdateAvailable = "Warning: "+$currentfile.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
+                    }
+                    catch{}
+                }
+                if ($UpdateAvailable -eq "")
+                {
+                    if ($Version -lt $NameLatest) {$UpdateAvailable = $NameLatest}
+                    elseif ($Version -eq $NameLatest) {$UpdateAvailable = "(same version)" }
+                    else {$UpdateAvailable = "Warning: "+$currentfile.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
+                }
+            }
+
+        }
 
         # Archived Github repo signalization
         $warning="Warning: repo isn't maintained anymore."
-        if ($_.Spec -ilike 'python-argparse.spec') {$UpdateAvailable=$warning}
+        if ($_.Spec -ilike 'dhcp.spec') {$UpdateAvailable=$warning+" See "+ "https://www.isc.org/dhcp_migration/"}
+        elseif ($_.Spec -ilike 'python-argparse.spec') {$UpdateAvailable=$warning}
         elseif ($_.Spec -ilike 'python-atomicwrites.spec') {$UpdateAvailable=$warning}
         elseif ($_.Spec -ilike 'python-subprocess32.spec') {$UpdateAvailable=$warning}
         elseif ($_.Spec -ilike 'python-terminaltables.spec') {$UpdateAvailable=$warning}
         elseif ($_.Spec -ilike 'confd.spec') {$UpdateAvailable=$warning}
         elseif ($_.Spec -ilike 'cve-check-tool.spec') {$UpdateAvailable=$warning}
         elseif ($_.Spec -ilike 'http-parser.spec') {$UpdateAvailable=$warning}
-        elseif ($_.Spec -ilike 'imagemagick.spec') {$UpdateAvailable=$warning}
         elseif ($_.Spec -ilike 'fcgi.spec') {$UpdateAvailable=$warning+" See "+ "https://github.com/FastCGI-Archives/fcgi2/archive/refs/tags/%{version}.tar.gz ."}
-        elseif ($_.Spec -ilike 'libtar.spec') {$UpdateAvailable=$warning}
-        elseif ($_.Spec -ilike 'lightwave.spec') {$UpdateAvailable=$warning}
+        elseif ($_.Spec -ilike 'libtar.spec') {$UpdateAvailable=$warning+" See "+ "https://sources.debian.org/patches/libtar"}
+        elseif ($_.Spec -ilike 'lightwave.spec') {$UpdateAvailable=$warning}	
 
         $warning="Warning: Cannot detect correlating tags from the repo provided."
         if (($_.Spec -ilike 'bluez-tools.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
@@ -2150,16 +2736,15 @@ function CheckURLHealth {
         if ($_.Spec -ilike 'python-pycodestyle.spec') {$UpdateAvailable=$warning}
 
         $warning="Info: Source0 contains a VMware internal url address."
-        if ($_.Spec -ilike 'distrib-compat.spec') {$UpdateAvailable=$warning}
+        if ($_.Spec -ilike 'ant-contrib.spec') {$UpdateAvailable=$warning}
+        elseif ($_.Spec -ilike 'distrib-compat.spec') {$UpdateAvailable=$warning}
         elseif ($_.Spec -ilike 'docker-vsock.spec') {$UpdateAvailable=$warning}
-        elseif ($_.Spec -ilike 'filesystem.spec') {$UpdateAvailable=$warning}
+        elseif ($_.Spec -ilike 'fipsify.spec') {$UpdateAvailable=$warning}
         elseif ($_.Spec -ilike 'grub2-theme.spec') {$UpdateAvailable=$warning}
-        elseif ($_.Spec -ilike 'initramfs.spec') {$UpdateAvailable=$warning}
         elseif ($_.Spec -ilike 'photon-iso-config.spec') {$UpdateAvailable=$warning}
         elseif ($_.Spec -ilike 'photon-release.spec') {$UpdateAvailable=$warning}
         elseif ($_.Spec -ilike 'photon-repos.spec') {$UpdateAvailable=$warning}
         elseif ($_.Spec -ilike 'photon-upgrade.spec') {$UpdateAvailable=$warning}
-        elseif ($_.Spec -ilike 'openssl.spec') {$UpdateAvailable=$warning}
 
         $warning="Warning: Source0 seems invalid and no other Official source has been found."
         if ($_.Spec -ilike 'cdrkit.spec') {$UpdateAvailable=$warning}
@@ -2169,11 +2754,6 @@ function CheckURLHealth {
         elseif ($_.Spec -ilike 'pcre.spec') {$UpdateAvailable=$warning}
         elseif ($_.Spec -ilike 'pypam.spec') {$UpdateAvailable=$warning}
 
-        $warning="Warning: Manufacturer changed packaging format in newer version(s)."
-        if (($_.Spec -ilike 'bridge-utils.spec') -and ($Source0 -ilike '*.tar.xz*')) {$UpdateAvailable=$warning} # https://git.kernel.org/pub/scm/network/bridge/bridge-utils.git
-        elseif (($_.Spec -ilike 'nftables.spec') -and ($Source0 -ilike '*.tar.bz2*')) {$UpdateAvailable=$warning}
-        elseif (($_.Spec -ilike 'ed.spec') -and ($Source0 -ilike '*.tar.lz*')) {$UpdateAvailable=$warning}
-
         $warning="Info: Source0 contains a static version number."
         if ($_.Spec -ilike 'autoconf213.spec') {$UpdateAvailable=$warning}
         elseif ($_.Spec -ilike 'etcd-3.3.27.spec') {$UpdateAvailable=$warning}
@@ -2182,11 +2762,148 @@ function CheckURLHealth {
         if ($_.Spec -ilike 'psmisc.spec') {$Source0 = $_.Source0}
 
         if (($UpdateAvailable -eq "") -and ($urlhealth -ne "200")) {$Source0=""}
+       
+        $UpdateURL="" 
+        $VersionedUpdateAvailable=""
+        if (!(($UpdateAvailable -ilike '*Warning*') -or ($UpdateAvailable -ilike '*Info*') -or ($UpdateAvailable -ilike '*same version*')))
+        {
+            $VersionedUpdateAvailable=$UpdateAvailable
+            if (($VersionedUpdateAvailable -ne "") -and ($UpdateAvailable -ne ""))
+            {
+                if ($_.spec -ilike 'docker.spec') { $Source0=[system.string]::concat("https://github.com/moby/moby/archive/refs/tags/v",$version,".tar.gz") }
 
-        $line=[System.String]::Concat($_.spec, ',',$_.source0,',',$Source0,',',$urlhealth,',',$UpdateAvailable)
+
+                if ($_.spec -ilike 'gtest.spec')
+                {
+                    $version = "release-" + $version
+                    $UpdateAvailable ="v" + $UpdateAvailable
+                }
+                if ($_.spec -ilike 'edgex.spec')
+                {
+                    $UpdateAvailable ="v" + $UpdateAvailable
+                }
+
+                if (($_.Source0 -ilike '*.tar.bz2*') -and ($Source0 -ilike '*.tar.gz*')) {$Source0=$Source0.replace(".tar.gz",".tar.bz2")}
+                if (($_.Source0 -ilike '*.tar.xz*') -and ($Source0 -ilike '*.tar.gz*')) {$Source0=$Source0.replace(".tar.gz",".tar.xz")}
+                if (($_.Source0 -ilike '*.tgz*') -and ($Source0 -ilike '*.tar.gz*')) {$Source0=$Source0.replace(".tar.gz",".tgz")}
+                if (($_.Source0 -ilike '*.zip*') -and ($Source0 -ilike '*.tar.gz*')) {$Source0=$Source0.replace(".tar.gz",".zip")}
+
+                $versionshort=[system.string]::concat((($version).Split("."))[0],'.',(($version).Split("."))[1])
+                $UpdateAvailableshort=[system.string]::concat((($UpdateAvailable).Split("."))[0],'.',(($UpdateAvailable).Split("."))[1])
+
+                $UpdateURL=$Source0 -ireplace $version,$UpdateAvailable
+                $UpdateURL=$UpdateURL -ireplace $versionshort,$UpdateAvailableshort
+                $HealthUpdateURL = urlhealth($UpdateURL)
+                if ($HealthUpdateURL -ne "200")
+                {
+                    $UpdateURL=$Source0 -ireplace $version,([string]$UpdateAvailable).Replace(".","_")
+                    $UpdateURL=$UpdateURL -ireplace $versionshort,$UpdateAvailableshort
+                    $HealthUpdateURL = urlhealth($UpdateURL)
+                    if ($HealthUpdateURL -ne "200")
+                    {
+                        $UpdateURL=$Source0 -ireplace $version,([string]$UpdateAvailable).Replace(".","-")
+                        $UpdateURL=$UpdateURL -ireplace $versionshort,$UpdateAvailableshort
+                        $HealthUpdateURL = urlhealth($UpdateURL)
+                        if ($HealthUpdateURL -ne "200")
+                        {
+                            $UpdateURL=$_.Source0 -ireplace '%{name}',$_.name
+                            $UpdateURL=$UpdateURL -ireplace '%{version}',$version
+                            $UpdateURL=$UpdateURL -ireplace $version,$UpdateAvailable
+                            $UpdateURL=$UpdateURL -ireplace $versionshort,$UpdateAvailableshort
+                            $HealthUpdateURL = urlhealth($UpdateURL)
+                            if ($HealthUpdateURL -ne "200")
+                            {
+                                $UpdateURL=$_.Source0 -ireplace '%{name}',$_.name
+                                $UpdateURL=$UpdateURL -ireplace '%{version}',$version
+                                $UpdateURL=$UpdateURL -ireplace $version,([string]$UpdateAvailable).Replace(".","_")
+                                $UpdateURL=$UpdateURL -ireplace $version,$UpdateAvailable
+                                $UpdateURL=$UpdateURL -ireplace $versionshort,$UpdateAvailableshort
+                                $HealthUpdateURL = urlhealth($UpdateURL)
+                                if ($HealthUpdateURL -ne "200")
+                                {                                                                            
+                                    $warning="Warning: Manufacturer may changed version packaging format."
+                                    $UpdateAvailable=$warning
+                                }
+                            }
+                        }                 
+                    }
+                }
+            }
+        }
+        else
+        {
+            $UpdateURL=""
+            $HealthUpdateURL=""
+        }
+
+        if ($HealthUpdateURL -eq "200")
+        {
+            $UpdateDownloadName = ($UpdateURL -split '/')[-1]
+
+            if ($UpdateDownloadName[0] -eq 'v')
+            {
+                $UpdateDownloadName = $UpdateDownloadName.substring(1)
+            }
+            $tmpName=[string](((($UpdateDownloadName -replace ".tar.gz","") -replace ".tar.xz","") -replace ".tgz","") -replace ".tar.lz","") -replace ".tar.bz2",""
+            if (!("$tmpname" -match '[A-Za-z]')) { $UpdateDownloadName = [System.String]::Concat($currentFile.Name,"-",$UpdateDownloadName) }
+
+            # $tmpSHAName=$currentFile.SHAName
+            # if ($tmpSHAName -ilike '*%{name}*') {$tmpSHAName=$currentFile.Name}
+
+            # if ($UpdateDownloadName -inotlike [system.string]::concat('*',$tmpSHAName,'*')) { $UpdateDownloadName = [System.String]::Concat($tmpSHAName,"-",$UpdateDownloadName) }
+
+            $SourcesNewDirectory=".\SOURCES_NEW"
+            if (!(Test-Path $SourcesNewDirectory)) {New-Item $SourcesNewDirectory -ItemType Directory}
+
+            $UpdateDownloadFile=[system.string]::concat($SourcesNewDirectory,"\",$UpdateDownloadName)
+            try { Invoke-WebRequest -Uri $UpdateURL -OutFile $UpdateDownloadFile }
+            catch
+            {
+                if ($UpdateURL -ilike '*netfilter.org*')
+                {
+                    $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+                    $session.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36"
+                    $Referer=""
+                    if ($UpdateURL -ilike '*libnetfilter_conntrack*') {$Referer="https://www.netfilter.org/projects/libnetfilter_conntrack/downloads.html"}
+                    elseif ($UpdateURL -ilike '*libmnl*') {$Referer="https://www.netfilter.org/projects/libmnl/downloads.html"}
+                    elseif ($UpdateURL -ilike '*libnetfilter_cthelper*') {$Referer="https://www.netfilter.org/projects/libnetfilter_cthelper/downloads.html"}
+                    elseif ($UpdateURL -ilike '*libnetfilter_cttimeout*') {$Referer="https://www.netfilter.org/projects/libnetfilter_cttimeout/downloads.html"}
+                    elseif ($UpdateURL -ilike '*libnetfilter_queue*') {$Referer="https://www.netfilter.org/projects/libnetfilter_queue/downloads.html"}
+                    elseif ($UpdateURL -ilike '*libnfnetlink*') {$Referer="https://www.netfilter.org/projects/libnfnetlink/downloads.html"}
+                    elseif ($UpdateURL -ilike '*libnftnl*') {$Referer="https://www.netfilter.org/projects/libnftnl/downloads.html"}
+                    elseif ($UpdateURL -ilike '*nftables*') {$Referer="https://www.netfilter.org/projects/nftables/downloads.html"}
+                    elseif ($UpdateURL -ilike '*conntrack-tools*') {$Referer="https://www.netfilter.org/projects/conntrack-tools/downloads.html"}
+                    elseif ($UpdateURL -ilike '*iptables*') {$Referer="https://www.netfilter.org/projects/iptables/downloads.html"}
+
+                    Invoke-WebRequest -UseBasicParsing -Uri $UpdateURL -OutFile $UpdateDownloadFile `
+                    -WebSession $session `
+                    -Headers @{
+                    "Accept"="text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
+                      "Accept-Encoding"="gzip, deflate, br"
+                      "Accept-Language"="en-US,en;q=0.9"
+                      "Referer"="$Referer"
+                      "Sec-Fetch-Dest"="document"
+                      "Sec-Fetch-Mode"="navigate"
+                      "Sec-Fetch-Site"="same-origin"
+                      "Sec-Fetch-User"="?1"
+                      "Upgrade-Insecure-Requests"="1"
+                      "sec-ch-ua"="`"Google Chrome`";v=`"113`", `"Chromium`";v=`"113`", `"Not-A.Brand`";v=`"24`""
+                      "sec-ch-ua-mobile"="?0"
+                      "sec-ch-ua-platform"="`"Windows`""
+                    }
+                }
+            }
+
+            if ($_.Spec -ilike 'openjdk8.spec') {ModifySpecFileOpenJDK8 -SpecFileName $CurrentFile.spec -Name $_.name -Update $UpdateAvailable -UpdateDownloadFile $UpdateDownloadFile -DownloadNameWithoutExtension $CurrentFile.Name}
+            else
+            {ModifySpecFile -SpecFileName $CurrentFile.spec -Name $_.name -Update $UpdateAvailable -UpdateDownloadFile $UpdateDownloadFile -DownloadNameWithoutExtension $CurrentFile.Name}
+        }
+
+        $line=[System.String]::Concat($_.spec, ',',$_.source0,',',$Source0,',',$urlhealth,',',$UpdateAvailable,',',$UpdateURL,',',$HealthUpdateURL,',',$CurrentFile.Name,',',$CurrentFile.SHAName,',',$UpdateDownloadName)
         $Lines += $line
+
     }
-    "Spec"+","+"Source0 original"+","+"Modified Source0 for url health check"+","+"UrlHealth"+","+"UpdateAvailable"| out-file $outputfile
+    "Spec"+","+"Source0 original"+","+"Modified Source0 for url health check"+","+"UrlHealth"+","+"UpdateAvailable"+","+"UpdateURL"+","+"HealthUpdateURL"+","+"Name"+","+"SHAName"+","+"UpdateDownloadName"| out-file $outputfile
     $lines | out-file $outputfile -append
     }
 }
