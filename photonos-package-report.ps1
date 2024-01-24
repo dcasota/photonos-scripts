@@ -526,7 +526,7 @@ calico-confd.spec,https://github.com/kelseyhightower/confd/archive/refs/tags/v%{
 c-ares.spec,https://github.com/c-ares/c-ares/archive/refs/tags/cares-%{version}.tar.gz
 cassandra.spec,https://github.com/apache/cassandra/archive/refs/tags/cassandra-%{version}.tar.gz   
 chrony.spec,https://github.com/mlichvar/chrony/archive/refs/tags/%{version}.tar.gz
-https://codeberg.org/pere/chrpath/archive/release-%{version}.tar.gz
+chrpath.spec,https://codeberg.org/pere/chrpath/archive/release-%{version}.tar.gz
 clang.spec,https://github.com/llvm/llvm-project/releases/download/llvmorg-%{version}/clang-%{version}.src.tar.xz
 cloud-init.spec,https://github.com/canonical/cloud-init/archive/refs/tags/%{version}.tar.gz
 cloud-utils.spec,https://github.com/canonical/cloud-utils/archive/refs/tags/%{version}.tar.gz
