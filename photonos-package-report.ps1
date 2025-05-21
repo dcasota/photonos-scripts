@@ -21,7 +21,6 @@
 #   0.51  06.03.2024   dcasota  git check added
 #   0.52  08.09.2024   dcasota  Ph6 and common added
 #   0.53  13.02.2025   dcasota  KojiFedoraProjectLookUp, various url fixes
-#   0.54  21.05.2025   dcasota  Optimized ParseDirectory, parallel processing in CheckURLHealth 
 #
 #  .PREREQUISITES
 #    - Script actually tested only on MS Windows OS with Powershell PSVersion 5.1 or higher
@@ -247,108 +246,109 @@ function ModifySpecFile
 
 function ParseDirectory
 {
-    param (
-        [parameter(Mandatory = $true)]
-        [string]$SourcePath,
-        [parameter(Mandatory = $true)]
-        [string]$PhotonDir
-    )
-    $Packages = @()
-    # Optimized: Directly get all .spec files recursively
+	param (
+		[parameter(Mandatory = $true)]
+		[string]$SourcePath,
+		[parameter(Mandatory = $true)]
+		[string]$PhotonDir
+	)
+    $Packages=@()
     Get-ChildItem -Path "$SourcePath\$PhotonDir\SPECS" -Recurse -File -Filter "*.spec" | ForEach-Object {
-        try {
-            $content = Get-Content $_.FullName
-            $Release = $null
-            $Release = (($content | Select-String -Pattern "^Release:")[0].ToString() -replace "Release:", "").Trim()
-            $Release = $Release.Replace("%{?dist}","")
-            $Release = $Release.Replace("%{?kat_build:.kat}","")
-            $Release = $Release.Replace("%{?kat_build:.%kat_build}","")
-            $Release = $Release.Replace("%{?kat_build:.%kat}","")
-            $Release = $Release.Replace("%{?kernelsubrelease}","")
-            $Release = $Release.Replace(".%{dialogsubversion}","")
-            $Version = $null
-            $Version = (($content | Select-String -Pattern "^Version:")[0].ToString() -ireplace "Version:", "").Trim()
-            if ($Release -ne $null) { $Version = $Version + "-" + $Release }
-            $Source0 = (($content | Select-String -Pattern "^Source0:")[0].ToString() -ireplace "Source0:", "").Trim()
+        try
+        {
+                $content = Get-Content $_.FullName
+                $Release=$null
+                $Release= (($content | Select-String -Pattern "^Release:")[0].ToString() -replace "Release:", "").Trim()
+                $Release = $Release.Replace("%{?dist}","")
+                $Release = $Release.Replace("%{?kat_build:.kat}","")
+                $Release = $Release.Replace("%{?kat_build:.%kat_build}","")
+                $Release = $Release.Replace("%{?kat_build:.%kat}","")
+                $Release = $Release.Replace("%{?kernelsubrelease}","")
+                $Release = $Release.Replace(".%{dialogsubversion}","")
+                $Version=$null
+                $version= (($content | Select-String -Pattern "^Version:")[0].ToString() -ireplace "Version:", "").Trim()
+                if ($Release -ne $null) {$Version = $Version+"-"+$Release}
+                $Source0= (($content | Select-String -Pattern "^Source0:")[0].ToString() -ireplace "Source0:", "").Trim()
 
-            if ($content -ilike '*URL:*') { $url = (($content | Select-String -Pattern "^URL:")[0].ToString() -ireplace "URL:", "").Trim() }
+                if ($content -ilike '*URL:*') { $url = (($content | Select-String -Pattern "^URL:")[0].ToString() -ireplace "URL:", "").Trim() }
 
-            $SHAName = ""
-            if ($content -ilike '*%define sha1*') { $SHAName = $content | %{ if ($_ -ilike '*%define sha1*') {((($_ -split '=')[0]).replace('%define sha1',"")).Trim()}}}
-            elseif ($content -ilike '*%define sha256*') { $SHAName = $content | %{ if ($_ -ilike '*%define sha256*') {((($_ -split '=')[0]).replace('%define sha256',"")).Trim()}}}
-            elseif ($content -ilike '*%define sha512*') { $SHAName = $content | %{ if ($_ -ilike '*%define sha512*') {((($_ -split '=')[0]).replace('%define sha512',"")).Trim()}}}
+                $SHAName=""
+                if ($content -ilike '*%define sha1*') {$SHAName = $content | %{ if ($_ -ilike '*%define sha1*') {((($_ -split '=')[0]).replace('%define sha1',"")).Trim()}}}
+                elseif ($content -ilike '*%define sha256*') {$SHAName = $content | %{ if ($_ -ilike '*%define sha256*') {((($_ -split '=')[0]).replace('%define sha256',"")).Trim()}}}
+                elseif ($content -ilike '*%define sha512*') {$SHAName = $content | %{ if ($_ -ilike '*%define sha512*') {((($_ -split '=')[0]).replace('%define sha512',"")).Trim()}}}
 
-            $srcname = ""
-            if ($content -ilike '*define srcname*') { $srcname = (($content | Select-String -Pattern '%define srcname')[0].ToString() -ireplace '%define srcname', "").Trim() }
-            if ($content -ilike '*global srcname*') { $srcname = (($content | Select-String -Pattern '%global srcname')[0].ToString() -ireplace '%global srcname', "").Trim() }
+                $srcname=""
+                if ($content -ilike '*define srcname*') { $srcname = (($content | Select-String -Pattern '%define srcname')[0].ToString() -ireplace '%define srcname', "").Trim() }
+                if ($content -ilike '*global srcname*') { $srcname = (($content | Select-String -Pattern '%global srcname')[0].ToString() -ireplace '%global srcname', "").Trim() }
 
-            $gem_name = ""
-            if ($content -ilike '*define gem_name*') { $gem_name = (($content | Select-String -Pattern '%define gem_name')[0].ToString() -ireplace '%define gem_name', "").Trim() }
-            if ($content -ilike '*global gem_name*') { $gem_name = (($content | Select-String -Pattern '%global gem_name')[0].ToString() -ireplace '%global gem_name', "").Trim() }
+                $gem_name=""
+                if ($content -ilike '*define gem_name*') { $gem_name = (($content | Select-String -Pattern '%define gem_name')[0].ToString() -ireplace '%define gem_name', "").Trim() }
+                if ($content -ilike '*global gem_name*') { $gem_name = (($content | Select-String -Pattern '%global gem_name')[0].ToString() -ireplace '%global gem_name', "").Trim() }
 
-            $group = ""
-            if ($content -ilike '*Group:*') { $group = (($content | Select-String -Pattern '^Group:')[0].ToString() -ireplace 'Group:', "").Trim() }
+                $group=""
+                if ($content -ilike '*Group:*') { $group = (($content | Select-String -Pattern '^Group:')[0].ToString() -ireplace 'Group:', "").Trim() }
 
-            $extra_version = ""
-            if ($content -ilike '*define extra_version*') { $extra_version = (($content | Select-String -Pattern '%define extra_version')[0].ToString() -ireplace '%define extra_version', "").Trim() }
+                $extra_version=""
+                if ($content -ilike '*define extra_version*') { $extra_version = (($content | Select-String -Pattern '%define extra_version')[0].ToString() -ireplace '%define extra_version', "").Trim() }
 
-            $main_version = ""
-            if ($content -ilike '*define main_version*') { $main_version = (($content | Select-String -Pattern '%define main_version')[0].ToString() -ireplace '%define main_version', "").Trim() }
+                $main_version=""
+                if ($content -ilike '*define main_version*') { $main_version = (($content | Select-String -Pattern '%define main_version')[0].ToString() -ireplace '%define main_version', "").Trim() }
 
-            $subversion = ""
-            if ($content -ilike '*define subversion*') { $subversion = (($content | Select-String -Pattern '%define subversion')[0].ToString() -ireplace '%define subversion', "").Trim() }
+                $subversion=""
+                if ($content -ilike '*define subversion*') { $subversion = (($content | Select-String -Pattern '%define subversion')[0].ToString() -ireplace '%define subversion', "").Trim() }
 
-            $byaccdate = ""
-            if ($content -ilike '*define byaccdate*') { $byaccdate = (($content | Select-String -Pattern '%define byaccdate')[0].ToString() -ireplace '%define byaccdate', "").Trim() }
+                $byaccdate=""
+                if ($content -ilike '*define byaccdate*') { $byaccdate = (($content | Select-String -Pattern '%define byaccdate')[0].ToString() -ireplace '%define byaccdate', "").Trim() }
 
-            $dialogsubversion = ""
-            if ($content -ilike '*define dialogsubversion*') { $dialogsubversion = (($content | Select-String -Pattern '%define dialogsubversion')[0].ToString() -ireplace '%define dialogsubversion', "").Trim() }
+                $dialogsubversion=""
+                if ($content -ilike '*define dialogsubversion*') { $dialogsubversion = (($content | Select-String -Pattern '%define dialogsubversion')[0].ToString() -ireplace '%define dialogsubversion', "").Trim() }
 
-            $libedit_release = ""
-            if ($content -ilike '*define libedit_release*') { $libedit_release = (($content | Select-String -Pattern '%define libedit_release')[0].ToString() -ireplace '%define libedit_release', "").Trim() }
+                $libedit_release=""
+                if ($content -ilike '*define libedit_release*') { $libedit_release = (($content | Select-String -Pattern '%define libedit_release')[0].ToString() -ireplace '%define libedit_release', "").Trim() }
 
-            $libedit_version = ""
-            if ($content -ilike '*define libedit_version*') { $libedit_version = (($content | Select-String -Pattern '%define libedit_version')[0].ToString() -ireplace '%define libedit_version', "").Trim() }
+                $libedit_version=""
+                if ($content -ilike '*define libedit_version*') { $libedit_version = (($content | Select-String -Pattern '%define libedit_version')[0].ToString() -ireplace '%define libedit_version', "").Trim() }
 
-            $ncursessubversion = ""
-            if ($content -ilike '*define ncursessubversion*') { $ncursessubversion = (($content | Select-String -Pattern '%define ncursessubversion')[0].ToString() -ireplace '%define ncursessubversion', "").Trim() }
+                $ncursessubversion=""
+                if ($content -ilike '*define ncursessubversion*') { $ncursessubversion = (($content | Select-String -Pattern '%define ncursessubversion')[0].ToString() -ireplace '%define ncursessubversion', "").Trim() }
 
-            $cpan_name = ""
-            if ($content -ilike '*define cpan_name*') { $cpan_name = (($content | Select-String -Pattern '%define cpan_name')[0].ToString() -ireplace '%define cpan_name', "").Trim() }
+                $cpan_name=""
+                if ($content -ilike '*define cpan_name*') { $cpan_name = (($content | Select-String -Pattern '%define cpan_name')[0].ToString() -ireplace '%define cpan_name', "").Trim() }
 
-            $xproto_ver = ""
-            if ($content -ilike '*define xproto_ver*') { $xproto_ver = (($content | Select-String -Pattern '%define xproto_ver')[0].ToString() -ireplace '%define xproto_ver', "").Trim() }
+                $xproto_ver=""
+                if ($content -ilike '*define xproto_ver*') { $xproto_ver = (($content | Select-String -Pattern '%define xproto_ver')[0].ToString() -ireplace '%define xproto_ver', "").Trim() }
 
-            $_url_src = ""
-            if ($content -ilike '*define _url_src*') { $_url_src = (($content | Select-String -Pattern '%define _url_src')[0].ToString() -ireplace '%define _url_src', "").Trim() }
+                $_url_src=""
+                if ($content -ilike '*define _url_src*') { $_url_src = (($content | Select-String -Pattern '%define _url_src')[0].ToString() -ireplace '%define _url_src', "").Trim() }
 
-            $_repo_ver = ""
-            if ($content -ilike '*define _repo_ver*') { $_repo_ver = (($content | Select-String -Pattern '%define _repo_ver')[0].ToString() -ireplace '%define _repo_ver', "").Trim() }
-
-            $Packages += [PSCustomObject]@{
-                Spec = $_.Name
-                Version = $Version
-                Name = (Split-Path $_.DirectoryName -Leaf)
-                Source0 = $Source0
-                url = $url
-                SHAName = $SHAName
-                srcname = $srcname
-                gem_name = $gem_name
-                group = $group
-                extra_version = $extra_version
-                main_version = $main_version
-                byaccdate = $byaccdate
-                dialogsubversion = $dialogsubversion
-                subversion = $subversion
-                libedit_release = $libedit_release
-                libedit_version = $libedit_version
-                ncursessubversion = $ncursessubversion
-                cpan_name = $cpan_name
-                xproto_ver = $xproto_ver
-                _url_src = $_url_src
-                _repo_ver = $_repo_ver
-            }
-        } catch {}
+                $_repo_ver=""
+                if ($content -ilike '*define _repo_ver*') { $_repo_ver = (($content | Select-String -Pattern '%define _repo_ver')[0].ToString() -ireplace '%define _repo_ver', "").Trim() }
+                
+                $Packages +=[PSCustomObject]@{
+                    Spec = $_.Name
+                    Version = $Version
+                    Name = $object.Name
+                    Source0 = $Source0
+                    url = $url
+                    SHAName = $SHAName
+                    srcname = $srcname
+                    gem_name = $gem_name
+                    group = $group
+                    extra_version = $extra_version
+                    main_version = $main_version
+                    byaccdate = $byaccdate
+                    dialogsubversion = $dialogsubversion
+                    subversion = $subversion
+                    libedit_release = $libedit_release
+                    libedit_version = $libedit_version
+                    ncursessubversion = $ncursessubversion
+                    cpan_name = $cpan_name
+                    xproto_ver = $xproto_ver
+                    _url_src = $_url_src
+                    _repo_ver = $_repo_ver
+                }
+        }
+        catch{}
     }
     return $Packages
 }
