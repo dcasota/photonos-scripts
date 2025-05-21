@@ -256,7 +256,8 @@ function ParseDirectory
     Get-ChildItem -Path "$SourcePath\$PhotonDir\SPECS" -Recurse -File -Filter "*.spec" | ForEach-Object {
         try
         {
-                $content = Get-Content $_.FullName
+                $Name = Split-Path -Path $_.DirectoryName -Leaf
+                $content = Get-Content $_
                 $Release=$null
                 $Release= (($content | Select-String -Pattern "^Release:")[0].ToString() -replace "Release:", "").Trim()
                 $Release = $Release.Replace("%{?dist}","")
@@ -327,7 +328,7 @@ function ParseDirectory
                 $Packages +=[PSCustomObject]@{
                     Spec = $_.Name
                     Version = $Version
-                    Name = $object.Name
+                    Name = $Name
                     Source0 = $Source0
                     url = $url
                     SHAName = $SHAName
@@ -1063,7 +1064,7 @@ function CheckURLHealth {
     Process{
     # Check Source0 url health in packages
     $Lines=@()
-    $CheckURLHealthPackageObject | foreach {
+    $CheckURLHealthPackageObject | foreach-object {
 
         # if ($_.spec -ilike 'python-daemon.spec')
         # {pause}
