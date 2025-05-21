@@ -1063,7 +1063,7 @@ function CheckURLHealth {
     Process{
     # Check Source0 url health in packages
     $Lines=@()
-    $CheckURLHealthPackageObject | foreach -Parallel {
+    $CheckURLHealthPackageObject | foreach {
 
         # if ($_.spec -ilike 'python-daemon.spec')
         # {pause}
@@ -3404,7 +3404,7 @@ function CheckURLHealth {
         $line=[System.String]::Concat($_.spec, ',',$_.source0,',',$Source0,',',$urlhealth,',',$UpdateAvailable,',',$UpdateURL,',',$HealthUpdateURL,',',$CurrentFile.Name,',',$CurrentFile.SHAName,',',$UpdateDownloadName)
         $Lines += $line
 
-    } -ThrottleLimit 10
+    }
     "Spec"+","+"Source0 original"+","+"Modified Source0 for url health check"+","+"UrlHealth"+","+"UpdateAvailable"+","+"UpdateURL"+","+"HealthUpdateURL"+","+"Name"+","+"SHAName"+","+"UpdateDownloadName"| out-file $outputfile
     $lines | out-file $outputfile -append
     }
