@@ -1,0 +1,10 @@
+Spec,Source0 original,Modified Source0 for url health check,UrlHealth,UpdateAvailable,UpdateURL,HealthUpdateURL,Name,SHAName,UpdateDownloadName
+linux-esx.spec,http://www.kernel.org/pub/linux/kernel/v6.x/linux-%{version}.tar.xz,,0,,,,v6.1,linux fips-canister jitterentropy,
+linux-rt.spec,http://www.kernel.org/pub/linux/kernel/v6.x/linux-%{version}.tar.xz,,0,,,,v6.1,linux stalld fips-canister jitterentropy,
+linux.spec,http://www.kernel.org/pub/linux/kernel/v6.x/linux-%{version}.tar.xz,,0,,,,v6.1,linux ena_linux efa_linux fips-canister jitterentropy,
+linux-esx.spec,http://www.kernel.org/pub/linux/kernel/v6.x/linux-%{version}.tar.xz,,0,,,,v6.12,linux fips-canister jitterentropy,
+linux-rt.spec,http://www.kernel.org/pub/linux/kernel/v6.x/linux-%{version}.tar.xz,,0,,,,v6.12,linux stalld fips-canister jitterentropy,
+linux.spec,http://www.kernel.org/pub/linux/kernel/v6.x/linux-%{version}.tar.xz,,0,,,,v6.12,linux ena_linux efa_linux fips-canister jitterentropy,
+linux-esx.spec,http://www.kernel.org/pub/linux/kernel/v6.x/linux-%{version}.tar.xz,,0,,,,v6.6,linux fips-canister jitterentropy,
+linux-rt.spec,http://www.kernel.org/pub/linux/kernel/v6.x/linux-%{version}.tar.xz,,0,,,,v6.6,linux stalld fips-canister jitterentropy,
+linux.spec,http://www.kernel.org/pub/linux/kernel/v6.x/linux-%{version}.tar.xz,,0,,,,v6.6,linux ena_linux efa_linux fips-canister jitterentropy,
