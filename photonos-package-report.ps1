@@ -197,9 +197,9 @@ function ParseSpecFile {
 
         $content = Get-Content $specfile -Raw
         # Example of fixing aliases if they were in the original ParseSpecFile:
-        if ($content -ilike '*%define sha1*') {$SHAName = $content | ForEach-Object { if ($_ -ilike '*%define sha1*') {((($_ -split '=')[0]).replace('%define sha1',"")).Trim()}}}
-        elseif ($content -ilike '*%define sha256*') {$SHAName = $content | ForEach-Object { if ($_ -ilike '*%define sha256*') {((($_ -split '=')[0]).replace('%define sha256',"")).Trim()}}}
-        elseif ($content -ilike '*%define sha512*') {$SHAName = $content | ForEach-Object { if ($_ -ilike '*%define sha512*') {((($_ -split '=')[0]).replace('%define sha512',"")).Trim()}}}
+        if ($content -ilike '*%define sha1*') {$metadata.SHAName = $content | ForEach-Object { if ($_ -ilike '*%define sha1*') {((($_ -split '=')[0]).replace('%define sha1',"")).Trim()}}}
+        elseif ($content -ilike '*%define sha256*') {$metadata.SHAName = $content | ForEach-Object { if ($_ -ilike '*%define sha256*') {((($_ -split '=')[0]).replace('%define sha256',"")).Trim()}}}
+        elseif ($content -ilike '*%define sha512*') {$metadata.SHAName = $content | ForEach-Object { if ($_ -ilike '*%define sha512*') {((($_ -split '=')[0]).replace('%define sha512',"")).Trim()}}}
 
         $reader = $null
         try {
@@ -363,7 +363,7 @@ function ModifySpecFile {
 
 
     try
-    { $version = (get-command use-culture).Version.ToString() }
+    { (get-command use-culture).Version.ToString() }
     catch
     { install-module -name PowerShellCookbook -AllowClobber -Force -Confirm:$false }
 
@@ -1568,7 +1568,6 @@ function CheckURLHealth {
         $SourceTagURL=""        
         $replace=@()
         $NameLatest=""
-        $SHAName=""
         $UpdateDownloadName=""
 
         
