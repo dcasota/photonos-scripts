@@ -22,14 +22,11 @@
 #   0.52  08.09.2024   dcasota  Ph6 and common added
 #   0.53  13.02.2025   dcasota  KojiFedoraProjectLookUp, various url fixes
 #   0.54  30.05.2025   GitHubCopilot  Implemented parallel processing for URL health checks, Fix linting errors from parallel processing implementation
-#   0.55  30.05.2025   GitHubCopilot  Implemented parallel processing for spec file modifications, Fix linting errors from parallel processing implementation
 #
 #  .PREREQUISITES
 #    - Script actually tested only on MS Windows OS with Powershell PSVersion 5.1 or higher
 #    - downloaded and unzipped branch directories of github.com/vmware/photon 
 #    - PowerShell 7+ for parallel processing capabilities
-
-
 
 
 function ModifySpecFileOpenJDK8 {
@@ -3548,79 +3545,63 @@ function GenerateUrlHealthReports {
         [bool]$GeneratePh3URLHealthReport,
         [bool]$GeneratePh4URLHealthReport,
         [bool]$GeneratePh5URLHealthReport,
-        [bool]$GeneratePh6URLHealthReport, # Added for 6.0
+        [bool]$GeneratePh6URLHealthReport,
         [bool]$GeneratePhCommonURLHealthReport
     )
+
     class HeapSort {
     # Heapsort algorithmus from Doug Finke
     # https://github.com/dfinke/SortingAlgorithms/blob/master/HeapSort.ps1
     # modified to compare concated ascii code values
-        [array] static Sort($targetList) {
-            $heapSize = $targetList.Count
+    [array] static Sort($targetList) {
+        $heapSize = $targetList.Count
 
-            for ([int]$p = ($heapSize - 1) / 2; $p -ge 0; $p--) {
-                [HeapSort]::MaxHeapify($targetList, $heapSize, $p)
-            }
-
-            for ($i = $targetList.Count - 1; $i -gt 0; $i--) {
-                $temp = $targetList[$i]
-                $targetList[$i] = $targetList[0]
-                $targetList[0] = $temp
-
-                $heapSize--
-                [HeapSort]::MaxHeapify($targetList, $heapSize, 0)
-            }
-            return $targetlist
+        for ([int]$p = ($heapSize - 1) / 2; $p -ge 0; $p--) {
+            [HeapSort]::MaxHeapify($targetList, $heapSize, $p)
         }
 
-        static MaxHeapify($targetList, $heapSize, $index) {
-            $left = ($index + 1) * 2 - 1
-            $right = ($index + 1) * 2
-            $largest = 0
+        for ($i = $targetList.Count - 1; $i -gt 0; $i--) {
+            $temp = $targetList[$i]
+            $targetList[$i] = $targetList[0]
+            $targetList[0] = $temp
 
-            if ($left -lt $heapSize -and [int64]([system.string]::concat((([system.Text.Encoding]::Default.GetBytes($targetList[$left])) | foreach-object tostring 000))) -gt [int64]([system.string]::concat((([system.Text.Encoding]::Default.GetBytes($targetList[$index])) | foreach-object tostring 000)))) {
-                $largest = $left
-            }
-            else {
-                $largest = $index
-            }
+            $heapSize--
+            [HeapSort]::MaxHeapify($targetList, $heapSize, 0)
+        }
+        return $targetlist
+    }
 
-            if ($right -lt $heapSize -and [int64]([system.string]::concat((([system.Text.Encoding]::Default.GetBytes($targetList[$right])) | foreach-object tostring 000))) -gt [int64]([system.string]::concat((([system.Text.Encoding]::Default.GetBytes($targetList[$largest])) | foreach-object tostring 000)))) {
-                $largest = $right
-            }
+    static MaxHeapify($targetList, $heapSize, $index) {
+        $left = ($index + 1) * 2 - 1
+        $right = ($index + 1) * 2
+        $largest = 0
 
-            if ($largest -ne $index) {
-                $temp = $targetList[$index]
-                $targetList[$index] = $targetList[$largest]
-                $targetList[$largest] = $temp
+        if ($left -lt $heapSize -and [int64]([system.string]::concat((([system.Text.Encoding]::Default.GetBytes($targetList[$left])) | foreach-object tostring 000))) -gt [int64]([system.string]::concat((([system.Text.Encoding]::Default.GetBytes($targetList[$index])) | foreach-object tostring 000)))) {
+            $largest = $left
+        }
+        else {
+            $largest = $index
+        }
 
-                [HeapSort]::MaxHeapify($targetList, $heapSize, $largest)
-            }
+        if ($right -lt $heapSize -and [int64]([system.string]::concat((([system.Text.Encoding]::Default.GetBytes($targetList[$right])) | foreach-object tostring 000))) -gt [int64]([system.string]::concat((([system.Text.Encoding]::Default.GetBytes($targetList[$largest])) | foreach-object tostring 000)))) {
+            $largest = $right
+        }
+
+        if ($largest -ne $index) {
+            $temp = $targetList[$index]
+            $targetList[$index] = $targetList[$largest]
+            $targetList[$largest] = $temp
+
+            [HeapSort]::MaxHeapify($targetList, $heapSize, $largest)
         }
     }
+    }    
+
     $Packages3 = $null
     $Packages4 = $null
     $Packages5 = $null
     $Packages6 = $null
     $PackagesCommon = $null
-
-    if ($PSVersionTable.PSVersion.Major -ge 5) {
-        try {
-            $HeapSortCommand = Get-Command 'HeapSort' -CommandType Class -ErrorAction Stop # Use Stop to ensure catch block is hit for relevant errors
-            if ($HeapSortCommand) {
-                $HeapSortClassDef = $HeapSortCommand.Definition
-            }
-        }
-        catch [System.Management.Automation.ParameterBindingException] {
-            # This exception occurs if 'Class' is not a valid CommandType.
-            # Log a warning or handle as appropriate. For now, $HeapSortClassDef remains "".
-            Write-Warning "Failed to get HeapSort class definition: -CommandType Class is not supported in this environment, even though PowerShell version is $($PSVersionTable.PSVersion.Major)."
-        }
-        catch {
-            # Catch other potential errors from Get-Command (e.g., command not found)
-            # Previous behavior was to silently continue, so $HeapSortClassDef remains "".
-        }
-    }
 
     if ($GeneratePh3URLHealthReport) {
         Write-Output "Preparing data for Photon OS 3.0 ..."
@@ -3655,59 +3636,65 @@ function GenerateUrlHealthReports {
     if ($GeneratePh5URLHealthReport -and $null -ne $Packages5) { $checkUrlHealthTasks += @{ Name = "Photon OS 5.0"; Release = "5.0"; Packages = $Packages5; PhotonDir = "photon-5.0" } }
     if ($GeneratePh6URLHealthReport -and $null -ne $Packages6) { $checkUrlHealthTasks += @{ Name = "Photon OS 6.0"; Release = "6.0"; Packages = $Packages6; PhotonDir = "photon-6.0" } }
     if ($GeneratePhCommonURLHealthReport -and $null -ne $PackagesCommon) { $checkUrlHealthTasks += @{ Name = "Photon OS Common"; Release = "common"; Packages = $PackagesCommon; PhotonDir = "photon-common" } }
-
-	$CheckURLHealthDef = (Get-Command 'CheckURLHealth' -ErrorAction SilentlyContinue).Definition
-	$urlhealthDef = (Get-Command 'urlhealth' -ErrorAction SilentlyContinue).Definition
-	$KojiFedoraProjectLookUpDef = (Get-Command 'KojiFedoraProjectLookUp' -ErrorAction SilentlyContinue).Definition
-	$ModifySpecFileDef = (Get-Command 'ModifySpecFile' -ErrorAction SilentlyContinue).Definition
-	$ModifySpecFileOpenJDK8Def = (Get-Command 'ModifySpecFileOpenJDK8' -ErrorAction SilentlyContinue).Definition
-	$HeapSortClassDef = (Get-Command 'HeapSort' -ErrorAction SilentlyContinue).Definition
-    $Source0LookupDef = (Get-Command 'Source0Lookup' -ErrorAction SilentlyContinue).Definition
-
-	$ProcessTaskScriptBlock = {
-		# Ensure the required functions and classes are defined in the runspace
-		# Capture definitions of functions and classes needed in parallel runspaces.
-		# Ensure these functions/classes are defined before this point in the script.
-        # FIRST: Define all required functions and classes in this runspace
-        # Use $using: to access variables from the parent scope
-        if ($using:CheckURLHealthDef) { 
-            Invoke-Expression "function CheckURLHealth { $using:CheckURLHealthDef }"
-        }
-        if ($using:urlhealthDef) { 
-            Invoke-Expression "function urlhealth { $using:urlhealthDef }"
-        }
-        if ($using:KojiFedoraProjectLookUpDef) { 
-            Invoke-Expression "function KojiFedoraProjectLookUp { $using:KojiFedoraProjectLookUpDef }"
-        }
-        if ($using:ModifySpecFileDef) { 
-            Invoke-Expression "function ModifySpecFile { $using:ModifySpecFileDef }"
-        }
-        if ($using:ModifySpecFileOpenJDK8Def) { 
-            Invoke-Expression "function ModifySpecFileOpenJDK8 { $using:ModifySpecFileOpenJDK8Def }"
-        }
-        if ($using:HeapSortClassDef) { 
-            Invoke-Expression $using:HeapSortClassDef
-        }
-        if ($using:Source0LookupDef) { 
-            Invoke-Expression "function Source0Lookup { $using:Source0LookupDef }"
-        }
-
-		$taskConfig = $_
-		Write-Output "Generating URLHealth report for $($taskConfig.Name) (parallel worker)..."
-		$outputFileName = "photonos-urlhealth-$($taskConfig.Release)_$((Get-Date).ToString("yyyyMMddHHmm"))"
-		$outputFilePath = Join-Path -Path $using:SourcePath -ChildPath "$outputFileName.prn" # Use $using:SourcePath for correct path in parallel
-		CheckURLHealth -outputfile $outputFilePath -accessToken $using:AccessToken -CheckURLHealthPackageObject $taskConfig.Packages -PhotonDir $taskConfig.PhotonDir -ThrottleLimitParam $using:ThrottleLimit -SourcePath $using:SourcePath
-		Write-Output "Finished report for $($taskConfig.Name) (parallel worker). Output: $outputFilePath"            
-	}
+    
     if ($Script:UseParallel -and $checkUrlHealthTasks.Count -gt 0) {
         Write-Host "Starting parallel URL health report generation for applicable versions ..."
-		$checkUrlHealthTasks | ForEach-Object -Parallel $ProcessTaskScriptBlock -ThrottleLimit $ThrottleLimit
+            
+         # Capture function definitions BEFORE creating the script blocks
+        # These must be captured in the main script scope where the functions exist
+        $CheckURLHealthDef = (Get-Command 'CheckURLHealth' -ErrorAction SilentlyContinue).Definition
+        $urlhealthDef = (Get-Command 'urlhealth' -ErrorAction SilentlyContinue).Definition
+        $KojiFedoraProjectLookUpDef = (Get-Command 'KojiFedoraProjectLookUp' -ErrorAction SilentlyContinue).Definition
+        $ModifySpecFileDef = (Get-Command 'ModifySpecFile' -ErrorAction SilentlyContinue).Definition
+        $ModifySpecFileOpenJDK8Def = (Get-Command 'ModifySpecFileOpenJDK8' -ErrorAction SilentlyContinue).Definition
+        # $HeapSortClassDef should already be captured at the beginning of this function
+        
+        $ProcessTaskScriptBlock = {
+            # FIRST: Define all required functions and classes in this runspace
+            # Use $using: to access variables from the parent scope
+            if ($using:CheckURLHealthDef) { 
+                Invoke-Expression "function CheckURLHealth { $using:CheckURLHealthDef }"
+            }
+            if ($using:urlhealthDef) { 
+                Invoke-Expression "function urlhealth { $using:urlhealthDef }"
+            }
+            if ($using:KojiFedoraProjectLookUpDef) { 
+                Invoke-Expression "function KojiFedoraProjectLookUp { $using:KojiFedoraProjectLookUpDef }"
+            }
+            if ($using:ModifySpecFileDef) { 
+                Invoke-Expression "function ModifySpecFile { $using:ModifySpecFileDef }"
+            }
+            if ($using:ModifySpecFileOpenJDK8Def) { 
+                Invoke-Expression "function ModifySpecFileOpenJDK8 { $using:ModifySpecFileOpenJDK8Def }"
+            }
+            if ($using:HeapSortClassDef) { 
+                Invoke-Expression $using:HeapSortClassDef
+            }
+
+            # NOW the actual task processing logic
+            $taskConfig = $_
+            Write-Output "Generating URLHealth report for $($taskConfig.Name) (parallel worker)..."
+            $outputFileName = "photonos-urlhealth-$($taskConfig.Release)_$((Get-Date).ToString("yyyyMMddHHmm"))"
+            $outputFilePath = Join-Path -Path $using:SourcePath -ChildPath "$outputFileName.prn"
+            
+            # Now CheckURLHealth should be available
+            CheckURLHealth -outputfile $outputFilePath -accessToken $using:AccessToken -CheckURLHealthPackageObject $taskConfig.Packages -PhotonDir $taskConfig.PhotonDir -ThrottleLimitParam $using:ThrottleLimit -SourcePath $using:SourcePath
+            
+            Write-Output "Finished report for $($taskConfig.Name) (parallel worker). Output: $outputFilePath"
+        }       
+        $checkUrlHealthTasks | ForEach-Object -Parallel $ProcessTaskScriptBlock -ThrottleLimit $ThrottleLimit
     } elseif ($checkUrlHealthTasks.Count -gt 0){ 
         # Fallback to sequential processing
         Write-Host "Starting sequential URL health report generation for applicable versions..."
-		$checkUrlHealthTasks | ForEach-Object $ProcessTaskScriptBlock
-	} else {
-            Write-Host "No URL health reports were enabled or no package data found."
+        $checkUrlHealthTasks | ForEach-Object {
+            $taskConfig = $_ # Current item from $checkUrlHealthTasks
+            Write-Output "Generating URLHealth report for $($taskConfig.Name) (parallel worker)..."
+            $outputFileName = "photonos-urlhealth-$($taskConfig.Release)_$((Get-Date).ToString('yyyyMMddHHmm'))"
+            $outputFilePath = Join-Path -Path $using:SourcePath -ChildPath "$outputFileName.prn"
+            CheckURLHealth -outputfile $outputFilePath -accessToken $using:AccessToken -CheckURLHealthPackageObject $taskConfig.Packages -PhotonDir $taskConfig.PhotonDir -ThrottleLimitParam $using:ThrottleLimit -SourcePath $using:SourcePath
+        }
+    } else {
+        Write-Host "No URL health reports were enabled or no package data found."
     }
     # Return package data for subsequent report generation if needed
     return @{
@@ -3717,9 +3704,8 @@ function GenerateUrlHealthReports {
         Packages6 = $Packages6
         PackagesCommon = $PackagesCommon
     }
-}	
-        
-            
+}
+
 # EDIT
 # path with all downloaded and unzipped branch directories of github.com/vmware/photon
 $sourcepath="$env:public"
