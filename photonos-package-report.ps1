@@ -435,7 +435,7 @@ function ParseDirectory {
         try
         {
                 $Name = Split-Path -Path $_.DirectoryName -Leaf
-                $content = Get-Content $_
+                $content = Get-Content $_.FullName
                 $Release=$null
                 $Release= (($content | Select-String -Pattern "^Release:")[0].ToString() -replace "Release:", "").Trim()
                 $Release = $Release.Replace("%{?dist}","")
@@ -691,6 +691,7 @@ function KojiFedoraProjectLookUp {
     }catch{}
     return $SourceRPMFileURL
 }
+
 function GitPhoton {
     param (
         [parameter(Mandatory = $true)]
@@ -714,6 +715,7 @@ function GitPhoton {
         else { git merge origin/$release }
     }
 }
+
 function Source0Lookup {
 
 
@@ -1219,6 +1221,7 @@ zsh.spec,https://github.com/zsh-users/zsh/archive/refs/tags/zsh-%{version}.tar.g
 $Source0LookupData = $Source0LookupData | convertfrom-csv
 return( $Source0LookupData )
 }
+
 function CheckURLHealth {
       [CmdletBinding()]
       Param(
@@ -1235,7 +1238,7 @@ function CheckURLHealth {
     $Lines=@()
     $CheckURLHealthPackageObject | foreach-object {
 
-        # if ($_.spec -ilike 'python-daemon.spec')
+        # if ($_.spec -ilike 'pandoc.spec')
         # {pause}
         # else
         # {return}
@@ -1262,7 +1265,7 @@ function CheckURLHealth {
         # This can change. Hence, this section has to be verified from time to time.
         # Until then, before any Source0 url health check the Source0 url value is changed to a manually verified value.
         # --------------------------------------------------------------------------------------------------------------
-        write-output "Processing $currentfile.spec ..."
+        Write-Host "Processing $($currentfile.spec) ..."
 
         $data = Source0Lookup
         $index=($data.'specfile').indexof($currentfile.spec)
@@ -1329,20 +1332,20 @@ function CheckURLHealth {
         # anomalies - rework for detection necessary
         ###############################################################################        
         
-        # for python-daemon.spec because pagure.io webpage downloads are broken
+        # for python-daemon.spec because pagure.io webpage downloads are broken. Still the case in June 2025.
         if ($currentFile.spec -eq "python-daemon.spec")
         {
-            $Source0="https://files.pythonhosted.org/packages/3d/37/4f10e37bdabc058a32989da2daf29e57dc59dbc5395497f3d36d5f5e2694/python_daemon-3.1.2.tar.gz"
-            $UpdateURL="https://files.pythonhosted.org/packages/d9/3c/727b06abb46fead341a2bdad04ba4a4db5395c44c45d8ba0aa82b517e462/python-daemon-2.3.2.tar.gz"
-            $HealthUpdateURL="200"
-            $UpdateAvailable="3.1.2"
+           $Source0="https://files.pythonhosted.org/packages/3d/37/4f10e37bdabc058a32989da2daf29e57dc59dbc5395497f3d36d5f5e2694/python_daemon-3.1.2.tar.gz"
+           $UpdateURL="https://files.pythonhosted.org/packages/d9/3c/727b06abb46fead341a2bdad04ba4a4db5395c44c45d8ba0aa82b517e462/python-daemon-2.3.2.tar.gz"
+           $HealthUpdateURL="200"
+           $UpdateAvailable="3.1.2"
         }
 
         if ($currentFile.spec -eq "libassuan.spec")
         {
-            $UpdateURL="https://www.gnupg.org/ftp/gcrypt/libassuan/libassuan-3.0.1.tar.bz2"
+            $UpdateURL="https://www.gnupg.org/ftp/gcrypt/libassuan/libassuan-3.0.2.tar.bz2"
             $HealthUpdateURL="200"
-            $UpdateAvailable="3.0.1"
+            $UpdateAvailable="3.0.2"
         }
 
         if ($currentFile.spec -eq "libtiff.spec")
@@ -1389,9 +1392,9 @@ function CheckURLHealth {
 
         if ($currentFile.spec -eq "pgbackrest.spec")
         {
-            $UpdateURL="https://github.com/pgbackrest/pgbackrest/archive/refs/tags/release/2.54.2.tar.gz"
+            $UpdateURL="https://github.com/pgbackrest/pgbackrest/archive/refs/tags/release/2.55.1.tar.gz"
             $HealthUpdateURL="200"
-            $UpdateAvailable="2.54.2"
+            $UpdateAvailable="2.55.1"
         }
 
         if ($currentFile.spec -eq "re2.spec")
@@ -2395,7 +2398,6 @@ function CheckURLHealth {
             }
         }
 
-
         # Check UpdateAvailable by sourceforge tags detection
         elseif ($Source0 -ilike '*sourceforge.net*')
         {
@@ -2633,8 +2635,6 @@ function CheckURLHealth {
             }
         }
 
-                    
-
         # Check UpdateAvailable by freedesktop tags detection
         elseif (($Source0 -ilike '*freedesktop.org*') -or ($Source0 -ilike '*https://gitlab.*'))
         {
@@ -2776,7 +2776,7 @@ function CheckURLHealth {
             }
         }
 
-        # Check UpdateAvailable by freedesktop tags detection
+        # Check UpdateAvailable by cpan tags detection
         elseif (($Source0 -ilike '*cpan.metacpan.org/authors*') -or ($Source0 -ilike '*search.cpan.org/CPAN/authors*') -or ($Source0 -ilike '*cpan.org/authors*'))
         {
             # Hardcoded SourceTagURL from Source0 because detection from Source0 url would have a worse ratio
@@ -3383,14 +3383,23 @@ function CheckURLHealth {
                         $ArtefactVersion=$ArtefactVersion -ireplace "v",""
                     }
                  }
-                 if ($ArtefactDownloadName)
+                 if ($ArtefactDownloadName -ne "")
                  {
-                    $UpdateURL=([system.string]::concat($SourceRPMFileURL,"/",$ArtefactDownloadName))
-                    $HealthUpdateURL="200"
+                    if (!($ArtefactDownloadName | select-string -pattern $_.Name -simplematch))
+                    {
+                        # not the same name, hence ignore this false positive
+                        $ArtefactVersion=""
+                        $ArtefactDownloadName=""
+                    }
+                    if ($ArtefactDownloadName -ne "")
+                    {
+                        $UpdateURL=([system.string]::concat($SourceRPMFileURL,"/",$ArtefactDownloadName))
+                        $HealthUpdateURL="200"
+                        if ($Version -lt $ArtefactVersion) {$UpdateAvailable = $ArtefactVersion}
+                        elseif ($Version -eq $ArtefactVersion) {$UpdateAvailable = "(same version)" }
+                        else {$UpdateAvailable = "Warning: "+$currentfile.spec+" Source0 version "+$version+" is higher than detected latest version "+$ArtefactVersion+" ." }
+                    }
                  }
-                 if ($Version -lt $ArtefactVersion) {$UpdateAvailable = $ArtefactVersion}
-                 elseif ($Version -eq $ArtefactVersion) {$UpdateAvailable = "(same version)" }
-                 else {$UpdateAvailable = "Warning: "+$currentfile.spec+" Source0 version "+$version+" is higher than detected latest version "+$ArtefactVersion+" ." }
             }
             catch{}
         }
@@ -3575,6 +3584,7 @@ function CheckURLHealth {
     $lines | out-file $outputfile -append
     }
 }
+
 function GenerateUrlHealthReports {
     param (
         [string]$SourcePath,
@@ -3723,8 +3733,7 @@ $GeneratePh4toPh5DiffHigherPackageVersionReport=$false
 $GeneratePh3toPh4DiffHigherPackageVersionReport=$false
 
 if (Get-Command git -ErrorAction SilentlyContinue) {}
-else
-{
+else {
     Write-Output "Git not found. Trying to install ..."
     winget install --id Git.Git -e --source winget
     Write-Output "Please restart the script."
@@ -3749,11 +3758,10 @@ if ($Script:UseParallel) {
     } else {
         Write-Host "PowerShell 7+ detected, but the -InitializationScript parameter for ForEach-Object -Parallel is not available in this environment. Operations requiring it will fall back to sequential mode."
     }
-} else {
+}
+else {
     Write-Host "PowerShell version less than 7 detected. Script will run in sequential mode."
 }
-
-
 
 # Call the new function
 $urlHealthPackageData = GenerateUrlHealthReports -SourcePath $sourcepath -AccessToken $access -ThrottleLimit $ThrottleLimit `
