@@ -3656,66 +3656,75 @@ function GenerateUrlHealthReports {
     if ($GeneratePh6URLHealthReport -and $null -ne $Packages6) { $checkUrlHealthTasks += @{ Name = "Photon OS 6.0"; Release = "6.0"; Packages = $Packages6; PhotonDir = "photon-6.0" } }
     if ($GeneratePhCommonURLHealthReport -and $null -ne $PackagesCommon) { $checkUrlHealthTasks += @{ Name = "Photon OS Common"; Release = "common"; Packages = $PackagesCommon; PhotonDir = "photon-common" } }
 
+	$CheckURLHealthDef = (Get-Command 'CheckURLHealth' -ErrorAction SilentlyContinue).Definition
+	$urlhealthDef = (Get-Command 'urlhealth' -ErrorAction SilentlyContinue).Definition
+	$KojiFedoraProjectLookUpDef = (Get-Command 'KojiFedoraProjectLookUp' -ErrorAction SilentlyContinue).Definition
+	$ModifySpecFileDef = (Get-Command 'ModifySpecFile' -ErrorAction SilentlyContinue).Definition
+	$ModifySpecFileOpenJDK8Def = (Get-Command 'ModifySpecFileOpenJDK8' -ErrorAction SilentlyContinue).Definition
+	$HeapSortClassDef = (Get-Command 'HeapSort' -ErrorAction SilentlyContinue).Definition
+    $Source0LookupDef = (Get-Command 'Source0Lookup' -ErrorAction SilentlyContinue).Definition
+
+	$ProcessTaskScriptBlock = {
+		# Ensure the required functions and classes are defined in the runspace
+		# Capture definitions of functions and classes needed in parallel runspaces.
+		# Ensure these functions/classes are defined before this point in the script.
+        # FIRST: Define all required functions and classes in this runspace
+        # Use $using: to access variables from the parent scope
+        if ($using:CheckURLHealthDef) { 
+            Invoke-Expression "function CheckURLHealth { $using:CheckURLHealthDef }"
+        }
+        if ($using:urlhealthDef) { 
+            Invoke-Expression "function urlhealth { $using:urlhealthDef }"
+        }
+        if ($using:KojiFedoraProjectLookUpDef) { 
+            Invoke-Expression "function KojiFedoraProjectLookUp { $using:KojiFedoraProjectLookUpDef }"
+        }
+        if ($using:ModifySpecFileDef) { 
+            Invoke-Expression "function ModifySpecFile { $using:ModifySpecFileDef }"
+        }
+        if ($using:ModifySpecFileOpenJDK8Def) { 
+            Invoke-Expression "function ModifySpecFileOpenJDK8 { $using:ModifySpecFileOpenJDK8Def }"
+        }
+        if ($using:HeapSortClassDef) { 
+            Invoke-Expression $using:HeapSortClassDef
+        }
+        if ($using:Source0LookupDef) { 
+            Invoke-Expression "function Source0Lookup { $using:Source0LookupDef }"
+        }
+
+		$taskConfig = $_
+		Write-Output "Generating URLHealth report for $($taskConfig.Name) (parallel worker)..."
+		$outputFileName = "photonos-urlhealth-$($taskConfig.Release)_$((Get-Date).ToString("yyyyMMddHHmm"))"
+		$outputFilePath = Join-Path -Path $using:SourcePath -ChildPath "$outputFileName.prn" # Use $using:SourcePath for correct path in parallel
+		CheckURLHealth -outputfile $outputFilePath -accessToken $using:AccessToken -CheckURLHealthPackageObject $taskConfig.Packages -PhotonDir $taskConfig.PhotonDir -ThrottleLimitParam $using:ThrottleLimit -SourcePath $using:SourcePath
+		Write-Output "Finished report for $($taskConfig.Name) (parallel worker). Output: $outputFilePath"            
+	}
     if ($Script:UseParallel -and $checkUrlHealthTasks.Count -gt 0) {
         Write-Host "Starting parallel URL health report generation for applicable versions ..."
-        $ProcessTaskScriptBlock = {
-            # Ensure the required functions and classes are defined in the runspace
-            # Capture definitions of functions and classes needed in parallel runspaces.
-            # Ensure these functions/classes are defined before this point in the script.
-            # This assumes 'urlhealth', 'KojiFedoraProjectLookUp', 'ModifySpecFile', 'ModifySpecFileOpenJDK8' are functions
-            # and 'HeapSort' is a PowerShell class. If not, these lines will error or need adjustment.
-            $CheckURLHealthDef = (Get-Command 'CheckURLHealth' -ErrorAction SilentlyContinue).Definition
-            $urlhealthDef = (Get-Command 'urlhealth' -ErrorAction SilentlyContinue).Definition
-            $KojiFedoraProjectLookUpDef = (Get-Command 'KojiFedoraProjectLookUp' -ErrorAction SilentlyContinue).Definition
-            $ModifySpecFileDef = (Get-Command 'ModifySpecFile' -ErrorAction SilentlyContinue).Definition
-            $ModifySpecFileOpenJDK8Def = (Get-Command 'ModifySpecFileOpenJDK8' -ErrorAction SilentlyContinue).Definition
-            $HeapSortClassDef = (Get-Command 'HeapSort' -ErrorAction SilentlyContinue).Definition
-            $taskConfig = $_
-            Write-Output "Generating URLHealth report for $($taskConfig.Name) (parallel worker)..."
-            $outputFileName = "photonos-urlhealth-$($taskConfig.Release)_$((Get-Date).ToString("yyyyMMddHHmm"))"
-            $outputFilePath = Join-Path -Path $using:SourcePath -ChildPath "$outputFileName.prn" # Use $using:SourcePath for correct path in parallel
-            CheckURLHealth -outputfile $outputFilePath -accessToken $using:AccessToken -CheckURLHealthPackageObject $taskConfig.Packages -PhotonDir $taskConfig.PhotonDir -ThrottleLimitParam $using:ThrottleLimit -SourcePath $using:SourcePath
-            Write-Output "Finished report for $($taskConfig.Name) (parallel worker). Output: $outputFilePath"            
-        }
-        # Create the final script block by combining definitions and core logic
-        $FinalProcessTaskScriptBlock = [scriptblock]::Create("$InitializationScript`n$ProcessTaskScriptBlock")   
-    $checkUrlHealthTasks | ForEach-Object -Parallel $ProcessTaskScriptBlock -ThrottleLimit $ThrottleLimit
+		$checkUrlHealthTasks | ForEach-Object -Parallel $ProcessTaskScriptBlock -ThrottleLimit $ThrottleLimit
     } elseif ($checkUrlHealthTasks.Count -gt 0){ 
         # Fallback to sequential processing
-    if ($Script:UseParallel -and -not $Script:InitializationScriptParameterAvailable) {
-            Write-Warning "PowerShell 7+ was detected, but the -InitializationScript parameter for ForEach-Object -Parallel is not available in this environment. Falling back to sequential processing for URL health reports. Consider upgrading your PowerShell version if parallel processing is desired."
-        }
         Write-Host "Starting sequential URL health report generation for applicable versions..."
-        foreach ($taskConfig in $checkUrlHealthTasks) {
-            Write-Output "Generating URLHealth report for $($taskConfig.Name) (sequential)..."
-            # Prepare definitions for functions and classes to be used in parallel runspaces
-            # $HeapSortClassDef is captured at the beginning of the GenerateUrlHealthReports function
-            $FunctionAndClassDefinitions = @"
-$(Get-Command 'CheckURLHealth' -ErrorAction SilentlyContinue).Definition
-$(Get-Command 'urlhealth' -ErrorAction SilentlyContinue).Definition
-$(Get-Command 'KojiFedoraProjectLookUp' -ErrorAction SilentlyContinue).Definition
-$(Get-Command 'ModifySpecFile' -ErrorAction SilentlyContinue).Defi(Get-Command 'ModifySpecFileOpenJDK8' -ErrorAction SilentlyContinue).Definition
-$($HeapSortClassDef)
-"@
-
-            # Define the core logic for the parallel task as a string
-            # Variables from the outer scope must be accessed using $using:
-            # The iterated object $_ (here assigned to $taskConfig) is directly available.
-            $CoreProcessTaskLogicString = @'
-                $taskConfig = $_ # Current item from $checkUrlHealthTasks
-                Write-Outp$Script:UseParallel = $PSVersionTable.PSVersion.Major -ge 7 -and $PSVersionTable.PSVersion.Minor -ge 4rallel worker)..."
-    1            $outputFileName = "photonos-urlhealth-$($taskConfig.Rel       $outputFilePath = Join-Path -Path $using:SourcePath -ChildPath "$outputFileName.prn"
-        true   
-                # Call th$truetion, now defined within this script block's scope
-             $trueckURLHealth -outputfile $outputFilePtrueaccessToken $using:AccessToktrueheckURLHealthPackageObject $taskConfig.Packages -PhotonDir $ttruenfig.PhotonDir -ThrottleLimitParam $using:ThrottleLtrue-SourcePath $using:SourcePath
-                
-  true         Write-Output "Finished report for $($taskCtrue.Name) (parallel worker). Output: $outputFilePath"
-'@
+		$checkUrlHealthTasks | ForEach-Object $ProcessTaskScriptBlock
+	} else {
+            Write-Host "No URL health reports were enabled or no package data found."
+    }
+    # Return package data for subsequent report generation if needed
+    return @{
+        Packages3 = $Packages3
+        Packages4 = $Packages4
+        Packages5 = $Packages5
+        Packages6 = $Packages6
+        PackagesCommon = $PackagesCommon
+    }
+}	
+        
             
-            # Create the final script block by combining definitions and core logic
-            $FinalProcessTaskScriptBlock = [scriptblock]::Create("$FunctionAndClassParallel = $PSVersionTable.PSVersion.Major -ge 7
-[int]$ThrottleLimit = 5         # New parameter for inner loop throttle in CheckURLHealth
-$Script:InitializationScriptParameterAvailable = $true
+# EDIT
+# path with all downloaded and unzipped branch directories of github.com/vmware/photon
+$sourcepath="$env:public"
+$Script:UseParallel = $PSVersionTable.PSVersion.Major -ge 7 -and $PSVersionTable.PSVersion.Minor -ge 4
+[int]$ThrottleLimit = 15         # New parameter for inner loop throttle in CheckURLHealth
 $access = Read-Host -Prompt "Please enter your Github Access Token."
 $GeneratePh3URLHealthReport=$false
 $GeneratePh4URLHealthReport=$false
@@ -3734,29 +3743,6 @@ else {
     winget install --id Git.Git -e --source winget
     Write-Output "Please restart the script."
     exit
-}
-
-# Check if PowerShell version is 7 or higher and if the -InitializationScript parameter is available for ForEach-Object -Parallel
-if ($Script:UseParallel) {
-    try {
-        $feCmd = Get-Command ForEach-Object -ErrorAction SilentlyContinue
-        # Check if both -Parallel and -InitializationScript parameters exist
-        if ($feCmd -and $feCmd.Parameters.ContainsKey('Parallel')) {
-            $Script:InitializationScriptParameterAvailable = $true
-        }
-    } catch {
-        # Fallback in case of unexpected error during Get-Command
-        $Script:InitializationScriptParameterAvailable = $false
-    }
-
-    if ($Script:InitializationScriptParameterAvailable) {
-        Write-Host "PowerShell 7+ detected. Parallel processing with InitializationScript will be enabled where applicable."
-    } else {
-        Write-Host "PowerShell 7+ detected, but the -InitializationScript parameter for ForEach-Object -Parallel is not available in this environment. Operations requiring it will fall back to sequential mode."
-    }
-}
-else {
-    Write-Host "PowerShell version less than 7 detected. Script will run in sequential mode."
 }
 
 # Call the new function
