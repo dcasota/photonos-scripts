@@ -21,10 +21,12 @@
 #   0.51  06.03.2024   dcasota  git check added
 #   0.52  08.09.2024   dcasota  Ph6 and common added
 #   0.53  13.02.2025   dcasota  KojiFedoraProjectLookUp, various url fixes
+#   0.54  30.05.2025   GitHubCopilot  Implemented parallel processing for URL health checks, Fix linting errors from parallel processing implementation
 #
 #  .PREREQUISITES
 #    - Script actually tested only on MS Windows OS with Powershell PSVersion 5.1 or higher
 #    - downloaded and unzipped branch directories of github.com/vmware/photon 
+#    - PowerShell 7+ for parallel processing capabilities
 
 
 class HeapSort {
@@ -54,17 +56,14 @@ class HeapSort {
         $right = ($index + 1) * 2
         $largest = 0
 
-
-       
-
-        if ($left -lt $heapSize -and [int64]([system.string]::concat((([system.Text.Encoding]::Default.GetBytes($targetList[$left])) | % tostring 000))) -gt [int64]([system.string]::concat((([system.Text.Encoding]::Default.GetBytes($targetList[$index])) | % tostring 000)))) {
+        if ($left -lt $heapSize -and [int64]([system.string]::concat((([system.Text.Encoding]::Default.GetBytes($targetList[$left])) | foreach-object tostring 000))) -gt [int64]([system.string]::concat((([system.Text.Encoding]::Default.GetBytes($targetList[$index])) | foreach-object tostring 000)))) {
             $largest = $left
         }
         else {
             $largest = $index
         }
 
-        if ($right -lt $heapSize -and [int64]([system.string]::concat((([system.Text.Encoding]::Default.GetBytes($targetList[$right])) | % tostring 000))) -gt [int64]([system.string]::concat((([system.Text.Encoding]::Default.GetBytes($targetList[$largest])) | % tostring 000)))) {
+        if ($right -lt $heapSize -and [int64]([system.string]::concat((([system.Text.Encoding]::Default.GetBytes($targetList[$right])) | foreach-object tostring 000))) -gt [int64]([system.string]::concat((([system.Text.Encoding]::Default.GetBytes($targetList[$largest])) | foreach-object tostring 000)))) {
             $largest = $right
         }
 
@@ -78,8 +77,7 @@ class HeapSort {
     }
 }
 
-function ModifySpecFileOpenJDK8
-{
+function ModifySpecFileOpenJDK8 {
 	param (
 		[parameter(Mandatory = $true)]
 		[string]$SpecFileName,
@@ -99,7 +97,7 @@ function ModifySpecFileOpenJDK8
 
 
     try
-    { $version = (get-command use-culture).Version.ToString() }
+    { (get-command use-culture).Version.ToString() }
     catch
     { install-module -name PowerShellCookbook -AllowClobber -Force -Confirm:$false }
 
@@ -163,8 +161,189 @@ function ModifySpecFileOpenJDK8
     # done
 }
 
-function ModifySpecFile
-{
+function ParseSpecFile {
+    [CmdletBinding()]
+    Param(
+        [parameter(Mandatory)]$specfile,
+        [parameter(Mandatory)]$photonDir
+    )
+    Process {
+        Write-Verbose "Parsing spec file: $FilePath"
+        $metadata = @{
+            SpecFileName      = (Split-Path -Path $FilePath -Leaf)
+            SpecDefinedName   = $null 
+            Version           = $null
+            Release           = $null
+            FullVersion       = $null 
+            Source0           = $null
+            url               = $null # Lowercase 'url' for consistency with original script's output object
+            SHAName           = "" 
+            srcname           = ""
+            gem_name          = ""
+            group             = ""
+            extra_version     = ""
+            main_version      = ""
+            subversion        = ""
+            byaccdate         = ""
+            dialogsubversion  = ""
+            libedit_release   = ""
+            libedit_version   = ""
+            ncursessubversion = ""
+            cpan_name         = ""
+            xproto_ver        = ""
+            _url_src          = ""
+            _repo_ver         = ""
+        }
+
+        $content = Get-Content $specfile -Raw
+        # Example of fixing aliases if they were in the original ParseSpecFile:
+        if ($content -ilike '*%define sha1*') {$SHAName = $content | ForEach-Object { if ($_ -ilike '*%define sha1*') {((($_ -split '=')[0]).replace('%define sha1',"")).Trim()}}}
+        elseif ($content -ilike '*%define sha256*') {$SHAName = $content | ForEach-Object { if ($_ -ilike '*%define sha256*') {((($_ -split '=')[0]).replace('%define sha256',"")).Trim()}}}
+        elseif ($content -ilike '*%define sha512*') {$SHAName = $content | ForEach-Object { if ($_ -ilike '*%define sha512*') {((($_ -split '=')[0]).replace('%define sha512',"")).Trim()}}}
+
+        $reader = $null
+        try {
+            $reader = [System.IO.StreamReader]::new($FilePath)
+            while ($line = $reader.ReadLine()) {
+                if ($line -match '^\s*Name:\s*(.+)$') { $metadata.SpecDefinedName = $matches[1].Trim() }
+                elseif ($line -match '^\s*Version:\s*(.+)$') { $metadata.Version = $matches[1].Trim() }
+                elseif ($line -match '^\s*Release:\s*(.+)$') { 
+                    $tempRelease = $matches[1].Trim()
+                    $tempRelease = $tempRelease.Replace("%{?dist}","")
+                    $tempRelease = $tempRelease.Replace("%{?kat_build:.kat}","")
+                    $tempRelease = $tempRelease.Replace("%{?kat_build:.%kat_build}","")
+                    $tempRelease = $tempRelease.Replace("%{?kat_build:.%kat}","")
+                    $tempRelease = $tempRelease.Replace("%{?kernelsubrelease}","")
+                    $tempRelease = $tempRelease.Replace(".%{dialogsubversion}","") # Replicates original literal replacement
+                    $metadata.Release = $tempRelease
+                }
+                elseif ($line -match '^\s*Source0:\s*(.+)$') { $metadata.Source0 = $matches[1].Trim() }
+                elseif ($line -match '^\s*URL:\s*(.+)$') { $metadata.url = $matches[1].Trim() } # Lowercase 'url'
+                
+                elseif ($line -match '^\s*%define\s+sha1\s+([^=\s]+)') { $metadata.SHAName = $matches[1].Trim() }
+                elseif ($line -match '^\s*%define\s+sha256\s+([^=\s]+)') { $metadata.SHAName = $matches[1].Trim() }
+                elseif ($line -match '^\s*%define\s+sha512\s+([^=\s]+)') { $metadata.SHAName = $matches[1].Trim() }
+
+                elseif ($line -match '^\s*%(?:define|global)\s+srcname\s+(.+)$') { $metadata.srcname = $matches[1].Trim() }
+                elseif ($line -match '^\s*%(?:define|global)\s+gem_name\s+(.+)$') { $metadata.gem_name = $matches[1].Trim() }
+                elseif ($line -match '^\s*Group:\s*(.+)$') { $metadata.group = $matches[1].Trim() }
+                elseif ($line -match '^\s*%define\s+extra_version\s+(.+)$') { $metadata.extra_version = $matches[1].Trim() }
+                elseif ($line -match '^\s*%define\s+main_version\s+(.+)$') { $metadata.main_version = $matches[1].Trim() }
+                elseif ($line -match '^\s*%define\s+subversion\s+(.+)$') { $metadata.subversion = $matches[1].Trim() }
+                elseif ($line -match '^\s*%define\s+byaccdate\s+(.+)$') { $metadata.byaccdate = $matches[1].Trim() }
+                elseif ($line -match '^\s*%define\s+dialogsubversion\s+(.+)$') { $metadata.dialogsubversion = $matches[1].Trim() }
+                elseif ($line -match '^\s*%define\s+libedit_release\s+(.+)$') { $metadata.libedit_release = $matches[1].Trim() }
+                elseif ($line -match '^\s*%define\s+libedit_version\s+(.+)$') { $metadata.libedit_version = $matches[1].Trim() }
+                elseif ($line -match '^\s*%define\s+ncursessubversion\s+(.+)$') { $metadata.ncursessubversion = $matches[1].Trim() }
+                elseif ($line -match '^\s*%define\s+cpan_name\s+(.+)$') { $metadata.cpan_name = $matches[1].Trim() }
+                elseif ($line -match '^\s*%define\s+xproto_ver\s+(.+)$') { $metadata.xproto_ver = $matches[1].Trim() }
+                elseif ($line -match '^\s*%define\s+_url_src\s+(.+)$') { $metadata._url_src = $matches[1].Trim() }
+                elseif ($line -match '^\s*%define\s+_repo_ver\s+(.+)$') { $metadata._repo_ver = $matches[1].Trim() }
+            }
+            
+            if ($metadata.Version -and $metadata.Release) {
+                $metadata.FullVersion = "$($metadata.Version)-$($metadata.Release)"
+            } elseif ($metadata.Version) {
+                $metadata.FullVersion = $metadata.Version
+            }
+        } catch {
+            Write-Error "Error parsing spec file '$($FilePath)': $($_.Exception.Message)"
+            return $null # Return null on error to allow ParseDirectory to skip
+        } finally {
+            if ($null -ne $reader) {
+                $reader.Close()
+                $reader.Dispose()
+            }
+        }
+        return [PSCustomObject]$metadata
+    }
+}
+
+function ModifySpecFileOpenJDK8 {
+    param (
+        [parameter(Mandatory = $true)]
+        [string]$SpecFileName,
+        [parameter(Mandatory = $true)]
+        [string]$photonDir,
+        [parameter(Mandatory = $true)]
+        [string]$Name,
+        [parameter(Mandatory = $true)]
+        [string]$Update,
+        [parameter(Mandatory = $true)]
+        [string]$UpdateDownloadFile,
+        [parameter(Mandatory = $true)]
+        [string]$DownloadNameWithoutExtension
+    )
+    $SpecFile = [system.string]::concat($sourcepath,"/",$photonDir,"/SPECS/",$Name,"/",$SpecFileName)
+    $Object=get-content $SpecFile
+
+
+    try
+    { (get-command use-culture).Version.ToString() }
+    catch
+    { install-module -name PowerShellCookbook -AllowClobber -Force -Confirm:$false }
+
+    $sha1=""
+    $sha256=""
+    $sha512=""
+    if ($object -ilike '*%define sha1*') { $certutil = certutil -hashfile $UpdateDownloadFile SHA1 | out-string; $sha1= ($certutil -split "`r`n")[1]  }
+    if ($object -ilike '*%define sha256*') { $certutil = certutil -hashfile $UpdateDownloadFile SHA256 | out-string; $sha256= ($certutil -split "`r`n")[1] }
+    if ($object -ilike '*%define sha512*') { $certutil = certutil -hashfile $UpdateDownloadFile SHA512 | out-string; $sha512= ($certutil -split "`r`n")[1] }
+
+    $DateEntry = use-culture -Culture en-US {(get-date -UFormat "%a") + " " + (get-date).ToString("MMM") + " " + (get-date -UFormat "%d %Y") }
+    $Line1=[system.string]::concat("* ",$DateEntry," ","First Last <firstname.lastname@broadcom.com> ",$Update,"-1")
+
+    $skip=$false
+    $FileModified = @() 
+    Foreach ($Line in $Object)
+    {
+        if ($skip -eq $false)
+        {
+            if ($Line -ilike '*Version:*') {$Line = $Line -replace 'Version:.+$', "Version:        1.8.0.$Update"; $FileModified += $Line}
+            elseif ($Line -ilike '*Release:*') {$Line = $Line -replace 'Release:.+$', 'Release:        1%{?dist}'; $FileModified += $Line}
+            elseif ($Line -ilike '*Source0:*') 
+            {
+                $FileModified += $Line
+                if ($sha1 -ne "") {$FileModified += [system.string]::concat('%define sha1 ',$DownloadNameWithoutExtension,'=',$sha1); $skip=$true }
+                elseif ($sha256 -ne "") {$FileModified += [system.string]::concat('%define sha256 ',$DownloadNameWithoutExtension,'=',$sha256); $skip=$true }
+                elseif ($sha512 -ne "") {$FileModified +=[system.string]::concat('%define sha512 ',$DownloadNameWithoutExtension,'=',$sha512); $skip=$true }
+            }
+            elseif ($Line -ilike '%changelog*') 
+            {
+                $FileModified += $Line
+                #Add Lines after the selected pattern 
+                $FileModified += $Line1
+                $FileModified += '- automatic version bump for testing purposes DO NOT USE'
+            }
+            elseif ($Line -ilike '%define subversion*') 
+            {
+                $FileModified += [system.string]::concat('%define subversion ',$Update)
+            }
+            else {$FileModified += $Line}
+        }
+        else {$skip = $false}
+    }
+    
+    $SpecsNewDirectory=".\SPECS_NEW\$Name"
+    if (!(Test-Path $SpecsNewDirectory)) {New-Item $SpecsNewDirectory -ItemType Directory}
+
+    $filename=[system.string]::concat($SpecsNewDirectory,"\",$Name,"-",$Update,".spec")
+    $FileModified | Set-Content $fileName
+    # awk '{ sub("\r$", ""); print }' ./SPECS/aide/aide.spec > ./SPECS/aide/aide.new
+
+    # #!/bin/bash
+    # cd /root/ph5/photon/SPECS_NEW
+    # for f in $(find ./ -name '*-[[:digit:]]*.spec');
+    #  do
+    #  DirectoryName=$(dirname $f)
+    #  if [ -d "/root/ph5/photon/SPECS/$DirectoryName" ]; then
+    #    awk '{ sub("\r$", ""); print }' $f > /root/ph5/photon/SPECS/$f
+    #    echo $f
+    #  fi
+    # done
+}
+
+function ModifySpecFile {
 	param (
 		[parameter(Mandatory = $true)]
 		[string]$SpecFileName,
@@ -244,8 +423,7 @@ function ModifySpecFile
     # done
 }
 
-function ParseDirectory
-{
+function ParseDirectory {
 	param (
 		[parameter(Mandatory = $true)]
 		[string]$SourcePath,
@@ -268,62 +446,62 @@ function ParseDirectory
                 $Release = $Release.Replace(".%{dialogsubversion}","")
                 $Version=$null
                 $version= (($content | Select-String -Pattern "^Version:")[0].ToString() -ireplace "Version:", "").Trim()
-                if ($Release -ne $null) {$Version = $Version+"-"+$Release}
+                if ($null -ne $Release) {$Version = $Version+"-"+$Release}
                 $Source0= (($content | Select-String -Pattern "^Source0:")[0].ToString() -ireplace "Source0:", "").Trim()
 
                 if ($content -ilike '*URL:*') { $url = (($content | Select-String -Pattern "^URL:")[0].ToString() -ireplace "URL:", "").Trim() }
 
                 $SHAName=""
-                if ($content -ilike '*%define sha1*') {$SHAName = $content | %{ if ($_ -ilike '*%define sha1*') {((($_ -split '=')[0]).replace('%define sha1',"")).Trim()}}}
-                elseif ($content -ilike '*%define sha256*') {$SHAName = $content | %{ if ($_ -ilike '*%define sha256*') {((($_ -split '=')[0]).replace('%define sha256',"")).Trim()}}}
-                elseif ($content -ilike '*%define sha512*') {$SHAName = $content | %{ if ($_ -ilike '*%define sha512*') {((($_ -split '=')[0]).replace('%define sha512',"")).Trim()}}}
+                if ($content -ilike '*%define sha1*') {$SHAName = $content | foreach-object{ if ($_ -ilike '*%define sha1*') {((($_ -split '=')[0]).replace('%define sha1',"")).Trim()}}}
+                elseif ($content -ilike '*%define sha256*') {$SHAName = $content | foreach-object{ if ($_ -ilike '*%define sha256*') {((($_ -split '=')[0]).replace('%define sha256',"")).Trim()}}}
+                elseif ($content -ilike '*%define sha512*') {$SHAName = $content | foreach-object{ if ($_ -ilike '*%define sha512*') {((($_ -split '=')[0]).replace('%define sha512',"")).Trim()}}}
 
                 $srcname=""
-                if ($content -ilike '*define srcname*') { $srcname = (($content | Select-String -Pattern '%define srcname')[0].ToString() -ireplace '%define srcname', "").Trim() }
-                if ($content -ilike '*global srcname*') { $srcname = (($content | Select-String -Pattern '%global srcname')[0].ToString() -ireplace '%global srcname', "").Trim() }
+                if ($content -ilike '*%define srcname*') { $srcname = (($content | Select-String -Pattern '%define srcname')[0].ToString() -ireplace '%define srcname', "").Trim() }
+                if ($content -ilike '*%global srcname*') { $srcname = (($content | Select-String -Pattern '%global srcname')[0].ToString() -ireplace '%global srcname', "").Trim() }
 
                 $gem_name=""
-                if ($content -ilike '*define gem_name*') { $gem_name = (($content | Select-String -Pattern '%define gem_name')[0].ToString() -ireplace '%define gem_name', "").Trim() }
-                if ($content -ilike '*global gem_name*') { $gem_name = (($content | Select-String -Pattern '%global gem_name')[0].ToString() -ireplace '%global gem_name', "").Trim() }
+                if ($content -ilike '*%define gem_name*') { $gem_name = (($content | Select-String -Pattern '%define gem_name')[0].ToString() -ireplace '%define gem_name', "").Trim() }
+                if ($content -ilike '*%global gem_name*') { $gem_name = (($content | Select-String -Pattern '%global gem_name')[0].ToString() -ireplace '%global gem_name', "").Trim() }
 
                 $group=""
                 if ($content -ilike '*Group:*') { $group = (($content | Select-String -Pattern '^Group:')[0].ToString() -ireplace 'Group:', "").Trim() }
 
                 $extra_version=""
-                if ($content -ilike '*define extra_version*') { $extra_version = (($content | Select-String -Pattern '%define extra_version')[0].ToString() -ireplace '%define extra_version', "").Trim() }
+                if ($content -ilike '*%define extra_version*') { $extra_version = (($content | Select-String -Pattern '%define extra_version')[0].ToString() -ireplace '%define extra_version', "").Trim() }
 
                 $main_version=""
-                if ($content -ilike '*define main_version*') { $main_version = (($content | Select-String -Pattern '%define main_version')[0].ToString() -ireplace '%define main_version', "").Trim() }
+                if ($content -ilike '*%define main_version*') { $main_version = (($content | Select-String -Pattern '%define main_version')[0].ToString() -ireplace '%define main_version', "").Trim() }
 
                 $subversion=""
-                if ($content -ilike '*define subversion*') { $subversion = (($content | Select-String -Pattern '%define subversion')[0].ToString() -ireplace '%define subversion', "").Trim() }
+                if ($content -ilike '*%define subversion*') { $subversion = (($content | Select-String -Pattern '%define subversion')[0].ToString() -ireplace '%define subversion', "").Trim() }
 
                 $byaccdate=""
                 if ($content -ilike '*define byaccdate*') { $byaccdate = (($content | Select-String -Pattern '%define byaccdate')[0].ToString() -ireplace '%define byaccdate', "").Trim() }
 
                 $dialogsubversion=""
-                if ($content -ilike '*define dialogsubversion*') { $dialogsubversion = (($content | Select-String -Pattern '%define dialogsubversion')[0].ToString() -ireplace '%define dialogsubversion', "").Trim() }
+                if ($content -ilike '*%define dialogsubversion*') { $dialogsubversion = (($content | Select-String -Pattern '%define dialogsubversion')[0].ToString() -ireplace '%define dialogsubversion', "").Trim() }
 
                 $libedit_release=""
                 if ($content -ilike '*define libedit_release*') { $libedit_release = (($content | Select-String -Pattern '%define libedit_release')[0].ToString() -ireplace '%define libedit_release', "").Trim() }
 
                 $libedit_version=""
-                if ($content -ilike '*define libedit_version*') { $libedit_version = (($content | Select-String -Pattern '%define libedit_version')[0].ToString() -ireplace '%define libedit_version', "").Trim() }
+                if ($content -ilike '*%define libedit_version*') { $libedit_version = (($content | Select-String -Pattern '%define libedit_version')[0].ToString() -ireplace '%define libedit_version', "").Trim() }
 
                 $ncursessubversion=""
-                if ($content -ilike '*define ncursessubversion*') { $ncursessubversion = (($content | Select-String -Pattern '%define ncursessubversion')[0].ToString() -ireplace '%define ncursessubversion', "").Trim() }
+                if ($content -ilike '*%define ncursessubversion*') { $ncursessubversion = (($content | Select-String -Pattern '%define ncursessubversion')[0].ToString() -ireplace '%define ncursessubversion', "").Trim() }
 
                 $cpan_name=""
                 if ($content -ilike '*define cpan_name*') { $cpan_name = (($content | Select-String -Pattern '%define cpan_name')[0].ToString() -ireplace '%define cpan_name', "").Trim() }
 
                 $xproto_ver=""
-                if ($content -ilike '*define xproto_ver*') { $xproto_ver = (($content | Select-String -Pattern '%define xproto_ver')[0].ToString() -ireplace '%define xproto_ver', "").Trim() }
+                if ($content -ilike '*%define xproto_ver*') { $xproto_ver = (($content | Select-String -Pattern '%define xproto_ver')[0].ToString() -ireplace '%define xproto_ver', "").Trim() }
 
                 $_url_src=""
                 if ($content -ilike '*define _url_src*') { $_url_src = (($content | Select-String -Pattern '%define _url_src')[0].ToString() -ireplace '%define _url_src', "").Trim() }
 
                 $_repo_ver=""
-                if ($content -ilike '*define _repo_ver*') { $_repo_ver = (($content | Select-String -Pattern '%define _repo_ver')[0].ToString() -ireplace '%define _repo_ver', "").Trim() }
+                if ($content -ilike '*%define _repo_ver*') { $_repo_ver = (($content | Select-String -Pattern '%define _repo_ver')[0].ToString() -ireplace '%define _repo_ver', "").Trim() }
                 
                 $Packages +=[PSCustomObject]@{
                     Spec = $_.Name
@@ -354,8 +532,7 @@ function ParseDirectory
     return $Packages
 }
 
-function Versioncompare
-{
+function Versioncompare {
 	param (
 		[parameter(Mandatory = $true)]
 		$versionA,
@@ -413,8 +590,7 @@ function Versioncompare
     return $resultAGtrB
 }
 
-function urlhealth
-{
+function urlhealth {
 	param (
 		[parameter(Mandatory = $true)]
 		$checkurl
@@ -466,8 +642,7 @@ function urlhealth
     return $urlhealthrc
 }
 
-function KojiFedoraProjectLookUp
-{
+function KojiFedoraProjectLookUp {
 # https://koji.fedoraproject.org/ contains a lot of Linux source packages.
 # Beside the fedora packages, the source is included, but it has to be extracted from the appropriate package. Inside that download source package, you find the .tar.gz bits.
 # To get an idea, see the following example.
@@ -477,15 +652,17 @@ function KojiFedoraProjectLookUp
 # Inside that package information is the .tar.gz source, here it's libaio-0.3.111.tar.gz.
 #
 # $SourceTagURL="https://src.fedoraproject.org/rpms/libaio/blob/main/f/sources"
-# $version = ((((((invoke-restmethod -uri $SourceTagURL -usebasicparsing) -split '<code class') -split '</code>')[1]) -split '\(') -split '\)')[1]
+# $version = ((((((Invoke-RestMethod -Uri $SourceTagURL -UseBasicParsing) -split '<code class') -split '</code>')[1]) -split '\(') -split '\)')[1]
 # The example uses the latest 0.3.111 version in 21.fc42 release.
 # Hence, programmatically traverse https://kojipkgs.fedoraproject.org//packages/libaio/0.3.111, then traverse the subdirectories until reaching the highest number 21.fc42
 # https://kojipkgs.fedoraproject.org/packages/libaio/0.3.111/21.fc42/src/libaio-0.3.111-21.fc42.src.rpm
 # 
-	param (
-		[parameter(Mandatory = $true)]
-		[string]$ArtefactName
+    param (
+        [parameter(Mandatory = $true)]
+        [string]$ArtefactName
     )
+    $Names = $Names | ForEach-Object { if (!($_ | Select-String -Pattern '<' -SimpleMatch)) {Write-Output $_}}
+    $Names = $Names | ForEach-Object { if (($_ | Select-String -Pattern '.src.rpm' -SimpleMatch)) {Write-Output $_}}
     $SourceRPMFileURL=""
     $SourceTagURL="https://src.fedoraproject.org/rpms/$ArtefactName/blob/main/f/sources"
     try
@@ -514,39 +691,32 @@ function KojiFedoraProjectLookUp
     }catch{}
     return $SourceRPMFileURL
 }
-
-
-# EDIT
-# path with all downloaded and unzipped branch directories of github.com/vmware/photon
-$sourcepath="$env:public"
-
-
-function GitPhoton
-{
-	param (
-		[parameter(Mandatory = $true)]
-		$release
-	)
+function GitPhoton {
+    param (
+        [parameter(Mandatory = $true)]
+        [string]$SourcePath,
+        [parameter(Mandatory = $true)]
+        $release
+    )
     #download from repo
-    if (!(test-path -path $sourcepath\photon-$release))
+    if (!(Test-Path -Path (Join-Path $SourcePath "photon-$release")))
     {
-        cd $sourcepath
-        git clone -b $release https://github.com/vmware/photon $sourcepath\photon-$release
-        cd $sourcepath\photon-$release
+        Set-Location $SourcePath
+        git clone -b $release https://github.com/vmware/photon (Join-Path $SourcePath "photon-$release")
+        Set-Location (Join-Path $SourcePath "photon-$release")
     }
     else
     {
-        cd $sourcepath\photon-$release
+        Set-Location (Join-Path $SourcePath "photon-$release")
         git fetch
         if ($release -ieq "master") { git merge origin/master }
         elseif ($release -ieq "dev") { git merge origin/dev }
         else { git merge origin/$release }
     }
 }
-
 function Source0Lookup {
 
-    Process{
+
 
 $Source0LookupData=@'
 specfile,Source0Lookup
@@ -1049,12 +1219,11 @@ zsh.spec,https://github.com/zsh-users/zsh/archive/refs/tags/zsh-%{version}.tar.g
 $Source0LookupData = $Source0LookupData | convertfrom-csv
 return( $Source0LookupData )
 }
-}
-
-
 function CheckURLHealth {
       [CmdletBinding()]
       Param(
+        [parameter(Mandatory)]$ThrottleLimitParam,
+        [parameter(Mandatory)]$SourcePath,
         [parameter(Mandatory)]$outputfile,
         [parameter(Mandatory)]$accessToken,
         [parameter(Mandatory,ValueFromPipeline)]$CheckURLHealthPackageObject,
@@ -1093,7 +1262,7 @@ function CheckURLHealth {
         # This can change. Hence, this section has to be verified from time to time.
         # Until then, before any Source0 url health check the Source0 url value is changed to a manually verified value.
         # --------------------------------------------------------------------------------------------------------------
-        $currentfile.spec
+        write-output "Processing $currentfile.spec ..."
 
         $data = Source0Lookup
         $index=($data.'specfile').indexof($currentfile.spec)
@@ -1657,7 +1826,7 @@ function CheckURLHealth {
                     $Names = $Names | foreach-object {$_.tolower().replace("llvmorg-","")}
                     $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
                     $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
-                    $NameLatest = ($Names | % {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
+                    $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
                     $SourceTagURL=[System.String]::Concat("https://github.com/llvm/llvm-project/releases/download/llvmorg-",$NameLatest,"/lldb-",$NameLatest,".src.tar.xz")
                     $rc = urlhealth -checkurl $SourceTagURL
                     if ($rc -eq "200") {$Names = $NameLatest}
@@ -1668,7 +1837,7 @@ function CheckURLHealth {
                     $Names = $Names | foreach-object {$_.tolower().replace("llvmorg-","")}
                     $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
                     $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
-                    $NameLatest = ($Names | % {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
+                    $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
                     $SourceTagURL=[System.String]::Concat("https://github.com/llvm/llvm-project/releases/download/llvmorg-",$NameLatest,"/llvm-",$NameLatest,".src.tar.xz")
                     $rc = urlhealth -checkurl $SourceTagURL
                     if ($rc -eq "200") {$Names = $NameLatest}
@@ -1840,62 +2009,59 @@ function CheckURLHealth {
                 Default {}
                 }
 
-                    $replace += $_.Name+"."
-                    $replace += $_.Name+"-"
-                    $replace += $_.Name+"_"
+                    $replace += $_.Name + "."
+                    $replace += $_.Name + "-"
+                    $replace += $_.Name + "_"
                     $replace += $_.Name
-                    $replace +="ver"
-                    $replace +="release_"
-                    $replace +="release-"
-                    $replace +="release"
-                    $i=0; do {$Names = $Names | foreach-object {$_.tolower().replace(($replace[$i]).tolower(),"")}; $i++} while ($i -ne $replace.count-1)
+                    $replace += "ver"
+                    $replace += "release_"
+                    $replace += "release-"
+                    $replace += "release"
+                    $i = 0; do { $Names = $Names | foreach-object { $_.tolower().replace(($replace[$i]).tolower(), "") }; $i++ } while ($i -ne $replace.count - 1)
 
                     # $replace | foreach { $Names = $Names -replace $_,""}
                     $Names = $Names.Where({ $null -ne $_ })
                     $Names = $Names.Where({ "" -ne $_ })
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^rel/' -simplematch) {$_ -ireplace '^rel/',""} else {$_}}
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^v' -simplematch) {$_ -ireplace '^v',""} else {$_}}
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^V' -simplematch) {$_ -ireplace '^V',""} else {$_}}
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^r' -simplematch) {$_ -ireplace '^r',""} else {$_}}
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^R' -simplematch) {$_ -ireplace '^R',""} else {$_}}
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '_' -simplematch) {$_ -ireplace '_',"."} else {$_}}
+                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^rel/' -simplematch) { $_ -ireplace '^rel/', "" } else { $_ } }
+                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^v' -simplematch) { $_ -ireplace '^v', "" } else { $_ } }
+                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^V' -simplematch) { $_ -ireplace '^V', "" } else { $_ } }
+                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^r' -simplematch) { $_ -ireplace '^r', "" } else { $_ } }
+                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^R' -simplematch) { $_ -ireplace '^R', "" } else { $_ } }
+                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '_' -simplematch) { $_ -ireplace '_', "." } else { $_ } }
 
                     # remove versions developer, release candidates, alpha versions, preview versions and versions without numbers
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'candidate' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-alpha' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-beta' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.beta' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.0' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.1' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.2' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.3' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.4' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc1' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc2' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc3' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc4' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-preview.' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-dev.' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-pre1' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.pre1' -simplematch)) {$_}}
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'candidate' -simplematch)) { $_ } }
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-alpha' -simplematch)) { $_ } }
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-beta' -simplematch)) { $_ } }
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.beta' -simplematch)) { $_ } }
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.0' -simplematch)) { $_ } }
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.1' -simplematch)) { $_ } }
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.2' -simplematch)) { $_ } }
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.3' -simplematch)) { $_ } }
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.4' -simplematch)) { $_ } }
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc1' -simplematch)) { $_ } }
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc2' -simplematch)) { $_ } }
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc3' -simplematch)) { $_ } }
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc4' -simplematch)) { $_ } }
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-preview.' -simplematch)) { $_ } }
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-dev.' -simplematch)) { $_ } }
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-pre1' -simplematch)) { $_ } }
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.pre1' -simplematch)) { $_ } }
 
-                    $Names = $Names -ireplace "v",""
+                    $Names = $Names -ireplace "v", ""
 
-                    if ($_.spec -notlike "amdvlk.spec")
-                    {
-                        $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
-                        $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
+                    if ($_.spec -notlike "amdvlk.spec") {
+                        $Names = $Names | foreach-object { if ($_ -match '\d') { $_ } }
+                        $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) { $_ } }
                     }
 
-                    if ($Names -ilike '*.*')
-                    {
-                        $NameLatest = ($Names | % {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
+                    if ($Names -ilike '*.*') {
+                        $NameLatest = ($Names | foreach-object { $tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) { $tmpversion } else { $tag } } | sort-object | select-object -last 1).ToString()
                     }
-                    else
-                    {
-                        $NameLatest = ($Names | convertfrom-json | sort-object |select-object -last 1).ToString()
+                    else {
+                        $NameLatest = ($Names | convertfrom-json | sort-object | select-object -last 1).ToString()
                     }
-                    if (!($Names.contains($NameLatest))) { $NameLatest = ($Names | sort-object |select-object -last 1).ToString() }
+                    if (!($Names.contains($NameLatest))) { $NameLatest = ($Names | sort-object | select-object -last 1).ToString() }
             }
             catch{$NameLatest=""}
             if ($NameLatest -ne "")
@@ -1946,7 +2112,7 @@ function CheckURLHealth {
                 $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
                 if ($Names -ilike '*.*')
                 {
-                    $NameLatest = ($Names | % {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
+                    $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
                 }
                 else
                 {
@@ -1966,7 +2132,7 @@ function CheckURLHealth {
                 $Names = $Names -replace "_","."
                 $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
                 $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
-                $NameLatest = ($Names | % {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
+                $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
                 $NameLatest = $NameLatest.replace(".","_")
                 $SourceTagURL=[System.String]::Concat($SourceTagURL,"NSS_",$NameLatest,"_RTM/src/")
             }
@@ -1981,7 +2147,7 @@ function CheckURLHealth {
                 $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
                 if ($Names -ilike '*.*')
                 {
-                    $NameLatest = ($Names | % {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
+                    $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
                 }
                 else
                 {
@@ -2010,7 +2176,7 @@ function CheckURLHealth {
                     $i=0; do {$Names = $Names | foreach-object {$_.tolower().replace(($replace[$i]).tolower(),"")}; $i++} while ($i -le $replace.count-1)
                     $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
                     $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
-                    $NameLatest = ($Names | % {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
+                    $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
                     $SourceTagURL=$SourceTagURL+$NameLatest
                     $Names = ((((invoke-restmethod -uri $SourceTagURL -usebasicparsing) -split "<tr><td") -split 'a href=') -split '>') -split "title="
                     $Names = $Names | foreach-object { if ($_ | select-string -pattern '.tar.' -simplematch) {$_}}
@@ -2113,7 +2279,7 @@ function CheckURLHealth {
 
                 if ($Names -ilike '*.*')
                 {
-                    $NameLatest = ($Names | % {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
+                    $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
                 }
                 else
                 {
@@ -2200,7 +2366,7 @@ function CheckURLHealth {
 
                 if ($Names -ilike '*.*')
                 {
-                    $NameLatest = ($Names | % {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
+                    $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
                 }
                 else
                 {
@@ -2288,7 +2454,7 @@ function CheckURLHealth {
 
                     if ($Names -ilike '*.*')
                     {
-                        $NameLatest = ($Names | % {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
+                        $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
                     }
                     else
                     {
@@ -2348,7 +2514,7 @@ function CheckURLHealth {
 
                 if ($Names -ilike '*.*')
                 {
-                    $NameLatest = ($Names | % {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
+                    $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
                 }
                 else
                 {
@@ -2437,7 +2603,7 @@ function CheckURLHealth {
 
                     if ($Names -ilike '*.*')
                     {
-                        $NameLatest = ($Names | % {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
+                        $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
                     }
                     else
                     {
@@ -2580,7 +2746,7 @@ function CheckURLHealth {
 
                     if ($Names -ilike '*.*')
                     {
-                        $NameLatest = ($Names | % {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
+                        $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
                     }
                     else
                     {
@@ -2683,7 +2849,7 @@ function CheckURLHealth {
 
                     if ($Names -ilike '*.*')
                     {
-                        $NameLatest = ($Names | % {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
+                        $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
                     }
                     else
                     {
@@ -2836,7 +3002,7 @@ function CheckURLHealth {
 
                     if ($Names -ilike '*.*')
                     {
-                        $NameLatest = ($Names | % {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
+                        $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
                     }
                     else
                     {
@@ -2887,12 +3053,12 @@ function CheckURLHealth {
         ($_.spec -ilike "libnetfilter_cthelper.spec") -or `
         ($_.spec -ilike "libnetfilter_cttimeout.spec") -or `
         ($_.spec -ilike "libnetfilter_queue.spec") -or `
-        ($_.spec -ilike "libnfnetlink.spec") -or ` 
+        ($_.spec -ilike "libnfnetlink.spec") -or `
         ($_.spec -ilike "libnftnl.spec") -or `
         ($_.spec -ilike "libteam.spec") -or `
         ($_.spec -ilike "nftables.spec") -or `
         ($_.spec -ilike "openvswitch.spec") -or `
-        ($_.spec -ilike "python-pbr.spec") -or `    
+        ($_.spec -ilike "python-pbr.spec") -or `
         ($_.spec -ilike "sysstat.spec") -or `
         ($_.spec -ilike "xmlsec1.spec"))
         {
@@ -3065,7 +3231,7 @@ function CheckURLHealth {
 
                 if ($Names -ilike '*.*')
                 {
-                    $NameLatest = ($Names | % {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
+                    $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
                 }
                 else
                 {
@@ -3410,87 +3576,220 @@ function CheckURLHealth {
     $lines | out-file $outputfile -append
     }
 }
+function GenerateUrlHealthReports {
+    param (
+        [string]$SourcePath,
+        [string]$AccessToken,
+        [int]$ThrottleLimit,
+        [bool]$GeneratePh3URLHealthReport,
+        [bool]$GeneratePh4URLHealthReport,
+        [bool]$GeneratePh5URLHealthReport,
+        [bool]$GeneratePh6URLHealthReport, # Added for 6.0
+        [bool]$GeneratePhCommonURLHealthReport
+    )
 
-if (get-command git -erroraction SilentlyContinue) {}
+    $Packages3 = $null
+    $Packages4 = $null
+    $Packages5 = $null
+    $Packages6 = $null
+    $PackagesCommon = $null
+
+    # Capture definitions of functions and classes needed in parallel runspaces.
+    # Ensure these functions/classes are defined before this point in the script.
+    # This assumes 'urlhealth', 'KojiFedoraProjectLookUp', 'ModifySpecFile', 'ModifySpecFileOpenJDK8' are functions
+    # and 'HeapSort' is a PowerShell class. If not, these lines will error or need adjustment.
+    $CheckURLHealthDef = (Get-Command 'CheckURLHealth' -ErrorAction SilentlyContinue).Definition
+    $urlhealthDef = (Get-Command 'urlhealth' -ErrorAction SilentlyContinue).Definition
+    $KojiFedoraProjectLookUpDef = (Get-Command 'KojiFedoraProjectLookUp' -ErrorAction SilentlyContinue).Definition
+    $ModifySpecFileDef = (Get-Command 'ModifySpecFile' -ErrorAction SilentlyContinue).Definition
+    $ModifySpecFileOpenJDK8Def = (Get-Command 'ModifySpecFileOpenJDK8' -ErrorAction SilentlyContinue).Definition
+    $HeapSortClassDef = (Get-Command '$HeapSortClassDef' -ErrorAction SilentlyContinue).Definition
+    if ($PSVersionTable.PSVersion.Major -ge 5) {
+        try {
+            $HeapSortCommand = Get-Command 'HeapSort' -CommandType Class -ErrorAction Stop # Use Stop to ensure catch block is hit for relevant errors
+            if ($HeapSortCommand) {
+                $HeapSortClassDef = $HeapSortCommand.Definition
+            }
+        }
+        catch [System.Management.Automation.ParameterBindingException] {
+            # This exception occurs if 'Class' is not a valid CommandType.
+            # Log a warning or handle as appropriate. For now, $HeapSortClassDef remains "".
+            Write-Warning "Failed to get HeapSort class definition: -CommandType Class is not supported in this environment, even though PowerShell version is $($PSVersionTable.PSVersion.Major)."
+        }
+        catch {
+            # Catch other potential errors from Get-Command (e.g., command not found)
+            # Previous behavior was to silently continue, so $HeapSortClassDef remains "".
+        }
+    }
+
+    if ($GeneratePh3URLHealthReport) {
+        Write-Output "Preparing data for Photon OS 3.0 ..."
+        GitPhoton -release "3.0" -SourcePath $SourcePath
+        $Packages3 = ParseDirectory -SourcePath $SourcePath -PhotonDir "photon-3.0"
+    }
+    if ($GeneratePh4URLHealthReport) {
+        Write-Output "Preparing data for Photon OS 4.0 ..."
+        GitPhoton -release "4.0" -SourcePath $SourcePath
+        $Packages4 = ParseDirectory -SourcePath $SourcePath -PhotonDir "photon-4.0"
+    }
+    if ($GeneratePh5URLHealthReport) {
+        Write-Output "Preparing data for Photon OS 5.0 ..."
+        GitPhoton -release "5.0" -SourcePath $SourcePath
+        $Packages5 = ParseDirectory -SourcePath $SourcePath -PhotonDir "photon-5.0"
+    }
+    if ($GeneratePh6URLHealthReport) {
+        Write-Output "Preparing data for Photon OS 6.0 ..."
+        GitPhoton -release "6.0" -SourcePath $SourcePath
+        $Packages6 = ParseDirectory -SourcePath $SourcePath -PhotonDir "photon-6.0"
+    }
+    if ($GeneratePhCommonURLHealthReport) {
+        Write-Output "Preparing data for Photon OS Common ..."
+        GitPhoton -release "common" -SourcePath $SourcePath
+        $PackagesCommon = ParseDirectory -SourcePath $SourcePath -PhotonDir "photon-common"
+    }
+
+    # Initialize and populate the list of tasks for URL health checks
+    $checkUrlHealthTasks = @()
+    if ($GeneratePh3URLHealthReport -and $null -ne $Packages3) { $checkUrlHealthTasks += @{ Name = "Photon OS 3.0"; Release = "3.0"; Packages = $Packages3; PhotonDir = "photon-3.0" } }
+    if ($GeneratePh4URLHealthReport -and $null -ne $Packages4) { $checkUrlHealthTasks += @{ Name = "Photon OS 4.0"; Release = "4.0"; Packages = $Packages4; PhotonDir = "photon-4.0" } }
+    if ($GeneratePh5URLHealthReport -and $null -ne $Packages5) { $checkUrlHealthTasks += @{ Name = "Photon OS 5.0"; Release = "5.0"; Packages = $Packages5; PhotonDir = "photon-5.0" } }
+    if ($GeneratePh6URLHealthReport -and $null -ne $Packages6) { $checkUrlHealthTasks += @{ Name = "Photon OS 6.0"; Release = "6.0"; Packages = $Packages6; PhotonDir = "photon-6.0" } }
+    if ($GeneratePhCommonURLHealthReport -and $null -ne $PackagesCommon) { $checkUrlHealthTasks += @{ Name = "Photon OS Common"; Release = "common"; Packages = $PackagesCommon; PhotonDir = "photon-common" } }
+
+        if ($Script:UseParallel -and $Script:InitializationScriptParameterAvailable -and $checkUrlHealthTasks.Count -gt 0) {
+            Write-Host "Starting parallel URL health report generation for applicable versions (Outer Throttle: 3)..."
+            
+            # Define the initialization script for parallel runspaces
+            $InitializationScriptBlockContent = 
+@"
+                $($HeapSortClassDef)
+                $($CheckURLHealthDef)
+                $($urlhealthDef)
+                $($KojiFedoraProjectLookUpDef)
+                $($ModifySpecFileDef)
+                $($ModifySpecFileOpenJDK8Def)
+"@
+
+            $InitializationScriptBlock = [scriptblock]::Create($InitializationScriptBlockContent)           
+            $checkUrlHealthTasks | ForEach-Object -Parallel {
+                $taskConfig = $_
+                Write-Output "Generating URLHealth report for $($taskConfig.Name) (parallel worker)..."
+                $outputFileName = "photonos-urlhealth-$($taskConfig.Release)_$((Get-Date).ToString("yyyyMMddHHmm"))"
+                $outputFilePath = Join-Path -Path $using:SourcePath -ChildPath "$outputFileName.prn" # Use $using:SourcePath for correct path in parallel
+                
+                CheckURLHealth -outputfile $outputFilePath -accessToken $using:AccessToken -CheckURLHealthPackageObject $taskConfig.Packages -PhotonDir $taskConfig.PhotonDir -ThrottleLimitParam $using:ThrottleLimit -SourcePath $using:SourcePath
+                Write-Output "Finished report for $($taskConfig.Name) (parallel worker). Output: $outputFilePath"
+            } -ThrottleLimit 3 -InitializationScript $InitializationScriptBlock
+        } elseif ($checkUrlHealthTasks.Count -gt 0) { # Fallback to sequential processing
+            if ($Script:UseParallel -and -not $Script:InitializationScriptParameterAvailable) {
+                Write-Warning "PowerShell 7+ was detected, but the -InitializationScript parameter for ForEach-Object -Parallel is not available in this environment. Falling back to sequential processing for URL health reports. Consider upgrading your PowerShell version if parallel processing is desired."
+            }
+            Write-Host "Starting sequential URL health report generation for applicable versions..."
+            foreach ($taskConfig in $checkUrlHealthTasks) {
+                Write-Output "Generating URLHealth report for $($taskConfig.Name) (sequential)..."
+                $outputFileName = "photonos-urlhealth-$($taskConfig.Release)_$((Get-Date).ToString("yyyyMMddHHmm"))"
+                $outputFilePath = Join-Path -Path $SourcePath -ChildPath "$outputFileName.prn"
+                CheckURLHealth -outputfile $outputFilePath -accessToken $AccessToken -CheckURLHealthPackageObject $taskConfig.Packages -PhotonDir $taskConfig.PhotonDir -ThrottleLimitParam $ThrottleLimit -SourcePath $SourcePath
+                Write-Output "Finished report for $($taskConfig.Name) (sequential). Output: $outputFilePath"
+            }
+        } else {
+            Write-Host "No URL health reports were enabled or no package data found."
+        }
+    # Return package data for subsequent report generation if needed
+    return @{
+        Packages3 = $Packages3
+        Packages4 = $Packages4
+        Packages5 = $Packages5
+        Packages6 = $Packages6
+        PackagesCommon = $PackagesCommon
+    }
+}
+
+# EDIT
+# path with all downloaded and unzipped branch directories of github.com/vmware/photon
+$sourcepath="$env:public"
+$Script:UseParallel = $PSVersionTable.PSVersion.Major -ge 7
+[int]$ThrottleLimit = 5         # New parameter for inner loop throttle in CheckURLHealth
+$Script:InitializationScriptParameterAvailable = $false
+$access = Read-Host -Prompt "Please enter your Github Access Token."
+$GeneratePh3URLHealthReport=$false
+$GeneratePh4URLHealthReport=$false
+$GeneratePh5URLHealthReport=$true
+$GeneratePh6URLHealthReport=$false
+$GeneratePhCommonURLHealthReport=$false
+$GeneratePhPackageReport=$false
+$GeneratePhCommontoPhMasterDiffHigherPackageVersionReport=$false
+$GeneratePh5toPh6DiffHigherPackageVersionReport=$false
+$GeneratePh4toPh5DiffHigherPackageVersionReport=$false
+$GeneratePh3toPh4DiffHigherPackageVersionReport=$false
+
+if (Get-Command git -ErrorAction SilentlyContinue) {}
 else
 {
-	echo Git not found. Trying to install ...
-	winget install --id Git.Git -e --source winget
-	echo Please restart the script.
-	exit
+    Write-Output "Git not found. Trying to install ..."
+    winget install --id Git.Git -e --source winget
+    Write-Output "Please restart the script."
+    exit
 }
 
-$access = Read-Host -Prompt "Please enter your Github Access Token."
+# Check if PowerShell version is 7 or higher and if the -InitializationScript parameter is available for ForEach-Object -Parallel
+if ($Script:UseParallel) {
+    try {
+        $feCmd = Get-Command ForEach-Object -ErrorAction SilentlyContinue
+        # Check if both -Parallel and -InitializationScript parameters exist
+        if ($feCmd -and $feCmd.Parameters.ContainsKey('Parallel') -and $feCmd.Parameters.ContainsKey('InitializationScript')) {
+            $Script:InitializationScriptParameterAvailable = $true
+        }
+    } catch {
+        # Fallback in case of unexpected error during Get-Command
+        $Script:InitializationScriptParameterAvailable = $false
+    }
 
-$GeneratePh3URLHealthReport=$true
-$GeneratePh4URLHealthReport=$true
-$GeneratePh5URLHealthReport=$true
-$GeneratePh6URLHealthReport=$true
-$GeneratePhCommonURLHealthReport=$true
-$GeneratePhPackageReport=$true
-$GeneratePhCommontoPhMasterDiffHigherPackageVersionReport=$true
-$GeneratePh5toPh6DiffHigherPackageVersionReport=$true
-$GeneratePh4toPh5DiffHigherPackageVersionReport=$true
-$GeneratePh3toPh4DiffHigherPackageVersionReport=$true
-
-if ($GeneratePh3URLHealthReport -ieq $true)
-{
-    write-output "Generating URLHealth report for Photon OS 3.0 ..."
-    GitPhoton -release "3.0"
-    $Packages3=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-3.0
-    CheckURLHealth -outputfile "$env:public\photonos-urlhealth-3.0_$((get-date).tostring("yyyMMddHHmm")).prn" -accessToken $access -CheckURLHealthPackageObject $Packages3 -PhotonDir photon-3.0
+    if ($Script:InitializationScriptParameterAvailable) {
+        Write-Host "PowerShell 7+ detected. Parallel processing with InitializationScript will be enabled where applicable."
+    } else {
+        Write-Host "PowerShell 7+ detected, but the -InitializationScript parameter for ForEach-Object -Parallel is not available in this environment. Operations requiring it will fall back to sequential mode."
+    }
+} else {
+    Write-Host "PowerShell version less than 7 detected. Script will run in sequential mode."
 }
 
 
-if ($GeneratePh4URLHealthReport -ieq $true)
-{
-    write-output "Generating URLHealth report for Photon OS 4.0 ..."
-    GitPhoton -release "4.0"
-    $Packages4=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-4.0
-    CheckURLHealth -outputfile "$env:public\photonos-urlhealth-4.0_$((get-date).tostring("yyyMMddHHmm")).prn" -accessToken $access -CheckURLHealthPackageObject $Packages4 -PhotonDir photon-4.0
-}
 
-if ($GeneratePh5URLHealthReport -ieq $true)
-{
-    write-output "Generating URLHealth report for Photon OS 5.0 ..."
-    GitPhoton -release "5.0"
-    $Packages5=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-5.0
-    CheckURLHealth -outputfile "$env:public\photonos-urlhealth-5.0_$((get-date).tostring("yyyMMddHHmm")).prn" -accessToken $access -CheckURLHealthPackageObject $Packages5 -PhotonDir photon-5.0
-}
+# Call the new function
+$urlHealthPackageData = GenerateUrlHealthReports -SourcePath $sourcepath -AccessToken $access -ThrottleLimit $ThrottleLimit `
+    -GeneratePh3URLHealthReport $GeneratePh3URLHealthReport `
+    -GeneratePh4URLHealthReport $GeneratePh4URLHealthReport `
+    -GeneratePh5URLHealthReport $GeneratePh5URLHealthReport `
+    -GeneratePh6URLHealthReport $GeneratePh6URLHealthReport `
+    -GeneratePhCommonURLHealthReport $GeneratePhCommonURLHealthReport
 
-if ($GeneratePh6URLHealthReport -ieq $true)
-{
-    write-output "Generating URLHealth report for Photon OS 6.0 ..."
-    GitPhoton -release "6.0"
-    $Packages6=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-6.0
-    CheckURLHealth -outputfile "$env:public\photonos-urlhealth-6.0_$((get-date).tostring("yyyMMddHHmm")).prn" -accessToken $access -CheckURLHealthPackageObject $Packages6 -PhotonDir photon-6.0
-}
-
-if ($GeneratePhCommonURLHealthReport -ieq $true)
-{
-    write-output "Generating URLHealth report for Photon OS Common ..."
-    GitPhoton -release "common"
-    $PackagesCommon=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-common
-    CheckURLHealth -outputfile "$env:public\photonos-urlhealth-common_$((get-date).tostring("yyyMMddHHmm")).prn" -accessToken $access -CheckURLHealthPackageObject $PackagesCommon -PhotonDir photon-common
+# Assign returned package data to existing variables if they were generated
+if ($null -ne $urlHealthPackageData) {
+    if ($GeneratePh3URLHealthReport) { $Packages3 = $urlHealthPackageData.Packages3 }
+    if ($GeneratePh4URLHealthReport) { $Packages4 = $urlHealthPackageData.Packages4 }
+    if ($GeneratePh5URLHealthReport) { $Packages5 = $urlHealthPackageData.Packages5 }
+    if ($GeneratePh6URLHealthReport) { $Packages6 = $urlHealthPackageData.Packages6 }
+    if ($GeneratePhCommonURLHealthReport) { $PackagesCommon = $urlHealthPackageData.PackagesCommon }
 }
 
 if ($GeneratePhPackageReport -ieq $true)
 {
     write-output "Generating Package Report ..."
     # fetch + merge per branch
-    GitPhoton -release "1.0"
-    GitPhoton -release "2.0"
-    GitPhoton -release master
-    GitPhoton -release dev
-    GitPhoton -release common
-    cd $sourcepath
+    GitPhoton -release "1.0" -sourcePath $sourcepath
+    GitPhoton -release "2.0" -sourcePath $sourcepath
+    GitPhoton -release master -sourcePath $sourcepath
+    GitPhoton -release dev -sourcePath $sourcepath
+    GitPhoton -release common -sourcePath $sourcepath
+    Set-location  $sourcepath
     # read all files from branch
     $Packages1=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-1.0
     $Packages2=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-2.0
     $PackagesMaster=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-master
     $Packages0=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-dev
     $PackagesCommon=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-common
-    $result = $Packages1,$Packages2,$Packages3,$Packages4,$Packages5,$Packages6,$PackagesCommon,$PackagesMaster| %{$_}|Select Spec,`
+    $result = $Packages1,$Packages2,$Packages3,$Packages4,$Packages5,$Packages6,$PackagesCommon,$PackagesMaster| foreach-object{$_}|Select-Object Spec,`
     @{l='photon-1.0';e={if($_.Spec -in $Packages1.Spec) {$Packages1[$Packages1.Spec.IndexOf($_.Spec)].version}}},`
     @{l='photon-2.0';e={if($_.Spec -in $Packages2.Spec) {$Packages2[$Packages2.Spec.IndexOf($_.Spec)].version}}},`
     @{l='photon-3.0';e={if($_.Spec -in $Packages3.Spec) {$Packages3[$Packages3.Spec.IndexOf($_.Spec)].version}}},`
@@ -3502,7 +3801,7 @@ if ($GeneratePhPackageReport -ieq $true)
     @{l='photon-master';e={if($_.Spec -in $PackagesMaster.Spec) {$PackagesMaster[$PackagesMaster.Spec.IndexOf($_.Spec)].version}}} -Unique | Sort-object Spec
     $outputfile="$env:public\photonos-package-report_$((get-date).tostring("yyyMMddHHmm")).prn"
     "Spec"+","+"photon-1.0"+","+"photon-2.0"+","+"photon-3.0"+","+"photon-4.0"+","+"photon-5.0"+","+"photon-6.0"+","+"photon-common"+","+"photon-dev"+","+"photon-master"| out-file $outputfile
-    $result | % { $_.Spec+","+$_."photon-1.0"+","+$_."photon-2.0"+","+$_."photon-3.0"+","+$_."photon-4.0"+","+$_."photon-5.0"+","+$_."photon-6.0"+","+$_."photon-common"+","+$_."photon-dev"+","+$_."photon-master"} |  out-file $outputfile -append
+    $result | foreach-object { $_.Spec+","+$_."photon-1.0"+","+$_."photon-2.0"+","+$_."photon-3.0"+","+$_."photon-4.0"+","+$_."photon-5.0"+","+$_."photon-6.0"+","+$_."photon-common"+","+$_."photon-dev"+","+$_."photon-master"} |  out-file $outputfile -append
 }
 
 if ($GeneratePhCommontoPhMasterDiffHigherPackageVersionReport -ieq $true)
@@ -3510,7 +3809,7 @@ if ($GeneratePhCommontoPhMasterDiffHigherPackageVersionReport -ieq $true)
     write-output "Generating difference report of common packages with a higher version than same master package ..."
     $outputfile1="$env:public\photonos-diff-report-common-master_$((get-date).tostring("yyyMMddHHmm")).prn"
     "Spec"+","+"photon-common"+","+"photon-master"| out-file $outputfile1
-    $result | % {
+    $result | foreach-object {
         # write-output $_.spec
         if ((!([string]::IsNullOrEmpty($_.'photon-common'))) -and (!([string]::IsNullOrEmpty($_.'photon-master'))))
         {
@@ -3529,7 +3828,7 @@ if ($GeneratePh5toPh6DiffHigherPackageVersionReport -ieq $true)
     write-output "Generating difference report of 5.0 packages with a higher version than same 6.0 package ..."
     $outputfile1="$env:public\photonos-diff-report-5.0-6.0_$((get-date).tostring("yyyMMddHHmm")).prn"
     "Spec"+","+"photon-5.0"+","+"photon-6.0"| out-file $outputfile1
-    $result | % {
+    $result | foreach-object {
         # write-output $_.spec
         if ((!([string]::IsNullOrEmpty($_.'photon-5.0'))) -and (!([string]::IsNullOrEmpty($_.'photon-6.0'))))
         {
@@ -3548,7 +3847,7 @@ if ($GeneratePh4toPh5DiffHigherPackageVersionReport -ieq $true)
     write-output "Generating difference report of 4.0 packages with a higher version than same 5.0 package ..."
     $outputfile1="$env:public\photonos-diff-report-4.0-5.0_$((get-date).tostring("yyyMMddHHmm")).prn"
     "Spec"+","+"photon-4.0"+","+"photon-5.0"| out-file $outputfile1
-    $result | % {
+    $result | foreach-object {
         # write-output $_.spec
         if ((!([string]::IsNullOrEmpty($_.'photon-4.0'))) -and (!([string]::IsNullOrEmpty($_.'photon-5.0'))))
         {
@@ -3567,7 +3866,7 @@ if ($GeneratePh3toPh4DiffHigherPackageVersionReport -ieq $true)
     write-output "Generating difference report of 3.0 packages with a higher version than same 4.0 package ..."
     $outputfile2="$env:public\photonos-diff-report-3.0-4.0_$((get-date).tostring("yyyMMddHHmm")).prn"
     "Spec"+","+"photon-3.0"+","+"photon-4.0"| out-file $outputfile2
-    $result | % {
+    $result | foreach-object {
         # write-output $_.spec
         if ((!([string]::IsNullOrEmpty($_.'photon-3.0'))) -and (!([string]::IsNullOrEmpty($_.'photon-4.0'))))
         {
