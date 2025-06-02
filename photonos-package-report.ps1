@@ -3661,7 +3661,7 @@ function GenerateUrlHealthReports {
 
 # path with all downloaded and unzipped branch directories of github.com/vmware/photon
 $global:sourcepath="$env:public"
-$Script:UseParallel = $PSVersionTable.PSVersion.Major -ge 7 -and $PSVersionTable.PSVersion.Minor -ge 11
+$Script:UseParallel = $PSVersionTable.PSVersion.Major -ge 7 -and $PSVersionTable.PSVersion.Minor -ge 4
 [int]$global:OuterThrottleLimit = 5          # New parameter for outer loop Tasks throttle
 [int]$global:InnerThrottleLimit = 15         # New parameter for inner loop Packages throttle
 $global:access = Read-Host -Prompt "Please enter your Github Access Token."
