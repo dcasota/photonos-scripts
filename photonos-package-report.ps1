@@ -22,17 +22,24 @@
 #   0.52  08.09.2024   dcasota  Ph6 and common added
 #   0.53  13.02.2025   dcasota  KojiFedoraProjectLookUp, various url fixes
 #   0.54  30.05.2025   GitHubCopilot  Implemented parallel processing for URL health checks, Fix linting errors from parallel processing implementation
+#   0.55  30.05.2025   GitHubCopilot  Implemented parallel processing for spec file modifications, Fix linting errors from parallel processing implementation
+#   0.56  30.05.2025   GitHubCopilot  Implemented parallel processing for spec file parsing, Fix linting errors from parallel processing implementation
+#   0.57  02.06.2025   dcasota  various Bugfixes
 #
 #  .PREREQUISITES
 #    - Script actually tested only on MS Windows OS with Powershell PSVersion 5.1 or higher
-#    - downloaded and unzipped branch directories of github.com/vmware/photon 
+#    - downloaded and unzipped branch directories of github.com/vmware/photon
 #    - PowerShell 7+ for parallel processing capabilities
+
+
 
 
 function ModifySpecFileOpenJDK8 {
 	param (
 		[parameter(Mandatory = $true)]
 		[string]$SpecFileName,
+		[parameter(Mandatory = $true)]
+		[string]$sourcepath,
 		[parameter(Mandatory = $true)]
 		[string]$photonDir,
 		[parameter(Mandatory = $true)]
@@ -44,7 +51,7 @@ function ModifySpecFileOpenJDK8 {
 		[parameter(Mandatory = $true)]
 		[string]$DownloadNameWithoutExtension
     )
-    $SpecFile = [system.string]::concat($sourcepath,"/",$photonDir,"/SPECS/",$Name,"/",$SpecFileName)
+    $SpecFile = join-path "$sourcepath" "$photonDir" "SPECS" "$Name" "$SpecFileName"
     $Object=get-content $SpecFile
 
 
@@ -64,28 +71,28 @@ function ModifySpecFileOpenJDK8 {
     $Line1=[system.string]::concat("* ",$DateEntry," ","First Last <firstname.lastname@broadcom.com> ",$Update,"-1")
 
     $skip=$false
-    $FileModified = @() 
+    $FileModified = @()
     Foreach ($Line in $Object)
     {
         if ($skip -eq $false)
         {
             if ($Line -ilike '*Version:*') {$Line = $Line -replace 'Version:.+$', "Version:        1.8.0.$Update"; $FileModified += $Line}
             elseif ($Line -ilike '*Release:*') {$Line = $Line -replace 'Release:.+$', 'Release:        1%{?dist}'; $FileModified += $Line}
-            elseif ($Line -ilike '*Source0:*') 
+            elseif ($Line -ilike '*Source0:*')
             {
                 $FileModified += $Line
                 if ($sha1 -ne "") {$FileModified += [system.string]::concat('%define sha1 ',$DownloadNameWithoutExtension,'=',$sha1); $skip=$true }
                 elseif ($sha256 -ne "") {$FileModified += [system.string]::concat('%define sha256 ',$DownloadNameWithoutExtension,'=',$sha256); $skip=$true }
                 elseif ($sha512 -ne "") {$FileModified +=[system.string]::concat('%define sha512 ',$DownloadNameWithoutExtension,'=',$sha512); $skip=$true }
             }
-            elseif ($Line -ilike '%changelog*') 
+            elseif ($Line -ilike '%changelog*')
             {
                 $FileModified += $Line
-                #Add Lines after the selected pattern 
+                #Add Lines after the selected pattern
                 $FileModified += $Line1
                 $FileModified += '- automatic version bump for testing purposes DO NOT USE'
             }
-            elseif ($Line -ilike '%define subversion*') 
+            elseif ($Line -ilike '%define subversion*')
             {
                 $FileModified += [system.string]::concat('%define subversion ',$Update)
             }
@@ -93,212 +100,25 @@ function ModifySpecFileOpenJDK8 {
         }
         else {$skip = $false}
     }
-    
-    $SpecsNewDirectory=".\SPECS_NEW\$Name"
-    if (!(Test-Path $SpecsNewDirectory)) {New-Item $SpecsNewDirectory -ItemType Directory}
 
-    $filename=[system.string]::concat($SpecsNewDirectory,"\",$Name,"-",$Update,".spec")
-    $FileModified | Set-Content $fileName
-    # awk '{ sub("\r$", ""); print }' ./SPECS/aide/aide.spec > ./SPECS/aide/aide.new
 
-    # #!/bin/bash
-    # cd /root/ph5/photon/SPECS_NEW
-    # for f in $(find ./ -name '*-[[:digit:]]*.spec');
-    #  do
-    #  DirectoryName=$(dirname $f)
-    #  if [ -d "/root/ph5/photon/SPECS/$DirectoryName" ]; then
-    #    awk '{ sub("\r$", ""); print }' $f > /root/ph5/photon/SPECS/$f
-    #    echo $f
-    #  fi
-    # done
-}
-
-function ParseSpecFile {
-    [CmdletBinding()]
-    Param(
-        [parameter(Mandatory)]$specfile,
-        [parameter(Mandatory)]$photonDir
-    )
-    Process {
-        Write-Verbose "Parsing spec file: $FilePath"
-        $metadata = @{
-            SpecFileName      = (Split-Path -Path $FilePath -Leaf)
-            SpecDefinedName   = $null 
-            Version           = $null
-            Release           = $null
-            FullVersion       = $null 
-            Source0           = $null
-            url               = $null # Lowercase 'url' for consistency with original script's output object
-            SHAName           = "" 
-            srcname           = ""
-            gem_name          = ""
-            group             = ""
-            extra_version     = ""
-            main_version      = ""
-            subversion        = ""
-            byaccdate         = ""
-            dialogsubversion  = ""
-            libedit_release   = ""
-            libedit_version   = ""
-            ncursessubversion = ""
-            cpan_name         = ""
-            xproto_ver        = ""
-            _url_src          = ""
-            _repo_ver         = ""
-        }
-
-        $content = Get-Content $specfile -Raw
-        # Example of fixing aliases if they were in the original ParseSpecFile:
-        if ($content -ilike '*%define sha1*') {$metadata.SHAName = $content | ForEach-Object { if ($_ -ilike '*%define sha1*') {((($_ -split '=')[0]).replace('%define sha1',"")).Trim()}}}
-        elseif ($content -ilike '*%define sha256*') {$metadata.SHAName = $content | ForEach-Object { if ($_ -ilike '*%define sha256*') {((($_ -split '=')[0]).replace('%define sha256',"")).Trim()}}}
-        elseif ($content -ilike '*%define sha512*') {$metadata.SHAName = $content | ForEach-Object { if ($_ -ilike '*%define sha512*') {((($_ -split '=')[0]).replace('%define sha512',"")).Trim()}}}
-
-        $reader = $null
-        try {
-            $reader = [System.IO.StreamReader]::new($FilePath)
-            while ($line = $reader.ReadLine()) {
-                if ($line -match '^\s*Name:\s*(.+)$') { $metadata.SpecDefinedName = $matches[1].Trim() }
-                elseif ($line -match '^\s*Version:\s*(.+)$') { $metadata.Version = $matches[1].Trim() }
-                elseif ($line -match '^\s*Release:\s*(.+)$') { 
-                    $tempRelease = $matches[1].Trim()
-                    $tempRelease = $tempRelease.Replace("%{?dist}","")
-                    $tempRelease = $tempRelease.Replace("%{?kat_build:.kat}","")
-                    $tempRelease = $tempRelease.Replace("%{?kat_build:.%kat_build}","")
-                    $tempRelease = $tempRelease.Replace("%{?kat_build:.%kat}","")
-                    $tempRelease = $tempRelease.Replace("%{?kernelsubrelease}","")
-                    $tempRelease = $tempRelease.Replace(".%{dialogsubversion}","") # Replicates original literal replacement
-                    $metadata.Release = $tempRelease
-                }
-                elseif ($line -match '^\s*Source0:\s*(.+)$') { $metadata.Source0 = $matches[1].Trim() }
-                elseif ($line -match '^\s*URL:\s*(.+)$') { $metadata.url = $matches[1].Trim() } # Lowercase 'url'
-                
-                elseif ($line -match '^\s*%define\s+sha1\s+([^=\s]+)') { $metadata.SHAName = $matches[1].Trim() }
-                elseif ($line -match '^\s*%define\s+sha256\s+([^=\s]+)') { $metadata.SHAName = $matches[1].Trim() }
-                elseif ($line -match '^\s*%define\s+sha512\s+([^=\s]+)') { $metadata.SHAName = $matches[1].Trim() }
-
-                elseif ($line -match '^\s*%(?:define|global)\s+srcname\s+(.+)$') { $metadata.srcname = $matches[1].Trim() }
-                elseif ($line -match '^\s*%(?:define|global)\s+gem_name\s+(.+)$') { $metadata.gem_name = $matches[1].Trim() }
-                elseif ($line -match '^\s*Group:\s*(.+)$') { $metadata.group = $matches[1].Trim() }
-                elseif ($line -match '^\s*%define\s+extra_version\s+(.+)$') { $metadata.extra_version = $matches[1].Trim() }
-                elseif ($line -match '^\s*%define\s+main_version\s+(.+)$') { $metadata.main_version = $matches[1].Trim() }
-                elseif ($line -match '^\s*%define\s+subversion\s+(.+)$') { $metadata.subversion = $matches[1].Trim() }
-                elseif ($line -match '^\s*%define\s+byaccdate\s+(.+)$') { $metadata.byaccdate = $matches[1].Trim() }
-                elseif ($line -match '^\s*%define\s+dialogsubversion\s+(.+)$') { $metadata.dialogsubversion = $matches[1].Trim() }
-                elseif ($line -match '^\s*%define\s+libedit_release\s+(.+)$') { $metadata.libedit_release = $matches[1].Trim() }
-                elseif ($line -match '^\s*%define\s+libedit_version\s+(.+)$') { $metadata.libedit_version = $matches[1].Trim() }
-                elseif ($line -match '^\s*%define\s+ncursessubversion\s+(.+)$') { $metadata.ncursessubversion = $matches[1].Trim() }
-                elseif ($line -match '^\s*%define\s+cpan_name\s+(.+)$') { $metadata.cpan_name = $matches[1].Trim() }
-                elseif ($line -match '^\s*%define\s+xproto_ver\s+(.+)$') { $metadata.xproto_ver = $matches[1].Trim() }
-                elseif ($line -match '^\s*%define\s+_url_src\s+(.+)$') { $metadata._url_src = $matches[1].Trim() }
-                elseif ($line -match '^\s*%define\s+_repo_ver\s+(.+)$') { $metadata._repo_ver = $matches[1].Trim() }
-            }
-            
-            if ($metadata.Version -and $metadata.Release) {
-                $metadata.FullVersion = "$($metadata.Version)-$($metadata.Release)"
-            } elseif ($metadata.Version) {
-                $metadata.FullVersion = $metadata.Version
-            }
-        } catch {
-            Write-Error "Error parsing spec file '$($FilePath)': $($_.Exception.Message)"
-            return $null # Return null on error to allow ParseDirectory to skip
-        } finally {
-            if ($null -ne $reader) {
-                $reader.Close()
-                $reader.Dispose()
-            }
-        }
-        return [PSCustomObject]$metadata
+    if ($null -ne $FileModified) {
+        $SpecsNewDirectory=join-path "$sourcepath" "$photonDir" "SPECS_NEW" "$Name"
+        $Update = [System.IO.Path]::GetFileNameWithoutExtension($Update) # Strips .asc if present
+        $fileNameBase = "$Name-$Update"
+        $filename = Join-Path -Path $SpecsNewDirectory -ChildPath "$fileNameBase.spec"
+        if (!(Test-Path $SpecsNewDirectory)) {New-Item $SpecsNewDirectory -ItemType Directory}
+        $FileModified | Set-Content $filename -Force -Confirm:$false
     }
 }
 
-function ModifySpecFileOpenJDK8 {
-    param (
-        [parameter(Mandatory = $true)]
-        [string]$SpecFileName,
-        [parameter(Mandatory = $true)]
-        [string]$photonDir,
-        [parameter(Mandatory = $true)]
-        [string]$Name,
-        [parameter(Mandatory = $true)]
-        [string]$Update,
-        [parameter(Mandatory = $true)]
-        [string]$UpdateDownloadFile,
-        [parameter(Mandatory = $true)]
-        [string]$DownloadNameWithoutExtension
-    )
-    $SpecFile = [system.string]::concat($sourcepath,"/",$photonDir,"/SPECS/",$Name,"/",$SpecFileName)
-    $Object=get-content $SpecFile
-
-
-    try
-    { (get-command use-culture).Version.ToString() }
-    catch
-    { install-module -name PowerShellCookbook -AllowClobber -Force -Confirm:$false }
-
-    $sha1=""
-    $sha256=""
-    $sha512=""
-    if ($object -ilike '*%define sha1*') { $certutil = certutil -hashfile $UpdateDownloadFile SHA1 | out-string; $sha1= ($certutil -split "`r`n")[1]  }
-    if ($object -ilike '*%define sha256*') { $certutil = certutil -hashfile $UpdateDownloadFile SHA256 | out-string; $sha256= ($certutil -split "`r`n")[1] }
-    if ($object -ilike '*%define sha512*') { $certutil = certutil -hashfile $UpdateDownloadFile SHA512 | out-string; $sha512= ($certutil -split "`r`n")[1] }
-
-    $DateEntry = use-culture -Culture en-US {(get-date -UFormat "%a") + " " + (get-date).ToString("MMM") + " " + (get-date -UFormat "%d %Y") }
-    $Line1=[system.string]::concat("* ",$DateEntry," ","First Last <firstname.lastname@broadcom.com> ",$Update,"-1")
-
-    $skip=$false
-    $FileModified = @() 
-    Foreach ($Line in $Object)
-    {
-        if ($skip -eq $false)
-        {
-            if ($Line -ilike '*Version:*') {$Line = $Line -replace 'Version:.+$', "Version:        1.8.0.$Update"; $FileModified += $Line}
-            elseif ($Line -ilike '*Release:*') {$Line = $Line -replace 'Release:.+$', 'Release:        1%{?dist}'; $FileModified += $Line}
-            elseif ($Line -ilike '*Source0:*') 
-            {
-                $FileModified += $Line
-                if ($sha1 -ne "") {$FileModified += [system.string]::concat('%define sha1 ',$DownloadNameWithoutExtension,'=',$sha1); $skip=$true }
-                elseif ($sha256 -ne "") {$FileModified += [system.string]::concat('%define sha256 ',$DownloadNameWithoutExtension,'=',$sha256); $skip=$true }
-                elseif ($sha512 -ne "") {$FileModified +=[system.string]::concat('%define sha512 ',$DownloadNameWithoutExtension,'=',$sha512); $skip=$true }
-            }
-            elseif ($Line -ilike '%changelog*') 
-            {
-                $FileModified += $Line
-                #Add Lines after the selected pattern 
-                $FileModified += $Line1
-                $FileModified += '- automatic version bump for testing purposes DO NOT USE'
-            }
-            elseif ($Line -ilike '%define subversion*') 
-            {
-                $FileModified += [system.string]::concat('%define subversion ',$Update)
-            }
-            else {$FileModified += $Line}
-        }
-        else {$skip = $false}
-    }
-    
-    $SpecsNewDirectory=".\SPECS_NEW\$Name"
-    if (!(Test-Path $SpecsNewDirectory)) {New-Item $SpecsNewDirectory -ItemType Directory}
-
-    $filename=[system.string]::concat($SpecsNewDirectory,"\",$Name,"-",$Update,".spec")
-    $FileModified | Set-Content $fileName
-    # awk '{ sub("\r$", ""); print }' ./SPECS/aide/aide.spec > ./SPECS/aide/aide.new
-
-    # #!/bin/bash
-    # cd /root/ph5/photon/SPECS_NEW
-    # for f in $(find ./ -name '*-[[:digit:]]*.spec');
-    #  do
-    #  DirectoryName=$(dirname $f)
-    #  if [ -d "/root/ph5/photon/SPECS/$DirectoryName" ]; then
-    #    awk '{ sub("\r$", ""); print }' $f > /root/ph5/photon/SPECS/$f
-    #    echo $f
-    #  fi
-    # done
-}
 
 function ModifySpecFile {
 	param (
 		[parameter(Mandatory = $true)]
 		[string]$SpecFileName,
+        [parameter(Mandatory = $true)]
+		[string]$sourcepath,
 		[parameter(Mandatory = $true)]
 		[string]$PhotonDir,
 		[parameter(Mandatory = $true)]
@@ -310,7 +130,7 @@ function ModifySpecFile {
 		[parameter(Mandatory = $true)]
 		[string]$DownloadNameWithoutExtension
     )
-    $SpecFile = [system.string]::concat($sourcepath,"/",$PhotonDir,"/SPECS/",$Name,"/",$SpecFileName)
+    $SpecFile = join-path "$sourcepath" "$photonDir" "SPECS" "$Name" "$SpecFileName"
     $Object=get-content $SpecFile
 
 
@@ -327,27 +147,27 @@ function ModifySpecFile {
     if ($object -ilike '*%define sha512*') { $certutil = certutil -hashfile $UpdateDownloadFile SHA512 | out-string; $sha512= ($certutil -split "`r`n")[1] }
 
     $DateEntry = use-culture -Culture en-US {(get-date -UFormat "%a") + " " + (get-date).ToString("MMM") + " " + (get-date -UFormat "%d %Y") }
-    $Line1=[system.string]::concat("* ",$DateEntry," ","First Last <flast@vmware.com> ",$Update,"-1")
+    $Line1=[system.string]::concat("* ",$DateEntry," ","First Last <first.last@broadcom.com> ",$Update,"-1")
 
     $skip=$false
-    $FileModified = @() 
+    $FileModified = @()
     Foreach ($Line in $Object)
     {
         if ($skip -eq $false)
         {
             if ($Line -ilike '*Version:*') {$Line = $Line -replace 'Version:.+$', "Version:        $Update"; $FileModified += $Line}
             elseif ($Line -ilike '*Release:*') {$Line = $Line -replace 'Release:.+$', 'Release:        1%{?dist}'; $FileModified += $Line}
-            elseif ($Line -ilike '*Source0:*') 
+            elseif ($Line -ilike '*Source0:*')
             {
                 $FileModified += $Line
                 if ($sha1 -ne "") {$FileModified += [system.string]::concat('%define sha1 ',$DownloadNameWithoutExtension,'=',$sha1); $skip=$true }
                 elseif ($sha256 -ne "") {$FileModified += [system.string]::concat('%define sha256 ',$DownloadNameWithoutExtension,'=',$sha256); $skip=$true }
                 elseif ($sha512 -ne "") {$FileModified +=[system.string]::concat('%define sha512 ',$DownloadNameWithoutExtension,'=',$sha512); $skip=$true }
             }
-            elseif ($Line -ilike '%changelog*') 
+            elseif ($Line -ilike '%changelog*')
             {
                 $FileModified += $Line
-                #Add Lines after the selected pattern 
+                #Add Lines after the selected pattern
                 $FileModified += $Line1
                 $FileModified += '- automatic version bump for testing purposes DO NOT USE'
             }
@@ -355,24 +175,16 @@ function ModifySpecFile {
         }
         else {$skip = $false}
     }
-    
-    $SpecsNewDirectory=".\SPECS_NEW\$Name"
-    if (!(Test-Path $SpecsNewDirectory)) {New-Item $SpecsNewDirectory -ItemType Directory}
 
-    $filename=[system.string]::concat($SpecsNewDirectory,"\",$Name,"-",$Update,".spec")
-    $FileModified | Set-Content $fileName
-    # awk '{ sub("\r$", ""); print }' ./SPECS/aide/aide.spec > ./SPECS/aide/aide.new
 
-    # #!/bin/bash
-    # cd /root/ph5/photon/SPECS_NEW
-    # for f in $(find ./ -name '*-[[:digit:]]*.spec');
-    #  do
-    #  DirectoryName=$(dirname $f)
-    #  if [ -d "/root/ph5/photon/SPECS/$DirectoryName" ]; then
-    #    awk '{ sub("\r$", ""); print }' $f > /root/ph5/photon/SPECS/$f
-    #    echo $f
-    #  fi
-    # done
+    if ($null -ne $FileModified) {
+        $SpecsNewDirectory=join-path "$sourcepath" "$photonDir" "SPECS_NEW" "$Name"
+        $Update = [System.IO.Path]::GetFileNameWithoutExtension($Update) # Strips .asc if present
+        $fileNameBase = "$Name-$Update"
+        $filename = Join-Path -Path $SpecsNewDirectory -ChildPath "$fileNameBase.spec"
+        if (!(Test-Path $SpecsNewDirectory)) {New-Item $SpecsNewDirectory -ItemType Directory}
+        $FileModified | Set-Content $filename -force -Confirm:$false
+    }
 }
 
 function ParseDirectory {
@@ -454,7 +266,7 @@ function ParseDirectory {
 
                 $_repo_ver=""
                 if ($content -ilike '*%define _repo_ver*') { $_repo_ver = (($content | Select-String -Pattern '%define _repo_ver')[0].ToString() -ireplace '%define _repo_ver', "").Trim() }
-                
+
                 $Packages +=[PSCustomObject]@{
                     Spec = $_.Name
                     Version = $Version
@@ -493,12 +305,12 @@ function Versioncompare {
 	)
     $resultAGtrB=0
 
-        if ([string]::IsNullOrEmpty($versionA)) {break} 
+        if ([string]::IsNullOrEmpty($versionA)) {break}
         $itemA=$versionA.split(".-")[0]
         if ([string]::IsNullOrEmpty($itemA)) {break}
         if ($itemA -eq $versionA) {$versionANew=""}
         elseif ($itemA.length -gt 0) {$versionANew=$versionA.Remove(0,$itemA.length+1)}
-    
+
         if ([string]::IsNullOrEmpty($versionB)) {break}
         $itemB=$versionB.split(".-")[0]
         if ([string]::IsNullOrEmpty($itemB)) {break}
@@ -555,7 +367,7 @@ function urlhealth {
     }
     catch
     {
-        $urlhealthrc = [int]$_.Exception.Response.StatusCode.value__        
+        $urlhealthrc = [int]$_.Exception.Response.StatusCode.value__
         if ($checkurl -ilike '*netfilter.org*')
         {
             $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
@@ -572,23 +384,27 @@ function urlhealth {
             elseif ($checkurl -ilike '*conntrack-tools*') {$Referer="https://www.netfilter.org/projects/conntrack-tools/downloads.html"}
             elseif ($checkurl -ilike '*iptables*') {$Referer="https://www.netfilter.org/projects/iptables/downloads.html"}
 
-            $rc = Invoke-WebRequest -UseBasicParsing -Uri $checkurl -Method Head -TimeoutSec 10 -ErrorAction Stop `
-            -WebSession $session `
-            -Headers @{
-            "Accept"="text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
-              "Accept-Encoding"="gzip, deflate, br"
-              "Accept-Language"="en-US,en;q=0.9"
-              "Referer"="$Referer"
-              "Sec-Fetch-Dest"="document"
-              "Sec-Fetch-Mode"="navigate"
-              "Sec-Fetch-Site"="same-origin"
-              "Sec-Fetch-User"="?1"
-              "Upgrade-Insecure-Requests"="1"
-              "sec-ch-ua"="`"Google Chrome`";v=`"113`", `"Chromium`";v=`"113`", `"Not-A.Brand`";v=`"24`""
-              "sec-ch-ua-mobile"="?0"
-              "sec-ch-ua-platform"="`"Windows`""
+            try {
+                $rc = Invoke-WebRequest -UseBasicParsing -Uri $checkurl -Method Head -TimeoutSec 10 -ErrorAction Stop `
+                -WebSession $session `
+                -Headers @{
+                "Accept"="text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
+                "Accept-Encoding"="gzip, deflate, br"
+                "Accept-Language"="en-US,en;q=0.9"
+                "Referer"="$Referer"
+                "Sec-Fetch-Dest"="document"
+                "Sec-Fetch-Mode"="navigate"
+                "Sec-Fetch-Site"="same-origin"
+                "Sec-Fetch-User"="?1"
+                "Upgrade-Insecure-Requests"="1"
+                "sec-ch-ua"="`"Google Chrome`";v=`"113`", `"Chromium`";v=`"113`", `"Not-A.Brand`";v=`"24`""
+                "sec-ch-ua-mobile"="?0"
+                "sec-ch-ua-platform"="`"Windows`""
+                }
+                $urlhealthrc = [int]$rc.StatusCode
+            } catch {
+                $urlhealthrc = [int]$_.Exception.Response.StatusCode.value__
             }
-            $urlhealthrc = [int]$rc.StatusCode
         }
     }
     return $urlhealthrc
@@ -608,7 +424,7 @@ function KojiFedoraProjectLookUp {
 # The example uses the latest 0.3.111 version in 21.fc42 release.
 # Hence, programmatically traverse https://kojipkgs.fedoraproject.org//packages/libaio/0.3.111, then traverse the subdirectories until reaching the highest number 21.fc42
 # https://kojipkgs.fedoraproject.org/packages/libaio/0.3.111/21.fc42/src/libaio-0.3.111-21.fc42.src.rpm
-# 
+
     param (
         [parameter(Mandatory = $true)]
         [string]$ArtefactName
@@ -619,13 +435,13 @@ function KojiFedoraProjectLookUp {
     $SourceTagURL="https://src.fedoraproject.org/rpms/$ArtefactName/blob/main/f/sources"
     try
     {
-        $ArtefactDownloadName=((((((invoke-restmethod -uri $SourceTagURL -usebasicparsing) -split '<code class') -split '</code>')[1]) -split '\(') -split '\)')[1]
+        $ArtefactDownloadName=((((((invoke-restmethod -uri $SourceTagURL -usebasicparsing -TimeoutSec 10) -split '<code class') -split '</code>')[1]) -split '\(') -split '\)')[1]
         $ArtefactVersion=$ArtefactDownloadName -ireplace "${ArtefactName}-",""
         $ArtefactVersion=$ArtefactVersion -ireplace ".tar.gz",""
         $ArtefactVersion=$ArtefactVersion -ireplace "v",""
 
         $SourceTagURL="https://kojipkgs.fedoraproject.org/packages/$ArtefactName/$ArtefactVersion"
-        $Names = ((invoke-restmethod -uri $SourceTagURL -usebasicparsing) -split '/">') -split '/</a>'
+        $Names = ((invoke-restmethod -uri $SourceTagURL -usebasicparsing -TimeoutSec 10) -split '/">') -split '/</a>'
         $Names = $Names | foreach-object { if (!($_ | select-string -pattern '<' -simplematch)) {echo $_}}
         $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
 
@@ -633,7 +449,7 @@ function KojiFedoraProjectLookUp {
 
         $SourceTagURL="https://kojipkgs.fedoraproject.org/packages/$ArtefactName/$ArtefactVersion/$NameLatest/src/"
 
-        $Names = ((invoke-restmethod -uri $SourceTagURL -usebasicparsing) -split '<a href="') -split '"'
+        $Names = ((invoke-restmethod -uri $SourceTagURL -usebasicparsing -TimeoutSec 10) -split '<a href="') -split '"'
         $Names = $Names | foreach-object { if (!($_ | select-string -pattern '<' -simplematch)) {echo $_}}
         $Names = $Names | foreach-object { if (($_ | select-string -pattern '.src.rpm' -simplematch)) {echo $_}}
 
@@ -643,7 +459,6 @@ function KojiFedoraProjectLookUp {
     }catch{}
     return $SourceRPMFileURL
 }
-
 function GitPhoton {
     param (
         [parameter(Mandatory = $true)]
@@ -669,8 +484,6 @@ function GitPhoton {
 }
 
 function Source0Lookup {
-
-
 
 $Source0LookupData=@'
 specfile,Source0Lookup
@@ -699,8 +512,8 @@ bindutils.spec,https://github.com/isc-projects/bind9/archive/refs/tags/v%{versio
 boost.spec,https://github.com/boostorg/boost/archive/refs/tags/boost-%{version}.tar.gz
 btrfs-progs.spec,https://github.com/kdave/btrfs-progs/archive/refs/tags/v%{version}.tar.gz
 bubblewrap.spec,https://github.com/containers/bubblewrap/archive/refs/tags/v%{version}.tar.gz
-bzip2.spec,https://github.com/libarchive/bzip2/archive/refs/tags/bzip2-%{version}.tar.gz    
-cairo.spec,https://gitlab.freedesktop.org/cairo/cairo/-/archive/%{version}/cairo-%{version}.tar.gz            
+bzip2.spec,https://github.com/libarchive/bzip2/archive/refs/tags/bzip2-%{version}.tar.gz
+cairo.spec,https://gitlab.freedesktop.org/cairo/cairo/-/archive/%{version}/cairo-%{version}.tar.gz
 calico-confd.spec,https://github.com/kelseyhightower/confd/archive/refs/tags/v%{version}.tar.gz
 c-ares.spec,https://github.com/c-ares/c-ares/archive/refs/tags/cares-%{version}.tar.gz
 cassandra.spec,https://github.com/apache/cassandra/archive/refs/tags/cassandra-%{version}.tar.gz
@@ -719,12 +532,12 @@ conmon.spec,https://github.com/containers/conmon/archive/refs/tags/v%{version}.t
 conntrack-tools.spec,https://www.netfilter.org/projects/conntrack-tools/files/conntrack-tools-%{version}.tar.bz2
 containers-common.spec,https://github.com/containers/common/archive/refs/tags/v%{version}.tar.gz
 coredns.spec,https://github.com/coredns/coredns/archive/refs/tags/v%{version}.tar.gz
-cracklib.spec,https://github.com/cracklib/cracklib/archive/refs/tags/v%{version}.tar.gz        
+cracklib.spec,https://github.com/cracklib/cracklib/archive/refs/tags/v%{version}.tar.gz
 cri-tools.spec,https://github.com/kubernetes-sigs/cri-tools/archive/refs/tags/v%{version}.tar.gz
 cryptsetup.spec,https://github.com/mbroz/cryptsetup/archive/refs/tags/v%{version}.tar.gz
 cups.spec,https://github.com/OpenPrinting/cups/archive/refs/tags/v%{version}.tar.gz
 cve-check-tool.spec,https://github.com/clearlinux/cve-check-tool/archive/refs/tags/v%{version}.tar.gz
-cyrus-sasl.spec,https://github.com/cyrusimap/cyrus-sasl/archive/refs/tags/cyrus-sasl-%{version}.tar.gz    
+cyrus-sasl.spec,https://github.com/cyrusimap/cyrus-sasl/archive/refs/tags/cyrus-sasl-%{version}.tar.gz
 cython3.spec,https://github.com/cython/cython/archive/refs/tags/%{version}.tar.gz
 device-mapper-multipath.spec,https://github.com/opensvc/multipath-tools/archive/refs/tags/%{version}.tar.gz
 device-mapper-multipath.spec,https://github.com/opensvc/multipath-tools/archive/refs/tags/%{version}.tar.gz
@@ -826,7 +639,7 @@ libpcap.spec,https://github.com/the-tcpdump-group/libpcap/archive/refs/tags/libp
 libselinux.spec,https://github.com/SELinuxProject/selinux/archive/refs/tags/libselinux-%{version}.tar.gz
 libsigc++.spec,https://github.com/libsigcplusplus/libsigcplusplus/archive/refs/tags/%{version}.tar.gz
 libsirp.spec,https://gitlab.freedesktop.org/slirp/libslirp/-/archive/v%{version}/libslirp-v%{version}.tar.gz
-libsoup.spec,https://github.com/GNOME/libsoup/archive/refs/tags/%{version}.tar.gz       
+libsoup.spec,https://github.com/GNOME/libsoup/archive/refs/tags/%{version}.tar.gz
 libssh2.spec,https://github.com/libssh2/libssh2/archive/refs/tags/libssh2-%{version}.tar.gz
 libtar.spec,https://github.com/tklauser/libtar/archive/refs/tags/v%{version}.tar.gz
 libteam.spec,https://github.com/jpirko/libteam/archive/refs/tags/v%{version}.tar.gz
@@ -916,12 +729,12 @@ psmisc.spec,https://gitlab.com/psmisc/psmisc/-/archive/v%{version}/psmisc-v%{ver
 pth.spec,https://ftp.gnu.org/gnu/pth/pth-%{version}.tar.gz
 pycurl.spec,https://github.com/pycurl/pycurl/archive/refs/tags/REL_%{version}.tar.gz
 pygobject.spec,https://gitlab.gnome.org/GNOME/pygobject/-/archive/%{version}/pygobject-%{version}.tar.gz
-python3-distro.spec,https://github.com/python-distro/distro/archive/refs/tags/v%{version}.tar.gz 
+python3-distro.spec,https://github.com/python-distro/distro/archive/refs/tags/v%{version}.tar.gz
 python3-pip.spec,https://github.com/pypa/pip/archive/refs/tags/%{version}.tar.gz
 python3-pyroute2.spec,https://github.com/svinota/pyroute2/archive/refs/tags/%{version}.tar.gz
 python3-setuptools.spec,https://github.com/pypa/setuptools/archive/refs/tags/v%{version}.tar.gz
 python-alabaster.spec,https://github.com/bitprophet/alabaster/archive/refs/tags/%{version}.tar.gz
-python-altgraph.spec,https://github.com/ronaldoussoren/altgraph/archive/refs/tags/v%{version}.tar.gz       
+python-altgraph.spec,https://github.com/ronaldoussoren/altgraph/archive/refs/tags/v%{version}.tar.gz
 python-altgraph.spec,https://github.com/ronaldoussoren/altgraph/archive/refs/tags/v%{version}.tar.gz
 python-appdirs.spec,https://github.com/ActiveState/appdirs/archive/refs/tags/%{version}.tar.gz
 python-argparse.spec,https://github.com/ThomasWaldmann/argparse/archive/refs/tags/r%{version}.tar.gz
@@ -964,7 +777,7 @@ python-deepmerge.spec,https://github.com/toumorokoshi/deepmerge/archive/refs/tag
 python-defusedxml.spec,https://github.com/tiran/defusedxml/archive/refs/tags/v%{version}.tar.gz
 python-dis3.spec,https://github.com/KeyWeeUsr/python-dis3/archive/refs/tags/v%{version}.tar.gz
 python-distlib.spec,https://github.com/pypa/distlib/archive/refs/tags/%{version}.tar.gz
-python-distro.spec,https://github.com/python-distro/distro/archive/refs/tags/v%{version}.tar.gz 
+python-distro.spec,https://github.com/python-distro/distro/archive/refs/tags/v%{version}.tar.gz
 python-dnspython.spec,https://github.com/rthalley/dnspython/archive/refs/tags/v%{version}.tar.gz
 python-docopt.spec,https://github.com/docopt/docopt/archive/refs/tags/%{version}.tar.gz
 python-docutils.spec,https://sourceforge.net/projects/docutils/files/docutils/0.19/docutils-%{version}.tar.gz/download
@@ -1051,7 +864,7 @@ python-pyinstaller.spec,https://github.com/pyinstaller/pyinstaller/archive/refs/
 python-pyinstaller-hooks-contrib.spec,https://github.com/pyinstaller/pyinstaller-hooks-contrib/archive/refs/tags/v%{version}.tar.gz
 python-pyjsparser.spec,https://github.com/PiotrDabkowski/pyjsparser/archive/refs/tags/v%{version}.tar.gz
 python-pyjwt.spec,https://github.com/jpadilla/pyjwt/archive/refs/tags/%{version}.tar.gz
-python-PyNaCl.spec,https://github.com/pyca/pynacl/archive/refs/tags/%{version}.tar.gz   
+python-PyNaCl.spec,https://github.com/pyca/pynacl/archive/refs/tags/%{version}.tar.gz
 python-pygobject.spec,https://gitlab.gnome.org/GNOME/pygobject/-/archive/%{version}/pygobject-%{version}.tar.gz
 python-pyOpenSSL.spec,https://github.com/pyca/pyopenssl/archive/refs/tags/%{version}.tar.gz
 python-pyparsing.spec,https://github.com/pyparsing/pyparsing/archive/refs/tags/pyparsing_%{version}.tar.gz
@@ -1161,7 +974,7 @@ wayland.spec,https://gitlab.freedesktop.org/wayland/wayland/-/archive/%{version}
 wget.spec,https://ftp.gnu.org/gnu/wget/wget-%{version}.tar.gz
 wireshark.spec,https://github.com/wireshark/wireshark/archive/refs/tags/wireshark-%{version}.tar.gz
 wrapt.spec,https://github.com/GrahamDumpleton/wrapt/archive/refs/tags/%{version}.tar.gz
-xerces-c.spec,https://github.com/apache/xerces-c/archive/refs/tags/v%{version}.tar.gz   
+xerces-c.spec,https://github.com/apache/xerces-c/archive/refs/tags/v%{version}.tar.gz
 xinetd.spec,https://github.com/xinetd-org/xinetd/archive/refs/tags/xinetd-%{version}.tar.gz
 XML-Parser.spec,https://github.com/toddr/XML-Parser/archive/refs/tags/%{version}.tar.gz
 xml-security-c.spec,https://archive.apache.org/dist/santuario/c-library/xml-security-c-%{version}.tar.gz
@@ -1177,255 +990,323 @@ return( $Source0LookupData )
 function CheckURLHealth {
       [CmdletBinding()]
       Param(
-        [parameter(Mandatory)]$ThrottleLimitParam,
+        [parameter(Mandatory)]$currentTask,
         [parameter(Mandatory)]$SourcePath,
         [parameter(Mandatory)]$outputfile,
         [parameter(Mandatory)]$accessToken,
-        [parameter(Mandatory,ValueFromPipeline)]$CheckURLHealthPackageObject,
-        [parameter(Mandatory,ValueFromPipeline)]$photonDir
-     )
+        [parameter(Mandatory)]$photonDir,
+        [Parameter(Mandatory = $true)]
+        $KojiFedoraProjectLookUpDef,  # Koji Fedora lookup definition
+        [Parameter(Mandatory = $true)]
+        $ModifySpecFileDef,  # Spec file modification definition
+        [Parameter(Mandatory = $true)]
+        $ModifySpecFileOpenJDK8Def,  # OpenJDK8 spec file modification
+        [Parameter(Mandatory = $true)]
+        $Source0LookupDef,  # Source0 lookup definition
+        [Parameter(Mandatory = $true)]
+        $urlhealthDef  # URL health definition
 
-    Process{
-    # Check Source0 url health in packages
-    $Lines=@()
-    $CheckURLHealthPackageObject | foreach-object {
+    )
 
-        # if ($_.spec -ilike 'pandoc.spec')
-        # {pause}
-        # else
-        # {return}
+    class HeapSort {
+    # Heapsort algorithmus from Doug Finke
+    # https://github.com/dfinke/SortingAlgorithms/blob/master/HeapSort.ps1
+    # modified to compare concated ascii code values
+        [array] static Sort($targetList) {
+            $heapSize = $targetList.Count
 
-        $currentFile = $_
-        $Source0 = $currentFile.Source0
+            for ([int]$p = ($heapSize - 1) / 2; $p -ge 0; $p--) {
+                [HeapSort]::MaxHeapify($targetList, $heapSize, $p)
+            }
 
-        # cut last index in $_.version and save value in $version
-        $Version=""
-        $versionArray=($_.version).split("-")
-        if ($versionArray.length -gt 0)
-        {
-            $Version=$versionArray[0]
-            for ($i=1;$i -lt ($versionArray.length -1);$i++) {$version=$Version + "-"+$versionArray[$i]}
-            if ($versionarray[$versionarray.Length-1] -ilike '*.*')
-            {
-                if ([string]((($_.version).split("-"))[-1]).split(".")[-1] -ne "") {$Version = [System.String]::concat($Version,"-",[string]((($_.version).split("-"))[-1]).split(".")[-1])}
+            for ($i = $targetList.Count - 1; $i -gt 0; $i--) {
+                $temp = $targetList[$i]
+                $targetList[$i] = $targetList[0]
+                $targetList[0] = $temp
+
+                $heapSize--
+                [HeapSort]::MaxHeapify($targetList, $heapSize, 0)
+            }
+            return $targetlist
+        }
+
+        static MaxHeapify($targetList, $heapSize, $index) {
+            $left = ($index + 1) * 2 - 1
+            $right = ($index + 1) * 2
+            $largest = 0
+
+            if ($left -lt $heapSize -and [int64]([system.string]::concat((([system.Text.Encoding]::Default.GetBytes($targetList[$left])) | foreach-object tostring 000))) -gt [int64]([system.string]::concat((([system.Text.Encoding]::Default.GetBytes($targetList[$index])) | foreach-object tostring 000)))) {
+                $largest = $left
+            }
+            else {
+                $largest = $index
+            }
+
+            if ($right -lt $heapSize -and [int64]([system.string]::concat((([system.Text.Encoding]::Default.GetBytes($targetList[$right])) | foreach-object tostring 000))) -gt [int64]([system.string]::concat((([system.Text.Encoding]::Default.GetBytes($targetList[$largest])) | foreach-object tostring 000)))) {
+                $largest = $right
+            }
+
+            if ($largest -ne $index) {
+                $temp = $targetList[$index]
+                $targetList[$index] = $targetList[$largest]
+                $targetList[$largest] = $temp
+
+                [HeapSort]::MaxHeapify($targetList, $heapSize, $largest)
             }
         }
+    }
 
+    if ($KojiFedoraProjectLookUpDef) {
+        Invoke-Expression "function KojiFedoraProjectLookUp { $KojiFedoraProjectLookUpDef }"
+    }
+    if ($ModifySpecFileDef) {
+        Invoke-Expression "function ModifySpecFile { $ModifySpecFileDef }"
+    }
+    if ($ModifySpecFileOpenJDK8Def) {
+        Invoke-Expression "function ModifySpecFileOpenJDK8 { $ModifySpecFileOpenJDK8Def }"
+    }
+    if ($Source0LookupDef) {
+        Invoke-Expression "function Source0Lookup { $Source0LookupDef }"
+    }
+    if ($urlhealthDef) {
+        Invoke-Expression "function URLHealth { $urlhealthDef }"
+    }
+    $line=@()
 
-        # --------------------------------------------------------------------------------------------------------------
-        # The following Source0 urls have been detected to be wrong or missspelled.
-        # This can change. Hence, this section has to be verified from time to time.
-        # Until then, before any Source0 url health check the Source0 url value is changed to a manually verified value.
-        # --------------------------------------------------------------------------------------------------------------
-        Write-Host "Processing $($currentfile.spec) ..."
+    if ($currentTask.spec -ilike 'libtirpc.spec')
+    {pause}
+    else
+    {return}
 
-        $data = Source0Lookup
-        $index=($data.'specfile').indexof($currentfile.spec)
-        if ([int]$index -ne -1)
+    $Source0 = $currentTask.Source0
+
+    # cut last index in $currentTask.version and save value in $version
+    $Version=""
+    $versionArray=($currentTask.version).split("-")
+    if ($versionArray.length -gt 0)
+    {
+        $Version=$versionArray[0]
+        for ($i=1;$i -lt ($versionArray.length -1);$i++) {$version=$Version + "-"+$versionArray[$i]}
+        if ($versionarray[$versionarray.Length-1] -ilike '*.*')
         {
-            $Source0=$data[$index].'Source0Lookup'
+            if ([string]((($currentTask.version).split("-"))[-1]).split(".")[-1] -ne "") {$Version = [System.String]::concat($Version,"-",[string]((($currentTask.version).split("-"))[-1]).split(".")[-1])}
         }
+    }
+
+
+    # --------------------------------------------------------------------------------------------------------------
+    # The following Source0 urls have been detected to be wrong or missspelled.
+    # This can change. Hence, this section has to be verified from time to time.
+    # Until then, before any Source0 url health check the Source0 url value is changed to a manually verified value.
+    # --------------------------------------------------------------------------------------------------------------
+    Write-Host "Processing $($currentTask.spec) ..."
+
+    $data = Source0Lookup
+    $index=($data.'specfile').indexof($currentTask.spec)
+    if ([int]$index -ne -1)
+    {
+        $Source0=$data[$index].'Source0Lookup'
+    }
+    else
+    {
+        if ($currentTask.spec -eq "glslang.spec") { if ($version -gt "9") {$Source0="https://github.com/KhronosGroup/glslang/archive/refs/tags/sdk-%{version}.tar.gz"}
+                                                    else {$Source0="https://github.com/KhronosGroup/glslang/archive/refs/tags/%{version}.tar.gz"}}
+        elseif ($currentTask.spec -eq "google-compute-engine.spec") {if ($version -lt "20190916") {$Source0="https://github.com/GoogleCloudPlatform/compute-image-packages/archive/refs/tags/%{version}.tar.gz"}
+                                                                    else {$Source0="https://github.com/GoogleCloudPlatform/compute-image-packages/archive/refs/tags/v%{version}.tar.gz"}}
+        elseif ($currentTask.spec -eq "gtk-doc.spec") {if ($version -lt "1.33.0") {$Source0="https://github.com/GNOME/gtk-doc/archive/refs/tags/GTK_DOC_%{version}.tar.gz"}
+                                                        else {$Source0="https://github.com/GNOME/gtk-doc/archive/refs/tags/%{version}.tar.gz"}}
+        elseif ($currentTask.spec -eq "haproxy.spec") { $tmpminor=($version.split(".")[0]+"."+$version.split(".")[1]);$Source0="https://www.haproxy.org/download/$tmpminor/src/devel/haproxy-%{version}.tar.gz"}
+        elseif ($currentTask.spec -eq "raspberrypi-firmware.spec")
+        {
+            $Source0="https://github.com/raspberrypi/firmware/archive/refs/tags/%{version}.tar.gz"
+            $tmpversion=$currentTask.version
+            $tmpversion = $tmpversion -ireplace "1.",""
+            $version = [System.String]::Concat("1.",[string]$tmpversion.Replace(".",""))
+        }
+        elseif ($currentTask.spec -eq "xmlsec1.spec") {if ($version -lt "1.2.30") {$Source0="https://www.aleksey.com/xmlsec/download/older-releases/xmlsec1-%{version}.tar.gz"} else {$Source0="https://www.aleksey.com/xmlsec/download/xmlsec1-%{version}.tar.gz"}}
+        }
+
+    # add url path if necessary and possible
+    if (($Source0 -notlike '*//*') -and ($currentTask.url -ne ""))
+    {
+        if (($currentTask.url -match '.tar.gz$') -or ($currentTask.url -match '.tar.xz$') -or ($currentTask.url -match '.tar.bz2$') -or ($currentTask.url -match '.tgz$'))
+        {$Source0=$currentTask.url}
         else
+        { $Source0 = [System.String]::Concat(($currentTask.url).Trimend('/'),$Source0) }
+    }
+    # replace variables
+    $Source0 = $Source0 -ireplace '%{name}',$currentTask.Name
+    $Source0 = $Source0 -ireplace '%{version}',$version
+
+    if ($Source0 -like '*{*')
+    {
+        if ($Source0 -ilike '*%{url}*') { $Source0 = $Source0 -ireplace '%{url}',$currentTask.url }
+        if ($Source0 -ilike '*%{srcname}*') { $Source0 = $Source0 -ireplace '%{srcname}',$currentTask.srcname }
+        if ($Source0 -ilike '*%{gem_name}*') { $Source0 = $Source0 -ireplace '%{gem_name}',$currentTask.gem_name }
+        if ($Source0 -ilike '*%{extra_version}*') { $Source0 = $Source0 -ireplace '%{extra_version}',$currentTask.extra_version }
+        if ($Source0 -ilike '*%{main_version}*') { $Source0 = $Source0 -ireplace '%{main_version}',$currentTask.main_version }
+        if ($Source0 -ilike '*%{byaccdate}*') { $Source0 = $Source0 -ireplace '%{byaccdate}',$currentTask.byaccdate }
+        if ($Source0 -ilike '*%{dialogsubversion}*') { $Source0 = $Source0 -ireplace '%{dialogsubversion}',$currentTask.dialogsubversion }
+        if ($Source0 -ilike '*%{subversion}*') { $Source0 = $Source0 -ireplace '%{subversion}',$currentTask.subversion }
+        if ($Source0 -ilike '*%{libedit_release}*') { $Source0 = $Source0 -ireplace '%{libedit_release}',$currentTask.libedit_release }
+        if ($Source0 -ilike '*%{libedit_version}*') { $Source0 = $Source0 -ireplace '%{libedit_version}',$currentTask.libedit_version }
+        if ($Source0 -ilike '*%{ncursessubversion}*') { $Source0 = $Source0 -ireplace '%{ncursessubversion}',$currentTask.ncursessubversion }
+        if ($Source0 -ilike '*%{cpan_name}*') { $Source0 = $Source0 -ireplace '%{cpan_name}',$currentTask.cpan_name }
+        if ($Source0 -ilike '*%{xproto_ver}*') { $Source0 = $Source0 -ireplace '%{xproto_ver}',$currentTask.xproto_ver}
+        if ($Source0 -ilike '*%{_url_src}*') { $Source0 = $Source0 -ireplace '%{_url_src}',$currentTask._url_src }
+        if ($Source0 -ilike '*%{_repo_ver}*') { $Source0 = $Source0 -ireplace '%{_repo_ver}',$currentTask._repo_ver}
+    }
+
+    $UpdateAvailable=""
+    $urlhealth=""
+    $HealthUpdateURL=""
+    $UpdateURL=""
+
+    ###############################################################################
+    # anomalies - rework for detection necessary
+    ###############################################################################
+
+    # for python-daemon.spec because pagure.io webpage downloads are broken. Still the case in June 2025.
+    if ($currentTask.spec -eq "python-daemon.spec")
+    {
+        $Source0="https://files.pythonhosted.org/packages/3d/37/4f10e37bdabc058a32989da2daf29e57dc59dbc5395497f3d36d5f5e2694/python_daemon-3.1.2.tar.gz"
+        $UpdateURL="https://files.pythonhosted.org/packages/d9/3c/727b06abb46fead341a2bdad04ba4a4db5395c44c45d8ba0aa82b517e462/python-daemon-2.3.2.tar.gz"
+        $HealthUpdateURL="200"
+        $UpdateAvailable="3.1.2"
+    }
+
+    if ($currentTask.spec -eq "libassuan.spec")
+    {
+        $UpdateURL="https://www.gnupg.org/ftp/gcrypt/libassuan/libassuan-3.0.2.tar.bz2"
+        $HealthUpdateURL="200"
+        $UpdateAvailable="3.0.2"
+    }
+
+    if ($currentTask.spec -eq "libtiff.spec")
+    {
+        $UpdateURL="https://download.osgeo.org/libtiff/tiff-4.7.0.tar.xz"
+        $HealthUpdateURL="200"
+        $UpdateAvailable="4.7.0"
+    }
+
+    if ($currentTask.spec -eq "mpc.spec")
+    {
+        $UpdateURL="https://ftp.gnu.org/gnu/mpc/mpc-1.3.1.tar.gz"
+        $HealthUpdateURL="200"
+        $UpdateAvailable="1.3.1"
+    }
+
+    if ($currentTask.spec -eq "python-enum34.spec")
+    {
+        $UpdateURL="https://files.pythonhosted.org/packages/11/c4/2da1f4952ba476677a42f25cd32ab8aaf0e1c0d0e00b89822b835c7e654c/enum34-1.1.10.tar.gz"
+        $HealthUpdateURL="200"
+        $UpdateAvailable="1.1.10"
+    }
+
+    if ($currentTask.spec -eq "runit.spec")
+    {
+        $UpdateURL="https://smarden.org/runit/runit-2.2.0.tar.gz"
+        $HealthUpdateURL="200"
+        $UpdateAvailable="2.2.0"
+    }
+
+    if ($currentTask.spec -eq "sendmail.spec")
+    {
+        $UpdateURL="https://ftp.sendmail.org/sendmail.8.18.1.tar.gz"
+        $HealthUpdateURL="200"
+        $UpdateAvailable="8.18.1"
+    }
+
+    if ($currentTask.spec -eq "zookeeper.spec")
+    {
+        $UpdateURL="https://www.apache.org/dyn/closer.lua/zookeeper/zookeeper-3.9.3/apache-zookeeper-3.9.3-bin.tar.gz"
+        $HealthUpdateURL="200"
+        $UpdateAvailable="3.9.3"
+    }
+
+    if ($currentTask.spec -eq "pgbackrest.spec")
+    {
+        $UpdateURL="https://github.com/pgbackrest/pgbackrest/archive/refs/tags/release/2.55.1.tar.gz"
+        $HealthUpdateURL="200"
+        $UpdateAvailable="2.55.1"
+    }
+
+    if ($currentTask.spec -eq "re2.spec")
+    {
+        $UpdateURL="https://github.com/google/re2/releases/download/2024-07-02/re2-2024-07-02.tar.gz"
+        $HealthUpdateURL="200"
+        $UpdateAvailable="2024-07-02"
+    }
+
+    ###############################################################################
+
+    $Source0Save=$Source0
+    if ($Source0 -like '*{*') {$urlhealth = "substitution_unfinished"}
+    else
+    {
+        $urlhealth = urlhealth($Source0)
+        if ($urlhealth -ne "200")
         {
-            if ($currentFile.spec -eq "glslang.spec") { if ($version -gt "9") {$Source0="https://github.com/KhronosGroup/glslang/archive/refs/tags/sdk-%{version}.tar.gz"}
-                                                        else {$Source0="https://github.com/KhronosGroup/glslang/archive/refs/tags/%{version}.tar.gz"}}
-            elseif ($currentFile.spec -eq "google-compute-engine.spec") {if ($version -lt "20190916") {$Source0="https://github.com/GoogleCloudPlatform/compute-image-packages/archive/refs/tags/%{version}.tar.gz"}
-                                                                        else {$Source0="https://github.com/GoogleCloudPlatform/compute-image-packages/archive/refs/tags/v%{version}.tar.gz"}}
-            elseif ($currentFile.spec -eq "gtk-doc.spec") {if ($version -lt "1.33.0") {$Source0="https://github.com/GNOME/gtk-doc/archive/refs/tags/GTK_DOC_%{version}.tar.gz"}
-                                                            else {$Source0="https://github.com/GNOME/gtk-doc/archive/refs/tags/%{version}.tar.gz"}}
-            elseif ($currentFile.spec -eq "haproxy.spec") { $tmpminor=($version.split(".")[0]+"."+$version.split(".")[1]);$Source0="https://www.haproxy.org/download/$tmpminor/src/devel/haproxy-%{version}.tar.gz"}
-            elseif ($currentFile.spec -eq "raspberrypi-firmware.spec")
+            # different trycatch-combinations to get a healthy github.com related Source0 url
+            if ($Source0 -ilike '*github.com*')
             {
-                $Source0="https://github.com/raspberrypi/firmware/archive/refs/tags/%{version}.tar.gz"
-                $tmpversion=$currentFile.version
-                $tmpversion = $tmpversion -ireplace "1.",""
-                $version = [System.String]::Concat("1.",[string]$tmpversion.Replace(".",""))
-            }
-            elseif ($currentFile.spec -eq "xmlsec1.spec") {if ($version -lt "1.2.30") {$Source0="https://www.aleksey.com/xmlsec/download/older-releases/xmlsec1-%{version}.tar.gz"} else {$Source0="https://www.aleksey.com/xmlsec/download/xmlsec1-%{version}.tar.gz"}}                                                                         
-         }
-
-        # add url path if necessary and possible
-        if (($Source0 -notlike '*//*') -and ($_.url -ne ""))
-        {
-            if (($_.url -match '.tar.gz$') -or ($_.url -match '.tar.xz$') -or ($_.url -match '.tar.bz2$') -or ($_.url -match '.tgz$'))
-            {$Source0=$_.url}
-            else
-            { $Source0 = [System.String]::Concat(($_.url).Trimend('/'),$Source0) }
-        }
-        # replace variables
-        $Source0 = $Source0 -ireplace '%{name}',$_.Name
-        $Source0 = $Source0 -ireplace '%{version}',$version
-
-        if ($Source0 -like '*{*')
-        {
-            if ($Source0 -ilike '*%{url}*') { $Source0 = $Source0 -ireplace '%{url}',$_.url }
-            if ($Source0 -ilike '*%{srcname}*') { $Source0 = $Source0 -ireplace '%{srcname}',$_.srcname }
-            if ($Source0 -ilike '*%{gem_name}*') { $Source0 = $Source0 -ireplace '%{gem_name}',$_.gem_name }
-            if ($Source0 -ilike '*%{extra_version}*') { $Source0 = $Source0 -ireplace '%{extra_version}',$_.extra_version }
-            if ($Source0 -ilike '*%{main_version}*') { $Source0 = $Source0 -ireplace '%{main_version}',$_.main_version }
-            if ($Source0 -ilike '*%{byaccdate}*') { $Source0 = $Source0 -ireplace '%{byaccdate}',$_.byaccdate }
-            if ($Source0 -ilike '*%{dialogsubversion}*') { $Source0 = $Source0 -ireplace '%{dialogsubversion}',$_.dialogsubversion }
-            if ($Source0 -ilike '*%{subversion}*') { $Source0 = $Source0 -ireplace '%{subversion}',$_.subversion }
-            if ($Source0 -ilike '*%{libedit_release}*') { $Source0 = $Source0 -ireplace '%{libedit_release}',$_.libedit_release }
-            if ($Source0 -ilike '*%{libedit_version}*') { $Source0 = $Source0 -ireplace '%{libedit_version}',$_.libedit_version }
-            if ($Source0 -ilike '*%{ncursessubversion}*') { $Source0 = $Source0 -ireplace '%{ncursessubversion}',$_.ncursessubversion }
-            if ($Source0 -ilike '*%{cpan_name}*') { $Source0 = $Source0 -ireplace '%{cpan_name}',$_.cpan_name }
-            if ($Source0 -ilike '*%{xproto_ver}*') { $Source0 = $Source0 -ireplace '%{xproto_ver}',$_.xproto_ver}
-            if ($Source0 -ilike '*%{_url_src}*') { $Source0 = $Source0 -ireplace '%{_url_src}',$_._url_src }
-            if ($Source0 -ilike '*%{_repo_ver}*') { $Source0 = $Source0 -ireplace '%{_repo_ver}',$_._repo_ver}
-        }
-
-        $UpdateAvailable=""
-        $urlhealth=""
-        $HealthUpdateURL=""
-        $UpdateURL="" 
-
-        ###############################################################################
-        # anomalies - rework for detection necessary
-        ###############################################################################        
-        
-        # for python-daemon.spec because pagure.io webpage downloads are broken. Still the case in June 2025.
-        if ($currentFile.spec -eq "python-daemon.spec")
-        {
-           $Source0="https://files.pythonhosted.org/packages/3d/37/4f10e37bdabc058a32989da2daf29e57dc59dbc5395497f3d36d5f5e2694/python_daemon-3.1.2.tar.gz"
-           $UpdateURL="https://files.pythonhosted.org/packages/d9/3c/727b06abb46fead341a2bdad04ba4a4db5395c44c45d8ba0aa82b517e462/python-daemon-2.3.2.tar.gz"
-           $HealthUpdateURL="200"
-           $UpdateAvailable="3.1.2"
-        }
-
-        if ($currentFile.spec -eq "libassuan.spec")
-        {
-            $UpdateURL="https://www.gnupg.org/ftp/gcrypt/libassuan/libassuan-3.0.2.tar.bz2"
-            $HealthUpdateURL="200"
-            $UpdateAvailable="3.0.2"
-        }
-
-        if ($currentFile.spec -eq "libtiff.spec")
-        {
-            $UpdateURL="https://download.osgeo.org/libtiff/tiff-4.7.0.tar.xz"
-            $HealthUpdateURL="200"
-            $UpdateAvailable="4.7.0"
-        }
-
-        if ($currentFile.spec -eq "mpc.spec")
-        {
-            $UpdateURL="https://ftp.gnu.org/gnu/mpc/mpc-1.3.1.tar.gz"
-            $HealthUpdateURL="200"
-            $UpdateAvailable="1.3.1"
-        }
-
-        if ($currentFile.spec -eq "python-enum34.spec")
-        {
-            $UpdateURL="https://files.pythonhosted.org/packages/11/c4/2da1f4952ba476677a42f25cd32ab8aaf0e1c0d0e00b89822b835c7e654c/enum34-1.1.10.tar.gz"
-            $HealthUpdateURL="200"
-            $UpdateAvailable="1.1.10"
-        }
-
-        if ($currentFile.spec -eq "runit.spec")
-        {
-            $UpdateURL="https://smarden.org/runit/runit-2.2.0.tar.gz"
-            $HealthUpdateURL="200"
-            $UpdateAvailable="2.2.0"
-        }
-
-        if ($currentFile.spec -eq "sendmail.spec")
-        {
-            $UpdateURL="https://ftp.sendmail.org/sendmail.8.18.1.tar.gz"
-            $HealthUpdateURL="200"
-            $UpdateAvailable="8.18.1"
-        }
-
-        if ($currentFile.spec -eq "zookeeper.spec")
-        {
-            $UpdateURL="https://www.apache.org/dyn/closer.lua/zookeeper/zookeeper-3.9.3/apache-zookeeper-3.9.3-bin.tar.gz"
-            $HealthUpdateURL="200"
-            $UpdateAvailable="3.9.3"
-        }
-
-        if ($currentFile.spec -eq "pgbackrest.spec")
-        {
-            $UpdateURL="https://github.com/pgbackrest/pgbackrest/archive/refs/tags/release/2.55.1.tar.gz"
-            $HealthUpdateURL="200"
-            $UpdateAvailable="2.55.1"
-        }
-
-        if ($currentFile.spec -eq "re2.spec")
-        {
-            $UpdateURL="https://github.com/google/re2/releases/download/2024-07-02/re2-2024-07-02.tar.gz"
-            $HealthUpdateURL="200"
-            $UpdateAvailable="2024-07-02"
-        }
-        
-        ###############################################################################
-
-        $Source0Save=$Source0
-        if ($Source0 -like '*{*') {$urlhealth = "substitution_unfinished"}
-        else
-        {
-            $urlhealth = urlhealth($Source0)
-            if ($urlhealth -ne "200")
-            {
-                # different trycatch-combinations to get a healthy github.com related Source0 url
-                if ($Source0 -ilike '*github.com*')
+                if ($Source0 -ilike '*/archive/refs/tags/*')
                 {
-                    if ($Source0 -ilike '*/archive/refs/tags/*')
+                    # check /archive/refs/tags/%{name}-v%{version} and /%{name}-%{version}
+                    $Source0=$Source0Save
+                    $replace=[System.String]::Concat(('/archive/refs/tags/'),$currentTask.Name,"-","v",$version)
+                    $replacenew=[System.String]::Concat(('/archive/refs/tags/v'),$version)
+                    $Source0 = $Source0 -ireplace $replace,$replacenew
+                    $urlhealth = urlhealth($Source0)
+                    if ($urlhealth -ne "200")
                     {
-                        # check /archive/refs/tags/%{name}-v%{version} and /%{name}-%{version}
                         $Source0=$Source0Save
-                        $replace=[System.String]::Concat(('/archive/refs/tags/'),$_.Name,"-","v",$version)
+                        $replace=[System.String]::Concat(('/archive/refs/tags/'),$currentTask.Name,"-",$version)
                         $replacenew=[System.String]::Concat(('/archive/refs/tags/v'),$version)
                         $Source0 = $Source0 -ireplace $replace,$replacenew
                         $urlhealth = urlhealth($Source0)
                         if ($urlhealth -ne "200")
                         {
                             $Source0=$Source0Save
-                            $replace=[System.String]::Concat(('/archive/refs/tags/'),$_.Name,"-",$version)
-                            $replacenew=[System.String]::Concat(('/archive/refs/tags/v'),$version)
+                            $replace=[System.String]::Concat(('/archive/refs/tags/'),$currentTask.Name,"-",$version)
+                            $replacenew=[System.String]::Concat(('/archive/refs/tags/'),$version)
                             $Source0 = $Source0 -ireplace $replace,$replacenew
                             $urlhealth = urlhealth($Source0)
                             if ($urlhealth -ne "200")
                             {
+                                # some versions have a _ in their version number
                                 $Source0=$Source0Save
-                                $replace=[System.String]::Concat(('/archive/refs/tags/'),$_.Name,"-",$version)
-                                $replacenew=[System.String]::Concat(('/archive/refs/tags/'),$version)
-                                $Source0 = $Source0 -ireplace $replace,$replacenew
+                                $versionnew = ([string]$version).Replace("_",".")
+                                $Source0 = $Source0 -ireplace $version,$versionnew
                                 $urlhealth = urlhealth($Source0)
                                 if ($urlhealth -ne "200")
                                 {
-                                    # some versions have a _ in their version number
+                                    # some versions need a - in their version number
                                     $Source0=$Source0Save
-                                    $versionnew = ([string]$version).Replace("_",".")
+                                    $versionnew = ([string]$version).Replace(".","-")
                                     $Source0 = $Source0 -ireplace $version,$versionnew
                                     $urlhealth = urlhealth($Source0)
                                     if ($urlhealth -ne "200")
                                     {
-                                        # some versions need a - in their version number
+                                        # some versions need a _ in their version number
                                         $Source0=$Source0Save
-                                        $versionnew = ([string]$version).Replace(".","-")
+                                        $versionnew = ([string]$version).Replace(".","_")
                                         $Source0 = $Source0 -ireplace $version,$versionnew
                                         $urlhealth = urlhealth($Source0)
                                         if ($urlhealth -ne "200")
                                         {
-                                            # some versions need a _ in their version number
-                                            $Source0=$Source0Save
-                                            $versionnew = ([string]$version).Replace(".","_")
-                                            $Source0 = $Source0 -ireplace $version,$versionnew
-                                            $urlhealth = urlhealth($Source0)
-                                            if ($urlhealth -ne "200")
+                                            $Name=""
+                                            $NameArray=($currentTask.Name).split("-")
+                                            if ($NameArray.length -gt 0) { $Name=$NameArray[$NameArray.length -1]}
+                                            if ($Name -ne "")
                                             {
-                                                $Name=""
-                                                $NameArray=($_.Name).split("-")
-                                                if ($NameArray.length -gt 0) { $Name=$NameArray[$NameArray.length -1]}
-                                                if ($Name -ne "")
+                                                $replace=[System.String]::Concat(('/archive/refs/tags/'),$Name,"-",$version)
+                                                $replacenew=[System.String]::Concat(('/archive/refs/tags/v'),$version)
+                                                $Source0 = $Source0 -ireplace $replace,$replacenew
+                                                $urlhealth = urlhealth($Source0)
+                                                if ($urlhealth -ne "200")
                                                 {
-                                                    $replace=[System.String]::Concat(('/archive/refs/tags/'),$Name,"-",$version)
-                                                    $replacenew=[System.String]::Concat(('/archive/refs/tags/v'),$version)
-                                                    $Source0 = $Source0 -ireplace $replace,$replacenew
-                                                    $urlhealth = urlhealth($Source0)
-                                                    if ($urlhealth -ne "200")
-                                                    {
-                                                        $Source0=$Source0Save
-                                                    }
+                                                    $Source0=$Source0Save
                                                 }
                                             }
                                         }
@@ -1434,736 +1315,706 @@ function CheckURLHealth {
                             }
                         }
                     }
-                    elseif ($Source0 -ilike '*/archive/*')
+                }
+                elseif ($Source0 -ilike '*/archive/*')
+                {
+                    $Source0=$Source0Save
+                    $replace=[System.String]::Concat(('/archive/'),$currentTask.Name,"-")
+                    $Source0 = $Source0 -ireplace $replace,'/archive/refs/tags/'
+                    $urlhealth = urlhealth($Source0)
+                    if ($urlhealth -ne "200")
                     {
+                        # check without naming but with a 'v' before version
                         $Source0=$Source0Save
-                        $replace=[System.String]::Concat(('/archive/'),$_.Name,"-")
-                        $Source0 = $Source0 -ireplace $replace,'/archive/refs/tags/'
+                        $replace=[System.String]::Concat(('/archive/'),$currentTask.Name,"-")
+                        $Source0 = $Source0 -ireplace $replace,'/archive/refs/tags/v'
                         $urlhealth = urlhealth($Source0)
                         if ($urlhealth -ne "200")
                         {
-                            # check without naming but with a 'v' before version
+                            # check with /releases/download/v{name}/{name}-{version}
                             $Source0=$Source0Save
-                            $replace=[System.String]::Concat(('/archive/'),$_.Name,"-")
-                            $Source0 = $Source0 -ireplace $replace,'/archive/refs/tags/v'
+                            $replace=[System.String]::Concat(('/archive/'),$currentTask.Name,"-",$version)
+                            $replacenew=[System.String]::Concat(('/releases/download/v'),$version,"/",$currentTask.Name,"-",$version,'-linux-amd64')
+                            $Source0 = $Source0 -ireplace $replace,$replacenew
                             $urlhealth = urlhealth($Source0)
                             if ($urlhealth -ne "200")
                             {
-                                # check with /releases/download/v{name}/{name}-{version}
                                 $Source0=$Source0Save
-                                $replace=[System.String]::Concat(('/archive/'),$_.Name,"-",$version)
-                                $replacenew=[System.String]::Concat(('/releases/download/v'),$version,"/",$_.Name,"-",$version,'-linux-amd64')
-                                $Source0 = $Source0 -ireplace $replace,$replacenew
-                                $urlhealth = urlhealth($Source0)
-                                if ($urlhealth -ne "200")
-                                {
-                                    $Source0=$Source0Save
-                                }
                             }
                         }
                     }
-                    elseif (($Source0 -ilike '*/releases/download/*') -and ($Source0 -notlike '*/refs/tags/*'))
+                }
+                elseif (($Source0 -ilike '*/releases/download/*') -and ($Source0 -notlike '*/refs/tags/*'))
+                {
+                    $Source0=$Source0Save
+                    $replace=[System.String]::Concat(('/releases/download/'),$currentTask.Name,"-",$version,"/",$currentTask.Name,"-",$version)
+                    $replacenew=[System.String]::Concat(('/archive/refs/tags/'),$version)
+                    $Source0 = $Source0 -ireplace $replace,$replacenew
+                    $urlhealth = urlhealth($Source0)
+                    if ($urlhealth -ne "200")
                     {
+                        # check without naming but with a 'v' before version
                         $Source0=$Source0Save
-                        $replace=[System.String]::Concat(('/releases/download/'),$_.Name,"-",$version,"/",$_.Name,"-",$version)
+                        $replace=[System.String]::Concat(('/releases/download/'),$version,"/",$currentTask.Name,"-",$version)
                         $replacenew=[System.String]::Concat(('/archive/refs/tags/'),$version)
                         $Source0 = $Source0 -ireplace $replace,$replacenew
                         $urlhealth = urlhealth($Source0)
                         if ($urlhealth -ne "200")
                         {
-                            # check without naming but with a 'v' before version
                             $Source0=$Source0Save
-                            $replace=[System.String]::Concat(('/releases/download/'),$version,"/",$_.Name,"-",$version)
-                            $replacenew=[System.String]::Concat(('/archive/refs/tags/'),$version)
+                            $replace=[System.String]::Concat(('/releases/download/'),$version,"/",$currentTask.Name,"-",$version)
+                            $replacenew=[System.String]::Concat(('/archive/refs/tags/v'),$version)
                             $Source0 = $Source0 -ireplace $replace,$replacenew
                             $urlhealth = urlhealth($Source0)
                             if ($urlhealth -ne "200")
                             {
                                 $Source0=$Source0Save
-                                $replace=[System.String]::Concat(('/releases/download/'),$version,"/",$_.Name,"-",$version)
-                                $replacenew=[System.String]::Concat(('/archive/refs/tags/v'),$version)
-                                $Source0 = $Source0 -ireplace $replace,$replacenew
-                                $urlhealth = urlhealth($Source0)
-                                if ($urlhealth -ne "200")
-                                {
-                                    $Source0=$Source0Save
-                                }
                             }
                         }
                     }
-                    else
+                }
+                else
+                {
+                    $Source0=$Source0Save
+                    $replace=[System.String]::Concat($currentTask.Name,"-",$version)
+                    $replacenew=[System.String]::Concat(('/archive/refs/tags/v'),$version)
+                    $Source0 = $Source0 -ireplace $replace,$replacenew
+                    $urlhealth = urlhealth($Source0)
+                    if ($urlhealth -ne "200")
                     {
                         $Source0=$Source0Save
-                        $replace=[System.String]::Concat($_.Name,"-",$version)
-                        $replacenew=[System.String]::Concat(('/archive/refs/tags/v'),$version)
+                        $replace=[System.String]::Concat($currentTask.Name,"-",$version)
+                        $replacenew=[System.String]::Concat(('/archive/refs/tags/'),$version)
                         $Source0 = $Source0 -ireplace $replace,$replacenew
                         $urlhealth = urlhealth($Source0)
                         if ($urlhealth -ne "200")
                         {
                             $Source0=$Source0Save
-                            $replace=[System.String]::Concat($_.Name,"-",$version)
-                            $replacenew=[System.String]::Concat(('/archive/refs/tags/'),$version)
-                            $Source0 = $Source0 -ireplace $replace,$replacenew
-                            $urlhealth = urlhealth($Source0)
-                            if ($urlhealth -ne "200")
-                            {
-                                $Source0=$Source0Save
-                            }
                         }
                     }
                 }
-                if ($urlhealth -ne "200")
-                {
-                    $urlhealth = urlhealth($Source0)
-                }
+            }
+            if ($urlhealth -ne "200")
+            {
+                $urlhealth = urlhealth($Source0)
             }
         }
+    }
 
 
-        $SourceTagURL=""        
-        $replace=@()
-        $NameLatest=""
-        $UpdateDownloadName=""
+    $SourceTagURL=""
+    $replace=@()
+    $NameLatest=""
+    $UpdateDownloadName=""
 
-        
-        # Check UpdateAvailable by github tags detection
-        if ($Source0 -ilike '*github.com*')
+
+    # Check UpdateAvailable by github tags detection
+    if ($Source0 -ilike '*github.com*')
+    {
+        # Autogenerated SourceTagURL from Source0
+        $TmpSource=$Source0 -ireplace 'https://github.com',""
+        $TmpSource=$TmpSource -ireplace 'https://www.github.com',""
+        $TmpSource=$TmpSource -ireplace 'http://github.com',""
+        $TmpSource=$TmpSource -ireplace 'http://www.github.com',""
+        $TmpSource=$TmpSource -ireplace '/archive/refs/tags',""
+        $SourceTagURLArray=($TmpSource).split("/")
+        if ($SourceTagURLArray.length -gt 1)
         {
-            # Autogenerated SourceTagURL from Source0
-            $TmpSource=$Source0 -ireplace 'https://github.com',""
-            $TmpSource=$TmpSource -ireplace 'https://www.github.com',""
-            $TmpSource=$TmpSource -ireplace 'http://github.com',""
-            $TmpSource=$TmpSource -ireplace 'http://www.github.com',""
-            $TmpSource=$TmpSource -ireplace '/archive/refs/tags',""
-            $SourceTagURLArray=($TmpSource).split("/")
-            if ($SourceTagURLArray.length -gt 1)
+            $SourceTagURL="https://api.github.com/repos" + "/" + $SourceTagURLArray[1] + "/" + $SourceTagURLArray[2] + "/releases"
+        } else {break}
+
+        # pre parse
+        switch($currentTask.spec)
+        {
+            "c-rest-engine.spec" {$SourceTagURL="https://api.github.com/repos/vmware/c-rest-engine/tags"; break }
+            "calico-bird.spec" {$SourceTagURL="https://api.github.com/repos/projectcalico/bird/tags"; break}
+            "calico-k8s-policy.spec" {$SourceTagURL="https://api.github.com/repos/projectcalico/k8s-policy/tags"; break}
+            "cpulimit.spec" {$SourceTagURL="https://api.github.com/repos/opsengine/cpulimit/tags"; break}
+            "dbus.spec" {$SourceTagURL="https://api.github.com/repos/dbus/dbus/tags"; break}
+            "docker-19.03.spec" {$SourceTagURL="https://api.github.com/repos/docker/docker-ce/tags"; break}
+            "go.spec" {$SourceTagURL="https://api.github.com/repos/golang/go/tags"; break}
+            "haproxy.spec" {$SourceTagURL="https://api.github.com/repos/haproxy/haproxy/tags"; $replace+="v"; break}
+            "hawkey.spec" {$SourceTagURL="https://api.github.com/repos/rpm-software-management/hawkey/tags"; break}
+            "ipmitool.spec" {$SourceTagURL="https://api.github.com/repos/ipmitool/ipmitool/tags"; break}
+            "ipxe.spec" {$SourceTagURL="https://api.github.com/repos/ipxe/ipxe/tags"; break}
+            "kube-controllers.spec" {$SourceTagURL="https://api.github.com/repos/projectcalico/kube-controllers/tags"; break}
+            "libcgroup.spec" {$SourceTagURL="https://api.github.com/repos/libcgroup/libcgroup/tags"; break}
+            "libglvnd.spec" {$SourceTagURL="https://api.github.com/repos/nvidia/libglvnd/tags"; break}
+            "motd.spec" {$SourceTagURL="https://api.github.com/repos/rtnpro/motdgen/tags"; break}
+            "netmgmt.spec" {$SourceTagURL="https://api.github.com/repos/vmware/photonos-netmgr/tags"; break}
+            "openldap.spec" {$SourceTagURL="https://api.github.com/repos/openldap/openldap/tags"; break}
+            "openresty.spec" {$SourceTagURL="https://api.github.com/repos/openresty/openresty/tags"; break}
+            "openssh.spec" {$SourceTagURL="https://api.github.com/repos/openssh/openssh-portable/tags"; break}
+            "pcstat.spec" {$SourceTagURL="https://api.github.com/repos/tobert/pcstat/tags"; break}
+            "python-boto3.spec" {$SourceTagURL="https://api.github.com/repos/boto/boto3/tags"; break}
+            "python-decorator.spec" {$SourceTagURL="https://github.com/micheles/decorator/tags"; break}
+            "python-etcd.spec" {$SourceTagURL="https://api.github.com/repos/jplana/python-etcd/tags"; break}
+            "python-gevent.spec" {$SourceTagURL="https://api.github.com/repos/gevent/gevent/tags"; break}
+            "python-hypothesis.spec" {$SourceTagURL="https://github.com/HypothesisWorks/hypothesis/tags/"; break}
+            "python3-pyroute2.spec" {$SourceTagURL="https://api.github.com/repos/svinota/pyroute2/tags"; break}
+            "python-pyserial.spec" {$SourceTagURL="https://api.github.com/repos/pyserial/pyserial/tags"; break}
+            "python-setproctitle.spec" {$SourceTagURL="https://github.com/dvarrazzo/py-setproctitle/tags"; $replace+="version-"; break}
+            "python-zmq.spec" {$SourceTagURL="https://api.github.com/repos/zeromq/pyzmq/tags"; break}
+            "rpm.spec" {$SourceTagURL="https://api.github.com/repos/rpm-software-management/rpm/tags"; break}
+            "salt3.spec" {$SourceTagURL="https://api.github.com/repos/saltstack/salt/tags"; break}
+            "selinux-policy.spec" {$SourceTagURL="https://github.com/fedora-selinux/selinux-policy/tags"; break}
+        }
+
+        try{
+            $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
+            $headers.Add("Authorization", "token $accessToken")
+
+            if ($SourceTagURL -ilike '*/releases*')
             {
-                $SourceTagURL="https://api.github.com/repos" + "/" + $SourceTagURLArray[1] + "/" + $SourceTagURLArray[2] + "/releases"
-            } else {break}
-
-            # pre parse
-            switch($_.spec)
-            {
-                "c-rest-engine.spec" {$SourceTagURL="https://api.github.com/repos/vmware/c-rest-engine/tags"; break }
-                "calico-bird.spec" {$SourceTagURL="https://api.github.com/repos/projectcalico/bird/tags"; break}
-                "calico-k8s-policy.spec" {$SourceTagURL="https://api.github.com/repos/projectcalico/k8s-policy/tags"; break}
-                "cpulimit.spec" {$SourceTagURL="https://api.github.com/repos/opsengine/cpulimit/tags"; break}
-                "dbus.spec" {$SourceTagURL="https://api.github.com/repos/dbus/dbus/tags"; break}
-                "docker-19.03.spec" {$SourceTagURL="https://api.github.com/repos/docker/docker-ce/tags"; break}
-                "go.spec" {$SourceTagURL="https://api.github.com/repos/golang/go/tags"; break}
-                "haproxy.spec" {$SourceTagURL="https://api.github.com/repos/haproxy/haproxy/tags"; $replace+="v"; break}
-                "hawkey.spec" {$SourceTagURL="https://api.github.com/repos/rpm-software-management/hawkey/tags"; break}
-                "ipmitool.spec" {$SourceTagURL="https://api.github.com/repos/ipmitool/ipmitool/tags"; break}
-                "ipxe.spec" {$SourceTagURL="https://api.github.com/repos/ipxe/ipxe/tags"; break}
-                "kube-controllers.spec" {$SourceTagURL="https://api.github.com/repos/projectcalico/kube-controllers/tags"; break}
-                "libcgroup.spec" {$SourceTagURL="https://api.github.com/repos/libcgroup/libcgroup/tags"; break}
-                "libglvnd.spec" {$SourceTagURL="https://api.github.com/repos/nvidia/libglvnd/tags"; break}
-                "motd.spec" {$SourceTagURL="https://api.github.com/repos/rtnpro/motdgen/tags"; break}
-                "netmgmt.spec" {$SourceTagURL="https://api.github.com/repos/vmware/photonos-netmgr/tags"; break}
-                "openldap.spec" {$SourceTagURL="https://api.github.com/repos/openldap/openldap/tags"; break}
-                "openresty.spec" {$SourceTagURL="https://api.github.com/repos/openresty/openresty/tags"; break}
-                "openssh.spec" {$SourceTagURL="https://api.github.com/repos/openssh/openssh-portable/tags"; break}
-                "pcstat.spec" {$SourceTagURL="https://api.github.com/repos/tobert/pcstat/tags"; break}
-                "python-boto3.spec" {$SourceTagURL="https://api.github.com/repos/boto/boto3/tags"; break}
-                "python-decorator.spec" {$SourceTagURL="https://github.com/micheles/decorator/tags"; break}
-                "python-etcd.spec" {$SourceTagURL="https://api.github.com/repos/jplana/python-etcd/tags"; break}
-                "python-gevent.spec" {$SourceTagURL="https://api.github.com/repos/gevent/gevent/tags"; break}
-                "python-hypothesis.spec" {$SourceTagURL="https://github.com/HypothesisWorks/hypothesis/tags/"; break}
-                "python3-pyroute2.spec" {$SourceTagURL="https://api.github.com/repos/svinota/pyroute2/tags"; break}
-                "python-pyserial.spec" {$SourceTagURL="https://api.github.com/repos/pyserial/pyserial/tags"; break}
-                "python-setproctitle.spec" {$SourceTagURL="https://github.com/dvarrazzo/py-setproctitle/tags"; $replace+="version-"; break}
-                "python-zmq.spec" {$SourceTagURL="https://api.github.com/repos/zeromq/pyzmq/tags"; break}
-                "rpm.spec" {$SourceTagURL="https://api.github.com/repos/rpm-software-management/rpm/tags"; break}
-                "salt3.spec" {$SourceTagURL="https://api.github.com/repos/saltstack/salt/tags"; break}
-                "selinux-policy.spec" {$SourceTagURL="https://github.com/fedora-selinux/selinux-policy/tags"; break}
-            }
-
-            try{
-                $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
-                $headers.Add("Authorization", "token $accessToken")
-
-                if ($SourceTagURL -ilike '*/releases*')
+                $Names = (invoke-webrequest $SourceTagURL -headers $headers -TimeoutSec 10 | convertfrom-json).tag_name
+                if ([string]::IsNullOrEmpty($Names))
                 {
-                    $Names = (invoke-webrequest $SourceTagURL -headers $headers | convertfrom-json).tag_name
+                    $Names = (invoke-webrequest $SourceTagURL -headers $headers -TimeoutSec 10 | convertfrom-json).name
                     if ([string]::IsNullOrEmpty($Names))
                     {
-                        $Names = (invoke-webrequest $SourceTagURL -headers $headers | convertfrom-json).name
+                        $Names = ((invoke-webrequest $SourceTagURL -headers $headers -TimeoutSec 10 | convertfrom-json).assets).name
                         if ([string]::IsNullOrEmpty($Names))
                         {
-                            $Names = ((invoke-webrequest $SourceTagURL -headers $headers | convertfrom-json).assets).name
-                            if ([string]::IsNullOrEmpty($Names))
-                            {
-                                $SourceTagURL=$SourceTagURL -ireplace "/releases","/tags"
-                            }
+                            $SourceTagURL=$SourceTagURL -ireplace "/releases","/tags"
                         }
                     }
                 }
-                if ($SourceTagURL -ilike '*/tags*')
-                {
-                    $i=0
-                    $lastpage=$false
-                    $Names=@()
-                    do
-                    {
-                        $i++
-                        try
-                        {
-                            $tmpUrl=[System.String]::Concat($SourceTagURL,"?page=",$i)
-                            $tmpdata = (invoke-restmethod -uri $tmpUrl -usebasicparsing -headers @{Authorization = "Bearer $accessToken"}).name
-                            if ([string]::IsNullOrEmpty($tmpdata))
-                            { $lastpage=$true }
-                            else
-                            { $Names += $tmpdata}
-                        }
-                        catch
-                        {
-                        $lastpage=$true
-                        }
-                    }
-                    until ($lastpage -eq $true)
-
-                    if ([string]::IsNullOrEmpty($Names))
-                    {
-                        $Names = ((invoke-restmethod -uri $tmpUrl -usebasicparsing -headers @{Authorization = "Bearer $accessToken"}) -split "href") -split "rel="
-                        $Names = $Names | foreach-object { if (($_ | select-string -pattern '/archive/refs/tags' -simplematch)) {$_}}
-                        $Names = ($Names | foreach-object { split-path $_ -leaf }) -ireplace '" ',""
-                    }
-
-                }
-
-                # remove ending
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.whl' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.asc' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.dmg' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.zip' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.exe' -simplematch)) {$_}}
-                $Names = $Names -replace ".tar.gz",""
-                $Names = $Names -replace ".tar.bz2",""
-                $Names = $Names -replace ".tar.xz",""
- 
-                # post parse
-                switch($_.spec)
-                {
-                "aide.spec" {$replace +="cs.tut.fi.import"; $replace+=".release"; break}
-                "amdvlk.spec" {$replace +="v-"; break}
-                "apache-ant.spec" {$replace +="rel/"; break}
-                "apache-maven.spec" {$replace +="workspace-v0"; $replace +="maven-"; break}
-                "apache-tomcat.spec"
-                {
-                    if ($outputfile -ilike '*-3.0_*') { $Names = $Names | foreach-object { if ($_ -like '8.*') {$_}}}
-                    elseif ($outputfile -ilike '*-4.0_*') { $Names = $Names | foreach-object { if ($_ -like '8.*') {$_}}}
-                    elseif ($outputfile -ilike '*-5.0_*') { $Names = $Names | foreach-object { if ($_ -like '10.*') {$_}}}
-                }
-                "at-spi2-core.spec" {$replace +="AT_SPI2_CORE_3_6_3"; $replace +="AT_SPI2_CORE_"; break}
-                "atk.spec"
-                {
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'gnome' -simplematch)) {$_}}
-                    $replace +="GTK_ALL_"; $replace +="EA_"; $replace +="GAIL_"
-                    break
-                }
-                "automake.spec" { $Names = $Names -ireplace "-","."; break }
-                "bcc.spec" {$replace +="src-with-submodule.tar.gz"; break}
-                "bindutils.spec" {$replace +="wpk-get-rid-of-up-downgrades-"; $replace +="noadaptive"; $replace +="more-adaptive"; $replace +="adaptive"; break}
-                "bpftrace.spec" {$replace +="binary.tools.man-bundle.tar.xz"; break}
-                "c-ares.spec" {$replace +="cares-"; break}
-                "calico-cni.spec" {$replace +="calico-amd64"; $replace +="calico-arm64"; break}
-                "calico-confd.spec" {$replace +="-darwin-amd64"; $replace +="confd-"; break}
-                "chrpath.spec" {$replace +="RELEASE_"; break}
-                "clang.spec" {$replace +="llvmorg-"; break }
-                "cloud-init.spec" {$replace +="ubuntu-";$replace +="ubuntu/"; break}
-                "colm.spec" {$replace +="colm-barracuda-v5"; $replace +="colm-barracuda-v4"; $replace +="colm-barracuda-v3"; $replace +="colm-barracuda-v2"; $replace +="colm-barracuda-v1"; $replace +="colm-"; break}
-                "cni.spec"
-                {
-                    # $Names = $Names | foreach-object { if ($_ | select-string -pattern 'cni-plugins-linux-amd64-' -simplematch) {$_}}
-                    # $replace +="cni-plugins-linux-amd64-"
-                    $replace +="v"
-                    break
-                }
-                "docker-20.10.spec" {$Names = $Names | foreach-object { if (!($_ | select-string -pattern 'xdocs-v' -simplematch)) {$_}}; break}
-                "dracut.spec" {$replace +="RHEL-"; break}
-                "ecdsa.spec" {$replace +="python-ecdsa-"; break}
-                "efibootmgr.spec" {$replace +="rhel-";$replace +="Revision_"; $replace+="release-tag"; $replace +="-branchpoint"; break}
-                "erlang.spec" {$replace +="R16B"; $replace +="OTP-"; $replace +="erl_1211-bp"; break}
-                "frr.spec" {$replace +="reindent-master-";$replace +="reindent-"; $replace +="before"; $replace +="after"; break}
-                "fribidi.spec" {$replace +="INIT"; break}
-                "falco.spec" { $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'agent/' -simplematch)) {$_}} ; break}
-                "fuse-overlayfs.spec.spec" {$replace +="aarch64"; break}
-                "glib.spec"
-                {
-                    $replace +="start"; $replace +="PRE_CLEANUP"; $replace +="GNOME_PRINT_"
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'GTK_' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'gobject_' -simplematch)) {$_}}
-                    break
-                }
-                "glibmm.spec"
-                {
-                    $replace +="start"
-                    break
-                }
-                "glib-networking.spec" {$replace +="glib-"; break}
-                "glslang.spec" {
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'untagged-' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'vulkan-' -simplematch)) {$_}}
-                    $replace +="master-tot";$replace +="main-tot";$replace +="sdk-"; $replace +="SDK-candidate-26-Jul-2020";$replace+="Overload400-PrecQual"
-                    $replace +="SDK-candidate";$replace+="SDK-candidate-2";$replace+="GL_EXT_shader_subgroup_extended_types-2016-05-10";$replace+="SPIRV99"
-                    break
-                }
-                "gnome-common.spec" {$replace +="version_"; $replace +="v7status"; $replace +="update_for_spell_branch_1"; $replace +="twodaysago"; $replace +="toshok-libmimedir-base"; $replace +="threedaysago"; break}
-                "gobject-introspection.spec" {$replace +="INITIAL_RELEASE"; $replace +="GOBJECT_INTROSPECTION_"; break}
-                "go.spec"
-                {
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'weekly' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'release' -simplematch)) {$_}}
-                    break
-                }
-                "gstreamer.spec" {$replace +="sharp-"; break}
-                "gtk3.spec" {$replace +="VIRTUAL_ATOM-22-06-"; $replace +="GTK_ALL_"; $replace +="TRISTAN_NATIVE_LAYOUT_START"; $replace +="START"; break}
-                "gtk-doc.spec" {$replace +="GTK_DOC_"; $replace +="start"; break}
-                "httpd.spec"
-                {
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'apache' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'mpm-' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'djg' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'dg_' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'wrowe' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'striker' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'PCRE_' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'MOD_SSL_' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'HTTPD_LDAP_' -simplematch)) {$_}}
-                    break
-                }
-                "httpd-mod_jk.spec"
-                {
-                    $replace +="JK_"
-                    break
-                }
-                "icu.spec"
-                {
-                    $Names = $Names | foreach-object { if (($_ | select-string -pattern 'release-' -simplematch)) {$_ -ireplace 'release-',""}}
-                    $Names = $Names | foreach-object { $_ -ireplace '-',"."}
-                    break
-                }
-                "inih.spec" {$replace +="r"; break}
-                "iperf.spec" {$replace +="trunk"; $replace +="iperf3"; break}
-                "iputils.spec" {$replace +="s"; break}
-                "initscripts.spec" {$replace +="upstart-"; $replace +="unstable"; break}
-                "json-glib.spec" {$replace +="json-glib-"; break}
-                "jsoncpp.spec" {$replace +="svn-release-"; $replace +="svn-import"; break}
-                "krb5.spec" {$replace+="-final"; break}
-                "kubernetes-dns.spec" {$replace +="test"; break}
-                "kubernetes-metrics-server.spec" {$replace +="metrics-ser-helm-chart-3.8.3"; break}
-                "libevent.spec" {$replace +="-stable"; break}
-                "libgd.spec" {$replace +="gd-"; break }
-                "libev.spec" {$replace +="rel-"; break}
-                "libnl.spec" {$replace +="libnl"; break}
-                "libpsl.spec" {$replace +="libpsl-"; $replace +="debian/"; break}
-                "librepo.spec" {$replace +="librepo-"; break}
-                "libselinux.spec" {$replace +="sepolgen-"; $replace +="checkpolicy-3.5"; break}
-                "libsolv.spec" {$replace +="BASE-SuSE-Code-13_"; $replace +="BASE-SuSE-Code-12_3-Branch"; $replace +="BASE-SuSE-Code-12_2-Branch"; $replace +="BASE-SuSE-Code-12_1-Branch"; $replace +="1-Branch"; break}
-                "libsoup.spec"
-                {
-                    $replace +="SOUP_"; $replace +="libsoup-pre214-branch-base"; $replace +="libsoup-hacking-branch-base"; $replace +="LIB"; $replace +="soup-2-0-branch-base"
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'gnome-' -simplematch)) {$_}}
-                    break
-                }
-                "libX11.spec" { $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'xf86-' -simplematch)) {$_}} ; break}
-                "libXinerama.spec" {$replace +="XORG-7_1"; break}
-                "libxml2.spec"
-                {
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'LIBXML2' -simplematch)) {$_}}
-                    break
-                }
-                "libxslt.spec" {$replace +="LIXSLT_"; break}
-                "linux-PAM.spec" {$replace +="pam_unix_refactor"; break}
-                "lldb.spec"
-                {
-                    $Names = $Names | foreach-object {$_.tolower().replace("llvmorg-","")}
-                    $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
-                    $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
-                    $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
-                    $SourceTagURL=[System.String]::Concat("https://github.com/llvm/llvm-project/releases/download/llvmorg-",$NameLatest,"/lldb-",$NameLatest,".src.tar.xz")
-                    $rc = urlhealth -checkurl $SourceTagURL
-                    if ($rc -eq "200") {$Names = $NameLatest}
-                    break
-                }
-                "llvm.spec"
-                {
-                    $Names = $Names | foreach-object {$_.tolower().replace("llvmorg-","")}
-                    $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
-                    $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
-                    $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
-                    $SourceTagURL=[System.String]::Concat("https://github.com/llvm/llvm-project/releases/download/llvmorg-",$NameLatest,"/llvm-",$NameLatest,".src.tar.xz")
-                    $rc = urlhealth -checkurl $SourceTagURL
-                    if ($rc -eq "200") {$Names = $NameLatest}
-                    break
-                }
-                "lm-sensors.spec"
-                {
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '-' -simplematch) {$_ -ireplace '-',"."} else {$_}}
-                    $replace +="i2c.2.8.km2"; $replace+="v."
-                    break
-                }
-                "lshw.spec"
-                {
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'A.' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'T.' -simplematch)) {$_}}
-                    $Names = $Names -ireplace "B.","9999" # tag detection for later
-                }
-                "lz4.spec" { $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'r' -simplematch)) {$_}} ; break}
-                "mariadb.spec"
-                {
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'toku' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'serg-' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'percona-' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'mysql-' -simplematch)) {$_}}
-                    break
-                }
-                "mc.spec" {$replace +="mc-"; break}
-                "mkinitcpio.spec"
-                {
-                    $SourceTagURL="https://github.com/archlinux/mkinitcpio/tags"
-                    $Names = (invoke-webrequest $SourceTagURL -headers $headers).links.href
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '.tar.' -simplematch) {$_}}
-                    $Names = $Names -replace "/archlinux/mkinitcpio/archive/refs/tags/v",""
-                    $Names = $Names -replace ".tar.gz",""
-                    break
-                }
-                "ModemManager.spec" {$replace +="-dev"; break}
-                "mysql.spec" {$replace +="mysql-cluster-"; break}
-                "network-config-manager.spec"
-                {
-                    $Names = $Names -ireplace ".a",".0.9991"
-                    $Names = $Names -ireplace ".b",".0.9992"
-                    $Names = $Names -ireplace ".c",".0.9993"
-                    break
-                }
-                "newt.spec" {$replace +="r"; $Names = $Names -replace "-","."; break}
-                "ninja-build.spec"
-                {
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'release-' -simplematch)) {$_}}
-                    break
-                }
-                "openjdk8.spec"
-                {
-                    $Names = $Names | foreach-object { if (($_ | select-string -pattern '-ga' -simplematch)) {$_}}
-                    $replace +="jdk8u"
-                    $replace +="-ga"
-                }
-                "openjdk11.spec"
-                {
-                    $Names = $Names | foreach-object { if (($_ | select-string -pattern '-ga' -simplematch)) {$_}}
-                    $replace +="jdk-"
-                    $replace +="-ga"
-                }
-                "openjdk17.spec"
-                {
-                    $Names = $Names | foreach-object { if (($_ | select-string -pattern '-ga' -simplematch)) {$_}}
-                    $replace +="jdk-"
-                    $replace +="-ga"
-                }
-                "openldap.spec" {$replace +="UTBM_"; $replace +="URE_"; $replace +="UMICH_LDAP_3_3"; $replace +="UCDATA_"; $replace +="TWEB_OL_BASE"; $replace +="SLAPD_BACK_LDAP"; $replace +="PHP3_TOOL_0_0"; $replace +="OPENLDAP_REL_ENG_"; $replace +="LMDB_"; break}
-                "open-vm-tools.spec" {$replace +="stable-"; break}
-                "pandoc.spec" {$replace +="pandoc-server-"; $replace +="pandoc-lua-engine-"; $replace +="pandoc-cli-0.1"; $replace +="new1.16deb"; $replace +="list"; break}
-                "pango.spec" {$replace +="tical-branch-point"; break}
-                "perl-Config-IniFiles.spec" {$replace +="releases/"; break}
-                "popt.spec" {$replace +="-release"; break}
-                "powershell.spec" {$replace +="hashes.sha256";break}
-                "pycurl.spec" {$replace +="REL_"; break}
-                "python-babel.spec" {$replace +="dev-2a51c9b95d06"; break} 
-                "python-cassandra-driver.spec" {$replace +="3.9-doc-backports-from-3.1"; $replace +="-backport-prepared-slack"; break}
-                "python-decorator.spec"
-                {
-                    $Names = (invoke-webrequest $SourceTagURL -headers $headers).links.href
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '.tar.' -simplematch) {$_}}
-                    $Names = $Names -replace "/micheles/decorator/archive/refs/tags/",""
-                    $Names = $Names -replace ".tar.gz",""
-                    break
-                }
-                "python-ethtool.spec" {$replace +="libnl-1-v0.6"; break}
-                "python-fuse.spec" {$replace +="start"; break}
-                "python-hatchling.spec"
-                {
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern 'hatchling-' -simplematch) {$_}}
-                    $replace +="hatchling-v"
-                }
-                "python-hypothesis.spec"
-                {
-                    $Names = (invoke-webrequest $SourceTagURL -headers $headers).links.href
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '.tar.' -simplematch) {$_}}
-                    $Names = $Names -replace "/HypothesisWorks/hypothesis/archive/refs/tags/hypothesis-python-",""
-                    $Names = $Names -replace ".tar.gz",""
-                    break
-                }
-                "python-incremental.spec" {$replace +="incremental-"; break}
-                "python-lxml.spec" {$replace +="lxml-"; break}
-                "python-mako.spec" {$replace +="rel_"; break}
-                "python-more-itertools.spec" {$replace +="v"; break}
-                "python-networkx.spec" {$replace += "python-networkx-"; $replace += "networkx-"; break }
-                "python-numpy.spec" {$replace +="with_maskna"; break}
-                "python-pyparsing.spec" {$replace +="pyparsing_"; break}
-                "python-setproctitle.spec" {$replace +="version-"; break}
-                "python-sqlalchemy.spec" {$replace +="rel_"; break}
-                "python-twisted.spec" {$replace += "python-"; $replace += "twisted-";break}
-                "python-webob.spec" {$replace +="sprint-coverage"; break}
-                "python-pytz.spec" {$replace +="release_"; break}
-                "rabbitmq3.10.spec" {
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern 'v3.10.' -simplematch) {$_}}
-                    break
-                }
-                "ragel.spec" {$replace +="ragel-pre-colm"; $replace +="ragel-barracuda-v5"; $replace +="barracuda-v4"; $replace +="barracuda-v3"; $replace +="barracuda-v2"; $replace +="barracuda-v1"; break}
-                "redis.spec" {$replace +="with-deprecated-diskstore"; $replace +="vm-playpen"; $replace +="twitter-20100825"; $replace +="twitter-20100804"; break}
-                "rpm.spec" {$replace +="rpm-";$replace +="-release"; break}
-                "s3fs-fuse.spec" {$replace +="Pre-v"; break}
-                "salt3.spec"  {$Names = $Names -ireplace "-","."; $replace +="Pre.v"; break}
-                "selinux-policy.spec"
-                {
-                    $Names = (invoke-webrequest $SourceTagURL -headers $headers).links.href
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '.tar.' -simplematch) {$_}}
-                    $Names = $Names -replace "/fedora-selinux/selinux-policy/archive/refs/tags/v",""
-                    $Names = $Names -replace ".tar.gz",""
-                    $replace +="y2023"
-                    break
-                }
-                "spirv-tools.spec" {$replace +="sdk-"; break}
-                "sysdig.spec" {
-                    $replace +="sysdig-inspect/"; $replace +="simpledriver-auto-dragent-20170906"; $replace +="s20171003"
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'falco/' -simplematch)) {$_}}
-                    break
-                }
-                "systemd.spec"
-                {
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'systemd-v' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'udev-' -simplematch)) {$_}}
-                    $Names = $Names -ireplace "v",""
-                    $Names = $Names -ireplace "-","."
-                    $Names = $Names | foreach-object { try{if ([int]$_ -gt 173) {$_}}catch{}}
-                    break
-                }
-                "sqlite.spec" {$replace +="version-"; break}
-                "squashfs-tools.spec" {$replace +="CVE-2021-41072"; break}
-                "uwsgi.spec" {$replace +="no_server_mode"; break}
-                "vulkan-headers.spec" {$replace +="vksc"; break}
-                "vulkan-loader.spec" {$replace +="windows-rt-"; break}
-                "vulkan-tools.spec" {$replace +="sdk-"; break}
-                "wavefront-proxy.spec" {$replace +="wavefront-";$replace +="proxy-"; break}
-                "xinetd.spec"
-                {
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '-' -simplematch) {$_ -ireplace '-',"."} else {$_}}
-                    $replace +="xinetd."
-                    $replace +="20030122"
-                    break
-                }
-                "xxhash.spec"
-                {
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'r' -simplematch)) {$_}}
-                    break
-                }
-                "zsh.spec" {$Names = $Names | foreach-object { if (!($_ | select-string -pattern '-test' -simplematch)) {$_}} ; break}
-                "zstd.spec" {$replace +="zstd"; break}
-                Default {}
-                }
-
-                    $replace += $_.Name + "."
-                    $replace += $_.Name + "-"
-                    $replace += $_.Name + "_"
-                    $replace += $_.Name
-                    $replace += "ver"
-                    $replace += "release_"
-                    $replace += "release-"
-                    $replace += "release"
-                    $i = 0; do { $Names = $Names | foreach-object { $_.tolower().replace(($replace[$i]).tolower(), "") }; $i++ } while ($i -ne $replace.count - 1)
-
-                    # $replace | foreach { $Names = $Names -replace $_,""}
-                    $Names = $Names.Where({ $null -ne $_ })
-                    $Names = $Names.Where({ "" -ne $_ })
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^rel/' -simplematch) { $_ -ireplace '^rel/', "" } else { $_ } }
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^v' -simplematch) { $_ -ireplace '^v', "" } else { $_ } }
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^V' -simplematch) { $_ -ireplace '^V', "" } else { $_ } }
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^r' -simplematch) { $_ -ireplace '^r', "" } else { $_ } }
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^R' -simplematch) { $_ -ireplace '^R', "" } else { $_ } }
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '_' -simplematch) { $_ -ireplace '_', "." } else { $_ } }
-
-                    # remove versions developer, release candidates, alpha versions, preview versions and versions without numbers
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'candidate' -simplematch)) { $_ } }
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-alpha' -simplematch)) { $_ } }
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-beta' -simplematch)) { $_ } }
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.beta' -simplematch)) { $_ } }
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.0' -simplematch)) { $_ } }
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.1' -simplematch)) { $_ } }
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.2' -simplematch)) { $_ } }
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.3' -simplematch)) { $_ } }
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.4' -simplematch)) { $_ } }
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc1' -simplematch)) { $_ } }
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc2' -simplematch)) { $_ } }
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc3' -simplematch)) { $_ } }
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc4' -simplematch)) { $_ } }
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-preview.' -simplematch)) { $_ } }
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-dev.' -simplematch)) { $_ } }
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-pre1' -simplematch)) { $_ } }
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.pre1' -simplematch)) { $_ } }
-
-                    $Names = $Names -ireplace "v", ""
-
-                    if ($_.spec -notlike "amdvlk.spec") {
-                        $Names = $Names | foreach-object { if ($_ -match '\d') { $_ } }
-                        $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) { $_ } }
-                    }
-
-                    if ($Names -ilike '*.*') {
-                        $NameLatest = ($Names | foreach-object { $tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) { $tmpversion } else { $tag } } | sort-object | select-object -last 1).ToString()
-                    }
-                    else {
-                        $NameLatest = ($Names | convertfrom-json | sort-object | select-object -last 1).ToString()
-                    }
-                    if (!($Names.contains($NameLatest))) { $NameLatest = ($Names | sort-object | select-object -last 1).ToString() }
             }
-            catch{$NameLatest=""}
-            if ($NameLatest -ne "")
+            if ($SourceTagURL -ilike '*/tags*')
             {
-                if ($_.spec -ilike 'lshw.spec') {$NameLatest = $NameLatest -replace "9999","B."}
-                elseif ($_.spec -ilike 'network-config-manager.spec')
+                $i=0
+                $lastpage=$false
+                $Names=@()
+                do
                 {
-                    $NameLatest = $NameLatest -replace ".0.9991",".a"
-                    $NameLatest = $NameLatest -replace ".0.9992",".b"
-                    $NameLatest = $NameLatest -replace ".0.9993",".c"
-                }
-                elseif (($NameLatest -ilike '*.*') -and ($version -ilike '*.*'))
-                {
+                    $i++
                     try
                     {
-                        if ([System.Version]$Version -lt [System.Version]$NameLatest) {$UpdateAvailable = $NameLatest}
-                        elseif ([System.Version]$Version -eq [System.Version]$NameLatest) {$UpdateAvailable = "(same version)" }
-                        else {$UpdateAvailable = "Warning: "+$currentfile.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
+                        $tmpUrl=[System.String]::Concat($SourceTagURL,"?page=",$i)
+                        $tmpdata = (invoke-restmethod -uri $tmpUrl -usebasicparsing -TimeoutSec 10 -headers @{Authorization = "Bearer $accessToken"}).name
+                        if ([string]::IsNullOrEmpty($tmpdata))
+                        { $lastpage=$true }
+                        else
+                        { $Names += $tmpdata}
                     }
-                    catch{}
+                    catch
+                    {
+                        $lastpage=$true
+                    }
                 }
-                if ($UpdateAvailable -eq "")
-                {
-                    if ($Version -lt $NameLatest) {$UpdateAvailable = $NameLatest}
-                    elseif ($Version -eq $NameLatest) {$UpdateAvailable = "(same version)" }
-                    else {$UpdateAvailable = "Warning: "+$currentfile.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
-                }
-            }
-        }
-        # Check UpdateAvailable by ftp.* and download.savannah.gnug.org tags detection
-        elseif (($Source0 -ilike '*ftp.*') -or ($Source0 -ilike '*/ftp/*') -or ($Source0 -ilike '*ftpmirror.*') -or ($Source0 -ilike '*download.savannah.gnu.org*'))
-        {
+                until ($lastpage -eq $true)
 
-            # ausnahmen
-            if (($_.spec -ilike 'mozjs.spec') -or ($_.spec -ilike 'mozjs60.spec'))
-            {
-                $SourceTagURL="https://ftp.mozilla.org/pub/firefox/releases/"
-                $Names = ((invoke-restmethod -uri $SourceTagURL -usebasicparsing) -split 'a href=') -split '>'
-                $Names = ($Names | foreach-object { if ($_ | select-string -pattern '</a' -simplematch) {$_}}) -replace '"',""
-                $Names = $Names -replace '/</a'
+                if ([string]::IsNullOrEmpty($Names))
+                {
+                    $Names = ((invoke-restmethod -uri $tmpUrl -usebasicparsing -TimeoutSec 10 -headers @{Authorization = "Bearer $accessToken"}) -split "href") -split "rel="
+                    $Names = $Names | foreach-object { if (($_ | select-string -pattern '/archive/refs/tags' -simplematch)) {$_}}
+                    $Names = ($Names | foreach-object { split-path $_ -leaf }) -ireplace '" ',""
+                }
 
-                if ($_.spec -ilike 'mozjs60.spec')
-                {
-                    $Names = $Names | foreach-object { if ($_ -match '60.') {$_}}
-                    $Names = $Names -replace "esr"
-                }
-                $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
-                $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
-                if ($Names -ilike '*.*')
-                {
-                    $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
-                }
-                else
-                {
-                    $NameLatest = ($Names | convertfrom-json | sort-object |select-object -last 1).ToString()
-                }
-                if ($_.spec -ilike 'mozjs60.spec') {$SourceTagURL=$SourceTagURL+$NameLatest+"esr/source/"}
-                else {$SourceTagURL=$SourceTagURL+$NameLatest+"/source/"}
             }
-            elseif ($_.spec -ilike 'nss.spec')
+
+            # remove ending
+            $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.whl' -simplematch)) {$_}}
+            $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.asc' -simplematch)) {$_}}
+            $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.dmg' -simplematch)) {$_}}
+            $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.zip' -simplematch)) {$_}}
+            $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.exe' -simplematch)) {$_}}
+            $Names = $Names -replace ".tar.gz",""
+            $Names = $Names -replace ".tar.bz2",""
+            $Names = $Names -replace ".tar.xz",""
+
+            # post parse
+            switch($currentTask.spec)
             {
-                $SourceTagURL="https://ftp.mozilla.org/pub/security/nss/releases/"
-                $Names = ((invoke-restmethod -uri $SourceTagURL -usebasicparsing) -split 'a href=') -split '>'
-                $Names = ($Names | foreach-object { if ($_ | select-string -pattern '</a' -simplematch) {$_}}) -replace '"',""
-                $Names = $Names -replace '/</a',""
-                $Names = $Names -replace "NSS_",""
-                $Names = $Names -replace "_RTM",""
-                $Names = $Names -replace "_","."
+            "aide.spec" {$replace +="cs.tut.fi.import"; $replace+=".release"; break}
+            "amdvlk.spec" {$replace +="v-"; break}
+            "apache-ant.spec" {$replace +="rel/"; break}
+            "apache-maven.spec" {$replace +="workspace-v0"; $replace +="maven-"; break}
+            "apache-tomcat.spec"
+            {
+                if ($outputfile -ilike '*-3.0_*') { $Names = $Names | foreach-object { if ($_ -like '8.*') {$_}}}
+                elseif ($outputfile -ilike '*-4.0_*') { $Names = $Names | foreach-object { if ($_ -like '8.*') {$_}}}
+                elseif ($outputfile -ilike '*-5.0_*') { $Names = $Names | foreach-object { if ($_ -like '10.*') {$_}}}
+            }
+            "at-spi2-core.spec" {$replace +="AT_SPI2_CORE_3_6_3"; $replace +="AT_SPI2_CORE_"; break}
+            "atk.spec"
+            {
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'gnome' -simplematch)) {$_}}
+                $replace +="GTK_ALL_"; $replace +="EA_"; $replace +="GAIL_"
+                break
+            }
+            "automake.spec" { $Names = $Names -ireplace "-","."; break }
+            "bcc.spec" {$replace +="src-with-submodule.tar.gz"; break}
+            "bindutils.spec" {$replace +="wpk-get-rid-of-up-downgrades-"; $replace +="noadaptive"; $replace +="more-adaptive"; $replace +="adaptive"; break}
+            "bpftrace.spec" {$replace +="binary.tools.man-bundle.tar.xz"; break}
+            "c-ares.spec" {$replace +="cares-"; break}
+            "calico-cni.spec" {$replace +="calico-amd64"; $replace +="calico-arm64"; break}
+            "calico-confd.spec" {$replace +="-darwin-amd64"; $replace +="confd-"; break}
+            "chrpath.spec" {$replace +="RELEASE_"; break}
+            "clang.spec" {$replace +="llvmorg-"; break }
+            "cloud-init.spec" {$replace +="ubuntu-";$replace +="ubuntu/"; break}
+            "colm.spec" {$replace +="colm-barracuda-v5"; $replace +="colm-barracuda-v4"; $replace +="colm-barracuda-v3"; $replace +="colm-barracuda-v2"; $replace +="colm-barracuda-v1"; $replace +="colm-"; break}
+            "cni.spec"
+            {
+                # $Names = $Names | foreach-object { if ($_ | select-string -pattern 'cni-plugins-linux-amd64-' -simplematch) {$_}}
+                # $replace +="cni-plugins-linux-amd64-"
+                $replace +="v"
+                break
+            }
+            "docker-20.10.spec" {$Names = $Names | foreach-object { if (!($_ | select-string -pattern 'xdocs-v' -simplematch)) {$_}}; break}
+            "dracut.spec" {$replace +="RHEL-"; break}
+            "ecdsa.spec" {$replace +="python-ecdsa-"; break}
+            "efibootmgr.spec" {$replace +="rhel-";$replace +="Revision_"; $replace+="release-tag"; $replace +="-branchpoint"; break}
+            "erlang.spec" {$replace +="R16B"; $replace +="OTP-"; $replace +="erl_1211-bp"; break}
+            "frr.spec" {$replace +="reindent-master-";$replace +="reindent-"; $replace +="before"; $replace +="after"; break}
+            "fribidi.spec" {$replace +="INIT"; break}
+            "falco.spec" { $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'agent/' -simplematch)) {$_}} ; break}
+            "fuse-overlayfs.spec.spec" {$replace +="aarch64"; break}
+            "glib.spec"
+            {
+                $replace +="start"; $replace +="PRE_CLEANUP"; $replace +="GNOME_PRINT_"
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'GTK_' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'gobject_' -simplematch)) {$_}}
+                break
+            }
+            "glibmm.spec"
+            {
+                $replace +="start"
+                break
+            }
+            "glib-networking.spec" {$replace +="glib-"; break}
+            "glslang.spec" {
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'untagged-' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'vulkan-' -simplematch)) {$_}}
+                $replace +="master-tot";$replace +="main-tot";$replace +="sdk-"; $replace +="SDK-candidate-26-Jul-2020";$replace+="Overload400-PrecQual"
+                $replace +="SDK-candidate";$replace+="SDK-candidate-2";$replace+="GL_EXT_shader_subgroup_extended_types-2016-05-10";$replace+="SPIRV99"
+                break
+            }
+            "gnome-common.spec" {$replace +="version_"; $replace +="v7status"; $replace +="update_for_spell_branch_1"; $replace +="twodaysago"; $replace +="toshok-libmimedir-base"; $replace +="threedaysago"; break}
+            "gobject-introspection.spec" {$replace +="INITIAL_RELEASE"; $replace +="GOBJECT_INTROSPECTION_"; break}
+            "go.spec"
+            {
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'weekly' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'release' -simplematch)) {$_}}
+                break
+            }
+            "gstreamer.spec" {$replace +="sharp-"; break}
+            "gtk3.spec" {$replace +="VIRTUAL_ATOM-22-06-"; $replace +="GTK_ALL_"; $replace +="TRISTAN_NATIVE_LAYOUT_START"; $replace +="START"; break}
+            "gtk-doc.spec" {$replace +="GTK_DOC_"; $replace +="start"; break}
+            "httpd.spec"
+            {
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'apache' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'mpm-' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'djg' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'dg_' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'wrowe' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'striker' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'PCRE_' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'MOD_SSL_' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'HTTPD_LDAP_' -simplematch)) {$_}}
+                break
+            }
+            "httpd-mod_jk.spec"
+            {
+                $replace +="JK_"
+                break
+            }
+            "icu.spec"
+            {
+                $Names = $Names | foreach-object { if (($_ | select-string -pattern 'release-' -simplematch)) {$_ -ireplace 'release-',""}}
+                $Names = $Names | foreach-object { $_ -ireplace '-',"."}
+                break
+            }
+            "inih.spec" {$replace +="r"; break}
+            "iperf.spec" {$replace +="trunk"; $replace +="iperf3"; break}
+            "iputils.spec" {$replace +="s"; break}
+            "initscripts.spec" {$replace +="upstart-"; $replace +="unstable"; break}
+            "json-glib.spec" {$replace +="json-glib-"; break}
+            "jsoncpp.spec" {$replace +="svn-release-"; $replace +="svn-import"; break}
+            "krb5.spec" {$replace+="-final"; break}
+            "kubernetes-dns.spec" {$replace +="test"; break}
+            "kubernetes-metrics-server.spec" {$replace +="metrics-ser-helm-chart-3.8.3"; break}
+            "libevent.spec" {$replace +="-stable"; break}
+            "libgd.spec" {$replace +="gd-"; break }
+            "libev.spec" {$replace +="rel-"; break}
+            "libnl.spec" {$replace +="libnl"; break}
+            "libpsl.spec" {$replace +="libpsl-"; $replace +="debian/"; break}
+            "librepo.spec" {$replace +="librepo-"; break}
+            "libselinux.spec" {$replace +="sepolgen-"; $replace +="checkpolicy-3.5"; break}
+            "libsolv.spec" {$replace +="BASE-SuSE-Code-13_"; $replace +="BASE-SuSE-Code-12_3-Branch"; $replace +="BASE-SuSE-Code-12_2-Branch"; $replace +="BASE-SuSE-Code-12_1-Branch"; $replace +="1-Branch"; break}
+            "libsoup.spec"
+            {
+                $replace +="SOUP_"; $replace +="libsoup-pre214-branch-base"; $replace +="libsoup-hacking-branch-base"; $replace +="LIB"; $replace +="soup-2-0-branch-base"
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'gnome-' -simplematch)) {$_}}
+                break
+            }
+            "libX11.spec" { $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'xf86-' -simplematch)) {$_}} ; break}
+            "libXinerama.spec" {$replace +="XORG-7_1"; break}
+            "libxml2.spec"
+            {
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'LIBXML2' -simplematch)) {$_}}
+                break
+            }
+            "libxslt.spec" {$replace +="LIXSLT_"; break}
+            "linux-PAM.spec" {$replace +="pam_unix_refactor"; break}
+            "lldb.spec"
+            {
+                $Names = $Names | foreach-object {$_.tolower().replace("llvmorg-","")}
                 $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
                 $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
                 $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
-                $NameLatest = $NameLatest.replace(".","_")
-                $SourceTagURL=[System.String]::Concat($SourceTagURL,"NSS_",$NameLatest,"_RTM/src/")
+                $SourceTagURL=[System.String]::Concat("https://github.com/llvm/llvm-project/releases/download/llvmorg-",$NameLatest,"/lldb-",$NameLatest,".src.tar.xz")
+                $rc = urlhealth -checkurl $SourceTagURL
+                if ($rc -eq "200") {$Names = $NameLatest}
+                break
             }
-            elseif ($_.spec -ilike 'nspr.spec')
+            "llvm.spec"
             {
-                $SourceTagURL="https://ftp.mozilla.org/pub/nspr/releases/"
-                $Names = ((invoke-restmethod -uri $SourceTagURL -usebasicparsing) -split 'a href=') -split '>'
-                $Names = ($Names | foreach-object { if ($_ | select-string -pattern '</a' -simplematch) {$_}}) -replace '"',""
-                $Names = $Names -replace '/</a'
-                $Names = $Names -replace "v"
+                $Names = $Names | foreach-object {$_.tolower().replace("llvmorg-","")}
                 $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
                 $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
-                if ($Names -ilike '*.*')
-                {
-                    $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
-                }
-                else
-                {
-                    $NameLatest = ($Names | convertfrom-json | sort-object |select-object -last 1).ToString()
-                }
-                $SourceTagURL=$SourceTagURL+"v"+$NameLatest+"/src/"
+                $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
+                $SourceTagURL=[System.String]::Concat("https://github.com/llvm/llvm-project/releases/download/llvmorg-",$NameLatest,"/llvm-",$NameLatest,".src.tar.xz")
+                $rc = urlhealth -checkurl $SourceTagURL
+                if ($rc -eq "200") {$Names = $NameLatest}
+                break
             }
-            elseif (($_.spec -ilike 'python2.spec') -or ($_.spec -ilike 'python3.spec'))
+            "lm-sensors.spec"
             {
-                $replace=@("Python-")
-                do
-                {
-                    $SourceTagURL="https://www.python.org/ftp/python/"
-                    $Names = ((invoke-restmethod -uri $SourceTagURL -usebasicparsing) -split 'a href=') -split '>'
-                    $Names = ($Names | foreach-object { if ($_ | select-string -pattern '</a' -simplematch) {$_}}) -replace '"',""
-                    $Names = $Names -replace '/</a'
+                $Names = $Names | foreach-object { if ($_ | select-string -pattern '-' -simplematch) {$_ -ireplace '-',"."} else {$_}}
+                $replace +="i2c.2.8.km2"; $replace+="v."
+                break
+            }
+            "lshw.spec"
+            {
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'A.' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'T.' -simplematch)) {$_}}
+                $Names = $Names -ireplace "B.","9999" # tag detection for later
+            }
+            "lz4.spec" { $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'r' -simplematch)) {$_}} ; break}
+            "mariadb.spec"
+            {
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'toku' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'serg-' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'percona-' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'mysql-' -simplematch)) {$_}}
+                break
+            }
+            "mc.spec" {$replace +="mc-"; break}
+            "mkinitcpio.spec"
+            {
+                $SourceTagURL="https://github.com/archlinux/mkinitcpio/tags"
+                $Names = (invoke-webrequest $SourceTagURL -headers $headers -TimeoutSec 10).links.href
+                $Names = $Names | foreach-object { if ($_ | select-string -pattern '.tar.' -simplematch) {$_}}
+                $Names = $Names -replace "/archlinux/mkinitcpio/archive/refs/tags/v",""
+                $Names = $Names -replace ".tar.gz",""
+                break
+            }
+            "ModemManager.spec" {$replace +="-dev"; break}
+            "mysql.spec" {$replace +="mysql-cluster-"; break}
+            "network-config-manager.spec"
+            {
+                $Names = $Names -ireplace ".a",".0.9991"
+                $Names = $Names -ireplace ".b",".0.9992"
+                $Names = $Names -ireplace ".c",".0.9993"
+                break
+            }
+            "newt.spec" {$replace +="r"; $Names = $Names -replace "-","."; break}
+            "ninja-build.spec"
+            {
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'release-' -simplematch)) {$_}}
+                break
+            }
+            "openjdk8.spec"
+            {
+                $Names = $Names | foreach-object { if (($_ | select-string -pattern '-ga' -simplematch)) {$_}}
+                $replace +="jdk8u"
+                $replace +="-ga"
+            }
+            "openjdk11.spec"
+            {
+                $Names = $Names | foreach-object { if (($_ | select-string -pattern '-ga' -simplematch)) {$_}}
+                $replace +="jdk-"
+                $replace +="-ga"
+            }
+            "openjdk17.spec"
+            {
+                $Names = $Names | foreach-object { if (($_ | select-string -pattern '-ga' -simplematch)) {$_}}
+                $replace +="jdk-"
+                $replace +="-ga"
+            }
+            "openldap.spec" {$replace +="UTBM_"; $replace +="URE_"; $replace +="UMICH_LDAP_3_3"; $replace +="UCDATA_"; $replace +="TWEB_OL_BASE"; $replace +="SLAPD_BACK_LDAP"; $replace +="PHP3_TOOL_0_0"; $replace +="OPENLDAP_REL_ENG_"; $replace +="LMDB_"; break}
+            "open-vm-tools.spec" {$replace +="stable-"; break}
+            "pandoc.spec" {$replace +="pandoc-server-"; $replace +="pandoc-lua-engine-"; $replace +="pandoc-cli-0.1"; $replace +="new1.16deb"; $replace +="list"; break}
+            "pango.spec" {$replace +="tical-branch-point"; break}
+            "perl-Config-IniFiles.spec" {$replace +="releases/"; break}
+            "popt.spec" {$replace +="-release"; break}
+            "powershell.spec" {$replace +="hashes.sha256";break}
+            "pycurl.spec" {$replace +="REL_"; break}
+            "python-babel.spec" {$replace +="dev-2a51c9b95d06"; break}
+            "python-cassandra-driver.spec" {$replace +="3.9-doc-backports-from-3.1"; $replace +="-backport-prepared-slack"; break}
+            "python-decorator.spec"
+            {
+                $Names = (invoke-webrequest $SourceTagURL -headers $headers -TimeoutSec 10).links.href
+                $Names = $Names | foreach-object { if ($_ | select-string -pattern '.tar.' -simplematch) {$_}}
+                $Names = $Names -replace "/micheles/decorator/archive/refs/tags/",""
+                $Names = $Names -replace ".tar.gz",""
+                break
+            }
+            "python-ethtool.spec" {$replace +="libnl-1-v0.6"; break}
+            "python-fuse.spec" {$replace +="start"; break}
+            "python-hatchling.spec"
+            {
+                $Names = $Names | foreach-object { if ($_ | select-string -pattern 'hatchling-' -simplematch) {$_}}
+                $replace +="hatchling-v"
+            }
+            "python-hypothesis.spec"
+            {
+                $Names = (invoke-webrequest $SourceTagURL -headers $headers -TimeoutSec 10).links.href
+                $Names = $Names | foreach-object { if ($_ | select-string -pattern '.tar.' -simplematch) {$_}}
+                $Names = $Names -replace "/HypothesisWorks/hypothesis/archive/refs/tags/hypothesis-python-",""
+                $Names = $Names -replace ".tar.gz",""
+                break
+            }
+            "python-incremental.spec" {$replace +="incremental-"; break}
+            "python-lxml.spec" {$replace +="lxml-"; break}
+            "python-mako.spec" {$replace +="rel_"; break}
+            "python-more-itertools.spec" {$replace +="v"; break}
+            "python-networkx.spec" {$replace += "python-networkx-"; $replace += "networkx-"; break }
+            "python-numpy.spec" {$replace +="with_maskna"; break}
+            "python-pyparsing.spec" {$replace +="pyparsing_"; break}
+            "python-setproctitle.spec" {$replace +="version-"; break}
+            "python-sqlalchemy.spec" {$replace +="rel_"; break}
+            "python-twisted.spec" {$replace += "python-"; $replace += "twisted-";break}
+            "python-webob.spec" {$replace +="sprint-coverage"; break}
+            "python-pytz.spec" {$replace +="release_"; break}
+            "rabbitmq3.10.spec" {
+                $Names = $Names | foreach-object { if ($_ | select-string -pattern 'v3.10.' -simplematch) {$_}}
+                break
+            }
+            "ragel.spec" {$replace +="ragel-pre-colm"; $replace +="ragel-barracuda-v5"; $replace +="barracuda-v4"; $replace +="barracuda-v3"; $replace +="barracuda-v2"; $replace +="barracuda-v1"; break}
+            "redis.spec" {$replace +="with-deprecated-diskstore"; $replace +="vm-playpen"; $replace +="twitter-20100825"; $replace +="twitter-20100804"; break}
+            "rpm.spec" {$replace +="rpm-";$replace +="-release"; break}
+            "s3fs-fuse.spec" {$replace +="Pre-v"; break}
+            "salt3.spec"  {$Names = $Names -ireplace "-","."; $replace +="Pre.v"; break}
+            "selinux-policy.spec"
+            {
+                $Names = (invoke-webrequest $SourceTagURL -headers $headers -TimeoutSec 10).links.href
+                $Names = $Names | foreach-object { if ($_ | select-string -pattern '.tar.' -simplematch) {$_}}
+                $Names = $Names -replace "/fedora-selinux/selinux-policy/archive/refs/tags/v",""
+                $Names = $Names -replace ".tar.gz",""
+                $replace +="y2023"
+                break
+            }
+            "spirv-tools.spec" {$replace +="sdk-"; break}
+            "sysdig.spec" {
+                $replace +="sysdig-inspect/"; $replace +="simpledriver-auto-dragent-20170906"; $replace +="s20171003"
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'falco/' -simplematch)) {$_}}
+                break
+            }
+            "systemd.spec"
+            {
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'systemd-v' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'udev-' -simplematch)) {$_}}
+                $Names = $Names -ireplace "v",""
+                $Names = $Names -ireplace "-","."
+                $Names = $Names | foreach-object { try{if ([int]$_ -gt 173) {$_}}catch{}}
+                break
+            }
+            "sqlite.spec" {$replace +="version-"; break}
+            "squashfs-tools.spec" {$replace +="CVE-2021-41072"; break}
+            "uwsgi.spec" {$replace +="no_server_mode"; break}
+            "vulkan-headers.spec" {$replace +="vksc"; break}
+            "vulkan-loader.spec" {$replace +="windows-rt-"; break}
+            "vulkan-tools.spec" {$replace +="sdk-"; break}
+            "wavefront-proxy.spec" {$replace +="wavefront-";$replace +="proxy-"; break}
+            "xinetd.spec"
+            {
+                $Names = $Names | foreach-object { if ($_ | select-string -pattern '-' -simplematch) {$_ -ireplace '-',"."} else {$_}}
+                $replace +="xinetd."
+                $replace +="20030122"
+                break
+            }
+            "xxhash.spec"
+            {
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'r' -simplematch)) {$_}}
+                break
+            }
+            "zsh.spec" {$Names = $Names | foreach-object { if (!($_ | select-string -pattern '-test' -simplematch)) {$_}} ; break}
+            "zstd.spec" {$replace +="zstd"; break}
+            Default {}
+            }
 
-                    if ($_.spec -ilike 'python2.spec')
-                    {
-                        $Names = $Names | foreach-object { if ($_ -match '^2.') {$_}}
-                    }
-                    elseif ($_.spec -ilike 'python3.spec')
-                    {
-                        $Names = $Names | foreach-object { if ($_ -match '^3.') {$_}}
-                    }
-                    $i=0; do {$Names = $Names | foreach-object {$_.tolower().replace(($replace[$i]).tolower(),"")}; $i++} while ($i -le $replace.count-1)
-                    $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
-                    $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
-                    $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
-                    $SourceTagURL=$SourceTagURL+$NameLatest
-                    $Names = ((((invoke-restmethod -uri $SourceTagURL -usebasicparsing) -split "<tr><td") -split 'a href=') -split '>') -split "title="
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '.tar.' -simplematch) {$_}}
-                    $Names = ($Names | foreach-object { if (!($_ | select-string -pattern '</a' -simplematch)) {$_}}) -ireplace '"',""
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.sig' -simplematch)) {$_}}
-                    $Names = $Names  -replace ".tar.gz",""
-                    $Names = $Names  -replace ".tar.bz2",""
-                    $Names = $Names  -replace ".tar.xz",""
-                    $Names = $Names  -replace ".tar.lz",""
-                    $Names = $Names -ireplace "Python-",""
-                    $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
-                    $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
-                    if ([string]::IsNullOrEmpty($Names)) {$replace +=$NameLatest}
-                } until (!([string]::IsNullOrEmpty($Names)))
+                $replace += $currentTask.Name + "."
+                $replace += $currentTask.Name + "-"
+                $replace += $currentTask.Name + "_"
+                $replace += $currentTask.Name
+                $replace += "ver"
+                $replace += "release_"
+                $replace += "release-"
+                $replace += "release"
+                $i = 0; do { $Names = $Names | foreach-object { $_.tolower().replace(($replace[$i]).tolower(), "") }; $i++ } while ($i -ne $replace.count - 1)
+
+                # $replace | foreach { $Names = $Names -replace $_,""}
+                $Names = $Names.Where({ $null -ne $currentTask.Name })
+                $Names = $Names.Where({ "" -ne $currentTask.Name })
+                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^rel/' -simplematch) { $_ -ireplace '^rel/', "" } else { $_ } }
+                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^v' -simplematch) { $_ -ireplace '^v', "" } else { $_ } }
+                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^V' -simplematch) { $_ -ireplace '^V', "" } else { $_ } }
+                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^r' -simplematch) { $_ -ireplace '^r', "" } else { $_ } }
+                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^R' -simplematch) { $_ -ireplace '^R', "" } else { $_ } }
+                $Names = $Names | foreach-object { if ($_ | select-string -pattern '_' -simplematch) { $_ -ireplace '_', "." } else { $_ } }
+
+                # remove versions developer, release candidates, alpha versions, preview versions and versions without numbers
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'candidate' -simplematch)) { $_ } }
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-alpha' -simplematch)) { $_ } }
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-beta' -simplematch)) { $_ } }
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.beta' -simplematch)) { $_ } }
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.0' -simplematch)) { $_ } }
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.1' -simplematch)) { $_ } }
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.2' -simplematch)) { $_ } }
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.3' -simplematch)) { $_ } }
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.4' -simplematch)) { $_ } }
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc1' -simplematch)) { $_ } }
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc2' -simplematch)) { $_ } }
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc3' -simplematch)) { $_ } }
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc4' -simplematch)) { $_ } }
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-preview.' -simplematch)) { $_ } }
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-dev.' -simplematch)) { $_ } }
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-pre1' -simplematch)) { $_ } }
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.pre1' -simplematch)) { $_ } }
+
+                $Names = $Names -ireplace "v", ""
+
+                if ($currentTask.spec -notlike "amdvlk.spec") {
+                    $Names = $Names | foreach-object { if ($_ -match '\d') { $_ } }
+                    $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) { $_ } }
+                }
+
+                if ($Names -ilike '*.*') {
+                    $NameLatest = ($Names | foreach-object { $tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) { $tmpversion } else { $tag } } | sort-object | select-object -last 1).ToString()
+                }
+                else {
+                    $NameLatest = ($Names | convertfrom-json | sort-object | select-object -last 1).ToString()
+                }
+                if (!($Names.contains($NameLatest))) { $NameLatest = ($Names | sort-object | select-object -last 1).ToString() }
+        }
+        catch{$NameLatest=""}
+        if ($NameLatest -ne "")
+        {
+            if ($currentTask.spec -ilike 'lshw.spec') {$NameLatest = $NameLatest -replace "9999","B."}
+            elseif ($currentTask.spec -ilike 'network-config-manager.spec')
+            {
+                $NameLatest = $NameLatest -replace ".0.9991",".a"
+                $NameLatest = $NameLatest -replace ".0.9992",".b"
+                $NameLatest = $NameLatest -replace ".0.9993",".c"
+            }
+            elseif (($NameLatest -ilike '*.*') -and ($version -ilike '*.*'))
+            {
+                try
+                {
+                    if ([System.Version]$Version -lt [System.Version]$NameLatest) {$UpdateAvailable = $NameLatest}
+                    elseif ([System.Version]$Version -eq [System.Version]$NameLatest) {$UpdateAvailable = "(same version)" }
+                    else {$UpdateAvailable = "Warning: "+$currentTask.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
+                }
+                catch{}
+            }
+            if ($UpdateAvailable -eq "")
+            {
+                if ($Version -lt $NameLatest) {$UpdateAvailable = $NameLatest}
+                elseif ($Version -eq $NameLatest) {$UpdateAvailable = "(same version)" }
+                else {$UpdateAvailable = "Warning: "+$currentTask.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
+            }
+        }
+    }
+    # Check UpdateAvailable by ftp.* and download.savannah.gnug.org tags detection
+    elseif (($Source0 -ilike '*ftp.*') -or ($Source0 -ilike '*/ftp/*') -or ($Source0 -ilike '*ftpmirror.*') -or ($Source0 -ilike '*download.savannah.gnu.org*'))
+    {
+
+        # ausnahmen
+        if (($currentTask.spec -ilike 'mozjs.spec') -or ($currentTask.spec -ilike 'mozjs60.spec'))
+        {
+            $SourceTagURL="https://ftp.mozilla.org/pub/firefox/releases/"
+            $Names = ((invoke-restmethod -uri $SourceTagURL -usebasicparsing -TimeoutSec 10) -split 'a href=') -split '>'
+            $Names = ($Names | foreach-object { if ($_ | select-string -pattern '</a' -simplematch) {$_}}) -replace '"',""
+            $Names = $Names -replace '/</a'
+
+            if ($currentTask.spec -ilike 'mozjs60.spec')
+            {
+                $Names = $Names | foreach-object { if ($_ -match '60.') {$_}}
+                $Names = $Names -replace "esr"
+            }
+            $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
+            $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
+            if ($Names -ilike '*.*')
+            {
+                $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
             }
             else
             {
-                # Autogenerated SourceTagURL from Source0
-                $SourceTagURLArray=($Source0 ).split("/")
-                if ($SourceTagURLArray.length -gt 0)
-                {
-                    for ($i=1;$i -lt ($SourceTagURLArray.length -1);$i++)
-                    {
-                        if ($SourceTagURL -eq "") {$SourceTagURL = $SourceTagURLArray[$i]}
-                        else { $SourceTagURL=$SourceTagURL + "/" + $SourceTagURLArray[$i] }
-                    }
-                }
+                $NameLatest = ($Names | convertfrom-json | sort-object |select-object -last 1).ToString()
             }
+            if ($currentTask.spec -ilike 'mozjs60.spec') {$SourceTagURL=$SourceTagURL+$NameLatest+"esr/source/"}
+            else {$SourceTagURL=$SourceTagURL+$NameLatest+"/source/"}
+        }
+        elseif ($currentTask.spec -ilike 'nss.spec')
+        {
+            $SourceTagURL="https://ftp.mozilla.org/pub/security/nss/releases/"
+            $Names = ((invoke-restmethod -uri $SourceTagURL -TimeoutSec 10 -usebasicparsing) -split 'a href=') -split '>'
+            $Names = ($Names | foreach-object { if ($_ | select-string -pattern '</a' -simplematch) {$_}}) -replace '"',""
+            $Names = $Names -replace '/</a',""
+            $Names = $Names -replace "NSS_",""
+            $Names = $Names -replace "_RTM",""
+            $Names = $Names -replace "_","."
+            $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
+            $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
+            $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
+            $NameLatest = $NameLatest.replace(".","_")
+            $SourceTagURL=[System.String]::Concat($SourceTagURL,"NSS_",$NameLatest,"_RTM/src/")
+        }
+        elseif ($currentTask.spec -ilike 'nspr.spec')
+        {
+            $SourceTagURL="https://ftp.mozilla.org/pub/nspr/releases/"
+            $Names = ((invoke-restmethod -uri $SourceTagURL -TimeoutSec 10 -usebasicparsing) -split 'a href=') -split '>'
+            $Names = ($Names | foreach-object { if ($_ | select-string -pattern '</a' -simplematch) {$_}}) -replace '"',""
+            $Names = $Names -replace '/</a'
+            $Names = $Names -replace "v"
+            $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
+            $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
+            if ($Names -ilike '*.*')
+            {
+                $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
+            }
+            else
+            {
+                $NameLatest = ($Names | convertfrom-json | sort-object |select-object -last 1).ToString()
+            }
+            $SourceTagURL=$SourceTagURL+"v"+$NameLatest+"/src/"
+        }
+        elseif (($currentTask.spec -ilike 'python2.spec') -or ($currentTask.spec -ilike 'python3.spec'))
+        {
+            $replace=@("Python-")
+            do
+            {
+                $SourceTagURL="https://www.python.org/ftp/python/"
+                $Names = ((invoke-restmethod -uri $SourceTagURL -TimeoutSec 10 -usebasicparsing) -split 'a href=') -split '>'
+                $Names = ($Names | foreach-object { if ($_ | select-string -pattern '</a' -simplematch) {$_}}) -replace '"',""
+                $Names = $Names -replace '/</a'
 
-
-            try{
-                $Names=@()
-                $Names = ((((invoke-restmethod -uri $SourceTagURL -usebasicparsing) -split "<tr><td") -split 'a href=') -split '>') -split "title="
+                if ($currentTask.spec -ilike 'python2.spec')
+                {
+                    $Names = $Names | foreach-object { if ($_ -match '^2.') {$_}}
+                }
+                elseif ($currentTask.spec -ilike 'python3.spec')
+                {
+                    $Names = $Names | foreach-object { if ($_ -match '^3.') {$_}}
+                }
+                $i=0; do {$Names = $Names | foreach-object {$_.tolower().replace(($replace[$i]).tolower(),"")}; $i++} while ($i -le $replace.count-1)
+                $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
+                $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
+                $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
+                $SourceTagURL=$SourceTagURL+$NameLatest
+                $Names = ((((invoke-restmethod -uri $SourceTagURL -TimeoutSec 10 -usebasicparsing) -split "<tr><td") -split 'a href=') -split '>') -split "title="
                 $Names = $Names | foreach-object { if ($_ | select-string -pattern '.tar.' -simplematch) {$_}}
                 $Names = ($Names | foreach-object { if (!($_ | select-string -pattern '</a' -simplematch)) {$_}}) -ireplace '"',""
                 $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.sig' -simplematch)) {$_}}
@@ -2171,569 +2022,14 @@ function CheckURLHealth {
                 $Names = $Names  -replace ".tar.bz2",""
                 $Names = $Names  -replace ".tar.xz",""
                 $Names = $Names  -replace ".tar.lz",""
-
-                if ($_.spec -ilike 'compat-gdbm.spec') {$replace +="gdbm-"}
-                elseif ($_.spec -ilike 'grub2.spec') {$replace +="grub-"}
-                elseif ($_.spec -ilike 'freetype2.spec') {$replace +="freetype-"}
-                elseif ($_.spec -ilike 'libldb.spec') {$replace +="ldb-"}
-                elseif ($_.spec -ilike 'libtalloc.spec') {$replace +="talloc-"}
-                elseif ($_.spec -ilike 'libtdb.spec') {$replace +="tdb-"}
-                elseif ($_.spec -ilike 'libtevent.spec') {$replace +="tevent-"}
-                elseif ($_.spec -ilike 'mozjs.spec') {$replace +="/pub/firefox/releases/"+$NameLatest+"/source/firefox-"; $replace +=".source"; $replace +=".asc"}
-                elseif ($_.spec -ilike 'mozjs60.spec') {$replace +="/pub/firefox/releases/"+$NameLatest+"esr/source/firefox-"; $replace +="esr.source"; $replace +=".asc"}
-                elseif ($_.spec -ilike 'nspr.spec') {$replace +="/pub/nspr/releases/v"+$NameLatest+"/src/nspr-"}
-                elseif ($_.spec -ilike 'nss.spec') {$replace +="/pub/security/nss/releases/NSS_"+$NameLatest+"_RTM/src/"}
-                elseif ($_.spec -ilike 'proto.spec') {$replace +="xproto-"}
-                elseif ($_.spec -ilike 'samba-client.spec') {$replace +="samba-"}
-                elseif ($_.spec -ilike 'wget.spec') {$Names = $Names | foreach-object { if (!($_ | select-string -pattern 'wget2-' -simplematch)) {$_}}}
-                elseif ($_.spec -ilike 'xorg-applications.spec') {$replace +="bdftopcf-"}
-                elseif ($_.spec -ilike 'xorg-fonts.spec') {$replace +="encodings-"}
-
-                $replace += $_.Name+"."
-                $replace += $_.Name+"-"
-                $replace += $_.Name+"_"
-                $replace += $_.Name
-                $replace +="ver"
-                $replace +="release_"
-                $replace +="release-"
-                $replace +="release"
-                $i=0; do {$Names = $Names | foreach-object {$_.tolower().replace(($replace[$i]).tolower(),"")}; $i++} while ($i -ne $replace.count-1)
-
-                $Names = $Names.Where({ $null -ne $_ })
-                $Names = $Names.Where({ "" -ne $_ })
-                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^rel/' -simplematch) {$_ -ireplace '^rel/',""} else {$_}}
-                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^v' -simplematch) {$_ -ireplace '^v',""} else {$_}}
-                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^V' -simplematch) {$_ -ireplace '^V',""} else {$_}}
-                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^r' -simplematch) {$_ -ireplace '^r',""} else {$_}}
-                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^R' -simplematch) {$_ -ireplace '^R',""} else {$_}}
-                $Names = $Names | foreach-object { if ($_ | select-string -pattern '_' -simplematch) {$_ -ireplace '_',"."} else {$_}}
-
-                # remove versions developer, release candidates, alpha versions, preview versions and versions without numbers
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'candidate' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-alpha' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-beta' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.beta' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.0' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.1' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.2' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.3' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.4' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc1' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc2' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc3' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc4' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-preview.' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-dev.' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-pre1' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.pre1' -simplematch)) {$_}}
-
-                    $Names = $Names  -replace "v",""
-                    $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
-                    $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
-
-                if ($Names -ilike '*.*')
-                {
-                    $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
-                }
-                else
-                {
-                    $NameLatest = ($Names | convertfrom-json | sort-object |select-object -last 1).ToString()
-                }
-                if (!($Names.contains($NameLatest))) { $NameLatest = ($Names | sort-object |select-object -last 1).ToString() }
-            }
-            catch{$NameLatest=""}
-            if ($NameLatest -ne "")
-            {
-                if (($NameLatest -ilike '*.*') -and ($version -ilike '*.*'))
-                {
-                    try
-                    {
-                        if ([System.Version]$Version -lt [System.Version]$NameLatest) {$UpdateAvailable = $NameLatest}
-                        elseif ([System.Version]$Version -eq [System.Version]$NameLatest) {$UpdateAvailable = "(same version)" }
-                        else {$UpdateAvailable = "Warning: "+$currentfile.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
-                    }
-                    catch{}
-                }
-                if ($UpdateAvailable -eq "")
-                {
-                    if ($Version -lt $NameLatest) {$UpdateAvailable = $NameLatest}
-                    elseif ($Version -eq $NameLatest) {$UpdateAvailable = "(same version)" }
-                    else {$UpdateAvailable = "Warning: "+$currentfile.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
-                }
-            }
+                $Names = $Names -ireplace "Python-",""
+                $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
+                $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
+                if ([string]::IsNullOrEmpty($Names)) {$replace +=$NameLatest}
+            } until (!([string]::IsNullOrEmpty($Names)))
         }
-
-        # Check UpdateAvailable by rubygems.org tags detection
-        elseif ($Source0 -ilike '*rubygems.org*')
+        else
         {
-            $Names=@()
-            $replace=@()
-            # Autogenerated SourceTagURL from Source0
-            $SourceTagURLArray=($Source0).split("-")
-            if ($SourceTagURLArray.length -gt 1)
-            {
-                $SourceTagURL = $SourceTagURLArray[0]
-                for ($i=1;$i -lt ($SourceTagURLArray.length -1);$i++) { $SourceTagURL=$SourceTagURL + "-" + $SourceTagURLArray[$i] }
-            }
-            $replace = ($SourceTagURL -ireplace "/downloads/","/gems/")+"/versions"
-            $replace = $replace -ireplace "http://","https://"
-            $SourceTagURL=$replace +".atom"
-            try{
-                $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
-                $headers.Add("Authorization", "token $accessToken")
-                $Names = (invoke-restmethod -uri $SourceTagURL).id
-                $Names = $Names  -replace $replace,""
-                $Names = $Names  -replace '/',""
-
-                $Names = $Names  -replace "-java",""
-                $Names = $Names  -replace "-i386-mswin32",""
-                $Names = $Names  -replace "-x86-mswin32",""
-                $Names = $Names  -replace "-x64-mingw-ucrt",""
-                $Names = $Names  -replace "-x86-mingw32",""
-                $Names = $Names  -replace "-x64-mingw32",""
-                $Names = $Names  -replace "-x86-linux",""
-                $Names = $Names  -replace "-x86_64-linux",""
-                $Names = $Names  -replace "-x86_64-darwin",""
-                $Names = $Names  -replace "-arm64-darwin",""
-                $Names = $Names  -replace "-arm-linux",""
-                $Names = $Names  -replace "mswin32",""
-                $Names = $Names  -replace "-aarch64-linux",""
-
-                # remove versions developer, release candidates, alpha versions, preview versions and versions without numbers
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'candidate' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-alpha' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-beta' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.beta' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.0' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.1' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.2' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.3' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.4' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc1' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc2' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc3' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc4' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-preview.' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-dev.' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-pre1' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.pre1' -simplematch)) {$_}}
-
-                if ($Names -ilike '*.*')
-                {
-                    $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
-                }
-                else
-                {
-                    $NameLatest = ($Names | convertfrom-json | sort-object | select-object -last 1).ToString()
-                }
-                if (!($Names.contains($NameLatest))) { $NameLatest = ($Names | sort-object |select-object -last 1).ToString() }
-            }
-            catch{$NameLatest=""}
-            if ($NameLatest -ne "")
-            {
-                if (($NameLatest -ilike '*.*') -and ($version -ilike '*.*'))
-                {
-                    try
-                    {
-                        if ([System.Version]$Version -lt [System.Version]$NameLatest) {$UpdateAvailable = $NameLatest}
-                        elseif ([System.Version]$Version -eq [System.Version]$NameLatest) {$UpdateAvailable = "(same version)" }
-                        else {$UpdateAvailable = "Warning: "+$currentfile.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
-                    }
-                    catch{}
-                }
-                if ($UpdateAvailable -eq "")
-                {
-                    if ($Version -lt $NameLatest) {$UpdateAvailable = $NameLatest}
-                    elseif ($Version -eq $NameLatest) {$UpdateAvailable = "(same version)" }
-                    else {$UpdateAvailable = "Warning: "+$currentfile.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
-                }
-            }
-        }
-
-        # Check UpdateAvailable by sourceforge tags detection
-        elseif ($Source0 -ilike '*sourceforge.net*')
-        {
-            $Names=@()
-            $replace=@()
-            # Autogenerated SourceTagURL from Source0
-            $SourceTagURLArray=($Source0).replace("http://","")
-            $SourceTagURLArray=($SourceTagURLArray).replace("https://","")
-            $SourceTagURLArray=($SourceTagURLArray).replace("sourceforge.net/","")
-            $SourceTagURLArray=($SourceTagURLArray).replace("downloads.project/","")
-            $SourceTagURLArray=($SourceTagURLArray).replace("projects/","")
-            $SourceTagURLArray=($SourceTagURLArray).replace("prdownloads.","")
-            $SourceTagURLArray=($SourceTagURLArray).replace("downloads.","")
-            $SourceTagURLArray=($SourceTagURLArray).replace("download.","")
-            $SourceTagURLArray=($SourceTagURLArray).replace("gkernel/files/","")
-            $SourceTagURLArray=($SourceTagURLArray).replace("sourceforge/","")
-
-            $tmpName=($SourceTagURLArray -split "/")[0]
-            $SourceTagURL="https://sourceforge.net/projects/$tmpName/files/$tmpName"
-            if ($_.spec -ilike 'docbook-xsl.spec') {$SourceTagURL="https://sourceforge.net/projects/docbook/files/docbook-xsl"}
-            elseif ($_.spec -ilike 'expect.spec') {$SourceTagURL="https://sourceforge.net/projects/expect/files/Expect"} #uppercase E
-            elseif ($_.spec -ilike 'fakeroot-ng.spec') {$SourceTagURL="https://sourceforge.net/projects/fakerootng/files/fakeroot-ng"}
-            elseif ($_.spec -ilike 'libpng.spec') {$SourceTagURL="https://sourceforge.net/projects/libpng/files/libpng16"}
-            elseif  ($_.spec -ilike 'nfs-utils.spec') {$SourceTagURL="https://sourceforge.net/projects/nfs/files/nfs-utils"}
-            elseif  ($_.spec -ilike 'openipmi.spec') {$SourceTagURL="https://sourceforge.net/projects/openipmi/files/OpenIPMI%202.0%20Library/"}
-            elseif  ($_.spec -ilike 'procps-ng.spec') {$SourceTagURL="http://sourceforge.net/projects/procps-ng/files/Production/"}
-            elseif ($_.spec -ilike 'rng-tools.spec') {$SourceTagURL="https://sourceforge.net/projects/gkernel/files/rng-tools"}
-            elseif ($_.spec -ilike 'tcl.spec') {$SourceTagURL="https://sourceforge.net/projects/tcl/files/Tcl"}
-            elseif ($_.spec -ilike 'unzip.spec')
-            {
-                $SourceTagURL='https://sourceforge.net/projects/infozip/files/UnZip%206.x%20%28latest%29/UnZip%206.0/'
-                if ($version -eq "6.0") {$version="60"}
-            }
-            elseif  ($_.spec -ilike 'xmlstarlet.spec') {$SourceTagURL='https://sourceforge.net/projects/xmlstar/files/xmlstarlet'}
-            elseif  ($_.spec -ilike 'zip.spec')
-            {
-                $SourceTagURL='https://sourceforge.net/projects/infozip/files/Zip%203.x%20%28latest%29/3.0/'
-                if ($version -eq "3.0") {$version="30"}
-                $replace += "zip30.zip"
-            }
-            try{
-                $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
-                $headers.Add("Authorization", "token $accessToken")
-                $Names = (((invoke-restmethod -uri $SourceTagURL) -split 'net.sf.files = {') -split "}};")[1] -split '{'
-                $Names = (($Names -split ',') | foreach-object { if($_ | select-string -pattern '"name":' -simplematch) {$_ -ireplace '"name":',""}}) -ireplace '"',""
-
-                if ($_.spec -ilike "backward-cpp.spec") {$replace +="v"}
-                elseif ($_.spec -ilike "e2fsprogs.spec") {$replace +="v"}
-                elseif ($_.spec -ilike "libusb.spec")
-                {
-                    $Names = $Names  -replace "libusb-compat-",""
-                    $Names = $Names  -replace "libusb-",""
-                    $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
-                    $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
-
-                    if ($Names -ilike '*.*')
-                    {
-                        $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
-                    }
-                    else
-                    {
-                        $NameLatest = ($Names | convertfrom-json | sort-object |select-object -last 1).ToString()
-                    }
-                    $SourceTagURL="https://sourceforge.net/projects/libusb/files/libusb-"+$NameLatest
-                    $Names = (((invoke-restmethod -uri $SourceTagURL) -split 'net.sf.files = {') -split "}};")[1] -split '{'
-                    $Names = (($Names -split ',') | foreach-object { if($_ | select-string -pattern '"name":' -simplematch) {$_ -ireplace '"name":',""}}) -ireplace '"',""
-                }
-                elseif ($_.spec -ilike 'tboot.spec')
-                {
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '2007' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '2008' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '2009' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '2010' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '2011' -simplematch)) {$_}}
-                }
-
-                $Names = $Names  -replace ".tar.gz",""
-                $Names = $Names  -replace ".tar.bz2",""
-                $Names = $Names  -replace ".tar.xz",""
-                $Names = $Names  -replace ".tar.lz",""
-
-                $replace += $_.Name+"."
-                $replace += $_.Name+"-"
-                $replace += $_.Name+"_"
-                $replace += $_.Name
-                $replace +="release_"
-                $replace +="release-"
-                $replace +="release"
-                $replace +="ver"
-
-                $i=0; do {$Names = $Names | foreach-object {$_.tolower().replace(($replace[$i]).tolower(),"")}; $i++} while ($i -ne $replace.count-1)
-
-                # remove versions developer, release candidates, alpha versions, preview versions and versions without numbers
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'candidate' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-alpha' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-beta' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.beta' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.0' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.1' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.2' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.3' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.4' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc1' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc2' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc3' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc4' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-preview.' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-dev.' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-pre1' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.pre1' -simplematch)) {$_}}
-
-                    $Names = $Names  -replace "v",""
-                    $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
-                    $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
-
-                if ($Names -ilike '*.*')
-                {
-                    $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
-                }
-                else
-                {
-                    $NameLatest = ($Names | convertfrom-json | sort-object |select-object -last 1).ToString()
-                }
-                if (!($Names.contains($NameLatest))) { $NameLatest = ($Names | sort-object |select-object -last 1).ToString() }
-            }
-            catch{$NameLatest=""}
-            if ($NameLatest -ne "")
-            {
-                if (($NameLatest -ilike '*.*') -and ($version -ilike '*.*'))
-                {
-                    try
-                    {
-                        if ([System.Version]$Version -lt [System.Version]$NameLatest) {$UpdateAvailable = $NameLatest}
-                        elseif ([System.Version]$Version -eq [System.Version]$NameLatest) {$UpdateAvailable = "(same version)" }
-                        else {$UpdateAvailable = "Warning: "+$currentfile.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
-                    }
-                    catch{}
-                }
-                if ($UpdateAvailable -eq "")
-                {
-                    if ($Version -lt $NameLatest) {$UpdateAvailable = $NameLatest}
-                    elseif ($Version -eq $NameLatest) {$UpdateAvailable = "(same version)" }
-                    else {$UpdateAvailable = "Warning: "+$currentfile.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
-                }
-            }
-        }
-
-        elseif ($Source0 -ilike '*https://pagure.io/*')
-        {
-            $Names = @()
-            $replace=@()
-            if ($_.spec -ilike 'python-daemon.spec') {$SourceTagURL="https://pagure.io/python-daemon/releases"}
-            
-            if ($SourceTagURL -ne "")
-            {
-                try
-                {
-                    if ([string]::IsNullOrEmpty($Names))
-                    {
-                        $tmpName=$_.Name
-                        $Names = ((invoke-restmethod -uri $SourceTagURL -usebasicparsing) -split '-release/') -split '.tar.gz"'
-                    }
-
-                    $replace += $_.Name+"."
-                    $replace += $_.Name+"-"
-                    $replace += $_.Name+"_"
-                    $replace +="ver"
-
-                    $i=0; do {$Names = $Names | foreach-object {$_.tolower().replace(($replace[$i]).tolower(),"")}; $i++} while ($i -ne $replace.count-1)
-                    $Names = $Names.Where({ $null -ne $_ })
-                    $Names = $Names.Where({ "" -ne $_ }) 
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^v' -simplematch) {$_ -ireplace '^v',""} else {$_}}
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^V' -simplematch) {$_ -ireplace '^V',""} else {$_}}
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^r' -simplematch) {$_ -ireplace '^r',""} else {$_}}
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^R' -simplematch) {$_ -ireplace '^R',""} else {$_}}
-
-                    # remove versions developer, release candidates, alpha versions, preview versions and versions without numbers
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'candidate' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-alpha' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-beta' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.beta' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.0' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.1' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.2' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.3' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.4' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc1' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc2' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc3' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc4' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-preview.' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-dev.' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-pre1' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.pre1' -simplematch)) {$_}}
-
-                    $Names = $Names  -replace "v",""
-                    $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
-                    $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
-
-                    if ($_.spec -ilike 'atk.spec')
-                    {
-                        $Names = $Names | foreach-object {$_.tolower().replace("_",".")}
-                    }
-
-                    if ($Names -ilike '*.*')
-                    {
-                        $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
-                    }
-                    else
-                    {
-                        $NameLatest = ($Names | convertfrom-json | sort-object |select-object -last 1).ToString()
-                    }
-                    if (!($Names.contains($NameLatest))) { $NameLatest = ($Names | sort-object |select-object -last 1).ToString() }
-                }
-                catch{$NameLatest=""}
-                if ($NameLatest -ne "")
-                {
-                    if (($NameLatest -ilike '*.*') -and ($version -ilike '*.*'))
-                    {
-                        try
-                        {
-                            if ([System.Version]$Version -lt [System.Version]$NameLatest) {$UpdateAvailable = $NameLatest}
-                            elseif ([System.Version]$Version -eq [System.Version]$NameLatest) {$UpdateAvailable = "(same version)" }
-                            else {$UpdateAvailable = "Warning: "+$currentfile.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
-                        }
-                        catch{}
-                    }
-                    if ($UpdateAvailable -eq "")
-                    {
-                        if ($Version -lt $NameLatest) {$UpdateAvailable = $NameLatest}
-                        elseif ($Version -eq $NameLatest) {$UpdateAvailable = "(same version)" }
-                        else {$UpdateAvailable = "Warning: "+$currentfile.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
-                    }
-                }
-            }
-        }
-
-        # Check UpdateAvailable by freedesktop tags detection
-        elseif (($Source0 -ilike '*freedesktop.org*') -or ($Source0 -ilike '*https://gitlab.*'))
-        {
-            # Hardcoded SourceTagURL from Source0 because detection from Source0 url would have a worse ratio
-            $Names = @()
-            $replace=@()
-            if ($_.spec -ilike 'asciidoc3.spec') {$SourceTagURL="https://gitlab.com/asciidoc3/asciidoc3/-/tags?format=atom"}
-            elseif ($_.spec -ilike 'atk.spec') {$SourceTagURL="https://gitlab.gnome.org/Archive/atk/-/tags?format=atom"}
-            elseif ($_.spec -ilike 'cairo.spec') {$SourceTagURL="https://gitlab.freedesktop.org/cairo/cairo/-/tags?format=atom"}
-            elseif ($_.spec -ilike 'dbus.spec') {$SourceTagURL="https://gitlab.freedesktop.org/dbus/dbus/-/tags?format=atom"}
-            elseif ($_.spec -ilike 'dbus-glib.spec') {$SourceTagURL="https://gitlab.freedesktop.org/dbus/dbus-glib/-/tags?format=atom"}
-            elseif ($_.spec -ilike 'dbus-python.spec') {$SourceTagURL="https://gitlab.freedesktop.org/dbus/dbus-python/-/tags?format=atom"}
-            elseif ($_.spec -ilike 'fontconfig.spec') {$SourceTagURL="https://gitlab.freedesktop.org/fontconfig/fontconfig/-/tags?format=atom"}       
-            elseif (($_.spec -ilike 'harfbuzz.spec') -or ($_.spec -ilike 'gst-plugins-bad.spec') -or ($_.spec -ilike 'gstreamer-plugins-base.spec') -or ($_.spec -ilike 'libdrm.spec') -or ($_.spec -ilike 'libqmi.spec') -or ($_.spec -ilike 'libxcb.spec') -or ($_.spec -ilike 'ModemManager.spec') -or ($_.spec -ilike 'xcb-proto.spec' -or ($_.spec -ilike 'libmbim.spec'))) # ausnahmen
-            {
-                if ($_.spec -ilike 'harfbuzz.spec') {$SourceTagURL="https://www.freedesktop.org/software/harfbuzz/release/"}
-                elseif ($_.spec -ilike 'gst-plugins-bad.spec') {$SourceTagURL="https://gstreamer.freedesktop.org/src/gst-plugins-bad"}
-                elseif ($_.spec -ilike 'gstreamer-plugins-base.spec') {$SourceTagURL="https://gstreamer.freedesktop.org/src/gst-plugins-base"; $replace +="gst-plugins-base-"}
-                elseif ($_.spec -ilike 'libdrm.spec') {$SourceTagURL="https://dri.freedesktop.org/libdrm/"}
-                elseif ($_.spec -ilike 'libqmi.spec') {$SourceTagURL="https://www.freedesktop.org/software/libqmi/"}
-                elseif ($_.spec -ilike 'libxcb.spec') {$SourceTagURL="http://xcb.freedesktop.org/dist/"}
-                elseif ($_.spec -ilike 'ModemManager.spec') {$SourceTagURL="https://www.freedesktop.org/software/ModemManager/"}
-                elseif ($_.spec -ilike 'xcb-proto.spec') {$SourceTagURL="http://xcb.freedesktop.org/dist/"}
-                elseif ($_.spec -ilike 'libmbim.spec') {$SourceTagURL="https://www.freedesktop.org/software/libmbim/"}
-              
-                $Names = (((invoke-restmethod -uri $SourceTagURL -usebasicparsing -headers @{Authorization = "Bearer $accessToken"}) -split "<tr><td") -split 'a href=') -split '>'
-                $Names = $Names | foreach-object { if ($_ | select-string -pattern '</a' -simplematch) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'commit' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern "'" -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '"' -simplematch)) {$_}}
-                $Names = $Names -ireplace '</a',""
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.sig' -simplematch)) {$_}}
-                $Names = $Names  -replace ".tar.gz",""
-                $Names = $Names  -replace ".tar.bz2",""
-                $Names = $Names  -replace ".tar.xz",""
-                $Names = $Names  -replace ".tar.lz",""
-            }
-            elseif ($_.spec -ilike 'gstreamer.spec') {$SourceTagURL="https://gitlab.freedesktop.org/gstreamer/gstreamer/-/tags?format=atom"} 
-            elseif ($_.spec -ilike 'ipcalc.spec') {$SourceTagURL="https://gitlab.com/ipcalc/ipcalc/-/tags?format=atom"}
-            elseif ($_.spec -ilike 'libslirp.spec') {$SourceTagURL="https://gitlab.freedesktop.org/slirp/libslirp/-/tags?format=atom"}
-            elseif ($_.spec -ilike 'libtiff.spec') {$SourceTagURL="https://gitlab.com/libtiff/libtiff/-/tags?format=atom"}
-            elseif ($_.spec -ilike 'libx11.spec') {$SourceTagURL="https://gitlab.freedesktop.org/xorg/lib/libx11/-/tags?format=atom"}  
-            elseif ($_.spec -ilike 'libxinerama.spec') {$SourceTagURL="https://gitlab.freedesktop.org/xorg/lib/libxinerama/-/tags?format=atom"}
-            elseif ($_.spec -ilike 'man-db.spec') {$SourceTagURL="https://gitlab.com/man-db/man-db/-/tags?format=atom"}
-            elseif ($_.spec -ilike 'mesa.spec') {$SourceTagURL="https://gitlab.freedesktop.org/mesa/mesa/-/tags?format=atom"}
-            elseif ($_.spec -ilike 'mm-common.spec') {$SourceTagURL="https://gitlab.gnome.org/GNOME/mm-common/-/tags?format=atom"}
-            elseif ($_.spec -ilike 'modemmanager.spec') {$SourceTagURL="https://gitlab.freedesktop.org/modemmanager/modemmanager/-/tags?format=atom"; $replace="-dev"}
-            elseif ($_.spec -ilike 'pixman.spec') {$SourceTagURL="https://gitlab.freedesktop.org/pixman/pixman/-/tags?format=atom"}
-            elseif ($_.spec -ilike 'pkg-config.spec') {$SourceTagURL="https://gitlab.freedesktop.org/pkg-config/pkg-config/-/tags?format=atom"}
-            elseif ($_.spec -ilike 'polkit.spec') {$SourceTagURL="https://gitlab.freedesktop.org/polkit/polkit/-/tags?format=atom"}
-            elseif ($_.spec -ilike 'psmisc.spec') {$SourceTagURL="https://gitlab.com/psmisc/psmisc/-/tags?format=atom"}
-            elseif ($_.spec -ilike 'pygobject.spec') {$SourceTagURL="https://gitlab.gnome.org/GNOME/pygobject/-/tags?format=atom"}
-            elseif ($_.spec -ilike 'python-M2Crypto.spec') {$SourceTagURL="https://gitlab.com/m2crypto/m2crypto/-/tags?format=atom"}
-            elseif ($_.spec -ilike 'python-pygobject.spec') {$SourceTagURL="https://gitlab.gnome.org/GNOME/pygobject/-/tags?format=atom"}
-            elseif ($_.spec -ilike 'shared-mime-info.spec') {$SourceTagURL="https://gitlab.freedesktop.org/xdg/shared-mime-info/-/tags?format=atom"}
-            elseif ($_.spec -ilike 'wayland.spec') {$SourceTagURL="https://gitlab.freedesktop.org/wayland/wayland/-/tags?format=atom"}
-            elseif ($_.spec -ilike 'wayland-protocols.spec') {$SourceTagURL="https://gitlab.freedesktop.org/wayland/wayland-protocols/-/tags?format=atom"}
-
-            if ($SourceTagURL -ne "")
-            {
-                try{
-                    if ([string]::IsNullOrEmpty($Names))
-                    {
-                        $Names = (invoke-restmethod -uri $SourceTagURL -usebasicparsing)
-                        $Names = $Names.title
-                    }
-
-                    $replace += $_.Name+"."
-                    $replace += $_.Name+"-"
-                    $replace += $_.Name+"_"
-                    $replace +="ver"
-
-                    $i=0; do {$Names = $Names | foreach-object {$_.tolower().replace(($replace[$i]).tolower(),"")}; $i++} while ($i -ne $replace.count-1)
-                    $Names = $Names.Where({ $null -ne $_ })
-                    $Names = $Names.Where({ "" -ne $_ }) 
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^v' -simplematch) {$_ -ireplace '^v',""} else {$_}}
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^V' -simplematch) {$_ -ireplace '^V',""} else {$_}}
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^r' -simplematch) {$_ -ireplace '^r',""} else {$_}}
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^R' -simplematch) {$_ -ireplace '^R',""} else {$_}}
-
-                    # remove versions developer, release candidates, alpha versions, preview versions and versions without numbers
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'candidate' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-alpha' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-beta' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.beta' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.0' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.1' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.2' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.3' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.4' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc1' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc2' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc3' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc4' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-preview.' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-dev.' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-pre1' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.pre1' -simplematch)) {$_}}
-
-                    $Names = $Names  -replace "v",""
-                    $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
-                    $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
-
-                    if ($_.spec -ilike 'atk.spec')
-                    {
-                        $Names = $Names | foreach-object {$_.tolower().replace("_",".")}
-                    }
-
-                    if ($Names -ilike '*.*')
-                    {
-                        $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
-                    }
-                    else
-                    {
-                        $NameLatest = ($Names | convertfrom-json | sort-object |select-object -last 1).ToString()
-                    }
-                    if (!($Names.contains($NameLatest))) { $NameLatest = ($Names | sort-object |select-object -last 1).ToString() }
-                }
-                catch{$NameLatest=""}
-                if ($NameLatest -ne "")
-                {
-                    if (($NameLatest -ilike '*.*') -and ($version -ilike '*.*'))
-                    {
-                        try
-                        {
-                            if ([System.Version]$Version -lt [System.Version]$NameLatest) {$UpdateAvailable = $NameLatest}
-                            elseif ([System.Version]$Version -eq [System.Version]$NameLatest) {$UpdateAvailable = "(same version)" }
-                            else {$UpdateAvailable = "Warning: "+$currentfile.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
-                        }
-                        catch{}
-                    }
-                    if ($UpdateAvailable -eq "")
-                    {
-                        if ($Version -lt $NameLatest) {$UpdateAvailable = $NameLatest}
-                        elseif ($Version -eq $NameLatest) {$UpdateAvailable = "(same version)" }
-                        else {$UpdateAvailable = "Warning: "+$currentfile.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
-                    }
-                }
-            }
-        }
-
-        # Check UpdateAvailable by cpan tags detection
-        elseif (($Source0 -ilike '*cpan.metacpan.org/authors*') -or ($Source0 -ilike '*search.cpan.org/CPAN/authors*') -or ($Source0 -ilike '*cpan.org/authors*'))
-        {
-            # Hardcoded SourceTagURL from Source0 because detection from Source0 url would have a worse ratio
-            $Names = @()
-            $replace=@()
             # Autogenerated SourceTagURL from Source0
             $SourceTagURLArray=($Source0 ).split("/")
             if ($SourceTagURLArray.length -gt 0)
@@ -2744,409 +2040,750 @@ function CheckURLHealth {
                     else { $SourceTagURL=$SourceTagURL + "/" + $SourceTagURLArray[$i] }
                 }
             }
-
-            if ($SourceTagURL -ne "")
-            {
-                try{
-                    if ([string]::IsNullOrEmpty($Names))
-                    {
-                        $Names = ((invoke-restmethod -uri $SourceTagURL -usebasicparsing) -split 'a href=') -split '>'
-                        $Names = ($Names | foreach-object { if ($_ | select-string -pattern '</a' -simplematch) {$_}}) -replace '"',""
-                        $Names = $Names -replace '</a'
-                    }
-
-                    $Names = $Names  -replace ".tar.gz",""
-                    $Names = $Names  -replace ".tar.bz2",""
-                    $Names = $Names  -replace ".tar.xz",""
-                    $Names = $Names  -replace ".tar.lz",""
-
-                    if ($_.spec -ilike '*perl-*.spec') { $replace +=  [system.string]::concat(($_.Name -ireplace "perl-",""),"-")}  
-
-                    $replace += $_.Name+"."
-                    $replace += $_.Name+"-"
-                    $replace += $_.Name+"_"
-                    $replace +="ver"
-
-                    $i=0; do {$Names = $Names | foreach-object {$_.tolower().replace(($replace[$i]).tolower(),"")}; $i++} while ($i -ne $replace.count-1)
-                    $Names = $Names.Where({ $null -ne $_ })
-                    $Names = $Names.Where({ "" -ne $_ }) 
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^v' -simplematch) {$_ -ireplace '^v',""} else {$_}}
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^V' -simplematch) {$_ -ireplace '^V',""} else {$_}}
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^r' -simplematch) {$_ -ireplace '^r',""} else {$_}}
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^R' -simplematch) {$_ -ireplace '^R',""} else {$_}}
-
-                    # remove versions developer, release candidates, alpha versions, preview versions and versions without numbers
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'candidate' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-alpha' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-beta' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.beta' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.0' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.1' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.2' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.3' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.4' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc1' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc2' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc3' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc4' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-preview.' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-dev.' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-pre1' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.pre1' -simplematch)) {$_}}
-
-                    $Names = $Names  -replace "v",""
-                    $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
-                    $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
-
-                    if ($Names -ilike '*.*')
-                    {
-                        $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
-                    }
-                    else
-                    {
-                        $NameLatest = ($Names | convertfrom-json | sort-object |select-object -last 1).ToString()
-                    }
-                    if (!($Names.contains($NameLatest))) { $NameLatest = ($Names | sort-object |select-object -last 1).ToString() }
-                }
-                catch{$NameLatest=""}
-                if ($NameLatest -ne "")
-                {
-                    if (($NameLatest -ilike '*.*') -and ($version -ilike '*.*'))
-                    {
-                        try
-                        {
-                            if ([System.Version]$Version -lt [System.Version]$NameLatest) {$UpdateAvailable = $NameLatest}
-                            elseif ([System.Version]$Version -eq [System.Version]$NameLatest) {$UpdateAvailable = "(same version)" }
-                            else {$UpdateAvailable = "Warning: "+$currentfile.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
-                        }
-                        catch{}
-                    }
-                    if ($UpdateAvailable -eq "")
-                    {
-                        if ($Version -lt $NameLatest) {$UpdateAvailable = $NameLatest}
-                        elseif ($Version -eq $NameLatest) {$UpdateAvailable = "(same version)" }
-                        else {$UpdateAvailable = "Warning: "+$currentfile.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
-                    }
-                }
-            }
         }
 
-        # Check UpdateAvailable by kernel.org tags detection
-        elseif ($Source0 -ilike '*kernel.org*')
-        {
+
+        try{
             $Names=@()
-            $replace=@()
-            # Hardcoded SourceTagURL from Source0 because detection from Source0 url would have a worse ratio
-            if ($_.spec -ilike 'autofs.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/linux/storage/autofs/autofs.git/refs/tags?format=atom"}
-            elseif ($_.spec -ilike 'blktrace.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/linux/kernel/git/axboe/blktrace.git/refs/tags?format=atom"}
-            elseif ($_.spec -ilike 'bluez.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/bluetooth/bluez.git/refs"} #ausnahme
-            elseif ($_.spec -ilike 'bridge-utils.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/network/bridge/bridge-utils.git/refs/tags?format=atom"}
-            elseif ($_.spec -ilike 'dtc.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/utils/dtc/dtc.git/refs/tags?format=atom"}
-            elseif ($_.spec -ilike 'ethtool.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/network/ethtool/ethtool.git/refs/tags?format=atom"}
-            elseif ($_.spec -ilike 'fio.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/linux/kernel/git/axboe/fio.git/refs/tags?format=atom"}
-            elseif ($_.spec -ilike 'git.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/git/git.git/refs/tags?format=atom"}
-            elseif ($_.spec -ilike 'i2c-tools.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/utils/i2c-tools/i2c-tools.git/refs/tags?format=atom"}
-            elseif ($_.spec -ilike 'iproute2.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/network/iproute2/iproute2.git/refs/tags?format=atom"}
-            elseif ($_.spec -ilike 'ipvsadm.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/utils/kernel/ipvsadm/ipvsadm.git/refs/tags?format=atom"}
-            elseif ($_.spec -ilike 'kexec-tools.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/utils/kernel/kexec/kexec-tools.git/refs/tags?format=atom"}
-            elseif ($_.spec -ilike 'keyutils.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/linux/kernel/git/dhowells/keyutils.git/refs/tags?format=atom"}
-            elseif ($_.spec -ilike 'kmod.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/utils/kernel/kmod/kmod.git/refs/tags?format=atom"}
-            elseif ($_.spec -ilike 'libcap.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/libs/libcap/libcap.git/refs/tags?format=atom"}
-            elseif ($_.spec -ilike 'libtraceevent.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/libs/libtrace/libtraceevent.git/refs/tags?format=atom"}
-            elseif ($_.spec -ilike 'libtracefs.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/libs/libtrace/libtracefs.git/refs/tags?format=atom"}
-            elseif (($_.spec -ilike 'linux-aws.spec') -or ($_.spec -ilike 'linux-esx.spec') -or ($_.spec -ilike 'linux-rt.spec') -or ($_.spec -ilike 'linux-secure.spec') -or ($_.spec -ilike 'linux.spec') -or ($_.spec -ilike 'linux-api-headers.spec'))
+            $Names = ((((invoke-restmethod -uri $SourceTagURL -TimeoutSec 10 -usebasicparsing) -split "<tr><td") -split 'a href=') -split '>') -split "title="
+            $Names = $Names | foreach-object { if ($_ | select-string -pattern '.tar.' -simplematch) {$_}}
+            $Names = ($Names | foreach-object { if (!($_ | select-string -pattern '</a' -simplematch)) {$_}}) -ireplace '"',""
+            $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.sig' -simplematch)) {$_}}
+            $Names = $Names  -replace ".tar.gz",""
+            $Names = $Names  -replace ".tar.bz2",""
+            $Names = $Names  -replace ".tar.xz",""
+            $Names = $Names  -replace ".tar.lz",""
+
+            if ($currentTask.spec -ilike 'compat-gdbm.spec') {$replace +="gdbm-"}
+            elseif ($currentTask.spec -ilike 'grub2.spec') {$replace +="grub-"}
+            elseif ($currentTask.spec -ilike 'freetype2.spec') {$replace +="freetype-"}
+            elseif ($currentTask.spec -ilike 'libldb.spec') {$replace +="ldb-"}
+            elseif ($currentTask.spec -ilike 'libtalloc.spec') {$replace +="talloc-"}
+            elseif ($currentTask.spec -ilike 'libtdb.spec') {$replace +="tdb-"}
+            elseif ($currentTask.spec -ilike 'libtevent.spec') {$replace +="tevent-"}
+            elseif ($currentTask.spec -ilike 'mozjs.spec') {$replace +="/pub/firefox/releases/"+$NameLatest+"/source/firefox-"; $replace +=".source"; $replace +=".asc"}
+            elseif ($currentTask.spec -ilike 'mozjs60.spec') {$replace +="/pub/firefox/releases/"+$NameLatest+"esr/source/firefox-"; $replace +="esr.source"; $replace +=".asc"}
+            elseif ($currentTask.spec -ilike 'nspr.spec') {$replace +="/pub/nspr/releases/v"+$NameLatest+"/src/nspr-"}
+            elseif ($currentTask.spec -ilike 'nss.spec') {$replace +="/pub/security/nss/releases/NSS_"+$NameLatest+"_RTM/src/"}
+            elseif ($currentTask.spec -ilike 'proto.spec') {$replace +="xproto-"}
+            elseif ($currentTask.spec -ilike 'samba-client.spec') {$replace +="samba-"}
+            elseif ($currentTask.spec -ilike 'wget.spec') {$Names = $Names | foreach-object { if (!($_ | select-string -pattern 'wget2-' -simplematch)) {$_}}}
+            elseif ($currentTask.spec -ilike 'xorg-applications.spec') {$replace +="bdftopcf-"}
+            elseif ($currentTask.spec -ilike 'xorg-fonts.spec') {$replace +="encodings-"}
+
+            $replace += $currentTask.Name+"."
+            $replace += $currentTask.Name+"-"
+            $replace += $currentTask.Name+"_"
+            $replace += $currentTask.Name
+            $replace +="ver"
+            $replace +="release_"
+            $replace +="release-"
+            $replace +="release"
+            $i=0; do {$Names = $Names | foreach-object {$_.tolower().replace(($replace[$i]).tolower(),"")}; $i++} while ($i -ne $replace.count-1)
+
+            $Names = $Names.Where({ $null -ne $currentTask.Name })
+            $Names = $Names.Where({ "" -ne $currentTask.Name })
+            $Names = $Names | foreach-object { if ($_ | select-string -pattern '^rel/' -simplematch) {$_ -ireplace '^rel/',""} else {$_}}
+            $Names = $Names | foreach-object { if ($_ | select-string -pattern '^v' -simplematch) {$_ -ireplace '^v',""} else {$_}}
+            $Names = $Names | foreach-object { if ($_ | select-string -pattern '^V' -simplematch) {$_ -ireplace '^V',""} else {$_}}
+            $Names = $Names | foreach-object { if ($_ | select-string -pattern '^r' -simplematch) {$_ -ireplace '^r',""} else {$_}}
+            $Names = $Names | foreach-object { if ($_ | select-string -pattern '^R' -simplematch) {$_ -ireplace '^R',""} else {$_}}
+            $Names = $Names | foreach-object { if ($_ | select-string -pattern '_' -simplematch) {$_ -ireplace '_',"."} else {$_}}
+
+            # remove versions developer, release candidates, alpha versions, preview versions and versions without numbers
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'candidate' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-alpha' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-beta' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.beta' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.0' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.1' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.2' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.3' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.4' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc1' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc2' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc3' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc4' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-preview.' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-dev.' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-pre1' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.pre1' -simplematch)) {$_}}
+
+                $Names = $Names  -replace "v",""
+                $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
+                $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
+
+            if ($Names -ilike '*.*')
             {
-                if ($outputfile -ilike '*-3.0_*') {$SourceTagURL="http://www.kernel.org/pub/linux/kernel/v4.x"; $replace +="linux-"}
-                elseif ($outputfile -ilike '*-4.0_*') {$SourceTagURL="http://www.kernel.org/pub/linux/kernel/v5.x"; $replace +="linux-"}
-                elseif ($outputfile -ilike '*-5.0_*') {$SourceTagURL="http://www.kernel.org/pub/linux/kernel/v6.x"; $replace +="linux-"}
+                $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
             }
-            elseif ($_.spec -ilike 'linux-firmware.spec') {$SourceTagURL="http://www.kernel.org/pub/linux/kernel/firmware"}
-            elseif ($_.spec -ilike 'man-pages.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/docs/man-pages/man-pages.git/refs/tags?format=atom"}
-            elseif ($_.spec -ilike 'pciutils.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/utils/pciutils/pciutils.git/refs/tags?format=atom"}
-            elseif ($_.spec -ilike 'rt-tests.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/utils/rt-tests/rt-tests.git/refs/tags?format=atom"}
-            elseif ($_.spec -ilike 'stalld.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/utils/stalld/stalld.git/refs/tags?format=atom"}
-            elseif ($_.spec -ilike 'syslinux.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/boot/syslinux/syslinux.git/refs/tags?format=atom"}
-            elseif ($_.spec -ilike 'trace-cmd.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/utils/trace-cmd/trace-cmd.git/refs/tags?format=atom"; $replace +="v"}
-            elseif ($_.spec -ilike 'usbutils.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/linux/kernel/git/gregkh/usbutils.git/refs/tags?format=atom"}
-            elseif ($_.spec -ilike 'xfsprogs.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/fs/xfs/xfsprogs-dev.git/refs/tags?format=atom"; $replace +="xfsprogs-dev-"; $replace +="v"}
             else
             {
-                $SourceTagURL=(split-path $Source0 -Parent).Replace("\","/")
+                $NameLatest = ($Names | convertfrom-json | sort-object |select-object -last 1).ToString()
             }
-
-            if ($SourceTagURL -ne "")
-            {
-                try{
-                    $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
-                    $headers.Add("Authorization", "token $accessToken")
-                    $Names = (((invoke-restmethod -uri $SourceTagURL -usebasicparsing -headers @{Authorization = "Bearer $accessToken"}) -split "<tr><td") -split 'a href=') -split '>'
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '</a' -simplematch) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'commit' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern "'" -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '"' -simplematch)) {$_}}
-                    $Names = $Names -ireplace '</a',""
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.sig' -simplematch)) {$_}}
-                    $Names = $Names  -replace ".tar.gz",""
-                    $Names = $Names  -replace ".tar.bz2",""
-                    $Names = $Names  -replace ".tar.xz",""
-                    $Names = $Names  -replace ".tar.lz",""
-
-                    $replace += $_.Name+"."
-                    $replace += $_.Name+"-"
-                    $replace += $_.Name+"_"
-                    $replace += $_.Name
-                    $replace +="ver"
-                    $replace +="release_"
-                    $replace +="release-"
-                    $replace +="release"
-                    $i=0; do {$Names = $Names | foreach-object {$_.tolower().replace(($replace[$i]).tolower(),"")}; $i++} while ($i -ne $replace.count-1)
-                    $Names = $Names.Where({ $null -ne $_ })
-                    $Names = $Names.Where({ "" -ne $_ })
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^rel/' -simplematch) {$_ -ireplace '^rel/',""} else {$_}}
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^v' -simplematch) {$_ -ireplace '^v',""} else {$_}}
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^V' -simplematch) {$_ -ireplace '^V',""} else {$_}}
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^r' -simplematch) {$_ -ireplace '^r',""} else {$_}}
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^R' -simplematch) {$_ -ireplace '^R',""} else {$_}}
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '_' -simplematch) {$_ -ireplace '_',"."} else {$_}}
-
-                    # remove versions developer, release candidates, alpha versions, preview versions and versions without numbers
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'candidate' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-alpha' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-beta' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.beta' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.0' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.1' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.2' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.3' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.4' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc1' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc2' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc3' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc4' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-preview.' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-dev.' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-pre1' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.pre1' -simplematch)) {$_}}
-
-                    $Names = $Names  -replace "v",""
-                    $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
-                    $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
-
-                    # post check
-                    if (($_.spec -ilike 'linux-aws.spec') -or ($_.spec -ilike 'linux-esx.spec') -or ($_.spec -ilike 'linux-rt.spec') -or ($_.spec -ilike 'linux-secure.spec') -or ($_.spec -ilike 'linux.spec') -or ($_.spec -ilike 'linux-api-headers.spec'))
-                    {
-                        if ($outputfile -ilike '*-3.0_*') {$Names = $Names | foreach-object { if ($_ | select-string -pattern '4.19.' -simplematch) {$_}}}
-                        elseif ($outputfile -ilike '*-4.0_*') {$Names = $Names | foreach-object { if ($_ | select-string -pattern '5.10.' -simplematch) {$_}}}
-                        elseif ($outputfile -ilike '*-5.0_*') {$Names = $Names | foreach-object { if ($_ | select-string -pattern '6.0' -simplematch) {$_}}}
-                    }
-                    if ($_.spec -ilike 'kexec-tools.spec')
-                    {
-                        $Names = $Names | foreach-object { if (!($_ | select-string -pattern '2006' -simplematch)) {$_}}
-                        $Names = $Names | foreach-object { if (!($_ | select-string -pattern '2007' -simplematch)) {$_}}
-                        $Names = $Names | foreach-object { if (!($_ | select-string -pattern '2008' -simplematch)) {$_}}
-                    }
-                    if ($_.spec -ilike 'libcap.spec')
-                    {
-                        $Names = $Names | foreach-object { if (!($_ | select-string -pattern '2006' -simplematch)) {$_}}
-                        $Names = $Names | foreach-object { if (!($_ | select-string -pattern '2007' -simplematch)) {$_}}
-                    }
-
-                    if ($Names -ilike '*.*')
-                    {
-                        $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
-                    }
-                    else
-                    {
-                        $NameLatest = ($Names | convertfrom-json | sort-object |select-object -last 1).ToString()
-                    }
-                    if (!($Names.contains($NameLatest))) { $NameLatest = ($Names | sort-object |select-object -last 1).ToString() }
-                }
-                catch{$NameLatest=""}
-                if ($NameLatest -ne "")
-                {
-                    if (($NameLatest -ilike '*.*') -and ($version -ilike '*.*'))
-                    {
-                        try
-                        {
-                            if ([System.Version]$Version -lt [System.Version]$NameLatest) {$UpdateAvailable = $NameLatest}
-                            elseif ([System.Version]$Version -eq [System.Version]$NameLatest) {$UpdateAvailable = "(same version)" }
-                            else {$UpdateAvailable = "Warning: "+$currentfile.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
-                        }
-                        catch{}
-                    }
-                    if ($UpdateAvailable -eq "")
-                    {
-                        if ($Version -lt $NameLatest) {$UpdateAvailable = $NameLatest}
-                        elseif ($Version -eq $NameLatest) {$UpdateAvailable = "(same version)" }
-                        else {$UpdateAvailable = "Warning: "+$currentfile.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
-                    }
-                }
-            }
+            if (!($Names.contains($NameLatest))) { $NameLatest = ($Names | sort-object |select-object -last 1).ToString() }
         }
-        elseif (((urlhealth((split-path $Source0 -Parent).Replace("\","/"))) -eq "200") -or `
-        ($_.spec -ilike "apparmor.spec") -or `
-        ($_.spec -ilike "bzr.spec") -or `
-        ($_.spec -ilike "chrpath.spec") -or `
-        ($_.spec -ilike "conntrack-tools.spec") -or `
-        ($_.spec -ilike "ebtables.specconntrack-tools.spec") -or `
-        ($_.spec -ilike "eventlog.spec") -or `
-        ($_.spec -ilike "intltool.spec") -or `
-        ($_.spec -ilike "iotop.spec") -or `
-        ($_.spec -ilike "ipset.spec") -or `
-        ($_.spec -ilike "iptables.spec") -or `
-        ($_.spec -ilike "itstool.spec") -or `
-        ($_.spec -ilike "json-c.spec") -or `
-        ($_.spec -ilike "js.spec") -or `
-        ($_.spec -ilike "lasso.spec") -or `
-        ($_.spec -ilike "libmnl.spec") -or `
-        ($_.spec -ilike "libmetalink.spec") -or `
-        ($_.spec -ilike "libnetfilter_conntrack.spec") -or `
-        ($_.spec -ilike "libnetfilter_cthelper.spec") -or `
-        ($_.spec -ilike "libnetfilter_cttimeout.spec") -or `
-        ($_.spec -ilike "libnetfilter_queue.spec") -or `
-        ($_.spec -ilike "libnfnetlink.spec") -or `
-        ($_.spec -ilike "libnftnl.spec") -or `
-        ($_.spec -ilike "libteam.spec") -or `
-        ($_.spec -ilike "nftables.spec") -or `
-        ($_.spec -ilike "openvswitch.spec") -or `
-        ($_.spec -ilike "python-pbr.spec") -or `
-        ($_.spec -ilike "sysstat.spec") -or `
-        ($_.spec -ilike "xmlsec1.spec"))
+        catch{$NameLatest=""}
+        if ($NameLatest -ne "")
         {
-
-            $SourceTagURL=(split-path $Source0 -Parent).Replace("\","/")
-
-            if ($_.spec -ilike "chrpath.spec") {$SourceTagURL="https://codeberg.org/pere/chrpath/tags"}
-            if ($_.spec -ilike "apparmor.spec") {$SourceTagURL="https://launchpad.net/apparmor/+download"}
-            if ($_.spec -ilike "bzr.spec") {$SourceTagURL="https://launchpad.net/bzr/+download"}
-            if ($_.spec -ilike "intltool.spec") {$SourceTagURL="https://launchpad.net/intltool/+download"}
-            if ($_.spec -ilike "ipset.spec") {$SourceTagURL="https://ipset.netfilter.org/install.html"}
-            if ($_.spec -ilike "itstool.spec") {$SourceTagURL="https://itstool.org/download.html"}
-            if ($_.spec -ilike "js.spec") {$SourceTagURL="https://archive.mozilla.org/pub/js/"}
-            if ($_.spec -ilike "json-c.spec") {$SourceTagURL="https://s3.amazonaws.com/json-c_releases/"}
-            if ($_.spec -ilike "openvswitch.spec") {$SourceTagURL="https://www.openvswitch.org/download"}
-            if ($_.spec -ilike "python-pbr.spec") {$SourceTagURL="https://opendev.org/openstack/pbr/tags"}
-            if ($_.spec -ilike "sysstat.spec") {$SourceTagURL="http://sebastien.godard.pagesperso-orange.fr/download.html"}
-            if ($_.spec -ilike "xmlsec1.spec") {$SourceTagURL="https://www.aleksey.com/xmlsec/download/"}
-            $Names=@()
-            $replace=@()
-            $NameLatest=""
-            try{ $Names = ((((invoke-restmethod -uri $SourceTagURL -usebasicparsing) -split "<tr><td") -split 'a href=') -split '>') -split "title=" }
-            catch
+            if (($NameLatest -ilike '*.*') -and ($version -ilike '*.*'))
             {
                 try
                 {
-                    $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
-                    $session.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36"
-                    $Names = Invoke-WebRequest -UseBasicParsing -Uri $SourceTagURL `
-                    -WebSession $session `
-                    -Headers @{
-                    "Accept"="text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
-                      "Accept-Encoding"="gzip, deflate, br"
-                      "Accept-Language"="en-US,en;q=0.9"
-                      "Cache-Control"="max-age=0"
-                      "Sec-Fetch-Dest"="document"
-                      "Sec-Fetch-Mode"="navigate"
-                      "Sec-Fetch-Site"="none"
-                      "Sec-Fetch-User"="?1"
-                      "Upgrade-Insecure-Requests"="1"
-                      "sec-ch-ua"="`"Google Chrome`";v=`"113`", `"Chromium`";v=`"113`", `"Not-A.Brand`";v=`"24`""
-                      "sec-ch-ua-mobile"="?0"
-                      "sec-ch-ua-platform"="`"Windows`""
-                    }
-                    $Names = $Names.Links.href
+                    if ([System.Version]$Version -lt [System.Version]$NameLatest) {$UpdateAvailable = $NameLatest}
+                    elseif ([System.Version]$Version -eq [System.Version]$NameLatest) {$UpdateAvailable = "(same version)" }
+                    else {$UpdateAvailable = "Warning: "+$currentTask.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
                 }
                 catch{}
             }
-            if ($_.spec -ilike "docbook-xml.spec")
+            if ($UpdateAvailable -eq "")
             {
-                $SourceTagURL="https://docbook.org/xml/"
-                $objtmp=@()
-                $objtmp = (invoke-webrequest -uri $SourceTagURL).Links.href
-                $objtmp = $objtmp | foreach-object { if ($_ -match '\d') {$_}}
-                $objtmp = $objtmp | foreach-object { if (!($_ | select-string -pattern 'CR' -simplematch)) {$_}}
-                $objtmp = $objtmp | foreach-object { if (!($_ | select-string -pattern 'b' -simplematch)) {$_}}
-                $Latest=([HeapSort]::Sort($objtmp) | select-object -last 1).tostring()
-                $SourceTagURL = [system.string]::concat('https://docbook.org/xml/',$Latest)
-                $objtmp = (invoke-webrequest -uri $SourceTagURL).Links.href
-                $Names = $objtmp | foreach-object { if ($_ | select-string -pattern 'docbook-' -simplematch) {$_}}
-                $Names = $Names  -replace "docbook-xml-",""
-                $Names = $Names  -replace "docbook-",""
-                $Names = $Names  -replace ".zip",""
+                if ($Version -lt $NameLatest) {$UpdateAvailable = $NameLatest}
+                elseif ($Version -eq $NameLatest) {$UpdateAvailable = "(same version)" }
+                else {$UpdateAvailable = "Warning: "+$currentTask.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
             }
-            if ($_.spec -ilike "json-c.spec")
+        }
+    }
+
+    # Check UpdateAvailable by rubygems.org tags detection
+    elseif ($Source0 -ilike '*rubygems.org*')
+    {
+        $Names=@()
+        $replace=@()
+        # Autogenerated SourceTagURL from Source0
+        $SourceTagURLArray=($Source0).split("-")
+        if ($SourceTagURLArray.length -gt 1)
+        {
+            $SourceTagURL = $SourceTagURLArray[0]
+            for ($i=1;$i -lt ($SourceTagURLArray.length -1);$i++) { $SourceTagURL=$SourceTagURL + "-" + $SourceTagURLArray[$i] }
+        }
+        $replace = ($SourceTagURL -ireplace "/downloads/","/gems/")+"/versions"
+        $replace = $replace -ireplace "http://","https://"
+        $SourceTagURL=$replace +".atom"
+        try{
+            $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
+            $headers.Add("Authorization", "token $accessToken")
+            $Names = (invoke-restmethod -uri $SourceTagURL -TimeoutSec 10).id
+            $Names = $Names  -replace $replace,""
+            $Names = $Names  -replace '/',""
+
+            $Names = $Names  -replace "-java",""
+            $Names = $Names  -replace "-i386-mswin32",""
+            $Names = $Names  -replace "-x86-mswin32",""
+            $Names = $Names  -replace "-x64-mingw-ucrt",""
+            $Names = $Names  -replace "-x86-mingw32",""
+            $Names = $Names  -replace "-x64-mingw32",""
+            $Names = $Names  -replace "-x86-linux",""
+            $Names = $Names  -replace "-x86_64-linux",""
+            $Names = $Names  -replace "-x86_64-darwin",""
+            $Names = $Names  -replace "-arm64-darwin",""
+            $Names = $Names  -replace "-arm-linux",""
+            $Names = $Names  -replace "mswin32",""
+            $Names = $Names  -replace "-aarch64-linux",""
+
+            # remove versions developer, release candidates, alpha versions, preview versions and versions without numbers
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'candidate' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-alpha' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-beta' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.beta' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.0' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.1' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.2' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.3' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.4' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc1' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc2' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc3' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc4' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-preview.' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-dev.' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-pre1' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.pre1' -simplematch)) {$_}}
+
+            if ($Names -ilike '*.*')
             {
-                $Names = (invoke-webrequest -uri $SourceTagURL -UseBasicParsing ) -split "<"
-                $Names = $Names | foreach-object { if ($_ | select-string -pattern 'Key>releases/json-c-' -simplematch) {$_ -ireplace "Key>releases/json-c-",""}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-nodoc.tar.gz' -simplematch)) {$_}}
+                $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
+            }
+            else
+            {
+                $NameLatest = ($Names | convertfrom-json | sort-object | select-object -last 1).ToString()
+            }
+            if (!($Names.contains($NameLatest))) { $NameLatest = ($Names | sort-object |select-object -last 1).ToString() }
+        }
+        catch{$NameLatest=""}
+        if ($NameLatest -ne "")
+        {
+            if (($NameLatest -ilike '*.*') -and ($version -ilike '*.*'))
+            {
+                try
+                {
+                    if ([System.Version]$Version -lt [System.Version]$NameLatest) {$UpdateAvailable = $NameLatest}
+                    elseif ([System.Version]$Version -eq [System.Version]$NameLatest) {$UpdateAvailable = "(same version)" }
+                    else {$UpdateAvailable = "Warning: "+$currentTask.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
+                }
+                catch{}
+            }
+            if ($UpdateAvailable -eq "")
+            {
+                if ($Version -lt $NameLatest) {$UpdateAvailable = $NameLatest}
+                elseif ($Version -eq $NameLatest) {$UpdateAvailable = "(same version)" }
+                else {$UpdateAvailable = "Warning: "+$currentTask.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
+            }
+        }
+    }
+
+    # Check UpdateAvailable by sourceforge tags detection
+    elseif ($Source0 -ilike '*sourceforge.net*')
+    {
+        $Names=@()
+        $replace=@()
+        # Autogenerated SourceTagURL from Source0
+        $SourceTagURLArray=($Source0).replace("http://","")
+        $SourceTagURLArray=($SourceTagURLArray).replace("https://","")
+        $SourceTagURLArray=($SourceTagURLArray).replace("sourceforge.net/","")
+        $SourceTagURLArray=($SourceTagURLArray).replace("downloads.project/","")
+        $SourceTagURLArray=($SourceTagURLArray).replace("projects/","")
+        $SourceTagURLArray=($SourceTagURLArray).replace("prdownloads.","")
+        $SourceTagURLArray=($SourceTagURLArray).replace("downloads.","")
+        $SourceTagURLArray=($SourceTagURLArray).replace("download.","")
+        $SourceTagURLArray=($SourceTagURLArray).replace("gkernel/files/","")
+        $SourceTagURLArray=($SourceTagURLArray).replace("sourceforge/","")
+
+        $tmpName=($SourceTagURLArray -split "/")[0]
+        $SourceTagURL="https://sourceforge.net/projects/$tmpName/files/$tmpName"
+        if ($currentTask.spec -ilike 'docbook-xsl.spec') {$SourceTagURL="https://sourceforge.net/projects/docbook/files/docbook-xsl"}
+        elseif ($currentTask.spec -ilike 'expect.spec') {$SourceTagURL="https://sourceforge.net/projects/expect/files/Expect"} #uppercase E
+        elseif ($currentTask.spec -ilike 'fakeroot-ng.spec') {$SourceTagURL="https://sourceforge.net/projects/fakerootng/files/fakeroot-ng"}
+        elseif ($currentTask.spec -ilike 'libpng.spec') {$SourceTagURL="https://sourceforge.net/projects/libpng/files/libpng16"}
+        elseif  ($currentTask.spec -ilike 'nfs-utils.spec') {$SourceTagURL="https://sourceforge.net/projects/nfs/files/nfs-utils"}
+        elseif  ($currentTask.spec -ilike 'openipmi.spec') {$SourceTagURL="https://sourceforge.net/projects/openipmi/files/OpenIPMI%202.0%20Library/"}
+        elseif  ($currentTask.spec -ilike 'procps-ng.spec') {$SourceTagURL="http://sourceforge.net/projects/procps-ng/files/Production/"}
+        elseif ($currentTask.spec -ilike 'rng-tools.spec') {$SourceTagURL="https://sourceforge.net/projects/gkernel/files/rng-tools"}
+        elseif ($currentTask.spec -ilike 'tcl.spec') {$SourceTagURL="https://sourceforge.net/projects/tcl/files/Tcl"}
+        elseif ($currentTask.spec -ilike 'unzip.spec')
+        {
+            $SourceTagURL='https://sourceforge.net/projects/infozip/files/UnZip%206.x%20%28latest%29/UnZip%206.0/'
+            if ($version -eq "6.0") {$version="60"}
+        }
+        elseif  ($currentTask.spec -ilike 'xmlstarlet.spec') {$SourceTagURL='https://sourceforge.net/projects/xmlstar/files/xmlstarlet'}
+        elseif  ($currentTask.spec -ilike 'zip.spec')
+        {
+            $SourceTagURL='https://sourceforge.net/projects/infozip/files/Zip%203.x%20%28latest%29/3.0/'
+            if ($version -eq "3.0") {$version="30"}
+            $replace += "zip30.zip"
+        }
+        try{
+            $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
+            $headers.Add("Authorization", "token $accessToken")
+            $Names = (((invoke-restmethod -uri $SourceTagURL -TimeoutSec 10) -split 'net.sf.files = {') -split "}};")[1] -split '{'
+            $Names = (($Names -split ',') | foreach-object { if($_ | select-string -pattern '"name":' -simplematch) {$_ -ireplace '"name":',""}}) -ireplace '"',""
+
+            if ($currentTask.spec -ilike "backward-cpp.spec") {$replace +="v"}
+            elseif ($currentTask.spec -ilike "e2fsprogs.spec") {$replace +="v"}
+            elseif ($currentTask.spec -ilike "libusb.spec")
+            {
+                $Names = $Names  -replace "libusb-compat-",""
+                $Names = $Names  -replace "libusb-",""
+                $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
+                $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
+
+                if ($Names -ilike '*.*')
+                {
+                    $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
+                }
+                else
+                {
+                    $NameLatest = ($Names | convertfrom-json | sort-object |select-object -last 1).ToString()
+                }
+                $SourceTagURL="https://sourceforge.net/projects/libusb/files/libusb-"+$NameLatest
+                $Names = (((invoke-restmethod -uri $SourceTagURL -TimeoutSec 10) -split 'net.sf.files = {') -split "}};")[1] -split '{'
+                $Names = (($Names -split ',') | foreach-object { if ($_ | select-string -pattern '"name":' -simplematch) {$_ -ireplace '"name":',""}}) -ireplace '"',""
+            }
+            elseif ($currentTask.spec -ilike 'tboot.spec')
+            {
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '2007' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '2008' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '2009' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '2010' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '2011' -simplematch)) {$_}}
             }
 
-            if (!([Object]::ReferenceEquals($Names,$null)))
+            $Names = $Names  -replace ".tar.gz",""
+            $Names = $Names  -replace ".tar.bz2",""
+            $Names = $Names  -replace ".tar.xz",""
+            $Names = $Names  -replace ".tar.lz",""
+
+            $replace += $currentTask.Name+"."
+            $replace += $currentTask.Name+"-"
+            $replace += $currentTask.Name+"_"
+            $replace += $currentTask.Name
+            $replace +="release_"
+            $replace +="release-"
+            $replace +="release"
+            $replace +="ver"
+
+            $i=0; do {$Names = $Names | foreach-object {$_.tolower().replace(($replace[$i]).tolower(),"")}; $i++} while ($i -ne $replace.count-1)
+
+            # remove versions developer, release candidates, alpha versions, preview versions and versions without numbers
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'candidate' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-alpha' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-beta' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.beta' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.0' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.1' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.2' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.3' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.4' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc1' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc2' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc3' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc4' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-preview.' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-dev.' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-pre1' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.pre1' -simplematch)) {$_}}
+
+                $Names = $Names  -replace "v",""
+                $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
+                $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
+
+            if ($Names -ilike '*.*')
             {
-                if ($_.spec -notlike "docbook-xml.spec")
-                {                
-                    if (((($Names | foreach-object { if ($_ | select-string -pattern '.tar.' -simplematch) {$_}}).count) -eq 0) -or ($_.spec -ilike "dialog.spec") -or ($_.spec -ilike "byacc.spec"))
+                $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
+            }
+            else
+            {
+                $NameLatest = ($Names | convertfrom-json | sort-object |select-object -last 1).ToString()
+            }
+            if (!($Names.contains($NameLatest))) { $NameLatest = ($Names | sort-object |select-object -last 1).ToString() }
+        }
+        catch{$NameLatest=""}
+        if ($NameLatest -ne "")
+        {
+            if (($NameLatest -ilike '*.*') -and ($version -ilike '*.*'))
+            {
+                try
+                {
+                    if ([System.Version]$Version -lt [System.Version]$NameLatest) {$UpdateAvailable = $NameLatest}
+                    elseif ([System.Version]$Version -eq [System.Version]$NameLatest) {$UpdateAvailable = "(same version)" }
+                    else {$UpdateAvailable = "Warning: "+$currentTask.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
+                }
+                catch{}
+            }
+            if ($UpdateAvailable -eq "")
+            {
+                if ($Version -lt $NameLatest) {$UpdateAvailable = $NameLatest}
+                elseif ($Version -eq $NameLatest) {$UpdateAvailable = "(same version)" }
+                else {$UpdateAvailable = "Warning: "+$currentTask.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
+            }
+        }
+    }
+
+    elseif ($Source0 -ilike '*https://pagure.io/*')
+    {
+        $Names = @()
+        $replace=@()
+        if ($currentTask.spec -ilike 'python-daemon.spec') {$SourceTagURL="https://pagure.io/python-daemon/releases"}
+
+        if ($SourceTagURL -ne "")
+        {
+            try
+            {
+                if ([string]::IsNullOrEmpty($Names))
+                {
+                    $tmpName=$currentTask.Name
+                    $Names = ((invoke-restmethod -uri $SourceTagURL -TimeoutSec 10 -usebasicparsing) -split '-release/') -split '.tar.gz"'
+                }
+
+                $replace += $currentTask.Name+"."
+                $replace += $currentTask.Name+"-"
+                $replace += $currentTask.Name+"_"
+                $replace +="ver"
+
+                $i=0; do {$Names = $Names | foreach-object {$_.tolower().replace(($replace[$i]).tolower(),"")}; $i++} while ($i -ne $replace.count-1)
+                $Names = $Names.Where({ $null -ne $currentTask.Name })
+                $Names = $Names.Where({ "" -ne $currentTask.Name })
+                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^v' -simplematch) {$_ -ireplace '^v',""} else {$_}}
+                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^V' -simplematch) {$_ -ireplace '^V',""} else {$_}}
+                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^r' -simplematch) {$_ -ireplace '^r',""} else {$_}}
+                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^R' -simplematch) {$_ -ireplace '^R',""} else {$_}}
+
+                # remove versions developer, release candidates, alpha versions, preview versions and versions without numbers
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'candidate' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-alpha' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-beta' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.beta' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.0' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.1' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.2' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.3' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.4' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc1' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc2' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc3' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc4' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-preview.' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-dev.' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-pre1' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.pre1' -simplematch)) {$_}}
+
+                $Names = $Names  -replace "v",""
+                $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
+                $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
+
+                if ($currentTask.spec -ilike 'atk.spec')
+                {
+                    $Names = $Names | foreach-object {$_.tolower().replace("_",".")}
+                }
+
+                if ($Names -ilike '*.*')
+                {
+                    $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
+                }
+                else
+                {
+                    $NameLatest = ($Names | convertfrom-json | sort-object |select-object -last 1).ToString()
+                }
+                if (!($Names.contains($NameLatest))) { $NameLatest = ($Names | sort-object |select-object -last 1).ToString() }
+            }
+            catch{$NameLatest=""}
+            if ($NameLatest -ne "")
+            {
+                if (($NameLatest -ilike '*.*') -and ($version -ilike '*.*'))
+                {
+                    try
                     {
-                        $Names = $Names | foreach-object { if ($_ | select-string -pattern '.tgz' -simplematch) {$_}}
+                        if ([System.Version]$Version -lt [System.Version]$NameLatest) {$UpdateAvailable = $NameLatest}
+                        elseif ([System.Version]$Version -eq [System.Version]$NameLatest) {$UpdateAvailable = "(same version)" }
+                        else {$UpdateAvailable = "Warning: "+$currentTask.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
                     }
-                    else
+                    catch{}
+                }
+                if ($UpdateAvailable -eq "")
+                {
+                    if ($Version -lt $NameLatest) {$UpdateAvailable = $NameLatest}
+                    elseif ($Version -eq $NameLatest) {$UpdateAvailable = "(same version)" }
+                    else {$UpdateAvailable = "Warning: "+$currentTask.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
+                }
+            }
+        }
+    }
+
+    # Check UpdateAvailable by freedesktop tags detection
+    elseif (($Source0 -ilike '*freedesktop.org*') -or ($Source0 -ilike '*https://gitlab.*'))
+    {
+        # Hardcoded SourceTagURL from Source0 because detection from Source0 url would have a worse ratio
+        $Names = @()
+        $replace=@()
+        if ($currentTask.spec -ilike 'asciidoc3.spec') {$SourceTagURL="https://gitlab.com/asciidoc3/asciidoc3/-/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'atk.spec') {$SourceTagURL="https://gitlab.gnome.org/Archive/atk/-/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'cairo.spec') {$SourceTagURL="https://gitlab.freedesktop.org/cairo/cairo/-/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'dbus.spec') {$SourceTagURL="https://gitlab.freedesktop.org/dbus/dbus/-/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'dbus-glib.spec') {$SourceTagURL="https://gitlab.freedesktop.org/dbus/dbus-glib/-/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'dbus-python.spec') {$SourceTagURL="https://gitlab.freedesktop.org/dbus/dbus-python/-/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'fontconfig.spec') {$SourceTagURL="https://gitlab.freedesktop.org/fontconfig/fontconfig/-/tags?format=atom"}
+        elseif (($currentTask.spec -ilike 'harfbuzz.spec') -or ($currentTask.spec -ilike 'gst-plugins-bad.spec') -or ($currentTask.spec -ilike 'gstreamer-plugins-base.spec') -or ($currentTask.spec -ilike 'libdrm.spec') -or ($currentTask.spec -ilike 'libqmi.spec') -or ($currentTask.spec -ilike 'libxcb.spec') -or ($currentTask.spec -ilike 'ModemManager.spec') -or ($currentTask.spec -ilike 'xcb-proto.spec' -or ($currentTask.spec -ilike 'libmbim.spec'))) # ausnahmen
+        {
+            if ($currentTask.spec -ilike 'harfbuzz.spec') {$SourceTagURL="https://www.freedesktop.org/software/harfbuzz/release/"}
+            elseif ($currentTask.spec -ilike 'gst-plugins-bad.spec') {$SourceTagURL="https://gstreamer.freedesktop.org/src/gst-plugins-bad"}
+            elseif ($currentTask.spec -ilike 'gstreamer-plugins-base.spec') {$SourceTagURL="https://gstreamer.freedesktop.org/src/gst-plugins-base"; $replace +="gst-plugins-base-"}
+            elseif ($currentTask.spec -ilike 'libdrm.spec') {$SourceTagURL="https://dri.freedesktop.org/libdrm/"}
+            elseif ($currentTask.spec -ilike 'libqmi.spec') {$SourceTagURL="https://www.freedesktop.org/software/libqmi/"}
+            elseif ($currentTask.spec -ilike 'libxcb.spec') {$SourceTagURL="http://xcb.freedesktop.org/dist/"}
+            elseif ($currentTask.spec -ilike 'ModemManager.spec') {$SourceTagURL="https://www.freedesktop.org/software/ModemManager/"}
+            elseif ($currentTask.spec -ilike 'xcb-proto.spec') {$SourceTagURL="http://xcb.freedesktop.org/dist/"}
+            elseif ($currentTask.spec -ilike 'libmbim.spec') {$SourceTagURL="https://www.freedesktop.org/software/libmbim/"}
+
+            $Names = (((invoke-restmethod -uri $SourceTagURL -TimeoutSec 10 -usebasicparsing -headers @{Authorization = "Bearer $accessToken"}) -split "<tr><td") -split 'a href=') -split '>'
+            $Names = $Names | foreach-object { if ($_ | select-string -pattern '</a' -simplematch) {$_}}
+            $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'commit' -simplematch)) {$_}}
+            $Names = $Names | foreach-object { if (!($_ | select-string -pattern "'" -simplematch)) {$_}}
+            $Names = $Names | foreach-object { if (!($_ | select-string -pattern '"' -simplematch)) {$_}}
+            $Names = $Names -ireplace '</a',""
+            $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.sig' -simplematch)) {$_}}
+            $Names = $Names  -replace ".tar.gz",""
+            $Names = $Names  -replace ".tar.bz2",""
+            $Names = $Names  -replace ".tar.xz",""
+            $Names = $Names  -replace ".tar.lz",""
+        }
+        elseif ($currentTask.spec -ilike 'gstreamer.spec') {$SourceTagURL="https://gitlab.freedesktop.org/gstreamer/gstreamer/-/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'ipcalc.spec') {$SourceTagURL="https://gitlab.com/ipcalc/ipcalc/-/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'libslirp.spec') {$SourceTagURL="https://gitlab.freedesktop.org/slirp/libslirp/-/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'libtiff.spec') {$SourceTagURL="https://gitlab.com/libtiff/libtiff/-/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'libx11.spec') {$SourceTagURL="https://gitlab.freedesktop.org/xorg/lib/libx11/-/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'libxinerama.spec') {$SourceTagURL="https://gitlab.freedesktop.org/xorg/lib/libxinerama/-/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'man-db.spec') {$SourceTagURL="https://gitlab.com/man-db/man-db/-/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'mesa.spec') {$SourceTagURL="https://gitlab.freedesktop.org/mesa/mesa/-/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'mm-common.spec') {$SourceTagURL="https://gitlab.gnome.org/GNOME/mm-common/-/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'modemmanager.spec') {$SourceTagURL="https://gitlab.freedesktop.org/modemmanager/modemmanager/-/tags?format=atom"; $replace="-dev"}
+        elseif ($currentTask.spec -ilike 'pixman.spec') {$SourceTagURL="https://gitlab.freedesktop.org/pixman/pixman/-/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'pkg-config.spec') {$SourceTagURL="https://gitlab.freedesktop.org/pkg-config/pkg-config/-/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'polkit.spec') {$SourceTagURL="https://gitlab.freedesktop.org/polkit/polkit/-/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'psmisc.spec') {$SourceTagURL="https://gitlab.com/psmisc/psmisc/-/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'pygobject.spec') {$SourceTagURL="https://gitlab.gnome.org/GNOME/pygobject/-/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'python-M2Crypto.spec') {$SourceTagURL="https://gitlab.com/m2crypto/m2crypto/-/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'python-pygobject.spec') {$SourceTagURL="https://gitlab.gnome.org/GNOME/pygobject/-/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'shared-mime-info.spec') {$SourceTagURL="https://gitlab.freedesktop.org/xdg/shared-mime-info/-/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'wayland.spec') {$SourceTagURL="https://gitlab.freedesktop.org/wayland/wayland/-/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'wayland-protocols.spec') {$SourceTagURL="https://gitlab.freedesktop.org/wayland/wayland-protocols/-/tags?format=atom"}
+
+        if ($SourceTagURL -ne "")
+        {
+            try{
+                if ([string]::IsNullOrEmpty($Names))
+                {
+                    $Names = (invoke-restmethod -uri $SourceTagURL -TimeoutSec 10 -usebasicparsing)
+                    $Names = $Names.title
+                }
+
+                $replace += $currentTask.Name+"."
+                $replace += $currentTask.Name+"-"
+                $replace += $currentTask.Name+"_"
+                $replace +="ver"
+
+                $i=0; do {$Names = $Names | foreach-object {$_.tolower().replace(($replace[$i]).tolower(),"")}; $i++} while ($i -ne $replace.count-1)
+                $Names = $Names.Where({ $null -ne $currentTask.Name })
+                $Names = $Names.Where({ "" -ne $currentTask.Name })
+                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^v' -simplematch) {$_ -ireplace '^v',""} else {$_}}
+                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^V' -simplematch) {$_ -ireplace '^V',""} else {$_}}
+                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^r' -simplematch) {$_ -ireplace '^r',""} else {$_}}
+                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^R' -simplematch) {$_ -ireplace '^R',""} else {$_}}
+
+                # remove versions developer, release candidates, alpha versions, preview versions and versions without numbers
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'candidate' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-alpha' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-beta' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.beta' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.0' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.1' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.2' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.3' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.4' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc1' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc2' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc3' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc4' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-preview.' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-dev.' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-pre1' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.pre1' -simplematch)) {$_}}
+
+                $Names = $Names  -replace "v",""
+                $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
+                $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
+
+                if ($currentTask.spec -ilike 'atk.spec')
+                {
+                    $Names = $Names | foreach-object {$_.tolower().replace("_",".")}
+                }
+
+                if ($Names -ilike '*.*')
+                {
+                    $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
+                }
+                else
+                {
+                    $NameLatest = ($Names | convertfrom-json | sort-object |select-object -last 1).ToString()
+                }
+                if (!($Names.contains($NameLatest))) { $NameLatest = ($Names | sort-object |select-object -last 1).ToString() }
+            }
+            catch{$NameLatest=""}
+            if ($NameLatest -ne "")
+            {
+                if (($NameLatest -ilike '*.*') -and ($version -ilike '*.*'))
+                {
+                    try
                     {
-                        $Names = $Names | foreach-object { if ($_ | select-string -pattern '.tar.' -simplematch) {$_}}
+                        if ([System.Version]$Version -lt [System.Version]$NameLatest) {$UpdateAvailable = $NameLatest}
+                        elseif ([System.Version]$Version -eq [System.Version]$NameLatest) {$UpdateAvailable = "(same version)" }
+                        else {$UpdateAvailable = "Warning: "+$currentTask.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
                     }
-                    $Names = ($Names | foreach-object { if (!($_ | select-string -pattern '</a' -simplematch)) {$_}}) -ireplace '"',""
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.tgz.asc' -simplematch)) {$_}}
-                    $Names = $Names  -replace "-src.tar.gz",""
-                    $Names = $Names  -replace ".tar.gz",""
-                    $Names = $Names  -replace ".tar.bz2",""
-                    $Names = $Names  -replace ".tar.xz",""
-                    $Names = $Names  -replace ".tar.lz",""
-                    $Names = $Names  -replace ".tgz",""
+                    catch{}
+                }
+                if ($UpdateAvailable -eq "")
+                {
+                    if ($Version -lt $NameLatest) {$UpdateAvailable = $NameLatest}
+                    elseif ($Version -eq $NameLatest) {$UpdateAvailable = "(same version)" }
+                    else {$UpdateAvailable = "Warning: "+$currentTask.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
+                }
+            }
+        }
+    }
+
+    # Check UpdateAvailable by cpan tags detection
+    elseif (($Source0 -ilike '*cpan.metacpan.org/authors*') -or ($Source0 -ilike '*search.cpan.org/CPAN/authors*') -or ($Source0 -ilike '*cpan.org/authors*'))
+    {
+        # Hardcoded SourceTagURL from Source0 because detection from Source0 url would have a worse ratio
+        $Names = @()
+        $replace=@()
+        # Autogenerated SourceTagURL from Source0
+        $SourceTagURLArray=($Source0 ).split("/")
+        if ($SourceTagURLArray.length -gt 0)
+        {
+            for ($i=1;$i -lt ($SourceTagURLArray.length -1);$i++)
+            {
+                if ($SourceTagURL -eq "") {$SourceTagURL = $SourceTagURLArray[$i]}
+                else { $SourceTagURL=$SourceTagURL + "/" + $SourceTagURLArray[$i] }
+            }
+        }
+
+        if ($SourceTagURL -ne "")
+        {
+            try{
+                if ([string]::IsNullOrEmpty($Names))
+                {
+                    $Names = ((invoke-restmethod -uri $SourceTagURL -TimeoutSec 10-usebasicparsing) -split 'a href=') -split '>'
+                    $Names = ($Names | foreach-object { if ($_ | select-string -pattern '</a' -simplematch) {$_}}) -replace '"',""
+                    $Names = $Names -replace '</a'
                 }
 
-                if ($_.spec -ilike "chrpath.spec")
-                {
-                    $Names = $Names | foreach-object { ($_ -split "href=") -split 'rel='}
-                    $Names = ($Names | foreach-object { if (($_ | select-string -pattern '/pere/chrpath' -simplematch)) {$_}}) -ireplace '/pere/chrpath/archive/release-',""
-                }
+                $Names = $Names  -replace ".tar.gz",""
+                $Names = $Names  -replace ".tar.bz2",""
+                $Names = $Names  -replace ".tar.xz",""
+                $Names = $Names  -replace ".tar.lz",""
 
-                if (($_.spec -ilike "apparmor.spec") -or ($_.spec -ilike "bzr.spec") -or ($_.spec -ilike "intltool.spec") -or ($_.spec -ilike "libmetalink.spec") -or ($_.spec -ilike "itstool.spec") -or ($_.spec -ilike "openssl.spec") -or ($_.spec -ilike "openssl-fips-provider.spec"))
-                {
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '/' -simplematch) {($_ -split '/')[-1]}}
-                }
-                elseif ($_.spec -ilike "curl.spec") { $Names = $Names  -replace "download/","" }
-                elseif ($_.spec -ilike "js.spec") { $replace += "/pub/js/"; $replace +="-1.0.0"}
-                elseif ($_.spec -ilike "lsscsi.spec") { $replace += "lsscsi-030" }
-                elseif ($_.spec -ilike "ltrace.spec") { $replace += ".orig" }
-                elseif ($_.spec -ilike "tzdata.spec")
-                {
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern 'tzdata' -simplematch) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.tar.z' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.asc' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.sign' -simplematch)) {$_}}
-                    $replace += "beta"
-                }
-                elseif ($_.spec -ilike "qemu-img.spec") { $replace += "qemu-" }
-                elseif ($_.spec -ilike "python-pbr.spec")
-                {
-                    $Names = ($Names -split "/openstack/pbr/archive/") -split ' rel=nofollow'
-                }
-                elseif ($_.spec -ilike "python-stevedore.spec") { $replace += "stevedore-" }
-                elseif ($_.spec -ilike "python-antlrpythonruntime.spec") { $replace += "antlr_python_runtime-" }
-                elseif ($_.spec -ilike "openvswitch.spec") { $replace += "https://www.openvswitch.org/releases/openvswitch-" }
-                elseif ($_.spec -ilike "sysstat.spec") { $replace += "href=http://pagesperso-orange.fr/sebastien.godard/sysstat-"; $replace +='<a'; $replace+="moz-do-not-send=true" ; $Names = $Names -replace '\n',""}        
+                if ($currentTask.spec -ilike '*perl-*.spec') { $replace +=  [system.string]::concat(($currentTask.Name -ireplace "perl-",""),"-")}
 
-                $replace += $_.Name+"."
-                $replace += $_.Name+"-"
-                $replace += $_.Name+"_"
-                $replace += $_.Name
+                $replace += $currentTask.Name+"."
+                $replace += $currentTask.Name+"-"
+                $replace += $currentTask.Name+"_"
+                $replace +="ver"
+
+                $i=0; do {$Names = $Names | foreach-object {$_.tolower().replace(($replace[$i]).tolower(),"")}; $i++} while ($i -ne $replace.count-1)
+                $Names = $Names.Where({ $null -ne $currentTask.Name })
+                $Names = $Names.Where({ "" -ne $currentTask.Name })
+                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^v' -simplematch) {$_ -ireplace '^v',""} else {$_}}
+                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^V' -simplematch) {$_ -ireplace '^V',""} else {$_}}
+                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^r' -simplematch) {$_ -ireplace '^r',""} else {$_}}
+                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^R' -simplematch) {$_ -ireplace '^R',""} else {$_}}
+
+                # remove versions developer, release candidates, alpha versions, preview versions and versions without numbers
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'candidate' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-alpha' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-beta' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.beta' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.0' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.1' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.2' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.3' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.4' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc1' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc2' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc3' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc4' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-preview.' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-dev.' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-pre1' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.pre1' -simplematch)) {$_}}
+
+                $Names = $Names  -replace "v",""
+                $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
+                $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
+
+                if ($Names -ilike '*.*')
+                {
+                    $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
+                }
+                else
+                {
+                    $NameLatest = ($Names | convertfrom-json | sort-object |select-object -last 1).ToString()
+                }
+                if (!($Names.contains($NameLatest))) { $NameLatest = ($Names | sort-object |select-object -last 1).ToString() }
+            }
+            catch{$NameLatest=""}
+            if ($NameLatest -ne "")
+            {
+                if (($NameLatest -ilike '*.*') -and ($version -ilike '*.*'))
+                {
+                    try
+                    {
+                        if ([System.Version]$Version -lt [System.Version]$NameLatest) {$UpdateAvailable = $NameLatest}
+                        elseif ([System.Version]$Version -eq [System.Version]$NameLatest) {$UpdateAvailable = "(same version)" }
+                        else {$UpdateAvailable = "Warning: "+$currentTask.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
+                    }
+                    catch{}
+                }
+                if ($UpdateAvailable -eq "")
+                {
+                    if ($Version -lt $NameLatest) {$UpdateAvailable = $NameLatest}
+                    elseif ($Version -eq $NameLatest) {$UpdateAvailable = "(same version)" }
+                    else {$UpdateAvailable = "Warning: "+$currentTask.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
+                }
+            }
+        }
+    }
+
+    # Check UpdateAvailable by kernel.org tags detection
+    elseif ($Source0 -ilike '*kernel.org*')
+    {
+        $Names=@()
+        $replace=@()
+        # Hardcoded SourceTagURL from Source0 because detection from Source0 url would have a worse ratio
+        if ($currentTask.spec -ilike 'autofs.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/linux/storage/autofs/autofs.git/refs/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'blktrace.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/linux/kernel/git/axboe/blktrace.git/refs/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'bluez.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/bluetooth/bluez.git/refs"} #ausnahme
+        elseif ($currentTask.spec -ilike 'bridge-utils.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/network/bridge/bridge-utils.git/refs/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'dtc.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/utils/dtc/dtc.git/refs/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'ethtool.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/network/ethtool/ethtool.git/refs/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'fio.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/linux/kernel/git/axboe/fio.git/refs/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'git.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/git/git.git/refs/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'i2c-tools.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/utils/i2c-tools/i2c-tools.git/refs/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'iproute2.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/network/iproute2/iproute2.git/refs/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'ipvsadm.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/utils/kernel/ipvsadm/ipvsadm.git/refs/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'kexec-tools.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/utils/kernel/kexec/kexec-tools.git/refs/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'keyutils.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/linux/kernel/git/dhowells/keyutils.git/refs/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'kmod.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/utils/kernel/kmod/kmod.git/refs/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'libcap.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/libs/libcap/libcap.git/refs/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'libtraceevent.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/libs/libtrace/libtraceevent.git/refs/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'libtracefs.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/libs/libtrace/libtracefs.git/refs/tags?format=atom"}
+        elseif (($currentTask.spec -ilike 'linux-aws.spec') -or ($currentTask.spec -ilike 'linux-esx.spec') -or ($currentTask.spec -ilike 'linux-rt.spec') -or ($currentTask.spec -ilike 'linux-secure.spec') -or ($currentTask.spec -ilike 'linux.spec') -or ($currentTask.spec -ilike 'linux-api-headers.spec'))
+        {
+            if ($outputfile -ilike '*-3.0_*') {$SourceTagURL="http://www.kernel.org/pub/linux/kernel/v4.x"; $replace +="linux-"}
+            elseif ($outputfile -ilike '*-4.0_*') {$SourceTagURL="http://www.kernel.org/pub/linux/kernel/v5.x"; $replace +="linux-"}
+            elseif ($outputfile -ilike '*-5.0_*') {$SourceTagURL="http://www.kernel.org/pub/linux/kernel/v6.x"; $replace +="linux-"}
+        }
+        elseif ($currentTask.spec -ilike 'linux-firmware.spec') {$SourceTagURL="http://www.kernel.org/pub/linux/kernel/firmware"}
+        elseif ($currentTask.spec -ilike 'man-pages.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/docs/man-pages/man-pages.git/refs/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'pciutils.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/utils/pciutils/pciutils.git/refs/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'rt-tests.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/utils/rt-tests/rt-tests.git/refs/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'stalld.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/utils/stalld/stalld.git/refs/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'syslinux.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/boot/syslinux/syslinux.git/refs/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'trace-cmd.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/utils/trace-cmd/trace-cmd.git/refs/tags?format=atom"; $replace +="v"}
+        elseif ($currentTask.spec -ilike 'usbutils.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/linux/kernel/git/gregkh/usbutils.git/refs/tags?format=atom"}
+        elseif ($currentTask.spec -ilike 'xfsprogs.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/fs/xfs/xfsprogs-dev.git/refs/tags?format=atom"; $replace +="xfsprogs-dev-"; $replace +="v"}
+        else
+        {
+            $SourceTagURL=(split-path $Source0 -Parent).Replace("\","/")
+        }
+
+        if ($SourceTagURL -ne "")
+        {
+            try{
+                $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
+                $headers.Add("Authorization", "token $accessToken")
+                $Names = (((invoke-restmethod -uri $SourceTagURL -TimeoutSec 10 -usebasicparsing -headers @{Authorization = "Bearer $accessToken"}) -split "<tr><td") -split 'a href=') -split '>'
+                $Names = $Names | foreach-object { if ($_ | select-string -pattern '</a' -simplematch) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'commit' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern "'" -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '"' -simplematch)) {$_}}
+                $Names = $Names -ireplace '</a',""
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.sig' -simplematch)) {$_}}
+                $Names = $Names  -replace ".tar.gz",""
+                $Names = $Names  -replace ".tar.bz2",""
+                $Names = $Names  -replace ".tar.xz",""
+                $Names = $Names  -replace ".tar.lz",""
+
+                $replace += $currentTask.Name+"."
+                $replace += $currentTask.Name+"-"
+                $replace += $currentTask.Name+"_"
+                $replace += $currentTask.Name
                 $replace +="ver"
                 $replace +="release_"
                 $replace +="release-"
                 $replace +="release"
                 $i=0; do {$Names = $Names | foreach-object {$_.tolower().replace(($replace[$i]).tolower(),"")}; $i++} while ($i -ne $replace.count-1)
-
-                $Names = $Names.Where({ $null -ne $_ })
-                $Names = $Names.Where({ "" -ne $_ })
+                $Names = $Names.Where({ $null -ne $currentTask.Name })
+                $Names = $Names.Where({ "" -ne $currentTask.Name })
                 $Names = $Names | foreach-object { if ($_ | select-string -pattern '^rel/' -simplematch) {$_ -ireplace '^rel/',""} else {$_}}
                 $Names = $Names | foreach-object { if ($_ | select-string -pattern '^v' -simplematch) {$_ -ireplace '^v',""} else {$_}}
                 $Names = $Names | foreach-object { if ($_ | select-string -pattern '^V' -simplematch) {$_ -ireplace '^V',""} else {$_}}
@@ -3155,30 +2792,46 @@ function CheckURLHealth {
                 $Names = $Names | foreach-object { if ($_ | select-string -pattern '_' -simplematch) {$_ -ireplace '_',"."} else {$_}}
 
                 # remove versions developer, release candidates, alpha versions, preview versions and versions without numbers
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'candidate' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-alpha' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-beta' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.beta' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.0' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.1' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.2' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.3' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.4' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc1' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc2' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc3' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc4' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-preview.' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-dev.' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-pre1' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.pre1' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'candidate' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-alpha' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-beta' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.beta' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.0' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.1' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.2' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.3' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.4' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc1' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc2' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc3' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc4' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-preview.' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-dev.' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-pre1' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.pre1' -simplematch)) {$_}}
 
-                    if ($_.spec -notlike "tzdata.spec")
-                    {
-                        $Names = $Names  -replace "v",""
-                        $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
-                        $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
-                    }
+                $Names = $Names  -replace "v",""
+                $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
+                $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
+
+                # post check
+                if (($currentTask.spec -ilike 'linux-aws.spec') -or ($currentTask.spec -ilike 'linux-esx.spec') -or ($currentTask.spec -ilike 'linux-rt.spec') -or ($currentTask.spec -ilike 'linux-secure.spec') -or ($currentTask.spec -ilike 'linux.spec') -or ($currentTask.spec -ilike 'linux-api-headers.spec'))
+                {
+                    if ($outputfile -ilike '*-3.0_*') {$Names = $Names | foreach-object { if ($_ | select-string -pattern '4.19.' -simplematch) {$_}}}
+                    elseif ($outputfile -ilike '*-4.0_*') {$Names = $Names | foreach-object { if ($_ | select-string -pattern '5.10.' -simplematch) {$_}}}
+                    elseif ($outputfile -ilike '*-5.0_*') {$Names = $Names | foreach-object { if ($_ | select-string -pattern '6.0' -simplematch) {$_}}}
+                }
+                if ($currentTask.spec -ilike 'kexec-tools.spec')
+                {
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '2006' -simplematch)) {$_}}
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '2007' -simplematch)) {$_}}
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '2008' -simplematch)) {$_}}
+                }
+                if ($currentTask.spec -ilike 'libcap.spec')
+                {
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '2006' -simplematch)) {$_}}
+                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '2007' -simplematch)) {$_}}
+                }
 
                 if ($Names -ilike '*.*')
                 {
@@ -3186,23 +2839,20 @@ function CheckURLHealth {
                 }
                 else
                 {
-                    
-                    try
-                    {
-                        $NameLatest=([HeapSort]::Sort($Names) | select-object -last 1).ToString()
-                    }
-                    catch{}
+                    $NameLatest = ($Names | convertfrom-json | sort-object |select-object -last 1).ToString()
                 }
+                if (!($Names.contains($NameLatest))) { $NameLatest = ($Names | sort-object |select-object -last 1).ToString() }
             }
+            catch{$NameLatest=""}
             if ($NameLatest -ne "")
             {
-                if ((($NameLatest -ilike '*.*') -or (($NameLatest -match '^\d+$'))) -and ($version -ilike '*.*'))
+                if (($NameLatest -ilike '*.*') -and ($version -ilike '*.*'))
                 {
                     try
                     {
                         if ([System.Version]$Version -lt [System.Version]$NameLatest) {$UpdateAvailable = $NameLatest}
                         elseif ([System.Version]$Version -eq [System.Version]$NameLatest) {$UpdateAvailable = "(same version)" }
-                        else {$UpdateAvailable = "Warning: "+$currentfile.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
+                        else {$UpdateAvailable = "Warning: "+$currentTask.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
                     }
                     catch{}
                 }
@@ -3210,134 +2860,393 @@ function CheckURLHealth {
                 {
                     if ($Version -lt $NameLatest) {$UpdateAvailable = $NameLatest}
                     elseif ($Version -eq $NameLatest) {$UpdateAvailable = "(same version)" }
-                    else {$UpdateAvailable = "Warning: "+$currentfile.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
+                    else {$UpdateAvailable = "Warning: "+$currentTask.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
                 }
             }
-
         }
+    }
+    elseif (((urlhealth((split-path $Source0 -Parent).Replace("\","/"))) -eq "200") -or `
+    ($currentTask.spec -ilike "apparmor.spec") -or `
+    ($currentTask.spec -ilike "bzr.spec") -or `
+    ($currentTask.spec -ilike "chrpath.spec") -or `
+    ($currentTask.spec -ilike "conntrack-tools.spec") -or `
+    ($currentTask.spec -ilike "ebtables.specconntrack-tools.spec") -or `
+    ($currentTask.spec -ilike "eventlog.spec") -or `
+    ($currentTask.spec -ilike "intltool.spec") -or `
+    ($currentTask.spec -ilike "iotop.spec") -or `
+    ($currentTask.spec -ilike "ipset.spec") -or `
+    ($currentTask.spec -ilike "iptables.spec") -or `
+    ($currentTask.spec -ilike "itstool.spec") -or `
+    ($currentTask.spec -ilike "json-c.spec") -or `
+    ($currentTask.spec -ilike "js.spec") -or `
+    ($currentTask.spec -ilike "lasso.spec") -or `
+    ($currentTask.spec -ilike "libmnl.spec") -or `
+    ($currentTask.spec -ilike "libmetalink.spec") -or `
+    ($currentTask.spec -ilike "libnetfilter_conntrack.spec") -or `
+    ($currentTask.spec -ilike "libnetfilter_cthelper.spec") -or `
+    ($currentTask.spec -ilike "libnetfilter_cttimeout.spec") -or `
+    ($currentTask.spec -ilike "libnetfilter_queue.spec") -or `
+    ($currentTask.spec -ilike "libnfnetlink.spec") -or `
+    ($currentTask.spec -ilike "libnftnl.spec") -or `
+    ($currentTask.spec -ilike "libteam.spec") -or `
+    ($currentTask.spec -ilike "nftables.spec") -or `
+    ($currentTask.spec -ilike "openvswitch.spec") -or `
+    ($currentTask.spec -ilike "python-pbr.spec") -or `
+    ($currentTask.spec -ilike "sysstat.spec") -or `
+    ($currentTask.spec -ilike "xmlsec1.spec"))
+    {
 
-        # Archived Github repo signalization
-        $warning="Warning: repo isn't maintained anymore."
-        if ($_.Spec -ilike 'dhcp.spec') {$UpdateAvailable=$warning+" See "+ "https://www.isc.org/dhcp_migration/"}
-        elseif ($_.Spec -ilike 'python-argparse.spec') {$UpdateAvailable=$warning}
-        elseif ($_.Spec -ilike 'python-atomicwrites.spec') {$UpdateAvailable=$warning}
-        elseif ($_.Spec -ilike 'python-ipaddr.spec') {$UpdateAvailable=$warning}
-        elseif ($_.Spec -ilike 'python-lockfile.spec') {$UpdateAvailable=$warning}
-        elseif ($_.Spec -ilike 'python-subprocess32.spec') {$UpdateAvailable=$warning}
-        elseif ($_.Spec -ilike 'python-terminaltables.spec') {$UpdateAvailable=$warning}
-        elseif ($_.Spec -ilike 'confd.spec') {$UpdateAvailable=$warning}
-        elseif ($_.Spec -ilike 'cve-check-tool.spec') {$UpdateAvailable=$warning}
-        elseif ($_.Spec -ilike 'http-parser.spec') {$UpdateAvailable=$warning}
-        elseif ($_.Spec -ilike 'fcgi.spec') {$UpdateAvailable=$warning+" See "+ "https://github.com/FastCGI-Archives/fcgi2/archive/refs/tags/%{version}.tar.gz ."}
-        elseif ($_.Spec -ilike 'libtar.spec') {$UpdateAvailable=$warning+" See "+ "https://sources.debian.org/patches/libtar"}
-        elseif ($_.Spec -ilike 'lightwave.spec') {$UpdateAvailable=$warning}	
+        $SourceTagURL=(split-path $Source0 -Parent).Replace("\","/")
 
-        $warning="Warning: Cannot detect correlating tags from the repo provided."
-        if (($_.Spec -ilike 'bluez-tools.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-        elseif (($_.Spec -ilike 'containers-common.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-        elseif (($_.Spec -ilike 'cpulimit.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-        elseif (($_.Spec -ilike 'dcerpc.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-        elseif (($_.Spec -ilike 'dotnet-sdk.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-        elseif (($_.Spec -ilike 'dtb-raspberrypi.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-        elseif (($_.Spec -ilike 'fuse-overlayfs-snapshotter.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-        elseif (($_.Spec -ilike 'hawkey.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-        elseif (($_.Spec -ilike 'libgsystem.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-        elseif (($_.Spec -ilike 'libselinux.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-        elseif (($_.Spec -ilike 'libsepol.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-        elseif (($_.Spec -ilike 'libnss-ato.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-        elseif (($_.Spec -ilike 'lightwave.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-        elseif (($_.Spec -ilike 'likewise-open.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-        elseif (($_.Spec -ilike 'linux-firmware.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-        elseif (($_.Spec -ilike 'motd.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-        elseif (($_.Spec -ilike 'netmgmt.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-        elseif (($_.Spec -ilike 'pcstat.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-        elseif (($_.Spec -ilike 'python-backports.ssl_match_hostname.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-        elseif (($_.Spec -ilike 'python-iniparse.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning} 
-        elseif (($_.Spec -ilike 'python-geomet.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-        elseif (($_.Spec -ilike 'python-pyjsparser.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}  
-        elseif (($_.Spec -ilike 'python-ruamel-yaml.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning+"Also, see "+"https://github.com/commx/ruamel-yaml/archive/refs/tags/%{version}.tar.gz"}
-        elseif (($_.Spec -ilike 'rubygem-aws-sdk-s3.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-        elseif (($_.Spec -ilike 'sqlite2.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-        elseif (($_.Spec -ilike 'tornado.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}     
-
-        $warning="Warning: duplicate of python-pam.spec"
-        if ($_.Spec -ilike 'python-pycodestyle.spec') {$UpdateAvailable=$warning}
-
-        $warning="Info: Source0 contains a VMware internal url address."
-        if ($_.Spec -ilike 'abupdate.spec') {$UpdateAvailable=$warning}
-        elseif ($_.Spec -ilike 'ant-contrib.spec') {$UpdateAvailable=$warning}
-        elseif ($_.Spec -ilike 'build-essential.spec') {$UpdateAvailable=$warning}
-        elseif ($_.Spec -ilike 'ca-certificates.spec') {$UpdateAvailable=$warning}
-        elseif ($_.Spec -ilike 'distrib-compat.spec') {$UpdateAvailable=$warning}
-        elseif ($_.Spec -ilike 'docker-vsock.spec') {$UpdateAvailable=$warning}
-        elseif ($_.Spec -ilike 'fipsify.spec') {$UpdateAvailable=$warning}
-        elseif ($_.Spec -ilike 'grub2-theme.spec') {$UpdateAvailable=$warning}
-        elseif ($_.Spec -ilike 'initramfs.spec') {$UpdateAvailable=$warning}
-        elseif ($_.Spec -ilike 'minimal.spec') {$UpdateAvailable=$warning}
-        elseif ($_.Spec -ilike 'photon-iso-config.spec') {$UpdateAvailable=$warning}
-        elseif ($_.Spec -ilike 'photon-release.spec') {$UpdateAvailable=$warning}
-        elseif ($_.Spec -ilike 'photon-repos.spec') {$UpdateAvailable=$warning}
-        elseif ($_.Spec -ilike 'photon-upgrade.spec') {$UpdateAvailable=$warning}
-        elseif ($_.Spec -ilike 'shim-signed.spec') {$UpdateAvailable=$warning}
-        elseif ($_.Spec -ilike 'stig-hardening.spec') {$UpdateAvailable=$warning}
-
-        $warning="Warning: Source0 seems invalid and no other Official source has been found."
-        if ($_.Spec -ilike 'cdrkit.spec') {$UpdateAvailable=$warning}
-        elseif ($_.Spec -ilike 'crash.spec') {$UpdateAvailable=$warning}
-        elseif ($_.Spec -ilike 'finger.spec') {$UpdateAvailable=$warning}
-        elseif ($_.Spec -ilike 'ndsend.spec') {$UpdateAvailable=$warning}
-        elseif ($_.Spec -ilike 'pcre.spec') {$UpdateAvailable=$warning}
-        elseif ($_.Spec -ilike 'pypam.spec') {$UpdateAvailable=$warning}
-
-        $warning="Info: Source0 contains a static version number."
-        if ($_.Spec -ilike 'autoconf213.spec') {$UpdateAvailable=$warning}
-        elseif ($_.Spec -ilike 'etcd-3.3.27.spec') {$UpdateAvailable=$warning}
-
-        $warning="Info: Packaging format .bz2 has changed."
-        if ($_.Spec -ilike 'python-twisted.spec') {$UpdateAvailable=$warning}
-
-        # reset to Source0 because of different packaging formats
-        if ($_.Spec -ilike 'psmisc.spec') {$Source0 = $_.Source0}
-
-        if (($UpdateAvailable -eq "") -and ($urlhealth -ne "200")) {$Source0=""}
-       
-        
-        $VersionedUpdateAvailable=""
-        # Check in Fedora
-        $SourceRPMFile=""
-        $SourceRPMFileURL=""
-        $SourceRPMFileURL=KojiFedoraProjectLookUp -ArtefactName $_.Name
-        if ($SourceRPMFileURL)
+        if ($currentTask.spec -ilike "chrpath.spec") {$SourceTagURL="https://codeberg.org/pere/chrpath/tags"}
+        if ($currentTask.spec -ilike "apparmor.spec") {$SourceTagURL="https://launchpad.net/apparmor/+download"}
+        if ($currentTask.spec -ilike "bzr.spec") {$SourceTagURL="https://launchpad.net/bzr/+download"}
+        if ($currentTask.spec -ilike "intltool.spec") {$SourceTagURL="https://launchpad.net/intltool/+download"}
+        if ($currentTask.spec -ilike "ipset.spec") {$SourceTagURL="https://ipset.netfilter.org/install.html"}
+        if ($currentTask.spec -ilike "itstool.spec") {$SourceTagURL="https://itstool.org/download.html"}
+        if ($currentTask.spec -ilike "js.spec") {$SourceTagURL="https://archive.mozilla.org/pub/js/"}
+        if ($currentTask.spec -ilike "json-c.spec") {$SourceTagURL="https://s3.amazonaws.com/json-c_releases/"}
+        if ($currentTask.spec -ilike "openvswitch.spec") {$SourceTagURL="https://www.openvswitch.org/download"}
+        if ($currentTask.spec -ilike "python-pbr.spec") {$SourceTagURL="https://opendev.org/openstack/pbr/tags"}
+        if ($currentTask.spec -ilike "sysstat.spec") {$SourceTagURL="http://sebastien.godard.pagesperso-orange.fr/download.html"}
+        if ($currentTask.spec -ilike "xmlsec1.spec") {$SourceTagURL="https://www.aleksey.com/xmlsec/download/"}
+        $Names=@()
+        $replace=@()
+        $NameLatest=""
+        try{ $Names = ((((invoke-restmethod -uri $SourceTagURL -TimeoutSec 10 -usebasicparsing) -split "<tr><td") -split 'a href=') -split '>') -split "title=" }
+        catch
         {
             try
             {
-                $DownloadPath="$SourcePath\tmp"
-                $SourceRPMFileName = ($SourceRPMFileURL -split '/')[-1]
-                $SourceRPMFile = Join-Path $DownloadPath $SourceRPMFileName
-                if (!(Test-Path $SourceRPMFile))
+                $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+                $session.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36"
+                $Names = Invoke-WebRequest -UseBasicParsing -Uri $SourceTagURL -TimeoutSec 10`
+                -WebSession $session `
+                -Headers @{
+                "Accept"="text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
+                    "Accept-Encoding"="gzip, deflate, br"
+                    "Accept-Language"="en-US,en;q=0.9"
+                    "Cache-Control"="max-age=0"
+                    "Sec-Fetch-Dest"="document"
+                    "Sec-Fetch-Mode"="navigate"
+                    "Sec-Fetch-Site"="none"
+                    "Sec-Fetch-User"="?1"
+                    "Upgrade-Insecure-Requests"="1"
+                    "sec-ch-ua"="`"Google Chrome`";v=`"113`", `"Chromium`";v=`"113`", `"Not-A.Brand`";v=`"24`""
+                    "sec-ch-ua-mobile"="?0"
+                    "sec-ch-ua-platform"="`"Windows`""
+                }
+                $Names = $Names.Links.href
+            }
+            catch{}
+        }
+        if ($currentTask.spec -ilike "docbook-xml.spec")
+        {
+            $SourceTagURL="https://docbook.org/xml/"
+            $objtmp=@()
+            $objtmp = (invoke-webrequest -uri $SourceTagURL -TimeoutSec 10).Links.href
+            $objtmp = $objtmp | foreach-object { if ($_ -match '\d') {$_}}
+            $objtmp = $objtmp | foreach-object { if (!($_ | select-string -pattern 'CR' -simplematch)) {$_}}
+            $objtmp = $objtmp | foreach-object { if (!($_ | select-string -pattern 'b' -simplematch)) {$_}}
+            $Latest=([HeapSort]::Sort($objtmp) | select-object -last 1).tostring()
+            $SourceTagURL = [system.string]::concat('https://docbook.org/xml/',$Latest)
+            $objtmp = (invoke-webrequest -uri $SourceTagURL -TimeoutSec 10).Links.href
+            $Names = $objtmp | foreach-object { if ($_ | select-string -pattern 'docbook-' -simplematch) {$_}}
+            $Names = $Names  -replace "docbook-xml-",""
+            $Names = $Names  -replace "docbook-",""
+            $Names = $Names  -replace ".zip",""
+        }
+        if ($currentTask.spec -ilike "json-c.spec")
+        {
+            $Names = (invoke-webrequest -uri $SourceTagURL -UseBasicParsing -TimeoutSec 10) -split "<"
+            $Names = $Names | foreach-object { if ($_ | select-string -pattern 'Key>releases/json-c-' -simplematch) {$_ -ireplace "Key>releases/json-c-",""}}
+            $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-nodoc.tar.gz' -simplematch)) {$_}}
+        }
+
+        if (!([Object]::ReferenceEquals($Names,$null)))
+        {
+            if ($currentTask.spec -notlike "docbook-xml.spec")
+            {
+                if (((($Names | foreach-object { if ($_ | select-string -pattern '.tar.' -simplematch) {$_}}).count) -eq 0) -or ($_.spec -ilike "dialog.spec") -or ($_.spec -ilike "byacc.spec"))
                 {
-                    try
-                    {
-                        if (!(Test-Path $DownloadPath)) {New-Item $DownloadPath -ItemType Directory}
-                        Invoke-WebRequest -Uri $SourceRPMFileURL -OutFile $SourceRPMFile
+                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '.tgz' -simplematch) {$_}}
+                }
+                else
+                {
+                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '.tar.' -simplematch) {$_}}
+                }
+                $Names = ($Names | foreach-object { if (!($_ | select-string -pattern '</a' -simplematch)) {$_}}) -ireplace '"',""
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.tgz.asc' -simplematch)) {$_}}
+                $Names = $Names  -replace "-src.tar.gz",""
+                $Names = $Names  -replace ".tar.gz",""
+                $Names = $Names  -replace ".tar.bz2",""
+                $Names = $Names  -replace ".tar.xz",""
+                $Names = $Names  -replace ".tar.lz",""
+                $Names = $Names  -replace ".tgz",""
+            }
+
+            if ($currentTask.spec -ilike "chrpath.spec")
+            {
+                $Names = $Names | foreach-object { ($_ -split "href=") -split 'rel='}
+                $Names = ($Names | foreach-object { if (($_ | select-string -pattern '/pere/chrpath' -simplematch)) {$_}}) -ireplace '/pere/chrpath/archive/release-',""
+            }
+
+            if (($currentTask.spec -ilike "apparmor.spec") -or ($currentTask.spec -ilike "bzr.spec") -or ($currentTask.spec -ilike "intltool.spec") -or ($currentTask.spec -ilike "libmetalink.spec") -or ($currentTask.spec -ilike "itstool.spec") -or ($currentTask.spec -ilike "openssl.spec") -or ($currentTask.spec -ilike "openssl-fips-provider.spec"))
+            {
+                $Names = $Names | foreach-object { if ($_ | select-string -pattern '/' -simplematch) {($_ -split '/')[-1]}}
+            }
+            elseif ($currentTask.spec -ilike "curl.spec") { $Names = $Names  -replace "download/","" }
+            elseif ($currentTask.spec -ilike "js.spec") { $replace += "/pub/js/"; $replace +="-1.0.0"}
+            elseif ($currentTask.spec -ilike "lsscsi.spec") { $replace += "lsscsi-030" }
+            elseif ($currentTask.spec -ilike "ltrace.spec") { $replace += ".orig" }
+            elseif ($currentTask.spec -ilike "tzdata.spec")
+            {
+                $Names = $Names | foreach-object { if ($_ | select-string -pattern 'tzdata' -simplematch) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.tar.z' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.asc' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.sign' -simplematch)) {$_}}
+                $replace += "beta"
+            }
+            elseif ($currentTask.spec -ilike "qemu-img.spec") { $replace += "qemu-" }
+            elseif ($currentTask.spec -ilike "python-pbr.spec")
+            {
+                $Names = ($Names -split "/openstack/pbr/archive/") -split ' rel=nofollow'
+            }
+            elseif ($currentTask.spec -ilike "python-stevedore.spec") { $replace += "stevedore-" }
+            elseif ($currentTask.spec -ilike "python-antlrpythonruntime.spec") { $replace += "antlr_python_runtime-" }
+            elseif ($currentTask.spec -ilike "openvswitch.spec") { $replace += "https://www.openvswitch.org/releases/openvswitch-" }
+            elseif ($currentTask.spec -ilike "sysstat.spec") { $replace += "href=http://pagesperso-orange.fr/sebastien.godard/sysstat-"; $replace +='<a'; $replace+="moz-do-not-send=true" ; $Names = $Names -replace '\n',""}
+
+            $replace += $currentTask.Name+"."
+            $replace += $currentTask.Name+"-"
+            $replace += $currentTask.Name+"_"
+            $replace += $currentTask.Name
+            $replace +="ver"
+            $replace +="release_"
+            $replace +="release-"
+            $replace +="release"
+            $i=0; do {$Names = $Names | foreach-object {$_.tolower().replace(($replace[$i]).tolower(),"")}; $i++} while ($i -ne $replace.count-1)
+
+            $Names = $Names.Where({ $null -ne $currentTask.Name })
+            $Names = $Names.Where({ "" -ne $currentTask.Name })
+            $Names = $Names | foreach-object { if ($_ | select-string -pattern '^rel/' -simplematch) {$_ -ireplace '^rel/',""} else {$_}}
+            $Names = $Names | foreach-object { if ($_ | select-string -pattern '^v' -simplematch) {$_ -ireplace '^v',""} else {$_}}
+            $Names = $Names | foreach-object { if ($_ | select-string -pattern '^V' -simplematch) {$_ -ireplace '^V',""} else {$_}}
+            $Names = $Names | foreach-object { if ($_ | select-string -pattern '^r' -simplematch) {$_ -ireplace '^r',""} else {$_}}
+            $Names = $Names | foreach-object { if ($_ | select-string -pattern '^R' -simplematch) {$_ -ireplace '^R',""} else {$_}}
+            $Names = $Names | foreach-object { if ($_ | select-string -pattern '_' -simplematch) {$_ -ireplace '_',"."} else {$_}}
+
+            # remove versions developer, release candidates, alpha versions, preview versions and versions without numbers
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'candidate' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-alpha' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-beta' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.beta' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.0' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.1' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.2' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.3' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.4' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc1' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc2' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc3' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc4' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-preview.' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-dev.' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-pre1' -simplematch)) {$_}}
+                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.pre1' -simplematch)) {$_}}
+
+                if ($currentTask.spec -notlike "tzdata.spec")
+                {
+                    $Names = $Names  -replace "v",""
+                    $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
+                    $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
+                }
+
+            if ($Names -ilike '*.*')
+            {
+                $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
+            }
+            else
+            {
+
+                try
+                {
+                    $NameLatest=([HeapSort]::Sort($Names) | select-object -last 1).ToString()
+                }
+                catch{}
+            }
+        }
+        if ($NameLatest -ne "")
+        {
+            if ((($NameLatest -ilike '*.*') -or (($NameLatest -match '^\d+$'))) -and ($version -ilike '*.*'))
+            {
+                try
+                {
+                    if ([System.Version]$Version -lt [System.Version]$NameLatest) {$UpdateAvailable = $NameLatest}
+                    elseif ([System.Version]$Version -eq [System.Version]$NameLatest) {$UpdateAvailable = "(same version)" }
+                    else {$UpdateAvailable = "Warning: "+$currentTask.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
+                }
+                catch{}
+            }
+            if ($UpdateAvailable -eq "")
+            {
+                if ($Version -lt $NameLatest) {$UpdateAvailable = $NameLatest}
+                elseif ($Version -eq $NameLatest) {$UpdateAvailable = "(same version)" }
+                else {$UpdateAvailable = "Warning: "+$currentTask.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
+            }
+        }
+
+    }
+
+    # Archived Github repo signalization
+    $warning="Warning: repo isn't maintained anymore."
+    if ($currentTask.Spec -ilike 'dhcp.spec') {$UpdateAvailable=$warning+" See "+ "https://www.isc.org/dhcp_migration/"}
+    elseif ($currentTask.Spec -ilike 'python-argparse.spec') {$UpdateAvailable=$warning}
+    elseif ($currentTask.Spec -ilike 'python-atomicwrites.spec') {$UpdateAvailable=$warning}
+    elseif ($currentTask.Spec -ilike 'python-ipaddr.spec') {$UpdateAvailable=$warning}
+    elseif ($currentTask.Spec -ilike 'python-lockfile.spec') {$UpdateAvailable=$warning}
+    elseif ($currentTask.Spec -ilike 'python-subprocess32.spec') {$UpdateAvailable=$warning}
+    elseif ($currentTask.Spec -ilike 'python-terminaltables.spec') {$UpdateAvailable=$warning}
+    elseif ($currentTask.Spec -ilike 'confd.spec') {$UpdateAvailable=$warning}
+    elseif ($currentTask.Spec -ilike 'cve-check-tool.spec') {$UpdateAvailable=$warning}
+    elseif ($currentTask.Spec -ilike 'http-parser.spec') {$UpdateAvailable=$warning}
+    elseif ($currentTask.Spec -ilike 'fcgi.spec') {$UpdateAvailable=$warning+" See "+ "https://github.com/FastCGI-Archives/fcgi2/archive/refs/tags/%{version}.tar.gz ."}
+    elseif ($currentTask.Spec -ilike 'libtar.spec') {$UpdateAvailable=$warning+" See "+ "https://sources.debian.org/patches/libtar"}
+    elseif ($currentTask.Spec -ilike 'lightwave.spec') {$UpdateAvailable=$warning}
+
+    $warning="Warning: Cannot detect correlating tags from the repo provided."
+    if (($currentTask.Spec -ilike 'bluez-tools.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
+    elseif (($currentTask.Spec -ilike 'containers-common.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
+    elseif (($currentTask.Spec -ilike 'cpulimit.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
+    elseif (($currentTask.Spec -ilike 'dcerpc.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
+    elseif (($currentTask.Spec -ilike 'dotnet-sdk.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
+    elseif (($currentTask.Spec -ilike 'dtb-raspberrypi.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
+    elseif (($currentTask.Spec -ilike 'fuse-overlayfs-snapshotter.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
+    elseif (($currentTask.Spec -ilike 'hawkey.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
+    elseif (($currentTask.Spec -ilike 'libgsystem.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
+    elseif (($currentTask.Spec -ilike 'libselinux.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
+    elseif (($currentTask.Spec -ilike 'libsepol.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
+    elseif (($currentTask.Spec -ilike 'libnss-ato.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
+    elseif (($currentTask.Spec -ilike 'lightwave.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
+    elseif (($currentTask.Spec -ilike 'likewise-open.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
+    elseif (($currentTask.Spec -ilike 'linux-firmware.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
+    elseif (($currentTask.Spec -ilike 'motd.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
+    elseif (($currentTask.Spec -ilike 'netmgmt.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
+    elseif (($currentTask.Spec -ilike 'pcstat.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
+    elseif (($currentTask.Spec -ilike 'python-backports.ssl_match_hostname.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
+    elseif (($currentTask.Spec -ilike 'python-iniparse.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
+    elseif (($currentTask.Spec -ilike 'python-geomet.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
+    elseif (($currentTask.Spec -ilike 'python-pyjsparser.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
+    elseif (($currentTask.Spec -ilike 'python-ruamel-yaml.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning+"Also, see "+"https://github.com/commx/ruamel-yaml/archive/refs/tags/%{version}.tar.gz"}
+    elseif (($currentTask.Spec -ilike 'rubygem-aws-sdk-s3.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
+    elseif (($currentTask.Spec -ilike 'sqlite2.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
+    elseif (($currentTask.Spec -ilike 'tornado.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
+
+    $warning="Warning: duplicate of python-pam.spec"
+    if ($currentTask.Spec -ilike 'python-pycodestyle.spec') {$UpdateAvailable=$warning}
+
+    $warning="Info: Source0 contains a VMware internal url address."
+    if ($currentTask.Spec -ilike 'abupdate.spec') {$UpdateAvailable=$warning}
+    elseif ($currentTask.Spec -ilike 'ant-contrib.spec') {$UpdateAvailable=$warning}
+    elseif ($currentTask.Spec -ilike 'build-essential.spec') {$UpdateAvailable=$warning}
+    elseif ($currentTask.Spec -ilike 'ca-certificates.spec') {$UpdateAvailable=$warning}
+    elseif ($currentTask.Spec -ilike 'distrib-compat.spec') {$UpdateAvailable=$warning}
+    elseif ($currentTask.Spec -ilike 'docker-vsock.spec') {$UpdateAvailable=$warning}
+    elseif ($currentTask.Spec -ilike 'fipsify.spec') {$UpdateAvailable=$warning}
+    elseif ($currentTask.Spec -ilike 'grub2-theme.spec') {$UpdateAvailable=$warning}
+    elseif ($currentTask.Spec -ilike 'initramfs.spec') {$UpdateAvailable=$warning}
+    elseif ($currentTask.Spec -ilike 'minimal.spec') {$UpdateAvailable=$warning}
+    elseif ($currentTask.Spec -ilike 'photon-iso-config.spec') {$UpdateAvailable=$warning}
+    elseif ($currentTask.Spec -ilike 'photon-release.spec') {$UpdateAvailable=$warning}
+    elseif ($currentTask.Spec -ilike 'photon-repos.spec') {$UpdateAvailable=$warning}
+    elseif ($currentTask.Spec -ilike 'photon-upgrade.spec') {$UpdateAvailable=$warning}
+    elseif ($currentTask.Spec -ilike 'shim-signed.spec') {$UpdateAvailable=$warning}
+    elseif ($currentTask.Spec -ilike 'stig-hardening.spec') {$UpdateAvailable=$warning}
+
+    $warning="Warning: Source0 seems invalid and no other Official source has been found."
+    if ($currentTask.Spec -ilike 'cdrkit.spec') {$UpdateAvailable=$warning}
+    elseif ($currentTask.Spec -ilike 'crash.spec') {$UpdateAvailable=$warning}
+    elseif ($currentTask.Spec -ilike 'finger.spec') {$UpdateAvailable=$warning}
+    elseif ($currentTask.Spec -ilike 'ndsend.spec') {$UpdateAvailable=$warning}
+    elseif ($currentTask.Spec -ilike 'pcre.spec') {$UpdateAvailable=$warning}
+    elseif ($currentTask.Spec -ilike 'pypam.spec') {$UpdateAvailable=$warning}
+
+    $warning="Info: Source0 contains a static version number."
+    if ($currentTask.Spec -ilike 'autoconf213.spec') {$UpdateAvailable=$warning}
+    elseif ($currentTask.Spec -ilike 'etcd-3.3.27.spec') {$UpdateAvailable=$warning}
+
+    $warning="Info: Packaging format .bz2 has changed."
+    if ($currentTask.Spec -ilike 'python-twisted.spec') {$UpdateAvailable=$warning}
+
+    # reset to Source0 because of different packaging formats
+    if ($currentTask.Spec -ilike 'psmisc.spec') {$Source0 = $currentTask.Source0}
+
+    if (($UpdateAvailable -eq "") -and ($urlhealth -ne "200")) {$Source0=""}
+
+
+    $VersionedUpdateAvailable=""
+    # Check in Fedora
+    $SourceRPMFile=""
+    $SourceRPMFileURL=""
+    $SourceRPMFileURL=KojiFedoraProjectLookUp -ArtefactName $currentTask.Name
+    if ($SourceRPMFileURL)
+    {
+        try {
+            $DownloadPath=join-path $SourcePath "tmp"
+            $SourceRPMFileName = ($SourceRPMFileURL -split '/')[-1]
+            $SourceRPMFile = Join-Path $DownloadPath $SourceRPMFileName
+            if (!(Test-Path $SourceRPMFile)) {
+                try {
+                    if (!(Test-Path $DownloadPath)) {New-Item $DownloadPath -ItemType Directory}
+                    Invoke-WebRequest -Uri $SourceRPMFileURL -OutFile $SourceRPMFile -TimeoutSec 10
+                }
+                catch{$SourceRPMFile=""}
+            }
+            $ArtefactDownloadName=""
+            $ArtefactVersion=""
+            $tarCommand = "tar"
+            if (-not (Get-Command $tarCommand -ErrorAction SilentlyContinue)) {
+                Write-Error "tar command not found in runspace for $SourceRPMFile"
+                return
+            }
+            try {
+                $nestedFiles = @()
+                $process = [System.Diagnostics.Process]::new()
+                $process.StartInfo.FileName = $tarCommand
+                $process.StartInfo.Arguments = "-tf `"$SourceRPMFile`""
+                $process.StartInfo.RedirectStandardOutput = $true
+                $process.StartInfo.UseShellExecute = $false
+                $process.StartInfo.CreateNoWindow = $true
+
+                $process.Start() | Out-Null
+                $timeoutMilliseconds = 60000  # 60 seconds timeout
+                $completed = $process.WaitForExit($timeoutMilliseconds)
+
+                if (-not $completed) {
+                    $process.Kill()
+                    $nestedFiles = @()
+                    $process.Dispose()
+                }
+                else {
+                    $nestedFiles = $process.StandardOutput.ReadToEnd() -split "`n" | Where-Object { $_ }
+                    $process.Dispose()
+                }
+
+                if ($null -ne $nestedFiles)
+                {
+                    foreach ($nestedFile in $nestedFiles ) {
+                        if (($nestedFile | select-string -pattern '.tar.gz' -simplematch))
+                        {
+                            $ArtefactDownloadName=$nestedFile
+                            $ArtefactVersion=$ArtefactDownloadName -ireplace ([system.string]::concat($currentTask.Name,"-")),""
+                            $ArtefactVersion=$ArtefactVersion -ireplace ".tar.gz",""
+                            $ArtefactVersion=$ArtefactVersion -ireplace "v",""
+                        }
                     }
-                    catch{$SourceRPMFile=""}
-                 }
-                 $ArtefactDownloadName=""
-                 $ArtefactVersion=""
-                 $nestedFiles = & tar -tf $SourceRPMFile
-                 foreach ($nestedFile in $nestedFiles ) {
-                    if (($nestedFile | select-string -pattern '.tar.gz' -simplematch))
-                    {
-                        $ArtefactDownloadName=$nestedFile
-                        $ArtefactVersion=$ArtefactDownloadName -ireplace ([system.string]::concat($_.Name,"-")),""
-                        $ArtefactVersion=$ArtefactVersion -ireplace ".tar.gz",""
-                        $ArtefactVersion=$ArtefactVersion -ireplace "v",""
-                    }
-                 }
-                 if ($ArtefactDownloadName -ne "")
-                 {
-                    if (!($ArtefactDownloadName | select-string -pattern $_.Name -simplematch))
+                }
+                if ($ArtefactDownloadName -ne "")
+                {
+                    if (!($ArtefactDownloadName | select-string -pattern $currentTask.Name -simplematch))
                     {
                         # not the same name, hence ignore this false positive
                         $ArtefactVersion=""
@@ -3349,259 +3258,229 @@ function CheckURLHealth {
                         $HealthUpdateURL="200"
                         if ($Version -lt $ArtefactVersion) {$UpdateAvailable = $ArtefactVersion}
                         elseif ($Version -eq $ArtefactVersion) {$UpdateAvailable = "(same version)" }
-                        else {$UpdateAvailable = "Warning: "+$currentfile.spec+" Source0 version "+$version+" is higher than detected latest version "+$ArtefactVersion+" ." }
+                        else {$UpdateAvailable = "Warning: "+$currentTask.spec+" Source0 version "+$version+" is higher than detected latest version "+$ArtefactVersion+" ." }
                     }
-                 }
+                }
             }
-            catch{}
+            catch {
+                Write-Error "Failed to extract files from $SourceRPMFile"
+                $ArtefactDownloadName=""
+                $ArtefactVersion=""
+            }
         }
+        catch{}
+    }
 
 
-        if (!(($UpdateAvailable -ilike '*Warning*') -or ($UpdateAvailable -ilike '*Info*') -or ($UpdateAvailable -ilike '*same version*')))
+    if (!(($UpdateAvailable -ilike '*Warning*') -or ($UpdateAvailable -ilike '*Info*') -or ($UpdateAvailable -ilike '*same version*')))
+    {
+        $VersionedUpdateAvailable=$UpdateAvailable
+        if (($VersionedUpdateAvailable -ne "") -and ($UpdateAvailable -ne ""))
         {
-            $VersionedUpdateAvailable=$UpdateAvailable
-            if (($VersionedUpdateAvailable -ne "") -and ($UpdateAvailable -ne ""))
+            if ($UpdateURL -eq "")
             {
-                if ($UpdateURL -eq "")
+                if ($currentTask.spec -ilike 'byacc.spec')
                 {
-                    if ($_.spec -ilike 'byacc.spec')
-                    {
-                        $version = $version -ireplace "2.0.",""
-                      
-                    }
+                    $version = $version -ireplace "2.0.",""
+                }
 
-                    if ($_.spec -ilike 'docker.spec') { $Source0=[system.string]::concat("https://github.com/moby/moby/archive/refs/tags/v",$version,".tar.gz") }
+                if ($currentTask.spec -ilike 'docker.spec') { $Source0=[system.string]::concat("https://github.com/moby/moby/archive/refs/tags/v",$version,".tar.gz") }
 
-                    if ($_.spec -ilike 'gtest.spec')
-                    {
-                        $version = "release-" + $version
-                        $UpdateAvailable ="v" + $UpdateAvailable
-                    }
-                    if ($_.spec -ilike 'edgex.spec')
-                    {
-                        $UpdateAvailable ="v" + $UpdateAvailable
-                    }
-                    if ($_.spec -ilike 'icu.spec')
-                    {
-                        $versionhiven=$UpdateAvailable.Replace(".","-")
-                        $versionunderscore=$UpdateAvailable.Replace(".","_")
-                        $Source0=[system.string]::concat("https://github.com/unicode-org/icu/releases/download/release-",$versionhiven,"/icu4c-",$versionunderscore,"-src.tgz")
-                    }
+                if ($currentTask.spec -ilike 'gtest.spec')
+                {
+                    $version = "release-" + $version
+                    $UpdateAvailable ="v" + $UpdateAvailable
+                }
+                if ($currentTask.spec -ilike 'edgex.spec')
+                {
+                    $UpdateAvailable ="v" + $UpdateAvailable
+                }
+                if ($currentTask.spec -ilike 'icu.spec')
+                {
+                    $versionhiven=$UpdateAvailable.Replace(".","-")
+                    $versionunderscore=$UpdateAvailable.Replace(".","_")
+                    $Source0=[system.string]::concat("https://github.com/unicode-org/icu/releases/download/release-",$versionhiven,"/icu4c-",$versionunderscore,"-src.tgz")
+                }
 
 
-                    if (($_.Source0 -ilike '*.tar.bz2*') -and ($Source0 -ilike '*.tar.gz*')) {$Source0=$Source0.replace(".tar.gz",".tar.bz2")}
-                    if (($_.Source0 -ilike '*.tar.xz*') -and ($Source0 -ilike '*.tar.gz*')) {$Source0=$Source0.replace(".tar.gz",".tar.xz")}
-                    if (($_.Source0 -ilike '*.tgz*') -and ($Source0 -ilike '*.tar.gz*')) {$Source0=$Source0.replace(".tar.gz",".tgz")}
-                    if (($_.Source0 -ilike '*.zip*') -and ($Source0 -ilike '*.tar.gz*')) {$Source0=$Source0.replace(".tar.gz",".zip")}
+                if (($currentTask.Source0 -ilike '*.tar.bz2*') -and ($Source0 -ilike '*.tar.gz*')) {$Source0=$Source0.replace(".tar.gz",".tar.bz2")}
+                if (($currentTask.Source0 -ilike '*.tar.xz*') -and ($Source0 -ilike '*.tar.gz*')) {$Source0=$Source0.replace(".tar.gz",".tar.xz")}
+                if (($currentTask.Source0 -ilike '*.tgz*') -and ($Source0 -ilike '*.tar.gz*')) {$Source0=$Source0.replace(".tar.gz",".tgz")}
+                if (($currentTask.Source0 -ilike '*.zip*') -and ($Source0 -ilike '*.tar.gz*')) {$Source0=$Source0.replace(".tar.gz",".zip")}
 
-                    $versionshort=[system.string]::concat((($version).Split("."))[0],'.',(($version).Split("."))[1])
-                    $UpdateAvailableshort=[system.string]::concat((($UpdateAvailable).Split("."))[0],'.',(($UpdateAvailable).Split("."))[1])
+                $versionshort=[system.string]::concat((($version).Split("."))[0],'.',(($version).Split("."))[1])
+                $UpdateAvailableshort=[system.string]::concat((($UpdateAvailable).Split("."))[0],'.',(($UpdateAvailable).Split("."))[1])
 
-                    $UpdateURL=$Source0 -ireplace $version,$UpdateAvailable
+                $UpdateURL=$Source0 -ireplace $version,$UpdateAvailable
+                $UpdateURL=$UpdateURL -ireplace $versionshort,$UpdateAvailableshort
+                $HealthUpdateURL = urlhealth($UpdateURL)
+                if ($HealthUpdateURL -ne "200")
+                {
+                    $UpdateURL=$Source0 -ireplace $version,([string]$UpdateAvailable).Replace(".","_")
                     $UpdateURL=$UpdateURL -ireplace $versionshort,$UpdateAvailableshort
                     $HealthUpdateURL = urlhealth($UpdateURL)
                     if ($HealthUpdateURL -ne "200")
                     {
-                        $UpdateURL=$Source0 -ireplace $version,([string]$UpdateAvailable).Replace(".","_")
+                        $UpdateURL=$Source0 -ireplace $version,([string]$UpdateAvailable).Replace(".","-")
                         $UpdateURL=$UpdateURL -ireplace $versionshort,$UpdateAvailableshort
                         $HealthUpdateURL = urlhealth($UpdateURL)
                         if ($HealthUpdateURL -ne "200")
                         {
-                            $UpdateURL=$Source0 -ireplace $version,([string]$UpdateAvailable).Replace(".","-")
+                            $UpdateURL=$currentTask.Source0 -ireplace '%{name}',$currentTask.name
+                            $UpdateURL=$UpdateURL -ireplace '%{version}',$version
+                            $UpdateURL=$UpdateURL -ireplace $version,$UpdateAvailable
                             $UpdateURL=$UpdateURL -ireplace $versionshort,$UpdateAvailableshort
                             $HealthUpdateURL = urlhealth($UpdateURL)
                             if ($HealthUpdateURL -ne "200")
                             {
-                                $UpdateURL=$_.Source0 -ireplace '%{name}',$_.name
+                                $UpdateURL=$currentTask.Source0 -ireplace '%{name}',$currentTask.name
                                 $UpdateURL=$UpdateURL -ireplace '%{version}',$version
+                                $UpdateURL=$UpdateURL -ireplace $version,([string]$UpdateAvailable).Replace(".","_")
                                 $UpdateURL=$UpdateURL -ireplace $version,$UpdateAvailable
                                 $UpdateURL=$UpdateURL -ireplace $versionshort,$UpdateAvailableshort
                                 $HealthUpdateURL = urlhealth($UpdateURL)
                                 if ($HealthUpdateURL -ne "200")
                                 {
-                                    $UpdateURL=$_.Source0 -ireplace '%{name}',$_.name
-                                    $UpdateURL=$UpdateURL -ireplace '%{version}',$version
-                                    $UpdateURL=$UpdateURL -ireplace $version,([string]$UpdateAvailable).Replace(".","_")
-                                    $UpdateURL=$UpdateURL -ireplace $version,$UpdateAvailable
-                                    $UpdateURL=$UpdateURL -ireplace $versionshort,$UpdateAvailableshort
-                                    $HealthUpdateURL = urlhealth($UpdateURL)
-                                    if ($HealthUpdateURL -ne "200")
-                                    {                                                                            
-                                        $warning="Warning: Manufacturer may changed version packaging format."
-                                        $UpdateAvailable=$warning
-                                        $UpdateURL=""
-                                        $HealthUpdateURL =""
-                                    }
+                                    $warning="Warning: Manufacturer may changed version packaging format."
+                                    $UpdateAvailable=$warning
+                                    $UpdateURL=""
+                                    $HealthUpdateURL =""
                                 }
-                            }                 
-                        }
-                    }
-                }
-            }
-        }
-        else
-        {
-            $UpdateURL=""
-            $HealthUpdateURL=""
-        }
-
-        if ($HealthUpdateURL -eq "200")
-        {
-            $UpdateDownloadName = ($UpdateURL -split '/')[-1]
-
-            if ($UpdateDownloadName[0] -eq 'v')
-            {
-                $UpdateDownloadName = $UpdateDownloadName.substring(1)
-            }
-            $tmpName=[string](((($UpdateDownloadName -replace ".tar.gz","") -replace ".tar.xz","") -replace ".tgz","") -replace ".tar.lz","") -replace ".tar.bz2",""
-            if (!("$tmpname" -match '[A-Za-z]')) { $UpdateDownloadName = [System.String]::Concat($currentFile.Name,"-",$UpdateDownloadName) }
-
-            # $tmpSHAName=$currentFile.SHAName
-            # if ($tmpSHAName -ilike '*%{name}*') {$tmpSHAName=$currentFile.Name}
-
-            # if ($UpdateDownloadName -inotlike [system.string]::concat('*',$tmpSHAName,'*')) { $UpdateDownloadName = [System.String]::Concat($tmpSHAName,"-",$UpdateDownloadName) }
-
-            $SourcesNewDirectory=".\SOURCES_NEW"
-            if (!(Test-Path $SourcesNewDirectory)) {New-Item $SourcesNewDirectory -ItemType Directory}
-
-            $UpdateDownloadFile=[system.string]::concat($SourcesNewDirectory,"\",$UpdateDownloadName)
-            if (Test-Path $UpdateDownloadFile) {}
-            else
-            {
-                if ($SourceRPMFile -ne "") # Fedora case
-                {
-                    try
-                    {
-                        & tar -xf $SourceRPMFile -C ([system.string]::concat($SourcePath,"\tmp"))
-                        $tmpPath=[system.string]::concat($SourcePath,"\tmp\",$UpdateDownloadName)
-                        if (test-path $tmpPath)
-                        {
-                            Move-Item -Path $tmpPath -Destination $SourcesNewDirectory
-                        }
-                        Remove-Item -Path ([system.string]::concat($SourcePath,"\tmp\*")) -Recurse -force
-                    }catch{}
-                }
-                else
-                {
-                    try { Invoke-WebRequest -Uri $UpdateURL -OutFile $UpdateDownloadFile }
-                    catch
-                    {
-                        if ($UpdateURL -ilike '*netfilter.org*')
-                        {
-                            $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
-                            $session.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36"
-                            $Referer=""
-                            if ($UpdateURL -ilike '*libnetfilter_conntrack*') {$Referer="https://www.netfilter.org/projects/libnetfilter_conntrack/downloads.html"}
-                            elseif ($UpdateURL -ilike '*libmnl*') {$Referer="https://www.netfilter.org/projects/libmnl/downloads.html"}
-                            elseif ($UpdateURL -ilike '*libnetfilter_cthelper*') {$Referer="https://www.netfilter.org/projects/libnetfilter_cthelper/downloads.html"}
-                            elseif ($UpdateURL -ilike '*libnetfilter_cttimeout*') {$Referer="https://www.netfilter.org/projects/libnetfilter_cttimeout/downloads.html"}
-                            elseif ($UpdateURL -ilike '*libnetfilter_queue*') {$Referer="https://www.netfilter.org/projects/libnetfilter_queue/downloads.html"}
-                            elseif ($UpdateURL -ilike '*libnfnetlink*') {$Referer="https://www.netfilter.org/projects/libnfnetlink/downloads.html"}
-                            elseif ($UpdateURL -ilike '*libnftnl*') {$Referer="https://www.netfilter.org/projects/libnftnl/downloads.html"}
-                            elseif ($UpdateURL -ilike '*nftables*') {$Referer="https://www.netfilter.org/projects/nftables/downloads.html"}
-                            elseif ($UpdateURL -ilike '*conntrack-tools*') {$Referer="https://www.netfilter.org/projects/conntrack-tools/downloads.html"}
-                            elseif ($UpdateURL -ilike '*iptables*') {$Referer="https://www.netfilter.org/projects/iptables/downloads.html"}
-
-                            Invoke-WebRequest -UseBasicParsing -Uri $UpdateURL -OutFile $UpdateDownloadFile `
-                            -WebSession $session `
-                            -Headers @{
-                            "Accept"="text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
-                              "Accept-Encoding"="gzip, deflate, br"
-                              "Accept-Language"="en-US,en;q=0.9"
-                              "Referer"="$Referer"
-                              "Sec-Fetch-Dest"="document"
-                              "Sec-Fetch-Mode"="navigate"
-                              "Sec-Fetch-Site"="same-origin"
-                              "Sec-Fetch-User"="?1"
-                              "Upgrade-Insecure-Requests"="1"
-                              "sec-ch-ua"="`"Google Chrome`";v=`"113`", `"Chromium`";v=`"113`", `"Not-A.Brand`";v=`"24`""
-                              "sec-ch-ua-mobile"="?0"
-                              "sec-ch-ua-platform"="`"Windows`""
                             }
                         }
                     }
                 }
             }
+        }
+    }
+    else
+    {
+        $UpdateURL=""
+        $HealthUpdateURL=""
+    }
 
-            if ($_.Spec -ilike 'openjdk8.spec') {ModifySpecFileOpenJDK8 -SpecFileName $CurrentFile.spec -PhotonDir $photonDir -Name $_.name -Update $UpdateAvailable -UpdateDownloadFile $UpdateDownloadFile -DownloadNameWithoutExtension $CurrentFile.Name}
+    if ($HealthUpdateURL -eq "200")
+    {
+        $UpdateDownloadName = ($UpdateURL -split '/')[-1]
+
+        if ($UpdateDownloadName[0] -eq 'v')
+        {
+            $UpdateDownloadName = $UpdateDownloadName.substring(1)
+        }
+        $tmpName=[string](((($UpdateDownloadName -replace ".tar.gz","") -replace ".tar.xz","") -replace ".tgz","") -replace ".tar.lz","") -replace ".tar.bz2",""
+        if (!("$tmpname" -match '[A-Za-z]')) { $UpdateDownloadName = [System.String]::Concat($currentTask.Name,"-",$UpdateDownloadName) }
+
+        # $tmpSHAName=$currentTask.SHAName
+        # if ($tmpSHAName -ilike '*%{name}*') {$tmpSHAName=$currentTask.Name}
+
+        # if ($UpdateDownloadName -inotlike [system.string]::concat('*',$tmpSHAName,'*')) { $UpdateDownloadName = [System.String]::Concat($tmpSHAName,"-",$UpdateDownloadName) }
+
+        $SourcesNewDirectory=join-path $sourcepath $photonDir "SOURCES_NEW"
+        if (!(Test-Path $SourcesNewDirectory)) {New-Item $SourcesNewDirectory -ItemType Directory}
+
+        $UpdateDownloadFile=Join-Path -Path $SourcesNewDirectory -ChildPath $UpdateDownloadName
+        if (Test-Path $UpdateDownloadFile) {}
+        else
+        {
+            if ($SourceRPMFile -ne "") # Fedora case
+            {
+                try {
+                    # Generate a unique temporary directory for each thread
+                    $uniqueTmpPath = Join-Path -Path $SourcePath -ChildPath "tmp_$([System.Guid]::NewGuid().ToString())"
+                    New-Item -Path $uniqueTmpPath -ItemType Directory -Force | Out-Null
+                    & tar -xf $SourceRPMFile -C $uniqueTmpPath
+                    $tmpContentPath = Join-Path -Path $uniqueTmpPath -ChildPath $UpdateDownloadName
+                    if (test-path $tmpContentPath)
+                    {
+                        Move-Item -Path $tmpContentPath -Destination $SourcesNewDirectory -Force -Confirm:$false
+                    }
+                }
+                catch {
+                    Write-Error "Error processing $SourceRPMFile in thread: $_"
+                }
+                finally {
+                    # Clean up
+                    Remove-Item -Path $uniqueTmpPath -Recurse -Force -ErrorAction SilentlyContinue
+                }
+            }
             else
-            {ModifySpecFile -SpecFileName $CurrentFile.spec -PhotonDir $photonDir -Name $_.name -Update $UpdateAvailable -UpdateDownloadFile $UpdateDownloadFile -DownloadNameWithoutExtension $CurrentFile.Name}
+            {
+                try { Invoke-WebRequest -Uri $UpdateURL -OutFile $UpdateDownloadFile -TimeoutSec 10}
+                catch
+                {
+                    if ($UpdateURL -ilike '*netfilter.org*')
+                    {
+                        $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+                        $session.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36"
+                        $Referer=""
+                        if ($UpdateURL -ilike '*libnetfilter_conntrack*') {$Referer="https://www.netfilter.org/projects/libnetfilter_conntrack/downloads.html"}
+                        elseif ($UpdateURL -ilike '*libmnl*') {$Referer="https://www.netfilter.org/projects/libmnl/downloads.html"}
+                        elseif ($UpdateURL -ilike '*libnetfilter_cthelper*') {$Referer="https://www.netfilter.org/projects/libnetfilter_cthelper/downloads.html"}
+                        elseif ($UpdateURL -ilike '*libnetfilter_cttimeout*') {$Referer="https://www.netfilter.org/projects/libnetfilter_cttimeout/downloads.html"}
+                        elseif ($UpdateURL -ilike '*libnetfilter_queue*') {$Referer="https://www.netfilter.org/projects/libnetfilter_queue/downloads.html"}
+                        elseif ($UpdateURL -ilike '*libnfnetlink*') {$Referer="https://www.netfilter.org/projects/libnfnetlink/downloads.html"}
+                        elseif ($UpdateURL -ilike '*libnftnl*') {$Referer="https://www.netfilter.org/projects/libnftnl/downloads.html"}
+                        elseif ($UpdateURL -ilike '*nftables*') {$Referer="https://www.netfilter.org/projects/nftables/downloads.html"}
+                        elseif ($UpdateURL -ilike '*conntrack-tools*') {$Referer="https://www.netfilter.org/projects/conntrack-tools/downloads.html"}
+                        elseif ($UpdateURL -ilike '*iptables*') {$Referer="https://www.netfilter.org/projects/iptables/downloads.html"}
+
+                        Invoke-WebRequest -UseBasicParsing -Uri $UpdateURL -OutFile $UpdateDownloadFile -TimeoutSec 10`
+                        -WebSession $session `
+                        -Headers @{
+                        "Accept"="text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
+                            "Accept-Encoding"="gzip, deflate, br"
+                            "Accept-Language"="en-US,en;q=0.9"
+                            "Referer"="$Referer"
+                            "Sec-Fetch-Dest"="document"
+                            "Sec-Fetch-Mode"="navigate"
+                            "Sec-Fetch-Site"="same-origin"
+                            "Sec-Fetch-User"="?1"
+                            "Upgrade-Insecure-Requests"="1"
+                            "sec-ch-ua"="`"Google Chrome`";v=`"113`", `"Chromium`";v=`"113`", `"Not-A.Brand`";v=`"24`""
+                            "sec-ch-ua-mobile"="?0"
+                            "sec-ch-ua-platform"="`"Windows`""
+                        }
+                    }
+                }
+            }
         }
 
-        $line=[System.String]::Concat($_.spec, ',',$_.source0,',',$Source0,',',$urlhealth,',',$UpdateAvailable,',',$UpdateURL,',',$HealthUpdateURL,',',$CurrentFile.Name,',',$CurrentFile.SHAName,',',$UpdateDownloadName)
-        $Lines += $line
-
+        if ($currentTask.Spec -ilike 'openjdk8.spec') {ModifySpecFileOpenJDK8 -SpecFileName $currentTask.spec -SourcePath $sourcepath -PhotonDir $photonDir -Name $currentTask.name -Update $UpdateAvailable -UpdateDownloadFile $UpdateDownloadFile -DownloadNameWithoutExtension $currentTask.Name}
+        else
+        {ModifySpecFile -SpecFileName $currentTask.spec -SourcePath $sourcepath -PhotonDir $photonDir -Name $currentTask.name -Update $UpdateAvailable -UpdateDownloadFile $UpdateDownloadFile -DownloadNameWithoutExtension $currentTask.Name}
     }
-    "Spec"+","+"Source0 original"+","+"Modified Source0 for url health check"+","+"UrlHealth"+","+"UpdateAvailable"+","+"UpdateURL"+","+"HealthUpdateURL"+","+"Name"+","+"SHAName"+","+"UpdateDownloadName"| out-file $outputfile
-    $lines | out-file $outputfile -append
+    if ($SourceRPMFile -ne "") {
+        if (Test-Path $SourceRPMFile) {
+            Remove-Item -Path $SourceRPMFile -Force -ErrorAction SilentlyContinue
+        }
     }
+    $line=[System.String]::Concat($currentTask.spec, ',',$currentTask.source0,',',$Source0,',',$urlhealth,',',$UpdateAvailable,',',$UpdateURL,',',$HealthUpdateURL,',',$currentTask.Name,',',$currentTask.SHAName,',',$UpdateDownloadName)
+    return $line
 }
+
 
 function GenerateUrlHealthReports {
     param (
         [string]$SourcePath,
         [string]$AccessToken,
-        [int]$ThrottleLimit,
+        [int]$OuterThrottleLimit,
+        [int]$InnerThrottleLimit,
         [bool]$GeneratePh3URLHealthReport,
         [bool]$GeneratePh4URLHealthReport,
         [bool]$GeneratePh5URLHealthReport,
         [bool]$GeneratePh6URLHealthReport,
-        [bool]$GeneratePhCommonURLHealthReport
+        [bool]$GeneratePhCommonURLHealthReport,
+        [bool]$GeneratePhDevURLHealthReport,
+        [bool]$GeneratePhMasterURLHealthReport
     )
-
-    class HeapSort {
-    # Heapsort algorithmus from Doug Finke
-    # https://github.com/dfinke/SortingAlgorithms/blob/master/HeapSort.ps1
-    # modified to compare concated ascii code values
-    [array] static Sort($targetList) {
-        $heapSize = $targetList.Count
-
-        for ([int]$p = ($heapSize - 1) / 2; $p -ge 0; $p--) {
-            [HeapSort]::MaxHeapify($targetList, $heapSize, $p)
-        }
-
-        for ($i = $targetList.Count - 1; $i -gt 0; $i--) {
-            $temp = $targetList[$i]
-            $targetList[$i] = $targetList[0]
-            $targetList[0] = $temp
-
-            $heapSize--
-            [HeapSort]::MaxHeapify($targetList, $heapSize, 0)
-        }
-        return $targetlist
-    }
-
-    static MaxHeapify($targetList, $heapSize, $index) {
-        $left = ($index + 1) * 2 - 1
-        $right = ($index + 1) * 2
-        $largest = 0
-
-        if ($left -lt $heapSize -and [int64]([system.string]::concat((([system.Text.Encoding]::Default.GetBytes($targetList[$left])) | foreach-object tostring 000))) -gt [int64]([system.string]::concat((([system.Text.Encoding]::Default.GetBytes($targetList[$index])) | foreach-object tostring 000)))) {
-            $largest = $left
-        }
-        else {
-            $largest = $index
-        }
-
-        if ($right -lt $heapSize -and [int64]([system.string]::concat((([system.Text.Encoding]::Default.GetBytes($targetList[$right])) | foreach-object tostring 000))) -gt [int64]([system.string]::concat((([system.Text.Encoding]::Default.GetBytes($targetList[$largest])) | foreach-object tostring 000)))) {
-            $largest = $right
-        }
-
-        if ($largest -ne $index) {
-            $temp = $targetList[$index]
-            $targetList[$index] = $targetList[$largest]
-            $targetList[$largest] = $temp
-
-            [HeapSort]::MaxHeapify($targetList, $heapSize, $largest)
-        }
-    }
-    }    
 
     $Packages3 = $null
     $Packages4 = $null
     $Packages5 = $null
     $Packages6 = $null
     $PackagesCommon = $null
+    $PackagesDev = $null
+    $PackagesMaster = $null
 
     if ($GeneratePh3URLHealthReport) {
         Write-Output "Preparing data for Photon OS 3.0 ..."
@@ -3628,6 +3507,16 @@ function GenerateUrlHealthReports {
         GitPhoton -release "common" -SourcePath $SourcePath
         $PackagesCommon = ParseDirectory -SourcePath $SourcePath -PhotonDir "photon-common"
     }
+    if ($GeneratePhDevURLHealthReport) {
+        Write-Output "Preparing data for Photon OS Development ..."
+        GitPhoton -release "dev" -SourcePath $SourcePath
+        $PackagesDev = ParseDirectory -SourcePath $SourcePath -PhotonDir "photon-dev"
+    }
+    if ($GeneratePhMasterURLHealthReport) {
+        Write-Output "Preparing data for Photon OS Master ..."
+        GitPhoton -release "master" -SourcePath $SourcePath
+        $PackagesMaster = ParseDirectory -SourcePath $SourcePath -PhotonDir "photon-master"
+    }
 
     # Initialize and populate the list of tasks for URL health checks
     $checkUrlHealthTasks = @()
@@ -3636,88 +3525,156 @@ function GenerateUrlHealthReports {
     if ($GeneratePh5URLHealthReport -and $null -ne $Packages5) { $checkUrlHealthTasks += @{ Name = "Photon OS 5.0"; Release = "5.0"; Packages = $Packages5; PhotonDir = "photon-5.0" } }
     if ($GeneratePh6URLHealthReport -and $null -ne $Packages6) { $checkUrlHealthTasks += @{ Name = "Photon OS 6.0"; Release = "6.0"; Packages = $Packages6; PhotonDir = "photon-6.0" } }
     if ($GeneratePhCommonURLHealthReport -and $null -ne $PackagesCommon) { $checkUrlHealthTasks += @{ Name = "Photon OS Common"; Release = "common"; Packages = $PackagesCommon; PhotonDir = "photon-common" } }
-    
-    if ($Script:UseParallel -and $checkUrlHealthTasks.Count -gt 0) {
-        Write-Host "Starting parallel URL health report generation for applicable versions ..."
-            
-         # Capture function definitions BEFORE creating the script blocks
-        # These must be captured in the main script scope where the functions exist
+    if ($GeneratePhDevURLHealthReport -and $null -ne $PackagesDev) { $checkUrlHealthTasks += @{ Name = "Photon OS Development"; Release = "dev"; Packages = $PackagesDev; PhotonDir = "photon-dev" } }
+    if ($GeneratePhMasterURLHealthReport -and $null -ne $PackagesMaster) { $checkUrlHealthTasks += @{ Name = "Photon OS Master"; Release = "master"; Packages = $PackagesMaster; PhotonDir = "photon-master" } }
+
+    if ($checkUrlHealthTasks.Count -gt 0) {
+
+        # define variables locally for functions used in parallel tasks
         $CheckURLHealthDef = (Get-Command 'CheckURLHealth' -ErrorAction SilentlyContinue).Definition
-        $urlhealthDef = (Get-Command 'urlhealth' -ErrorAction SilentlyContinue).Definition
         $KojiFedoraProjectLookUpDef = (Get-Command 'KojiFedoraProjectLookUp' -ErrorAction SilentlyContinue).Definition
         $ModifySpecFileDef = (Get-Command 'ModifySpecFile' -ErrorAction SilentlyContinue).Definition
         $ModifySpecFileOpenJDK8Def = (Get-Command 'ModifySpecFileOpenJDK8' -ErrorAction SilentlyContinue).Definition
-        # $HeapSortClassDef should already be captured at the beginning of this function
-        
-        $ProcessTaskScriptBlock = {
-            # FIRST: Define all required functions and classes in this runspace
-            # Use $using: to access variables from the parent scope
-            if ($using:CheckURLHealthDef) { 
-                Invoke-Expression "function CheckURLHealth { $using:CheckURLHealthDef }"
-            }
-            if ($using:urlhealthDef) { 
-                Invoke-Expression "function urlhealth { $using:urlhealthDef }"
-            }
-            if ($using:KojiFedoraProjectLookUpDef) { 
-                Invoke-Expression "function KojiFedoraProjectLookUp { $using:KojiFedoraProjectLookUpDef }"
-            }
-            if ($using:ModifySpecFileDef) { 
-                Invoke-Expression "function ModifySpecFile { $using:ModifySpecFileDef }"
-            }
-            if ($using:ModifySpecFileOpenJDK8Def) { 
-                Invoke-Expression "function ModifySpecFileOpenJDK8 { $using:ModifySpecFileOpenJDK8Def }"
-            }
-            if ($using:HeapSortClassDef) { 
-                Invoke-Expression $using:HeapSortClassDef
-            }
+        $Source0LookupDef = (Get-Command 'Source0Lookup' -ErrorAction SilentlyContinue).Definition
+        $urlhealthDef = (Get-Command 'urlhealth' -ErrorAction SilentlyContinue).Definition
 
-            # NOW the actual task processing logic
-            $taskConfig = $_
-            Write-Output "Generating URLHealth report for $($taskConfig.Name) (parallel worker)..."
-            $outputFileName = "photonos-urlhealth-$($taskConfig.Release)_$((Get-Date).ToString("yyyyMMddHHmm"))"
-            $outputFilePath = Join-Path -Path $using:SourcePath -ChildPath "$outputFileName.prn"
-            
-            # Now CheckURLHealth should be available
-            CheckURLHealth -outputfile $outputFilePath -accessToken $using:AccessToken -CheckURLHealthPackageObject $taskConfig.Packages -PhotonDir $taskConfig.PhotonDir -ThrottleLimitParam $using:ThrottleLimit -SourcePath $using:SourcePath
-            
-            Write-Output "Finished report for $($taskConfig.Name) (parallel worker). Output: $outputFilePath"
-        }       
-        $checkUrlHealthTasks | ForEach-Object -Parallel $ProcessTaskScriptBlock -ThrottleLimit $ThrottleLimit
-    } elseif ($checkUrlHealthTasks.Count -gt 0){ 
-        # Fallback to sequential processing
-        Write-Host "Starting sequential URL health report generation for applicable versions..."
-        $checkUrlHealthTasks | ForEach-Object {
-            $taskConfig = $_ # Current item from $checkUrlHealthTasks
-            Write-Output "Generating URLHealth report for $($taskConfig.Name) (parallel worker)..."
-            $outputFileName = "photonos-urlhealth-$($taskConfig.Release)_$((Get-Date).ToString('yyyyMMddHHmm'))"
-            $outputFilePath = Join-Path -Path $using:SourcePath -ChildPath "$outputFileName.prn"
-            CheckURLHealth -outputfile $outputFilePath -accessToken $using:AccessToken -CheckURLHealthPackageObject $taskConfig.Packages -PhotonDir $taskConfig.PhotonDir -ThrottleLimitParam $using:ThrottleLimit -SourcePath $using:SourcePath
+
+        if ($Script:UseParallel) {
+            Write-Host "Starting parallel URL health report generation for applicable versions ..."
+            $checkUrlHealthTasks | ForEach-Object -Parallel {
+                # Capture the task config
+                $TaskConfig = $_
+
+                # define variables locally for functions used in parallel tasks
+                $SourcePath = $using:SourcePath
+                $AccessToken = $using:AccessToken
+                $OuterThrottleLimit = $using:OuterThrottleLimit
+                $InnerThrottleLimit = $using:InnerThrottleLimit
+                $CheckURLHealthDef = $using:CheckURLHealthDef
+                $KojiFedoraProjectLookUpDef = $using:KojiFedoraProjectLookUpDef
+                $ModifySpecFileDef = $using:ModifySpecFileDef
+                $ModifySpecFileOpenJDK8Def = $using:ModifySpecFileOpenJDK8Def
+                $Source0LookupDef = $using:Source0LookupDef
+                $urlhealthDef = $using:urlhealthDef
+                if ($CheckURLHealthDef) {
+                    Invoke-Expression "function CheckURLHealth { $CheckURLHealthDef }"
+                }
+                if ($KojiFedoraProjectLookUpDef) {
+                    Invoke-Expression "function KojiFedoraProjectLookUp { $KojiFedoraProjectLookUpDef }"
+                }
+                if ($ModifySpecFileDef) {
+                    Invoke-Expression "function ModifySpecFile { $ModifySpecFileDef }"
+                }
+                if ($ModifySpecFileOpenJDK8Def) {
+                    Invoke-Expression "function ModifySpecFileOpenJDK8 { $ModifySpecFileOpenJDK8Def }"
+                }
+                if ($Source0LookupDef) {
+                    Invoke-Expression "function Source0Lookup { $Source0LookupDef }"
+                }
+                if ($urlhealthDef) {
+                    Invoke-Expression "function urlhealth { $urlhealthDef }"
+                }
+                Write-Output "Generating URLHealth report for $($TaskConfig.Name) ..."
+                $outputFileName = "photonos-urlhealth-$($TaskConfig.Release)_$((Get-Date).ToString("yyyyMMddHHmm"))"
+                $outputFilePath = Join-Path -Path $SourcePath -ChildPath "$outputFileName.prn"
+
+
+                # Collect results in memory to avoid file conflicts
+                $results=@()
+                $line= "Spec,Source0 original,Modified Source0 for url health check,UrlHealth,UpdateAvailable,UpdateURL,HealthUpdateURL,Name,SHAName,UpdateDownloadName"
+                $results += $line
+
+                $results += $TaskConfig.Packages | ForEach-Object -Parallel {
+                    $currentPackage=$_
+                    # define variables locally for functions used in parallel tasks
+                    $SourcePath = $using:SourcePath
+                    $AccessToken = $using:AccessToken
+                    $OuterThrottleLimit = $using:OuterThrottleLimit
+                    $InnerThrottleLimit = $using:InnerThrottleLimit
+                    $CheckURLHealthDef = $using:CheckURLHealthDef
+                    $KojiFedoraProjectLookUpDef = $using:KojiFedoraProjectLookUpDef
+                    $ModifySpecFileDef = $using:ModifySpecFileDef
+                    $ModifySpecFileOpenJDK8Def = $using:ModifySpecFileOpenJDK8Def
+                    $Source0LookupDef = $using:Source0LookupDef
+                    $urlhealthDef = $using:urlhealthDef
+                    if ($CheckURLHealthDef) {
+                        Invoke-Expression "function CheckURLHealth { $CheckURLHealthDef }"
+                    }
+                    if ($KojiFedoraProjectLookUpDef) {
+                        Invoke-Expression "function KojiFedoraProjectLookUp { $KojiFedoraProjectLookUpDef }"
+                    }
+                    if ($ModifySpecFileDef) {
+                        Invoke-Expression "function ModifySpecFile { $ModifySpecFileDef }"
+                    }
+                    if ($ModifySpecFileOpenJDK8Def) {
+                        Invoke-Expression "function ModifySpecFileOpenJDK8 { $ModifySpecFileOpenJDK8Def }"
+                    }
+                    if ($Source0LookupDef) {
+                        Invoke-Expression "function Source0Lookup { $Source0LookupDef }"
+                    }
+                    if ($urlhealthDef) {
+                        Invoke-Expression "function urlhealth { $urlhealthDef }"
+                    }
+                    $outputFilePath = $using:outputFilePath
+                    $photonDir = $using:TaskConfig.PhotonDir
+                    # Use $using: to access variables from the parent scope
+                    CheckURLHealth -currentTask $currentPackage -SourcePath $SourcePath -AccessToken $AccessToken `
+                        -outputfile $outputFilePath -photonDir $photonDir `
+                        -KojiFedoraProjectLookUpDef $using:KojiFedoraProjectLookUpDef -ModifySpecFileDef $using:ModifySpecFileDef `
+                        -ModifySpecFileOpenJDK8Def $using:ModifySpecFileOpenJDK8Def -Source0LookupDef $using:Source0LookupDef `
+                        -urlhealthDef $using:urlhealthDef
+                    Write-Host "Processing"$($currentPackage.Spec)"done."
+                } -ThrottleLimit $InnerThrottleLimit
+
+                $results | ForEach-Object { $_ | Out-File $outputFilePath -Append }
+            } -ThrottleLimit $OuterThrottleLimit
+        } else {
+            # Fallback to sequential processing
+            Write-Host "Starting sequential URL health report generation for applicable versions..."
+            $checkUrlHealthTasks | ForEach-Object {
+                $TaskConfig = $_
+                Write-Output "Generating URLHealth report for $($TaskConfig.Name) ..."
+                $outputFileName = "photonos-urlhealth-$($TaskConfig.Release)_$((Get-Date).ToString("yyyyMMddHHmm"))"
+                $outputFilePath = Join-Path -Path $SourcePath -ChildPath "$outputFileName.prn"
+                $results=@()
+                $line="Spec"+","+"Source0 original"+","+"Modified Source0 for url health check"+","+"UrlHealth"+","+"UpdateAvailable"+","+"UpdateURL"+","+"HealthUpdateURL"+","+"Name"+","+"SHAName"+","+"UpdateDownloadName"
+                $results += $line
+                $results += $TaskConfig.Packages | ForEach-Object {
+                    $currentPackage=$_
+                    $photonDir = $TaskConfig.PhotonDir
+                    # Use $using: to access variables from the parent scope
+                    CheckURLHealth -currentTask $currentPackage -SourcePath $SourcePath -AccessToken $AccessToken `
+                        -outputfile $outputFilePath -photonDir $photonDir `
+                        -KojiFedoraProjectLookUpDef $KojiFedoraProjectLookUpDef -ModifySpecFileDef $ModifySpecFileDef `
+                        -ModifySpecFileOpenJDK8Def $ModifySpecFileOpenJDK8Def -Source0LookupDef $Source0LookupDef `
+                        -urlhealthDef $urlhealthDef
+                }
+                $results | ForEach-Object { $_ | Out-File $outputFilePath -Append }
+            }
         }
-    } else {
-        Write-Host "No URL health reports were enabled or no package data found."
     }
-    # Return package data for subsequent report generation if needed
-    return @{
-        Packages3 = $Packages3
-        Packages4 = $Packages4
-        Packages5 = $Packages5
-        Packages6 = $Packages6
-        PackagesCommon = $PackagesCommon
+    else {
+        Write-Host "No URL health reports were enabled or no package data found."
     }
 }
 
-# EDIT
+
 # path with all downloaded and unzipped branch directories of github.com/vmware/photon
-$sourcepath="$env:public"
-$Script:UseParallel = $PSVersionTable.PSVersion.Major -ge 7 -and $PSVersionTable.PSVersion.Minor -ge 4
-[int]$ThrottleLimit = 15         # New parameter for inner loop throttle in CheckURLHealth
-$access = Read-Host -Prompt "Please enter your Github Access Token."
+$global:sourcepath="$env:public"
+$Script:UseParallel = $PSVersionTable.PSVersion.Major -ge 7 -and $PSVersionTable.PSVersion.Minor -ge 11
+[int]$global:OuterThrottleLimit = 5          # New parameter for outer loop Tasks throttle
+[int]$global:InnerThrottleLimit = 15         # New parameter for inner loop Packages throttle
+$global:access = Read-Host -Prompt "Please enter your Github Access Token."
 $GeneratePh3URLHealthReport=$false
 $GeneratePh4URLHealthReport=$false
 $GeneratePh5URLHealthReport=$true
 $GeneratePh6URLHealthReport=$false
 $GeneratePhCommonURLHealthReport=$false
+$GeneratePhDevURLHealthReport=$false
+$GeneratePhMasterURLHealthReport=$false
+
 $GeneratePhPackageReport=$false
+
 $GeneratePhCommontoPhMasterDiffHigherPackageVersionReport=$false
 $GeneratePh5toPh6DiffHigherPackageVersionReport=$false
 $GeneratePh4toPh5DiffHigherPackageVersionReport=$false
@@ -3732,12 +3689,15 @@ else {
 }
 
 # Call the new function
-$urlHealthPackageData = GenerateUrlHealthReports -SourcePath $sourcepath -AccessToken $access -ThrottleLimit $ThrottleLimit `
+$urlHealthPackageData = GenerateUrlHealthReports -SourcePath $global:sourcepath -AccessToken $global:access -OuterThrottleLimit $global:OuterThrottleLimit -InnerThrottleLimit $global:InnerThrottleLimit `
     -GeneratePh3URLHealthReport $GeneratePh3URLHealthReport `
     -GeneratePh4URLHealthReport $GeneratePh4URLHealthReport `
     -GeneratePh5URLHealthReport $GeneratePh5URLHealthReport `
     -GeneratePh6URLHealthReport $GeneratePh6URLHealthReport `
-    -GeneratePhCommonURLHealthReport $GeneratePhCommonURLHealthReport
+    -GeneratePhCommonURLHealthReport $GeneratePhCommonURLHealthReport `
+    -GeneratePhDevURLHealthReport $GeneratePhDevURLHealthReport `
+    -GeneratePhMasterURLHealthReport $GeneratePhMasterURLHealthReport
+
 
 # Assign returned package data to existing variables if they were generated
 if ($null -ne $urlHealthPackageData) {
@@ -3746,109 +3706,113 @@ if ($null -ne $urlHealthPackageData) {
     if ($GeneratePh5URLHealthReport) { $Packages5 = $urlHealthPackageData.Packages5 }
     if ($GeneratePh6URLHealthReport) { $Packages6 = $urlHealthPackageData.Packages6 }
     if ($GeneratePhCommonURLHealthReport) { $PackagesCommon = $urlHealthPackageData.PackagesCommon }
+    if ($GeneratePhDevURLHealthReport) { $PackagesDev = $urlHealthPackageData.PackagesDev }
+    if ($GeneratePhMasterURLHealthReport) { $PackagesMaster = $urlHealthPackageData.PackagesMaster }
 }
 
-if ($GeneratePhPackageReport -ieq $true)
+if ($GeneratePhPackageReport)
 {
     write-output "Generating Package Report ..."
     # fetch + merge per branch
-    GitPhoton -release "1.0" -sourcePath $sourcepath
-    GitPhoton -release "2.0" -sourcePath $sourcepath
+    GitPhoton -release "3.0" -sourcePath $sourcepath
+    GitPhoton -release "4.0" -sourcePath $sourcepath
+    GitPhoton -release "5.0" -sourcePath $sourcepath
+    GitPhoton -release "6.0" -sourcePath $sourcepath
     GitPhoton -release master -sourcePath $sourcepath
     GitPhoton -release dev -sourcePath $sourcepath
     GitPhoton -release common -sourcePath $sourcepath
     Set-location  $sourcepath
     # read all files from branch
-    $Packages1=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-1.0
-    $Packages2=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-2.0
-    $PackagesMaster=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-master
-    $Packages0=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-dev
+    $Packages3=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-3.0
+    $Packages4=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-4.0
+    $Packages5=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-5.0
+    $Packages6=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-6.0
     $PackagesCommon=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-common
-    $result = $Packages1,$Packages2,$Packages3,$Packages4,$Packages5,$Packages6,$PackagesCommon,$PackagesMaster| foreach-object{$_}|Select-Object Spec,`
-    @{l='photon-1.0';e={if($_.Spec -in $Packages1.Spec) {$Packages1[$Packages1.Spec.IndexOf($_.Spec)].version}}},`
-    @{l='photon-2.0';e={if($_.Spec -in $Packages2.Spec) {$Packages2[$Packages2.Spec.IndexOf($_.Spec)].version}}},`
-    @{l='photon-3.0';e={if($_.Spec -in $Packages3.Spec) {$Packages3[$Packages3.Spec.IndexOf($_.Spec)].version}}},`
-    @{l='photon-4.0';e={if($_.Spec -in $Packages4.Spec) {$Packages4[$Packages4.Spec.IndexOf($_.Spec)].version}}},`
-    @{l='photon-5.0';e={if($_.Spec -in $Packages5.Spec) {$Packages5[$Packages5.Spec.IndexOf($_.Spec)].version}}},`
-    @{l='photon-6.0';e={if($_.Spec -in $Packages6.Spec) {$Packages6[$Packages6.Spec.IndexOf($_.Spec)].version}}},`
-    @{l='photon-common';e={if($_.Spec -in $PackagesCommon.Spec) {$PackagesCommon[$PackagesCommon.Spec.IndexOf($_.Spec)].version}}},`
-    @{l='photon-dev';e={if($_.Spec -in $Packages0.Spec) {$Packages0[$Packages0.Spec.IndexOf($_.Spec)].version}}},`
-    @{l='photon-master';e={if($_.Spec -in $PackagesMaster.Spec) {$PackagesMaster[$PackagesMaster.Spec.IndexOf($_.Spec)].version}}} -Unique | Sort-object Spec
+    $PackagesDev=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-dev
+    $PackagesMaster=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-master
+    $result = $Packages3,$Packages4,$Packages5,$Packages6,$PackagesCommon,$PackagesDev,$PackagesMaster| foreach-object{$currentTask}|Select-Object Spec,`
+    @{l='photon-3.0';e={if($currentTask.Spec -in $Packages3.Spec) {$Packages3[$Packages3.Spec.IndexOf($currentTask.Spec)].version}}},`
+    @{l='photon-4.0';e={if($currentTask.Spec -in $Packages4.Spec) {$Packages4[$Packages4.Spec.IndexOf($currentTask.Spec)].version}}},`
+    @{l='photon-5.0';e={if($currentTask.Spec -in $Packages5.Spec) {$Packages5[$Packages5.Spec.IndexOf($currentTask.Spec)].version}}},`
+    @{l='photon-6.0';e={if($currentTask.Spec -in $Packages6.Spec) {$Packages6[$Packages6.Spec.IndexOf($currentTask.Spec)].version}}},`
+    @{l='photon-common';e={if($currentTask.Spec -in $PackagesCommon.Spec) {$PackagesCommon[$PackagesCommon.Spec.IndexOf($currentTask.Spec)].version}}},`
+    @{l='photon-dev';e={if($currentTask.Spec -in $PackagesDev.Spec) {$PackagesDev[$PackagesDev.Spec.IndexOf($currentTask.Spec)].version}}},`
+    @{l='photon-master';e={if($currentTask.Spec -in $PackagesMaster.Spec) {$PackagesMaster[$PackagesMaster.Spec.IndexOf($currentTask.Spec)].version}}} -Unique | Sort-object Spec
     $outputfile="$env:public\photonos-package-report_$((get-date).tostring("yyyMMddHHmm")).prn"
-    "Spec"+","+"photon-1.0"+","+"photon-2.0"+","+"photon-3.0"+","+"photon-4.0"+","+"photon-5.0"+","+"photon-6.0"+","+"photon-common"+","+"photon-dev"+","+"photon-master"| out-file $outputfile
-    $result | foreach-object { $_.Spec+","+$_."photon-1.0"+","+$_."photon-2.0"+","+$_."photon-3.0"+","+$_."photon-4.0"+","+$_."photon-5.0"+","+$_."photon-6.0"+","+$_."photon-common"+","+$_."photon-dev"+","+$_."photon-master"} |  out-file $outputfile -append
+    "Spec"+","+"photon-3.0"+","+"photon-4.0"+","+"photon-5.0"+","+"photon-6.0"+","+"photon-common"+","+"photon-dev"+","+"photon-master"| out-file $outputfile
+    $result | foreach-object { $currentTask.Spec+","+$currentTask."photon-3.0"+","+$currentTask."photon-4.0"+","+$currentTask."photon-5.0"+","+$currentTask."photon-6.0"+","+$currentTask."photon-common"+","+$currentTask."photon-dev"+","+$currentTask."photon-master"} |  out-file $outputfile -append
 }
 
-if ($GeneratePhCommontoPhMasterDiffHigherPackageVersionReport -ieq $true)
+if ($GeneratePhCommontoPhMasterDiffHigherPackageVersionReport)
 {
     write-output "Generating difference report of common packages with a higher version than same master package ..."
     $outputfile1="$env:public\photonos-diff-report-common-master_$((get-date).tostring("yyyMMddHHmm")).prn"
     "Spec"+","+"photon-common"+","+"photon-master"| out-file $outputfile1
     $result | foreach-object {
-        # write-output $_.spec
-        if ((!([string]::IsNullOrEmpty($_.'photon-common'))) -and (!([string]::IsNullOrEmpty($_.'photon-master'))))
+        # write-output $currentTask.spec
+        if ((!([string]::IsNullOrEmpty($currentTask.'photon-common'))) -and (!([string]::IsNullOrEmpty($currentTask.'photon-master'))))
         {
-            $VersionCompare1 = VersionCompare $_.'photon-common' $_.'photon-master'
+            $VersionCompare1 = VersionCompare $currentTask.'photon-common' $currentTask.'photon-master'
             if ($VersionCompare1 -eq 1)
             {
-                $diffspec1=[System.String]::Concat($_.spec, ',',$_.'photon-common',',',$_.'photon-master')
+                $diffspec1=[System.String]::Concat($currentTask.spec, ',',$currentTask.'photon-common',',',$currentTask.'photon-master')
                 $diffspec1 | out-file $outputfile1 -append
             }
         }
     }
 }
 
-if ($GeneratePh5toPh6DiffHigherPackageVersionReport -ieq $true)
+if ($GeneratePh5toPh6DiffHigherPackageVersionReport)
 {
     write-output "Generating difference report of 5.0 packages with a higher version than same 6.0 package ..."
     $outputfile1="$env:public\photonos-diff-report-5.0-6.0_$((get-date).tostring("yyyMMddHHmm")).prn"
     "Spec"+","+"photon-5.0"+","+"photon-6.0"| out-file $outputfile1
     $result | foreach-object {
-        # write-output $_.spec
-        if ((!([string]::IsNullOrEmpty($_.'photon-5.0'))) -and (!([string]::IsNullOrEmpty($_.'photon-6.0'))))
+        # write-output $currentTask.spec
+        if ((!([string]::IsNullOrEmpty($currentTask.'photon-5.0'))) -and (!([string]::IsNullOrEmpty($currentTask.'photon-6.0'))))
         {
-            $VersionCompare1 = VersionCompare $_.'photon-5.0' $_.'photon-6.0'
+            $VersionCompare1 = VersionCompare $currentTask.'photon-5.0' $currentTask.'photon-6.0'
             if ($VersionCompare1 -eq 1)
             {
-                $diffspec1=[System.String]::Concat($_.spec, ',',$_.'photon-5.0',',',$_.'photon-6.0')
+                $diffspec1=[System.String]::Concat($currentTask.spec, ',',$currentTask.'photon-5.0',',',$currentTask.'photon-6.0')
                 $diffspec1 | out-file $outputfile1 -append
             }
         }
     }
 }
 
-if ($GeneratePh4toPh5DiffHigherPackageVersionReport -ieq $true)
+if ($GeneratePh4toPh5DiffHigherPackageVersionReport)
 {
     write-output "Generating difference report of 4.0 packages with a higher version than same 5.0 package ..."
     $outputfile1="$env:public\photonos-diff-report-4.0-5.0_$((get-date).tostring("yyyMMddHHmm")).prn"
     "Spec"+","+"photon-4.0"+","+"photon-5.0"| out-file $outputfile1
     $result | foreach-object {
-        # write-output $_.spec
-        if ((!([string]::IsNullOrEmpty($_.'photon-4.0'))) -and (!([string]::IsNullOrEmpty($_.'photon-5.0'))))
+        # write-output $currentTask.spec
+        if ((!([string]::IsNullOrEmpty($currentTask.'photon-4.0'))) -and (!([string]::IsNullOrEmpty($currentTask.'photon-5.0'))))
         {
-            $VersionCompare1 = VersionCompare $_.'photon-4.0' $_.'photon-5.0'
+            $VersionCompare1 = VersionCompare $currentTask.'photon-4.0' $currentTask.'photon-5.0'
             if ($VersionCompare1 -eq 1)
             {
-                $diffspec1=[System.String]::Concat($_.spec, ',',$_.'photon-4.0',',',$_.'photon-5.0')
+                $diffspec1=[System.String]::Concat($currentTask.spec, ',',$currentTask.'photon-4.0',',',$currentTask.'photon-5.0')
                 $diffspec1 | out-file $outputfile1 -append
             }
         }
     }
 }
 
-if ($GeneratePh3toPh4DiffHigherPackageVersionReport -ieq $true)
+if ($GeneratePh3toPh4DiffHigherPackageVersionReport)
 {
     write-output "Generating difference report of 3.0 packages with a higher version than same 4.0 package ..."
     $outputfile2="$env:public\photonos-diff-report-3.0-4.0_$((get-date).tostring("yyyMMddHHmm")).prn"
     "Spec"+","+"photon-3.0"+","+"photon-4.0"| out-file $outputfile2
     $result | foreach-object {
-        # write-output $_.spec
-        if ((!([string]::IsNullOrEmpty($_.'photon-3.0'))) -and (!([string]::IsNullOrEmpty($_.'photon-4.0'))))
+        # write-output $currentTask.spec
+        if ((!([string]::IsNullOrEmpty($currentTask.'photon-3.0'))) -and (!([string]::IsNullOrEmpty($currentTask.'photon-4.0'))))
         {
-            $VersionCompare2 = VersionCompare $_.'photon-3.0' $_.'photon-4.0'
+            $VersionCompare2 = VersionCompare $currentTask.'photon-3.0' $currentTask.'photon-4.0'
             if ($VersionCompare2 -eq 1)
             {
-                $diffspec2=[System.String]::Concat($_.spec, ',',$_.'photon-3.0',',',$_.'photon-4.0')
+                $diffspec2=[System.String]::Concat($currentTask.spec, ',',$currentTask.'photon-3.0',',',$currentTask.'photon-4.0')
                 $diffspec2 | out-file $outputfile2 -append
             }
         }
