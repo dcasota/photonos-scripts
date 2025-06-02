@@ -1073,10 +1073,10 @@ function CheckURLHealth {
     }
     $line=@()
 
-    if ($currentTask.spec -ilike 'libtirpc.spec')
-    {pause}
-    else
-    {return}
+    # if ($currentTask.spec -ilike 'libtirpc.spec')
+    # {pause}
+    # else
+    # {return}
 
     $Source0 = $currentTask.Source0
 
@@ -3301,7 +3301,7 @@ function CheckURLHealth {
                     $versionunderscore=$UpdateAvailable.Replace(".","_")
                     $Source0=[system.string]::concat("https://github.com/unicode-org/icu/releases/download/release-",$versionhiven,"/icu4c-",$versionunderscore,"-src.tgz")
                 }
-
+                if ($currentTask.spec -ilike 'libtirpc.spec') { $Source0=[system.string]::concat("https://downloads.sourceforge.net/project/libtirpc/libtirpc/",$version,"/libtirpc-",$version,".tar.bz2") }
 
                 if (($currentTask.Source0 -ilike '*.tar.bz2*') -and ($Source0 -ilike '*.tar.gz*')) {$Source0=$Source0.replace(".tar.gz",".tar.bz2")}
                 if (($currentTask.Source0 -ilike '*.tar.xz*') -and ($Source0 -ilike '*.tar.gz*')) {$Source0=$Source0.replace(".tar.gz",".tar.xz")}
@@ -3665,20 +3665,20 @@ $Script:UseParallel = $PSVersionTable.PSVersion.Major -ge 7 -and $PSVersionTable
 [int]$global:OuterThrottleLimit = 5          # New parameter for outer loop Tasks throttle
 [int]$global:InnerThrottleLimit = 15         # New parameter for inner loop Packages throttle
 $global:access = Read-Host -Prompt "Please enter your Github Access Token."
-$GeneratePh3URLHealthReport=$false
-$GeneratePh4URLHealthReport=$false
+$GeneratePh3URLHealthReport=$true
+$GeneratePh4URLHealthReport=$true
 $GeneratePh5URLHealthReport=$true
-$GeneratePh6URLHealthReport=$false
-$GeneratePhCommonURLHealthReport=$false
-$GeneratePhDevURLHealthReport=$false
-$GeneratePhMasterURLHealthReport=$false
+$GeneratePh6URLHealthReport=$true
+$GeneratePhCommonURLHealthReport=$true
+$GeneratePhDevURLHealthReport=$true
+$GeneratePhMasterURLHealthReport=$true
 
-$GeneratePhPackageReport=$false
+$GeneratePhPackageReport=$true
 
-$GeneratePhCommontoPhMasterDiffHigherPackageVersionReport=$false
-$GeneratePh5toPh6DiffHigherPackageVersionReport=$false
-$GeneratePh4toPh5DiffHigherPackageVersionReport=$false
-$GeneratePh3toPh4DiffHigherPackageVersionReport=$false
+$GeneratePhCommontoPhMasterDiffHigherPackageVersionReport=$true
+$GeneratePh5toPh6DiffHigherPackageVersionReport=$true
+$GeneratePh4toPh5DiffHigherPackageVersionReport=$true
+$GeneratePh3toPh4DiffHigherPackageVersionReport=$true
 
 if (Get-Command git -ErrorAction SilentlyContinue) {}
 else {
