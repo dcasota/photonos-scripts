@@ -39,7 +39,7 @@ function ModifySpecFileOpenJDK8 {
 		[parameter(Mandatory = $true)]
 		[string]$SpecFileName,
 		[parameter(Mandatory = $true)]
-		[string]$sourcepath,
+		[string]$SourcePath,
 		[parameter(Mandatory = $true)]
 		[string]$photonDir,
 		[parameter(Mandatory = $true)]
@@ -51,8 +51,8 @@ function ModifySpecFileOpenJDK8 {
 		[parameter(Mandatory = $true)]
 		[string]$DownloadNameWithoutExtension
     )
-    $SpecFile = join-path "$sourcepath" "$photonDir" "SPECS" "$Name" "$SpecFileName"
-    $Object=get-content $SpecFile
+    $SpecFile = join-path "$SourcePath" "$photonDir" "SPECS" "$Name" "$SpecFileName"
+    $object=get-content $SpecFile
 
 
     try
@@ -68,42 +68,42 @@ function ModifySpecFileOpenJDK8 {
     if ($object -ilike '*%define sha512*') { $certutil = certutil -hashfile $UpdateDownloadFile SHA512 | out-string; $sha512= ($certutil -split "`r`n")[1] }
 
     $DateEntry = use-culture -Culture en-US {(get-date -UFormat "%a") + " " + (get-date).ToString("MMM") + " " + (get-date -UFormat "%d %Y") }
-    $Line1=[system.string]::concat("* ",$DateEntry," ","First Last <firstname.lastname@broadcom.com> ",$Update,"-1")
+    $line1=[system.string]::concat("* ",$DateEntry," ","First Last <firstname.lastname@broadcom.com> ",$Update,"-1")
 
     $skip=$false
     $FileModified = @()
-    Foreach ($Line in $Object)
+    Foreach ($line in $object)
     {
         if ($skip -eq $false)
         {
-            if ($Line -ilike '*Version:*') {$Line = $Line -replace 'Version:.+$', "Version:        1.8.0.$Update"; $FileModified += $Line}
-            elseif ($Line -ilike '*Release:*') {$Line = $Line -replace 'Release:.+$', 'Release:        1%{?dist}'; $FileModified += $Line}
-            elseif ($Line -ilike '*Source0:*')
+            if ($line -ilike '*Version:*') {$line = $line -replace 'Version:.+$', "Version:        1.8.0.$Update"; $FileModified += $line}
+            elseif ($line -ilike '*Release:*') {$line = $line -replace 'Release:.+$', 'Release:        1%{?dist}'; $FileModified += $line}
+            elseif ($line -ilike '*Source0:*')
             {
-                $FileModified += $Line
+                $FileModified += $line
                 if ($sha1 -ne "") {$FileModified += [system.string]::concat('%define sha1 ',$DownloadNameWithoutExtension,'=',$sha1); $skip=$true }
                 elseif ($sha256 -ne "") {$FileModified += [system.string]::concat('%define sha256 ',$DownloadNameWithoutExtension,'=',$sha256); $skip=$true }
                 elseif ($sha512 -ne "") {$FileModified +=[system.string]::concat('%define sha512 ',$DownloadNameWithoutExtension,'=',$sha512); $skip=$true }
             }
-            elseif ($Line -ilike '%changelog*')
+            elseif ($line -ilike '%changelog*')
             {
-                $FileModified += $Line
+                $FileModified += $line
                 #Add Lines after the selected pattern
-                $FileModified += $Line1
+                $FileModified += $line1
                 $FileModified += '- automatic version bump for testing purposes DO NOT USE'
             }
-            elseif ($Line -ilike '%define subversion*')
+            elseif ($line -ilike '%define subversion*')
             {
                 $FileModified += [system.string]::concat('%define subversion ',$Update)
             }
-            else {$FileModified += $Line}
+            else {$FileModified += $line}
         }
         else {$skip = $false}
     }
 
 
     if ($null -ne $FileModified) {
-        $SpecsNewDirectory=join-path "$sourcepath" "$photonDir" "SPECS_NEW" "$Name"
+        $SpecsNewDirectory=join-path "$SourcePath" "$photonDir" "SPECS_NEW" "$Name"
         $Update = [System.IO.Path]::GetFileNameWithoutExtension($Update) # Strips .asc if present
         $fileNameBase = "$Name-$Update"
         $filename = Join-Path -Path $SpecsNewDirectory -ChildPath "$fileNameBase.spec"
@@ -118,9 +118,9 @@ function ModifySpecFile {
 		[parameter(Mandatory = $true)]
 		[string]$SpecFileName,
         [parameter(Mandatory = $true)]
-		[string]$sourcepath,
+		[string]$SourcePath,
 		[parameter(Mandatory = $true)]
-		[string]$PhotonDir,
+		[string]$photonDir,
 		[parameter(Mandatory = $true)]
 		[string]$Name,
 		[parameter(Mandatory = $true)]
@@ -130,8 +130,8 @@ function ModifySpecFile {
 		[parameter(Mandatory = $true)]
 		[string]$DownloadNameWithoutExtension
     )
-    $SpecFile = join-path "$sourcepath" "$photonDir" "SPECS" "$Name" "$SpecFileName"
-    $Object=get-content $SpecFile
+    $SpecFile = join-path "$SourcePath" "$photonDir" "SPECS" "$Name" "$SpecFileName"
+    $object=get-content $SpecFile
 
 
     try
@@ -147,38 +147,38 @@ function ModifySpecFile {
     if ($object -ilike '*%define sha512*') { $certutil = certutil -hashfile $UpdateDownloadFile SHA512 | out-string; $sha512= ($certutil -split "`r`n")[1] }
 
     $DateEntry = use-culture -Culture en-US {(get-date -UFormat "%a") + " " + (get-date).ToString("MMM") + " " + (get-date -UFormat "%d %Y") }
-    $Line1=[system.string]::concat("* ",$DateEntry," ","First Last <first.last@broadcom.com> ",$Update,"-1")
+    $line1=[system.string]::concat("* ",$DateEntry," ","First Last <first.last@broadcom.com> ",$Update,"-1")
 
     $skip=$false
     $FileModified = @()
-    Foreach ($Line in $Object)
+    Foreach ($line in $object)
     {
         if ($skip -eq $false)
         {
-            if ($Line -ilike '*Version:*') {$Line = $Line -replace 'Version:.+$', "Version:        $Update"; $FileModified += $Line}
-            elseif ($Line -ilike '*Release:*') {$Line = $Line -replace 'Release:.+$', 'Release:        1%{?dist}'; $FileModified += $Line}
-            elseif ($Line -ilike '*Source0:*')
+            if ($line -ilike '*Version:*') {$line = $line -replace 'Version:.+$', "Version:        $Update"; $FileModified += $line}
+            elseif ($line -ilike '*Release:*') {$line = $line -replace 'Release:.+$', 'Release:        1%{?dist}'; $FileModified += $line}
+            elseif ($line -ilike '*Source0:*')
             {
-                $FileModified += $Line
+                $FileModified += $line
                 if ($sha1 -ne "") {$FileModified += [system.string]::concat('%define sha1 ',$DownloadNameWithoutExtension,'=',$sha1); $skip=$true }
                 elseif ($sha256 -ne "") {$FileModified += [system.string]::concat('%define sha256 ',$DownloadNameWithoutExtension,'=',$sha256); $skip=$true }
                 elseif ($sha512 -ne "") {$FileModified +=[system.string]::concat('%define sha512 ',$DownloadNameWithoutExtension,'=',$sha512); $skip=$true }
             }
-            elseif ($Line -ilike '%changelog*')
+            elseif ($line -ilike '%changelog*')
             {
-                $FileModified += $Line
+                $FileModified += $line
                 #Add Lines after the selected pattern
-                $FileModified += $Line1
+                $FileModified += $line1
                 $FileModified += '- automatic version bump for testing purposes DO NOT USE'
             }
-            else {$FileModified += $Line}
+            else {$FileModified += $line}
         }
         else {$skip = $false}
     }
 
 
     if ($null -ne $FileModified) {
-        $SpecsNewDirectory=join-path "$sourcepath" "$photonDir" "SPECS_NEW" "$Name"
+        $SpecsNewDirectory=join-path "$SourcePath" "$photonDir" "SPECS_NEW" "$Name"
         $Update = [System.IO.Path]::GetFileNameWithoutExtension($Update) # Strips .asc if present
         $fileNameBase = "$Name-$Update"
         $filename = Join-Path -Path $SpecsNewDirectory -ChildPath "$fileNameBase.spec"
@@ -192,25 +192,25 @@ function ParseDirectory {
 		[parameter(Mandatory = $true)]
 		[string]$SourcePath,
 		[parameter(Mandatory = $true)]
-		[string]$PhotonDir
+		[string]$photonDir
 	)
     $Packages=@()
-    Get-ChildItem -Path "$SourcePath\$PhotonDir\SPECS" -Recurse -File -Filter "*.spec" | ForEach-Object {
+    Get-ChildItem -Path "$SourcePath\$photonDir\SPECS" -Recurse -File -Filter "*.spec" | ForEach-Object {
         try
         {
                 $Name = Split-Path -Path $_.DirectoryName -Leaf
                 $content = Get-Content $_.FullName
-                $Release=$null
-                $Release= (($content | Select-String -Pattern "^Release:")[0].ToString() -replace "Release:", "").Trim()
-                $Release = $Release.Replace("%{?dist}","")
-                $Release = $Release.Replace("%{?kat_build:.kat}","")
-                $Release = $Release.Replace("%{?kat_build:.%kat_build}","")
-                $Release = $Release.Replace("%{?kat_build:.%kat}","")
-                $Release = $Release.Replace("%{?kernelsubrelease}","")
-                $Release = $Release.Replace(".%{dialogsubversion}","")
-                $Version=$null
+                $release=$null
+                $release= (($content | Select-String -Pattern "^Release:")[0].ToString() -replace "Release:", "").Trim()
+                $release = $release.Replace("%{?dist}","")
+                $release = $release.Replace("%{?kat_build:.kat}","")
+                $release = $release.Replace("%{?kat_build:.%kat_build}","")
+                $release = $release.Replace("%{?kat_build:.%kat}","")
+                $release = $release.Replace("%{?kernelsubrelease}","")
+                $release = $release.Replace(".%{dialogsubversion}","")
+                $version=$null
                 $version= (($content | Select-String -Pattern "^Version:")[0].ToString() -ireplace "Version:", "").Trim()
-                if ($null -ne $Release) {$Version = $Version+"-"+$Release}
+                if ($null -ne $release) {$version = $version+"-"+$release}
                 $Source0= (($content | Select-String -Pattern "^Source0:")[0].ToString() -ireplace "Source0:", "").Trim()
 
                 if ($content -ilike '*URL:*') { $url = (($content | Select-String -Pattern "^URL:")[0].ToString() -ireplace "URL:", "").Trim() }
@@ -269,7 +269,7 @@ function ParseDirectory {
 
                 $Packages +=[PSCustomObject]@{
                     Spec = $_.Name
-                    Version = $Version
+                    Version = $version
                     Name = $Name
                     Source0 = $Source0
                     url = $url
@@ -1027,7 +1027,7 @@ function CheckURLHealth {
                 $heapSize--
                 [HeapSort]::MaxHeapify($targetList, $heapSize, 0)
             }
-            return $targetlist
+            return $targetList
         }
 
         static MaxHeapify($targetList, $heapSize, $index) {
@@ -1081,15 +1081,15 @@ function CheckURLHealth {
     $Source0 = $currentTask.Source0
 
     # cut last index in $currentTask.version and save value in $version
-    $Version=""
+    $version=""
     $versionArray=($currentTask.version).split("-")
     if ($versionArray.length -gt 0)
     {
-        $Version=$versionArray[0]
-        for ($i=1;$i -lt ($versionArray.length -1);$i++) {$version=$Version + "-"+$versionArray[$i]}
-        if ($versionarray[$versionarray.Length-1] -ilike '*.*')
+        $version=$versionArray[0]
+        for ($i=1;$i -lt ($versionArray.length -1);$i++) {$version=$version + "-"+$versionArray[$i]}
+        if ($versionArray[$versionArray.Length-1] -ilike '*.*')
         {
-            if ([string]((($currentTask.version).split("-"))[-1]).split(".")[-1] -ne "") {$Version = [System.String]::concat($Version,"-",[string]((($currentTask.version).split("-"))[-1]).split(".")[-1])}
+            if ([string]((($currentTask.version).split("-"))[-1]).split(".")[-1] -ne "") {$version = [System.String]::concat($version,"-",[string]((($currentTask.version).split("-"))[-1]).split(".")[-1])}
         }
     }
 
@@ -1913,16 +1913,16 @@ function CheckURLHealth {
             {
                 try
                 {
-                    if ([System.Version]$Version -lt [System.Version]$NameLatest) {$UpdateAvailable = $NameLatest}
-                    elseif ([System.Version]$Version -eq [System.Version]$NameLatest) {$UpdateAvailable = "(same version)" }
+                    if ([System.Version]$version -lt [System.Version]$NameLatest) {$UpdateAvailable = $NameLatest}
+                    elseif ([System.Version]$version -eq [System.Version]$NameLatest) {$UpdateAvailable = "(same version)" }
                     else {$UpdateAvailable = "Warning: "+$currentTask.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
                 }
                 catch{}
             }
             if ($UpdateAvailable -eq "")
             {
-                if ($Version -lt $NameLatest) {$UpdateAvailable = $NameLatest}
-                elseif ($Version -eq $NameLatest) {$UpdateAvailable = "(same version)" }
+                if ($version -lt $NameLatest) {$UpdateAvailable = $NameLatest}
+                elseif ($version -eq $NameLatest) {$UpdateAvailable = "(same version)" }
                 else {$UpdateAvailable = "Warning: "+$currentTask.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
             }
         }
@@ -2130,16 +2130,16 @@ function CheckURLHealth {
             {
                 try
                 {
-                    if ([System.Version]$Version -lt [System.Version]$NameLatest) {$UpdateAvailable = $NameLatest}
-                    elseif ([System.Version]$Version -eq [System.Version]$NameLatest) {$UpdateAvailable = "(same version)" }
+                    if ([System.Version]$version -lt [System.Version]$NameLatest) {$UpdateAvailable = $NameLatest}
+                    elseif ([System.Version]$version -eq [System.Version]$NameLatest) {$UpdateAvailable = "(same version)" }
                     else {$UpdateAvailable = "Warning: "+$currentTask.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
                 }
                 catch{}
             }
             if ($UpdateAvailable -eq "")
             {
-                if ($Version -lt $NameLatest) {$UpdateAvailable = $NameLatest}
-                elseif ($Version -eq $NameLatest) {$UpdateAvailable = "(same version)" }
+                if ($version -lt $NameLatest) {$UpdateAvailable = $NameLatest}
+                elseif ($version -eq $NameLatest) {$UpdateAvailable = "(same version)" }
                 else {$UpdateAvailable = "Warning: "+$currentTask.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
             }
         }
@@ -2217,16 +2217,16 @@ function CheckURLHealth {
             {
                 try
                 {
-                    if ([System.Version]$Version -lt [System.Version]$NameLatest) {$UpdateAvailable = $NameLatest}
-                    elseif ([System.Version]$Version -eq [System.Version]$NameLatest) {$UpdateAvailable = "(same version)" }
+                    if ([System.Version]$version -lt [System.Version]$NameLatest) {$UpdateAvailable = $NameLatest}
+                    elseif ([System.Version]$version -eq [System.Version]$NameLatest) {$UpdateAvailable = "(same version)" }
                     else {$UpdateAvailable = "Warning: "+$currentTask.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
                 }
                 catch{}
             }
             if ($UpdateAvailable -eq "")
             {
-                if ($Version -lt $NameLatest) {$UpdateAvailable = $NameLatest}
-                elseif ($Version -eq $NameLatest) {$UpdateAvailable = "(same version)" }
+                if ($version -lt $NameLatest) {$UpdateAvailable = $NameLatest}
+                elseif ($version -eq $NameLatest) {$UpdateAvailable = "(same version)" }
                 else {$UpdateAvailable = "Warning: "+$currentTask.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
             }
         }
@@ -2364,16 +2364,16 @@ function CheckURLHealth {
             {
                 try
                 {
-                    if ([System.Version]$Version -lt [System.Version]$NameLatest) {$UpdateAvailable = $NameLatest}
-                    elseif ([System.Version]$Version -eq [System.Version]$NameLatest) {$UpdateAvailable = "(same version)" }
+                    if ([System.Version]$version -lt [System.Version]$NameLatest) {$UpdateAvailable = $NameLatest}
+                    elseif ([System.Version]$version -eq [System.Version]$NameLatest) {$UpdateAvailable = "(same version)" }
                     else {$UpdateAvailable = "Warning: "+$currentTask.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
                 }
                 catch{}
             }
             if ($UpdateAvailable -eq "")
             {
-                if ($Version -lt $NameLatest) {$UpdateAvailable = $NameLatest}
-                elseif ($Version -eq $NameLatest) {$UpdateAvailable = "(same version)" }
+                if ($version -lt $NameLatest) {$UpdateAvailable = $NameLatest}
+                elseif ($version -eq $NameLatest) {$UpdateAvailable = "(same version)" }
                 else {$UpdateAvailable = "Warning: "+$currentTask.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
             }
         }
@@ -2453,16 +2453,16 @@ function CheckURLHealth {
                 {
                     try
                     {
-                        if ([System.Version]$Version -lt [System.Version]$NameLatest) {$UpdateAvailable = $NameLatest}
-                        elseif ([System.Version]$Version -eq [System.Version]$NameLatest) {$UpdateAvailable = "(same version)" }
+                        if ([System.Version]$version -lt [System.Version]$NameLatest) {$UpdateAvailable = $NameLatest}
+                        elseif ([System.Version]$version -eq [System.Version]$NameLatest) {$UpdateAvailable = "(same version)" }
                         else {$UpdateAvailable = "Warning: "+$currentTask.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
                     }
                     catch{}
                 }
                 if ($UpdateAvailable -eq "")
                 {
-                    if ($Version -lt $NameLatest) {$UpdateAvailable = $NameLatest}
-                    elseif ($Version -eq $NameLatest) {$UpdateAvailable = "(same version)" }
+                    if ($version -lt $NameLatest) {$UpdateAvailable = $NameLatest}
+                    elseif ($version -eq $NameLatest) {$UpdateAvailable = "(same version)" }
                     else {$UpdateAvailable = "Warning: "+$currentTask.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
                 }
             }
@@ -2594,16 +2594,16 @@ function CheckURLHealth {
                 {
                     try
                     {
-                        if ([System.Version]$Version -lt [System.Version]$NameLatest) {$UpdateAvailable = $NameLatest}
-                        elseif ([System.Version]$Version -eq [System.Version]$NameLatest) {$UpdateAvailable = "(same version)" }
+                        if ([System.Version]$version -lt [System.Version]$NameLatest) {$UpdateAvailable = $NameLatest}
+                        elseif ([System.Version]$version -eq [System.Version]$NameLatest) {$UpdateAvailable = "(same version)" }
                         else {$UpdateAvailable = "Warning: "+$currentTask.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
                     }
                     catch{}
                 }
                 if ($UpdateAvailable -eq "")
                 {
-                    if ($Version -lt $NameLatest) {$UpdateAvailable = $NameLatest}
-                    elseif ($Version -eq $NameLatest) {$UpdateAvailable = "(same version)" }
+                    if ($version -lt $NameLatest) {$UpdateAvailable = $NameLatest}
+                    elseif ($version -eq $NameLatest) {$UpdateAvailable = "(same version)" }
                     else {$UpdateAvailable = "Warning: "+$currentTask.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
                 }
             }
@@ -2697,16 +2697,16 @@ function CheckURLHealth {
                 {
                     try
                     {
-                        if ([System.Version]$Version -lt [System.Version]$NameLatest) {$UpdateAvailable = $NameLatest}
-                        elseif ([System.Version]$Version -eq [System.Version]$NameLatest) {$UpdateAvailable = "(same version)" }
+                        if ([System.Version]$version -lt [System.Version]$NameLatest) {$UpdateAvailable = $NameLatest}
+                        elseif ([System.Version]$version -eq [System.Version]$NameLatest) {$UpdateAvailable = "(same version)" }
                         else {$UpdateAvailable = "Warning: "+$currentTask.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
                     }
                     catch{}
                 }
                 if ($UpdateAvailable -eq "")
                 {
-                    if ($Version -lt $NameLatest) {$UpdateAvailable = $NameLatest}
-                    elseif ($Version -eq $NameLatest) {$UpdateAvailable = "(same version)" }
+                    if ($version -lt $NameLatest) {$UpdateAvailable = $NameLatest}
+                    elseif ($version -eq $NameLatest) {$UpdateAvailable = "(same version)" }
                     else {$UpdateAvailable = "Warning: "+$currentTask.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
                 }
             }
@@ -2850,16 +2850,16 @@ function CheckURLHealth {
                 {
                     try
                     {
-                        if ([System.Version]$Version -lt [System.Version]$NameLatest) {$UpdateAvailable = $NameLatest}
-                        elseif ([System.Version]$Version -eq [System.Version]$NameLatest) {$UpdateAvailable = "(same version)" }
+                        if ([System.Version]$version -lt [System.Version]$NameLatest) {$UpdateAvailable = $NameLatest}
+                        elseif ([System.Version]$version -eq [System.Version]$NameLatest) {$UpdateAvailable = "(same version)" }
                         else {$UpdateAvailable = "Warning: "+$currentTask.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
                     }
                     catch{}
                 }
                 if ($UpdateAvailable -eq "")
                 {
-                    if ($Version -lt $NameLatest) {$UpdateAvailable = $NameLatest}
-                    elseif ($Version -eq $NameLatest) {$UpdateAvailable = "(same version)" }
+                    if ($version -lt $NameLatest) {$UpdateAvailable = $NameLatest}
+                    elseif ($version -eq $NameLatest) {$UpdateAvailable = "(same version)" }
                     else {$UpdateAvailable = "Warning: "+$currentTask.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
                 }
             }
@@ -3082,16 +3082,16 @@ function CheckURLHealth {
             {
                 try
                 {
-                    if ([System.Version]$Version -lt [System.Version]$NameLatest) {$UpdateAvailable = $NameLatest}
-                    elseif ([System.Version]$Version -eq [System.Version]$NameLatest) {$UpdateAvailable = "(same version)" }
+                    if ([System.Version]$version -lt [System.Version]$NameLatest) {$UpdateAvailable = $NameLatest}
+                    elseif ([System.Version]$version -eq [System.Version]$NameLatest) {$UpdateAvailable = "(same version)" }
                     else {$UpdateAvailable = "Warning: "+$currentTask.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
                 }
                 catch{}
             }
             if ($UpdateAvailable -eq "")
             {
-                if ($Version -lt $NameLatest) {$UpdateAvailable = $NameLatest}
-                elseif ($Version -eq $NameLatest) {$UpdateAvailable = "(same version)" }
+                if ($version -lt $NameLatest) {$UpdateAvailable = $NameLatest}
+                elseif ($version -eq $NameLatest) {$UpdateAvailable = "(same version)" }
                 else {$UpdateAvailable = "Warning: "+$currentTask.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ." }
             }
         }
@@ -3184,7 +3184,7 @@ function CheckURLHealth {
     if (($UpdateAvailable -eq "") -and ($urlhealth -ne "200")) {$Source0=""}
 
 
-    $VersionedUpdateAvailable=""
+    $versionedUpdateAvailable=""
     # Check in Fedora
     $SourceRPMFile=""
     $SourceRPMFileURL=""
@@ -3256,8 +3256,8 @@ function CheckURLHealth {
                     {
                         $UpdateURL=([system.string]::concat($SourceRPMFileURL,"/",$ArtefactDownloadName))
                         $HealthUpdateURL="200"
-                        if ($Version -lt $ArtefactVersion) {$UpdateAvailable = $ArtefactVersion}
-                        elseif ($Version -eq $ArtefactVersion) {$UpdateAvailable = "(same version)" }
+                        if ($version -lt $ArtefactVersion) {$UpdateAvailable = $ArtefactVersion}
+                        elseif ($version -eq $ArtefactVersion) {$UpdateAvailable = "(same version)" }
                         else {$UpdateAvailable = "Warning: "+$currentTask.spec+" Source0 version "+$version+" is higher than detected latest version "+$ArtefactVersion+" ." }
                     }
                 }
@@ -3274,8 +3274,8 @@ function CheckURLHealth {
 
     if (!(($UpdateAvailable -ilike '*Warning*') -or ($UpdateAvailable -ilike '*Info*') -or ($UpdateAvailable -ilike '*same version*')))
     {
-        $VersionedUpdateAvailable=$UpdateAvailable
-        if (($VersionedUpdateAvailable -ne "") -and ($UpdateAvailable -ne ""))
+        $versionedUpdateAvailable=$UpdateAvailable
+        if (($versionedUpdateAvailable -ne "") -and ($UpdateAvailable -ne ""))
         {
             if ($UpdateURL -eq "")
             {
@@ -3368,14 +3368,14 @@ function CheckURLHealth {
             $UpdateDownloadName = $UpdateDownloadName.substring(1)
         }
         $tmpName=[string](((($UpdateDownloadName -replace ".tar.gz","") -replace ".tar.xz","") -replace ".tgz","") -replace ".tar.lz","") -replace ".tar.bz2",""
-        if (!("$tmpname" -match '[A-Za-z]')) { $UpdateDownloadName = [System.String]::Concat($currentTask.Name,"-",$UpdateDownloadName) }
+        if (!("$tmpName" -match '[A-Za-z]')) { $UpdateDownloadName = [System.String]::Concat($currentTask.Name,"-",$UpdateDownloadName) }
 
         # $tmpSHAName=$currentTask.SHAName
         # if ($tmpSHAName -ilike '*%{name}*') {$tmpSHAName=$currentTask.Name}
 
         # if ($UpdateDownloadName -inotlike [system.string]::concat('*',$tmpSHAName,'*')) { $UpdateDownloadName = [System.String]::Concat($tmpSHAName,"-",$UpdateDownloadName) }
 
-        $SourcesNewDirectory=join-path $sourcepath $photonDir "SOURCES_NEW"
+        $SourcesNewDirectory=join-path $SourcePath $photonDir "SOURCES_NEW"
         if (!(Test-Path $SourcesNewDirectory)) {New-Item $SourcesNewDirectory -ItemType Directory}
 
         $UpdateDownloadFile=Join-Path -Path $SourcesNewDirectory -ChildPath $UpdateDownloadName
@@ -3445,9 +3445,9 @@ function CheckURLHealth {
             }
         }
 
-        if ($currentTask.Spec -ilike 'openjdk8.spec') {ModifySpecFileOpenJDK8 -SpecFileName $currentTask.spec -SourcePath $sourcepath -PhotonDir $photonDir -Name $currentTask.name -Update $UpdateAvailable -UpdateDownloadFile $UpdateDownloadFile -DownloadNameWithoutExtension $currentTask.Name}
+        if ($currentTask.Spec -ilike 'openjdk8.spec') {ModifySpecFileOpenJDK8 -SpecFileName $currentTask.spec -SourcePath $SourcePath -PhotonDir $photonDir -Name $currentTask.name -Update $UpdateAvailable -UpdateDownloadFile $UpdateDownloadFile -DownloadNameWithoutExtension $currentTask.Name}
         else
-        {ModifySpecFile -SpecFileName $currentTask.spec -SourcePath $sourcepath -PhotonDir $photonDir -Name $currentTask.name -Update $UpdateAvailable -UpdateDownloadFile $UpdateDownloadFile -DownloadNameWithoutExtension $currentTask.Name}
+        {ModifySpecFile -SpecFileName $currentTask.spec -SourcePath $SourcePath -PhotonDir $photonDir -Name $currentTask.name -Update $UpdateAvailable -UpdateDownloadFile $UpdateDownloadFile -DownloadNameWithoutExtension $currentTask.Name}
     }
     if ($SourceRPMFile -ne "") {
         if (Test-Path $SourceRPMFile) {
@@ -3462,7 +3462,7 @@ function CheckURLHealth {
 function GenerateUrlHealthReports {
     param (
         [string]$SourcePath,
-        [string]$AccessToken,
+        [string]$accessToken,
         [int]$OuterThrottleLimit,
         [int]$InnerThrottleLimit,
         [bool]$GeneratePh3URLHealthReport,
@@ -3547,7 +3547,7 @@ function GenerateUrlHealthReports {
 
                 # define variables locally for functions used in parallel tasks
                 $SourcePath = $using:SourcePath
-                $AccessToken = $using:AccessToken
+                $accessToken = $using:AccessToken
                 $OuterThrottleLimit = $using:OuterThrottleLimit
                 $InnerThrottleLimit = $using:InnerThrottleLimit
                 $CheckURLHealthDef = $using:CheckURLHealthDef
@@ -3588,7 +3588,7 @@ function GenerateUrlHealthReports {
                     $currentPackage=$_
                     # define variables locally for functions used in parallel tasks
                     $SourcePath = $using:SourcePath
-                    $AccessToken = $using:AccessToken
+                    $accessToken = $using:AccessToken
                     $OuterThrottleLimit = $using:OuterThrottleLimit
                     $InnerThrottleLimit = $using:InnerThrottleLimit
                     $CheckURLHealthDef = $using:CheckURLHealthDef
@@ -3618,7 +3618,7 @@ function GenerateUrlHealthReports {
                     $outputFilePath = $using:outputFilePath
                     $photonDir = $using:TaskConfig.PhotonDir
                     # Use $using: to access variables from the parent scope
-                    CheckURLHealth -currentTask $currentPackage -SourcePath $SourcePath -AccessToken $AccessToken `
+                    CheckURLHealth -currentTask $currentPackage -SourcePath $SourcePath -AccessToken $accessToken `
                         -outputfile $outputFilePath -photonDir $photonDir `
                         -KojiFedoraProjectLookUpDef $using:KojiFedoraProjectLookUpDef -ModifySpecFileDef $using:ModifySpecFileDef `
                         -ModifySpecFileOpenJDK8Def $using:ModifySpecFileOpenJDK8Def -Source0LookupDef $using:Source0LookupDef `
@@ -3643,7 +3643,7 @@ function GenerateUrlHealthReports {
                     $currentPackage=$_
                     $photonDir = $TaskConfig.PhotonDir
                     # Use $using: to access variables from the parent scope
-                    CheckURLHealth -currentTask $currentPackage -SourcePath $SourcePath -AccessToken $AccessToken `
+                    CheckURLHealth -currentTask $currentPackage -SourcePath $SourcePath -AccessToken $accessToken `
                         -outputfile $outputFilePath -photonDir $photonDir `
                         -KojiFedoraProjectLookUpDef $KojiFedoraProjectLookUpDef -ModifySpecFileDef $ModifySpecFileDef `
                         -ModifySpecFileOpenJDK8Def $ModifySpecFileOpenJDK8Def -Source0LookupDef $Source0LookupDef `
@@ -3714,22 +3714,22 @@ if ($GeneratePhPackageReport)
 {
     write-output "Generating Package Report ..."
     # fetch + merge per branch
-    GitPhoton -release "3.0" -sourcePath $sourcepath
-    GitPhoton -release "4.0" -sourcePath $sourcepath
-    GitPhoton -release "5.0" -sourcePath $sourcepath
-    GitPhoton -release "6.0" -sourcePath $sourcepath
-    GitPhoton -release master -sourcePath $sourcepath
-    GitPhoton -release dev -sourcePath $sourcepath
-    GitPhoton -release common -sourcePath $sourcepath
-    Set-location  $sourcepath
+    GitPhoton -release "3.0" -sourcePath $SourcePath
+    GitPhoton -release "4.0" -sourcePath $SourcePath
+    GitPhoton -release "5.0" -sourcePath $SourcePath
+    GitPhoton -release "6.0" -sourcePath $SourcePath
+    GitPhoton -release master -sourcePath $SourcePath
+    GitPhoton -release dev -sourcePath $SourcePath
+    GitPhoton -release common -sourcePath $SourcePath
+    Set-location  $SourcePath
     # read all files from branch
-    $Packages3=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-3.0
-    $Packages4=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-4.0
-    $Packages5=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-5.0
-    $Packages6=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-6.0
-    $PackagesCommon=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-common
-    $PackagesDev=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-dev
-    $PackagesMaster=ParseDirectory -SourcePath $sourcepath -PhotonDir photon-master
+    $Packages3=ParseDirectory -SourcePath $SourcePath -PhotonDir photon-3.0
+    $Packages4=ParseDirectory -SourcePath $SourcePath -PhotonDir photon-4.0
+    $Packages5=ParseDirectory -SourcePath $SourcePath -PhotonDir photon-5.0
+    $Packages6=ParseDirectory -SourcePath $SourcePath -PhotonDir photon-6.0
+    $PackagesCommon=ParseDirectory -SourcePath $SourcePath -PhotonDir photon-common
+    $PackagesDev=ParseDirectory -SourcePath $SourcePath -PhotonDir photon-dev
+    $PackagesMaster=ParseDirectory -SourcePath $SourcePath -PhotonDir photon-master
     $result = $Packages3,$Packages4,$Packages5,$Packages6,$PackagesCommon,$PackagesDev,$PackagesMaster| foreach-object{$currentTask}|Select-Object Spec,`
     @{l='photon-3.0';e={if($currentTask.Spec -in $Packages3.Spec) {$Packages3[$Packages3.Spec.IndexOf($currentTask.Spec)].version}}},`
     @{l='photon-4.0';e={if($currentTask.Spec -in $Packages4.Spec) {$Packages4[$Packages4.Spec.IndexOf($currentTask.Spec)].version}}},`
@@ -3752,8 +3752,8 @@ if ($GeneratePhCommontoPhMasterDiffHigherPackageVersionReport)
         # write-output $currentTask.spec
         if ((!([string]::IsNullOrEmpty($currentTask.'photon-common'))) -and (!([string]::IsNullOrEmpty($currentTask.'photon-master'))))
         {
-            $VersionCompare1 = VersionCompare $currentTask.'photon-common' $currentTask.'photon-master'
-            if ($VersionCompare1 -eq 1)
+            $versionCompare1 = VersionCompare $currentTask.'photon-common' $currentTask.'photon-master'
+            if ($versionCompare1 -eq 1)
             {
                 $diffspec1=[System.String]::Concat($currentTask.spec, ',',$currentTask.'photon-common',',',$currentTask.'photon-master')
                 $diffspec1 | out-file $outputfile1 -append
@@ -3771,8 +3771,8 @@ if ($GeneratePh5toPh6DiffHigherPackageVersionReport)
         # write-output $currentTask.spec
         if ((!([string]::IsNullOrEmpty($currentTask.'photon-5.0'))) -and (!([string]::IsNullOrEmpty($currentTask.'photon-6.0'))))
         {
-            $VersionCompare1 = VersionCompare $currentTask.'photon-5.0' $currentTask.'photon-6.0'
-            if ($VersionCompare1 -eq 1)
+            $versionCompare1 = VersionCompare $currentTask.'photon-5.0' $currentTask.'photon-6.0'
+            if ($versionCompare1 -eq 1)
             {
                 $diffspec1=[System.String]::Concat($currentTask.spec, ',',$currentTask.'photon-5.0',',',$currentTask.'photon-6.0')
                 $diffspec1 | out-file $outputfile1 -append
@@ -3790,8 +3790,8 @@ if ($GeneratePh4toPh5DiffHigherPackageVersionReport)
         # write-output $currentTask.spec
         if ((!([string]::IsNullOrEmpty($currentTask.'photon-4.0'))) -and (!([string]::IsNullOrEmpty($currentTask.'photon-5.0'))))
         {
-            $VersionCompare1 = VersionCompare $currentTask.'photon-4.0' $currentTask.'photon-5.0'
-            if ($VersionCompare1 -eq 1)
+            $versionCompare1 = VersionCompare $currentTask.'photon-4.0' $currentTask.'photon-5.0'
+            if ($versionCompare1 -eq 1)
             {
                 $diffspec1=[System.String]::Concat($currentTask.spec, ',',$currentTask.'photon-4.0',',',$currentTask.'photon-5.0')
                 $diffspec1 | out-file $outputfile1 -append
@@ -3809,8 +3809,8 @@ if ($GeneratePh3toPh4DiffHigherPackageVersionReport)
         # write-output $currentTask.spec
         if ((!([string]::IsNullOrEmpty($currentTask.'photon-3.0'))) -and (!([string]::IsNullOrEmpty($currentTask.'photon-4.0'))))
         {
-            $VersionCompare2 = VersionCompare $currentTask.'photon-3.0' $currentTask.'photon-4.0'
-            if ($VersionCompare2 -eq 1)
+            $versionCompare2 = VersionCompare $currentTask.'photon-3.0' $currentTask.'photon-4.0'
+            if ($versionCompare2 -eq 1)
             {
                 $diffspec2=[System.String]::Concat($currentTask.spec, ',',$currentTask.'photon-3.0',',',$currentTask.'photon-4.0')
                 $diffspec2 | out-file $outputfile2 -append
