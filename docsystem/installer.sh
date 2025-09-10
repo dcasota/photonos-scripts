@@ -25,7 +25,6 @@
 # Added: Dynamically fetches latest COMMIT_HASH from photon-hugo branch for repo checkout.
 # Fixes: Removes /etc/nginx/html/* to prevent Nginx welcome screen.
 # Fixes: Runs npm audit fix after npm install; removes maxdepth from subpath list.
-# Fixes: Sets expanded permalink paths in config.toml for blog, docs-v3, docs-v4, docs-v5; adds routine to loop through .md files in those subdirs and set permalink frontmatter.
 # Fixes: Corrects sed expression for URL cleanup to handle parentheses around URLs; ensures single [permalinks] section to fix config error.
 # For subpath hosting (e.g., /photon-site): Rerun with modified baseURL and Nginx location/alias as per comments.
 # Note: Self-signed cert will cause browser warnings; for production, use cert.
@@ -41,6 +40,9 @@
 # Fix: Use correct i18n key 'post_last_mod' in page-meta-lastmod.html for proper translation.
 # Fix: Use '%-d' in git date format to remove zero-padding on day.
 # Fix: Add space after "modified" in footer via i18n translation.
+# Added: Flatten redundant nested docs-vX subdirs to fix double path URLs (e.g., /docs-v5/docs-v5/).
+# Added: Clean up duplicated permalinks from existing content.
+# Fix: Use :sections in permalink config to handle hierarchy without duplicates; remove frontmatter permalink setting; fix internal links.
 
 if [ -z "$1" ]; then
   echo "Error: Provide an install directory, e.g., sudo ./installer.sh /var/www/photon-site"
@@ -77,9 +79,6 @@ truncate -s 0 /var/log/nginx/error.log 2>/dev/null || rm -f /var/log/nginx/error
 truncate -s 0 /var/log/nginx/photon-site-error.log 2>/dev/null || rm -f /var/log/nginx/photon-site-error.log
 rm -f "$INSTALL_DIR/hugo_build.log"
 rm -f "$INSTALL_DIR/malformed_urls.log"
-
-# Update system (safe to run multiple times)
-# tdnf update -y
 
 # Install dependencies if not present (tdnf skips if installed)
 tdnf install -y wget curl nginx tar iptables nodejs openssl
@@ -118,7 +117,6 @@ else
   echo "Cloning repo"
   git clone --branch photon-hugo --single-branch https://github.com/vmware/photon.git "$INSTALL_DIR"
   cd "$INSTALL_DIR"
-  # Already on branch, no need for checkout
 fi
 
 # Get the actual commit details after update
@@ -134,22 +132,36 @@ echo "Abbreviated hash: $COMMIT_ABBREV"
 # Initialize submodules (e.g., for Docsy theme)
 git submodule update --init --recursive
 
+# Fix redundant nested docs-vX subdirs
+for ver in docs-v3 docs-v4 docs-v5; do
+  NESTED_DIR="$INSTALL_DIR/content/en/$ver/$ver"
+  if [ -d "$NESTED_DIR" ]; then
+    echo "Flattening redundant /$ver/$ver/ nested dir..."
+    mv "$NESTED_DIR"/* "$INSTALL_DIR/content/en/$ver/" 2>/dev/null || true
+    rmdir "$NESTED_DIR" 2>/dev/null || true
+    rm -f "$NESTED_DIR/_index.md" 2>/dev/null
+  fi
+done
+
+# Fix internal links to remove double paths
+echo "Fixing internal links to remove double paths..."
+find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i 's|/docs-v3/docs-v3/|/docs-v3/|g' {} \;
+find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i 's|/docs-v4/docs-v4/|/docs-v4/|g' {} \;
+find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i 's|/docs-v5/docs-v5/|/docs-v5/|g' {} \;
+
 # Patch docs-v* _index.md to set type: docs for sidebar and menu on main pages
 for ver in docs-v3 docs-v4 docs-v5; do
   if [ -f "content/en/$ver/_index.md" ]; then
-    # Remove any existing type line
     sed -i '/^type\s*:/d' "content/en/$ver/_index.md"
-    # Insert new type: docs after the opening frontmatter ---
     sed -i '1s/^---$/---\ntype: docs/' "content/en/$ver/_index.md"
   fi
 done
 
-# Install npm dependencies for theme (if package.json exists, use legacy-peer-deps for compatibility)
+# Install npm dependencies for theme
 if [ -f package.json ]; then
   npm install --legacy-peer-deps
   npm audit fix
 fi
-# If theme has its own (e.g., cd themes/docsy && npm install if exists)
 if [ -d themes/docsy ] && [ -f themes/docsy/package.json ]; then
   cd themes/docsy
   npm install --legacy-peer-deps
@@ -157,10 +169,10 @@ if [ -d themes/docsy ] && [ -f themes/docsy/package.json ]; then
   cd ../..
 fi
 
-# Fix deprecated disableKinds in config.toml (case-insensitive)
+# Fix deprecated disableKinds in config.toml
 sed -i 's/[Tt]axonomy[Tt]erm/taxonomy/g' config.toml
 
-# Fix deprecated languages.en.description by moving to [languages.en.params]
+# Fix deprecated languages.en.description
 if grep -q "^description.*=" config.toml; then
   DESCRIPTION=$(grep "^description.*=" config.toml | sed 's/description *= *"\(.*\)"/\1/')
   sed -i '/^description.*=/d' config.toml
@@ -171,73 +183,47 @@ if grep -q "^description.*=" config.toml; then
   fi
 fi
 
-# Remove existing googleAnalytics and uglyURLs if present (possibly in wrong place)
+# Remove existing googleAnalytics and uglyURLs
 sed -i '/^googleAnalytics/d' config.toml
 sed -i '/^uglyURLs/d' config.toml
 
-# Add uglyURLs to config.toml as top-level
+# Add uglyURLs to config.toml
 echo -e "\nuglyURLs = false" >> config.toml
 
-# Fix render-link.html to use safeURL directly
+# Fix render-link.html to use safeURL
 if [ -f layouts/partials/render-link.html ]; then
   sed -i 's/urls\.Parse \([^ ]*\)/\1 | safeURL/g' layouts/partials/render-link.html
 fi
 
-# Ensure single [permalinks] section and set expanded paths
+# Remove existing duplicated permalinks
+find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i '/^permalink: \/docs-v[3-5]\/docs-v[3-5]\//d' {} \;
+
+# Ensure single [permalinks] section and set paths using :sections to handle hierarchy without duplicates
 if grep -q "\[permalinks\]" config.toml; then
-  echo "Removing existing [permalinks] section from config.toml"
-  # Remove [permalinks] section and its contents until next section or end of file
   sed -i '/\[permalinks\]/,/^[\[a-zA-Z]\|^$/d' config.toml
 fi
-# Append new [permalinks] section
 cat >> config.toml <<EOF_PERMALINKS
 
 [permalinks]
   blog = "/blog/:year/:month/:day/:slug/"
-  docs-v3 = "/docs-v3/:section/:slug/"
-  docs-v4 = "/docs-v4/:section/:slug/"
-  docs-v5 = "/docs-v5/:section/:slug/"
+  docs-v3 = "/:sections/:slug/"
+  docs-v4 = "/:sections/:slug/"
+  docs-v5 = "/:sections/:slug/"
 EOF_PERMALINKS
 
-# Verify no duplicate [permalinks] sections
+# Verify no duplicate [permalinks]
 if [ $(grep -c "\[permalinks\]" config.toml) -gt 1 ]; then
-  echo "Error: Multiple [permalinks] sections found in config.toml after modification."
-  echo "Please manually check $INSTALL_DIR/config.toml for duplicates."
+  echo "Error: Multiple [permalinks] sections found in config.toml."
   exit 1
 fi
 
-# Fix URLs in markdown to handle parentheses around URLs
+# Fix URLs in markdown
 find content/en -type f -name "*.md" -exec sed -i 's/ (\([^)]*\))/ \1/g' {} \;
 
-# Set permalink frontmatter in .md files for blog, docs-v3, docs-v4, docs-v5
-for dir in blog docs-v3 docs-v4 docs-v5; do
-  find "content/en/$dir" -type f -name "*.md" | while read -r file; do
-    if ! grep -q "^permalink:" "$file"; then
-      REL_PATH=$(echo "$file" | sed "s|content/en/$dir/||")
-      SECTION=$(dirname "$REL_PATH" | sed 's|/|_|g')
-      SLUG=$(basename "$file" .md)
-      if [ "$dir" = "blog" ]; then
-        # Extract date from file or use current date
-        DATE=$(grep -m 1 "^date:" "$file" | sed 's/date: *//')
-        if [ -z "$DATE" ]; then
-          DATE=$(date +%Y-%m-%d)
-        fi
-        YEAR=$(echo "$DATE" | cut -d'-' -f1)
-        MONTH=$(echo "$DATE" | cut -d'-' -f2)
-        DAY=$(echo "$DATE" | cut -d'T' -f1 | cut -d'-' -f3)
-        PERMALINK="/blog/$YEAR/$MONTH/$DAY/$SLUG/"
-      else
-        PERMALINK="/$dir/$SECTION/$SLUG/"
-      fi
-      sed -i "2i permalink: $PERMALINK" "$file"
-    fi
-  done
-done
-
-# Patch templates to replace deprecated .Site.IsServer with hugo.IsServer
+# Patch templates for .Site.IsServer
 find layouts themes -type f -name "*.html" -exec sed -i 's/\.Site\.IsServer/hugo.IsServer/g' {} \;
 
-# Patch head.html to use modern Google Analytics internal template instead of deprecated async version
+# Patch head.html for Google Analytics
 if [ -f themes/photon-theme/layouts/partials/head.html ]; then
   sed -i 's/google_analytics_async.html/google_analytics.html/g' themes/photon-theme/layouts/partials/head.html
 else
@@ -247,13 +233,13 @@ if [ -f themes/docsy/layouts/partials/head.html ]; then
   sed -i 's/google_analytics_async.html/google_analytics.html/g' themes/docsy/layouts/partials/head.html
 fi
 
-# Set up GA4 config with dynamic placeholder ID
+# Set up GA4 config
 sed -i '/\[services\.googleAnalytics\]/,/^$/d' config.toml
 RANDOM_ID=$(cat /dev/urandom | tr -dc 'A-Z0-9' | fold -w 10 | head -n 1)
 echo -e "\n[services.googleAnalytics]\n    id = \"G-${RANDOM_ID}\"" >> config.toml
-echo "Generated placeholder GA4 ID: G-${RANDOM_ID} (for testing; replace with real ID in config.toml for production)"
+echo "Generated placeholder GA4 ID: G-${RANDOM_ID} (replace with real ID for production)"
 
-# Add commit details and github_repo to config.toml under [params] if not already present
+# Add commit details to config.toml
 if ! grep -q "\[params\]" config.toml; then
   echo -e "\n[params]" >> config.toml
 fi
@@ -273,8 +259,8 @@ if ! grep -E -q "last_commit_full_hash\s*=" config.toml; then
   sed -i '/\[params\]/a last_commit_full_hash = "'"$COMMIT_HASH"'"' config.toml
 fi
 
-# Added: Overrides page-meta-lastmod.html with hardcoded commit info from params for consistent footer matching the branch.
-mkdir -p "$INSTALL_DIR/layouts/partials"  # Ensure override dir exists
+# Override page-meta-lastmod.html
+mkdir -p "$INSTALL_DIR/layouts/partials"
 cat > "$INSTALL_DIR/layouts/partials/page-meta-lastmod.html" <<-'HEREDOC_LASTMOD'
 {{- if or (.Params.hide_meta) (eq .Params.show_lastmod false) -}}
 {{- else -}}
@@ -282,30 +268,31 @@ cat > "$INSTALL_DIR/layouts/partials/page-meta-lastmod.html" <<-'HEREDOC_LASTMOD
 {{- end -}}
 HEREDOC_LASTMOD
 
-# Debug: Verify the generated template
+# Debug page-meta-lastmod.html
 echo "Verifying page-meta-lastmod.html content..."
 cat "$INSTALL_DIR/layouts/partials/page-meta-lastmod.html"
 if grep -q "^[[:space:]]" "$INSTALL_DIR/layouts/partials/page-meta-lastmod.html"; then
-  echo "Warning: Leading whitespace detected in page-meta-lastmod.html, which may cause parsing errors."
+  echo "Warning: Leading whitespace detected in page-meta-lastmod.html."
 fi
 
-# Validate config.toml before building
+# Validate config.toml
 echo "Validating config.toml..."
 /usr/local/bin/hugo config > /dev/null 2>&1
 if [ $? -ne 0 ]; then
-  echo "Error: config.toml validation failed. Check syntax in $INSTALL_DIR/config.toml."
+  echo "Error: config.toml validation failed. Check $INSTALL_DIR/config.toml."
   /usr/local/bin/hugo config 2>&1 | tee "$INSTALL_DIR/config_validation.log"
-  echo "Validation errors logged to $INSTALL_DIR/config_validation.log"
   exit 1
 fi
 
-# Build (or rebuild) the site with Hugo (use debug logging for detailed errors)
-# To use custom path like /photon-site, change to --baseURL "/photon-site/" and adjust Nginx location below.
+# Clear existing public directory
+rm -rf "$SITE_DIR/*"
+
+# Build site with Hugo
 echo "Building site with Hugo..."
-set -o pipefail  # Ensure hugo failures propagate
+set -o pipefail
 /usr/local/bin/hugo --minify --baseURL "/" --logLevel debug --enableGitInfo -d public 2>&1 | tee hugo_build.log
 if [ $? -ne 0 ]; then
-  echo "Hugo build failed. Check hugo_build.log for details."
+  echo "Hugo build failed. Check hugo_build.log."
   exit 1
 fi
 
@@ -314,7 +301,7 @@ mkdir -p "$SITE_DIR"
 chown -R nginx:nginx "$INSTALL_DIR"
 chmod -R 755 "$INSTALL_DIR"
 
-# Check SELinux status and suggest disabling if enforcing
+# Check SELinux
 if command -v getenforce &> /dev/null && [ "$(getenforce)" = "Enforcing" ]; then
   echo "Warning: SELinux is in Enforcing mode, which may cause permission issues."
   echo "To disable temporarily, run: setenforce 0"
@@ -326,16 +313,16 @@ echo "Directory permissions for Nginx:"
 ls -ld /var/www /var/www/photon-site /var/www/photon-site/public
 ls -l "$SITE_DIR/index.html" || echo "index.html not found"
 
-# Check if site files exist before proceeding
+# Check site files
 if [ -f "$SITE_DIR/index.html" ]; then
   echo "Build successful: index.html exists."
 else
-  echo "Error: Build failed - index.html not found in $SITE_DIR. Check hugo_build.log for details."
+  echo "Error: Build failed - index.html not found in $SITE_DIR. Check hugo_build.log."
   exit 1
 fi
 echo "Site files present: $(ls -l $SITE_DIR | grep index.html)"
 
-# Verify required subdirectories (blog, docs-v3, docs-v4, docs-v5)
+# Verify subdirectories
 for subdir in blog docs-v3 docs-v4 docs-v5; do
   if [ -d "$SITE_DIR/$subdir" ] && [ -f "$SITE_DIR/$subdir/index.html" ]; then
     echo "Subpath /$subdir/ found with index.html."
@@ -348,17 +335,17 @@ done
 echo "Content structure in content/en/:"
 find "$INSTALL_DIR/content/en" -type f -name "_index.md"
 
-# Analyze subpaths (list generated directories for debugging)
+# Analyze subpaths
 echo "Generated subpaths in public/:"
 find "$SITE_DIR" -type d
 
 # Ensure Nginx conf.d directory exists
 mkdir -p /etc/nginx/conf.d
 
-# Remove default HTML to prevent welcome screen
+# Remove default HTML
 rm -rf /etc/nginx/html/* /usr/share/nginx/html/* /var/www/html/*
 
-# Replace nginx.conf with minimal config to avoid location directive errors
+# Replace nginx.conf
 cat > /etc/nginx/nginx.conf <<EOF_NGINX
 user nginx;
 worker_processes auto;
@@ -386,33 +373,26 @@ http {
 }
 EOF_NGINX
 
-# Set up self-signed cert for HTTPS using dynamic IP
+# Set up self-signed cert
 mkdir -p /etc/nginx/ssl
 if [ ! -f /etc/nginx/ssl/selfsigned.crt ]; then
   openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /etc/nginx/ssl/selfsigned.key -out /etc/nginx/ssl/selfsigned.crt -subj "/CN=${IP_ADDRESS}"
 fi
 
-# Configure Nginx (overwrite if exists) - listen on all interfaces explicitly with HTTP redirect to HTTPS
-# For custom path /photon-site: Replace root/location with:
-# root /some/dummy/root; # or keep default
-# location /photon-site/ {
-#   alias $SITE_DIR/;
-#   index index.html;
-#   try_files $uri $uri/ =404;
-# }
+# Configure Nginx
 NGINX_CONF="/etc/nginx/conf.d/photon-site.conf"
 echo "Configuring Nginx (overwriting if exists)"
 cat > "${NGINX_CONF}" <<EOF_PHOTON
 server {
     listen 0.0.0.0:80 default_server;
-    server_name _;  # Catch-all
+    server_name _;
 
     return 301 https://\$host\$request_uri;
 }
 
 server {
     listen 0.0.0.0:443 ssl default_server;
-    server_name _;  # Catch-all
+    server_name _;
 
     ssl_certificate /etc/nginx/ssl/selfsigned.crt;
     ssl_certificate_key /etc/nginx/ssl/selfsigned.key;
@@ -429,17 +409,17 @@ server {
 }
 EOF_PHOTON
 
-# Remove any default Nginx config to avoid conflicts
+# Remove default Nginx configs
 rm -f /etc/nginx/conf.d/default.conf /etc/nginx/default.d/*.conf /etc/nginx/sites-enabled/default /etc/nginx/nginx.conf.bak
 
-# List all Nginx configs for debugging
+# List Nginx configs
 echo "Nginx configs present:"
 ls -l /etc/nginx/ /etc/nginx/conf.d/
 
-# Test Nginx config and restart if valid
+# Test and restart Nginx
 nginx -t
 if [ $? -ne 0 ]; then
-  echo "Nginx config test failed. Check output above for errors."
+  echo "Nginx config test failed."
   exit 1
 fi
 systemctl restart nginx
@@ -448,10 +428,10 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
-# Optional: Enable Nginx to start on boot (idempotent)
+# Enable Nginx on boot
 systemctl enable nginx
 
-# Open ports 80 and 443 in firewall (iptables) and persist
+# Open firewall ports
 mkdir -p /etc/systemd/scripts
 if ! iptables -C INPUT -p tcp --dport 80 -j ACCEPT 2>/dev/null; then
   iptables -A INPUT -p tcp --dport 80 -j ACCEPT
@@ -465,10 +445,9 @@ iptables-save > /etc/systemd/scripts/ip4save
 if [ -f "$SITE_DIR/index.html" ]; then
   echo "Build successful: index.html exists."
 else
-  echo "Error: Build failed - index.html not found in $SITE_DIR. Check hugo_build.log for details."
+  echo "Error: Build failed - index.html not found in $SITE_DIR. Check hugo_build.log."
   exit 1
 fi
-# Verify subpath files (blog, docs-v3, docs-v4, docs-v5)
 for subdir in blog docs-v3 docs-v4 docs-v5; do
   if [ -d "$SITE_DIR/$subdir" ] && [ -f "$SITE_DIR/$subdir/index.html" ]; then
     echo "Subpath /$subdir/ found with index.html."
@@ -477,10 +456,9 @@ for subdir in blog docs-v3 docs-v4 docs-v5; do
   fi
 done
 
-echo "Installation complete! Access the Photon site at https://${IP_ADDRESS}/ (HTTP redirects to HTTPS). Note: Self-signed cert may cause browser warnings—accept the risk."
-echo "Subpaths /blog/, /docs-v3/, /docs-v4/, /docs-v5/ should now work if the build succeeded."
-echo "The /docs/ link now serves content directly from public/docs/."
-echo "If 404 persists, check if index.html exists in $SITE_DIR/{blog,docs-v3,docs-v4,docs-v5} and review hugo_build.log, malformed_urls.log."
+echo "Installation complete! Access the Photon site at https://${IP_ADDRESS}/ (HTTP redirects to HTTPS)."
+echo "Subpaths /blog/, /docs-v3/, /docs-v4/, /docs-v5/ should now work without double paths."
+echo "If 404 persists, check $SITE_DIR/{blog,docs-v3,docs-v4,docs-v5} and hugo_build.log, malformed_urls.log."
 echo "If seeing 404 or Nginx welcome screen, check /var/log/nginx/photon-site-error.log, /var/log/nginx/error.log."
 echo "Fixed versions used: Hugo $HUGO_VERSION, Repo commit $COMMIT_HASH."
 echo "To update manually: Rerun this script to reset to fixed versions, or modify script for latest."
