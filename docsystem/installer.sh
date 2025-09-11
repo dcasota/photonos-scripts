@@ -43,26 +43,18 @@
 # Added: Flatten redundant nested docs-vX subdirs to fix double path URLs (e.g., /docs-v5/docs-v5/).
 # Added: Clean up duplicated permalinks from existing content.
 # Fix: Use :sections in permalink config to handle hierarchy without duplicates; remove frontmatter permalink setting; fix internal links.
+# Added: Override render-image.html to disable lazy loading for printview image display fix.
+# Updated: Modified render-image.html to use root-relative absolute paths for images to fix wrong relative paths in printview.
+# Added: Patch quick-start-links _index.md to fix orphaned links with correct absolute paths for all versions (v3, v4, v5).
 
-if [ -z "$1" ]; then
-  echo "Error: Provide an install directory, e.g., sudo ./installer.sh /var/www/photon-site"
-  exit 1
-fi
 
-INSTALL_DIR="$1"
-HUGO_VERSION="0.149.0"  # Latest version as of August 29, 2025
+BASE_DIR="/var/www"
+INSTALL_DIR="$BASE_DIR/photon-site"
 SITE_DIR="$INSTALL_DIR/public"  # Where built static files go
-
-# Dynamically retrieve latest COMMIT_HASH from photon-hugo branch (for logging)
-tdnf install -y git
-COMMIT_HASH=$(git ls-remote https://github.com/vmware/photon.git refs/heads/photon-hugo | cut -f 1)
-if [ -z "$COMMIT_HASH" ]; then
-  echo "Error: Could not fetch latest commit hash from photon-hugo branch."
-  exit 1
-fi
-echo "Using latest commit hash for reference: $COMMIT_HASH"
+HUGO_VERSION="0.150.0"  # Latest version as of September 10, 2025
 
 # Dynamically retrieve DHCP IP address
+tdnf install -y iproute2
 IP_ADDRESS=$(ip addr show | grep -oP 'inet \K[\d.]+(?=/)' | grep -v '127.0.0.1' | head -n 1)
 if [ -z "$IP_ADDRESS" ]; then
   IP_ADDRESS=$(hostname -I | awk '{print $1}' | grep -v '127.0.0.1')
@@ -72,6 +64,15 @@ if [ -z "$IP_ADDRESS" ]; then
   echo "Warning: Could not detect DHCP IP. Using 'localhost' for certificate. Set IP manually if needed."
 fi
 echo "Detected IP address: $IP_ADDRESS"
+
+# Dynamically retrieve latest COMMIT_HASH from photon-hugo branch (for logging)
+tdnf install -y git
+COMMIT_HASH=$(git ls-remote https://github.com/vmware/photon.git refs/heads/photon-hugo | cut -f 1)
+if [ -z "$COMMIT_HASH" ]; then
+  echo "Error: Could not fetch latest commit hash from photon-hugo branch."
+  exit 1
+fi
+echo "Using latest commit hash for reference: $COMMIT_HASH"
 
 # Clean up log files before starting
 echo "Cleaning up log files..."
@@ -106,18 +107,14 @@ chmod -R 755 /var/www
 # Mark the repository as safe to avoid dubious ownership errors
 git config --global --add safe.directory "$INSTALL_DIR"
 
-# Clone or update the repo
-if [ -d "$INSTALL_DIR/.git" ]; then
-  echo "Repo exists, updating to latest on photon-hugo branch"
-  cd "$INSTALL_DIR"
-  git fetch
-  git checkout photon-hugo
-  git reset --hard origin/photon-hugo  # Reset to remote head, discard local changes
-else
-  echo "Cloning repo"
-  git clone --branch photon-hugo --single-branch https://github.com/vmware/photon.git "$INSTALL_DIR"
-  cd "$INSTALL_DIR"
+# Clone repo
+if [ -d "$INSTALL_DIR" ]; then
+  echo "Deleting existing repo"
+  rm -rf "$INSTALL_DIR"
 fi
+echo "Cloning repo"
+git clone --branch photon-hugo --single-branch https://github.com/vmware/photon.git "$INSTALL_DIR"
+cd "$INSTALL_DIR"
 
 # Get the actual commit details after update
 COMMIT_HASH=$(git rev-parse HEAD)
@@ -147,13 +144,13 @@ done
 echo "Fixing internal links to remove double paths..."
 find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i 's|/docs-v3/docs-v3/|/docs-v3/|g' {} \;
 find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i 's|/docs-v4/docs-v4/|/docs-v4/|g' {} \;
-find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i 's|/docs-v5/docs-v5/|/docs-v5/|g' {} \;
+find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i 's|/docs-v5/docs-v5/| /docs-v5/|g' {} \;
 
 # Patch docs-v* _index.md to set type: docs for sidebar and menu on main pages
 for ver in docs-v3 docs-v4 docs-v5; do
-  if [ -f "content/en/$ver/_index.md" ]; then
-    sed -i '/^type\s*:/d' "content/en/$ver/_index.md"
-    sed -i '1s/^---$/---\ntype: docs/' "content/en/$ver/_index.md"
+  if [ -f "$INSTALL_DIR/content/en/$ver/_index.md" ]; then
+    sed -i '/^type\s*:/d' "$INSTALL_DIR/content/en/$ver/_index.md"
+    sed -i '1s/^---$/---\ntype: docs/' "$INSTALL_DIR/content/en/$ver/_index.md"
   fi
 done
 
@@ -259,8 +256,8 @@ if ! grep -E -q "last_commit_full_hash\s*=" config.toml; then
   sed -i '/\[params\]/a last_commit_full_hash = "'"$COMMIT_HASH"'"' config.toml
 fi
 
-# Override page-meta-lastmod.html
-mkdir -p "$INSTALL_DIR/layouts/partials"
+# Added: Overrides page-meta-lastmod.html with hardcoded commit info from params for consistent footer matching the branch.
+mkdir -p "$INSTALL_DIR/layouts/partials"  # Ensure override dir exists
 cat > "$INSTALL_DIR/layouts/partials/page-meta-lastmod.html" <<-'HEREDOC_LASTMOD'
 {{- if or (.Params.hide_meta) (eq .Params.show_lastmod false) -}}
 {{- else -}}
@@ -268,12 +265,25 @@ cat > "$INSTALL_DIR/layouts/partials/page-meta-lastmod.html" <<-'HEREDOC_LASTMOD
 {{- end -}}
 HEREDOC_LASTMOD
 
-# Debug page-meta-lastmod.html
+# Debug: Verify the generated template
 echo "Verifying page-meta-lastmod.html content..."
 cat "$INSTALL_DIR/layouts/partials/page-meta-lastmod.html"
 if grep -q "^[[:space:]]" "$INSTALL_DIR/layouts/partials/page-meta-lastmod.html"; then
   echo "Warning: Leading whitespace detected in page-meta-lastmod.html."
 fi
+
+# Added: Override render-image.html to disable lazy loading for printview image display fix.
+# Updated: Use root-relative absolute paths for local relative images to fix path issues in printview.
+mkdir -p "$INSTALL_DIR/layouts/_default/_markup"
+cat > "$INSTALL_DIR/layouts/_default/_markup/render-image.html" <<EOF
+{{ \$src := .Destination }}
+{{ if or (hasPrefix \$src "http://") (hasPrefix \$src "https://") (hasPrefix \$src "/") }}
+  {{ \$src = \$src | safeURL }}
+{{ else }}
+  {{ \$src = printf "%s%s" .Page.RelPermalink \$src | safeURL }}
+{{ end }}
+<img src="{{ \$src }}" alt="{{ .Text }}" {{ with .Title }}title="{{ . }}"{{ end }} />
+EOF
 
 # Validate config.toml
 echo "Validating config.toml..."
@@ -281,6 +291,7 @@ echo "Validating config.toml..."
 if [ $? -ne 0 ]; then
   echo "Error: config.toml validation failed. Check $INSTALL_DIR/config.toml."
   /usr/local/bin/hugo config 2>&1 | tee "$INSTALL_DIR/config_validation.log"
+  echo "Validation errors logged to $INSTALL_DIR/config_validation.log"
   exit 1
 fi
 
@@ -310,7 +321,7 @@ fi
 
 # Debug permissions
 echo "Directory permissions for Nginx:"
-ls -ld /var/www /var/www/photon-site /var/www/photon-site/public
+ls -ld "$BASE_DIR" "$INSTALL_DIR" "$SITE_DIR"
 ls -l "$SITE_DIR/index.html" || echo "index.html not found"
 
 # Check site files
@@ -328,6 +339,18 @@ for subdir in blog docs-v3 docs-v4 docs-v5; do
     echo "Subpath /$subdir/ found with index.html."
   else
     echo "Warning: Subpath /$subdir/ missing or incomplete. Check $SITE_DIR/$subdir/ and hugo_build.log."
+	exit 1
+  fi
+done
+
+# Added: Patch quick-start-links index.html to fix orphaned links with correct absolute paths for all versions
+for ver in docs-v3 docs-v4 docs-v5; do
+  QL_FILE="$SITE_DIR/$ver/quick-start-links/index.html"
+  if [ -f "$QL_FILE" ]; then
+    echo "Patching quick-start-links index.html for $ver to fix orphaned links..."
+	sed -i 's|<a href=..\/..\/overview\/>Overview</a>|<a href=..\/overview\/>Overview</a>|g' $QL_FILE
+	sed -i 's|<a href=..\/..\/installation-guide\/downloading-photon\/>Downloading Photon OS</a>|<a href=..\/installation-guide\/downloading-photon\/>Downloading Photon OS</a>|g' $QL_FILE
+	sed -i 's|<a href=..\/..\/installation-guide\/building-images\/build-iso-from-source\/>Build an ISO from the source code for Photon OS</a>|<a href=..\/installation-guide\/building-images\/build-iso-from-source\/>Build an ISO from the source code for Photon OS</a>|g' $QL_FILE
   fi
 done
 
@@ -457,8 +480,4 @@ for subdir in blog docs-v3 docs-v4 docs-v5; do
 done
 
 echo "Installation complete! Access the Photon site at https://${IP_ADDRESS}/ (HTTP redirects to HTTPS)."
-echo "Subpaths /blog/, /docs-v3/, /docs-v4/, /docs-v5/ should now work without double paths."
-echo "If 404 persists, check $SITE_DIR/{blog,docs-v3,docs-v4,docs-v5} and hugo_build.log, malformed_urls.log."
-echo "If seeing 404 or Nginx welcome screen, check /var/log/nginx/photon-site-error.log, /var/log/nginx/error.log."
-echo "Fixed versions used: Hugo $HUGO_VERSION, Repo commit $COMMIT_HASH."
-echo "To update manually: Rerun this script to reset to fixed versions, or modify script for latest."
+
