@@ -4,5 +4,5 @@ To create a self-hosted copy of https://vmware.github.io/photon, you can use `in
 3. run
    ```
    chmod a+x ./installer.sh
-   ./installer.sh /var/www/photon-site
+   ./installer.sh
    ```
