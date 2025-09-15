@@ -110,7 +110,7 @@ setup_crawl4ai() {
     while ss -tuln | grep -q ":$MCP_CRAWL_PORT "; do
         sleep 1
     done
-    docker run -d --network host -p $MCP_CRAWL_PORT:11235 --name crawl4ai-mcp --shm-size=1g unclecode/crawl4ai:latest
+    docker run -d --network host -p $MCP_CRAWL_PORT:11235 --name crawl4ai-mcp --shm-size=2g --ipc=host unclecode/crawl4ai:latest
     sleep 10  # Wait for startup
     curl -s http://localhost:$MCP_CRAWL_PORT/health || { echo "Crawl4AI setup failed."; exit 1; }
     echo "Crawl4AI MCP running on port $MCP_CRAWL_PORT"
@@ -165,7 +165,7 @@ import os
 import logging
 import signal
 import atexit
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin, urlparse, urlunparse
 from collections import deque
 import language_tool_python
 from spellchecker import SpellChecker
@@ -200,11 +200,15 @@ logging.info("Starting inspector daemon...")
 # Initialize language tools
 try:
     tool = language_tool_python.LanguageTool('en-US')
+    tool.disable_rule('MORFOLOGIK_RULE_EN_US')
 except Exception as e:
     logging.error(f"Failed to initialize LanguageTool: {str(e)}")
     tool = None
 try:
     spell = SpellChecker()
+    exclusion_list = ['alternativename', 'alternativenamespolicy', 'api', 'auditd', 'aws', 'bc', 'bootable', 'btrfs', 'cgroup', 'cli', 'cntrctl', 'config', 'cpus', 'createrepo', 'dcerpc', 'dev', 'dhcp', 'dns', 'fcgi', 'filesystem', 'filesystems', 'fips', 'flavours', 'fsck', 'gcc', 'gce', 'genisoimage', 'github', 'glibc', 'gso', 'hostname', 'initrd', 'ip', 'iso', 'journalctl', 'json', 'kubernetes', 'lightwave', 'macaddress', 'macaddresspolicy', 'metadata', 'metalink', 'namepolicy', 'ndsend', 'netmgr', 'netplan', 'nfs', 'nftables', 'nics', 'nmctl', 'openjdk', 'openssl', 'oss', 'pmd', 'postgresql', 'pxe', 'rebase', 'repoquery', 'repos', 'rpm', 'rpms', 'runtime', 'selinux', 'sendmail', 'sizepercent', 'sriov', 'sshfs', 'ssl', 'systemd', 'tdnf', 'texinfo', 'tls', 'tndf', 'toolchain', 'uefi', 'ulogd', 'umask', 'urls', 'veth', 'vhd', 'vlan', 'vmware', 'vprobes', 'vsphere', 'vti', 'wireguard', 'wlan', 'xfs', 'yaml', 'zstd']
+    for word in exclusion_list:
+        spell.add(word)
 except Exception as e:
     logging.error(f"Failed to initialize SpellChecker: {str(e)}")
     spell = None
@@ -228,11 +232,11 @@ def crawl_page(url):
         crawl_config = {
             "page_timeout": 300000,
             "browser_config": {
-                "extra_args": ["--ignore-certificate-errors"]
+                "extra_args": ["--ignore-certificate-errors", "--disable-dev-shm-usage"]
             }
         }
         resp = requests.post(f"http://localhost:{config['mcp_crawl_port']}/crawl",
-                             json={"urls": [url], "instructions": "Extract markdown content, all links, and html", "config": crawl_config}, timeout=300)
+                             json={"urls": [url], "instructions": "Extract markdown content, all links, and html", "config": crawl_config}, timeout=600)
         logging.debug(f"Received response for {url}")
         if resp.status_code == 200:
             data = resp.json()
@@ -249,17 +253,19 @@ def crawl_page(url):
         logging.error(f"Exception while crawling {url}: {str(e)}")
         return {'success': False}
 
-def recursive_crawl(start_url):
+def crawl_and_analyze(start_url, version_dir, timestamp, version):
     url_queue = queue.Queue()
     visited = set()
     visited_lock = threading.Lock()
+    analyzed_local = set()
+    local_lock = threading.Lock()
     with visited_lock:
-        if start_url not in visited:
-            visited.add(start_url)
-            url_queue.put(start_url)
-    all_data = {}
-    data_lock = threading.Lock()
-    num_workers = 10
+        parsed_start = urlparse(start_url)
+        normalized_start = urlunparse(parsed_start._replace(fragment=''))
+        if normalized_start not in visited:
+            visited.add(normalized_start)
+            url_queue.put(normalized_start)
+    num_workers = 2
 
     def crawl_worker():
         while not shutdown_event.is_set():
@@ -268,25 +274,29 @@ def recursive_crawl(start_url):
                 if url is None:
                     break
                 data = crawl_page(url)
+                # Analyze even if crawl failed
+                _, page_analyzed_local, is_analyzed_crawled = analyze_page(url, data, start_url, version_dir, timestamp, version)
+                with local_lock:
+                    analyzed_local.update(page_analyzed_local)
                 new_links = []
-                if data:
-                    with data_lock:
-                        all_data[url] = data
-                    if data.get('success', True):
-                        try:
-                            soup = BeautifulSoup(data.get('html', ''), 'lxml')
-                            for a in soup.find_all('a', href=True):
-                                link = urljoin(url, a['href'])
-                                if urlparse(link).netloc == urlparse(start_url).netloc and link.startswith(start_url):
-                                    with visited_lock:
-                                        if link not in visited:
-                                            visited.add(link)
-                                            new_links.append(link)
-                        except Exception as e:
-                            logging.error(f"Failed to parse HTML for {url}: {str(e)}")
-                else:
-                    with data_lock:
-                        all_data[url] = {'success': False}
+                if data.get('success', True):
+                    try:
+                        soup = BeautifulSoup(data.get('html', ''), 'lxml')
+                        excluded_link_texts = ["Edit this page", "Create child page", "Create docs issue", "Create project issue", "Print entire section"]
+                        for a in soup.find_all('a', href=True):
+                            link_text = a.get_text().strip()
+                            if link_text in excluded_link_texts:
+                                continue
+                            link = urljoin(url, a['href'])
+                            parsed_link = urlparse(link)
+                            normalized_link = urlunparse(parsed_link._replace(fragment=''))
+                            if urlparse(normalized_link).netloc == urlparse(start_url).netloc and normalized_link.startswith(start_url):
+                                with visited_lock:
+                                    if normalized_link not in visited:
+                                        visited.add(normalized_link)
+                                        new_links.append(normalized_link)
+                    except Exception as e:
+                        logging.error(f"Failed to parse HTML for {url}: {str(e)}")
                 for link in new_links:
                     url_queue.put(link)
                 url_queue.task_done()
@@ -300,7 +310,7 @@ def recursive_crawl(start_url):
             url_queue.put(None)
         concurrent.futures.wait(workers)
 
-    return all_data, list(visited)
+    return list(visited), analyzed_local
 
 # Function to list all files in a directory and subdirectories
 def list_files(dir_path):
@@ -315,17 +325,36 @@ def list_files(dir_path):
 
 # Define the check link function
 def check_link(full_link):
-    try:
-        resp = requests.get(full_link, allow_redirects=True, timeout=10, verify=False)
-        if resp.status_code >= 400:
-            return {"path": "", "issue": f"Broken link: {full_link} (status {resp.status_code})", "fix": "Replace or remove", "diff": ""}
-        return None
-    except Exception as e:
-        logging.error(f"Exception in link check for {full_link}: {str(e)}")
-        return {"path": "", "issue": f"Broken link check failed: {full_link} ({str(e)})", "fix": "Investigate", "diff": ""}
+    retries = 3
+    for attempt in range(retries):
+        try:
+            resp = requests.get(full_link, allow_redirects=True, timeout=30, verify=False)
+            if resp.status_code == 429:
+                time.sleep(5 * (attempt + 1))
+                continue
+            if resp.status_code >= 400:
+                return {"issue": f"Broken link: {full_link} (status {resp.status_code})", "fix": "Replace or remove", "diff": ""}
+            return None
+        except Exception as e:
+            logging.error(f"Exception in link check for {full_link}: {str(e)}")
+            if attempt < retries - 1:
+                time.sleep(5 * (attempt + 1))
+                continue
+            return {"issue": f"Broken link check failed: {full_link} ({str(e)})", "fix": "Investigate", "diff": ""}
+    return {"issue": f"Broken link: {full_link} (status 429 after retries)", "fix": "Replace or remove", "diff": ""}
+
+def write_changes(path, issues, timestamp):
+    if not issues:
+        return
+    data = {"path": path, "issues": issues}
+    hash_val = hashlib.sha256(path.encode()).hexdigest()[:10]
+    page_file = os.path.join(LOG_DIR, f'changes_{hash_val}_{timestamp}.json')
+    logging.info(f"Writing {len(issues)} issues for {path} to {page_file}")
+    with open(page_file, 'w') as f:
+        json.dump(data, f, indent=2)
 
 # Define the analysis function for parallel execution
-def analyze_page(url, data, start_url, version_dir):
+def analyze_page(url, data, start_url, version_dir, timestamp, version):
     page_changes = []
     page_analyzed_local = []
     is_analyzed_crawled = False
@@ -333,32 +362,45 @@ def analyze_page(url, data, start_url, version_dir):
         logging.info(f"Analyzing web page: {url}")
         if data.get('success') == False:
             logging.warning(f"Crawl failed for {url}")
-            page_changes.append({"path": url, "issue": "Crawl failed", "fix": "Check server", "diff": ""})
+            page_changes.append({"issue": "Crawl failed", "fix": "Check server", "diff": ""})
+            write_changes(url, page_changes, timestamp)
             return page_changes, page_analyzed_local, is_analyzed_crawled
         
         is_analyzed_crawled = True
         
-        content = data.get('markdown', '')  # Assume markdown extracted
+        content = data.get('markdown', '')
+        if not isinstance(content, str):
+            content = ''
         # Check for broken links (orphaned web links) in parallel
         try:
             logging.debug(f"Checking for broken links in {url}")
             soup = BeautifulSoup(data.get('html', ''), 'lxml')
             links_to_check = []
+            excluded_link_texts = ["Edit this page", "Create child page", "Create docs issue", "Create project issue", "Print entire section"]
             for a in soup.find_all('a', href=True):
+                link_text = a.get_text().strip()
+                if link_text in excluded_link_texts:
+                    continue
                 link = a['href']
                 full_link = urljoin(url, link)
                 parsed = urlparse(full_link)
                 if parsed.scheme in ('http', 'https'):
                     links_to_check.append(full_link)
+            # Check for duplicated version in internal links
+            for full_link in links_to_check:
+                parsed = urlparse(full_link)
+                if parsed.netloc == urlparse(start_url).netloc and full_link.startswith(start_url):
+                    path = parsed.path
+                    version_str = f'docs-{version}'
+                    if path.startswith(f'/{version_str}/') and path.count(f'/{version_str}/') > 1:
+                        page_changes.append({"issue": f"Duplicated version in path: {full_link}", "fix": "Remove duplicate version segment", "diff": ""})
             if links_to_check:
-                with concurrent.futures.ThreadPoolExecutor(max_workers=20) as link_executor:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=5) as link_executor:
                     link_futures = [link_executor.submit(check_link, fl) for fl in links_to_check]
                     for future in concurrent.futures.as_completed(link_futures):
                         result = future.result()
                         if result:
-                            result["path"] = url
                             page_changes.append(result)
-                            logging.info(f"Issue in {url}: {result['issue']}")
         except Exception as e:
             logging.error(f"Failed to process links for {url}: {str(e)}")
         
@@ -367,6 +409,7 @@ def analyze_page(url, data, start_url, version_dir):
             text = soup.get_text(separator='\n', strip=True)
         except Exception as e:
             logging.error(f"Failed to extract text for {url}: {str(e)}")
+            write_changes(url, page_changes, timestamp)
             return page_changes, page_analyzed_local, is_analyzed_crawled
         
         # Grammar check
@@ -376,9 +419,7 @@ def analyze_page(url, data, start_url, version_dir):
                 matches = tool.check(text)
                 if matches:
                     issues = [f"{m.ruleId}: {m.message}" for m in matches]
-                    issue = "Grammar issues"
-                    logging.info(f"Issue in {url}: {issue}")
-                    page_changes.append({"path": url, "issue": issue, "fix": '\n'.join(issues), "diff": ""})
+                    page_changes.append({"issue": "Grammar issues", "fix": '\n'.join(issues), "diff": ""})
             except Exception as e:
                 logging.error(f"Grammar check failed for {url}: {str(e)}")
         
@@ -388,14 +429,12 @@ def analyze_page(url, data, start_url, version_dir):
                 logging.debug(f"Checking spelling in {url}")
                 misspelled = list(spell.unknown([word for word in text.split() if word.isalpha()]))
                 if misspelled:
-                    issue = "Spelling issues"
-                    logging.info(f"Issue in {url}: {issue}")
-                    page_changes.append({"path": url, "issue": issue, "fix": ', '.join(misspelled), "diff": ""})
+                    page_changes.append({"issue": "Spelling issues", "fix": ', '.join(misspelled), "diff": ""})
             except Exception as e:
                 logging.error(f"Spelling check failed for {url}: {str(e)}")
         
         # Markdown glitches using markdownlint-cli
-        if content:
+        if content and isinstance(content, str):
             temp_file = None
             try:
                 logging.debug(f"Checking markdown in {url}")
@@ -404,9 +443,7 @@ def analyze_page(url, data, start_url, version_dir):
                     tmp.write(content)
                 lint_result = subprocess.run(['markdownlint', temp_file], capture_output=True, text=True)
                 if lint_result.returncode != 0:
-                    issue = "Markdown issues"
-                    logging.info(f"Issue in {url}: {issue}")
-                    page_changes.append({"path": url, "issue": issue, "fix": lint_result.stdout, "diff": ""})
+                    page_changes.append({"issue": "Markdown issues", "fix": lint_result.stdout, "diff": ""})
                 os.remove(temp_file)
             except Exception as e:
                 logging.error(f"Markdown linting failed for {url}: {str(e)}")
@@ -416,8 +453,10 @@ def analyze_page(url, data, start_url, version_dir):
         # Comparison with local source
         relative = url.replace(start_url, '')
         if relative == '':
+            write_changes(url, page_changes, timestamp)
             return page_changes, page_analyzed_local, is_analyzed_crawled  # Skip index page
         if not relative.endswith('.html'):
+            write_changes(url, page_changes, timestamp)
             return page_changes, page_analyzed_local, is_analyzed_crawled
         md_file = relative[:-5] + '.md'
         local_path = os.path.join(version_dir, md_file)
@@ -426,26 +465,26 @@ def analyze_page(url, data, start_url, version_dir):
                 logging.debug(f"Comparing with local file: {local_path}")
                 with open(local_path, 'r') as f:
                     local_content = f.read()
+                if not isinstance(content, str):
+                    content = ''
                 if local_content.strip() != content.strip():
                     diff = '\n'.join(difflib.unified_diff(local_content.splitlines(), content.splitlines(), fromfile=local_path, tofile=url))
-                    issue = "Content mismatch"
-                    logging.info(f"Issue in {url} vs {local_path}: {issue}")
-                    page_changes.append({"path": url, "issue": issue, "fix": "Review diff", "diff": diff})
+                    page_changes.append({"issue": "Content mismatch", "fix": "Review diff", "diff": diff})
                 page_analyzed_local.append(local_path)
             else:
-                issue = "Missing local source"
-                logging.info(f"Issue for {url}: {issue}")
-                page_changes.append({"path": url, "issue": issue, "fix": "Add MD file", "diff": ""})
+                page_changes.append({"issue": "Missing local source", "fix": "Add MD file", "diff": ""})
         except Exception as e:
             logging.error(f"Failed to compare with local file {local_path}: {str(e)}")
         
         # Add more checks: structure, sections, syntax similarly
+        if page_changes:
+            write_changes(url, page_changes, timestamp)
     except Exception as e:
         logging.error(f"Failed to analyze page {url}: {str(e)}")
     
     return page_changes, page_analyzed_local, is_analyzed_crawled
 
-def analyze_local(local_path):
+def analyze_local(local_path, timestamp):
     changes = []
     try:
         logging.info(f"Analyzing local file not on web: {local_path}")
@@ -461,9 +500,7 @@ def analyze_local(local_path):
                 tmp.write(local_content)
             lint_result = subprocess.run(['markdownlint', temp_file], capture_output=True, text=True)
             if lint_result.returncode != 0:
-                issue = "Markdown issues (local)"
-                logging.info(f"Issue in {local_path}: {issue}")
-                changes.append({"path": local_path, "issue": issue, "fix": lint_result.stdout, "diff": ""})
+                changes.append({"issue": "Markdown issues (local)", "fix": lint_result.stdout, "diff": ""})
             os.remove(temp_file)
         except Exception as e:
             logging.error(f"Markdown linting failed for {local_path}: {str(e)}")
@@ -477,6 +514,8 @@ def analyze_local(local_path):
             text = soup.get_text(separator='\n', strip=True)
         except Exception as e:
             logging.error(f"Failed to convert markdown for {local_path}: {str(e)}")
+            if changes:
+                write_changes(local_path, changes, timestamp)
             return changes
         
         # Grammar check
@@ -486,9 +525,7 @@ def analyze_local(local_path):
                 matches = tool.check(text)
                 if matches:
                     issues = [f"{m.ruleId}: {m.message}" for m in matches]
-                    issue = "Grammar issues (local)"
-                    logging.info(f"Issue in {local_path}: {issue}")
-                    changes.append({"path": local_path, "issue": issue, "fix": '\n'.join(issues), "diff": ""})
+                    changes.append({"issue": "Grammar issues (local)", "fix": '\n'.join(issues), "diff": ""})
             except Exception as e:
                 logging.error(f"Grammar check failed for {local_path}: {str(e)}")
         
@@ -498,16 +535,14 @@ def analyze_local(local_path):
                 logging.debug(f"Checking spelling in {local_path}")
                 misspelled = list(spell.unknown([word for word in text.split() if word.isalpha()]))
                 if misspelled:
-                    issue = "Spelling issues (local)"
-                    logging.info(f"Issue in {local_path}: {issue}")
-                    changes.append({"path": local_path, "issue": issue, "fix": ', '.join(misspelled), "diff": ""})
+                    changes.append({"issue": "Spelling issues (local)", "fix": ', '.join(misspelled), "diff": ""})
             except Exception as e:
                 logging.error(f"Spelling check failed for {local_path}: {str(e)}")
         
         # Missing on web
-        issue = "Missing on web"
-        logging.info(f"Issue in {local_path}: {issue}")
-        changes.append({"path": local_path, "issue": issue, "fix": "Upload to server", "diff": ""})
+        changes.append({"issue": "Missing on web", "fix": "Upload to server", "diff": ""})
+        if changes:
+            write_changes(local_path, changes, timestamp)
     except Exception as e:
         logging.error(f"Failed to process local file {local_path}: {str(e)}")
     return changes
@@ -515,38 +550,30 @@ def analyze_local(local_path):
 # Verification functions (implement basic checks)
 def verify_content(version, timestamp):
     timestamp_version = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    start_dict = {"path": f"docs-{version}", "issue": "Verification started", "fix": f"Initial verification cycle for version {version} at {timestamp_version}", "diff": ""}
+    start_dict = [{"issue": "Verification started", "fix": f"Initial verification cycle for version {version} at {timestamp_version}", "diff": ""}]
     try:
-        hash_val = hashlib.md5(start_dict["path"].encode()).hexdigest()[:10]
-        start_file = os.path.join(LOG_DIR, f'changes_{hash_val}_{timestamp}.json')
-        with open(start_file, 'w') as f:
-            json.dump([start_dict], f, indent=2)
-        logging.info(f"Wrote started for {version} to {start_file}")
+        write_changes(f"docs-{version}", start_dict, timestamp)
     except Exception as e:
         logging.error(f"Failed to write started for {version}: {str(e)}")
 
     start_url = f"{config['base_url']}docs-{version}/"
+    version_dir = os.path.join(DOCS_ROOT, f'docs-{version}')
     logging.debug(f"Starting crawl for docs version: {version} at {start_url}")
     
     try:
-        all_data, crawled_urls = recursive_crawl(start_url)
+        crawled_urls, analyzed_local = crawl_and_analyze(start_url, version_dir, timestamp, version)
         logging.debug(f"Crawled URLs for docs-{version}: {', '.join(crawled_urls)}")
         logging.debug(f"Crawled {len(crawled_urls)} pages for docs-{version}")
     except Exception as e:
         logging.error(f"Failed to crawl for {version}: {str(e)}")
-        error_dict = {"path": f"docs-{version}", "issue": "Crawl failed", "fix": str(e), "diff": ""}
+        error_dict = [{"issue": "Crawl failed", "fix": str(e), "diff": ""}]
         try:
-            hash_val = hashlib.md5(error_dict["path"].encode()).hexdigest()[:10]
-            error_file = os.path.join(LOG_DIR, f'changes_{hash_val}_{timestamp}.json')
-            with open(error_file, 'w') as f:
-                json.dump([error_dict], f, indent=2)
-            logging.info(f"Wrote crawl failed for {version} to {error_file}")
+            write_changes(f"docs-{version}", error_dict, timestamp)
         except Exception as ee:
             logging.error(f"Failed to write crawl failed for {version}: {str(ee)}")
         return
     
     # List files from local filesystem
-    version_dir = os.path.join(DOCS_ROOT, f'docs-{version}')
     logging.debug(f"Checking directory: {version_dir}")
     if os.path.exists(version_dir):
         files = list_files(version_dir)
@@ -555,60 +582,18 @@ def verify_content(version, timestamp):
         logging.warning(f"Directory {version_dir} does not exist.")
         files = []
     
-    analyzed_crawled = []
-    analyzed_local = set()
-    
-    # Parallelize the analysis loop
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-        futures = {
-            executor.submit(analyze_page, url, data, start_url, version_dir): url
-            for url, data in all_data.items()
-        }
-        for future in concurrent.futures.as_completed(futures):
-            url = futures[future]
-            try:
-                page_changes, page_analyzed_local, is_analyzed_crawled = future.result()
-                if page_changes:
-                    try:
-                        path = page_changes[0]["path"]
-                        hash_val = hashlib.md5(path.encode()).hexdigest()[:10]
-                        page_file = os.path.join(LOG_DIR, f'changes_{hash_val}_{timestamp}.json')
-                        logging.info(f"About to write {len(page_changes)} changes for {path} to {page_file}")
-                        with open(page_file, 'w') as f:
-                            json.dump(page_changes, f, indent=2)
-                        logging.info(f"Wrote changes for {path} to {page_file}")
-                    except Exception as e:
-                        logging.error(f"Failed to write changes for {url}: {str(e)}")
-                analyzed_local.update(page_analyzed_local)
-                if is_analyzed_crawled:
-                    analyzed_crawled.append(url)
-            except Exception as e:
-                logging.error(f"Exception in analyzing {url}: {str(e)}")
-    
     # Check for local .md files not on web
     local_mds = [f for f in files if f.endswith('.md')]
     not_analyzed_local = [path for path in local_mds if path not in analyzed_local]
     if not_analyzed_local:
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-            local_futures = [executor.submit(analyze_local, path) for path in not_analyzed_local]
+            local_futures = [executor.submit(analyze_local, path, timestamp) for path in not_analyzed_local]
             for future in concurrent.futures.as_completed(local_futures):
                 try:
                     local_changes = future.result()
-                    if local_changes:
-                        try:
-                            path = local_changes[0]["path"]
-                            hash_val = hashlib.md5(path.encode()).hexdigest()[:10]
-                            local_file = os.path.join(LOG_DIR, f'changes_{hash_val}_{timestamp}.json')
-                            logging.info(f"About to write {len(local_changes)} changes for {path} to {local_file}")
-                            with open(local_file, 'w') as f:
-                                json.dump(local_changes, f, indent=2)
-                            logging.info(f"Wrote changes for {path} to {local_file}")
-                        except Exception as e:
-                            logging.error(f"Failed to write {local_file}: {str(e)}")
                 except Exception as e:
                     logging.error(f"Exception in analyzing local file: {str(e)}")
     
-    logging.debug(f"Analyzed crawled pages for docs-{version}: {', '.join(analyzed_crawled)}")
     logging.debug(f"Analyzed local files for docs-{version}: {', '.join(analyzed_local)}")
 
 if len(sys.argv) > 1 and sys.argv[1] == '--run':
@@ -620,13 +605,9 @@ if len(sys.argv) > 1 and sys.argv[1] == '--run':
         except KeyError:
             logging.error("Versions not found in config")
             versions = []
-            error_dict = {"path": "global", "issue": "Config error", "fix": "Versions not found in config", "diff": ""}
+            error_dict = [{"issue": "Config error", "fix": "Versions not found in config", "diff": ""}]
             try:
-                hash_val = hashlib.md5(error_dict["path"].encode()).hexdigest()[:10]
-                error_file = os.path.join(LOG_DIR, f'changes_{hash_val}_{timestamp}.json')
-                with open(error_file, 'w') as f:
-                    json.dump([error_dict], f, indent=2)
-                logging.info(f"Wrote config error to {error_file}")
+                write_changes("global", error_dict, timestamp)
             except Exception as e:
                 logging.error(f"Failed to write config error: {str(e)}")
         logging.info(f"Processing {len(versions)} versions")
@@ -638,13 +619,9 @@ if len(sys.argv) > 1 and sys.argv[1] == '--run':
                     future.result()
                 except Exception as e:
                     logging.error(f"Failed to process version {version}: {str(e)}")
-                    error_dict = {"path": f"docs-{version}", "issue": "Verification failed", "fix": f"Exception: {str(e)}", "diff": ""}
+                    error_dict = [{"issue": "Verification failed", "fix": f"Exception: {str(e)}", "diff": ""}]
                     try:
-                        hash_val = hashlib.md5(error_dict["path"].encode()).hexdigest()[:10]
-                        error_file = os.path.join(LOG_DIR, f'changes_{hash_val}_{timestamp}.json')
-                        with open(error_file, 'w') as f:
-                            json.dump([error_dict], f, indent=2)
-                        logging.info(f"Wrote verification failed for {version} to {error_file}")
+                        write_changes(f"docs-{version}", error_dict, timestamp)
                     except Exception as ee:
                         logging.error(f"Failed to write error for {version}: {str(ee)}")
         logging.info("Verification cycle complete. Sleeping for 1 hour.")
