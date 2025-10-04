@@ -6,7 +6,7 @@
 # Default version: v0.11.11
 # Default config path: ./ollama_config.json
 
-OLLAMA_VERSION=${1:-v0.11.11}
+OLLAMA_VERSION=${1:-v0.12.3}
 CONFIG_FILE=${2:-./ollama_config.json}
 
 # Top 5 popular Ollama models (based on 2025 popularity from sources)
@@ -16,7 +16,8 @@ MODELS=(
   "llama3.1:8b|Llama 3.1 8B|128000|8192"
   "qwen2.5:7b|Qwen 2.5 7B|131072|8192"
   "mistral:7b|Mistral 7B|32768|4096"
-  "gemma2:9b|Gemma 2 9B|8192|4096"
+  "gemma3:4b|Gemma 4 4B|8192|4096"
+  "embeddinggemma:300m|embeddinggemma 300m|2048|2048"  
   "phi3:3.8b|Phi 3 Mini 3.8B|128000|4096"
 )
 
@@ -84,4 +85,5 @@ cat << EOF >> "$CONFIG_FILE"
 EOF
 
 echo "Installation and configuration complete!"
+
 echo "Config file generated: $CONFIG_FILE"
