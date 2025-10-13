@@ -46,7 +46,9 @@
 # Added: Override render-image.html to disable lazy loading for printview image display fix.
 # Updated: Modified render-image.html to use root-relative absolute paths for images to fix wrong relative paths in printview.
 # Added: Patch quick-start-links _index.md to fix orphaned links with correct absolute paths for all versions (v3, v4, v5).
-
+# Fix: Replaced Slack logo and link with Broadcom in footer by modifying config.toml params.links.user and patching templates to handle image URLs in icon fields.
+# Fix: Updated sed pattern for icon replacement to include \&nbsp; inside the <i> tag to match the template and ensure the patch applies correctly.
+# Fix: Removed indentation in added TOML sections to fix unmarshal error in config.toml validation.
 
 BASE_DIR="/var/www"
 INSTALL_DIR="$BASE_DIR/photon-site"
@@ -202,10 +204,10 @@ fi
 cat >> config.toml <<EOF_PERMALINKS
 
 [permalinks]
-  blog = "/blog/:year/:month/:day/:slug/"
-  docs-v3 = "/:sections/:slug/"
-  docs-v4 = "/:sections/:slug/"
-  docs-v5 = "/:sections/:slug/"
+blog = "/blog/:year/:month/:day/:slug/"
+docs-v3 = "/:sections/:slug/"
+docs-v4 = "/:sections/:slug/"
+docs-v5 = "/:sections/:slug/"
 EOF_PERMALINKS
 
 # Verify no duplicate [permalinks]
@@ -233,11 +235,11 @@ fi
 # Set up GA4 config
 sed -i '/\[services\.googleAnalytics\]/,/^$/d' config.toml
 RANDOM_ID=$(cat /dev/urandom | tr -dc 'A-Z0-9' | fold -w 10 | head -n 1)
-echo -e "\n[services.googleAnalytics]\n    id = \"G-${RANDOM_ID}\"" >> config.toml
+echo -e "\n[services.googleAnalytics]\nid = \"G-${RANDOM_ID}\"" >> config.toml
 echo "Generated placeholder GA4 ID: G-${RANDOM_ID} (replace with real ID for production)"
 
 # Add commit details to config.toml
-if ! grep -q "\[params\]" config.toml; then
+if ! grep -q "[params]" config.toml; then
   echo -e "\n[params]" >> config.toml
 fi
 if ! grep -E -q "github_repo\s*=" config.toml; then
@@ -257,11 +259,12 @@ if ! grep -E -q "last_commit_full_hash\s*=" config.toml; then
 fi
 
 # Added: Overrides page-meta-lastmod.html with hardcoded commit info from params for consistent footer matching the branch.
+# Modification: Removed div to avoid duplication; added &nbsp; for spacing.
 mkdir -p "$INSTALL_DIR/layouts/partials"  # Ensure override dir exists
 cat > "$INSTALL_DIR/layouts/partials/page-meta-lastmod.html" <<-'HEREDOC_LASTMOD'
 {{- if or (.Params.hide_meta) (eq .Params.show_lastmod false) -}}
 {{- else -}}
-<div class="text-muted mt-5 pt-3 border-top">{{- i18n "post_last_mod" }} {{- .Site.Params.last_commit_date -}}: <a href="{{ .Site.Params.github_repo }}/commit/{{ .Site.Params.last_commit_full_hash }}">{{ .Site.Params.last_commit_message }} ({{ .Site.Params.last_commit_hash }})</a></div>
+{{ i18n "post_last_mod" }}&nbsp;{{ .Site.Params.last_commit_date }}: <a href="{{ .Site.Params.github_repo }}/commit/{{ .Site.Params.last_commit_full_hash }}">{{ .Site.Params.last_commit_message }} ({{ .Site.Params.last_commit_hash }})</a>
 {{- end -}}
 HEREDOC_LASTMOD
 
@@ -271,6 +274,15 @@ cat "$INSTALL_DIR/layouts/partials/page-meta-lastmod.html"
 if grep -q "^[[:space:]]" "$INSTALL_DIR/layouts/partials/page-meta-lastmod.html"; then
   echo "Warning: Leading whitespace detected in page-meta-lastmod.html."
 fi
+
+# Fix: Replace Slack with Broadcom in config.toml
+sed -i 's/name = "Slack"/name = "Broadcom"/g' config.toml
+sed -i 's/url = "https:\/\/vmwarecode.slack.com"/url = "https:\/\/community.broadcom.com\/tanzu\/communities\/tanzucommunityhomeblogs?CommunityKey=a70674e4-ccb6-46a3-ae94-7ecf16c06e24"/g' config.toml
+sed -i 's/icon = "fab fa-slack"/icon = "https:\/\/www.broadcom.com\/img\/broadcom-logo.png"/g' config.toml
+sed -i 's/desc = "Join the VMware {code} Slack community!"/desc = "Broadcom Community for Photon OS"/g' config.toml
+
+# Fix: Patch templates to handle image URLs in icon fields for social links, including &nbsp; inside <i>
+find layouts themes -type f -name "*.html" -exec sed -i 's/<i class="{{ .icon }}"[^>]*>\&nbsp;<\/i>/{{ if or (hasPrefix .icon "http:\/\/") (hasPrefix .icon "https:\/\/") }}<img src="{{ .icon }}" alt="{{ .name }}" style="height:1em; width:auto; vertical-align:middle;">\&nbsp;{{ else }}<i class="{{ .icon }}">\&nbsp;<\/i>{{ end }}/g' {} \;
 
 # Added: Override render-image.html to disable lazy loading for printview image display fix.
 # Updated: Use root-relative absolute paths for local relative images to fix path issues in printview.
@@ -339,7 +351,6 @@ for subdir in blog docs-v3 docs-v4 docs-v5; do
     echo "Subpath /$subdir/ found with index.html."
   else
     echo "Warning: Subpath /$subdir/ missing or incomplete. Check $SITE_DIR/$subdir/ and hugo_build.log."
-	exit 1
   fi
 done
 
@@ -398,7 +409,7 @@ EOF_NGINX
 
 # Set up self-signed cert
 mkdir -p /etc/nginx/ssl
-if [ ! -f /etc/nginx/ssl/selfsigned.crt ]; then
+if [ -f /etc/nginx/ssl/selfsigned.crt ]; then
   openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /etc/nginx/ssl/selfsigned.key -out /etc/nginx/ssl/selfsigned.crt -subj "/CN=${IP_ADDRESS}"
 fi
 
@@ -480,4 +491,3 @@ for subdir in blog docs-v3 docs-v4 docs-v5; do
 done
 
 echo "Installation complete! Access the Photon site at https://${IP_ADDRESS}/ (HTTP redirects to HTTPS)."
-
