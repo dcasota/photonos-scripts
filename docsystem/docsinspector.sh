@@ -16,6 +16,11 @@ CONFIG_FILE="$INSTALL_DIR/config.yaml"
 VENV_DIR="$INSTALL_DIR/venv"
 OUTPUT_LOG="/var/log/fs-mcp.log"
 DOCS_ROOT="/var/www/photon-site/public"
+LT_PORT=8081
+
+# Create log directory early
+mkdir -p $LOG_DIR
+chown -R $INSPECTOR_USER $LOG_DIR || true  # In case user not created yet
 
 # Dynamically retrieve DHCP IP address
 tdnf install -y iproute2
@@ -67,8 +72,7 @@ install_deps() {
     echo "Updating package cache..."
     tdnf makecache || true  # In case metadata needs refresh
     echo "Installing system packages..."
-    tdnf install -y python3 python3-pip go nodejs docker git curl psmisc openjdk21
-    tdnf install -y iptables  # For potential network needs
+    tdnf install -y python3 python3-pip python3-devel libxml2-devel libxslt-devel zlib-devel go nodejs docker git curl psmisc openjdk21 unzip iptables
     # Configure Docker to disable IPv6
     mkdir -p /etc/docker
     cat <<EOF > /etc/docker/daemon.json
@@ -95,8 +99,44 @@ setup_python_env() {
     mkdir -p $INSTALL_DIR
     chown $INSPECTOR_USER $INSTALL_DIR
     sudo -u $INSPECTOR_USER python3 -m venv $VENV_DIR
-    sudo -u $INSPECTOR_USER $VENV_DIR/bin/pip install --upgrade pip
-    sudo -u $INSPECTOR_USER $VENV_DIR/bin/pip install requests beautifulsoup4 lxml pandas pyyaml language-tool-python pyspellchecker markdown
+    sudo -u $INSPECTOR_USER $VENV_DIR/bin/pip install --upgrade pip >> $LOG_DIR/pip_install.log 2>&1
+    if [ $? -ne 0 ]; then
+        echo "Pip upgrade failed. See $LOG_DIR/pip_install.log"
+        cat $LOG_DIR/pip_install.log
+        exit 1
+    fi
+    sudo -u $INSPECTOR_USER $VENV_DIR/bin/pip install requests beautifulsoup4 lxml pandas pyyaml language-tool-python pyspellchecker markdown >> $LOG_DIR/pip_install.log 2>&1
+    if [ $? -ne 0 ]; then
+        echo "Pip install failed. See $LOG_DIR/pip_install.log"
+        cat $LOG_DIR/pip_install.log
+        exit 1
+    fi
+}
+
+# Function to setup LanguageTool locally
+setup_languagetool() {
+    echo "Setting up local LanguageTool..."
+    LT_DIR="$INSTALL_DIR/languagetool"
+    mkdir -p $LT_DIR
+    curl -L -o $LT_DIR/LanguageTool.zip https://www.languagetool.org/download/LanguageTool-6.6.zip
+    rm -rf $LT_DIR/LanguageTool-6.6 $LT_DIR/lt
+    unzip $LT_DIR/LanguageTool.zip -d $LT_DIR
+    rm $LT_DIR/LanguageTool.zip
+    mv $LT_DIR/LanguageTool-6.6 $LT_DIR/lt
+    chown -R $INSPECTOR_USER $LT_DIR
+    echo "Starting LanguageTool server..."
+    fuser -k $LT_PORT/tcp || true
+    while ss -tuln | grep -q ":$LT_PORT "; do
+        sleep 1
+    done
+    nohup java -cp "$LT_DIR/lt/languagetool-server.jar" org.languagetool.server.HTTPServer --port $LT_PORT --allow-origin "*" >> $LOG_DIR/languagetool.log 2>&1 &
+    sleep 10
+    if curl -s -d "language=en-US" -d "text=This is a test" "http://localhost:$LT_PORT/v2/check" | grep -q '"name":"LanguageTool"'; then
+        echo "LanguageTool server running on port $LT_PORT"
+    else
+        echo "LanguageTool setup failed."
+        exit 1
+    fi
 }
 
 # Function to setup Crawl4AI MCP using Docker
@@ -152,63 +192,74 @@ install_inspector() {
     echo "Installing inspector code..."
     # Embed or generate main.py (simplified example; in production, git clone or copy from source)
     cat <<EOL_MAIN > $INSTALL_DIR/main.py
-import requests
-import yaml
-import json
-import difflib
-from bs4 import BeautifulSoup
-import datetime
-import time
-import sys
-import subprocess
 import os
 import logging
-import signal
-import atexit
-from urllib.parse import urljoin, urlparse, urlunparse
-from collections import deque
-import language_tool_python
-from spellchecker import SpellChecker
-from markdown import markdown
-import threading
-import concurrent.futures
-import tempfile
-import queue
-import hashlib
-# Add other imports as needed
+import sys
+
+# Setup logging to file with default level
+LOG_DIR = '/var/log/inspector'
+DOCS_ROOT = '/var/www/photon-site/public'
+os.makedirs(LOG_DIR, exist_ok=True)
+default_log_level = 'DEBUG'
+level = logging.getLevelName(default_log_level.upper())
+logging.basicConfig(filename=os.path.join(LOG_DIR, 'inspector.log'), level=level, format='%(asctime)s,%(msecs)03d - %(levelname)s - %(message)s')
+logging.info("Starting inspector daemon...")
+
+try:
+    import requests
+    import yaml
+    import json
+    import difflib
+    from bs4 import BeautifulSoup
+    import datetime
+    import time
+    import subprocess
+    import signal
+    import atexit
+    from urllib.parse import urljoin, urlparse, urlunparse
+    from collections import deque
+    import language_tool_python
+    from spellchecker import SpellChecker
+    from markdown import markdown
+    import threading
+    import concurrent.futures
+    import tempfile
+    import queue
+    import hashlib
+except ImportError as e:
+    logging.error(f"Failed to import required modules: {str(e)}")
+    sys.exit(1)
+
 # Note: markdownlint-cli is installed via npm; use subprocess to call it for linting
 
+# Load config
 logging.info("Loading config from /opt/docs-inspector/config.yaml")
 try:
     config = yaml.safe_load(open('/opt/docs-inspector/config.yaml'))
     logging.info(f"Loaded config: {config}")
+    # Adjust log level if specified in config
+    log_level = config.get('log_level', default_log_level).upper()
+    new_level = logging.getLevelName(log_level)
+    if new_level != level:
+        logging.getLogger().setLevel(new_level)
+        logging.info(f"Adjusted log level to {log_level}")
 except Exception as e:
     logging.error(f"Failed to load config: {str(e)}")
     config = {'base_url': 'https://localhost/', 'versions': [], 'mcp_crawl_port': 11235, 'mcp_fs_port': 8001, 'log_level': 'DEBUG'}
 
-# Setup logging to file
-LOG_DIR = '/var/log/inspector'
-DOCS_ROOT = '/var/www/photon-site/public'
-root = logging.getLogger()
-for h in root.handlers[:]:
-    root.removeHandler(h)
-log_level = config.get('log_level', 'DEBUG').upper()
-level = logging.getLevelName(log_level)
-logging.basicConfig(filename=os.path.join(LOG_DIR, 'inspector.log'), level=level, format='%(asctime)s,%(msecs)03d - %(levelname)s - %(message)s')
-logging.info("Starting inspector daemon...")
-
 # Initialize language tools
 try:
-    tool = language_tool_python.LanguageTool('en-US')
-    tool.disable_rule('MORFOLOGIK_RULE_EN_US')
+    tool = language_tool_python.LanguageTool('en-US', config={'disabledRuleIds': 'MORFOLOGIK_RULE_EN_US'})
 except Exception as e:
     logging.error(f"Failed to initialize LanguageTool: {str(e)}")
     tool = None
 try:
     spell = SpellChecker()
-    exclusion_list = ['alternativename', 'alternativenamespolicy', 'api', 'auditd', 'aws', 'bc', 'bootable', 'btrfs', 'cgroup', 'cli', 'cntrctl', 'config', 'cpus', 'createrepo', 'dcerpc', 'dev', 'dhcp', 'dns', 'fcgi', 'filesystem', 'filesystems', 'fips', 'flavours', 'fsck', 'gcc', 'gce', 'genisoimage', 'github', 'glibc', 'gso', 'hostname', 'initrd', 'ip', 'iso', 'journalctl', 'json', 'kubernetes', 'lightwave', 'macaddress', 'macaddresspolicy', 'metadata', 'metalink', 'namepolicy', 'ndsend', 'netmgr', 'netplan', 'nfs', 'nftables', 'nics', 'nmctl', 'openjdk', 'openssl', 'oss', 'pmd', 'postgresql', 'pxe', 'rebase', 'repoquery', 'repos', 'rpm', 'rpms', 'runtime', 'selinux', 'sendmail', 'sizepercent', 'sriov', 'sshfs', 'ssl', 'systemd', 'tdnf', 'texinfo', 'tls', 'tndf', 'toolchain', 'uefi', 'ulogd', 'umask', 'urls', 'veth', 'vhd', 'vlan', 'vmware', 'vprobes', 'vsphere', 'vti', 'wireguard', 'wlan', 'xfs', 'yaml', 'zstd']
-    for word in exclusion_list:
-        spell.add(word)
+    exclusion_list = ['alternativename','alternativenamespolicy','api','auditd','aws','bc','bootable','btrfs','cgroup','cli','cntrctl','config','cpus','createrepo','dcerpc','dev','dhcp','dns','fcgi','filesystem','filesystems','fips','fix','flavours','fsck','gcc','gce','genisoimage','github','glibc','gso','hostname','initrd','ip','iso','journalctl','json','kpartx','kubernetes','lightwave','macaddress','macaddresspolicy','metadata','metalink','modifiedseptember','namepolicy','ndsend','netmgr','netplan','nfs','nftables','nics','nmctl','openjdk','openssl','oss','pmd','postgresql','pxe','rebase','repoquery','repos','rpm','rpms','runtime','selinux','sendmail','sizepercent','sriov','sshfs','ssl','systemd','tdnf','texinfo','tls','tndf','toolchain','uefi','ulogd','umask','urls','veth','vhd','vlan','vmware','vprobes','vsphere','vti','wget','wireguard','wlan','xfs','yaml','zstd']
+    exclusion_list += ['url','eof','postinstallscripts','ui','cp','ostree','pushd','gpt','flavour','isolinux','cdrom','flase','esp','nameserver','esx','autodetected','mkisofs','repo','efi','netmask','http','popd','mkdir','printf','rootfs','postinstall','lvm','bintray','vmlinuz','nano','bootmode','rpi','dualboot','repo','gcloud','vddk','gsutil','hvm','ovf','vmdk','rm','ovftool','sdk','mkdir','changeme','cp']
+    exclusion_list += ['auxww','strace','milli','fdisk','preinstalled','shasum','lsb','vm','overconsuming','vsz','vmstat','objdump','fuser','onlay','stat','fd','traceroute','udp','netstat','checksums','rss','auxf','tty','chmod','sshd','systemctl','txt','procs','tcp','ldd','aux','sy','interprocess','grep','swpd','findutils','httpd','networkd','unix','cpu','mem','http','inodes','lsof','enoent','rsa','sda','netlink','inprogress','unmount','screenshot','bo','cwd','df','pid','gdb','updatedb','wa','namespace','sha']
+    exclusion_list += ['crypto','autosetup','rpmbuild','https','makecache','authcookies','unforgeable','binutils','tarball','dosfstools','cdrkit','dtc','customised','modprobe','spi','dtb','suse','init','sysvinit','runlevel','sles','scp','kallysms','vms','esxi','hypervisor','vprobe','tmp','netcat','networkctl','tcpdump']
+    spell.word_frequency.load_words(exclusion_list)
 except Exception as e:
     logging.error(f"Failed to initialize SpellChecker: {str(e)}")
     spell = None
@@ -281,7 +332,7 @@ def crawl_and_analyze(start_url, version_dir, timestamp, version):
                 new_links = []
                 if data.get('success', True):
                     try:
-                        soup = BeautifulSoup(data.get('html', ''), 'lxml')
+                        soup = BeautifulSoup(data.get('html',''),'lxml')
                         excluded_link_texts = ["Edit this page", "Create child page", "Create docs issue", "Create project issue", "Print entire section"]
                         for a in soup.find_all('a', href=True):
                             link_text = a.get_text().strip()
@@ -350,7 +401,7 @@ def write_changes(path, issues, timestamp):
     hash_val = hashlib.sha256(path.encode()).hexdigest()[:10]
     page_file = os.path.join(LOG_DIR, f'changes_{hash_val}_{timestamp}.json')
     logging.info(f"Writing {len(issues)} issues for {path} to {page_file}")
-    with open(page_file, 'w') as f:
+    with open(page_file,'w') as f:
         json.dump(data, f, indent=2)
 
 # Define the analysis function for parallel execution
@@ -368,13 +419,13 @@ def analyze_page(url, data, start_url, version_dir, timestamp, version):
         
         is_analyzed_crawled = True
         
-        content = data.get('markdown', '')
+        content = data.get('markdown','')
         if not isinstance(content, str):
             content = ''
         # Check for broken links (orphaned web links) in parallel
         try:
             logging.debug(f"Checking for broken links in {url}")
-            soup = BeautifulSoup(data.get('html', ''), 'lxml')
+            soup = BeautifulSoup(data.get('html',''),'lxml')
             links_to_check = []
             excluded_link_texts = ["Edit this page", "Create child page", "Create docs issue", "Create project issue", "Print entire section"]
             for a in soup.find_all('a', href=True):
@@ -384,7 +435,7 @@ def analyze_page(url, data, start_url, version_dir, timestamp, version):
                 link = a['href']
                 full_link = urljoin(url, link)
                 parsed = urlparse(full_link)
-                if parsed.scheme in ('http', 'https'):
+                if parsed.scheme in ('http','https'):
                     links_to_check.append(full_link)
             # Check for duplicated version in internal links
             for full_link in links_to_check:
@@ -422,6 +473,9 @@ def analyze_page(url, data, start_url, version_dir, timestamp, version):
                     page_changes.append({"issue": "Grammar issues", "fix": '\n'.join(issues), "diff": ""})
             except Exception as e:
                 logging.error(f"Grammar check failed for {url}: {str(e)}")
+                page_changes.append({"issue": "Grammar check exception", "fix": str(e), "diff": ""})
+        else:
+            page_changes.append({"issue": "Grammar tool not available", "fix": "Check LanguageTool setup", "diff": ""})
         
         # Spelling check
         if spell:
@@ -429,9 +483,12 @@ def analyze_page(url, data, start_url, version_dir, timestamp, version):
                 logging.debug(f"Checking spelling in {url}")
                 misspelled = list(spell.unknown([word for word in text.split() if word.isalpha()]))
                 if misspelled:
-                    page_changes.append({"issue": "Spelling issues", "fix": ', '.join(misspelled), "diff": ""})
+                    page_changes.append({"issue": "Spelling issues", "fix": ','.join(misspelled), "diff": ""})
             except Exception as e:
                 logging.error(f"Spelling check failed for {url}: {str(e)}")
+                page_changes.append({"issue": "Spelling check exception", "fix": str(e), "diff": ""})
+        else:
+            page_changes.append({"issue": "Spelling tool not available", "fix": "Check SpellChecker setup", "diff": ""})
         
         # Markdown glitches using markdownlint-cli
         if content and isinstance(content, str):
@@ -447,11 +504,12 @@ def analyze_page(url, data, start_url, version_dir, timestamp, version):
                 os.remove(temp_file)
             except Exception as e:
                 logging.error(f"Markdown linting failed for {url}: {str(e)}")
+                page_changes.append({"issue": "Markdown lint exception", "fix": str(e), "diff": ""})
                 if temp_file and os.path.exists(temp_file):
                     os.remove(temp_file)
         
         # Comparison with local source
-        relative = url.replace(start_url, '')
+        relative = url.replace(start_url,'')
         if relative == '':
             write_changes(url, page_changes, timestamp)
             return page_changes, page_analyzed_local, is_analyzed_crawled  # Skip index page
@@ -463,7 +521,7 @@ def analyze_page(url, data, start_url, version_dir, timestamp, version):
         try:
             if os.path.exists(local_path):
                 logging.debug(f"Comparing with local file: {local_path}")
-                with open(local_path, 'r') as f:
+                with open(local_path,'r') as f:
                     local_content = f.read()
                 if not isinstance(content, str):
                     content = ''
@@ -488,7 +546,7 @@ def analyze_local(local_path, timestamp):
     changes = []
     try:
         logging.info(f"Analyzing local file not on web: {local_path}")
-        with open(local_path, 'r') as f:
+        with open(local_path,'r') as f:
             local_content = f.read()
         
         # Markdown glitches using markdownlint-cli
@@ -504,13 +562,14 @@ def analyze_local(local_path, timestamp):
             os.remove(temp_file)
         except Exception as e:
             logging.error(f"Markdown linting failed for {local_path}: {str(e)}")
+            changes.append({"issue": "Markdown lint exception (local)", "fix": str(e), "diff": ""})
             if temp_file and os.path.exists(temp_file):
                 os.remove(temp_file)
         
         # Convert to HTML and extract text for grammar and spelling
         try:
             html = markdown(local_content)
-            soup = BeautifulSoup(html, 'lxml')
+            soup = BeautifulSoup(html,'lxml')
             text = soup.get_text(separator='\n', strip=True)
         except Exception as e:
             logging.error(f"Failed to convert markdown for {local_path}: {str(e)}")
@@ -528,6 +587,9 @@ def analyze_local(local_path, timestamp):
                     changes.append({"issue": "Grammar issues (local)", "fix": '\n'.join(issues), "diff": ""})
             except Exception as e:
                 logging.error(f"Grammar check failed for {local_path}: {str(e)}")
+                changes.append({"issue": "Grammar check exception (local)", "fix": str(e), "diff": ""})
+        else:
+            changes.append({"issue": "Grammar tool not available (local)", "fix": "Check LanguageTool setup", "diff": ""})
         
         # Spelling check
         if spell:
@@ -535,9 +597,12 @@ def analyze_local(local_path, timestamp):
                 logging.debug(f"Checking spelling in {local_path}")
                 misspelled = list(spell.unknown([word for word in text.split() if word.isalpha()]))
                 if misspelled:
-                    changes.append({"issue": "Spelling issues (local)", "fix": ', '.join(misspelled), "diff": ""})
+                    changes.append({"issue": "Spelling issues (local)", "fix": ','.join(misspelled), "diff": ""})
             except Exception as e:
                 logging.error(f"Spelling check failed for {local_path}: {str(e)}")
+                changes.append({"issue": "Spelling check exception (local)", "fix": str(e), "diff": ""})
+        else:
+            changes.append({"issue": "Spelling tool not available (local)", "fix": "Check SpellChecker setup", "diff": ""})
         
         # Missing on web
         changes.append({"issue": "Missing on web", "fix": "Upload to server", "diff": ""})
@@ -562,7 +627,7 @@ def verify_content(version, timestamp):
     
     try:
         crawled_urls, analyzed_local = crawl_and_analyze(start_url, version_dir, timestamp, version)
-        logging.debug(f"Crawled URLs for docs-{version}: {', '.join(crawled_urls)}")
+        logging.debug(f"Crawled URLs for docs-{version}: {','.join(crawled_urls)}")
         logging.debug(f"Crawled {len(crawled_urls)} pages for docs-{version}")
     except Exception as e:
         logging.error(f"Failed to crawl for {version}: {str(e)}")
@@ -577,7 +642,7 @@ def verify_content(version, timestamp):
     logging.debug(f"Checking directory: {version_dir}")
     if os.path.exists(version_dir):
         files = list_files(version_dir)
-        logging.debug(f"Files in docs-{version} subdirectories: {', '.join(files)}")
+        logging.debug(f"Files in docs-{version} subdirectories: {','.join(files)}")
     else:
         logging.warning(f"Directory {version_dir} does not exist.")
         files = []
@@ -594,7 +659,7 @@ def verify_content(version, timestamp):
                 except Exception as e:
                     logging.error(f"Exception in analyzing local file: {str(e)}")
     
-    logging.debug(f"Analyzed local files for docs-{version}: {', '.join(analyzed_local)}")
+    logging.debug(f"Analyzed local files for docs-{version}: {','.join(analyzed_local)}")
 
 if len(sys.argv) > 1 and sys.argv[1] == '--run':
     while not shutdown_event.is_set():
@@ -649,7 +714,6 @@ EOL_CONFIG
 # Function to setup daemon with systemd
 setup_daemon() {
     echo "Setting up systemd daemon..."
-    mkdir -p $LOG_DIR
     rm -f $LOG_DIR/inspector.log $LOG_DIR/inspector.err
     chown -R $INSPECTOR_USER $INSTALL_DIR $LOG_DIR $VENV_DIR
     cat <<EOL_SERVICE > /etc/systemd/system/docs-inspector.service
@@ -675,6 +739,7 @@ check_prereqs
 install_deps
 setup_user
 setup_python_env
+setup_languagetool
 setup_crawl4ai
 setup_fs_mcp
 install_inspector
