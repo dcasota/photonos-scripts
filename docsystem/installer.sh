@@ -47,7 +47,7 @@
 # Updated: Modified render-image.html to use root-relative absolute paths for images to fix wrong relative paths in printview.
 # Added: Patch quick-start-links _index.md to fix orphaned links with correct absolute paths for all versions (v3, v4, v5).
 # Fix: Replaced Slack logo and link with Broadcom in footer by modifying config.toml params.links.user and patching templates to handle image URLs in icon fields.
-# Fix: Updated sed pattern for icon replacement to include \&nbsp; inside the <i> tag to match the template and ensure the patch applies correctly.
+# Fix: Updated to use local Broadcom logo and change name to "Broadcom Community".
 # Fix: Removed indentation in added TOML sections to fix unmarshal error in config.toml validation.
 
 BASE_DIR="/var/www"
@@ -130,6 +130,10 @@ echo "Abbreviated hash: $COMMIT_ABBREV"
 
 # Initialize submodules (e.g., for Docsy theme)
 git submodule update --init --recursive
+
+# Download Broadcom logo locally to static/img
+mkdir -p static/img
+wget -O static/img/broadcom-logo.png "https://www.broadcom.com/img/broadcom-logo.png"
 
 # Fix redundant nested docs-vX subdirs
 for ver in docs-v3 docs-v4 docs-v5; do
@@ -276,13 +280,13 @@ if grep -q "^[[:space:]]" "$INSTALL_DIR/layouts/partials/page-meta-lastmod.html"
 fi
 
 # Fix: Replace Slack with Broadcom in config.toml
-sed -i 's/name = "Slack"/name = "Broadcom"/g' config.toml
+sed -i 's/name = "Slack"/name = "Broadcom Community"/g' config.toml
 sed -i 's/url = "https:\/\/vmwarecode.slack.com"/url = "https:\/\/community.broadcom.com\/tanzu\/communities\/tanzucommunityhomeblogs?CommunityKey=a70674e4-ccb6-46a3-ae94-7ecf16c06e24"/g' config.toml
-sed -i 's/icon = "fab fa-slack"/icon = "https:\/\/www.broadcom.com\/img\/broadcom-logo.png"/g' config.toml
+sed -i 's/icon = "fab fa-slack"/icon = "\/img\/broadcom-logo.png"/g' config.toml
 sed -i 's/desc = "Join the VMware {code} Slack community!"/desc = "Broadcom Community for Photon OS"/g' config.toml
 
-# Fix: Patch templates to handle image URLs in icon fields for social links, including &nbsp; inside <i>
-find layouts themes -type f -name "*.html" -exec sed -i 's/<i class="{{ .icon }}"[^>]*>\&nbsp;<\/i>/{{ if or (hasPrefix .icon "http:\/\/") (hasPrefix .icon "https:\/\/") }}<img src="{{ .icon }}" alt="{{ .name }}" style="height:1em; width:auto; vertical-align:middle;">\&nbsp;{{ else }}<i class="{{ .icon }}">\&nbsp;<\/i>{{ end }}/g' {} \;
+# Fix: Patch templates to handle image URLs in icon fields for social links
+find layouts themes -type f -name "*.html" -exec sed -i 's/<i class="{{ .icon }}"[^>]*>\&nbsp;<\/i>/{{ if or (hasPrefix .icon "http:\/\/") (hasPrefix .icon "https:\/\/") (hasPrefix .icon "\/") }}<img src="{{ .icon }}" alt="{{ .name }}" style="height:1em; width:auto; vertical-align:middle;">\&nbsp;{{ else }}<i class="{{ .icon }}" aria-hidden="true">\&nbsp;<\/i>{{ end }}/g' {} \;
 
 # Added: Override render-image.html to disable lazy loading for printview image display fix.
 # Updated: Use root-relative absolute paths for local relative images to fix path issues in printview.
