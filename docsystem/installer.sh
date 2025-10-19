@@ -384,9 +384,9 @@ for ver in docs-v3 docs-v4 docs-v5; do
   QL_FILE="$SITE_DIR/$ver/quick-start-links/index.html"
   if [ -f "$QL_FILE" ]; then
     echo "Patching quick-start-links index.html for $ver to fix orphaned links..."
-	sed -i 's|<a href=..\/..\/overview\/>Overview</a>|<a href=..\/overview\/>Overview</a>|g' $QL_FILE
-	sed -i 's|<a href=..\/..\/installation-guide\/downloading-photon\/>Downloading Photon OS</a>|<a href=..\/installation-guide\/downloading-photon\/>Downloading Photon OS</a>|g' $QL_FILE
-	sed -i 's|<a href=..\/..\/installation-guide\/building-images\/build-iso-from-source\/>Build an ISO from the source code for Photon OS</a>|<a href=..\/installation-guide\/building-images\/build-iso-from-source\/>Build an ISO from the source code for Photon OS</a>|g' $QL_FILE
+    sed -i 's|<a href=..\/..\/overview\/>Overview</a>|<a href=..\/overview\/>Overview</a>|g' $QL_FILE
+    sed -i 's|<a href=..\/..\/installation-guide\/downloading-photon\/>Downloading Photon OS</a>|<a href=..\/installation-guide\/downloading-photon\/>Downloading Photon OS</a>|g' $QL_FILE
+    sed -i 's|<a href=..\/..\/installation-guide\/building-images\/build-iso-from-source\/>Build an ISO from the source code for Photon OS</a>|<a href=..\/installation-guide\/building-images\/build-iso-from-source\/>Build an ISO from the source code for Photon OS</a>|g' $QL_FILE
   fi
 done
 
@@ -434,8 +434,17 @@ EOF_NGINX
 
 # Set up self-signed cert
 mkdir -p /etc/nginx/ssl
-if [ -f /etc/nginx/ssl/selfsigned.crt ]; then
+if [ ! -f /etc/nginx/ssl/selfsigned.crt ] || [ ! -f /etc/nginx/ssl/selfsigned.key ]; then
+  echo "Generating self-signed certificate for ${IP_ADDRESS}..."
   openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /etc/nginx/ssl/selfsigned.key -out /etc/nginx/ssl/selfsigned.crt -subj "/CN=${IP_ADDRESS}"
+  if [ $? -ne 0 ]; then
+    echo "Error: Failed to generate self-signed certificate."
+    exit 1
+  fi
+  chmod 600 /etc/nginx/ssl/selfsigned.key /etc/nginx/ssl/selfsigned.crt
+  chown nginx:nginx /etc/nginx/ssl/selfsigned.key /etc/nginx/ssl/selfsigned.crt
+else
+  echo "Self-signed certificate already exists, skipping generation."
 fi
 
 # Configure Nginx
