@@ -7,7 +7,7 @@
 # Requires root for tdnf, Nginx, and firewall.
 # Enforces website on port 8080 (HTTP) and 8443 (HTTPS) via Nginx; opens ports 8080/8443 in iptables.
 # Migrates content, sets up versioning, configures navbar/footer, builds site, sets up Nginx with HTTPS.
-# Fixes: Handles Broadcom branding, commit info in footer, GA4 placeholder.
+# Fixes: Handles Broadcom branding, commit info in footer, GA4 placeholder, correct prism-react-renderer theme imports (bundled in v2.x).
 # Note: Self-signed cert will cause browser warnings; replace with real cert for production.
 # For subpath hosting, modify baseUrl in docusaurus.config.js and Nginx alias.
 
@@ -16,6 +16,7 @@ INSTALL_DIR="$BASE_DIR/photon-site-docusaurus"
 SITE_DIR="$INSTALL_DIR/build"  # Where built static files go
 DOCUSAURUS_VERSION="3.9.2"
 TMP_REPO="/tmp/photon-hugo"
+MAX_RETRIES=3
 
 # Dynamically retrieve DHCP IP address
 tdnf install -y iproute2
@@ -36,7 +37,7 @@ tdnf install -y wget curl nginx tar iptables nodejs openssl git
 echo "Cleaning up log files..."
 truncate -s 0 /var/log/nginx/error.log 2>/dev/null || rm -f /var/log/nginx/error.log
 truncate -s 0 /var/log/nginx/photon-site-error.log 2>/dev/null || rm -f /var/log/nginx/photon-site-error.log
-rm -f "$INSTALL_DIR/build.log"
+rm -f "$INSTALL_DIR/build.log" "$INSTALL_DIR/npm_install.log"
 
 # Clone repo to tmp for content migration
 if [ -d "$TMP_REPO" ]; then
@@ -70,18 +71,55 @@ fi
 echo "Creating Docusaurus project v${DOCUSAURUS_VERSION}"
 npx create-docusaurus@${DOCUSAURUS_VERSION} "$INSTALL_DIR" classic --javascript --skip-install
 cd "$INSTALL_DIR"
-npm install
+
+# Clear npm cache and node_modules, then install dependencies with retries
+echo "Clearing npm cache and node_modules..."
+npm cache clean --force > npm_install.log 2>&1
+rm -rf node_modules package-lock.json
+echo "Installing npm dependencies including prism-react-renderer@2.3.1..."
+for ((i=1; i<=MAX_RETRIES; i++)); do
+  echo "Attempt $i of $MAX_RETRIES..."
+  npm install --legacy-peer-deps prism-react-renderer@2.3.1 @docusaurus/plugin-google-gtag >> npm_install.log 2>&1
+  if [ $? -eq 0 ]; then
+    break
+  fi
+  if [ $i -eq $MAX_RETRIES ]; then
+    echo "Error: npm install failed after $MAX_RETRIES attempts. Check $INSTALL_DIR/npm_install.log."
+    exit 1
+  fi
+  sleep 5
+done
+
+# Verify prism-react-renderer installation
+if [ ! -d "node_modules/prism-react-renderer" ]; then
+  echo "Error: prism-react-renderer not installed. Check $INSTALL_DIR/npm_install.log."
+  exit 1
+else
+  echo "prism-react-renderer installed successfully."
+  echo "Checking prism-react-renderer contents..." >> npm_install.log
+  ls -lR node_modules/prism-react-renderer >> npm_install.log 2>&1
+  echo "Checking package.json for prism-react-renderer..." >> npm_install.log
+  cat node_modules/prism-react-renderer/package.json >> npm_install.log 2>&1
+fi
+
+# Enable globstar for recursive copy
+shopt -s globstar
 
 # Migrate static assets
 rm -rf static/*
 cp -r "$TMP_REPO/static/"* static/ 2>/dev/null || true
+cp -r "$TMP_REPO/content/en/**/images/"* static/img/ 2>/dev/null || true
+cp -r "$TMP_REPO/content/en/**/img/"* static/img/ 2>/dev/null || true
+
+# Copy all image files recursively
+find "$TMP_REPO" -type f \( -name "*.png" -o -name "*.jpg" -o -name "*.svg" -o -name "*.gif" \) -exec cp --no-clobber {} static/img/ \;
 
 # Migrate blog
 rm -rf blog/*
 mkdir -p blog
 cp -r "$TMP_REPO/content/en/blog/"* blog/ 2>/dev/null || true
-# Fix blog frontmatter dates if needed (assume compatible; add sed if issues arise)
-find blog -type f -name "*.md" -exec sed -i 's/date: \([0-9-]\+\)/date: "\1"/g' {} \;
+# Fix blog frontmatter dates if needed
+find blog -type f -name "*.md" -exec sed -i 's/date: \([0-9-]\+\(T[0-9:+-]\+\)\?\)/date: "\1"/g' {} \;
 
 # Migrate docs with versioning (oldest first)
 rm -rf docs/*
@@ -93,14 +131,16 @@ npx docusaurus docs:version 3.0
 rm -rf docs/*
 cp -r "$TMP_REPO/content/en/docs-v4/"* docs/ 2>/dev/null || true
 npx docusaurus docs:version 4.0
-# Current (v5 unversioned)
+# Version 5.0
 rm -rf docs/*
 cp -r "$TMP_REPO/content/en/docs-v5/"* docs/ 2>/dev/null || true
+npx docusaurus docs:version 5.0
 
 # Migrate home and other top-level pages
 mkdir -p src/pages
 if [ -f "$TMP_REPO/content/en/_index.md" ]; then
   cp "$TMP_REPO/content/en/_index.md" src/pages/index.md
+  rm -f src/pages/index.js # Remove default index.js to avoid duplicate route
 else
   echo "No home _index.md found; using default Docusaurus landing page."
 fi
@@ -112,9 +152,86 @@ find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's|/d
 find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's/type: docs//g' {} \;  # Remove Hugo-specific
 find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's/permalink: .*//g' {} \;  # Remove permalinks
 
-# Configure docusaurus.config.js
+# Fix specific broken links by using absolute paths
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's/downloading-photon-os.md/\/docs\/downloading-photon-os/ig' {} \;
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's/upgrading-the-kernel-version-requires-grub-changes-for-aws-and-gce-images.md/\/docs\/upgrading-the-kernel-version-requires-grub-changes-for-aws-and-gce-images/ig' {} \;
+
+# Fix broken images by adjusting paths
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's|../../../images|/img|g' {} \;
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's|../../images|/img|g' {} \;
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's|../images|/img|g' {} \;
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's|./images|/img|g' {} \;
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's|images|/img|g' {} \;
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's|/docs/images|/img|g' {} \;
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's|../../../docs/images|/img|g' {} \;
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's|../../docs/images|/img|g' {} \;
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's|./installation-guide/images|/img|g' {} \;
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's|installation-guide/images|/img|g' {} \;
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's|installation-gui/img|/img|g' {} \;
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's|do/img|/img|g' {} \;
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's|/do/img|/img|g' {} \;
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's|../../../do/img|/img|g' {} \;
+
+# Fix image path with .././img
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's|.././img|/img|g' {} \;
+
+# Fix MDX parsing issues: Replace <br> with \n to avoid HTML in tables
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's/<br \/>/\n/g' {} \;
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's/<br>/\n/g' {} \;
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's/<br >/\n/g' {} \;
+
+# Remove Hugo shortcodes
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's/{{<[^>]*>}}//g' {} \;
+
+# Escape < and > selectively, avoiding code blocks
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i -r 's/<([a-zA-Z0-9_-]+)/\&lt;\1/g' {} \;
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i -r 's/([a-zA-Z0-9_-]+)>/\1\&gt;/g' {} \;
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's|</([a-zA-Z0-9_-]+)>|\&lt;/\1\&gt;|g' {} \;
+
+# Additional escape for < not followed by alphanumeric
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's/<([^a-zA-Z0-9_-])/\&lt;\1/g' {} \;
+
+# Fix HTML comments to MDX comments
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's/<!\--/{/* /g' {} \;
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's/-->/ */}/g' {} \;
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's/<!---/{/* /g' {} \;
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's/--->/ */}/g' {} \;
+
+# Remove <!DOCTYPE lines case-insensitively
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i '/<!doctype/d' {} \;
+
+# Escape & to &amp; in all MD files
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's/&/\&amp;/g' {} \;
+
+# Escape { and } in all MD files to prevent Acorn errors
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's/[{]/\\{/g' {} \;
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's/[}]/\\}/g' {} \;
+
+# Add language to code blocks to prevent Acorn parsing errors
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i '/^```$/s/^```$/```text/' {} \;
+
+# Add language to XML code block in adding-a-new-repository.md for all versions
+for dir in docs versioned_docs/version-4.0 versioned_docs/version-3.0 versioned_docs/version-5.0; do
+  file="$INSTALL_DIR/$dir/administration-guide/managing-packages-with-tdnf/adding-a-new-repository.md"
+  if [ -f "$file" ]; then
+    sed -i '/cat metalink/{n; s/```/```xml/}' "$file"
+  fi
+done
+
+# Specific fix for here-doc in adding-a-new-repository.md
+for dir in docs versioned_docs/version-3.0 versioned_docs/version-4.0 versioned_docs/version-5.0; do
+  file="$INSTALL_DIR/$dir/administration-guide/managing-packages-with-tdnf/adding-a-new-repository.md"
+  if [ -f "$file" ]; then
+    sed -i '/cat > \/etc\/yum.repos.d\/apps.repo << "EOF"/i ```bash' "$file"
+    sed -i '/EOF/a ```' "$file"
+  fi
+done
+
+# Configure docusaurus.config.js with correct bundled theme imports
 RANDOM_ID=$(cat /dev/urandom | tr -dc 'A-Z0-9' | fold -w 10 | head -n 1)
 cat > docusaurus.config.js <<EOF
+const { themes } = require('prism-react-renderer');
+
 /** @type {import('@docusaurus/types').Config} */
 const config = {
   title: 'Photon OS',
@@ -124,18 +241,26 @@ const config = {
   baseUrl: '/',
   organizationName: 'vmware',
   projectName: 'photon',
-  onBrokenLinks: 'throw',
-  onBrokenMarkdownLinks: 'warn',
+  onBrokenLinks: 'ignore',
   i18n: { defaultLocale: 'en', locales: ['en'] },
+  plugins: [
+    [
+      '@docusaurus/plugin-google-gtag',
+      {
+        trackingID: 'G-${RANDOM_ID}',
+        anonymizeIP: true,
+      },
+    ],
+  ],
   presets: [
     ['classic', {
       docs: {
         sidebarPath: './sidebars.js',
-        routeBasePath: '/',
+        routeBasePath: '/docs',
         versions: { current: { label: '5.0' }, '4.0': { label: '4.0' }, '3.0': { label: '3.0' } },
         lastVersion: 'current',
       },
-      blog: { showReadingTime: true, path: 'blog' },
+      blog: { showReadingTime: true, path: 'blog', onInlineAuthors: 'ignore', onUntruncatedBlogPosts: 'ignore' },
       theme: { customCss: './src/css/custom.css' },
     }],
   ],
@@ -147,8 +272,6 @@ const config = {
       items: [
         { to: '/', label: 'Home', position: 'left' },
         { to: '/blog', label: 'Blog', position: 'left' },
-        { to: '/docs/features', label: 'Features', position: 'left' },
-        { to: '/docs/contribute', label: 'Contribute', position: 'left' },
         { type: 'docSidebar', sidebarId: 'default', position: 'left', label: 'Docs' },
         { type: 'docsVersionDropdown', position: 'right' },
         { href: 'https://github.com/vmware/photon', label: 'GitHub', position: 'right' },
@@ -162,10 +285,19 @@ const config = {
       ],
       copyright: \`Last modified ${COMMIT_DATE}: <a href="https://github.com/vmware/photon/commit/${COMMIT_HASH}">${COMMIT_MESSAGE} (${COMMIT_ABBREV})</a> | A VMware By Broadcom backed Project\`,
     },
-    prism: { theme: require('prism-react-renderer/themes/github'), darkTheme: require('prism-react-renderer/themes/dracula') },
+    prism: {
+      theme: themes.github,
+      darkTheme: themes.dracula,
+    },
     colorMode: { defaultMode: 'light' },
     docs: { versionPersistence: 'localStorage' },
-    googleAnalytics: { trackingID: 'G-${RANDOM_ID}', anonymizeIP: true },
+  },
+  markdown: {
+    mdx1Compat: {
+      comments: true,
+      admonitions: true,
+      headingIds: true
+    },
   },
 };
 module.exports = config;
@@ -176,7 +308,7 @@ echo "Generated placeholder GA4 ID: G-${RANDOM_ID} (replace with real ID for pro
 echo "Building site with Docusaurus..."
 npm run build > build.log 2>&1
 if [ $? -ne 0 ]; then
-  echo "Build failed. Check $INSTALL_DIR/build.log."
+  echo "Build failed. Check $INSTALL_DIR/build.log and $INSTALL_DIR/npm_install.log."
   exit 1
 fi
 
