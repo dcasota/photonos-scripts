@@ -53,7 +53,7 @@
 BASE_DIR="/var/www"
 INSTALL_DIR="$BASE_DIR/photon-site"
 SITE_DIR="$INSTALL_DIR/public"  # Where built static files go
-HUGO_VERSION="0.150.0"  # Latest version as of September 10, 2025
+HUGO_VERSION="0.151.2"  # Latest version as of October 20, 2025
 
 # Dynamically retrieve DHCP IP address
 tdnf install -y iproute2
