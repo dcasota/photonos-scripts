@@ -36,3 +36,10 @@ Installs and configures, lobogg, lame, libvorbis, flac, libmad, mpg123, sox, por
    ```
    ./configuresound.sh
    ```
+
+### Migrate to Docusaurus
+Migrates the Photon OS website to docusaurus.
+1. run
+   ```
+   ./migrate2docusaurus.sh
+   ```
