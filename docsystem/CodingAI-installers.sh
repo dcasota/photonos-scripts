@@ -4,6 +4,13 @@
 cd $HOME
 tdnf install -y curl wget
 
+echo Installing SnykCLI ...
+# https://docs.snyk.io/developer-tools/snyk-cli/install-or-update-the-snyk-cli
+curl --compressed https://downloads.snyk.io/cli/stable/snyk-macos -o snyk
+chmod +x ./snyk
+mv ./snyk /usr/local/bin/
+echo Installation finished. Start SnykCLI with `snyk`.
+
 echo Installing FactoryAI Droid CLI ...
 # https://docs.factory.ai/cli/getting-started/overview
 curl -fsSL https://app.factory.ai/cli | sh
