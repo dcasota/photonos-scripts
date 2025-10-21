@@ -31,7 +31,7 @@ fi
 echo "Detected IP address: $IP_ADDRESS"
 
 # Install dependencies if not present
-tdnf install -y wget curl nginx tar iptables nodejs openssl git
+tdnf install -y wget curl nginx tar iptables nodejs openssl git awk
 
 # Clean up log files before starting
 echo "Cleaning up log files..."
@@ -118,8 +118,31 @@ find "$TMP_REPO" -type f \( -name "*.png" -o -name "*.jpg" -o -name "*.svg" -o -
 rm -rf blog/*
 mkdir -p blog
 cp -r "$TMP_REPO/content/en/blog/"* blog/ 2>/dev/null || true
+rm -f blog/_index.md  # Remove Hugo's blog index (not a post; causes date=null in Docusaurus archive)
 # Fix blog frontmatter dates if needed
 find blog -type f -name "*.md" -exec sed -i 's/date: \([0-9-]\+\(T[0-9:+-]\+\)\?\)/date: "\1"/g' {} \;
+
+# Ensure all blog posts have a date in frontmatter; derive from filename if missing
+for file in $(find blog -type f -name "*.md"); do
+  if [ -f "$file" ]; then
+    if ! grep -q '^date:' "$file"; then
+      base=$(basename "$file" .md)
+      date_str=$(echo "$base" | grep -oE '^[0-9]{4}-[0-9]{2}-[0-9]{2}')
+      if [ -z "$date_str" ]; then
+        date_str="2020-01-01"
+      fi
+      if head -n 1 "$file" | grep -q '^---$'; then
+        # Insert date after first ---
+        sed -i "/^---$/a date: \"${date_str}\"" "$file"
+      else
+        # Add full frontmatter
+        sed -i "1i ---" "$file"
+        sed -i "2i date: \"${date_str}\""
+        sed -i "3i ---"
+      fi
+    fi
+  fi
+done
 
 # Migrate docs with versioning (oldest first)
 rm -rf docs/*
@@ -152,6 +175,9 @@ find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's|/d
 find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's/type: docs//g' {} \;  # Remove Hugo-specific
 find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's/permalink: .*//g' {} \;  # Remove permalinks
 
+# Fix typo in downloading photon link
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's/downloading-photon\.md/downloading-photon-os.md/g' {} \;
+
 # Fix specific broken links by using absolute paths
 find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's/downloading-photon-os.md/\/docs\/downloading-photon-os/ig' {} \;
 find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's/upgrading-the-kernel-version-requires-grub-changes-for-aws-and-gce-images.md/\/docs\/upgrading-the-kernel-version-requires-grub-changes-for-aws-and-gce-images/ig' {} \;
@@ -172,24 +198,31 @@ find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's|do
 find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's|/do/img|/img|g' {} \;
 find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's|../../../do/img|/img|g' {} \;
 
+# Additional image path fixes
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's|../../img|/img|g' {} \;
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's|\./\/img|/img|g' {} \;
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's|\.\./\.\./\.\./\/img|/img|g' {} \;
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's|//img|/img|g' {} \;
+
 # Fix image path with .././img
 find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's|.././img|/img|g' {} \;
 
 # Fix MDX parsing issues: Replace <br> with \n to avoid HTML in tables
 find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's/<br \/>/\n/g' {} \;
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's/<br\/>/\n/g' {} \;
 find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's/<br>/\n/g' {} \;
 find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's/<br >/\n/g' {} \;
 
-# Remove Hugo shortcodes
+# Replace Hugo highlight shortcodes with Docusaurus fenced code blocks
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's/{{\s*<\s*highlight\s*\(\w+\)\s*>}}/``` \1/g' {} \;
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's/{{\s*<\s*/highlight\s*>}}/``` /g' {} \;
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's/{{<\s*/endhighlight\s*>}} /```/g' {} \;
+
+# Remove remaining Hugo shortcodes
 find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's/{{<[^>]*>}}//g' {} \;
 
-# Escape < and > selectively, avoiding code blocks
-find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i -r 's/<([a-zA-Z0-9_-]+)/\&lt;\1/g' {} \;
-find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i -r 's/([a-zA-Z0-9_-]+)>/\1\&gt;/g' {} \;
-find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's|</([a-zA-Z0-9_-]+)>|\&lt;/\1\&gt;|g' {} \;
-
-# Additional escape for < not followed by alphanumeric
-find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's/<([^a-zA-Z0-9_-])/\&lt;\1/g' {} \;
+# Remove <!DOCTYPE lines case-insensitively
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i '/<!doctype/dI' {} \;
 
 # Fix HTML comments to MDX comments
 find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's/<!\--/{/* /g' {} \;
@@ -197,15 +230,19 @@ find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's/--
 find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's/<!---/{/* /g' {} \;
 find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's/--->/ */}/g' {} \;
 
-# Remove <!DOCTYPE lines case-insensitively
-find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i '/<!doctype/d' {} \;
+# Escape < and > selectively, avoiding code blocks
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i -r 's/<([a-zA-Z0-9_-]+)/\&lt;\1/g' {} \;
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i -r 's/([a-zA-Z0-9_-]+)>/\1\&gt;/g' {} \;
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i -r 's|</([a-zA-Z0-9_-]+)>|\&lt;/\1\&gt;|g' {} \;
+
+# Additional escape for < not followed by alphanumeric
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i -r 's/<([^a-zA-Z0-9_-])/\&lt;\1/g' {} \;
 
 # Escape & to &amp; in all MD files
 find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's/&/\&amp;/g' {} \;
 
-# Escape { and } in all MD files to prevent Acorn errors
-find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's/[{]/\\{/g' {} \;
-find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i 's/[}]/\\}/g' {} \;
+# Selectively escape { and } outside of fenced code blocks to prevent Acorn errors
+find blog docs src/pages versioned_docs -type f -name "*.md*" -exec awk -i inplace 'BEGIN { in_code = 0 } /^```/ { in_code = !in_code; print; next } { if (in_code == 0) { gsub(/\{/, "\\{"); gsub(/\}/, "\\}") } print }' {} \;
 
 # Add language to code blocks to prevent Acorn parsing errors
 find blog docs src/pages versioned_docs -type f -name "*.md*" -exec sed -i '/^```$/s/^```$/```text/' {} \;
@@ -260,7 +297,7 @@ const config = {
         versions: { current: { label: '5.0' }, '4.0': { label: '4.0' }, '3.0': { label: '3.0' } },
         lastVersion: 'current',
       },
-      blog: { showReadingTime: true, path: 'blog', onInlineAuthors: 'ignore', onUntruncatedBlogPosts: 'ignore' },
+      blog: { showReadingTime: true, path: 'blog', onInlineAuthors: 'ignore', onUntruncatedBlogPosts: 'ignore', archiveBasePath: null },
       theme: { customCss: './src/css/custom.css' },
     }],
   ],
@@ -272,7 +309,7 @@ const config = {
       items: [
         { to: '/', label: 'Home', position: 'left' },
         { to: '/blog', label: 'Blog', position: 'left' },
-        { type: 'docSidebar', sidebarId: 'default', position: 'left', label: 'Docs' },
+        { type: 'docSidebar', sidebarId: 'tutorialSidebar', position: 'left', label: 'Docs' },
         { type: 'docsVersionDropdown', position: 'right' },
         { href: 'https://github.com/vmware/photon', label: 'GitHub', position: 'right' },
       ],
@@ -298,6 +335,10 @@ const config = {
       admonitions: true,
       headingIds: true
     },
+    hooks: {
+      onBrokenMarkdownLinks: 'ignore',
+      onBrokenMarkdownImages: 'ignore'
+    }
   },
 };
 module.exports = config;

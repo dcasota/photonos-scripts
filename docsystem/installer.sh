@@ -525,3 +525,4 @@ for subdir in blog docs-v3 docs-v4 docs-v5; do
 done
 
 echo "Installation complete! Access the Photon site at https://${IP_ADDRESS}/ (HTTP redirects to HTTPS)."
+
