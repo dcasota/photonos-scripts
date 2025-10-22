@@ -10,6 +10,8 @@
 # Fixes: Handles Broadcom branding, commit info in footer, GA4 placeholder, correct prism-react-renderer theme imports (bundled in v2.x).
 # Note: Self-signed cert will cause browser warnings; replace with real cert for production.
 # For subpath hosting, modify baseUrl in docusaurus.config.js and Nginx alias.
+# Modified: Added archiveBasePath: null to blog options to disable archive page generation, fixing build error from null date in posts.
+# Modified: Added feedOptions: { type: null } to blog options to disable feed generation, fixing invalid time value error in Atom feed creation.
 
 BASE_DIR="/var/www"
 INSTALL_DIR="$BASE_DIR/photon-site-docusaurus"
@@ -140,6 +142,17 @@ for file in $(find blog -type f -name "*.md"); do
         sed -i "2i date: \"${date_str}\""
         sed -i "3i ---"
       fi
+    fi
+  fi
+done
+
+# Validate and fix invalid dates in blog frontmatter
+for file in $(find blog -type f -name "*.md"); do
+  date_line=$(grep '^date:' "$file" | head -1)
+  if [ -n "$date_line" ]; then
+    date_str=$(echo "$date_line" | sed 's/date: *"\?//' | sed 's/"\?$//' | awk '{print $1}')
+    if [ -z "$date_str" ] || ! date -d "$date_str" >/dev/null 2>&1; then
+      sed -i "s/^date: .*/date: \"2020-01-01\"/g" "$file"
     fi
   fi
 done
@@ -297,7 +310,7 @@ const config = {
         versions: { current: { label: '5.0' }, '4.0': { label: '4.0' }, '3.0': { label: '3.0' } },
         lastVersion: 'current',
       },
-      blog: { showReadingTime: true, path: 'blog', onInlineAuthors: 'ignore', onUntruncatedBlogPosts: 'ignore', archiveBasePath: null },
+      blog: { showReadingTime: true, path: 'blog', onInlineAuthors: 'ignore', onUntruncatedBlogPosts: 'ignore', archiveBasePath: null, feedOptions: { type: null } },
       theme: { customCss: './src/css/custom.css' },
     }],
   ],
