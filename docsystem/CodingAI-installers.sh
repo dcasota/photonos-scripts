@@ -130,6 +130,9 @@ echo "Installation finished. Start KiloCode CLI with 'kilocode'."
 
 echo Installing n8n workflow tool ... 
 # https://docs.n8n.io/
+
+PID=$(ps -ef | grep "[/]usr/bin/n8n start" | awk '{print $2}'); [ -n "$PID" ] && kill $PID || echo "No running n8n found."
+
 npm install n8n -g
 iptables -A INPUT -p tcp --dport 5678 -j ACCEPT
 iptables-save >/etc/systemd/scripts/ip4save
@@ -168,7 +171,8 @@ export N8N_DIAGNOSTICS_CONFIG_FRONTEND=
 export N8N_DIAGNOSTICS_CONFIG_BACKEND=
 export GENERIC_TIMEZONE=Europe/Zurich
 export NODE_FUNCTION_ALLOW_BUILTIN=*
-echo "Installation finished. Start n8n workflow tool with 'n8n start'."
+nohup n8n start >/dev/null 2>&1 &
+echo "Installation finished. n8n workflow tool has been started in the background."
 read -p "Press a key to continue ..."
 
 echo Installing Microsoft Cloudfoundry CLI ...
