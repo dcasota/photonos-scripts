@@ -26,7 +26,7 @@ rm -r "$(uv tool dir)"
 curl -fsSL https://app.factory.ai/cli | sh
 chmod a+x .local/bin/droid
 mv .local/bin/droid /usr/local/bin
-echo "Installation finished. Start droid with 'droid'".
+echo "Installation finished. Start FactoryAI Droid CLI with 'droid'."
 
 echo Installing OpenAI Codex CLI ...
 tdnf install -y nodejs
