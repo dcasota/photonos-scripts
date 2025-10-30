@@ -9,7 +9,7 @@ echo Installing SnykCLI ...
 curl --compressed https://downloads.snyk.io/cli/stable/snyk-linux -o snyk
 chmod +x ./snyk
 mv ./snyk /usr/local/bin/
-echo Installation finished. Start SnykCLI with `snyk`.
+echo Installation finished. Start SnykCLI with snyk.
 read -p "Press a key to continue ..."
 
 echo Installing FactoryAI Droid CLI ...
@@ -17,13 +17,13 @@ echo Installing FactoryAI Droid CLI ...
 curl -fsSL https://app.factory.ai/cli | sh
 echo 'export PATH=/root/.local/bin:$PATH' >> ~/.bashrc
 source ~/.bashrc
-echo Installation finished. Start droid with `.local/bin/droid`.
+echo Installation finished. Start droid with .local/bin/droid.
 read -p "Press a key to continue ..."
 
 echo Installing OpenAI Codex CLI ...
 # https://developers.openai.com/codex/cli/
 npm install -g @openai/codex
-echo Installation finished. Start Codex CLI with `codex`.
+echo Installation finished. Start Codex CLI with codex.
 read -p "Press a key to continue ..."
 
 echo Installing Grok-CLI ...
@@ -35,52 +35,52 @@ npm run build
 npm link
 npm audit --force
 cd ..
-echo Installation finished. Start Grok CLI with `grok`.
+echo Installation finished. Start Grok CLI with grok.
 read -p "Press a key to continue ..."
 
 echo Installing Coderabbit CLI ...
 # https://www.coderabbit.ai/cli
 tdnf install -y unzip
 curl -fsSL https://cli.coderabbit.ai/install.sh | sh
-echo Installation finished. Start Coderabbit CLI with `coderabbit`.
+echo Installation finished. Start Coderabbit CLI with coderabbit.
 read -p "Press a key to continue ..."
 
 echo Installing Google Gemini CLI ...
 # https://github.com/google-gemini/gemini-cli
 npm install -g @google/gemini-cli
 curl -fsSL https://cli.coderabbit.ai/install.sh | sh
-echo Installation finished. Start Gemini CLI with `gemini`.
+echo Installation finished. Start Gemini CLI with gemini.
 read -p "Press a key to continue ..."
 
 echo Installing Anthropic Claude Code ...
 # https://github.com/anthropics/claude-code
 rm -rf /usr/lib/node_modules/@anthropic-ai/claude-code
 npm install -g @anthropic-ai/claude-code
-echo Installation finished. Start Claude Code with `claude`.
+echo Installation finished. Start Claude Code with claude.
 read -p "Press a key to continue ..."
 
 echo Installing Microsoft Copilot CLI ...
 # https://docs.github.com/en/copilot/how-tos/use-copilot-agents/use-copilot-cli
 npm install -g @github/copilot
-echo Installation finished. Start Copilot CLI with `copilot`.
+echo Installation finished. Start Copilot CLI with copilot.
 read -p "Press a key to continue ..."
 
 echo Installing Cursor CLI ...
 # https://cursor.com/cli
 curl https://cursor.com/install -fsS | bash
-echo Installation finished. Start Cursor CLI with `.local/bin/cursor-agent`.
+echo Installation finished. Start Cursor CLI with .local/bin/cursor-agent.
 read -p "Press a key to continue ..."
 
 echo Installing Ampcode CLI ...
 # https://ampcode.com/manual
 curl -fsSL https://ampcode.com/install.sh | bash
-echo Installation finished. Start Ampcode CLI with `.local/bin/amp`.
+echo Installation finished. Start Ampcode CLI with .local/bin/amp.
 
 echo Installing OpenCode CLI ...
 # https://opencode.ai/
 # https://martinfowler.com/articles/build-own-coding-agent.html#TheWaveOfCliCodingAgents
 curl -fsSL https://opencode.ai/install | bash
-echo Installation finished. Start OpenCode CLI with `.opencode/bin/opencode`.
+echo Installation finished. Start OpenCode CLI with .opencode/bin/opencode.
 read -p "Press a key to continue ..."
 
 echo Installing AllHands CLI ...
@@ -154,7 +154,7 @@ export N8N_DIAGNOSTICS_CONFIG_FRONTEND=
 export N8N_DIAGNOSTICS_CONFIG_BACKEND=
 export GENERIC_TIMEZONE=Europe/Zurich
 export NODE_FUNCTION_ALLOW_BUILTIN=*
-echo Installation finished. Start n8n workflow tool with `n8n start`.
+echo Installation finished. Start n8n workflow tool with n8n start.
 read -p "Press a key to continue ..."
 
 echo Installing Microsoft Cloudfoundry CLI ...
