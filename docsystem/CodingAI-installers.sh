@@ -173,7 +173,6 @@ export GENERIC_TIMEZONE=Europe/Zurich
 export NODE_FUNCTION_ALLOW_BUILTIN=*
 nohup n8n start >/dev/null 2>&1 &
 echo "Installation finished. n8n workflow tool has been started in the background."
-read -p "Press a key to continue ..."
 
 echo Installing Microsoft Cloudfoundry CLI ...
 # https://github.com/cloudfoundry/cli/wiki/V8-CLI-Installation-Guide
@@ -186,7 +185,7 @@ cf add-plugin-repo CF-Community https://plugins.cloudfoundry.org
 cf install-plugin multiapps -f
 cf repo-plugins
 echo Installation finished.
-read -p "Press a key to continue ..."
+
 
 echo Installing Windsurf ...
 # https://windsurf.com/download/editor?os=linux
