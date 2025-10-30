@@ -69,7 +69,7 @@ echo Installing Cursor CLI ...
 tdnf install -y tar
 curl -fsSL https://cursor.com/install | bash
 chmod a+x .local/bin/cursor-agent
-mv .local/bin/cursor-agent /usr/local/cursor-agent
+mv .local/bin/cursor-agent /usr/local/bin
 echo "Installation finished. Start Cursor CLI with 'cursor-agent'."
 
 echo Installing Ampcode CLI ...
