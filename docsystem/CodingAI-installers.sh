@@ -2,7 +2,12 @@
 
 # Installer script for various coding AI agents
 cd $HOME
-tdnf install -y curl git
+tdnf install -y curl git nodejs
+curl -LsSf https://astral.sh/uv/install.sh | sh
+chmod a+x .local/bin/uv
+mv .local/bin/uv /usr/local/bin
+chmod a+x .local/bin/uvx
+mv .local/bin/uvx /usr/local/bin
 
 echo Installing SnykCLI ...
 # https://docs.snyk.io/developer-tools/snyk-cli/install-or-update-the-snyk-cli
@@ -12,30 +17,19 @@ mv ./snyk /usr/local/bin/
 echo "Installation finished. Start SnykCLI with 'snyk'."
 
 echo Installing FactoryAI Droid CLI ...
-curl -LsSf https://astral.sh/uv/install.sh | sh
-chmod a+x .local/bin/uv
-mv .local/bin/uv /usr/local/bin
-chmod a+x .local/bin/uvx
-mv .local/bin/uvx /usr/local/bin
-
-uv cache clean
-rm -r "$(uv python dir)"
-rm -r "$(uv tool dir)"
-
 # https://docs.factory.ai/cli/getting-started/overview
+uv cache clean
 curl -fsSL https://app.factory.ai/cli | sh
 chmod a+x .local/bin/droid
 mv .local/bin/droid /usr/local/bin
 echo "Installation finished. Start FactoryAI Droid CLI with 'droid'."
 
 echo Installing OpenAI Codex CLI ...
-tdnf install -y nodejs
 # https://developers.openai.com/codex/cli/
 npm install -g @openai/codex
 echo "Installation finished. Start Codex CLI with 'codex'."
 
 echo Installing Grok-CLI ...
-tdnf install -y nodejs
 # https://github.com/superagent-ai/grok-cli
 git clone https://github.com/superagent-ai/grok-cli
 cd grok-cli
@@ -95,14 +89,8 @@ echo "Installation finished. Start OpenCode CLI with 'opencode'."
 echo Installing AllHands CLI ...
 # https://docs.all-hands.dev/usage/how-to/cli-mode
 # ISSUE: _hashlib.UnsupportedDigestmodError: [digital envelope routines] unsupported
-curl -LsSf https://astral.sh/uv/install.sh | sh
 uv cache clean
-rm -r "$(uv python dir)"
-rm -r "$(uv tool dir)"
-rm ~/.local/bin/uv ~/.local/bin/uvx
-source $HOME/.local/bin/env
-echo 'eval "$(uv generate-shell-completion bash)"' >> ~/.bashrc
-uvx --python 3.12 --from openhands-ai openhands
+uvx --python 3.11 --from openhands-ai openhands
 echo "Installation finished. Start Openhands CLI with 'openhands'."
 read -p "Press a key to continue ..."
 
