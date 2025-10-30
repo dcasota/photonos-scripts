@@ -87,13 +87,12 @@ chmod a+x .opencode/bin/opencode
 mv .opencode/bin/opencode /usr/local/bin
 echo "Installation finished. Start OpenCode CLI with 'opencode'."
 
-echo Installing AllHands CLI ...
+# echo Installing Openhands CLI ...
 # https://docs.all-hands.dev/usage/how-to/cli-mode
-# ISSUE: _hashlib.UnsupportedDigestmodError: [digital envelope routines] unsupported
-uv cache clean
-uvx --python 3.11 --from openhands-ai openhands
-echo "Installation finished. Start Openhands CLI with 'openhands'."
-read -p "Press a key to continue ..."
+# ISSUE: Failed to build `func-timeout==4.3.5`
+# uv cache clean
+# uvx --python 3.12 openhands serve
+# echo "Installation finished. Start Openhands CLI with 'openhands'."
 
 echo Installing KiloCode CLI ...
 # https://kilocode.ai/docs/cli
