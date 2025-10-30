@@ -44,7 +44,8 @@ echo Installing Coderabbit CLI ...
 # https://www.coderabbit.ai/cli
 tdnf install -y unzip
 curl -fsSL https://cli.coderabbit.ai/install.sh | sh
-echo "Installation finished. Start Coderabbit CLI with 'coderabbit'."
+source ~/.bashrc
+echo "Installation finished. Start Coderabbit CLI with 'coderabbit --cwd'."
 
 echo Installing Google Gemini CLI ...
 tdnf install -y nodejs
