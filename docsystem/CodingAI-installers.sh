@@ -94,6 +94,11 @@ uvx --python 3.11 --from openhands-ai openhands
 echo "Installation finished. Start Openhands CLI with 'openhands'."
 read -p "Press a key to continue ..."
 
+echo Installing KiloCode CLI ...
+# https://kilocode.ai/docs/cli
+npm install -g @kilocode/cli
+echo "Installation finished. Start KiloCode CLI with 'kilocode'."
+
 # echo Installing Eigent Multi-Agent ...
 # https://www.eigent.ai/
 # ISSUE: This cli has poor safety.
@@ -163,13 +168,13 @@ export N8N_DIAGNOSTICS_CONFIG_FRONTEND=
 export N8N_DIAGNOSTICS_CONFIG_BACKEND=
 export GENERIC_TIMEZONE=Europe/Zurich
 export NODE_FUNCTION_ALLOW_BUILTIN=*
-echo Installation finished. Start n8n workflow tool with n8n start.
+echo "Installation finished. Start n8n workflow tool with 'n8n start'."
 read -p "Press a key to continue ..."
 
 echo Installing Microsoft Cloudfoundry CLI ...
 # https://github.com/cloudfoundry/cli/wiki/V8-CLI-Installation-Guide
 # ...first configure the Cloud Foundry Foundation package repository
-wget -O /etc/yum.repos.d/cloudfoundry-cli.repo https://packages.cloudfoundry.org/fedora/cloudfoundry-cli.repo
+curl -J -L -O /etc/yum.repos.d/cloudfoundry-cli.repo https://packages.cloudfoundry.org/fedora/cloudfoundry-cli.repo
 # ...then, install the cf CLI (which will also download and add the public key to your system)
 yum install -y cf8-cli
 cf add-plugin-repo CF-Community https://plugins.cloudfoundry.org
