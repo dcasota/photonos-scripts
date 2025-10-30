@@ -174,7 +174,8 @@ read -p "Press a key to continue ..."
 echo Installing Microsoft Cloudfoundry CLI ...
 # https://github.com/cloudfoundry/cli/wiki/V8-CLI-Installation-Guide
 # ...first configure the Cloud Foundry Foundation package repository
-curl -J -L -O /etc/yum.repos.d/cloudfoundry-cli.repo https://packages.cloudfoundry.org/fedora/cloudfoundry-cli.repo
+curl -J -L -O https://packages.cloudfoundry.org/fedora/cloudfoundry-cli.repo
+mv ./cloudfoundry-cli.repo /etc/yum.repos.d/cloudfoundry-cli.repo 
 # ...then, install the cf CLI (which will also download and add the public key to your system)
 yum install -y cf8-cli
 cf add-plugin-repo CF-Community https://plugins.cloudfoundry.org
