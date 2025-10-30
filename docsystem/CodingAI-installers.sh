@@ -12,11 +12,17 @@ mv ./snyk /usr/local/bin/
 echo "Installation finished. Start SnykCLI with 'snyk'."
 
 echo Installing FactoryAI Droid CLI ...
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv cache clean
+rm -r "$(uv python dir)"
+rm -r "$(uv tool dir)"
+rm ~/.local/bin/uv ~/.local/bin/uvx
+source $HOME/.local/bin/env
 # https://docs.factory.ai/cli/getting-started/overview
 curl -fsSL https://app.factory.ai/cli | sh
-echo 'export PATH=/root/.local/bin:$PATH' >> ~/.bashrc
-source ~/.bashrc
-echo "Installation finished. Start droid with '.local/bin/droid'."
+chmod a+x .local/bin/droid
+mv .local/bin/droid /usr/local/bin
+echo "Installation finished. Start droid with 'droid'."
 
 echo Installing OpenAI Codex CLI ...
 tdnf install -y nodejs
