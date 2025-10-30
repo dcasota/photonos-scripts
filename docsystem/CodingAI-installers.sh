@@ -94,15 +94,27 @@ uvx --python 3.11 --from openhands-ai openhands
 echo "Installation finished. Start Openhands CLI with 'openhands'."
 read -p "Press a key to continue ..."
 
-echo Installing Eigent Multi-Agent ...
+# echo Installing Eigent Multi-Agent ...
 # https://www.eigent.ai/
-# ISSUE: ValueError: [digital envelope routines] unsupported
-git clone https://github.com/eigent-ai/eigent.git
-cd eigent
-npm install
-npm run dev
-echo Installation finished.
-read -p "Press a key to continue ..."
+# ISSUE: This cli has poor safety.
+# npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+# npm warn deprecated lodash.isequal@4.5.0: This package is deprecated. Use require('node:util').isDeepStrictEqual instead.
+# npm warn deprecated boolean@3.2.0: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+# npm warn deprecated @simplewebauthn/types@11.0.0: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+# npm warn deprecated glob@7.2.3: Glob versions prior to v9 are no longer supported
+# npm warn deprecated rimraf@2.7.1: Rimraf versions prior to v4 are no longer supported
+# npm warn deprecated glob@7.2.3: Glob versions prior to v9 are no longer supported
+# npm warn deprecated glob@7.2.3: Glob versions prior to v9 are no longer supported
+# npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+# npm warn deprecated glob@7.2.3: Glob versions prior to v9 are no longer supported
+# npm warn deprecated source-map@0.8.0-beta.0: The work that was done in this beta branch won't be included in future versions
+
+# git clone https://github.com/eigent-ai/eigent.git
+# cd eigent
+# npm install
+# npm run dev
+# echo Installation finished.
+# read -p "Press a key to continue ..."
 
 
 # Common Terminal UI
