@@ -2,7 +2,7 @@
 
 # Installer script for various coding AI agents
 cd $HOME
-tdnf install -y curl wget
+tdnf install -y curl git
 
 echo Installing SnykCLI ...
 # https://docs.snyk.io/developer-tools/snyk-cli/install-or-update-the-snyk-cli
@@ -10,7 +10,6 @@ curl --compressed https://downloads.snyk.io/cli/stable/snyk-linux -o snyk
 chmod +x ./snyk
 mv ./snyk /usr/local/bin/
 echo Installation finished. Start SnykCLI with 'snyk'.
-read -p "Press a key to continue ..."
 
 echo Installing FactoryAI Droid CLI ...
 # https://docs.factory.ai/cli/getting-started/overview
@@ -18,13 +17,11 @@ curl -fsSL https://app.factory.ai/cli | sh
 echo 'export PATH=/root/.local/bin:$PATH' >> ~/.bashrc
 source ~/.bashrc
 echo Installation finished. Start droid with '.local/bin/droid'.
-read -p "Press a key to continue ..."
 
 echo Installing OpenAI Codex CLI ...
 # https://developers.openai.com/codex/cli/
 npm install -g @openai/codex
 echo Installation finished. Start Codex CLI with 'codex'.
-read -p "Press a key to continue ..."
 
 echo Installing Grok-CLI ...
 # https://github.com/superagent-ai/grok-cli
@@ -36,39 +33,35 @@ npm link
 npm audit --force
 cd ..
 echo Installation finished. Start Grok CLI with 'grok'.
-read -p "Press a key to continue ..."
 
 echo Installing Coderabbit CLI ...
 # https://www.coderabbit.ai/cli
 tdnf install -y unzip
 curl -fsSL https://cli.coderabbit.ai/install.sh | sh
 echo Installation finished. Start Coderabbit CLI with 'coderabbit'.
-read -p "Press a key to continue ..."
 
 echo Installing Google Gemini CLI ...
 # https://github.com/google-gemini/gemini-cli
 npm install -g @google/gemini-cli
 echo Installation finished. Start Gemini CLI with 'gemini'.
-read -p "Press a key to continue ..."
 
 echo Installing Anthropic Claude Code ...
 # https://github.com/anthropics/claude-code
 rm -rf /usr/lib/node_modules/@anthropic-ai/claude-code
 npm install -g @anthropic-ai/claude-code
 echo Installation finished. Start Claude Code with 'claude'.
-read -p "Press a key to continue ..."
 
 echo Installing Microsoft Copilot CLI ...
 # https://docs.github.com/en/copilot/how-tos/use-copilot-agents/use-copilot-cli
 npm install -g @github/copilot
 echo Installation finished. Start Copilot CLI with 'copilot'.
-read -p "Press a key to continue ..."
 
 echo Installing Cursor CLI ...
 # https://cursor.com/cli
 curl https://cursor.com/install -fsS | bash
-echo Installation finished. Start Cursor CLI with '.local/bin/cursor-agent'.
-read -p "Press a key to continue ..."
+chmod a+x .local/bin/cursor-agent
+mv .local/bin/cursor-agent /usr/local/cursor-agent
+echo Installation finished. Start Cursor CLI with 'cursor-agent'.
 
 echo Installing Ampcode CLI ...
 # https://ampcode.com/manual
@@ -80,7 +73,6 @@ echo Installing OpenCode CLI ...
 # https://martinfowler.com/articles/build-own-coding-agent.html#TheWaveOfCliCodingAgents
 curl -fsSL https://opencode.ai/install | bash
 echo Installation finished. Start OpenCode CLI with '.opencode/bin/opencode'.
-read -p "Press a key to continue ..."
 
 echo Installing AllHands CLI ...
 # https://docs.all-hands.dev/usage/how-to/cli-mode
@@ -93,7 +85,7 @@ wget -qO- https://astral.sh/uv/install.sh | sh
 source $HOME/.local/bin/env
 echo 'eval "$(uv generate-shell-completion bash)"' >> ~/.bashrc
 uvx --python 3.12 --from openhands-ai openhands
-echo Installation finished.
+echo Installation finished. Start Openhands CLI with 'openhands'.
 read -p "Press a key to continue ..."
 
 echo Installing Eigent Multi-Agent ...
