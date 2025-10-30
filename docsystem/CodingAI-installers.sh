@@ -61,6 +61,7 @@ echo Installation finished. Start Copilot CLI with 'copilot'.
 
 echo Installing Cursor CLI ...
 # https://cursor.com/cli
+tdnf install -y tar
 curl -fsSL https://cursor.com/install | bash
 chmod a+x .local/bin/cursor-agent
 mv .local/bin/cursor-agent /usr/local/cursor-agent
