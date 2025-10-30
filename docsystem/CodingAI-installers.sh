@@ -19,11 +19,13 @@ source ~/.bashrc
 echo Installation finished. Start droid with '.local/bin/droid'.
 
 echo Installing OpenAI Codex CLI ...
+tdnf install -y nodejs
 # https://developers.openai.com/codex/cli/
 npm install -g @openai/codex
 echo Installation finished. Start Codex CLI with 'codex'.
 
 echo Installing Grok-CLI ...
+tdnf install -y nodejs
 # https://github.com/superagent-ai/grok-cli
 git clone https://github.com/superagent-ai/grok-cli
 cd grok-cli
@@ -41,6 +43,7 @@ curl -fsSL https://cli.coderabbit.ai/install.sh | sh
 echo Installation finished. Start Coderabbit CLI with 'coderabbit'.
 
 echo Installing Google Gemini CLI ...
+tdnf install -y nodejs
 # https://github.com/google-gemini/gemini-cli
 npm install -g @google/gemini-cli
 echo Installation finished. Start Gemini CLI with 'gemini'.
@@ -58,7 +61,7 @@ echo Installation finished. Start Copilot CLI with 'copilot'.
 
 echo Installing Cursor CLI ...
 # https://cursor.com/cli
-curl https://cursor.com/install -fsS | bash
+curl -fsSL https://cursor.com/install | bash
 chmod a+x .local/bin/cursor-agent
 mv .local/bin/cursor-agent /usr/local/cursor-agent
 echo Installation finished. Start Cursor CLI with 'cursor-agent'.
@@ -66,22 +69,26 @@ echo Installation finished. Start Cursor CLI with 'cursor-agent'.
 echo Installing Ampcode CLI ...
 # https://ampcode.com/manual
 curl -fsSL https://ampcode.com/install.sh | bash
-echo Installation finished. Start Ampcode CLI with '.local/bin/amp'.
+chmod a+x .local/bin/amp
+mv .local/bin/amp /usr/local/bin
+echo Installation finished. Start Ampcode CLI with 'amp'.
 
 echo Installing OpenCode CLI ...
 # https://opencode.ai/
 # https://martinfowler.com/articles/build-own-coding-agent.html#TheWaveOfCliCodingAgents
 curl -fsSL https://opencode.ai/install | bash
-echo Installation finished. Start OpenCode CLI with '.opencode/bin/opencode'.
+chmod a+x .opencode/bin/opencode
+mv .opencode/bin/opencode /usr/local/bin
+echo Installation finished. Start OpenCode CLI with 'opencode'.
 
 echo Installing AllHands CLI ...
 # https://docs.all-hands.dev/usage/how-to/cli-mode
 # ISSUE: _hashlib.UnsupportedDigestmodError: [digital envelope routines] unsupported
+curl -LsSf https://astral.sh/uv/install.sh | sh
 uv cache clean
 rm -r "$(uv python dir)"
 rm -r "$(uv tool dir)"
 rm ~/.local/bin/uv ~/.local/bin/uvx
-wget -qO- https://astral.sh/uv/install.sh | sh
 source $HOME/.local/bin/env
 echo 'eval "$(uv generate-shell-completion bash)"' >> ~/.bashrc
 uvx --python 3.12 --from openhands-ai openhands
