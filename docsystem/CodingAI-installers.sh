@@ -13,15 +13,22 @@ echo "Installation finished. Start SnykCLI with 'snyk'."
 
 echo Installing FactoryAI Droid CLI ...
 curl -LsSf https://astral.sh/uv/install.sh | sh
+chmod a+x .local/bin/uv
+mv .local/bin/uv /usr/local/bin
+chmod a+x .local/bin/uvx
+mv .local/bin/uvx /usr/local/bin
+
 uv cache clean
 rm -r "$(uv python dir)"
 rm -r "$(uv tool dir)"
-rm ~/.local/bin/uv ~/.local/bin/uvx
-source $HOME/.local/bin/env
+
 # https://docs.factory.ai/cli/getting-started/overview
 curl -fsSL https://app.factory.ai/cli | sh
 chmod a+x .local/bin/droid
 mv .local/bin/droid /usr/local/bin
+Installation finished. Start droid with '.local/bin/droid'.
+
+
 echo "Installation finished. Start droid with 'droid'."
 
 echo Installing OpenAI Codex CLI ...
