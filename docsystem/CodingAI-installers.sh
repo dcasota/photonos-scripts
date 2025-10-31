@@ -213,4 +213,8 @@ gpgkey=https://windsurf-stable.codeiumdata.com/wVxQEIWkwPUEAGf3/yum/RPM-GPG-KEY-
 yum install windsurf --nodeps --downloadonly
 rpm -ivh --nodeps /var/cache/tdnf/windsurf/rpms/Windsurf-*.rpm
 rm -f /etc/yum.repos.d/windsurf.repo
+mkdir $HOME/sandbox
+tdnf install -y atk-devel at-spi2-core-devel cups-devel cairo-devel gtk3-devel mesa-libgbm-devel
+windsurf --user-data-dir=$HOME/sandbox
+# windsurf is installed, however for the web daemon, x11 is missing.
 echo Installation finished. 
