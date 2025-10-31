@@ -199,15 +199,18 @@ gpgcheck=1
 gpgkey=https://windsurf-stable.codeiumdata.com/wVxQEIWkwPUEAGf3/yum/RPM-GPG-KEY-windsurf" | sudo tee /etc/yum.repos.d/windsurf.repo > /dev/null
 # ---
 # ISSUE: 1. nothing provides libxkbfile.so.1()(64bit) needed by windsurf-1.12.12-1759154290.el8.x86_64
-tdnf install -y libxkbcommon
-git clone git clone https://git.launchpad.net/ubuntu/+source/libxkbfile
-cd libxkbfile
-tdnf install -y build-essential m4 util-macros libx11-devel
-./configure
-chmod a+x ./autogen.sh
-./autogen.sh
-make
-make install
+# tdnf install -y libxkbcommon
+# git clone git clone https://git.launchpad.net/ubuntu/+source/libxkbfile
+# cd libxkbfile
+# tdnf install -y build-essential m4 util-macros libx11-devel
+# ./configure
+# chmod a+x ./autogen.sh
+# ./autogen.sh
+# make
+# make install
 # ---
-yum install -y windsurf
+# yum install -y windsurf
+yum install windsurf --nodeps --downloadonly
+rpm -ivh --nodeps /var/cache/tdnf/windsurf/rpms/Windsurf-*.rpm
+rm -f /etc/yum.repos.d/windsurf.repo
 echo Installation finished. 
