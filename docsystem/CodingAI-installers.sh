@@ -2,7 +2,7 @@
 
 # Installer script for various coding AI agents
 cd $HOME
-tdnf install -y curl git nodejs
+tdnf install -y curl git nodejs tar
 curl -LsSf https://astral.sh/uv/install.sh | sh
 chmod a+x .local/bin/uv
 mv .local/bin/uv /usr/local/bin
