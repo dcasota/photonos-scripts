@@ -25,15 +25,21 @@ echo "Installing Ollama version $OLLAMA_VERSION..."
 
 # Install Ollama with specific version
 OLLAMA_VERSION=$OLLAMA_VERSION curl -fsSL https://ollama.com/install.sh | sh
-
-# Start Ollama service if not running
-if ! pgrep -x "ollama" > /dev/null; then
-  echo "Starting Ollama service..."
-  ollama serve &
-  sleep 5  # Wait for service to start
+# Check if Ollama is running; start with context if not
+if ! pgrep -f "ollama serve" > /dev/null; then
+    echo "Starting Ollama server with 32K context..."
+    OLLAMA_CONTEXT_LENGTH=32000 ollama serve &
+    sleep 5  # Wait for server to start
+fi
+# Test Ollama API
+if curl -s http://localhost:11434/api/tags > /dev/null; then
+    echo "Ollama API is accessible."
+else
+    echo "Error: Ollama API not responding. Ensure server is running."
+    exit 1
 fi
 
-# Pull the top 5 models
+# Pull the models
 for model_entry in "${MODELS[@]}"; do
   model_id=$(echo "$model_entry" | cut -d'|' -f1)
   echo "Pulling model: $model_id"
