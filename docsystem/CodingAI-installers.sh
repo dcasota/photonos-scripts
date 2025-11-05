@@ -44,7 +44,7 @@ echo Installing Coderabbit CLI ...
 # https://www.coderabbit.ai/cli
 tdnf install -y unzip
 curl -fsSL https://cli.coderabbit.ai/install.sh | sh
-source ~/.bashrc
+mv .local/bin/coderabbit /usr/local/bin
 echo "Installation finished. Start Coderabbit CLI with 'coderabbit --cwd'."
 
 echo Installing Google Gemini CLI ...
@@ -210,7 +210,7 @@ gpgkey=https://windsurf-stable.codeiumdata.com/wVxQEIWkwPUEAGf3/yum/RPM-GPG-KEY-
 # make install
 # ---
 # yum install -y windsurf
-yum install windsurf --nodeps --downloadonly
+yum install -y windsurf --nodeps --downloadonly
 rpm -ivh --nodeps /var/cache/tdnf/windsurf/rpms/Windsurf-*.rpm
 rm -f /etc/yum.repos.d/windsurf.repo
 mkdir $HOME/sandbox
