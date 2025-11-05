@@ -78,8 +78,13 @@ done
 
 echo "Config updated. All installed Ollama models added to $CONFIG_FILE."
 
-# Configure DroiCLI with MCP access to local filesystem
-droid mcp add filesystem npx @modelcontextprotocol/server-filesystem /
+# Check if MCP filesystem is already configured
+if droid mcp list | grep -q "filesystem"; then
+    echo "MCP filesystem already configured, skipping addition."
+else
+    # Configure Droid CLI with MCP access to local filesystem
+    droid mcp add filesystem npx @modelcontextprotocol/server-filesystem /
+fi
 
 # Run Droid CLI
 echo "For the onboarding go to https://factory.ai/. Be prepared with an email address and a mobile phone number."
