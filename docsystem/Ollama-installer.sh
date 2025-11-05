@@ -3,10 +3,10 @@
 # Installer script for Ollama with specific version, top 5 LLMs, and dynamic config generation
 
 # Usage: ./install_ollama.sh [ollama_version] [config_file_path]
-# Default version: v0.11.11
+# Default version: v0.12.9
 # Default config path: ./ollama_config.json
 
-OLLAMA_VERSION=${1:-v0.12.3}
+OLLAMA_VERSION=${1:-v0.12.9}
 CONFIG_FILE=${2:-./ollama_config.json}
 
 # Top 5 popular Ollama models (based on 2025 popularity from sources)
@@ -87,3 +87,4 @@ EOF
 echo "Installation and configuration complete!"
 
 echo "Config file generated: $CONFIG_FILE"
+
