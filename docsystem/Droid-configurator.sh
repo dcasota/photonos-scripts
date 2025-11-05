@@ -8,6 +8,7 @@
 # Set defaults
 CONFIG_FILE="$HOME/.factory/config.json"
 BASE_URL="http://localhost:11434/v1/"
+PROVIDER="generic-chat-completion-api"
 
 # API Keys
 echo "API Keys:"
@@ -37,15 +38,12 @@ if [ ! -f "$CONFIG_FILE" ]; then
     echo '{"custom_models": []}' > "$CONFIG_FILE"
 fi
 
-# Function to get max_tokens from modelfile (parse num_ctx if present)
+# Function to get context_length from Ollama API
 get_max_tokens() {
     local model=$1
-    local modelfile=$(ollama show "$model" --modelfile 2>/dev/null)
-    local num_ctx=$(echo "$modelfile" | grep -i '^PARAMETER num_ctx' | awk '{print $3}')
-    if [ -z "$num_ctx" ]; then
-        echo "No num_ctx specified. Aborting."
-		exit 1
-    fi
+    local info=$(curl -s http://localhost:11434/api/show -d "{\"name\": \"$model\"}")
+    local ctx=$(echo "$info" | jq '.details.context_length // 2048')
+    echo "$ctx"
 }
 
 # Loop over models and add if not already in config
@@ -80,7 +78,7 @@ if [ -n "$xai_key" ]; then
     GROK_MODEL="grok-code-fast-1"
     GROK_DISPLAY_NAME="Grok Code Fast 1"
     GROK_BASE_URL="https://api.x.ai/v1"
-    GROK_PROVIDER="xAI"
+    GROK_PROVIDER="generic-chat-completion-api"
     GROK_MAX_TOKENS=256000
     
     # Check if already exists
@@ -102,12 +100,17 @@ fi
 
 echo "Config updated. All installed Ollama models added to $CONFIG_FILE."
 
-# Check if MCP filesystem is already configured
-if droid mcp list | grep -q "filesystem"; then
-    echo "MCP filesystem already configured, skipping addition."
+# Configure Droid CLI with MCP access to local filesystem if not already configured
+add_output=$(droid mcp add filesystem "npx @modelcontextprotocol/server-filesystem /" 2>&1)
+if [ $? -eq 0 ]; then
+    echo "$add_output"
 else
-    # Configure Droid CLI with MCP access to local filesystem
-    droid mcp add filesystem npx @modelcontextprotocol/server-filesystem /
+    if echo "$add_output" | grep -q "already exists"; then
+        echo "MCP filesystem already configured, skipping addition."
+    else
+        echo "$add_output"
+        exit 1
+    fi
 fi
 
 # Run Droid CLI
