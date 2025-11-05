@@ -82,4 +82,5 @@ echo "Config updated. All installed Ollama models added to $CONFIG_FILE."
 droid mcp add filesystem npx @modelcontextprotocol/server-filesystem /
 
 # Run Droid CLI
-echo "Starting Droid CLI with 'droid'. Use /model to select an Ollama model."
+echo "For the onboarding go to https://factory.ai/. Be prepared with an email address and a mobile phone number."
+echo "Start Droid CLI with 'droid'. Use /model to select an Ollama model."
