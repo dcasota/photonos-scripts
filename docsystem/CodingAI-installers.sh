@@ -1,6 +1,8 @@
 #!/bin/bash
 
 # Installer script for various coding AI agents
+
+# install prerequisites
 cd $HOME
 tdnf install -y curl git nodejs tar
 curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -8,6 +10,17 @@ chmod a+x .local/bin/uv
 mv .local/bin/uv /usr/local/bin
 chmod a+x .local/bin/uvx
 mv .local/bin/uvx /usr/local/bin
+
+# echo Configure AI Providers ...
+# TODO
+# echo "Installation finished."
+
+# echo Configure NotebookLM CLI ...
+# https://github.com/tmc/nlm
+# tdnf install -y go build-essential
+# TODO browser needed (chromium?)
+# go install github.com/tmc/nlm/cmd/nlm@latest
+
 
 echo Installing SnykCLI ...
 # https://docs.snyk.io/developer-tools/snyk-cli/install-or-update-the-snyk-cli
@@ -98,6 +111,12 @@ echo Installing KiloCode CLI ...
 # https://kilocode.ai/docs/cli
 npm install -g @kilocode/cli
 echo "Installation finished. Start KiloCode CLI with 'kilocode'."
+
+echo Installing Cline CLI ...
+# https://docs.cline.bot/
+npm install -g cline
+echo "Installation finished. Start Cline CLI with 'cline'."
+
 
 # echo Installing Eigent Multi-Agent ...
 # https://www.eigent.ai/
