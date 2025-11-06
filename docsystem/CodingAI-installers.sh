@@ -12,7 +12,13 @@ chmod a+x .local/bin/uvx
 mv .local/bin/uvx /usr/local/bin
 
 # echo Configure AI Providers ...
-# TODO
+# TODO: your provider’s website to get an API key:
+# Ollama: sign-in for Cloud-LLMs
+# Anthropic: console.anthropic.com
+# Grok: console.x.ai
+# OpenRouter: openrouter.ai/keys
+# OpenAI: platform.openai.com/api-keys
+# Google: aistudio.google.com/apikey
 # echo "Installation finished."
 
 # echo Configure NotebookLM CLI ...
