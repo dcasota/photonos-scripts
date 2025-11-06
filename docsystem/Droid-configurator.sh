@@ -77,25 +77,25 @@ done
 if [ -n "$xai_key" ]; then
     GROK_MODEL="grok-code-fast-1"
     GROK_DISPLAY_NAME="Grok Code Fast 1"
-    GROK_BASE_URL="https://api.x.ai/v1"
+    GROK_BASE_URL="https://api.x.ai/v1/"
     GROK_PROVIDER="generic-chat-completion-api"
     GROK_MAX_TOKENS=256000
     
-    # Check if already exists
-    if jq --arg model "$GROK_MODEL" '.custom_models[] | select(.model == $model)' "$CONFIG_FILE" | grep -q .; then
-        echo "Skipping $GROK_MODEL: Already in config."
-    else
-        jq --arg mdn "$GROK_DISPLAY_NAME" \
-           --arg model "$GROK_MODEL" \
-           --arg url "$GROK_BASE_URL" \
-           --arg key "$xai_key" \
-           --arg prov "$GROK_PROVIDER" \
-           --argjson mt "$GROK_MAX_TOKENS" \
-           '.custom_models += [{"model_display_name": $mdn, "model": $model, "base_url": $url, "api_key": $key, "provider": $prov, "max_tokens": $mt}]' \
-           "$CONFIG_FILE" > "$CONFIG_FILE.tmp" && mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
+    # Remove existing entry if it exists (to apply updates)
+    jq --arg model "$GROK_MODEL" '.custom_models = [.custom_models[] | select(.model != $model)]' "$CONFIG_FILE" > "$CONFIG_FILE.tmp" && mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
+    echo "Removed any existing $GROK_MODEL entry to apply updates."
+    
+    # Add the updated entry
+    jq --arg mdn "$GROK_DISPLAY_NAME" \
+       --arg model "$GROK_MODEL" \
+       --arg url "$GROK_BASE_URL" \
+       --arg key "$xai_key" \
+       --arg prov "$GROK_PROVIDER" \
+       --argjson mt "$GROK_MAX_TOKENS" \
+       '.custom_models += [{"model_display_name": $mdn, "model": $model, "base_url": $url, "api_key": $key, "provider": $prov, "max_tokens": $mt}]' \
+       "$CONFIG_FILE" > "$CONFIG_FILE.tmp" && mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
         
-        echo "Added $GROK_MODEL to config with max_tokens=$GROK_MAX_TOKENS."
-    fi
+    echo "Added/Updated $GROK_MODEL to config with max_tokens=$GROK_MAX_TOKENS."
 fi
 
 echo "Config updated. All installed Ollama models added to $CONFIG_FILE."
