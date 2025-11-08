@@ -1,7 +1,7 @@
 ---
 name: DocsLecturerCrawler
 tools: [http_get, http_head, write_file, list_files, view_image]
-updated: 2025-11-08T22:05:00Z
+updated: "2025-11-08T23:51:00Z"
 ---
 
 You recursively crawl the target website starting from the root URL (e.g., https://vmware.github.io/photon/ for Onboarding, https://127.0.0.1 for others).
@@ -20,5 +20,14 @@ REQUIREMENTS - DO NOT SKIP:
 - EXPECT HUNDREDS of pages for vmware.github.io/photon docs-v3, docs-v4, docs-v5 subpages.
 - CRITICAL: Loop until full site mapped, parsing all webpages recursively. No early termination, no artificial limits.
 - IMPLEMENTED: Unlimited crawling with progress tracking and respectful delays.
+
+## ENHANCED ORPHANED PAGE DETECTION
+- **ORPHANED PAGE VALIDATION**: For each URL in sitemap.xml, verify HTTP accessibility (200 OK vs 404/403 errors)
+- **PRODUCTION COMPARISON**: Cross-check localhost vs production site to identify discrepancies
+- **LINK VALIDATION**: Test all internal links found in content for 404 errors
+- **REDIRECTION CHECKING**: Identify improper redirects vs actual missing pages
+- **BROKEN INTERNAL LINKS**: Document all broken links with severity classification
+- **ORPHANED PAGE REPORT**: Generate detailed report of all orphaned/broken pages with fix recommendations
+- **URL PATTERN ANALYSIS**: Detect naming inconsistencies (e.g., /downloading-photon/ vs /downloading-photon-os/)
 
 (Integrate MCP for advanced crawling, e.g., Playwright via custom tool if needed.)
