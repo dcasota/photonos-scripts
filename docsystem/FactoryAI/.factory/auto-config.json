@@ -88,7 +88,7 @@
       }
     }
   },
-  "default_level": "medium",
+  "default_level": "high",
   "goal_processing": {
     "enabled": true,
     "track_completion": true,
