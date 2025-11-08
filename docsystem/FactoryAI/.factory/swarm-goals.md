@@ -8,17 +8,17 @@ updated: 2025-11-08T23:05:00Z
 # Swarm Level Configurations
 
 ## auto(low)
-- Depth: 3 levels max
-- Pages: 50 pages max
-- Grammar: Basic checks only
+- Depth: Unlimited
+- Pages: Unlimited
+- Grammar: Full analysis with Flesch score >60
 - Security: Basic scan only
 - Code conversion: Limited to major code blocks
 - PR creation: Manual approval required
 
 ## auto(medium)
-- Depth: 5 levels max
-- Pages: 200 pages max
-- Grammar: Full analysis with Flesch score >50
+- Depth: Unlimited
+- Pages: Unlimited
+- Grammar: Full analysis with Flesch score >60
 - Security: Standard MITRE checks
 - Code conversion: All code blocks
 - PR creation: Semi-automated
