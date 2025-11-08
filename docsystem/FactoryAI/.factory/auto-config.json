@@ -5,15 +5,15 @@
   "auto_levels": {
     "low": {
       "crawling": {
-        "max_depth": 3,
-        "max_pages": 50,
-        "allow_localhost": false,
+        "max_depth": "unlimited",
+        "max_pages": "unlimited",
+        "allow_localhost": true,
         "sitemap_priority": "low"
       },
       "grammar": {
         "enabled": true,
-        "flesch_threshold": 40,
-        "comprehensive": false
+        "flesch_threshold": 60,
+        "comprehensive": true
       },
       "security": {
         "level": "basic",
@@ -32,14 +32,14 @@
     },
     "medium": {
       "crawling": {
-        "max_depth": 5,
-        "max_pages": 200,
+        "max_depth": "unlimited",
+        "max_pages": "unlimited",
         "allow_localhost": true,
         "sitemap_priority": "medium"
       },
       "grammar": {
         "enabled": true,
-        "flesch_threshold": 50,
+        "flesch_threshold": 60,
         "comprehensive": true
       },
       "security": {
