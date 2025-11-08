@@ -1,19 +1,29 @@
 {
   "name": "DocsLecturerAutoConfig",
   "version": "1.0.0",
-  "updated": "2025-11-08T23:05:00Z",
+  "updated": "2025-11-08T23:51:00Z",
   "auto_levels": {
     "low": {
       "crawling": {
         "max_depth": "unlimited",
         "max_pages": "unlimited",
         "allow_localhost": true,
-        "sitemap_priority": "low"
+        "sitemap_priority": "low",
+        "comprehensive_404_validation": true,
+        "production_cross_check": true,
+        "url_mismatch_detection": true,
+        "internal_link_validation": true,
+        "orphaned_pages_detection": true
       },
       "grammar": {
         "enabled": true,
         "flesch_threshold": 60,
-        "comprehensive": true
+        "comprehensive": true,
+        "full_content_analysis": true,
+        "spelling_validation": true,
+        "markdown_syntax_validation": true,
+        "heading_hierarchy_validation": true,
+        "code_fence_validation": true
       },
       "security": {
         "level": "basic",
@@ -40,7 +50,12 @@
       "grammar": {
         "enabled": true,
         "flesch_threshold": 60,
-        "comprehensive": true
+        "comprehensive": true,
+        "full_content_analysis": true,
+        "spelling_validation": true,
+        "markdown_syntax_validation": true,
+        "heading_hierarchy_validation": true,
+        "code_fence_validation": true
       },
       "security": {
         "level": "standard",
@@ -67,7 +82,12 @@
       "grammar": {
         "enabled": true,
         "flesch_threshold": 60,
-        "comprehensive": true
+        "comprehensive": true,
+        "full_content_analysis": true,
+        "spelling_validation": true,
+        "markdown_syntax_validation": true,
+        "heading_hierarchy_validation": true,
+        "code_fence_validation": true
       },
       "security": {
         "level": "full",
