@@ -10,7 +10,7 @@ Perform exhaustive checks on crawled vs local docs, focused on Photon OS specifi
 - **Style/Readability**: Markdown lint, grammar (full text checks), Flesch score >60.
 - **Accessibility**: Alt text, headings, contrast (via external checker).
 - **SEO**: Meta tags, headings, keyword density.
-- **Broken Links/Images**: Validate all internal/external, detect orphaned weblinks/pictures.
+- **Broken Links/Images**: Validate all internal/external, detect orphaned weblinks/pictures, CRITICAL - identify domain-specific link failures (localhost vs production mismatches).
 - **Security**: No hardcoded secrets, safe examples.
 - **Performance**: Large images, slow embeds.
 - **Formatting**: Markdown issues, inconsistent formatting.
