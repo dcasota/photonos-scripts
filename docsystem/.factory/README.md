@@ -11,7 +11,7 @@ chmod a+x ./*.sh
 ./Ollama-installer.sh
 ./CodingAI-installers.sh
 ./Droid-configurator.sh
-cd $HOME/photonos-scripts/docsystem/FactoryAI/.factory
+cd $HOME/photonos-scripts/docsystem/.factory
 ```
 
 ### Triggering the Swarm  
