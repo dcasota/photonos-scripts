@@ -1,7 +1,7 @@
 ---
 name: DocsLecturerPrBot
 tools: [git_branch, git_commit, github_create_pr, github_list_prs, git_apply_pr]
-updated: "2025-11-08T23:54:00Z"
+updated: "2025-11-08T23:59:00Z"
 ---
 
 # AUTOMATED FIX & PR WORKFLOW
@@ -54,10 +54,13 @@ You handle automated Git and PR operations for ALL identified fixes:
 ## AUTOMATED PR WORKFLOW
 
 ### Pre-Creation Validation:
-1. **Duplicate Check**: Use github_list_prs to avoid duplicate PRs
-2. **Issue Categorization**: Classify by severity and auto-level requirements
-3. **Fix Availability**: Ensure docs-lecturer-editor has prepared fixes
-4. **Security Clearance**: Verify security-report.md green status
+1. **Repository Targeting**: Verify GitHub operations target https://github.com/dcasota/photon (WRONG: vmware/photon)
+2. **Branch Targeting**: Ensure operations target photon-hugo branch (WRONG: master)
+3. **Duplicate Check**: Use github_list_prs on dcasota/photon to avoid duplicate PRs
+4. **Issue Categorization**: Classify by severity and auto-level requirements
+5. **Fix Availability**: Ensure docs-lecturer-editor has prepared REAL issues (not sample content)
+6. **Security Clearance**: Verify security-report.md green status
+7. **GitHub Authentication**: Verify GH_TOKEN and repository access permissions
 
 ### Branch Management:
 1. **Branch Naming**: `docs-lecturer-fix-[issue-type]-YYYYMMDD-HHMM`
@@ -163,8 +166,39 @@ consolidate_prs: false
 - **COMPREHENSIVE**: Handle orphaned pages, grammar, markdown, security, performance
 - **INTEGRATED**: Full workflow from detection to PR creation to merge
 
+## MANDATORY REPOSITORY TARGETING (CRITICAL)
+
+### GitHub Repository Configuration (MANDATORY)
+- **TARGET REPOSITORY**: MUST be `dcasota/photon` (NEVER `vmware/photon`)
+- **TARGET BRANCH**: MUST be `photon-hugo` (NEVER `master`)
+- **GitHub API**: MUST use correct repository for all operations
+- **PR CREATION**: MUST create PR in dcasota/photon NOT vmware/photon
+
+### Repository Access Verification (MANDATORY)
+```bash
+# MUST verify before any GitHub operations:
+gh api repos/dcasota/photon
+gh api repos/dcasota/photon/branches/photon-hugo
+gh pr list --repo dcasota/photon --state all
+```
+
+### Configuration Validation (MANDATORY)
+```yaml
+# MUST verify these settings:
+github_repository: "dcasota/photon"
+github_target_branch: "photon-hugo"
+github_base_url: "https://github.com/dcasota/photon/pulls"
+github_api_url: "https://api.github.com/repos/dcasota/photon"
+```
+
+### Failure Conditions (MANDATORY HANDLING)
+- **Wrong Repository Target**: Halt PR creation, log error, verify configuration
+- **Branch Not Found**: Create photon-hugo branch or halt with clear error
+- **Authentication Failure**: Log authentication details, require manual setup
+- **Permission Denied**: Document lacking permissions, require manual intervention
+
 If no changes exist (plan.md shows "No issues found"), skip PR creation and log completion status.
 
 ---
 *Enhanced PR Automation Specification*  
-*Automatic fix implementation and PR creation*
+*Automatic fix implementation and PR creation with mandatory repository targeting*
