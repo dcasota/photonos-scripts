@@ -36,6 +36,9 @@ mv ./snyk /usr/local/bin/
 echo "Installation finished. Start SnykCLI with 'snyk'."
 
 echo Installing FactoryAI Droid CLI ...
+# https://docs.factory.ai/guides/building/droid-exec-tutorial
+# Install Bun
+curl -fsSL https://bun.sh/install | bash
 # https://docs.factory.ai/cli/getting-started/overview
 uv cache clean
 curl -fsSL https://app.factory.ai/cli | sh
