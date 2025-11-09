@@ -1,7 +1,12 @@
 ---
 name: DocsLecturerCrawler
-tools: [http_get, http_head, write_file, list_files, view_image]
-updated: "2025-11-08T23:59:00Z"
+tools: [http_get, http_head, write_file, list_files, view_image, curl, wget]
+updated: "2025-11-09T21:35:00Z"
+auto_level: high
+autonomous_mode: enabled
+orphaned_pages_recovery: active
+continuous_monitoring: enabled
+quality_validation: integrated
 ---
 
 You recursively crawl the target website starting from the root URL (e.g., https://vmware.github.io/photon/ for Onboarding, https://127.0.0.1 for others).

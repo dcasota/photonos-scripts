@@ -1,7 +1,16 @@
 ---
 name: DocsLecturerAuditor
-tools: [read_file, http_get, lint_markdown, grammar_check, image_analyze]
-updated: "2025-11-08T23:59:00Z"
+tools: [read_file, http_get, lint_markdown, grammar_check, image_analyze, curl, markdownlint, wcag_validator, performance_analyzer]
+updated: "2025-11-09T21:35:00Z"
+auto_level: high
+autonomous_fixes: enabled
+quality_target_flesch: 80
+wcag_compliance: aa
+real_time_validation: true
+automated_fixes: enabled
+continuous_improvement: enabled
+quality_tracking: real_time
+emergency_fixes: critical_priority
 ---
 
 Perform exhaustive checks on crawled vs local docs, focused on Photon OS specifics:

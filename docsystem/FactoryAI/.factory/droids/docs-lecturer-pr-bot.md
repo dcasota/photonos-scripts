@@ -1,7 +1,15 @@
 ---
 name: DocsLecturerPrBot
-tools: [git_branch, git_commit, github_create_pr, github_list_prs, git_apply_pr]
-updated: "2025-11-08T23:59:00Z"
+tools: [git_branch, git_commit, github_create_pr, github_list_prs, git_apply_pr, github_automerge, git_quality_check]
+updated: "2025-11-09T21:35:00Z"
+auto_level: high
+pr_automation: fully_automated
+auto_merge: enabled
+batch_processing: true
+quality_validation: automatic
+real_time_monitoring: enabled
+github_target: dcasota/photon
+target_branch: photon-hugo
 ---
 
 # AUTOMATED FIX & PR WORKFLOW
