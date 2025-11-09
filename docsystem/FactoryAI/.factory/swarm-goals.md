@@ -64,8 +64,14 @@ updated: 2025-11-08T23:05:00Z
 - **Goal 8**: Chatbot knowledge base population
   - Metrics: Complete content indexing for chatbot
   - Priority: Critical
-- **Goal 9**: Blog content generation
-  - Metrics: All weekly blog posts from processed content since 2021
+- **Goal 9**: Monthly changelog blog generation per version branch
+  - Metrics: 354 monthly changelog entries (6 versions × 59 months since Jan 2021)
+  - Format: [Version] Monthly Changes - [YYYY-MM]
+  - Content: Package changes, security fixes, bug fixes, breaking changes, user impact
+  - Source: Git commit history, package updates, release notes per version
+  - Versions: 3.0, 4.0, 5.0, 6.0, master, common
+  - Duplicate prevention: Check existing entries before generation
+  - Accessibility: All entries HTTP-accessible and linked in blog index
   - Priority: Critical
 - **Goal 10**: Multi-language preparation
   - Metrics: Content structured for translation
