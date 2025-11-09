@@ -10,7 +10,7 @@
         "max_depth": "unlimited",
         "max_pages": "unlimited",
         "allow_localhost": true,
-        "sitemap_priority": "low",
+        "sitemap_priority": "high",
         "comprehensive_404_validation": true,
         "production_cross_check": true,
         "url_mismatch_detection": true,
@@ -28,8 +28,9 @@
         "code_fence_validation": true
       },
       "security": {
-        "level": "basic",
-        "mitre_checks": false
+        "level": "full",
+        "mitre_checks": true,
+        "atlas_compliance": true
       },
       "code_conversion": {
         "enabled": true,
@@ -47,7 +48,12 @@
         "max_depth": "unlimited",
         "max_pages": "unlimited",
         "allow_localhost": true,
-        "sitemap_priority": "medium"
+        "sitemap_priority": "high",
+        "comprehensive_404_validation": true,
+        "production_cross_check": true,
+        "url_mismatch_detection": true,
+        "internal_link_validation": true,
+        "orphaned_pages_detection": true        
       },
       "grammar": {
         "enabled": true,
@@ -60,8 +66,9 @@
         "code_fence_validation": true
       },
       "security": {
-        "level": "standard",
-        "mitre_checks": true
+        "level": "full",
+        "mitre_checks": true,
+        "atlas_compliance": true
       },
       "code_conversion": {
         "enabled": true,
@@ -79,7 +86,12 @@
         "max_depth": "unlimited",
         "max_pages": "unlimited",
         "allow_localhost": true,
-        "sitemap_priority": "high"
+        "sitemap_priority": "high",
+        "comprehensive_404_validation": true,
+        "production_cross_check": true,
+        "url_mismatch_detection": true,
+        "internal_link_validation": true,
+        "orphaned_pages_detection": true
       },
       "grammar": {
         "enabled": true,
@@ -143,7 +155,7 @@
   },
   "translator_config": {
     "languages": ["de", "fr", "it", "bg", "hi", "zh"],
-    "versions": ["3.0", "4.0", "5.0", "6.0"],
+    "versions": ["3.0", "4.0", "5.0"],
     "total_translation_sets": 24,
     "execution_order": "LAST",
     "parallel_translation": true
