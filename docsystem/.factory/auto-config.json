@@ -1,0 +1,159 @@
+{
+  "name": "DocsLecturerAutoConfig",
+  "version": "3.0.0",
+  "updated": "2025-11-09T21:00:00Z",
+  "teams": 5,
+  "droids": 25,
+  "auto_levels": {
+    "low": {
+      "crawling": {
+        "max_depth": "unlimited",
+        "max_pages": "unlimited",
+        "allow_localhost": true,
+        "sitemap_priority": "low",
+        "comprehensive_404_validation": true,
+        "production_cross_check": true,
+        "url_mismatch_detection": true,
+        "internal_link_validation": true,
+        "orphaned_pages_detection": true
+      },
+      "grammar": {
+        "enabled": true,
+        "flesch_threshold": 60,
+        "comprehensive": true,
+        "full_content_analysis": true,
+        "spelling_validation": true,
+        "markdown_syntax_validation": true,
+        "heading_hierarchy_validation": true,
+        "code_fence_validation": true
+      },
+      "security": {
+        "level": "basic",
+        "mitre_checks": false
+      },
+      "code_conversion": {
+        "enabled": true,
+        "interactive": false,
+        "major_blocks_only": true
+      },
+      "pr_automation": {
+        "auto_create": false,
+        "auto_merge": false,
+        "require_approval": true
+      }
+    },
+    "medium": {
+      "crawling": {
+        "max_depth": "unlimited",
+        "max_pages": "unlimited",
+        "allow_localhost": true,
+        "sitemap_priority": "medium"
+      },
+      "grammar": {
+        "enabled": true,
+        "flesch_threshold": 60,
+        "comprehensive": true,
+        "full_content_analysis": true,
+        "spelling_validation": true,
+        "markdown_syntax_validation": true,
+        "heading_hierarchy_validation": true,
+        "code_fence_validation": true
+      },
+      "security": {
+        "level": "standard",
+        "mitre_checks": true
+      },
+      "code_conversion": {
+        "enabled": true,
+        "interactive": false,
+        "major_blocks_only": false
+      },
+      "pr_automation": {
+        "auto_create": true,
+        "auto_merge": false,
+        "require_approval": false
+      }
+    },
+    "high": {
+      "crawling": {
+        "max_depth": "unlimited",
+        "max_pages": "unlimited",
+        "allow_localhost": true,
+        "sitemap_priority": "high"
+      },
+      "grammar": {
+        "enabled": true,
+        "flesch_threshold": 60,
+        "comprehensive": true,
+        "full_content_analysis": true,
+        "spelling_validation": true,
+        "markdown_syntax_validation": true,
+        "heading_hierarchy_validation": true,
+        "code_fence_validation": true
+      },
+      "security": {
+        "level": "full",
+        "mitre_checks": true,
+        "atlas_compliance": true
+      },
+      "code_conversion": {
+        "enabled": true,
+        "interactive": true,
+        "major_blocks_only": false,
+        "sandbox_runtime": "@anthropic-ai/sandbox-runtime"
+      },
+      "pr_automation": {
+        "auto_create": true,
+        "auto_merge": true,
+        "require_approval": false,
+        "consolidate_prs": true
+      }
+    }
+  },
+  "default_level": "high",
+  "goal_processing": {
+    "enabled": true,
+    "track_completion": true,
+    "quality_gates": true,
+    "progressive_enhancement": true
+  },
+  "team_execution": {
+    "sequential": true,
+    "teams": [
+      "docs-maintenance",
+      "docs-sandbox",
+      "docs-blogger",
+      "docs-translator"
+    ],
+    "security_team": "docs-security",
+    "security_execution_mode": "continuous_parallel",
+    "execution_note": "docs-security runs CONTINUOUSLY in parallel. docs-translator executes LAST after all other teams complete",
+    "quality_gates_between_teams": true
+  },
+  "target_repository": {
+    "url": "https://github.com/dcasota/photon",
+    "branch": "photon-hugo"
+  },
+  "blogger_config": {
+    "source_repository": "https://github.com/vmware/photon",
+    "branches": ["3.0", "4.0", "5.0", "6.0", "master", "common"],
+    "start_date": "2021-01-01",
+    "format": "monthly",
+    "output_path": "content/blog/"
+  },
+  "translator_config": {
+    "languages": ["de", "fr", "it", "bg", "hi", "zh"],
+    "versions": ["3.0", "4.0", "5.0", "6.0"],
+    "total_translation_sets": 24,
+    "execution_order": "LAST",
+    "parallel_translation": true
+  },
+  "security_config": {
+    "framework": "MITRE_ATLAS",
+    "execution_mode": "continuous_parallel",
+    "monitoring_scope": "all_teams",
+    "alert_levels": ["CRITICAL", "HIGH", "MEDIUM", "LOW"],
+    "compliance_required": true,
+    "audit_retention": "permanent"
+  }
+}

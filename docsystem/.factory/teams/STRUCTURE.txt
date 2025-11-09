@@ -1,0 +1,182 @@
+Four-Team Documentation System Structure
+=========================================
+
+.factory/teams/
+│
+├── 📄 START-HERE.md              Quick start guide
+├── 📄 README.md                  Main documentation
+├── 📄 MASTER-ORCHESTRATOR.md     Master coordinator for all teams
+├── 📄 SUMMARY.md                 Overview and statistics
+├── 📄 STRUCTURE.txt              This file (visual structure)
+├── 📄 INDEX.md                   Complete file index
+│
+├── 📁 docs-maintenance/          TEAM 1: Content Quality & Maintenance
+│   ├── 📄 README.md              Team documentation
+│   ├── 📄 orchestrator.md        Team coordinator
+│   ├── 🤖 crawler.md             Site discovery & link validation
+│   ├── 🤖 auditor.md             Quality assessment
+│   ├── 🤖 editor.md              Automated content fixes
+│   ├── 🤖 pr-bot.md              PR creation & management
+│   ├── 🤖 logger.md              Progress tracking
+│   └── 🤖 security.md            Security compliance
+│
+├── 📁 docs-sandbox/              TEAM 2: Code Modernization
+│   ├── 📄 README.md              Team documentation
+│   ├── 📄 orchestrator.md        Team coordinator
+│   ├── 🤖 converter.md           Code block → sandbox conversion
+│   └── 🤖 tester.md              Sandbox functionality testing
+│
+├── 📁 docs-translator/           TEAM 3: Internationalization
+│   ├── 📄 README.md              Team documentation
+│   ├── 📄 orchestrator.md        Team coordinator
+│   ├── 🤖 translator.md          Multi-language translation
+│   └── 🤖 chatbot.md             Knowledge base population
+│
+└── 📁 docs-blogger/              TEAM 4: Blog Generation
+    ├── 📄 README.md              Team documentation
+    ├── 📄 orchestrator.md        Team coordinator
+    ├── 🤖 blogger.md             Monthly blog generation
+    └── 🤖 pr-bot.md              PR management for blog content
+
+
+EXECUTION FLOW
+==============
+
+    MASTER-ORCHESTRATOR
+            │
+            ↓
+    ┌───────────────────┐
+    │  SETUP & VALIDATE │
+    └───────────────────┘
+            │
+            ↓
+    ┌───────────────────────────────────────────────┐
+    │  TEAM 1: Docs Maintenance                     │
+    │  ┌─────────┐  ┌─────────┐  ┌────────┐        │
+    │  │ Crawler │→ │ Auditor │→ │ Editor │→ PR    │
+    │  └─────────┘  └─────────┘  └────────┘        │
+    │     Logger & Security (continuous)            │
+    └───────────────────────────────────────────────┘
+            │
+            ↓ [Quality Gates Check]
+            │
+    ┌───────────────────────────────────────────────┐
+    │  TEAM 2: Docs Sandbox                         │
+    │  ┌───────────┐  ┌────────┐                   │
+    │  │ Converter │→ │ Tester │→ PR               │
+    │  └───────────┘  └────────┘                   │
+    └───────────────────────────────────────────────┘
+            │
+            ↓ [Quality Gates Check]
+            │
+    ┌───────────────────────────────────────────────┐
+    │  TEAM 3: Docs Translator                      │
+    │  ┌────────────┐  ┌─────────┐                 │
+    │  │ Translator │→ │ Chatbot │→ PR             │
+    │  └────────────┘  └─────────┘                 │
+    └───────────────────────────────────────────────┘
+            │
+            ↓ [Quality Gates Check]
+            │
+    ┌───────────────────────────────────────────────┐
+    │  TEAM 4: Docs Blogger                         │
+    │  ┌─────────┐  ┌────────┐                     │
+    │  │ Blogger │→ │ PR-Bot │→ Publication        │
+    │  └─────────┘  └────────┘                     │
+    └───────────────────────────────────────────────┘
+            │
+            ↓
+    ┌───────────────────┐
+    │ FINAL VALIDATION  │
+    └───────────────────┘
+            │
+            ↓
+         COMPLETE
+
+
+STATISTICS
+==========
+
+Total Files:       26 files (25 .md + 1 .txt)
+Total Teams:       4 teams
+Total Droids:      12 focused droids
+Orchestrators:     5 (1 master + 4 team)
+Documentation:     6 core files
+
+
+QUICK REFERENCE
+===============
+
+Run Everything:
+  factory run @DocsSwarmMasterOrchestrator
+
+Run Individual Teams:
+  factory run @docs-maintenance-orchestrator
+  factory run @docs-sandbox-orchestrator
+  factory run @docs-translator-orchestrator
+  factory run @docs-blogger-orchestrator
+
+Run Individual Droids:
+  factory run @docs-maintenance-crawler
+  factory run @docs-maintenance-auditor
+  factory run @docs-sandbox-converter
+  factory run @docs-translator-translator
+  factory run @docs-blogger-blogger
+
+
+QUALITY GATES
+=============
+
+Team 1 (Maintenance):
+  ✅ Critical issues: 0
+  ✅ Grammar: >95%
+  ✅ Markdown: 100%
+  ✅ Accessibility: WCAG AA
+  ✅ Orphaned pages: 0
+
+Team 2 (Sandbox):
+  ✅ Conversion: 100% eligible blocks
+  ✅ Functionality: All sandboxes working
+  ✅ Security: Isolated execution
+
+Team 3 (Translator):
+  ✅ Translation: 100% coverage
+  ✅ Knowledge base: Complete
+
+Team 4 (Blogger):
+  ✅ Blog posts: Monthly coverage complete
+  ✅ Technical accuracy: All references verified
+  ✅ Hugo integration: Build successful
+
+
+KEY BENEFITS
+============
+
+✅ Organized Structure:   4 specialized teams with clear roles
+✅ Focused Droids:        12 droids organized by function
+✅ Clear Organization:    Team-based directory structure
+✅ Better Maintainability: Isolated teams, clear responsibilities
+✅ Easier Debugging:      Isolated failure domains
+✅ Comprehensive Docs:    6 core documentation files
+✅ Linear Workflow:       Sequential team execution
+✅ Quality Gates:         Clear checkpoints between teams
+
+
+TARGET REPOSITORY
+=================
+
+Repository: https://github.com/dcasota/photon
+Branch:     photon-hugo
+PR Target:  All teams create PRs to this repository
+
+
+STATUS
+======
+
+Created:    2025-11-09
+Updated:    2025-11-09
+Status:     ✅ COMPLETE
+Teams:      4 specialized teams
+Droids:     12 focused droids
+Files:      26 total files
+Coverage:   100% of goals
