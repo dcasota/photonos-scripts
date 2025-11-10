@@ -12,13 +12,8 @@ From 2015 to 2020, automation and documentation were key priorities. However, af
 
 The Photon OS team could delegate more documentation activities to an autonomous AI agent team. The list of potential enhancements is extensive:
 
-- **Role-Based Docs Writer AI Agent Team**: Designed to streamline documentation creation through collaborative AI agents.
-- **Command-Line Interfaces (CLIs)**: Incorporated for efficient user interactions and automation.
-- **System Prompts (Specifications)**: Leveraged to define specific roles and skills for each AI agent within the team.
-- **Role-Based Access Control (RBAC)**: Ensures secure permissions and governance across team operations.
-- **Replay Safety Mechanisms**: Built-in to prevent accidental re-execution of actions or outputs.
 - **Integrated AI Chatbot**: Enables users to ask questions or request summaries of documentation content.
-- **Scientific Wording**: Emphasized to maintain precision and clarity in technical descriptions.
+- **Scientific Wording**: Emphasized to maintain branch-(release)specific precision and clarity in technical descriptions
 - **Grammar Checks**: Automatically applied to produce polished and error-free documentation.
 - **Multilanguage Support**: Allows for seamless translation and adaptation across various languages.
 - **Embedded Code Sandbox**: Provides a secure environment for testing and demonstrating code snippets within documentation.
