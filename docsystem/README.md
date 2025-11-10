@@ -19,6 +19,7 @@ The Photon OS team could delegate more documentation activities to an autonomous
 - **Embedded Code Sandbox**: Provides a secure environment for testing and demonstrating code snippets within documentation.
 - **Changelog Blog Entries**: Automatically generated to track updates and version histories.
 - **Static Site Generator Flexibility**: Enables easy switching between tools like Hugo, MkDocs, and Docusaurus for simplified deployment and customization.
+- **Learn Academy**: Comprehensive learn modules and quizzes.
 
 ## Concept
 
