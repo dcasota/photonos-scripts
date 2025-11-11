@@ -2,7 +2,7 @@
 
 # Usage: sudo ./installer.sh <install_directory>
 # All-in-one reinstallable installer for self-hosting the Photon OS documentation web app on Photon OS.
-# Uses fixed versions: Hugo v0.149.0 (latest), repo latest commit on photon-hugo branch.
+# Uses fixed versions: Hugo v0.151.2 (latest as of Nov 2025), repo latest commit on photon-hugo branch.
 # Assumes Photon OS (uses tdnf for packages).
 # Includes all components: clones repo from GitHub, installs Hugo binary, builds site, sets up Nginx.
 # Designed to be idempotent/reinstallable: checks for existing installations and updates/resets as needed.
@@ -49,11 +49,12 @@
 # Fix: Replaced Slack logo and link with Broadcom in footer by modifying config.toml params.links.user and patching templates to handle image URLs in icon fields.
 # Fix: Updated to use local Broadcom logo and change name to "Broadcom Community".
 # Fix: Removed indentation in added TOML sections to fix unmarshal error in config.toml validation.
+# FIXED (2025-11-10): Moved xterm.js sandbox injection BEFORE Hugo build; corrected filename to building-the-iso.md.
 
 BASE_DIR="/var/www"
 INSTALL_DIR="$BASE_DIR/photon-site"
 SITE_DIR="$INSTALL_DIR/public"  # Where built static files go
-HUGO_VERSION="0.151.2"  # Latest version as of October 20, 2025
+HUGO_VERSION="0.151.2"  # Latest version as of November 10, 2025
 
 # Dynamically retrieve DHCP IP address
 tdnf install -y iproute2
@@ -150,7 +151,7 @@ done
 echo "Fixing internal links to remove double paths..."
 find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i 's|/docs-v3/docs-v3/|/docs-v3/|g' {} \;
 find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i 's|/docs-v4/docs-v4/|/docs-v4/|g' {} \;
-find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i 's|/docs-v5/docs-v5/| /docs-v5/|g' {} \;
+find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i 's|/docs-v5/docs-v5/|/docs-v5/|g' {} \;
 
 # Patch docs-v* _index.md to set type: docs for sidebar and menu on main pages
 for ver in docs-v3 docs-v4 docs-v5; do
@@ -170,6 +171,16 @@ if [ -d themes/docsy ] && [ -f themes/docsy/package.json ]; then
   npm install --legacy-peer-deps
   npm audit fix
   cd ../..
+fi
+
+# Enable raw HTML in Markdown to prevent escaping of <script> tags
+if ! grep -q "\[markup.goldmark.renderer\]" config.toml; then
+  cat >> config.toml <<'EOF_CONFIGTOML'
+[markup]
+  [markup.goldmark]
+    [markup.goldmark.renderer]
+      unsafe = true
+EOF_CONFIGTOML
 fi
 
 # Fix deprecated disableKinds in config.toml
@@ -310,17 +321,181 @@ sed -i 's/https:\/\/vmware.github.io/https:\/\/www.broadcom.com/g' config.toml
 find layouts themes -type f -name "*.html" -exec sed -i 's/https:\/\/vmware.github.io/https:\/\/www.broadcom.com/g' {} \;
 
 # Added: Override render-image.html to disable lazy loading for printview image display fix.
-# Updated: Use root-relative absolute paths for local relative images to fix path issues in printview.
+# Updated: Modified render-image.html to use root-relative absolute paths for images to fix wrong relative paths in printview.
+# FIXED: Inline the src logic without := assignment to avoid parse error in v0.151.2
+# FIXED: Remove escaped quotes in hasPrefix to fix parse parse failed unexpected "\\" error
+# FIXED: Use single quotes for hasPrefix strings to fix parse malformed character constant
+# FIXED: Use backticks for hasPrefix strings to fix malformed character constant
 mkdir -p "$INSTALL_DIR/layouts/_default/_markup"
-cat > "$INSTALL_DIR/layouts/_default/_markup/render-image.html" <<EOF
-{{ \$src := .Destination }}
-{{ if or (hasPrefix \$src "http://") (hasPrefix \$src "https://") (hasPrefix \$src "/") }}
-  {{ \$src = \$src | safeURL }}
-{{ else }}
-  {{ \$src = printf "%s%s" .Page.RelPermalink \$src | safeURL }}
-{{ end }}
-<img src="{{ \$src }}" alt="{{ .Text }}" {{ with .Title }}title="{{ . }}"{{ end }} />
-EOF
+cat > "$INSTALL_DIR/layouts/_default/_markup/render-image.html" <<'EOF_MARKUP'
+<img src="{{ if or (hasPrefix .Destination `http://`) (hasPrefix .Destination `https://`) (hasPrefix .Destination `/`) }}{{ .Destination | safeURL }}{{ else }}{{ printf "%s%s" .Page.RelPermalink .Destination | safeURL }}{{ end }}" alt="{{ .Text }}" {{ with .Title }}title="{{ . }}"{{ end }} />
+EOF_MARKUP
+
+# === SANDBOX INJECTION ===
+# Download xterm.js and addons to static/js/xterm...
+echo "Downloading xterm.js and addons to static/js/xterm..."
+mkdir -p static/js/xterm
+curl -o static/js/xterm/xterm.js https://cdn.jsdelivr.net/npm/xterm@4.19.0/lib/xterm.js
+curl -o static/js/xterm/xterm.css https://cdn.jsdelivr.net/npm/xterm@4.19.0/css/xterm.css
+curl -o static/js/xterm/xterm-addon-fit.js https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.5.0/lib/xterm-addon-fit.js
+
+# Create sandbox.js external file
+cat > static/js/sandbox.js <<'EOF_JS'
+const term = new Terminal({ theme: { background: "#1e1e1e" } });
+const fitAddon = new FitAddon.FitAddon();
+term.loadAddon(fitAddon);
+term.open(document.getElementById("terminal"));
+fitAddon.fit();
+
+let socket;
+try {
+  socket = new WebSocket('ws://localhost:3000');
+  socket.onopen = () => {
+    term.writeln('Connected to local Photon OS Build Sandbox');
+    term.writeln('Type commands below (runs in your local Docker container):');
+  };
+  socket.onmessage = (event) => { term.write(event.data); };
+  term.onData((data) => { if (socket.readyState === WebSocket.OPEN) socket.send(data); });
+  socket.onclose = () => { term.writeln('Connection closed. Restart the local server if needed.'); };
+  socket.onerror = () => { term.writeln('Error: Could not connect to local server. Ensure it\'s running on port 3000.'); };
+} catch (err) {
+  term.writeln('Error initializing sandbox: ' + err.message);
+}
+EOF_JS
+
+# Create sandbox shortcode for the div and script reference
+mkdir -p layouts/shortcodes
+cat > layouts/shortcodes/sandbox.html <<'EOF_SHORTCODE'
+<div id="sandbox-container" style="margin: 2em 0; border: 1px solid #444; border-radius: 8px; overflow: hidden;">
+  <div id="terminal" style="height: 400px;"></div>
+</div>
+
+<link rel="stylesheet" href="/css/xterm/xterm.css">
+<script src="/js/xterm/xterm.js"></script>
+<script src="/js/xterm/xterm-addon-fit.js"></script>
+<script src="/js/sandbox.js"></script>
+
+<style>
+  #terminal { background: #1e1e1e !important; }
+  .xterm-cursor { background: #0f0 !important; }
+</style>
+
+<!-- EOF_SANDBOX -->
+EOF_SHORTCODE
+
+TARGET_FILE="$INSTALL_DIR/content/en/docs-v5/installation-guide/building images/build-iso-from-source/build-the-iso.md"
+if [ -f "$TARGET_FILE" ]; then
+  echo "Target file found: $TARGET_FILE"
+
+  # Write awk program to temp file to avoid quoting issues
+  cat > /tmp/inject.awk <<'EOF_AWK'
+BEGIN { insert_done = 0 }
+/make iso/ && !insert_done {
+  print $0  # Print the matching line
+  print ""
+  print "**Note: For interactive mode, set up the local terminal server on your Windows machine (see instructions below). Otherwise, this is a static demo.**"
+  print ""
+  print "{{% sandbox %}}"
+  print ""
+  print "#### Local Setup Instructions for Interactive Sandbox"
+  print "1. Install Node.js (if not already): Download from https://nodejs.org/ (LTS version recommended)."
+  print "2. Install required packages: Open Command Prompt or PowerShell and run `npm install dockerode ws express`."
+  print "3. Create `terminal-server.js` with the code below (save in a folder, e.g., C:\\sandbox):"
+  print "   ```javascript"
+  print "   const Docker = require('dockerode');"
+  print "   const express = require('express');"
+  print "   const WebSocket = require('ws');"
+  print "   const http = require('http');"
+  print ""
+  print "   const app = express();"
+  print "   const server = http.createServer(app);"
+  print "   const wss = new WebSocket.Server({ server });"
+  print ""
+  print "   const docker = new Docker();"
+  print ""
+  print "   wss.on('connection', async (ws) => {"
+  print "     try {"
+  print "       const container = await docker.createContainer({"
+  print "         Image: 'photon-builder',"
+  print "         Tty: true,"
+  print "         OpenStdin: true,"
+  print "         AttachStdin: true,"
+  print "         AttachStdout: true,"
+  print "         AttachStderr: true,"
+  print "         Cmd: ['/bin/bash'],"
+  print "       });"
+  print "       await container.start();"
+  print ""
+  print "       const exec = await container.exec({"
+  print "         Cmd: ['/bin/bash'],"
+  print "         AttachStdin: true,"
+  print "         AttachStdout: true,"
+  print "         AttachStderr: true,"
+  print "         Tty: true,"
+  print "       });"
+  print ""
+  print "       const stream = await exec.start({ hijack: true, stdin: true });"
+  print ""
+  print "       stream.on('data', (chunk) => ws.send(chunk.toString()));"
+  print "       ws.on('message', (message) => stream.write(message));"
+  print "       ws.on('close', async () => {"
+  print "         await container.stop();"
+  print "         await container.remove();"
+  print "       });"
+  print "     } catch (err) {"
+  print "       ws.send(`Error: ${err.message}`);"
+  print "       ws.close();"
+  print "     }"
+  print "   });"
+  print ""
+  print "   server.listen(3000, () => console.log('Terminal server running on port 3000'));"
+  print "   ```"
+  print "4. Build the Docker image: Create `Dockerfile` in the same folder:"
+  print "   ```dockerfile"
+  print "   FROM photon:5.0"
+  print "   RUN tdnf install -y git build-essential  # Add more packages if needed for builds"
+  print "   RUN git clone https://github.com/vmware/photon.git /workspace/photon"
+  print "   WORKDIR /workspace/photon"
+  print "   CMD [\"/bin/bash\"]"
+  print "   ```"
+  print "   Then run `docker build -t photon-builder .`"
+  print "5. Start the server: `node terminal-server.js`"
+  print "6. Refresh this page—the sandbox will now be interactive!"
+  print ""
+  print "**Security Note:** This runs containers as root by default; customize for production (e.g., add --user)."
+  print ""
+  insert_done = 1
+  next
+}
+{ print $0 }
+END { if (insert_done) system("echo Injection successful >&2"); else system("echo SANDBOX INJECTION FAILED >&2") }
+EOF_AWK
+
+  # Run awk with the temp program file
+  awk -f /tmp/inject.awk "$TARGET_FILE" > "$TARGET_FILE.tmp" 2>/tmp/awk_inject.log
+  mv "$TARGET_FILE.tmp" "$TARGET_FILE"
+  rm /tmp/inject.awk  # Clean up
+
+  cat /tmp/awk_inject.log
+
+  if grep -q "Injection successful" /tmp/awk_inject.log; then
+    touch "$TARGET_FILE"
+    echo "Interactive sandbox successfully injected after first 'make iso' command."
+  else
+    echo "Injection failed - no matching line found. Check file content for 'make iso'."
+    exit 1
+  fi
+  rm /tmp/awk_inject.log
+else
+  echo "ERROR: Target file NOT found: $TARGET_FILE"
+  ls -l "$INSTALL_DIR/content/en/docs-v5/installation-guide/building images/build-iso-from-source/" || true
+  exit 1
+fi
+# === END OF SANDBOX INJECTION ===
+
+# Clear cache and old output before build
+echo "Cleaning Hugo cache and old output..."
+rm -rf "$INSTALL_DIR/resources" "$INSTALL_DIR/public" "$SITE_DIR/*"
 
 # Validate config.toml
 echo "Validating config.toml..."
@@ -332,17 +507,17 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
-# Clear existing public directory
-rm -rf "$SITE_DIR/*"
-
 # Build site with Hugo
 echo "Building site with Hugo..."
 set -o pipefail
-/usr/local/bin/hugo --minify --baseURL "/" --logLevel debug --enableGitInfo -d public 2>&1 | tee hugo_build.log
+cd "$INSTALL_DIR"
+/usr/local/bin/hugo --minify --baseURL "/" --logLevel debug --enableGitInfo --ignoreCache --forceSyncStatic -d public 2>&1 | tee hugo_build.log
 if [ $? -ne 0 ]; then
   echo "Hugo build failed. Check hugo_build.log."
   exit 1
 fi
+
+
 
 # Make site dir readable by nginx
 mkdir -p "$SITE_DIR"
@@ -379,7 +554,7 @@ for subdir in blog docs-v3 docs-v4 docs-v5; do
   fi
 done
 
-# Added: Patch quick-start-links index.html to fix orphaned links with correct absolute paths for all versions
+# Added: Patch quick-start-links index.html to fix orphaned links with correct absolute paths for all versions (POST-BUILD, STATIC FIX)
 for ver in docs-v3 docs-v4 docs-v5; do
   QL_FILE="$SITE_DIR/$ver/quick-start-links/index.html"
   if [ -f "$QL_FILE" ]; then
@@ -434,7 +609,7 @@ EOF_NGINX
 
 # Set up self-signed cert
 mkdir -p /etc/nginx/ssl
-if [ ! -f /etc/nginx/ssl/selfsigned.crt ] || [ ! -f /etc/nginx/ssl/selfsigned.key ]; then
+if [ ! -f /etc/nginx/ssl/selfsigned.crt ] || [ -f /etc/nginx/ssl/selfsigned.key ]; then
   echo "Generating self-signed certificate for ${IP_ADDRESS}..."
   openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /etc/nginx/ssl/selfsigned.key -out /etc/nginx/ssl/selfsigned.crt -subj "/CN=${IP_ADDRESS}"
   if [ $? -ne 0 ]; then
@@ -525,4 +700,4 @@ for subdir in blog docs-v3 docs-v4 docs-v5; do
 done
 
 echo "Installation complete! Access the Photon site at https://${IP_ADDRESS}/ (HTTP redirects to HTTPS)."
-
+echo "Interactive sandbox available at: https://${IP_ADDRESS}/docs-v5/installation-guide/building-images/build-iso-from-source/building-the-iso/#interactive-code-sandbox"
