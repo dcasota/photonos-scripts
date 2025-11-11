@@ -50,11 +50,13 @@
 # Fix: Updated to use local Broadcom logo and change name to "Broadcom Community".
 # Fix: Removed indentation in added TOML sections to fix unmarshal error in config.toml validation.
 # FIXED (2025-11-10): Moved xterm.js sandbox injection BEFORE Hugo build; corrected filename to building-the-iso.md.
+# Note: microsandbox.dev integration for enhanced isolation can be added by replacing Docker with microsandbox SDK in the backend.js (requires custom adaptation for streaming terminal, as microsandbox is primarily for code execution snippets).
 
 BASE_DIR="/var/www"
 INSTALL_DIR="$BASE_DIR/photon-site"
 SITE_DIR="$INSTALL_DIR/public"  # Where built static files go
 HUGO_VERSION="0.151.2"  # Latest version as of November 10, 2025
+PHOTON_FORK_REPOSITORY="https://www.github.com/dcasota/photon"
 
 # Dynamically retrieve DHCP IP address
 tdnf install -y iproute2
@@ -65,6 +67,7 @@ fi
 if [ -z "$IP_ADDRESS" ]; then
   IP_ADDRESS="localhost"
   echo "Warning: Could not detect DHCP IP. Using 'localhost' for certificate. Set IP manually if needed."
+  exit 1
 fi
 echo "Detected IP address: $IP_ADDRESS"
 
@@ -81,11 +84,14 @@ echo "Using latest commit hash for reference: $COMMIT_HASH"
 echo "Cleaning up log files..."
 truncate -s 0 /var/log/nginx/error.log 2>/dev/null || rm -f /var/log/nginx/error.log
 truncate -s 0 /var/log/nginx/photon-site-error.log 2>/dev/null || rm -f /var/log/nginx/photon-site-error.log
-rm -f "$INSTALL_DIR/hugo_build.log"
-rm -f "$INSTALL_DIR/malformed_urls.log"
+truncate -s 0 $INSTALL_DIR/hugo_build.log 2>/dev/null || rm -f $INSTALL_DIR/hugo_build.log
+truncate -s 0 $INSTALL_DIR/malformed_urls.log 2>/dev/null || rm -f $INSTALL_DIR/malformed_urls.log
 
-# Install dependencies if not present (tdnf skips if installed)
-tdnf install -y wget curl nginx tar iptables nodejs openssl
+# Install required packages
+echo "Installing required packages..."
+tdnf install -y wget unzip curl tar gzip nodejs nginx openssl iptables docker
+systemctl enable --now docker
+systemctl enable --now nginx
 
 # Ensure /usr/local/bin exists
 mkdir -p /usr/local/bin
@@ -107,27 +113,38 @@ mkdir -p /var/www
 chown -R nginx:nginx /var/www
 chmod -R 755 /var/www
 
-# Mark the repository as safe to avoid dubious ownership errors
-git config --global --add safe.directory "$INSTALL_DIR"
-
 # Clone repo
 if [ -d "$INSTALL_DIR" ]; then
   echo "Deleting existing repo"
   rm -rf "$INSTALL_DIR"
 fi
 echo "Cloning repo"
-git clone --branch photon-hugo --single-branch https://github.com/vmware/photon.git "$INSTALL_DIR"
+git clone --branch photon-hugo --single-branch $PHOTON_FORK_REPOSITORY "$INSTALL_DIR"
 cd "$INSTALL_DIR"
 
-# Get the actual commit details after update
-COMMIT_HASH=$(git rev-parse HEAD)
-COMMIT_ABBREV=$(git log -1 --format=%h)
+# Extract commit details and add to config.toml
+COMMIT_DATE=$(git log -1 --format=%cd --date=short)
+COMMIT_HASH_SHORT=$(echo $COMMIT_HASH | cut -c1-7)
 COMMIT_MESSAGE=$(git log -1 --format=%s)
-COMMIT_DATE=$(git log -1 --format=%cd --date=format:'%B %-d, %Y')
-echo "Checked out commit: $COMMIT_HASH"
-echo "Commit date: $COMMIT_DATE"
-echo "Commit message: $COMMIT_MESSAGE"
-echo "Abbreviated hash: $COMMIT_ABBREV"
+COMMIT_FULL_HASH=$COMMIT_HASH
+
+if ! grep -q "last_commit_date" $INSTALL_DIR/config.toml; then
+  if grep -q "^\[params\]$" $INSTALL_DIR/config.toml; then
+    sed -i '/^\[params\]$/a last_commit_date = "'"$COMMIT_DATE"'"' $INSTALL_DIR/config.toml
+    sed -i '/^\[params\]$/a last_commit_hash = "'"$COMMIT_HASH_SHORT"'"' $INSTALL_DIR/config.toml
+    sed -i '/^\[params\]$/a last_commit_full_hash = "'"$COMMIT_FULL_HASH"'"' $INSTALL_DIR/config.toml
+    sed -i '/^\[params\]$/a last_commit_message = "'"$COMMIT_MESSAGE"'"' $INSTALL_DIR/config.toml
+  else
+    cat >> $INSTALL_DIR/config.toml <<EOF
+
+[params]
+last_commit_date = "$COMMIT_DATE"
+last_commit_hash = "$COMMIT_HASH_SHORT"
+last_commit_full_hash = "$COMMIT_FULL_HASH"
+last_commit_message = "$COMMIT_MESSAGE"
+EOF
+  fi
+fi
 
 # Initialize submodules (e.g., for Docsy theme)
 git submodule update --init --recursive
@@ -151,7 +168,7 @@ done
 echo "Fixing internal links to remove double paths..."
 find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i 's|/docs-v3/docs-v3/|/docs-v3/|g' {} \;
 find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i 's|/docs-v4/docs-v4/|/docs-v4/|g' {} \;
-find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i 's|/docs-v5/docs-v5/|/docs-v5/|g' {} \;
+find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i 's|/docs-v5/docs-v5/| /docs-v5/|g' {} \;
 
 # Patch docs-v* _index.md to set type: docs for sidebar and menu on main pages
 for ver in docs-v3 docs-v4 docs-v5; do
@@ -173,50 +190,47 @@ if [ -d themes/docsy ] && [ -f themes/docsy/package.json ]; then
   cd ../..
 fi
 
-# Enable raw HTML in Markdown to prevent escaping of <script> tags
-if ! grep -q "\[markup.goldmark.renderer\]" config.toml; then
-  cat >> config.toml <<'EOF_CONFIGTOML'
-[markup]
-  [markup.goldmark]
-    [markup.goldmark.renderer]
-      unsafe = true
-EOF_CONFIGTOML
-fi
+cd "$INSTALL_DIR"
 
 # Fix deprecated disableKinds in config.toml
-sed -i 's/[Tt]axonomy[Tt]erm/taxonomy/g' config.toml
+sed -i 's/[Tt]axonomy[Tt]erm/taxonomy/g' $INSTALL_DIR/config.toml
 
 # Fix deprecated languages.en.description
-if grep -q "^description.*=" config.toml; then
-  DESCRIPTION=$(grep "^description.*=" config.toml | sed 's/description *= *"\(.*\)"/\1/')
-  sed -i '/^description.*=/d' config.toml
+if grep -q "^description.*=" $INSTALL_DIR/config.toml; then
+  DESCRIPTION=$(grep "^description.*=" $INSTALL_DIR/config.toml | sed 's/description *= *"\(.*\)"/\1/')
+  sed -i '/^description.*=/d' $INSTALL_DIR/config.toml
   if ! grep -q "\[languages.en.params\]" config.toml; then
-    echo -e "\n[languages.en.params]\ndescription = \"$DESCRIPTION\"" >> config.toml
+    echo -e "\n[languages.en.params]\ndescription = \"$DESCRIPTION\"" >> $INSTALL_DIR/config.toml
   else
-    sed -i "/\[languages.en.params\]/a description = \"$DESCRIPTION\"" config.toml
+    sed -i "/\[languages.en.params\]/a description = \"$DESCRIPTION\"" $INSTALL_DIR/config.toml
   fi
 fi
 
 # Remove existing googleAnalytics and uglyURLs
-sed -i '/^googleAnalytics/d' config.toml
-sed -i '/^uglyURLs/d' config.toml
+sed -i '/^googleAnalytics/d' $INSTALL_DIR/config.toml
+sed -i '/^uglyURLs/d' $INSTALL_DIR/config.toml
 
 # Add uglyURLs to config.toml
 echo -e "\nuglyURLs = false" >> config.toml
 
 # Fix render-link.html to use safeURL
-if [ -f layouts/partials/render-link.html ]; then
-  sed -i 's/urls\.Parse \([^ ]*\)/\1 | safeURL/g' layouts/partials/render-link.html
+if [ -f $INSTALL_DIR/layouts/partials/render-link.html ]; then
+  sed -i 's/urls\.Parse \([^ ]*\)/\1 | safeURL/g' $INSTALL_DIR/layouts/partials/render-link.html
+fi
+
+# Patch render-link.html to fix parse errors
+if [ -f $INSTALL_DIR/layouts/_default/_markup/render-link.html ]; then
+  sed -i 's/urls\.Parse \([^ ]*\)/\1 | safeURL/g' $INSTALL_DIR/layouts/partials/render-link.html
 fi
 
 # Remove existing duplicated permalinks
 find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i '/^permalink: \/docs-v[3-5]\/docs-v[3-5]\//d' {} \;
 
 # Ensure single [permalinks] section and set paths using :sections to handle hierarchy without duplicates
-if grep -q "\[permalinks\]" config.toml; then
-  sed -i '/\[permalinks\]/,/^[\[a-zA-Z]\|^$/d' config.toml
+if grep -q "\[permalinks\]" $INSTALL_DIR/config.toml; then
+  sed -i '/\[permalinks\]/,/^[\[a-zA-Z]\|^$/d' $INSTALL_DIR/config.toml
 fi
-cat >> config.toml <<EOF_PERMALINKS
+cat >> $INSTALL_DIR/config.toml <<EOF_PERMALINKS
 
 [permalinks]
 blog = "/blog/:year/:month/:day/:slug/"
@@ -226,16 +240,27 @@ docs-v5 = "/:sections/:slug/"
 EOF_PERMALINKS
 
 # Verify no duplicate [permalinks]
-if [ $(grep -c "\[permalinks\]" config.toml) -gt 1 ]; then
+if [ $(grep -c "\[permalinks\]" $INSTALL_DIR/config.toml) -gt 1 ]; then
   echo "Error: Multiple [permalinks] sections found in config.toml."
   exit 1
 fi
 
+# Enable raw HTML in Markdown to prevent escaping of <script> tags
+if ! grep -q "[markup.goldmark.renderer]" $INSTALL_DIR/config.toml; then
+  cat >> $INSTALL_DIR/config.toml <<EOF
+
+[markup]
+  [markup.goldmark]
+    [markup.goldmark.renderer]
+      unsafe = true
+EOF
+fi
+
 # Fix URLs in markdown
-find content/en -type f -name "*.md" -exec sed -i 's/ (\([^)]*\))/ \1/g' {} \;
+find $INSTALL_DIR/content/en -type f -name "*.md" -exec sed -i 's/ (\([^)]*\))/ \1/g' {} \;
 
 # Patch templates for .Site.IsServer
-find layouts themes -type f -name "*.html" -exec sed -i 's/\.Site\.IsServer/hugo.IsServer/g' {} \;
+find $INSTALL_DIR/layouts $INSTALL_DIR/themes -type f -name "*.html" -exec sed -i 's/\.Site\.IsServer/hugo.IsServer/g' {} \;
 
 # Patch head.html for Google Analytics
 if [ -f themes/photon-theme/layouts/partials/head.html ]; then
@@ -248,29 +273,29 @@ if [ -f themes/docsy/layouts/partials/head.html ]; then
 fi
 
 # Set up GA4 config
-sed -i '/\[services\.googleAnalytics\]/,/^$/d' config.toml
+sed -i '/\[services\.googleAnalytics\]/,/^$/d' $INSTALL_DIR/config.toml
 RANDOM_ID=$(cat /dev/urandom | tr -dc 'A-Z0-9' | fold -w 10 | head -n 1)
-echo -e "\n[services.googleAnalytics]\nid = \"G-${RANDOM_ID}\"" >> config.toml
+echo -e "\n[services.googleAnalytics]\nid = \"G-${RANDOM_ID}\"" >> $INSTALL_DIR/config.toml
 echo "Generated placeholder GA4 ID: G-${RANDOM_ID} (replace with real ID for production)"
 
 # Add commit details to config.toml
-if ! grep -q "[params]" config.toml; then
-  echo -e "\n[params]" >> config.toml
+if ! grep -q "[params]" $INSTALL_DIR/config.toml; then
+  echo -e "\n[params]" >> $INSTALL_DIR/config.toml
 fi
-if ! grep -E -q "github_repo\s*=" config.toml; then
-  sed -i '/\[params\]/a github_repo = "https://github.com/vmware/photon"' config.toml
+if ! grep -E -q "github_repo\s*=" $INSTALL_DIR/config.toml; then
+  sed -i '/\[params\]/a github_repo = "https://github.com/vmware/photon"' $INSTALL_DIR/config.toml
 fi
-if ! grep -E -q "last_commit_date\s*=" config.toml; then
-  sed -i '/\[params\]/a last_commit_date = "'"$COMMIT_DATE"'"' config.toml
+if ! grep -E -q "last_commit_date\s*=" $INSTALL_DIR/config.toml; then
+  sed -i '/\[params\]/a last_commit_date = "'"$COMMIT_DATE"'"' $INSTALL_DIR/config.toml
 fi
-if ! grep -E -q "last_commit_message\s*=" config.toml; then
-  sed -i '/\[params\]/a last_commit_message = "'"$COMMIT_MESSAGE"'"' config.toml
+if ! grep -E -q "last_commit_message\s*=" $INSTALL_DIR/config.toml; then
+  sed -i '/\[params\]/a last_commit_message = "'"$COMMIT_MESSAGE"'"' $INSTALL_DIR/config.toml
 fi
-if ! grep -E -q "last_commit_hash\s*=" config.toml; then
-  sed -i '/\[params\]/a last_commit_hash = "'"$COMMIT_ABBREV"'"' config.toml
+if ! grep -E -q "last_commit_hash\s*=" $INSTALL_DIR/config.toml; then
+  sed -i '/\[params\]/a last_commit_hash = "'"$COMMIT_ABBREV"'"' $INSTALL_DIR/config.toml
 fi
-if ! grep -E -q "last_commit_full_hash\s*=" config.toml; then
-  sed -i '/\[params\]/a last_commit_full_hash = "'"$COMMIT_HASH"'"' config.toml
+if ! grep -E -q "last_commit_full_hash\s*=" $INSTALL_DIR/config.toml; then
+  sed -i '/\[params\]/a last_commit_full_hash = "'"$COMMIT_HASH"'"' $INSTALL_DIR/config.toml
 fi
 
 # Added: Overrides page-meta-lastmod.html with hardcoded commit info from params for consistent footer matching the branch.
@@ -291,56 +316,140 @@ if grep -q "^[[:space:]]" "$INSTALL_DIR/layouts/partials/page-meta-lastmod.html"
 fi
 
 # Fix: Replace Slack with Broadcom in config.toml
-sed -i 's/name = "Slack"/name = "Broadcom Community"/g' config.toml
-sed -i 's/url = "https:\/\/vmwarecode.slack.com"/url = "https:\/\/community.broadcom.com\/tanzu\/communities\/tanzucommunityhomeblogs?CommunityKey=a70674e4-ccb6-46a3-ae94-7ecf16c06e24"/g' config.toml
-sed -i 's/icon = "fab fa-slack"/icon = "fas fa-comment-dots"/g' config.toml
-sed -i 's/desc = "Join the VMware {code} Slack community!"/desc = "Broadcom Community for Photon OS"/g' config.toml
+sed -i 's/name = "Slack"/name = "Broadcom Community"/g' $INSTALL_DIR/config.toml
+sed -i 's/url = "https:\/\/vmwarecode.slack.com"/url = "https:\/\/community.broadcom.com\/tanzu\/communities\/tanzucommunityhomeblogs?CommunityKey=a70674e4-ccb6-46a3-ae94-7ecf16c06e24"/g' $INSTALL_DIR/config.toml
+sed -i 's/icon = "fab fa-slack"/icon = "fas fa-comment-dots"/g' $INSTALL_DIR/config.toml
+sed -i 's/desc = "Join the VMware {code} Slack community!"/desc = "Broadcom Community for Photon OS"/g' $INSTALL_DIR/config.toml
 
 # Fix: Patch templates to handle image URLs in icon fields for social links
-find layouts themes -type f -name "*.html" -exec sed -i 's/<i class="{{ .icon }}"[^>]*>\&nbsp;<\/i>/{{ if or (hasPrefix .icon "http:\/\/") (hasPrefix .icon "https:\/\/") (hasPrefix .icon "\/") }}<img src="{{ .icon }}" alt="{{ .name }}" style="height:1em; width:auto; vertical-align:middle;">\&nbsp;{{ else }}<i class="{{ .icon }}" aria-hidden="true">\&nbsp;<\/i>{{ end }}/g' {} \;
+find $INSTALL_DIR/layouts $INSTALL_DIR/themes -type f -name "*.html" -exec sed -i 's/<i class="{{ .icon }}"[^>]*>\&nbsp;<\/i>/{{ if or (hasPrefix .icon "http:\/\/") (hasPrefix .icon "https:\/\/") (hasPrefix .icon "\/") }}<img src="{{ .icon }}" alt="{{ .name }}" style="height:1em; width:auto; vertical-align:middle;">\&nbsp;{{ else }}<i class="{{ .icon }}" aria-hidden="true">\&nbsp;<\/i>{{ end }}/g' {} \;
 
 # Fix footer text to "a VMware By Broadcom backed Project"
-sed -i 's/A VMware Backed Project/a VMware By Broadcom backed Project/gi' config.toml
-find layouts themes -type f -name "*.html" -exec sed -i 's/A VMware Backed Project/a VMware By Broadcom backed Project/gi' {} \;
+sed -i 's/A VMware Backed Project/a VMware By Broadcom backed Project/gi' $INSTALL_DIR/config.toml
+find $INSTALL_DIR/layouts $INSTALL_DIR/themes -type f -name "*.html" -exec sed -i 's/A VMware Backed Project/a VMware By Broadcom backed Project/gi' {} \;
 
 # Fix VMware logo to Broadcom logo
-find layouts themes -type f -name "*.html" -exec sed -i 's/vmware-logo.png/broadcom-logo.png/g' {} \;
-find layouts themes -type f -name "*.html" -exec sed -i 's/vmware.png/broadcom-logo.png/g' {} \;
-find layouts themes -type f -name "*.html" -exec sed -i 's/vmware-logo.svg/broadcom-logo.png/g' {} \;
+find $INSTALL_DIR/layouts $INSTALL_DIR/themes -type f -name "*.html" -exec sed -i 's/vmware-logo.png/broadcom-logo.png/g' {} \;
+find $INSTALL_DIR/layouts $INSTALL_DIR/themes -type f -name "*.html" -exec sed -i 's/vmware.png/broadcom-logo.png/g' {} \;
+find $INSTALL_DIR/layouts $INSTALL_DIR/themes -type f -name "*.html" -exec sed -i 's/vmware-logo.svg/broadcom-logo.png/g' {} \;
 
 # Fix VMware link to Broadcom
-find layouts themes -type f -name "*.html" -exec sed -i 's/https:\/\/www.vmware.com/https:\/\/www.broadcom.com/g' {} \;
-sed -i 's/https:\/\/www.vmware.com/https:\/\/www.broadcom.com/g' config.toml
+find $INSTALL_DIR/layouts $INSTALL_DIR/themes -type f -name "*.html" -exec sed -i 's/https:\/\/www.vmware.com/https:\/\/www.broadcom.com/g' {} \;
+sed -i 's/https:\/\/www.vmware.com/https:\/\/www.broadcom.com/g' $INSTALL_DIR/config.toml
 
 # Additional fixes for config.toml links post-Broadcom acquisition
-sed -i 's/vmw_link = "https:\/\/www.vmware.com"/vmw_link = "https:\/\/www.broadcom.com"/g' config.toml
-sed -i 's/privacy_policy = "https:\/\/vmware.com\/help\/privacy"/privacy_policy = "https:\/\/www.broadcom.com\/company\/legal\/privacy"/g' config.toml
+sed -i 's/vmw_link = "https:\/\/www.vmware.com"/vmw_link = "https:\/\/www.broadcom.com"/g' $INSTALL_DIR/config.toml
+sed -i 's/privacy_policy = "https:\/\/vmware.com\/help\/privacy"/privacy_policy = "https:\/\/www.broadcom.com\/company\/legal\/privacy"/g' $INSTALL_DIR/config.toml
 
 # Fix specific footer link from vmware.github.io to broadcom.com
-sed -i 's/https:\/\/vmware.github.io/https:\/\/www.broadcom.com/g' config.toml
-find layouts themes -type f -name "*.html" -exec sed -i 's/https:\/\/vmware.github.io/https:\/\/www.broadcom.com/g' {} \;
+sed -i 's/https:\/\/vmware.github.io/https:\/\/www.broadcom.com/g' $INSTALL_DIR/config.toml
+find $INSTALL_DIR/layouts $INSTALL_DIR/themes -type f -name "*.html" -exec sed -i 's/https:\/\/vmware.github.io/https:\/\/www.broadcom.com/g' {} \;
 
 # Added: Override render-image.html to disable lazy loading for printview image display fix.
-# Updated: Modified render-image.html to use root-relative absolute paths for images to fix wrong relative paths in printview.
-# FIXED: Inline the src logic without := assignment to avoid parse error in v0.151.2
-# FIXED: Remove escaped quotes in hasPrefix to fix parse parse failed unexpected "\\" error
-# FIXED: Use single quotes for hasPrefix strings to fix parse malformed character constant
-# FIXED: Use backticks for hasPrefix strings to fix malformed character constant
+# Updated: Use root-relative absolute paths for local relative images to fix path issues in printview.
 mkdir -p "$INSTALL_DIR/layouts/_default/_markup"
-cat > "$INSTALL_DIR/layouts/_default/_markup/render-image.html" <<'EOF_MARKUP'
-<img src="{{ if or (hasPrefix .Destination `http://`) (hasPrefix .Destination `https://`) (hasPrefix .Destination `/`) }}{{ .Destination | safeURL }}{{ else }}{{ printf "%s%s" .Page.RelPermalink .Destination | safeURL }}{{ end }}" alt="{{ .Text }}" {{ with .Title }}title="{{ . }}"{{ end }} />
-EOF_MARKUP
+cat > "$INSTALL_DIR/layouts/_default/_markup/render-image.html" <<EOF
+{{ \$src := .Destination }}
+{{ if or (hasPrefix \$src "http://") (hasPrefix \$src "https://") (hasPrefix \$src "/") }}
+  {{ \$src = \$src | safeURL }}
+{{ else }}
+  {{ \$src = printf "%s%s" .Page.RelPermalink \$src | safeURL }}
+{{ end }}
+<img src="{{ \$src }}" alt="{{ .Text }}" {{ with .Title }}title="{{ . }}"{{ end }} />
+EOF
+
+# Validate config.toml
+echo "Validating config.toml..."
+/usr/local/bin/hugo config > /dev/null 2>&1
+if [ $? -ne 0 ]; then
+  echo "Error: config.toml validation failed. Check $INSTALL_DIR/config.toml."
+  /usr/local/bin/hugo config 2>&1 | tee "$INSTALL_DIR/config_validation.log"
+  echo "Validation errors logged to $INSTALL_DIR/config_validation.log"
+  exit 1
+fi
+
+# Clear existing public directory
+rm -rf "$SITE_DIR/*"
 
 # === SANDBOX INJECTION ===
-# Download xterm.js and addons to static/js/xterm...
+# Install microsandbox for enhanced isolation (note: custom adaptation needed for streaming terminal; currently using Docker backend)
+echo "Installing microsandbox..."
+curl -sSL https://get.microsandbox.dev | sh
+msb server start --dev &> /var/log/microsandbox.log &
+
+# Server-side sandbox backend with Docker (replace with microsandbox SDK for better isolation)
+npm install dockerode ws express
+npm audit fix
+mkdir -p $INSTALL_DIR/backend
+cat > $INSTALL_DIR/backend/terminal-server.js <<'EOF'
+const Docker = require('dockerode');
+const express = require('express');
+const WebSocket = require('ws');
+const http = require('http');
+
+const app = express();
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server });
+const docker = new Docker();
+
+wss.on('connection', async (ws) => {
+  try {
+    const container = await docker.createContainer({
+      Image: 'photon-builder',
+      Tty: true,
+      OpenStdin: true,
+      AttachStdin: true,
+      AttachStdout: true,
+      AttachStderr: true,
+      Cmd: ['/bin/bash'],
+      HostConfig: { Memory: 536870912, NanoCpus: 1000000000 } // 512MB, 1 CPU
+    });
+    await container.start();
+    const exec = await container.exec({
+      Cmd: ['/bin/bash'],
+      AttachStdin: true,
+      AttachStdout: true,
+      AttachStderr: true,
+      Tty: true
+    });
+    const stream = await exec.start({ hijack: true, stdin: true });
+    stream.on('data', (chunk) => ws.send(chunk.toString()));
+    ws.on('message', (message) => stream.write(message));
+    ws.on('close', async () => {
+      await container.stop();
+      await container.remove();
+    });
+  } catch (err) {
+    ws.send(`Error: ${err.message}`);
+    ws.close();
+  }
+});
+
+server.listen(3000, () => console.log('Terminal server on port 3000'));
+EOF
+nohup node $INSTALL_DIR/backend/terminal-server.js > /var/log/terminal-server.log 2>&1 &
+
+# Build sandbox image
+cat > $INSTALL_DIR/backend/Dockerfile <<EOF
+FROM photon:5.0
+RUN sed -i 's/packages.vmware.com/packages-prod.broadcom.com/g' /etc/yum.repos.d/*
+RUN tdnf install -y git build-essential
+RUN git clone https://github.com/vmware/photon.git /workspace/photon
+WORKDIR /workspace/photon
+CMD ["/bin/bash"]
+EOF
+cd $INSTALL_DIR/backend/
+docker build -t photon-builder .
+
+# Download xterm.js and addons
 echo "Downloading xterm.js and addons to static/js/xterm..."
-mkdir -p static/js/xterm
-curl -o static/js/xterm/xterm.js https://cdn.jsdelivr.net/npm/xterm@4.19.0/lib/xterm.js
-curl -o static/js/xterm/xterm.css https://cdn.jsdelivr.net/npm/xterm@4.19.0/css/xterm.css
-curl -o static/js/xterm/xterm-addon-fit.js https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.5.0/lib/xterm-addon-fit.js
+mkdir -p $INSTALL_DIR/static/js/xterm
+curl -o $INSTALL_DIR/static/js/xterm/xterm.js https://cdn.jsdelivr.net/npm/xterm@4.19.0/lib/xterm.js
+curl -o $INSTALL_DIR/static/js/xterm/xterm.css https://cdn.jsdelivr.net/npm/xterm@4.19.0/css/xterm.css
+curl -o $INSTALL_DIR/static/js/xterm/xterm-addon-fit.js https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.5.0/lib/xterm-addon-fit.js
 
 # Create sandbox.js external file
-cat > static/js/sandbox.js <<'EOF_JS'
+cat > $INSTALL_DIR/static/js/sandbox.js <<'EOF_JS'
 const term = new Terminal({ theme: { background: "#1e1e1e" } });
 const fitAddon = new FitAddon.FitAddon();
 term.loadAddon(fitAddon);
@@ -349,23 +458,23 @@ fitAddon.fit();
 
 let socket;
 try {
-  socket = new WebSocket('ws://localhost:3000');
+  socket = new WebSocket('wss://' + window.location.host + '/ws/');
   socket.onopen = () => {
-    term.writeln('Connected to local Photon OS Build Sandbox');
-    term.writeln('Type commands below (runs in your local Docker container):');
+    term.writeln('Connected to server-side Photon OS Build Sandbox');
+    term.writeln('Type commands below:');
   };
   socket.onmessage = (event) => { term.write(event.data); };
   term.onData((data) => { if (socket.readyState === WebSocket.OPEN) socket.send(data); });
-  socket.onclose = () => { term.writeln('Connection closed. Restart the local server if needed.'); };
-  socket.onerror = () => { term.writeln('Error: Could not connect to local server. Ensure it\'s running on port 3000.'); };
+  socket.onclose = () => { term.writeln('Connection closed.'); };
+  socket.onerror = () => { term.writeln('Error: Could not connect to server.'); };
 } catch (err) {
   term.writeln('Error initializing sandbox: ' + err.message);
 }
 EOF_JS
 
-# Create sandbox shortcode for the div and script reference
-mkdir -p layouts/shortcodes
-cat > layouts/shortcodes/sandbox.html <<'EOF_SHORTCODE'
+# Create sandbox shortcode
+mkdir -p $INSTALL_DIR/layouts/shortcodes
+cat > $INSTALL_DIR/layouts/shortcodes/sandbox.html <<'EOF_SHORTCODE'
 <div id="sandbox-container" style="margin: 2em 0; border: 1px solid #444; border-radius: 8px; overflow: hidden;">
   <div id="terminal" style="height: 400px;"></div>
 </div>
@@ -387,82 +496,15 @@ TARGET_FILE="$INSTALL_DIR/content/en/docs-v5/installation-guide/building images/
 if [ -f "$TARGET_FILE" ]; then
   echo "Target file found: $TARGET_FILE"
 
-  # Write awk program to temp file to avoid quoting issues
+  # Write awk program to temp file
   cat > /tmp/inject.awk <<'EOF_AWK'
 BEGIN { insert_done = 0 }
 /make iso/ && !insert_done {
-  print $0  # Print the matching line
+  print $0
   print ""
-  print "**Note: For interactive mode, set up the local terminal server on your Windows machine (see instructions below). Otherwise, this is a static demo.**"
+  print "**Interactive server-side sandbox enabled - type commands below.**"
   print ""
   print "{{% sandbox %}}"
-  print ""
-  print "#### Local Setup Instructions for Interactive Sandbox"
-  print "1. Install Node.js (if not already): Download from https://nodejs.org/ (LTS version recommended)."
-  print "2. Install required packages: Open Command Prompt or PowerShell and run `npm install dockerode ws express`."
-  print "3. Create `terminal-server.js` with the code below (save in a folder, e.g., C:\\sandbox):"
-  print "   ```javascript"
-  print "   const Docker = require('dockerode');"
-  print "   const express = require('express');"
-  print "   const WebSocket = require('ws');"
-  print "   const http = require('http');"
-  print ""
-  print "   const app = express();"
-  print "   const server = http.createServer(app);"
-  print "   const wss = new WebSocket.Server({ server });"
-  print ""
-  print "   const docker = new Docker();"
-  print ""
-  print "   wss.on('connection', async (ws) => {"
-  print "     try {"
-  print "       const container = await docker.createContainer({"
-  print "         Image: 'photon-builder',"
-  print "         Tty: true,"
-  print "         OpenStdin: true,"
-  print "         AttachStdin: true,"
-  print "         AttachStdout: true,"
-  print "         AttachStderr: true,"
-  print "         Cmd: ['/bin/bash'],"
-  print "       });"
-  print "       await container.start();"
-  print ""
-  print "       const exec = await container.exec({"
-  print "         Cmd: ['/bin/bash'],"
-  print "         AttachStdin: true,"
-  print "         AttachStdout: true,"
-  print "         AttachStderr: true,"
-  print "         Tty: true,"
-  print "       });"
-  print ""
-  print "       const stream = await exec.start({ hijack: true, stdin: true });"
-  print ""
-  print "       stream.on('data', (chunk) => ws.send(chunk.toString()));"
-  print "       ws.on('message', (message) => stream.write(message));"
-  print "       ws.on('close', async () => {"
-  print "         await container.stop();"
-  print "         await container.remove();"
-  print "       });"
-  print "     } catch (err) {"
-  print "       ws.send(`Error: ${err.message}`);"
-  print "       ws.close();"
-  print "     }"
-  print "   });"
-  print ""
-  print "   server.listen(3000, () => console.log('Terminal server running on port 3000'));"
-  print "   ```"
-  print "4. Build the Docker image: Create `Dockerfile` in the same folder:"
-  print "   ```dockerfile"
-  print "   FROM photon:5.0"
-  print "   RUN tdnf install -y git build-essential  # Add more packages if needed for builds"
-  print "   RUN git clone https://github.com/vmware/photon.git /workspace/photon"
-  print "   WORKDIR /workspace/photon"
-  print "   CMD [\"/bin/bash\"]"
-  print "   ```"
-  print "   Then run `docker build -t photon-builder .`"
-  print "5. Start the server: `node terminal-server.js`"
-  print "6. Refresh this page—the sandbox will now be interactive!"
-  print ""
-  print "**Security Note:** This runs containers as root by default; customize for production (e.g., add --user)."
   print ""
   insert_done = 1
   next
@@ -471,21 +513,18 @@ BEGIN { insert_done = 0 }
 END { if (insert_done) system("echo Injection successful >&2"); else system("echo SANDBOX INJECTION FAILED >&2") }
 EOF_AWK
 
-  # Run awk with the temp program file
+  # Run awk
   awk -f /tmp/inject.awk "$TARGET_FILE" > "$TARGET_FILE.tmp" 2>/tmp/awk_inject.log
   mv "$TARGET_FILE.tmp" "$TARGET_FILE"
-  rm /tmp/inject.awk  # Clean up
+  rm /tmp/inject.awk
+  rm /tmp/awk_inject.log  # Clean up log after use
 
-  cat /tmp/awk_inject.log
-
-  if grep -q "Injection successful" /tmp/awk_inject.log; then
-    touch "$TARGET_FILE"
+  if [ $? -eq 0 ]; then
     echo "Interactive sandbox successfully injected after first 'make iso' command."
   else
     echo "Injection failed - no matching line found. Check file content for 'make iso'."
     exit 1
   fi
-  rm /tmp/awk_inject.log
 else
   echo "ERROR: Target file NOT found: $TARGET_FILE"
   ls -l "$INSTALL_DIR/content/en/docs-v5/installation-guide/building images/build-iso-from-source/" || true
@@ -493,31 +532,15 @@ else
 fi
 # === END OF SANDBOX INJECTION ===
 
-# Clear cache and old output before build
-echo "Cleaning Hugo cache and old output..."
-rm -rf "$INSTALL_DIR/resources" "$INSTALL_DIR/public" "$SITE_DIR/*"
-
-# Validate config.toml
-echo "Validating config.toml..."
-/usr/local/bin/hugo config > /dev/null 2>&1
-if [ $? -ne 0 ]; then
-  echo "Error: config.toml validation failed. Check $INSTALL_DIR/config.toml."
-  /usr/local/bin/hugo config 2>&1 | tee "$INSTALL_DIR/config_validation.log"
-  echo "Validation errors logged to $INSTALL_DIR/config_validation.log"
-  exit 1
-fi
-
 # Build site with Hugo
 echo "Building site with Hugo..."
+cd $INSTALL_DIR
 set -o pipefail
-cd "$INSTALL_DIR"
-/usr/local/bin/hugo --minify --baseURL "/" --logLevel debug --enableGitInfo --ignoreCache --forceSyncStatic -d public 2>&1 | tee hugo_build.log
+/usr/local/bin/hugo --minify --baseURL "/" --logLevel debug --enableGitInfo -d public 2>&1 | tee $INSTALL_DIR/hugo_build.log
 if [ $? -ne 0 ]; then
   echo "Hugo build failed. Check hugo_build.log."
   exit 1
 fi
-
-
 
 # Make site dir readable by nginx
 mkdir -p "$SITE_DIR"
@@ -622,7 +645,7 @@ else
   echo "Self-signed certificate already exists, skipping generation."
 fi
 
-# Configure Nginx
+# Configure Nginx with WS proxy
 NGINX_CONF="/etc/nginx/conf.d/photon-site.conf"
 echo "Configuring Nginx (overwriting if exists)"
 cat > "${NGINX_CONF}" <<EOF_PHOTON
@@ -645,6 +668,13 @@ server {
 
     location / {
         try_files \$uri \$uri/ =404;
+    }
+
+    location /ws/ {
+        proxy_pass http://localhost:3000/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
     }
 
     error_log /var/log/nginx/photon-site-error.log warn;
@@ -687,17 +717,19 @@ iptables-save > /etc/systemd/scripts/ip4save
 # Verify build and access
 if [ -f "$SITE_DIR/index.html" ]; then
   echo "Build successful: index.html exists."
+	for subdir in blog docs-v3 docs-v4 docs-v5; do
+	  if [ -d "$SITE_DIR/$subdir" ] && [ -f "$SITE_DIR/$subdir/index.html" ]; then
+		echo "Subpath /$subdir/ found with index.html."
+	  else
+		echo "Warning: Subpath /$subdir/ missing or incomplete. Check $SITE_DIR/$subdir/ and hugo_build.log."
+		exit 1
+	  fi
+	done  
 else
   echo "Error: Build failed - index.html not found in $SITE_DIR. Check hugo_build.log."
   exit 1
 fi
-for subdir in blog docs-v3 docs-v4 docs-v5; do
-  if [ -d "$SITE_DIR/$subdir" ] && [ -f "$SITE_DIR/$subdir/index.html" ]; then
-    echo "Subpath /$subdir/ found with index.html."
-  else
-    echo "Warning: Subpath /$subdir/ missing or incomplete. Check $SITE_DIR/$subdir/ and hugo_build.log."
-  fi
-done
+
 
 echo "Installation complete! Access the Photon site at https://${IP_ADDRESS}/ (HTTP redirects to HTTPS)."
 echo "Interactive sandbox available at: https://${IP_ADDRESS}/docs-v5/installation-guide/building-images/build-iso-from-source/building-the-iso/#interactive-code-sandbox"
