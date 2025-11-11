@@ -126,6 +126,11 @@ echo Installing Cline CLI ...
 npm install -g cline
 echo "Installation finished. Start Cline CLI with 'cline'."
 
+# echo Installing Warp CLI ...
+# wget https://app.warp.dev/download/cli?os=linux&package=rpm&arch=x86_64
+# export WARP_API_KEY="wk-xxx..."
+# echo "Installation finished. Start Warp CLI with 'warp'."
+
 
 # echo Installing Eigent Multi-Agent ...
 # https://www.eigent.ai/
