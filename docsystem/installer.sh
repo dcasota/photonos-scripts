@@ -49,8 +49,19 @@
 # Fix: Replaced Slack logo and link with Broadcom in footer by modifying config.toml params.links.user and patching templates to handle image URLs in icon fields.
 # Fix: Updated to use local Broadcom logo and change name to "Broadcom Community".
 # Fix: Removed indentation in added TOML sections to fix unmarshal error in config.toml validation.
-# FIXED (2025-11-10): Moved xterm.js sandbox injection BEFORE Hugo build; corrected filename to building-the-iso.md.
-# Note: microsandbox.dev integration for enhanced isolation can be added by replacing Docker with microsandbox SDK in the backend.js (requires custom adaptation for streaming terminal, as microsandbox is primarily for code execution snippets).
+# Modification (2025-11-11): Replaced per-page sandbox with global console feature in menu; console is draggable, resizable, with reset/reconnect options; uses same backend.
+# Fix (2025-11-11): Removed escaping backslashes in render-image.html to fix Hugo parse error. Changed navbar patch path to photon-theme.
+# Modification: Added "Chat" menu entry with icon; opens static chat box, draggable/resizable.
+# Modification: Extended console to persist open state, position, size across pages using localStorage; session preserved for 5 min inactivity with backend timeout.
+# Modification: Preserve console buffer content across page switches by saving to localStorage on beforeunload and restoring on init; send \r on reconnect to redraw prompt.
+# Modification (2025-11-11): Use tmux in backend for persistent terminal state, including buffer and cursor position; remove frontend buffer save/restore; remove auto-open on load to require user click; remove repeated messages.
+# Modification (2025-11-11): Reengineer console to embed as a fixed bottom panel like Azure Cloud Shell; remove draggable; make vertically resizable; add welcome overlay on first open.
+# Modification (2025-11-11): Preserve open state of console across page navigations using localStorage; auto-open if previously open; persist welcome shown state.
+# Modification (2025-11-11): Add term.focus() to ensure cursor focus on open; clean detach on beforeunload by sending prefix-d to tmux.
+# Modification (2025-11-11): Track unfinished input in frontend and re-send on reconnect to preserve typed characters and set cursor at end.
+# Modification (2025-11-11): Move detach sequence to backend on ws.close for reliability; add short delay before stream.end().
+# Modification: Added cronie installation and cron job for periodic Docker container prune to clean up stopped sandboxes.
+# Modification: On re-attach, capture and send current tmux pane content to show initial state.
 
 BASE_DIR="/var/www"
 INSTALL_DIR="$BASE_DIR/photon-site"
@@ -89,9 +100,10 @@ truncate -s 0 $INSTALL_DIR/malformed_urls.log 2>/dev/null || rm -f $INSTALL_DIR/
 
 # Install required packages
 echo "Installing required packages..."
-tdnf install -y wget unzip curl tar gzip nodejs nginx openssl iptables docker
+tdnf install -y wget unzip curl tar gzip nodejs nginx openssl iptables docker cronie
 systemctl enable --now docker
 systemctl enable --now nginx
+systemctl enable --now crond
 
 # Ensure /usr/local/bin exists
 mkdir -p /usr/local/bin
@@ -135,14 +147,14 @@ if ! grep -q "last_commit_date" $INSTALL_DIR/config.toml; then
     sed -i '/^\[params\]$/a last_commit_full_hash = "'"$COMMIT_FULL_HASH"'"' $INSTALL_DIR/config.toml
     sed -i '/^\[params\]$/a last_commit_message = "'"$COMMIT_MESSAGE"'"' $INSTALL_DIR/config.toml
   else
-    cat >> $INSTALL_DIR/config.toml <<EOF
+    cat >> $INSTALL_DIR/config.toml <<'EOF_CONFIGTOML'
 
 [params]
 last_commit_date = "$COMMIT_DATE"
 last_commit_hash = "$COMMIT_HASH_SHORT"
 last_commit_full_hash = "$COMMIT_FULL_HASH"
 last_commit_message = "$COMMIT_MESSAGE"
-EOF
+EOF_CONFIGTOML
   fi
 fi
 
@@ -168,7 +180,7 @@ done
 echo "Fixing internal links to remove double paths..."
 find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i 's|/docs-v3/docs-v3/|/docs-v3/|g' {} \;
 find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i 's|/docs-v4/docs-v4/|/docs-v4/|g' {} \;
-find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i 's|/docs-v5/docs-v5/| /docs-v5/|g' {} \;
+find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i 's|/docs-v5/docs-v5/|/docs-v5/|g' {} \;
 
 # Patch docs-v* _index.md to set type: docs for sidebar and menu on main pages
 for ver in docs-v3 docs-v4 docs-v5; do
@@ -247,13 +259,13 @@ fi
 
 # Enable raw HTML in Markdown to prevent escaping of <script> tags
 if ! grep -q "[markup.goldmark.renderer]" $INSTALL_DIR/config.toml; then
-  cat >> $INSTALL_DIR/config.toml <<EOF
+  cat >> $INSTALL_DIR/config.toml <<'EOF_MARKUPGOLDMARK'
 
 [markup]
   [markup.goldmark]
     [markup.goldmark.renderer]
       unsafe = true
-EOF
+EOF_MARKUPGOLDMARK
 fi
 
 # Fix URLs in markdown
@@ -292,10 +304,10 @@ if ! grep -E -q "last_commit_message\s*=" $INSTALL_DIR/config.toml; then
   sed -i '/\[params\]/a last_commit_message = "'"$COMMIT_MESSAGE"'"' $INSTALL_DIR/config.toml
 fi
 if ! grep -E -q "last_commit_hash\s*=" $INSTALL_DIR/config.toml; then
-  sed -i '/\[params\]/a last_commit_hash = "'"$COMMIT_ABBREV"'"' $INSTALL_DIR/config.toml
+  sed -i '/\[params\]/a last_commit_hash = "'"$COMMIT_HASH_SHORT"'"' $INSTALL_DIR/config.toml
 fi
 if ! grep -E -q "last_commit_full_hash\s*=" $INSTALL_DIR/config.toml; then
-  sed -i '/\[params\]/a last_commit_full_hash = "'"$COMMIT_HASH"'"' $INSTALL_DIR/config.toml
+  sed -i '/\[params\]/a last_commit_full_hash = "'"$COMMIT_FULL_HASH"'"' $INSTALL_DIR/config.toml
 fi
 
 # Added: Overrides page-meta-lastmod.html with hardcoded commit info from params for consistent footer matching the branch.
@@ -346,17 +358,17 @@ sed -i 's/https:\/\/vmware.github.io/https:\/\/www.broadcom.com/g' $INSTALL_DIR/
 find $INSTALL_DIR/layouts $INSTALL_DIR/themes -type f -name "*.html" -exec sed -i 's/https:\/\/vmware.github.io/https:\/\/www.broadcom.com/g' {} \;
 
 # Added: Override render-image.html to disable lazy loading for printview image display fix.
-# Updated: Use root-relative absolute paths for local relative images to fix path issues in printview.
+# Updated: Modified render-image.html to use root-relative absolute paths for images to fix wrong relative paths in printview.
 mkdir -p "$INSTALL_DIR/layouts/_default/_markup"
-cat > "$INSTALL_DIR/layouts/_default/_markup/render-image.html" <<EOF
-{{ \$src := .Destination }}
-{{ if or (hasPrefix \$src "http://") (hasPrefix \$src "https://") (hasPrefix \$src "/") }}
-  {{ \$src = \$src | safeURL }}
+cat > "$INSTALL_DIR/layouts/_default/_markup/render-image.html" <<'EOF_RENDERIMAGE'
+{{ $src := .Destination }}
+{{ if or (hasPrefix $src "http://") (hasPrefix $src "https://") (hasPrefix $src "/") }}
+  {{ $src = $src | safeURL }}
 {{ else }}
-  {{ \$src = printf "%s%s" .Page.RelPermalink \$src | safeURL }}
+  {{ $src = printf "%s%s" .Page.RelPermalink $src | safeURL }}
 {{ end }}
-<img src="{{ \$src }}" alt="{{ .Text }}" {{ with .Title }}title="{{ . }}"{{ end }} />
-EOF
+<img src="{{ $src }}" alt="{{ .Text }}" {{ with .Title }}title="{{ . }}"{{ end }} />
+EOF_RENDERIMAGE
 
 # Validate config.toml
 echo "Validating config.toml..."
@@ -371,54 +383,145 @@ fi
 # Clear existing public directory
 rm -rf "$SITE_DIR/*"
 
-# === SANDBOX INJECTION ===
-# Install microsandbox for enhanced isolation (note: custom adaptation needed for streaming terminal; currently using Docker backend)
-echo "Installing microsandbox..."
-curl -sSL https://get.microsandbox.dev | sh
-msb server start --dev &> /var/log/microsandbox.log &
-
-# Server-side sandbox backend with Docker (replace with microsandbox SDK for better isolation)
+# === CONSOLE SETUP ===
+# Server-side console backend with Docker and tmux for persistent state
 npm install dockerode ws express
 npm audit fix
 mkdir -p $INSTALL_DIR/backend
-cat > $INSTALL_DIR/backend/terminal-server.js <<'EOF'
+cat > $INSTALL_DIR/backend/terminal-server.js <<'EOF_BACKENDTERMINALSERVER'
 const Docker = require('dockerode');
 const express = require('express');
 const WebSocket = require('ws');
 const http = require('http');
+const crypto = require('crypto');
+const urlModule = require('url');
 
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 const docker = new Docker();
 
-wss.on('connection', async (ws) => {
+const sessions = {};
+const INACTIVITY_TIMEOUT = 5 * 60 * 1000; // 5 minutes
+
+function resetTimeout(session) {
+  if (session.timeout) clearTimeout(session.timeout);
+  session.timeout = setTimeout(() => stopSession(session), INACTIVITY_TIMEOUT);
+}
+
+function stopSession(session) {
+  session.ws.forEach(w => {
+    if (w.readyState === WebSocket.OPEN) {
+      w.send('Session timed out due to inactivity.');
+      w.close();
+    }
+  });
+  if (session.container) {
+    session.container.stop().then(() => session.container.remove());
+  }
+  delete sessions[session.id];
+}
+
+wss.on('connection', async (ws, req) => {
+  const parsedUrl = urlModule.parse(req.url, true);
+  let sessionId = parsedUrl.query.session;
+  let session;
+  let isNewSession = false;
+
+  if (sessionId && sessions[sessionId]) {
+    session = sessions[sessionId];
+  } else {
+    isNewSession = true;
+    sessionId = crypto.randomUUID();
+    session = { id: sessionId, ws: [], lastActivity: Date.now() };
+    sessions[sessionId] = session;
+
+    try {
+      const container = await docker.createContainer({
+        Image: 'photon-builder',
+        Labels: { 'photon-sandbox': 'true' },
+        Tty: true,
+        OpenStdin: true,
+        AttachStdin: true,
+        AttachStdout: true,
+        AttachStderr: true,
+        Cmd: ['/bin/bash'],
+        HostConfig: { Memory: 536870912, NanoCpus: 1000000000 } // 512MB, 1 CPU
+      });
+      session.container = container;
+      await container.start();
+
+      // Create tmux session
+      const execNew = await container.exec({
+        Cmd: ['tmux', 'new-session', '-d', '-s', session.id, '/bin/bash'],
+        AttachStdin: false,
+        AttachStdout: false,
+        AttachStderr: false,
+      });
+      await execNew.start();
+    } catch (err) {
+      ws.send(`Error: ${err.message}`);
+      ws.close();
+      return;
+    }
+  }
+
   try {
-    const container = await docker.createContainer({
-      Image: 'photon-builder',
-      Tty: true,
-      OpenStdin: true,
-      AttachStdin: true,
-      AttachStdout: true,
-      AttachStderr: true,
-      Cmd: ['/bin/bash'],
-      HostConfig: { Memory: 536870912, NanoCpus: 1000000000 } // 512MB, 1 CPU
-    });
-    await container.start();
-    const exec = await container.exec({
-      Cmd: ['/bin/bash'],
+    // Attach to tmux session
+    const execAttach = await session.container.exec({
+      Cmd: ['tmux', 'attach-session', '-t', session.id],
       AttachStdin: true,
       AttachStdout: true,
       AttachStderr: true,
       Tty: true
     });
-    const stream = await exec.start({ hijack: true, stdin: true });
-    stream.on('data', (chunk) => ws.send(chunk.toString()));
-    ws.on('message', (message) => stream.write(message));
-    ws.on('close', async () => {
-      await container.stop();
-      await container.remove();
+    const stream = await execAttach.start({ hijack: true, stdin: true });
+    session.ws.push({ ws, stream });
+
+    stream.on('data', (chunk) => {
+      const data = chunk.toString();
+      session.ws.forEach(client => {
+        if (client.ws.readyState === WebSocket.OPEN) client.ws.send(data);
+      });
     });
+
+    ws.on('message', (message) => {
+      stream.write(message);
+      session.lastActivity = Date.now();
+      resetTimeout(session);
+    });
+
+    ws.on('close', () => {
+      const client = session.ws.find(client => client.ws === ws);
+      if (client) {
+        client.stream.write('\x02d');
+        setTimeout(() => {
+          client.stream.end();
+        }, 100); // Delay to allow detach to process
+        session.ws = session.ws.filter(c => c !== client);
+      }
+      if (session.ws.length === 0) {
+        resetTimeout(session);
+      }
+    });
+
+    if (isNewSession) {
+      ws.send(JSON.stringify({ type: 'session', id: sessionId }));
+    } else {
+      // Send current pane content for re-attach
+      const execCapture = await session.container.exec({
+        Cmd: ['tmux', 'capture-pane', '-t', session.id, '-p'],
+        AttachStdout: true,
+        AttachStderr: true
+      });
+      const captureStream = await execCapture.start({ hijack: false });
+      let buffer = '';
+      captureStream.on('data', chunk => buffer += chunk.toString());
+      captureStream.on('end', () => {
+        ws.send(buffer);
+      });
+    }
+    resetTimeout(session);
   } catch (err) {
     ws.send(`Error: ${err.message}`);
     ws.close();
@@ -426,18 +529,18 @@ wss.on('connection', async (ws) => {
 });
 
 server.listen(3000, () => console.log('Terminal server on port 3000'));
-EOF
+EOF_BACKENDTERMINALSERVER
 nohup node $INSTALL_DIR/backend/terminal-server.js > /var/log/terminal-server.log 2>&1 &
 
-# Build sandbox image
-cat > $INSTALL_DIR/backend/Dockerfile <<EOF
+# Build console image
+cat > $INSTALL_DIR/backend/Dockerfile <<EOF_DOCKERFILE
 FROM photon:5.0
 RUN sed -i 's/packages.vmware.com/packages-prod.broadcom.com/g' /etc/yum.repos.d/*
-RUN tdnf install -y git build-essential
+RUN tdnf install -y git build-essential tmux
 RUN git clone https://github.com/vmware/photon.git /workspace/photon
 WORKDIR /workspace/photon
 CMD ["/bin/bash"]
-EOF
+EOF_DOCKERFILE
 cd $INSTALL_DIR/backend/
 docker build -t photon-builder .
 
@@ -448,89 +551,280 @@ curl -o $INSTALL_DIR/static/js/xterm/xterm.js https://cdn.jsdelivr.net/npm/xterm
 curl -o $INSTALL_DIR/static/js/xterm/xterm.css https://cdn.jsdelivr.net/npm/xterm@4.19.0/css/xterm.css
 curl -o $INSTALL_DIR/static/js/xterm/xterm-addon-fit.js https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.5.0/lib/xterm-addon-fit.js
 
-# Create sandbox.js external file
-cat > $INSTALL_DIR/static/js/sandbox.js <<'EOF_JS'
-const term = new Terminal({ theme: { background: "#1e1e1e" } });
-const fitAddon = new FitAddon.FitAddon();
-term.loadAddon(fitAddon);
-term.open(document.getElementById("terminal"));
-fitAddon.fit();
+# Create console.js external file
+cat > $INSTALL_DIR/static/js/console.js <<'EOF_JS'
+let term = null;
+let socket = null;
+let isOpen = false;
+let fitAddon = null;
+let currentInput = '';
 
-let socket;
-try {
-  socket = new WebSocket('wss://' + window.location.host + '/ws/');
+function toggleConsole() {
+  const win = document.getElementById('console-window');
+  if (isOpen) {
+    win.style.display = 'none';
+    if (socket) socket.close();
+    if (term) term.dispose();
+    term = null;
+    fitAddon = null;
+    isOpen = false;
+    localStorage.setItem('consoleOpen', 'false');
+  } else {
+    win.style.display = 'block';
+    initConsole();
+    isOpen = true;
+    localStorage.setItem('consoleOpen', 'true');
+    if (localStorage.getItem('consoleWelcomeShown') !== 'true') {
+      showWelcomeOverlay();
+      localStorage.setItem('consoleWelcomeShown', 'true');
+    }
+  }
+}
+
+function initConsole() {
+  if (!term) {
+    term = new Terminal({ theme: { background: "#1e1e1e" } });
+    fitAddon = new FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
+    term.open(document.getElementById('terminal'));
+    fitAddon.fit();
+    term.focus();
+    term.onData((data) => {
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(data);
+      }
+      updateCurrentInput(data);
+    });
+  }
+  connectWS();
+}
+
+function updateCurrentInput(data) {
+  if (data.length === 1 && data.charCodeAt(0) >= 32 && data.charCodeAt(0) <= 126) {
+    currentInput += data;
+  } else if (data === '\b') {
+    if (currentInput.length > 0) currentInput = currentInput.slice(0, -1);
+  } else if (data === '\r') {
+    currentInput = '';
+  } // ignore others like arrows for simplicity
+}
+
+function connectWS() {
+  if (socket && socket.readyState !== WebSocket.CLOSED) socket.close();
+  const sessionID = localStorage.getItem('consoleSessionID');
+  const wsUrl = sessionID ? `wss://${location.host}/ws/?session=${sessionID}` : `wss://${location.host}/ws/`;
+  socket = new WebSocket(wsUrl);
   socket.onopen = () => {
-    term.writeln('Connected to server-side Photon OS Build Sandbox');
-    term.writeln('Type commands below:');
+    currentInput = localStorage.getItem('consoleCurrentInput') || '';
+    if (currentInput) {
+      socket.send(currentInput);
+    }
   };
-  socket.onmessage = (event) => { term.write(event.data); };
-  term.onData((data) => { if (socket.readyState === WebSocket.OPEN) socket.send(data); });
+  socket.onmessage = (event) => {
+    try {
+      const json = JSON.parse(event.data);
+      if (json.type === 'session') {
+        localStorage.setItem('consoleSessionID', json.id);
+        return;
+      }
+    } catch (e) {}
+    term.write(event.data);
+  };
   socket.onclose = () => { term.writeln('Connection closed.'); };
   socket.onerror = () => { term.writeln('Error: Could not connect to server.'); };
-} catch (err) {
-  term.writeln('Error initializing sandbox: ' + err.message);
 }
+
+function resetConsole() {
+  if (term) term.reset();
+}
+
+function reconnectConsole() {
+  connectWS();
+}
+
+function showWelcomeOverlay() {
+  const overlay = document.createElement('div');
+  overlay.id = 'console-welcome';
+  overlay.style.position = 'absolute';
+  overlay.style.top = '50%';
+  overlay.style.left = '50%';
+  overlay.style.transform = 'translate(-50%, -50%)';
+  overlay.style.background = '#fff';
+  overlay.style.padding = '20px';
+  overlay.style.borderRadius = '5px';
+  overlay.style.boxShadow = '0 0 10px rgba(0,0,0,0.5)';
+  overlay.style.zIndex = '1001';
+  overlay.innerHTML = `
+    <h3>Welcome to Photon OS Console</h3>
+    <p>This is an embedded console for Photon OS documentation.</p>
+    <p>Start typing commands below.</p>
+    <button onclick="this.parentElement.remove()">OK</button>
+  `;
+  document.getElementById('console-window').appendChild(overlay);
+}
+
+// Save currentInput on unload
+window.addEventListener('beforeunload', () => {
+  localStorage.setItem('consoleCurrentInput', currentInput);
+});
+
+// Resize handling
+const win = document.getElementById('console-window');
+win.addEventListener('resize', () => {
+  localStorage.setItem('consoleHeight', win.style.height);
+  if (fitAddon) fitAddon.fit();
+});
+
+// Resize observer for terminal
+new ResizeObserver(() => {
+  if (term && isOpen && fitAddon) {
+    fitAddon.fit();
+  }
+}).observe(document.getElementById('terminal'));
+
+// Persist on load
+window.addEventListener('load', () => {
+  const win = document.getElementById('console-window');
+  win.style.height = localStorage.getItem('consoleHeight') || '300px';
+  if (localStorage.getItem('consoleOpen') === 'true') {
+    toggleConsole();
+  }
+});
 EOF_JS
 
-# Create sandbox shortcode
-mkdir -p $INSTALL_DIR/layouts/shortcodes
-cat > $INSTALL_DIR/layouts/shortcodes/sandbox.html <<'EOF_SHORTCODE'
-<div id="sandbox-container" style="margin: 2em 0; border: 1px solid #444; border-radius: 8px; overflow: hidden;">
-  <div id="terminal" style="height: 400px;"></div>
+# === CHAT SETUP ===
+# Create chat.js external file (static chat)
+cat > $INSTALL_DIR/static/js/chat.js <<'EOF_CHATJS'
+let isChatOpen = false;
+let isChatDragging = false;
+let chatOffsetX, chatOffsetY;
+
+function toggleChat() {
+  const chatWin = document.getElementById('chat-window');
+  if (isChatOpen) {
+    chatWin.style.display = 'none';
+    isChatOpen = false;
+    localStorage.setItem('chatOpen', 'false');
+  } else {
+    chatWin.style.display = 'block';
+    isChatOpen = true;
+    localStorage.setItem('chatOpen', 'true');
+  }
+}
+
+// Draggable functionality for chat
+const chatHeader = document.getElementById('chat-header');
+const chatWin = document.getElementById('chat-window');
+if (chatHeader && chatWin) {
+  chatHeader.addEventListener('mousedown', (e) => {
+    isChatDragging = true;
+    chatOffsetX = e.clientX - chatWin.getBoundingClientRect().left;
+    chatOffsetY = e.clientY - chatWin.getBoundingClientRect().top;
+  });
+  document.addEventListener('mousemove', (e) => {
+    if (isChatDragging) {
+      chatWin.style.left = (e.clientX - chatOffsetX) + 'px';
+      chatWin.style.top = (e.clientY - chatOffsetY) + 'px';
+    }
+  });
+  document.addEventListener('mouseup', () => {
+    if (isChatDragging) {
+      localStorage.setItem('chatLeft', chatWin.style.left);
+      localStorage.setItem('chatTop', chatWin.style.top);
+      isChatDragging = false;
+    }
+  });
+}
+
+// Chat functionality (static)
+const chatMessages = document.getElementById('chat-messages');
+const chatInput = document.getElementById('chat-input');
+const chatSend = document.getElementById('chat-send');
+
+chatSend.addEventListener('click', sendChatMessage);
+chatInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') sendChatMessage();
+});
+
+function sendChatMessage() {
+  const msg = chatInput.value.trim();
+  if (msg) {
+    chatMessages.innerHTML += `<div class="user">${msg}</div>`;
+    chatInput.value = '';
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+}
+
+// Resize handling for chat
+chatWin.addEventListener('resize', () => {
+  localStorage.setItem('chatWidth', chatWin.offsetWidth + 'px');
+  localStorage.setItem('chatHeight', chatWin.offsetHeight + 'px');
+});
+
+// Persist on load for chat
+window.addEventListener('load', () => {
+  const chatWin = document.getElementById('chat-window');
+  chatWin.style.left = localStorage.getItem('chatLeft') || '200px';
+  chatWin.style.top = localStorage.getItem('chatTop') || '200px';
+  chatWin.style.width = localStorage.getItem('chatWidth') || '400px';
+  chatWin.style.height = localStorage.getItem('chatHeight') || '300px';
+  if (localStorage.getItem('chatOpen') === 'true') {
+    toggleChat();
+  }
+});
+EOF_CHATJS
+
+# Add console and chat window HTML/JS to body-end partial
+mkdir -p $INSTALL_DIR/layouts/partials/hooks
+cat > $INSTALL_DIR/layouts/partials/hooks/body-end.html <<'EOF_BODY_END'
+<div id="console-window" style="display: none; position: fixed; bottom: 0; left: 0; right: 0; height: 300px; background: #fff; border-top: 1px solid #000; z-index: 1000; resize: vertical; overflow: hidden; box-shadow: 0 -2px 10px rgba(0,0,0,0.2);">
+  <div id="console-header" style="background: #ddd; padding: 5px; display: flex; justify-content: space-between; align-items: center;">
+    <span>Photon OS Console</span>
+    <div>
+      <button onclick="resetConsole()">Reset</button>
+      <button onclick="reconnectConsole()">Reconnect</button>
+      <button onclick="toggleConsole()">Close</button>
+    </div>
+  </div>
+  <div id="terminal" style="width: 100%; height: calc(100% - 30px); background: #1e1e1e;"></div>
 </div>
 
-<link rel="stylesheet" href="/css/xterm/xterm.css">
+<div id="chat-window" style="display: none; position: fixed; top: 200px; left: 200px; width: 400px; height: 300px; background: #fff; border: 1px solid #000; z-index: 1000; resize: both; overflow: hidden; box-shadow: 0 0 10px rgba(0,0,0,0.5);">
+  <div id="chat-header" style="background: #ddd; padding: 5px; cursor: move; display: flex; justify-content: space-between; align-items: center;">
+    <span>Chat</span>
+    <button onclick="toggleChat()">Close</button>
+  </div>
+  <div id="chat-messages" style="height: calc(100% - 60px); overflow-y: auto; padding: 10px; background: #f9f9f9;"></div>
+  <div style="display: flex; padding: 5px;">
+    <input id="chat-input" style="flex: 1; padding: 5px;" placeholder="Type your question...">
+    <button id="chat-send" style="padding: 5px 10px;">Send</button>
+  </div>
+</div>
+
+<link rel="stylesheet" href="/js/xterm/xterm.css">
 <script src="/js/xterm/xterm.js"></script>
 <script src="/js/xterm/xterm-addon-fit.js"></script>
-<script src="/js/sandbox.js"></script>
+<script src="/js/console.js"></script>
+<script src="/js/chat.js"></script>
+EOF_BODY_END
 
-<style>
-  #terminal { background: #1e1e1e !important; }
-  .xterm-cursor { background: #0f0 !important; }
-</style>
-
-<!-- EOF_SANDBOX -->
-EOF_SHORTCODE
-
-TARGET_FILE="$INSTALL_DIR/content/en/docs-v5/installation-guide/building images/build-iso-from-source/build-the-iso.md"
-if [ -f "$TARGET_FILE" ]; then
-  echo "Target file found: $TARGET_FILE"
-
-  # Write awk program to temp file
-  cat > /tmp/inject.awk <<'EOF_AWK'
-BEGIN { insert_done = 0 }
-/make iso/ && !insert_done {
-  print $0
-  print ""
-  print "**Interactive server-side sandbox enabled - type commands below.**"
-  print ""
-  print "{{% sandbox %}}"
-  print ""
-  insert_done = 1
-  next
-}
-{ print $0 }
-END { if (insert_done) system("echo Injection successful >&2"); else system("echo SANDBOX INJECTION FAILED >&2") }
-EOF_AWK
-
-  # Run awk
-  awk -f /tmp/inject.awk "$TARGET_FILE" > "$TARGET_FILE.tmp" 2>/tmp/awk_inject.log
-  mv "$TARGET_FILE.tmp" "$TARGET_FILE"
-  rm /tmp/inject.awk
-  rm /tmp/awk_inject.log  # Clean up log after use
-
-  if [ $? -eq 0 ]; then
-    echo "Interactive sandbox successfully injected after first 'make iso' command."
-  else
-    echo "Injection failed - no matching line found. Check file content for 'make iso'."
-    exit 1
-  fi
+# Patch navbar to add console and chat icons in menu
+NAVBAR_FILE="$INSTALL_DIR/themes/photon-theme/layouts/partials/navbar.html"
+if [ -f "$NAVBAR_FILE" ]; then
+  sed -i '/<\/ul>/i <li class="nav-item"><a class="nav-link" href="#" onclick="toggleConsole(); return false;" title="Console"><i class="fas fa-terminal"></i></a></li>' "$NAVBAR_FILE"
+  sed -i '/<\/ul>/i <li class="nav-item"><a class="nav-link" href="#" onclick="toggleChat(); return false;" title="Chat"><i class="fas fa-comments"></i></a></li>' "$NAVBAR_FILE"
 else
-  echo "ERROR: Target file NOT found: $TARGET_FILE"
-  ls -l "$INSTALL_DIR/content/en/docs-v5/installation-guide/building images/build-iso-from-source/" || true
-  exit 1
+  echo "Warning: navbar.html not found. Console and chat menu items not added."
 fi
-# === END OF SANDBOX INJECTION ===
+# === END OF CONSOLE AND CHAT SETUP ===
+
+# Set up cron job for Docker cleanup
+echo "Setting up cron job for Docker container cleanup..."
+mkdir -p /etc/cron.d
+cat > /etc/cron.d/photon-cleanup <<EOF
+*/5 * * * * root docker container prune -f
+EOF
+chmod 644 /etc/cron.d/photon-cleanup
 
 # Build site with Hugo
 echo "Building site with Hugo..."
@@ -732,4 +1026,4 @@ fi
 
 
 echo "Installation complete! Access the Photon site at https://${IP_ADDRESS}/ (HTTP redirects to HTTPS)."
-echo "Interactive sandbox available at: https://${IP_ADDRESS}/docs-v5/installation-guide/building-images/build-iso-from-source/building-the-iso/#interactive-code-sandbox"
+echo "Global console and chat available via menu icons."
