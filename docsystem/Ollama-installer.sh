@@ -6,20 +6,23 @@
 # Default version: v0.12.9
 # Default config path: ./ollama_config.json
 
-OLLAMA_VERSION=${1:-v0.12.9}
+OLLAMA_VERSION=${1:-v0.12.11}
 CONFIG_FILE=${2:-./ollama_config.json}
 
 # Top 5 popular Ollama models (based on 2025 popularity from sources)
 # for 8GB VRAM
 # Model id, name, context_window, default_max_tokens
 MODELS=(
-  "llama3.1:8b|Llama 3.1 8B|128000|8192"
-  "qwen2.5:7b|Qwen 2.5 7B|131072|8192"
-  "mistral:7b|Mistral 7B|32768|4096"
-  "gemma3:4b|Gemma 4 4B|8192|4096"
   "embeddinggemma:300m|embeddinggemma 300m|2048|2048"  
-  "phi3:3.8b|Phi 3 Mini 3.8B|128000|4096"
 )
+# MODELS=(
+#   "llama3.1:8b|Llama 3.1 8B|128000|8192"
+#   "qwen2.5:7b|Qwen 2.5 7B|131072|8192"
+#   "mistral:7b|Mistral 7B|32768|4096"
+#   "gemma3:4b|Gemma 4 4B|8192|4096"
+#   "embeddinggemma:300m|embeddinggemma 300m|2048|2048"  
+#   "phi3:3.8b|Phi 3 Mini 3.8B|128000|4096"
+# )
 
 echo "Installing Ollama version $OLLAMA_VERSION..."
 
