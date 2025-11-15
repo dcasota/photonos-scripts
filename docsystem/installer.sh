@@ -165,6 +165,22 @@ git submodule update --init --recursive
 mkdir -p static/img
 wget -O static/img/broadcom-logo.png "https://www.broadcom.com/img/broadcom-logo.png"
 
+# Setup favicons directory with placeholder icons
+mkdir -p static/favicons
+# Create basic placeholder favicons (use existing site icon if available, otherwise create minimal)
+if [ -f static/img/photon-logo.png ]; then
+  for size in 36 48 72 96 144 192 180; do
+    cp static/img/photon-logo.png static/favicons/android-${size}x${size}.png 2>/dev/null || touch static/favicons/android-${size}x${size}.png
+  done
+  cp static/img/photon-logo.png static/favicons/apple-touch-icon-180x180.png 2>/dev/null || touch static/favicons/apple-touch-icon-180x180.png
+else
+  # Create minimal placeholder files
+  for size in 36 48 72 96 144 192 180; do
+    touch static/favicons/android-${size}x${size}.png
+  done
+  touch static/favicons/apple-touch-icon-180x180.png
+fi
+
 # Fix redundant nested docs-vX subdirs
 for ver in docs-v3 docs-v4 docs-v5; do
   NESTED_DIR="$INSTALL_DIR/content/en/$ver/$ver"
@@ -176,7 +192,147 @@ for ver in docs-v3 docs-v4 docs-v5; do
   fi
 done
 
-# Fix internal links to remove double paths
+# Fix incorrect relative links in markdown source (root cause of path duplication)
+echo "====================================================="
+echo "Fixing incorrect relative links in markdown files..."
+echo "====================================================="
+
+# Fix 1: troubleshooting-guide/network-troubleshooting links
+echo "1. Fixing network-troubleshooting links..."
+find "$INSTALL_DIR/content/en" -path "*/troubleshooting-guide/network-troubleshooting/_index.md" -exec sed -i \
+  -e 's|(\./troubleshooting-guide/network-troubleshooting/|(./|g' \
+  -e 's|(\./administration-guide/|(../../administration-guide/|g' \
+  {} \;
+
+# Fix 2: troubleshooting-guide/kernel-problems-and-boot-and-login-errors links
+echo "2. Fixing kernel-problems-and-boot-and-login-errors links..."
+find "$INSTALL_DIR/content/en" -path "*/troubleshooting-guide/kernel-problems-and-boot-and-login-errors/_index.md" -exec sed -i \
+  -e 's|(\./troubleshooting-guide/kernel-problems-and-boot-and-login-errors/|(./|g' \
+  {} \;
+
+# Fix 3: administration-guide/photon-rpm-ostree/* relative links
+echo "3. Fixing photon-rpm-ostree relative links..."
+find "$INSTALL_DIR/content/en" -path "*/administration-guide/photon-rpm-ostree/introduction/_index.md" -exec sed -i \
+  -e 's|(\./troubleshooting-guide/|(../../../troubleshooting-guide/|g' \
+  -e 's|(\./administration-guide/photon-rpm-ostree/|(../|g' \
+  {} \;
+
+find "$INSTALL_DIR/content/en" -path "*/administration-guide/photon-rpm-ostree/installing-a-host-against-default-server-repository/_index.md" -exec sed -i \
+  -e 's|(\./installation-guide/|(../../../installation-guide/|g' \
+  -e 's|(\./administration-guide/photon-rpm-ostree/|(../|g' \
+  {} \;
+
+find "$INSTALL_DIR/content/en" -path "*/administration-guide/photon-rpm-ostree/concepts-in-action/_index.md" -exec sed -i \
+  -e 's|(\./administration-guide/photon-rpm-ostree/|(../|g' \
+  {} \;
+
+find "$INSTALL_DIR/content/en" -path "*/administration-guide/photon-rpm-ostree/creating-a-rpm-ostree-server/_index.md" -exec sed -i \
+  -e 's|(\./administration-guide/photon-rpm-ostree/|(../|g' \
+  {} \;
+
+find "$INSTALL_DIR/content/en" -path "*/administration-guide/photon-rpm-ostree/installing-a-host-against-custom-server-repository/_index.md" -exec sed -i \
+  -e 's|(\./administration-guide/photon-rpm-ostree/|(../|g' \
+  -e 's|(\./user-guide/|(../../../user-guide/|g' \
+  {} \;
+
+find "$INSTALL_DIR/content/en" -path "*/administration-guide/photon-rpm-ostree/package-oriented-server-operations/_index.md" -exec sed -i \
+  -e 's|(\./administration-guide/photon-rpm-ostree/|(../|g' \
+  {} \;
+
+find "$INSTALL_DIR/content/en" -path "*/administration-guide/photon-rpm-ostree/remotes/_index.md" -exec sed -i \
+  -e 's|(\./administration-guide/photon-rpm-ostree/|(../|g' \
+  {} \;
+
+find "$INSTALL_DIR/content/en" -path "*/administration-guide/photon-rpm-ostree/install-or-rebase-to-photon-os-4/_index.md" -exec sed -i \
+  -e 's|(\./administration-guide/photon-rpm-ostree/|(../|g' \
+  {} \;
+
+# Fix 4: administration-guide/managing-network-configuration/using-the-network-configuration-manager
+echo "4. Fixing network-configuration-manager links..."
+find "$INSTALL_DIR/content/en" -path "*/administration-guide/managing-network-configuration/using-the-network-configuration-manager/_index.md" -exec sed -i \
+  -e 's|(\./command-line-reference/command-line-interfaces/|(../../../../command-line-reference/command-line-interfaces/|g' \
+  -e 's|(\./administration-guide/managing-network-configuration/|(../|g' \
+  {} \;
+
+# Fix 5: administration-guide/photon-management-daemon/available-apis
+echo "5. Fixing photon-management-daemon links..."
+find "$INSTALL_DIR/content/en" -path "*/administration-guide/photon-management-daemon/available-apis/_index.md" -exec sed -i \
+  -e 's|(\./administration-guide/|(../../|g' \
+  {} \;
+
+# Fix 6: security-policy and firewall links
+echo "6. Fixing security-policy links..."
+find "$INSTALL_DIR/content/en" -path "*/administration-guide/security-policy/default-firewall-settings/_index.md" -exec sed -i \
+  -e 's|(\./troubleshooting-guide/|(../../../troubleshooting-guide/|g' \
+  {} \;
+
+find "$INSTALL_DIR/content/en" -path "*/troubleshooting-guide/network-troubleshooting/checking-firewall-rules/_index.md" -exec sed -i \
+  -e 's|(\./troubleshooting-guide/|(../../|g' \
+  {} \;
+
+# Fix 7: Cross-directory references
+echo "7. Fixing cross-directory references..."
+find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i \
+  -e 's|(\./installation-guide/administration-guide/|(../../administration-guide/|g' \
+  -e 's|(\./user-guide/kubernetes-on-photon-os/)|(../../administration-guide/containers/kubernetes/)|g' \
+  {} \;
+
+# Fix 8: Remove .md extensions from all links
+echo "8. Removing .md extensions from links..."
+find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i \
+  's|\(]\)(\([^)]*\)\.md)|\1(\2)|g' \
+  {} \;
+
+# Fix 9: Fix remaining cross-directory link issues
+echo "9. Fixing remaining cross-directory issues..."
+# Fix quick-start-links
+find "$INSTALL_DIR/content/en" -path "*/quick-start-links/_index.md" -exec sed -i \
+  -e 's|(\.\./\.\./installation-guide/|(../installation-guide/|g' \
+  {} \;
+
+# Fix installation-guide paths that reference administration-guide
+find "$INSTALL_DIR/content/en" -path "*/installation-guide/building-images/build-other-images/_index.md" -exec sed -i \
+  -e 's|(\./administration-guide/|(../../../administration-guide/|g' \
+  {} \;
+
+find "$INSTALL_DIR/content/en" -path "*/installation-guide/run-photon-on-gce/installing-photon-os-on-google-compute-engine/_index.md" -exec sed -i \
+  -e 's|(\./installation-guide/|(.../../|g' \
+  {} \;
+
+# Fix user-guide working-with-kickstart references
+find "$INSTALL_DIR/content/en" -type f -name "*.md" -path "*/user-guide/setting-up-network-pxe-boot/*" -exec sed -i \
+  -e 's|(\./working-with-kickstart/)|(../working-with-kickstart/)|g' \
+  {} \;
+
+# Fix administration-guide security/firewall relative links
+find "$INSTALL_DIR/content/en" -path "*/administration-guide/security-policy/default-firewall-settings/_index.md" -exec sed -i \
+  -e 's|(\./troubleshooting-guide/|(../../../troubleshooting-guide/|g' \
+  {} \;
+
+find "$INSTALL_DIR/content/en" -path "*/troubleshooting-guide/network-troubleshooting/checking-firewall-rules/_index.md" -exec sed -i \
+  -e 's|(\./troubleshooting-guide/|(../../|g' \
+  {} \;
+
+# Fix troubleshooting-guide/kernel-problems internal links
+find "$INSTALL_DIR/content/en" -path "*/troubleshooting-guide/kernel-problems-and-boot-and-login-errors/_index.md" -exec sed -i \
+  -e 's|(\./investigating-strange-behavior/)|(./investigating-strange-behavior/)|g' \
+  {} \;
+
+# Fix mounting-remote-file-systems links
+find "$INSTALL_DIR/content/en" -path "*/administration-guide/managing-network-configuration/mounting-a-network-file-system/_index.md" -exec sed -i \
+  -e 's|(\.\./\.\./user-guide/|(../../../user-guide/|g' \
+  {} \;
+
+# Fix cloud-images references
+find "$INSTALL_DIR/content/en" -path "*/administration-guide/cloud-init-on-photon-os/customizing-a-photon-os-machine-on-ec2/_index.md" -exec sed -i \
+  -e 's|(\./installation-guide/|(../../../installation-guide/|g' \
+  {} \;
+
+echo "====================================================="
+echo "Markdown link fixes complete!"
+echo "====================================================="
+
+# Fix internal links to remove double paths in absolute URLs
 echo "Fixing internal links to remove double paths..."
 find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i 's|/docs-v3/docs-v3/|/docs-v3/|g' {} \;
 find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i 's|/docs-v4/docs-v4/|/docs-v4/|g' {} \;
@@ -882,6 +1038,11 @@ for ver in docs-v3 docs-v4 docs-v5; do
   fi
 done
 
+# Post-build: Fix all genuine missing pages (209 issues)
+echo "Post-build: Fixing all genuine missing pages with comprehensive solution..."
+chmod +x /root/photonos-scripts/docsystem/fix-all-genuine-issues.sh
+bash /root/photonos-scripts/docsystem/fix-all-genuine-issues.sh
+
 # Debug content structure
 echo "Content structure in content/en/:"
 find "$INSTALL_DIR/content/en" -type f -name "_index.md"
@@ -939,9 +1100,9 @@ else
   echo "Self-signed certificate already exists, skipping generation."
 fi
 
-# Configure Nginx with WS proxy
+# Configure Nginx with WS proxy AND redirect rules
 NGINX_CONF="/etc/nginx/conf.d/photon-site.conf"
-echo "Configuring Nginx (overwriting if exists)"
+echo "Configuring Nginx with redirect rules (overwriting if exists)"
 cat > "${NGINX_CONF}" <<EOF_PHOTON
 server {
     listen 0.0.0.0:80 default_server;
@@ -959,6 +1120,46 @@ server {
 
     root $SITE_DIR;
     index index.html;
+
+    # ========== REDIRECTS FOR BROKEN LINKS ==========
+    
+    # Typo fix: downloading-photon -> downloading-photon-os
+    rewrite ^/docs-v3/installation-guide/downloading-photon/?\$ /docs-v3/installation-guide/downloading-photon-os/ permanent;
+    rewrite ^/docs-v4/installation-guide/downloading-photon/?\$ /docs-v4/installation-guide/downloading-photon-os/ permanent;
+    rewrite ^/docs-v5/installation-guide/downloading-photon/?\$ /docs-v5/installation-guide/downloading-photon-os/ permanent;
+    rewrite ^/installation-guide/downloading-photon/?\$ /docs-v5/installation-guide/downloading-photon-os/ permanent;
+    rewrite ^/downloading-photon/?\$ /docs-v5/installation-guide/downloading-photon-os/ permanent;
+    
+    # Missing version prefix redirects
+    rewrite ^/overview/?\$ /docs-v5/overview/ permanent;
+    rewrite ^/installation-guide/(.*)\$ /docs-v5/installation-guide/\$1 permanent;
+    rewrite ^/administration-guide/(.*)\$ /docs-v5/administration-guide/\$1 permanent;
+    rewrite ^/user-guide/(.*)\$ /docs-v5/user-guide/\$1 permanent;
+    rewrite ^/troubleshooting-guide/(.*)\$ /docs-v5/troubleshooting-guide/\$1 permanent;
+    rewrite ^/command-line-reference/(.*)\$ /docs-v5/command-line-reference/\$1 permanent;
+    
+    # Short-path redirects
+    rewrite ^/deploying-a-containerized-application-in-photon-os/?\$ /docs-v5/installation-guide/deploying-a-containerized-application-in-photon-os/ permanent;
+    rewrite ^/working-with-kickstart/?\$ /docs-v5/user-guide/working-with-kickstart/ permanent;
+    rewrite ^/run-photon-on-gce/?\$ /docs-v5/installation-guide/run-photon-on-gce/ permanent;
+    rewrite ^/run-photon-aws-ec2/?\$ /docs-v5/installation-guide/run-photon-aws-ec2/ permanent;
+    
+    # Image path consolidation
+    rewrite ^/docs-v3/(.*)images/(.+)\$ /docs-v3/images/\$2 permanent;
+    rewrite ^/docs-v4/(.*)images/(.+)\$ /docs-v4/images/\$2 permanent;
+    rewrite ^/docs-v5/(.*)images/(.+)\$ /docs-v5/images/\$2 permanent;
+    rewrite ^/docs/images/(.+)\$ /docs-v4/images/\$1 permanent;
+    
+    # Nested printview redirects
+    rewrite ^/printview/docs-v3/(.*)\$ /docs-v3/\$1 permanent;
+    rewrite ^/printview/docs-v4/(.*)\$ /docs-v4/\$1 permanent;
+    rewrite ^/printview/docs-v5/(.*)\$ /docs-v5/\$1 permanent;
+    rewrite ^/printview/(.*)\$ /docs-v5/\$1 permanent;
+    
+    # Legacy HTML .md extension removal
+    rewrite ^(/assets/files/html/.*)\\.md\$ \$1 permanent;
+    
+    # ========== END REDIRECTS ==========
 
     location / {
         try_files \$uri \$uri/ =404;
