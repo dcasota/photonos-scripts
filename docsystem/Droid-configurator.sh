@@ -6,7 +6,7 @@
 # - Droid CLI is installed.
 
 # Set defaults
-FACTORYAI_PROJECT_DIR=$HOME/photonos-scripts/docsystem
+export FACTORYAI_PROJECT_DIR=$HOME/photonos-scripts/docsystem
 CONFIG_FILE="$FACTORYAI_PROJECT_DIR/.factory/config.json"
 
 tdnf install -y jq curl
