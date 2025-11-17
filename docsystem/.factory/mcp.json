@@ -9,11 +9,11 @@
     },
     "filesystem": {
       "command": "npx",
-      "args": ["@anthropic/mcp-server-filesystem", "/root/photonos-scripts/docsystem/FactoryAI"]
+      "args": ["@anthropic/mcp-server-filesystem", "/root/photonos-scripts/docsystem"]
     },
     "git": {
       "command": "npx",
-      "args": ["@anthropic/mcp-server-git", "--repository", "/root/photonos-scripts/docsystem/FactoryAI"]
+      "args": ["@anthropic/mcp-server-git", "--repository", "/root/photonos-scripts/docsystem"]
     }
   },
   "tools": [
