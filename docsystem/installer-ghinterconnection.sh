@@ -322,7 +322,7 @@ fi
 
 # Check if python3 is available
 if command -v python3 &> /dev/null; then
-    python3 "$PYTHON_SCRIPTFETCH"
+    python3 "$PYTHON_SCRIPT_FETCH"
 else
     echo "Error: python3 is not installed. Cannot fetch project status."
 fi
