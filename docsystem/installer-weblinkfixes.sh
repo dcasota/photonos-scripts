@@ -240,7 +240,7 @@ echo -e "\nuglyURLs = false" >>$INSTALL_DIR/config.toml
 
 # Fix 23: Fix malformed external links caused by extra '(' immediately after ']'
 echo "23: Fixing malformed external links caused by extra '(' immediately after ']' ..."
-find "$INSTALL_DIR/content" -type f -name "*.md" -exec sed -i 's/]\((https\?:\/\/\)/](https?:\/\//g' {} \;
+find "$INSTALL_DIR/content" -type f -name "*.md" -exec sed -i 's/]\((https\?:\/\/\)/](https:\/\//g' {} \;
 # Specific fix for the Vagrant link (in case the general one needs help on that line)
 sed -i 's/]\((https:\/\/app\.vagrantup\.com\/vmware\/boxes\/photon\))/](https:\/\/app\.vagrantup\.com\/vmware\/boxes\/photon\))/g' "$INSTALL_DIR/content/en/docs-v5/user-guide/packer-examples/_index.md" 2>/dev/null || true
 
@@ -299,6 +299,24 @@ if [ $(grep -c "\[permalinks\]" $INSTALL_DIR/config.toml) -gt 1 ]; then
   echo "Error: Multiple [permalinks] sections found in config.toml."
   exit 1
 fi
+
+# Fix 27: Add github_repo to config.toml to fix /commit/ links in theme
+echo "27: Adding github_repo to config.toml..."
+if ! grep -q "github_repo" "$INSTALL_DIR/config.toml"; then
+    echo "Adding github_repo to config.toml..."
+    # Check if [params] exists
+    if grep -q "\[params\]" "$INSTALL_DIR/config.toml"; then
+        sed -i '/\[params\]/a github_repo = "https://github.com/vmware/photon"' "$INSTALL_DIR/config.toml"
+    else
+        echo "" >> "$INSTALL_DIR/config.toml"
+        echo "[params]" >> "$INSTALL_DIR/config.toml"
+        echo 'github_repo = "https://github.com/vmware/photon"' >> "$INSTALL_DIR/config.toml"
+    fi
+fi
+
+# Fix 28: Regex-induced https?:// links in markdown
+echo "28: Fixing regex-induced https?:// links in markdown..."
+find "$INSTALL_DIR/content" -type f -name "*.md" -exec sed -i 's/https?:\/\//https:\/\//g' {} +
 
 echo "======================================================="
 echo "Fixing incorrect relative links in markdown files done."
