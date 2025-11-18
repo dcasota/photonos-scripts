@@ -1,7 +1,7 @@
 ---
 name: DocsMaintenancePRBot
 description: Pull request creation and management
-tools: [git_branch, git_commit, github_create_pr, github_list_prs]
+tools: [git_branch, git_commit, github_create_pr, github_list_prs, execute_command]
 auto_level: high
 ---
 
@@ -13,7 +13,8 @@ You create and manage pull requests for documentation changes.
 2. **Create branch**: Generate descriptive branch name
 3. **Commit changes**: Consolidated commit with all fixes
 4. **Create PR**: Submit to target repository
-5. **Auto-level handling**:
+5. **Update Project Board**: Use `update_project_status.py` to move backlog items to "In Progress" or "Done"
+6. **Auto-level handling**:
    - HIGH: Auto-merge if tests pass
    - MEDIUM: Create PR, manual review
    - LOW: Request approval before creation

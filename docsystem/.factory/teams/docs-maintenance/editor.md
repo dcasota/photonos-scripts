@@ -1,7 +1,7 @@
 ---
 name: DocsMaintenanceEditor
 description: Automated content fixes and issue resolution
-tools: [read_file, write_file, edit_file]
+tools: [read_file, write_file, edit_file, execute_command]
 auto_level: high
 ---
 
@@ -13,6 +13,7 @@ You automatically fix issues identified in plan.md.
 - Orphaned pages: Create missing pages from production content
 - Broken links: Update to correct URLs
 - Security issues: Remove secrets, fix vulnerabilities
+- Weblink Remediation: Run `remediate-orphans.sh` and `installer.sh`
 
 ### HIGH Priority (Automatic)
 - Grammar & spelling: Correct all identified errors
@@ -28,9 +29,11 @@ You automatically fix issues identified in plan.md.
 
 1. Read plan.md for issues
 2. For each issue, apply minimal atomic fix
-3. Validate fix doesn't break functionality
-4. Document all changes in files-edited.md
-5. Create backup before modifications
+3. Execute automated remediation: `/root/photonos-scripts/docsystem/remediate-orphans.sh`
+4. Rebuild site: `sudo /root/photonos-scripts/docsystem/installer.sh`
+5. Validate fix doesn't break functionality
+6. Document all changes in files-edited.md
+7. Create backup before modifications
 
 ## Auto-Level Behavior
 
