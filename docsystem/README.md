@@ -77,6 +77,10 @@ chmod a+x ./*.sh
 The Photon OS nginx webserver is installed locally. 
 
 #### Prepare the AI tools
+
+Docsystem relies heavily on FactoryAI's Droid CLI. The idea is quite intriguing: an AI agent's objectives and strategies are defined in a markdown file. Multiple agents form a team, and several teams together make up a swarm.
+Within the repository, the .factory directory specifies the swarm's goals, as well as each team and its members.
+
 4. run the following commands.
 ```
 ./Ollama-installer.sh
@@ -84,7 +88,16 @@ The Photon OS nginx webserver is installed locally.
 ./Droid-configurator.sh
 cd $HOME/photonos-scripts/docsystem/.factory
 ```
-Ollama-installer.sh installs Ollama with several locally downloaded LLMs. CodingAI-installer.sh installs a bunch of CLI e.g. FactoryAI Droid CLI, OpenAI Codex CLI, Grok-CLI, Coderabbit CLI, Google Gemini CLI, Anthropic Claude Code, Microsoft Copilot CLI, Cursor CLI, Ampcode CLI,  OpenCode CLI, AllHands CLI, Eigent Multi-Agent. It also installs a n8n Workflow instance, Microsoft Cloudfoundry CLI and Windsurf.
+
+
+
+`Droid-configurator.sh` installs Droid CLI. This is the initial version, which also provides optional configuration for an external Ollama source and xAI Cloud-LLMs.  
+
+The `Ollama-installer.sh` script is an optional tool for Droid that installs Ollama along with several locally downloaded LLMs. You can check inside the script for instructions on how to enable additional local LLMs.
+
+The `CodingAI-installer.sh` script os an optional tool for Droid that installs a bunch of CLI e.g. FactoryAI Droid CLI, OpenAI Codex CLI, Grok-CLI, Coderabbit CLI, Google Gemini CLI, Anthropic Claude Code, Microsoft Copilot CLI, Cursor CLI, Ampcode CLI,  OpenCode CLI, AllHands CLI, Eigent Multi-Agent. It also installs a n8n Workflow instance, Microsoft Cloudfoundry CLI and Windsurf.
+
+
 
 5. Run Droid CLI.
 ```
