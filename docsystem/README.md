@@ -1,4 +1,4 @@
-# Docsystem: A 24/7 Continuous Improvement System for Broadcom (VMware) Photon OS Documentation
+# Docsystem: A 24/7 Continuous Improvement System for the VMware By Broadcom Photon OS Documentation
 
 ## Status Quo
 
