@@ -9,15 +9,24 @@
 export FACTORYAI_PROJECT_DIR=$HOME/photonos-scripts/docsystem
 CONFIG_FILE="$FACTORYAI_PROJECT_DIR/.factory/config.json"
 
-tdnf install -y jq curl
+# install prerequisites
+cd $HOME
+tdnf install -y curl jq git nodejs tar
+
 
 if [ ! -f "/usr/local/bin/droid" ]; then
     echo Installing FactoryAI Droid CLI ...
-    # https://docs.factory.ai/guides/building/droid-exec-tutorial
-    # Install Bun
+    # install uv
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    chmod a+x .local/bin/uv
+    mv .local/bin/uv /usr/local/bin
+    chmod a+x .local/bin/uvx
+    mv .local/bin/uvx /usr/local/bin    
+    # Install bun
     curl -fsSL https://bun.sh/install | bash
     # https://docs.factory.ai/cli/getting-started/overview
     uv cache clean
+    # https://docs.factory.ai/guides/building/droid-exec-tutorial    
     curl -fsSL https://app.factory.ai/cli | sh
     chmod a+x .local/bin/droid
     mv .local/bin/droid /usr/local/bin
