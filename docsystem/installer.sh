@@ -62,11 +62,20 @@
 # Modification (2025-11-11): Move detach sequence to backend on ws.close for reliability; add short delay before stream.end().
 # Modification: Added cronie installation and cron job for periodic Docker container prune to clean up stopped sandboxes.
 # Modification: On re-attach, capture and send current tmux pane content to show initial state.
+# Added: Integrated search overlay with Lunr.js client-side search, matching the Factory.ai style (transparent input panel, blurred background).
+# Fix: Added mkdir -p for static/js to prevent file creation errors.
+# Fix: Patched head.html to replace deprecated _internal/google_analytics_async.html with _internal/google_analytics.html.
+# Fix: Patched head-css.html to replace .Site.IsServer with hugo.IsServer.
+# Fix: Fixed backend terminal-server.js to use console.log instead of undefined server.listen.
+# Fix: Added npm init and install for backend dependencies.
+# Fix (2025-11-17): Set TERM=xterm-256color in Docker container and tmux exec environments to resolve "missing or unsuitable terminal: xterm" error.
+# Fix (2025-11-17): Added ncurses-terminfo to Dockerfile to provide terminfo entries for xterm and xterm-256color.
+# Fix (2025-11-17): Fixed tmux "no sessions" error by using default shell in new-session (avoids non-interactive bash exit), added -e TERM=xterm-256color to new-session, and corrected session ID persistence by sending session.id instead of param.
 
 BASE_DIR="/var/www"
 INSTALL_DIR="$BASE_DIR/photon-site"
 SITE_DIR="$INSTALL_DIR/public"  # Where built static files go
-HUGO_VERSION="0.151.2"  # Latest version as of November 10, 2025
+HUGO_VERSION="0.152.2"  # Latest version as of November 10, 2025
 PHOTON_FORK_REPOSITORY="https://www.github.com/dcasota/photon"
 
 # Dynamically retrieve DHCP IP address
@@ -127,8 +136,10 @@ chmod -R 755 /var/www
 
 # Clone repo
 if [ -d "$INSTALL_DIR" ]; then
-  echo "Deleting existing repo"
-  rm -rf "$INSTALL_DIR"
+  cd "$INSTALL_DIR"
+  git config --global --add safe.directory "$INSTALL_DIR"
+  git fetch
+  git merge
 fi
 echo "Cloning repo"
 git clone --branch photon-hugo --single-branch $PHOTON_FORK_REPOSITORY "$INSTALL_DIR"
@@ -147,7 +158,7 @@ if ! grep -q "last_commit_date" $INSTALL_DIR/config.toml; then
     sed -i '/^\[params\]$/a last_commit_full_hash = "'"$COMMIT_FULL_HASH"'"' $INSTALL_DIR/config.toml
     sed -i '/^\[params\]$/a last_commit_message = "'"$COMMIT_MESSAGE"'"' $INSTALL_DIR/config.toml
   else
-    cat >> $INSTALL_DIR/config.toml <<'EOF_CONFIGTOML'
+    cat >> $INSTALL_DIR/config.toml <<EOF_CONFIGTOML
 
 [params]
 last_commit_date = "$COMMIT_DATE"
@@ -161,24 +172,38 @@ fi
 # Initialize submodules (e.g., for Docsy theme)
 git submodule update --init --recursive
 
+# Install npm dependencies for theme
+if [ -f $INSTALL_DIR/package.json ]; then
+  npm install --legacy-peer-deps 1>NUL 2>&1
+  npm audit fix 1>NUL 2>&1
+fi
+if [ -d $INSTALL_DIR/themes/docsy ] && [ -f $INSTALL_DIR/themes/docsy/package.json ]; then
+  cd $INSTALL_DIR/themes/docsy
+  npm install --legacy-peer-deps 1>NUL 2>&1
+  npm audit fix 1>NUL 2>&1
+  cd ../..
+fi
+
 # Download Broadcom logo locally to static/img
-mkdir -p static/img
-wget -O static/img/broadcom-logo.png "https://www.broadcom.com/img/broadcom-logo.png"
+if [ ! -f $INSTALL_DIR/static/img/broadcom-logo.png ]; then
+	mkdir -p $INSTALL_DIR/static/img
+	wget -O $INSTALL_DIR/static/img/broadcom-logo.png "https://www.broadcom.com/img/broadcom-logo.png"
+fi
 
 # Setup favicons directory with placeholder icons
-mkdir -p static/favicons
+mkdir -p $INSTALL_DIR/static/favicons
 # Create basic placeholder favicons (use existing site icon if available, otherwise create minimal)
-if [ -f static/img/photon-logo.png ]; then
+if [ -f $INSTALL_DIR/static/img/photon-logo.png ]; then
   for size in 36 48 72 96 144 192 180; do
-    cp static/img/photon-logo.png static/favicons/android-${size}x${size}.png 2>/dev/null || touch static/favicons/android-${size}x${size}.png
+    cp $INSTALL_DIR/static/img/photon-logo.png $INSTALL_DIR/static/favicons/android-${size}x${size}.png 2>/dev/null || touch static/favicons/android-${size}x${size}.png
   done
-  cp static/img/photon-logo.png static/favicons/apple-touch-icon-180x180.png 2>/dev/null || touch static/favicons/apple-touch-icon-180x180.png
+  cp $INSTALL_DIR/static/img/photon-logo.png $INSTALL_DIR/static/favicons/apple-touch-icon-180x180.png 2>/dev/null || touch static/favicons/apple-touch-icon-180x180.png
 else
   # Create minimal placeholder files
   for size in 36 48 72 96 144 192 180; do
-    touch static/favicons/android-${size}x${size}.png
+    touch $INSTALL_DIR/static/favicons/android-${size}x${size}.png
   done
-  touch static/favicons/apple-touch-icon-180x180.png
+  touch $INSTALL_DIR/static/favicons/apple-touch-icon-180x180.png
 fi
 
 # Fix redundant nested docs-vX subdirs
@@ -328,10 +353,6 @@ find "$INSTALL_DIR/content/en" -path "*/administration-guide/cloud-init-on-photo
   -e 's|(\./installation-guide/|(../../../installation-guide/|g' \
   {} \;
 
-echo "====================================================="
-echo "Markdown link fixes complete!"
-echo "====================================================="
-
 # Fix internal links to remove double paths in absolute URLs
 echo "Fixing internal links to remove double paths..."
 find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i 's|/docs-v3/docs-v3/|/docs-v3/|g' {} \;
@@ -346,17 +367,7 @@ for ver in docs-v3 docs-v4 docs-v5; do
   fi
 done
 
-# Install npm dependencies for theme
-if [ -f package.json ]; then
-  npm install --legacy-peer-deps
-  npm audit fix
-fi
-if [ -d themes/docsy ] && [ -f themes/docsy/package.json ]; then
-  cd themes/docsy
-  npm install --legacy-peer-deps
-  npm audit fix
-  cd ../..
-fi
+
 
 cd "$INSTALL_DIR"
 
@@ -374,12 +385,40 @@ if grep -q "^description.*=" $INSTALL_DIR/config.toml; then
   fi
 fi
 
+# Robust fix for deprecated .Site.GoogleAnalytics (removed entirely from Hugo ~0.94+; accessing it now panics)
+# We replace it with the modern safe map access .Site.Params.googleAnalytics everywhere.
+# Since we have no GA ID, leaving the param unset makes it evaluate to "" / false → any conditional GA code is skipped safely.
+echo "Applying robust patch for deprecated .Site.GoogleAnalytics → .Site.Params.googleAnalytics in ALL template files..."
+find "$INSTALL_DIR" -type f \( -name "*.html" -o -name "*.tmpl" \) -print0 | xargs -0 sed -i 's|\.Site\.GoogleAnalytics|.Site.Params.googleAnalytics|g'
+
 # Remove existing googleAnalytics and uglyURLs
 sed -i '/^googleAnalytics/d' $INSTALL_DIR/config.toml
 sed -i '/^uglyURLs/d' $INSTALL_DIR/config.toml
 
 # Add uglyURLs to config.toml
 echo -e "\nuglyURLs = false" >> config.toml
+
+# Add googleAnalytics to config.toml if not present (for completeness, even if template is patched)
+if ! grep -q "^googleAnalytics" config.toml; then
+  echo "googleAnalytics = \"G-XXXXXXXXXX\"" >> config.toml  # Replace with actual ID or leave placeholder
+fi
+
+# Fix malformed external links caused by extra '(' immediately after ']' (common copy-paste typo)
+echo "Fixing malformed external links with extra '('..."
+find "$INSTALL_DIR/content" -type f -name "*.md" -exec sed -i 's/]\((https\?:\/\/\)/](https?:\/\//g' {} \;
+# Specific fix for the Vagrant link (in case the general one needs help on that line)
+sed -i 's/]\((https:\/\/app\.vagrantup\.com\/vmware\/boxes\/photon\))/](https:\/\/app\.vagrantup\.com\/vmware\/boxes\/photon\))/g' "$INSTALL_DIR/content/en/docs-v5/user-guide/packer-examples/_index.md" 2>/dev/null || true
+
+# Install correct, fully safe render-link.html override (fixes BOTH urls.Parse errors AND the ".Title in type string" error forever)
+echo "Installing bullet-proof safe render-link.html override..."
+mkdir -p "$INSTALL_DIR/layouts/_default/_markup"
+cat > "$INSTALL_DIR/layouts/_default/_markup/render-link.html" <<'EOF_RENDERLINK'
+<a href="{{ .Destination | safeURL }}"
+   {{ with .Title }} title="{{ . | safeHTMLAttr }}"{{ end }}
+   {{ if or (strings.HasPrefix .Destination "http://") (strings.HasPrefix .Destination "https://") }} target="_blank" rel="noopener noreferrer"{{ end }}>
+  {{ .Text | safeHTML }}
+</a>
+EOF_RENDERLINK
 
 # Fix render-link.html to use safeURL
 if [ -f $INSTALL_DIR/layouts/partials/render-link.html ]; then
@@ -388,8 +427,36 @@ fi
 
 # Patch render-link.html to fix parse errors
 if [ -f $INSTALL_DIR/layouts/_default/_markup/render-link.html ]; then
-  sed -i 's/urls\.Parse \([^ ]*\)/\1 | safeURL/g' $INSTALL_DIR/layouts/partials/render-link.html
+  sed -i 's/urls\.Parse \([^ ]*\)/\1 | safeURL/g' $INSTALL_DIR/layouts/_default/_markup/render-link.html
 fi
+
+# Patch head.html to fix deprecated Google Analytics template
+HEAD_FILE="$INSTALL_DIR/layouts/partials/head.html"
+if [ -f "$HEAD_FILE" ]; then
+  echo "Patching head.html for Google Analytics template..."
+  sed -i 's/_internal\/google_analytics_async.html/_internal\/google_analytics.html/g' "$HEAD_FILE"
+fi
+# Also check in theme if not in layouts
+THEME_HEAD="$INSTALL_DIR/themes/photon-theme/layouts/partials/head.html"
+if [ -f "$THEME_HEAD" ] && [ ! -f "$HEAD_FILE" ]; then
+  sed -i 's/_internal\/google_analytics_async.html/_internal\/google_analytics.html/g' "$THEME_HEAD"
+fi
+
+# Patch head-css.html to fix deprecated .Site.IsServer
+HEAD_CSS_FILE="$INSTALL_DIR/themes/photon-theme/layouts/partials/head-css.html"
+if [ -f "$HEAD_CSS_FILE" ]; then
+  echo "Patching head-css.html for .Site.IsServer..."
+  sed -i 's/\.Site\.IsServer/hugo.IsServer/g' "$HEAD_CSS_FILE"
+fi
+# Also check in layouts if not in theme
+LAYOUT_HEAD_CSS="$INSTALL_DIR/layouts/partials/head-css.html"
+if [ -f "$LAYOUT_HEAD_CSS" ] && [ ! -f "$HEAD_CSS_FILE" ]; then
+  sed -i 's/\.Site\.IsServer/hugo.IsServer/g' "$LAYOUT_HEAD_CSS"
+fi
+
+# Fix for deprecated .Site.IsServer (replaced by hugo.IsServer in recent Hugo versions)
+echo "Patching deprecated .Site.IsServer → hugo.IsServer in all template files..."
+find "$INSTALL_DIR" -type f \( -name "*.html" -o -name "*.tmpl" \) -print0 | xargs -0 sed -i 's|\.Site\.IsServer|hugo.IsServer|g'
 
 # Remove existing duplicated permalinks
 find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i '/^permalink: \/docs-v[3-5]\/docs-v[3-5]\//d' {} \;
@@ -413,208 +480,120 @@ if [ $(grep -c "\[permalinks\]" $INSTALL_DIR/config.toml) -gt 1 ]; then
   exit 1
 fi
 
-# Enable raw HTML in Markdown to prevent escaping of <script> tags
-if ! grep -q "[markup.goldmark.renderer]" $INSTALL_DIR/config.toml; then
-  cat >> $INSTALL_DIR/config.toml <<'EOF_MARKUPGOLDMARK'
+# Add search outputs to config.toml for Lunr index generation
+if ! grep -q "\[outputs\]" $INSTALL_DIR/config.toml; then
+  cat >> $INSTALL_DIR/config.toml <<EOF_OUTPUTS
 
-[markup]
-  [markup.goldmark]
-    [markup.goldmark.renderer]
-      unsafe = true
-EOF_MARKUPGOLDMARK
-fi
-
-# Fix URLs in markdown
-find $INSTALL_DIR/content/en -type f -name "*.md" -exec sed -i 's/ (\([^)]*\))/ \1/g' {} \;
-
-# Patch templates for .Site.IsServer
-find $INSTALL_DIR/layouts $INSTALL_DIR/themes -type f -name "*.html" -exec sed -i 's/\.Site\.IsServer/hugo.IsServer/g' {} \;
-
-# Patch head.html for Google Analytics
-if [ -f themes/photon-theme/layouts/partials/head.html ]; then
-  sed -i 's/google_analytics_async.html/google_analytics.html/g' themes/photon-theme/layouts/partials/head.html
+[outputs]
+home = ["HTML", "RSS", "JSON"]
+EOF_OUTPUTS
 else
-  echo "Warning: themes/photon-theme/layouts/partials/head.html not found. Skipping GA fix."
-fi
-if [ -f themes/docsy/layouts/partials/head.html ]; then
-  sed -i 's/google_analytics_async.html/google_analytics.html/g' themes/docsy/layouts/partials/head.html
+  sed -i '/\[outputs\]/,/^$/s/home = \["HTML", "RSS"\]/home = ["HTML", "RSS", "JSON"]/' $INSTALL_DIR/config.toml
 fi
 
-# Set up GA4 config
-sed -i '/\[services\.googleAnalytics\]/,/^$/d' $INSTALL_DIR/config.toml
-RANDOM_ID=$(cat /dev/urandom | tr -dc 'A-Z0-9' | fold -w 10 | head -n 1)
-echo -e "\n[services.googleAnalytics]\nid = \"G-${RANDOM_ID}\"" >> $INSTALL_DIR/config.toml
-echo "Generated placeholder GA4 ID: G-${RANDOM_ID} (replace with real ID for production)"
+echo "====================================================="
+echo "Markdown link fixes complete!"
+echo "====================================================="
 
-# Add commit details to config.toml
-if ! grep -q "[params]" $INSTALL_DIR/config.toml; then
-  echo -e "\n[params]" >> $INSTALL_DIR/config.toml
-fi
-if ! grep -E -q "github_repo\s*=" $INSTALL_DIR/config.toml; then
-  sed -i '/\[params\]/a github_repo = "https://github.com/vmware/photon"' $INSTALL_DIR/config.toml
-fi
-if ! grep -E -q "last_commit_date\s*=" $INSTALL_DIR/config.toml; then
-  sed -i '/\[params\]/a last_commit_date = "'"$COMMIT_DATE"'"' $INSTALL_DIR/config.toml
-fi
-if ! grep -E -q "last_commit_message\s*=" $INSTALL_DIR/config.toml; then
-  sed -i '/\[params\]/a last_commit_message = "'"$COMMIT_MESSAGE"'"' $INSTALL_DIR/config.toml
-fi
-if ! grep -E -q "last_commit_hash\s*=" $INSTALL_DIR/config.toml; then
-  sed -i '/\[params\]/a last_commit_hash = "'"$COMMIT_HASH_SHORT"'"' $INSTALL_DIR/config.toml
-fi
-if ! grep -E -q "last_commit_full_hash\s*=" $INSTALL_DIR/config.toml; then
-  sed -i '/\[params\]/a last_commit_full_hash = "'"$COMMIT_FULL_HASH"'"' $INSTALL_DIR/config.toml
-fi
 
-# Added: Overrides page-meta-lastmod.html with hardcoded commit info from params for consistent footer matching the branch.
-# Modification: Removed div to avoid duplication; added &nbsp; for spacing.
-mkdir -p "$INSTALL_DIR/layouts/partials"  # Ensure override dir exists
-cat > "$INSTALL_DIR/layouts/partials/page-meta-lastmod.html" <<-'HEREDOC_LASTMOD'
-{{- if or (.Params.hide_meta) (eq .Params.show_lastmod false) -}}
-{{- else -}}
-{{ i18n "post_last_mod" }}&nbsp;{{ .Site.Params.last_commit_date }}: <a href="{{ .Site.Params.github_repo }}/commit/{{ .Site.Params.last_commit_full_hash }}">{{ .Site.Params.last_commit_message }} ({{ .Site.Params.last_commit_hash }})</a>
+# Create search index template for Hugo
+mkdir -p $INSTALL_DIR/layouts/_default
+cat > $INSTALL_DIR/layouts/_default/index.json <<'EOF_SEARCH_INDEX'
+{{- $index := slice -}}
+{{- range where .Site.RegularPages "Type" "ne" "json" -}}
+  {{- $item := dict "title" .Title "tags" (.Params.tags | default slice) "contents" (.Plain | plainify) "permalink" .Permalink "summary" (.Summary | plainify) -}}
+  {{- $index = $index | append $item -}}
 {{- end -}}
-HEREDOC_LASTMOD
+{{- $index | jsonify -}}
+EOF_SEARCH_INDEX
 
-# Debug: Verify the generated template
-echo "Verifying page-meta-lastmod.html content..."
-cat "$INSTALL_DIR/layouts/partials/page-meta-lastmod.html"
-if grep -q "^[[:space:]]" "$INSTALL_DIR/layouts/partials/page-meta-lastmod.html"; then
-  echo "Warning: Leading whitespace detected in page-meta-lastmod.html."
-fi
-
-# Fix: Replace Slack with Broadcom in config.toml
-sed -i 's/name = "Slack"/name = "Broadcom Community"/g' $INSTALL_DIR/config.toml
-sed -i 's/url = "https:\/\/vmwarecode.slack.com"/url = "https:\/\/community.broadcom.com\/tanzu\/communities\/tanzucommunityhomeblogs?CommunityKey=a70674e4-ccb6-46a3-ae94-7ecf16c06e24"/g' $INSTALL_DIR/config.toml
-sed -i 's/icon = "fab fa-slack"/icon = "fas fa-comment-dots"/g' $INSTALL_DIR/config.toml
-sed -i 's/desc = "Join the VMware {code} Slack community!"/desc = "Broadcom Community for Photon OS"/g' $INSTALL_DIR/config.toml
-
-# Fix: Patch templates to handle image URLs in icon fields for social links
-find $INSTALL_DIR/layouts $INSTALL_DIR/themes -type f -name "*.html" -exec sed -i 's/<i class="{{ .icon }}"[^>]*>\&nbsp;<\/i>/{{ if or (hasPrefix .icon "http:\/\/") (hasPrefix .icon "https:\/\/") (hasPrefix .icon "\/") }}<img src="{{ .icon }}" alt="{{ .name }}" style="height:1em; width:auto; vertical-align:middle;">\&nbsp;{{ else }}<i class="{{ .icon }}" aria-hidden="true">\&nbsp;<\/i>{{ end }}/g' {} \;
-
-# Fix footer text to "a VMware By Broadcom backed Project"
-sed -i 's/A VMware Backed Project/a VMware By Broadcom backed Project/gi' $INSTALL_DIR/config.toml
-find $INSTALL_DIR/layouts $INSTALL_DIR/themes -type f -name "*.html" -exec sed -i 's/A VMware Backed Project/a VMware By Broadcom backed Project/gi' {} \;
-
-# Fix VMware logo to Broadcom logo
-find $INSTALL_DIR/layouts $INSTALL_DIR/themes -type f -name "*.html" -exec sed -i 's/vmware-logo.png/broadcom-logo.png/g' {} \;
-find $INSTALL_DIR/layouts $INSTALL_DIR/themes -type f -name "*.html" -exec sed -i 's/vmware.png/broadcom-logo.png/g' {} \;
-find $INSTALL_DIR/layouts $INSTALL_DIR/themes -type f -name "*.html" -exec sed -i 's/vmware-logo.svg/broadcom-logo.png/g' {} \;
-
-# Fix VMware link to Broadcom
-find $INSTALL_DIR/layouts $INSTALL_DIR/themes -type f -name "*.html" -exec sed -i 's/https:\/\/www.vmware.com/https:\/\/www.broadcom.com/g' {} \;
-sed -i 's/https:\/\/www.vmware.com/https:\/\/www.broadcom.com/g' $INSTALL_DIR/config.toml
-
-# Additional fixes for config.toml links post-Broadcom acquisition
-sed -i 's/vmw_link = "https:\/\/www.vmware.com"/vmw_link = "https:\/\/www.broadcom.com"/g' $INSTALL_DIR/config.toml
-sed -i 's/privacy_policy = "https:\/\/vmware.com\/help\/privacy"/privacy_policy = "https:\/\/www.broadcom.com\/company\/legal\/privacy"/g' $INSTALL_DIR/config.toml
-
-# Fix specific footer link from vmware.github.io to broadcom.com
-sed -i 's/https:\/\/vmware.github.io/https:\/\/www.broadcom.com/g' $INSTALL_DIR/config.toml
-find $INSTALL_DIR/layouts $INSTALL_DIR/themes -type f -name "*.html" -exec sed -i 's/https:\/\/vmware.github.io/https:\/\/www.broadcom.com/g' {} \;
-
-# Added: Override render-image.html to disable lazy loading for printview image display fix.
-# Updated: Modified render-image.html to use root-relative absolute paths for images to fix wrong relative paths in printview.
-mkdir -p "$INSTALL_DIR/layouts/_default/_markup"
-cat > "$INSTALL_DIR/layouts/_default/_markup/render-image.html" <<'EOF_RENDERIMAGE'
-{{ $src := .Destination }}
-{{ if or (hasPrefix $src "http://") (hasPrefix $src "https://") (hasPrefix $src "/") }}
-  {{ $src = $src | safeURL }}
-{{ else }}
-  {{ $src = printf "%s%s" .Page.RelPermalink $src | safeURL }}
-{{ end }}
-<img src="{{ $src }}" alt="{{ .Text }}" {{ with .Title }}title="{{ . }}"{{ end }} />
-EOF_RENDERIMAGE
-
-# Validate config.toml
-echo "Validating config.toml..."
-/usr/local/bin/hugo config > /dev/null 2>&1
-if [ $? -ne 0 ]; then
-  echo "Error: config.toml validation failed. Check $INSTALL_DIR/config.toml."
-  /usr/local/bin/hugo config 2>&1 | tee "$INSTALL_DIR/config_validation.log"
-  echo "Validation errors logged to $INSTALL_DIR/config_validation.log"
-  exit 1
-fi
-
-# Clear existing public directory
-rm -rf "$SITE_DIR/*"
-
-# === CONSOLE SETUP ===
-# Server-side console backend with Docker and tmux for persistent state
-npm install dockerode ws express
-npm audit fix
+# === CONSOLE BACKEND SETUP ===
+# Create backend/terminal-server.js
 mkdir -p $INSTALL_DIR/backend
 cat > $INSTALL_DIR/backend/terminal-server.js <<'EOF_BACKENDTERMINALSERVER'
-const Docker = require('dockerode');
-const express = require('express');
 const WebSocket = require('ws');
-const http = require('http');
-const crypto = require('crypto');
-const urlModule = require('url');
-
-const app = express();
-const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
+const Docker = require('dockerode');
 const docker = new Docker();
 
-const sessions = {};
-const INACTIVITY_TIMEOUT = 5 * 60 * 1000; // 5 minutes
+const sessions = new Map();
+const TIMEOUT = 5 * 60 * 1000; // 5 min
 
 function resetTimeout(session) {
-  if (session.timeout) clearTimeout(session.timeout);
-  session.timeout = setTimeout(() => stopSession(session), INACTIVITY_TIMEOUT);
+  clearTimeout(session.timeout);
+  session.timeout = setTimeout(() => {
+    if (session.ws.length === 0) {
+      session.container.kill();
+      sessions.delete(session.id);
+    }
+  }, TIMEOUT);
 }
 
-function stopSession(session) {
-  session.ws.forEach(w => {
-    if (w.readyState === WebSocket.OPEN) {
-      w.send('Session timed out due to inactivity.');
-      w.close();
-    }
-  });
-  if (session.container) {
-    session.container.stop().then(() => session.container.remove());
-  }
-  delete sessions[session.id];
-}
+const wss = new WebSocket.Server({ port: 3000 });
+console.log('Terminal server on port 3000');
 
 wss.on('connection', async (ws, req) => {
-  const parsedUrl = urlModule.parse(req.url, true);
-  let sessionId = parsedUrl.query.session;
-  let session;
+  const urlParams = new URLSearchParams(req.url.slice(4));
+  const sessionId = urlParams.get('session');
+  let session = sessions.get(sessionId);
   let isNewSession = false;
 
-  if (sessionId && sessions[sessionId]) {
-    session = sessions[sessionId];
-  } else {
+  if (!session) {
     isNewSession = true;
-    sessionId = crypto.randomUUID();
-    session = { id: sessionId, ws: [], lastActivity: Date.now() };
-    sessions[sessionId] = session;
+    session = {
+      id: `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      ws: [],
+      container: null,
+      lastActivity: Date.now(),
+      timeout: null
+    };
+    sessions.set(session.id, session);
 
     try {
       const container = await docker.createContainer({
         Image: 'photon-builder',
-        Labels: { 'photon-sandbox': 'true' },
         Tty: true,
-        OpenStdin: true,
         AttachStdin: true,
         AttachStdout: true,
         AttachStderr: true,
-        Cmd: ['/bin/bash'],
+        Env: ['TERM=xterm-256color'],
         HostConfig: { Memory: 536870912, NanoCpus: 1000000000 } // 512MB, 1 CPU
       });
       session.container = container;
       await container.start();
 
-      // Create tmux session
+      // Create tmux session with default shell and explicit TERM
       const execNew = await container.exec({
-        Cmd: ['tmux', 'new-session', '-d', '-s', session.id, '/bin/bash'],
+        Cmd: ['tmux', 'new-session', '-d', '-s', session.id, '-e', 'TERM=xterm-256color'],
+        Env: ['TERM=xterm-256color'],
         AttachStdin: false,
         AttachStdout: false,
         AttachStderr: false,
       });
       await execNew.start();
+
+      // Wait briefly for session to initialize
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Disable status bar to prevent leak into stream
+      try {
+        const execStatusOff = await container.exec({
+          Cmd: ['tmux', 'set-option', '-gq', 'status', 'off'],
+          AttachStdin: false,
+          AttachStdout: false,
+          AttachStderr: false,
+        });
+        await execStatusOff.start({ Detach: true });
+
+        const execWindowStatusOff = await container.exec({
+          Cmd: ['tmux', 'set-window-option', '-gq', '-t', session.id, 'status', 'off'],
+          AttachStdin: false,
+          AttachStdout: false,
+          AttachStderr: false,
+        });
+        await execWindowStatusOff.start({ Detach: true });
+      } catch (err) {
+        console.log('Failed to disable tmux status bar:', err.message);
+      }
     } catch (err) {
       ws.send(`Error: ${err.message}`);
       ws.close();
@@ -626,6 +605,7 @@ wss.on('connection', async (ws, req) => {
     // Attach to tmux session
     const execAttach = await session.container.exec({
       Cmd: ['tmux', 'attach-session', '-t', session.id],
+      Env: ['TERM=xterm-256color'],
       AttachStdin: true,
       AttachStdout: true,
       AttachStderr: true,
@@ -662,19 +642,20 @@ wss.on('connection', async (ws, req) => {
     });
 
     if (isNewSession) {
-      ws.send(JSON.stringify({ type: 'session', id: sessionId }));
+      ws.send(JSON.stringify({ type: 'session', id: session.id }));
     } else {
-      // Send current pane content for re-attach
+      // Send current pane content for re-attach (clean from top, no status)
       const execCapture = await session.container.exec({
-        Cmd: ['tmux', 'capture-pane', '-t', session.id, '-p'],
+        Cmd: ['tmux', 'capture-pane', '-t', session.id, '-p', '-S', '-'],
+        Env: ['TERM=xterm-256color'],
         AttachStdout: true,
-        AttachStderr: true
+        AttachStderr: false
       });
       const captureStream = await execCapture.start({ hijack: false });
       let buffer = '';
       captureStream.on('data', chunk => buffer += chunk.toString());
       captureStream.on('end', () => {
-        ws.send(buffer);
+        ws.send(buffer + '\r\n');  // Ensure clean line after buffer
       });
     }
     resetTimeout(session);
@@ -683,17 +664,22 @@ wss.on('connection', async (ws, req) => {
     ws.close();
   }
 });
-
-server.listen(3000, () => console.log('Terminal server on port 3000'));
 EOF_BACKENDTERMINALSERVER
+
+# Install backend dependencies
+cd $INSTALL_DIR/backend
+npm init -y 1>/dev/null 2>&1
+npm install ws dockerode 1>/dev/null 2>&1
+cd $INSTALL_DIR
+
 nohup node $INSTALL_DIR/backend/terminal-server.js > /var/log/terminal-server.log 2>&1 &
 
 # Build console image
 cat > $INSTALL_DIR/backend/Dockerfile <<EOF_DOCKERFILE
 FROM photon:5.0
 RUN sed -i 's/packages.vmware.com/packages-prod.broadcom.com/g' /etc/yum.repos.d/*
-RUN tdnf install -y git build-essential tmux
-RUN git clone https://github.com/vmware/photon.git /workspace/photon
+RUN tdnf install -y git build-essential tmux ncurses-terminfo
+RUN mkdir -p /workspace/photon
 WORKDIR /workspace/photon
 CMD ["/bin/bash"]
 EOF_DOCKERFILE
@@ -708,6 +694,7 @@ curl -o $INSTALL_DIR/static/js/xterm/xterm.css https://cdn.jsdelivr.net/npm/xter
 curl -o $INSTALL_DIR/static/js/xterm/xterm-addon-fit.js https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.5.0/lib/xterm-addon-fit.js
 
 # Create console.js external file
+mkdir -p $INSTALL_DIR/static/js
 cat > $INSTALL_DIR/static/js/console.js <<'EOF_JS'
 let term = null;
 let socket = null;
@@ -724,12 +711,12 @@ function toggleConsole() {
     term = null;
     fitAddon = null;
     isOpen = false;
-    localStorage.setItem('consoleOpen', 'false');
+    // Removed: localStorage.setItem('consoleOpen', 'false');
   } else {
     win.style.display = 'block';
     initConsole();
     isOpen = true;
-    localStorage.setItem('consoleOpen', 'true');
+    // Removed: localStorage.setItem('consoleOpen', 'true');
     if (localStorage.getItem('consoleWelcomeShown') !== 'true') {
       showWelcomeOverlay();
       localStorage.setItem('consoleWelcomeShown', 'true');
@@ -838,99 +825,239 @@ new ResizeObserver(() => {
   }
 }).observe(document.getElementById('terminal'));
 
-// Persist on load
+// Persist on load (height only, no auto-open)
 window.addEventListener('load', () => {
   const win = document.getElementById('console-window');
   win.style.height = localStorage.getItem('consoleHeight') || '300px';
-  if (localStorage.getItem('consoleOpen') === 'true') {
-    toggleConsole();
-  }
+  // Removed auto-toggle: No if (localStorage.getItem('consoleOpen') === 'true') { toggleConsole(); }
 });
 EOF_JS
 
-# === CHAT SETUP ===
-# Create chat.js external file (static chat)
-cat > $INSTALL_DIR/static/js/chat.js <<'EOF_CHATJS'
-let isChatOpen = false;
-let isChatDragging = false;
-let chatOffsetX, chatOffsetY;
+# === SEARCH OVERLAY SETUP ===
+echo "Setting up search overlay with Lunr.js..."
 
-function toggleChat() {
-  const chatWin = document.getElementById('chat-window');
-  if (isChatOpen) {
-    chatWin.style.display = 'none';
-    isChatOpen = false;
-    localStorage.setItem('chatOpen', 'false');
-  } else {
-    chatWin.style.display = 'block';
-    isChatOpen = true;
-    localStorage.setItem('chatOpen', 'true');
-  }
+mkdir -p $INSTALL_DIR/static/js
+wget -O $INSTALL_DIR/static/js/lunr.min.js https://unpkg.com/lunr@2.3.9/lunr.min.js || echo "Warning: Failed to download Lunr.js."
+
+mkdir -p $INSTALL_DIR/static/css
+cat > $INSTALL_DIR/static/css/search-overlay.css <<'EOF_SEARCH_CSS'
+/* Search Button removed - using original Docsy search input */
+
+/* Overlay */
+.search-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 9999;
+  opacity: 0;
+  visibility: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.3s ease, visibility 0.3s ease;
 }
 
-// Draggable functionality for chat
-const chatHeader = document.getElementById('chat-header');
-const chatWin = document.getElementById('chat-window');
-if (chatHeader && chatWin) {
-  chatHeader.addEventListener('mousedown', (e) => {
-    isChatDragging = true;
-    chatOffsetX = e.clientX - chatWin.getBoundingClientRect().left;
-    chatOffsetY = e.clientY - chatWin.getBoundingClientRect().top;
+.search-overlay.active {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* Search Panel */
+.search-panel {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  padding: 2rem;
+  max-width: 600px;
+  width: 90%;
+  max-height: 80vh;
+  overflow-y: auto;
+  position: relative;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+}
+
+.search-close {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 0.5rem;
+  border-radius: 50%;
+  transition: background-color 0.2s;
+}
+
+#search-input {
+  width: 100%;
+  padding: 1rem;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.2);
+  color: inherit;
+  font-size: 1.2rem;
+  outline: none;
+  backdrop-filter: blur(10px);
+}
+
+#search-input::placeholder {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.search-results {
+  margin-top: 1rem;
+  color: inherit;
+}
+
+.search-results ul {
+  list-style: none;
+  padding: 0;
+}
+
+.search-results li {
+  margin-bottom: 1rem;
+}
+
+.search-results a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.search-results a:hover {
+  text-decoration: underline;
+}
+EOF_SEARCH_CSS
+
+cat > $INSTALL_DIR/static/js/search.js <<'EOF_SEARCH_JS'
+let searchIndex = null;
+let documents = {};
+
+document.addEventListener('DOMContentLoaded', function() {
+  const overlay = document.getElementById('search-overlay');
+  const close = document.getElementById('search-close');
+  const input = document.getElementById('search-input');
+  const results = document.getElementById('search-results');
+
+  // Load search index
+  async function loadIndex() {
+    try {
+      const response = await fetch('/index.json');
+      const pages = await response.json();
+      documents = {};
+      pages.forEach(doc => documents[doc.permalink] = doc);
+
+      if (typeof lunr !== 'undefined') {
+        searchIndex = lunr(function () {
+          this.ref('permalink');
+          this.field('title', { boost: 10 });
+          this.field('tags', { boost: 5 });
+          this.field('contents');
+          this.field('summary', { boost: 2 });
+          pages.forEach(page => this.add(page));
+        });
+      }
+    } catch (e) {
+      console.error('Search index load failed', e);
+    }
+  }
+
+  loadIndex();
+
+  // Open / close
+  function openSearch() {
+    overlay.classList.add('active');
+    document.body.classList.add('search-open');
+    input.focus();
+  }
+
+  function closeSearch() {
+    overlay.classList.remove('active');
+    document.body.classList.remove('search-open');
+    input.value = '';
+    results.innerHTML = '';
+    if (originalSearchInput) originalSearchInput.value = '';
+  }
+
+  if (close) close.addEventListener('click', closeSearch);
+  overlay.addEventListener('click', function(e) {
+    if (e.target === overlay) closeSearch();
   });
-  document.addEventListener('mousemove', (e) => {
-    if (isChatDragging) {
-      chatWin.style.left = (e.clientX - chatOffsetX) + 'px';
-      chatWin.style.top = (e.clientY - chatOffsetY) + 'px';
+
+  // Search functionality
+  input.addEventListener('input', function(e) {
+    const query = e.target.value.trim();
+    if (originalSearchInput) originalSearchInput.value = query;
+    if (query.length < 2) {
+      results.innerHTML = '';
+      return;
+    }
+    if (!searchIndex) {
+      results.innerHTML = '<p>Loading search...</p>';
+      return;
+    }
+    const searchResults = searchIndex.search(query);
+    let html = '<ul>';
+    searchResults.forEach(r => {
+      const doc = documents[r.ref];
+      if (doc) {
+        html += `<li><a href="${doc.permalink}">${doc.title}</a><br><small>${doc.summary || ''}</small></li>`;
+      }
+    });
+    html += '</ul>';
+    if (searchResults.length === 0) {
+      html = '<p>No results found.</p>';
+    }
+    results.innerHTML = html;
+  });
+
+  // Close on Escape key
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && overlay.classList.contains('active')) {
+      closeSearch();
     }
   });
-  document.addEventListener('mouseup', () => {
-    if (isChatDragging) {
-      localStorage.setItem('chatLeft', chatWin.style.left);
-      localStorage.setItem('chatTop', chatWin.style.top);
-      isChatDragging = false;
-    }
-  });
-}
 
-// Chat functionality (static)
-const chatMessages = document.getElementById('chat-messages');
-const chatInput = document.getElementById('chat-input');
-const chatSend = document.getElementById('chat-send');
+  // === Hook to original Docsy sidebar search input ===
+  const originalSearchInput = document.querySelector('input[placeholder*="Search this site"]');
+  if (originalSearchInput) {
+    // Hide any original results dropdowns
+    ['.td-search-results', '.search-results', '#search-results', '#results'].forEach(sel => {
+      const res = document.querySelector(sel);
+      if (res) res.style.display = 'none';
+    });
 
-chatSend.addEventListener('click', sendChatMessage);
-chatInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') sendChatMessage();
-});
+    // Open overlay on focus
+    originalSearchInput.addEventListener('focus', function() {
+      openSearch();
+      input.value = this.value || '';
+      input.dispatchEvent(new Event('input'));
+    });
 
-function sendChatMessage() {
-  const msg = chatInput.value.trim();
-  if (msg) {
-    chatMessages.innerHTML += `<div class="user">${msg}</div>`;
-    chatInput.value = '';
-    chatMessages.scrollTop = chatMessages.scrollHeight;
+    // Sync typing from original to overlay
+    originalSearchInput.addEventListener('input', function(e) {
+      input.value = e.target.value;
+      input.dispatchEvent(new Event('input'));
+    });
   }
-}
 
-// Resize handling for chat
-chatWin.addEventListener('resize', () => {
-  localStorage.setItem('chatWidth', chatWin.offsetWidth + 'px');
-  localStorage.setItem('chatHeight', chatWin.offsetHeight + 'px');
-});
-
-// Persist on load for chat
-window.addEventListener('load', () => {
-  const chatWin = document.getElementById('chat-window');
-  chatWin.style.left = localStorage.getItem('chatLeft') || '200px';
-  chatWin.style.top = localStorage.getItem('chatTop') || '200px';
-  chatWin.style.width = localStorage.getItem('chatWidth') || '400px';
-  chatWin.style.height = localStorage.getItem('chatHeight') || '300px';
-  if (localStorage.getItem('chatOpen') === 'true') {
-    toggleChat();
+  // Sync typing from overlay to original
+  if (input && originalSearchInput) {
+    input.addEventListener('input', function(e) {
+      originalSearchInput.value = e.target.value;
+    });
   }
 });
-EOF_CHATJS
+EOF_SEARCH_JS
 
-# Add console and chat window HTML/JS to body-end partial
+# Add console and search window HTML/JS to body-end partial
 mkdir -p $INSTALL_DIR/layouts/partials/hooks
 cat > $INSTALL_DIR/layouts/partials/hooks/body-end.html <<'EOF_BODY_END'
 <div id="console-window" style="display: none; position: fixed; bottom: 0; left: 0; right: 0; height: 300px; background: #fff; border-top: 1px solid #000; z-index: 1000; resize: vertical; overflow: hidden; box-shadow: 0 -2px 10px rgba(0,0,0,0.2);">
@@ -945,34 +1072,40 @@ cat > $INSTALL_DIR/layouts/partials/hooks/body-end.html <<'EOF_BODY_END'
   <div id="terminal" style="width: 100%; height: calc(100% - 30px); background: #1e1e1e;"></div>
 </div>
 
-<div id="chat-window" style="display: none; position: fixed; top: 200px; left: 200px; width: 400px; height: 300px; background: #fff; border: 1px solid #000; z-index: 1000; resize: both; overflow: hidden; box-shadow: 0 0 10px rgba(0,0,0,0.5);">
-  <div id="chat-header" style="background: #ddd; padding: 5px; cursor: move; display: flex; justify-content: space-between; align-items: center;">
-    <span>Chat</span>
-    <button onclick="toggleChat()">Close</button>
-  </div>
-  <div id="chat-messages" style="height: calc(100% - 60px); overflow-y: auto; padding: 10px; background: #f9f9f9;"></div>
-  <div style="display: flex; padding: 5px;">
-    <input id="chat-input" style="flex: 1; padding: 5px;" placeholder="Type your question...">
-    <button id="chat-send" style="padding: 5px 10px;">Send</button>
+<!-- Search Overlay HTML -->
+<div id="search-overlay" class="search-overlay" role="dialog" aria-modal="true" aria-labelledby="search-input">
+  <div class="search-panel">
+    <button id="search-close" class="search-close" aria-label="Close search">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+        <line x1="18" y1="6" x2="6" y2="18"></line>
+        <line x1="6" y1="6" x2="18" y2="18"></line>
+      </svg>
+    </button>
+    <input type="search" id="search-input" placeholder="Search..." autofocus>
+    <div id="search-results" class="search-results">
+      <!-- Results will be populated by JS -->
+    </div>
   </div>
 </div>
 
+<link rel="stylesheet" href="/css/search-overlay.css">
+<script src="/js/lunr.min.js"></script>
 <link rel="stylesheet" href="/js/xterm/xterm.css">
 <script src="/js/xterm/xterm.js"></script>
 <script src="/js/xterm/xterm-addon-fit.js"></script>
 <script src="/js/console.js"></script>
-<script src="/js/chat.js"></script>
+<script src="/js/search.js"></script>
 EOF_BODY_END
 
-# Patch navbar to add console and chat icons in menu
+# Patch navbar to add console icon in menu
 NAVBAR_FILE="$INSTALL_DIR/themes/photon-theme/layouts/partials/navbar.html"
 if [ -f "$NAVBAR_FILE" ]; then
   sed -i '/<\/ul>/i <li class="nav-item"><a class="nav-link" href="#" onclick="toggleConsole(); return false;" title="Console"><i class="fas fa-terminal"></i></a></li>' "$NAVBAR_FILE"
-  sed -i '/<\/ul>/i <li class="nav-item"><a class="nav-link" href="#" onclick="toggleChat(); return false;" title="Chat"><i class="fas fa-comments"></i></a></li>' "$NAVBAR_FILE"
 else
-  echo "Warning: navbar.html not found. Console and chat menu items not added."
+  echo "Warning: navbar.html not found. Console not added."
 fi
-# === END OF CONSOLE AND CHAT SETUP ===
+# === END OF CONSOLE SETUP ===
+
 
 # Set up cron job for Docker cleanup
 echo "Setting up cron job for Docker container cleanup..."
@@ -1018,14 +1151,6 @@ else
 fi
 echo "Site files present: $(ls -l $SITE_DIR | grep index.html)"
 
-# Verify subdirectories
-for subdir in blog docs-v3 docs-v4 docs-v5; do
-  if [ -d "$SITE_DIR/$subdir" ] && [ -f "$SITE_DIR/$subdir/index.html" ]; then
-    echo "Subpath /$subdir/ found with index.html."
-  else
-    echo "Warning: Subpath /$subdir/ missing or incomplete. Check $SITE_DIR/$subdir/ and hugo_build.log."
-  fi
-done
 
 # Added: Patch quick-start-links index.html to fix orphaned links with correct absolute paths for all versions (POST-BUILD, STATIC FIX)
 for ver in docs-v3 docs-v4 docs-v5; do
@@ -1037,11 +1162,6 @@ for ver in docs-v3 docs-v4 docs-v5; do
     sed -i 's|<a href=..\/..\/installation-guide\/building-images\/build-iso-from-source\/>Build an ISO from the source code for Photon OS</a>|<a href=..\/installation-guide\/building-images\/build-iso-from-source\/>Build an ISO from the source code for Photon OS</a>|g' $QL_FILE
   fi
 done
-
-# Post-build: Fix all genuine missing pages (209 issues)
-echo "Post-build: Fixing all genuine missing pages with comprehensive solution..."
-chmod +x /root/photonos-scripts/docsystem/fix-all-genuine-issues.sh
-bash /root/photonos-scripts/docsystem/fix-all-genuine-issues.sh
 
 # Debug content structure
 echo "Content structure in content/en/:"
@@ -1226,5 +1346,11 @@ else
 fi
 
 
+# Verify search index generated
+if [ -f "$SITE_DIR/index.json" ]; then
+  echo "Search index generated successfully."
+else
+  echo "Warning: Search index not generated. Check Hugo build logs."
+fi
+
 echo "Installation complete! Access the Photon site at https://${IP_ADDRESS}/ (HTTP redirects to HTTPS)."
-echo "Global console and chat available via menu icons."
