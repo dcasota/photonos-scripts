@@ -124,7 +124,7 @@ if __name__ == "__main__":
     main()
 EOF_PYTHONSCRIPTFETCH
 
-cat > $PYTHON_SCRIPT_UPDATE <<'EOF_PYTHONSCRIPTUPDATE
+cat > $PYTHON_SCRIPT_UPDATE <<'EOF_PYTHONSCRIPTUPDATE'
 import os
 import json
 import urllib.request
