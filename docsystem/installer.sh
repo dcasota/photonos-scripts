@@ -20,7 +20,7 @@ fi
 
 # Check if GITHUB_USERNAME is set
 if [ -z "$GITHUB_USERNAME" ]; then
-    echo "GITHUB_USERNAME is not set. Please enter your GitHub token:"
+    echo "GITHUB_USERNAME is not set. Please enter your GitHub username:"
     read -s GITHUB_USERNAME
     echo  # Print a newline after input
     if [ -z "$GITHUB_USERNAME" ]; then
