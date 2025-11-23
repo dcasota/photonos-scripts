@@ -468,6 +468,34 @@ if [ -f "$I18N_FILE" ]; then
     fi
 fi
 
+# Fix 48: Fix blog and cross-reference links to whats-new (Hugo slugifies title to "what-is-new-in-photon-os-4")
+echo "48. Fixing links to whats-new pages (Hugo slug generation)..."
+find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i \
+  -e 's|(docs-v3/whats-new/)|(docs-v3/overview/what-is-new-in-photon-os/)|g' \
+  -e 's|(/docs-v3/whats-new/)|(/docs-v3/overview/what-is-new-in-photon-os/)|g' \
+  -e 's|(docs-v4/whats-new/)|(docs-v4/what-is-new-in-photon-os-4/)|g' \
+  -e 's|(/docs-v4/whats-new/)|(/docs-v4/what-is-new-in-photon-os-4/)|g' \
+  -e 's|(docs-v5/whats-new/)|(docs-v5/what-is-new-in-photon-os-5/)|g' \
+  -e 's|(/docs-v5/whats-new/)|(/docs-v5/what-is-new-in-photon-os-5/)|g' \
+  {} \;
+
+# Fix 49: Fix kickstart links (Hugo slugifies title "Kickstart Support" to "kickstart-support-in-photon-os")
+echo "49. Fixing kickstart links to match Hugo slug generation..."
+find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i \
+  -e 's|(/docs-v3/user-guide/working-with-kickstart/)|(/docs-v3/user-guide/kickstart-support-in-photon-os/)|g' \
+  -e 's|(/docs-v4/user-guide/working-with-kickstart/)|(/docs-v4/user-guide/kickstart-support-in-photon-os/)|g' \
+  -e 's|(/docs-v5/user-guide/working-with-kickstart/)|(/docs-v5/user-guide/kickstart-support-in-photon-os/)|g' \
+  -e 's|(../../user-guide/working-with-kickstart/)|(../../user-guide/kickstart-support-in-photon-os/)|g' \
+  -e 's|(../../../user-guide/working-with-kickstart/)|(../../../user-guide/kickstart-support-in-photon-os/)|g' \
+  {} \;
+
+# Fix 50: Fix troubleshooting-linux-kernel link (Hugo generates as "linux-kernel", not "troubleshooting-linux-kernel")
+echo "50. Fixing troubleshooting-linux-kernel links..."
+find "$INSTALL_DIR/content/en" -path "*/kernel-problems-and-boot-and-login-errors/_index.md" -exec sed -i \
+  -e 's|(./troubleshooting-linux-kernel)|(./linux-kernel/)|g' \
+  -e 's|(troubleshooting-linux-kernel)|(linux-kernel/)|g' \
+  {} \;
+
 echo "======================================================="
 echo "Fixing incorrect relative links in markdown files done."
 echo "======================================================="
