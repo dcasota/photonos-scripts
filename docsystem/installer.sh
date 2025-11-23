@@ -162,7 +162,8 @@ fi
 if [ -d .git ]; then
     COMMIT_DATE=$(git log -1 --format=%cd --date=short)
     COMMIT_HASH_SHORT=$(echo $COMMIT_HASH | cut -c1-7)
-    COMMIT_MESSAGE=$(git log -1 --format=%s)
+    # Escape double quotes in commit message for TOML compatibility
+    COMMIT_MESSAGE=$(git log -1 --format=%s | sed 's/"/\\"/g')
     COMMIT_FULL_HASH=$COMMIT_HASH
 else
     COMMIT_DATE=$(date +%Y-%m-%d)
