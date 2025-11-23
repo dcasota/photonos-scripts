@@ -157,10 +157,11 @@ server {
     rewrite ^/run-photon-on-gce/?\$ /docs-v5/installation-guide/run-photon-on-gce/ permanent;
     rewrite ^/run-photon-aws-ec2/?\$ /docs-v5/installation-guide/run-photon-aws-ec2/ permanent;
     
-    # Image path consolidation
-    rewrite ^/docs-v3/(.*)images/(.+)\$ /docs-v3/images/\$2 permanent;
-    rewrite ^/docs-v4/(.*)images/(.+)\$ /docs-v4/images/\$2 permanent;
-    rewrite ^/docs-v5/(.*)images/(.+)\$ /docs-v5/images/\$2 permanent;
+    # Image path consolidation (FIXED - more specific regex to prevent false matches)
+    # Only redirect actual paths containing /images/ subdirectory, not directory names ending in "images"
+    rewrite ^/docs-v3/(.*)/images/(.+\.(png|jpg|jpeg|gif|svg|webp|ico))\$ /docs-v3/images/\$2 permanent;
+    rewrite ^/docs-v4/(.*)/images/(.+\.(png|jpg|jpeg|gif|svg|webp|ico))\$ /docs-v4/images/\$2 permanent;
+    rewrite ^/docs-v5/(.*)/images/(.+\.(png|jpg|jpeg|gif|svg|webp|ico))\$ /docs-v5/images/\$2 permanent;
     rewrite ^/docs/images/(.+)\$ /docs-v4/images/\$1 permanent;
     
     # Nested printview redirects
