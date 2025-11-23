@@ -496,6 +496,57 @@ find "$INSTALL_DIR/content/en" -path "*/kernel-problems-and-boot-and-login-error
   -e 's|(troubleshooting-linux-kernel)|(linux-kernel/)|g' \
   {} \;
 
+# Fix 51: Fix kickstart relative path links (Hugo slugifies "Working with Kickstart" to "kickstart-support-in-photon-os")
+echo "51. Fixing kickstart relative path links in PXE boot documentation..."
+find "$INSTALL_DIR/content/en" -name "setting-up-network-pxe-boot.md" -exec sed -i \
+  -e 's|(../working-with-kickstart/)|(../kickstart-support-in-photon-os/)|g' \
+  -e 's|(working-with-kickstart/)|(kickstart-support-in-photon-os/)|g' \
+  {} \;
+
+# Fix 52: Fix whats-new relative path in upgrading documentation (use absolute path to avoid Hugo relative path confusion)
+echo "52. Fixing whats-new relative path links..."
+find "$INSTALL_DIR/content/en" -name "*upgrading-to-photon-os*.md" -exec sed -i \
+  -e 's|(\.\./what-is-new-in-photon-os-4/)|(/docs-v4/what-is-new-in-photon-os-4/)|g' \
+  -e 's|(what-is-new-in-photon-os-4/)|(/docs-v4/what-is-new-in-photon-os-4/)|g' \
+  -e 's|(./whats-new/)|(../../what-is-new-in-photon-os-4/)|g' \
+  -e 's|(whats-new/)|(../../what-is-new-in-photon-os-4/)|g' \
+  -e 's|(/docs-v4/installation-guide/upgrading-to-photon-os-4.0/whats-new/)|(/docs-v4/what-is-new-in-photon-os-4/)|g' \
+  {} \;
+
+# Fix 53: Fix netmgr and PMD API links to use actual Hugo slugs
+echo "53. Fixing netmgr and PMD API links to match actual Hugo-generated page slugs..."
+find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i \
+  -e 's|photon-management-daemon-cli/)|photon-management-daemon-command-line-interface-pmd-cli/)|g' \
+  -e 's|netmgr\.c/)|network-configuration-manager-c-api/)|g' \
+  -e 's|netmgr\.python/)|network-configuration-manager-python-api/)|g' \
+  -e 's|(/docs-v4/administration-guide/managing-network-configuration/using-the-network-configuration-manager/command-line-reference/command-line-interfaces/photon-management-daemon-command-line-interface-pmd-cli/)|(/docs-v4/command-line-reference/command-line-interfaces/photon-management-daemon-command-line-interface-pmd-cli/)|g' \
+  -e 's|(/docs-v4/administration-guide/managing-network-configuration/using-the-network-configuration-manager/administration-guide/managing-network-configuration/network-configuration-manager-c-api/)|(/docs-v4/administration-guide/managing-network-configuration/network-configuration-manager-c-api/)|g' \
+  -e 's|(/docs-v4/administration-guide/managing-network-configuration/using-the-network-configuration-manager/administration-guide/managing-network-configuration/network-configuration-manager-python-api/)|(/docs-v4/administration-guide/managing-network-configuration/network-configuration-manager-python-api/)|g' \
+  -e 's|(/docs-v4/administration-guide/photon-management-daemon/available-apis/administration-guide/network-configuration-manager-python-api/)|(/docs-v4/administration-guide/managing-network-configuration/network-configuration-manager-python-api/)|g' \
+  -e 's|(/docs-v4/administration-guide/photon-management-daemon/available-apis/administration-guide/managing-network-configuration/network-configuration-manager-c-api/)|(/docs-v4/administration-guide/managing-network-configuration/network-configuration-manager-c-api/)|g' \
+  {} \;
+
+# Fix 54: Fix troubleshooting packages duplicate path segment
+echo "54. Fixing troubleshooting packages duplicate path segment..."
+find "$INSTALL_DIR/content/en" -path "*/troubleshooting-guide/troubleshooting-packages*.md" -exec sed -i \
+  -e 's|(/docs-v4/troubleshooting-guide/troubleshooting-packages/administration-guide/)|(/docs-v4/administration-guide/)|g' \
+  -e 's|(./administration-guide/)|(../../administration-guide/)|g' \
+  {} \;
+
+# Fix 55: Fix remaining paths to use absolute URLs (avoid Hugo relative path confusion)
+echo "55. Fixing remaining paths to use absolute URLs..."
+find "$INSTALL_DIR/content/en" -path "*/administration-guide/photon-management-daemon/available-apis*.md" -exec sed -i \
+  -e 's|(./administration-guide/network-configuration-manager-python-api/)|(/docs-v4/administration-guide/managing-network-configuration/network-configuration-manager-python-api/)|g' \
+  -e 's|(./administration-guide/network-configuration-manager-c-api/)|(/docs-v4/administration-guide/managing-network-configuration/network-configuration-manager-c-api/)|g' \
+  -e 's|(/docs-v4/administration-guide/photon-management-daemon/available-apis/administration-guide/network-configuration-manager-python-api/)|(/docs-v4/administration-guide/managing-network-configuration/network-configuration-manager-python-api/)|g' \
+  {} \;
+find "$INSTALL_DIR/content/en" -path "*/administration-guide/managing-network-configuration/using-the-network-configuration-manager.md" -exec sed -i \
+  -e 's|(../../command-line-reference/command-line-interfaces/photon-management-daemon-command-line-interface-pmd-cli/)|(/docs-v4/command-line-reference/command-line-interfaces/photon-management-daemon-command-line-interface-pmd-cli/)|g' \
+  -e 's|(../../managing-network-configuration/network-configuration-manager-c-api/)|(/docs-v4/administration-guide/managing-network-configuration/network-configuration-manager-c-api/)|g' \
+  -e 's|(../../managing-network-configuration/network-configuration-manager-python-api/)|(/docs-v4/administration-guide/managing-network-configuration/network-configuration-manager-python-api/)|g' \
+  -e 's|(/docs-v4/administration-guide/command-line-reference/command-line-interfaces/photon-management-daemon-command-line-interface-pmd-cli/)|(/docs-v4/command-line-reference/command-line-interfaces/photon-management-daemon-command-line-interface-pmd-cli/)|g' \
+  {} \;
+
 echo "======================================================="
 echo "Fixing incorrect relative links in markdown files done."
 echo "======================================================="
