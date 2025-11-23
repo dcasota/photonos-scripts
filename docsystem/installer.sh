@@ -201,8 +201,17 @@ fi
 # Remove any existing menu.main entries to ensure clean configuration
 if grep -q "^\[\[menu\.main\]\]" $INSTALL_DIR/config.toml; then
   echo "Removing existing menu configuration..."
-  # Use awk to remove all [[menu.main]] blocks
-  awk '/^# Menu configuration$/ {skip=1} /^\[\[menu\.main\]\]/ {skip=1} skip && /^$/ {skip=0; next} !skip' $INSTALL_DIR/config.toml > $INSTALL_DIR/config.toml.tmp
+  # Use awk to remove all [[menu.main]] blocks and the menu configuration header
+  # Skip from "# Menu configuration" until we hit a line that starts with [[ but is not [[menu.main]]
+  # or until we hit another section marker (line starting with #)
+  awk '
+    /^# Menu configuration$/ { in_menu=1; next }
+    in_menu && /^\[\[menu\.main\]\]/ { in_block=1; next }
+    in_menu && in_block && /^(name|weight|url|identifier|pre|post) *=/ { next }
+    in_menu && in_block && /^$/ { in_block=0; next }
+    in_menu && !in_block && (/^#/ || /^\[/) { in_menu=0 }
+    !in_menu || (!in_block && !/^\[\[menu\.main\]\]/)
+  ' $INSTALL_DIR/config.toml > $INSTALL_DIR/config.toml.tmp
   mv $INSTALL_DIR/config.toml.tmp $INSTALL_DIR/config.toml
 fi
 
