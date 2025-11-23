@@ -2,6 +2,8 @@
 
 **Purpose**: Content quality, grammar, broken links, orphaned pages, SEO, accessibility, and security compliance.
 
+**📋 DETAILED PLAN**: See [`PLAN-SPECIFICATION.md`](./PLAN-SPECIFICATION.md) for the comprehensive reengineered workflow with quality metrics, validation criteria, and reproducible execution procedures.
+
 ## Team Members
 
 ### Core Droids
