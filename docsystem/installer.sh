@@ -206,25 +206,40 @@ if grep -q "^\[\[menu\.main\]\]" $INSTALL_DIR/config.toml; then
   mv $INSTALL_DIR/config.toml.tmp $INSTALL_DIR/config.toml
 fi
 
-# Now add the proper menu configuration
-echo "Adding menu configuration (Blog, Docs, Release)..."
+# Now add the proper menu configuration matching the reference site
+echo "Adding menu configuration (Home, Blog, Features, Contribute, Docs, Github)..."
 cat >> $INSTALL_DIR/config.toml <<'EOF_MENU'
 
 # Menu configuration
 [[menu.main]]
-name = "Blog"
+name = "Home"
 weight = 10
+url = "/"
+
+[[menu.main]]
+name = "Blog"
+weight = 20
 url = "/blog/"
 
 [[menu.main]]
+name = "Features"
+weight = 30
+url = "/#features"
+
+[[menu.main]]
+name = "Contribute"
+weight = 40
+url = "/#contributing"
+
+[[menu.main]]
 name = "Docs"
-weight = 20
+weight = 50
 url = "/docs/"
 
 [[menu.main]]
-name = "Release"
-weight = 30
-url = "https://github.com/vmware/photon/releases"
+name = "Github"
+weight = 60
+url = "https://github.com/vmware/photon"
 EOF_MENU
 
 # Initialize submodules (e.g., for Docsy theme)
