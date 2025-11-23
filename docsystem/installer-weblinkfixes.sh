@@ -385,13 +385,28 @@ find "$INSTALL_DIR/content/en" -path "*/troubleshooting-guide/performance-issues
 # Fix 43: Fix broken link in troubleshooting/kernel-problems
 echo "43: Fixing broken link in troubleshooting/kernel-problems..."
 find "$INSTALL_DIR/content/en" -path "*/troubleshooting-guide/kernel-problems-and-boot-and-login-errors/_index.md" -exec sed -i 's|(\./investigating-strange-behavior/)|(./investigating-unexpected-behavior/)|g' {} \;
-find "$INSTALL_DIR/content/en" -path "*/troubleshooting-guide/kernel-problems-and-boot-and-login-errors/_index.md" -exec sed -i 's|(\.\./troubleshooting-guide/kernel-problems-and-boot-and-login-errors/troubleshooting-linux-kernel/)|(./troubleshooting-linux-kernel/)|g' {} \;
+# Remove trailing slash from markdown file links (causes 404 in Hugo)
+find "$INSTALL_DIR/content/en" -path "*/troubleshooting-guide/kernel-problems-and-boot-and-login-errors/_index.md" -exec sed -i 's|(\./troubleshooting-linux-kernel/)|(./troubleshooting-linux-kernel)|g' {} \;
+# Fix incorrect nested paths in kernel-problems index
+find "$INSTALL_DIR/content/en" -path "*/troubleshooting-guide/kernel-problems-and-boot-and-login-errors/_index.md" -exec sed -i \
+  -e 's|(\./troubleshooting-guide/kernel-problems-and-boot-and-login-errors/kernel-overview/)|(./kernel-overview/)|g' \
+  -e 's|(\./troubleshooting-guide/kernel-problems-and-boot-and-login-errors/boot-process-overview/)|(./boot-process-overview/)|g' \
+  -e 's|(\./troubleshooting-guide/kernel-problems-and-boot-and-login-errors/blank-screen-on-reboot/)|(./blank-screen-on-reboot/)|g' \
+  -e 's|(\./troubleshooting-guide/kernel-problems-and-boot-and-login-errors/investigating-unexpected-behavior/)|(./investigating-unexpected-behavior/)|g' \
+  -e 's|(\./troubleshooting-guide/kernel-problems-and-boot-and-login-errors/investigating-the-guest-kernel/)|(./investigating-the-guest-kernel/)|g' \
+  -e 's|(\./troubleshooting-guide/kernel-problems-and-boot-and-login-errors/kernel-log-replication-with-vprobes/)|(./kernel-log-replication-with-vprobes/)|g' \
+  {} \;
 
-# Fix 44: Fix blog link for whats-new
+# Fix 44: Fix blog link for whats-new (remove double slash)
 echo "44: Fixing blog link for whats-new..."
-# Ensure trailing slash is removed if present in the source or incorrect
-sed -i 's|/docs/overview/whats-new/|/docs-v4/whats-new/|g' "$INSTALL_DIR/content/en/blog/releases/photon4-ga.md"
-sed -i 's|/docs-v4/whats-new|/docs-v4/whats-new/|g' "$INSTALL_DIR/content/en/blog/releases/photon4-ga.md"
+# Remove double slash from whats-new link
+sed -i 's|/docs-v4/whats-new//|/docs-v4/whats-new/|g' "$INSTALL_DIR/content/en/blog/releases/photon4-ga.md"
+
+# Fix 45: Fix incorrect relative path in firewall settings SSH link
+echo "45: Fixing firewall settings SSH link..."
+find "$INSTALL_DIR/content/en" -path "*/administration-guide/security-policy/default-firewall-settings.md" -exec sed -i \
+  's|(\./troubleshooting-guide/solutions-to-common-problems/permitting-root-login-with-ssh/)|(../../../troubleshooting-guide/solutions-to-common-problems/permitting-root-login-with-ssh/)|g' \
+  {} \;
 
 echo "======================================================="
 echo "Fixing incorrect relative links in markdown files done."
