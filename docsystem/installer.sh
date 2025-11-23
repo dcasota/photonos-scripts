@@ -163,7 +163,8 @@ if [ -d .git ]; then
     COMMIT_DATE=$(git log -1 --format=%cd --date=short)
     COMMIT_HASH_SHORT=$(echo $COMMIT_HASH | cut -c1-7)
     # Escape double quotes in commit message for TOML compatibility
-    COMMIT_MESSAGE=$(git log -1 --format=%s | sed 's/"/\\"/g')
+    # Use double backslash to survive shell interpolation
+    COMMIT_MESSAGE=$(git log -1 --format=%s | sed 's/"/\\\\"/g')
     COMMIT_FULL_HASH=$COMMIT_HASH
 else
     COMMIT_DATE=$(date +%Y-%m-%d)
@@ -172,14 +173,20 @@ else
     COMMIT_MESSAGE="Downloaded from ZIP"
 fi
 
-if ! grep -q "last_commit_date" $INSTALL_DIR/config.toml; then
-  if grep -q "^\[params\]$" $INSTALL_DIR/config.toml; then
-    sed -i '/^\[params\]$/a last_commit_date = "'"$COMMIT_DATE"'"' $INSTALL_DIR/config.toml
-    sed -i '/^\[params\]$/a last_commit_hash = "'"$COMMIT_HASH_SHORT"'"' $INSTALL_DIR/config.toml
-    sed -i '/^\[params\]$/a last_commit_full_hash = "'"$COMMIT_FULL_HASH"'"' $INSTALL_DIR/config.toml
-    sed -i '/^\[params\]$/a last_commit_message = "'"$COMMIT_MESSAGE"'"' $INSTALL_DIR/config.toml
-  else
-    cat >> $INSTALL_DIR/config.toml <<EOF_CONFIGTOML
+# Remove existing commit info to ensure fresh values on every run
+sed -i '/^last_commit_date = /d' $INSTALL_DIR/config.toml
+sed -i '/^last_commit_hash = /d' $INSTALL_DIR/config.toml
+sed -i '/^last_commit_full_hash = /d' $INSTALL_DIR/config.toml
+sed -i '/^last_commit_message = /d' $INSTALL_DIR/config.toml
+
+# Add fresh commit info
+if grep -q "^\[params\]$" $INSTALL_DIR/config.toml; then
+  sed -i '/^\[params\]$/a last_commit_date = "'"$COMMIT_DATE"'"' $INSTALL_DIR/config.toml
+  sed -i '/^\[params\]$/a last_commit_hash = "'"$COMMIT_HASH_SHORT"'"' $INSTALL_DIR/config.toml
+  sed -i '/^\[params\]$/a last_commit_full_hash = "'"$COMMIT_FULL_HASH"'"' $INSTALL_DIR/config.toml
+  sed -i '/^\[params\]$/a last_commit_message = "'"$COMMIT_MESSAGE"'"' $INSTALL_DIR/config.toml
+else
+  cat >> $INSTALL_DIR/config.toml <<EOF_CONFIGTOML
 
 [params]
 last_commit_date = "$COMMIT_DATE"
@@ -187,7 +194,6 @@ last_commit_hash = "$COMMIT_HASH_SHORT"
 last_commit_full_hash = "$COMMIT_FULL_HASH"
 last_commit_message = "$COMMIT_MESSAGE"
 EOF_CONFIGTOML
-  fi
 fi
 
 # Add UI configuration for navbar logo if not present
