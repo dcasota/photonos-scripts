@@ -934,6 +934,25 @@ factory run @docs-maintenance-pr-bot
 
 ---
 
+## Execution History
+
+### 2025-11-23: Hugo Slug Generation Fixes (Fixes 48-50)
+
+**Issues Identified**: 3 broken links caused by mismatch between Hugo's URL slug generation and markdown link references
+
+**Root Cause**: Hugo generates URLs from page `title` field (slugified), but internal links referenced different paths
+
+**Fixes Applied**:
+- **Fix 48**: whats-new pages - Hugo generates `what-is-new-in-photon-os-4` from title "What is New in Photon OS 4", not `whats-new`
+- **Fix 49**: kickstart pages - Hugo generates `kickstart-support-in-photon-os` from title "Kickstart Support in Photon OS", not `working-with-kickstart`
+- **Fix 50**: troubleshooting-linux-kernel - Hugo generates `linux-kernel` from title "Linux Kernel", not `troubleshooting-linux-kernel`
+
+**Impact**: Fixed 3 critical broken link issues. Validation shows all pages now accessible (200 OK).
+
+**Key Learning**: Always check Hugo's actual generated URL structure (`public/` directory) versus assumed link paths. Hugo slug generation follows title field, not filename.
+
+---
+
 ## Appendix A: Tool Requirements
 
 ### Python Packages
