@@ -198,8 +198,17 @@ if ! grep -q "^\[params\.ui\]" $INSTALL_DIR/config.toml; then
 fi
 
 # Add menu configuration if not present
-if ! grep -q "^\[\[menu\.main\]\]" $INSTALL_DIR/config.toml; then
-  cat >> $INSTALL_DIR/config.toml <<'EOF_MENU'
+# Remove any existing menu.main entries to ensure clean configuration
+if grep -q "^\[\[menu\.main\]\]" $INSTALL_DIR/config.toml; then
+  echo "Removing existing menu configuration..."
+  # Use awk to remove all [[menu.main]] blocks
+  awk '/^# Menu configuration$/ {skip=1} /^\[\[menu\.main\]\]/ {skip=1} skip && /^$/ {skip=0; next} !skip' $INSTALL_DIR/config.toml > $INSTALL_DIR/config.toml.tmp
+  mv $INSTALL_DIR/config.toml.tmp $INSTALL_DIR/config.toml
+fi
+
+# Now add the proper menu configuration
+echo "Adding menu configuration (Blog, Docs, Release)..."
+cat >> $INSTALL_DIR/config.toml <<'EOF_MENU'
 
 # Menu configuration
 [[menu.main]]
@@ -217,7 +226,6 @@ name = "Release"
 weight = 30
 url = "https://github.com/vmware/photon/releases"
 EOF_MENU
-fi
 
 # Initialize submodules (e.g., for Docsy theme)
 if [ -d .git ]; then
