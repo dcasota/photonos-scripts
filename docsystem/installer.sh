@@ -197,6 +197,16 @@ if ! grep -q "^\[params\.ui\]" $INSTALL_DIR/config.toml; then
   fi
 fi
 
+# Add version selector configuration to [params] section if not present
+if ! grep -q "version_menu" $INSTALL_DIR/config.toml; then
+  if grep -q "^\[params\]$" $INSTALL_DIR/config.toml; then
+    echo "Adding version selector parameters to [params] section..."
+    sed -i '/^\[params\]$/a version_menu = "Release"' $INSTALL_DIR/config.toml
+    sed -i '/^\[params\]$/a version = "v5"' $INSTALL_DIR/config.toml
+    sed -i '/^\[params\]$/a url_latest_version = "/docs/"' $INSTALL_DIR/config.toml
+  fi
+fi
+
 # Add menu configuration if not present
 # Remove any existing menu.main entries to ensure clean configuration
 if grep -q "^\[\[menu\.main\]\]" $INSTALL_DIR/config.toml; then
@@ -250,6 +260,51 @@ name = "Github"
 weight = 60
 url = "https://github.com/vmware/photon"
 EOF_MENU
+
+# Remove any existing params.versions entries to ensure clean configuration
+if grep -q "^\[\[params\.versions\]\]" $INSTALL_DIR/config.toml; then
+  echo "Removing existing version selector configuration..."
+  # Use awk to remove all [[params.versions]] blocks and the version selector header
+  awk '
+    /^# Version selector configuration$/ { in_versions=1; next }
+    in_versions && /^\[\[params\.versions\]\]/ { in_block=1; next }
+    in_versions && in_block && /^(version|url) *=/ { next }
+    in_versions && in_block && /^$/ { in_block=0; next }
+    in_versions && !in_block && (/^#/ || /^\[/) { in_versions=0 }
+    !in_versions || (!in_block && !/^\[\[params\.versions\]\]/)
+  ' $INSTALL_DIR/config.toml > $INSTALL_DIR/config.toml.tmp
+  mv $INSTALL_DIR/config.toml.tmp $INSTALL_DIR/config.toml
+fi
+
+# Add version selector configuration
+echo "Adding version selector configuration (Release dropdown with all doc versions)..."
+cat >> $INSTALL_DIR/config.toml <<'EOF_VERSIONS'
+
+# Version selector configuration
+[[params.versions]]
+  version = "latest"
+  url = "/docs/"
+
+[[params.versions]]
+  version = "v5"
+  url = "/docs-v5/"
+
+[[params.versions]]
+  version = "v4"
+  url = "/docs-v4/"
+
+[[params.versions]]
+  version = "v3"
+  url = "/docs-v3/"
+
+[[params.versions]]
+  version = "v3 (old)"
+  url = "/assets/files/html/3.0/"
+
+[[params.versions]]
+  version = "v2 and v1"
+  url = "/assets/files/html/1.0-2.0/"
+EOF_VERSIONS
 
 # Initialize submodules (e.g., for Docsy theme)
 if [ -d .git ]; then
