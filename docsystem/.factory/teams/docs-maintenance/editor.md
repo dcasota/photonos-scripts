@@ -26,7 +26,7 @@ You automatically fix issues identified in plan.md.
 - Content clarity: Improve readability
 - Formatting: Standardize structure
 
-## Fix Implementation
+## Fix Implementation Workflow
 
 1. Read plan.md for issues
 2. For each issue, apply minimal atomic fix
@@ -35,6 +35,78 @@ You automatically fix issues identified in plan.md.
 5. Validate fix doesn't break functionality
 6. Document all changes in files-edited.md
 7. Create backup before modifications
+
+## Fix Versioning Strategy for installer-weblinkfixes.sh
+
+When adding fixes to `installer-weblinkfixes.sh`:
+
+1. **Create backup**: `cp installer-weblinkfixes.sh installer-weblinkfixes.sh.backup`
+2. **Apply fix**: Add new fix with incremented number (e.g., Fix 48, 49, 50...)
+3. **Test fix**: Run `sudo ./installer.sh`
+4. **Validate**: Run `./weblinkchecker.sh 127.0.0.1:443` again
+5. **If successful**: Keep modification
+6. **If breaks**: Restore from backup, try alternative approach
+
+**Example Fix Addition**:
+```bash
+# Fix 48 - Correct orphan link to downloading-photon page
+echo "48: Fixing downloading-photon typo..."
+find "$INSTALL_DIR/content/en" -path "*/Introduction/photon-quickstart.md" -exec sed -i \
+  -e 's|downloading-photon/|downloading-photon-os/|g' \
+  {} \;
+```
+
+**Versioning During Iterations**:
+- Original: `installer-weblinkfixes.sh`
+- Iteration 1: `installer-weblinkfixes.sh.1` (temporary)
+- Iteration 2: `installer-weblinkfixes.sh.2` (temporary)
+- Final: `installer-weblinkfixes.sh` (overwrites original, no .1, .2 in PR)
+
+## Specific Fix Types
+
+### Critical: Orphan Links - Installer Script Fixes
+Location: `installer-weblinkfixes.sh` (add to Fix sequence)
+
+### Critical: Orphan Images - File Copy Fixes
+```bash
+# Fix 49 - Download missing image from production
+MISSING_IMG="/var/www/photon-site/static/img/missing-screenshot.png"
+if [ ! -f "$MISSING_IMG" ]; then
+  wget -O "$MISSING_IMG" https://vmware.github.io/photon/img/missing-screenshot.png
+fi
+```
+
+### High Priority: Grammar Fixes - Content Edits
+```bash
+# Fix 50 - Grammar corrections in intro.md
+sed -i 's/informations/information/g' $INSTALL_DIR/content/en/docs-v5/intro.md
+sed -i 's/softwares/software/g' $INSTALL_DIR/content/en/docs-v5/intro.md
+```
+
+### High Priority: Markdown Fixes - Structure Corrections
+```bash
+# Fix 51 - Add missing H2 heading in guide.md
+sed -i '42i ## Installation Steps' /var/www/photon-site/content/en/docs-v5/guide.md
+```
+
+### Medium Priority: Image Sizing - CSS Standardization
+```bash
+# Fix 53 - Standardize image sizing
+cat > $INSTALL_DIR/static/css/image-sizing.css <<EOF_CSS
+.content img {
+  max-width: 800px;
+  height: auto;
+  display: block;
+  margin: 1rem auto;
+}
+EOF_CSS
+```
+
+### Medium Priority: Formatting Standardization
+```bash
+# Fix 55 - Add language identifiers to code blocks
+find $INSTALL_DIR/content -name "*.md" -exec sed -i 's/^```$/```bash/g' {} \;
+```
 
 ## Branding and Feature Preservation
 

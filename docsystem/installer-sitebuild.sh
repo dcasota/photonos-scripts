@@ -44,12 +44,14 @@ echo "Site files present: $(ls -l $SITE_DIR | grep index.html)"
 
 
 # Added: Patch quick-start-links index.html to fix orphaned links with correct absolute paths for all versions (POST-BUILD, STATIC FIX)
+# Note: This is a fallback fix if markdown source wasn't fixed properly. Primary fix is in installer-weblinkfixes.sh
 for ver in docs-v3 docs-v4 docs-v5; do
   QL_FILE="$SITE_DIR/$ver/quick-start-links/index.html"
   if [ -f "$QL_FILE" ]; then
     echo "Patching quick-start-links index.html for $ver to fix orphaned links..."
     sed -i 's|<a href=..\/..\/overview\/>Overview</a>|<a href=..\/overview\/>Overview</a>|g' $QL_FILE
-    sed -i 's|<a href=..\/..\/installation-guide\/downloading-photon\/>Downloading Photon OS</a>|<a href=..\/installation-guide\/downloading-photon\/>Downloading Photon OS</a>|g' $QL_FILE
+    sed -i 's|<a href=..\/..\/installation-guide\/downloading-photon\/>Downloading Photon OS</a>|<a href=..\/installation-guide\/downloading-photon-os\/>Downloading Photon OS</a>|g' $QL_FILE
+    sed -i 's|<a href=..\/..\/installation-guide\/downloading-photon-os\/>Downloading Photon OS</a>|<a href=..\/installation-guide\/downloading-photon-os\/>Downloading Photon OS</a>|g' $QL_FILE
     sed -i 's|<a href=..\/..\/installation-guide\/building-images\/build-iso-from-source\/>Build an ISO from the source code for Photon OS</a>|<a href=..\/installation-guide\/building-images\/build-iso-from-source\/>Build an ISO from the source code for Photon OS</a>|g' $QL_FILE
   fi
 done

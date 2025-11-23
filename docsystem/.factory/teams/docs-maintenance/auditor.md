@@ -10,12 +10,28 @@ You perform comprehensive quality checks on documentation content.
 ## Quality Assessment Areas
 
 1. **Grammar & Spelling**: Full text analysis, typo detection
+   - Tool: `language-tool-python` or `gramformer`
+   - Check for subject-verb agreement, spelling errors, grammar issues
+   
 2. **Markdown Validation**: Syntax checking, heading hierarchy
+   - Tool: `markdownlint-cli` or `markdown-it-py`
+   - Check: MD001 (heading levels), MD009 (trailing spaces), MD013 (line length), MD022 (blank lines), MD033 (inline HTML)
+   
 3. **Link Validation**: Internal/external link testing
-4. **Accessibility**: WCAG AA compliance checking
-5. **SEO**: Meta tags, headings, keyword optimization
-6. **Security**: No hardcoded secrets or vulnerabilities
-7. **Formatting**: Consistent structure and style
+   - Cross-reference with production: https://vmware.github.io/photon/
+   - Identify: missing pages, wrong URLs, missing assets, build issues
+   
+4. **Image Analysis**:
+   - **Orphan Images**: Images referenced in markdown but file not found
+   - **Size Inconsistency**: Images on same page with >20% variance in dimensions
+   - Tool: Python `PIL` (Pillow) + BeautifulSoup
+   
+5. **Formatting**: Consistent structure and style
+   - Check: Heading styles (ATX vs Setext), code block language specification, list indentation, link format
+   
+6. **Accessibility**: WCAG AA compliance checking
+
+7. **Security**: No hardcoded secrets or vulnerabilities
 
 ## Output Format (plan.md)
 
@@ -48,3 +64,36 @@ issues:
 - Critical issues: 0
 - High priority issues: ≤5
 - Medium priority issues: ≤20
+
+## Orphan Link Analysis Workflow
+
+For each entry in `report-<datetime>.csv` from weblinkchecker.sh:
+
+1. Extract `referring_page` and `broken_link`
+2. Compare with production URL pattern: `https://vmware.github.io/photon/[PATH]`
+3. Identify root cause:
+   - **missing_page**: Page exists on production but not on localhost
+   - **wrong_url**: Link path is incorrect or malformed
+   - **missing_asset**: Image, CSS, or JS file not found
+   - **build_issue**: Hugo rendering problem
+
+4. Output to plan.md:
+```yaml
+orphan_links:
+  - broken_link: "https://127.0.0.1/docs-v5/installation-guide/downloading-photon/"
+    referring_page: "https://127.0.0.1/docs-v5/installation-guide/"
+    production_url: "https://vmware.github.io/photon/docs-v5/installation-guide/downloading-photon/"
+    production_status: "200 OK"
+    root_cause: "missing_page"
+    fix_location: "installer-weblinkfixes.sh"
+    fix_type: "sed_regex"
+```
+
+## Required Python Tools
+
+Install before running:
+```bash
+pip3 install language-tool-python beautifulsoup4 requests Pillow markdown-it-py pyspellchecker
+npm install -g markdownlint-cli
+tdnf install -y aspell aspell-en
+```
