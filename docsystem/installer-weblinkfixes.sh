@@ -310,8 +310,16 @@ echo "26: Fixing duplicated permalinks ..."
 find "$INSTALL_DIR/content/" -type f -name "*.md" -exec sed -i '/^permalink: \/docs-v[3-5]\/docs-v[3-5]\//d' {} \;
 # Ensure single [permalinks] section and set paths using :sections to handle hierarchy without duplicates
 if grep -q "\[permalinks\]" $INSTALL_DIR/config.toml; then
-  # Remove existing [permalinks] section (assuming it is at the end or we want to replace it entirely)
-  sed -i '/^\[permalinks\]/,$d' $INSTALL_DIR/config.toml
+  # Remove existing [permalinks] section without deleting everything after it
+  # Use awk to remove only the [permalinks] section and its content
+  awk '
+    /^\[permalinks\]$/ { in_perma=1; next }
+    in_perma && /^$/ { next }
+    in_perma && /^[a-zA-Z0-9_-]+ *=/ { next }
+    in_perma && (/^#/ || /^\[/) { in_perma=0 }
+    !in_perma { print }
+  ' $INSTALL_DIR/config.toml > $INSTALL_DIR/config.toml.tmp
+  mv $INSTALL_DIR/config.toml.tmp $INSTALL_DIR/config.toml
 fi
 cat >> $INSTALL_DIR/config.toml <<EOF_PERMALINKS
 
