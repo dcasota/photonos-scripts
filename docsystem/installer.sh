@@ -189,6 +189,36 @@ EOF_CONFIGTOML
   fi
 fi
 
+# Add UI configuration for navbar logo if not present
+if ! grep -q "^\[params\.ui\]" $INSTALL_DIR/config.toml; then
+  if grep -q "^\[params\]$" $INSTALL_DIR/config.toml; then
+    # Add after [params] section
+    sed -i '/^\[params\]$/a \n# UI configuration\n[params.ui]\n# Enable navbar logo\nnavbar_logo = true' $INSTALL_DIR/config.toml
+  fi
+fi
+
+# Add menu configuration if not present
+if ! grep -q "^\[\[menu\.main\]\]" $INSTALL_DIR/config.toml; then
+  cat >> $INSTALL_DIR/config.toml <<'EOF_MENU'
+
+# Menu configuration
+[[menu.main]]
+name = "Blog"
+weight = 10
+url = "/blog/"
+
+[[menu.main]]
+name = "Docs"
+weight = 20
+url = "/docs/"
+
+[[menu.main]]
+name = "Release"
+weight = 30
+url = "https://github.com/vmware/photon/releases"
+EOF_MENU
+fi
+
 # Initialize submodules (e.g., for Docsy theme)
 if [ -d .git ]; then
     git submodule update --init --recursive 1>>$LOGFILE 2>&1

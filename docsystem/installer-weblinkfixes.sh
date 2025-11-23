@@ -131,9 +131,18 @@ find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i \
 
 # Fix 9: Fix remaining cross-directory link issues
 echo "9. Fixing remaining cross-directory issues..."
-# Fix quick-start-links
+# Fix quick-start-links (photon-quickstart.md) - fixing both relative path and typo
+find "$INSTALL_DIR/content/en" -path "*/Introduction/photon-quickstart.md" -exec sed -i \
+  -e 's|(\.\./\.\./overview/)|(../overview/)|g' \
+  -e 's|(\.\./\.\./installation-guide/downloading-photon/)|(../installation-guide/downloading-photon-os/)|g' \
+  -e 's|(\.\./\.\./installation-guide/building-images/build-iso-from-source/)|(../installation-guide/building-images/build-iso-from-source/)|g' \
+  {} \;
+
+# Also fix quick-start-links index if exists
 find "$INSTALL_DIR/content/en" -path "*/quick-start-links/_index.md" -exec sed -i \
   -e 's|(\.\./\.\./installation-guide/|(../installation-guide/|g' \
+  -e 's|(\.\./\.\./overview/)|(../overview/)|g' \
+  -e 's|downloading-photon/|downloading-photon-os/|g' \
   {} \;
 
 # Fix 10: installation-guide paths that reference administration-guide

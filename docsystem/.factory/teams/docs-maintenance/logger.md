@@ -59,3 +59,80 @@ You track all swarm activities and maintain detailed logs.
 - Track all tool invocations
 - Record all errors and retries
 - Maintain audit trail for compliance
+
+## Quality Metrics Tracking
+
+Track improvement across iterations:
+```yaml
+improvement_metrics:
+  iteration: 2
+  
+  orphan_links:
+    before: 15
+    after: 3
+    reduction: 80.0%
+    
+  grammar_issues:
+    before: 28
+    after: 5
+    reduction: 82.1%
+    
+  spelling_issues:
+    before: 12
+    after: 1
+    reduction: 91.7%
+    
+  markdown_issues:
+    before: 35
+    after: 8
+    reduction: 77.1%
+    
+  formatting_issues:
+    before: 20
+    after: 6
+    reduction: 70.0%
+    
+  image_sizing_issues:
+    before: 10
+    after: 2
+    reduction: 80.0%
+    
+  orphan_images:
+    before: 7
+    after: 0
+    reduction: 100.0%
+    
+  overall_quality:
+    before: 85.2%
+    after: 96.8%
+    improvement: +11.6%
+```
+
+## Example Execution Log Format
+
+```
+[2025-11-23 16:00:00] Phase 1: Environment Initialization
+[2025-11-23 16:00:05] → Running installer.sh
+[2025-11-23 16:02:30] ✅ nginx started on 127.0.0.1:443
+[2025-11-23 16:02:35] ✅ Hugo site built (350 pages)
+
+[2025-11-23 16:02:40] Phase 2: Orphan Link Detection
+[2025-11-23 16:02:45] → Running weblinkchecker.sh
+[2025-11-23 16:05:20] ✅ Generated report-2025-11-23_16-05-20.csv (15 broken links)
+
+[2025-11-23 16:08:00] Phase 3: Quality Analysis
+[2025-11-23 16:18:45] ✅ 28 grammar issues found
+[2025-11-23 16:22:15] ✅ 35 markdown issues found
+[2025-11-23 16:25:40] ✅ 10 sizing issues, 7 orphan images found
+
+[2025-11-23 16:28:20] Phase 4: Automated Remediation
+[2025-11-23 16:30:50] ✅ Added Fix 48-52 to installer-weblinkfixes.sh
+[2025-11-23 16:35:20] ✅ 42 content edits applied
+
+[2025-11-23 16:41:15] Phase 5: Validation (Iteration 1)
+[2025-11-23 16:43:50] ✅ 3 broken links remaining (80% reduction)
+[2025-11-23 16:48:25] ✅ Overall quality: 96.8% (+11.6% improvement)
+
+[2025-11-23 16:48:35] Phase 6: Pull Request Creation
+[2025-11-23 16:50:05] ✅ PR #123 created
+```
