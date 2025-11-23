@@ -300,8 +300,8 @@ if [ $(grep -c "\[permalinks\]" $INSTALL_DIR/config.toml) -gt 1 ]; then
   exit 1
 fi
 
-# Fix 27: Add github_repo to config.toml to fix /commit/ links in theme
-echo "27: Adding github_repo to config.toml..."
+# Fix 27: Add github_repo and Broadcom configuration to config.toml
+echo "27: Adding github_repo and Broadcom configuration to config.toml..."
 if ! grep -q "github_repo" "$INSTALL_DIR/config.toml"; then
     echo "Adding github_repo to config.toml..."
     # Check if [params] exists
@@ -312,6 +312,27 @@ if ! grep -q "github_repo" "$INSTALL_DIR/config.toml"; then
         echo "[params]" >> "$INSTALL_DIR/config.toml"
         echo 'github_repo = "https://github.com/vmware/photon"' >> "$INSTALL_DIR/config.toml"
     fi
+fi
+
+# Add copyright and Broadcom community links
+if ! grep -q "copyright =" "$INSTALL_DIR/config.toml"; then
+    echo "Adding copyright and community links to config.toml..."
+    sed -i '/github_repo/a copyright = "VMware"' "$INSTALL_DIR/config.toml"
+    
+    # Add community links section
+    cat >> "$INSTALL_DIR/config.toml" <<'EOF_LINKS'
+
+# Community and support links
+[[params.links.user]]
+name = "GitHub"
+url = "https://github.com/vmware/photon"
+icon = "fab fa-github"
+
+[[params.links.user]]
+name = "Broadcom Community"
+url = "https://community.broadcom.com/"
+icon = "fas fa-users"
+EOF_LINKS
 fi
 
 # Fix 28: Regex-induced https?:// links in markdown
@@ -407,6 +428,36 @@ echo "45: Fixing firewall settings SSH link..."
 find "$INSTALL_DIR/content/en" -path "*/administration-guide/security-policy/default-firewall-settings.md" -exec sed -i \
   's|(\./troubleshooting-guide/solutions-to-common-problems/permitting-root-login-with-ssh/)|(../../../troubleshooting-guide/solutions-to-common-problems/permitting-root-login-with-ssh/)|g' \
   {} \;
+
+# Fix 46: Update footer template to include Broadcom logo
+echo "46: Updating footer template to include Broadcom logo..."
+FOOTER_FILE="$INSTALL_DIR/themes/photon-theme/layouts/partials/footer.html"
+if [ -f "$FOOTER_FILE" ]; then
+    # Check if Broadcom logo is already in footer
+    if ! grep -q "broadcom-logo.png" "$FOOTER_FILE"; then
+        echo "Adding Broadcom logo to footer..."
+        # Replace the footer logo section
+        sed -i '/<div class="text-right">/,/<\/div>/{
+            /<div class="text-right">/ {
+                c\<div class="text-right d-flex align-items-center justify-content-end">
+            }
+            /vmware-logo.svg/ {
+                c\  <a href="https://vmware.github.io" class="mr-3"> <img class="vmw-footer-logo" src="/img/vmware-logo.svg" alt="VMware" /></a>\n  <a href="https://www.broadcom.com" target="_blank"> <img class="vmw-footer-logo" src="/img/broadcom-logo.png" alt="Broadcom" style="max-height: 40px;" /></a>
+            }
+        }' "$FOOTER_FILE"
+    fi
+fi
+
+# Fix 47: Update i18n translation for Broadcom branding
+echo "47: Updating i18n translation for Broadcom branding..."
+I18N_FILE="$INSTALL_DIR/themes/photon-theme/i18n/en.toml"
+if [ -f "$I18N_FILE" ]; then
+    # Update footer text to include Broadcom
+    if grep -q 'other = "A VMware Backed Project"' "$I18N_FILE"; then
+        echo "Updating footer text to include Broadcom..."
+        sed -i 's/other = "A VMware Backed Project"/other = "A VMware By Broadcom Backed Project"/' "$I18N_FILE"
+    fi
+fi
 
 echo "======================================================="
 echo "Fixing incorrect relative links in markdown files done."

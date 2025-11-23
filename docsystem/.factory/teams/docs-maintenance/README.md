@@ -29,6 +29,7 @@ crawler → auditor → editor → pr-bot
 - **Link Validation**: Test all internal/external links
 - **Automated Fixes**: Grammar, markdown, accessibility improvements
 - **PR Management**: Create and manage documentation PRs
+- **Branding Compliance**: Ensure Broadcom integration alongside VMware branding (logo, community links, footer text)
 
 ## Quality Gates
 
@@ -52,6 +53,43 @@ factory run @docs-maintenance-auditor
 factory run @docs-maintenance-editor
 ```
 
+## Branding Requirements (DO NOT REMOVE)
+
+### Required Broadcom Integration
+The following Broadcom elements are **mandatory features** (like the console window):
+
+1. **Broadcom Logo in Footer**
+   - File: `/var/www/photon-site/static/img/broadcom-logo.png`
+   - Must appear alongside VMware logo in footer
+   - Configured by `installer-weblinkfixes.sh` (Fix 46)
+
+2. **Broadcom Community Link**
+   - Must be in footer community links section
+   - URL: `https://community.broadcom.com/`
+   - Configured in `config.toml` (Fix 27)
+
+3. **Footer Branding Text**
+   - Must read: "A VMware By Broadcom Backed Project"
+   - Location: `themes/photon-theme/i18n/en.toml`
+   - Configured by `installer-weblinkfixes.sh` (Fix 47)
+
+4. **Package Repository URLs**
+   - Console container uses `packages-prod.broadcom.com`
+   - Required for Docker-based console feature
+   - Location: `installer-consolebackend.sh`
+
+### Console Window Feature
+- Terminal icon in main navigation menu
+- Full WebSocket + Docker + tmux backend
+- Implemented by `installer-consolebackend.sh`
+- **Must be preserved** during all maintenance operations
+
+### Reference Implementation
+- VMware logo: Points to `https://vmware.github.io`
+- Broadcom logo: Points to `https://www.broadcom.com`
+- Both logos displayed side-by-side in footer
+- Both branding elements coexist without conflicts
+
 ## Security Monitoring
 
 This team is monitored by **Team 5: Docs Security** for:
@@ -59,3 +97,4 @@ This team is monitored by **Team 5: Docs Security** for:
 - Content security validation
 - Link safety verification
 - Unauthorized access prevention
+- Branding compliance verification
