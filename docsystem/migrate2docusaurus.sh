@@ -52,7 +52,8 @@ cd "$TMP_REPO"
 # Get commit details
 COMMIT_HASH=$(git rev-parse HEAD)
 COMMIT_ABBREV=$(git log -1 --format=%h)
-COMMIT_MESSAGE=$(git log -1 --format=%s)
+# Escape special characters in commit message for JavaScript/HTML compatibility
+COMMIT_MESSAGE=$(git log -1 --format=%s | sed "s/'/\\\\'/g" | sed 's/"/\\"/g')
 COMMIT_DATE=$(git log -1 --format=%cd --date=format:'%B %-d, %Y')
 echo "Checked out commit: $COMMIT_HASH"
 echo "Commit date: $COMMIT_DATE"
