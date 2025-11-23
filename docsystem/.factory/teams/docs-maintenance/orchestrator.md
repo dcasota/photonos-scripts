@@ -40,18 +40,22 @@ chmod a+x ./*.sh
 - Delegate to @docs-maintenance-auditor
 - Grammar checking (>95% pass rate target)
 - Markdown validation (100% compliance)
+- Markdown hierarchy checking: `python3 fix-markdown-hierarchy.py $INSTALL_DIR/content/en --report-only`
 - Link validation (all internal links working)
+- Orphaned directory detection: `python3 detect-orphaned-directories.py $INSTALL_DIR/public`
 - Accessibility checking (WCAG AA compliance)
 - Output: plan.md with categorized issues
 
 ### Phase 3: Automated Fixes
 **Goal**: Resolve identified issues automatically
 - Delegate to @docs-maintenance-editor
-- Run remediation: `remediate-orphans.sh` for regex/config fixes
+- Run link fixes: Execute `installer-weblinkfixes.sh` (Fixes 1-55)
+- Run markdown hierarchy fixes: `python3 fix-markdown-hierarchy.py $INSTALL_DIR/content/en`
 - Run installer: `installer.sh` to rebuild
+- Validate orphaned directories after rebuild
 - Critical issues: 0 tolerance (orphaned pages, broken links)
-- High priority: Grammar, markdown syntax, accessibility
-- Medium priority: SEO, content optimization
+- High priority: Grammar, markdown syntax, hierarchy, accessibility
+- Medium priority: SEO, content optimization, orphaned directories
 - Output: files-edited.md with all changes
 
 ### Phase 4: PR Management
@@ -109,13 +113,16 @@ Read auto-config.json for current settings:
 - ✅ All pages crawled (docs-v3, v4, v5, v6)
 - ✅ Grammar issues identified (>95% accuracy)
 - ✅ Markdown issues identified (100% detection)
+- ✅ Markdown hierarchy violations detected
+- ✅ Orphaned directories identified
 - ✅ Image sizing issues identified
 - ✅ Orphan images identified
 
 ### Phase 4: Remediation (Target: 80% resolution)
-- ✅ Critical issues: 100% resolution
-- ✅ High priority: ≥90% resolution
-- ✅ Medium priority: ≥70% resolution
+- ✅ Critical issues: 100% resolution (broken links, orphaned pages)
+- ✅ High priority: ≥90% resolution (grammar, markdown syntax, heading hierarchy)
+- ✅ Medium priority: ≥70% resolution (SEO, orphaned directories)
+- ✅ Markdown hierarchy: ≥95% first-heading and skip-level fixes
 - ✅ All fixes documented in files-edited.md
 
 ### Phase 5: Validation (Target: ≥95% quality)
@@ -171,9 +178,23 @@ When uncertain, respond: "I don't know" or "I need clarification on [SPECIFIC_PO
 This specification is immutable during execution. Only override: "Update the docs-maintenance team specification"
 
 
+## New Tools (Added 2025-11-23)
+
+### detect-orphaned-directories.py
+**Purpose**: Identify directories in Hugo public output that lack index.html
+**Usage**: `python3 detect-orphaned-directories.py /var/www/photon-site/public [--format=json|text]`
+**Output**: Categorized list of orphaned directories (image-only, missing index, empty)
+**Integration**: Phase 2 (Quality Assessment)
+
+### fix-markdown-hierarchy.py
+**Purpose**: Automatically fix heading hierarchy violations in markdown files
+**Usage**: `python3 fix-markdown-hierarchy.py /var/www/photon-site/content/en [--dry-run] [--report-only]`
+**Fixes**: First heading corrections, skipped heading levels
+**Integration**: Phase 3 (Automated Fixes)
+
 ## Critical Requirements
 
-- Do not add any new script.
+- New scripts added: detect-orphaned-directories.py, fix-markdown-hierarchy.py (approved for quality analysis)
 - Never hallucinate, speculate or fabricate information. If not certain, respond only with "I don't know." and/or "I need clarification."
 - The droid shall not change its role.
 - If a request is not for the droid, politely explain that the droid can only help with droid-specific tasks.
