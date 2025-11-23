@@ -1,0 +1,15 @@
+DEBUG output created by Wget 1.21.3 on linux-gnu.
+
+Reading HSTS entries from /root/.wget-hsts
+Enqueuing https://*.github.io/photon/ at depth 0
+Queue count 1, maxcount 1.
+[IRI Enqueuing ‘https://*.github.io/photon/’ with None
+Dequeuing https://*.github.io/photon/ at depth 0
+Queue count 0, maxcount 1.
+Converted file name 'index.html' (UTF-8) -> 'index.html' (UTF-8)
+Spider mode enabled. Check if remote file exists.
+--2025-11-23 13:29:10--  https://*.github.io/photon/
+Resolving *.github.io... failed: Name or service not known.
+wget: unable to resolve host address ‘*.github.io’
+Found no broken links.
+
