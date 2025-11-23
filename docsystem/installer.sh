@@ -271,14 +271,15 @@ EOF_MENU
 # Remove any existing params.versions entries to ensure clean configuration
 if grep -q "^\[\[params\.versions\]\]" $INSTALL_DIR/config.toml; then
   echo "Removing existing version selector configuration..."
-  # Use awk to remove all [[params.versions]] blocks and the version selector header
+  # Remove the "# Version selector configuration" comment line
+  sed -i '/^# Version selector configuration$/d' $INSTALL_DIR/config.toml
+  # Use awk to remove ALL [[params.versions]] blocks (handles multiple duplicates)
   awk '
-    /^# Version selector configuration$/ { in_versions=1; next }
-    in_versions && /^\[\[params\.versions\]\]/ { in_block=1; next }
-    in_versions && in_block && /^(version|url) *=/ { next }
-    in_versions && in_block && /^$/ { in_block=0; next }
-    in_versions && !in_block && (/^#/ || /^\[/) { in_versions=0 }
-    !in_versions || (!in_block && !/^\[\[params\.versions\]\]/)
+    /^\[\[params\.versions\]\]/ { in_block=1; next }
+    in_block && /^[[:space:]]*(version|url) *=/ { next }
+    in_block && /^[[:space:]]*$/ { next }
+    in_block && (/^\[/ || /^[a-zA-Z]/) { in_block=0 }
+    !in_block
   ' $INSTALL_DIR/config.toml > $INSTALL_DIR/config.toml.tmp
   mv $INSTALL_DIR/config.toml.tmp $INSTALL_DIR/config.toml
 fi
