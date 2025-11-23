@@ -318,6 +318,81 @@ fi
 echo "28: Fixing regex-induced https?:// links in markdown..."
 find "$INSTALL_DIR/content" -type f -name "*.md" -exec sed -i 's/https?:\/\//https:\/\//g' {} +
 
+# Fix 29: Fix Slug for mounting-remote-file-systems to match filename
+echo "29: Fixing Slug for mounting-remote-file-systems..."
+find "$INSTALL_DIR/content/en" -name "mounting-remote-file-systems.md" -exec sed -i '/^slug: mounting-remote-file-systems.*/d' {} \;
+find "$INSTALL_DIR/content/en" -name "mounting-remote-file-systems.md" -exec sed -i '/^weight: .*/a slug: mounting-remote-file-systems' {} \;
+
+# Fix 30: Fix Slug for inspecting-network-links-with-networkctl
+echo "30: Fixing Slug for inspecting-network-links-with-networkctl..."
+find "$INSTALL_DIR/content/en" -name "inspecting-network-links-with-networkctl.md" -exec sed -i '/^slug: inspecting-network-links-with-networkctl.*/d' {} \;
+find "$INSTALL_DIR/content/en" -name "inspecting-network-links-with-networkctl.md" -exec sed -i '/^weight: .*/a slug: inspecting-network-links-with-networkctl' {} \;
+
+# Fix 31: Fix Packer Examples Link
+echo "31: Fixing Packer Examples Link..."
+sed -i 's|\[vmware/photon\]: (https://app.vagrantup.com/vmware/boxes/photon)|[vmware/photon]: https://app.vagrantup.com/vmware/boxes/photon|g' "$INSTALL_DIR/content/en/docs-v5/user-guide/packer-examples/_index.md"
+
+# Fix 32: Fix Kubernetes Link in administration-guide
+echo "32: Fixing Kubernetes Link..."
+find "$INSTALL_DIR/content/en" -name "kubernetes.md" -path "*/administration-guide/containers/*" -exec sed -i 's|(\.\./\.\./administration-guide/containers/kubernetes/)|(../../user-guide/kubernetes-on-photon-os/running-kubernetes-on-photon-os/)|g' {} \;
+
+# Fix 33: Fix Blog Post Link
+echo "33: Fixing Blog Post Link..."
+sed -i 's|/docs/overview/whats-new/|/docs-v4/whats-new/|g' "$INSTALL_DIR/content/en/blog/releases/photon4-ga.md"
+
+# Fix 34: Fix GCE Prerequisite missing link
+echo "34: Removing dead link to kernel upgrade in GCE prerequisites..."
+find "$INSTALL_DIR/content/en" -name "prerequisites-for-photon-os-on-gce.md" -exec sed -i '/Upgrading the Kernel Version Requires Grub Changes/d' {} \;
+
+# Fix 35: Fix Kubernetes Link in administration-guide (Correct Path)
+echo "35: Fixing Kubernetes Link in administration-guide (Correct Path)..."
+find "$INSTALL_DIR/content/en" -name "kubernetes.md" -path "*/administration-guide/containers/*" -exec sed -i 's|(\.\./\.\./administration-guide/containers/kubernetes/)|(../../../user-guide/kubernetes-on-photon-os/running-kubernetes-on-photon-os/)|g' {} \;
+find "$INSTALL_DIR/content/en" -name "kubernetes.md" -path "*/administration-guide/containers/*" -exec sed -i 's|(\.\./\.\./user-guide/kubernetes-on-photon-os/running-kubernetes-on-photon-os/)|(../../../user-guide/kubernetes-on-photon-os/running-kubernetes-on-photon-os/)|g' {} \;
+
+# Fix 36: Fix cloud-images link in administration-guide
+echo "36: Fixing cloud-images link in administration-guide..."
+find "$INSTALL_DIR/content/en" -path "*/administration-guide/cloud-init-on-photon-os/customizing-a-photon-os-machine-on-ec2.md" -exec sed -i 's|(\.\./\.\./\.\./installation-guide/cloud-images/)|(../../../installation-guide/compatible-cloud-images/)|g' {} \;
+find "$INSTALL_DIR/content/en" -path "*/administration-guide/cloud-init-on-photon-os/customizing-a-photon-os-machine-on-ec2.md" -exec sed -i 's|(\.\./\.\./installation-guide/cloud-images/)|(../../../installation-guide/compatible-cloud-images/)|g' {} \;
+
+# Fix 37: Fix broken link in installing-photon-os-on-google-compute-engine
+echo "37: Fixing broken link in installing-photon-os-on-google-compute-engine..."
+find "$INSTALL_DIR/content/en" -path "*/installation-guide/run-photon-on-gce/installing-photon-os-on-gce.md" -exec sed -i 's|(\./installation-guide/deploying-a-containerized-application-in-photon-os/)|(../../deploying-a-containerized-application-in-photon-os/)|g' {} \;
+
+# Fix 38: Fix broken link in default-firewall-settings
+echo "38: Fixing broken link in default-firewall-settings..."
+find "$INSTALL_DIR/content/en" -path "*/administration-guide/security-policy/default-firewall-settings.md" -exec sed -i 's|(\.\./\.\./troubleshooting-guide/solutions-to-common-problems/permitting-root-login-with-ssh/)|(../../../troubleshooting-guide/solutions-to-common-problems/permitting-root-login-with-ssh/)|g' {} \;
+
+# Fix 39: Fix broken link in checking-firewall-rules
+echo "39: Fixing broken link in checking-firewall-rules..."
+find "$INSTALL_DIR/content/en" -path "*/troubleshooting-guide/network-troubleshooting/checking-firewall-rules.md" -exec sed -i 's|(\.\./\.\./troubleshooting-guide/solutions-to-common-problems/permitting-root-login-with-ssh/)|(../../solutions-to-common-problems/permitting-root-login-with-ssh/)|g' {} \;
+find "$INSTALL_DIR/content/en" -path "*/troubleshooting-guide/network-troubleshooting/checking-firewall-rules.md" -exec sed -i 's|(\./troubleshooting-guide/solutions-to-common-problems/permitting-root-login-with-ssh/)|(../../solutions-to-common-problems/permitting-root-login-with-ssh/)|g' {} \;
+
+# Fix 40: Fix broken link in troubleshooting/network-troubleshooting for tcpdump
+echo "40: Fixing broken link in troubleshooting/network-troubleshooting for tcpdump..."
+find "$INSTALL_DIR/content/en" -path "*/troubleshooting-guide/network-troubleshooting/_index.md" -exec sed -i 's|(\.\./\.\./administration-guide/managing-network-configuration/installing-the-packages-for-tcpdump-and-netcat-with-tdnf/)|(../../administration-guide/managing-network-configuration/installing-packages-for-tcpdump-and-netcat/)|g' {} \;
+
+# Fix 41: Fix broken link in installing-a-host-against-custom-server-repository
+echo "41: Fixing broken link in installing-a-host-against-custom-server-repository..."
+find "$INSTALL_DIR/content/en" -path "*/administration-guide/photon-rpm-ostree/installing-a-host-against-custom-server-repository/_index.md" -exec sed -i 's|(\.\./\.\./user-guide/working-with-kickstart/)|(../../../user-guide/working-with-kickstart/)|g' {} \;
+
+# Fix 42: Fix broken link in troubleshooting/performance-issues
+echo "42: Fixing broken link in troubleshooting/performance-issues..."
+find "$INSTALL_DIR/content/en" -path "*/troubleshooting-guide/performance-issues/_index.md" -exec sed -i 's|(general_performance_guidelines)|(general-performance-guidelines)|g' {} \;
+find "$INSTALL_DIR/content/en" -path "*/troubleshooting-guide/performance-issues/_index.md" -exec sed -i 's|(throughput_performance)|(throughput-performance)|g' {} \;
+# Legacy wrong fix removal just in case
+find "$INSTALL_DIR/content/en" -path "*/troubleshooting-guide/performance-issues/_index.md" -exec sed -i 's|(\.\./troubleshooting-guide/performance-issues/general_performance_guidelines)|(general-performance-guidelines)|g' {} \;
+
+# Fix 43: Fix broken link in troubleshooting/kernel-problems
+echo "43: Fixing broken link in troubleshooting/kernel-problems..."
+find "$INSTALL_DIR/content/en" -path "*/troubleshooting-guide/kernel-problems-and-boot-and-login-errors/_index.md" -exec sed -i 's|(\./investigating-strange-behavior/)|(./investigating-unexpected-behavior/)|g' {} \;
+find "$INSTALL_DIR/content/en" -path "*/troubleshooting-guide/kernel-problems-and-boot-and-login-errors/_index.md" -exec sed -i 's|(\.\./troubleshooting-guide/kernel-problems-and-boot-and-login-errors/troubleshooting-linux-kernel/)|(./troubleshooting-linux-kernel/)|g' {} \;
+
+# Fix 44: Fix blog link for whats-new
+echo "44: Fixing blog link for whats-new..."
+# Ensure trailing slash is removed if present in the source or incorrect
+sed -i 's|/docs/overview/whats-new/|/docs-v4/whats-new/|g' "$INSTALL_DIR/content/en/blog/releases/photon4-ga.md"
+sed -i 's|/docs-v4/whats-new|/docs-v4/whats-new/|g' "$INSTALL_DIR/content/en/blog/releases/photon4-ga.md"
+
 echo "======================================================="
 echo "Fixing incorrect relative links in markdown files done."
 echo "======================================================="
