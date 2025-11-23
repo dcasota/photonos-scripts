@@ -43,6 +43,24 @@ echo "======================================================="
 echo "Fixing incorrect relative links in markdown files ..."
 echo "======================================================="
 
+# Fix 0: Rename directories with spaces to use hyphens (CRITICAL - prevents redirect loops)
+echo "0. Renaming directories with spaces to use hyphens..."
+for ver in docs-v3 docs-v4 docs-v5; do
+  SPACE_DIR="$INSTALL_DIR/content/en/$ver/installation-guide/building images"
+  HYPHEN_DIR="$INSTALL_DIR/content/en/$ver/installation-guide/building-images"
+  if [ -d "$SPACE_DIR" ]; then
+    echo "  Renaming: $SPACE_DIR -> $HYPHEN_DIR"
+    mv "$SPACE_DIR" "$HYPHEN_DIR"
+  fi
+done
+
+# Validate no directories with spaces remain
+DIRS_WITH_SPACES=$(find "$INSTALL_DIR/content" -type d -name "* *" 2>/dev/null | wc -l)
+if [ "$DIRS_WITH_SPACES" -gt 0 ]; then
+  echo "WARNING: Found $DIRS_WITH_SPACES directories with spaces:"
+  find "$INSTALL_DIR/content" -type d -name "* *" 2>/dev/null
+fi
+
 # Fix 1: troubleshooting-guide/network-troubleshooting links
 echo "1. Fixing network-troubleshooting links..."
 find "$INSTALL_DIR/content/en" -path "*/troubleshooting-guide/network-troubleshooting/_index.md" -exec sed -i \
@@ -546,6 +564,111 @@ find "$INSTALL_DIR/content/en" -path "*/administration-guide/managing-network-co
   -e 's|(../../managing-network-configuration/network-configuration-manager-python-api/)|(/docs-v4/administration-guide/managing-network-configuration/network-configuration-manager-python-api/)|g' \
   -e 's|(/docs-v4/administration-guide/command-line-reference/command-line-interfaces/photon-management-daemon-command-line-interface-pmd-cli/)|(/docs-v4/command-line-reference/command-line-interfaces/photon-management-daemon-command-line-interface-pmd-cli/)|g' \
   {} \;
+
+# Fix 56: Fix docs-v4 broken API links (from weblinkchecker.sh report)
+echo "56. Fixing docs-v4 broken API links with duplicated path segments..."
+# These links have duplicated path segments causing 404 errors
+find "$INSTALL_DIR/content/en/docs-v4" -type f -name "*.md" -exec sed -i \
+  -e 's|(./command-line-reference/command-line-interfaces/photon-management-daemon-command-line-interface-pmd-cli/)|(/docs-v4/command-line-reference/command-line-interfaces/photon-management-daemon-command-line-interface-pmd-cli/)|g' \
+  -e 's|(./administration-guide/managing-network-configuration/network-configuration-manager-c-api/)|(/docs-v4/administration-guide/managing-network-configuration/network-configuration-manager-c-api/)|g' \
+  -e 's|(./administration-guide/managing-network-configuration/network-configuration-manager-python-api/)|(/docs-v4/administration-guide/managing-network-configuration/network-configuration-manager-python-api/)|g' \
+  -e 's|(../administration-guide/managing-network-configuration/network-configuration-manager-c-api/)|(/docs-v4/administration-guide/managing-network-configuration/network-configuration-manager-c-api/)|g' \
+  -e 's|(../administration-guide/managing-network-configuration/network-configuration-manager-python-api/)|(/docs-v4/administration-guide/managing-network-configuration/network-configuration-manager-python-api/)|g' \
+  {} \;
+
+# Additional fix for available-apis page specifically
+if [ -f "$INSTALL_DIR/content/en/docs-v4/administration-guide/photon-management-daemon/available-apis.md" ]; then
+  echo "  Fixing available-apis.md specifically..."
+  sed -i \
+    -e 's|\[netmgr\.c\](./administration-guide/managing-network-configuration/network-configuration-manager-c-api/)|[netmgr.c](/docs-v4/administration-guide/managing-network-configuration/network-configuration-manager-c-api/)|g' \
+    -e 's|\[netmgr\.python\](./administration-guide/managing-network-configuration/network-configuration-manager-python-api/)|[netmgr.python](/docs-v4/administration-guide/managing-network-configuration/network-configuration-manager-python-api/)|g' \
+    "$INSTALL_DIR/content/en/docs-v4/administration-guide/photon-management-daemon/available-apis.md"
+fi
+
+# Additional fix for using-the-network-configuration-manager page
+if [ -f "$INSTALL_DIR/content/en/docs-v4/administration-guide/managing-network-configuration/using-the-network-configuration-manager.md" ]; then
+  echo "  Fixing using-the-network-configuration-manager.md specifically..."
+  sed -i \
+    -e 's|\[pmd-cli\](../../command-line-reference/command-line-interfaces/photon-management-daemon-command-line-interface-pmd-cli/)|[pmd-cli](/docs-v4/command-line-reference/command-line-interfaces/photon-management-daemon-command-line-interface-pmd-cli/)|g' \
+    -e 's|\[netmgr\.c API\](../../managing-network-configuration/network-configuration-manager-c-api/)|[netmgr.c API](/docs-v4/administration-guide/managing-network-configuration/network-configuration-manager-c-api/)|g' \
+    -e 's|\[netmgr\.python API\](../../managing-network-configuration/network-configuration-manager-python-api/)|[netmgr.python API](/docs-v4/administration-guide/managing-network-configuration/network-configuration-manager-python-api/)|g' \
+    "$INSTALL_DIR/content/en/docs-v4/administration-guide/managing-network-configuration/using-the-network-configuration-manager.md"
+fi
+
+# Fix 57: Fix image paths in installation-guide subdirectories (../../images/ -> ../images/)
+echo "57. Fixing image paths in installation-guide subdirectories..."
+# Files in /installation-guide/run-photon-*/ subdirectories incorrectly use ../../images/
+# which goes to /docs-v5/images/ instead of /docs-v5/installation-guide/images/
+# The images are actually in /installation-guide/images/, so should use ../images/
+for ver in docs-v3 docs-v4 docs-v5; do
+  echo "  Processing $ver..."
+  # Fix in all run-photon-* subdirectories
+  find "$INSTALL_DIR/content/en/$ver/installation-guide/run-photon-"* -type f -name "*.md" -exec sed -i \
+    -e 's|(\.\./\.\./images/|(../images/|g' \
+    -e 's|](../../images/|](../images/|g' \
+    {} \; 2>/dev/null || true
+  
+  # Fix in building-images subdirectories (but not building-images itself)
+  find "$INSTALL_DIR/content/en/$ver/installation-guide/building-images" -mindepth 2 -type f -name "*.md" -exec sed -i \
+    -e 's|(\.\./\.\./images/|(../images/|g' \
+    -e 's|](../../images/|](../images/|g' \
+    {} \; 2>/dev/null || true
+done
+
+# Fix 58: Fix administration-guide paths in build-other-images
+echo "58. Fixing administration-guide paths in build-other-images..."
+# Files in /installation-guide/building-images/build-other-images/ use ../../administration-guide/
+# which goes to /installation-guide/administration-guide/ (WRONG)
+# Should be ../../../administration-guide/ to reach /docs-vX/administration-guide/
+for ver in docs-v3 docs-v4 docs-v5; do
+  find "$INSTALL_DIR/content/en/$ver/installation-guide/building-images/build-other-images" -type f -name "*.md" -exec sed -i \
+    -e 's|(\.\./\.\./administration-guide/|(../../../administration-guide/|g' \
+    -e 's|](../../administration-guide/|](../../../administration-guide/|g' \
+    {} \; 2>/dev/null || true
+done
+
+# Fix 59: Fix typo in docs-v4 fusion OVA image path (..images -> ../images)
+echo "59. Fixing typo in docs-v4 fusion OVA image path..."
+find "$INSTALL_DIR/content/en/docs-v4/installation-guide/run-photon-on-fusion" -type f -name "*.md" -exec sed -i \
+  -e 's|(\.\.\.\./images/|(../images/|g' \
+  -e 's|](\.\.\.\.images/|](../images/|g' \
+  -e 's|](\.\.images/|](../images/|g' \
+  -e 's|\.\.images/|../images/|g' \
+  {} \; 2>/dev/null || true
+
+# Fix 60: Fix absolute image paths in troubleshooting/fsck-fails (/docs/images -> /docs-v4/images)
+echo "60. Fixing absolute image paths in troubleshooting fsck-fails..."
+find "$INSTALL_DIR/content/en/docs-v4/troubleshooting-guide/file-system-troubleshooting" -type f -name "*.md" -exec sed -i \
+  -e 's|(/docs/images/|(/docs-v4/images/|g' \
+  {} \; 2>/dev/null || true
+# Also fix for all versions to be consistent
+for ver in docs-v3 docs-v5; do
+  find "$INSTALL_DIR/content/en/$ver/troubleshooting-guide/file-system-troubleshooting" -type f -name "*.md" -exec sed -i \
+    -e 's|(/docs/images/|](/$ver/images/)|g' \
+    {} \; 2>/dev/null || true
+done
+
+# Fix 61: Copy missing images from installation-guide/images to top-level images directory
+echo "61. Ensuring all installation images are accessible from top-level images directory..."
+for ver in docs-v3 docs-v4 docs-v5; do
+  SRC_DIR="$INSTALL_DIR/content/en/$ver/installation-guide/images"
+  DEST_DIR="$INSTALL_DIR/content/en/$ver/images"
+  
+  if [ -d "$SRC_DIR" ] && [ -d "$DEST_DIR" ]; then
+    echo "  Copying missing images for $ver..."
+    # Copy only if files don't exist in destination (preserve existing files)
+    rsync -a --ignore-existing "$SRC_DIR/" "$DEST_DIR/" 2>/dev/null || cp -rn "$SRC_DIR"/* "$DEST_DIR"/ 2>/dev/null || true
+  fi
+done
+
+# Fix 62: Copy troubleshooting images from docs-v5 to docs-v4 (missing in v4)
+echo "62. Copying missing troubleshooting images from docs-v5 to docs-v4..."
+if [ -f "$INSTALL_DIR/content/en/docs-v5/images/fsck-fails.png" ]; then
+  cp -n "$INSTALL_DIR/content/en/docs-v5/images/fsck-fails.png" "$INSTALL_DIR/content/en/docs-v4/images/" 2>/dev/null || true
+fi
+if [ -f "$INSTALL_DIR/content/en/docs-v5/images/lsblk-command.png" ]; then
+  cp -n "$INSTALL_DIR/content/en/docs-v5/images/lsblk-command.png" "$INSTALL_DIR/content/en/docs-v4/images/" 2>/dev/null || true
+fi
 
 echo "======================================================="
 echo "Fixing incorrect relative links in markdown files done."
