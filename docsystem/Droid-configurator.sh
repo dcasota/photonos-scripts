@@ -11,7 +11,7 @@ CONFIG_FILE="$FACTORYAI_PROJECT_DIR/.factory/config.json"
 
 # install prerequisites
 cd $HOME
-tdnf install -y curl jq git nodejs tar
+tdnf install -y curl jq git nodejs tar unzip
 
 
 if [ ! -f "/usr/local/bin/droid" ]; then
