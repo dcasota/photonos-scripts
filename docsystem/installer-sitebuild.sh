@@ -164,11 +164,12 @@ server {
     rewrite ^/docs-v5/(.*)/images/(.+\.(png|jpg|jpeg|gif|svg|webp|ico))\$ /docs-v5/images/\$2 permanent;
     rewrite ^/docs/images/(.+)\$ /docs-v4/images/\$1 permanent;
     
-    # Nested printview redirects
-    rewrite ^/printview/docs-v3/(.*)\$ /docs-v3/\$1 permanent;
-    rewrite ^/printview/docs-v4/(.*)\$ /docs-v4/\$1 permanent;
-    rewrite ^/printview/docs-v5/(.*)\$ /docs-v5/\$1 permanent;
-    rewrite ^/printview/(.*)\$ /docs-v5/\$1 permanent;
+    # Nested printview redirects - DISABLED to enable print functionality
+    # These redirects were preventing the "Print entire section" feature from working
+    # rewrite ^/printview/docs-v3/(.*)\$ /docs-v3/\$1 permanent;
+    # rewrite ^/printview/docs-v4/(.*)\$ /docs-v4/\$1 permanent;
+    # rewrite ^/printview/docs-v5/(.*)\$ /docs-v5/\$1 permanent;
+    # rewrite ^/printview/(.*)\$ /docs-v5/\$1 permanent;
     
     # Legacy HTML .md extension removal
     rewrite ^(/assets/files/html/.*)\\.md\$ \$1 permanent;
