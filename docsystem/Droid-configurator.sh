@@ -13,6 +13,13 @@ CONFIG_FILE="$FACTORYAI_PROJECT_DIR/.factory/config.json"
 cd $HOME
 tdnf install -y curl jq git nodejs tar unzip
 
+# gh CLI
+rpm -ivh https://github.com/cli/cli/releases/download/v2.83.1/gh_2.83.1_linux_amd64.rpm
+if [ -f "/usr/local/bin/gh" ]; then
+   if [ -f "/usr/bin/gh" ]; then  
+     cp /usr/bin/gh /usr/local/bin/gh
+   fi
+fi
 
 if [ ! -f "/usr/local/bin/droid" ]; then
     echo Installing FactoryAI Droid CLI ...
