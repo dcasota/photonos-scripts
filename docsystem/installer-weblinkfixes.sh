@@ -691,10 +691,10 @@ EOF_TOGGLE
   echo "  Replaced toggle.html with simple moon/sun icon button"
 fi
 
-# Fix 64: Update navbar.html to use simple toggle button
+# Fix 64: Update navbar.html - place console and dark mode after version selector
 NAVBAR_FILE="$INSTALL_DIR/themes/photon-theme/layouts/partials/navbar.html"
 if [ -f "$NAVBAR_FILE" ]; then
-  # Replace the dark mode toolbar section with simpler version
+  # Remove old dark mode toolbar section
   sed -i '
     /<!-- dark mode toolbar -->/,/<!-- End of dark mode toggle in navbar -->/ {
       /<!-- dark mode toolbar -->/!{
@@ -703,11 +703,15 @@ if [ -f "$NAVBAR_FILE" ]; then
     }
   ' "$NAVBAR_FILE"
   
-  # Add simple toggle button before console button
-  sed -i '/<li class="nav-item"><a class="nav-link" href="#" onclick="toggleConsole/i\
-\t\t<!-- Dark Mode Toggle -->\n\t\t{{ if .Site.Params.darkmode }}\n\t\t<li class="nav-item">\n\t\t\t<button id="theme-toggle" class="btn btn-link nav-link" aria-label="Toggle dark mode" style="padding: 0.375rem 0.75rem;">\n\t\t\t\t<i id="theme-icon" class="fas fa-moon"></i>\n\t\t\t</button>\n\t\t</li>\n\t\t{{ end }}' "$NAVBAR_FILE"
+  # Remove any existing console button
+  sed -i '/<li class="nav-item"><a class="nav-link" href="#" onclick="toggleConsole.*<\/a><\/li>/d' "$NAVBAR_FILE"
   
-  echo "  Updated navbar.html with simple moon/sun toggle"
+  # Add console and dark mode toggle after version selector (on same line)
+  # Find the closing div after version selector and add buttons before language selector
+  sed -i '/{{ if  (gt (len .Site.Home.Translations) 0) }}/i\
+\t\t<!-- Console Button -->\n\t\t<li class="nav-item">\n\t\t\t<a class="nav-link" href="#" onclick="toggleConsole(); return false;" title="Console">\n\t\t\t\t<i class="fas fa-terminal"></i>\n\t\t\t</a>\n\t\t</li>\n\t\t\n\t\t<!-- Dark Mode Toggle -->\n\t\t{{ if .Site.Params.darkmode }}\n\t\t<li class="nav-item">\n\t\t\t<button id="theme-toggle" class="btn btn-link nav-link" aria-label="Toggle dark mode" style="padding: 0.375rem 0.75rem;">\n\t\t\t\t<i id="theme-icon" class="fas fa-moon"></i>\n\t\t\t</button>\n\t\t</li>\n\t\t{{ end }}' "$NAVBAR_FILE"
+  
+  echo "  Updated navbar.html: Console and dark mode toggle after version selector"
 fi
 
 echo "======================================================="
