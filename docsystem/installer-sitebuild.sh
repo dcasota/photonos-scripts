@@ -11,8 +11,97 @@ echo "Installing custom site enhancements (console, dark mode, code buttons)..."
 # Create directories if they don't exist
 mkdir -p "$INSTALL_DIR/layouts/partials/hooks"
 mkdir -p "$INSTALL_DIR/layouts/shortcodes"
+mkdir -p "$INSTALL_DIR/layouts/partials"
 mkdir -p "$INSTALL_DIR/static/js/xterm"
 mkdir -p "$INSTALL_DIR/static/css"
+
+# Add navbar structure to prevent duplicate icons
+if [ -f "$INSTALL_DIR/themes/photon-theme/layouts/partials/navbar.html" ]; then
+  # Check if navbar already has console and dark mode elements
+  if ! grep -q "Console Button" "$INSTALL_DIR/themes/photon-theme/layouts/partials/navbar.html"; then
+    echo "Adding clean navbar structure..."
+    # Create navbar with single console and dark mode buttons
+    cat > "$INSTALL_DIR/themes/photon-theme/layouts/partials/navbar.html" << 'EOF_NAVBAR'
+{{ $cover := .HasShortcode "blocks/cover" }}
+{{/* added quick _if eq_ to use a different nav for the /docs/ pages */}}
+{{ if eq .Type "docs" }}
+	<div class="container-fluid pl-3 pr-3" id="navbarish">
+
+{{ else if eq .Type "blog" }}
+	<div class="container-fluid pl-3 pr-3" id="navbarish">
+	{{ else }}	
+	
+<div class="container pl-0 pr-3" id="navbarish">
+	{{ end }}
+	
+  <nav class="navbar navbar-default navbar-dark navbar-expand-md d-flex justify-content-between {{ if $cover}} td-navbar-cover {{ end }}" role="navigation" data-toggle="collapse" data-target="#menu_items" aria-expanded="false" aria-controls="navbar">
+	<div class="navbar-header d-flex align-items-center justify-content-between">   
+		<a class="navbar-brand" href="{{ .Site.Home.RelPermalink }}">
+		<span class="navbar-logo">{{ if .Site.Params.ui.navbar_logo }}{{ with resources.Get "icons/logo.svg" }}{{ ( . | minify).Content | safeHTML }}{{ end }}{{ end }}</span><span class="text-uppercase font-weight-bold">{{ .Site.Title }}</span>
+		</a>
+	</div>
+	<div class="ml-auto">
+		<button type="button" class="navbar-toggler third-button collapsed" data-toggle="collapse" data-target="#menu_items" aria-expanded="false" aria-controls="navbar">
+			<div class="animated-icon">
+				<span></span>
+				<span></span>
+				<span></span>
+			</div>
+		</button>
+	</div>
+	<div id="menu_items" class="navbar-collapse collapse ml-md-auto justify-content-end text-center">
+		<ul class="nav navbar-nav">
+		{{ $p := . }}
+		{{ range .Site.Menus.main }}
+		<li class="nav-item p-0">
+			{{ $active := or ($p.IsMenuCurrent "main" .) ($p.HasMenuCurrent "main" .) }}
+			{{ with .Page }}
+			{{ $active = or $active ( $.IsDescendant .)  }}
+			{{ end }}
+			{{ $url := urls.Parse .URL }}
+			{{ $baseurl := urls.Parse $.Site.Params.Baseurl }}
+			<a {{ if .Identifier }}id="{{ .Identifier }}"{{ end }} class="nav-link{{if $active }} active{{end}}" href="{{ with .Page }}{{ .RelPermalink }}{{ else }}{{ .URL | relLangURL }}{{ end }}" {{ if ne $url.Host $baseurl.Host }}target="_blank" {{ end }}><span{{if $active }} class="active"{{end}}>{{ .Name }}</span></a>
+		</li>
+		{{ end }}
+		
+		{{ if and (eq .Type "docs") .Site.Params.versions }}
+		<div class="navbar-nav dropdown border-0">
+			<li class="nav-item">
+				{{ partial "navbar-version-selector.html" . }}
+			</li>
+		</div>
+		{{ end }}
+		
+		<!-- Console Button -->
+		<li class="nav-item d-inline-block">
+			<a class="nav-link" href="#" onclick="toggleConsole(); return false;" title="Console">
+				<i class="fas fa-terminal"></i>
+			</a>
+		</li>
+		
+		<!-- Dark Mode Toggle -->
+		{{ if .Site.Params.darkmode }}
+		<li class="nav-item d-inline-block">
+			<a href="#" id="theme-toggle" class="nav-link" aria-label="Toggle dark mode" onclick="return false;">
+				<i id="theme-icon" class="fas fa-moon"></i>
+			</a>
+		</li>
+		{{ end }}
+		
+		{{ if (gt (len .Site.Home.Translations) 0) }}
+		<div class="navbar-nav dropdown border-0">
+			<li class="nav-item">
+				{{ partial "navbar-lang-selector.html" . }}
+			</li>
+		</div>
+		{{ end }}
+		</ul>
+	</div>
+  </nav>
+</div>
+EOF_NAVBAR
+  fi
+fi
 
 # Install body-end.html (console + code block enhancement)
 cat > "$INSTALL_DIR/layouts/partials/hooks/body-end.html" << 'EOF_BODYEND'

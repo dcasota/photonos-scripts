@@ -350,13 +350,7 @@ window.addEventListener('load', () => {
 });
 EOF_JS
 
-# Patch navbar to add console icon in menu
-NAVBAR_FILE="$INSTALL_DIR/themes/photon-theme/layouts/partials/navbar.html"
-if [ -f "$NAVBAR_FILE" ]; then
-  sed -i '/<\/ul>/i <li class="nav-item"><a class="nav-link" href="#" onclick="toggleConsole(); return false;" title="Console"><i class="fas fa-terminal"></i></a></li>' "$NAVBAR_FILE"
-else
-  echo "Warning: navbar.html not found. Console not added."
-fi
+# Note: Navbar modifications are now handled in the main installer script to prevent duplicates
 
 # Set up cron job for Docker cleanup
 echo "Setting up cron job for Docker container cleanup..."
