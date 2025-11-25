@@ -691,27 +691,27 @@ EOF_TOGGLE
   echo "  Replaced toggle.html with simple moon/sun icon button"
 fi
 
-# Fix 64: Update navbar.html - place console and dark mode after version selector
+# Fix 64: Update navbar.html - place console and dark mode after version selector (avoid duplicates)
 NAVBAR_FILE="$INSTALL_DIR/themes/photon-theme/layouts/partials/navbar.html"
 if [ -f "$NAVBAR_FILE" ]; then
-  # Remove old dark mode toolbar section
-  sed -i '
-    /<!-- dark mode toolbar -->/,/<!-- End of dark mode toggle in navbar -->/ {
-      /<!-- dark mode toolbar -->/!{
-        /<!-- End of dark mode toggle in navbar -->/!d
-      }
-    }
-  ' "$NAVBAR_FILE"
+  echo "  Cleaning up navbar.html - removing ALL console and dark mode duplicates..."
   
-  # Remove any existing console button
-  sed -i '/<li class="nav-item"><a class="nav-link" href="#" onclick="toggleConsole.*<\/a><\/li>/d' "$NAVBAR_FILE"
+  # Remove ALL lines containing console button or dark mode toggle
+  sed -i '/toggleConsole/d' "$NAVBAR_FILE"
+  sed -i '/theme-toggle/d' "$NAVBAR_FILE"
+  sed -i '/<!-- Console Button -->/d' "$NAVBAR_FILE"
+  sed -i '/<!-- Dark Mode Toggle -->/d' "$NAVBAR_FILE"
+  sed -i '/<!-- dark mode toolbar -->/d' "$NAVBAR_FILE"
+  sed -i '/<!-- End of dark mode toggle in navbar -->/d' "$NAVBAR_FILE"
   
-  # Add console and dark mode toggle after version selector (on same line)
-  # Find the closing div after version selector and add buttons before language selector
-  sed -i '/{{ if  (gt (len .Site.Home.Translations) 0) }}/i\
-\t\t<!-- Console Button -->\n\t\t<li class="nav-item">\n\t\t\t<a class="nav-link" href="#" onclick="toggleConsole(); return false;" title="Console">\n\t\t\t\t<i class="fas fa-terminal"></i>\n\t\t\t</a>\n\t\t</li>\n\t\t\n\t\t<!-- Dark Mode Toggle -->\n\t\t{{ if .Site.Params.darkmode }}\n\t\t<li class="nav-item">\n\t\t\t<button id="theme-toggle" class="btn btn-link nav-link" aria-label="Toggle dark mode" style="padding: 0.375rem 0.75rem;">\n\t\t\t\t<i id="theme-icon" class="fas fa-moon"></i>\n\t\t\t</button>\n\t\t</li>\n\t\t{{ end }}' "$NAVBAR_FILE"
+  # Now add them ONCE after the version selector closing {{ end }}
+  # Find the line with version selector's {{ end }} and add console + dark mode after it
+  sed -i '/{{ if and (eq .Type "docs") .Site.Params.versions }}/,/{{ end }}/{
+    /{{ end }}/a\
+\t\t<!-- Console Button -->\n\t\t<li class="nav-item">\n\t\t\t<a class="nav-link" href="#" onclick="toggleConsole(); return false;" title="Console">\n\t\t\t\t<i class="fas fa-terminal"></i>\n\t\t\t</a>\n\t\t</li>\n\t\t\n\t\t<!-- Dark Mode Toggle -->\n\t\t{{ if .Site.Params.darkmode }}\n\t\t<li class="nav-item">\n\t\t\t<button id="theme-toggle" class="btn btn-link nav-link" aria-label="Toggle dark mode" style="padding: 0.375rem 0.75rem;">\n\t\t\t\t<i id="theme-icon" class="fas fa-moon"></i>\n\t\t\t</button>\n\t\t</li>\n\t\t{{ end }}
+  }' "$NAVBAR_FILE"
   
-  echo "  Updated navbar.html: Console and dark mode toggle after version selector"
+  echo "  Updated navbar.html: Single console and dark mode after Release dropdown"
 fi
 
 echo "======================================================="
