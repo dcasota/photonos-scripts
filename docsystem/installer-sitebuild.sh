@@ -302,9 +302,62 @@ if [ -d "/var/www/photon-site/static/js/xterm" ]; then
   cp -r /var/www/photon-site/static/js/xterm/* "$INSTALL_DIR/static/js/xterm/"
 fi
 
-# Copy console.js from photon-site if it exists
+# Copy console.js from photon-site if it exists, and add sendCommand function
 if [ -f "/var/www/photon-site/static/js/console.js" ]; then
   cp /var/www/photon-site/static/js/console.js "$INSTALL_DIR/static/js/"
+  
+  # Add sendCommand function if it doesn't exist
+  if ! grep -q "function sendCommand" "$INSTALL_DIR/static/js/console.js"; then
+    # Add sendCommand function before the last closing brace
+    cat >> "$INSTALL_DIR/static/js/console.js" << 'EOF_SENDCMD'
+
+// Send command to console (called by Run buttons)
+function sendCommand(command) {
+  // Remove leading # from comments
+  let cleanCommand = command;
+  const lines = command.split('\n');
+  const cleanedLines = lines.map(line => {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('#') && !trimmed.startsWith('#!')) {
+      return ''; // Remove comment lines
+    }
+    return line;
+  }).filter(line => line.trim() !== ''); // Remove empty lines
+  
+  cleanCommand = cleanedLines.join('\n');
+  
+  // Open console if not open
+  if (!isOpen) {
+    toggleConsole();
+    // Wait for console to initialize
+    setTimeout(() => {
+      executeCommand(cleanCommand);
+    }, 500);
+  } else {
+    executeCommand(cleanCommand);
+  }
+}
+
+function executeCommand(command) {
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    // Send command to terminal
+    socket.send(command + '\r');
+    if (term) {
+      term.focus();
+    }
+  } else {
+    console.error('WebSocket not connected');
+    // Retry after a short delay
+    setTimeout(() => {
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(command + '\r');
+      }
+    }, 1000);
+  }
+}
+EOF_SENDCMD
+    echo "  Added sendCommand function to console.js"
+  fi
 fi
 
 echo "Custom enhancements installed successfully."
