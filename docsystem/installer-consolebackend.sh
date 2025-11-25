@@ -228,7 +228,22 @@ function toggleConsole() {
 
 function initConsole() {
   if (!term) {
-    term = new Terminal({ theme: { background: "#1e1e1e" } });
+    term = new Terminal({ 
+      theme: { 
+        background: "#1e1e1e", 
+        foreground: "#e0e0e0",
+        cursor: "#00ff00",
+        cursorAccent: "#1e1e1e",
+        black: "#000000",
+        red: "#ff5555",
+        green: "#50fa7b",
+        yellow: "#f1fa8c",
+        blue: "#bd93f9",
+        magenta: "#ff79c6",
+        cyan: "#8be9fd",
+        white: "#f8f8f2"
+      } 
+    });
     fitAddon = new FitAddon.FitAddon();
     term.loadAddon(fitAddon);
     term.open(document.getElementById('terminal'));

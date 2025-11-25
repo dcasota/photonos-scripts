@@ -16,16 +16,16 @@ mkdir -p "$INSTALL_DIR/static/css"
 
 # Install body-end.html (console + code block enhancement)
 cat > "$INSTALL_DIR/layouts/partials/hooks/body-end.html" << 'EOF_BODYEND'
-<div id="console-window" style="display: none; position: fixed; bottom: 0; left: 0; right: 0; height: 300px; background: #fff; border-top: 1px solid #000; z-index: 1000; resize: vertical; overflow: hidden; box-shadow: 0 -2px 10px rgba(0,0,0,0.2);">
-  <div id="console-header" style="background: #ddd; padding: 5px; display: flex; justify-content: space-between; align-items: center;">
+<div id="console-window" style="display: none; position: fixed; bottom: 0; left: 0; right: 0; height: 300px; background: #1e1e1e; border-top: 1px solid #444; z-index: 1000; resize: vertical; overflow: hidden; box-shadow: 0 -2px 10px rgba(0,0,0,0.5);">
+  <div id="console-header" style="background: #2d2d2d; color: #e0e0e0; padding: 5px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #444;">
     <span>Photon OS Console</span>
     <div>
-      <button onclick="resetConsole()">Reset</button>
-      <button onclick="reconnectConsole()">Reconnect</button>
-      <button onclick="toggleConsole()">Close</button>
+      <button onclick="resetConsole()" style="background: #007bff; color: white; border: none; padding: 4px 8px; cursor: pointer; border-radius: 3px; margin-left: 5px;">Reset</button>
+      <button onclick="reconnectConsole()" style="background: #28a745; color: white; border: none; padding: 4px 8px; cursor: pointer; border-radius: 3px; margin-left: 5px;">Reconnect</button>
+      <button onclick="toggleConsole()" style="background: #dc3545; color: white; border: none; padding: 4px 8px; cursor: pointer; border-radius: 3px; margin-left: 5px;">Close</button>
     </div>
   </div>
-  <div id="terminal" style="width: 100%; height: calc(100% - 30px); background: #1e1e1e;"></div>
+  <div id="terminal" style="width: 100%; height: calc(100% - 40px); background: #1e1e1e;"></div>
 </div>
 
 <link rel="stylesheet" href="/css/dark-mode.css">
