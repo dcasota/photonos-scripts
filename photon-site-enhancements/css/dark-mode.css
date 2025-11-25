@@ -1,0 +1,155 @@
+/* Dark Mode CSS Variables and Styles */
+
+:root {
+  /* Light mode colors (default) */
+  --bg-color: #ffffff;
+  --text-color: #212529;
+  --link-color: #007bff;
+  --border-color: #dee2e6;
+  --code-bg: #f8f9fa;
+  --navbar-bg: #ffffff;
+  --navbar-text: #212529;
+  --card-bg: #ffffff;
+  --shadow-color: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="dark"] {
+  /* Dark mode colors */
+  --bg-color: #1a1a1a;
+  --text-color: #e0e0e0;
+  --link-color: #66b3ff;
+  --border-color: #444;
+  --code-bg: #2d2d2d;
+  --navbar-bg: #212529;
+  --navbar-text: #e0e0e0;
+  --card-bg: #2d2d2d;
+  --shadow-color: rgba(0, 0, 0, 0.5);
+}
+
+/* Apply dark mode styles */
+[data-theme="dark"] body {
+  background-color: var(--bg-color);
+  color: var(--text-color);
+}
+
+[data-theme="dark"] .navbar {
+  background-color: var(--navbar-bg) !important;
+  color: var(--navbar-text) !important;
+}
+
+[data-theme="dark"] .nav-link {
+  color: var(--navbar-text) !important;
+}
+
+[data-theme="dark"] .nav-link:hover {
+  color: #66b3ff !important;
+}
+
+[data-theme="dark"] .card,
+[data-theme="dark"] .home-grid-cards {
+  background-color: var(--card-bg);
+  color: var(--text-color);
+  border-color: var(--border-color);
+}
+
+[data-theme="dark"] pre,
+[data-theme="dark"] code {
+  background-color: var(--code-bg);
+  color: var(--text-color);
+}
+
+[data-theme="dark"] .td-sidebar {
+  background-color: var(--bg-color);
+  color: var(--text-color);
+}
+
+[data-theme="dark"] .td-sidebar-nav a {
+  color: var(--text-color);
+}
+
+[data-theme="dark"] .td-sidebar-nav a:hover {
+  color: var(--link-color);
+}
+
+[data-theme="dark"] a {
+  color: var(--link-color);
+}
+
+[data-theme="dark"] a:hover {
+  color: #99ccff;
+}
+
+[data-theme="dark"] .td-content,
+[data-theme="dark"] .td-main {
+  background-color: var(--bg-color);
+  color: var(--text-color);
+}
+
+[data-theme="dark"] h1,
+[data-theme="dark"] h2,
+[data-theme="dark"] h3,
+[data-theme="dark"] h4,
+[data-theme="dark"] h5,
+[data-theme="dark"] h6 {
+  color: var(--text-color);
+}
+
+[data-theme="dark"] .border,
+[data-theme="dark"] .border-top,
+[data-theme="dark"] .border-bottom {
+  border-color: var(--border-color) !important;
+}
+
+[data-theme="dark"] footer {
+  background-color: var(--navbar-bg);
+  color: var(--navbar-text);
+}
+
+[data-theme="dark"] .text-dark {
+  color: var(--text-color) !important;
+}
+
+[data-theme="dark"] .bg-secondary {
+  background-color: #2d2d2d !important;
+}
+
+[data-theme="dark"] .bg-white {
+  background-color: var(--bg-color) !important;
+}
+
+/* Dark mode for console window */
+[data-theme="dark"] #console-window {
+  background: #1a1a1a;
+  border-top-color: #444;
+}
+
+[data-theme="dark"] #console-header {
+  background: #2d2d2d;
+  color: var(--text-color);
+}
+
+/* Dark mode for search overlay */
+[data-theme="dark"] .search-overlay {
+  background-color: rgba(0, 0, 0, 0.9);
+}
+
+[data-theme="dark"] .search-panel {
+  background-color: var(--card-bg);
+  color: var(--text-color);
+}
+
+[data-theme="dark"] #search-input {
+  background-color: var(--code-bg);
+  color: var(--text-color);
+  border-color: var(--border-color);
+}
+
+/* Smooth transition for theme changes */
+body,
+.navbar,
+.card,
+pre,
+code,
+a {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}

@@ -1,0 +1,6 @@
+{{- $index := slice -}}
+{{- range where .Site.RegularPages "Type" "ne" "json" -}}
+  {{- $item := dict "title" .Title "tags" (.Params.tags | default slice) "contents" (.Plain | plainify) "permalink" .Permalink "summary" (.Summary | plainify) -}}
+  {{- $index = $index | append $item -}}
+{{- end -}}
+{{- $index | jsonify -}}

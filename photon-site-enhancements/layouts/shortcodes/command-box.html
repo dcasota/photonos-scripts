@@ -1,0 +1,27 @@
+{{- $command := .Get "command" | default (.Inner | strings.TrimSpace) -}}
+{{- $description := .Get "description" | default "" -}}
+<div class="command-box" style="position: relative; margin: 1em 0; border: 1px solid #ddd; border-radius: 4px; background: #f8f9fa;">
+  {{- if $description -}}
+  <div class="command-description" style="padding: 0.5em 1em; background: #e9ecef; border-bottom: 1px solid #ddd; font-size: 0.9em; color: #495057;">
+    {{ $description }}
+  </div>
+  {{- end -}}
+  <div style="display: flex; align-items: center; padding: 1em;">
+    <pre style="flex: 1; margin: 0; background: transparent; border: none; padding: 0;"><code class="language-bash">{{ $command }}</code></pre>
+    <div style="display: flex; gap: 0.5em; margin-left: 1em;">
+      <button class="run-in-console-btn" 
+              data-command="{{ $command }}" 
+              style="padding: 0.5em 1em; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap;"
+              title="Run in console">
+        <i class="fas fa-play"></i> Run
+      </button>
+      <button class="copy-code-btn" 
+              data-command="{{ $command }}" 
+              style="padding: 0.5em 1em; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap;"
+              title="Copy to clipboard"
+              onclick="navigator.clipboard.writeText(this.getAttribute('data-command')).then(() => { const orig = this.innerHTML; this.innerHTML = '<i class=\'fas fa-check\'></i> Copied!'; this.style.background = '#218838'; setTimeout(() => { this.innerHTML = orig; this.style.background = '#28a745'; }, 2000); })">
+        <i class="fas fa-copy"></i> Copy
+      </button>
+    </div>
+  </div>
+</div>

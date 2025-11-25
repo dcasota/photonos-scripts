@@ -1,0 +1,152 @@
+<div id="console-window" style="display: none; position: fixed; bottom: 0; left: 0; right: 0; height: 300px; background: #fff; border-top: 1px solid #000; z-index: 1000; resize: vertical; overflow: hidden; box-shadow: 0 -2px 10px rgba(0,0,0,0.2);">
+  <div id="console-header" style="background: #ddd; padding: 5px; display: flex; justify-content: space-between; align-items: center;">
+    <span>Photon OS Console</span>
+    <div>
+      <button onclick="resetConsole()">Reset</button>
+      <button onclick="reconnectConsole()">Reconnect</button>
+      <button onclick="toggleConsole()">Close</button>
+    </div>
+  </div>
+  <div id="terminal" style="width: 100%; height: calc(100% - 30px); background: #1e1e1e;"></div>
+</div>
+
+<!-- Search Overlay HTML -->
+<div id="search-overlay" class="search-overlay" role="dialog" aria-modal="true" aria-labelledby="search-input">
+  <div class="search-panel">
+    <button id="search-close" class="search-close" aria-label="Close search">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+        <line x1="18" y1="6" x2="6" y2="18"></line>
+        <line x1="6" y1="6" x2="18" y2="18"></line>
+      </svg>
+    </button>
+    <input type="search" id="search-input" placeholder="Search..." autofocus>
+    <div id="search-results" class="search-results">
+      <!-- Results will be populated by JS -->
+    </div>
+  </div>
+</div>
+
+<link rel="stylesheet" href="/css/search-overlay.css">
+<link rel="stylesheet" href="/css/dark-mode.css">
+<script src="/js/lunr.min.js"></script>
+<link rel="stylesheet" href="/js/xterm/xterm.css">
+<script src="/js/xterm/xterm.js"></script>
+<script src="/js/xterm/xterm-addon-fit.js"></script>
+<script src="/js/console.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/dark-mode.js"></script>
+<script>
+// Enhance code blocks with "Run in Console" button
+document.addEventListener('DOMContentLoaded', function() {
+  // Add click handlers for shortcode command boxes
+  document.querySelectorAll('.run-in-console-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const command = this.getAttribute('data-command');
+      sendCommand(command);
+    });
+  });
+  
+  // Auto-enhance all bash/shell code blocks AND plain code blocks with a run button
+  document.querySelectorAll('pre code').forEach(codeBlock => {
+    const pre = codeBlock.parentElement;
+    // Don't enhance if already enhanced or inside a command-box
+    if (pre.classList.contains('enhanced') || pre.closest('.command-box')) {
+      return;
+    }
+    
+    const command = codeBlock.textContent.trim();
+    // Only enhance single-line commands or short multi-line commands (< 5 lines)
+    const lines = command.split('\n');
+    if (lines.length > 5 || command.includes('#!/')) {
+      return;
+    }
+    
+    // Skip if content doesn't look like a command (e.g., JSON, XML, long text)
+    // A command typically starts with a command name or has shell indicators
+    if (lines.length === 1 && command.length > 100) {
+      return; // Too long for a single command
+    }
+    
+    // Skip blocks that look like code output or documentation rather than commands
+    // Commands typically don't have multiple spaces or indentation patterns
+    const firstLine = lines[0];
+    if (firstLine.match(/^\s{4,}/)) {
+      return; // Heavily indented, likely code/output
+    }
+    
+    // Create wrapper
+    const wrapper = document.createElement('div');
+    wrapper.style.position = 'relative';
+    wrapper.style.marginBottom = '1em';
+    
+    // Create button container
+    const buttonContainer = document.createElement('div');
+    buttonContainer.style.position = 'absolute';
+    buttonContainer.style.top = '0.5em';
+    buttonContainer.style.right = '0.5em';
+    buttonContainer.style.display = 'flex';
+    buttonContainer.style.gap = '0.5em';
+    buttonContainer.style.zIndex = '10';
+    
+    // Create Run button
+    const runBtn = document.createElement('button');
+    runBtn.className = 'run-in-console-btn';
+    runBtn.innerHTML = '<i class="fas fa-play"></i> Run';
+    runBtn.style.padding = '0.3em 0.8em';
+    runBtn.style.background = '#007bff';
+    runBtn.style.color = 'white';
+    runBtn.style.border = 'none';
+    runBtn.style.borderRadius = '4px';
+    runBtn.style.cursor = 'pointer';
+    runBtn.style.fontSize = '0.85em';
+    runBtn.title = 'Run in console';
+    
+    runBtn.addEventListener('click', function() {
+      sendCommand(command);
+    });
+    
+    // Create Copy button
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'copy-code-btn';
+    copyBtn.innerHTML = '<i class="fas fa-copy"></i> Copy';
+    copyBtn.style.padding = '0.3em 0.8em';
+    copyBtn.style.background = '#28a745';
+    copyBtn.style.color = 'white';
+    copyBtn.style.border = 'none';
+    copyBtn.style.borderRadius = '4px';
+    copyBtn.style.cursor = 'pointer';
+    copyBtn.style.fontSize = '0.85em';
+    copyBtn.title = 'Copy to clipboard';
+    
+    copyBtn.addEventListener('click', function() {
+      navigator.clipboard.writeText(command).then(() => {
+        const originalHTML = copyBtn.innerHTML;
+        copyBtn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+        copyBtn.style.background = '#218838';
+        setTimeout(() => {
+          copyBtn.innerHTML = originalHTML;
+          copyBtn.style.background = '#28a745';
+        }, 2000);
+      }).catch(err => {
+        console.error('Failed to copy:', err);
+        copyBtn.innerHTML = '<i class="fas fa-times"></i> Failed';
+        copyBtn.style.background = '#dc3545';
+        setTimeout(() => {
+          copyBtn.innerHTML = '<i class="fas fa-copy"></i> Copy';
+          copyBtn.style.background = '#28a745';
+        }, 2000);
+      });
+    });
+    
+    // Add buttons to container
+    buttonContainer.appendChild(runBtn);
+    buttonContainer.appendChild(copyBtn);
+    
+    // Wrap the pre element
+    pre.parentNode.insertBefore(wrapper, pre);
+    wrapper.appendChild(pre);
+    wrapper.appendChild(buttonContainer);
+    pre.classList.add('enhanced');
+  });
+});
+</script>
