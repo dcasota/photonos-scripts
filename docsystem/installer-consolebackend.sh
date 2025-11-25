@@ -228,7 +228,22 @@ function toggleConsole() {
 
 function initConsole() {
   if (!term) {
-    term = new Terminal({ theme: { background: "#1e1e1e" } });
+    term = new Terminal({ 
+      theme: { 
+        background: "#1e1e1e", 
+        foreground: "#e0e0e0",
+        cursor: "#00ff00",
+        cursorAccent: "#1e1e1e",
+        black: "#000000",
+        red: "#ff5555",
+        green: "#50fa7b",
+        yellow: "#f1fa8c",
+        blue: "#bd93f9",
+        magenta: "#ff79c6",
+        cyan: "#8be9fd",
+        white: "#f8f8f2"
+      } 
+    });
     fitAddon = new FitAddon.FitAddon();
     term.loadAddon(fitAddon);
     term.open(document.getElementById('terminal'));
@@ -335,13 +350,7 @@ window.addEventListener('load', () => {
 });
 EOF_JS
 
-# Patch navbar to add console icon in menu
-NAVBAR_FILE="$INSTALL_DIR/themes/photon-theme/layouts/partials/navbar.html"
-if [ -f "$NAVBAR_FILE" ]; then
-  sed -i '/<\/ul>/i <li class="nav-item"><a class="nav-link" href="#" onclick="toggleConsole(); return false;" title="Console"><i class="fas fa-terminal"></i></a></li>' "$NAVBAR_FILE"
-else
-  echo "Warning: navbar.html not found. Console not added."
-fi
+# Note: Navbar modifications are now handled in the main installer script to prevent duplicates
 
 # Set up cron job for Docker cleanup
 echo "Setting up cron job for Docker container cleanup..."
