@@ -196,6 +196,10 @@ cat > "$INSTALL_DIR/static/css/dark-mode.css" << 'EOF_DARKCSS'
   --navbar-bg: #ffffff;
   --navbar-text: #212529;
   --card-bg: #ffffff;
+  --sidebar-bg: #f8f9fa;
+  --sidebar-text: #212529;
+  --sidebar-link: #007bff;
+  --sidebar-hover: #e9ecef;
   --shadow-color: rgba(0, 0, 0, 0.1);
 }
 
@@ -208,14 +212,20 @@ cat > "$INSTALL_DIR/static/css/dark-mode.css" << 'EOF_DARKCSS'
   --navbar-bg: #212529;
   --navbar-text: #e0e0e0;
   --card-bg: #2d2d2d;
+  --sidebar-bg: #1e1e1e;
+  --sidebar-text: #e0e0e0;
+  --sidebar-link: #66b3ff;
+  --sidebar-hover: #2d2d2d;
   --shadow-color: rgba(0, 0, 0, 0.5);
 }
 
+/* Body */
 [data-theme="dark"] body {
   background-color: var(--bg-color);
   color: var(--text-color);
 }
 
+/* Navbar */
 [data-theme="dark"] .navbar {
   background-color: var(--navbar-bg) !important;
   color: var(--navbar-text) !important;
@@ -225,6 +235,35 @@ cat > "$INSTALL_DIR/static/css/dark-mode.css" << 'EOF_DARKCSS'
   color: var(--navbar-text) !important;
 }
 
+/* Sidebar */
+[data-theme="dark"] .td-sidebar {
+  background-color: var(--sidebar-bg) !important;
+  color: var(--sidebar-text) !important;
+}
+
+[data-theme="dark"] .td-sidebar-nav {
+  background-color: var(--sidebar-bg) !important;
+}
+
+[data-theme="dark"] .td-sidebar-link {
+  color: var(--sidebar-link) !important;
+}
+
+[data-theme="dark"] .td-sidebar-link:hover {
+  background-color: var(--sidebar-hover) !important;
+  color: var(--sidebar-link) !important;
+}
+
+[data-theme="dark"] .td-sidebar-link.active,
+[data-theme="dark"] .td-sidebar-link__section {
+  color: var(--sidebar-text) !important;
+}
+
+[data-theme="dark"] .td-sidebar-nav__section-title {
+  color: var(--sidebar-text) !important;
+}
+
+/* Code blocks */
 [data-theme="dark"] pre {
   background-color: var(--code-bg) !important;
   color: var(--text-color) !important;
@@ -233,6 +272,28 @@ cat > "$INSTALL_DIR/static/css/dark-mode.css" << 'EOF_DARKCSS'
 [data-theme="dark"] code {
   background-color: var(--code-bg) !important;
   color: var(--text-color) !important;
+}
+
+/* Cards and content areas */
+[data-theme="dark"] .card {
+  background-color: var(--card-bg) !important;
+  color: var(--text-color) !important;
+  border-color: var(--border-color) !important;
+}
+
+[data-theme="dark"] a {
+  color: var(--link-color) !important;
+}
+
+/* Search box in sidebar */
+[data-theme="dark"] .td-sidebar__search {
+  background-color: var(--sidebar-bg) !important;
+}
+
+[data-theme="dark"] .td-sidebar__search input {
+  background-color: var(--code-bg) !important;
+  color: var(--text-color) !important;
+  border-color: var(--border-color) !important;
 }
 EOF_DARKCSS
 

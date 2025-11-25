@@ -696,6 +696,9 @@ NAVBAR_FILE="$INSTALL_DIR/themes/photon-theme/layouts/partials/navbar.html"
 if [ -f "$NAVBAR_FILE" ]; then
   echo "  Cleaning up navbar.html - removing ALL console and dark mode duplicates..."
   
+  # Remove the old toggle.html partial reference (this shows the checkbox toggle)
+  sed -i '/{{ if  \.Site\.Params\.darkmode }}/{N;N;N;N;/{{ partial "toggle\.html"/d;}' "$NAVBAR_FILE"
+  
   # Remove ALL lines containing console button or dark mode toggle
   sed -i '/toggleConsole/d' "$NAVBAR_FILE"
   sed -i '/theme-toggle/d' "$NAVBAR_FILE"
