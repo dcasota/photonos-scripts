@@ -678,6 +678,38 @@ if [ -f "$INSTALL_DIR/content/en/docs-v5/images/lsblk-command.png" ]; then
   cp -n "$INSTALL_DIR/content/en/docs-v5/images/lsblk-command.png" "$INSTALL_DIR/content/en/docs-v4/images/" 2>/dev/null || true
 fi
 
+# Fix 63: Replace dark mode toggle with simple moon/sun icon button
+echo "63. Replacing dark mode toggle with moon/sun icon button..."
+TOGGLE_FILE="$INSTALL_DIR/themes/photon-theme/layouts/partials/toggle.html"
+if [ -f "$TOGGLE_FILE" ]; then
+  cat > "$TOGGLE_FILE" << 'EOF_TOGGLE'
+<!-- Simple Moon/Sun Toggle Button -->
+<button id="theme-toggle" class="btn btn-link nav-link" aria-label="Toggle dark mode" style="padding: 0.5rem;">
+  <i id="theme-icon" class="fas fa-moon" style="font-size: 1.2rem;"></i>
+</button>
+EOF_TOGGLE
+  echo "  Replaced toggle.html with simple moon/sun icon button"
+fi
+
+# Fix 64: Update navbar.html to use simple toggle button
+NAVBAR_FILE="$INSTALL_DIR/themes/photon-theme/layouts/partials/navbar.html"
+if [ -f "$NAVBAR_FILE" ]; then
+  # Replace the dark mode toolbar section with simpler version
+  sed -i '
+    /<!-- dark mode toolbar -->/,/<!-- End of dark mode toggle in navbar -->/ {
+      /<!-- dark mode toolbar -->/!{
+        /<!-- End of dark mode toggle in navbar -->/!d
+      }
+    }
+  ' "$NAVBAR_FILE"
+  
+  # Add simple toggle button before console button
+  sed -i '/<li class="nav-item"><a class="nav-link" href="#" onclick="toggleConsole/i\
+\t\t<!-- Dark Mode Toggle -->\n\t\t{{ if .Site.Params.darkmode }}\n\t\t<li class="nav-item">\n\t\t\t<button id="theme-toggle" class="btn btn-link nav-link" aria-label="Toggle dark mode" style="padding: 0.375rem 0.75rem;">\n\t\t\t\t<i id="theme-icon" class="fas fa-moon"></i>\n\t\t\t</button>\n\t\t</li>\n\t\t{{ end }}' "$NAVBAR_FILE"
+  
+  echo "  Updated navbar.html with simple moon/sun toggle"
+fi
+
 echo "======================================================="
 echo "Fixing incorrect relative links in markdown files done."
 echo "======================================================="

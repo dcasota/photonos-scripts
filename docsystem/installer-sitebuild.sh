@@ -34,8 +34,38 @@ cat > "$INSTALL_DIR/layouts/partials/hooks/body-end.html" << 'EOF_BODYEND'
 <script src="/js/xterm/xterm-addon-fit.js"></script>
 <script src="/js/console.js"></script>
 <script src="/js/dark-mode.js"></script>
+<style>
+.code-wrapper {
+  position: relative;
+  margin: 20px 0;
+}
+.code-button-container {
+  position: absolute;
+  top: 5px;
+  right: -70px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  z-index: 10;
+}
+.code-button-container button {
+  width: 60px;
+  padding: 4px 8px;
+  font-size: 12px;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  color: white;
+}
+.code-button-container .run-btn {
+  background: #007bff;
+}
+.code-button-container .copy-btn {
+  background: #28a745;
+}
+</style>
 <script>
-// Enhance code blocks with Run and Copy buttons
+// Enhance code blocks with Run and Copy buttons (positioned outside)
 document.addEventListener('DOMContentLoaded', function() {
   document.querySelectorAll('pre code').forEach(codeBlock => {
     const text = codeBlock.textContent.trim();
@@ -45,33 +75,39 @@ document.addEventListener('DOMContentLoaded', function() {
     if (lines.length > 5 || text.startsWith('#!')) return;
     
     const pre = codeBlock.parentElement;
-    if (pre.querySelector('.code-button-container')) return;
+    if (pre.parentElement && pre.parentElement.classList.contains('code-wrapper')) return;
     
+    // Wrap pre in a container
+    const wrapper = document.createElement('div');
+    wrapper.className = 'code-wrapper';
+    pre.parentNode.insertBefore(wrapper, pre);
+    wrapper.appendChild(pre);
+    
+    // Create button container
     const container = document.createElement('div');
     container.className = 'code-button-container';
-    container.style.cssText = 'position: absolute; top: 5px; right: 5px; display: flex; gap: 5px;';
     
     // Run button
     const runBtn = document.createElement('button');
     runBtn.textContent = 'Run';
-    runBtn.style.cssText = 'background: #007bff; color: white; border: none; padding: 4px 8px; cursor: pointer; border-radius: 3px; font-size: 12px;';
+    runBtn.className = 'run-btn';
     runBtn.addEventListener('click', () => sendCommand(text));
     
     // Copy button
     const copyBtn = document.createElement('button');
     copyBtn.textContent = 'Copy';
-    copyBtn.style.cssText = 'background: #28a745; color: white; border: none; padding: 4px 8px; cursor: pointer; border-radius: 3px; font-size: 12px;';
+    copyBtn.className = 'copy-btn';
     copyBtn.addEventListener('click', () => {
       navigator.clipboard.writeText(text).then(() => {
-        copyBtn.textContent = '✓ Copied!';
-        setTimeout(() => copyBtn.textContent = 'Copy', 2000);
+        const originalText = copyBtn.textContent;
+        copyBtn.textContent = '✓';
+        setTimeout(() => copyBtn.textContent = originalText, 2000);
       });
     });
     
     container.appendChild(runBtn);
     container.appendChild(copyBtn);
-    pre.style.position = 'relative';
-    pre.appendChild(container);
+    wrapper.appendChild(container);
   });
 });
 </script>
