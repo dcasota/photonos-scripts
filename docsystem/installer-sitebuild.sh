@@ -11,8 +11,96 @@ echo "Installing custom site enhancements (console, dark mode, code buttons)..."
 # Create directories if they don't exist
 mkdir -p "$INSTALL_DIR/layouts/partials/hooks"
 mkdir -p "$INSTALL_DIR/layouts/shortcodes"
+mkdir -p "$INSTALL_DIR/layouts/partials"
 mkdir -p "$INSTALL_DIR/static/js/xterm"
 mkdir -p "$INSTALL_DIR/static/css"
+
+# Ensure navbar.html has the correct structure (create/overwrite if needed)
+if [ -f "$INSTALL_DIR/themes/photon-theme/layouts/partials/navbar.html" ]; then
+  echo "Updating navbar.html with clean structure..."
+else
+  echo "Creating navbar.html with clean structure..."
+fi
+
+# Create navbar.html with proper structure (no duplicates, aligned buttons)
+cat > "$INSTALL_DIR/themes/photon-theme/layouts/partials/navbar.html" << 'EOF_NAVBAR'
+{{ $cover := .HasShortcode "blocks/cover" }}
+{{/* added quick _if eq_ to use a different nav for the /docs/ pages */}}
+{{ if eq .Type "docs" }}
+	<div class="container-fluid pl-3 pr-3" id="navbarish">
+
+{{ else if eq .Type "blog" }}
+	<div class="container-fluid pl-3 pr-3" id="navbarish">
+	{{ else }}	
+	
+<div class="container pl-0 pr-3" id="navbarish">
+	{{ end }}
+	
+  <nav class="navbar navbar-default navbar-dark navbar-expand-md d-flex justify-content-between {{ if $cover}} td-navbar-cover {{ end }}" role="navigation" data-toggle="collapse" data-target="#menu_items" aria-expanded="false" aria-controls="navbar">
+	<div class="navbar-header d-flex align-items-center justify-content-between">   
+		<a class="navbar-brand" href="{{ .Site.Home.RelPermalink }}">
+		<span class="navbar-logo">{{ if .Site.Params.ui.navbar_logo }}{{ with resources.Get "icons/logo.svg" }}{{ ( . | minify).Content | safeHTML }}{{ end }}{{ end }}</span><span class="text-uppercase font-weight-bold">{{ .Site.Title }}</span>
+		</a>
+	</div>
+	<div class="ml-auto">
+		<button type="button" class="navbar-toggler third-button collapsed" data-toggle="collapse" data-target="#menu_items" aria-expanded="false" aria-controls="navbar">
+			<div class="animated-icon">
+				<span></span>
+				<span></span>
+				<span></span>
+			</div>
+		</button>
+	</div>
+	<div id="menu_items" class="navbar-collapse collapse ml-md-auto justify-content-end text-center">
+		<ul class="nav navbar-nav">
+		{{ $p := . }}
+		{{ range .Site.Menus.main }}
+		<li class="nav-item p-0">
+			{{ $active := or ($p.IsMenuCurrent "main" .) ($p.HasMenuCurrent "main" .) }}
+			{{ with .Page }}
+			{{ $active = or $active ( $.IsDescendant .)  }}
+			{{ end }}
+			{{ $url := urls.Parse .URL }}
+			{{ $baseurl := urls.Parse $.Site.Params.Baseurl }}
+			<a {{ if .Identifier }}id="{{ .Identifier }}"{{ end }} class="nav-link{{if $active }} active{{end}}" href="{{ with .Page }}{{ .RelPermalink }}{{ else }}{{ .URL | relLangURL }}{{ end }}" {{ if ne $url.Host $baseurl.Host }}target="_blank" {{ end }}><span{{if $active }} class="active"{{end}}>{{ .Name }}</span></a>
+		</li>
+		{{ end }}
+		
+		
+		{{ if and (eq .Type "docs") .Site.Params.versions }}
+		<div class="navbar-nav dropdown border-0">
+			<li class="nav-item">
+				{{ partial "navbar-version-selector.html" . }}
+			</li>
+		</div>
+		{{ end }}
+		<!-- Console Button -->
+		<li class="nav-item d-inline-block">
+			<a class="nav-link" href="#" onclick="toggleConsole(); return false;" title="Console">
+				<i class="fas fa-terminal"></i>
+			</a>
+		</li>
+		
+		<!-- Dark Mode Toggle -->
+		{{ if .Site.Params.darkmode }}
+		<li class="nav-item d-inline-block">
+			<a href="#" id="theme-toggle" class="nav-link" aria-label="Toggle dark mode" onclick="return false;">
+				<i id="theme-icon" class="fas fa-moon"></i>
+			</a>
+		</li>
+		{{ end }}
+		{{ if  (gt (len .Site.Home.Translations) 0) }}
+		<div class="navbar-nav dropdown border-0">
+			<li class="nav-item">
+				{{ partial "navbar-lang-selector.html" . }}
+			</li>
+		</div>
+		{{ end }}
+</ul>
+	</div>
+  </nav>
+</div>
+EOF_NAVBAR
 
 # Install body-end.html (console + code block enhancement)
 cat > "$INSTALL_DIR/layouts/partials/hooks/body-end.html" << 'EOF_BODYEND'
@@ -67,15 +155,57 @@ cat > "$INSTALL_DIR/layouts/partials/hooks/body-end.html" << 'EOF_BODYEND'
 <script>
 // Enhance code blocks with Run and Copy buttons (positioned outside)
 document.addEventListener('DOMContentLoaded', function() {
-  document.querySelectorAll('pre code').forEach(codeBlock => {
+  console.log('Code block enhancement script loaded');
+  document.querySelectorAll('pre code').forEach((codeBlock, index) => {
     const text = codeBlock.textContent.trim();
     const lines = text.split('\n');
     
+    console.log(`Processing code block ${index}:`, { text, lineCount: lines.length });
+    
     // Skip if too many lines or has shebang
-    if (lines.length > 5 || text.startsWith('#!')) return;
+    if (lines.length > 5 || text.startsWith('#!')) {
+      console.log(`Skipping code block ${index}: too many lines or starts with shebang`);
+      return;
+    }
+    
+    // Additional check: Skip if text looks like documentation or comments only
+    const nonEmptyLines = lines.filter(line => line.trim() && !line.trim().startsWith('#'));
+    if (nonEmptyLines.length === 0) {
+      console.log(`Skipping code block ${index}: no non-empty non-comment lines`);
+      return;
+    }
+    
+    // Skip if the code block contains markers that indicate it's documentation
+    if (text.includes('```') || text.includes('~~~')) {
+      console.log(`Skipping code block ${index}: contains markdown markers`);
+      return;
+    }
     
     const pre = codeBlock.parentElement;
-    if (pre.parentElement && pre.parentElement.classList.contains('code-wrapper')) return;
+    if (pre.parentElement && pre.parentElement.classList.contains('code-wrapper')) {
+      console.log(`Skipping code block ${index}: already has wrapper`);
+      return;
+    }
+    
+    // Check if this looks like an executable command
+    // Allow single-line commands, pipeline commands, and basic shell commands
+    const looksExecutable = nonEmptyLines.some(line => {
+      const trimmed = line.trim();
+      // Basic shell commands, pipelines, or commands with common prefixes
+      return /^[a-zA-Z0-9_\/\-\$\.]+/.test(trimmed) || 
+             trimmed.includes('|') || 
+             trimmed.includes('&&') || 
+             trimmed.includes('||') ||
+             trimmed.includes('; ') ||
+             /^export |^unset |^cd |^ls |^mkdir |^rm |^cp |^mv |^echo |^cat |^chmod |^chown |^wget |^curl |^tar |^unzip |^npm |^pip |^python |^node |^java |^docker |^tdnf |^yum |^apt |^systemctl |^service |^journalctl |^git |^make |^gcc |^g\+\+/.test(trimmed);
+    });
+    
+    if (!looksExecutable) {
+      console.log(`Skipping code block ${index}: doesn't look executable`);
+      return;
+    }
+    
+    console.log(`Adding run/copy buttons to code block ${index}`);
     
     // Wrap pre in a container
     const wrapper = document.createElement('div');
@@ -91,7 +221,20 @@ document.addEventListener('DOMContentLoaded', function() {
     const runBtn = document.createElement('button');
     runBtn.textContent = 'Run';
     runBtn.className = 'run-btn';
-    runBtn.addEventListener('click', () => sendCommand(text));
+    runBtn.addEventListener('click', (event) => {
+      console.log('Run button clicked for command:', text);
+      event.preventDefault();
+      event.stopPropagation();
+      
+      // Check if sendCommand function exists
+      if (typeof sendCommand === 'function') {
+        console.log('sendCommand function found, executing...');
+        sendCommand(text);
+      } else {
+        console.error('sendCommand function not found!');
+        alert('Console command function not available. Please refresh the page.');
+      }
+    });
     
     // Copy button
     const copyBtn = document.createElement('button');
@@ -109,6 +252,8 @@ document.addEventListener('DOMContentLoaded', function() {
     container.appendChild(copyBtn);
     wrapper.appendChild(container);
   });
+  
+  console.log('Code block enhancement script completed');
 });
 </script>
 EOF_BODYEND
@@ -340,19 +485,43 @@ function sendCommand(command) {
 
 function executeCommand(command) {
   if (socket && socket.readyState === WebSocket.OPEN) {
-    // Send command to terminal
+    // Send command to terminal with carriage return for proper execution
     socket.send(command + '\r');
     if (term) {
       term.focus();
     }
   } else {
-    console.error('WebSocket not connected');
-    // Retry after a short delay
-    setTimeout(() => {
+    console.error('WebSocket not connected, attempting to reconnect...');
+    // Try to reconnect if not connected
+    if (!isOpen) {
+      toggleConsole();
+    }
+    // Retry multiple times with increasing delays
+    let retryCount = 0;
+    const maxRetries = 5;
+    const retryDelay = 500;
+    
+    function trySendCommand() {
       if (socket && socket.readyState === WebSocket.OPEN) {
         socket.send(command + '\r');
+        if (term) {
+          term.focus();
+        }
+      } else if (retryCount < maxRetries) {
+        retryCount++;
+        console.log(`Retry ${retryCount}/${maxRetries} in ${retryDelay}ms...`);
+        setTimeout(trySendCommand, retryDelay);
+      } else {
+        console.error('Failed to execute command after maximum retries');
+        // Show error message to user
+        if (term) {
+          term.writeln('\r\n\x1b[31mError: Could not execute command. Please check console connection.\x1b[0m\r\n');
+        }
       }
-    }, 1000);
+    }
+    
+    // Start retry attempts with initial delay to allow connection to establish
+    setTimeout(trySendCommand, 100);
   }
 }
 EOF_SENDCMD

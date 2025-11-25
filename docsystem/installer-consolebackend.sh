@@ -275,9 +275,14 @@ function connectWS() {
   const wsUrl = sessionID ? `wss://${location.host}/ws/?session=${sessionID}` : `wss://${location.host}/ws/`;
   socket = new WebSocket(wsUrl);
   socket.onopen = () => {
+    console.log('WebSocket connected successfully');
     currentInput = localStorage.getItem('consoleCurrentInput') || '';
-    if (currentInput) {
+    if (currentInput && term) {
       socket.send(currentInput);
+    }
+    // Clear any previous connection error messages
+    if (term) {
+      term.writeln('');
     }
   };
   socket.onmessage = (event) => {
@@ -285,13 +290,26 @@ function connectWS() {
       const json = JSON.parse(event.data);
       if (json.type === 'session') {
         localStorage.setItem('consoleSessionID', json.id);
+        console.log('Session established:', json.id);
         return;
       }
     } catch (e) {}
-    term.write(event.data);
+    if (term) {
+      term.write(event.data);
+    }
   };
-  socket.onclose = () => { term.writeln('Connection closed.'); };
-  socket.onerror = () => { term.writeln('Error: Could not connect to server.'); };
+  socket.onclose = () => { 
+    console.log('WebSocket connection closed');
+    if (term) {
+      term.writeln('\r\n\x1b[33mConnection to server closed. You can reconnect using the Reconnect button.\x1b[0m\r\n');
+    }
+  };
+  socket.onerror = (error) => { 
+    console.error('WebSocket error:', error);
+    if (term) {
+      term.writeln('\r\n\x1b[31mError: Could not connect to console server. Please try reconnecting.\x1b[0m\r\n');
+    }
+  };
 }
 
 function resetConsole() {
@@ -350,13 +368,7 @@ window.addEventListener('load', () => {
 });
 EOF_JS
 
-# Patch navbar to add console icon in menu
-NAVBAR_FILE="$INSTALL_DIR/themes/photon-theme/layouts/partials/navbar.html"
-if [ -f "$NAVBAR_FILE" ]; then
-  sed -i '/<\/ul>/i <li class="nav-item"><a class="nav-link" href="#" onclick="toggleConsole(); return false;" title="Console"><i class="fas fa-terminal"></i></a></li>' "$NAVBAR_FILE"
-else
-  echo "Warning: navbar.html not found. Console not added."
-fi
+# Note: Navbar modifications are now handled in the main installer script to prevent duplicates
 
 # Set up cron job for Docker cleanup
 echo "Setting up cron job for Docker container cleanup..."
