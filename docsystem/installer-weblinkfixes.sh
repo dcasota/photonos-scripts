@@ -711,7 +711,7 @@ if [ -f "$NAVBAR_FILE" ]; then
   # Find the line with version selector's {{ end }} and add console + dark mode after it
   sed -i '/{{ if and (eq .Type "docs") .Site.Params.versions }}/,/{{ end }}/{
     /{{ end }}/a\
-\t\t<!-- Console Button -->\n\t\t<li class="nav-item">\n\t\t\t<a class="nav-link" href="#" onclick="toggleConsole(); return false;" title="Console">\n\t\t\t\t<i class="fas fa-terminal"></i>\n\t\t\t</a>\n\t\t</li>\n\t\t\n\t\t<!-- Dark Mode Toggle -->\n\t\t{{ if .Site.Params.darkmode }}\n\t\t<li class="nav-item">\n\t\t\t<button id="theme-toggle" class="btn btn-link nav-link" aria-label="Toggle dark mode" style="padding: 0.375rem 0.75rem;">\n\t\t\t\t<i id="theme-icon" class="fas fa-moon"></i>\n\t\t\t</button>\n\t\t</li>\n\t\t{{ end }}
+\t\t<!-- Console Button -->\n\t\t<li class="nav-item d-inline-block">\n\t\t\t<a class="nav-link" href="#" onclick="toggleConsole(); return false;" title="Console">\n\t\t\t\t<i class="fas fa-terminal"></i>\n\t\t\t</a>\n\t\t</li>\n\t\t\n\t\t<!-- Dark Mode Toggle -->\n\t\t{{ if .Site.Params.darkmode }}\n\t\t<li class="nav-item d-inline-block">\n\t\t\t<button id="theme-toggle" class="btn btn-link nav-link" aria-label="Toggle dark mode" style="padding: 0.375rem 0.75rem; margin: 0;">\n\t\t\t\t<i id="theme-icon" class="fas fa-moon"></i>\n\t\t\t</button>\n\t\t</li>\n\t\t{{ end }}
   }' "$NAVBAR_FILE"
   
   echo "  Updated navbar.html: Single console and dark mode after Release dropdown"
