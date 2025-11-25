@@ -17,6 +17,7 @@ Optionally commits and pushes fixes to a git repository.
 import argparse
 import csv
 import datetime
+import gc
 import logging
 import os
 import re
@@ -78,12 +79,24 @@ class DocumentationAnalyzer:
                  github_token: Optional[str] = None, 
                  github_username: Optional[str] = None,
                  github_branch: Optional[str] = None,
-                 github_pr: bool = False):
-        """Initialize the analyzer with base URL and worker count."""
-        # Generate filenames first
+                 github_pr: bool = False,
+                 language: str = 'en'):
+        """Initialize the analyzer with base URL and worker count.
+        
+        Args:
+            base_url: Base URL of the documentation site
+            num_workers: Number of parallel workers
+            github_url: GitHub repository URL
+            github_token: GitHub authentication token
+            github_username: GitHub username
+            github_branch: Target branch for commits
+            github_pr: Whether to create a pull request
+            language: Language code for content directory (default: 'en')
+        """
+        # Generate filenames first (use absolute paths to survive directory changes)
         timestamp = datetime.datetime.now().isoformat()
-        self.report_filename: str = f"report-{timestamp}.csv"
-        self.log_filename: str = f"report-{timestamp}.log"
+        self.report_filename: str = os.path.abspath(f"report-{timestamp}.csv")
+        self.log_filename: str = os.path.abspath(f"report-{timestamp}.log")
         
         # Git/GitHub configuration
         self.github_url = github_url
@@ -92,6 +105,9 @@ class DocumentationAnalyzer:
         self.github_branch = github_branch
         self.github_pr = github_pr
         self.git_enabled = bool(github_url and github_token and github_username)
+        self.language = language  # Language code for content directory
+        self.target_repo_path = None  # Will be set if we clone the target repo
+        self.original_cwd = os.getcwd()  # Save original directory
         
         # Setup logging to file (not console)
         logging.basicConfig(
@@ -107,8 +123,31 @@ class DocumentationAnalyzer:
         # Start from base URL - will discover structure automatically
         self.effective_url = self.base_url
         
-        # Number of parallel workers
+        # Number of parallel workers (limit based on available memory)
         self.num_workers = max(1, min(20, num_workers))
+        
+        # Reduce workers if system has limited memory to prevent OOM
+        try:
+            with open('/proc/meminfo', 'r') as f:
+                meminfo = f.read()
+                # Extract MemAvailable in KB
+                for line in meminfo.split('\n'):
+                    if 'MemAvailable:' in line:
+                        mem_available_kb = int(line.split()[1])
+                        mem_available_gb = mem_available_kb / 1024 / 1024
+                        
+                        # If less than 4GB available, limit workers to prevent OOM
+                        if mem_available_gb < 4.0:
+                            original_workers = self.num_workers
+                            # Use fewer workers: 1 worker per 500MB available
+                            self.num_workers = max(1, min(self.num_workers, int(mem_available_gb * 2)))
+                            if self.num_workers != original_workers:
+                                self.logger.warning(f"Limited workers from {original_workers} to {self.num_workers} due to low memory ({mem_available_gb:.1f}GB available)")
+                                print(f"⚠️  Limited to {self.num_workers} workers due to low memory ({mem_available_gb:.1f}GB available)")
+                        break
+        except Exception as e:
+            self.logger.debug(f"Could not check available memory: {e}")
+        
         self.logger.info(f"Using {self.num_workers} parallel worker(s)")
         
         # Setup HTTP session with retries
@@ -125,11 +164,21 @@ class DocumentationAnalyzer:
         # CSV report data
         self.report_data: List[Dict[str, str]] = []
         
+        # Track fixes for application
+        self.fixes_to_apply: Dict[str, List[Dict[str, str]]] = {}  # {page_url: [fixes]}
+        
         # Thread-safe CSV writing lock
         self.csv_lock = threading.Lock()
         
+        # Thread-safe fixes lock
+        self.fixes_lock = threading.Lock()
+        
         # Progress bar
         self.progress_bar: Optional[tqdm] = None
+        
+        # Store page contents for grammar checking (to avoid parallel LanguageTool issues)
+        self.pages_for_grammar_check: Dict[str, str] = {}  # {page_url: text_content}
+        self.pages_lock = threading.Lock()  # Lock for pages dictionary
         
         # Initialize CSV immediately with headers (after logger is set up)
         self._initialize_csv()
@@ -166,7 +215,7 @@ class DocumentationAnalyzer:
             sys.exit(1)
     
     def _write_csv_row(self, page_url: str, category: str, location: str, fix: str):
-        """Append a row to the CSV report (thread-safe)."""
+        """Append a row to the CSV report (thread-safe) and track fix for application."""
         try:
             # Use lock to ensure thread-safe writes
             with self.csv_lock:
@@ -179,6 +228,18 @@ class DocumentationAnalyzer:
                         'Issue Category': category,
                         'Issue Location Description': location,
                         'Fix Suggestion': fix
+                    })
+            
+            # Track fix for later application (if in PR mode with cloned repo)
+            if self.github_pr and self.target_repo_path:
+                with self.fixes_lock:
+                    if page_url not in self.fixes_to_apply:
+                        self.fixes_to_apply[page_url] = []
+                    self.fixes_to_apply[page_url].append({
+                        'category': category,
+                        'location': location,
+                        'fix': fix,
+                        'original_text': location  # Store for finding/replacing
                     })
         except Exception as e:
             self.logger.error(f"Failed to write CSV row: {e}")
@@ -397,6 +458,515 @@ class DocumentationAnalyzer:
             self.logger.error(f"Failed to crawl {url}: {e}")
         
         return links
+    
+    def _commit_and_push_single_fix(self, file_path: str, page_url: str, num_fixes: int) -> bool:
+        """
+        Commit and push a single fix immediately.
+        This allows each fix to be tracked as a separate commit in the PR.
+        """
+        if not self.target_repo_path:
+            return False
+        
+        try:
+            # Get relative path for commit message
+            rel_path = os.path.relpath(file_path, self.target_repo_path)
+            
+            # Stage the modified file
+            subprocess.run(
+                ['git', 'add', file_path],
+                cwd=self.target_repo_path,
+                check=True,
+                capture_output=True
+            )
+            
+            # Create commit message
+            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            commit_message = f"docs: Fix {num_fixes} issue(s) in {rel_path}\n\nPage: {page_url}\nTimestamp: {timestamp}\nGenerated by analyzer.py"
+            
+            # Commit
+            subprocess.run(
+                ['git', 'commit', '-m', commit_message],
+                cwd=self.target_repo_path,
+                check=True,
+                capture_output=True
+            )
+            
+            # Push immediately
+            if self.github_url and self.github_token and self.github_username:
+                # Get current branch
+                result = subprocess.run(
+                    ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                    cwd=self.target_repo_path
+                )
+                current_branch = result.stdout.strip()
+                
+                # Parse GitHub URL and inject credentials
+                parsed_url = urllib.parse.urlparse(self.github_url)
+                auth_url = f"{parsed_url.scheme}://{self.github_username}:{self.github_token}@{parsed_url.netloc}{parsed_url.path}"
+                
+                # Push to remote
+                subprocess.run(
+                    ['git', 'push', auth_url, f'{current_branch}:{current_branch}'],
+                    check=True,
+                    capture_output=True,
+                    cwd=self.target_repo_path
+                )
+                
+                self.logger.info(f"Pushed commit for {rel_path}")
+                print(f"      📤 Pushed to remote")
+                return True
+            else:
+                self.logger.warning("GitHub credentials not available for push")
+                return False
+                
+        except subprocess.CalledProcessError as e:
+            self.logger.error(f"Failed to commit/push {file_path}: {e}")
+            if e.stderr:
+                error_text = e.stderr.decode('utf-8', errors='ignore') if isinstance(e.stderr, bytes) else e.stderr
+                self.logger.error(f"Git error: {error_text}")
+            return False
+        except Exception as e:
+            self.logger.error(f"Error in commit/push for {file_path}: {e}")
+            return False
+    
+
+    def _setup_target_repository(self) -> bool:
+        """
+        Clone target repository and setup feature branch for fixes.
+        This ensures we work in the correct repository with shared git history.
+        
+        Returns:
+            True if setup successful, False otherwise
+        """
+        if not (self.github_url and self.github_token and self.github_username and self.github_branch):
+            return False
+        
+        try:
+            import tempfile
+            import shutil
+            
+            # Parse repository info
+            parsed_url = urllib.parse.urlparse(self.github_url)
+            path = parsed_url.path.strip('/')
+            if path.endswith('.git'):
+                path = path[:-4]
+            repo_name = path.split('/')[-1]
+            
+            # Create temporary directory for cloning
+            temp_dir = tempfile.mkdtemp(prefix='analyzer_')
+            self.target_repo_path = os.path.join(temp_dir, repo_name)
+            
+            self.logger.info(f"Setting up target repository workflow:")
+            self.logger.info(f"  Repository: {self.github_url}")
+            self.logger.info(f"  Base branch: {self.github_branch}")
+            self.logger.info(f"  Clone location: {self.target_repo_path}")
+            
+            print(f"\n🔧 Setting up target repository workflow...")
+            print(f"   Repository: {path}")
+            print(f"   Base branch: {self.github_branch}")
+            
+            # Construct authenticated URL
+            auth_url = f"{parsed_url.scheme}://{self.github_username}:{self.github_token}@{parsed_url.netloc}{parsed_url.path}"
+            
+            # Clone repository
+            print(f"   📥 Cloning repository...")
+            clone_result = subprocess.run(
+                ['git', 'clone', '--quiet', auth_url, self.target_repo_path],
+                capture_output=True,
+                text=True
+            )
+            
+            if clone_result.returncode != 0:
+                self.logger.error(f"Failed to clone repository: {clone_result.stderr}")
+                print(f"   ❌ Failed to clone repository")
+                return False
+            
+            # Change to repository directory
+            os.chdir(self.target_repo_path)
+            self.logger.info(f"Changed to repository directory: {self.target_repo_path}")
+            
+            # Checkout base branch
+            print(f"   🔀 Checking out base branch: {self.github_branch}")
+            checkout_result = subprocess.run(
+                ['git', 'checkout', self.github_branch],
+                capture_output=True,
+                text=True
+            )
+            
+            if checkout_result.returncode != 0:
+                self.logger.error(f"Failed to checkout base branch: {checkout_result.stderr}")
+                print(f"   ❌ Base branch '{self.github_branch}' not found")
+                return False
+            
+            # Create feature branch
+            timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+            feature_branch = f"docs/analysis-fixes-{timestamp}"
+            
+            print(f"   🌿 Creating feature branch: {feature_branch}")
+            branch_result = subprocess.run(
+                ['git', 'checkout', '-b', feature_branch],
+                capture_output=True,
+                text=True
+            )
+            
+            if branch_result.returncode != 0:
+                self.logger.error(f"Failed to create feature branch: {branch_result.stderr}")
+                print(f"   ❌ Failed to create feature branch")
+                return False
+            
+            # Create .gitignore to prevent accidental report commits
+            gitignore_path = os.path.join(self.target_repo_path, '.gitignore')
+            gitignore_content = "\n# Analyzer reports - do not commit\nreport-*.csv\nreport-*.log\n"
+            
+            try:
+                # Append to existing .gitignore or create new one
+                mode = 'a' if os.path.exists(gitignore_path) else 'w'
+                with open(gitignore_path, mode) as f:
+                    f.write(gitignore_content)
+                self.logger.info("Added analyzer reports to .gitignore")
+            except Exception as e:
+                self.logger.warning(f"Could not update .gitignore: {e}")
+            
+            self.logger.info(f"Successfully set up repository in {self.target_repo_path}")
+            self.logger.info(f"Working on feature branch: {feature_branch}")
+            print(f"   ✅ Repository ready for fixes")
+            print(f"   Working branch: {feature_branch}\n")
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error setting up target repository: {e}")
+            print(f"   ❌ Error: {e}")
+            return False
+    
+    def _cleanup_target_repository(self):
+        """Clean up cloned repository directory."""
+        if self.target_repo_path and os.path.exists(self.target_repo_path):
+            try:
+                import shutil
+                # Change back to original directory
+                os.chdir(self.original_cwd)
+                # Remove the entire temp directory (parent of target_repo_path)
+                temp_dir = os.path.dirname(self.target_repo_path)
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                self.logger.info(f"Cleaned up temporary repository: {temp_dir}")
+            except Exception as e:
+                self.logger.warning(f"Failed to clean up repository: {e}")
+    
+    def _url_to_file_path(self, page_url: str) -> Optional[str]:
+        """
+        Convert a page URL to its corresponding file path in the cloned repository.
+        
+        For example:
+        https://127.0.0.1/docs-v5/overview/index.html
+        → content/{language}/docs-v5/Overview/_index.md or content/{language}/docs-v5/Overview/Introduction.md
+        
+        Note: Handles case-insensitive matching since URLs are lowercase but
+        filesystem may have different casing. Uses self.language for content subdirectory.
+        """
+        try:
+            parsed_url = urllib.parse.urlparse(page_url)
+            path = parsed_url.path.lstrip('/')
+            
+            # Remove .html extension if present
+            if path.endswith('.html'):
+                path = path[:-5]
+            if path.endswith('/index'):
+                path = path[:-6]
+            if path.endswith('/'):
+                path = path[:-1]
+            
+            # Try common documentation file extensions
+            # For GitHub photon repository, files are in content/{language}/ subdirectory
+            content_subdir = f"content/{self.language}"
+            possible_files = [
+                os.path.join(self.target_repo_path, content_subdir, f"{path}.md"),
+                os.path.join(self.target_repo_path, content_subdir, f"{path}/index.md"),
+                os.path.join(self.target_repo_path, content_subdir, f"{path}/_index.md"),
+                os.path.join(self.target_repo_path, content_subdir, f"{path}/README.md"),
+                os.path.join(self.target_repo_path, f"{path}.md"),
+                os.path.join(self.target_repo_path, f"{path}/index.md"),
+                os.path.join(self.target_repo_path, f"{path}/_index.md"),
+                os.path.join(self.target_repo_path, f"{path}/README.md"),
+                os.path.join(self.target_repo_path, f"{path}.html"),
+                os.path.join(self.target_repo_path, f"{path}/index.html"),
+            ]
+            
+            # First try exact match
+            for file_path in possible_files:
+                if os.path.exists(file_path):
+                    return file_path
+            
+            # If exact match fails, try case-insensitive matching
+            # This handles cases where URL is lowercase but filesystem uses different casing
+            path_parts = path.split('/')
+            base_dir = os.path.join(self.target_repo_path, content_subdir)
+            
+            if not os.path.exists(base_dir):
+                base_dir = self.target_repo_path
+            
+            # Navigate through path parts with case-insensitive matching
+            current_dir = base_dir
+            resolved_parts = []
+            unmatched_parts = []
+            
+            for part in path_parts:
+                if not part:
+                    continue
+                    
+                try:
+                    entries = os.listdir(current_dir)
+                    # Find case-insensitive match for directory
+                    matched = None
+                    for entry in entries:
+                        if entry.lower() == part.lower() and os.path.isdir(os.path.join(current_dir, entry)):
+                            matched = entry
+                            break
+                    
+                    if matched:
+                        resolved_parts.append(matched)
+                        current_dir = os.path.join(current_dir, matched)
+                    else:
+                        # No directory match found, save unmatched parts
+                        unmatched_parts.append(part)
+                except (OSError, PermissionError):
+                    break
+            
+            # If we resolved some parts, try building file paths
+            if resolved_parts:
+                resolved_path = '/'.join(resolved_parts)
+                case_insensitive_files = [
+                    os.path.join(base_dir, f"{resolved_path}.md"),
+                    os.path.join(base_dir, f"{resolved_path}/index.md"),
+                    os.path.join(base_dir, f"{resolved_path}/_index.md"),
+                    os.path.join(base_dir, f"{resolved_path}/README.md"),
+                ]
+                
+                for file_path in case_insensitive_files:
+                    if os.path.exists(file_path):
+                        return file_path
+                
+                # Try to find a matching file for unmatched parts
+                # This handles cases like "introduction-to-photon-os" → "Introduction.md"
+                if len(unmatched_parts) > 0 and len(resolved_parts) > 0:
+                    # Look for file in the last resolved directory
+                    search_dir = os.path.join(base_dir, '/'.join(resolved_parts))
+                    
+                    # Join unmatched parts to form the filename we're looking for
+                    filename_to_match = '-'.join(unmatched_parts)
+                    
+                    try:
+                        if os.path.isdir(search_dir):
+                            entries = os.listdir(search_dir)
+                            # Look for files that match
+                            for entry in entries:
+                                entry_lower = entry.lower()
+                                filename_lower = filename_to_match.lower()
+                                
+                                # Check if filename (without extension) matches
+                                if entry_lower.endswith('.md'):
+                                    base_name = entry_lower[:-3]
+                                    # Try various matching strategies
+                                    if (base_name == filename_lower or
+                                        base_name.replace('-', '') == filename_lower.replace('-', '') or
+                                        base_name.replace('_', '') == filename_lower.replace('_', '') or
+                                        base_name.replace('-', '').replace('_', '') == filename_lower.replace('-', '').replace('_', '')):
+                                        candidate = os.path.join(search_dir, entry)
+                                        if os.path.isfile(candidate):
+                                            return candidate
+                            
+                            # Hugo-specific: Try matching against title in front matter
+                            # URLs may be generated from "title:" field in markdown front matter
+                            for entry in entries:
+                                if entry.endswith('.md'):
+                                    file_path = os.path.join(search_dir, entry)
+                                    try:
+                                        with open(file_path, 'r', encoding='utf-8') as f:
+                                            content = f.read(500)  # Read first 500 chars for front matter
+                                            # Look for title in YAML front matter
+                                            if content.startswith('---'):
+                                                lines = content.split('\n')
+                                                for line in lines[1:10]:  # Check first 10 lines
+                                                    if line.startswith('title:'):
+                                                        title = line.split(':', 1)[1].strip().strip('"\'')
+                                                        # Generate slug from title (Hugo-style)
+                                                        slug = title.lower().replace(' ', '-')
+                                                        # Remove special characters
+                                                        slug = ''.join(c if c.isalnum() or c == '-' else '' for c in slug)
+                                                        if slug == filename_lower:
+                                                            return file_path
+                                                        break
+                                    except (IOError, UnicodeDecodeError):
+                                        continue
+                    except (OSError, PermissionError):
+                        pass
+            
+            self.logger.warning(f"Could not find file for URL: {page_url}")
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"Error converting URL to file path: {e}")
+            return None
+    
+    def _apply_grammar_fix(self, content: str, location: str, fix: str) -> str:
+        """Apply a grammar fix to content."""
+        # Grammar fixes are complex and context-dependent
+        # Add a markdown comment noting the issue for manual review
+        if "..." in location:
+            # Extract the actual error context
+            error_context = location.replace("...", "").strip()
+            if error_context in content:
+                # Check if comment already exists to prevent duplicates
+                comment_marker = f"<!-- GRAMMAR CHECK:"
+                if comment_marker not in content or f"<!-- GRAMMAR CHECK: {fix[:100]}" not in content:
+                    # Add HTML comment before the error for manual review (only once)
+                    content = content.replace(
+                        error_context,
+                        f"<!-- GRAMMAR CHECK: {fix[:100]} -->\n{error_context}",
+                        1  # Replace only first occurrence
+                    )
+                    self.logger.info(f"Marked grammar issue for review: {error_context[:50]}")
+        return content
+    
+    def _apply_markdown_fix(self, content: str, location: str, fix: str) -> str:
+        """Apply markdown rendering fix to content."""
+        # Remove unrendered markdown patterns
+        if "Unrendered markdown:" in location:
+            # Extract the problematic pattern
+            pattern = location.replace("Unrendered markdown:", "").strip()
+            if pattern in content:
+                # Check if comment already exists to prevent duplicates
+                comment_marker = f"<!-- MARKDOWN ISSUE:"
+                if comment_marker not in content or f"<!-- MARKDOWN ISSUE: {fix[:100]}" not in content:
+                    # Add HTML comment noting the markdown issue for manual review (only once)
+                    content = content.replace(
+                        pattern,
+                        f"<!-- MARKDOWN ISSUE: {fix[:100]} -->\n{pattern}",
+                        1  # Replace only first occurrence
+                    )
+                    self.logger.info(f"Marked markdown issue for review: {pattern[:50]}")
+        return content
+    
+    def _apply_link_fix(self, content: str, location: str, fix: str) -> str:
+        """Apply link fix to content (remove or comment out broken links)."""
+        # Extract URL from location
+        if "URL:" in location:
+            url_part = location.split("URL:")[-1].strip()
+            if url_part in content:
+                # Comment out broken link
+                content = content.replace(f"]({url_part})", f"](#{url_part.replace('/', '-')} <!-- BROKEN LINK: {url_part} -->)")
+                self.logger.info(f"Fixed broken link: {url_part}")
+        return content
+    
+    def _apply_fixes_to_file(self, file_path: str, page_url: str) -> bool:
+        """Apply all fixes for a page to its corresponding file."""
+        if page_url not in self.fixes_to_apply:
+            return False
+        
+        fixes = self.fixes_to_apply[page_url]
+        if not fixes:
+            return False
+        
+        try:
+            # Read file content
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            original_content = content
+            original_size = len(content)
+            fixes_applied = 0
+            
+            # Apply fixes by category
+            for fix_item in fixes:
+                category = fix_item['category']
+                location = fix_item['location']
+                fix_suggestion = fix_item['fix']
+                
+                if category == 'grammar':
+                    content = self._apply_grammar_fix(content, location, fix_suggestion)
+                elif category == 'markdown':
+                    content = self._apply_markdown_fix(content, location, fix_suggestion)
+                elif category == 'orphan_url':
+                    new_content = self._apply_link_fix(content, location, fix_suggestion)
+                    if new_content != content:
+                        fixes_applied += 1
+                    content = new_content
+                # orphan_image and image_alignment fixes would be similar
+            
+            # Safety check: prevent file corruption
+            # If file grew by more than 10x, something went wrong - don't save
+            new_size = len(content)
+            if new_size > original_size * 10:
+                self.logger.error(f"CORRUPTION DETECTED: {file_path} grew from {original_size} to {new_size} bytes (10x+). Not saving!")
+                return False
+            
+            # Write back if changed
+            if content != original_content:
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(content)
+                self.logger.info(f"Applied {fixes_applied} fix(es) to {file_path} (size: {original_size} → {new_size} bytes)")
+                return True
+            
+            return False
+            
+        except Exception as e:
+            self.logger.error(f"Error applying fixes to {file_path}: {e}")
+            return False
+    
+    def apply_all_fixes(self) -> int:
+        """
+        Apply all tracked fixes to their corresponding files in the cloned repository.
+        Commits and pushes after each file is fixed.
+        Returns the number of files modified.
+        """
+        if not self.target_repo_path:
+            self.logger.warning("No target repository path - cannot apply fixes")
+            return 0
+        
+        if not self.fixes_to_apply:
+            self.logger.info("No fixes to apply")
+            return 0
+        
+        self.logger.info(f"Applying fixes to {len(self.fixes_to_apply)} page(s)...")
+        print(f"\n📝 Applying fixes to documentation files...")
+        
+        files_modified = 0
+        
+        # Process fixes and immediately clear from memory to reduce memory pressure
+        # Convert to list to avoid "dictionary changed size during iteration"
+        pages_to_fix = list(self.fixes_to_apply.items())
+        
+        for page_url, fixes in pages_to_fix:
+            # Convert URL to file path
+            file_path = self._url_to_file_path(page_url)
+            if not file_path:
+                self.logger.warning(f"Could not find file for {page_url}")
+                # Clear this page's fixes from memory
+                del self.fixes_to_apply[page_url]
+                continue
+            
+            # Apply fixes to the file
+            if self._apply_fixes_to_file(file_path, page_url):
+                files_modified += 1
+                rel_path = os.path.relpath(file_path, self.target_repo_path)
+                print(f"   ✅ Fixed {rel_path} ({len(fixes)} issue(s))")
+                
+                # Commit and push this fix immediately
+                if self._commit_and_push_single_fix(file_path, page_url, len(fixes)):
+                    self.logger.info(f"Committed and pushed fixes for {rel_path}")
+                else:
+                    self.logger.warning(f"Failed to commit/push fixes for {rel_path}")
+            
+            # Clear this page's fixes from memory immediately to reduce memory usage
+            del self.fixes_to_apply[page_url]
+        
+        self.logger.info(f"Applied fixes to {files_modified} file(s)")
+        print(f"\n✅ Applied fixes to {files_modified} file(s)\n")
+        
+        return files_modified
     
     def generate_sitemap(self):
         """Generate sitemap by crawling the site."""
@@ -726,8 +1296,13 @@ class DocumentationAnalyzer:
             text_content = main_content.get_text(separator=' ', strip=True)
             html_content = str(main_content)
             
+            # Store page content for grammar checking later (serialized to avoid memory issues)
+            # Grammar checking is done in a separate sequential pass after parallel analysis
+            with self.pages_lock:
+                self.pages_for_grammar_check[page_url] = text_content
+            
             # Perform analyses (only for accessible pages)
-            self._check_grammar(page_url, text_content)
+            # NOTE: Grammar checking is done later in sequential pass to avoid parallel memory issues
             self._check_markdown_artifacts(page_url, html_content, text_content)
             self._check_orphan_links(page_url, soup)
             self._check_orphan_images(page_url, soup)
@@ -761,6 +1336,44 @@ class DocumentationAnalyzer:
                 "Check page structure and content"
             )
     
+    def _run_sequential_grammar_check(self):
+        """
+        Run grammar checking sequentially after parallel analysis.
+        This ensures only ONE LanguageTool instance handles all requests,
+        preventing parallel memory issues.
+        """
+        if not self.pages_for_grammar_check:
+            self.logger.info("No pages to grammar check")
+            return
+        
+        total_pages = len(self.pages_for_grammar_check)
+        self.logger.info(f"Running sequential grammar check on {total_pages} pages...")
+        print(f"\n📝 Running grammar check (sequential to save memory)...")
+        
+        # Create progress bar for grammar checking
+        progress_bar = tqdm(
+            total=total_pages,
+            desc="Grammar checking",
+            unit="page",
+            bar_format='{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]'
+        )
+        
+        try:
+            # Process each page sequentially (no parallelization)
+            pages_to_check = list(self.pages_for_grammar_check.items())
+            
+            for page_url, text_content in pages_to_check:
+                self._check_grammar(page_url, text_content)
+                progress_bar.update(1)
+                
+                # Clear from memory immediately after checking
+                del self.pages_for_grammar_check[page_url]
+            
+            self.logger.info(f"Grammar check complete for {total_pages} pages")
+            print(f"✅ Grammar check complete\n")
+        finally:
+            progress_bar.close()
+    
     def analyze_all_pages(self):
         """Analyze all pages in the sitemap (with optional parallelization)."""
         total_pages = len(self.sitemap)
@@ -791,6 +1404,10 @@ class DocumentationAnalyzer:
                 self.progress_bar.close()
         
         self.logger.info(f"Analysis complete. Report saved to: {self.report_filename}")
+        
+        # Now run sequential grammar check on all collected pages
+        # This ensures only ONE LanguageTool instance is used, preventing memory issues
+        self._run_sequential_grammar_check()
     
     def _analyze_pages_parallel(self):
         """Analyze pages in parallel using ThreadPoolExecutor."""
@@ -830,6 +1447,9 @@ class DocumentationAnalyzer:
             return False
         
         try:
+            # Determine working directory (cloned repo if in PR mode, otherwise current dir)
+            work_dir = self.target_repo_path if self.target_repo_path else None
+            
             # Check if git is available
             subprocess.run(['git', '--version'], check=True, capture_output=True)
             
@@ -837,27 +1457,31 @@ class DocumentationAnalyzer:
             result = subprocess.run(
                 ['git', 'rev-parse', '--git-dir'],
                 capture_output=True,
-                text=True
+                text=True,
+                cwd=work_dir
             )
             if result.returncode != 0:
                 self.logger.warning("Not in a git repository, skipping git operations")
                 return False
             
-            # Add the report files
-            self.logger.info(f"Adding report files to git: {self.report_filename}, {self.log_filename}")
-            subprocess.run(['git', 'add', self.report_filename, self.log_filename], check=True)
+            # Add the report files (only if not in PR mode, as fixes are already committed)
+            if not self.target_repo_path:
+                self.logger.info(f"Adding report files to git: {self.report_filename}, {self.log_filename}")
+                subprocess.run(['git', 'add', self.report_filename, self.log_filename], check=True, cwd=work_dir)
             
-            # Create commit message
-            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            commit_message = f"docs(analyzer): Add analysis report - {timestamp}\n\nAutomated documentation analysis report.\nGenerated by analyzer.py"
-            
-            # Commit changes
-            self.logger.info("Creating git commit...")
-            subprocess.run(
-                ['git', 'commit', '-m', commit_message],
-                check=True,
-                capture_output=True
-            )
+            # Create commit for report files (only if not in PR mode, as fixes are already committed)
+            if not self.target_repo_path:
+                timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                commit_message = f"docs(analyzer): Add analysis report - {timestamp}\n\nAutomated documentation analysis report.\nGenerated by analyzer.py"
+                
+                # Commit changes
+                self.logger.info("Creating git commit...")
+                subprocess.run(
+                    ['git', 'commit', '-m', commit_message],
+                    check=True,
+                    capture_output=True,
+                    cwd=work_dir
+                )
             
             # Setup remote URL with authentication if needed
             if self.github_url and self.github_token and self.github_username:
@@ -872,17 +1496,25 @@ class DocumentationAnalyzer:
                         ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
                         capture_output=True,
                         text=True,
-                        check=True
+                        check=True,
+                        cwd=work_dir
                     )
                     current_branch = result.stdout.strip()
                     
-                    self.logger.info(f"Pushing to remote: {parsed_url.netloc}{parsed_url.path} (branch: {current_branch})")
+                    # Determine which branch to push to
+                    # If github_branch is specified and different from current, push current branch
+                    # to create a feature branch that will PR into github_branch
+                    target_branch = current_branch  # Push current branch as-is
                     
-                    # Push to remote
+                    self.logger.info(f"Pushing to remote: {parsed_url.netloc}{parsed_url.path} (branch: {target_branch})")
+                    print(f"📤 Pushing changes to {parsed_url.netloc}{parsed_url.path}...")
+                    
+                    # Push to remote repository specified by github_url
                     subprocess.run(
-                        ['git', 'push', auth_url, current_branch],
+                        ['git', 'push', auth_url, f'{current_branch}:{target_branch}'],
                         check=True,
-                        capture_output=True
+                        capture_output=True,
+                        cwd=work_dir
                     )
                     
                     self.logger.info("Successfully pushed changes to remote repository")
@@ -937,7 +1569,8 @@ class DocumentationAnalyzer:
                 ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
                 capture_output=True,
                 text=True,
-                check=True
+                check=True,
+                cwd=self.target_repo_path if self.target_repo_path else None
             )
             current_branch = result.stdout.strip()
             
@@ -1006,28 +1639,22 @@ Please review the attached CSV report for detailed findings and fix suggestions.
                     return
             
             # Check if there are commits to create PR from
-            # Note: When using different repository (github_url != origin), we always proceed
-            # because we can't easily check commit differences across repos
-            if self.github_url:
-                # Cross-repo scenario: skip commit count check, let gh handle it
-                self.logger.info(f"Cross-repository PR - skipping commit count validation")
-                commit_count = 1  # Assume we have commits
-            else:
-                # Same repo scenario: check commit count locally
-                commits_check = subprocess.run(
-                    ['git', 'rev-list', '--count', f'origin/{base_branch}..{current_branch}'],
-                    capture_output=True,
-                    text=True
-                )
-                commit_count = int(commits_check.stdout.strip()) if commits_check.returncode == 0 else 0
-                
-                if commit_count == 0:
-                    self.logger.warning(f"No new commits between {base_branch} and {current_branch}")
-                    print(f"\n⚠️  No new commits to create PR")
-                    print(f"   Current branch: {current_branch}")
-                    print(f"   Base branch: {base_branch}")
-                    print(f"   The report was pushed but no PR was created (branch already in sync)")
-                    return
+            # Always check commit count in the target repository
+            commits_check = subprocess.run(
+                ['git', 'rev-list', '--count', f'{base_branch}..{current_branch}'],
+                capture_output=True,
+                text=True,
+                cwd=self.target_repo_path if self.target_repo_path else None
+            )
+            commit_count = int(commits_check.stdout.strip()) if commits_check.returncode == 0 else 0
+            
+            if commit_count == 0:
+                self.logger.warning(f"No new commits between {base_branch} and {current_branch}")
+                print(f"\n⚠️  No new commits to create PR")
+                print(f"   Current branch: {current_branch}")
+                print(f"   Base branch: {base_branch}")
+                print(f"   Analysis completed but no fixes were applied (no commits to create PR)")
+                return
             
             self.logger.info(f"Creating pull request: {current_branch} -> {base_branch} ({commit_count} commits)")
             
@@ -1075,7 +1702,8 @@ Please review the attached CSV report for detailed findings and fix suggestions.
                 capture_output=True,
                 text=True,
                 check=True,
-                env=env
+                env=env,
+                cwd=self.target_repo_path if self.target_repo_path else None
             )
             
             pr_url = result.stdout.strip()
@@ -1144,6 +1772,15 @@ Please review the attached CSV report for detailed findings and fix suggestions.
             print(f"Workers: {self.num_workers}")
             print()
             
+            # If PR mode is enabled, setup target repository first
+            if self.github_pr and self.github_url and self.github_branch:
+                print("📋 PR mode enabled - setting up target repository workflow")
+                if not self._setup_target_repository():
+                    self.logger.error("Failed to setup target repository")
+                    print(f"\n❌ ERROR: Failed to setup target repository")
+                    print(f"   Check the log file for details: {self.log_filename}")
+                    sys.exit(1)
+            
             # Validate connectivity
             if not self.validate_connectivity():
                 self.logger.error("Cannot proceed without valid connection to server")
@@ -1165,6 +1802,32 @@ Please review the attached CSV report for detailed findings and fix suggestions.
             
             # Analyze all pages
             self.analyze_all_pages()
+            
+            # Close grammar checker to free memory before applying fixes
+            if self.grammar_tool:
+                try:
+                    self.logger.info("Closing grammar checker to free memory before applying fixes...")
+                    self.grammar_tool.close()
+                    self.grammar_tool = None
+                    print("\n🧹 Freed grammar checker memory")
+                except Exception as e:
+                    self.logger.warning(f"Error closing grammar tool: {e}")
+            
+            # Clear pages dictionary (should already be empty, but just in case)
+            self.pages_for_grammar_check.clear()
+            
+            # Force garbage collection to free memory
+            gc.collect()
+            self.logger.info("Ran garbage collection to free memory")
+            
+            # Apply fixes if in PR mode with cloned repository
+            # Fixes are now committed and pushed individually per file
+            if self.github_pr and self.target_repo_path:
+                files_modified = self.apply_all_fixes()
+                
+                # Force garbage collection after applying fixes
+                gc.collect()
+                self.logger.info("Ran garbage collection after applying fixes")
             
             # Finalize report
             self.finalize_report()
@@ -1188,6 +1851,8 @@ Please review the attached CSV report for detailed findings and fix suggestions.
             sys.exit(1)
         finally:
             self.cleanup()
+            # Clean up cloned repository if it exists
+            self._cleanup_target_repository()
 
 
 def validate_url(url: str) -> str:
@@ -1236,6 +1901,10 @@ Examples:
   # With git push and PR creation to specific branch
   python analyzer.py --url https://127.0.0.1 \\
     --github-branch main --github-pr
+  
+  # With custom language directory (e.g., German content)
+  python analyzer.py --url https://127.0.0.1/de \\
+    --language de --github-pr
 
 Requirements:
   - Python 3.8+
@@ -1295,6 +1964,13 @@ Requirements:
         help='Create a pull request using gh CLI after pushing changes'
     )
     
+    parser.add_argument(
+        '--language',
+        type=str,
+        default='en',
+        help='Language code for content directory (e.g., en, de, fr). Defaults to "en" for content/en/'
+    )
+    
     args = parser.parse_args()
     
     # Validate parallel workers
@@ -1326,7 +2002,8 @@ Requirements:
         github_token=github_token,
         github_username=github_username,
         github_branch=github_branch,
-        github_pr=args.github_pr
+        github_pr=args.github_pr,
+        language=args.language
     )
     
     analyzer.run()
