@@ -5,6 +5,213 @@ if [ -z "$INSTALL_DIR" ]; then
   exit 1
 fi
 
+# Install custom enhancements before building
+echo "Installing custom site enhancements (console, dark mode, code buttons)..."
+
+# Create directories if they don't exist
+mkdir -p "$INSTALL_DIR/layouts/partials/hooks"
+mkdir -p "$INSTALL_DIR/layouts/shortcodes"
+mkdir -p "$INSTALL_DIR/static/js/xterm"
+mkdir -p "$INSTALL_DIR/static/css"
+
+# Install body-end.html (console + code block enhancement)
+cat > "$INSTALL_DIR/layouts/partials/hooks/body-end.html" << 'EOF_BODYEND'
+<div id="console-window" style="display: none; position: fixed; bottom: 0; left: 0; right: 0; height: 300px; background: #fff; border-top: 1px solid #000; z-index: 1000; resize: vertical; overflow: hidden; box-shadow: 0 -2px 10px rgba(0,0,0,0.2);">
+  <div id="console-header" style="background: #ddd; padding: 5px; display: flex; justify-content: space-between; align-items: center;">
+    <span>Photon OS Console</span>
+    <div>
+      <button onclick="resetConsole()">Reset</button>
+      <button onclick="reconnectConsole()">Reconnect</button>
+      <button onclick="toggleConsole()">Close</button>
+    </div>
+  </div>
+  <div id="terminal" style="width: 100%; height: calc(100% - 30px); background: #1e1e1e;"></div>
+</div>
+
+<link rel="stylesheet" href="/css/dark-mode.css">
+<link rel="stylesheet" href="/js/xterm/xterm.css">
+<script src="/js/xterm/xterm.js"></script>
+<script src="/js/xterm/xterm-addon-fit.js"></script>
+<script src="/js/console.js"></script>
+<script src="/js/dark-mode.js"></script>
+<script>
+// Enhance code blocks with Run and Copy buttons
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('pre code').forEach(codeBlock => {
+    const text = codeBlock.textContent.trim();
+    const lines = text.split('\n');
+    
+    // Skip if too many lines or has shebang
+    if (lines.length > 5 || text.startsWith('#!')) return;
+    
+    const pre = codeBlock.parentElement;
+    if (pre.querySelector('.code-button-container')) return;
+    
+    const container = document.createElement('div');
+    container.className = 'code-button-container';
+    container.style.cssText = 'position: absolute; top: 5px; right: 5px; display: flex; gap: 5px;';
+    
+    // Run button
+    const runBtn = document.createElement('button');
+    runBtn.textContent = 'Run';
+    runBtn.style.cssText = 'background: #007bff; color: white; border: none; padding: 4px 8px; cursor: pointer; border-radius: 3px; font-size: 12px;';
+    runBtn.addEventListener('click', () => sendCommand(text));
+    
+    // Copy button
+    const copyBtn = document.createElement('button');
+    copyBtn.textContent = 'Copy';
+    copyBtn.style.cssText = 'background: #28a745; color: white; border: none; padding: 4px 8px; cursor: pointer; border-radius: 3px; font-size: 12px;';
+    copyBtn.addEventListener('click', () => {
+      navigator.clipboard.writeText(text).then(() => {
+        copyBtn.textContent = '✓ Copied!';
+        setTimeout(() => copyBtn.textContent = 'Copy', 2000);
+      });
+    });
+    
+    container.appendChild(runBtn);
+    container.appendChild(copyBtn);
+    pre.style.position = 'relative';
+    pre.appendChild(container);
+  });
+});
+</script>
+EOF_BODYEND
+
+# Install command-box shortcode
+cat > "$INSTALL_DIR/layouts/shortcodes/command-box.html" << 'EOF_CMDBOX'
+<div class="command-box" style="position: relative; margin: 20px 0;">
+  <pre style="background: #f5f5f5; padding: 15px; border-radius: 5px; position: relative;"><code>{{ .Inner }}</code></pre>
+  <div style="position: absolute; top: 10px; right: 10px; display: flex; gap: 5px;">
+    <button class="run-in-console-btn" data-command="{{ .Inner | htmlUnescape }}" 
+            style="background: #007bff; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 3px;">
+      Run
+    </button>
+    <button class="copy-command-btn" data-command="{{ .Inner | htmlUnescape }}"
+            style="background: #28a745; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 3px;">
+      Copy
+    </button>
+  </div>
+</div>
+EOF_CMDBOX
+
+# Install dark-mode.js
+cat > "$INSTALL_DIR/static/js/dark-mode.js" << 'EOF_DARKJS'
+(function() {
+  const STORAGE_KEY = 'theme-preference';
+  const THEME_ATTR = 'data-theme';
+  
+  function getTheme() {
+    return localStorage.getItem(STORAGE_KEY) || 'light';
+  }
+  
+  function saveTheme(theme) {
+    localStorage.setItem(STORAGE_KEY, theme);
+  }
+  
+  function updateIcon(theme) {
+    const icon = document.getElementById('theme-icon');
+    if (icon) {
+      icon.className = theme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
+    }
+  }
+  
+  function applyTheme(theme) {
+    document.documentElement.setAttribute(THEME_ATTR, theme);
+    updateIcon(theme);
+  }
+  
+  function toggleTheme(e) {
+    if (e) e.preventDefault();
+    const currentTheme = getTheme();
+    const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+    saveTheme(newTheme);
+    applyTheme(newTheme);
+  }
+  
+  function init() {
+    const savedTheme = getTheme();
+    applyTheme(savedTheme);
+    
+    const toggleButton = document.getElementById('theme-toggle');
+    if (toggleButton) {
+      toggleButton.addEventListener('click', toggleTheme);
+    }
+  }
+  
+  const savedTheme = getTheme();
+  applyTheme(savedTheme);
+  
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+EOF_DARKJS
+
+# Install dark-mode.css
+cat > "$INSTALL_DIR/static/css/dark-mode.css" << 'EOF_DARKCSS'
+:root {
+  --bg-color: #ffffff;
+  --text-color: #212529;
+  --link-color: #007bff;
+  --border-color: #dee2e6;
+  --code-bg: #f8f9fa;
+  --navbar-bg: #ffffff;
+  --navbar-text: #212529;
+  --card-bg: #ffffff;
+  --shadow-color: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="dark"] {
+  --bg-color: #1a1a1a;
+  --text-color: #e0e0e0;
+  --link-color: #66b3ff;
+  --border-color: #444;
+  --code-bg: #2d2d2d;
+  --navbar-bg: #212529;
+  --navbar-text: #e0e0e0;
+  --card-bg: #2d2d2d;
+  --shadow-color: rgba(0, 0, 0, 0.5);
+}
+
+[data-theme="dark"] body {
+  background-color: var(--bg-color);
+  color: var(--text-color);
+}
+
+[data-theme="dark"] .navbar {
+  background-color: var(--navbar-bg) !important;
+  color: var(--navbar-text) !important;
+}
+
+[data-theme="dark"] .nav-link {
+  color: var(--navbar-text) !important;
+}
+
+[data-theme="dark"] pre {
+  background-color: var(--code-bg) !important;
+  color: var(--text-color) !important;
+}
+
+[data-theme="dark"] code {
+  background-color: var(--code-bg) !important;
+  color: var(--text-color) !important;
+}
+EOF_DARKCSS
+
+# Copy xterm files from photon-site if they exist
+if [ -d "/var/www/photon-site/static/js/xterm" ]; then
+  cp -r /var/www/photon-site/static/js/xterm/* "$INSTALL_DIR/static/js/xterm/"
+fi
+
+# Copy console.js from photon-site if it exists
+if [ -f "/var/www/photon-site/static/js/console.js" ]; then
+  cp /var/www/photon-site/static/js/console.js "$INSTALL_DIR/static/js/"
+fi
+
+echo "Custom enhancements installed successfully."
+
 # Build site with Hugo
 echo "Building site with Hugo..."
 cd $INSTALL_DIR
