@@ -10,89 +10,6 @@ if [ -z "$SITE_DIR" ]; then
   exit 1
 fi
 
-
-# Ensure navbar has clean structure (create or fix if needed)
-echo "Creating/updating navbar.html with clean structure..." >> $LOGFILE
-mkdir -p "$INSTALL_DIR/themes/photon-theme/layouts/partials"
-cat > "$INSTALL_DIR/themes/photon-theme/layouts/partials/navbar.html" <<'EOF_NAVBAR'
-{{ $cover := .HasShortcode "blocks/cover" }}
-{{/* added quick _if eq_ to use a different nav for the /docs/ pages */}}
-{{ if eq .Type "docs" }}
-	<div class="container-fluid pl-3 pr-3" id="navbarish">
-{{ else if eq .Type "blog" }}
-	<div class="container-fluid pl-3 pr-3" id="navbarish">
-{{ else }}
-	<div class="container pl-0 pr-3" id="navbarish">
-{{ end }}
-  <nav class="navbar navbar-default navbar-dark navbar-expand-md d-flex justify-content-between {{ if $cover }} td-navbar-cover {{ end }}" role="navigation" data-toggle="collapse" data-target="#menu_items" aria-expanded="false" aria-controls="navbar">
-	<div class="navbar-header d-flex align-items-center justify-content-between">
-		<a class="navbar-brand" href="{{ .Site.Home.RelPermalink }}">
-			<span class="navbar-logo">{{ if .Site.Params.ui.navbar_logo }}{{ with resources.Get "icons/logo.svg" }}{{ . | minify | safeHTML }}{{ end }}{{ end }}</span>
-			<span class="text-uppercase font-weight-bold">{{ .Site.Title }}</span>
-		</a>
-	</div>
-	<div class="ml-auto">
-		<button type="button" class="navbar-toggler third-button collapsed" data-toggle="collapse" data-target="#menu_items" aria-expanded="false" aria-controls="navbar">
-			<div class="animated-icon">
-				<span></span>
-				<span></span>
-				<span></span>
-			</div>
-		</button>
-	</div>
-	<div id="menu_items" class="navbar-collapse collapse ml-md-auto justify-content-end text-center">
-		<ul class="nav navbar-nav">
-			{{ $p := . }}
-			{{ range .Site.Menus.main }}
-			<li class="nav-item p-0">
-				{{ $active := or ($p.IsMenuCurrent "main" .) ($p.HasMenuCurrent "main" .) }}
-				{{ with .Page }}
-					{{ $active = or $active ($.IsDescendant .) }}
-				{{ end }}
-				{{ $url := urls.Parse .URL }}
-				{{ $baseurl := urls.Parse $.Site.Params.Baseurl }}
-				<a {{ if .Identifier }}id="{{ .Identifier }}"{{ end }} class="nav-link{{ if $active }} active{{ end }}" href="{{ with .Page }}{{ .RelPermalink }}{{ else }}{{ .URL | relLangURL }}{{ end }}"{{ if ne $url.Host $baseurl.Host }} target="_blank"{{ end }}>
-					<span{{ if $active }} class="active"{{ end }}>{{ .Name }}</span>
-				</a>
-			</li>
-			{{ if and (eq $p.Type "docs") $.Site.Params.versions }}
-			<div class="navbar-nav dropdown border-0">
-				<li class="nav-item">
-					{{ partial "navbar-version-selector.html" $ }}
-				</li>
-			</div>
-			{{ end }}
-			{{ end }}
-
-			<!-- Console Button -->
-			<li class="nav-item d-inline-block">
-				<a class="nav-link" href="#" onclick="toggleConsole(); return false;" title="Console">
-					<i class="fas fa-terminal"></i>
-				</a>
-			</li>
-
-			<!-- Dark Mode Toggle -->
-			{{ if .Site.Params.darkmode }}
-			<li class="nav-item d-inline-block">
-				<a href="#" id="theme-toggle" class="nav-link" aria-label="Toggle dark mode" onclick="return false;">
-					<i id="theme-icon" class="fas fa-moon"></i>
-				</a>
-			</li>
-			{{ end }}
-
-			{{ if (gt (len .Site.Home.Translations) 0) }}
-			<div class="navbar-nav dropdown border-0">
-				<li class="nav-item">
-					{{ partial "navbar-lang-selector.html" . }}
-				</li>
-			</div>
-			{{ end }}
-		</ul>
-	</div>
-  </nav>
-</div>
-EOF_NAVBAR
-
 # Build site with Hugo
 echo "Building site with Hugo..."
 cd $INSTALL_DIR
@@ -108,55 +25,12 @@ mkdir -p "$SITE_DIR"
 chown -R nginx:nginx "$INSTALL_DIR"
 chmod -R 755 "$INSTALL_DIR"
 
-# Check SELinux
-if command -v getenforce &> /dev/null && [ "$(getenforce)" = "Enforcing" ]; then
-  echo "Warning: SELinux is in Enforcing mode, which may cause permission issues."
-  echo "To disable temporarily, run: setenforce 0"
-  echo "To disable permanently, edit /etc/selinux/config and set SELINUX=disabled, then reboot."
-  exit 1
-fi
-
-# Debug permissions
-echo "Directory permissions for Nginx:"
-ls -ld "$BASE_DIR" "$INSTALL_DIR" "$SITE_DIR"
-ls -l "$SITE_DIR/index.html" || echo "index.html not found"
-
-# Check site files
-if [ -f "$SITE_DIR/index.html" ]; then
-  echo "Build successful: index.html exists."
-else
-  echo "Error: Build failed - index.html not found in $SITE_DIR. Check hugo_build.log."
-  exit 1
-fi
-echo "Site files present: $(ls -l $SITE_DIR | grep index.html)"
-
-
-# Added: Patch quick-start-links index.html to fix orphaned links with correct absolute paths for all versions (POST-BUILD, STATIC FIX)
-# Note: This is a fallback fix if markdown source wasn't fixed properly. Primary fix is in installer-weblinkfixes.sh
-for ver in docs-v3 docs-v4 docs-v5; do
-  QL_FILE="$SITE_DIR/$ver/quick-start-links/index.html"
-  if [ -f "$QL_FILE" ]; then
-    echo "Patching quick-start-links index.html for $ver to fix orphaned links..."
-    sed -i 's|<a href=..\/..\/overview\/>Overview</a>|<a href=..\/overview\/>Overview</a>|g' $QL_FILE
-    sed -i 's|<a href=..\/..\/installation-guide\/downloading-photon\/>Downloading Photon OS</a>|<a href=..\/installation-guide\/downloading-photon-os\/>Downloading Photon OS</a>|g' $QL_FILE
-    sed -i 's|<a href=..\/..\/installation-guide\/downloading-photon-os\/>Downloading Photon OS</a>|<a href=..\/installation-guide\/downloading-photon-os\/>Downloading Photon OS</a>|g' $QL_FILE
-    sed -i 's|<a href=..\/..\/installation-guide\/building-images\/build-iso-from-source\/>Build an ISO from the source code for Photon OS</a>|<a href=..\/installation-guide\/building-images\/build-iso-from-source\/>Build an ISO from the source code for Photon OS</a>|g' $QL_FILE
-  fi
-done
-
-# Debug content structure
-echo "Content structure in content/en/:"
-find "$INSTALL_DIR/content/en" -type f -name "_index.md"
-
-# Analyze subpaths
-echo "Generated subpaths in public/:"
-find "$SITE_DIR" -type d
-
 # Ensure Nginx conf.d directory exists
 mkdir -p /etc/nginx/conf.d
-
 # Remove default HTML
 rm -rf /etc/nginx/html/* /usr/share/nginx/html/* /var/www/html/*
+# Remove default Nginx configs
+rm -f /etc/nginx/conf.d/default.conf /etc/nginx/default.d/*.conf /etc/nginx/sites-enabled/default /etc/nginx/nginx.conf.bak
 
 # Replace nginx.conf
 cat > /etc/nginx/nginx.conf <<EOF_NGINX
@@ -280,12 +154,20 @@ server {
 }
 EOF_PHOTON
 
-# Remove default Nginx configs
-rm -f /etc/nginx/conf.d/default.conf /etc/nginx/default.d/*.conf /etc/nginx/sites-enabled/default /etc/nginx/nginx.conf.bak
-
-# List Nginx configs
-echo "Nginx configs present:"
-ls -l /etc/nginx/ /etc/nginx/conf.d/
+if [ "$DEBUGYES" ]; then
+# Added: Patch quick-start-links index.html to fix orphaned links with correct absolute paths for all versions (POST-BUILD, STATIC FIX)
+# Note: This is a fallback fix if markdown source wasn't fixed properly. Primary fix is in installer-weblinkfixes.sh
+for ver in docs-v3 docs-v4 docs-v5; do
+  QL_FILE="$SITE_DIR/$ver/quick-start-links/index.html"
+  if [ -f "$QL_FILE" ]; then
+    echo "Patching quick-start-links index.html for $ver to fix orphaned links..."
+    sed -i 's|<a href=..\/..\/overview\/>Overview</a>|<a href=..\/overview\/>Overview</a>|g' $QL_FILE
+    sed -i 's|<a href=..\/..\/installation-guide\/downloading-photon\/>Downloading Photon OS</a>|<a href=..\/installation-guide\/downloading-photon-os\/>Downloading Photon OS</a>|g' $QL_FILE
+    sed -i 's|<a href=..\/..\/installation-guide\/downloading-photon-os\/>Downloading Photon OS</a>|<a href=..\/installation-guide\/downloading-photon-os\/>Downloading Photon OS</a>|g' $QL_FILE
+    sed -i 's|<a href=..\/..\/installation-guide\/building-images\/build-iso-from-source\/>Build an ISO from the source code for Photon OS</a>|<a href=..\/installation-guide\/building-images\/build-iso-from-source\/>Build an ISO from the source code for Photon OS</a>|g' $QL_FILE
+  fi
+done
+fi
 
 # Test and restart Nginx
 nginx -t
@@ -298,19 +180,8 @@ if [ $? -ne 0 ]; then
   echo "Nginx restart failed. Check /var/log/nginx/error.log and /var/log/nginx/photon-site-error.log."
   exit 1
 fi
-
 # Enable Nginx on boot
 systemctl enable nginx
-
-# Open firewall ports
-mkdir -p /etc/systemd/scripts
-if ! iptables -C INPUT -p tcp --dport 80 -j ACCEPT 2>/dev/null; then
-  iptables -A INPUT -p tcp --dport 80 -j ACCEPT
-fi
-if ! iptables -C INPUT -p tcp --dport 443 -j ACCEPT 2>/dev/null; then
-  iptables -A INPUT -p tcp --dport 443 -j ACCEPT
-fi
-iptables-save > /etc/systemd/scripts/ip4save
 
 # Verify build and access
 if [ -f "$SITE_DIR/index.html" ]; then
@@ -322,19 +193,28 @@ if [ -f "$SITE_DIR/index.html" ]; then
 		echo "Error: Subpath /$subdir/ missing or incomplete. Check $SITE_DIR/$subdir/ and hugo_build.log."
 		exit 1
 	  fi
-	done  
+	done
+	# Verify search index generated
+	if [ -f "$SITE_DIR/index.json" ]; then
+	  echo "Search index generated successfully."
+	else
+	  echo "Error: Search index not generated. Check Hugo build logs."
+	  exit 1
+	fi	
 else
   echo "Error: Build failed - index.html not found in $SITE_DIR. Check hugo_build.log."
   exit 1
 fi
 
-
-# Verify search index generated
-if [ -f "$SITE_DIR/index.json" ]; then
-  echo "Search index generated successfully."
-else
-  echo "Error: Search index not generated. Check Hugo build logs."
-  exit 1
+# Open firewall ports
+mkdir -p /etc/systemd/scripts
+if ! iptables -C INPUT -p tcp --dport 80 -j ACCEPT 2>/dev/null; then
+  iptables -A INPUT -p tcp --dport 80 -j ACCEPT
 fi
+if ! iptables -C INPUT -p tcp --dport 443 -j ACCEPT 2>/dev/null; then
+  iptables -A INPUT -p tcp --dport 443 -j ACCEPT
+fi
+iptables-save > /etc/systemd/scripts/ip4save
+
 
 echo "Installation complete! Access the Photon site at https://${IP_ADDRESS}/ (HTTP redirects to HTTPS)."
