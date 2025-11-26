@@ -134,6 +134,22 @@ else
   fi
 fi
 
+# Initialize submodules (e.g., for Docsy theme)
+if [ -d $INSTALL_DIR/.git ]; then
+    git submodule update --init --recursive 1>>$LOGFILE 2>&1
+    # Install npm dependencies for theme
+    if [ -f $INSTALL_DIR/package.json ]; then
+      npm install --legacy-peer-deps 1>>$LOGFILE 2>&1
+      npm audit fix 1>>$LOGFILE 2>&1
+    fi
+    if [ -d $INSTALL_DIR/themes/docsy ] && [ -f $INSTALL_DIR/themes/docsy/package.json ]; then
+      cd $INSTALL_DIR/themes/docsy
+      npm install --legacy-peer-deps 1>>$LOGFILE 2>&1
+      npm audit fix 1>>$LOGFILE 2>&1
+      cd ../..
+    fi
+fi
+
 $START_DIR/installer-weblinkfixes.sh
 $START_DIR/installer-consolebackend.sh
 $START_DIR/installer-searchbackend.sh
