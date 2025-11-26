@@ -49,6 +49,70 @@ cat > $INSTALL_DIR/static/css/search-overlay.css <<'EOF_SEARCH_CSS'
   visibility: visible;
 }
 
+/* Dark Mode Styles */
+body.dark-mode {
+  background-color: #1a1a1a;
+  color: #e0e0e0;
+}
+
+body.dark-mode .td-navbar {
+  background-color: #2d2d2d !important;
+  border-color: #404040 !important;
+}
+
+body.dark-mode .td-navbar .navbar-brand,
+body.dark-mode .td-navbar .nav-link {
+  color: #e0e0e0 !important;
+}
+
+body.dark-mode .td-navbar .nav-link:hover,
+body.dark-mode .td-navbar .nav-link.active {
+  color: #ffffff !important;
+}
+
+body.dark-mode .td-content {
+  background-color: #1a1a1a;
+  color: #e0e0e0;
+}
+
+body.dark-mode .td-content > p,
+body.dark-mode .td-content > h1,
+body.dark-mode .td-content > h2,
+body.dark-mode .td-content > h3,
+body.dark-mode .td-content > h4,
+body.dark-mode .td-content > h5 {
+  color: #e0e0e0;
+}
+
+body.dark-mode .td-sidebar {
+  background-color: #2d2d2d;
+}
+
+body.dark-mode .td-sidebar-nav .td-sidebar-link {
+  color: #b0b0b0;
+}
+
+body.dark-mode .td-sidebar-nav .td-sidebar-link:hover,
+body.dark-mode .td-sidebar-nav .td-sidebar-link.active {
+  color: #ffffff;
+  background-color: #404040;
+}
+
+body.dark-mode .search-panel {
+  background-color: #2d2d2d;
+  color: #e0e0e0;
+}
+
+body.dark-mode .search-input {
+  background-color: #404040;
+  color: #e0e0e0;
+  border-color: #606060;
+}
+
+body.dark-mode .search-results {
+  background-color: #2d2d2d;
+}
+
 /* Search Panel */
 .search-panel {
   background: rgba(255, 255, 255, 0.1);
@@ -123,6 +187,36 @@ let searchIndex = null;
 let documents = {};
 
 document.addEventListener('DOMContentLoaded', function() {
+  // Theme toggle functionality
+  const themeToggle = document.getElementById('theme-toggle');
+  const themeIcon = document.getElementById('theme-icon');
+  
+  if (themeToggle && themeIcon) {
+    // Check for saved theme preference or default to light mode
+    const currentTheme = localStorage.getItem('theme') || 'light';
+    
+    if (currentTheme === 'dark') {
+      document.body.classList.add('dark-mode');
+      themeIcon.classList.remove('fa-moon');
+      themeIcon.classList.add('fa-sun');
+    }
+    
+    themeToggle.addEventListener('click', function() {
+      document.body.classList.toggle('dark-mode');
+      const isDark = document.body.classList.contains('dark-mode');
+      
+      if (isDark) {
+        themeIcon.classList.remove('fa-moon');
+        themeIcon.classList.add('fa-sun');
+        localStorage.setItem('theme', 'dark');
+      } else {
+        themeIcon.classList.remove('fa-sun');
+        themeIcon.classList.add('fa-moon');
+        localStorage.setItem('theme', 'light');
+      }
+    });
+  }
+
   const overlay = document.getElementById('search-overlay');
   const close = document.getElementById('search-close');
   const input = document.getElementById('search-input');

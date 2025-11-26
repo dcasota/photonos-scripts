@@ -26,6 +26,12 @@ else
     echo "PHOTON_FORK_REPOSITORY is set."
 fi
 
+if [ -z "$PHOTON_FORK_REPOSITORY" ]; then
+    echo "PHOTON_FORK_REPOSITORY is not set. Please enter your Photon OS fork repository as environment variable EXPORT PHOTON_FORK_REPOSITORY."
+    exit 1
+else
+    echo "PHOTON_FORK_REPOSITORY is set."
+fi
 
 export START_DIR=$(dirname "$(readlink -f "$0")")
 export BASE_DIR="/var/www"
@@ -214,18 +220,13 @@ fi
 # Remove any existing menu.main entries to ensure clean configuration
 if grep -q "^\[\[menu\.main\]\]" $INSTALL_DIR/config.toml; then
   echo "Removing existing menu configuration..."
-  # Use awk to remove all [[menu.main]] blocks and the menu configuration header
-  # Skip from "# Menu configuration" until we hit a line that starts with [[ but is not [[menu.main]]
-  # or until we hit another section marker (line starting with #)
-  awk '
-    /^# Menu configuration$/ { in_menu=1; next }
-    in_menu && /^\[\[menu\.main\]\]/ { in_block=1; next }
-    in_menu && in_block && /^(name|weight|url|identifier|pre|post) *=/ { next }
-    in_menu && in_block && /^$/ { in_block=0; next }
-    in_menu && !in_block && (/^#/ || /^\[/) { in_menu=0 }
-    !in_menu || (!in_block && !/^\[\[menu\.main\]\]/)
-  ' $INSTALL_DIR/config.toml > $INSTALL_DIR/config.toml.tmp
-  mv $INSTALL_DIR/config.toml.tmp $INSTALL_DIR/config.toml
+  # Remove the entire "Additional menu items" section including all menu.main entries
+  sed -i '/^# Additional menu items$/,/^$/{
+    /^$/!d
+    /^$/d
+  }' $INSTALL_DIR/config.toml
+  # Also remove any remaining menu.main entries and their content
+  sed -i '/^\[\[menu\.main\]\]/,/^$/d' $INSTALL_DIR/config.toml
 fi
 
 # Now add the proper menu configuration matching the reference site
