@@ -198,7 +198,7 @@ EOF_DARKMODE
   fi
 fi
 
-if [ -z "DEBUG" ]; then
+
 # Add UI configuration for navbar logo if not present
 if ! grep -q "^\[params\.ui\]" $INSTALL_DIR/config.toml; then
   if grep -q "^\[params\]$" $INSTALL_DIR/config.toml; then
@@ -332,7 +332,6 @@ EOF_VERSIONS
 else
   echo "Version selector configuration already exists, skipping..."
 fi
-fi  # End of DEBUG conditional
 
 
 # Initialize submodules (e.g., for Docsy theme)
