@@ -5,30 +5,28 @@ if [ -z "$INSTALL_DIR" ]; then
   exit 1
 fi
 
-# Ensure navbar has clean structure (create if not exists)
-if [ ! -f "$INSTALL_DIR/themes/photon-theme/layouts/partials/navbar.html" ]; then
-  echo "Warning: navbar.html not found - creating one" >> $LOGFILE
-else
-  echo "Creating navbar.html with clean structure..." >> $LOGFILE
-  cat > "$INSTALL_DIR/themes/photon-theme/layouts/partials/navbar.html" <<'EOF_NAVBAR'
+# Ensure navbar has clean structure (create or fix if needed)
+echo "Creating/updating navbar.html with clean structure..." >> $LOGFILE
+mkdir -p "$INSTALL_DIR/themes/photon-theme/layouts/partials"
+cat > "$INSTALL_DIR/themes/photon-theme/layouts/partials/navbar.html" <<'EOF_NAVBAR'
 {{ $cover := .HasShortcode "blocks/cover" }}
 {{/* added quick _if eq_ to use a different nav for the /docs/ pages */}}
 {{ if eq .Type "docs" }}
 	<div class="container-fluid pl-3 pr-3" id="navbarish">
-
 {{ else if eq .Type "blog" }}
 	<div class="container-fluid pl-3 pr-3" id="navbarish">
-	{{ else }}	
-	
-<div class="container pl-0 pr-3" id="navbarish">
-{{ end }}	
-  <nav class="navbar navbar-default navbar-dark navbar-expand-md d-flex justify-content-between {{ if $cover}} td-navbar-cover {{ end }}" role="navigation" data-toggle="collapse" data-target="#menu_items" aria-expanded="false" aria-controls="navbar">
-	<div class="navbar-header d-flex align-items-center justify-content-between">   
+{{ else }}
+	<div class="container pl-0 pr-3" id="navbarish">
+{{ end }}
+  <nav class="navbar navbar-default navbar-dark navbar-expand-md d-flex justify-content-between {{ if $cover }} td-navbar-cover {{ end }}" role="navigation" data-toggle="collapse" data-target="#menu_items" aria-expanded="false" aria-controls="navbar">
+	<div class="navbar-header d-flex align-items-center justify-content-between">
 		<a class="navbar-brand" href="{{ .Site.Home.RelPermalink }}">
-	<span class="navbar-logo">{{ if .Site.Params.ui.navbar_logo }}{{ with resources.Get "icons/logo.svg" }}{{ . | minify | safeHTML }}{{ end }}{{ end }}</span><span class="text-uppercase font-weight-bold">{{ .Site.Title }}</span></a>
+			<span class="navbar-logo">{{ if .Site.Params.ui.navbar_logo }}{{ with resources.Get "icons/logo.svg" }}{{ . | minify | safeHTML }}{{ end }}{{ end }}</span>
+			<span class="text-uppercase font-weight-bold">{{ .Site.Title }}</span>
+		</a>
 	</div>
 	<div class="ml-auto">
-			<button type="button" class="navbar-toggler third-button collapsed" data-toggle="collapse" data-target="#menu_items" aria-expanded="false" aria-controls="navbar">
+		<button type="button" class="navbar-toggler third-button collapsed" data-toggle="collapse" data-target="#menu_items" aria-expanded="false" aria-controls="navbar">
 			<div class="animated-icon">
 				<span></span>
 				<span></span>
@@ -37,55 +35,57 @@ else
 		</button>
 	</div>
 	<div id="menu_items" class="navbar-collapse collapse ml-md-auto justify-content-end text-center">
-			<ul class="nav navbar-nav">
-		{{ $p := . }}
-		{{ range .Site.Menus.main }}
-		<li class="nav-item p-0">
-			{{ $active := or ($p.IsMenuCurrent "main" .) ($p.HasMenuCurrent "main" .) }}
-			{{ with .Page }}
-			{{ $active = or $active ($.IsDescendant .) }}
-			{{ $url := urls.Parse .URL }}
-			{{ $baseurl := urls.Parse $.Site.Params.Baseurl }}
-			<a {{ if .Identifier }}id="{{ .Identifier }}"{{ end }} class="nav-link{{if $active }} active{{end}}" href="{{ with .Page .RelPermalink }}{{ else }}{{ .URL | relLangURL }}" {{ if ne $url.Host $baseurl.Host }}target="_blank" {{ end }}><span{{if $active }} class="active"{{ end }}</span></a>
+		<ul class="nav navbar-nav">
+			{{ $p := . }}
+			{{ range .Site.Menus.main }}
+			<li class="nav-item p-0">
+				{{ $active := or ($p.IsMenuCurrent "main" .) ($p.HasMenuCurrent "main" .) }}
+				{{ with .Page }}
+					{{ $active = or $active ($.IsDescendant .) }}
+				{{ end }}
+				{{ $url := urls.Parse .URL }}
+				{{ $baseurl := urls.Parse $.Site.Params.Baseurl }}
+				<a {{ if .Identifier }}id="{{ .Identifier }}"{{ end }} class="nav-link{{ if $active }} active{{ end }}" href="{{ with .Page }}{{ .RelPermalink }}{{ else }}{{ .URL | relLangURL }}{{ end }}"{{ if ne $url.Host $baseurl.Host }} target="_blank"{{ end }}>
+					<span{{ if $active }} class="active"{{ end }}>{{ .Name }}</span>
+				</a>
 			</li>
-		{{ if and (eq .Type "docs") .Site.Params.versions }}
-		<div class="navbar-nav dropdown border-0">
-			<li class="nav-item">
-				{{ partial "navbar-version-selector.html" . }}
-			</li>
-		</div>
-		{{ end }}
-		{{ end }}
-
-		<!-- Console Button -->
-		<li class="nav-item d-inline-block">
-			<a class="nav-link" href="#" onclick="toggleConsole(); return false;" title="Console">
-				<i class="fas fa-terminal"></i>
-			</a>
-		</li>
-		
-		<!-- Dark Mode Toggle -->
-		{{ if .Site.Params.darkmode }}
-		<li class="nav-item d-inline-block">
-			<a href="#" id="theme-toggle" class="nav-link" aria-label="Toggle dark mode" onclick="return false;">
-				<i id="theme-icon" class="fas fa-moon"></i>
-			</a>
-		</li>
-		{{ end }}
-		
-		{{ if (gt (len .Site.Home.Translations) 0) }}
-		<div class="navbar-nav dropdown border-0">
-			<li class="nav-item">
-				{{ partial "navbar-lang-selector.html" . }}
-			</li>
+			{{ if and (eq .Type "docs") $.Site.Params.versions }}
+			<div class="navbar-nav dropdown border-0">
+				<li class="nav-item">
+					{{ partial "navbar-version-selector.html" $ }}
+				</li>
 			</div>
-		{{ end }}
+			{{ end }}
+			{{ end }}
+
+			<!-- Console Button -->
+			<li class="nav-item d-inline-block">
+				<a class="nav-link" href="#" onclick="toggleConsole(); return false;" title="Console">
+					<i class="fas fa-terminal"></i>
+				</a>
+			</li>
+
+			<!-- Dark Mode Toggle -->
+			{{ if .Site.Params.darkmode }}
+			<li class="nav-item d-inline-block">
+				<a href="#" id="theme-toggle" class="nav-link" aria-label="Toggle dark mode" onclick="return false;">
+					<i id="theme-icon" class="fas fa-moon"></i>
+				</a>
+			</li>
+			{{ end }}
+
+			{{ if (gt (len .Site.Home.Translations) 0) }}
+			<div class="navbar-nav dropdown border-0">
+				<li class="nav-item">
+					{{ partial "navbar-lang-selector.html" . }}
+				</li>
+			</div>
+			{{ end }}
 		</ul>
 	</div>
   </nav>
 </div>
 EOF_NAVBAR
-fi
 
 # Build site with Hugo
 echo "Building site with Hugo..."
