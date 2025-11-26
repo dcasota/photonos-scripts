@@ -43,7 +43,7 @@ else
 		<li class="nav-item p-0">
 			{{ $active := or ($p.IsMenuCurrent "main" .) ($p.HasMenuCurrent "main" .) }}
 			{{ with .Page }}
-			{{ $active = or ($active ( $.IsDescendant .)  }}
+			{{ $active = or $active ($.IsDescendant .) }}
 			{{ $url := urls.Parse .URL }}
 			{{ $baseurl := urls.Parse $.Site.Params.Baseurl }}
 			<a {{ if .Identifier }}id="{{ .Identifier }}"{{ end }} class="nav-link{{if $active }} active{{end}}" href="{{ with .Page .RelPermalink }}{{ else }}{{ .URL | relLangURL }}" {{ if ne $url.Host $baseurl.Host }}target="_blank" {{ end }}><span{{if $active }} class="active"{{ end }}</span></a>
