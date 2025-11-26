@@ -143,6 +143,22 @@ if [ -d $INSTALL_DIR/.git ]; then
     fi
 fi
 
+# Enable dark mode in config.toml
+echo "Enabling dark mode in config.toml..."
+sed -i 's/^darkmode = false$/darkmode = true/' $INSTALL_DIR/config.toml
+if grep -q '^darkmode = true$' $INSTALL_DIR/config.toml; then
+  : # Do nothing, already enabled
+else
+  if grep -q "^\[params\]$" $INSTALL_DIR/config.toml; then
+    sed -i '/^\[params\]$/a darkmode = true' $INSTALL_DIR/config.toml
+  else
+    cat >> $INSTALL_DIR/config.toml <<EOF_DARKMODE
+[params]
+darkmode = true
+EOF_DARKMODE
+  fi
+fi
+
 $START_DIR/installer-weblinkfixes.sh
 # $START_DIR/installer-consolebackend.sh
 # $START_DIR/installer-searchbackend.sh
