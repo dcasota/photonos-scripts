@@ -49,7 +49,7 @@ cat > "$INSTALL_DIR/themes/photon-theme/layouts/partials/navbar.html" <<'EOF_NAV
 					<span{{ if $active }} class="active"{{ end }}>{{ .Name }}</span>
 				</a>
 			</li>
-			{{ if and (eq .Type "docs") $.Site.Params.versions }}
+			{{ if and (eq $p.Type "docs") $.Site.Params.versions }}
 			<div class="navbar-nav dropdown border-0">
 				<li class="nav-item">
 					{{ partial "navbar-version-selector.html" $ }}
