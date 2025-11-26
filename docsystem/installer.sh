@@ -214,6 +214,19 @@ if ! grep -q "version_menu" $INSTALL_DIR/config.toml; then
     sed -i '/^\[params\]$/a version = "v5"' $INSTALL_DIR/config.toml
     sed -i '/^\[params\]$/a url_latest_version = "/docs/"' $INSTALL_DIR/config.toml
   fi
+else
+  echo "version_menu already exists, cleaning up duplicates..."
+  # Remove any duplicate version_menu entries to prevent multiple Release dropdowns
+  sed -i '/^version_menu = "Release"$/d' $INSTALL_DIR/config.toml
+  # Add single version_menu entry
+  if grep -q "^\[params\]$" $INSTALL_DIR/config.toml; then
+    sed -i '/^\[params\]$/a version_menu = "Release"' $INSTALL_DIR/config.toml
+    # Also clean up version and url_latest_version to avoid duplicates
+    sed -i '/^version = "v5"$/d' $INSTALL_DIR/config.toml
+    sed -i '/^url_latest_version = "\/docs\/"$/d' $INSTALL_DIR/config.toml
+    sed -i '/^\[params\]$/a version = "v5"' $INSTALL_DIR/config.toml
+    sed -i '/^\[params\]$/a url_latest_version = "/docs/"' $INSTALL_DIR/config.toml
+  fi
 fi
 
 # Add menu configuration if not present
@@ -229,9 +242,10 @@ if grep -q "^\[\[menu\.main\]\]" $INSTALL_DIR/config.toml; then
   sed -i '/^\[\[menu\.main\]\]/,/^$/d' $INSTALL_DIR/config.toml
 fi
 
-# Now add the proper menu configuration matching the reference site
-echo "Adding menu configuration (Home, Blog, Features, Contribute, Docs, Github)..."
-cat >> $INSTALL_DIR/config.toml <<'EOF_MENU'
+# Now add the proper menu configuration matching the reference site (only if not already present)
+if ! grep -q '^name = "Home"' $INSTALL_DIR/config.toml; then
+  echo "Adding menu configuration (Home, Blog, Features, Contribute, Docs, Github)..."
+  cat >> $INSTALL_DIR/config.toml <<'EOF_MENU'
 
 # Menu configuration
 [[menu.main]]
@@ -264,6 +278,9 @@ name = "Github"
 weight = 60
 url = "https://github.com/vmware/photon"
 EOF_MENU
+else
+  echo "Menu configuration already exists, skipping..."
+fi
 
 # Remove any existing params.versions entries to ensure clean configuration
 if grep -q "^\[\[params\.versions\]\]" $INSTALL_DIR/config.toml; then
@@ -281,9 +298,10 @@ if grep -q "^\[\[params\.versions\]\]" $INSTALL_DIR/config.toml; then
   mv $INSTALL_DIR/config.toml.tmp $INSTALL_DIR/config.toml
 fi
 
-# Add version selector configuration
-echo "Adding version selector configuration (Release dropdown with all doc versions)..."
-cat >> $INSTALL_DIR/config.toml <<'EOF_VERSIONS'
+# Add version selector configuration if not already present
+if ! grep -q "^\[\[params\.versions\]\]" $INSTALL_DIR/config.toml; then
+  echo "Adding version selector configuration (Release dropdown with all doc versions)..."
+  cat >> $INSTALL_DIR/config.toml <<'EOF_VERSIONS'
 
 # Version selector configuration
 [[params.versions]]
@@ -310,7 +328,10 @@ cat >> $INSTALL_DIR/config.toml <<'EOF_VERSIONS'
   version = "v2 and v1"
   url = "/assets/files/html/1.0-2.0/"
 EOF_VERSIONS
+else
+  echo "Version selector configuration already exists, skipping..."
 fi
+fi  # End of DEBUG conditional
 
 
 # Initialize submodules (e.g., for Docsy theme)
