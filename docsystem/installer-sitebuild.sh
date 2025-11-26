@@ -1,9 +1,15 @@
 #!/bin/bash
 
 if [ -z "$INSTALL_DIR" ]; then
-  echo "Error: Variable INSTALL_DIR is not set. This sub-script must be called by installer.sh"
+  echo "Error: Variable INSTALL_DIR is not set. This sub-script must be called by installer.sh."
   exit 1
 fi
+
+if [ -z "$SITE_DIR" ]; then
+  echo "Error: Variable SITE_DIR is not set. This sub-script must be called by installer.sh."
+  exit 1
+fi
+
 
 # Ensure navbar has clean structure (create or fix if needed)
 echo "Creating/updating navbar.html with clean structure..." >> $LOGFILE
