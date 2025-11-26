@@ -143,8 +143,8 @@ if [ -d $INSTALL_DIR/.git ]; then
     fi
 fi
 
-$START_DIR/installer-weblinkfixes.sh
-$START_DIR/installer-consolebackend.sh
-$START_DIR/installer-searchbackend.sh
+# $START_DIR/installer-weblinkfixes.sh
+# $START_DIR/installer-consolebackend.sh
+# $START_DIR/installer-searchbackend.sh
 $START_DIR/installer-sitebuild.sh
 $START_DIR/installer-ghinterconnection.sh
