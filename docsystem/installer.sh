@@ -38,13 +38,6 @@ else
     echo "PHOTON_FORK_REPOSITORY is set."
 fi
 
-if [ -z "$PHOTON_FORK_REPOSITORY" ]; then
-    echo "PHOTON_FORK_REPOSITORY is not set. Please enter your Photon OS fork repository as environment variable EXPORT PHOTON_FORK_REPOSITORY."
-    exit 1
-else
-    echo "PHOTON_FORK_REPOSITORY is set."
-fi
-
 # Install required packages
 echo "Installing required packages..."
 echo "Installing required packages..." 1>>$LOGFILE 2>&1
