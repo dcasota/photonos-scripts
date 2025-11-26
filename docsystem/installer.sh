@@ -3,6 +3,18 @@
 # Usage: sudo ./installer.sh
 # All-in-one reinstallable installer for self-hosting the Photon OS documentation web app on Photon OS.
 
+export LOGFILE="/var/log/installer.log"
+echo "All-in-one reinstallable installer for self-hosting the Photon OS documentation web app on Photon OS." 
+echo "All-in-one reinstallable installer for self-hosting the Photon OS documentation web app on Photon OS." 1>$LOGFILE 2>&1
+echo "====================================================================================================="
+date 1>>$LOGFILE 2>&1
+
+export START_DIR=$(dirname "$(readlink -f "$0")")
+export BASE_DIR="/var/www"
+export INSTALL_DIR="$BASE_DIR/photon-site"
+export SITE_DIR="$INSTALL_DIR/public"  # Where built static files go
+export HUGO_VERSION="0.152.2"  # Latest version as of November 10, 2025
+
 # Check if GITHUB_TOKEN is set
 if [ -z "$GITHUB_TOKEN" ]; then
     echo 'GITHUB_TOKEN is not set. Please enter your GitHub token as environment variable EXPORT GITHUB_TOKEN="..."'
@@ -32,17 +44,6 @@ if [ -z "$PHOTON_FORK_REPOSITORY" ]; then
 else
     echo "PHOTON_FORK_REPOSITORY is set."
 fi
-
-export START_DIR=$(dirname "$(readlink -f "$0")")
-export BASE_DIR="/var/www"
-export INSTALL_DIR="$BASE_DIR/photon-site"
-export SITE_DIR="$INSTALL_DIR/public"  # Where built static files go
-export HUGO_VERSION="0.152.2"  # Latest version as of November 10, 2025
-export LOGFILE="/var/log/installer.log"
-
-echo "All-in-one reinstallable installer for self-hosting the Photon OS documentation web app on Photon OS." 
-echo "All-in-one reinstallable installer for self-hosting the Photon OS documentation web app on Photon OS." 1>$LOGFILE 2>&1
-date 1>>$LOGFILE 2>&1
 
 # Install required packages
 echo "Installing required packages..."
