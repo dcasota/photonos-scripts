@@ -153,13 +153,93 @@ server {
     
     # ========== PRINTVIEW REDIRECTS ==========
     # Fix broken paths in printview - redirect to actual content
+    # Root cause: Printview pages render relative links which become /printview/docs-vX/short-path/
+    # instead of the full path /docs-vX/section/subsection/short-path/
     
-    # Printview images - redirect to docs version images
+    # Printview images - redirect to docs version images (including nested subdirectory images)
     rewrite ^/printview/images/(.+)\$ /docs-v5/images/\$1 permanent;
     rewrite ^/printview/docs-v3/images/(.+)\$ /docs-v3/images/\$1 permanent;
     rewrite ^/printview/docs-v4/images/(.+)\$ /docs-v4/images/\$1 permanent;
     rewrite ^/printview/docs-v5/images/(.+)\$ /docs-v5/images/\$1 permanent;
+    # Handle nested image paths like /printview/docs-v5/installation-guide/images/xxx.png
+    rewrite ^/printview/docs-v([345])/(.*)/images/(.+\.(png|jpg|jpeg|gif|svg|webp|ico))\$ /docs-v\$1/images/\$3 permanent;
     
+    # ========== PRINTVIEW TROUBLESHOOTING GUIDE SHORT PATHS ==========
+    # These are relative links from printview that lost their parent directory context
+    
+    # Network troubleshooting subsection pages (from /printview/docs-vX/ or /printview/docs-vX/troubleshooting-guide/)
+    rewrite ^/printview/docs-v([345])/managing-the-network-configuration/?\$ /docs-v\$1/troubleshooting-guide/network-troubleshooting/managing-the-network-configuration/ permanent;
+    rewrite ^/printview/docs-v([345])/inspecting-ip-addresses/?\$ /docs-v\$1/troubleshooting-guide/network-troubleshooting/inspecting-ip-addresses/ permanent;
+    rewrite ^/printview/docs-v([345])/inspecting-network-links-with-networkctl/?\$ /docs-v\$1/troubleshooting-guide/network-troubleshooting/inspecting-network-links-with-networkctl/ permanent;
+    rewrite ^/printview/docs-v([345])/network-debugging/?\$ /docs-v\$1/troubleshooting-guide/network-troubleshooting/network-debugging/ permanent;
+    rewrite ^/printview/docs-v([345])/checking-firewall-rules/?\$ /docs-v\$1/troubleshooting-guide/network-troubleshooting/checking-firewall-rules/ permanent;
+    rewrite ^/printview/docs-v([345])/inspect-network-settings-with-netmgr/?\$ /docs-v\$1/troubleshooting-guide/network-troubleshooting/inspect-network-settings-with-netmgr/ permanent;
+    
+    # Kernel problems subsection pages
+    rewrite ^/printview/docs-v([345])/kernel-overview/?\$ /docs-v\$1/troubleshooting-guide/kernel-problems-and-boot-and-login-errors/kernel-overview/ permanent;
+    rewrite ^/printview/docs-v([345])/boot-process-overview/?\$ /docs-v\$1/troubleshooting-guide/kernel-problems-and-boot-and-login-errors/boot-process-overview/ permanent;
+    rewrite ^/printview/docs-v([345])/blank-screen-on-reboot/?\$ /docs-v\$1/troubleshooting-guide/kernel-problems-and-boot-and-login-errors/blank-screen-on-reboot/ permanent;
+    rewrite ^/printview/docs-v([345])/investigating-unexpected-behavior/?\$ /docs-v\$1/troubleshooting-guide/kernel-problems-and-boot-and-login-errors/investigating-unexpected-behavior/ permanent;
+    rewrite ^/printview/docs-v([345])/investigating-the-guest-kernel/?\$ /docs-v\$1/troubleshooting-guide/kernel-problems-and-boot-and-login-errors/investigating-the-guest-kernel/ permanent;
+    rewrite ^/printview/docs-v([345])/kernel-log-replication-with-vprobes/?\$ /docs-v\$1/troubleshooting-guide/kernel-problems-and-boot-and-login-errors/kernel-log-replication-with-vprobes/ permanent;
+    rewrite ^/printview/docs-v([345])/linux-kernel/?\$ /docs-v\$1/troubleshooting-guide/kernel-problems-and-boot-and-login-errors/linux-kernel/ permanent;
+    
+    # Performance issues subsection pages
+    rewrite ^/printview/docs-v([345])/general-performance-guidelines/?\$ /docs-v\$1/troubleshooting-guide/performance-issues/general-performance-guidelines/ permanent;
+    rewrite ^/printview/docs-v([345])/throughput-performance/?\$ /docs-v\$1/troubleshooting-guide/performance-issues/throughput-performance/ permanent;
+    
+    # Troubleshooting subsection paths with troubleshooting-guide prefix but wrong nesting
+    rewrite ^/printview/docs-v([345])/troubleshooting-guide/managing-the-network-configuration/?\$ /docs-v\$1/troubleshooting-guide/network-troubleshooting/managing-the-network-configuration/ permanent;
+    rewrite ^/printview/docs-v([345])/troubleshooting-guide/inspecting-ip-addresses/?\$ /docs-v\$1/troubleshooting-guide/network-troubleshooting/inspecting-ip-addresses/ permanent;
+    rewrite ^/printview/docs-v([345])/troubleshooting-guide/inspecting-network-links-with-networkctl/?\$ /docs-v\$1/troubleshooting-guide/network-troubleshooting/inspecting-network-links-with-networkctl/ permanent;
+    rewrite ^/printview/docs-v([345])/troubleshooting-guide/network-debugging/?\$ /docs-v\$1/troubleshooting-guide/network-troubleshooting/network-debugging/ permanent;
+    rewrite ^/printview/docs-v([345])/troubleshooting-guide/checking-firewall-rules/?\$ /docs-v\$1/troubleshooting-guide/network-troubleshooting/checking-firewall-rules/ permanent;
+    rewrite ^/printview/docs-v([345])/troubleshooting-guide/inspect-network-settings-with-netmgr/?\$ /docs-v\$1/troubleshooting-guide/network-troubleshooting/inspect-network-settings-with-netmgr/ permanent;
+    rewrite ^/printview/docs-v([345])/troubleshooting-guide/kernel-overview/?\$ /docs-v\$1/troubleshooting-guide/kernel-problems-and-boot-and-login-errors/kernel-overview/ permanent;
+    rewrite ^/printview/docs-v([345])/troubleshooting-guide/boot-process-overview/?\$ /docs-v\$1/troubleshooting-guide/kernel-problems-and-boot-and-login-errors/boot-process-overview/ permanent;
+    rewrite ^/printview/docs-v([345])/troubleshooting-guide/blank-screen-on-reboot/?\$ /docs-v\$1/troubleshooting-guide/kernel-problems-and-boot-and-login-errors/blank-screen-on-reboot/ permanent;
+    rewrite ^/printview/docs-v([345])/troubleshooting-guide/investigating-unexpected-behavior/?\$ /docs-v\$1/troubleshooting-guide/kernel-problems-and-boot-and-login-errors/investigating-unexpected-behavior/ permanent;
+    rewrite ^/printview/docs-v([345])/troubleshooting-guide/investigating-the-guest-kernel/?\$ /docs-v\$1/troubleshooting-guide/kernel-problems-and-boot-and-login-errors/investigating-the-guest-kernel/ permanent;
+    rewrite ^/printview/docs-v([345])/troubleshooting-guide/kernel-log-replication-with-vprobes/?\$ /docs-v\$1/troubleshooting-guide/kernel-problems-and-boot-and-login-errors/kernel-log-replication-with-vprobes/ permanent;
+    rewrite ^/printview/docs-v([345])/troubleshooting-guide/linux-kernel/?\$ /docs-v\$1/troubleshooting-guide/kernel-problems-and-boot-and-login-errors/linux-kernel/ permanent;
+    rewrite ^/printview/docs-v([345])/troubleshooting-guide/general-performance-guidelines/?\$ /docs-v\$1/troubleshooting-guide/performance-issues/general-performance-guidelines/ permanent;
+    rewrite ^/printview/docs-v([345])/troubleshooting-guide/throughput-performance/?\$ /docs-v\$1/troubleshooting-guide/performance-issues/throughput-performance/ permanent;
+    
+    # ========== PRINTVIEW INSTALLATION GUIDE SHORT PATHS ==========
+    rewrite ^/printview/docs-v([345])/run-photon-on-gce/?\$ /docs-v\$1/installation-guide/run-photon-on-gce/ permanent;
+    rewrite ^/printview/docs-v([345])/run-photon-aws-ec2/?\$ /docs-v\$1/installation-guide/run-photon-aws-ec2/ permanent;
+    rewrite ^/printview/docs-v([345])/deploying-a-containerized-application-in-photon-os/?\$ /docs-v\$1/installation-guide/deploying-a-containerized-application-in-photon-os/ permanent;
+    rewrite ^/printview/docs-v([345])/downloading-photon/?\$ /docs-v\$1/installation-guide/downloading-photon-os/ permanent;
+    rewrite ^/printview/downloading-photon/?\$ /docs-v5/installation-guide/downloading-photon-os/ permanent;
+    
+    # ========== PRINTVIEW ADMINISTRATION GUIDE SHORT PATHS ==========
+    # RPM-OSTree paths with admin-guide prefix but missing photon-rpm-ostree
+    rewrite ^/printview/docs-v([345])/installing-a-host-against-default-server-repository/?\$ /docs-v\$1/administration-guide/photon-rpm-ostree/installing-a-host-against-default-server-repository/ permanent;
+    rewrite ^/printview/docs-v([345])/installing-a-host-against-custom-server-repository/?\$ /docs-v\$1/administration-guide/photon-rpm-ostree/installing-a-host-against-custom-server-repository/ permanent;
+    rewrite ^/printview/docs-v([345])/host-updating-operations/?\$ /docs-v\$1/administration-guide/photon-rpm-ostree/host-updating-operations/ permanent;
+    rewrite ^/printview/docs-v([345])/creating-a-rpm-ostree-server/?\$ /docs-v\$1/administration-guide/photon-rpm-ostree/creating-a-rpm-ostree-server/ permanent;
+    rewrite ^/printview/docs-v([345])/package-oriented-server-operations/?\$ /docs-v\$1/administration-guide/photon-rpm-ostree/package-oriented-server-operations/ permanent;
+    rewrite ^/printview/docs-v([345])/file-oriented-server-operations/?\$ /docs-v\$1/administration-guide/photon-rpm-ostree/file-oriented-server-operations/ permanent;
+    rewrite ^/printview/docs-v([345])/remotes/?\$ /docs-v\$1/administration-guide/photon-rpm-ostree/remotes/ permanent;
+    rewrite ^/printview/docs-v([345])/concepts-in-action/?\$ /docs-v\$1/administration-guide/photon-rpm-ostree/concepts-in-action/ permanent;
+    rewrite ^/printview/docs-v([345])/install-or-rebase-to-photon-os-4/?\$ /docs-v\$1/administration-guide/photon-rpm-ostree/install-or-rebase-to-photon-os-4/ permanent;
+    
+    # Administration guide with missing nested section
+    rewrite ^/printview/docs-v([345])/administration-guide/installing-a-host-against-default-server-repository/?\$ /docs-v\$1/administration-guide/photon-rpm-ostree/installing-a-host-against-default-server-repository/ permanent;
+    rewrite ^/printview/docs-v([345])/administration-guide/installing-a-host-against-custom-server-repository/?\$ /docs-v\$1/administration-guide/photon-rpm-ostree/installing-a-host-against-custom-server-repository/ permanent;
+    rewrite ^/printview/docs-v([345])/administration-guide/host-updating-operations/?\$ /docs-v\$1/administration-guide/photon-rpm-ostree/host-updating-operations/ permanent;
+    rewrite ^/printview/docs-v([345])/administration-guide/creating-a-rpm-ostree-server/?\$ /docs-v\$1/administration-guide/photon-rpm-ostree/creating-a-rpm-ostree-server/ permanent;
+    rewrite ^/printview/docs-v([345])/administration-guide/package-oriented-server-operations/?\$ /docs-v\$1/administration-guide/photon-rpm-ostree/package-oriented-server-operations/ permanent;
+    rewrite ^/printview/docs-v([345])/administration-guide/file-oriented-server-operations/?\$ /docs-v\$1/administration-guide/photon-rpm-ostree/file-oriented-server-operations/ permanent;
+    rewrite ^/printview/docs-v([345])/administration-guide/remotes/?\$ /docs-v\$1/administration-guide/photon-rpm-ostree/remotes/ permanent;
+    rewrite ^/printview/docs-v([345])/administration-guide/concepts-in-action/?\$ /docs-v\$1/administration-guide/photon-rpm-ostree/concepts-in-action/ permanent;
+    rewrite ^/printview/docs-v([345])/administration-guide/install-or-rebase-to-photon-os-4/?\$ /docs-v\$1/administration-guide/photon-rpm-ostree/install-or-rebase-to-photon-os-4/ permanent;
+    rewrite ^/printview/docs-v([345])/managing-packages-with-tdnf/?\$ /docs-v\$1/administration-guide/managing-packages-with-tdnf/ permanent;
+    
+    # ========== PRINTVIEW USER GUIDE SHORT PATHS ==========
+    rewrite ^/printview/docs-v([345])/kickstart-support-in-photon-os/?\$ /docs-v\$1/user-guide/kickstart-support-in-photon-os/ permanent;
+    
+    # ========== PRINTVIEW GENERIC SECTION REDIRECTS ==========
     # Printview short paths - redirect to actual docs content
     rewrite ^/printview/overview/?\$ /docs-v5/overview/ permanent;
     rewrite ^/printview/overview/whats-new/?\$ /docs-v5/overview/what-is-new-in-photon-os-5/ permanent;
@@ -169,7 +249,14 @@ server {
     rewrite ^/printview/troubleshooting-guide/(.*)\$ /docs-v5/troubleshooting-guide/\$1 permanent;
     rewrite ^/printview/command-line-reference/(.*)\$ /docs-v5/command-line-reference/\$1 permanent;
     
-    # Printview Photon RPM-OSTree paths
+    # Printview with docs version - pass through to actual docs
+    rewrite ^/printview/docs-v([345])/installation-guide/(.*)\$ /docs-v\$1/installation-guide/\$2 permanent;
+    rewrite ^/printview/docs-v([345])/administration-guide/(.*)\$ /docs-v\$1/administration-guide/\$2 permanent;
+    rewrite ^/printview/docs-v([345])/user-guide/(.*)\$ /docs-v\$1/user-guide/\$2 permanent;
+    rewrite ^/printview/docs-v([345])/troubleshooting-guide/(.*)\$ /docs-v\$1/troubleshooting-guide/\$2 permanent;
+    rewrite ^/printview/docs-v([345])/command-line-reference/(.*)\$ /docs-v\$1/command-line-reference/\$2 permanent;
+    
+    # Printview Photon RPM-OSTree paths (no version prefix)
     rewrite ^/printview/installing-a-host-against-default-server-repository/?\$ /docs-v5/administration-guide/photon-rpm-ostree/installing-a-host-against-default-server-repository/ permanent;
     rewrite ^/printview/installing-a-host-against-custom-server-repository/?\$ /docs-v5/administration-guide/photon-rpm-ostree/installing-a-host-against-custom-server-repository/ permanent;
     rewrite ^/printview/host-updating-operations/?\$ /docs-v5/administration-guide/photon-rpm-ostree/host-updating-operations/ permanent;
@@ -181,7 +268,7 @@ server {
     rewrite ^/printview/install-or-rebase-to-photon-os-4/?\$ /docs-v4/administration-guide/photon-rpm-ostree/install-or-rebase-to-photon-os-4/ permanent;
     rewrite ^/printview/install-or-rebase-to-photon-os-3/?\$ /docs-v3/administration-guide/photon-rpm-ostree/install-or-rebase-to-photon-os-3/ permanent;
     
-    # Printview misc paths
+    # Printview misc paths (no version prefix)
     rewrite ^/printview/what-is-new-in-photon-os-4/?\$ /docs-v4/what-is-new-in-photon-os-4/ permanent;
     rewrite ^/printview/what-is-new-in-photon-os-5/?\$ /docs-v5/overview/what-is-new-in-photon-os-5/ permanent;
     rewrite ^/printview/managing-packages-with-tdnf/?\$ /docs-v5/administration-guide/managing-packages-with-tdnf/ permanent;
