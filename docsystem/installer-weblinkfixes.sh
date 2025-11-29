@@ -717,6 +717,85 @@ if [ -f "$NAVBAR_FILE" ]; then
   echo "  Updated navbar.html: Single console and dark mode after Release dropdown"
 fi
 
+# Fix 65: Fix kernel-problems-and-boot-and-login-errors internal links (investigating-strange-behavior -> investigating-unexpected-behavior)
+echo "65. Fixing kernel-problems investigating-strange-behavior links..."
+find "$INSTALL_DIR/content/en" -path "*/troubleshooting-guide/kernel-problems-and-boot-and-login-errors/_index.md" -exec sed -i \
+  -e 's|(investigating-strange-behavior)|(investigating-unexpected-behavior)|g' \
+  -e 's|(./investigating-strange-behavior/)|(./investigating-unexpected-behavior/)|g' \
+  -e 's|(investigating-strange-behavior/)|(investigating-unexpected-behavior/)|g' \
+  {} \;
+
+# Fix 66: Fix Troubleshooting-linuxkernel typo (capitalization and hyphen)
+echo "66. Fixing Troubleshooting-linuxkernel link..."
+find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i \
+  -e 's|(Troubleshooting-linuxkernel)|(linux-kernel/)|g' \
+  -e 's|(Troubleshooting-linux-kernel)|(linux-kernel/)|g' \
+  {} \;
+
+# Fix 67: Fix netmgr link in troubleshooting (netmgr -> using-the-network-configuration-manager)
+echo "67. Fixing netmgr link in troubleshooting..."
+find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i \
+  -e 's|troubleshooting-guide/network-troubleshooting/netmgr|administration-guide/managing-network-configuration/using-the-network-configuration-manager|g' \
+  {} \;
+
+# Fix 68: Fix photon_admin paths (old documentation path style)
+echo "68. Fixing photon_admin paths..."
+find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i \
+  -e 's|photon_admin/installing-the-packages-for-tcpdump-and-netcat-with-tdnf|administration-guide/managing-network-configuration/installing-packages-for-tcpdump-and-netcat|g' \
+  {} \;
+
+# Fix 69: Fix Downloading-Photon capitalization issue
+echo "69. Fixing Downloading-Photon capitalization..."
+find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i \
+  -e 's|/Downloading-Photon|/downloading-photon-os|g' \
+  -e 's|(Downloading-Photon)|(downloading-photon-os)|g' \
+  {} \;
+
+# Fix 70: Fix upgrading-to-photon-os-3 path (missing trailing slash or .0 suffix)
+echo "70. Fixing upgrading-to-photon-os-3 path..."
+find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i \
+  -e 's|upgrading-to-photon-os-3.0/|upgrading-to-photon-os-3/|g' \
+  -e 's|upgrading-to-photon-os-4.0/|upgrading-to-photon-os-4/|g' \
+  {} \;
+
+# Fix 71: Fix build-iso-from-source path (should be under building-images)
+echo "71. Fixing build-iso-from-source path..."
+find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i \
+  -e 's|installation-guide/build-iso-from-source/|installation-guide/building-images/build-iso-from-source/|g' \
+  {} \;
+
+# Fix 72: Fix commnad-line-interfaces typo
+echo "72. Fixing commnad-line-interfaces typo..."
+find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i \
+  -e 's|commnad-line-interfaces|command-line-interfaces|g' \
+  {} \;
+
+# Fix 73: Fix Vagrant box link format issue
+echo "73. Fixing Vagrant box link format..."
+find "$INSTALL_DIR/content/en" -name "packer-examples" -type d -exec find {} -name "*.md" -exec sed -i \
+  -e 's|\[vmware/photon\]: (https://app.vagrantup.com/vmware/boxes/photon)|[vmware/photon](https://app.vagrantup.com/vmware/boxes/photon)|g' \
+  -e 's|(%28https://app.vagrantup.com/vmware/boxes/photon%29)|https://app.vagrantup.com/vmware/boxes/photon|g' \
+  {} \; 2>/dev/null || true
+
+# Fix 74: Copy missing troubleshooting images
+echo "74. Copying missing troubleshooting images..."
+for ver in docs-v3 docs-v4 docs-v5; do
+  DEST_DIR="$INSTALL_DIR/content/en/$ver/images"
+  mkdir -p "$DEST_DIR"
+  
+  # Copy specific images that are referenced but may be missing
+  for img in watchcmd.png top-in-photon-os.png resetpw.png grub-edit-menu-orig.png grub-edit-menu-changepw.png; do
+    # Try to find and copy from any version that has it
+    for srcver in docs-v5 docs-v4 docs-v3; do
+      SRC="$INSTALL_DIR/content/en/$srcver/images/$img"
+      if [ -f "$SRC" ] && [ ! -f "$DEST_DIR/$img" ]; then
+        cp "$SRC" "$DEST_DIR/" 2>/dev/null || true
+        break
+      fi
+    done
+  done
+done
+
 echo "======================================================="
 echo "Fixing incorrect relative links in markdown files done."
 echo "======================================================="
