@@ -107,6 +107,7 @@ server {
     
     # Missing version prefix redirects
     rewrite ^/overview/?\$ /docs-v5/overview/ permanent;
+    rewrite ^/overview/whats-new/?\$ /docs-v5/overview/what-is-new-in-photon-os-5/ permanent;
     rewrite ^/installation-guide/(.*)\$ /docs-v5/installation-guide/\$1 permanent;
     rewrite ^/administration-guide/(.*)\$ /docs-v5/administration-guide/\$1 permanent;
     rewrite ^/user-guide/(.*)\$ /docs-v5/user-guide/\$1 permanent;
@@ -115,9 +116,30 @@ server {
     
     # Short-path redirects
     rewrite ^/deploying-a-containerized-application-in-photon-os/?\$ /docs-v5/installation-guide/deploying-a-containerized-application-in-photon-os/ permanent;
-    rewrite ^/working-with-kickstart/?\$ /docs-v5/user-guide/working-with-kickstart/ permanent;
+    rewrite ^/working-with-kickstart/?\$ /docs-v5/user-guide/kickstart-support-in-photon-os/ permanent;
+    rewrite ^/kickstart-support-in-photon-os/?\$ /docs-v5/user-guide/kickstart-support-in-photon-os/ permanent;
     rewrite ^/run-photon-on-gce/?\$ /docs-v5/installation-guide/run-photon-on-gce/ permanent;
     rewrite ^/run-photon-aws-ec2/?\$ /docs-v5/installation-guide/run-photon-aws-ec2/ permanent;
+    rewrite ^/what-is-new-in-photon-os-4/?\$ /docs-v4/what-is-new-in-photon-os-4/ permanent;
+    rewrite ^/what-is-new-in-photon-os-5/?\$ /docs-v5/overview/what-is-new-in-photon-os-5/ permanent;
+    rewrite ^/managing-packages-with-tdnf/?\$ /docs-v5/administration-guide/managing-packages-with-tdnf/ permanent;
+    rewrite ^/solutions-to-common-problems/(.*)\$ /docs-v5/troubleshooting-guide/solutions-to-common-problems/\$1 permanent;
+    
+    # Photon RPM-OSTree short path redirects
+    rewrite ^/installing-a-host-against-default-server-repository/?\$ /docs-v5/administration-guide/photon-rpm-ostree/installing-a-host-against-default-server-repository/ permanent;
+    rewrite ^/installing-a-host-against-custom-server-repository/?\$ /docs-v5/administration-guide/photon-rpm-ostree/installing-a-host-against-custom-server-repository/ permanent;
+    rewrite ^/host-updating-operations/?\$ /docs-v5/administration-guide/photon-rpm-ostree/host-updating-operations/ permanent;
+    rewrite ^/creating-a-rpm-ostree-server/?\$ /docs-v5/administration-guide/photon-rpm-ostree/creating-a-rpm-ostree-server/ permanent;
+    rewrite ^/package-oriented-server-operations/?\$ /docs-v5/administration-guide/photon-rpm-ostree/package-oriented-server-operations/ permanent;
+    rewrite ^/file-oriented-server-operations/?\$ /docs-v5/administration-guide/photon-rpm-ostree/file-oriented-server-operations/ permanent;
+    rewrite ^/remotes/?\$ /docs-v5/administration-guide/photon-rpm-ostree/remotes/ permanent;
+    rewrite ^/concepts-in-action/?\$ /docs-v5/administration-guide/photon-rpm-ostree/concepts-in-action/ permanent;
+    rewrite ^/install-or-rebase-to-photon-os-4/?\$ /docs-v4/administration-guide/photon-rpm-ostree/install-or-rebase-to-photon-os-4/ permanent;
+    rewrite ^/install-or-rebase-to-photon-os-3/?\$ /docs-v3/administration-guide/photon-rpm-ostree/install-or-rebase-to-photon-os-3/ permanent;
+    
+    # Network configuration API redirects
+    rewrite ^/network-configuration-manager-c-api/?\$ /docs-v5/administration-guide/managing-network-configuration/network-configuration-manager-c-api/ permanent;
+    rewrite ^/network-configuration-manager-python-api/?\$ /docs-v5/administration-guide/managing-network-configuration/network-configuration-manager-python-api/ permanent;
     
     # Image path consolidation (FIXED - more specific regex to prevent false matches)
     # Only redirect actual paths containing /images/ subdirectory, not directory names ending in "images"
@@ -126,12 +148,70 @@ server {
     rewrite ^/docs-v5/(.*)/images/(.+\.(png|jpg|jpeg|gif|svg|webp|ico))\$ /docs-v5/images/\$2 permanent;
     rewrite ^/docs/images/(.+)\$ /docs-v4/images/\$1 permanent;
     
-    # Nested printview redirects - DISABLED to enable print functionality
-    # These redirects were preventing the "Print entire section" feature from working
-    # rewrite ^/printview/docs-v3/(.*)\$ /docs-v3/\$1 permanent;
-    # rewrite ^/printview/docs-v4/(.*)\$ /docs-v4/\$1 permanent;
-    # rewrite ^/printview/docs-v5/(.*)\$ /docs-v5/\$1 permanent;
-    # rewrite ^/printview/(.*)\$ /docs-v5/\$1 permanent;
+    # Root-level images redirect (for paths like /images/xyz.png)
+    rewrite ^/images/(.+\.(png|jpg|jpeg|gif|svg|webp|ico))\$ /docs-v5/images/\$1 permanent;
+    
+    # ========== PRINTVIEW REDIRECTS ==========
+    # Fix broken paths in printview - redirect to actual content
+    
+    # Printview images - redirect to docs version images
+    rewrite ^/printview/images/(.+)\$ /docs-v5/images/\$1 permanent;
+    rewrite ^/printview/docs-v3/images/(.+)\$ /docs-v3/images/\$1 permanent;
+    rewrite ^/printview/docs-v4/images/(.+)\$ /docs-v4/images/\$1 permanent;
+    rewrite ^/printview/docs-v5/images/(.+)\$ /docs-v5/images/\$1 permanent;
+    
+    # Printview short paths - redirect to actual docs content
+    rewrite ^/printview/overview/?\$ /docs-v5/overview/ permanent;
+    rewrite ^/printview/overview/whats-new/?\$ /docs-v5/overview/what-is-new-in-photon-os-5/ permanent;
+    rewrite ^/printview/installation-guide/(.*)\$ /docs-v5/installation-guide/\$1 permanent;
+    rewrite ^/printview/administration-guide/(.*)\$ /docs-v5/administration-guide/\$1 permanent;
+    rewrite ^/printview/user-guide/(.*)\$ /docs-v5/user-guide/\$1 permanent;
+    rewrite ^/printview/troubleshooting-guide/(.*)\$ /docs-v5/troubleshooting-guide/\$1 permanent;
+    rewrite ^/printview/command-line-reference/(.*)\$ /docs-v5/command-line-reference/\$1 permanent;
+    
+    # Printview Photon RPM-OSTree paths
+    rewrite ^/printview/installing-a-host-against-default-server-repository/?\$ /docs-v5/administration-guide/photon-rpm-ostree/installing-a-host-against-default-server-repository/ permanent;
+    rewrite ^/printview/installing-a-host-against-custom-server-repository/?\$ /docs-v5/administration-guide/photon-rpm-ostree/installing-a-host-against-custom-server-repository/ permanent;
+    rewrite ^/printview/host-updating-operations/?\$ /docs-v5/administration-guide/photon-rpm-ostree/host-updating-operations/ permanent;
+    rewrite ^/printview/creating-a-rpm-ostree-server/?\$ /docs-v5/administration-guide/photon-rpm-ostree/creating-a-rpm-ostree-server/ permanent;
+    rewrite ^/printview/package-oriented-server-operations/?\$ /docs-v5/administration-guide/photon-rpm-ostree/package-oriented-server-operations/ permanent;
+    rewrite ^/printview/file-oriented-server-operations/?\$ /docs-v5/administration-guide/photon-rpm-ostree/file-oriented-server-operations/ permanent;
+    rewrite ^/printview/remotes/?\$ /docs-v5/administration-guide/photon-rpm-ostree/remotes/ permanent;
+    rewrite ^/printview/concepts-in-action/?\$ /docs-v5/administration-guide/photon-rpm-ostree/concepts-in-action/ permanent;
+    rewrite ^/printview/install-or-rebase-to-photon-os-4/?\$ /docs-v4/administration-guide/photon-rpm-ostree/install-or-rebase-to-photon-os-4/ permanent;
+    rewrite ^/printview/install-or-rebase-to-photon-os-3/?\$ /docs-v3/administration-guide/photon-rpm-ostree/install-or-rebase-to-photon-os-3/ permanent;
+    
+    # Printview misc paths
+    rewrite ^/printview/what-is-new-in-photon-os-4/?\$ /docs-v4/what-is-new-in-photon-os-4/ permanent;
+    rewrite ^/printview/what-is-new-in-photon-os-5/?\$ /docs-v5/overview/what-is-new-in-photon-os-5/ permanent;
+    rewrite ^/printview/managing-packages-with-tdnf/?\$ /docs-v5/administration-guide/managing-packages-with-tdnf/ permanent;
+    rewrite ^/printview/kickstart-support-in-photon-os/?\$ /docs-v5/user-guide/kickstart-support-in-photon-os/ permanent;
+    rewrite ^/printview/run-photon-on-gce/?\$ /docs-v5/installation-guide/run-photon-on-gce/ permanent;
+    rewrite ^/printview/run-photon-aws-ec2/?\$ /docs-v5/installation-guide/run-photon-aws-ec2/ permanent;
+    rewrite ^/printview/upgrading-to-photon-os-3/?\$ /docs-v3/installation-guide/upgrading-to-photon-os-3/ permanent;
+    rewrite ^/printview/solutions-to-common-problems/(.*)\$ /docs-v5/troubleshooting-guide/solutions-to-common-problems/\$1 permanent;
+    rewrite ^/printview/network-configuration-manager-c-api/?\$ /docs-v5/administration-guide/managing-network-configuration/network-configuration-manager-c-api/ permanent;
+    rewrite ^/printview/network-configuration-manager-python-api/?\$ /docs-v5/administration-guide/managing-network-configuration/network-configuration-manager-python-api/ permanent;
+    rewrite ^/printview/photon_admin/(.*)\$ /docs-v5/administration-guide/\$1 permanent;
+    
+    # ========== DOUBLE-PATH FIX ==========
+    # Fix double nested paths like /docs-v3/docs-v3/
+    rewrite ^/docs-v3/docs-v3/(.*)\$ /docs-v3/\$1 permanent;
+    rewrite ^/docs-v4/docs-v4/(.*)\$ /docs-v4/\$1 permanent;
+    rewrite ^/docs-v5/docs-v5/(.*)\$ /docs-v5/\$1 permanent;
+    
+    # Fix double slashes in paths
+    rewrite ^(.*)//+(.*)\$ \$1/\$2 permanent;
+    
+    # ========== STATIC ASSETS REDIRECTS ==========
+    # Redirect docs-v3 static assets to top-level assets
+    rewrite ^/docs-v3/favicons/(.*)\$ /favicons/\$1 permanent;
+    rewrite ^/docs-v3/img/(.*)\$ /img/\$1 permanent;
+    rewrite ^/docs-v3/css/(.*)\$ /css/\$1 permanent;
+    rewrite ^/docs-v3/js/(.*)\$ /js/\$1 permanent;
+    rewrite ^/docs-v3/fonts/(.*)\$ /fonts/\$1 permanent;
+    rewrite ^/docs-v3/scss/(.*)\$ /scss/\$1 permanent;
+    rewrite ^/docs-v3/assets/(.*)\$ /assets/\$1 permanent;
     
     # Legacy HTML .md extension removal
     rewrite ^(/assets/files/html/.*)\\.md\$ \$1 permanent;
