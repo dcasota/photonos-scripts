@@ -56,7 +56,7 @@ import threading
 import json
 
 # Version info
-VERSION = "1.0"
+VERSION = "1.1"
 TOOL_NAME = "photonos-docs-lecturer.py"
 
 # Lazy-loaded modules (populated by check_and_import_dependencies)
@@ -346,6 +346,13 @@ class DocumentationLecturer:
         
         # Temp directory for cloning
         self.temp_dir = None
+        
+        # Incremental PR state
+        self.pr_url: Optional[str] = None  # URL of created PR (None if not created yet)
+        self.pr_number: Optional[int] = None  # PR number for updates
+        self.repo_cloned: bool = False  # Whether repo has been cloned
+        self.git_lock = threading.Lock()  # Lock for git operations (thread-safe)
+        self.fixed_files_log: List[Dict] = []  # Log of fixes for PR body updates
     
     def _setup_logging(self):
         """Configure logging to file and stderr."""
@@ -1234,15 +1241,39 @@ class DocumentationLecturer:
         
         VMware must be spelled with capital V and M: "VMware"
         Incorrect: vmware, Vmware, VMWare, VMWARE, etc.
+        
+        Excludes URLs containing 'vmware' (e.g., github.com/vmware, packages.vmware.com).
         """
         issues = []
         
+        # Pattern to detect if match is within a URL
+        url_pattern = re.compile(r'https?://[^\s<>"\']+|www\.[^\s<>"\']+')
+        
         for match in self.VMWARE_SPELLING_PATTERN.finditer(text_content):
             incorrect_spelling = match.group(0)
+            match_start = match.start()
+            match_end = match.end()
             
-            # Get context around the match
-            start = max(0, match.start() - 30)
-            end = min(len(text_content), match.end() + 30)
+            # Get extended context to check for URL
+            context_start = max(0, match_start - 100)
+            context_end = min(len(text_content), match_end + 50)
+            context_region = text_content[context_start:context_end]
+            
+            # Check if this match is within a URL
+            is_in_url = False
+            for url_match in url_pattern.finditer(context_region):
+                url_start_abs = context_start + url_match.start()
+                url_end_abs = context_start + url_match.end()
+                if url_start_abs <= match_start and match_end <= url_end_abs:
+                    is_in_url = True
+                    break
+            
+            if is_in_url:
+                continue  # Skip VMware spelling in URLs
+            
+            # Get display context around the match
+            start = max(0, match_start - 30)
+            end = min(len(text_content), match_end + 30)
             context = text_content[start:end]
             
             location = f"Incorrect VMware spelling: '{incorrect_spelling}' in ...{context}..."
@@ -1860,6 +1891,10 @@ class DocumentationLecturer:
                     fixes_str = ', '.join(applied_fixes) if applied_fixes else 'content changes'
                     self.logger.info(f"Applied fixes to {local_path}: {fixes_str}")
                     print(f"  [FIX] {os.path.basename(local_path)}: {fixes_str}")
+                    
+                    # Incremental commit/push/PR for each fix (when --gh-pr is enabled)
+                    if self.gh_pr and self.repo_cloned:
+                        self._incremental_commit_push_and_pr(local_path, applied_fixes)
                 else:
                     self.logger.debug(f"No changes needed for {local_path}")
                 
@@ -1872,14 +1907,18 @@ class DocumentationLecturer:
         Replaces variations like 'vmware', 'Vmware', 'VMWare', 'VMWARE' with 'VMware'.
         Preserves URLs and code blocks.
         """
-        # Split content to preserve code blocks
-        parts = re.split(r'(```[\s\S]*?```|`[^`]+`)', content)
+        # Split content to preserve code blocks and URLs
+        # Match: fenced code blocks, inline code, and URLs
+        parts = re.split(r'(```[\s\S]*?```|`[^`]+`|https?://[^\s<>"\')\]]+|www\.[^\s<>"\')\]]+)', content)
         
         for i, part in enumerate(parts):
             # Skip code blocks
             if part.startswith('```') or part.startswith('`'):
                 continue
-            # Fix VMware spelling (but not in URLs)
+            # Skip URLs
+            if part.startswith('http://') or part.startswith('https://') or part.startswith('www.'):
+                continue
+            # Fix VMware spelling in regular text
             parts[i] = self.VMWARE_SPELLING_PATTERN.sub('VMware', part)
         
         return ''.join(parts)
@@ -1902,15 +1941,18 @@ class DocumentationLecturer:
         return self.DEPRECATED_VMWARE_URL.sub(replace_url, content)
     
     def _fix_backtick_spacing(self, content: str) -> str:
-        """Fix missing spaces before/after backticks.
+        """Fix missing spaces around backticks.
         
-        - 'word`code`' -> 'word `code`'
-        - '`code`word' -> '`code` word'
+        Only fixes:
+        - 'word`code`' -> 'word `code`' (missing space BEFORE opening backtick)
+        - '`code`word' -> '`code` word' (missing space AFTER closing backtick)
+        
+        Does NOT add space before ending backtick (inside the code).
         """
-        # Fix missing space before backtick
+        # Fix missing space before opening backtick (word immediately before backtick)
         content = self.MISSING_SPACE_BEFORE_BACKTICK.sub(r'\1 \2', content)
         
-        # Fix missing space after backtick
+        # Fix missing space after closing backtick (word immediately after backtick)
         content = self.MISSING_SPACE_AFTER_BACKTICK.sub(r'\1 \2', content)
         
         return content
@@ -2134,6 +2176,17 @@ Return only the fixed markdown content, no explanations."""
                 self.logger.error(f"Clone failed: {result.stderr}")
                 return None
             
+            # Configure git user identity in the cloned repo (required for commits)
+            subprocess.run(
+                ['git', 'config', 'user.email', f'{self.gh_username}@users.noreply.github.com'],
+                cwd=self.temp_dir, check=True, capture_output=True
+            )
+            subprocess.run(
+                ['git', 'config', 'user.name', self.gh_username],
+                cwd=self.temp_dir, check=True, capture_output=True
+            )
+            self.logger.info(f"Configured git user: {self.gh_username}")
+            
             self.logger.info(f"Repository cloned to {self.temp_dir}")
             return self.temp_dir
             
@@ -2348,6 +2401,342 @@ See attached CSV report for detailed issue locations and fix suggestions.
             return False
     
     # =========================================================================
+    # Incremental PR Operations (per-fix commit/push/PR)
+    # =========================================================================
+    
+    def _initialize_repo_for_incremental_pr(self) -> bool:
+        """Clone the repository once at the start for incremental PR workflow.
+        
+        Returns:
+            True if repo was cloned successfully, False otherwise.
+        """
+        if not self.gh_pr or not self.ghrepo_url:
+            return False
+        
+        if self.repo_cloned:
+            return True
+        
+        try:
+            # Clone the repository
+            repo_dir = self._clone_repository()
+            if not repo_dir:
+                self.logger.error("Failed to clone repository for incremental PR")
+                return False
+            
+            self.repo_cloned = True
+            self.logger.info(f"Repository cloned for incremental PR workflow: {repo_dir}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to initialize repo for incremental PR: {e}")
+            return False
+    
+    def _incremental_commit_push_and_pr(self, local_path: str, fixes_applied: List[str]) -> bool:
+        """Commit a single file fix, push, and create/update PR.
+        
+        This is called immediately after each file fix is applied.
+        Thread-safe via git_lock.
+        
+        Args:
+            local_path: Path to the fixed local file
+            fixes_applied: List of fix types applied (e.g., ['VMware spelling', 'backtick spacing'])
+            
+        Returns:
+            True if commit/push/PR succeeded, False otherwise.
+        """
+        if not self.gh_pr or not self.repo_cloned or not self.temp_dir:
+            return False
+        
+        with self.git_lock:
+            try:
+                import shutil
+                
+                # Map local path to repo path
+                repo_path = self._map_local_path_to_repo_path(local_path, self.temp_dir)
+                if not repo_path:
+                    self.logger.warning(f"Could not map {local_path} to repo path")
+                    return False
+                
+                # Ensure parent directory exists in repo
+                os.makedirs(os.path.dirname(repo_path), exist_ok=True)
+                
+                # Copy the fixed file to the cloned repo
+                shutil.copy2(local_path, repo_path)
+                rel_path = os.path.relpath(repo_path, self.temp_dir)
+                self.logger.info(f"Copied {local_path} -> {repo_path}")
+                
+                # Change to repo directory for git operations
+                original_cwd = os.getcwd()
+                os.chdir(self.temp_dir)
+                
+                try:
+                    # Add the file
+                    subprocess.run(['git', 'add', rel_path], check=True, capture_output=True)
+                    
+                    # Check if there are changes to commit
+                    result = subprocess.run(['git', 'status', '--porcelain'], capture_output=True, text=True)
+                    if not result.stdout.strip():
+                        self.logger.info(f"No changes to commit for {rel_path}")
+                        return True  # No changes but not an error
+                    
+                    # Commit with descriptive message
+                    fixes_str = ', '.join(fixes_applied) if fixes_applied else 'content fixes'
+                    file_basename = os.path.basename(local_path)
+                    commit_msg = f"Fix {file_basename}: {fixes_str}\n\nAutomated fix by {TOOL_NAME}"
+                    subprocess.run(['git', 'commit', '-m', commit_msg], check=True, capture_output=True)
+                    
+                    # Push with auth
+                    parsed = urllib.parse.urlparse(self.ghrepo_url)
+                    auth_url = f"{parsed.scheme}://{self.gh_username}:{self.gh_repotoken}@{parsed.netloc}{parsed.path}"
+                    branch = self.ghrepo_branch
+                    
+                    subprocess.run(['git', 'push', auth_url, branch], check=True, capture_output=True)
+                    self.logger.info(f"Pushed fix for {file_basename} to {self.ghrepo_url}")
+                    print(f"  [PUSH] {file_basename} pushed to GitHub")
+                    
+                    # Log the fix for PR body
+                    self.fixed_files_log.append({
+                        'file': rel_path,
+                        'fixes': fixes_applied,
+                        'timestamp': datetime.datetime.now().isoformat()
+                    })
+                    
+                    # Create or update PR
+                    self._create_or_update_pr()
+                    
+                    return True
+                    
+                finally:
+                    os.chdir(original_cwd)
+                    
+            except subprocess.CalledProcessError as e:
+                self.logger.error(f"Git operation failed for {local_path}: {e}")
+                return False
+            except Exception as e:
+                self.logger.error(f"Incremental commit/push failed for {local_path}: {e}")
+                return False
+    
+    def _generate_pr_body(self) -> str:
+        """Generate the PR body with current fix statistics."""
+        # Build the files fixed section
+        files_fixed_lines = []
+        for fix_entry in self.fixed_files_log:
+            file_path = fix_entry['file']
+            fixes = ', '.join(fix_entry['fixes'])
+            files_fixed_lines.append(f"- `{file_path}`: {fixes}")
+        
+        files_fixed_section = '\n'.join(files_fixed_lines) if files_fixed_lines else '- No fixes applied yet'
+        
+        pr_body = f"""# Documentation Analysis Report
+
+**Generated:** {self.timestamp}
+**Tool:** {TOOL_NAME} v{VERSION}
+**Last Updated:** {datetime.datetime.now().isoformat()}
+**Pages analyzed:** {self.pages_analyzed}
+**Issues found:** {self.issues_found}
+**Fixes applied:** {self.fixes_applied}
+**LLM Provider:** {self.llm_provider or 'None (deterministic fixes only)'}
+
+## Files Fixed
+
+{files_fixed_section}
+
+## Issue Categories Detected and Fixed
+
+### Deterministic Fixes (Applied Automatically)
+- **VMware spelling**: Corrected incorrect spellings (vmware, Vmware, etc.) to VMware
+- **Deprecated URLs**: Updated packages.vmware.com URLs to packages-prod.broadcom.com
+- **Backtick spacing**: Fixed missing spaces before/after inline code
+- **Shell prompts**: Removed shell prompt prefixes ($, #, ❯) from code blocks
+
+### LLM-Assisted Fixes (Requires --llm flag)
+- **Grammar/spelling errors**: Language and grammar corrections
+- **Markdown artifacts**: Fixed unrendered markdown syntax
+- **Mixed command/output**: Separated command and output into distinct code blocks
+
+### Issues Reported (Manual Review Recommended)
+- **Broken links**: Orphan URLs requiring manual verification
+- **Broken images**: Missing or inaccessible image files
+- **Unaligned images**: Images lacking proper CSS alignment
+- **Indentation issues**: List item indentation problems
+
+---
+*This PR is updated incrementally as fixes are applied. Check the commit history for details.*
+"""
+        return pr_body
+    
+    def _find_existing_open_pr(self) -> bool:
+        """Check if an open PR already exists from the fork branch to the target branch.
+        
+        If found, sets self.pr_url and self.pr_number.
+        
+        Returns:
+            True if an existing open PR was found, False otherwise.
+        """
+        if not self.ref_ghrepo or not self.gh_repotoken:
+            self.logger.debug("Cannot check for existing PR: missing ref_ghrepo or gh_repotoken")
+            return False
+        
+        try:
+            env = os.environ.copy()
+            env['GH_TOKEN'] = self.gh_repotoken
+            
+            parsed = urllib.parse.urlparse(self.ref_ghrepo)
+            repo_path = parsed.path.strip('/').rstrip('.git')
+            
+            head_branch = self.ghrepo_branch
+            base_branch = self.ref_ghbranch
+            
+            self.logger.info(f"Checking for existing open PR: {self.gh_username}:{head_branch} -> {repo_path}:{base_branch}")
+            
+            # Search for open PRs from our head branch to the base branch
+            # Note: gh pr list --head works with just branch name when searching cross-repo
+            # We also filter by author to ensure we only find our own PRs
+            result = subprocess.run([
+                'gh', 'pr', 'list',
+                '--head', head_branch,
+                '--base', base_branch,
+                '--repo', repo_path,
+                '--author', self.gh_username,
+                '--state', 'open',
+                '--json', 'number,url,title',
+                '--limit', '1'
+            ], capture_output=True, text=True, env=env)
+            
+            self.logger.debug(f"gh pr list result: returncode={result.returncode}, stdout={result.stdout[:200] if result.stdout else 'empty'}, stderr={result.stderr[:200] if result.stderr else 'empty'}")
+            
+            if result.returncode == 0 and result.stdout.strip():
+                try:
+                    pr_data = json.loads(result.stdout)
+                    if pr_data:
+                        self.pr_number = pr_data[0]['number']
+                        self.pr_url = pr_data[0]['url']
+                        pr_title = pr_data[0].get('title', '')
+                        self.logger.info(f"Found existing open PR #{self.pr_number}: {pr_title}")
+                        print(f"\n[PR] Reusing existing PR #{self.pr_number}: {self.pr_url}")
+                        return True
+                    else:
+                        self.logger.info("No existing open PR found (empty result)")
+                except json.JSONDecodeError as e:
+                    self.logger.warning(f"Failed to parse PR list JSON: {e}")
+            else:
+                self.logger.info(f"No existing open PR found (returncode={result.returncode})")
+                if result.stderr:
+                    self.logger.debug(f"gh pr list stderr: {result.stderr}")
+            
+            return False
+            
+        except Exception as e:
+            self.logger.warning(f"Error checking for existing PR: {e}")
+            return False
+    
+    def _create_or_update_pr(self) -> bool:
+        """Create a new PR or update the existing one with new fix information.
+        
+        On first call per run:
+        - Checks if an open PR already exists (from previous runs)
+        - If yes, reuses that PR
+        - If no, creates a new PR
+        
+        On subsequent calls:
+        - Updates the existing PR body with new fix information
+        
+        Returns:
+            True if PR was created/updated successfully, False otherwise.
+        """
+        if not self.gh_pr or not self.ref_ghrepo:
+            return False
+        
+        try:
+            env = os.environ.copy()
+            env['GH_TOKEN'] = self.gh_repotoken
+            
+            # Parse ref repo
+            parsed = urllib.parse.urlparse(self.ref_ghrepo)
+            repo_path = parsed.path.strip('/').rstrip('.git')
+            
+            head_branch = self.ghrepo_branch
+            base_branch = self.ref_ghbranch
+            
+            pr_body = self._generate_pr_body()
+            
+            if self.pr_url is None:
+                # First, check if an open PR already exists (from previous runs)
+                if self._find_existing_open_pr():
+                    # Reuse existing PR - just update the body
+                    return self._update_pr_body(pr_body)
+                
+                # No existing PR, create a new one
+                pr_title = f"Documentation fixes - {self.timestamp}"
+                result = subprocess.run([
+                    'gh', 'pr', 'create',
+                    '--title', pr_title,
+                    '--body', pr_body,
+                    '--head', f"{self.gh_username}:{head_branch}",
+                    '--base', base_branch,
+                    '--repo', repo_path
+                ], capture_output=True, text=True, env=env)
+                
+                if result.returncode == 0:
+                    self.pr_url = result.stdout.strip()
+                    # Extract PR number from URL
+                    pr_match = re.search(r'/pull/(\d+)', self.pr_url)
+                    if pr_match:
+                        self.pr_number = int(pr_match.group(1))
+                    self.logger.info(f"Pull request created: {self.pr_url}")
+                    print(f"\n[PR] Created: {self.pr_url}")
+                    return True
+                else:
+                    self.logger.error(f"PR creation failed: {result.stderr}")
+                    return False
+            else:
+                # Update existing PR body
+                return self._update_pr_body(pr_body)
+                
+        except subprocess.CalledProcessError as e:
+            self.logger.error(f"PR operation failed: {e.stderr if hasattr(e, 'stderr') else e}")
+            return False
+        except Exception as e:
+            self.logger.error(f"PR operation failed: {e}")
+            return False
+    
+    def _update_pr_body(self, pr_body: str) -> bool:
+        """Update the body of an existing PR.
+        
+        Args:
+            pr_body: New PR body content
+            
+        Returns:
+            True if update succeeded, False otherwise.
+        """
+        if not self.pr_number or not self.ref_ghrepo:
+            return False
+        
+        try:
+            env = os.environ.copy()
+            env['GH_TOKEN'] = self.gh_repotoken
+            
+            parsed = urllib.parse.urlparse(self.ref_ghrepo)
+            repo_path = parsed.path.strip('/').rstrip('.git')
+            
+            result = subprocess.run([
+                'gh', 'pr', 'edit', str(self.pr_number),
+                '--body', pr_body,
+                '--repo', repo_path
+            ], capture_output=True, text=True, env=env)
+            
+            if result.returncode == 0:
+                self.logger.info(f"Updated PR #{self.pr_number} body")
+                return True
+            else:
+                self.logger.warning(f"Failed to update PR body: {result.stderr}")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Failed to update PR body: {e}")
+            return False
+    
+    # =========================================================================
     # Main Workflow
     # =========================================================================
     
@@ -2429,7 +2818,13 @@ See attached CSV report for detailed issue locations and fix suggestions.
         print(f"   Issues: {self.issues_found}")
     
     def run_full(self):
-        """Run full workflow with fixes and PR."""
+        """Run full workflow with fixes and PR.
+        
+        When --gh-pr is enabled, uses incremental PR workflow:
+        - Clones repo once at start
+        - Commits/pushes each fix immediately after it's applied
+        - Creates PR on first fix, updates PR body on subsequent fixes
+        """
         print(f"{TOOL_NAME} v{VERSION} - Run Mode")
         print(f"Log: {self.log_filename}")
         print(f"Report: {self.report_filename}")
@@ -2437,6 +2832,7 @@ See attached CSV report for detailed issue locations and fix suggestions.
         print(f"Workers: {self.num_workers}")
         if self.gh_pr:
             print(f"PR Target: {self.ref_ghrepo}")
+            print(f"PR Mode: Incremental (per-fix commit/push)")
         if self.llm_provider:
             print(f"LLM Provider: {self.llm_provider}")
         print()
@@ -2454,6 +2850,14 @@ See attached CSV report for detailed issue locations and fix suggestions.
                 print(f"\n[ERROR] Failed to fork repository")
                 sys.exit(1)
         
+        # Clone repository for incremental PR workflow (before analysis starts)
+        if self.gh_pr:
+            print("Cloning repository for incremental PR workflow...")
+            if not self._initialize_repo_for_incremental_pr():
+                print(f"\n[ERROR] Failed to clone repository for incremental PR")
+                sys.exit(1)
+            print(f"[OK] Repository cloned to {self.temp_dir}\n")
+        
         # Validate connectivity
         if not self.validate_connectivity():
             print(f"\n[ERROR] Cannot connect to {self.base_url}")
@@ -2469,16 +2873,15 @@ See attached CSV report for detailed issue locations and fix suggestions.
         
         print(f"Found {len(self.sitemap)} pages to analyze\n")
         
-        # Analyze and apply fixes
+        # Analyze and apply fixes (incremental commit/push/PR happens per-fix)
         self.analyze_all_pages()
         
         # Finalize report
         self.finalize_report()
         
-        # Git operations
-        if self.gh_pr:
-            if self._git_commit_and_push():
-                self._create_pull_request()
+        # Final PR body update with complete statistics
+        if self.gh_pr and self.pr_url:
+            self._update_pr_body(self._generate_pr_body())
         
         # Summary
         print(f"\n[OK] Workflow complete!")
@@ -2487,6 +2890,8 @@ See attached CSV report for detailed issue locations and fix suggestions.
         print(f"   Pages: {self.pages_analyzed}")
         print(f"   Issues: {self.issues_found}")
         print(f"   Fixes: {self.fixes_applied}")
+        if self.pr_url:
+            print(f"   PR: {self.pr_url}")
     
     def run(self):
         """Main entry point."""
