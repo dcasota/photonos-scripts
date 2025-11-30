@@ -1846,44 +1846,166 @@ Return only the fixed markdown content, no explanations."""
             self.logger.error("gh CLI not found. Install from: https://cli.github.com/")
             return False
     
-    def _git_commit_and_push(self) -> bool:
-        """Commit and push changes to git repository."""
+    def _clone_repository(self) -> Optional[str]:
+        """Clone the user's fork repository to a temp directory.
+        
+        Returns:
+            Path to the cloned repository, or None if cloning failed.
+        """
         if not self.ghrepo_url or not self.gh_repotoken:
+            return None
+        
+        try:
+            import shutil
+            
+            # Create temp directory
+            self.temp_dir = tempfile.mkdtemp(prefix='photon-docs-')
+            self.logger.info(f"Created temp directory: {self.temp_dir}")
+            
+            # Build auth URL for cloning
+            parsed = urllib.parse.urlparse(self.ghrepo_url)
+            auth_url = f"{parsed.scheme}://{self.gh_username}:{self.gh_repotoken}@{parsed.netloc}{parsed.path}"
+            
+            # Clone the repository
+            self.logger.info(f"Cloning {self.ghrepo_url} branch {self.ghrepo_branch}...")
+            result = subprocess.run(
+                ['git', 'clone', '--branch', self.ghrepo_branch, '--depth', '1', auth_url, self.temp_dir],
+                capture_output=True, text=True
+            )
+            
+            if result.returncode != 0:
+                self.logger.error(f"Clone failed: {result.stderr}")
+                return None
+            
+            self.logger.info(f"Repository cloned to {self.temp_dir}")
+            return self.temp_dir
+            
+        except Exception as e:
+            self.logger.error(f"Failed to clone repository: {e}")
+            return None
+    
+    def _map_local_path_to_repo_path(self, local_path: str, repo_dir: str) -> Optional[str]:
+        """Map a local webserver file path to the cloned repository path.
+        
+        Args:
+            local_path: Path to file in local_webserver (e.g., /var/www/photon-site/content/en/docs-v5/...)
+            repo_dir: Path to cloned repository
+            
+        Returns:
+            Corresponding path in the cloned repository, or None if mapping failed.
+        """
+        if not self.local_webserver or not local_path:
+            return None
+        
+        try:
+            # Get the relative path from local_webserver
+            # e.g., /var/www/photon-site/content/en/docs-v5/file.md -> content/en/docs-v5/file.md
+            rel_path = os.path.relpath(local_path, self.local_webserver)
+            
+            # Construct path in cloned repo
+            repo_path = os.path.join(repo_dir, rel_path)
+            
+            return repo_path
+            
+        except Exception as e:
+            self.logger.error(f"Failed to map path {local_path}: {e}")
+            return None
+    
+    def _copy_modified_files_to_repo(self, repo_dir: str) -> List[str]:
+        """Copy modified files from local_webserver to the cloned repository.
+        
+        Args:
+            repo_dir: Path to cloned repository
+            
+        Returns:
+            List of paths to copied files in the repo (relative to repo_dir).
+        """
+        import shutil
+        
+        copied_files = []
+        
+        for local_path in self.modified_files:
+            repo_path = self._map_local_path_to_repo_path(local_path, repo_dir)
+            if not repo_path:
+                self.logger.warning(f"Could not map {local_path} to repo path")
+                continue
+            
+            try:
+                # Ensure parent directory exists in repo
+                os.makedirs(os.path.dirname(repo_path), exist_ok=True)
+                
+                # Copy the file
+                shutil.copy2(local_path, repo_path)
+                
+                # Store relative path for git add
+                rel_path = os.path.relpath(repo_path, repo_dir)
+                copied_files.append(rel_path)
+                self.logger.info(f"Copied {local_path} -> {repo_path}")
+                
+            except Exception as e:
+                self.logger.error(f"Failed to copy {local_path} to {repo_path}: {e}")
+        
+        return copied_files
+    
+    def _git_commit_and_push(self) -> bool:
+        """Clone repo, copy modified files, commit and push changes."""
+        if not self.ghrepo_url or not self.gh_repotoken:
+            return False
+        
+        if not self.modified_files:
+            self.logger.info("No modified files to commit")
             return False
         
         try:
             # Check git
             subprocess.run(['git', '--version'], check=True, capture_output=True)
             
-            # Check if in git repo
-            result = subprocess.run(['git', 'rev-parse', '--git-dir'], capture_output=True, text=True)
-            if result.returncode != 0:
-                self.logger.warning("Not in a git repository")
+            # Clone the repository to a temp directory
+            repo_dir = self._clone_repository()
+            if not repo_dir:
+                self.logger.error("Failed to clone repository")
                 return False
             
-            # Add files
-            files_to_add = [self.report_filename, self.log_filename]
-            files_to_add.extend(list(self.modified_files))
+            # Copy modified files to the cloned repo
+            copied_files = self._copy_modified_files_to_repo(repo_dir)
+            if not copied_files:
+                self.logger.warning("No files were copied to the repository")
+                return False
             
-            for f in files_to_add:
-                if os.path.exists(f):
-                    subprocess.run(['git', 'add', f], check=True)
+            # Change to repo directory for git operations
+            original_cwd = os.getcwd()
+            os.chdir(repo_dir)
             
-            # Commit
-            commit_msg = f"Documentation fixes - {self.timestamp}\n\nAutomated fixes by {TOOL_NAME}"
-            subprocess.run(['git', 'commit', '-m', commit_msg], check=True, capture_output=True)
-            
-            # Push with auth
-            parsed = urllib.parse.urlparse(self.ghrepo_url)
-            auth_url = f"{parsed.scheme}://{self.gh_username}:{self.gh_repotoken}@{parsed.netloc}{parsed.path}"
-            
-            # Use ghrepo_branch for pushing to user's forked repo
-            branch = self.ghrepo_branch
-            
-            subprocess.run(['git', 'push', auth_url, branch], check=True, capture_output=True)
-            self.logger.info(f"Pushed to {self.ghrepo_url} branch {branch}")
-            print(f"\n[OK] Git push successful to {parsed.netloc}{parsed.path}")
-            return True
+            try:
+                # Add copied files
+                for rel_path in copied_files:
+                    subprocess.run(['git', 'add', rel_path], check=True)
+                
+                # Check if there are changes to commit
+                result = subprocess.run(['git', 'status', '--porcelain'], capture_output=True, text=True)
+                if not result.stdout.strip():
+                    self.logger.info("No changes to commit")
+                    return False
+                
+                # Commit
+                commit_msg = f"Documentation fixes - {self.timestamp}\n\nAutomated fixes by {TOOL_NAME}"
+                subprocess.run(['git', 'commit', '-m', commit_msg], check=True, capture_output=True)
+                
+                # Push with auth
+                parsed = urllib.parse.urlparse(self.ghrepo_url)
+                auth_url = f"{parsed.scheme}://{self.gh_username}:{self.gh_repotoken}@{parsed.netloc}{parsed.path}"
+                
+                # Use ghrepo_branch for pushing to user's forked repo
+                branch = self.ghrepo_branch
+                
+                subprocess.run(['git', 'push', auth_url, branch], check=True, capture_output=True)
+                self.logger.info(f"Pushed to {self.ghrepo_url} branch {branch}")
+                print(f"\n[OK] Git push successful to {parsed.netloc}{parsed.path}")
+                return True
+                
+            finally:
+                # Restore original working directory
+                os.chdir(original_cwd)
             
         except subprocess.CalledProcessError as e:
             self.logger.error(f"Git operation failed: {e}")
