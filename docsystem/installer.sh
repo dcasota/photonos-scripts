@@ -16,26 +16,14 @@ export SITE_DIR="$INSTALL_DIR/public"  # Where built static files go
 export HUGO_VERSION="0.152.2"  # Latest version as of November 10, 2025
 
 # Check if GITHUB_TOKEN is set
-if [ -z "$GITHUB_TOKEN" ]; then
-    echo 'GITHUB_TOKEN is not set. Please enter your GitHub token as environment variable EXPORT GITHUB_TOKEN="..."'
+# Check if all required environment variables are set
+if [ -z "$GITHUB_TOKEN" ] || [ -z "$GITHUB_USERNAME" ] || [ -z "$PHOTON_FORK_REPOSITORY" ]; then
+    [ -z "$GITHUB_TOKEN" ] && echo 'GITHUB_TOKEN is not set. Please enter your GitHub token as environment variable EXPORT GITHUB_TOKEN.'
+    [ -z "$GITHUB_USERNAME" ] && echo 'GITHUB_USERNAME is not set. Please enter your GitHub username as environment variable EXPORT GITHUB_USERNAME.'
+    [ -z "$PHOTON_FORK_REPOSITORY" ] && echo 'PHOTON_FORK_REPOSITORY is not set. Please enter your Photon OS fork repository as environment variable EXPORT PHOTON_FORK_REPOSITORY.'
     exit 1
 else
-    echo "GITHUB_TOKEN is set."
-fi
-
-# Check if GITHUB_USERNAME is set
-if [ -z "$GITHUB_USERNAME" ]; then
-    echo "GITHUB_USERNAME is not set. Please enter your GitHub username as environment variable GITHUB_TOKEN."
-    exit 1
-else
-    echo "GITHUB_USERNAME is set."
-fi
-
-if [ -z "$PHOTON_FORK_REPOSITORY" ]; then
-    echo "PHOTON_FORK_REPOSITORY is not set. Please enter your Photon OS fork repository as environment variable PHOTON_FORK_REPOSITORY."
-    exit 1
-else
-    echo "PHOTON_FORK_REPOSITORY is set."
+    echo "All variables are set."
 fi
 
 # Install required packages
