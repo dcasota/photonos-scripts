@@ -500,7 +500,7 @@ if [ -f "$FOOTER_FILE" ]; then
                 c\<div class="text-right d-flex align-items-center justify-content-end">
             }
             /vmware-logo.svg/ {
-                c\  <a href="https://vmware.github.io" class="mr-3"> <img class="vmw-footer-logo" src="/img/vmware-logo.svg" alt="VMware" /></a>\n  <a href="https://www.broadcom.com" target="_blank"> <img class="vmw-footer-logo" src="/img/broadcom-logo.png" alt="Broadcom" style="max-height: 40px;" /></a>
+                c\  <a href="https://www.broadcom.com" target="_blank"> <img class="vmw-footer-logo" src="/img/broadcom-logo.png" alt="Broadcom" style="max-height: 40px;" /></a>
             }
         }' "$FOOTER_FILE"
     fi
