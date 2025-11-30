@@ -1419,17 +1419,132 @@ class DocumentationLecturer:
         
         return True
     
-    def _map_url_to_local_path(self, page_url: str) -> Optional[str]:
+    def _find_directory_case_insensitive(self, parent_dir: str, target_name: str) -> Optional[str]:
+        """Find a directory or file matching target_name case-insensitively.
+        
+        Hugo normalizes URLs to lowercase, but the actual filesystem may have
+        mixed-case directory names (e.g., 'command-line-Interfaces' vs 'command-line-interfaces').
+        
+        Args:
+            parent_dir: The parent directory to search in
+            target_name: The name to find (from URL, typically lowercase)
+            
+        Returns:
+            The actual path if found, None otherwise
+        """
+        if not os.path.isdir(parent_dir):
+            return None
+        
+        target_lower = target_name.lower()
+        
+        try:
+            for entry in os.listdir(parent_dir):
+                if entry.lower() == target_lower:
+                    return os.path.join(parent_dir, entry)
+        except OSError:
+            pass
+        
+        return None
+    
+    def _calculate_content_similarity(self, text1: str, text2: str) -> float:
+        """Calculate similarity between two text strings using word overlap.
+        
+        Uses Jaccard similarity on word sets for a fast, reasonable approximation.
+        
+        Args:
+            text1: First text string
+            text2: Second text string
+            
+        Returns:
+            Similarity score between 0.0 and 1.0
+        """
+        # Normalize: lowercase, extract words only
+        def extract_words(text: str) -> Set[str]:
+            # Remove markdown syntax and extract alphanumeric words
+            text = re.sub(r'[#*`\[\](){}|<>]', ' ', text.lower())
+            words = set(re.findall(r'\b[a-z0-9]{3,}\b', text))
+            return words
+        
+        words1 = extract_words(text1)
+        words2 = extract_words(text2)
+        
+        if not words1 or not words2:
+            return 0.0
+        
+        intersection = words1 & words2
+        union = words1 | words2
+        
+        return len(intersection) / len(union) if union else 0.0
+    
+    def _find_matching_file_by_content(self, parent_dir: str, webpage_text: str, 
+                                        min_similarity: float = 0.3) -> Optional[str]:
+        """Find a markdown file in parent_dir that best matches the webpage content.
+        
+        This is a fallback when path-based matching fails. It compares the webpage
+        content with each markdown file in the directory and returns the best match.
+        
+        Args:
+            parent_dir: Directory to search for markdown files
+            webpage_text: Text content extracted from the webpage
+            min_similarity: Minimum similarity threshold (0.0 to 1.0)
+            
+        Returns:
+            Path to the best matching file, or None if no match above threshold
+        """
+        if not os.path.isdir(parent_dir) or not webpage_text:
+            return None
+        
+        best_match = None
+        best_score = min_similarity
+        
+        try:
+            for entry in os.listdir(parent_dir):
+                if not entry.endswith('.md') or entry.startswith('_'):
+                    continue
+                
+                file_path = os.path.join(parent_dir, entry)
+                if not os.path.isfile(file_path):
+                    continue
+                
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        file_content = f.read()
+                    
+                    score = self._calculate_content_similarity(webpage_text, file_content)
+                    
+                    if score > best_score:
+                        best_score = score
+                        best_match = file_path
+                        self.logger.debug(f"Content match candidate: {entry} (score: {score:.3f})")
+                        
+                except Exception as e:
+                    self.logger.debug(f"Could not read {file_path}: {e}")
+                    continue
+            
+            if best_match:
+                self.logger.debug(f"Best content match: {best_match} (score: {best_score:.3f})")
+            
+        except OSError as e:
+            self.logger.debug(f"Could not list directory {parent_dir}: {e}")
+        
+        return best_match
+    
+    def _map_url_to_local_path(self, page_url: str, webpage_text: str = None) -> Optional[str]:
         """Map a page URL to local markdown file path.
         
         Hugo content structure typically uses:
         - _index.md for section/directory pages (e.g., /docs-v5/ -> content/en/docs-v5/_index.md)
         - {name}.md or {name}/_index.md for leaf pages
         
-        This function searches multiple possible paths to find the correct markdown file.
+        This function performs case-insensitive matching because Hugo normalizes
+        URLs to lowercase while the filesystem may have mixed-case names.
+        
+        When path-based matching fails, it falls back to content-based matching
+        by comparing the webpage content with markdown files in the parent directory.
         
         Args:
             page_url: The URL of the page (e.g., https://127.0.0.1/docs-v5/admin-guide/)
+            webpage_text: Optional text content from the webpage for content-based matching
             
         Returns:
             Absolute path to the markdown file, or None if not found.
@@ -1451,74 +1566,86 @@ class DocumentationLecturer:
                 self.local_webserver,                                            # e.g., /var/www/photon-site
             ]
             
-            # Possible file patterns for the path (in order of preference)
-            # For path like "docs-v5/admin-guide/cloud-init"
-            path_variations = []
-            
-            if path:
-                # 1. Directory with _index.md (most common for Hugo sections)
-                #    e.g., docs-v5/admin-guide/cloud-init/_index.md
-                path_variations.append(os.path.join(path, '_index.md'))
-                
-                # 2. Direct .md file
-                #    e.g., docs-v5/admin-guide/cloud-init.md
-                path_variations.append(path + '.md')
-                
-                # 3. index.md (alternative to _index.md)
-                #    e.g., docs-v5/admin-guide/cloud-init/index.md
-                path_variations.append(os.path.join(path, 'index.md'))
-                
-                # 4. README.md (some projects use this)
-                #    e.g., docs-v5/admin-guide/cloud-init/README.md
-                path_variations.append(os.path.join(path, 'README.md'))
-            else:
+            if not path:
                 # Root path - look for _index.md at content root
-                path_variations.append('_index.md')
-                path_variations.append('index.md')
+                for content_base in content_bases:
+                    if not os.path.isdir(content_base):
+                        continue
+                    for md_file in ['_index.md', 'index.md']:
+                        candidate = os.path.join(content_base, md_file)
+                        if os.path.isfile(candidate):
+                            return candidate
+                return None
             
-            # Search through all combinations
+            path_parts = path.split('/')
+            
+            # Track the deepest successfully resolved directory for content-based fallback
+            deepest_resolved_dir = None
+            
+            # Try each content base with case-insensitive directory traversal
             for content_base in content_bases:
                 if not os.path.isdir(content_base):
                     continue
-                    
-                for path_var in path_variations:
-                    candidate = os.path.join(content_base, path_var)
-                    if os.path.isfile(candidate):
-                        self.logger.debug(f"Mapped {page_url} -> {candidate}")
-                        return candidate
-            
-            # If still not found, try a recursive search in content directory
-            # This handles cases where the URL structure doesn't match the file structure exactly
-            if path:
-                # Get the last component of the path (the page name)
-                path_parts = path.split('/')
-                page_name = path_parts[-1] if path_parts else None
                 
-                if page_name:
-                    # Search for _index.md in directories matching the path pattern
-                    for content_base in content_bases:
-                        if not os.path.isdir(content_base):
-                            continue
-                        
-                        # Try to find the directory by walking the path components
-                        current_dir = content_base
-                        found = True
-                        
-                        for part in path_parts:
-                            next_dir = os.path.join(current_dir, part)
-                            if os.path.isdir(next_dir):
-                                current_dir = next_dir
-                            else:
-                                found = False
-                                break
-                        
-                        if found and os.path.isdir(current_dir):
-                            # Check for markdown files in the final directory
-                            for md_file in ['_index.md', 'index.md', 'README.md']:
-                                candidate = os.path.join(current_dir, md_file)
-                                if os.path.isfile(candidate):
-                                    self.logger.debug(f"Mapped {page_url} -> {candidate} (via directory walk)")
-                                    return candidate
+                # Walk through path components using case-insensitive matching
+                current_dir = content_base
+                resolved_parts = []
+                all_parts_resolved = True
+                
+                for i, part in enumerate(path_parts):
+                    is_last_part = (i == len(path_parts) - 1)
+                    
+                    # First try exact match (faster)
+                    exact_path = os.path.join(current_dir, part)
+                    if os.path.isdir(exact_path):
+                        current_dir = exact_path
+                        resolved_parts.append(part)
+                        continue
+                    
+                    # For the last component, also check if it's a file
+                    if is_last_part and os.path.isfile(exact_path + '.md'):
+                        return exact_path + '.md'
+                    
+                    # Try case-insensitive match for directory
+                    found_dir = self._find_directory_case_insensitive(current_dir, part)
+                    if found_dir and os.path.isdir(found_dir):
+                        current_dir = found_dir
+                        resolved_parts.append(os.path.basename(found_dir))
+                        continue
+                    
+                    # For the last component, try case-insensitive file match
+                    if is_last_part:
+                        found_file = self._find_directory_case_insensitive(current_dir, part + '.md')
+                        if found_file and os.path.isfile(found_file):
+                            return found_file
+                    
+                    # Path component not found - save current_dir for content-based fallback
+                    # This is the deepest directory we could resolve
+                    if current_dir != content_base:
+                        deepest_resolved_dir = current_dir
+                    
+                    all_parts_resolved = False
+                    break
+                
+                if all_parts_resolved and os.path.isdir(current_dir):
+                    # Found the directory, now look for the markdown file
+                    for md_file in ['_index.md', 'index.md', 'README.md']:
+                        candidate = os.path.join(current_dir, md_file)
+                        if os.path.isfile(candidate):
+                            self.logger.debug(f"Mapped {page_url} -> {candidate}")
+                            return candidate
+                    
+                    # No _index.md in this directory - save for content-based fallback
+                    deepest_resolved_dir = current_dir
+                    self.logger.debug(f"Directory exists but no _index.md: {current_dir}")
+            
+            # Fallback: Try content-based matching in the deepest resolved directory
+            if deepest_resolved_dir and webpage_text:
+                self.logger.debug(f"Trying content-based matching in: {deepest_resolved_dir}")
+                content_match = self._find_matching_file_by_content(deepest_resolved_dir, webpage_text)
+                if content_match:
+                    self.logger.info(f"Content-based match for {page_url}: {content_match}")
+                    return content_match
             
             self.logger.debug(f"No local file found for {page_url}")
             return None
@@ -1598,7 +1725,7 @@ class DocumentationLecturer:
                     'vmware_spelling_issues': vmware_spelling_issues,
                     'header_spacing_issues': header_spacing_issues,
                 }
-                self._apply_fixes(page_url, all_issues)
+                self._apply_fixes(page_url, all_issues, text_content)
             
             self.pages_analyzed += 1
             
@@ -1612,7 +1739,7 @@ class DocumentationLecturer:
             self.logger.error(f"Failed to analyze {page_url}: {e}")
             self._write_csv_row(page_url, 'analysis_error', str(e), "Check page structure")
     
-    def _apply_fixes(self, page_url: str, issues: Dict[str, List]):
+    def _apply_fixes(self, page_url: str, issues: Dict[str, List], webpage_text: str = None):
         """Apply fixes to local markdown files.
         
         Args:
@@ -1627,8 +1754,9 @@ class DocumentationLecturer:
                 - deprecated_url_issues: Deprecated VMware URLs
                 - vmware_spelling_issues: Incorrect VMware spelling
                 - mixed_cmd_output_issues: Mixed command/output in code blocks
+            webpage_text: Optional text content from the webpage for content-based file matching
         """
-        local_path = self._map_url_to_local_path(page_url)
+        local_path = self._map_url_to_local_path(page_url, webpage_text)
         if not local_path or not os.path.exists(local_path):
             self.logger.warning(f"No local file found for {page_url} (local_webserver={self.local_webserver})")
             return
@@ -2949,6 +3077,196 @@ drwxr-xr-x 14 root root 4096 Nov 30 10:00 ..
             self.assertIn("echo hello", fixed)
             self.assertNotIn("$ ls", fixed)
             self.assertNotIn("$ echo", fixed)
+            
+            lecturer.cleanup()
+        
+        def test_case_insensitive_directory_matching(self):
+            """Test case-insensitive directory/file matching for URL to path mapping."""
+            import tempfile
+            import shutil
+            
+            class MockArgs:
+                command = 'analyze'
+                website = 'https://example.com'
+                parallel = 1
+                language = 'en'
+                ref_website = None
+                test = False
+            
+            lecturer = DocumentationLecturer(MockArgs())
+            
+            # Create a temporary directory structure mimicking Hugo content
+            # with mixed-case directory names
+            temp_dir = tempfile.mkdtemp(prefix='test_case_insensitive_')
+            try:
+                # Create structure: content/en/docs-v4/command-line-reference/command-line-Interfaces/_index.md
+                content_dir = os.path.join(temp_dir, 'content', 'en', 'docs-v4', 
+                                          'command-line-reference', 'command-line-Interfaces')
+                os.makedirs(content_dir, exist_ok=True)
+                
+                # Create _index.md file
+                index_file = os.path.join(content_dir, '_index.md')
+                with open(index_file, 'w') as f:
+                    f.write('# Command Line Interfaces\n')
+                
+                # Set up lecturer with temp directory as local_webserver
+                lecturer.local_webserver = temp_dir
+                lecturer.language = 'en'
+                
+                # Test case-insensitive matching (URL has lowercase, filesystem has mixed case)
+                url = 'https://127.0.0.1/docs-v4/command-line-reference/command-line-interfaces/'
+                result = lecturer._map_url_to_local_path(url)
+                
+                # Should find the file despite case difference
+                self.assertIsNotNone(result, 
+                    f"Should find file with case-insensitive matching. "
+                    f"URL path: command-line-interfaces, Filesystem: command-line-Interfaces")
+                self.assertTrue(os.path.isfile(result), f"Result should be a valid file: {result}")
+                self.assertTrue(result.endswith('_index.md'), f"Should find _index.md, got: {result}")
+                
+            finally:
+                # Cleanup
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                lecturer.cleanup()
+        
+        def test_content_based_file_matching(self):
+            """Test content-based file matching when path-based matching fails."""
+            import tempfile
+            import shutil
+            
+            class MockArgs:
+                command = 'analyze'
+                website = 'https://example.com'
+                parallel = 1
+                language = 'en'
+                ref_website = None
+                test = False
+            
+            lecturer = DocumentationLecturer(MockArgs())
+            
+            # Create a temporary directory structure mimicking Hugo content
+            # where URL doesn't match filename (e.g., URL: building-cloud-images, file: build-cloud-images.md)
+            temp_dir = tempfile.mkdtemp(prefix='test_content_matching_')
+            try:
+                # Create structure: content/en/docs-v4/build-other-images/
+                content_dir = os.path.join(temp_dir, 'content', 'en', 'docs-v4', 'build-other-images')
+                os.makedirs(content_dir, exist_ok=True)
+                
+                # Create _index.md for the parent directory
+                index_file = os.path.join(content_dir, '_index.md')
+                with open(index_file, 'w') as f:
+                    f.write('# Build Other Images\n\nThis section covers building various image types.\n')
+                
+                # Create build-cloud-images.md with specific content
+                cloud_file = os.path.join(content_dir, 'build-cloud-images.md')
+                cloud_content = '''# Building Cloud Images
+
+This guide explains how to build cloud images for AWS, Azure, and GCE.
+
+## Prerequisites
+
+- Photon OS build environment
+- Cloud SDK installed
+- Sufficient disk space
+
+## Building AMI Images
+
+Run the following command to build an AMI:
+
+```bash
+sudo make image IMG_NAME=ami
+```
+
+## Building Azure Images
+
+For Azure, use:
+
+```bash
+sudo make image IMG_NAME=azure
+```
+'''
+                with open(cloud_file, 'w') as f:
+                    f.write(cloud_content)
+                
+                # Create another file to ensure we pick the right one
+                ova_file = os.path.join(content_dir, 'build-ova.md')
+                with open(ova_file, 'w') as f:
+                    f.write('# Building OVA\n\nThis is about OVA images, virtual machines.\n')
+                
+                # Set up lecturer with temp directory as local_webserver
+                lecturer.local_webserver = temp_dir
+                lecturer.language = 'en'
+                
+                # Simulate webpage content that matches the cloud images file
+                webpage_text = '''Building Cloud Images
+                
+This guide explains how to build cloud images for AWS, Azure, and GCE.
+
+Prerequisites
+- Photon OS build environment
+- Cloud SDK installed
+- Sufficient disk space
+
+Building AMI Images
+Run the following command to build an AMI:
+sudo make image IMG_NAME=ami
+
+Building Azure Images
+For Azure, use:
+sudo make image IMG_NAME=azure
+'''
+                
+                # Test content-based matching
+                # URL says "building-cloud-images" but file is "build-cloud-images.md"
+                url = 'https://127.0.0.1/docs-v4/build-other-images/building-cloud-images/'
+                result = lecturer._map_url_to_local_path(url, webpage_text)
+                
+                # Should find the file via content matching
+                self.assertIsNotNone(result, 
+                    "Should find file via content-based matching when URL doesn't match filename")
+                self.assertTrue(os.path.isfile(result), f"Result should be a valid file: {result}")
+                self.assertTrue(result.endswith('build-cloud-images.md'), 
+                    f"Should find build-cloud-images.md via content matching, got: {result}")
+                
+            finally:
+                # Cleanup
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                lecturer.cleanup()
+        
+        def test_content_similarity_calculation(self):
+            """Test the content similarity calculation function."""
+            class MockArgs:
+                command = 'analyze'
+                website = 'https://example.com'
+                parallel = 1
+                language = 'en'
+                ref_website = None
+                test = False
+            
+            lecturer = DocumentationLecturer(MockArgs())
+            
+            # Test identical texts
+            text1 = "Building cloud images for AWS Azure and GCE"
+            text2 = "Building cloud images for AWS Azure and GCE"
+            score = lecturer._calculate_content_similarity(text1, text2)
+            self.assertEqual(score, 1.0, "Identical texts should have similarity of 1.0")
+            
+            # Test completely different texts
+            text1 = "Building cloud images for AWS"
+            text2 = "Installing packages with tdnf"
+            score = lecturer._calculate_content_similarity(text1, text2)
+            self.assertLess(score, 0.3, "Completely different texts should have low similarity")
+            
+            # Test partially similar texts
+            text1 = "Building cloud images for AWS Azure GCE"
+            text2 = "Cloud images for AWS and Azure deployment"
+            score = lecturer._calculate_content_similarity(text1, text2)
+            self.assertGreater(score, 0.3, "Partially similar texts should have moderate similarity")
+            self.assertLess(score, 1.0, "Partially similar texts should not be identical")
+            
+            # Test empty texts
+            score = lecturer._calculate_content_similarity("", "some text")
+            self.assertEqual(score, 0.0, "Empty text should have zero similarity")
             
             lecturer.cleanup()
     
