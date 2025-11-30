@@ -398,18 +398,6 @@ server {
     rewrite ^(/assets/files/html/.*)\\.md\$ \$1 permanent;
     
     # ========== END REDIRECTS ==========
-    
-    # ========== SPECIAL LOCATION BLOCKS FOR MALFORMED URLS ==========
-    # Handle malformed URLs with URL-encoded parentheses that regex can't catch
-    location ~ "^/printview/docs-v[345]/\(https:" {
-        return 301 https://app.vagrantup.com/vmware/boxes/photon;
-    }
-    location ~ "^/docs-v[345]/user-guide/packer-examples/\(https:" {
-        return 301 https://app.vagrantup.com/vmware/boxes/photon;
-    }
-    location ~ "^/assets/files/html/1\.0-2\.0/See" {
-        return 301 https://www.gnu.org/software/findutils/manual/find.html;
-    }
 
     location / {
         try_files \$uri \$uri/ =404;

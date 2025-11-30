@@ -239,100 +239,6 @@ server {
     # ========== PRINTVIEW USER GUIDE SHORT PATHS ==========
     rewrite ^/printview/docs-v([345])/kickstart-support-in-photon-os/?\$ /docs-v\$1/user-guide/kickstart-support-in-photon-os/ permanent;
     
-    # ========== PRINTVIEW BROKEN RELATIVE PATH FIXES ==========
-    # Fix printview relative links that became short paths (e.g., Downloading-Photon-OS instead of full path)
-    rewrite ^/printview/docs-v([345])/Downloading-Photon-OS/?\$ /docs-v\$1/installation-guide/downloading-photon-os/ permanent;
-    rewrite ^/printview/docs-v([345])/downloading-photon/?\$ /docs-v\$1/installation-guide/downloading-photon-os/ permanent;
-    rewrite ^/printview/docs-v([345])/netmgr/?\$ /docs-v\$1/troubleshooting-guide/network-troubleshooting/inspect-network-settings-with-netmgr/ permanent;
-    
-    # Fix malformed URLs with parentheses (Vagrant link rendered incorrectly)
-    # Handle both URL-encoded (%28%29) and literal parentheses
-    rewrite "^/printview/docs-v([345])/\(https://app\.vagrantup\.com/vmware/boxes/photon\)/?\$" https://app.vagrantup.com/vmware/boxes/photon permanent;
-    rewrite "^/docs-v([345])/user-guide/packer-examples/\(https://app\.vagrantup\.com/vmware/boxes/photon\)/?\$" https://app.vagrantup.com/vmware/boxes/photon permanent;
-    rewrite "^/printview/docs-v([345])/%28https://app\.vagrantup\.com/vmware/boxes/photon%29/?\$" https://app.vagrantup.com/vmware/boxes/photon permanent;
-    rewrite "^/docs-v([345])/user-guide/packer-examples/%28https://app\.vagrantup\.com/vmware/boxes/photon%29/?\$" https://app.vagrantup.com/vmware/boxes/photon permanent;
-    
-    # ========== CROSS-VERSION API PATH FIXES ==========
-    # Fix v3 docs referencing v5 paths that don't exist at expected location
-    rewrite ^/docs-v5/administration-guide/network-configuration-manager-python-api/?\$ /docs-v5/administration-guide/managing-network-configuration/network-configuration-manager-python-api/ permanent;
-    rewrite ^/docs-v3/administration-guide/network-configuration-manager-python-api/?\$ /docs-v3/administration-guide/managing-network-configuration/network-configuration-manager-python-api/ permanent;
-    
-    # Fix v5 cross-references that may not exist (redirect to v3 or closest equivalent)
-    rewrite ^/docs-v5/overview/what-is-new-in-photon-os-5/?\$ /docs-v5/what-is-new-in-photon-os-5/ permanent;
-    rewrite ^/docs-v5/command-line-reference/photon-management-daemon-command-line-interface-pmd-cli/?\$ /docs-v5/command-line-reference/command-line-interfaces/photon-management-daemon-command-line-interface-pmd-cli/ permanent;
-    rewrite ^/docs-v3/command-line-reference/photon-management-daemon-command-line-interface-pmd-cli/?\$ /docs-v3/command-line-reference/commnad-line-interfaces/photon-management-daemon-command-line-interface-pmd-cli/ permanent;
-    
-    # Fix v5 API paths that don't exist - redirect to v3 equivalent or general page
-    rewrite ^/docs-v5/administration-guide/managing-network-configuration/network-configuration-manager-python-api/?\$ /docs-v3/administration-guide/managing-network-configuration/network-configuration-manager-python-api/ permanent;
-    rewrite ^/docs-v5/administration-guide/managing-network-configuration/network-configuration-manager-c-api/?\$ /docs-v3/administration-guide/managing-network-configuration/network-configuration-manager-c-api/ permanent;
-    
-    # Fix upgrading-to-photon-os path inconsistencies
-    rewrite ^/docs-v3/installation-guide/upgrading-to-photon-os-3/?\$ /docs-v3/installation-guide/upgrading-to-photon-os-3.0/ permanent;
-    rewrite ^/docs-v4/installation-guide/upgrading-to-photon-os-4/?\$ /docs-v4/installation-guide/upgrading-to-photon-os-4.0/ permanent;
-    
-    # Fix whats-new path redirects for v3
-    rewrite ^/docs-v3/overview/whats-new/?\$ /docs-v3/overview/what-is-new-in-photon-os/ permanent;
-    rewrite ^/docs-v3/overview/what-is-new-in-photon-os/?\$ /docs-v3/overview/ permanent;
-    
-    # Fix troubleshooting guide cross-reference path
-    rewrite ^/docs-v3/troubleshooting-guide/network-troubleshooting/netmgr/?\$ /docs-v3/troubleshooting-guide/network-troubleshooting/inspect-network-settings-with-netmgr/ permanent;
-    rewrite ^/docs-v3/troubleshooting-guide/administration-guide/(.*)\$ /docs-v3/administration-guide/\$1 permanent;
-    rewrite ^/docs-v3/administration-guide/managing-network-configuration/installing-packages-for-tcpdump-and-netcat/?\$ /docs-v3/administration-guide/managing-network-configuration/ permanent;
-    
-    # ========== LEGACY HTML FILE FIXES ==========
-    # Fix broken links in /assets/files/html/ legacy documentation
-    rewrite ^/assets/files/html/3\.0/photon_installation/cloud-images/?\$ /docs-v3/installation-guide/downloading-photon-os/ permanent;
-    rewrite ^/assets/files/html/3\.0/photon_installation/Upgrading-the-Kernel-Version-Requires-Grub-Changes-for-AWS-and-GCE-Images/?\$ /docs-v3/installation-guide/run-photon-on-gce/ permanent;
-    rewrite ^/assets/files/html/3\.0/photon_admin/Running-Project-Photon-on-Fusion/?\$ /docs-v3/installation-guide/run-photon-on-fusion/ permanent;
-    rewrite ^/assets/files/html/3\.0/photon_admin/photon_admin/(.*)\$ /assets/files/html/3.0/photon_admin/\$1 permanent;
-    rewrite ^/assets/files/html/3\.0/photon_admin/Photon-RPM-OStree-3-Concepts-in-action/?\$ /assets/files/html/3.0/photon_admin/Photon-RPM-OSTree-3-Concepts-in-action.html permanent;
-    rewrite ^/assets/files/html/3\.0/photon_admin/Photon-RPM-OSTree-8-File-oriented-server-operations/?\$ /assets/files/html/3.0/photon_admin/Photon-RPM-OSTree-8-File-oriented-server-operations.html permanent;
-    rewrite ^/assets/files/html/3\.0/photon_admin/kickstart/?\$ /docs-v3/user-guide/kickstart-support-in-photon-os/ permanent;
-    rewrite ^/assets/files/html/3\.0/photon_admin/Photon-RPM-OSTree-9-Package-oriented-server-operations\.mdjson-configuration-file/?\$ /assets/files/html/3.0/photon_admin/Photon-RPM-OSTree-9-Package-oriented-server-operations.html permanent;
-    rewrite ^/assets/files/html/3\.0/photon_troubleshoot/Troubleshooting-vmtoolsd/?\$ /docs-v3/troubleshooting-guide/ permanent;
-    rewrite ^/assets/files/html/3\.0/photon_troubleshoot/photon_admin/README/?\$ /docs-v3/administration-guide/ permanent;
-    
-    # Fix legacy 1.0-2.0 HTML redirects
-    rewrite ^/assets/files/html/1\.0-2\.0/Running-Project-Photon-on-vSphere/?\$ /docs-v3/installation-guide/run-photon-on-vsphere/ permanent;
-    rewrite ^/assets/files/html/1\.0-2\.0/Running-Project-Photon-on-Fusion/?\$ /docs-v3/installation-guide/run-photon-on-fusion/ permanent;
-    rewrite ^/assets/files/html/1\.0-2\.0/cloud-images/?\$ /docs-v3/installation-guide/downloading-photon-os/ permanent;
-    rewrite ^/assets/files/html/1\.0-2\.0/Photon-RPM-OSTree-Appendix-A-Known-issues/?\$ /docs-v3/administration-guide/photon-rpm-ostree/ permanent;
-    rewrite ^/assets/files/html/1\.0-2\.0/Photon-RPM-OStree-3-Concepts-in-action/?\$ /assets/files/html/1.0-2.0/Photon-RPM-OSTree-3-Concepts-in-action.html permanent;
-    rewrite ^/assets/files/html/1\.0-2\.0/Photon-RPM-OSTree-8-File-oriented-server-operations/?\$ /assets/files/html/1.0-2.0/Photon-RPM-OSTree-8-File-oriented-server-operations.html permanent;
-    # Handle malformed external link in legacy docs (multiple patterns)
-    # The original link is: See%20https:/www.gnu.org/software/findutils/manual/find.html (missing double slash)
-    rewrite "^/assets/files/html/1\.0-2\.0/See%20https:/www\.gnu\.org/software/findutils/manual/find\.html/?\$" https://www.gnu.org/software/findutils/manual/find.html permanent;
-    rewrite "^/assets/files/html/1\.0-2\.0/See%20https://www\.gnu\.org/software/findutils/manual/find\.html/?\$" https://www.gnu.org/software/findutils/manual/find.html permanent;
-    rewrite "^/assets/files/html/1\.0-2\.0/See\%20https:/www\.gnu\.org/software/findutils/manual/find\.html/?\$" https://www.gnu.org/software/findutils/manual/find.html permanent;
-    
-    # Fix missing .html extension references in legacy HTML files
-    rewrite ^/assets/files/html/3\.0/photon_admin/Photon-RPM-OSTree-5-Host-updating-operations/?\$ /assets/files/html/3.0/photon_admin/Photon-RPM-OSTree-5-Host-updating-operations.html permanent;
-    # Note: Files have inconsistent naming (OStree vs OSTree) - redirect to actual file names
-    rewrite ^/assets/files/html/3\.0/photon_admin/Photon-RPM-OSTree-3-Concepts-in-action\.html/?\$ /assets/files/html/3.0/photon_admin/Photon-RPM-OStree-3-Concepts-in-action.html permanent;
-    rewrite ^/assets/files/html/3\.0/photon_admin/Photon-RPM-OSTree-8-File-oriented-server-operations\.html/?\$ /assets/files/html/3.0/photon_admin/Photon-RPM-OStree-8-File-oriented-server-operations.html permanent;
-    rewrite ^/assets/files/html/1\.0-2\.0/Photon-RPM-OSTree-3-Concepts-in-action\.html/?\$ /assets/files/html/1.0-2.0/Photon-RPM-OStree-3-Concepts-in-action.html permanent;
-    rewrite ^/assets/files/html/1\.0-2\.0/Photon-RPM-OSTree-8-File-oriented-server-operations\.html/?\$ /assets/files/html/1.0-2.0/Photon-RPM-OStree-8-File-oriented-server-operations.html permanent;
-    
-    # ========== SPECIFIC BROKEN PATH FIXES ==========
-    # Fix prerequisite page relative link issue
-    rewrite ^/docs-v3/installation-guide/run-photon-on-vsphere/prerequisites-for-running-photon-os-on-vsphere/Downloading-Photon-OS/?\$ /docs-v3/installation-guide/downloading-photon-os/ permanent;
-    rewrite ^/docs-v3/installation-guide/run-photon-on-gce/downloading-photon/?\$ /docs-v3/installation-guide/downloading-photon-os/ permanent;
-    
-    # Fix PMD command line reference path
-    rewrite ^/docs-v3/command-line-reference/command-line-interfaces/photon-management-daemon-command-line-interface-pmd-cli/?\$ /docs-v3/command-line-reference/photon-management-daemon-command-line-interface-pmd-cli/ permanent;
-    rewrite ^/docs-v5/command-line-reference/command-line-interfaces/photon-management-daemon-command-line-interface-pmd-cli/?\$ /docs-v5/command-line-reference/photon-management-daemon-command-line-interface-pmd-cli/ permanent;
-    
-    # ========== DOUBLE-SLASH NAVIGATION FIXES ==========
-    # Fix paths with double slash from broken navigation (e.g., managing-network-configuration//network-configuration-manager-c-api/)
-    rewrite ^/docs-v3/administration-guide/managing-network-configuration//(.*)\$ /docs-v3/administration-guide/managing-network-configuration/\$1 permanent;
-    
-    # Fix broken navigation links from double-slash pages (these pages show wrong relative nav)
-    rewrite ^/docs-v3/blog/?\$ /blog/ permanent;
-    rewrite ^/docs-v3/docs/?\$ /docs-v3/ permanent;
-    rewrite ^/docs-v3/docs-v5/?\$ /docs-v5/ permanent;
-    rewrite ^/docs-v3/docs-v4/?\$ /docs-v4/ permanent;
-    rewrite ^/docs-v3/printview/docs-v3/administration-guide/managing-network-configuration/?\$ /docs-v3/administration-guide/managing-network-configuration/ permanent;
-    
     # ========== PRINTVIEW GENERIC SECTION REDIRECTS ==========
     # Printview short paths - redirect to actual docs content
     rewrite ^/printview/overview/?\$ /docs-v5/overview/ permanent;
@@ -398,18 +304,6 @@ server {
     rewrite ^(/assets/files/html/.*)\\.md\$ \$1 permanent;
     
     # ========== END REDIRECTS ==========
-    
-    # ========== SPECIAL LOCATION BLOCKS FOR MALFORMED URLS ==========
-    # Handle malformed URLs with URL-encoded parentheses that regex can't catch
-    location ~ "^/printview/docs-v[345]/\(https:" {
-        return 301 https://app.vagrantup.com/vmware/boxes/photon;
-    }
-    location ~ "^/docs-v[345]/user-guide/packer-examples/\(https:" {
-        return 301 https://app.vagrantup.com/vmware/boxes/photon;
-    }
-    location ~ "^/assets/files/html/1\.0-2\.0/See" {
-        return 301 https://www.gnu.org/software/findutils/manual/find.html;
-    }
 
     location / {
         try_files \$uri \$uri/ =404;
