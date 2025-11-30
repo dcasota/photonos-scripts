@@ -773,11 +773,13 @@ find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i \
   -e 's|(Downloading-Photon)|(downloading-photon-os)|g' \
   {} \;
 
-# Fix 70: Fix upgrading-to-photon-os-3 path (missing trailing slash or .0 suffix)
-echo "70. Fixing upgrading-to-photon-os-3 path..."
+# Fix 70: Fix upgrading-to-photon-os path variants (normalize to actual file slugs)
+# The actual files are named upgrading-to-photon-os-3.0.md and upgrading-to-photon-os-4.0.md
+# so the URLs should use the .0 suffix. Fix links that incorrectly omit .0.
+echo "70. Fixing upgrading-to-photon-os path variants..."
 find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i \
-  -e 's|upgrading-to-photon-os-3.0/|upgrading-to-photon-os-3/|g' \
-  -e 's|upgrading-to-photon-os-4.0/|upgrading-to-photon-os-4/|g' \
+  -e 's|upgrading-to-photon-os-3/|upgrading-to-photon-os-3.0/|g' \
+  -e 's|upgrading-to-photon-os-4/|upgrading-to-photon-os-4.0/|g' \
   {} \;
 
 # Fix 71: Fix build-iso-from-source path (should be under building-images)
@@ -818,48 +820,14 @@ for ver in docs-v3 docs-v4 docs-v5; do
   done
 done
 
-# Fix 75: Add slug front matter to files where filename differs from title-derived slug
-# This ensures Hugo generates URLs that match the filename, which is required for
-# photonos-docs-lecturer.py to correctly map URLs to local files for automated fixes.
-# Hugo by default generates URLs from the title field, but we want URLs based on filenames.
-echo "75. Adding slug front matter to files where filename differs from title-derived slug..."
-
-add_slug_if_needed() {
-  local file="$1"
-  local filename=$(basename "$file" .md)
-  
-  # Skip _index.md files (they use directory name for URL)
-  if [ "$filename" = "_index" ]; then
-    return
-  fi
-  
-  # Check if slug already exists
-  if grep -q "^slug:" "$file" 2>/dev/null; then
-    return
-  fi
-  
-  # Extract title and convert to Hugo-style slug
-  local title=$(grep -m1 "^title:" "$file" 2>/dev/null | sed 's/title:\s*["'\'']\?\([^"'\'']*\)["'\'']\?/\1/')
-  if [ -z "$title" ]; then
-    return
-  fi
-  
-  # Convert title to slug (lowercase, spaces to hyphens, remove special chars)
-  local title_slug=$(echo "$title" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//')
-  
-  # If filename differs from title-derived slug, add slug front matter
-  if [ "$filename" != "$title_slug" ] && [ -n "$title_slug" ]; then
-    # Add slug after title line in front matter
-    sed -i "/^title:/a slug: $filename" "$file"
-  fi
-}
-
-export -f add_slug_if_needed
-
-# Process all markdown files (excluding _index.md)
-find "$INSTALL_DIR/content/en" -type f -name "*.md" ! -name "_index.md" -exec bash -c 'add_slug_if_needed "$0"' {} \;
-
-echo "  Slug front matter added to files where needed."
+# Fix 75: REMOVED - Adding slug front matter based on filename contradicts other fixes
+# that change links to use title-derived slugs. Hugo should use default slug generation
+# based on the title field. If specific pages need custom slugs, they should be added
+# manually to those specific files.
+# 
+# The previous fixes (49, 50, 51, etc.) change links to match Hugo's title-derived slugs
+# (e.g., "kickstart-support-in-photon-os" from title "Kickstart Support in Photon OS").
+# Adding filename-based slugs would break these links.
 
 echo "======================================================="
 echo "Fixing incorrect relative links in markdown files done."
