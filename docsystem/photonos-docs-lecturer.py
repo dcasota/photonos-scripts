@@ -203,6 +203,41 @@ class DocumentationLecturer:
         re.compile(r'_([^_]+)_'),  # Italic text not rendered
     ]
     
+    # Pattern for missing space before backticks (e.g., "Clone`the" should be "Clone `the")
+    MISSING_SPACE_BEFORE_BACKTICK = re.compile(r'([a-zA-Z])(`[^`]+`)')
+    
+    # Pattern for missing space after backticks (e.g., "`command`text" should be "`command` text")
+    MISSING_SPACE_AFTER_BACKTICK = re.compile(r'(`[^`]+`)([a-zA-Z])')
+    
+    # Pattern for detecting indentation issues in numbered/bulleted lists
+    # Matches lines that start with a number followed by period/parenthesis
+    NUMBERED_LIST_PATTERN = re.compile(r'^(\s*)(\d+)([.)])(\s+)(.*)$', re.MULTILINE)
+    
+    # Patterns for detecting shell prompt prefixes in code blocks that should be removed
+    # These are common shell prompts that shouldn't be part of copyable commands
+    SHELL_PROMPT_PATTERNS = [
+        re.compile(r'^(\$\s+)(.+)$', re.MULTILINE),      # "$ command" - standard user prompt
+        re.compile(r'^(#\s+)(.+)$', re.MULTILINE),       # "# command" - root prompt
+        re.compile(r'^(>\s+)(.+)$', re.MULTILINE),       # "> command" - alternative prompt
+        re.compile(r'^(%\s+)(.+)$', re.MULTILINE),       # "% command" - csh/tcsh prompt
+        re.compile(r'^(❯\s*)(.+)$', re.MULTILINE),       # "❯ command" - fancy prompt (e.g., starship, powerline)
+        re.compile(r'^(➜\s+)(.+)$', re.MULTILINE),       # "➜  command" - Oh My Zsh robbyrussell theme
+        re.compile(r'^(root@\S+[#$]\s*)(.+)$', re.MULTILINE),  # "root@host# command"
+        re.compile(r'^(\w+@\S+[#$%]\s*)(.+)$', re.MULTILINE),  # "user@host$ command"
+    ]
+    
+    # Deprecated VMware packages URL pattern
+    DEPRECATED_VMWARE_URL = re.compile(r'https?://packages\.vmware\.com/[^\s"\'<>]*')
+    VMWARE_URL_REPLACEMENT = 'https://packages-prod.broadcom.com/'
+    
+    # VMware spelling pattern - must be "VMware" with capital V and M
+    # Matches incorrect spellings like "vmware", "Vmware", "VMWare", "VMWARE", etc.
+    # Uses word boundaries and explicitly excludes the correct spelling
+    VMWARE_SPELLING_PATTERN = re.compile(r'\b((?!VMware)[vV][mM][wW][aA][rR][eE])\b')
+    
+    # Markdown header without space pattern (e.g., "####Title" should be "#### Title")
+    MARKDOWN_HEADER_NO_SPACE = re.compile(r'^(#{2,6})([^\s#].*)$', re.MULTILINE)
+    
     # Alignment CSS classes to check
     ALIGNMENT_CLASSES = ['align-center', 'align-left', 'align-right', 'centered', 
                          'img-responsive', 'text-center', 'mx-auto', 'd-block']
@@ -626,11 +661,34 @@ class DocumentationLecturer:
             print(f"        sudo python3 {TOOL_NAME} install-tools", file=sys.stderr)
             return False
     
+    def _strip_code_from_text(self, text: str) -> str:
+        """Remove code blocks and inline code from text before grammar checking.
+        
+        Removes:
+        - Fenced code blocks (``` ... ```)
+        - Inline code (` ... `)
+        
+        This prevents false grammar errors on technical expressions and commands.
+        """
+        # Remove fenced code blocks (``` ... ```) - including with language specifier
+        text = re.sub(r'```[\w]*\s*[\s\S]*?```', ' ', text)
+        
+        # Remove inline code (` ... `) - be careful not to match empty backticks
+        text = re.sub(r'`[^`]+`', ' ', text)
+        
+        # Clean up multiple spaces created by removals
+        text = re.sub(r'\s+', ' ', text)
+        
+        return text
+    
     def _check_grammar(self, page_url: str, text: str) -> List[Dict]:
         """Check text for grammar issues (thread-safe)."""
         issues = []
         try:
             tool = self._get_grammar_tool()
+            
+            # Strip code blocks and inline code before grammar checking
+            text = self._strip_code_from_text(text)
             
             # Chunk large text
             max_chunk = 5000
@@ -710,6 +768,500 @@ class DocumentationLecturer:
                     )
         
         return artifacts
+    
+    def _check_missing_spaces_around_backticks(self, page_url: str, text_content: str) -> List[Dict]:
+        """Check for missing spaces before or after inline code backticks.
+        
+        Detects issues like:
+        - "Clone`the project" -> should be "Clone `the project"
+        - "`command`and" -> should be "`command` and"
+        """
+        issues = []
+        
+        # Check for missing space before backtick (e.g., "word`code`")
+        for match in self.MISSING_SPACE_BEFORE_BACKTICK.finditer(text_content):
+            preceding_char = match.group(1)
+            code_block = match.group(2)
+            full_match = match.group(0)
+            
+            # Get context around the match
+            start = max(0, match.start() - 20)
+            end = min(len(text_content), match.end() + 20)
+            context = text_content[start:end]
+            
+            location = f"Missing space before backtick: ...{context}..."
+            fix = f"Add space before backtick: '{preceding_char} {code_block}' instead of '{full_match}'"
+            
+            self._write_csv_row(page_url, 'formatting', location, fix)
+            issues.append({
+                'type': 'missing_space_before_backtick',
+                'context': context,
+                'original': full_match,
+                'suggestion': f"{preceding_char} {code_block}"
+            })
+            
+            if len(issues) >= 10:
+                break
+        
+        # Check for missing space after backtick (e.g., "`code`word")
+        for match in self.MISSING_SPACE_AFTER_BACKTICK.finditer(text_content):
+            code_block = match.group(1)
+            following_char = match.group(2)
+            full_match = match.group(0)
+            
+            # Get context around the match
+            start = max(0, match.start() - 20)
+            end = min(len(text_content), match.end() + 20)
+            context = text_content[start:end]
+            
+            location = f"Missing space after backtick: ...{context}..."
+            fix = f"Add space after backtick: '{code_block} {following_char}' instead of '{full_match}'"
+            
+            self._write_csv_row(page_url, 'formatting', location, fix)
+            issues.append({
+                'type': 'missing_space_after_backtick',
+                'context': context,
+                'original': full_match,
+                'suggestion': f"{code_block} {following_char}"
+            })
+            
+            if len(issues) >= 10:
+                break
+        
+        return issues
+    
+    def _check_list_indentation_issues(self, page_url: str, html_content: str) -> List[Dict]:
+        """Check for indentation issues in numbered/bulleted lists.
+        
+        Detects issues like:
+        - Inconsistent indentation in list items
+        - List items that don't align properly
+        - Nested content not properly indented under list items
+        """
+        issues = []
+        soup = BeautifulSoup(html_content, 'html.parser')
+        
+        # Check ordered lists (ol) for indentation issues
+        for ol in soup.find_all('ol'):
+            list_items = ol.find_all('li', recursive=False)
+            
+            for i, li in enumerate(list_items):
+                # Check if list item has nested content that might have indentation issues
+                nested_elements = li.find_all(['p', 'pre', 'code', 'ul', 'ol'], recursive=True)
+                
+                # Get text content of the list item
+                li_text = li.get_text(separator=' ', strip=True)
+                
+                # Check for common indentation-related issues in the HTML structure
+                # Look for text nodes that might indicate improper markdown rendering
+                for child in li.children:
+                    if hasattr(child, 'name'):
+                        # Check if there's a paragraph immediately after the list marker
+                        # that should be on the same line
+                        if child.name == 'p':
+                            prev_text = child.previous_sibling
+                            if prev_text and isinstance(prev_text, str) and prev_text.strip():
+                                # There's text before the paragraph - might be indentation issue
+                                context = f"List item {i+1}: {li_text[:80]}..."
+                                location = f"Possible indentation issue in list item: {context}"
+                                fix = "Ensure consistent indentation for list item content"
+                                
+                                self._write_csv_row(page_url, 'indentation', location, fix)
+                                issues.append({
+                                    'type': 'list_indentation',
+                                    'item_number': i + 1,
+                                    'context': context
+                                })
+                
+                # Check for code blocks within list items that might not be properly indented
+                code_blocks = li.find_all('pre')
+                for code_block in code_blocks:
+                    # Check if code block appears to be misaligned
+                    parent_p = code_block.find_parent('p')
+                    if parent_p and parent_p.parent == li:
+                        # Code block inside paragraph inside list item - potential issue
+                        code_text = code_block.get_text()[:50]
+                        location = f"Code block in list item {i+1} may have indentation issues: {code_text}..."
+                        fix = "Ensure code block is properly indented (4 spaces or 1 tab) under the list item"
+                        
+                        self._write_csv_row(page_url, 'indentation', location, fix)
+                        issues.append({
+                            'type': 'code_block_indentation',
+                            'item_number': i + 1,
+                            'context': code_text
+                        })
+            
+            if len(issues) >= 10:
+                break
+        
+        # Also check for unordered lists
+        for ul in soup.find_all('ul'):
+            list_items = ul.find_all('li', recursive=False)
+            
+            for i, li in enumerate(list_items):
+                # Check for nested content indentation issues
+                nested_pre = li.find_all('pre', recursive=True)
+                for pre in nested_pre:
+                    # Check if there's text content after the code block that might indicate
+                    # the code block isn't properly nested
+                    next_sibling = pre.next_sibling
+                    if next_sibling and isinstance(next_sibling, str) and next_sibling.strip():
+                        text_preview = next_sibling.strip()[:50]
+                        location = f"Text after code block in list item may indicate indentation issue: {text_preview}..."
+                        fix = "Ensure proper indentation for content following code blocks in list items"
+                        
+                        self._write_csv_row(page_url, 'indentation', location, fix)
+                        issues.append({
+                            'type': 'post_code_indentation',
+                            'context': text_preview
+                        })
+            
+            if len(issues) >= 10:
+                break
+        
+        return issues
+    
+    def _check_shell_prompt_in_code_blocks(self, page_url: str, soup: BeautifulSoup) -> List[Dict]:
+        """Check for shell prompt prefixes in code blocks that should be removed.
+        
+        Detects issues like:
+        - "$ command" where "$ " is a shell prompt prefix
+        - "# command" where "# " is a root prompt prefix
+        - "user@host$ command" where the prompt should be removed
+        
+        These prompts make it harder for users to copy-paste commands.
+        """
+        issues = []
+        
+        # Find all code blocks (pre, code elements)
+        code_blocks = soup.find_all(['pre', 'code'])
+        
+        for code_block in code_blocks:
+            # Get the text content of the code block
+            code_text = code_block.get_text()
+            
+            if not code_text or len(code_text.strip()) == 0:
+                continue
+            
+            # Check each line in the code block
+            lines = code_text.split('\n')
+            for line_num, line in enumerate(lines):
+                if not line.strip():
+                    continue
+                
+                # Check against each shell prompt pattern
+                for pattern in self.SHELL_PROMPT_PATTERNS:
+                    match = pattern.match(line)
+                    if match:
+                        prompt_prefix = match.group(1)
+                        actual_command = match.group(2)
+                        
+                        # Skip if the line looks like a comment (# followed by explanation text)
+                        # Comments typically have more words and don't look like commands
+                        if prompt_prefix.startswith('#'):
+                            # Heuristics to distinguish comments from root prompts:
+                            # - Comments often have multiple words with spaces
+                            # - Commands typically start with known command names or paths
+                            words = actual_command.split()
+                            if len(words) > 3 and not actual_command.startswith(('/', './', 'sudo', 'cd', 'ls', 'cat', 'echo', 'export', 'mkdir', 'rm', 'cp', 'mv', 'chmod', 'chown', 'apt', 'yum', 'dnf', 'tdnf', 'pip', 'python', 'npm', 'git', 'docker', 'systemctl', 'service')):
+                                continue
+                        
+                        # Create a context snippet
+                        context = line[:80] if len(line) > 80 else line
+                        
+                        location = f"Shell prompt in code block: '{context}'"
+                        fix = f"Remove shell prompt prefix '{prompt_prefix.strip()}' - command should be: '{actual_command}'"
+                        
+                        self._write_csv_row(page_url, 'shell_prompt', location, fix)
+                        issues.append({
+                            'type': 'shell_prompt_prefix',
+                            'line_number': line_num + 1,
+                            'prompt': prompt_prefix,
+                            'command': actual_command,
+                            'original_line': line
+                        })
+                        
+                        # Only report first match per line
+                        break
+                
+                if len(issues) >= 20:
+                    break
+            
+            if len(issues) >= 20:
+                break
+        
+        return issues
+    
+    def _check_mixed_command_output_in_code_blocks(self, page_url: str, soup: BeautifulSoup) -> List[Dict]:
+        """Check for code blocks that mix console commands with their output.
+        
+        Detects code blocks where a command (e.g., "sudo cat /etc/file") is followed by
+        its output in the same code block. These should be separated into:
+        - A command code block (for copy-button functionality)
+        - An output code block (for display only)
+        
+        Heuristics used to detect mixed content:
+        1. First line looks like a command (starts with sudo, cat, ls, etc.)
+        2. Subsequent lines look like output (config format, JSON, multi-line text)
+        3. No shell prompts on output lines
+        """
+        issues = []
+        
+        # Common command prefixes that indicate a line is a command
+        COMMAND_PATTERNS = [
+            re.compile(r'^(sudo\s+)'),           # sudo commands
+            re.compile(r'^(cat\s+)'),            # cat file
+            re.compile(r'^(ls\s+|ls$)'),         # ls commands
+            re.compile(r'^(grep\s+)'),           # grep commands
+            re.compile(r'^(find\s+)'),           # find commands
+            re.compile(r'^(systemctl\s+)'),      # systemctl commands
+            re.compile(r'^(journalctl\s+)'),     # journalctl commands
+            re.compile(r'^(docker\s+)'),         # docker commands
+            re.compile(r'^(kubectl\s+)'),        # kubectl commands
+            re.compile(r'^(tdnf\s+)'),           # tdnf commands
+            re.compile(r'^(rpm\s+)'),            # rpm commands
+            re.compile(r'^(curl\s+)'),           # curl commands
+            re.compile(r'^(wget\s+)'),           # wget commands
+            re.compile(r'^(echo\s+)'),           # echo commands
+            re.compile(r'^(head\s+|tail\s+)'),   # head/tail commands
+            re.compile(r'^(awk\s+|sed\s+)'),     # awk/sed commands
+            re.compile(r'^(chmod\s+|chown\s+)'), # permission commands
+            re.compile(r'^(mkdir\s+|rm\s+)'),    # file operation commands
+            re.compile(r'^(cp\s+|mv\s+)'),       # copy/move commands
+            re.compile(r'^(ip\s+|ifconfig\s+)'), # network commands
+            re.compile(r'^(nmctl\s+)'),          # network manager commands
+            re.compile(r'^(hostnamectl\s+)'),    # hostname commands
+            re.compile(r'^(timedatectl\s+)'),    # time/date commands
+            re.compile(r'^(localectl\s+)'),      # locale commands
+        ]
+        
+        # Patterns that indicate output (not commands)
+        OUTPUT_PATTERNS = [
+            re.compile(r'^\[[\w\s]+\]'),              # Section headers like [System], [Network]
+            re.compile(r'^[\w_]+='),                  # Key=value config lines
+            re.compile(r'^\s*"[\w_]+":\s*'),          # JSON key-value
+            re.compile(r'^\s*{\s*$'),                 # JSON opening brace
+            re.compile(r'^\s*}\s*$'),                 # JSON closing brace
+            re.compile(r'^\s+\w+:\s+\w+'),            # YAML-like key: value with leading space
+            re.compile(r'^[A-Z][a-z]+:\s+'),          # Capitalized labels like "Name:", "Status:"
+            re.compile(r'^\s{2,}'),                   # Lines with significant indentation (likely output)
+            re.compile(r'^─+|^━+|^═+'),               # Box drawing characters (table borders)
+            re.compile(r'^\s*\d+\.\d+\.\d+'),         # Version numbers
+            re.compile(r'^total\s+\d+'),              # ls output "total N"
+            re.compile(r'^[drwx-]{10}'),              # ls -l output (file permissions)
+        ]
+        
+        # Find all code blocks (pre elements, potentially containing code elements)
+        code_blocks = soup.find_all('pre')
+        
+        for code_block in code_blocks:
+            code_text = code_block.get_text()
+            
+            if not code_text or len(code_text.strip()) == 0:
+                continue
+            
+            lines = code_text.strip().split('\n')
+            
+            if len(lines) < 2:
+                continue  # Need at least 2 lines to have command + output
+            
+            # Check if first line looks like a command
+            first_line = lines[0].strip()
+            
+            # Skip if first line is empty or looks like output
+            if not first_line:
+                continue
+            
+            # Remove shell prompt prefix if present for analysis
+            clean_first_line = first_line
+            for prompt_pattern in self.SHELL_PROMPT_PATTERNS:
+                match = prompt_pattern.match(first_line)
+                if match:
+                    clean_first_line = match.group(2)
+                    break
+            
+            # Check if first line matches a command pattern
+            is_command = False
+            for cmd_pattern in COMMAND_PATTERNS:
+                if cmd_pattern.match(clean_first_line):
+                    is_command = True
+                    break
+            
+            if not is_command:
+                continue
+            
+            # Now check if remaining lines look like output
+            output_line_count = 0
+            command_line_count = 1  # First line is a command
+            
+            for line in lines[1:]:
+                line_stripped = line.strip()
+                if not line_stripped:
+                    continue
+                
+                # Check if this line looks like output
+                is_output = False
+                for output_pattern in OUTPUT_PATTERNS:
+                    if output_pattern.match(line):
+                        is_output = True
+                        output_line_count += 1
+                        break
+                
+                if not is_output:
+                    # Check if it's another command
+                    is_another_command = False
+                    for cmd_pattern in COMMAND_PATTERNS:
+                        if cmd_pattern.match(line_stripped):
+                            is_another_command = True
+                            command_line_count += 1
+                            break
+                    
+                    # Check for shell prompts (indicating another command)
+                    if not is_another_command:
+                        for prompt_pattern in self.SHELL_PROMPT_PATTERNS:
+                            if prompt_pattern.match(line):
+                                is_another_command = True
+                                command_line_count += 1
+                                break
+                    
+                    # If not a command, treat as potential output
+                    if not is_another_command:
+                        output_line_count += 1
+            
+            # Report issue if we found significant output mixed with command
+            if output_line_count >= 2 and command_line_count <= 2:
+                # Get a preview of the content
+                command_preview = clean_first_line[:60]
+                if len(clean_first_line) > 60:
+                    command_preview += "..."
+                
+                output_preview = lines[1].strip()[:60] if len(lines) > 1 else ""
+                if len(lines) > 1 and len(lines[1].strip()) > 60:
+                    output_preview += "..."
+                
+                location = f"Mixed command and output in code block. Command: '{command_preview}', Output starts: '{output_preview}'"
+                fix = "Separate into two code blocks: one for the command (copyable) and one for the output (display only)"
+                
+                self._write_csv_row(page_url, 'mixed_command_output', location, fix)
+                issues.append({
+                    'type': 'mixed_command_output',
+                    'command': clean_first_line,
+                    'output_lines': output_line_count,
+                    'total_lines': len(lines)
+                })
+                
+                if len(issues) >= 10:
+                    break
+        
+        return issues
+    
+    def _check_deprecated_vmware_urls(self, page_url: str, soup: BeautifulSoup) -> List[Dict]:
+        """Check for deprecated packages.vmware.com URLs that should be updated.
+        
+        These URLs should be replaced with packages-prod.broadcom.com.
+        """
+        issues = []
+        
+        # Check all anchor tags for deprecated URLs
+        for anchor in soup.find_all('a', href=True):
+            href = anchor.get('href', '')
+            if self.DEPRECATED_VMWARE_URL.match(href):
+                link_text = anchor.get_text().strip()[:50]
+                location = f"Deprecated VMware URL: {href}"
+                fix = f"Replace with {self.VMWARE_URL_REPLACEMENT} - Link text: '{link_text}'"
+                
+                self._write_csv_row(page_url, 'deprecated_url', location, fix)
+                issues.append({
+                    'type': 'deprecated_vmware_url',
+                    'url': href,
+                    'link_text': link_text
+                })
+        
+        # Also check text content for URLs that might not be hyperlinks
+        text_content = soup.get_text()
+        for match in self.DEPRECATED_VMWARE_URL.finditer(text_content):
+            url_found = match.group(0)
+            # Avoid duplicates from anchor check
+            if not any(i['url'] == url_found for i in issues):
+                location = f"Deprecated VMware URL in text: {url_found}"
+                fix = f"Replace with {self.VMWARE_URL_REPLACEMENT}"
+                
+                self._write_csv_row(page_url, 'deprecated_url', location, fix)
+                issues.append({
+                    'type': 'deprecated_vmware_url',
+                    'url': url_found,
+                    'link_text': ''
+                })
+        
+        return issues
+    
+    def _check_vmware_spelling(self, page_url: str, text_content: str) -> List[Dict]:
+        """Check for incorrect VMware spelling.
+        
+        VMware must be spelled with capital V and M: "VMware"
+        Incorrect: vmware, Vmware, VMWare, VMWARE, etc.
+        """
+        issues = []
+        
+        for match in self.VMWARE_SPELLING_PATTERN.finditer(text_content):
+            incorrect_spelling = match.group(0)
+            
+            # Get context around the match
+            start = max(0, match.start() - 30)
+            end = min(len(text_content), match.end() + 30)
+            context = text_content[start:end]
+            
+            location = f"Incorrect VMware spelling: '{incorrect_spelling}' in ...{context}..."
+            fix = f"Change '{incorrect_spelling}' to 'VMware'"
+            
+            self._write_csv_row(page_url, 'spelling', location, fix)
+            issues.append({
+                'type': 'vmware_spelling',
+                'incorrect': incorrect_spelling,
+                'context': context
+            })
+            
+            if len(issues) >= 10:
+                break
+        
+        return issues
+    
+    def _check_markdown_header_spacing(self, page_url: str, text_content: str) -> List[Dict]:
+        """Check for markdown headers missing space after hash symbols.
+        
+        Detects issues like:
+        - "####Title" should be "#### Title"
+        - "###Subtitle" should be "### Subtitle"
+        - "##Section" should be "## Section"
+        """
+        issues = []
+        
+        for match in self.MARKDOWN_HEADER_NO_SPACE.finditer(text_content):
+            hashes = match.group(1)
+            title = match.group(2)
+            original = match.group(0)
+            
+            # Get context around the match
+            start = max(0, match.start() - 10)
+            end = min(len(text_content), match.end() + 20)
+            context = text_content[start:end]
+            
+            location = f"Markdown header missing space: '{original}'"
+            fix = f"Add space after '{hashes}': '{hashes} {title}'"
+            
+            self._write_csv_row(page_url, 'markdown', location, fix)
+            issues.append({
+                'type': 'markdown_header_no_space',
+                'original': original,
+                'hashes': hashes,
+                'title': title,
+                'suggestion': f"{hashes} {title}"
+            })
+            
+            if len(issues) >= 10:
+                break
+        
+        return issues
     
     def _check_url_link(self, url: str) -> Tuple[bool, int]:
         """Check if a URL link is valid."""
@@ -903,9 +1455,43 @@ class DocumentationLecturer:
             orphan_images = self._check_orphan_images(page_url, soup)
             self._check_image_alignment(page_url, soup)
             
+            # Check for formatting issues (missing spaces around backticks)
+            formatting_issues = self._check_missing_spaces_around_backticks(page_url, text_content)
+            
+            # Check for indentation issues in lists
+            indentation_issues = self._check_list_indentation_issues(page_url, html_content)
+            
+            # Check for shell prompt prefixes in code blocks
+            shell_prompt_issues = self._check_shell_prompt_in_code_blocks(page_url, soup)
+            
+            # Check for mixed command and output in code blocks
+            mixed_cmd_output_issues = self._check_mixed_command_output_in_code_blocks(page_url, soup)
+            
+            # Check for deprecated VMware package URLs
+            deprecated_url_issues = self._check_deprecated_vmware_urls(page_url, soup)
+            
+            # Check for incorrect VMware spelling
+            vmware_spelling_issues = self._check_vmware_spelling(page_url, text_content)
+            
+            # Check for markdown headers missing space after hash symbols
+            header_spacing_issues = self._check_markdown_header_spacing(page_url, text_content)
+            
             # Apply fixes if running with --gh-pr
             if self.command == 'run' and self.gh_pr:
-                self._apply_fixes(page_url, grammar_issues, md_artifacts, orphan_links, orphan_images)
+                all_issues = {
+                    'grammar_issues': grammar_issues,
+                    'md_artifacts': md_artifacts,
+                    'orphan_links': orphan_links,
+                    'orphan_images': orphan_images,
+                    'formatting_issues': formatting_issues,
+                    'indentation_issues': indentation_issues,
+                    'shell_prompt_issues': shell_prompt_issues,
+                    'mixed_cmd_output_issues': mixed_cmd_output_issues,
+                    'deprecated_url_issues': deprecated_url_issues,
+                    'vmware_spelling_issues': vmware_spelling_issues,
+                    'header_spacing_issues': header_spacing_issues,
+                }
+                self._apply_fixes(page_url, all_issues)
             
             self.pages_analyzed += 1
             
@@ -919,9 +1505,22 @@ class DocumentationLecturer:
             self.logger.error(f"Failed to analyze {page_url}: {e}")
             self._write_csv_row(page_url, 'analysis_error', str(e), "Check page structure")
     
-    def _apply_fixes(self, page_url: str, grammar_issues: List, md_artifacts: List, 
-                     orphan_links: List, orphan_images: List):
-        """Apply fixes to local markdown files."""
+    def _apply_fixes(self, page_url: str, issues: Dict[str, List]):
+        """Apply fixes to local markdown files.
+        
+        Args:
+            page_url: The URL of the page being fixed
+            issues: Dictionary of issue types to their detected issues:
+                - grammar_issues: Grammar/spelling issues
+                - md_artifacts: Unrendered markdown artifacts
+                - orphan_links: Broken links
+                - orphan_images: Broken images
+                - formatting_issues: Missing spaces around backticks
+                - shell_prompt_issues: Shell prompts in code blocks
+                - deprecated_url_issues: Deprecated VMware URLs
+                - vmware_spelling_issues: Incorrect VMware spelling
+                - mixed_cmd_output_issues: Mixed command/output in code blocks
+        """
         local_path = self._map_url_to_local_path(page_url)
         if not local_path or not os.path.exists(local_path):
             self.logger.debug(f"No local file found for {page_url}")
@@ -934,7 +1533,36 @@ class DocumentationLecturer:
                 
                 original = content
                 
+                # =========================================================
+                # Deterministic fixes (no LLM required)
+                # =========================================================
+                
+                # Fix VMware spelling (vmware -> VMware)
+                vmware_issues = issues.get('vmware_spelling_issues', [])
+                if vmware_issues:
+                    content = self._fix_vmware_spelling(content)
+                
+                # Fix deprecated VMware URLs
+                deprecated_url_issues = issues.get('deprecated_url_issues', [])
+                if deprecated_url_issues:
+                    content = self._fix_deprecated_urls(content)
+                
+                # Fix missing spaces around backticks
+                formatting_issues = issues.get('formatting_issues', [])
+                if formatting_issues:
+                    content = self._fix_backtick_spacing(content)
+                
+                # Fix shell prompts in code blocks (in markdown source)
+                shell_prompt_issues = issues.get('shell_prompt_issues', [])
+                if shell_prompt_issues:
+                    content = self._fix_shell_prompts_in_markdown(content)
+                
+                # =========================================================
+                # LLM-based fixes (require LLM client)
+                # =========================================================
+                
                 # Apply grammar fixes via LLM if available
+                grammar_issues = issues.get('grammar_issues', [])
                 if grammar_issues and self.llm_client:
                     try:
                         fixed = self.llm_client.fix_grammar(content, grammar_issues)
@@ -944,6 +1572,7 @@ class DocumentationLecturer:
                         self.logger.error(f"LLM grammar fix failed: {e}")
                 
                 # Apply markdown fixes via LLM if available
+                md_artifacts = issues.get('md_artifacts', [])
                 if md_artifacts and self.llm_client:
                     try:
                         fixed = self.llm_client.fix_markdown(content, md_artifacts)
@@ -951,6 +1580,14 @@ class DocumentationLecturer:
                             content = fixed
                     except Exception as e:
                         self.logger.error(f"LLM markdown fix failed: {e}")
+                
+                # Fix mixed command/output code blocks via LLM
+                mixed_cmd_output_issues = issues.get('mixed_cmd_output_issues', [])
+                if mixed_cmd_output_issues and self.llm_client:
+                    try:
+                        content = self._fix_mixed_command_output_llm(content, mixed_cmd_output_issues)
+                    except Exception as e:
+                        self.logger.error(f"LLM mixed command/output fix failed: {e}")
                 
                 # Translate if language != en
                 if self.language != 'en' and self.llm_client:
@@ -971,6 +1608,147 @@ class DocumentationLecturer:
                 
         except Exception as e:
             self.logger.error(f"Failed to apply fixes to {local_path}: {e}")
+    
+    def _fix_vmware_spelling(self, content: str) -> str:
+        """Fix incorrect VMware spelling in content.
+        
+        Replaces variations like 'vmware', 'Vmware', 'VMWare', 'VMWARE' with 'VMware'.
+        Preserves URLs and code blocks.
+        """
+        # Split content to preserve code blocks
+        parts = re.split(r'(```[\s\S]*?```|`[^`]+`)', content)
+        
+        for i, part in enumerate(parts):
+            # Skip code blocks
+            if part.startswith('```') or part.startswith('`'):
+                continue
+            # Fix VMware spelling (but not in URLs)
+            parts[i] = self.VMWARE_SPELLING_PATTERN.sub('VMware', part)
+        
+        return ''.join(parts)
+    
+    def _fix_deprecated_urls(self, content: str) -> str:
+        """Fix deprecated packages.vmware.com URLs.
+        
+        Replaces https://packages.vmware.com/* with https://packages-prod.broadcom.com/*
+        """
+        # Replace the base URL while preserving the path
+        def replace_url(match):
+            old_url = match.group(0)
+            # Extract path after packages.vmware.com
+            path_match = re.search(r'packages\.vmware\.com(/[^\s"\'<>]*)?', old_url)
+            if path_match:
+                path = path_match.group(1) or ''
+                return f'https://packages-prod.broadcom.com{path}'
+            return old_url
+        
+        return self.DEPRECATED_VMWARE_URL.sub(replace_url, content)
+    
+    def _fix_backtick_spacing(self, content: str) -> str:
+        """Fix missing spaces before/after backticks.
+        
+        - 'word`code`' -> 'word `code`'
+        - '`code`word' -> '`code` word'
+        """
+        # Fix missing space before backtick
+        content = self.MISSING_SPACE_BEFORE_BACKTICK.sub(r'\1 \2', content)
+        
+        # Fix missing space after backtick
+        content = self.MISSING_SPACE_AFTER_BACKTICK.sub(r'\1 \2', content)
+        
+        return content
+    
+    def _fix_shell_prompts_in_markdown(self, content: str) -> str:
+        """Remove shell prompt prefixes from code blocks in markdown.
+        
+        Transforms:
+        ```bash
+        $ ls -la
+        ```
+        
+        To:
+        ```bash
+        ls -la
+        ```
+        """
+        # Find all fenced code blocks
+        def fix_code_block(match):
+            code_block = match.group(0)
+            lines = code_block.split('\n')
+            
+            fixed_lines = [lines[0]]  # Keep the opening ```lang
+            
+            for line in lines[1:-1]:  # Skip first and last lines (``` markers)
+                fixed_line = line
+                for pattern in self.SHELL_PROMPT_PATTERNS:
+                    prompt_match = pattern.match(line)
+                    if prompt_match:
+                        # Remove the prompt, keep the command
+                        fixed_line = prompt_match.group(2)
+                        break
+                fixed_lines.append(fixed_line)
+            
+            if lines:
+                fixed_lines.append(lines[-1])  # Keep the closing ```
+            
+            return '\n'.join(fixed_lines)
+        
+        # Match fenced code blocks
+        content = re.sub(r'```[\w]*\n[\s\S]*?```', fix_code_block, content)
+        
+        return content
+    
+    def _fix_mixed_command_output_llm(self, content: str, issues: List[Dict]) -> str:
+        """Fix mixed command/output code blocks using LLM.
+        
+        Asks LLM to separate command and output into distinct code blocks.
+        """
+        if not self.llm_client or not issues:
+            return content
+        
+        # Create prompt for LLM
+        commands = [issue.get('command', '') for issue in issues[:5]]
+        commands_str = '\n'.join(f"- {cmd}" for cmd in commands if cmd)
+        
+        prompt = f"""In the following markdown content, there are code blocks that mix commands with their output.
+Please separate each such code block into two blocks:
+1. A command block (just the command, copyable)
+2. An output block (the command output, for display)
+
+Commands to look for:
+{commands_str}
+
+For example, transform:
+```
+sudo cat /etc/config.toml
+[Section]
+Key="value"
+```
+
+Into:
+```bash
+sudo cat /etc/config.toml
+```
+
+Output:
+```toml
+[Section]
+Key="value"
+```
+
+Content to fix:
+{content}
+
+Return only the fixed markdown content, no explanations."""
+
+        try:
+            fixed = self.llm_client._generate(prompt)
+            if fixed and len(fixed) > len(content) * 0.5:  # Sanity check
+                return fixed
+        except Exception as e:
+            self.logger.error(f"LLM fix for mixed command/output failed: {e}")
+        
+        return content
     
     def analyze_all_pages(self):
         """Analyze all pages in the sitemap."""
@@ -1139,16 +1917,28 @@ class DocumentationLecturer:
 **Pages analyzed:** {self.pages_analyzed}
 **Issues found:** {self.issues_found}
 **Fixes applied:** {self.fixes_applied}
+**LLM Provider:** {self.llm_provider or 'None (deterministic fixes only)'}
 
-## Summary
-Automated documentation analysis identifying:
-- Grammar and spelling errors
-- Markdown rendering artifacts
-- Broken links (orphan URLs)
-- Broken images (orphan pictures)
-- Unaligned images
+## Issue Categories Detected and Fixed
 
-See attached report for details.
+### Deterministic Fixes (Applied Automatically)
+- **VMware spelling**: Corrected incorrect spellings (vmware, Vmware, etc.) to VMware
+- **Deprecated URLs**: Updated packages.vmware.com URLs to packages-prod.broadcom.com
+- **Backtick spacing**: Fixed missing spaces before/after inline code
+- **Shell prompts**: Removed shell prompt prefixes ($, #, ❯) from code blocks
+
+### LLM-Assisted Fixes (Requires --llm flag)
+- **Grammar/spelling errors**: Language and grammar corrections
+- **Markdown artifacts**: Fixed unrendered markdown syntax
+- **Mixed command/output**: Separated command and output into distinct code blocks
+
+### Issues Reported (Manual Review Recommended)
+- **Broken links**: Orphan URLs requiring manual verification
+- **Broken images**: Missing or inaccessible image files
+- **Unaligned images**: Images lacking proper CSS alignment
+- **Indentation issues**: List item indentation problems
+
+See attached CSV report for detailed issue locations and fix suggestions.
 """
             
             # Create PR from user's branch to reference repo's base branch
@@ -1264,7 +2054,13 @@ See attached report for details.
         print(f"Workers: {self.num_workers}")
         if self.gh_pr:
             print(f"PR Target: {self.ref_ghrepo}")
+        if self.llm_provider:
+            print(f"LLM Provider: {self.llm_provider}")
         print()
+        
+        # Initialize grammar checker first - exit if fails
+        if not self.initialize_grammar_checker():
+            sys.exit(1)
         
         # Initialize CSV
         self._initialize_csv()
@@ -1611,6 +2407,295 @@ def run_tests():
             test_text = "## Header\n* bullet\n[link](url)"
             for pattern in patterns[:3]:
                 self.assertTrue(pattern.search(test_text))
+        
+        def test_missing_space_before_backtick(self):
+            pattern = DocumentationLecturer.MISSING_SPACE_BEFORE_BACKTICK
+            # Should match: word immediately followed by backtick code
+            self.assertTrue(pattern.search("Clone`the project`"))
+            self.assertTrue(pattern.search("Run`command`"))
+            # Should not match: proper spacing
+            self.assertIsNone(pattern.search("Clone `the project`"))
+            self.assertIsNone(pattern.search("Run `command`"))
+        
+        def test_missing_space_after_backtick(self):
+            pattern = DocumentationLecturer.MISSING_SPACE_AFTER_BACKTICK
+            # Should match: backtick code immediately followed by word
+            self.assertTrue(pattern.search("`command`and"))
+            self.assertTrue(pattern.search("`code`text"))
+            # Should not match: proper spacing
+            self.assertIsNone(pattern.search("`command` and"))
+            self.assertIsNone(pattern.search("`code` text"))
+        
+        def test_shell_prompt_patterns(self):
+            patterns = DocumentationLecturer.SHELL_PROMPT_PATTERNS
+            # Test "$ command" pattern (first pattern)
+            dollar_pattern = patterns[0]
+            match = dollar_pattern.match("$ ls -la")
+            self.assertIsNotNone(match)
+            self.assertEqual(match.group(1), "$ ")
+            self.assertEqual(match.group(2), "ls -la")
+            
+            # Test "# command" pattern (second pattern)
+            hash_pattern = patterns[1]
+            match = hash_pattern.match("# systemctl restart nginx")
+            self.assertIsNotNone(match)
+            self.assertEqual(match.group(1), "# ")
+            self.assertEqual(match.group(2), "systemctl restart nginx")
+            
+            # Test "❯ command" pattern (fancy prompt like starship/powerline)
+            fancy_pattern = patterns[4]
+            match = fancy_pattern.match("❯ sudo wg show")
+            self.assertIsNotNone(match)
+            self.assertEqual(match.group(1), "❯ ")
+            self.assertEqual(match.group(2), "sudo wg show")
+            
+            # Test without space after ❯
+            match = fancy_pattern.match("❯wg genkey")
+            self.assertIsNotNone(match)
+            self.assertEqual(match.group(1), "❯")
+            self.assertEqual(match.group(2), "wg genkey")
+            
+            # Test "➜  command" pattern (Oh My Zsh robbyrussell theme)
+            omz_pattern = patterns[5]
+            match = omz_pattern.match("➜  git status")
+            self.assertIsNotNone(match)
+            self.assertEqual(match.group(1), "➜  ")
+            self.assertEqual(match.group(2), "git status")
+            
+            # Should not match lines without prompts
+            self.assertIsNone(dollar_pattern.match("ls -la"))
+            self.assertIsNone(dollar_pattern.match("echo hello"))
+        
+        def test_strip_code_from_text(self):
+            # Create a minimal mock args object for testing
+            class MockArgs:
+                command = 'analyze'
+                website = 'https://example.com'
+                parallel = 1
+                language = 'en'
+                ref_website = None
+                test = False
+            
+            lecturer = DocumentationLecturer(MockArgs())
+            
+            # Test removal of fenced code blocks
+            text_with_code_block = "This is text ```python\nprint('hello')\n``` and more text"
+            result = lecturer._strip_code_from_text(text_with_code_block)
+            self.assertNotIn("print", result)
+            self.assertIn("This is text", result)
+            self.assertIn("and more text", result)
+            
+            # Test removal of inline code
+            text_with_inline = "Run the `ls -la` command to list files"
+            result = lecturer._strip_code_from_text(text_with_inline)
+            self.assertNotIn("ls -la", result)
+            self.assertIn("Run the", result)
+            self.assertIn("command to list files", result)
+            
+            # Test mixed content
+            text_mixed = "Use `export VAR=value` and ```bash\necho $VAR\n``` to set variables"
+            result = lecturer._strip_code_from_text(text_mixed)
+            self.assertNotIn("export", result)
+            self.assertNotIn("echo", result)
+            self.assertIn("Use", result)
+            self.assertIn("to set variables", result)
+            
+            lecturer.cleanup()
+        
+        def test_deprecated_vmware_url_pattern(self):
+            pattern = DocumentationLecturer.DEPRECATED_VMWARE_URL
+            # Should match deprecated VMware package URLs
+            self.assertIsNotNone(pattern.match("https://packages.vmware.com/photon/"))
+            self.assertIsNotNone(pattern.match("https://packages.vmware.com/photon/4.0/"))
+            self.assertIsNotNone(pattern.match("http://packages.vmware.com/tools/"))
+            # Should not match other URLs
+            self.assertIsNone(pattern.match("https://vmware.com/"))
+            self.assertIsNone(pattern.match("https://packages-prod.broadcom.com/"))
+        
+        def test_vmware_spelling_pattern(self):
+            pattern = DocumentationLecturer.VMWARE_SPELLING_PATTERN
+            # Should match incorrect spellings
+            self.assertIsNotNone(pattern.search("vmware"))
+            self.assertIsNotNone(pattern.search("Vmware"))
+            self.assertIsNotNone(pattern.search("VMWare"))
+            self.assertIsNotNone(pattern.search("VMWARE"))
+            self.assertIsNotNone(pattern.search("VmWare"))
+            # Should NOT match correct spelling
+            self.assertIsNone(pattern.search("VMware"))
+            self.assertIsNone(pattern.search("Use VMware products"))
+        
+        def test_markdown_header_no_space_pattern(self):
+            pattern = DocumentationLecturer.MARKDOWN_HEADER_NO_SPACE
+            # Should match headers without space
+            match = pattern.search("####Install Google cloud SDK")
+            self.assertIsNotNone(match)
+            self.assertEqual(match.group(1), "####")
+            self.assertEqual(match.group(2), "Install Google cloud SDK")
+            
+            match = pattern.search("###Subtitle without space")
+            self.assertIsNotNone(match)
+            self.assertEqual(match.group(1), "###")
+            
+            match = pattern.search("##Section")
+            self.assertIsNotNone(match)
+            self.assertEqual(match.group(1), "##")
+            
+            # Should NOT match headers with proper space
+            self.assertIsNone(pattern.search("#### Install with space"))
+            self.assertIsNone(pattern.search("### Proper subtitle"))
+            self.assertIsNone(pattern.search("## Correct section"))
+        
+        def test_mixed_command_output_detection(self):
+            """Test detection of mixed command and output in code blocks."""
+            # Create a minimal mock args object for testing
+            class MockArgs:
+                command = 'analyze'
+                website = 'https://example.com'
+                parallel = 1
+                language = 'en'
+                ref_website = None
+                test = False
+            
+            lecturer = DocumentationLecturer(MockArgs())
+            
+            # Test case 1: Mixed command with config output (should detect)
+            html_mixed = '''
+            <pre>sudo cat /etc/photon-mgmt/mgmt.toml
+[System]
+LogLevel="info"
+UseAuthentication="false"
+
+[Network]
+ListenUnixSocket="true"</pre>
+            '''
+            soup = BeautifulSoup(html_mixed, 'html.parser')
+            issues = lecturer._check_mixed_command_output_in_code_blocks("https://test.com/page", soup)
+            self.assertGreater(len(issues), 0, "Should detect mixed command and output")
+            self.assertEqual(issues[0]['type'], 'mixed_command_output')
+            
+            # Test case 2: Command only (should NOT detect)
+            html_command_only = '''
+            <pre>sudo systemctl restart nginx</pre>
+            '''
+            soup = BeautifulSoup(html_command_only, 'html.parser')
+            issues = lecturer._check_mixed_command_output_in_code_blocks("https://test.com/page", soup)
+            self.assertEqual(len(issues), 0, "Should not flag command-only code blocks")
+            
+            # Test case 3: Output only (should NOT detect)
+            html_output_only = '''
+            <pre>[System]
+LogLevel="info"
+UseAuthentication="false"</pre>
+            '''
+            soup = BeautifulSoup(html_output_only, 'html.parser')
+            issues = lecturer._check_mixed_command_output_in_code_blocks("https://test.com/page", soup)
+            self.assertEqual(len(issues), 0, "Should not flag output-only code blocks")
+            
+            # Test case 4: ls command with output (should detect)
+            html_ls_output = '''
+            <pre>ls -la /var/log
+total 1234
+drwxr-xr-x  2 root root 4096 Nov 30 10:00 .
+drwxr-xr-x 14 root root 4096 Nov 30 10:00 ..
+-rw-r--r--  1 root root 1234 Nov 30 10:00 syslog</pre>
+            '''
+            soup = BeautifulSoup(html_ls_output, 'html.parser')
+            issues = lecturer._check_mixed_command_output_in_code_blocks("https://test.com/page", soup)
+            self.assertGreater(len(issues), 0, "Should detect ls command with output")
+            
+            lecturer.cleanup()
+        
+        def test_fix_vmware_spelling(self):
+            """Test VMware spelling fix function."""
+            class MockArgs:
+                command = 'analyze'
+                website = 'https://example.com'
+                parallel = 1
+                language = 'en'
+                ref_website = None
+                test = False
+            
+            lecturer = DocumentationLecturer(MockArgs())
+            
+            # Test basic fixes
+            content = "Install vmware tools and Vmware Workstation"
+            fixed = lecturer._fix_vmware_spelling(content)
+            self.assertEqual(fixed, "Install VMware tools and VMware Workstation")
+            
+            # Test that code blocks are preserved
+            content = "Use `vmware` command and vmware products"
+            fixed = lecturer._fix_vmware_spelling(content)
+            self.assertIn("`vmware`", fixed)  # Code should be unchanged
+            self.assertIn("VMware products", fixed)  # Text should be fixed
+            
+            lecturer.cleanup()
+        
+        def test_fix_deprecated_urls(self):
+            """Test deprecated URL fix function."""
+            class MockArgs:
+                command = 'analyze'
+                website = 'https://example.com'
+                parallel = 1
+                language = 'en'
+                ref_website = None
+                test = False
+            
+            lecturer = DocumentationLecturer(MockArgs())
+            
+            # Test URL replacement
+            content = "Download from https://packages.vmware.com/photon/5.0/"
+            fixed = lecturer._fix_deprecated_urls(content)
+            self.assertIn("packages-prod.broadcom.com", fixed)
+            self.assertIn("/photon/5.0/", fixed)  # Path should be preserved
+            self.assertNotIn("packages.vmware.com", fixed)
+            
+            lecturer.cleanup()
+        
+        def test_fix_backtick_spacing(self):
+            """Test backtick spacing fix function."""
+            class MockArgs:
+                command = 'analyze'
+                website = 'https://example.com'
+                parallel = 1
+                language = 'en'
+                ref_website = None
+                test = False
+            
+            lecturer = DocumentationLecturer(MockArgs())
+            
+            # Test missing space before backtick
+            content = "Run the command`ls -la`"
+            fixed = lecturer._fix_backtick_spacing(content)
+            self.assertEqual(fixed, "Run the command `ls -la`")
+            
+            # Test missing space after backtick
+            content = "`command`and then"
+            fixed = lecturer._fix_backtick_spacing(content)
+            self.assertEqual(fixed, "`command` and then")
+            
+            lecturer.cleanup()
+        
+        def test_fix_shell_prompts_in_markdown(self):
+            """Test shell prompt removal from markdown code blocks."""
+            class MockArgs:
+                command = 'analyze'
+                website = 'https://example.com'
+                parallel = 1
+                language = 'en'
+                ref_website = None
+                test = False
+            
+            lecturer = DocumentationLecturer(MockArgs())
+            
+            # Test $ prompt removal
+            content = "```bash\n$ ls -la\n$ echo hello\n```"
+            fixed = lecturer._fix_shell_prompts_in_markdown(content)
+            self.assertIn("ls -la", fixed)
+            self.assertIn("echo hello", fixed)
+            self.assertNotIn("$ ls", fixed)
+            self.assertNotIn("$ echo", fixed)
+            
+            lecturer.cleanup()
     
     loader = unittest.TestLoader()
     suite = loader.loadTestsFromTestCase(TestDocumentationLecturer)
