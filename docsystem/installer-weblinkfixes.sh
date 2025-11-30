@@ -1,4 +1,7 @@
 #!/bin/bash
+# installer-weblinkfixes.sh - Fixes web links, branding, and configuration for Photon OS documentation
+# Version: 1.1.0
+# Updated: 2025-11-30
 
 if [ -z "$INSTALL_DIR" ]; then
   echo "Error: Variable INSTALL_DIR is not set. This sub-script must be called by installer.sh"
@@ -491,19 +494,15 @@ find "$INSTALL_DIR/content/en" -path "*/administration-guide/security-policy/def
 echo "46: Updating footer template to include Broadcom logo..."
 FOOTER_FILE="$INSTALL_DIR/themes/photon-theme/layouts/partials/footer.html"
 if [ -f "$FOOTER_FILE" ]; then
-    # Check if Broadcom logo is already in footer
-    if ! grep -q "broadcom-logo.png" "$FOOTER_FILE"; then
-        echo "Adding Broadcom logo to footer..."
-        # Replace the footer logo section
-        sed -i '/<div class="text-right">/,/<\/div>/{
-            /<div class="text-right">/ {
-                c\<div class="text-right d-flex align-items-center justify-content-end">
-            }
-            /vmware-logo.svg/ {
-                c\  <a href="https://www.broadcom.com" target="_blank"> <img class="vmw-footer-logo" src="/img/broadcom-logo.png" alt="Broadcom" style="max-height: 40px;" /></a>
-            }
-        }' "$FOOTER_FILE"
-    fi
+    echo "Fixing Broadcom logo link in footer..."
+    # Fix any anchor tag wrapping the logo image to point to www.broadcom.com
+    # Handle variations: href="/", href="./", href with spaces in class attribute
+    sed -i 's|<a href="[^"]*">[ ]*<img class=" vmw-footer-logo"|<a href="https://www.broadcom.com" target="_blank"><img class="vmw-footer-logo"|g' "$FOOTER_FILE"
+    sed -i 's|<a href="[^"]*">[ ]*<img class="vmw-footer-logo"|<a href="https://www.broadcom.com" target="_blank"><img class="vmw-footer-logo"|g' "$FOOTER_FILE"
+    # Ensure broadcom-logo.png is used instead of vmware logos
+    sed -i 's|vmware-logo.png|broadcom-logo.png|g' "$FOOTER_FILE"
+    sed -i 's|vmware-logo.svg|broadcom-logo.png|g' "$FOOTER_FILE"
+    sed -i 's|vmware.png|broadcom-logo.png|g' "$FOOTER_FILE"
 fi
 
 # Fix 47: Update i18n translation for Broadcom branding
