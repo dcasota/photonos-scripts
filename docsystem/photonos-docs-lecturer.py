@@ -34,6 +34,8 @@ Example:
         --language en
 """
 
+from __future__ import annotations
+
 import argparse
 import csv
 import datetime
@@ -57,54 +59,86 @@ import json
 VERSION = "1.0"
 TOOL_NAME = "photonos-docs-lecturer.py"
 
-# Check and import required libraries with install suggestions
-def check_import(module_name: str, package_name: str = None, pip_name: str = None):
-    """Check if module can be imported, provide install suggestion if not."""
-    pip_name = pip_name or package_name or module_name
+# Lazy-loaded modules (populated by check_and_import_dependencies)
+requests = None
+bs4 = None
+BeautifulSoup = None
+language_tool_python = None
+Retry = None
+HTTPAdapter = None
+tqdm = None
+Image = None
+genai = None
+HAS_TQDM = False
+HAS_PIL = False
+HAS_GEMINI = False
+
+def check_and_import_dependencies():
+    """Check and import all required dependencies. Called after parsing commands."""
+    global requests, bs4, BeautifulSoup, language_tool_python, Retry, HTTPAdapter
+    global tqdm, Image, genai, HAS_TQDM, HAS_PIL, HAS_GEMINI
+    
+    missing_packages = []
+    
+    # Check required packages
     try:
-        return __import__(module_name)
+        import requests as _requests
+        requests = _requests
+        from requests.adapters import HTTPAdapter as _HTTPAdapter
+        HTTPAdapter = _HTTPAdapter
+        try:
+            from requests.packages.urllib3.util.retry import Retry as _Retry
+        except ImportError:
+            from urllib3.util.retry import Retry as _Retry
+        Retry = _Retry
+        requests.packages.urllib3.disable_warnings()
     except ImportError:
-        print(f"ERROR: '{module_name}' library not found. Install with: pip install {pip_name}", file=sys.stderr)
+        missing_packages.append(('requests', 'requests'))
+    
+    try:
+        import bs4 as _bs4
+        bs4 = _bs4
+        from bs4 import BeautifulSoup as _BeautifulSoup
+        BeautifulSoup = _BeautifulSoup
+    except ImportError:
+        missing_packages.append(('bs4', 'beautifulsoup4'))
+    
+    try:
+        import language_tool_python as _language_tool_python
+        language_tool_python = _language_tool_python
+    except ImportError:
+        missing_packages.append(('language_tool_python', 'language-tool-python'))
+    
+    # Check optional packages
+    try:
+        from tqdm import tqdm as _tqdm
+        tqdm = _tqdm
+        HAS_TQDM = True
+    except ImportError:
+        HAS_TQDM = False
+    
+    try:
+        from PIL import Image as _Image
+        Image = _Image
+        HAS_PIL = True
+    except ImportError:
+        HAS_PIL = False
+    
+    try:
+        import google.generativeai as _genai
+        genai = _genai
+        HAS_GEMINI = True
+    except ImportError:
+        HAS_GEMINI = False
+    
+    # Report missing required packages
+    if missing_packages:
+        print("ERROR: Required libraries not found:", file=sys.stderr)
+        for module_name, pip_name in missing_packages:
+            print(f"       - {module_name} (pip install {pip_name})", file=sys.stderr)
+        print(file=sys.stderr)
+        print(f"       Run: python3 {TOOL_NAME} install-tools", file=sys.stderr)
         sys.exit(1)
-
-# Required external libraries
-requests = check_import('requests')
-from requests.adapters import HTTPAdapter
-try:
-    from requests.packages.urllib3.util.retry import Retry
-except ImportError:
-    from urllib3.util.retry import Retry
-
-bs4 = check_import('bs4', 'beautifulsoup4')
-from bs4 import BeautifulSoup
-
-language_tool_python = check_import('language_tool_python', pip_name='language-tool-python')
-
-# Optional: tqdm for progress bars
-try:
-    from tqdm import tqdm
-    HAS_TQDM = True
-except ImportError:
-    HAS_TQDM = False
-    tqdm = None
-
-# Optional: PIL for image checks
-try:
-    from PIL import Image
-    HAS_PIL = True
-except ImportError:
-    HAS_PIL = False
-
-# Optional: Google Generative AI for Gemini LLM
-try:
-    import google.generativeai as genai
-    HAS_GEMINI = True
-except ImportError:
-    HAS_GEMINI = False
-    genai = None
-
-# Suppress SSL warnings
-requests.packages.urllib3.disable_warnings()
 
 
 class LLMClient:
@@ -1386,7 +1420,20 @@ class DocumentationLecturer:
         return True
     
     def _map_url_to_local_path(self, page_url: str) -> Optional[str]:
-        """Map a page URL to local markdown file path."""
+        """Map a page URL to local markdown file path.
+        
+        Hugo content structure typically uses:
+        - _index.md for section/directory pages (e.g., /docs-v5/ -> content/en/docs-v5/_index.md)
+        - {name}.md or {name}/_index.md for leaf pages
+        
+        This function searches multiple possible paths to find the correct markdown file.
+        
+        Args:
+            page_url: The URL of the page (e.g., https://127.0.0.1/docs-v5/admin-guide/)
+            
+        Returns:
+            Absolute path to the markdown file, or None if not found.
+        """
         if not self.local_webserver:
             return None
         
@@ -1394,27 +1441,87 @@ class DocumentationLecturer:
             parsed = urllib.parse.urlparse(page_url)
             path = parsed.path.strip('/')
             
-            # Handle index pages
-            if path.endswith('/') or not path:
-                path = os.path.join(path, '_index.md')
-            elif not path.endswith('.md'):
-                path = path + '.md'
+            # Remove trailing slash for consistent handling
+            path = path.rstrip('/')
             
-            # Content path with language
-            local_path = os.path.join(
-                self.local_webserver, 
-                'content', 
-                self.language,
-                path
-            )
+            # Base content directories to search (in order of preference)
+            content_bases = [
+                os.path.join(self.local_webserver, 'content', self.language),  # e.g., /var/www/photon-site/content/en
+                os.path.join(self.local_webserver, 'content'),                  # e.g., /var/www/photon-site/content
+                self.local_webserver,                                            # e.g., /var/www/photon-site
+            ]
             
-            # Try alternate paths
-            if not os.path.exists(local_path):
-                alt_path = os.path.join(self.local_webserver, 'content', path)
-                if os.path.exists(alt_path):
-                    local_path = alt_path
+            # Possible file patterns for the path (in order of preference)
+            # For path like "docs-v5/admin-guide/cloud-init"
+            path_variations = []
             
-            return local_path if os.path.exists(local_path) else None
+            if path:
+                # 1. Directory with _index.md (most common for Hugo sections)
+                #    e.g., docs-v5/admin-guide/cloud-init/_index.md
+                path_variations.append(os.path.join(path, '_index.md'))
+                
+                # 2. Direct .md file
+                #    e.g., docs-v5/admin-guide/cloud-init.md
+                path_variations.append(path + '.md')
+                
+                # 3. index.md (alternative to _index.md)
+                #    e.g., docs-v5/admin-guide/cloud-init/index.md
+                path_variations.append(os.path.join(path, 'index.md'))
+                
+                # 4. README.md (some projects use this)
+                #    e.g., docs-v5/admin-guide/cloud-init/README.md
+                path_variations.append(os.path.join(path, 'README.md'))
+            else:
+                # Root path - look for _index.md at content root
+                path_variations.append('_index.md')
+                path_variations.append('index.md')
+            
+            # Search through all combinations
+            for content_base in content_bases:
+                if not os.path.isdir(content_base):
+                    continue
+                    
+                for path_var in path_variations:
+                    candidate = os.path.join(content_base, path_var)
+                    if os.path.isfile(candidate):
+                        self.logger.debug(f"Mapped {page_url} -> {candidate}")
+                        return candidate
+            
+            # If still not found, try a recursive search in content directory
+            # This handles cases where the URL structure doesn't match the file structure exactly
+            if path:
+                # Get the last component of the path (the page name)
+                path_parts = path.split('/')
+                page_name = path_parts[-1] if path_parts else None
+                
+                if page_name:
+                    # Search for _index.md in directories matching the path pattern
+                    for content_base in content_bases:
+                        if not os.path.isdir(content_base):
+                            continue
+                        
+                        # Try to find the directory by walking the path components
+                        current_dir = content_base
+                        found = True
+                        
+                        for part in path_parts:
+                            next_dir = os.path.join(current_dir, part)
+                            if os.path.isdir(next_dir):
+                                current_dir = next_dir
+                            else:
+                                found = False
+                                break
+                        
+                        if found and os.path.isdir(current_dir):
+                            # Check for markdown files in the final directory
+                            for md_file in ['_index.md', 'index.md', 'README.md']:
+                                candidate = os.path.join(current_dir, md_file)
+                                if os.path.isfile(candidate):
+                                    self.logger.debug(f"Mapped {page_url} -> {candidate} (via directory walk)")
+                                    return candidate
+            
+            self.logger.debug(f"No local file found for {page_url}")
+            return None
             
         except Exception as e:
             self.logger.error(f"Failed to map URL to local path: {e}")
@@ -1523,8 +1630,10 @@ class DocumentationLecturer:
         """
         local_path = self._map_url_to_local_path(page_url)
         if not local_path or not os.path.exists(local_path):
-            self.logger.debug(f"No local file found for {page_url}")
+            self.logger.warning(f"No local file found for {page_url} (local_webserver={self.local_webserver})")
             return
+        
+        self.logger.info(f"Found local file for {page_url}: {local_path}")
         
         try:
             with self.file_edit_lock:
@@ -1604,7 +1713,27 @@ class DocumentationLecturer:
                         f.write(content)
                     self.modified_files.add(local_path)
                     self.fixes_applied += 1
-                    self.logger.info(f"Applied fixes to {local_path}")
+                    
+                    # Log what types of fixes were applied
+                    applied_fixes = []
+                    if issues.get('vmware_spelling_issues'):
+                        applied_fixes.append('VMware spelling')
+                    if issues.get('deprecated_url_issues'):
+                        applied_fixes.append('deprecated URLs')
+                    if issues.get('formatting_issues'):
+                        applied_fixes.append('backtick spacing')
+                    if issues.get('shell_prompt_issues'):
+                        applied_fixes.append('shell prompts')
+                    if issues.get('grammar_issues') and self.llm_client:
+                        applied_fixes.append('grammar (LLM)')
+                    if issues.get('md_artifacts') and self.llm_client:
+                        applied_fixes.append('markdown (LLM)')
+                    
+                    fixes_str = ', '.join(applied_fixes) if applied_fixes else 'content changes'
+                    self.logger.info(f"Applied fixes to {local_path}: {fixes_str}")
+                    print(f"  [FIX] {os.path.basename(local_path)}: {fixes_str}")
+                else:
+                    self.logger.debug(f"No changes needed for {local_path}")
                 
         except Exception as e:
             self.logger.error(f"Failed to apply fixes to {local_path}: {e}")
@@ -1953,7 +2082,11 @@ Return only the fixed markdown content, no explanations."""
             return False
         
         if not self.modified_files:
-            self.logger.info("No modified files to commit")
+            self.logger.warning("No modified files to commit - no fixes were applied to local files")
+            print("\n[WARN] No files were modified. Possible reasons:")
+            print("       - No fixable issues found in markdown source files")
+            print("       - Local webserver path doesn't match Hugo content structure")
+            print(f"       - Check that {self.local_webserver}/content/{self.language}/ contains your docs")
             return False
         
         try:
@@ -2928,31 +3061,43 @@ def install_tools() -> int:
             print(f"[ERROR] Failed to install pip: {e}", file=sys.stderr)
             success = False
     
-    # Step 3: Install language-tool-python
+    # Step 3: Install required Python packages
     print()
-    print("[STEP 3/3] Installing language-tool-python...")
+    print("[STEP 3/3] Installing required Python packages...")
+    
+    # List of required packages: (pip_name, display_name)
+    required_packages = [
+        ('requests', 'requests'),
+        ('beautifulsoup4', 'beautifulsoup4 (bs4)'),
+        ('lxml', 'lxml'),
+        ('language-tool-python', 'language-tool-python'),
+        ('Pillow', 'Pillow (PIL)'),
+        ('tqdm', 'tqdm'),
+    ]
     
     if pip_available:
-        try:
-            # Check if already installed
-            result = subprocess.run(
-                [sys.executable, '-m', 'pip', 'show', 'language-tool-python'],
-                capture_output=True, text=True
-            )
-            if result.returncode == 0:
-                print("[OK] language-tool-python is already installed")
-            else:
-                # Install language-tool-python
-                subprocess.run(
-                    [sys.executable, '-m', 'pip', 'install', 'language-tool-python'],
-                    check=True
+        for pip_name, display_name in required_packages:
+            try:
+                # Check if already installed
+                result = subprocess.run(
+                    [sys.executable, '-m', 'pip', 'show', pip_name],
+                    capture_output=True, text=True
                 )
-                print("[OK] language-tool-python installed")
-        except subprocess.CalledProcessError as e:
-            print(f"[ERROR] Failed to install language-tool-python: {e}", file=sys.stderr)
-            success = False
+                if result.returncode == 0:
+                    print(f"[OK] {display_name} is already installed")
+                else:
+                    # Install package
+                    print(f"[INFO] Installing {display_name}...")
+                    subprocess.run(
+                        [sys.executable, '-m', 'pip', 'install', pip_name],
+                        check=True
+                    )
+                    print(f"[OK] {display_name} installed")
+            except subprocess.CalledProcessError as e:
+                print(f"[ERROR] Failed to install {display_name}: {e}", file=sys.stderr)
+                success = False
     else:
-        print("[ERROR] Cannot install language-tool-python without pip", file=sys.stderr)
+        print("[ERROR] Cannot install Python packages without pip", file=sys.stderr)
         success = False
     
     # Summary
@@ -2989,9 +3134,12 @@ def main():
         print(f"{TOOL_NAME} v{VERSION}")
         sys.exit(0)
     
-    # Handle install-tools command
+    # Handle install-tools command (no dependencies required)
     if args.command == 'install-tools':
         sys.exit(install_tools())
+    
+    # For analyze/run commands, check and import dependencies first
+    check_and_import_dependencies()
     
     # Handle test flag
     if hasattr(args, 'test') and args.test:
