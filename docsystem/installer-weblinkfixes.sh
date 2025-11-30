@@ -818,6 +818,49 @@ for ver in docs-v3 docs-v4 docs-v5; do
   done
 done
 
+# Fix 75: Add slug front matter to files where filename differs from title-derived slug
+# This ensures Hugo generates URLs that match the filename, which is required for
+# photonos-docs-lecturer.py to correctly map URLs to local files for automated fixes.
+# Hugo by default generates URLs from the title field, but we want URLs based on filenames.
+echo "75. Adding slug front matter to files where filename differs from title-derived slug..."
+
+add_slug_if_needed() {
+  local file="$1"
+  local filename=$(basename "$file" .md)
+  
+  # Skip _index.md files (they use directory name for URL)
+  if [ "$filename" = "_index" ]; then
+    return
+  fi
+  
+  # Check if slug already exists
+  if grep -q "^slug:" "$file" 2>/dev/null; then
+    return
+  fi
+  
+  # Extract title and convert to Hugo-style slug
+  local title=$(grep -m1 "^title:" "$file" 2>/dev/null | sed 's/title:\s*["'\'']\?\([^"'\'']*\)["'\'']\?/\1/')
+  if [ -z "$title" ]; then
+    return
+  fi
+  
+  # Convert title to slug (lowercase, spaces to hyphens, remove special chars)
+  local title_slug=$(echo "$title" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//')
+  
+  # If filename differs from title-derived slug, add slug front matter
+  if [ "$filename" != "$title_slug" ] && [ -n "$title_slug" ]; then
+    # Add slug after title line in front matter
+    sed -i "/^title:/a slug: $filename" "$file"
+  fi
+}
+
+export -f add_slug_if_needed
+
+# Process all markdown files (excluding _index.md)
+find "$INSTALL_DIR/content/en" -type f -name "*.md" ! -name "_index.md" -exec bash -c 'add_slug_if_needed "$0"' {} \;
+
+echo "  Slug front matter added to files where needed."
+
 echo "======================================================="
 echo "Fixing incorrect relative links in markdown files done."
 echo "======================================================="
