@@ -269,16 +269,17 @@ class DocumentationLecturer:
     
     # Patterns for detecting shell prompt prefixes in code blocks that should be removed
     # These are common shell prompts that shouldn't be part of copyable commands
+    # Note: Patterns include optional leading whitespace to handle indented code blocks
+    # Note: "#" alone is NOT included as it's typically used for comments in code blocks, not root prompts
     SHELL_PROMPT_PATTERNS = [
-        re.compile(r'^(\$\s+)(.+)$', re.MULTILINE),      # "$ command" - standard user prompt
-        re.compile(r'^(#\s+)(.+)$', re.MULTILINE),       # "# command" - root prompt
-        re.compile(r'^(>\s+)(.+)$', re.MULTILINE),       # "> command" - alternative prompt
-        re.compile(r'^(%\s+)(.+)$', re.MULTILINE),       # "% command" - csh/tcsh prompt
-        re.compile(r'^(~\s+)(.+)$', re.MULTILINE),       # "~ command" - home directory prompt
-        re.compile(r'^(❯\s*)(.+)$', re.MULTILINE),       # "❯ command" - fancy prompt (e.g., starship, powerline)
-        re.compile(r'^(➜\s+)(.+)$', re.MULTILINE),       # "➜  command" - Oh My Zsh robbyrussell theme
-        re.compile(r'^(root@\S+[#$]\s*)(.+)$', re.MULTILINE),  # "root@host# command"
-        re.compile(r'^(\w+@\S+[#$%]\s*)(.+)$', re.MULTILINE),  # "user@host$ command"
+        re.compile(r'^(\s*)(\$\s+)(.+)$', re.MULTILINE),      # "$ command" - standard user prompt
+        re.compile(r'^(\s*)(>\s+)(.+)$', re.MULTILINE),       # "> command" - alternative prompt
+        re.compile(r'^(\s*)(%\s+)(.+)$', re.MULTILINE),       # "% command" - csh/tcsh prompt
+        re.compile(r'^(\s*)(~\s+)(.+)$', re.MULTILINE),       # "~ command" - home directory prompt
+        re.compile(r'^(\s*)(❯\s*)(.+)$', re.MULTILINE),       # "❯ command" - fancy prompt (e.g., starship, powerline)
+        re.compile(r'^(\s*)(➜\s+)(.+)$', re.MULTILINE),       # "➜  command" - Oh My Zsh robbyrussell theme
+        re.compile(r'^(\s*)(root@\S+[#$]\s*)(.+)$', re.MULTILINE),  # "root@host# command"
+        re.compile(r'^(\s*)(\w+@\S+[#$%]\s*)(.+)$', re.MULTILINE),  # "user@host$ command"
     ]
     
     # Deprecated VMware packages URL pattern
@@ -1016,24 +1017,16 @@ class DocumentationLecturer:
                 for pattern in self.SHELL_PROMPT_PATTERNS:
                     match = pattern.match(line)
                     if match:
-                        prompt_prefix = match.group(1)
-                        actual_command = match.group(2)
-                        
-                        # Skip if the line looks like a comment (# followed by explanation text)
-                        # Comments typically have more words and don't look like commands
-                        if prompt_prefix.startswith('#'):
-                            # Heuristics to distinguish comments from root prompts:
-                            # - Comments often have multiple words with spaces
-                            # - Commands typically start with known command names or paths
-                            words = actual_command.split()
-                            if len(words) > 3 and not actual_command.startswith(('/', './', 'sudo', 'cd', 'ls', 'cat', 'echo', 'export', 'mkdir', 'rm', 'cp', 'mv', 'chmod', 'chown', 'apt', 'yum', 'dnf', 'tdnf', 'pip', 'python', 'npm', 'git', 'docker', 'systemctl', 'service')):
-                                continue
+                        # Pattern groups: (1) leading whitespace, (2) prompt, (3) command
+                        leading_whitespace = match.group(1)
+                        prompt_prefix = match.group(2)
+                        actual_command = match.group(3)
                         
                         # Create a context snippet
                         context = line[:80] if len(line) > 80 else line
                         
                         location = f"Shell prompt in code block: '{context}'"
-                        fix = f"Remove shell prompt prefix '{prompt_prefix.strip()}' - command should be: '{actual_command}'"
+                        fix = f"Remove shell prompt prefix '{prompt_prefix.strip()}' - command should be: '{leading_whitespace}{actual_command}'"
                         
                         self._write_csv_row(page_url, 'shell_prompt', location, fix)
                         issues.append({
@@ -1140,7 +1133,8 @@ class DocumentationLecturer:
             for prompt_pattern in self.SHELL_PROMPT_PATTERNS:
                 match = prompt_pattern.match(first_line)
                 if match:
-                    clean_first_line = match.group(2)
+                    # Pattern groups: (1) leading whitespace, (2) prompt, (3) command
+                    clean_first_line = match.group(3)
                     break
             
             # Check if first line matches a command pattern
@@ -2045,8 +2039,11 @@ class DocumentationLecturer:
                 for pattern in self.SHELL_PROMPT_PATTERNS:
                     prompt_match = pattern.match(line)
                     if prompt_match:
-                        # Remove the prompt, keep the command
-                        fixed_line = prompt_match.group(2)
+                        # Remove the prompt, keep leading whitespace and command
+                        # Pattern groups: (1) leading whitespace, (2) prompt, (3) command
+                        leading_ws = prompt_match.group(1)
+                        command = prompt_match.group(3)
+                        fixed_line = leading_ws + command
                         break
                 code_content_lines.append(fixed_line)
             
@@ -3399,38 +3396,48 @@ def run_tests():
         def test_shell_prompt_patterns(self):
             patterns = DocumentationLecturer.SHELL_PROMPT_PATTERNS
             # Test "$ command" pattern (first pattern)
+            # Pattern groups: (1) leading whitespace, (2) prompt, (3) command
             dollar_pattern = patterns[0]
             match = dollar_pattern.match("$ ls -la")
             self.assertIsNotNone(match)
-            self.assertEqual(match.group(1), "$ ")
-            self.assertEqual(match.group(2), "ls -la")
+            self.assertEqual(match.group(1), "")  # no leading whitespace
+            self.assertEqual(match.group(2), "$ ")
+            self.assertEqual(match.group(3), "ls -la")
             
-            # Test "# command" pattern (second pattern)
-            hash_pattern = patterns[1]
-            match = hash_pattern.match("# systemctl restart nginx")
+            # Test with indentation (tabs before $)
+            match = dollar_pattern.match("\t$ tar -zxvf file.tar.gz")
             self.assertIsNotNone(match)
-            self.assertEqual(match.group(1), "# ")
-            self.assertEqual(match.group(2), "systemctl restart nginx")
+            self.assertEqual(match.group(1), "\t")  # leading tab
+            self.assertEqual(match.group(2), "$ ")
+            self.assertEqual(match.group(3), "tar -zxvf file.tar.gz")
+            
+            # Note: "# command" pattern was removed - # in code blocks are comments, not prompts
+            # Verify that "# comment" lines are NOT matched by any pattern
+            for pattern in patterns:
+                self.assertIsNone(pattern.match("# This is a comment"))
             
             # Test "❯ command" pattern (fancy prompt like starship/powerline)
-            fancy_pattern = patterns[4]
+            fancy_pattern = patterns[4]  # index adjusted after removing # pattern
             match = fancy_pattern.match("❯ sudo wg show")
             self.assertIsNotNone(match)
-            self.assertEqual(match.group(1), "❯ ")
-            self.assertEqual(match.group(2), "sudo wg show")
+            self.assertEqual(match.group(1), "")
+            self.assertEqual(match.group(2), "❯ ")
+            self.assertEqual(match.group(3), "sudo wg show")
             
             # Test without space after ❯
             match = fancy_pattern.match("❯wg genkey")
             self.assertIsNotNone(match)
-            self.assertEqual(match.group(1), "❯")
-            self.assertEqual(match.group(2), "wg genkey")
+            self.assertEqual(match.group(1), "")
+            self.assertEqual(match.group(2), "❯")
+            self.assertEqual(match.group(3), "wg genkey")
             
             # Test "➜  command" pattern (Oh My Zsh robbyrussell theme)
-            omz_pattern = patterns[5]
+            omz_pattern = patterns[5]  # index adjusted
             match = omz_pattern.match("➜  git status")
             self.assertIsNotNone(match)
-            self.assertEqual(match.group(1), "➜  ")
-            self.assertEqual(match.group(2), "git status")
+            self.assertEqual(match.group(1), "")
+            self.assertEqual(match.group(2), "➜  ")
+            self.assertEqual(match.group(3), "git status")
             
             # Should not match lines without prompts
             self.assertIsNone(dollar_pattern.match("ls -la"))
