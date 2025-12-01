@@ -69,10 +69,10 @@ In this section, 24/7 docsystem mainly uses FactoryAI's droid features.
 3. Run the following commands to clone the repository.
 ```
 cd $HOME
-tdnf install -y git
+sudo tdnf install -y git
 git clone https://github.com/dcasota/photonos-scripts
 cd $HOME/photonos-scripts/docsystem
-find . -type f -name "*.sh" -exec chmod +x {} \;
+find . -type f -name "*.sh" -exec sudo chmod +x {} \;
 ```
 
 Within the repository, the .factory subdirectory specifies the swarm's goals, as well as each team and its members.
@@ -87,8 +87,8 @@ Within the repository, the .factory subdirectory specifies the swarm's goals, as
    `Droid-configurator.sh` installs Droid CLI. This is the initial version, which also provides optional configuration for an external Ollama source and xAI Cloud-LLMs.  
 
 ```
-./Droid-configurator.sh
+sudo ./Droid-configurator.sh
 cd $HOME/photonos-scripts/docsystem/.factory
-droid /run-docs-lecturer-swarm
+sudo droid /run-docs-lecturer-swarm
 ```
 
