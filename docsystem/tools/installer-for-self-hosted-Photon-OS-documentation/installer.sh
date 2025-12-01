@@ -34,11 +34,8 @@ systemctl enable --now docker 1>>$LOGFILE 2>&1
 systemctl enable --now nginx 1>>$LOGFILE 2>&1
 systemctl enable --now crond 1>>$LOGFILE 2>&1
 
-# Dynamically retrieve DHCP IP address
-export IP_ADDRESS=$(ip addr show | grep -oP 'inet \K[\d.]+(?=/)' | grep -v '127.0.0.1' | head -n 1)
-if [ -z "$IP_ADDRESS" ]; then
-  export IP_ADDRESS=$(hostname -I | awk '{print $1}' | grep -v '127.0.0.1')
-fi
+# Dynamically retrieve DHCP IP address from eth0 using ifconfig
+export IP_ADDRESS=$(ifconfig eth0 2>/dev/null | grep 'inet ' | awk '{print $2}')
 if [ -z "$IP_ADDRESS" ]; then
   echo "Error: Could not detect DHCP IP."
   echo "Error: Could not detect DHCP IP." 1>>$LOGFILE 2>&1
