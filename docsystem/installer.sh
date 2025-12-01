@@ -79,11 +79,15 @@ chown -R nginx:nginx /var/www 1>>$LOGFILE 2>&1
 chmod -R 755 /var/www 1>>$LOGFILE 2>&1
 
 # Clone repo
+# Construct authenticated URL using token
+REPO_URL=$(echo "$PHOTON_FORK_REPOSITORY" | sed "s|https://|https://${GITHUB_USERNAME}:${GITHUB_TOKEN}@|")
+
 if [ -d "$INSTALL_DIR/.git" ]; then
   echo "Fetch and merge repo"
   echo "Fetch and merge repo" 1>>$LOGFILE 2>&1
   cd "$INSTALL_DIR" 1>>$LOGFILE 2>&1
   git config --global --add safe.directory "$INSTALL_DIR" 1>>$LOGFILE 2>&1
+  git remote set-url origin "$REPO_URL" 1>>$LOGFILE 2>&1
   git fetch 1>>$LOGFILE 2>&1
   git merge 1>>$LOGFILE 2>&1
 else
@@ -91,7 +95,7 @@ else
   rm -rf "$INSTALL_DIR" 
   echo "Cloning repo"
   echo "Cloning repo" 1>>$LOGFILE 2>&1 
-  if git clone --branch photon-hugo --single-branch $PHOTON_FORK_REPOSITORY "$INSTALL_DIR" 1>>$LOGFILE 2>&1; then
+  if git clone --branch photon-hugo --single-branch "$REPO_URL" "$INSTALL_DIR" 1>>$LOGFILE 2>&1; then
       cd "$INSTALL_DIR" 1>>$LOGFILE 2>&1
       # Check if theme exists, if not download Docsy as fallback
       if [ ! -d "$INSTALL_DIR/themes/photon-theme" ]; then
