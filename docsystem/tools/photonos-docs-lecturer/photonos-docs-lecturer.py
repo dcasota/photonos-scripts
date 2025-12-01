@@ -21,18 +21,19 @@ Commands:
 
 Issue Categories Detected:
     - grammar: Grammar and spelling issues
-    - markdown: Unrendered markdown artifacts, missing header spacing
+    - markdown: Unrendered markdown artifacts, missing header spacing, unclosed code blocks
     - heading_hierarchy: Heading level violations (skipped levels, wrong first heading)
     - orphan_page: Broken/inaccessible pages
     - orphan_link: Broken hyperlinks
     - orphan_image: Missing or broken images
     - image_alignment: Improperly aligned images
     - formatting: Missing spaces around backticks
+    - backtick_errors: Spaces inside backticks, unclosed inline/fenced code blocks
     - indentation: List and code block indentation issues
     - shell_prompt: Shell prompt prefixes in code blocks
     - mixed_command_output: Commands mixed with output in code blocks
     - deprecated_url: Deprecated VMware package URLs
-    - spelling: Incorrect VMware spelling
+    - spelling: Incorrect VMware spelling (excludes URLs, file paths, emails, code blocks)
 
 Example:
     python3 photonos-docs-lecturer.py run \\
@@ -179,13 +180,33 @@ class LLMClient:
     
     def translate(self, text: str, target_language: str) -> str:
         """Translate text to target language using LLM."""
-        prompt = f"Translate the following text to {target_language}. Preserve any markdown formatting. Only return the translation, no explanations:\n\n{text}"
+        prompt = f"""Translate the following text to {target_language}.
+
+IMPORTANT RULES:
+- Preserve ALL markdown formatting exactly as-is
+- Do NOT modify any URLs, including file extensions like .md, .html, .pdf
+- Do NOT translate or change paths in markdown links [text](url) - keep the URL exactly as-is
+- Do NOT modify code blocks or inline code content
+- Only translate the natural language text
+
+Text to translate:
+{text}
+
+Return only the translated text, no explanations."""
         return self._generate(prompt)
     
     def fix_grammar(self, text: str, issues: List[Dict]) -> str:
         """Fix grammar issues in text using LLM."""
         issue_desc = "\n".join([f"- {i['message']}: {i.get('suggestion', 'No suggestion')}" for i in issues[:10]])
-        prompt = f"""Fix the following grammar issues in the text. Preserve markdown formatting.
+        prompt = f"""Fix the following grammar issues in the text. 
+
+IMPORTANT RULES:
+- Preserve ALL markdown formatting exactly as-is
+- Do NOT modify any URLs, including file extensions like .md, .html, .pdf
+- Do NOT change paths in markdown links [text](url) - keep the URL exactly as-is
+- Do NOT modify code blocks or inline code
+- Only fix the specific grammar issues listed below
+
 Issues found:
 {issue_desc}
 
@@ -199,6 +220,12 @@ Return only the corrected text."""
         """Fix markdown rendering artifacts."""
         prompt = f"""Fix the following markdown rendering issues in the text:
 Artifacts found: {', '.join(artifacts[:5])}
+
+IMPORTANT RULES:
+- Do NOT modify any URLs, including file extensions like .md, .html, .pdf
+- Do NOT change paths in markdown links [text](url) - keep the URL exactly as-is
+- Preserve all link URLs exactly as they appear in the original text
+- Only fix the markdown syntax/rendering issues
 
 Text to fix:
 {text}
@@ -219,6 +246,11 @@ Common indentation problems to fix:
 2. Code blocks inside list items not indented correctly (need 4 spaces or 1 tab)
 3. Nested content not properly indented under parent list items
 4. Inconsistent indentation (mixing tabs and spaces)
+
+IMPORTANT RULES:
+- Do NOT modify any URLs, including file extensions like .md, .html, .pdf
+- Do NOT change paths in markdown links [text](url) - keep the URL exactly as-is
+- Only fix indentation, do not change any content
 
 Text to fix:
 {text}
@@ -278,6 +310,23 @@ class DocumentationLecturer:
     
     # Pattern for missing space after backticks (e.g., "`command`text" should be "`command` text")
     MISSING_SPACE_AFTER_BACKTICK = re.compile(r'(`[^`]+`)([a-zA-Z])')
+    
+    # Patterns for detecting malformed inline code backticks
+    # These patterns match single inline code spans with space issues
+    # Uses (?<!\S) lookbehind to ensure opening backtick is at word boundary
+    # Uses (?!\S) lookahead to ensure closing backtick is at word boundary
+    
+    # Inline code with space after opening backtick: "` code`" should be "`code`"
+    # Match: word boundary, backtick, whitespace, non-whitespace content, backtick, word boundary
+    INLINE_CODE_SPACE_AFTER_OPEN = re.compile(r'(?<![`\w])`[ \t]+(\S[^`\n]*?)`(?![`\w])')
+    
+    # Inline code with space before closing backtick: "`code `" should be "`code`"
+    # Match: word boundary, backtick, content ending in non-whitespace, whitespace, backtick, word boundary
+    INLINE_CODE_SPACE_BEFORE_CLOSE = re.compile(r'(?<![`\w])`([^`\n]*?\S)[ \t]+`(?![`\w])')
+    
+    # Inline code with spaces on both sides: "` code `" should be "`code`"
+    # Match: word boundary, backtick, whitespace, content, whitespace, backtick, word boundary
+    INLINE_CODE_SPACES_BOTH = re.compile(r'(?<![`\w])`[ \t]+([^`\n]+?)[ \t]+`(?![`\w])')
     
     # Pattern for detecting indentation issues in numbered/bulleted lists
     # Matches lines that start with a number followed by period/parenthesis
@@ -909,6 +958,155 @@ class DocumentationLecturer:
             })
             
             if len(issues) >= 10:
+                break
+        
+        return issues
+    
+    def _check_backtick_errors(self, page_url: str, text_content: str) -> List[Dict]:
+        """Check for malformed backtick usage in markdown.
+        
+        Detects issues like:
+        - Unclosed fenced code blocks (``` without closing ```)
+        - Unclosed inline code (` without closing `)
+        - Space after opening backtick: "` code`" should be "`code`"
+        - Space before closing backtick: "`code `" should be "`code`"
+        - Spaces on both sides: "` code `" should be "`code`"
+        
+        Args:
+            page_url: URL of the page being analyzed
+            text_content: Raw text/markdown content of the page
+            
+        Returns:
+            List of backtick formatting issues found
+        """
+        issues = []
+        
+        # Check for unclosed fenced code blocks
+        fenced_opens = list(re.finditer(r'^```', text_content, re.MULTILINE))
+        if len(fenced_opens) % 2 != 0:
+            # Odd number of ``` means at least one is unclosed
+            # Find the last unclosed one
+            last_open = fenced_opens[-1] if fenced_opens else None
+            if last_open:
+                start = max(0, last_open.start() - 20)
+                end = min(len(text_content), last_open.end() + 50)
+                context = text_content[start:end].replace('\n', '\\n')
+                
+                location = f"Unclosed fenced code block at position {last_open.start()}: ...{context}..."
+                fix = "Add closing ``` to complete the fenced code block"
+                
+                self._write_csv_row(page_url, 'markdown', location, fix)
+                issues.append({
+                    'type': 'unclosed_fenced_code_block',
+                    'position': last_open.start(),
+                    'context': context
+                })
+        
+        # For inline backtick checking, we need to exclude fenced code blocks first
+        # Replace fenced code blocks with placeholder to avoid false positives
+        text_without_fenced = re.sub(r'```[\s\S]*?```', lambda m: ' ' * len(m.group(0)), text_content)
+        
+        # Check for unclosed inline backticks
+        # Count single backticks that are not part of ``` sequences
+        single_backticks = list(re.finditer(r'(?<!`)`(?!`)', text_without_fenced))
+        if len(single_backticks) % 2 != 0:
+            # Odd number means at least one unclosed inline code
+            # Try to find the unclosed one by checking pairs
+            for i in range(0, len(single_backticks) - 1, 2):
+                open_tick = single_backticks[i]
+                close_tick = single_backticks[i + 1]
+                
+                # Check if there's a newline between them (likely unclosed)
+                between = text_without_fenced[open_tick.end():close_tick.start()]
+                if '\n' in between:
+                    start = max(0, open_tick.start() - 10)
+                    end = min(len(text_without_fenced), open_tick.end() + 40)
+                    context = text_without_fenced[start:end].replace('\n', '\\n')
+                    
+                    location = f"Possibly unclosed inline code at position {open_tick.start()}: ...{context}..."
+                    fix = "Add closing ` to complete the inline code or remove the opening `"
+                    
+                    self._write_csv_row(page_url, 'markdown', location, fix)
+                    issues.append({
+                        'type': 'unclosed_inline_code',
+                        'position': open_tick.start(),
+                        'context': context
+                    })
+                    break
+            
+            # Check the last unpaired backtick
+            if len(single_backticks) % 2 != 0:
+                last_tick = single_backticks[-1]
+                start = max(0, last_tick.start() - 10)
+                end = min(len(text_without_fenced), last_tick.end() + 40)
+                context = text_without_fenced[start:end].replace('\n', '\\n')
+                
+                location = f"Unclosed inline code backtick at position {last_tick.start()}: ...{context}..."
+                fix = "Add closing ` to complete the inline code or remove the backtick"
+                
+                self._write_csv_row(page_url, 'markdown', location, fix)
+                issues.append({
+                    'type': 'unclosed_inline_code',
+                    'position': last_tick.start(),
+                    'context': context
+                })
+        
+        # Check for spaces after opening backtick: "` code`"
+        for match in self.INLINE_CODE_SPACE_AFTER_OPEN.finditer(text_without_fenced):
+            full_match = match.group(0)
+            content = match.group(1)
+            
+            # Skip if this looks like it might be intentional (very long content)
+            if len(content) > 100:
+                continue
+            
+            start = max(0, match.start() - 15)
+            end = min(len(text_without_fenced), match.end() + 15)
+            context = text_without_fenced[start:end]
+            
+            location = f"Space after opening backtick: '{full_match}'"
+            fix = f"Remove space after opening backtick: `{content.strip()}` instead of {full_match}"
+            
+            self._write_csv_row(page_url, 'markdown', location, fix)
+            issues.append({
+                'type': 'space_after_opening_backtick',
+                'original': full_match,
+                'context': context,
+                'suggestion': f"`{content.strip()}`"
+            })
+            
+            if len(issues) >= 20:
+                break
+        
+        # Check for spaces before closing backtick: "`code `"
+        for match in self.INLINE_CODE_SPACE_BEFORE_CLOSE.finditer(text_without_fenced):
+            full_match = match.group(0)
+            content = match.group(1)
+            
+            # Skip if already caught by SPACE_AFTER_OPEN pattern
+            if full_match.startswith('` '):
+                continue
+            
+            # Skip if this looks like it might be intentional (very long content)
+            if len(content) > 100:
+                continue
+            
+            start = max(0, match.start() - 15)
+            end = min(len(text_without_fenced), match.end() + 15)
+            context = text_without_fenced[start:end]
+            
+            location = f"Space before closing backtick: '{full_match}'"
+            fix = f"Remove space before closing backtick: `{content.strip()}` instead of {full_match}"
+            
+            self._write_csv_row(page_url, 'markdown', location, fix)
+            issues.append({
+                'type': 'space_before_closing_backtick',
+                'original': full_match,
+                'context': context,
+                'suggestion': f"`{content.strip()}`"
+            })
+            
+            if len(issues) >= 20:
                 break
         
         return issues
@@ -1932,6 +2130,9 @@ class DocumentationLecturer:
             # Check for formatting issues (missing spaces around backticks)
             formatting_issues = self._check_missing_spaces_around_backticks(page_url, text_content)
             
+            # Check for backtick errors (unclosed code blocks, spaces inside backticks)
+            backtick_errors = self._check_backtick_errors(page_url, text_content)
+            
             # Check for indentation issues in lists
             indentation_issues = self._check_list_indentation_issues(page_url, html_content)
             
@@ -1961,6 +2162,7 @@ class DocumentationLecturer:
                     'orphan_links': orphan_links,
                     'orphan_images': orphan_images,
                     'formatting_issues': formatting_issues,
+                    'backtick_errors': backtick_errors,
                     'indentation_issues': indentation_issues,
                     'shell_prompt_issues': shell_prompt_issues,
                     'mixed_cmd_output_issues': mixed_cmd_output_issues,
@@ -1994,6 +2196,7 @@ class DocumentationLecturer:
                 - orphan_links: Broken links
                 - orphan_images: Broken images
                 - formatting_issues: Missing spaces around backticks
+                - backtick_errors: Malformed backticks (spaces inside, unclosed)
                 - shell_prompt_issues: Shell prompts in code blocks
                 - deprecated_url_issues: Deprecated VMware URLs
                 - vmware_spelling_issues: Incorrect VMware spelling
@@ -2033,6 +2236,11 @@ class DocumentationLecturer:
                 formatting_issues = issues.get('formatting_issues', [])
                 if formatting_issues:
                     content = self._fix_backtick_spacing(content)
+                
+                # Fix backtick errors (spaces inside backticks)
+                backtick_errors = issues.get('backtick_errors', [])
+                if backtick_errors:
+                    content = self._fix_backtick_errors(content)
                 
                 # Fix shell prompts in code blocks (in markdown source)
                 shell_prompt_issues = issues.get('shell_prompt_issues', [])
@@ -2112,6 +2320,8 @@ class DocumentationLecturer:
                         applied_fixes.append('deprecated URLs')
                     if issues.get('formatting_issues'):
                         applied_fixes.append('backtick spacing')
+                    if issues.get('backtick_errors'):
+                        applied_fixes.append('backtick errors')
                     if issues.get('shell_prompt_issues'):
                         applied_fixes.append('shell prompts')
                     if issues.get('grammar_issues') and self.llm_client:
@@ -2150,12 +2360,13 @@ class DocumentationLecturer:
         # Split content to preserve code blocks, URLs, file paths, and emails
         # Match: fenced code blocks, inline code, URLs with protocol, domain patterns,
         # file paths (Unix-style), and email addresses
+        # NOTE: URL patterns must be GREEDY (+) not non-greedy (+?) to capture full URLs
         preserve_pattern = re.compile(
             r'('
             r'```[\s\S]*?```'                          # Fenced code blocks
             r'|`[^`]+`'                                # Inline code
-            r'|https?://[^\s<>"\')\]]+?'               # URLs with protocol
-            r'|www\.[^\s<>"\')\]]+?'                   # www URLs
+            r'|https?://[^\s<>"\')\]]+' # URLs with protocol (greedy to capture full URL)
+            r'|www\.[^\s<>"\')\]]+' # www URLs (greedy to capture full URL)
             r'|[a-zA-Z0-9-]+\.vmware\.[a-zA-Z0-9-]+[^\s<>"\')\]]*'  # Domain patterns
             r'|(?:/[\w.-]+)+/?'                        # Unix file paths (e.g., /var/log/VMware-imc/)
             r'|[\w.+-]+@[\w.-]+\.\w+'                  # Email addresses
@@ -2221,6 +2432,43 @@ class DocumentationLecturer:
         content = self.MISSING_SPACE_AFTER_BACKTICK.sub(r'\1 \2', content)
         
         return content
+    
+    def _fix_backtick_errors(self, content: str) -> str:
+        """Fix backtick formatting errors in markdown content.
+        
+        Fixes:
+        - Spaces after opening backtick: "` code`" -> "`code`"
+        - Spaces before closing backtick: "`code `" -> "`code`"
+        - Spaces on both sides: "` code `" -> "`code`"
+        
+        Note: Does NOT fix unclosed backticks as that requires manual review
+        to determine the intended scope of the code block.
+        """
+        # First, handle fenced code blocks - we should not modify their content
+        # Split content by fenced code blocks to preserve them
+        fenced_pattern = re.compile(r'(```[\s\S]*?```)')
+        parts = fenced_pattern.split(content)
+        
+        for i, part in enumerate(parts):
+            # Skip fenced code blocks (odd indices after split with capturing group)
+            if part.startswith('```'):
+                continue
+            
+            # Fix inline code with spaces on both sides first (more specific)
+            # "` code `" -> "`code`"
+            part = self.INLINE_CODE_SPACES_BOTH.sub(lambda m: f'`{m.group(1).strip()}`', part)
+            
+            # Fix inline code with space after opening backtick
+            # "` code`" -> "`code`"
+            part = self.INLINE_CODE_SPACE_AFTER_OPEN.sub(lambda m: f'`{m.group(1).strip()}`', part)
+            
+            # Fix inline code with space before closing backtick
+            # "`code `" -> "`code`"
+            part = self.INLINE_CODE_SPACE_BEFORE_CLOSE.sub(lambda m: f'`{m.group(1).strip()}`', part)
+            
+            parts[i] = part
+        
+        return ''.join(parts)
     
     def _fix_shell_prompts_in_markdown(self, content: str) -> str:
         """Remove shell prompt prefixes from code blocks in markdown.
@@ -2357,6 +2605,11 @@ Output:
 [Section]
 Key="value"
 ```
+
+IMPORTANT RULES:
+- Do NOT modify any URLs, including file extensions like .md, .html, .pdf
+- Do NOT change paths in markdown links [text](url) - keep the URL exactly as-is
+- Only modify the code blocks that mix commands with output
 
 Content to fix:
 {content}
@@ -2681,21 +2934,24 @@ Return only the fixed markdown content, no explanations."""
 ## Issue Categories Detected and Fixed
 
 ### Deterministic Fixes (Applied Automatically)
-- **VMware spelling**: Corrected incorrect spellings (vmware, Vmware, etc.) to VMware
+- **VMware spelling**: Corrected incorrect spellings (vmware, Vmware, etc.) to VMware (excludes URLs, file paths, emails, code blocks)
 - **Deprecated URLs**: Updated packages.vmware.com URLs to packages-prod.broadcom.com
 - **Backtick spacing**: Fixed missing spaces before/after inline code
+- **Backtick errors**: Fixed spaces inside backticks (e.g., "` code `" -> "`code`")
+- **Heading hierarchy**: Fixed heading level violations (e.g., H1 -> H3 skips)
 - **Shell prompts**: Removed shell prompt prefixes ($, #, ❯) from code blocks
 
 ### LLM-Assisted Fixes (Requires --llm flag)
-- **Grammar/spelling errors**: Language and grammar corrections
-- **Markdown artifacts**: Fixed unrendered markdown syntax
+- **Grammar/spelling errors**: Language and grammar corrections (preserves URLs exactly)
+- **Markdown artifacts**: Fixed unrendered markdown syntax (preserves URLs exactly)
 - **Mixed command/output**: Separated command and output into distinct code blocks
+- **Indentation issues**: Fixed list and code block indentation
 
 ### Issues Reported (Manual Review Recommended)
 - **Broken links**: Orphan URLs requiring manual verification
 - **Broken images**: Missing or inaccessible image files
 - **Unaligned images**: Images lacking proper CSS alignment
-- **Indentation issues**: List item indentation problems
+- **Unclosed code blocks**: Fenced (```) or inline (`) code blocks without closing markers
 
 See attached CSV report for detailed issue locations and fix suggestions.
 """
@@ -2903,21 +3159,24 @@ See attached CSV report for detailed issue locations and fix suggestions.
 ## Issue Categories Detected and Fixed
 
 ### Deterministic Fixes (Applied Automatically)
-- **VMware spelling**: Corrected incorrect spellings (vmware, Vmware, etc.) to VMware
+- **VMware spelling**: Corrected incorrect spellings (vmware, Vmware, etc.) to VMware (excludes URLs, file paths, emails, code blocks)
 - **Deprecated URLs**: Updated packages.vmware.com URLs to packages-prod.broadcom.com
 - **Backtick spacing**: Fixed missing spaces before/after inline code
+- **Backtick errors**: Fixed spaces inside backticks (e.g., "` code `" -> "`code`")
+- **Heading hierarchy**: Fixed heading level violations (e.g., H1 -> H3 skips)
 - **Shell prompts**: Removed shell prompt prefixes ($, #, ❯) from code blocks
 
 ### LLM-Assisted Fixes (Requires --llm flag)
-- **Grammar/spelling errors**: Language and grammar corrections
-- **Markdown artifacts**: Fixed unrendered markdown syntax
+- **Grammar/spelling errors**: Language and grammar corrections (preserves URLs exactly)
+- **Markdown artifacts**: Fixed unrendered markdown syntax (preserves URLs exactly)
 - **Mixed command/output**: Separated command and output into distinct code blocks
+- **Indentation issues**: Fixed list and code block indentation
 
 ### Issues Reported (Manual Review Recommended)
 - **Broken links**: Orphan URLs requiring manual verification
 - **Broken images**: Missing or inaccessible image files
 - **Unaligned images**: Images lacking proper CSS alignment
-- **Indentation issues**: List item indentation problems
+- **Unclosed code blocks**: Fenced (```) or inline (`) code blocks without closing markers
 
 ---
 *This PR is updated incrementally as fixes are applied. Check the commit history for details.*
@@ -3336,11 +3595,15 @@ Issue Types and Fix Modes:
   | Issue Type               | Detected    | Fix Mode      | Description               |
   +--------------------------+-------------+---------------+---------------------------+
   | VMware spelling          | Always      | Automatic     | vmware -> VMware          |
+  |                          |             |               | (excludes URLs, paths,    |
+  |                          |             |               | emails, code blocks)      |
   | Deprecated URLs          | Always      | Automatic     | packages.vmware.com ->    |
   |                          |             |               | packages-prod.broadcom.com|
   | Backtick spacing         | Always      | Automatic     | word`code` -> word `code` |
+  | Backtick errors          | Always      | Automatic     | ` code ` -> `code`        |
   | Shell prompts            | Always      | Automatic     | Remove $, #, ~, etc.      |
   | Code block language      | Always      | Automatic     | Add python/console hint   |
+  | Heading hierarchy        | Always      | Automatic     | Fix H1->H3 skips          |
   | Grammar/spelling         | Always      | LLM-assisted  | Requires --llm flag       |
   | Markdown artifacts       | Always      | LLM-assisted  | Requires --llm flag       |
   | Mixed command/output     | Always      | LLM-assisted  | Requires --llm flag       |
@@ -3348,6 +3611,7 @@ Issue Types and Fix Modes:
   | Broken links             | Always      | Report only   | Manual review needed      |
   | Broken images            | Always      | Report only   | Manual review needed      |
   | Unaligned images         | Always      | Report only   | Manual review needed      |
+  | Unclosed code blocks     | Always      | Report only   | ``` or ` without closing  |
   +--------------------------+-------------+---------------+---------------------------+
 
 Examples:
