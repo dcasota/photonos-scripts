@@ -54,7 +54,7 @@ fi
 
 # Create or initialize config.json if not exists
 if [ ! -f "$CONFIG_FILE" ]; then
-    mkdir -p "$HOME/.factory"
+    mkdir -p "$(dirname "$CONFIG_FILE")"
     echo "Creating new config file: $CONFIG_FILE"
     echo '{"custom_models": []}' > "$CONFIG_FILE"
 fi
