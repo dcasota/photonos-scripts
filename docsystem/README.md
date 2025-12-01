@@ -77,12 +77,14 @@ find . -type f -name "*.sh" -exec chmod +x {} \;
 
 Within the repository, the .factory subdirectory specifies the swarm's goals, as well as each team and its members.
 
-4. Optionally, run the tools in tools subdirectory, see README.
-   Droid can make use of local LLMs using Ollama and Web-LLMs such as Google Gemini and xAI Grok. 
+4. Optionally, run the tools in tools subdirectory, see README. Her a few examples:
+   Create a self-hosted Photon OS documentation website using `./tools/installer-for-self-hosted-Photon-OS-documentation/installer.sh`.
+   Improve the Photon OS documentation website content by automated analyis and pull requests using tools/photonos-docs-lecturer. 
+   Droid can make use of local LLMs using Ollama and Web-LLMs such as Google Gemini and xAI Grok using tools/Ollama-installer and tools/CodingAI-installers.
 
 6. Configure and run Droid.  
 
-`Droid-configurator.sh` installs Droid CLI. This is the initial version, which also provides optional configuration for an external Ollama source and xAI Cloud-LLMs.  
+   `Droid-configurator.sh` installs Droid CLI. This is the initial version, which also provides optional configuration for an external Ollama source and xAI Cloud-LLMs.  
 
 ```
 ./Droid-configurator.sh
