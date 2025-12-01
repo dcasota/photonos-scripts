@@ -351,6 +351,10 @@ class DocumentationLecturer:
     DEPRECATED_VMWARE_URL = re.compile(r'https?://packages\.vmware\.com/[^\s"\'<>]*')
     VMWARE_URL_REPLACEMENT = 'https://packages-prod.broadcom.com/'
     
+    # Deprecated VDDK download URL pattern (exact match)
+    DEPRECATED_VDDK_URL = 'https://my.vmware.com/web/vmware/downloads/details?downloadGroup=VDDK670&productId=742'
+    VDDK_URL_REPLACEMENT = 'https://developer.broadcom.com/sdks/vmware-virtual-disk-development-kit-vddk/6.7'
+    
     # VMware spelling pattern - must be "VMware" with capital V and M
     # Matches incorrect spellings like "vmware", "Vmware", "VMWare", "VMWARE", etc.
     # Uses word boundaries and explicitly excludes the correct spelling
@@ -1433,20 +1437,35 @@ class DocumentationLecturer:
         """Check for deprecated packages.vmware.com URLs that should be updated.
         
         These URLs should be replaced with packages-prod.broadcom.com.
+        Also checks for deprecated VDDK download URL.
         """
         issues = []
         
         # Check all anchor tags for deprecated URLs
         for anchor in soup.find_all('a', href=True):
             href = anchor.get('href', '')
+            link_text = anchor.get_text().strip()[:50]
+            
+            # Check for deprecated packages.vmware.com URLs
             if self.DEPRECATED_VMWARE_URL.match(href):
-                link_text = anchor.get_text().strip()[:50]
                 location = f"Deprecated VMware URL: {href}"
                 fix = f"Replace with {self.VMWARE_URL_REPLACEMENT} - Link text: '{link_text}'"
                 
                 self._write_csv_row(page_url, 'deprecated_url', location, fix)
                 issues.append({
                     'type': 'deprecated_vmware_url',
+                    'url': href,
+                    'link_text': link_text
+                })
+            
+            # Check for deprecated VDDK URL
+            elif href == self.DEPRECATED_VDDK_URL:
+                location = f"Deprecated VDDK URL: {href}"
+                fix = f"Replace with {self.VDDK_URL_REPLACEMENT} - Link text: '{link_text}'"
+                
+                self._write_csv_row(page_url, 'deprecated_url', location, fix)
+                issues.append({
+                    'type': 'deprecated_vddk_url',
                     'url': href,
                     'link_text': link_text
                 })
@@ -1464,6 +1483,19 @@ class DocumentationLecturer:
                 issues.append({
                     'type': 'deprecated_vmware_url',
                     'url': url_found,
+                    'link_text': ''
+                })
+        
+        # Check for deprecated VDDK URL in text content
+        if self.DEPRECATED_VDDK_URL in text_content:
+            if not any(i['url'] == self.DEPRECATED_VDDK_URL for i in issues):
+                location = f"Deprecated VDDK URL in text: {self.DEPRECATED_VDDK_URL}"
+                fix = f"Replace with {self.VDDK_URL_REPLACEMENT}"
+                
+                self._write_csv_row(page_url, 'deprecated_url', location, fix)
+                issues.append({
+                    'type': 'deprecated_vddk_url',
+                    'url': self.DEPRECATED_VDDK_URL,
                     'link_text': ''
                 })
         
@@ -2400,9 +2432,10 @@ class DocumentationLecturer:
         return ''.join(parts)
     
     def _fix_deprecated_urls(self, content: str) -> str:
-        """Fix deprecated packages.vmware.com URLs.
+        """Fix deprecated packages.vmware.com URLs and VDDK URL.
         
         Replaces https://packages.vmware.com/* with https://packages-prod.broadcom.com/*
+        Replaces deprecated VDDK URL with new Broadcom developer URL.
         """
         # Replace the base URL while preserving the path
         def replace_url(match):
@@ -2414,7 +2447,13 @@ class DocumentationLecturer:
                 return f'https://packages-prod.broadcom.com{path}'
             return old_url
         
-        return self.DEPRECATED_VMWARE_URL.sub(replace_url, content)
+        # Fix packages.vmware.com URLs
+        content = self.DEPRECATED_VMWARE_URL.sub(replace_url, content)
+        
+        # Fix deprecated VDDK URL (exact string replacement)
+        content = content.replace(self.DEPRECATED_VDDK_URL, self.VDDK_URL_REPLACEMENT)
+        
+        return content
     
     def _fix_backtick_spacing(self, content: str) -> str:
         """Fix missing spaces around backticks.
