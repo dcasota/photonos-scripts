@@ -355,6 +355,13 @@ class DocumentationLecturer:
     DEPRECATED_VDDK_URL = 'https://my.vmware.com/web/vmware/downloads/details?downloadGroup=VDDK670&productId=742'
     VDDK_URL_REPLACEMENT = 'https://developer.broadcom.com/sdks/vmware-virtual-disk-development-kit-vddk/6.7'
     
+    # Deprecated AWS EC2 CLI URL patterns (both http and https)
+    DEPRECATED_AWS_EC2_CLI_URLS = [
+        'http://docs.aws.amazon.com/AWSEC2/latest/CommandLineReference/set-up-ec2-cli-linux.html',
+        'https://docs.aws.amazon.com/AWSEC2/latest/CommandLineReference/set-up-ec2-cli-linux.html'
+    ]
+    AWS_EC2_CLI_URL_REPLACEMENT = 'https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html'
+    
     # VMware spelling pattern - must be "VMware" with capital V and M
     # Matches incorrect spellings like "vmware", "Vmware", "VMWare", "VMWARE", etc.
     # Uses word boundaries and explicitly excludes the correct spelling
@@ -1469,6 +1476,18 @@ class DocumentationLecturer:
                     'url': href,
                     'link_text': link_text
                 })
+            
+            # Check for deprecated AWS EC2 CLI URL
+            elif href in self.DEPRECATED_AWS_EC2_CLI_URLS:
+                location = f"Deprecated AWS EC2 CLI URL: {href}"
+                fix = f"Replace with {self.AWS_EC2_CLI_URL_REPLACEMENT} - Link text: '{link_text}'"
+                
+                self._write_csv_row(page_url, 'deprecated_url', location, fix)
+                issues.append({
+                    'type': 'deprecated_aws_ec2_cli_url',
+                    'url': href,
+                    'link_text': link_text
+                })
         
         # Also check text content for URLs that might not be hyperlinks
         text_content = soup.get_text()
@@ -1498,6 +1517,20 @@ class DocumentationLecturer:
                     'url': self.DEPRECATED_VDDK_URL,
                     'link_text': ''
                 })
+        
+        # Check for deprecated AWS EC2 CLI URL in text content
+        for aws_url in self.DEPRECATED_AWS_EC2_CLI_URLS:
+            if aws_url in text_content:
+                if not any(i['url'] == aws_url for i in issues):
+                    location = f"Deprecated AWS EC2 CLI URL in text: {aws_url}"
+                    fix = f"Replace with {self.AWS_EC2_CLI_URL_REPLACEMENT}"
+                    
+                    self._write_csv_row(page_url, 'deprecated_url', location, fix)
+                    issues.append({
+                        'type': 'deprecated_aws_ec2_cli_url',
+                        'url': aws_url,
+                        'link_text': ''
+                    })
         
         return issues
     
@@ -2432,10 +2465,11 @@ class DocumentationLecturer:
         return ''.join(parts)
     
     def _fix_deprecated_urls(self, content: str) -> str:
-        """Fix deprecated packages.vmware.com URLs and VDDK URL.
+        """Fix deprecated packages.vmware.com URLs, VDDK URL, and AWS EC2 CLI URL.
         
         Replaces https://packages.vmware.com/* with https://packages-prod.broadcom.com/*
         Replaces deprecated VDDK URL with new Broadcom developer URL.
+        Replaces deprecated AWS EC2 CLI URLs with new AWS CLI install guide URL.
         """
         # Replace the base URL while preserving the path
         def replace_url(match):
@@ -2452,6 +2486,10 @@ class DocumentationLecturer:
         
         # Fix deprecated VDDK URL (exact string replacement)
         content = content.replace(self.DEPRECATED_VDDK_URL, self.VDDK_URL_REPLACEMENT)
+        
+        # Fix deprecated AWS EC2 CLI URLs (both http and https versions)
+        for aws_url in self.DEPRECATED_AWS_EC2_CLI_URLS:
+            content = content.replace(aws_url, self.AWS_EC2_CLI_URL_REPLACEMENT)
         
         return content
     
