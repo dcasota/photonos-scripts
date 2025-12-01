@@ -2,10 +2,11 @@
 """
 Photon OS Documentation Lecturer
 A comprehensive command-line tool for crawling Photon OS documentation served by Nginx,
-identifying issues (grammar/spelling, markdown artifacts, orphan links/images, unaligned images),
-generating CSV reports, and optionally applying fixes via git push and GitHub PR.
+identifying issues (grammar/spelling, markdown artifacts, orphan links/images, unaligned images,
+heading hierarchy violations), generating CSV reports, and optionally applying fixes via git 
+push and GitHub PR.
 
-Version: 1.0
+Version: 1.4
 Based on analyzer.py with extended features for complete documentation workflow.
 
 Usage:
@@ -17,6 +18,21 @@ Commands:
     run      - Execute full workflow (analyze, generate fixes, push changes, create PR)
     analyze  - Generate report only (no fixes, git operations, or PR)
     version  - Display tool version
+
+Issue Categories Detected:
+    - grammar: Grammar and spelling issues
+    - markdown: Unrendered markdown artifacts, missing header spacing
+    - heading_hierarchy: Heading level violations (skipped levels, wrong first heading)
+    - orphan_page: Broken/inaccessible pages
+    - orphan_link: Broken hyperlinks
+    - orphan_image: Missing or broken images
+    - image_alignment: Improperly aligned images
+    - formatting: Missing spaces around backticks
+    - indentation: List and code block indentation issues
+    - shell_prompt: Shell prompt prefixes in code blocks
+    - mixed_command_output: Commands mixed with output in code blocks
+    - deprecated_url: Deprecated VMware package URLs
+    - spelling: Incorrect VMware spelling
 
 Example:
     python3 photonos-docs-lecturer.py run \\
@@ -56,7 +72,7 @@ import threading
 import json
 
 # Version info
-VERSION = "1.3"
+VERSION = "1.4"
 TOOL_NAME = "photonos-docs-lecturer.py"
 
 # Lazy-loaded modules (populated by check_and_import_dependencies)
@@ -298,6 +314,9 @@ class DocumentationLecturer:
     ALIGNMENT_CLASSES = ['align-center', 'align-left', 'align-right', 'centered', 
                          'img-responsive', 'text-center', 'mx-auto', 'd-block']
     CONTAINER_CLASSES = ['image-container', 'figure', 'gallery', 'img-gallery', 'images-row']
+    
+    # Markdown heading pattern for hierarchy analysis (ATX-style: # ## ### etc.)
+    MARKDOWN_HEADING_PATTERN = re.compile(r'^(#{1,6})\s+(.+)$', re.MULTILINE)
     
     def __init__(self, args):
         """Initialize the lecturer with parsed arguments."""
@@ -1353,6 +1372,139 @@ class DocumentationLecturer:
         
         return issues
     
+    def _detect_heading_level(self, line: str) -> int:
+        """Detect markdown heading level from a line.
+        
+        Returns the heading level (1-6) or 0 if not a heading.
+        Only handles ATX-style headings (# ## ### etc.).
+        """
+        match = re.match(r'^(#{1,6})\s+', line)
+        if match:
+            return len(match.group(1))
+        return 0
+    
+    def _analyze_heading_hierarchy(self, content: str) -> List[Dict]:
+        """Analyze markdown content for heading hierarchy violations.
+        
+        Detects issues like:
+        - First heading is not H1
+        - Skipped heading levels (e.g., H1 -> H3 without H2)
+        
+        Returns list of issues found with line numbers and suggestions.
+        """
+        lines = content.split('\n')
+        issues = []
+        prev_level = 0
+        
+        for line_num, line in enumerate(lines, 1):
+            level = self._detect_heading_level(line)
+            
+            if level > 0:
+                # Check for hierarchy violations
+                if prev_level == 0 and level > 1:
+                    # First heading is not H1
+                    issues.append({
+                        'line': line_num,
+                        'current_level': level,
+                        'prev_level': prev_level,
+                        'issue': f'First heading is H{level}, should be H1',
+                        'suggestion': 1,
+                        'content': line.strip()
+                    })
+                elif level - prev_level > 1:
+                    # Skipped heading levels
+                    issues.append({
+                        'line': line_num,
+                        'current_level': level,
+                        'prev_level': prev_level,
+                        'issue': f'Heading jumped from H{prev_level} to H{level}',
+                        'suggestion': prev_level + 1,
+                        'content': line.strip()
+                    })
+                
+                prev_level = level
+        
+        return issues
+    
+    def _check_heading_hierarchy(self, page_url: str, text_content: str) -> List[Dict]:
+        """Check for heading hierarchy violations in page content.
+        
+        Detects issues like:
+        - First heading is not H1 (should start with single #)
+        - Skipped heading levels (e.g., ## followed by #### without ###)
+        
+        Args:
+            page_url: URL of the page being analyzed
+            text_content: Raw text/markdown content of the page
+            
+        Returns:
+            List of heading hierarchy issues found
+        """
+        issues = self._analyze_heading_hierarchy(text_content)
+        
+        for issue in issues:
+            location = f"Line {issue['line']}: {issue['content'][:60]}..."
+            fix = f"{issue['issue']}. Change to H{issue['suggestion']}"
+            
+            self._write_csv_row(page_url, 'heading_hierarchy', location, fix)
+        
+        return issues
+    
+    def _fix_heading_hierarchy(self, content: str) -> Tuple[str, List[Dict]]:
+        """Fix heading hierarchy violations in markdown content.
+        
+        Applies conservative fixes:
+        - Changes first heading to H1 if it's not
+        - Fixes skipped heading levels by adjusting to next valid level
+        
+        Args:
+            content: Original markdown content
+            
+        Returns:
+            Tuple of (fixed_content, list_of_fixes_applied)
+        """
+        lines = content.split('\n')
+        fixes_applied = []
+        prev_level = 0
+        
+        for i, line in enumerate(lines):
+            level = self._detect_heading_level(line)
+            
+            if level > 0:
+                new_level = level
+                fix_reason = None
+                
+                # Fix first heading if not H1
+                if prev_level == 0 and level > 1:
+                    new_level = 1
+                    fix_reason = f'First heading: H{level} -> H1'
+                
+                # Fix heading level skips
+                elif level - prev_level > 1:
+                    new_level = prev_level + 1
+                    fix_reason = f'Heading skip: H{prev_level} -> H{level} becomes H{prev_level} -> H{new_level}'
+                
+                if new_level != level and fix_reason:
+                    # Replace heading
+                    old_line = line
+                    new_line = re.sub(r'^#{1,6}', '#' * new_level, line)
+                    lines[i] = new_line
+                    
+                    fixes_applied.append({
+                        'line': i + 1,
+                        'old_level': level,
+                        'new_level': new_level,
+                        'reason': fix_reason,
+                        'old_content': old_line.strip(),
+                        'new_content': new_line.strip()
+                    })
+                    
+                    prev_level = new_level
+                else:
+                    prev_level = level
+        
+        return '\n'.join(lines), fixes_applied
+    
     def _check_url_link(self, url: str) -> Tuple[bool, int]:
         """Check if a URL link is valid."""
         try:
@@ -1766,6 +1918,9 @@ class DocumentationLecturer:
             # Check for markdown headers missing space after hash symbols
             header_spacing_issues = self._check_markdown_header_spacing(page_url, text_content)
             
+            # Check for heading hierarchy violations (H1 -> H3 skips, wrong first heading level)
+            heading_hierarchy_issues = self._check_heading_hierarchy(page_url, text_content)
+            
             # Apply fixes if running with --gh-pr
             if self.command == 'run' and self.gh_pr:
                 all_issues = {
@@ -1780,6 +1935,7 @@ class DocumentationLecturer:
                     'deprecated_url_issues': deprecated_url_issues,
                     'vmware_spelling_issues': vmware_spelling_issues,
                     'header_spacing_issues': header_spacing_issues,
+                    'heading_hierarchy_issues': heading_hierarchy_issues,
                 }
                 self._apply_fixes(page_url, all_issues, text_content)
             
@@ -1810,6 +1966,7 @@ class DocumentationLecturer:
                 - deprecated_url_issues: Deprecated VMware URLs
                 - vmware_spelling_issues: Incorrect VMware spelling
                 - mixed_cmd_output_issues: Mixed command/output in code blocks
+                - heading_hierarchy_issues: Heading hierarchy violations (skipped levels, wrong first heading)
             webpage_text: Optional text content from the webpage for content-based file matching
         """
         local_path = self._map_url_to_local_path(page_url, webpage_text)
@@ -1849,6 +2006,13 @@ class DocumentationLecturer:
                 shell_prompt_issues = issues.get('shell_prompt_issues', [])
                 if shell_prompt_issues:
                     content = self._fix_shell_prompts_in_markdown(content)
+                
+                # Fix heading hierarchy violations (H1 -> H3 skips, wrong first heading)
+                heading_hierarchy_issues = issues.get('heading_hierarchy_issues', [])
+                if heading_hierarchy_issues:
+                    content, hierarchy_fixes = self._fix_heading_hierarchy(content)
+                    if hierarchy_fixes:
+                        self.logger.info(f"Applied {len(hierarchy_fixes)} heading hierarchy fixes to {local_path}")
                 
                 # =========================================================
                 # LLM-based fixes (require LLM client)
