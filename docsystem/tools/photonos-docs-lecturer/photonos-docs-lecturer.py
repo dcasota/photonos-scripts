@@ -1280,19 +1280,27 @@ class DocumentationLecturer:
         Excludes:
         - URLs containing 'vmware' (e.g., github.com/vmware, packages.vmware.com)
         - Domain-like patterns (e.g., packages.vmware.com without https://)
-        - Console commands containing vmware
+        - File paths (e.g., /var/log/VMware-imc/, /etc/pki/rpm-gpg/VMware-RPM-GPG-KEY)
+        - Email addresses (e.g., linux-packages@VMware.com)
+        - Console commands/code blocks containing vmware
         """
         issues = []
         
         # Pattern to detect if match is within a URL (with or without protocol)
         url_pattern = re.compile(r'https?://[^\s<>"\']+|www\.[^\s<>"\']+|[a-zA-Z0-9-]+\.[a-zA-Z0-9-]+\.(com|org|net|io|gov|edu)[^\s<>"\']*')
         
+        # Pattern to detect file paths (Unix-style)
+        file_path_pattern = re.compile(r'(?:/[\w.-]+)+/?')
+        
+        # Pattern to detect email addresses
+        email_pattern = re.compile(r'[\w.+-]+@[\w.-]+\.\w+', re.IGNORECASE)
+        
         for match in self.VMWARE_SPELLING_PATTERN.finditer(text_content):
             incorrect_spelling = match.group(0)
             match_start = match.start()
             match_end = match.end()
             
-            # Get extended context to check for URL or domain pattern
+            # Get extended context to check for URL, domain, file path, or email patterns
             context_start = max(0, match_start - 100)
             context_end = min(len(text_content), match_end + 50)
             context_region = text_content[context_start:context_end]
@@ -1308,6 +1316,30 @@ class DocumentationLecturer:
             
             if is_in_url:
                 continue  # Skip VMware spelling in URLs/domains
+            
+            # Check if match is within a file path
+            is_in_file_path = False
+            for path_match in file_path_pattern.finditer(context_region):
+                path_start_abs = context_start + path_match.start()
+                path_end_abs = context_start + path_match.end()
+                if path_start_abs <= match_start and match_end <= path_end_abs:
+                    is_in_file_path = True
+                    break
+            
+            if is_in_file_path:
+                continue  # Skip VMware spelling in file paths
+            
+            # Check if match is within an email address
+            is_in_email = False
+            for email_match in email_pattern.finditer(context_region):
+                email_start_abs = context_start + email_match.start()
+                email_end_abs = context_start + email_match.end()
+                if email_start_abs <= match_start and match_end <= email_end_abs:
+                    is_in_email = True
+                    break
+            
+            if is_in_email:
+                continue  # Skip VMware spelling in email addresses
             
             # Check if match is in a domain-like context (e.g., "packages.vmware.com")
             # Look for pattern like "word.vmware.word"
@@ -2110,14 +2142,32 @@ class DocumentationLecturer:
         Replaces variations like 'vmware', 'Vmware', 'VMWare', 'VMWARE' with 'VMware'.
         Preserves:
         - Code blocks (fenced and inline)
-        - URLs (with or without protocol)
+        - URLs (with or without protocol, including github.com/vmware/*)
         - Domain-like patterns (e.g., packages.vmware.com)
+        - File paths (e.g., /var/log/VMware-imc/, /etc/pki/rpm-gpg/VMware-RPM-GPG-KEY)
+        - Email addresses (e.g., linux-packages@VMware.com)
         """
-        # Split content to preserve code blocks and URLs
-        # Match: fenced code blocks, inline code, URLs with protocol, and domain patterns
-        parts = re.split(r'(```[\s\S]*?```|`[^`]+`|https?://[^\s<>"\')\]]+|www\.[^\s<>"\')\]]+|[a-zA-Z0-9-]+\.vmware\.[a-zA-Z0-9-]+[^\s<>"\')\]]*)', content, flags=re.IGNORECASE)
+        # Split content to preserve code blocks, URLs, file paths, and emails
+        # Match: fenced code blocks, inline code, URLs with protocol, domain patterns,
+        # file paths (Unix-style), and email addresses
+        preserve_pattern = re.compile(
+            r'('
+            r'```[\s\S]*?```'                          # Fenced code blocks
+            r'|`[^`]+`'                                # Inline code
+            r'|https?://[^\s<>"\')\]]+?'               # URLs with protocol
+            r'|www\.[^\s<>"\')\]]+?'                   # www URLs
+            r'|[a-zA-Z0-9-]+\.vmware\.[a-zA-Z0-9-]+[^\s<>"\')\]]*'  # Domain patterns
+            r'|(?:/[\w.-]+)+/?'                        # Unix file paths (e.g., /var/log/VMware-imc/)
+            r'|[\w.+-]+@[\w.-]+\.\w+'                  # Email addresses
+            r')',
+            re.IGNORECASE
+        )
+        
+        parts = preserve_pattern.split(content)
         
         for i, part in enumerate(parts):
+            if not part:
+                continue
             # Skip code blocks
             if part.startswith('```') or part.startswith('`'):
                 continue
@@ -2126,6 +2176,12 @@ class DocumentationLecturer:
                 continue
             # Skip domain-like patterns (e.g., packages.vmware.com)
             if re.match(r'^[a-zA-Z0-9-]+\.vmware\.[a-zA-Z0-9-]+', part, re.IGNORECASE):
+                continue
+            # Skip file paths (start with / and contain path segments)
+            if part.startswith('/') and '/' in part[1:]:
+                continue
+            # Skip email addresses
+            if '@' in part and re.match(r'^[\w.+-]+@[\w.-]+\.\w+$', part, re.IGNORECASE):
                 continue
             # Fix VMware spelling in regular text
             parts[i] = self.VMWARE_SPELLING_PATTERN.sub('VMware', part)
