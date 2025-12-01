@@ -79,12 +79,31 @@ wget --spider \
      "$NEW_URL" \
      -o "$REPORT_FILE"
 
-# Parse the log for broken links and their referring pages, output to CSV
+# Parse the log for broken links (404, connection refused, timeout) and their referring pages, output to CSV
 awk '
-  BEGIN { print "referring_page,broken_link" }
+  BEGIN { print "referring_page,broken_link,error_type" }
   /^--.*--  / { current_url = $3; referrer = "" }
   /^Referer: / { referrer = $2; gsub(/\r/, "", referrer) }
-  /Remote file does not exist -- broken link!!!/ { gsub(/\r/, "", current_url); if (referrer != "") print referrer "," current_url }
+  /Remote file does not exist -- broken link!!!/ { 
+    gsub(/\r/, "", current_url)
+    if (referrer != "") print referrer "," current_url ",404_NOT_FOUND"
+  }
+  /failed: Connection refused/ {
+    gsub(/\r/, "", current_url)
+    if (current_url != "") print (referrer != "" ? referrer : "N/A") "," current_url ",CONNECTION_REFUSED"
+  }
+  /failed: Connection timed out/ {
+    gsub(/\r/, "", current_url)
+    if (current_url != "") print (referrer != "" ? referrer : "N/A") "," current_url ",CONNECTION_TIMEOUT"
+  }
+  /Unable to establish SSL connection/ {
+    gsub(/\r/, "", current_url)
+    if (current_url != "") print (referrer != "" ? referrer : "N/A") "," current_url ",SSL_ERROR"
+  }
+  /Name or service not known/ {
+    gsub(/\r/, "", current_url)
+    if (current_url != "") print (referrer != "" ? referrer : "N/A") "," current_url ",DNS_FAILURE"
+  }
 ' "$REPORT_FILE" > "$CSV_FILE"
 
 # Extract redirect information
@@ -126,13 +145,23 @@ echo "========================================"
 echo "Crawl complete!"
 echo "========================================"
 echo "Full details: $REPORT_FILE"
-echo "Broken links (404): $CSV_FILE"
+echo "Broken links: $CSV_FILE"
 echo "Redirects: $REDIRECT_FILE"
 echo "Redirect loops: $REDIRECT_LOOP_FILE"
 echo ""
 echo "Summary:"
-BROKEN_COUNT=$(tail -n +2 "$CSV_FILE" | wc -l)
-echo "  - Broken links (404): $BROKEN_COUNT"
+BROKEN_404=$(grep -c "404_NOT_FOUND" "$CSV_FILE" 2>/dev/null || echo 0)
+CONN_REFUSED=$(grep -c "CONNECTION_REFUSED" "$CSV_FILE" 2>/dev/null || echo 0)
+CONN_TIMEOUT=$(grep -c "CONNECTION_TIMEOUT" "$CSV_FILE" 2>/dev/null || echo 0)
+SSL_ERRORS=$(grep -c "SSL_ERROR" "$CSV_FILE" 2>/dev/null || echo 0)
+DNS_FAILURES=$(grep -c "DNS_FAILURE" "$CSV_FILE" 2>/dev/null || echo 0)
+TOTAL_BROKEN=$((BROKEN_404 + CONN_REFUSED + CONN_TIMEOUT + SSL_ERRORS + DNS_FAILURES))
+echo "  - Total broken links: $TOTAL_BROKEN"
+echo "    - 404 Not Found: $BROKEN_404"
+echo "    - Connection Refused: $CONN_REFUSED"
+echo "    - Connection Timeout: $CONN_TIMEOUT"
+echo "    - SSL Errors: $SSL_ERRORS"
+echo "    - DNS Failures: $DNS_FAILURES"
 echo "  - Redirect loops: $LOOP_COUNT"
 echo "  - Excessive redirects: $EXCESSIVE_COUNT"
 echo ""
