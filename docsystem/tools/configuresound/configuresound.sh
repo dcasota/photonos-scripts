@@ -126,10 +126,12 @@ git_clone_or_update() {
     local attempt=1
 
     if [[ -d "$target_dir/.git" ]]; then
-        log_info "Updating existing repo: $target_dir"
-        cd "$target_dir"
-        git fetch --all --quiet || true
-        git reset --hard origin/HEAD --quiet || git reset --hard HEAD --quiet
+        log_info "Updating existing repo: $(basename "$target_dir")"
+        (
+            cd "$target_dir"
+            git fetch --all --quiet || true
+            git reset --hard origin/HEAD --quiet || git reset --hard HEAD --quiet
+        )
         return 0
     fi
 
