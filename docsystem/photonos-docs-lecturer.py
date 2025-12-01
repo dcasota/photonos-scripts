@@ -56,7 +56,7 @@ import threading
 import json
 
 # Version info
-VERSION = "1.1"
+VERSION = "1.3"
 TOOL_NAME = "photonos-docs-lecturer.py"
 
 # Lazy-loaded modules (populated by check_and_import_dependencies)
@@ -154,7 +154,7 @@ class LLMClient:
             if not HAS_GEMINI:
                 raise ImportError("google-generativeai library required for Gemini. Install with: pip install google-generativeai")
             genai.configure(api_key=self.api_key)
-            self.model = genai.GenerativeModel('gemini-pro')
+            self.model = genai.GenerativeModel('gemini-2.5-flash')
         elif self.provider == "xai":
             # xAI uses HTTP API
             self.xai_endpoint = "https://api.x.ai/v1/chat/completions"
@@ -188,6 +188,26 @@ Text to fix:
 {text}
 
 Return only the corrected markdown text."""
+        return self._generate(prompt)
+    
+    def fix_indentation(self, text: str, issues: List[Dict]) -> str:
+        """Fix indentation issues in markdown lists and code blocks."""
+        issue_desc = "\n".join([f"- {i.get('context', i.get('type', 'unknown'))}" for i in issues[:10]])
+        prompt = f"""Fix the following indentation issues in the markdown text.
+
+Issues found:
+{issue_desc}
+
+Common indentation problems to fix:
+1. List items not properly aligned
+2. Code blocks inside list items not indented correctly (need 4 spaces or 1 tab)
+3. Nested content not properly indented under parent list items
+4. Inconsistent indentation (mixing tabs and spaces)
+
+Text to fix:
+{text}
+
+Return only the corrected markdown text with proper indentation."""
         return self._generate(prompt)
     
     def _generate(self, prompt: str) -> str:
@@ -254,6 +274,7 @@ class DocumentationLecturer:
         re.compile(r'^(#\s+)(.+)$', re.MULTILINE),       # "# command" - root prompt
         re.compile(r'^(>\s+)(.+)$', re.MULTILINE),       # "> command" - alternative prompt
         re.compile(r'^(%\s+)(.+)$', re.MULTILINE),       # "% command" - csh/tcsh prompt
+        re.compile(r'^(~\s+)(.+)$', re.MULTILINE),       # "~ command" - home directory prompt
         re.compile(r'^(❯\s*)(.+)$', re.MULTILINE),       # "❯ command" - fancy prompt (e.g., starship, powerline)
         re.compile(r'^(➜\s+)(.+)$', re.MULTILINE),       # "➜  command" - Oh My Zsh robbyrussell theme
         re.compile(r'^(root@\S+[#$]\s*)(.+)$', re.MULTILINE),  # "root@host# command"
@@ -353,6 +374,7 @@ class DocumentationLecturer:
         self.repo_cloned: bool = False  # Whether repo has been cloned
         self.git_lock = threading.Lock()  # Lock for git operations (thread-safe)
         self.fixed_files_log: List[Dict] = []  # Log of fixes for PR body updates
+        self.first_commit_made: bool = False  # Whether the first commit has been made (for amend logic)
     
     def _setup_logging(self):
         """Configure logging to file and stderr."""
@@ -1242,24 +1264,27 @@ class DocumentationLecturer:
         VMware must be spelled with capital V and M: "VMware"
         Incorrect: vmware, Vmware, VMWare, VMWARE, etc.
         
-        Excludes URLs containing 'vmware' (e.g., github.com/vmware, packages.vmware.com).
+        Excludes:
+        - URLs containing 'vmware' (e.g., github.com/vmware, packages.vmware.com)
+        - Domain-like patterns (e.g., packages.vmware.com without https://)
+        - Console commands containing vmware
         """
         issues = []
         
-        # Pattern to detect if match is within a URL
-        url_pattern = re.compile(r'https?://[^\s<>"\']+|www\.[^\s<>"\']+')
+        # Pattern to detect if match is within a URL (with or without protocol)
+        url_pattern = re.compile(r'https?://[^\s<>"\']+|www\.[^\s<>"\']+|[a-zA-Z0-9-]+\.[a-zA-Z0-9-]+\.(com|org|net|io|gov|edu)[^\s<>"\']*')
         
         for match in self.VMWARE_SPELLING_PATTERN.finditer(text_content):
             incorrect_spelling = match.group(0)
             match_start = match.start()
             match_end = match.end()
             
-            # Get extended context to check for URL
+            # Get extended context to check for URL or domain pattern
             context_start = max(0, match_start - 100)
             context_end = min(len(text_content), match_end + 50)
             context_region = text_content[context_start:context_end]
             
-            # Check if this match is within a URL
+            # Check if this match is within a URL or domain-like pattern
             is_in_url = False
             for url_match in url_pattern.finditer(context_region):
                 url_start_abs = context_start + url_match.start()
@@ -1269,7 +1294,13 @@ class DocumentationLecturer:
                     break
             
             if is_in_url:
-                continue  # Skip VMware spelling in URLs
+                continue  # Skip VMware spelling in URLs/domains
+            
+            # Check if match is in a domain-like context (e.g., "packages.vmware.com")
+            # Look for pattern like "word.vmware.word"
+            local_context = text_content[max(0, match_start - 20):min(len(text_content), match_end + 20)]
+            if re.search(r'\w+\.' + re.escape(incorrect_spelling) + r'\.\w+', local_context, re.IGNORECASE):
+                continue  # Skip domain-like patterns
             
             # Get display context around the match
             start = max(0, match_start - 30)
@@ -1857,6 +1888,16 @@ class DocumentationLecturer:
                     except Exception as e:
                         self.logger.error(f"LLM mixed command/output fix failed: {e}")
                 
+                # Fix indentation issues via LLM
+                indentation_issues = issues.get('indentation_issues', [])
+                if indentation_issues and self.llm_client:
+                    try:
+                        fixed = self.llm_client.fix_indentation(content, indentation_issues)
+                        if fixed:
+                            content = fixed
+                    except Exception as e:
+                        self.logger.error(f"LLM indentation fix failed: {e}")
+                
                 # Translate if language != en
                 if self.language != 'en' and self.llm_client:
                     try:
@@ -1887,6 +1928,10 @@ class DocumentationLecturer:
                         applied_fixes.append('grammar (LLM)')
                     if issues.get('md_artifacts') and self.llm_client:
                         applied_fixes.append('markdown (LLM)')
+                    if issues.get('indentation_issues') and self.llm_client:
+                        applied_fixes.append('indentation (LLM)')
+                    if issues.get('mixed_cmd_output_issues') and self.llm_client:
+                        applied_fixes.append('mixed cmd/output (LLM)')
                     
                     fixes_str = ', '.join(applied_fixes) if applied_fixes else 'content changes'
                     self.logger.info(f"Applied fixes to {local_path}: {fixes_str}")
@@ -1905,11 +1950,14 @@ class DocumentationLecturer:
         """Fix incorrect VMware spelling in content.
         
         Replaces variations like 'vmware', 'Vmware', 'VMWare', 'VMWARE' with 'VMware'.
-        Preserves URLs and code blocks.
+        Preserves:
+        - Code blocks (fenced and inline)
+        - URLs (with or without protocol)
+        - Domain-like patterns (e.g., packages.vmware.com)
         """
         # Split content to preserve code blocks and URLs
-        # Match: fenced code blocks, inline code, and URLs
-        parts = re.split(r'(```[\s\S]*?```|`[^`]+`|https?://[^\s<>"\')\]]+|www\.[^\s<>"\')\]]+)', content)
+        # Match: fenced code blocks, inline code, URLs with protocol, and domain patterns
+        parts = re.split(r'(```[\s\S]*?```|`[^`]+`|https?://[^\s<>"\')\]]+|www\.[^\s<>"\')\]]+|[a-zA-Z0-9-]+\.vmware\.[a-zA-Z0-9-]+[^\s<>"\')\]]*)', content, flags=re.IGNORECASE)
         
         for i, part in enumerate(parts):
             # Skip code blocks
@@ -1917,6 +1965,9 @@ class DocumentationLecturer:
                 continue
             # Skip URLs
             if part.startswith('http://') or part.startswith('https://') or part.startswith('www.'):
+                continue
+            # Skip domain-like patterns (e.g., packages.vmware.com)
+            if re.match(r'^[a-zA-Z0-9-]+\.vmware\.[a-zA-Z0-9-]+', part, re.IGNORECASE):
                 continue
             # Fix VMware spelling in regular text
             parts[i] = self.VMWARE_SPELLING_PATTERN.sub('VMware', part)
@@ -1960,13 +2011,17 @@ class DocumentationLecturer:
     def _fix_shell_prompts_in_markdown(self, content: str) -> str:
         """Remove shell prompt prefixes from code blocks in markdown.
         
+        Also adds language hints to code blocks without them:
+        - Adds 'python' if content looks like Python code
+        - Adds 'console' otherwise for shell commands
+        
         Transforms:
-        ```bash
+        ```
         $ ls -la
         ```
         
         To:
-        ```bash
+        ```console
         ls -la
         ```
         """
@@ -1975,7 +2030,15 @@ class DocumentationLecturer:
             code_block = match.group(0)
             lines = code_block.split('\n')
             
-            fixed_lines = [lines[0]]  # Keep the opening ```lang
+            if not lines:
+                return code_block
+            
+            # Check if the opening line has a language specified
+            opening_line = lines[0]
+            has_language = len(opening_line) > 3  # More than just "```"
+            
+            fixed_lines = []
+            code_content_lines = []
             
             for line in lines[1:-1]:  # Skip first and last lines (``` markers)
                 fixed_line = line
@@ -1985,8 +2048,18 @@ class DocumentationLecturer:
                         # Remove the prompt, keep the command
                         fixed_line = prompt_match.group(2)
                         break
-                fixed_lines.append(fixed_line)
+                code_content_lines.append(fixed_line)
             
+            # Determine language if not specified
+            if not has_language and code_content_lines:
+                code_text = '\n'.join(code_content_lines)
+                if self._looks_like_python(code_text):
+                    opening_line = '```python'
+                else:
+                    opening_line = '```console'
+            
+            fixed_lines.append(opening_line)
+            fixed_lines.extend(code_content_lines)
             if lines:
                 fixed_lines.append(lines[-1])  # Keep the closing ```
             
@@ -1996,6 +2069,39 @@ class DocumentationLecturer:
         content = re.sub(r'```[\w]*\n[\s\S]*?```', fix_code_block, content)
         
         return content
+    
+    def _looks_like_python(self, code: str) -> bool:
+        """Heuristic to detect if code content looks like Python.
+        
+        Returns True if the code appears to be Python, False otherwise.
+        """
+        python_indicators = [
+            r'^\s*import\s+\w+',           # import statements
+            r'^\s*from\s+\w+\s+import',    # from X import Y
+            r'^\s*def\s+\w+\s*\(',         # function definitions
+            r'^\s*class\s+\w+',            # class definitions
+            r'^\s*if\s+.*:$',              # if statements with colon
+            r'^\s*for\s+\w+\s+in\s+',      # for loops
+            r'^\s*while\s+.*:$',           # while loops
+            r'^\s*print\s*\(',             # print function
+            r'^\s*return\s+',              # return statements
+            r'^\s*#\s*!.*python',          # shebang
+            r'^\s*"""',                    # docstrings
+            r"^\s*'''",                    # docstrings
+            r'^\s*@\w+',                   # decorators
+            r'\s*=\s*\[.*\]',              # list assignments
+            r'\s*=\s*\{.*\}',              # dict assignments
+            r'\.append\(',                 # list methods
+            r'\.format\(',                 # string format
+            r'f".*\{',                     # f-strings
+            r"f'.*\{",                     # f-strings
+        ]
+        
+        for pattern in python_indicators:
+            if re.search(pattern, code, re.MULTILINE):
+                return True
+        
+        return False
     
     def _fix_mixed_command_output_llm(self, content: str, issues: List[Dict]) -> str:
         """Fix mixed command/output code blocks using LLM.
@@ -2432,10 +2538,14 @@ See attached CSV report for detailed issue locations and fix suggestions.
             return False
     
     def _incremental_commit_push_and_pr(self, local_path: str, fixes_applied: List[str]) -> bool:
-        """Commit a single file fix, push, and create/update PR.
+        """Add file fix to a single squashed commit, push, and create/update PR.
         
         This is called immediately after each file fix is applied.
         Thread-safe via git_lock.
+        
+        Uses a single commit per run:
+        - First fix: creates new commit with descriptive message
+        - Subsequent fixes: amends the commit and force pushes
         
         Args:
             local_path: Path to the fixed local file
@@ -2465,6 +2575,13 @@ See attached CSV report for detailed issue locations and fix suggestions.
                 rel_path = os.path.relpath(repo_path, self.temp_dir)
                 self.logger.info(f"Copied {local_path} -> {repo_path}")
                 
+                # Log the fix for PR body (before git operations)
+                self.fixed_files_log.append({
+                    'file': rel_path,
+                    'fixes': fixes_applied,
+                    'timestamp': datetime.datetime.now().isoformat()
+                })
+                
                 # Change to repo directory for git operations
                 original_cwd = os.getcwd()
                 os.chdir(self.temp_dir)
@@ -2479,27 +2596,33 @@ See attached CSV report for detailed issue locations and fix suggestions.
                         self.logger.info(f"No changes to commit for {rel_path}")
                         return True  # No changes but not an error
                     
-                    # Commit with descriptive message
-                    fixes_str = ', '.join(fixes_applied) if fixes_applied else 'content fixes'
-                    file_basename = os.path.basename(local_path)
-                    commit_msg = f"Fix {file_basename}: {fixes_str}\n\nAutomated fix by {TOOL_NAME}"
-                    subprocess.run(['git', 'commit', '-m', commit_msg], check=True, capture_output=True)
+                    # Build commit message with all fixes so far
+                    commit_msg = self._generate_commit_message()
                     
-                    # Push with auth
+                    if not self.first_commit_made:
+                        # First commit: create new commit
+                        subprocess.run(['git', 'commit', '-m', commit_msg], check=True, capture_output=True)
+                        self.first_commit_made = True
+                        self.logger.info(f"Created initial commit with fix for {os.path.basename(local_path)}")
+                    else:
+                        # Subsequent fixes: amend the existing commit
+                        subprocess.run(['git', 'commit', '--amend', '-m', commit_msg], check=True, capture_output=True)
+                        self.logger.info(f"Amended commit with fix for {os.path.basename(local_path)}")
+                    
+                    # Push with auth (force push needed for amended commits)
                     parsed = urllib.parse.urlparse(self.ghrepo_url)
                     auth_url = f"{parsed.scheme}://{self.gh_username}:{self.gh_repotoken}@{parsed.netloc}{parsed.path}"
                     branch = self.ghrepo_branch
                     
-                    subprocess.run(['git', 'push', auth_url, branch], check=True, capture_output=True)
-                    self.logger.info(f"Pushed fix for {file_basename} to {self.ghrepo_url}")
-                    print(f"  [PUSH] {file_basename} pushed to GitHub")
+                    if self.first_commit_made and len(self.fixed_files_log) > 1:
+                        # Force push for amended commits
+                        subprocess.run(['git', 'push', '--force', auth_url, branch], check=True, capture_output=True)
+                    else:
+                        # Regular push for first commit
+                        subprocess.run(['git', 'push', auth_url, branch], check=True, capture_output=True)
                     
-                    # Log the fix for PR body
-                    self.fixed_files_log.append({
-                        'file': rel_path,
-                        'fixes': fixes_applied,
-                        'timestamp': datetime.datetime.now().isoformat()
-                    })
+                    self.logger.info(f"Pushed to {self.ghrepo_url}")
+                    print(f"  [PUSH] {os.path.basename(local_path)} added to commit")
                     
                     # Create or update PR
                     self._create_or_update_pr()
@@ -2515,6 +2638,25 @@ See attached CSV report for detailed issue locations and fix suggestions.
             except Exception as e:
                 self.logger.error(f"Incremental commit/push failed for {local_path}: {e}")
                 return False
+    
+    def _generate_commit_message(self) -> str:
+        """Generate a commit message summarizing all fixes in this run.
+        
+        Returns:
+            Commit message with title and list of fixed files.
+        """
+        title = f"Documentation fixes - {self.timestamp}"
+        
+        # Build list of fixed files
+        files_summary = []
+        for fix_entry in self.fixed_files_log:
+            file_path = fix_entry['file']
+            fixes = ', '.join(fix_entry['fixes'])
+            files_summary.append(f"- {file_path}: {fixes}")
+        
+        body = "\n".join(files_summary) if files_summary else "- No fixes applied"
+        
+        return f"{title}\n\n{body}\n\nAutomated fixes by {TOOL_NAME} v{VERSION}"
     
     def _generate_pr_body(self) -> str:
         """Generate the PR body with current fix statistics."""
@@ -2972,6 +3114,25 @@ Commands:
   install-tools  Install required tools (Java, language-tool-python) - requires admin
   version        Display tool version
 
+Issue Types and Fix Modes:
+  +--------------------------+-------------+---------------+---------------------------+
+  | Issue Type               | Detected    | Fix Mode      | Description               |
+  +--------------------------+-------------+---------------+---------------------------+
+  | VMware spelling          | Always      | Automatic     | vmware -> VMware          |
+  | Deprecated URLs          | Always      | Automatic     | packages.vmware.com ->    |
+  |                          |             |               | packages-prod.broadcom.com|
+  | Backtick spacing         | Always      | Automatic     | word`code` -> word `code` |
+  | Shell prompts            | Always      | Automatic     | Remove $, #, ~, etc.      |
+  | Code block language      | Always      | Automatic     | Add python/console hint   |
+  | Grammar/spelling         | Always      | LLM-assisted  | Requires --llm flag       |
+  | Markdown artifacts       | Always      | LLM-assisted  | Requires --llm flag       |
+  | Mixed command/output     | Always      | LLM-assisted  | Requires --llm flag       |
+  | Indentation issues       | Always      | LLM-assisted  | Requires --llm flag       |
+  | Broken links             | Always      | Report only   | Manual review needed      |
+  | Broken images            | Always      | Report only   | Manual review needed      |
+  | Unaligned images         | Always      | Report only   | Manual review needed      |
+  +--------------------------+-------------+---------------+---------------------------+
+
 Examples:
   # Install required tools (run as root/sudo)
   sudo python3 {TOOL_NAME} install-tools
@@ -2979,7 +3140,7 @@ Examples:
   # Analyze only
   python3 {TOOL_NAME} analyze --website https://127.0.0.1/docs-v5 --parallel 5
   
-  # Full workflow with PR
+  # Full workflow with PR (automatic fixes only)
   python3 {TOOL_NAME} run \\
     --website https://127.0.0.1/docs-v5 \\
     --local-webserver /var/www/photon-site \\
@@ -2991,6 +3152,20 @@ Examples:
     --ref-ghbranch photon-hugo \\
     --parallel 10 \\
     --gh-pr
+
+  # Full workflow with LLM-assisted fixes
+  python3 {TOOL_NAME} run \\
+    --website https://127.0.0.1/docs-v5 \\
+    --local-webserver /var/www/photon-site \\
+    --gh-repotoken ghp_xxxxxxxxx \\
+    --gh-username myuser \\
+    --ghrepo-url https://github.com/myuser/photon.git \\
+    --ghrepo-branch photon-hugo \\
+    --ref-ghrepo https://github.com/vmware/photon.git \\
+    --ref-ghbranch photon-hugo \\
+    --parallel 10 \\
+    --gh-pr \\
+    --llm gemini --GEMINI_API_KEY your_api_key
 
 Version: {VERSION}
         """
@@ -3155,9 +3330,16 @@ def validate_args(args) -> bool:
             return False
     
     if args.command == 'run':
-        if args.llm == 'gemini' and not args.GEMINI_API_KEY:
-            print("[ERROR] --GEMINI_API_KEY required when --llm gemini", file=sys.stderr)
-            return False
+        if args.llm == 'gemini':
+            if not args.GEMINI_API_KEY:
+                print("[ERROR] --GEMINI_API_KEY required when --llm gemini", file=sys.stderr)
+                return False
+            # Check if google-generativeai is installed
+            if not HAS_GEMINI:
+                print("[ERROR] google-generativeai library required for --llm gemini", file=sys.stderr)
+                print("        Install with: pip install google-generativeai", file=sys.stderr)
+                print(f"        Or run: sudo python3 {TOOL_NAME} install-tools", file=sys.stderr)
+                return False
         if args.llm == 'xai' and not args.XAI_API_KEY:
             print("[ERROR] --XAI_API_KEY required when --llm xai", file=sys.stderr)
             return False
@@ -3796,6 +3978,7 @@ def install_tools() -> int:
         ('language-tool-python', 'language-tool-python'),
         ('Pillow', 'Pillow (PIL)'),
         ('tqdm', 'tqdm'),
+        ('google-generativeai', 'google-generativeai (for --llm gemini)'),
     ]
     
     if pip_available:
