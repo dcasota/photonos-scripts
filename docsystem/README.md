@@ -72,7 +72,7 @@ cd $HOME
 tdnf install -y git
 git clone https://github.com/dcasota/photonos-scripts
 cd $HOME/photonos-scripts/docsystem
-chmod a+x ./*.sh
+find . -type f -name "*.sh" -exec chmod +x {} \;
 ```
 
 Within the repository, the .factory subdirectory specifies the swarm's goals, as well as each team and its members.
