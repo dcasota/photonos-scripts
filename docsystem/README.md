@@ -92,3 +92,46 @@ cd $HOME/photonos-scripts/docsystem/.factory
 sudo droid /run-docs-lecturer-swarm
 ```
 
+
+#### Hint
+
+In a non-root environment, run the following script to save the exported environment variables when starting `installer.sh`.
+```
+#!/bin/bash
+
+# Script to configure sudo to preserve specific environment variables system-wide.
+# This adds 'Defaults env_keep += "GITHUB_TOKEN GITHUB_USERNAME PHOTON_FORK_REPOSITORY"' to a file in /etc/sudoers.d/
+# WARNING: This modifies system sudo configuration and affects all users with sudo access.
+# Run with sudo. Backup /etc/sudoers.d/ before running.
+
+# Check if not run as root
+if [ "$(id -u)" -ne 0 ]; then
+    echo "This script must be run with sudo."
+    exit 1
+fi
+
+SUDOERS_FILE="/etc/sudoers.d/env_keep_custom"
+ENV_KEEP_LINE='Defaults env_keep += "GITHUB_TOKEN GITHUB_USERNAME PHOTON_FORK_REPOSITORY"'
+
+# Check if the file exists and if the line is already present
+if [ -f "$SUDOERS_FILE" ] && grep -Fxq "$ENV_KEEP_LINE" "$SUDOERS_FILE"; then
+    echo "The env_keep configuration for these variables is already present in $SUDOERS_FILE."
+else
+    # Create or append to the file
+    echo "$ENV_KEEP_LINE" > "$SUDOERS_FILE"  # Use > to create/overwrite for simplicity; adjust if needed
+    chmod 0440 "$SUDOERS_FILE"  # Set correct permissions
+    echo "Added env_keep configuration to $SUDOERS_FILE."
+    
+    # Validate sudoers syntax
+    if ! visudo -c -f "$SUDOERS_FILE"; then
+        echo "Error: Invalid sudoers syntax. Reverting changes."
+        rm -f "$SUDOERS_FILE"
+        exit 1
+    fi
+fi
+
+echo "Configuration complete. Now, set the variables in your shell (e.g., export GITHUB_TOKEN='your_value'), and they will be preserved in sudo commands."
+echo "Test with: sudo printenv GITHUB_TOKEN"
+echo "Note: This does not set the variables themselves—only preserves them when already set."
+```
+
