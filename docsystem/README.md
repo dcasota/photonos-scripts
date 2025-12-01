@@ -57,6 +57,8 @@ The strategy for introducing Docsystem encompasses four key phases: **Quality** 
 
 ## FactoryAI-centric implementation
 
+Docsystem relies heavily on FactoryAI's Droid CLI. The idea is quite intriguing: an AI agent's objectives and strategies are defined in a markdown file. Multiple agents form a team, and several teams together make up a swarm.
+
 In this section, 24/7 docsystem mainly uses FactoryAI's droid features.
 
 ### Testing environment
@@ -64,36 +66,21 @@ In this section, 24/7 docsystem mainly uses FactoryAI's droid features.
 #### Create a self-hosted copy of https://vmware.github.io/photon. 
 1. Create a vm with 8gb ram, 4vcpu, 40gb disk.
 2. Ensure internet access.
-3. Clone docsystem and run `installer.sh`.
+3. Run the following commands to clone the repository.
 ```
 cd $HOME
 tdnf install -y git
 git clone https://github.com/dcasota/photonos-scripts
 cd $HOME/photonos-scripts/docsystem
 chmod a+x ./*.sh
-./installer.sh
 ```
 
-The Photon OS nginx webserver is installed locally. 
+Within the repository, the .factory subdirectory specifies the swarm's goals, as well as each team and its members.
 
-#### Prepare the AI tools
+4. Optionally, run the tools in tools subdirectory, see README.
+   Droid can make use of local LLMs using Ollama and Web-LLMs such as Google Gemini and xAI Grok. 
 
-Docsystem relies heavily on FactoryAI's Droid CLI. The idea is quite intriguing: an AI agent's objectives and strategies are defined in a markdown file. Multiple agents form a team, and several teams together make up a swarm.
-Within the repository, the .factory directory specifies the swarm's goals, as well as each team and its members.
-
-Droid can make use of local LLMs using Ollama and Cloud-LLMs such as xAI Grok.
-
-The `Ollama-installer.sh` script is an optional tool for Droid that installs Ollama along with several locally downloaded LLMs. You can check inside the script for instructions on how to enable additional local LLMs.
-
-The `CodingAI-installer.sh` script os an optional tool for Droid that installs a bunch of CLI e.g. FactoryAI Droid CLI, OpenAI Codex CLI, Grok-CLI, Coderabbit CLI, Google Gemini CLI, Anthropic Claude Code, Microsoft Copilot CLI, Cursor CLI, Ampcode CLI,  OpenCode CLI, AllHands CLI, Eigent Multi-Agent. It also installs a n8n Workflow instance, Microsoft Cloudfoundry CLI and Windsurf.
-
-4. Optionally, run the following scripts.
-```
-./Ollama-installer.sh
-./CodingAI-installers.sh
-```
-
-5. Configure and run Droid.  
+6. Configure and run Droid.  
 
 `Droid-configurator.sh` installs Droid CLI. This is the initial version, which also provides optional configuration for an external Ollama source and xAI Cloud-LLMs.  
 
@@ -103,28 +90,3 @@ cd $HOME/photonos-scripts/docsystem/.factory
 droid /run-docs-lecturer-swarm
 ```
 
-
-
-## (Alternatives: Unfinished)
-
-### Docs-Inspector
-The script installs docs-inspector daemon. It crawls the local web server and protocols as json files any sort of broken links, markdown issues and english grammar issues.
-1. run
-   ```
-   ./docsinspector.sh
-   ```
-
-### Sound configuration
-Installs and configures, lobogg, lame, libvorbis, flac, libmad, mpg123, sox, portaudio, sonic, pcaudiolib, and mbrola with various voices for espeak-ng.
-1. run
-   ```
-   ./configuresound.sh
-   ```
-
-### Migrate to Docusaurus and mkDocs
-Migrates the Photon OS website to docusaurus and Mkdocs.
-1. run
-   ```
-   ./migrate2docusaurus.sh
-   ./migrate2mkdocs.sh   
-   ```
