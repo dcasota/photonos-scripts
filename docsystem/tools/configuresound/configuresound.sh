@@ -409,10 +409,10 @@ install_mbrola_voices() {
         
         if wget --timeout=30 --tries=2 -q "$voice_url" -O "$voice_file" 2>/dev/null; then
             chmod 644 "$voice_file"
-            ((installed++))
+            installed=$((installed + 1))
         else
             rm -rf "$voice_dir"
-            ((failed++))
+            failed=$((failed + 1))
         fi
     done < "$voices_file"
     
