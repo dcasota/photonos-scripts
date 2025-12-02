@@ -769,7 +769,9 @@ find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i \
 # Fix 69: Fix Downloading-Photon capitalization issue
 echo "69. Fixing Downloading-Photon capitalization..."
 find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i \
+  -e 's|/Downloading-Photon-OS|/downloading-photon-os|g' \
   -e 's|/Downloading-Photon|/downloading-photon-os|g' \
+  -e 's|(Downloading-Photon-OS)|(downloading-photon-os)|g' \
   -e 's|(Downloading-Photon)|(downloading-photon-os)|g' \
   {} \;
 
