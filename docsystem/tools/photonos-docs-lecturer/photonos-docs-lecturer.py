@@ -6,8 +6,13 @@ identifying issues (grammar/spelling, markdown artifacts, orphan links/images, u
 heading hierarchy violations), generating CSV reports, and optionally applying fixes via git 
 push and GitHub PR.
 
-Version: 1.4
+Version: 1.5
 Based on analyzer.py with extended features for complete documentation workflow.
+
+Changes in 1.5:
+- Added --fix parameter for selective fix application
+- 13 enumerated fix types (9 automatic, 4 LLM-assisted)
+- Use --list-fixes to see all available fix types
 
 Usage:
     python3 photonos-docs-lecturer.py run --website <url> [options]
@@ -73,7 +78,7 @@ import threading
 import json
 
 # Version info
-VERSION = "1.4"
+VERSION = "1.5"
 TOOL_NAME = "photonos-docs-lecturer.py"
 
 # Lazy-loaded modules (populated by check_and_import_dependencies)
@@ -161,6 +166,13 @@ def check_and_import_dependencies():
 class LLMClient:
     """Client for LLM API interactions (Gemini or xAI)."""
     
+    # Pattern to match markdown links: [text](url)
+    # Captures: group(1) = link text, group(2) = URL
+    MARKDOWN_LINK_PATTERN = re.compile(r'\[([^\]]*)\]\(([^)]+)\)')
+    
+    # Pattern to match inline URLs (http/https)
+    INLINE_URL_PATTERN = re.compile(r'(?<![(\[])(https?://[^\s<>"\')\]]+)')
+    
     def __init__(self, provider: str, api_key: str, language: str = "en"):
         self.provider = provider.lower()
         self.api_key = api_key
@@ -178,31 +190,118 @@ class LLMClient:
         else:
             raise ValueError(f"Unsupported LLM provider: {provider}")
     
+    def _protect_urls(self, text: str) -> Tuple[str, Dict[str, str]]:
+        """Replace URLs with placeholders to protect them from LLM modification.
+        
+        LLMs sometimes modify URLs despite explicit instructions not to do so.
+        This method replaces all URLs with unique placeholders before sending
+        to the LLM, allowing us to restore the original URLs afterwards.
+        
+        Args:
+            text: Original text containing URLs
+            
+        Returns:
+            Tuple of (protected_text, url_map) where url_map maps placeholders to original URLs
+        """
+        url_map = {}
+        counter = [0]  # Use list to allow modification in nested function
+        
+        def replace_markdown_link(match):
+            link_text = match.group(1)
+            url = match.group(2)
+            placeholder = f"__URL_PLACEHOLDER_{counter[0]}__"
+            url_map[placeholder] = url
+            counter[0] += 1
+            return f"[{link_text}]({placeholder})"
+        
+        def replace_inline_url(match):
+            url = match.group(1)
+            placeholder = f"__URL_PLACEHOLDER_{counter[0]}__"
+            url_map[placeholder] = url
+            counter[0] += 1
+            return placeholder
+        
+        # First protect markdown links [text](url)
+        protected = self.MARKDOWN_LINK_PATTERN.sub(replace_markdown_link, text)
+        
+        # Then protect standalone URLs (not already in markdown links)
+        protected = self.INLINE_URL_PATTERN.sub(replace_inline_url, protected)
+        
+        return protected, url_map
+    
+    def _restore_urls(self, text: str, url_map: Dict[str, str]) -> str:
+        """Restore original URLs from placeholders.
+        
+        Args:
+            text: Text with URL placeholders
+            url_map: Map of placeholders to original URLs
+            
+        Returns:
+            Text with original URLs restored
+        """
+        result = text
+        for placeholder, original_url in url_map.items():
+            result = result.replace(placeholder, original_url)
+        return result
+    
+    def _generate_with_url_protection(self, prompt: str, text_to_protect: str) -> str:
+        """Generate LLM response with URL protection.
+        
+        Protects URLs in the input text before sending to LLM, then restores
+        them in the output. This prevents LLMs from accidentally modifying
+        URLs (e.g., removing .md extensions).
+        
+        Args:
+            prompt: The prompt template (should contain {text} placeholder)
+            text_to_protect: The text content that may contain URLs
+            
+        Returns:
+            LLM response with original URLs preserved
+        """
+        # Protect URLs in the text
+        protected_text, url_map = self._protect_urls(text_to_protect)
+        
+        # Generate response with protected text
+        full_prompt = prompt.replace("{text}", protected_text)
+        response = self._generate(full_prompt)
+        
+        if not response:
+            return ""
+        
+        # Restore original URLs in the response
+        return self._restore_urls(response, url_map)
+    
     def translate(self, text: str, target_language: str) -> str:
-        """Translate text to target language using LLM."""
-        prompt = f"""Translate the following text to {target_language}.
+        """Translate text to target language using LLM.
+        
+        URLs are protected using placeholders to prevent LLM from modifying them.
+        """
+        prompt_template = f"""Translate the following text to {target_language}.
 
 IMPORTANT RULES:
 - Preserve ALL markdown formatting exactly as-is
-- Do NOT modify any URLs, including file extensions like .md, .html, .pdf
+- Do NOT modify any URLs or placeholders (text like __URL_PLACEHOLDER_N__)
 - Do NOT translate or change paths in markdown links [text](url) - keep the URL exactly as-is
 - Do NOT modify code blocks or inline code content
 - Only translate the natural language text
 
 Text to translate:
-{text}
+{{text}}
 
 Return only the translated text, no explanations."""
-        return self._generate(prompt)
+        return self._generate_with_url_protection(prompt_template, text)
     
     def fix_grammar(self, text: str, issues: List[Dict]) -> str:
-        """Fix grammar issues in text using LLM."""
+        """Fix grammar issues in text using LLM.
+        
+        URLs are protected using placeholders to prevent LLM from modifying them.
+        """
         issue_desc = "\n".join([f"- {i['message']}: {i.get('suggestion', 'No suggestion')}" for i in issues[:10]])
-        prompt = f"""Fix the following grammar issues in the text. 
+        prompt_template = f"""Fix the following grammar issues in the text. 
 
 IMPORTANT RULES:
 - Preserve ALL markdown formatting exactly as-is
-- Do NOT modify any URLs, including file extensions like .md, .html, .pdf
+- Do NOT modify any URLs or placeholders (text like __URL_PLACEHOLDER_N__)
 - Do NOT change paths in markdown links [text](url) - keep the URL exactly as-is
 - Do NOT modify code blocks or inline code
 - Only fix the specific grammar issues listed below
@@ -211,32 +310,38 @@ Issues found:
 {issue_desc}
 
 Text to fix:
-{text}
+{{text}}
 
 Return only the corrected text."""
-        return self._generate(prompt)
+        return self._generate_with_url_protection(prompt_template, text)
     
     def fix_markdown(self, text: str, artifacts: List[str]) -> str:
-        """Fix markdown rendering artifacts."""
-        prompt = f"""Fix the following markdown rendering issues in the text:
+        """Fix markdown rendering artifacts.
+        
+        URLs are protected using placeholders to prevent LLM from modifying them.
+        """
+        prompt_template = f"""Fix the following markdown rendering issues in the text:
 Artifacts found: {', '.join(artifacts[:5])}
 
 IMPORTANT RULES:
-- Do NOT modify any URLs, including file extensions like .md, .html, .pdf
+- Do NOT modify any URLs or placeholders (text like __URL_PLACEHOLDER_N__)
 - Do NOT change paths in markdown links [text](url) - keep the URL exactly as-is
 - Preserve all link URLs exactly as they appear in the original text
 - Only fix the markdown syntax/rendering issues
 
 Text to fix:
-{text}
+{{text}}
 
 Return only the corrected markdown text."""
-        return self._generate(prompt)
+        return self._generate_with_url_protection(prompt_template, text)
     
     def fix_indentation(self, text: str, issues: List[Dict]) -> str:
-        """Fix indentation issues in markdown lists and code blocks."""
+        """Fix indentation issues in markdown lists and code blocks.
+        
+        URLs are protected using placeholders to prevent LLM from modifying them.
+        """
         issue_desc = "\n".join([f"- {i.get('context', i.get('type', 'unknown'))}" for i in issues[:10]])
-        prompt = f"""Fix the following indentation issues in the markdown text.
+        prompt_template = f"""Fix the following indentation issues in the markdown text.
 
 Issues found:
 {issue_desc}
@@ -248,15 +353,15 @@ Common indentation problems to fix:
 4. Inconsistent indentation (mixing tabs and spaces)
 
 IMPORTANT RULES:
-- Do NOT modify any URLs, including file extensions like .md, .html, .pdf
+- Do NOT modify any URLs or placeholders (text like __URL_PLACEHOLDER_N__)
 - Do NOT change paths in markdown links [text](url) - keep the URL exactly as-is
 - Only fix indentation, do not change any content
 
 Text to fix:
-{text}
+{{text}}
 
 Return only the corrected markdown text with proper indentation."""
-        return self._generate(prompt)
+        return self._generate_with_url_protection(prompt_template, text)
     
     def _generate(self, prompt: str) -> str:
         """Generate response from LLM."""
@@ -353,11 +458,23 @@ class DocumentationLecturer:
     
     # Deprecated VMware packages URL pattern
     DEPRECATED_VMWARE_URL = re.compile(r'https?://packages\.vmware\.com/[^\s"\'<>]*')
-    VMWARE_URL_REPLACEMENT = 'https://packages-prod.broadcom.com/'
+    VMWARE_URL_REPLACEMENT = 'https://packages.broadcom.com/'
     
-    # Deprecated VDDK download URL pattern (exact match)
-    DEPRECATED_VDDK_URL = 'https://my.vmware.com/web/vmware/downloads/details?downloadGroup=VDDK670&productId=742'
+    # Deprecated VDDK download URL patterns (multiple sources)
+    DEPRECATED_VDDK_URLS = [
+        'https://my.vmware.com/web/vmware/downloads/details?downloadGroup=VDDK670&productId=742',
+        'https://developercenter.vmware.com/web/sdk/60/vddk'
+    ]
     VDDK_URL_REPLACEMENT = 'https://developer.broadcom.com/sdks/vmware-virtual-disk-development-kit-vddk/6.7'
+    # Full markdown link replacement for VDDK 6.0 -> VDDK 6.7
+    DEPRECATED_VDDK_60_LINK = '[VDDK 6.0](https://developercenter.vmware.com/web/sdk/60/vddk)'
+    VDDK_67_LINK_REPLACEMENT = '[VDDK 6.7](https://developer.broadcom.com/sdks/vmware-virtual-disk-development-kit-vddk/6.7)'
+    # Keep old constant for backward compatibility
+    DEPRECATED_VDDK_URL = DEPRECATED_VDDK_URLS[0]
+    
+    # Deprecated OVFTOOL URL (my.vmware.com -> developer.broadcom.com)
+    DEPRECATED_OVFTOOL_URL = 'https://my.vmware.com/group/vmware/details?downloadGroup=OVFTOOL410&productId=491'
+    OVFTOOL_URL_REPLACEMENT = 'https://developer.broadcom.com/tools/open-virtualization-format-ovf-tool/latest'
     
     # Deprecated AWS EC2 CLI URL patterns (both http and https)
     DEPRECATED_AWS_EC2_CLI_URLS = [
@@ -366,13 +483,34 @@ class DocumentationLecturer:
     ]
     AWS_EC2_CLI_URL_REPLACEMENT = 'https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html'
     
+    # Deprecated CloudFoundry bosh-stemcell URL (branch changed from develop to main, path changed)
+    DEPRECATED_BOSH_STEMCELL_URL = 'https://github.com/cloudfoundry/bosh/blob/develop/bosh-stemcell/README.md'
+    BOSH_STEMCELL_URL_REPLACEMENT = 'https://github.com/cloudfoundry/bosh/blob/main/README.md'
+    
     # VMware spelling pattern - must be "VMware" with capital V and M
     # Matches incorrect spellings like "vmware", "Vmware", "VMWare", "VMWARE", etc.
     # Uses word boundaries and explicitly excludes the correct spelling
     VMWARE_SPELLING_PATTERN = re.compile(r'\b((?!VMware)[vV][mM][wW][aA][rR][eE])\b')
     
+    # Pattern for broken email addresses in console output
+    # Matches email addresses where the domain is split with whitespace/newlines
+    # e.g., "linux-packages@vmware.                        com" should be "linux-packages@vmware.com"
+    # Pattern: localpart@domain. followed by whitespace then TLD (com, org, net, etc.)
+    BROKEN_EMAIL_PATTERN = re.compile(
+        r'([\w.+-]+@[\w.-]+\.)'  # Email local part + @ + domain + dot
+        r'(\s+)'                  # Whitespace (including newlines)
+        r'(\w{2,6})'              # TLD (2-6 chars: com, org, net, io, etc.)
+        r'(?=[>\s\)\]"\']|$)',    # Followed by common delimiters or end
+        re.MULTILINE
+    )
+    
     # Markdown header without space pattern (e.g., "####Title" should be "#### Title")
     MARKDOWN_HEADER_NO_SPACE = re.compile(r'^(#{2,6})([^\s#].*)$', re.MULTILINE)
+    
+    # HTML comment pattern - matches <!-- ... --> including multiline comments
+    # Used to detect and remove HTML comment markers while preserving inner content
+    # This is for commented-out content that should be uncommented/visible
+    HTML_COMMENT_PATTERN = re.compile(r'<!--\s*([\s\S]*?)\s*-->', re.MULTILINE)
     
     # Alignment CSS classes to check
     ALIGNMENT_CLASSES = ['align-center', 'align-left', 'align-right', 'centered', 
@@ -381,6 +519,95 @@ class DocumentationLecturer:
     
     # Markdown heading pattern for hierarchy analysis (ATX-style: # ## ### etc.)
     MARKDOWN_HEADING_PATTERN = re.compile(r'^(#{1,6})\s+(.+)$', re.MULTILINE)
+    
+    # Enumerated fix types for --fix parameter
+    # Each fix has an ID, key (used in issues dict), description, and whether it requires LLM
+    FIX_TYPES = {
+        1: {'key': 'broken_email_issues', 'name': 'broken-emails', 'desc': 'Fix broken email addresses (domain split with whitespace)', 'llm': False},
+        2: {'key': 'vmware_spelling_issues', 'name': 'vmware-spelling', 'desc': 'Fix VMware spelling (vmware -> VMware)', 'llm': False},
+        3: {'key': 'deprecated_url_issues', 'name': 'deprecated-urls', 'desc': 'Fix deprecated URLs (VMware, VDDK, OVFTOOL, AWS, bosh-stemcell)', 'llm': False},
+        4: {'key': 'formatting_issues', 'name': 'backtick-spacing', 'desc': 'Fix missing spaces around backticks', 'llm': False},
+        5: {'key': 'backtick_errors', 'name': 'backtick-errors', 'desc': 'Fix backtick errors (spaces inside backticks)', 'llm': False},
+        6: {'key': 'shell_prompt_issues', 'name': 'shell-prompts', 'desc': 'Fix shell prompts in code blocks (remove $ # etc.)', 'llm': False},
+        7: {'key': 'heading_hierarchy_issues', 'name': 'heading-hierarchy', 'desc': 'Fix heading hierarchy violations (skipped levels)', 'llm': False},
+        8: {'key': 'header_spacing_issues', 'name': 'header-spacing', 'desc': 'Fix markdown headers missing space (####Title -> #### Title)', 'llm': False},
+        9: {'key': 'html_comment_issues', 'name': 'html-comments', 'desc': 'Fix HTML comments (remove <!-- --> markers, keep content)', 'llm': False},
+        10: {'key': 'grammar_issues', 'name': 'grammar', 'desc': 'Fix grammar and spelling issues (requires --llm)', 'llm': True},
+        11: {'key': 'md_artifacts', 'name': 'markdown-artifacts', 'desc': 'Fix unrendered markdown artifacts (requires --llm)', 'llm': True},
+        12: {'key': 'mixed_cmd_output_issues', 'name': 'mixed-cmd-output', 'desc': 'Fix mixed command/output in code blocks (requires --llm)', 'llm': True},
+        13: {'key': 'indentation_issues', 'name': 'indentation', 'desc': 'Fix indentation issues (requires --llm)', 'llm': True},
+    }
+    
+    @classmethod
+    def get_fix_help_text(cls) -> str:
+        """Generate help text listing all available fixes."""
+        lines = ["Available fixes:"]
+        for fix_id, fix_info in cls.FIX_TYPES.items():
+            llm_marker = " [LLM]" if fix_info['llm'] else ""
+            lines.append(f"  {fix_id:2d}. {fix_info['name']:<20s} - {fix_info['desc']}{llm_marker}")
+        return '\n'.join(lines)
+    
+    @classmethod
+    def parse_fix_spec(cls, fix_spec: str) -> set:
+        """Parse fix specification string into a set of fix IDs.
+        
+        Args:
+            fix_spec: Comma-separated list of fix IDs or ranges (e.g., "1,2,3,5-9")
+            
+        Returns:
+            Set of fix IDs to apply
+            
+        Raises:
+            ValueError: If the specification is invalid
+        """
+        if not fix_spec or fix_spec.strip().lower() == 'all':
+            return set(cls.FIX_TYPES.keys())
+        
+        fix_ids = set()
+        parts = fix_spec.replace(' ', '').split(',')
+        
+        for part in parts:
+            if not part:
+                continue
+            
+            if '-' in part:
+                # Range specification (e.g., "5-9")
+                try:
+                    start, end = part.split('-', 1)
+                    start_id = int(start)
+                    end_id = int(end)
+                    
+                    if start_id > end_id:
+                        raise ValueError(f"Invalid range: {part} (start > end)")
+                    
+                    for fix_id in range(start_id, end_id + 1):
+                        if fix_id in cls.FIX_TYPES:
+                            fix_ids.add(fix_id)
+                        else:
+                            raise ValueError(f"Unknown fix ID in range: {fix_id}")
+                except ValueError as e:
+                    if "Unknown fix ID" in str(e) or "Invalid range" in str(e):
+                        raise
+                    raise ValueError(f"Invalid range format: {part}")
+            else:
+                # Single fix ID
+                try:
+                    fix_id = int(part)
+                    if fix_id in cls.FIX_TYPES:
+                        fix_ids.add(fix_id)
+                    else:
+                        raise ValueError(f"Unknown fix ID: {fix_id}. Valid IDs are 1-{max(cls.FIX_TYPES.keys())}")
+                except ValueError as e:
+                    if "Unknown fix ID" in str(e):
+                        raise
+                    raise ValueError(f"Invalid fix ID: {part}")
+        
+        return fix_ids
+    
+    @classmethod
+    def get_enabled_fix_keys(cls, fix_ids: set) -> set:
+        """Convert fix IDs to their corresponding issue keys."""
+        return {cls.FIX_TYPES[fix_id]['key'] for fix_id in fix_ids if fix_id in cls.FIX_TYPES}
     
     def __init__(self, args):
         """Initialize the lecturer with parsed arguments."""
@@ -459,6 +686,20 @@ class DocumentationLecturer:
         self.git_lock = threading.Lock()  # Lock for git operations (thread-safe)
         self.fixed_files_log: List[Dict] = []  # Log of fixes for PR body updates
         self.first_commit_made: bool = False  # Whether the first commit has been made (for amend logic)
+        
+        # Parse --fix specification to determine which fixes to apply
+        fix_spec = getattr(args, 'fix', None)
+        if fix_spec:
+            try:
+                self.enabled_fix_ids = self.parse_fix_spec(fix_spec)
+                self.enabled_fix_keys = self.get_enabled_fix_keys(self.enabled_fix_ids)
+            except ValueError as e:
+                self.logger.error(f"Invalid --fix specification: {e}")
+                raise
+        else:
+            # Default: all fixes enabled
+            self.enabled_fix_ids = set(self.FIX_TYPES.keys())
+            self.enabled_fix_keys = self.get_enabled_fix_keys(self.enabled_fix_ids)
     
     def _setup_logging(self):
         """Configure logging to file and stderr."""
@@ -1447,7 +1688,7 @@ class DocumentationLecturer:
     def _check_deprecated_vmware_urls(self, page_url: str, soup: BeautifulSoup) -> List[Dict]:
         """Check for deprecated packages.vmware.com URLs that should be updated.
         
-        These URLs should be replaced with packages-prod.broadcom.com.
+        These URLs should be replaced with packages.broadcom.com.
         Also checks for deprecated VDDK download URL.
         """
         issues = []
@@ -1469,14 +1710,26 @@ class DocumentationLecturer:
                     'link_text': link_text
                 })
             
-            # Check for deprecated VDDK URL
-            elif href == self.DEPRECATED_VDDK_URL:
+            # Check for deprecated VDDK URLs (multiple sources)
+            elif href in self.DEPRECATED_VDDK_URLS:
                 location = f"Deprecated VDDK URL: {href}"
                 fix = f"Replace with {self.VDDK_URL_REPLACEMENT} - Link text: '{link_text}'"
                 
                 self._write_csv_row(page_url, 'deprecated_url', location, fix)
                 issues.append({
                     'type': 'deprecated_vddk_url',
+                    'url': href,
+                    'link_text': link_text
+                })
+            
+            # Check for deprecated OVFTOOL URL
+            elif href == self.DEPRECATED_OVFTOOL_URL:
+                location = f"Deprecated OVFTOOL URL: {href}"
+                fix = f"Replace with {self.OVFTOOL_URL_REPLACEMENT} - Link text: '{link_text}'"
+                
+                self._write_csv_row(page_url, 'deprecated_url', location, fix)
+                issues.append({
+                    'type': 'deprecated_ovftool_url',
                     'url': href,
                     'link_text': link_text
                 })
@@ -1489,6 +1742,18 @@ class DocumentationLecturer:
                 self._write_csv_row(page_url, 'deprecated_url', location, fix)
                 issues.append({
                     'type': 'deprecated_aws_ec2_cli_url',
+                    'url': href,
+                    'link_text': link_text
+                })
+            
+            # Check for deprecated CloudFoundry bosh-stemcell URL
+            elif href == self.DEPRECATED_BOSH_STEMCELL_URL:
+                location = f"Deprecated bosh-stemcell URL: {href}"
+                fix = f"Replace with {self.BOSH_STEMCELL_URL_REPLACEMENT} - Link text: '{link_text}'"
+                
+                self._write_csv_row(page_url, 'deprecated_url', location, fix)
+                issues.append({
+                    'type': 'deprecated_bosh_stemcell_url',
                     'url': href,
                     'link_text': link_text
                 })
@@ -1509,18 +1774,19 @@ class DocumentationLecturer:
                     'link_text': ''
                 })
         
-        # Check for deprecated VDDK URL in text content
-        if self.DEPRECATED_VDDK_URL in text_content:
-            if not any(i['url'] == self.DEPRECATED_VDDK_URL for i in issues):
-                location = f"Deprecated VDDK URL in text: {self.DEPRECATED_VDDK_URL}"
-                fix = f"Replace with {self.VDDK_URL_REPLACEMENT}"
-                
-                self._write_csv_row(page_url, 'deprecated_url', location, fix)
-                issues.append({
-                    'type': 'deprecated_vddk_url',
-                    'url': self.DEPRECATED_VDDK_URL,
-                    'link_text': ''
-                })
+        # Check for deprecated VDDK URLs in text content
+        for vddk_url in self.DEPRECATED_VDDK_URLS:
+            if vddk_url in text_content:
+                if not any(i['url'] == vddk_url for i in issues):
+                    location = f"Deprecated VDDK URL in text: {vddk_url}"
+                    fix = f"Replace with {self.VDDK_URL_REPLACEMENT}"
+                    
+                    self._write_csv_row(page_url, 'deprecated_url', location, fix)
+                    issues.append({
+                        'type': 'deprecated_vddk_url',
+                        'url': vddk_url,
+                        'link_text': ''
+                    })
         
         # Check for deprecated AWS EC2 CLI URL in text content
         for aws_url in self.DEPRECATED_AWS_EC2_CLI_URLS:
@@ -1536,6 +1802,32 @@ class DocumentationLecturer:
                         'link_text': ''
                     })
         
+        # Check for deprecated OVFTOOL URL in text content
+        if self.DEPRECATED_OVFTOOL_URL in text_content:
+            if not any(i['url'] == self.DEPRECATED_OVFTOOL_URL for i in issues):
+                location = f"Deprecated OVFTOOL URL in text: {self.DEPRECATED_OVFTOOL_URL}"
+                fix = f"Replace with {self.OVFTOOL_URL_REPLACEMENT}"
+                
+                self._write_csv_row(page_url, 'deprecated_url', location, fix)
+                issues.append({
+                    'type': 'deprecated_ovftool_url',
+                    'url': self.DEPRECATED_OVFTOOL_URL,
+                    'link_text': ''
+                })
+        
+        # Check for deprecated CloudFoundry bosh-stemcell URL in text content
+        if self.DEPRECATED_BOSH_STEMCELL_URL in text_content:
+            if not any(i['url'] == self.DEPRECATED_BOSH_STEMCELL_URL for i in issues):
+                location = f"Deprecated bosh-stemcell URL in text: {self.DEPRECATED_BOSH_STEMCELL_URL}"
+                fix = f"Replace with {self.BOSH_STEMCELL_URL_REPLACEMENT}"
+                
+                self._write_csv_row(page_url, 'deprecated_url', location, fix)
+                issues.append({
+                    'type': 'deprecated_bosh_stemcell_url',
+                    'url': self.DEPRECATED_BOSH_STEMCELL_URL,
+                    'link_text': ''
+                })
+        
         return issues
     
     def _check_vmware_spelling(self, page_url: str, text_content: str) -> List[Dict]:
@@ -1549,6 +1841,7 @@ class DocumentationLecturer:
         - Domain-like patterns (e.g., packages.vmware.com without https://)
         - File paths (e.g., /var/log/VMware-imc/, /etc/pki/rpm-gpg/VMware-RPM-GPG-KEY)
         - Email addresses (e.g., linux-packages@VMware.com)
+        - Broken email addresses (e.g., linux-packages@vmware.     com)
         - Console commands/code blocks containing vmware
         """
         issues = []
@@ -1559,8 +1852,12 @@ class DocumentationLecturer:
         # Pattern to detect file paths (Unix-style)
         file_path_pattern = re.compile(r'(?:/[\w.-]+)+/?')
         
-        # Pattern to detect email addresses
+        # Pattern to detect email addresses (normal)
         email_pattern = re.compile(r'[\w.+-]+@[\w.-]+\.\w+', re.IGNORECASE)
+        
+        # Pattern to detect broken email addresses (domain split with whitespace)
+        # e.g., "linux-packages@vmware.                        com"
+        broken_email_pattern = re.compile(r'[\w.+-]+@[\w.-]+\.\s+\w{2,6}', re.IGNORECASE)
         
         for match in self.VMWARE_SPELLING_PATTERN.finditer(text_content):
             incorrect_spelling = match.group(0)
@@ -1596,7 +1893,7 @@ class DocumentationLecturer:
             if is_in_file_path:
                 continue  # Skip VMware spelling in file paths
             
-            # Check if match is within an email address
+            # Check if match is within an email address (normal)
             is_in_email = False
             for email_match in email_pattern.finditer(context_region):
                 email_start_abs = context_start + email_match.start()
@@ -1608,11 +1905,27 @@ class DocumentationLecturer:
             if is_in_email:
                 continue  # Skip VMware spelling in email addresses
             
+            # Check if match is within a broken email address (with whitespace in domain)
+            is_in_broken_email = False
+            for broken_match in broken_email_pattern.finditer(context_region):
+                broken_start_abs = context_start + broken_match.start()
+                broken_end_abs = context_start + broken_match.end()
+                if broken_start_abs <= match_start and match_end <= broken_end_abs:
+                    is_in_broken_email = True
+                    break
+            
+            if is_in_broken_email:
+                continue  # Skip VMware spelling in broken email addresses
+            
             # Check if match is in a domain-like context (e.g., "packages.vmware.com")
             # Look for pattern like "word.vmware.word"
             local_context = text_content[max(0, match_start - 20):min(len(text_content), match_end + 20)]
             if re.search(r'\w+\.' + re.escape(incorrect_spelling) + r'\.\w+', local_context, re.IGNORECASE):
                 continue  # Skip domain-like patterns
+            
+            # Also check for broken domain pattern (word.vmware.  whitespace  word)
+            if re.search(r'\w+\.' + re.escape(incorrect_spelling) + r'\.\s+\w+', local_context, re.IGNORECASE):
+                continue  # Skip broken domain-like patterns (will be fixed by broken email fix)
             
             # Get display context around the match
             start = max(0, match_start - 30)
@@ -1626,6 +1939,46 @@ class DocumentationLecturer:
             issues.append({
                 'type': 'vmware_spelling',
                 'incorrect': incorrect_spelling,
+                'context': context
+            })
+            
+            if len(issues) >= 10:
+                break
+        
+        return issues
+    
+    def _check_broken_email_addresses(self, page_url: str, text_content: str) -> List[Dict]:
+        """Check for broken email addresses where domain is split with whitespace.
+        
+        Detects issues like:
+        - "linux-packages@vmware.                        com" should be "linux-packages@vmware.com"
+        - "user@example.   org" should be "user@example.org"
+        
+        This commonly happens in console output where long lines are wrapped.
+        """
+        issues = []
+        
+        for match in self.BROKEN_EMAIL_PATTERN.finditer(text_content):
+            email_prefix = match.group(1)  # e.g., "linux-packages@vmware."
+            whitespace = match.group(2)    # The whitespace/newlines
+            tld = match.group(3)           # e.g., "com"
+            
+            broken_email = match.group(0)
+            fixed_email = f"{email_prefix}{tld}"
+            
+            # Get context around the match
+            start = max(0, match.start() - 20)
+            end = min(len(text_content), match.end() + 20)
+            context = text_content[start:end].replace('\n', '\\n')
+            
+            location = f"Broken email address: '{email_prefix}[whitespace]{tld}' in ...{context}..."
+            fix = f"Remove whitespace: '{fixed_email}'"
+            
+            self._write_csv_row(page_url, 'broken_email', location, fix)
+            issues.append({
+                'type': 'broken_email',
+                'original': broken_email,
+                'fixed': fixed_email,
                 'context': context
             })
             
@@ -1671,6 +2024,56 @@ class DocumentationLecturer:
         
         return issues
     
+    def _check_html_comments(self, page_url: str, text_content: str) -> List[Dict]:
+        """Check for HTML comments (<!-- ... -->) that should be uncommented.
+        
+        Detects HTML comment blocks in markdown content that may contain
+        valid content that was commented out and should be made visible.
+        
+        Note: This only checks content outside of fenced code blocks to avoid
+        false positives on code examples that legitimately show HTML comments.
+        """
+        issues = []
+        
+        # First, remove fenced code blocks to avoid false positives
+        # Replace code blocks with placeholder to preserve positions
+        code_block_pattern = re.compile(r'```[\s\S]*?```')
+        text_without_code = code_block_pattern.sub(lambda m: ' ' * len(m.group(0)), text_content)
+        
+        for match in self.HTML_COMMENT_PATTERN.finditer(text_without_code):
+            comment_content = match.group(1).strip()
+            full_match = match.group(0)
+            
+            # Skip empty comments
+            if not comment_content:
+                continue
+            
+            # Get context around the match
+            start = max(0, match.start() - 10)
+            end = min(len(text_without_code), match.end() + 10)
+            
+            # Create a preview of the comment content (truncated)
+            preview = comment_content[:80].replace('\n', '\\n')
+            if len(comment_content) > 80:
+                preview += "..."
+            
+            location = f"HTML comment found: <!-- {preview} -->"
+            fix = "Remove HTML comment markers to make content visible, or delete if obsolete"
+            
+            self._write_csv_row(page_url, 'html_comment', location, fix)
+            issues.append({
+                'type': 'html_comment',
+                'content': comment_content,
+                'full_match': full_match,
+                'start': match.start(),
+                'end': match.end()
+            })
+            
+            if len(issues) >= 20:
+                break
+        
+        return issues
+    
     def _detect_heading_level(self, line: str) -> int:
         """Detect markdown heading level from a line.
         
@@ -1686,8 +2089,11 @@ class DocumentationLecturer:
         """Analyze markdown content for heading hierarchy violations.
         
         Detects issues like:
-        - First heading is not H1
-        - Skipped heading levels (e.g., H1 -> H3 without H2)
+        - Skipped heading levels (e.g., H2 -> H4 without H3)
+        
+        NOTE: Does NOT flag "first heading is not H1" as an issue. In Hugo/documentation
+        systems, the page title (H1) often comes from front matter, so content headings
+        legitimately start at H2 or lower.
         
         Returns list of issues found with line numbers and suggestions.
         """
@@ -1699,19 +2105,15 @@ class DocumentationLecturer:
             level = self._detect_heading_level(line)
             
             if level > 0:
-                # Check for hierarchy violations
-                if prev_level == 0 and level > 1:
-                    # First heading is not H1
-                    issues.append({
-                        'line': line_num,
-                        'current_level': level,
-                        'prev_level': prev_level,
-                        'issue': f'First heading is H{level}, should be H1',
-                        'suggestion': 1,
-                        'content': line.strip()
-                    })
-                elif level - prev_level > 1:
-                    # Skipped heading levels
+                # Record the first heading level as the baseline
+                # Do NOT flag it as an issue - Hugo/docs often have H1 in front matter
+                if prev_level == 0:
+                    prev_level = level
+                    continue
+                
+                # Check for heading level skips (only for subsequent headings)
+                # A skip is when the level increases by more than 1
+                if level - prev_level > 1:
                     issues.append({
                         'line': line_num,
                         'current_level': level,
@@ -1729,8 +2131,10 @@ class DocumentationLecturer:
         """Check for heading hierarchy violations in page content.
         
         Detects issues like:
-        - First heading is not H1 (should start with single #)
         - Skipped heading levels (e.g., ## followed by #### without ###)
+        
+        NOTE: Does NOT flag "first heading is not H1" as an issue. In Hugo/documentation
+        systems, the page title (H1) often comes from front matter.
         
         Args:
             page_url: URL of the page being analyzed
@@ -1753,8 +2157,12 @@ class DocumentationLecturer:
         """Fix heading hierarchy violations in markdown content.
         
         Applies conservative fixes:
-        - Changes first heading to H1 if it's not
         - Fixes skipped heading levels by adjusting to next valid level
+        
+        NOTE: Does NOT change the first heading to H1. In Hugo/documentation systems,
+        the page title (H1) often comes from front matter, so content headings
+        legitimately start at H2 or lower. Forcing the first heading to H1 would
+        incorrectly modify valid markdown like "## Example" to "# Example".
         
         Args:
             content: Original markdown content
@@ -1765,6 +2173,7 @@ class DocumentationLecturer:
         lines = content.split('\n')
         fixes_applied = []
         prev_level = 0
+        first_heading_level = 0  # Track the first heading level to use as baseline
         
         for i, line in enumerate(lines):
             level = self._detect_heading_level(line)
@@ -1773,13 +2182,16 @@ class DocumentationLecturer:
                 new_level = level
                 fix_reason = None
                 
-                # Fix first heading if not H1
-                if prev_level == 0 and level > 1:
-                    new_level = 1
-                    fix_reason = f'First heading: H{level} -> H1'
+                # Record the first heading level as the baseline
+                # Do NOT force it to be H1 - Hugo/docs often have H1 in front matter
+                if prev_level == 0:
+                    first_heading_level = level
+                    prev_level = level
+                    continue
                 
-                # Fix heading level skips
-                elif level - prev_level > 1:
+                # Fix heading level skips (only for subsequent headings)
+                # A skip is when the level increases by more than 1
+                if level - prev_level > 1:
                     new_level = prev_level + 1
                     fix_reason = f'Heading skip: H{prev_level} -> H{level} becomes H{prev_level} -> H{new_level}'
                 
@@ -1803,6 +2215,62 @@ class DocumentationLecturer:
                     prev_level = level
         
         return '\n'.join(lines), fixes_applied
+    
+    def _fix_markdown_header_spacing(self, content: str) -> str:
+        """Fix markdown headers missing space after hash symbols.
+        
+        Fixes issues like:
+        - "####Title" -> "#### Title"
+        - "###Subtitle" -> "### Subtitle"
+        - "##Section" -> "## Section"
+        
+        This is a deterministic fix that adds a space between the hash symbols
+        and the title text when missing.
+        """
+        def add_space(match):
+            hashes = match.group(1)
+            title = match.group(2)
+            return f"{hashes} {title}"
+        
+        return self.MARKDOWN_HEADER_NO_SPACE.sub(add_space, content)
+    
+    def _fix_html_comments(self, content: str) -> str:
+        """Remove HTML comment markers while preserving inner content.
+        
+        Transforms:
+        - "<!-- Azure - A vhd file -->" -> "Azure - A vhd file"
+        - "<!-- ###Section\nContent -->" -> "###Section\nContent"
+        
+        This removes the comment markers (<!-- and -->) but keeps the content
+        that was inside the comment, making it visible in the rendered output.
+        
+        Note: This operates on the raw content and does NOT modify content
+        inside fenced code blocks (``` ... ```).
+        """
+        # First, protect fenced code blocks from modification
+        code_blocks = []
+        code_block_pattern = re.compile(r'```[\s\S]*?```')
+        
+        def save_code_block(match):
+            code_blocks.append(match.group(0))
+            return f'__CODE_BLOCK_{len(code_blocks) - 1}__'
+        
+        # Replace code blocks with placeholders
+        content = code_block_pattern.sub(save_code_block, content)
+        
+        # Remove HTML comment markers, keeping the inner content
+        def uncomment(match):
+            inner_content = match.group(1)
+            # Preserve leading/trailing whitespace structure
+            return inner_content
+        
+        content = self.HTML_COMMENT_PATTERN.sub(uncomment, content)
+        
+        # Restore code blocks
+        for i, code_block in enumerate(code_blocks):
+            content = content.replace(f'__CODE_BLOCK_{i}__', code_block)
+        
+        return content
     
     def _check_url_link(self, url: str) -> Tuple[bool, int]:
         """Check if a URL link is valid."""
@@ -2217,8 +2685,14 @@ class DocumentationLecturer:
             # Check for incorrect VMware spelling
             vmware_spelling_issues = self._check_vmware_spelling(page_url, text_content)
             
+            # Check for broken email addresses (domain split with whitespace)
+            broken_email_issues = self._check_broken_email_addresses(page_url, text_content)
+            
             # Check for markdown headers missing space after hash symbols
             header_spacing_issues = self._check_markdown_header_spacing(page_url, text_content)
+            
+            # Check for HTML comments that should be uncommented
+            html_comment_issues = self._check_html_comments(page_url, text_content)
             
             # Check for heading hierarchy violations (H1 -> H3 skips, wrong first heading level)
             heading_hierarchy_issues = self._check_heading_hierarchy(page_url, text_content)
@@ -2237,7 +2711,9 @@ class DocumentationLecturer:
                     'mixed_cmd_output_issues': mixed_cmd_output_issues,
                     'deprecated_url_issues': deprecated_url_issues,
                     'vmware_spelling_issues': vmware_spelling_issues,
+                    'broken_email_issues': broken_email_issues,
                     'header_spacing_issues': header_spacing_issues,
+                    'html_comment_issues': html_comment_issues,
                     'heading_hierarchy_issues': heading_hierarchy_issues,
                 }
                 self._apply_fixes(page_url, all_issues, text_content)
@@ -2269,6 +2745,7 @@ class DocumentationLecturer:
                 - shell_prompt_issues: Shell prompts in code blocks
                 - deprecated_url_issues: Deprecated VMware URLs
                 - vmware_spelling_issues: Incorrect VMware spelling
+                - broken_email_issues: Broken email addresses (domain split with whitespace)
                 - mixed_cmd_output_issues: Mixed command/output in code blocks
                 - heading_hierarchy_issues: Heading hierarchy violations (skipped levels, wrong first heading)
             webpage_text: Optional text content from the webpage for content-based file matching
@@ -2289,47 +2766,65 @@ class DocumentationLecturer:
                 
                 # =========================================================
                 # Deterministic fixes (no LLM required)
+                # Only apply fixes that are enabled via --fix parameter
                 # =========================================================
+                
+                # Fix broken email addresses (domain split with whitespace)
+                # This must be done BEFORE VMware spelling fix to avoid false positives
+                broken_email_issues = issues.get('broken_email_issues', [])
+                if broken_email_issues and 'broken_email_issues' in self.enabled_fix_keys:
+                    content = self._fix_broken_email_addresses(content)
                 
                 # Fix VMware spelling (vmware -> VMware)
                 vmware_issues = issues.get('vmware_spelling_issues', [])
-                if vmware_issues:
+                if vmware_issues and 'vmware_spelling_issues' in self.enabled_fix_keys:
                     content = self._fix_vmware_spelling(content)
                 
                 # Fix deprecated VMware URLs
                 deprecated_url_issues = issues.get('deprecated_url_issues', [])
-                if deprecated_url_issues:
+                if deprecated_url_issues and 'deprecated_url_issues' in self.enabled_fix_keys:
                     content = self._fix_deprecated_urls(content)
                 
                 # Fix missing spaces around backticks
                 formatting_issues = issues.get('formatting_issues', [])
-                if formatting_issues:
+                if formatting_issues and 'formatting_issues' in self.enabled_fix_keys:
                     content = self._fix_backtick_spacing(content)
                 
                 # Fix backtick errors (spaces inside backticks)
                 backtick_errors = issues.get('backtick_errors', [])
-                if backtick_errors:
+                if backtick_errors and 'backtick_errors' in self.enabled_fix_keys:
                     content = self._fix_backtick_errors(content)
                 
                 # Fix shell prompts in code blocks (in markdown source)
                 shell_prompt_issues = issues.get('shell_prompt_issues', [])
-                if shell_prompt_issues:
+                if shell_prompt_issues and 'shell_prompt_issues' in self.enabled_fix_keys:
                     content = self._fix_shell_prompts_in_markdown(content)
                 
                 # Fix heading hierarchy violations (H1 -> H3 skips, wrong first heading)
                 heading_hierarchy_issues = issues.get('heading_hierarchy_issues', [])
-                if heading_hierarchy_issues:
+                if heading_hierarchy_issues and 'heading_hierarchy_issues' in self.enabled_fix_keys:
                     content, hierarchy_fixes = self._fix_heading_hierarchy(content)
                     if hierarchy_fixes:
                         self.logger.info(f"Applied {len(hierarchy_fixes)} heading hierarchy fixes to {local_path}")
                 
+                # Fix markdown headers missing space after hash symbols (####Title -> #### Title)
+                header_spacing_issues = issues.get('header_spacing_issues', [])
+                if header_spacing_issues and 'header_spacing_issues' in self.enabled_fix_keys:
+                    content = self._fix_markdown_header_spacing(content)
+                
+                # Fix HTML comments by removing markers and preserving inner content
+                html_comment_issues = issues.get('html_comment_issues', [])
+                if html_comment_issues and 'html_comment_issues' in self.enabled_fix_keys:
+                    content = self._fix_html_comments(content)
+                
                 # =========================================================
                 # LLM-based fixes (require LLM client)
+                # Only apply fixes that are enabled via --fix parameter
                 # =========================================================
                 
                 # Apply grammar fixes via LLM if available
                 grammar_issues = issues.get('grammar_issues', [])
-                if grammar_issues and self.llm_client:
+                if grammar_issues and self.llm_client and 'grammar_issues' in self.enabled_fix_keys:
                     try:
                         fixed = self.llm_client.fix_grammar(content, grammar_issues)
                         if fixed:
@@ -2339,7 +2834,7 @@ class DocumentationLecturer:
                 
                 # Apply markdown fixes via LLM if available
                 md_artifacts = issues.get('md_artifacts', [])
-                if md_artifacts and self.llm_client:
+                if md_artifacts and self.llm_client and 'md_artifacts' in self.enabled_fix_keys:
                     try:
                         fixed = self.llm_client.fix_markdown(content, md_artifacts)
                         if fixed:
@@ -2349,7 +2844,7 @@ class DocumentationLecturer:
                 
                 # Fix mixed command/output code blocks via LLM
                 mixed_cmd_output_issues = issues.get('mixed_cmd_output_issues', [])
-                if mixed_cmd_output_issues and self.llm_client:
+                if mixed_cmd_output_issues and self.llm_client and 'mixed_cmd_output_issues' in self.enabled_fix_keys:
                     try:
                         content = self._fix_mixed_command_output_llm(content, mixed_cmd_output_issues)
                     except Exception as e:
@@ -2357,7 +2852,7 @@ class DocumentationLecturer:
                 
                 # Fix indentation issues via LLM
                 indentation_issues = issues.get('indentation_issues', [])
-                if indentation_issues and self.llm_client:
+                if indentation_issues and self.llm_client and 'indentation_issues' in self.enabled_fix_keys:
                     try:
                         fixed = self.llm_client.fix_indentation(content, indentation_issues)
                         if fixed:
@@ -2381,26 +2876,34 @@ class DocumentationLecturer:
                     self.modified_files.add(local_path)
                     self.fixes_applied += 1
                     
-                    # Log what types of fixes were applied
+                    # Log what types of fixes were applied (only those that were enabled)
                     applied_fixes = []
-                    if issues.get('vmware_spelling_issues'):
+                    if issues.get('broken_email_issues') and 'broken_email_issues' in self.enabled_fix_keys:
+                        applied_fixes.append('broken emails')
+                    if issues.get('vmware_spelling_issues') and 'vmware_spelling_issues' in self.enabled_fix_keys:
                         applied_fixes.append('VMware spelling')
-                    if issues.get('deprecated_url_issues'):
+                    if issues.get('deprecated_url_issues') and 'deprecated_url_issues' in self.enabled_fix_keys:
                         applied_fixes.append('deprecated URLs')
-                    if issues.get('formatting_issues'):
+                    if issues.get('formatting_issues') and 'formatting_issues' in self.enabled_fix_keys:
                         applied_fixes.append('backtick spacing')
-                    if issues.get('backtick_errors'):
+                    if issues.get('backtick_errors') and 'backtick_errors' in self.enabled_fix_keys:
                         applied_fixes.append('backtick errors')
-                    if issues.get('shell_prompt_issues'):
+                    if issues.get('shell_prompt_issues') and 'shell_prompt_issues' in self.enabled_fix_keys:
                         applied_fixes.append('shell prompts')
-                    if issues.get('grammar_issues') and self.llm_client:
+                    if issues.get('heading_hierarchy_issues') and 'heading_hierarchy_issues' in self.enabled_fix_keys:
+                        applied_fixes.append('heading hierarchy')
+                    if issues.get('header_spacing_issues') and 'header_spacing_issues' in self.enabled_fix_keys:
+                        applied_fixes.append('header spacing')
+                    if issues.get('html_comment_issues') and 'html_comment_issues' in self.enabled_fix_keys:
+                        applied_fixes.append('HTML comments')
+                    if issues.get('grammar_issues') and self.llm_client and 'grammar_issues' in self.enabled_fix_keys:
                         applied_fixes.append('grammar (LLM)')
-                    if issues.get('md_artifacts') and self.llm_client:
+                    if issues.get('md_artifacts') and self.llm_client and 'md_artifacts' in self.enabled_fix_keys:
                         applied_fixes.append('markdown (LLM)')
-                    if issues.get('indentation_issues') and self.llm_client:
-                        applied_fixes.append('indentation (LLM)')
-                    if issues.get('mixed_cmd_output_issues') and self.llm_client:
+                    if issues.get('mixed_cmd_output_issues') and self.llm_client and 'mixed_cmd_output_issues' in self.enabled_fix_keys:
                         applied_fixes.append('mixed cmd/output (LLM)')
+                    if issues.get('indentation_issues') and self.llm_client and 'indentation_issues' in self.enabled_fix_keys:
+                        applied_fixes.append('indentation (LLM)')
                     
                     fixes_str = ', '.join(applied_fixes) if applied_fixes else 'content changes'
                     self.logger.info(f"Applied fixes to {local_path}: {fixes_str}")
@@ -2425,11 +2928,13 @@ class DocumentationLecturer:
         - Domain-like patterns (e.g., packages.vmware.com)
         - File paths (e.g., /var/log/VMware-imc/, /etc/pki/rpm-gpg/VMware-RPM-GPG-KEY)
         - Email addresses (e.g., linux-packages@VMware.com)
+        - Broken email addresses (e.g., linux-packages@vmware.     com)
         """
         # Split content to preserve code blocks, URLs, file paths, and emails
         # Match: fenced code blocks, inline code, URLs with protocol, domain patterns,
-        # file paths (Unix-style), and email addresses
+        # file paths (Unix-style), email addresses, and broken email addresses
         # NOTE: URL patterns must be GREEDY (+) not non-greedy (+?) to capture full URLs
+        # NOTE: Broken email pattern must come BEFORE normal email pattern to match first
         preserve_pattern = re.compile(
             r'('
             r'```[\s\S]*?```'                          # Fenced code blocks
@@ -2438,6 +2943,7 @@ class DocumentationLecturer:
             r'|www\.[^\s<>"\')\]]+' # www URLs (greedy to capture full URL)
             r'|[a-zA-Z0-9-]+\.vmware\.[a-zA-Z0-9-]+[^\s<>"\')\]]*'  # Domain patterns
             r'|(?:/[\w.-]+)+/?'                        # Unix file paths (e.g., /var/log/VMware-imc/)
+            r'|[\w.+-]+@[\w.-]+\.\s+\w{2,6}'           # Broken email addresses (domain.  tld)
             r'|[\w.+-]+@[\w.-]+\.\w+'                  # Email addresses
             r')',
             re.IGNORECASE
@@ -2460,6 +2966,9 @@ class DocumentationLecturer:
             # Skip file paths (start with / and contain path segments)
             if part.startswith('/') and '/' in part[1:]:
                 continue
+            # Skip broken email addresses (domain split with whitespace)
+            if '@' in part and re.match(r'^[\w.+-]+@[\w.-]+\.\s+\w{2,6}$', part, re.IGNORECASE):
+                continue
             # Skip email addresses
             if '@' in part and re.match(r'^[\w.+-]+@[\w.-]+\.\w+$', part, re.IGNORECASE):
                 continue
@@ -2468,12 +2977,29 @@ class DocumentationLecturer:
         
         return ''.join(parts)
     
-    def _fix_deprecated_urls(self, content: str) -> str:
-        """Fix deprecated packages.vmware.com URLs, VDDK URL, and AWS EC2 CLI URL.
+    def _fix_broken_email_addresses(self, content: str) -> str:
+        """Fix broken email addresses where domain is split with whitespace.
         
-        Replaces https://packages.vmware.com/* with https://packages-prod.broadcom.com/*
+        Fixes issues like:
+        - "linux-packages@vmware.                        com" -> "linux-packages@vmware.com"
+        - "user@example.   org" -> "user@example.org"
+        
+        This commonly happens in console output where long lines are wrapped.
+        """
+        def fix_email(match):
+            email_prefix = match.group(1)  # e.g., "linux-packages@vmware."
+            tld = match.group(3)           # e.g., "com"
+            return f"{email_prefix}{tld}"
+        
+        return self.BROKEN_EMAIL_PATTERN.sub(fix_email, content)
+    
+    def _fix_deprecated_urls(self, content: str) -> str:
+        """Fix deprecated packages.vmware.com URLs, VDDK URL, AWS EC2 CLI URL, and bosh-stemcell URL.
+        
+        Replaces https://packages.vmware.com/* with https://packages.broadcom.com/*
         Replaces deprecated VDDK URL with new Broadcom developer URL.
         Replaces deprecated AWS EC2 CLI URLs with new AWS CLI install guide URL.
+        Replaces deprecated CloudFoundry bosh-stemcell URL with new main branch URL.
         """
         # Replace the base URL while preserving the path
         def replace_url(match):
@@ -2482,18 +3008,28 @@ class DocumentationLecturer:
             path_match = re.search(r'packages\.vmware\.com(/[^\s"\'<>]*)?', old_url)
             if path_match:
                 path = path_match.group(1) or ''
-                return f'https://packages-prod.broadcom.com{path}'
+                return f'https://packages.broadcom.com{path}'
             return old_url
         
         # Fix packages.vmware.com URLs
         content = self.DEPRECATED_VMWARE_URL.sub(replace_url, content)
         
-        # Fix deprecated VDDK URL (exact string replacement)
-        content = content.replace(self.DEPRECATED_VDDK_URL, self.VDDK_URL_REPLACEMENT)
+        # Fix deprecated VDDK URLs (multiple sources)
+        # First, try to replace full markdown link including text (VDDK 6.0 -> VDDK 6.7)
+        content = content.replace(self.DEPRECATED_VDDK_60_LINK, self.VDDK_67_LINK_REPLACEMENT)
+        # Then replace any remaining deprecated VDDK URLs
+        for vddk_url in self.DEPRECATED_VDDK_URLS:
+            content = content.replace(vddk_url, self.VDDK_URL_REPLACEMENT)
         
         # Fix deprecated AWS EC2 CLI URLs (both http and https versions)
         for aws_url in self.DEPRECATED_AWS_EC2_CLI_URLS:
             content = content.replace(aws_url, self.AWS_EC2_CLI_URL_REPLACEMENT)
+        
+        # Fix deprecated OVFTOOL URL
+        content = content.replace(self.DEPRECATED_OVFTOOL_URL, self.OVFTOOL_URL_REPLACEMENT)
+        
+        # Fix deprecated CloudFoundry bosh-stemcell URL
+        content = content.replace(self.DEPRECATED_BOSH_STEMCELL_URL, self.BOSH_STEMCELL_URL_REPLACEMENT)
         
         return content
     
@@ -2653,6 +3189,7 @@ class DocumentationLecturer:
         """Fix mixed command/output code blocks using LLM.
         
         Asks LLM to separate command and output into distinct code blocks.
+        URLs are protected using placeholders to prevent LLM from modifying them.
         """
         if not self.llm_client or not issues:
             return content
@@ -2661,7 +3198,7 @@ class DocumentationLecturer:
         commands = [issue.get('command', '') for issue in issues[:5]]
         commands_str = '\n'.join(f"- {cmd}" for cmd in commands if cmd)
         
-        prompt = f"""In the following markdown content, there are code blocks that mix commands with their output.
+        prompt_template = f"""In the following markdown content, there are code blocks that mix commands with their output.
 Please separate each such code block into two blocks:
 1. A command block (just the command, copyable)
 2. An output block (the command output, for display)
@@ -2688,17 +3225,17 @@ Key="value"
 ```
 
 IMPORTANT RULES:
-- Do NOT modify any URLs, including file extensions like .md, .html, .pdf
+- Do NOT modify any URLs or placeholders (text like __URL_PLACEHOLDER_N__)
 - Do NOT change paths in markdown links [text](url) - keep the URL exactly as-is
 - Only modify the code blocks that mix commands with output
 
 Content to fix:
-{content}
+{{text}}
 
 Return only the fixed markdown content, no explanations."""
 
         try:
-            fixed = self.llm_client._generate(prompt)
+            fixed = self.llm_client._generate_with_url_protection(prompt_template, content)
             if fixed and len(fixed) > len(content) * 0.5:  # Sanity check
                 return fixed
         except Exception as e:
@@ -3016,7 +3553,7 @@ Return only the fixed markdown content, no explanations."""
 
 ### Deterministic Fixes (Applied Automatically)
 - **VMware spelling**: Corrected incorrect spellings (vmware, Vmware, etc.) to VMware (excludes URLs, file paths, emails, code blocks)
-- **Deprecated URLs**: Updated packages.vmware.com URLs to packages-prod.broadcom.com
+- **Deprecated URLs**: Updated packages.vmware.com URLs to packages.broadcom.com
 - **Backtick spacing**: Fixed missing spaces before/after inline code
 - **Backtick errors**: Fixed spaces inside backticks (e.g., "` code `" -> "`code`")
 - **Heading hierarchy**: Fixed heading level violations (e.g., H1 -> H3 skips)
@@ -3241,7 +3778,7 @@ See attached CSV report for detailed issue locations and fix suggestions.
 
 ### Deterministic Fixes (Applied Automatically)
 - **VMware spelling**: Corrected incorrect spellings (vmware, Vmware, etc.) to VMware (excludes URLs, file paths, emails, code blocks)
-- **Deprecated URLs**: Updated packages.vmware.com URLs to packages-prod.broadcom.com
+- **Deprecated URLs**: Updated packages.vmware.com URLs to packages.broadcom.com
 - **Backtick spacing**: Fixed missing spaces before/after inline code
 - **Backtick errors**: Fixed spaces inside backticks (e.g., "` code `" -> "`code`")
 - **Heading hierarchy**: Fixed heading level violations (e.g., H1 -> H3 skips)
@@ -3679,7 +4216,7 @@ Issue Types and Fix Modes:
   |                          |             |               | (excludes URLs, paths,    |
   |                          |             |               | emails, code blocks)      |
   | Deprecated URLs          | Always      | Automatic     | packages.vmware.com ->    |
-  |                          |             |               | packages-prod.broadcom.com|
+  |                          |             |               | packages.broadcom.com     |
   | Backtick spacing         | Always      | Automatic     | word`code` -> word `code` |
   | Backtick errors          | Always      | Automatic     | ` code ` -> `code`        |
   | Shell prompts            | Always      | Automatic     | Remove $, #, ~, etc.      |
@@ -3729,6 +4266,42 @@ Examples:
     --gh-pr \\
     --llm gemini --GEMINI_API_KEY your_api_key
 
+  # Apply only specific fixes (e.g., VMware spelling and deprecated URLs)
+  python3 {TOOL_NAME} run \\
+    --website https://127.0.0.1/docs-v5 \\
+    --local-webserver /var/www/photon-site \\
+    --gh-pr --fix 2,3
+
+Selective Fix Application (--fix parameter):
+  The --fix parameter allows selecting specific fixes to apply. By default, all
+  fixes are applied when using --gh-pr. Use --list-fixes to see all available fixes.
+
+  Syntax: --fix SPEC where SPEC can be:
+    - Single ID:     --fix 1
+    - Multiple IDs:  --fix 1,2,3
+    - Range:         --fix 1-5
+    - Mixed:         --fix 1,3,5-9
+    - All:           --fix all (default behavior)
+
+  Available fixes (use --list-fixes for details):
+    ID  Name                  Description                                    [LLM]
+    --  --------------------  ---------------------------------------------  -----
+     1  broken-emails         Fix broken email addresses                     
+     2  vmware-spelling       Fix VMware spelling (vmware -> VMware)         
+     3  deprecated-urls       Fix deprecated URLs (VMware, VDDK, etc.)       
+     4  backtick-spacing      Fix missing spaces around backticks            
+     5  backtick-errors       Fix spaces inside backticks                    
+     6  shell-prompts         Remove shell prompts from code blocks          
+     7  heading-hierarchy     Fix heading hierarchy violations               
+     8  header-spacing        Fix markdown header spacing                    
+     9  html-comments         Remove HTML comment markers                    
+    10  grammar               Fix grammar and spelling issues                [LLM]
+    11  markdown-artifacts    Fix unrendered markdown artifacts              [LLM]
+    12  mixed-cmd-output      Fix mixed command/output in code blocks        [LLM]
+    13  indentation           Fix indentation issues                         [LLM]
+
+  Note: Fixes marked [LLM] require --llm flag (gemini or xai) with API key.
+
 Version: {VERSION}
         """
     )
@@ -3744,6 +4317,7 @@ Version: {VERSION}
     # Analyze command
     analyze_parser = subparsers.add_parser('analyze', help='Generate report only')
     _add_common_args(analyze_parser)
+    _add_git_args(analyze_parser)  # For --fix and --list-fixes options
     
     # Run command
     run_parser = subparsers.add_parser('run', help='Execute full workflow')
@@ -3848,6 +4422,23 @@ def _add_git_args(parser: argparse.ArgumentParser):
         action='store_true',
         help='Generate fixes, commit/push, and create PR'
     )
+    
+    parser.add_argument(
+        '--fix',
+        type=str,
+        default=None,
+        metavar='FIXES',
+        help='''Specify which fixes to apply (comma-separated IDs or ranges).
+Examples: "1,2,3", "1-5", "1,3,5-9", "all"
+If not specified with --gh-pr, all fixes are applied.
+Use --list-fixes to see available fix IDs.'''
+    )
+    
+    parser.add_argument(
+        '--list-fixes',
+        action='store_true',
+        help='List all available fix types with their IDs and exit'
+    )
 
 
 def _add_llm_args(parser: argparse.ArgumentParser):
@@ -3933,6 +4524,50 @@ def run_tests():
                 validate_parallel("0")
             with self.assertRaises(argparse.ArgumentTypeError):
                 validate_parallel("25")
+        
+        def test_parse_fix_spec(self):
+            """Test --fix parameter parsing."""
+            parse = DocumentationLecturer.parse_fix_spec
+            
+            # Test single fix ID
+            result = parse("1")
+            self.assertEqual(result, {1})
+            
+            # Test multiple single fix IDs
+            result = parse("1,2,3")
+            self.assertEqual(result, {1, 2, 3})
+            
+            # Test range
+            result = parse("5-9")
+            self.assertEqual(result, {5, 6, 7, 8, 9})
+            
+            # Test mixed single and range
+            result = parse("1,3,5-7")
+            self.assertEqual(result, {1, 3, 5, 6, 7})
+            
+            # Test 'all' keyword
+            result = parse("all")
+            self.assertEqual(result, set(DocumentationLecturer.FIX_TYPES.keys()))
+            
+            # Test None/empty returns all
+            result = parse(None)
+            self.assertEqual(result, set(DocumentationLecturer.FIX_TYPES.keys()))
+            
+            # Test with spaces
+            result = parse("1, 2, 3")
+            self.assertEqual(result, {1, 2, 3})
+            
+            # Test invalid fix ID
+            with self.assertRaises(ValueError):
+                parse("99")
+            
+            # Test invalid range (start > end)
+            with self.assertRaises(ValueError):
+                parse("9-5")
+            
+            # Test invalid format
+            with self.assertRaises(ValueError):
+                parse("abc")
         
         def test_markdown_patterns(self):
             patterns = DocumentationLecturer.MARKDOWN_PATTERNS
@@ -4068,7 +4703,7 @@ def run_tests():
             self.assertIsNotNone(pattern.match("http://packages.vmware.com/tools/"))
             # Should not match other URLs
             self.assertIsNone(pattern.match("https://vmware.com/"))
-            self.assertIsNone(pattern.match("https://packages-prod.broadcom.com/"))
+            self.assertIsNone(pattern.match("https://packages.broadcom.com/"))
         
         def test_vmware_spelling_pattern(self):
             pattern = DocumentationLecturer.VMWARE_SPELLING_PATTERN
@@ -4102,6 +4737,94 @@ def run_tests():
             self.assertIsNone(pattern.search("#### Install with space"))
             self.assertIsNone(pattern.search("### Proper subtitle"))
             self.assertIsNone(pattern.search("## Correct section"))
+        
+        def test_fix_markdown_header_spacing(self):
+            """Test markdown header spacing fix function."""
+            class MockArgs:
+                command = 'analyze'
+                website = 'https://example.com'
+                parallel = 1
+                language = 'en'
+                ref_website = None
+                test = False
+            
+            lecturer = DocumentationLecturer(MockArgs())
+            
+            # Test basic fix
+            content = "####Install Google cloud SDK"
+            fixed = lecturer._fix_markdown_header_spacing(content)
+            self.assertEqual(fixed, "#### Install Google cloud SDK")
+            
+            # Test multiple headers
+            content = """### GCE
+
+The tar file can be uploaded to Google's cloud storage.
+
+####Install Google cloud SDK on host machine
+
+Some content here.
+
+###Another section"""
+            fixed = lecturer._fix_markdown_header_spacing(content)
+            self.assertIn("#### Install Google cloud SDK on host machine", fixed)
+            self.assertIn("### Another section", fixed)
+            self.assertNotIn("####Install", fixed)
+            self.assertNotIn("###Another", fixed)
+            
+            # Test that properly spaced headers are not modified
+            content = "### Proper Header\n\n#### Another Header"
+            fixed = lecturer._fix_markdown_header_spacing(content)
+            self.assertEqual(content, fixed)
+            
+            lecturer.cleanup()
+        
+        def test_fix_html_comments(self):
+            """Test HTML comment removal while preserving inner content."""
+            class MockArgs:
+                command = 'analyze'
+                website = 'https://example.com'
+                parallel = 1
+                language = 'en'
+                ref_website = None
+                test = False
+            
+            lecturer = DocumentationLecturer(MockArgs())
+            
+            # Test single-line comment
+            content = "Some text\n\n<!-- Azure - A vhd file -->\n\nMore text"
+            fixed = lecturer._fix_html_comments(content)
+            self.assertIn("Azure - A vhd file", fixed)
+            self.assertNotIn("<!--", fixed)
+            self.assertNotIn("-->", fixed)
+            
+            # Test multi-line comment
+            content = """Some text
+
+<!-- ###How to build Photon bosh-stemcell
+
+Please follow the link to build Photon bosh-stemcell
+-->
+
+More text"""
+            fixed = lecturer._fix_html_comments(content)
+            self.assertIn("###How to build Photon bosh-stemcell", fixed)
+            self.assertIn("Please follow the link to build Photon bosh-stemcell", fixed)
+            self.assertNotIn("<!--", fixed)
+            self.assertNotIn("-->", fixed)
+            
+            # Test that code blocks are NOT modified
+            content = """Some text
+
+```html
+<!-- This is a code example comment -->
+<div>Content</div>
+```
+
+More text"""
+            fixed = lecturer._fix_html_comments(content)
+            self.assertIn("<!-- This is a code example comment -->", fixed)
+            
+            lecturer.cleanup()
         
         def test_mixed_command_output_detection(self):
             """Test detection of mixed command and output in code blocks."""
@@ -4163,6 +4886,62 @@ drwxr-xr-x 14 root root 4096 Nov 30 10:00 ..
             
             lecturer.cleanup()
         
+        def test_llm_url_protection(self):
+            """Test URL protection mechanism for LLM calls.
+            
+            Bug fix: LLMs sometimes modify URLs despite explicit instructions,
+            such as removing .md extensions from GitHub links. The URL protection
+            mechanism replaces URLs with placeholders before LLM calls and restores
+            them afterwards.
+            """
+            # Test the LLMClient URL protection directly (without actual LLM calls)
+            # Create a mock LLMClient to test _protect_urls and _restore_urls
+            
+            # Test _protect_urls
+            text = """The GCE-ready version of Photon OS is licensed as described in the Photon OS [LICENSE guide](https://github.com/vmware/photon/blob/master/LICENSE.md).
+
+See also [documentation](https://docs.example.com/guide.html) and visit https://example.com/path/file.pdf for more info."""
+            
+            protected, url_map = LLMClient._protect_urls(LLMClient, text)
+            
+            # Check that URLs are replaced with placeholders
+            self.assertNotIn("https://github.com/vmware/photon/blob/master/LICENSE.md", protected)
+            self.assertNotIn("https://docs.example.com/guide.html", protected)
+            self.assertNotIn("https://example.com/path/file.pdf", protected)
+            
+            # Check that placeholders are present
+            self.assertIn("__URL_PLACEHOLDER_0__", protected)
+            self.assertIn("__URL_PLACEHOLDER_1__", protected)
+            self.assertIn("__URL_PLACEHOLDER_2__", protected)
+            
+            # Check that link text is preserved
+            self.assertIn("[LICENSE guide]", protected)
+            self.assertIn("[documentation]", protected)
+            
+            # Check url_map contains the original URLs
+            self.assertEqual(len(url_map), 3)
+            self.assertIn("https://github.com/vmware/photon/blob/master/LICENSE.md", url_map.values())
+            self.assertIn("https://docs.example.com/guide.html", url_map.values())
+            self.assertIn("https://example.com/path/file.pdf", url_map.values())
+            
+            # Test _restore_urls
+            restored = LLMClient._restore_urls(LLMClient, protected, url_map)
+            
+            # Check that original URLs are restored
+            self.assertIn("https://github.com/vmware/photon/blob/master/LICENSE.md", restored)
+            self.assertIn("https://docs.example.com/guide.html", restored)
+            self.assertIn("https://example.com/path/file.pdf", restored)
+            
+            # Check that the full markdown links are intact
+            self.assertIn("[LICENSE guide](https://github.com/vmware/photon/blob/master/LICENSE.md)", restored)
+            self.assertIn("[documentation](https://docs.example.com/guide.html)", restored)
+            
+            # Check that placeholders are removed
+            self.assertNotIn("__URL_PLACEHOLDER_", restored)
+            
+            # The restored text should match the original
+            self.assertEqual(text, restored)
+        
         def test_fix_vmware_spelling(self):
             """Test VMware spelling fix function."""
             class MockArgs:
@@ -4203,9 +4982,111 @@ drwxr-xr-x 14 root root 4096 Nov 30 10:00 ..
             # Test URL replacement
             content = "Download from https://packages.vmware.com/photon/5.0/"
             fixed = lecturer._fix_deprecated_urls(content)
-            self.assertIn("packages-prod.broadcom.com", fixed)
+            self.assertIn("packages.broadcom.com", fixed)
             self.assertIn("/photon/5.0/", fixed)  # Path should be preserved
             self.assertNotIn("packages.vmware.com", fixed)
+            
+            # Test bosh-stemcell URL replacement
+            content = "Please follow the link to [build](https://github.com/cloudfoundry/bosh/blob/develop/bosh-stemcell/README.md) Photon bosh-stemcell"
+            fixed = lecturer._fix_deprecated_urls(content)
+            self.assertIn("https://github.com/cloudfoundry/bosh/blob/main/README.md", fixed)
+            self.assertNotIn("blob/develop/bosh-stemcell/README.md", fixed)
+            
+            # Test deprecated VDDK URL replacement (developercenter.vmware.com) with full link text update
+            content = "[VDDK 6.0](https://developercenter.vmware.com/web/sdk/60/vddk)"
+            fixed = lecturer._fix_deprecated_urls(content)
+            self.assertEqual(fixed, "[VDDK 6.7](https://developer.broadcom.com/sdks/vmware-virtual-disk-development-kit-vddk/6.7)")
+            self.assertNotIn("developercenter.vmware.com", fixed)
+            self.assertNotIn("VDDK 6.0", fixed)
+            
+            # Test deprecated VDDK URL replacement (my.vmware.com)
+            content = "[VDDK](https://my.vmware.com/web/vmware/downloads/details?downloadGroup=VDDK670&productId=742)"
+            fixed = lecturer._fix_deprecated_urls(content)
+            self.assertIn("https://developer.broadcom.com/sdks/vmware-virtual-disk-development-kit-vddk/6.7", fixed)
+            self.assertNotIn("my.vmware.com", fixed)
+            
+            # Test deprecated OVFTOOL URL replacement
+            content = "[OVFTOOL](https://my.vmware.com/group/vmware/details?downloadGroup=OVFTOOL410&productId=491)"
+            fixed = lecturer._fix_deprecated_urls(content)
+            self.assertIn("https://developer.broadcom.com/tools/open-virtualization-format-ovf-tool/latest", fixed)
+            self.assertNotIn("my.vmware.com/group/vmware/details", fixed)
+            
+            lecturer.cleanup()
+        
+        def test_fix_broken_email_addresses(self):
+            """Test broken email address fix function.
+            
+            Bug fix: Email addresses in console output may be broken with whitespace
+            when long lines are wrapped, e.g., "linux-packages@vmware.     com"
+            """
+            class MockArgs:
+                command = 'analyze'
+                website = 'https://example.com'
+                parallel = 1
+                language = 'en'
+                ref_website = None
+                test = False
+            
+            lecturer = DocumentationLecturer(MockArgs())
+            
+            # Test basic broken email fix
+            content = "Summary     : gpg(VMware, Inc. -- Linux Packaging Key -- <linux-packages@vmware.                        com>)"
+            fixed = lecturer._fix_broken_email_addresses(content)
+            self.assertIn("linux-packages@vmware.com", fixed)
+            self.assertNotIn("vmware.                        com", fixed)
+            
+            # Test multiple whitespace patterns
+            content = "Contact: user@example.   org for support"
+            fixed = lecturer._fix_broken_email_addresses(content)
+            self.assertIn("user@example.org", fixed)
+            self.assertNotIn("example.   org", fixed)
+            
+            # Test with newline in domain
+            content = "Email: admin@company.\nnet"
+            fixed = lecturer._fix_broken_email_addresses(content)
+            self.assertIn("admin@company.net", fixed)
+            
+            # Test that normal emails are not modified
+            content = "Contact linux-packages@vmware.com for help"
+            fixed = lecturer._fix_broken_email_addresses(content)
+            self.assertEqual(content, fixed)  # Should be unchanged
+            
+            lecturer.cleanup()
+        
+        def test_vmware_spelling_excludes_broken_emails(self):
+            """Test that VMware spelling check excludes broken email addresses.
+            
+            The 'vmware' in 'linux-packages@vmware.     com' should NOT be flagged
+            as a spelling issue because it's part of an email domain.
+            """
+            class MockArgs:
+                command = 'analyze'
+                website = 'https://example.com'
+                parallel = 1
+                language = 'en'
+                ref_website = None
+                test = False
+            
+            lecturer = DocumentationLecturer(MockArgs())
+            
+            # Broken email - vmware should NOT be flagged
+            content = "Summary: gpg(VMware, Inc. -- <linux-packages@vmware.                        com>)"
+            issues = lecturer._check_vmware_spelling("https://test.com", content)
+            # Should have 0 issues - the vmware in the broken email should be excluded
+            self.assertEqual(len(issues), 0, 
+                "vmware in broken email 'linux-packages@vmware.     com' should not be flagged")
+            
+            # Normal email - vmware should NOT be flagged
+            content = "Contact linux-packages@vmware.com for support"
+            issues = lecturer._check_vmware_spelling("https://test.com", content)
+            self.assertEqual(len(issues), 0, 
+                "vmware in normal email should not be flagged")
+            
+            # Regular text with incorrect spelling - SHOULD be flagged
+            content = "Install vmware tools on the system"
+            issues = lecturer._check_vmware_spelling("https://test.com", content)
+            self.assertGreater(len(issues), 0, 
+                "vmware in regular text should be flagged")
             
             lecturer.cleanup()
         
@@ -4271,6 +5152,82 @@ drwxr-xr-x 14 root root 4096 Nov 30 10:00 ..
             self.assertIn("echo hello", fixed)
             self.assertNotIn("$ ls", fixed)
             self.assertNotIn("$ echo", fixed)
+            
+            lecturer.cleanup()
+        
+        def test_fix_heading_hierarchy_preserves_first_heading(self):
+            """Test that _fix_heading_hierarchy does NOT change first heading to H1.
+            
+            Bug fix: Previously, '## Example' was incorrectly changed to '# Example'
+            because the code assumed the first heading must be H1. In Hugo/docs systems,
+            the page title (H1) often comes from front matter, so content legitimately
+            starts at H2.
+            """
+            class MockArgs:
+                command = 'analyze'
+                website = 'https://example.com'
+                parallel = 1
+                language = 'en'
+                ref_website = None
+                test = False
+            
+            lecturer = DocumentationLecturer(MockArgs())
+            
+            # Test 1: First heading is H2 - should NOT be changed to H1
+            content = "## Example\n\nSome content here.\n\n### Subsection\n\nMore content."
+            fixed, fixes = lecturer._fix_heading_hierarchy(content)
+            self.assertEqual(fixed, content, "First heading '## Example' should NOT be changed to '# Example'")
+            self.assertEqual(len(fixes), 0, "No fixes should be applied")
+            
+            # Test 2: First heading is H3 - should NOT be changed to H1
+            content = "### Deep Start\n\nSome content.\n\n#### Even Deeper\n\nMore content."
+            fixed, fixes = lecturer._fix_heading_hierarchy(content)
+            self.assertEqual(fixed, content, "First heading '### Deep Start' should NOT be changed")
+            self.assertEqual(len(fixes), 0, "No fixes should be applied")
+            
+            # Test 3: Heading skip after first heading SHOULD be fixed
+            # H2 -> H4 is a skip, should become H2 -> H3
+            content = "## Example\n\nSome content.\n\n#### Skipped Level\n\nMore content."
+            fixed, fixes = lecturer._fix_heading_hierarchy(content)
+            self.assertIn("### Skipped Level", fixed, "H4 should be fixed to H3 (heading skip)")
+            self.assertNotIn("#### Skipped Level", fixed)
+            self.assertEqual(len(fixes), 1, "One fix should be applied for the heading skip")
+            
+            # Test 4: Multiple heading skips
+            content = "## Section\n\n##### Skip Many\n\nContent."
+            fixed, fixes = lecturer._fix_heading_hierarchy(content)
+            self.assertIn("### Skip Many", fixed, "H5 should be fixed to H3 (next valid level after H2)")
+            
+            # Test 5: Valid heading progression - no changes needed
+            content = "## Section 1\n\n### Subsection 1.1\n\n#### Subsubsection 1.1.1\n\n## Section 2"
+            fixed, fixes = lecturer._fix_heading_hierarchy(content)
+            self.assertEqual(fixed, content, "Valid heading progression should not be changed")
+            self.assertEqual(len(fixes), 0, "No fixes for valid progression")
+            
+            lecturer.cleanup()
+        
+        def test_analyze_heading_hierarchy_ignores_first_heading(self):
+            """Test that _analyze_heading_hierarchy does NOT flag first heading as issue."""
+            class MockArgs:
+                command = 'analyze'
+                website = 'https://example.com'
+                parallel = 1
+                language = 'en'
+                ref_website = None
+                test = False
+            
+            lecturer = DocumentationLecturer(MockArgs())
+            
+            # First heading is H2 - should NOT be flagged as issue
+            content = "## Example\n\nContent.\n\n### Subsection"
+            issues = lecturer._analyze_heading_hierarchy(content)
+            self.assertEqual(len(issues), 0, "First H2 heading should not be flagged as issue")
+            
+            # Heading skip should still be detected
+            content = "## Example\n\n#### Skipped\n\nContent."
+            issues = lecturer._analyze_heading_hierarchy(content)
+            self.assertEqual(len(issues), 1, "Heading skip H2 -> H4 should be detected")
+            self.assertIn("jumped from H2 to H4", issues[0]['issue'])
             
             lecturer.cleanup()
         
@@ -4645,6 +5602,11 @@ def main():
     
     if args.command == 'version':
         print(f"{TOOL_NAME} v{VERSION}")
+        sys.exit(0)
+    
+    # Handle --list-fixes flag
+    if hasattr(args, 'list_fixes') and args.list_fixes:
+        print(DocumentationLecturer.get_fix_help_text())
         sys.exit(0)
     
     # Handle install-tools command (no dependencies required)
