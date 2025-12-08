@@ -306,10 +306,14 @@ class DocumentationLecturer:
     ]
     
     # Pattern for missing space before backticks (e.g., "Clone`the" should be "Clone `the")
-    MISSING_SPACE_BEFORE_BACKTICK = re.compile(r'([a-zA-Z])(`[^`]+`)')
+    # Uses [^\s`] after opening backtick to ensure we match valid inline code (content must start
+    # with non-whitespace), preventing false matches from closing backticks of other code spans.
+    # Uses [^`\n]*? (non-greedy, no newlines) to match minimal content within same line.
+    MISSING_SPACE_BEFORE_BACKTICK = re.compile(r'([a-zA-Z])(`[^\s`][^`\n]*?`)')
     
     # Pattern for missing space after backticks (e.g., "`command`text" should be "`command` text")
-    MISSING_SPACE_AFTER_BACKTICK = re.compile(r'(`[^`]+`)([a-zA-Z])')
+    # Same constraints as above to ensure we match complete, valid inline code spans.
+    MISSING_SPACE_AFTER_BACKTICK = re.compile(r'(`[^\s`][^`\n]*?`)([a-zA-Z])')
     
     # Patterns for detecting malformed inline code backticks
     # These patterns match single inline code spans with space issues
@@ -3939,11 +3943,20 @@ def run_tests():
         def test_missing_space_before_backtick(self):
             pattern = DocumentationLecturer.MISSING_SPACE_BEFORE_BACKTICK
             # Should match: word immediately followed by backtick code
-            self.assertTrue(pattern.search("Clone`the project`"))
+            self.assertTrue(pattern.search("Clone`the`"))
             self.assertTrue(pattern.search("Run`command`"))
             # Should not match: proper spacing
-            self.assertIsNone(pattern.search("Clone `the project`"))
+            self.assertIsNone(pattern.search("Clone `the`"))
             self.assertIsNone(pattern.search("Run `command`"))
+            # Should not match: inline code with space inside (invalid markdown)
+            self.assertIsNone(pattern.search("Clone` the`"))
+            # Critical bug fix test: should NOT match across multiple inline code blocks
+            # In "The `top` tool and command`ps`", the pattern should only match "d`ps`"
+            # and NOT match "p` tool and command`" (which would corrupt `top`)
+            test_multi = "The `top` tool and command`ps` here"
+            matches = pattern.findall(test_multi)
+            self.assertEqual(len(matches), 1, "Should find exactly one match")
+            self.assertEqual(matches[0], ('d', '`ps`'), "Should match 'd`ps`' not spanning across `top`")
         
         def test_missing_space_after_backtick(self):
             pattern = DocumentationLecturer.MISSING_SPACE_AFTER_BACKTICK
@@ -3953,6 +3966,13 @@ def run_tests():
             # Should not match: proper spacing
             self.assertIsNone(pattern.search("`command` and"))
             self.assertIsNone(pattern.search("`code` text"))
+            # Should not match: inline code with space inside (invalid markdown)
+            self.assertIsNone(pattern.search("` command`and"))
+            # Critical bug fix test: should NOT match across multiple inline code blocks
+            test_multi = "Use `cmd1`and `cmd2` here"
+            matches = pattern.findall(test_multi)
+            self.assertEqual(len(matches), 1, "Should find exactly one match")
+            self.assertEqual(matches[0], ('`cmd1`', 'a'), "Should match '`cmd1`a' not spanning blocks")
         
         def test_shell_prompt_patterns(self):
             patterns = DocumentationLecturer.SHELL_PROMPT_PATTERNS
@@ -4202,14 +4222,33 @@ drwxr-xr-x 14 root root 4096 Nov 30 10:00 ..
             lecturer = DocumentationLecturer(MockArgs())
             
             # Test missing space before backtick
-            content = "Run the command`ls -la`"
+            content = "Run the command`ls`"
             fixed = lecturer._fix_backtick_spacing(content)
-            self.assertEqual(fixed, "Run the command `ls -la`")
+            self.assertEqual(fixed, "Run the command `ls`")
             
             # Test missing space after backtick
             content = "`command`and then"
             fixed = lecturer._fix_backtick_spacing(content)
             self.assertEqual(fixed, "`command` and then")
+            
+            # Test that properly spaced inline code is not modified
+            content = "The `top` tool monitors system resources"
+            fixed = lecturer._fix_backtick_spacing(content)
+            self.assertEqual(fixed, "The `top` tool monitors system resources")
+            
+            # Critical bug fix test: multiple inline codes on same line
+            # Should only fix the actual issue, not corrupt other inline codes
+            content = "The `top` tool and command`ps` here"
+            fixed = lecturer._fix_backtick_spacing(content)
+            self.assertEqual(fixed, "The `top` tool and command `ps` here")
+            self.assertIn("`top`", fixed, "The `top` inline code should remain unchanged")
+            self.assertNotIn("` top `", fixed, "Should not add spaces inside `top`")
+            self.assertNotIn("`top `", fixed, "Should not add trailing space inside `top`")
+            
+            # Test multiline content - should not match across lines
+            content = "First `code` line\nSecond`code2` line"
+            fixed = lecturer._fix_backtick_spacing(content)
+            self.assertEqual(fixed, "First `code` line\nSecond `code2` line")
             
             lecturer.cleanup()
         
