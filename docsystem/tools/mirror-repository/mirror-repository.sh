@@ -1,7 +1,8 @@
 #!/bin/bash
 
-# Usage: ./mirror_repo.sh [ORIGINAL_REPO] [REPO_NAME]
-# If not provided as arguments, falls back to environment variables ORIGINAL_REPO and REPO_NAME.
+# Usage: ./mirror_repo.sh [ORIGINAL_REPO] [REPO_NAME] [LOCAL_PATH]
+# If not provided as arguments, falls back to environment variables ORIGINAL_REPO, REPO_NAME, and LOCAL_PATH.
+# LOCAL_PATH is optional - if not provided, a temporary directory will be used.
 # Required environment variables: GITHUB_USERNAME, GITHUB_TOKEN
 
 # Check for required commands
@@ -13,11 +14,12 @@ command -v base64 >/dev/null 2>&1 || { echo "Error: base64 is required but not i
 # Get parameters
 ORIGINAL_REPO=${1:-${ORIGINAL_REPO:-}}
 REPO_NAME=${2:-${REPO_NAME:-}}
+LOCAL_PATH=${3:-${LOCAL_PATH:-}}
 
 # Check if required parameters are set
 if [ -z "$ORIGINAL_REPO" ] || [ -z "$REPO_NAME" ]; then
   echo "Error: ORIGINAL_REPO and REPO_NAME must be provided as arguments or environment variables."
-  echo "Usage: $0 <ORIGINAL_REPO> <REPO_NAME>"
+  echo "Usage: $0 <ORIGINAL_REPO> <REPO_NAME> [LOCAL_PATH]"
   exit 1
 fi
 
@@ -102,8 +104,19 @@ else
   sleep 2  # Short delay to ensure repo is ready
 fi
 
-# Create a temporary directory for the clone
-CLONE_DIR=$(mktemp -d -t "${REPO_NAME}.XXXXXX") || { echo "Error creating temporary directory."; exit 1; }
+# Create or use the specified directory for the clone
+if [ -n "$LOCAL_PATH" ]; then
+  CLONE_DIR="$LOCAL_PATH"
+  USE_TEMP_DIR=false
+  if [ -d "$CLONE_DIR" ]; then
+    echo "Warning: Directory $CLONE_DIR already exists. Contents will be overwritten."
+    rm -rf "$CLONE_DIR"
+  fi
+  mkdir -p "$CLONE_DIR" || { echo "Error creating directory $CLONE_DIR."; exit 1; }
+else
+  CLONE_DIR=$(mktemp -d -t "${REPO_NAME}.XXXXXX") || { echo "Error creating temporary directory."; exit 1; }
+  USE_TEMP_DIR=true
+fi
 
 # Create a bare mirrored clone of the original repository
 git clone --mirror --progress "$ORIGINAL_REPO" "$CLONE_DIR" || { echo "Error cloning original repository."; rm -rf "$CLONE_DIR"; exit 1; }
@@ -128,8 +141,13 @@ fi
 # Push the cleaned mirrored clone to the new GitHub repository
 git push --mirror --progress "$MIRROR_REPO" || { echo "Error pushing to mirror repository."; cd ..; rm -rf "$CLONE_DIR"; exit 1; }
 
-# Clean up the temporary local clone
+# Clean up the local clone (only if using temporary directory)
 cd ..
-rm -rf "$CLONE_DIR"
+if [ "$USE_TEMP_DIR" = true ]; then
+  rm -rf "$CLONE_DIR"
+  echo "Temporary directory cleaned up."
+else
+  echo "Local repository preserved at: $CLONE_DIR"
+fi
 
 echo "Mirroring complete. The repository has been duplicated to https://github.com/$GITHUB_USERNAME/$REPO_NAME.git."
