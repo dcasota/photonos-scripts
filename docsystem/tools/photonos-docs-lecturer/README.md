@@ -2,7 +2,7 @@
 
 ## Overview
 
-`photonos-docs-lecturer.py` is a comprehensive documentation analysis and remediation tool for Photon OS documentation. It crawls documentation served by an Nginx webserver, identifies various issues (grammar, spelling, markdown artifacts, broken links/images, formatting problems), generates CSV reports, and optionally applies automated fixes via git push and GitHub pull requests.
+`photonos-docs-lecturer.py` is a comprehensive documentation analysis and remediation tool for Photon OS documentation. It crawls documentation served by an Nginx webserver, identifies various issues (grammar, spelling, markdown artifacts, broken links/images, formatting problems, heading hierarchy violations), generates CSV reports, and optionally applies automated fixes via git push and GitHub pull requests.
 
 ### Project Goal
 
@@ -19,7 +19,7 @@ The goal is to automate documentation quality assurance for the Photon OS projec
 ### Prerequisites
 
 - Python 3.8+
-- Java (required for grammar checking via LanguageTool)
+- Java >= 17 (required for grammar checking via LanguageTool)
 
 ### Install Dependencies
 
@@ -29,8 +29,8 @@ sudo python3 photonos-docs-lecturer.py install-tools
 ```
 
 This installs:
-- Java runtime (openjdk)
-- Python packages: requests, beautifulsoup4, language-tool-python, tqdm, Pillow
+- Java runtime (openjdk21)
+- Python packages: requests, beautifulsoup4, lxml, language-tool-python, tqdm, Pillow
 - LLM support: google-generativeai (for Gemini-based fixes when `--llm gemini` is specified)
 
 ---
@@ -47,7 +47,7 @@ python3 photonos-docs-lecturer.py <command> [options]
 |---------|-------------|
 | `run` | Full workflow: analyze, generate fixes, push changes, create PR |
 | `analyze` | Generate report only (no fixes, git operations, or PR) |
-| `install-tools` | Install Java and required Python packages |
+| `install-tools` | Install Java and required Python packages (requires admin/sudo) |
 | `version` | Display tool version |
 
 ### Basic Examples
@@ -70,6 +70,34 @@ python3 photonos-docs-lecturer.py run \
   --ref-ghbranch photon-hugo \
   --parallel 10 \
   --gh-pr
+
+# Full workflow with LLM-assisted fixes (Gemini)
+python3 photonos-docs-lecturer.py run \
+  --website https://127.0.0.1/docs-v5 \
+  --local-webserver /var/www/photon-site \
+  --gh-repotoken ghp_xxxxxxxxx \
+  --gh-username myuser \
+  --ghrepo-url https://github.com/myuser/photon.git \
+  --ghrepo-branch photon-hugo \
+  --ref-ghrepo https://github.com/vmware/photon.git \
+  --ref-ghbranch photon-hugo \
+  --parallel 10 \
+  --gh-pr \
+  --llm gemini --GEMINI_API_KEY your_api_key
+
+# Full workflow with LLM-assisted fixes (xAI/Grok)
+python3 photonos-docs-lecturer.py run \
+  --website https://127.0.0.1/docs-v5 \
+  --local-webserver /var/www/photon-site \
+  --gh-repotoken ghp_xxxxxxxxx \
+  --gh-username myuser \
+  --ghrepo-url https://github.com/myuser/photon.git \
+  --ghrepo-branch photon-hugo \
+  --ref-ghrepo https://github.com/vmware/photon.git \
+  --ref-ghbranch photon-hugo \
+  --parallel 10 \
+  --gh-pr \
+  --llm xai --XAI_API_KEY your_api_key
 ```
 
 ---
@@ -103,8 +131,71 @@ python3 photonos-docs-lecturer.py run \
 | `--language` | en | Language code for grammar checking |
 | `--llm` | - | LLM provider for advanced fixes (`gemini` or `xai`) |
 | `--GEMINI_API_KEY` | - | API key for Google Gemini |
-| `--XAI_API_KEY` | - | API key for xAI |
+| `--XAI_API_KEY` | - | API key for xAI (Grok) |
 | `--ref-website` | - | Reference website for comparison |
+| `--fix` | all | Selective fix specification (see below) |
+| `--list-fixes` | - | Display all available fix types |
+| `--test` | - | Run unit tests instead of analysis |
+
+---
+
+## Selective Fix Application (--fix parameter)
+
+Version 1.5 introduces the `--fix` parameter for selective fix application. By default, all fixes are applied when using `--gh-pr`. Use `--list-fixes` to see all available fixes.
+
+### Syntax
+
+```bash
+--fix SPEC
+```
+
+Where SPEC can be:
+- Single ID: `--fix 1`
+- Multiple IDs: `--fix 1,2,3`
+- Range: `--fix 1-5`
+- Mixed: `--fix 1,3,5-9`
+- All: `--fix all` (default behavior)
+
+### Available Fix Types
+
+| ID | Name | Description | LLM Required |
+|----|------|-------------|:------------:|
+| 1 | broken-emails | Fix broken email addresses (domain split with whitespace) | No |
+| 2 | vmware-spelling | Fix VMware spelling (vmware -> VMware) | No |
+| 3 | deprecated-urls | Fix deprecated URLs (VMware, VDDK, OVFTOOL, AWS, bosh-stemcell) | No |
+| 4 | backtick-spacing | Fix missing spaces around backticks | No |
+| 5 | backtick-errors | Fix backtick errors (spaces inside backticks) | No |
+| 6 | shell-prompts | Fix shell prompts in code blocks (remove $, #, etc.) | No |
+| 7 | heading-hierarchy | Fix heading hierarchy violations (skipped levels) | No |
+| 8 | header-spacing | Fix markdown headers missing space (####Title -> #### Title) | No |
+| 9 | html-comments | Fix HTML comments (remove <!-- --> markers, keep content) | No |
+| 10 | grammar | Fix grammar and spelling issues | Yes |
+| 11 | markdown-artifacts | Fix unrendered markdown artifacts | Yes |
+| 12 | mixed-cmd-output | Fix mixed command/output in code blocks | Yes |
+| 13 | indentation | Fix indentation issues | Yes |
+
+### Examples
+
+```bash
+# Apply only VMware spelling and deprecated URL fixes
+python3 photonos-docs-lecturer.py run \
+  --website https://127.0.0.1/docs-v5 \
+  --local-webserver /var/www/photon-site \
+  --gh-pr --fix 2,3
+
+# Apply all automatic fixes (1-9), skip LLM fixes
+python3 photonos-docs-lecturer.py run \
+  --website https://127.0.0.1/docs-v5 \
+  --local-webserver /var/www/photon-site \
+  --gh-pr --fix 1-9
+
+# Apply grammar fixes only (requires LLM)
+python3 photonos-docs-lecturer.py run \
+  --website https://127.0.0.1/docs-v5 \
+  --local-webserver /var/www/photon-site \
+  --gh-pr --fix 10 \
+  --llm gemini --GEMINI_API_KEY your_key
+```
 
 ---
 
@@ -114,7 +205,7 @@ The tool detects and reports issues in the following categories:
 
 ### 1. `grammar` - Grammar and Spelling Issues
 
-**Detection:** Uses LanguageTool (Java-based) to check text for grammar and spelling errors.
+**Detection:** Uses LanguageTool (Java-based) to check text for grammar and spelling errors. Code blocks and inline code are automatically excluded from grammar checking.
 
 **What it finds:**
 - Spelling mistakes
@@ -125,13 +216,6 @@ The tool detects and reports issues in the following categories:
 **How it's fixed:**
 - **Without LLM:** Reports suggestions from LanguageTool in the CSV
 - **With LLM:** Uses Gemini/xAI to intelligently apply grammar corrections
-
-**Example Report Entry:**
-```
-Category: grammar
-Location: "...the packages is installed..."
-Fix: [AGREEMENT_SENT_START] The verb 'is' doesn't seem to agree. Suggestions: are
-```
 
 ---
 
@@ -146,21 +230,30 @@ Fix: [AGREEMENT_SENT_START] The verb 'is' doesn't seem to agree. Suggestions: ar
 - Unrendered code blocks and inline code
 - Unrendered bold/italic (`**bold**`, `_italic_`)
 - Headers missing space after `#` (e.g., `####Title` instead of `#### Title`)
+- Unclosed fenced code blocks (``` without closing ```)
+- Unclosed inline code backticks
 
 **How it's fixed:**
 - **Deterministic:** Headers missing space are auto-corrected
 - **With LLM:** Complex markdown issues are fixed via AI
 
-**Example Report Entry:**
-```
-Category: markdown
-Location: Markdown header missing space: '####Configuration'
-Fix: Add space after '####': '#### Configuration'
-```
+---
+
+### 3. `heading_hierarchy` - Heading Level Violations
+
+**Detection:** Analyzes markdown heading structure for proper hierarchy.
+
+**What it finds:**
+- Skipped heading levels (e.g., H1 -> H3 without H2)
+- Wrong first heading level (should start with appropriate level based on context)
+- Inconsistent heading progression
+
+**How it's fixed:**
+- **Deterministic:** Automatically adjusts heading levels to fix hierarchy
 
 ---
 
-### 3. `orphan_url` - Broken/Orphan Links
+### 4. `orphan_link` / `orphan_url` - Broken/Orphan Links
 
 **Detection:** HEAD requests to verify each internal link returns HTTP 2xx/3xx.
 
@@ -172,16 +265,9 @@ Fix: Add space after '####': '#### Configuration'
 **How it's fixed:**
 - Reported for manual review (links require human decision to update or remove)
 
-**Example Report Entry:**
-```
-Category: orphan_url
-Location: Link text: 'Installation Guide', URL: https://example.com/old-page
-Fix: Remove or update link (status: 404)
-```
-
 ---
 
-### 4. `orphan_picture` - Broken/Orphan Images
+### 5. `orphan_image` / `orphan_picture` - Broken/Orphan Images
 
 **Detection:** HEAD requests to verify each image source URL is accessible.
 
@@ -193,16 +279,9 @@ Fix: Remove or update link (status: 404)
 **How it's fixed:**
 - Reported for manual review
 
-**Example Report Entry:**
-```
-Category: orphan_picture
-Location: Alt text: 'Architecture Diagram', URL: https://example.com/images/arch.png
-Fix: Remove or fix image path (status: 404)
-```
-
 ---
 
-### 5. `unaligned_images` - Unaligned Multiple Images
+### 6. `image_alignment` / `unaligned_images` - Unaligned Multiple Images
 
 **Detection:** Checks if pages with multiple images have proper CSS alignment classes.
 
@@ -216,36 +295,38 @@ Fix: Remove or fix image path (status: 404)
 **How it's fixed:**
 - Reported with suggestion to add CSS classes or container divs
 
-**Example Report Entry:**
-```
-Category: unaligned_images
-Location: 3 unaligned images: /images/step1.png, /images/step2.png, /images/step3.png
-Fix: Add CSS alignment classes or wrap images in container div
-```
-
 ---
 
-### 6. `formatting` - Formatting Issues
+### 7. `formatting` - Formatting Issues (Backtick Spacing)
 
 **Detection:** Regex patterns for missing spaces around inline code backticks.
 
 **What it finds:**
-- Missing space before backtick: `Clone\`the project\`` â†’ should be `Clone \`the project\``
-- Missing space after backtick: `\`command\`text` â†’ should be `\`command\` text`
+- Missing space before backtick: `Clone`the project`` -> should be `Clone `the project``
+- Missing space after backtick: `` `command`text`` -> should be `` `command` text``
 
 **How it's fixed:**
 - **Deterministic:** Automatically adds missing spaces
 
-**Example Report Entry:**
-```
-Category: formatting
-Location: Missing space before backtick: ...Run`docker ps`...
-Fix: Add space before backtick: 'Run `docker ps`' instead of 'Run`docker ps`'
-```
+---
+
+### 8. `backtick_errors` - Backtick Errors
+
+**Detection:** Regex patterns for malformed backtick usage.
+
+**What it finds:**
+- Space after opening backtick: `` ` code` `` -> should be `` `code` ``
+- Space before closing backtick: `` `code ` `` -> should be `` `code` ``
+- Spaces on both sides: `` ` code ` `` -> should be `` `code` ``
+- Unclosed fenced code blocks
+- Unclosed inline code backticks
+
+**How it's fixed:**
+- **Deterministic:** Automatically fixes space issues in backticks
 
 ---
 
-### 7. `indentation` - List Indentation Issues
+### 9. `indentation` - List Indentation Issues
 
 **Detection:** Analyzes HTML structure of ordered/unordered lists for improper nesting.
 
@@ -257,40 +338,28 @@ Fix: Add space before backtick: 'Run `docker ps`' instead of 'Run`docker ps`'
 **How it's fixed:**
 - **With LLM:** Uses AI to fix indentation in markdown source
 
-**Example Report Entry:**
-```
-Category: indentation
-Location: Code block in list item 3 may have indentation issues: sudo tdnf install...
-Fix: Ensure code block is properly indented (4 spaces or 1 tab) under the list item
-```
-
 ---
 
-### 8. `shell_prompt` - Shell Prompts in Code Blocks
+### 10. `shell_prompt` - Shell Prompts in Code Blocks
 
 **Detection:** Regex patterns for common shell prompt prefixes that shouldn't be in copyable code.
 
 **What it finds:**
 - `$ command` (user prompt)
-- `# command` (root prompt in specific contexts)
 - `> command` (alternative prompt)
 - `% command` (csh/tcsh prompt)
+- `~ command` (home directory prompt)
 - `user@host$ command` (full prompt)
 - `root@host# command` (root full prompt)
+- `❯ command` (fancy prompts like starship, powerline)
+- `➜ command` (Oh My Zsh robbyrussell theme)
 
 **How it's fixed:**
 - **Deterministic:** Removes prompt prefixes, adds language hints (```console)
 
-**Example Report Entry:**
-```
-Category: shell_prompt
-Location: Shell prompt in code block: '$ sudo tdnf install nginx'
-Fix: Remove shell prompt prefix '$' - command should be: 'sudo tdnf install nginx'
-```
-
 ---
 
-### 9. `mixed_command_output` - Mixed Command and Output
+### 11. `mixed_command_output` - Mixed Command and Output
 
 **Detection:** Heuristics identify code blocks containing both commands and their output.
 
@@ -298,46 +367,31 @@ Fix: Remove shell prompt prefix '$' - command should be: 'sudo tdnf install ngin
 - Code blocks where a command is followed by its output
 - Makes copy-paste difficult for users
 
-**Common patterns detected:**
-```
-sudo cat /etc/config.toml    â† Command
-[Section]                     â† Output starts here
-Key="value"
-```
-
 **How it's fixed:**
 - **With LLM:** Separates into two code blocks (command + output)
 
-**Example Report Entry:**
-```
-Category: mixed_command_output
-Location: Mixed command and output in code block. Command: 'cat /etc/os-release', Output starts: 'NAME="VMware Photon OS"'
-Fix: Separate into two code blocks: one for the command (copyable) and one for the output (display only)
-```
-
 ---
 
-### 10. `deprecated_url` - Deprecated VMware URLs
+### 12. `deprecated_url` - Deprecated URLs
 
-**Detection:** Regex matches `packages.vmware.com` URLs that should use Broadcom infrastructure.
+**Detection:** Regex matches deprecated URLs that need updating.
 
-**What it finds:**
-- `https://packages.vmware.com/*` URLs
-- These should be updated to `https://packages-prod.broadcom.com/`
+**Deprecated URLs detected:**
+| Old URL | New URL |
+|---------|---------|
+| `packages.vmware.com/*` | `packages.broadcom.com/` |
+| `my.vmware.com/.../VDDK670...` | `developer.broadcom.com/sdks/vmware-virtual-disk-development-kit-vddk/6.7` |
+| `developercenter.vmware.com/web/sdk/60/vddk` | `developer.broadcom.com/sdks/vmware-virtual-disk-development-kit-vddk/6.7` |
+| `my.vmware.com/.../OVFTOOL410...` | `developer.broadcom.com/tools/open-virtualization-format-ovf-tool/latest` |
+| `docs.aws.amazon.com/.../set-up-ec2-cli-linux.html` | `docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html` |
+| `github.com/cloudfoundry/bosh/blob/develop/bosh-stemcell/README.md` | `github.com/cloudfoundry/bosh/blob/main/README.md` |
 
 **How it's fixed:**
 - **Deterministic:** Automatically replaces deprecated URLs
 
-**Example Report Entry:**
-```
-Category: deprecated_url
-Location: Deprecated VMware URL: https://packages.vmware.com/photon/3.0/
-Fix: Replace with https://packages-prod.broadcom.com/
-```
-
 ---
 
-### 11. `spelling` - VMware Spelling Errors
+### 13. `spelling` - VMware Spelling Errors
 
 **Detection:** Regex matches incorrect capitalizations of "VMware".
 
@@ -347,21 +401,39 @@ Fix: Replace with https://packages-prod.broadcom.com/
 - `VMWare` (incorrect second capital)
 - `VMWARE` (all caps)
 
-**Excludes:** URLs, domain names, code blocks
+**Excludes:** URLs, domain names, file paths, email addresses, code blocks
 
 **How it's fixed:**
 - **Deterministic:** Replaces with correct spelling `VMware`
 
-**Example Report Entry:**
-```
-Category: spelling
-Location: Incorrect VMware spelling: 'vmware' in ...Photon OS is developed by vmware...
-Fix: Change 'vmware' to 'VMware'
-```
+---
+
+### 14. `broken_email` - Broken Email Addresses
+
+**Detection:** Regex matches email addresses where the domain is split with whitespace/newlines.
+
+**What it finds:**
+- `linux-packages@vmware.                        com` -> should be `linux-packages@vmware.com`
+
+**How it's fixed:**
+- **Deterministic:** Automatically removes whitespace to fix email
 
 ---
 
-### 12. `orphan_page` - Inaccessible Pages
+### 15. `html_comment` - HTML Comments
+
+**Detection:** Regex matches HTML comment markers `<!-- ... -->`.
+
+**What it finds:**
+- HTML comments that should be uncommented/visible
+- Commented-out content that should be restored
+
+**How it's fixed:**
+- **Deterministic:** Removes comment markers, keeps inner content
+
+---
+
+### 16. `orphan_page` - Inaccessible Pages
 
 **Detection:** Pages in sitemap that return HTTP 4xx/5xx or timeout.
 
@@ -372,13 +444,6 @@ Fix: Change 'vmware' to 'VMware'
 
 **How it's fixed:**
 - Reported for manual review (remove from sitemap or fix page)
-
-**Example Report Entry:**
-```
-Category: orphan_page
-Location: HTTP 404 - Page not accessible
-Fix: Remove from sitemap or fix page availability
-```
 
 ---
 
@@ -396,7 +461,7 @@ Each run generates timestamped output files:
 ```csv
 Page URL,Issue Category,Issue Location Description,Fix Suggestion
 https://example.com/docs/page1/,grammar,"...the packages is installed...",The verb 'is' doesn't seem to agree. Suggestions: are
-https://example.com/docs/page2/,orphan_url,"Link text: 'Old Guide', URL: ...",Remove or update link (status: 404)
+https://example.com/docs/page2/,orphan_link,"Link text: 'Old Guide', URL: ...",Remove or update link (status: 404)
 ```
 
 ---
@@ -405,23 +470,54 @@ https://example.com/docs/page2/,orphan_url,"Link text: 'Old Guide', URL: ...",Re
 
 | Category | Deterministic Fix | LLM Fix | Manual Review |
 |----------|:-----------------:|:-------:|:-------------:|
+| `broken_email` | Yes | - | - |
+| `spelling` (VMware) | Yes | - | - |
+| `deprecated_url` | Yes | - | - |
+| `formatting` | Yes | - | - |
+| `backtick_errors` | Yes | - | - |
+| `shell_prompt` | Yes | - | - |
+| `heading_hierarchy` | Yes | - | - |
+| `header_spacing` | Yes | - | - |
+| `html_comment` | Yes | - | - |
 | `grammar` | - | Yes | Fallback |
 | `markdown` | Partial | Yes | - |
-| `orphan_url` | - | - | Yes |
-| `orphan_picture` | - | - | Yes |
-| `unaligned_images` | - | - | Yes |
-| `formatting` | Yes | - | - |
-| `indentation` | - | Yes | Fallback |
-| `shell_prompt` | Yes | - | - |
 | `mixed_command_output` | - | Yes | Fallback |
-| `deprecated_url` | Yes | - | - |
-| `spelling` | Yes | - | - |
+| `indentation` | - | Yes | Fallback |
+| `orphan_link` | - | - | Yes |
+| `orphan_image` | - | - | Yes |
+| `image_alignment` | - | - | Yes |
 | `orphan_page` | - | - | Yes |
 
 **Legend:**
-- **Deterministic Fix:** Applied automatically using regex/rules
-- **LLM Fix:** Applied using AI (requires `--llm` and API key)
+- **Deterministic Fix:** Applied automatically using regex/rules (fixes 1-9)
+- **LLM Fix:** Applied using AI (fixes 10-13, requires `--llm` and API key)
 - **Manual Review:** Reported in CSV for human decision
+
+---
+
+## LLM Providers
+
+The tool supports two LLM providers for advanced fixes:
+
+### Google Gemini
+
+```bash
+--llm gemini --GEMINI_API_KEY your_api_key
+```
+
+Uses the `gemini-2.5-flash` model for cost-efficient, high-quality fixes.
+
+### xAI (Grok)
+
+```bash
+--llm xai --XAI_API_KEY your_api_key
+```
+
+Uses the `grok-3-mini` model (OpenAI-compatible API).
+
+### URL Protection
+
+When using LLM-assisted fixes, URLs are automatically protected using placeholders before being sent to the LLM. This prevents the LLM from accidentally modifying URLs (e.g., removing `.md` extensions). Original URLs are restored after the LLM response is received.
 
 ---
 
@@ -447,25 +543,6 @@ tail -n +2 "$REPORT" | cut -d',' -f2 | sort | uniq -c | sort -rn | while read co
 done
 ```
 
-### Example Output
-
-```
-==============================================
-  Issue Report - Categories
-  Total Issues: 1399
-==============================================
-
-  Rank | Category                              | Count | Percentage
-  -----+---------------------------------------+-------+-----------
-  1    | double_slash (malformed // in paths)  |  1301 |  92.9%
-       | - from printview pages                |   997 |  71.2%
-       | - from other pages                    |   304 |  21.7%
-  2    | missing_image (broken image refs)     |    60 |   4.2%
-  3    | other (md_file_link, wrong paths)     |    38 |   2.7%
-
-==============================================
-```
-
 ---
 
 ## Workflow Diagram
@@ -480,6 +557,7 @@ done
 |  1. Parse Arguments & Validate Connectivity                 |
 |     - Test HEAD request to --website                        |
 |     - Initialize logging                                    |
+|     - Parse --fix specification (if provided)               |
 +-------------------------------------------------------------+
                               |
                               v
@@ -491,19 +569,31 @@ done
                               |
                               v
 +-------------------------------------------------------------+
-|  3. Analyze Each Page (parallel if --parallel > 1)         |
-|     - Grammar/spelling (LanguageTool)                       |
-|     - Markdown artifacts (regex)                            |
-|     - Orphan links/images (HEAD checks)                     |
-|     - Formatting issues                                     |
-|     - Shell prompts in code blocks                          |
-|     - Deprecated URLs                                       |
-|     - VMware spelling                                       |
+|  3. Initialize Grammar Checker                              |
+|     - Load LanguageTool (requires Java >= 17)               |
+|     - Configure for specified language                      |
 +-------------------------------------------------------------+
                               |
                               v
 +-------------------------------------------------------------+
-|  4. Write Issues to CSV Report                              |
+|  4. Analyze Each Page (parallel if --parallel > 1)          |
+|     - Grammar/spelling (LanguageTool)                       |
+|     - Markdown artifacts (regex)                            |
+|     - Heading hierarchy violations                          |
+|     - Orphan links/images (HEAD checks)                     |
+|     - Formatting issues (backtick spacing)                  |
+|     - Backtick errors (spaces inside)                       |
+|     - Shell prompts in code blocks                          |
+|     - Mixed command/output detection                        |
+|     - Deprecated URLs                                       |
+|     - VMware spelling                                       |
+|     - Broken email addresses                                |
+|     - HTML comments                                         |
++-------------------------------------------------------------+
+                              |
+                              v
++-------------------------------------------------------------+
+|  5. Write Issues to CSV Report                              |
 +-------------------------------------------------------------+
                               |
                    +----------+----------+
@@ -512,21 +602,22 @@ done
                    |                     |
                    v                     v
 +---------------------+   +---------------------------------+
-|  Done: Report Only  |   |  5. Apply Fixes                 |
-+---------------------+   |     - Deterministic fixes       |
-                          |     - LLM-based fixes (if key)  |
+|  Done: Report Only  |   |  6. Apply Fixes (based on --fix)|
++---------------------+   |     - Deterministic fixes (1-9) |
+                          |     - LLM-based fixes (10-13)   |
                           +---------------------------------+
                                          |
                                          v
                           +---------------------------------+
-                          |  6. Git Commit & Push           |
+                          |  7. Git Commit & Push           |
+                          |     - Incremental per-fix mode  |
                           |     - Commit modified files     |
                           |     - Push to --ghrepo-branch   |
                           +---------------------------------+
                                          |
                                          v
                           +---------------------------------+
-                          |  7. Create GitHub PR            |
+                          |  8. Create GitHub PR            |
                           |     - PR to --ref-ghrepo        |
                           |     - Include fix summary       |
                           +---------------------------------+
@@ -542,9 +633,9 @@ done
 [ERROR] Failed to initialize grammar checker
 ```
 
-**Solution:** Install Java runtime:
+**Solution:** Install Java runtime (>= 17):
 ```bash
-sudo tdnf install openjdk11
+sudo tdnf install openjdk21
 # or
 sudo python3 photonos-docs-lecturer.py install-tools
 ```
@@ -562,11 +653,24 @@ openssl s_client -connect localhost:443 </dev/null 2>/dev/null | \
 
 Ensure you provide the correct API key:
 ```bash
+# For Gemini
 python3 photonos-docs-lecturer.py run \
   --llm gemini \
   --GEMINI_API_KEY your_api_key_here \
   ...
+
+# For xAI
+python3 photonos-docs-lecturer.py run \
+  --llm xai \
+  --XAI_API_KEY your_api_key_here \
+  ...
 ```
+
+### xAI API 404 Error
+
+If you see `404 Client Error: Not Found for url: https://api.x.ai/v1/chat/completions`, ensure:
+1. Your API key is valid and has access to the xAI API
+2. The tool is using a valid model name (default: `grok-3-mini`)
 
 ### No Local File Found for URL
 
@@ -574,11 +678,45 @@ The tool maps URLs to local markdown files. Ensure:
 1. `--local-webserver` points to the Hugo content root
 2. Directory structure matches: `{local-webserver}/content/{language}/...`
 
+### Selective Fixes Not Working
+
+Use `--list-fixes` to see available fix IDs:
+```bash
+python3 photonos-docs-lecturer.py run --list-fixes
+```
+
+---
+
+## Version History
+
+### Version 1.5 (Current)
+- Added `--fix` parameter for selective fix application
+- 13 enumerated fix types (9 automatic, 4 LLM-assisted)
+- Added `--list-fixes` option to display all available fixes
+- Added broken email detection and fixing
+- Added HTML comment detection and fixing
+- Added heading hierarchy violation detection and fixing
+- Added header spacing detection and fixing
+- Improved backtick error detection (spaces inside backticks)
+- Added xAI (Grok) LLM provider support
+- URL protection for LLM-assisted fixes (prevents URL modification)
+- Incremental PR workflow support
+
+### Version 1.3
+- Initial documented version
+- Grammar/spelling detection with LanguageTool
+- Markdown artifact detection
+- Orphan link/image detection
+- VMware spelling detection
+- Deprecated URL detection
+- Shell prompt detection
+- Gemini LLM support
+
 ---
 
 ## Version
 
-Current version: **1.3**
+Current version: **1.5**
 
 Check version:
 ```bash

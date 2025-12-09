@@ -185,8 +185,9 @@ class LLMClient:
             genai.configure(api_key=self.api_key)
             self.model = genai.GenerativeModel('gemini-2.5-flash')
         elif self.provider == "xai":
-            # xAI uses HTTP API
+            # xAI uses HTTP API (OpenAI-compatible)
             self.xai_endpoint = "https://api.x.ai/v1/chat/completions"
+            self.xai_model = "grok-3-mini"  # Default model (cost-efficient)
         else:
             raise ValueError(f"Unsupported LLM provider: {provider}")
     
@@ -376,13 +377,13 @@ Return only the corrected markdown text with proper indentation."""
             return ""
     
     def _xai_generate(self, prompt: str) -> str:
-        """Generate response using xAI API."""
+        """Generate response using xAI API (OpenAI-compatible)."""
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
         }
         payload = {
-            "model": "grok-beta",
+            "model": self.xai_model,
             "messages": [{"role": "user", "content": prompt}],
             "max_tokens": 2000
         }
