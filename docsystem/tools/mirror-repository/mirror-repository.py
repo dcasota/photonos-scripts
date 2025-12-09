@@ -175,7 +175,7 @@ Environment variables:
     parser.add_argument(
         '--local-path', '-l',
         default=None,
-        help='Local path for the clone (optional, uses temp directory if not specified)'
+        help='Working directory for the clone (optional, temp directory will be created inside it; uses system temp if not specified)'
     )
     
     args = parser.parse_args()
@@ -233,15 +233,12 @@ Environment variables:
         time.sleep(2)
     
     # Determine clone directory
-    use_temp_dir = args.local_path is None
-    if use_temp_dir:
-        clone_dir = tempfile.mkdtemp(prefix=f"{original_repo}.")
+    # If local_path is provided, create temp directory inside it; otherwise use system temp
+    if args.local_path:
+        os.makedirs(args.local_path, exist_ok=True)
+        clone_dir = tempfile.mkdtemp(prefix=f"{original_repo}.", dir=args.local_path)
     else:
-        clone_dir = args.local_path
-        if os.path.exists(clone_dir):
-            print(f"Warning: Directory {clone_dir} already exists. Contents will be overwritten.")
-            shutil.rmtree(clone_dir)
-        os.makedirs(clone_dir, exist_ok=True)
+        clone_dir = tempfile.mkdtemp(prefix=f"{original_repo}.")
     
     print(f"Clone directory: {clone_dir}")
     
@@ -261,6 +258,10 @@ Environment variables:
             with open(config_path, 'r') as f:
                 if '[lfs]' in f.read():
                     print("Git LFS detected. Handling LFS objects...")
+                    # Ensure git-lfs is installed
+                    if not check_command('git-lfs'):
+                        if not install_git_lfs():
+                            raise subprocess.CalledProcessError(1, ['git-lfs'])
                     mirror_url = f'https://{github_username}:{github_token}@github.com/{target_owner}/{target_repo}.git'
                     run_command(['git', 'lfs', 'fetch', '--all'], cwd=clone_dir)
                     run_command(['git', 'lfs', 'push', '--all', mirror_url], cwd=clone_dir)
@@ -285,11 +286,9 @@ Environment variables:
         print(f"Error during mirroring: {e}")
         sys.exit(1)
     finally:
-        if use_temp_dir:
-            shutil.rmtree(clone_dir, ignore_errors=True)
-            print("Temporary directory cleaned up.")
-        else:
-            print(f"Local repository preserved at: {clone_dir}")
+        # Always clean up the temporary clone directory
+        shutil.rmtree(clone_dir, ignore_errors=True)
+        print("Temporary directory cleaned up.")
 
 
 if __name__ == '__main__':

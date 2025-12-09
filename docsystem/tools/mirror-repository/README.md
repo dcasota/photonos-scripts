@@ -20,7 +20,7 @@ A legacy Bash version (`mirror-repository.sh`) is also available.
 |-----------|-------|----------|-------------|
 | `--original-repo` | `-o` | Yes | URL of the source GitHub repository to mirror |
 | `--target-repo` | `-t` | Yes | URL of the target GitHub repository (mirror destination) |
-| `--local-path` | `-l` | No | Local path for the clone (uses temp directory if not specified) |
+| `--local-path` | `-l` | No | Working directory for the clone (temp directory will be created inside it; uses system temp if not specified) |
 
 ### Environment Variables
 
@@ -50,10 +50,10 @@ A legacy Bash version (`mirror-repository.sh`) is also available.
   -l /tmp/photon-clone
 ```
 
-## Legacy Bash Script
+## Bash Script
 
 ```bash
-./mirror-repository.sh <ORIGINAL_REPO> <REPO_NAME> [LOCAL_PATH]
+./mirror-repository.sh <ORIGINAL_REPO> <TARGET_REPO> [LOCAL_PATH]
 ```
 
 ### Bash Script Parameters
@@ -61,16 +61,16 @@ A legacy Bash version (`mirror-repository.sh`) is also available.
 | Position | Required | Description |
 |----------|----------|-------------|
 | 1 | Yes | Source repository URL |
-| 2 | Yes | Target repository name (not full URL) |
-| 3 | No | Local path for the clone |
+| 2 | Yes | Target repository URL |
+| 3 | No | Working directory for the clone (temp directory will be created inside it) |
 
 ### Bash Script Example
 
 ```bash
-./mirror-repository.sh https://github.com/vmware/photon photon-mirror /tmp/photon-clone
+./mirror-repository.sh https://github.com/vmware/photon https://github.com/myuser/photon-mirror /tmp
 ```
 
-**Note**: The Bash script uses `GITHUB_USERNAME` to construct the target URL as `github.com/$GITHUB_USERNAME/$REPO_NAME`.
+**Note**: The `LOCAL_PATH` parameter specifies the working directory where a uniquely-named temporary subdirectory will be created for the clone operation.
 
 ## What Gets Mirrored
 
@@ -127,11 +127,13 @@ Mirroring complete. The repository has been duplicated to https://github.com/myu
 Temporary directory cleaned up.
 ```
 
-### With Local Path Preservation
+### With Local Path (Working Directory)
 
 ```
 ...
-Local repository preserved at: /tmp/photon-clone
+Clone directory: /tmp/photon.abc123
+...
+Temporary directory cleaned up.
 ```
 
 ## Git LFS Support
@@ -231,7 +233,7 @@ crontab -e
 | Feature | Python | Bash |
 |---------|--------|------|
 | Named parameters | Yes (`--original-repo`) | No (positional only) |
-| Target URL format | Full URL | Repo name only |
+| Target URL format | Full URL | Full URL |
 | Branch summary | Yes | No |
 | Force push | Yes | No |
 | Error handling | Comprehensive | Basic |

@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# Usage: ./mirror_repo.sh [ORIGINAL_REPO] [REPO_NAME] [LOCAL_PATH]
-# If not provided as arguments, falls back to environment variables ORIGINAL_REPO, REPO_NAME, and LOCAL_PATH.
-# LOCAL_PATH is optional - if not provided, a temporary directory will be used.
+# Usage: ./mirror_repo.sh [ORIGINAL_REPO] [TARGET_REPO] [LOCAL_PATH]
+# If not provided as arguments, falls back to environment variables ORIGINAL_REPO, TARGET_REPO, and LOCAL_PATH.
+# LOCAL_PATH is optional - if not provided, a temporary directory will be used as working directory.
 # Required environment variables: GITHUB_USERNAME, GITHUB_TOKEN
 
 # Check for required commands
@@ -13,13 +13,21 @@ command -v base64 >/dev/null 2>&1 || { echo "Error: base64 is required but not i
 
 # Get parameters
 ORIGINAL_REPO=${1:-${ORIGINAL_REPO:-}}
-REPO_NAME=${2:-${REPO_NAME:-}}
+TARGET_REPO=${2:-${TARGET_REPO:-}}
 LOCAL_PATH=${3:-${LOCAL_PATH:-}}
 
 # Check if required parameters are set
-if [ -z "$ORIGINAL_REPO" ] || [ -z "$REPO_NAME" ]; then
-  echo "Error: ORIGINAL_REPO and REPO_NAME must be provided as arguments or environment variables."
-  echo "Usage: $0 <ORIGINAL_REPO> <REPO_NAME> [LOCAL_PATH]"
+if [ -z "$ORIGINAL_REPO" ] || [ -z "$TARGET_REPO" ]; then
+  echo "Error: ORIGINAL_REPO and TARGET_REPO must be provided as arguments or environment variables."
+  echo "Usage: $0 <ORIGINAL_REPO> <TARGET_REPO> [LOCAL_PATH]"
+  exit 1
+fi
+
+# Extract repo name from TARGET_REPO URL (assuming https://github.com/owner/repo(.git))
+REPO_NAME=$(echo "$TARGET_REPO" | sed -E 's|https://github.com/[^/]+/([^/.]+)(\.git)?|\1|')
+
+if [ "$REPO_NAME" = "$TARGET_REPO" ]; then
+  echo "Error: TARGET_REPO must be a GitHub repository URL."
   exit 1
 fi
 
@@ -124,18 +132,14 @@ else
   sleep 2  # Short delay to ensure repo is ready
 fi
 
-# Create or use the specified directory for the clone
+# Create temporary directory for the clone
+# If LOCAL_PATH is provided, create temp directory inside it; otherwise use system temp
 if [ -n "$LOCAL_PATH" ]; then
-  CLONE_DIR="$LOCAL_PATH"
-  USE_TEMP_DIR=false
-  if [ -d "$CLONE_DIR" ]; then
-    echo "Warning: Directory $CLONE_DIR already exists. Contents will be overwritten."
-    rm -rf "$CLONE_DIR"
-  fi
-  mkdir -p "$CLONE_DIR" || { echo "Error creating directory $CLONE_DIR."; exit 1; }
+  # Ensure LOCAL_PATH exists
+  mkdir -p "$LOCAL_PATH" || { echo "Error creating directory $LOCAL_PATH."; exit 1; }
+  CLONE_DIR=$(mktemp -d -p "$LOCAL_PATH" "${REPO_NAME}.XXXXXX") || { echo "Error creating temporary directory in $LOCAL_PATH."; exit 1; }
 else
   CLONE_DIR=$(mktemp -d -t "${REPO_NAME}.XXXXXX") || { echo "Error creating temporary directory."; exit 1; }
-  USE_TEMP_DIR=true
 fi
 
 # Create a bare mirrored clone of the original repository
@@ -152,8 +156,12 @@ git for-each-ref --format='%(refname)' refs/changes | xargs -r -n1 git update-re
 git for-each-ref --format='%(refname)' refs/pull | xargs -r -n1 git update-ref -d
 
 # Handle Git LFS if present
-if grep -q '[lfs]' config; then
+if grep -q '\[lfs\]' config; then
   echo "Git LFS detected. Handling LFS objects..."
+  # Ensure git-lfs is installed
+  if ! command -v git-lfs >/dev/null 2>&1; then
+    install_git_lfs
+  fi
   git lfs fetch --all || { echo "Error fetching LFS objects."; cd ..; rm -rf "$CLONE_DIR"; exit 1; }
   git lfs push --all "$MIRROR_REPO" || { echo "Error pushing LFS objects."; cd ..; rm -rf "$CLONE_DIR"; exit 1; }
 fi
@@ -161,13 +169,9 @@ fi
 # Push the cleaned mirrored clone to the new GitHub repository
 git push --mirror --progress "$MIRROR_REPO" || { echo "Error pushing to mirror repository."; cd ..; rm -rf "$CLONE_DIR"; exit 1; }
 
-# Clean up the local clone (only if using temporary directory)
+# Clean up the temporary clone directory
 cd ..
-if [ "$USE_TEMP_DIR" = true ]; then
-  rm -rf "$CLONE_DIR"
-  echo "Temporary directory cleaned up."
-else
-  echo "Local repository preserved at: $CLONE_DIR"
-fi
+rm -rf "$CLONE_DIR"
+echo "Temporary directory cleaned up."
 
 echo "Mirroring complete. The repository has been duplicated to https://github.com/$GITHUB_USERNAME/$REPO_NAME.git."
