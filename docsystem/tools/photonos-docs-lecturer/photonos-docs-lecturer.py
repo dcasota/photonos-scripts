@@ -246,18 +246,20 @@ class LLMClient:
         return result
     
     def _generate_with_url_protection(self, prompt: str, text_to_protect: str) -> str:
-        """Generate LLM response with URL protection.
+        """Generate LLM response with URL protection and post-processing.
         
         Protects URLs in the input text before sending to LLM, then restores
         them in the output. This prevents LLMs from accidentally modifying
         URLs (e.g., removing .md extensions).
+        
+        Also cleans the LLM response to remove prompt leakage and artifacts.
         
         Args:
             prompt: The prompt template (should contain {text} placeholder)
             text_to_protect: The text content that may contain URLs
             
         Returns:
-            LLM response with original URLs preserved
+            LLM response with original URLs preserved and prompt leakage removed
         """
         # Protect URLs in the text
         protected_text, url_map = self._protect_urls(text_to_protect)
@@ -269,8 +271,11 @@ class LLMClient:
         if not response:
             return ""
         
+        # Clean the response to remove prompt leakage
+        cleaned_response = self._clean_llm_response(response, text_to_protect)
+        
         # Restore original URLs in the response
-        return self._restore_urls(response, url_map)
+        return self._restore_urls(cleaned_response, url_map)
     
     def translate(self, text: str, target_language: str) -> str:
         """Translate text to target language using LLM.
@@ -279,17 +284,21 @@ class LLMClient:
         """
         prompt_template = f"""Translate the following text to {target_language}.
 
-IMPORTANT RULES:
-- Preserve ALL markdown formatting exactly as-is
-- Do NOT modify any URLs or placeholders (text like __URL_PLACEHOLDER_N__)
-- Do NOT translate or change paths in markdown links [text](url) - keep the URL exactly as-is
-- Do NOT modify code blocks or inline code content
-- Only translate the natural language text
+CRITICAL RULES - VIOLATIONS WILL CAUSE ERRORS:
+1. Preserve ALL markdown formatting exactly as-is (headings, lists, code blocks, inline code)
+2. Do NOT modify any URLs or placeholders (text like __URL_PLACEHOLDER_N__)
+3. Do NOT translate or change any relative paths like ../../images/ or ../images/
+4. Do NOT translate or change paths in markdown links [text](path) - keep the path exactly as-is
+5. Do NOT translate content inside code blocks (```) or inline code (`)
+6. Do NOT translate technical terms, product names, or command names (e.g., VMware, GitHub, Photon OS)
+7. Do NOT add, remove, or reorder list items
+8. Do NOT add any explanations, notes, or commentary to your response
+9. Only translate the natural language text outside of code and technical terms
 
 Text to translate:
 {{text}}
 
-Return only the translated text, no explanations."""
+Output the translated text directly without any preamble or explanation."""
         return self._generate_with_url_protection(prompt_template, text)
     
     def fix_grammar(self, text: str, issues: List[Dict]) -> str:
@@ -298,22 +307,27 @@ Return only the translated text, no explanations."""
         URLs are protected using placeholders to prevent LLM from modifying them.
         """
         issue_desc = "\n".join([f"- {i['message']}: {i.get('suggestion', 'No suggestion')}" for i in issues[:10]])
-        prompt_template = f"""Fix the following grammar issues in the text. 
+        prompt_template = f"""Fix ONLY the following grammar issues in the text. 
 
-IMPORTANT RULES:
-- Preserve ALL markdown formatting exactly as-is
-- Do NOT modify any URLs or placeholders (text like __URL_PLACEHOLDER_N__)
-- Do NOT change paths in markdown links [text](url) - keep the URL exactly as-is
-- Do NOT modify code blocks or inline code
-- Only fix the specific grammar issues listed below
+CRITICAL RULES - VIOLATIONS WILL CAUSE ERRORS:
+1. Preserve ALL markdown formatting exactly as-is (headings, lists, code blocks, inline code)
+2. Do NOT modify any URLs or placeholders (text like __URL_PLACEHOLDER_N__)
+3. Do NOT change any relative paths like ../../images/ or ../images/
+4. Do NOT change paths in markdown links [text](path) - keep the path exactly as-is
+5. Do NOT modify content inside code blocks (```) or inline code (`)
+6. Do NOT change technical terms, product names, or command names (e.g., Tdnf, tdnf, VMware, GitHub)
+7. Do NOT add, remove, or reorder list items - only fix grammar within existing items
+8. Do NOT change the meaning or content of sentences - only fix grammar
+9. Do NOT add any explanations, notes, or commentary to your response
+10. Words at the start of sentences may be capitalized differently for technical reasons - leave them as-is
 
-Issues found:
+Issues to fix (ONLY fix these specific issues):
 {issue_desc}
 
 Text to fix:
 {{text}}
 
-Return only the corrected text."""
+Output the corrected text directly without any preamble or explanation."""
         return self._generate_with_url_protection(prompt_template, text)
     
     def fix_markdown(self, text: str, artifacts: List[str]) -> str:
@@ -321,19 +335,25 @@ Return only the corrected text."""
         
         URLs are protected using placeholders to prevent LLM from modifying them.
         """
-        prompt_template = f"""Fix the following markdown rendering issues in the text:
-Artifacts found: {', '.join(artifacts[:5])}
+        artifacts_str = ', '.join(artifacts[:5]) if artifacts else 'general markdown issues'
+        prompt_template = f"""Fix ONLY the markdown rendering issues in the text. Issues detected: {artifacts_str}
 
-IMPORTANT RULES:
-- Do NOT modify any URLs or placeholders (text like __URL_PLACEHOLDER_N__)
-- Do NOT change paths in markdown links [text](url) - keep the URL exactly as-is
-- Preserve all link URLs exactly as they appear in the original text
-- Only fix the markdown syntax/rendering issues
+CRITICAL RULES - VIOLATIONS WILL CAUSE ERRORS:
+1. Do NOT modify any URLs or placeholders (text like __URL_PLACEHOLDER_N__)
+2. Do NOT change any relative paths like ../../images/ or ../images/
+3. Do NOT change paths in markdown links [text](path) - keep the path exactly as-is
+4. Preserve all link URLs exactly as they appear in the original text
+5. Do NOT convert single inline code (`) to fenced code blocks (```) if it's part of a sentence
+6. Do NOT add language specifiers (like ```bash) to inline code that starts sentences
+7. Do NOT change the content or meaning of any text - only fix markdown syntax
+8. Do NOT add, remove, or reorder list items
+9. Do NOT add any explanations, notes, or commentary to your response
+10. Inline code like `cloud-init` or `nocloud` at the start of a sentence should remain as inline code
 
 Text to fix:
 {{text}}
 
-Return only the corrected markdown text."""
+Output the corrected markdown directly without any preamble or explanation."""
         return self._generate_with_url_protection(prompt_template, text)
     
     def fix_indentation(self, text: str, issues: List[Dict]) -> str:
@@ -342,9 +362,9 @@ Return only the corrected markdown text."""
         URLs are protected using placeholders to prevent LLM from modifying them.
         """
         issue_desc = "\n".join([f"- {i.get('context', i.get('type', 'unknown'))}" for i in issues[:10]])
-        prompt_template = f"""Fix the following indentation issues in the markdown text.
+        prompt_template = f"""Fix ONLY the indentation issues in the markdown text.
 
-Issues found:
+Indentation issues detected:
 {issue_desc}
 
 Common indentation problems to fix:
@@ -353,16 +373,102 @@ Common indentation problems to fix:
 3. Nested content not properly indented under parent list items
 4. Inconsistent indentation (mixing tabs and spaces)
 
-IMPORTANT RULES:
-- Do NOT modify any URLs or placeholders (text like __URL_PLACEHOLDER_N__)
-- Do NOT change paths in markdown links [text](url) - keep the URL exactly as-is
-- Only fix indentation, do not change any content
+CRITICAL RULES - VIOLATIONS WILL CAUSE ERRORS:
+1. Do NOT modify any URLs or placeholders (text like __URL_PLACEHOLDER_N__)
+2. Do NOT change any relative paths like ../../images/ or ../images/
+3. Do NOT change paths in markdown links [text](path) - keep the path exactly as-is
+4. ONLY fix indentation - do NOT change any words or content
+5. Do NOT add, remove, or reorder list items
+6. Do NOT change the text content of any list item
+7. Do NOT add any explanations, notes, or commentary to your response
+8. Preserve all existing whitespace within lines - only adjust leading whitespace
 
 Text to fix:
 {{text}}
 
-Return only the corrected markdown text with proper indentation."""
+Output the corrected markdown directly without any preamble or explanation."""
         return self._generate_with_url_protection(prompt_template, text)
+    
+    def _clean_llm_response(self, response: str, original_text: str) -> str:
+        """Clean LLM response by removing prompt leakage and validating output.
+        
+        This method addresses several common LLM issues:
+        1. Prompt leakage: LLM sometimes includes prompt instructions in output
+        2. Artifacts: Phrases like "Return only the corrected text" appearing in output
+        3. Content additions: LLM adding explanatory text not in original
+        4. Content alteration: LLM changing meaning of original content
+        
+        Args:
+            response: Raw LLM response
+            original_text: Original text that was sent for fixing
+            
+        Returns:
+            Cleaned response with prompt leakage removed
+        """
+        if not response:
+            return ""
+        
+        # List of known prompt leakage patterns to remove
+        prompt_leakage_patterns = [
+            # Instruction fragments
+            r'^Return only the corrected text\.?\s*',
+            r'^Return only the corrected markdown text\.?\s*',
+            r'^Return only the translated text\.?\s*',
+            r'^Return only the fixed markdown content\.?\s*',
+            r'Return only the corrected text\.?\s*$',
+            r'Return only the corrected markdown text\.?\s*$',
+            r'Return only the translated text\.?\s*$',
+            r'Return only the fixed markdown content\.?\s*$',
+            # Artifacts found prefix (from fix_markdown prompt)
+            r'^Artifacts found:.*?\n',
+            r'\nArtifacts found:.*$',
+            # Issues found prefix (from fix_grammar/fix_indentation prompts)
+            r'^Issues found:.*?\n(?:- .*\n)*',
+            r'\nIssues found:.*$',
+            # Common LLM meta-comments
+            r'^Here is the (?:corrected|fixed|translated) text:\s*\n?',
+            r'^Here\'s the (?:corrected|fixed|translated) text:\s*\n?',
+            r'^\*\*(?:Corrected|Fixed|Translated) (?:Text|Markdown)\*\*:?\s*\n?',
+            r'^IMPORTANT RULES:.*?(?=\n\n|\n[A-Z#`])',
+            # No explanations trailer
+            r'\n*No explanations\.?\s*$',
+            r'\n*no explanations\.?\s*$',
+        ]
+        
+        cleaned = response
+        
+        for pattern in prompt_leakage_patterns:
+            cleaned = re.sub(pattern, '', cleaned, flags=re.MULTILINE | re.IGNORECASE | re.DOTALL)
+        
+        # Strip leading/trailing whitespace
+        cleaned = cleaned.strip()
+        
+        # Sanity check: if response is drastically different in length, return original
+        # This catches cases where LLM completely rewrote the content
+        if len(cleaned) < len(original_text) * 0.5:
+            logging.warning("LLM response too short compared to original, using original text")
+            return original_text
+        
+        if len(cleaned) > len(original_text) * 2:
+            logging.warning("LLM response much longer than original, may contain explanations")
+            # Try to extract just the text portion if there's clear structure
+            # Look for common patterns where LLM adds explanations
+            lines = cleaned.split('\n')
+            content_lines = []
+            skip_mode = False
+            for line in lines:
+                # Skip lines that look like explanatory headers
+                if re.match(r'^(?:Explanation|Note|Changes made|Here\'s what|I (?:have )?(?:fixed|corrected)|The following):', line, re.IGNORECASE):
+                    skip_mode = True
+                    continue
+                if skip_mode and line.strip() == '':
+                    skip_mode = False
+                    continue
+                if not skip_mode:
+                    content_lines.append(line)
+            cleaned = '\n'.join(content_lines).strip()
+        
+        return cleaned
     
     def _generate(self, prompt: str) -> str:
         """Generate response from LLM."""
@@ -3186,13 +3292,18 @@ class DocumentationLecturer:
         # file paths (Unix-style), email addresses, and broken email addresses
         # NOTE: URL patterns must be GREEDY (+) not non-greedy (+?) to capture full URLs
         # NOTE: Broken email pattern must come BEFORE normal email pattern to match first
+        # NOTE: github.com/vmware/* pattern added to preserve GitHub organization paths
         preserve_pattern = re.compile(
             r'('
             r'```[\s\S]*?```'                          # Fenced code blocks
             r'|`[^`]+`'                                # Inline code
             r'|https?://[^\s<>"\')\]]+' # URLs with protocol (greedy to capture full URL)
             r'|www\.[^\s<>"\')\]]+' # www URLs (greedy to capture full URL)
+            r'|github\.com/[^\s<>"\')\]]+' # GitHub paths without protocol
+            r'|gitlab\.com/[^\s<>"\')\]]+' # GitLab paths without protocol
+            r'|bitbucket\.org/[^\s<>"\')\]]+' # Bitbucket paths without protocol
             r'|[a-zA-Z0-9-]+\.vmware\.[a-zA-Z0-9-]+[^\s<>"\')\]]*'  # Domain patterns
+            r'|[a-zA-Z0-9-]+\.(com|org|net|io|edu|gov)/[^\s<>"\')\]]*'  # Domain/path without protocol
             r'|(?:/[\w.-]+)+/?'                        # Unix file paths (e.g., /var/log/VMware-imc/)
             r'|[\w.+-]+@[\w.-]+\.\s+\w{2,6}'           # Broken email addresses (domain.  tld)
             r'|[\w.+-]+@[\w.-]+\.\w+'                  # Email addresses
@@ -3203,6 +3314,10 @@ class DocumentationLecturer:
         parts = preserve_pattern.split(content)
         
         for i, part in enumerate(parts):
+            # Handle None values (from non-capturing groups in split)
+            if part is None:
+                parts[i] = ''
+                continue
             if not part:
                 continue
             # Skip code blocks
@@ -3211,8 +3326,14 @@ class DocumentationLecturer:
             # Skip URLs
             if part.startswith('http://') or part.startswith('https://') or part.startswith('www.'):
                 continue
+            # Skip GitHub/GitLab/Bitbucket paths (e.g., github.com/vmware/photon)
+            if re.match(r'^(?:github|gitlab)\.com/', part, re.IGNORECASE) or part.startswith('bitbucket.org/'):
+                continue
             # Skip domain-like patterns (e.g., packages.vmware.com)
             if re.match(r'^[a-zA-Z0-9-]+\.vmware\.[a-zA-Z0-9-]+', part, re.IGNORECASE):
+                continue
+            # Skip domain/path patterns (e.g., example.com/path)
+            if re.match(r'^[a-zA-Z0-9-]+\.(com|org|net|io|edu|gov)/', part, re.IGNORECASE):
                 continue
             # Skip file paths (start with / and contain path segments)
             if part.startswith('/') and '/' in part[1:]:
@@ -3585,15 +3706,20 @@ Output:
 Key="value"
 ```
 
-IMPORTANT RULES:
-- Do NOT modify any URLs or placeholders (text like __URL_PLACEHOLDER_N__)
-- Do NOT change paths in markdown links [text](url) - keep the URL exactly as-is
-- Only modify the code blocks that mix commands with output
+CRITICAL RULES - VIOLATIONS WILL CAUSE ERRORS:
+1. Do NOT modify any URLs or placeholders (text like __URL_PLACEHOLDER_N__)
+2. Do NOT change any relative paths like ../../images/ or ../images/
+3. Do NOT change paths in markdown links [text](path) - keep the path exactly as-is
+4. Only modify the code blocks that mix commands with output
+5. Do NOT modify any other content outside of these specific code blocks
+6. Do NOT add any explanations, notes, or commentary to your response
+7. Do NOT change the content or meaning of any text outside code blocks
+8. Do NOT add, remove, or reorder list items
 
 Content to fix:
 {{text}}
 
-Return only the fixed markdown content, no explanations."""
+Output the fixed markdown directly without any preamble or explanation."""
 
         try:
             fixed = self.llm_client._generate_with_url_protection(prompt_template, content)
