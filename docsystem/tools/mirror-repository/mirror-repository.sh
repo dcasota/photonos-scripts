@@ -54,9 +54,29 @@ check_lfs() {
   fi
 }
 
+# Function to install git-lfs if running as root
+install_git_lfs() {
+  if [ "$(id -u)" -eq 0 ]; then
+    echo "git-lfs not found. Installing automatically (running as root)..."
+    if command -v tdnf >/dev/null 2>&1; then
+      tdnf install -y git-lfs || { echo "Error: Failed to install git-lfs."; exit 1; }
+      echo "git-lfs installed successfully."
+    else
+      echo "Error: tdnf not found. Cannot auto-install git-lfs."
+      exit 1
+    fi
+  else
+    echo "Error: git-lfs is required for this repository but not installed."
+    echo "Run as root to auto-install, or install manually: tdnf install -y git-lfs"
+    exit 1
+  fi
+}
+
 # Check for git-lfs if needed
 if check_lfs; then
-  command -v git-lfs >/dev/null 2>&1 || { echo "Error: git-lfs is required for this repository but not installed."; exit 1; }
+  if ! command -v git-lfs >/dev/null 2>&1; then
+    install_git_lfs
+  fi
   echo "Git LFS detected in original repository."
 fi
 

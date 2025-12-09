@@ -27,6 +27,33 @@ def check_command(cmd: str) -> bool:
     return shutil.which(cmd) is not None
 
 
+def is_root() -> bool:
+    """Check if script is running as root."""
+    return os.geteuid() == 0
+
+
+def install_git_lfs() -> bool:
+    """Install git-lfs using tdnf if running as root."""
+    if not is_root():
+        print("Error: git-lfs is required for this repository but not installed.")
+        print("Run as root to auto-install, or install manually: tdnf install -y git-lfs")
+        return False
+    
+    print("git-lfs not found. Installing automatically (running as root)...")
+    
+    if not check_command('tdnf'):
+        print("Error: tdnf not found. Cannot auto-install git-lfs.")
+        return False
+    
+    result = subprocess.run(['tdnf', 'install', '-y', 'git-lfs'], capture_output=False)
+    if result.returncode != 0:
+        print("Error: Failed to install git-lfs.")
+        return False
+    
+    print("git-lfs installed successfully.")
+    return True
+
+
 def parse_github_url(url: str) -> tuple[str, str] | None:
     """Extract owner and repo name from a GitHub URL."""
     pattern = r'https://github\.com/([^/]+)/([^/.]+)(?:\.git)?'
@@ -188,8 +215,8 @@ Environment variables:
     uses_lfs = check_lfs(original_owner, original_repo, github_token)
     if uses_lfs:
         if not check_command('git-lfs'):
-            print("Error: git-lfs is required for this repository but not installed.")
-            sys.exit(1)
+            if not install_git_lfs():
+                sys.exit(1)
         print("Git LFS detected in original repository.")
     
     # Configure git

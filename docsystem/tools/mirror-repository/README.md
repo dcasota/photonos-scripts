@@ -142,9 +142,19 @@ The script automatically detects Git LFS usage by:
 2. Checking the local `config` file for `[lfs]` section after cloning
 
 If LFS is detected:
-- Requires `git-lfs` to be installed
+- Checks if `git-lfs` is installed
+- **Auto-installs `git-lfs` if running as root** (using `tdnf install -y git-lfs`)
+- If not running as root, displays error with manual install instructions
 - Fetches all LFS objects from source
 - Pushes all LFS objects to target
+
+### Auto-Install Behavior
+
+| Running as | git-lfs missing | Action |
+|------------|-----------------|--------|
+| root | Yes | Auto-installs via `tdnf install -y git-lfs` |
+| non-root | Yes | Exits with error and install instructions |
+| any | No (installed) | Proceeds normally |
 
 ## Error Handling
 
@@ -153,7 +163,7 @@ If LFS is detected:
 | `GITHUB_USERNAME and GITHUB_TOKEN environment variables must be set` | Missing credentials | Export required environment variables |
 | `--original-repo must be a valid GitHub repository URL` | Invalid source URL | Use format `https://github.com/owner/repo` |
 | `--target-repo must be a valid GitHub repository URL` | Invalid target URL | Use format `https://github.com/owner/repo` |
-| `git-lfs is required for this repository but not installed` | Source uses LFS | Install git-lfs: `tdnf install git-lfs` |
+| `git-lfs is required for this repository but not installed` | Source uses LFS, not running as root | Run as root for auto-install, or manually: `tdnf install -y git-lfs` |
 | `Error creating repository` | API failure | Check token permissions (needs `repo` scope) |
 | `Error cloning original repository` | Network/access issue | Verify source URL is accessible |
 | `Error pushing to mirror repository` | Push failure | Check token permissions and target repo access |
@@ -178,7 +188,7 @@ To create a token:
 |-------------|---------|-------|
 | Python | 3.9+ | For type hints syntax |
 | git | 2.0+ | For mirror clone/push |
-| git-lfs | Any | Only if source uses LFS |
+| git-lfs | Any | Only if source uses LFS (auto-installed when running as root) |
 | requests | Any | Python HTTP library |
 | Disk Space | Varies | Depends on repository size |
 | Network | Required | For clone and push operations |
@@ -193,7 +203,7 @@ pip install requests
 
 # System packages (Photon OS)
 tdnf install git
-tdnf install git-lfs  # Optional, only if mirroring LFS repos
+tdnf install git-lfs  # Optional, auto-installed when running as root if needed
 ```
 
 ### Bash Script
@@ -201,7 +211,7 @@ tdnf install git-lfs  # Optional, only if mirroring LFS repos
 ```bash
 # System packages
 tdnf install git curl
-tdnf install git-lfs  # Optional
+tdnf install git-lfs  # Optional, auto-installed when running as root if needed
 ```
 
 ## Scheduling Regular Syncs
@@ -226,6 +236,7 @@ crontab -e
 | Force push | Yes | No |
 | Error handling | Comprehensive | Basic |
 | LFS support | Yes | Yes |
+| Auto-install git-lfs | Yes (as root) | Yes (as root) |
 
 ## Troubleshooting
 
