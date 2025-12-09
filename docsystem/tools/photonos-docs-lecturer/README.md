@@ -173,6 +173,7 @@ Where SPEC can be:
 | 11 | markdown-artifacts | Fix unrendered markdown artifacts | Yes |
 | 12 | mixed-cmd-output | Fix mixed command/output in code blocks | Yes |
 | 13 | indentation | Fix indentation issues | Yes |
+| 14 | malformed-codeblocks | Fix malformed code blocks (mismatched backticks) | No |
 
 ### Examples
 
@@ -183,11 +184,11 @@ python3 photonos-docs-lecturer.py run \
   --local-webserver /var/www/photon-site \
   --gh-pr --fix 2,3
 
-# Apply all automatic fixes (1-9), skip LLM fixes
+# Apply all automatic fixes (1-9, 14), skip LLM fixes
 python3 photonos-docs-lecturer.py run \
   --website https://127.0.0.1/docs-v5 \
   --local-webserver /var/www/photon-site \
-  --gh-pr --fix 1-9
+  --gh-pr --fix 1-9,14
 
 # Apply grammar fixes only (requires LLM)
 python3 photonos-docs-lecturer.py run \
@@ -447,6 +448,29 @@ The tool detects and reports issues in the following categories:
 
 ---
 
+### 17. `malformed_code_block` - Malformed Code Blocks
+
+**Detection:** Regex patterns identify incorrectly formatted code blocks in markdown source.
+
+**What it finds:**
+- Single backtick + content + triple backticks: `` `command``` `` (should be fenced block)
+- Consecutive inline code lines that should be fenced:
+  ```
+  `command1`
+  `command2`
+  ```
+  Should be:
+  ```bash
+  command1
+  command2
+  ```
+- Stray backticks inside fenced code blocks (e.g., trailing backtick on a line)
+
+**How it's fixed:**
+- **Deterministic:** Automatically converts to proper fenced code blocks and removes stray backticks
+
+---
+
 ## Output Files
 
 Each run generates timestamped output files:
@@ -479,6 +503,7 @@ https://example.com/docs/page2/,orphan_link,"Link text: 'Old Guide', URL: ...",R
 | `heading_hierarchy` | Yes | - | - |
 | `header_spacing` | Yes | - | - |
 | `html_comment` | Yes | - | - |
+| `malformed_code_block` | Yes | - | - |
 | `grammar` | - | Yes | Fallback |
 | `markdown` | Partial | Yes | - |
 | `mixed_command_output` | - | Yes | Fallback |
@@ -489,7 +514,7 @@ https://example.com/docs/page2/,orphan_link,"Link text: 'Old Guide', URL: ...",R
 | `orphan_page` | - | - | Yes |
 
 **Legend:**
-- **Deterministic Fix:** Applied automatically using regex/rules (fixes 1-9)
+- **Deterministic Fix:** Applied automatically using regex/rules (fixes 1-9, 14)
 - **LLM Fix:** Applied using AI (fixes 10-13, requires `--llm` and API key)
 - **Manual Review:** Reported in CSV for human decision
 
@@ -589,6 +614,7 @@ done
 |     - VMware spelling                                       |
 |     - Broken email addresses                                |
 |     - HTML comments                                         |
+|     - Malformed code blocks                                 |
 +-------------------------------------------------------------+
                               |
                               v
@@ -689,7 +715,15 @@ python3 photonos-docs-lecturer.py run --list-fixes
 
 ## Version History
 
-### Version 1.5 (Current)
+### Version 1.6 (Current)
+- Added Fix Type 14: malformed code blocks detection and fixing
+  - Detects single backtick + triple backtick patterns (`` `cmd``` ``)
+  - Detects consecutive inline code lines that should be fenced blocks
+  - Detects and removes stray backticks inside fenced code blocks
+- 14 enumerated fix types (10 automatic, 4 LLM-assisted)
+- Improved detection of code block formatting issues
+
+### Version 1.5
 - Added `--fix` parameter for selective fix application
 - 13 enumerated fix types (9 automatic, 4 LLM-assisted)
 - Added `--list-fixes` option to display all available fixes
@@ -716,7 +750,7 @@ python3 photonos-docs-lecturer.py run --list-fixes
 
 ## Version
 
-Current version: **1.5**
+Current version: **1.6**
 
 Check version:
 ```bash

@@ -78,7 +78,7 @@ import threading
 import json
 
 # Version info
-VERSION = "1.5"
+VERSION = "1.6"
 TOOL_NAME = "photonos-docs-lecturer.py"
 
 # Lazy-loaded modules (populated by check_and_import_dependencies)
@@ -438,6 +438,19 @@ class DocumentationLecturer:
     # Match: word boundary, backtick, whitespace, content, whitespace, backtick, word boundary
     INLINE_CODE_SPACES_BOTH = re.compile(r'(?<![`\w])`[ \t]+([^`\n]+?)[ \t]+`(?![`\w])')
     
+    # Patterns for detecting malformed code blocks
+    # Pattern 1: Single backtick followed by content and triple backticks: `content```
+    # This is a common error where someone started inline code but ended with fenced code block syntax
+    MALFORMED_CODE_BLOCK_SINGLE_TRIPLE = re.compile(r'`([^`\n]+)```')
+    
+    # Pattern 2: Consecutive lines starting with single backtick containing commands
+    # These should be converted to a fenced code block
+    # Matches: `command1`\n    `command2`
+    CONSECUTIVE_INLINE_COMMANDS = re.compile(
+        r'(?:^|\n)(\s*)`([^`\n]+)`\s*\n\s*`([^`\n]+)`',
+        re.MULTILINE
+    )
+    
     # Pattern for detecting indentation issues in numbered/bulleted lists
     # Matches lines that start with a number followed by period/parenthesis
     NUMBERED_LIST_PATTERN = re.compile(r'^(\s*)(\d+)([.)])(\s+)(.*)$', re.MULTILINE)
@@ -537,6 +550,7 @@ class DocumentationLecturer:
         11: {'key': 'md_artifacts', 'name': 'markdown-artifacts', 'desc': 'Fix unrendered markdown artifacts (requires --llm)', 'llm': True},
         12: {'key': 'mixed_cmd_output_issues', 'name': 'mixed-cmd-output', 'desc': 'Fix mixed command/output in code blocks (requires --llm)', 'llm': True},
         13: {'key': 'indentation_issues', 'name': 'indentation', 'desc': 'Fix indentation issues (requires --llm)', 'llm': True},
+        14: {'key': 'malformed_code_block_issues', 'name': 'malformed-codeblocks', 'desc': 'Fix malformed code blocks (mismatched backticks, inline->fenced)', 'llm': False},
     }
     
     @classmethod
@@ -1362,6 +1376,135 @@ class DocumentationLecturer:
                 'context': context,
                 'suggestion': f"`{content.strip()}`"
             })
+            
+            if len(issues) >= 20:
+                break
+        
+        return issues
+    
+    def _check_malformed_code_blocks(self, page_url: str, text_content: str) -> List[Dict]:
+        """Check for malformed code blocks in markdown.
+        
+        Detects issues like:
+        - Single backtick followed by content ending with triple backticks: `command```
+          This should be a proper fenced code block: ```\\ncommand\\n```
+        - Consecutive lines of inline code that should be a fenced code block:
+          `command1`
+          `command2`
+          Should be:
+          ```
+          command1
+          command2
+          ```
+        
+        Args:
+            page_url: URL of the page being analyzed
+            text_content: Raw text/markdown content of the page
+            
+        Returns:
+            List of malformed code block issues found
+        """
+        issues = []
+        
+        # Check for single backtick + content + triple backticks pattern
+        # e.g., `git clone https://github.com/vmware/photon.git```
+        for match in self.MALFORMED_CODE_BLOCK_SINGLE_TRIPLE.finditer(text_content):
+            content = match.group(1)
+            full_match = match.group(0)
+            
+            start = max(0, match.start() - 20)
+            end = min(len(text_content), match.end() + 20)
+            context = text_content[start:end].replace('\n', '\\n')
+            
+            location = f"Malformed code block (1 backtick start, 3 backtick end): ...{context}..."
+            fix = f"Convert to fenced code block: ```\\n{content}\\n```"
+            
+            self._write_csv_row(page_url, 'malformed_code_block', location, fix)
+            issues.append({
+                'type': 'single_triple_backtick',
+                'content': content,
+                'original': full_match,
+                'context': context
+            })
+            
+            if len(issues) >= 20:
+                break
+        
+        # Check for consecutive inline code lines that should be fenced
+        # Look for patterns like:
+        #   `command1`
+        #   `command2`
+        for match in self.CONSECUTIVE_INLINE_COMMANDS.finditer(text_content):
+            indent = match.group(1)
+            cmd1 = match.group(2)
+            cmd2 = match.group(3)
+            full_match = match.group(0)
+            
+            start = max(0, match.start() - 10)
+            end = min(len(text_content), match.end() + 10)
+            context = text_content[start:end].replace('\n', '\\n')
+            
+            location = f"Consecutive inline commands should be fenced code block: ...{context}..."
+            fix = f"Convert to fenced code block: ```bash\\n{cmd1}\\n{cmd2}\\n```"
+            
+            self._write_csv_row(page_url, 'malformed_code_block', location, fix)
+            issues.append({
+                'type': 'consecutive_inline_commands',
+                'commands': [cmd1, cmd2],
+                'indent': indent,
+                'original': full_match,
+                'context': context
+            })
+            
+            if len(issues) >= 20:
+                break
+        
+        # Check for stray backticks inside fenced code blocks
+        # Look for patterns like: ```bash\ncmd`\n```
+        fenced_pattern = re.compile(r'```[\w]*\n([\s\S]*?)```')
+        for match in fenced_pattern.finditer(text_content):
+            block_content = match.group(1)
+            for line_num, line in enumerate(block_content.split('\n')):
+                # Check for stray trailing backtick
+                if line.endswith('`') and not line.endswith('```'):
+                    start = max(0, match.start())
+                    end = min(len(text_content), match.end())
+                    context = text_content[start:end][:100].replace('\n', '\\n')
+                    
+                    location = f"Stray backtick in code block line: {line[:50]}..."
+                    fix = "Remove trailing backtick from code block line"
+                    
+                    self._write_csv_row(page_url, 'malformed_code_block', location, fix)
+                    issues.append({
+                        'type': 'stray_backtick_in_block',
+                        'line': line,
+                        'line_num': line_num,
+                        'context': context
+                    })
+                    
+                    if len(issues) >= 20:
+                        break
+                
+                # Check for stray leading backtick
+                stripped = line.lstrip()
+                if stripped.startswith('`') and not stripped.startswith('```'):
+                    start = max(0, match.start())
+                    end = min(len(text_content), match.end())
+                    context = text_content[start:end][:100].replace('\n', '\\n')
+                    
+                    location = f"Stray leading backtick in code block line: {line[:50]}..."
+                    fix = "Remove leading backtick from code block line"
+                    
+                    self._write_csv_row(page_url, 'malformed_code_block', location, fix)
+                    issues.append({
+                        'type': 'stray_backtick_in_block',
+                        'line': line,
+                        'line_num': line_num,
+                        'context': context
+                    })
+                    
+                    if len(issues) >= 20:
+                        break
             
             if len(issues) >= 20:
                 break
@@ -2671,6 +2814,9 @@ class DocumentationLecturer:
             # Check for backtick errors (unclosed code blocks, spaces inside backticks)
             backtick_errors = self._check_backtick_errors(page_url, text_content)
             
+            # Check for malformed code blocks (mismatched backticks, inline->fenced)
+            malformed_code_block_issues = self._check_malformed_code_blocks(page_url, text_content)
+            
             # Check for indentation issues in lists
             indentation_issues = self._check_list_indentation_issues(page_url, html_content)
             
@@ -2707,6 +2853,7 @@ class DocumentationLecturer:
                     'orphan_images': orphan_images,
                     'formatting_issues': formatting_issues,
                     'backtick_errors': backtick_errors,
+                    'malformed_code_block_issues': malformed_code_block_issues,
                     'indentation_issues': indentation_issues,
                     'shell_prompt_issues': shell_prompt_issues,
                     'mixed_cmd_output_issues': mixed_cmd_output_issues,
@@ -2743,6 +2890,7 @@ class DocumentationLecturer:
                 - orphan_images: Broken images
                 - formatting_issues: Missing spaces around backticks
                 - backtick_errors: Malformed backticks (spaces inside, unclosed)
+                - malformed_code_block_issues: Mismatched backticks (e.g., `cmd``` -> fenced)
                 - shell_prompt_issues: Shell prompts in code blocks
                 - deprecated_url_issues: Deprecated VMware URLs
                 - vmware_spelling_issues: Incorrect VMware spelling
@@ -2795,6 +2943,14 @@ class DocumentationLecturer:
                 backtick_errors = issues.get('backtick_errors', [])
                 if backtick_errors and 'backtick_errors' in self.enabled_fix_keys:
                     content = self._fix_backtick_errors(content)
+                
+                # Fix malformed code blocks (mismatched backticks, inline->fenced)
+                # Note: Detection must be done on markdown source, not rendered HTML
+                if 'malformed_code_block_issues' in self.enabled_fix_keys:
+                    # Detect malformed code blocks directly in markdown source
+                    md_malformed_issues = self._check_malformed_code_blocks(page_url, content)
+                    if md_malformed_issues:
+                        content = self._fix_malformed_code_blocks(content)
                 
                 # Fix shell prompts in code blocks (in markdown source)
                 shell_prompt_issues = issues.get('shell_prompt_issues', [])
@@ -2889,6 +3045,8 @@ class DocumentationLecturer:
                         applied_fixes.append('backtick spacing')
                     if issues.get('backtick_errors') and 'backtick_errors' in self.enabled_fix_keys:
                         applied_fixes.append('backtick errors')
+                    if issues.get('malformed_code_block_issues') and 'malformed_code_block_issues' in self.enabled_fix_keys:
+                        applied_fixes.append('malformed code blocks')
                     if issues.get('shell_prompt_issues') and 'shell_prompt_issues' in self.enabled_fix_keys:
                         applied_fixes.append('shell prompts')
                     if issues.get('heading_hierarchy_issues') and 'heading_hierarchy_issues' in self.enabled_fix_keys:
@@ -3087,6 +3245,106 @@ class DocumentationLecturer:
             parts[i] = part
         
         return ''.join(parts)
+    
+    def _fix_malformed_code_blocks(self, content: str) -> str:
+        """Fix malformed code blocks in markdown content.
+        
+        Fixes:
+        - Single backtick + content + triple backticks: `command``` -> ```bash\\ncommand\\n```
+        - Consecutive inline commands: `cmd1`\\n`cmd2` -> ```bash\\ncmd1\\ncmd2\\n```
+        - Stray backticks inside fenced code blocks: ```\\ncmd`\\n``` -> ```\\ncmd\\n```
+        
+        These patterns indicate the author intended to create fenced code blocks
+        but used incorrect backtick syntax.
+        """
+        # Fix pattern 0: Stray backticks inside fenced code blocks
+        # This fixes lines inside code blocks that have trailing/leading backticks
+        def fix_stray_backticks_in_block(match):
+            full_block = match.group(0)
+            lines = full_block.split('\n')
+            if len(lines) < 2:
+                return full_block
+            
+            # Keep first line (```lang) and last line (```) unchanged
+            result = [lines[0]]
+            for line in lines[1:-1]:
+                # Remove stray backticks at start/end of code lines
+                # But preserve proper inline code patterns
+                cleaned = line
+                # Remove trailing single backtick (but not ```)
+                if cleaned.endswith('`') and not cleaned.endswith('```'):
+                    cleaned = cleaned[:-1]
+                # Remove leading single backtick (but not ```)
+                stripped = cleaned.lstrip()
+                if stripped.startswith('`') and not stripped.startswith('```'):
+                    indent = len(cleaned) - len(stripped)
+                    cleaned = cleaned[:indent] + stripped[1:]
+                result.append(cleaned)
+            result.append(lines[-1])
+            return '\n'.join(result)
+        
+        content = re.sub(r'```[\w]*\n[\s\S]*?```', fix_stray_backticks_in_block, content)
+        
+        # Fix pattern 1: `content``` -> proper fenced code block
+        # This pattern indicates someone started with inline code but ended with fenced syntax
+        def fix_single_triple(match):
+            content_text = match.group(1).strip()
+            # Determine language hint based on content
+            lang = 'bash'
+            if content_text.startswith('python') or 'import ' in content_text:
+                lang = 'python'
+            return f'```{lang}\n{content_text}\n```'
+        
+        content = self.MALFORMED_CODE_BLOCK_SINGLE_TRIPLE.sub(fix_single_triple, content)
+        
+        # Fix pattern 2: Consecutive inline code blocks that should be fenced
+        # Look for 2+ consecutive lines of `command` that should be a code block
+        # This is more complex - we need to find all consecutive inline code lines
+        lines = content.split('\n')
+        result_lines = []
+        i = 0
+        
+        while i < len(lines):
+            line = lines[i]
+            # Check if this line is a standalone inline code (command)
+            # Pattern: optional indent + `command` (entire line is just inline code)
+            inline_match = re.match(r'^(\s*)`([^`]+)`\s*$', line)
+            
+            if inline_match:
+                indent = inline_match.group(1)
+                commands = [inline_match.group(2)]
+                
+                # Look ahead for more consecutive inline commands
+                j = i + 1
+                while j < len(lines):
+                    next_line = lines[j]
+                    next_match = re.match(r'^\s*`([^`]+)`\s*$', next_line)
+                    if next_match:
+                        commands.append(next_match.group(1))
+                        j += 1
+                    else:
+                        break
+                
+                # If we found 2+ consecutive inline commands, convert to fenced block
+                if len(commands) >= 2:
+                    # Determine language from content
+                    lang = 'bash'
+                    for cmd in commands:
+                        if cmd.startswith('python') or 'import ' in cmd:
+                            lang = 'python'
+                            break
+                    
+                    result_lines.append(f'{indent}```{lang}')
+                    for cmd in commands:
+                        result_lines.append(f'{indent}{cmd}')
+                    result_lines.append(f'{indent}```')
+                    i = j
+                    continue
+            
+            result_lines.append(line)
+            i += 1
+        
+        return '\n'.join(result_lines)
     
     def _fix_shell_prompts_in_markdown(self, content: str) -> str:
         """Remove shell prompt prefixes from code blocks in markdown.
@@ -3299,7 +3557,7 @@ Return only the fixed markdown content, no explanations."""
     def _fork_repository(self) -> bool:
         """Fork the reference repository using gh CLI."""
         if not self.ref_ghrepo or not self.gh_repotoken:
-            return True  # No fork needed
+            return True  # No reference repo specified
         
         try:
             # Set GH_TOKEN environment
@@ -3309,32 +3567,36 @@ Return only the fixed markdown content, no explanations."""
             # Check gh CLI
             subprocess.run(['gh', '--version'], check=True, capture_output=True)
             
-            # Parse ref repo
-            parsed = urllib.parse.urlparse(self.ref_ghrepo)
-            repo_path = parsed.path.strip('/').rstrip('.git')
+            # Parse user's repo URL to verify it exists
+            if self.ghrepo_url:
+                user_repo_parsed = urllib.parse.urlparse(self.ghrepo_url)
+                user_repo_path = user_repo_parsed.path.strip('/')
+                if user_repo_path.endswith('.git'):
+                    user_repo_path = user_repo_path[:-4]
+            else:
+                # Fallback to default naming convention
+                parsed = urllib.parse.urlparse(self.ref_ghrepo)
+                repo_path = parsed.path.strip('/')
+                if repo_path.endswith('.git'):
+                    repo_path = repo_path[:-4]
+                user_repo_path = f"{self.gh_username}/{repo_path.split('/')[-1]}"
             
-            # Check if fork already exists
-            self.logger.info(f"Checking for existing fork of {repo_path}...")
+            # Verify the user's repository exists (works for both forks and mirrors)
+            self.logger.info(f"Verifying repository {user_repo_path} exists...")
             result = subprocess.run(
-                ['gh', 'repo', 'view', f"{self.gh_username}/{repo_path.split('/')[-1]}"],
+                ['gh', 'repo', 'view', user_repo_path],
                 capture_output=True, text=True, env=env
             )
             
             if result.returncode == 0:
-                self.logger.info("Fork already exists")
+                self.logger.info(f"Repository {user_repo_path} verified")
                 return True
-            
-            # Create fork
-            self.logger.info(f"Forking {repo_path}...")
-            result = subprocess.run(
-                ['gh', 'repo', 'fork', repo_path, '--clone=false'],
-                capture_output=True, text=True, check=True, env=env
-            )
-            self.logger.info("Fork created successfully")
-            return True
+            else:
+                self.logger.error(f"Repository {user_repo_path} not found or not accessible")
+                return False
             
         except subprocess.CalledProcessError as e:
-            self.logger.error(f"Fork failed: {e.stderr}")
+            self.logger.error(f"Repository verification failed: {e.stderr}")
             return False
         except FileNotFoundError:
             self.logger.error("gh CLI not found. Install from: https://cli.github.com/")
@@ -3873,10 +4135,13 @@ See attached CSV report for detailed issue locations and fix suggestions.
         On first call per run:
         - Checks if an open PR already exists (from previous runs)
         - If yes, reuses that PR
-        - If no, creates a new PR
+        - If no, creates a new PR using GitHub API
         
         On subsequent calls:
         - Updates the existing PR body with new fix information
+        
+        Note: Works with both forks and mirrors. Uses GitHub API directly to
+        support cross-repository PRs from mirrors (non-fork repositories).
         
         Returns:
             True if PR was created/updated successfully, False otherwise.
@@ -3888,9 +4153,11 @@ See attached CSV report for detailed issue locations and fix suggestions.
             env = os.environ.copy()
             env['GH_TOKEN'] = self.gh_repotoken
             
-            # Parse ref repo
+            # Parse ref repo (target for PR)
             parsed = urllib.parse.urlparse(self.ref_ghrepo)
-            repo_path = parsed.path.strip('/').rstrip('.git')
+            repo_path = parsed.path.strip('/')
+            if repo_path.endswith('.git'):
+                repo_path = repo_path[:-4]
             
             head_branch = self.ghrepo_branch
             base_branch = self.ref_ghbranch
@@ -3903,29 +4170,63 @@ See attached CSV report for detailed issue locations and fix suggestions.
                     # Reuse existing PR - just update the body
                     return self._update_pr_body(pr_body)
                 
-                # No existing PR, create a new one
+                # No existing PR, create a new one using GitHub API
+                # This works for both forks and mirrors
                 pr_title = f"Documentation fixes - {self.timestamp}"
+                
+                # Create PR using gh api command (works for cross-repo PRs)
+                pr_data = {
+                    'title': pr_title,
+                    'body': pr_body,
+                    'head': f"{self.gh_username}:{head_branch}",
+                    'base': base_branch
+                }
+                
                 result = subprocess.run([
-                    'gh', 'pr', 'create',
-                    '--title', pr_title,
-                    '--body', pr_body,
-                    '--head', f"{self.gh_username}:{head_branch}",
-                    '--base', base_branch,
-                    '--repo', repo_path
+                    'gh', 'api',
+                    f'repos/{repo_path}/pulls',
+                    '-X', 'POST',
+                    '-f', f'title={pr_title}',
+                    '-f', f'body={pr_body}',
+                    '-f', f'head={self.gh_username}:{head_branch}',
+                    '-f', f'base={base_branch}'
                 ], capture_output=True, text=True, env=env)
                 
                 if result.returncode == 0:
-                    self.pr_url = result.stdout.strip()
-                    # Extract PR number from URL
-                    pr_match = re.search(r'/pull/(\d+)', self.pr_url)
-                    if pr_match:
-                        self.pr_number = int(pr_match.group(1))
-                    self.logger.info(f"Pull request created: {self.pr_url}")
-                    print(f"\n[PR] Created: {self.pr_url}")
-                    return True
+                    try:
+                        pr_response = json.loads(result.stdout)
+                        self.pr_url = pr_response.get('html_url', '')
+                        self.pr_number = pr_response.get('number')
+                        self.logger.info(f"Pull request created: {self.pr_url}")
+                        print(f"\n[PR] Created: {self.pr_url}")
+                        return True
+                    except json.JSONDecodeError:
+                        self.logger.error(f"Failed to parse PR response: {result.stdout}")
+                        return False
                 else:
-                    self.logger.error(f"PR creation failed: {result.stderr}")
-                    return False
+                    error_msg = result.stderr
+                    # Check if it's a "No commits between" error (mirror/non-fork scenario)
+                    if "No commits between" in error_msg or "No commits between" in result.stdout:
+                        # Get user repo path for the manual PR link
+                        user_repo_parsed = urllib.parse.urlparse(self.ghrepo_url)
+                        user_repo_path = user_repo_parsed.path.strip('/')
+                        if user_repo_path.endswith('.git'):
+                            user_repo_path = user_repo_path[:-4]
+                        
+                        self.logger.warning(f"Cannot create cross-repository PR (mirror detected)")
+                        print(f"\n[INFO] Cross-repository PR not possible - changes pushed to {self.ghrepo_url}")
+                        print(f"       Branch: {head_branch}")
+                        print(f"       Your mirror repository has the documentation fixes.")
+                        print(f"       To contribute these changes to {repo_path}, you would need to:")
+                        print(f"       1. Fork {repo_path} on GitHub")
+                        print(f"       2. Push your changes to your fork")
+                        print(f"       3. Create a PR from your fork to {repo_path}")
+                        # Mark as successful since changes were pushed
+                        self.pr_url = "N/A (mirror - manual PR required)"
+                        return True
+                    else:
+                        self.logger.error(f"PR creation failed: {error_msg}")
+                        return False
             else:
                 # Update existing PR body
                 return self._update_pr_body(pr_body)
@@ -3954,7 +4255,9 @@ See attached CSV report for detailed issue locations and fix suggestions.
             env['GH_TOKEN'] = self.gh_repotoken
             
             parsed = urllib.parse.urlparse(self.ref_ghrepo)
-            repo_path = parsed.path.strip('/').rstrip('.git')
+            repo_path = parsed.path.strip('/')
+            if repo_path.endswith('.git'):
+                repo_path = repo_path[:-4]
             
             result = subprocess.run([
                 'gh', 'pr', 'edit', str(self.pr_number),
