@@ -78,7 +78,7 @@ import threading
 import json
 
 # Version info
-VERSION = "1.6"
+VERSION = "1.7"
 TOOL_NAME = "photonos-docs-lecturer.py"
 
 # Lazy-loaded modules (populated by check_and_import_dependencies)
@@ -439,9 +439,9 @@ class DocumentationLecturer:
     INLINE_CODE_SPACES_BOTH = re.compile(r'(?<![`\w])`[ \t]+([^`\n]+?)[ \t]+`(?![`\w])')
     
     # Patterns for detecting malformed code blocks
-    # Pattern 1: Single backtick followed by content and triple backticks: `content```
+    # Pattern 1: Single backtick followed by content and 3+ backticks: `content``` or `content`````
     # This is a common error where someone started inline code but ended with fenced code block syntax
-    MALFORMED_CODE_BLOCK_SINGLE_TRIPLE = re.compile(r'`([^`\n]+)```')
+    MALFORMED_CODE_BLOCK_SINGLE_TRIPLE = re.compile(r'`([^`\n]+)`{3,}')
     
     # Pattern 2: Consecutive lines starting with single backtick containing commands
     # These should be converted to a fenced code block
@@ -536,21 +536,28 @@ class DocumentationLecturer:
     
     # Enumerated fix types for --fix parameter
     # Each fix has an ID, key (used in issues dict), description, and whether it requires LLM
+    # NOTE: shell-prompts (ID 6) and mixed-cmd-output (ID 12) were moved to FEATURE_TYPES
     FIX_TYPES = {
         1: {'key': 'broken_email_issues', 'name': 'broken-emails', 'desc': 'Fix broken email addresses (domain split with whitespace)', 'llm': False},
         2: {'key': 'vmware_spelling_issues', 'name': 'vmware-spelling', 'desc': 'Fix VMware spelling (vmware -> VMware)', 'llm': False},
         3: {'key': 'deprecated_url_issues', 'name': 'deprecated-urls', 'desc': 'Fix deprecated URLs (VMware, VDDK, OVFTOOL, AWS, bosh-stemcell)', 'llm': False},
         4: {'key': 'formatting_issues', 'name': 'backtick-spacing', 'desc': 'Fix missing spaces around backticks', 'llm': False},
         5: {'key': 'backtick_errors', 'name': 'backtick-errors', 'desc': 'Fix backtick errors (spaces inside backticks)', 'llm': False},
-        6: {'key': 'shell_prompt_issues', 'name': 'shell-prompts', 'desc': 'Fix shell prompts in code blocks (remove $ # etc.)', 'llm': False},
-        7: {'key': 'heading_hierarchy_issues', 'name': 'heading-hierarchy', 'desc': 'Fix heading hierarchy violations (skipped levels)', 'llm': False},
-        8: {'key': 'header_spacing_issues', 'name': 'header-spacing', 'desc': 'Fix markdown headers missing space (####Title -> #### Title)', 'llm': False},
-        9: {'key': 'html_comment_issues', 'name': 'html-comments', 'desc': 'Fix HTML comments (remove <!-- --> markers, keep content)', 'llm': False},
-        10: {'key': 'grammar_issues', 'name': 'grammar', 'desc': 'Fix grammar and spelling issues (requires --llm)', 'llm': True},
-        11: {'key': 'md_artifacts', 'name': 'markdown-artifacts', 'desc': 'Fix unrendered markdown artifacts (requires --llm)', 'llm': True},
-        12: {'key': 'mixed_cmd_output_issues', 'name': 'mixed-cmd-output', 'desc': 'Fix mixed command/output in code blocks (requires --llm)', 'llm': True},
-        13: {'key': 'indentation_issues', 'name': 'indentation', 'desc': 'Fix indentation issues (requires --llm)', 'llm': True},
-        14: {'key': 'malformed_code_block_issues', 'name': 'malformed-codeblocks', 'desc': 'Fix malformed code blocks (mismatched backticks, inline->fenced)', 'llm': False},
+        6: {'key': 'heading_hierarchy_issues', 'name': 'heading-hierarchy', 'desc': 'Fix heading hierarchy violations (skipped levels)', 'llm': False},
+        7: {'key': 'header_spacing_issues', 'name': 'header-spacing', 'desc': 'Fix markdown headers missing space (####Title -> #### Title)', 'llm': False},
+        8: {'key': 'html_comment_issues', 'name': 'html-comments', 'desc': 'Fix HTML comments (remove <!-- --> markers, keep content)', 'llm': False},
+        9: {'key': 'grammar_issues', 'name': 'grammar', 'desc': 'Fix grammar and spelling issues (requires --llm)', 'llm': True},
+        10: {'key': 'md_artifacts', 'name': 'markdown-artifacts', 'desc': 'Fix unrendered markdown artifacts (requires --llm)', 'llm': True},
+        11: {'key': 'indentation_issues', 'name': 'indentation', 'desc': 'Fix indentation issues (requires --llm)', 'llm': True},
+        12: {'key': 'malformed_code_block_issues', 'name': 'malformed-codeblocks', 'desc': 'Fix malformed code blocks (mismatched backticks, inline->fenced)', 'llm': False},
+    }
+    
+    # Enumerated feature types for --feature parameter
+    # Features are optional enhancements that may modify code block formatting
+    # Each feature has an ID, key (used in issues dict), description, and whether it requires LLM
+    FEATURE_TYPES = {
+        1: {'key': 'shell_prompt_issues', 'name': 'shell-prompts', 'desc': 'Remove shell prompts in code blocks ($ # etc.)', 'llm': False},
+        2: {'key': 'mixed_cmd_output_issues', 'name': 'mixed-cmd-output', 'desc': 'Separate mixed command/output in code blocks (requires --llm)', 'llm': True},
     }
     
     @classmethod
@@ -560,6 +567,15 @@ class DocumentationLecturer:
         for fix_id, fix_info in cls.FIX_TYPES.items():
             llm_marker = " [LLM]" if fix_info['llm'] else ""
             lines.append(f"  {fix_id:2d}. {fix_info['name']:<20s} - {fix_info['desc']}{llm_marker}")
+        return '\n'.join(lines)
+    
+    @classmethod
+    def get_feature_help_text(cls) -> str:
+        """Generate help text listing all available features."""
+        lines = ["Available features:"]
+        for feature_id, feature_info in cls.FEATURE_TYPES.items():
+            llm_marker = " [LLM]" if feature_info['llm'] else ""
+            lines.append(f"  {feature_id:2d}. {feature_info['name']:<20s} - {feature_info['desc']}{llm_marker}")
         return '\n'.join(lines)
     
     @classmethod
@@ -623,6 +639,68 @@ class DocumentationLecturer:
     def get_enabled_fix_keys(cls, fix_ids: set) -> set:
         """Convert fix IDs to their corresponding issue keys."""
         return {cls.FIX_TYPES[fix_id]['key'] for fix_id in fix_ids if fix_id in cls.FIX_TYPES}
+    
+    @classmethod
+    def parse_feature_spec(cls, feature_spec: str) -> set:
+        """Parse feature specification string into a set of feature IDs.
+        
+        Args:
+            feature_spec: Comma-separated list of feature IDs or ranges (e.g., "1,2" or "1-2")
+            
+        Returns:
+            Set of feature IDs to apply
+            
+        Raises:
+            ValueError: If the specification is invalid
+        """
+        if not feature_spec or feature_spec.strip().lower() == 'all':
+            return set(cls.FEATURE_TYPES.keys())
+        
+        feature_ids = set()
+        parts = feature_spec.replace(' ', '').split(',')
+        
+        for part in parts:
+            if not part:
+                continue
+            
+            if '-' in part:
+                # Range specification (e.g., "1-2")
+                try:
+                    start, end = part.split('-', 1)
+                    start_id = int(start)
+                    end_id = int(end)
+                    
+                    if start_id > end_id:
+                        raise ValueError(f"Invalid range: {part} (start > end)")
+                    
+                    for feature_id in range(start_id, end_id + 1):
+                        if feature_id in cls.FEATURE_TYPES:
+                            feature_ids.add(feature_id)
+                        else:
+                            raise ValueError(f"Unknown feature ID in range: {feature_id}")
+                except ValueError as e:
+                    if "Unknown feature ID" in str(e) or "Invalid range" in str(e):
+                        raise
+                    raise ValueError(f"Invalid range format: {part}")
+            else:
+                # Single feature ID
+                try:
+                    feature_id = int(part)
+                    if feature_id in cls.FEATURE_TYPES:
+                        feature_ids.add(feature_id)
+                    else:
+                        raise ValueError(f"Unknown feature ID: {feature_id}. Valid IDs are 1-{max(cls.FEATURE_TYPES.keys())}")
+                except ValueError as e:
+                    if "Unknown feature ID" in str(e):
+                        raise
+                    raise ValueError(f"Invalid feature ID: {part}")
+        
+        return feature_ids
+    
+    @classmethod
+    def get_enabled_feature_keys(cls, feature_ids: set) -> set:
+        """Convert feature IDs to their corresponding issue keys."""
+        return {cls.FEATURE_TYPES[feature_id]['key'] for feature_id in feature_ids if feature_id in cls.FEATURE_TYPES}
     
     def __init__(self, args):
         """Initialize the lecturer with parsed arguments."""
@@ -715,6 +793,20 @@ class DocumentationLecturer:
             # Default: all fixes enabled
             self.enabled_fix_ids = set(self.FIX_TYPES.keys())
             self.enabled_fix_keys = self.get_enabled_fix_keys(self.enabled_fix_ids)
+        
+        # Parse --feature specification to determine which features to apply
+        feature_spec = getattr(args, 'feature', None)
+        if feature_spec:
+            try:
+                self.enabled_feature_ids = self.parse_feature_spec(feature_spec)
+                self.enabled_feature_keys = self.get_enabled_feature_keys(self.enabled_feature_ids)
+            except ValueError as e:
+                self.logger.error(f"Invalid --feature specification: {e}")
+                raise
+        else:
+            # Default: no features enabled (features are opt-in)
+            self.enabled_feature_ids = set()
+            self.enabled_feature_keys = set()
     
     def _setup_logging(self):
         """Configure logging to file and stderr."""
@@ -2952,9 +3044,9 @@ class DocumentationLecturer:
                     if md_malformed_issues:
                         content = self._fix_malformed_code_blocks(content)
                 
-                # Fix shell prompts in code blocks (in markdown source)
+                # Fix shell prompts in code blocks (in markdown source) - this is a FEATURE, not a fix
                 shell_prompt_issues = issues.get('shell_prompt_issues', [])
-                if shell_prompt_issues and 'shell_prompt_issues' in self.enabled_fix_keys:
+                if shell_prompt_issues and 'shell_prompt_issues' in self.enabled_feature_keys:
                     content = self._fix_shell_prompts_in_markdown(content)
                 
                 # Fix heading hierarchy violations (H1 -> H3 skips, wrong first heading)
@@ -2999,9 +3091,9 @@ class DocumentationLecturer:
                     except Exception as e:
                         self.logger.error(f"LLM markdown fix failed: {e}")
                 
-                # Fix mixed command/output code blocks via LLM
+                # Fix mixed command/output code blocks via LLM - this is a FEATURE, not a fix
                 mixed_cmd_output_issues = issues.get('mixed_cmd_output_issues', [])
-                if mixed_cmd_output_issues and self.llm_client and 'mixed_cmd_output_issues' in self.enabled_fix_keys:
+                if mixed_cmd_output_issues and self.llm_client and 'mixed_cmd_output_issues' in self.enabled_feature_keys:
                     try:
                         content = self._fix_mixed_command_output_llm(content, mixed_cmd_output_issues)
                     except Exception as e:
@@ -3047,7 +3139,7 @@ class DocumentationLecturer:
                         applied_fixes.append('backtick errors')
                     if issues.get('malformed_code_block_issues') and 'malformed_code_block_issues' in self.enabled_fix_keys:
                         applied_fixes.append('malformed code blocks')
-                    if issues.get('shell_prompt_issues') and 'shell_prompt_issues' in self.enabled_fix_keys:
+                    if issues.get('shell_prompt_issues') and 'shell_prompt_issues' in self.enabled_feature_keys:
                         applied_fixes.append('shell prompts')
                     if issues.get('heading_hierarchy_issues') and 'heading_hierarchy_issues' in self.enabled_fix_keys:
                         applied_fixes.append('heading hierarchy')
@@ -3059,7 +3151,7 @@ class DocumentationLecturer:
                         applied_fixes.append('grammar (LLM)')
                     if issues.get('md_artifacts') and self.llm_client and 'md_artifacts' in self.enabled_fix_keys:
                         applied_fixes.append('markdown (LLM)')
-                    if issues.get('mixed_cmd_output_issues') and self.llm_client and 'mixed_cmd_output_issues' in self.enabled_fix_keys:
+                    if issues.get('mixed_cmd_output_issues') and self.llm_client and 'mixed_cmd_output_issues' in self.enabled_feature_keys:
                         applied_fixes.append('mixed cmd/output (LLM)')
                     if issues.get('indentation_issues') and self.llm_client and 'indentation_issues' in self.enabled_fix_keys:
                         applied_fixes.append('indentation (LLM)')
@@ -3250,13 +3342,23 @@ class DocumentationLecturer:
         """Fix malformed code blocks in markdown content.
         
         Fixes:
-        - Single backtick + content + triple backticks: `command``` -> ```bash\\ncommand\\n```
+        - Excess backticks in code block closing: ```bash\\ncmd\\n````` -> ```bash\\ncmd\\n```
+        - Single backtick + content + 3+ backticks: `command````` -> ```bash\\ncommand\\n```
         - Consecutive inline commands: `cmd1`\\n`cmd2` -> ```bash\\ncmd1\\ncmd2\\n```
         - Stray backticks inside fenced code blocks: ```\\ncmd`\\n``` -> ```\\ncmd\\n```
         
         These patterns indicate the author intended to create fenced code blocks
         but used incorrect backtick syntax.
         """
+        # Fix pattern -1: Excess backticks in code block closing (````` instead of ```)
+        # This must be done first before other patterns
+        # Matches: 4+ backticks at start of a line (closing a code block incorrectly)
+        content = re.sub(r'^(`{4,})$', '```', content, flags=re.MULTILINE)
+        
+        # Also fix excess backticks inline (e.g., "cmd`````" at end of line in a code block)
+        # This catches patterns like "git clone url`````"
+        content = re.sub(r'(`{4,})(\s*$)', '```\\2', content, flags=re.MULTILINE)
+        
         # Fix pattern 0: Stray backticks inside fenced code blocks
         # This fixes lines inside code blocks that have trailing/leading backticks
         def fix_stray_backticks_in_block(match):
@@ -4523,17 +4625,23 @@ Issue Types and Fix Modes:
   |                          |             |               | packages.broadcom.com     |
   | Backtick spacing         | Always      | Automatic     | word`code` -> word `code` |
   | Backtick errors          | Always      | Automatic     | ` code ` -> `code`        |
-  | Shell prompts            | Always      | Automatic     | Remove $, #, ~, etc.      |
-  | Code block language      | Always      | Automatic     | Add python/console hint   |
   | Heading hierarchy        | Always      | Automatic     | Fix H1->H3 skips          |
   | Grammar/spelling         | Always      | LLM-assisted  | Requires --llm flag       |
   | Markdown artifacts       | Always      | LLM-assisted  | Requires --llm flag       |
-  | Mixed command/output     | Always      | LLM-assisted  | Requires --llm flag       |
   | Indentation issues       | Always      | LLM-assisted  | Requires --llm flag       |
   | Broken links             | Always      | Report only   | Manual review needed      |
   | Broken images            | Always      | Report only   | Manual review needed      |
   | Unaligned images         | Always      | Report only   | Manual review needed      |
   | Unclosed code blocks     | Always      | Report only   | ``` or ` without closing  |
+  +--------------------------+-------------+---------------+---------------------------+
+
+Optional Features (--feature parameter):
+  +--------------------------+-------------+---------------+---------------------------+
+  | Feature Type             | Detected    | Apply Mode    | Description               |
+  +--------------------------+-------------+---------------+---------------------------+
+  | Shell prompts            | Always      | Automatic     | Remove $, #, ~, etc.      |
+  | Code block language      | Always      | Automatic     | Add python/console hint   |
+  | Mixed command/output     | Always      | LLM-assisted  | Requires --llm flag       |
   +--------------------------+-------------+---------------+---------------------------+
 
 Examples:
@@ -4595,16 +4703,33 @@ Selective Fix Application (--fix parameter):
      3  deprecated-urls       Fix deprecated URLs (VMware, VDDK, etc.)       
      4  backtick-spacing      Fix missing spaces around backticks            
      5  backtick-errors       Fix spaces inside backticks                    
-     6  shell-prompts         Remove shell prompts from code blocks          
-     7  heading-hierarchy     Fix heading hierarchy violations               
-     8  header-spacing        Fix markdown header spacing                    
-     9  html-comments         Remove HTML comment markers                    
-    10  grammar               Fix grammar and spelling issues                [LLM]
-    11  markdown-artifacts    Fix unrendered markdown artifacts              [LLM]
-    12  mixed-cmd-output      Fix mixed command/output in code blocks        [LLM]
-    13  indentation           Fix indentation issues                         [LLM]
+     6  heading-hierarchy     Fix heading hierarchy violations               
+     7  header-spacing        Fix markdown header spacing                    
+     8  html-comments         Remove HTML comment markers                    
+     9  grammar               Fix grammar and spelling issues                [LLM]
+    10  markdown-artifacts    Fix unrendered markdown artifacts              [LLM]
+    11  indentation           Fix indentation issues                         [LLM]
+    12  malformed-codeblocks  Fix malformed code blocks                      
 
   Note: Fixes marked [LLM] require --llm flag (gemini or xai) with API key.
+
+Selective Feature Application (--feature parameter):
+  The --feature parameter allows selecting specific features to apply.
+  By default, no features are applied. Use --list-features to see all features.
+
+  Syntax: --feature SPEC where SPEC can be:
+    - Single ID:     --feature 1
+    - Multiple IDs:  --feature 1,2
+    - Range:         --feature 1-2
+    - All:           --feature all
+
+  Available features (use --list-features for details):
+    ID  Name                  Description                                    [LLM]
+    --  --------------------  ---------------------------------------------  -----
+     1  shell-prompts         Remove shell prompts from code blocks          
+     2  mixed-cmd-output      Separate mixed command/output in code blocks   [LLM]
+
+  Note: Features marked [LLM] require --llm flag (gemini or xai) with API key.
 
 Version: {VERSION}
         """
@@ -4636,7 +4761,7 @@ def _add_common_args(parser: argparse.ArgumentParser):
     """Add common arguments to parser."""
     parser.add_argument(
         '--website',
-        required=True,
+        required=False,  # Not required when using --list-fixes or --list-features
         type=validate_url,
         help='Base URL of local Photon OS Nginx webserver (e.g., https://127.0.0.1/docs-v5)'
     )
@@ -4743,6 +4868,24 @@ Use --list-fixes to see available fix IDs.'''
         action='store_true',
         help='List all available fix types with their IDs and exit'
     )
+    
+    parser.add_argument(
+        '--feature',
+        type=str,
+        default=None,
+        metavar='FEATURES',
+        help='''Specify which features to apply (comma-separated IDs or ranges).
+Examples: "1,2", "1-2", "all"
+Features are optional enhancements (shell-prompts, mixed-cmd-output).
+By default, no features are applied.
+Use --list-features to see available feature IDs.'''
+    )
+    
+    parser.add_argument(
+        '--list-features',
+        action='store_true',
+        help='List all available feature types with their IDs and exit'
+    )
 
 
 def _add_llm_args(parser: argparse.ArgumentParser):
@@ -4841,9 +4984,9 @@ def run_tests():
             result = parse("1,2,3")
             self.assertEqual(result, {1, 2, 3})
             
-            # Test range
-            result = parse("5-9")
-            self.assertEqual(result, {5, 6, 7, 8, 9})
+            # Test range (use valid IDs within current FIX_TYPES)
+            result = parse("5-8")
+            self.assertEqual(result, {5, 6, 7, 8})
             
             # Test mixed single and range
             result = parse("1,3,5-7")
@@ -4868,6 +5011,38 @@ def run_tests():
             # Test invalid range (start > end)
             with self.assertRaises(ValueError):
                 parse("9-5")
+            
+            # Test invalid format
+            with self.assertRaises(ValueError):
+                parse("abc")
+        
+        def test_parse_feature_spec(self):
+            """Test --feature parameter parsing."""
+            parse = DocumentationLecturer.parse_feature_spec
+            
+            # Test single feature ID
+            result = parse("1")
+            self.assertEqual(result, {1})
+            
+            # Test multiple feature IDs
+            result = parse("1,2")
+            self.assertEqual(result, {1, 2})
+            
+            # Test range
+            result = parse("1-2")
+            self.assertEqual(result, {1, 2})
+            
+            # Test 'all' keyword
+            result = parse("all")
+            self.assertEqual(result, set(DocumentationLecturer.FEATURE_TYPES.keys()))
+            
+            # Test None/empty returns all
+            result = parse(None)
+            self.assertEqual(result, set(DocumentationLecturer.FEATURE_TYPES.keys()))
+            
+            # Test invalid feature ID
+            with self.assertRaises(ValueError):
+                parse("99")
             
             # Test invalid format
             with self.assertRaises(ValueError):
@@ -5911,6 +6086,11 @@ def main():
     # Handle --list-fixes flag
     if hasattr(args, 'list_fixes') and args.list_fixes:
         print(DocumentationLecturer.get_fix_help_text())
+        sys.exit(0)
+    
+    # Handle --list-features flag
+    if hasattr(args, 'list_features') and args.list_features:
+        print(DocumentationLecturer.get_feature_help_text())
         sys.exit(0)
     
     # Handle install-tools command (no dependencies required)

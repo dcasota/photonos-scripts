@@ -135,6 +135,8 @@ python3 photonos-docs-lecturer.py run \
 | `--ref-website` | - | Reference website for comparison |
 | `--fix` | all | Selective fix specification (see below) |
 | `--list-fixes` | - | Display all available fix types |
+| `--feature` | none | Selective feature specification (see below) |
+| `--list-features` | - | Display all available feature types |
 | `--test` | - | Run unit tests instead of analysis |
 
 ---
@@ -165,15 +167,13 @@ Where SPEC can be:
 | 3 | deprecated-urls | Fix deprecated URLs (VMware, VDDK, OVFTOOL, AWS, bosh-stemcell) | No |
 | 4 | backtick-spacing | Fix missing spaces around backticks | No |
 | 5 | backtick-errors | Fix backtick errors (spaces inside backticks) | No |
-| 6 | shell-prompts | Fix shell prompts in code blocks (remove $, #, etc.) | No |
-| 7 | heading-hierarchy | Fix heading hierarchy violations (skipped levels) | No |
-| 8 | header-spacing | Fix markdown headers missing space (####Title -> #### Title) | No |
-| 9 | html-comments | Fix HTML comments (remove <!-- --> markers, keep content) | No |
-| 10 | grammar | Fix grammar and spelling issues | Yes |
-| 11 | markdown-artifacts | Fix unrendered markdown artifacts | Yes |
-| 12 | mixed-cmd-output | Fix mixed command/output in code blocks | Yes |
-| 13 | indentation | Fix indentation issues | Yes |
-| 14 | malformed-codeblocks | Fix malformed code blocks (mismatched backticks) | No |
+| 6 | heading-hierarchy | Fix heading hierarchy violations (skipped levels) | No |
+| 7 | header-spacing | Fix markdown headers missing space (####Title -> #### Title) | No |
+| 8 | html-comments | Fix HTML comments (remove <!-- --> markers, keep content) | No |
+| 9 | grammar | Fix grammar and spelling issues | Yes |
+| 10 | markdown-artifacts | Fix unrendered markdown artifacts | Yes |
+| 11 | indentation | Fix indentation issues | Yes |
+| 12 | malformed-codeblocks | Fix malformed code blocks (mismatched backticks) | No |
 
 ### Examples
 
@@ -184,17 +184,68 @@ python3 photonos-docs-lecturer.py run \
   --local-webserver /var/www/photon-site \
   --gh-pr --fix 2,3
 
-# Apply all automatic fixes (1-9, 14), skip LLM fixes
+# Apply all automatic fixes (1-8, 12), skip LLM fixes
 python3 photonos-docs-lecturer.py run \
   --website https://127.0.0.1/docs-v5 \
   --local-webserver /var/www/photon-site \
-  --gh-pr --fix 1-9,14
+  --gh-pr --fix 1-8,12
 
 # Apply grammar fixes only (requires LLM)
 python3 photonos-docs-lecturer.py run \
   --website https://127.0.0.1/docs-v5 \
   --local-webserver /var/www/photon-site \
-  --gh-pr --fix 10 \
+  --gh-pr --fix 9 \
+  --llm gemini --GEMINI_API_KEY your_key
+```
+
+---
+
+## Selective Feature Application (--feature parameter)
+
+Version 1.7 introduces the `--feature` parameter for optional feature enhancements. Features are **opt-in** and not applied by default. Use `--list-features` to see all available features.
+
+Features are separated from fixes because they may modify code block formatting in ways that change the documentation style (e.g., removing shell prompts).
+
+### Syntax
+
+```bash
+--feature SPEC
+```
+
+Where SPEC can be:
+- Single ID: `--feature 1`
+- Multiple IDs: `--feature 1,2`
+- Range: `--feature 1-2`
+- All: `--feature all`
+
+### Available Feature Types
+
+| ID | Name | Description | LLM Required |
+|----|------|-------------|:------------:|
+| 1 | shell-prompts | Remove shell prompts in code blocks ($ # etc.) | No |
+| 2 | mixed-cmd-output | Separate mixed command/output in code blocks | Yes |
+
+### Examples
+
+```bash
+# Apply shell prompt removal feature
+python3 photonos-docs-lecturer.py run \
+  --website https://127.0.0.1/docs-v5 \
+  --local-webserver /var/www/photon-site \
+  --gh-pr --feature 1
+
+# Apply all features (requires LLM for mixed-cmd-output)
+python3 photonos-docs-lecturer.py run \
+  --website https://127.0.0.1/docs-v5 \
+  --local-webserver /var/www/photon-site \
+  --gh-pr --feature all \
+  --llm xai --XAI_API_KEY your_key
+
+# Apply fixes and features together
+python3 photonos-docs-lecturer.py run \
+  --website https://127.0.0.1/docs-v5 \
+  --local-webserver /var/www/photon-site \
+  --gh-pr --fix all --feature all \
   --llm gemini --GEMINI_API_KEY your_key
 ```
 
@@ -715,7 +766,18 @@ python3 photonos-docs-lecturer.py run --list-fixes
 
 ## Version History
 
-### Version 1.6 (Current)
+### Version 1.7 (Current)
+- Separated fixes and features into two categories:
+  - **Fixes** (`--fix`): Bug fixes and error corrections (applied by default)
+  - **Features** (`--feature`): Optional enhancements that modify code style (opt-in)
+- Moved shell-prompts and mixed-cmd-output from fixes to features
+- Added `--feature` parameter for selective feature application
+- Added `--list-features` option to display all available features
+- Renumbered fix IDs to maintain sequential numbering:
+  - Fix IDs 1-12 (was 1-14, minus shell-prompts and mixed-cmd-output)
+  - Feature IDs 1-2 (shell-prompts, mixed-cmd-output)
+
+### Version 1.6
 - Added Fix Type 14: malformed code blocks detection and fixing
   - Detects single backtick + triple backtick patterns (`` `cmd``` ``)
   - Detects consecutive inline code lines that should be fenced blocks
@@ -750,7 +812,7 @@ python3 photonos-docs-lecturer.py run --list-fixes
 
 ## Version
 
-Current version: **1.6**
+Current version: **1.7**
 
 Check version:
 ```bash
