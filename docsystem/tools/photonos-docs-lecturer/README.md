@@ -355,7 +355,6 @@ The tool detects and reports issues in the following categories:
 **Detection:** Regex patterns for missing spaces around inline code backticks.
 
 **What it finds:**
-- Missing space before backtick: `Clone`the project`` -> should be `Clone `the project``
 - Missing space after backtick: `` `command`text`` -> should be `` `command` text``
 - URLs incorrectly wrapped in backticks: `` `https://example.com` `` -> should be `https://example.com`
 
@@ -395,39 +394,7 @@ The tool detects and reports issues in the following categories:
 
 ---
 
-### 10. `shell_prompt` - Shell Prompts in Code Blocks
-
-**Detection:** Regex patterns for common shell prompt prefixes that shouldn't be in copyable code.
-
-**What it finds:**
-- `$ command` (user prompt)
-- `> command` (alternative prompt)
-- `% command` (csh/tcsh prompt)
-- `~ command` (home directory prompt)
-- `user@host$ command` (full prompt)
-- `root@host# command` (root full prompt)
-- `❯ command` (fancy prompts like starship, powerline)
-- `➜ command` (Oh My Zsh robbyrussell theme)
-
-**How it's fixed:**
-- **Deterministic:** Removes prompt prefixes, adds language hints (```console)
-
----
-
-### 11. `mixed_command_output` - Mixed Command and Output
-
-**Detection:** Heuristics identify code blocks containing both commands and their output.
-
-**What it finds:**
-- Code blocks where a command is followed by its output
-- Makes copy-paste difficult for users
-
-**How it's fixed:**
-- **With LLM:** Separates into two code blocks (command + output)
-
----
-
-### 12. `deprecated_url` - Deprecated URLs
+### 10. `deprecated_url` - Deprecated URLs
 
 **Detection:** Regex matches deprecated URLs that need updating.
 
@@ -446,7 +413,7 @@ The tool detects and reports issues in the following categories:
 
 ---
 
-### 13. `spelling` - VMware Spelling Errors
+### 11. `spelling` - VMware Spelling Errors
 
 **Detection:** Regex matches incorrect capitalizations of "VMware".
 
@@ -463,7 +430,7 @@ The tool detects and reports issues in the following categories:
 
 ---
 
-### 14. `broken_email` - Broken Email Addresses
+### 12. `broken_email` - Broken Email Addresses
 
 **Detection:** Regex matches email addresses where the domain is split with whitespace/newlines.
 
@@ -475,7 +442,7 @@ The tool detects and reports issues in the following categories:
 
 ---
 
-### 15. `html_comment` - HTML Comments
+### 13. `html_comment` - HTML Comments
 
 **Detection:** Regex matches HTML comment markers `<!-- ... -->`.
 
@@ -488,7 +455,7 @@ The tool detects and reports issues in the following categories:
 
 ---
 
-### 16. `orphan_page` - Inaccessible Pages
+### 14. `orphan_page` - Inaccessible Pages
 
 **Detection:** Pages in sitemap that return HTTP 4xx/5xx or timeout.
 
@@ -502,7 +469,7 @@ The tool detects and reports issues in the following categories:
 
 ---
 
-### 17. `malformed_code_block` - Malformed Code Blocks
+### 15. `malformed_code_block` - Malformed Code Blocks
 
 **Detection:** Regex patterns identify incorrectly formatted code blocks in markdown source.
 
@@ -527,7 +494,7 @@ The tool detects and reports issues in the following categories:
 
 ---
 
-### 18. `numbered_list` - Numbered List Sequence Errors
+### 16. `numbered_list` - Numbered List Sequence Errors
 
 **Detection:** Analyzes numbered list sequences for duplicate or skipped numbers.
 
@@ -538,6 +505,42 @@ The tool detects and reports issues in the following categories:
 
 **How it's fixed:**
 - **Deterministic:** Automatically renumbers list items to correct sequence
+
+---
+
+## Feature Categories
+
+Features are optional enhancements that may modify code block formatting in ways that change the documentation style. They are **opt-in** via the `--feature` parameter and are not applied by default.
+
+### 1. `shell_prompt` - Shell Prompts in Code Blocks
+
+**Detection:** Regex patterns for common shell prompt prefixes that shouldn't be in copyable code.
+
+**What it finds:**
+- `$ command` (user prompt)
+- `> command` (alternative prompt)
+- `% command` (csh/tcsh prompt)
+- `~ command` (home directory prompt)
+- `user@host$ command` (full prompt)
+- `root@host# command` (root full prompt)
+- `❯ command` (fancy prompts like starship, powerline)
+- `➜ command` (Oh My Zsh robbyrussell theme)
+
+**How it's fixed:**
+- **Deterministic:** Removes prompt prefixes, adds language hints (```console)
+
+---
+
+### 2. `mixed_command_output` - Mixed Command and Output
+
+**Detection:** Heuristics identify code blocks containing both commands and their output.
+
+**What it finds:**
+- Code blocks where a command is followed by its output
+- Makes copy-paste difficult for users
+
+**How it's fixed:**
+- **With LLM:** Separates into two code blocks (command + output)
 
 ---
 
@@ -569,7 +572,6 @@ https://example.com/docs/page2/,orphan_link,"Link text: 'Old Guide', URL: ...",R
 | `deprecated_url` | Yes | - | - |
 | `formatting` | Yes | - | - |
 | `backtick_errors` | Yes | - | - |
-| `shell_prompt` | Yes | - | - |
 | `heading_hierarchy` | Yes | - | - |
 | `header_spacing` | Yes | - | - |
 | `html_comment` | Yes | - | - |
@@ -577,7 +579,6 @@ https://example.com/docs/page2/,orphan_link,"Link text: 'Old Guide', URL: ...",R
 | `numbered_list` | Yes | - | - |
 | `grammar` | - | Yes | Fallback |
 | `markdown` | Partial | Yes | - |
-| `mixed_command_output` | - | Yes | Fallback |
 | `indentation` | - | Yes | Fallback |
 | `orphan_link` | - | - | Yes |
 | `orphan_image` | - | - | Yes |
@@ -585,9 +586,24 @@ https://example.com/docs/page2/,orphan_link,"Link text: 'Old Guide', URL: ...",R
 | `orphan_page` | - | - | Yes |
 
 **Legend:**
-- **Deterministic Fix:** Applied automatically using regex/rules (fixes 1-9, 14)
-- **LLM Fix:** Applied using AI (fixes 10-13, requires `--llm` and API key)
+- **Deterministic Fix:** Applied automatically using regex/rules (fixes 1-8, 12-13)
+- **LLM Fix:** Applied using AI (fixes 9-11, requires `--llm` and API key)
 - **Manual Review:** Reported in CSV for human decision
+
+---
+
+## Feature Application Summary
+
+Features are opt-in enhancements applied via `--feature` parameter:
+
+| Feature | Deterministic Fix | LLM Fix |
+|---------|:-----------------:|:-------:|
+| `shell_prompt` | Yes | - |
+| `mixed_command_output` | - | Yes |
+
+**Legend:**
+- **Deterministic Fix:** Applied automatically using regex/rules (feature 1)
+- **LLM Fix:** Applied using AI (feature 2, requires `--llm` and API key)
 
 ---
 
