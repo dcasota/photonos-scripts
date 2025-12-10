@@ -78,8 +78,46 @@ import threading
 import json
 
 # Version info
-VERSION = "2.0"
+VERSION = "2.4"
 TOOL_NAME = "photonos-docs-lecturer.py"
+
+# Version 2.4 changes:
+# - CRITICAL: Added post-LLM cleanup step to re-run deterministic fixes
+#   - LLMs sometimes wrap standalone URLs in backticks or add extra backticks
+#   - After all LLM fixes, re-run _fix_backtick_spacing() to remove backticks from URLs
+#   - After all LLM fixes, re-run _fix_malformed_code_blocks() to fix `url``` patterns
+#   - This ensures LLM cannot undo URL backtick removal
+
+# Version 2.3 changes:
+# - CRITICAL: Fixed LLM modifying indented code blocks (console output)
+#   - Added rule 6 to LLM prompts: lines starting with 4+ spaces or tab are CODE and must not be modified
+#   - Added rules 19-20: never merge lines, indented lines are console output
+#   - Updated _strip_code_from_text() to also strip indented code blocks before grammar checking
+# - CRITICAL: Fixed prompt leakage at end of files
+#   - Added specific patterns to catch "Output ONLY the corrected text..." leakage
+#   - LLM sometimes includes its instruction at the end of responses
+# - Enhanced domain capitalization fix to work more reliably
+
+# Version 2.2 changes:
+# - CRITICAL: Fixed markdown link formatting issues caused by LLM
+#   - Added _fix_markdown_link_formatting() to remove spaces after [ in markdown links
+#   - Fixes patterns like [ `cloud-init` overview](url) -> [`cloud-init` overview](url)
+# - CRITICAL: Fixed domain capitalization issues caused by LLM
+#   - Added _fix_domain_capitalization() to restore correct domain case
+#   - Fixes patterns like [GitHub.com/path](url) -> [github.com/path](url)
+#   - LLMs sometimes capitalize domain names which can break URLs/display
+# - Enhanced LLM prompts to prevent these issues in the first place
+
+# Version 2.1 changes:
+# - CRITICAL: Fixed escaped underscores issue in LLM responses
+#   - Added _fix_escaped_underscores() to restore incorrectly escaped underscores
+#   - Added explicit LLM prompt rules: NEVER escape underscores with backslash
+#   - Technical identifiers in tables/listings (e.g., disable_ec2_metadata) now preserved
+# - CRITICAL: Fixed triple backticks used as inline code
+#   - Added TRIPLE_BACKTICK_INLINE_PATTERN to detect ```term``` on same line
+#   - Converts ```cloud-init``` to `cloud-init` before other patterns
+#   - Added explicit LLM prompt rule to convert triple backticks to single backticks for inline code
+# - Enhanced LLM prompts with explicit underscore preservation rules
 
 # Version 2.0 changes:
 # - CRITICAL: Enhanced LLM response cleaning to prevent ANY added text
@@ -353,29 +391,44 @@ Output ONLY the translated text. Do NOT add any preamble, explanation, notes, or
         URLs are protected using placeholders to prevent LLM from modifying them.
         """
         issue_desc = "\n".join([f"- {i['message']}: {i.get('suggestion', 'No suggestion')}" for i in issues[:10]])
-        prompt_template = f"""Fix ONLY the following grammar issues in the text. 
+        prompt_template = f"""You are a grammar correction assistant. Fix ONLY the specific grammar issues listed below.
 
-CRITICAL RULES - VIOLATIONS WILL CAUSE ERRORS:
-1. Preserve ALL markdown formatting exactly as-is (headings, lists, code blocks, inline code)
-2. Do NOT modify any URLs or placeholders (text like __URL_PLACEHOLDER_N__)
-3. Do NOT change any relative paths like ../../images/ or ../images/
-4. Do NOT change paths in markdown links [text](path) - keep the path exactly as-is
-5. Do NOT modify content inside code blocks (```) or inline code (`)
-6. Do NOT change technical terms, product names, or command names (e.g., Tdnf, tdnf, VMware, GitHub)
-7. Do NOT add, remove, or reorder list items - only fix grammar within existing items
-8. Do NOT change the meaning or content of sentences - only fix grammar
-9. Do NOT add any explanations, notes, or commentary to your response
-10. Words at the start of sentences may be capitalized differently for technical reasons - leave them as-is
-11. NEVER add ANY text that wasn't in the original - no parenthetical notes like "(wait, ...)" or "(note: ...)"
-12. NEVER add observations, thoughts, or meta-commentary about the content
+ABSOLUTE RESTRICTIONS (violating ANY of these will break the system):
 
-Issues to fix (ONLY fix these specific issues):
+1. NEVER MODIFY THESE - copy them EXACTLY as they appear:
+   - URLs (anything starting with http:// or https://)
+   - Markdown link text that contains URLs: [https://github.com/...](url) - keep the text EXACTLY as-is
+   - Domain names: github.com, gitlab.com, bitbucket.org - NEVER capitalize these
+   - Placeholders like __URL_PLACEHOLDER_N__ or __PATH_PLACEHOLDER_N__
+   - Content inside backticks (inline code): `command`
+   - Content inside triple backticks (code blocks): ```code```
+   - Lines starting with tab or 4+ spaces (these are code/output, NOT prose)
+   - Technical identifiers with underscores: disable_ec2_metadata, users_groups
+
+2. PRESERVE STRUCTURE - do not change:
+   - Line breaks - each line must remain on its own line
+   - Indentation - preserve all leading spaces/tabs exactly
+   - Markdown formatting: #, ##, *, -, |, etc.
+   - List numbering and ordering
+
+3. ONLY FIX - these specific grammar issues:
 {issue_desc}
+
+4. NEVER ADD:
+   - Backticks around URLs or paths
+   - Explanations, notes, or commentary
+   - Text that wasn't in the original
+   - Parenthetical remarks like (note: ...) or (this is ...)
+
+5. NEVER CHANGE:
+   - Capitalization of domain names (github.com stays github.com, NOT GitHub.com)
+   - URL paths (Downloading-Photon-OS stays exactly as-is)
+   - Technical terms even if they look misspelled
 
 Text to fix:
 {{text}}
 
-Output ONLY the corrected text. Do NOT add any preamble, explanation, notes, or commentary."""
+Return ONLY the corrected text with no additional output."""
         return self._generate_with_url_protection(prompt_template, text)
     
     def fix_markdown(self, text: str, artifacts: List[str]) -> str:
@@ -384,26 +437,45 @@ Output ONLY the corrected text. Do NOT add any preamble, explanation, notes, or 
         URLs are protected using placeholders to prevent LLM from modifying them.
         """
         artifacts_str = ', '.join(artifacts[:5]) if artifacts else 'general markdown issues'
-        prompt_template = f"""Fix ONLY the markdown rendering issues in the text. Issues detected: {artifacts_str}
+        prompt_template = f"""You are a markdown syntax correction assistant. Fix ONLY markdown rendering issues.
 
-CRITICAL RULES - VIOLATIONS WILL CAUSE ERRORS:
-1. Do NOT modify any URLs or placeholders (text like __URL_PLACEHOLDER_N__)
-2. Do NOT change any relative paths like ../../images/ or ../images/
-3. Do NOT change paths in markdown links [text](path) - keep the path exactly as-is
-4. Preserve all link URLs exactly as they appear in the original text
-5. Do NOT convert single inline code (`) to fenced code blocks (```) if it's part of a sentence
-6. Do NOT add language specifiers (like ```bash) to inline code that starts sentences
-7. Do NOT change the content or meaning of any text - only fix markdown syntax
-8. Do NOT add, remove, or reorder list items
-9. Do NOT add any explanations, notes, or commentary to your response
-10. Inline code like `cloud-init` or `nocloud` at the start of a sentence should remain as inline code
-11. NEVER add ANY text that wasn't in the original - no parenthetical notes like "(wait, ...)" or "(this is ...)"
-12. NEVER add observations, thoughts, or meta-commentary about the content
+Issues detected: {artifacts_str}
+
+ABSOLUTE RESTRICTIONS (violating ANY of these will break the system):
+
+1. NEVER MODIFY THESE - copy them EXACTLY as they appear:
+   - URLs (anything starting with http:// or https://)
+   - Markdown link text that contains URLs: [https://github.com/...](url) - keep EXACTLY as-is
+   - Domain names: github.com, gitlab.com - NEVER capitalize these
+   - Placeholders like __URL_PLACEHOLDER_N__ or __PATH_PLACEHOLDER_N__
+   - Lines starting with tab or 4+ spaces (these are code/output)
+   - Technical identifiers with underscores: disable_ec2_metadata
+
+2. PRESERVE STRUCTURE:
+   - Line breaks - each line must remain on its own line
+   - Indentation - preserve all leading spaces/tabs exactly
+   - List numbering and ordering
+
+3. MARKDOWN FIXES ALLOWED:
+   - Convert ```term``` to `term` when used inline within a sentence
+   - Fix unclosed code blocks
+   - Fix malformed link syntax
+
+4. NEVER ADD:
+   - Backticks around URLs or paths
+   - Language specifiers to inline code
+   - Explanations, notes, or commentary
+   - Spaces inside markdown link brackets: [text] not [ text ]
+
+5. NEVER CHANGE:
+   - Capitalization of domain names (github.com stays lowercase)
+   - URL paths or query strings
+   - Content meaning
 
 Text to fix:
 {{text}}
 
-Output ONLY the corrected markdown. Do NOT add any preamble, explanation, notes, or commentary."""
+Return ONLY the corrected markdown with no additional output."""
         return self._generate_with_url_protection(prompt_template, text)
     
     def fix_indentation(self, text: str, issues: List[Dict]) -> str:
@@ -412,36 +484,39 @@ Output ONLY the corrected markdown. Do NOT add any preamble, explanation, notes,
         URLs are protected using placeholders to prevent LLM from modifying them.
         """
         issue_desc = "\n".join([f"- {i.get('context', i.get('type', 'unknown'))}" for i in issues[:10]])
-        prompt_template = f"""Fix ONLY the indentation issues in the markdown text.
+        prompt_template = f"""You are an indentation correction assistant. Fix ONLY indentation/alignment issues.
 
-Indentation issues detected:
+Issues detected:
 {issue_desc}
 
-Common indentation problems to fix:
-1. List items not properly aligned
-2. Code blocks inside list items not indented correctly (need 4 spaces or 1 tab)
-3. Nested content not properly indented under parent list items
-4. Inconsistent indentation (mixing tabs and spaces)
-5. Content within a numbered list step should maintain consistent indentation with other content in the same step
-6. Sentences and code blocks at the same nesting level should have the same indentation
+ABSOLUTE RESTRICTIONS (violating ANY of these will break the system):
 
-CRITICAL RULES - VIOLATIONS WILL CAUSE ERRORS:
-1. Do NOT modify any URLs or placeholders (text like __URL_PLACEHOLDER_N__)
-2. Do NOT change any relative paths like ../../images/ or ../images/
-3. Do NOT change paths in markdown links [text](path) - keep the path exactly as-is
-4. ONLY fix indentation - do NOT change any words or content
-5. Do NOT add, remove, or reorder list items
-6. Do NOT change the text content of any list item
-7. Do NOT add any explanations, notes, or commentary to your response
-8. Preserve all existing whitespace within lines - only adjust leading whitespace
-9. NEVER add ANY text that wasn't in the original - no parenthetical notes like "(wait, ...)" or "(note: ...)"
-10. NEVER add observations, thoughts, or meta-commentary about the content
-11. When aligning nested content in a list, look at the indentation of the FIRST code block or paragraph in that list item and match it
+1. NEVER MODIFY THESE - copy them EXACTLY as they appear:
+   - URLs and placeholders (__URL_PLACEHOLDER_N__)
+   - Content inside backticks
+   - Domain names (github.com stays lowercase)
+   - All words and text content
+
+2. ONLY ADJUST:
+   - Leading whitespace (spaces/tabs at start of lines)
+   - Alignment of list items and nested content
+
+3. INDENTATION FIXES ALLOWED:
+   - Align list items properly
+   - Indent code blocks inside lists (4 spaces)
+   - Fix inconsistent indentation
+   - Align nested content under parent items
+
+4. NEVER:
+   - Change any words or text content
+   - Add or remove list items
+   - Add explanations or commentary
+   - Capitalize domain names
 
 Text to fix:
 {{text}}
 
-Output ONLY the corrected markdown. Do NOT add any preamble, explanation, notes, or commentary."""
+Return ONLY the corrected markdown with no additional output."""
         return self._generate_with_url_protection(prompt_template, text)
     
     def _clean_llm_response(self, response: str, original_text: str) -> str:
@@ -522,6 +597,10 @@ Output ONLY the corrected markdown. Do NOT add any preamble, explanation, notes,
             r'\s*\([^)]*(?:duplicate|original|keep\s*as\s*is|I\'ll|I\s+will|note|wait|this\s+is|skipping|unchanged|already)[^)]*\)\s*',
             # Lines that are purely LLM commentary (not in markdown tables)
             r'^\s*(?:Note|Wait|I\'ll|I\s+will|This\s+is|Keeping|Skipping)[^|\n]*$',
+            # CRITICAL: Catch exact prompt instruction that sometimes leaks through
+            r'\n*Output ONLY the corrected text\.?\s*Do NOT add any preamble,? explanation,? notes,? or commentary\.?\s*$',
+            r'\n*Output ONLY the corrected markdown\.?\s*Do NOT add any preamble,? explanation,? notes,? or commentary\.?\s*$',
+            r'\n*Output ONLY the (?:corrected|fixed|translated) (?:text|markdown|content)\.?[^\n]*(?:preamble|explanation|commentary)[^\n]*$',
         ]
         
         cleaned = response
@@ -564,7 +643,85 @@ Output ONLY the corrected markdown. Do NOT add any preamble, explanation, notes,
         # 2. Look like meta-commentary or explanations
         cleaned = self._remove_llm_added_lines(cleaned, original_text)
         
+        # CRITICAL: Fix incorrectly escaped underscores in technical identifiers
+        # LLMs sometimes escape underscores like disable_ec2_metadata -> disable\_ec2\_metadata
+        # This is wrong in markdown tables/listings and should be reverted
+        cleaned = self._fix_escaped_underscores(cleaned, original_text)
+        
+        # CRITICAL: Fix markdown link text formatting issues
+        # LLMs sometimes add spaces after [ in markdown links when link text starts with backtick
+        # e.g., [ `cloud-init` overview] should be [`cloud-init` overview]
+        cleaned = self._fix_markdown_link_formatting(cleaned, original_text)
+        
+        # CRITICAL: Fix incorrect domain capitalization in link text
+        # LLMs sometimes capitalize domain names like github.com to GitHub.com
+        # This is incorrect and can break URLs
+        cleaned = self._fix_domain_capitalization(cleaned, original_text)
+        
         return cleaned
+    
+    def _fix_escaped_underscores(self, response: str, original_text: str) -> str:
+        """Fix incorrectly escaped underscores in technical identifiers.
+        
+        LLMs sometimes escape underscores (e.g., disable_ec2_metadata becomes disable\\_ec2\\_metadata).
+        This is incorrect in technical documentation, especially in tables/listings.
+        
+        This method finds escaped underscores and restores them if the original
+        text contained the unescaped version.
+        
+        Args:
+            response: LLM response that may have incorrectly escaped underscores
+            original_text: Original text with correct underscore usage
+            
+        Returns:
+            Response with escaped underscores fixed
+        """
+        if not response or not original_text:
+            return response
+        
+        # Pattern to find escaped underscores: \_ (backslash followed by underscore)
+        escaped_pattern = re.compile(r'\\(_)')
+        
+        # Find all identifiers with escaped underscores in the response
+        # Pattern: word characters, escaped underscore, word characters (can repeat)
+        escaped_identifier_pattern = re.compile(r'\b(\w+(?:\\_\w+)+)\b')
+        
+        def restore_underscore(match):
+            escaped_identifier = match.group(1)
+            # Remove the backslashes to get the original identifier
+            original_identifier = escaped_identifier.replace('\\_', '_')
+            
+            # Check if the original identifier exists in the original text
+            if original_identifier in original_text:
+                return original_identifier
+            else:
+                # Keep escaped version if original wasn't present (might be intentional)
+                return escaped_identifier
+        
+        # Replace escaped identifiers with original versions
+        result = escaped_identifier_pattern.sub(restore_underscore, response)
+        
+        # Also handle any remaining standalone escaped underscores
+        # Only fix if the word with unescaped underscore appears in original
+        def restore_standalone_underscore(match):
+            full_match = match.group(0)
+            # Get context around the underscore
+            start = max(0, match.start() - 20)
+            end = min(len(result), match.end() + 20)
+            context = result[start:end]
+            
+            # Try to extract the full word containing the escaped underscore
+            word_match = re.search(r'(\w+)\\_(\w+)', context)
+            if word_match:
+                potential_word = f"{word_match.group(1)}_{word_match.group(2)}"
+                if potential_word in original_text:
+                    return '_'
+            return full_match
+        
+        # Apply standalone underscore fix
+        result = escaped_pattern.sub(restore_standalone_underscore, result)
+        
+        return result
     
     def _remove_llm_added_lines(self, response: str, original_text: str) -> str:
         """Remove lines that appear to be LLM-added commentary.
@@ -642,6 +799,112 @@ Output ONLY the corrected markdown. Do NOT add any preamble, explanation, notes,
             result_lines.append(line)
         
         return '\n'.join(result_lines)
+    
+    def _fix_markdown_link_formatting(self, response: str, original_text: str) -> str:
+        """Fix markdown link text formatting issues caused by LLM.
+        
+        LLMs sometimes add spaces after [ in markdown links when the link text
+        starts with a backtick. This method fixes such patterns.
+        
+        Examples fixed:
+        - [ `cloud-init` overview](url) -> [`cloud-init` overview](url)
+        - [ `term` text](url) -> [`term` text](url)
+        
+        Args:
+            response: LLM response with potential link formatting issues
+            original_text: Original text for validation
+            
+        Returns:
+            Response with markdown link formatting fixed
+        """
+        if not response:
+            return response
+        
+        # Pattern to match markdown links with space after opening bracket
+        # Matches: [ (space) followed by content ](url)
+        space_after_bracket_pattern = re.compile(r'\[\s+(`[^`]+`[^\]]*)\]\(([^)]+)\)')
+        
+        def fix_link(match):
+            link_text = match.group(1)
+            url = match.group(2)
+            # Remove leading space from link text
+            return f'[{link_text}]({url})'
+        
+        result = space_after_bracket_pattern.sub(fix_link, response)
+        
+        # Also fix cases where space is added before closing bracket when text ends with backtick
+        # Matches: [content `term` ](url) -> [content `term`](url)
+        space_before_bracket_pattern = re.compile(r'\[([^\]]*`[^`]+`)\s+\]\(([^)]+)\)')
+        result = space_before_bracket_pattern.sub(r'[\1](\2)', result)
+        
+        return result
+    
+    def _fix_domain_capitalization(self, response: str, original_text: str) -> str:
+        """Fix incorrect domain capitalization in link text caused by LLM.
+        
+        LLMs sometimes capitalize domain names like github.com to GitHub.com
+        in link text, which is incorrect. This method restores the original
+        domain capitalization.
+        
+        Examples fixed:
+        - [GitHub.com/vmware/photon](url) -> [github.com/vmware/photon](url) (if original was lowercase)
+        - The URL GitHub.com/path -> github.com/path (if original was lowercase)
+        
+        Args:
+            response: LLM response with potential domain capitalization issues
+            original_text: Original text with correct capitalization
+            
+        Returns:
+            Response with domain capitalization fixed
+        """
+        if not response or not original_text:
+            return response
+        
+        # Common domain names that LLMs incorrectly capitalize
+        # Map of incorrect -> correct (when appearing in link text, not as proper nouns)
+        domain_corrections = {
+            'GitHub.com': 'github.com',
+            'GitLab.com': 'gitlab.com',
+            'BitBucket.org': 'bitbucket.org',
+            'SourceForge.net': 'sourceforge.net',
+        }
+        
+        result = response
+        
+        for incorrect, correct in domain_corrections.items():
+            # Check if the incorrect capitalization appears in the response
+            # We fix it regardless of original text since domain names should always be lowercase
+            if incorrect in result or incorrect.lower() != incorrect and re.search(re.escape(incorrect), result, re.IGNORECASE):
+                # Fix in markdown link text: [GitHub.com/path](url)
+                # Pattern matches the domain in link text part only
+                link_text_pattern = re.compile(
+                    r'\[([^\]]*?)' + re.escape(incorrect) + r'([^\]]*?)\](\([^)]+\))',
+                    re.IGNORECASE
+                )
+                result = link_text_pattern.sub(
+                    lambda m: f'[{m.group(1)}{correct}{m.group(2)}]{m.group(3)}',
+                    result
+                )
+                
+                # Also fix standalone occurrences that look like URLs in text
+                # but NOT in actual URL positions (inside parentheses of markdown links)
+                # Pattern: domain at start of URL-like path in plain text
+                standalone_pattern = re.compile(
+                    r'(?<!\()' + re.escape(incorrect) + r'(/[\w./-]*)',
+                    re.IGNORECASE
+                )
+                result = standalone_pattern.sub(correct + r'\1', result)
+                
+                # Also fix the exact incorrect capitalization anywhere it appears
+                # (but not inside parentheses which are URL targets in markdown)
+                result = re.sub(
+                    r'(?<!\()' + re.escape(incorrect) + r'(?![^[]*\])',
+                    correct,
+                    result,
+                    flags=re.IGNORECASE
+                )
+        
+        return result
     
     def _generate(self, prompt: str) -> str:
         """Generate response from LLM."""
@@ -769,6 +1032,16 @@ class DocumentationLecturer:
         re.MULTILINE
     )
     
+    # Pattern 6: Triple backticks used as inline code delimiters (on same line, no newlines)
+    # This is a common error where authors use ```term``` instead of `term`
+    # Example: ```cloud-init``` is a multi-distribution... -> `cloud-init` is a multi-distribution...
+    # Note: This is different from Pattern 5 which handles fenced blocks with newlines
+    TRIPLE_BACKTICK_INLINE_PATTERN = re.compile(
+        r'```'  # Opening triple backtick
+        r'([a-zA-Z0-9_-]+(?:\s+[a-zA-Z0-9_-]+)?)'  # Single word or two words (no newlines allowed)
+        r'```'  # Closing triple backtick
+    )
+    
     # Pattern for detecting indentation issues in numbered/bulleted lists
     # Matches lines that start with a number followed by period/parenthesis
     NUMBERED_LIST_PATTERN = re.compile(r'^(\s*)(\d+)([.)])(\s+)(.*)$', re.MULTILINE)
@@ -822,7 +1095,7 @@ class DocumentationLecturer:
     # Deprecated Bintray URLs (Bintray service was discontinued in 2021)
     # These URLs should be replaced with the GitHub wiki download page
     DEPRECATED_BINTRAY_URL_PATTERN = re.compile(r'https?://(?:dl\.)?bintray\.com/[^\s"\'<>\)]*')
-    BINTRAY_URL_REPLACEMENT = 'https://github.com/vmware/photon/wiki/downloading-photon-os'
+    BINTRAY_URL_REPLACEMENT = 'https://github.com/vmware/photon/wiki/Downloading-Photon-OS'
     
     # VMware spelling pattern - must be "VMware" with capital V and M
     # Matches incorrect spellings like "vmware", "Vmware", "VMWare", "VMWARE", etc.
@@ -1486,6 +1759,7 @@ class DocumentationLecturer:
         Removes:
         - Fenced code blocks (``` ... ```)
         - Inline code (` ... `)
+        - Indented code blocks (lines starting with 4+ spaces or tab)
         
         This prevents false grammar errors on technical expressions and commands.
         """
@@ -1494,6 +1768,11 @@ class DocumentationLecturer:
         
         # Remove inline code (` ... `) - be careful not to match empty backticks
         text = re.sub(r'`[^`]+`', ' ', text)
+        
+        # Remove indented code blocks (lines starting with tab or 4+ spaces)
+        # These are markdown code blocks without fences
+        text = re.sub(r'^[\t].*$', ' ', text, flags=re.MULTILINE)
+        text = re.sub(r'^[ ]{4,}.*$', ' ', text, flags=re.MULTILINE)
         
         # Clean up multiple spaces created by removals
         text = re.sub(r'\s+', ' ', text)
@@ -1973,6 +2252,29 @@ class DocumentationLecturer:
                 'type': 'plain_text_command',
                 'command': command,
                 'indent': indent,
+                'context': context
+            })
+            
+            if len(issues) >= 20:
+                break
+        
+        # Check for triple backticks used as inline code delimiters (no newlines)
+        # e.g., ```cloud-init``` should be `cloud-init`
+        for match in self.TRIPLE_BACKTICK_INLINE_PATTERN.finditer(text_content):
+            code_content = match.group(1)
+            full_match = match.group(0)
+            
+            start = max(0, match.start() - 10)
+            end = min(len(text_content), match.end() + 30)
+            context = text_content[start:end].replace('\n', '\\n')
+            
+            location = f"Triple backticks used as inline code (should use single backticks): ...{context}..."
+            fix = f"Convert to single backticks: `{code_content}`"
+            
+            self._write_csv_row(page_url, 'malformed_code_block', location, fix)
+            issues.append({
+                'type': 'triple_backtick_inline',
+                'code_content': code_content,
                 'context': context
             })
             
@@ -3637,6 +3939,21 @@ class DocumentationLecturer:
                     except Exception as e:
                         self.logger.error(f"LLM translation failed: {e}")
                 
+                # =========================================================
+                # Post-LLM cleanup (re-run deterministic fixes)
+                # LLMs sometimes undo deterministic fixes, so we re-apply them
+                # =========================================================
+                
+                # Re-run backtick spacing fix - LLMs sometimes wrap URLs in backticks
+                # This removes backticks from standalone URLs that LLM might have added
+                if 'formatting_issues' in self.enabled_fix_keys:
+                    content = self._fix_backtick_spacing(content)
+                
+                # Re-run malformed code block fix - LLMs sometimes add extra backticks
+                # This fixes patterns like `url``` that LLM might create
+                if 'malformed_code_block_issues' in self.enabled_fix_keys:
+                    content = self._fix_malformed_code_blocks(content)
+                
                 # Write back if changed
                 if content != original:
                     with open(local_path, 'w', encoding='utf-8') as f:
@@ -3845,10 +4162,12 @@ class DocumentationLecturer:
         # Pattern to detect URLs inside backticks (full URL pattern)
         url_pattern = re.compile(r'^https?://\S+$')
         
-        # FIRST PASS: Remove backticks from standalone URLs
-        # Pattern matches: `https://...` (backticked URLs that stand alone)
-        # This handles the case where URL is wrapped in backticks on its own line or as standalone
-        standalone_backtick_url_pattern = re.compile(r'`(https?://[^\s`]+)`')
+        # FIRST PASS: Remove backticks from standalone URLs that have proper spacing
+        # Pattern matches: `https://...` (backticked URLs that stand alone with space/start/end boundaries)
+        # This handles the case where URL is wrapped in backticks but already has proper spacing
+        # Note: We use lookahead/lookbehind to ensure we don't match URLs adjacent to text
+        # (those cases are handled by the combined pattern which adds spaces)
+        standalone_backtick_url_pattern = re.compile(r'(?<![a-zA-Z])`(https?://[^\s`]+)`(?![a-zA-Z])')
         content = standalone_backtick_url_pattern.sub(r'\1', content)
         
         # Combined pattern to match backticked content with optional word before and/or after
@@ -3944,6 +4263,11 @@ class DocumentationLecturer:
         These patterns indicate the author intended to create fenced code blocks
         but used incorrect backtick syntax.
         """
+        # Fix pattern -3: Triple backticks used as inline code delimiters (no newlines)
+        # This handles cases like ```cloud-init``` -> `cloud-init`
+        # This must be done FIRST before the fenced code pattern
+        content = self.TRIPLE_BACKTICK_INLINE_PATTERN.sub(r'`\1`', content)
+        
         # Fix pattern -2: Fenced code block incorrectly used for inline code within a sentence
         # This MUST be done FIRST before any other pattern, to convert back to inline code
         # Example: ```bash\ncloud-init\n``` is a multi-distribution... -> `cloud-init` is a...
@@ -6179,7 +6503,15 @@ See also [documentation](https://docs.example.com/guide.html) and visit https://
             such as "Output the corrected markdown directly without any preamble or explanation."
             The _clean_llm_response method should remove these artifacts.
             """
-            # Create a mock LLMClient to test _clean_llm_response
+            # Create a mock LLMClient instance to test _clean_llm_response
+            class MockLLMClient:
+                def _remove_llm_added_lines(self, response, original_text):
+                    return LLMClient._remove_llm_added_lines(self, response, original_text)
+                def _fix_escaped_underscores(self, response, original_text):
+                    return LLMClient._fix_escaped_underscores(self, response, original_text)
+            
+            mock_client = MockLLMClient()
+            
             original_text = """# Test Content
 
 Some markdown content here.
@@ -6190,24 +6522,24 @@ Some markdown content here.
             
             # Test case 1: Prompt instruction at end of response
             response_with_leakage = original_text + "\n\nOutput the corrected markdown directly without any preamble or explanation."
-            cleaned = LLMClient._clean_llm_response(LLMClient, response_with_leakage, original_text)
+            cleaned = LLMClient._clean_llm_response(mock_client, response_with_leakage, original_text)
             self.assertNotIn("Output the corrected markdown", cleaned)
             self.assertIn("# Test Content", cleaned)
             self.assertIn("| test | 123   |", cleaned)
             
             # Test case 2: "Return only" instruction at end
             response_with_leakage = original_text + "\n\nReturn only the corrected text."
-            cleaned = LLMClient._clean_llm_response(LLMClient, response_with_leakage, original_text)
+            cleaned = LLMClient._clean_llm_response(mock_client, response_with_leakage, original_text)
             self.assertNotIn("Return only", cleaned)
             
             # Test case 3: "without any preamble" fragment
             response_with_leakage = original_text + "\n\nwithout any preamble or explanation."
-            cleaned = LLMClient._clean_llm_response(LLMClient, response_with_leakage, original_text)
+            cleaned = LLMClient._clean_llm_response(mock_client, response_with_leakage, original_text)
             self.assertNotIn("without any preamble", cleaned)
             
             # Test case 4: Clean response should pass through unchanged
             clean_response = original_text
-            cleaned = LLMClient._clean_llm_response(LLMClient, clean_response, original_text)
+            cleaned = LLMClient._clean_llm_response(mock_client, clean_response, original_text)
             self.assertEqual(cleaned, original_text)
         
         def test_llm_relative_path_protection(self):
@@ -6521,6 +6853,86 @@ The file is located at ./path/to/file.md in the repository."""
             self.assertIn("```bash", fixed, "Standalone fenced block should remain fenced")
             
             lecturer.cleanup()
+        
+        def test_fix_triple_backtick_inline(self):
+            """Test conversion of triple backticks used as inline code to single backticks.
+            
+            Bug fix: Source markdown sometimes uses ```term``` instead of `term` for inline code.
+            This should be converted to single backticks.
+            """
+            class MockArgs:
+                command = 'analyze'
+                website = 'https://example.com'
+                parallel = 1
+                language = 'en'
+                ref_website = None
+                test = False
+            
+            lecturer = DocumentationLecturer(MockArgs())
+            
+            # Test: triple backticks on same line should become single backticks
+            content = "```cloud-init``` is a multi-distribution package."
+            fixed = lecturer._fix_malformed_code_blocks(content)
+            self.assertEqual(fixed, "`cloud-init` is a multi-distribution package.")
+            
+            # Test: multiple instances of triple backtick inline
+            content = "The ```ec2``` datasource and ```nocloud``` are both supported."
+            fixed = lecturer._fix_malformed_code_blocks(content)
+            self.assertEqual(fixed, "The `ec2` datasource and `nocloud` are both supported.")
+            
+            # Test: triple backticks with hyphenated term
+            content = "Use ```ec2-datasource``` for Amazon."
+            fixed = lecturer._fix_malformed_code_blocks(content)
+            self.assertEqual(fixed, "Use `ec2-datasource` for Amazon.")
+            
+            # Test: triple backticks with two words
+            content = "Has ```ec2 datasource``` turned on."
+            fixed = lecturer._fix_malformed_code_blocks(content)
+            self.assertEqual(fixed, "Has `ec2 datasource` turned on.")
+            
+            lecturer.cleanup()
+        
+        def test_fix_escaped_underscores(self):
+            """Test restoration of incorrectly escaped underscores in LLM responses.
+            
+            Bug fix: LLMs sometimes escape underscores in technical identifiers
+            like disable_ec2_metadata -> disable\\_ec2\\_metadata. This is wrong.
+            """
+            # Test the _fix_escaped_underscores method directly via LLMClient
+            original_text = """Module Frequency Info
+------------------------------------
+Name                  |  Frequency
+----------------------|-------------
+disable_ec2_metadata  | Always
+users_groups          | Instance
+write_files           | Instance
+update_hostname       | Always"""
+            
+            # Simulate LLM response with escaped underscores
+            llm_response = """Module Frequency Info
+------------------------------------
+Name                  |  Frequency
+----------------------|-------------
+disable\\_ec2\\_metadata  | Always
+users\\_groups          | Instance
+write\\_files           | Instance
+update_hostname       | Always"""
+            
+            # Create LLMClient mock to test _fix_escaped_underscores
+            class MockLLMClient:
+                pass
+            
+            client = MockLLMClient()
+            # Access the method via LLMClient class
+            fixed = LLMClient._fix_escaped_underscores(client, llm_response, original_text)
+            
+            # Verify escaped underscores are restored
+            self.assertIn("disable_ec2_metadata", fixed)
+            self.assertIn("users_groups", fixed)
+            self.assertIn("write_files", fixed)
+            self.assertNotIn("disable\\_ec2\\_metadata", fixed)
+            self.assertNotIn("users\\_groups", fixed)
+            self.assertNotIn("write\\_files", fixed)
         
         def test_fix_shell_prompts_in_markdown(self):
             """Test shell prompt removal from markdown code blocks."""

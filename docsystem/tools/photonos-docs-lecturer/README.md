@@ -822,7 +822,22 @@ python3 photonos-docs-lecturer.py run --list-fixes
 
 ## Version History
 
-### Version 2.0 (Current)
+### Version 2.1 (Current)
+- **CRITICAL: Fixed escaped underscores issue in LLM responses**
+  - Added `_fix_escaped_underscores()` method to restore incorrectly escaped underscores
+  - Technical identifiers like `disable_ec2_metadata` in tables/listings are now preserved correctly
+  - LLMs were escaping underscores (e.g., `disable\_ec2\_metadata`) which is incorrect in technical documentation
+  - Added explicit LLM prompt rules: "NEVER escape underscores with backslash"
+- **CRITICAL: Fixed triple backticks used as inline code**
+  - Added `TRIPLE_BACKTICK_INLINE_PATTERN` to detect `\`\`\`term\`\`\`` on same line
+  - Converts `\`\`\`cloud-init\`\`\`` to `` `cloud-init` `` when used as inline code
+  - Added explicit LLM prompt rule to convert triple backticks to single backticks for inline code
+  - This fixes issues where source markdown incorrectly uses triple backticks for inline code
+- Enhanced backtick spacing for URLs:
+  - Fixed URL detection to properly add spaces when removing backticks from adjacent text
+  - URLs wrapped in backticks with no spaces now correctly get spaces added when backticks are removed
+
+### Version 2.0
 - **CRITICAL: Enhanced LLM response validation to prevent ANY added text**
   - Added comprehensive patterns to detect/remove LLM commentary like "(wait, this is a duplicate...)" or "or explanation."
   - Added `_remove_llm_added_lines()` method for line-by-line validation against original content
