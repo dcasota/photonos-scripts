@@ -139,7 +139,7 @@ echo "Note: This does not set the variables themselves—only preserves them whe
 
 Testing photonos-docs-lecturer on the original Photon OS GitHub repo may expose unfinished public commits. It's more effective to use a separate mirrored repository for testing.
 
-For this, you can use mirror-repository.py or mirror-repository.sh.
+For this, you can use `mirror-repository.py` or `mirror-repository.sh`.
 Usage: `./tools/mirror-repository/mirror-repository.sh <ORIGINAL_REPO> <TARGET_REPO> [LOCAL_PATH]`
 
 Example:
