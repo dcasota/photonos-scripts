@@ -407,6 +407,7 @@ The tool detects and reports issues in the following categories:
 | `my.vmware.com/.../OVFTOOL410...` | `developer.broadcom.com/tools/open-virtualization-format-ovf-tool/latest` |
 | `docs.aws.amazon.com/.../set-up-ec2-cli-linux.html` | `docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html` |
 | `github.com/cloudfoundry/bosh/blob/develop/bosh-stemcell/README.md` | `github.com/cloudfoundry/bosh/blob/main/README.md` |
+| `bintray.com/*` (Bintray discontinued 2021) | `github.com/vmware/photon/wiki/downloading-photon-os` |
 
 **How it's fixed:**
 - **Deterministic:** Automatically replaces deprecated URLs
@@ -821,7 +822,26 @@ python3 photonos-docs-lecturer.py run --list-fixes
 
 ## Version History
 
-### Version 1.9 (Current)
+### Version 2.0 (Current)
+- **CRITICAL: Enhanced LLM response validation to prevent ANY added text**
+  - Added comprehensive patterns to detect/remove LLM commentary like "(wait, this is a duplicate...)" or "or explanation."
+  - Added `_remove_llm_added_lines()` method for line-by-line validation against original content
+  - Strengthened ALL LLM prompts with explicit "NEVER add ANY text" rules
+  - LLM responses are now validated to ensure no fabricated content is added
+- Added deprecated Bintray URL replacement (service discontinued 2021)
+  - Pattern: `bintray.com/*` -> `github.com/vmware/photon/wiki/downloading-photon-os`
+- Improved numbered list sequence fixing:
+  - Rewrote logic to correctly renumber ALL list items in sequence
+  - Fixed handling of lists starting from any number
+  - Better detection of list continuation vs new lists
+- Enhanced relative path protection for LLM fixes:
+  - Now protects paths in parentheses: `(./path/to/page/)`
+  - Prevents LLM from modifying relative documentation links
+- Improved indentation fix prompts:
+  - Added rules for consistent indentation within numbered list steps
+  - Added instruction to match indentation with FIRST code block in the same list item
+
+### Version 1.9
 - Enhanced malformed code block detection and fixing:
   - Detects fenced code blocks incorrectly used for inline code within sentences
   - Converts fenced blocks back to inline code when followed by sentence continuation words (is, are, was, were, has, have, had, can, will, would, should, may, might, must, turned, configuration, data, with) or punctuation (., ,, etc.)
@@ -900,7 +920,7 @@ python3 photonos-docs-lecturer.py run --list-fixes
 
 ## Version
 
-Current version: **1.9**
+Current version: **2.0**
 
 Check version:
 ```bash

@@ -78,8 +78,20 @@ import threading
 import json
 
 # Version info
-VERSION = "1.9"
+VERSION = "2.0"
 TOOL_NAME = "photonos-docs-lecturer.py"
+
+# Version 2.0 changes:
+# - CRITICAL: Enhanced LLM response cleaning to prevent ANY added text
+#   - Added comprehensive patterns to detect/remove LLM commentary like "(wait, this is...)"
+#   - Added _remove_llm_added_lines() for line-by-line validation against original content
+#   - Strengthened all LLM prompts with explicit "NEVER add ANY text" rules
+# - Fixed backticks around standalone URLs: `https://example.com` -> https://example.com
+# - Added deprecated Bintray URL replacement (service discontinued 2021)
+#   - Pattern: DEPRECATED_BINTRAY_URL_PATTERN -> https://github.com/vmware/photon/wiki/downloading-photon-os
+# - Improved numbered list sequence fixing to correctly renumber all items
+# - Enhanced relative path protection to include paths in parentheses: (./path/)
+# - Improved indentation fix prompts for better nested content alignment
 
 # Lazy-loaded modules (populated by check_and_import_dependencies)
 requests = None
@@ -176,15 +188,15 @@ class LLMClient:
     # Pattern to match relative paths that look like documentation links
     # Matches paths like: ../path/to/page, ./path/to/page, path/to/page.md
     # Must contain at least one slash and typically have path-like structure
-    # Excludes paths that are clearly not documentation links
+    # Also matches paths inside parentheses: (./path/to/page/) which are common in markdown links
     RELATIVE_PATH_PATTERN = re.compile(
-        r'(?<![(\[a-zA-Z0-9_-])'  # Not preceded by ( [ or alphanumeric (to avoid partial matches)
         r'('
-        r'\.{1,2}/[\w./-]+'  # Paths starting with ./ or ../
+        r'\(\s*\.{1,2}/[\w./-]+/?\s*\)'  # Paths in parentheses: (./path/) or (../path/)
         r'|'
-        r'[\w-]+(?:/[\w-]+)+(?:\.md)?'  # Paths like dir/subdir/page or dir/subdir/page.md (at least 2 segments)
+        r'\.{1,2}/[\w./-]+/?'  # Paths starting with ./ or ../ (with optional trailing slash)
+        r'|'
+        r'[\w-]+(?:/[\w-]+)+(?:\.md)?/?'  # Paths like dir/subdir/page or dir/subdir/page.md
         r')'
-        r'(?![a-zA-Z0-9_/-])'  # Not followed by alphanumeric or path chars (to avoid partial matches)
     )
     
     def __init__(self, provider: str, api_key: str, language: str = "en"):
@@ -326,11 +338,13 @@ CRITICAL RULES - VIOLATIONS WILL CAUSE ERRORS:
 7. Do NOT add, remove, or reorder list items
 8. Do NOT add any explanations, notes, or commentary to your response
 9. Only translate the natural language text outside of code and technical terms
+10. NEVER add ANY text that wasn't in the original - no parenthetical notes like "(note: ...)" or "(this is ...)"
+11. NEVER add observations, thoughts, or meta-commentary about the content
 
 Text to translate:
 {{text}}
 
-Output the translated text directly without any preamble or explanation."""
+Output ONLY the translated text. Do NOT add any preamble, explanation, notes, or commentary."""
         return self._generate_with_url_protection(prompt_template, text)
     
     def fix_grammar(self, text: str, issues: List[Dict]) -> str:
@@ -352,6 +366,8 @@ CRITICAL RULES - VIOLATIONS WILL CAUSE ERRORS:
 8. Do NOT change the meaning or content of sentences - only fix grammar
 9. Do NOT add any explanations, notes, or commentary to your response
 10. Words at the start of sentences may be capitalized differently for technical reasons - leave them as-is
+11. NEVER add ANY text that wasn't in the original - no parenthetical notes like "(wait, ...)" or "(note: ...)"
+12. NEVER add observations, thoughts, or meta-commentary about the content
 
 Issues to fix (ONLY fix these specific issues):
 {issue_desc}
@@ -359,7 +375,7 @@ Issues to fix (ONLY fix these specific issues):
 Text to fix:
 {{text}}
 
-Output the corrected text directly without any preamble or explanation."""
+Output ONLY the corrected text. Do NOT add any preamble, explanation, notes, or commentary."""
         return self._generate_with_url_protection(prompt_template, text)
     
     def fix_markdown(self, text: str, artifacts: List[str]) -> str:
@@ -381,11 +397,13 @@ CRITICAL RULES - VIOLATIONS WILL CAUSE ERRORS:
 8. Do NOT add, remove, or reorder list items
 9. Do NOT add any explanations, notes, or commentary to your response
 10. Inline code like `cloud-init` or `nocloud` at the start of a sentence should remain as inline code
+11. NEVER add ANY text that wasn't in the original - no parenthetical notes like "(wait, ...)" or "(this is ...)"
+12. NEVER add observations, thoughts, or meta-commentary about the content
 
 Text to fix:
 {{text}}
 
-Output the corrected markdown directly without any preamble or explanation."""
+Output ONLY the corrected markdown. Do NOT add any preamble, explanation, notes, or commentary."""
         return self._generate_with_url_protection(prompt_template, text)
     
     def fix_indentation(self, text: str, issues: List[Dict]) -> str:
@@ -404,6 +422,8 @@ Common indentation problems to fix:
 2. Code blocks inside list items not indented correctly (need 4 spaces or 1 tab)
 3. Nested content not properly indented under parent list items
 4. Inconsistent indentation (mixing tabs and spaces)
+5. Content within a numbered list step should maintain consistent indentation with other content in the same step
+6. Sentences and code blocks at the same nesting level should have the same indentation
 
 CRITICAL RULES - VIOLATIONS WILL CAUSE ERRORS:
 1. Do NOT modify any URLs or placeholders (text like __URL_PLACEHOLDER_N__)
@@ -414,11 +434,14 @@ CRITICAL RULES - VIOLATIONS WILL CAUSE ERRORS:
 6. Do NOT change the text content of any list item
 7. Do NOT add any explanations, notes, or commentary to your response
 8. Preserve all existing whitespace within lines - only adjust leading whitespace
+9. NEVER add ANY text that wasn't in the original - no parenthetical notes like "(wait, ...)" or "(note: ...)"
+10. NEVER add observations, thoughts, or meta-commentary about the content
+11. When aligning nested content in a list, look at the indentation of the FIRST code block or paragraph in that list item and match it
 
 Text to fix:
 {{text}}
 
-Output the corrected markdown directly without any preamble or explanation."""
+Output ONLY the corrected markdown. Do NOT add any preamble, explanation, notes, or commentary."""
         return self._generate_with_url_protection(prompt_template, text)
     
     def _clean_llm_response(self, response: str, original_text: str) -> str:
@@ -475,6 +498,30 @@ Output the corrected markdown directly without any preamble or explanation."""
             # Generic "without any" instruction fragments (with preceding newlines)
             r'(?:\n\s*)+[Ww]ithout any (?:preamble|explanation|commentary)\.?\s*$',
             r'(?:\n\s*)+without any preamble or explanation\.?\s*$',
+            # LLM commentary patterns - CRITICAL: LLM must NEVER add ANY text
+            # These are patterns where LLM adds its own observations/notes/commentary
+            # ANY text added by LLM that wasn't in the original MUST be removed
+            r'\(wait,\s*[^)]+\)',              # "(wait, ...)"
+            r'\(note:\s*[^)]+\)',              # "(note: ...)"
+            r'\(Note:\s*[^)]+\)',              # "(Note: ...)"
+            r'\(I\'ll\s+[^)]+\)',              # "(I'll ...)"
+            r'\(I\s+will\s+[^)]+\)',           # "(I will ...)"
+            r'\([Nn]ote\s+that\s+[^)]+\)',     # "(Note that...)"
+            r'\([Ss]ee\s+[^)]+\)',             # "(see ...)"
+            r'\(this\s+is\s+[^)]+\)',          # "(this is ...)"
+            r'\(keep\s+as\s+is[^)]*\)',        # "(keep as is...)"
+            r'\(keeping\s+[^)]+\)',            # "(keeping...)"
+            r'\(duplicate[^)]*\)',             # "(duplicate...)"
+            r'\(original[^)]*\)',              # "(original...)"
+            r'\(unchanged[^)]*\)',             # "(unchanged...)"
+            r'\(skipping[^)]*\)',              # "(skipping...)"
+            r'\(already[^)]*\)',               # "(already...)"
+            r'\n+or\s+explanation\.\s*$',      # "or explanation." at end (prompt fragment)
+            r'^\s*or\s+explanation\.\s*$',     # "or explanation." standalone line
+            # Inline LLM meta-comments in parentheses - catch-all for commentary
+            r'\s*\([^)]*(?:duplicate|original|keep\s*as\s*is|I\'ll|I\s+will|note|wait|this\s+is|skipping|unchanged|already)[^)]*\)\s*',
+            # Lines that are purely LLM commentary (not in markdown tables)
+            r'^\s*(?:Note|Wait|I\'ll|I\s+will|This\s+is|Keeping|Skipping)[^|\n]*$',
         ]
         
         cleaned = response
@@ -510,7 +557,91 @@ Output the corrected markdown directly without any preamble or explanation."""
                     content_lines.append(line)
             cleaned = '\n'.join(content_lines).strip()
         
+        # CRITICAL: Final validation - detect and remove any lines that appear to be
+        # LLM-added commentary that weren't caught by patterns above
+        # This checks for lines that:
+        # 1. Are completely new (not in original)
+        # 2. Look like meta-commentary or explanations
+        cleaned = self._remove_llm_added_lines(cleaned, original_text)
+        
         return cleaned
+    
+    def _remove_llm_added_lines(self, response: str, original_text: str) -> str:
+        """Remove lines that appear to be LLM-added commentary.
+        
+        CRITICAL: LLM must NEVER add ANY text that wasn't in the original.
+        This method detects and removes lines that:
+        1. Were not present in the original text (even partially)
+        2. Look like meta-commentary, notes, or explanations
+        
+        Args:
+            response: Cleaned LLM response
+            original_text: Original text that was sent for fixing
+            
+        Returns:
+            Response with LLM-added lines removed
+        """
+        if not response or not original_text:
+            return response
+        
+        # Create a set of normalized "signature" words from original text
+        # These are distinctive words that help identify original content
+        original_words = set(re.findall(r'\b[a-zA-Z]{4,}\b', original_text.lower()))
+        
+        # Patterns that indicate LLM-added commentary
+        commentary_indicators = [
+            r'^\s*\(.*\)\s*$',                    # Line is just parenthetical note
+            r'wait,?\s+this',                      # "wait, this..."
+            r'i\'ll\s+keep',                       # "I'll keep..."
+            r'keeping\s+as\s+is',                  # "keeping as is"
+            r'this\s+is\s+a\s+duplicate',          # "this is a duplicate"
+            r'note\s*:',                           # "note:" or "Note:"
+            r'or\s+explanation\.',                 # "or explanation."
+            r'^\s*$',                              # Empty lines are OK, skip check
+        ]
+        
+        lines = response.split('\n')
+        result_lines = []
+        
+        for line in lines:
+            line_lower = line.lower().strip()
+            
+            # Keep empty lines and lines that are clearly original content
+            if not line_lower:
+                result_lines.append(line)
+                continue
+            
+            # Check if line matches commentary patterns
+            is_commentary = False
+            for pattern in commentary_indicators:
+                if re.search(pattern, line_lower):
+                    # Verify this pattern wasn't in original
+                    if not re.search(pattern, original_text.lower()):
+                        is_commentary = True
+                        logging.warning(f"Removing LLM-added commentary: {line[:80]}...")
+                        break
+            
+            if is_commentary:
+                continue
+            
+            # Check if line has very few words in common with original
+            # This catches completely fabricated lines
+            line_words = set(re.findall(r'\b[a-zA-Z]{4,}\b', line_lower))
+            if line_words:
+                overlap = line_words & original_words
+                overlap_ratio = len(overlap) / len(line_words) if line_words else 0
+                
+                # If less than 20% of words appear in original, it's likely added
+                # But only for lines that look like commentary (not code/technical)
+                if overlap_ratio < 0.2 and not line.strip().startswith(('```', '`', '#', '-', '*', '|')):
+                    # Check if it looks like a sentence/commentary
+                    if re.match(r'^\s*[A-Z].*[.!?]\s*$', line) or re.match(r'^\s*\(.*\)\s*$', line):
+                        logging.warning(f"Removing likely LLM-added line (low overlap): {line[:80]}...")
+                        continue
+            
+            result_lines.append(line)
+        
+        return '\n'.join(result_lines)
     
     def _generate(self, prompt: str) -> str:
         """Generate response from LLM."""
@@ -687,6 +818,11 @@ class DocumentationLecturer:
     # Deprecated CloudFoundry bosh-stemcell URL (branch changed from develop to main, path changed)
     DEPRECATED_BOSH_STEMCELL_URL = 'https://github.com/cloudfoundry/bosh/blob/develop/bosh-stemcell/README.md'
     BOSH_STEMCELL_URL_REPLACEMENT = 'https://github.com/cloudfoundry/bosh/blob/main/README.md'
+    
+    # Deprecated Bintray URLs (Bintray service was discontinued in 2021)
+    # These URLs should be replaced with the GitHub wiki download page
+    DEPRECATED_BINTRAY_URL_PATTERN = re.compile(r'https?://(?:dl\.)?bintray\.com/[^\s"\'<>\)]*')
+    BINTRAY_URL_REPLACEMENT = 'https://github.com/vmware/photon/wiki/downloading-photon-os'
     
     # VMware spelling pattern - must be "VMware" with capital V and M
     # Matches incorrect spellings like "vmware", "Vmware", "VMWare", "VMWARE", etc.
@@ -2331,6 +2467,20 @@ class DocumentationLecturer:
                     'link_text': ''
                 })
         
+        # Check for deprecated Bintray URLs (service discontinued in 2021)
+        for bintray_match in self.DEPRECATED_BINTRAY_URL_PATTERN.finditer(text_content):
+            bintray_url = bintray_match.group(0)
+            if not any(i.get('url') == bintray_url for i in issues):
+                location = f"Deprecated Bintray URL in text: {bintray_url}"
+                fix = f"Replace with {self.BINTRAY_URL_REPLACEMENT}"
+                
+                self._write_csv_row(page_url, 'deprecated_url', location, fix)
+                issues.append({
+                    'type': 'deprecated_bintray_url',
+                    'url': bintray_url,
+                    'link_text': ''
+                })
+        
         return issues
     
     def _check_vmware_spelling(self, page_url: str, text_content: str) -> List[Dict]:
@@ -3666,6 +3816,9 @@ class DocumentationLecturer:
         # Fix deprecated CloudFoundry bosh-stemcell URL
         content = content.replace(self.DEPRECATED_BOSH_STEMCELL_URL, self.BOSH_STEMCELL_URL_REPLACEMENT)
         
+        # Fix deprecated Bintray URLs (service discontinued in 2021)
+        content = self.DEPRECATED_BINTRAY_URL_PATTERN.sub(self.BINTRAY_URL_REPLACEMENT, content)
+        
         return content
     
     def _fix_backtick_spacing(self, content: str) -> str:
@@ -3675,6 +3828,7 @@ class DocumentationLecturer:
         - 'word`code`' -> 'word `code`' (missing space BEFORE opening backtick)
         - '`code`word' -> '`code` word' (missing space AFTER closing backtick)
         - 'Clone`the Photon' -> 'Clone the Photon' (stray backtick typo - no closing backtick)
+        - '`https://example.com/path`' -> 'https://example.com/path' (removes backticks from standalone URLs)
         
         Does NOT add space before ending backtick (inside the code).
         
@@ -3688,8 +3842,14 @@ class DocumentationLecturer:
         # This must be done BEFORE the combined pattern to avoid mismatches
         content = self.STRAY_BACKTICK_TYPO.sub(r'\1 \2', content)
         
-        # Pattern to detect URLs inside backticks
+        # Pattern to detect URLs inside backticks (full URL pattern)
         url_pattern = re.compile(r'^https?://\S+$')
+        
+        # FIRST PASS: Remove backticks from standalone URLs
+        # Pattern matches: `https://...` (backticked URLs that stand alone)
+        # This handles the case where URL is wrapped in backticks on its own line or as standalone
+        standalone_backtick_url_pattern = re.compile(r'`(https?://[^\s`]+)`')
+        content = standalone_backtick_url_pattern.sub(r'\1', content)
         
         # Combined pattern to match backticked content with optional word before and/or after
         # This handles all cases in a single pass to correctly remove backticks from URLs
@@ -3963,9 +4123,11 @@ class DocumentationLecturer:
         3. Third item
         3. Fourth item  <- Should be 4.
         
-        Also handles various numbered list formats:
-        - "1. Item" (standard)
-        - "1) Item" (parenthesis)
+        Also handles:
+        - Lists starting from any number (preserves first number)
+        - Various formats: "1. Item" (standard) or "1) Item" (parenthesis)
+        - Indented content between list items
+        - Nested lists at different indentation levels
         """
         lines = content.split('\n')
         result_lines = []
@@ -3989,46 +4151,44 @@ class DocumentationLecturer:
                 
                 # Check if we're starting a new list or continuing
                 if not in_list:
-                    # Starting a new list
+                    # Starting a new list - preserve the first number as-is
                     in_list = True
                     list_indent = indent
                     list_format = separator
-                    expected_number = number + 1
+                    expected_number = number + 1  # Next number should be this + 1
                     result_lines.append(line)
                 elif indent == list_indent and separator == list_format:
-                    # Continuing the same list
-                    if number != expected_number - 1 and number == expected_number - 2:
-                        # Duplicate number detected (e.g., two "3."s)
-                        # Fix by using the expected number
-                        fixed_line = f'{indent}{expected_number - 1}{separator}{rest}'
-                        result_lines.append(fixed_line)
-                    else:
-                        # Renumber to ensure sequence
-                        fixed_line = f'{indent}{expected_number}{separator}{rest}'
-                        result_lines.append(fixed_line)
-                        expected_number += 1
-                else:
-                    # Different indent or format - might be nested or new list
+                    # Continuing the same list - always use the expected number
+                    # This fixes both duplicates and out-of-sequence numbers
+                    fixed_line = f'{indent}{expected_number}{separator}{rest}'
+                    result_lines.append(fixed_line)
+                    expected_number += 1
+                elif indent != list_indent:
+                    # Different indent - this is a nested list, keep as-is
+                    # Don't modify nested list numbering
                     result_lines.append(line)
-                    if indent != list_indent:
-                        # Nested list - don't reset main list counter
-                        pass
-                    else:
-                        # New list format at same level
-                        list_format = separator
-                        expected_number = number + 1
+                else:
+                    # Same indent but different format (e.g., switching from "1." to "1)")
+                    # Treat as a new list
+                    list_format = separator
+                    expected_number = number + 1
+                    result_lines.append(line)
             else:
                 # Not a numbered list line
                 # Check if list continues (blank line or indented content under list item)
                 if in_list:
-                    if line.strip() == '' or (line.startswith(list_indent) and len(line) > len(list_indent)):
-                        # Blank line or indented content - list might continue
-                        pass
-                    else:
-                        # Line doesn't match list pattern and isn't blank/indented
-                        # Check if next potential list item would be at same indent
+                    # List continues if line is blank or indented under the list
+                    is_continuation = (
+                        line.strip() == '' or 
+                        (list_indent and line.startswith(list_indent) and len(line.strip()) > 0) or
+                        (not list_indent and line.startswith((' ', '\t')))
+                    )
+                    
+                    if not is_continuation:
+                        # Line doesn't belong to list - reset list tracking
                         in_list = False
                         expected_number = 1
+                        list_indent = ''
                 
                 result_lines.append(line)
         
