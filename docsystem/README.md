@@ -93,7 +93,7 @@ sudo droid /run-docs-lecturer-swarm
 ```
 
 
-#### Hint
+#### Hint: export environment variables in a non-root environment
 
 In a non-root environment, run the following script to save the exported environment variables before starting `./tools/installer-for-self-hosted-Photon-OS-documentation/installer.sh`.
 ```
@@ -135,3 +135,16 @@ echo "Test with: sudo printenv GITHUB_TOKEN"
 echo "Note: This does not set the variables themselves—only preserves them when already set."
 ```
 
+#### Hint: mirrored repository for testing purpose
+
+Testing photonos-docs-lecturer on the original Photon OS GitHub repo may expose unfinished public commits. It's more effective to use a separate mirrored repository for testing.
+
+For this, you can use mirror-repository.py or mirror-repository.sh.
+Usage: `./tools/mirror-repository/mirror-repository.sh <ORIGINAL_REPO> <TARGET_REPO> [LOCAL_PATH]`
+
+Example:
+```
+./tools/mirror-repository/mirror-repository.sh https://github.com/username/photon https://github.com/username/photon-docsystemtesting $HOME
+cd $HOME
+git clone https://github.com/username/photon-docsystemtesting
+```
