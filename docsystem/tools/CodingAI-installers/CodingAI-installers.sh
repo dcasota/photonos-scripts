@@ -94,6 +94,13 @@ chmod a+x .local/bin/cursor-agent
 mv .local/bin/cursor-agent /usr/local/bin
 echo "Installation finished. Start Cursor CLI with 'cursor-agent'."
 
+echo Installing Mistral Vibe CLI ...
+# https://github.com/mistralai/mistral-vibe/blob/main/README.md
+curl -LsSf https://mistral.ai/vibe/install.sh | bash
+# export MISTRAL_API_KEY="your_mistral_api_key"
+mv .local/bin/vibe /usr/local/bin
+echo "Installation finished. Start Mistral Vibe CLI with 'vibe'."
+
 echo Installing Ampcode CLI ...
 # https://ampcode.com/manual
 curl -fsSL https://ampcode.com/install.sh | bash
