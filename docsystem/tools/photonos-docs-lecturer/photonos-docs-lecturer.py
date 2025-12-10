@@ -1095,7 +1095,7 @@ class DocumentationLecturer:
     # Deprecated Bintray URLs (Bintray service was discontinued in 2021)
     # These URLs should be replaced with the GitHub wiki download page
     DEPRECATED_BINTRAY_URL_PATTERN = re.compile(r'https?://(?:dl\.)?bintray\.com/[^\s"\'<>\)]*')
-    BINTRAY_URL_REPLACEMENT = 'https://github.com/vmware/photon/wiki/Downloading-Photon-OS'
+    BINTRAY_URL_REPLACEMENT = 'https://github.com/vmware/photon/wiki/downloading-photon-os'
     
     # VMware spelling pattern - must be "VMware" with capital V and M
     # Matches incorrect spellings like "vmware", "Vmware", "VMWare", "VMWARE", etc.
