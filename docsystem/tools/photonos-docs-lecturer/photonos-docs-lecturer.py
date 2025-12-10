@@ -78,7 +78,7 @@ import threading
 import json
 
 # Version info
-VERSION = "1.8"
+VERSION = "1.9"
 TOOL_NAME = "photonos-docs-lecturer.py"
 
 # Lazy-loaded modules (populated by check_and_import_dependencies)
@@ -442,7 +442,7 @@ Output the corrected markdown directly without any preamble or explanation."""
         
         # List of known prompt leakage patterns to remove
         prompt_leakage_patterns = [
-            # Instruction fragments
+            # Instruction fragments - "Return only" variations
             r'^Return only the corrected text\.?\s*',
             r'^Return only the corrected markdown text\.?\s*',
             r'^Return only the translated text\.?\s*',
@@ -451,6 +451,13 @@ Output the corrected markdown directly without any preamble or explanation."""
             r'Return only the corrected markdown text\.?\s*$',
             r'Return only the translated text\.?\s*$',
             r'Return only the fixed markdown content\.?\s*$',
+            # Instruction fragments - "Output" variations (common in prompts)
+            r'^Output the (?:corrected|fixed|translated) (?:text|markdown|content).*?(?:explanation|preamble)\.?\s*',
+            r'Output the (?:corrected|fixed|translated) (?:text|markdown|content).*?(?:explanation|preamble)\.?\s*$',
+            r'\n+Output the (?:corrected|fixed|translated) (?:text|markdown|content).*?(?:explanation|preamble)\.?\s*$',
+            # Direct match for the exact leaked text
+            r'\n*Output the corrected markdown directly without any preamble or explanation\.?\s*$',
+            r'^Output the corrected markdown directly without any preamble or explanation\.?\s*\n*',
             # Artifacts found prefix (from fix_markdown prompt)
             r'^Artifacts found:.*?\n',
             r'\nArtifacts found:.*$',
@@ -465,6 +472,9 @@ Output the corrected markdown directly without any preamble or explanation."""
             # No explanations trailer
             r'\n*No explanations\.?\s*$',
             r'\n*no explanations\.?\s*$',
+            # Generic "without any" instruction fragments (with preceding newlines)
+            r'(?:\n\s*)+[Ww]ithout any (?:preamble|explanation|commentary)\.?\s*$',
+            r'(?:\n\s*)+without any preamble or explanation\.?\s*$',
         ]
         
         cleaned = response
@@ -555,6 +565,13 @@ class DocumentationLecturer:
     # Uses [^`\n]*? (non-greedy, no newlines) to match minimal content within same line.
     MISSING_SPACE_BEFORE_BACKTICK = re.compile(r'([a-zA-Z])(`[^\s`][^`\n]*?`)')
     
+    # Pattern for stray opening backtick followed by plain text (no closing backtick)
+    # This detects patterns like "Clone`the Photon project:" where backtick is a typo
+    # Match: word + backtick + word char (without closing backtick on the same line)
+    # Requires whitespace or start of line before the word to avoid matching within valid inline code
+    # The backtick is likely a typo for a space, so we remove it and add a space
+    STRAY_BACKTICK_TYPO = re.compile(r'(?:^|(?<=\s))([a-zA-Z]+)`([a-zA-Z])(?![^`\n]*`)')
+    
     # Pattern for missing space after backticks (e.g., "`command`text" should be "`command` text")
     # Same constraints as above to ensure we match complete, valid inline code spans.
     MISSING_SPACE_AFTER_BACKTICK = re.compile(r'(`[^\s`][^`\n]*?`)([a-zA-Z])')
@@ -586,6 +603,38 @@ class DocumentationLecturer:
     # Matches: `command1`\n    `command2`
     CONSECUTIVE_INLINE_COMMANDS = re.compile(
         r'(?:^|\n)(\s*)`([^`\n]+)`\s*\n\s*`([^`\n]+)`',
+        re.MULTILINE
+    )
+    
+    # Pattern 3: Plain text commands that should be in code blocks or backticks
+    # These are commands appearing as plain text after list items without proper formatting
+    # Matches: indented line starting with common command patterns (git clone, cd $, sudo make, export)
+    PLAIN_TEXT_COMMAND_PATTERN = re.compile(
+        r'^(\s{4,})'  # At least 4 spaces of indentation (typical list content)
+        r'((?:git\s+clone|cd\s+\$|sudo\s+make|export\s+\w+=)[^\n]*)',  # Command pattern
+        re.MULTILINE
+    )
+    
+    # Pattern 4: Consecutive plain text commands that should be in a single code block
+    # Matches two or more consecutive indented command lines
+    CONSECUTIVE_PLAIN_TEXT_COMMANDS = re.compile(
+        r'^(\s{4,})'  # Indentation
+        r'((?:git\s+clone|cd\s+\$|sudo\s+make|export\s+\w+=)[^\n]*\n)'  # First command
+        r'(\s{4,}(?:git\s+clone|cd\s+\$|sudo\s+make|export\s+\w+=)[^\n]*)',  # Second command
+        re.MULTILINE
+    )
+    
+    # Pattern 5: Fenced code block used incorrectly for inline code within a sentence
+    # This pattern detects when a fenced code block (```...```) contains a single word/term
+    # and is followed by text that continues the sentence (like " is a", " are", etc.) or punctuation
+    # Example: ```bash\ncloud-init\n``` is a multi-distribution... -> `cloud-init` is a multi-distribution...
+    # Example: ...hostname is set to ```bash\ntesthost\n```. -> ...hostname is set to `testhost`.
+    # Matches: optional lang specifier, single-line content, followed by sentence continuation or punctuation
+    FENCED_INLINE_CODE_PATTERN = re.compile(
+        r'```(?:bash|sh|shell|console|text)?\s*\n'  # Opening fence with optional language
+        r'([a-zA-Z0-9_-]+(?:\s+[a-zA-Z0-9_-]+)?)\s*\n'  # Single word or two words (like "cloud-init" or "ec2 datasource")
+        r'```'  # Closing fence
+        r'(\s*(?:[.,;:!?]|(?:\s+(?:is|are|was|were|has|have|had|can|will|would|should|may|might|must|turned|configuration|data|with)\b)))',  # Punctuation or sentence continuation
         re.MULTILINE
     )
     
@@ -687,7 +736,7 @@ class DocumentationLecturer:
         9: {'key': 'grammar_issues', 'name': 'grammar', 'desc': 'Fix grammar and spelling issues (requires --llm)', 'llm': True},
         10: {'key': 'md_artifacts', 'name': 'markdown-artifacts', 'desc': 'Fix unrendered markdown artifacts (requires --llm)', 'llm': True},
         11: {'key': 'indentation_issues', 'name': 'indentation', 'desc': 'Fix indentation issues (requires --llm)', 'llm': True},
-        12: {'key': 'malformed_code_block_issues', 'name': 'malformed-codeblocks', 'desc': 'Fix malformed code blocks (mismatched backticks, inline->fenced)', 'llm': False},
+        12: {'key': 'malformed_code_block_issues', 'name': 'malformed-codeblocks', 'desc': 'Fix malformed code blocks (mismatched backticks, inline->fenced, plain text commands)', 'llm': False},
         13: {'key': 'numbered_list_issues', 'name': 'numbered-lists', 'desc': 'Fix numbered list sequence errors (duplicate numbers)', 'llm': False},
     }
     
@@ -1409,8 +1458,35 @@ class DocumentationLecturer:
         Detects issues like:
         - "Clone`the project" -> should be "Clone `the project"
         - "`command`and" -> should be "`command` and"
+        - "Clone`the Photon project:" -> should be "Clone the Photon project:" (stray backtick typo)
         """
         issues = []
+        
+        # First, check for stray backtick typos (backtick not followed by closing backtick)
+        # e.g., "Clone`the Photon project:" where backtick is a typo and should be replaced with space
+        for match in self.STRAY_BACKTICK_TYPO.finditer(text_content):
+            preceding_char = match.group(1)
+            following_char = match.group(2)
+            full_match = match.group(0)
+            
+            # Get context around the match
+            start = max(0, match.start() - 20)
+            end = min(len(text_content), match.end() + 20)
+            context = text_content[start:end]
+            
+            location = f"Stray backtick (typo): ...{context}..."
+            fix = f"Replace stray backtick with space: '{preceding_char} {following_char}' instead of '{full_match}'"
+            
+            self._write_csv_row(page_url, 'formatting', location, fix)
+            issues.append({
+                'type': 'stray_backtick_typo',
+                'context': context,
+                'original': full_match,
+                'suggestion': f"{preceding_char} {following_char}"
+            })
+            
+            if len(issues) >= 10:
+                break
         
         # Check for missing space before backtick (e.g., "word`code`")
         for match in self.MISSING_SPACE_BEFORE_BACKTICK.finditer(text_content):
@@ -1736,6 +1812,58 @@ class DocumentationLecturer:
                     
                     if len(issues) >= 20:
                         break
+            
+            if len(issues) >= 20:
+                break
+        
+        # Check for plain text commands that should be in code blocks
+        # These are commands appearing as plain text after list items without backticks
+        # First, exclude content already inside fenced code blocks
+        text_without_fenced = re.sub(r'```[\s\S]*?```', lambda m: '\n' * m.group(0).count('\n'), text_content)
+        
+        for match in self.PLAIN_TEXT_COMMAND_PATTERN.finditer(text_without_fenced):
+            indent = match.group(1)
+            command = match.group(2)
+            
+            start = max(0, match.start() - 20)
+            end = min(len(text_without_fenced), match.end() + 20)
+            context = text_without_fenced[start:end].replace('\n', '\\n')
+            
+            location = f"Plain text command should be in code block: ...{context}..."
+            fix = f"Wrap in code block: ```\\n{command}\\n```"
+            
+            self._write_csv_row(page_url, 'malformed_code_block', location, fix)
+            issues.append({
+                'type': 'plain_text_command',
+                'command': command,
+                'indent': indent,
+                'context': context
+            })
+            
+            if len(issues) >= 20:
+                break
+        
+        # Check for fenced code blocks incorrectly used for inline code within sentences
+        # e.g., ```bash\ncloud-init\n``` is a multi-distribution... should be `cloud-init` is a...
+        for match in self.FENCED_INLINE_CODE_PATTERN.finditer(text_content):
+            code_content = match.group(1)
+            continuation = match.group(2)
+            full_match = match.group(0)
+            
+            start = max(0, match.start() - 10)
+            end = min(len(text_content), match.end() + 30)
+            context = text_content[start:end].replace('\n', '\\n')
+            
+            location = f"Fenced code block should be inline code (part of sentence): ...{context}..."
+            fix = f"Convert to inline code: `{code_content}`{continuation}"
+            
+            self._write_csv_row(page_url, 'malformed_code_block', location, fix)
+            issues.append({
+                'type': 'fenced_should_be_inline',
+                'code_content': code_content,
+                'continuation': continuation,
+                'context': context
+            })
             
             if len(issues) >= 20:
                 break
@@ -3541,11 +3669,12 @@ class DocumentationLecturer:
         return content
     
     def _fix_backtick_spacing(self, content: str) -> str:
-        """Fix missing spaces around backticks.
+        """Fix missing spaces around backticks and stray backticks.
         
-        Only fixes:
+        Fixes:
         - 'word`code`' -> 'word `code`' (missing space BEFORE opening backtick)
         - '`code`word' -> '`code` word' (missing space AFTER closing backtick)
+        - 'Clone`the Photon' -> 'Clone the Photon' (stray backtick typo - no closing backtick)
         
         Does NOT add space before ending backtick (inside the code).
         
@@ -3553,6 +3682,12 @@ class DocumentationLecturer:
         - If backtick content is a standalone URL (http:// or https://), removes backticks entirely
           since URLs should not be wrapped in inline code backticks.
         """
+        # First, fix stray backtick typos (backtick without closing backtick)
+        # e.g., "Clone`the Photon project:" -> "Clone the Photon project:"
+        # The backtick is likely a typo for a space, so we replace backtick with space
+        # This must be done BEFORE the combined pattern to avoid mismatches
+        content = self.STRAY_BACKTICK_TYPO.sub(r'\1 \2', content)
+        
         # Pattern to detect URLs inside backticks
         url_pattern = re.compile(r'^https?://\S+$')
         
@@ -3639,6 +3774,7 @@ class DocumentationLecturer:
         """Fix malformed code blocks in markdown content.
         
         Fixes:
+        - Fenced code blocks incorrectly used for inline code: ```bash\\nterm\\n``` is a... -> `term` is a...
         - Excess backticks in code block closing: ```bash\\ncmd\\n````` -> ```bash\\ncmd\\n```
         - Single backtick + content + 3+ backticks: `command````` -> ```bash\\ncommand\\n```
         - Consecutive inline commands: `cmd1`\\n`cmd2` -> ```bash\\ncmd1\\ncmd2\\n```
@@ -3648,6 +3784,11 @@ class DocumentationLecturer:
         These patterns indicate the author intended to create fenced code blocks
         but used incorrect backtick syntax.
         """
+        # Fix pattern -2: Fenced code block incorrectly used for inline code within a sentence
+        # This MUST be done FIRST before any other pattern, to convert back to inline code
+        # Example: ```bash\ncloud-init\n``` is a multi-distribution... -> `cloud-init` is a...
+        content = self.FENCED_INLINE_CODE_PATTERN.sub(r'`\1`\2', content)
+        
         # Fix pattern -1: Excess backticks in code block closing (````` instead of ```)
         # This must be done first before other patterns
         # Matches: 4+ backticks at start of a line (closing a code block incorrectly)
@@ -3765,6 +3906,51 @@ class DocumentationLecturer:
             r'(\s|$)'                      # Followed by space or end of line
         )
         content = unclosed_at_end.sub(r'`\1`\2\3', content)
+        
+        # Fix pattern 4: Consecutive plain text commands that should be in a code block
+        # Look for 2+ consecutive lines of plain text commands (git clone, cd $, etc.)
+        lines = content.split('\n')
+        result_lines = []
+        i = 0
+        
+        while i < len(lines):
+            line = lines[i]
+            
+            # Check if this line is a plain text command (not in backticks or code block)
+            plain_cmd_match = re.match(r'^(\s{4,})(git\s+clone\s+\S+|cd\s+\$\S+|sudo\s+make\s+\S.*|export\s+\w+=.*)$', line)
+            
+            if plain_cmd_match:
+                indent = plain_cmd_match.group(1)
+                commands = [plain_cmd_match.group(2)]
+                
+                # Look ahead for more consecutive plain text commands
+                j = i + 1
+                while j < len(lines):
+                    next_line = lines[j]
+                    # Skip blank lines
+                    if next_line.strip() == '':
+                        j += 1
+                        continue
+                    next_match = re.match(r'^(\s{4,})(git\s+clone\s+\S+|cd\s+\$\S+|sudo\s+make\s+\S.*|export\s+\w+=.*)$', next_line)
+                    if next_match:
+                        commands.append(next_match.group(2))
+                        j += 1
+                    else:
+                        break
+                
+                # If we found 2+ consecutive plain text commands, convert to fenced block
+                if len(commands) >= 2:
+                    result_lines.append(f'{indent}```')
+                    for cmd in commands:
+                        result_lines.append(f'{indent}{cmd}')
+                    result_lines.append(f'{indent}```')
+                    i = j
+                    continue
+            
+            result_lines.append(line)
+            i += 1
+        
+        content = '\n'.join(result_lines)
         
         return content
     
@@ -5826,6 +6012,44 @@ See also [documentation](https://docs.example.com/guide.html) and visit https://
             # The restored text should match the original
             self.assertEqual(text, restored)
         
+        def test_llm_prompt_leakage_cleaning(self):
+            """Test that prompt leakage is properly cleaned from LLM responses.
+            
+            Bug fix: LLMs sometimes include prompt instructions in their output,
+            such as "Output the corrected markdown directly without any preamble or explanation."
+            The _clean_llm_response method should remove these artifacts.
+            """
+            # Create a mock LLMClient to test _clean_llm_response
+            original_text = """# Test Content
+
+Some markdown content here.
+
+| Name | Value |
+|------|-------|
+| test | 123   |"""
+            
+            # Test case 1: Prompt instruction at end of response
+            response_with_leakage = original_text + "\n\nOutput the corrected markdown directly without any preamble or explanation."
+            cleaned = LLMClient._clean_llm_response(LLMClient, response_with_leakage, original_text)
+            self.assertNotIn("Output the corrected markdown", cleaned)
+            self.assertIn("# Test Content", cleaned)
+            self.assertIn("| test | 123   |", cleaned)
+            
+            # Test case 2: "Return only" instruction at end
+            response_with_leakage = original_text + "\n\nReturn only the corrected text."
+            cleaned = LLMClient._clean_llm_response(LLMClient, response_with_leakage, original_text)
+            self.assertNotIn("Return only", cleaned)
+            
+            # Test case 3: "without any preamble" fragment
+            response_with_leakage = original_text + "\n\nwithout any preamble or explanation."
+            cleaned = LLMClient._clean_llm_response(LLMClient, response_with_leakage, original_text)
+            self.assertNotIn("without any preamble", cleaned)
+            
+            # Test case 4: Clean response should pass through unchanged
+            clean_response = original_text
+            cleaned = LLMClient._clean_llm_response(LLMClient, clean_response, original_text)
+            self.assertEqual(cleaned, original_text)
+        
         def test_llm_relative_path_protection(self):
             """Test relative path protection mechanism for LLM calls.
             
@@ -6073,6 +6297,68 @@ The file is located at ./path/to/file.md in the repository."""
             content = "`https://example.com/path`here"
             fixed = lecturer._fix_backtick_spacing(content)
             self.assertEqual(fixed, "https://example.com/path here")
+            
+            # Test stray backtick typo fix (backtick should become space)
+            # "Clone`the" should become "Clone the" when there's no closing backtick
+            content = "3.  Clone`the Photon project:"
+            fixed = lecturer._fix_backtick_spacing(content)
+            self.assertEqual(fixed, "3.  Clone the Photon project:")
+            
+            # Stray backtick should NOT affect valid inline code
+            content = "Run `command` and Clone`the project"
+            fixed = lecturer._fix_backtick_spacing(content)
+            self.assertIn("`command`", fixed, "Valid inline code should be preserved")
+            self.assertIn("Clone the project", fixed, "Stray backtick should be replaced with space")
+            
+            lecturer.cleanup()
+        
+        def test_fix_fenced_inline_code(self):
+            """Test conversion of fenced code blocks back to inline code when part of a sentence.
+            
+            Bug fix: LLMs sometimes convert inline code like `cloud-init` to fenced code blocks
+            like ```bash\ncloud-init\n``` when fixing markdown. This is wrong when the code
+            is part of a sentence. This fix converts such patterns back to inline code.
+            """
+            class MockArgs:
+                command = 'analyze'
+                website = 'https://example.com'
+                parallel = 1
+                language = 'en'
+                ref_website = None
+                test = False
+            
+            lecturer = DocumentationLecturer(MockArgs())
+            
+            # Test: fenced code block at start of sentence should become inline code
+            content = "```bash\ncloud-init\n``` is a multi-distribution package."
+            fixed = lecturer._fix_malformed_code_blocks(content)
+            self.assertEqual(fixed, "`cloud-init` is a multi-distribution package.")
+            
+            # Test: fenced code block with "turned" continuation
+            content = "The ```bash\nec2 datasource\n``` turned on by default."
+            fixed = lecturer._fix_malformed_code_blocks(content)
+            self.assertEqual(fixed, "The `ec2 datasource` turned on by default.")
+            
+            # Test: fenced code block without language specifier
+            content = "```\nnocloud\n``` data source is used."
+            fixed = lecturer._fix_malformed_code_blocks(content)
+            self.assertEqual(fixed, "`nocloud` data source is used.")
+            
+            # Test: fenced code block ending with punctuation (period)
+            content = "The hostname is set to ```bash\ntesthost\n```."
+            fixed = lecturer._fix_malformed_code_blocks(content)
+            self.assertEqual(fixed, "The hostname is set to `testhost`.")
+            
+            # Test: actual multi-line code block should NOT be converted
+            content = "```bash\necho hello\necho world\n```"
+            fixed = lecturer._fix_malformed_code_blocks(content)
+            self.assertIn("```bash", fixed, "Multi-line code block should remain fenced")
+            self.assertIn("echo hello", fixed)
+            
+            # Test: fenced code block without sentence continuation should NOT be converted
+            content = "```bash\ncloud-init\n```\n\nSome other paragraph."
+            fixed = lecturer._fix_malformed_code_blocks(content)
+            self.assertIn("```bash", fixed, "Standalone fenced block should remain fenced")
             
             lecturer.cleanup()
         

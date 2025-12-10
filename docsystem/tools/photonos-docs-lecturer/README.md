@@ -487,10 +487,22 @@ The tool detects and reports issues in the following categories:
   ```
 - Stray backticks inside fenced code blocks (e.g., trailing backtick on a line)
 - Unclosed inline backticks at end of sentences: `` `$HOME/path. `` -> `` `$HOME/path`. ``
+- Fenced code blocks incorrectly used for inline code within sentences:
+  ```
+  ```bash
+  cloud-init
+  ``` is a multi-distribution package
+  ```
+  Should be: `` `cloud-init` is a multi-distribution package ``
+- Plain text commands that should be in code blocks (e.g., `git clone`, `cd $HOME`)
+- Stray backtick typos (e.g., `Clone`the` -> `Clone the`)
 
 **How it's fixed:**
 - **Deterministic:** Automatically converts to proper fenced code blocks and removes stray backticks
 - **Deterministic:** Closes unclosed inline backticks that end with sentence punctuation
+- **Deterministic:** Converts fenced code blocks back to inline code when followed by sentence continuation words (is, are, was, etc.) or punctuation
+- **Deterministic:** Wraps plain text commands in fenced code blocks
+- **Deterministic:** Replaces stray backtick typos with spaces
 
 ---
 
@@ -809,7 +821,23 @@ python3 photonos-docs-lecturer.py run --list-fixes
 
 ## Version History
 
-### Version 1.8 (Current)
+### Version 1.9 (Current)
+- Enhanced malformed code block detection and fixing:
+  - Detects fenced code blocks incorrectly used for inline code within sentences
+  - Converts fenced blocks back to inline code when followed by sentence continuation words (is, are, was, were, has, have, had, can, will, would, should, may, might, must, turned, configuration, data, with) or punctuation (., ,, etc.)
+  - Example fix: `` ```bash\ncloud-init\n``` is a multi-distribution package `` -> `` `cloud-init` is a multi-distribution package ``
+- Enhanced backtick spacing fix:
+  - Detects and fixes stray backtick typos (e.g., `Clone`the` -> `Clone the`)
+- Added plain text command detection:
+  - Detects shell commands appearing as plain text (git clone, cd $, sudo make, export)
+  - Wraps consecutive plain text commands in fenced code blocks
+- Added LLM response cleaning for prompt leakage:
+  - Removes prompt instructions that LLMs sometimes include in their output
+  - Patterns cleaned: "Output the corrected markdown...", "Return only the corrected text", etc.
+- Added comprehensive unit tests for all new fixes
+- 13 enumerated fix types (9 automatic, 4 LLM-assisted)
+
+### Version 1.8
 - Added Fix Type 13: Numbered list sequence errors
   - Detects duplicate numbers (e.g., 1, 2, 3, 3, 5)
   - Detects skipped numbers in sequence
@@ -872,7 +900,7 @@ python3 photonos-docs-lecturer.py run --list-fixes
 
 ## Version
 
-Current version: **1.8**
+Current version: **1.9**
 
 Check version:
 ```bash
