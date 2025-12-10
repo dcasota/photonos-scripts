@@ -165,7 +165,7 @@ Where SPEC can be:
 | 1 | broken-emails | Fix broken email addresses (domain split with whitespace) | No |
 | 2 | vmware-spelling | Fix VMware spelling (vmware -> VMware) | No |
 | 3 | deprecated-urls | Fix deprecated URLs (VMware, VDDK, OVFTOOL, AWS, bosh-stemcell) | No |
-| 4 | backtick-spacing | Fix missing spaces around backticks | No |
+| 4 | backtick-spacing | Fix missing spaces around backticks, remove backticks from URLs | No |
 | 5 | backtick-errors | Fix backtick errors (spaces inside backticks) | No |
 | 6 | heading-hierarchy | Fix heading hierarchy violations (skipped levels) | No |
 | 7 | header-spacing | Fix markdown headers missing space (####Title -> #### Title) | No |
@@ -173,7 +173,8 @@ Where SPEC can be:
 | 9 | grammar | Fix grammar and spelling issues | Yes |
 | 10 | markdown-artifacts | Fix unrendered markdown artifacts | Yes |
 | 11 | indentation | Fix indentation issues | Yes |
-| 12 | malformed-codeblocks | Fix malformed code blocks (mismatched backticks) | No |
+| 12 | malformed-codeblocks | Fix malformed code blocks (mismatched backticks, unclosed inline code) | No |
+| 13 | numbered-lists | Fix numbered list sequence errors (duplicate/skipped numbers) | No |
 
 ### Examples
 
@@ -356,9 +357,11 @@ The tool detects and reports issues in the following categories:
 **What it finds:**
 - Missing space before backtick: `Clone`the project`` -> should be `Clone `the project``
 - Missing space after backtick: `` `command`text`` -> should be `` `command` text``
+- URLs incorrectly wrapped in backticks: `` `https://example.com` `` -> should be `https://example.com`
 
 **How it's fixed:**
 - **Deterministic:** Automatically adds missing spaces
+- **Deterministic:** Removes backticks from standalone URLs (URLs should not be in inline code)
 
 ---
 
@@ -505,7 +508,7 @@ The tool detects and reports issues in the following categories:
 
 **What it finds:**
 - Single backtick + content + triple backticks: `` `command``` `` (should be fenced block)
-- Consecutive inline code lines that should be fenced:
+- Consecutive inline code lines that should be fenced (including with blank lines between them):
   ```
   `command1`
   `command2`
@@ -516,9 +519,25 @@ The tool detects and reports issues in the following categories:
   command2
   ```
 - Stray backticks inside fenced code blocks (e.g., trailing backtick on a line)
+- Unclosed inline backticks at end of sentences: `` `$HOME/path. `` -> `` `$HOME/path`. ``
 
 **How it's fixed:**
 - **Deterministic:** Automatically converts to proper fenced code blocks and removes stray backticks
+- **Deterministic:** Closes unclosed inline backticks that end with sentence punctuation
+
+---
+
+### 18. `numbered_list` - Numbered List Sequence Errors
+
+**Detection:** Analyzes numbered list sequences for duplicate or skipped numbers.
+
+**What it finds:**
+- Duplicate numbers (e.g., 1, 2, 3, 3, 5)
+- Skipped numbers in sequence (e.g., 1, 2, 4)
+- Out of order numbers
+
+**How it's fixed:**
+- **Deterministic:** Automatically renumbers list items to correct sequence
 
 ---
 
@@ -555,6 +574,7 @@ https://example.com/docs/page2/,orphan_link,"Link text: 'Old Guide', URL: ...",R
 | `header_spacing` | Yes | - | - |
 | `html_comment` | Yes | - | - |
 | `malformed_code_block` | Yes | - | - |
+| `numbered_list` | Yes | - | - |
 | `grammar` | - | Yes | Fallback |
 | `markdown` | Partial | Yes | - |
 | `mixed_command_output` | - | Yes | Fallback |
@@ -591,9 +611,16 @@ Uses the `gemini-2.5-flash` model for cost-efficient, high-quality fixes.
 
 Uses the `grok-3-mini` model (OpenAI-compatible API).
 
-### URL Protection
+### URL and Path Protection
 
-When using LLM-assisted fixes, URLs are automatically protected using placeholders before being sent to the LLM. This prevents the LLM from accidentally modifying URLs (e.g., removing `.md` extensions). Original URLs are restored after the LLM response is received.
+When using LLM-assisted fixes, URLs and paths are automatically protected using placeholders before being sent to the LLM. This prevents the LLM from accidentally modifying them. Original content is restored after the LLM response is received.
+
+**Protected content includes:**
+- Markdown links: `[text](url)` - the URL part is protected
+- Standalone URLs: `https://example.com/path`
+- Relative documentation paths: `troubleshooting-guide/solutions-to-common-problems/page`
+- Paths starting with `./` or `../`: `../administration-guide/security-policy/settings`
+- File paths with `.md` extension: `path/to/file.md`
 
 ---
 
@@ -766,7 +793,24 @@ python3 photonos-docs-lecturer.py run --list-fixes
 
 ## Version History
 
-### Version 1.7 (Current)
+### Version 1.8 (Current)
+- Added Fix Type 13: Numbered list sequence errors
+  - Detects duplicate numbers (e.g., 1, 2, 3, 3, 5)
+  - Detects skipped numbers in sequence
+  - Automatically renumbers list items to correct sequence
+- Enhanced malformed code block detection and fixing:
+  - Now handles blank lines between consecutive inline commands
+  - Fixes unclosed inline backticks at end of sentences (e.g., `` `$HOME/path. `` -> `` `$HOME/path`. ``)
+- Enhanced backtick spacing fix:
+  - Removes backticks from standalone URLs (URLs should not be in inline code)
+- Added relative path protection for LLM fixes:
+  - Protects paths like `troubleshooting-guide/solutions-to-common-problems/page`
+  - Protects paths starting with `./` or `../`
+  - Prevents LLM from modifying documentation links
+- Increased xAI max_tokens from 2000 to 131072 to prevent LLM truncating long documents
+- 13 enumerated fix types (9 automatic, 4 LLM-assisted)
+
+### Version 1.7
 - Separated fixes and features into two categories:
   - **Fixes** (`--fix`): Bug fixes and error corrections (applied by default)
   - **Features** (`--feature`): Optional enhancements that modify code style (opt-in)
@@ -812,7 +856,7 @@ python3 photonos-docs-lecturer.py run --list-fixes
 
 ## Version
 
-Current version: **1.7**
+Current version: **1.8**
 
 Check version:
 ```bash

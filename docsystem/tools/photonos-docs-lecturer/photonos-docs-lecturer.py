@@ -78,7 +78,7 @@ import threading
 import json
 
 # Version info
-VERSION = "1.7"
+VERSION = "1.8"
 TOOL_NAME = "photonos-docs-lecturer.py"
 
 # Lazy-loaded modules (populated by check_and_import_dependencies)
@@ -173,6 +173,20 @@ class LLMClient:
     # Pattern to match inline URLs (http/https)
     INLINE_URL_PATTERN = re.compile(r'(?<![(\[])(https?://[^\s<>"\')\]]+)')
     
+    # Pattern to match relative paths that look like documentation links
+    # Matches paths like: ../path/to/page, ./path/to/page, path/to/page.md
+    # Must contain at least one slash and typically have path-like structure
+    # Excludes paths that are clearly not documentation links
+    RELATIVE_PATH_PATTERN = re.compile(
+        r'(?<![(\[a-zA-Z0-9_-])'  # Not preceded by ( [ or alphanumeric (to avoid partial matches)
+        r'('
+        r'\.{1,2}/[\w./-]+'  # Paths starting with ./ or ../
+        r'|'
+        r'[\w-]+(?:/[\w-]+)+(?:\.md)?'  # Paths like dir/subdir/page or dir/subdir/page.md (at least 2 segments)
+        r')'
+        r'(?![a-zA-Z0-9_/-])'  # Not followed by alphanumeric or path chars (to avoid partial matches)
+    )
+    
     def __init__(self, provider: str, api_key: str, language: str = "en"):
         self.provider = provider.lower()
         self.api_key = api_key
@@ -198,6 +212,11 @@ class LLMClient:
         This method replaces all URLs with unique placeholders before sending
         to the LLM, allowing us to restore the original URLs afterwards.
         
+        Protects:
+        - Markdown links: [text](url)
+        - Standalone http/https URLs
+        - Relative paths (e.g., ../path/to/page, dir/subdir/page.md)
+        
         Args:
             text: Original text containing URLs
             
@@ -222,11 +241,24 @@ class LLMClient:
             counter[0] += 1
             return placeholder
         
+        def replace_relative_path(match):
+            path = match.group(1)
+            # Skip if already a placeholder or inside code block markers
+            if '__URL_PLACEHOLDER_' in path or path.startswith('```'):
+                return match.group(0)
+            placeholder = f"__PATH_PLACEHOLDER_{counter[0]}__"
+            url_map[placeholder] = path
+            counter[0] += 1
+            return placeholder
+        
         # First protect markdown links [text](url)
         protected = self.MARKDOWN_LINK_PATTERN.sub(replace_markdown_link, text)
         
         # Then protect standalone URLs (not already in markdown links)
         protected = self.INLINE_URL_PATTERN.sub(replace_inline_url, protected)
+        
+        # Finally protect relative paths that look like documentation links
+        protected = self.RELATIVE_PATH_PATTERN.sub(replace_relative_path, protected)
         
         return protected, url_map
     
@@ -491,7 +523,7 @@ Output the corrected markdown directly without any preamble or explanation."""
         payload = {
             "model": self.xai_model,
             "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 2000
+            "max_tokens": 131072
         }
         try:
             response = requests.post(self.xai_endpoint, headers=headers, json=payload, timeout=60)
@@ -656,6 +688,7 @@ class DocumentationLecturer:
         10: {'key': 'md_artifacts', 'name': 'markdown-artifacts', 'desc': 'Fix unrendered markdown artifacts (requires --llm)', 'llm': True},
         11: {'key': 'indentation_issues', 'name': 'indentation', 'desc': 'Fix indentation issues (requires --llm)', 'llm': True},
         12: {'key': 'malformed_code_block_issues', 'name': 'malformed-codeblocks', 'desc': 'Fix malformed code blocks (mismatched backticks, inline->fenced)', 'llm': False},
+        13: {'key': 'numbered_list_issues', 'name': 'numbered-lists', 'desc': 'Fix numbered list sequence errors (duplicate numbers)', 'llm': False},
     }
     
     # Enumerated feature types for --feature parameter
@@ -2495,6 +2528,99 @@ class DocumentationLecturer:
         
         return issues
     
+    def _check_numbered_list_sequence(self, page_url: str, text_content: str) -> List[Dict]:
+        """Check for numbered list sequence errors.
+        
+        Detects issues like:
+        - Duplicate numbers (e.g., 1, 2, 3, 3, 5)
+        - Missing numbers in sequence
+        - Out of order numbers
+        
+        Args:
+            page_url: URL of the page being analyzed
+            text_content: Raw text/markdown content of the page
+            
+        Returns:
+            List of numbered list sequence issues found
+        """
+        issues = []
+        lines = text_content.split('\n')
+        
+        # Track current list context
+        in_list = False
+        expected_number = 1
+        list_indent = ''
+        list_format = '.'  # '.' or ')'
+        
+        for line_num, line in enumerate(lines):
+            # Check if this line is a numbered list item
+            list_match = re.match(r'^(\s*)(\d+)([.)])(\s+.*)$', line)
+            
+            if list_match:
+                indent = list_match.group(1)
+                number = int(list_match.group(2))
+                separator = list_match.group(3)
+                
+                if not in_list:
+                    # Starting a new list
+                    in_list = True
+                    list_indent = indent
+                    list_format = separator
+                    expected_number = number + 1
+                elif indent == list_indent and separator == list_format:
+                    # Continuing the same list - check sequence
+                    if number != expected_number:
+                        if number == expected_number - 1:
+                            # Duplicate number
+                            issue = {
+                                'type': 'duplicate_number',
+                                'line': line_num + 1,
+                                'number': number,
+                                'expected': expected_number,
+                                'content': line.strip()[:50]
+                            }
+                            issues.append(issue)
+                            
+                            location = f"Line {line_num + 1}: Duplicate list number {number}"
+                            fix = f"Change to {expected_number}. (sequential numbering)"
+                            self._write_csv_row(page_url, 'numbered_list', location, fix)
+                        elif number > expected_number:
+                            # Skipped number
+                            issue = {
+                                'type': 'skipped_number',
+                                'line': line_num + 1,
+                                'number': number,
+                                'expected': expected_number,
+                                'content': line.strip()[:50]
+                            }
+                            issues.append(issue)
+                            
+                            location = f"Line {line_num + 1}: Skipped from {expected_number - 1} to {number}"
+                            fix = f"Change to {expected_number}. (sequential numbering)"
+                            self._write_csv_row(page_url, 'numbered_list', location, fix)
+                    
+                    expected_number = number + 1
+                else:
+                    # Different indent or format - might be nested or new list
+                    if indent != list_indent:
+                        # Nested list - don't reset
+                        pass
+                    else:
+                        # New list format
+                        list_format = separator
+                        expected_number = number + 1
+            else:
+                # Not a numbered list line
+                if in_list:
+                    if line.strip() == '' or (list_indent and line.startswith(list_indent) and len(line) > len(list_indent)):
+                        # Blank line or indented content - list might continue
+                        pass
+                    else:
+                        in_list = False
+                        expected_number = 1
+        
+        return issues
+    
     def _fix_heading_hierarchy(self, content: str) -> Tuple[str, List[Dict]]:
         """Fix heading hierarchy violations in markdown content.
         
@@ -3042,6 +3168,9 @@ class DocumentationLecturer:
             # Check for heading hierarchy violations (H1 -> H3 skips, wrong first heading level)
             heading_hierarchy_issues = self._check_heading_hierarchy(page_url, text_content)
             
+            # Check for numbered list sequence errors (duplicate/skipped numbers)
+            numbered_list_issues = self._check_numbered_list_sequence(page_url, text_content)
+            
             # Apply fixes if running with --gh-pr
             if self.command == 'run' and self.gh_pr:
                 all_issues = {
@@ -3061,6 +3190,7 @@ class DocumentationLecturer:
                     'header_spacing_issues': header_spacing_issues,
                     'html_comment_issues': html_comment_issues,
                     'heading_hierarchy_issues': heading_hierarchy_issues,
+                    'numbered_list_issues': numbered_list_issues,
                 }
                 self._apply_fixes(page_url, all_issues, text_content)
             
@@ -3171,6 +3301,11 @@ class DocumentationLecturer:
                 html_comment_issues = issues.get('html_comment_issues', [])
                 if html_comment_issues and 'html_comment_issues' in self.enabled_fix_keys:
                     content = self._fix_html_comments(content)
+                
+                # Fix numbered list sequence errors (duplicate/skipped numbers)
+                numbered_list_issues = issues.get('numbered_list_issues', [])
+                if numbered_list_issues and 'numbered_list_issues' in self.enabled_fix_keys:
+                    content = self._fix_numbered_list_sequence(content)
                 
                 # =========================================================
                 # LLM-based fixes (require LLM client)
@@ -3413,14 +3548,55 @@ class DocumentationLecturer:
         - '`code`word' -> '`code` word' (missing space AFTER closing backtick)
         
         Does NOT add space before ending backtick (inside the code).
+        
+        Special handling for URLs:
+        - If backtick content is a standalone URL (http:// or https://), removes backticks entirely
+          since URLs should not be wrapped in inline code backticks.
         """
-        # Fix missing space before opening backtick (word immediately before backtick)
-        content = self.MISSING_SPACE_BEFORE_BACKTICK.sub(r'\1 \2', content)
+        # Pattern to detect URLs inside backticks
+        url_pattern = re.compile(r'^https?://\S+$')
         
-        # Fix missing space after closing backtick (word immediately after backtick)
-        content = self.MISSING_SPACE_AFTER_BACKTICK.sub(r'\1 \2', content)
+        # Combined pattern to match backticked content with optional word before and/or after
+        # This handles all cases in a single pass to correctly remove backticks from URLs
+        # Pattern: (optional word char)(backticked content)(optional word char)
+        combined_pattern = re.compile(r'([a-zA-Z])?(`[^\s`][^`\n]*?`)([a-zA-Z])?')
         
-        return content
+        def fix_backtick_spacing(match):
+            preceding_char = match.group(1) or ''
+            code_block = match.group(2)
+            following_char = match.group(3) or ''
+            
+            # Extract content between backticks
+            inner_content = code_block[1:-1]  # Remove surrounding backticks
+            
+            # Check if we actually need to fix anything
+            needs_space_before = bool(preceding_char)
+            needs_space_after = bool(following_char)
+            
+            if not needs_space_before and not needs_space_after:
+                # No fix needed, return original
+                return match.group(0)
+            
+            # If it's a URL, remove backticks entirely and add spaces as needed
+            if url_pattern.match(inner_content):
+                result = ''
+                if preceding_char:
+                    result = f'{preceding_char} '
+                result += inner_content
+                if following_char:
+                    result += f' {following_char}'
+                return result
+            
+            # Otherwise, add spaces around the backticked content
+            result = ''
+            if preceding_char:
+                result = f'{preceding_char} '
+            result += code_block
+            if following_char:
+                result += f' {following_char}'
+            return result
+        
+        return combined_pattern.sub(fix_backtick_spacing, content)
     
     def _fix_backtick_errors(self, content: str) -> str:
         """Fix backtick formatting errors in markdown content.
@@ -3467,6 +3643,7 @@ class DocumentationLecturer:
         - Single backtick + content + 3+ backticks: `command````` -> ```bash\\ncommand\\n```
         - Consecutive inline commands: `cmd1`\\n`cmd2` -> ```bash\\ncmd1\\ncmd2\\n```
         - Stray backticks inside fenced code blocks: ```\\ncmd`\\n``` -> ```\\ncmd\\n```
+        - Unclosed inline backticks at end of sentence (path or command followed by period)
         
         These patterns indicate the author intended to create fenced code blocks
         but used incorrect backtick syntax.
@@ -3522,7 +3699,7 @@ class DocumentationLecturer:
         
         # Fix pattern 2: Consecutive inline code blocks that should be fenced
         # Look for 2+ consecutive lines of `command` that should be a code block
-        # This is more complex - we need to find all consecutive inline code lines
+        # Also handles blank lines between consecutive inline commands
         lines = content.split('\n')
         result_lines = []
         i = 0
@@ -3536,16 +3713,25 @@ class DocumentationLecturer:
             if inline_match:
                 indent = inline_match.group(1)
                 commands = [inline_match.group(2)]
+                blank_lines_before = []
                 
-                # Look ahead for more consecutive inline commands
+                # Look ahead for more consecutive inline commands (allowing blank lines)
                 j = i + 1
                 while j < len(lines):
                     next_line = lines[j]
+                    # Skip blank lines but remember them
+                    if next_line.strip() == '':
+                        blank_lines_before.append(j)
+                        j += 1
+                        continue
                     next_match = re.match(r'^\s*`([^`]+)`\s*$', next_line)
                     if next_match:
                         commands.append(next_match.group(1))
+                        blank_lines_before = []  # Reset - we found a command
                         j += 1
                     else:
+                        # Restore position to after last command (before blank lines that don't lead to commands)
+                        j -= len(blank_lines_before)
                         break
                 
                 # If we found 2+ consecutive inline commands, convert to fenced block
@@ -3566,6 +3752,99 @@ class DocumentationLecturer:
             
             result_lines.append(line)
             i += 1
+        
+        content = '\n'.join(result_lines)
+        
+        # Fix pattern 3: Unclosed inline backticks at end of sentence
+        # Pattern: `path/or/command. or `$VAR/path.
+        # These should be closed: `path/or/command`. or `$VAR/path`.
+        unclosed_at_end = re.compile(
+            r'`'                           # Opening backtick
+            r'([^\s`][^`\n]*?)'            # Content (starts with non-space, non-backtick)
+            r'([.!?])'                     # Sentence-ending punctuation
+            r'(\s|$)'                      # Followed by space or end of line
+        )
+        content = unclosed_at_end.sub(r'`\1`\2\3', content)
+        
+        return content
+    
+    def _fix_numbered_list_sequence(self, content: str) -> str:
+        """Fix numbered list items with incorrect sequential numbering.
+        
+        Fixes issues like:
+        1. First item
+        2. Second item
+        3. Third item
+        3. Fourth item  <- Should be 4.
+        
+        Also handles various numbered list formats:
+        - "1. Item" (standard)
+        - "1) Item" (parenthesis)
+        """
+        lines = content.split('\n')
+        result_lines = []
+        
+        # Track current list context
+        in_list = False
+        expected_number = 1
+        list_indent = ''
+        list_format = '.'  # '.' or ')'
+        
+        for line in lines:
+            # Check if this line is a numbered list item
+            # Pattern: optional indent + number + (. or )) + space + content
+            list_match = re.match(r'^(\s*)(\d+)([.)])(\s+.*)$', line)
+            
+            if list_match:
+                indent = list_match.group(1)
+                number = int(list_match.group(2))
+                separator = list_match.group(3)
+                rest = list_match.group(4)
+                
+                # Check if we're starting a new list or continuing
+                if not in_list:
+                    # Starting a new list
+                    in_list = True
+                    list_indent = indent
+                    list_format = separator
+                    expected_number = number + 1
+                    result_lines.append(line)
+                elif indent == list_indent and separator == list_format:
+                    # Continuing the same list
+                    if number != expected_number - 1 and number == expected_number - 2:
+                        # Duplicate number detected (e.g., two "3."s)
+                        # Fix by using the expected number
+                        fixed_line = f'{indent}{expected_number - 1}{separator}{rest}'
+                        result_lines.append(fixed_line)
+                    else:
+                        # Renumber to ensure sequence
+                        fixed_line = f'{indent}{expected_number}{separator}{rest}'
+                        result_lines.append(fixed_line)
+                        expected_number += 1
+                else:
+                    # Different indent or format - might be nested or new list
+                    result_lines.append(line)
+                    if indent != list_indent:
+                        # Nested list - don't reset main list counter
+                        pass
+                    else:
+                        # New list format at same level
+                        list_format = separator
+                        expected_number = number + 1
+            else:
+                # Not a numbered list line
+                # Check if list continues (blank line or indented content under list item)
+                if in_list:
+                    if line.strip() == '' or (line.startswith(list_indent) and len(line) > len(list_indent)):
+                        # Blank line or indented content - list might continue
+                        pass
+                    else:
+                        # Line doesn't match list pattern and isn't blank/indented
+                        # Check if next potential list item would be at same indent
+                        in_list = False
+                        expected_number = 1
+                
+                result_lines.append(line)
         
         return '\n'.join(result_lines)
     
@@ -5547,6 +5826,48 @@ See also [documentation](https://docs.example.com/guide.html) and visit https://
             # The restored text should match the original
             self.assertEqual(text, restored)
         
+        def test_llm_relative_path_protection(self):
+            """Test relative path protection mechanism for LLM calls.
+            
+            Relative paths like 'troubleshooting-guide/solutions-to-common-problems/page'
+            should be protected from LLM modification.
+            """
+            # Test text with relative paths
+            text = """For more information, see troubleshooting-guide/solutions-to-common-problems/permitting-root-login-with-ssh.
+
+Also check ../administration-guide/security-policy/default-firewall-settings for firewall configuration.
+
+The file is located at ./path/to/file.md in the repository."""
+            
+            protected, url_map = LLMClient._protect_urls(LLMClient, text)
+            
+            # Check that relative paths are replaced with placeholders
+            self.assertNotIn("troubleshooting-guide/solutions-to-common-problems/permitting-root-login-with-ssh", protected)
+            self.assertNotIn("../administration-guide/security-policy/default-firewall-settings", protected)
+            self.assertNotIn("./path/to/file.md", protected)
+            
+            # Check that placeholders are present
+            self.assertIn("__PATH_PLACEHOLDER_", protected)
+            
+            # Check url_map contains the original paths
+            self.assertIn("troubleshooting-guide/solutions-to-common-problems/permitting-root-login-with-ssh", url_map.values())
+            self.assertIn("../administration-guide/security-policy/default-firewall-settings", url_map.values())
+            self.assertIn("./path/to/file.md", url_map.values())
+            
+            # Test _restore_urls
+            restored = LLMClient._restore_urls(LLMClient, protected, url_map)
+            
+            # Check that original paths are restored
+            self.assertIn("troubleshooting-guide/solutions-to-common-problems/permitting-root-login-with-ssh", restored)
+            self.assertIn("../administration-guide/security-policy/default-firewall-settings", restored)
+            self.assertIn("./path/to/file.md", restored)
+            
+            # Check that placeholders are removed
+            self.assertNotIn("__PATH_PLACEHOLDER_", restored)
+            
+            # The restored text should match the original
+            self.assertEqual(text, restored)
+        
         def test_fix_vmware_spelling(self):
             """Test VMware spelling fix function."""
             class MockArgs:
@@ -5735,6 +6056,23 @@ See also [documentation](https://docs.example.com/guide.html) and visit https://
             content = "First `code` line\nSecond`code2` line"
             fixed = lecturer._fix_backtick_spacing(content)
             self.assertEqual(fixed, "First `code` line\nSecond `code2` line")
+            
+            # Test URL in backticks - backticks should be removed entirely
+            # URLs should not be wrapped in inline code backticks
+            content = "See`https://github.com/vmware/photon/tree/master/SPECS`for details"
+            fixed = lecturer._fix_backtick_spacing(content)
+            self.assertEqual(fixed, "See https://github.com/vmware/photon/tree/master/SPECS for details")
+            self.assertNotIn("`", fixed, "Backticks should be removed from URLs")
+            
+            # Test URL with only missing space before
+            content = "Visit`https://example.com/path`"
+            fixed = lecturer._fix_backtick_spacing(content)
+            self.assertEqual(fixed, "Visit https://example.com/path")
+            
+            # Test URL with only missing space after
+            content = "`https://example.com/path`here"
+            fixed = lecturer._fix_backtick_spacing(content)
+            self.assertEqual(fixed, "https://example.com/path here")
             
             lecturer.cleanup()
         
