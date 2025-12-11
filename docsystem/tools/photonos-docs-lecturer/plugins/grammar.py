@@ -102,8 +102,25 @@ Return ONLY the corrected text. Do NOT add any preamble, explanation, or comment
             
             for match in matches:
                 # Skip certain rule categories
-                if match.ruleId in ['WHITESPACE_RULE', 'EN_QUOTES']:
+                if match.ruleId in ['WHITESPACE_RULE', 'EN_QUOTES', 
+                                    'UPPERCASE_SENTENCE_START', 'COMMA_PARENTHESIS_WHITESPACE']:
                     continue
+                
+                # For spelling rules, skip hyphenated terms, camelCase, and underscored terms
+                if match.ruleId in ['MORFOLOGIK_RULE_EN_US', 'MORFOLOGIK_RULE_EN_GB']:
+                    matched_text = safe_content[match.offset:match.offset + match.errorLength]
+                    
+                    # Skip hyphenated terms (e.g., cloud-init, systemd-networkd)
+                    if '-' in matched_text:
+                        continue
+                    
+                    # Skip camelCase or PascalCase (e.g., NetworkManager)
+                    if any(c.isupper() for c in matched_text[1:]) and any(c.islower() for c in matched_text):
+                        continue
+                    
+                    # Skip terms with underscores (e.g., cloud_init)
+                    if '_' in matched_text:
+                        continue
                 
                 issue = Issue(
                     category=self.PLUGIN_NAME,

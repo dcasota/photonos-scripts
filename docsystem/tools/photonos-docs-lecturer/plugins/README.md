@@ -41,13 +41,15 @@ def fix(self, content, issues, **kwargs):
 
 | Plugin | FIX_ID | Description |
 |--------|--------|-------------|
-| grammar | 1 | Grammar and spelling fixes (LLM-assisted) |
+| grammar | 1 | Grammar and spelling fixes (LLM-assisted, smart typo detection) |
 | markdown | 2 | Markdown formatting fixes |
 | indentation | 3 | List and content indentation |
 | formatting | 4 | Backtick spacing fixes |
 | backtick_errors | 5 | Spaces inside backticks |
 | deprecated_url | 13 | Deprecated URL replacement |
 | spelling | 14 | VMware/Photon spelling fixes |
+
+
 
 ### Detection-Only Plugins (FIX_ID = 0)
 

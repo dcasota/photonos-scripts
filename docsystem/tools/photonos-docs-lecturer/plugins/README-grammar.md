@@ -1,6 +1,6 @@
 # Grammar Plugin
 
-**Version:** 2.0.0  
+**Version:** 2.1.0  
 **FIX_ID:** 1  
 **Requires LLM:** Yes
 
@@ -11,11 +11,21 @@ and LLM for complex fixes.
 
 ## Issues Detected
 
-- Spelling errors
+- Spelling errors (detected but NOT auto-fixed - see below)
 - Grammar mistakes
 - Punctuation issues
 - Subject-verb agreement
 - Article usage (a/an/the)
+
+## LLM-Based Fixing
+
+All grammar and spelling issues are sent to the LLM (xAI Grok 4) for intelligent
+fixing. The LLM understands technical context and preserves technical terms.
+
+**Detection Filtering (before sending to LLM):**
+- Hyphenated terms (e.g., `cloud-init`) are skipped during detection
+- camelCase/PascalCase terms (e.g., `NetworkManager`) are skipped
+- Underscored terms (e.g., `cloud_init`) are skipped
 
 ## Code Block Protection
 
