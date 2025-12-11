@@ -1,52 +1,38 @@
 # Orphan Link Plugin
 
-## Overview
+**Version:** 2.0.0  
+**FIX_ID:** 0 (Detection Only)  
+**Requires LLM:** No
 
-The Orphan Link Plugin detects broken hyperlinks within documentation pages by validating internal links via HTTP HEAD requests.
+## Description
 
-**Plugin ID:** None (detection only)  
-**Requires LLM:** No  
-**Auto-fixable:** No  
-**Version:** 1.0.0
+Detects broken hyperlinks that return 404 or connection errors.
 
-## Features
+## Issues Detected
 
-- Validate internal hyperlinks
-- Cache link check results for efficiency
-- Report broken links with context
+1. **HTTP 404** - Link target not found
+2. **Connection errors** - Server unreachable
+3. **Timeout** - Server not responding
 
-## What It Detects
+## Why Detection Only
 
-- Links returning 404 (Not Found)
-- Links returning 5xx (Server Error)
-- Links timing out
-- Links to external pages (optional)
+Broken links require human decision:
+- Remove the link?
+- Update to new URL?
+- Replace with archived version?
 
-## Usage
+## URL Validation
 
-Link validation is part of the standard analysis:
+- Relative URLs resolved against page URL
+- Redirects followed
+- HEAD requests used (faster than GET)
+- Results cached per session
 
-```bash
-python3 photonos-docs-lecturer.py analyze \
-  --website https://127.0.0.1/docs-v5
+## Configuration
+
+```python
+config = {
+    'timeout': 10,  # seconds
+    'skip_external': False  # Check only internal links
+}
 ```
-
-## Log File
-
-```
-/var/log/photonos-docs-lecturer-orphan_link.log
-```
-
-## Report Format
-
-```csv
-Page URL,Issue Category,Issue Location Description,Fix Suggestion
-https://example.com/page/,orphan_link,"Link text: 'Old Guide', URL: /old/path",Remove or update link (status: 404)
-```
-
-## Manual Resolution
-
-1. **Update link target:** Change URL to correct path
-2. **Remove link:** If content no longer exists
-3. **Update link text:** If pointing to renamed page
-4. **Add redirect:** Configure server redirect for old URLs

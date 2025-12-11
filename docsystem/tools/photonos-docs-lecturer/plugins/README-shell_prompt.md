@@ -1,77 +1,40 @@
-# Shell Prompt Plugin (Feature)
+# Shell Prompt Plugin
 
-## Overview
+**Version:** 2.0.0  
+**FIX_ID:** 0 (Detection Only)  
+**Requires LLM:** No
 
-The Shell Prompt Plugin removes shell prompts from code blocks to make commands copyable. This is an optional feature that modifies code block formatting.
+## Description
 
-**Feature ID:** 1  
-**Requires LLM:** No  
-**Version:** 1.0.0
+Detects shell prompts in code blocks that might hinder copy-paste.
 
-## Features
+## Issues Detected
 
-- Remove common shell prompts
-- Preserve command content
-- Add language hints to code blocks
+1. **$ prompt** - `$ command`
+2. **# prompt** - `# command` (root)
+3. **User prompts** - `root@host:~#`
+4. **Bracketed prompts** - `[user@host dir]$`
 
-## Usage
+## Why Detection Only
 
-```bash
-# Enable shell prompt removal (feature 1)
-python3 photonos-docs-lecturer.py run \
-  --website https://127.0.0.1/docs-v5 \
-  --feature 1
-```
+Shell prompts are often intentional:
+- Show interactive sessions
+- Indicate root vs user commands
+- Document expected workflow
 
-## What It Removes
-
-| Prompt | Example |
-|--------|---------|
-| `$` | `$ command` → `command` |
-| `>` | `> command` → `command` |
-| `%` | `% command` → `command` |
-| `~` | `~ command` → `command` |
-| `❯` | `❯ command` → `command` |
-| `➜` | `➜ command` → `command` |
-| `root@host#` | `root@host# command` → `command` |
-| `user@host$` | `user@host$ command` → `command` |
+Removal is a stylistic choice requiring human judgment.
 
 ## Example
 
-### Before
-
 ```bash
-$ git clone https://github.com/vmware/photon.git
-$ cd photon
-$ sudo make iso
+$ docker ps
+CONTAINER ID   IMAGE   ...
+
+# systemctl start nginx
 ```
 
-### After
+The `$` and `#` prompts help readers understand context.
 
-```console
-git clone https://github.com/vmware/photon.git
-cd photon
-sudo make iso
-```
+## Configuration
 
-## Why This is a Feature
-
-This is classified as a feature (not a fix) because:
-
-1. Some documentation intentionally shows prompts
-2. Prompts can indicate user vs root context
-3. Removal changes the documentation style
-4. Users should opt-in to this change
-
-## Log File
-
-```
-/var/log/photonos-docs-lecturer-shell_prompt.log
-```
-
-## Example Output
-
-```
-2025-12-11 10:00:00 - INFO - [shell_prompt] Detected: Shell prompt detected: $ prompt
-2025-12-11 10:00:01 - INFO - [shell_prompt] Fixed: Removed 5 shell prompts from code blocks
-```
+No configuration required.

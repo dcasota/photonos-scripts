@@ -1,24 +1,37 @@
 #!/usr/bin/env python3
 """
-Base Plugin Module for Photon OS Documentation Lecturer
+Base Plugin Classes for Photon OS Documentation Lecturer
 
-Provides the abstract base class and common functionality for all plugins.
-Each plugin inherits from BasePlugin and implements detect() and fix() methods.
+Provides the foundation for all documentation analysis plugins with
+CRITICAL code block protection to ensure fenced code blocks are NEVER modified.
 
-Version: 1.0.0
+Version: 2.0.0
 """
 
 from __future__ import annotations
 
-import logging
-import os
 import re
-import threading
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
-__version__ = "1.0.0"
+__version__ = "2.0.0"
+
+# Placeholder used to protect code blocks during processing
+CODE_BLOCK_PLACEHOLDER = "\x00CODEBLOCK_{}_\x00"
+
+# Pattern to match fenced code blocks (``` or ~~~)
+FENCED_CODE_BLOCK_PATTERN = re.compile(
+    r'(^```[\w]*.*?^```|^~~~[\w]*.*?^~~~)',
+    re.MULTILINE | re.DOTALL
+)
+
+# Pattern to match indented code blocks (4+ spaces or tab at line start)
+INDENTED_CODE_BLOCK_PATTERN = re.compile(
+    r'^((?:[ ]{4,}|\t).+(?:\n(?:[ ]{4,}|\t).+)*)',
+    re.MULTILINE
+)
 
 
 @dataclass
@@ -27,16 +40,14 @@ class Issue:
     category: str
     location: str
     description: str
-    suggestion: str
-    line_number: Optional[int] = None
-    context: Optional[str] = None
-    severity: str = "medium"  # low, medium, high, critical
-    fixable: bool = True
-    requires_llm: bool = False
+    suggestion: str = ""
+    context: str = ""
+    severity: str = "medium"
+    line_number: int = 0
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
-@dataclass 
+@dataclass
 class FixResult:
     """Result of applying a fix."""
     success: bool
@@ -45,101 +56,120 @@ class FixResult:
     error: Optional[str] = None
 
 
-class PluginLogger:
-    """Thread-safe logger for plugins with dedicated log file."""
+def strip_code_blocks(text: str) -> str:
+    """Remove all code blocks from text for analysis.
     
-    _loggers: Dict[str, logging.Logger] = {}
-    _lock = threading.Lock()
+    This function removes:
+    - Fenced code blocks (``` ... ``` or ~~~ ... ~~~)
+    - Inline code (`...`)
+    - Indented code blocks (4+ spaces or tab at line start)
     
-    @classmethod
-    def get_logger(cls, plugin_name: str, log_dir: str = "/var/log") -> logging.Logger:
-        """Get or create a logger for a plugin.
+    Use this before detecting issues to avoid false positives on code content.
+    
+    Args:
+        text: The markdown content
         
-        Args:
-            plugin_name: Name of the plugin (e.g., 'grammar', 'markdown')
-            log_dir: Directory for log files
-            
-        Returns:
-            Configured logger instance
-        """
-        with cls._lock:
-            logger_key = f"photonos-docs-lecturer-{plugin_name}"
-            
-            if logger_key in cls._loggers:
-                return cls._loggers[logger_key]
-            
-            logger = logging.getLogger(logger_key)
-            logger.setLevel(logging.INFO)
-            
-            # Prevent duplicate handlers
-            if not logger.handlers:
-                # File handler
-                log_file = os.path.join(log_dir, f"photonos-docs-lecturer-{plugin_name}.log")
-                try:
-                    os.makedirs(log_dir, exist_ok=True)
-                    file_handler = logging.FileHandler(log_file, mode='a', encoding='utf-8')
-                    file_handler.setFormatter(logging.Formatter(
-                        '%(asctime)s - %(levelname)s - [%(name)s] %(message)s'
-                    ))
-                    logger.addHandler(file_handler)
-                except PermissionError:
-                    # Fall back to current directory if /var/log not writable
-                    pass
-                
-                # Stream handler for errors only
-                stream_handler = logging.StreamHandler()
-                stream_handler.setLevel(logging.WARNING)
-                stream_handler.setFormatter(logging.Formatter(
-                    '%(levelname)s - [%(name)s] %(message)s'
-                ))
-                logger.addHandler(stream_handler)
-            
-            cls._loggers[logger_key] = logger
-            return logger
+    Returns:
+        Text with all code blocks replaced with spaces
+    """
+    if not text:
+        return text
+    
+    # Remove fenced code blocks
+    result = FENCED_CODE_BLOCK_PATTERN.sub(' ', text)
+    
+    # Remove inline code
+    result = re.sub(r'`[^`\n]+`', ' ', result)
+    
+    # Remove indented code blocks
+    result = INDENTED_CODE_BLOCK_PATTERN.sub(' ', result)
+    
+    return result
+
+
+def protect_code_blocks(text: str) -> Tuple[str, List[str]]:
+    """Replace code blocks with placeholders to protect them during fixes.
+    
+    CRITICAL: This function MUST be called before applying any regex-based
+    fixes to ensure code block content is never modified.
+    
+    Args:
+        text: The markdown content
+        
+    Returns:
+        Tuple of (text with placeholders, list of original code blocks)
+    """
+    if not text:
+        return text, []
+    
+    code_blocks = []
+    
+    def save_code_block(match):
+        idx = len(code_blocks)
+        code_blocks.append(match.group(0))
+        return CODE_BLOCK_PLACEHOLDER.format(idx)
+    
+    # Protect fenced code blocks first (they take priority)
+    result = FENCED_CODE_BLOCK_PATTERN.sub(save_code_block, text)
+    
+    # Protect indented code blocks
+    result = INDENTED_CODE_BLOCK_PATTERN.sub(save_code_block, result)
+    
+    return result, code_blocks
+
+
+def restore_code_blocks(text: str, code_blocks: List[str]) -> str:
+    """Restore code blocks from placeholders after fixes are applied.
+    
+    Args:
+        text: Text with placeholders
+        code_blocks: List of original code block content
+        
+    Returns:
+        Text with code blocks restored
+    """
+    if not text or not code_blocks:
+        return text
+    
+    result = text
+    for idx, block in enumerate(code_blocks):
+        placeholder = CODE_BLOCK_PLACEHOLDER.format(idx)
+        result = result.replace(placeholder, block)
+    
+    return result
 
 
 class BasePlugin(ABC):
     """Abstract base class for all documentation plugins.
     
-    Each plugin must implement:
-    - detect(): Find issues in content
-    - fix(): Apply fixes to content
-    
-    Plugins are thread-safe and maintain their own state.
+    All plugins MUST implement detect() and fix() methods.
+    All plugins MUST use protect_code_blocks() before applying fixes.
     """
     
-    # Plugin metadata - override in subclasses
     PLUGIN_NAME: str = "base"
     PLUGIN_VERSION: str = "1.0.0"
     PLUGIN_DESCRIPTION: str = "Base plugin"
     REQUIRES_LLM: bool = False
-    FIX_ID: Optional[int] = None  # ID for --fix parameter
+    FIX_ID: int = 0
     
-    def __init__(self, llm_client: Optional[Any] = None, config: Optional[Dict] = None):
-        """Initialize the plugin.
-        
-        Args:
-            llm_client: Optional LLM client for AI-assisted fixes
-            config: Optional configuration dictionary
-        """
-        self.llm_client = llm_client
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        """Initialize plugin with optional configuration."""
         self.config = config or {}
-        self.logger = PluginLogger.get_logger(self.PLUGIN_NAME)
-        self._lock = threading.Lock()
-        
-        # Statistics
+        self.logger = logging.getLogger(f"plugin.{self.PLUGIN_NAME}")
         self._issues_detected = 0
-        self._fixes_applied = 0
-        self._stats_lock = threading.Lock()
+        self._issues_fixed = 0
     
     @abstractmethod
     def detect(self, content: str, url: str, **kwargs) -> List[Issue]:
-        """Detect issues in content.
+        """Detect issues in the content.
+        
+        IMPORTANT: Use strip_code_blocks() on content before pattern matching
+        to avoid detecting issues inside code blocks.
         
         Args:
-            content: The content to analyze (HTML or markdown)
-            url: URL of the page being analyzed
-            **kwargs: Additional context (e.g., soup object, local_path)
+            content: The markdown content to analyze
+            url: URL or path of the document
+            **kwargs: Additional context (soup, raw_html, etc.)
             
         Returns:
             List of detected issues
@@ -148,7 +178,10 @@ class BasePlugin(ABC):
     
     @abstractmethod
     def fix(self, content: str, issues: List[Issue], **kwargs) -> FixResult:
-        """Apply fixes to content.
+        """Apply fixes to the content.
+        
+        CRITICAL: Use protect_code_blocks() and restore_code_blocks() to
+        ensure code blocks are NEVER modified.
         
         Args:
             content: The markdown content to fix
@@ -156,145 +189,124 @@ class BasePlugin(ABC):
             **kwargs: Additional context
             
         Returns:
-            FixResult with modified content and changes made
+            FixResult with modified content
         """
         pass
     
-    def can_fix(self, issue: Issue) -> bool:
-        """Check if this plugin can fix the given issue.
-        
-        Args:
-            issue: The issue to check
-            
-        Returns:
-            True if plugin can fix this issue
-        """
-        return issue.category == self.PLUGIN_NAME and issue.fixable
-    
     def increment_detected(self, count: int = 1):
-        """Thread-safe increment of detected issues count."""
-        with self._stats_lock:
-            self._issues_detected += count
+        """Track number of issues detected."""
+        self._issues_detected += count
     
     def increment_fixed(self, count: int = 1):
-        """Thread-safe increment of fixes applied count."""
-        with self._stats_lock:
-            self._fixes_applied += count
+        """Track number of issues fixed."""
+        self._issues_fixed += count
     
     def get_stats(self) -> Dict[str, int]:
-        """Get plugin statistics.
-        
-        Returns:
-            Dictionary with detection and fix counts
-        """
-        with self._stats_lock:
-            return {
-                "issues_detected": self._issues_detected,
-                "fixes_applied": self._fixes_applied
-            }
+        """Get plugin statistics."""
+        return {
+            "detected": self._issues_detected,
+            "fixed": self._issues_fixed
+        }
     
     def reset_stats(self):
-        """Reset statistics counters."""
-        with self._stats_lock:
-            self._issues_detected = 0
-            self._fixes_applied = 0
+        """Reset plugin statistics."""
+        self._issues_detected = 0
+        self._issues_fixed = 0
     
-    def validate_content(self, content: str) -> bool:
-        """Validate that content is suitable for processing.
-        
-        Args:
-            content: Content to validate
-            
-        Returns:
-            True if content is valid
-        """
-        if not content or not isinstance(content, str):
-            return False
-        if len(content.strip()) < 10:
-            return False
-        return True
+    def log_info(self, message: str):
+        """Log info message."""
+        self.logger.info(f"[{self.PLUGIN_NAME}] {message}")
     
-    def log_issue(self, issue: Issue):
-        """Log a detected issue."""
-        self.logger.info(f"Detected: {issue.category} - {issue.description[:100]}")
+    def log_error(self, message: str):
+        """Log error message."""
+        self.logger.error(f"[{self.PLUGIN_NAME}] {message}")
     
-    def log_fix(self, description: str):
-        """Log an applied fix."""
-        self.logger.info(f"Fixed: {description[:100]}")
-    
-    def log_error(self, error: str):
-        """Log an error."""
-        self.logger.error(error)
+    def log_debug(self, message: str):
+        """Log debug message."""
+        self.logger.debug(f"[{self.PLUGIN_NAME}] {message}")
 
 
 class PatternBasedPlugin(BasePlugin):
-    """Base class for plugins that use regex patterns for detection.
+    """Base class for plugins that use regex patterns.
     
-    Provides common functionality for pattern-based issue detection
-    and fixing, which is the most common plugin type.
+    Provides helper methods for safe pattern-based detection and fixing
+    that automatically protect code blocks.
     """
     
-    # Override in subclasses: list of (pattern, description, suggestion) tuples
-    DETECTION_PATTERNS: List[Tuple[re.Pattern, str, str]] = []
-    
-    # Override in subclasses: list of (pattern, replacement) tuples for fixing
-    FIX_PATTERNS: List[Tuple[re.Pattern, str]] = []
-    
-    def detect(self, content: str, url: str, **kwargs) -> List[Issue]:
-        """Detect issues using configured patterns.
+    def detect_with_pattern(
+        self,
+        content: str,
+        pattern: re.Pattern,
+        category: str,
+        description: str,
+        suggestion_template: str = ""
+    ) -> List[Issue]:
+        """Detect issues using a regex pattern, excluding code blocks.
         
         Args:
-            content: Content to analyze
-            url: URL of the page
-            **kwargs: Additional context
+            content: The markdown content
+            pattern: Compiled regex pattern
+            category: Issue category
+            description: Issue description
+            suggestion_template: Template for suggestion (use {match} for match text)
             
         Returns:
             List of detected issues
         """
+        # Strip code blocks before detection
+        safe_content = strip_code_blocks(content)
+        
         issues = []
-        
-        if not self.validate_content(content):
-            return issues
-        
-        for pattern, description, suggestion in self.DETECTION_PATTERNS:
-            for match in pattern.finditer(content):
-                issue = Issue(
-                    category=self.PLUGIN_NAME,
-                    location=f"Match: {match.group(0)[:50]}...",
-                    description=description,
-                    suggestion=suggestion,
-                    context=match.group(0)[:100],
-                    metadata={"match": match.group(0), "start": match.start(), "end": match.end()}
-                )
-                issues.append(issue)
-                self.log_issue(issue)
+        for match in pattern.finditer(safe_content):
+            suggestion = suggestion_template.format(match=match.group(0)) if suggestion_template else ""
+            issue = Issue(
+                category=category,
+                location=f"Position {match.start()}",
+                description=description,
+                suggestion=suggestion,
+                context=match.group(0)[:100]
+            )
+            issues.append(issue)
         
         self.increment_detected(len(issues))
         return issues
     
-    def fix(self, content: str, issues: List[Issue], **kwargs) -> FixResult:
-        """Apply pattern-based fixes.
+    def fix_with_pattern(
+        self,
+        content: str,
+        pattern: re.Pattern,
+        replacement: str,
+        change_description: str
+    ) -> FixResult:
+        """Apply a regex-based fix, protecting code blocks.
+        
+        CRITICAL: This method automatically protects code blocks.
         
         Args:
-            content: Content to fix
-            issues: Issues to fix
-            **kwargs: Additional context
+            content: The markdown content
+            pattern: Compiled regex pattern
+            replacement: Replacement string (can use backreferences)
+            change_description: Description of the change
             
         Returns:
             FixResult with modified content
         """
-        if not self.validate_content(content):
-            return FixResult(success=False, error="Invalid content")
+        if not content:
+            return FixResult(success=False, error="No content")
         
-        result = content
+        # Protect code blocks
+        protected_content, code_blocks = protect_code_blocks(content)
+        
+        # Apply fix
+        new_content, count = pattern.subn(replacement, protected_content)
+        
+        # Restore code blocks
+        result = restore_code_blocks(new_content, code_blocks)
+        
         changes = []
-        
-        for pattern, replacement in self.FIX_PATTERNS:
-            new_result, count = pattern.subn(replacement, result)
-            if count > 0:
-                changes.append(f"Applied {pattern.pattern[:30]}... ({count} replacements)")
-                result = new_result
-                self.increment_fixed(count)
+        if count > 0:
+            changes.append(f"{change_description}: {count} instances")
+            self.increment_fixed(count)
         
         return FixResult(
             success=True,
@@ -304,133 +316,147 @@ class PatternBasedPlugin(BasePlugin):
 
 
 class LLMAssistedPlugin(BasePlugin):
-    """Base class for plugins that require LLM assistance for fixing.
+    """Base class for plugins that use LLM assistance.
     
-    Provides common functionality for LLM-based issue detection
-    and fixing. Includes prompt templates and response handling.
+    Provides helper methods for LLM-based detection and fixing
+    with proper prompt construction and response validation.
     """
     
     REQUIRES_LLM = True
     
-    # Override in subclasses: prompt template for the LLM
-    LLM_PROMPT_TEMPLATE: str = ""
+    def __init__(self, config: Optional[Dict[str, Any]] = None, llm_client: Any = None):
+        """Initialize with optional LLM client."""
+        super().__init__(config)
+        self.llm_client = llm_client
     
-    def fix(self, content: str, issues: List[Issue], **kwargs) -> FixResult:
-        """Apply LLM-assisted fixes.
+    def set_llm_client(self, client: Any):
+        """Set the LLM client."""
+        self.llm_client = client
+    
+    def call_llm(self, prompt: str, original_text: str) -> Optional[str]:
+        """Call LLM with prompt and validate response.
         
         Args:
-            content: Content to fix
-            issues: Issues to fix
-            **kwargs: Additional context
+            prompt: The prompt to send to LLM
+            original_text: Original text for validation
+            
+        Returns:
+            LLM response or None if validation fails
+        """
+        if not self.llm_client:
+            self.log_error("No LLM client configured")
+            return None
+        
+        result = None
+        if hasattr(self.llm_client, '_generate_with_url_protection'):
+            result = self.llm_client._generate_with_url_protection(prompt, original_text)
+        elif hasattr(self.llm_client, '_generate'):
+            result = self.llm_client._generate(prompt)
+        
+        if result:
+            result = self._validate_llm_response(result, original_text)
+        
+        return result
+    
+    def _validate_llm_response(self, response: str, original_text: str) -> Optional[str]:
+        """Validate LLM response to prevent content destruction.
+        
+        Args:
+            response: The LLM response
+            original_text: The original text
+            
+        Returns:
+            Response if valid, None otherwise
+        """
+        if not response:
+            return None
+        
+        # Reject responses with template placeholders
+        if '{text}' in response or '{{text}}' in response:
+            self.log_error("LLM returned template placeholder - rejecting")
+            return None
+        
+        # Check content length (allow 80-130% of original)
+        original_len = len(original_text.strip())
+        response_len = len(response.strip())
+        
+        if original_len > 100:
+            if response_len < original_len * 0.8:
+                self.log_error(f"LLM response too short ({response_len} vs {original_len})")
+                return None
+            if response_len > original_len * 1.3:
+                self.log_error(f"LLM response too long ({response_len} vs {original_len})")
+                return None
+        
+        # Preserve YAML front matter
+        if original_text.strip().startswith('---'):
+            if not response.strip().startswith('---'):
+                self.log_error("LLM removed YAML front matter - rejecting")
+                return None
+        
+        # Reject suspiciously short responses
+        if response_len < 50 and original_len > 200:
+            self.log_error("LLM response suspiciously short - rejecting")
+            return None
+        
+        return response
+    
+    def fix_with_llm(
+        self,
+        content: str,
+        prompt_template: str,
+        issues_text: str,
+        change_description: str
+    ) -> FixResult:
+        """Apply LLM-based fix, protecting code blocks.
+        
+        CRITICAL: Code blocks are extracted, LLM processes only non-code content,
+        then code blocks are restored exactly as they were.
+        
+        Args:
+            content: The markdown content
+            prompt_template: Template with {text} placeholder
+            issues_text: Description of issues to fix
+            change_description: Description of the change
             
         Returns:
             FixResult with modified content
         """
+        if not content:
+            return FixResult(success=False, error="No content")
+        
         if not self.llm_client:
-            return FixResult(
-                success=False,
-                error="LLM client required but not provided"
-            )
+            return FixResult(success=False, error="No LLM client")
         
-        if not self.validate_content(content):
-            return FixResult(success=False, error="Invalid content")
+        # Protect code blocks
+        protected_content, code_blocks = protect_code_blocks(content)
         
-        try:
-            # Build prompt from template
-            prompt = self._build_prompt(content, issues)
-            
-            # Call LLM
-            response = self._call_llm(prompt, content)
-            
-            if response:
-                self.increment_fixed(len(issues))
-                return FixResult(
-                    success=True,
-                    modified_content=response,
-                    changes_made=[f"Applied LLM fixes for {len(issues)} issues"]
-                )
-            else:
-                return FixResult(
-                    success=False,
-                    error="LLM returned empty response"
-                )
-        except Exception as e:
-            self.log_error(f"LLM fix failed: {e}")
-            return FixResult(success=False, error=str(e))
-    
-    def _build_prompt(self, content: str, issues: List[Issue]) -> str:
-        """Build LLM prompt from template and issues.
+        # Build prompt with protected content
+        prompt = prompt_template.format(text=protected_content)
         
-        Override in subclasses for custom prompt building.
-        """
-        issue_desc = "\n".join([f"- {i.description}" for i in issues[:10]])
-        return self.LLM_PROMPT_TEMPLATE.format(
-            issues=issue_desc,
-            text=content
+        # Call LLM
+        result = self.call_llm(prompt, protected_content)
+        
+        if not result:
+            return FixResult(success=False, error="LLM returned invalid response")
+        
+        # Restore code blocks in LLM output
+        final_content = restore_code_blocks(result, code_blocks)
+        
+        # Verify code blocks are unchanged
+        _, new_code_blocks = protect_code_blocks(final_content)
+        if len(new_code_blocks) != len(code_blocks):
+            self.log_error("Code block count changed - rejecting LLM response")
+            return FixResult(success=False, error="LLM modified code block structure")
+        
+        for i, (orig, new) in enumerate(zip(code_blocks, new_code_blocks)):
+            if orig != new:
+                self.log_error(f"Code block {i} was modified - rejecting")
+                return FixResult(success=False, error="LLM modified code block content")
+        
+        self.increment_fixed(1)
+        return FixResult(
+            success=True,
+            modified_content=final_content,
+            changes_made=[change_description]
         )
-    
-    def _call_llm(self, prompt: str, original_text: str) -> Optional[str]:
-        """Call the LLM with the prompt.
-        
-        Override in subclasses for custom LLM interaction.
-        """
-        if hasattr(self.llm_client, '_generate_with_url_protection'):
-            return self.llm_client._generate_with_url_protection(prompt, original_text)
-        elif hasattr(self.llm_client, '_generate'):
-            return self.llm_client._generate(prompt)
-        return None
-
-
-def strip_code_blocks(text: str) -> str:
-    """Remove code blocks from text for analysis.
-    
-    Strips:
-    - Fenced code blocks (```...```)
-    - Inline code (`...`)
-    - Indented code blocks (4+ spaces or tab at start)
-    
-    Args:
-        text: Text containing code blocks
-        
-    Returns:
-        Text with code blocks removed
-    """
-    if not text:
-        return ""
-    
-    # Remove fenced code blocks
-    result = re.sub(r'```[\s\S]*?```', '', text)
-    
-    # Remove inline code
-    result = re.sub(r'`[^`]+`', '', result)
-    
-    # Remove indented code blocks (4+ spaces or tab at line start)
-    result = re.sub(r'^(?:    |\t).*$', '', result, flags=re.MULTILINE)
-    
-    return result
-
-
-def extract_urls(text: str) -> List[str]:
-    """Extract all URLs from text.
-    
-    Args:
-        text: Text containing URLs
-        
-    Returns:
-        List of extracted URLs
-    """
-    url_pattern = re.compile(r'https?://[^\s<>"\')\]]+')
-    return url_pattern.findall(text)
-
-
-def extract_markdown_links(text: str) -> List[Tuple[str, str]]:
-    """Extract markdown links from text.
-    
-    Args:
-        text: Text containing markdown links
-        
-    Returns:
-        List of (link_text, url) tuples
-    """
-    link_pattern = re.compile(r'\[([^\]]+)\]\(([^)]+)\)')
-    return link_pattern.findall(text)

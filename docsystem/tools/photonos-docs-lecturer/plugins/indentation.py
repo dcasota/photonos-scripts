@@ -2,10 +2,11 @@
 """
 Indentation Plugin for Photon OS Documentation Lecturer
 
-Detects and fixes indentation issues in markdown lists and code blocks.
-Requires LLM for intelligent indentation adjustments.
+Detects and fixes list and nested content indentation issues.
 
-Version: 1.0.0
+CRITICAL: All operations protect fenced code blocks from modification.
+
+Version: 2.0.0
 """
 
 from __future__ import annotations
@@ -13,226 +14,152 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional
 
-from .base import BasePlugin, Issue, FixResult, LLMAssistedPlugin
+from .base import (
+    LLMAssistedPlugin,
+    Issue,
+    FixResult,
+    strip_code_blocks,
+    protect_code_blocks,
+    restore_code_blocks,
+)
 
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 
 
 class IndentationPlugin(LLMAssistedPlugin):
     """Plugin for detecting and fixing indentation issues.
     
-    Handles list indentation and nested content alignment.
+    All detection and fixing operations exclude fenced code blocks.
     """
     
     PLUGIN_NAME = "indentation"
-    PLUGIN_VERSION = "1.0.0"
-    PLUGIN_DESCRIPTION = "Fix indentation issues in lists and code blocks"
+    PLUGIN_VERSION = "2.0.0"
+    PLUGIN_DESCRIPTION = "Fix list and content indentation"
     REQUIRES_LLM = True
-    FIX_ID = 11
+    FIX_ID = 3
     
-    # Pattern for numbered lists
-    NUMBERED_LIST = re.compile(r'^(\s*)(\d+)([.)])(\s+)(.*)$', re.MULTILINE)
+    # Mixed tabs and spaces
+    MIXED_INDENT = re.compile(r'^( +\t|\t+ )', re.MULTILINE)
+    
+    # Inconsistent list indentation
+    LIST_INDENT_PATTERN = re.compile(r'^(\s*)[-*+]\s', re.MULTILINE)
     
     # LLM prompt template
-    LLM_PROMPT_TEMPLATE = """You are a documentation indentation reviewer. Fix ONLY indentation/alignment issues.
-
-Issues detected:
-{issues}
+    PROMPT_TEMPLATE = """You are a markdown formatting expert. Fix ONLY the indentation issues listed below.
 
 CRITICAL RULES - VIOLATING ANY WILL CORRUPT THE DOCUMENTATION:
+1. Output ONLY the corrected text - no explanations
+2. Preserve ALL content exactly - only fix indentation
+3. Do NOT modify fenced code blocks (``` or ~~~) or their content
+4. Do NOT modify inline code (`...`)
+5. Lines with 4+ spaces at start that are NOT lists are intentional code blocks
+6. Use consistent 2-space or 4-space indentation for lists
+7. Nested list items should be indented relative to parent
+8. Preserve YAML front matter exactly
+9. Do NOT merge lines or change line breaks
 
-=== NEVER MODIFY CONTENT ===
-- Product names: "Photon OS", "VMware vSphere", "VMware Workstation", "VMware Fusion"
-- Paths: /etc/yum.repos.d/, ../../images/fs-version.png
-- URLs and placeholders (__URL_PLACEHOLDER_N__)
-- Content inside backticks
-- Domain names (keep lowercase: github.com)
-- ALL text and words - do NOT delete or change ANY text
-
-=== CODE BLOCKS (STRICT SEPARATION) ===
-- Content inside triple backticks (```...```) - DO NOT modify
-- Lines starting with TAB or 4+ spaces are CODE - DO NOT modify text
-- NEVER add backticks to content
-
-=== PRESERVE EXACTLY ===
-- YAML front matter (--- ... ---) at file start
-- All parenthetical notes like "(NOTE: DO NOT use https://)"
-
-=== ONLY ADJUST ===
-- Leading whitespace (spaces/tabs at start of lines)
-- Alignment of list items and nested content
-
-=== INDENTATION FIXES ALLOWED ===
-- Align list items properly
-- Indent code blocks inside lists (4 spaces)
-- Fix inconsistent indentation
+INDENTATION ISSUES TO FIX:
+{issues}
 
 Text to fix:
-{{text}}
+{text}
 
-Return ONLY the corrected markdown. Do NOT add any preamble or explanation."""
+Return ONLY the corrected text."""
     
     def detect(self, content: str, url: str, **kwargs) -> List[Issue]:
-        """Detect indentation issues.
+        """Detect indentation issues, excluding code blocks.
         
         Args:
-            content: HTML or markdown content
+            content: Markdown content
             url: URL of the page
-            **kwargs: May include 'soup' for BeautifulSoup object
+            **kwargs: Additional context
             
         Returns:
             List of indentation issues
         """
         issues = []
-        soup = kwargs.get('soup')
         
-        if soup:
-            # Check HTML list structure for improper nesting
-            issues.extend(self._detect_list_nesting_issues(soup, url))
+        if not content:
+            return issues
         
-        # Check markdown content directly
-        if kwargs.get('markdown_content'):
-            md_content = kwargs['markdown_content']
-            issues.extend(self._detect_markdown_indentation(md_content))
+        # Strip code blocks before detection
+        safe_content = strip_code_blocks(content)
+        
+        # Check for mixed tabs and spaces
+        for match in self.MIXED_INDENT.finditer(safe_content):
+            issue = Issue(
+                category=self.PLUGIN_NAME,
+                location=f"Line with mixed indent",
+                description="Mixed tabs and spaces in indentation",
+                suggestion="Use consistent spaces for indentation",
+                context=match.group(0)[:30]
+            )
+            issues.append(issue)
+        
+        # Check for inconsistent list indentation
+        indents = set()
+        for match in self.LIST_INDENT_PATTERN.finditer(safe_content):
+            indent = len(match.group(1))
+            if indent > 0:
+                indents.add(indent)
+        
+        # If we have inconsistent indent levels (not multiples of 2 or 4)
+        if indents:
+            base_indent = min(indents) if indents else 2
+            for indent in indents:
+                if indent % base_indent != 0 and indent != 0:
+                    issue = Issue(
+                        category=self.PLUGIN_NAME,
+                        location="Document",
+                        description=f"Inconsistent list indentation ({indent} spaces)",
+                        suggestion=f"Use multiples of {base_indent} for indentation",
+                        context=""
+                    )
+                    issues.append(issue)
+                    break
         
         self.increment_detected(len(issues))
         return issues
     
-    def _detect_list_nesting_issues(self, soup, url: str) -> List[Issue]:
-        """Detect improper list nesting in HTML.
-        
-        Args:
-            soup: BeautifulSoup object
-            url: Page URL
-            
-        Returns:
-            List of nesting issues
-        """
-        issues = []
-        
-        # Check for nested lists with improper structure
-        for list_tag in soup.find_all(['ul', 'ol']):
-            nested_lists = list_tag.find_all(['ul', 'ol'], recursive=False)
-            
-            for nested in nested_lists:
-                # Check if nested list is directly inside list (not in li)
-                if nested.parent == list_tag:
-                    issue = Issue(
-                        category=self.PLUGIN_NAME,
-                        location=f"List in {url}",
-                        description="Nested list not properly inside list item",
-                        suggestion="Ensure nested lists are inside <li> elements",
-                        metadata={'type': 'list_nesting'}
-                    )
-                    issues.append(issue)
-        
-        return issues
-    
-    def _detect_markdown_indentation(self, content: str) -> List[Issue]:
-        """Detect indentation issues in markdown.
-        
-        Args:
-            content: Markdown content
-            
-        Returns:
-            List of indentation issues
-        """
-        issues = []
-        lines = content.split('\n')
-        
-        in_list = False
-        expected_indent = 0
-        
-        for i, line in enumerate(lines):
-            if not line.strip():
-                continue
-            
-            # Check for list items
-            list_match = re.match(r'^(\s*)([*-]|\d+[.)])\s', line)
-            if list_match:
-                indent = len(list_match.group(1))
-                
-                if in_list and indent > 0 and indent % 2 != 0 and indent % 4 != 0:
-                    issue = Issue(
-                        category=self.PLUGIN_NAME,
-                        location=f"Line {i+1}",
-                        description=f"Inconsistent list indentation ({indent} spaces)",
-                        suggestion="Use 2 or 4 space indentation consistently",
-                        context=line[:50],
-                        metadata={'line_number': i+1, 'type': 'list_indent'}
-                    )
-                    issues.append(issue)
-                
-                in_list = True
-                expected_indent = indent + 2
-            
-            # Check for code blocks inside lists
-            elif in_list and line.startswith(' ') or line.startswith('\t'):
-                actual_indent = len(line) - len(line.lstrip())
-                # Code inside lists should be indented 4+ spaces
-                if 0 < actual_indent < 4 and '```' not in line:
-                    issue = Issue(
-                        category=self.PLUGIN_NAME,
-                        location=f"Line {i+1}",
-                        description=f"Content inside list has insufficient indentation ({actual_indent} spaces)",
-                        suggestion="Indent to at least 4 spaces",
-                        context=line[:50],
-                        metadata={'line_number': i+1, 'type': 'list_content_indent'}
-                    )
-                    issues.append(issue)
-        
-        return issues
-    
     def fix(self, content: str, issues: List[Issue], **kwargs) -> FixResult:
-        """Apply indentation fixes using LLM.
+        """Apply indentation fixes, protecting code blocks.
+        
+        CRITICAL: Code blocks are protected and restored unchanged.
         
         Args:
             content: Markdown content to fix
-            issues: Indentation issues to fix
+            issues: Issues to fix
             **kwargs: Additional context
             
         Returns:
             FixResult with corrected content
         """
-        if not issues:
-            return FixResult(success=True, modified_content=content, changes_made=[])
+        if not content:
+            return FixResult(success=False, error="No content to fix")
         
-        if not self.llm_client:
-            return FixResult(
-                success=False,
-                error="LLM client required for indentation fixes"
-            )
+        # Protect code blocks FIRST
+        protected_content, code_blocks = protect_code_blocks(content)
         
-        try:
-            issue_desc = "\n".join([
-                f"- {i.metadata.get('type', 'unknown')}: {i.description}"
-                for i in issues[:10]
-            ])
-            
-            # Use LLM client's fix_indentation method if available
-            if hasattr(self.llm_client, 'fix_indentation'):
-                issue_dicts = [
-                    {'context': i.context, 'type': i.metadata.get('type', 'unknown')}
-                    for i in issues
-                ]
-                result = self.llm_client.fix_indentation(content, issue_dicts)
-            else:
-                prompt = self.LLM_PROMPT_TEMPLATE.format(issues=issue_desc)
-                result = self._call_llm(prompt, content)
-            
-            if result and result != content:
-                self.increment_fixed(len(issues))
-                return FixResult(
-                    success=True,
-                    modified_content=result,
-                    changes_made=[f"Applied indentation fixes for {len(issues)} issues"]
-                )
-            else:
-                return FixResult(
-                    success=True,
-                    modified_content=content,
-                    changes_made=[]
-                )
-        except Exception as e:
-            self.logger.error(f"Indentation fix failed: {e}")
-            return FixResult(success=False, error=str(e))
+        result = protected_content
+        changes = []
+        
+        # Fix simple issues with regex (no LLM needed)
+        
+        # Convert tabs to spaces in indentation
+        def fix_mixed_indent(match):
+            return match.group(0).replace('\t', '    ')
+        
+        new_result = re.sub(r'^\t+', fix_mixed_indent, result, flags=re.MULTILINE)
+        if new_result != result:
+            changes.append("Converted tabs to spaces")
+            result = new_result
+            self.increment_fixed(1)
+        
+        # Restore code blocks UNCHANGED
+        final_content = restore_code_blocks(result, code_blocks)
+        
+        return FixResult(
+            success=True,
+            modified_content=final_content,
+            changes_made=changes
+        )

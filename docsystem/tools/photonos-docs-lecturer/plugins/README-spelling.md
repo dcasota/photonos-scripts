@@ -1,91 +1,52 @@
 # Spelling Plugin
 
-## Overview
+**Version:** 2.0.0  
+**FIX_ID:** 14  
+**Requires LLM:** No
 
-The Spelling Plugin detects and fixes VMware spelling errors, broken email addresses, and HTML comments.
+## Description
 
-**Plugin ID:** 2 (VMware spelling)  
-**Requires LLM:** No  
-**Version:** 1.0.0
+Fixes incorrect VMware and Photon OS spelling variants.
 
-## Features
+## Issues Detected
 
-- Fix VMware spelling variations
-- Fix broken email addresses (domain split)
-- Handle HTML comments
+1. **VMware variants** - `Vmware`, `vmware`, `VMWare`, `VMWARE`
+2. **Photon OS variants** - `photon os`, `Photon os`, `photon OS`
 
-## Usage
+## Correct Spellings
 
-```bash
-# Fix VMware spelling (ID 2)
-python3 photonos-docs-lecturer.py run \
-  --website https://127.0.0.1/docs-v5 \
-  --fix 2
+- `VMware` (not Vmware, vmware, VMWare)
+- `Photon OS` (not photon os, Photon os)
 
-# Fix broken emails (ID 1)
-python3 photonos-docs-lecturer.py run \
-  --website https://127.0.0.1/docs-v5 \
-  --fix 1
+## Code Block Protection
 
-# Fix HTML comments (ID 8)
-python3 photonos-docs-lecturer.py run \
-  --website https://127.0.0.1/docs-v5 \
-  --fix 8
+Spelling fixes exclude code blocks:
+```python
+safe_content = strip_code_blocks(content)
+# Detection on safe_content
+
+protected, blocks = protect_code_blocks(content)
+result = apply_fixes(protected)
+final = restore_code_blocks(result, blocks)
 ```
 
-## What It Fixes
+## Example Fixes
 
-### VMware Spelling (ID 2)
-
-| Wrong | Correct |
-|-------|---------|
-| vmware | VMware |
-| Vmware | VMware |
-| VMWare | VMware |
-| VMWARE | VMware |
-
-**Excludes:** URLs, paths, email addresses, code blocks
-
-### Broken Emails (ID 1)
-
+**Before:**
 ```markdown
-# Wrong
-Contact: linux-packages@vmware.
-                        com
-
-# Fixed
-Contact: linux-packages@vmware.com
+Install vmware tools on your Photon os machine.
 ```
 
-### HTML Comments (ID 8)
-
-```html
-<!-- Content that should be visible -->
-```
-
-Becomes:
-
+**After:**
 ```markdown
-Content that should be visible
+Install VMware tools on your Photon OS machine.
 ```
 
-## Log File
+## Special Cases
 
-```
-/var/log/photonos-docs-lecturer-spelling.log
-```
+- `vmware.com` is NOT changed (domain names are lowercase)
+- Code blocks are never modified
 
-## Example Output
+## Configuration
 
-```
-2025-12-11 10:00:00 - INFO - [spelling] Detected: Incorrect VMware spelling: vmware
-2025-12-11 10:00:01 - INFO - [spelling] Fixed: Fixed VMware spelling
-```
-
-## Related Fix IDs
-
-| ID | Description |
-|----|-------------|
-| 1 | Broken email addresses |
-| 2 | VMware spelling |
-| 8 | HTML comments |
+No configuration required.

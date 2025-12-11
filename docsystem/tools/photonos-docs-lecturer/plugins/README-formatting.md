@@ -1,85 +1,44 @@
 # Formatting Plugin
 
-## Overview
+**Version:** 2.0.0  
+**FIX_ID:** 4  
+**Requires LLM:** No
 
-The Formatting Plugin handles backtick spacing issues and other formatting fixes. It adds missing spaces around inline code backticks and removes backticks from URLs.
+## Description
 
-**Plugin ID:** 4  
-**Requires LLM:** No  
-**Version:** 1.0.0
+Fixes missing spaces around inline code backticks and related formatting issues.
 
-## Features
+## Issues Detected
 
-- Add missing spaces before backticks
-- Add missing spaces after backticks
-- Remove backticks from URLs
-- Fix stray backtick typos
+1. **Missing space before backtick** - `word`code`` should be `word `code``
+2. **Missing space after backtick** - `` `code`word`` should be `` `code` word``
+3. **Stray backtick typo** - `Clone`the` should be `Clone the`
+4. **URLs in backticks** - `` `https://...` `` should be `https://...`
 
-## Usage
+## Code Block Protection
 
-```bash
-# Apply formatting fixes
-python3 photonos-docs-lecturer.py run \
-  --website https://127.0.0.1/docs-v5 \
-  --fix 4
+This plugin uses `protect_code_blocks()` to ensure fenced code blocks are never modified:
+
+```python
+protected_content, code_blocks = protect_code_blocks(content)
+# Apply fixes to protected_content
+final_content = restore_code_blocks(result, code_blocks)
 ```
 
-## What It Detects and Fixes
+## Example Fixes
 
-### Missing Space Before Backtick
-
-```markdown
-# Wrong
-Clone`the repository`
-
-# Fixed
-Clone `the repository`
+**Before:**
+```
+Run the`docker ps`command to list containers.
+Visit`https://example.com`for more info.
 ```
 
-### Missing Space After Backtick
-
-```markdown
-# Wrong
-Run `command`now
-
-# Fixed
-Run `command` now
+**After:**
+```
+Run the `docker ps` command to list containers.
+Visit https://example.com for more info.
 ```
 
-### URLs in Backticks
+## Configuration
 
-```markdown
-# Wrong
-Visit `https://example.com`
-
-# Fixed
-Visit https://example.com
-```
-
-### Stray Backtick Typos
-
-```markdown
-# Wrong
-Clone`the project
-
-# Fixed
-Clone the project
-```
-
-## Log File
-
-```
-/var/log/photonos-docs-lecturer-formatting.log
-```
-
-## Example Output
-
-```
-2025-12-11 10:00:00 - INFO - [formatting] Fixed: Added 5 spaces before backticks
-2025-12-11 10:00:00 - INFO - [formatting] Fixed: Removed backticks from 2 URLs
-```
-
-## Related Plugins
-
-- **Backtick Errors Plugin (ID 5):** Handles spaces inside backticks
-- **Markdown Plugin (ID 10):** Handles markdown artifacts
+No configuration required.

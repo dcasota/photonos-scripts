@@ -2,125 +2,98 @@
 """
 Orphan Page Plugin for Photon OS Documentation Lecturer
 
-Detects pages that return HTTP errors (404, 5xx) or are inaccessible.
-These issues require manual intervention to resolve.
+Detects pages that are not linked from anywhere (orphaned).
 
-Version: 1.0.0
+Version: 2.0.0
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from .base import BasePlugin, Issue, FixResult
 
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 
 
 class OrphanPagePlugin(BasePlugin):
-    """Plugin for detecting inaccessible/orphan pages.
+    """Plugin for detecting orphan pages.
     
-    Detects pages that return HTTP errors or are unreachable.
-    These issues cannot be auto-fixed and require manual review.
+    Requires full site context to identify unreferenced pages.
+    Detection only - manual fixes required.
     """
     
     PLUGIN_NAME = "orphan_page"
-    PLUGIN_VERSION = "1.0.0"
-    PLUGIN_DESCRIPTION = "Detect broken/inaccessible pages"
+    PLUGIN_VERSION = "2.0.0"
+    PLUGIN_DESCRIPTION = "Detect pages not linked from anywhere"
     REQUIRES_LLM = False
-    FIX_ID = None  # No auto-fix available
+    FIX_ID = 0  # No automatic fix
     
-    def __init__(self, llm_client: Optional[Any] = None, config: Optional[Dict] = None):
-        """Initialize the orphan page plugin.
-        
-        Args:
-            llm_client: Not used for this plugin
-            config: Configuration with 'session' key for requests.Session
-        """
-        super().__init__(llm_client, config)
-        self.session = config.get('session') if config else None
-        self.timeout = config.get('timeout', 10) if config else 10
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        """Initialize orphan page detector."""
+        super().__init__(config)
+        self._all_pages: Set[str] = set()
+        self._linked_pages: Set[str] = set()
+    
+    def register_page(self, url: str):
+        """Register a discovered page."""
+        self._all_pages.add(url)
+    
+    def register_link(self, from_url: str, to_url: str):
+        """Register a link from one page to another."""
+        self._linked_pages.add(to_url)
     
     def detect(self, content: str, url: str, **kwargs) -> List[Issue]:
-        """Detect if a page is orphan/inaccessible.
+        """Detect if this page is orphaned.
+        
+        Note: Full detection requires all pages to be registered first.
         
         Args:
-            content: Not used directly (checks URL accessibility)
-            url: URL to check
-            **kwargs: May include 'status_code' if already fetched
+            content: Markdown content (not used)
+            url: URL of the page
+            **kwargs: Additional context
             
         Returns:
-            List with single issue if page is orphan, empty otherwise
+            List of orphan page issues
         """
         issues = []
         
-        status_code = kwargs.get('status_code')
-        error = kwargs.get('error')
-        
-        # If status code already provided
-        if status_code and status_code >= 400:
-            issue = Issue(
-                category=self.PLUGIN_NAME,
-                location=url,
-                description=f"Page returned HTTP {status_code}",
-                suggestion="Remove from sitemap or fix the page",
-                fixable=False,
-                metadata={'status_code': status_code}
-            )
-            issues.append(issue)
-            self.increment_detected(1)
+        # Skip if not enough context
+        if not self._all_pages:
             return issues
         
-        # If error message provided
-        if error:
-            issue = Issue(
-                category=self.PLUGIN_NAME,
-                location=url,
-                description=f"Page error: {error}",
-                suggestion="Check server configuration",
-                fixable=False,
-                metadata={'error': error}
-            )
-            issues.append(issue)
-            self.increment_detected(1)
-            return issues
-        
-        # Check URL if session available
-        if self.session and url:
-            try:
-                response = self.session.head(url, timeout=self.timeout, allow_redirects=True)
-                if response.status_code >= 400:
-                    issue = Issue(
-                        category=self.PLUGIN_NAME,
-                        location=url,
-                        description=f"Page returned HTTP {response.status_code}",
-                        suggestion="Remove from sitemap or fix the page",
-                        fixable=False,
-                        metadata={'status_code': response.status_code}
-                    )
-                    issues.append(issue)
-                    self.increment_detected(1)
-            except Exception as e:
+        # Check if this page is linked from anywhere
+        if url in self._all_pages and url not in self._linked_pages:
+            # Check if it's the index/home page
+            if not url.endswith('/') and not url.endswith('index'):
                 issue = Issue(
                     category=self.PLUGIN_NAME,
                     location=url,
-                    description=f"Failed to access page: {str(e)[:100]}",
-                    suggestion="Check server and network connectivity",
-                    fixable=False,
-                    metadata={'error': str(e)}
+                    description="Page is not linked from any other page",
+                    suggestion="Add a link to this page from relevant locations",
+                    severity="medium"
                 )
                 issues.append(issue)
                 self.increment_detected(1)
         
         return issues
     
+    def get_all_orphans(self) -> List[str]:
+        """Get all orphan pages after full site scan."""
+        orphans = []
+        for page in self._all_pages:
+            if page not in self._linked_pages:
+                if not page.endswith('/') and not page.endswith('index'):
+                    orphans.append(page)
+        return orphans
+    
     def fix(self, content: str, issues: List[Issue], **kwargs) -> FixResult:
-        """Orphan pages cannot be auto-fixed.
+        """No automatic fix for orphan pages.
         
-        Returns:
-            FixResult indicating manual intervention required
+        Returns content unchanged - manual linking required.
         """
         return FixResult(
-            success=False,
-            error="Orphan pages require manual intervention"
+            success=True,
+            modified_content=content,
+            changes_made=["Orphan pages require manual linking"]
         )

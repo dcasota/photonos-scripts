@@ -1,66 +1,34 @@
 # Image Alignment Plugin
 
-## Overview
+**Version:** 2.0.0  
+**FIX_ID:** 0 (Detection Only)  
+**Requires LLM:** No
 
-The Image Alignment Plugin detects pages with multiple images that lack proper CSS alignment classes. Reports issues for manual review as alignment preferences vary by design.
+## Description
 
-**Plugin ID:** None (detection only)  
-**Requires LLM:** No  
-**Auto-fixable:** No  
-**Version:** 1.0.0
+Detects improperly aligned or positioned images.
 
-## Features
+## Issues Detected
 
-- Detect unaligned multiple images
-- Check for alignment CSS classes
-- Check for container wrappers
+1. **Deprecated align attribute** - `<img align="left">` should use CSS
+2. **Float without clear** - Floating images may break layout
 
-## What It Detects
+## Why Detection Only
 
-Pages with 2+ images lacking:
-- Alignment classes (align-center, text-center, etc.)
-- Container wrappers (figure, gallery, etc.)
-- Float/flex/grid styling
+Image alignment is often intentional and context-dependent.
+Automatic fixes could break carefully designed layouts.
 
-## CSS Classes Checked
-
-### Alignment Classes
-- `align-center`, `align-left`, `align-right`
-- `centered`, `center`
-- `img-responsive`, `img-fluid`
-- `text-center`, `text-left`, `text-right`
-- `mx-auto`, `d-block`
-- `float-left`, `float-right`
-
-### Container Classes
-- `image-container`, `figure`
-- `gallery`, `img-gallery`
-- `images-row`, `flex`, `grid`
-
-## Usage
-
-```bash
-python3 photonos-docs-lecturer.py analyze \
-  --website https://127.0.0.1/docs-v5
-```
-
-## Log File
-
-```
-/var/log/photonos-docs-lecturer-image_alignment.log
-```
-
-## Manual Resolution
-
-Add appropriate CSS to images:
+## Example Issues
 
 ```html
-<!-- Center a single image -->
-<img src="image.png" class="mx-auto d-block">
-
-<!-- Multiple images in a row -->
-<div class="image-container">
-  <img src="img1.png" class="img-fluid">
-  <img src="img2.png" class="img-fluid">
-</div>
+<img src="logo.png" align="right">
 ```
+
+Should be:
+```html
+<img src="logo.png" style="float: right;">
+```
+
+## Configuration
+
+No configuration required.

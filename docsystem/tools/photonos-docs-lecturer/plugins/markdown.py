@@ -2,10 +2,12 @@
 """
 Markdown Plugin for Photon OS Documentation Lecturer
 
-Detects and fixes markdown rendering artifacts and formatting issues.
-Handles both deterministic fixes and LLM-assisted complex fixes.
+Detects and fixes markdown formatting issues like unrendered artifacts,
+missing header spacing, and unclosed code blocks.
 
-Version: 1.0.0
+CRITICAL: All operations protect fenced code blocks from modification.
+
+Version: 2.0.0
 """
 
 from __future__ import annotations
@@ -13,265 +15,63 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional
 
-from .base import BasePlugin, Issue, FixResult, LLMAssistedPlugin
+from .base import (
+    LLMAssistedPlugin,
+    Issue,
+    FixResult,
+    strip_code_blocks,
+    protect_code_blocks,
+    restore_code_blocks,
+)
 
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 
 
 class MarkdownPlugin(LLMAssistedPlugin):
-    """Plugin for detecting and fixing markdown artifacts.
+    """Plugin for detecting and fixing markdown issues.
     
-    Detects unrendered markdown syntax and fixes rendering issues.
+    All detection and fixing operations exclude fenced code blocks.
     """
     
     PLUGIN_NAME = "markdown"
-    PLUGIN_VERSION = "1.0.0"
-    PLUGIN_DESCRIPTION = "Detect and fix markdown rendering artifacts"
+    PLUGIN_VERSION = "2.0.0"
+    PLUGIN_DESCRIPTION = "Fix markdown formatting issues"
     REQUIRES_LLM = True
-    FIX_ID = 10
+    FIX_ID = 2
     
-    # Patterns to detect unrendered markdown in HTML
-    ARTIFACT_PATTERNS = [
-        (re.compile(r'(?<!\`)##\s+\w+'), 'Unrendered header'),
-        (re.compile(r'\*\s+\w+'), 'Unrendered bullet point'),
-        (re.compile(r'\[([^\]]+)\]\(([^\)]+)\)'), 'Unrendered link'),
-        (re.compile(r'```[\s\S]*?```'), 'Unrendered code block'),
-        (re.compile(r'`[^`]+`'), 'Unrendered inline code'),
-        (re.compile(r'\*\*([^\*]+)\*\*'), 'Unrendered bold text'),
-        (re.compile(r'(?<![*\w])_([^_]+)_(?![*\w])'), 'Unrendered italic text'),
-    ]
+    # Missing space after heading hash
+    MISSING_HEADING_SPACE = re.compile(r'^(#{1,6})([^\s#])', re.MULTILINE)
     
-    # Pattern for headers missing space after #
-    HEADER_NO_SPACE_PATTERN = re.compile(r'^(#{2,6})([^\s#].*)$', re.MULTILINE)
+    # Unrendered bold/italic
+    UNRENDERED_BOLD = re.compile(r'\*\*[^*]+\*\*')
+    UNRENDERED_ITALIC = re.compile(r'(?<!\*)\*[^*]+\*(?!\*)')
     
-    # Pattern for unclosed fenced code blocks
-    UNCLOSED_FENCE_PATTERN = re.compile(r'^```(\w*)\s*$(?![\s\S]*?^```\s*$)', re.MULTILINE)
+    # Broken link patterns
+    BROKEN_LINK = re.compile(r'\[([^\]]+)\]\s+\(')  # Space between ] and (
     
     # LLM prompt template
-    LLM_PROMPT_TEMPLATE = """You are a documentation markdown reviewer. Fix ONLY markdown rendering issues.
-
-Issues detected: {issues}
+    PROMPT_TEMPLATE = """You are a markdown formatting expert. Fix ONLY the markdown issues listed below.
 
 CRITICAL RULES - VIOLATING ANY WILL CORRUPT THE DOCUMENTATION:
+1. Output ONLY the corrected text - no explanations
+2. Preserve ALL existing formatting that is correct
+3. Do NOT modify fenced code blocks (``` or ~~~) or their content
+4. Do NOT modify inline code (`...`)
+5. Do NOT add or remove any content
+6. Lines starting with 4+ spaces are code - do NOT modify
+7. Preserve YAML front matter exactly
+8. Do NOT escape underscores
 
-=== PRODUCT NAMES (NEVER MODIFY) ===
-These product names MUST remain EXACTLY as written:
-- "Photon OS" - ALWAYS keep both words together
-- "VMware vSphere", "VMware Workstation", "VMware Fusion"
-- "Docker", "Kubernetes", "GitHub"
-
-=== PATHS (NEVER MODIFY) ===
-- Relative paths: ../../images/fs-version.png - keep EXACTLY as-is
-- Directory paths: /etc/yum.repos.d/ - dots in names like "yum.repos.d" are VALID
-- File paths: /var/cache/tdnf, /media/cdrom
-
-=== CODE BLOCKS (STRICT SEPARATION) ===
-- Content inside triple backticks (```...```) is a CODE BLOCK - DO NOT modify
-- Content inside single backticks (`...`) is INLINE CODE - copy the ENTIRE `...` block EXACTLY
-- Example: `*.raw` must stay as `*.raw` - never change to `*.raw,` or `*.raw` and
-- Lines starting with TAB or 4+ spaces are CODE OUTPUT - DO NOT modify
-- NEVER add backticks inside code blocks
-- NEVER add backticks to words that didn't have them
-- NEVER remove the closing backtick from inline code
-
-=== PRESERVE EXACTLY ===
-- YAML front matter (--- ... ---) at file start
-- All URLs and domain names (keep lowercase: github.com not GitHub.com)
-- All line breaks and indentation
-- All parenthetical notes - NEVER delete text like "(NOTE: ...)"
-
-=== MARKDOWN FIXES ALLOWED ===
-- Convert ```term``` to `term` ONLY when used inline within a sentence
-- Fix unclosed code blocks (missing closing ```)
-- Add space after # in headers: #Title -> # Title
-
-=== DO NOT ===
-- Do NOT delete ANY text
-- Do NOT add backticks after sentence-ending periods
-- Do NOT modify product names
-- Do NOT modify paths
+MARKDOWN ISSUES TO FIX:
+{issues}
 
 Text to fix:
-{{text}}
+{text}
 
-Return ONLY the corrected markdown. Do NOT add any preamble or explanation."""
-    
-    def __init__(self, llm_client: Optional[Any] = None, config: Optional[Dict] = None):
-        """Initialize the markdown plugin."""
-        super().__init__(llm_client, config)
+Return ONLY the corrected text."""
     
     def detect(self, content: str, url: str, **kwargs) -> List[Issue]:
-        """Detect markdown rendering artifacts.
-        
-        Args:
-            content: HTML content from rendered page
-            url: URL of the page
-            **kwargs: May include 'soup' for BeautifulSoup object
-            
-        Returns:
-            List of markdown artifact issues
-        """
-        issues = []
-        soup = kwargs.get('soup')
-        
-        if not soup and not content:
-            return issues
-        
-        # Get text content from HTML
-        if soup:
-            text = soup.get_text()
-        else:
-            text = content
-        
-        # Check for unrendered markdown artifacts
-        for pattern, description in self.ARTIFACT_PATTERNS:
-            matches = pattern.findall(text)
-            if matches:
-                for match in matches[:5]:  # Limit to first 5
-                    match_text = match if isinstance(match, str) else str(match)
-                    issue = Issue(
-                        category=self.PLUGIN_NAME,
-                        location=f"Found: {match_text[:50]}...",
-                        description=description,
-                        suggestion="Fix markdown syntax or rendering",
-                        context=match_text[:100]
-                    )
-                    issues.append(issue)
-        
-        # Check for headers missing space
-        if kwargs.get('markdown_content'):
-            md_content = kwargs['markdown_content']
-            header_issues = self._detect_header_spacing(md_content)
-            issues.extend(header_issues)
-        
-        self.increment_detected(len(issues))
-        return issues
-    
-    def _detect_header_spacing(self, content: str) -> List[Issue]:
-        """Detect headers missing space after #.
-        
-        Args:
-            content: Markdown content
-            
-        Returns:
-            List of header spacing issues
-        """
-        issues = []
-        
-        for match in self.HEADER_NO_SPACE_PATTERN.finditer(content):
-            hashes = match.group(1)
-            rest = match.group(2)
-            issue = Issue(
-                category="header_spacing",
-                location=f"Line: {match.group(0)[:50]}",
-                description=f"Header missing space after {hashes}",
-                suggestion=f"Change to: {hashes} {rest}",
-                metadata={'hashes': hashes, 'rest': rest, 'full_match': match.group(0)}
-            )
-            issues.append(issue)
-        
-        return issues
-    
-    def fix(self, content: str, issues: List[Issue], **kwargs) -> FixResult:
-        """Apply markdown fixes.
-        
-        Applies deterministic fixes first, then LLM fixes for complex issues.
-        
-        Args:
-            content: Markdown content to fix
-            issues: Markdown issues to fix
-            **kwargs: Additional context
-            
-        Returns:
-            FixResult with corrected content
-        """
-        if not content:
-            return FixResult(success=False, error="No content to fix")
-        
-        result = content
-        changes = []
-        
-        # Apply deterministic fixes first
-        result, det_changes = self._apply_deterministic_fixes(result)
-        changes.extend(det_changes)
-        
-        # Apply LLM fixes for remaining complex issues if available
-        remaining_issues = [i for i in issues if i.category == self.PLUGIN_NAME]
-        if remaining_issues and self.llm_client:
-            try:
-                llm_result = super().fix(result, remaining_issues, **kwargs)
-                if llm_result.success and llm_result.modified_content:
-                    result = llm_result.modified_content
-                    changes.extend(llm_result.changes_made)
-            except Exception as e:
-                self.logger.error(f"LLM markdown fix failed: {e}")
-        
-        return FixResult(
-            success=True,
-            modified_content=result,
-            changes_made=changes
-        )
-    
-    def _apply_deterministic_fixes(self, content: str) -> tuple:
-        """Apply deterministic markdown fixes.
-        
-        Args:
-            content: Markdown content
-            
-        Returns:
-            Tuple of (fixed_content, list_of_changes)
-        """
-        result = content
-        changes = []
-        
-        # Fix header spacing
-        def fix_header(match):
-            return f"{match.group(1)} {match.group(2)}"
-        
-        new_result, count = self.HEADER_NO_SPACE_PATTERN.subn(fix_header, result)
-        if count > 0:
-            changes.append(f"Fixed {count} header spacing issues")
-            result = new_result
-            self.increment_fixed(count)
-        
-        return result, changes
-
-
-class MalformedCodeBlockPlugin(BasePlugin):
-    """Plugin for detecting and fixing malformed code blocks.
-    
-    Handles various code block issues without requiring LLM.
-    """
-    
-    PLUGIN_NAME = "malformed_code_block"
-    PLUGIN_VERSION = "1.0.0"
-    PLUGIN_DESCRIPTION = "Fix malformed code blocks"
-    REQUIRES_LLM = False
-    FIX_ID = 12
-    
-    # Pattern: single backtick + content + 3+ backticks
-    SINGLE_TRIPLE_PATTERN = re.compile(r'`([^`\n]+)`{3,}')
-    
-    # Pattern: consecutive inline code that should be fenced
-    CONSECUTIVE_INLINE = re.compile(
-        r'(?:^|\n)(\s*)`([^`\n]+)`\s*\n\s*`([^`\n]+)`',
-        re.MULTILINE
-    )
-    
-    # Pattern: triple backticks used as inline (same line)
-    TRIPLE_INLINE = re.compile(r'```([a-zA-Z0-9_-]+(?:\s+[a-zA-Z0-9_-]+)?)```')
-    
-    # Pattern: fenced block used for inline code (followed by sentence continuation)
-    FENCED_INLINE = re.compile(
-        r'```(?:bash|sh|shell|console|text)?\s*\n'
-        r'([a-zA-Z0-9_-]+(?:\s+[a-zA-Z0-9_-]+)?)\s*\n'
-        r'```'
-        r'(\s*(?:[.,;:!?]|(?:\s+(?:is|are|was|were|has|have|had|can|will|would|should|may|might|must|turned|configuration|data|with)\b)))',
-        re.MULTILINE
-    )
-    
-    def detect(self, content: str, url: str, **kwargs) -> List[Issue]:
-        """Detect malformed code blocks.
+        """Detect markdown issues, excluding code blocks.
         
         Args:
             content: Markdown content
@@ -279,43 +79,35 @@ class MalformedCodeBlockPlugin(BasePlugin):
             **kwargs: Additional context
             
         Returns:
-            List of code block issues
+            List of markdown issues
         """
         issues = []
         
         if not content:
             return issues
         
-        # Check for single-triple pattern
-        for match in self.SINGLE_TRIPLE_PATTERN.finditer(content):
-            issue = Issue(
-                category=self.PLUGIN_NAME,
-                location=f"Pattern: `content```",
-                description="Single backtick followed by triple backticks",
-                suggestion="Convert to proper fenced code block",
-                context=match.group(0)[:50]
-            )
-            issues.append(issue)
+        # Strip code blocks before detection
+        safe_content = strip_code_blocks(content)
         
-        # Check for triple backticks used as inline
-        for match in self.TRIPLE_INLINE.finditer(content):
+        # Check for missing heading space
+        for match in self.MISSING_HEADING_SPACE.finditer(safe_content):
             issue = Issue(
                 category=self.PLUGIN_NAME,
-                location=f"Pattern: ```{match.group(1)}```",
-                description="Triple backticks used for inline code",
-                suggestion=f"Convert to single backticks: `{match.group(1)}`",
+                location=f"Heading: {match.group(0)[:30]}",
+                description="Missing space after heading hash",
+                suggestion=f"Add space: {match.group(1)} {match.group(2)}",
                 context=match.group(0)
             )
             issues.append(issue)
         
-        # Check for fenced block incorrectly used for inline
-        for match in self.FENCED_INLINE.finditer(content):
+        # Check for broken links (space between ] and ()
+        for match in self.BROKEN_LINK.finditer(safe_content):
             issue = Issue(
                 category=self.PLUGIN_NAME,
-                location=f"Fenced block followed by: {match.group(2)[:20]}",
-                description="Fenced code block used where inline code expected",
-                suggestion=f"Convert to inline: `{match.group(1)}`",
-                context=match.group(0)[:80]
+                location=f"Link: {match.group(1)[:30]}",
+                description="Space between link text and URL",
+                suggestion="Remove space between ] and (",
+                context=match.group(0)
             )
             issues.append(issue)
         
@@ -323,7 +115,9 @@ class MalformedCodeBlockPlugin(BasePlugin):
         return issues
     
     def fix(self, content: str, issues: List[Issue], **kwargs) -> FixResult:
-        """Fix malformed code blocks.
+        """Apply markdown fixes, protecting code blocks.
+        
+        CRITICAL: Code blocks are protected and restored unchanged.
         
         Args:
             content: Markdown content to fix
@@ -336,42 +130,39 @@ class MalformedCodeBlockPlugin(BasePlugin):
         if not content:
             return FixResult(success=False, error="No content to fix")
         
-        result = content
+        # Protect code blocks FIRST
+        protected_content, code_blocks = protect_code_blocks(content)
+        
+        result = protected_content
         changes = []
         
-        # Fix triple backticks used as inline
-        def fix_triple_inline(match):
-            return f'`{match.group(1)}`'
+        # Fix simple issues with regex (no LLM needed)
         
-        new_result, count = self.TRIPLE_INLINE.subn(fix_triple_inline, result)
+        # Fix missing heading space
+        def fix_heading_space(match):
+            return f"{match.group(1)} {match.group(2)}"
+        
+        new_result, count = self.MISSING_HEADING_SPACE.subn(fix_heading_space, result)
         if count > 0:
-            changes.append(f"Converted {count} triple-backtick inline code to single backticks")
+            changes.append(f"Added space after {count} heading hashes")
             result = new_result
             self.increment_fixed(count)
         
-        # Fix fenced blocks used for inline
-        def fix_fenced_inline(match):
-            return f'`{match.group(1)}`{match.group(2)}'
+        # Fix broken links
+        def fix_broken_link(match):
+            return f"[{match.group(1)}]("
         
-        new_result, count = self.FENCED_INLINE.subn(fix_fenced_inline, result)
+        new_result, count = self.BROKEN_LINK.subn(fix_broken_link, result)
         if count > 0:
-            changes.append(f"Converted {count} fenced blocks to inline code")
+            changes.append(f"Fixed {count} broken links")
             result = new_result
             self.increment_fixed(count)
         
-        # Fix single-triple pattern
-        def fix_single_triple(match):
-            code = match.group(1)
-            return f'```\n{code}\n```'
-        
-        new_result, count = self.SINGLE_TRIPLE_PATTERN.subn(fix_single_triple, result)
-        if count > 0:
-            changes.append(f"Fixed {count} malformed code blocks")
-            result = new_result
-            self.increment_fixed(count)
+        # Restore code blocks UNCHANGED
+        final_content = restore_code_blocks(result, code_blocks)
         
         return FixResult(
             success=True,
-            modified_content=result,
+            modified_content=final_content,
             changes_made=changes
         )

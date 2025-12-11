@@ -1,85 +1,37 @@
 # Backtick Errors Plugin
 
-## Overview
+**Version:** 2.0.0  
+**FIX_ID:** 5  
+**Requires LLM:** No
 
-The Backtick Errors Plugin detects and fixes spaces inside inline code backticks and handles unclosed inline code.
+## Description
 
-**Plugin ID:** 5  
-**Requires LLM:** No  
-**Version:** 1.0.0
+Fixes spaces inside inline code backticks.
 
-## Features
+## Issues Detected
 
-- Remove space after opening backtick
-- Remove space before closing backtick
-- Fix spaces on both sides
-- Close unclosed inline backticks
+1. **Space after opening backtick** - `` ` code` `` should be `` `code` ``
+2. **Space before closing backtick** - `` `code ` `` should be `` `code` ``
+3. **Spaces on both sides** - `` ` code ` `` should be `` `code` ``
 
-## Usage
+## Code Block Protection
 
-```bash
-# Apply backtick error fixes
-python3 photonos-docs-lecturer.py run \
-  --website https://127.0.0.1/docs-v5 \
-  --fix 5
+This plugin uses `protect_code_blocks()` to ensure fenced code blocks are never modified.
+
+## Example Fixes
+
+**Before:**
+```
+Run the ` docker ps ` command.
+The ` kubectl` tool is required.
 ```
 
-## What It Detects and Fixes
-
-### Space After Opening Backtick
-
-```markdown
-# Wrong
-Use ` command` to run
-
-# Fixed
-Use `command` to run
+**After:**
+```
+Run the `docker ps` command.
+The `kubectl` tool is required.
 ```
 
-### Space Before Closing Backtick
+## Configuration
 
-```markdown
-# Wrong
-Use `command ` to run
-
-# Fixed
-Use `command` to run
-```
-
-### Spaces on Both Sides
-
-```markdown
-# Wrong
-Use ` command ` to run
-
-# Fixed
-Use `command` to run
-```
-
-### Unclosed Inline Backticks
-
-```markdown
-# Wrong
-Use `$HOME/path.
-
-# Fixed
-Use `$HOME/path`.
-```
-
-## Log File
-
-```
-/var/log/photonos-docs-lecturer-backtick_errors.log
-```
-
-## Example Output
-
-```
-2025-12-11 10:00:00 - INFO - [backtick_errors] Fixed: Removed 3 spaces after opening backticks
-2025-12-11 10:00:00 - INFO - [backtick_errors] Fixed: Closed 1 unclosed inline backticks
-```
-
-## Related Plugins
-
-- **Formatting Plugin (ID 4):** Handles spaces around backticks
-- **Malformed Code Block Plugin (ID 12):** Handles code block structure
+No configuration required.

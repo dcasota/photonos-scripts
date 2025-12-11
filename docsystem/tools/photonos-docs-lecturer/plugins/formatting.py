@@ -5,7 +5,9 @@ Formatting Plugin for Photon OS Documentation Lecturer
 Handles backtick spacing issues and other formatting fixes.
 Fixes missing spaces around inline code backticks.
 
-Version: 1.0.0
+CRITICAL: All operations protect fenced code blocks from modification.
+
+Version: 2.0.0
 """
 
 from __future__ import annotations
@@ -13,27 +15,34 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional
 
-from .base import BasePlugin, Issue, FixResult, PatternBasedPlugin
+from .base import (
+    PatternBasedPlugin,
+    Issue,
+    FixResult,
+    strip_code_blocks,
+    protect_code_blocks,
+    restore_code_blocks,
+)
 
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 
 
 class FormattingPlugin(PatternBasedPlugin):
     """Plugin for detecting and fixing formatting issues.
     
-    Handles backtick spacing and related formatting problems.
+    All detection and fixing operations exclude fenced code blocks.
     """
     
     PLUGIN_NAME = "formatting"
-    PLUGIN_VERSION = "1.0.0"
+    PLUGIN_VERSION = "2.0.0"
     PLUGIN_DESCRIPTION = "Fix missing spaces around backticks"
     REQUIRES_LLM = False
     FIX_ID = 4
     
-    # Pattern for missing space before backticks
+    # Pattern for missing space before backticks (word immediately before `)
     MISSING_SPACE_BEFORE = re.compile(r'([a-zA-Z])(`[^\s`][^`\n]*?`)')
     
-    # Pattern for missing space after backticks
+    # Pattern for missing space after backticks (word immediately after `)
     MISSING_SPACE_AFTER = re.compile(r'(`[^\s`][^`\n]*?`)([a-zA-Z])')
     
     # Pattern for stray backtick typo (e.g., Clone`the -> Clone the)
@@ -42,11 +51,8 @@ class FormattingPlugin(PatternBasedPlugin):
     # Pattern for URLs wrapped in backticks (should be removed)
     URL_IN_BACKTICKS = re.compile(r'`(https?://[^`\s]+)`')
     
-    # Pattern for standalone URL with trailing backtick (opening removed by LLM)
-    URL_TRAILING_BACKTICK = re.compile(r'(https?://[^\s`]+)`(\s|$)')
-    
     def detect(self, content: str, url: str, **kwargs) -> List[Issue]:
-        """Detect formatting issues.
+        """Detect formatting issues, excluding code blocks.
         
         Args:
             content: Markdown content
@@ -61,8 +67,11 @@ class FormattingPlugin(PatternBasedPlugin):
         if not content:
             return issues
         
+        # Strip code blocks before detection
+        safe_content = strip_code_blocks(content)
+        
         # Check for missing space before backticks
-        for match in self.MISSING_SPACE_BEFORE.finditer(content):
+        for match in self.MISSING_SPACE_BEFORE.finditer(safe_content):
             issue = Issue(
                 category=self.PLUGIN_NAME,
                 location=f"Pattern: {match.group(0)[:30]}",
@@ -73,7 +82,7 @@ class FormattingPlugin(PatternBasedPlugin):
             issues.append(issue)
         
         # Check for missing space after backticks
-        for match in self.MISSING_SPACE_AFTER.finditer(content):
+        for match in self.MISSING_SPACE_AFTER.finditer(safe_content):
             issue = Issue(
                 category=self.PLUGIN_NAME,
                 location=f"Pattern: {match.group(0)[:30]}",
@@ -84,7 +93,7 @@ class FormattingPlugin(PatternBasedPlugin):
             issues.append(issue)
         
         # Check for URLs in backticks
-        for match in self.URL_IN_BACKTICKS.finditer(content):
+        for match in self.URL_IN_BACKTICKS.finditer(safe_content):
             issue = Issue(
                 category=self.PLUGIN_NAME,
                 location=f"URL: {match.group(1)[:40]}",
@@ -95,7 +104,7 @@ class FormattingPlugin(PatternBasedPlugin):
             issues.append(issue)
         
         # Check for stray backtick typos
-        for match in self.STRAY_BACKTICK.finditer(content):
+        for match in self.STRAY_BACKTICK.finditer(safe_content):
             issue = Issue(
                 category=self.PLUGIN_NAME,
                 location=f"Pattern: {match.group(0)[:30]}",
@@ -109,7 +118,9 @@ class FormattingPlugin(PatternBasedPlugin):
         return issues
     
     def fix(self, content: str, issues: List[Issue], **kwargs) -> FixResult:
-        """Apply formatting fixes.
+        """Apply formatting fixes, protecting code blocks.
+        
+        CRITICAL: Code blocks are protected and restored unchanged.
         
         Args:
             content: Markdown content to fix
@@ -122,7 +133,10 @@ class FormattingPlugin(PatternBasedPlugin):
         if not content:
             return FixResult(success=False, error="No content to fix")
         
-        result = content
+        # Protect code blocks FIRST
+        protected_content, code_blocks = protect_code_blocks(content)
+        
+        result = protected_content
         changes = []
         
         # Fix missing space before backticks
@@ -165,25 +179,11 @@ class FormattingPlugin(PatternBasedPlugin):
             result = new_result
             self.increment_fixed(count)
         
-        # Fix trailing backtick on URLs (from LLM corruption)
-        def fix_url_trailing(match):
-            url = match.group(1)
-            trailing = match.group(2)
-            # Check if there's no opening backtick before URL
-            url_pos = result.find(url)
-            if url_pos > 0 and result[url_pos - 1] == '`':
-                # Has opening backtick - keep as is
-                return match.group(0)
-            return url + trailing
-        
-        new_result, count = self.URL_TRAILING_BACKTICK.subn(fix_url_trailing, result)
-        if count > 0:
-            changes.append(f"Fixed {count} URLs with trailing backticks")
-            result = new_result
-            self.increment_fixed(count)
+        # Restore code blocks UNCHANGED
+        final_content = restore_code_blocks(result, code_blocks)
         
         return FixResult(
             success=True,
-            modified_content=result,
+            modified_content=final_content,
             changes_made=changes
         )

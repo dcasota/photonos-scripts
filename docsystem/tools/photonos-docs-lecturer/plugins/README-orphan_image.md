@@ -1,59 +1,37 @@
 # Orphan Image Plugin
 
-## Overview
+**Version:** 2.0.0  
+**FIX_ID:** 0 (Detection Only)  
+**Requires LLM:** No
 
-The Orphan Image Plugin detects broken or missing images in documentation pages by validating image source URLs.
+## Description
 
-**Plugin ID:** None (detection only)  
-**Requires LLM:** No  
-**Auto-fixable:** No  
-**Version:** 1.0.0
+Detects missing or broken images.
 
-## Features
+## Issues Detected
 
-- Validate image sources (src attributes)
-- Check markdown image syntax
-- Report missing images with context
-- Cache check results for efficiency
+1. **HTTP 404** - Image not found
+2. **Connection errors** - Image server unreachable
+3. **Broken HTML images** - `<img src="...">` with invalid src
 
-## What It Detects
+## Image Formats
 
-- Images returning 404 (Not Found)
-- Images with incorrect paths
-- Relative path errors
-- Missing image files
+Checks both markdown and HTML image syntax:
+- `![alt](url)`
+- `<img src="url">`
 
-## Usage
+## Why Detection Only
 
-Image validation is part of the standard analysis:
+Missing images require human decision:
+- Find correct image?
+- Remove image reference?
+- Update path?
 
-```bash
-python3 photonos-docs-lecturer.py analyze \
-  --website https://127.0.0.1/docs-v5
+## Configuration
+
+```python
+config = {
+    'timeout': 10,  # seconds
+    'skip_data_urls': True  # Skip data: URLs
+}
 ```
-
-## Supported Formats
-
-- Markdown images: `![alt](path)`
-- HTML images: `<img src="path">`
-- Common extensions: .png, .jpg, .jpeg, .gif, .svg, .webp
-
-## Log File
-
-```
-/var/log/photonos-docs-lecturer-orphan_image.log
-```
-
-## Report Format
-
-```csv
-Page URL,Issue Category,Issue Location Description,Fix Suggestion
-https://example.com/page/,orphan_image,"Image: screenshot.png",Fix image path or remove reference (status: 404)
-```
-
-## Manual Resolution
-
-1. **Fix path:** Correct the image path
-2. **Add image:** Upload missing image file
-3. **Remove reference:** Delete broken image reference
-4. **Update alt text:** If image moved to new location

@@ -1,104 +1,58 @@
 # Grammar Plugin
 
-## Overview
+**Version:** 2.0.0  
+**FIX_ID:** 1  
+**Requires LLM:** Yes
 
-The Grammar Plugin detects and fixes grammar and spelling issues in documentation using LanguageTool for detection and LLM (Large Language Model) for intelligent fixing.
+## Description
 
-**Plugin ID:** 9  
-**Requires LLM:** Yes  
-**Version:** 1.0.0
+Detects and fixes grammar and spelling issues using LanguageTool for detection
+and LLM for complex fixes.
 
-## Features
+## Issues Detected
 
-- Grammar error detection via LanguageTool
-- Spelling mistake identification
-- Context-aware fixing with LLM
-- Automatic exclusion of code blocks
+- Spelling errors
+- Grammar mistakes
+- Punctuation issues
+- Subject-verb agreement
+- Article usage (a/an/the)
 
-## Usage
+## Code Block Protection
 
-### Enable Grammar Fixes
+Grammar checking is performed on content with code blocks stripped:
 
-```bash
-# Apply grammar fixes (requires LLM)
-python3 photonos-docs-lecturer.py run \
-  --website https://127.0.0.1/docs-v5 \
-  --fix 9 \
-  --llm xai --XAI_API_KEY your_key
+```python
+safe_content = strip_code_blocks(content)
+matches = language_tool.check(safe_content)
 ```
 
-### Combine with Other Fixes
+Fixes use `protect_code_blocks()` to ensure code blocks are preserved:
 
-```bash
-# Apply grammar and VMware spelling fixes
-python3 photonos-docs-lecturer.py run \
-  --website https://127.0.0.1/docs-v5 \
-  --fix 2,9 \
-  --llm gemini --GEMINI_API_KEY your_key
+```python
+protected, blocks = protect_code_blocks(content)
+result = llm_fix(protected)
+final = restore_code_blocks(result, blocks)
 ```
 
-## What It Detects
+## LLM Prompt
 
-- **Spelling mistakes:** Misspelled words
-- **Grammar errors:** Subject-verb agreement, tense issues
-- **Punctuation errors:** Incorrect comma usage, missing periods
-- **Style issues:** Passive voice (when configured)
-
-## What It Preserves
-
-The plugin automatically excludes from checking:
-
-- Content inside code blocks (```)
-- Inline code (`code`)
-- Indented code (4+ spaces)
-- URLs and paths
-- Product names (Photon OS, VMware, etc.)
-- Technical identifiers
-
-## Configuration
-
-The plugin uses the following defaults:
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| language | en-EN | Language for grammar checking |
-
-## Log File
-
-Plugin logs are written to:
-```
-/var/log/photonos-docs-lecturer-grammar.log
-```
+The LLM is given explicit rules:
+1. Output ONLY the corrected text
+2. Preserve all formatting
+3. Do NOT modify code blocks
+4. Do NOT escape underscores
+5. Lines starting with 4+ spaces are code
 
 ## Dependencies
 
-- Java >= 17 (for LanguageTool)
-- language-tool-python package
-- LLM provider (Gemini or xAI) with API key
+- `language-tool-python` for detection
+- LLM client (xAI/Gemini) for fixes
 
-## Example Output
+## Configuration
 
+```python
+config = {
+    'language': 'en-US',
+    'max_issues': 20  # Limit issues per LLM call
+}
 ```
-2025-12-11 10:00:00 - INFO - [grammar] Detected: grammar - The verb 'is' doesn't seem to agree...
-2025-12-11 10:00:01 - INFO - [grammar] Fixed: Applied grammar fixes for 3 issues
-```
-
-## Troubleshooting
-
-### LanguageTool fails to initialize
-
-```bash
-# Install Java
-sudo tdnf install openjdk21
-```
-
-### LLM fixes not applied
-
-Ensure you provide a valid API key:
-```bash
---llm xai --XAI_API_KEY your_actual_key
-```
-
-### Too many false positives
-
-Grammar checking automatically skips certain rule categories known to produce false positives in technical documentation. If you encounter issues, review the log file for details.

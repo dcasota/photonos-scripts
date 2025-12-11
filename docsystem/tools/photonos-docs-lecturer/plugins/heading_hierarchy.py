@@ -2,10 +2,11 @@
 """
 Heading Hierarchy Plugin for Photon OS Documentation Lecturer
 
-Detects and fixes heading level violations in markdown documents.
-Ensures proper heading progression without skipped levels.
+Detects heading level violations (skipped levels, wrong first heading).
 
-Version: 1.0.0
+CRITICAL: All operations protect fenced code blocks from modification.
+
+Version: 2.0.0
 """
 
 from __future__ import annotations
@@ -13,37 +14,33 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional
 
-from .base import BasePlugin, Issue, FixResult
+from .base import (
+    BasePlugin,
+    Issue,
+    FixResult,
+    strip_code_blocks,
+)
 
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 
 
 class HeadingHierarchyPlugin(BasePlugin):
-    """Plugin for detecting and fixing heading hierarchy violations.
+    """Plugin for detecting heading hierarchy violations.
     
-    Ensures proper heading level progression in markdown documents.
+    Detection only - manual fixes recommended for heading structure.
     """
     
     PLUGIN_NAME = "heading_hierarchy"
-    PLUGIN_VERSION = "1.0.0"
-    PLUGIN_DESCRIPTION = "Fix heading hierarchy violations (skipped levels)"
+    PLUGIN_VERSION = "2.0.0"
+    PLUGIN_DESCRIPTION = "Detect heading hierarchy violations"
     REQUIRES_LLM = False
-    FIX_ID = 6
+    FIX_ID = 0  # No automatic fix
     
-    # Pattern to match ATX-style headings (# ## ### etc.)
+    # Heading pattern
     HEADING_PATTERN = re.compile(r'^(#{1,6})\s+(.+)$', re.MULTILINE)
     
-    def __init__(self, llm_client: Optional[Any] = None, config: Optional[Dict] = None):
-        """Initialize the heading hierarchy plugin."""
-        super().__init__(llm_client, config)
-        self.min_first_level = config.get('min_first_level', 2) if config else 2
-    
     def detect(self, content: str, url: str, **kwargs) -> List[Issue]:
-        """Detect heading hierarchy violations.
-        
-        Checks for:
-        - Skipped heading levels (e.g., H1 -> H3)
-        - Wrong starting level
+        """Detect heading hierarchy issues.
         
         Args:
             content: Markdown content
@@ -58,125 +55,54 @@ class HeadingHierarchyPlugin(BasePlugin):
         if not content:
             return issues
         
-        # Extract all headings
+        # Strip code blocks before detection
+        safe_content = strip_code_blocks(content)
+        
         headings = []
-        for match in self.HEADING_PATTERN.finditer(content):
+        for match in self.HEADING_PATTERN.finditer(safe_content):
             level = len(match.group(1))
             text = match.group(2).strip()
-            headings.append({
-                'level': level,
-                'text': text,
-                'match': match.group(0),
-                'start': match.start(),
-                'end': match.end()
-            })
+            headings.append((level, text, match.start()))
         
         if not headings:
             return issues
         
-        # Check for hierarchy violations
+        # Check first heading
+        first_level = headings[0][0]
+        if first_level > 2:
+            issue = Issue(
+                category=self.PLUGIN_NAME,
+                location=f"First heading: {headings[0][1][:30]}",
+                description=f"First heading is h{first_level}, should be h1 or h2",
+                suggestion="Consider using h1 or h2 for the first heading",
+                severity="medium"
+            )
+            issues.append(issue)
+        
+        # Check for skipped levels
         prev_level = 0
-        for i, heading in enumerate(headings):
-            level = heading['level']
-            
-            # Check for skipped levels (more than 1 level increase)
+        for level, text, pos in headings:
             if prev_level > 0 and level > prev_level + 1:
-                skipped = level - prev_level - 1
                 issue = Issue(
                     category=self.PLUGIN_NAME,
-                    location=f"Heading: {heading['text'][:40]}...",
-                    description=f"Skipped {skipped} heading level(s): H{prev_level} -> H{level}",
-                    suggestion=f"Change from H{level} to H{prev_level + 1}",
-                    metadata={
-                        'index': i,
-                        'current_level': level,
-                        'expected_level': prev_level + 1,
-                        'text': heading['text']
-                    }
+                    location=f"Heading: {text[:30]}",
+                    description=f"Skipped heading level: h{prev_level} -> h{level}",
+                    suggestion=f"Use h{prev_level + 1} instead of h{level}",
+                    severity="medium"
                 )
                 issues.append(issue)
-            
             prev_level = level
         
         self.increment_detected(len(issues))
         return issues
     
     def fix(self, content: str, issues: List[Issue], **kwargs) -> FixResult:
-        """Fix heading hierarchy violations.
+        """No automatic fix for heading hierarchy.
         
-        Adjusts heading levels to ensure proper progression.
-        
-        Args:
-            content: Markdown content to fix
-            issues: Heading issues to fix
-            **kwargs: Additional context
-            
-        Returns:
-            FixResult with corrected content
+        Returns content unchanged - manual review recommended.
         """
-        if not content:
-            return FixResult(success=False, error="No content to fix")
-        
-        if not issues:
-            return FixResult(success=True, modified_content=content, changes_made=[])
-        
-        result = content
-        changes = []
-        
-        # Re-extract headings for current state
-        headings = list(self.HEADING_PATTERN.finditer(result))
-        
-        if not headings:
-            return FixResult(success=True, modified_content=content, changes_made=[])
-        
-        # Calculate level adjustments
-        adjustments = self._calculate_adjustments(headings)
-        
-        # Apply fixes in reverse order to preserve positions
-        for match, new_level in reversed(adjustments):
-            old_hashes = match.group(1)
-            text = match.group(2)
-            new_hashes = '#' * new_level
-            
-            if old_hashes != new_hashes:
-                old_heading = match.group(0)
-                new_heading = f"{new_hashes} {text}"
-                result = result[:match.start()] + new_heading + result[match.end():]
-                changes.append(f"Changed H{len(old_hashes)} to H{new_level}: {text[:30]}...")
-                self.increment_fixed(1)
-        
         return FixResult(
             success=True,
-            modified_content=result,
-            changes_made=changes
+            modified_content=content,
+            changes_made=["Heading hierarchy issues require manual review"]
         )
-    
-    def _calculate_adjustments(self, headings: List) -> List[tuple]:
-        """Calculate necessary heading level adjustments.
-        
-        Args:
-            headings: List of heading regex matches
-            
-        Returns:
-            List of (match, new_level) tuples
-        """
-        adjustments = []
-        prev_level = 0
-        
-        for match in headings:
-            current_level = len(match.group(1))
-            
-            if prev_level == 0:
-                # First heading - keep as is
-                new_level = current_level
-            elif current_level > prev_level + 1:
-                # Skipped level - adjust down
-                new_level = prev_level + 1
-            else:
-                # Valid level
-                new_level = current_level
-            
-            adjustments.append((match, new_level))
-            prev_level = new_level
-        
-        return adjustments

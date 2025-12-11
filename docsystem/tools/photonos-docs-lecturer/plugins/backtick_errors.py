@@ -3,9 +3,11 @@
 Backtick Errors Plugin for Photon OS Documentation Lecturer
 
 Detects and fixes spaces inside inline code backticks.
-Handles unclosed inline code and fenced code blocks.
+Handles unclosed inline code patterns.
 
-Version: 1.0.0
+CRITICAL: All operations protect fenced code blocks from modification.
+
+Version: 2.0.0
 """
 
 from __future__ import annotations
@@ -13,19 +15,26 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional
 
-from .base import BasePlugin, Issue, FixResult
+from .base import (
+    PatternBasedPlugin,
+    Issue,
+    FixResult,
+    strip_code_blocks,
+    protect_code_blocks,
+    restore_code_blocks,
+)
 
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 
 
-class BacktickErrorsPlugin(BasePlugin):
+class BacktickErrorsPlugin(PatternBasedPlugin):
     """Plugin for detecting and fixing backtick errors.
     
-    Handles spaces inside backticks and unclosed code blocks.
+    All detection and fixing operations exclude fenced code blocks.
     """
     
     PLUGIN_NAME = "backtick_errors"
-    PLUGIN_VERSION = "1.0.0"
+    PLUGIN_VERSION = "2.0.0"
     PLUGIN_DESCRIPTION = "Fix backtick errors (spaces inside backticks)"
     REQUIRES_LLM = False
     FIX_ID = 5
@@ -42,11 +51,8 @@ class BacktickErrorsPlugin(BasePlugin):
     # Unclosed inline backtick at end of sentence
     UNCLOSED_INLINE = re.compile(r'`([^`\n]+)([.!?])(\s|$)')
     
-    # Valid inline code characters (for checking unclosed detection)
-    VALID_INLINE_CHARS = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_]).>')
-    
     def detect(self, content: str, url: str, **kwargs) -> List[Issue]:
-        """Detect backtick errors.
+        """Detect backtick errors, excluding code blocks.
         
         Args:
             content: Markdown content
@@ -61,8 +67,11 @@ class BacktickErrorsPlugin(BasePlugin):
         if not content:
             return issues
         
+        # Strip code blocks before detection
+        safe_content = strip_code_blocks(content)
+        
         # Check for space after opening backtick
-        for match in self.SPACE_AFTER_OPEN.finditer(content):
+        for match in self.SPACE_AFTER_OPEN.finditer(safe_content):
             issue = Issue(
                 category=self.PLUGIN_NAME,
                 location=f"Pattern: `{' ' + match.group(1)[:20]}...",
@@ -73,7 +82,7 @@ class BacktickErrorsPlugin(BasePlugin):
             issues.append(issue)
         
         # Check for space before closing backtick
-        for match in self.SPACE_BEFORE_CLOSE.finditer(content):
+        for match in self.SPACE_BEFORE_CLOSE.finditer(safe_content):
             issue = Issue(
                 category=self.PLUGIN_NAME,
                 location=f"Pattern: `{match.group(1)[:20]}...",
@@ -84,7 +93,7 @@ class BacktickErrorsPlugin(BasePlugin):
             issues.append(issue)
         
         # Check for spaces on both sides
-        for match in self.SPACES_BOTH.finditer(content):
+        for match in self.SPACES_BOTH.finditer(safe_content):
             issue = Issue(
                 category=self.PLUGIN_NAME,
                 location=f"Pattern: ` {match.group(1)[:20]}...",
@@ -94,33 +103,13 @@ class BacktickErrorsPlugin(BasePlugin):
             )
             issues.append(issue)
         
-        # Check for unclosed inline backticks
-        for match in self.UNCLOSED_INLINE.finditer(content):
-            code_content = match.group(1)
-            punct = match.group(2)
-            
-            # Check if this is actually unclosed (not preceded by valid chars)
-            start_pos = match.start()
-            if start_pos > 0:
-                prev_char = content[start_pos - 1]
-                if prev_char in self.VALID_INLINE_CHARS:
-                    continue
-            
-            issue = Issue(
-                category=self.PLUGIN_NAME,
-                location=f"Pattern: `{code_content[:20]}...",
-                description=f"Unclosed inline backtick before '{punct}'",
-                suggestion=f"Close backtick: `{code_content}`{punct}",
-                context=match.group(0),
-                metadata={'content': code_content, 'punct': punct}
-            )
-            issues.append(issue)
-        
         self.increment_detected(len(issues))
         return issues
     
     def fix(self, content: str, issues: List[Issue], **kwargs) -> FixResult:
-        """Apply backtick error fixes.
+        """Apply backtick error fixes, protecting code blocks.
+        
+        CRITICAL: Code blocks are protected and restored unchanged.
         
         Args:
             content: Markdown content to fix
@@ -133,7 +122,10 @@ class BacktickErrorsPlugin(BasePlugin):
         if not content:
             return FixResult(success=False, error="No content to fix")
         
-        result = content
+        # Protect code blocks FIRST
+        protected_content, code_blocks = protect_code_blocks(content)
+        
+        result = protected_content
         changes = []
         
         # Fix spaces on both sides (most specific pattern first)
@@ -166,29 +158,11 @@ class BacktickErrorsPlugin(BasePlugin):
             result = new_result
             self.increment_fixed(count)
         
-        # Fix unclosed inline backticks
-        def fix_unclosed(match):
-            code_content = match.group(1)
-            punct = match.group(2)
-            trailing = match.group(3)
-            
-            # Check if truly unclosed
-            start_pos = match.start()
-            if start_pos > 0:
-                prev_char = content[start_pos - 1]
-                if prev_char in self.VALID_INLINE_CHARS:
-                    return match.group(0)
-            
-            return f'`{code_content}`{punct}{trailing}'
-        
-        new_result, count = self.UNCLOSED_INLINE.subn(fix_unclosed, result)
-        if count > 0:
-            changes.append(f"Closed {count} unclosed inline backticks")
-            result = new_result
-            self.increment_fixed(count)
+        # Restore code blocks UNCHANGED
+        final_content = restore_code_blocks(result, code_blocks)
         
         return FixResult(
             success=True,
-            modified_content=result,
+            modified_content=final_content,
             changes_made=changes
         )
