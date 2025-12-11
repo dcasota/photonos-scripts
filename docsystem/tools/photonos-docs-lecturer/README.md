@@ -232,6 +232,8 @@ Where SPEC can be:
 | 12 | malformed-codeblocks | Fix malformed code blocks | No |
 | 13 | numbered-lists | Fix numbered list sequence errors | No |
 
+
+
 ### Examples
 
 ```bash
@@ -328,6 +330,7 @@ https://example.com/docs/page2/,orphan_link,"Link: 'Old Guide'",Remove or update
 |----------|:-----------------:|:-------:|:-------------:|
 | `broken_email` | Yes | - | - |
 | `spelling` (VMware) | Yes | - | - |
+| `spelling` (general) | - | Yes | - |
 | `deprecated_url` | Yes | - | - |
 | `formatting` | Yes | - | - |
 | `backtick_errors` | Yes | - | - |
@@ -343,6 +346,8 @@ https://example.com/docs/page2/,orphan_link,"Link: 'Old Guide'",Remove or update
 | `orphan_image` | - | - | Yes |
 | `image_alignment` | - | - | Yes |
 | `orphan_page` | - | - | Yes |
+
+
 
 ---
 
@@ -362,7 +367,7 @@ Uses the `gemini-2.0-flash` model for cost-efficient, high-quality fixes.
 --llm xai --XAI_API_KEY your_api_key
 ```
 
-Uses the `grok-beta` model (OpenAI-compatible API).
+Uses the `grok-4` model (OpenAI-compatible API).
 
 ---
 
