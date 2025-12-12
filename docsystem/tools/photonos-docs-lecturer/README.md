@@ -221,16 +221,14 @@ Where SPEC can be:
 | 1 | broken-emails | Fix broken email addresses | No |
 | 2 | vmware-spelling | Fix VMware spelling (vmware -> VMware) | No |
 | 3 | deprecated-urls | Fix deprecated URLs (VMware, VDDK, OVFTOOL, AWS) | No |
-| 4 | backtick-spacing | Fix missing spaces around backticks | No |
-| 5 | backtick-errors | Fix backtick errors (spaces inside backticks) | No |
-| 6 | heading-hierarchy | Fix heading hierarchy violations | No |
-| 7 | header-spacing | Fix markdown headers missing space | No |
-| 8 | html-comments | Fix HTML comments (remove markers, keep content) | No |
-| 9 | grammar | Fix grammar and spelling issues | Yes |
-| 10 | markdown-artifacts | Fix unrendered markdown artifacts | Yes |
-| 11 | indentation | Fix indentation issues | Yes |
-| 12 | malformed-codeblocks | Fix malformed code blocks | No |
-| 13 | numbered-lists | Fix numbered list sequence errors | No |
+| 4 | backticks | Fix all backtick issues (spacing, errors, malformed blocks, URLs) | Yes |
+| 5 | heading-hierarchy | Fix heading hierarchy violations | No |
+| 6 | header-spacing | Fix markdown headers missing space | No |
+| 7 | html-comments | Fix HTML comments (remove markers, keep content) | No |
+| 8 | grammar | Fix grammar and spelling issues | Yes |
+| 9 | markdown-artifacts | Fix unrendered markdown artifacts | Yes |
+| 10 | indentation | Fix indentation issues | Yes |
+| 11 | numbered-lists | Fix numbered list sequence errors | No |
 
 
 
@@ -243,11 +241,11 @@ python3 photonos-docs-lecturer.py run \
   --local-webserver /var/www/photon-site \
   --gh-pr --fix 2,3
 
-# Apply all automatic fixes (1-8, 12-13), skip LLM fixes
+# Apply all non-LLM fixes (1-3, 5-7, 11)
 python3 photonos-docs-lecturer.py run \
   --website https://127.0.0.1/docs-v5 \
   --local-webserver /var/www/photon-site \
-  --gh-pr --fix 1-8,12,13
+  --gh-pr --fix 1-3,5-7,11
 ```
 
 ---
