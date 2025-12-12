@@ -316,36 +316,15 @@ class FixApplicator:
                         if result.success and result.modified_content:
                             content = result.modified_content
                 
-                # Fix missing spaces around backticks (using plugin)
-                formatting_issues = issues.get('formatting_issues', [])
-                if formatting_issues and 'formatting_issues' in self.lecturer.enabled_fix_keys:
-                    formatting_plugin = self.lecturer.plugin_manager.get_plugin('formatting')
-                    if formatting_plugin:
-                        plugin_issues = [Issue(category='formatting', location='', description=str(i)) for i in formatting_issues]
-                        result = formatting_plugin.fix(content, plugin_issues)
-                        if result.success and result.modified_content:
-                            content = result.modified_content
-                
-                # Fix backtick errors (using plugin)
-                backtick_errors = issues.get('backtick_errors', [])
-                if backtick_errors and 'backtick_errors' in self.lecturer.enabled_fix_keys:
-                    backtick_plugin = self.lecturer.plugin_manager.get_plugin('backtick_errors')
-                    if backtick_plugin:
-                        plugin_issues = [Issue(category='backtick_errors', location='', description=str(i)) for i in backtick_errors]
-                        result = backtick_plugin.fix(content, plugin_issues)
-                        if result.success and result.modified_content:
-                            content = result.modified_content
-                
-                # Fix malformed code blocks (using plugin)
-                if 'malformed_code_block_issues' in self.lecturer.enabled_fix_keys:
-                    md_malformed_issues = self.lecturer._check_malformed_code_blocks(page_url, content)
-                    if md_malformed_issues:
-                        markdown_plugin = self.lecturer.plugin_manager.get_plugin('markdown')
-                        if markdown_plugin:
-                            plugin_issues = [Issue(category='markdown', location='', description=str(i)) for i in md_malformed_issues]
-                            result = markdown_plugin.fix(content, plugin_issues)
-                            if result.success and result.modified_content:
-                                content = result.modified_content
+                # Fix all backtick issues (unified LLM-based fix)
+                backtick_issues = issues.get('backtick_issues', [])
+                if backtick_issues and self.lecturer.llm_client and 'backtick_issues' in self.lecturer.enabled_fix_keys:
+                    try:
+                        fixed = self.lecturer.llm_client.fix_backticks(content, backtick_issues)
+                        if fixed:
+                            content = fixed
+                    except Exception as e:
+                        self.logger.error(f"LLM backtick fix failed: {e}")
                 
                 # Fix shell prompts (using plugin) - FEATURE
                 shell_prompt_issues = issues.get('shell_prompt_issues', [])
@@ -430,19 +409,7 @@ class FixApplicator:
                 # Post-LLM cleanup
                 # =========================================================
                 
-                if 'formatting_issues' in self.lecturer.enabled_fix_keys:
-                    formatting_plugin = self.lecturer.plugin_manager.get_plugin('formatting')
-                    if formatting_plugin:
-                        result = formatting_plugin.fix(content, [])
-                        if result.success and result.modified_content:
-                            content = result.modified_content
-                
-                if 'malformed_code_block_issues' in self.lecturer.enabled_fix_keys:
-                    markdown_plugin = self.lecturer.plugin_manager.get_plugin('markdown')
-                    if markdown_plugin:
-                        result = markdown_plugin.fix(content, [])
-                        if result.success and result.modified_content:
-                            content = result.modified_content
+                # No additional cleanup needed - backtick fixes are now unified in LLM
                 
                 # Write back if changed
                 if content != original:
@@ -474,12 +441,8 @@ class FixApplicator:
             applied_fixes.append('VMware spelling')
         if issues.get('deprecated_url_issues') and 'deprecated_url_issues' in self.lecturer.enabled_fix_keys:
             applied_fixes.append('deprecated URLs')
-        if issues.get('formatting_issues') and 'formatting_issues' in self.lecturer.enabled_fix_keys:
-            applied_fixes.append('backtick spacing')
-        if issues.get('backtick_errors') and 'backtick_errors' in self.lecturer.enabled_fix_keys:
-            applied_fixes.append('backtick errors')
-        if issues.get('malformed_code_block_issues') and 'malformed_code_block_issues' in self.lecturer.enabled_fix_keys:
-            applied_fixes.append('malformed code blocks')
+        if issues.get('backtick_issues') and self.lecturer.llm_client and 'backtick_issues' in self.lecturer.enabled_fix_keys:
+            applied_fixes.append('backticks (LLM)')
         if issues.get('shell_prompt_issues') and 'shell_prompt_issues' in self.lecturer.enabled_feature_keys:
             applied_fixes.append('shell prompts')
         if issues.get('heading_hierarchy_issues') and 'heading_hierarchy_issues' in self.lecturer.enabled_fix_keys:

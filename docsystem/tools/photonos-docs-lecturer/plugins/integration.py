@@ -13,8 +13,6 @@ from typing import Any, Dict, List, Optional, Type
 
 from .base import BasePlugin, Issue, FixResult
 from .manager import PluginManager
-from .formatting import FormattingPlugin
-from .backtick_errors import BacktickErrorsPlugin
 from .deprecated_url import DeprecatedUrlPlugin
 from .spelling import SpellingPlugin
 from .grammar import GrammarPlugin
@@ -33,8 +31,6 @@ __version__ = "2.0.0"
 
 # All available plugins
 ALL_PLUGINS: List[Type[BasePlugin]] = [
-    FormattingPlugin,
-    BacktickErrorsPlugin,
     DeprecatedUrlPlugin,
     SpellingPlugin,
     GrammarPlugin,

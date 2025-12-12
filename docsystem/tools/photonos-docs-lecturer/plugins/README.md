@@ -41,13 +41,17 @@ def fix(self, content, issues, **kwargs):
 
 | Plugin | FIX_ID | Description |
 |--------|--------|-------------|
-| grammar | 1 | Grammar and spelling fixes (LLM-assisted, smart typo detection) |
-| markdown | 2 | Markdown formatting fixes |
-| indentation | 3 | List and content indentation |
-| formatting | 4 | Backtick spacing fixes |
-| backtick_errors | 5 | Spaces inside backticks |
-| deprecated_url | 13 | Deprecated URL replacement |
-| spelling | 14 | VMware/Photon spelling fixes |
+| broken_email | 1 | Fix broken email addresses |
+| vmware_spelling | 2 | Fix VMware spelling (vmware -> VMware) |
+| deprecated_url | 3 | Fix deprecated URLs (VMware, VDDK, OVFTOOL, AWS) |
+| backticks | 4 | Fix all backtick issues (LLM-assisted) |
+| heading_hierarchy | 5 | Fix heading hierarchy violations |
+| header_spacing | 6 | Fix markdown headers missing space |
+| html_comments | 7 | Fix HTML comments |
+| grammar | 8 | Fix grammar and spelling issues (LLM-assisted) |
+| markdown_artifacts | 9 | Fix unrendered markdown artifacts (LLM-assisted) |
+| indentation | 10 | Fix indentation issues (LLM-assisted) |
+| numbered_lists | 11 | Fix numbered list sequence errors |
 
 
 

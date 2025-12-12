@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Dict, List, Tuple, TYPE_CHECKING
+from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
 
 # Lazy imports for LLM libraries
 HAS_GEMINI = False
@@ -79,7 +79,7 @@ class LLMClient:
             if not HAS_REQUESTS:
                 raise ImportError("requests library required for xAI. Install with: pip install requests")
             self.xai_endpoint = "https://api.x.ai/v1/chat/completions"
-            self.xai_model = "grok-4"
+            self.xai_model = "grok-4-0709"
         else:
             raise ValueError(f"Unsupported LLM provider: {provider}")
     
@@ -179,11 +179,90 @@ CRITICAL RULES - VIOLATIONS WILL CAUSE ERRORS:
 9. Only translate the natural language text outside of code and technical terms
 10. NEVER add ANY text that wasn't in the original - no parenthetical notes like "(note: ...)" or "(this is ...)"
 11. NEVER add observations, thoughts, or meta-commentary about the content
+12. Do NOT fix, add, remove, or modify ANY backticks - preserve all backtick formatting exactly as-is
 
 Text to translate:
 {{text}}
 
 Output ONLY the translated text. Do NOT add any preamble, explanation, notes, or commentary."""
+        return self._generate_with_url_protection(prompt_template, text)
+    
+    def fix_backticks(self, text: str, issues: Optional[List[Dict]] = None) -> str:
+        """Fix backtick-related markdown issues using LLM.
+        
+        This method should be called EARLY in the fix pipeline, before grammar
+        and other checks, to ensure proper code formatting is established first.
+        
+        Fixes:
+        - Missing starting/ending backticks
+        - Wrong spaces after starting backtick
+        - Wrong spaces before ending backtick  
+        - Mismatched triple backtick counts
+        - Inline code vs code block confusion
+        
+        Args:
+            text: The markdown content to fix
+            issues: Optional list of detected backtick issues (for context)
+            
+        Returns:
+            Fixed markdown content
+        """
+        issue_context = ""
+        if issues:
+            issue_desc = "\n".join([f"- Line {i.get('line_number', '?')}: {i.get('description', i.get('message', 'backtick issue'))}" for i in issues[:15]])
+            issue_context = f"\nDetected issues to fix:\n{issue_desc}\n"
+        
+        prompt_template = f"""You are a Markdown expert specializing in backtick syntax. Fix ONLY backtick-related issues in the text below.
+{issue_context}
+### Backtick Rules to Apply:
+
+#### 1. Inline Code (Single Backticks)
+- Enclose short code elements in single backticks: `text`
+- If code contains a backtick, use double backticks: `` `text` ``
+- NO spaces after opening backtick or before closing backtick
+- WRONG: ` text` or `text ` or ` text `
+- CORRECT: `text`
+
+#### 2. Code Blocks (Triple Backticks)
+- Use exactly three backticks (```) on separate lines
+- Opening and closing must have SAME count
+- Language identifier after opening is optional: ```python
+- WRONG: `` or ```` without matching close
+- CORRECT: ``` matched with ```
+
+#### 3. Common Errors to Fix:
+- Missing starting backtick: text` → `text`
+- Missing ending backtick: `text → `text`
+- Space after opening: ` text` → `text`
+- Space before closing: `text ` → `text`
+- Mismatched triple backticks: ensure opening and closing match
+- Single backtick for multi-line code: convert to triple backticks
+- URLs in backticks (not in code blocks): `https://example.com` → https://example.com
+- Triple backticks around inline text (not in code block): ```word``` → `word`
+
+### ABSOLUTE RESTRICTIONS:
+
+1. ONLY fix backtick syntax issues - do NOT change:
+   - Any actual text content or wording
+   - URLs, paths, or placeholders
+   - Headings, lists, or other markdown
+   - Line breaks or general indentation
+
+2. PRESERVE exactly:
+   - All text inside code spans (only fix the backticks themselves)
+   - Code block content (only fix the fencing)
+   - YAML front matter (--- delimited sections)
+
+3. NEVER:
+   - Add backticks around text that doesn't need them
+   - Remove valid backticks
+   - Change code block language identifiers
+   - Add explanations or commentary
+
+Text to fix:
+{{text}}
+
+Return ONLY the corrected markdown with no additional output."""
         return self._generate_with_url_protection(prompt_template, text)
     
     def fix_grammar(self, text: str, issues: List[Dict]) -> str:
@@ -216,7 +295,6 @@ ABSOLUTE RESTRICTIONS (violating ANY of these will break the system):
 {issue_desc}
 
 4. NEVER ADD:
-   - Backticks around ANY text (do not wrap words in backticks that weren't already in backticks)
    - Explanations, notes, or commentary
    - Text that wasn't in the original
    - Parenthetical remarks like (note: ...) or (this is ...)
@@ -225,6 +303,13 @@ ABSOLUTE RESTRICTIONS (violating ANY of these will break the system):
    - Capitalization of domain names (github.com stays github.com, NOT GitHub.com)
    - URL paths (Downloading-Photon-OS stays exactly as-is)
    - Technical terms even if they look misspelled
+
+6. NEVER FIX BACKTICKS - do NOT modify any backtick formatting:
+   - Do NOT add backticks around any text
+   - Do NOT remove any existing backticks
+   - Do NOT fix spacing inside or around backticks
+   - Do NOT convert between single and triple backticks
+   - Preserve all backticks exactly as they appear in the original
 
 Text to fix:
 {{text}}
@@ -258,13 +343,11 @@ ABSOLUTE RESTRICTIONS (violating ANY of these will break the system):
    - List numbering and ordering
 
 3. MARKDOWN FIXES ALLOWED:
-   - Convert ```term``` to `term` when used inline within a sentence
-   - Fix unclosed code blocks
    - Fix malformed link syntax
+   - Fix broken table formatting
+   - Fix heading syntax issues
 
 4. NEVER ADD:
-   - Backticks around ANY text (do not wrap words in backticks that weren't already in backticks)
-   - Language specifiers to inline code
    - Explanations, notes, or commentary
    - Spaces inside markdown link brackets: [text] not [ text ]
 
@@ -272,6 +355,14 @@ ABSOLUTE RESTRICTIONS (violating ANY of these will break the system):
    - Capitalization of domain names (github.com stays lowercase)
    - URL paths or query strings
    - Content meaning
+
+6. NEVER FIX BACKTICKS - do NOT modify any backtick formatting:
+   - Do NOT add backticks around any text
+   - Do NOT remove any existing backticks
+   - Do NOT fix spacing inside or around backticks
+   - Do NOT convert between single and triple backticks (e.g., ```term``` to `term`)
+   - Do NOT fix unclosed code blocks or backtick issues
+   - Preserve all backticks exactly as they appear in the original
 
 Text to fix:
 {{text}}
@@ -310,10 +401,16 @@ ABSOLUTE RESTRICTIONS (violating ANY of these will break the system):
 
 4. NEVER:
    - Change any words or text content
-   - Add backticks around ANY text
    - Add or remove list items
    - Add explanations or commentary
    - Capitalize domain names
+
+5. NEVER FIX BACKTICKS - do NOT modify any backtick formatting:
+   - Do NOT add backticks around any text
+   - Do NOT remove any existing backticks
+   - Do NOT fix spacing inside or around backticks
+   - Do NOT convert between single and triple backticks
+   - Preserve all backticks exactly as they appear in the original
 
 Text to fix:
 {{text}}
@@ -658,7 +755,7 @@ Return ONLY the corrected markdown with no additional output."""
             "max_tokens": 131072
         }
         try:
-            response = requests.post(self.xai_endpoint, headers=headers, json=payload, timeout=60)
+            response = requests.post(self.xai_endpoint, headers=headers, json=payload, timeout=600)
             response.raise_for_status()
             data = response.json()
             return data.get("choices", [{}])[0].get("message", {}).get("content", "")

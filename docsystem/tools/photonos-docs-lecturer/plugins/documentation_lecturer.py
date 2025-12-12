@@ -280,16 +280,14 @@ class DocumentationLecturer:
         1: {'key': 'broken_email_issues', 'name': 'broken-emails', 'desc': 'Fix broken email addresses (domain split with whitespace)', 'llm': False},
         2: {'key': 'vmware_spelling_issues', 'name': 'vmware-spelling', 'desc': 'Fix VMware spelling (vmware -> VMware)', 'llm': False},
         3: {'key': 'deprecated_url_issues', 'name': 'deprecated-urls', 'desc': 'Fix deprecated URLs (VMware, VDDK, OVFTOOL, AWS, bosh-stemcell)', 'llm': False},
-        4: {'key': 'formatting_issues', 'name': 'backtick-spacing', 'desc': 'Fix missing spaces around backticks', 'llm': False},
-        5: {'key': 'backtick_errors', 'name': 'backtick-errors', 'desc': 'Fix backtick errors (spaces inside backticks)', 'llm': False},
-        6: {'key': 'heading_hierarchy_issues', 'name': 'heading-hierarchy', 'desc': 'Fix heading hierarchy violations (skipped levels)', 'llm': False},
-        7: {'key': 'header_spacing_issues', 'name': 'header-spacing', 'desc': 'Fix markdown headers missing space (####Title -> #### Title)', 'llm': False},
-        8: {'key': 'html_comment_issues', 'name': 'html-comments', 'desc': 'Fix HTML comments (remove <!-- --> markers, keep content)', 'llm': False},
-        9: {'key': 'grammar_issues', 'name': 'grammar', 'desc': 'Fix grammar and spelling issues (requires --llm)', 'llm': True},
-        10: {'key': 'md_artifacts', 'name': 'markdown-artifacts', 'desc': 'Fix unrendered markdown artifacts (requires --llm)', 'llm': True},
-        11: {'key': 'indentation_issues', 'name': 'indentation', 'desc': 'Fix indentation issues (requires --llm)', 'llm': True},
-        12: {'key': 'malformed_code_block_issues', 'name': 'malformed-codeblocks', 'desc': 'Fix malformed code blocks (mismatched backticks, inline->fenced, plain text commands)', 'llm': False},
-        13: {'key': 'numbered_list_issues', 'name': 'numbered-lists', 'desc': 'Fix numbered list sequence errors (duplicate numbers)', 'llm': False},
+        4: {'key': 'backtick_issues', 'name': 'backticks', 'desc': 'Fix all backtick issues (spacing, errors, malformed blocks, URLs in backticks) (requires --llm)', 'llm': True},
+        5: {'key': 'heading_hierarchy_issues', 'name': 'heading-hierarchy', 'desc': 'Fix heading hierarchy violations (skipped levels)', 'llm': False},
+        6: {'key': 'header_spacing_issues', 'name': 'header-spacing', 'desc': 'Fix markdown headers missing space (####Title -> #### Title)', 'llm': False},
+        7: {'key': 'html_comment_issues', 'name': 'html-comments', 'desc': 'Fix HTML comments (remove <!-- --> markers, keep content)', 'llm': False},
+        8: {'key': 'grammar_issues', 'name': 'grammar', 'desc': 'Fix grammar and spelling issues (requires --llm)', 'llm': True},
+        9: {'key': 'md_artifacts', 'name': 'markdown-artifacts', 'desc': 'Fix unrendered markdown artifacts (requires --llm)', 'llm': True},
+        10: {'key': 'indentation_issues', 'name': 'indentation', 'desc': 'Fix indentation issues (requires --llm)', 'llm': True},
+        11: {'key': 'numbered_list_issues', 'name': 'numbered-lists', 'desc': 'Fix numbered list sequence errors (duplicate numbers)', 'llm': False},
     }
     
     # Enumerated feature types for --feature parameter
@@ -942,8 +940,9 @@ class DocumentationLecturer:
             chunks = [text[i:i+max_chunk] for i in range(0, len(text), max_chunk)]
             
             for chunk in chunks:
-                with self.grammar_tool_lock:
-                    matches = tool.check(chunk)
+                # Note: No lock needed - LanguageTool runs as an HTTP server
+                # that handles concurrent requests internally
+                matches = tool.check(chunk)
                 
                 # Filter false positives
                 always_skip_rules = {
@@ -2646,14 +2645,11 @@ class DocumentationLecturer:
             orphan_images = self._check_orphan_images(page_url, soup)
             self._check_image_alignment(page_url, soup)
             
-            # Check for formatting issues (missing spaces around backticks)
-            formatting_issues = self._check_missing_spaces_around_backticks(page_url, text_content)
-            
-            # Check for backtick errors (unclosed code blocks, spaces inside backticks)
-            backtick_errors = self._check_backtick_errors(page_url, text_content)
-            
-            # Check for malformed code blocks (mismatched backticks, inline->fenced)
-            malformed_code_block_issues = self._check_malformed_code_blocks(page_url, text_content)
+            # Check for all backtick issues (unified detection)
+            backtick_issues = []
+            backtick_issues.extend(self._check_missing_spaces_around_backticks(page_url, text_content))
+            backtick_issues.extend(self._check_backtick_errors(page_url, text_content))
+            backtick_issues.extend(self._check_malformed_code_blocks(page_url, text_content))
             
             # Check for indentation issues in lists
             indentation_issues = self._check_list_indentation_issues(page_url, html_content)
@@ -2692,9 +2688,7 @@ class DocumentationLecturer:
                     'md_artifacts': md_artifacts,
                     'orphan_links': orphan_links,
                     'orphan_images': orphan_images,
-                    'formatting_issues': formatting_issues,
-                    'backtick_errors': backtick_errors,
-                    'malformed_code_block_issues': malformed_code_block_issues,
+                    'backtick_issues': backtick_issues,
                     'indentation_issues': indentation_issues,
                     'shell_prompt_issues': shell_prompt_issues,
                     'mixed_cmd_output_issues': mixed_cmd_output_issues,
@@ -3306,13 +3300,6 @@ See attached CSV report for detailed issue locations and fix suggestions.
                 rel_path = os.path.relpath(repo_path, self.temp_dir)
                 self.logger.info(f"Copied {local_path} -> {repo_path}")
                 
-                # Log the fix for PR body (before git operations)
-                self.fixed_files_log.append({
-                    'file': rel_path,
-                    'fixes': fixes_applied,
-                    'timestamp': datetime.datetime.now().isoformat()
-                })
-                
                 # Change to repo directory for git operations
                 original_cwd = os.getcwd()
                 os.chdir(self.temp_dir)
@@ -3324,8 +3311,15 @@ See attached CSV report for detailed issue locations and fix suggestions.
                     # Check if there are changes to commit
                     result = subprocess.run(['git', 'status', '--porcelain'], capture_output=True, text=True)
                     if not result.stdout.strip():
-                        self.logger.info(f"No changes to commit for {rel_path}")
+                        self.logger.info(f"No changes to commit for {rel_path} (file content identical)")
                         return True  # No changes but not an error
+                    
+                    # Log the fix for PR body (only after confirming there are actual changes)
+                    self.fixed_files_log.append({
+                        'file': rel_path,
+                        'fixes': fixes_applied,
+                        'timestamp': datetime.datetime.now().isoformat()
+                    })
                     
                     # Build commit message with all fixes so far
                     commit_msg = self._generate_commit_message()
