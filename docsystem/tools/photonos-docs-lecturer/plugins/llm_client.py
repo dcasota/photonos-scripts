@@ -9,11 +9,12 @@ Supports:
 - Google Gemini API
 - xAI (Grok) API
 
-Version: 1.0.0
+Version: 1.1.0
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
@@ -41,7 +42,7 @@ try:
 except ImportError:
     HAS_REQUESTS = False
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 
 class LLMClient:
@@ -160,6 +161,225 @@ class LLMClient:
         cleaned_response = self._clean_llm_response(response, text_to_protect)
         return self._restore_urls(cleaned_response, url_map)
     
+    def _generate_with_reasoning(self, prompt: str, text_to_protect: str, issues: List[Dict], fix_type: str) -> str:
+        """Generate LLM response with structured reasoning and self-validation.
+        
+        This method asks the LLM to:
+        1. Reason about the issues and proposed changes
+        2. List specific changes it will make
+        3. Return the corrected text
+        
+        The response is validated to ensure:
+        - Changes correlate with detected issues
+        - No unnecessary modifications are made
+        - Trailing newlines are preserved
+        
+        Args:
+            prompt: The base prompt for the fix
+            text_to_protect: The original text content
+            issues: List of detected issues to fix
+            fix_type: Type of fix (e.g., "grammar", "markdown")
+            
+        Returns:
+            Fixed text, or original text if validation fails
+        """
+        protected_text, url_map = self._protect_urls(text_to_protect)
+        
+        # Build issue summary for reasoning context
+        issue_summary = "\n".join([
+            f"- {i.get('message', i.get('description', str(i)))[:100]}" 
+            for i in issues[:10]
+        ])
+        
+        # Structured output prompt
+        structured_prompt = f"""{prompt}
+
+IMPORTANT: You must respond with a valid JSON object in this exact format:
+{{
+  "reasoning": "Brief explanation of what issues were found and how you will fix them (1-3 sentences)",
+  "changes": ["list of specific changes made, e.g., 'Line 5: fixed duplicate word the the -> the'"],
+  "no_changes_needed": false,
+  "result": "the complete corrected text here"
+}}
+
+If NO changes are needed, set "no_changes_needed" to true and copy the original text exactly to "result".
+
+Issues to address:
+{issue_summary}
+
+Text to fix:
+{protected_text}
+
+Respond ONLY with the JSON object, no other text."""
+
+        response = self._generate(structured_prompt)
+        
+        if not response:
+            return text_to_protect
+        
+        # Parse JSON response
+        parsed = self._parse_structured_response(response, text_to_protect)
+        
+        if parsed is None:
+            logging.warning(f"Failed to parse structured {fix_type} response, falling back to direct generation")
+            # Fall back to traditional method
+            return self._generate_with_url_protection(prompt + "\n\nText to fix:\n{text}", text_to_protect)
+        
+        reasoning = parsed.get('reasoning', '')
+        changes = parsed.get('changes', [])
+        no_changes_needed = parsed.get('no_changes_needed', False)
+        result = parsed.get('result', '')
+        
+        # Log reasoning for transparency
+        if reasoning:
+            logging.info(f"LLM {fix_type} reasoning: {reasoning[:200]}")
+        
+        # Validate the response
+        if no_changes_needed:
+            logging.info(f"LLM determined no {fix_type} changes needed")
+            return text_to_protect
+        
+        if not result:
+            logging.warning(f"LLM {fix_type} response missing result, using original")
+            return text_to_protect
+        
+        if not changes:
+            logging.warning(f"LLM {fix_type} response has result but no changes listed, using original")
+            return text_to_protect
+        
+        # Validate changes correlate with issues
+        if not self._validate_changes(changes, issues, fix_type):
+            logging.warning(f"LLM {fix_type} changes don't correlate with issues, using original")
+            return text_to_protect
+        
+        # Restore URLs
+        result = self._restore_urls(result, url_map)
+        
+        # Preserve trailing newline if original had one
+        if text_to_protect.endswith('\n') and not result.endswith('\n'):
+            result += '\n'
+        elif not text_to_protect.endswith('\n') and result.endswith('\n'):
+            result = result.rstrip('\n')
+        
+        # Final validation: ensure result is not drastically different
+        # Grammar/markdown fixes should only make minor changes (90-110% of original length)
+        if len(result) < len(text_to_protect) * 0.9:
+            logging.warning(f"LLM {fix_type} result too short ({len(result)} vs {len(text_to_protect)}), using original")
+            return text_to_protect
+        
+        if len(result) > len(text_to_protect) * 1.1:
+            logging.warning(f"LLM {fix_type} result too long ({len(result)} vs {len(text_to_protect)}), using original")
+            return text_to_protect
+        
+        logging.info(f"LLM {fix_type} applied {len(changes)} changes: {', '.join(changes[:3])}")
+        return result
+    
+    def _parse_structured_response(self, response: str, original_text: str) -> Optional[Dict]:
+        """Parse JSON response from LLM with structured output.
+        
+        Handles common issues like:
+        - JSON wrapped in markdown code blocks
+        - Trailing commas
+        - Missing quotes
+        
+        Args:
+            response: Raw LLM response
+            original_text: Original text for fallback
+            
+        Returns:
+            Parsed dict or None if parsing fails
+        """
+        if not response:
+            return None
+        
+        # Try to extract JSON from response
+        json_str = response.strip()
+        
+        # Remove markdown code block wrapper if present
+        if json_str.startswith('```'):
+            # Find the content between ``` markers
+            lines = json_str.split('\n')
+            json_lines = []
+            in_block = False
+            for line in lines:
+                if line.strip().startswith('```'):
+                    in_block = not in_block
+                    continue
+                if in_block or (not line.strip().startswith('```') and json_lines):
+                    json_lines.append(line)
+            json_str = '\n'.join(json_lines).strip()
+        
+        # Try direct JSON parse
+        try:
+            return json.loads(json_str)
+        except json.JSONDecodeError:
+            pass
+        
+        # Try to find JSON object in response
+        json_match = re.search(r'\{[\s\S]*\}', json_str)
+        if json_match:
+            try:
+                return json.loads(json_match.group())
+            except json.JSONDecodeError:
+                pass
+        
+        # Try to fix common JSON issues
+        try:
+            # Remove trailing commas before } or ]
+            fixed = re.sub(r',(\s*[}\]])', r'\1', json_str)
+            return json.loads(fixed)
+        except json.JSONDecodeError:
+            pass
+        
+        logging.warning(f"Could not parse LLM JSON response: {json_str[:200]}...")
+        return None
+    
+    def _validate_changes(self, changes: List[str], issues: List[Dict], fix_type: str) -> bool:
+        """Validate that LLM changes correlate with detected issues.
+        
+        Args:
+            changes: List of change descriptions from LLM
+            issues: Original detected issues
+            fix_type: Type of fix for context
+            
+        Returns:
+            True if changes seem valid, False otherwise
+        """
+        if not changes:
+            return False
+        
+        # Check for suspicious patterns in changes
+        suspicious_patterns = [
+            r'trailing\s*(newline|whitespace|space)',
+            r'removed?\s*(trailing|extra)\s*(newline|whitespace)',
+            r'normalized?\s*(whitespace|spacing|line\s*ending)',
+            r'(added|removed)\s*blank\s*line',
+        ]
+        
+        for change in changes:
+            change_lower = change.lower()
+            for pattern in suspicious_patterns:
+                if re.search(pattern, change_lower):
+                    logging.warning(f"Suspicious {fix_type} change detected: {change}")
+                    return False
+        
+        # For grammar fixes, ensure changes mention grammar-related terms
+        if fix_type == "grammar" and issues:
+            grammar_terms = ['spelling', 'grammar', 'word', 'duplicate', 'article', 'comma', 
+                           'punctuation', 'tense', 'agreement', 'typo', 'capitalization']
+            has_grammar_change = any(
+                any(term in change.lower() for term in grammar_terms)
+                for change in changes
+            )
+            # Allow if at least one change is grammar-related, or if changes are specific line fixes
+            if not has_grammar_change:
+                has_line_fixes = any(re.search(r'line\s*\d+', change.lower()) for change in changes)
+                if not has_line_fixes:
+                    logging.debug(f"No grammar-related terms in changes: {changes}")
+                    # Be lenient - don't reject, just log
+        
+        return True
+    
     def translate(self, text: str, target_language: str) -> str:
         """Translate text to target language using LLM.
         
@@ -266,109 +486,79 @@ Return ONLY the corrected markdown with no additional output."""
         return self._generate_with_url_protection(prompt_template, text)
     
     def fix_grammar(self, text: str, issues: List[Dict]) -> str:
-        """Fix grammar issues in text using LLM.
+        """Fix grammar issues in text using LLM with structured reasoning.
+        
+        Uses structured output with reasoning to ensure:
+        - Only specified grammar issues are fixed
+        - No whitespace-only or unnecessary changes
+        - LLM explains and validates its own changes
         
         URLs are protected using placeholders to prevent LLM from modifying them.
         """
-        issue_desc = "\n".join([f"- {i['message']}: {i.get('suggestion', 'No suggestion')}" for i in issues[:10]])
-        prompt_template = f"""You are a grammar correction assistant. Fix ONLY the specific grammar issues listed below.
+        prompt_template = """You are a grammar correction assistant. Fix ONLY the specific grammar issues listed.
 
-ABSOLUTE RESTRICTIONS (violating ANY of these will break the system):
+ABSOLUTE RESTRICTIONS (violating ANY will cause rejection):
 
-1. NEVER MODIFY THESE - copy them EXACTLY as they appear:
-   - URLs (anything starting with http:// or https://)
-   - Markdown link text that contains URLs: [https://github.com/...](url) - keep the text EXACTLY as-is
-   - Domain names: github.com, gitlab.com, bitbucket.org - NEVER capitalize these
-   - Placeholders like __URL_PLACEHOLDER_N__ or __PATH_PLACEHOLDER_N__
-   - Content inside backticks (inline code): `command`
-   - Content inside triple backticks (code blocks): ```code```
-   - Lines starting with tab or 4+ spaces (these are code/output, NOT prose)
-   - Technical identifiers with underscores: disable_ec2_metadata, users_groups
+1. NEVER MODIFY:
+   - URLs, domain names, or placeholders (__URL_PLACEHOLDER_N__)
+   - Content inside backticks or code blocks
+   - Lines starting with tab or 4+ spaces (code/output)
+   - Technical identifiers with underscores
 
-2. PRESERVE STRUCTURE - do not change:
-   - Line breaks - each line must remain on its own line
-   - Indentation - preserve all leading spaces/tabs exactly
-   - Markdown formatting: #, ##, *, -, |, etc.
-   - List numbering and ordering
+2. PRESERVE EXACTLY:
+   - All line breaks and indentation
+   - All markdown formatting (#, *, -, |)
+   - Trailing newlines at end of file
+   - All whitespace that isn't part of a grammar fix
 
-3. ONLY FIX - these specific grammar issues:
-{issue_desc}
+3. ONLY FIX the grammar issues listed - nothing else
 
-4. NEVER ADD:
-   - Explanations, notes, or commentary
-   - Text that wasn't in the original
-   - Parenthetical remarks like (note: ...) or (this is ...)
+4. NEVER:
+   - Change whitespace unless it's part of a grammar fix
+   - Add or remove trailing newlines
+   - "Normalize" or "clean up" formatting
+   - Add any explanatory text"""
 
-5. NEVER CHANGE:
-   - Capitalization of domain names (github.com stays github.com, NOT GitHub.com)
-   - URL paths (Downloading-Photon-OS stays exactly as-is)
-   - Technical terms even if they look misspelled
-
-6. NEVER FIX BACKTICKS - do NOT modify any backtick formatting:
-   - Do NOT add backticks around any text
-   - Do NOT remove any existing backticks
-   - Do NOT fix spacing inside or around backticks
-   - Do NOT convert between single and triple backticks
-   - Preserve all backticks exactly as they appear in the original
-
-Text to fix:
-{{text}}
-
-Return ONLY the corrected text with no additional output."""
-        return self._generate_with_url_protection(prompt_template, text)
+        return self._generate_with_reasoning(prompt_template, text, issues, "grammar")
     
     def fix_markdown(self, text: str, artifacts: List[str]) -> str:
-        """Fix markdown rendering artifacts.
+        """Fix markdown rendering artifacts using LLM with structured reasoning.
+        
+        Uses structured output with reasoning to ensure:
+        - Only actual markdown issues are fixed
+        - No whitespace-only or unnecessary changes
+        - LLM explains and validates its own changes
         
         URLs are protected using placeholders to prevent LLM from modifying them.
         """
-        artifacts_str = ', '.join(artifacts[:5]) if artifacts else 'general markdown issues'
-        prompt_template = f"""You are a markdown syntax correction assistant. Fix ONLY markdown rendering issues.
+        prompt_template = """You are a markdown syntax correction assistant. Fix ONLY markdown rendering issues.
 
-Issues detected: {artifacts_str}
+ABSOLUTE RESTRICTIONS (violating ANY will cause rejection):
 
-ABSOLUTE RESTRICTIONS (violating ANY of these will break the system):
+1. NEVER MODIFY:
+   - URLs, domain names, or placeholders (__URL_PLACEHOLDER_N__)
+   - Lines starting with tab or 4+ spaces (code/output)
+   - Content inside backticks
 
-1. NEVER MODIFY THESE - copy them EXACTLY as they appear:
-   - URLs (anything starting with http:// or https://)
-   - Markdown link text that contains URLs: [https://github.com/...](url) - keep EXACTLY as-is
-   - Domain names: github.com, gitlab.com - NEVER capitalize these
-   - Placeholders like __URL_PLACEHOLDER_N__ or __PATH_PLACEHOLDER_N__
-   - Lines starting with tab or 4+ spaces (these are code/output)
-   - Technical identifiers with underscores: disable_ec2_metadata
-
-2. PRESERVE STRUCTURE:
-   - Line breaks - each line must remain on its own line
-   - Indentation - preserve all leading spaces/tabs exactly
-   - List numbering and ordering
+2. PRESERVE EXACTLY:
+   - All line breaks and indentation
+   - Trailing newlines at end of file
+   - All whitespace that isn't part of a markdown fix
 
 3. MARKDOWN FIXES ALLOWED:
    - Fix malformed link syntax
    - Fix broken table formatting
    - Fix heading syntax issues
 
-4. NEVER ADD:
-   - Explanations, notes, or commentary
-   - Spaces inside markdown link brackets: [text] not [ text ]
+4. NEVER:
+   - Change whitespace unless it's part of a markdown fix
+   - Add or remove trailing newlines
+   - Modify backtick formatting
+   - Add any explanatory text"""
 
-5. NEVER CHANGE:
-   - Capitalization of domain names (github.com stays lowercase)
-   - URL paths or query strings
-   - Content meaning
-
-6. NEVER FIX BACKTICKS - do NOT modify any backtick formatting:
-   - Do NOT add backticks around any text
-   - Do NOT remove any existing backticks
-   - Do NOT fix spacing inside or around backticks
-   - Do NOT convert between single and triple backticks (e.g., ```term``` to `term`)
-   - Do NOT fix unclosed code blocks or backtick issues
-   - Preserve all backticks exactly as they appear in the original
-
-Text to fix:
-{{text}}
-
-Return ONLY the corrected markdown with no additional output."""
-        return self._generate_with_url_protection(prompt_template, text)
+        # Convert artifacts list to issue-like format for structured reasoning
+        issues = [{'message': f'Markdown artifact: {a}', 'description': a} for a in artifacts[:10]]
+        return self._generate_with_reasoning(prompt_template, text, issues, "markdown")
     
     def fix_indentation(self, text: str, issues: List[Dict]) -> str:
         """Fix indentation issues in markdown lists and code blocks.

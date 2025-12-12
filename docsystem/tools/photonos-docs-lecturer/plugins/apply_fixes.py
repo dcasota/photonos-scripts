@@ -278,6 +278,11 @@ class FixApplicator:
             self.logger.warning(f"No local file found for {page_url} (local_webserver={self.local_webserver})")
             return
         
+        # Skip _index.md files (Hugo section pages with navigation content only)
+        if os.path.basename(local_path) == '_index.md':
+            self.logger.debug(f"Skipping _index.md section page: {local_path}")
+            return
+        
         self.logger.info(f"Found local file for {page_url}: {local_path}")
         
         try:

@@ -947,7 +947,8 @@ class DocumentationLecturer:
                 # Filter false positives
                 always_skip_rules = {
                     'UPPERCASE_SENTENCE_START',
-                    'COMMA_PARENTHESIS_WHITESPACE'
+                    'COMMA_PARENTHESIS_WHITESPACE',
+                    'POSSESSIVE_APOSTROPHE',  # False positive for noun adjuncts (e.g., "updates repository")
                 }
                 
                 # Rules to skip conditionally (for technical terms)
@@ -1951,6 +1952,21 @@ class DocumentationLecturer:
                     'link_text': ''
                 })
         
+        # Check for plain "Bintray" word occurrences (even without URLs)
+        # This ensures the word is replaced with "Download" even in prose text
+        if 'Bintray' in text_content:
+            # Only add issue if not already covered by a Bintray URL detection
+            if not any(i.get('type') == 'deprecated_bintray_url' for i in issues):
+                location = "Deprecated 'Bintray' reference in text"
+                fix = "Replace 'Bintray' with 'Download'"
+                
+                self._write_csv_row(page_url, 'deprecated_url', location, fix)
+                issues.append({
+                    'type': 'deprecated_bintray_word',
+                    'url': '',
+                    'link_text': 'Bintray'
+                })
+        
         return issues
     
     def _check_vmware_spelling(self, page_url: str, text_content: str) -> List[Dict]:
@@ -2892,7 +2908,6 @@ Output the fixed markdown directly without any preamble or explanation."""
                     self.analyze_page(page_url)
                     if self.progress_bar:
                         self.progress_bar.update(1)
-                    time.sleep(0.5)
             else:
                 self._analyze_pages_parallel()
         finally:

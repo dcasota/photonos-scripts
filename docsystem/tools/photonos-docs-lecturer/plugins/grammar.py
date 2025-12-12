@@ -103,7 +103,8 @@ Return ONLY the corrected text. Do NOT add any preamble, explanation, or comment
             for match in matches:
                 # Skip certain rule categories
                 if match.ruleId in ['WHITESPACE_RULE', 'EN_QUOTES', 
-                                    'UPPERCASE_SENTENCE_START', 'COMMA_PARENTHESIS_WHITESPACE']:
+                                    'UPPERCASE_SENTENCE_START', 'COMMA_PARENTHESIS_WHITESPACE',
+                                    'POSSESSIVE_APOSTROPHE']:  # False positive for noun adjuncts
                     continue
                 
                 # For spelling rules, skip hyphenated terms, camelCase, and underscored terms
