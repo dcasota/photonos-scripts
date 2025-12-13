@@ -363,6 +363,16 @@ class FixApplicator:
                 if numbered_list_issues and 'numbered_list_issues' in self.lecturer.enabled_fix_keys:
                     content = self.lecturer._fix_numbered_list_sequence(content)
                 
+                # Fix hardcoded typos and errors (using plugin)
+                hardcoded_replaces_issues = issues.get('hardcoded_replaces_issues', [])
+                if hardcoded_replaces_issues and 'hardcoded_replaces_issues' in self.lecturer.enabled_fix_keys:
+                    hardcoded_plugin = self.lecturer.plugin_manager.get_plugin('hardcoded_replaces')
+                    if hardcoded_plugin:
+                        plugin_issues = [Issue(category='hardcoded_replaces', location='', description=str(i)) for i in hardcoded_replaces_issues]
+                        result = hardcoded_plugin.fix(content, plugin_issues)
+                        if result.success and result.modified_content:
+                            content = result.modified_content
+                
                 # =========================================================
                 # LLM-based fixes
                 # =========================================================
@@ -464,5 +474,7 @@ class FixApplicator:
             applied_fixes.append('mixed cmd/output (LLM)')
         if issues.get('indentation_issues') and self.lecturer.llm_client and 'indentation_issues' in self.lecturer.enabled_fix_keys:
             applied_fixes.append('indentation (LLM)')
+        if issues.get('hardcoded_replaces_issues') and 'hardcoded_replaces_issues' in self.lecturer.enabled_fix_keys:
+            applied_fixes.append('hardcoded replaces')
         
         return applied_fixes

@@ -91,7 +91,7 @@ from .base import BasePlugin, Issue, FixResult
 class MyPlugin(BasePlugin):
     PLUGIN_NAME = "my_plugin"
     PLUGIN_VERSION = "1.0.0"
-    FIX_ID = 10
+    FIX_ID = 13  # Use next available ID
     REQUIRES_LLM = False
     
     def detect(self, content, url, **kwargs):

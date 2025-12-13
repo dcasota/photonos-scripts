@@ -37,7 +37,7 @@ class MarkdownPlugin(LLMAssistedPlugin):
     PLUGIN_VERSION = "2.0.0"
     PLUGIN_DESCRIPTION = "Fix markdown formatting issues"
     REQUIRES_LLM = True
-    FIX_ID = 2
+    FIX_ID = 10
     
     # Missing space after heading hash
     MISSING_HEADING_SPACE = re.compile(r'^(#{1,6})([^\s#])', re.MULTILINE)

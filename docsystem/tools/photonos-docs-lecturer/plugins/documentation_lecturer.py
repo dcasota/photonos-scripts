@@ -278,16 +278,17 @@ class DocumentationLecturer:
     # NOTE: shell-prompts (ID 6) and mixed-cmd-output (ID 12) were moved to FEATURE_TYPES
     FIX_TYPES = {
         1: {'key': 'broken_email_issues', 'name': 'broken-emails', 'desc': 'Fix broken email addresses (domain split with whitespace)', 'llm': False},
-        2: {'key': 'vmware_spelling_issues', 'name': 'vmware-spelling', 'desc': 'Fix VMware spelling (vmware -> VMware)', 'llm': False},
-        3: {'key': 'deprecated_url_issues', 'name': 'deprecated-urls', 'desc': 'Fix deprecated URLs (VMware, VDDK, OVFTOOL, AWS, bosh-stemcell)', 'llm': False},
-        4: {'key': 'backtick_issues', 'name': 'backticks', 'desc': 'Fix all backtick issues (spacing, errors, malformed blocks, URLs in backticks) (requires --llm)', 'llm': True},
-        5: {'key': 'heading_hierarchy_issues', 'name': 'heading-hierarchy', 'desc': 'Fix heading hierarchy violations (skipped levels)', 'llm': False},
-        6: {'key': 'header_spacing_issues', 'name': 'header-spacing', 'desc': 'Fix markdown headers missing space (####Title -> #### Title)', 'llm': False},
-        7: {'key': 'html_comment_issues', 'name': 'html-comments', 'desc': 'Fix HTML comments (remove <!-- --> markers, keep content)', 'llm': False},
-        8: {'key': 'grammar_issues', 'name': 'grammar', 'desc': 'Fix grammar and spelling issues (requires --llm)', 'llm': True},
-        9: {'key': 'md_artifacts', 'name': 'markdown-artifacts', 'desc': 'Fix unrendered markdown artifacts (requires --llm)', 'llm': True},
-        10: {'key': 'indentation_issues', 'name': 'indentation', 'desc': 'Fix indentation issues (requires --llm)', 'llm': True},
-        11: {'key': 'numbered_list_issues', 'name': 'numbered-lists', 'desc': 'Fix numbered list sequence errors (duplicate numbers)', 'llm': False},
+        2: {'key': 'deprecated_url_issues', 'name': 'deprecated-urls', 'desc': 'Fix deprecated URLs (VMware, VDDK, OVFTOOL, AWS, bosh-stemcell)', 'llm': False},
+        3: {'key': 'hardcoded_replaces_issues', 'name': 'hardcoded-replaces', 'desc': 'Fix known typos and errors (hardcoded replacements)', 'llm': False},
+        4: {'key': 'heading_hierarchy_issues', 'name': 'heading-hierarchy', 'desc': 'Fix heading hierarchy violations (skipped levels)', 'llm': False},
+        5: {'key': 'header_spacing_issues', 'name': 'header-spacing', 'desc': 'Fix markdown headers missing space (####Title -> #### Title)', 'llm': False},
+        6: {'key': 'html_comment_issues', 'name': 'html-comments', 'desc': 'Fix HTML comments (remove <!-- --> markers, keep content)', 'llm': False},
+        7: {'key': 'vmware_spelling_issues', 'name': 'vmware-spelling', 'desc': 'Fix VMware spelling (vmware -> VMware)', 'llm': False},
+        8: {'key': 'backtick_issues', 'name': 'backticks', 'desc': 'Fix all backtick issues (spacing, errors, malformed blocks, URLs in backticks) (requires --llm)', 'llm': True},
+        9: {'key': 'grammar_issues', 'name': 'grammar', 'desc': 'Fix grammar and spelling issues (requires --llm)', 'llm': True},
+        10: {'key': 'md_artifacts', 'name': 'markdown-artifacts', 'desc': 'Fix unrendered markdown artifacts (requires --llm)', 'llm': True},
+        11: {'key': 'indentation_issues', 'name': 'indentation', 'desc': 'Fix indentation issues (requires --llm)', 'llm': True},
+        12: {'key': 'numbered_list_issues', 'name': 'numbered-lists', 'desc': 'Fix numbered list sequence errors (duplicate numbers)', 'llm': False},
     }
     
     # Enumerated feature types for --feature parameter
@@ -2385,6 +2386,60 @@ class DocumentationLecturer:
         
         return issues
     
+    def _check_hardcoded_replaces(self, page_url: str, text_content: str) -> List[Dict]:
+        """Check for known typos and errors that have hardcoded replacements.
+        
+        Uses the HardcodedReplacesPlugin to detect issues.
+        
+        IMPORTANT: For STRUCTURAL_REPLACEMENTS (code block fixes), we must read
+        the raw markdown file because:
+        - text_content comes from soup.get_text() which strips markdown structure
+        - STRUCTURAL_REPLACEMENTS patterns require exact newlines, indentation, backticks
+        
+        Args:
+            page_url: URL of the page being analyzed
+            text_content: HTML-extracted text (used for regular replacements fallback)
+            
+        Returns:
+            List of hardcoded replace issues found
+        """
+        issues = []
+        
+        # Get the hardcoded_replaces plugin
+        hardcoded_plugin = self.plugin_manager.get_plugin('hardcoded_replaces')
+        if not hardcoded_plugin:
+            return issues
+        
+        # For STRUCTURAL_REPLACEMENTS, we need raw markdown content from the file
+        # because text_content from soup.get_text() loses markdown structure
+        raw_markdown = None
+        if self.local_webserver:
+            local_path = self.fix_applicator.map_url_to_local_path(page_url, text_content)
+            if local_path and os.path.exists(local_path):
+                try:
+                    with open(local_path, 'r', encoding='utf-8') as f:
+                        raw_markdown = f.read()
+                except Exception as e:
+                    self.logger.debug(f"Could not read local file for hardcoded_replaces: {e}")
+        
+        # Use raw markdown if available, otherwise fall back to text_content
+        # (text_content still works for simple text replacements)
+        content_to_check = raw_markdown if raw_markdown else text_content
+        
+        # Use the plugin to detect issues
+        plugin_issues = hardcoded_plugin.detect(content_to_check, page_url)
+        
+        for issue in plugin_issues:
+            issues.append({
+                'original': issue.context,
+                'suggestion': issue.suggestion,
+                'description': issue.description,
+            })
+            
+            self._write_csv_row(page_url, 'hardcoded_replaces', issue.description, issue.suggestion)
+        
+        return issues
+    
     def _fix_heading_hierarchy(self, content: str) -> Tuple[str, List[Dict]]:
         """Fix heading hierarchy violations in markdown content.
         
@@ -2697,6 +2752,9 @@ class DocumentationLecturer:
             # Check for numbered list sequence errors (duplicate/skipped numbers)
             numbered_list_issues = self._check_numbered_list_sequence(page_url, text_content)
             
+            # Check for hardcoded typos and errors
+            hardcoded_replaces_issues = self._check_hardcoded_replaces(page_url, text_content)
+            
             # Apply fixes if running with --gh-pr
             if self.command == 'run' and self.gh_pr:
                 all_issues = {
@@ -2715,6 +2773,7 @@ class DocumentationLecturer:
                     'html_comment_issues': html_comment_issues,
                     'heading_hierarchy_issues': heading_hierarchy_issues,
                     'numbered_list_issues': numbered_list_issues,
+                    'hardcoded_replaces_issues': hardcoded_replaces_issues,
                 }
                 self.fix_applicator.apply_fixes(page_url, all_issues, text_content)
             

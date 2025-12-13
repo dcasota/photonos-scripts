@@ -1,7 +1,7 @@
 # Spelling Plugin
 
 **Version:** 2.0.0  
-**FIX_ID:** 14  
+**FIX_ID:** 7  
 **Requires LLM:** No
 
 ## Description

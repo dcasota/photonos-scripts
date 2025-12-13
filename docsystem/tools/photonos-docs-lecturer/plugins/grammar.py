@@ -37,7 +37,7 @@ class GrammarPlugin(LLMAssistedPlugin):
     PLUGIN_VERSION = "2.0.0"
     PLUGIN_DESCRIPTION = "Fix grammar and spelling issues"
     REQUIRES_LLM = True
-    FIX_ID = 1
+    FIX_ID = 9
     
     # LLM prompt template for grammar fixes
     PROMPT_TEMPLATE = """You are a technical documentation editor. Fix ONLY the grammar issues listed below.

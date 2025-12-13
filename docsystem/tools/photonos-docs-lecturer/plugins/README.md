@@ -42,30 +42,28 @@ def fix(self, content, issues, **kwargs):
 | Plugin | FIX_ID | Description |
 |--------|--------|-------------|
 | broken_email | 1 | Fix broken email addresses |
-| vmware_spelling | 2 | Fix VMware spelling (vmware -> VMware) |
-| deprecated_url | 3 | Fix deprecated URLs (VMware, VDDK, OVFTOOL, AWS) |
-| backticks | 4 | Fix all backtick issues (LLM-assisted) |
-| heading_hierarchy | 5 | Fix heading hierarchy violations |
-| header_spacing | 6 | Fix markdown headers missing space |
-| html_comments | 7 | Fix HTML comments |
-| grammar | 8 | Fix grammar and spelling issues (LLM-assisted) |
-| markdown_artifacts | 9 | Fix unrendered markdown artifacts (LLM-assisted) |
-| indentation | 10 | Fix indentation issues (LLM-assisted) |
-| numbered_lists | 11 | Fix numbered list sequence errors |
-
-
+| deprecated_url | 2 | Fix deprecated URLs (VMware, VDDK, OVFTOOL, AWS) |
+| hardcoded_replaces | 3 | Fix known typos and errors (hardcoded replacements) |
+| heading_hierarchy | 4 | Fix heading hierarchy violations |
+| header_spacing | 5 | Fix markdown headers missing space |
+| html_comments | 6 | Fix HTML comments |
+| vmware_spelling | 7 | Fix VMware spelling (vmware -> VMware) |
+| backticks | 8 | Fix all backtick issues (LLM-assisted) |
+| grammar | 9 | Fix grammar and spelling issues (LLM-assisted) |
+| markdown_artifacts | 10 | Fix unrendered markdown artifacts (LLM-assisted) |
+| indentation | 11 | Fix indentation issues (LLM-assisted) |
+| numbered_lists | 12 | Fix numbered list sequence errors |
 
 ### Detection-Only Plugins (FIX_ID = 0)
 
 | Plugin | Description |
 |--------|-------------|
-| heading_hierarchy | Heading level violations |
 | orphan_link | Broken hyperlinks |
 | orphan_image | Missing images |
 | orphan_page | Unreferenced pages |
 | image_alignment | Image positioning issues |
-| shell_prompt | Shell prompts in code blocks |
-| mixed_command_output | Commands mixed with output |
+| shell_prompt | Shell prompts in code blocks (FEATURE) |
+| mixed_command_output | Commands mixed with output (FEATURE) |
 
 ## Usage
 
@@ -111,7 +109,7 @@ class MyPlugin(PatternBasedPlugin):
     PLUGIN_VERSION = "1.0.0"
     PLUGIN_DESCRIPTION = "My custom plugin"
     REQUIRES_LLM = False
-    FIX_ID = 15  # Use next available ID
+    FIX_ID = 13  # Use next available ID
     
     def detect(self, content, url, **kwargs):
         # Use strip_code_blocks() before pattern matching

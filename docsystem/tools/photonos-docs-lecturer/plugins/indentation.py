@@ -36,7 +36,7 @@ class IndentationPlugin(LLMAssistedPlugin):
     PLUGIN_VERSION = "2.0.0"
     PLUGIN_DESCRIPTION = "Fix list and content indentation"
     REQUIRES_LLM = True
-    FIX_ID = 3
+    FIX_ID = 11
     
     # Mixed tabs and spaces
     MIXED_INDENT = re.compile(r'^( +\t|\t+ )', re.MULTILINE)

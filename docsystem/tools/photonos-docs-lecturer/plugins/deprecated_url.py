@@ -37,7 +37,7 @@ class DeprecatedUrlPlugin(PatternBasedPlugin):
     PLUGIN_VERSION = "2.1.0"
     PLUGIN_DESCRIPTION = "Fix deprecated URLs (VMware, VDDK, AWS, Bintray)"
     REQUIRES_LLM = False
-    FIX_ID = 13
+    FIX_ID = 2
     
     # Deprecated VMware packages URL pattern
     DEPRECATED_VMWARE_URL = re.compile(r'https?://packages\.vmware\.com/[^\s"\'<>]*')
@@ -201,13 +201,8 @@ class DeprecatedUrlPlugin(PatternBasedPlugin):
         new_result, count = self.BINTRAY_PATTERN.subn(self.BINTRAY_REPLACEMENT, result)
         if count > 0:
             changes.append(f"Replaced {count} deprecated Bintray URLs")
-            result = new_result
-        
-        # Replace "Bintray" word with "Download"
-        if 'Bintray' in result:
-            result = result.replace('Bintray', 'Download')
-            changes.append("Replaced 'Bintray' with 'Download'")
-        
+            result = new_result        
+
         self.increment_fixed(len(changes))
         final_content = restore_code_blocks(result, code_blocks)
         

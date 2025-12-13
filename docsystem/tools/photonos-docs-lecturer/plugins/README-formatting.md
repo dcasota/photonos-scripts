@@ -1,8 +1,10 @@
 # Formatting Plugin
 
 **Version:** 2.0.0  
-**FIX_ID:** 4  
+**FIX_ID:** 0  
 **Requires LLM:** No
+
+> Note: This plugin is for detection only. Backtick formatting is handled by the backticks fix (FIX_ID 8).
 
 ## Description
 

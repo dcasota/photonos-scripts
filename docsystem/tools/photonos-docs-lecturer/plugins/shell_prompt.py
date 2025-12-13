@@ -25,7 +25,7 @@ class ShellPromptPlugin(BasePlugin):
     PLUGIN_VERSION = "2.1.0"
     PLUGIN_DESCRIPTION = "Remove shell prompts from code blocks"
     REQUIRES_LLM = False
-    FIX_ID = 15  # Automatic fix now available
+    FIX_ID = 0  # This is a FEATURE, not a FIX
     
     # Shell prompt patterns for detection
     PROMPTS = [

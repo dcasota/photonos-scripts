@@ -25,6 +25,7 @@ from .orphan_page import OrphanPagePlugin
 from .image_alignment import ImageAlignmentPlugin
 from .shell_prompt import ShellPromptPlugin
 from .mixed_command_output import MixedCommandOutputPlugin
+from .hardcoded_replaces import HardcodedReplacesPlugin
 
 __version__ = "2.0.0"
 
@@ -43,6 +44,7 @@ ALL_PLUGINS: List[Type[BasePlugin]] = [
     ImageAlignmentPlugin,
     ShellPromptPlugin,
     MixedCommandOutputPlugin,
+    HardcodedReplacesPlugin,
 ]
 
 # Plugins with automatic fixes (FIX_ID > 0)

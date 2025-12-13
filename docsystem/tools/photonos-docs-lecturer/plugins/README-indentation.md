@@ -1,7 +1,7 @@
 # Indentation Plugin
 
 **Version:** 2.0.0  
-**FIX_ID:** 3  
+**FIX_ID:** 11  
 **Requires LLM:** Yes (for complex issues)
 
 ## Description

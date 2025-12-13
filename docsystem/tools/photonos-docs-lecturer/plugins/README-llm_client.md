@@ -30,12 +30,12 @@ class LLMClient:
 
 ## Fix Pipeline Order
 
-The `fix_backticks()` method (FIX_ID 4) should be called **first** in the fix pipeline:
+The `fix_backticks()` method (FIX_ID 8) should be called **first** in the fix pipeline:
 
-1. **fix_backticks** (FIX_ID 4) - Correct all backtick issues (unified LLM-based fix)
-2. fix_grammar (FIX_ID 8) - Fix grammar issues
-3. fix_markdown (FIX_ID 9) - Fix markdown artifacts
-4. fix_indentation (FIX_ID 10) - Fix indentation issues
+1. **fix_backticks** (FIX_ID 8) - Correct all backtick issues (unified LLM-based fix)
+2. fix_grammar (FIX_ID 9) - Fix grammar issues
+3. fix_markdown (FIX_ID 10) - Fix markdown artifacts
+4. fix_indentation (FIX_ID 11) - Fix indentation issues
 5. translate - Translate to target language
 
 The unified backtick fix handles:

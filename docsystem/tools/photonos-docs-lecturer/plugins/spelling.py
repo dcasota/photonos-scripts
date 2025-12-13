@@ -37,7 +37,7 @@ class SpellingPlugin(PatternBasedPlugin):
     PLUGIN_VERSION = "2.0.0"
     PLUGIN_DESCRIPTION = "Fix incorrect VMware/Photon spelling"
     REQUIRES_LLM = False
-    FIX_ID = 14
+    FIX_ID = 7
     
     # VMware spelling variants (incorrect -> correct)
     VMWARE_PATTERNS = [

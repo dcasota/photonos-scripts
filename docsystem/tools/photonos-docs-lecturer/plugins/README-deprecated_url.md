@@ -1,7 +1,7 @@
 # Deprecated URL Plugin
 
-**Version:** 2.0.0  
-**FIX_ID:** 13  
+**Version:** 2.1.0  
+**FIX_ID:** 2  
 **Requires LLM:** No
 
 ## Description

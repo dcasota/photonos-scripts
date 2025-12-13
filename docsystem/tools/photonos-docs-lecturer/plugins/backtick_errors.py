@@ -37,7 +37,7 @@ class BacktickErrorsPlugin(PatternBasedPlugin):
     PLUGIN_VERSION = "2.0.0"
     PLUGIN_DESCRIPTION = "Fix backtick errors (spaces inside backticks)"
     REQUIRES_LLM = False
-    FIX_ID = 5
+    FIX_ID = 8
     
     # Space after opening backtick: ` code`
     SPACE_AFTER_OPEN = re.compile(r'(?<![`\w])`[ \t]+(\S[^`\n]*?)`(?![`\w])')

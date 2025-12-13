@@ -37,7 +37,7 @@ class FormattingPlugin(PatternBasedPlugin):
     PLUGIN_VERSION = "2.0.0"
     PLUGIN_DESCRIPTION = "Fix missing spaces around backticks"
     REQUIRES_LLM = False
-    FIX_ID = 4
+    FIX_ID = 0
     
     # Pattern for missing space before backticks (word immediately before `)
     MISSING_SPACE_BEFORE = re.compile(r'([a-zA-Z])(`[^\s`][^`\n]*?`)')

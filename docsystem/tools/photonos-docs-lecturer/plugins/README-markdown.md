@@ -1,7 +1,7 @@
 # Markdown Plugin
 
 **Version:** 2.0.0  
-**FIX_ID:** 2  
+**FIX_ID:** 10  
 **Requires LLM:** Yes (for complex issues)
 
 ## Description
