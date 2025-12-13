@@ -199,25 +199,25 @@ Commands:
   version        Display tool version
 
 Issue Types and Fix Modes:
-  +--------------------------+-------------+---------------+---------------------------+
-  | Issue Type               | Detected    | Fix Mode      | Description               |
-  +--------------------------+-------------+---------------+---------------------------+
-  | VMware spelling          | Always      | Automatic     | vmware -> VMware          |
-  |                          |             |               | (excludes URLs, paths,    |
-  |                          |             |               | emails, code blocks)      |
-  | Deprecated URLs          | Always      | Automatic     | packages.vmware.com ->    |
-  |                          |             |               | packages.broadcom.com     |
-  | Backtick spacing         | Always      | Automatic     | word`code` -> word `code` |
-  | Backtick errors          | Always      | Automatic     | ` code ` -> `code`        |
-  | Heading hierarchy        | Always      | Automatic     | Fix H1->H3 skips          |
-  | Grammar/spelling         | Always      | LLM-assisted  | Requires --llm flag       |
-  | Markdown artifacts       | Always      | LLM-assisted  | Requires --llm flag       |
-  | Indentation issues       | Always      | LLM-assisted  | Requires --llm flag       |
-  | Broken links             | Always      | Report only   | Manual review needed      |
-  | Broken images            | Always      | Report only   | Manual review needed      |
-  | Unaligned images         | Always      | Report only   | Manual review needed      |
-  | Unclosed code blocks     | Always      | Report only   | ``` or ` without closing  |
-  +--------------------------+-------------+---------------+---------------------------+
+  +--------------------------+-------------+---------------+------------------------------------------+
+  | Issue Type               | Detected    | Fix Mode      | Description                              |
+  +--------------------------+-------------+---------------+------------------------------------------+
+  | Broken emails            | Always      | Automatic     | Fix domain split with whitespace         |
+  | Deprecated URLs          | Always      | Automatic     | VMware, VDDK, OVFTOOL, AWS, bosh-stemcell|
+  | Hardcoded replaces       | Always      | Automatic     | Fix known typos and errors               |
+  | Heading hierarchy        | Always      | Automatic     | Fix heading level skips                  |
+  | Header spacing           | Always      | Automatic     | ####Title -> #### Title                  |
+  | HTML comments            | Always      | Automatic     | Remove <!-- --> markers, keep content    |
+  | VMware spelling          | Always      | Automatic     | vmware -> VMware                         |
+  | Backticks                | Always      | LLM-assisted  | All backtick issues (requires --llm)     |
+  | Grammar/spelling         | Always      | LLM-assisted  | Grammar and spelling (requires --llm)    |
+  | Markdown artifacts       | Always      | LLM-assisted  | Unrendered markdown (requires --llm)     |
+  | Indentation issues       | Always      | LLM-assisted  | Fix indentation (requires --llm)         |
+  | Numbered lists           | Always      | Automatic     | Fix duplicate list numbers               |
+  | Broken links             | Always      | Report only   | Manual review needed                     |
+  | Broken images            | Always      | Report only   | Manual review needed                     |
+  | Unaligned images         | Always      | Report only   | Manual review needed                     |
+  +--------------------------+-------------+---------------+------------------------------------------+
 
 Optional Features (--feature parameter):
   +--------------------------+-------------+---------------+---------------------------+
@@ -280,20 +280,20 @@ Selective Fix Application (--fix parameter):
     - All:           --fix all (default behavior)
 
   Available fixes (use --list-fixes for details):
-    ID  Name                  Description                                    [LLM]
-    --  --------------------  ---------------------------------------------  -----
-     1  broken-emails         Fix broken email addresses                     
-     2  vmware-spelling       Fix VMware spelling (vmware -> VMware)         
-     3  deprecated-urls       Fix deprecated URLs (VMware, VDDK, etc.)       
-     4  backtick-spacing      Fix missing spaces around backticks            
-     5  backtick-errors       Fix spaces inside backticks                    
-     6  heading-hierarchy     Fix heading hierarchy violations               
-     7  header-spacing        Fix markdown header spacing                    
-     8  html-comments         Remove HTML comment markers                    
-     9  grammar               Fix grammar and spelling issues                [LLM]
-    10  markdown-artifacts    Fix unrendered markdown artifacts              [LLM]
-    11  indentation           Fix indentation issues                         [LLM]
-    12  malformed-codeblocks  Fix malformed code blocks                      
+    ID  Name                  Description                                         [LLM]
+    --  --------------------  --------------------------------------------------- -----
+     1  broken-emails         Fix broken email addresses (domain split)           
+     2  deprecated-urls       Fix deprecated URLs (VMware, VDDK, OVFTOOL, AWS)    
+     3  hardcoded-replaces    Fix known typos and errors (hardcoded replacements) 
+     4  heading-hierarchy     Fix heading hierarchy violations (skipped levels)   
+     5  header-spacing        Fix markdown headers missing space                  
+     6  html-comments         Fix HTML comments (remove markers, keep content)    
+     7  vmware-spelling       Fix VMware spelling (vmware -> VMware)              
+     8  backticks             Fix all backtick issues (spacing, errors, URLs)     [LLM]
+     9  grammar               Fix grammar and spelling issues                     [LLM]
+    10  markdown-artifacts    Fix unrendered markdown artifacts                   [LLM]
+    11  indentation           Fix indentation issues                              [LLM]
+    12  numbered-lists        Fix numbered list sequence errors                   
 
   Note: Fixes marked [LLM] require --llm flag (gemini or xai) with API key.
 
