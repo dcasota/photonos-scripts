@@ -108,6 +108,16 @@ chmod a+x .local/bin/amp
 mv .local/bin/amp /usr/local/bin
 echo "Installation finished. Start Ampcode CLI with 'amp'."
 
+echo Installing DeepCode CLI ...
+# https://github.com/HKUDS/DeepCode
+pip3 install deepcode-hku
+# 🔑 Download configuration files
+curl -O https://raw.githubusercontent.com/HKUDS/DeepCode/main/mcp_agent.config.yaml
+curl -O https://raw.githubusercontent.com/HKUDS/DeepCode/main/mcp_agent.secrets.yaml
+echo "Installation finished. Start DeepCode with 'deepcode'. The application will automatically start at http://localhost:8501."
+echo "Installation finished. Start DeepCode CLI with 'python cli/main_cli.py'. 
+
+
 echo Installing OpenCode CLI ...
 # https://opencode.ai/
 # https://martinfowler.com/articles/build-own-coding-agent.html#TheWaveOfCliCodingAgents
