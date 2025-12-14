@@ -115,7 +115,7 @@ pip3 install deepcode-hku
 curl -O https://raw.githubusercontent.com/HKUDS/DeepCode/main/mcp_agent.config.yaml
 curl -O https://raw.githubusercontent.com/HKUDS/DeepCode/main/mcp_agent.secrets.yaml
 echo "Installation finished. Start DeepCode with 'deepcode'. The application will automatically start at http://localhost:8501."
-echo "Installation finished. Start DeepCode CLI with 'python cli/main_cli.py'. 
+echo "Installation finished. Start DeepCode CLI with 'python cli/main_cli.py'."
 
 
 echo Installing OpenCode CLI ...
