@@ -190,10 +190,46 @@ python3 photonos-docs-lecturer.py run \
 | `--GEMINI_API_KEY` | - | API key for Google Gemini |
 | `--XAI_API_KEY` | - | API key for xAI (Grok) |
 | `--ref-website` | - | Reference website for comparison |
+| `--exclusion-paths` | - | Comma-separated path prefixes to exclude from processing |
 | `--fix` | all | Selective fix specification (see below) |
 | `--list-fixes` | - | Display all available fix types |
 | `--feature` | none | Selective feature specification (see below) |
 | `--list-features` | - | Display all available feature types |
+
+---
+
+## Exclusion Paths (--exclusion-paths parameter)
+
+The `--exclusion-paths` parameter allows you to exclude specific path prefixes from processing. This is useful when you want to skip certain sections of documentation (e.g., blog posts, news, or archived content).
+
+### Syntax
+
+```bash
+--exclusion-paths "path1/,path2/,path3/"
+```
+
+The paths are matched against the URL path component. Both with and without leading/trailing slashes work.
+
+### Examples
+
+```bash
+# Skip blog and news sections
+python3 photonos-docs-lecturer.py analyze \
+  --website https://127.0.0.1/docs-v5 \
+  --exclusion-paths "blog/,news/"
+
+# Skip specific content directories (Hugo content structure)
+python3 photonos-docs-lecturer.py run \
+  --website https://127.0.0.1/docs-v5 \
+  --local-webserver /var/www/photon-site \
+  --exclusion-paths "content/en/blog/,content/en/news/" \
+  --gh-pr
+
+# Skip archived documentation versions
+python3 photonos-docs-lecturer.py analyze \
+  --website https://127.0.0.1 \
+  --exclusion-paths "docs-v1/,docs-v2/"
+```
 
 ---
 
@@ -219,18 +255,50 @@ Where SPEC can be:
 | ID | Name | Description | LLM Required |
 |----|------|-------------|:------------:|
 | 1 | broken-emails | Fix broken email addresses | No |
-| 2 | vmware-spelling | Fix VMware spelling (vmware -> VMware) | No |
-| 3 | deprecated-urls | Fix deprecated URLs (VMware, VDDK, OVFTOOL, AWS) | No |
-| 4 | backticks | Fix all backtick issues (spacing, errors, malformed blocks, URLs) | Yes |
-| 5 | heading-hierarchy | Fix heading hierarchy violations | No |
-| 6 | header-spacing | Fix markdown headers missing space | No |
-| 7 | html-comments | Fix HTML comments (remove markers, keep content) | No |
-| 8 | grammar | Fix grammar and spelling issues | Yes |
-| 9 | markdown-artifacts | Fix unrendered markdown artifacts | Yes |
-| 10 | indentation | Fix indentation issues | Yes |
-| 11 | numbered-lists | Fix numbered list sequence errors | No |
+| 2 | deprecated-urls | Fix deprecated URLs (VMware, VDDK, OVFTOOL, AWS, bosh-stemcell) | No |
+| 3 | hardcoded-replaces | Fix known typos and errors (hardcoded replacements) | No |
+| 4 | heading-hierarchy | Fix heading hierarchy violations | No |
+| 5 | header-spacing | Fix markdown headers missing space | No |
+| 6 | html-comments | Fix HTML comments (remove markers, keep content) | No |
+| 7 | vmware-spelling | Fix VMware spelling (vmware -> VMware) | No |
+| 8 | backticks | Fix all backtick issues (spacing, errors, malformed blocks, URLs) | Yes |
+| 9 | grammar | Fix grammar and spelling issues | Yes |
+| 10 | markdown-artifacts | Fix unrendered markdown artifacts | Yes |
+| 11 | indentation | Fix indentation issues | Yes |
+| 12 | numbered-lists | Fix numbered list sequence errors | No |
+| 13 | relative-paths | Allow relative path modifications (../path, ../../path) | No |
+| 14 | new-pages | Include newly created pages in commits | No |
 
+### Special Fix IDs
 
+#### FIX_ID 13: Relative Paths
+
+When FIX_ID 13 is **NOT enabled** (default), the system will automatically revert any relative path modifications made by external tools (e.g., installer.sh). This ensures that paths like `../images/` are not inadvertently changed to `../../images/`.
+
+To **allow** relative path modifications, explicitly include FIX_ID 13:
+```bash
+--fix 1-14  # Includes relative path changes
+--fix 13    # Only relative path changes
+```
+
+#### FIX_ID 14: New Pages
+
+When FIX_ID 14 is **NOT enabled** (default), newly created pages (files that don't exist in the original repository) will be **excluded from commits**. This is useful when external tools like `installer.sh` create new files by renaming directories (e.g., from `building images/` to `building-images/`), which Git sees as new files.
+
+To **include** newly created pages in commits:
+```bash
+--fix 1-14  # Includes new pages
+--fix 14    # Only new pages (no other fixes)
+```
+
+At the end of a run, if any newly created files were skipped, the tool will display a summary:
+```
+[INFO] Skipped 3 newly created file(s) (FIX_ID 14 not enabled):
+       - build-prerequisites.md
+       - build-the-iso.md
+       - build-ova.md
+       To include new pages in commits, add --fix 14 or --fix 1-14
+```
 
 ### Examples
 
@@ -239,13 +307,20 @@ Where SPEC can be:
 python3 photonos-docs-lecturer.py run \
   --website https://127.0.0.1/docs-v5 \
   --local-webserver /var/www/photon-site \
-  --gh-pr --fix 2,3
+  --gh-pr --fix 2,7
 
-# Apply all non-LLM fixes (1-3, 5-7, 11)
+# Apply all non-LLM fixes (1-7, 12)
 python3 photonos-docs-lecturer.py run \
   --website https://127.0.0.1/docs-v5 \
   --local-webserver /var/www/photon-site \
-  --gh-pr --fix 1-3,5-7,11
+  --gh-pr --fix 1-7,12
+
+# Apply all fixes including new pages
+python3 photonos-docs-lecturer.py run \
+  --website https://127.0.0.1/docs-v5 \
+  --local-webserver /var/www/photon-site \
+  --gh-pr --fix 1-14 \
+  --llm gemini --GEMINI_API_KEY your_key
 ```
 
 ---

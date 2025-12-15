@@ -214,6 +214,7 @@ Issue Types and Fix Modes:
   | Markdown artifacts       | Always      | LLM-assisted  | Unrendered markdown (requires --llm)     |
   | Indentation issues       | Always      | LLM-assisted  | Fix indentation (requires --llm)         |
   | Numbered lists           | Always      | Automatic     | Fix duplicate list numbers               |
+  | Content loss             | --ref-ghrepo| Automatic     | Detect removed content vs GitHub ref     |
   | Broken links             | Always      | Report only   | Manual review needed                     |
   | Broken images            | Always      | Report only   | Manual review needed                     |
   | Unaligned images         | Always      | Report only   | Manual review needed                     |
@@ -234,6 +235,10 @@ Examples:
 
   # Analyze only
   python3 {TOOL_NAME} analyze --website https://127.0.0.1/docs-v5 --parallel 5
+
+  # Analyze with exclusion paths (skip blog and news)
+  python3 {TOOL_NAME} analyze --website https://127.0.0.1/docs-v5 --parallel 5 \\
+    --exclusion-paths "blog/,news/"
   
   # Full workflow with PR (automatic fixes only)
   python3 {TOOL_NAME} run \\
@@ -366,10 +371,11 @@ def _add_common_args(parser: argparse.ArgumentParser):
     )
     
     parser.add_argument(
-        '--ref-website',
-        type=validate_url,
+        '--exclusion-paths',
+        type=str,
         default=None,
-        help='Reference public website URL for comparison (e.g., https://vmware.github.io/photon/docs-v5)'
+        metavar='PATHS',
+        help='Comma-separated list of path prefixes to exclude from processing (e.g., "content/en/blog/,content/en/news/")'
     )
     
     parser.add_argument(
@@ -420,7 +426,7 @@ def _add_git_args(parser: argparse.ArgumentParser):
         '--ref-ghrepo',
         type=str,
         default=None,
-        help='Original GitHub repo to fork from (e.g., https://github.com/vmware/photon.git)'
+        help='Reference GitHub repo for PR target (e.g., https://github.com/vmware/photon.git)'
     )
     
     parser.add_argument(
