@@ -6,13 +6,13 @@ Detects and fixes deprecated URLs (VMware, VDDK, OVFTOOL, AWS, Bintray, etc.).
 
 CRITICAL: All operations protect fenced code blocks from modification.
 
-Version: 2.1.0
+Version: 2.2.0
 """
 
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from .base import (
     PatternBasedPlugin,
@@ -23,7 +23,7 @@ from .base import (
     restore_code_blocks,
 )
 
-__version__ = "2.1.0"
+__version__ = "2.2.0"
 
 
 class DeprecatedUrlPlugin(PatternBasedPlugin):
@@ -34,45 +34,72 @@ class DeprecatedUrlPlugin(PatternBasedPlugin):
     """
     
     PLUGIN_NAME = "deprecated_url"
-    PLUGIN_VERSION = "2.1.0"
+    PLUGIN_VERSION = "2.2.0"
     PLUGIN_DESCRIPTION = "Fix deprecated URLs (VMware, VDDK, AWS, Bintray)"
     REQUIRES_LLM = False
     FIX_ID = 2
     
-    # Deprecated VMware packages URL pattern
-    DEPRECATED_VMWARE_URL = re.compile(r'https?://packages\.vmware\.com/[^\s"\'<>]*')
-    VMWARE_URL_REPLACEMENT = 'https://packages.broadcom.com/'
-    
-    # Deprecated VDDK download URLs
-    DEPRECATED_VDDK_URLS = [
-        'https://my.vmware.com/web/vmware/downloads/details?downloadGroup=VDDK670&productId=742',
-        'https://developercenter.vmware.com/web/sdk/60/vddk'
+    # Simple URL replacements: (old_url, new_url, description)
+    URL_REPLACEMENTS: List[Tuple[str, str, str]] = [
+        # VDDK URLs
+        ('https://my.vmware.com/web/vmware/downloads/details?downloadGroup=VDDK670&productId=742',
+         'https://developer.broadcom.com/sdks/vmware-virtual-disk-development-kit-vddk/6.7',
+         'Deprecated VDDK URL'),
+        ('https://developercenter.vmware.com/web/sdk/60/vddk',
+         'https://developer.broadcom.com/sdks/vmware-virtual-disk-development-kit-vddk/6.7',
+         'Deprecated VDDK URL'),
+        # VDDK markdown link
+        ('[VDDK 6.0](https://developercenter.vmware.com/web/sdk/60/vddk)',
+         '[VDDK 6.7](https://developer.broadcom.com/sdks/vmware-virtual-disk-development-kit-vddk/6.7)',
+         'Deprecated VDDK 6.0 link'),
+        # OVFTOOL URL
+        ('https://my.vmware.com/group/vmware/details?downloadGroup=OVFTOOL410&productId=491',
+         'https://developer.broadcom.com/tools/open-virtualization-format-ovf-tool/latest',
+         'Deprecated OVFTOOL URL'),
+        # CloudFoundry bosh-stemcell URL
+        ('https://github.com/cloudfoundry/bosh/blob/develop/bosh-stemcell/README.md',
+         'https://github.com/cloudfoundry/bosh-linux-stemcell-builder',
+         'Deprecated bosh-stemcell URL'),
+        # Malformed URLs (typos with ./ in path)
+        ('https://cloud.google.com/compute./tutorials/building-images',
+         'https://cloud.google.com/compute/docs/tutorials/building-images',
+         'Malformed URL (typo in path)'),
+        ('https://github.com/vmware/photon-os-installer/blob/master./ks_config.md',
+         'https://github.com/vmware/photon-os-installer/blob/master/docs/ks_config.md',
+         'Malformed URL (typo in path)'),
     ]
-    VDDK_URL_REPLACEMENT = 'https://developer.broadcom.com/sdks/vmware-virtual-disk-development-kit-vddk/6.7'
-    DEPRECATED_VDDK_60_LINK = '[VDDK 6.0](https://developercenter.vmware.com/web/sdk/60/vddk)'
-    VDDK_67_LINK_REPLACEMENT = '[VDDK 6.7](https://developer.broadcom.com/sdks/vmware-virtual-disk-development-kit-vddk/6.7)'
     
-    # Deprecated OVFTOOL URL
-    DEPRECATED_OVFTOOL_URL = 'https://my.vmware.com/group/vmware/details?downloadGroup=OVFTOOL410&productId=491'
-    OVFTOOL_URL_REPLACEMENT = 'https://developer.broadcom.com/tools/open-virtualization-format-ovf-tool/latest'
-    
-    # Deprecated AWS EC2 CLI URLs
-    DEPRECATED_AWS_EC2_CLI_URLS = [
-        'http://docs.aws.amazon.com/AWSEC2/latest/CommandLineReference/set-up-ec2-cli-linux.html',
-        'https://docs.aws.amazon.com/AWSEC2/latest/CommandLineReference/set-up-ec2-cli-linux.html'
+    # Regex-based URL patterns: (pattern, replacement_or_none, description)
+    # If replacement is a string, use subn directly
+    # If replacement is None, use custom logic in fix() method
+    REGEX_REPLACEMENTS: List[Tuple[re.Pattern, Optional[str], str]] = [
+        # VMware packages URL pattern - replacement preserves path (handled specially in fix())
+        # Pattern excludes ] and ) to properly handle markdown links like [url](url)
+        # Each URL in the markdown link is matched separately
+        # NOTE: hardcoded_replaces runs FIRST and handles specific full-string replacements
+        (re.compile(r'https?://packages\.vmware\.com(/[^\s"\'<>\]\)]*)?'),
+         None,  # Special handling to preserve path
+         'Deprecated VMware packages URL'),
+        # AWS EC2 CLI URL pattern
+        (re.compile(r'https?://docs\.aws\.amazon\.com/AWSEC2/latest/CommandLineReference/set-up-ec2-cli-linux\.html'),
+         'https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html',
+         'Deprecated AWS EC2 CLI URL'),
+        # Bintray URLs (service discontinued in 2021)
+        (re.compile(r'https?://(?:dl\.)?bintray\.com/[^\s\)\"\']*', re.IGNORECASE),
+         'https://github.com/vmware/photon/wiki/downloading-photon-os',
+         'Deprecated Bintray URL'),
     ]
-    AWS_EC2_CLI_URL_REPLACEMENT = 'https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html'
     
-    # Deprecated CloudFoundry bosh-stemcell URL
-    DEPRECATED_BOSH_STEMCELL_URL = 'https://github.com/cloudfoundry/bosh/blob/develop/bosh-stemcell/README.md'
-    BOSH_STEMCELL_URL_REPLACEMENT = 'https://github.com/cloudfoundry/bosh/blob/main/README.md'
+    # Pattern for VMware packages URL with path capture
+    # Pattern excludes ] and ) to properly handle markdown links like [url](url)
+    # Each URL in the markdown link is matched separately
+    VMWARE_PACKAGES_PATTERN = re.compile(r'https?://packages\.vmware\.com(/[^\s"\'<>\]\)]*)?')
     
-    # Bintray URLs (service discontinued in 2021)
-    BINTRAY_PATTERN = re.compile(
-        r'https?://(?:dl\.)?bintray\.com/[^\s\)\"\']*',
-        re.IGNORECASE
-    )
-    BINTRAY_REPLACEMENT = "https://github.com/vmware/photon/wiki/downloading-photon-os"
+    def _replace_url(self, content: str, old_url: str, new_url: str) -> Tuple[str, bool]:
+        """Replace a single URL in content. Returns (modified_content, was_changed)."""
+        if old_url in content:
+            return content.replace(old_url, new_url), True
+        return content, False
     
     def detect(self, content: str, url: str, **kwargs) -> List[Issue]:
         """Detect deprecated URLs, excluding code blocks."""
@@ -83,67 +110,27 @@ class DeprecatedUrlPlugin(PatternBasedPlugin):
         
         safe_content = strip_code_blocks(content)
         
-        # Check VMware packages URLs
-        for match in self.DEPRECATED_VMWARE_URL.finditer(safe_content):
-            issues.append(Issue(
-                category=self.PLUGIN_NAME,
-                location=f"URL: {match.group(0)[:50]}",
-                description="Deprecated VMware packages URL",
-                suggestion=f"Replace with Broadcom URL",
-                context=match.group(0)
-            ))
-        
-        # Check VDDK URLs
-        for vddk_url in self.DEPRECATED_VDDK_URLS:
-            if vddk_url in safe_content:
+        # Check simple URL replacements
+        for old_url, new_url, description in self.URL_REPLACEMENTS:
+            if old_url in safe_content:
                 issues.append(Issue(
                     category=self.PLUGIN_NAME,
-                    location=f"URL: {vddk_url[:50]}",
-                    description="Deprecated VDDK URL",
-                    suggestion=f"Replace with: {self.VDDK_URL_REPLACEMENT}",
-                    context=vddk_url
+                    location=f"URL: {old_url[:50]}",
+                    description=description,
+                    suggestion=f"Replace with: {new_url}",
+                    context=old_url
                 ))
         
-        # Check OVFTOOL URL
-        if self.DEPRECATED_OVFTOOL_URL in safe_content:
-            issues.append(Issue(
-                category=self.PLUGIN_NAME,
-                location="OVFTOOL URL",
-                description="Deprecated OVFTOOL URL",
-                suggestion=f"Replace with: {self.OVFTOOL_URL_REPLACEMENT}",
-                context=self.DEPRECATED_OVFTOOL_URL
-            ))
-        
-        # Check AWS EC2 CLI URLs
-        for aws_url in self.DEPRECATED_AWS_EC2_CLI_URLS:
-            if aws_url in safe_content:
+        # Check regex-based URL patterns
+        for pattern, replacement, description in self.REGEX_REPLACEMENTS:
+            for match in pattern.finditer(safe_content):
                 issues.append(Issue(
                     category=self.PLUGIN_NAME,
-                    location=f"URL: {aws_url[:50]}",
-                    description="Deprecated AWS EC2 CLI URL",
-                    suggestion=f"Replace with: {self.AWS_EC2_CLI_URL_REPLACEMENT}",
-                    context=aws_url
+                    location=f"URL: {match.group(0)[:50]}",
+                    description=description,
+                    suggestion=f"Replace with: {replacement}",
+                    context=match.group(0)
                 ))
-        
-        # Check bosh-stemcell URL
-        if self.DEPRECATED_BOSH_STEMCELL_URL in safe_content:
-            issues.append(Issue(
-                category=self.PLUGIN_NAME,
-                location="bosh-stemcell URL",
-                description="Deprecated bosh-stemcell URL (develop -> main branch)",
-                suggestion=f"Replace with: {self.BOSH_STEMCELL_URL_REPLACEMENT}",
-                context=self.DEPRECATED_BOSH_STEMCELL_URL
-            ))
-        
-        # Check Bintray URLs
-        for match in self.BINTRAY_PATTERN.finditer(safe_content):
-            issues.append(Issue(
-                category=self.PLUGIN_NAME,
-                location=f"URL: {match.group(0)[:50]}",
-                description="Deprecated Bintray URL (service discontinued 2021)",
-                suggestion=f"Replace with: {self.BINTRAY_REPLACEMENT}",
-                context=match.group(0)
-            ))
         
         self.increment_detected(len(issues))
         return issues
@@ -157,51 +144,39 @@ class DeprecatedUrlPlugin(PatternBasedPlugin):
         result = protected_content
         changes = []
         
-        # Fix VMware packages URLs
-        def replace_vmware_url(match):
-            old_url = match.group(0)
-            path_match = re.search(r'packages\.vmware\.com(/[^\s"\'<>]*)?', old_url)
-            if path_match:
-                path = path_match.group(1) or ''
-                return f'https://packages.broadcom.com{path}'
-            return old_url
+        # Apply simple URL replacements
+        for old_url, new_url, description in self.URL_REPLACEMENTS:
+            result, changed = self._replace_url(result, old_url, new_url)
+            if changed:
+                changes.append(f"Fixed: {description}")
         
-        new_result = self.DEPRECATED_VMWARE_URL.sub(replace_vmware_url, result)
-        if new_result != result:
-            changes.append("Replaced VMware packages URLs with Broadcom URLs")
-            result = new_result
-        
-        # Fix VDDK URLs (markdown link first, then plain URLs)
-        if self.DEPRECATED_VDDK_60_LINK in result:
-            result = result.replace(self.DEPRECATED_VDDK_60_LINK, self.VDDK_67_LINK_REPLACEMENT)
-            changes.append("Replaced VDDK 6.0 link with VDDK 6.7")
-        
-        for vddk_url in self.DEPRECATED_VDDK_URLS:
-            if vddk_url in result:
-                result = result.replace(vddk_url, self.VDDK_URL_REPLACEMENT)
-                changes.append("Replaced deprecated VDDK URL")
-        
-        # Fix AWS EC2 CLI URLs
-        for aws_url in self.DEPRECATED_AWS_EC2_CLI_URLS:
-            if aws_url in result:
-                result = result.replace(aws_url, self.AWS_EC2_CLI_URL_REPLACEMENT)
-                changes.append("Replaced deprecated AWS EC2 CLI URL")
-        
-        # Fix OVFTOOL URL
-        if self.DEPRECATED_OVFTOOL_URL in result:
-            result = result.replace(self.DEPRECATED_OVFTOOL_URL, self.OVFTOOL_URL_REPLACEMENT)
-            changes.append("Replaced deprecated OVFTOOL URL")
-        
-        # Fix bosh-stemcell URL
-        if self.DEPRECATED_BOSH_STEMCELL_URL in result:
-            result = result.replace(self.DEPRECATED_BOSH_STEMCELL_URL, self.BOSH_STEMCELL_URL_REPLACEMENT)
-            changes.append("Replaced deprecated bosh-stemcell URL")
-        
-        # Fix Bintray URLs
-        new_result, count = self.BINTRAY_PATTERN.subn(self.BINTRAY_REPLACEMENT, result)
-        if count > 0:
-            changes.append(f"Replaced {count} deprecated Bintray URLs")
-            result = new_result        
+        # Apply regex-based replacements
+        for pattern, replacement, description in self.REGEX_REPLACEMENTS:
+            if replacement is None:
+                # Special handling for VMware packages URL - preserve path
+                if 'VMware packages' in description:
+                    def replace_vmware_url(match):
+                        path = match.group(1) if match.group(1) else ''
+                        # Handle trailing ) that might be markdown link delimiter
+                        # If path ends with ) and there's a matching ( earlier, it's part of URL
+                        # Otherwise, it's likely a markdown link closer
+                        if path.endswith(')'):
+                            # Count parentheses to determine if ) is balanced
+                            open_count = path.count('(')
+                            close_count = path.count(')')
+                            if close_count > open_count:
+                                # Extra ) is likely markdown delimiter, don't include it
+                                path = path[:-1]
+                        return f'https://packages.broadcom.com{path}'
+                    new_result, count = pattern.subn(replace_vmware_url, result)
+                    if count > 0:
+                        changes.append(f"Fixed {count} {description}(s)")
+                        result = new_result
+            else:
+                new_result, count = pattern.subn(replacement, result)
+                if count > 0:
+                    changes.append(f"Fixed {count} {description}(s)")
+                    result = new_result
 
         self.increment_fixed(len(changes))
         final_content = restore_code_blocks(result, code_blocks)

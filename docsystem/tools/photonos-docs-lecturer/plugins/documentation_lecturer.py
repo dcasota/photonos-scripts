@@ -231,9 +231,9 @@ class DocumentationLecturer:
     ]
     AWS_EC2_CLI_URL_REPLACEMENT = 'https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html'
     
-    # Deprecated CloudFoundry bosh-stemcell URL (branch changed from develop to main, path changed)
+    # Deprecated CloudFoundry bosh-stemcell URL (old repo moved to bosh-linux-stemcell-builder)
     DEPRECATED_BOSH_STEMCELL_URL = 'https://github.com/cloudfoundry/bosh/blob/develop/bosh-stemcell/README.md'
-    BOSH_STEMCELL_URL_REPLACEMENT = 'https://github.com/cloudfoundry/bosh/blob/main/README.md'
+    BOSH_STEMCELL_URL_REPLACEMENT = 'https://github.com/cloudfoundry/bosh-linux-stemcell-builder'
     
     # Deprecated Bintray URLs (Bintray service was discontinued in 2021)
     # These URLs should be replaced with the GitHub wiki download page
@@ -289,6 +289,8 @@ class DocumentationLecturer:
         10: {'key': 'md_artifacts', 'name': 'markdown-artifacts', 'desc': 'Fix unrendered markdown artifacts (requires --llm)', 'llm': True},
         11: {'key': 'indentation_issues', 'name': 'indentation', 'desc': 'Fix indentation issues (requires --llm)', 'llm': True},
         12: {'key': 'numbered_list_issues', 'name': 'numbered-lists', 'desc': 'Fix numbered list sequence errors (duplicate numbers)', 'llm': False},
+        13: {'key': 'relative_path_issues', 'name': 'relative-paths', 'desc': 'Allow relative path modifications (../path, ../../path)', 'llm': False},
+        14: {'key': 'new_pages_issues', 'name': 'new-pages', 'desc': 'Include newly created pages in commits (pages not in original repo)', 'llm': False},
     }
     
     # Enumerated feature types for --feature parameter
@@ -457,11 +459,21 @@ class DocumentationLecturer:
         # Website configuration
         self.base_url = getattr(args, 'website', '').rstrip('/') if hasattr(args, 'website') else ''
         self.local_webserver = getattr(args, 'local_webserver', None)
-        self.ref_website = getattr(args, 'ref_website', None)
         self.language = getattr(args, 'language', 'en')
         
         # Parallel processing
         self.num_workers = max(1, min(20, getattr(args, 'parallel', 1)))
+        
+        # Exclusion paths - parse comma-separated list into set
+        exclusion_paths_str = getattr(args, 'exclusion_paths', None)
+        if exclusion_paths_str:
+            # Split by comma, strip whitespace, remove empty entries
+            self.exclusion_paths = set(
+                path.strip() for path in exclusion_paths_str.split(',') if path.strip()
+            )
+            self.logger.info(f"Exclusion paths configured: {self.exclusion_paths}")
+        else:
+            self.exclusion_paths = set()
         
         # GitHub configuration
         self.gh_repotoken = getattr(args, 'gh_repotoken', None)
@@ -504,6 +516,10 @@ class DocumentationLecturer:
         
         # Files modified for git
         self.modified_files: Set[str] = set()
+        
+        # Newly created files (files that don't exist in the original repo)
+        # These are only included in commits if FIX_ID 14 (new-pages) is enabled
+        self.newly_created_files: Set[str] = set()
         
         # Progress bar
         self.progress_bar = None
@@ -815,6 +831,60 @@ class DocumentationLecturer:
         
         return links
     
+    def _is_excluded_url(self, url: str) -> bool:
+        """Check if a URL should be excluded based on exclusion paths.
+        
+        The exclusion paths are matched against the URL path component.
+        For example, if exclusion_paths contains "content/en/blog/", then
+        URLs like "https://example.com/blog/post1" would be excluded if
+        the path "/blog/" matches the exclusion pattern.
+        
+        Args:
+            url: The URL to check
+            
+        Returns:
+            True if the URL should be excluded, False otherwise
+        """
+        if not self.exclusion_paths:
+            return False
+        
+        parsed = urllib.parse.urlparse(url)
+        url_path = parsed.path.lstrip('/')
+        
+        for exclusion_path in self.exclusion_paths:
+            # Normalize the exclusion path (remove leading/trailing slashes for matching)
+            normalized_exclusion = exclusion_path.strip('/')
+            
+            # Check if URL path starts with or contains the exclusion path
+            # This handles both "blog/" matching "/blog/post1" and 
+            # "content/en/blog/" matching against the full path structure
+            if url_path.startswith(normalized_exclusion) or f'/{normalized_exclusion}' in f'/{url_path}':
+                self.logger.debug(f"Excluding URL (matches '{exclusion_path}'): {url}")
+                return True
+        
+        return False
+    
+    def _filter_excluded_urls(self, urls: List[str]) -> List[str]:
+        """Filter out URLs that match exclusion paths.
+        
+        Args:
+            urls: List of URLs to filter
+            
+        Returns:
+            Filtered list with excluded URLs removed
+        """
+        if not self.exclusion_paths:
+            return urls
+        
+        original_count = len(urls)
+        filtered = [url for url in urls if not self._is_excluded_url(url)]
+        excluded_count = original_count - len(filtered)
+        
+        if excluded_count > 0:
+            self.logger.info(f"Excluded {excluded_count} URLs based on exclusion paths")
+        
+        return filtered
+    
     def generate_sitemap(self):
         """Generate sitemap by parsing sitemap.xml or crawling the site."""
         self.logger.info("Generating sitemap...")
@@ -824,6 +894,8 @@ class DocumentationLecturer:
         # Try sitemap.xml first
         sitemap_urls = self._parse_sitemap_xml()
         if sitemap_urls:
+            # Apply exclusion filter
+            sitemap_urls = self._filter_excluded_urls(sitemap_urls)
             self.sitemap = sitemap_urls
             self.visited_urls.update(sitemap_urls)
             self.logger.info(f"Using sitemap.xml with {len(sitemap_urls)} pages")
@@ -841,6 +913,10 @@ class DocumentationLecturer:
             
             if not robots.can_fetch("*", url):
                 self.logger.debug(f"Skipping (robots.txt): {url}")
+                continue
+            
+            # Check exclusion paths before adding to sitemap
+            if self._is_excluded_url(url):
                 continue
             
             self.sitemap.append(url)
@@ -3135,6 +3211,7 @@ Output the fixed markdown directly without any preamble or explanation."""
         import shutil
         
         copied_files = []
+        new_pages_enabled = 14 in self.enabled_fix_ids
         
         for local_path in self.modified_files:
             repo_path = self._map_local_path_to_repo_path(local_path, repo_dir)
@@ -3143,6 +3220,15 @@ Output the fixed markdown directly without any preamble or explanation."""
                 continue
             
             try:
+                # Check if this is a newly created file (doesn't exist in original repo)
+                is_new_file = not os.path.exists(repo_path)
+                
+                if is_new_file:
+                    self.newly_created_files.add(local_path)
+                    if not new_pages_enabled:
+                        self.logger.info(f"Skipping newly created file (FIX_ID 14 not enabled): {repo_path}")
+                        continue
+                
                 # Ensure parent directory exists in repo
                 os.makedirs(os.path.dirname(repo_path), exist_ok=True)
                 
@@ -3152,7 +3238,10 @@ Output the fixed markdown directly without any preamble or explanation."""
                 # Store relative path for git add
                 rel_path = os.path.relpath(repo_path, repo_dir)
                 copied_files.append(rel_path)
-                self.logger.info(f"Copied {local_path} -> {repo_path}")
+                if is_new_file:
+                    self.logger.info(f"Copied NEW file {local_path} -> {repo_path}")
+                else:
+                    self.logger.info(f"Copied {local_path} -> {repo_path}")
                 
             except Exception as e:
                 self.logger.error(f"Failed to copy {local_path} to {repo_path}: {e}")
@@ -3366,13 +3455,26 @@ See attached CSV report for detailed issue locations and fix suggestions.
                     self.logger.warning(f"Could not map {local_path} to repo path")
                     return False
                 
+                # Check if this is a newly created file (doesn't exist in original repo)
+                is_new_file = not os.path.exists(repo_path)
+                new_pages_enabled = 14 in self.enabled_fix_ids
+                
+                if is_new_file:
+                    self.newly_created_files.add(local_path)
+                    if not new_pages_enabled:
+                        self.logger.info(f"Skipping newly created file (FIX_ID 14 not enabled): {repo_path}")
+                        return True  # Not an error, just skip
+                
                 # Ensure parent directory exists in repo
                 os.makedirs(os.path.dirname(repo_path), exist_ok=True)
                 
                 # Copy the fixed file to the cloned repo
                 shutil.copy2(local_path, repo_path)
                 rel_path = os.path.relpath(repo_path, self.temp_dir)
-                self.logger.info(f"Copied {local_path} -> {repo_path}")
+                if is_new_file:
+                    self.logger.info(f"Copied NEW file {local_path} -> {repo_path}")
+                else:
+                    self.logger.info(f"Copied {local_path} -> {repo_path}")
                 
                 # Change to repo directory for git operations
                 original_cwd = os.getcwd()
@@ -3877,6 +3979,13 @@ See attached CSV report for detailed issue locations and fix suggestions.
         print(f"   Fixes: {self.fixes_applied}")
         if self.pr_url:
             print(f"   PR: {self.pr_url}")
+        
+        # Report skipped newly created files if any
+        if self.newly_created_files and 14 not in self.enabled_fix_ids:
+            print(f"\n[INFO] Skipped {len(self.newly_created_files)} newly created file(s) (FIX_ID 14 not enabled):")
+            for f in sorted(self.newly_created_files):
+                print(f"       - {os.path.basename(f)}")
+            print(f"       To include new pages in commits, add --fix 14 or --fix 1-14")
     
     def run(self):
         """Main entry point."""

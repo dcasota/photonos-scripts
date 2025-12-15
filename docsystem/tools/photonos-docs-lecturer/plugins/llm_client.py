@@ -142,6 +142,71 @@ class LLMClient:
             result = result.replace(placeholder, original_url)
         return result
     
+    def _validate_and_restore_urls(self, result: str, original_text: str) -> str:
+        """Validate URLs in result match original and restore any that were modified.
+        
+        Despite URL protection via placeholders, LLMs sometimes still modify URLs
+        in subtle ways (e.g., removing .md extensions, changing paths). This method
+        performs a final validation pass to detect and restore any modified URLs.
+        
+        Args:
+            result: The LLM-processed text with URLs restored from placeholders
+            original_text: The original unmodified text
+            
+        Returns:
+            Result with any modified URLs restored to their original form
+        """
+        if not result or not original_text:
+            return result
+        
+        # Extract all markdown links from both texts
+        original_links = self.MARKDOWN_LINK_PATTERN.findall(original_text)
+        result_links = self.MARKDOWN_LINK_PATTERN.findall(result)
+        
+        # Build a map of link text -> original URL for validation
+        original_url_map = {}
+        for link_text, url in original_links:
+            # Use link text as key since it should remain the same
+            original_url_map[link_text] = url
+        
+        # Check each link in result and restore if URL was modified
+        def restore_link(match):
+            link_text = match.group(1)
+            current_url = match.group(2)
+            
+            if link_text in original_url_map:
+                original_url = original_url_map[link_text]
+                if current_url != original_url:
+                    # URL was modified by LLM despite protection
+                    logging.warning(f"Restoring modified URL: '{current_url}' -> '{original_url}'")
+                    return f"[{link_text}]({original_url})"
+            
+            return match.group(0)
+        
+        result = self.MARKDOWN_LINK_PATTERN.sub(restore_link, result)
+        
+        # Also check for inline URLs that might have been modified
+        original_inline_urls = set(self.INLINE_URL_PATTERN.findall(original_text))
+        
+        for orig_url in original_inline_urls:
+            # Check if a similar but modified URL exists in result
+            # Common modifications: removing .md, changing domain case, etc.
+            base_url = orig_url.rsplit('.', 1)[0] if '.' in orig_url.split('/')[-1] else orig_url
+            
+            # Look for the modified version in result
+            for potential_modified in self.INLINE_URL_PATTERN.findall(result):
+                if potential_modified != orig_url:
+                    # Check if it's the same URL with .md stripped
+                    if orig_url.endswith('.md') and potential_modified == orig_url[:-3]:
+                        logging.warning(f"Restoring .md extension: '{potential_modified}' -> '{orig_url}'")
+                        result = result.replace(potential_modified, orig_url)
+                    # Check if base URL matches (same URL with extension changed)
+                    elif potential_modified.rsplit('.', 1)[0] == base_url:
+                        logging.warning(f"Restoring URL extension: '{potential_modified}' -> '{orig_url}'")
+                        result = result.replace(potential_modified, orig_url)
+        
+        return result
+    
     def _generate_with_url_protection(self, prompt: str, text_to_protect: str) -> str:
         """Generate LLM response with URL protection and post-processing.
         
@@ -159,7 +224,12 @@ class LLMClient:
             return ""
         
         cleaned_response = self._clean_llm_response(response, text_to_protect)
-        return self._restore_urls(cleaned_response, url_map)
+        result = self._restore_urls(cleaned_response, url_map)
+        
+        # Final validation pass to catch any URLs the LLM modified despite protection
+        result = self._validate_and_restore_urls(result, text_to_protect)
+        
+        return result
     
     def _generate_with_reasoning(self, prompt: str, text_to_protect: str, issues: List[Dict], fix_type: str) -> str:
         """Generate LLM response with structured reasoning and self-validation.
@@ -254,6 +324,9 @@ Respond ONLY with the JSON object, no other text."""
         
         # Restore URLs
         result = self._restore_urls(result, url_map)
+        
+        # Final validation pass to catch any URLs the LLM modified despite protection
+        result = self._validate_and_restore_urls(result, text_to_protect)
         
         # Preserve trailing newline if original had one
         if text_to_protect.endswith('\n') and not result.endswith('\n'):

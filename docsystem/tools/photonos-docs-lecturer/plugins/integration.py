@@ -27,7 +27,7 @@ from .shell_prompt import ShellPromptPlugin
 from .mixed_command_output import MixedCommandOutputPlugin
 from .hardcoded_replaces import HardcodedReplacesPlugin
 
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 
 
 # All available plugins

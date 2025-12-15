@@ -28,8 +28,13 @@ FENCED_CODE_BLOCK_PATTERN = re.compile(
 )
 
 # Pattern to match indented code blocks (4+ spaces or tab at line start)
+# IMPORTANT: This pattern is intentionally restrictive to avoid false positives
+# with list continuations. Indented code blocks in markdown must be preceded by
+# a blank line. Lines indented within list items are NOT code blocks.
+# We use a negative lookbehind to ensure the indented block follows a blank line.
 INDENTED_CODE_BLOCK_PATTERN = re.compile(
-    r'^((?:[ ]{4,}|\t).+(?:\n(?:[ ]{4,}|\t).+)*)',
+    r'(?:^|\n\n)'  # Start of text or blank line (paragraph break)
+    r'((?:[ ]{4,}|\t)[^\n]+(?:\n(?:[ ]{4,}|\t)[^\n]+)*)',  # Indented lines
     re.MULTILINE
 )
 
@@ -62,7 +67,11 @@ def strip_code_blocks(text: str) -> str:
     This function removes:
     - Fenced code blocks (``` ... ``` or ~~~ ... ~~~)
     - Inline code (`...`)
-    - Indented code blocks (4+ spaces or tab at line start)
+    
+    NOTE: Indented code blocks (4+ spaces) are NOT stripped because:
+    - They are ambiguous with list continuations and nested content
+    - Modern markdown primarily uses fenced code blocks
+    - Stripping them causes false positives (e.g., URLs in list items)
     
     Use this before detecting issues to avoid false positives on code content.
     
@@ -70,7 +79,7 @@ def strip_code_blocks(text: str) -> str:
         text: The markdown content
         
     Returns:
-        Text with all code blocks replaced with spaces
+        Text with code blocks replaced with spaces
     """
     if not text:
         return text
@@ -81,8 +90,10 @@ def strip_code_blocks(text: str) -> str:
     # Remove inline code
     result = re.sub(r'`[^`\n]+`', ' ', result)
     
-    # Remove indented code blocks
-    result = INDENTED_CODE_BLOCK_PATTERN.sub(' ', result)
+    # NOTE: We intentionally do NOT strip indented code blocks here.
+    # The INDENTED_CODE_BLOCK_PATTERN is too aggressive and incorrectly
+    # matches list continuations (4+ space indented content within lists).
+    # Fenced code blocks are the standard for Photon OS documentation.
     
     return result
 
@@ -92,6 +103,9 @@ def protect_code_blocks(text: str) -> Tuple[str, List[str]]:
     
     CRITICAL: This function MUST be called before applying any regex-based
     fixes to ensure code block content is never modified.
+    
+    NOTE: Only fenced code blocks are protected. Indented code blocks are NOT
+    protected because the pattern incorrectly matches list continuations.
     
     Args:
         text: The markdown content
@@ -109,11 +123,13 @@ def protect_code_blocks(text: str) -> Tuple[str, List[str]]:
         code_blocks.append(match.group(0))
         return CODE_BLOCK_PLACEHOLDER.format(idx)
     
-    # Protect fenced code blocks first (they take priority)
+    # Protect fenced code blocks (the standard for Photon OS documentation)
     result = FENCED_CODE_BLOCK_PATTERN.sub(save_code_block, text)
     
-    # Protect indented code blocks
-    result = INDENTED_CODE_BLOCK_PATTERN.sub(save_code_block, result)
+    # NOTE: We intentionally do NOT protect indented code blocks here.
+    # The INDENTED_CODE_BLOCK_PATTERN is too aggressive and incorrectly
+    # matches list continuations (4+ space indented content within lists).
+    # This caused URLs in list items to be skipped during fix application.
     
     return result, code_blocks
 

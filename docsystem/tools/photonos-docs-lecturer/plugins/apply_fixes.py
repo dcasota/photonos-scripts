@@ -4,7 +4,7 @@ Apply Fixes Module for Photon OS Documentation Lecturer
 
 Provides functionality to apply fixes to local markdown files based on detected issues.
 
-Version: 1.0.0
+Version: 1.1.0
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from .base import Issue
 if TYPE_CHECKING:
     from ..photonos_docs_lecturer import DocumentationLecturer
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 
 class FixApplicator:
@@ -36,6 +36,9 @@ class FixApplicator:
             lecturer: The DocumentationLecturer instance providing context
         """
         self.lecturer = lecturer
+        # Track files that have already had content restoration applied
+        # to prevent duplicate restorations when same file accessed via multiple URLs
+        self._content_restored_files = set()
     
     @property
     def local_webserver(self) -> Optional[str]:
@@ -48,6 +51,201 @@ class FixApplicator:
     @property
     def language(self) -> str:
         return self.lecturer.language
+    
+    def _get_git_file_content(self, file_path: str) -> Optional[str]:
+        """Get the git HEAD version of a file.
+        
+        This is used to compare against the original git content when the local
+        file may have been modified by installer.sh (e.g., relative paths changed).
+        
+        Args:
+            file_path: Absolute path to the file
+            
+        Returns:
+            Content from git HEAD, or None if not in a git repo or file not tracked
+        """
+        import subprocess
+        
+        try:
+            # Find the git root directory
+            result = subprocess.run(
+                ['git', 'rev-parse', '--show-toplevel'],
+                cwd=os.path.dirname(file_path),
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode != 0:
+                return None
+            
+            git_root = result.stdout.strip()
+            
+            # Get relative path from git root
+            rel_path = os.path.relpath(file_path, git_root)
+            
+            # Get file content from HEAD
+            result = subprocess.run(
+                ['git', 'show', f'HEAD:{rel_path}'],
+                cwd=git_root,
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            if result.returncode != 0:
+                return None
+            
+            return result.stdout
+            
+        except Exception as e:
+            self.logger.debug(f"Could not get git version of {file_path}: {e}")
+            return None
+    
+    # Pattern to match relative paths in markdown links: [text](./path), [text](../path) or [text](../../path)
+    # Also matches image references: ![alt](../images/file.png)
+    # Matches BOTH ./ (single dot) and ../ (double dots) paths
+    RELATIVE_PATH_PATTERN = re.compile(
+        r'(\[!?\[[^\]]*\]\()'  # Opening: [text]( or [![text](
+        r'(\.{1,2}(?:/\.\.)*'  # Relative path: ./ or ../ or ../../ etc. (\.{1,2} matches 1-2 dots)
+        r'/[^)\s]+)'           # Rest of path until )
+        r'(\))'                # Closing )
+    )
+    
+    # Pattern to match standalone relative paths in parentheses (for images)
+    # Matches BOTH ./ (single dot) and ../ (double dots) paths
+    STANDALONE_RELATIVE_PATH = re.compile(
+        r'(\()'                # Opening (
+        r'(\.{1,2}(?:/\.\.)*'  # Relative path: ./ or ../ or ../../ etc. (\.{1,2} matches 1-2 dots)
+        r'/[^)\s]+)'           # Rest of path until )
+        r'(\))'                # Closing )
+    )
+    
+    def _revert_relative_path_changes(self, content: str, original: str) -> str:
+        """Revert any relative path modifications back to original paths.
+        
+        Compares relative paths in content with original and reverts any changes.
+        This is used when FIX_ID 13 (relative-paths) is not enabled.
+        
+        Uses two strategies:
+        1. Line-by-line comparison for paths that have identical surrounding context
+        2. Context-based matching for paths where surrounding text also changed
+        
+        Args:
+            content: The modified content
+            original: The original content before fixes
+            
+        Returns:
+            Content with relative paths reverted to original values
+        """
+        if content == original:
+            return content
+        
+        result = content
+        reverted_count = 0
+        
+        # Strategy 1: Extract all markdown links/images with relative paths using position tracking
+        # Pattern matches: [text](./path), [text](../path) or ![alt](../path)
+        # Matches BOTH ./ (single dot) and ../ (double dots) paths
+        MARKDOWN_LINK_WITH_PATH = re.compile(
+            r'(!?\[[^\]]*\])'           # Link/image text: [text] or ![alt]
+            r'\('                        # Opening paren
+            r'(\.{1,2}(?:/\.\.)*'        # Relative path: ./ or ../ or ../../ etc.
+            r'/[^)\s]+)'                 # Rest of path until ) or space
+            r'\)'                        # Closing paren
+        )
+        
+        # Extract paths as a list of (link_text, path, start_pos, end_pos) tuples from original
+        # Using positions allows accurate matching even with duplicate link texts
+        original_links = []
+        for match in MARKDOWN_LINK_WITH_PATH.finditer(original):
+            link_text = match.group(1)  # [text] or ![alt]
+            path = match.group(2)        # ../images/foo.png or ./path/
+            original_links.append((link_text, path, match.start(), match.end()))
+        
+        # Extract paths from content as a list with positions
+        content_links = []
+        for match in MARKDOWN_LINK_WITH_PATH.finditer(result):
+            link_text = match.group(1)
+            path = match.group(2)
+            content_links.append((link_text, path, match.start(), match.end()))
+        
+        # Build list of replacements to make (process in reverse order to preserve positions)
+        replacements = []
+        
+        # Match links by position: compare original[i] with content[i]
+        # This handles cases where the same link text appears multiple times with different paths
+        for i, (orig_link_text, orig_path, _, _) in enumerate(original_links):
+            if i < len(content_links):
+                content_link_text, content_path, start_pos, end_pos = content_links[i]
+                # Only revert if link text matches but path differs
+                if orig_link_text == content_link_text and orig_path != content_path:
+                    # Schedule replacement using exact string positions
+                    old_link = f"{content_link_text}({content_path})"
+                    new_link = f"{orig_link_text}({orig_path})"
+                    replacements.append((start_pos, end_pos, old_link, new_link, content_path, orig_path))
+        
+        # Apply replacements in reverse order (from end to start) to preserve string positions
+        for start_pos, end_pos, old_link, new_link, content_path, orig_path in reversed(replacements):
+            # Verify the old_link is at the expected position
+            actual_text = result[start_pos:end_pos]
+            if actual_text == old_link:
+                result = result[:start_pos] + new_link + result[end_pos:]
+                reverted_count += 1
+                self.logger.info(f"Reverted relative path: {content_path} -> {orig_path}")
+        
+        # Strategy 2: Fallback context-based matching for any remaining differences
+        # This catches paths where the link text might have changed slightly
+        def extract_paths_with_context(text: str) -> dict:
+            """Extract relative paths with surrounding context."""
+            paths = {}
+            for match in self.STANDALONE_RELATIVE_PATH.finditer(text):
+                path = match.group(2)
+                start = max(0, match.start() - 50)
+                end = min(len(text), match.end() + 50)
+                context = text[start:end]
+                paths[context] = path
+            return paths
+        
+        original_paths = extract_paths_with_context(original)
+        content_paths = extract_paths_with_context(result)
+        
+        for orig_context, orig_path in original_paths.items():
+            for content_context, new_path in content_paths.items():
+                if orig_path != new_path:
+                    orig_context_clean = orig_context.replace(orig_path, '')
+                    content_context_clean = content_context.replace(new_path, '')
+                    
+                    if self._contexts_match(orig_context_clean, content_context_clean):
+                        old_str = f'({new_path})'
+                        new_str = f'({orig_path})'
+                        if old_str in result:
+                            result = result.replace(old_str, new_str)
+                            reverted_count += 1
+                            self.logger.info(f"Reverted relative path (context): {new_path} -> {orig_path}")
+        
+        if reverted_count > 0:
+            self.logger.info(f"Reverted {reverted_count} relative path modification(s)")
+        
+        return result
+    
+    def _contexts_match(self, ctx1: str, ctx2: str) -> bool:
+        """Check if two contexts are similar enough to be the same location."""
+        # Remove whitespace and compare
+        ctx1_clean = re.sub(r'\s+', '', ctx1)
+        ctx2_clean = re.sub(r'\s+', '', ctx2)
+        
+        # Check for significant overlap
+        if len(ctx1_clean) < 10 or len(ctx2_clean) < 10:
+            return ctx1_clean == ctx2_clean
+        
+        # Check if one is substring of the other or they share most characters
+        if ctx1_clean in ctx2_clean or ctx2_clean in ctx1_clean:
+            return True
+        
+        # Calculate similarity
+        common = sum(1 for a, b in zip(ctx1_clean, ctx2_clean) if a == b)
+        similarity = common / max(len(ctx1_clean), len(ctx2_clean))
+        
+        return similarity > 0.7
     
     def find_directory_case_insensitive(self, parent_dir: str, target_name: str) -> Optional[str]:
         """Find a directory or file matching target_name case-insensitively.
@@ -104,17 +302,72 @@ class FixApplicator:
         
         return len(intersection) / len(union) if union else 0.0
     
+    def extract_title_from_markdown(self, file_path: str) -> Optional[str]:
+        """Extract the title from a markdown file's frontmatter.
+        
+        Args:
+            file_path: Path to the markdown file
+            
+        Returns:
+            The title string, or None if not found
+        """
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read(1000)  # Read first 1000 chars for frontmatter
+            
+            # Check for YAML frontmatter
+            if content.startswith('---'):
+                end = content.find('---', 3)
+                if end > 0:
+                    frontmatter = content[3:end]
+                    # Extract title
+                    for line in frontmatter.split('\n'):
+                        if line.strip().startswith('title:'):
+                            title = line.split(':', 1)[1].strip()
+                            # Remove quotes if present
+                            if (title.startswith('"') and title.endswith('"')) or \
+                               (title.startswith("'") and title.endswith("'")):
+                                title = title[1:-1]
+                            return title
+        except Exception:
+            pass
+        return None
+    
+    def normalize_slug(self, text: str) -> str:
+        """Normalize text to a URL slug format for comparison.
+        
+        Args:
+            text: Text to normalize (e.g., "Building OVA image")
+            
+        Returns:
+            Normalized slug (e.g., "building-ova-image")
+        """
+        # Convert to lowercase
+        slug = text.lower()
+        # Replace spaces and underscores with hyphens
+        slug = re.sub(r'[\s_]+', '-', slug)
+        # Remove non-alphanumeric characters except hyphens
+        slug = re.sub(r'[^a-z0-9-]', '', slug)
+        # Remove multiple consecutive hyphens
+        slug = re.sub(r'-+', '-', slug)
+        # Strip leading/trailing hyphens
+        slug = slug.strip('-')
+        return slug
+    
     def find_matching_file_by_content(self, parent_dir: str, webpage_text: str, 
-                                      min_similarity: float = 0.3) -> Optional[str]:
+                                      min_similarity: float = 0.3,
+                                      url_slug: str = None) -> Optional[str]:
         """Find a markdown file in parent_dir that best matches the webpage content.
         
-        This is a fallback when path-based matching fails. It compares the webpage
-        content with each markdown file in the directory and returns the best match.
+        This is a fallback when path-based matching fails. It first tries to match
+        by comparing the URL slug with file titles (from frontmatter), then falls
+        back to content similarity matching.
         
         Args:
             parent_dir: Directory to search for markdown files
             webpage_text: Text content extracted from the webpage
             min_similarity: Minimum similarity threshold (0.0 to 1.0)
+            url_slug: Optional URL slug to match against file titles
             
         Returns:
             Path to the best matching file, or None if no match above threshold
@@ -124,6 +377,7 @@ class FixApplicator:
         
         best_match = None
         best_score = min_similarity
+        title_match = None
         
         try:
             for entry in os.listdir(parent_dir):
@@ -135,6 +389,16 @@ class FixApplicator:
                     continue
                 
                 try:
+                    # First, try title-based matching if url_slug is provided
+                    if url_slug and not title_match:
+                        file_title = self.extract_title_from_markdown(file_path)
+                        if file_title:
+                            title_slug = self.normalize_slug(file_title)
+                            if title_slug == url_slug:
+                                self.logger.debug(f"Title match found: {entry} (title: '{file_title}' -> slug: '{title_slug}')")
+                                title_match = file_path
+                    
+                    # Also compute content similarity for fallback
                     with open(file_path, 'r', encoding='utf-8') as f:
                         file_content = f.read()
                     
@@ -148,6 +412,11 @@ class FixApplicator:
                 except Exception as e:
                     self.logger.debug(f"Could not read {file_path}: {e}")
                     continue
+            
+            # Prefer title match over content match
+            if title_match:
+                self.logger.debug(f"Using title-based match: {title_match}")
+                return title_match
             
             if best_match:
                 self.logger.debug(f"Best content match: {best_match} (score: {best_score:.3f})")
@@ -253,7 +522,11 @@ class FixApplicator:
             
             if deepest_resolved_dir and webpage_text:
                 self.logger.debug(f"Trying content-based matching in: {deepest_resolved_dir}")
-                content_match = self.find_matching_file_by_content(deepest_resolved_dir, webpage_text)
+                # Extract the last part of the URL path as the slug for title matching
+                url_slug = path_parts[-1] if path_parts else None
+                content_match = self.find_matching_file_by_content(
+                    deepest_resolved_dir, webpage_text, url_slug=url_slug
+                )
                 if content_match:
                     self.logger.info(f"Content-based match for {page_url}: {content_match}")
                     return content_match
@@ -311,7 +584,21 @@ class FixApplicator:
                         if result.success and result.modified_content:
                             content = result.modified_content
                 
+                # Fix hardcoded typos and errors (using plugin)
+                # NOTE: Must run BEFORE deprecated_url to allow specific full-string replacements
+                # (like "[https://packages.vmware.com/photon](https://packages.vmware.com/photon)")
+                # to take precedence over regex-based URL replacements
+                hardcoded_replaces_issues = issues.get('hardcoded_replaces_issues', [])
+                if hardcoded_replaces_issues and 'hardcoded_replaces_issues' in self.lecturer.enabled_fix_keys:
+                    hardcoded_plugin = self.lecturer.plugin_manager.get_plugin('hardcoded_replaces')
+                    if hardcoded_plugin:
+                        plugin_issues = [Issue(category='hardcoded_replaces', location='', description=str(i)) for i in hardcoded_replaces_issues]
+                        result = hardcoded_plugin.fix(content, plugin_issues)
+                        if result.success and result.modified_content:
+                            content = result.modified_content
+                
                 # Fix deprecated VMware URLs (using plugin)
+                # NOTE: Runs AFTER hardcoded_replaces so specific replacements take precedence
                 deprecated_url_issues = issues.get('deprecated_url_issues', [])
                 if deprecated_url_issues and 'deprecated_url_issues' in self.lecturer.enabled_fix_keys:
                     deprecated_plugin = self.lecturer.plugin_manager.get_plugin('deprecated_url')
@@ -362,16 +649,6 @@ class FixApplicator:
                 numbered_list_issues = issues.get('numbered_list_issues', [])
                 if numbered_list_issues and 'numbered_list_issues' in self.lecturer.enabled_fix_keys:
                     content = self.lecturer._fix_numbered_list_sequence(content)
-                
-                # Fix hardcoded typos and errors (using plugin)
-                hardcoded_replaces_issues = issues.get('hardcoded_replaces_issues', [])
-                if hardcoded_replaces_issues and 'hardcoded_replaces_issues' in self.lecturer.enabled_fix_keys:
-                    hardcoded_plugin = self.lecturer.plugin_manager.get_plugin('hardcoded_replaces')
-                    if hardcoded_plugin:
-                        plugin_issues = [Issue(category='hardcoded_replaces', location='', description=str(i)) for i in hardcoded_replaces_issues]
-                        result = hardcoded_plugin.fix(content, plugin_issues)
-                        if result.success and result.modified_content:
-                            content = result.modified_content
                 
                 # =========================================================
                 # LLM-based fixes
@@ -424,7 +701,17 @@ class FixApplicator:
                 # Post-LLM cleanup
                 # =========================================================
                 
-                # No additional cleanup needed - backtick fixes are now unified in LLM
+                # Revert relative path modifications if FIX_ID 13 is not enabled
+                # The local file may have relative paths modified by installer.sh
+                # Compare against git HEAD version to get the TRUE original paths
+                if 'relative_path_issues' not in self.lecturer.enabled_fix_keys:
+                    # Get git version for true original paths (installer.sh may have modified local file)
+                    git_content = self._get_git_file_content(local_path)
+                    if git_content:
+                        content = self._revert_relative_path_changes(content, git_content)
+                    else:
+                        # Fallback to local original if git version not available
+                        content = self._revert_relative_path_changes(content, original)
                 
                 # Write back if changed
                 if content != original:

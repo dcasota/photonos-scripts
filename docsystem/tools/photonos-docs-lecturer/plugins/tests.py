@@ -638,10 +638,10 @@ The file is located at ./path/to/file.md in the repository."""
             self.assertIn("/photon/5.0/", fixed)  # Path should be preserved
             self.assertNotIn("packages.vmware.com", fixed)
             
-            # Test bosh-stemcell URL replacement
+            # Test bosh-stemcell URL replacement (old repo moved to bosh-linux-stemcell-builder)
             content = "Please follow the link to [build](https://github.com/cloudfoundry/bosh/blob/develop/bosh-stemcell/README.md) Photon bosh-stemcell"
             fixed = lecturer._fix_deprecated_urls(content)
-            self.assertIn("https://github.com/cloudfoundry/bosh/blob/main/README.md", fixed)
+            self.assertIn("https://github.com/cloudfoundry/bosh-linux-stemcell-builder", fixed)
             self.assertNotIn("blob/develop/bosh-stemcell/README.md", fixed)
             
             # Test deprecated VDDK URL replacement (developercenter.vmware.com) with full link text update
@@ -1246,6 +1246,184 @@ sudo make image IMG_NAME=azure
             # Test empty texts
             score = lecturer._calculate_content_similarity("", "some text")
             self.assertEqual(score, 0.0, "Empty text should have zero similarity")
+            
+            lecturer.cleanup()
+        
+        def test_revert_relative_path_changes(self):
+            """Test that relative path modifications are reverted when FIX_ID 13 is not enabled.
+            
+            Bug fix: When running with --fix 1-5 (without FIX_ID 13), relative paths like
+            ../../images/foo.png should not be modified to ../images/foo.png.
+            The _revert_relative_path_changes function should detect and revert such changes.
+            """
+            from .apply_fixes import FixApplicator
+            
+            class MockArgs:
+                command = 'analyze'
+                website = 'https://example.com'
+                parallel = 1
+                language = 'en'
+                ref_website = None
+                test = False
+                fix = '1-5'  # Not including FIX_ID 13 (relative-paths)
+                feature = None
+                llm = None
+                llm_api_key = None
+                local_webserver = None
+                gh_pr = False
+                repo_cloned = None
+            
+            lecturer = DocumentationLecturer(MockArgs())
+            fix_applicator = FixApplicator(lecturer)
+            
+            # Original content with ../../ paths
+            original = """# Test Document
+
+![Image 1](../../images/test-image.png)
+
+Some text here.
+
+![Image 2](../../images/another-image.png)
+
+See also [link](../docs/guide.md) for more info.
+"""
+            
+            # Modified content with ../ paths (one level removed)
+            modified = """# Test Document
+
+![Image 1](../images/test-image.png)
+
+Some text here.
+
+![Image 2](../images/another-image.png)
+
+See also [link](../docs/guide.md) for more info.
+"""
+            
+            # The revert function should restore the original paths
+            result = fix_applicator._revert_relative_path_changes(modified, original)
+            
+            # Verify paths are reverted
+            self.assertIn("../../images/test-image.png", result, 
+                "First image path should be reverted to ../../")
+            self.assertIn("../../images/another-image.png", result, 
+                "Second image path should be reverted to ../../")
+            self.assertIn("../docs/guide.md", result, 
+                "Unchanged path should remain the same")
+            # Check that the single ../ version is NOT present as a standalone path
+            # Note: ../images appears as substring of ../../images, so we check the full link
+            self.assertNotIn("](../images/test-image.png)", result,
+                "Modified path should not remain as standalone link")
+            
+            # Test that identical content returns unchanged
+            result2 = fix_applicator._revert_relative_path_changes(original, original)
+            self.assertEqual(result2, original, "Identical content should return unchanged")
+            
+            # Test case 2: Single dot paths (./) should also be protected
+            # This tests the bug fix where ./troubleshooting-guide/... paths were not being reverted
+            original_single_dot = """# Firewall Rules
+
+Check [Permitting Root Login with SSH](./troubleshooting-guide/solutions-to-common-problems/permitting-root-login-with-ssh/) for SSH access.
+
+See also [Default Firewall Settings](./administration-guide/security-policy/default-firewall-settings/) for more.
+"""
+            
+            # Modified content with ../ paths (changed by installer-weblinkfixes.sh)
+            modified_single_dot = """# Firewall Rules
+
+Check [Permitting Root Login with SSH](../../solutions-to-common-problems/permitting-root-login-with-ssh/) for SSH access.
+
+See also [Default Firewall Settings](../../administration-guide/security-policy/default-firewall-settings/) for more.
+"""
+            
+            # The revert function should restore the original ./ paths
+            result3 = fix_applicator._revert_relative_path_changes(modified_single_dot, original_single_dot)
+            
+            # Verify ./ paths are reverted
+            self.assertIn("./troubleshooting-guide/solutions-to-common-problems/permitting-root-login-with-ssh/", result3, 
+                "Single dot path should be reverted to ./troubleshooting-guide/...")
+            self.assertIn("./administration-guide/security-policy/default-firewall-settings/", result3, 
+                "Second single dot path should be reverted to ./administration-guide/...")
+            # Verify the modified ../ paths are NOT present
+            self.assertNotIn("](../../solutions-to-common-problems/permitting-root-login-with-ssh/)", result3,
+                "Modified ../../ path should be reverted to original ./")
+            
+            lecturer.cleanup()
+        
+        def test_revert_relative_path_duplicate_link_text(self):
+            """Test that duplicate link texts with different paths are handled correctly.
+            
+            Bug fix: When the same link text appears multiple times with different paths,
+            each occurrence should be independently tracked and reverted.
+            Example: [Photon OS Admin Guide](./path/) and [Photon OS Admin Guide](../../path/)
+            """
+            from .apply_fixes import FixApplicator
+            
+            class MockArgs:
+                command = 'analyze'
+                website = 'https://example.com'
+                parallel = 1
+                language = 'en'
+                ref_website = None
+                test = False
+                fix = '1-5'  # Not including FIX_ID 13 (relative-paths)
+                feature = None
+                llm = None
+                llm_api_key = None
+                local_webserver = None
+                gh_pr = False
+                repo_cloned = None
+            
+            lecturer = DocumentationLecturer(MockArgs())
+            fix_applicator = FixApplicator(lecturer)
+            
+            # Original content with TWO links that have same link text but different paths
+            # This mimics the troubleshooting-packages.md scenario
+            original_duplicate = """# Troubleshooting Packages
+
+For more information, see the [Photon OS Administration Guide](./administration-guide/).
+
+Some intermediate content here with other details.
+
+For more commands see the [Photon OS Administration Guide](../../administration-guide/).
+
+End of document.
+"""
+            
+            # Modified content where installer.sh changed the SECOND path to match the first
+            # Both paths now show ./administration-guide/ but only the second should be reverted
+            modified_duplicate = """# Troubleshooting Packages
+
+For more information, see the [Photon OS Administration Guide](./administration-guide/).
+
+Some intermediate content here with other details.
+
+For more commands see the [Photon OS Administration Guide](./administration-guide/).
+
+End of document.
+"""
+            
+            # The revert function should restore only the second path
+            result4 = fix_applicator._revert_relative_path_changes(modified_duplicate, original_duplicate)
+            
+            # Count occurrences
+            import re
+            single_dot_count = len(re.findall(r'\]\(\./administration-guide/\)', result4))
+            double_dot_count = len(re.findall(r'\]\(\.\./\.\./administration-guide/\)', result4))
+            
+            # First link should remain ./administration-guide/
+            self.assertEqual(single_dot_count, 1, 
+                "First link should remain with ./ path")
+            
+            # Second link should be reverted to ../../administration-guide/
+            self.assertEqual(double_dot_count, 1, 
+                "Second link should be reverted to ../../ path")
+            
+            # Verify exact text appears
+            self.assertIn("For more information, see the [Photon OS Administration Guide](./administration-guide/)", result4,
+                "First occurrence should have single-dot path")
+            self.assertIn("For more commands see the [Photon OS Administration Guide](../../administration-guide/)", result4,
+                "Second occurrence should have double-dot path")
             
             lecturer.cleanup()
     
