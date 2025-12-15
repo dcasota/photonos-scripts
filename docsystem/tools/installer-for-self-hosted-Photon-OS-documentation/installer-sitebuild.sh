@@ -23,7 +23,10 @@ fi
 # Make site dir readable by nginx
 mkdir -p "$SITE_DIR"
 chown -R nginx:nginx "$INSTALL_DIR"
-chmod -R 755 "$INSTALL_DIR"
+# Set proper permissions: directories need 755 (traversable), files need 644 (readable only)
+# Using -R 755 on all files would make .md files executable, causing unwanted git mode changes
+find "$INSTALL_DIR" -type d -exec chmod 755 {} \;
+find "$INSTALL_DIR" -type f -exec chmod 644 {} \;
 
 # Ensure Nginx conf.d directory exists
 mkdir -p /etc/nginx/conf.d

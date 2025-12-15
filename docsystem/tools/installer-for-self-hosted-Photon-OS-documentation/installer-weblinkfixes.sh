@@ -167,10 +167,14 @@ find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i \
   -e 's|(\./user-guide/kubernetes-on-photon-os/)|(../../administration-guide/containers/kubernetes/)|g' \
   {} \;
 
-# Fix 8: Remove .md extensions from all links
-echo "8. Removing .md extensions from links..."
+# Fix 8: Remove .md extensions from internal/relative links only
+# IMPORTANT: Do NOT remove .md from external URLs (http:// or https://)
+# External URLs like https://github.com/.../LICENSE.md should keep their extension
+echo "8. Removing .md extensions from internal links (excluding external URLs)..."
 find "$INSTALL_DIR/content/en" -type f -name "*.md" -exec sed -i \
-  's|\(]\)(\([^)]*\)\.md)|\1(\2)|g' \
+  -e 's|\(]\)(\(\.\./[^)]*\)\.md)|\1(\2)|g' \
+  -e 's|\(]\)(\(\./[^)]*\)\.md)|\1(\2)|g' \
+  -e 's|\(]\)(\([a-zA-Z0-9_-][^):]*\)\.md)|\1(\2)|g' \
   {} \;
 
 # Fix 9: Fix remaining cross-directory link issues
