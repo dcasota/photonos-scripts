@@ -13,20 +13,20 @@ cd $HOME
 tdnf install -y git
 git clone https://github.com/dcasota/photonos-scripts
 cd $HOME/photonos-scripts/docsystem
-chmod a+x ./*.sh
+find . -type f -name "*.sh" -exec sudo chmod +x {} \;
 ```
 
 ### Basic Installation
 
 ```bash
 # Install Photon OS documentation site (Hugo-based)
-./installer.sh
+./tools/installer-for-self-hosted-Photon-OS-documentation/installer.sh
 
-# Install Ollama with LLM models
-./Ollama-installer.sh
+# option: Install Ollama with LLM models
+./Ollama-installer/Ollama-installer.sh
 
-# Install AI coding assistants
-./CodingAI-installers.sh
+# option: Install AI coding assistants
+./CodingAI-installers/CodingAI-installers.sh
 
 # Configure Factory AI Droid
 ./Droid-configurator.sh
