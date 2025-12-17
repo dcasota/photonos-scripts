@@ -4,9 +4,9 @@
 
 # Usage: ./integrate_kernel_patches.sh [kernel_version] [--stop-before-patch VALUE] [--start-from-patch VALUE]
 # e.g. 6.12 --stop-before-patch Patch512
-# This script detects the package manager, installs prerequisites if missing (git, python3, python3-pip),
-# checks/installs Python modules (requests, pytest), clones Photon OS repo, runs spec2git tests,
-# downloads stable patches for the given kernel version, uses spec2git to convert each linux*.spec to Git in a granular way with permutations of defines (with optional stop/start overriding the loop),
+# This script installs prerequisites if missing (git, python3, python3-pip), checks/installs Python modules (requests, pytest), 
+# clones Photon OS repo, runs spec2git tests, downloads stable patches for the given kernel version, 
+# uses spec2git to convert each linux*.spec to Git in a granular way with permutations of defines (with optional stop/start overriding the loop),
 # applies each patch as a commit, and converts back. The granular loop applies cumulatively up to each patch for each permutation.
 # Integrates checkpoint.conf for resumability: stores kernel_version, spec_file, canister, acvp, last_patch.
 
