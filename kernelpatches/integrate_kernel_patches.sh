@@ -10,8 +10,11 @@
 # applies each patch as a commit, and converts back. The granular loop applies cumulatively up to each patch for each permutation.
 # Integrates checkpoint.conf for resumability: stores kernel_version, spec_file, canister, acvp, last_patch.
 
+# Supported kernel versions
+SUPPORTED_KERNELS=("5.10" "6.1" "6.12")
+
 # Parse arguments
-KERNEL_VERSION="6.12"
+KERNEL_VERSION=""
 STOP_BEFORE_PATCH=""
 START_FROM_PATCH=""
 while [[ $# -gt 0 ]]; do
@@ -22,18 +25,202 @@ while [[ $# -gt 0 ]]; do
         --start-from-patch)
             START_FROM_PATCH="$2"
             shift 2 ;;
+        --help|-h)
+            echo "Usage: $0 <kernel_version> [OPTIONS]"
+            echo ""
+            echo "Supported kernel versions: ${SUPPORTED_KERNELS[*]}"
+            echo ""
+            echo "Options:"
+            echo "  --stop-before-patch VALUE   Stop before specified patch"
+            echo "  --start-from-patch VALUE    Start from specified patch"
+            echo "  --help, -h                  Show this help"
+            exit 0 ;;
         *)
             KERNEL_VERSION="$1"
             shift ;;
     esac
 done
 
+# Validate kernel version
+if [ -z "$KERNEL_VERSION" ]; then
+    echo "ERROR: Kernel version is required."
+    echo "Supported versions: ${SUPPORTED_KERNELS[*]}"
+    echo "Usage: $0 <kernel_version> [OPTIONS]"
+    exit 1
+fi
+
+VALID_VERSION=false
+for v in "${SUPPORTED_KERNELS[@]}"; do
+    if [ "$v" = "$KERNEL_VERSION" ]; then
+        VALID_VERSION=true
+        break
+    fi
+done
+
+if [ "$VALID_VERSION" = false ]; then
+    echo "ERROR: Unsupported kernel version '$KERNEL_VERSION'"
+    echo "Supported versions: ${SUPPORTED_KERNELS[*]}"
+    exit 1
+fi
+
+# Determine kernel.org base URL based on major version
+KERNEL_MAJOR="${KERNEL_VERSION%%.*}"
+KERNEL_ORG_BASE_URL="https://cdn.kernel.org/pub/linux/kernel/v${KERNEL_MAJOR}.x/"
+echo "Using kernel.org base URL: $KERNEL_ORG_BASE_URL"
+
 PHOTON_DIR="$HOME/photon"
-SPEC_DIR="$PHOTON_DIR/SPECS/linux/v${KERNEL_VERSION}"
 PATCH_DIR="$HOME/kernel_patches_${KERNEL_VERSION}"
 SPEC2GIT="$PHOTON_DIR/tools/scripts/spec2git/spec2git.py"
 TESTS_DIR="$PHOTON_DIR/tools/scripts/spec2git/tests"
 CHECKPOINT_FILE="checkpoint.conf"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SKILLS_FILE="${SCRIPT_DIR}/patch_routing.skills"
+
+# Determine SPEC_DIR based on kernel version
+case "$KERNEL_VERSION" in
+    5.10)
+        SPEC_DIR="$PHOTON_DIR/SPECS/linux"
+        PHOTON_BRANCH="4.0"
+        ;;
+    6.1)
+        SPEC_DIR="$PHOTON_DIR/SPECS/linux/v6.1"
+        PHOTON_BRANCH="5.0"
+        ;;
+    6.12)
+        SPEC_DIR="$PHOTON_DIR/SPECS/linux/v6.12"
+        PHOTON_BRANCH="common"
+        ;;
+esac
+echo "Spec directory: $SPEC_DIR"
+echo "Photon branch: $PHOTON_BRANCH"
+
+# Get available spec files for kernel version
+get_available_specs() {
+    case "$KERNEL_VERSION" in
+        5.10) echo "linux.spec linux-esx.spec linux-rt.spec" ;;
+        6.1)  echo "linux.spec linux-esx.spec linux-rt.spec" ;;
+        6.12) echo "linux.spec linux-esx.spec" ;;
+    esac
+}
+
+# Get patch routing from skills file or auto-detect
+get_patch_targets() {
+    local PATCH_FILE=$1
+    local SHA_PREFIX=$2
+    
+    # Check skills file first
+    if [ -f "$SKILLS_FILE" ] && [ -n "$SHA_PREFIX" ]; then
+        local ROUTING=$(grep -E "^${SHA_PREFIX}" "$SKILLS_FILE" 2>/dev/null | head -1 | cut -d'|' -f2)
+        if [ -n "$ROUTING" ]; then
+            echo "$ROUTING"
+            return
+        fi
+    fi
+    
+    # Auto-detect based on patch content
+    if [ -f "$PATCH_FILE" ]; then
+        local HAS_GPU=$(grep -E '^\+\+\+.*drivers/gpu/' "$PATCH_FILE" 2>/dev/null)
+        local HAS_KVM=$(grep -E '^\+\+\+.*arch/x86/kvm/' "$PATCH_FILE" 2>/dev/null)
+        local HAS_RT=$(grep -E '^\+\+\+.*kernel/sched/.*rt' "$PATCH_FILE" 2>/dev/null)
+        local HAS_VIRT=$(grep -E '^\+\+\+.*(hyperv|vmw|xen)/' "$PATCH_FILE" 2>/dev/null)
+        
+        if [ -n "$HAS_GPU" ]; then
+            echo "base"
+            return
+        fi
+        if [ -n "$HAS_KVM" ] || [ -n "$HAS_VIRT" ]; then
+            echo "base,esx"
+            return
+        fi
+        if [ -n "$HAS_RT" ]; then
+            echo "base,rt"
+            return
+        fi
+    fi
+    
+    echo "all"
+}
+
+# Expand targets to spec file names
+expand_targets() {
+    local TARGETS=$1
+    local AVAILABLE=$2
+    local RESULT=""
+    
+    case "$TARGETS" in
+        all)  echo "$AVAILABLE"; return ;;
+        none) echo ""; return ;;
+    esac
+    
+    IFS=',' read -ra TARR <<< "$TARGETS"
+    for t in "${TARR[@]}"; do
+        case "$t" in
+            base) echo "$AVAILABLE" | grep -q "linux.spec" && RESULT="$RESULT linux.spec" ;;
+            esx)  echo "$AVAILABLE" | grep -q "linux-esx.spec" && RESULT="$RESULT linux-esx.spec" ;;
+            rt)   echo "$AVAILABLE" | grep -q "linux-rt.spec" && RESULT="$RESULT linux-rt.spec" ;;
+        esac
+    done
+    echo "$RESULT" | xargs
+}
+
+AVAILABLE_SPECS=$(get_available_specs)
+echo "Available specs: $AVAILABLE_SPECS"
+echo "Skills file: $SKILLS_FILE"
+
+# Network configuration
+NETWORK_TIMEOUT="${NETWORK_TIMEOUT:-30}"
+NETWORK_RETRIES="${NETWORK_RETRIES:-3}"
+
+# Logging setup
+LOG_DIR="${LOG_DIR:-/var/log/kernel-backport}"
+mkdir -p "$LOG_DIR" 2>/dev/null || LOG_DIR="/tmp"
+LOG_FILE="$LOG_DIR/integrate_${KERNEL_VERSION}_$(date +%Y%m%d_%H%M%S).log"
+
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG_FILE"
+}
+
+log_error() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] $*" | tee -a "$LOG_FILE" >&2
+}
+
+# Network connectivity check
+check_network() {
+    local hosts=("github.com" "cdn.kernel.org")
+    local attempt=1
+    
+    log "Checking network connectivity..."
+    
+    while [ $attempt -le $NETWORK_RETRIES ]; do
+        for host in "${hosts[@]}"; do
+            if timeout "$NETWORK_TIMEOUT" ping -c 1 "$host" >/dev/null 2>&1; then
+                log "Network OK: $host reachable"
+                return 0
+            fi
+            if timeout "$NETWORK_TIMEOUT" curl -s --head --max-time "$NETWORK_TIMEOUT" "https://$host" >/dev/null 2>&1; then
+                log "Network OK: $host reachable (curl)"
+                return 0
+            fi
+        done
+        
+        log "Network check attempt $attempt/$NETWORK_RETRIES failed"
+        attempt=$((attempt + 1))
+        [ $attempt -le $NETWORK_RETRIES ] && sleep 5
+    done
+    
+    log_error "Network is not available after $NETWORK_RETRIES attempts"
+    return 1
+}
+
+# Check network before proceeding
+if ! check_network; then
+    log_error "Aborting due to network unavailability"
+    echo "Network is not available. Please check your connection and try again."
+    exit 0  # Exit cleanly
+fi
+
+log "Starting kernel integration for version $KERNEL_VERSION"
+log "Log file: $LOG_FILE"
 
 # install system prerequisites
 tdnf install -y git python3 python3-pip rpm-build tar wget util-linux build-essential cmake flex bison xz patch elfutils-libelf-devel elfutils-devel
@@ -54,11 +241,20 @@ done
 
 # Clone Photon OS repository if it doesn't exist
 if [ ! -d "$PHOTON_DIR" ]; then
-        # download the common release
-        git clone -b common https://github.com/vmware/photon.git "$PHOTON_DIR"
+    echo "Cloning Photon OS repository (branch: $PHOTON_BRANCH)..."
+    git clone -b "$PHOTON_BRANCH" https://github.com/vmware/photon.git "$PHOTON_DIR"
     echo "Photon OS repository cloned."
 else
     echo "Using existing Photon OS repository."
+    # Ensure we're on the correct branch
+    cd "$PHOTON_DIR"
+    CURRENT_BRANCH=$(git branch --show-current)
+    if [ "$CURRENT_BRANCH" != "$PHOTON_BRANCH" ]; then
+        echo "Switching from $CURRENT_BRANCH to $PHOTON_BRANCH..."
+        git fetch origin "$PHOTON_BRANCH"
+        git checkout "$PHOTON_BRANCH"
+    fi
+    cd - > /dev/null
 fi
 
 # Run all spec2git tests to verify the tool
@@ -70,14 +266,22 @@ if [ $? -ne 0 ]; then
 fi
 echo "All spec2git tests passed successfully."
 
-# Discover all linux*.spec files in the versioned directory
+# Discover linux*.spec files in the versioned directory, filtered by available specs
 cd "$SPEC_DIR" || { echo "Spec directory $SPEC_DIR not found. Aborting."; exit 1; }
-SPEC_FILES=($(ls linux*.spec 2>/dev/null))
+SPEC_FILES=()
+for spec in $AVAILABLE_SPECS; do
+    if [ -f "$spec" ]; then
+        SPEC_FILES+=("$spec")
+    else
+        echo "WARNING: Expected spec file $spec not found in $SPEC_DIR"
+    fi
+done
 if [ ${#SPEC_FILES[@]} -eq 0 ]; then
     echo "No linux*.spec files found in $SPEC_DIR. Aborting."
     exit 1
 fi
 echo "Detected spec files: ${SPEC_FILES[*]}"
+echo "Using skills-based patch routing from: $SKILLS_FILE"
 
 # Function to update checkpoint file
 update_checkpoint() {
@@ -133,24 +337,25 @@ if [ -f "$CHECKPOINT_FILE" ]; then
         TOTAL_PATCHES_FOR_RESUME=$(grep -c '^Patch[0-9]*:' "$SPEC_DIR/$SPEC_FROM_FILE")
         # Validate content
         if [[ -n "$KERNEL_FROM_FILE" && "$CANISTER_FROM_FILE" =~ ^[01]$ && "$ACVP_FROM_FILE" =~ ^[01]$ && "$LAST_PATCH_FROM_FILE" =~ ^[0-9]+$ && $LAST_PATCH_FROM_FILE -le $TOTAL_PATCHES_FOR_RESUME ]]; then
-            # Set kernel if no arg provided
-            if [ "$KERNEL_VERSION" = "6.12" ]; then
-                KERNEL_VERSION="$KERNEL_FROM_FILE"
-                echo "Using kernel version from checkpoint: $KERNEL_VERSION"
-            fi
-            START_CANISTER=$CANISTER_FROM_FILE
-            START_ACVP=$ACVP_FROM_FILE
-            if [ "$LAST_PATCH_FROM_FILE" -ge "$TOTAL_PATCHES_FOR_RESUME" ]; then
-                # Spec completed, advance to next spec
-                START_SPEC_INDEX=$((START_SPEC_INDEX + 1))
-                START_CANISTER=0
-                START_ACVP=0
-                START_N=1
-                echo "Previous spec $SPEC_FROM_FILE completed. Advancing to spec index $START_SPEC_INDEX."
+            # Verify checkpoint kernel matches requested kernel
+            if [ "$KERNEL_FROM_FILE" != "$KERNEL_VERSION" ]; then
+                echo "WARNING: Checkpoint kernel ($KERNEL_FROM_FILE) differs from requested ($KERNEL_VERSION). Starting fresh."
+                rm -f "$CHECKPOINT_FILE"
             else
-                START_N=$((LAST_PATCH_FROM_FILE + 1))
+                START_CANISTER=$CANISTER_FROM_FILE
+                START_ACVP=$ACVP_FROM_FILE
+                if [ "$LAST_PATCH_FROM_FILE" -ge "$TOTAL_PATCHES_FOR_RESUME" ]; then
+                    # Spec completed, advance to next spec
+                    START_SPEC_INDEX=$((START_SPEC_INDEX + 1))
+                    START_CANISTER=0
+                    START_ACVP=0
+                    START_N=1
+                    echo "Previous spec $SPEC_FROM_FILE completed. Advancing to spec index $START_SPEC_INDEX."
+                else
+                    START_N=$((LAST_PATCH_FROM_FILE + 1))
+                fi
+                echo "Resuming from checkpoint: spec $SPEC_FROM_FILE (index $START_SPEC_INDEX), canister $START_CANISTER, acvp $START_ACVP, starting from patch $START_N"
             fi
-            echo "Resuming from checkpoint: spec $SPEC_FROM_FILE (index $START_SPEC_INDEX), canister $START_CANISTER, acvp $START_ACVP, starting from patch $START_N"
         else
             echo "Invalid checkpoint file content. Proceeding without."
         fi
@@ -171,12 +376,15 @@ import requests
 import lzma
 import os
 
-base_url = 'https://cdn.kernel.org/pub/linux/kernel/v6.x/'
+kernel_version = "$KERNEL_VERSION"
+base_url = "$KERNEL_ORG_BASE_URL"
 patch_num = 1
 output_dir = '$PATCH_DIR'
 
+print(f"Downloading stable patches for kernel {kernel_version} from {base_url}")
+
 while True:
-    patch_file = f'patch-{os.environ.get("KERNEL_VERSION", "$KERNEL_VERSION")}.{patch_num}.xz'
+    patch_file = f'patch-{kernel_version}.{patch_num}.xz'
     url = base_url + patch_file
     response = requests.get(url)
     if response.status_code != 200:
@@ -187,7 +395,7 @@ while True:
     with open(xz_path, 'wb') as f:
         f.write(response.content)
 
-    patch_path = os.path.join(output_dir, f'patch-{os.environ.get("KERNEL_VERSION", "$KERNEL_VERSION")}.{patch_num}')
+    patch_path = os.path.join(output_dir, f'patch-{kernel_version}.{patch_num}')
     with lzma.open(xz_path) as f_in, open(patch_path, 'wb') as f_out:
         f_out.write(f_in.read())
 
