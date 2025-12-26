@@ -110,7 +110,7 @@ log_info "Copying files..."
 cp "$SCRIPT_DIR/kernel_backport_unified.sh" "$INSTALL_DIR/"
 cp "$SCRIPT_DIR/integrate_kernel_patches.sh" "$INSTALL_DIR/"
 cp "$SCRIPT_DIR/patch_routing.skills" "$INSTALL_DIR/"
-cp "$SCRIPT_DIR/kernel-backport-processor.md" "$INSTALL_DIR/"
+cp "$SCRIPT_DIR/README.md" "$INSTALL_DIR/"
 
 # Make scripts executable
 chmod +x "$INSTALL_DIR/kernel_backport_unified.sh"

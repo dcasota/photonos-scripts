@@ -18,14 +18,13 @@
 #
 # Options:
 #   --kernel VERSION     Kernel version to backport (5.10, 6.1, 6.12) - REQUIRED
-#   --start-month YYYY-MM  Start month to scan (default: 2024-01)
-#   --end-month YYYY-MM    End month to scan (default: current month)
+#   --month YYYY-MM      Month to scan (default: all months from 2024-01 to current)
 #   --repo-url URL       Photon repo URL (default: https://github.com/dcasota/photon.git)
 #   --branch NAME        Branch to use (default: auto-detected based on kernel)
 #   --skip-clone         Skip cloning if repo already exists
 #   --skip-review        Skip CVE review step
 #   --skip-push          Skip git push and PR creation
-#   --enable-build       Enable RPM build (slow, disabled by default)
+#   --disable-build      Disable RPM build (enabled by default)
 #   --limit N            Limit to first N patches (0 = no limit)
 #   --dry-run            Show what would be done without making changes
 #   --help               Show this help message
@@ -43,8 +42,7 @@ set -e
 # -----------------------------------------------------------------------------
 SUPPORTED_KERNELS=("5.10" "6.1" "6.12")
 KERNEL_VERSION=""
-START_MONTH="2024-01"
-END_MONTH=$(date +%Y-%m)
+SCAN_MONTH=""
 REPO_URL="https://github.com/dcasota/photon.git"
 BRANCH=""
 REPO_DIR=""
@@ -56,7 +54,7 @@ CVE_PATCH_MAX=249
 SKIP_CLONE=false
 SKIP_REVIEW=false
 SKIP_PUSH=false
-ENABLE_BUILD=false
+ENABLE_BUILD=true
 PATCH_LIMIT=0
 DRY_RUN=false
 
@@ -184,14 +182,13 @@ expand_targets_to_specs() {
 while [[ $# -gt 0 ]]; do
   case $1 in
     --kernel) KERNEL_VERSION="$2"; shift 2 ;;
-    --start-month) START_MONTH="$2"; shift 2 ;;
-    --end-month) END_MONTH="$2"; shift 2 ;;
+    --month) SCAN_MONTH="$2"; shift 2 ;;
     --repo-url) REPO_URL="$2"; shift 2 ;;
     --branch) BRANCH="$2"; shift 2 ;;
     --skip-clone) SKIP_CLONE=true; shift ;;
     --skip-review) SKIP_REVIEW=true; shift ;;
     --skip-push) SKIP_PUSH=true; shift ;;
-    --enable-build) ENABLE_BUILD=true; shift ;;
+    --disable-build) ENABLE_BUILD=false; shift ;;
     --limit) PATCH_LIMIT="$2"; shift 2 ;;
     --dry-run) DRY_RUN=true; shift ;;
     --help)
@@ -293,7 +290,11 @@ check_network() {
 log "=== Unified Kernel Backport Script ==="
 log "Kernel version: $KERNEL_VERSION"
 log "Output directory: $OUTPUT_BASE"
-log "Scan range: $START_MONTH to $END_MONTH"
+if [ -z "$SCAN_MONTH" ]; then
+  log "Scan range: 2024-01 to $(date +%Y-%m)"
+else
+  log "Scan month: $SCAN_MONTH"
+fi
 log "Target branch: $BRANCH"
 log "Spec directory: $SPEC_SUBDIR"
 log "Available specs: $AVAILABLE_SPECS"
@@ -333,14 +334,14 @@ clone_repo() {
 # Step 2: Find Eligible Patches (formerly script1.sh)
 # -----------------------------------------------------------------------------
 
-# Helper function to get days in a month
+# Helper: get days in a month
 get_days_in_month() {
   local year=$1
   local month=$2
   case $month in
     01|03|05|07|08|10|12) echo 31 ;;
     04|06|09|11) echo 30 ;;
-    02) 
+    02)
       if [ $((year % 4)) -eq 0 ] && { [ $((year % 100)) -ne 0 ] || [ $((year % 400)) -eq 0 ]; }; then
         echo 29
       else
@@ -350,32 +351,51 @@ get_days_in_month() {
   esac
 }
 
-# Helper function to iterate months from start to end
-iterate_months() {
-  local start_month="$1"
-  local end_month="$2"
+# Helper: scan a single month
+scan_month() {
+  local scan_month=$1
+  local year=$(echo "$scan_month" | cut -d'-' -f1)
+  local month=$(echo "$scan_month" | cut -d'-' -f2)
+  local days=$(get_days_in_month "$year" "$month")
   
-  local start_year=$(echo "$start_month" | cut -d'-' -f1)
-  local start_mon=$(echo "$start_month" | cut -d'-' -f2)
-  local end_year=$(echo "$end_month" | cut -d'-' -f1)
-  local end_mon=$(echo "$end_month" | cut -d'-' -f2)
+  log "  Scanning month: $scan_month ($days days)"
   
-  local current_year=$start_year
-  local current_mon=$((10#$start_mon))
-  
-  while true; do
-    printf "%04d-%02d\n" $current_year $current_mon
+  for day in $(seq 1 $days); do
+    padded_day=$(printf "%02d" $day)
+    since="${scan_month}-${padded_day}T00:00:00Z"
+    until="${scan_month}-${padded_day}T23:59:59Z"
     
-    # Check if we've reached the end
-    if [ $current_year -eq $end_year ] && [ $current_mon -eq $((10#$end_mon)) ]; then
-      break
+    if [ "$DRY_RUN" = false ]; then
+      api_url="https://api.github.com/repos/${UPSTREAM_REPO}/commits?since=${since}&until=${until}&per_page=100"
+      response=$(curl -s -H "Accept: application/vnd.github+json" "$api_url")
+      
+      # Extract eligible commits
+      eligible=$(echo "$response" | jq -r --arg keywords "$KEYWORDS" \
+        '.[] | select(.commit.message | test($keywords; "i")) | .sha' 2>/dev/null)
+      
+      if [ -n "$eligible" ]; then
+        echo "$eligible" >> "$PATCH_LIST"
+      fi
     fi
-    
-    # Advance to next month
-    current_mon=$((current_mon + 1))
-    if [ $current_mon -gt 12 ]; then
-      current_mon=1
-      current_year=$((current_year + 1))
+  done
+}
+
+# Helper: generate list of months from start to end (YYYY-MM format)
+generate_month_range() {
+  local start_year=$1
+  local start_month=$2
+  local end_year=$3
+  local end_month=$4
+  
+  local year=$start_year
+  local month=$start_month
+  
+  while [ "$year" -lt "$end_year" ] || { [ "$year" -eq "$end_year" ] && [ "$month" -le "$end_month" ]; }; do
+    printf "%04d-%02d\n" "$year" "$month"
+    month=$((month + 1))
+    if [ "$month" -gt 12 ]; then
+      month=1
+      year=$((year + 1))
     fi
   done
 }
@@ -383,38 +403,25 @@ iterate_months() {
 find_eligible_patches() {
   log ""
   log "=== Step 2: Find Eligible Patches ==="
-  log "Scanning upstream $UPSTREAM_REPO from $START_MONTH to $END_MONTH"
   log "Keywords: $KEYWORDS"
   
   > "$PATCH_LIST"
   
-  # Iterate through all months in range
-  for SCAN_MONTH in $(iterate_months "$START_MONTH" "$END_MONTH"); do
-    log "  Scanning month: $SCAN_MONTH"
+  if [ -n "$SCAN_MONTH" ]; then
+    # Single month specified
+    log "Scanning upstream $UPSTREAM_REPO for month $SCAN_MONTH"
+    scan_month "$SCAN_MONTH"
+  else
+    # Default: scan from January 2024 to current month
+    local current_year=$(date +%Y)
+    local current_month=$(date +%-m)
     
-    YEAR=$(echo "$SCAN_MONTH" | cut -d'-' -f1)
-    MONTH=$(echo "$SCAN_MONTH" | cut -d'-' -f2)
-    DAYS=$(get_days_in_month $YEAR $MONTH)
+    log "Scanning upstream $UPSTREAM_REPO from 2024-01 to ${current_year}-$(printf '%02d' $current_month)"
     
-    for day in $(seq 1 $DAYS); do
-      padded_day=$(printf "%02d" $day)
-      since="${SCAN_MONTH}-${padded_day}T00:00:00Z"
-      until="${SCAN_MONTH}-${padded_day}T23:59:59Z"
-      
-      if [ "$DRY_RUN" = false ]; then
-        api_url="https://api.github.com/repos/${UPSTREAM_REPO}/commits?since=${since}&until=${until}&per_page=100"
-        response=$(curl -s -H "Accept: application/vnd.github+json" "$api_url")
-        
-        # Extract eligible commits
-        eligible=$(echo "$response" | jq -r --arg keywords "$KEYWORDS" \
-          '.[] | select(.commit.message | test($keywords; "i")) | .sha' 2>/dev/null)
-        
-        if [ -n "$eligible" ]; then
-          echo "$eligible" >> "$PATCH_LIST"
-        fi
-      fi
+    for scan_month in $(generate_month_range 2024 1 "$current_year" "$current_month"); do
+      scan_month "$scan_month"
     done
-  done
+  fi
   
   if [ "$DRY_RUN" = false ]; then
     TOTAL_PATCHES=$(wc -l < "$PATCH_LIST" | tr -d ' ')
