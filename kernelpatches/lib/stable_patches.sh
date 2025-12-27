@@ -133,9 +133,10 @@ download_stable_patches() {
     
     # Decompress
     if ! xz -d -k -f "$xz_path" 2>/dev/null; then
-      log_error "Failed to decompress $patch_file" >&2
+      log_warn "Failed to decompress $patch_file (possibly corrupt), skipping" >&2
       rm -f "$xz_path"
-      break
+      patch_num=$((patch_num + 1))
+      continue
     fi
     
     # Rename decompressed file
