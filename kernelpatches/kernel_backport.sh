@@ -249,14 +249,23 @@ if [ "$PATCH_SOURCE" = "stable" ] || [ "$PATCH_SOURCE" = "stable-full" ] || [ "$
 fi
 
 # -----------------------------------------------------------------------------
-# Full Spec2Git Workflow (stable-full)
+# Full Spec2Git Workflow (stable-full or all with --analyze-cves)
 # -----------------------------------------------------------------------------
+RUN_STABLE_INTEGRATION=false
 if [ "$PATCH_SOURCE" = "stable-full" ]; then
+  RUN_STABLE_INTEGRATION=true
+elif [ "$PATCH_SOURCE" = "all" ] && [ "$ANALYZE_CVES" = true ] && [ "$STABLE_TOTAL" -gt 0 ]; then
+  RUN_STABLE_INTEGRATION=true
   log ""
-  log "=== Step 3b: Full Spec2Git Workflow ==="
+  log "Note: --analyze-cves with --source all triggers stable patch integration"
+fi
+
+if [ "$RUN_STABLE_INTEGRATION" = true ]; then
+  log ""
+  log "=== Step 3b: Stable Patch Integration Workflow ==="
   
   if [ "$DRY_RUN" = true ]; then
-    log "DRY RUN: Would run full spec2git workflow with:"
+    log "DRY RUN: Would run stable integration workflow with:"
     log "  - Kernel: $KERNEL_VERSION"
     log "  - Photon repo: $REPO_DIR"
     log "  - Stable patches: $OUTPUT_BASE/stable_patches"
@@ -264,7 +273,6 @@ if [ "$PATCH_SOURCE" = "stable-full" ]; then
     log "  - Analyze CVEs: $ANALYZE_CVES"
     log "  - CVE since: ${CVE_SINCE:-all}"
     log "  - Resume: $RESUME"
-    log "  - Permutations: canister_build(0,1) x acvp_build(0,1) = 4"
   else
     STABLE_PATCH_DIR="$OUTPUT_BASE/stable_patches"
     
@@ -274,15 +282,13 @@ if [ "$PATCH_SOURCE" = "stable-full" ]; then
       exit 1
     fi
     
-    log "Starting full spec2git workflow..."
-    log "This will process each stable patch through all permutations"
+    log "Starting stable patch integration workflow..."
     log "Patches: $(ls -1 "$STABLE_PATCH_DIR"/patch-"$KERNEL_VERSION".* 2>/dev/null | grep -v '\.xz$' | wc -l)"
     log "Spec files: $AVAILABLE_SPECS"
-    log "Permutations: 4 (canister 0/1 x acvp 0/1)"
     
     if run_spec2git_full_workflow "$KERNEL_VERSION" "$REPO_DIR" "$STABLE_PATCH_DIR" \
          "$REPORT_DIR" "$RESUME" "$ANALYZE_CVES" "$CVE_SINCE"; then
-      log "Spec2git workflow completed successfully"
+      log "Stable integration workflow completed successfully"
       
       # Show report location if CVE analysis was enabled
       if [ "$ANALYZE_CVES" = true ]; then
@@ -296,19 +302,21 @@ if [ "$PATCH_SOURCE" = "stable-full" ]; then
         done
       fi
     else
-      log_error "Spec2git workflow failed"
+      log_error "Stable integration workflow failed"
       exit 1
     fi
   fi
   
-  # Skip the normal patch processing for stable-full
-  log ""
-  log "=== ALL DONE ==="
-  log "Exit code: 0"
-  log "Output directory: $OUTPUT_BASE"
-  log "Report directory: $REPORT_DIR"
-  log "Log file: $LOG_FILE"
-  exit 0
+  # For stable-full only source, exit here; for 'all', continue to CVE processing
+  if [ "$PATCH_SOURCE" = "stable-full" ]; then
+    log ""
+    log "=== ALL DONE ==="
+    log "Exit code: 0"
+    log "Output directory: $OUTPUT_BASE"
+    log "Report directory: $REPORT_DIR"
+    log "Log file: $LOG_FILE"
+    exit 0
+  fi
 fi
 
 # -----------------------------------------------------------------------------
