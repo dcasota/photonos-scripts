@@ -21,8 +21,14 @@ Automated kernel patch backporting tool for Photon OS. Supports:
 # CVE patches with specific source
 ./kernel_backport.sh --kernel 6.1 --source cve --cve-source atom
 
-# Stable kernel patches from kernel.org
+# Stable kernel patches from kernel.org (download only)
 ./kernel_backport.sh --kernel 6.1 --source stable
+
+# Full stable patch workflow with integration
+./kernel_backport.sh --kernel 6.1 --source stable-full
+
+# Stable patches with CVE analysis (find redundant CVE patches)
+./kernel_backport.sh --kernel 5.10 --source stable-full --analyze-cves --cve-since 2023-01
 
 # Both CVE and stable patches
 ./kernel_backport.sh --kernel 6.12 --source all
@@ -81,9 +87,13 @@ tail -f /var/log/kernel-backport/summary.log
 ```
 Options:
   --kernel VERSION     Kernel version (5.10, 6.1, 6.12) - REQUIRED
-  --source TYPE        Patch source: cve (default), stable, or all
+  --source TYPE        Patch source: cve (default), stable, stable-full, or all
   --cve-source SOURCE  CVE source: nvd (default), atom, or upstream
   --month YYYY-MM      Month to scan (for upstream CVE source only)
+  --analyze-cves       Analyze which CVE patches become redundant after stable patches
+  --cve-since YYYY-MM  Filter CVE analysis to CVEs since this date
+  --resume             Resume from checkpoint (for stable-full workflow)
+  --report-dir DIR     Directory for CVE analysis reports (default: /var/log/kernel-backport/reports)
   --repo-url URL       Photon repo URL (default: https://github.com/vmware/photon.git)
   --branch NAME        Branch to use (auto-detected by default)
   --skip-clone         Skip cloning if repo exists
@@ -100,8 +110,23 @@ Options:
 | Source | Description |
 |--------|-------------|
 | `cve` | CVE patches from NVD/atom/upstream (default) |
-| `stable` | Stable kernel subversion patches from kernel.org |
+| `stable` | Stable kernel subversion patches from kernel.org (download only) |
+| `stable-full` | Full workflow: download stable patches and integrate into spec files |
 | `all` | Both CVE and stable patches |
+
+### Stable-Full Workflow
+
+The `stable-full` source performs a complete integration workflow:
+
+1. Downloads stable kernel patches from kernel.org
+2. Integrates patches into spec files (linux.spec, linux-esx.spec, etc.)
+3. Optionally analyzes CVE coverage to identify redundant CVE patches
+
+**Integration Methods:**
+- **spec2git** (if available): Advanced tool that converts spec to git, applies patches, and converts back
+- **Simple integration** (fallback): Copies patches to spec directory and adds Patch entries to spec files
+
+The script automatically falls back to simple integration if spec2git is not available in the Photon repository.
 
 ### CVE Sources (when --source cve)
 
@@ -216,7 +241,8 @@ skip12345678|none|Patch not applicable to Photon OS
 | `patch_routing.skills` | Skills file for patch routing rules |
 | `lib/common.sh` | Shared functions (logging, network, routing) |
 | `lib/cve_sources.sh` | CVE detection (NVD, atom, upstream) |
-| `lib/stable_patches.sh` | Stable kernel patch download |
+| `lib/stable_patches.sh` | Stable kernel patch download and integration |
+| `lib/cve_analysis.sh` | CVE analysis and redundancy detection |
 | `README.md` | This documentation |
 
 ## Logging
@@ -229,6 +255,8 @@ All operations are logged to files for debugging and auditing:
 | `/var/log/kernel-backport/backport_YYYYMMDD_HHMMSS.log` | Detailed cron wrapper log |
 | `/var/log/kernel-backport/kernel_X.Y_YYYYMMDD_HHMMSS.log` | Per-kernel execution log |
 | `/tmp/backport_YYYYMMDD_HHMMSS/execution.log` | Real-time execution details |
+| `/var/log/kernel-backport/reports/cve_analysis_*.json` | CVE analysis reports (JSON) |
+| `/var/log/kernel-backport/reports/cve_analysis_*.txt` | CVE analysis reports (text) |
 
 ### Log Rotation
 - Logs older than 30 days are automatically deleted by the cron wrapper
