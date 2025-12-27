@@ -449,10 +449,147 @@ clear_checkpoint() {
 }
 
 # =============================================================================
+# Simple Stable Workflow (fallback when spec2git not available)
+# =============================================================================
+
+# Run simple stable patch integration without spec2git
+run_simple_stable_workflow() {
+  local KERNEL_VERSION="$1"
+  local PHOTON_DIR="$2"
+  local PATCH_DIR="$3"
+  local REPORT_DIR="$4"
+  local ANALYZE_CVES="${5:-false}"
+  local CVE_SINCE="${6:-}"
+  
+  local SPEC_SUBDIR=$(get_spec_dir_for_kernel "$KERNEL_VERSION")
+  local SPEC_DIR="$PHOTON_DIR/$SPEC_SUBDIR"
+  local AVAILABLE_SPECS=$(get_spec_files_for_kernel "$KERNEL_VERSION")
+  
+  log "=== Simple Stable Patch Integration ===" >&2
+  log "Kernel: $KERNEL_VERSION" >&2
+  log "Spec directory: $SPEC_DIR" >&2
+  log "Available specs: $AVAILABLE_SPECS" >&2
+  
+  # Verify spec directory exists
+  if [ ! -d "$SPEC_DIR" ]; then
+    log_error "Spec directory not found: $SPEC_DIR" >&2
+    return 1
+  fi
+  
+  # Get list of stable patches
+  local stable_patches=($(ls "$PATCH_DIR"/patch-"$KERNEL_VERSION".* 2>/dev/null | grep -v '\.xz$' | sort -V))
+  local total_patches=${#stable_patches[@]}
+  
+  if [ $total_patches -eq 0 ]; then
+    log "No stable patches found in $PATCH_DIR" >&2
+    return 0
+  fi
+  
+  log "Found $total_patches stable patches to process" >&2
+  
+  # Initialize CVE report if analyzing
+  local cve_report=""
+  if [ "$ANALYZE_CVES" = true ]; then
+    local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    source "$script_dir/cve_analysis.sh" 2>/dev/null || true
+    if type init_cve_report &>/dev/null; then
+      cve_report=$(init_cve_report "$KERNEL_VERSION" "$REPORT_DIR")
+      log "CVE report initialized: $cve_report" >&2
+    fi
+  fi
+  
+  local all_redundant_cves=""
+  local integrated_count=0
+  local skipped_count=0
+  
+  # Process each spec file
+  for spec in $AVAILABLE_SPECS; do
+    local spec_path="$SPEC_DIR/$spec"
+    
+    if [ ! -f "$spec_path" ]; then
+      log_warn "Spec file not found: $spec_path" >&2
+      continue
+    fi
+    
+    log "" >&2
+    log "Processing spec: $spec" >&2
+    
+    local patch_idx=0
+    for patch_file in "${stable_patches[@]}"; do
+      patch_idx=$((patch_idx + 1))
+      local patch_name=$(basename "$patch_file")
+      
+      log "  [$patch_idx/$total_patches] Processing: $patch_name" >&2
+      
+      # Check if already integrated (by patch name in spec)
+      if grep -q "$patch_name" "$spec_path" 2>/dev/null; then
+        log "    Skipped: already in spec" >&2
+        skipped_count=$((skipped_count + 1))
+        continue
+      fi
+      
+      # Copy patch to spec directory
+      cp "$patch_file" "$SPEC_DIR/$patch_name"
+      
+      # Get next available patch number
+      local patch_num=$(get_next_patch_number "$spec_path" 2>/dev/null || echo "100")
+      
+      # Add patch to spec using simple method
+      if add_patch_to_spec "$spec_path" "$patch_name" "$patch_num" 2>/dev/null; then
+        log "    Added as Patch${patch_num}" >&2
+        integrated_count=$((integrated_count + 1))
+        
+        # Analyze CVE coverage if enabled
+        if [ "$ANALYZE_CVES" = true ] && [ -n "$cve_report" ]; then
+          if type extract_cves_from_patch &>/dev/null; then
+            local patch_cves=$(extract_cves_from_patch "$patch_file" 2>/dev/null)
+            local redundant=$(analyze_stable_patch_cve_coverage "$patch_file" "$spec_path" "$SPEC_DIR" "" 2>/dev/null)
+            
+            if [ -n "$CVE_SINCE" ] && type filter_cves_since &>/dev/null; then
+              patch_cves=$(filter_cves_since "$patch_cves" "$CVE_SINCE")
+              redundant=$(filter_cves_since "$redundant" "$CVE_SINCE")
+            fi
+            
+            if [ -n "$redundant" ]; then
+              log "    CVEs now redundant: $redundant" >&2
+              all_redundant_cves="$all_redundant_cves $redundant"
+            fi
+            
+            if type add_patch_to_report &>/dev/null; then
+              add_patch_to_report "$cve_report" "$patch_name" "true" "$patch_cves" "$redundant"
+            fi
+          fi
+        fi
+      else
+        log_warn "    Failed to add to spec" >&2
+      fi
+    done
+  done
+  
+  # Finalize CVE report
+  if [ "$ANALYZE_CVES" = true ] && [ -n "$cve_report" ]; then
+    if type finalize_cve_report &>/dev/null; then
+      local total_cves=0
+      local cves_fixed=$(echo "$all_redundant_cves" | tr ' ' '\n' | grep -E 'CVE-[0-9]+-[0-9]+' | sort -u | wc -l)
+      finalize_cve_report "$cve_report" "$total_patches" "$total_cves" "$cves_fixed" "0"
+    fi
+  fi
+  
+  log "" >&2
+  log "=== Simple Integration Complete ===" >&2
+  log "Integrated: $integrated_count patches" >&2
+  log "Skipped: $skipped_count patches (already present)" >&2
+  log "Patches copied to: $SPEC_DIR/" >&2
+  
+  return 0
+}
+
+# =============================================================================
 # Full Spec2Git Workflow with Permutations
 # =============================================================================
 
 # Run the complete spec2git workflow for a kernel version
+# Falls back to simple integration if spec2git is not available
 run_spec2git_full_workflow() {
   local KERNEL_VERSION="$1"
   local PHOTON_DIR="$2"
@@ -464,8 +601,10 @@ run_spec2git_full_workflow() {
   
   local SPEC2GIT=$(check_spec2git_available "$PHOTON_DIR")
   if [ -z "$SPEC2GIT" ]; then
-    log_error "spec2git not found in $PHOTON_DIR" >&2
-    return 1
+    log_warn "spec2git not found in $PHOTON_DIR - using simple integration mode" >&2
+    log "Note: spec2git is an optional advanced tool. Simple integration will copy patches to spec directory." >&2
+    run_simple_stable_workflow "$KERNEL_VERSION" "$PHOTON_DIR" "$PATCH_DIR" "$REPORT_DIR" "$ANALYZE_CVES" "$CVE_SINCE"
+    return $?
   fi
   
   local SPEC_SUBDIR=$(get_spec_dir_for_kernel "$KERNEL_VERSION")
