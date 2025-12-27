@@ -11,7 +11,7 @@
 # Options:
 #   --install-dir DIR    Installation directory (default: /opt/kernel-backport)
 #   --log-dir DIR        Log directory (default: /var/log/kernel-backport)
-#   --cron SCHEDULE      Cron schedule (default: "0 2 * * *" = daily at 2 AM)
+#   --cron SCHEDULE      Cron schedule (default: "0 */2 * * *" = every 2 hours)
 #   --kernels LIST       Comma-separated kernel versions (default: 5.10,6.1,6.12)
 #   --no-cron            Skip cron job installation
 #   --uninstall          Remove installation and cron job
@@ -23,7 +23,7 @@ set -e
 # Defaults
 INSTALL_DIR="/opt/kernel-backport"
 LOG_DIR="/var/log/kernel-backport"
-CRON_SCHEDULE="0 2 * * *"
+CRON_SCHEDULE="0 */2 * * *"
 KERNELS="5.10,6.1,6.12"
 INSTALL_CRON=true
 UNINSTALL=false
@@ -104,17 +104,21 @@ fi
 log_info "Creating directories..."
 mkdir -p "$INSTALL_DIR"
 mkdir -p "$LOG_DIR"
+mkdir -p "$LOG_DIR/reports"
 
 # Copy files
 log_info "Copying files..."
-cp "$SCRIPT_DIR/kernel_backport_unified.sh" "$INSTALL_DIR/"
+mkdir -p "$INSTALL_DIR/lib"
+cp "$SCRIPT_DIR/kernel_backport.sh" "$INSTALL_DIR/"
 cp "$SCRIPT_DIR/integrate_kernel_patches.sh" "$INSTALL_DIR/"
 cp "$SCRIPT_DIR/patch_routing.skills" "$INSTALL_DIR/"
 cp "$SCRIPT_DIR/README.md" "$INSTALL_DIR/"
+cp "$SCRIPT_DIR/lib/"*.sh "$INSTALL_DIR/lib/"
 
 # Make scripts executable
-chmod +x "$INSTALL_DIR/kernel_backport_unified.sh"
+chmod +x "$INSTALL_DIR/kernel_backport.sh"
 chmod +x "$INSTALL_DIR/integrate_kernel_patches.sh"
+chmod +x "$INSTALL_DIR/lib/"*.sh
 
 # Create configuration file
 log_info "Creating configuration file..."
@@ -127,6 +131,9 @@ KERNELS="$KERNELS"
 
 # Log directory
 LOG_DIR="$LOG_DIR"
+
+# Report directory for CVE analysis
+REPORT_DIR="$LOG_DIR/reports"
 
 # Photon repository URL
 REPO_URL="https://github.com/vmware/photon.git"
@@ -281,8 +288,7 @@ main() {
         log_info "Processing kernel: $kernel"
         log_info "------------------------------------------"
         
-        # Build command
-        CMD="$SCRIPT_DIR/kernel_backport_unified.sh --kernel $kernel"
+        CMD="$SCRIPT_DIR/kernel_backport.sh --kernel $kernel --source cve"
         [ "$SKIP_REVIEW" = true ] && CMD="$CMD --skip-review"
         [ "$SKIP_PUSH" = true ] && CMD="$CMD --skip-push"
         CMD="$CMD --skip-clone"
@@ -432,5 +438,5 @@ echo "  Uninstall:     $SCRIPT_DIR/install.sh --uninstall"
 echo ""
 if [ "$INSTALL_CRON" = true ]; then
     echo "Cron job installed: $CRON_SCHEDULE"
-    echo "Next run: $(date -d "tomorrow 02:00" 2>/dev/null || echo "Check with 'crontab -l'")"
+    echo "Next run: $(date -d "next hour" +"%Y-%m-%d %H:00" 2>/dev/null || echo "Check with 'crontab -l'")"
 fi

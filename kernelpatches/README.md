@@ -1,35 +1,40 @@
 # Kernel Backport Processor for Photon OS
 
-Automated kernel CVE patch backporting tool for Photon OS. Scans upstream Linux kernel commits for CVE fixes and integrates them into Photon OS kernel spec files.
+Automated kernel patch backporting tool for Photon OS. Supports:
+- **CVE patches** from NVD, atom feed, or upstream commits
+- **Stable kernel subversion patches** from kernel.org (e.g., 6.1.120 → 6.1.121)
 
 ## Supported Kernels
 
 | Kernel | Photon Branch | Spec Files | Spec Directory |
 |--------|---------------|------------|----------------|
 | 5.10   | 4.0           | linux.spec, linux-esx.spec, linux-rt.spec | SPECS/linux |
-| 6.1    | 5.0           | linux.spec, linux-esx.spec, linux-rt.spec | SPECS/linux/v6.1 |
+| 6.1    | 5.0           | linux.spec, linux-esx.spec, linux-rt.spec | SPECS/linux |
 | 6.12   | common        | linux.spec, linux-esx.spec | SPECS/linux/v6.12 |
 
 ## Quick Start
 
 ```bash
-# Scan for CVE patches for kernel 5.10 (scans 2024-01 to current month)
-./kernel_backport_unified.sh --kernel 5.10
+# CVE patches (default) - uses NVD kernel.org CNA feed
+./kernel_backport.sh --kernel 5.10
 
-# Scan a specific month only
-./kernel_backport_unified.sh --kernel 6.1 --month 2024-07
+# CVE patches with specific source
+./kernel_backport.sh --kernel 6.1 --source cve --cve-source atom
+
+# Stable kernel patches from kernel.org
+./kernel_backport.sh --kernel 6.1 --source stable
+
+# Both CVE and stable patches
+./kernel_backport.sh --kernel 6.12 --source all
 
 # Dry run to see what would be done
-./kernel_backport_unified.sh --kernel 6.12 --dry-run
-
-# Skip RPM build (enabled by default)
-./kernel_backport_unified.sh --kernel 5.10 --disable-build
+./kernel_backport.sh --kernel 6.12 --dry-run
 ```
 
 ## Installation
 
 ```bash
-# Install with default settings (cron job at 2 AM daily)
+# Install with default settings (cron job every 2 hours)
 sudo ./install.sh
 
 # Install without cron job
@@ -48,7 +53,7 @@ sudo ./install.sh --uninstall
 |--------|---------|-------------|
 | `--install-dir DIR` | `/opt/kernel-backport` | Installation directory |
 | `--log-dir DIR` | `/var/log/kernel-backport` | Log directory |
-| `--cron SCHEDULE` | `0 2 * * *` | Cron schedule (daily 2 AM) |
+| `--cron SCHEDULE` | `0 */2 * * *` | Cron schedule (every 2 hours) |
 | `--kernels LIST` | `5.10,6.1,6.12` | Comma-separated kernel versions |
 | `--no-cron` | - | Skip cron job installation |
 | `--uninstall` | - | Remove installation |
@@ -71,13 +76,15 @@ tail -f /var/log/kernel-backport/summary.log
 
 ## Usage
 
-### Command Line Options
+### Command Line Options (kernel_backport.sh)
 
 ```
 Options:
   --kernel VERSION     Kernel version (5.10, 6.1, 6.12) - REQUIRED
-  --month YYYY-MM      Month to scan (default: all months from 2024-01 to current)
-  --repo-url URL       Photon repo URL (default: https://github.com/dcasota/photon.git)
+  --source TYPE        Patch source: cve (default), stable, or all
+  --cve-source SOURCE  CVE source: nvd (default), atom, or upstream
+  --month YYYY-MM      Month to scan (for upstream CVE source only)
+  --repo-url URL       Photon repo URL (default: https://github.com/vmware/photon.git)
   --branch NAME        Branch to use (auto-detected by default)
   --skip-clone         Skip cloning if repo exists
   --skip-review        Skip CVE review step
@@ -88,10 +95,27 @@ Options:
   --help               Show help
 ```
 
+### Patch Sources
+
+| Source | Description |
+|--------|-------------|
+| `cve` | CVE patches from NVD/atom/upstream (default) |
+| `stable` | Stable kernel subversion patches from kernel.org |
+| `all` | Both CVE and stable patches |
+
+### CVE Sources (when --source cve)
+
+| Source | Description |
+|--------|-------------|
+| `nvd` | NIST NVD filtered by kernel.org CNA (default). Recent feed every 2h + yearly feeds (2024+) once per day |
+| `atom` | Official linux-cve-announce mailing list Atom feed |
+| `upstream` | Search torvalds/linux commits for "CVE" keyword |
+
 ### Default Behavior
 
-- **Date range**: Scans from January 2024 to current month
-- **Keywords**: CVE only (processes only CVE-related patches)
+- **Patch source**: CVE patches
+- **CVE source**: NIST NVD (kernel.org CNA)
+- **NVD feeds**: Recent feed every run + yearly feeds (2024 to current year) once per 24 hours
 - **Build**: RPM build is enabled by default
 
 ## Workflow
@@ -186,10 +210,13 @@ skip12345678|none|Patch not applicable to Photon OS
 
 | File | Description |
 |------|-------------|
-| `kernel_backport_unified.sh` | Main backport processor script |
+| `kernel_backport.sh` | Unified backport script (CVE + stable patches) |
 | `install.sh` | Installer with cron job setup |
 | `integrate_kernel_patches.sh` | Spec2git-based integration script |
 | `patch_routing.skills` | Skills file for patch routing rules |
+| `lib/common.sh` | Shared functions (logging, network, routing) |
+| `lib/cve_sources.sh` | CVE detection (NVD, atom, upstream) |
+| `lib/stable_patches.sh` | Stable kernel patch download |
 | `README.md` | This documentation |
 
 ## Logging
