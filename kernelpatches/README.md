@@ -9,7 +9,8 @@
      ├── kernel_backport.sh   # Main backport script
      ├── patch_routing.skills # Rules for routing patches to spec files
      ├── lib/
-     │   ├── common.sh        # Shared functions (logging, network, routing)
+     │   ├── common.sh        # Shared functions (logging, network, routing, SHA512)
+     │   ├── build.sh         # Build functions (rpmbuild, version updates)
      │   ├── cve_sources.sh   # CVE detection from NVD/atom/upstream
      │   ├── stable_patches.sh # Stable kernel patch handling
      │   └── cve_analysis.sh  # CVE redundancy analysis
@@ -274,11 +275,49 @@ skip12345678|none|Patch not applicable to Photon OS
 | `install.sh` | Installer with cron job setup |
 | `integrate_kernel_patches.sh` | Spec2git-based integration script |
 | `patch_routing.skills` | Skills file for patch routing rules |
-| `lib/common.sh` | Shared functions (logging, network, routing) |
+| `lib/common.sh` | Shared functions (logging, network, routing, spec file operations, SHA512) |
+| `lib/build.sh` | Build functions (rpmbuild, kernel version updates, SHA512 hash updates) |
 | `lib/cve_sources.sh` | CVE detection (NVD, atom, upstream) |
 | `lib/stable_patches.sh` | Stable kernel patch download and integration |
 | `lib/cve_analysis.sh` | CVE analysis and redundancy detection |
 | `README.md` | This documentation |
+
+## Kernel Version Updates
+
+When a new stable kernel version is released (e.g., 5.10.247 → 5.10.248), the spec files need to be updated with:
+- New Version number
+- New SHA512 hash for the tarball
+- Reset Release to 1
+- Changelog entry
+
+### SHA512 Hash Updates
+
+Photon OS spec files use `%define sha512 <name>=<hash>` to verify source tarballs. The `lib/build.sh` library provides functions to automate this:
+
+```bash
+# Source the libraries
+source lib/common.sh
+source lib/build.sh
+
+# Check and update kernel version automatically
+check_and_update_kernel_version "5.10" "./4.0" "/tmp/sources" "linux.spec linux-esx.spec linux-rt.spec"
+
+# Or update to a specific version
+update_kernel_version "5.10" "5.10.248" "./4.0" "/tmp/sources" "linux.spec linux-esx.spec linux-rt.spec"
+
+# Low-level SHA512 functions (from lib/common.sh)
+get_spec_sha512 "4.0/SPECS/linux/linux.spec" "linux"           # Get current hash
+update_spec_sha512 "spec.file" "linux" "abc123..."             # Update hash
+calculate_file_sha512 "/path/to/linux-5.10.248.tar.xz"         # Calculate hash
+```
+
+### Version Update Workflow
+
+1. **Check for updates**: Queries kernel.org for latest stable version
+2. **Download tarball**: Downloads new kernel tarball to sources directory
+3. **Calculate SHA512**: Computes hash of downloaded tarball
+4. **Update spec files**: Updates Version, SHA512, resets Release to 1
+5. **Add changelog**: Adds changelog entry with update message
 
 ## Logging
 

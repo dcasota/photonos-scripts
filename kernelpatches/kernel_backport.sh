@@ -220,14 +220,76 @@ if [ ! -d "$REPO_DIR/$SPEC_SUBDIR" ]; then
 fi
 
 # -----------------------------------------------------------------------------
+# Check Stable Kernel Status
+# -----------------------------------------------------------------------------
+log ""
+log "=== Step 2: Check Stable Kernel Status ==="
+
+CURRENT_PHOTON_VERSION=$(get_photon_kernel_version "$KERNEL_VERSION" "$REPO_DIR")
+STABLE_STATUS=$(check_stable_kernel_status "$KERNEL_VERSION" "$REPO_DIR")
+STABLE_UPDATE_NEEDED=false
+LATEST_STABLE_VERSION=""
+
+if [[ "$STABLE_STATUS" == UPDATE_NEEDED* ]]; then
+  STABLE_UPDATE_NEEDED=true
+  LATEST_STABLE_VERSION=$(echo "$STABLE_STATUS" | cut -d'|' -f3)
+  VERSIONS_BEHIND=$(get_versions_behind "$CURRENT_PHOTON_VERSION" "$LATEST_STABLE_VERSION")
+  
+  log "WARNING: Kernel $KERNEL_VERSION is behind stable!"
+  log "  Current Photon: $CURRENT_PHOTON_VERSION"
+  log "  Latest stable:  $LATEST_STABLE_VERSION"
+  log "  Versions behind: $VERSIONS_BEHIND"
+  log ""
+  log "A stable update will be performed automatically."
+elif [[ "$STABLE_STATUS" == UP_TO_DATE* ]]; then
+  log "Kernel is up to date: $CURRENT_PHOTON_VERSION"
+else
+  log_warn "Could not determine stable kernel status"
+fi
+
+# -----------------------------------------------------------------------------
+# Perform Stable Update if Needed
+# -----------------------------------------------------------------------------
+STABLE_UPDATE_SUCCESS=false
+if [ "$STABLE_UPDATE_NEEDED" = true ]; then
+  log ""
+  log "=== Step 2a: Perform Stable Kernel Update ==="
+  
+  if [ "$DRY_RUN" = true ]; then
+    log "DRY RUN: Would update kernel from $CURRENT_PHOTON_VERSION to $LATEST_STABLE_VERSION"
+    log "DRY RUN: Would reset Release to 1"
+    log "DRY RUN: Would add changelog entry"
+  else
+    # Integrate the stable update (update Version, reset Release, add changelog)
+    if integrate_stable_update "$KERNEL_VERSION" "$REPO_DIR" "$LATEST_STABLE_VERSION" "$AVAILABLE_SPECS"; then
+      STABLE_UPDATE_SUCCESS=true
+      log "Stable update integrated successfully"
+      
+      # Analyze CVE patches that may now be redundant
+      remove_redundant_cve_patches "$KERNEL_VERSION" "$REPO_DIR" "$LATEST_STABLE_VERSION" "$AVAILABLE_SPECS"
+      
+      # Update current version for CVE filtering
+      CURRENT_PHOTON_VERSION="$LATEST_STABLE_VERSION"
+    else
+      log_error "Failed to integrate stable update"
+      exit 1
+    fi
+  fi
+fi
+
+# -----------------------------------------------------------------------------
 # Process CVE Patches
 # -----------------------------------------------------------------------------
 CVE_TOTAL=0
 if [ "$PATCH_SOURCE" = "cve" ] || [ "$PATCH_SOURCE" = "all" ]; then
   log ""
-  log "=== Step 2: Find CVE Patches ==="
+  log "=== Step 3: Find CVE Patches ==="
   
-  CVE_TOTAL=$(find_cve_patches "$CVE_SOURCE" "$KERNEL_VERSION" "$OUTPUT_BASE" "$PATCH_LIST" "$DRY_RUN" "$SCAN_MONTH")
+  if [ -n "$CURRENT_PHOTON_VERSION" ]; then
+    log "Current Photon kernel: $CURRENT_PHOTON_VERSION"
+  fi
+  
+  CVE_TOTAL=$(find_cve_patches "$CVE_SOURCE" "$KERNEL_VERSION" "$OUTPUT_BASE" "$PATCH_LIST" "$DRY_RUN" "$SCAN_MONTH" "$CURRENT_PHOTON_VERSION")
   
   if [ "$CVE_TOTAL" -gt 0 ]; then
     log "Sample commits:"
@@ -474,26 +536,75 @@ done
 # -----------------------------------------------------------------------------
 # Build Step
 # -----------------------------------------------------------------------------
-if [ "$ENABLE_BUILD" = true ] && [ "${SUCCESS:-0}" -gt 0 ]; then
+# Build is triggered if:
+# 1. Stable update was performed (STABLE_UPDATE_SUCCESS=true)
+# 2. CVE patches were integrated (SUCCESS > 0)
+BUILD_NEEDED=false
+BUILD_REASON=""
+
+if [ "$STABLE_UPDATE_SUCCESS" = true ]; then
+  BUILD_NEEDED=true
+  BUILD_REASON="stable update to $LATEST_STABLE_VERSION"
+fi
+
+if [ "${SUCCESS:-0}" -gt 0 ]; then
+  BUILD_NEEDED=true
+  if [ -n "$BUILD_REASON" ]; then
+    BUILD_REASON="$BUILD_REASON + $SUCCESS CVE patch(es)"
+  else
+    BUILD_REASON="$SUCCESS CVE patch(es)"
+  fi
+fi
+
+if [ "$ENABLE_BUILD" = true ] && [ "$BUILD_NEEDED" = true ]; then
   log ""
-  log "=== Step 5: Update Spec and Build RPMs ==="
+  log "=== Step 6: Build RPMs ==="
+  log "Build reason: $BUILD_REASON"
   
   if [ "$DRY_RUN" = true ]; then
-    log "DRY RUN: Would run build step for $SUCCESS patches"
+    log "DRY RUN: Would build RPMs for: $BUILD_REASON"
     for spec in $AVAILABLE_SPECS; do
       SPEC_PATH="$REPO_DIR/$SPEC_SUBDIR/$spec"
       if [ -f "$SPEC_PATH" ]; then
-        CURRENT_RELEASE=$(get_spec_release "$SPEC_PATH")
         VERSION=$(get_spec_version "$SPEC_PATH")
-        log "  $spec: Would increment Release $CURRENT_RELEASE -> $((CURRENT_RELEASE + 1))"
-        log "  $spec: Would add changelog for $VERSION-$((CURRENT_RELEASE + 1))"
-        log "  $spec: Would build RPM"
+        RELEASE=$(get_spec_release "$SPEC_PATH")
+        log "  $spec: Would build $VERSION-$RELEASE"
       fi
     done
   else
     BUILD_FAILED=false
-    CHANGELOG_MSG="Backported $SUCCESS CVE patch(es)"
     
+    # If only CVE patches (no stable update), we need to increment release and add changelog
+    if [ "$STABLE_UPDATE_SUCCESS" != true ] && [ "${SUCCESS:-0}" -gt 0 ]; then
+      log "Updating spec files for CVE patches..."
+      CHANGELOG_MSG="Backported $SUCCESS CVE patch(es)"
+      
+      for spec in $AVAILABLE_SPECS; do
+        SPEC_PATH="$REPO_DIR/$SPEC_SUBDIR/$spec"
+        
+        if [ ! -f "$SPEC_PATH" ]; then
+          continue
+        fi
+        
+        # Increment release number
+        NEW_RELEASE=$(increment_spec_release "$SPEC_PATH")
+        if [ -z "$NEW_RELEASE" ]; then
+          log_error "Failed to increment release for $spec"
+          BUILD_FAILED=true
+          continue
+        fi
+        
+        # Add changelog entry
+        VERSION=$(get_spec_version "$SPEC_PATH")
+        if ! add_changelog_entry "$SPEC_PATH" "$VERSION" "$NEW_RELEASE" "$CHANGELOG_MSG"; then
+          log_error "Failed to add changelog entry for $spec"
+          BUILD_FAILED=true
+          continue
+        fi
+      done
+    fi
+    
+    # Build all specs
     for spec in $AVAILABLE_SPECS; do
       SPEC_PATH="$REPO_DIR/$SPEC_SUBDIR/$spec"
       
@@ -503,30 +614,11 @@ if [ "$ENABLE_BUILD" = true ] && [ "${SUCCESS:-0}" -gt 0 ]; then
       fi
       
       log ""
-      log "Processing $spec for build..."
+      log "Building $spec..."
       
-      # Get current version
       VERSION=$(get_spec_version "$SPEC_PATH")
-      if [ -z "$VERSION" ]; then
-        log_error "Could not get version from $SPEC_PATH"
-        BUILD_FAILED=true
-        continue
-      fi
-      
-      # Increment release number
-      NEW_RELEASE=$(increment_spec_release "$SPEC_PATH")
-      if [ -z "$NEW_RELEASE" ]; then
-        log_error "Failed to increment release for $spec"
-        BUILD_FAILED=true
-        continue
-      fi
-      
-      # Add changelog entry
-      if ! add_changelog_entry "$SPEC_PATH" "$VERSION" "$NEW_RELEASE" "$CHANGELOG_MSG"; then
-        log_error "Failed to add changelog entry for $spec"
-        BUILD_FAILED=true
-        continue
-      fi
+      RELEASE=$(get_spec_release "$SPEC_PATH")
+      log "  Version: $VERSION-$RELEASE"
       
       # Build RPM
       BUILD_LOG="$OUTPUT_BASE/build_${spec%.spec}.log"
@@ -536,7 +628,7 @@ if [ "$ENABLE_BUILD" = true ] && [ "${SUCCESS:-0}" -gt 0 ]; then
         continue
       fi
       
-      log "  Successfully built $spec (Release: $NEW_RELEASE)"
+      log "  Successfully built $spec"
     done
     
     if [ "$BUILD_FAILED" = true ]; then
