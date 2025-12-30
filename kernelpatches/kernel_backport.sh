@@ -54,6 +54,7 @@ source "$SCRIPT_DIR/lib/common.sh"
 source "$SCRIPT_DIR/lib/cve_sources.sh"
 source "$SCRIPT_DIR/lib/stable_patches.sh"
 source "$SCRIPT_DIR/lib/cve_analysis.sh"
+source "$SCRIPT_DIR/lib/build.sh"
 
 # -----------------------------------------------------------------------------
 # Configuration Defaults
@@ -469,6 +470,91 @@ for spec in $AVAILABLE_SPECS; do
     log "  $spec: $COUNT"
   fi
 done
+
+# -----------------------------------------------------------------------------
+# Build Step
+# -----------------------------------------------------------------------------
+if [ "$ENABLE_BUILD" = true ] && [ "${SUCCESS:-0}" -gt 0 ]; then
+  log ""
+  log "=== Step 5: Update Spec and Build RPMs ==="
+  
+  if [ "$DRY_RUN" = true ]; then
+    log "DRY RUN: Would run build step for $SUCCESS patches"
+    for spec in $AVAILABLE_SPECS; do
+      SPEC_PATH="$REPO_DIR/$SPEC_SUBDIR/$spec"
+      if [ -f "$SPEC_PATH" ]; then
+        CURRENT_RELEASE=$(get_spec_release "$SPEC_PATH")
+        VERSION=$(get_spec_version "$SPEC_PATH")
+        log "  $spec: Would increment Release $CURRENT_RELEASE -> $((CURRENT_RELEASE + 1))"
+        log "  $spec: Would add changelog for $VERSION-$((CURRENT_RELEASE + 1))"
+        log "  $spec: Would build RPM"
+      fi
+    done
+  else
+    BUILD_FAILED=false
+    CHANGELOG_MSG="Backported $SUCCESS CVE patch(es)"
+    
+    for spec in $AVAILABLE_SPECS; do
+      SPEC_PATH="$REPO_DIR/$SPEC_SUBDIR/$spec"
+      
+      if [ ! -f "$SPEC_PATH" ]; then
+        log_warn "Spec file not found, skipping: $SPEC_PATH"
+        continue
+      fi
+      
+      log ""
+      log "Processing $spec for build..."
+      
+      # Get current version
+      VERSION=$(get_spec_version "$SPEC_PATH")
+      if [ -z "$VERSION" ]; then
+        log_error "Could not get version from $SPEC_PATH"
+        BUILD_FAILED=true
+        continue
+      fi
+      
+      # Increment release number
+      NEW_RELEASE=$(increment_spec_release "$SPEC_PATH")
+      if [ -z "$NEW_RELEASE" ]; then
+        log_error "Failed to increment release for $spec"
+        BUILD_FAILED=true
+        continue
+      fi
+      
+      # Add changelog entry
+      if ! add_changelog_entry "$SPEC_PATH" "$VERSION" "$NEW_RELEASE" "$CHANGELOG_MSG"; then
+        log_error "Failed to add changelog entry for $spec"
+        BUILD_FAILED=true
+        continue
+      fi
+      
+      # Build RPM
+      BUILD_LOG="$OUTPUT_BASE/build_${spec%.spec}.log"
+      if ! build_kernel_rpm "$SPEC_PATH" "$BUILD_LOG"; then
+        log_error "Build failed for $spec - see $BUILD_LOG"
+        BUILD_FAILED=true
+        continue
+      fi
+      
+      log "  Successfully built $spec (Release: $NEW_RELEASE)"
+    done
+    
+    if [ "$BUILD_FAILED" = true ]; then
+      log_error ""
+      log_error "One or more builds failed. Skipping push/PR."
+      log "Build logs available in: $OUTPUT_BASE/"
+      log "Log file: $LOG_FILE"
+      exit 1
+    fi
+    
+    log ""
+    log "Build step completed successfully"
+  fi
+elif [ "$ENABLE_BUILD" = true ] && [ "${SUCCESS:-0}" -eq 0 ]; then
+  log ""
+  log "=== Step 5: Build Step Skipped ==="
+  log "No patches were successfully integrated, skipping build."
+fi
 
 # -----------------------------------------------------------------------------
 # Summary

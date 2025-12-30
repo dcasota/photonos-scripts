@@ -110,14 +110,12 @@ mkdir -p "$LOG_DIR/reports"
 log_info "Copying files..."
 mkdir -p "$INSTALL_DIR/lib"
 cp "$SCRIPT_DIR/kernel_backport.sh" "$INSTALL_DIR/"
-cp "$SCRIPT_DIR/integrate_kernel_patches.sh" "$INSTALL_DIR/"
 cp "$SCRIPT_DIR/patch_routing.skills" "$INSTALL_DIR/"
 cp "$SCRIPT_DIR/README.md" "$INSTALL_DIR/"
 cp "$SCRIPT_DIR/lib/"*.sh "$INSTALL_DIR/lib/"
 
 # Make scripts executable
 chmod +x "$INSTALL_DIR/kernel_backport.sh"
-chmod +x "$INSTALL_DIR/integrate_kernel_patches.sh"
 chmod +x "$INSTALL_DIR/lib/"*.sh
 
 # Create configuration file
