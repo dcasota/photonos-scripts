@@ -1,8 +1,43 @@
 # Kernel Backport Processor for Photon OS
 
-Automated kernel patch backporting tool for Photon OS. Supports:
-- **CVE patches** from NVD, atom feed, or upstream commits
-- **Stable kernel subversion patches** from kernel.org (e.g., 6.1.120 → 6.1.121)
+   The kernelpatches system is an automated kernel patch backporting solution for Photon OS. Here's the workflow:
+
+   Architecture
+
+     kernelpatches/
+     ├── install.sh           # Installer with cron job setup
+     ├── kernel_backport.sh   # Main backport script
+     ├── patch_routing.skills # Rules for routing patches to spec files
+     ├── lib/
+     │   ├── common.sh        # Shared functions (logging, network, routing)
+     │   ├── cve_sources.sh   # CVE detection from NVD/atom/upstream
+     │   ├── stable_patches.sh # Stable kernel patch handling
+     │   └── cve_analysis.sh  # CVE redundancy analysis
+     ├── 4.0/                 # Cloned Photon 4.0 branch (kernel 5.10)
+     ├── 5.0/                 # Cloned Photon 5.0 branch (kernel 6.1)
+     └── common/              # Photon common branch (kernel 6.12)
+
+   Workflow Steps
+
+   1. Installation: install.sh installs to /opt/kernel-backport, sets up cron (every 2 hours by default), creates config and helper scripts (status.sh, run-now.sh)
+
+   2. Clone/Update Repository: Clones the appropriate Photon branch based on kernel version (5.10→4.0, 6.1→5.0, 6.12→common)
+
+   3. Find Patches: Scans for patches from:
+     •  CVE patches: NVD (kernel.org CNA), atom feed, or upstream commits
+     •  Stable patches: kernel.org subversion patches (e.g., 6.1.120→6.1.121)
+
+   4. Route Patches: Uses patch_routing.skills or auto-detection to determine which spec files receive each patch:
+     •  all → linux.spec, linux-esx.spec, linux-rt.spec
+     •  base → linux.spec only
+     •  esx → linux-esx.spec only
+     •  none → skip patch
+
+   5. Integrate: Adds patches to spec files (Patch100-249 range for CVEs), copies patch files to SPECS/linux directory
+
+   6. Build (optional): Runs rpmbuild for kernel RPMs
+
+   7. Commit/Push/PR: Creates git commit, pushes to branch, opens GitHub PR
 
 ## Supported Kernels
 
