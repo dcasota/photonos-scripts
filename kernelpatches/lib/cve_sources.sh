@@ -46,12 +46,15 @@ process_nvd_json() {
   done
   
   # Also parse git.kernel.org commits
+  # Matches both formats:
+  #   - git.kernel.org/stable/c/[hash]
+  #   - git.kernel.org/.../commit/?id=[hash]
   jq -r --arg cna "$KERNEL_ORG_CNA" '
     .vulnerabilities[]? |
     select(.cve.sourceIdentifier == $cna) |
     {
       cve_id: .cve.id,
-      refs: [.cve.references[]? | select(.url | test("git.kernel.org.*commit.*[a-f0-9]{40}")) | .url]
+      refs: [.cve.references[]? | select(.url | test("git.kernel.org.*(commit|/c/).*[a-f0-9]{40}")) | .url]
     } |
     select(.refs | length > 0) |
     "\(.cve_id)|\(.refs[])"
@@ -154,10 +157,10 @@ find_patches_nvd() {
   fetch_and_process_nvd_feed "$feed_url" "$CVE_INFO_FILE" "$PATCH_LIST" "recent" "$OUTPUT_DIR"
   
   # Additionally process yearly feeds once per 24 hours
-  log "Checking yearly feeds (2024+)..." >&2
+  log "Checking yearly feeds (2023+)..." >&2
   if should_run_yearly_feed; then
     local current_year=$(date +%Y)
-    local start_year=2024
+    local start_year=2023
     
     log "Processing yearly feeds from $start_year to $current_year..." >&2
     
@@ -191,9 +194,13 @@ find_patches_atom() {
   local OUTPUT_DIR="$2"
   local PATCH_LIST="$3"
   local DRY_RUN="${4:-false}"
+  local CURRENT_VERSION="${5:-}"
   
   log "Source: linux-cve-announce mailing list (kernel.org official CVE feed)" >&2
   log "Target kernel: $KERNEL_VERSION" >&2
+  if [ -n "$CURRENT_VERSION" ]; then
+    log "Current Photon version: $CURRENT_VERSION (will skip fixes already in tarball)" >&2
+  fi
   
   local CVE_INFO_FILE="$OUTPUT_DIR/cve_info.txt"
   > "$CVE_INFO_FILE"
@@ -231,15 +238,25 @@ find_patches_atom() {
     fixes=$(grep -oP "Fixed in ${KERNEL_VERSION}\.[0-9]+ with commit [a-f0-9]{40}" "$feed_file" 2>/dev/null || true)
   fi
   
+  local skipped=0
   if [ -n "$fixes" ]; then
     while IFS= read -r fix_line; do
       if [ -n "$fix_line" ]; then
-        local version=$(echo "$fix_line" | grep -oP "Fixed in \K${kernel_pattern}[0-9]+")
+        local fix_version=$(echo "$fix_line" | grep -oP "Fixed in \K${kernel_pattern}[0-9]+")
         local commit=$(echo "$fix_line" | grep -oP 'commit \K[a-f0-9]{40}')
         
         if [ -n "$commit" ]; then
+          # Skip if fix version <= current Photon version (already in tarball)
+          if [ -n "$CURRENT_VERSION" ] && [ -n "$fix_version" ]; then
+            if ! version_less_than "$CURRENT_VERSION" "$fix_version"; then
+              log "  Skipping $commit (fixed in $fix_version, already in $CURRENT_VERSION)" >&2
+              skipped=$((skipped + 1))
+              continue
+            fi
+          fi
+          
           echo "$commit" >> "$PATCH_LIST"
-          echo "$version|$commit" >> "$CVE_INFO_FILE"
+          echo "$fix_version|$commit" >> "$CVE_INFO_FILE"
         fi
       fi
     done <<< "$fixes"
@@ -251,7 +268,7 @@ find_patches_atom() {
   fi
   
   local total=$(wc -l < "$PATCH_LIST" 2>/dev/null | tr -d ' ' || echo "0")
-  log "Found $total CVE fix commits for kernel $KERNEL_VERSION" >&2
+  log "Found $total CVE fix commits for kernel $KERNEL_VERSION (skipped $skipped already in tarball)" >&2
   
   [ "$total" -gt 0 ] && log "CVE info saved to: $CVE_INFO_FILE" >&2
   
@@ -376,13 +393,14 @@ find_cve_patches() {
   local PATCH_LIST="$4"
   local DRY_RUN="${5:-false}"
   local SCAN_MONTH="${6:-}"
+  local CURRENT_VERSION="${7:-}"
   
   case "$CVE_SOURCE" in
     nvd)
       find_patches_nvd "$KERNEL_VERSION" "$OUTPUT_DIR" "$PATCH_LIST" "$DRY_RUN"
       ;;
     atom)
-      find_patches_atom "$KERNEL_VERSION" "$OUTPUT_DIR" "$PATCH_LIST" "$DRY_RUN"
+      find_patches_atom "$KERNEL_VERSION" "$OUTPUT_DIR" "$PATCH_LIST" "$DRY_RUN" "$CURRENT_VERSION"
       ;;
     upstream)
       find_patches_upstream "$KERNEL_VERSION" "$OUTPUT_DIR" "$PATCH_LIST" "$DRY_RUN" "$SCAN_MONTH"

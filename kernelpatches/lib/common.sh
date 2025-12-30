@@ -373,6 +373,62 @@ get_spec_version() {
     sed -E 's/^Version:\s*([0-9.]+).*/\1/'
 }
 
+# Update version in spec file
+update_spec_version() {
+  local SPEC_PATH="$1"
+  local NEW_VERSION="$2"
+  
+  if [ ! -f "$SPEC_PATH" ]; then
+    log_error "Spec file not found: $SPEC_PATH"
+    return 1
+  fi
+  
+  local OLD_VERSION=$(get_spec_version "$SPEC_PATH")
+  if [ -z "$OLD_VERSION" ]; then
+    log_error "Could not extract current version from $SPEC_PATH"
+    return 1
+  fi
+  
+  # Replace version line
+  sed -i -E "s/^(Version:\s*)${OLD_VERSION}/\1${NEW_VERSION}/" "$SPEC_PATH"
+  
+  if [ $? -eq 0 ]; then
+    log "Updated Version: $OLD_VERSION -> $NEW_VERSION in $(basename "$SPEC_PATH")"
+    return 0
+  else
+    log_error "Failed to update version in $SPEC_PATH"
+    return 1
+  fi
+}
+
+# Reset release number to 1 (for new kernel version)
+reset_spec_release() {
+  local SPEC_PATH="$1"
+  
+  if [ ! -f "$SPEC_PATH" ]; then
+    log_error "Spec file not found: $SPEC_PATH"
+    return 1
+  fi
+  
+  local CURRENT=$(get_spec_release "$SPEC_PATH")
+  if [ -z "$CURRENT" ]; then
+    log_error "Could not extract Release number from $SPEC_PATH"
+    return 1
+  fi
+  
+  # Replace the release number with 1, preserving the rest of the line
+  sed -i -E "s/^(Release:\s*)${CURRENT}(%.*)/\11\2/" "$SPEC_PATH"
+  
+  if [ $? -eq 0 ]; then
+    log "Reset Release: $CURRENT -> 1 in $(basename "$SPEC_PATH")"
+    echo "1"
+    return 0
+  else
+    log_error "Failed to reset Release in $SPEC_PATH"
+    return 1
+  fi
+}
+
 # -----------------------------------------------------------------------------
 # Validation Functions
 # -----------------------------------------------------------------------------
@@ -386,6 +442,186 @@ validate_kernel_version() {
   done
   
   return 1
+}
+
+# -----------------------------------------------------------------------------
+# Version Comparison Functions
+# -----------------------------------------------------------------------------
+
+# Compare two kernel versions (e.g., 6.12.60 vs 6.12.63)
+# Returns: 0 if v1 < v2, 1 if v1 >= v2
+version_less_than() {
+  local v1="$1"
+  local v2="$2"
+  
+  # Split versions into components
+  local v1_major=$(echo "$v1" | cut -d. -f1)
+  local v1_minor=$(echo "$v1" | cut -d. -f2)
+  local v1_patch=$(echo "$v1" | cut -d. -f3)
+  
+  local v2_major=$(echo "$v2" | cut -d. -f1)
+  local v2_minor=$(echo "$v2" | cut -d. -f2)
+  local v2_patch=$(echo "$v2" | cut -d. -f3)
+  
+  # Default patch to 0 if not present
+  v1_patch=${v1_patch:-0}
+  v2_patch=${v2_patch:-0}
+  
+  # Compare major
+  if [ "$v1_major" -lt "$v2_major" ]; then
+    return 0
+  elif [ "$v1_major" -gt "$v2_major" ]; then
+    return 1
+  fi
+  
+  # Compare minor
+  if [ "$v1_minor" -lt "$v2_minor" ]; then
+    return 0
+  elif [ "$v1_minor" -gt "$v2_minor" ]; then
+    return 1
+  fi
+  
+  # Compare patch
+  if [ "$v1_patch" -lt "$v2_patch" ]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+# Get current Photon kernel version from spec file
+get_photon_kernel_version() {
+  local KERNEL_VERSION="$1"
+  local REPO_DIR="$2"
+  
+  local SPEC_SUBDIR=$(get_spec_dir_for_kernel "$KERNEL_VERSION")
+  local SPEC_PATH="$REPO_DIR/$SPEC_SUBDIR/linux.spec"
+  
+  if [ -f "$SPEC_PATH" ]; then
+    get_spec_version "$SPEC_PATH"
+  else
+    echo ""
+  fi
+}
+
+# -----------------------------------------------------------------------------
+# SHA512 Hash Functions
+# -----------------------------------------------------------------------------
+
+# Calculate SHA512 hash of a file
+calculate_file_sha512() {
+  local FILE_PATH="$1"
+  
+  if [ ! -f "$FILE_PATH" ]; then
+    log_error "File not found: $FILE_PATH"
+    return 1
+  fi
+  
+  sha512sum "$FILE_PATH" | awk '{print $1}'
+}
+
+# Get current SHA512 hash for a source from spec file
+# Arguments:
+#   $1 - SPEC_PATH: Path to spec file
+#   $2 - SOURCE_NAME: Name identifier in sha512 define (e.g., "linux", "ena_linux")
+# Returns: The SHA512 hash string or empty if not found
+get_spec_sha512() {
+  local SPEC_PATH="$1"
+  local SOURCE_NAME="${2:-linux}"
+  
+  if [ ! -f "$SPEC_PATH" ]; then
+    log_error "Spec file not found: $SPEC_PATH"
+    return 1
+  fi
+  
+  # Match pattern: %define sha512 <name>=<hash>
+  grep -E "^%define sha512\s+${SOURCE_NAME}=" "$SPEC_PATH" | head -1 | \
+    sed -E "s/^%define sha512\s+${SOURCE_NAME}=([0-9a-f]+).*/\1/"
+}
+
+# Update SHA512 hash for a source in spec file
+# Arguments:
+#   $1 - SPEC_PATH: Path to spec file
+#   $2 - SOURCE_NAME: Name identifier in sha512 define (e.g., "linux", "ena_linux")
+#   $3 - NEW_SHA512: The new SHA512 hash value
+# Returns: 0 on success, 1 on failure
+update_spec_sha512() {
+  local SPEC_PATH="$1"
+  local SOURCE_NAME="${2:-linux}"
+  local NEW_SHA512="$3"
+  
+  if [ ! -f "$SPEC_PATH" ]; then
+    log_error "Spec file not found: $SPEC_PATH"
+    return 1
+  fi
+  
+  if [ -z "$NEW_SHA512" ]; then
+    log_error "No SHA512 hash provided"
+    return 1
+  fi
+  
+  # Validate SHA512 format (128 hex characters)
+  if ! echo "$NEW_SHA512" | grep -qE '^[0-9a-f]{128}$'; then
+    log_error "Invalid SHA512 hash format: $NEW_SHA512"
+    return 1
+  fi
+  
+  local OLD_SHA512=$(get_spec_sha512 "$SPEC_PATH" "$SOURCE_NAME")
+  
+  if [ -z "$OLD_SHA512" ]; then
+    log_error "No existing SHA512 definition found for '$SOURCE_NAME' in $SPEC_PATH"
+    return 1
+  fi
+  
+  if [ "$OLD_SHA512" = "$NEW_SHA512" ]; then
+    log "SHA512 hash unchanged for $SOURCE_NAME in $(basename "$SPEC_PATH")"
+    return 0
+  fi
+  
+  # Update the SHA512 hash
+  sed -i -E "s/^(%define sha512\s+${SOURCE_NAME}=)[0-9a-f]+/\1${NEW_SHA512}/" "$SPEC_PATH"
+  
+  if [ $? -eq 0 ]; then
+    log "Updated SHA512 for $SOURCE_NAME in $(basename "$SPEC_PATH")"
+    log "  Old: ${OLD_SHA512:0:16}...${OLD_SHA512: -16}"
+    log "  New: ${NEW_SHA512:0:16}...${NEW_SHA512: -16}"
+    return 0
+  else
+    log_error "Failed to update SHA512 in $SPEC_PATH"
+    return 1
+  fi
+}
+
+# Update SHA512 hash for kernel tarball after downloading new version
+# Arguments:
+#   $1 - SPEC_PATH: Path to spec file
+#   $2 - TARBALL_PATH: Path to the kernel tarball file
+#   $3 - SOURCE_NAME: Name identifier (default: "linux")
+# Returns: 0 on success, 1 on failure
+update_kernel_tarball_sha512() {
+  local SPEC_PATH="$1"
+  local TARBALL_PATH="$2"
+  local SOURCE_NAME="${3:-linux}"
+  
+  if [ ! -f "$SPEC_PATH" ]; then
+    log_error "Spec file not found: $SPEC_PATH"
+    return 1
+  fi
+  
+  if [ ! -f "$TARBALL_PATH" ]; then
+    log_error "Tarball not found: $TARBALL_PATH"
+    return 1
+  fi
+  
+  log "Calculating SHA512 for $(basename "$TARBALL_PATH")..."
+  local NEW_SHA512=$(calculate_file_sha512 "$TARBALL_PATH")
+  
+  if [ -z "$NEW_SHA512" ]; then
+    log_error "Failed to calculate SHA512 for $TARBALL_PATH"
+    return 1
+  fi
+  
+  update_spec_sha512 "$SPEC_PATH" "$SOURCE_NAME" "$NEW_SHA512"
 }
 
 # -----------------------------------------------------------------------------

@@ -345,3 +345,210 @@ run_build_step() {
   log "Build step completed successfully"
   return 0
 }
+
+# -----------------------------------------------------------------------------
+# Kernel Version Update Functions
+# -----------------------------------------------------------------------------
+
+# Update kernel to a new version (downloads tarball, updates spec with version and SHA512)
+# Arguments:
+#   $1 - KERNEL_VERSION: Base kernel version (e.g., "5.10", "6.1")
+#   $2 - NEW_FULL_VERSION: New full kernel version (e.g., "5.10.248", "6.1.160")
+#   $3 - REPO_DIR: Path to Photon repository
+#   $4 - SOURCES_DIR: Directory to download tarball to
+#   $5 - AVAILABLE_SPECS: Space-separated list of spec files to update
+#   $6 - DRY_RUN: "true" to skip actual changes
+# Returns: 0 on success, 1 on failure
+update_kernel_version() {
+  local KERNEL_VERSION="$1"
+  local NEW_FULL_VERSION="$2"
+  local REPO_DIR="$3"
+  local SOURCES_DIR="$4"
+  local AVAILABLE_SPECS="$5"
+  local DRY_RUN="${6:-false}"
+  
+  local SPEC_SUBDIR=$(get_spec_dir_for_kernel "$KERNEL_VERSION")
+  
+  if [ -z "$SPEC_SUBDIR" ]; then
+    log_error "Invalid kernel version: $KERNEL_VERSION"
+    return 1
+  fi
+  
+  log ""
+  log "=== Kernel Version Update: $KERNEL_VERSION -> $NEW_FULL_VERSION ==="
+  
+  # Determine kernel major version for URL
+  local MAJOR_VER="${KERNEL_VERSION%%.*}"
+  local TARBALL_NAME="linux-${NEW_FULL_VERSION}.tar.xz"
+  local TARBALL_URL="https://cdn.kernel.org/pub/linux/kernel/v${MAJOR_VER}.x/${TARBALL_NAME}"
+  local TARBALL_PATH="${SOURCES_DIR}/${TARBALL_NAME}"
+  
+  log "Tarball URL: $TARBALL_URL"
+  log "Tarball Path: $TARBALL_PATH"
+  
+  if [ "$DRY_RUN" = "true" ]; then
+    log "  DRY RUN: Would download $TARBALL_URL"
+    log "  DRY RUN: Would calculate SHA512 of tarball"
+    log "  DRY RUN: Would update Version to $NEW_FULL_VERSION in all specs"
+    log "  DRY RUN: Would update SHA512 hash in all specs"
+    log "  DRY RUN: Would reset Release to 1 in all specs"
+    return 0
+  fi
+  
+  # Create sources directory if needed
+  mkdir -p "$SOURCES_DIR"
+  
+  # Download tarball if not exists
+  if [ ! -f "$TARBALL_PATH" ]; then
+    log "Downloading kernel tarball..."
+    if ! wget -q --show-progress -O "$TARBALL_PATH" "$TARBALL_URL"; then
+      log_error "Failed to download kernel tarball from $TARBALL_URL"
+      rm -f "$TARBALL_PATH"
+      return 1
+    fi
+    log "Downloaded: $TARBALL_PATH"
+  else
+    log "Tarball already exists: $TARBALL_PATH"
+  fi
+  
+  # Calculate SHA512 hash
+  log "Calculating SHA512 hash..."
+  local NEW_SHA512=$(calculate_file_sha512 "$TARBALL_PATH")
+  
+  if [ -z "$NEW_SHA512" ]; then
+    log_error "Failed to calculate SHA512 hash"
+    return 1
+  fi
+  
+  log "SHA512: ${NEW_SHA512:0:32}...${NEW_SHA512: -32}"
+  
+  # Update each spec file
+  local UPDATE_FAILED=false
+  
+  for spec in $AVAILABLE_SPECS; do
+    local SPEC_PATH="$REPO_DIR/$SPEC_SUBDIR/$spec"
+    
+    if [ ! -f "$SPEC_PATH" ]; then
+      log_warn "Spec file not found, skipping: $SPEC_PATH"
+      continue
+    fi
+    
+    log ""
+    log "Updating $spec..."
+    
+    # Get current version
+    local OLD_VERSION=$(get_spec_version "$SPEC_PATH")
+    if [ -z "$OLD_VERSION" ]; then
+      log_error "Could not get current version from $SPEC_PATH"
+      UPDATE_FAILED=true
+      continue
+    fi
+    
+    # Update version
+    if ! update_spec_version "$SPEC_PATH" "$NEW_FULL_VERSION"; then
+      log_error "Failed to update version in $spec"
+      UPDATE_FAILED=true
+      continue
+    fi
+    
+    # Update SHA512 hash
+    if ! update_spec_sha512 "$SPEC_PATH" "linux" "$NEW_SHA512"; then
+      log_error "Failed to update SHA512 in $spec"
+      UPDATE_FAILED=true
+      continue
+    fi
+    
+    # Reset release to 1
+    if ! reset_spec_release "$SPEC_PATH"; then
+      log_error "Failed to reset release in $spec"
+      UPDATE_FAILED=true
+      continue
+    fi
+    
+    # Add changelog entry
+    local CHANGELOG_MSG="Update to version $NEW_FULL_VERSION"
+    if ! add_changelog_entry "$SPEC_PATH" "$NEW_FULL_VERSION" "1" "$CHANGELOG_MSG"; then
+      log_error "Failed to add changelog entry to $spec"
+      UPDATE_FAILED=true
+      continue
+    fi
+    
+    log "  Successfully updated $spec"
+  done
+  
+  if [ "$UPDATE_FAILED" = true ]; then
+    log_error "One or more spec updates failed"
+    return 1
+  fi
+  
+  log ""
+  log "Kernel version update completed successfully"
+  return 0
+}
+
+# Check if a kernel version update is needed and perform it
+# Arguments:
+#   $1 - KERNEL_VERSION: Base kernel version (e.g., "5.10", "6.1")
+#   $2 - REPO_DIR: Path to Photon repository
+#   $3 - SOURCES_DIR: Directory to download tarball to
+#   $4 - AVAILABLE_SPECS: Space-separated list of spec files
+#   $5 - DRY_RUN: "true" to skip actual changes
+# Returns: 0 if update performed/not needed, 1 on error
+check_and_update_kernel_version() {
+  local KERNEL_VERSION="$1"
+  local REPO_DIR="$2"
+  local SOURCES_DIR="$3"
+  local AVAILABLE_SPECS="$4"
+  local DRY_RUN="${5:-false}"
+  
+  log ""
+  log "Checking for kernel version updates..."
+  
+  # Get current version from spec
+  local CURRENT_VERSION=$(get_photon_kernel_version "$KERNEL_VERSION" "$REPO_DIR")
+  if [ -z "$CURRENT_VERSION" ]; then
+    log_error "Could not determine current kernel version"
+    return 1
+  fi
+  
+  log "Current Photon kernel version: $CURRENT_VERSION"
+  
+  # Get latest stable version from kernel.org
+  local KERNEL_URL=$(get_kernel_org_url "$KERNEL_VERSION")
+  local LATEST_VERSION=""
+  
+  # Fetch latest version (parse kernel.org index)
+  LATEST_VERSION=$(curl -s "$KERNEL_URL" 2>/dev/null | \
+    grep -oE "linux-${KERNEL_VERSION}\.[0-9]+\.tar\.xz" | \
+    sed 's/linux-//; s/.tar.xz//' | \
+    sort -V | tail -1)
+  
+  if [ -z "$LATEST_VERSION" ]; then
+    log_warn "Could not fetch latest kernel version from kernel.org"
+    return 0
+  fi
+  
+  log "Latest stable kernel version: $LATEST_VERSION"
+  
+  # Compare versions
+  if [ "$CURRENT_VERSION" = "$LATEST_VERSION" ]; then
+    log "Kernel is up to date"
+    return 0
+  fi
+  
+  if version_less_than "$CURRENT_VERSION" "$LATEST_VERSION"; then
+    log "New kernel version available: $CURRENT_VERSION -> $LATEST_VERSION"
+    
+    if [ "$DRY_RUN" = "true" ]; then
+      log "  DRY RUN: Would update kernel to $LATEST_VERSION"
+      return 0
+    fi
+    
+    # Perform the update
+    update_kernel_version "$KERNEL_VERSION" "$LATEST_VERSION" "$REPO_DIR" "$SOURCES_DIR" "$AVAILABLE_SPECS" "$DRY_RUN"
+    return $?
+  else
+    log "Current version ($CURRENT_VERSION) is newer than or equal to latest ($LATEST_VERSION)"
+    return 0
+  fi
+}
