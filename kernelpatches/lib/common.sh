@@ -265,6 +265,115 @@ get_next_patch_number() {
 }
 
 # -----------------------------------------------------------------------------
+# Spec Release and Changelog Functions
+# -----------------------------------------------------------------------------
+
+# Get current release number from spec file
+get_spec_release() {
+  local SPEC_PATH="$1"
+  
+  if [ ! -f "$SPEC_PATH" ]; then
+    echo ""
+    return 1
+  fi
+  
+  # Extract release number from "Release: N%{...}" pattern
+  grep -E '^Release:' "$SPEC_PATH" | head -1 | \
+    sed -E 's/^Release:\s*([0-9]+).*/\1/'
+}
+
+# Increment release number in spec file
+# Returns the new release number
+increment_spec_release() {
+  local SPEC_PATH="$1"
+  
+  if [ ! -f "$SPEC_PATH" ]; then
+    log_error "Spec file not found: $SPEC_PATH"
+    return 1
+  fi
+  
+  local CURRENT=$(get_spec_release "$SPEC_PATH")
+  if [ -z "$CURRENT" ]; then
+    log_error "Could not extract Release number from $SPEC_PATH"
+    return 1
+  fi
+  
+  local NEW=$((CURRENT + 1))
+  
+  # Replace the release number, preserving the rest of the line
+  sed -i -E "s/^(Release:\s*)${CURRENT}(%.*)/\1${NEW}\2/" "$SPEC_PATH"
+  
+  if [ $? -eq 0 ]; then
+    log "Incremented Release: $CURRENT -> $NEW in $(basename "$SPEC_PATH")"
+    echo "$NEW"
+    return 0
+  else
+    log_error "Failed to increment Release in $SPEC_PATH"
+    return 1
+  fi
+}
+
+# Add changelog entry to spec file
+# Format: * <Day> <Mon> <DD> <YYYY> <Author> <Version>-<Release>
+#         - <Message>
+add_changelog_entry() {
+  local SPEC_PATH="$1"
+  local VERSION="$2"
+  local RELEASE="$3"
+  local MESSAGE="$4"
+  local AUTHOR="${5:-Kernel Backport Script <kernel-backport@photon.local>}"
+  
+  if [ ! -f "$SPEC_PATH" ]; then
+    log_error "Spec file not found: $SPEC_PATH"
+    return 1
+  fi
+  
+  # Format date as: Day Mon DD YYYY (e.g., "Mon Dec 30 2024")
+  local DATE_STR=$(date '+%a %b %d %Y')
+  
+  # Find %changelog line number
+  local CHANGELOG_LINE=$(grep -n '^%changelog' "$SPEC_PATH" | head -1 | cut -d: -f1)
+  
+  if [ -z "$CHANGELOG_LINE" ]; then
+    log_error "No %changelog section found in $SPEC_PATH"
+    return 1
+  fi
+  
+  # Create temporary file with changelog entry inserted
+  local TMP_FILE=$(mktemp)
+  
+  # Copy lines up to and including %changelog, then insert entry, then rest of file
+  head -n "$CHANGELOG_LINE" "$SPEC_PATH" > "$TMP_FILE"
+  echo "* ${DATE_STR} ${AUTHOR} ${VERSION}-${RELEASE}" >> "$TMP_FILE"
+  echo "- ${MESSAGE}" >> "$TMP_FILE"
+  tail -n +$((CHANGELOG_LINE + 1)) "$SPEC_PATH" >> "$TMP_FILE"
+  
+  # Replace original file
+  mv "$TMP_FILE" "$SPEC_PATH"
+  
+  if [ $? -eq 0 ]; then
+    log "Added changelog entry to $(basename "$SPEC_PATH")"
+    return 0
+  else
+    log_error "Failed to add changelog entry to $SPEC_PATH"
+    return 1
+  fi
+}
+
+# Get version from spec file
+get_spec_version() {
+  local SPEC_PATH="$1"
+  
+  if [ ! -f "$SPEC_PATH" ]; then
+    echo ""
+    return 1
+  fi
+  
+  grep -E '^Version:' "$SPEC_PATH" | head -1 | \
+    sed -E 's/^Version:\s*([0-9.]+).*/\1/'
+}
+
+# -----------------------------------------------------------------------------
 # Validation Functions
 # -----------------------------------------------------------------------------
 validate_kernel_version() {
