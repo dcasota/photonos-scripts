@@ -12,10 +12,12 @@
 # Options:
 #   --kernel VERSION     Kernel version to backport (5.10, 6.1, 6.12) - REQUIRED
 #   --source TYPE        Patch source: 'cve' (default), 'stable', 'stable-full', or 'all'
-#   --cve-source SOURCE  CVE source: 'nvd' (default), 'atom', or 'upstream'
+#   --cve-source SOURCE  CVE source: 'nvd' (default), 'atom', 'upstream', or 'ghsa'
 #   --month YYYY-MM      Month to scan (for upstream CVE source only)
 #   --analyze-cves       Analyze which CVE patches are redundant after stable patches
 #   --cve-since YYYY-MM  Filter CVE analysis to CVEs since this date
+#   --detect-gaps        Detect CVEs without stable backports (require manual porting)
+#   --gap-report DIR     Directory for gap detection reports (default: /var/log/kernel-backport/gaps)
 #   --resume             Resume from checkpoint (for stable-full workflow)
 #   --report-dir DIR     Directory for CVE analysis reports (default: /var/log/kernel-backport/reports)
 #   --repo-url URL       Photon repo URL (default: https://github.com/vmware/photon.git)
@@ -39,6 +41,7 @@
 #              Recent feed every 2 hours + yearly feeds (2024+) once per day
 #   atom     - Official linux-cve-announce mailing list Atom feed
 #   upstream - Search torvalds/linux commits for "CVE" keyword
+#   ghsa     - GitHub Advisory Database (requires gh CLI auth or GITHUB_TOKEN)
 #
 # Supported Kernels:
 #   5.10 - Linux 5.10 LTS (Photon OS 4.0)
@@ -54,6 +57,7 @@ source "$SCRIPT_DIR/lib/common.sh"
 source "$SCRIPT_DIR/lib/cve_sources.sh"
 source "$SCRIPT_DIR/lib/stable_patches.sh"
 source "$SCRIPT_DIR/lib/cve_analysis.sh"
+source "$SCRIPT_DIR/lib/cve_gap_detection.sh"
 source "$SCRIPT_DIR/lib/build.sh"
 
 # -----------------------------------------------------------------------------
@@ -78,6 +82,8 @@ DRY_RUN=false
 ANALYZE_CVES=false
 CVE_SINCE=""
 RESUME=false
+DETECT_GAPS=false
+GAP_REPORT_DIR="${GAP_REPORT_DIR:-/var/log/kernel-backport/gaps}"
 
 # -----------------------------------------------------------------------------
 # Parse Arguments
@@ -90,6 +96,8 @@ while [[ $# -gt 0 ]]; do
     --month) SCAN_MONTH="$2"; shift 2 ;;
     --analyze-cves) ANALYZE_CVES=true; shift ;;
     --cve-since) CVE_SINCE="$2"; shift 2 ;;
+    --detect-gaps) DETECT_GAPS=true; shift ;;
+    --gap-report) GAP_REPORT_DIR="$2"; shift 2 ;;
     --resume) RESUME=true; shift ;;
     --report-dir) REPORT_DIR="$2"; shift 2 ;;
     --repo-url) REPO_URL="$2"; shift 2 ;;
@@ -130,9 +138,9 @@ if [ "$PATCH_SOURCE" != "cve" ] && [ "$PATCH_SOURCE" != "stable" ] && \
   exit 1
 fi
 
-if [ "$CVE_SOURCE" != "nvd" ] && [ "$CVE_SOURCE" != "atom" ] && [ "$CVE_SOURCE" != "upstream" ]; then
+if [ "$CVE_SOURCE" != "nvd" ] && [ "$CVE_SOURCE" != "atom" ] && [ "$CVE_SOURCE" != "upstream" ] && [ "$CVE_SOURCE" != "ghsa" ]; then
   echo "ERROR: Invalid --cve-source '$CVE_SOURCE'"
-  echo "Valid options: nvd, atom, upstream"
+  echo "Valid options: nvd, atom, upstream, ghsa"
   exit 1
 fi
 
@@ -167,6 +175,7 @@ case "$PATCH_SOURCE" in
       nvd) log "CVE source: NIST NVD (kernel.org CNA, recent + yearly feeds)" ;;
       atom) log "CVE source: linux-cve-announce Atom feed" ;;
       upstream) log "CVE source: upstream commits (searching for CVE keyword)" ;;
+      ghsa) log "CVE source: GitHub Advisory Database (GHSA)" ;;
     esac
     ;;
 esac
@@ -178,6 +187,8 @@ log "Skills file: $SKILLS_FILE"
 log "Kernel.org URL: $KERNEL_ORG_URL"
 [ "$ANALYZE_CVES" = true ] && log "CVE Analysis: enabled"
 [ -n "$CVE_SINCE" ] && log "CVE since: $CVE_SINCE"
+[ "$DETECT_GAPS" = true ] && log "Gap detection: enabled"
+[ "$DETECT_GAPS" = true ] && log "Gap report directory: $GAP_REPORT_DIR"
 [ "$RESUME" = true ] && log "Resume from checkpoint: enabled"
 log "Report directory: $REPORT_DIR"
 log "Dry run: $DRY_RUN"
@@ -297,6 +308,57 @@ if [ "$PATCH_SOURCE" = "cve" ] || [ "$PATCH_SOURCE" = "all" ]; then
       log "  $sha"
     done
     [ "$CVE_TOTAL" -gt 5 ] && log "  ... and $((CVE_TOTAL - 5)) more"
+  fi
+  
+  # Run gap detection if enabled
+  if [ "$DETECT_GAPS" = true ] && [ "$CVE_TOTAL" -gt 0 ]; then
+    log ""
+    log "=== Step 3a: CVE Gap Detection ==="
+    log "Analyzing CVEs for missing stable backports..."
+    
+    # Create CVE list file from cve_info.txt (contains CVE_ID|commit pairs)
+    CVE_LIST_FILE="$OUTPUT_BASE/cve_ids.txt"
+    if [ -f "$OUTPUT_BASE/cve_info.txt" ]; then
+      cut -d'|' -f1 "$OUTPUT_BASE/cve_info.txt" | sort -u > "$CVE_LIST_FILE"
+    elif [ -f "$OUTPUT_BASE/cve_info_ghsa.txt" ]; then
+      cut -d'|' -f1 "$OUTPUT_BASE/cve_info_ghsa.txt" | sort -u > "$CVE_LIST_FILE"
+    else
+      # Generate CVE IDs from patch list by querying NVD (slower)
+      log "No CVE info file found, will analyze commits individually"
+      > "$CVE_LIST_FILE"
+    fi
+    
+    if [ "$DRY_RUN" = true ]; then
+      log "DRY RUN: Would run gap detection with:"
+      log "  - Kernel: $KERNEL_VERSION"
+      log "  - Current version: $CURRENT_PHOTON_VERSION"
+      log "  - CVE list: $CVE_LIST_FILE"
+      log "  - Gap report dir: $GAP_REPORT_DIR"
+    else
+      mkdir -p "$GAP_REPORT_DIR"
+      
+      if [ -s "$CVE_LIST_FILE" ]; then
+        GAP_REPORT=$(run_gap_detection "$KERNEL_VERSION" "$CURRENT_PHOTON_VERSION" "$CVE_LIST_FILE" "$OUTPUT_BASE" "$GAP_REPORT_DIR")
+        
+        if [ -n "$GAP_REPORT" ] && [ -f "$GAP_REPORT" ]; then
+          GAPS_FOUND=$(jq -r '.summary.cves_with_gaps' "$GAP_REPORT" 2>/dev/null || echo "0")
+          
+          if [ "$GAPS_FOUND" -gt 0 ]; then
+            log ""
+            log "WARNING: $GAPS_FOUND CVE(s) require manual backporting!"
+            log "These CVEs affect kernel $KERNEL_VERSION but have no official stable backport."
+            log "Gap report: $GAP_REPORT"
+            log ""
+            log "CVEs requiring manual backport:"
+            jq -r '.gaps[] | "  - \(.cve_id) [\(.severity)] - \(.description | .[0:80])..."' "$GAP_REPORT" 2>/dev/null | head -10
+          else
+            log "No backport gaps detected - all CVEs have available patches"
+          fi
+        fi
+      else
+        log "No CVE IDs to analyze for gaps"
+      fi
+    fi
   fi
 fi
 

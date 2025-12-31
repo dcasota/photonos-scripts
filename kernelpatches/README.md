@@ -1,44 +1,49 @@
 # Kernel Backport Processor for Photon OS
 
-   The kernelpatches system is an automated kernel patch backporting solution for Photon OS. Here's the workflow:
+The kernelpatches system is an automated kernel patch backporting solution for Photon OS. Here's the workflow:
 
-   Architecture
+## Architecture
 
-     kernelpatches/
-     ├── install.sh           # Installer with cron job setup
-     ├── kernel_backport.sh   # Main backport script
-     ├── patch_routing.skills # Rules for routing patches to spec files
-     ├── lib/
-     │   ├── common.sh        # Shared functions (logging, network, routing, SHA512)
-     │   ├── build.sh         # Build functions (rpmbuild, version updates)
-     │   ├── cve_sources.sh   # CVE detection from NVD/atom/upstream
-     │   ├── stable_patches.sh # Stable kernel patch handling
-     │   └── cve_analysis.sh  # CVE redundancy analysis
-     ├── 4.0/                 # Cloned Photon 4.0 branch (kernel 5.10)
-     ├── 5.0/                 # Cloned Photon 5.0 branch (kernel 6.1)
-     └── common/              # Photon common branch (kernel 6.12)
+```
+kernelpatches/
+├── install.sh              # Installer with cron job setup
+├── kernel_backport.sh      # Main backport script
+├── patch_routing.skills    # Rules for routing patches to spec files
+├── lib/
+│   ├── common.sh           # Shared functions (logging, network, routing, SHA512)
+│   ├── build.sh            # Build functions (rpmbuild, version updates)
+│   ├── cve_sources.sh      # CVE detection from NVD/atom/upstream/GHSA
+│   ├── cve_gap_detection.sh # CVE gap detection for missing backports
+│   ├── stable_patches.sh   # Stable kernel patch handling
+│   └── cve_analysis.sh     # CVE redundancy analysis
+├── 4.0/                    # Cloned Photon 4.0 branch (kernel 5.10)
+├── 5.0/                    # Cloned Photon 5.0 branch (kernel 6.1)
+└── common/                 # Photon common branch (kernel 6.12)
+```
 
-   Workflow Steps
+## Workflow Steps
 
-   1. Installation: install.sh installs to /opt/kernel-backport, sets up cron (every 2 hours by default), creates config and helper scripts (status.sh, run-now.sh)
+1. **Installation**: install.sh installs to /opt/kernel-backport, sets up cron (every 2 hours by default), creates config and helper scripts (status.sh, run-now.sh)
 
-   2. Clone/Update Repository: Clones the appropriate Photon branch based on kernel version (5.10→4.0, 6.1→5.0, 6.12→common)
+2. **Clone/Update Repository**: Clones the appropriate Photon branch based on kernel version (5.10→4.0, 6.1→5.0, 6.12→common)
 
-   3. Find Patches: Scans for patches from:
-     •  CVE patches: NVD (kernel.org CNA), atom feed, or upstream commits
-     •  Stable patches: kernel.org subversion patches (e.g., 6.1.120→6.1.121)
+3. **Find Patches**: Scans for patches from:
+   - CVE patches: NVD (kernel.org CNA), GitHub Advisory Database (GHSA), atom feed, or upstream commits
+   - Stable patches: kernel.org subversion patches (e.g., 6.1.120→6.1.121)
 
-   4. Route Patches: Uses patch_routing.skills or auto-detection to determine which spec files receive each patch:
-     •  all → linux.spec, linux-esx.spec, linux-rt.spec
-     •  base → linux.spec only
-     •  esx → linux-esx.spec only
-     •  none → skip patch
+4. **Gap Detection** (optional): Identifies CVEs that affect the target kernel but have no official stable backport available, requiring manual backporting
 
-   5. Integrate: Adds patches to spec files (Patch100-249 range for CVEs), copies patch files to SPECS/linux directory
+5. **Route Patches**: Uses patch_routing.skills or auto-detection to determine which spec files receive each patch:
+   - `all` → linux.spec, linux-esx.spec, linux-rt.spec
+   - `base` → linux.spec only
+   - `esx` → linux-esx.spec only
+   - `none` → skip patch
 
-   6. Build (optional): Runs rpmbuild for kernel RPMs
+6. **Integrate**: Adds patches to spec files (Patch100-499 range for CVEs), copies patch files to SPECS/linux directory
 
-   7. Commit/Push/PR: Creates git commit, pushes to branch, opens GitHub PR
+7. **Build** (optional): Runs rpmbuild for kernel RPMs
+
+8. **Commit/Push/PR**: Creates git commit, pushes to branch, opens GitHub PR
 
 ## Supported Kernels
 
@@ -54,8 +59,14 @@
 # CVE patches (default) - uses NVD kernel.org CNA feed
 ./kernel_backport.sh --kernel 5.10
 
-# CVE patches with specific source
+# CVE patches with specific source (atom feed)
 ./kernel_backport.sh --kernel 6.1 --source cve --cve-source atom
+
+# CVE patches from GitHub Advisory Database
+./kernel_backport.sh --kernel 6.1 --source cve --cve-source ghsa
+
+# CVE patches with gap detection (identify CVEs needing manual backport)
+./kernel_backport.sh --kernel 5.10 --source cve --detect-gaps --gap-report /tmp/gaps
 
 # Stable kernel patches from kernel.org (download only)
 ./kernel_backport.sh --kernel 6.1 --source stable
@@ -124,8 +135,10 @@ tail -f /var/log/kernel-backport/summary.log
 Options:
   --kernel VERSION     Kernel version (5.10, 6.1, 6.12) - REQUIRED
   --source TYPE        Patch source: cve (default), stable, stable-full, or all
-  --cve-source SOURCE  CVE source: nvd (default), atom, or upstream
+  --cve-source SOURCE  CVE source: nvd (default), atom, ghsa, or upstream
   --month YYYY-MM      Month to scan (for upstream CVE source only)
+  --detect-gaps        Enable CVE gap detection (find CVEs without stable backports)
+  --gap-report DIR     Directory for gap detection reports (default: /var/log/kernel-backport/gaps)
   --analyze-cves       Analyze which CVE patches become redundant after stable patches
   --cve-since YYYY-MM  Filter CVE analysis to CVEs since this date
   --resume             Resume from checkpoint (for stable-full workflow)
@@ -170,7 +183,52 @@ The script automatically falls back to simple integration if spec2git is not ava
 |--------|-------------|
 | `nvd` | NIST NVD filtered by kernel.org CNA (default). Recent feed every 2h + yearly feeds (2024+) once per day |
 | `atom` | Official linux-cve-announce mailing list Atom feed |
+| `ghsa` | GitHub Advisory Database - queries for Linux kernel advisories via GraphQL API |
 | `upstream` | Search torvalds/linux commits for "CVE" keyword |
+
+### CVE Gap Detection (--detect-gaps)
+
+Gap detection identifies CVEs that:
+1. Affect the target kernel version (based on NVD CPE data)
+2. Have NO official stable backport available from kernel.org
+
+This is useful for finding CVEs that require **manual backporting** because the kernel.org stable team hasn't created an official backport yet.
+
+**Example scenario**: CVE-2024-53095 (SMB client use-after-free) initially only had fixes for kernels 6.6+ and 6.11+. Photon OS running kernel 5.10 or 6.1 needed a manual backport until kernel.org added official stable backports.
+
+```bash
+# Run gap detection for kernel 5.10
+./kernel_backport.sh --kernel 5.10 --source cve --detect-gaps
+
+# Save gap reports to custom directory
+./kernel_backport.sh --kernel 6.1 --source cve --detect-gaps --gap-report /tmp/cve-gaps
+
+# Combine with GHSA source for comprehensive coverage
+./kernel_backport.sh --kernel 5.10 --source cve --cve-source ghsa --detect-gaps
+```
+
+**Gap Report Output** (JSON format):
+```json
+{
+  "kernel_version": "5.10",
+  "photon_version": "5.10.247",
+  "summary": {
+    "total_cves_analyzed": 24,
+    "cves_with_gaps": 1,
+    "cves_patchable": 15,
+    "cves_not_affected": 8
+  },
+  "gaps": [
+    {
+      "cve_id": "CVE-2024-XXXXX",
+      "severity": "HIGH",
+      "cvss": 7.8,
+      "fix_branches": ["6.6", "6.11"],
+      "missing_backports": ["5.10", "5.15", "6.1"]
+    }
+  ]
+}
+```
 
 ### Default Behavior
 
@@ -293,15 +351,22 @@ Key Scripts:
 
    5. `lib/cve_sources.sh` - CVE detection from:  
      •  NVD (NIST) with kernel.org CNA filtering  
+     •  GitHub Advisory Database (GHSA) via GraphQL API  
      •  linux-cve-announce Atom feed  
      •  Upstream torvalds/linux commit search  
 
-   6. `lib/stable_patches.sh` - Stable patch handling:  
+   6. `lib/cve_gap_detection.sh` - CVE gap detection:  
+     •  Queries NVD for CVE affected version ranges  
+     •  Checks git.kernel.org for available stable backports  
+     •  Identifies CVEs requiring manual backporting  
+     •  Generates JSON/text gap reports  
+
+   7. `lib/stable_patches.sh` - Stable patch handling:  
      •  Downloads incremental patches from kernel.org  
      •  spec2git integration workflow (with fallback to simple mode)  
      •  Checkpoint/resume capability for long operations  
 
-   7. `lib/cve_analysis.sh` - CVE redundancy detection:  
+   8. `lib/cve_analysis.sh` - CVE redundancy detection:  
      •  Identifies CVE patches made redundant by stable updates  
      •  Generates JSON/text reports  
 
@@ -354,6 +419,8 @@ All operations are logged to files for debugging and auditing:
 | `/tmp/backport_YYYYMMDD_HHMMSS/execution.log` | Real-time execution details |
 | `/var/log/kernel-backport/reports/cve_analysis_*.json` | CVE analysis reports (JSON) |
 | `/var/log/kernel-backport/reports/cve_analysis_*.txt` | CVE analysis reports (text) |
+| `/var/log/kernel-backport/gaps/gap_report_*.json` | CVE gap detection reports (JSON) |
+| `/var/log/kernel-backport/gaps/gap_report_*.txt` | CVE gap detection reports (text) |
 
 ### Log Rotation
 - Logs older than 30 days are automatically deleted by the cron wrapper
