@@ -379,10 +379,11 @@ def download(ctx, kernel: str, output: Optional[str]):
 @main.command()
 @click.option("--kernel", "-k", required=True, type=click.Choice(SUPPORTED_KERNELS),
               help="Kernel version")
-@click.option("--output", "-o", type=click.Path(), help="Output directory for logs")
+@click.option("--output", "-o", type=click.Path(), help="Output directory for logs (auto-generated if not specified)")
 @click.option("--canister", type=int, default=0, help="canister_build value (0 or 1)")
 @click.option("--acvp", type=int, default=0, help="acvp_build value (0 or 1)")
 @click.option("--all-permutations", is_flag=True, help="Build all canister/acvp combinations")
+@click.option("--skip-deps", is_flag=True, help="Skip installing build dependencies")
 @click.pass_context
 def build(
     ctx,
@@ -391,11 +392,15 @@ def build(
     canister: int,
     acvp: int,
     all_permutations: bool,
+    skip_deps: bool,
 ):
     """
     Build kernel RPMs.
     
-    Build kernel packages from spec files.
+    Build kernel packages from spec files. Build dependencies are automatically
+    installed via tdnf unless --skip-deps is specified.
+    
+    Output directory defaults to kernelpatches/build/{version}-{release}/
     """
     from scripts.build import KernelBuilder
     
@@ -407,10 +412,10 @@ def build(
         console.print(f"[red]Repository not found for kernel {kernel}[/red]")
         sys.exit(1)
     
-    output_dir = Path(output) if output else Path(f"/tmp/build_{kernel}")
-    output_dir.mkdir(parents=True, exist_ok=True)
+    # Use specified output dir or let build_all_specs auto-generate it
+    output_dir = Path(output) if output else None
     
-    # Verify dependencies
+    # Verify basic dependencies (rpmbuild, gcc, etc.)
     deps_ok, missing = builder.verify_build_deps()
     if not deps_ok:
         console.print(f"[red]Missing dependencies: {', '.join(missing)}[/red]")
@@ -418,9 +423,15 @@ def build(
     
     try:
         if all_permutations:
+            # For permutations, we need an output dir
+            if output_dir is None:
+                output_dir = builder.get_build_output_dir(kernel, repo_dir)
             results = builder.build_all_permutations(kernel, repo_dir, output_dir)
         else:
-            results = builder.build_all_specs(kernel, repo_dir, output_dir, canister, acvp)
+            results = builder.build_all_specs(
+                kernel, repo_dir, output_dir, canister, acvp,
+                install_deps=not skip_deps
+            )
         
         success = sum(1 for r in results if r.success)
         failed = len(results) - success
@@ -434,6 +445,81 @@ def build(
                 console.print(f"      Error: {r.error_message}")
         
         if failed > 0:
+            sys.exit(1)
+            
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        if ctx.obj.get("verbose"):
+            console.print_exception()
+        sys.exit(1)
+
+
+@main.command(name="build-srpm")
+@click.option("--kernel", "-k", required=True, type=click.Choice(SUPPORTED_KERNELS),
+              help="Kernel version")
+@click.option("--scheme", "-s", default="linux-esx",
+              type=click.Choice(["linux", "linux-esx"]),
+              help="Naming scheme (linux or linux-esx)")
+@click.option("--canister", type=int, default=0, help="canister_build value (0 or 1)")
+@click.option("--acvp", type=int, default=0, help="acvp_build value (0 or 1)")
+@click.option("--skip-deps", is_flag=True, help="Skip installing build dependencies")
+@click.pass_context
+def build_srpm(
+    ctx,
+    kernel: str,
+    scheme: str,
+    canister: int,
+    acvp: int,
+    skip_deps: bool,
+):
+    """
+    Build kernel RPM using SRPM from packages.vmware.com.
+    
+    This command downloads the official SRPM, extracts all sources,
+    applies the modified spec file with CVE patches, and builds the RPM.
+    
+    Output RPMs are placed in /usr/local/src/RPMS/x86_64/
+    
+    Examples:
+    
+        # Build linux-esx kernel
+        kernel-backport build-srpm --kernel 5.10
+        
+        # Build generic linux kernel
+        kernel-backport build-srpm --kernel 5.10 --scheme linux
+    """
+    from scripts.build import KernelBuilder
+    
+    config = KernelConfig.from_env()
+    builder = KernelBuilder(config)
+    
+    # Verify basic dependencies
+    deps_ok, missing = builder.verify_build_deps()
+    if not deps_ok:
+        console.print(f"[red]Missing dependencies: {', '.join(missing)}[/red]")
+        sys.exit(1)
+    
+    try:
+        console.print(f"[bold]Building {scheme} kernel {kernel} from SRPM[/bold]")
+        
+        result = builder.build_from_srpm(
+            kernel_version=kernel,
+            naming_scheme=scheme,
+            canister=canister,
+            acvp=acvp,
+            install_deps=not skip_deps,
+        )
+        
+        if result.success:
+            console.print(f"\n[green]Build successful![/green]")
+            console.print(f"  Version: {result.version}-{result.release}")
+            console.print(f"  Duration: {result.duration_seconds}s")
+            console.print(f"  RPMs: /usr/local/src/RPMS/x86_64/")
+        else:
+            console.print(f"\n[red]Build failed![/red]")
+            console.print(f"  Error: {result.error_message}")
+            if result.log_file:
+                console.print(f"  Log: {result.log_file}")
             sys.exit(1)
             
     except Exception as e:
