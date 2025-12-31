@@ -384,6 +384,283 @@ _scan_month_upstream() {
 }
 
 # -----------------------------------------------------------------------------
+# GitHub Advisory Database Functions (GHSA)
+# -----------------------------------------------------------------------------
+
+# Configuration for GHSA
+GHSA_GRAPHQL_URL="https://api.github.com/graphql"
+GHSA_SEVERITY_FILTER="${GHSA_SEVERITY_FILTER:-HIGH,CRITICAL}"
+GHSA_MARKER="${LOG_DIR:-.}/.ghsa_last_run"
+
+# Check if GitHub CLI is available and authenticated
+_check_gh_auth() {
+  if command -v gh >/dev/null 2>&1; then
+    if gh auth status >/dev/null 2>&1; then
+      return 0
+    fi
+  fi
+  return 1
+}
+
+# Get GitHub token from gh CLI or environment
+_get_github_token() {
+  # First check environment variable
+  if [ -n "${GITHUB_TOKEN:-}" ]; then
+    echo "$GITHUB_TOKEN"
+    return 0
+  fi
+  
+  # Try to get from gh CLI
+  if _check_gh_auth; then
+    gh auth token 2>/dev/null
+    return $?
+  fi
+  
+  return 1
+}
+
+# Query GitHub Advisory Database using GraphQL
+# Returns JSON with CVE advisories related to Linux kernel
+_query_ghsa_advisories() {
+  local OUTPUT_FILE="$1"
+  local AFTER_CURSOR="${2:-}"
+  
+  local TOKEN=$(_get_github_token)
+  if [ -z "$TOKEN" ]; then
+    log_error "No GitHub token available. Set GITHUB_TOKEN or authenticate with 'gh auth login'" >&2
+    return 1
+  fi
+  
+  # Build cursor parameter
+  local AFTER_PARAM=""
+  if [ -n "$AFTER_CURSOR" ]; then
+    AFTER_PARAM=", after: \"$AFTER_CURSOR\""
+  fi
+  
+  # GraphQL query for Linux kernel CVEs
+  local QUERY='query {
+    securityAdvisories(first: 100, orderBy: {field: PUBLISHED_AT, direction: DESC}'$AFTER_PARAM') {
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      nodes {
+        ghsaId
+        summary
+        severity
+        publishedAt
+        updatedAt
+        identifiers {
+          type
+          value
+        }
+        references {
+          url
+        }
+        cwes(first: 5) {
+          nodes {
+            cweId
+            name
+          }
+        }
+        vulnerabilities(first: 10) {
+          nodes {
+            package {
+              name
+              ecosystem
+            }
+            vulnerableVersionRange
+            firstPatchedVersion {
+              identifier
+            }
+          }
+        }
+      }
+    }
+  }'
+  
+  # Execute GraphQL query
+  local RESPONSE=$(curl -s --max-time 60 \
+    -H "Authorization: bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -X POST \
+    -d "{\"query\": \"$(echo "$QUERY" | tr '\n' ' ' | sed 's/"/\\"/g')\"}" \
+    "$GHSA_GRAPHQL_URL" 2>/dev/null)
+  
+  if [ -z "$RESPONSE" ]; then
+    log_error "Empty response from GitHub GraphQL API" >&2
+    return 1
+  fi
+  
+  # Check for errors
+  local ERRORS=$(echo "$RESPONSE" | jq -r '.errors[0].message // empty' 2>/dev/null)
+  if [ -n "$ERRORS" ]; then
+    log_error "GitHub API error: $ERRORS" >&2
+    return 1
+  fi
+  
+  echo "$RESPONSE" > "$OUTPUT_FILE"
+  return 0
+}
+
+# Parse GHSA response and extract Linux kernel CVEs with commit references
+_parse_ghsa_for_kernel_cves() {
+  local GHSA_JSON="$1"
+  local CVE_INFO_FILE="$2"
+  local PATCH_LIST="$3"
+  local SEVERITY_FILTER="$4"
+  
+  if [ ! -f "$GHSA_JSON" ]; then
+    return 1
+  fi
+  
+  # Build severity filter regex
+  local SEV_REGEX=$(echo "$SEVERITY_FILTER" | tr ',' '|')
+  
+  # Extract advisories that:
+  # 1. Have a CVE identifier
+  # 2. Match severity filter
+  # 3. Have references to git.kernel.org or torvalds/linux commits
+  # 4. Summary/description mentions "linux kernel" or "kernel"
+  jq -r --arg sev_regex "$SEV_REGEX" '
+    .data.securityAdvisories.nodes[]? |
+    select(.severity | test($sev_regex; "i")) |
+    select(
+      (.summary | test("linux kernel|kernel|smb|cifs|net/|fs/|drivers/|mm/|arch/"; "i")) or
+      (.references[]?.url | test("git.kernel.org|torvalds/linux"; "i"))
+    ) |
+    {
+      ghsa_id: .ghsaId,
+      cve_id: (.identifiers[] | select(.type == "CVE") | .value),
+      severity: .severity,
+      summary: .summary,
+      refs: [.references[]?.url | select(test("git.kernel.org.*/c/[a-f0-9]{40}|torvalds/linux/commit/[a-f0-9]{40}"))]
+    } |
+    select(.cve_id != null) |
+    select(.refs | length > 0) |
+    "\(.cve_id)|\(.severity)|\(.ghsa_id)|\(.refs[])"
+  ' "$GHSA_JSON" 2>/dev/null | while IFS='|' read -r cve_id severity ghsa_id ref_url; do
+    if [ -n "$ref_url" ] && [ -n "$cve_id" ]; then
+      # Extract commit SHA from URL
+      local commit=""
+      if echo "$ref_url" | grep -q "git.kernel.org"; then
+        commit=$(echo "$ref_url" | grep -oP '/c/\K[a-f0-9]{40}' | head -1)
+      elif echo "$ref_url" | grep -q "torvalds/linux"; then
+        commit=$(echo "$ref_url" | grep -oP 'commit/\K[a-f0-9]{40}' | head -1)
+      fi
+      
+      if [ -n "$commit" ]; then
+        echo "$commit" >> "$PATCH_LIST"
+        echo "$cve_id|$commit|$severity|$ghsa_id" >> "$CVE_INFO_FILE"
+      fi
+    fi
+  done
+}
+
+# Check if we should run full GHSA scan (rate limit: once per hour)
+_should_run_ghsa_full() {
+  if [ ! -f "$GHSA_MARKER" ]; then
+    return 0
+  fi
+  
+  local last_run=$(cat "$GHSA_MARKER" 2>/dev/null)
+  local now=$(date +%s)
+  local age=$((now - last_run))
+  
+  if [ $age -ge 3600 ]; then
+    return 0
+  else
+    local mins=$((age / 60))
+    log "  GHSA full scan last run ${mins}m ago (rate limit: 1/hour)" >&2
+    return 1
+  fi
+}
+
+_update_ghsa_marker() {
+  mkdir -p "$(dirname "$GHSA_MARKER")"
+  date +%s > "$GHSA_MARKER"
+}
+
+find_patches_ghsa() {
+  local KERNEL_VERSION="$1"
+  local OUTPUT_DIR="$2"
+  local PATCH_LIST="$3"
+  local DRY_RUN="${4:-false}"
+  
+  log "Source: GitHub Advisory Database (GHSA)" >&2
+  log "Filter: Severity $GHSA_SEVERITY_FILTER, Linux kernel related" >&2
+  log "Target kernel: $KERNEL_VERSION" >&2
+  
+  local CVE_INFO_FILE="$OUTPUT_DIR/cve_info_ghsa.txt"
+  > "$CVE_INFO_FILE"
+  > "$PATCH_LIST"
+  
+  if [ "$DRY_RUN" = true ]; then
+    log "Dry run - skipping actual API calls" >&2
+    echo "0"
+    return 0
+  fi
+  
+  # Check for GitHub authentication
+  if ! _get_github_token >/dev/null 2>&1; then
+    log_error "GitHub authentication required for GHSA source" >&2
+    log_error "Either set GITHUB_TOKEN environment variable or run 'gh auth login'" >&2
+    echo "0"
+    return 1
+  fi
+  
+  log "Querying GitHub Advisory Database..." >&2
+  
+  local GHSA_JSON="$OUTPUT_DIR/ghsa_response.json"
+  local page=1
+  local total_fetched=0
+  local cursor=""
+  
+  # Paginate through results (max 5 pages = 500 advisories)
+  while [ $page -le 5 ]; do
+    log "  Fetching page $page..." >&2
+    
+    if ! _query_ghsa_advisories "$GHSA_JSON" "$cursor"; then
+      log_warn "Failed to fetch GHSA page $page" >&2
+      break
+    fi
+    
+    # Parse and extract kernel CVEs
+    _parse_ghsa_for_kernel_cves "$GHSA_JSON" "$CVE_INFO_FILE" "$PATCH_LIST" "$GHSA_SEVERITY_FILTER"
+    
+    # Check for more pages
+    local has_next=$(jq -r '.data.securityAdvisories.pageInfo.hasNextPage' "$GHSA_JSON" 2>/dev/null)
+    cursor=$(jq -r '.data.securityAdvisories.pageInfo.endCursor // empty' "$GHSA_JSON" 2>/dev/null)
+    
+    local page_count=$(jq -r '.data.securityAdvisories.nodes | length' "$GHSA_JSON" 2>/dev/null)
+    total_fetched=$((total_fetched + page_count))
+    
+    if [ "$has_next" != "true" ] || [ -z "$cursor" ]; then
+      break
+    fi
+    
+    page=$((page + 1))
+    sleep 1  # Rate limiting
+  done
+  
+  rm -f "$GHSA_JSON"
+  
+  # Remove duplicates
+  if [ -f "$PATCH_LIST" ] && [ -s "$PATCH_LIST" ]; then
+    sort -u "$PATCH_LIST" -o "$PATCH_LIST"
+  fi
+  
+  _update_ghsa_marker
+  
+  local total=$(wc -l < "$PATCH_LIST" 2>/dev/null | tr -d ' ' || echo "0")
+  log "Scanned $total_fetched advisories, found $total kernel CVE commits from GHSA" >&2
+  
+  [ "$total" -gt 0 ] && log "CVE info saved to: $CVE_INFO_FILE" >&2
+  
+  echo "$total"
+}
+
+# -----------------------------------------------------------------------------
 # Main Dispatcher
 # -----------------------------------------------------------------------------
 find_cve_patches() {
@@ -404,6 +681,9 @@ find_cve_patches() {
       ;;
     upstream)
       find_patches_upstream "$KERNEL_VERSION" "$OUTPUT_DIR" "$PATCH_LIST" "$DRY_RUN" "$SCAN_MONTH"
+      ;;
+    ghsa)
+      find_patches_ghsa "$KERNEL_VERSION" "$OUTPUT_DIR" "$PATCH_LIST" "$DRY_RUN"
       ;;
     *)
       log_error "Unknown CVE source: $CVE_SOURCE"
