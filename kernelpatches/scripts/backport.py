@@ -5,7 +5,7 @@ Main backport workflow orchestration.
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Dict, List, Optional, Tuple
 
 from git import Repo
 
@@ -27,6 +27,7 @@ from scripts.config import (
 )
 from scripts.models import CVESource, Patch, PatchSource, PatchTarget
 from scripts.spec_file import SpecFile
+from scripts.source_verification import SourceVerifier, PatchVerificationResult
 
 
 def run_backport_workflow(
@@ -234,6 +235,7 @@ def run_backport_workflow(
     success_count = 0
     failed_count = 0
     skipped_count = 0
+    included_in_source_count = 0
     
     if patch_source in (PatchSource.CVE, PatchSource.ALL) and cve_total > 0 and not dry_run:
         logger.info(f"Processing {cve_total} CVE patches...")
@@ -241,6 +243,26 @@ def run_backport_workflow(
         from scripts.cve_sources import fetch_cves_sync
         
         cves = fetch_cves_sync(cve_source, kernel_version, output_dir, current_version, config)
+        
+        # Initialize source verifier for checking patches against stable kernel source
+        source_verifier: Optional[SourceVerifier] = None
+        source_verification_results: Dict[str, PatchVerificationResult] = {}
+        
+        if current_version:
+            logger.info("")
+            logger.info("=== Step 4a: Download and Extract Stable Kernel Source ===")
+            logger.info(f"Checking patches against kernel source {current_version}")
+            logger.info(f"Source URL: {config.photon_sources_url}linux-{current_version}.tar.xz")
+            
+            source_verifier = SourceVerifier(config=config)
+            source_dir = source_verifier.extract_source(current_version)
+            
+            if source_dir:
+                logger.info(f"Source extracted to: {source_dir}")
+                logger.info("Will verify each patch against source before adding to spec files")
+            else:
+                logger.warning("Could not extract source tarball, skipping source verification")
+                source_verifier = None
         
         processed = 0
         for cve in cves:
@@ -265,6 +287,20 @@ def run_backport_workflow(
                 
                 patch_content = patch_file.read_text(errors="ignore")
                 
+                # Check if patch is already included in stable kernel source
+                if source_verifier:
+                    verification = source_verifier.check_patch_included(
+                        patch_content, sha, cve.cve_id
+                    )
+                    source_verification_results[sha] = verification
+                    
+                    if verification.is_included:
+                        logger.info(f"  SKIP: Already included in kernel source - {verification.match_reason}")
+                        included_in_source_count += 1
+                        skipped_count += 1
+                        patch_file.unlink()
+                        continue
+                
                 # Determine routing
                 patch = Patch(sha=sha, cve_ids=[cve.cve_id])
                 target = determine_patch_targets(
@@ -281,7 +317,7 @@ def run_backport_workflow(
                 target_specs = expand_targets_to_specs(target, mapping.spec_files)
                 logger.info(f"  Routing: {target.value} -> {target_specs}")
                 
-                # Check if already integrated
+                # Check if already integrated in spec files
                 already_in = []
                 for spec_name in target_specs:
                     spec_path = spec_dir / spec_name
@@ -291,7 +327,7 @@ def run_backport_workflow(
                             already_in.append(spec_name)
                 
                 if already_in:
-                    logger.info(f"  SKIP: Already in {already_in}")
+                    logger.info(f"  SKIP: Already in spec files {already_in}")
                     skipped_count += 1
                     patch_file.unlink()
                     continue
@@ -316,7 +352,16 @@ def run_backport_workflow(
                 success_count += 1
                 patch_file.unlink()
         
-        logger.info(f"CVE Processing: Success={success_count}, Failed={failed_count}, Skipped={skipped_count}")
+        # Cleanup source verifier
+        if source_verifier:
+            source_verifier.cleanup()
+        
+        logger.info("")
+        logger.info(f"CVE Processing Complete:")
+        logger.info(f"  Success (added to spec): {success_count}")
+        logger.info(f"  Already in source tarball: {included_in_source_count}")
+        logger.info(f"  Skipped (other reasons): {skipped_count - included_in_source_count}")
+        logger.info(f"  Failed: {failed_count}")
     
     # Process stable patches
     if patch_source in (PatchSource.STABLE_FULL, PatchSource.ALL) and stable_total > 0:

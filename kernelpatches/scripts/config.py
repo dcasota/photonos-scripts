@@ -92,7 +92,10 @@ class KernelConfig:
     
     # Patch numbering ranges in spec files
     cve_patch_min: int = 100
-    cve_patch_max: int = 499
+    cve_patch_max: int = 9999
+    
+    # Broadcom artifactory for source packages
+    photon_sources_url: str = "https://packages.broadcom.com/artifactory/photon/photon_sources/1.0/"
     
     # Build settings
     build_timeout: int = 3600  # 1 hour

@@ -19,8 +19,8 @@ from scripts.config import SUPPORTED_KERNELS
 console = Console()
 
 
-DEFAULT_INSTALL_DIR = Path("/opt/kernel-backport")
-DEFAULT_LOG_DIR = Path("/var/log/kernel-backport")
+DEFAULT_INSTALL_DIR = Path("/opt/photon-kernel-backport")
+DEFAULT_LOG_DIR = Path("/var/log/photon-kernel-backport")
 DEFAULT_CRON_SCHEDULE = "0 */2 * * *"  # Every 2 hours
 DEFAULT_KERNELS = ",".join(SUPPORTED_KERNELS)
 
