@@ -52,7 +52,8 @@ dev = [
 ]
 
 [project.scripts]
-kernel-backport = "scripts.cli:main"
+photon-kernel-backport = "scripts.cli:main"
+phkbp = "scripts.cli:main"
 
 [project.urls]
 Repository = "https://github.com/vmware/photon"

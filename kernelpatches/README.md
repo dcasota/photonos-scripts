@@ -1,4 +1,4 @@
-# Kernel Backport Solution for Photon OS
+# Photon OS Kernel Backport Tool
 
 Automated kernel patch backporting and CVE coverage tracking for Photon OS.
 
@@ -27,24 +27,29 @@ pip install -e .
 
 ## Quick Start
 
+The CLI tool can be invoked as `photon-kernel-backport` or the shorter alias `phkbp`.
+
 ```bash
 # Generate CVE coverage matrix
-kernel-backport matrix --output /tmp/reports
+photon-kernel-backport matrix --output /tmp/reports
+
+# Or use the short alias
+phkbp matrix --output /tmp/reports
 
 # Generate full matrix with all stable patches
-kernel-backport full-matrix --output /var/log/cve_matrix --download-patches
+photon-kernel-backport full-matrix --output /var/log/cve_matrix --download-patches
 
 # Detect CVE gaps for a kernel
-kernel-backport gaps --kernel 5.10
+photon-kernel-backport gaps --kernel 5.10
 
 # Check kernel status
-kernel-backport status --kernel 6.1
+photon-kernel-backport status --kernel 6.1
 
 # Run backport workflow
-kernel-backport backport --kernel 6.1 --source cve
+photon-kernel-backport backport --kernel 6.1 --source cve
 
 # Install with cron scheduling
-kernel-backport install --cron "0 4 * * *"
+photon-kernel-backport install --cron "0 4 * * *"
 ```
 
 ## Commands
@@ -67,16 +72,16 @@ Generate a CVE coverage matrix across kernel versions.
 
 ```bash
 # Generate in all formats (JSON, CSV, Markdown)
-kernel-backport matrix --output /tmp/cve_reports
+photon-kernel-backport matrix --output /tmp/cve_reports
 
 # Generate for specific kernel only
-kernel-backport matrix --kernel 6.1 --output /tmp/reports
+photon-kernel-backport matrix --kernel 6.1 --output /tmp/reports
 
 # Print to console
-kernel-backport matrix --print-table --max-rows 100
+photon-kernel-backport matrix --print-table --max-rows 100
 
 # CSV format only
-kernel-backport matrix --format csv --output /tmp
+photon-kernel-backport matrix --format csv --output /tmp
 ```
 
 **Five CVE States:**
@@ -95,13 +100,13 @@ Generate a comprehensive matrix with all CVEs and stable patches:
 
 ```bash
 # Generate full matrix with all data
-kernel-backport full-matrix --output /var/log/cve_matrix --download-patches --repo-base .
+photon-kernel-backport full-matrix --output /var/log/cve_matrix --download-patches --repo-base .
 
 # Quick matrix without downloading patches
-kernel-backport full-matrix --output /tmp/matrix
+photon-kernel-backport full-matrix --output /tmp/matrix
 
 # Specific kernels only
-kernel-backport full-matrix --kernels 6.1,6.12 --output /tmp/matrix
+photon-kernel-backport full-matrix --kernels 6.1,6.12 --output /tmp/matrix
 ```
 
 This will:
@@ -116,13 +121,13 @@ Identify CVEs that affect a kernel but have no available patch.
 
 ```bash
 # Analyze all kernel.org CVEs from NVD feeds
-kernel-backport gaps --kernel 5.10
+photon-kernel-backport gaps --kernel 5.10
 
 # Analyze specific CVEs from a file
-kernel-backport gaps --kernel 6.1 --cve-list /tmp/cves.txt
+photon-kernel-backport gaps --kernel 6.1 --cve-list /tmp/cves.txt
 
 # Custom output directory
-kernel-backport gaps --kernel 6.12 --output /tmp/gap_reports
+photon-kernel-backport gaps --kernel 6.12 --output /tmp/gap_reports
 ```
 
 **Performance:** Analyzes 7,500+ CVEs in ~30 seconds (vs ~20 hours with per-CVE API calls)
@@ -133,19 +138,19 @@ Run the full backport workflow for CVE or stable patches.
 
 ```bash
 # CVE patches from NVD
-kernel-backport backport --kernel 6.1 --source cve
+photon-kernel-backport backport --kernel 6.1 --source cve
 
 # Stable kernel patches
-kernel-backport backport --kernel 5.10 --source stable
+photon-kernel-backport backport --kernel 5.10 --source stable
 
 # Both CVE and stable
-kernel-backport backport --kernel 6.12 --source all
+photon-kernel-backport backport --kernel 6.12 --source all
 
 # Dry run
-kernel-backport backport --kernel 6.1 --dry-run
+photon-kernel-backport backport --kernel 6.1 --dry-run
 
 # With gap detection
-kernel-backport backport --kernel 5.10 --detect-gaps
+photon-kernel-backport backport --kernel 5.10 --detect-gaps
 ```
 
 ### `status` - Kernel Status
@@ -153,7 +158,7 @@ kernel-backport backport --kernel 5.10 --detect-gaps
 Check current kernel version and patch status.
 
 ```bash
-kernel-backport status --kernel 6.1
+photon-kernel-backport status --kernel 6.1
 ```
 
 ### `download` - Download Stable Patches
@@ -161,7 +166,7 @@ kernel-backport status --kernel 6.1
 Download stable patches from kernel.org without integration.
 
 ```bash
-kernel-backport download --kernel 6.1 --output /tmp/patches
+photon-kernel-backport download --kernel 6.1 --output /tmp/patches
 ```
 
 ### `build` - Build Kernel RPMs
@@ -169,7 +174,7 @@ kernel-backport download --kernel 6.1 --output /tmp/patches
 Build kernel RPMs from spec files.
 
 ```bash
-kernel-backport build --kernel 6.1
+photon-kernel-backport build --kernel 6.1
 ```
 
 ### `install` - Install with Cron Scheduling
@@ -178,19 +183,19 @@ Install the kernel backport solution with optional cron job:
 
 ```bash
 # Install with default settings (cron every 2 hours)
-kernel-backport install
+photon-kernel-backport install
 
 # Install with custom schedule (daily at 4 AM)
-kernel-backport install --cron "0 4 * * *" --kernels 6.1,6.12
+photon-kernel-backport install --cron "0 4 * * *" --kernels 6.1,6.12
 
 # Install without cron
-kernel-backport install --no-cron
+photon-kernel-backport install --no-cron
 
 # Custom directories
-kernel-backport install --install-dir /opt/kb --log-dir /var/log/kb
+photon-kernel-backport install --install-dir /opt/kb --log-dir /var/log/kb
 
 # Uninstall
-kernel-backport install --uninstall
+photon-kernel-backport install --uninstall
 ```
 
 ## NVD Feed Cache
@@ -205,7 +210,7 @@ The solution uses local NVD feed caching for fast offline analysis:
 | `2024.json.gz` | Once per 24h | All 2024 CVEs |
 | `2025.json.gz` | Once per 24h | All 2025 CVEs |
 
-Cache location: `/var/cache/kernel-backport/nvd_feeds/`
+Cache location: `/var/cache/photon-kernel-backport/nvd_feeds/`
 
 ## Supported Kernels
 
@@ -288,8 +293,8 @@ Environment variables:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `KERNEL_BACKPORT_CACHE_DIR` | `/var/cache/kernel-backport` | Cache directory |
-| `KERNEL_BACKPORT_LOG_DIR` | `/var/log/kernel-backport` | Log directory |
+| `KERNEL_BACKPORT_CACHE_DIR` | `/var/cache/photon-kernel-backport` | Cache directory |
+| `KERNEL_BACKPORT_LOG_DIR` | `/var/log/photon-kernel-backport` | Log directory |
 | `KERNEL_BACKPORT_REPO_BASE` | Current directory | Base for repo clones |
 
 ## Project Structure
