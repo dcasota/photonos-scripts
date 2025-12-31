@@ -62,7 +62,8 @@ photon-kernel-backport install --cron "0 4 * * *"
 | `backport` | Run kernel patch backporting workflow |
 | `status` | Check kernel status and available updates |
 | `download` | Download stable patches from kernel.org |
-| `build` | Build kernel RPMs |
+| `build` | Build kernel RPMs from local spec files |
+| `build-srpm` | Build kernel RPMs using official SRPM from Broadcom |
 | `install` | Install with optional cron scheduling |
 | `cve` | CVE-related subcommands |
 
@@ -171,11 +172,46 @@ photon-kernel-backport download --kernel 6.1 --output /tmp/patches
 
 ### `build` - Build Kernel RPMs
 
-Build kernel RPMs from spec files.
+Build kernel RPMs from local spec files. Automatically installs build dependencies via tdnf.
 
 ```bash
-photon-kernel-backport build --kernel 6.1
+# Build with auto-generated output directory (kernelpatches/build/{version}-{release}/)
+photon-kernel-backport build --kernel 5.10
+
+# Build with custom output directory
+photon-kernel-backport build --kernel 6.1 --output /tmp/build
+
+# Skip dependency installation
+photon-kernel-backport build --kernel 6.1 --skip-deps
+
+# Build all canister/acvp permutations
+photon-kernel-backport build --kernel 5.10 --all-permutations
 ```
+
+### `build-srpm` - Build from Official SRPM
+
+Build kernel RPMs using the official SRPM from packages.broadcom.com. This is the recommended method as it includes all required source files and patches.
+
+```bash
+# Build linux-esx kernel (default)
+photon-kernel-backport build-srpm --kernel 5.10
+
+# Build generic linux kernel
+photon-kernel-backport build-srpm --kernel 5.10 --scheme linux
+
+# Skip dependency installation
+photon-kernel-backport build-srpm --kernel 5.10 --skip-deps
+```
+
+**Build Process:**
+1. Downloads SRPM from `packages.broadcom.com/artifactory/photon/`
+2. Extracts sources using `rpm2cpio`
+3. Sets up build environment at `/usr/local/src`
+4. Creates symlink `/usr/src/photon` -> `/usr/local/src`
+5. Installs build dependencies via tdnf
+6. Runs `rpmbuild -bb`
+
+**Output:** RPMs are placed in `/usr/local/src/RPMS/x86_64/`
 
 ### `install` - Install with Cron Scheduling
 
