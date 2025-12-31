@@ -1,0 +1,34 @@
+# Kernel Patch Routing Skills File
+# =================================
+# This file defines which spec files should receive each patch.
+#
+# Format:
+#   <commit_sha_prefix>|<targets>|<description>
+#
+# Targets can be:
+#   all       - Apply to linux.spec, linux-esx.spec, linux-rt.spec (if exists)
+#   base      - Apply to linux.spec only
+#   esx       - Apply to linux-esx.spec only
+#   rt        - Apply to linux-rt.spec only
+#   base,esx  - Apply to linux.spec and linux-esx.spec
+#   base,rt   - Apply to linux.spec and linux-rt.spec
+#   esx,rt    - Apply to linux-esx.spec and linux-rt.spec
+#   none      - Skip this patch entirely
+#
+# If a commit SHA is not listed, the default behavior is 'all'.
+#
+# Examples:
+# abc123def456|all|Fix CVE-2024-1234 affecting all kernel variants
+# 789xyz012abc|esx|ESX-specific virtualization fix
+# def456ghi789|base,rt|Fix for base and RT kernels, not ESX
+# skip12345678|none|Patch not applicable to Photon OS
+
+# Default routing rules based on patch characteristics
+# (Scripts will auto-detect based on patch content if not explicitly listed)
+#
+# Auto-detection rules:
+# - Patches touching drivers/gpu/* -> base only (not esx)
+# - Patches touching arch/x86/kvm/* -> esx only
+# - Patches touching kernel/sched/rt* -> rt only
+# - Patches touching security/*, mm/*, fs/* -> all
+# - CVE fixes -> all (unless specifically excluded)
