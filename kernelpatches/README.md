@@ -191,7 +191,7 @@ photon-kernel-backport install --cron "0 4 * * *" --kernels 6.1,6.12
 # Install without cron
 photon-kernel-backport install --no-cron
 
-# Custom directories
+# Custom directories (defaults: /opt/photon-kernel-backport and /var/log/photon-kernel-backport)
 photon-kernel-backport install --install-dir /opt/kb --log-dir /var/log/kb
 
 # Uninstall
