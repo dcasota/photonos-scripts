@@ -273,37 +273,37 @@ Key Scripts:
 
    1. `install.sh` - Installer that sets up the solution at `/opt/kernel-backport` with cron scheduling (every 2 hours by default), creates status/run-now helper scripts, and config file
 
-   2. `kernel_backport.sh` - Main orchestration script supporting:
-     •  CVE patches from NVD, atom feed, or upstream commits
-     •  Stable kernel subversion patches from kernel.org
-     •  Automatic kernel version updates with SHA512 hash calculation
-     •  RPM build integration
+   2. `kernel_backport.sh` - Main orchestration script supporting:  
+     •  CVE patches from NVD, atom feed, or upstream commits  
+     •  Stable kernel subversion patches from kernel.org  
+     •  Automatic kernel version updates with SHA512 hash calculation  
+     •  RPM build integration  
 
-   3. `lib/common.sh` - Core utilities:
-     •  Kernel version mappings (5.10→4.0, 6.1→5.0, 6.12→common)
-     •  Spec file manipulation (patch numbering, release increment, changelog)
-     •  SHA512 hash management for tarballs
-     •  Patch routing logic (all/base/esx/rt)
-     •  Network checks with retry logic
+   3. `lib/common.sh` - Core utilities:  
+     •  Kernel version mappings (5.10→4.0, 6.1→5.0, 6.12→common)  
+     •  Spec file manipulation (patch numbering, release increment, changelog)  
+     •  SHA512 hash management for tarballs  
+     •  Patch routing logic (all/base/esx/rt)  
+     •  Network checks with retry logic  
 
-   4. `lib/build.sh` - RPM build functions:
-     •  rpmbuild wrapper with canister/acvp permutations
-     •  Kernel version updates with tarball download and SHA512 calculation
-     •  Build timeout handling (1 hour default)
+   4. `lib/build.sh` - RPM build functions:  
+     •  rpmbuild wrapper with canister/acvp permutations  
+     •  Kernel version updates with tarball download and SHA512 calculation  
+     •  Build timeout handling (1 hour default)  
 
-   5. `lib/cve_sources.sh` - CVE detection from:
-     •  NVD (NIST) with kernel.org CNA filtering
-     •  linux-cve-announce Atom feed
-     •  Upstream torvalds/linux commit search
+   5. `lib/cve_sources.sh` - CVE detection from:  
+     •  NVD (NIST) with kernel.org CNA filtering  
+     •  linux-cve-announce Atom feed  
+     •  Upstream torvalds/linux commit search  
 
-   6. `lib/stable_patches.sh` - Stable patch handling:
-     •  Downloads incremental patches from kernel.org
-     •  spec2git integration workflow (with fallback to simple mode)
-     •  Checkpoint/resume capability for long operations
+   6. `lib/stable_patches.sh` - Stable patch handling:  
+     •  Downloads incremental patches from kernel.org  
+     •  spec2git integration workflow (with fallback to simple mode)  
+     •  Checkpoint/resume capability for long operations  
 
-   7. `lib/cve_analysis.sh` - CVE redundancy detection:
-     •  Identifies CVE patches made redundant by stable updates
-     •  Generates JSON/text reports
+   7. `lib/cve_analysis.sh` - CVE redundancy detection:  
+     •  Identifies CVE patches made redundant by stable updates  
+     •  Generates JSON/text reports  
 
 ## Kernel Version Updates
 
