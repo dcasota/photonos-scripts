@@ -190,14 +190,17 @@ photon-kernel-backport build --kernel 5.10 --all-permutations
 
 ### `build-srpm` - Build from Official SRPM
 
-Build kernel RPMs using the official SRPM from packages.broadcom.com. This is the recommended method as it includes all required source files and patches.
+Build kernel RPMs using the official SRPM from packages.broadcom.com. This is the recommended method as it includes all required source files and patches. By default, builds all kernel specs (linux.spec, linux-esx.spec, linux-rt.spec).
 
 ```bash
-# Build linux-esx kernel (default)
+# Build all kernel specs (linux.spec, linux-esx.spec, linux-rt.spec)
 photon-kernel-backport build-srpm --kernel 5.10
 
-# Build generic linux kernel
-photon-kernel-backport build-srpm --kernel 5.10 --scheme linux
+# Build only linux-esx kernel
+photon-kernel-backport build-srpm --kernel 5.10 --specs linux-esx.spec
+
+# Build linux and linux-esx
+photon-kernel-backport build-srpm --kernel 5.10 --specs "linux.spec,linux-esx.spec"
 
 # Skip dependency installation
 photon-kernel-backport build-srpm --kernel 5.10 --skip-deps
@@ -208,10 +211,13 @@ photon-kernel-backport build-srpm --kernel 5.10 --skip-deps
 2. Extracts sources using `rpm2cpio`
 3. Sets up build environment at `/usr/local/src`
 4. Creates symlink `/usr/src/photon` -> `/usr/local/src`
-5. Installs build dependencies via tdnf
-6. Runs `rpmbuild -bb`
+5. Copies local spec files (with CVE patches and updated release) to build directory
+6. Installs build dependencies via tdnf
+7. Runs `rpmbuild -bb` for each spec file
 
 **Output:** RPMs are placed in `/usr/local/src/RPMS/x86_64/`
+
+**Note:** The local spec files in `{kernel}/SPECS/linux/` are used instead of the SRPM's spec files. This ensures that CVE patches and release number updates are included in the build.
 
 ### `install` - Install with Cron Scheduling
 
