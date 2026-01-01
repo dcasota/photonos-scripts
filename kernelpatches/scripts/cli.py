@@ -457,9 +457,8 @@ def build(
 @main.command(name="build-srpm")
 @click.option("--kernel", "-k", required=True, type=click.Choice(SUPPORTED_KERNELS),
               help="Kernel version")
-@click.option("--scheme", "-s", default="linux-esx",
-              type=click.Choice(["linux", "linux-esx"]),
-              help="Naming scheme (linux or linux-esx)")
+@click.option("--specs", "-s", default=None,
+              help="Comma-separated spec files to build (e.g., 'linux.spec,linux-esx.spec'). If not specified, builds all.")
 @click.option("--canister", type=int, default=0, help="canister_build value (0 or 1)")
 @click.option("--acvp", type=int, default=0, help="acvp_build value (0 or 1)")
 @click.option("--skip-deps", is_flag=True, help="Skip installing build dependencies")
@@ -467,26 +466,30 @@ def build(
 def build_srpm(
     ctx,
     kernel: str,
-    scheme: str,
+    specs: Optional[str],
     canister: int,
     acvp: int,
     skip_deps: bool,
 ):
     """
-    Build kernel RPM using SRPM from packages.vmware.com.
+    Build kernel RPMs using SRPM from packages.vmware.com.
     
     This command downloads the official SRPM, extracts all sources,
-    applies the modified spec file with CVE patches, and builds the RPM.
+    applies the local modified spec files (with CVE patches and updated release),
+    and builds all kernel RPMs.
     
     Output RPMs are placed in /usr/local/src/RPMS/x86_64/
     
     Examples:
     
-        # Build linux-esx kernel
+        # Build all kernel specs (linux.spec, linux-esx.spec, linux-rt.spec)
         kernel-backport build-srpm --kernel 5.10
         
-        # Build generic linux kernel
-        kernel-backport build-srpm --kernel 5.10 --scheme linux
+        # Build only linux-esx kernel
+        kernel-backport build-srpm --kernel 5.10 --specs linux-esx.spec
+        
+        # Build linux and linux-esx
+        kernel-backport build-srpm --kernel 5.10 --specs "linux.spec,linux-esx.spec"
     """
     from scripts.build import KernelBuilder
     
@@ -499,27 +502,43 @@ def build_srpm(
         console.print(f"[red]Missing dependencies: {', '.join(missing)}[/red]")
         sys.exit(1)
     
+    # Parse spec filter
+    spec_filter = None
+    if specs:
+        spec_filter = [s.strip() for s in specs.split(",")]
+    
     try:
-        console.print(f"[bold]Building {scheme} kernel {kernel} from SRPM[/bold]")
+        if spec_filter:
+            console.print(f"[bold]Building kernel {kernel} from SRPM: {', '.join(spec_filter)}[/bold]")
+        else:
+            console.print(f"[bold]Building all kernel specs for {kernel} from SRPM[/bold]")
         
-        result = builder.build_from_srpm(
+        results = builder.build_all_from_srpm(
             kernel_version=kernel,
-            naming_scheme=scheme,
             canister=canister,
             acvp=acvp,
             install_deps=not skip_deps,
+            spec_filter=spec_filter,
         )
         
-        if result.success:
-            console.print(f"\n[green]Build successful![/green]")
-            console.print(f"  Version: {result.version}-{result.release}")
-            console.print(f"  Duration: {result.duration_seconds}s")
-            console.print(f"  RPMs: /usr/local/src/RPMS/x86_64/")
-        else:
-            console.print(f"\n[red]Build failed![/red]")
-            console.print(f"  Error: {result.error_message}")
-            if result.log_file:
-                console.print(f"  Log: {result.log_file}")
+        success = sum(1 for r in results if r.success)
+        failed = len(results) - success
+        
+        console.print(f"\n[bold]Build Results:[/bold] {success} succeeded, {failed} failed")
+        
+        for r in results:
+            status = "[green]OK[/green]" if r.success else "[red]FAIL[/red]"
+            console.print(f"  {status} {Path(r.spec_file).name}: {r.version}-{r.release}")
+            if r.duration_seconds:
+                console.print(f"       Duration: {r.duration_seconds}s")
+            if not r.success and r.error_message:
+                console.print(f"       Error: {r.error_message}")
+            if r.log_file:
+                console.print(f"       Log: {r.log_file}")
+        
+        console.print(f"\n  RPMs: /usr/local/src/RPMS/x86_64/")
+        
+        if failed > 0:
             sys.exit(1)
             
     except Exception as e:

@@ -284,14 +284,29 @@ class KernelBuilder:
             logger.error("Could not download SRPM from packages.vmware.com")
             return False, build_topdir
         
-        # Copy SRPM spec to SPECS directory (use original SRPM spec as base)
-        srpm_spec = sources_dir / f"{naming_scheme}.spec"
-        dest_spec = build_topdir / "SPECS" / f"{naming_scheme}.spec"
-        if srpm_spec.exists():
-            shutil.copy2(srpm_spec, dest_spec)
-            logger.info(f"Using SRPM spec file: {dest_spec}")
-        else:
-            logger.warning(f"SRPM spec not found: {srpm_spec}")
+        # Copy local spec files (with patches) to SPECS directory, overriding SRPM specs
+        # The local spec files have our CVE patches and updated release numbers
+        mapping = KERNEL_MAPPINGS.get(kernel_version)
+        local_spec_dir = self.config.get_repo_dir(kernel_version) / mapping.spec_dir
+        
+        specs_copied = []
+        for spec_name in mapping.spec_files:
+            local_spec_path = local_spec_dir / spec_name
+            dest_spec = build_topdir / "SPECS" / spec_name
+            
+            if local_spec_path.exists():
+                shutil.copy2(local_spec_path, dest_spec)
+                logger.info(f"Using local spec file: {local_spec_path} -> {dest_spec}")
+                specs_copied.append(spec_name)
+            else:
+                # Fall back to SRPM spec if local doesn't exist
+                srpm_spec = sources_dir / spec_name
+                if srpm_spec.exists():
+                    shutil.copy2(srpm_spec, dest_spec)
+                    logger.info(f"Using SRPM spec file: {dest_spec}")
+                    specs_copied.append(spec_name)
+                else:
+                    logger.warning(f"Spec file not found: {spec_name}")
         
         # Modify check_for_config_applicability.inc to not fail on config diffs
         # (different compiler versions will cause config differences)
@@ -448,6 +463,166 @@ diff -u .config.old .config || echo "Config differences detected (expected with 
                 canister_build=canister,
                 acvp_build=acvp,
             )
+    
+    def build_all_from_srpm(
+        self,
+        kernel_version: str,
+        canister: int = 0,
+        acvp: int = 0,
+        install_deps: bool = True,
+        spec_filter: Optional[List[str]] = None,
+    ) -> List[BuildResult]:
+        """
+        Build all kernel RPMs using SRPM-based approach.
+        
+        This downloads the official SRPM, extracts sources, applies our
+        modified spec files with CVE patches, and builds all RPMs.
+        
+        Args:
+            kernel_version: Kernel version (e.g., "5.10")
+            canister: canister_build value (0 or 1)
+            acvp: acvp_build value (0 or 1)
+            install_deps: Whether to install build dependencies
+            spec_filter: Optional list of spec files to build (e.g., ["linux.spec", "linux-esx.spec"])
+                        If None, builds all spec files for this kernel version.
+        
+        Returns:
+            List of BuildResult for each spec built
+        """
+        results = []
+        
+        # Set up build environment (downloads SRPM, copies local specs)
+        success, build_topdir = self.setup_srpm_build_env(kernel_version, "linux-esx")
+        if not success:
+            return [BuildResult(
+                spec_file="setup",
+                success=False,
+                version="",
+                release="",
+                error_message="Failed to set up SRPM build environment",
+            )]
+        
+        # Get spec files to build
+        mapping = KERNEL_MAPPINGS.get(kernel_version)
+        if not mapping:
+            return [BuildResult(
+                spec_file="config",
+                success=False,
+                version="",
+                release="",
+                error_message=f"Invalid kernel version: {kernel_version}",
+            )]
+        
+        spec_files = spec_filter if spec_filter else mapping.spec_files
+        
+        # Create output directory for logs
+        output_dir = self.get_build_output_dir(kernel_version, self.config.get_repo_dir(kernel_version))
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Build each spec file
+        for spec_name in spec_files:
+            spec_path = build_topdir / "SPECS" / spec_name
+            if not spec_path.exists():
+                logger.warning(f"Spec file not found, skipping: {spec_path}")
+                continue
+            
+            spec = SpecFile(spec_path)
+            version = spec.version
+            release = str(spec.release)
+            
+            # Install build dependencies for first spec
+            if install_deps and spec_name == spec_files[0]:
+                self.install_build_deps(spec_path)
+            
+            build_log = output_dir / f"build_{spec_name.replace('.spec', '')}.log"
+            
+            logger.info(f"Building {spec_name} (canister={canister}, acvp={acvp})")
+            logger.info(f"  Version: {version}-{release}")
+            logger.info(f"  Build topdir: {build_topdir}")
+            logger.info(f"  Log: {build_log}")
+            logger.info(f"  Output: {build_topdir}/RPMS/x86_64/")
+            
+            # Build command
+            cmd = [
+                "rpmbuild", "-bb",
+                "--define", f"_topdir {build_topdir}",
+                "--define", f"canister_build {canister}",
+                "--define", f"acvp_build {acvp}",
+                str(spec_path),
+            ]
+            
+            # Run build
+            start_time = time.time()
+            
+            try:
+                with open(build_log, "w") as log_file:
+                    process = subprocess.run(
+                        cmd,
+                        stdout=log_file,
+                        stderr=subprocess.STDOUT,
+                        timeout=self.config.build_timeout,
+                    )
+                
+                duration = int(time.time() - start_time)
+                
+                if process.returncode == 0:
+                    logger.info(f"Build of {spec_name} successful in {duration}s")
+                    results.append(BuildResult(
+                        spec_file=str(spec_path),
+                        success=True,
+                        version=version,
+                        release=release,
+                        duration_seconds=duration,
+                        log_file=str(build_log),
+                        canister_build=canister,
+                        acvp_build=acvp,
+                    ))
+                else:
+                    logger.error(f"Build of {spec_name} failed (exit code: {process.returncode}) after {duration}s")
+                    results.append(BuildResult(
+                        spec_file=str(spec_path),
+                        success=False,
+                        version=version,
+                        release=release,
+                        duration_seconds=duration,
+                        log_file=str(build_log),
+                        error_message=f"Build failed with exit code {process.returncode}",
+                        canister_build=canister,
+                        acvp_build=acvp,
+                    ))
+                    
+            except subprocess.TimeoutExpired:
+                duration = int(time.time() - start_time)
+                logger.error(f"Build of {spec_name} timed out after {self.config.build_timeout}s")
+                results.append(BuildResult(
+                    spec_file=str(spec_path),
+                    success=False,
+                    version=version,
+                    release=release,
+                    duration_seconds=duration,
+                    log_file=str(build_log),
+                    error_message=f"Build timed out after {self.config.build_timeout}s",
+                    canister_build=canister,
+                    acvp_build=acvp,
+                ))
+            except Exception as e:
+                results.append(BuildResult(
+                    spec_file=str(spec_path),
+                    success=False,
+                    version=version,
+                    release=release,
+                    error_message=str(e),
+                    canister_build=canister,
+                    acvp_build=acvp,
+                ))
+        
+        # Summary
+        success_count = sum(1 for r in results if r.success)
+        fail_count = len(results) - success_count
+        logger.info(f"Build Summary: Success={success_count}, Failed={fail_count}")
+        logger.info(f"RPMs available in {build_topdir}/RPMS/x86_64/")
+        
+        return results
     
     def build_rpm(
         self,
