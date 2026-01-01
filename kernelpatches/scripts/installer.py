@@ -217,7 +217,7 @@ INSTALL_DIR = Path("{install_dir}")
 LOG_DIR = Path("{log_dir}")
 LOCK_FILE = Path("/tmp/kernel-backport.lock")
 
-print("=== Kernel Backport Solution Status ===")
+print("=== Kernel Backport Tool Status ===")
 print()
 print(f"Installation: {{INSTALL_DIR}}")
 print(f"Log Directory: {{LOG_DIR}}")

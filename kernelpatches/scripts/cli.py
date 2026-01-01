@@ -5,7 +5,7 @@ Command-line interface for the kernelpatches solution.
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 import click
 from rich.console import Console
@@ -27,7 +27,7 @@ console = Console()
 def print_banner():
     """Print application banner."""
     console.print(Panel.fit(
-        f"[bold blue]Kernel Backport Solution[/bold blue] v{__version__}\n"
+        f"[bold blue]Kernel Backport Tool[/bold blue] v{__version__}\n"
         "[dim]Automated kernel patch backporting for Photon OS[/dim]",
         border_style="blue",
     ))
@@ -68,6 +68,8 @@ def main(ctx, verbose: bool, quiet: bool):
 @click.option("--gap-report", type=click.Path(), help="Directory for gap detection reports")
 @click.option("--resume", is_flag=True, help="Resume from checkpoint")
 @click.option("--report-dir", type=click.Path(), help="Directory for analysis reports")
+@click.option("--repo-base", type=click.Path(),
+              help="Base directory for cloning Photon repos (default: /root/photonos-scripts/kernelpatches)")
 @click.option("--repo-url", default="https://github.com/vmware/photon.git",
               help="Photon repository URL")
 @click.option("--branch", help="Git branch to use (auto-detected by default)")
@@ -90,6 +92,7 @@ def backport(
     gap_report: Optional[str],
     resume: bool,
     report_dir: Optional[str],
+    repo_base: Optional[str],
     repo_url: str,
     branch: Optional[str],
     skip_clone: bool,
@@ -135,6 +138,7 @@ def backport(
             cve_since=cve_since,
             detect_gaps=detect_gaps,
             resume=resume,
+            repo_base=Path(repo_base) if repo_base else None,
             repo_url=repo_url,
             branch=branch,
             skip_clone=skip_clone,
@@ -160,73 +164,179 @@ def backport(
         sys.exit(1)
 
 
+def parse_kernel_arg(kernel: str) -> List[str]:
+    """Parse kernel argument: 'all', single value, or comma-separated list."""
+    if kernel.lower() == "all":
+        return list(SUPPORTED_KERNELS)
+    return [k.strip() for k in kernel.split(",")]
+
+
 @main.command()
-@click.option("--kernel", "-k", type=click.Choice(SUPPORTED_KERNELS),
-              help="Filter by kernel version")
-@click.option("--output", "-o", type=click.Path(), help="Output directory for reports")
-@click.option("--format", "-f", default="all",
-              type=click.Choice(["json", "csv", "markdown", "all"]),
-              help="Output format")
-@click.option("--print-table", is_flag=True, help="Print matrix to console")
-@click.option("--max-rows", type=int, default=50, help="Max rows to display")
+@click.option("--output", "-o", type=click.Path(), default="/var/log/photon-kernel-backport/cve_matrix",
+              help="Output directory for matrix files")
+@click.option("--kernel", "-k", default="all",
+              help="Kernel version(s): 5.10, 6.1, 6.12, comma-separated list, or 'all'")
+@click.option("--repo-base", type=click.Path(),
+              help="Base directory for cloning Photon repos (default: /root/photonos-scripts/kernelpatches)")
+@click.option("--repo-url", default="https://github.com/vmware/photon.git",
+              help="Photon repository URL")
+@click.option("--skip-clone", is_flag=True, help="Skip cloning repos (use existing or fail)")
+@click.option("--update-repos", is_flag=True, help="Force update existing repos")
+@click.option("--analyze-source", is_flag=True,
+              help="Download kernel tarball and analyze CVE patches against source code")
 @click.pass_context
-def matrix(
-    ctx,
-    kernel: Optional[str],
-    output: Optional[str],
-    format: str,
-    print_table: bool,
-    max_rows: int,
-):
+def matrix(ctx, output: str, kernel: str, repo_base: Optional[str], repo_url: str, skip_clone: bool, update_repos: bool, analyze_source: bool):
     """
-    Generate CVE coverage matrix.
+    Generate comprehensive CVE coverage matrix.
     
-    Shows CVE status across kernel versions with CVSS scores and references.
+    This command:
+    1. Clones/updates Photon OS repos for the specified kernel(s)
+    2. Downloads NVD feeds and fetches all kernel CVEs
+    3. Downloads stable patches from kernel.org (from current Photon version to latest)
+    4. Builds complete coverage matrix with five-state tracking
+    5. Downloads missing CVE patches
+    6. (Optional) Downloads kernel tarball and analyzes CVE patches against source
+    7. Exports to JSON, CSV, and Markdown formats
     
     Examples:
     
-        # Generate full matrix to files
-        kernel-backport matrix --output /tmp/reports
+        # Generate matrix for all kernels (auto-clones repos)
+        photon-kernel-backport matrix
         
-        # Print matrix to console
-        kernel-backport matrix --print-table
+        # Specific kernel
+        photon-kernel-backport matrix --kernel 5.10
         
-        # Generate CSV only
-        kernel-backport matrix --format csv --output /tmp
+        # Multiple kernels
+        photon-kernel-backport matrix --kernel 5.10,6.1
+        
+        # With source code analysis (downloads kernel tarball)
+        photon-kernel-backport matrix --kernel 5.10 --analyze-source
+        
+        # Custom output directory
+        photon-kernel-backport matrix --output /tmp/cve_matrix
+        
+        # Custom repo location and URL
+        photon-kernel-backport matrix --kernel 5.10 --repo-base /tmp/repos --repo-url https://github.com/myorg/photon.git
+        
+        # Update existing repos before generating matrix
+        photon-kernel-backport matrix --kernel 5.10 --update-repos
     """
-    from scripts.cve_matrix import generate_cve_matrix, print_cve_matrix
+    import asyncio
+    from scripts.generate_full_matrix import (
+        fetch_all_cves,
+        download_stable_patches_async,
+        download_missing_cve_patches,
+        analyze_cve_patches_against_source,
+        update_matrix_with_source_analysis,
+        build_matrix,
+        save_matrix,
+        print_summary,
+    )
+    from scripts.common import ensure_photon_repos_for_kernels
     
+    kernel_versions = parse_kernel_arg(kernel)
+    output_dir = Path(output)
     config = KernelConfig.from_env()
     
-    kernel_versions = [kernel] if kernel else SUPPORTED_KERNELS
+    console.print("[bold]Comprehensive CVE Coverage Matrix Generator[/bold]")
+    console.print(f"Kernels: {', '.join(kernel_versions)}")
+    console.print(f"Output: {output_dir}")
+    if analyze_source:
+        console.print("[cyan]Source analysis enabled[/cyan]")
+    if repo_base:
+        console.print(f"Repo base: {repo_base}")
+    if repo_url != "https://github.com/vmware/photon.git":
+        console.print(f"Repo URL: {repo_url}")
     
-    # Build repo_dirs map
+    # Step 1: Ensure repos are cloned and show status
+    from scripts.stable_patches import StablePatchManager
+    
     repo_dirs = {}
-    for kv in kernel_versions:
-        repo_dir = config.get_repo_dir(kv)
-        if repo_dir and repo_dir.exists():
-            repo_dirs[kv] = repo_dir
+    if not skip_clone:
+        console.print(f"\n[bold blue]Step 1: Ensuring Photon repositories are cloned[/bold blue]")
+        repo_dirs = ensure_photon_repos_for_kernels(
+            kernel_versions,
+            config=config,
+            repo_url=repo_url,
+            repo_base=Path(repo_base) if repo_base else None,
+            force_update=update_repos,
+        )
+        if not repo_dirs:
+            console.print("[red]Failed to clone any repositories[/red]")
+            sys.exit(1)
+    else:
+        # Skip clone mode: try to use existing repos
+        console.print(f"\n[bold blue]Step 1: Checking existing Photon repositories[/bold blue]")
+        base = Path(repo_base) if repo_base else None
+        mapping = {"5.10": "4.0", "6.1": "5.0", "6.12": "common"}
+        for kv in kernel_versions:
+            if base:
+                repo_dir = base / mapping.get(kv, kv)
+            else:
+                repo_dir = config.get_repo_dir(kv)
+            if repo_dir and repo_dir.exists():
+                repo_dirs[kv] = repo_dir
+                console.print(f"  Found existing repo for {kv}: {repo_dir}")
+            else:
+                console.print(f"  [red]No repo found for {kv}[/red]")
     
-    try:
-        if print_table:
-            print_cve_matrix(kernel_versions, repo_dirs, None, max_rows, config)
-        else:
-            output_dir = Path(output) if output else config.report_dir
-            matrix = generate_cve_matrix(
-                output_dir,
+    # Show kernel status (like 'status' command)
+    manager = StablePatchManager(config)
+    console.print(f"\n[bold blue]Step 2: Checking kernel versions[/bold blue]")
+    for kv in kernel_versions:
+        if kv in repo_dirs:
+            current = manager.get_current_photon_version(kv, repo_dirs[kv])
+            latest = manager.get_latest_stable_version(kv)
+            if current and latest:
+                from scripts.common import version_less_than
+                if version_less_than(current, latest):
+                    behind = manager.get_versions_behind(current, latest)
+                    console.print(f"  {kv}: Photon [cyan]{current}[/cyan] -> Latest stable [cyan]{latest}[/cyan] [yellow]({behind} versions behind)[/yellow]")
+                else:
+                    console.print(f"  {kv}: Photon [cyan]{current}[/cyan] [green](up to date)[/green]")
+            elif current:
+                console.print(f"  {kv}: Photon [cyan]{current}[/cyan] (could not check latest)")
+            else:
+                console.print(f"  {kv}: [yellow]Could not determine version[/yellow]")
+    
+    async def run():
+        # Fetch CVEs (Step 3)
+        cves = await fetch_all_cves(output_dir, config)
+        
+        # Download stable patches (Step 4 - only from current Photon version to latest)
+        patch_dirs, photon_versions = await download_stable_patches_async(
+            kernel_versions, output_dir, config, repo_dirs
+        )
+        
+        # Build initial matrix (Step 5) to determine which CVE patches are missing
+        current_step = 5
+        mat = build_matrix(cves, kernel_versions, repo_dirs, patch_dirs, config, photon_versions, step_num=current_step)
+        current_step += 1
+        
+        # Download missing CVE patches (Step 6 - not built-in and not already in spec)
+        cve_patch_dirs = await download_missing_cve_patches(mat, output_dir, config)
+        current_step += 1
+        
+        # Analyze CVE patches against kernel source (Step 7 - optional)
+        if analyze_source:
+            analysis_results = await analyze_cve_patches_against_source(
                 kernel_versions,
-                repo_dirs,
-                None,  # patch_dirs
-                format,
+                photon_versions,
+                cve_patch_dirs,
+                output_dir,
                 config,
             )
-            console.print(f"[green]Generated CVE matrix with {matrix.total_cves} entries[/green]")
             
-    except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-        if ctx.obj.get("verbose"):
-            console.print_exception()
-        sys.exit(1)
+            # Update matrix with source analysis (Step 8)
+            mat = update_matrix_with_source_analysis(mat, analysis_results)
+            current_step += 1
+        
+        # Save matrix and print summary
+        save_matrix(mat, output_dir, step_num=current_step)
+        print_summary(mat)
+    
+    asyncio.run(run())
+    console.print("\n[bold green]Done![/bold green]")
 
 
 @main.command()
@@ -380,6 +490,8 @@ def download(ctx, kernel: str, output: Optional[str]):
 @click.option("--kernel", "-k", required=True, type=click.Choice(SUPPORTED_KERNELS),
               help="Kernel version")
 @click.option("--output", "-o", type=click.Path(), help="Output directory for logs (auto-generated if not specified)")
+@click.option("--specs", "-s", default=None,
+              help="Comma-separated spec files to build (e.g., 'linux.spec,linux-esx.spec'). If not specified, builds all.")
 @click.option("--canister", type=int, default=0, help="canister_build value (0 or 1)")
 @click.option("--acvp", type=int, default=0, help="acvp_build value (0 or 1)")
 @click.option("--all-permutations", is_flag=True, help="Build all canister/acvp combinations")
@@ -389,107 +501,34 @@ def build(
     ctx,
     kernel: str,
     output: Optional[str],
+    specs: Optional[str],
     canister: int,
     acvp: int,
     all_permutations: bool,
     skip_deps: bool,
 ):
     """
-    Build kernel RPMs.
-    
-    Build kernel packages from spec files. Build dependencies are automatically
-    installed via tdnf unless --skip-deps is specified.
-    
-    Output directory defaults to kernelpatches/build/{version}-{release}/
-    """
-    from scripts.build import KernelBuilder
-    
-    config = KernelConfig.from_env()
-    builder = KernelBuilder(config)
-    
-    repo_dir = config.get_repo_dir(kernel)
-    if not repo_dir or not repo_dir.exists():
-        console.print(f"[red]Repository not found for kernel {kernel}[/red]")
-        sys.exit(1)
-    
-    # Use specified output dir or let build_all_specs auto-generate it
-    output_dir = Path(output) if output else None
-    
-    # Verify basic dependencies (rpmbuild, gcc, etc.)
-    deps_ok, missing = builder.verify_build_deps()
-    if not deps_ok:
-        console.print(f"[red]Missing dependencies: {', '.join(missing)}[/red]")
-        sys.exit(1)
-    
-    try:
-        if all_permutations:
-            # For permutations, we need an output dir
-            if output_dir is None:
-                output_dir = builder.get_build_output_dir(kernel, repo_dir)
-            results = builder.build_all_permutations(kernel, repo_dir, output_dir)
-        else:
-            results = builder.build_all_specs(
-                kernel, repo_dir, output_dir, canister, acvp,
-                install_deps=not skip_deps
-            )
-        
-        success = sum(1 for r in results if r.success)
-        failed = len(results) - success
-        
-        console.print(f"\n[bold]Build Results:[/bold] {success} succeeded, {failed} failed")
-        
-        for r in results:
-            status = "[green]✓[/green]" if r.success else "[red]✗[/red]"
-            console.print(f"  {status} {Path(r.spec_file).name}: {r.version}-{r.release}")
-            if not r.success and r.error_message:
-                console.print(f"      Error: {r.error_message}")
-        
-        if failed > 0:
-            sys.exit(1)
-            
-    except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-        if ctx.obj.get("verbose"):
-            console.print_exception()
-        sys.exit(1)
-
-
-@main.command(name="build-srpm")
-@click.option("--kernel", "-k", required=True, type=click.Choice(SUPPORTED_KERNELS),
-              help="Kernel version")
-@click.option("--specs", "-s", default=None,
-              help="Comma-separated spec files to build (e.g., 'linux.spec,linux-esx.spec'). If not specified, builds all.")
-@click.option("--canister", type=int, default=0, help="canister_build value (0 or 1)")
-@click.option("--acvp", type=int, default=0, help="acvp_build value (0 or 1)")
-@click.option("--skip-deps", is_flag=True, help="Skip installing build dependencies")
-@click.pass_context
-def build_srpm(
-    ctx,
-    kernel: str,
-    specs: Optional[str],
-    canister: int,
-    acvp: int,
-    skip_deps: bool,
-):
-    """
-    Build kernel RPMs using SRPM from packages.vmware.com.
+    Build kernel RPMs using SRPM from packages.broadcom.com.
     
     This command downloads the official SRPM, extracts all sources,
-    applies the local modified spec files (with CVE patches and updated release),
-    and builds all kernel RPMs.
+    and builds the kernel RPMs. Build dependencies are automatically
+    installed via tdnf unless --skip-deps is specified.
     
     Output RPMs are placed in /usr/local/src/RPMS/x86_64/
     
     Examples:
     
         # Build all kernel specs (linux.spec, linux-esx.spec, linux-rt.spec)
-        kernel-backport build-srpm --kernel 5.10
+        photon-kernel-backport build --kernel 5.10
         
         # Build only linux-esx kernel
-        kernel-backport build-srpm --kernel 5.10 --specs linux-esx.spec
+        photon-kernel-backport build --kernel 5.10 --specs linux-esx.spec
         
         # Build linux and linux-esx
-        kernel-backport build-srpm --kernel 5.10 --specs "linux.spec,linux-esx.spec"
+        photon-kernel-backport build --kernel 5.10 --specs "linux.spec,linux-esx.spec"
+        
+        # Build all canister/acvp permutations
+        photon-kernel-backport build --kernel 5.10 --all-permutations
     """
     from scripts.build import KernelBuilder
     
@@ -508,18 +547,28 @@ def build_srpm(
         spec_filter = [s.strip() for s in specs.split(",")]
     
     try:
-        if spec_filter:
-            console.print(f"[bold]Building kernel {kernel} from SRPM: {', '.join(spec_filter)}[/bold]")
+        if all_permutations:
+            console.print(f"[bold]Building kernel {kernel} - all canister/acvp permutations[/bold]")
+            # For permutations, use local build approach
+            repo_dir = config.get_repo_dir(kernel)
+            if not repo_dir or not repo_dir.exists():
+                console.print(f"[red]Repository not found for kernel {kernel}[/red]")
+                sys.exit(1)
+            output_dir = Path(output) if output else builder.get_build_output_dir(kernel, repo_dir)
+            results = builder.build_all_permutations(kernel, repo_dir, output_dir)
         else:
-            console.print(f"[bold]Building all kernel specs for {kernel} from SRPM[/bold]")
-        
-        results = builder.build_all_from_srpm(
-            kernel_version=kernel,
-            canister=canister,
-            acvp=acvp,
-            install_deps=not skip_deps,
-            spec_filter=spec_filter,
-        )
+            if spec_filter:
+                console.print(f"[bold]Building kernel {kernel} from SRPM: {', '.join(spec_filter)}[/bold]")
+            else:
+                console.print(f"[bold]Building all kernel specs for {kernel} from SRPM[/bold]")
+            
+            results = builder.build_all_from_srpm(
+                kernel_version=kernel,
+                canister=canister,
+                acvp=acvp,
+                install_deps=not skip_deps,
+                spec_filter=spec_filter,
+            )
         
         success = sum(1 for r in results if r.success)
         failed = len(results) - success
@@ -597,12 +646,12 @@ def cve_fetch(ctx, source: str, kernel: str, output: Optional[str]):
               help="Log directory")
 @click.option("--cron", default="0 */2 * * *",
               help="Cron schedule (default: every 2 hours)")
-@click.option("--kernels", default=",".join(SUPPORTED_KERNELS),
-              help="Comma-separated kernel versions")
+@click.option("--kernel", "-k", default="all",
+              help="Kernel version(s): 5.10, 6.1, 6.12, comma-separated list, or 'all'")
 @click.option("--no-cron", is_flag=True, help="Skip cron job installation")
 @click.option("--uninstall", is_flag=True, help="Remove installation")
 @click.pass_context
-def install(ctx, install_dir: str, log_dir: str, cron: str, kernels: str, no_cron: bool, uninstall: bool):
+def install(ctx, install_dir: str, log_dir: str, cron: str, kernel: str, no_cron: bool, uninstall: bool):
     """
     Install the kernel backport solution with optional cron scheduling.
     
@@ -635,10 +684,13 @@ def install(ctx, install_dir: str, log_dir: str, cron: str, kernels: str, no_cro
     if os.geteuid() != 0:
         console.print("[yellow]Warning: Not running as root. Some operations may fail.[/yellow]")
     
+    kernel_versions = parse_kernel_arg(kernel)
+    kernels_str = ",".join(kernel_versions)
+    
     console.print("[bold]Installing kernel backport solution...[/bold]")
     console.print(f"  Install directory: {install_path}")
     console.print(f"  Log directory: {log_path}")
-    console.print(f"  Kernels: {kernels}")
+    console.print(f"  Kernels: {kernels_str}")
     
     # Create directories
     install_path.mkdir(parents=True, exist_ok=True)
@@ -655,7 +707,7 @@ def install(ctx, install_dir: str, log_dir: str, cron: str, kernels: str, no_cro
     console.print(f"  Copied package to: {dest_package}")
     
     # Create scripts
-    create_config_file(install_path, log_path, kernels)
+    create_config_file(install_path, log_path, kernels_str)
     create_cron_wrapper(install_path, log_path)
     create_status_script(install_path, log_path)
     create_run_now_script(install_path)
@@ -669,70 +721,111 @@ def install(ctx, install_dir: str, log_dir: str, cron: str, kernels: str, no_cro
     console.print(f"  Run manually:  {install_path}/run-now.sh")
 
 
-@main.command(name="full-matrix")
-@click.option("--output", "-o", type=click.Path(), default="/var/log/cve_matrix",
-              help="Output directory for matrix files")
-@click.option("--download-patches", is_flag=True,
-              help="Download stable patches from kernel.org")
-@click.option("--kernels", default=",".join(SUPPORTED_KERNELS),
-              help="Comma-separated kernel versions")
-@click.option("--repo-base", type=click.Path(exists=True),
-              help="Base directory containing Photon repo clones")
+@main.command(name="cve-build-workflow")
+@click.option("--kernel", "-k", default="all",
+              help="Kernel version(s): 5.10, 6.1, 6.12, comma-separated list, or 'all'")
+@click.option("--output", "-o", type=click.Path(), help="Output directory for reports")
+@click.option("--repo-base", type=click.Path(),
+              help="Base directory for cloning Photon repos (default: /root/photonos-scripts/kernelpatches)")
+@click.option("--repo-url", default="https://github.com/vmware/photon.git",
+              help="Photon repository URL")
+@click.option("--no-cleanup", is_flag=True, help="Skip cleanup of previous run artifacts")
+@click.option("--phase1-only", is_flag=True, help="Only run phase 1 (current kernel)")
+@click.option("--specs", "-s", default="linux-esx.spec",
+              help="Comma-separated spec files to build (default: linux-esx.spec)")
 @click.pass_context
-def full_matrix(ctx, output: str, download_patches: bool, kernels: str, repo_base: Optional[str]):
+def cve_build_workflow(
+    ctx,
+    kernel: str,
+    output: Optional[str],
+    repo_base: Optional[str],
+    repo_url: str,
+    no_cleanup: bool,
+    phase1_only: bool,
+    specs: str,
+):
     """
-    Generate comprehensive CVE coverage matrix with all data.
+    Run two-phase CVE coverage build workflow.
     
-    This command:
-    1. Downloads NVD feeds and fetches all kernel CVEs
-    2. Optionally downloads stable patches from kernel.org
-    3. Builds complete coverage matrix with five-state tracking
-    4. Exports to JSON, CSV, and Markdown formats
+    Phase 1: Build current kernel version with CVE patches
+    Phase 2: Build latest stable kernel with CVE patches
+    
+    Generates comprehensive reports with CVE coverage matrix,
+    patch integration status, and build results.
+    
+    Examples:
+    
+        # Full workflow for all kernels
+        photon-kernel-backport cve-build-workflow
+        
+        # Single kernel
+        photon-kernel-backport cve-build-workflow --kernel 6.12
+        
+        # Multiple kernels
+        photon-kernel-backport cve-build-workflow --kernel 5.10,6.1
+        
+        # Phase 1 only (current kernel)
+        photon-kernel-backport cve-build-workflow --kernel 6.12 --phase1-only
+        
+        # Custom output directory
+        photon-kernel-backport cve-build-workflow -k 6.12 -o /tmp/cve_report
+        
+        # Build multiple specs
+        photon-kernel-backport cve-build-workflow -k 6.12 --specs "linux.spec,linux-esx.spec"
     """
-    import asyncio
-    from scripts.generate_full_matrix import (
-        fetch_all_cves,
-        download_stable_patches_async,
-        build_matrix,
-        save_matrix,
-        print_summary,
-    )
+    from scripts.cve_coverage_build_workflow import run_cve_build_workflow
     
-    kernel_versions = [k.strip() for k in kernels.split(",")]
-    output_dir = Path(output)
-    config = KernelConfig.from_env()
+    kernel_versions = parse_kernel_arg(kernel)
+    spec_filter = [s.strip() for s in specs.split(",")]
     
-    console.print("[bold]Comprehensive CVE Coverage Matrix Generator[/bold]")
-    console.print(f"Kernels: {', '.join(kernel_versions)}")
-    console.print(f"Output: {output_dir}")
-    
-    async def run():
-        # Fetch CVEs
-        cves = await fetch_all_cves(output_dir, config)
+    all_success = True
+    for kv in kernel_versions:
+        console.print(f"\n[bold cyan]{'='*60}[/bold cyan]")
+        console.print(f"[bold cyan]Processing kernel {kv}[/bold cyan]")
+        console.print(f"[bold cyan]{'='*60}[/bold cyan]\n")
         
-        # Download patches
-        patch_dirs = {}
-        if download_patches:
-            patch_dirs = await download_stable_patches_async(kernel_versions, output_dir, config)
+        # Determine output directory for this kernel
+        if output:
+            kv_output = f"{output}_{kv}" if len(kernel_versions) > 1 else output
+        else:
+            kv_output = None
         
-        # Build repo_dirs
-        repo_dirs = {}
-        if repo_base:
-            base = Path(repo_base)
-            mapping = {"5.10": "4.0", "6.1": "5.0", "6.12": "common"}
-            for kv in kernel_versions:
-                branch = mapping.get(kv, kv)
-                repo_path = base / branch
-                if repo_path.exists():
-                    repo_dirs[kv] = repo_path
-        
-        # Build and save matrix
-        matrix = build_matrix(cves, kernel_versions, repo_dirs, patch_dirs, config)
-        save_matrix(matrix, output_dir)
-        print_summary(matrix)
+        try:
+            report = run_cve_build_workflow(
+                kernel_version=kv,
+                cleanup=not no_cleanup,
+                output_dir=kv_output,
+                repo_base=Path(repo_base) if repo_base else None,
+                repo_url=repo_url,
+                phase1_only=phase1_only,
+                spec_filter=spec_filter,
+            )
+            
+            # Check build success
+            if report.phases:
+                phase_success = all(p.build.success for p in report.phases if p.build.spec_file)
+                if not phase_success:
+                    all_success = False
+            
+        except Exception as e:
+            console.print(f"[red]Error processing kernel {kv}: {e}[/red]")
+            if ctx.obj.get("verbose"):
+                console.print_exception()
+            all_success = False
     
-    asyncio.run(run())
-    console.print("\n[bold green]Done![/bold green]")
+    # Summary for multiple kernels
+    if len(kernel_versions) > 1:
+        console.print(f"\n[bold]{'='*60}[/bold]")
+        console.print(f"[bold]Workflow Summary[/bold]")
+        console.print(f"[bold]{'='*60}[/bold]")
+        console.print(f"Kernels processed: {', '.join(kernel_versions)}")
+        if all_success:
+            console.print("[green]All builds completed successfully[/green]")
+        else:
+            console.print("[yellow]Some builds failed - check individual reports[/yellow]")
+    
+    if not all_success:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

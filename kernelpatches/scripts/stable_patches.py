@@ -97,18 +97,80 @@ class StablePatchManager:
         self.marker_dir = self.config.cache_dir / "stable_markers"
         self.marker_dir.mkdir(parents=True, exist_ok=True)
     
-    def get_current_photon_version(self, kernel_version: str, repo_dir: Path) -> Optional[str]:
-        """Get current Photon kernel version from spec file."""
+    def get_current_photon_version(self, kernel_version: str, repo_dir: Optional[Path] = None) -> Optional[str]:
+        """Get current Photon kernel version from spec file or remote repository.
+        
+        Args:
+            kernel_version: Kernel series (e.g., "5.10", "6.1")
+            repo_dir: Optional local repository directory. If not provided,
+                      fetches from remote Broadcom repository.
+        
+        Returns:
+            Full kernel version string (e.g., "5.10.247") or None
+        """
         mapping = KERNEL_MAPPINGS.get(kernel_version)
         if not mapping:
             return None
         
-        spec_path = repo_dir / mapping.spec_dir / "linux.spec"
-        if not spec_path.exists():
+        # Try local spec file first if repo_dir is provided
+        if repo_dir:
+            spec_path = repo_dir / mapping.spec_dir / "linux.spec"
+            if spec_path.exists():
+                spec = SpecFile(spec_path)
+                return spec.version
+        
+        # Fall back to remote repository lookup
+        return self.get_current_photon_version_remote(kernel_version)
+    
+    def get_current_photon_version_remote(self, kernel_version: str) -> Optional[str]:
+        """Get current Photon kernel version from remote Broadcom repository.
+        
+        Queries the SRPM repository listing to find the latest kernel version
+        for the specified kernel series.
+        
+        Args:
+            kernel_version: Kernel series (e.g., "5.10", "6.1")
+        
+        Returns:
+            Full kernel version string (e.g., "5.10.247") or None
+        """
+        import re
+        
+        mapping = KERNEL_MAPPINGS.get(kernel_version)
+        if not mapping:
             return None
         
-        spec = SpecFile(spec_path)
-        return spec.version
+        # Map kernel version to Photon OS version
+        photon_version = mapping.branch.value  # e.g., "4.0" or "5.0"
+        
+        # Build SRPM repository URL
+        srpm_url = f"https://packages.broadcom.com/artifactory/photon/{photon_version}/photon_srpms_{photon_version}_x86_64/"
+        
+        logger.debug(f"Fetching Photon kernel version from {srpm_url}")
+        
+        try:
+            response = requests.get(srpm_url, timeout=30)
+            response.raise_for_status()
+            listing = response.text
+        except Exception as e:
+            logger.warning(f"Failed to fetch SRPM listing: {e}")
+            return None
+        
+        # Find all kernel SRPM versions matching the kernel series
+        # Pattern: linux-5.10.247-7.ph4.src.rpm
+        pattern = rf"linux-({re.escape(kernel_version)}\.(\d+))-\d+\.ph\d+\.src\.rpm"
+        matches = re.findall(pattern, listing)
+        
+        if not matches:
+            logger.warning(f"No kernel SRPMs found for {kernel_version}")
+            return None
+        
+        # Find the highest patch version
+        versions = [(m[0], int(m[1])) for m in matches]
+        latest = max(versions, key=lambda x: x[1])
+        
+        logger.info(f"Found Photon kernel version: {latest[0]}")
+        return latest[0]
     
     def get_latest_stable_version(self, kernel_version: str) -> Optional[str]:
         """Get latest stable version from kernel.org."""

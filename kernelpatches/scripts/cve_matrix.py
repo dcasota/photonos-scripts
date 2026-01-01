@@ -10,10 +10,10 @@ Provides a comprehensive view of CVE coverage including:
 
 CVE States per stable patch per kernel version:
 - cve_not_applicable: CVE doesn't affect this kernel version
-- cve_included: CVE fix is included in Photon's current stable version
-- cve_in_newer_stable: CVE fix exists in a newer stable patch (upgrade available)
-- cve_patch_available: CVE has a patch (in spec file) but not in any stable patch
-- cve_patch_missing: CVE affects this kernel but no patch exists (gap)
+- cve_included: CVE fix is included in Photon (via stable patch OR manual spec patch)
+- cve_in_newer_stable: CVE fix exists in a newer stable patch (not yet in spec)
+- cve_patch_available: CVE has a downloadable patch (fix_commits) but not yet in spec or stable
+- cve_patch_missing: CVE affects this kernel but no patch exists anywhere (true gap)
 """
 
 import csv
@@ -40,10 +40,10 @@ class CVEPatchState(str, Enum):
     
     Five possible states:
     - CVE_NOT_APPLICABLE: CVE doesn't affect this kernel version
-    - CVE_INCLUDED: CVE fix is included in Photon's current stable version
-    - CVE_IN_NEWER_STABLE: CVE fix exists in a newer stable patch (upgrade available)
-    - CVE_PATCH_AVAILABLE: CVE patch exists (in spec file) but not in any stable patch
-    - CVE_PATCH_MISSING: CVE affects kernel but no patch exists anywhere (gap)
+    - CVE_INCLUDED: CVE fix is included in Photon (via stable patch OR manual spec patch)
+    - CVE_IN_NEWER_STABLE: CVE fix exists in a newer stable patch (not yet in spec)
+    - CVE_PATCH_AVAILABLE: CVE has downloadable patch (fix_commits) but not in spec or stable
+    - CVE_PATCH_MISSING: CVE affects kernel but no patch exists anywhere (true gap)
     """
     CVE_NOT_APPLICABLE = "cve_not_applicable"
     CVE_INCLUDED = "cve_included"
@@ -90,10 +90,10 @@ class StablePatchCVECoverage:
     
     Tracks all five states for each CVE at this stable patch version:
     - not_applicable: CVEs that don't affect this kernel
-    - included: CVEs fixed in Photon's current stable version
-    - cve_in_newer_stable: CVEs fixed in newer stable patches (upgrade available)
-    - cve_patch_available: CVEs with patches in spec file but not in stable
-    - cve_patch_missing: CVEs with no CVE patch anywhere (gaps)
+    - included: CVEs fixed in Photon (via stable patch OR manual spec patch)
+    - cve_in_newer_stable: CVEs fixed in newer stable patches (not yet in spec)
+    - cve_patch_available: CVEs with downloadable patches but not in spec or stable
+    - cve_patch_missing: CVEs with no patch anywhere (true gaps)
     """
     patch_version: str  # e.g., "6.1.155"
     kernel_series: str  # e.g., "6.1"
@@ -495,6 +495,13 @@ class CVECoverageMatrix:
             "source": self.source,
             "kernel_versions": self.kernel_versions,
             "total_cves": self.total_cves,
+            "state_definitions": {
+                "cve_not_applicable": "CVE doesn't affect this kernel version",
+                "cve_included": "CVE fix is included in Photon (via stable patch OR manual spec patch)",
+                "cve_in_newer_stable": "CVE fix exists in a newer stable patch (not yet in spec)",
+                "cve_patch_available": "CVE has downloadable patch (fix_commits) but not in spec or stable",
+                "cve_patch_missing": "CVE affects kernel but no patch exists anywhere (true gap)",
+            },
             "summary": self.summary(),
             "severity_summary": self.severity_summary(),
             "kernel_coverage": {
@@ -521,14 +528,19 @@ class CVECoverageMatrix:
         
         with open(output_path, "w", newline="") as f:
             writer = csv.writer(f)
+            
             writer.writerow(headers)
             
             for entry in self.entries:
+                # Sanitize description: replace newlines with spaces and truncate
+                description = entry.description.replace("\n", " ").replace("\r", " ")
+                description = " ".join(description.split())[:100]
+                
                 row = [
                     entry.cve_id,
                     f"{entry.cvss_score:.1f}",
                     entry.severity,
-                    entry.description[:100],
+                    description,
                 ]
                 for kv in self.kernel_versions:
                     status = entry.kernel_status.get(
@@ -541,37 +553,72 @@ class CVECoverageMatrix:
                 row.append(entry.published_date or "")
                 
                 writer.writerow(row)
+            
+            # Write state definitions at the end as comments
+            writer.writerow([])
+            writer.writerow(["# CVE State Definitions:"])
+            writer.writerow(["# cve_not_applicable: CVE doesn't affect this kernel version"])
+            writer.writerow(["# cve_included: CVE fix is included in Photon (via stable patch OR manual spec patch)"])
+            writer.writerow(["# cve_in_newer_stable: CVE fix exists in a newer stable patch (not yet in spec)"])
+            writer.writerow(["# cve_patch_available: CVE has downloadable patch (fix_commits) but not in spec or stable"])
+            writer.writerow(["# cve_patch_missing: CVE affects kernel but no patch exists anywhere (true gap)"])
         
         logger.info(f"Saved CSV matrix: {output_path}")
     
     def save_stable_patch_csv(self, output_path: Path) -> None:
-        """Save stable patch -> CVE mapping with all four states."""
+        """Save per-CVE status with Yes/No for each state category."""
         output_path.parent.mkdir(parents=True, exist_ok=True)
         
         with open(output_path, "w", newline="") as f:
             writer = csv.writer(f)
-            writer.writerow([
-                "Kernel", "Stable Patch Version",
-                "CVE N/A", "CVE Included", "CVE In Newer Stable", "CVE Spec Patch", "CVE Patch Missing",
-                "Coverage %",
-                "CVE Included List", "CVE Missing List"
-            ])
             
+            # Build headers dynamically based on kernel versions
+            # Use photon_version (e.g., 5.10.247) instead of kernel series (e.g., 5.10)
+            headers = ["CVE ID", "CVSS Score", "Severity"]
             for kv in self.kernel_versions:
-                if kv in self.kernel_coverage:
-                    for sp in self.kernel_coverage[kv].stable_patches:
-                        writer.writerow([
-                            sp.kernel_series,
-                            sp.patch_version,
-                            len(sp.not_applicable),
-                            len(sp.included),
-                            len(sp.cve_in_newer_stable),
-                            len(sp.cve_patch_available),
-                            len(sp.cve_patch_missing),
-                            f"{sp.coverage_percent:.1f}%",
-                            "; ".join(sp.included[:5]) + ("..." if len(sp.included) > 5 else ""),
-                            "; ".join(sp.cve_patch_missing[:5]) + ("..." if len(sp.cve_patch_missing) > 5 else ""),
-                        ])
+                # Get the stable patch version from kernel_coverage
+                kc = self.kernel_coverage.get(kv)
+                stable_patch = kc.photon_version if kc else kv
+                headers.extend([
+                    f"Kernel ({kv})",
+                    f"CVE N/A ({stable_patch})",
+                    f"CVE Included ({stable_patch})",
+                    f"CVE In Newer Stable ({stable_patch})",
+                    f"CVE Patch Available ({stable_patch})",
+                    f"CVE Patch Missing ({stable_patch})",
+                ])
+            writer.writerow(headers)
+            
+            for entry in self.entries:
+                row = [
+                    entry.cve_id,
+                    f"{entry.cvss_score:.1f}",
+                    entry.severity,
+                ]
+                
+                for kv in self.kernel_versions:
+                    status = entry.kernel_status.get(
+                        kv, KernelCVEStatus(state=CVEPatchState.CVE_PATCH_MISSING)
+                    )
+                    state = status.state
+                    
+                    row.append(kv)
+                    row.append("Yes" if state == CVEPatchState.CVE_NOT_APPLICABLE else "No")
+                    row.append("Yes" if state == CVEPatchState.CVE_INCLUDED else "No")
+                    row.append("Yes" if state == CVEPatchState.CVE_IN_NEWER_STABLE else "No")
+                    row.append("Yes" if state == CVEPatchState.CVE_PATCH_AVAILABLE else "No")
+                    row.append("Yes" if state == CVEPatchState.CVE_PATCH_MISSING else "No")
+                
+                writer.writerow(row)
+            
+            # Write state definitions at the end as comments
+            writer.writerow([])
+            writer.writerow(["# CVE State Definitions:"])
+            writer.writerow(["# CVE N/A: CVE doesn't affect this kernel version"])
+            writer.writerow(["# CVE Included: CVE fix is included in Photon (via stable patch OR manual spec patch)"])
+            writer.writerow(["# CVE In Newer Stable: CVE fix exists in a newer stable patch (not yet in spec)"])
+            writer.writerow(["# CVE Patch Available: CVE has downloadable patch but not in spec or stable"])
+            writer.writerow(["# CVE Patch Missing: CVE affects kernel but no patch exists anywhere (true gap)"])
         
         logger.info(f"Saved stable patch CSV: {output_path}")
     
@@ -591,10 +638,10 @@ class CVECoverageMatrix:
             "| State | Description |",
             "|-------|-------------|",
             "| cve_not_applicable | CVE doesn't affect this kernel version |",
-            "| cve_included | CVE fix is included in Photon's current stable version |",
-            "| cve_in_newer_stable | CVE fix exists in a newer stable patch (upgrade available) |",
-            "| cve_patch_available | CVE patch exists in spec file but not in any stable patch |",
-            "| cve_patch_missing | CVE affects kernel but no CVE patch exists (gap) |",
+            "| cve_included | CVE fix is included in Photon (via stable patch OR manual spec patch) |",
+            "| cve_in_newer_stable | CVE fix exists in a newer stable patch (not yet in spec) |",
+            "| cve_patch_available | CVE has downloadable patch (fix_commits) but not in spec or stable |",
+            "| cve_patch_missing | CVE affects kernel but no patch exists anywhere (true gap) |",
             "",
             "## Coverage Summary",
             "",
@@ -678,7 +725,7 @@ class CVECoverageMatrix:
         
         sorted_entries = sorted(self.entries, key=lambda e: e.cvss_score, reverse=True)
         
-        for entry in sorted_entries[:100]:
+        for entry in sorted_entries:
             row = f"| {entry.cve_id} | {entry.cvss_score:.1f} | {entry.severity} |"
             
             for kv in self.kernel_versions:
@@ -693,19 +740,16 @@ class CVECoverageMatrix:
             
             lines.append(row)
         
-        if len(self.entries) > 100:
-            lines.append(f"\n*... and {len(self.entries) - 100} more CVEs*")
-        
         # Legend
         lines.extend([
             "",
             "## Legend",
             "",
             "- ➖ CVE N/A - CVE doesn't affect this kernel",
-            "- ✅ CVE Included - Fix included in Photon's current stable version",
-            "- ⬆️ In Newer Stable - Fix available by upgrading to latest stable",
-            "- 🔄 Spec Patch - CVE patch exists in spec file but not in stable",
-            "- ❌ CVE Patch Missing - No CVE patch exists (gap)",
+            "- ✅ CVE Included - Fix included in Photon (stable patch or manual spec patch)",
+            "- ⬆️ In Newer Stable - Fix in newer stable patch (not yet in spec)",
+            "- 🔄 Patch Available - Downloadable patch exists but not in spec or stable",
+            "- ❌ CVE Patch Missing - No patch exists anywhere (true gap)",
         ])
         
         with open(output_path, "w") as f:
@@ -790,7 +834,7 @@ class CVECoverageMatrix:
         
         # Legend
         console.print("\n[bold]Legend:[/bold]")
-        console.print("  [grey50]—[/grey50] N/A  [green]✓[/green] Included  [cyan]⬆[/cyan] In Newer Stable  [yellow]○[/yellow] Spec Patch  [red]✗[/red] Missing (Gap)")
+        console.print("  [grey50]—[/grey50] N/A  [green]✓[/green] Included  [cyan]⬆[/cyan] In Newer Stable  [yellow]○[/yellow] Patch Available  [red]✗[/red] Missing (Gap)")
 
 
 class StablePatchCVEMapper:
@@ -839,16 +883,16 @@ class StablePatchCVEMapper:
         Build coverage for all stable patches with five states.
         
         States are calculated relative to Photon's current version:
-        - cve_included: Fixed in Photon's version or earlier
-        - cve_in_newer_stable: Fixed in stable patches after Photon's version
-        - cve_patch_available: Patch in spec file but not in any stable
-        - cve_patch_missing: No patch exists anywhere (gap)
+        - cve_included: Fixed in Photon's stable version OR in spec file (manual patch)
+        - cve_in_newer_stable: Fixed in newer stable patches (not yet in spec)
+        - cve_patch_available: Patch downloadable (has fix_commits) but not in spec or stable
+        - cve_patch_missing: No patch exists anywhere (true gap)
         
         Args:
             kernel_version: Kernel series (e.g., "6.12")
             patch_dir: Directory containing stable patch files
             all_cves: All CVEs to analyze
-            spec_cves: CVEs with patches in spec file
+            spec_cves: CVEs with patches in spec file (manual CVE patches)
             not_applicable_cves: CVEs that don't affect this kernel
             photon_version: Photon's current kernel version (e.g., "6.12.60")
         
@@ -905,22 +949,35 @@ class StablePatchCVEMapper:
             cves_in_photon = cumulative_included  # Use all if no Photon version specified
         
         # CVEs fixed in newer stable patches (after Photon's version)
-        cves_in_newer_stable = cumulative_included - cves_in_photon
+        cves_in_newer_stable_only = cumulative_included - cves_in_photon
+        
+        # CVEs that are in the spec file (manual patches)
+        spec_cve_ids = set(spec_cves.keys())
         
         # Build coverage for Photon's current version
-        # cve_included: Fixed in Photon's current version
-        included = list(cves_in_photon & applicable_cves)
+        # cve_included: Fixed in Photon's current stable version OR in spec file (manual patch)
+        # If a CVE is in the spec file, it's considered included regardless of stable patch status
+        included_from_stable = cves_in_photon & applicable_cves
+        included_from_spec = spec_cve_ids & applicable_cves
+        included = list(included_from_stable | included_from_spec)
         
-        # cve_in_newer_stable: Fixed in newer stable patches
-        in_newer_stable = list(cves_in_newer_stable & applicable_cves)
+        # cve_in_newer_stable: Fixed in newer stable patches BUT NOT already in spec file
+        # (if it's in spec, it's already included)
+        in_newer_stable = list((cves_in_newer_stable_only & applicable_cves) - spec_cve_ids)
         
-        # cve_patch_available: Has spec patch but not in any stable
-        spec_only_cves = set(spec_cves.keys()) - cumulative_included
-        cve_patch_available = list(spec_only_cves & applicable_cves)
+        # cve_patch_available: CVEs that have fix_commits (downloadable) but NOT in spec and NOT in any stable
+        # These are CVEs where a patch exists upstream but hasn't been added to Photon yet
+        cves_with_patches = set()
+        for cve_id, cve in all_cves.items():
+            if cve.fix_commits:  # Has downloadable patch
+                cves_with_patches.add(cve_id)
+        cve_patch_available = list(
+            (cves_with_patches & applicable_cves) - cumulative_included - spec_cve_ids
+        )
         
-        # cve_patch_missing: No patch anywhere
-        all_patched = cumulative_included | set(spec_cves.keys())
-        cve_patch_missing = list(applicable_cves - all_patched)
+        # cve_patch_missing: No patch anywhere (true gaps - no stable patch, no spec patch, no fix_commits)
+        all_covered = cumulative_included | spec_cve_ids | cves_with_patches
+        cve_patch_missing = list(applicable_cves - all_covered)
         
         # Create coverage entry for Photon's current version
         coverage = StablePatchCVECoverage(

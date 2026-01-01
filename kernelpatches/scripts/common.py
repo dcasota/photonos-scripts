@@ -406,3 +406,137 @@ def format_duration(seconds: int) -> str:
         hours = seconds // 3600
         minutes = (seconds % 3600) // 60
         return f"{hours}h {minutes}m"
+
+
+def ensure_photon_repo(
+    kernel_version: str,
+    config: Optional[KernelConfig] = None,
+    repo_url: Optional[str] = None,
+    repo_base: Optional[Path] = None,
+    force_update: bool = False,
+    depth: int = 1,
+) -> Optional[Path]:
+    """
+    Ensure Photon OS repository is cloned for the specified kernel version.
+    
+    This is the centralized clone/update routine used by matrix, backport,
+    and cve_coverage_build_workflow commands.
+    
+    Args:
+        kernel_version: Kernel series (e.g., "5.10", "6.1", "6.12")
+        config: Optional KernelConfig (uses DEFAULT_CONFIG if not provided)
+        repo_url: Optional repository URL (uses config.repo_url if not provided)
+        repo_base: Optional base directory for cloning (overrides config default)
+        force_update: If True, fetch and reset even if repo exists
+        depth: Clone depth (default: 1 for shallow clone)
+    
+    Returns:
+        Path to the repository directory, or None if clone/update failed
+    """
+    from git import Repo, GitCommandError
+    
+    config = config or DEFAULT_CONFIG
+    mapping = KERNEL_MAPPINGS.get(kernel_version)
+    
+    if not mapping:
+        logger.error(f"Unsupported kernel version: {kernel_version}")
+        return None
+    
+    # Determine repo directory - use repo_base if provided, otherwise config default
+    if repo_base:
+        repo_dir = Path(repo_base) / mapping.branch.value
+    else:
+        repo_dir = config.get_repo_dir(kernel_version)
+    
+    if not repo_dir:
+        logger.error(f"Could not determine repo directory for {kernel_version}")
+        return None
+    
+    branch = mapping.branch.value
+    repo_url = repo_url or config.repo_url
+    spec_dir = repo_dir / mapping.spec_dir
+    
+    # Check if repo already exists and has the spec directory
+    if spec_dir.exists():
+        if force_update:
+            console.print(f"[blue]Updating repository: {repo_dir}[/blue]")
+            try:
+                repo = Repo(repo_dir)
+                repo.remotes.origin.fetch()
+                repo.git.reset("--hard", f"origin/{branch}")
+                console.print(f"[green]Repository updated[/green]")
+                return repo_dir
+            except GitCommandError as e:
+                logger.error(f"Failed to update repository: {e}")
+                return None
+        else:
+            logger.debug(f"Repository exists: {repo_dir}")
+            return repo_dir
+    
+    # Clone the repository
+    console.print(f"[blue]Cloning Photon repository for kernel {kernel_version}[/blue]")
+    console.print(f"  Branch: {branch}")
+    console.print(f"  Target: {repo_dir}")
+    
+    try:
+        repo_dir.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Remove partial clone if exists
+        if repo_dir.exists():
+            safe_remove_dir(repo_dir)
+        
+        Repo.clone_from(
+            repo_url,
+            repo_dir,
+            branch=branch,
+            depth=depth,
+            single_branch=True,
+        )
+        console.print(f"[green]Clone successful[/green]")
+        return repo_dir
+        
+    except GitCommandError as e:
+        logger.error(f"Failed to clone repository: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"Unexpected error during clone: {e}")
+        return None
+
+
+def ensure_photon_repos_for_kernels(
+    kernel_versions: List[str],
+    config: Optional[KernelConfig] = None,
+    repo_url: Optional[str] = None,
+    repo_base: Optional[Path] = None,
+    force_update: bool = False,
+) -> dict:
+    """
+    Ensure Photon OS repositories are cloned for multiple kernel versions.
+    
+    Args:
+        kernel_versions: List of kernel series (e.g., ["5.10", "6.1"])
+        config: Optional KernelConfig
+        repo_url: Optional repository URL
+        repo_base: Optional base directory for cloning (overrides config default)
+        force_update: If True, fetch and reset even if repos exist
+    
+    Returns:
+        Dictionary mapping kernel version to repo directory path.
+        Only includes successfully cloned/updated repos.
+    """
+    repo_dirs = {}
+    
+    for kv in kernel_versions:
+        repo_dir = ensure_photon_repo(
+            kv,
+            config=config,
+            repo_url=repo_url,
+            repo_base=repo_base,
+            force_update=force_update,
+        )
+        if repo_dir:
+            repo_dirs[kv] = repo_dir
+        else:
+            console.print(f"[yellow]Warning: Could not ensure repo for kernel {kv}[/yellow]")
+    
+    return repo_dirs

@@ -206,7 +206,16 @@ class NVDFetcher(CVEFetcher):
         output_dir: Path,
         current_version: Optional[str] = None,
     ) -> List[CVE]:
-        """Fetch CVEs from NVD feeds."""
+        """Fetch CVEs from NVD feeds.
+        
+        Fetches in order:
+        1. Yearly feeds (2023 to current year) - once per 24 hours
+        2. Modified feed (differential updates from last 8 days)
+        3. Recent feed (new CVEs from last 8 days)
+        
+        This order ensures yearly data is loaded first, then updated with
+        any modifications, and finally new entries are added.
+        """
         logger.info("Source: NIST National Vulnerability Database (NVD)")
         logger.info(f"Filter: kernel.org CNA ({self.config.kernel_org_cna})")
         logger.info(f"Target kernel: {kernel_version}")
@@ -215,13 +224,7 @@ class NVDFetcher(CVEFetcher):
         output_dir.mkdir(parents=True, exist_ok=True)
         
         async with aiohttp.ClientSession() as session:
-            # Always fetch recent feed
-            recent_url = f"{self.config.nvd_feed_base}/nvdcve-2.0-recent.json.gz"
-            recent_cves = await self._fetch_feed(session, recent_url, output_dir, "recent")
-            for cve in recent_cves:
-                all_cves[cve.cve_id] = cve
-            
-            # Fetch yearly feeds once per 24 hours
+            # Step 1: Fetch yearly feeds once per 24 hours
             if self._should_run_yearly_feeds():
                 current_year = datetime.now().year
                 start_year = 2023
@@ -236,6 +239,31 @@ class NVDFetcher(CVEFetcher):
                 
                 self._update_yearly_marker()
                 logger.info("Yearly feeds processing complete")
+            
+            # Step 2: Fetch modified feed (differential - CVEs modified in last 8 days)
+            logger.info("Processing modified (differential) feed...")
+            modified_url = f"{self.config.nvd_feed_base}/nvdcve-2.0-modified.json.gz"
+            modified_cves = await self._fetch_feed(session, modified_url, output_dir, "modified")
+            modified_count = 0
+            for cve in modified_cves:
+                if cve.cve_id in all_cves:
+                    # Update existing entry with newer data
+                    all_cves[cve.cve_id] = cve
+                    modified_count += 1
+                else:
+                    all_cves[cve.cve_id] = cve
+            logger.info(f"Modified feed: {len(modified_cves)} CVEs ({modified_count} updates)")
+            
+            # Step 3: Fetch recent feed (new CVEs from last 8 days)
+            logger.info("Processing recent feed...")
+            recent_url = f"{self.config.nvd_feed_base}/nvdcve-2.0-recent.json.gz"
+            recent_cves = await self._fetch_feed(session, recent_url, output_dir, "recent")
+            new_count = 0
+            for cve in recent_cves:
+                if cve.cve_id not in all_cves:
+                    new_count += 1
+                all_cves[cve.cve_id] = cve
+            logger.info(f"Recent feed: {len(recent_cves)} CVEs ({new_count} new)")
         
         cves = list(all_cves.values())
         logger.info(f"Found {len(cves)} kernel.org CVE entries from NVD")
@@ -244,33 +272,31 @@ class NVDFetcher(CVEFetcher):
 
 
 class GHSAFetcher(CVEFetcher):
-    """Fetch CVEs from GitHub Advisory Database."""
+    """Fetch CVEs from GitHub Advisory Database using Linux kernel search."""
     
-    GRAPHQL_QUERY = """
-    query($cursor: String) {
-        securityAdvisories(first: 100, orderBy: {field: PUBLISHED_AT, direction: DESC}, after: $cursor) {
-            pageInfo {
-                hasNextPage
-                endCursor
+    # Search URL for Linux kernel advisories
+    KERNEL_SEARCH_URL = "https://github.com/advisories?query=In+the+Linux+kernel%2C+the+following+vulnerability+has+been"
+    
+    # GraphQL query to fetch advisory details by GHSA ID
+    GRAPHQL_QUERY_BY_ID = """
+    query($ghsaId: String!) {
+        securityAdvisory(ghsaId: $ghsaId) {
+            ghsaId
+            summary
+            severity
+            publishedAt
+            updatedAt
+            identifiers {
+                type
+                value
             }
-            nodes {
-                ghsaId
-                summary
-                severity
-                publishedAt
-                updatedAt
-                identifiers {
-                    type
-                    value
-                }
-                references {
-                    url
-                }
-                cwes(first: 5) {
-                    nodes {
-                        cweId
-                        name
-                    }
+            references {
+                url
+            }
+            cwes(first: 5) {
+                nodes {
+                    cweId
+                    name
                 }
             }
         }
@@ -285,28 +311,82 @@ class GHSAFetcher(CVEFetcher):
         "LOW": Severity.LOW,
     }
     
-    def _is_kernel_related(self, advisory: Dict[str, Any]) -> bool:
-        """Check if advisory is related to Linux kernel."""
-        summary = advisory.get("summary", "").lower()
+    async def _fetch_ghsa_ids_from_search(self, session: aiohttp.ClientSession) -> List[str]:
+        """Scrape GHSA IDs from GitHub advisories search page."""
+        ghsa_ids = []
+        page = 1
+        max_pages = 50  # Limit to avoid excessive scraping
         
-        kernel_keywords = [
-            "linux kernel", "kernel", "smb", "cifs",
-            "net/", "fs/", "drivers/", "mm/", "arch/",
-        ]
+        while page <= max_pages:
+            url = f"{self.KERNEL_SEARCH_URL}&page={page}"
+            
+            try:
+                async with session.get(
+                    url,
+                    timeout=aiohttp.ClientTimeout(total=30),
+                    headers={"User-Agent": "kernel-backport-tool/1.0"},
+                ) as response:
+                    if response.status != 200:
+                        logger.warning(f"GHSA search page {page} returned HTTP {response.status}")
+                        break
+                    
+                    html = await response.text()
+            except Exception as e:
+                logger.warning(f"Failed to fetch GHSA search page {page}: {e}")
+                break
+            
+            # Extract GHSA IDs from the page
+            page_ids = re.findall(r'GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}', html)
+            unique_ids = list(dict.fromkeys(page_ids))  # Remove duplicates preserving order
+            
+            if not unique_ids:
+                break  # No more results
+            
+            ghsa_ids.extend(unique_ids)
+            logger.debug(f"Page {page}: found {len(unique_ids)} GHSA IDs")
+            
+            page += 1
+            await asyncio.sleep(0.5)  # Rate limiting
         
-        if any(kw in summary for kw in kernel_keywords):
-            return True
+        # Remove duplicates across pages
+        return list(dict.fromkeys(ghsa_ids))
+    
+    async def _fetch_advisory_details(
+        self,
+        session: aiohttp.ClientSession,
+        ghsa_id: str,
+        headers: Dict[str, str],
+    ) -> Optional[Dict[str, Any]]:
+        """Fetch advisory details via GraphQL API."""
+        payload = {
+            "query": self.GRAPHQL_QUERY_BY_ID,
+            "variables": {"ghsaId": ghsa_id},
+        }
         
-        # Check references
-        for ref in advisory.get("references", []):
-            url = ref.get("url", "")
-            if "git.kernel.org" in url or "torvalds/linux" in url:
-                return True
-        
-        return False
+        try:
+            async with session.post(
+                self.config.github_graphql_url,
+                json=payload,
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as response:
+                if response.status != 200:
+                    return None
+                
+                data = await response.json()
+                
+                if "errors" in data:
+                    return None
+                
+                return data.get("data", {}).get("securityAdvisory")
+        except Exception:
+            return None
     
     def _parse_advisory(self, advisory: Dict[str, Any]) -> Optional[CVE]:
         """Parse a GHSA advisory into a CVE object."""
+        if not advisory:
+            return None
+        
         # Get CVE ID
         cve_id = None
         ghsa_id = advisory.get("ghsaId")
@@ -377,7 +457,7 @@ class GHSAFetcher(CVEFetcher):
         output_dir: Path,
         current_version: Optional[str] = None,
     ) -> List[CVE]:
-        """Fetch CVEs from GitHub Advisory Database."""
+        """Fetch CVEs from GitHub Advisory Database using Linux kernel search."""
         logger.info("Source: GitHub Advisory Database (GHSA)")
         logger.info(f"Target kernel: {kernel_version}")
         
@@ -392,59 +472,38 @@ class GHSAFetcher(CVEFetcher):
         }
         
         all_cves: Dict[str, CVE] = {}
-        cursor = None
-        page = 0
-        max_pages = 5
         
-        async with aiohttp.ClientSession(headers=headers) as session:
-            while page < max_pages:
-                page += 1
-                logger.debug(f"Fetching GHSA page {page}")
+        async with aiohttp.ClientSession() as session:
+            # Step 1: Scrape GHSA IDs from search results
+            logger.info("Searching for Linux kernel advisories...")
+            ghsa_ids = await self._fetch_ghsa_ids_from_search(session)
+            logger.info(f"Found {len(ghsa_ids)} Linux kernel advisory IDs")
+            
+            if not ghsa_ids:
+                return []
+            
+            # Step 2: Fetch details for each advisory via GraphQL
+            logger.info("Fetching advisory details...")
+            batch_size = 10
+            
+            for i in range(0, len(ghsa_ids), batch_size):
+                batch = ghsa_ids[i:i + batch_size]
                 
-                variables = {"cursor": cursor} if cursor else {}
-                payload = {
-                    "query": self.GRAPHQL_QUERY,
-                    "variables": variables,
-                }
+                tasks = [
+                    self._fetch_advisory_details(session, ghsa_id, headers)
+                    for ghsa_id in batch
+                ]
                 
-                try:
-                    async with session.post(
-                        self.config.github_graphql_url,
-                        json=payload,
-                        timeout=aiohttp.ClientTimeout(total=60),
-                    ) as response:
-                        if response.status != 200:
-                            logger.warning(f"GHSA API error: HTTP {response.status}")
-                            break
-                        
-                        data = await response.json()
-                except Exception as e:
-                    logger.warning(f"GHSA API request failed: {e}")
-                    break
+                results = await asyncio.gather(*tasks)
                 
-                # Check for errors
-                if "errors" in data:
-                    logger.warning(f"GHSA API error: {data['errors']}")
-                    break
+                for advisory in results:
+                    if advisory:
+                        cve = self._parse_advisory(advisory)
+                        if cve:
+                            all_cves[cve.cve_id] = cve
                 
-                advisories = data.get("data", {}).get("securityAdvisories", {})
-                nodes = advisories.get("nodes", [])
-                
-                for advisory in nodes:
-                    if not self._is_kernel_related(advisory):
-                        continue
-                    
-                    cve = self._parse_advisory(advisory)
-                    if cve and cve.fix_commits:
-                        all_cves[cve.cve_id] = cve
-                
-                # Check pagination
-                page_info = advisories.get("pageInfo", {})
-                if not page_info.get("hasNextPage"):
-                    break
-                cursor = page_info.get("endCursor")
-                
-                await asyncio.sleep(1)  # Rate limiting
+                # Rate limiting between batches
+                await asyncio.sleep(1)
         
         cves = list(all_cves.values())
         logger.info(f"Found {len(cves)} kernel CVEs from GHSA")
@@ -472,6 +531,7 @@ class AtomFetcher(CVEFetcher):
             response = requests.get(
                 self.config.cve_announce_feed,
                 timeout=60,
+                headers={"User-Agent": "kernel-backport-tool/1.0 (compatible)"},
             )
             response.raise_for_status()
             feed_content = response.text
@@ -479,30 +539,60 @@ class AtomFetcher(CVEFetcher):
             logger.error(f"Failed to fetch Atom feed: {e}")
             return []
         
-        # Parse fixes for target kernel
-        pattern = rf"Fixed in ({kernel_version}\.\d+) with commit ([a-f0-9]{{40}})"
-        matches = re.findall(pattern, feed_content)
-        
         cves: Dict[str, CVE] = {}
         skipped = 0
         
-        for fix_version, commit in matches:
-            # Skip if already in current version
-            if current_version and not version_less_than(current_version, fix_version):
-                skipped += 1
+        # Parse Atom feed entries - extract CVE ID from title and fix info from content
+        # Entry format: <title>CVE-YYYY-NNNNN: description</title>
+        # Content contains: "fixed in X.Y.Z with commit <sha>"
+        entry_pattern = r'<entry>.*?<title[^>]*>(.*?)</title>.*?<content[^>]*>(.*?)</content>.*?</entry>'
+        entries = re.findall(entry_pattern, feed_content, re.DOTALL)
+        
+        for title, content in entries:
+            # Extract CVE ID from title (format: "CVE-YYYY-NNNNN: description")
+            # Skip REJECTED entries
+            if "REJECTED:" in title:
                 continue
             
-            # Create a minimal CVE object (Atom feed doesn't provide full details)
-            # We use commit as identifier since CVE ID isn't directly available
-            cve_id = f"CVE-ATOM-{commit[:8]}"  # Placeholder
+            cve_match = re.search(r'(CVE-\d{4}-\d{4,})', title)
+            if not cve_match:
+                continue
             
+            cve_id = cve_match.group(1)
+            
+            # Find fixes for target kernel version (case-insensitive)
+            # Format: "fixed in 5.10.188 with commit cdf9a7e2cdc7a5464e3cc6d0b715ba2b1d215521"
+            fix_pattern = rf'fixed in ({kernel_version}\.\d+) with commit ([a-f0-9]{{40}})'
+            fix_matches = re.findall(fix_pattern, content, re.IGNORECASE)
+            
+            if not fix_matches:
+                continue
+            
+            # Collect all fix commits for this CVE
+            fix_commits = []
+            latest_fix_version = None
+            
+            for fix_version, commit in fix_matches:
+                # Skip if already in current version
+                if current_version and not version_less_than(current_version, fix_version):
+                    skipped += 1
+                    continue
+                
+                fix_commits.append(commit)
+                if latest_fix_version is None or version_less_than(latest_fix_version, fix_version):
+                    latest_fix_version = fix_version
+            
+            if not fix_commits:
+                continue
+            
+            # Create CVE object with real CVE ID
             cve = CVE(
                 cve_id=cve_id,
                 source=CVESource.ATOM,
-                fix_commits=[commit],
-                affected_versions=[fix_version],
+                fix_commits=fix_commits,
+                affected_versions=[latest_fix_version] if latest_fix_version else [],
             )
-            cves[commit] = cve
+            cves[cve_id] = cve
         
         logger.info(f"Found {len(cves)} CVE fixes for kernel {kernel_version} (skipped {skipped})")
         

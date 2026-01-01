@@ -39,6 +39,7 @@ def run_backport_workflow(
     cve_since: Optional[str] = None,
     detect_gaps: bool = False,
     resume: bool = False,
+    repo_base: Optional[Path] = None,
     repo_url: str = "https://github.com/vmware/photon.git",
     branch: Optional[str] = None,
     skip_clone: bool = False,
@@ -61,6 +62,7 @@ def run_backport_workflow(
         cve_since: Filter CVE analysis by date
         detect_gaps: Enable gap detection
         resume: Resume from checkpoint
+        repo_base: Base directory for cloning repos (overrides config default)
         repo_url: Photon repository URL
         branch: Git branch (auto-detected if not specified)
         skip_clone: Skip cloning if repo exists
@@ -84,7 +86,11 @@ def run_backport_workflow(
     if not branch:
         branch = mapping.branch.value
     
-    repo_dir = config.base_dir / "kernelpatches" / branch
+    # Determine repo directory
+    if repo_base:
+        repo_dir = repo_base / branch
+    else:
+        repo_dir = config.base_dir / "kernelpatches" / branch
     spec_dir = repo_dir / mapping.spec_dir
     output_dir = create_output_dir("backport")
     skills_file = config.base_dir / "kernelpatches" / "patch_routing.skills"
@@ -111,26 +117,25 @@ def run_backport_workflow(
     logger.info("")
     logger.info("=== Step 1: Clone Photon Repository ===")
     
+    from scripts.common import ensure_photon_repo
+    
     if skip_clone and repo_dir.exists():
         logger.info(f"Skipping clone, using existing {repo_dir}")
     else:
-        if repo_dir.exists():
-            logger.info(f"Updating repository at {repo_dir}")
-            try:
-                repo = Repo(repo_dir)
-                repo.remotes.origin.fetch()
-                repo.git.reset("--hard", f"origin/{branch}")
-            except Exception as e:
-                logger.error(f"Failed to update repo: {e}")
+        if not dry_run:
+            # Use centralized clone routine
+            cloned_dir = ensure_photon_repo(
+                kernel_version,
+                config=config,
+                repo_url=repo_url,
+                repo_base=repo_base,
+                force_update=repo_dir.exists(),  # Update if exists
+            )
+            if not cloned_dir:
+                logger.error("Failed to clone/update repository")
                 return False
-        else:
-            logger.info(f"Cloning {repo_url} (branch: {branch})")
-            if not dry_run:
-                try:
-                    Repo.clone_from(repo_url, repo_dir, branch=branch)
-                except Exception as e:
-                    logger.error(f"Failed to clone repo: {e}")
-                    return False
+            repo_dir = cloned_dir
+            spec_dir = repo_dir / mapping.spec_dir
     
     if not spec_dir.exists() and not dry_run:
         logger.error(f"Spec directory not found: {spec_dir}")

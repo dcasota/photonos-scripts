@@ -188,6 +188,7 @@ class KernelBuilder:
         self,
         kernel_version: str,
         naming_scheme: str = "linux-esx",
+        use_srpm_spec: bool = False,
     ) -> Tuple[bool, Path]:
         """
         Set up SRPM-based build environment.
@@ -198,6 +199,8 @@ class KernelBuilder:
         Args:
             kernel_version: Kernel version (e.g., "5.10")
             naming_scheme: "linux" or "linux-esx"
+            use_srpm_spec: If True, use spec files from SRPM instead of local specs.
+                          This ensures all patches referenced in spec exist in SOURCES.
         
         Returns:
             Tuple of (success, build_topdir)
@@ -284,26 +287,34 @@ class KernelBuilder:
             logger.error("Could not download SRPM from packages.vmware.com")
             return False, build_topdir
         
-        # Copy local spec files (with patches) to SPECS directory, overriding SRPM specs
-        # The local spec files have our CVE patches and updated release numbers
+        # Copy spec files to SPECS directory
         mapping = KERNEL_MAPPINGS.get(kernel_version)
         local_spec_dir = self.config.get_repo_dir(kernel_version) / mapping.spec_dir
         
         specs_copied = []
         for spec_name in mapping.spec_files:
-            local_spec_path = local_spec_dir / spec_name
             dest_spec = build_topdir / "SPECS" / spec_name
+            srpm_spec = sources_dir / spec_name
+            local_spec_path = local_spec_dir / spec_name
             
-            if local_spec_path.exists():
-                shutil.copy2(local_spec_path, dest_spec)
-                logger.info(f"Using local spec file: {local_spec_path} -> {dest_spec}")
-                specs_copied.append(spec_name)
-            else:
-                # Fall back to SRPM spec if local doesn't exist
-                srpm_spec = sources_dir / spec_name
+            if use_srpm_spec:
+                # Use SRPM spec files - ensures all patches exist in SOURCES
                 if srpm_spec.exists():
                     shutil.copy2(srpm_spec, dest_spec)
-                    logger.info(f"Using SRPM spec file: {dest_spec}")
+                    logger.info(f"Using SRPM spec file: {srpm_spec} -> {dest_spec}")
+                    specs_copied.append(spec_name)
+                else:
+                    logger.warning(f"SRPM spec file not found: {spec_name}")
+            else:
+                # Use local spec files (with CVE patches) - requires patches in SOURCES
+                if local_spec_path.exists():
+                    shutil.copy2(local_spec_path, dest_spec)
+                    logger.info(f"Using local spec file: {local_spec_path} -> {dest_spec}")
+                    specs_copied.append(spec_name)
+                elif srpm_spec.exists():
+                    # Fall back to SRPM spec if local doesn't exist
+                    shutil.copy2(srpm_spec, dest_spec)
+                    logger.info(f"Using SRPM spec file (fallback): {dest_spec}")
                     specs_copied.append(spec_name)
                 else:
                     logger.warning(f"Spec file not found: {spec_name}")
@@ -471,12 +482,12 @@ diff -u .config.old .config || echo "Config differences detected (expected with 
         acvp: int = 0,
         install_deps: bool = True,
         spec_filter: Optional[List[str]] = None,
+        use_srpm_spec: bool = False,
     ) -> List[BuildResult]:
         """
         Build all kernel RPMs using SRPM-based approach.
         
-        This downloads the official SRPM, extracts sources, applies our
-        modified spec files with CVE patches, and builds all RPMs.
+        This downloads the official SRPM, extracts sources, and builds all RPMs.
         
         Args:
             kernel_version: Kernel version (e.g., "5.10")
@@ -485,14 +496,18 @@ diff -u .config.old .config || echo "Config differences detected (expected with 
             install_deps: Whether to install build dependencies
             spec_filter: Optional list of spec files to build (e.g., ["linux.spec", "linux-esx.spec"])
                         If None, builds all spec files for this kernel version.
+            use_srpm_spec: If True, use spec files from SRPM (guaranteed to build).
+                          If False, use local spec files (may have additional patches).
         
         Returns:
             List of BuildResult for each spec built
         """
         results = []
         
-        # Set up build environment (downloads SRPM, copies local specs)
-        success, build_topdir = self.setup_srpm_build_env(kernel_version, "linux-esx")
+        # Set up build environment (downloads SRPM)
+        success, build_topdir = self.setup_srpm_build_env(
+            kernel_version, "linux-esx", use_srpm_spec=use_srpm_spec
+        )
         if not success:
             return [BuildResult(
                 spec_file="setup",
@@ -543,9 +558,14 @@ diff -u .config.old .config || echo "Config differences detected (expected with 
             logger.info(f"  Output: {build_topdir}/RPMS/x86_64/")
             
             # Build command
+            # Determine %dist macro based on kernel version
+            photon_major = "4" if kernel_version == "5.10" else "5"
+            dist_macro = f".ph{photon_major}"
+            
             cmd = [
                 "rpmbuild", "-bb",
                 "--define", f"_topdir {build_topdir}",
+                "--define", f"dist {dist_macro}",
                 "--define", f"canister_build {canister}",
                 "--define", f"acvp_build {acvp}",
                 str(spec_path),
