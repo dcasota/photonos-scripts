@@ -13,13 +13,6 @@ The kernelpatches solution provides:
 - **Feed-based Analysis** - Fast offline CVE analysis using local NVD feed cache (no per-CVE API calls)
 - **Scheduled Automation** - Install with cron for automated backporting
 
-## Installation
-
-```bash
-cd kernelpatches
-pip install -e .
-```
-
 ### Dependencies
 
 - Python 3.9+
@@ -27,29 +20,73 @@ pip install -e .
 
 ## Quick Start
 
-The CLI tool can be invoked as `photon-kernel-backport` or the shorter alias `phkbp`.
+Recommended Workflow
 
-```bash
-# Generate CVE coverage matrix
-photon-kernel-backport matrix --output /tmp/reports
+   1. **Initial Setup**
 
-# Or use the short alias
-phkbp matrix --output /tmp/reports
+      ```bash
+           cd kernelpatches
+           pip install -e .
+      ```
+      
+      After initial setup, the CLI tool can be invoked as `photon-kernel-backport` or the shorter alias `phkbp`.  
 
-# Generate full matrix with all stable patches
-photon-kernel-backport full-matrix --output /var/log/cve_matrix --download-patches
+   2. **Assessment Phase** (understand current state)
 
-# Detect CVE gaps for a kernel
-photon-kernel-backport gaps --kernel 5.10
+      ```bash
+           # Check kernel status first.
+           photon-kernel-backport status --kernel 5.10
+      
+           # Generate CVE coverage matrix to see current gaps
+           photon-kernel-backport matrix --output /var/log/photon-kernel-backport/cve_coverage_matrix --print-table
+      ```  
+   3. **Deep Analysis Phase** (comprehensive view)
+      
+      ```bash
+           # Generate full matrix with all CVE and stable patch data
+           photon-kernel-backport full-matrix --output /var/log/photon-kernel-backport/cve_matrix --download-patches --repo-base .
+      
+           # Identify specific CVE gaps requiring attention
+           photon-kernel-backport gaps --kernel 5.10 --output /var/log/photon-kernel-backport/gap_reports
+      ```
+   4. **Patching Phase** (apply fixes)
 
-# Check kernel status
-photon-kernel-backport status --kernel 6.1
+      ```bash
+           # Dry run first to see what will happen
+           photon-kernel-backport backport --kernel 5.10 --source all --dry-run
+      
+           # Apply CVE and stable patches
+           photon-kernel-backport backport --kernel 5.10 --source all --detect-gaps
+      ```
+   5. **Build Phase** (create RPMs)
 
-# Run backport workflow
-photon-kernel-backport backport --kernel 6.1 --source cve
+      ```bash
+           # Recommended: Build using official SRPM (includes all sources)
+           photon-kernel-backport build-srpm --kernel 5.10
+      
+           # Or build from local specs if you have all sources
+           photon-kernel-backport build --kernel 5.10
+      ```
+   6. **Automation Phase** (ongoing maintenance)
 
-# Install with cron scheduling
-photon-kernel-backport install --cron "0 4 * * *"
+      ```bash
+           # Install with cron for automated backporting (every 2 hours default)
+           photon-kernel-backport install --cron "0 4 * * *" --kernels 5.10,6.1,6.12
+      ```
+   Prerequisites Chain
+
+   Step          │ Prerequisites
+   --------------+-------------------------------------------------------
+   `status`      │ Photon repo clones (4.0/, 5.0/, common/)
+   `matrix`      │ None (uses NVD feed cache)
+   `full-matrix` │ `--download-patches` needs network access
+   `gaps`        │ NVD feed cache auto-downloaded
+   `backport`    │ Photon repo clones with spec files
+   `build-srpm`  │ Network access to packages.broadcom.com, tdnf for deps
+   `build`       │ Local spec files + all source tarballs
+   `install`     │ Root access for cron and /opt directories
+
+   The typical flow is: status -> matrix/gaps (assess) -> backport (patch) -> build-srpm (compile) -> install (automate).
 ```
 
 ## Commands
@@ -73,16 +110,16 @@ Generate a CVE coverage matrix across kernel versions.
 
 ```bash
 # Generate in all formats (JSON, CSV, Markdown)
-photon-kernel-backport matrix --output /tmp/cve_reports
+photon-kernel-backport matrix --output /var/log/photon-kernel-backport/cve_reports
 
 # Generate for specific kernel only
-photon-kernel-backport matrix --kernel 6.1 --output /tmp/reports
+photon-kernel-backport matrix --kernel 5.10 --output /var/log/photon-kernel-backport/cve_reports
 
 # Print to console
 photon-kernel-backport matrix --print-table --max-rows 100
 
 # CSV format only
-photon-kernel-backport matrix --format csv --output /tmp
+photon-kernel-backport matrix --format csv --output /var/log/photon-kernel-backport
 ```
 
 **Five CVE States:**
@@ -101,13 +138,13 @@ Generate a comprehensive matrix with all CVEs and stable patches:
 
 ```bash
 # Generate full matrix with all data
-photon-kernel-backport full-matrix --output /var/log/cve_matrix --download-patches --repo-base .
+photon-kernel-backport full-matrix --output /var/log/photon-kernel-backport/cve_matrix --download-patches --repo-base .
 
 # Quick matrix without downloading patches
-photon-kernel-backport full-matrix --output /tmp/matrix
+photon-kernel-backport full-matrix --output /var/log/photon-kernel-backport/matrix
 
 # Specific kernels only
-photon-kernel-backport full-matrix --kernels 6.1,6.12 --output /tmp/matrix
+photon-kernel-backport full-matrix --kernels 6.1,6.12 --output /var/log/photon-kernel-backport/matrix
 ```
 
 This will:
@@ -125,10 +162,10 @@ Identify CVEs that affect a kernel but have no available patch.
 photon-kernel-backport gaps --kernel 5.10
 
 # Analyze specific CVEs from a file
-photon-kernel-backport gaps --kernel 6.1 --cve-list /tmp/cves.txt
+photon-kernel-backport gaps --kernel 6.1 --cve-list /var/log/photon-kernel-backport/cves.txt
 
 # Custom output directory
-photon-kernel-backport gaps --kernel 6.12 --output /tmp/gap_reports
+photon-kernel-backport gaps --kernel 6.12 --output /var/log/photon-kernel-backport/gap_reports
 ```
 
 **Performance:** Analyzes 7,500+ CVEs in ~30 seconds (vs ~20 hours with per-CVE API calls)
@@ -167,7 +204,7 @@ photon-kernel-backport status --kernel 6.1
 Download stable patches from kernel.org without integration.
 
 ```bash
-photon-kernel-backport download --kernel 6.1 --output /tmp/patches
+photon-kernel-backport download --kernel 6.1 --output /var/log/photon-kernel-backport/patches
 ```
 
 ### `build` - Build Kernel RPMs
@@ -179,7 +216,7 @@ Build kernel RPMs from local spec files. Automatically installs build dependenci
 photon-kernel-backport build --kernel 5.10
 
 # Build with custom output directory
-photon-kernel-backport build --kernel 6.1 --output /tmp/build
+photon-kernel-backport build --kernel 6.1 --output /var/log/photon-kernel-backport/build
 
 # Skip dependency installation
 photon-kernel-backport build --kernel 6.1 --skip-deps
@@ -234,7 +271,7 @@ photon-kernel-backport install --cron "0 4 * * *" --kernels 6.1,6.12
 photon-kernel-backport install --no-cron
 
 # Custom directories (defaults: /opt/photon-kernel-backport and /var/log/photon-kernel-backport)
-photon-kernel-backport install --install-dir /opt/kb --log-dir /var/log/kb
+photon-kernel-backport install --install-dir /opt/photon-kernel-backport --log-dir /var/log/photon-kernel-backport
 
 # Uninstall
 photon-kernel-backport install --uninstall
