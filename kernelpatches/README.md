@@ -288,6 +288,7 @@ The solution uses local NVD feed caching for fast offline analysis:
 | `2023.json.gz` | Once per 24h | All 2023 CVEs |
 | `2024.json.gz` | Once per 24h | All 2024 CVEs |
 | `2025.json.gz` | Once per 24h | All 2025 CVEs |
+| `2026.json.gz` | Once per 24h | All 2026 CVEs |
 
 Cache location: `/var/cache/photon-kernel-backport/nvd_feeds/`
 
