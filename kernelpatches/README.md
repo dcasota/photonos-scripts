@@ -34,22 +34,16 @@ Recommended Workflow
    2. **Assessment Phase** (understand current state)
 
       ```bash
-           # Check kernel status first.
+           # Check kernel status first
            photon-kernel-backport status --kernel 5.10
       
-           # Generate CVE coverage matrix to see current gaps
-           photon-kernel-backport matrix --output /var/log/photon-kernel-backport/cve_coverage_matrix --print-table
-      ```  
-   3. **Deep Analysis Phase** (comprehensive view)
-      
-      ```bash
-           # Generate full matrix with all CVE and stable patch data
-           photon-kernel-backport full-matrix --output /var/log/photon-kernel-backport/cve_coverage_matrix --download-patches --repo-base .
+           # Generate CVE coverage matrix with all CVE and stable patch data (auto-clones repos)
+           photon-kernel-backport matrix --kernel 5.10
       
            # Identify specific CVE gaps requiring attention
            photon-kernel-backport gaps --kernel 5.10 --output /var/log/photon-kernel-backport/gap_reports
       ```
-   4. **Patching Phase** (apply fixes)
+   3. **Patching Phase** (apply fixes)
 
       ```bash
            # Dry run first to see what will happen
@@ -58,69 +52,82 @@ Recommended Workflow
            # Apply CVE and stable patches
            photon-kernel-backport backport --kernel 5.10 --source all --detect-gaps
       ```
-   5. **Build Phase** (create RPMs)
+   4. **Build Phase** (create RPMs)
 
       ```bash
-           # Recommended: Build using official SRPM (includes all sources)
-           photon-kernel-backport build-srpm --kernel 5.10
-      
-           # Or build from local specs if you have all sources
+           # Build kernel RPMs using official SRPM
            photon-kernel-backport build --kernel 5.10
+      
+           # Build specific spec only
+           photon-kernel-backport build --kernel 5.10 --specs linux-esx.spec
       ```
-   6. **Automation Phase** (ongoing maintenance)
+   5. **Automation Phase** (ongoing maintenance)
 
       ```bash
            # Install with cron for automated backporting (every 2 hours default)
-           photon-kernel-backport install --cron "0 4 * * *" --kernels 5.10,6.1,6.12
+           photon-kernel-backport install --cron "0 4 * * *" --kernel 5.10,6.1,6.12
       ```
    Prerequisites Chain
 
    Step          │ Prerequisites
    --------------+-------------------------------------------------------
-   `status`      │ Photon repo clones (4.0/, 5.0/, common/)
-   `matrix`      │ None (uses NVD feed cache)
-   `full-matrix` │ `--download-patches` needs network access
+   `status`      │ Photon repo clones (auto-cloned to 4.0/, 5.0/, common/)
+   `matrix`      │ Network access for NVD feeds, stable patches, and repo cloning
    `gaps`        │ NVD feed cache auto-downloaded
-   `backport`    │ Photon repo clones with spec files
-   `build-srpm`  │ Network access to packages.broadcom.com, tdnf for deps
-   `build`       │ Local spec files + all source tarballs
+   `backport`    │ Network access for repo cloning (repos auto-cloned)
+   `build`       │ Network access to packages.broadcom.com, tdnf for deps
    `install`     │ Root access for cron and /opt directories
 
-   The typical flow is: status -> matrix/gaps (assess) -> backport (patch) -> build-srpm (compile) -> install (automate).
+   The typical flow is: status -> matrix/gaps (assess) -> backport (patch) -> build (compile) -> install (automate).
+   
+   **Note:** All commands that need Photon repos (`matrix`, `backport`, `cve-build-workflow`) automatically clone them.
+   Use `--repo-base` and `--repo-url` to customize the clone location and source repository.
 ```
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| `matrix` | Generate CVE coverage matrix |
-| `full-matrix` | Generate comprehensive matrix with all data |
+| `matrix` | Generate comprehensive CVE coverage matrix |
 | `gaps` | Detect CVE backport gaps |
 | `backport` | Run kernel patch backporting workflow |
+| `cve-build-workflow` | Two-phase CVE coverage build with comprehensive reporting |
 | `status` | Check kernel status and available updates |
 | `download` | Download stable patches from kernel.org |
-| `build` | Build kernel RPMs from local spec files |
-| `build-srpm` | Build kernel RPMs using official SRPM from Broadcom |
+| `build` | Build kernel RPMs using official SRPM from Broadcom |
 | `install` | Install with optional cron scheduling |
 | `cve` | CVE-related subcommands |
 
-### `matrix` - CVE Coverage Matrix
+### `matrix` - CVE Coverage Matrix Generation
 
-Generate a CVE coverage matrix across kernel versions.
+Generate a comprehensive CVE coverage matrix with all CVEs and stable patches:
 
 ```bash
-# Generate in all formats (JSON, CSV, Markdown)
-photon-kernel-backport matrix --output /var/log/photon-kernel-backport/cve_coverage_matrix
+# Generate matrix for all kernels (auto-clones repos)
+photon-kernel-backport matrix
 
-# Generate for specific kernel only
-photon-kernel-backport matrix --kernel 5.10 --output /var/log/photon-kernel-backport/cve_coverage_matrix
+# Specific kernel
+photon-kernel-backport matrix --kernel 5.10
 
-# Print to console
-photon-kernel-backport matrix --print-table --max-rows 100
+# Multiple kernels
+photon-kernel-backport matrix --kernel 6.1,6.12
 
-# CSV format only
-photon-kernel-backport matrix --format csv --output /var/log/photon-kernel-backport/cve_coverage_matrix
+# Custom output directory
+photon-kernel-backport matrix --kernel 5.10 --output /tmp/cve_matrix
+
+# Custom repo location and URL
+photon-kernel-backport matrix --kernel 5.10 --repo-base /tmp/repos --repo-url https://github.com/myorg/photon.git
+
+# Update existing repos before generating matrix
+photon-kernel-backport matrix --kernel 5.10 --update-repos
 ```
+
+This will:
+1. Fetch ~7,500 CVEs from NVD (kernel.org CNA)
+2. Download stable patches from kernel.org
+3. Read Photon's current kernel versions from spec files
+4. Build complete coverage matrix with five-state tracking
+5. Export to JSON, CSV, and Markdown formats
 
 **Five CVE States:**
 
@@ -131,27 +138,6 @@ photon-kernel-backport matrix --format csv --output /var/log/photon-kernel-backp
 | `cve_in_newer_stable` | ⬆️ | Fix exists in newer stable patch (upgrade available) |
 | `cve_patch_available` | 🔄 | Patch exists in spec file but not in any stable |
 | `cve_patch_missing` | ❌ | CVE affects kernel but no patch exists (gap) |
-
-### `full-matrix` - Comprehensive Matrix Generation
-
-Generate a comprehensive matrix with all CVEs and stable patches:
-
-```bash
-# Generate full matrix with all data
-photon-kernel-backport full-matrix --output /var/log/photon-kernel-backport/cve_coverage_matrix --download-patches --repo-base .
-
-# Quick matrix without downloading patches
-photon-kernel-backport full-matrix --output /var/log/photon-kernel-backport/cve_coverage_matrix
-
-# Specific kernels only
-photon-kernel-backport full-matrix --kernels 6.1,6.12 --output /var/log/photon-kernel-backport/cve_coverage_matrix
-```
-
-This will:
-1. Fetch ~7,500 CVEs from NVD (kernel.org CNA)
-2. Download stable patches from kernel.org (with `--download-patches`)
-3. Read Photon's current kernel versions from spec files
-4. Generate matrix showing coverage and upgrade impact
 
 ### `gaps` - CVE Gap Detection
 
@@ -189,7 +175,55 @@ photon-kernel-backport backport --kernel 6.1 --dry-run
 
 # With gap detection
 photon-kernel-backport backport --kernel 5.10 --detect-gaps
+
+# Custom repo location and URL
+photon-kernel-backport backport --kernel 5.10 --repo-base /tmp/repos --repo-url https://github.com/myorg/photon.git
 ```
+
+### `cve-build-workflow` - Two-Phase CVE Coverage Build
+
+Run a comprehensive two-phase workflow that:
+1. **Phase 1**: Builds current kernel (e.g., 6.12.60) with CVE patches
+2. **Phase 2**: Builds latest stable kernel (e.g., 6.12.63) with CVE patches
+
+Each phase generates CVE coverage matrix, downloads missing patches, integrates them into spec files, builds RPMs, and produces comprehensive JSON/Markdown reports.
+
+```bash
+# Full workflow for all kernels
+photon-kernel-backport cve-build-workflow
+
+# Single kernel
+photon-kernel-backport cve-build-workflow --kernel 6.12
+
+# Multiple kernels
+photon-kernel-backport cve-build-workflow --kernel 5.10,6.1
+
+# Phase 1 only (current kernel)
+photon-kernel-backport cve-build-workflow --kernel 6.12 --phase1-only
+
+# Custom output directory
+photon-kernel-backport cve-build-workflow -k 6.12 -o /tmp/cve_report
+
+# Build multiple specs
+photon-kernel-backport cve-build-workflow -k 6.12 --specs "linux.spec,linux-esx.spec"
+
+# Skip cleanup (for debugging/rerun)
+photon-kernel-backport cve-build-workflow --kernel 6.12 --no-cleanup
+
+# Custom repo location and URL
+photon-kernel-backport cve-build-workflow --kernel 6.12 --repo-base /tmp/repos --repo-url https://github.com/myorg/photon.git
+```
+
+**Report Output:**
+- `report.json` - Complete workflow results in JSON format
+- `report.md` - Human-readable Markdown summary
+
+**Report Contents:**
+- CVE coverage statistics (included, in newer stable, patch available, missing, not applicable)
+- Coverage percentage calculation
+- Patches downloaded and integrated counts
+- Build success/failure with duration and log paths
+- RPM output locations
 
 ### `status` - Kernel Status
 
@@ -439,45 +473,50 @@ pytest tests/ --cov=scripts
 
 ### `backport` - Run kernel patch backporting workflow
 
-| Option            | Type                                   | Default                               | Description                                      |
-|-------------------|----------------------------------------|---------------------------------------|--------------------------------------------------|
-| `-k, --kernel`    | Choice: 5.10, 6.1, 6.12                | **Required**                          | Kernel version to process                        |
-| `-s, --source`    | Choice: cve, stable, stable-full, all  | cve                                   | Patch source type                                |
-| `--cve-source`    | Choice: nvd, atom, ghsa, upstream      | nvd                                   | CVE source when using --source cve               |
-| `--month`         | String                                 | None                                  | Month to scan (YYYY-MM) for upstream source      |
-| `--analyze-cves`  | Flag                                   | False                                 | Analyze CVE redundancy after stable patches      |
-| `--cve-since`     | String                                 | None                                  | Filter CVE analysis to CVEs since date (YYYY-MM) |
-| `--detect-gaps`   | Flag                                   | False                                 | Detect CVEs without stable backports             |
-| `--gap-report`    | Path                                   | None                                  | Directory for gap detection reports              |
-| `--resume`        | Flag                                   | False                                 | Resume from checkpoint                           |
-| `--report-dir`    | Path                                   | None                                  | Directory for analysis reports                   |
-| `--repo-url`      | String                                 | https://github.com/vmware/photon.git  | Photon repository URL                            |
-| `--branch`        | String                                 | Auto-detected                         | Git branch to use                                |
-| `--skip-clone`    | Flag                                   | False                                 | Skip cloning if repo exists                      |
-| `--skip-review`   | Flag                                   | False                                 | Skip CVE review step                             |
-| `--skip-push`     | Flag                                   | False                                 | Skip git push and PR creation                    |
-| `--disable-build` | Flag                                   | False                                 | Disable RPM build                                |
-| `--limit`         | Integer                                | 0                                     | Limit to first N patches                         |
-| `--dry-run`       | Flag                                   | False                                 | Show what would be done without changes          |
+| Option            | Type                                   | Default                                      | Description                                      |
+|-------------------|----------------------------------------|----------------------------------------------|--------------------------------------------------|
+| `-k, --kernel`    | Choice: 5.10, 6.1, 6.12                | **Required**                                 | Kernel version to process                        |
+| `-s, --source`    | Choice: cve, stable, stable-full, all  | cve                                          | Patch source type                                |
+| `--cve-source`    | Choice: nvd, atom, ghsa, upstream      | nvd                                          | CVE source when using --source cve               |
+| `--month`         | String                                 | None                                         | Month to scan (YYYY-MM) for upstream source      |
+| `--analyze-cves`  | Flag                                   | False                                        | Analyze CVE redundancy after stable patches      |
+| `--cve-since`     | String                                 | None                                         | Filter CVE analysis to CVEs since date (YYYY-MM) |
+| `--detect-gaps`   | Flag                                   | False                                        | Detect CVEs without stable backports             |
+| `--gap-report`    | Path                                   | None                                         | Directory for gap detection reports              |
+| `--resume`        | Flag                                   | False                                        | Resume from checkpoint                           |
+| `--report-dir`    | Path                                   | None                                         | Directory for analysis reports                   |
+| `--repo-base`     | Path                                   | /root/photonos-scripts/kernelpatches         | Base directory for cloning Photon repos          |
+| `--repo-url`      | String                                 | https://github.com/vmware/photon.git         | Photon repository URL                            |
+| `--branch`        | String                                 | Auto-detected                                | Git branch to use                                |
+| `--skip-clone`    | Flag                                   | False                                        | Skip cloning if repo exists                      |
+| `--skip-review`   | Flag                                   | False                                        | Skip CVE review step                             |
+| `--skip-push`     | Flag                                   | False                                        | Skip git push and PR creation                    |
+| `--disable-build` | Flag                                   | False                                        | Disable RPM build                                |
+| `--limit`         | Integer                                | 0                                            | Limit to first N patches                         |
+| `--dry-run`       | Flag                                   | False                                        | Show what would be done without changes          |
 
-### `matrix` - Generate CVE coverage matrix
+### `cve-build-workflow` - Two-phase CVE coverage build workflow
 
-| Option          | Type                                | Default | Description                    |
-|-----------------|-------------------------------------|---------|--------------------------------|
-| `-k, --kernel`  | Choice: 5.10, 6.1, 6.12             | None    | Filter by kernel version       |
-| `-o, --output`  | Path                                | None    | Output directory for reports   |
-| `-f, --format`  | Choice: json, csv, markdown, all    | all     | Output format                  |
-| `--print-table` | Flag                                | False   | Print matrix to console        |
-| `--max-rows`    | Integer                             | 50      | Max rows to display            |
+| Option          | Type   | Default                              | Description                                            |
+|-----------------|--------|--------------------------------------|--------------------------------------------------------|
+| `-k, --kernel`  | String | all                                  | Kernel version(s): 5.10, 6.1, 6.12, comma-list, or all |
+| `-o, --output`  | Path   | Auto-generated                       | Output directory for reports                           |
+| `--repo-base`   | Path   | /root/photonos-scripts/kernelpatches | Base directory for cloning Photon repos                |
+| `--repo-url`    | String | https://github.com/vmware/photon.git | Photon repository URL                                  |
+| `--no-cleanup`  | Flag   | False                                | Skip cleanup of previous run artifacts                 |
+| `--phase1-only` | Flag   | False                                | Only run phase 1 (current kernel)                      |
+| `-s, --specs`   | String | linux-esx.spec                       | Comma-separated spec files to build                    |
 
-### `full-matrix` - Generate comprehensive matrix with all data
+### `matrix` - Generate comprehensive CVE coverage matrix
 
-| Option              | Type   | Default              | Description                                    |
-|---------------------|--------|----------------------|------------------------------------------------|
-| `-o, --output`      | Path   | /var/log/cve_matrix  | Output directory for matrix files              |
-| `--download-patches`| Flag   | False                | Download stable patches from kernel.org        |
-| `--kernels`         | String | 5.10,6.1,6.12        | Comma-separated kernel versions                |
-| `--repo-base`       | Path   | None                 | Base directory containing Photon repo clones   |
+| Option           | Type   | Default                                    | Description                                            |
+|------------------|--------|--------------------------------------------|--------------------------------------------------------|
+| `-k, --kernel`   | String | all                                        | Kernel version(s): 5.10, 6.1, 6.12, comma-list, or all |
+| `-o, --output`   | Path   | /var/log/photon-kernel-backport/cve_matrix | Output directory for matrix files                      |
+| `--repo-base`    | Path   | /root/photonos-scripts/kernelpatches       | Base directory for cloning Photon repos                |
+| `--repo-url`     | String | https://github.com/vmware/photon.git       | Photon repository URL                                  |
+| `--skip-clone`   | Flag   | False                                      | Skip cloning repos (use existing or fail)              |
+| `--update-repos` | Flag   | False                                      | Force update existing repos                            |
 
 ### `gaps` - Detect CVE backport gaps
 
@@ -500,37 +539,28 @@ pytest tests/ --cov=scripts
 | `-k, --kernel` | Choice: 5.10, 6.1, 6.12   | **Required**                 | Kernel version     |
 | `-o, --output` | Path                      | /tmp/stable_patches_{kernel} | Output directory   |
 
-### `build` - Build kernel RPMs from local spec files
+### `build` - Build kernel RPMs using official SRPM
 
-| Option              | Type                      | Default        | Description                        |
-|---------------------|---------------------------|----------------|------------------------------------|
-| `-k, --kernel`      | Choice: 5.10, 6.1, 6.12   | **Required**   | Kernel version                     |
-| `-o, --output`      | Path                      | Auto-generated | Output directory for logs          |
-| `--canister`        | Integer                   | 0              | canister_build value (0 or 1)      |
-| `--acvp`            | Integer                   | 0              | acvp_build value (0 or 1)          |
-| `--all-permutations`| Flag                      | False          | Build all canister/acvp combos     |
-| `--skip-deps`       | Flag                      | False          | Skip installing build dependencies |
-
-### `build-srpm` - Build kernel RPMs using official SRPM
-
-| Option         | Type                      | Default      | Description                        |
-|----------------|---------------------------|--------------|------------------------------------|
-| `-k, --kernel` | Choice: 5.10, 6.1, 6.12   | **Required** | Kernel version                     |
-| `-s, --specs`  | String                    | All specs    | Comma-separated spec files to build|
-| `--canister`   | Integer                   | 0            | canister_build value (0 or 1)      |
-| `--acvp`       | Integer                   | 0            | acvp_build value (0 or 1)          |
-| `--skip-deps`  | Flag                      | False        | Skip installing build dependencies |
+| Option              | Type                      | Default        | Description                         |
+|---------------------|---------------------------|----------------|-------------------------------------|
+| `-k, --kernel`      | Choice: 5.10, 6.1, 6.12   | **Required**   | Kernel version                      |
+| `-o, --output`      | Path                      | Auto-generated | Output directory for logs           |
+| `-s, --specs`       | String                    | All specs      | Comma-separated spec files to build |
+| `--canister`        | Integer                   | 0              | canister_build value (0 or 1)       |
+| `--acvp`            | Integer                   | 0              | acvp_build value (0 or 1)           |
+| `--all-permutations`| Flag                      | False          | Build all canister/acvp combos      |
+| `--skip-deps`       | Flag                      | False          | Skip installing build dependencies  |
 
 ### `install` - Install with optional cron scheduling
 
-| Option          | Type   | Default              | Description                  |
-|-----------------|--------|----------------------|------------------------------|
-| `--install-dir` | String | /opt/kernel-backport | Installation directory       |
-| `--log-dir`     | String | /var/log/kernel-backport | Log directory            |
-| `--cron`        | String | 0 */2 * * *          | Cron schedule                |
-| `--kernels`     | String | 5.10,6.1,6.12        | Comma-separated kernel versions |
-| `--no-cron`     | Flag   | False                | Skip cron job installation   |
-| `--uninstall`   | Flag   | False                | Remove installation          |
+| Option          | Type   | Default                  | Description                                            |
+|-----------------|--------|--------------------------|--------------------------------------------------------|
+| `--install-dir` | String | /opt/kernel-backport     | Installation directory                                 |
+| `--log-dir`     | String | /var/log/kernel-backport | Log directory                                          |
+| `--cron`        | String | 0 */2 * * *              | Cron schedule                                          |
+| `-k, --kernel`  | String | all                      | Kernel version(s): 5.10, 6.1, 6.12, comma-list, or all |
+| `--no-cron`     | Flag   | False                    | Skip cron job installation                             |
+| `--uninstall`   | Flag   | False                    | Remove installation                                    |
 
 ### `cve fetch` - Fetch CVEs from specified source
 
