@@ -44,7 +44,7 @@ Recommended Workflow
       
       ```bash
            # Generate full matrix with all CVE and stable patch data
-           photon-kernel-backport full-matrix --output /var/log/photon-kernel-backport/cve_matrix --download-patches --repo-base .
+           photon-kernel-backport full-matrix --output /var/log/photon-kernel-backport/cve_coverage_matrix --download-patches --repo-base .
       
            # Identify specific CVE gaps requiring attention
            photon-kernel-backport gaps --kernel 5.10 --output /var/log/photon-kernel-backport/gap_reports
@@ -110,16 +110,16 @@ Generate a CVE coverage matrix across kernel versions.
 
 ```bash
 # Generate in all formats (JSON, CSV, Markdown)
-photon-kernel-backport matrix --output /var/log/photon-kernel-backport/cve_reports
+photon-kernel-backport matrix --output /var/log/photon-kernel-backport/cve_coverage_matrix
 
 # Generate for specific kernel only
-photon-kernel-backport matrix --kernel 5.10 --output /var/log/photon-kernel-backport/cve_reports
+photon-kernel-backport matrix --kernel 5.10 --output /var/log/photon-kernel-backport/cve_coverage_matrix
 
 # Print to console
 photon-kernel-backport matrix --print-table --max-rows 100
 
 # CSV format only
-photon-kernel-backport matrix --format csv --output /var/log/photon-kernel-backport
+photon-kernel-backport matrix --format csv --output /var/log/photon-kernel-backport/cve_coverage_matrix
 ```
 
 **Five CVE States:**
@@ -138,13 +138,13 @@ Generate a comprehensive matrix with all CVEs and stable patches:
 
 ```bash
 # Generate full matrix with all data
-photon-kernel-backport full-matrix --output /var/log/photon-kernel-backport/cve_matrix --download-patches --repo-base .
+photon-kernel-backport full-matrix --output /var/log/photon-kernel-backport/cve_coverage_matrix --download-patches --repo-base .
 
 # Quick matrix without downloading patches
-photon-kernel-backport full-matrix --output /var/log/photon-kernel-backport/matrix
+photon-kernel-backport full-matrix --output /var/log/photon-kernel-backport/cve_coverage_matrix
 
 # Specific kernels only
-photon-kernel-backport full-matrix --kernels 6.1,6.12 --output /var/log/photon-kernel-backport/matrix
+photon-kernel-backport full-matrix --kernels 6.1,6.12 --output /var/log/photon-kernel-backport/cve_coverage_matrix
 ```
 
 This will:
@@ -162,7 +162,7 @@ Identify CVEs that affect a kernel but have no available patch.
 photon-kernel-backport gaps --kernel 5.10
 
 # Analyze specific CVEs from a file
-photon-kernel-backport gaps --kernel 6.1 --cve-list /var/log/photon-kernel-backport/cves.txt
+photon-kernel-backport gaps --kernel 6.1 --cve-list /var/log/photon-kernel-backport/gap_reports/cves.txt
 
 # Custom output directory
 photon-kernel-backport gaps --kernel 6.12 --output /var/log/photon-kernel-backport/gap_reports
