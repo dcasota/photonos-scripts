@@ -68,7 +68,7 @@ Recommended Workflow
            photon-kernel-backport install --cron "0 4 * * *" --kernel 5.10,6.1,6.12
       ```
    Prerequisites Chain
-
+   ```bash
    Step          │ Prerequisites
    --------------+-------------------------------------------------------
    `status`      │ Photon repo clones (auto-cloned to 4.0/, 5.0/, common/)
@@ -77,26 +77,26 @@ Recommended Workflow
    `backport`    │ Network access for repo cloning (repos auto-cloned)
    `build`       │ Network access to packages.broadcom.com, tdnf for deps
    `install`     │ Root access for cron and /opt directories
-
+   ```
    The typical flow is: status -> matrix/gaps (assess) -> backport (patch) -> build (compile) -> install (automate).
    
    **Note:** All commands that need Photon repos (`matrix`, `backport`, `cve-build-workflow`) automatically clone them.
    Use `--repo-base` and `--repo-url` to customize the clone location and source repository.
-```
 
-## Commands
 
-| Command | Description |
-|---------|-------------|
-| `matrix` | Generate comprehensive CVE coverage matrix |
-| `gaps` | Detect CVE backport gaps |
-| `backport` | Run kernel patch backporting workflow |
+## Commands  
+
+| Command              | Description                                               |
+|----------------------|-----------------------------------------------------------|
+| `matrix`             | Generate comprehensive CVE coverage matrix                |
+| `gaps`               | Detect CVE backport gaps                                  |
+| `backport`           | Run kernel patch backporting workflow                     |
 | `cve-build-workflow` | Two-phase CVE coverage build with comprehensive reporting |
-| `status` | Check kernel status and available updates |
-| `download` | Download stable patches from kernel.org |
-| `build` | Build kernel RPMs using official SRPM from Broadcom |
-| `install` | Install with optional cron scheduling |
-| `cve` | CVE-related subcommands |
+| `status`             | Check kernel status and available updates                 |
+| `download`           | Download stable patches from kernel.org                   |
+| `build`              | Build kernel RPMs using official SRPM from Broadcom       |
+| `install`            | Install with optional cron scheduling                     |
+| `cve`                | CVE-related subcommands                                   |
 
 ### `matrix` - CVE Coverage Matrix Generation
 
