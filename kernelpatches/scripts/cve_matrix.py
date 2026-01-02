@@ -1052,14 +1052,37 @@ class CVEMatrixBuilder:
         return all_cves
     
     def determine_not_applicable(
-        self, cve: CVE, kernel_version: str
+        self, cve: CVE, kernel_version: str, photon_version: Optional[str] = None
     ) -> bool:
-        """Determine if CVE is not applicable to kernel version."""
-        # Check affected versions from CVE data
+        """Determine if CVE is not applicable to kernel version using CPE ranges.
+        
+        Args:
+            cve: CVE object with cpe_ranges
+            kernel_version: Kernel series (e.g., "6.1")
+            photon_version: Full Photon kernel version (e.g., "6.1.159")
+        
+        Returns:
+            True if CVE does NOT affect this kernel version
+        """
+        # Use full Photon version for precise CPE range check
+        version_to_check = photon_version or kernel_version
+        
+        # Check CPE ranges first (most accurate)
+        if cve.cpe_ranges:
+            is_affected = cve.is_version_affected(version_to_check)
+            if is_affected is False:
+                # CPE data explicitly says this version is NOT affected
+                return True
+            elif is_affected is True:
+                # CPE data says this version IS affected
+                return False
+            # is_affected is None means no matching range found
+        
+        # Fall back to legacy affected_versions check
         if cve.affected_versions:
             return not any(kernel_version in v for v in cve.affected_versions)
         
-        # If no version info, assume it might apply
+        # If no version info, assume it might apply (not N/A)
         return False
     
     def determine_status(
@@ -1144,12 +1167,14 @@ class CVEMatrixBuilder:
             else:
                 kernel_spec_cves[kv] = {}
             
-            # Determine not applicable CVEs
+            # Determine not applicable CVEs using CPE ranges
             not_applicable = set()
             for cve in cves:
-                if cve.cve_id.startswith("CVE-") and self.determine_not_applicable(cve, kv):
+                if cve.cve_id.startswith("CVE-") and self.determine_not_applicable(cve, kv, photon_ver):
                     not_applicable.add(cve.cve_id)
             kernel_not_applicable[kv] = not_applicable
+            
+            logger.info(f"Kernel {kv} ({photon_ver}): {len(not_applicable)} CVEs marked N/A via CPE ranges")
             
             # Build stable patch coverage with Photon version awareness
             patch_dir = patch_dirs.get(kv)

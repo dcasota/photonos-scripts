@@ -23,7 +23,7 @@ from scripts.common import (
     version_less_than,
 )
 from scripts.config import DEFAULT_CONFIG, KernelConfig
-from scripts.models import CVE, CVEReference, CVESource, KernelVersion, Severity
+from scripts.models import CVE, CVEReference, CVESource, CPERange, KernelVersion, Severity
 
 
 class CVEFetcher:
@@ -154,6 +154,27 @@ class NVDFetcher(CVEFetcher):
             published = cve_data.get("published")
             modified = cve_data.get("lastModified")
             
+            # Extract CPE ranges from configurations
+            cpe_ranges = []
+            configurations = cve_data.get("configurations", [])
+            for config in configurations:
+                for node in config.get("nodes", []):
+                    for cpe_match in node.get("cpeMatch", []):
+                        criteria = cpe_match.get("criteria", "")
+                        # Only interested in Linux kernel CPEs
+                        if "linux_kernel" not in criteria and "linux:linux_kernel" not in criteria:
+                            continue
+                        
+                        cpe_range = CPERange(
+                            criteria=criteria,
+                            version_start_including=cpe_match.get("versionStartIncluding"),
+                            version_start_excluding=cpe_match.get("versionStartExcluding"),
+                            version_end_including=cpe_match.get("versionEndIncluding"),
+                            version_end_excluding=cpe_match.get("versionEndExcluding"),
+                            vulnerable=cpe_match.get("vulnerable", True),
+                        )
+                        cpe_ranges.append(cpe_range)
+            
             cve = CVE(
                 cve_id=cve_id,
                 cvss_score=cvss_score,
@@ -164,6 +185,7 @@ class NVDFetcher(CVEFetcher):
                 source=CVESource.NVD,
                 references=references,
                 fix_commits=list(set(fix_commits)),
+                cpe_ranges=cpe_ranges,
             )
             cves.append(cve)
         

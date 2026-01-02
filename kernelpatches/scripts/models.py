@@ -114,6 +114,42 @@ class CVEReference(BaseModel):
         return "commit" in self.url.lower() or "/c/" in self.url
 
 
+class CPERange(BaseModel):
+    """Represents a CPE version range for affected kernel versions."""
+    criteria: str = ""
+    version_start_including: Optional[str] = None
+    version_start_excluding: Optional[str] = None
+    version_end_including: Optional[str] = None
+    version_end_excluding: Optional[str] = None
+    vulnerable: bool = True
+    
+    def contains_version(self, version: str) -> bool:
+        """Check if a kernel version falls within this range."""
+        ver = KernelVersion.parse(version)
+        
+        # Check start boundary
+        if self.version_start_including:
+            start = KernelVersion.parse(self.version_start_including)
+            if ver < start:
+                return False
+        if self.version_start_excluding:
+            start = KernelVersion.parse(self.version_start_excluding)
+            if ver <= start:
+                return False
+        
+        # Check end boundary
+        if self.version_end_including:
+            end = KernelVersion.parse(self.version_end_including)
+            if ver > end:
+                return False
+        if self.version_end_excluding:
+            end = KernelVersion.parse(self.version_end_excluding)
+            if ver >= end:
+                return False
+        
+        return True
+
+
 class CVE(BaseModel):
     """Represents a CVE with all relevant information."""
     cve_id: str
@@ -129,6 +165,26 @@ class CVE(BaseModel):
     fix_branches: List[str] = Field(default_factory=list)
     ghsa_id: Optional[str] = None
     cwes: List[str] = Field(default_factory=list)
+    cpe_ranges: List[CPERange] = Field(default_factory=list)
+    
+    def is_version_affected(self, kernel_version: str) -> Optional[bool]:
+        """
+        Check if a kernel version is affected by this CVE using CPE ranges.
+        
+        Returns:
+            True: Version is vulnerable
+            False: Version is NOT vulnerable (patched or not in affected range)
+            None: No CPE data available to make determination
+        """
+        if not self.cpe_ranges:
+            return None
+        
+        for cpe_range in self.cpe_ranges:
+            if cpe_range.contains_version(kernel_version):
+                return cpe_range.vulnerable
+        
+        # Version not in any range - not affected
+        return False
     
     @field_validator("cve_id")
     @classmethod

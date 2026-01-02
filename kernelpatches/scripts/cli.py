@@ -182,10 +182,8 @@ def parse_kernel_arg(kernel: str) -> List[str]:
               help="Photon repository URL")
 @click.option("--skip-clone", is_flag=True, help="Skip cloning repos (use existing or fail)")
 @click.option("--update-repos", is_flag=True, help="Force update existing repos")
-@click.option("--analyze-source", is_flag=True,
-              help="Download kernel tarball and analyze CVE patches against source code")
 @click.pass_context
-def matrix(ctx, output: str, kernel: str, repo_base: Optional[str], repo_url: str, skip_clone: bool, update_repos: bool, analyze_source: bool):
+def matrix(ctx, output: str, kernel: str, repo_base: Optional[str], repo_url: str, skip_clone: bool, update_repos: bool):
     """
     Generate comprehensive CVE coverage matrix.
     
@@ -194,8 +192,8 @@ def matrix(ctx, output: str, kernel: str, repo_base: Optional[str], repo_url: st
     2. Downloads NVD feeds and fetches all kernel CVEs
     3. Downloads stable patches from kernel.org (from current Photon version to latest)
     4. Builds complete coverage matrix with five-state tracking
-    5. Downloads missing CVE patches
-    6. (Optional) Downloads kernel tarball and analyzes CVE patches against source
+    5. Collects existing CVE patches
+    6. Analyzes CVE patches against kernel source
     7. Exports to JSON, CSV, and Markdown formats
     
     Examples:
@@ -208,9 +206,6 @@ def matrix(ctx, output: str, kernel: str, repo_base: Optional[str], repo_url: st
         
         # Multiple kernels
         photon-kernel-backport matrix --kernel 5.10,6.1
-        
-        # With source code analysis (downloads kernel tarball)
-        photon-kernel-backport matrix --kernel 5.10 --analyze-source
         
         # Custom output directory
         photon-kernel-backport matrix --output /tmp/cve_matrix
@@ -225,7 +220,9 @@ def matrix(ctx, output: str, kernel: str, repo_base: Optional[str], repo_url: st
     from scripts.generate_full_matrix import (
         fetch_all_cves,
         download_stable_patches_async,
-        download_missing_cve_patches,
+        collect_existing_cve_patches,
+        download_cve_patches,
+        download_kernel_tarballs_for_analysis,
         analyze_cve_patches_against_source,
         update_matrix_with_source_analysis,
         build_matrix,
@@ -241,8 +238,6 @@ def matrix(ctx, output: str, kernel: str, repo_base: Optional[str], repo_url: st
     console.print("[bold]Comprehensive CVE Coverage Matrix Generator[/bold]")
     console.print(f"Kernels: {', '.join(kernel_versions)}")
     console.print(f"Output: {output_dir}")
-    if analyze_source:
-        console.print("[cyan]Source analysis enabled[/cyan]")
     if repo_base:
         console.print(f"Repo base: {repo_base}")
     if repo_url != "https://github.com/vmware/photon.git":
@@ -301,7 +296,7 @@ def matrix(ctx, output: str, kernel: str, repo_base: Optional[str], repo_url: st
     
     async def run():
         # Fetch CVEs (Step 3)
-        cves = await fetch_all_cves(output_dir, config)
+        cves = await fetch_all_cves(output_dir, config, kernel_versions[0])
         
         # Download stable patches (Step 4 - only from current Photon version to latest)
         patch_dirs, photon_versions = await download_stable_patches_async(
@@ -313,27 +308,45 @@ def matrix(ctx, output: str, kernel: str, repo_base: Optional[str], repo_url: st
         mat = build_matrix(cves, kernel_versions, repo_dirs, patch_dirs, config, photon_versions, step_num=current_step)
         current_step += 1
         
-        # Download missing CVE patches (Step 6 - not built-in and not already in spec)
-        cve_patch_dirs = await download_missing_cve_patches(mat, output_dir, config)
+        # Download CVE patches (Step 6)
+        cve_patch_dirs = await download_cve_patches(mat, output_dir, config, step_num=current_step)
         current_step += 1
         
-        # Analyze CVE patches against kernel source (Step 7 - optional)
-        if analyze_source:
-            analysis_results = await analyze_cve_patches_against_source(
-                kernel_versions,
-                photon_versions,
-                cve_patch_dirs,
-                output_dir,
-                config,
-            )
-            
-            # Update matrix with source analysis (Step 8)
-            mat = update_matrix_with_source_analysis(mat, analysis_results)
-            current_step += 1
+        # Download kernel tarballs for source analysis (Step 7)
+        from rich.console import Console
+        console = Console()
+        console.print(f"\n[bold blue]Step {current_step}: Downloading kernel tarballs for source analysis[/bold blue]")
+        source_dirs = await download_kernel_tarballs_for_analysis(
+            kernel_versions,
+            photon_versions,
+            output_dir,
+            config,
+        )
+        current_step += 1
+        
+        # Build CVE map for CPE lookup (no API calls needed - data from NVD feeds)
+        cve_map = {cve.cve_id: cve for cve in cves}
+        
+        # Analyze CVE patches against kernel source (Step 8)
+        analysis_results = analyze_cve_patches_against_source(
+            kernel_versions,
+            photon_versions,
+            cve_patch_dirs,
+            output_dir,
+            config,
+            step_num=current_step,
+            source_dirs=source_dirs,
+            cve_map=cve_map,
+        )
+        current_step += 1
+        
+        # Update matrix with source analysis (Step 8)
+        mat = update_matrix_with_source_analysis(mat, analysis_results, step_num=current_step)
+        current_step += 1
         
         # Save matrix and print summary
         save_matrix(mat, output_dir, step_num=current_step)
-        print_summary(mat)
+        print_summary(mat, analysis_results)
     
     asyncio.run(run())
     console.print("\n[bold green]Done![/bold green]")
