@@ -127,7 +127,21 @@ This will:
 2. Download stable patches from kernel.org
 3. Read Photon's current kernel versions from spec files
 4. Build complete coverage matrix with five-state tracking
-5. Export to JSON, CSV, and Markdown formats
+5. Download CVE patches for CVEs with fix commits
+6. Analyze patches against kernel source to detect already-included fixes
+7. Export to JSON, CSV, and Markdown formats
+
+**Summary Output:**
+
+The matrix command produces a summary showing:
+- Total CVEs and severity distribution
+- Coverage by kernel (included, in newer stable, spec patch, missing)
+- Critical/High gaps requiring attention
+- **Applicable CVE Patches** section with:
+  - Total applicable patches count
+  - Severity distribution of applicable patches
+  - Coverage by kernel
+  - All critical/high applicable patches listed with CVSS scores
 
 **Five CVE States:**
 
