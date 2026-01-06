@@ -114,6 +114,63 @@ See some personal docker container learning progress with [Potree - a WebGL base
 From a packages update service consistency perspective, there is always a good moment for creating an ISO binary.
 Photon OS can be used as ISO build platform. Some personal progress using Photon OS as Photon OS ISO build machine has been documented on [How to build the Photon OS ISO file](https://github.com/dcasota/photonos-scripts/wiki/How-to-build-the-Photon-OS-ISO-file). Photon OS could be used to create eg. Microsoft Windows ISO builds from [uupdump.net](https://uupdump.net) as well.
 
+# Use Case 8 - Automated Kernel Patch Backporting and CVE Coverage Tracking
+As security is paramount for Photon OS, keeping kernel patches up-to-date and tracking CVE coverage is critical. The [kernelpatches](kernelpatches/) solution provides automated kernel patch backporting and comprehensive CVE coverage tracking for Photon OS.
+
+## Goal and Key Features
+
+The **kernelpatches** tool automates the complex process of maintaining kernel security patches across different Photon OS versions. Its primary goal is to:
+
+1. **Track CVE Coverage** - Monitor which CVEs affect each kernel version (5.10, 6.1, 6.12) and their current patch status
+2. **Automate Patch Backporting** - Download and integrate CVE patches and stable kernel updates into Photon OS spec files
+3. **Detect Security Gaps** - Identify CVEs that lack stable backports and require manual attention
+4. **Build Patched Kernels** - Generate RPM packages with integrated security patches
+5. **Enable Continuous Monitoring** - Support scheduled automation via cron for ongoing security maintenance
+
+## What It Does
+
+The kernelpatches solution analyzes ~7,500 kernel CVEs from NVD (National Vulnerability Database) and tracks each CVE through five states:
+- ✅ **Included** - Fix is already in Photon's current kernel version
+- ⬆️ **In Newer Stable** - Fix exists in a newer stable patch (upgrade available)
+- 🔄 **Patch Available** - Patch exists in spec file but not in stable releases
+- ❌ **Missing** - CVE affects kernel but no patch exists (security gap)
+- ➖ **Not Applicable** - CVE doesn't affect this kernel version
+
+## Quick Start Example
+
+```bash
+# Install the tool
+cd kernelpatches
+pip install -e .
+
+# Check kernel status and CVE coverage
+photon-kernel-backport status --kernel 6.1
+photon-kernel-backport matrix --kernel 6.1
+
+# Identify security gaps
+photon-kernel-backport gaps --kernel 6.1
+
+# Apply patches (CVE and stable updates)
+photon-kernel-backport backport --kernel 6.1 --source all
+
+# Build patched kernel RPMs
+photon-kernel-backport build --kernel 6.1
+
+# Automate with cron (daily at 4 AM)
+photon-kernel-backport install --cron "0 4 * * *" --kernels 6.1,6.12
+```
+
+## Why It Matters
+
+For Photon OS as a security-focused platform, this tool addresses several critical needs:
+- **Proactive Security** - Automatically tracks and applies security patches before they become exploits
+- **Compliance** - Maintains audit trails of CVE coverage and patch status
+- **Reduced Manual Effort** - Automates tedious patch integration and spec file updates
+- **Gap Visibility** - Quickly identifies CVEs that need manual intervention
+- **Version Management** - Handles multiple kernel versions (4.x/5.10, 5.x/6.1, 6.x/6.12) simultaneously
+
+For detailed documentation, architecture, API reference, and complete command options, see the [kernelpatches README](kernelpatches/README.md).
+
 # Photon OS components in commercial products and open-source Photon OS
 From a paid support perspective, open source Photon OS has nothing to do with the VMware commercial products in which some Photon OS components are a customized part of. VCSA, vSphere Replication, Workstation, vRealize Operations, and much more run on a strict VMware governance for that commercial product.
 
