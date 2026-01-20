@@ -293,16 +293,44 @@ The certificate subject must match the GRUB stub signature issuer. With the Phot
 
 ### MOK enrollment doesn't persist after reboot
 
-**Cause**: Some firmwares have issues with certificate enrollment or limited NVRAM.
+**Cause**: Multiple possible causes:
+
+1. **Wrong MokManager loaded** (most common): Shim looks for `\mmx64.efi` at the ROOT of the EFI partition, not in `\EFI\BOOT\`. If it's missing from ROOT, shim falls back to the laptop's built-in or previously-installed MokManager, which writes to a different MOK database.
+
+2. **NVRAM write issues**: Some firmwares have issues with certificate enrollment or limited NVRAM.
 
 **Solutions**:
-1. Try **hash enrollment** instead of certificate enrollment:
+
+1. **Verify you're using the correct MokManager** (most important):
+   - The MokManager from your USB should have "Enroll key from disk", "Enroll hash from disk", "Delete key", etc.
+   - If you only see minimal options, you're using the laptop's built-in MokManager
+   - **Fix**: Rebuild ISO with latest HABv4-installer.sh which places `mmx64.efi` at ROOT level
+
+2. Try **hash enrollment** instead of certificate enrollment:
    - Select "Enroll hash from disk" in MokManager
    - Navigate to `EFI/BOOT/` and select `grub.efi`
    - This enrolls the binary hash which some firmwares handle better
-2. Always select **Reboot** from MokManager menu (don't power off)
-3. Some firmwares require BIOS/UEFI setup password to be set before MOK can write to NVRAM
-4. Try enrolling `ENROLL_THIS_KEY_IN_MOKMANAGER.cer` to get both VMware and MOK in one operation
+
+3. Always select **Reboot** from MokManager menu (don't power off)
+
+4. Some firmwares require BIOS/UEFI setup password to be set before MOK can write to NVRAM
+
+5. Try enrolling `ENROLL_THIS_KEY_IN_MOKMANAGER.cer` to get both VMware and MOK in one operation
+
+### MOK enrollment silently fails (no confirmation after "Continue")
+
+**Cause**: The MokManager being used is NOT from your USB - it's the laptop's built-in or a previously-installed one.
+
+**Symptoms**:
+- After selecting "Continue" to enroll, no confirmation dialog appears
+- MokManager has limited options (no "Delete key", "Reset MOK", etc.)
+- Hash/certificate enrollment appears to succeed but doesn't persist
+
+**Root Cause**: Fedora shim looks for MokManager at `\mmx64.efi` (ROOT of EFI partition). If the file is only in `\EFI\BOOT\mmx64.efi`, shim can't find it and falls back to another MokManager.
+
+**Solution**: Rebuild ISO with latest HABv4-installer.sh which places `mmx64.efi` at both:
+- `\mmx64.efi` (ROOT level - required by shim)
+- `\EFI\BOOT\mmx64.efi` (backup)
 
 ### MOK enrollment password prompt loops
 
@@ -546,7 +574,8 @@ dmesg | grep -iE "module|signature|lockdown"
 | MokManager.efi Not Found | Wrong filename or missing from efiboot.img | Rebuild with latest script |
 | Security Violation (first boot) | Photon OS MOK certificate not enrolled | Enroll certificate from root `/` |
 | Certificate not visible | File missing | Rebuild ISO with latest script |
-| Enrollment doesn't persist | Firmware issue | Try "Enroll hash from disk" instead |
+| Enrollment doesn't persist | Wrong MokManager loaded (mmx64.efi not at ROOT) | Rebuild ISO with latest script |
+| Enrollment silently fails | Wrong MokManager (no confirmation dialog) | Rebuild ISO - mmx64.efi must be at ROOT level |
 | Security Violation | Unsigned binary | Enroll Photon OS MOK certificate |
 | Lockdown: unsigned module | Unsigned .ko | Use matching kernel+modules |
 | No space left (efiboot.img) | Image too small | Resize to 16MB |
