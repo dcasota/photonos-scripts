@@ -1985,9 +1985,11 @@ EOFSTUBCFG
     echo "[OK] Installed VMware GRUB as grubx64_real.efi"
     
     # 4. MokManager.efi = Fedora MokManager (Fedora signed, matches Fedora shim)
+    #    CRITICAL: Shim looks for \mmx64.efi at ROOT of EFI partition, not in \EFI\BOOT\
     cp "$KEYS_DIR/mmx64-fedora.efi" "$new_mount/EFI/BOOT/MokManager.efi"
     cp "$KEYS_DIR/mmx64-fedora.efi" "$new_mount/EFI/BOOT/mmx64.efi"
-    echo "[OK] Installed Fedora MokManager"
+    cp "$KEYS_DIR/mmx64-fedora.efi" "$new_mount/mmx64.efi"  # ROOT level for shim!
+    echo "[OK] Installed Fedora MokManager (including root level for shim)"
     
     # 5. ENROLL_THIS_KEY_IN_MOKMANAGER.cer = Photon OS MOK certificate
     cp "$KEYS_DIR/MOK.der" "$new_mount/ENROLL_THIS_KEY_IN_MOKMANAGER.cer"
@@ -2059,6 +2061,7 @@ EOFGRUBCFG2
     cp "$grub_stub_signed" "$iso_extract/EFI/BOOT/grubx64.efi"
     cp "$grub_real" "$iso_extract/EFI/BOOT/grubx64_real.efi"
     cp "$KEYS_DIR/mmx64-fedora.efi" "$iso_extract/EFI/BOOT/MokManager.efi"
+    cp "$KEYS_DIR/mmx64-fedora.efi" "$iso_extract/mmx64.efi"  # ROOT level for shim!
     cp "$KEYS_DIR/MOK.der" "$iso_extract/EFI/BOOT/ENROLL_THIS_KEY_IN_MOKMANAGER.cer"
     echo "[OK] Updated ISO EFI directory (Photon OS Secure Boot)"
     
