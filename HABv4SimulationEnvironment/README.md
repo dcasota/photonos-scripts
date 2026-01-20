@@ -94,8 +94,8 @@ Image Signing Key (IMG)      <- Signs bootloader/kernel
 ├── KEK.key / KEK.crt        # Key Exchange Key (x86_64)
 ├── DB.key / DB.crt          # Signature Database Key (x86_64)
 ├── MOK.key / MOK.crt        # Machine Owner Key for Secure Boot
-├── shim-fedora.efi          # Fedora shim 15.8 (SBAT=shim,4)
-├── mmx64-fedora.efi         # Fedora MokManager
+├── shim-suse.efi            # SUSE shim 15.8 from Ventoy (SBAT=shim,4)
+├── MokManager-suse.efi      # SUSE MokManager from Ventoy
 └── grub-photon-stub.efi     # Custom GRUB stub (MOK-signed)
 ```
 
@@ -348,20 +348,20 @@ The generated Secure Boot ISO uses a two-stage boot menu:
 
 ```
 UEFI Firmware (Microsoft UEFI CA 2011)
-    → BOOTX64.EFI (Fedora shim 15.8, SBAT=shim,4)
+    → BOOTX64.EFI (SUSE shim 15.8 from Ventoy, SBAT=shim,4)
         ├→ grubx64.efi (Photon OS GRUB stub, MOK-signed)
         │      → grubx64_real.efi (VMware-signed GRUB)
         │             → vmlinuz (VMware-signed kernel)
         │                     → *.ko modules (build-key-signed)
         │
-        └→ MokManager.efi (Fedora-signed) [MOK enrollment]
+        └→ MokManager.efi (SUSE-signed) [MOK enrollment]
 ```
 
-**Why Fedora Shim?** We use Fedora's Microsoft-signed shim because:
+**Why SUSE Shim from Ventoy?** We use Ventoy's SUSE shim because:
 - It has SBAT version `shim,4` (compliant with Microsoft's revocation)
-- SUSE/Ventoy shim (`shim,3`) is REVOKED and fails with "SBAT self-check failed"
-- Fedora's MokManager is signed by Fedora CA (matches Fedora shim)
-- Custom Photon OS GRUB stub is signed with our MOK certificate
+- Ventoy uses a production-proven Secure Boot implementation
+- SUSE's MokManager is signed by SUSE CA (matches SUSE shim)
+- SUSE shim looks for `\MokManager.efi` at ROOT level
 - See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed explanation
 
 ### Quick Start: First Boot with Secure Boot
@@ -390,7 +390,7 @@ When you build an ISO with `--build-iso`, the script automatically:
 1. Builds the base Photon OS ISO with custom module signing key
 2. Configures kernel to sign all modules during build (`CONFIG_MODULE_SIG_ALL=y`)
 3. Downloads VMware-signed GRUB from the official Photon repository
-4. Downloads Fedora shim 15.8 (SBAT=shim,4 compliant) and MokManager
+4. Downloads SUSE shim 15.8 from Ventoy (SBAT=shim,4 compliant) and MokManager
 5. Builds custom Photon OS GRUB stub with 5-second menu (for MokManager access)
 6. Signs the GRUB stub with your MOK key
 7. Includes MOK certificate as `ENROLL_THIS_KEY_IN_MOKMANAGER.cer` in efiboot.img
@@ -398,7 +398,7 @@ When you build an ISO with `--build-iso`, the script automatically:
 9. Uses `xorriso` with `-isohybrid-mbr` and `-isohybrid-gpt-basdat` for proper USB boot support
 10. Creates a new ISO with `-secureboot.iso` suffix
 
-**Note**: The script uses Fedora shim (SBAT compliant) instead of SUSE/Ventoy shim (SBAT revoked).
+**Note**: The script uses SUSE shim from Ventoy 1.1.10 (SBAT=shim,4 compliant).
 
 ```bash
 # Build Secure Boot compatible ISO
@@ -451,8 +451,8 @@ The ISO includes a rescue shell with `mokutil` pre-installed:
 
 | Component | Signer | Location in ISO | Trust Chain |
 |-----------|--------|-----------------|-------------|
-| `BOOTX64.EFI` (shim) | Microsoft + SUSE | `/EFI/BOOT/` | UEFI → Shim |
-| `MokManager.efi` | SUSE | `/EFI/BOOT/` | Shim → MokManager |
+| `BOOTX64.EFI` (shim) | Microsoft + Fedora | `/EFI/BOOT/` | UEFI → Shim |
+| `MokManager.efi` / `mmx64.efi` | Fedora | ROOT + `/EFI/BOOT/` | Shim → MokManager |
 | `grubx64.efi` | MOK | `efiboot.img:/EFI/BOOT/` | Shim → GRUB stub |
 | `grubx64_real.efi` | VMware | `efiboot.img:/EFI/BOOT/` | Stub → GRUB real |
 | `vmlinuz-vmware` | VMware | `/isolinux/` | Shim → Kernel |
@@ -557,8 +557,15 @@ MokManager provides all these built-in (no separate GRUB menu entries needed):
 - Reboot / Power off
 
 **"Failed to open \EFI\BOOT\MokManager.efi - Not Found"**
-- MokManager not present in efiboot.img (or wrong filename)
-- Solution: Rebuild with latest HABv4-installer.sh
+- MokManager not present in efiboot.img (or wrong filename/location)
+- Solution: Rebuild with latest HABv4-installer.sh (places MokManager at all known paths)
+
+**MokManager shows limited options (no "Delete key")**
+- You're using the laptop's built-in MokManager, not the one from USB
+- Root cause: SUSE shim couldn't find MokManager at ROOT level
+- Solution: Rebuild ISO with latest HABv4-installer.sh which places SUSE MokManager at:
+  - `\MokManager.efi` (ROOT) - SUSE shim looks here
+  - `\EFI\BOOT\MokManager.efi` - fallback
 
 **Certificate not visible in MokManager "Enroll key from disk"**
 - Navigate to root `/`
