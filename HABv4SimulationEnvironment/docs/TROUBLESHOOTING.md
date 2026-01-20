@@ -19,14 +19,14 @@ This document covers common issues and their solutions.
 
 ### "SBAT self-check failed: Security Policy Violation"
 
-**Cause**: The shim has an SBAT version that is revoked by Microsoft. Ventoy's SUSE shim has `shim,3` which is REVOKED.
+**Cause**: The shim has an SBAT version that is revoked by Microsoft. Old shims with `shim,3` or lower are REVOKED.
 
 **Solutions**:
-1. Use Fedora shim 15.8 (SBAT=shim,4) instead of Ventoy's SUSE shim
-2. Rebuild ISO with latest HABv4-installer.sh which uses Fedora shim
+1. Use SUSE shim from Ventoy 1.1.10 (SBAT=shim,4 compliant)
+2. Rebuild ISO with latest HABv4-installer.sh which downloads Ventoy's SUSE shim
 3. Verify shim SBAT version:
    ```bash
-   strings BOOTX64.EFI | grep -A5 "^sbat,"
+   objcopy -O binary --only-section=.sbat BOOTX64.EFI /dev/stdout | head -3
    # Should show shim,4 or higher
    ```
 
@@ -326,11 +326,16 @@ The certificate subject must match the GRUB stub signature issuer. With the Phot
 - MokManager has limited options (no "Delete key", "Reset MOK", etc.)
 - Hash/certificate enrollment appears to succeed but doesn't persist
 
-**Root Cause**: Fedora shim looks for MokManager at `\mmx64.efi` (ROOT of EFI partition). If the file is only in `\EFI\BOOT\mmx64.efi`, shim can't find it and falls back to another MokManager.
+**Root Cause**: SUSE shim looks for MokManager at `\MokManager.efi` (ROOT of EFI partition).
+If MokManager is only in `\EFI\BOOT\`, shim can't find it and falls back to another MokManager (from NVRAM or internal drive).
 
-**Solution**: Rebuild ISO with latest HABv4-installer.sh which places `mmx64.efi` at both:
-- `\mmx64.efi` (ROOT level - required by shim)
-- `\EFI\BOOT\mmx64.efi` (backup)
+**Solution**: Rebuild ISO with latest HABv4-installer.sh which places SUSE MokManager at:
+- `\MokManager.efi` (ROOT) - **Primary path** for SUSE shim
+- `\EFI\BOOT\MokManager.efi` - fallback
+
+**How to verify you have the correct MokManager**:
+- SUSE MokManager shows: "Enroll key from disk", "Enroll hash from disk", **"Delete key"**, "Delete hash", "Reboot", "Power off"
+- If "Delete key" option is missing, you're using the wrong (built-in) MokManager
 
 ### MOK enrollment password prompt loops
 
@@ -574,8 +579,9 @@ dmesg | grep -iE "module|signature|lockdown"
 | MokManager.efi Not Found | Wrong filename or missing from efiboot.img | Rebuild with latest script |
 | Security Violation (first boot) | Photon OS MOK certificate not enrolled | Enroll certificate from root `/` |
 | Certificate not visible | File missing | Rebuild ISO with latest script |
-| Enrollment doesn't persist | Wrong MokManager loaded (mmx64.efi not at ROOT) | Rebuild ISO with latest script |
-| Enrollment silently fails | Wrong MokManager (no confirmation dialog) | Rebuild ISO - mmx64.efi must be at ROOT level |
+| Enrollment doesn't persist | Wrong MokManager loaded | Rebuild ISO (mmx64.efi + MokManager.efi at ROOT) |
+| Enrollment silently fails | Wrong MokManager (no confirmation) | Rebuild ISO - both mmx64.efi AND MokManager.efi at ROOT |
+| MokManager missing "Delete key" | Using laptop's built-in MokManager | Rebuild ISO with latest script |
 | Security Violation | Unsigned binary | Enroll Photon OS MOK certificate |
 | Lockdown: unsigned module | Unsigned .ko | Use matching kernel+modules |
 | No space left (efiboot.img) | Image too small | Resize to 16MB |
@@ -585,3 +591,14 @@ dmesg | grep -iE "module|signature|lockdown"
 | grubx64_real.efi not found | GRUB stub search failed | Rebuild with latest script (includes search module) |
 | BOOT BLOCKED (no Continue) | eFuse USB missing/invalid | Insert eFuse USB labeled `EFUSE_SIM` or rebuild ISO without `--efuse-usb` |
 | eFuse USB not detected | Wrong label or not FAT32 | Recreate with `--create-efuse-usb=/dev/sdX` |
+
+### MokManager Path Reference
+
+SUSE shim looks for MokManager at ROOT level:
+
+| Location | Purpose |
+|----------|---------|
+| `\MokManager.efi` (ROOT) | **Primary path** - SUSE shim looks here first |
+| `\EFI\BOOT\MokManager.efi` | Fallback location |
+
+**Current ISO places SUSE MokManager at 4 locations** (ISO ROOT, ISO EFI/BOOT, efiboot ROOT, efiboot EFI/BOOT).

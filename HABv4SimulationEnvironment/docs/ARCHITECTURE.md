@@ -23,16 +23,16 @@ This is the main architecture document for the HABv4 Secure Boot project. For de
                                 │
                                 ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                  Fedora Shim 15.8 (BOOTX64.EFI)                     │
+│               SUSE Shim 15.8 from Ventoy (BOOTX64.EFI)              │
 │          Signed by: Microsoft    SBAT: shim,4 (compliant)           │
-│          Embedded: Fedora Secure Boot CA                            │
+│          Embedded: SUSE Linux Enterprise Secure Boot CA             │
 └─────────────────────────────────────────────────────────────────────┘
                     │                           │
                     ▼                           ▼
     ┌───────────────────────────┐   ┌───────────────────────────┐
-    │   Photon OS GRUB Stub     │   │   Fedora MokManager       │
+    │   Photon OS GRUB Stub     │   │   SUSE MokManager         │
     │   (grub.efi/grubx64.efi)  │   │   (MokManager.efi)        │
-    │   Signed: Photon OS MOK   │   │   Signed: Fedora CA       │
+    │   Signed: Photon OS MOK   │   │   Signed: SUSE CA         │
     └───────────────────────────┘   └───────────────────────────┘
                     │
                     ▼
@@ -56,29 +56,29 @@ This is the main architecture document for the HABv4 Secure Boot project. For de
 ```
 
 **Note on SBAT Compliance**: Microsoft's SBAT (Secure Boot Advanced Targeting) revocation 
-requires `shim,4` or higher. Ventoy's SUSE shim (`shim,3`) is revoked and will fail with
-"SBAT self-check failed". We use Fedora's shim which is SBAT compliant.
+requires `shim,4` or higher. We use SUSE shim from Ventoy 1.1.10 which has SBAT version 
+`shim,4` (compliant). The shim looks for MokManager at `\MokManager.efi` (ROOT level).
 
 ---
 
 ## Key Components
 
-### Fedora Shim (Why Not Ventoy's SUSE Shim?)
+### SUSE Shim from Ventoy
 
-We use **Fedora's shim** instead of Ventoy's SUSE shim because:
+We use **SUSE shim from Ventoy 1.1.10** because:
 
-1. **Fedora's shim** is SBAT version `shim,4` (compliant with Microsoft's revocation)
-2. **Ventoy's SUSE shim** is SBAT version `shim,3` (REVOKED - causes "SBAT self-check failed")
-3. **Fedora's MokManager** is signed by Fedora CA
-4. Therefore, **Fedora's shim trusts Fedora's MokManager**
+1. **SUSE shim** (from Ventoy) is SBAT version `shim,4` (compliant with Microsoft's revocation)
+2. **Ventoy** uses a well-tested, production-proven Secure Boot implementation
+3. **SUSE's MokManager** is signed by SUSE CA and matches the embedded certificate in the shim
+4. **SUSE shim looks for `\MokManager.efi`** at ROOT level (not `\mmx64.efi` like Fedora)
 5. We build a **custom Photon OS GRUB stub** signed with our own MOK certificate
 
 ### Why This Approach?
 
 | Component | Source | SBAT | Purpose |
 |-----------|--------|------|---------|
-| `BOOTX64.EFI` | Fedora | shim,4 ✓ | First-stage bootloader (SBAT compliant) |
-| `MokManager.efi` | Fedora | N/A | MOK management (matches Fedora shim) |
+| `BOOTX64.EFI` | SUSE (Ventoy) | shim,4 ✓ | First-stage bootloader (SBAT compliant) |
+| `MokManager.efi` | SUSE (Ventoy) | N/A | MOK management (matches SUSE shim) |
 | `grub.efi` | Photon OS | N/A | Custom GRUB stub (signed with Photon OS MOK) |
 | `grubx64_real.efi` | VMware | N/A | Actual GRUB (chainloaded) |
 
@@ -92,7 +92,7 @@ The ISO includes one VMware-signed kernel:
 
 ### Important: grub.efi vs grubx64.efi
 
-Fedora shim looks for `grubx64.efi` or `grub.efi` as loader. We provide **both**:
+SUSE shim looks for `grub.efi` or `grubx64.efi` as loader. We provide **both**:
 - `grub.efi` - Photon OS stub (MOK-signed) - requires MOK enrollment
 - `grubx64.efi` - Same as grub.efi (standard name)
 - `grubx64_real.efi` - VMware-signed GRUB real (chainloaded by stub)
@@ -116,9 +116,9 @@ Fedora shim looks for `grubx64.efi` or `grub.efi` as loader. We provide **both**
 ├── Module Signing
 │   └── kernel_module_signing.pem
 │
-├── Fedora Components (SBAT Compliant)
-│   ├── shim-fedora.efi     # Microsoft-signed Fedora shim (SBAT=shim,4)
-│   └── mmx64-fedora.efi    # Fedora-signed MokManager
+├── SUSE Components (SBAT Compliant, from Ventoy)
+│   ├── shim-suse.efi       # Microsoft-signed SUSE shim (SBAT=shim,4)
+│   └── MokManager-suse.efi # SUSE-signed MokManager
 │
 └── Photon OS GRUB Stub
     └── grub-photon-stub.efi  # Custom GRUB stub (MOK-signed)
@@ -132,12 +132,16 @@ See [KEY_MANAGEMENT.md](KEY_MANAGEMENT.md) for details.
 
 ```
 ISO/
+├── mmx64.efi                              # Fedora MokManager (ROOT - for Fedora shim)
+├── MokManager.efi                         # Fedora MokManager (ROOT - for SUSE shim)
+├── ENROLL_THIS_KEY_IN_MOKMANAGER.cer      # Photon OS MOK certificate (ROOT)
 ├── EFI/BOOT/
 │   ├── BOOTX64.EFI                        # Fedora shim (SBAT=shim,4)
 │   ├── grub.efi                           # Photon OS GRUB stub (MOK-signed)
 │   ├── grubx64.efi                        # Same as grub.efi
 │   ├── grubx64_real.efi                   # VMware-signed GRUB
-│   ├── MokManager.efi                     # Fedora MokManager
+│   ├── MokManager.efi                     # Fedora MokManager (backup)
+│   ├── mmx64.efi                          # Fedora MokManager (backup)
 │   └── ENROLL_THIS_KEY_IN_MOKMANAGER.cer  # Photon OS MOK certificate
 │
 ├── boot/grub2/
@@ -149,20 +153,24 @@ ISO/
     └── initrd.img      # Initial ramdisk
 ```
 
+**MokManager Placement**: SUSE shim looks for MokManager at `\MokManager.efi` (ROOT level):
+- `\MokManager.efi` (ROOT) - **Primary path** for SUSE shim
+- `\EFI\BOOT\MokManager.efi` - Fallback location
+
 **efiboot.img contents:**
 ```
 /
-├── ENROLL_THIS_KEY_IN_MOKMANAGER.cer  # Photon OS MOK certificate
+├── MokManager.efi                      # SUSE MokManager (ROOT - SUSE shim looks here)
+├── ENROLL_THIS_KEY_IN_MOKMANAGER.cer   # Photon OS MOK certificate (ROOT)
 ├── grub/
 │   └── grub.cfg                        # Bootstrap config (fallback)
 └── EFI/BOOT/
-    ├── BOOTX64.EFI                     # Fedora shim
+    ├── BOOTX64.EFI                     # SUSE shim (SBAT=shim,4)
     ├── grub.efi                        # Photon OS GRUB stub
     ├── grubx64.efi                     # Same as grub.efi
     ├── grubx64_real.efi                # VMware GRUB
     ├── grub.cfg                        # Bootstrap for grubx64_real
-    ├── MokManager.efi                  # Fedora MokManager
-    ├── mmx64.efi                       # Same as MokManager.efi
+    ├── MokManager.efi                  # SUSE MokManager (fallback)
     └── revocations.efi                 # UEFI revocation list
 ```
 
@@ -260,14 +268,14 @@ USB (LABEL=EFUSE_SIM, FAT32)
 
 | Error | Cause | Fix |
 |-------|-------|-----|
-| SBAT self-check failed | Shim SBAT version revoked | Use Fedora shim (SBAT=shim,4), not Ventoy's SUSE shim |
+| SBAT self-check failed | Shim SBAT version revoked | Use SUSE shim from Ventoy 1.1.10 (SBAT=shim,4) |
 | Security Violation (first boot) | MOK not enrolled | Enroll `ENROLL_THIS_KEY_IN_MOKMANAGER.cer` from root `/` |
 | Enrollment doesn't persist | Firmware issue | Try "Enroll hash from disk" for `grub.efi` |
 | Certificate mismatch | Wrong cert enrolled | Verify cert shows `CN=Photon OS Secure Boot MOK` |
 | MokManager.efi Not Found | Missing from efiboot.img | Rebuild with latest script |
 | Certificate not visible | File missing | Navigate to root `/` in MokManager |
 | EFI USB boot failed | ISO not hybrid | Use xorriso with isohybrid options |
-| bad shim signature | Shim/MokManager mismatch | Use matching pair (Fedora shim + Fedora MokManager) |
+| bad shim signature | Shim/MokManager mismatch | Use matching pair (SUSE shim + SUSE MokManager from Ventoy) |
 | can't find command 'reboot' | VMware GRUB missing module | Use "UEFI Firmware Settings" or Ctrl+Alt+Del |
 | grubx64_real.efi not found | GRUB stub search failed | Rebuild with latest script (includes search module) |
 

@@ -22,14 +22,16 @@ A Secure Boot compatible ISO needs:
 
 ```
 ISO Root/
+├── MokManager.efi                         # SUSE MokManager (ROOT - SUSE shim looks here)
+├── ENROLL_THIS_KEY_IN_MOKMANAGER.cer      # Photon OS MOK certificate (ROOT)
 ├── EFI/
 │   └── BOOT/
-│       ├── BOOTX64.EFI                        # Fedora shim 15.8 (SBAT=shim,4)
-│       ├── grub.efi                           # Photon OS GRUB stub (MOK-signed)
-│       ├── grubx64.efi                        # Same as grub.efi
-│       ├── grubx64_real.efi                   # VMware-signed GRUB real
-│       ├── MokManager.efi                     # Fedora MokManager
-│       └── ENROLL_THIS_KEY_IN_MOKMANAGER.cer  # CN=grub certificate
+│       ├── BOOTX64.EFI                    # SUSE shim 15.8 from Ventoy (SBAT=shim,4)
+│       ├── grub.efi                       # Photon OS GRUB stub (MOK-signed)
+│       ├── grubx64.efi                    # Same as grub.efi
+│       ├── grubx64_real.efi               # VMware-signed GRUB real
+│       ├── MokManager.efi                 # SUSE MokManager (fallback)
+│       └── ENROLL_THIS_KEY_IN_MOKMANAGER.cer  # Photon OS MOK certificate
 │
 ├── boot/
 │   └── grub2/
@@ -47,28 +49,34 @@ ISO Root/
 └── ... (other files)
 ```
 
+**CRITICAL: MokManager Path** - SUSE shim looks for MokManager at ROOT level:
+- **SUSE shim**: `\MokManager.efi` (ROOT) - **Primary path**
+- Fallback: `\EFI\BOOT\MokManager.efi`
+
 ### efiboot.img Contents
 
 The `efiboot.img` is a FAT filesystem image containing EFI boot files:
 
 ```
 efiboot.img (FAT32, 16MB)/
-├── ENROLL_THIS_KEY_IN_MOKMANAGER.cer   # Photon OS MOK certificate
+├── MokManager.efi                      # SUSE MokManager (ROOT - SUSE shim looks here)
+├── ENROLL_THIS_KEY_IN_MOKMANAGER.cer   # Photon OS MOK certificate (ROOT)
 ├── grub/
 │   └── grub.cfg                        # Bootstrap config (fallback)
 └── EFI/
     └── BOOT/
-        ├── BOOTX64.EFI      # Fedora shim 15.8 (SBAT=shim,4)
+        ├── BOOTX64.EFI      # SUSE shim 15.8 from Ventoy (SBAT=shim,4)
         ├── grub.efi         # Photon OS GRUB stub (MOK-signed)
         ├── grubx64.efi      # Same as grub.efi
         ├── grubx64_real.efi # VMware GRUB real
         ├── grub.cfg         # Bootstrap config for grubx64_real
-        ├── MokManager.efi   # Fedora MokManager
-        ├── mmx64.efi        # Same as MokManager.efi
+        ├── MokManager.efi   # SUSE MokManager (fallback)
         └── revocations.efi  # Revocation list
 ```
 
-**Photon OS Secure Boot**: Uses Fedora shim (SBAT compliant) + custom Photon OS GRUB stub (MOK-signed). User enrolls the Photon OS MOK certificate, which allows shim to trust the stub.
+All MokManager copies are identical SUSE-signed binaries from Ventoy.
+
+**Photon OS Secure Boot**: Uses SUSE shim from Ventoy (SBAT compliant) + custom Photon OS GRUB stub (MOK-signed). User enrolls the Photon OS MOK certificate, which allows shim to trust the stub.
 
 **Two-Stage Boot Menu**:
 - Stage 1 (Stub, 5 sec timeout): Continue / MokManager / Reboot / Shutdown
