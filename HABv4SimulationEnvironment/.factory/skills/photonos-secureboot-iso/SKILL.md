@@ -28,140 +28,153 @@ This skill covers creating Secure Boot enabled ISOs for Photon OS that work on c
 | UEFI IA32 | BOOTIA32.EFI (shim) | Yes | Rare 32-bit UEFI |
 | BIOS/Legacy | isolinux | No | MBR fallback |
 
-### UEFI Secure Boot Chain
+### UEFI Secure Boot Chain (Cascade Architecture)
 
 ```
 UEFI Firmware (Microsoft UEFI CA in db)
     ↓ verifies Microsoft signature
 BOOTX64.EFI (SUSE shim from Ventoy, SBAT=shim,4)
     ↓ verifies against MokList (after MOK enrollment)
-grubx64.efi (Full GRUB, signed with MOK key)
-    ↓ loads grub.cfg
-vmlinuz (VMware-signed kernel)
+grub.efi (Ventoy stub, 64KB, signed CN=grub)
+    ↓ chainloads (EFI LoadImage)
+grubx64_real.efi (Ventoy full GRUB, 1.9MB)
+    ↓ reads /grub/grub.cfg
+vmlinuz (kernel)
 ```
 
-## CRITICAL: Ventoy Component Limitations
+**The cascade architecture (shim → stub → full GRUB) is the CORRECT design.**
 
-### Understanding Ventoy's grub.efi (PreLoader)
+## CRITICAL: Ventoy's grub.cfg Path Requirements
 
-**Ventoy's `grub.efi` is NOT a full GRUB binary!** This is a common source of boot failures.
+### The Problem: Config Path Mismatch
 
-| Property | Ventoy grub.efi | Full GRUB (grubx64_real.efi) |
-|----------|-----------------|------------------------------|
-| Size | ~64 KB | ~1.9 MB |
-| Type | Minimal stub/PreLoader | Full GRUB bootloader |
-| Commands | Very limited (no search, configfile, chainloader) | Full command set |
-| Purpose | Ventoy-specific chainloading | General-purpose bootloader |
-| Config | Embedded, Ventoy-specific paths | Reads grub.cfg from disk |
+Ventoy's `grubx64_real.efi` has an **embedded prefix** that looks for config files at:
+1. `/grub/grub.cfg` (primary - Ventoy's location)
+2. `/boot/grub/grub.cfg` (fallback)
 
-**Why this matters**: If you use Ventoy's `grub.efi` as your bootloader and it drops to a `grub>` prompt, it's because this minimal stub cannot execute standard GRUB commands like `search` or `configfile`.
+**Photon OS uses `/boot/grub2/grub.cfg`** - this path is NOT in Ventoy's search list!
 
-### Correct Approach for Photon OS
+### The Solution: Create /grub/grub.cfg Redirect
 
-**DO NOT** use Ventoy's `grub.efi` as the main bootloader. Instead:
-
-1. Use **SUSE shim** (`BOOTX64.EFI`) - Microsoft signed, SBAT compliant
-2. Use **VMware's GRUB** (`grubx64.efi` from Photon ISO) - Full GRUB, can be MOK-signed
-3. Sign VMware's GRUB with your MOK key so shim trusts it
-
-### Boot Chain Options
-
-**Option A: Sign VMware GRUB with MOK (Recommended)**
-```
-BOOTX64.EFI (SUSE shim) → grubx64.efi (VMware GRUB, MOK-signed) → kernel
-```
-- Requires signing VMware's GRUB with your own MOK key
-- User enrolls YOUR certificate, not Ventoy's
-
-**Option B: Use Ventoy's Full Chain (Not for custom ISOs)**
-```
-BOOTX64.EFI (SUSE shim) → grub.efi (stub) → grubx64_real.efi → kernel
-```
-- Only works with Ventoy's specific directory structure (`/grub/grub.cfg`)
-- The stub expects Ventoy-specific paths and files
-- **NOT suitable for Photon OS ISOs**
-
-## CRITICAL: Shim MOK vs Firmware MOK
-
-This is the most important concept for troubleshooting Secure Boot issues.
-
-### Shim's MokManager (CORRECT for Ventoy-style boot)
-
-- **UI**: Blue screen interface with white text
-- **Storage**: MokList NVRAM variable (shim-specific)
-- **Used by**: Ventoy, Ubuntu, Fedora, SUSE, etc.
-- **How to trigger**: Shim automatically launches it when loader signature not trusted
-
-### Laptop Firmware MOK (WRONG for our use case)
-
-- **UI**: Manufacturer-specific (Dell gray, HP red/white, Lenovo ThinkShield)
-- **Storage**: UEFI db/dbx variables (firmware-level)
-- **Problem**: Does NOT populate shim's MokList
-- **Result**: Even after enrollment, shim still doesn't trust the loader
-
-### Why Ventoy Works on USB Drives
-
-Ventoy works because it has a **complete ecosystem**:
-1. Specific directory structure (`/grub/`, `/ventoy/`, etc.)
-2. Pre-configured `grub.cfg` at `/grub/grub.cfg` (89KB!)
-3. The stub `grub.efi` knows to look for Ventoy-specific paths
-4. `grubx64_real.efi` is configured with Ventoy's prefix
-
-**Our ISO lacks this structure**, so Ventoy's stub drops to a prompt.
-
-## Files and Their Purposes
-
-| File | Source | Size | Purpose | Use in ISO? |
-|------|--------|------|---------|-------------|
-| BOOTX64.EFI | Ventoy | 965 KB | SUSE shim (Microsoft-signed) | YES - first stage |
-| grub.efi | Ventoy | 64 KB | Minimal stub (Ventoy-specific) | NO - lacks commands |
-| grubx64_real.efi | Ventoy | 1.9 MB | Full GRUB (Ventoy-specific prefix) | MAYBE - needs config |
-| grubx64.efi | Photon ISO | 1.3 MB | VMware's GRUB | YES - sign with MOK |
-| MokManager.efi | Ventoy | 852 KB | MOK enrollment UI | YES |
-| ENROLL_THIS_KEY_IN_MOKMANAGER.cer | Generated | ~1 KB | Your MOK certificate | YES |
-
-### File Verification
+Create a `/grub/grub.cfg` file at the ISO root that redirects to Photon's actual config:
 
 ```bash
-# Check if a GRUB binary is full or stub
-ls -la file.efi
-# Stub: ~64 KB
-# Full GRUB: 1-2 MB
-
-# Check available commands in GRUB binary
-strings file.efi | grep -E "^search$|^configfile$|^chainloader$|^linux$" | wc -l
-# Stub: 0 matches
-# Full GRUB: multiple matches
-
-# Verify signature
-sbverify --list file.efi
+# /grub/grub.cfg - Redirect to Photon OS config
+search --no-floppy --file --set=root /isolinux/isolinux.cfg
+set prefix=($root)/boot/grub2
+configfile $prefix/grub.cfg
 ```
 
-## ISO Structure
+This file must exist at the **root of the ISO** in a `/grub/` directory.
+
+### Why the Stub Drops to grub> Prompt
+
+When Ventoy's cascade boots:
+1. Shim loads `grub.efi` (stub) ✓
+2. Stub chainloads `grubx64_real.efi` ✓
+3. `grubx64_real.efi` looks for `/grub/grub.cfg` ✗ NOT FOUND
+4. Falls back to `/boot/grub/grub.cfg` ✗ NOT FOUND (Photon uses grub2)
+5. **Drops to `grub>` prompt**
+
+## Ventoy Component Details
+
+### File Purposes
+
+| File | Size | Type | Purpose |
+|------|------|------|---------|
+| `BOOTX64.EFI` | ~965 KB | SUSE shim | First stage, Microsoft-signed |
+| `grub.efi` | ~64 KB | Stub/PreLoader | Chainloads grubx64_real.efi |
+| `grubx64_real.efi` | ~1.9 MB | Full GRUB | Actual bootloader, reads config |
+| `MokManager.efi` | ~852 KB | MOK manager | Certificate enrollment UI |
+
+### The 64KB Stub is NOT Broken
+
+The stub `grub.efi` is designed to:
+1. Be verified by shim (signed with CN=grub, Ventoy's MOK)
+2. Chainload `grubx64_real.efi` using EFI LoadImage
+3. **It does NOT read grub.cfg itself** - that's the real GRUB's job
+
+The stub successfully chainloads the real GRUB. The problem is the real GRUB can't find its config file.
+
+### Verifying the Cascade Works
+
+At the `grub>` prompt, test if you're in the real GRUB:
+```
+grub> search --file /isolinux/isolinux.cfg
+```
+If this command works, you're in `grubx64_real.efi` (the stub doesn't have `search`).
+
+## Required ISO Structure
 
 ```
 ISO Root/
-├── ENROLL_THIS_KEY_IN_MOKMANAGER.cer   # Your MOK certificate
+├── grub/                                # REQUIRED for Ventoy GRUB
+│   └── grub.cfg                         # Redirect to Photon config
+├── ENROLL_THIS_KEY_IN_MOKMANAGER.cer    # Ventoy MOK certificate (CN=grub)
 ├── mmx64.efi                            # MokManager at root
 ├── EFI/BOOT/
 │   ├── BOOTX64.EFI                      # SUSE shim (Microsoft-signed)
-│   ├── grubx64.efi                      # VMware GRUB (MOK-signed) ← NOT grub.efi!
+│   ├── grub.efi                         # Ventoy stub (64KB, CN=grub signed)
+│   ├── grubx64_real.efi                 # Ventoy full GRUB (1.9MB)
 │   ├── MokManager.efi                   # MOK enrollment UI
-│   └── grub.cfg                         # Bootstrap config (optional)
+│   └── grub.cfg                         # Bootstrap (optional backup)
 ├── boot/grub2/
 │   ├── efiboot.img                      # EFI System Partition image
-│   └── grub.cfg                         # Main boot menu
+│   └── grub.cfg                         # Photon OS main boot menu
 └── isolinux/                            # BIOS/MBR boot support
     ├── isolinux.bin
+    ├── isolinux.cfg                     # Search marker file
     ├── vmlinuz
     └── initrd.img
 ```
 
-### Key Point: grubx64.efi NOT grub.efi
+### The Critical /grub/grub.cfg
 
-The shim looks for a second-stage loader. SUSE shim defaults to `grubx64.efi` (or `grub.efi` as fallback). 
+**Content of `/grub/grub.cfg`:**
+```bash
+# Ventoy GRUB redirect to Photon OS config
+# grubx64_real.efi looks here first (prefix=/grub)
 
-**Use VMware's full GRUB** renamed/copied to `grubx64.efi`, NOT Ventoy's 64KB stub.
+search --no-floppy --file --set=root /isolinux/isolinux.cfg
+set prefix=($root)/boot/grub2
+configfile $prefix/grub.cfg
+```
+
+### efiboot.img Structure
+
+The embedded EFI boot image must also have `/grub/grub.cfg`:
+```
+efiboot.img/
+├── grub/
+│   └── grub.cfg                         # Redirect config
+├── ENROLL_THIS_KEY_IN_MOKMANAGER.cer
+├── mmx64.efi
+└── EFI/BOOT/
+    ├── BOOTX64.EFI
+    ├── grub.efi
+    ├── grubx64_real.efi
+    ├── MokManager.efi
+    └── grub.cfg                         # Backup redirect
+```
+
+## CRITICAL: Shim MOK vs Firmware MOK
+
+### Shim's MokManager (CORRECT)
+
+- **UI**: Blue screen interface with white text
+- **Storage**: MokList NVRAM variable (shim-specific)
+- **Certificate to enroll**: `ENROLL_THIS_KEY_IN_MOKMANAGER.cer` (CN=grub)
+
+### Laptop Firmware MOK (WRONG)
+
+- **UI**: Manufacturer-specific (Dell gray, HP red, Lenovo ThinkShield)
+- **Storage**: UEFI db/dbx variables
+- **Problem**: Does NOT populate shim's MokList
+
+If you see the laptop's security dialog instead of the blue MokManager:
+1. Disable CSM/Legacy boot in BIOS
+2. Enable pure UEFI mode
+3. Ensure Secure Boot is enabled
 
 ## Tool Usage
 
@@ -174,59 +187,31 @@ The shim looks for a second-stage loader. SUSE shim defaults to `grubx64.efi` (o
 # Build Secure Boot ISO
 ./PhotonOS-HABv4Emulation-ISOCreator -b
 
-# Build for specific Photon OS release
-./PhotonOS-HABv4Emulation-ISOCreator -r 5.0 -b
-
 # Diagnose existing ISO
 ./PhotonOS-HABv4Emulation-ISOCreator -D /path/to/iso
-```
-
-## Signing VMware's GRUB
-
-To create a working Secure Boot ISO:
-
-```bash
-# 1. Generate MOK key pair
-openssl req -new -x509 -newkey rsa:2048 -keyout MOK.key -out MOK.crt \
-    -nodes -days 3650 -subj "/CN=Photon OS Secure Boot/"
-
-# 2. Convert to DER for enrollment
-openssl x509 -in MOK.crt -out MOK.der -outform DER
-
-# 3. Extract VMware's GRUB from Photon ISO
-xorriso -osirrox on -indev photon.iso -extract /boot/efi/EFI/BOOT/grubx64.efi ./grubx64.efi
-
-# 4. Sign with your MOK key
-sbsign --key MOK.key --cert MOK.crt --output grubx64-signed.efi grubx64.efi
-
-# 5. Verify signature
-sbverify --list grubx64-signed.efi
-# Should show your certificate CN
-
-# 6. Use grubx64-signed.efi as EFI/BOOT/grubx64.efi in your ISO
-# 7. Include MOK.der as ENROLL_THIS_KEY_IN_MOKMANAGER.cer
 ```
 
 ## Verification Commands
 
 ```bash
-# Check if GRUB is full or stub (CRITICAL!)
-stat -c%s EFI/BOOT/grubx64.efi
-# Should be > 1 MB for full GRUB
-# If ~64 KB, it's the Ventoy stub - WILL NOT WORK!
+# Verify /grub/grub.cfg exists in ISO (CRITICAL!)
+xorriso -osirrox on -indev <iso> -extract /grub/grub.cfg /tmp/grub.cfg
+cat /tmp/grub.cfg
+# Should show: search/configfile redirect to /boot/grub2/
 
-# Verify shim is Microsoft-signed
-sbverify --list EFI/BOOT/BOOTX64.EFI 2>&1 | grep -i microsoft
+# Verify cascade components
+xorriso -osirrox on -indev <iso> -ls /EFI/BOOT/
+# Must have: BOOTX64.EFI, grub.efi (64KB), grubx64_real.efi (1.9MB)
 
-# Verify GRUB is signed with your MOK
-sbverify --list EFI/BOOT/grubx64.efi 2>&1 | grep -i "subject:"
+# Check stub size (should be ~64KB)
+xorriso -osirrox on -indev <iso> -extract /EFI/BOOT/grub.efi /tmp/stub.efi
+stat -c%s /tmp/stub.efi
+# Expected: ~64000 bytes
 
-# Test GRUB has required commands
-strings EFI/BOOT/grubx64.efi | grep -c "configfile"
-# Should be > 0
-
-# Verify ISO has UEFI boot capability
-xorriso -indev <iso> -pvd_info 2>&1 | grep -i "El Torito"
+# Check real GRUB size (should be ~1.9MB)  
+xorriso -osirrox on -indev <iso> -extract /EFI/BOOT/grubx64_real.efi /tmp/real.efi
+stat -c%s /tmp/real.efi
+# Expected: ~1900000 bytes
 ```
 
 ## First Boot Procedure
@@ -249,9 +234,9 @@ sync
 ### Step 3: Boot and Enroll MOK
 
 1. Boot from USB
-2. **EXPECT**: Blue MokManager screen with white text
-   - If you see laptop's manufacturer dialog instead → STOP, check BIOS settings
-   - If you see `grub>` prompt → WRONG GRUB binary used (stub instead of full)
+2. **EXPECT**: Blue MokManager screen (shim's)
+   - If laptop's dialog appears → check BIOS settings
+   - If `grub>` prompt appears → /grub/grub.cfg is missing
 3. Select **"Enroll key from disk"**
 4. Navigate to USB root
 5. Select `ENROLL_THIS_KEY_IN_MOKMANAGER.cer`
@@ -259,90 +244,83 @@ sync
 
 ### Step 4: Verify Boot
 
-After reboot, GRUB menu should appear (not `grub>` prompt).
+After reboot, Photon OS GRUB menu should appear.
 
 ## Troubleshooting
 
-### Drops to `grub>` Prompt (No Menu)
+### Drops to `grub>` Prompt After MOK Enrollment
 
-**Symptom**: After MOK enrollment succeeds, system boots to bare `grub>` prompt.
+**Symptom**: After successful MOK enrollment, boots to bare `grub>` prompt.
 
-**Cause**: Using Ventoy's 64KB stub `grub.efi` instead of full GRUB.
+**Cause**: `/grub/grub.cfg` is missing or incorrect.
 
-**Diagnosis**:
-```bash
-# Check the GRUB binary size in your ISO
-xorriso -osirrox on -indev your.iso -extract /EFI/BOOT/grubx64.efi /tmp/grub.efi
-stat -c%s /tmp/grub.efi
-# If ~64 KB → WRONG (Ventoy stub)
-# If ~1-2 MB → Correct (full GRUB)
+**Diagnosis** (at grub> prompt):
+```
+grub> ls
+# Should show partitions like (hd0), (hd0,msdos1), etc.
+
+grub> ls (hd0,msdos2)/
+# Look for grub/ directory
+
+grub> cat (hd0,msdos2)/grub/grub.cfg
+# If "file not found" - that's the problem!
 ```
 
-**Solution**: 
-1. Use VMware's GRUB from the original Photon ISO
-2. Sign it with your MOK key
-3. Place as `EFI/BOOT/grubx64.efi`
+**Manual boot** (at grub> prompt):
+```
+grub> search --no-floppy --file --set=root /isolinux/isolinux.cfg
+grub> set prefix=($root)/boot/grub2
+grub> configfile $prefix/grub.cfg
+```
+
+**Fix**: Rebuild ISO with `/grub/grub.cfg` redirect file.
 
 ### "Policy Violation" - Laptop's Security Dialog
 
-**Symptom**: Manufacturer-branded dialog instead of blue MokManager.
-
-**Cause**: CSM/Legacy boot enabled or wrong boot mode.
+**Cause**: CSM/Legacy boot enabled.
 
 **Solution**:
 1. Enter BIOS setup
 2. Disable CSM/Legacy completely
-3. Ensure UEFI-only mode
-4. Verify Secure Boot is enabled
+3. Enable UEFI-only mode
 
-### MOK Enrollment Doesn't Persist
+### Commands Don't Work at grub> Prompt
 
-**Cause**: Enrolling in firmware db instead of shim's MokList.
+**If `search` command not found**: You're in the stub, not real GRUB. The stub failed to chainload `grubx64_real.efi`.
 
-**Solution**: Must see blue MokManager screen, not laptop's firmware dialog.
+**Check**: Is `grubx64_real.efi` present in `/EFI/BOOT/`?
 
-### "Security Violation" After Enrollment
-
-**Possible causes**:
-1. Wrong certificate enrolled (must match GRUB signature)
-2. Used "Continue" instead of "Reboot"
-3. GRUB signed with different key than certificate
-
-**Solution**: Verify certificate matches GRUB signature:
-```bash
-# Certificate subject
-openssl x509 -in ENROLL_THIS_KEY_IN_MOKMANAGER.cer -inform DER -noout -subject
-
-# GRUB signature issuer (should match)
-sbverify --list grubx64.efi | grep subject
-```
-
-### GRUB Prompt Commands Don't Work
-
-**Symptom**: At `grub>` prompt, commands like `ls`, `search`, `configfile` return errors.
-
-**Cause**: Using Ventoy's minimal stub which lacks these commands.
-
-**Solution**: Replace with full GRUB binary (see "Drops to grub> Prompt" above).
+**If `search` works but config not found**: You're in real GRUB but `/grub/grub.cfg` is missing.
 
 ## Quick Reference
 
-| Issue | Likely Cause | Quick Check |
-|-------|--------------|-------------|
-| `grub>` prompt | Wrong GRUB binary (stub) | Check file size (~64KB = stub) |
-| Policy violation | CSM enabled | Check BIOS boot mode |
-| Enrollment fails | Wrong MokManager | Must see blue screen |
-| Commands not found | Stub GRUB | Check `strings \| grep configfile` |
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `grub>` prompt, `search` works | Missing /grub/grub.cfg | Add redirect config |
+| `grub>` prompt, `search` fails | Stub didn't chainload | Check grubx64_real.efi exists |
+| Laptop security dialog | CSM enabled | Disable CSM in BIOS |
+| Blue MokManager, enrollment fails | Wrong cert or NVRAM issue | Try hash enrollment |
 
-| Task | Command |
-|------|---------|
-| Build ISO | `./PhotonOS-HABv4Emulation-ISOCreator -b` |
-| Diagnose ISO | `./PhotonOS-HABv4Emulation-ISOCreator -D <iso>` |
-| Check GRUB size | `stat -c%s EFI/BOOT/grubx64.efi` |
-| Sign GRUB | `sbsign --key MOK.key --cert MOK.crt -o signed.efi grub.efi` |
+| File | Expected Size | Purpose |
+|------|---------------|---------|
+| grub.efi | ~64 KB | Stub (chainloads real GRUB) |
+| grubx64_real.efi | ~1.9 MB | Real GRUB (reads config) |
+| /grub/grub.cfg | ~150 bytes | Redirect to Photon config |
+
+## Implementation Checklist
+
+When creating a Secure Boot ISO:
+
+- [ ] SUSE shim (`BOOTX64.EFI`) is Microsoft-signed
+- [ ] Stub (`grub.efi`) is ~64KB and signed CN=grub
+- [ ] Real GRUB (`grubx64_real.efi`) is ~1.9MB
+- [ ] `/grub/grub.cfg` exists with redirect to `/boot/grub2/grub.cfg`
+- [ ] `/grub/grub.cfg` also exists inside efiboot.img
+- [ ] `ENROLL_THIS_KEY_IN_MOKMANAGER.cer` at ISO root
+- [ ] MokManager.efi in `/EFI/BOOT/` and at root as `mmx64.efi`
 
 ## Related Documentation
 
-- [BOOT_PROCESS.md](../../../docs/BOOT_PROCESS.md) - Detailed boot chain explanation
-- [TROUBLESHOOTING.md](../../../docs/TROUBLESHOOTING.md) - Complete troubleshooting guide
-- [Ventoy Secure Boot](https://www.ventoy.net/en/doc_secure.html) - Ventoy official docs
+- [BOOT_PROCESS.md](../../../docs/BOOT_PROCESS.md) - Detailed boot chain
+- [TROUBLESHOOTING.md](../../../docs/TROUBLESHOOTING.md) - Complete troubleshooting
+- [Ventoy Secure Boot](https://www.ventoy.net/en/doc_secure.html) - Ventoy docs

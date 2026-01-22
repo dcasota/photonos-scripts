@@ -922,10 +922,29 @@ static int create_secure_boot_iso(void) {
         log_info("IA32 (32-bit UEFI) support added to efiboot.img");
     }
     
-    /* Create grub.cfg - with eFuse USB mode support */
-    char grub_cfg[512];
-    snprintf(grub_cfg, sizeof(grub_cfg), "%s/EFI/BOOT/grub.cfg", efi_mount);
+    /* CRITICAL: Create /grub/grub.cfg for Ventoy's grubx64_real.efi
+     * Ventoy's real GRUB has embedded prefix=/grub and looks for /grub/grub.cfg
+     * This file redirects to Photon OS's actual config at /boot/grub2/grub.cfg */
+    char grub_dir[512], grub_cfg[512];
+    snprintf(grub_dir, sizeof(grub_dir), "%s/grub", efi_mount);
+    mkdir_p(grub_dir);
+    snprintf(grub_cfg, sizeof(grub_cfg), "%s/grub/grub.cfg", efi_mount);
     FILE *f = fopen(grub_cfg, "w");
+    if (f) {
+        fprintf(f,
+            "# Ventoy GRUB redirect to Photon OS config\n"
+            "# grubx64_real.efi looks here (prefix=/grub)\n"
+            "search --no-floppy --file --set=root /isolinux/isolinux.cfg\n"
+            "set prefix=($root)/boot/grub2\n"
+            "configfile $prefix/grub.cfg\n"
+        );
+        fclose(f);
+        log_info("Created /grub/grub.cfg redirect for Ventoy GRUB");
+    }
+    
+    /* Also create /EFI/BOOT/grub.cfg as backup */
+    snprintf(grub_cfg, sizeof(grub_cfg), "%s/EFI/BOOT/grub.cfg", efi_mount);
+    f = fopen(grub_cfg, "w");
     if (f) {
         if (cfg.efuse_usb_mode) {
             /* eFuse USB verification mode - require dongle */
@@ -1000,6 +1019,24 @@ static int create_secure_boot_iso(void) {
     run_cmd(cmd);
     snprintf(cmd, sizeof(cmd), "cp '%s' '%s/ENROLL_THIS_KEY_IN_MOKMANAGER.cer'", mok_cert, iso_extract);
     run_cmd(cmd);
+    
+    /* CRITICAL: Create /grub/grub.cfg in ISO root for Ventoy's grubx64_real.efi */
+    char iso_grub_dir[512];
+    snprintf(iso_grub_dir, sizeof(iso_grub_dir), "%s/grub", iso_extract);
+    mkdir_p(iso_grub_dir);
+    snprintf(grub_cfg, sizeof(grub_cfg), "%s/grub/grub.cfg", iso_extract);
+    f = fopen(grub_cfg, "w");
+    if (f) {
+        fprintf(f,
+            "# Ventoy GRUB redirect to Photon OS config\n"
+            "# grubx64_real.efi looks here (prefix=/grub)\n"
+            "search --no-floppy --file --set=root /isolinux/isolinux.cfg\n"
+            "set prefix=($root)/boot/grub2\n"
+            "configfile $prefix/grub.cfg\n"
+        );
+        fclose(f);
+        log_info("Created /grub/grub.cfg redirect in ISO root");
+    }
     
     /* IA32 (32-bit UEFI) support in ISO root */
     if (file_exists(ia32_shim)) {
@@ -1151,28 +1188,29 @@ static int diagnose_iso(const char *iso_path) {
         }
     }
     
-    /* CRITICAL: Check if grub.efi is full GRUB or Ventoy stub */
-    printf("\n[GRUB Binary Analysis - CRITICAL]\n");
-    char grub_check_path[512];
-    snprintf(grub_check_path, sizeof(grub_check_path), "%s/EFI_BOOT/grub.efi", work_dir);
-    if (file_exists(grub_check_path)) {
-        long grub_size = get_file_size(grub_check_path);
-        if (grub_size < 100000) {  /* Less than 100KB = stub */
-            printf("  " RED "[CRITICAL]" RESET " grub.efi is only %ld KB - this is Ventoy's STUB!\n", grub_size / 1024);
-            printf("             Ventoy's stub lacks essential commands (search, configfile, linux)\n");
-            printf("             This will cause boot to drop to 'grub>' prompt!\n");
-            printf("             " YELLOW "FIX:" RESET " Use VMware's full GRUB and sign with MOK key\n");
-            errors++;
-        } else {
-            printf("  " GREEN "[OK]" RESET " grub.efi is %ld KB - full GRUB binary\n", grub_size / 1024);
-            /* Verify it has essential commands */
-            snprintf(cmd, sizeof(cmd), "strings '%s' | grep -q 'configfile'", grub_check_path);
-            if (system(cmd) == 0) {
-                printf("  " GREEN "[OK]" RESET " grub.efi has 'configfile' command\n");
+    /* Check cascade architecture: grub.efi (stub) + grubx64_real.efi (full GRUB) */
+    printf("\n[GRUB Cascade Architecture]\n");
+    char grub_stub_path[512], grub_real_path[512];
+    snprintf(grub_stub_path, sizeof(grub_stub_path), "%s/EFI_BOOT/grub.efi", work_dir);
+    snprintf(grub_real_path, sizeof(grub_real_path), "%s/EFI_BOOT/grubx64_real.efi", work_dir);
+    
+    if (file_exists(grub_stub_path)) {
+        long stub_size = get_file_size(grub_stub_path);
+        if (stub_size < 100000) {  /* Less than 100KB = stub (expected) */
+            printf("  " GREEN "[OK]" RESET " grub.efi is %ld KB (Ventoy stub - expected)\n", stub_size / 1024);
+            
+            /* Check if grubx64_real.efi exists for cascade */
+            if (file_exists(grub_real_path)) {
+                long real_size = get_file_size(grub_real_path);
+                printf("  " GREEN "[OK]" RESET " grubx64_real.efi is %ld KB (full GRUB)\n", real_size / 1024);
+                printf("  " GREEN "[OK]" RESET " Cascade architecture: stub -> real GRUB\n");
             } else {
-                printf("  " YELLOW "[WARN]" RESET " grub.efi may be missing 'configfile' command\n");
-                warnings++;
+                printf("  " RED "[FAIL]" RESET " grubx64_real.efi MISSING!\n");
+                printf("             Stub needs grubx64_real.efi to chainload\n");
+                errors++;
             }
+        } else {
+            printf("  " GREEN "[OK]" RESET " grub.efi is %ld KB - full GRUB binary\n", stub_size / 1024);
         }
     }
     
@@ -1233,6 +1271,31 @@ static int diagnose_iso(const char *iso_path) {
         }
     } else {
         printf("  " RED "[FAIL]" RESET " ENROLL_THIS_KEY_IN_MOKMANAGER.cer missing at ISO root\n");
+        errors++;
+    }
+    
+    /* CRITICAL: Check /grub/grub.cfg redirect for Ventoy's grubx64_real.efi */
+    printf("\n[Ventoy GRUB Config - CRITICAL]\n");
+    snprintf(cmd, sizeof(cmd), "xorriso -osirrox on -indev '%s' -extract /grub/grub.cfg '%s/grub_redirect.cfg' 2>/dev/null", 
+        iso_path, work_dir);
+    system(cmd);
+    
+    char grub_redirect[512];
+    snprintf(grub_redirect, sizeof(grub_redirect), "%s/grub_redirect.cfg", work_dir);
+    if (file_exists(grub_redirect)) {
+        printf("  " GREEN "[OK]" RESET " /grub/grub.cfg exists (Ventoy GRUB redirect)\n");
+        /* Verify it has the right content - should have search and configfile commands */
+        snprintf(cmd, sizeof(cmd), "grep -q 'search.*isolinux' '%s' && grep -q 'configfile' '%s'", grub_redirect, grub_redirect);
+        if (system(cmd) == 0) {
+            printf("  " GREEN "[OK]" RESET " Redirect has search and configfile commands\n");
+        } else {
+            printf("  " YELLOW "[WARN]" RESET " Redirect may not have correct commands\n");
+            warnings++;
+        }
+    } else {
+        printf("  " RED "[CRITICAL]" RESET " /grub/grub.cfg MISSING!\n");
+        printf("             Ventoy's grubx64_real.efi looks for /grub/grub.cfg\n");
+        printf("             Without it, boot will drop to 'grub>' prompt!\n");
         errors++;
     }
     
