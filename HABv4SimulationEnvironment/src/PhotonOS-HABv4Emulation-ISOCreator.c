@@ -1271,6 +1271,23 @@ int main(int argc, char *argv[]) {
         cfg.download_ventoy = 1;
     }
     
+    /* Auto-enable prerequisites if building ISO and keys/components don't exist */
+    if (cfg.build_iso) {
+        char mok_path[512], shim_path[512];
+        snprintf(mok_path, sizeof(mok_path), "%s/MOK.key", cfg.keys_dir);
+        snprintf(shim_path, sizeof(shim_path), "%s/shim-suse.efi", cfg.keys_dir);
+        
+        if (!file_exists(mok_path)) {
+            log_info("Keys not found, auto-enabling key generation");
+            cfg.generate_keys = 1;
+            cfg.setup_efuse = 1;
+        }
+        if (!file_exists(shim_path)) {
+            log_info("Ventoy components not found, auto-enabling download");
+            cfg.download_ventoy = 1;
+        }
+    }
+    
     printf("\n");
     printf("=========================================\n");
     printf("%s v%s\n", PROGRAM_NAME, VERSION);
