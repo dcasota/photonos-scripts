@@ -860,6 +860,48 @@ static int create_secure_boot_iso(void) {
         return -1;
     }
     
+    /* Sign kernel and initrd with MOK key for Custom MOK boot option
+     * This allows the unsigned Photon OS kernel to be trusted by shim
+     * after the user enrolls our MOK certificate */
+    char mok_key[512], mok_crt[512];
+    snprintf(mok_key, sizeof(mok_key), "%s/MOK.key", cfg.keys_dir);
+    snprintf(mok_crt, sizeof(mok_crt), "%s/MOK.crt", cfg.keys_dir);
+    
+    char kernel_path[512], initrd_path[512];
+    char signed_kernel[512], signed_initrd[512];
+    snprintf(kernel_path, sizeof(kernel_path), "%s/isolinux/vmlinuz", iso_extract);
+    snprintf(initrd_path, sizeof(initrd_path), "%s/isolinux/initrd.img", iso_extract);
+    snprintf(signed_kernel, sizeof(signed_kernel), "%s/vmlinuz-signed", work_dir);
+    snprintf(signed_initrd, sizeof(signed_initrd), "%s/initrd-signed.img", work_dir);
+    
+    if (file_exists(mok_key) && file_exists(mok_crt) && file_exists(kernel_path)) {
+        log_info("Signing kernel with MOK key...");
+        snprintf(cmd, sizeof(cmd), "sbsign --key '%s' --cert '%s' --output '%s' '%s' 2>/dev/null",
+            mok_key, mok_crt, signed_kernel, kernel_path);
+        if (run_cmd(cmd) == 0 && file_exists(signed_kernel)) {
+            /* Replace original kernel with signed version */
+            snprintf(cmd, sizeof(cmd), "cp '%s' '%s'", signed_kernel, kernel_path);
+            run_cmd(cmd);
+            log_info("Kernel signed with MOK key (CN=HABv4 Secure Boot MOK)");
+        } else {
+            log_warn("Failed to sign kernel - will use unsigned kernel");
+        }
+    }
+    
+    if (file_exists(mok_key) && file_exists(mok_crt) && file_exists(initrd_path)) {
+        log_info("Signing initrd with MOK key...");
+        snprintf(cmd, sizeof(cmd), "sbsign --key '%s' --cert '%s' --output '%s' '%s' 2>/dev/null",
+            mok_key, mok_crt, signed_initrd, initrd_path);
+        if (run_cmd(cmd) == 0 && file_exists(signed_initrd)) {
+            /* Replace original initrd with signed version */
+            snprintf(cmd, sizeof(cmd), "cp '%s' '%s'", signed_initrd, initrd_path);
+            run_cmd(cmd);
+            log_info("Initrd signed with MOK key");
+        } else {
+            log_warn("Failed to sign initrd - will use unsigned initrd");
+        }
+    }
+    
     log_info("Creating efiboot.img...");
     char new_efiboot[512], efiboot_path[512];
     snprintf(new_efiboot, sizeof(new_efiboot), "%s/efiboot.img", work_dir);
@@ -894,8 +936,16 @@ static int create_secure_boot_iso(void) {
     run_cmd(cmd);
     snprintf(cmd, sizeof(cmd), "cp '%s' '%s/mmx64.efi'", mokm_path, efi_mount);
     run_cmd(cmd);
+    /* Ventoy certificate for GRUB chain (CN=grub) */
     snprintf(cmd, sizeof(cmd), "cp '%s' '%s/ENROLL_THIS_KEY_IN_MOKMANAGER.cer'", mok_cert, efi_mount);
     run_cmd(cmd);
+    /* Our MOK certificate for signed kernel (CN=HABv4 Secure Boot MOK) */
+    char our_mok_der[512];
+    snprintf(our_mok_der, sizeof(our_mok_der), "%s/MOK.der", cfg.keys_dir);
+    if (file_exists(our_mok_der)) {
+        snprintf(cmd, sizeof(cmd), "cp '%s' '%s/ENROLL_MOK_FOR_KERNEL.cer'", our_mok_der, efi_mount);
+        run_cmd(cmd);
+    }
     
     /* IA32 (32-bit UEFI) support in efiboot.img */
     char ia32_shim[512], ia32_preloader[512], ia32_grub[512], ia32_mokm[512];
@@ -1036,8 +1086,14 @@ static int create_secure_boot_iso(void) {
     run_cmd(cmd);
     snprintf(cmd, sizeof(cmd), "cp '%s' '%s/mmx64.efi'", mokm_path, iso_extract);
     run_cmd(cmd);
+    /* Ventoy certificate for GRUB chain (CN=grub) */
     snprintf(cmd, sizeof(cmd), "cp '%s' '%s/ENROLL_THIS_KEY_IN_MOKMANAGER.cer'", mok_cert, iso_extract);
     run_cmd(cmd);
+    /* Our MOK certificate for signed kernel (CN=HABv4 Secure Boot MOK) */
+    if (file_exists(our_mok_der)) {
+        snprintf(cmd, sizeof(cmd), "cp '%s' '%s/ENROLL_MOK_FOR_KERNEL.cer'", our_mok_der, iso_extract);
+        run_cmd(cmd);
+    }
     
     /* CRITICAL: Create /grub/grub.cfg in ISO root for Ventoy's grubx64_real.efi */
     char iso_grub_dir[512];
@@ -1127,10 +1183,10 @@ static int create_secure_boot_iso(void) {
         }
         printf("\n");
         printf("Boot Chain:\n");
-        printf("  UEFI -> BOOTX64.EFI (SUSE shim)\n");
-        printf("       -> grub.efi (PreLoader)\n");
-        printf("       -> grubx64_real.efi (GRUB)\n");
-        printf("       -> Linux kernel\n");
+        printf("  UEFI -> BOOTX64.EFI (SUSE shim, Microsoft-signed)\n");
+        printf("       -> grub.efi (Ventoy PreLoader, CN=grub signed)\n");
+        printf("       -> grubx64_real.efi (Ventoy GRUB)\n");
+        printf("       -> vmlinuz (MOK-signed with CN=HABv4 Secure Boot MOK)\n");
         printf("\n");
         printf("First Boot Instructions:\n");
         printf("  1. Boot from USB with UEFI Secure Boot ENABLED\n");
@@ -1138,9 +1194,11 @@ static int create_secure_boot_iso(void) {
         printf("     " YELLOW "NOTE:" RESET " If you see your laptop's security dialog instead,\n");
         printf("           check that CSM/Legacy boot is DISABLED in BIOS.\n");
         printf("  3. Select 'Enroll key from disk'\n");
-        printf("  4. Navigate to USB root -> ENROLL_THIS_KEY_IN_MOKMANAGER.cer\n");
-        printf("  5. Confirm and select REBOOT (not continue)\n");
-        printf("  6. System should now boot without security violation\n");
+        printf("  4. Enroll BOTH certificates from USB root:\n");
+        printf("     a) ENROLL_THIS_KEY_IN_MOKMANAGER.cer (CN=grub - for Ventoy GRUB)\n");
+        printf("     b) ENROLL_MOK_FOR_KERNEL.cer (CN=HABv4 - for signed kernel)\n");
+        printf("  5. After enrolling both, select REBOOT (not continue)\n");
+        printf("  6. After reboot, select 'Install' - both GRUB and kernel are trusted\n");
         if (cfg.efuse_usb_mode) {
             printf("\neFuse USB Mode:\n");
             printf("  - Insert USB dongle labeled 'EFUSE_SIM' before boot\n");
