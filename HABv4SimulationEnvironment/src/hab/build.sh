@@ -2,27 +2,30 @@
 #
 # HAB Secure Boot Build System
 #
-# This script builds all HAB components from source:
-# - efitools library and PreLoader
-# - HAB PreLoader (customized for VMware GRUB)
+# Builds HAB PreLoader using the efitools library.
+#
+# Prerequisites:
+#   - gnu-efi-devel package installed
+#   - efitools source cloned to $EFITOOLS_DIR
+#   - Ventoy binaries in $HAB_KEYS (shim-suse.efi, MokManager-suse.efi)
+#   - MOK key pair in $HAB_KEYS (MOK.key, MOK.crt, MOK.der)
 #
 # Usage: ./build.sh [target]
-#   Targets: all, clean, preloader, install, sign
+#   Targets: all, clean, efitools, preloader, install, sign, info, help
 #
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SRC_ROOT="/root/src"
-HAB_KEYS="/root/hab_keys"
 
-# Source directories
-EFITOOLS_DIR="$SRC_ROOT/kernel.org/efitools"
-SHIM_DIR="$SRC_ROOT/rhboot/shim"
-VENTOY_DIR="$SRC_ROOT/ventoy/Ventoy-1.1.10"
+# Configurable paths (override with environment variables)
+EFITOOLS_DIR="${EFITOOLS_DIR:-/root/src/kernel.org/efitools}"
+HAB_KEYS="${HAB_KEYS:-/root/hab_keys}"
+
 HAB_PRELOADER_DIR="$SCRIPT_DIR/preloader"
+HAB_ISO_DIR="$SCRIPT_DIR/iso"
 
-# Colors for output
+# Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -37,44 +40,36 @@ check_dependencies() {
     
     local missing=()
     
-    # Check for required tools
     for tool in gcc ld objcopy sbsign; do
         if ! command -v $tool &>/dev/null; then
             missing+=("$tool")
         fi
     done
     
-    # Check for GNU-EFI
     if [ ! -f /usr/include/efi/efi.h ]; then
         missing+=("gnu-efi-devel")
     fi
     
     if [ ${#missing[@]} -ne 0 ]; then
         log_error "Missing dependencies: ${missing[*]}"
-        echo "Install with: dnf install ${missing[*]}"
+        echo "Install with: tdnf install gnu-efi-devel sbsigntools gcc make"
         return 1
     fi
     
     log_info "All dependencies satisfied"
-    return 0
 }
 
-check_sources() {
-    log_info "Checking source directories..."
-    
+check_efitools() {
     if [ ! -d "$EFITOOLS_DIR" ]; then
         log_error "efitools not found at $EFITOOLS_DIR"
-        echo "Run: cd $SRC_ROOT/kernel.org && git clone git://git.kernel.org/pub/scm/linux/kernel/git/jejb/efitools.git"
+        echo ""
+        echo "Clone efitools with:"
+        echo "  mkdir -p $(dirname $EFITOOLS_DIR)"
+        echo "  cd $(dirname $EFITOOLS_DIR)"
+        echo "  git clone git://git.kernel.org/pub/scm/linux/kernel/git/jejb/efitools.git"
         return 1
     fi
-    
-    if [ ! -d "$VENTOY_DIR" ]; then
-        log_warn "Ventoy source not found at $VENTOY_DIR"
-        echo "Download from: https://github.com/ventoy/Ventoy/archive/refs/tags/v1.1.10.tar.gz"
-    fi
-    
-    log_info "Source directories OK"
-    return 0
+    log_info "efitools found at $EFITOOLS_DIR"
 }
 
 build_efitools_lib() {
@@ -88,7 +83,6 @@ build_efitools_lib() {
         echo 'unsigned int _tmp_tmp_hash_len = 0;' >> hashlist.h
     fi
     
-    # Build the EFI library
     make lib/lib-efi.a ARCH=x86_64 2>&1 | tail -5
     
     if [ -f lib/lib-efi.a ]; then
@@ -104,27 +98,42 @@ build_hab_preloader() {
     
     cd "$HAB_PRELOADER_DIR"
     
+    # Update Makefile with correct efitools path
+    sed -i "s|^EFITOOLS_DIR.*=.*|EFITOOLS_DIR = $EFITOOLS_DIR|" Makefile
+    
     make clean 2>/dev/null || true
     make all
     
     if [ -f HabPreLoader-sbat.efi ]; then
-        log_info "HAB PreLoader built: HabPreLoader-sbat.efi"
-        ls -la HabPreLoader-sbat.efi
+        log_info "HAB PreLoader built: HabPreLoader-sbat.efi ($(stat -c%s HabPreLoader-sbat.efi) bytes)"
     else
         log_error "Failed to build HAB PreLoader"
         return 1
     fi
 }
 
+build_iso_tool() {
+    log_info "Building ISO tool..."
+    
+    cd "$HAB_ISO_DIR"
+    make clean 2>/dev/null || true
+    make
+    
+    if [ -f hab_iso ]; then
+        log_info "ISO tool built: hab_iso"
+    else
+        log_error "Failed to build ISO tool"
+        return 1
+    fi
+}
+
 install_preloader() {
-    log_info "Installing HAB PreLoader..."
+    log_info "Installing HAB PreLoader to $HAB_KEYS..."
     
     mkdir -p "$HAB_KEYS"
     
-    cd "$HAB_PRELOADER_DIR"
-    
-    if [ -f HabPreLoader-sbat.efi ]; then
-        cp HabPreLoader-sbat.efi "$HAB_KEYS/hab-preloader.efi"
+    if [ -f "$HAB_PRELOADER_DIR/HabPreLoader-sbat.efi" ]; then
+        cp "$HAB_PRELOADER_DIR/HabPreLoader-sbat.efi" "$HAB_KEYS/hab-preloader.efi"
         log_info "Installed: $HAB_KEYS/hab-preloader.efi"
     else
         log_error "HabPreLoader-sbat.efi not found - run build first"
@@ -136,51 +145,29 @@ sign_preloader() {
     log_info "Signing HAB PreLoader with MOK..."
     
     if [ ! -f "$HAB_KEYS/MOK.key" ] || [ ! -f "$HAB_KEYS/MOK.crt" ]; then
-        log_error "MOK key not found. Generate with HABv4-installer.sh first."
+        log_error "MOK key not found at $HAB_KEYS/MOK.key"
+        echo ""
+        echo "Generate MOK with:"
+        echo "  openssl genrsa -out $HAB_KEYS/MOK.key 2048"
+        echo "  openssl req -new -x509 -sha256 -key $HAB_KEYS/MOK.key -out $HAB_KEYS/MOK.crt -days 3650 \\"
+        echo "      -subj \"/CN=HABv4 Secure Boot MOK/O=Organization/C=US\""
+        echo "  openssl x509 -in $HAB_KEYS/MOK.crt -outform DER -out $HAB_KEYS/MOK.der"
         return 1
     fi
     
-    cd "$HAB_PRELOADER_DIR"
-    make sign
+    if [ ! -f "$HAB_KEYS/hab-preloader.efi" ]; then
+        log_error "hab-preloader.efi not found - run install first"
+        return 1
+    fi
+    
+    sbsign --key "$HAB_KEYS/MOK.key" \
+           --cert "$HAB_KEYS/MOK.crt" \
+           --output "$HAB_KEYS/hab-preloader-signed.efi" \
+           "$HAB_KEYS/hab-preloader.efi" 2>&1
     
     if [ -f "$HAB_KEYS/hab-preloader-signed.efi" ]; then
-        log_info "Signed PreLoader: $HAB_KEYS/hab-preloader-signed.efi"
+        log_info "Signed: $HAB_KEYS/hab-preloader-signed.efi"
         sbverify --list "$HAB_KEYS/hab-preloader-signed.efi" 2>&1 | head -5
-    fi
-}
-
-copy_ventoy_binaries() {
-    log_info "Copying Ventoy pre-built binaries..."
-    
-    if [ ! -d "$VENTOY_DIR" ]; then
-        log_warn "Ventoy source not available"
-        return 1
-    fi
-    
-    mkdir -p "$HAB_KEYS"
-    
-    # Copy shim (SUSE signed, SBAT compliant)
-    if [ -f "$VENTOY_DIR/INSTALL/EFI/BOOT/BOOTX64.EFI" ]; then
-        cp "$VENTOY_DIR/INSTALL/EFI/BOOT/BOOTX64.EFI" "$HAB_KEYS/shim-suse.efi"
-        log_info "Copied: shim-suse.efi"
-    fi
-    
-    # Copy MokManager
-    if [ -f "$VENTOY_DIR/INSTALL/EFI/BOOT/MokManager.efi" ]; then
-        cp "$VENTOY_DIR/INSTALL/EFI/BOOT/MokManager.efi" "$HAB_KEYS/MokManager-suse.efi"
-        log_info "Copied: MokManager-suse.efi"
-    fi
-    
-    # Copy Ventoy's grubx64_real.efi (patched GRUB that doesn't need shim_lock)
-    if [ -f "$VENTOY_DIR/INSTALL/EFI/BOOT/grubx64_real.efi" ]; then
-        cp "$VENTOY_DIR/INSTALL/EFI/BOOT/grubx64_real.efi" "$HAB_KEYS/ventoy-grub-real.efi"
-        log_info "Copied: ventoy-grub-real.efi"
-    fi
-    
-    # Copy Ventoy's PreLoader for reference
-    if [ -f "$VENTOY_DIR/INSTALL/EFI/BOOT/grub.efi" ]; then
-        cp "$VENTOY_DIR/INSTALL/EFI/BOOT/grub.efi" "$HAB_KEYS/ventoy-preloader.efi"
-        log_info "Copied: ventoy-preloader.efi"
     fi
 }
 
@@ -188,9 +175,23 @@ clean_all() {
     log_info "Cleaning build artifacts..."
     
     cd "$HAB_PRELOADER_DIR" && make clean 2>/dev/null || true
-    cd "$EFITOOLS_DIR" && make clean 2>/dev/null || true
+    cd "$HAB_ISO_DIR" && make clean 2>/dev/null || true
     
     log_info "Clean complete"
+}
+
+show_info() {
+    echo "HAB Secure Boot Build Configuration"
+    echo "===================================="
+    echo "Script directory: $SCRIPT_DIR"
+    echo "efitools:         $EFITOOLS_DIR"
+    echo "HAB keys:         $HAB_KEYS"
+    echo "PreLoader dir:    $HAB_PRELOADER_DIR"
+    echo "ISO tool dir:     $HAB_ISO_DIR"
+    echo ""
+    echo "Environment variables:"
+    echo "  EFITOOLS_DIR - Path to efitools source"
+    echo "  HAB_KEYS     - Path to keys and output binaries"
 }
 
 show_help() {
@@ -200,29 +201,25 @@ HAB Secure Boot Build System
 Usage: $0 [target]
 
 Targets:
-  all           Build everything (default)
+  all           Build efitools library + HAB PreLoader + ISO tool (default)
   clean         Clean all build artifacts
   deps          Check build dependencies
   efitools      Build efitools library only
   preloader     Build HAB PreLoader only
-  install       Install PreLoader to hab_keys
+  isotool       Build ISO tool only
+  install       Install PreLoader to \$HAB_KEYS
   sign          Sign PreLoader with MOK
-  ventoy        Copy Ventoy pre-built binaries
+  info          Show build configuration
   help          Show this help
 
+Environment Variables:
+  EFITOOLS_DIR  Path to efitools source (default: /root/src/kernel.org/efitools)
+  HAB_KEYS      Path to keys directory (default: /root/hab_keys)
+
 Examples:
-  $0              # Build everything
-  $0 preloader    # Build HAB PreLoader only
-  $0 sign         # Sign with MOK after building
-
-Source Locations:
-  efitools: $EFITOOLS_DIR
-  Ventoy:   $VENTOY_DIR
-  HAB:      $HAB_PRELOADER_DIR
-
-Output:
-  $HAB_KEYS/hab-preloader.efi        (unsigned)
-  $HAB_KEYS/hab-preloader-signed.efi (signed with MOK)
+  $0                        # Build everything
+  $0 preloader              # Build HAB PreLoader only
+  EFITOOLS_DIR=/opt/efitools $0 all   # Use custom efitools path
 EOF
 }
 
@@ -230,9 +227,10 @@ EOF
 case "${1:-all}" in
     all)
         check_dependencies
-        check_sources
+        check_efitools
         build_efitools_lib
         build_hab_preloader
+        build_iso_tool
         install_preloader
         ;;
     clean)
@@ -242,10 +240,15 @@ case "${1:-all}" in
         check_dependencies
         ;;
     efitools)
+        check_efitools
         build_efitools_lib
         ;;
     preloader)
+        check_efitools
         build_hab_preloader
+        ;;
+    isotool)
+        build_iso_tool
         ;;
     install)
         install_preloader
@@ -253,8 +256,8 @@ case "${1:-all}" in
     sign)
         sign_preloader
         ;;
-    ventoy)
-        copy_ventoy_binaries
+    info)
+        show_info
         ;;
     help|--help|-h)
         show_help
