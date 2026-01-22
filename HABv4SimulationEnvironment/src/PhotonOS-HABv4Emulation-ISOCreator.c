@@ -796,19 +796,10 @@ static int create_secure_boot_iso(void) {
         }
     }
     
-    char preloader[512], mok_cert[512];
-    char hab_preloader[512];
-    snprintf(hab_preloader, sizeof(hab_preloader), "%s/hab-preloader-signed.efi", cfg.keys_dir);
-    
-    if (cfg.use_ventoy_preloader || !file_exists(hab_preloader)) {
-        snprintf(preloader, sizeof(preloader), "%s/ventoy-preloader.efi", cfg.keys_dir);
-        snprintf(mok_cert, sizeof(mok_cert), "%s/ventoy-mok.cer", cfg.keys_dir);
-        log_info("Using Ventoy PreLoader");
-    } else {
-        strncpy(preloader, hab_preloader, sizeof(preloader) - 1);
-        snprintf(mok_cert, sizeof(mok_cert), "%s/MOK.der", cfg.keys_dir);
-        log_info("Using HAB PreLoader");
-    }
+    /* MOK key paths for signing custom GRUB stub and kernel */
+    char mok_key[512], mok_crt[512];
+    snprintf(mok_key, sizeof(mok_key), "%s/MOK.key", cfg.keys_dir);
+    snprintf(mok_crt, sizeof(mok_crt), "%s/MOK.crt", cfg.keys_dir);
     
     char shim_path[512], mokm_path[512];
     snprintf(shim_path, sizeof(shim_path), "%s/shim-suse.efi", cfg.keys_dir);
@@ -816,11 +807,6 @@ static int create_secure_boot_iso(void) {
     
     if (!file_exists(shim_path) || !file_exists(mokm_path)) {
         log_error("Required Ventoy components missing. Run with --download-ventoy first.");
-        return -1;
-    }
-    
-    if (!file_exists(preloader)) {
-        log_error("PreLoader not found: %s", preloader);
         return -1;
     }
     
@@ -844,42 +830,43 @@ static int create_secure_boot_iso(void) {
         return -1;
     }
     
-    char grub_real[512];
-    snprintf(grub_real, sizeof(grub_real), "%s/EFI/BOOT/grubx64_real.efi", iso_extract);
-    if (!file_exists(grub_real)) {
-        snprintf(grub_real, sizeof(grub_real), "%s/EFI/BOOT/grubx64.efi", iso_extract);
-    }
-    if (!file_exists(grub_real)) {
-        snprintf(grub_real, sizeof(grub_real), "%s/ventoy-grub-real.efi", cfg.keys_dir);
+    /* Get VMware's original GRUB for "VMware Original" boot option
+     * VMware's GRUB is inside efiboot.img, need to extract it */
+    char vmware_grub[512];
+    char orig_efiboot[512], efi_extract[512];
+    snprintf(orig_efiboot, sizeof(orig_efiboot), "%s/boot/grub2/efiboot.img", iso_extract);
+    snprintf(efi_extract, sizeof(efi_extract), "%s/efi_orig", work_dir);
+    snprintf(vmware_grub, sizeof(vmware_grub), "%s/vmware_grub.efi", work_dir);
+    
+    mkdir_p(efi_extract);
+    if (file_exists(orig_efiboot)) {
+        snprintf(cmd, sizeof(cmd), "mount -o loop '%s' '%s' 2>/dev/null", orig_efiboot, efi_extract);
+        if (run_cmd(cmd) == 0) {
+            char efi_grub[512];
+            snprintf(efi_grub, sizeof(efi_grub), "%s/EFI/BOOT/grubx64.efi", efi_extract);
+            if (file_exists(efi_grub)) {
+                snprintf(cmd, sizeof(cmd), "cp '%s' '%s'", efi_grub, vmware_grub);
+                run_cmd(cmd);
+                log_info("Extracted VMware's GRUB from efiboot.img");
+            }
+            snprintf(cmd, sizeof(cmd), "umount '%s' 2>/dev/null", efi_extract);
+            run_cmd(cmd);
+        }
     }
     
-    if (!file_exists(grub_real)) {
-        log_error("GRUB not found");
-        snprintf(cmd, sizeof(cmd), "rm -rf '%s'", work_dir);
-        run_cmd(cmd);
-        return -1;
-    }
-    
-    /* Sign kernel and initrd with MOK key for Custom MOK boot option
+    /* Sign kernel with MOK key for Custom MOK boot option
      * This allows the unsigned Photon OS kernel to be trusted by shim
      * after the user enrolls our MOK certificate */
-    char mok_key[512], mok_crt[512];
-    snprintf(mok_key, sizeof(mok_key), "%s/MOK.key", cfg.keys_dir);
-    snprintf(mok_crt, sizeof(mok_crt), "%s/MOK.crt", cfg.keys_dir);
-    
-    char kernel_path[512], initrd_path[512];
-    char signed_kernel[512], signed_initrd[512];
+    char kernel_path[512];
+    char signed_kernel[512];
     snprintf(kernel_path, sizeof(kernel_path), "%s/isolinux/vmlinuz", iso_extract);
-    snprintf(initrd_path, sizeof(initrd_path), "%s/isolinux/initrd.img", iso_extract);
     snprintf(signed_kernel, sizeof(signed_kernel), "%s/vmlinuz-signed", work_dir);
-    snprintf(signed_initrd, sizeof(signed_initrd), "%s/initrd-signed.img", work_dir);
     
     if (file_exists(mok_key) && file_exists(mok_crt) && file_exists(kernel_path)) {
         log_info("Signing kernel with MOK key...");
         snprintf(cmd, sizeof(cmd), "sbsign --key '%s' --cert '%s' --output '%s' '%s' 2>/dev/null",
             mok_key, mok_crt, signed_kernel, kernel_path);
         if (run_cmd(cmd) == 0 && file_exists(signed_kernel)) {
-            /* Replace original kernel with signed version */
             snprintf(cmd, sizeof(cmd), "cp '%s' '%s'", signed_kernel, kernel_path);
             run_cmd(cmd);
             log_info("Kernel signed with MOK key (CN=HABv4 Secure Boot MOK)");
@@ -888,19 +875,87 @@ static int create_secure_boot_iso(void) {
         }
     }
     
-    if (file_exists(mok_key) && file_exists(mok_crt) && file_exists(initrd_path)) {
-        log_info("Signing initrd with MOK key...");
-        snprintf(cmd, sizeof(cmd), "sbsign --key '%s' --cert '%s' --output '%s' '%s' 2>/dev/null",
-            mok_key, mok_crt, signed_initrd, initrd_path);
-        if (run_cmd(cmd) == 0 && file_exists(signed_initrd)) {
-            /* Replace original initrd with signed version */
-            snprintf(cmd, sizeof(cmd), "cp '%s' '%s'", signed_initrd, initrd_path);
-            run_cmd(cmd);
-            log_info("Initrd signed with MOK key");
-        } else {
-            log_warn("Failed to sign initrd - will use unsigned initrd");
-        }
+    /* Build custom GRUB stub with 6-option menu (NO shim_lock module)
+     * This stub presents options for Custom MOK vs VMware Original boot */
+    char stub_cfg[512], custom_stub[512], signed_stub[512];
+    snprintf(stub_cfg, sizeof(stub_cfg), "%s/stub-menu.cfg", work_dir);
+    snprintf(custom_stub, sizeof(custom_stub), "%s/grub-stub.efi", work_dir);
+    snprintf(signed_stub, sizeof(signed_stub), "%s/grub-stub-signed.efi", work_dir);
+    
+    log_info("Building custom GRUB stub (6-option menu, no shim_lock)...");
+    
+    /* Create stub menu configuration */
+    FILE *f = fopen(stub_cfg, "w");
+    if (f) {
+        fprintf(f,
+            "# Custom GRUB Stub Menu - 6 Options\n"
+            "# NO shim_lock = kernel loads without signature verification\n"
+            "\n"
+            "set timeout=5\n"
+            "set default=0\n"
+            "\n"
+            "insmod part_gpt\n"
+            "insmod part_msdos\n"
+            "insmod fat\n"
+            "insmod iso9660\n"
+            "insmod search\n"
+            "insmod chain\n"
+            "insmod configfile\n"
+            "\n"
+            "search --no-floppy --file --set=root /isolinux/isolinux.cfg\n"
+            "\n"
+            "menuentry \"1. Continue to Photon OS Installer (Custom MOK)\" {\n"
+            "    configfile /boot/grub2/grub-custom.cfg\n"
+            "}\n"
+            "\n"
+            "menuentry \"2. Continue to Photon OS Installer (VMware Original)\" {\n"
+            "    chainloader /EFI/BOOT/grubx64_real.efi\n"
+            "}\n"
+            "\n"
+            "menuentry \"3. MokManager - Enroll/Delete MOK Keys\" {\n"
+            "    chainloader /EFI/BOOT/MokManager.efi\n"
+            "}\n"
+            "\n"
+            "menuentry \"4. Reboot into UEFI Firmware Settings\" {\n"
+            "    fwsetup\n"
+            "}\n"
+            "\n"
+            "menuentry \"5. Reboot\" {\n"
+            "    reboot\n"
+            "}\n"
+            "\n"
+            "menuentry \"6. Shutdown\" {\n"
+            "    halt\n"
+            "}\n"
+        );
+        fclose(f);
     }
+    
+    /* Build GRUB stub WITHOUT shim_lock module */
+    snprintf(cmd, sizeof(cmd),
+        "grub2-mkimage -O x86_64-efi -o '%s' -c '%s' -p /EFI/BOOT "
+        "normal search configfile linux chain fat part_gpt part_msdos iso9660 "
+        "boot echo reboot halt test true loadenv read all_video gfxterm font efi_gop "
+        "2>/dev/null",
+        custom_stub, stub_cfg);
+    
+    if (run_cmd(cmd) != 0 || !file_exists(custom_stub)) {
+        log_error("Failed to build custom GRUB stub");
+        snprintf(cmd, sizeof(cmd), "rm -rf '%s'", work_dir);
+        run_cmd(cmd);
+        return -1;
+    }
+    
+    /* Sign custom stub with MOK key */
+    snprintf(cmd, sizeof(cmd), "sbsign --key '%s' --cert '%s' --output '%s' '%s' 2>/dev/null",
+        mok_key, mok_crt, signed_stub, custom_stub);
+    if (run_cmd(cmd) != 0 || !file_exists(signed_stub)) {
+        log_error("Failed to sign custom GRUB stub");
+        snprintf(cmd, sizeof(cmd), "rm -rf '%s'", work_dir);
+        run_cmd(cmd);
+        return -1;
+    }
+    log_info("Custom GRUB stub built and signed");
     
     log_info("Creating efiboot.img...");
     char new_efiboot[512], efiboot_path[512];
@@ -926,26 +981,33 @@ static int create_secure_boot_iso(void) {
     snprintf(efi_boot_dir, sizeof(efi_boot_dir), "%s/EFI/BOOT", efi_mount);
     mkdir_p(efi_boot_dir);
     
+    /* SUSE shim (Microsoft-signed) */
     snprintf(cmd, sizeof(cmd), "cp '%s' '%s/EFI/BOOT/BOOTX64.EFI'", shim_path, efi_mount);
     run_cmd(cmd);
-    snprintf(cmd, sizeof(cmd), "cp '%s' '%s/EFI/BOOT/grub.efi'", preloader, efi_mount);
+    
+    /* Custom GRUB stub (MOK-signed, 6-option menu, NO shim_lock) */
+    snprintf(cmd, sizeof(cmd), "cp '%s' '%s/EFI/BOOT/grub.efi'", signed_stub, efi_mount);
     run_cmd(cmd);
-    snprintf(cmd, sizeof(cmd), "cp '%s' '%s/EFI/BOOT/grubx64_real.efi'", grub_real, efi_mount);
+    snprintf(cmd, sizeof(cmd), "cp '%s' '%s/EFI/BOOT/grubx64.efi'", signed_stub, efi_mount);
     run_cmd(cmd);
+    
+    /* VMware's original GRUB for "VMware Original" option (will fail with unsigned kernel) */
+    if (file_exists(vmware_grub)) {
+        snprintf(cmd, sizeof(cmd), "cp '%s' '%s/EFI/BOOT/grubx64_real.efi'", vmware_grub, efi_mount);
+        run_cmd(cmd);
+    }
+    
+    /* MokManager for certificate enrollment */
     snprintf(cmd, sizeof(cmd), "cp '%s' '%s/EFI/BOOT/MokManager.efi'", mokm_path, efi_mount);
     run_cmd(cmd);
     snprintf(cmd, sizeof(cmd), "cp '%s' '%s/mmx64.efi'", mokm_path, efi_mount);
     run_cmd(cmd);
-    /* Ventoy certificate for GRUB chain (CN=grub) */
-    snprintf(cmd, sizeof(cmd), "cp '%s' '%s/ENROLL_THIS_KEY_IN_MOKMANAGER.cer'", mok_cert, efi_mount);
-    run_cmd(cmd);
-    /* Our MOK certificate for signed kernel (CN=HABv4 Secure Boot MOK) */
+    
+    /* MOK certificate for enrollment (CN=HABv4 Secure Boot MOK) */
     char our_mok_der[512];
     snprintf(our_mok_der, sizeof(our_mok_der), "%s/MOK.der", cfg.keys_dir);
-    if (file_exists(our_mok_der)) {
-        snprintf(cmd, sizeof(cmd), "cp '%s' '%s/ENROLL_MOK_FOR_KERNEL.cer'", our_mok_der, efi_mount);
-        run_cmd(cmd);
-    }
+    snprintf(cmd, sizeof(cmd), "cp '%s' '%s/ENROLL_THIS_KEY_IN_MOKMANAGER.cer'", our_mok_der, efi_mount);
+    run_cmd(cmd);
     
     /* IA32 (32-bit UEFI) support in efiboot.img */
     char ia32_shim[512], ia32_preloader[512], ia32_grub[512], ia32_mokm[512];
@@ -972,46 +1034,8 @@ static int create_secure_boot_iso(void) {
         log_info("IA32 (32-bit UEFI) support added to efiboot.img");
     }
     
-    /* CRITICAL: Create /grub/grub.cfg for Ventoy's grubx64_real.efi
-     * Ventoy's real GRUB has embedded prefix=/grub and looks for /grub/grub.cfg
-     * This file redirects to Photon OS's actual config at /boot/grub2/grub.cfg */
-    char grub_dir[512], grub_cfg[512];
-    snprintf(grub_dir, sizeof(grub_dir), "%s/grub", efi_mount);
-    mkdir_p(grub_dir);
-    snprintf(grub_cfg, sizeof(grub_cfg), "%s/grub/grub.cfg", efi_mount);
-    FILE *f = fopen(grub_cfg, "w");
-    if (f) {
-        fprintf(f,
-            "# Ventoy GRUB redirect to Photon OS config\n"
-            "# grubx64_real.efi looks here (prefix=/grub)\n"
-            "\n"
-            "# Load required modules\n"
-            "insmod part_gpt\n"
-            "insmod part_msdos\n"
-            "insmod search\n"
-            "insmod iso9660\n"
-            "\n"
-            "# Search for the ISO filesystem\n"
-            "search --no-floppy --file --set=root /isolinux/isolinux.cfg\n"
-            "\n"
-            "if [ -n \"$root\" ]; then\n"
-            "    set prefix=($root)/boot/grub2\n"
-            "    configfile $prefix/grub.cfg\n"
-            "else\n"
-            "    echo \"ERROR: Cannot find Photon OS ISO filesystem\"\n"
-            "    echo \"The search for /isolinux/isolinux.cfg failed.\"\n"
-            "    echo \"\"\n"
-            "    echo \"Available devices:\"\n"
-            "    ls\n"
-            "    echo \"\"\n"
-            "    echo \"Try manually: set root=(hdX,Y) then configfile /boot/grub2/grub.cfg\"\n"
-            "fi\n"
-        );
-        fclose(f);
-        log_info("Created /grub/grub.cfg redirect for Ventoy GRUB");
-    }
-    
-    /* Also create /EFI/BOOT/grub.cfg as backup */
+    /* Create /EFI/BOOT/grub.cfg for the custom stub */
+    char grub_cfg[512];
     snprintf(grub_cfg, sizeof(grub_cfg), "%s/EFI/BOOT/grub.cfg", efi_mount);
     f = fopen(grub_cfg, "w");
     if (f) {
@@ -1076,60 +1100,70 @@ static int create_secure_boot_iso(void) {
     snprintf(efi_boot_dir, sizeof(efi_boot_dir), "%s/EFI/BOOT", iso_extract);
     mkdir_p(efi_boot_dir);
     
+    /* SUSE shim (Microsoft-signed) */
     snprintf(cmd, sizeof(cmd), "cp '%s' '%s/EFI/BOOT/BOOTX64.EFI'", shim_path, iso_extract);
     run_cmd(cmd);
-    snprintf(cmd, sizeof(cmd), "cp '%s' '%s/EFI/BOOT/grub.efi'", preloader, iso_extract);
+    
+    /* Custom GRUB stub (MOK-signed, 6-option menu, NO shim_lock) */
+    snprintf(cmd, sizeof(cmd), "cp '%s' '%s/EFI/BOOT/grub.efi'", signed_stub, iso_extract);
     run_cmd(cmd);
-    snprintf(cmd, sizeof(cmd), "cp '%s' '%s/EFI/BOOT/grubx64_real.efi'", grub_real, iso_extract);
+    snprintf(cmd, sizeof(cmd), "cp '%s' '%s/EFI/BOOT/grubx64.efi'", signed_stub, iso_extract);
     run_cmd(cmd);
+    
+    /* VMware's original GRUB for "VMware Original" option */
+    if (file_exists(vmware_grub)) {
+        snprintf(cmd, sizeof(cmd), "cp '%s' '%s/EFI/BOOT/grubx64_real.efi'", vmware_grub, iso_extract);
+        run_cmd(cmd);
+    }
+    
+    /* MokManager */
     snprintf(cmd, sizeof(cmd), "cp '%s' '%s/EFI/BOOT/MokManager.efi'", mokm_path, iso_extract);
     run_cmd(cmd);
     snprintf(cmd, sizeof(cmd), "cp '%s' '%s/mmx64.efi'", mokm_path, iso_extract);
     run_cmd(cmd);
-    /* Ventoy certificate for GRUB chain (CN=grub) */
-    snprintf(cmd, sizeof(cmd), "cp '%s' '%s/ENROLL_THIS_KEY_IN_MOKMANAGER.cer'", mok_cert, iso_extract);
+    snprintf(cmd, sizeof(cmd), "cp '%s' '%s/MokManager.efi'", mokm_path, iso_extract);
     run_cmd(cmd);
-    /* Our MOK certificate for signed kernel (CN=HABv4 Secure Boot MOK) */
-    if (file_exists(our_mok_der)) {
-        snprintf(cmd, sizeof(cmd), "cp '%s' '%s/ENROLL_MOK_FOR_KERNEL.cer'", our_mok_der, iso_extract);
-        run_cmd(cmd);
-    }
     
-    /* CRITICAL: Create /grub/grub.cfg in ISO root for Ventoy's grubx64_real.efi */
-    char iso_grub_dir[512];
-    snprintf(iso_grub_dir, sizeof(iso_grub_dir), "%s/grub", iso_extract);
-    mkdir_p(iso_grub_dir);
-    snprintf(grub_cfg, sizeof(grub_cfg), "%s/grub/grub.cfg", iso_extract);
-    f = fopen(grub_cfg, "w");
+    /* MOK certificate for enrollment (CN=HABv4 Secure Boot MOK) */
+    snprintf(cmd, sizeof(cmd), "cp '%s' '%s/ENROLL_THIS_KEY_IN_MOKMANAGER.cer'", our_mok_der, iso_extract);
+    run_cmd(cmd);
+    
+    /* Create /boot/grub2/grub-custom.cfg for "Install (Custom MOK)" menu */
+    char grub_custom_cfg[512];
+    snprintf(grub_custom_cfg, sizeof(grub_custom_cfg), "%s/boot/grub2/grub-custom.cfg", iso_extract);
+    f = fopen(grub_custom_cfg, "w");
     if (f) {
         fprintf(f,
-            "# Ventoy GRUB redirect to Photon OS config\n"
-            "# grubx64_real.efi looks here (prefix=/grub)\n"
+            "# Custom MOK Boot Menu\n"
+            "# Kernel is MOK-signed - loads without shim_lock verification\n"
             "\n"
-            "# Load required modules\n"
+            "set timeout=10\n"
+            "set default=0\n"
+            "\n"
             "insmod part_gpt\n"
             "insmod part_msdos\n"
             "insmod search\n"
             "insmod iso9660\n"
+            "insmod linux\n"
             "\n"
-            "# Search for the ISO filesystem\n"
             "search --no-floppy --file --set=root /isolinux/isolinux.cfg\n"
             "\n"
-            "if [ -n \"$root\" ]; then\n"
-            "    set prefix=($root)/boot/grub2\n"
-            "    configfile $prefix/grub.cfg\n"
-            "else\n"
-            "    echo \"ERROR: Cannot find Photon OS ISO filesystem\"\n"
-            "    echo \"The search for /isolinux/isolinux.cfg failed.\"\n"
-            "    echo \"\"\n"
-            "    echo \"Available devices:\"\n"
-            "    ls\n"
-            "    echo \"\"\n"
-            "    echo \"Try manually: set root=(hdX,Y) then configfile /boot/grub2/grub.cfg\"\n"
-            "fi\n"
+            "menuentry \"Install (Custom MOK)\" {\n"
+            "    linux /isolinux/vmlinuz root=/dev/ram0 loglevel=3 photon.media=UUID=$BOOT_UUID\n"
+            "    initrd /isolinux/initrd.img\n"
+            "}\n"
+            "\n"
+            "menuentry \"Install (Custom MOK) - Debug Mode\" {\n"
+            "    linux /isolinux/vmlinuz root=/dev/ram0 loglevel=7 photon.media=UUID=$BOOT_UUID\n"
+            "    initrd /isolinux/initrd.img\n"
+            "}\n"
+            "\n"
+            "menuentry \"Back to Stub Menu\" {\n"
+            "    configfile /EFI/BOOT/grub.cfg\n"
+            "}\n"
         );
         fclose(f);
-        log_info("Created /grub/grub.cfg redirect in ISO root");
+        log_info("Created /boot/grub2/grub-custom.cfg for Custom MOK boot");
     }
     
     /* IA32 (32-bit UEFI) support in ISO root */
@@ -1184,9 +1218,12 @@ static int create_secure_boot_iso(void) {
         printf("\n");
         printf("Boot Chain:\n");
         printf("  UEFI -> BOOTX64.EFI (SUSE shim, Microsoft-signed)\n");
-        printf("       -> grub.efi (Ventoy PreLoader, CN=grub signed)\n");
-        printf("       -> grubx64_real.efi (Ventoy GRUB)\n");
-        printf("       -> vmlinuz (MOK-signed with CN=HABv4 Secure Boot MOK)\n");
+        printf("       -> grub.efi (Custom GRUB stub, MOK-signed, NO shim_lock)\n");
+        printf("       -> Stub Menu (5 sec timeout):\n");
+        printf("          1. Custom MOK    -> grub-custom.cfg -> vmlinuz (MOK-signed)\n");
+        printf("          2. VMware Orig   -> grubx64_real.efi -> grub.cfg -> vmlinuz (unsigned)\n");
+        printf("          3. MokManager    -> Enroll/Delete MOK keys\n");
+        printf("          4-6. UEFI/Reboot/Shutdown\n");
         printf("\n");
         printf("First Boot Instructions:\n");
         printf("  1. Boot from USB with UEFI Secure Boot ENABLED\n");
@@ -1194,11 +1231,12 @@ static int create_secure_boot_iso(void) {
         printf("     " YELLOW "NOTE:" RESET " If you see your laptop's security dialog instead,\n");
         printf("           check that CSM/Legacy boot is DISABLED in BIOS.\n");
         printf("  3. Select 'Enroll key from disk'\n");
-        printf("  4. Enroll BOTH certificates from USB root:\n");
-        printf("     a) ENROLL_THIS_KEY_IN_MOKMANAGER.cer (CN=grub - for Ventoy GRUB)\n");
-        printf("     b) ENROLL_MOK_FOR_KERNEL.cer (CN=HABv4 - for signed kernel)\n");
-        printf("  5. After enrolling both, select REBOOT (not continue)\n");
-        printf("  6. After reboot, select 'Install' - both GRUB and kernel are trusted\n");
+        printf("  4. Navigate to USB root -> ENROLL_THIS_KEY_IN_MOKMANAGER.cer\n");
+        printf("     (This is YOUR MOK certificate: CN=HABv4 Secure Boot MOK)\n");
+        printf("  5. Confirm and select REBOOT (not continue)\n");
+        printf("  6. After reboot, Stub Menu appears (5 sec timeout)\n");
+        printf("  7. Select '1. Continue to Photon OS Installer (Custom MOK)'\n");
+        printf("  8. Select 'Install (Custom MOK)' to begin installation\n");
         if (cfg.efuse_usb_mode) {
             printf("\neFuse USB Mode:\n");
             printf("  - Insert USB dongle labeled 'EFUSE_SIM' before boot\n");
