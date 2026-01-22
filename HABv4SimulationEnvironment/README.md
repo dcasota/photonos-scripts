@@ -13,10 +13,11 @@ This environment provides tools to create Secure Boot enabled ISOs that work on 
 
 ## Quick Start
 
-### Build and Run
+### Clone and Build
 
 ```bash
-cd src
+git clone https://github.com/dcasota/photonos-scripts.git
+cd photonos-scripts/HABv4SimulationEnvironment/src
 make
 
 # Full setup (keys, eFuse, Ventoy components)
@@ -138,7 +139,7 @@ git clone git://git.kernel.org/pub/scm/linux/kernel/git/jejb/efitools.git
 ### Compile
 
 ```bash
-cd src
+cd photonos-scripts/HABv4SimulationEnvironment/src
 make              # Build main tool + hab_iso
 make install      # Install to /usr/local/bin
 make hab-preloader  # Build HAB PreLoader (requires efitools)
