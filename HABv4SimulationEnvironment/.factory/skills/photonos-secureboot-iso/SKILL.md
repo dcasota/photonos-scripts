@@ -10,13 +10,26 @@ description: |
 
 ## Overview
 
-This skill covers creating Secure Boot enabled ISOs for Photon OS that work on consumer laptops with UEFI Secure Boot enabled. It uses a **custom GRUB stub** built with `grub2-mkimage` that excludes the `shim_lock` module, allowing the MOK-signed kernel to load.
+This skill covers creating Secure Boot enabled ISOs for Photon OS that work on consumer laptops with UEFI Secure Boot enabled. It uses a **custom GRUB stub** built with `grub2-mkimage` that excludes the `shim_lock` module, combined with a MOK-signed kernel.
 
 ## Prerequisites
 
 - Photon OS build environment
-- Required packages: `xorriso`, `sbsigntools`, `dosfstools`, `grub2-efi`
+- Required packages: `xorriso`, `sbsigntools`, `dosfstools`, `grub2-efi`, `sfdisk`
 - SUSE shim components (embedded in repository, auto-extracted)
+
+## Quick Start
+
+```bash
+# Build Secure Boot ISO (simplest - does everything automatically)
+./PhotonOS-HABv4Emulation-ISOCreator -b
+
+# Build ISO with eFuse USB dongle
+./PhotonOS-HABv4Emulation-ISOCreator --build-iso --setup-efuse --create-efuse-usb=/dev/sdX
+
+# Diagnose existing ISO
+./PhotonOS-HABv4Emulation-ISOCreator -D /path/to/iso
+```
 
 ## Architecture
 
@@ -44,27 +57,14 @@ grub.efi (Custom GRUB stub, MOK-signed, NO shim_lock)
     │
     └─→ "2. VMware Original" path:
         chainloader grubx64_real.efi
-        → VMware's GRUB (has shim_lock) → FAILS: unsigned kernel rejected
+        → VMware's GRUB (has shim_lock) → unsigned kernel rejected
 ```
 
-## CRITICAL: Why Custom GRUB Stub is Necessary
+## Why Custom GRUB Stub Without shim_lock
 
-### The Problem: VMware's GRUB Has shim_lock Module
+VMware's GRUB includes the `shim_lock` verifier module which calls shim's `Verify()` for kernel loading. While our MOK-signed kernel should be accepted (the certificate is in MokList), we build a custom stub without `shim_lock` to ensure compatibility across different firmware implementations and to provide a fallback path.
 
-VMware's GRUB (`grubx64.efi`) includes the `shim_lock` verifier:
-1. Detects it was loaded via shim (Secure Boot chain)
-2. Intercepts all file loading operations (kernel, initrd, modules)
-3. Calls shim's `Verify()` protocol to check signatures
-4. Rejects any file that shim doesn't trust
-
-**Result**: `shim_lock` calls `Verify(vmlinuz)` → unsigned kernel → **"bad shim signature"**
-
-### The Solution: Custom GRUB Stub + MOK-Signed Kernel
-
-1. Build custom GRUB stub with `grub2-mkimage` **without shim_lock**
-2. Sign the custom stub with MOK key
-3. Sign the kernel with MOK key
-4. User enrolls ONE certificate (our MOK)
+The custom stub is still verified by shim via MOK signature, maintaining the secure boot chain up to GRUB.
 
 ## Stub Menu (5 Second Timeout)
 
@@ -75,7 +75,7 @@ VMware's GRUB (`grubx64.efi`) includes the `shim_lock` verifier:
    
 2. Continue to Photon OS Installer (VMware Original)
    → chainloader /EFI/BOOT/grubx64_real.efi
-   → Note: Will fail with "bad shim signature" on consumer laptops
+   → Note: Will fail with "bad shim signature" (unsigned kernel)
    
 3. MokManager - Enroll/Delete MOK Keys
    → chainloader /EFI/BOOT/MokManager.efi
@@ -90,16 +90,61 @@ VMware's GRUB (`grubx64.efi`) includes the `shim_lock` verifier:
    → halt
 ```
 
-## File Purposes
+## Tool Usage
 
-| File | Type | Purpose |
-|------|------|---------|
-| `BOOTX64.EFI` | SUSE shim | First stage, Microsoft-signed |
-| `grub.efi` | Custom GRUB stub | MOK-signed, NO shim_lock, 6-option menu |
-| `grubx64_real.efi` | VMware's GRUB | For "VMware Original" option (has shim_lock) |
-| `MokManager.efi` | MOK manager | Certificate enrollment UI |
-| `grub-custom.cfg` | GRUB config | "Install (Custom MOK)" menu |
-| `vmlinuz` | Kernel | MOK-signed for Custom MOK path |
+### Command Line Options
+
+```
+Usage: PhotonOS-HABv4Emulation-ISOCreator [OPTIONS]
+
+Options:
+  -r, --release=VERSION      Photon OS release: 4.0, 5.0, 6.0 (default: 5.0)
+  -i, --input=ISO            Input ISO file (default: auto-detect)
+  -o, --output=ISO           Output ISO file (default: <input>-secureboot.iso)
+  -k, --keys-dir=DIR         Keys directory (default: /root/hab_keys)
+  -e, --efuse-dir=DIR        eFuse directory (default: /root/efuse_sim)
+  -m, --mok-days=DAYS        MOK certificate validity in days (default: 180)
+  -b, --build-iso            Build Secure Boot ISO
+  -g, --generate-keys        Generate cryptographic keys
+  -s, --setup-efuse          Setup eFuse simulation
+  -u, --create-efuse-usb=DEV Create eFuse USB dongle on device
+  -E, --efuse-usb            Enable eFuse USB verification in GRUB
+  -F, --full-kernel-build    Build kernel from source (takes hours)
+  -D, --diagnose=ISO         Diagnose an existing ISO for Secure Boot issues
+  -c, --clean                Clean up all artifacts
+  -v, --verbose              Verbose output
+  -h, --help                 Show help
+```
+
+### Examples
+
+```bash
+# Generate keys and build ISO
+./PhotonOS-HABv4Emulation-ISOCreator -b
+
+# Build ISO for Photon OS 4.0
+./PhotonOS-HABv4Emulation-ISOCreator --release 4.0 --build-iso
+
+# Build ISO with eFuse USB dongle
+./PhotonOS-HABv4Emulation-ISOCreator --build-iso --create-efuse-usb=/dev/sdd
+
+# Build ISO with eFuse verification enabled
+./PhotonOS-HABv4Emulation-ISOCreator --build-iso --efuse-usb
+
+# Diagnose why an ISO isn't booting
+./PhotonOS-HABv4Emulation-ISOCreator -D /path/to/photon.iso
+
+# Clean up all generated artifacts
+./PhotonOS-HABv4Emulation-ISOCreator -c
+```
+
+### Embedded Components
+
+SUSE shim components are embedded in the repository at `data/`:
+- `shim-suse.efi.gz` - SUSE shim (Microsoft-signed)
+- `MokManager-suse.efi.gz` - MOK Manager
+
+These are automatically extracted when building an ISO. No manual download required.
 
 ## Required ISO Structure
 
@@ -107,7 +152,6 @@ VMware's GRUB (`grubx64.efi`) includes the `shim_lock` verifier:
 ISO Root/
 ├── ENROLL_THIS_KEY_IN_MOKMANAGER.cer    # MOK certificate for enrollment
 ├── MokManager.efi                        # SUSE MokManager at root
-├── mmx64.efi                             # MokManager (alternate name)
 ├── EFI/BOOT/
 │   ├── BOOTX64.EFI                       # SUSE shim (Microsoft-signed)
 │   ├── grub.efi                          # Custom GRUB stub (MOK-signed)
@@ -119,34 +163,9 @@ ISO Root/
 │   ├── grub.cfg                          # VMware's original menu
 │   └── grub-custom.cfg                   # Custom MOK menu
 └── isolinux/                             # BIOS/MBR boot support
-    ├── isolinux.bin
-    ├── isolinux.cfg
     ├── vmlinuz                           # MOK-signed kernel
     └── initrd.img
 ```
-
-## Tool Usage
-
-### PhotonOS-HABv4Emulation-ISOCreator
-
-```bash
-# Default setup (generates keys only)
-./PhotonOS-HABv4Emulation-ISOCreator
-
-# Build Secure Boot ISO (auto-extracts embedded SUSE shim components)
-./PhotonOS-HABv4Emulation-ISOCreator -b
-
-# Diagnose existing ISO
-./PhotonOS-HABv4Emulation-ISOCreator -D /path/to/iso
-```
-
-### Embedded Components
-
-SUSE shim components are embedded in the repository at `data/`:
-- `shim-suse.efi.gz` - SUSE shim (Microsoft-signed)
-- `MokManager-suse.efi.gz` - MOK Manager
-
-These are automatically extracted when building an ISO. No manual download required.
 
 ## First Boot Procedure
 
@@ -169,7 +188,7 @@ sync
 
 1. Boot from USB
 2. **EXPECT**: Blue MokManager screen (shim's Security Violation)
-   - If laptop's dialog appears → check BIOS settings (disable CSM)
+   - If laptop's dialog appears → disable CSM in BIOS
 3. Select **"Enroll key from disk"**
 4. Navigate to USB root
 5. Select `ENROLL_THIS_KEY_IN_MOKMANAGER.cer`
@@ -187,19 +206,13 @@ After reboot:
 
 ### "bad shim signature" Error
 
-**Symptom**: Selecting "Install" shows `bad shim signature` error.
-
-**Cause**: You selected "VMware Original" which uses VMware's GRUB with shim_lock.
+**Cause**: Selected "VMware Original" which uses VMware's GRUB with shim_lock.
 
 **Solution**: Reboot and select **"1. Custom MOK"** option instead.
 
 ### Drops to grub> Prompt
 
-**Symptom**: After MOK enrollment, boots to bare `grub>` prompt.
-
-**Cause**: GRUB can't find its config file.
-
-**Manual boot** (at grub> prompt):
+**Manual boot** at grub> prompt:
 ```
 grub> search --no-floppy --file --set=root /isolinux/isolinux.cfg
 grub> configfile ($root)/boot/grub2/grub-custom.cfg
@@ -207,13 +220,13 @@ grub> configfile ($root)/boot/grub2/grub-custom.cfg
 
 ### Laptop Shows Security Dialog Instead of Blue MokManager
 
-**Cause**: CSM/Legacy boot is enabled, or booting in non-UEFI mode.
+**Cause**: CSM/Legacy boot is enabled.
 
-**Solution**:
-1. Enter BIOS setup
-2. Disable CSM/Legacy completely
-3. Enable pure UEFI mode
-4. Ensure Secure Boot is enabled
+**Solution**: Disable CSM/Legacy completely in BIOS, enable pure UEFI mode.
+
+### "parted: command not found" (Fixed)
+
+The tool now uses `sfdisk` instead of `parted` for eFuse USB creation.
 
 ## Quick Reference
 
@@ -222,9 +235,4 @@ grub> configfile ($root)/boot/grub2/grub-custom.cfg
 | "bad shim signature" | Selected VMware Original | Select Custom MOK instead |
 | Laptop security dialog | CSM enabled | Disable CSM in BIOS |
 | grub> prompt | Config not found | Manual boot or rebuild ISO |
-| "SBAT self-check failed" | Old shim | Rebuild with latest embedded shim |
-
-## Related Documentation
-
-- [BOOT_PROCESS.md](../../../docs/BOOT_PROCESS.md) - Detailed boot chain
-- [TROUBLESHOOTING.md](../../../docs/TROUBLESHOOTING.md) - Complete troubleshooting
+| ISO not built with --create-efuse-usb | Old bug (fixed) | Update to latest version |
