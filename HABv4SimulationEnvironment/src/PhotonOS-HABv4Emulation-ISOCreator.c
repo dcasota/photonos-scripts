@@ -35,7 +35,7 @@
 #include <fcntl.h>
 #include <time.h>
 
-#define VERSION "1.1.0"
+#define VERSION "1.1.1"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */

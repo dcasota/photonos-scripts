@@ -55,7 +55,7 @@ make
 | `-v` | `--verbose` | Off | No | Verbose output |
 | `-h` | `--help` | — | No | Show help |
 
-*Auto = When no action flags are specified, `-g -s -d` are enabled by default.
+*Auto = When no action flags are specified, `-g -s -d` are enabled by default. When `-b` is used, missing prerequisites are auto-detected and enabled.
 
 ### Default Behavior (No Parameters)
 
@@ -70,6 +70,18 @@ This performs:
 3. Download SUSE shim and MokManager from Ventoy
 
 **Note:** ISO is NOT built by default. Use `-b` to build an ISO.
+
+### Auto-Detection with `-b`
+
+When using `-b` (build ISO), the tool automatically detects and enables missing prerequisites:
+- If keys don't exist → auto-enables `-g` (generate keys) and `-s` (setup eFuse)
+- If Ventoy components don't exist → auto-enables `-d` (download Ventoy)
+
+This means you can simply run:
+```bash
+./PhotonOS-HABv4Emulation-ISOCreator -b
+```
+Even after cleanup, and it will automatically set up everything needed.
 
 ## Examples
 
@@ -225,6 +237,7 @@ The tool generates these keys in the keys directory:
 
 ## Version History
 
+- **v1.1.1** - Auto-detect missing prerequisites when using `-b`, dynamic "Next steps" output
 - **v1.1.0** - Restored `--efuse-usb` and `--full-kernel-build`, fixed MOK default to 180 days
 - **v1.0.0** - Initial C implementation replacing bash script
 
