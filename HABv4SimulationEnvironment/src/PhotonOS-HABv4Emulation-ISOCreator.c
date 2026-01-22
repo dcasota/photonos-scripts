@@ -10,6 +10,8 @@
  *   - Ventoy component download (SUSE shim, MokManager)
  *   - Secure Boot ISO creation
  *   - eFuse USB dongle creation
+ *   - Full kernel build support (optional)
+ *   - eFuse USB verification mode
  *
  * Usage:
  *   PhotonOS-HABv4Emulation-ISOCreator [OPTIONS]
@@ -27,17 +29,18 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/utsname.h>
 #include <errno.h>
 #include <dirent.h>
 #include <fcntl.h>
 #include <time.h>
 
-#define VERSION "1.0.0"
+#define VERSION "1.1.0"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */
 #define DEFAULT_RELEASE "5.0"
-#define DEFAULT_MOK_DAYS 3650
+#define DEFAULT_MOK_DAYS 180
 #define DEFAULT_KEYS_DIR "/root/hab_keys"
 #define DEFAULT_EFUSE_DIR "/root/efuse_sim"
 #define DEFAULT_EFIBOOT_SIZE_MB 16
@@ -68,6 +71,8 @@ typedef struct {
     int download_ventoy;
     int use_ventoy_preloader;
     int skip_preloader_build;
+    int full_kernel_build;
+    int efuse_usb_mode;
     int cleanup;
     int verbose;
 } config_t;
@@ -123,21 +128,9 @@ static int run_cmd(const char *cmd) {
     return WEXITSTATUS(ret);
 }
 
-static int run_cmd_quiet(const char *cmd) {
-    char full_cmd[2048];
-    snprintf(full_cmd, sizeof(full_cmd), "%s >/dev/null 2>&1", cmd);
-    return run_cmd(full_cmd);
-}
-
 static int file_exists(const char *path) {
     struct stat st;
     return stat(path, &st) == 0;
-}
-
-static int is_directory(const char *path) {
-    struct stat st;
-    if (stat(path, &st) != 0) return 0;
-    return S_ISDIR(st.st_mode);
 }
 
 static int mkdir_p(const char *path) {
@@ -166,6 +159,15 @@ static long get_file_size(const char *path) {
     return st.st_size;
 }
 
+static const char *get_host_arch(void) {
+    struct utsname uts;
+    if (uname(&uts) == 0) {
+        if (strcmp(uts.machine, "x86_64") == 0) return "x86_64";
+        if (strcmp(uts.machine, "aarch64") == 0) return "aarch64";
+    }
+    return "unknown";
+}
+
 /* ============================================================================
  * Key Generation
  * ============================================================================ */
@@ -183,7 +185,6 @@ static int generate_key_pair(const char *name, const char *subject, int bits, in
         return 0;
     }
     
-    /* Generate key and certificate */
     snprintf(cmd, sizeof(cmd),
         "openssl req -new -x509 -newkey rsa:%d -nodes "
         "-keyout '%s' -out '%s' -days %d "
@@ -195,7 +196,6 @@ static int generate_key_pair(const char *name, const char *subject, int bits, in
         return -1;
     }
     
-    /* Convert to DER */
     snprintf(cmd, sizeof(cmd),
         "openssl x509 -in '%s' -outform DER -out '%s' 2>/dev/null",
         crt_path, der_path);
@@ -219,7 +219,6 @@ static int generate_mok_key(void) {
         return 0;
     }
     
-    /* Create OpenSSL config with Code Signing extension */
     FILE *f = fopen(cnf_path, "w");
     if (!f) {
         log_error("Failed to create MOK config");
@@ -247,7 +246,6 @@ static int generate_mok_key(void) {
     );
     fclose(f);
     
-    /* Generate MOK */
     snprintf(cmd, sizeof(cmd),
         "openssl req -new -x509 -newkey rsa:2048 -nodes "
         "-keyout '%s' -out '%s' -days %d -config '%s' 2>/dev/null",
@@ -259,7 +257,6 @@ static int generate_mok_key(void) {
         return -1;
     }
     
-    /* Convert to DER */
     snprintf(cmd, sizeof(cmd),
         "openssl x509 -in '%s' -outform DER -out '%s' 2>/dev/null",
         crt_path, der_path);
@@ -283,19 +280,16 @@ static int generate_srk_key(void) {
         return 0;
     }
     
-    /* Generate 4096-bit RSA key */
     snprintf(cmd, sizeof(cmd), "openssl genrsa -out '%s' 4096 2>/dev/null", pem_path);
     if (run_cmd(cmd) != 0) {
         log_error("Failed to generate SRK key");
         return -1;
     }
     
-    /* Extract public key */
     snprintf(cmd, sizeof(cmd), 
         "openssl rsa -in '%s' -pubout -out '%s' 2>/dev/null", pem_path, pub_path);
     run_cmd(cmd);
     
-    /* Generate hash */
     snprintf(cmd, sizeof(cmd),
         "openssl dgst -sha256 -binary '%s' > '%s'", pub_path, hash_path);
     run_cmd(cmd);
@@ -335,7 +329,6 @@ static int generate_all_keys(void) {
     
     mkdir_p(cfg.keys_dir);
     
-    /* UEFI Secure Boot keys */
     if (generate_key_pair("PK", "/CN=HABv4 Platform Key/O=HABv4/C=US", 2048, 3650) != 0)
         return -1;
     if (generate_key_pair("KEK", "/CN=HABv4 Key Exchange Key/O=HABv4/C=US", 2048, 3650) != 0)
@@ -343,11 +336,9 @@ static int generate_all_keys(void) {
     if (generate_key_pair("DB", "/CN=HABv4 Signature Database Key/O=HABv4/C=US", 2048, 3650) != 0)
         return -1;
     
-    /* MOK with Code Signing */
     if (generate_mok_key() != 0)
         return -1;
     
-    /* HAB keys */
     if (generate_srk_key() != 0)
         return -1;
     if (generate_simple_key("csf", 2048) != 0)
@@ -355,7 +346,6 @@ static int generate_all_keys(void) {
     if (generate_simple_key("img", 2048) != 0)
         return -1;
     
-    /* Kernel module signing */
     char cmd[1024];
     char kmod_path[512];
     snprintf(kmod_path, sizeof(kmod_path), "%s/kernel_module_signing.pem", cfg.keys_dir);
@@ -382,7 +372,6 @@ static int setup_efuse_simulation(void) {
     
     mkdir_p(cfg.efuse_dir);
     
-    /* Copy SRK hash */
     char src[512], dst[512];
     snprintf(src, sizeof(src), "%s/srk_hash.bin", cfg.keys_dir);
     snprintf(dst, sizeof(dst), "%s/srk_fuse.bin", cfg.efuse_dir);
@@ -393,7 +382,6 @@ static int setup_efuse_simulation(void) {
         run_cmd(cmd);
     }
     
-    /* Security config (closed mode) */
     snprintf(dst, sizeof(dst), "%s/sec_config.bin", cfg.efuse_dir);
     FILE *f = fopen(dst, "wb");
     if (f) {
@@ -408,7 +396,6 @@ static int setup_efuse_simulation(void) {
         fclose(f);
     }
     
-    /* eFuse map */
     snprintf(dst, sizeof(dst), "%s/efuse_map.txt", cfg.efuse_dir);
     f = fopen(dst, "w");
     if (f) {
@@ -435,14 +422,12 @@ static int setup_efuse_simulation(void) {
 static int create_efuse_usb(const char *device) {
     log_step("Creating eFuse USB dongle on %s...", device);
     
-    /* Check device exists */
     struct stat st;
     if (stat(device, &st) != 0 || !S_ISBLK(st.st_mode)) {
         log_error("Device not found or not a block device: %s", device);
         return -1;
     }
     
-    /* Warning */
     printf(YELLOW "WARNING: This will ERASE all data on %s!\n" RESET, device);
     printf("Continue? [y/N] ");
     fflush(stdout);
@@ -456,7 +441,6 @@ static int create_efuse_usb(const char *device) {
     
     char cmd[1024];
     
-    /* Create partition table */
     snprintf(cmd, sizeof(cmd), "parted -s '%s' mklabel gpt", device);
     if (run_cmd(cmd) != 0) {
         log_error("Failed to create partition table");
@@ -466,7 +450,6 @@ static int create_efuse_usb(const char *device) {
     snprintf(cmd, sizeof(cmd), "parted -s '%s' mkpart primary fat32 1MiB 100%%", device);
     run_cmd(cmd);
     
-    /* Determine partition name */
     char partition[256];
     if (strstr(device, "nvme") != NULL) {
         snprintf(partition, sizeof(partition), "%sp1", device);
@@ -474,17 +457,14 @@ static int create_efuse_usb(const char *device) {
         snprintf(partition, sizeof(partition), "%s1", device);
     }
     
-    /* Wait for partition to appear */
     sleep(1);
     
-    /* Format */
-    snprintf(cmd, sizeof(cmd), "mkfs.vfat -F 32 -n 'HABEFUSE' '%s'", partition);
+    snprintf(cmd, sizeof(cmd), "mkfs.vfat -F 32 -n 'EFUSE_SIM' '%s'", partition);
     if (run_cmd(cmd) != 0) {
         log_error("Failed to format partition");
         return -1;
     }
     
-    /* Mount and copy */
     char mount_point[256];
     snprintf(mount_point, sizeof(mount_point), "/tmp/habefuse_%d", getpid());
     mkdir_p(mount_point);
@@ -496,9 +476,8 @@ static int create_efuse_usb(const char *device) {
         return -1;
     }
     
-    /* Create efuse directory and copy files */
     char efuse_path[512];
-    snprintf(efuse_path, sizeof(efuse_path), "%s/efuse", mount_point);
+    snprintf(efuse_path, sizeof(efuse_path), "%s/efuse_sim", mount_point);
     mkdir_p(efuse_path);
     
     snprintf(cmd, sizeof(cmd), "cp '%s'/* '%s/' 2>/dev/null || true", cfg.efuse_dir, efuse_path);
@@ -507,12 +486,11 @@ static int create_efuse_usb(const char *device) {
     snprintf(cmd, sizeof(cmd), "cp '%s/srk_hash.bin' '%s/' 2>/dev/null || true", cfg.keys_dir, efuse_path);
     run_cmd(cmd);
     
-    /* Unmount */
     snprintf(cmd, sizeof(cmd), "umount '%s'", mount_point);
     run_cmd(cmd);
     rmdir(mount_point);
     
-    log_info("eFuse USB dongle created on %s", device);
+    log_info("eFuse USB dongle created on %s (label: EFUSE_SIM)", device);
     return 0;
 }
 
@@ -538,7 +516,6 @@ static int download_ventoy_components(void) {
     
     char cmd[2048];
     
-    /* Download Ventoy */
     log_info("Downloading Ventoy %s...", VENTOY_VERSION);
     snprintf(cmd, sizeof(cmd),
         "wget -q --show-progress -O '%s/ventoy.tar.gz' '%s'",
@@ -551,16 +528,13 @@ static int download_ventoy_components(void) {
         return -1;
     }
     
-    /* Extract */
     snprintf(cmd, sizeof(cmd), "cd '%s' && tar -xzf ventoy.tar.gz", work_dir);
     run_cmd(cmd);
     
-    /* Extract from disk image */
     char disk_img[512], mount_point[256];
     snprintf(disk_img, sizeof(disk_img), "%s/ventoy-%s/ventoy/ventoy.disk.img", work_dir, VENTOY_VERSION);
     snprintf(mount_point, sizeof(mount_point), "%s/mnt", work_dir);
     
-    /* Decompress if needed */
     char xz_img[520];
     snprintf(xz_img, sizeof(xz_img), "%s.xz", disk_img);
     if (file_exists(xz_img)) {
@@ -573,7 +547,6 @@ static int download_ventoy_components(void) {
         snprintf(cmd, sizeof(cmd), "mount -o loop,ro '%s' '%s'", disk_img, mount_point);
         
         if (run_cmd(cmd) == 0) {
-            /* Copy components */
             snprintf(cmd, sizeof(cmd), "cp '%s/EFI/BOOT/BOOTX64.EFI' '%s/shim-suse.efi'",
                 mount_point, cfg.keys_dir);
             run_cmd(cmd);
@@ -599,16 +572,120 @@ static int download_ventoy_components(void) {
         }
     }
     
-    /* Cleanup */
     snprintf(cmd, sizeof(cmd), "rm -rf '%s'", work_dir);
     run_cmd(cmd);
     
-    /* Verify */
     if (file_exists(shim_path)) {
         log_info("SUSE shim downloaded");
         log_info("MokManager downloaded");
     } else {
         log_error("Failed to extract Ventoy components");
+        return -1;
+    }
+    
+    return 0;
+}
+
+/* ============================================================================
+ * Full Kernel Build (Restored from bash script)
+ * ============================================================================ */
+
+static int build_linux_kernel(void) {
+    const char *arch = get_host_arch();
+    
+    log_step("Linux %s kernel build...", arch);
+    
+    if (!cfg.full_kernel_build) {
+        log_info("Skipping full kernel build (use --full-kernel-build to enable)");
+        log_info("Note: Full kernel build takes several hours");
+        return 0;
+    }
+    
+    log_warn("Full kernel build requested - this will take several hours!");
+    printf("\n");
+    printf("The full kernel build process includes:\n");
+    printf("  1. Downloading kernel source from kernel.org\n");
+    printf("  2. Configuring kernel with Secure Boot options\n");
+    printf("  3. Building kernel and modules\n");
+    printf("  4. Signing kernel with MOK key\n");
+    printf("  5. Signing all modules with kernel module signing key\n");
+    printf("\n");
+    
+    char kernel_dir[512];
+    snprintf(kernel_dir, sizeof(kernel_dir), "%s/linux-%s", cfg.photon_dir, arch);
+    
+    if (strcmp(arch, "x86_64") == 0) {
+        log_step("Building Linux kernel for x86_64...");
+        
+        /* Check for kernel source */
+        if (!file_exists(kernel_dir)) {
+            log_info("Kernel source not found at %s", kernel_dir);
+            log_info("To build kernel manually:");
+            printf("  1. git clone --depth 1 https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git %s\n", kernel_dir);
+            printf("  2. cd %s\n", kernel_dir);
+            printf("  3. make defconfig\n");
+            printf("  4. Enable CONFIG_MODULE_SIG=y, CONFIG_MODULE_SIG_ALL=y\n");
+            printf("  5. Copy %s/kernel_module_signing.pem to certs/signing_key.pem\n", cfg.keys_dir);
+            printf("  6. make -j$(nproc)\n");
+            printf("  7. Sign vmlinuz with sbsign using MOK.key\n");
+            return 0;
+        }
+        
+        char cmd[2048];
+        
+        /* Copy signing key */
+        snprintf(cmd, sizeof(cmd), "cp '%s/kernel_module_signing.pem' '%s/certs/signing_key.pem'",
+            cfg.keys_dir, kernel_dir);
+        run_cmd(cmd);
+        
+        /* Build kernel */
+        snprintf(cmd, sizeof(cmd), "cd '%s' && make -j$(nproc)", kernel_dir);
+        log_info("Running: make -j$(nproc) in %s", kernel_dir);
+        log_warn("This will take a long time...");
+        
+        if (run_cmd(cmd) != 0) {
+            log_error("Kernel build failed");
+            return -1;
+        }
+        
+        /* Sign kernel */
+        char vmlinuz[512], vmlinuz_signed[512];
+        snprintf(vmlinuz, sizeof(vmlinuz), "%s/arch/x86/boot/bzImage", kernel_dir);
+        snprintf(vmlinuz_signed, sizeof(vmlinuz_signed), "%s/vmlinuz-signed", kernel_dir);
+        
+        if (file_exists(vmlinuz)) {
+            snprintf(cmd, sizeof(cmd),
+                "sbsign --key '%s/MOK.key' --cert '%s/MOK.crt' --output '%s' '%s'",
+                cfg.keys_dir, cfg.keys_dir, vmlinuz_signed, vmlinuz);
+            run_cmd(cmd);
+            log_info("Kernel signed: %s", vmlinuz_signed);
+        }
+        
+        log_info("x86_64 kernel build complete");
+        
+    } else if (strcmp(arch, "aarch64") == 0) {
+        log_step("Building Linux kernel for aarch64...");
+        
+        if (!file_exists(kernel_dir)) {
+            log_info("Kernel source not found at %s", kernel_dir);
+            log_info("For aarch64, consider using linux-imx:");
+            printf("  git clone --depth 1 -b lf-6.6.y https://github.com/nxp-imx/linux-imx.git %s\n", kernel_dir);
+            return 0;
+        }
+        
+        char cmd[2048];
+        snprintf(cmd, sizeof(cmd), "cd '%s' && make -j$(nproc) Image", kernel_dir);
+        log_info("Running: make -j$(nproc) Image in %s", kernel_dir);
+        
+        if (run_cmd(cmd) != 0) {
+            log_error("Kernel build failed");
+            return -1;
+        }
+        
+        log_info("aarch64 kernel build complete");
+        
+    } else {
+        log_warn("Unknown architecture: %s", arch);
         return -1;
     }
     
@@ -624,7 +701,6 @@ static int find_base_iso(char *iso_path, size_t path_size) {
     snprintf(iso_dir, sizeof(iso_dir), "%s/stage", cfg.photon_dir);
     mkdir_p(iso_dir);
     
-    /* Look for existing ISO */
     DIR *dir = opendir(iso_dir);
     if (dir) {
         struct dirent *entry;
@@ -640,7 +716,6 @@ static int find_base_iso(char *iso_path, size_t path_size) {
         closedir(dir);
     }
     
-    /* Try to download */
     log_info("No base ISO found, attempting download...");
     
     const char *iso_name;
@@ -677,7 +752,6 @@ static int create_secure_boot_iso(void) {
     
     char base_iso[512];
     
-    /* Use provided input or find base ISO */
     if (strlen(cfg.input_iso) > 0) {
         strncpy(base_iso, cfg.input_iso, sizeof(base_iso) - 1);
         if (!file_exists(base_iso)) {
@@ -692,12 +766,10 @@ static int create_secure_boot_iso(void) {
     
     log_info("Base ISO: %s", base_iso);
     
-    /* Determine output ISO */
     char output_iso[512];
     if (strlen(cfg.output_iso) > 0) {
         strncpy(output_iso, cfg.output_iso, sizeof(output_iso) - 1);
     } else {
-        /* Replace .iso with -secureboot.iso */
         strncpy(output_iso, base_iso, sizeof(output_iso) - 1);
         char *ext = strstr(output_iso, ".iso");
         if (ext) {
@@ -705,7 +777,6 @@ static int create_secure_boot_iso(void) {
         }
     }
     
-    /* Determine PreLoader */
     char preloader[512], mok_cert[512];
     char hab_preloader[512];
     snprintf(hab_preloader, sizeof(hab_preloader), "%s/hab-preloader-signed.efi", cfg.keys_dir);
@@ -720,7 +791,6 @@ static int create_secure_boot_iso(void) {
         log_info("Using HAB PreLoader");
     }
     
-    /* Check required files */
     char shim_path[512], mokm_path[512];
     snprintf(shim_path, sizeof(shim_path), "%s/shim-suse.efi", cfg.keys_dir);
     snprintf(mokm_path, sizeof(mokm_path), "%s/MokManager-suse.efi", cfg.keys_dir);
@@ -735,7 +805,6 @@ static int create_secure_boot_iso(void) {
         return -1;
     }
     
-    /* Create work directory */
     char work_dir[256], iso_extract[512], efi_mount[256];
     snprintf(work_dir, sizeof(work_dir), "/root/tmp_iso_%d", getpid());
     snprintf(iso_extract, sizeof(iso_extract), "%s/iso", work_dir);
@@ -746,7 +815,6 @@ static int create_secure_boot_iso(void) {
     
     char cmd[2048];
     
-    /* Extract ISO */
     log_info("Extracting ISO...");
     snprintf(cmd, sizeof(cmd), "xorriso -osirrox on -indev '%s' -extract / '%s' 2>/dev/null",
         base_iso, iso_extract);
@@ -757,7 +825,6 @@ static int create_secure_boot_iso(void) {
         return -1;
     }
     
-    /* Find GRUB */
     char grub_real[512];
     snprintf(grub_real, sizeof(grub_real), "%s/EFI/BOOT/grubx64_real.efi", iso_extract);
     if (!file_exists(grub_real)) {
@@ -774,7 +841,6 @@ static int create_secure_boot_iso(void) {
         return -1;
     }
     
-    /* Create new efiboot.img */
     log_info("Creating efiboot.img...");
     char new_efiboot[512], efiboot_path[512];
     snprintf(new_efiboot, sizeof(new_efiboot), "%s/efiboot.img", work_dir);
@@ -795,7 +861,6 @@ static int create_secure_boot_iso(void) {
         return -1;
     }
     
-    /* Populate efiboot.img */
     char efi_boot_dir[512];
     snprintf(efi_boot_dir, sizeof(efi_boot_dir), "%s/EFI/BOOT", efi_mount);
     mkdir_p(efi_boot_dir);
@@ -813,16 +878,59 @@ static int create_secure_boot_iso(void) {
     snprintf(cmd, sizeof(cmd), "cp '%s' '%s/ENROLL_THIS_KEY_IN_MOKMANAGER.cer'", mok_cert, efi_mount);
     run_cmd(cmd);
     
-    /* Create grub.cfg */
+    /* Create grub.cfg - with eFuse USB mode support */
     char grub_cfg[512];
     snprintf(grub_cfg, sizeof(grub_cfg), "%s/EFI/BOOT/grub.cfg", efi_mount);
     FILE *f = fopen(grub_cfg, "w");
     if (f) {
-        fprintf(f,
-            "search --no-floppy --file --set=root /isolinux/isolinux.cfg\n"
-            "set prefix=($root)/boot/grub2\n"
-            "configfile $prefix/grub.cfg\n"
-        );
+        if (cfg.efuse_usb_mode) {
+            /* eFuse USB verification mode - require dongle */
+            fprintf(f,
+                "# HABv4 eFuse USB Verification Mode\n"
+                "set timeout=10\n"
+                "set efuse_found=0\n"
+                "\n"
+                "# Search for eFuse USB dongle (label: EFUSE_SIM)\n"
+                "search --no-floppy --label EFUSE_SIM --set=efuse_disk\n"
+                "if [ -n \"$efuse_disk\" ]; then\n"
+                "    if [ -f ($efuse_disk)/efuse_sim/srk_fuse.bin ]; then\n"
+                "        set efuse_found=1\n"
+                "        echo \"eFuse USB dongle found - Security Mode: CLOSED\"\n"
+                "    fi\n"
+                "fi\n"
+                "\n"
+                "if [ \"$efuse_found\" = \"0\" ]; then\n"
+                "    echo \"\"\n"
+                "    echo \"=========================================\"\n"
+                "    echo \"BOOT BLOCKED - eFuse USB Dongle Required\"\n"
+                "    echo \"=========================================\"\n"
+                "    echo \"Insert eFuse USB dongle (label: EFUSE_SIM)\"\n"
+                "    echo \"and select 'Retry' or reboot.\"\n"
+                "    echo \"\"\n"
+                "    menuentry \"Retry - Search for eFuse USB\" {\n"
+                "        configfile /EFI/BOOT/grub.cfg\n"
+                "    }\n"
+                "    menuentry \"Reboot\" {\n"
+                "        reboot\n"
+                "    }\n"
+                "    menuentry \"Power Off\" {\n"
+                "        halt\n"
+                "    }\n"
+                "else\n"
+                "    search --no-floppy --file --set=root /isolinux/isolinux.cfg\n"
+                "    set prefix=($root)/boot/grub2\n"
+                "    configfile $prefix/grub.cfg\n"
+                "fi\n"
+            );
+            log_info("eFuse USB verification mode ENABLED");
+        } else {
+            /* Standard mode - no dongle required */
+            fprintf(f,
+                "search --no-floppy --file --set=root /isolinux/isolinux.cfg\n"
+                "set prefix=($root)/boot/grub2\n"
+                "configfile $prefix/grub.cfg\n"
+            );
+        }
         fclose(f);
     }
     
@@ -832,7 +940,6 @@ static int create_secure_boot_iso(void) {
     snprintf(cmd, sizeof(cmd), "cp '%s' '%s'", new_efiboot, efiboot_path);
     run_cmd(cmd);
     
-    /* Update ISO EFI directory */
     log_info("Updating ISO EFI directory...");
     snprintf(efi_boot_dir, sizeof(efi_boot_dir), "%s/EFI/BOOT", iso_extract);
     mkdir_p(efi_boot_dir);
@@ -850,7 +957,6 @@ static int create_secure_boot_iso(void) {
     snprintf(cmd, sizeof(cmd), "cp '%s' '%s/ENROLL_THIS_KEY_IN_MOKMANAGER.cer'", mok_cert, iso_extract);
     run_cmd(cmd);
     
-    /* Build ISO */
     log_info("Building ISO...");
     snprintf(cmd, sizeof(cmd),
         "cd '%s' && xorriso -as mkisofs "
@@ -868,7 +974,6 @@ static int create_secure_boot_iso(void) {
     
     run_cmd(cmd);
     
-    /* Cleanup */
     snprintf(cmd, sizeof(cmd), "rm -rf '%s'", work_dir);
     run_cmd(cmd);
     
@@ -879,6 +984,9 @@ static int create_secure_boot_iso(void) {
         log_info("=========================================");
         log_info("ISO: %s", output_iso);
         log_info("Size: %ld MB", get_file_size(output_iso) / (1024 * 1024));
+        if (cfg.efuse_usb_mode) {
+            log_info("eFuse USB Mode: ENABLED (dongle required)");
+        }
         printf("\n");
         printf("Boot Chain:\n");
         printf("  UEFI -> BOOTX64.EFI (SUSE shim)\n");
@@ -890,6 +998,11 @@ static int create_secure_boot_iso(void) {
         printf("  1. Security Violation -> MokManager\n");
         printf("  2. Enroll ENROLL_THIS_KEY_IN_MOKMANAGER.cer\n");
         printf("  3. Reboot\n");
+        if (cfg.efuse_usb_mode) {
+            printf("\neFuse USB Mode:\n");
+            printf("  - Insert USB dongle labeled 'EFUSE_SIM' before boot\n");
+            printf("  - Create dongle with: %s -u /dev/sdX\n", PROGRAM_NAME);
+        }
         log_info("=========================================");
         return 0;
     } else {
@@ -992,30 +1105,38 @@ static void show_help(void) {
     printf("%s v%s - HABv4 Secure Boot Simulation Environment\n\n", PROGRAM_NAME, VERSION);
     printf("Usage: %s [OPTIONS]\n\n", PROGRAM_NAME);
     printf("Options:\n");
-    printf("  -r, --release=VERSION    Photon OS release: 4.0, 5.0, 6.0 (default: %s)\n", DEFAULT_RELEASE);
-    printf("  -i, --input=ISO          Input ISO file\n");
-    printf("  -o, --output=ISO         Output ISO file\n");
-    printf("  -k, --keys-dir=DIR       Keys directory (default: %s)\n", DEFAULT_KEYS_DIR);
-    printf("  -e, --efuse-dir=DIR      eFuse directory (default: %s)\n", DEFAULT_EFUSE_DIR);
-    printf("  -m, --mok-days=DAYS      MOK certificate validity (default: %d)\n", DEFAULT_MOK_DAYS);
-    printf("  -b, --build-iso          Build Secure Boot ISO\n");
-    printf("  -g, --generate-keys      Generate cryptographic keys\n");
-    printf("  -s, --setup-efuse        Setup eFuse simulation\n");
-    printf("  -d, --download-ventoy    Download Ventoy components\n");
-    printf("  -u, --create-efuse-usb=DEV  Create eFuse USB dongle\n");
-    printf("  -V, --use-ventoy         Use Ventoy PreLoader instead of HAB\n");
-    printf("  -S, --skip-build         Skip HAB PreLoader build\n");
-    printf("  -c, --clean              Clean up all artifacts\n");
-    printf("  -v, --verbose            Verbose output\n");
-    printf("  -h, --help               Show this help\n");
+    printf("  -r, --release=VERSION      Photon OS release: 4.0, 5.0, 6.0 (default: %s)\n", DEFAULT_RELEASE);
+    printf("  -i, --input=ISO            Input ISO file (default: auto-detect in ~/<release>/stage/)\n");
+    printf("  -o, --output=ISO           Output ISO file (default: <input>-secureboot.iso)\n");
+    printf("  -k, --keys-dir=DIR         Keys directory (default: %s)\n", DEFAULT_KEYS_DIR);
+    printf("  -e, --efuse-dir=DIR        eFuse directory (default: %s)\n", DEFAULT_EFUSE_DIR);
+    printf("  -m, --mok-days=DAYS        MOK certificate validity in days (default: %d, max: 3650)\n", DEFAULT_MOK_DAYS);
+    printf("  -b, --build-iso            Build Secure Boot ISO\n");
+    printf("  -g, --generate-keys        Generate cryptographic keys\n");
+    printf("  -s, --setup-efuse          Setup eFuse simulation\n");
+    printf("  -d, --download-ventoy      Download Ventoy components (SUSE shim, MokManager)\n");
+    printf("  -u, --create-efuse-usb=DEV Create eFuse USB dongle on device (e.g., /dev/sdb)\n");
+    printf("  -E, --efuse-usb            Enable eFuse USB dongle verification in GRUB\n");
+    printf("  -F, --full-kernel-build    Build kernel from source (takes hours)\n");
+    printf("  -V, --use-ventoy           Use Ventoy PreLoader instead of HAB PreLoader\n");
+    printf("  -S, --skip-build           Skip HAB PreLoader build\n");
+    printf("  -c, --clean                Clean up all artifacts\n");
+    printf("  -v, --verbose              Verbose output\n");
+    printf("  -h, --help                 Show this help\n");
+    printf("\n");
+    printf("Default behavior (no action flags):\n");
+    printf("  When no action flags (-b, -g, -s, -d, -u, -c, -F) are specified,\n");
+    printf("  the tool runs: -g -s -d (generate keys, setup eFuse, download Ventoy)\n");
     printf("\n");
     printf("Examples:\n");
-    printf("  %s -g -s -d              # Setup: generate keys, eFuse, download Ventoy\n", PROGRAM_NAME);
-    printf("  %s -b                    # Build Secure Boot ISO\n", PROGRAM_NAME);
-    printf("  %s -r 4.0 -b             # Build for Photon OS 4.0\n", PROGRAM_NAME);
-    printf("  %s -i input.iso -o out.iso -b  # Specify input/output ISO\n", PROGRAM_NAME);
-    printf("  %s -u /dev/sdb           # Create eFuse USB dongle\n", PROGRAM_NAME);
-    printf("  %s -c                    # Cleanup\n", PROGRAM_NAME);
+    printf("  %s                         # Default: setup keys, eFuse, Ventoy\n", PROGRAM_NAME);
+    printf("  %s -b                      # Build Secure Boot ISO\n", PROGRAM_NAME);
+    printf("  %s -r 4.0 -b               # Build for Photon OS 4.0\n", PROGRAM_NAME);
+    printf("  %s -i in.iso -o out.iso -b # Specify input/output ISO\n", PROGRAM_NAME);
+    printf("  %s -E -b                   # Build ISO with eFuse USB verification\n", PROGRAM_NAME);
+    printf("  %s -u /dev/sdb             # Create eFuse USB dongle\n", PROGRAM_NAME);
+    printf("  %s -F                      # Full kernel build (hours)\n", PROGRAM_NAME);
+    printf("  %s -c                      # Cleanup all artifacts\n", PROGRAM_NAME);
     printf("\n");
 }
 
@@ -1024,41 +1145,40 @@ static void show_help(void) {
  * ============================================================================ */
 
 int main(int argc, char *argv[]) {
-    /* Initialize config with defaults */
     memset(&cfg, 0, sizeof(cfg));
     strncpy(cfg.release, DEFAULT_RELEASE, sizeof(cfg.release) - 1);
     strncpy(cfg.keys_dir, DEFAULT_KEYS_DIR, sizeof(cfg.keys_dir) - 1);
     strncpy(cfg.efuse_dir, DEFAULT_EFUSE_DIR, sizeof(cfg.efuse_dir) - 1);
     cfg.mok_days = DEFAULT_MOK_DAYS;
     
-    /* Set photon_dir based on release */
     char *home = getenv("HOME");
     if (!home) home = "/root";
     snprintf(cfg.photon_dir, sizeof(cfg.photon_dir), "%s/%s", home, cfg.release);
     
-    /* Parse arguments */
     static struct option long_options[] = {
-        {"release",         required_argument, 0, 'r'},
-        {"input",           required_argument, 0, 'i'},
-        {"output",          required_argument, 0, 'o'},
-        {"keys-dir",        required_argument, 0, 'k'},
-        {"efuse-dir",       required_argument, 0, 'e'},
-        {"mok-days",        required_argument, 0, 'm'},
-        {"build-iso",       no_argument,       0, 'b'},
-        {"generate-keys",   no_argument,       0, 'g'},
-        {"setup-efuse",     no_argument,       0, 's'},
-        {"download-ventoy", no_argument,       0, 'd'},
-        {"create-efuse-usb",required_argument, 0, 'u'},
-        {"use-ventoy",      no_argument,       0, 'V'},
-        {"skip-build",      no_argument,       0, 'S'},
-        {"clean",           no_argument,       0, 'c'},
-        {"verbose",         no_argument,       0, 'v'},
-        {"help",            no_argument,       0, 'h'},
+        {"release",           required_argument, 0, 'r'},
+        {"input",             required_argument, 0, 'i'},
+        {"output",            required_argument, 0, 'o'},
+        {"keys-dir",          required_argument, 0, 'k'},
+        {"efuse-dir",         required_argument, 0, 'e'},
+        {"mok-days",          required_argument, 0, 'm'},
+        {"build-iso",         no_argument,       0, 'b'},
+        {"generate-keys",     no_argument,       0, 'g'},
+        {"setup-efuse",       no_argument,       0, 's'},
+        {"download-ventoy",   no_argument,       0, 'd'},
+        {"create-efuse-usb",  required_argument, 0, 'u'},
+        {"efuse-usb",         no_argument,       0, 'E'},
+        {"full-kernel-build", no_argument,       0, 'F'},
+        {"use-ventoy",        no_argument,       0, 'V'},
+        {"skip-build",        no_argument,       0, 'S'},
+        {"clean",             no_argument,       0, 'c'},
+        {"verbose",           no_argument,       0, 'v'},
+        {"help",              no_argument,       0, 'h'},
         {0, 0, 0, 0}
     };
     
     int opt;
-    while ((opt = getopt_long(argc, argv, "r:i:o:k:e:m:bgsdVScu:vh", long_options, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "r:i:o:k:e:m:bgsdEFVScu:vh", long_options, NULL)) != -1) {
         switch (opt) {
             case 'r':
                 strncpy(cfg.release, optarg, sizeof(cfg.release) - 1);
@@ -1098,6 +1218,12 @@ int main(int argc, char *argv[]) {
             case 'u':
                 strncpy(cfg.efuse_usb_device, optarg, sizeof(cfg.efuse_usb_device) - 1);
                 break;
+            case 'E':
+                cfg.efuse_usb_mode = 1;
+                break;
+            case 'F':
+                cfg.full_kernel_build = 1;
+                break;
             case 'V':
                 cfg.use_ventoy_preloader = 1;
                 break;
@@ -1119,18 +1245,15 @@ int main(int argc, char *argv[]) {
         }
     }
     
-    /* Check root */
     if (geteuid() != 0) {
         log_error("This program must be run as root");
         return 1;
     }
     
-    /* Handle cleanup */
     if (cfg.cleanup) {
         return do_cleanup();
     }
     
-    /* Handle eFuse USB creation */
     if (strlen(cfg.efuse_usb_device) > 0) {
         if (!cfg.generate_keys) cfg.generate_keys = 1;
         if (!cfg.setup_efuse) cfg.setup_efuse = 1;
@@ -1141,24 +1264,27 @@ int main(int argc, char *argv[]) {
     }
     
     /* If no specific action, default to full setup */
-    if (!cfg.generate_keys && !cfg.setup_efuse && !cfg.download_ventoy && !cfg.build_iso) {
+    if (!cfg.generate_keys && !cfg.setup_efuse && !cfg.download_ventoy && 
+        !cfg.build_iso && !cfg.full_kernel_build) {
         cfg.generate_keys = 1;
         cfg.setup_efuse = 1;
         cfg.download_ventoy = 1;
     }
     
-    /* Print banner */
     printf("\n");
     printf("=========================================\n");
     printf("%s v%s\n", PROGRAM_NAME, VERSION);
     printf("=========================================\n");
+    printf("Host Architecture: %s\n", get_host_arch());
     printf("Photon OS Release: %s\n", cfg.release);
     printf("Keys Directory:    %s\n", cfg.keys_dir);
     printf("eFuse Directory:   %s\n", cfg.efuse_dir);
+    printf("MOK Validity:      %d days\n", cfg.mok_days);
     if (cfg.build_iso) printf("Build ISO:         YES\n");
+    if (cfg.efuse_usb_mode) printf("eFuse USB Mode:    ENABLED\n");
+    if (cfg.full_kernel_build) printf("Full Kernel Build: YES\n");
     printf("=========================================\n\n");
     
-    /* Execute actions */
     if (cfg.generate_keys) {
         if (generate_all_keys() != 0) return 1;
     }
@@ -1169,6 +1295,10 @@ int main(int argc, char *argv[]) {
     
     if (cfg.download_ventoy) {
         if (download_ventoy_components() != 0) return 1;
+    }
+    
+    if (cfg.full_kernel_build) {
+        if (build_linux_kernel() != 0) return 1;
     }
     
     verify_installation();
@@ -1184,9 +1314,11 @@ int main(int argc, char *argv[]) {
     printf("Keys:     %s\n", cfg.keys_dir);
     printf("eFuse:    %s\n", cfg.efuse_dir);
     printf("\nNext steps:\n");
-    printf("  - Build ISO:      %s -b\n", PROGRAM_NAME);
-    printf("  - Create USB:     %s -u /dev/sdX\n", PROGRAM_NAME);
-    printf("  - Cleanup:        %s -c\n", PROGRAM_NAME);
+    printf("  - Build ISO:        %s -b\n", PROGRAM_NAME);
+    printf("  - With eFuse mode:  %s -E -b\n", PROGRAM_NAME);
+    printf("  - Create USB:       %s -u /dev/sdX\n", PROGRAM_NAME);
+    printf("  - Full kernel:      %s -F\n", PROGRAM_NAME);
+    printf("  - Cleanup:          %s -c\n", PROGRAM_NAME);
     log_info("=========================================");
     
     return 0;

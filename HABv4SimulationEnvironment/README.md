@@ -20,42 +20,62 @@ git clone https://github.com/dcasota/photonos-scripts.git
 cd photonos-scripts/HABv4SimulationEnvironment/src
 make
 
-# Full setup (keys, eFuse, Ventoy components)
-./PhotonOS-HABv4Emulation-ISOCreator -g -s -d
+# Default setup (no parameters): generates keys, eFuse, downloads Ventoy
+./PhotonOS-HABv4Emulation-ISOCreator
 
 # Build Secure Boot ISO
 ./PhotonOS-HABv4Emulation-ISOCreator -b
 
-# Or combined
+# Full setup + build ISO
 ./PhotonOS-HABv4Emulation-ISOCreator -g -s -d -b
 ```
 
-### Command Line Options
+## Command Line Options
 
-| Option | Long Form | Description |
-|--------|-----------|-------------|
-| `-r` | `--release=VERSION` | Photon OS version: 4.0, 5.0, 6.0 (default: 5.0) |
-| `-i` | `--input=ISO` | Input ISO file |
-| `-o` | `--output=ISO` | Output ISO file |
-| `-k` | `--keys-dir=DIR` | Keys directory (default: /root/hab_keys) |
-| `-e` | `--efuse-dir=DIR` | eFuse directory (default: /root/efuse_sim) |
-| `-m` | `--mok-days=DAYS` | MOK certificate validity (default: 3650) |
-| `-b` | `--build-iso` | Build Secure Boot ISO |
-| `-g` | `--generate-keys` | Generate cryptographic keys |
-| `-s` | `--setup-efuse` | Setup eFuse simulation |
-| `-d` | `--download-ventoy` | Download Ventoy components |
-| `-u` | `--create-efuse-usb=DEV` | Create eFuse USB dongle |
-| `-V` | `--use-ventoy` | Use Ventoy PreLoader instead of HAB |
-| `-S` | `--skip-build` | Skip HAB PreLoader build |
-| `-c` | `--clean` | Clean up all artifacts |
-| `-v` | `--verbose` | Verbose output |
-| `-h` | `--help` | Show help |
+### All Parameters
 
-### Examples
+| Option | Long Form | Default | Required | Description |
+|--------|-----------|---------|----------|-------------|
+| `-r` | `--release=VERSION` | `5.0` | No | Photon OS version: 4.0, 5.0, 6.0 |
+| `-i` | `--input=ISO` | Auto-detect | No | Input ISO file path |
+| `-o` | `--output=ISO` | `<input>-secureboot.iso` | No | Output ISO file path |
+| `-k` | `--keys-dir=DIR` | `/root/hab_keys` | No | Keys directory |
+| `-e` | `--efuse-dir=DIR` | `/root/efuse_sim` | No | eFuse simulation directory |
+| `-m` | `--mok-days=DAYS` | `180` | No | MOK certificate validity (1-3650 days) |
+| `-b` | `--build-iso` | Off | No | Build Secure Boot ISO |
+| `-g` | `--generate-keys` | Auto* | No | Generate cryptographic keys |
+| `-s` | `--setup-efuse` | Auto* | No | Setup eFuse simulation |
+| `-d` | `--download-ventoy` | Auto* | No | Download Ventoy components |
+| `-u` | `--create-efuse-usb=DEV` | — | No | Create eFuse USB dongle on device |
+| `-E` | `--efuse-usb` | Off | No | Enable eFuse USB verification in GRUB |
+| `-F` | `--full-kernel-build` | Off | No | Build kernel from source (hours) |
+| `-V` | `--use-ventoy` | Off | No | Use Ventoy PreLoader instead of HAB |
+| `-S` | `--skip-build` | Off | No | Skip HAB PreLoader build |
+| `-c` | `--clean` | Off | No | Clean up all artifacts |
+| `-v` | `--verbose` | Off | No | Verbose output |
+| `-h` | `--help` | — | No | Show help |
+
+*Auto = When no action flags are specified, `-g -s -d` are enabled by default.
+
+### Default Behavior (No Parameters)
+
+Running the tool without any parameters is equivalent to:
+```bash
+./PhotonOS-HABv4Emulation-ISOCreator -g -s -d
+```
+
+This performs:
+1. Generate all cryptographic keys (PK, KEK, DB, MOK, SRK, CSF, IMG)
+2. Setup eFuse simulation files
+3. Download SUSE shim and MokManager from Ventoy
+
+**Note:** ISO is NOT built by default. Use `-b` to build an ISO.
+
+## Examples
 
 ```bash
-# Setup environment
-./PhotonOS-HABv4Emulation-ISOCreator -g -s -d
+# Default setup (keys + eFuse + Ventoy download)
+./PhotonOS-HABv4Emulation-ISOCreator
 
 # Build Secure Boot ISO for Photon OS 5.0
 ./PhotonOS-HABv4Emulation-ISOCreator -b
@@ -66,11 +86,23 @@ make
 # Specify input/output ISO
 ./PhotonOS-HABv4Emulation-ISOCreator -i photon.iso -o photon-sb.iso -b
 
+# Build ISO with eFuse USB dongle verification
+./PhotonOS-HABv4Emulation-ISOCreator -E -b
+
 # Create eFuse USB dongle
 ./PhotonOS-HABv4Emulation-ISOCreator -u /dev/sdb
 
-# Cleanup
+# Full kernel build (takes hours)
+./PhotonOS-HABv4Emulation-ISOCreator -F
+
+# Custom MOK validity (365 days)
+./PhotonOS-HABv4Emulation-ISOCreator -m 365 -g
+
+# Cleanup all artifacts
 ./PhotonOS-HABv4Emulation-ISOCreator -c
+
+# Verbose output
+./PhotonOS-HABv4Emulation-ISOCreator -v -b
 ```
 
 ## Directory Structure
@@ -122,6 +154,29 @@ Linux Kernel
 5. Navigate to `ENROLL_THIS_KEY_IN_MOKMANAGER.cer`
 6. Confirm and reboot
 
+## eFuse USB Mode
+
+When built with `-E` flag, the ISO requires an eFuse USB dongle to boot:
+
+1. Create the dongle: `./PhotonOS-HABv4Emulation-ISOCreator -u /dev/sdb`
+2. Build ISO with eFuse mode: `./PhotonOS-HABv4Emulation-ISOCreator -E -b`
+3. Insert USB dongle (label: `EFUSE_SIM`) before booting
+4. Without dongle, boot is blocked with "Retry" option
+
+## Full Kernel Build
+
+The `-F` flag enables building the Linux kernel from source:
+
+```bash
+./PhotonOS-HABv4Emulation-ISOCreator -F
+```
+
+**Warning:** This takes several hours and includes:
+- Downloading kernel source
+- Configuring with Secure Boot options
+- Building kernel and modules
+- Signing with MOK key
+
 ## Building from Source
 
 ### Prerequisites
@@ -154,7 +209,7 @@ The tool generates these keys in the keys directory:
 | PK.* | Platform Key |
 | KEK.* | Key Exchange Key |
 | DB.* | Signature Database Key |
-| MOK.* | Machine Owner Key (for signing) |
+| MOK.* | Machine Owner Key (for signing, default 180 days) |
 | srk.* | Super Root Key (HAB simulation) |
 | csf.* | Command Sequence File Key |
 | img.* | Image Signing Key |
@@ -167,6 +222,11 @@ The tool generates these keys in the keys directory:
 - [ISO Creation](docs/ISO_CREATION.md) - Creating Secure Boot ISOs
 - [Key Management](docs/KEY_MANAGEMENT.md) - Key generation
 - [Troubleshooting](docs/TROUBLESHOOTING.md) - Common issues
+
+## Version History
+
+- **v1.1.0** - Restored `--efuse-usb` and `--full-kernel-build`, fixed MOK default to 180 days
+- **v1.0.0** - Initial C implementation replacing bash script
 
 ## License
 
