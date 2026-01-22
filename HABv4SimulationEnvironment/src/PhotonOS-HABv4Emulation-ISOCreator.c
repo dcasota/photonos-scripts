@@ -53,6 +53,7 @@
 #define GREEN   "\x1b[32m"
 #define YELLOW  "\x1b[33m"
 #define BLUE    "\x1b[34m"
+#define CYAN    "\x1b[36m"
 #define RESET   "\x1b[0m"
 
 /* Configuration structure */
@@ -64,6 +65,7 @@ typedef struct {
     char input_iso[512];
     char output_iso[512];
     char efuse_usb_device[128];
+    char diagnose_iso_path[512];
     int mok_days;
     int build_iso;
     int generate_keys;
@@ -567,6 +569,23 @@ static int download_ventoy_components(void) {
                 mount_point, cfg.keys_dir);
             run_cmd(cmd);
             
+            /* IA32 (32-bit UEFI) support - for rare 32-bit UEFI systems */
+            snprintf(cmd, sizeof(cmd), "cp '%s/EFI/BOOT/BOOTIA32.EFI' '%s/shim-ia32.efi' 2>/dev/null || true",
+                mount_point, cfg.keys_dir);
+            run_cmd(cmd);
+            
+            snprintf(cmd, sizeof(cmd), "cp '%s/EFI/BOOT/grubia32.efi' '%s/ventoy-preloader-ia32.efi' 2>/dev/null || true",
+                mount_point, cfg.keys_dir);
+            run_cmd(cmd);
+            
+            snprintf(cmd, sizeof(cmd), "cp '%s/EFI/BOOT/grubia32_real.efi' '%s/ventoy-grub-real-ia32.efi' 2>/dev/null || true",
+                mount_point, cfg.keys_dir);
+            run_cmd(cmd);
+            
+            snprintf(cmd, sizeof(cmd), "cp '%s/EFI/BOOT/mmia32.efi' '%s/MokManager-ia32.efi' 2>/dev/null || true",
+                mount_point, cfg.keys_dir);
+            run_cmd(cmd);
+            
             snprintf(cmd, sizeof(cmd), "umount '%s'", mount_point);
             run_cmd(cmd);
         }
@@ -878,6 +897,31 @@ static int create_secure_boot_iso(void) {
     snprintf(cmd, sizeof(cmd), "cp '%s' '%s/ENROLL_THIS_KEY_IN_MOKMANAGER.cer'", mok_cert, efi_mount);
     run_cmd(cmd);
     
+    /* IA32 (32-bit UEFI) support in efiboot.img */
+    char ia32_shim[512], ia32_preloader[512], ia32_grub[512], ia32_mokm[512];
+    snprintf(ia32_shim, sizeof(ia32_shim), "%s/shim-ia32.efi", cfg.keys_dir);
+    snprintf(ia32_preloader, sizeof(ia32_preloader), "%s/ventoy-preloader-ia32.efi", cfg.keys_dir);
+    snprintf(ia32_grub, sizeof(ia32_grub), "%s/ventoy-grub-real-ia32.efi", cfg.keys_dir);
+    snprintf(ia32_mokm, sizeof(ia32_mokm), "%s/MokManager-ia32.efi", cfg.keys_dir);
+    
+    if (file_exists(ia32_shim)) {
+        snprintf(cmd, sizeof(cmd), "cp '%s' '%s/EFI/BOOT/BOOTIA32.EFI'", ia32_shim, efi_mount);
+        run_cmd(cmd);
+        if (file_exists(ia32_preloader)) {
+            snprintf(cmd, sizeof(cmd), "cp '%s' '%s/EFI/BOOT/grubia32.efi'", ia32_preloader, efi_mount);
+            run_cmd(cmd);
+        }
+        if (file_exists(ia32_grub)) {
+            snprintf(cmd, sizeof(cmd), "cp '%s' '%s/EFI/BOOT/grubia32_real.efi'", ia32_grub, efi_mount);
+            run_cmd(cmd);
+        }
+        if (file_exists(ia32_mokm)) {
+            snprintf(cmd, sizeof(cmd), "cp '%s' '%s/EFI/BOOT/mmia32.efi'", ia32_mokm, efi_mount);
+            run_cmd(cmd);
+        }
+        log_info("IA32 (32-bit UEFI) support added to efiboot.img");
+    }
+    
     /* Create grub.cfg - with eFuse USB mode support */
     char grub_cfg[512];
     snprintf(grub_cfg, sizeof(grub_cfg), "%s/EFI/BOOT/grub.cfg", efi_mount);
@@ -957,6 +1001,25 @@ static int create_secure_boot_iso(void) {
     snprintf(cmd, sizeof(cmd), "cp '%s' '%s/ENROLL_THIS_KEY_IN_MOKMANAGER.cer'", mok_cert, iso_extract);
     run_cmd(cmd);
     
+    /* IA32 (32-bit UEFI) support in ISO root */
+    if (file_exists(ia32_shim)) {
+        snprintf(cmd, sizeof(cmd), "cp '%s' '%s/EFI/BOOT/BOOTIA32.EFI'", ia32_shim, iso_extract);
+        run_cmd(cmd);
+        if (file_exists(ia32_preloader)) {
+            snprintf(cmd, sizeof(cmd), "cp '%s' '%s/EFI/BOOT/grubia32.efi'", ia32_preloader, iso_extract);
+            run_cmd(cmd);
+        }
+        if (file_exists(ia32_grub)) {
+            snprintf(cmd, sizeof(cmd), "cp '%s' '%s/EFI/BOOT/grubia32_real.efi'", ia32_grub, iso_extract);
+            run_cmd(cmd);
+        }
+        if (file_exists(ia32_mokm)) {
+            snprintf(cmd, sizeof(cmd), "cp '%s' '%s/EFI/BOOT/mmia32.efi'", ia32_mokm, iso_extract);
+            run_cmd(cmd);
+        }
+        log_info("IA32 (32-bit UEFI) support added to ISO");
+    }
+    
     log_info("Building ISO...");
     snprintf(cmd, sizeof(cmd),
         "cd '%s' && xorriso -as mkisofs "
@@ -994,10 +1057,15 @@ static int create_secure_boot_iso(void) {
         printf("       -> grubx64_real.efi (GRUB)\n");
         printf("       -> Linux kernel\n");
         printf("\n");
-        printf("First Boot:\n");
-        printf("  1. Security Violation -> MokManager\n");
-        printf("  2. Enroll ENROLL_THIS_KEY_IN_MOKMANAGER.cer\n");
-        printf("  3. Reboot\n");
+        printf("First Boot Instructions:\n");
+        printf("  1. Boot from USB with UEFI Secure Boot ENABLED\n");
+        printf("  2. You should see a BLUE MokManager screen (shim's)\n");
+        printf("     " YELLOW "NOTE:" RESET " If you see your laptop's security dialog instead,\n");
+        printf("           check that CSM/Legacy boot is DISABLED in BIOS.\n");
+        printf("  3. Select 'Enroll key from disk'\n");
+        printf("  4. Navigate to USB root -> ENROLL_THIS_KEY_IN_MOKMANAGER.cer\n");
+        printf("  5. Confirm and select REBOOT (not continue)\n");
+        printf("  6. System should now boot without security violation\n");
         if (cfg.efuse_usb_mode) {
             printf("\neFuse USB Mode:\n");
             printf("  - Insert USB dongle labeled 'EFUSE_SIM' before boot\n");
@@ -1031,6 +1099,185 @@ static int do_cleanup(void) {
     
     log_info("Cleanup complete");
     return 0;
+}
+
+/* ============================================================================
+ * ISO Diagnostics
+ * ============================================================================ */
+
+static int diagnose_iso(const char *iso_path) {
+    log_step("Diagnosing ISO: %s", iso_path);
+    
+    if (!file_exists(iso_path)) {
+        log_error("ISO file not found: %s", iso_path);
+        return -1;
+    }
+    
+    char work_dir[256], cmd[2048];
+    snprintf(work_dir, sizeof(work_dir), "/tmp/iso_diagnose_%d", getpid());
+    mkdir_p(work_dir);
+    
+    int errors = 0, warnings = 0;
+    
+    printf("\n");
+    log_info("=== ISO Structure Analysis ===");
+    
+    /* Check El Torito boot records */
+    printf("\n[Boot Modes]\n");
+    snprintf(cmd, sizeof(cmd), "xorriso -indev '%s' -pvd_info 2>&1 | grep -i 'El Torito'", iso_path);
+    if (system(cmd) == 0) {
+        printf("  " GREEN "[OK]" RESET " El Torito boot records present\n");
+    } else {
+        printf("  " RED "[FAIL]" RESET " Missing El Torito boot records\n");
+        errors++;
+    }
+    
+    /* Extract EFI/BOOT */
+    snprintf(cmd, sizeof(cmd), "xorriso -osirrox on -indev '%s' -extract /EFI/BOOT '%s/EFI_BOOT' 2>/dev/null", 
+        iso_path, work_dir);
+    system(cmd);
+    
+    /* Check required EFI files */
+    printf("\n[EFI Boot Files (x64)]\n");
+    const char *efi_files[] = {"BOOTX64.EFI", "grub.efi", "MokManager.efi", NULL};
+    for (int i = 0; efi_files[i]; i++) {
+        char path[512];
+        snprintf(path, sizeof(path), "%s/EFI_BOOT/%s", work_dir, efi_files[i]);
+        if (file_exists(path)) {
+            printf("  " GREEN "[OK]" RESET " %s\n", efi_files[i]);
+        } else {
+            printf("  " RED "[FAIL]" RESET " %s missing\n", efi_files[i]);
+            errors++;
+        }
+    }
+    
+    /* CRITICAL: Check if grub.efi is full GRUB or Ventoy stub */
+    printf("\n[GRUB Binary Analysis - CRITICAL]\n");
+    char grub_check_path[512];
+    snprintf(grub_check_path, sizeof(grub_check_path), "%s/EFI_BOOT/grub.efi", work_dir);
+    if (file_exists(grub_check_path)) {
+        long grub_size = get_file_size(grub_check_path);
+        if (grub_size < 100000) {  /* Less than 100KB = stub */
+            printf("  " RED "[CRITICAL]" RESET " grub.efi is only %ld KB - this is Ventoy's STUB!\n", grub_size / 1024);
+            printf("             Ventoy's stub lacks essential commands (search, configfile, linux)\n");
+            printf("             This will cause boot to drop to 'grub>' prompt!\n");
+            printf("             " YELLOW "FIX:" RESET " Use VMware's full GRUB and sign with MOK key\n");
+            errors++;
+        } else {
+            printf("  " GREEN "[OK]" RESET " grub.efi is %ld KB - full GRUB binary\n", grub_size / 1024);
+            /* Verify it has essential commands */
+            snprintf(cmd, sizeof(cmd), "strings '%s' | grep -q 'configfile'", grub_check_path);
+            if (system(cmd) == 0) {
+                printf("  " GREEN "[OK]" RESET " grub.efi has 'configfile' command\n");
+            } else {
+                printf("  " YELLOW "[WARN]" RESET " grub.efi may be missing 'configfile' command\n");
+                warnings++;
+            }
+        }
+    }
+    
+    /* Check optional IA32 files */
+    printf("\n[EFI Boot Files (IA32 - optional)]\n");
+    const char *ia32_files[] = {"BOOTIA32.EFI", "grubia32.efi", "mmia32.efi", NULL};
+    for (int i = 0; ia32_files[i]; i++) {
+        char path[512];
+        snprintf(path, sizeof(path), "%s/EFI_BOOT/%s", work_dir, ia32_files[i]);
+        if (file_exists(path)) {
+            printf("  " GREEN "[OK]" RESET " %s\n", ia32_files[i]);
+        } else {
+            printf("  " YELLOW "[--]" RESET " %s not present (optional)\n", ia32_files[i]);
+        }
+    }
+    
+    /* Verify signatures */
+    printf("\n[Signature Verification]\n");
+    char shim_path[512], grub_path[512];
+    snprintf(shim_path, sizeof(shim_path), "%s/EFI_BOOT/BOOTX64.EFI", work_dir);
+    snprintf(grub_path, sizeof(grub_path), "%s/EFI_BOOT/grub.efi", work_dir);
+    
+    if (file_exists(shim_path)) {
+        snprintf(cmd, sizeof(cmd), "sbverify --list '%s' 2>&1 | grep -q 'Microsoft'", shim_path);
+        if (system(cmd) == 0) {
+            printf("  " GREEN "[OK]" RESET " BOOTX64.EFI signed by Microsoft\n");
+        } else {
+            printf("  " YELLOW "[WARN]" RESET " BOOTX64.EFI signature not verified as Microsoft\n");
+            warnings++;
+        }
+    }
+    
+    if (file_exists(grub_path)) {
+        snprintf(cmd, sizeof(cmd), "sbverify --list '%s' 2>&1 | grep -q 'CN=grub'", grub_path);
+        if (system(cmd) == 0) {
+            printf("  " GREEN "[OK]" RESET " grub.efi signed with CN=grub\n");
+        } else {
+            printf("  " YELLOW "[WARN]" RESET " grub.efi signature not verified as CN=grub\n");
+            warnings++;
+        }
+    }
+    
+    /* Check MOK certificate */
+    printf("\n[MOK Certificate]\n");
+    snprintf(cmd, sizeof(cmd), "xorriso -osirrox on -indev '%s' -extract /ENROLL_THIS_KEY_IN_MOKMANAGER.cer '%s/mok.cer' 2>/dev/null", 
+        iso_path, work_dir);
+    system(cmd);
+    
+    char mok_cert[512];
+    snprintf(mok_cert, sizeof(mok_cert), "%s/mok.cer", work_dir);
+    if (file_exists(mok_cert)) {
+        snprintf(cmd, sizeof(cmd), "openssl x509 -in '%s' -inform DER -noout -subject 2>&1 | grep -q 'CN.*=.*grub'", mok_cert);
+        if (system(cmd) == 0) {
+            printf("  " GREEN "[OK]" RESET " ENROLL_THIS_KEY_IN_MOKMANAGER.cer present (CN=grub)\n");
+        } else {
+            printf("  " YELLOW "[WARN]" RESET " Certificate present but CN may not match\n");
+            warnings++;
+        }
+    } else {
+        printf("  " RED "[FAIL]" RESET " ENROLL_THIS_KEY_IN_MOKMANAGER.cer missing at ISO root\n");
+        errors++;
+    }
+    
+    /* Check efiboot.img */
+    printf("\n[EFI Boot Image]\n");
+    snprintf(cmd, sizeof(cmd), "xorriso -osirrox on -indev '%s' -extract /boot/grub2/efiboot.img '%s/efiboot.img' 2>/dev/null", 
+        iso_path, work_dir);
+    system(cmd);
+    
+    char efiboot[512];
+    snprintf(efiboot, sizeof(efiboot), "%s/efiboot.img", work_dir);
+    if (file_exists(efiboot)) {
+        printf("  " GREEN "[OK]" RESET " efiboot.img present\n");
+        long size = get_file_size(efiboot);
+        printf("  " GREEN "[OK]" RESET " Size: %ld KB\n", size / 1024);
+    } else {
+        printf("  " RED "[FAIL]" RESET " efiboot.img missing\n");
+        errors++;
+    }
+    
+    /* Summary */
+    printf("\n");
+    log_info("=== Diagnosis Summary ===");
+    if (errors == 0 && warnings == 0) {
+        printf(GREEN "All checks passed! ISO should boot correctly.\n" RESET);
+    } else if (errors == 0) {
+        printf(YELLOW "%d warning(s). ISO may still work.\n" RESET, warnings);
+    } else {
+        printf(RED "%d error(s), %d warning(s). ISO may have boot issues.\n" RESET, errors, warnings);
+    }
+    
+    printf("\n");
+    log_info("=== First Boot Checklist ===");
+    printf("1. " YELLOW "CRITICAL:" RESET " Disable CSM/Legacy boot in BIOS\n");
+    printf("2. Enable UEFI Secure Boot\n");
+    printf("3. Boot from USB\n");
+    printf("4. You should see a " CYAN "BLUE MokManager screen" RESET " (shim's)\n");
+    printf("   " RED "NOT" RESET " your laptop's manufacturer security dialog\n");
+    printf("5. Enroll the certificate and REBOOT\n");
+    
+    /* Cleanup */
+    snprintf(cmd, sizeof(cmd), "rm -rf '%s'", work_dir);
+    system(cmd);
+    
+    return errors;
 }
 
 /* ============================================================================
@@ -1120,6 +1367,7 @@ static void show_help(void) {
     printf("  -F, --full-kernel-build    Build kernel from source (takes hours)\n");
     printf("  -V, --use-ventoy           Use Ventoy PreLoader instead of HAB PreLoader\n");
     printf("  -S, --skip-build           Skip HAB PreLoader build\n");
+    printf("  -D, --diagnose=ISO         Diagnose an existing ISO for Secure Boot issues\n");
     printf("  -c, --clean                Clean up all artifacts\n");
     printf("  -v, --verbose              Verbose output\n");
     printf("  -h, --help                 Show this help\n");
@@ -1136,6 +1384,7 @@ static void show_help(void) {
     printf("  %s -E -b                   # Build ISO with eFuse USB verification\n", PROGRAM_NAME);
     printf("  %s -u /dev/sdb             # Create eFuse USB dongle\n", PROGRAM_NAME);
     printf("  %s -F                      # Full kernel build (hours)\n", PROGRAM_NAME);
+    printf("  %s -D /path/to/iso         # Diagnose existing ISO\n", PROGRAM_NAME);
     printf("  %s -c                      # Cleanup all artifacts\n", PROGRAM_NAME);
     printf("\n");
 }
@@ -1171,6 +1420,7 @@ int main(int argc, char *argv[]) {
         {"full-kernel-build", no_argument,       0, 'F'},
         {"use-ventoy",        no_argument,       0, 'V'},
         {"skip-build",        no_argument,       0, 'S'},
+        {"diagnose",          required_argument, 0, 'D'},
         {"clean",             no_argument,       0, 'c'},
         {"verbose",           no_argument,       0, 'v'},
         {"help",              no_argument,       0, 'h'},
@@ -1178,7 +1428,7 @@ int main(int argc, char *argv[]) {
     };
     
     int opt;
-    while ((opt = getopt_long(argc, argv, "r:i:o:k:e:m:bgsdEFVScu:vh", long_options, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "r:i:o:k:e:m:bgsdEFVSD:cu:vh", long_options, NULL)) != -1) {
         switch (opt) {
             case 'r':
                 strncpy(cfg.release, optarg, sizeof(cfg.release) - 1);
@@ -1230,6 +1480,9 @@ int main(int argc, char *argv[]) {
             case 'S':
                 cfg.skip_preloader_build = 1;
                 break;
+            case 'D':
+                strncpy(cfg.diagnose_iso_path, optarg, sizeof(cfg.diagnose_iso_path) - 1);
+                break;
             case 'c':
                 cfg.cleanup = 1;
                 break;
@@ -1252,6 +1505,10 @@ int main(int argc, char *argv[]) {
     
     if (cfg.cleanup) {
         return do_cleanup();
+    }
+    
+    if (strlen(cfg.diagnose_iso_path) > 0) {
+        return diagnose_iso(cfg.diagnose_iso_path);
     }
     
     if (strlen(cfg.efuse_usb_device) > 0) {

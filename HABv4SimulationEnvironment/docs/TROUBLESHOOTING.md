@@ -97,7 +97,39 @@ This document covers common issues and their solutions.
 
 ### GRUB drops to command prompt (grub>)
 
-**Cause**: GRUB can't find its configuration file.
+**CRITICAL**: This is often caused by using the **wrong GRUB binary**.
+
+#### Cause 1: Using Ventoy's Stub Instead of Full GRUB
+
+Ventoy's `grub.efi` is a **64KB minimal stub**, NOT a full GRUB. It lacks essential commands like `search`, `configfile`, `linux`, and `chainloader`.
+
+**Diagnosis**:
+```bash
+# Check the GRUB binary size
+stat -c%s /path/to/grub.efi
+# ~64 KB = Ventoy stub (WRONG for custom ISOs)
+# ~1-2 MB = Full GRUB (CORRECT)
+
+# Check if commands exist
+strings /path/to/grub.efi | grep -c "configfile"
+# 0 = stub (missing commands)
+# >0 = full GRUB
+```
+
+**Solution**: Use VMware's GRUB from the original Photon ISO, sign it with your MOK key:
+```bash
+# Extract VMware's GRUB
+xorriso -osirrox on -indev photon.iso -extract /boot/efi/EFI/BOOT/grubx64.efi ./grubx64.efi
+
+# Sign with MOK key
+sbsign --key MOK.key --cert MOK.crt --output grubx64-signed.efi grubx64.efi
+
+# Use grubx64-signed.efi in your ISO as EFI/BOOT/grubx64.efi
+```
+
+#### Cause 2: Missing grub.cfg (if using full GRUB)
+
+**Cause**: Full GRUB can't find its configuration file.
 
 **Solutions**:
 1. Ensure `grub.cfg` exists in efiboot.img `/EFI/BOOT/`
@@ -107,6 +139,23 @@ This document covers common issues and their solutions.
    configfile ($root)/boot/grub2/grub.cfg
    ```
 3. Check the search file exists on ISO
+
+### Understanding Ventoy Components (CRITICAL)
+
+When using Ventoy components for Secure Boot, understand their limitations:
+
+| Component | Size | Type | Can Use for Custom ISO? |
+|-----------|------|------|-------------------------|
+| `BOOTX64.EFI` | ~965 KB | SUSE shim | YES - Microsoft signed |
+| `grub.efi` | ~64 KB | Minimal stub | NO - lacks commands |
+| `grubx64_real.efi` | ~1.9 MB | Full GRUB (Ventoy) | MAYBE - needs Ventoy paths |
+| `MokManager.efi` | ~852 KB | MOK manager | YES |
+
+**Key Insight**: Ventoy's `grub.efi` is designed for Ventoy's specific ecosystem. It expects:
+- `/grub/grub.cfg` at partition root (Ventoy-specific path)
+- Ventoy's directory structure (`/ventoy/`, `/grub/themes/`, etc.)
+
+For Photon OS ISOs, use VMware's full GRUB binary and sign it with your own MOK key.
 
 ---
 
@@ -222,6 +271,59 @@ Try hash enrollment instead:
 ---
 
 ## MOK Enrollment Issues
+
+### CRITICAL: Laptop Firmware MOK vs Shim's MokManager
+
+This is the most important distinction for troubleshooting Secure Boot issues on consumer laptops.
+
+**Two Different MOK Systems**:
+
+| Aspect | Laptop Firmware MOK | Shim's MokManager |
+|--------|---------------------|-------------------|
+| **Where** | Built into UEFI firmware | Loaded from USB by shim |
+| **UI** | Manufacturer-specific (Dell gray, HP red, Lenovo ThinkShield) | **Standard blue screen** with white text |
+| **Storage** | Firmware's PK/KEK/db variables | Shim's MokList NVRAM variable |
+| **What it trusts** | Only entries in UEFI db | Entries in MokList |
+| **Works with Ventoy-style boot** | **NO** | **YES** |
+
+**How to Tell Which One You're Using**:
+
+- **Shim's MokManager (CORRECT)**: Blue screen with white text, options include:
+  - "Enroll key from disk"
+  - "Enroll hash from disk"
+  - "Delete key"
+  - "Delete hash"
+  - "Reboot" / "Power off"
+
+- **Laptop's Firmware MOK (WRONG)**: Manufacturer-branded dialog:
+  - Dell: Gray/white "Secure Boot Violation" or "Security Alert"
+  - HP: Red/white security warning dialog
+  - Lenovo: ThinkShield or gray security dialog
+  - Other: Usually branded with manufacturer logo
+
+**Why This Matters**:
+
+When you enroll a certificate in the laptop's firmware MOK:
+1. The certificate goes into the firmware's db (UEFI Secure Boot database)
+2. Shim does NOT check this database for MOK certificates
+3. Shim only checks its own MokList variable
+4. **Result**: Enrollment appears to succeed but shim still rejects the loader
+
+**If You See Laptop's Firmware Dialog Instead of Blue MokManager**:
+
+1. **Disable CSM/Legacy boot** in BIOS setup
+2. **Enable pure UEFI mode** (not hybrid)
+3. Verify **Secure Boot is enabled** (not in setup mode)
+4. Ensure booting from USB in UEFI mode (look for "UEFI: USB" in boot menu)
+5. Reboot and try again
+
+**Use the Diagnose Feature**:
+
+```bash
+./PhotonOS-HABv4Emulation-ISOCreator -D /path/to/your.iso
+```
+
+This will verify the ISO structure and show first-boot checklist.
 
 ### "Failed to open \EFI\BOOT\MokManager.efi - Not Found"
 
@@ -586,7 +688,9 @@ dmesg | grep -iE "module|signature|lockdown"
 | Lockdown: unsigned module | Unsigned .ko | Use matching kernel+modules |
 | No space left (efiboot.img) | Image too small | Resize to 16MB |
 | Need to delete MOK keys | Keys enrolled | Use mokutil --delete |
-| GRUB drops to prompt | Missing grub.cfg | Add bootstrap grub.cfg |
+| GRUB drops to prompt | Using Ventoy stub (64KB) instead of full GRUB | Use VMware's GRUB, sign with MOK key |
+| GRUB drops to prompt | Missing grub.cfg (if full GRUB) | Add bootstrap grub.cfg |
+| Commands not found at grub> | Ventoy stub lacks commands | Use full GRUB binary (>1MB) |
 | can't find command 'reboot' | VMware GRUB missing module | Use "UEFI Firmware Settings" or Ctrl+Alt+Del |
 | grubx64_real.efi not found | GRUB stub search failed | Rebuild with PhotonOS-HABv4Emulation-ISOCreator |
 | BOOT BLOCKED (no Continue) | eFuse USB missing/invalid | Insert eFuse USB or rebuild without eFuse requirement |
