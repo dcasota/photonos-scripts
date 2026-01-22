@@ -13,54 +13,63 @@ This environment provides tools to create Secure Boot enabled ISOs that work on 
 
 ## Quick Start
 
-### Using the Installer (Recommended)
+### Build and Run
 
 ```bash
-# Full setup with ISO creation
-./HABv4-installer.sh --build-iso
+cd src
+make
 
-# Setup only (no ISO)
-./HABv4-installer.sh
+# Full setup (keys, eFuse, Ventoy components)
+./PhotonOS-HABv4Emulation-ISOCreator -g -s -d
 
-# Specific Photon OS version
-./HABv4-installer.sh --release=4.0 --build-iso
+# Build Secure Boot ISO
+./PhotonOS-HABv4Emulation-ISOCreator -b
 
-# Cleanup
-./HABv4-installer.sh clean
+# Or combined
+./PhotonOS-HABv4Emulation-ISOCreator -g -s -d -b
 ```
 
-### Installer Options
+### Command Line Options
 
-| Option | Description |
-|--------|-------------|
-| `--release=VERSION` | Photon OS version: 4.0, 5.0, 6.0 (default: 5.0) |
-| `--build-iso` | Build/fix Photon OS ISO for Secure Boot |
-| `--full-kernel-build` | Build kernel from source (takes hours) |
-| `--efuse-usb` | Enable eFuse USB dongle verification |
-| `--create-efuse-usb=DEV` | Create eFuse USB dongle on device |
-| `--mok-days=DAYS` | MOK certificate validity (default: 3650) |
-| `--skip-build` | Skip building HAB PreLoader (use existing) |
-| `--use-ventoy-preloader` | Use Ventoy's PreLoader instead of HAB |
-| `clean` | Clean up all build artifacts |
-| `--help` | Show help message |
+| Option | Long Form | Description |
+|--------|-----------|-------------|
+| `-r` | `--release=VERSION` | Photon OS version: 4.0, 5.0, 6.0 (default: 5.0) |
+| `-i` | `--input=ISO` | Input ISO file |
+| `-o` | `--output=ISO` | Output ISO file |
+| `-k` | `--keys-dir=DIR` | Keys directory (default: /root/hab_keys) |
+| `-e` | `--efuse-dir=DIR` | eFuse directory (default: /root/efuse_sim) |
+| `-m` | `--mok-days=DAYS` | MOK certificate validity (default: 3650) |
+| `-b` | `--build-iso` | Build Secure Boot ISO |
+| `-g` | `--generate-keys` | Generate cryptographic keys |
+| `-s` | `--setup-efuse` | Setup eFuse simulation |
+| `-d` | `--download-ventoy` | Download Ventoy components |
+| `-u` | `--create-efuse-usb=DEV` | Create eFuse USB dongle |
+| `-V` | `--use-ventoy` | Use Ventoy PreLoader instead of HAB |
+| `-S` | `--skip-build` | Skip HAB PreLoader build |
+| `-c` | `--clean` | Clean up all artifacts |
+| `-v` | `--verbose` | Verbose output |
+| `-h` | `--help` | Show help |
 
-### Manual Build (Advanced)
+### Examples
 
 ```bash
-# 1. Clone efitools (required)
-mkdir -p /root/src/kernel.org
-cd /root/src/kernel.org
-git clone git://git.kernel.org/pub/scm/linux/kernel/git/jejb/efitools.git
+# Setup environment
+./PhotonOS-HABv4Emulation-ISOCreator -g -s -d
 
-# 2. Build HAB PreLoader
-cd /path/to/HABv4SimulationEnvironment/src/hab
-./build.sh all      # Build efitools library + HAB PreLoader
-./build.sh sign     # Sign with MOK
+# Build Secure Boot ISO for Photon OS 5.0
+./PhotonOS-HABv4Emulation-ISOCreator -b
 
-# 3. Create Secure Boot ISO
-cd /path/to/HABv4SimulationEnvironment/src/hab/iso
-make
-./hab_iso /path/to/photon.iso /path/to/photon-secureboot.iso
+# Build for Photon OS 4.0
+./PhotonOS-HABv4Emulation-ISOCreator -r 4.0 -b
+
+# Specify input/output ISO
+./PhotonOS-HABv4Emulation-ISOCreator -i photon.iso -o photon-sb.iso -b
+
+# Create eFuse USB dongle
+./PhotonOS-HABv4Emulation-ISOCreator -u /dev/sdb
+
+# Cleanup
+./PhotonOS-HABv4Emulation-ISOCreator -c
 ```
 
 ## Directory Structure
@@ -75,15 +84,17 @@ HABv4SimulationEnvironment/
 │   ├── KEY_MANAGEMENT.md          # Key generation & management
 │   └── TROUBLESHOOTING.md         # Common issues & solutions
 └── src/
-    └── hab/                       # HABv4 source code
+    ├── Makefile                   # Main build file
+    ├── PhotonOS-HABv4Emulation-ISOCreator.c  # Main tool source
+    └── hab/                       # HABv4 components
         ├── BUILD.md               # Build instructions
-        ├── build.sh               # Build script
+        ├── build.sh               # HAB PreLoader build script
         ├── preloader/             # HAB PreLoader
         │   ├── HabPreLoader.c     # Main source (uses efitools)
         │   ├── hashlist.h         # Hash list header
         │   └── Makefile
         └── iso/                   # ISO builder
-            ├── hab_iso.c          # C-based ISO builder
+            ├── hab_iso.c          # ISO manipulation tool
             └── Makefile
 ```
 
@@ -110,23 +121,43 @@ Linux Kernel
 5. Navigate to `ENROLL_THIS_KEY_IN_MOKMANAGER.cer`
 6. Confirm and reboot
 
-## Requirements
+## Building from Source
 
-| Package | Purpose |
-|---------|---------|
-| gnu-efi-devel | EFI development headers |
-| sbsigntools | Binary signing (sbsign, sbverify) |
-| xorriso | ISO manipulation |
-| syslinux | Hybrid ISO creation |
-| dosfstools | FAT filesystem tools |
-| gcc, make | Compilation |
-| git | Clone efitools source |
+### Prerequisites
 
-## External Dependencies
+```bash
+# Install dependencies (Photon OS)
+tdnf install -y gcc make gnu-efi-devel sbsigntools xorriso syslinux dosfstools wget git
 
-The build requires these external sources:
-- **efitools**: `git://git.kernel.org/pub/scm/linux/kernel/git/jejb/efitools.git`
-- **Ventoy binaries**: SUSE shim and MokManager from Ventoy release
+# For HAB PreLoader (optional)
+mkdir -p /root/src/kernel.org
+cd /root/src/kernel.org
+git clone git://git.kernel.org/pub/scm/linux/kernel/git/jejb/efitools.git
+```
+
+### Compile
+
+```bash
+cd src
+make              # Build main tool + hab_iso
+make install      # Install to /usr/local/bin
+make hab-preloader  # Build HAB PreLoader (requires efitools)
+```
+
+## Generated Keys
+
+The tool generates these keys in the keys directory:
+
+| Key | Purpose |
+|-----|---------|
+| PK.* | Platform Key |
+| KEK.* | Key Exchange Key |
+| DB.* | Signature Database Key |
+| MOK.* | Machine Owner Key (for signing) |
+| srk.* | Super Root Key (HAB simulation) |
+| csf.* | Command Sequence File Key |
+| img.* | Image Signing Key |
+| kernel_module_signing.pem | Kernel module signing |
 
 ## Documentation
 
@@ -138,5 +169,6 @@ The build requires these external sources:
 
 ## License
 
+- PhotonOS-HABv4Emulation-ISOCreator: GPL-3.0+
 - HAB PreLoader: GPL-3.0+ (based on efitools)
 - efitools: GPL-2.0+
