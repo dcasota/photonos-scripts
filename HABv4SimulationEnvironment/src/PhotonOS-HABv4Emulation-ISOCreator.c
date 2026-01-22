@@ -440,14 +440,12 @@ static int create_efuse_usb(const char *device) {
     
     char cmd[1024];
     
-    snprintf(cmd, sizeof(cmd), "parted -s '%s' mklabel gpt", device);
+    /* Use sfdisk instead of parted (more commonly available) */
+    snprintf(cmd, sizeof(cmd), "sfdisk '%s' <<EOF\nlabel: gpt\ntype=EBD0A0A2-B9E5-4433-87C0-68B6B72699C7\nEOF", device);
     if (run_cmd(cmd) != 0) {
         log_error("Failed to create partition table");
         return -1;
     }
-    
-    snprintf(cmd, sizeof(cmd), "parted -s '%s' mkpart primary fat32 1MiB 100%%", device);
-    run_cmd(cmd);
     
     char partition[256];
     if (strstr(device, "nvme") != NULL) {
@@ -456,6 +454,10 @@ static int create_efuse_usb(const char *device) {
         snprintf(partition, sizeof(partition), "%s1", device);
     }
     
+    /* Wait for partition to appear */
+    sleep(2);
+    snprintf(cmd, sizeof(cmd), "partprobe '%s' 2>/dev/null || true", device);
+    run_cmd(cmd);
     sleep(1);
     
     snprintf(cmd, sizeof(cmd), "mkfs.vfat -F 32 -n 'EFUSE_SIM' '%s'", partition);
