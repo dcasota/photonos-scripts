@@ -41,12 +41,12 @@ This document covers key generation, storage, and usage for Secure Boot.
 │   ├── csf.pem / csf_pub.pem          # Command Sequence File Key
 │   └── img.pem / img_pub.pem          # Image Signing Key
 │
-├── Fedora Shim Components (SBAT Compliant)
-│   ├── shim-fedora.efi                 # Fedora shim 15.8 (SBAT=shim,4)
-│   └── mmx64-fedora.efi                # Fedora MokManager
+├── SUSE Shim Components (SBAT Compliant)
+│   ├── shim-suse.efi                   # SUSE shim (SBAT=shim,4)
+│   └── MokManager-suse.efi             # SUSE MokManager
 │
-└── Photon OS GRUB Stub
-    └── grub-photon-stub.efi            # Custom GRUB stub (MOK-signed)
+└── HAB PreLoader
+    └── hab-preloader-signed.efi        # HAB PreLoader (MOK-signed)
 ```
 
 ### Key Purposes
@@ -309,8 +309,8 @@ chmod 700 /root/hab_keys
 ### Quick Reference
 
 ```bash
-# All-in-one key generation script
-./hab_scripts/hab_keys.sh generate
+# All-in-one key generation
+./PhotonOS-HABv4Emulation-ISOCreator -g
 
 # Individual commands:
 
@@ -342,22 +342,22 @@ openssl x509 -in cert.crt -text -noout
 
 ### How It Works
 
-We use **Fedora shim** (SBAT compliant) + **custom Photon OS GRUB stub** (MOK-signed). The Photon OS GRUB stub chainloads the VMware-signed GRUB real binary. User enrolls the Photon OS MOK certificate, which allows Fedora shim to trust the stub.
+We use **SUSE shim** (SBAT compliant) + **HAB PreLoader** (MOK-signed). The HAB PreLoader installs a permissive security policy and chainloads the VMware-signed GRUB. User enrolls the MOK certificate, which allows SUSE shim to trust the PreLoader.
 
-### First Boot: Enroll Photon OS MOK Certificate
+### First Boot: Enroll MOK Certificate
 
-On first boot, Fedora shim doesn't trust the Photon OS MOK signature yet, so MokManager appears automatically:
+On first boot, SUSE shim doesn't trust the HAB PreLoader signature yet, so MokManager appears automatically:
 
 1. **Security Violation** error appears → Press any key
-2. MokManager blue screen appears automatically (Fedora MokManager)
+2. MokManager blue screen appears automatically (SUSE MokManager)
 3. Select **"Enroll key from disk"**
 4. Navigate to root `/`
 5. Select `ENROLL_THIS_KEY_IN_MOKMANAGER.cer`
 6. Confirm enrollment and select **Reboot**
-7. Photon OS GRUB stub now loads successfully (trusted via MOK signature)
-8. Stub chainloads VMware GRUB real → kernel boots
+7. HAB PreLoader now loads successfully (trusted via MOK signature)
+8. PreLoader installs permissive policy → GRUB → kernel boots
 
-**Note**: The certificate contains `CN=Photon OS Secure Boot MOK` which is our custom signing key.
+**Note**: The certificate contains `CN=HABv4 Secure Boot MOK` which is our custom signing key.
 
 ### MokManager Built-in Options
 
@@ -381,17 +381,15 @@ This enrolls the binary hash instead of trusting a certificate, which works bett
 
 ### After Enrollment
 
-After enrolling the Photon OS MOK certificate:
-1. On reboot, the stub menu appears (5 second timeout)
-2. Wait for timeout or select "Continue to Photon OS Installer"
-3. Main menu appears with:
-   - **"Install Photon OS (Custom)"** - VMware-signed kernel
-   - **"Install Photon OS (VMware original)"** - VMware-signed kernel with verbose logging
+After enrolling the MOK certificate:
+1. On reboot, HAB PreLoader loads and installs permissive security policy
+2. GRUB loads and shows boot menu
+3. Kernel boots normally with Secure Boot enabled
 
 **To Access MokManager After Enrollment**:
 1. Reboot the system
-2. During the 5-second stub menu, press any key
-3. Select "MokManager - Enroll/Delete MOK Keys"
+2. During early boot, trigger shim's MOK menu (typically by holding specific key)
+3. Or use `mokutil` commands from running system
 
 ### Method 2: From Running Linux
 

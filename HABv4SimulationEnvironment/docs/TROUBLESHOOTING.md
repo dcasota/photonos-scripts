@@ -23,7 +23,7 @@ This document covers common issues and their solutions.
 
 **Solutions**:
 1. Use SUSE shim from Ventoy 1.1.10 (SBAT=shim,4 compliant)
-2. Rebuild ISO with latest HABv4-installer.sh which downloads Ventoy's SUSE shim
+2. Rebuild ISO with latest PhotonOS-HABv4Emulation-ISOCreator which downloads Ventoy's SUSE shim
 3. Verify shim SBAT version:
    ```bash
    objcopy -O binary --only-section=.sbat BOOTX64.EFI /dev/stdout | head -3
@@ -119,9 +119,9 @@ This document covers common issues and their solutions.
 **Solutions**:
 1. Insert the eFuse USB dongle (labeled `EFUSE_SIM`) before booting
 2. Select "Retry - Search for eFuse USB" after inserting
-3. If you don't have an eFuse USB, rebuild ISO without `--efuse-usb`:
+3. If you don't have an eFuse USB, rebuild ISO without eFuse requirement:
    ```bash
-   ./HABv4-installer.sh --release=5.0 --build-iso
+   ./PhotonOS-HABv4Emulation-ISOCreator -r 5.0 -b
    ```
 
 ### "eFuse USB found but missing srk_fuse.bin"
@@ -131,7 +131,7 @@ This document covers common issues and their solutions.
 **Solutions**:
 1. Recreate the eFuse USB dongle:
    ```bash
-   ./HABv4-installer.sh --create-efuse-usb=/dev/sdX
+   ./PhotonOS-HABv4Emulation-ISOCreator -u /dev/sdX
    ```
 2. Verify USB contents:
    ```
@@ -228,7 +228,7 @@ Try hash enrollment instead:
 **Cause**: MokManager installed with wrong filename (mmx64.efi instead of MokManager.efi).
 
 **Solutions**:
-1. Rebuild ISO with latest HABv4-installer.sh (fixed)
+1. Rebuild ISO with latest PhotonOS-HABv4Emulation-ISOCreator (fixed)
 2. Manually rename: `mmx64.efi` → `MokManager.efi` in both:
    - `/EFI/BOOT/` on ISO root
    - Inside `efiboot.img`
@@ -253,7 +253,7 @@ Try hash enrollment instead:
 1. When using "Enroll key from disk", navigate to root `/`
 2. You should see `ENROLL_THIS_KEY_IN_MOKMANAGER.cer`
 3. The filename matches Ventoy's naming convention for maximum compatibility
-4. If missing, rebuild ISO with latest HABv4-installer.sh
+4. If missing, rebuild ISO with latest PhotonOS-HABv4Emulation-ISOCreator
 
 ### Certificate enrolled but still "Security Violation" after reboot
 
@@ -304,7 +304,7 @@ The certificate subject must match the GRUB stub signature issuer. With the Phot
 1. **Verify you're using the correct MokManager** (most important):
    - The MokManager from your USB should have "Enroll key from disk", "Enroll hash from disk", "Delete key", etc.
    - If you only see minimal options, you're using the laptop's built-in MokManager
-   - **Fix**: Rebuild ISO with latest HABv4-installer.sh which places `mmx64.efi` at ROOT level
+   - **Fix**: Rebuild ISO with latest PhotonOS-HABv4Emulation-ISOCreator which places `mmx64.efi` at ROOT level
 
 2. Try **hash enrollment** instead of certificate enrollment:
    - Select "Enroll hash from disk" in MokManager
@@ -329,7 +329,7 @@ The certificate subject must match the GRUB stub signature issuer. With the Phot
 **Root Cause**: SUSE shim looks for MokManager at `\MokManager.efi` (ROOT of EFI partition).
 If MokManager is only in `\EFI\BOOT\`, shim can't find it and falls back to another MokManager (from NVRAM or internal drive).
 
-**Solution**: Rebuild ISO with latest HABv4-installer.sh which places SUSE MokManager at:
+**Solution**: Rebuild ISO with latest PhotonOS-HABv4Emulation-ISOCreator which places SUSE MokManager at:
 - `\MokManager.efi` (ROOT) - **Primary path** for SUSE shim
 - `\EFI\BOOT\MokManager.efi` - fallback
 
@@ -419,7 +419,7 @@ If MokManager is only in `\EFI\BOOT\`, shim can't find it and falls back to anot
    mkfs.vfat -F 12 efiboot_new.img
    # Mount and copy contents from old one
    ```
-2. Use latest HABv4-installer.sh (auto-resizes)
+2. Use latest PhotonOS-HABv4Emulation-ISOCreator (auto-resizes)
 
 ### xorriso: "Failed to find suitable boot image"
 
@@ -576,21 +576,21 @@ dmesg | grep -iE "module|signature|lockdown"
 | EFI USB Device (USB) boot failed | Not hybrid | Rebuild with xorriso |
 | grub.efi Not Found | Missing file | Copy grubx64.efi to grub.efi |
 | bad shim signature | Wrong trust chain | Use Fedora shim + Fedora MokManager |
-| MokManager.efi Not Found | Wrong filename or missing from efiboot.img | Rebuild with latest script |
-| Security Violation (first boot) | Photon OS MOK certificate not enrolled | Enroll certificate from root `/` |
-| Certificate not visible | File missing | Rebuild ISO with latest script |
-| Enrollment doesn't persist | Wrong MokManager loaded | Rebuild ISO (mmx64.efi + MokManager.efi at ROOT) |
-| Enrollment silently fails | Wrong MokManager (no confirmation) | Rebuild ISO - both mmx64.efi AND MokManager.efi at ROOT |
-| MokManager missing "Delete key" | Using laptop's built-in MokManager | Rebuild ISO with latest script |
+| MokManager.efi Not Found | Wrong filename or missing from efiboot.img | Rebuild with PhotonOS-HABv4Emulation-ISOCreator |
+| Security Violation (first boot) | MOK certificate not enrolled | Enroll certificate from root `/` |
+| Certificate not visible | File missing | Rebuild with PhotonOS-HABv4Emulation-ISOCreator |
+| Enrollment doesn't persist | Wrong MokManager loaded | Rebuild with PhotonOS-HABv4Emulation-ISOCreator |
+| Enrollment silently fails | Wrong MokManager (no confirmation) | Rebuild with PhotonOS-HABv4Emulation-ISOCreator |
+| MokManager missing "Delete key" | Using laptop's built-in MokManager | Rebuild with PhotonOS-HABv4Emulation-ISOCreator |
 | Security Violation | Unsigned binary | Enroll Photon OS MOK certificate |
 | Lockdown: unsigned module | Unsigned .ko | Use matching kernel+modules |
 | No space left (efiboot.img) | Image too small | Resize to 16MB |
 | Need to delete MOK keys | Keys enrolled | Use mokutil --delete |
 | GRUB drops to prompt | Missing grub.cfg | Add bootstrap grub.cfg |
 | can't find command 'reboot' | VMware GRUB missing module | Use "UEFI Firmware Settings" or Ctrl+Alt+Del |
-| grubx64_real.efi not found | GRUB stub search failed | Rebuild with latest script (includes search module) |
-| BOOT BLOCKED (no Continue) | eFuse USB missing/invalid | Insert eFuse USB labeled `EFUSE_SIM` or rebuild ISO without `--efuse-usb` |
-| eFuse USB not detected | Wrong label or not FAT32 | Recreate with `--create-efuse-usb=/dev/sdX` |
+| grubx64_real.efi not found | GRUB stub search failed | Rebuild with PhotonOS-HABv4Emulation-ISOCreator |
+| BOOT BLOCKED (no Continue) | eFuse USB missing/invalid | Insert eFuse USB or rebuild without eFuse requirement |
+| eFuse USB not detected | Wrong label or not FAT32 | Recreate with `-u /dev/sdX` option |
 
 ### MokManager Path Reference
 

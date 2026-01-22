@@ -1,459 +1,243 @@
-# ISO Creation and USB Boot Guide
+# HABv4 ISO Creation Guide
 
-This document covers creating Secure Boot compatible ISOs and writing them to USB drives.
+## Overview
 
-## Table of Contents
+This guide explains how to create Secure Boot enabled ISOs using the PhotonOS-HABv4Emulation-ISOCreator tool.
 
-1. [ISO Structure](#iso-structure)
-2. [Creating Secure Boot ISO](#creating-secure-boot-iso)
-3. [ISO Hybrid Structure](#iso-hybrid-structure)
-4. [Writing to USB](#writing-to-usb)
-5. [xorriso vs mkisofs](#xorriso-vs-mkisofs)
-6. [efiboot.img Details](#efibootimg-details)
-7. [Verifying ISO](#verifying-iso)
+## Prerequisites
 
----
+### Required Packages
+```bash
+tdnf install -y gcc make gnu-efi-devel sbsigntools xorriso syslinux dosfstools wget
+```
+
+### Build the Tool
+```bash
+cd src
+make
+```
+
+## Quick Start
+
+### Full Setup + ISO Creation
+```bash
+# Setup environment and build ISO in one command
+./PhotonOS-HABv4Emulation-ISOCreator -g -s -d -b
+
+# Or step by step:
+./PhotonOS-HABv4Emulation-ISOCreator -g    # Generate keys
+./PhotonOS-HABv4Emulation-ISOCreator -s    # Setup eFuse simulation
+./PhotonOS-HABv4Emulation-ISOCreator -d    # Download Ventoy components
+./PhotonOS-HABv4Emulation-ISOCreator -b    # Build ISO
+```
+
+### Specify Input/Output ISO
+```bash
+./PhotonOS-HABv4Emulation-ISOCreator -i /path/to/photon.iso -o /path/to/output.iso -b
+```
+
+### Build for Different Photon OS Versions
+```bash
+./PhotonOS-HABv4Emulation-ISOCreator -r 4.0 -b    # Photon OS 4.0
+./PhotonOS-HABv4Emulation-ISOCreator -r 5.0 -b    # Photon OS 5.0
+./PhotonOS-HABv4Emulation-ISOCreator -r 6.0 -b    # Photon OS 6.0
+```
 
 ## ISO Structure
 
 ### Required Components
 
-A Secure Boot compatible ISO needs:
-
 ```
 ISO Root/
-├── MokManager.efi                         # SUSE MokManager (ROOT - SUSE shim looks here)
-├── ENROLL_THIS_KEY_IN_MOKMANAGER.cer      # Photon OS MOK certificate (ROOT)
+├── mmx64.efi                              # SUSE MokManager (ROOT - required!)
+├── ENROLL_THIS_KEY_IN_MOKMANAGER.cer      # MOK certificate for enrollment
 ├── EFI/
 │   └── BOOT/
-│       ├── BOOTX64.EFI                    # SUSE shim 15.8 from Ventoy (SBAT=shim,4)
-│       ├── grub.efi                       # Photon OS GRUB stub (MOK-signed)
-│       ├── grubx64.efi                    # Same as grub.efi
-│       ├── grubx64_real.efi               # VMware-signed GRUB real
-│       ├── MokManager.efi                 # SUSE MokManager (fallback)
-│       └── ENROLL_THIS_KEY_IN_MOKMANAGER.cer  # Photon OS MOK certificate
+│       ├── BOOTX64.EFI                    # SUSE shim (Microsoft-signed)
+│       ├── grub.efi                       # HAB PreLoader (MOK-signed)
+│       ├── grubx64_real.efi               # VMware GRUB
+│       └── MokManager.efi                 # SUSE MokManager (backup)
 │
 ├── boot/
 │   └── grub2/
-│       ├── efiboot.img      # EFI System Partition image (16MB)
-│       ├── grub.cfg         # Boot menu configuration
-│       └── themes/          # GRUB themes
+│       ├── efiboot.img                    # EFI boot image (16MB FAT)
+│       └── grub.cfg                       # Boot menu configuration
 │
-├── isolinux/
-│   ├── isolinux.bin         # BIOS boot loader
-│   ├── isolinux.cfg         # BIOS boot config
-│   ├── vmlinuz              # VMware-signed kernel
-│   ├── initrd.img           # Initial ramdisk
-│   └── boot.cat             # El Torito boot catalog
-│
-└── ... (other files)
+└── isolinux/
+    ├── isolinux.bin                       # BIOS boot loader
+    ├── isolinux.cfg                       # BIOS boot config
+    ├── vmlinuz                            # Linux kernel
+    └── initrd.img                         # Initial ramdisk
 ```
-
-**CRITICAL: MokManager Path** - SUSE shim looks for MokManager at ROOT level:
-- **SUSE shim**: `\MokManager.efi` (ROOT) - **Primary path**
-- Fallback: `\EFI\BOOT\MokManager.efi`
 
 ### efiboot.img Contents
 
-The `efiboot.img` is a FAT filesystem image containing EFI boot files:
-
 ```
-efiboot.img (FAT32, 16MB)/
-├── MokManager.efi                      # SUSE MokManager (ROOT - SUSE shim looks here)
-├── ENROLL_THIS_KEY_IN_MOKMANAGER.cer   # Photon OS MOK certificate (ROOT)
-├── grub/
-│   └── grub.cfg                        # Bootstrap config (fallback)
+efiboot.img (FAT12, 16MB)/
+├── mmx64.efi                              # MokManager at ROOT
+├── ENROLL_THIS_KEY_IN_MOKMANAGER.cer      # MOK certificate
 └── EFI/
     └── BOOT/
-        ├── BOOTX64.EFI      # SUSE shim 15.8 from Ventoy (SBAT=shim,4)
-        ├── grub.efi         # Photon OS GRUB stub (MOK-signed)
-        ├── grubx64.efi      # Same as grub.efi
-        ├── grubx64_real.efi # VMware GRUB real
-        ├── grub.cfg         # Bootstrap config for grubx64_real
-        ├── MokManager.efi   # SUSE MokManager (fallback)
-        └── revocations.efi  # Revocation list
+        ├── BOOTX64.EFI                    # SUSE shim
+        ├── grub.efi                       # HAB PreLoader
+        ├── grubx64_real.efi               # VMware GRUB
+        ├── MokManager.efi                 # MokManager backup
+        └── grub.cfg                       # Bootstrap config
 ```
 
-All MokManager copies are identical SUSE-signed binaries from Ventoy.
+**CRITICAL**: SUSE shim looks for MokManager at `\mmx64.efi` (root level), not in EFI/BOOT/.
 
-**Photon OS Secure Boot**: Uses SUSE shim from Ventoy (SBAT compliant) + custom Photon OS GRUB stub (MOK-signed). User enrolls the Photon OS MOK certificate, which allows shim to trust the stub.
+## Boot Chain
 
-**Two-Stage Boot Menu**:
-- Stage 1 (Stub, 5 sec timeout): Continue / MokManager / Reboot / Shutdown
-- Stage 2 (Main): Install Photon OS (Custom) / Install Photon OS (VMware original) / Reboot / Shutdown
+```
+UEFI Firmware
+    ↓ verifies against Microsoft CA (db)
+BOOTX64.EFI (SUSE shim 15.8)
+    ↓ verifies against MokList
+grub.efi (HAB PreLoader)
+    ↓ installs permissive security policy
+grubx64_real.efi (VMware GRUB)
+    ↓
+Linux Kernel
+```
 
-MokManager is only accessible from Stage 1 (stub menu) because shim's protocol is still available there.
+## Using hab_iso Tool (Alternative)
 
----
-
-## Creating Secure Boot ISO
-
-### Using HABv4-installer.sh
+The `hab_iso` tool in `src/hab/iso/` can also create ISOs:
 
 ```bash
-# Build complete Secure Boot ISO
-./HABv4-installer.sh --release=5.0 --build-iso
-
-# Fix existing ISO for Secure Boot
-source ./HABv4-installer.sh
-fix_iso_secureboot /path/to/photon.iso
+cd src/hab/iso
+make
+./hab_iso /path/to/input.iso /path/to/output.iso
 ```
 
-### Using hab_iso.sh (Modular)
+## Manual ISO Creation
 
+### Step 1: Extract ISO
 ```bash
-# Fix existing ISO
-./hab_scripts/hab_iso.sh fix /path/to/photon.iso
-
-# Output: /path/to/photon-secureboot.iso
+mkdir -p /tmp/iso_work
+xorriso -osirrox on -indev input.iso -extract / /tmp/iso_work
 ```
 
-### Manual Process
-
-1. **Extract original ISO**
-   ```bash
-   mkdir /tmp/iso_extract
-   mount -o loop original.iso /mnt
-   cp -a /mnt/* /tmp/iso_extract/
-   umount /mnt
-   ```
-
-2. **Add Secure Boot components**
-   ```bash
-   # Copy Fedora shim and MokManager
-   cp shim-fedora.efi /tmp/iso_extract/EFI/BOOT/BOOTX64.EFI
-   cp mmx64-fedora.efi /tmp/iso_extract/EFI/BOOT/MokManager.efi
-   
-   # Copy Photon OS GRUB stub + VMware GRUB real
-   cp grub-photon-stub.efi /tmp/iso_extract/EFI/BOOT/grubx64.efi
-   cp grub-photon-stub.efi /tmp/iso_extract/EFI/BOOT/grub.efi
-   cp grubx64_real.efi /tmp/iso_extract/EFI/BOOT/grubx64_real.efi
-   
-   # Copy Photon OS MOK certificate for enrollment
-   cp MOK.der /tmp/iso_extract/EFI/BOOT/ENROLL_THIS_KEY_IN_MOKMANAGER.cer
-   ```
-
-3. **Update efiboot.img** (resize if needed)
-   ```bash
-   # Create larger efiboot.img (16MB)
-   dd if=/dev/zero of=efiboot_new.img bs=1M count=16
-   mkfs.vfat -F 32 efiboot_new.img
-   
-   # Mount and copy files
-   mount -o loop efiboot_new.img /mnt
-   mkdir -p /mnt/EFI/BOOT /mnt/grub
-   cp BOOTX64.EFI grub.efi grubx64.efi grubx64_real.efi grub.cfg MokManager.efi /mnt/EFI/BOOT/
-   cp ENROLL_THIS_KEY_IN_MOKMANAGER.cer /mnt/
-   umount /mnt
-   
-   cp efiboot_new.img /tmp/iso_extract/boot/grub2/efiboot.img
-   ```
-
-4. **Create ISO with xorriso**
-   ```bash
-   xorriso -as mkisofs \
-       -R -l -D \
-       -o output.iso \
-       -V "PHOTON_SB" \
-       -c isolinux/boot.cat \
-       -b isolinux/isolinux.bin \
-       -no-emul-boot -boot-load-size 4 -boot-info-table \
-       -eltorito-alt-boot \
-       -e boot/grub2/efiboot.img \
-       -no-emul-boot \
-       -isohybrid-mbr /usr/share/syslinux/isohdpfx.bin \
-       -isohybrid-gpt-basdat \
-       /tmp/iso_extract
-   ```
-
----
-
-## ISO Hybrid Structure
-
-### What is Hybrid ISO?
-
-A hybrid ISO can boot from:
-- CD/DVD (via El Torito)
-- USB drive (via MBR/GPT)
-
-### Required Components
-
-| Component | Purpose |
-|-----------|---------|
-| El Torito boot catalog | CD/DVD boot |
-| MBR boot code | Legacy BIOS USB boot |
-| GPT partition table | UEFI USB boot |
-| EFI System Partition | UEFI boot files |
-
-### Partition Layout
-
-```
-Hybrid ISO:
-┌────────────────────────────────────────────────────┐
-│ MBR (512 bytes)                                    │
-│   - Boot code from isohdpfx.bin                   │
-│   - Partition table                                │
-├────────────────────────────────────────────────────┤
-│ GPT Header (if present)                            │
-├────────────────────────────────────────────────────┤
-│ ISO 9660 Filesystem                                │
-│   - El Torito boot catalog                        │
-│   - All ISO files                                  │
-│   - efiboot.img embedded                          │
-├────────────────────────────────────────────────────┤
-│ EFI System Partition (from efiboot.img)           │
-│   Type: 0xEF (EFI)                                │
-└────────────────────────────────────────────────────┘
-```
-
-### Verifying Hybrid Structure
-
+### Step 2: Update EFI Components
 ```bash
-# Check partition table
-fdisk -l image.iso
+mkdir -p /tmp/iso_work/EFI/BOOT
 
-# Expected output:
-# Device     Boot Start     End Sectors Size Id Type
-# image.iso1 *        0 8399159 8399160   4G  0 Empty
-# image.iso2        840    6983    6144   3M ef EFI
+# Copy SUSE shim
+cp /root/hab_keys/shim-suse.efi /tmp/iso_work/EFI/BOOT/BOOTX64.EFI
 
-# Check El Torito
-xorriso -indev image.iso -report_el_torito plain
+# Copy HAB PreLoader (or Ventoy PreLoader)
+cp /root/hab_keys/hab-preloader-signed.efi /tmp/iso_work/EFI/BOOT/grub.efi
+
+# Keep existing GRUB as grubx64_real.efi
+mv /tmp/iso_work/EFI/BOOT/grubx64.efi /tmp/iso_work/EFI/BOOT/grubx64_real.efi
+
+# Copy MokManager
+cp /root/hab_keys/MokManager-suse.efi /tmp/iso_work/EFI/BOOT/MokManager.efi
+cp /root/hab_keys/MokManager-suse.efi /tmp/iso_work/mmx64.efi
+
+# Copy MOK certificate
+cp /root/hab_keys/MOK.der /tmp/iso_work/ENROLL_THIS_KEY_IN_MOKMANAGER.cer
 ```
 
----
-
-## Writing to USB
-
-### Using dd (Linux)
-
+### Step 3: Update efiboot.img
 ```bash
-# Find your USB device
-lsblk
+# Create new 16MB FAT image
+dd if=/dev/zero of=/tmp/efiboot.img bs=1M count=16
+mkfs.vfat -F 12 -n EFIBOOT /tmp/efiboot.img
 
-# Write ISO (DESTRUCTIVE!)
-sudo dd if=photon-secureboot.iso of=/dev/sdX bs=4M status=progress conv=fsync
-sudo sync
+# Mount and populate
+mkdir -p /tmp/efi_mount
+mount -o loop /tmp/efiboot.img /tmp/efi_mount
+mkdir -p /tmp/efi_mount/EFI/BOOT
+
+# Copy all components
+cp /root/hab_keys/shim-suse.efi /tmp/efi_mount/EFI/BOOT/BOOTX64.EFI
+cp /root/hab_keys/hab-preloader-signed.efi /tmp/efi_mount/EFI/BOOT/grub.efi
+cp /tmp/iso_work/EFI/BOOT/grubx64_real.efi /tmp/efi_mount/EFI/BOOT/
+cp /root/hab_keys/MokManager-suse.efi /tmp/efi_mount/EFI/BOOT/MokManager.efi
+cp /root/hab_keys/MokManager-suse.efi /tmp/efi_mount/mmx64.efi
+cp /root/hab_keys/MOK.der /tmp/efi_mount/ENROLL_THIS_KEY_IN_MOKMANAGER.cer
+
+# Create bootstrap grub.cfg
+cat > /tmp/efi_mount/EFI/BOOT/grub.cfg << 'EOF'
+search --no-floppy --file --set=root /isolinux/isolinux.cfg
+set prefix=($root)/boot/grub2
+configfile $prefix/grub.cfg
+EOF
+
+sync
+umount /tmp/efi_mount
+
+# Replace original
+cp /tmp/efiboot.img /tmp/iso_work/boot/grub2/efiboot.img
 ```
 
-### Using Rufus (Windows)
-
-1. Download Rufus from https://rufus.ie/
-2. Select USB device
-3. Select ISO file
-4. **IMPORTANT**: Choose **DD Image** mode (not ISO mode)
-5. Click Start
-
-### Using hab_iso.sh
-
+### Step 4: Build ISO
 ```bash
-# Write with confirmation
-./hab_scripts/hab_iso.sh write photon-secureboot.iso /dev/sdX
-```
-
-### Common Mistakes
-
-| Mistake | Result | Solution |
-|---------|--------|----------|
-| Rufus ISO mode | May not boot | Use DD mode |
-| Copying files to FAT32 USB | Won't boot | Use dd or Rufus DD |
-| Writing to partition (sda1) | Corrupted USB | Write to disk (sda) |
-| Not syncing | Incomplete write | Run `sync` after dd |
-
-### Creating eFuse USB Dongle
-
-If building with `--efuse-usb` flag, you'll need to create a separate USB dongle with eFuse simulation files:
-
-```bash
-# Create eFuse USB dongle (after keys are generated)
-sudo ./HABv4-installer.sh --create-efuse-usb=/dev/sdb
-```
-
-This formats the USB with:
-- Label: `EFUSE_SIM`
-- Filesystem: FAT32
-- Contents: `efuse_sim/` directory with SRK hash and security config
-
-The GRUB stub will search for this USB at boot time and display security mode status.
-
----
-
-## xorriso vs mkisofs
-
-### Recommended: xorriso
-
-```bash
+cd /tmp/iso_work
 xorriso -as mkisofs \
-    -R -l -D \
-    -o output.iso \
-    -V "VOLUME_LABEL" \
+    -o /path/to/output.iso \
+    -isohybrid-mbr /usr/share/syslinux/isohdpfx.bin \
     -c isolinux/boot.cat \
     -b isolinux/isolinux.bin \
     -no-emul-boot -boot-load-size 4 -boot-info-table \
     -eltorito-alt-boot \
     -e boot/grub2/efiboot.img \
-    -no-emul-boot \
-    -isohybrid-mbr /usr/share/syslinux/isohdpfx.bin \
-    -isohybrid-gpt-basdat \
-    /path/to/contents
+    -no-emul-boot -isohybrid-gpt-basdat \
+    -V "PHOTON_SB" \
+    .
 ```
 
-Key options:
-- `-isohybrid-mbr`: Add MBR boot code
-- `-isohybrid-gpt-basdat`: Create GPT partition for EFI
+## Verification
 
-### Legacy: mkisofs + isohybrid
+### Check ISO Structure
+```bash
+xorriso -indev output.iso -ls /EFI/BOOT/
+xorriso -indev output.iso -ls /
+```
+
+### Verify Signatures
+```bash
+# Extract and check
+mkdir /tmp/verify
+xorriso -osirrox on -indev output.iso -extract /EFI/BOOT /tmp/verify
+
+sbverify --list /tmp/verify/BOOTX64.EFI    # Should show Microsoft
+sbverify --list /tmp/verify/grub.efi       # Should show MOK
+```
+
+### Check HAB PreLoader
+```bash
+objdump -t /tmp/verify/grub.efi | grep security_policy
+# Should show: security_policy_mok_allow, security_policy_mok_deny, etc.
+```
+
+## Writing to USB
 
 ```bash
-# Create ISO
-mkisofs -R -l -L -D \
-    -c isolinux/boot.cat \
-    -b isolinux/isolinux.bin \
-    -no-emul-boot -boot-load-size 4 -boot-info-table \
-    -eltorito-alt-boot \
-    -e boot/grub2/efiboot.img -no-emul-boot \
-    -o output.iso \
-    /path/to/contents
+# Find USB device
+lsblk
 
-# Make hybrid
-isohybrid --uefi output.iso
+# Write ISO (DESTRUCTIVE!)
+sudo dd if=output.iso of=/dev/sdX bs=4M status=progress conv=fsync
+sudo sync
 ```
 
-### Comparison
+## Troubleshooting
 
-| Aspect | xorriso | mkisofs + isohybrid |
-|--------|---------|---------------------|
-| Single command | Yes | No (two steps) |
-| GPT support | Native | Post-processing |
-| UEFI compatibility | Better | May have issues |
-| Installed on | xorriso package | genisoimage + syslinux |
+### "MokManager not found"
+- Ensure `mmx64.efi` exists at ISO root (not just in EFI/BOOT/)
+- SUSE shim requires MokManager at `\mmx64.efi`
 
----
+### "Security Violation"
+- Normal on first boot before MOK enrollment
+- Enroll the MOK certificate via MokManager
 
-## efiboot.img Details
+### ISO won't boot in UEFI
+- Check efiboot.img is properly populated
+- Verify `-isohybrid-gpt-basdat` flag was used with xorriso
 
-### Size Requirements
-
-| Original | With Fedora shim | Recommended |
-|----------|------------------|-------------|
-| 3 MB | Too small | 8 MB |
-
-Contents require ~4.5 MB:
-- Fedora shim: ~950 KB
-- Fedora MokManager: ~850 KB
-- Photon OS GRUB stub (grub.efi): ~2.5 MB (includes embedded modules)
-- VMware GRUB real (grubx64_real.efi): ~1.3 MB
-- grub.cfg: ~1 KB
-- Certificate: ~1 KB
-
-### Creating efiboot.img
-
-```bash
-# Create 16MB FAT32 image
-dd if=/dev/zero of=efiboot.img bs=1M count=16
-mkfs.vfat -F 32 -n "EFIBOOT" efiboot.img
-
-# Mount and populate
-mkdir /tmp/efi_mount
-mount -o loop efiboot.img /tmp/efi_mount
-
-mkdir -p /tmp/efi_mount/EFI/BOOT
-cp bootx64.efi /tmp/efi_mount/EFI/BOOT/
-cp grubx64_stub.efi /tmp/efi_mount/EFI/BOOT/grubx64.efi
-cp grubx64_stub.efi /tmp/efi_mount/EFI/BOOT/grub.efi  # CRITICAL!
-cp grubx64_real.efi /tmp/efi_mount/EFI/BOOT/
-cp grub.cfg /tmp/efi_mount/EFI/BOOT/
-
-sync
-umount /tmp/efi_mount
-```
-
-### Bootstrap grub.cfg
-
-The grub.cfg in efiboot.img is a bootstrap that finds the ISO:
-
-```bash
-# Bootstrap grub.cfg
-set timeout=3
-
-# Search for ISO filesystem
-search --no-floppy --file --set=root /isolinux/vmlinuz
-
-# Load real config from ISO
-if [ -n "$root" ]; then
-    set prefix=($root)/boot/grub2
-    configfile ($root)/boot/grub2/grub.cfg
-fi
-
-# Fallback
-menuentry "Photon OS Install (fallback)" {
-    linux /isolinux/vmlinuz root=/dev/ram0 loglevel=3
-    initrd /isolinux/initrd.img
-}
-```
-
----
-
-## Verifying ISO
-
-### Check Structure
-
-```bash
-# Mount and inspect
-mkdir /tmp/iso_check
-mount -o loop image.iso /tmp/iso_check
-
-# Check EFI files
-ls -la /tmp/iso_check/EFI/BOOT/
-
-# Check signatures
-sbverify --list /tmp/iso_check/EFI/BOOT/BOOTX64.EFI
-
-# Check kernels
-ls -la /tmp/iso_check/isolinux/vmlinuz*
-
-umount /tmp/iso_check
-```
-
-### Check Hybrid
-
-```bash
-# Partition table
-fdisk -l image.iso
-
-# El Torito catalog
-xorriso -indev image.iso -report_el_torito plain
-```
-
-### Using hab_iso.sh
-
-```bash
-./hab_scripts/hab_iso.sh verify /path/to/image.iso
-```
-
-### Expected Output
-
-```
-=== Partition Structure ===
-Device     Boot Start     End Sectors Size Id Type
-image.iso1 *        0 8399159 8399160   4G  0 Empty
-image.iso2        840    8887    8048   4M ef EFI
-
-=== EFI/BOOT Contents ===
-BOOTX64.EFI       949424  (Fedora shim 15.8 SBAT=shim,4)
-grub.efi         2500000  (Photon OS GRUB stub, MOK-signed)
-grubx64.efi      2500000  (Photon OS GRUB stub, MOK-signed)
-grubx64_real.efi 1297712  (VMware GRUB real)
-MokManager.efi    848080  (Fedora MokManager)
-ENROLL_THIS_KEY_IN_MOKMANAGER.cer  (Photon OS MOK certificate)
-
-=== Shim Signature ===
-signature 1: Microsoft Windows UEFI Driver Publisher
-
-=== Shim SBAT ===
-sbat,1,SBAT Version,sbat,1,https://github.com/rhboot/shim/blob/main/SBAT.md
-shim,4,UEFI shim,shim,1,https://github.com/rhboot/shim
-
-=== Kernel ===
-vmlinuz  (VMware signed)
-```
+### SBAT verification failed
+- Use SUSE shim from Ventoy (SBAT version shim,4)
+- Don't use older Fedora shim versions
