@@ -13,47 +13,51 @@ This environment provides tools to create Secure Boot enabled ISOs that work on 
 
 ## Quick Start
 
-### 1. Install Dependencies
-```bash
-# Photon OS
-tdnf install -y gnu-efi-devel sbsigntools xorriso syslinux dosfstools gcc make git
+### Using the Installer (Recommended)
 
-# Clone efitools (required for building)
+```bash
+# Full setup with ISO creation
+./HABv4-installer.sh --build-iso
+
+# Setup only (no ISO)
+./HABv4-installer.sh
+
+# Specific Photon OS version
+./HABv4-installer.sh --release=4.0 --build-iso
+
+# Cleanup
+./HABv4-installer.sh clean
+```
+
+### Installer Options
+
+| Option | Description |
+|--------|-------------|
+| `--release=VERSION` | Photon OS version: 4.0, 5.0, 6.0 (default: 5.0) |
+| `--build-iso` | Build/fix Photon OS ISO for Secure Boot |
+| `--full-kernel-build` | Build kernel from source (takes hours) |
+| `--efuse-usb` | Enable eFuse USB dongle verification |
+| `--create-efuse-usb=DEV` | Create eFuse USB dongle on device |
+| `--mok-days=DAYS` | MOK certificate validity (default: 3650) |
+| `--skip-build` | Skip building HAB PreLoader (use existing) |
+| `--use-ventoy-preloader` | Use Ventoy's PreLoader instead of HAB |
+| `clean` | Clean up all build artifacts |
+| `--help` | Show help message |
+
+### Manual Build (Advanced)
+
+```bash
+# 1. Clone efitools (required)
 mkdir -p /root/src/kernel.org
 cd /root/src/kernel.org
 git clone git://git.kernel.org/pub/scm/linux/kernel/git/jejb/efitools.git
-```
 
-### 2. Generate MOK Key
-```bash
-mkdir -p /root/hab_keys
-cd /root/hab_keys
-
-# Generate key pair
-openssl genrsa -out MOK.key 2048
-openssl req -new -x509 -sha256 -key MOK.key -out MOK.crt -days 3650 \
-    -subj "/CN=HABv4 Secure Boot MOK/O=Organization/C=US"
-openssl x509 -in MOK.crt -outform DER -out MOK.der
-```
-
-### 3. Download Ventoy Binaries
-```bash
-cd /tmp
-wget https://github.com/ventoy/Ventoy/releases/download/v1.1.10/ventoy-1.1.10-linux.tar.gz
-tar xzf ventoy-1.1.10-linux.tar.gz
-cp ventoy-1.1.10/tool/x86_64/BOOTX64.EFI /root/hab_keys/shim-suse.efi
-cp ventoy-1.1.10/tool/x86_64/MokManager.efi /root/hab_keys/MokManager-suse.efi
-```
-
-### 4. Build HAB PreLoader
-```bash
+# 2. Build HAB PreLoader
 cd /path/to/HABv4SimulationEnvironment/src/hab
 ./build.sh all      # Build efitools library + HAB PreLoader
 ./build.sh sign     # Sign with MOK
-```
 
-### 5. Create Secure Boot ISO
-```bash
+# 3. Create Secure Boot ISO
 cd /path/to/HABv4SimulationEnvironment/src/hab/iso
 make
 ./hab_iso /path/to/photon.iso /path/to/photon-secureboot.iso
