@@ -70,9 +70,6 @@ typedef struct {
     int build_iso;
     int generate_keys;
     int setup_efuse;
-    int download_ventoy;
-    int use_ventoy_preloader;
-    int skip_preloader_build;
     int full_kernel_build;
     int efuse_usb_mode;
     int cleanup;
@@ -500,17 +497,82 @@ static int create_efuse_usb(const char *device) {
  * Ventoy Components
  * ============================================================================ */
 
-static int download_ventoy_components(void) {
-    log_step("Downloading Ventoy components...");
+/* Forward declaration */
+static int download_ventoy_components_fallback(void);
+
+/* Get the directory containing the executable */
+static void get_executable_dir(char *dir, size_t size) {
+    char path[512];
+    ssize_t len = readlink("/proc/self/exe", path, sizeof(path) - 1);
+    if (len > 0) {
+        path[len] = '\0';
+        char *last_slash = strrchr(path, '/');
+        if (last_slash) {
+            *last_slash = '\0';
+            strncpy(dir, path, size - 1);
+            dir[size - 1] = '\0';
+            return;
+        }
+    }
+    strncpy(dir, ".", size - 1);
+}
+
+static int extract_embedded_shim_components(void) {
+    log_step("Extracting embedded SUSE shim components...");
     
     char shim_path[512], mok_path[512];
     snprintf(shim_path, sizeof(shim_path), "%s/shim-suse.efi", cfg.keys_dir);
     snprintf(mok_path, sizeof(mok_path), "%s/MokManager-suse.efi", cfg.keys_dir);
     
     if (file_exists(shim_path) && file_exists(mok_path)) {
-        log_info("Ventoy components already exist");
+        log_info("SUSE shim components already exist");
         return 0;
     }
+    
+    /* Find embedded data files relative to executable */
+    char exe_dir[512], data_dir[512];
+    get_executable_dir(exe_dir, sizeof(exe_dir));
+    snprintf(data_dir, sizeof(data_dir), "%s/../data", exe_dir);
+    
+    char shim_gz[512], mok_gz[512];
+    snprintf(shim_gz, sizeof(shim_gz), "%s/shim-suse.efi.gz", data_dir);
+    snprintf(mok_gz, sizeof(mok_gz), "%s/MokManager-suse.efi.gz", data_dir);
+    
+    char cmd[1024];
+    
+    if (file_exists(shim_gz) && file_exists(mok_gz)) {
+        log_info("Using embedded SUSE shim components");
+        
+        snprintf(cmd, sizeof(cmd), "gunzip -c '%s' > '%s'", shim_gz, shim_path);
+        if (run_cmd(cmd) != 0) {
+            log_error("Failed to extract shim-suse.efi");
+            return -1;
+        }
+        
+        snprintf(cmd, sizeof(cmd), "gunzip -c '%s' > '%s'", mok_gz, mok_path);
+        if (run_cmd(cmd) != 0) {
+            log_error("Failed to extract MokManager-suse.efi");
+            return -1;
+        }
+        
+        log_info("Extracted shim-suse.efi");
+        log_info("Extracted MokManager-suse.efi");
+        return 0;
+    }
+    
+    log_warn("Embedded shim components not found at %s", data_dir);
+    log_info("Falling back to Ventoy download...");
+    
+    /* Fallback: download from Ventoy if embedded files not found */
+    return download_ventoy_components_fallback();
+}
+
+static int download_ventoy_components_fallback(void) {
+    log_step("Downloading Ventoy components (fallback)...");
+    
+    char shim_path[512], mok_path[512];
+    snprintf(shim_path, sizeof(shim_path), "%s/shim-suse.efi", cfg.keys_dir);
+    snprintf(mok_path, sizeof(mok_path), "%s/MokManager-suse.efi", cfg.keys_dir);
     
     char work_dir[256];
     snprintf(work_dir, sizeof(work_dir), "/tmp/ventoy_%d", getpid());
@@ -554,35 +616,6 @@ static int download_ventoy_components(void) {
             run_cmd(cmd);
             
             snprintf(cmd, sizeof(cmd), "cp '%s/EFI/BOOT/MokManager.efi' '%s/MokManager-suse.efi'",
-                mount_point, cfg.keys_dir);
-            run_cmd(cmd);
-            
-            snprintf(cmd, sizeof(cmd), "cp '%s/EFI/BOOT/grub.efi' '%s/ventoy-preloader.efi'",
-                mount_point, cfg.keys_dir);
-            run_cmd(cmd);
-            
-            snprintf(cmd, sizeof(cmd), "cp '%s/EFI/BOOT/grubx64_real.efi' '%s/ventoy-grub-real.efi' 2>/dev/null || true",
-                mount_point, cfg.keys_dir);
-            run_cmd(cmd);
-            
-            snprintf(cmd, sizeof(cmd), "cp '%s/ENROLL_THIS_KEY_IN_MOKMANAGER.cer' '%s/ventoy-mok.cer' 2>/dev/null || true",
-                mount_point, cfg.keys_dir);
-            run_cmd(cmd);
-            
-            /* IA32 (32-bit UEFI) support - for rare 32-bit UEFI systems */
-            snprintf(cmd, sizeof(cmd), "cp '%s/EFI/BOOT/BOOTIA32.EFI' '%s/shim-ia32.efi' 2>/dev/null || true",
-                mount_point, cfg.keys_dir);
-            run_cmd(cmd);
-            
-            snprintf(cmd, sizeof(cmd), "cp '%s/EFI/BOOT/grubia32.efi' '%s/ventoy-preloader-ia32.efi' 2>/dev/null || true",
-                mount_point, cfg.keys_dir);
-            run_cmd(cmd);
-            
-            snprintf(cmd, sizeof(cmd), "cp '%s/EFI/BOOT/grubia32_real.efi' '%s/ventoy-grub-real-ia32.efi' 2>/dev/null || true",
-                mount_point, cfg.keys_dir);
-            run_cmd(cmd);
-            
-            snprintf(cmd, sizeof(cmd), "cp '%s/EFI/BOOT/mmia32.efi' '%s/MokManager-ia32.efi' 2>/dev/null || true",
                 mount_point, cfg.keys_dir);
             run_cmd(cmd);
             
@@ -805,9 +838,12 @@ static int create_secure_boot_iso(void) {
     snprintf(shim_path, sizeof(shim_path), "%s/shim-suse.efi", cfg.keys_dir);
     snprintf(mokm_path, sizeof(mokm_path), "%s/MokManager-suse.efi", cfg.keys_dir);
     
+    /* Auto-extract embedded SUSE shim components if missing */
     if (!file_exists(shim_path) || !file_exists(mokm_path)) {
-        log_error("Required Ventoy components missing. Run with --download-ventoy first.");
-        return -1;
+        if (extract_embedded_shim_components() != 0) {
+            log_error("Failed to extract SUSE shim components");
+            return -1;
+        }
     }
     
     char work_dir[256], iso_extract[512], efi_mount[256];
@@ -1331,7 +1367,7 @@ static int diagnose_iso(const char *iso_path) {
     if (file_exists(grub_stub_path)) {
         long stub_size = get_file_size(grub_stub_path);
         if (stub_size < 100000) {  /* Less than 100KB = stub (expected) */
-            printf("  " GREEN "[OK]" RESET " grub.efi is %ld KB (Ventoy stub - expected)\n", stub_size / 1024);
+            printf("  " GREEN "[OK]" RESET " grub.efi is %ld KB (custom stub - expected)\n", stub_size / 1024);
             
             /* Check if grubx64_real.efi exists for cascade */
             if (file_exists(grub_real_path)) {
@@ -1408,29 +1444,27 @@ static int diagnose_iso(const char *iso_path) {
         errors++;
     }
     
-    /* CRITICAL: Check /grub/grub.cfg redirect for Ventoy's grubx64_real.efi */
-    printf("\n[Ventoy GRUB Config - CRITICAL]\n");
-    snprintf(cmd, sizeof(cmd), "xorriso -osirrox on -indev '%s' -extract /grub/grub.cfg '%s/grub_redirect.cfg' 2>/dev/null", 
+    /* Check for custom GRUB config */
+    printf("\n[Custom GRUB Config]\n");
+    snprintf(cmd, sizeof(cmd), "xorriso -osirrox on -indev '%s' -extract /boot/grub2/grub-custom.cfg '%s/grub_custom.cfg' 2>/dev/null", 
         iso_path, work_dir);
     system(cmd);
     
-    char grub_redirect[512];
-    snprintf(grub_redirect, sizeof(grub_redirect), "%s/grub_redirect.cfg", work_dir);
-    if (file_exists(grub_redirect)) {
-        printf("  " GREEN "[OK]" RESET " /grub/grub.cfg exists (Ventoy GRUB redirect)\n");
-        /* Verify it has the right content - should have search and configfile commands */
-        snprintf(cmd, sizeof(cmd), "grep -q 'search.*isolinux' '%s' && grep -q 'configfile' '%s'", grub_redirect, grub_redirect);
+    char grub_custom[512];
+    snprintf(grub_custom, sizeof(grub_custom), "%s/grub_custom.cfg", work_dir);
+    if (file_exists(grub_custom)) {
+        printf("  " GREEN "[OK]" RESET " /boot/grub2/grub-custom.cfg exists (Custom MOK menu)\n");
+        /* Verify it has the right content - should have Install menuentry */
+        snprintf(cmd, sizeof(cmd), "grep -q 'Install.*Custom MOK' '%s'", grub_custom);
         if (system(cmd) == 0) {
-            printf("  " GREEN "[OK]" RESET " Redirect has search and configfile commands\n");
+            printf("  " GREEN "[OK]" RESET " Has 'Install (Custom MOK)' menu entry\n");
         } else {
-            printf("  " YELLOW "[WARN]" RESET " Redirect may not have correct commands\n");
+            printf("  " YELLOW "[WARN]" RESET " May not have correct menu entries\n");
             warnings++;
         }
     } else {
-        printf("  " RED "[CRITICAL]" RESET " /grub/grub.cfg MISSING!\n");
-        printf("             Ventoy's grubx64_real.efi looks for /grub/grub.cfg\n");
-        printf("             Without it, boot will drop to 'grub>' prompt!\n");
-        errors++;
+        printf("  " YELLOW "[--]" RESET " /boot/grub2/grub-custom.cfg not present\n");
+        printf("             Custom MOK boot path may not work\n");
     }
     
     /* Check efiboot.img */
@@ -1517,7 +1551,7 @@ static int verify_installation(void) {
     } else {
         snprintf(path, sizeof(path), "%s/ventoy-preloader.efi", cfg.keys_dir);
         if (file_exists(path)) {
-            printf("  " YELLOW "[OK]" RESET " Ventoy PreLoader (fallback)\n");
+            printf("  " YELLOW "[OK]" RESET " SUSE shim components (for custom stub)\n");
         } else {
             printf("  " RED "[--]" RESET " No PreLoader found\n");
             errors++;
@@ -1558,12 +1592,9 @@ static void show_help(void) {
     printf("  -b, --build-iso            Build Secure Boot ISO\n");
     printf("  -g, --generate-keys        Generate cryptographic keys\n");
     printf("  -s, --setup-efuse          Setup eFuse simulation\n");
-    printf("  -d, --download-ventoy      Download Ventoy components (SUSE shim, MokManager)\n");
     printf("  -u, --create-efuse-usb=DEV Create eFuse USB dongle on device (e.g., /dev/sdb)\n");
     printf("  -E, --efuse-usb            Enable eFuse USB dongle verification in GRUB\n");
     printf("  -F, --full-kernel-build    Build kernel from source (takes hours)\n");
-    printf("  -V, --use-ventoy           Use Ventoy PreLoader instead of HAB PreLoader\n");
-    printf("  -S, --skip-build           Skip HAB PreLoader build\n");
     printf("  -D, --diagnose=ISO         Diagnose an existing ISO for Secure Boot issues\n");
     printf("  -c, --clean                Clean up all artifacts\n");
     printf("  -v, --verbose              Verbose output\n");
@@ -1611,12 +1642,9 @@ int main(int argc, char *argv[]) {
         {"build-iso",         no_argument,       0, 'b'},
         {"generate-keys",     no_argument,       0, 'g'},
         {"setup-efuse",       no_argument,       0, 's'},
-        {"download-ventoy",   no_argument,       0, 'd'},
         {"create-efuse-usb",  required_argument, 0, 'u'},
         {"efuse-usb",         no_argument,       0, 'E'},
         {"full-kernel-build", no_argument,       0, 'F'},
-        {"use-ventoy",        no_argument,       0, 'V'},
-        {"skip-build",        no_argument,       0, 'S'},
         {"diagnose",          required_argument, 0, 'D'},
         {"clean",             no_argument,       0, 'c'},
         {"verbose",           no_argument,       0, 'v'},
@@ -1625,7 +1653,7 @@ int main(int argc, char *argv[]) {
     };
     
     int opt;
-    while ((opt = getopt_long(argc, argv, "r:i:o:k:e:m:bgsdEFVSD:cu:vh", long_options, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "r:i:o:k:e:m:bgsEFD:cu:vh", long_options, NULL)) != -1) {
         switch (opt) {
             case 'r':
                 strncpy(cfg.release, optarg, sizeof(cfg.release) - 1);
@@ -1659,9 +1687,6 @@ int main(int argc, char *argv[]) {
             case 's':
                 cfg.setup_efuse = 1;
                 break;
-            case 'd':
-                cfg.download_ventoy = 1;
-                break;
             case 'u':
                 strncpy(cfg.efuse_usb_device, optarg, sizeof(cfg.efuse_usb_device) - 1);
                 break;
@@ -1670,12 +1695,6 @@ int main(int argc, char *argv[]) {
                 break;
             case 'F':
                 cfg.full_kernel_build = 1;
-                break;
-            case 'V':
-                cfg.use_ventoy_preloader = 1;
-                break;
-            case 'S':
-                cfg.skip_preloader_build = 1;
                 break;
             case 'D':
                 strncpy(cfg.diagnose_iso_path, optarg, sizeof(cfg.diagnose_iso_path) - 1);
@@ -1717,28 +1736,23 @@ int main(int argc, char *argv[]) {
         return create_efuse_usb(cfg.efuse_usb_device);
     }
     
-    /* If no specific action, default to full setup */
-    if (!cfg.generate_keys && !cfg.setup_efuse && !cfg.download_ventoy && 
+    /* If no specific action, default to full setup (generate keys) */
+    if (!cfg.generate_keys && !cfg.setup_efuse && 
         !cfg.build_iso && !cfg.full_kernel_build) {
         cfg.generate_keys = 1;
         cfg.setup_efuse = 1;
-        cfg.download_ventoy = 1;
     }
     
-    /* Auto-enable prerequisites if building ISO and keys/components don't exist */
+    /* Auto-enable key generation if building ISO and keys don't exist */
     if (cfg.build_iso) {
-        char mok_path[512], shim_path[512];
+        char mok_path[512];
         snprintf(mok_path, sizeof(mok_path), "%s/MOK.key", cfg.keys_dir);
-        snprintf(shim_path, sizeof(shim_path), "%s/shim-suse.efi", cfg.keys_dir);
         
         if (!file_exists(mok_path)) {
             log_info("Keys not found, auto-enabling key generation");
             cfg.generate_keys = 1;
         }
-        if (!file_exists(shim_path)) {
-            log_info("Ventoy components not found, auto-enabling download");
-            cfg.download_ventoy = 1;
-        }
+        /* SUSE shim components are extracted automatically when building ISO */
     }
     
     printf("\n");
@@ -1761,10 +1775,6 @@ int main(int argc, char *argv[]) {
     
     if (cfg.setup_efuse) {
         if (setup_efuse_simulation() != 0) return 1;
-    }
-    
-    if (cfg.download_ventoy) {
-        if (download_ventoy_components() != 0) return 1;
     }
     
     if (cfg.full_kernel_build) {
