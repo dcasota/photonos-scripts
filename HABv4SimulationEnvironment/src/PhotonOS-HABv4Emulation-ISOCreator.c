@@ -1313,12 +1313,27 @@ int main(int argc, char *argv[]) {
     log_info("=========================================");
     printf("Keys:     %s\n", cfg.keys_dir);
     printf("eFuse:    %s\n", cfg.efuse_dir);
+    
+    /* Dynamic next steps based on what was done */
     printf("\nNext steps:\n");
-    printf("  - Build ISO:        %s -b\n", PROGRAM_NAME);
-    printf("  - With eFuse mode:  %s -E -b\n", PROGRAM_NAME);
-    printf("  - Create USB:       %s -u /dev/sdX\n", PROGRAM_NAME);
-    printf("  - Full kernel:      %s -F\n", PROGRAM_NAME);
-    printf("  - Cleanup:          %s -c\n", PROGRAM_NAME);
+    if (cfg.build_iso) {
+        /* ISO was built - suggest writing to USB or testing */
+        printf("  - Write to USB:     dd if=<iso> of=/dev/sdX bs=4M status=progress\n");
+        printf("  - Create eFuse USB: %s -u /dev/sdX\n", PROGRAM_NAME);
+        printf("  - Rebuild with eFuse mode: %s -E -b\n", PROGRAM_NAME);
+        printf("  - Cleanup:          %s -c\n", PROGRAM_NAME);
+    } else if (cfg.full_kernel_build) {
+        /* Kernel was built - suggest building ISO */
+        printf("  - Build ISO:        %s -b\n", PROGRAM_NAME);
+        printf("  - Cleanup:          %s -c\n", PROGRAM_NAME);
+    } else {
+        /* Setup was done - suggest building ISO */
+        printf("  - Build ISO:        %s -b\n", PROGRAM_NAME);
+        printf("  - With eFuse mode:  %s -E -b\n", PROGRAM_NAME);
+        printf("  - Create eFuse USB: %s -u /dev/sdX\n", PROGRAM_NAME);
+        printf("  - Full kernel:      %s -F\n", PROGRAM_NAME);
+        printf("  - Cleanup:          %s -c\n", PROGRAM_NAME);
+    }
     log_info("=========================================");
     
     return 0;
