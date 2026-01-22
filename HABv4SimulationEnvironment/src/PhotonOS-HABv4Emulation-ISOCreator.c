@@ -1729,13 +1729,11 @@ int main(int argc, char *argv[]) {
         return diagnose_iso(cfg.diagnose_iso_path);
     }
     
-    if (strlen(cfg.efuse_usb_device) > 0) {
+    /* Handle eFuse USB creation - but don't return early if --build-iso is also set */
+    int efuse_usb_requested = (strlen(cfg.efuse_usb_device) > 0);
+    if (efuse_usb_requested) {
         if (!cfg.generate_keys) cfg.generate_keys = 1;
         if (!cfg.setup_efuse) cfg.setup_efuse = 1;
-        
-        if (cfg.generate_keys && generate_all_keys() != 0) return 1;
-        if (cfg.setup_efuse && setup_efuse_simulation() != 0) return 1;
-        return create_efuse_usb(cfg.efuse_usb_device);
     }
     
     /* If no specific action, default to full setup (generate keys) */
@@ -1777,6 +1775,11 @@ int main(int argc, char *argv[]) {
     
     if (cfg.setup_efuse) {
         if (setup_efuse_simulation() != 0) return 1;
+    }
+    
+    /* Create eFuse USB dongle if requested */
+    if (efuse_usb_requested) {
+        if (create_efuse_usb(cfg.efuse_usb_device) != 0) return 1;
     }
     
     if (cfg.full_kernel_build) {
