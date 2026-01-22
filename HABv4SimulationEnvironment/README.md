@@ -74,14 +74,16 @@ This performs:
 ### Auto-Detection with `-b`
 
 When using `-b` (build ISO), the tool automatically detects and enables missing prerequisites:
-- If keys don't exist → auto-enables `-g` (generate keys) and `-s` (setup eFuse)
+- If keys don't exist → auto-enables `-g` (generate keys)
 - If Ventoy components don't exist → auto-enables `-d` (download Ventoy)
+
+**Note:** eFuse setup (`-s`) is never auto-enabled and must always be explicitly specified.
 
 This means you can simply run:
 ```bash
 ./PhotonOS-HABv4Emulation-ISOCreator -b
 ```
-Even after cleanup, and it will automatically set up everything needed.
+Even after cleanup, and it will automatically generate keys and download Ventoy components.
 
 ## Examples
 

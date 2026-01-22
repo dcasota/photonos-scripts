@@ -1280,7 +1280,6 @@ int main(int argc, char *argv[]) {
         if (!file_exists(mok_path)) {
             log_info("Keys not found, auto-enabling key generation");
             cfg.generate_keys = 1;
-            cfg.setup_efuse = 1;
         }
         if (!file_exists(shim_path)) {
             log_info("Ventoy components not found, auto-enabling download");
