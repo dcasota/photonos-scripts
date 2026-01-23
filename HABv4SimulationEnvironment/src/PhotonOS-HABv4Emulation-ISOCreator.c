@@ -74,6 +74,7 @@ typedef struct {
     int efuse_usb_mode;
     int cleanup;
     int verbose;
+    int yes_to_all;
 } config_t;
 
 /* Global config */
@@ -428,14 +429,19 @@ static int create_efuse_usb(const char *device) {
     }
     
     printf(YELLOW "WARNING: This will ERASE all data on %s!\n" RESET, device);
-    printf("Continue? [y/N] ");
-    fflush(stdout);
     
-    char confirm[8];
-    if (fgets(confirm, sizeof(confirm), stdin) == NULL || 
-        (confirm[0] != 'y' && confirm[0] != 'Y')) {
-        log_info("Aborted");
-        return 0;
+    if (!cfg.yes_to_all) {
+        printf("Continue? [y/N] ");
+        fflush(stdout);
+        
+        char confirm[8];
+        if (fgets(confirm, sizeof(confirm), stdin) == NULL || 
+            (confirm[0] != 'y' && confirm[0] != 'Y')) {
+            log_info("Aborted");
+            return 0;
+        }
+    } else {
+        printf("Auto-confirmed with -y flag\n");
     }
     
     char cmd[1024];
@@ -1174,6 +1180,73 @@ static int create_secure_boot_iso(void) {
     snprintf(cmd, sizeof(cmd), "cp '%s' '%s/ENROLL_THIS_KEY_IN_MOKMANAGER.cer'", our_mok_der, iso_extract);
     run_cmd(cmd);
     
+    /* Create /EFI/BOOT/grub.cfg in ISO root (for USB boot)
+     * Note: efiboot.img already has this for CD/DVD boot, but USB boot
+     * reads directly from the ISO filesystem, not from efiboot.img */
+    char iso_grub_cfg[512];
+    snprintf(iso_grub_cfg, sizeof(iso_grub_cfg), "%s/EFI/BOOT/grub.cfg", iso_extract);
+    f = fopen(iso_grub_cfg, "w");
+    if (f) {
+        if (cfg.efuse_usb_mode) {
+            /* eFuse USB verification mode */
+            fprintf(f,
+                "# HABv4 eFuse USB Verification Mode\n"
+                "set timeout=10\n"
+                "set efuse_found=0\n"
+                "\n"
+                "search --no-floppy --label EFUSE_SIM --set=efuse_disk\n"
+                "if [ -n \"$efuse_disk\" ]; then\n"
+                "    if [ -f ($efuse_disk)/efuse_sim/srk_fuse.bin ]; then\n"
+                "        set efuse_found=1\n"
+                "    fi\n"
+                "fi\n"
+                "\n"
+                "if [ \"$efuse_found\" = \"0\" ]; then\n"
+                "    echo \"BOOT BLOCKED - eFuse USB Dongle Required\"\n"
+                "    menuentry \"Retry\" { configfile /EFI/BOOT/grub.cfg }\n"
+                "    menuentry \"Reboot\" { reboot }\n"
+                "else\n"
+                "    configfile /boot/grub2/grub-stub-menu.cfg\n"
+                "fi\n"
+            );
+        } else {
+            /* Standard mode - show 6-option stub menu */
+            fprintf(f,
+                "# Custom GRUB Stub Menu - 6 Options\n"
+                "set timeout=5\n"
+                "set default=0\n"
+                "\n"
+                "search --no-floppy --file --set=root /isolinux/isolinux.cfg\n"
+                "\n"
+                "menuentry \"1. Continue to Photon OS Installer (Custom MOK)\" {\n"
+                "    configfile /boot/grub2/grub-custom.cfg\n"
+                "}\n"
+                "\n"
+                "menuentry \"2. Continue to Photon OS Installer (VMware Original)\" {\n"
+                "    chainloader /EFI/BOOT/grubx64_real.efi\n"
+                "}\n"
+                "\n"
+                "menuentry \"3. MokManager - Enroll/Delete MOK Keys\" {\n"
+                "    chainloader /EFI/BOOT/MokManager.efi\n"
+                "}\n"
+                "\n"
+                "menuentry \"4. Reboot into UEFI Firmware Settings\" {\n"
+                "    fwsetup\n"
+                "}\n"
+                "\n"
+                "menuentry \"5. Reboot\" {\n"
+                "    reboot\n"
+                "}\n"
+                "\n"
+                "menuentry \"6. Shutdown\" {\n"
+                "    halt\n"
+                "}\n"
+            );
+        }
+        fclose(f);
+        log_info("Created /EFI/BOOT/grub.cfg for USB boot");
+    }
+    
     /* Create /boot/grub2/grub-custom.cfg for "Install (Custom MOK)" menu */
     char grub_custom_cfg[512];
     snprintf(grub_custom_cfg, sizeof(grub_custom_cfg), "%s/boot/grub2/grub-custom.cfg", iso_extract);
@@ -1650,6 +1723,7 @@ static void show_help(void) {
     printf("  -D, --diagnose=ISO         Diagnose an existing ISO for Secure Boot issues\n");
     printf("  -c, --clean                Clean up all artifacts\n");
     printf("  -v, --verbose              Verbose output\n");
+    printf("  -y, --yes                  Auto-confirm destructive operations (e.g., erase USB)\n");
     printf("  -h, --help                 Show this help\n");
     printf("\n");
     printf("Default behavior (no action flags):\n");
@@ -1700,12 +1774,13 @@ int main(int argc, char *argv[]) {
         {"diagnose",          required_argument, 0, 'D'},
         {"clean",             no_argument,       0, 'c'},
         {"verbose",           no_argument,       0, 'v'},
+        {"yes",               no_argument,       0, 'y'},
         {"help",              no_argument,       0, 'h'},
         {0, 0, 0, 0}
     };
     
     int opt;
-    while ((opt = getopt_long(argc, argv, "r:i:o:k:e:m:bgsEFD:cu:vh", long_options, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "r:i:o:k:e:m:bgsEFD:cu:vyh", long_options, NULL)) != -1) {
         switch (opt) {
             case 'r':
                 strncpy(cfg.release, optarg, sizeof(cfg.release) - 1);
@@ -1756,6 +1831,9 @@ int main(int argc, char *argv[]) {
                 break;
             case 'v':
                 cfg.verbose = 1;
+                break;
+            case 'y':
+                cfg.yes_to_all = 1;
                 break;
             case 'h':
                 show_help();
