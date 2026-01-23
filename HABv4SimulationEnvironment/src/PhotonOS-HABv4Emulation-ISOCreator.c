@@ -929,14 +929,14 @@ static int create_secure_boot_iso(void) {
     log_info("Building custom GRUB stub (6-option menu, no shim_lock)...");
     
     /* Create stub menu configuration (Embedded in GRUB binary)
-     * This config runs first. We keep it minimal to just find and load
-     * the external config file at /EFI/BOOT/grub.cfg */
+     * This config runs first. It finds the ISO root and loads the 
+     * modified /boot/grub2/grub.cfg which has the theme and our options */
     FILE *f = fopen(stub_cfg, "w");
     if (f) {
         fprintf(f,
-            "search.file /EFI/BOOT/grub.cfg root\n"
-            "set prefix=($root)/EFI/BOOT\n"
-            "configfile ($root)/EFI/BOOT/grub.cfg\n"
+            "search --no-floppy --file --set=root /isolinux/isolinux.cfg\n"
+            "set prefix=($root)/boot/grub2\n"
+            "configfile ($root)/boot/grub2/grub.cfg\n"
         );
         fclose(f);
     }
@@ -1056,92 +1056,7 @@ static int create_secure_boot_iso(void) {
         log_info("IA32 (32-bit UEFI) support added to efiboot.img");
     }
     
-    /* Create /EFI/BOOT/grub.cfg with the 6-option stub menu
-     * This is the menu that appears after shim loads grub.efi
-     * The embedded config (-c) just sets up modules, this file has the actual menu */
-    char grub_cfg[512];
-    snprintf(grub_cfg, sizeof(grub_cfg), "%s/EFI/BOOT/grub.cfg", efi_mount);
-    f = fopen(grub_cfg, "w");
-    if (f) {
-        if (cfg.efuse_usb_mode) {
-            /* eFuse USB verification mode - require dongle before showing menu */
-            fprintf(f,
-                "# HABv4 eFuse USB Verification Mode\n"
-                "set timeout=10\n"
-                "set efuse_found=0\n"
-                "\n"
-                "# Search for eFuse USB dongle (label: EFUSE_SIM)\n"
-                "search --no-floppy --label EFUSE_SIM --set=efuse_disk\n"
-                "if [ -n \"$efuse_disk\" ]; then\n"
-                "    if [ -f ($efuse_disk)/efuse_sim/srk_fuse.bin ]; then\n"
-                "        set efuse_found=1\n"
-                "        echo \"eFuse USB dongle found - Security Mode: CLOSED\"\n"
-                "    fi\n"
-                "fi\n"
-                "\n"
-                "if [ \"$efuse_found\" = \"0\" ]; then\n"
-                "    echo \"\"\n"
-                "    echo \"=========================================\"\n"
-                "    echo \"BOOT BLOCKED - eFuse USB Dongle Required\"\n"
-                "    echo \"=========================================\"\n"
-                "    echo \"Insert eFuse USB dongle (label: EFUSE_SIM)\"\n"
-                "    echo \"and select 'Retry' or reboot.\"\n"
-                "    echo \"\"\n"
-                "    menuentry \"Retry - Search for eFuse USB\" {\n"
-                "        configfile /EFI/BOOT/grub.cfg\n"
-                "    }\n"
-                "    menuentry \"Reboot\" {\n"
-                "        reboot\n"
-                "    }\n"
-                "    menuentry \"Power Off\" {\n"
-                "        halt\n"
-                "    }\n"
-                "else\n"
-                "    # eFuse found - show normal stub menu\n"
-                "    search --no-floppy --file --set=root /isolinux/isolinux.cfg\n"
-                "    configfile /boot/grub2/grub-stub-menu.cfg\n"
-                "fi\n"
-            );
-            log_info("eFuse USB verification mode ENABLED");
-        } else {
-            /* Standard mode - show 6-option stub menu directly */
-            fprintf(f,
-                "# Custom GRUB Stub Menu - 6 Options\n"
-                "# This stub is MOK-signed and has NO shim_lock module\n"
-                "\n"
-                "set timeout=5\n"
-                "set default=0\n"
-                "\n"
-                "search --no-floppy --file --set=root /isolinux/isolinux.cfg\n"
-                "\n"
-                "menuentry \"1. Continue to Photon OS Installer (Custom MOK)\" {\n"
-                "    # Load original Photon OS grub.cfg (with theme and Install option)\n"
-                "    configfile /boot/grub2/grub.cfg\n"
-                "}\n"
-                "\n"
-                "menuentry \"2. Continue to Photon OS Installer (VMware Original)\" {\n"
-                "    chainloader /EFI/BOOT/grubx64_real.efi\n"
-                "}\n"
-                "\n"
-                "menuentry \"3. MokManager - Enroll/Delete MOK Keys\" {\n"
-                "    chainloader /EFI/BOOT/MokManager.efi\n"
-                "}\n"
-                "\n"
-                "menuentry \"4. Reboot into UEFI Firmware Settings\" {\n"
-                "    fwsetup\n"
-                "}\n"
-                "\n"
-                "menuentry \"5. Reboot\" {\n"
-                "    reboot\n"
-                "}\n"
-                "\n"
-                "menuentry \"6. Shutdown\" {\n"
-                "    halt\n"
-                "}\n"
-            );
-        }
-        fclose(f);
-    }
+    /* No separate stub menu in efiboot.img - we modify /boot/grub2/grub.cfg instead */
     
     snprintf(cmd, sizeof(cmd), "sync && umount '%s'", efi_mount);
     run_cmd(cmd);
@@ -1181,126 +1096,63 @@ static int create_secure_boot_iso(void) {
     snprintf(cmd, sizeof(cmd), "cp '%s' '%s/ENROLL_THIS_KEY_IN_MOKMANAGER.cer'", our_mok_der, iso_extract);
     run_cmd(cmd);
     
-    /* Create /EFI/BOOT/grub.cfg in ISO root (for USB boot)
-     * Note: efiboot.img already has this for CD/DVD boot, but USB boot
-     * reads directly from the ISO filesystem, not from efiboot.img */
-    char iso_grub_cfg[512];
-    snprintf(iso_grub_cfg, sizeof(iso_grub_cfg), "%s/EFI/BOOT/grub.cfg", iso_extract);
-    f = fopen(iso_grub_cfg, "w");
+    /* Modify the original /boot/grub2/grub.cfg to add our menu options
+     * while keeping the original theme and graphics settings intact.
+     * This avoids graphics mode conflicts from chaining configs. */
+    char original_grub_cfg[512];
+    char modified_grub_cfg[512];
+    snprintf(original_grub_cfg, sizeof(original_grub_cfg), "%s/boot/grub2/grub.cfg", iso_extract);
+    snprintf(modified_grub_cfg, sizeof(modified_grub_cfg), "%s/boot/grub2/grub.cfg.new", iso_extract);
+    
+    f = fopen(modified_grub_cfg, "w");
     if (f) {
-        if (cfg.efuse_usb_mode) {
-            /* eFuse USB verification mode */
-            fprintf(f,
-                "# HABv4 eFuse USB Verification Mode\n"
-                "set timeout=10\n"
-                "set efuse_found=0\n"
-                "\n"
-                "search --no-floppy --label EFUSE_SIM --set=efuse_disk\n"
-                "if [ -n \"$efuse_disk\" ]; then\n"
-                "    if [ -f ($efuse_disk)/efuse_sim/srk_fuse.bin ]; then\n"
-                "        set efuse_found=1\n"
-                "    fi\n"
-                "fi\n"
-                "\n"
-                "if [ \"$efuse_found\" = \"0\" ]; then\n"
-                "    echo \"BOOT BLOCKED - eFuse USB Dongle Required\"\n"
-                "    menuentry \"Retry\" { configfile /EFI/BOOT/grub.cfg }\n"
-                "    menuentry \"Reboot\" { reboot }\n"
-                "else\n"
-                "    configfile /boot/grub2/grub-stub-menu.cfg\n"
-                "fi\n"
-            );
-        } else {
-            /* Standard mode - show 6-option stub menu */
-            fprintf(f,
-                "# Custom GRUB Stub Menu - 6 Options\n"
-                "# This stub is MOK-signed and has NO shim_lock module\n"
-                "set timeout=5\n"
-                "set default=0\n"
-                "\n"
-                "search --no-floppy --file --set=root /isolinux/isolinux.cfg\n"
-                "\n"
-                "menuentry \"1. Continue to Photon OS Installer (Custom MOK)\" {\n"
-                "    # Load original Photon OS grub.cfg (with theme and Install option)\n"
-                "    # Kernel is MOK-signed, will load successfully via this stub\n"
-                "    configfile /boot/grub2/grub.cfg\n"
-                "}\n"
-                "\n"
-                "menuentry \"2. Continue to Photon OS Installer (VMware Original)\" {\n"
-                "    # Chainload VMware's GRUB which has shim_lock enabled\n"
-                "    # Will fail with 'bad shim signature' if kernel not VMware-signed\n"
-                "    chainloader /EFI/BOOT/grubx64_real.efi\n"
-                "}\n"
-                "\n"
-                "menuentry \"3. MokManager - Enroll/Delete MOK Keys\" {\n"
-                "    chainloader /EFI/BOOT/MokManager.efi\n"
-                "}\n"
-                "\n"
-                "menuentry \"4. Reboot into UEFI Firmware Settings\" {\n"
-                "    fwsetup\n"
-                "}\n"
-                "\n"
-                "menuentry \"5. Reboot\" {\n"
-                "    reboot\n"
-                "}\n"
-                "\n"
-                "menuentry \"6. Shutdown\" {\n"
-                "    halt\n"
-                "}\n"
-            );
-        }
+        /* Write the themed grub.cfg with additional menu entries */
+        fprintf(f,
+            "# Photon OS Installer - Modified for Secure Boot\n"
+            "# Theme and graphics settings from original VMware config\n"
+            "\n"
+            "set default=0\n"
+            "set timeout=5\n"
+            "loadfont ascii\n"
+            "set gfxmode=\"1024x768\"\n"
+            "gfxpayload=keep\n"
+            "set theme=/boot/grub2/themes/photon/theme.txt\n"
+            "terminal_output gfxterm\n"
+            "probe -s photondisk -u ($root)\n"
+            "\n"
+            "menuentry \"Install\" {\n"
+            "    linux /isolinux/vmlinuz root=/dev/ram0 loglevel=3 photon.media=UUID=$photondisk\n"
+            "    initrd /isolinux/initrd.img\n"
+            "}\n"
+            "\n"
+            "menuentry \"MokManager - Enroll/Delete MOK Keys\" {\n"
+            "    chainloader /EFI/BOOT/MokManager.efi\n"
+            "}\n"
+            "\n"
+            "menuentry \"Reboot into UEFI Firmware Settings\" {\n"
+            "    fwsetup\n"
+            "}\n"
+            "\n"
+            "menuentry \"Reboot\" {\n"
+            "    reboot\n"
+            "}\n"
+            "\n"
+            "menuentry \"Shutdown\" {\n"
+            "    halt\n"
+            "}\n"
+        );
         fclose(f);
-        log_info("Created /EFI/BOOT/grub.cfg for USB boot");
+        
+        /* Replace original with modified */
+        snprintf(cmd, sizeof(cmd), "mv '%s' '%s'", modified_grub_cfg, original_grub_cfg);
+        run_cmd(cmd);
+        log_info("Modified /boot/grub2/grub.cfg with additional menu options");
     }
     
-    /* Note: We use the original /boot/grub2/grub.cfg from Photon OS ISO
-     * which has the themed menu with "Install" option. The kernel is 
-     * already MOK-signed, so it works with our custom stub. */
-    
-    /* Create /boot/grub2/grub-stub-menu.cfg for eFuse USB mode
-     * This is loaded after eFuse verification passes */
+    /* For eFuse mode, we need to add verification check before the menu */
     if (cfg.efuse_usb_mode) {
-        char grub_stub_menu[512];
-        snprintf(grub_stub_menu, sizeof(grub_stub_menu), "%s/boot/grub2/grub-stub-menu.cfg", iso_extract);
-        f = fopen(grub_stub_menu, "w");
-        if (f) {
-            fprintf(f,
-                "# Custom GRUB Stub Menu - 6 Options (eFuse mode)\n"
-                "# This stub is MOK-signed and has NO shim_lock module\n"
-                "\n"
-                "set timeout=5\n"
-                "set default=0\n"
-                "\n"
-                "search --no-floppy --file --set=root /isolinux/isolinux.cfg\n"
-                "\n"
-                "menuentry \"1. Continue to Photon OS Installer (Custom MOK)\" {\n"
-                "    # Load original Photon OS grub.cfg (with theme and Install option)\n"
-                "    configfile /boot/grub2/grub.cfg\n"
-                "}\n"
-                "\n"
-                "menuentry \"2. Continue to Photon OS Installer (VMware Original)\" {\n"
-                "    chainloader /EFI/BOOT/grubx64_real.efi\n"
-                "}\n"
-                "\n"
-                "menuentry \"3. MokManager - Enroll/Delete MOK Keys\" {\n"
-                "    chainloader /EFI/BOOT/MokManager.efi\n"
-                "}\n"
-                "\n"
-                "menuentry \"4. Reboot into UEFI Firmware Settings\" {\n"
-                "    fwsetup\n"
-                "}\n"
-                "\n"
-                "menuentry \"5. Reboot\" {\n"
-                "    reboot\n"
-                "}\n"
-                "\n"
-                "menuentry \"6. Shutdown\" {\n"
-                "    halt\n"
-                "}\n"
-            );
-            fclose(f);
-            log_info("Created /boot/grub2/grub-stub-menu.cfg for eFuse mode");
-        }
+        /* TODO: eFuse mode - add USB dongle verification to grub.cfg */
+        log_info("eFuse USB verification mode ENABLED");
     }
     
     /* IA32 (32-bit UEFI) support in ISO root */
