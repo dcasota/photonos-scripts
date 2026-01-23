@@ -953,11 +953,14 @@ static int create_secure_boot_iso(void) {
         fclose(f);
     }
     
-    /* Build GRUB stub WITHOUT shim_lock module but WITH SBAT data */
+    /* Build GRUB stub WITHOUT shim_lock module but WITH SBAT data
+     * Include probe (for UUID detection), gfxmenu (for themed menus),
+     * png/jpeg/tga (for background images), and gfxterm_background */
     snprintf(cmd, sizeof(cmd),
-        "grub2-mkimage -O x86_64-efi -o '%s' -c '%s' -p /EFI/BOOT --sbat '%s' "
+        "grub2-mkimage -O x86_64-efi -o '%s' -c '%s' -p /boot/grub2 --sbat '%s' "
         "normal search configfile linux chain fat part_gpt part_msdos iso9660 "
         "boot echo reboot halt test true loadenv read all_video gfxterm font efi_gop "
+        "probe gfxmenu png jpeg tga gfxterm_background "
         "2>/dev/null",
         custom_stub, stub_cfg, sbat_csv);
     
@@ -1106,53 +1109,126 @@ static int create_secure_boot_iso(void) {
     
     f = fopen(modified_grub_cfg, "w");
     if (f) {
-        /* Write the themed grub.cfg with additional menu entries */
-        fprintf(f,
-            "# Photon OS Installer - Modified for Secure Boot\n"
-            "# Theme and graphics settings from original VMware config\n"
-            "\n"
-            "set default=0\n"
-            "set timeout=5\n"
-            "loadfont ascii\n"
-            "set gfxmode=\"1024x768\"\n"
-            "gfxpayload=keep\n"
-            "set theme=/boot/grub2/themes/photon/theme.txt\n"
-            "terminal_output gfxterm\n"
-            "probe -s photondisk -u ($root)\n"
-            "\n"
-            "menuentry \"Install\" {\n"
-            "    linux /isolinux/vmlinuz root=/dev/ram0 loglevel=3 photon.media=UUID=$photondisk\n"
-            "    initrd /isolinux/initrd.img\n"
-            "}\n"
-            "\n"
-            "menuentry \"MokManager - Enroll/Delete MOK Keys\" {\n"
-            "    chainloader /EFI/BOOT/MokManager.efi\n"
-            "}\n"
-            "\n"
-            "menuentry \"Reboot into UEFI Firmware Settings\" {\n"
-            "    fwsetup\n"
-            "}\n"
-            "\n"
-            "menuentry \"Reboot\" {\n"
-            "    reboot\n"
-            "}\n"
-            "\n"
-            "menuentry \"Shutdown\" {\n"
-            "    halt\n"
-            "}\n"
-        );
+        /* Write the themed grub.cfg with 6 menu entries */
+        if (cfg.efuse_usb_mode) {
+            /* eFuse mode: Check for USB dongle before showing menu */
+            fprintf(f,
+                "# Photon OS Installer - HABv4 Secure Boot with eFuse Verification\n"
+                "# Theme and graphics settings from original VMware config\n"
+                "\n"
+                "# eFuse USB dongle verification\n"
+                "set efuse_verified=0\n"
+                "search --no-floppy --label EFUSE_SIM --set=efuse_disk\n"
+                "if [ -n \"$efuse_disk\" ]; then\n"
+                "    if [ -f ($efuse_disk)/efuse_sim/srk_fuse.bin ]; then\n"
+                "        set efuse_verified=1\n"
+                "    fi\n"
+                "fi\n"
+                "\n"
+                "if [ \"$efuse_verified\" = \"0\" ]; then\n"
+                "    echo \"\"\n"
+                "    echo \"=========================================\"\n"
+                "    echo \"  HABv4 SECURITY: eFuse USB Required\"\n"
+                "    echo \"=========================================\"\n"
+                "    echo \"\"\n"
+                "    echo \"Insert eFuse USB dongle (label: EFUSE_SIM)\"\n"
+                "    echo \"and select 'Retry' to continue.\"\n"
+                "    echo \"\"\n"
+                "    set timeout=-1\n"
+                "    menuentry \"Retry - Search for eFuse USB\" {\n"
+                "        configfile /boot/grub2/grub.cfg\n"
+                "    }\n"
+                "    menuentry \"Reboot\" {\n"
+                "        reboot\n"
+                "    }\n"
+                "    menuentry \"Shutdown\" {\n"
+                "        halt\n"
+                "    }\n"
+                "else\n"
+                "    # eFuse verified - show full menu\n"
+                "    set default=0\n"
+                "    set timeout=5\n"
+                "    loadfont ascii\n"
+                "    set gfxmode=\"1024x768\"\n"
+                "    gfxpayload=keep\n"
+                "    set theme=/boot/grub2/themes/photon/theme.txt\n"
+                "    terminal_output gfxterm\n"
+                "    probe -s photondisk -u ($root)\n"
+                "\n"
+                "    menuentry \"Install (Custom MOK)\" {\n"
+                "        linux /isolinux/vmlinuz root=/dev/ram0 loglevel=3 photon.media=UUID=$photondisk\n"
+                "        initrd /isolinux/initrd.img\n"
+                "    }\n"
+                "\n"
+                "    menuentry \"Install (VMware Original) - Will fail without VMware signature\" {\n"
+                "        chainloader /EFI/BOOT/grubx64_real.efi\n"
+                "    }\n"
+                "\n"
+                "    menuentry \"MokManager - Enroll/Delete MOK Keys\" {\n"
+                "        chainloader /EFI/BOOT/MokManager.efi\n"
+                "    }\n"
+                "\n"
+                "    menuentry \"Reboot into UEFI Firmware Settings\" {\n"
+                "        fwsetup\n"
+                "    }\n"
+                "\n"
+                "    menuentry \"Reboot\" {\n"
+                "        reboot\n"
+                "    }\n"
+                "\n"
+                "    menuentry \"Shutdown\" {\n"
+                "        halt\n"
+                "    }\n"
+                "fi\n"
+            );
+            log_info("eFuse USB verification mode ENABLED in grub.cfg");
+        } else {
+            /* Standard mode: 6-option menu */
+            fprintf(f,
+                "# Photon OS Installer - Modified for Secure Boot\n"
+                "# Theme and graphics settings from original VMware config\n"
+                "\n"
+                "set default=0\n"
+                "set timeout=5\n"
+                "loadfont ascii\n"
+                "set gfxmode=\"1024x768\"\n"
+                "gfxpayload=keep\n"
+                "set theme=/boot/grub2/themes/photon/theme.txt\n"
+                "terminal_output gfxterm\n"
+                "probe -s photondisk -u ($root)\n"
+                "\n"
+                "menuentry \"Install (Custom MOK)\" {\n"
+                "    linux /isolinux/vmlinuz root=/dev/ram0 loglevel=3 photon.media=UUID=$photondisk\n"
+                "    initrd /isolinux/initrd.img\n"
+                "}\n"
+                "\n"
+                "menuentry \"Install (VMware Original) - Will fail without VMware signature\" {\n"
+                "    chainloader /EFI/BOOT/grubx64_real.efi\n"
+                "}\n"
+                "\n"
+                "menuentry \"MokManager - Enroll/Delete MOK Keys\" {\n"
+                "    chainloader /EFI/BOOT/MokManager.efi\n"
+                "}\n"
+                "\n"
+                "menuentry \"Reboot into UEFI Firmware Settings\" {\n"
+                "    fwsetup\n"
+                "}\n"
+                "\n"
+                "menuentry \"Reboot\" {\n"
+                "    reboot\n"
+                "}\n"
+                "\n"
+                "menuentry \"Shutdown\" {\n"
+                "    halt\n"
+                "}\n"
+            );
+        }
         fclose(f);
         
         /* Replace original with modified */
         snprintf(cmd, sizeof(cmd), "mv '%s' '%s'", modified_grub_cfg, original_grub_cfg);
         run_cmd(cmd);
-        log_info("Modified /boot/grub2/grub.cfg with additional menu options");
-    }
-    
-    /* For eFuse mode, we need to add verification check before the menu */
-    if (cfg.efuse_usb_mode) {
-        /* TODO: eFuse mode - add USB dongle verification to grub.cfg */
-        log_info("eFuse USB verification mode ENABLED");
+        log_info("Modified /boot/grub2/grub.cfg with 6 menu options");
     }
     
     /* IA32 (32-bit UEFI) support in ISO root */

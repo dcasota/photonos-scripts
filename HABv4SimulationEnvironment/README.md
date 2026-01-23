@@ -43,10 +43,23 @@ UEFI Firmware
 BOOTX64.EFI (SUSE shim, SBAT=shim,4)
     ↓ (verifies against MokList)
 grub.efi (Custom GRUB stub, MOK-signed, SBAT=grub,3)
-    ↓ (Presents 5-second stub menu)
-    ├── 1. Custom MOK (Default) → Original grub.cfg (themed) → MOK-signed kernel
-    └── 2. VMware Original      → Chains to VMware GRUB (shim_lock enabled)
+    ↓ (Loads modified grub.cfg with theme)
+    ↓ (Presents 6-option themed menu, 5 sec timeout)
+    ├── 1. Install (Custom MOK)     → MOK-signed kernel (default)
+    ├── 2. Install (VMware Original)→ Chains to VMware GRUB (will fail)
+    ├── 3. MokManager               → Enroll/Delete MOK keys
+    ├── 4. UEFI Firmware Settings   → fwsetup
+    ├── 5. Reboot
+    └── 6. Shutdown
 ```
+
+### GRUB Modules
+
+The custom GRUB stub includes these modules for proper theming and UUID detection:
+- `probe` - Required for UUID detection (`photon.media=UUID=$photondisk`)
+- `gfxmenu` - Required for themed menus
+- `png`, `jpeg`, `tga` - Required for background images
+- `gfxterm_background` - Graphics terminal background support
 
 ### Why Custom GRUB Stub?
 VMware's original GRUB includes the `shim_lock` verifier module, which enforces strict kernel signature verification via shim. To support custom kernels or installers without replacing the Microsoft-signed shim, we build a custom GRUB stub that:
@@ -81,10 +94,8 @@ VMware's original GRUB includes the `shim_lock` verifier module, which enforces 
 2.  **Blue Screen**: You will see a blue "Shim UEFI key management" screen (MokManager).
 3.  **Enroll Key**: Select "Enroll key from disk" -> Select `ENROLL_THIS_KEY_IN_MOKMANAGER.cer`.
 4.  **Reboot**: Confirm enrollment and reboot.
-5.  **Stub Menu**: After reboot, a 6-option menu appears (5 sec timeout).
-6.  **Install**: Select "1. Continue to Photon OS Installer (Custom MOK)".
-7.  **Themed Menu**: The original Photon OS installer menu appears (with background).
-8.  **Install**: Select "Install" to begin installation.
+5.  **Themed Menu**: After reboot, the Photon OS installer menu appears with background picture.
+6.  **Install**: Select "Install (Custom MOK)" to begin installation with MOK-signed kernel.
 
 ## Troubleshooting
 

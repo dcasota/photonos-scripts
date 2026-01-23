@@ -67,17 +67,25 @@ Shim verifies the next stage (GRUB stub) using:
 
 ### Files
 - **Stub**: `grub.efi` (Custom GRUB, MOK-signed, SBAT-compliant).
-- **Config**: `/boot/grub2/grub-custom.cfg`.
+- **Config**: `/boot/grub2/grub.cfg` (modified with additional menu entries).
 
 ### Custom Stub Features
 We build a custom GRUB binary using `grub2-mkimage` that:
 1.  **Includes SBAT metadata**: To satisfy Shim's policy check.
 2.  **Is signed with MOK**: To pass Shim's signature check.
 3.  **Excludes `shim_lock`**: To prevent strict validation of the kernel (relies on MOK signature instead).
-4.  **Provides a Menu**:
-    -   1. Custom MOK (Default)
-    -   2. VMware Original (Fallback)
-    -   3. MOK Management
+4.  **Includes Required Modules**:
+    -   `probe` - UUID detection for kernel boot parameters
+    -   `gfxmenu` - Themed menu support
+    -   `png`, `jpeg`, `tga` - Background image formats
+    -   `gfxterm_background` - Graphics terminal background
+5.  **Provides a 6-Option Themed Menu** (in `/boot/grub2/grub.cfg`):
+    -   1. Install (Custom MOK) [default]
+    -   2. Install (VMware Original) - Will fail
+    -   3. MokManager - Enroll/Delete MOK Keys
+    -   4. Reboot into UEFI Firmware Settings
+    -   5. Reboot
+    -   6. Shutdown
 
 ---
 

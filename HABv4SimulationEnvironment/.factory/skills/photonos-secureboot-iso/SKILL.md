@@ -49,16 +49,24 @@ UEFI Firmware (Microsoft UEFI CA in db)
 BOOTX64.EFI (SUSE shim, SBAT=shim,4)
     ↓ verifies MOK signature
 grub.efi (Custom GRUB stub, MOK-signed, NO shim_lock)
-    ↓ presents Stub Menu (5 sec timeout)
+    ↓ loads modified /boot/grub2/grub.cfg
+    ↓ presents 6-option themed menu (5 sec timeout)
     │
-    ├─→ "1. Custom MOK" path:
-    │   configfile /boot/grub2/grub.cfg (original themed menu)
-    │   → "Install" (with Photon OS background) → linux vmlinuz (MOK-signed)
+    ├─→ "Install (Custom MOK)" path:
+    │   linux vmlinuz (MOK-signed) + initrd
     │
-    └─→ "2. VMware Original" path:
+    └─→ "Install (VMware Original)" path:
         chainloader grubx64_real.efi
         → VMware's GRUB (has shim_lock) → unsigned kernel rejected
 ```
+
+## GRUB Modules
+
+The custom GRUB stub includes these modules for proper theming and functionality:
+- `probe` - Required for UUID detection (`photon.media=UUID=$photondisk`)
+- `gfxmenu` - Required for themed menus
+- `png`, `jpeg`, `tga` - Required for background images  
+- `gfxterm_background` - Graphics terminal background support
 
 ## Why Custom GRUB Stub Without shim_lock
 
@@ -66,16 +74,18 @@ VMware's GRUB includes the `shim_lock` verifier module which calls shim's `Verif
 
 The custom stub is still verified by shim via MOK signature, maintaining the secure boot chain up to GRUB.
 
-## Stub Menu (5 Second Timeout)
+## Menu Options (Themed, 5 Second Timeout)
+
+The modified `/boot/grub2/grub.cfg` displays a themed menu with Photon OS background:
 
 ```
-1. Continue to Photon OS Installer (Custom MOK)     [default]
-   → configfile /boot/grub2/grub.cfg (original themed menu)
-   → Shows Photon OS background with "Install" option
+1. Install (Custom MOK)                                      [default]
+   → linux vmlinuz (MOK-signed) + initrd
+   → Boots the installer with MOK-signed kernel
    
-2. Continue to Photon OS Installer (VMware Original)
+2. Install (VMware Original) - Will fail without VMware signature
    → chainloader /EFI/BOOT/grubx64_real.efi
-   → Note: Will fail with "bad shim signature" (unsigned kernel)
+   → VMware's GRUB with shim_lock (kernel verification fails)
    
 3. MokManager - Enroll/Delete MOK Keys
    → chainloader /EFI/BOOT/MokManager.efi
@@ -88,6 +98,28 @@ The custom stub is still verified by shim via MOK signature, maintaining the sec
    
 6. Shutdown
    → halt
+```
+
+## eFuse USB Mode
+
+When built with `-E` flag, the ISO requires an eFuse USB dongle (label: `EFUSE_SIM`) to boot:
+
+```bash
+# Build ISO with eFuse verification
+PhotonOS-HABv4Emulation-ISOCreator -E -b
+
+# Create eFuse USB dongle
+PhotonOS-HABv4Emulation-ISOCreator -u /dev/sdX
+```
+
+Without the eFuse USB dongle present, the boot will show:
+```
+=========================================
+  HABv4 SECURITY: eFuse USB Required
+=========================================
+
+Insert eFuse USB dongle (label: EFUSE_SIM)
+and select 'Retry' to continue.
 ```
 
 ## Tool Usage
@@ -198,10 +230,15 @@ sync
 ### Step 4: Boot to Installer
 
 After reboot:
-1. Stub menu appears (5 second timeout) with 6 options
-2. Select **"1. Continue to Photon OS Installer (Custom MOK)"** (default)
-3. Original Photon OS menu appears with background picture and **"Install"** option
-4. Select **"Install"** to begin installation
+1. Themed Photon OS menu appears (5 second timeout) with background picture
+2. 6 menu options are displayed:
+   - Install (Custom MOK) [default]
+   - Install (VMware Original) - Will fail
+   - MokManager - Enroll/Delete MOK Keys
+   - Reboot into UEFI Firmware Settings
+   - Reboot
+   - Shutdown
+3. Select **"Install (Custom MOK)"** to begin installation with MOK-signed kernel
 
 ## Troubleshooting
 

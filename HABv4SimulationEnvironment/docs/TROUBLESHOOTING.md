@@ -229,6 +229,44 @@ For Photon OS ISOs, use VMware's full GRUB binary and sign it with your own MOK 
 2. Don't try to boot unsigned EFI binaries directly
 3. Check Secure Boot is actually enabled (some UEFI show this error even when disabled)
 
+### "error: can't find command `probe`"
+
+**Cause**: GRUB stub was built without the `probe` module. The `probe` command is required to detect the UUID of the ISO filesystem for proper kernel boot parameters.
+
+**Impact**: Without `probe`, the kernel boot parameter `photon.media=UUID=$photondisk` will be empty, causing the installer to fail to find the installation media.
+
+**Solution**: Rebuild the ISO with a GRUB stub that includes the `probe` module:
+```bash
+./PhotonOS-HABv4Emulation-ISOCreator -b
+```
+
+The current version includes `probe` in the grub2-mkimage command.
+
+### "error: module `gfxmenu' isn't loaded"
+
+**Cause**: GRUB stub was built without the `gfxmenu` module. This module is required for themed menus with background images.
+
+**Impact**: The menu will display without theming/background. May show garbled characters.
+
+**Solution**: Rebuild the ISO with a GRUB stub that includes `gfxmenu`, `png`, `jpeg`, `tga`, and `gfxterm_background` modules:
+```bash
+./PhotonOS-HABv4Emulation-ISOCreator -b
+```
+
+### "photon.media=UUID=" (Empty UUID)
+
+**Cause**: The `probe` command failed or wasn't executed. The kernel command line shows `photon.media=UUID=` without an actual UUID.
+
+**Impact**: The installer cannot locate the installation media (ISO filesystem).
+
+**Solutions**:
+1. Ensure the GRUB stub includes the `probe` module
+2. Verify the grub.cfg contains: `probe -s photondisk -u ($root)`
+3. Rebuild the ISO:
+   ```bash
+   ./PhotonOS-HABv4Emulation-ISOCreator -b
+   ```
+
 ### "Verification failed: (0x1A) Security Violation"
 
 **Cause**: Binary signature doesn't match any trusted certificate.
