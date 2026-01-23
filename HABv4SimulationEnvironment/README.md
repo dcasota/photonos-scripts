@@ -35,7 +35,7 @@ make
 
 ## Architecture
 
-### Boot Chain
+### Boot Chain (ISO Boot)
 
 ```
 UEFI Firmware
@@ -44,13 +44,25 @@ BOOTX64.EFI (SUSE shim, SBAT=shim,4)
     ↓ (verifies against MokList)
 grub.efi (Custom GRUB stub, MOK-signed, SBAT=grub,3)
     ↓ (Loads modified grub.cfg with theme)
-    ↓ (Presents 6-option themed menu, 5 sec timeout)
-    ├── 1. Install (Custom MOK)     → MOK-signed kernel (default)
-    ├── 2. Install (VMware Original)→ Chains to VMware GRUB (will fail)
-    ├── 3. MokManager               → Enroll/Delete MOK keys
-    ├── 4. UEFI Firmware Settings   → fwsetup
+    ↓ (Presents themed menu, 5 sec timeout)
+    ├── 1. Install (Custom MOK) - Automated  → Uses ks=cdrom:/mok_ks.cfg
+    ├── 2. Install (Custom MOK) - Interactive→ Manual package selection
+    ├── 3. Install (VMware Original)         → Chains to VMware GRUB
+    ├── 4. MokManager                        → Enroll/Delete MOK keys
     ├── 5. Reboot
     └── 6. Shutdown
+```
+
+### Boot Chain (Installed System with MOK)
+
+```
+UEFI Firmware
+    ↓ (verifies against Microsoft CA in db)
+shim-signed-mok (bootx64.efi, Microsoft-signed)
+    ↓ (verifies against MokList)
+grub2-efi-image-mok (grubx64.efi, MOK-signed)
+    ↓
+linux-mok (vmlinuz, MOK-signed)
 ```
 
 ### GRUB Modules
@@ -67,6 +79,40 @@ VMware's original GRUB includes the `shim_lock` verifier module, which enforces 
 2. Contains proper SBAT metadata to satisfy shim policy.
 3. Excludes `shim_lock` (or relies on MOK signature).
 4. Provides a menu to choose between the custom path and the original VMware path.
+
+### RPM Secure Boot Patcher
+
+The tool includes an integrated RPM patcher that automatically creates MOK-signed variants of boot packages:
+
+| Original Package | MOK Package | Contents |
+|-----------------|-------------|----------|
+| `shim-signed` | `shim-signed-mok` | Microsoft-signed shim (passthrough) |
+| `grub2-efi-image` | `grub2-efi-image-mok` | MOK-signed grubx64.efi |
+| `linux` / `linux-esx` | `linux-mok` | MOK-signed vmlinuz + boot files |
+
+The patcher:
+- Discovers packages by file paths (version-agnostic)
+- Generates SPEC files with proper Provides/Conflicts
+- Handles both `linux` and `linux-esx` kernel flavors
+- Integrates built RPMs into the ISO repository
+
+### Kickstart-Based Installation
+
+The ISO uses **kickstart configuration files** instead of initrd patching for robustness:
+
+**`/mok_ks.cfg`** - Automated MOK installation:
+```json
+{
+    "linux_flavor": "linux-mok",
+    "packages": ["minimal", "initramfs", "linux-mok", "grub2-efi-image-mok", "shim-signed-mok"],
+    "bootmode": "efi"
+}
+```
+
+This approach is:
+- **Version-independent** - Works with any photon-os-installer version
+- **More robust** - No fragile sed-based patching
+- **VMware-supported** - Uses official kickstart mechanism
 
 ## Command Line Options
 
@@ -105,10 +151,15 @@ VMware's original GRUB includes the `shim_lock` verifier module, which enforces 
 
 ## Version History
 
--   **v1.5.0** - Fixed USB boot menu display, added `-y` flag for auto-confirm.
--   **v1.4.0** - Embedded SUSE shim components, removed manual download, SBAT support added.
--   **v1.3.0** - Custom GRUB stub with MOK-signed kernel approach.
--   **v1.1.0** - Initial C implementation.
+-   **v1.4.0** - Kickstart-based installation, RPM patcher fixes:
+    - Replaced initrd patching with kickstart configuration files
+    - Fixed RPM SPEC file generation (date format, dist tag, kernel flavor)
+    - Added support for linux-esx kernel flavor
+    - Simplified shim-signed-mok to passthrough (Photon lacks MokManager)
+-   **v1.3.0** - Added initrd patching for MOK package substitution (deprecated).
+-   **v1.2.0** - Integrated RPM Secure Boot Patcher for installed system support.
+-   **v1.1.0** - Custom GRUB stub with MOK-signed kernel, SBAT support.
+-   **v1.0.0** - Initial C implementation.
 
 ## License
 
