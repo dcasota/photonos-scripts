@@ -171,37 +171,51 @@ The ISO creator includes an integrated **RPM Secure Boot Patcher** that automati
 | `linux-mok` | `/boot/vmlinuz-*`, `/boot/*` | MOK key |
 | `shim-signed-mok` | `bootx64.efi`, `revocations.efi`, `mmx64.efi` | MOK key (mmx64 only) |
 
-### How Installation Selection Works
+### How Installation Selection Works (Kickstart-Based Approach)
 
-The kernel command line parameter `photon.secureboot=mok` tells the installer which package set to use:
+The ISO uses **kickstart configuration files** to select between MOK and standard packages. This approach is:
+- **Version-independent** - works with any photon-os-installer version (v2.7, v2.8, future)
+- **More robust** - no fragile initrd patching required
+- **VMware-supported** - uses official kickstart mechanism
 
-- **"Install (Custom MOK)"**: Passes `photon.secureboot=mok` → MOK-signed packages installed
-- **"Install (VMware Original)"**: No parameter → Original unsigned packages installed
+**Boot Menu Options:**
 
-### Initrd Patching
+| Menu Entry | Kickstart | Packages Installed |
+|------------|-----------|-------------------|
+| Install (Custom MOK) - Automated | `ks=cdrom:/mok_ks.cfg` | linux-mok, grub2-efi-image-mok, shim-signed-mok |
+| Install (Custom MOK) - Interactive | None | User selects packages (MOK packages available) |
+| Install (VMware Original) - Automated | `ks=cdrom:/standard_ks.cfg` | linux, grub2-efi-image, shim-signed |
 
-The ISO creator automatically patches the installer in the initrd to:
+### Kickstart Files
 
-1. **Add `mok_patch.py`** module to the photon_installer package
-2. **Patch `installer.py`** to import and call `apply_mok_substitution()`
-3. **Repack the initrd** with the patched installer
+The ISO contains two kickstart configuration files:
 
-The patch:
-```python
-# Added after 'import tdnf'
-try:
-    from mok_patch import apply_mok_substitution
-except ImportError:
-    apply_mok_substitution = lambda p, l=None: p
-
-# Modified package assignment
-install_config['packages'] = apply_mok_substitution(packages_pruned, logger)
+**`/mok_ks.cfg`** - MOK Secure Boot installation:
+```json
+{
+    "linux_flavor": "linux-mok",
+    "packages": ["minimal", "initramfs", "linux-mok", "grub2-efi-image-mok", "shim-signed-mok"],
+    "bootmode": "efi"
+}
 ```
 
-When `photon.secureboot=mok` is detected in `/proc/cmdline`, the function automatically substitutes:
-- `linux` → `linux-mok`
-- `grub2-efi-image` → `grub2-efi-image-mok`
-- `shim-signed` → `shim-signed-mok`
+**`/standard_ks.cfg`** - Standard installation (reference):
+```json
+{
+    "linux_flavor": "linux",
+    "packages": ["minimal", "initramfs", "linux", "grub2-efi-image", "shim-signed"],
+    "bootmode": "efi"
+}
+```
+
+### Why Kickstart Instead of Initrd Patching
+
+Previous versions patched the installer in the initrd to detect `photon.secureboot=mok`. This had risks:
+- **Version fragility** - sed patterns could break with installer updates
+- **Python path hardcoding** - Python 3.11 path may change in future releases
+- **Maintenance burden** - each Photon OS version needed testing
+
+The kickstart approach avoids these issues entirely.
 
 ## Tool Usage
 
