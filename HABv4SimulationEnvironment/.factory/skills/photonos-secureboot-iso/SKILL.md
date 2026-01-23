@@ -24,8 +24,8 @@ This skill covers creating Secure Boot enabled ISOs for Photon OS that work on c
 # Build Secure Boot ISO (simplest - does everything automatically)
 ./PhotonOS-HABv4Emulation-ISOCreator -b
 
-# Build ISO with eFuse USB dongle
-./PhotonOS-HABv4Emulation-ISOCreator --build-iso --setup-efuse --create-efuse-usb=/dev/sdX
+# Build ISO with eFuse USB dongle (auto-confirm with -y)
+./PhotonOS-HABv4Emulation-ISOCreator --release 5.0 --build-iso --setup-efuse --create-efuse-usb=/dev/sdX -y
 
 # Diagnose existing ISO
 ./PhotonOS-HABv4Emulation-ISOCreator -D /path/to/iso
@@ -113,6 +113,7 @@ Options:
   -D, --diagnose=ISO         Diagnose an existing ISO for Secure Boot issues
   -c, --clean                Clean up all artifacts
   -v, --verbose              Verbose output
+  -y, --yes                  Auto-confirm destructive operations (e.g., erase USB)
   -h, --help                 Show help
 ```
 
@@ -125,8 +126,8 @@ Options:
 # Build ISO for Photon OS 4.0
 ./PhotonOS-HABv4Emulation-ISOCreator --release 4.0 --build-iso
 
-# Build ISO with eFuse USB dongle
-./PhotonOS-HABv4Emulation-ISOCreator --build-iso --create-efuse-usb=/dev/sdd
+# Build ISO with eFuse USB dongle (auto-confirm)
+./PhotonOS-HABv4Emulation-ISOCreator --build-iso --setup-efuse --create-efuse-usb=/dev/sdd -y
 
 # Build ISO with eFuse verification enabled
 ./PhotonOS-HABv4Emulation-ISOCreator --build-iso --efuse-usb
@@ -236,3 +237,4 @@ The tool now uses `sfdisk` instead of `parted` for eFuse USB creation.
 | Laptop security dialog | CSM enabled | Disable CSM in BIOS |
 | grub> prompt | Config not found | Manual boot or rebuild ISO |
 | ISO not built with --create-efuse-usb | Old bug (fixed) | Update to latest version |
+| Stub menu not showing (jumps to installer) | grub.cfg missing in ISO root | Update to v1.5.0+ |

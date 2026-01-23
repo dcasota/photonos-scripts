@@ -26,8 +26,8 @@ make
 # Simplest usage: Generate keys, setup eFuse, build ISO
 ./PhotonOS-HABv4Emulation-ISOCreator -b
 
-# Build ISO with eFuse USB dongle
-./PhotonOS-HABv4Emulation-ISOCreator -b -u /dev/sdd
+# Build ISO and create eFuse USB dongle (with auto-confirm)
+./PhotonOS-HABv4Emulation-ISOCreator --release 5.0 --build-iso --setup-efuse --create-efuse-usb=/dev/sdd -y
 
 # Diagnose existing ISO
 ./PhotonOS-HABv4Emulation-ISOCreator -D /path/to/iso
@@ -70,6 +70,7 @@ VMware's original GRUB includes the `shim_lock` verifier module, which enforces 
 | `-D` | `--diagnose=ISO` | — | Diagnose an existing ISO |
 | `-c` | `--clean` | Off | Clean up all artifacts |
 | `-v` | `--verbose` | Off | Verbose output |
+| `-y` | `--yes` | Off | Auto-confirm destructive operations (e.g., erase USB) |
 | `-h` | `--help` | — | Show help |
 
 **Note:** The tool embeds required SUSE shim components (`shim-suse.efi`, `MokManager.efi`) and extracts them automatically. No internet connection is required.
@@ -91,6 +92,7 @@ VMware's original GRUB includes the `shim_lock` verifier module, which enforces 
 
 ## Version History
 
+-   **v1.5.0** - Fixed USB boot menu display, added `-y` flag for auto-confirm.
 -   **v1.4.0** - Embedded SUSE shim components, removed manual download, SBAT support added.
 -   **v1.3.0** - Custom GRUB stub with MOK-signed kernel approach.
 -   **v1.1.0** - Initial C implementation.
