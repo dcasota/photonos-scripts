@@ -19,6 +19,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <glob.h>
+#include <time.h>
 
 /* ANSI colors */
 #define RED     "\x1b[31m"
@@ -392,6 +393,12 @@ static int generate_grub_mok_spec(rpm_build_config_t *config, rpm_package_info_t
     char spec_path[1024];
     snprintf(spec_path, sizeof(spec_path), "%s/grub2-efi-image-mok.spec", config->specs_dir);
     
+    /* Generate date string for changelog */
+    char date_str[64];
+    time_t now = time(NULL);
+    struct tm *tm_info = localtime(&now);
+    strftime(date_str, sizeof(date_str), "%a %b %d %Y", tm_info);
+    
     FILE *f = fopen(spec_path, "w");
     if (!f) {
         log_error("Failed to create %s", spec_path);
@@ -429,8 +436,8 @@ static int generate_grub_mok_spec(rpm_build_config_t *config, rpm_package_info_t
         "with the grubx64.efi binary signed using a custom MOK key.\n"
         "\n"
         "%%prep\n"
-        "# Extract grubx64.efi from original package\n"
-        "rpm2cpio %%{source_rpm_dir}/grub2-efi-image-%%{grub_version}-%%{grub_release}%%{?dist}.%%{_arch}.rpm | cpio -idmv\n"
+        "# Extract grubx64.efi from original package (release already contains dist tag)\n"
+        "rpm2cpio %%{source_rpm_dir}/grub2-efi-image-%%{grub_version}-%%{grub_release}.%%{_arch}.rpm | cpio -idmv\n"
         "\n"
         "%%build\n"
         "# Sign grubx64.efi with MOK key\n"
@@ -448,11 +455,12 @@ static int generate_grub_mok_spec(rpm_build_config_t *config, rpm_package_info_t
         "/boot/efi/EFI/BOOT/grubx64.efi\n"
         "\n"
         "%%changelog\n"
-        "* $(date '+%%a %%b %%d %%Y') HABv4 Project <habv4@local> %%{grub_version}-%%{grub_release}.mok1\n"
+        "* %s HABv4 Project <habv4@local> %%{grub_version}-%%{grub_release}.mok1\n"
         "- MOK-signed variant of grub2-efi-image\n",
         grub_pkg->version, grub_pkg->release,
         grub_pkg->version,
-        grub_pkg->release
+        grub_pkg->release,
+        date_str
     );
     
     fclose(f);
@@ -467,21 +475,41 @@ static int generate_linux_mok_spec(rpm_build_config_t *config, rpm_package_info_
     char spec_path[1024];
     snprintf(spec_path, sizeof(spec_path), "%s/linux-mok.spec", config->specs_dir);
     
+    /* Generate date string for changelog */
+    char date_str[64];
+    time_t now = time(NULL);
+    struct tm *tm_info = localtime(&now);
+    strftime(date_str, sizeof(date_str), "%a %b %d %Y", tm_info);
+    
     FILE *f = fopen(spec_path, "w");
     if (!f) {
         log_error("Failed to create %s", spec_path);
         return -1;
     }
     
-    /* Construct the kernel filename */
+    /* Construct the kernel filename
+     * For standard linux: vmlinuz-VERSION-RELEASE (e.g., vmlinuz-6.1.159-10.ph5)
+     * For linux-esx: vmlinuz-VERSION-RELEASE-esx (e.g., vmlinuz-6.1.159-7.ph5-esx)
+     * The flavor suffix comes from the package name after "linux-"
+     */
     char kernel_filename[256];
-    snprintf(kernel_filename, sizeof(kernel_filename), "vmlinuz-%s-%s", 
-             linux_pkg->version, linux_pkg->release);
+    const char *flavor = "";
+    if (strncmp(linux_pkg->name, "linux-", 6) == 0 && strlen(linux_pkg->name) > 6) {
+        flavor = linux_pkg->name + 6;  /* e.g., "esx" from "linux-esx" */
+    }
+    if (flavor[0]) {
+        snprintf(kernel_filename, sizeof(kernel_filename), "vmlinuz-%s-%s-%s", 
+                 linux_pkg->version, linux_pkg->release, flavor);
+    } else {
+        snprintf(kernel_filename, sizeof(kernel_filename), "vmlinuz-%s-%s", 
+                 linux_pkg->version, linux_pkg->release);
+    }
     
     fprintf(f,
         "%%define debug_package %%{nil}\n"
         "\n"
-        "# Derived from linux %s-%s\n"
+        "# Derived from %s %s-%s\n"
+        "%%define linux_name %s\n"
         "%%define linux_version %s\n"
         "%%define linux_release %s\n"
         "%%define kernel_file %s\n"
@@ -495,21 +523,22 @@ static int generate_linux_mok_spec(rpm_build_config_t *config, rpm_package_info_
         "Vendor:     VMware, Inc.\n"
         "Distribution:   Photon\n"
         "\n"
-        "# Provides same capability as original\n"
+        "# Provides same capability as original (using %%{linux_name} which may be linux, linux-esx, etc.)\n"
+        "Provides:   %%{linux_name} = %%{linux_version}-%%{linux_release}%%{?dist}\n"
         "Provides:   linux = %%{linux_version}-%%{linux_release}%%{?dist}\n"
         "Provides:   linux-secure\n"
-        "Conflicts:  linux\n"
+        "Conflicts:  %%{linux_name}\n"
         "\n"
         "BuildRequires:  sbsigntools\n"
         "\n"
         "%%description\n"
         "Linux kernel signed with Machine Owner Key (MOK) for Secure Boot.\n"
-        "This package provides the same kernel as the standard linux package\n"
+        "This package provides the same kernel as the standard %%{linux_name} package\n"
         "but with the vmlinuz binary signed using a custom MOK key.\n"
         "\n"
         "%%prep\n"
-        "# Extract boot files from original package\n"
-        "rpm2cpio %%{source_rpm_dir}/linux-%%{linux_version}-%%{linux_release}%%{?dist}.%%{_arch}.rpm | cpio -idmv './boot/*'\n"
+        "# Extract boot files from original package (release already contains dist tag)\n"
+        "rpm2cpio %%{source_rpm_dir}/%%{linux_name}-%%{linux_version}-%%{linux_release}.%%{_arch}.rpm | cpio -idmv './boot/*'\n"
         "\n"
         "%%build\n"
         "# Sign kernel with MOK key\n"
@@ -527,12 +556,14 @@ static int generate_linux_mok_spec(rpm_build_config_t *config, rpm_package_info_
         "/boot/*\n"
         "\n"
         "%%changelog\n"
-        "* $(date '+%%a %%b %%d %%Y') HABv4 Project <habv4@local> %%{linux_version}-%%{linux_release}.mok1\n"
-        "- MOK-signed variant of linux kernel\n",
-        linux_pkg->version, linux_pkg->release,
+        "* %s HABv4 Project <habv4@local> %%{linux_version}-%%{linux_release}.mok1\n"
+        "- MOK-signed variant of %%{linux_name} kernel\n",
+        linux_pkg->name, linux_pkg->version, linux_pkg->release,
+        linux_pkg->name,
         linux_pkg->version,
         linux_pkg->release,
-        kernel_filename
+        kernel_filename,
+        date_str
     );
     
     fclose(f);
@@ -549,6 +580,12 @@ static int generate_shim_mok_spec(rpm_build_config_t *config,
     char spec_path[1024];
     snprintf(spec_path, sizeof(spec_path), "%s/shim-signed-mok.spec", config->specs_dir);
     
+    /* Generate date string for changelog */
+    char date_str[64];
+    time_t now = time(NULL);
+    struct tm *tm_info = localtime(&now);
+    strftime(date_str, sizeof(date_str), "%a %b %d %Y", tm_info);
+    
     FILE *f = fopen(spec_path, "w");
     if (!f) {
         log_error("Failed to create %s", spec_path);
@@ -564,7 +601,7 @@ static int generate_shim_mok_spec(rpm_build_config_t *config,
         "%%define shim_src_version %s\n"
         "%%define shim_src_release %s\n"
         "\n"
-        "Summary:    Photon shim with MokManager included\n"
+        "Summary:    Photon shim-signed passthrough for MOK boot chain\n"
         "Name:       shim-signed-mok\n"
         "Version:    %%{shim_version}\n"
         "Release:    %%{shim_release}.mok1%%{?dist}\n"
@@ -577,45 +614,38 @@ static int generate_shim_mok_spec(rpm_build_config_t *config,
         "Provides:   shim-signed = %%{shim_version}-%%{shim_release}%%{?dist}\n"
         "Conflicts:  shim-signed\n"
         "\n"
-        "BuildRequires:  sbsigntools\n"
-        "\n"
         "%%description\n"
-        "Photon shim package with MokManager (mmx64.efi) included.\n"
-        "The MokManager is signed with MOK key for Secure Boot compatibility.\n"
+        "Photon shim-signed package for MOK Secure Boot chain.\n"
+        "This package provides the same Microsoft-signed shim as the original.\n"
+        "The shim verifies GRUB which then verifies the kernel using MOK.\n"
+        "MOK enrollment is performed during initial ISO boot via MokManager.\n"
         "\n"
         "%%prep\n"
-        "# Extract files from shim-signed\n"
-        "rpm2cpio %%{source_rpm_dir}/shim-signed-%%{shim_version}-%%{shim_release}%%{?dist}.%%{_arch}.rpm | cpio -idmv\n"
-        "# Extract MokManager from shim package\n"
-        "rpm2cpio %%{source_rpm_dir}/shim-%%{shim_src_version}-%%{shim_src_release}%%{?dist}.%%{_arch}.rpm | cpio -idmv './usr/share/shim/*'\n"
+        "# Extract files from shim-signed (release already contains dist tag)\n"
+        "rpm2cpio %%{source_rpm_dir}/shim-signed-%%{shim_version}-%%{shim_release}.%%{_arch}.rpm | cpio -idmv\n"
         "\n"
         "%%build\n"
-        "# Sign MokManager with MOK key\n"
-        "sbsign --key %%{mok_key} --cert %%{mok_cert} \\\n"
-        "       --output ./usr/share/shim/mmx64.efi.signed \\\n"
-        "       ./usr/share/shim/mmx64.efi\n"
-        "mv ./usr/share/shim/mmx64.efi.signed ./boot/efi/EFI/BOOT/mmx64.efi\n"
+        "# No build needed - shim is already Microsoft-signed\n"
         "\n"
         "%%install\n"
         "install -d %%{buildroot}/boot/efi/EFI/BOOT\n"
         "install -m 0644 ./boot/efi/EFI/BOOT/bootx64.efi %%{buildroot}/boot/efi/EFI/BOOT/\n"
         "install -m 0644 ./boot/efi/EFI/BOOT/revocations.efi %%{buildroot}/boot/efi/EFI/BOOT/\n"
-        "install -m 0644 ./boot/efi/EFI/BOOT/mmx64.efi %%{buildroot}/boot/efi/EFI/BOOT/\n"
         "\n"
         "%%files\n"
         "%%defattr(-,root,root,-)\n"
         "/boot/efi/EFI/BOOT/bootx64.efi\n"
         "/boot/efi/EFI/BOOT/revocations.efi\n"
-        "/boot/efi/EFI/BOOT/mmx64.efi\n"
         "\n"
         "%%changelog\n"
-        "* $(date '+%%a %%b %%d %%Y') HABv4 Project <habv4@local> %%{shim_version}-%%{shim_release}.mok1\n"
-        "- shim-signed with MokManager included and MOK-signed\n",
+        "* %s HABv4 Project <habv4@local> %%{shim_version}-%%{shim_release}.mok1\n"
+        "- shim-signed passthrough for MOK boot chain\n",
         shim_signed_pkg->version, shim_signed_pkg->release,
         shim_signed_pkg->version,
         shim_signed_pkg->release,
         shim_pkg ? shim_pkg->version : shim_signed_pkg->version,
-        shim_pkg ? shim_pkg->release : "2"
+        shim_pkg ? shim_pkg->release : "2",
+        date_str
     );
     
     fclose(f);
