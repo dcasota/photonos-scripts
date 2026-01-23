@@ -1,0 +1,1027 @@
+/*
+ * rpm_secureboot_patcher.c
+ *
+ * RPM Secure Boot Patcher - Creates MOK-signed variants of boot packages
+ *
+ * Copyright 2024 HABv4 Project
+ * SPDX-License-Identifier: GPL-3.0+
+ */
+
+#include "rpm_secureboot_patcher.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdarg.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <dirent.h>
+#include <errno.h>
+#include <glob.h>
+
+/* ANSI colors */
+#define RED     "\x1b[31m"
+#define GREEN   "\x1b[32m"
+#define YELLOW  "\x1b[33m"
+#define BLUE    "\x1b[34m"
+#define RESET   "\x1b[0m"
+
+static int g_verbose = 0;
+
+/* ============================================================================
+ * Utility Functions
+ * ============================================================================ */
+
+static void log_info(const char *fmt, ...) {
+    va_list args;
+    printf(GREEN "[RPM-PATCH]" RESET " ");
+    va_start(args, fmt);
+    vprintf(fmt, args);
+    va_end(args);
+    printf("\n");
+}
+
+static void log_error(const char *fmt, ...) {
+    va_list args;
+    fprintf(stderr, RED "[RPM-PATCH ERROR]" RESET " ");
+    va_start(args, fmt);
+    vfprintf(stderr, fmt, args);
+    va_end(args);
+    fprintf(stderr, "\n");
+}
+
+static void log_debug(const char *fmt, ...) {
+    if (!g_verbose) return;
+    va_list args;
+    printf(BLUE "[RPM-PATCH DEBUG]" RESET " ");
+    va_start(args, fmt);
+    vprintf(fmt, args);
+    va_end(args);
+    printf("\n");
+}
+
+static int run_cmd(const char *cmd) {
+    if (g_verbose) {
+        printf("  $ %s\n", cmd);
+    }
+    int ret = system(cmd);
+    return WEXITSTATUS(ret);
+}
+
+static int run_cmd_output(const char *cmd, char *output, size_t output_size) {
+    FILE *fp = popen(cmd, "r");
+    if (!fp) return -1;
+    
+    output[0] = '\0';
+    size_t total = 0;
+    char buf[256];
+    while (fgets(buf, sizeof(buf), fp) && total < output_size - 1) {
+        size_t len = strlen(buf);
+        if (total + len < output_size) {
+            strcat(output, buf);
+            total += len;
+        }
+    }
+    
+    /* Remove trailing newline */
+    size_t len = strlen(output);
+    if (len > 0 && output[len-1] == '\n') {
+        output[len-1] = '\0';
+    }
+    
+    return pclose(fp);
+}
+
+static int file_exists(const char *path) {
+    struct stat st;
+    return stat(path, &st) == 0;
+}
+
+static int mkdir_p(const char *path) {
+    char tmp[512];
+    char *p = NULL;
+    size_t len;
+
+    snprintf(tmp, sizeof(tmp), "%s", path);
+    len = strlen(tmp);
+    if (tmp[len - 1] == '/')
+        tmp[len - 1] = 0;
+    
+    for (p = tmp + 1; *p; p++) {
+        if (*p == '/') {
+            *p = 0;
+            mkdir(tmp, 0755);
+            *p = '/';
+        }
+    }
+    return mkdir(tmp, 0755);
+}
+
+static char* strdup_safe(const char *s) {
+    return s ? strdup(s) : NULL;
+}
+
+/* ============================================================================
+ * Package Discovery Functions
+ * ============================================================================ */
+
+/**
+ * Find RPM that provides a specific file
+ */
+static char* find_rpm_providing_file(const char *rpm_dir, const char *filepath) {
+    char cmd[1024];
+    char output[4096];
+    DIR *dir;
+    struct dirent *entry;
+    
+    dir = opendir(rpm_dir);
+    if (!dir) return NULL;
+    
+    while ((entry = readdir(dir)) != NULL) {
+        if (entry->d_type != DT_REG) continue;
+        if (strstr(entry->d_name, ".rpm") == NULL) continue;
+        if (strstr(entry->d_name, ".src.rpm") != NULL) continue;
+        
+        char rpm_path[1024];
+        snprintf(rpm_path, sizeof(rpm_path), "%s/%s", rpm_dir, entry->d_name);
+        
+        /* Check if this RPM provides the file */
+        snprintf(cmd, sizeof(cmd), 
+            "rpm -qpl '%s' 2>/dev/null | grep -q '^%s$' && echo 'found'",
+            rpm_path, filepath);
+        
+        if (run_cmd_output(cmd, output, sizeof(output)) == 0 && 
+            strstr(output, "found") != NULL) {
+            closedir(dir);
+            return strdup(rpm_path);
+        }
+    }
+    
+    closedir(dir);
+    return NULL;
+}
+
+/**
+ * Find RPM that provides a file matching a pattern (e.g., /boot/vmlinuz-*)
+ */
+static char* find_rpm_providing_file_pattern(const char *rpm_dir, const char *pattern) {
+    char cmd[1024];
+    char output[4096];
+    DIR *dir;
+    struct dirent *entry;
+    
+    /* Extract the directory part and filename pattern */
+    char dir_part[256] = "";
+    char file_pattern[256] = "";
+    const char *last_slash = strrchr(pattern, '/');
+    if (last_slash) {
+        size_t dir_len = last_slash - pattern;
+        strncpy(dir_part, pattern, dir_len);
+        dir_part[dir_len] = '\0';
+        strcpy(file_pattern, last_slash + 1);
+    } else {
+        strcpy(file_pattern, pattern);
+    }
+    
+    dir = opendir(rpm_dir);
+    if (!dir) return NULL;
+    
+    while ((entry = readdir(dir)) != NULL) {
+        if (entry->d_type != DT_REG) continue;
+        if (strstr(entry->d_name, ".rpm") == NULL) continue;
+        if (strstr(entry->d_name, ".src.rpm") != NULL) continue;
+        /* Skip -mok packages */
+        if (strstr(entry->d_name, "-mok-") != NULL) continue;
+        
+        char rpm_path[1024];
+        snprintf(rpm_path, sizeof(rpm_path), "%s/%s", rpm_dir, entry->d_name);
+        
+        /* Check if this RPM provides files matching the pattern */
+        /* Convert glob pattern to grep pattern */
+        char grep_pattern[512];
+        snprintf(grep_pattern, sizeof(grep_pattern), "^%s/", dir_part);
+        
+        /* For vmlinuz-*, we look for /boot/vmlinuz-<version> */
+        if (strstr(file_pattern, "vmlinuz") != NULL) {
+            snprintf(cmd, sizeof(cmd), 
+                "rpm -qpl '%s' 2>/dev/null | grep -E '^/boot/vmlinuz-[0-9]' | head -1",
+                rpm_path);
+        } else {
+            snprintf(cmd, sizeof(cmd), 
+                "rpm -qpl '%s' 2>/dev/null | grep '%s' | head -1",
+                rpm_path, dir_part);
+        }
+        
+        if (run_cmd_output(cmd, output, sizeof(output)) == 0 && strlen(output) > 0) {
+            closedir(dir);
+            log_debug("Found RPM for pattern %s: %s", pattern, rpm_path);
+            return strdup(rpm_path);
+        }
+    }
+    
+    closedir(dir);
+    return NULL;
+}
+
+/**
+ * Extract package info from RPM file
+ */
+static rpm_package_info_t* extract_rpm_info(const char *rpm_path) {
+    if (!rpm_path || !file_exists(rpm_path)) return NULL;
+    
+    rpm_package_info_t *pkg = calloc(1, sizeof(rpm_package_info_t));
+    if (!pkg) return NULL;
+    
+    pkg->rpm_path = strdup(rpm_path);
+    
+    char cmd[1024];
+    char output[256];
+    
+    /* Get package name */
+    snprintf(cmd, sizeof(cmd), "rpm -qp --qf '%%{NAME}' '%s' 2>/dev/null", rpm_path);
+    if (run_cmd_output(cmd, output, sizeof(output)) == 0) {
+        pkg->name = strdup(output);
+    }
+    
+    /* Get version */
+    snprintf(cmd, sizeof(cmd), "rpm -qp --qf '%%{VERSION}' '%s' 2>/dev/null", rpm_path);
+    if (run_cmd_output(cmd, output, sizeof(output)) == 0) {
+        pkg->version = strdup(output);
+    }
+    
+    /* Get release */
+    snprintf(cmd, sizeof(cmd), "rpm -qp --qf '%%{RELEASE}' '%s' 2>/dev/null", rpm_path);
+    if (run_cmd_output(cmd, output, sizeof(output)) == 0) {
+        pkg->release = strdup(output);
+    }
+    
+    /* Get arch */
+    snprintf(cmd, sizeof(cmd), "rpm -qp --qf '%%{ARCH}' '%s' 2>/dev/null", rpm_path);
+    if (run_cmd_output(cmd, output, sizeof(output)) == 0) {
+        pkg->arch = strdup(output);
+    }
+    
+    log_debug("Extracted info: %s-%s-%s.%s", 
+              pkg->name ? pkg->name : "?",
+              pkg->version ? pkg->version : "?", 
+              pkg->release ? pkg->release : "?",
+              pkg->arch ? pkg->arch : "?");
+    
+    return pkg;
+}
+
+/**
+ * Find SPEC file for a package
+ */
+static char* find_spec_for_package(const char *specs_dir, const char *pkg_name) {
+    char spec_path[1024];
+    
+    /* Try exact match first: <pkg_name>/<pkg_name>.spec */
+    snprintf(spec_path, sizeof(spec_path), "%s/%s/%s.spec", specs_dir, pkg_name, pkg_name);
+    if (file_exists(spec_path)) {
+        return strdup(spec_path);
+    }
+    
+    /* Try base name for subpackages (e.g., grub2-efi-image -> grub2) */
+    char base_name[256];
+    strncpy(base_name, pkg_name, sizeof(base_name) - 1);
+    
+    /* Remove suffixes like -efi-image, -signed, etc. */
+    char *dash = strrchr(base_name, '-');
+    while (dash) {
+        *dash = '\0';
+        snprintf(spec_path, sizeof(spec_path), "%s/%s/%s.spec", specs_dir, base_name, base_name);
+        if (file_exists(spec_path)) {
+            return strdup(spec_path);
+        }
+        dash = strrchr(base_name, '-');
+    }
+    
+    return NULL;
+}
+
+discovered_packages_t* rpm_discover_packages(
+    const char *rpm_dir,
+    const char *specs_dir,
+    const char *release
+) {
+    log_info("Discovering Secure Boot packages...");
+    
+    discovered_packages_t *pkgs = calloc(1, sizeof(discovered_packages_t));
+    if (!pkgs) return NULL;
+    
+    pkgs->release = strdup(release);
+    
+    /* Determine dist tag from release */
+    char dist_tag[32];
+    snprintf(dist_tag, sizeof(dist_tag), ".ph%c", release[0]);
+    pkgs->dist_tag = strdup(dist_tag);
+    
+    /* Find grub2-efi-image by the file it provides */
+    log_debug("Looking for package providing /boot/efi/EFI/BOOT/grubx64.efi");
+    char *grub_rpm = find_rpm_providing_file(rpm_dir, "/boot/efi/EFI/BOOT/grubx64.efi");
+    if (grub_rpm) {
+        pkgs->grub_efi = extract_rpm_info(grub_rpm);
+        if (pkgs->grub_efi) {
+            pkgs->grub_efi->spec_path = find_spec_for_package(specs_dir, pkgs->grub_efi->name);
+        }
+        free(grub_rpm);
+        log_info("Found grub2-efi-image: %s-%s", 
+                 pkgs->grub_efi->name, pkgs->grub_efi->version);
+    }
+    
+    /* Find linux kernel by the file it provides */
+    log_debug("Looking for package providing /boot/vmlinuz-*");
+    char *linux_rpm = find_rpm_providing_file_pattern(rpm_dir, "/boot/vmlinuz-*");
+    if (linux_rpm) {
+        pkgs->linux_kernel = extract_rpm_info(linux_rpm);
+        if (pkgs->linux_kernel) {
+            pkgs->linux_kernel->spec_path = find_spec_for_package(specs_dir, pkgs->linux_kernel->name);
+        }
+        free(linux_rpm);
+        log_info("Found linux kernel: %s-%s", 
+                 pkgs->linux_kernel->name, pkgs->linux_kernel->version);
+    }
+    
+    /* Find shim-signed by the file it provides */
+    log_debug("Looking for package providing /boot/efi/EFI/BOOT/bootx64.efi");
+    char *shim_signed_rpm = find_rpm_providing_file(rpm_dir, "/boot/efi/EFI/BOOT/bootx64.efi");
+    if (shim_signed_rpm) {
+        pkgs->shim_signed = extract_rpm_info(shim_signed_rpm);
+        if (pkgs->shim_signed) {
+            pkgs->shim_signed->spec_path = find_spec_for_package(specs_dir, pkgs->shim_signed->name);
+        }
+        free(shim_signed_rpm);
+        log_info("Found shim-signed: %s-%s", 
+                 pkgs->shim_signed->name, pkgs->shim_signed->version);
+    }
+    
+    /* Find shim (for MokManager source) */
+    log_debug("Looking for package providing /usr/share/shim/shimx64.efi");
+    char *shim_rpm = find_rpm_providing_file(rpm_dir, "/usr/share/shim/shimx64.efi");
+    if (shim_rpm) {
+        pkgs->shim = extract_rpm_info(shim_rpm);
+        if (pkgs->shim) {
+            pkgs->shim->spec_path = find_spec_for_package(specs_dir, pkgs->shim->name);
+        }
+        free(shim_rpm);
+        log_info("Found shim: %s-%s", 
+                 pkgs->shim->name, pkgs->shim->version);
+    }
+    
+    /* Verify we found the required packages */
+    if (!pkgs->grub_efi || !pkgs->linux_kernel || !pkgs->shim_signed) {
+        log_error("Failed to discover all required packages");
+        rpm_free_discovered_packages(pkgs);
+        return NULL;
+    }
+    
+    log_info("Package discovery complete");
+    return pkgs;
+}
+
+/* ============================================================================
+ * SPEC File Generation
+ * ============================================================================ */
+
+/**
+ * Generate grub2-efi-image-mok.spec
+ */
+static int generate_grub_mok_spec(rpm_build_config_t *config, rpm_package_info_t *grub_pkg) {
+    char spec_path[1024];
+    snprintf(spec_path, sizeof(spec_path), "%s/grub2-efi-image-mok.spec", config->specs_dir);
+    
+    FILE *f = fopen(spec_path, "w");
+    if (!f) {
+        log_error("Failed to create %s", spec_path);
+        return -1;
+    }
+    
+    fprintf(f,
+        "%%define debug_package %%{nil}\n"
+        "\n"
+        "# Derived from grub2-efi-image %s-%s\n"
+        "%%define grub_version %s\n"
+        "%%define grub_release %s\n"
+        "\n"
+        "Summary:    GRUB UEFI image signed with MOK key\n"
+        "Name:       grub2-efi-image-mok\n"
+        "Version:    %%{grub_version}\n"
+        "Release:    %%{grub_release}.mok1%%{?dist}\n"
+        "Group:      System Environment/Base\n"
+        "License:    GPLv3+\n"
+        "Vendor:     VMware, Inc.\n"
+        "Distribution:   Photon\n"
+        "\n"
+        "# Provides same capability as original\n"
+        "Provides:   grub2-efi-image = %%{grub_version}-%%{grub_release}%%{?dist}\n"
+        "Conflicts:  grub2-efi-image\n"
+        "\n"
+        "# Same requirements as original\n"
+        "Requires:   grub2-theme\n"
+        "\n"
+        "BuildRequires:  sbsigntools\n"
+        "\n"
+        "%%description\n"
+        "GRUB UEFI image signed with Machine Owner Key (MOK) for Secure Boot.\n"
+        "This package provides the same functionality as grub2-efi-image but\n"
+        "with the grubx64.efi binary signed using a custom MOK key.\n"
+        "\n"
+        "%%prep\n"
+        "# Extract grubx64.efi from original package\n"
+        "rpm2cpio %%{source_rpm_dir}/grub2-efi-image-%%{grub_version}-%%{grub_release}%%{?dist}.%%{_arch}.rpm | cpio -idmv\n"
+        "\n"
+        "%%build\n"
+        "# Sign grubx64.efi with MOK key\n"
+        "sbsign --key %%{mok_key} --cert %%{mok_cert} \\\n"
+        "       --output ./boot/efi/EFI/BOOT/grubx64.efi.signed \\\n"
+        "       ./boot/efi/EFI/BOOT/grubx64.efi\n"
+        "mv ./boot/efi/EFI/BOOT/grubx64.efi.signed ./boot/efi/EFI/BOOT/grubx64.efi\n"
+        "\n"
+        "%%install\n"
+        "install -d %%{buildroot}/boot/efi/EFI/BOOT\n"
+        "install -m 0644 ./boot/efi/EFI/BOOT/grubx64.efi %%{buildroot}/boot/efi/EFI/BOOT/\n"
+        "\n"
+        "%%files\n"
+        "%%defattr(-,root,root,-)\n"
+        "/boot/efi/EFI/BOOT/grubx64.efi\n"
+        "\n"
+        "%%changelog\n"
+        "* $(date '+%%a %%b %%d %%Y') HABv4 Project <habv4@local> %%{grub_version}-%%{grub_release}.mok1\n"
+        "- MOK-signed variant of grub2-efi-image\n",
+        grub_pkg->version, grub_pkg->release,
+        grub_pkg->version,
+        grub_pkg->release
+    );
+    
+    fclose(f);
+    log_info("Generated %s", spec_path);
+    return 0;
+}
+
+/**
+ * Generate linux-mok.spec
+ */
+static int generate_linux_mok_spec(rpm_build_config_t *config, rpm_package_info_t *linux_pkg) {
+    char spec_path[1024];
+    snprintf(spec_path, sizeof(spec_path), "%s/linux-mok.spec", config->specs_dir);
+    
+    FILE *f = fopen(spec_path, "w");
+    if (!f) {
+        log_error("Failed to create %s", spec_path);
+        return -1;
+    }
+    
+    /* Construct the kernel filename */
+    char kernel_filename[256];
+    snprintf(kernel_filename, sizeof(kernel_filename), "vmlinuz-%s-%s", 
+             linux_pkg->version, linux_pkg->release);
+    
+    fprintf(f,
+        "%%define debug_package %%{nil}\n"
+        "\n"
+        "# Derived from linux %s-%s\n"
+        "%%define linux_version %s\n"
+        "%%define linux_release %s\n"
+        "%%define kernel_file %s\n"
+        "\n"
+        "Summary:    Linux kernel signed with MOK key\n"
+        "Name:       linux-mok\n"
+        "Version:    %%{linux_version}\n"
+        "Release:    %%{linux_release}.mok1%%{?dist}\n"
+        "Group:      System Environment/Kernel\n"
+        "License:    GPLv2\n"
+        "Vendor:     VMware, Inc.\n"
+        "Distribution:   Photon\n"
+        "\n"
+        "# Provides same capability as original\n"
+        "Provides:   linux = %%{linux_version}-%%{linux_release}%%{?dist}\n"
+        "Provides:   linux-secure\n"
+        "Conflicts:  linux\n"
+        "\n"
+        "BuildRequires:  sbsigntools\n"
+        "\n"
+        "%%description\n"
+        "Linux kernel signed with Machine Owner Key (MOK) for Secure Boot.\n"
+        "This package provides the same kernel as the standard linux package\n"
+        "but with the vmlinuz binary signed using a custom MOK key.\n"
+        "\n"
+        "%%prep\n"
+        "# Extract boot files from original package\n"
+        "rpm2cpio %%{source_rpm_dir}/linux-%%{linux_version}-%%{linux_release}%%{?dist}.%%{_arch}.rpm | cpio -idmv './boot/*'\n"
+        "\n"
+        "%%build\n"
+        "# Sign kernel with MOK key\n"
+        "sbsign --key %%{mok_key} --cert %%{mok_cert} \\\n"
+        "       --output ./boot/%%{kernel_file}.signed \\\n"
+        "       ./boot/%%{kernel_file}\n"
+        "mv ./boot/%%{kernel_file}.signed ./boot/%%{kernel_file}\n"
+        "\n"
+        "%%install\n"
+        "install -d %%{buildroot}/boot\n"
+        "cp -a ./boot/* %%{buildroot}/boot/\n"
+        "\n"
+        "%%files\n"
+        "%%defattr(-,root,root,-)\n"
+        "/boot/*\n"
+        "\n"
+        "%%changelog\n"
+        "* $(date '+%%a %%b %%d %%Y') HABv4 Project <habv4@local> %%{linux_version}-%%{linux_release}.mok1\n"
+        "- MOK-signed variant of linux kernel\n",
+        linux_pkg->version, linux_pkg->release,
+        linux_pkg->version,
+        linux_pkg->release,
+        kernel_filename
+    );
+    
+    fclose(f);
+    log_info("Generated %s", spec_path);
+    return 0;
+}
+
+/**
+ * Generate shim-signed-mok.spec
+ */
+static int generate_shim_mok_spec(rpm_build_config_t *config, 
+                                   rpm_package_info_t *shim_signed_pkg,
+                                   rpm_package_info_t *shim_pkg) {
+    char spec_path[1024];
+    snprintf(spec_path, sizeof(spec_path), "%s/shim-signed-mok.spec", config->specs_dir);
+    
+    FILE *f = fopen(spec_path, "w");
+    if (!f) {
+        log_error("Failed to create %s", spec_path);
+        return -1;
+    }
+    
+    fprintf(f,
+        "%%define debug_package %%{nil}\n"
+        "\n"
+        "# Derived from shim-signed %s-%s\n"
+        "%%define shim_version %s\n"
+        "%%define shim_release %s\n"
+        "%%define shim_src_version %s\n"
+        "%%define shim_src_release %s\n"
+        "\n"
+        "Summary:    Photon shim with MokManager included\n"
+        "Name:       shim-signed-mok\n"
+        "Version:    %%{shim_version}\n"
+        "Release:    %%{shim_release}.mok1%%{?dist}\n"
+        "Group:      System Environment/Base\n"
+        "License:    BSD\n"
+        "Vendor:     VMware, Inc.\n"
+        "Distribution:   Photon\n"
+        "\n"
+        "# Provides same capability as original\n"
+        "Provides:   shim-signed = %%{shim_version}-%%{shim_release}%%{?dist}\n"
+        "Conflicts:  shim-signed\n"
+        "\n"
+        "BuildRequires:  sbsigntools\n"
+        "\n"
+        "%%description\n"
+        "Photon shim package with MokManager (mmx64.efi) included.\n"
+        "The MokManager is signed with MOK key for Secure Boot compatibility.\n"
+        "\n"
+        "%%prep\n"
+        "# Extract files from shim-signed\n"
+        "rpm2cpio %%{source_rpm_dir}/shim-signed-%%{shim_version}-%%{shim_release}%%{?dist}.%%{_arch}.rpm | cpio -idmv\n"
+        "# Extract MokManager from shim package\n"
+        "rpm2cpio %%{source_rpm_dir}/shim-%%{shim_src_version}-%%{shim_src_release}%%{?dist}.%%{_arch}.rpm | cpio -idmv './usr/share/shim/*'\n"
+        "\n"
+        "%%build\n"
+        "# Sign MokManager with MOK key\n"
+        "sbsign --key %%{mok_key} --cert %%{mok_cert} \\\n"
+        "       --output ./usr/share/shim/mmx64.efi.signed \\\n"
+        "       ./usr/share/shim/mmx64.efi\n"
+        "mv ./usr/share/shim/mmx64.efi.signed ./boot/efi/EFI/BOOT/mmx64.efi\n"
+        "\n"
+        "%%install\n"
+        "install -d %%{buildroot}/boot/efi/EFI/BOOT\n"
+        "install -m 0644 ./boot/efi/EFI/BOOT/bootx64.efi %%{buildroot}/boot/efi/EFI/BOOT/\n"
+        "install -m 0644 ./boot/efi/EFI/BOOT/revocations.efi %%{buildroot}/boot/efi/EFI/BOOT/\n"
+        "install -m 0644 ./boot/efi/EFI/BOOT/mmx64.efi %%{buildroot}/boot/efi/EFI/BOOT/\n"
+        "\n"
+        "%%files\n"
+        "%%defattr(-,root,root,-)\n"
+        "/boot/efi/EFI/BOOT/bootx64.efi\n"
+        "/boot/efi/EFI/BOOT/revocations.efi\n"
+        "/boot/efi/EFI/BOOT/mmx64.efi\n"
+        "\n"
+        "%%changelog\n"
+        "* $(date '+%%a %%b %%d %%Y') HABv4 Project <habv4@local> %%{shim_version}-%%{shim_release}.mok1\n"
+        "- shim-signed with MokManager included and MOK-signed\n",
+        shim_signed_pkg->version, shim_signed_pkg->release,
+        shim_signed_pkg->version,
+        shim_signed_pkg->release,
+        shim_pkg ? shim_pkg->version : shim_signed_pkg->version,
+        shim_pkg ? shim_pkg->release : "2"
+    );
+    
+    fclose(f);
+    log_info("Generated %s", spec_path);
+    return 0;
+}
+
+int rpm_generate_mok_specs(
+    rpm_build_config_t *config,
+    discovered_packages_t *packages
+) {
+    log_info("Generating MOK variant SPEC files...");
+    
+    /* Create specs directory */
+    mkdir_p(config->specs_dir);
+    
+    /* Generate SPEC files */
+    if (packages->grub_efi) {
+        if (generate_grub_mok_spec(config, packages->grub_efi) != 0) {
+            return RPM_PATCH_ERR_SPEC_GENERATION_FAILED;
+        }
+    }
+    
+    if (packages->linux_kernel) {
+        if (generate_linux_mok_spec(config, packages->linux_kernel) != 0) {
+            return RPM_PATCH_ERR_SPEC_GENERATION_FAILED;
+        }
+    }
+    
+    if (packages->shim_signed) {
+        if (generate_shim_mok_spec(config, packages->shim_signed, packages->shim) != 0) {
+            return RPM_PATCH_ERR_SPEC_GENERATION_FAILED;
+        }
+    }
+    
+    log_info("SPEC file generation complete");
+    return RPM_PATCH_SUCCESS;
+}
+
+/* ============================================================================
+ * RPM Build Functions
+ * ============================================================================ */
+
+/**
+ * Build a single MOK RPM
+ */
+static int build_single_rpm(rpm_build_config_t *config, const char *spec_name, 
+                            const char *dist_tag) {
+    char cmd[2048];
+    char spec_path[1024];
+    
+    snprintf(spec_path, sizeof(spec_path), "%s/%s", config->specs_dir, spec_name);
+    
+    if (!file_exists(spec_path)) {
+        log_error("SPEC file not found: %s", spec_path);
+        return -1;
+    }
+    
+    log_info("Building %s...", spec_name);
+    
+    /* Build the RPM */
+    snprintf(cmd, sizeof(cmd),
+        "rpmbuild -bb --define '_topdir %s' "
+        "--define 'dist %s' "
+        "--define 'mok_key %s' "
+        "--define 'mok_cert %s' "
+        "--define 'source_rpm_dir %s' "
+        "'%s' 2>&1",
+        config->rpmbuild_dir,
+        dist_tag,
+        config->mok_key,
+        config->mok_cert,
+        config->source_rpm_dir,
+        spec_path);
+    
+    if (g_verbose) {
+        printf("  $ %s\n", cmd);
+    }
+    
+    int ret = run_cmd(cmd);
+    if (ret != 0) {
+        log_error("Failed to build %s (exit code: %d)", spec_name, ret);
+        return -1;
+    }
+    
+    log_info("Successfully built %s", spec_name);
+    return 0;
+}
+
+int rpm_build_mok_packages(
+    rpm_build_config_t *config,
+    discovered_packages_t *packages
+) {
+    log_info("Building MOK-signed RPM packages...");
+    
+    /* Create rpmbuild directory structure */
+    char path[1024];
+    snprintf(path, sizeof(path), "%s/BUILD", config->rpmbuild_dir);
+    mkdir_p(path);
+    snprintf(path, sizeof(path), "%s/RPMS", config->rpmbuild_dir);
+    mkdir_p(path);
+    snprintf(path, sizeof(path), "%s/SRPMS", config->rpmbuild_dir);
+    mkdir_p(path);
+    snprintf(path, sizeof(path), "%s/SOURCES", config->rpmbuild_dir);
+    mkdir_p(path);
+    snprintf(path, sizeof(path), "%s/SPECS", config->rpmbuild_dir);
+    mkdir_p(path);
+    
+    /* Build order: shim-signed-mok, grub2-efi-image-mok, linux-mok */
+    
+    /* 1. Build shim-signed-mok (includes MokManager) */
+    if (build_single_rpm(config, "shim-signed-mok.spec", packages->dist_tag) != 0) {
+        return RPM_PATCH_ERR_BUILD_FAILED;
+    }
+    
+    /* 2. Build grub2-efi-image-mok */
+    if (build_single_rpm(config, "grub2-efi-image-mok.spec", packages->dist_tag) != 0) {
+        return RPM_PATCH_ERR_BUILD_FAILED;
+    }
+    
+    /* 3. Build linux-mok */
+    if (build_single_rpm(config, "linux-mok.spec", packages->dist_tag) != 0) {
+        return RPM_PATCH_ERR_BUILD_FAILED;
+    }
+    
+    /* Move built RPMs to output directory */
+    mkdir_p(config->output_dir);
+    char cmd[1024];
+    snprintf(cmd, sizeof(cmd), "cp %s/RPMS/*/*.rpm '%s/' 2>/dev/null", 
+             config->rpmbuild_dir, config->output_dir);
+    run_cmd(cmd);
+    
+    log_info("MOK package build complete");
+    return RPM_PATCH_SUCCESS;
+}
+
+/* ============================================================================
+ * Validation Functions
+ * ============================================================================ */
+
+rpm_validation_result_t* rpm_validate_mok_package(
+    const char *rpm_path,
+    const char *mok_cert
+) {
+    rpm_validation_result_t *result = calloc(1, sizeof(rpm_validation_result_t));
+    if (!result) return NULL;
+    
+    char cmd[1024];
+    char output[4096];
+    
+    /* Check RPM integrity */
+    snprintf(cmd, sizeof(cmd), "rpm -K '%s' 2>&1", rpm_path);
+    if (run_cmd_output(cmd, output, sizeof(output)) == 0) {
+        result->rpm_valid = (strstr(output, "OK") != NULL || 
+                            strstr(output, "digests OK") != NULL);
+    }
+    
+    /* Extract and verify signatures on EFI files */
+    char tmp_dir[256];
+    snprintf(tmp_dir, sizeof(tmp_dir), "/tmp/rpm_validate_%d", getpid());
+    mkdir_p(tmp_dir);
+    
+    snprintf(cmd, sizeof(cmd), "cd '%s' && rpm2cpio '%s' | cpio -idm 2>/dev/null", 
+             tmp_dir, rpm_path);
+    run_cmd(cmd);
+    
+    /* Check for EFI files and verify signatures */
+    result->signature_valid = 1;
+    const char *efi_files[] = {
+        "boot/efi/EFI/BOOT/grubx64.efi",
+        "boot/efi/EFI/BOOT/mmx64.efi",
+        NULL
+    };
+    
+    for (int i = 0; efi_files[i]; i++) {
+        char file_path[512];
+        snprintf(file_path, sizeof(file_path), "%s/%s", tmp_dir, efi_files[i]);
+        
+        if (file_exists(file_path)) {
+            snprintf(cmd, sizeof(cmd), "sbverify --cert '%s' '%s' 2>&1", 
+                     mok_cert, file_path);
+            if (run_cmd_output(cmd, output, sizeof(output)) != 0 ||
+                strstr(output, "Signature verification OK") == NULL) {
+                result->signature_valid = 0;
+                result->error_message = strdup(output);
+                break;
+            }
+        }
+    }
+    
+    /* Also check kernel */
+    snprintf(cmd, sizeof(cmd), "find '%s/boot' -name 'vmlinuz-*' -type f 2>/dev/null | head -1", 
+             tmp_dir);
+    if (run_cmd_output(cmd, output, sizeof(output)) == 0 && strlen(output) > 0) {
+        snprintf(cmd, sizeof(cmd), "sbverify --cert '%s' '%s' 2>&1", 
+                 mok_cert, output);
+        char verify_output[4096];
+        if (run_cmd_output(cmd, verify_output, sizeof(verify_output)) != 0 ||
+            strstr(verify_output, "Signature verification OK") == NULL) {
+            result->signature_valid = 0;
+            if (!result->error_message) {
+                result->error_message = strdup(verify_output);
+            }
+        }
+    }
+    
+    /* Cleanup */
+    snprintf(cmd, sizeof(cmd), "rm -rf '%s'", tmp_dir);
+    run_cmd(cmd);
+    
+    return result;
+}
+
+/* ============================================================================
+ * ISO Integration Functions
+ * ============================================================================ */
+
+int rpm_integrate_to_iso(
+    const char *iso_rpm_dir,
+    rpm_build_config_t *config
+) {
+    log_info("Integrating MOK packages into ISO...");
+    
+    char cmd[1024];
+    
+    /* Copy all MOK RPMs to the ISO */
+    snprintf(cmd, sizeof(cmd), "cp '%s'/*-mok-*.rpm '%s/' 2>/dev/null", 
+             config->output_dir, iso_rpm_dir);
+    
+    if (run_cmd(cmd) != 0) {
+        /* Try with glob */
+        glob_t glob_result;
+        char pattern[512];
+        snprintf(pattern, sizeof(pattern), "%s/*-mok-*.rpm", config->output_dir);
+        
+        if (glob(pattern, 0, NULL, &glob_result) == 0) {
+            for (size_t i = 0; i < glob_result.gl_pathc; i++) {
+                snprintf(cmd, sizeof(cmd), "cp '%s' '%s/'", 
+                         glob_result.gl_pathv[i], iso_rpm_dir);
+                run_cmd(cmd);
+                log_info("Copied %s", glob_result.gl_pathv[i]);
+            }
+            globfree(&glob_result);
+        }
+    }
+    
+    log_info("MOK packages integrated into ISO");
+    return RPM_PATCH_SUCCESS;
+}
+
+/* ============================================================================
+ * Main Entry Point
+ * ============================================================================ */
+
+int rpm_patch_secureboot_packages(
+    const char *photon_release_dir,
+    const char *iso_extract_dir,
+    const char *mok_key,
+    const char *mok_cert,
+    int verbose
+) {
+    g_verbose = verbose;
+    
+    log_info("=== RPM Secure Boot Patcher ===");
+    log_info("Photon release dir: %s", photon_release_dir);
+    log_info("ISO extract dir: %s", iso_extract_dir);
+    
+    /* Construct paths */
+    char rpm_dir[512], specs_dir[512], iso_rpm_dir[512];
+    snprintf(rpm_dir, sizeof(rpm_dir), "%s/stage/RPMS/x86_64", photon_release_dir);
+    snprintf(specs_dir, sizeof(specs_dir), "%s/SPECS", photon_release_dir);
+    snprintf(iso_rpm_dir, sizeof(iso_rpm_dir), "%s/RPMS/x86_64", iso_extract_dir);
+    
+    /* Extract release from path (e.g., /root/5.0 -> 5.0) */
+    const char *release = strrchr(photon_release_dir, '/');
+    release = release ? release + 1 : photon_release_dir;
+    
+    /* Step 1: Discover packages */
+    discovered_packages_t *packages = rpm_discover_packages(rpm_dir, specs_dir, release);
+    if (!packages) {
+        log_error("Package discovery failed");
+        return RPM_PATCH_ERR_DISCOVERY_FAILED;
+    }
+    
+    /* Step 2: Set up build configuration */
+    rpm_build_config_t config = {0};
+    config.work_dir = strdup("/tmp/rpm_mok_build");
+    config.specs_dir = strdup("/tmp/rpm_mok_build/SPECS");
+    config.rpmbuild_dir = strdup("/tmp/rpm_mok_build/rpmbuild");
+    config.output_dir = strdup("/tmp/rpm_mok_build/output");
+    config.source_rpm_dir = strdup(rpm_dir);
+    config.source_specs_dir = strdup(specs_dir);
+    config.mok_key = strdup(mok_key);
+    config.mok_cert = strdup(mok_cert);
+    config.release = strdup(release);
+    config.verbose = verbose;
+    
+    /* Create work directories */
+    mkdir_p(config.work_dir);
+    mkdir_p(config.specs_dir);
+    mkdir_p(config.rpmbuild_dir);
+    mkdir_p(config.output_dir);
+    
+    /* Step 3: Generate SPEC files */
+    int ret = rpm_generate_mok_specs(&config, packages);
+    if (ret != RPM_PATCH_SUCCESS) {
+        log_error("SPEC generation failed");
+        rpm_free_discovered_packages(packages);
+        return ret;
+    }
+    
+    /* Step 4: Build packages */
+    ret = rpm_build_mok_packages(&config, packages);
+    if (ret != RPM_PATCH_SUCCESS) {
+        log_error("Package build failed");
+        rpm_free_discovered_packages(packages);
+        return ret;
+    }
+    
+    /* Step 5: Validate packages */
+    log_info("Validating built packages...");
+    glob_t glob_result;
+    char pattern[512];
+    snprintf(pattern, sizeof(pattern), "%s/*-mok-*.rpm", config.output_dir);
+    
+    if (glob(pattern, 0, NULL, &glob_result) == 0) {
+        for (size_t i = 0; i < glob_result.gl_pathc; i++) {
+            rpm_validation_result_t *vr = rpm_validate_mok_package(
+                glob_result.gl_pathv[i], mok_cert);
+            
+            if (vr) {
+                if (!vr->signature_valid) {
+                    log_error("Signature validation failed for %s: %s", 
+                              glob_result.gl_pathv[i],
+                              vr->error_message ? vr->error_message : "unknown error");
+                } else {
+                    log_info("Validated: %s", glob_result.gl_pathv[i]);
+                }
+                rpm_free_validation_result(vr);
+            }
+        }
+        globfree(&glob_result);
+    }
+    
+    /* Step 6: Integrate into ISO */
+    ret = rpm_integrate_to_iso(iso_rpm_dir, &config);
+    if (ret != RPM_PATCH_SUCCESS) {
+        log_error("ISO integration failed");
+        rpm_free_discovered_packages(packages);
+        return ret;
+    }
+    
+    /* Cleanup */
+    rpm_free_discovered_packages(packages);
+    
+    log_info("=== RPM Secure Boot Patcher Complete ===");
+    return RPM_PATCH_SUCCESS;
+}
+
+/* ============================================================================
+ * Cleanup Functions
+ * ============================================================================ */
+
+void rpm_free_package_info(rpm_package_info_t *pkg) {
+    if (!pkg) return;
+    free(pkg->rpm_path);
+    free(pkg->name);
+    free(pkg->version);
+    free(pkg->release);
+    free(pkg->arch);
+    free(pkg->spec_path);
+    if (pkg->files) {
+        for (int i = 0; i < pkg->file_count; i++) {
+            free(pkg->files[i]);
+        }
+        free(pkg->files);
+    }
+    free(pkg);
+}
+
+void rpm_free_discovered_packages(discovered_packages_t *packages) {
+    if (!packages) return;
+    rpm_free_package_info(packages->grub_efi);
+    rpm_free_package_info(packages->linux_kernel);
+    rpm_free_package_info(packages->shim_signed);
+    rpm_free_package_info(packages->shim);
+    free(packages->release);
+    free(packages->dist_tag);
+    free(packages);
+}
+
+void rpm_free_validation_result(rpm_validation_result_t *result) {
+    if (!result) return;
+    free(result->error_message);
+    free(result);
+}
+
+void rpm_free_build_config(rpm_build_config_t *config) {
+    if (!config) return;
+    free(config->work_dir);
+    free(config->specs_dir);
+    free(config->rpmbuild_dir);
+    free(config->output_dir);
+    free(config->source_rpm_dir);
+    free(config->source_specs_dir);
+    free(config->mok_key);
+    free(config->mok_cert);
+    free(config->release);
+}

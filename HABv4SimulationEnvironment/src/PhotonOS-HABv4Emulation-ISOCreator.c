@@ -35,7 +35,9 @@
 #include <fcntl.h>
 #include <time.h>
 
-#define VERSION "1.1.1"
+#include "rpm_secureboot_patcher.h"
+
+#define VERSION "1.2.0"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */
@@ -1156,11 +1158,11 @@ static int create_secure_boot_iso(void) {
                 "    probe -s photondisk -u ($root)\n"
                 "\n"
                 "    menuentry \"Install (Custom MOK)\" {\n"
-                "        linux /isolinux/vmlinuz root=/dev/ram0 loglevel=3 photon.media=UUID=$photondisk\n"
+                "        linux /isolinux/vmlinuz root=/dev/ram0 loglevel=3 photon.media=UUID=$photondisk photon.secureboot=mok\n"
                 "        initrd /isolinux/initrd.img\n"
                 "    }\n"
                 "\n"
-                "    menuentry \"Install (VMware Original) - Will fail without VMware signature\" {\n"
+                "    menuentry \"Install (VMware Original)\" {\n"
                 "        chainloader /EFI/BOOT/grubx64_real.efi\n"
                 "    }\n"
                 "\n"
@@ -1198,11 +1200,11 @@ static int create_secure_boot_iso(void) {
                 "probe -s photondisk -u ($root)\n"
                 "\n"
                 "menuentry \"Install (Custom MOK)\" {\n"
-                "    linux /isolinux/vmlinuz root=/dev/ram0 loglevel=3 photon.media=UUID=$photondisk\n"
+                "    linux /isolinux/vmlinuz root=/dev/ram0 loglevel=3 photon.media=UUID=$photondisk photon.secureboot=mok\n"
                 "    initrd /isolinux/initrd.img\n"
                 "}\n"
                 "\n"
-                "menuentry \"Install (VMware Original) - Will fail without VMware signature\" {\n"
+                "menuentry \"Install (VMware Original)\" {\n"
                 "    chainloader /EFI/BOOT/grubx64_real.efi\n"
                 "}\n"
                 "\n"
@@ -1248,6 +1250,29 @@ static int create_secure_boot_iso(void) {
             run_cmd(cmd);
         }
         log_info("IA32 (32-bit UEFI) support added to ISO");
+    }
+    
+    /* Build MOK-signed RPM packages for installation */
+    log_info("Building MOK-signed RPM packages for installation...");
+    {
+        char photon_release_dir[512];
+        snprintf(photon_release_dir, sizeof(photon_release_dir), "/root/%s", cfg.release);
+        
+        int rpm_ret = rpm_patch_secureboot_packages(
+            photon_release_dir,
+            iso_extract,
+            mok_key,
+            mok_crt,
+            cfg.verbose
+        );
+        
+        if (rpm_ret != 0) {
+            log_warn("MOK RPM package build failed (code: %d)", rpm_ret);
+            log_warn("Installation with 'Install (Custom MOK)' may not work on target system");
+            log_warn("Live boot from ISO will still work");
+        } else {
+            log_info("MOK-signed RPM packages built and integrated");
+        }
     }
     
     log_info("Building ISO...");

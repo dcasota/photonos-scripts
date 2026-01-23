@@ -4,6 +4,10 @@ CC = gcc
 CFLAGS = -Wall -O2 -g -Wno-format-truncation -Wno-stringop-truncation
 TARGET = PhotonOS-HABv4Emulation-ISOCreator
 
+# Sources
+SRCS = PhotonOS-HABv4Emulation-ISOCreator.c rpm_secureboot_patcher.c
+HDRS = rpm_secureboot_patcher.h
+
 # Sub-projects
 HAB_PRELOADER_DIR = hab/preloader
 HAB_ISO_DIR = hab/iso
@@ -12,8 +16,8 @@ HAB_ISO_DIR = hab/iso
 
 all: $(TARGET) hab-iso
 
-$(TARGET): PhotonOS-HABv4Emulation-ISOCreator.c
-	$(CC) $(CFLAGS) -o $@ $<
+$(TARGET): $(SRCS) $(HDRS)
+	$(CC) $(CFLAGS) -o $@ $(SRCS)
 	@echo "Built: $@ ($$(stat -c%s $@) bytes)"
 
 hab-preloader:

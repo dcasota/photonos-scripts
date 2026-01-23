@@ -53,11 +53,29 @@ grub.efi (Custom GRUB stub, MOK-signed, NO shim_lock)
     ↓ presents 6-option themed menu (5 sec timeout)
     │
     ├─→ "Install (Custom MOK)" path:
-    │   linux vmlinuz (MOK-signed) + initrd
+    │   linux vmlinuz (MOK-signed) + initrd + photon.secureboot=mok
+    │   → Installs MOK-signed RPM packages to target system
     │
     └─→ "Install (VMware Original)" path:
         chainloader grubx64_real.efi
-        → VMware's GRUB (has shim_lock) → unsigned kernel rejected
+        → VMware's GRUB → original unsigned RPMs installed
+```
+
+### Installed System Boot (Post-Installation)
+
+For "Install (Custom MOK)":
+```
+UEFI Firmware → shim-signed-mok (bootx64.efi + mmx64.efi)
+             → grub2-efi-image-mok (grubx64.efi, MOK-signed)
+             → linux-mok (vmlinuz, MOK-signed)
+```
+
+For "Install (VMware Original)":
+```
+UEFI Firmware → shim-signed (bootx64.efi, VMware vendor cert)
+             → grub2-efi-image (grubx64.efi, unsigned)
+             → linux (vmlinuz, unsigned)
+             ⚠ Will fail on Secure Boot enabled systems
 ```
 
 ## GRUB Modules
@@ -121,6 +139,44 @@ Without the eFuse USB dongle present, the boot will show:
 Insert eFuse USB dongle (label: EFUSE_SIM)
 and select 'Retry' to continue.
 ```
+
+## RPM Secure Boot Patcher
+
+The ISO creator includes an integrated **RPM Secure Boot Patcher** that automatically:
+
+1. **Discovers** relevant boot packages (version-agnostic, by file paths):
+   - `grub2-efi-image` (provides `/boot/efi/EFI/BOOT/grubx64.efi`)
+   - `linux` (provides `/boot/vmlinuz-*`)
+   - `shim-signed` (provides `/boot/efi/EFI/BOOT/bootx64.efi`)
+   - `shim` (provides MokManager source)
+
+2. **Generates** MOK-signed variant SPEC files:
+   - `grub2-efi-image-mok.spec`
+   - `linux-mok.spec`
+   - `shim-signed-mok.spec`
+
+3. **Builds** MOK-signed RPMs that:
+   - Have `-mok` suffix (e.g., `grub2-efi-image-mok`)
+   - Provide same capabilities as originals (`Provides: grub2-efi-image`)
+   - Conflict with originals (`Conflicts: grub2-efi-image`)
+   - Include MokManager (`mmx64.efi`) in `shim-signed-mok`
+
+4. **Integrates** both original and MOK-signed RPMs into the ISO
+
+### MOK Package Contents
+
+| Package | Files | Signed With |
+|---------|-------|-------------|
+| `grub2-efi-image-mok` | `/boot/efi/EFI/BOOT/grubx64.efi` | MOK key |
+| `linux-mok` | `/boot/vmlinuz-*`, `/boot/*` | MOK key |
+| `shim-signed-mok` | `bootx64.efi`, `revocations.efi`, `mmx64.efi` | MOK key (mmx64 only) |
+
+### How Installation Selection Works
+
+The kernel command line parameter `photon.secureboot=mok` tells the installer which package set to use:
+
+- **"Install (Custom MOK)"**: Passes `photon.secureboot=mok` → MOK-signed packages installed
+- **"Install (VMware Original)"**: No parameter → Original unsigned packages installed
 
 ## Tool Usage
 
@@ -242,18 +298,34 @@ After reboot:
 
 ## Troubleshooting
 
-### "bad shim signature" Error
+### Installed System: "Policy Violation" then "bad shim signature"
+
+**Cause**: The installed Photon OS uses original VMware RPMs which are unsigned:
+- `grub2-efi-image` provides unsigned `grubx64.efi` → Policy Violation
+- `linux` provides unsigned `vmlinuz` → bad shim signature
+
+**Solution**: 
+1. Reinstall using **"Install (Custom MOK)"** menu option
+2. This installs MOK-signed packages: `grub2-efi-image-mok`, `linux-mok`, `shim-signed-mok`
+
+### Installed System: Missing MokManager
+
+**Cause**: Original `shim-signed` package doesn't include MokManager (`mmx64.efi`).
+
+**Solution**: Use `shim-signed-mok` which includes MokManager.
+
+### "bad shim signature" Error During Live Boot
 
 **Cause**: Selected "VMware Original" which uses VMware's GRUB with shim_lock.
 
-**Solution**: Reboot and select **"1. Custom MOK"** option instead.
+**Solution**: Reboot and select **"Install (Custom MOK)"** option instead.
 
 ### Drops to grub> Prompt
 
 **Manual boot** at grub> prompt:
 ```
 grub> search --no-floppy --file --set=root /isolinux/isolinux.cfg
-grub> configfile ($root)/boot/grub2/grub-custom.cfg
+grub> configfile ($root)/boot/grub2/grub.cfg
 ```
 
 ### Laptop Shows Security Dialog Instead of Blue MokManager
@@ -261,6 +333,24 @@ grub> configfile ($root)/boot/grub2/grub-custom.cfg
 **Cause**: CSM/Legacy boot is enabled.
 
 **Solution**: Disable CSM/Legacy completely in BIOS, enable pure UEFI mode.
+
+### RPM Build Fails During ISO Creation
+
+**Cause**: Missing build dependencies or incorrect SPECS directory.
+
+**Check**:
+1. Verify `/root/<release>/SPECS` directory exists
+2. Verify `/root/<release>/stage/RPMS/x86_64` contains the required RPMs
+3. Check that `rpmbuild` and `sbsigntools` are installed
+
+### MOK-Signed Packages Not Being Installed
+
+**Cause**: The installer doesn't see the `photon.secureboot=mok` kernel parameter.
+
+**Check**:
+1. Verify you selected **"Install (Custom MOK)"** from the boot menu
+2. Check `/proc/cmdline` contains `photon.secureboot=mok`
+3. Verify MOK RPMs exist in `/RPMS/x86_64/` directory on ISO
 
 ### "parted: command not found" (Fixed)
 
