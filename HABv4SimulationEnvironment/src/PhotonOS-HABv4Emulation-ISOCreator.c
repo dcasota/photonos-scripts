@@ -969,13 +969,25 @@ static int create_secure_boot_iso(void) {
         fclose(f);
     }
     
-    /* Build GRUB stub WITHOUT shim_lock module */
+    /* Create sbat.csv for SBAT metadata (CRITICAL for modern shims) */
+    char sbat_csv[512];
+    snprintf(sbat_csv, sizeof(sbat_csv), "%s/sbat.csv", work_dir);
+    f = fopen(sbat_csv, "w");
+    if (f) {
+        fprintf(f,
+            "sbat,1,SBAT Version,sbat,1,https://github.com/rhboot/shim/blob/main/SBAT.md\n"
+            "grub,3,Free Software Foundation,grub,2.06,https://www.gnu.org/software/grub/\n"
+        );
+        fclose(f);
+    }
+    
+    /* Build GRUB stub WITHOUT shim_lock module but WITH SBAT data */
     snprintf(cmd, sizeof(cmd),
-        "grub2-mkimage -O x86_64-efi -o '%s' -c '%s' -p /EFI/BOOT "
+        "grub2-mkimage -O x86_64-efi -o '%s' -c '%s' -p /EFI/BOOT --sbat '%s' "
         "normal search configfile linux chain fat part_gpt part_msdos iso9660 "
         "boot echo reboot halt test true loadenv read all_video gfxterm font efi_gop "
         "2>/dev/null",
-        custom_stub, stub_cfg);
+        custom_stub, stub_cfg, sbat_csv);
     
     if (run_cmd(cmd) != 0 || !file_exists(custom_stub)) {
         log_error("Failed to build custom GRUB stub");
