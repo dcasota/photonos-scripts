@@ -43,8 +43,8 @@ UEFI Firmware
 BOOTX64.EFI (SUSE shim, SBAT=shim,4)
     ↓ (verifies against MokList)
 grub.efi (Custom GRUB stub, MOK-signed, SBAT=grub,3)
-    ↓ (Presents 5-second menu)
-    ├── 1. Custom MOK (Default) → Loads MOK-signed kernel
+    ↓ (Presents 5-second stub menu)
+    ├── 1. Custom MOK (Default) → Original grub.cfg (themed) → MOK-signed kernel
     └── 2. VMware Original      → Chains to VMware GRUB (shim_lock enabled)
 ```
 
@@ -81,8 +81,10 @@ VMware's original GRUB includes the `shim_lock` verifier module, which enforces 
 2.  **Blue Screen**: You will see a blue "Shim UEFI key management" screen (MokManager).
 3.  **Enroll Key**: Select "Enroll key from disk" -> Select `ENROLL_THIS_KEY_IN_MOKMANAGER.cer`.
 4.  **Reboot**: Confirm enrollment and reboot.
-5.  **Stub Menu**: After reboot, a menu appears (5 sec timeout).
+5.  **Stub Menu**: After reboot, a 6-option menu appears (5 sec timeout).
 6.  **Install**: Select "1. Continue to Photon OS Installer (Custom MOK)".
+7.  **Themed Menu**: The original Photon OS installer menu appears (with background).
+8.  **Install**: Select "Install" to begin installation.
 
 ## Troubleshooting
 

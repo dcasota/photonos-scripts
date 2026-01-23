@@ -52,8 +52,8 @@ grub.efi (Custom GRUB stub, MOK-signed, NO shim_lock)
     ↓ presents Stub Menu (5 sec timeout)
     │
     ├─→ "1. Custom MOK" path:
-    │   configfile /boot/grub2/grub-custom.cfg
-    │   → "Install (Custom MOK)" → linux vmlinuz (MOK-signed)
+    │   configfile /boot/grub2/grub.cfg (original themed menu)
+    │   → "Install" (with Photon OS background) → linux vmlinuz (MOK-signed)
     │
     └─→ "2. VMware Original" path:
         chainloader grubx64_real.efi
@@ -70,8 +70,8 @@ The custom stub is still verified by shim via MOK signature, maintaining the sec
 
 ```
 1. Continue to Photon OS Installer (Custom MOK)     [default]
-   → configfile /boot/grub2/grub-custom.cfg
-   → Main menu: "Install (Custom MOK)"
+   → configfile /boot/grub2/grub.cfg (original themed menu)
+   → Shows Photon OS background with "Install" option
    
 2. Continue to Photon OS Installer (VMware Original)
    → chainloader /EFI/BOOT/grubx64_real.efi
@@ -198,10 +198,10 @@ sync
 ### Step 4: Boot to Installer
 
 After reboot:
-1. Stub menu appears (5 second timeout)
+1. Stub menu appears (5 second timeout) with 6 options
 2. Select **"1. Continue to Photon OS Installer (Custom MOK)"** (default)
-3. Main menu appears: **"Install (Custom MOK)"**
-4. Installation proceeds normally
+3. Original Photon OS menu appears with background picture and **"Install"** option
+4. Select **"Install"** to begin installation
 
 ## Troubleshooting
 

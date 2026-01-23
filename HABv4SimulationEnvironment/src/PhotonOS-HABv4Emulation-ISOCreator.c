@@ -1107,7 +1107,7 @@ static int create_secure_boot_iso(void) {
             /* Standard mode - show 6-option stub menu directly */
             fprintf(f,
                 "# Custom GRUB Stub Menu - 6 Options\n"
-                "# This menu is shown by the MOK-signed custom GRUB stub\n"
+                "# This stub is MOK-signed and has NO shim_lock module\n"
                 "\n"
                 "set timeout=5\n"
                 "set default=0\n"
@@ -1115,7 +1115,8 @@ static int create_secure_boot_iso(void) {
                 "search --no-floppy --file --set=root /isolinux/isolinux.cfg\n"
                 "\n"
                 "menuentry \"1. Continue to Photon OS Installer (Custom MOK)\" {\n"
-                "    configfile /boot/grub2/grub-custom.cfg\n"
+                "    # Load original Photon OS grub.cfg (with theme and Install option)\n"
+                "    configfile /boot/grub2/grub.cfg\n"
                 "}\n"
                 "\n"
                 "menuentry \"2. Continue to Photon OS Installer (VMware Original)\" {\n"
@@ -1213,16 +1214,21 @@ static int create_secure_boot_iso(void) {
             /* Standard mode - show 6-option stub menu */
             fprintf(f,
                 "# Custom GRUB Stub Menu - 6 Options\n"
+                "# This stub is MOK-signed and has NO shim_lock module\n"
                 "set timeout=5\n"
                 "set default=0\n"
                 "\n"
                 "search --no-floppy --file --set=root /isolinux/isolinux.cfg\n"
                 "\n"
                 "menuentry \"1. Continue to Photon OS Installer (Custom MOK)\" {\n"
-                "    configfile /boot/grub2/grub-custom.cfg\n"
+                "    # Load original Photon OS grub.cfg (with theme and Install option)\n"
+                "    # Kernel is MOK-signed, will load successfully via this stub\n"
+                "    configfile /boot/grub2/grub.cfg\n"
                 "}\n"
                 "\n"
                 "menuentry \"2. Continue to Photon OS Installer (VMware Original)\" {\n"
+                "    # Chainload VMware's GRUB which has shim_lock enabled\n"
+                "    # Will fail with 'bad shim signature' if kernel not VMware-signed\n"
                 "    chainloader /EFI/BOOT/grubx64_real.efi\n"
                 "}\n"
                 "\n"
@@ -1247,43 +1253,9 @@ static int create_secure_boot_iso(void) {
         log_info("Created /EFI/BOOT/grub.cfg for USB boot");
     }
     
-    /* Create /boot/grub2/grub-custom.cfg for "Install (Custom MOK)" menu */
-    char grub_custom_cfg[512];
-    snprintf(grub_custom_cfg, sizeof(grub_custom_cfg), "%s/boot/grub2/grub-custom.cfg", iso_extract);
-    f = fopen(grub_custom_cfg, "w");
-    if (f) {
-        fprintf(f,
-            "# Custom MOK Boot Menu\n"
-            "# Kernel is MOK-signed - loads without shim_lock verification\n"
-            "\n"
-            "set timeout=10\n"
-            "set default=0\n"
-            "\n"
-            "insmod part_gpt\n"
-            "insmod part_msdos\n"
-            "insmod search\n"
-            "insmod iso9660\n"
-            "insmod linux\n"
-            "\n"
-            "search --no-floppy --file --set=root /isolinux/isolinux.cfg\n"
-            "\n"
-            "menuentry \"Install (Custom MOK)\" {\n"
-            "    linux /isolinux/vmlinuz root=/dev/ram0 loglevel=3 photon.media=UUID=$BOOT_UUID\n"
-            "    initrd /isolinux/initrd.img\n"
-            "}\n"
-            "\n"
-            "menuentry \"Install (Custom MOK) - Debug Mode\" {\n"
-            "    linux /isolinux/vmlinuz root=/dev/ram0 loglevel=7 photon.media=UUID=$BOOT_UUID\n"
-            "    initrd /isolinux/initrd.img\n"
-            "}\n"
-            "\n"
-            "menuentry \"Back to Stub Menu\" {\n"
-            "    configfile /EFI/BOOT/grub.cfg\n"
-            "}\n"
-        );
-        fclose(f);
-        log_info("Created /boot/grub2/grub-custom.cfg for Custom MOK boot");
-    }
+    /* Note: We use the original /boot/grub2/grub.cfg from Photon OS ISO
+     * which has the themed menu with "Install" option. The kernel is 
+     * already MOK-signed, so it works with our custom stub. */
     
     /* Create /boot/grub2/grub-stub-menu.cfg for eFuse USB mode
      * This is loaded after eFuse verification passes */
@@ -1294,12 +1266,16 @@ static int create_secure_boot_iso(void) {
         if (f) {
             fprintf(f,
                 "# Custom GRUB Stub Menu - 6 Options (eFuse mode)\n"
+                "# This stub is MOK-signed and has NO shim_lock module\n"
                 "\n"
                 "set timeout=5\n"
                 "set default=0\n"
                 "\n"
+                "search --no-floppy --file --set=root /isolinux/isolinux.cfg\n"
+                "\n"
                 "menuentry \"1. Continue to Photon OS Installer (Custom MOK)\" {\n"
-                "    configfile /boot/grub2/grub-custom.cfg\n"
+                "    # Load original Photon OS grub.cfg (with theme and Install option)\n"
+                "    configfile /boot/grub2/grub.cfg\n"
                 "}\n"
                 "\n"
                 "menuentry \"2. Continue to Photon OS Installer (VMware Original)\" {\n"
@@ -1381,7 +1357,7 @@ static int create_secure_boot_iso(void) {
         printf("  UEFI -> BOOTX64.EFI (SUSE shim, Microsoft-signed)\n");
         printf("       -> grub.efi (Custom GRUB stub, MOK-signed, NO shim_lock)\n");
         printf("       -> Stub Menu (5 sec timeout):\n");
-        printf("          1. Custom MOK    -> grub-custom.cfg -> vmlinuz (MOK-signed)\n");
+        printf("          1. Custom MOK    -> grub.cfg (themed) -> vmlinuz (MOK-signed)\n");
         printf("          2. VMware Orig   -> grubx64_real.efi -> grub.cfg -> vmlinuz (unsigned)\n");
         printf("          3. MokManager    -> Enroll/Delete MOK keys\n");
         printf("          4-6. UEFI/Reboot/Shutdown\n");
@@ -1569,27 +1545,28 @@ static int diagnose_iso(const char *iso_path) {
         errors++;
     }
     
-    /* Check for custom GRUB config */
-    printf("\n[Custom GRUB Config]\n");
-    snprintf(cmd, sizeof(cmd), "xorriso -osirrox on -indev '%s' -extract /boot/grub2/grub-custom.cfg '%s/grub_custom.cfg' 2>/dev/null", 
+    /* Check original GRUB config (for themed installer menu) */
+    printf("\n[Original GRUB Config]\n");
+    snprintf(cmd, sizeof(cmd), "xorriso -osirrox on -indev '%s' -extract /boot/grub2/grub.cfg '%s/grub_orig.cfg' 2>/dev/null", 
         iso_path, work_dir);
     system(cmd);
     
-    char grub_custom[512];
-    snprintf(grub_custom, sizeof(grub_custom), "%s/grub_custom.cfg", work_dir);
-    if (file_exists(grub_custom)) {
-        printf("  " GREEN "[OK]" RESET " /boot/grub2/grub-custom.cfg exists (Custom MOK menu)\n");
-        /* Verify it has the right content - should have Install menuentry */
-        snprintf(cmd, sizeof(cmd), "grep -q 'Install.*Custom MOK' '%s'", grub_custom);
+    char grub_orig[512];
+    snprintf(grub_orig, sizeof(grub_orig), "%s/grub_orig.cfg", work_dir);
+    if (file_exists(grub_orig)) {
+        printf("  " GREEN "[OK]" RESET " /boot/grub2/grub.cfg exists (original themed menu)\n");
+        /* Verify it has the theme setting */
+        snprintf(cmd, sizeof(cmd), "grep -q 'theme=' '%s'", grub_orig);
         if (system(cmd) == 0) {
-            printf("  " GREEN "[OK]" RESET " Has 'Install (Custom MOK)' menu entry\n");
+            printf("  " GREEN "[OK]" RESET " Has theme setting (will show Photon OS background)\n");
         } else {
-            printf("  " YELLOW "[WARN]" RESET " May not have correct menu entries\n");
+            printf("  " YELLOW "[WARN]" RESET " No theme setting found\n");
             warnings++;
         }
     } else {
-        printf("  " YELLOW "[--]" RESET " /boot/grub2/grub-custom.cfg not present\n");
-        printf("             Custom MOK boot path may not work\n");
+        printf("  " RED "[FAIL]" RESET " /boot/grub2/grub.cfg missing\n");
+        printf("             Custom MOK boot path will not work\n");
+        errors++;
     }
     
     /* Check efiboot.img */
