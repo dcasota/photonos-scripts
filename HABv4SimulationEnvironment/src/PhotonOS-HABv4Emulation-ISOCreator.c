@@ -922,49 +922,15 @@ static int create_secure_boot_iso(void) {
     
     log_info("Building custom GRUB stub (6-option menu, no shim_lock)...");
     
-    /* Create stub menu configuration */
+    /* Create stub menu configuration (Embedded in GRUB binary)
+     * This config runs first. We keep it minimal to just find and load
+     * the external config file at /EFI/BOOT/grub.cfg */
     FILE *f = fopen(stub_cfg, "w");
     if (f) {
         fprintf(f,
-            "# Custom GRUB Stub Menu - 6 Options\n"
-            "# NO shim_lock = kernel loads without signature verification\n"
-            "\n"
-            "set timeout=5\n"
-            "set default=0\n"
-            "\n"
-            "insmod part_gpt\n"
-            "insmod part_msdos\n"
-            "insmod fat\n"
-            "insmod iso9660\n"
-            "insmod search\n"
-            "insmod chain\n"
-            "insmod configfile\n"
-            "\n"
-            "search --no-floppy --file --set=root /isolinux/isolinux.cfg\n"
-            "\n"
-            "menuentry \"1. Continue to Photon OS Installer (Custom MOK)\" {\n"
-            "    configfile /boot/grub2/grub-custom.cfg\n"
-            "}\n"
-            "\n"
-            "menuentry \"2. Continue to Photon OS Installer (VMware Original)\" {\n"
-            "    chainloader /EFI/BOOT/grubx64_real.efi\n"
-            "}\n"
-            "\n"
-            "menuentry \"3. MokManager - Enroll/Delete MOK Keys\" {\n"
-            "    chainloader /EFI/BOOT/MokManager.efi\n"
-            "}\n"
-            "\n"
-            "menuentry \"4. Reboot into UEFI Firmware Settings\" {\n"
-            "    fwsetup\n"
-            "}\n"
-            "\n"
-            "menuentry \"5. Reboot\" {\n"
-            "    reboot\n"
-            "}\n"
-            "\n"
-            "menuentry \"6. Shutdown\" {\n"
-            "    halt\n"
-            "}\n"
+            "search.file /EFI/BOOT/grub.cfg root\n"
+            "set prefix=($root)/EFI/BOOT\n"
+            "configfile ($root)/EFI/BOOT/grub.cfg\n"
         );
         fclose(f);
     }
