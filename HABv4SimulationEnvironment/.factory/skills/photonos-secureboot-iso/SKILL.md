@@ -178,6 +178,31 @@ The kernel command line parameter `photon.secureboot=mok` tells the installer wh
 - **"Install (Custom MOK)"**: Passes `photon.secureboot=mok` → MOK-signed packages installed
 - **"Install (VMware Original)"**: No parameter → Original unsigned packages installed
 
+### Initrd Patching
+
+The ISO creator automatically patches the installer in the initrd to:
+
+1. **Add `mok_patch.py`** module to the photon_installer package
+2. **Patch `installer.py`** to import and call `apply_mok_substitution()`
+3. **Repack the initrd** with the patched installer
+
+The patch:
+```python
+# Added after 'import tdnf'
+try:
+    from mok_patch import apply_mok_substitution
+except ImportError:
+    apply_mok_substitution = lambda p, l=None: p
+
+# Modified package assignment
+install_config['packages'] = apply_mok_substitution(packages_pruned, logger)
+```
+
+When `photon.secureboot=mok` is detected in `/proc/cmdline`, the function automatically substitutes:
+- `linux` → `linux-mok`
+- `grub2-efi-image` → `grub2-efi-image-mok`
+- `shim-signed` → `shim-signed-mok`
+
 ## Tool Usage
 
 ### Command Line Options
