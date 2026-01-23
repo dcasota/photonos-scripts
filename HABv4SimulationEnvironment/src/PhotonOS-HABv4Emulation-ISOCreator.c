@@ -1084,13 +1084,15 @@ static int create_secure_boot_iso(void) {
         log_info("IA32 (32-bit UEFI) support added to efiboot.img");
     }
     
-    /* Create /EFI/BOOT/grub.cfg for the custom stub */
+    /* Create /EFI/BOOT/grub.cfg with the 6-option stub menu
+     * This is the menu that appears after shim loads grub.efi
+     * The embedded config (-c) just sets up modules, this file has the actual menu */
     char grub_cfg[512];
     snprintf(grub_cfg, sizeof(grub_cfg), "%s/EFI/BOOT/grub.cfg", efi_mount);
     f = fopen(grub_cfg, "w");
     if (f) {
         if (cfg.efuse_usb_mode) {
-            /* eFuse USB verification mode - require dongle */
+            /* eFuse USB verification mode - require dongle before showing menu */
             fprintf(f,
                 "# HABv4 eFuse USB Verification Mode\n"
                 "set timeout=10\n"
@@ -1123,18 +1125,46 @@ static int create_secure_boot_iso(void) {
                 "        halt\n"
                 "    }\n"
                 "else\n"
+                "    # eFuse found - show normal stub menu\n"
                 "    search --no-floppy --file --set=root /isolinux/isolinux.cfg\n"
-                "    set prefix=($root)/boot/grub2\n"
-                "    configfile $prefix/grub.cfg\n"
+                "    configfile /boot/grub2/grub-stub-menu.cfg\n"
                 "fi\n"
             );
             log_info("eFuse USB verification mode ENABLED");
         } else {
-            /* Standard mode - no dongle required */
+            /* Standard mode - show 6-option stub menu directly */
             fprintf(f,
+                "# Custom GRUB Stub Menu - 6 Options\n"
+                "# This menu is shown by the MOK-signed custom GRUB stub\n"
+                "\n"
+                "set timeout=5\n"
+                "set default=0\n"
+                "\n"
                 "search --no-floppy --file --set=root /isolinux/isolinux.cfg\n"
-                "set prefix=($root)/boot/grub2\n"
-                "configfile $prefix/grub.cfg\n"
+                "\n"
+                "menuentry \"1. Continue to Photon OS Installer (Custom MOK)\" {\n"
+                "    configfile /boot/grub2/grub-custom.cfg\n"
+                "}\n"
+                "\n"
+                "menuentry \"2. Continue to Photon OS Installer (VMware Original)\" {\n"
+                "    chainloader /EFI/BOOT/grubx64_real.efi\n"
+                "}\n"
+                "\n"
+                "menuentry \"3. MokManager - Enroll/Delete MOK Keys\" {\n"
+                "    chainloader /EFI/BOOT/MokManager.efi\n"
+                "}\n"
+                "\n"
+                "menuentry \"4. Reboot into UEFI Firmware Settings\" {\n"
+                "    fwsetup\n"
+                "}\n"
+                "\n"
+                "menuentry \"5. Reboot\" {\n"
+                "    reboot\n"
+                "}\n"
+                "\n"
+                "menuentry \"6. Shutdown\" {\n"
+                "    halt\n"
+                "}\n"
             );
         }
         fclose(f);
@@ -1214,6 +1244,48 @@ static int create_secure_boot_iso(void) {
         );
         fclose(f);
         log_info("Created /boot/grub2/grub-custom.cfg for Custom MOK boot");
+    }
+    
+    /* Create /boot/grub2/grub-stub-menu.cfg for eFuse USB mode
+     * This is loaded after eFuse verification passes */
+    if (cfg.efuse_usb_mode) {
+        char grub_stub_menu[512];
+        snprintf(grub_stub_menu, sizeof(grub_stub_menu), "%s/boot/grub2/grub-stub-menu.cfg", iso_extract);
+        f = fopen(grub_stub_menu, "w");
+        if (f) {
+            fprintf(f,
+                "# Custom GRUB Stub Menu - 6 Options (eFuse mode)\n"
+                "\n"
+                "set timeout=5\n"
+                "set default=0\n"
+                "\n"
+                "menuentry \"1. Continue to Photon OS Installer (Custom MOK)\" {\n"
+                "    configfile /boot/grub2/grub-custom.cfg\n"
+                "}\n"
+                "\n"
+                "menuentry \"2. Continue to Photon OS Installer (VMware Original)\" {\n"
+                "    chainloader /EFI/BOOT/grubx64_real.efi\n"
+                "}\n"
+                "\n"
+                "menuentry \"3. MokManager - Enroll/Delete MOK Keys\" {\n"
+                "    chainloader /EFI/BOOT/MokManager.efi\n"
+                "}\n"
+                "\n"
+                "menuentry \"4. Reboot into UEFI Firmware Settings\" {\n"
+                "    fwsetup\n"
+                "}\n"
+                "\n"
+                "menuentry \"5. Reboot\" {\n"
+                "    reboot\n"
+                "}\n"
+                "\n"
+                "menuentry \"6. Shutdown\" {\n"
+                "    halt\n"
+                "}\n"
+            );
+            fclose(f);
+            log_info("Created /boot/grub2/grub-stub-menu.cfg for eFuse mode");
+        }
     }
     
     /* IA32 (32-bit UEFI) support in ISO root */
