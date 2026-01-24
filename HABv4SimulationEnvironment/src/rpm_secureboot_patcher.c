@@ -896,6 +896,15 @@ int rpm_sign_mok_packages(
     
     log_info("Signing MOK RPM packages with GPG key...");
     
+    /* RPM's rpmsign uses /usr/bin/gpg2 by default, but Photon OS only has /usr/bin/gpg.
+     * Create symlink if needed to fix "Could not exec gpg" error */
+    if (access("/usr/bin/gpg2", X_OK) != 0 && access("/usr/bin/gpg", X_OK) == 0) {
+        log_info("Creating /usr/bin/gpg2 symlink for rpmsign compatibility");
+        if (symlink("/usr/bin/gpg", "/usr/bin/gpg2") != 0 && errno != EEXIST) {
+            log_warn("Failed to create gpg2 symlink: %s", strerror(errno));
+        }
+    }
+    
     /* Build pattern to find MOK RPMs */
     snprintf(pattern, sizeof(pattern), "%s/*-mok-*.rpm", config->output_dir);
     
