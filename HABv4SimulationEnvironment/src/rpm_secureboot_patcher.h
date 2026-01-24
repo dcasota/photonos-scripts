@@ -166,6 +166,23 @@ int rpm_integrate_to_iso(
 );
 
 /**
+ * Sign MOK RPM packages with GPG key
+ *
+ * Signs all MOK-variant RPMs in the output directory using rpmsign.
+ * Requires GPG key to be generated first.
+ *
+ * @param config        Build configuration
+ * @param gpg_home      Path to GNUPGHOME directory containing GPG keys
+ * @param gpg_key_name  GPG key identifier (Name-Real from key generation)
+ * @return              0 on success, negative error code on failure
+ */
+int rpm_sign_mok_packages(
+    rpm_build_config_t *config,
+    const char *gpg_home,
+    const char *gpg_key_name
+);
+
+/**
  * Main entry point - patch and build all Secure Boot RPMs
  *
  * This function:

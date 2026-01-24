@@ -37,7 +37,7 @@
 
 #include "rpm_secureboot_patcher.h"
 
-#define VERSION "1.4.0"
+#define VERSION "1.5.0"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */
@@ -58,6 +58,11 @@
 #define CYAN    "\x1b[36m"
 #define RESET   "\x1b[0m"
 
+/* GPG key configuration for RPM signing */
+#define GPG_KEY_NAME "HABv4 RPM Signing Key"
+#define GPG_KEY_EMAIL "habv4-rpm@local"
+#define GPG_KEY_FILE "RPM-GPG-KEY-habv4"
+
 /* Configuration structure */
 typedef struct {
     char release[16];
@@ -74,6 +79,7 @@ typedef struct {
     int setup_efuse;
     int full_kernel_build;
     int efuse_usb_mode;
+    int rpm_signing;          /* Enable GPG signing of MOK RPM packages */
     int cleanup;
     int verbose;
     int yes_to_all;
@@ -371,6 +377,83 @@ static int generate_all_keys(void) {
 }
 
 /* ============================================================================
+ * GPG Key Generation for RPM Signing
+ * ============================================================================ */
+
+static int generate_gpg_keys(void) {
+    char gpg_pub[512], gpg_home[512], gpg_batch[512];
+    char cmd[2048];
+    
+    snprintf(gpg_pub, sizeof(gpg_pub), "%s/%s", cfg.keys_dir, GPG_KEY_FILE);
+    snprintf(gpg_home, sizeof(gpg_home), "%s/.gnupg", cfg.keys_dir);
+    
+    /* Check if GPG key already exists */
+    if (file_exists(gpg_pub)) {
+        log_info("GPG key already exists: %s", gpg_pub);
+        return 0;
+    }
+    
+    log_step("Generating GPG key pair for RPM signing...");
+    
+    /* Create GNUPGHOME directory */
+    mkdir_p(gpg_home);
+    snprintf(cmd, sizeof(cmd), "chmod 700 '%s'", gpg_home);
+    run_cmd(cmd);
+    
+    /* Create batch file for unattended key generation */
+    snprintf(gpg_batch, sizeof(gpg_batch), "%s/gpg_batch.txt", cfg.keys_dir);
+    FILE *f = fopen(gpg_batch, "w");
+    if (!f) {
+        log_error("Failed to create GPG batch file");
+        return -1;
+    }
+    
+    fprintf(f,
+        "%%echo Generating %s\n"
+        "Key-Type: RSA\n"
+        "Key-Length: 4096\n"
+        "Key-Usage: sign\n"
+        "Name-Real: %s\n"
+        "Name-Email: %s\n"
+        "Expire-Date: 0\n"
+        "%%no-protection\n"
+        "%%commit\n"
+        "%%echo Done\n",
+        GPG_KEY_NAME, GPG_KEY_NAME, GPG_KEY_EMAIL
+    );
+    fclose(f);
+    
+    /* Generate key */
+    snprintf(cmd, sizeof(cmd), 
+        "GNUPGHOME='%s' gpg --batch --gen-key '%s' 2>/dev/null",
+        gpg_home, gpg_batch);
+    
+    if (run_cmd(cmd) != 0) {
+        log_error("Failed to generate GPG key");
+        unlink(gpg_batch);
+        return -1;
+    }
+    
+    /* Export public key (ASCII armored) */
+    snprintf(cmd, sizeof(cmd),
+        "GNUPGHOME='%s' gpg --export --armor '%s' > '%s' 2>/dev/null",
+        gpg_home, GPG_KEY_NAME, gpg_pub);
+    
+    if (run_cmd(cmd) != 0) {
+        log_error("Failed to export GPG public key");
+        unlink(gpg_batch);
+        return -1;
+    }
+    
+    /* Cleanup batch file */
+    unlink(gpg_batch);
+    
+    log_info("GPG key pair generated: %s", GPG_KEY_NAME);
+    log_info("Public key exported to: %s", gpg_pub);
+    return 0;
+}
+
+/* ============================================================================
  * eFuse Simulation
  * ============================================================================ */
 
@@ -499,6 +582,19 @@ static int create_efuse_usb(const char *device) {
     
     snprintf(cmd, sizeof(cmd), "cp '%s/srk_hash.bin' '%s/' 2>/dev/null || true", cfg.keys_dir, efuse_path);
     run_cmd(cmd);
+    
+    /* Copy GPG public key if RPM signing is enabled */
+    if (cfg.rpm_signing) {
+        char gpg_src[512], gpg_dst[512];
+        snprintf(gpg_src, sizeof(gpg_src), "%s/%s", cfg.keys_dir, GPG_KEY_FILE);
+        snprintf(gpg_dst, sizeof(gpg_dst), "%s/%s", mount_point, GPG_KEY_FILE);
+        
+        if (file_exists(gpg_src)) {
+            snprintf(cmd, sizeof(cmd), "cp '%s' '%s'", gpg_src, gpg_dst);
+            run_cmd(cmd);
+            log_info("GPG public key copied to eFuse USB");
+        }
+    }
     
     snprintf(cmd, sizeof(cmd), "umount '%s'", mount_point);
     run_cmd(cmd);
@@ -963,6 +1059,19 @@ static int create_secure_boot_iso(void) {
             "    \"postinstall\": [\n"
             "        \"#!/bin/sh\",\n"
             "        \"echo 'Photon OS installed with MOK Secure Boot support' > /etc/mok-secureboot\",\n"
+        );
+        
+        /* Add GPG key import if RPM signing is enabled */
+        if (cfg.rpm_signing) {
+            fprintf(f,
+                "        \"rpm --import /cdrom/%s\",\n"
+                "        \"echo 'gpgcheck=1' >> /etc/yum.repos.d/photon.repo\",\n"
+                "        \"echo 'GPG key imported for MOK RPM verification' >> /etc/mok-secureboot\",\n",
+                GPG_KEY_FILE
+            );
+        }
+        
+        fprintf(f,
             "        \"echo 'Remember to enroll MOK key on first boot if not already done' >> /etc/mok-secureboot\"\n"
             "    ],\n"
             "    \"ui\": true\n"
@@ -1365,6 +1474,36 @@ static int create_secure_boot_iso(void) {
             log_warn("Live boot from ISO will still work");
         } else {
             log_info("MOK-signed RPM packages built and integrated");
+            
+            /* Sign MOK RPMs with GPG if enabled */
+            if (cfg.rpm_signing) {
+                log_info("GPG signing MOK RPM packages...");
+                
+                /* Generate GPG keys if needed */
+                if (generate_gpg_keys() != 0) {
+                    log_warn("Failed to generate GPG keys, skipping RPM signing");
+                } else {
+                    /* Get build config output_dir from rpm_patch function
+                     * For simplicity, we use the standard rpmbuild location */
+                    rpm_build_config_t sign_cfg = {0};
+                    char output_dir[512], gpg_home[512];
+                    snprintf(output_dir, sizeof(output_dir), "%s/rpmbuild/RPMS", photon_release_dir);
+                    snprintf(gpg_home, sizeof(gpg_home), "%s/.gnupg", cfg.keys_dir);
+                    sign_cfg.output_dir = output_dir;
+                    
+                    if (rpm_sign_mok_packages(&sign_cfg, gpg_home, GPG_KEY_NAME) != 0) {
+                        log_warn("Failed to sign MOK RPM packages");
+                    } else {
+                        /* Copy GPG public key to ISO root */
+                        char gpg_pub[512], gpg_iso[512];
+                        snprintf(gpg_pub, sizeof(gpg_pub), "%s/%s", cfg.keys_dir, GPG_KEY_FILE);
+                        snprintf(gpg_iso, sizeof(gpg_iso), "%s/%s", iso_extract, GPG_KEY_FILE);
+                        snprintf(cmd, sizeof(cmd), "cp '%s' '%s'", gpg_pub, gpg_iso);
+                        run_cmd(cmd);
+                        log_info("GPG public key copied to ISO root");
+                    }
+                }
+            }
         }
     }
     
@@ -1742,6 +1881,7 @@ static void show_help(void) {
     printf("  -s, --setup-efuse          Setup eFuse simulation\n");
     printf("  -u, --create-efuse-usb=DEV Create eFuse USB dongle on device (e.g., /dev/sdb)\n");
     printf("  -E, --efuse-usb            Enable eFuse USB dongle verification in GRUB\n");
+    printf("  -R, --rpm-signing          Enable GPG signing of MOK RPM packages\n");
     printf("  -F, --full-kernel-build    Build kernel from source (takes hours)\n");
     printf("  -D, --diagnose=ISO         Diagnose an existing ISO for Secure Boot issues\n");
     printf("  -c, --clean                Clean up all artifacts\n");
@@ -1759,6 +1899,7 @@ static void show_help(void) {
     printf("  %s -r 4.0 -b               # Build for Photon OS 4.0\n", PROGRAM_NAME);
     printf("  %s -i in.iso -o out.iso -b # Specify input/output ISO\n", PROGRAM_NAME);
     printf("  %s -E -b                   # Build ISO with eFuse USB verification\n", PROGRAM_NAME);
+    printf("  %s -R -b                   # Build ISO with RPM signing\n", PROGRAM_NAME);
     printf("  %s -u /dev/sdb             # Create eFuse USB dongle\n", PROGRAM_NAME);
     printf("  %s -F                      # Full kernel build (hours)\n", PROGRAM_NAME);
     printf("  %s -D /path/to/iso         # Diagnose existing ISO\n", PROGRAM_NAME);
@@ -1793,6 +1934,7 @@ int main(int argc, char *argv[]) {
         {"setup-efuse",       no_argument,       0, 's'},
         {"create-efuse-usb",  required_argument, 0, 'u'},
         {"efuse-usb",         no_argument,       0, 'E'},
+        {"rpm-signing",       no_argument,       0, 'R'},
         {"full-kernel-build", no_argument,       0, 'F'},
         {"diagnose",          required_argument, 0, 'D'},
         {"clean",             no_argument,       0, 'c'},
@@ -1803,7 +1945,7 @@ int main(int argc, char *argv[]) {
     };
     
     int opt;
-    while ((opt = getopt_long(argc, argv, "r:i:o:k:e:m:bgsEFD:cu:vyh", long_options, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "r:i:o:k:e:m:bgsERFD:cu:vyh", long_options, NULL)) != -1) {
         switch (opt) {
             case 'r':
                 strncpy(cfg.release, optarg, sizeof(cfg.release) - 1);
@@ -1842,6 +1984,9 @@ int main(int argc, char *argv[]) {
                 break;
             case 'E':
                 cfg.efuse_usb_mode = 1;
+                break;
+            case 'R':
+                cfg.rpm_signing = 1;
                 break;
             case 'F':
                 cfg.full_kernel_build = 1;

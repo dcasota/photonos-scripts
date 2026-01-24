@@ -217,6 +217,36 @@ Previous versions patched the installer in the initrd to detect `photon.securebo
 
 The kickstart approach avoids these issues entirely.
 
+### RPM Signing (Optional)
+
+The `--rpm-signing` (`-R`) option enables GPG signing of MOK RPM packages for compliance with:
+- **NIST SP 800-53** (SI-7: Software Integrity, CM-14: Signed Components)
+- **FedRAMP** (requires NIST 800-53 controls)
+- **EU Cyber Resilience Act** (Article 10: Software integrity verification)
+
+When enabled, the tool:
+1. **Generates a GPG key pair** (`RPM-GPG-KEY-habv4`) in the keys directory
+2. **Signs all MOK RPM packages** after building with `rpmsign`
+3. **Copies the public key** to the ISO root and eFuse USB
+4. **Updates the kickstart** to import the GPG key during installation
+
+**Key locations:**
+- GPG keyring: `<keys_dir>/.gnupg/`
+- Public key: `<keys_dir>/RPM-GPG-KEY-habv4`
+- On ISO: `/RPM-GPG-KEY-habv4`
+- On eFuse USB: `/RPM-GPG-KEY-habv4`
+
+**Verification after installation:**
+```bash
+# Verify GPG key is imported
+rpm -qa gpg-pubkey* --qf '%{NAME}-%{VERSION}-%{RELEASE}\t%{SUMMARY}\n'
+
+# Verify MOK packages are signed
+rpm -qa *-mok* --qf '%{NAME}\t%{SIGPGP:pgpsig}\n'
+```
+
+See `docs/SIGNING_OVERVIEW.md` for detailed comparison of Secure Boot signing vs RPM signing.
+
 ## Tool Usage
 
 ### Command Line Options
@@ -236,6 +266,7 @@ Options:
   -s, --setup-efuse          Setup eFuse simulation
   -u, --create-efuse-usb=DEV Create eFuse USB dongle on device
   -E, --efuse-usb            Enable eFuse USB verification in GRUB
+  -R, --rpm-signing          Enable GPG signing of MOK RPM packages
   -F, --full-kernel-build    Build kernel from source (takes hours)
   -D, --diagnose=ISO         Diagnose an existing ISO for Secure Boot issues
   -c, --clean                Clean up all artifacts
@@ -258,6 +289,12 @@ Options:
 
 # Build ISO with eFuse verification enabled
 ./PhotonOS-HABv4Emulation-ISOCreator --build-iso --efuse-usb
+
+# Build ISO with RPM signing for compliance (NIST 800-53, FedRAMP, EU CRA)
+./PhotonOS-HABv4Emulation-ISOCreator --build-iso --rpm-signing
+
+# Full secure build: eFuse USB + RPM signing
+./PhotonOS-HABv4Emulation-ISOCreator --build-iso --efuse-usb --rpm-signing --create-efuse-usb=/dev/sdd -y
 
 # Diagnose why an ISO isn't booting
 ./PhotonOS-HABv4Emulation-ISOCreator -D /path/to/photon.iso

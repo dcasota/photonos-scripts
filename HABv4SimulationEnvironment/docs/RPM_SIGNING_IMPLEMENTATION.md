@@ -1,8 +1,8 @@
-# RPM Signing Implementation Plan for HABv4
+# RPM Signing Implementation for HABv4
 
-## Overview
+## Status: IMPLEMENTED (v1.5.0)
 
-This document outlines the complete implementation plan to add RPM signing capability to the PhotonOS-HABv4Emulation-ISOCreator tool via a new `--rpm-signing` option.
+This document describes the RPM signing capability added to the PhotonOS-HABv4Emulation-ISOCreator tool via the `--rpm-signing` (`-R`) option.
 
 ## Goals
 

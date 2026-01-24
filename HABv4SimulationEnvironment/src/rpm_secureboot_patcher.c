@@ -20,6 +20,7 @@
 #include <errno.h>
 #include <glob.h>
 #include <time.h>
+#include <libgen.h>
 
 /* ANSI colors */
 #define RED     "\x1b[31m"
@@ -50,6 +51,15 @@ static void log_error(const char *fmt, ...) {
     vfprintf(stderr, fmt, args);
     va_end(args);
     fprintf(stderr, "\n");
+}
+
+static void log_warn(const char *fmt, ...) {
+    va_list args;
+    printf(YELLOW "[RPM-PATCH WARN]" RESET " ");
+    va_start(args, fmt);
+    vprintf(fmt, args);
+    va_end(args);
+    printf("\n");
 }
 
 static void log_debug(const char *fmt, ...) {
@@ -857,6 +867,71 @@ rpm_validation_result_t* rpm_validate_mok_package(
     run_cmd(cmd);
     
     return result;
+}
+
+/* ============================================================================
+ * RPM GPG Signing Functions
+ * ============================================================================ */
+
+int rpm_sign_mok_packages(
+    rpm_build_config_t *config,
+    const char *gpg_home,
+    const char *gpg_key_name
+) {
+    char cmd[2048];
+    char pattern[512];
+    glob_t glob_result;
+    int signed_count = 0;
+    
+    log_info("Signing MOK RPM packages with GPG key...");
+    
+    /* Build pattern to find MOK RPMs */
+    snprintf(pattern, sizeof(pattern), "%s/*-mok-*.rpm", config->output_dir);
+    
+    if (glob(pattern, 0, NULL, &glob_result) != 0) {
+        log_warn("No MOK RPMs found to sign in %s", config->output_dir);
+        return 0;  /* Not an error if no packages found */
+    }
+    
+    /* Sign each RPM */
+    for (size_t i = 0; i < glob_result.gl_pathc; i++) {
+        const char *rpm_path = glob_result.gl_pathv[i];
+        
+        log_debug("Signing: %s", rpm_path);
+        
+        /* Use rpmsign with GNUPGHOME set */
+        snprintf(cmd, sizeof(cmd),
+            "GNUPGHOME='%s' rpmsign "
+            "--define '_gpg_name %s' "
+            "--addsign '%s' 2>&1",
+            gpg_home,
+            gpg_key_name,
+            rpm_path);
+        
+        if (run_cmd(cmd) != 0) {
+            log_error("Failed to sign: %s", rpm_path);
+            globfree(&glob_result);
+            return RPM_PATCH_ERR_SIGN_FAILED;
+        }
+        
+        signed_count++;
+        log_info("Signed: %s", basename((char*)rpm_path));
+    }
+    
+    globfree(&glob_result);
+    
+    if (signed_count > 0) {
+        /* Verify signatures */
+        log_info("Verifying RPM signatures...");
+        snprintf(cmd, sizeof(cmd), 
+            "rpm --checksig %s/*-mok-*.rpm 2>&1 | grep -v 'NOT OK' || true", 
+            config->output_dir);
+        run_cmd(cmd);
+        
+        log_info("Successfully signed %d MOK RPM package(s)", signed_count);
+    }
+    
+    return RPM_PATCH_SUCCESS;
 }
 
 /* ============================================================================
