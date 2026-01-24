@@ -98,12 +98,11 @@ grub.efi (Custom GRUB stub - MOK-signed)
     │
     ▼
 Stub Menu (5 second timeout):
-    1. Custom MOK        → grub.cfg → vmlinuz (MOK-signed)
-    2. VMware Original   → grubx64_real.efi → vmlinuz
-    3. MokManager        → Key enrollment
-    4. UEFI Shell
-    5. Reboot
-    6. Shutdown
+    1. Custom MOK (Physical HW)  → ks=mok_ks.cfg → MOK packages
+    2. VMware Original (VMware)  → ks=standard_ks.cfg → VMware packages
+    3. MokManager                → Key enrollment
+    4. Reboot
+    5. Shutdown
 ```
 
 ## First Boot Instructions
@@ -115,8 +114,11 @@ Stub Menu (5 second timeout):
 5. **Navigate to**: USB root → `ENROLL_THIS_KEY_IN_MOKMANAGER.cer`
 6. **Confirm and REBOOT** (not continue)
 7. **After reboot**: Stub Menu appears (5 sec timeout)
-8. **Select**: "1. Continue to Photon OS Installer (Custom MOK)"
-9. **In installer**: Select "Install (Custom MOK) - Automated"
+8. **Select installation option**:
+   - **"Install (Custom MOK) - For Physical Hardware"** for physical machines with Secure Boot
+   - **"Install (VMware Original) - For VMware VMs"** for VMware virtual machines
+9. **Follow the interactive installer** - disk selection, hostname, password, etc.
+   (package selection is enforced by kickstart)
 
 ## MOK RPM Packages
 

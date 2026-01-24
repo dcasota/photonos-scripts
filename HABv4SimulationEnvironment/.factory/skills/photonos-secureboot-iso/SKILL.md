@@ -63,19 +63,21 @@ grub.efi (Custom GRUB stub, MOK-signed, NO shim_lock)
 
 ### Installed System Boot (Post-Installation)
 
-For "Install (Custom MOK)":
+For "Install (Custom MOK) - For Physical Hardware":
 ```
-UEFI Firmware → shim-signed-mok (bootx64.efi + mmx64.efi)
-             → grub2-efi-image-mok (grubx64.efi, MOK-signed)
+UEFI Firmware → shim-signed-mok (SUSE shim bootx64.efi + MokManager)
+             → grub2-efi-image-mok (Custom GRUB stub, MOK-signed, NO shim_lock)
              → linux-mok (vmlinuz, MOK-signed)
+             ✓ Works on physical hardware with Secure Boot enabled
 ```
 
-For "Install (VMware Original)":
+For "Install (VMware Original) - For VMware VMs":
 ```
-UEFI Firmware → shim-signed (bootx64.efi, VMware vendor cert)
-             → grub2-efi-image (grubx64.efi, unsigned)
+UEFI Firmware → shim-signed (VMware's bootx64.efi)
+             → grub2-efi-image (VMware's grubx64.efi with shim_lock)
              → linux (vmlinuz, unsigned)
-             ⚠ Will fail on Secure Boot enabled systems
+             ✓ Works in VMware VMs (no real Secure Boot enforcement)
+             ⚠ Will fail on physical hardware with Secure Boot enabled
 ```
 
 ## GRUB Modules
@@ -97,13 +99,15 @@ The custom stub is still verified by shim via MOK signature, maintaining the sec
 The modified `/boot/grub2/grub.cfg` displays a themed menu with Photon OS background:
 
 ```
-1. Install (Custom MOK)                                      [default]
-   → linux vmlinuz (MOK-signed) + initrd
-   → Boots the installer with MOK-signed kernel
+1. Install (Custom MOK) - For Physical Hardware              [default]
+   → Uses ks=cdrom:/mok_ks.cfg
+   → Installs: linux-mok, grub2-efi-image-mok, shim-signed-mok
+   → Interactive installer with enforced MOK packages
    
-2. Install (VMware Original) - Will fail without VMware signature
-   → chainloader /EFI/BOOT/grubx64_real.efi
-   → VMware's GRUB with shim_lock (kernel verification fails)
+2. Install (VMware Original) - For VMware VMs
+   → Uses ks=cdrom:/standard_ks.cfg
+   → Installs: linux, grub2-efi-image, shim-signed
+   → For VMware virtual machines (no Secure Boot signing needed)
    
 3. MokManager - Enroll/Delete MOK Keys
    → chainloader /EFI/BOOT/MokManager.efi
@@ -117,6 +121,8 @@ The modified `/boot/grub2/grub.cfg` displays a themed menu with Photon OS backgr
 6. Shutdown
    → halt
 ```
+
+Both install options use kickstart with `"ui": true` which makes the installer **interactive** while still **enforcing the package selection** from the kickstart file.
 
 ## eFuse USB Mode
 
@@ -177,36 +183,40 @@ The ISO uses **kickstart configuration files** to select between MOK and standar
 - **Version-independent** - works with any photon-os-installer version (v2.7, v2.8, future)
 - **More robust** - no fragile initrd patching required
 - **VMware-supported** - uses official kickstart mechanism
+- **Interactive yet enforced** - `ui:true` makes installer interactive while enforcing package selection
 
 **Boot Menu Options:**
 
 | Menu Entry | Kickstart | Packages Installed |
 |------------|-----------|-------------------|
-| Install (Custom MOK) - Automated | `ks=cdrom:/mok_ks.cfg` | linux-mok, grub2-efi-image-mok, shim-signed-mok |
-| Install (Custom MOK) - Interactive | None | User selects packages (MOK packages available) |
-| Install (VMware Original) - Automated | `ks=cdrom:/standard_ks.cfg` | linux, grub2-efi-image, shim-signed |
+| Install (Custom MOK) - For Physical Hardware | `ks=cdrom:/mok_ks.cfg` | linux-mok, grub2-efi-image-mok, shim-signed-mok |
+| Install (VMware Original) - For VMware VMs | `ks=cdrom:/standard_ks.cfg` | linux, grub2-efi-image, shim-signed |
 
 ### Kickstart Files
 
 The ISO contains two kickstart configuration files:
 
-**`/mok_ks.cfg`** - MOK Secure Boot installation:
+**`/mok_ks.cfg`** - MOK Secure Boot installation (interactive with enforced packages):
 ```json
 {
     "linux_flavor": "linux-mok",
     "packages": ["minimal", "initramfs", "linux-mok", "grub2-efi-image-mok", "shim-signed-mok"],
-    "bootmode": "efi"
+    "bootmode": "efi",
+    "ui": true
 }
 ```
 
-**`/standard_ks.cfg`** - Standard installation (reference):
+**`/standard_ks.cfg`** - VMware installation (interactive with enforced packages):
 ```json
 {
     "linux_flavor": "linux",
     "packages": ["minimal", "initramfs", "linux", "grub2-efi-image", "shim-signed"],
-    "bootmode": "efi"
+    "bootmode": "efi",
+    "ui": true
 }
 ```
+
+The `"ui": true` setting makes the Photon OS installer show its normal interactive UI (disk selection, hostname, password, etc.) while still enforcing the package selection from the kickstart file.
 
 ### Why Kickstart Instead of Initrd Patching
 
@@ -363,26 +373,30 @@ sync
 
 After reboot:
 1. Themed Photon OS menu appears (5 second timeout) with background picture
-2. 6 menu options are displayed:
-   - Install (Custom MOK) [default]
-   - Install (VMware Original) - Will fail
+2. Menu options are displayed:
+   - **Install (Custom MOK) - For Physical Hardware** [default]
+   - Install (VMware Original) - For VMware VMs
    - MokManager - Enroll/Delete MOK Keys
-   - Reboot into UEFI Firmware Settings
-   - Reboot
-   - Shutdown
-3. Select **"Install (Custom MOK)"** to begin installation with MOK-signed kernel
+   - Reboot / Shutdown
+3. Select **"Install (Custom MOK) - For Physical Hardware"** for physical machines with Secure Boot
+4. The interactive installer appears - configure disk, hostname, password, etc.
+5. Package selection is enforced by kickstart (MOK packages will be installed)
 
 ## Troubleshooting
 
 ### Installed System: "Policy Violation" then "bad shim signature"
 
-**Cause**: The installed Photon OS uses original VMware RPMs which are unsigned:
-- `grub2-efi-image` provides unsigned `grubx64.efi` → Policy Violation
-- `linux` provides unsigned `vmlinuz` → bad shim signature
+**Cause**: The installed Photon OS uses original VMware RPMs which have `shim_lock`:
+- VMware's `shim-signed` has `shim_lock` which rejects MOK-signed binaries
+- VMware's `grub2-efi-image` has `shim_lock` module compiled in
+- `linux` provides unsigned `vmlinuz`
 
 **Solution**: 
-1. Reinstall using **"Install (Custom MOK)"** menu option
-2. This installs MOK-signed packages: `grub2-efi-image-mok`, `linux-mok`, `shim-signed-mok`
+1. Reinstall using **"Install (Custom MOK) - For Physical Hardware"** menu option
+2. This installs MOK-signed packages with SUSE shim (no `shim_lock`):
+   - `shim-signed-mok` - SUSE shim + MokManager
+   - `grub2-efi-image-mok` - Custom GRUB stub (MOK-signed, no shim_lock)
+   - `linux-mok` - MOK-signed kernel
 
 ### Installed System: Missing MokManager
 
