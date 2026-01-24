@@ -56,6 +56,7 @@ typedef struct {
     char *mok_key;            /* MOK private key path */
     char *mok_cert;           /* MOK certificate path */
     char *release;            /* Photon OS release (e.g., "5.0") */
+    char *keys_dir;           /* Keys directory (for pre-built EFI binaries) */
     int verbose;
 } rpm_build_config_t;
 

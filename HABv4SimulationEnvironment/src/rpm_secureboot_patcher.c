@@ -398,6 +398,10 @@ discovered_packages_t* rpm_discover_packages(
 
 /**
  * Generate grub2-efi-image-mok.spec
+ * 
+ * Uses the pre-built custom GRUB stub (without shim_lock) instead of
+ * re-signing VMware's GRUB. VMware's GRUB has shim_lock compiled in,
+ * which causes policy violations when booted via SUSE shim.
  */
 static int generate_grub_mok_spec(rpm_build_config_t *config, rpm_package_info_t *grub_pkg) {
     char spec_path[1024];
@@ -418,17 +422,18 @@ static int generate_grub_mok_spec(rpm_build_config_t *config, rpm_package_info_t
     fprintf(f,
         "%%define debug_package %%{nil}\n"
         "\n"
-        "# Derived from grub2-efi-image %s-%s\n"
+        "# Custom GRUB stub for MOK Secure Boot (replaces grub2-efi-image %s-%s)\n"
+        "# Uses pre-built GRUB without shim_lock module to avoid policy violations\n"
         "%%define grub_version %s\n"
         "%%define grub_release %s\n"
         "\n"
-        "Summary:    GRUB UEFI image signed with MOK key\n"
+        "Summary:    Custom GRUB stub for MOK Secure Boot (no shim_lock)\n"
         "Name:       grub2-efi-image-mok\n"
         "Version:    %%{grub_version}\n"
         "Release:    %%{grub_release}.mok1%%{?dist}\n"
         "Group:      System Environment/Base\n"
         "License:    GPLv3+\n"
-        "Vendor:     VMware, Inc.\n"
+        "Vendor:     HABv4 Project\n"
         "Distribution:   Photon\n"
         "\n"
         "# Provides same capability as original\n"
@@ -438,23 +443,23 @@ static int generate_grub_mok_spec(rpm_build_config_t *config, rpm_package_info_t
         "# Same requirements as original\n"
         "Requires:   grub2-theme\n"
         "\n"
-        "BuildRequires:  sbsigntools\n"
-        "\n"
         "%%description\n"
-        "GRUB UEFI image signed with Machine Owner Key (MOK) for Secure Boot.\n"
-        "This package provides the same functionality as grub2-efi-image but\n"
-        "with the grubx64.efi binary signed using a custom MOK key.\n"
+        "Custom GRUB UEFI stub built without shim_lock module for MOK Secure Boot.\n"
+        "This package provides a GRUB that works with the SUSE shim boot chain.\n"
+        "The GRUB is signed with MOK key and does NOT require shim_lock verification.\n"
+        "\n"
+        "Unlike VMware's grub2-efi-image which has shim_lock compiled in,\n"
+        "this custom GRUB stub allows the SUSE shim to launch it without\n"
+        "policy violations.\n"
         "\n"
         "%%prep\n"
-        "# Extract grubx64.efi from original package (release already contains dist tag)\n"
-        "rpm2cpio %%{source_rpm_dir}/grub2-efi-image-%%{grub_version}-%%{grub_release}.%%{_arch}.rpm | cpio -idmv\n"
+        "# Use pre-built custom GRUB stub from keys directory\n"
+        "# This GRUB was built with grub-mkimage without shim_lock module\n"
+        "mkdir -p ./boot/efi/EFI/BOOT\n"
+        "cp %%{keys_dir}/grub-mok.efi ./boot/efi/EFI/BOOT/grubx64.efi\n"
         "\n"
         "%%build\n"
-        "# Sign grubx64.efi with MOK key\n"
-        "sbsign --key %%{mok_key} --cert %%{mok_cert} \\\n"
-        "       --output ./boot/efi/EFI/BOOT/grubx64.efi.signed \\\n"
-        "       ./boot/efi/EFI/BOOT/grubx64.efi\n"
-        "mv ./boot/efi/EFI/BOOT/grubx64.efi.signed ./boot/efi/EFI/BOOT/grubx64.efi\n"
+        "# No build needed - using pre-built and pre-signed GRUB stub\n"
         "\n"
         "%%install\n"
         "install -d %%{buildroot}/boot/efi/EFI/BOOT\n"
@@ -466,7 +471,8 @@ static int generate_grub_mok_spec(rpm_build_config_t *config, rpm_package_info_t
         "\n"
         "%%changelog\n"
         "* %s HABv4 Project <habv4@local> %%{grub_version}-%%{grub_release}.mok1\n"
-        "- MOK-signed variant of grub2-efi-image\n",
+        "- Custom GRUB stub without shim_lock for MOK Secure Boot\n"
+        "- Built with grub-mkimage, signed with MOK key\n",
         grub_pkg->version, grub_pkg->release,
         grub_pkg->version,
         grub_pkg->release,
@@ -605,19 +611,18 @@ static int generate_shim_mok_spec(rpm_build_config_t *config,
     fprintf(f,
         "%%define debug_package %%{nil}\n"
         "\n"
-        "# Derived from shim-signed %s-%s\n"
+        "# SUSE shim for MOK Secure Boot (replaces VMware shim-signed %s-%s)\n"
+        "# Uses SUSE's Microsoft-signed shim which properly supports MOK keys\n"
         "%%define shim_version %s\n"
         "%%define shim_release %s\n"
-        "%%define shim_src_version %s\n"
-        "%%define shim_src_release %s\n"
         "\n"
-        "Summary:    Photon shim-signed passthrough for MOK boot chain\n"
+        "Summary:    SUSE shim for MOK Secure Boot chain\n"
         "Name:       shim-signed-mok\n"
         "Version:    %%{shim_version}\n"
         "Release:    %%{shim_release}.mok1%%{?dist}\n"
         "Group:      System Environment/Base\n"
         "License:    BSD\n"
-        "Vendor:     VMware, Inc.\n"
+        "Vendor:     HABv4 Project\n"
         "Distribution:   Photon\n"
         "\n"
         "# Provides same capability as original\n"
@@ -625,36 +630,40 @@ static int generate_shim_mok_spec(rpm_build_config_t *config,
         "Conflicts:  shim-signed\n"
         "\n"
         "%%description\n"
-        "Photon shim-signed package for MOK Secure Boot chain.\n"
-        "This package provides the same Microsoft-signed shim as the original.\n"
-        "The shim verifies GRUB which then verifies the kernel using MOK.\n"
-        "MOK enrollment is performed during initial ISO boot via MokManager.\n"
+        "SUSE shim (Microsoft-signed) for MOK Secure Boot chain.\n"
+        "This package provides the SUSE shim which properly handles MOK keys\n"
+        "for launching MOK-signed GRUB binaries.\n"
+        "\n"
+        "VMware's shim has strict shim_lock behavior that prevents launching\n"
+        "MOK-signed binaries. The SUSE shim correctly implements MOK verification\n"
+        "and is required for the HABv4 Secure Boot chain to work.\n"
         "\n"
         "%%prep\n"
-        "# Extract files from shim-signed (release already contains dist tag)\n"
-        "rpm2cpio %%{source_rpm_dir}/shim-signed-%%{shim_version}-%%{shim_release}.%%{_arch}.rpm | cpio -idmv\n"
+        "# Use pre-built SUSE shim from keys directory\n"
+        "mkdir -p ./boot/efi/EFI/BOOT\n"
+        "cp %%{keys_dir}/shim-suse.efi ./boot/efi/EFI/BOOT/bootx64.efi\n"
+        "cp %%{keys_dir}/MokManager-suse.efi ./boot/efi/EFI/BOOT/MokManager.efi\n"
         "\n"
         "%%build\n"
-        "# No build needed - shim is already Microsoft-signed\n"
+        "# No build needed - SUSE shim is already Microsoft-signed\n"
         "\n"
         "%%install\n"
         "install -d %%{buildroot}/boot/efi/EFI/BOOT\n"
         "install -m 0644 ./boot/efi/EFI/BOOT/bootx64.efi %%{buildroot}/boot/efi/EFI/BOOT/\n"
-        "install -m 0644 ./boot/efi/EFI/BOOT/revocations.efi %%{buildroot}/boot/efi/EFI/BOOT/\n"
+        "install -m 0644 ./boot/efi/EFI/BOOT/MokManager.efi %%{buildroot}/boot/efi/EFI/BOOT/\n"
         "\n"
         "%%files\n"
         "%%defattr(-,root,root,-)\n"
         "/boot/efi/EFI/BOOT/bootx64.efi\n"
-        "/boot/efi/EFI/BOOT/revocations.efi\n"
+        "/boot/efi/EFI/BOOT/MokManager.efi\n"
         "\n"
         "%%changelog\n"
         "* %s HABv4 Project <habv4@local> %%{shim_version}-%%{shim_release}.mok1\n"
-        "- shim-signed passthrough for MOK boot chain\n",
+        "- SUSE shim for MOK Secure Boot chain\n"
+        "- Replaces VMware shim which has shim_lock issues\n",
         shim_signed_pkg->version, shim_signed_pkg->release,
         shim_signed_pkg->version,
         shim_signed_pkg->release,
-        shim_pkg ? shim_pkg->version : shim_signed_pkg->version,
-        shim_pkg ? shim_pkg->release : "2",
         date_str
     );
     
@@ -723,12 +732,14 @@ static int build_single_rpm(rpm_build_config_t *config, const char *spec_name,
         "--define 'mok_key %s' "
         "--define 'mok_cert %s' "
         "--define 'source_rpm_dir %s' "
+        "--define 'keys_dir %s' "
         "'%s' 2>&1",
         config->rpmbuild_dir,
         dist_tag,
         config->mok_key,
         config->mok_cert,
         config->source_rpm_dir,
+        config->keys_dir ? config->keys_dir : "/root/hab_keys",
         spec_path);
     
     if (g_verbose) {
@@ -1017,6 +1028,13 @@ int rpm_patch_secureboot_packages(
     config.mok_cert = strdup(mok_cert);
     config.release = strdup(release);
     config.verbose = verbose;
+    
+    /* Get keys_dir from mok_key path (e.g., /root/hab_keys/MOK.key -> /root/hab_keys) */
+    char keys_dir[512];
+    strncpy(keys_dir, mok_key, sizeof(keys_dir) - 1);
+    char *last_slash = strrchr(keys_dir, '/');
+    if (last_slash) *last_slash = '\0';
+    config.keys_dir = strdup(keys_dir);
     
     /* Create work directories */
     mkdir_p(config.work_dir);

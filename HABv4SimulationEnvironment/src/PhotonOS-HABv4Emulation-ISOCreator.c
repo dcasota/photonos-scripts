@@ -1176,6 +1176,15 @@ static int create_secure_boot_iso(void) {
     }
     log_info("Custom GRUB stub built and signed");
     
+    /* Save custom GRUB stub to keys directory for RPM patcher.
+     * The SUSE shim and MokManager are already in keys_dir from extraction. */
+    char saved_grub[512];
+    snprintf(saved_grub, sizeof(saved_grub), "%s/grub-mok.efi", cfg.keys_dir);
+    
+    snprintf(cmd, sizeof(cmd), "cp '%s' '%s'", signed_stub, saved_grub);
+    run_cmd(cmd);
+    log_info("Saved custom GRUB stub to keys directory: %s", saved_grub);
+    
     log_info("Creating efiboot.img...");
     char new_efiboot[512], efiboot_path[512];
     snprintf(new_efiboot, sizeof(new_efiboot), "%s/efiboot.img", work_dir);
