@@ -1356,15 +1356,14 @@ static int create_secure_boot_iso(void) {
                 "    gfxpayload=keep\n"
                 "    set theme=/boot/grub2/themes/photon/theme.txt\n"
                 "    terminal_output gfxterm\n"
-                "    probe -s photondisk -u ($root)\n"
                 "\n"
                 "    menuentry \"Install (Custom MOK) - For Physical Hardware\" {\n"
-                "        linux /isolinux/vmlinuz root=/dev/ram0 loglevel=3 photon.media=UUID=$photondisk ks=cdrom:/mok_ks.cfg\n"
+                "        linux /isolinux/vmlinuz root=/dev/ram0 loglevel=3 photon.media=LABEL=PHOTON_SB_%s ks=cdrom:/mok_ks.cfg\n"
                 "        initrd /isolinux/initrd.img\n"
                 "    }\n"
                 "\n"
                 "    menuentry \"Install (VMware Original) - For VMware VMs\" {\n"
-                "        linux /isolinux/vmlinuz root=/dev/ram0 loglevel=3 photon.media=UUID=$photondisk ks=cdrom:/standard_ks.cfg\n"
+                "        linux /isolinux/vmlinuz root=/dev/ram0 loglevel=3 photon.media=LABEL=PHOTON_SB_%s ks=cdrom:/standard_ks.cfg\n"
                 "        initrd /isolinux/initrd.img\n"
                 "    }\n"
                 "\n"
@@ -1383,7 +1382,8 @@ static int create_secure_boot_iso(void) {
                 "    menuentry \"Shutdown\" {\n"
                 "        halt\n"
                 "    }\n"
-                "fi\n"
+                "fi\n",
+                cfg.release, cfg.release
             );
             log_info("eFuse USB verification mode ENABLED in grub.cfg");
         } else {
@@ -1399,15 +1399,14 @@ static int create_secure_boot_iso(void) {
                 "gfxpayload=keep\n"
                 "set theme=/boot/grub2/themes/photon/theme.txt\n"
                 "terminal_output gfxterm\n"
-                "probe -s photondisk -u ($root)\n"
                 "\n"
                 "menuentry \"Install (Custom MOK) - For Physical Hardware\" {\n"
-                "    linux /isolinux/vmlinuz root=/dev/ram0 loglevel=3 photon.media=UUID=$photondisk ks=cdrom:/mok_ks.cfg\n"
+                "    linux /isolinux/vmlinuz root=/dev/ram0 loglevel=3 photon.media=LABEL=PHOTON_SB_%s ks=cdrom:/mok_ks.cfg\n"
                 "    initrd /isolinux/initrd.img\n"
                 "}\n"
                 "\n"
                 "menuentry \"Install (VMware Original) - For VMware VMs\" {\n"
-                "    linux /isolinux/vmlinuz root=/dev/ram0 loglevel=3 photon.media=UUID=$photondisk ks=cdrom:/standard_ks.cfg\n"
+                "    linux /isolinux/vmlinuz root=/dev/ram0 loglevel=3 photon.media=LABEL=PHOTON_SB_%s ks=cdrom:/standard_ks.cfg\n"
                 "    initrd /isolinux/initrd.img\n"
                 "}\n"
                 "\n"
@@ -1425,7 +1424,8 @@ static int create_secure_boot_iso(void) {
                 "\n"
                 "menuentry \"Shutdown\" {\n"
                 "    halt\n"
-                "}\n"
+                "}\n",
+                cfg.release, cfg.release
             );
         }
         fclose(f);
