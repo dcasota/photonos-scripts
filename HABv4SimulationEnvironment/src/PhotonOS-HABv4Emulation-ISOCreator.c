@@ -1483,11 +1483,10 @@ static int create_secure_boot_iso(void) {
                 if (generate_gpg_keys() != 0) {
                     log_warn("Failed to generate GPG keys, skipping RPM signing");
                 } else {
-                    /* Get build config output_dir from rpm_patch function
-                     * For simplicity, we use the standard rpmbuild location */
+                    /* MOK RPMs are built to /tmp/rpm_mok_build/output by rpm_secureboot_patcher */
                     rpm_build_config_t sign_cfg = {0};
                     char output_dir[512], gpg_home[512];
-                    snprintf(output_dir, sizeof(output_dir), "%s/rpmbuild/RPMS", photon_release_dir);
+                    snprintf(output_dir, sizeof(output_dir), "/tmp/rpm_mok_build/output");
                     snprintf(gpg_home, sizeof(gpg_home), "%s/.gnupg", cfg.keys_dir);
                     sign_cfg.output_dir = output_dir;
                     
