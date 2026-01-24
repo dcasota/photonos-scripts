@@ -1358,18 +1358,14 @@ static int create_secure_boot_iso(void) {
                 "    terminal_output gfxterm\n"
                 "    probe -s photondisk -u ($root)\n"
                 "\n"
-                "    menuentry \"Install (Custom MOK) - Automated\" {\n"
+                "    menuentry \"Install (Custom MOK) - For Physical Hardware\" {\n"
                 "        linux /isolinux/vmlinuz root=/dev/ram0 loglevel=3 photon.media=UUID=$photondisk ks=cdrom:/mok_ks.cfg\n"
                 "        initrd /isolinux/initrd.img\n"
                 "    }\n"
                 "\n"
-                "    menuentry \"Install (Custom MOK) - Interactive\" {\n"
-                "        linux /isolinux/vmlinuz root=/dev/ram0 loglevel=3 photon.media=UUID=$photondisk\n"
+                "    menuentry \"Install (VMware Original) - For VMware VMs\" {\n"
+                "        linux /isolinux/vmlinuz root=/dev/ram0 loglevel=3 photon.media=UUID=$photondisk ks=cdrom:/standard_ks.cfg\n"
                 "        initrd /isolinux/initrd.img\n"
-                "    }\n"
-                "\n"
-                "    menuentry \"Install (VMware Original) - Automated\" {\n"
-                "        chainloader /EFI/BOOT/grubx64_real.efi\n"
                 "    }\n"
                 "\n"
                 "    menuentry \"MokManager - Enroll/Delete MOK Keys\" {\n"
@@ -1405,18 +1401,14 @@ static int create_secure_boot_iso(void) {
                 "terminal_output gfxterm\n"
                 "probe -s photondisk -u ($root)\n"
                 "\n"
-                "menuentry \"Install (Custom MOK) - Automated\" {\n"
+                "menuentry \"Install (Custom MOK) - For Physical Hardware\" {\n"
                 "    linux /isolinux/vmlinuz root=/dev/ram0 loglevel=3 photon.media=UUID=$photondisk ks=cdrom:/mok_ks.cfg\n"
                 "    initrd /isolinux/initrd.img\n"
                 "}\n"
                 "\n"
-                "menuentry \"Install (Custom MOK) - Interactive\" {\n"
-                "    linux /isolinux/vmlinuz root=/dev/ram0 loglevel=3 photon.media=UUID=$photondisk\n"
+                "menuentry \"Install (VMware Original) - For VMware VMs\" {\n"
+                "    linux /isolinux/vmlinuz root=/dev/ram0 loglevel=3 photon.media=UUID=$photondisk ks=cdrom:/standard_ks.cfg\n"
                 "    initrd /isolinux/initrd.img\n"
-                "}\n"
-                "\n"
-                "menuentry \"Install (VMware Original) - Automated\" {\n"
-                "    chainloader /EFI/BOOT/grubx64_real.efi\n"
                 "}\n"
                 "\n"
                 "menuentry \"MokManager - Enroll/Delete MOK Keys\" {\n"
@@ -1550,10 +1542,10 @@ static int create_secure_boot_iso(void) {
         printf("  UEFI -> BOOTX64.EFI (SUSE shim, Microsoft-signed)\n");
         printf("       -> grub.efi (Custom GRUB stub, MOK-signed, NO shim_lock)\n");
         printf("       -> Stub Menu (5 sec timeout):\n");
-        printf("          1. Custom MOK    -> grub.cfg (themed) -> vmlinuz (MOK-signed)\n");
-        printf("          2. VMware Orig   -> grubx64_real.efi -> grub.cfg -> vmlinuz (unsigned)\n");
-        printf("          3. MokManager    -> Enroll/Delete MOK keys\n");
-        printf("          4-6. UEFI/Reboot/Shutdown\n");
+        printf("          1. Custom MOK (Physical HW)  -> MOK packages -> vmlinuz (MOK-signed)\n");
+        printf("          2. VMware Original (VMware)  -> VMware packages -> vmlinuz\n");
+        printf("          3. MokManager                -> Enroll/Delete MOK keys\n");
+        printf("          4-5. Reboot/Shutdown\n");
         printf("\n");
         printf("First Boot Instructions:\n");
         printf("  1. Boot from USB with UEFI Secure Boot ENABLED\n");
@@ -1565,8 +1557,10 @@ static int create_secure_boot_iso(void) {
         printf("     (This is YOUR MOK certificate: CN=HABv4 Secure Boot MOK)\n");
         printf("  5. Confirm and select REBOOT (not continue)\n");
         printf("  6. After reboot, Stub Menu appears (5 sec timeout)\n");
-        printf("  7. Select '1. Continue to Photon OS Installer (Custom MOK)'\n");
-        printf("  8. Select 'Install (Custom MOK)' to begin installation\n");
+        printf("  7. Select installation option:\n");
+        printf("     - 'Install (Custom MOK)' for PHYSICAL hardware with Secure Boot\n");
+        printf("     - 'Install (VMware Original)' for VMware virtual machines\n");
+        printf("  8. Follow the interactive installer prompts\n");
         if (cfg.efuse_usb_mode) {
             printf("\neFuse USB Mode:\n");
             printf("  - Insert USB dongle labeled 'EFUSE_SIM' before boot\n");
