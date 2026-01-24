@@ -1022,13 +1022,103 @@ static int create_secure_boot_iso(void) {
         }
     }
     
-    /* Modify the installer's package options to include MOK Secure Boot option
-     * This approach uses the interactive installer (no kickstart) which avoids
-     * the progress_bar bug in photon-installer when ui:true is used with kickstart.
-     * Users select packages interactively, but the correct MOK packages are offered. */
-    log_info("Modifying installer package options for MOK Secure Boot...");
+    /* Create kickstart files for MOK and Standard installations
+     * The kickstart approach with ui:true provides interactive installation
+     * while enforcing the correct package selection. We also patch the
+     * installer to fix the progress_bar AttributeError bug. */
+    log_info("Creating kickstart files and patching installer...");
     
-    /* Extract initrd to modify installer options */
+    /* Create MOK kickstart on ISO root */
+    char mok_ks_path[512], std_ks_path[512];
+    snprintf(mok_ks_path, sizeof(mok_ks_path), "%s/mok_ks.cfg", iso_extract);
+    snprintf(std_ks_path, sizeof(std_ks_path), "%s/standard_ks.cfg", iso_extract);
+    
+    /* Create MOK kickstart - uses MOK-signed packages */
+    FILE *f = fopen(mok_ks_path, "w");
+    if (f) {
+        fprintf(f,
+            "{\n"
+            "    \"hostname\": \"photon-mok\",\n"
+            "    \"password\": {\n"
+            "        \"crypted\": false,\n"
+            "        \"text\": \"changeme\"\n"
+            "    },\n"
+            "    \"disk\": \"/dev/sda\",\n"
+            "    \"partitions\": [\n"
+            "        {\"mountpoint\": \"/\", \"size\": 0, \"filesystem\": \"ext4\"},\n"
+            "        {\"mountpoint\": \"/boot\", \"size\": 300, \"filesystem\": \"ext4\"},\n"
+            "        {\"size\": 256, \"filesystem\": \"swap\"}\n"
+            "    ],\n"
+            "    \"bootmode\": \"efi\",\n"
+            "    \"linux_flavor\": \"linux-mok\",\n"
+            "    \"packages\": [\n"
+            "        \"minimal\",\n"
+            "        \"initramfs\",\n"
+            "        \"linux-mok\",\n"
+            "        \"grub2-efi-image-mok\",\n"
+            "        \"shim-signed-mok\"\n"
+            "    ],\n"
+            "    \"postinstall\": [\n"
+            "        \"#!/bin/sh\",\n"
+            "        \"echo 'Photon OS installed with MOK Secure Boot support' > /etc/mok-secureboot\",\n"
+        );
+        
+        /* Add GPG key import if RPM signing is enabled */
+        if (cfg.rpm_signing) {
+            fprintf(f,
+                "        \"rpm --import /cdrom/%s\",\n"
+                "        \"echo 'gpgcheck=1' >> /etc/yum.repos.d/photon.repo\",\n"
+                "        \"echo 'GPG key imported for MOK RPM verification' >> /etc/mok-secureboot\",\n",
+                GPG_KEY_FILE
+            );
+        }
+        
+        fprintf(f,
+            "        \"echo 'Remember to enroll MOK key on first boot if not already done' >> /etc/mok-secureboot\"\n"
+            "    ],\n"
+            "    \"ui\": true\n"
+            "}\n"
+        );
+        fclose(f);
+        log_info("Created MOK kickstart: mok_ks.cfg");
+    }
+    
+    /* Create standard kickstart - uses original VMware packages */
+    f = fopen(std_ks_path, "w");
+    if (f) {
+        fprintf(f,
+            "{\n"
+            "    \"hostname\": \"photon-standard\",\n"
+            "    \"password\": {\n"
+            "        \"crypted\": false,\n"
+            "        \"text\": \"changeme\"\n"
+            "    },\n"
+            "    \"disk\": \"/dev/sda\",\n"
+            "    \"partitions\": [\n"
+            "        {\"mountpoint\": \"/\", \"size\": 0, \"filesystem\": \"ext4\"},\n"
+            "        {\"mountpoint\": \"/boot\", \"size\": 300, \"filesystem\": \"ext4\"},\n"
+            "        {\"size\": 256, \"filesystem\": \"swap\"}\n"
+            "    ],\n"
+            "    \"bootmode\": \"efi\",\n"
+            "    \"linux_flavor\": \"linux\",\n"
+            "    \"packages\": [\n"
+            "        \"minimal\",\n"
+            "        \"initramfs\",\n"
+            "        \"linux\",\n"
+            "        \"grub2-efi-image\",\n"
+            "        \"shim-signed\"\n"
+            "    ],\n"
+            "    \"ui\": true\n"
+            "}\n"
+        );
+        fclose(f);
+        log_info("Created standard kickstart: standard_ks.cfg");
+    }
+    
+    /* Extract initrd to patch the installer for progress_bar bug fix
+     * Bug: When ui:true in kickstart, installer crashes with AttributeError
+     * if exception occurs before progress_bar is created.
+     * Fix: Initialize progress_bar=None and add null checks before access */
     char initrd_extract[512], initrd_orig[512], initrd_new[512];
     snprintf(initrd_extract, sizeof(initrd_extract), "%s/initrd_mod", work_dir);
     snprintf(initrd_orig, sizeof(initrd_orig), "%s/isolinux/initrd.img", iso_extract);
@@ -1040,98 +1130,30 @@ static int create_secure_boot_iso(void) {
     snprintf(cmd, sizeof(cmd), "cd '%s' && zcat '%s' | cpio -idm 2>/dev/null", initrd_extract, initrd_orig);
     run_cmd(cmd);
     
-    /* Create packages_mok.json for MOK Secure Boot installation */
-    char pkg_mok_path[512];
-    snprintf(pkg_mok_path, sizeof(pkg_mok_path), "%s/installer/packages_mok.json", initrd_extract);
-    FILE *f = fopen(pkg_mok_path, "w");
-    if (f) {
-        fprintf(f,
-            "{\n"
-            "    \"packages\": [\n"
-            "        \"minimal\",\n"
-            "        \"linux-mok\",\n"
-            "        \"initramfs\",\n"
-            "        \"grub2-efi-image-mok\",\n"
-            "        \"shim-signed-mok\",\n"
-            "        \"lvm2\",\n"
-            "        \"less\",\n"
-            "        \"sudo\"\n"
-            "    ]\n"
-            "}\n"
-        );
-        fclose(f);
-        log_info("Created packages_mok.json");
-    }
+    /* Apply progress_bar fix to installer.py
+     * This fixes the AttributeError when using kickstart with ui:true */
+    char installer_py[512];
+    snprintf(installer_py, sizeof(installer_py), 
+        "%s/usr/lib/python3.11/site-packages/photon_installer/installer.py", initrd_extract);
     
-    /* Create packages_standard.json for VMware standard installation */
-    char pkg_std_path[512];
-    snprintf(pkg_std_path, sizeof(pkg_std_path), "%s/installer/packages_standard.json", initrd_extract);
-    f = fopen(pkg_std_path, "w");
-    if (f) {
-        fprintf(f,
-            "{\n"
-            "    \"packages\": [\n"
-            "        \"minimal\",\n"
-            "        \"linux\",\n"
-            "        \"linux-esx\",\n"
-            "        \"initramfs\",\n"
-            "        \"grub2-efi-image\",\n"
-            "        \"shim-signed\",\n"
-            "        \"lvm2\",\n"
-            "        \"less\",\n"
-            "        \"sudo\"\n"
-            "    ]\n"
-            "}\n"
-        );
-        fclose(f);
-        log_info("Created packages_standard.json");
-    }
-    
-    /* Modify build_install_options_all.json to show MOK option first */
-    char options_path[512];
-    snprintf(options_path, sizeof(options_path), "%s/installer/build_install_options_all.json", initrd_extract);
-    f = fopen(options_path, "w");
-    if (f) {
-        fprintf(f,
-            "{\n"
-            "    \"mok\": {\n"
-            "        \"title\": \"1. Photon MOK Secure Boot (Physical Hardware)\",\n"
-            "        \"packagelist_file\": \"packages_mok.json\",\n"
-            "        \"visible\": true\n"
-            "    },\n"
-            "    \"standard\": {\n"
-            "        \"title\": \"2. Photon Standard (VMware VMs)\",\n"
-            "        \"packagelist_file\": \"packages_standard.json\",\n"
-            "        \"visible\": true\n"
-            "    },\n"
-            "    \"minimal\": {\n"
-            "        \"title\": \"3. Photon Minimal (Original)\",\n"
-            "        \"packagelist_file\": \"packages_minimal.json\",\n"
-            "        \"visible\": true\n"
-            "    },\n"
-            "    \"developer\": {\n"
-            "        \"title\": \"4. Photon Developer\",\n"
-            "        \"packagelist_file\": \"packages_developer.json\",\n"
-            "        \"visible\": true\n"
-            "    },\n"
-            "    \"ostree_host\": {\n"
-            "        \"title\": \"5. Photon OSTree Host\",\n"
-            "        \"packagelist_file\": \"packages_ostree_host.json\",\n"
-            "        \"visible\": true,\n"
-            "        \"include\": [],\n"
-            "        \"additional-files\": [\n"
-            "            \"ostree-repo.tar.gz\"\n"
-            "        ]\n"
-            "    },\n"
-            "    \"realtime\": {\n"
-            "        \"title\": \"6. Photon Real Time\",\n"
-            "        \"packagelist_file\": \"packages_rt.json\",\n"
-            "        \"visible\": true\n"
-            "    }\n"
-            "}\n"
-        );
-        fclose(f);
-        log_info("Modified build_install_options_all.json with MOK options");
+    if (file_exists(installer_py)) {
+        log_info("Applying progress_bar fix to installer.py...");
+        
+        /* Fix 1: Initialize progress_bar and window to None in __init__ */
+        snprintf(cmd, sizeof(cmd),
+            "sed -i 's/self\\.cwd = os\\.getcwd()/self.cwd = os.getcwd()\\n        self.progress_bar = None  # Fix: Initialize to prevent AttributeError\\n        self.window = None        # Fix: Initialize to prevent AttributeError/' '%s'",
+            installer_py);
+        run_cmd(cmd);
+        
+        /* Fix 2: Add null check in exit_gracefully for progress_bar */
+        snprintf(cmd, sizeof(cmd),
+            "sed -i \"s/if self\\.install_config\\['ui'\\]:/if self.install_config['ui'] and self.progress_bar is not None:/g\" '%s'",
+            installer_py);
+        run_cmd(cmd);
+        
+        log_info("Patched installer.py with progress_bar fix");
+    } else {
+        log_warn("installer.py not found at expected path");
     }
     
     /* Repack initrd */
@@ -1143,7 +1165,7 @@ static int create_secure_boot_iso(void) {
     /* Replace original initrd */
     snprintf(cmd, sizeof(cmd), "mv '%s' '%s'", initrd_new, initrd_orig);
     run_cmd(cmd);
-    log_info("Updated initrd with MOK package options");
+    log_info("Updated initrd with progress_bar fix");
     
     /* Cleanup initrd extract directory */
     snprintf(cmd, sizeof(cmd), "rm -rf '%s'", initrd_extract);
@@ -1393,8 +1415,13 @@ static int create_secure_boot_iso(void) {
                 "    set theme=/boot/grub2/themes/photon/theme.txt\n"
                 "    terminal_output gfxterm\n"
                 "\n"
-                "    menuentry \"Install Photon OS (Interactive)\" {\n"
-                "        linux /isolinux/vmlinuz root=/dev/ram0 loglevel=3 photon.media=LABEL=PHOTON_SB_%s\n"
+                "    menuentry \"Install (Custom MOK) - For Physical Hardware\" {\n"
+                "        linux /isolinux/vmlinuz root=/dev/ram0 loglevel=3 photon.media=LABEL=PHOTON_SB_%s ks=cdrom:/mok_ks.cfg\n"
+                "        initrd /isolinux/initrd.img\n"
+                "    }\n"
+                "\n"
+                "    menuentry \"Install (VMware Original) - For VMware VMs\" {\n"
+                "        linux /isolinux/vmlinuz root=/dev/ram0 loglevel=3 photon.media=LABEL=PHOTON_SB_%s ks=cdrom:/standard_ks.cfg\n"
                 "        initrd /isolinux/initrd.img\n"
                 "    }\n"
                 "\n"
@@ -1414,11 +1441,11 @@ static int create_secure_boot_iso(void) {
                 "        halt\n"
                 "    }\n"
                 "fi\n",
-                cfg.release
+                cfg.release, cfg.release
             );
             log_info("eFuse USB verification mode ENABLED in grub.cfg");
         } else {
-            /* Standard mode: Simple menu with interactive installer */
+            /* Standard mode: 6-option menu with kickstart */
             fprintf(f,
                 "# Photon OS Installer - Modified for Secure Boot\n"
                 "# Theme and graphics settings from original VMware config\n"
@@ -1431,8 +1458,13 @@ static int create_secure_boot_iso(void) {
                 "set theme=/boot/grub2/themes/photon/theme.txt\n"
                 "terminal_output gfxterm\n"
                 "\n"
-                "menuentry \"Install Photon OS (Interactive)\" {\n"
-                "    linux /isolinux/vmlinuz root=/dev/ram0 loglevel=3 photon.media=LABEL=PHOTON_SB_%s\n"
+                "menuentry \"Install (Custom MOK) - For Physical Hardware\" {\n"
+                "    linux /isolinux/vmlinuz root=/dev/ram0 loglevel=3 photon.media=LABEL=PHOTON_SB_%s ks=cdrom:/mok_ks.cfg\n"
+                "    initrd /isolinux/initrd.img\n"
+                "}\n"
+                "\n"
+                "menuentry \"Install (VMware Original) - For VMware VMs\" {\n"
+                "    linux /isolinux/vmlinuz root=/dev/ram0 loglevel=3 photon.media=LABEL=PHOTON_SB_%s ks=cdrom:/standard_ks.cfg\n"
                 "    initrd /isolinux/initrd.img\n"
                 "}\n"
                 "\n"
@@ -1451,7 +1483,7 @@ static int create_secure_boot_iso(void) {
                 "menuentry \"Shutdown\" {\n"
                 "    halt\n"
                 "}\n",
-                cfg.release
+                cfg.release, cfg.release
             );
         }
         fclose(f);
@@ -1459,7 +1491,7 @@ static int create_secure_boot_iso(void) {
         /* Replace original with modified */
         snprintf(cmd, sizeof(cmd), "mv '%s' '%s'", modified_grub_cfg, original_grub_cfg);
         run_cmd(cmd);
-        log_info("Modified /boot/grub2/grub.cfg for interactive installation");
+        log_info("Modified /boot/grub2/grub.cfg with 6 menu options");
     }
     
     /* IA32 (32-bit UEFI) support in ISO root */
@@ -1568,14 +1600,11 @@ static int create_secure_boot_iso(void) {
         printf("  UEFI -> BOOTX64.EFI (SUSE shim, Microsoft-signed)\n");
         printf("       -> grub.efi (Custom GRUB stub, MOK-signed, NO shim_lock)\n");
         printf("       -> GRUB Menu (5 sec timeout):\n");
-        printf("          1. Install Photon OS (Interactive)\n");
-        printf("          2. MokManager - Enroll/Delete MOK keys\n");
-        printf("          3-4. Reboot/Shutdown\n");
-        printf("\n");
-        printf("Interactive Installer Package Options:\n");
-        printf("  1. Photon MOK Secure Boot (Physical Hardware)\n");
-        printf("  2. Photon Standard (VMware VMs)\n");
-        printf("  3-6. Original Photon options (Minimal, Developer, etc.)\n");
+        printf("          1. Install (Custom MOK) - For Physical Hardware\n");
+        printf("          2. Install (VMware Original) - For VMware VMs\n");
+        printf("          3. MokManager - Enroll/Delete MOK keys\n");
+        printf("          4. Reboot into UEFI Firmware Settings\n");
+        printf("          5-6. Reboot/Shutdown\n");
         printf("\n");
         printf("First Boot Instructions:\n");
         printf("  1. Boot from USB with UEFI Secure Boot ENABLED\n");
@@ -1587,11 +1616,11 @@ static int create_secure_boot_iso(void) {
         printf("     (This is YOUR MOK certificate: CN=HABv4 Secure Boot MOK)\n");
         printf("  5. Confirm and select REBOOT (not continue)\n");
         printf("  6. After reboot, GRUB Menu appears (5 sec timeout)\n");
-        printf("  7. Select 'Install Photon OS (Interactive)'\n");
-        printf("  8. In the interactive installer, select package option:\n");
-        printf("     - 'Photon MOK Secure Boot' for PHYSICAL hardware\n");
-        printf("     - 'Photon Standard' for VMware VMs\n");
-        printf("  9. Configure disk, hostname, password interactively\n");
+        printf("  7. Select installation option:\n");
+        printf("     - 'Install (Custom MOK)' for PHYSICAL hardware with Secure Boot\n");
+        printf("     - 'Install (VMware Original)' for VMware virtual machines\n");
+        printf("  8. Follow the interactive installer prompts\n");
+        printf("     (Disk, hostname, password are configurable; packages are preset)\n");
         if (cfg.efuse_usb_mode) {
             printf("\neFuse USB Mode:\n");
             printf("  - Insert USB dongle labeled 'EFUSE_SIM' before boot\n");

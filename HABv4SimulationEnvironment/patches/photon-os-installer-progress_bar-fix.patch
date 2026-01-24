@@ -1,0 +1,141 @@
+From: HABv4 Secure Boot Project <habv4@example.com>
+Date: Fri, 24 Jan 2026 16:50:00 +0100
+Subject: [PATCH] Fix AttributeError when progress_bar not initialized in UI mode
+
+The installer crashes with "AttributeError: 'Installer' object has no
+attribute 'progress_bar'" when using kickstart with ui:true if an
+exception occurs before the progress_bar is created.
+
+Root cause:
+- When ui:true in kickstart, install_config['ui'] is True
+- execute() calls curses.wrapper(self._install)
+- Inside _install(), progress_bar is created only AFTER curses init succeeds
+- If exception occurs before progress_bar creation, exit_gracefully() is called
+- exit_gracefully() checks install_config['ui'] and calls progress_bar.hide()
+- This fails because progress_bar was never created as an instance attribute
+
+Fix:
+1. Initialize self.progress_bar = None in __init__()
+2. Initialize self.window = None in __init__()
+3. Add "and self.progress_bar is not None" checks before accessing progress_bar
+4. Add "and self.window is not None" check in exit_gracefully() for window access
+
+This ensures safe access to UI components regardless of initialization state.
+
+Signed-off-by: HABv4 Secure Boot Project <habv4@example.com>
+---
+ photon_installer/installer.py | 24 +++++++++++++-----------
+ 1 file changed, 13 insertions(+), 11 deletions(-)
+
+--- installer.py.orig	2026-01-24 16:49:58.968432540 +0100
++++ installer.py	2026-01-24 16:50:50.698744712 +0100
+@@ -133,6 +133,8 @@
+         self.ab_present = False
+         self.mounts = []
+         self.cwd = os.getcwd()
++        self.progress_bar = None  # Fix: Initialize to prevent AttributeError
++        self.window = None        # Fix: Initialize to prevent AttributeError
+ 
+         # some keys can have arch specific variations
+         for key in ['packages', 'linux_flavor']:
+@@ -772,7 +774,7 @@
+             self.exit_gracefully()
+ 
+         # Congratulation screen
+-        if self.install_config['ui']:
++        if self.install_config['ui'] and self.progress_bar is not None:
+             self.progress_bar.hide()
+             self.window.addstr(0, 0, 'Congratulations, Photon has been installed in {0} secs.\n\n'
+                                'Press any key to continue to boot...'
+@@ -831,8 +833,9 @@
+         del frame1
+         if not self.exiting and self.install_config:
+             self.exiting = True
+-            if self.install_config['ui']:
++            if self.install_config['ui'] and self.progress_bar is not None:
+                 self.progress_bar.hide()
++            if self.install_config['ui'] and self.window is not None:
+                 self.window.addstr(0, 0, 'Oops, Installer got interrupted.\n\n' +
+                                    'Press any key to get to the bash...')
+                 self.window.content_window().getch()
+@@ -860,7 +863,7 @@
+         if 'ansible' not in self.install_config:
+             return
+ 
+-        if self.install_config['ui']:
++        if self.install_config['ui'] and self.progress_bar is not None:
+             self.progress_bar.update_message('Running ansible scripts')
+ 
+         ansibles = self.install_config['ansible']
+@@ -921,7 +924,7 @@
+         if 'docker' not in self.install_config:
+             return
+ 
+-        if self.install_config['ui']:
++        if self.install_config['ui'] and self.progress_bar is not None:
+             self.progress_bar.update_message("Installing docker images")
+ 
+         socket_file = os.path.join(self.photon_root, "var/run/docker.sock")
+@@ -1278,7 +1281,7 @@
+         """
+         Prepare the system to install photon
+         """
+-        if self.install_config['ui']:
++        if self.install_config['ui'] and self.progress_bar is not None:
+             self.progress_bar.update_message('Initializing system...')
+ 
+         rpm_db_path = subprocess.check_output(['rpm', '-E', '%_dbpath'], universal_newlines=True).rstrip('\n')
+@@ -1383,7 +1386,7 @@
+         """
+         Finalize the system after the installation
+         """
+-        if self.install_config['ui']:
++        if self.install_config['ui'] and self.progress_bar is not None:
+             self.progress_bar.show_loading('Finalizing installation')
+ 
+         self._copy_additional_files()
+@@ -1399,7 +1402,7 @@
+             return
+ 
+         # remove the tdnf cache directory
+-        if self.install_config['ui']:
++        if self.install_config['ui'] and self.progress_bar is not None:
+             self.progress_bar.update_message('Cleaning up tdnf cache')
+ 
+         cache_dir = os.path.join(self.photon_root, 'var/cache/tdnf')
+@@ -1419,7 +1422,7 @@
+         if self.install_config.get('no_clean', False):
+             return
+ 
+-        if self.install_config['ui']:
++        if self.install_config['ui'] and self.progress_bar is not None:
+             self.progress_bar.update_message('Cleaning up tdnf install repo configs')
+ 
+         if os.path.exists(self.tdnf_conf_path):
+@@ -1434,7 +1437,7 @@
+     def _setup_grub(self):
+         bootmode = self.install_config['bootmode']
+ 
+-        if self.install_config['ui']:
++        if self.install_config['ui'] and self.progress_bar is not None:
+             self.progress_bar.update_message('Setting up GRUB')
+ 
+         device = self.install_config['disks']['default']['device']
+@@ -1614,7 +1617,7 @@
+         total_size = 0
+         stderr = None
+ 
+-        if self.install_config['ui']:
++        if self.install_config['ui'] and self.progress_bar is not None:
+             tdnf_cmd = ("tdnf install -y --releasever {0} --installroot {1} "
+                         "-c {2} --setopt=reposdir={3} "
+                         "{4}").format(self.photon_release_version,
+@@ -2123,7 +2126,7 @@
+         Partition the disk
+         """
+ 
+-        if self.install_config['ui']:
++        if self.install_config['ui'] and self.progress_bar is not None:
+             self.progress_bar.update_message('Partitioning...')
+ 
+         ptv = self._get_partition_tree_view()
