@@ -1139,17 +1139,51 @@ static int create_secure_boot_iso(void) {
     if (file_exists(installer_py)) {
         log_info("Applying progress_bar fix to installer.py...");
         
-        /* Fix 1: Initialize progress_bar and window to None in __init__ */
-        snprintf(cmd, sizeof(cmd),
-            "sed -i 's/self\\.cwd = os\\.getcwd()/self.cwd = os.getcwd()\\n        self.progress_bar = None  # Fix: Initialize to prevent AttributeError\\n        self.window = None        # Fix: Initialize to prevent AttributeError/' '%s'",
-            installer_py);
-        run_cmd(cmd);
+        /* The fix needs to be surgical - only fix exit_gracefully(), not all ui checks.
+         * We use a Python script to make precise changes. */
         
-        /* Fix 2: Add null check in exit_gracefully for progress_bar */
-        snprintf(cmd, sizeof(cmd),
-            "sed -i \"s/if self\\.install_config\\['ui'\\]:/if self.install_config['ui'] and self.progress_bar is not None:/g\" '%s'",
-            installer_py);
-        run_cmd(cmd);
+        char patch_script[512];
+        snprintf(patch_script, sizeof(patch_script), "%s/patch_installer.py", work_dir);
+        
+        FILE *pf = fopen(patch_script, "w");
+        if (pf) {
+            fprintf(pf,
+                "#!/usr/bin/env python3\n"
+                "import sys\n"
+                "\n"
+                "with open(sys.argv[1], 'r') as f:\n"
+                "    content = f.read()\n"
+                "\n"
+                "# Fix 1: Add progress_bar = None and window = None after self.cwd = os.getcwd()\n"
+                "old = 'self.cwd = os.getcwd()'\n"
+                "new = '''self.cwd = os.getcwd()\n"
+                "        self.progress_bar = None  # Fix: prevent AttributeError in exit_gracefully\n"
+                "        self.window = None        # Fix: prevent AttributeError in exit_gracefully'''\n"
+                "content = content.replace(old, new, 1)\n"
+                "\n"
+                "# Fix 2: In exit_gracefully, add None checks for progress_bar and window\n"
+                "old_exit = '''if self.install_config['ui']:\n"
+                "                self.progress_bar.hide()\n"
+                "                self.window.addstr(0, 0, 'Oops, Installer got interrupted.'''\n"
+                "new_exit = '''if self.install_config['ui'] and self.progress_bar is not None:\n"
+                "                self.progress_bar.hide()\n"
+                "            if self.install_config['ui'] and self.window is not None:\n"
+                "                self.window.addstr(0, 0, 'Oops, Installer got interrupted.'''\n"
+                "content = content.replace(old_exit, new_exit, 1)\n"
+                "\n"
+                "with open(sys.argv[1], 'w') as f:\n"
+                "    f.write(content)\n"
+                "\n"
+                "print('Patch applied successfully')\n"
+            );
+            fclose(pf);
+            
+            snprintf(cmd, sizeof(cmd), "python3 '%s' '%s' 2>&1", patch_script, installer_py);
+            run_cmd(cmd);
+            
+            snprintf(cmd, sizeof(cmd), "rm -f '%s'", patch_script);
+            run_cmd(cmd);
+        }
         
         log_info("Patched installer.py with progress_bar fix");
     } else {
