@@ -1436,17 +1436,16 @@ static int create_secure_boot_iso(void) {
         log_warn("installer.py not found at expected path");
     }
     
-    /* Add MOK package options to build_install_options_all.json
-     * This makes "Photon MOK Secure Boot" appear in the interactive installer's package selection */
-    char options_json[512], mok_packages_json[512];
-    snprintf(options_json, sizeof(options_json), "%s/installer/build_install_options_all.json", initrd_extract);
-    snprintf(mok_packages_json, sizeof(mok_packages_json), "%s/installer/packages_mok.json", initrd_extract);
+    /* Modify packages_minimal.json to include MOK-signed packages
+     * This ensures the default "Photon Minimal" installation uses MOK packages */
+    char minimal_packages_json[512];
+    snprintf(minimal_packages_json, sizeof(minimal_packages_json), "%s/installer/packages_minimal.json", initrd_extract);
     
-    if (file_exists(options_json)) {
-        log_info("Adding MOK package option to installer...");
+    if (file_exists(minimal_packages_json)) {
+        log_info("Adding MOK packages to packages_minimal.json...");
         
-        /* Create packages_mok.json with MOK-signed packages */
-        FILE *f = fopen(mok_packages_json, "w");
+        /* Overwrite packages_minimal.json with MOK-signed packages */
+        FILE *f = fopen(minimal_packages_json, "w");
         if (f) {
             fprintf(f,
                 "{\n"
@@ -1463,60 +1462,10 @@ static int create_secure_boot_iso(void) {
                 "}\n"
             );
             fclose(f);
-            log_info("Created packages_mok.json");
+            log_info("Updated packages_minimal.json with MOK packages");
         }
-        
-        /* Add MOK option to build_install_options_all.json using Python to preserve JSON format */
-        char add_mok_script[512];
-        snprintf(add_mok_script, sizeof(add_mok_script), "%s/add_mok_option.py", work_dir);
-        
-        FILE *pf = fopen(add_mok_script, "w");
-        if (pf) {
-            fprintf(pf,
-                "#!/usr/bin/env python3\n"
-                "import json\n"
-                "import sys\n"
-                "\n"
-                "with open(sys.argv[1], 'r') as f:\n"
-                "    options = json.load(f)\n"
-                "\n"
-                "# Add MOK Secure Boot option at the beginning\n"
-                "mok_option = {\n"
-                "    'mok': {\n"
-                "        'title': '1. Photon MOK Secure Boot (Physical Hardware)',\n"
-                "        'packagelist_file': 'packages_mok.json',\n"
-                "        'visible': True\n"
-                "    }\n"
-                "}\n"
-                "\n"
-                "# Renumber existing options\n"
-                "new_options = mok_option\n"
-                "num = 2\n"
-                "for key, value in options.items():\n"
-                "    if value.get('visible', False) and 'title' in value:\n"
-                "        # Update title number\n"
-                "        old_title = value['title']\n"
-                "        if old_title[0].isdigit() and old_title[1] == '.':\n"
-                "            value['title'] = str(num) + old_title[1:]\n"
-                "            num += 1\n"
-                "    new_options[key] = value\n"
-                "\n"
-                "with open(sys.argv[1], 'w') as f:\n"
-                "    json.dump(new_options, f, indent=4)\n"
-                "\n"
-                "print('MOK option added successfully')\n"
-            );
-            fclose(pf);
-            
-            snprintf(cmd, sizeof(cmd), "python3 '%s' '%s' 2>&1", add_mok_script, options_json);
-            run_cmd(cmd);
-            
-            snprintf(cmd, sizeof(cmd), "rm -f '%s'", add_mok_script);
-            run_cmd(cmd);
-        }
-        log_info("Added MOK package option to installer menu");
     } else {
-        log_warn("build_install_options_all.json not found in initrd");
+        log_warn("packages_minimal.json not found in initrd");
     }
     
     /* Repack initrd */
@@ -1778,7 +1727,7 @@ static int create_secure_boot_iso(void) {
                 "    set theme=/boot/grub2/themes/photon/theme.txt\n"
                 "    terminal_output gfxterm\n"
                 "\n"
-                "    menuentry \"Install Photon OS (Interactive)\" {\n"
+                "    menuentry \"Install\" {\n"
                 "        linux /isolinux/vmlinuz root=/dev/ram0 loglevel=3 photon.media=LABEL=PHOTON_SB_%s\n"
                 "        initrd /isolinux/initrd.img\n"
                 "    }\n"
@@ -1807,12 +1756,12 @@ static int create_secure_boot_iso(void) {
              * The installer will show the full interactive UI including:
              * - EULA acceptance
              * - Disk selection
-             * - Package selection (with MOK option added)
+             * - Package selection (Minimal now uses MOK packages)
              * - Hostname configuration
              * - Password configuration */
             fprintf(f,
                 "# Photon OS Installer - Modified for Secure Boot\n"
-                "# Interactive installation with MOK package option\n"
+                "# Interactive installation - Minimal uses MOK packages\n"
                 "# Theme and graphics settings from original VMware config\n"
                 "\n"
                 "set default=0\n"
@@ -1823,7 +1772,7 @@ static int create_secure_boot_iso(void) {
                 "set theme=/boot/grub2/themes/photon/theme.txt\n"
                 "terminal_output gfxterm\n"
                 "\n"
-                "menuentry \"Install Photon OS (Interactive)\" {\n"
+                "menuentry \"Install\" {\n"
                 "    linux /isolinux/vmlinuz root=/dev/ram0 loglevel=3 photon.media=LABEL=PHOTON_SB_%s\n"
                 "    initrd /isolinux/initrd.img\n"
                 "}\n"
