@@ -376,6 +376,14 @@ On first boot, the **blue MokManager screen** appears:
 
 ## Version History
 
+- **v1.7.0** - Installed system boot fixes:
+  - GRUB for installed system now searches for `/boot/grub2/grub.cfg` (not ISO-specific path)
+  - eFuse verification conditional - only added when `--efuse-usb` flag is used
+  - SUSE shim looks for `grub.efi` - now installed as both `grub.efi` and `grubx64.efi`
+  - USB 3.x performance fix: `usbcore.autosuspend=-1` kernel parameter
+  - Package conflicts fixed: `Obsoletes` without version constraint
+  - linux-mok package now only includes kernel files (not /boot/efi)
+  - Repodata regeneration after adding MOK packages
 - **v1.6.0** - Interactive installer with MOK package option (Option C), linuxselector.py patch
 - **v1.5.0** - Kickstart-based installation, RPM signing, full kernel build support
 - **v1.4.0** - Kickstart configuration, RPM patcher fixes

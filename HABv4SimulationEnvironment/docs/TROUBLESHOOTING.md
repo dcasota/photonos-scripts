@@ -81,7 +81,41 @@ This document covers common issues and their solutions.
    ```bash
    cp grubx64.efi grub.efi
    ```
-2. Rebuild ISO with latest HABv4-installer.sh (fixed)
+2. Rebuild ISO with latest PhotonOS-HABv4Emulation-ISOCreator (v1.7.0+ installs both names)
+
+### "error: ../../grub-core/commands/search.c:NNN: no such device"
+
+**Cause**: The installed system's GRUB was built for ISO boot (searches for `/isolinux/isolinux.cfg`) instead of the installed system (should search for `/boot/grub2/grub.cfg`).
+
+**Impact**: GRUB cannot find the root partition because it's looking for a file that only exists on the ISO.
+
+**Solutions**:
+1. Rebuild ISO with latest PhotonOS-HABv4Emulation-ISOCreator (v1.7.0+)
+2. The fix builds GRUB with an embedded config that searches for `/boot/grub2/grub.cfg`
+
+### Installation takes 2000+ seconds (instead of ~75 seconds)
+
+**Cause**: USB autosuspend causing severe performance degradation on USB 3.x devices.
+
+**Solutions**:
+1. Rebuild ISO with latest PhotonOS-HABv4Emulation-ISOCreator (v1.7.0+ adds `usbcore.autosuspend=-1`)
+2. Or manually add `usbcore.autosuspend=-1` to kernel command line in GRUB
+
+### "rpm transaction failed" during installation
+
+**Cause**: Package conflicts between MOK packages and original packages.
+
+**Common issues**:
+- `Obsoletes` with version constraint fails when original has higher version
+- File conflicts between `linux-mok` and `grub2-efi-image-mok`
+- MOK packages not indexed in repodata
+
+**Solutions**:
+1. Rebuild ISO with latest PhotonOS-HABv4Emulation-ISOCreator (v1.7.0+ fixes all these)
+2. Specific fixes applied:
+   - `Obsoletes: package` without version constraint
+   - `linux-mok` only includes kernel files (not `/boot/efi`)
+   - Repodata regenerated after adding MOK packages
 
 ### "start_image() returned Not Found"
 
@@ -714,7 +748,10 @@ dmesg | grep -iE "module|signature|lockdown"
 | shim_lock protocol not found | Chainloading from wrong menu | Access MokManager from stub menu (Stage 1) |
 | EFI USB Device (SB) boot failed | Bad shim signature | Use Fedora shim |
 | EFI USB Device (USB) boot failed | Not hybrid | Rebuild with xorriso |
-| grub.efi Not Found | Missing file | Copy grubx64.efi to grub.efi |
+| grub.efi Not Found | Missing file | Rebuild ISO (v1.7.0+ installs both names) |
+| search.c: no such device | GRUB searching for ISO path | Rebuild ISO (v1.7.0+ fixes embedded config) |
+| Installation takes 2000+ seconds | USB autosuspend issue | Rebuild ISO (v1.7.0+ adds usbcore.autosuspend=-1) |
+| rpm transaction failed | Package conflicts | Rebuild ISO (v1.7.0+ fixes Obsoletes) |
 | bad shim signature | Wrong trust chain | Use Fedora shim + Fedora MokManager |
 | MokManager.efi Not Found | Wrong filename or missing from efiboot.img | Rebuild with PhotonOS-HABv4Emulation-ISOCreator |
 | Security Violation (first boot) | MOK certificate not enrolled | Enroll certificate from root `/` |

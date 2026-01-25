@@ -306,8 +306,12 @@ sync
 | "Policy Violation" | GRUB SBAT issue | Use latest version |
 | grub> prompt | Config not found | Rebuild ISO |
 | BOOT BLOCKED | eFuse USB missing | Insert eFuse USB or rebuild without `-E` |
-| ZeroDivisionError in linuxselector | linux-mok not recognized | Rebuild ISO (v1.6.0 fixes this) |
+| ZeroDivisionError in linuxselector | linux-mok not recognized | Rebuild ISO (v1.6.0+ fixes this) |
 | Installed system fails | Standard packages installed | Reinstall with "Photon MOK Secure Boot" |
+| "search.c: no such device" | GRUB searching for ISO path | Rebuild ISO (v1.7.0+ fixes embedded config) |
+| Installation takes 2000+ seconds | USB autosuspend | Rebuild ISO (v1.7.0+ adds kernel param) |
+| "grub.efi Not Found" | SUSE shim looks for grub.efi | Rebuild ISO (v1.7.0+ installs both names) |
+| "rpm transaction failed" | Package conflicts | Rebuild ISO (v1.7.0+ fixes Obsoletes) |
 
 ### Detailed Troubleshooting
 
