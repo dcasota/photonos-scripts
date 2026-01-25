@@ -914,6 +914,35 @@ static int build_linux_kernel(void) {
         log_info("Using kernel config: %s", config_path);
         snprintf(cmd, sizeof(cmd), "cp '%s' '%s/.config'", config_path, kernel_src);
         run_cmd(cmd);
+        
+        /* Copy Photon certificate bundle if it exists (required by CONFIG_SYSTEM_TRUSTED_KEYS) */
+        char cert_bundle_src[512], cert_bundle_dst[512];
+        
+        /* Try release-specific SPECS first */
+        snprintf(cert_bundle_src, sizeof(cert_bundle_src), "%s/SPECS/linux/photon-cert-bundle.pem", cfg.photon_dir);
+        if (!file_exists(cert_bundle_src)) {
+            /* Try common SPECS */
+            const char *kernel_version_dir = NULL;
+            if (strcmp(cfg.release, "5.0") == 0) kernel_version_dir = "v6.1";
+            else if (strcmp(cfg.release, "6.0") == 0) kernel_version_dir = "v6.12";
+            if (kernel_version_dir) {
+                snprintf(cert_bundle_src, sizeof(cert_bundle_src), "/root/common/SPECS/linux/%s/photon-cert-bundle.pem", kernel_version_dir);
+            }
+        }
+        
+        if (file_exists(cert_bundle_src)) {
+            snprintf(cert_bundle_dst, sizeof(cert_bundle_dst), "%s/photon-cert-bundle.pem", kernel_src);
+            log_info("Copying Photon certificate bundle...");
+            snprintf(cmd, sizeof(cmd), "cp '%s' '%s'", cert_bundle_src, cert_bundle_dst);
+            run_cmd(cmd);
+        } else {
+            /* Disable SYSTEM_TRUSTED_KEYS if bundle not found */
+            log_warn("Photon certificate bundle not found, disabling CONFIG_SYSTEM_TRUSTED_KEYS");
+            snprintf(cmd, sizeof(cmd), 
+                "cd '%s' && scripts/config --set-str CONFIG_SYSTEM_TRUSTED_KEYS ''",
+                kernel_src);
+            run_cmd(cmd);
+        }
     } else {
         log_warn("No Photon kernel config found, using defconfig");
         snprintf(cmd, sizeof(cmd), "cd '%s' && make defconfig", kernel_src);
