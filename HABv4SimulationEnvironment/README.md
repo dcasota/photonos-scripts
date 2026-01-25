@@ -254,10 +254,14 @@ SUSE Shim (BOOTX64.EFI)
 Custom GRUB Stub (grub.efi)
     ↓ loads configuration
 Boot Menu
-    ├── Install (Custom MOK) - For Physical Hardware
-    │   └── Installs: linux-mok, grub2-efi-image-mok, shim-signed-mok
-    └── Install (VMware Original) - For VMware VMs
-        └── Installs: linux, grub2-efi-image, shim-signed
+    └── Install
+        ↓ launches interactive installer
+        Package Selection Screen:
+          1. Photon MOK Secure Boot    ← For physical hardware
+          2. Photon Minimal            ← Original VMware packages
+          3. Photon Developer
+          4. Photon OSTree Host
+          5. Photon Real Time
 ```
 
 ### Why Original Photon OS Fails
@@ -336,9 +340,11 @@ On first boot, the **blue MokManager screen** appears:
 
 ### 3. Install
 
-1. Select **"Install (Custom MOK) - For Physical Hardware"**
-2. Complete interactive installation
-3. Reboot into compliant Photon OS
+1. Select **"Install"** from the GRUB menu
+2. Accept EULA, select disk, configure partitions
+3. At **Package Selection**, choose **"1. Photon MOK Secure Boot"**
+4. Configure hostname and root password
+5. Complete installation and reboot
 
 ---
 
@@ -360,7 +366,7 @@ On first boot, the **blue MokManager screen** appears:
 
 | Problem | Cause | Solution |
 |---------|-------|----------|
-| "bad shim signature" | Using VMware Original on hardware | Select "Custom MOK" option |
+| "bad shim signature" | Selected Photon Minimal on hardware | Select "Photon MOK Secure Boot" |
 | Laptop security dialog | CSM/Legacy enabled | Disable CSM in BIOS |
 | Enrollment doesn't persist | Wrong MokManager | Rebuild with latest version |
 | "Policy Violation" | SBAT version issue | Update to latest version |
@@ -370,6 +376,7 @@ On first boot, the **blue MokManager screen** appears:
 
 ## Version History
 
+- **v1.6.0** - Interactive installer with MOK package option (Option C), linuxselector.py patch
 - **v1.5.0** - Kickstart-based installation, RPM signing, full kernel build support
 - **v1.4.0** - Kickstart configuration, RPM patcher fixes
 - **v1.3.0** - Initrd patching (deprecated)

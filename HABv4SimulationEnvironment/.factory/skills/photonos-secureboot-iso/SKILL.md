@@ -78,11 +78,17 @@ BOOTX64.EFI (SUSE shim, SBAT=shim,4)
 grub.efi (Custom GRUB stub, MOK-signed, NO shim_lock)
     ↓ loads grub.cfg with themed menu (5 sec timeout)
     │
-    ├─→ "Install (Custom MOK)" → ks=cdrom:/mok_ks.cfg
-    │   → Installs: linux-mok, grub2-efi-image-mok, shim-signed-mok
-    │
-    └─→ "Install (VMware Original)" → ks=cdrom:/standard_ks.cfg
-        → Installs: linux, grub2-efi-image, shim-signed
+    └─→ "Install" → launches interactive installer
+        │
+        ↓ Package Selection Screen (modified build_install_options_all.json)
+        │
+        ├─→ "1. Photon MOK Secure Boot" → packages_mok.json
+        │   → Installs: linux-mok, grub2-efi-image-mok, shim-signed-mok
+        │
+        ├─→ "2. Photon Minimal" → packages_minimal.json (original)
+        │   → Installs: linux, grub2-efi-image, shim-signed
+        │
+        └─→ "3-5. Developer/OSTree/RT" → respective package files
 ```
 
 ### Boot Chain (Installed System - MOK Path)
@@ -129,43 +135,64 @@ Generated specs include:
 - MOK-signed binaries
 - MokManager in `shim-signed-mok`
 
-## Kickstart-Based Installation
+## Interactive Installation with MOK Package Option (v1.6.0)
 
-The ISO uses **kickstart configuration files** instead of initrd patching:
+The ISO uses a **fully interactive installer** with MOK packages added to the package selection menu. This is **Option C** from the architecture decision record (see ADR-001 in DROID_SKILL_GUIDE.md).
 
-### `/mok_ks.cfg` (MOK Installation)
+### How It Works
+
+1. **Single GRUB menu entry**: "Install" launches the interactive installer
+2. **No kickstart files**: Full interactive experience (EULA, disk, hostname, password)
+3. **Modified `build_install_options_all.json`**: Adds "Photon MOK Secure Boot" as first option
+4. **New `packages_mok.json`**: Contains MOK-signed packages
+
+### Initrd Modifications
+
+The tool modifies the initrd to:
+
+1. **Create `packages_mok.json`** in `/installer/`:
 ```json
 {
-    "linux_flavor": "linux-mok",
-    "packages": ["minimal", "initramfs", "linux-mok", "grub2-efi-image-mok", "shim-signed-mok"],
-    "bootmode": "efi",
-    "ui": true
+    "packages": [
+        "minimal", "linux-mok", "initramfs",
+        "grub2-efi-image-mok", "shim-signed-mok",
+        "lvm2", "less", "sudo"
+    ]
 }
 ```
 
-### `/standard_ks.cfg` (VMware Installation)
+2. **Modify `build_install_options_all.json`** to add MOK option first:
 ```json
 {
-    "linux_flavor": "linux",
-    "packages": ["minimal", "initramfs", "linux", "grub2-efi-image", "shim-signed"],
-    "bootmode": "efi",
-    "ui": true
+    "mok": {
+        "title": "1. Photon MOK Secure Boot",
+        "packagelist_file": "packages_mok.json",
+        "visible": true
+    },
+    "minimal": {
+        "title": "2. Photon Minimal",
+        ...
+    }
 }
 ```
 
-The `"ui": true` makes the installer **interactive** while **enforcing package selection**.
+3. **Patch `linuxselector.py`** to recognize `linux-mok` kernel:
+```python
+linux_flavors = {"linux-mok":"MOK Secure Boot", "linux":"Generic", ...}
+```
 
-### Why Kickstart Instead of Initrd Patching
+### Why Interactive Instead of Kickstart
 
-Previous versions patched the installer in initrd. This had risks:
-- **Version fragility**: sed patterns could break with updates
-- **Python path hardcoding**: `/usr/lib/python3.11/` may change
-- **Maintenance burden**: each version needed testing
+Previous versions (v1.5.0) used kickstart files with `"ui": true`. This failed because:
+- **Photon installer architecture**: Interactive UI only runs when NO kickstart is provided
+- **`ui: true` misconception**: Only controls progress bars, not the configuration wizard
+- **Missing required fields**: Kickstart without disk/hostname caused crashes
 
-Kickstart approach is:
-- **Version-independent**: works with any photon-os-installer
-- **VMware-supported**: uses official mechanism
-- **Robust**: no fragile patching
+The interactive approach (Option C):
+- **Full user control**: EULA, disk selection, partitioning, hostname, password
+- **Explicit MOK choice**: Users see "Photon MOK Secure Boot" in package selection
+- **Preserves options**: All original package options remain available
+- **Follows installer patterns**: Uses official `build_install_options_all.json` mechanism
 
 ## Kernel Build Support
 
@@ -263,21 +290,24 @@ sync
 
 ### Step 4: Install (Second Boot)
 1. Themed menu appears
-2. Select "Install (Custom MOK) - For Physical Hardware"
-3. Complete interactive installation
-4. Reboot into installed system
+2. Select "Install"
+3. Accept EULA, select disk, configure partitions
+4. At **Package Selection**, choose **"1. Photon MOK Secure Boot"**
+5. Configure hostname and root password
+6. Complete installation and reboot
 
 ## Troubleshooting Quick Reference
 
 | Error | Cause | Fix |
 |-------|-------|-----|
-| "bad shim signature" | Selected VMware Original | Select Custom MOK |
+| "bad shim signature" | Selected Photon Minimal on hardware | Select "Photon MOK Secure Boot" |
 | Laptop security dialog (not blue MokManager) | CSM enabled | Disable CSM in BIOS |
 | Enrollment doesn't persist | Wrong MokManager | Rebuild ISO |
 | "Policy Violation" | GRUB SBAT issue | Use latest version |
 | grub> prompt | Config not found | Rebuild ISO |
 | BOOT BLOCKED | eFuse USB missing | Insert eFuse USB or rebuild without `-E` |
-| Installed system fails | Standard packages installed | Reinstall with "Custom MOK" |
+| ZeroDivisionError in linuxselector | linux-mok not recognized | Rebuild ISO (v1.6.0 fixes this) |
+| Installed system fails | Standard packages installed | Reinstall with "Photon MOK Secure Boot" |
 
 ### Detailed Troubleshooting
 
@@ -293,7 +323,7 @@ sync
 
 **Installed system gets "bad shim signature":**
 - Standard VMware packages were installed (have shim_lock)
-- Fix: Reinstall using "Install (Custom MOK)" menu option
+- Fix: Reinstall and select "1. Photon MOK Secure Boot" at package selection
 
 ## ISO Structure
 
@@ -301,8 +331,6 @@ sync
 ISO Root/
 ├── ENROLL_THIS_KEY_IN_MOKMANAGER.cer    # MOK certificate
 ├── MokManager.efi                        # SUSE MokManager
-├── mok_ks.cfg                           # MOK kickstart
-├── standard_ks.cfg                      # Standard kickstart
 ├── EFI/BOOT/
 │   ├── BOOTX64.EFI                      # SUSE shim
 │   ├── grub.efi                         # Custom GRUB stub
@@ -349,15 +377,21 @@ SUSE shim components are embedded in `data/`:
 
 Extracted automatically during build. No internet required.
 
-## Installer Patch (Progress Bar Fix)
+## Installer Patches
 
-The photon-os-installer has a bug where `exit_gracefully()` assumes `progress_bar` exists. When kickstart uses `"ui": true`, this can cause `AttributeError` if curses init fails.
+The tool applies several patches to the photon-os-installer in the initrd:
 
-The tool applies a surgical fix to `installer.py` in the initrd:
-1. Initialize `self.progress_bar = None` in `__init__()`
-2. Check for None in `exit_gracefully()` before accessing
+### 1. Progress Bar Fix (installer.py)
+The installer assumes `progress_bar` exists in `exit_gracefully()`. Fix:
+- Initialize `self.progress_bar = None` in `__init__()`
+- Check for None before accessing in `exit_gracefully()` and `_execute_modules()`
 
-This fix has been submitted upstream as PR #39.
+Submitted upstream as PR #39.
+
+### 2. Linux-MOK Recognition (linuxselector.py)
+The `LinuxSelector` class has hardcoded kernel flavors. Without this patch, selecting packages with `linux-mok` causes `ZeroDivisionError` (no menu items created).
+
+Fix: Add `"linux-mok": "MOK Secure Boot"` to `linux_flavors` dictionary.
 
 ## For Developers Using This Skill
 
