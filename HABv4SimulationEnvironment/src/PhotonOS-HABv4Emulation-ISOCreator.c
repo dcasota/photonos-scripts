@@ -1436,6 +1436,52 @@ static int create_secure_boot_iso(void) {
         log_warn("installer.py not found at expected path");
     }
     
+    /* Patch linuxselector.py to recognize linux-mok kernel flavor
+     * The LinuxSelector class has a hardcoded dict of known kernel flavors.
+     * Without this patch, selecting packages with linux-mok causes ZeroDivisionError
+     * because no menu items are created (linux-mok not in the dict). */
+    char linuxselector_py[512];
+    snprintf(linuxselector_py, sizeof(linuxselector_py),
+        "%s/usr/lib/python3.11/site-packages/photon_installer/linuxselector.py", initrd_extract);
+    
+    if (file_exists(linuxselector_py)) {
+        log_info("Patching linuxselector.py to recognize linux-mok...");
+        
+        char patch_linux_script[512];
+        snprintf(patch_linux_script, sizeof(patch_linux_script), "%s/patch_linuxselector.py", work_dir);
+        
+        FILE *pf = fopen(patch_linux_script, "w");
+        if (pf) {
+            fprintf(pf,
+                "#!/usr/bin/env python3\n"
+                "import sys\n"
+                "\n"
+                "with open(sys.argv[1], 'r') as f:\n"
+                "    content = f.read()\n"
+                "\n"
+                "# Add linux-mok to the linux_flavors dictionary\n"
+                "old = 'linux_flavors = {\"linux\":\"Generic\"'\n"
+                "new = 'linux_flavors = {\"linux-mok\":\"MOK Secure Boot\", \"linux\":\"Generic\"'\n"
+                "content = content.replace(old, new, 1)\n"
+                "\n"
+                "with open(sys.argv[1], 'w') as f:\n"
+                "    f.write(content)\n"
+                "\n"
+                "print('linuxselector.py patched for linux-mok')\n"
+            );
+            fclose(pf);
+            
+            snprintf(cmd, sizeof(cmd), "python3 '%s' '%s' 2>&1", patch_linux_script, linuxselector_py);
+            run_cmd(cmd);
+            
+            snprintf(cmd, sizeof(cmd), "rm -f '%s'", patch_linux_script);
+            run_cmd(cmd);
+        }
+        log_info("Patched linuxselector.py with linux-mok support");
+    } else {
+        log_warn("linuxselector.py not found at expected path");
+    }
+    
     /* Modify packages_minimal.json to include MOK-signed packages
      * This ensures the default "Photon Minimal" installation uses MOK packages */
     char minimal_packages_json[512];
