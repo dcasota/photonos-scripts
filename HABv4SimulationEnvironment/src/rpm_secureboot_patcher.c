@@ -987,6 +987,32 @@ int rpm_integrate_to_iso(
         }
     }
     
+    /* Regenerate repodata to include the new MOK packages
+     * Without this, tdnf won't find the MOK packages during installation */
+    log_info("Regenerating repository metadata...");
+    
+    /* Get the parent RPMS directory (iso_rpm_dir is RPMS/x86_64, we need RPMS) */
+    char repo_dir[512];
+    strncpy(repo_dir, iso_rpm_dir, sizeof(repo_dir) - 1);
+    char *last_slash = strrchr(repo_dir, '/');
+    if (last_slash) *last_slash = '\0';
+    
+    /* Remove old repodata and regenerate */
+    snprintf(cmd, sizeof(cmd), "rm -rf '%s/repodata'", repo_dir);
+    run_cmd(cmd);
+    
+    snprintf(cmd, sizeof(cmd), "createrepo_c '%s' 2>&1", repo_dir);
+    if (run_cmd(cmd) != 0) {
+        /* Try createrepo if createrepo_c not available */
+        snprintf(cmd, sizeof(cmd), "createrepo '%s' 2>&1", repo_dir);
+        if (run_cmd(cmd) != 0) {
+            log_error("Failed to regenerate repodata - MOK packages may not be installable");
+            log_error("Please ensure createrepo or createrepo_c is installed");
+            return RPM_PATCH_ERR_BUILD_FAILED;
+        }
+    }
+    
+    log_info("Repository metadata regenerated");
     log_info("MOK packages integrated into ISO");
     return RPM_PATCH_SUCCESS;
 }
