@@ -1,324 +1,397 @@
 # Secure Boot Architecture Overview
 
-This is the main architecture document for the HABv4 Secure Boot project. For detailed information, see the documents in the `docs/` directory.
+This document explains the architecture of the HABv4 Secure Boot Simulation Environment.
 
-## Quick Links
+## Table of Contents
 
-| Document | Description |
-|----------|-------------|
-| [BOOT_PROCESS.md](BOOT_PROCESS.md) | Complete boot chain explanation |
-| [KEY_MANAGEMENT.md](KEY_MANAGEMENT.md) | Key generation and management |
-| [ISO_CREATION.md](ISO_CREATION.md) | ISO creation and USB boot |
-| [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Common issues and solutions |
+1. [The Problem](#the-problem)
+2. [Our Solution](#our-solution)
+3. [Boot Chain Overview](#boot-chain-overview)
+4. [Key Components](#key-components)
+5. [Package Structure](#package-structure)
+6. [Directory Layout](#directory-layout)
+7. [Related Documentation](#related-documentation)
+
+---
+
+## The Problem
+
+**Photon OS ISOs don't boot on physical hardware with Secure Boot enabled.**
+
+Here's why:
+
+1. **UEFI Secure Boot** requires all boot code to be cryptographically signed
+2. **VMware's shim** (first-stage bootloader) includes `shim_lock` verification
+3. **`shim_lock`** calls shim's `Verify()` function for every binary loaded
+4. **Custom or unsigned kernels** fail this verification
+5. **Result**: "bad shim signature" error on consumer laptops
+
+```
+Original Photon OS Boot (FAILS on Secure Boot):
+
+UEFI Firmware
+    ↓ verifies (Microsoft CA in db) ✓
+VMware shim (bootx64.efi)
+    ↓ has shim_lock module
+VMware GRUB (grubx64.efi)
+    ↓ calls shim_lock Verify()
+Kernel (vmlinuz)
+    ↓ signature check fails ✗
+"bad shim signature" ERROR
+```
+
+---
+
+## Our Solution
+
+We replace the boot chain with components that work together:
+
+1. **SUSE shim**: Microsoft-signed, SBAT compliant, no `shim_lock` enforcement
+2. **Custom GRUB stub**: MOK-signed, built without `shim_lock` module
+3. **MOK-signed kernel**: Signed with our Machine Owner Key
+4. **MOK packages**: Install these components to the target system
+
+```
+HABv4 Modified Boot (WORKS on Secure Boot):
+
+UEFI Firmware
+    ↓ verifies (Microsoft CA in db) ✓
+SUSE shim (BOOTX64.EFI)
+    ↓ verifies (MokList) ✓
+Custom GRUB stub (grub.efi)
+    ↓ MOK-signed, no shim_lock ✓
+Kernel (vmlinuz)
+    ↓ boots successfully ✓
+Photon OS Installer
+```
 
 ---
 
 ## Boot Chain Overview
 
+### ISO Boot (Installation)
+
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        UEFI Firmware                                 │
-│                   (Microsoft UEFI CA 2011)                          │
+│                   (Microsoft UEFI CA 2011 in db)                    │
 └─────────────────────────────────────────────────────────────────────┘
                                 │
-                                ▼
+                                ▼ verifies Microsoft signature
 ┌─────────────────────────────────────────────────────────────────────┐
-│               SUSE Shim 15.8 from Ventoy (BOOTX64.EFI)              │
+│                     SUSE Shim (BOOTX64.EFI)                         │
 │          Signed by: Microsoft    SBAT: shim,4 (compliant)           │
-│          Embedded: SUSE Linux Enterprise Secure Boot CA             │
+│          Source: Embedded in tool (from Ventoy 1.1.10)              │
 └─────────────────────────────────────────────────────────────────────┘
-                    │                           │
-                    ▼                           ▼
-    ┌───────────────────────────┐   ┌───────────────────────────┐
-    │   Photon OS GRUB Stub     │   │   SUSE MokManager         │
-    │   (grub.efi/grubx64.efi)  │   │   (MokManager.efi)        │
-    │   Signed: Photon OS MOK   │   │   Signed: SUSE CA         │
-    └───────────────────────────┘   └───────────────────────────┘
-                    │
-                    ▼
-    ┌───────────────────────────┐
-    │   VMware GRUB Real        │
-    │   (grubx64_real.efi)      │
-    │   Signed: VMware, Inc.    │
-    └───────────────────────────┘
-                    │
-                    ▼
-    ┌───────────────────────────┐
-    │   vmlinuz                 │
-    │   (VMware-signed kernel)  │
-    └───────────────────────────┘
-                    │
-                    ▼
+                                │
+                                ▼ verifies MOK signature (MokList)
 ┌─────────────────────────────────────────────────────────────────────┐
-│                     Kernel Modules (*.ko)                           │
-│              Signed with build-time signing key                     │
+│                  Custom GRUB Stub (grub.efi)                        │
+│          Signed by: Photon OS MOK    SBAT: grub,3                   │
+│          Built with: grub2-mkimage (no shim_lock module)            │
 └─────────────────────────────────────────────────────────────────────┘
+                                │
+                                ▼ loads grub.cfg, presents menu
+┌─────────────────────────────────────────────────────────────────────┐
+│                         Boot Menu                                    │
+│  1. Install (Custom MOK) - For Physical Hardware   [default]        │
+│  2. Install (VMware Original) - For VMware VMs                      │
+│  3. MokManager - Enroll/Delete MOK Keys                             │
+│  4. Reboot into UEFI Firmware Settings                              │
+│  5. Reboot                                                          │
+│  6. Shutdown                                                        │
+└─────────────────────────────────────────────────────────────────────┘
+                                │
+                    ┌───────────┴───────────┐
+                    ▼                       ▼
+          Custom MOK Path           VMware Original Path
+          (Physical HW)             (VMware VMs)
+                    │                       │
+                    ▼                       ▼
+            MOK-signed vmlinuz      Chainload grubx64_real.efi
+            + initrd                (VMware's GRUB)
+            + ks=cdrom:/mok_ks.cfg  + ks=cdrom:/standard_ks.cfg
 ```
 
-**Note on SBAT Compliance**: Microsoft's SBAT (Secure Boot Advanced Targeting) revocation 
-requires `shim,4` or higher. We use SUSE shim from Ventoy 1.1.10 which has SBAT version 
-`shim,4` (compliant). The shim looks for MokManager at `\MokManager.efi` (ROOT level).
+### Installed System Boot (Post-Installation)
+
+**MOK Path (Physical Hardware):**
+```
+UEFI Firmware
+    ↓
+shim-signed-mok (SUSE shim + MokManager)
+    ↓
+grub2-efi-image-mok (Custom GRUB stub, MOK-signed)
+    ↓
+linux-mok (MOK-signed vmlinuz)
+    ↓
+Photon OS (running)
+```
+
+**Standard Path (VMware VMs):**
+```
+UEFI Firmware
+    ↓
+shim-signed (VMware shim)
+    ↓
+grub2-efi-image (VMware GRUB with shim_lock)
+    ↓
+linux (unsigned vmlinuz)
+    ↓
+Photon OS (running)
+⚠ Will fail on physical hardware with Secure Boot
+```
 
 ---
 
 ## Key Components
 
-### SUSE Shim from Ventoy
+### SUSE Shim
 
-We use **SUSE shim from Ventoy 1.1.10** because:
+| Property | Value |
+|----------|-------|
+| Source | Ventoy 1.1.10 |
+| Signer | Microsoft Corporation UEFI CA 2011 |
+| SBAT Version | shim,4 (compliant with current revocation) |
+| Size | ~965 KB |
+| Embedded Cert | SUSE Linux Enterprise Secure Boot CA |
+| MokManager Path | Looks for `\MokManager.efi` at root |
 
-1. **SUSE shim** (from Ventoy) is SBAT version `shim,4` (compliant with Microsoft's revocation)
-2. **Ventoy** uses a well-tested, production-proven Secure Boot implementation
-3. **SUSE's MokManager** is signed by SUSE CA and matches the embedded certificate in the shim
-4. **SUSE shim looks for `\MokManager.efi`** at ROOT level (not `\mmx64.efi` like Fedora)
-5. We build a **custom Photon OS GRUB stub** signed with our own MOK certificate
+**Why SUSE shim?**
+- Microsoft-signed (trusted by all UEFI firmware)
+- SBAT version 4 (passes Microsoft's revocation checks)
+- Doesn't enforce `shim_lock` on next-stage loader
+- Well-tested (used by Ventoy for years)
 
-### Why This Approach?
+### Custom GRUB Stub
 
-| Component | Source | SBAT | Purpose |
-|-----------|--------|------|---------|
-| `BOOTX64.EFI` | SUSE (Ventoy) | shim,4 ✓ | First-stage bootloader (SBAT compliant) |
-| `MokManager.efi` | SUSE (Ventoy) | N/A | MOK management (matches SUSE shim) |
-| `grub.efi` | Photon OS | N/A | Custom GRUB stub (signed with Photon OS MOK) |
-| `grubx64_real.efi` | VMware | N/A | Actual GRUB (chainloaded) |
+| Property | Value |
+|----------|-------|
+| Source | Built with grub2-mkimage |
+| Signer | Photon OS MOK |
+| Size | ~2 MB |
+| shim_lock | **Not included** |
+| SBAT | grub,3 (embedded in binary) |
 
-### Single Kernel
+**Modules included:**
+- Core: `search`, `configfile`, `linux`, `initrd`, `chain`
+- Filesystem: `fat`, `iso9660`, `ext2`, `part_gpt`, `part_msdos`
+- Graphics: `gfxterm`, `gfxmenu`, `png`, `jpeg`, `tga`, `gfxterm_background`
+- Detection: `probe` (for UUID), `efi_gop`, `efi_uga`
+- Commands: `echo`, `reboot`, `halt`, `test`, `true`
 
-The ISO includes one VMware-signed kernel:
+**Why custom GRUB?**
+- VMware's GRUB has `shim_lock` module compiled in
+- `shim_lock` enforces strict signature verification
+- Custom GRUB skips this, relying on MOK signature alone
+- Still verified by shim (MOK signature), maintaining security
 
-| Kernel | Signer | Use Case |
-|--------|--------|----------|
-| `vmlinuz` | VMware | All systems (trusted by shim's embedded VMware cert) |
+### MokManager
 
-### Important: grub.efi vs grubx64.efi
+| Property | Value |
+|----------|-------|
+| Source | SUSE (from Ventoy) |
+| Signer | SUSE Linux Enterprise Secure Boot CA |
+| Size | ~852 KB |
+| Location | Root of ISO (`\MokManager.efi`) |
 
-SUSE shim looks for `grub.efi` or `grubx64.efi` as loader. We provide **both**:
-- `grub.efi` - Photon OS stub (MOK-signed) - requires MOK enrollment
-- `grubx64.efi` - Same as grub.efi (standard name)
-- `grubx64_real.efi` - VMware-signed GRUB real (chainloaded by stub)
+**Functions:**
+- Enroll key from disk
+- Enroll hash from disk
+- Delete key/hash
+- Reset MOK
+- Reboot / Power off
 
----
+### Machine Owner Key (MOK)
 
-## Key Hierarchy
+| Property | Value |
+|----------|-------|
+| Algorithm | RSA 2048-bit |
+| Validity | 180 days (configurable) |
+| Subject | CN=Photon OS Secure Boot MOK |
+| Storage | `/root/hab_keys/MOK.key`, `MOK.crt`, `MOK.der` |
 
-```
-/root/hab_keys/
-├── UEFI Keys (for custom firmware)
-│   ├── PK.key/crt/der      # Platform Key
-│   ├── KEK.key/crt/der     # Key Exchange Key
-│   └── DB.key/crt/der      # Signature Database Key
-│
-├── MOK (Machine Owner Key)
-│   ├── MOK.key             # Private key
-│   ├── MOK.crt             # Certificate (PEM)
-│   └── MOK.der             # Certificate (for enrollment)
-│
-├── Module Signing
-│   └── kernel_module_signing.pem
-│
-├── SUSE Components (SBAT Compliant, from Ventoy)
-│   ├── shim-suse.efi       # Microsoft-signed SUSE shim (SBAT=shim,4)
-│   └── MokManager-suse.efi # SUSE-signed MokManager
-│
-└── Photon OS GRUB Stub
-    └── grub-photon-stub.efi  # Custom GRUB stub (MOK-signed)
-```
-
-See [KEY_MANAGEMENT.md](KEY_MANAGEMENT.md) for details.
-
----
-
-## ISO Structure
-
-```
-ISO/
-├── mmx64.efi                              # Fedora MokManager (ROOT - for Fedora shim)
-├── MokManager.efi                         # Fedora MokManager (ROOT - for SUSE shim)
-├── ENROLL_THIS_KEY_IN_MOKMANAGER.cer      # Photon OS MOK certificate (ROOT)
-├── EFI/BOOT/
-│   ├── BOOTX64.EFI                        # Fedora shim (SBAT=shim,4)
-│   ├── grub.efi                           # Photon OS GRUB stub (MOK-signed)
-│   ├── grubx64.efi                        # Same as grub.efi
-│   ├── grubx64_real.efi                   # VMware-signed GRUB
-│   ├── MokManager.efi                     # Fedora MokManager (backup)
-│   ├── mmx64.efi                          # Fedora MokManager (backup)
-│   └── ENROLL_THIS_KEY_IN_MOKMANAGER.cer  # Photon OS MOK certificate
-│
-├── boot/grub2/
-│   ├── efiboot.img     # 16MB EFI partition image
-│   └── grub.cfg        # Boot menu
-│
-└── isolinux/
-    ├── vmlinuz         # VMware-signed kernel
-    └── initrd.img      # Initial ramdisk
-```
-
-**MokManager Placement**: SUSE shim looks for MokManager at `\MokManager.efi` (ROOT level):
-- `\MokManager.efi` (ROOT) - **Primary path** for SUSE shim
-- `\EFI\BOOT\MokManager.efi` - Fallback location
-
-**efiboot.img contents:**
-```
-/
-├── MokManager.efi                      # SUSE MokManager (ROOT - SUSE shim looks here)
-├── ENROLL_THIS_KEY_IN_MOKMANAGER.cer   # Photon OS MOK certificate (ROOT)
-├── grub/
-│   └── grub.cfg                        # Bootstrap config (fallback)
-└── EFI/BOOT/
-    ├── BOOTX64.EFI                     # SUSE shim (SBAT=shim,4)
-    ├── grub.efi                        # Photon OS GRUB stub
-    ├── grubx64.efi                     # Same as grub.efi
-    ├── grubx64_real.efi                # VMware GRUB
-    ├── grub.cfg                        # Bootstrap for grubx64_real
-    ├── MokManager.efi                  # SUSE MokManager (fallback)
-    └── revocations.efi                 # UEFI revocation list
-```
-
-See [ISO_CREATION.md](ISO_CREATION.md) for details.
+**What we sign with MOK:**
+- Custom GRUB stub (`grub.efi`)
+- Kernel (`vmlinuz`)
+- MokManager (if building custom)
 
 ---
 
-## eFuse USB Dongle (Optional)
+## Package Structure
 
-For a more realistic HABv4 simulation, the GRUB stub can verify the presence of an eFuse USB dongle before proceeding to boot.
+### Original vs MOK Packages
 
-### How It Works
+| Original | MOK Variant | Difference |
+|----------|-------------|------------|
+| `shim-signed` | `shim-signed-mok` | SUSE shim + MokManager (not VMware shim) |
+| `grub2-efi-image` | `grub2-efi-image-mok` | Custom GRUB stub (no shim_lock) |
+| `linux` | `linux-mok` | MOK-signed vmlinuz |
+| `linux-esx` | `linux-mok` | MOK-signed vmlinuz (ESX flavor) |
 
-```
-GRUB Stub (MOK-signed)
-    │
-    ├─→ Search for USB with LABEL=EFUSE_SIM
-    │
-    ├─→ If found: Check for /efuse_sim/srk_fuse.bin
-    │       └─→ Valid: "Security Mode: CLOSED" - boot menu shown
-    │       └─→ Invalid: "BOOT BLOCKED" - only Retry/Reboot
-    │
-    └─→ If not found: "BOOT BLOCKED" - only Retry/Reboot
-
-Note: When --efuse-usb is used, boot is ENFORCED. The "Continue to
-Photon OS Installer" option only appears when eFuse USB is valid.
-```
-
-### Creating eFuse USB Dongle
-
-```bash
-# Build keys first (if not already done)
-sudo ./HABv4-installer.sh
-
-# Create eFuse USB dongle
-sudo ./HABv4-installer.sh --create-efuse-usb=/dev/sdb
-
-# Build ISO with eFuse USB verification
-sudo ./HABv4-installer.sh --release=5.0 --build-iso --efuse-usb
-```
-
-### USB Dongle Contents
+### Package Relationships
 
 ```
-USB (LABEL=EFUSE_SIM, FAT32)
-└── efuse_sim/
-    ├── srk_fuse.bin          # SRK hash (32 bytes)
-    ├── sec_config.bin        # Security mode (0x02 = Closed)
-    ├── efuse_config.json     # Complete eFuse configuration
-    └── srk_pub.pem           # SRK public key (optional)
+shim-signed-mok:
+  Provides: shim-signed
+  Conflicts: shim-signed
+  Contains: bootx64.efi (SUSE), mmx64.efi (MokManager)
+
+grub2-efi-image-mok:
+  Provides: grub2-efi-image
+  Conflicts: grub2-efi-image
+  Contains: grubx64.efi (Custom GRUB stub, MOK-signed)
+
+linux-mok:
+  Provides: linux
+  Conflicts: linux, linux-esx
+  Contains: vmlinuz-* (MOK-signed), config-*, System.map-*
 ```
 
-### Comparison to Real Hardware
+### Kickstart Package Selection
 
-| Aspect | Real NXP eFuses | USB Dongle Simulation |
-|--------|-----------------|----------------------|
-| Storage | OTP silicon fuses | FAT32 USB drive |
-| Permanence | Burned forever | Can be copied/modified |
-| Verification | Hardware Boot ROM | GRUB stub config |
-| Cloning | Impossible | Trivially copied |
-| Use Case | Production security | Development/demo |
+**MOK Installation (`mok_ks.cfg`):**
+```json
+{
+    "linux_flavor": "linux-mok",
+    "packages": ["minimal", "initramfs", "linux-mok", 
+                 "grub2-efi-image-mok", "shim-signed-mok"],
+    "bootmode": "efi",
+    "ui": true
+}
+```
+
+**Standard Installation (`standard_ks.cfg`):**
+```json
+{
+    "linux_flavor": "linux",
+    "packages": ["minimal", "initramfs", "linux", 
+                 "grub2-efi-image", "shim-signed"],
+    "bootmode": "efi",
+    "ui": true
+}
+```
 
 ---
 
-## Modular Scripts
+## Directory Layout
+
+### Build Environment
 
 ```
 /root/
-├── HABv4-installer.sh      # Main installer
-└── hab_scripts/
-    ├── hab_lib.sh          # Common library
-    ├── hab_keys.sh         # Key management
-    └── hab_iso.sh          # ISO operations
+├── hab_keys/                    # Signing keys
+│   ├── MOK.key                  # MOK private key
+│   ├── MOK.crt                  # MOK certificate (PEM)
+│   ├── MOK.der                  # MOK certificate (DER)
+│   ├── kernel_module_signing.pem # Kernel module signing
+│   ├── shim-suse.efi            # Extracted SUSE shim
+│   ├── MokManager-suse.efi      # Extracted MokManager
+│   └── grub-photon-stub.efi     # Built GRUB stub (MOK-signed)
+│
+├── efuse_sim/                   # eFuse simulation (optional)
+│   ├── srk_fuse.bin             # SRK hash
+│   └── sec_config.bin           # Security mode
+│
+├── 5.0/                         # Photon OS build tree
+│   ├── stage/
+│   │   ├── RPMS/x86_64/         # Built RPMs
+│   │   └── SOURCES/             # Kernel source tarballs
+│   └── SPECS/
+│       └── linux/               # Kernel config files
+│
+└── photon-5.0-xxx.iso           # Input ISO (downloaded)
 ```
 
-### Quick Usage
+### ISO Structure
 
-```bash
-# Generate all keys
-./hab_scripts/hab_keys.sh generate
+```
+photon-5.0-xxx-secureboot.iso
+├── ENROLL_THIS_KEY_IN_MOKMANAGER.cer  # MOK certificate for enrollment
+├── MokManager.efi                      # SUSE MokManager (root)
+├── mok_ks.cfg                         # MOK kickstart
+├── standard_ks.cfg                    # Standard kickstart
+│
+├── EFI/BOOT/
+│   ├── BOOTX64.EFI                    # SUSE shim
+│   ├── grub.efi                       # Custom GRUB stub
+│   ├── grubx64.efi                    # Same as grub.efi
+│   ├── grubx64_real.efi               # VMware GRUB (for standard path)
+│   └── MokManager.efi                 # Backup location
+│
+├── boot/grub2/
+│   ├── efiboot.img                    # EFI System Partition (16MB FAT)
+│   ├── grub.cfg                       # Boot menu configuration
+│   └── themes/                        # Photon OS theme
+│
+├── RPMS/x86_64/                       # All RPMs (original + MOK)
+│   ├── shim-signed-mok-*.rpm
+│   ├── grub2-efi-image-mok-*.rpm
+│   ├── linux-mok-*.rpm
+│   └── ... (original packages)
+│
+└── isolinux/                          # BIOS/Legacy boot
+    ├── isolinux.bin
+    ├── vmlinuz                        # MOK-signed kernel
+    └── initrd.img                     # Patched initrd
+```
 
-# Fix existing ISO for Secure Boot
-./hab_scripts/hab_iso.sh fix /path/to/photon.iso
+### efiboot.img Contents
 
-# Verify ISO structure
-./hab_scripts/hab_iso.sh verify /path/to/photon-secureboot.iso
-
-# Write to USB
-./hab_scripts/hab_iso.sh write /path/to/photon-secureboot.iso /dev/sdX
+```
+efiboot.img (FAT12, 16MB)
+├── MokManager.efi                     # SUSE MokManager (root)
+├── ENROLL_THIS_KEY_IN_MOKMANAGER.cer  # MOK certificate
+│
+└── EFI/BOOT/
+    ├── BOOTX64.EFI                    # SUSE shim
+    ├── grub.efi                       # Custom GRUB stub
+    ├── grubx64.efi                    # Same as grub.efi
+    ├── grubx64_real.efi               # VMware GRUB
+    ├── MokManager.efi                 # Backup
+    └── grub.cfg                       # Bootstrap config
 ```
 
 ---
 
-## Common Issues Quick Reference
+## Related Documentation
 
-| Error | Cause | Fix |
-|-------|-------|-----|
-| SBAT self-check failed | Shim SBAT version revoked | Use SUSE shim from Ventoy 1.1.10 (SBAT=shim,4) |
-| Security Violation (first boot) | MOK not enrolled | Enroll `ENROLL_THIS_KEY_IN_MOKMANAGER.cer` from root `/` |
-| Enrollment doesn't persist | Firmware issue | Try "Enroll hash from disk" for `grub.efi` |
-| Certificate mismatch | Wrong cert enrolled | Verify cert shows `CN=Photon OS Secure Boot MOK` |
-| MokManager.efi Not Found | Missing from efiboot.img | Rebuild with latest script |
-| Certificate not visible | File missing | Navigate to root `/` in MokManager |
-| EFI USB boot failed | ISO not hybrid | Use xorriso with isohybrid options |
-| bad shim signature | Shim/MokManager mismatch | Use matching pair (SUSE shim + SUSE MokManager from Ventoy) |
-| can't find command 'reboot' | VMware GRUB missing module | Use "UEFI Firmware Settings" or Ctrl+Alt+Del |
-| grubx64_real.efi not found | GRUB stub search failed | Rebuild with latest script (includes search module) |
-
-**Two-Stage Boot Menu**:
-- Stage 1 (Stub, 5 sec): Continue / MokManager / Reboot / Shutdown
-- Stage 2 (Main): Install Photon OS (Custom/VMware original) / UEFI Firmware Settings
-
-Note: MokManager only works from Stage 1 (shim_lock protocol available). VMware's GRUB doesn't have reboot/halt commands built-in.
-
-**MokManager Menu Options** (built-in):
-- Enroll key from disk / Enroll hash from disk
-- Delete key / Delete hash  
-- Reboot / Power off
-
-**From Installed System** (mokutil):
-```bash
-mokutil --list-enrolled    # List enrolled keys
-mokutil --delete key.der   # Schedule deletion (reboot required)
-```
-
-See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for complete guide.
+| Document | Description |
+|----------|-------------|
+| [BOOT_PROCESS.md](BOOT_PROCESS.md) | Detailed boot sequence |
+| [KEY_MANAGEMENT.md](KEY_MANAGEMENT.md) | Key generation and MOK enrollment |
+| [ISO_CREATION.md](ISO_CREATION.md) | ISO creation process |
+| [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Common issues and solutions |
+| [SIGNING_OVERVIEW.md](SIGNING_OVERVIEW.md) | Secure Boot vs RPM signing |
+| [DROID_SKILL_GUIDE.md](DROID_SKILL_GUIDE.md) | Using the Droid AI skill |
 
 ---
 
-## Creating Secure Boot ISO
+## Security Considerations
 
-### One Command
+### What's Verified
 
-```bash
-./HABv4-installer.sh --release=5.0 --build-iso
-```
+| Stage | Verifier | Key Source |
+|-------|----------|------------|
+| Shim | UEFI Firmware | Microsoft CA (in db) |
+| GRUB | Shim | MokList (user-enrolled) |
+| Kernel | None (shim_lock disabled) | N/A |
 
-### Manual Steps
+### Trade-offs
 
-1. Generate keys: `./hab_scripts/hab_keys.sh generate`
-2. Fix ISO: `./hab_scripts/hab_iso.sh fix original.iso`
-3. Write USB: `dd if=photon-secureboot.iso of=/dev/sdX bs=4M status=progress`
+**Security**: The kernel is NOT verified by shim after our modification. However:
+- The kernel IS signed with MOK (can be verified manually)
+- The kernel came from our ISO (chain of custody)
+- This is the same trust model as most Linux distributions
 
----
+**Compatibility**: Works on any UEFI system with:
+- Microsoft UEFI CA 2011 in db (nearly universal)
+- MokList support (requires shim)
+- No additional firmware configuration required
 
-## External References
+### Recommendations
 
-- [UEFI Secure Boot Specification](https://uefi.org/specs/UEFI/2.10/32_Secure_Boot_and_Driver_Signing.html)
-- [Shim Bootloader](https://github.com/rhboot/shim)
-- [Ventoy Secure Boot](https://www.ventoy.net/en/doc_secure.html)
-- [NXP HABv4 Documentation](https://www.nxp.com/docs/en/application-note/AN4581.pdf)
+1. **Keep MOK keys secure**: Private key should not be distributed
+2. **Short validity period**: Default 180 days reduces exposure window
+3. **Use RPM signing**: Enable `--rpm-signing` for package integrity
+4. **Physical security**: First boot requires physical presence for MOK enrollment

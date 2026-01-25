@@ -1,0 +1,270 @@
+# Using the Droid Skill for HABv4 Development
+
+This project includes a **Factory Droid skill** that enables AI-assisted development, troubleshooting, and ISO creation. This guide explains how developers can leverage the skill to accelerate their work.
+
+## What is a Droid Skill?
+
+A Droid skill is a specialized knowledge module that helps Factory's AI assistant (Droid) understand domain-specific concepts, code patterns, and workflows. When you work with Droid in this repository, it automatically loads the skill and gains expert knowledge about:
+
+- UEFI Secure Boot architecture
+- Photon OS boot process
+- MOK (Machine Owner Key) management
+- ISO creation and modification
+- RPM package building and signing
+- Troubleshooting boot issues
+
+## Getting Started
+
+### Prerequisites
+
+1. Install Factory CLI or use Factory in your IDE
+2. Clone this repository
+3. Navigate to the `HABv4SimulationEnvironment` directory
+
+### Activating the Skill
+
+The skill is automatically loaded when you work in this repository. Simply start a conversation with Droid:
+
+```bash
+# Start Droid in the project directory
+cd photonos-scripts/HABv4SimulationEnvironment
+droid
+```
+
+Or use Factory in your IDE (VS Code, JetBrains, etc.).
+
+## Common Developer Tasks
+
+### 1. Building the Tool
+
+Ask Droid to help you build the ISO creator:
+
+```
+User: Build the PhotonOS-HABv4Emulation-ISOCreator tool
+
+Droid: I'll compile the tool for you...
+[Droid runs: cd src && make]
+```
+
+### 2. Creating a Secure Boot ISO
+
+```
+User: Create a Secure Boot ISO for Photon OS 5.0
+
+Droid: I'll build the ISO. This will:
+1. Download Photon OS 5.0 ISO if not present
+2. Generate MOK signing keys
+3. Build MOK-signed RPM packages
+4. Create the Secure Boot ISO
+[Droid runs: ./PhotonOS-HABv4Emulation-ISOCreator -b]
+```
+
+### 3. Diagnosing Boot Issues
+
+```
+User: My ISO won't boot with Secure Boot enabled. Can you diagnose it?
+
+Droid: I'll analyze the ISO structure and signatures...
+[Droid runs: ./PhotonOS-HABv4Emulation-ISOCreator -D /path/to/iso]
+[Provides detailed analysis of what's wrong and how to fix it]
+```
+
+### 4. Understanding the Code
+
+```
+User: How does the RPM Secure Boot Patcher work?
+
+Droid: The RPM Secure Boot Patcher (in rpm_secureboot_patcher.c) works by:
+1. Discovering boot packages by file paths (version-agnostic)
+2. Generating MOK-signed variant SPEC files
+3. Building RPMs with proper Provides/Conflicts
+...
+[Explains the architecture with code references]
+```
+
+### 5. Modifying the Boot Chain
+
+```
+User: I want to add a new menu option to the GRUB configuration
+
+Droid: I'll help you modify the grub.cfg generation. 
+The menu is created in build_grub_config() around line 2450...
+[Shows relevant code and suggests changes]
+```
+
+### 6. Adding New Features
+
+```
+User: Can you add support for signing with a hardware security module (HSM)?
+
+Droid: I'll analyze the current signing code and propose HSM integration:
+1. Current signing uses sbsign with file-based keys
+2. We could add PKCS#11 support for HSM signing
+3. Here's the implementation plan...
+[Creates detailed implementation plan]
+```
+
+## Skill Capabilities
+
+### What Droid Knows About This Project
+
+| Topic | Knowledge Level |
+|-------|-----------------|
+| UEFI Secure Boot chain | Expert |
+| Photon OS installer | Expert |
+| MOK enrollment process | Expert |
+| GRUB2 module system | Expert |
+| RPM spec file creation | Expert |
+| ISO creation (xorriso) | Expert |
+| EFI binary signing (sbsign) | Expert |
+| GPG/RPM signing | Expert |
+| Kernel module signing | Expert |
+| Troubleshooting boot issues | Expert |
+
+### Example Questions Droid Can Answer
+
+**Architecture:**
+- "How does shim verify the GRUB signature?"
+- "What's the difference between db and MokList?"
+- "Why do we need a custom GRUB stub without shim_lock?"
+
+**Implementation:**
+- "How do I add a new kernel parameter to the boot menu?"
+- "How does the kickstart-based installation work?"
+- "Where is the efiboot.img created?"
+
+**Troubleshooting:**
+- "Why am I getting 'Policy Violation' errors?"
+- "The installer doesn't detect my disk, what's wrong?"
+- "MOK enrollment doesn't persist after reboot"
+
+**Compliance:**
+- "What's the difference between Secure Boot signing and RPM signing?"
+- "How do I meet NIST 800-53 requirements?"
+- "What regulations require package signing?"
+
+## Advanced Usage
+
+### 1. Kernel Build Support
+
+The tool supports building kernels from Photon OS sources:
+
+```
+User: Build a custom kernel with Secure Boot support for release 5.0
+
+Droid: I'll use --full-kernel-build which will:
+1. Find kernel source in /root/5.0/stage/SOURCES/
+2. Apply Photon OS config (config-esx_x86_64)
+3. Enable CONFIG_MODULE_SIG, CONFIG_LOCK_DOWN
+4. Build and sign the kernel
+[Explains the build process and runs it]
+```
+
+### 2. eFuse USB Security
+
+For hardware security simulation:
+
+```
+User: Create an ISO that requires an eFuse USB dongle to boot
+
+Droid: I'll build with eFuse verification:
+1. Generate eFuse simulation data
+2. Build ISO with -E flag (requires eFuse USB)
+3. Create the USB dongle
+[Runs: ./PhotonOS-HABv4Emulation-ISOCreator -b -E -u /dev/sdX]
+```
+
+### 3. Compliance Builds
+
+For regulated environments:
+
+```
+User: Create a FedRAMP-compliant ISO with RPM signing
+
+Droid: For FedRAMP compliance, I'll enable:
+1. RPM signing (NIST 800-53 SI-7, CM-14)
+2. GPG key generation with 4096-bit RSA
+3. Package signature verification in kickstart
+[Runs: ./PhotonOS-HABv4Emulation-ISOCreator -b -R]
+```
+
+## Contributing with Droid
+
+### Adding New Features
+
+1. Describe what you want to implement
+2. Droid analyzes existing code and conventions
+3. Droid proposes an implementation plan
+4. Review and approve the plan
+5. Droid implements the feature
+6. Droid runs tests and verifies the build
+
+### Fixing Bugs
+
+1. Describe the bug or error message
+2. Droid analyzes the code path
+3. Droid identifies root cause
+4. Droid proposes and implements fix
+5. Droid verifies the fix works
+
+### Code Review
+
+```
+User: Review my changes to the RPM patcher
+
+Droid: I'll analyze your changes...
+[Reviews code for:
+- Coding style consistency
+- Security implications
+- Error handling
+- Edge cases
+- Documentation]
+```
+
+## Skill File Location
+
+The skill definition is at:
+```
+.factory/skills/photonos-secureboot-iso/SKILL.md
+```
+
+This file contains the complete knowledge base that Droid uses when working with this project.
+
+## Updating the Skill
+
+If you add new features or fix bugs, consider updating the skill documentation:
+
+```
+User: Update the skill documentation to include the new kernel build feature
+
+Droid: I'll update SKILL.md with:
+1. New command line options
+2. Directory structure for kernel sources
+3. Build process explanation
+4. Troubleshooting for kernel builds
+```
+
+## Troubleshooting Droid Issues
+
+### Skill Not Loading
+
+If Droid doesn't seem to know about Secure Boot:
+1. Verify you're in the `HABv4SimulationEnvironment` directory
+2. Check that `.factory/skills/photonos-secureboot-iso/SKILL.md` exists
+3. Restart your Droid session
+
+### Droid Gives Incorrect Information
+
+The skill may need updates if:
+- New Photon OS versions have different behavior
+- Upstream changes to photon-os-installer
+- New UEFI/shim requirements
+
+Update the skill file with correct information and submit a PR.
+
+## Best Practices
+
+1. **Be specific**: "Build ISO for 5.0 with RPM signing" is better than "build it"
+2. **Provide context**: If you have an error, share the full error message
+3. **Verify results**: Always test the generated ISOs on actual hardware
+4. **Update documentation**: If you discover something new, ask Droid to update the docs

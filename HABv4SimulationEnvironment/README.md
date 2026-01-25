@@ -1,182 +1,197 @@
 # HABv4 Secure Boot Simulation Environment
 
-UEFI Secure Boot implementation for Photon OS with SBAT enforcement support.
+**Create bootable Photon OS ISOs that work on real hardware with UEFI Secure Boot enabled.**
 
-## Overview
+## What is This?
 
-This environment provides tools to create Secure Boot enabled ISOs that work on modern UEFI systems with SBAT (Secure Boot Advanced Targeting) enforcement. The solution uses:
+This tool solves a common problem: **Photon OS ISOs don't boot on consumer laptops with Secure Boot enabled** because VMware's bootloaders require their shim's `shim_lock` verification, which rejects custom or unsigned kernels.
 
-- **SUSE shim** (Microsoft-signed, SBAT compliant)
-- **Custom GRUB Stub** (MOK-signed, SBAT compliant, with fallback menu)
-- **MOK-signed Kernel** (bypasses shim_lock verification)
-- **MOK (Machine Owner Key)** for custom signing
+The HABv4 Simulation Environment creates modified ISOs that:
+- **Boot on physical hardware** with UEFI Secure Boot enabled
+- **Use a Microsoft-signed SUSE shim** (SBAT compliant, passes firmware verification)
+- **Include a custom GRUB stub** (MOK-signed, without `shim_lock` restrictions)
+- **Install MOK-signed packages** to the target system for continued Secure Boot support
+
+### Before vs After
+
+| Scenario | Original Photon OS ISO | HABv4 Modified ISO |
+|----------|----------------------|-------------------|
+| VMware VMs | Works | Works |
+| Physical hardware (Secure Boot OFF) | Works | Works |
+| Physical hardware (Secure Boot ON) | **Fails** ("bad shim signature") | **Works** |
+| Consumer laptops | **Fails** | **Works** |
 
 ## Quick Start
 
-### Build Environment
+### 1. Build the Tool
 
 ```bash
 cd photonos-scripts/HABv4SimulationEnvironment/src
 make
 ```
 
-### Create Secure Boot ISO
+### 2. Create a Secure Boot ISO
 
 ```bash
-# Simplest usage: Generate keys, setup eFuse, build ISO
+# Simplest usage - does everything automatically:
 ./PhotonOS-HABv4Emulation-ISOCreator -b
-
-# Build ISO and create eFuse USB dongle (with auto-confirm)
-./PhotonOS-HABv4Emulation-ISOCreator --release 5.0 --build-iso --setup-efuse --create-efuse-usb=/dev/sdd -y
-
-# Diagnose existing ISO
-./PhotonOS-HABv4Emulation-ISOCreator -D /path/to/iso
 ```
 
-## Architecture
+This will:
+1. Download the Photon OS 5.0 ISO (if not present)
+2. Generate MOK signing keys
+3. Build MOK-signed RPM packages
+4. Create a Secure Boot compatible ISO
 
-### Boot Chain (ISO Boot)
+### 3. Write to USB and Boot
 
-```
-UEFI Firmware
-    ↓ (verifies against Microsoft CA in db)
-BOOTX64.EFI (SUSE shim, SBAT=shim,4)
-    ↓ (verifies against MokList)
-grub.efi (Custom GRUB stub, MOK-signed, SBAT=grub,3)
-    ↓ (Loads modified grub.cfg with theme)
-    ↓ (Presents themed menu, 5 sec timeout)
-    ├── 1. Install (Custom MOK) - For Physical Hardware → ks=cdrom:/mok_ks.cfg
-    ├── 2. Install (VMware Original) - For VMware VMs  → ks=cdrom:/standard_ks.cfg
-    ├── 3. MokManager                                  → Enroll/Delete MOK keys
-    ├── 4. Reboot
-    └── 5. Shutdown
-```
+```bash
+# Write to USB drive
+sudo dd if=photon-5.0-*-secureboot.iso of=/dev/sdX bs=4M status=progress
+sync
 
-### Boot Chain (Installed System with MOK)
-
-```
-UEFI Firmware
-    ↓ (verifies against Microsoft CA in db)
-shim-signed-mok (SUSE shim bootx64.efi, Microsoft-signed)
-    ↓ (verifies against MokList)
-grub2-efi-image-mok (Custom GRUB stub grubx64.efi, MOK-signed, NO shim_lock)
-    ↓
-linux-mok (vmlinuz, MOK-signed)
+# Boot from USB with Secure Boot enabled
+# First boot: Enroll MOK certificate when prompted
+# Second boot: Install Photon OS normally
 ```
 
-**Important**: The MOK packages install the same SUSE shim and custom GRUB stub used on the ISO, ensuring the installed system boots without policy violations.
+## How It Works
 
-### GRUB Modules
+### Boot Chain Comparison
 
-The custom GRUB stub includes these modules for proper theming and UUID detection:
-- `probe` - Required for UUID detection (`photon.media=UUID=$photondisk`)
-- `gfxmenu` - Required for themed menus
-- `png`, `jpeg`, `tga` - Required for background images
-- `gfxterm_background` - Graphics terminal background support
-
-### Why Custom GRUB Stub?
-VMware's original GRUB includes the `shim_lock` verifier module, which enforces strict kernel signature verification via shim. To support custom kernels or installers without replacing the Microsoft-signed shim, we build a custom GRUB stub that:
-1. Is signed with our MOK.
-2. Contains proper SBAT metadata to satisfy shim policy.
-3. Excludes `shim_lock` (or relies on MOK signature).
-4. Provides a menu to choose between the custom path and the original VMware path.
-
-### RPM Secure Boot Patcher
-
-The tool includes an integrated RPM patcher that automatically creates MOK-signed variants of boot packages:
-
-| Original Package | MOK Package | Contents |
-|-----------------|-------------|----------|
-| `shim-signed` | `shim-signed-mok` | SUSE shim (Microsoft-signed) + MokManager |
-| `grub2-efi-image` | `grub2-efi-image-mok` | Custom GRUB stub (MOK-signed, no shim_lock) |
-| `linux` / `linux-esx` | `linux-mok` | MOK-signed vmlinuz + boot files |
-
-The patcher:
-- Discovers packages by file paths (version-agnostic)
-- Generates SPEC files with proper Provides/Conflicts
-- Handles both `linux` and `linux-esx` kernel flavors
-- Integrates built RPMs into the ISO repository
-
-### Kickstart-Based Installation
-
-The ISO uses **kickstart configuration files** instead of initrd patching for robustness:
-
-**`/mok_ks.cfg`** - MOK installation (interactive with enforced packages):
-```json
-{
-    "linux_flavor": "linux-mok",
-    "packages": ["minimal", "initramfs", "linux-mok", "grub2-efi-image-mok", "shim-signed-mok"],
-    "bootmode": "efi",
-    "ui": true
-}
+**Original Photon OS (fails on Secure Boot):**
+```
+UEFI Firmware → VMware shim → VMware GRUB (shim_lock) → Kernel
+                                    ↓
+                         "bad shim signature" ✗
 ```
 
-**`/standard_ks.cfg`** - VMware installation (for VMware VMs):
-```json
-{
-    "linux_flavor": "linux",
-    "packages": ["minimal", "initramfs", "linux", "grub2-efi-image", "shim-signed"],
-    "bootmode": "efi",
-    "ui": true
-}
+**HABv4 Modified ISO (works on Secure Boot):**
+```
+UEFI Firmware → SUSE shim (Microsoft-signed) → Custom GRUB (MOK-signed) → Kernel
+       ↓                    ↓                            ↓
+   Passes ✓           Passes (MokList) ✓         Boots successfully ✓
 ```
 
-Both kickstarts have `"ui": true` which makes the installer **interactive** while still **enforcing the package selection**. This approach is:
-- **Version-independent** - Works with any photon-os-installer version
-- **More robust** - No fragile sed-based patching
-- **VMware-supported** - Uses official kickstart mechanism
+### What Gets Modified
+
+| Component | Original | Modified |
+|-----------|----------|----------|
+| `BOOTX64.EFI` | VMware shim | SUSE shim (Microsoft-signed, SBAT=shim,4) |
+| `grubx64.efi` | VMware GRUB (has `shim_lock`) | Custom GRUB stub (no `shim_lock`, MOK-signed) |
+| `vmlinuz` | Unsigned | MOK-signed |
+| RPM packages | `shim-signed`, `grub2-efi-image`, `linux` | `shim-signed-mok`, `grub2-efi-image-mok`, `linux-mok` |
+
+### Installation Menu
+
+The modified ISO presents a menu with two installation options:
+
+```
+1. Install (Custom MOK) - For Physical Hardware    [Recommended for laptops]
+2. Install (VMware Original) - For VMware VMs      [Use in VMs without Secure Boot]
+3. MokManager - Enroll/Delete MOK Keys
+4. Reboot into UEFI Firmware Settings
+5. Reboot
+6. Shutdown
+```
+
+Both options use **interactive installation** - you choose disk, hostname, and password as usual. The difference is which RPM packages get installed.
+
+## First Boot Guide
+
+### Step 1: Prepare
+
+1. Write ISO to USB drive
+2. Enable Secure Boot in BIOS/UEFI settings
+3. Disable CSM/Legacy Boot (important!)
+4. Boot from USB in UEFI mode
+
+### Step 2: Enroll MOK Certificate
+
+On first boot, you'll see the **blue MokManager screen** (not your laptop's security dialog):
+
+1. Select **"Enroll key from disk"**
+2. Navigate to the root `/` folder
+3. Select **`ENROLL_THIS_KEY_IN_MOKMANAGER.cer`**
+4. Confirm and select **"Reboot"**
+
+> **Note**: If you see your laptop manufacturer's security dialog (gray/red), not the blue MokManager, you need to disable CSM/Legacy boot in BIOS.
+
+### Step 3: Install Photon OS
+
+After reboot:
+1. The themed Photon OS menu appears
+2. Select **"Install (Custom MOK) - For Physical Hardware"**
+3. Complete the interactive installation (disk, hostname, password)
+4. Reboot into your installed system
 
 ## Command Line Options
 
-### All Parameters
+| Option | Description |
+|--------|-------------|
+| `-b`, `--build-iso` | Build Secure Boot ISO |
+| `-r VERSION`, `--release=VERSION` | Photon OS version: 4.0, 5.0, 6.0 (default: 5.0) |
+| `-D ISO`, `--diagnose=ISO` | Diagnose an existing ISO for Secure Boot issues |
+| `-E`, `--efuse-usb` | Enable eFuse USB verification (optional hardware security) |
+| `-u DEV`, `--create-efuse-usb=DEV` | Create eFuse USB dongle on device |
+| `-R`, `--rpm-signing` | Enable GPG signing of RPM packages (for compliance) |
+| `-F`, `--full-kernel-build` | Build kernel from source with Secure Boot options |
+| `-c`, `--clean` | Clean up all generated artifacts |
+| `-v`, `--verbose` | Verbose output |
+| `-y`, `--yes` | Auto-confirm destructive operations |
+| `-h`, `--help` | Show help |
 
-| Option | Long Form | Default | Description |
-|--------|-----------|---------|-------------|
-| `-r` | `--release=VERSION` | `5.0` | Photon OS version: 4.0, 5.0, 6.0 |
-| `-b` | `--build-iso` | Off | Build Secure Boot ISO |
-| `-g` | `--generate-keys` | Auto | Generate cryptographic keys |
-| `-s` | `--setup-efuse` | Auto | Setup eFuse simulation |
-| `-u` | `--create-efuse-usb=DEV` | — | Create eFuse USB dongle on device |
-| `-E` | `--efuse-usb` | Off | Enable eFuse USB verification in GRUB |
-| `-D` | `--diagnose=ISO` | — | Diagnose an existing ISO |
-| `-c` | `--clean` | Off | Clean up all artifacts |
-| `-v` | `--verbose` | Off | Verbose output |
-| `-y` | `--yes` | Off | Auto-confirm destructive operations (e.g., erase USB) |
-| `-h` | `--help` | — | Show help |
+### Examples
 
-**Note:** The tool embeds required SUSE shim components (`shim-suse.efi`, `MokManager.efi`) and extracts them automatically. No internet connection is required.
+```bash
+# Build ISO for Photon OS 6.0
+./PhotonOS-HABv4Emulation-ISOCreator --release 6.0 --build-iso
 
-## First Boot Procedure
+# Build with RPM signing (for NIST 800-53, FedRAMP, EU CRA compliance)
+./PhotonOS-HABv4Emulation-ISOCreator --build-iso --rpm-signing
 
-1.  **Boot from ISO** with Secure Boot enabled.
-2.  **Blue Screen**: You will see a blue "Shim UEFI key management" screen (MokManager).
-3.  **Enroll Key**: Select "Enroll key from disk" -> Select `ENROLL_THIS_KEY_IN_MOKMANAGER.cer`.
-4.  **Reboot**: Confirm enrollment and reboot.
-5.  **Themed Menu**: After reboot, the Photon OS installer menu appears with background picture.
-6.  **Install**: Select "Install (Custom MOK)" to begin installation with MOK-signed kernel.
+# Build with eFuse USB hardware verification
+./PhotonOS-HABv4Emulation-ISOCreator --build-iso --efuse-usb --create-efuse-usb=/dev/sdd -y
+
+# Diagnose why an existing ISO won't boot
+./PhotonOS-HABv4Emulation-ISOCreator -D /path/to/photon.iso
+```
 
 ## Troubleshooting
 
--   **"Policy Violation"**: Means the GRUB stub lacks valid SBAT data. This version fixes this by embedding `sbat.csv`.
--   **"bad shim signature"**: Occurs if you select "VMware Original" with an unsigned kernel. Use "Custom MOK" option.
--   **Laptop Security Dialog**: If your laptop shows a security warning instead of the blue MokManager, disable CSM/Legacy Boot in BIOS.
+| Problem | Cause | Solution |
+|---------|-------|----------|
+| "bad shim signature" | Selected VMware Original on hardware | Select "Install (Custom MOK)" instead |
+| Laptop security dialog instead of blue MokManager | CSM/Legacy enabled | Disable CSM in BIOS, enable pure UEFI |
+| Enrollment doesn't persist | Wrong MokManager used | Rebuild ISO with latest version |
+| "Policy Violation" | GRUB SBAT issue | Use latest version (fixed) |
+| Installed system won't boot | Installed standard packages | Reinstall using "Install (Custom MOK)" |
+
+See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for complete guide.
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Boot chain and component overview |
+| [docs/BOOT_PROCESS.md](docs/BOOT_PROCESS.md) | Detailed boot sequence explanation |
+| [docs/KEY_MANAGEMENT.md](docs/KEY_MANAGEMENT.md) | Key generation and MOK enrollment |
+| [docs/ISO_CREATION.md](docs/ISO_CREATION.md) | ISO creation process |
+| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Common issues and solutions |
+| [docs/SIGNING_OVERVIEW.md](docs/SIGNING_OVERVIEW.md) | Secure Boot vs RPM signing comparison |
+
+## Using the Droid Skill
+
+This project includes a Factory Droid skill for AI-assisted development. See [docs/DROID_SKILL_GUIDE.md](docs/DROID_SKILL_GUIDE.md) for how to use it.
 
 ## Version History
 
--   **v1.5.0** - RPM signing, SUSE shim in installed system, interactive kickstart:
-    - Added `--rpm-signing` option for GPG signing of MOK RPM packages (compliance: NIST 800-53, FedRAMP, EU CRA)
-    - Fixed installed system boot: MOK packages now use SUSE shim and custom GRUB stub (no shim_lock)
-    - Both install options now use kickstart with `ui:true` for interactive installation with enforced packages
-    - Menu renamed: "Install (Custom MOK) - For Physical Hardware" and "Install (VMware Original) - For VMware VMs"
-    - Fixed gpg2 symlink creation for rpmsign compatibility on Photon OS
--   **v1.4.0** - Kickstart-based installation, RPM patcher fixes:
-    - Replaced initrd patching with kickstart configuration files
-    - Fixed RPM SPEC file generation (date format, dist tag, kernel flavor)
-    - Added support for linux-esx kernel flavor
--   **v1.3.0** - Added initrd patching for MOK package substitution (deprecated).
--   **v1.2.0** - Integrated RPM Secure Boot Patcher for installed system support.
--   **v1.1.0** - Custom GRUB stub with MOK-signed kernel, SBAT support.
--   **v1.0.0** - Initial C implementation.
+- **v1.5.0** - Kickstart-based installation, RPM signing, kernel build support
+- **v1.4.0** - Kickstart configuration files, RPM patcher fixes
+- **v1.3.0** - Initrd patching for MOK packages (deprecated)
+- **v1.2.0** - Integrated RPM Secure Boot Patcher
+- **v1.1.0** - Custom GRUB stub with SBAT support
+- **v1.0.0** - Initial C implementation
 
 ## License
 

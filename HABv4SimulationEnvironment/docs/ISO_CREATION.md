@@ -1,183 +1,288 @@
-# HABv4 ISO Creation Guide
-
-## Overview
+# ISO Creation Guide
 
 This guide explains how to create Secure Boot enabled ISOs using the PhotonOS-HABv4Emulation-ISOCreator tool.
+
+## Table of Contents
+
+1. [Prerequisites](#prerequisites)
+2. [Quick Start](#quick-start)
+3. [Build Process Overview](#build-process-overview)
+4. [Detailed Steps](#detailed-steps)
+5. [Customization Options](#customization-options)
+6. [Verification](#verification)
+7. [Writing to USB](#writing-to-usb)
+8. [Troubleshooting](#troubleshooting)
+
+---
 
 ## Prerequisites
 
 ### Required Packages
+
+Install on Photon OS:
 ```bash
-tdnf install -y gcc make gnu-efi-devel sbsigntools xorriso syslinux dosfstools wget
+tdnf install -y gcc make sbsigntools xorriso dosfstools grub2-efi
 ```
 
 ### Build the Tool
+
 ```bash
-cd src
+cd photonos-scripts/HABv4SimulationEnvironment/src
 make
 ```
+
+### Directory Structure
+
+Ensure you have the Photon OS build environment:
+```
+/root/
+├── 5.0/                    # Or 4.0, 6.0
+│   └── stage/
+│       └── RPMS/x86_64/    # RPM packages
+└── photon-5.0-*.iso        # Source ISO (downloaded automatically)
+```
+
+---
 
 ## Quick Start
 
-### Full Setup + ISO Creation
+### One Command Build
+
 ```bash
-# Setup environment and build ISO in one command
-./PhotonOS-HABv4Emulation-ISOCreator -g -s -d -b
-
-# Or step by step:
-./PhotonOS-HABv4Emulation-ISOCreator -g    # Generate keys
-./PhotonOS-HABv4Emulation-ISOCreator -s    # Setup eFuse simulation
-./PhotonOS-HABv4Emulation-ISOCreator -d    # Download Ventoy components
-./PhotonOS-HABv4Emulation-ISOCreator -b    # Build ISO
+# Build everything automatically
+./PhotonOS-HABv4Emulation-ISOCreator -b
 ```
 
-### Specify Input/Output ISO
+This will:
+1. Download Photon OS ISO (if not present)
+2. Generate MOK signing keys
+3. Extract SUSE shim components
+4. Build custom GRUB stub
+5. Create MOK-signed RPM packages
+6. Assemble Secure Boot ISO
+
+### Common Build Variations
+
 ```bash
-./PhotonOS-HABv4Emulation-ISOCreator -i /path/to/photon.iso -o /path/to/output.iso -b
+# Build for Photon OS 6.0
+./PhotonOS-HABv4Emulation-ISOCreator --release 6.0 --build-iso
+
+# Build with RPM signing (for compliance)
+./PhotonOS-HABv4Emulation-ISOCreator --build-iso --rpm-signing
+
+# Build with eFuse USB requirement
+./PhotonOS-HABv4Emulation-ISOCreator --build-iso --efuse-usb
+
+# Build kernel from source (takes hours)
+./PhotonOS-HABv4Emulation-ISOCreator --build-iso --full-kernel-build
 ```
 
-### Build for Different Photon OS Versions
-```bash
-./PhotonOS-HABv4Emulation-ISOCreator -r 4.0 -b    # Photon OS 4.0
-./PhotonOS-HABv4Emulation-ISOCreator -r 5.0 -b    # Photon OS 5.0
-./PhotonOS-HABv4Emulation-ISOCreator -r 6.0 -b    # Photon OS 6.0
-```
+---
 
-## ISO Structure
-
-### Required Components
+## Build Process Overview
 
 ```
-ISO Root/
-├── mmx64.efi                              # SUSE MokManager (ROOT - required!)
-├── ENROLL_THIS_KEY_IN_MOKMANAGER.cer      # MOK certificate for enrollment
-├── EFI/
-│   └── BOOT/
-│       ├── BOOTX64.EFI                    # SUSE shim (Microsoft-signed)
-│       ├── grub.efi                       # HAB PreLoader (MOK-signed)
-│       ├── grubx64_real.efi               # VMware GRUB
-│       └── MokManager.efi                 # SUSE MokManager (backup)
-│
-├── boot/
-│   └── grub2/
-│       ├── efiboot.img                    # EFI boot image (16MB FAT)
-│       └── grub.cfg                       # Boot menu configuration
-│
-└── isolinux/
-    ├── isolinux.bin                       # BIOS boot loader
-    ├── isolinux.cfg                       # BIOS boot config
-    ├── vmlinuz                            # Linux kernel
-    └── initrd.img                         # Initial ramdisk
-```
-
-### efiboot.img Contents
-
-```
-efiboot.img (FAT12, 16MB)/
-├── mmx64.efi                              # MokManager at ROOT
-├── ENROLL_THIS_KEY_IN_MOKMANAGER.cer      # MOK certificate
-└── EFI/
-    └── BOOT/
-        ├── BOOTX64.EFI                    # SUSE shim
-        ├── grub.efi                       # HAB PreLoader
-        ├── grubx64_real.efi               # VMware GRUB
-        ├── MokManager.efi                 # MokManager backup
-        └── grub.cfg                       # Bootstrap config
-```
-
-**CRITICAL**: SUSE shim looks for MokManager at `\mmx64.efi` (root level), not in EFI/BOOT/.
-
-## Boot Chain
-
-```
-UEFI Firmware
-    ↓ verifies against Microsoft CA (db)
-BOOTX64.EFI (SUSE shim 15.8)
-    ↓ verifies against MokList
-grub.efi (HAB PreLoader)
-    ↓ installs permissive security policy
-grubx64_real.efi (VMware GRUB)
+Input ISO
     ↓
-Linux Kernel
+Extract ISO contents
+    ↓
+Generate MOK keys (if needed)
+    ↓
+Extract SUSE shim from embedded data
+    ↓
+Build custom GRUB stub (grub2-mkimage)
+    ↓
+Sign GRUB stub with MOK key
+    ↓
+Discover original RPM packages
+    ↓
+Generate MOK variant SPEC files
+    ↓
+Build MOK RPM packages
+    ↓
+Sign kernel with MOK key
+    ↓
+Create kickstart configuration files
+    ↓
+Patch installer in initrd (progress_bar fix)
+    ↓
+Update grub.cfg with boot menu
+    ↓
+Rebuild efiboot.img
+    ↓
+Assemble final ISO (xorriso)
+    ↓
+Output: photon-X.X-secureboot.iso
 ```
 
-## Using hab_iso Tool (Alternative)
+---
 
-The `hab_iso` tool in `src/hab/iso/` can also create ISOs:
+## Detailed Steps
+
+### Step 1: Key Generation
+
+If keys don't exist, the tool generates them:
 
 ```bash
-cd src/hab/iso
-make
-./hab_iso /path/to/input.iso /path/to/output.iso
+# MOK key pair (RSA 2048, 180 days validity)
+openssl req -new -x509 -newkey rsa:2048 \
+    -keyout MOK.key -out MOK.crt \
+    -nodes -days 180 \
+    -subj "/CN=Photon OS Secure Boot MOK"
+
+# Convert to DER for enrollment
+openssl x509 -in MOK.crt -outform DER -out MOK.der
 ```
 
-## Manual ISO Creation
+### Step 2: SUSE Shim Extraction
 
-### Step 1: Extract ISO
-```bash
-mkdir -p /tmp/iso_work
-xorriso -osirrox on -indev input.iso -extract / /tmp/iso_work
+Embedded components are extracted from `data/`:
+```
+data/shim-suse.efi.gz → /root/hab_keys/shim-suse.efi
+data/MokManager-suse.efi.gz → /root/hab_keys/MokManager-suse.efi
 ```
 
-### Step 2: Update EFI Components
+### Step 3: Custom GRUB Stub Build
+
 ```bash
-mkdir -p /tmp/iso_work/EFI/BOOT
-
-# Copy SUSE shim
-cp /root/hab_keys/shim-suse.efi /tmp/iso_work/EFI/BOOT/BOOTX64.EFI
-
-# Copy HAB PreLoader (or Ventoy PreLoader)
-cp /root/hab_keys/hab-preloader-signed.efi /tmp/iso_work/EFI/BOOT/grub.efi
-
-# Keep existing GRUB as grubx64_real.efi
-mv /tmp/iso_work/EFI/BOOT/grubx64.efi /tmp/iso_work/EFI/BOOT/grubx64_real.efi
-
-# Copy MokManager
-cp /root/hab_keys/MokManager-suse.efi /tmp/iso_work/EFI/BOOT/MokManager.efi
-cp /root/hab_keys/MokManager-suse.efi /tmp/iso_work/mmx64.efi
-
-# Copy MOK certificate
-cp /root/hab_keys/MOK.der /tmp/iso_work/ENROLL_THIS_KEY_IN_MOKMANAGER.cer
+grub2-mkimage \
+    --format=x86_64-efi \
+    --output=grub-photon-stub.efi \
+    --prefix=/boot/grub2 \
+    --sbat=sbat.csv \
+    --disable-shim-lock \
+    # Module list:
+    part_gpt part_msdos fat iso9660 ext2 \
+    search search_fs_uuid search_fs_file search_label \
+    configfile linux initrd chain \
+    echo reboot halt test true \
+    gfxterm gfxmenu png jpeg tga gfxterm_background \
+    probe efi_gop efi_uga
 ```
 
-### Step 3: Update efiboot.img
+### Step 4: Signing
+
 ```bash
-# Create new 16MB FAT image
-dd if=/dev/zero of=/tmp/efiboot.img bs=1M count=16
-mkfs.vfat -F 12 -n EFIBOOT /tmp/efiboot.img
+# Sign GRUB stub
+sbsign --key MOK.key --cert MOK.crt \
+    --output grub-photon-stub-signed.efi \
+    grub-photon-stub.efi
 
-# Mount and populate
-mkdir -p /tmp/efi_mount
-mount -o loop /tmp/efiboot.img /tmp/efi_mount
-mkdir -p /tmp/efi_mount/EFI/BOOT
-
-# Copy all components
-cp /root/hab_keys/shim-suse.efi /tmp/efi_mount/EFI/BOOT/BOOTX64.EFI
-cp /root/hab_keys/hab-preloader-signed.efi /tmp/efi_mount/EFI/BOOT/grub.efi
-cp /tmp/iso_work/EFI/BOOT/grubx64_real.efi /tmp/efi_mount/EFI/BOOT/
-cp /root/hab_keys/MokManager-suse.efi /tmp/efi_mount/EFI/BOOT/MokManager.efi
-cp /root/hab_keys/MokManager-suse.efi /tmp/efi_mount/mmx64.efi
-cp /root/hab_keys/MOK.der /tmp/efi_mount/ENROLL_THIS_KEY_IN_MOKMANAGER.cer
-
-# Create bootstrap grub.cfg
-cat > /tmp/efi_mount/EFI/BOOT/grub.cfg << 'EOF'
-search --no-floppy --file --set=root /isolinux/isolinux.cfg
-set prefix=($root)/boot/grub2
-configfile $prefix/grub.cfg
-EOF
-
-sync
-umount /tmp/efi_mount
-
-# Replace original
-cp /tmp/efiboot.img /tmp/iso_work/boot/grub2/efiboot.img
+# Sign kernel
+sbsign --key MOK.key --cert MOK.crt \
+    --output vmlinuz-signed \
+    vmlinuz
 ```
 
-### Step 4: Build ISO
+### Step 5: RPM Package Discovery
+
+The tool finds packages by file paths (version-agnostic):
+
+```
+/root/5.0/stage/RPMS/x86_64/
+├── grub2-efi-image-*.rpm  → provides /boot/efi/EFI/BOOT/grubx64.efi
+├── linux-*.rpm            → provides /boot/vmlinuz-*
+├── linux-esx-*.rpm        → provides /boot/vmlinuz-* (alternate)
+└── shim-signed-*.rpm      → provides /boot/efi/EFI/BOOT/bootx64.efi
+```
+
+### Step 6: MOK SPEC Generation
+
+For each package, a `-mok` variant SPEC is generated:
+
+```spec
+Name:           grub2-efi-image-mok
+Version:        %{original_version}
+Release:        1.mok%{?dist}
+Summary:        GRUB EFI image with MOK Secure Boot support
+License:        GPLv3+
+Provides:       grub2-efi-image = %{version}
+Conflicts:      grub2-efi-image
+
+%install
+install -D -m 0644 %{SOURCE0} %{buildroot}/boot/efi/EFI/BOOT/grubx64.efi
+```
+
+### Step 7: RPM Build
+
 ```bash
-cd /tmp/iso_work
+rpmbuild -bb \
+    --define "_topdir /root/5.0/stage" \
+    --define "dist .ph5" \
+    grub2-efi-image-mok.spec
+```
+
+### Step 8: Kickstart Creation
+
+Two kickstart files are placed at ISO root:
+
+**mok_ks.cfg:**
+```json
+{
+    "linux_flavor": "linux-mok",
+    "packages": ["minimal", "initramfs", "linux-mok", 
+                 "grub2-efi-image-mok", "shim-signed-mok"],
+    "bootmode": "efi",
+    "ui": true
+}
+```
+
+**standard_ks.cfg:**
+```json
+{
+    "linux_flavor": "linux",
+    "packages": ["minimal", "initramfs", "linux", 
+                 "grub2-efi-image", "shim-signed"],
+    "bootmode": "efi",
+    "ui": true
+}
+```
+
+### Step 9: Initrd Patching
+
+The installer in initrd has a bug with `progress_bar`. We apply a surgical fix:
+
+```python
+# In installer.py __init__():
+self.progress_bar = None
+self.window = None
+
+# In exit_gracefully():
+if self.progress_bar:
+    self.progress_bar.hide()
+```
+
+### Step 10: grub.cfg Update
+
+Boot menu with 6 options:
+```
+1. Install (Custom MOK) - For Physical Hardware
+2. Install (VMware Original) - For VMware VMs
+3. MokManager - Enroll/Delete MOK Keys
+4. Reboot into UEFI Firmware Settings
+5. Reboot
+6. Shutdown
+```
+
+### Step 11: efiboot.img Rebuild
+
+```bash
+# Create 16MB FAT image
+dd if=/dev/zero of=efiboot.img bs=1M count=16
+mkfs.vfat -F 12 -n EFIBOOT efiboot.img
+
+# Populate with boot files
+mount -o loop efiboot.img /mnt
+cp BOOTX64.EFI grub.efi MokManager.efi /mnt/EFI/BOOT/
+cp MokManager.efi MOK.der /mnt/
+umount /mnt
+```
+
+### Step 12: ISO Assembly
+
+```bash
 xorriso -as mkisofs \
-    -o /path/to/output.iso \
+    -o photon-5.0-secureboot.iso \
     -isohybrid-mbr /usr/share/syslinux/isohdpfx.bin \
     -c isolinux/boot.cat \
     -b isolinux/isolinux.bin \
@@ -185,59 +290,242 @@ xorriso -as mkisofs \
     -eltorito-alt-boot \
     -e boot/grub2/efiboot.img \
     -no-emul-boot -isohybrid-gpt-basdat \
-    -V "PHOTON_SB" \
-    .
+    -V "PHOTON_$(date +%Y%m%d)" \
+    /tmp/iso_work/
 ```
+
+---
+
+## Customization Options
+
+### Different Photon OS Versions
+
+```bash
+./PhotonOS-HABv4Emulation-ISOCreator --release 4.0 --build-iso
+./PhotonOS-HABv4Emulation-ISOCreator --release 5.0 --build-iso
+./PhotonOS-HABv4Emulation-ISOCreator --release 6.0 --build-iso
+```
+
+### Custom Keys Directory
+
+```bash
+./PhotonOS-HABv4Emulation-ISOCreator \
+    --keys-dir=/path/to/keys \
+    --build-iso
+```
+
+### Custom Input/Output ISO
+
+```bash
+./PhotonOS-HABv4Emulation-ISOCreator \
+    --input=/path/to/photon.iso \
+    --output=/path/to/output.iso \
+    --build-iso
+```
+
+### MOK Certificate Validity
+
+```bash
+# 365 days instead of default 180
+./PhotonOS-HABv4Emulation-ISOCreator \
+    --mok-days=365 \
+    --build-iso
+```
+
+### RPM Signing (Compliance)
+
+```bash
+./PhotonOS-HABv4Emulation-ISOCreator \
+    --build-iso \
+    --rpm-signing
+```
+
+This adds:
+- GPG key generation
+- Package signing with rpmsign
+- GPG key import in kickstart postinstall
+
+### eFuse USB Requirement
+
+```bash
+# Build ISO that requires eFuse USB dongle
+./PhotonOS-HABv4Emulation-ISOCreator \
+    --build-iso \
+    --efuse-usb
+
+# Create the eFuse USB dongle
+./PhotonOS-HABv4Emulation-ISOCreator \
+    --create-efuse-usb=/dev/sdX \
+    --yes
+```
+
+### Full Kernel Build
+
+Build kernel from source with Secure Boot options:
+
+```bash
+./PhotonOS-HABv4Emulation-ISOCreator \
+    --build-iso \
+    --full-kernel-build
+```
+
+Requires kernel source in:
+- `/root/{release}/stage/SOURCES/linux-*.tar.xz`
+- Config in `/root/{release}/SPECS/linux/` or `/root/common/SPECS/linux/`
+
+---
 
 ## Verification
 
 ### Check ISO Structure
+
 ```bash
-xorriso -indev output.iso -ls /EFI/BOOT/
-xorriso -indev output.iso -ls /
+# List EFI boot files
+xorriso -indev photon-secureboot.iso -ls /EFI/BOOT/
+
+# List root files
+xorriso -indev photon-secureboot.iso -ls /
+
+# Check kickstart files
+xorriso -osirrox on -indev photon-secureboot.iso \
+    -extract /mok_ks.cfg /tmp/mok_ks.cfg
+cat /tmp/mok_ks.cfg
 ```
 
 ### Verify Signatures
+
 ```bash
-# Extract and check
+# Extract and verify
 mkdir /tmp/verify
-xorriso -osirrox on -indev output.iso -extract /EFI/BOOT /tmp/verify
+xorriso -osirrox on -indev photon-secureboot.iso \
+    -extract /EFI/BOOT /tmp/verify
 
-sbverify --list /tmp/verify/BOOTX64.EFI    # Should show Microsoft
-sbverify --list /tmp/verify/grub.efi       # Should show MOK
+# Check shim (should show Microsoft)
+sbverify --list /tmp/verify/BOOTX64.EFI
+
+# Check GRUB stub (should show MOK)
+sbverify --list /tmp/verify/grub.efi
+
+# Verify GRUB against MOK certificate
+sbverify --cert /root/hab_keys/MOK.crt /tmp/verify/grub.efi
 ```
 
-### Check HAB PreLoader
+### Use Built-in Diagnose
+
 ```bash
-objdump -t /tmp/verify/grub.efi | grep security_policy
-# Should show: security_policy_mok_allow, security_policy_mok_deny, etc.
+./PhotonOS-HABv4Emulation-ISOCreator -D photon-secureboot.iso
 ```
+
+This checks:
+- EFI boot files present
+- Signatures valid
+- SBAT metadata correct
+- Kickstart files present
+- MOK certificate present
+
+---
 
 ## Writing to USB
+
+### Using dd (Linux)
 
 ```bash
 # Find USB device
 lsblk
 
 # Write ISO (DESTRUCTIVE!)
-sudo dd if=output.iso of=/dev/sdX bs=4M status=progress conv=fsync
+sudo dd if=photon-secureboot.iso of=/dev/sdX bs=4M status=progress conv=fsync
 sudo sync
 ```
 
+### Using Rufus (Windows)
+
+1. Select ISO file
+2. **Important**: Use DD mode, not ISO mode
+3. Write to USB
+
+### Using Ventoy
+
+The ISO works with Ventoy out of the box:
+1. Copy ISO to Ventoy USB
+2. Boot from Ventoy
+3. Select the ISO
+
+---
+
 ## Troubleshooting
 
-### "MokManager not found"
-- Ensure `mmx64.efi` exists at ISO root (not just in EFI/BOOT/)
-- SUSE shim requires MokManager at `\mmx64.efi`
+### Build Fails: "rpmbuild: command not found"
 
-### "Security Violation"
-- Normal on first boot before MOK enrollment
-- Enroll the MOK certificate via MokManager
+```bash
+tdnf install -y rpm-build
+```
 
-### ISO won't boot in UEFI
-- Check efiboot.img is properly populated
-- Verify `-isohybrid-gpt-basdat` flag was used with xorriso
+### Build Fails: "sbsign: command not found"
 
-### SBAT verification failed
-- Use SUSE shim from Ventoy (SBAT version shim,4)
-- Don't use older Fedora shim versions
+```bash
+tdnf install -y sbsigntools
+```
+
+### Build Fails: "xorriso: command not found"
+
+```bash
+tdnf install -y xorriso
+```
+
+### Build Fails: "grub2-mkimage: command not found"
+
+```bash
+tdnf install -y grub2-efi
+```
+
+### Build Fails: "Cannot find RPM packages"
+
+Ensure the RPM directory exists:
+```bash
+ls /root/5.0/stage/RPMS/x86_64/*.rpm
+```
+
+If empty, you need to build Photon OS packages first or download them.
+
+### Build Fails: "mkfs.vfat: command not found"
+
+```bash
+tdnf install -y dosfstools
+```
+
+### ISO Won't Boot: "SBAT self-check failed"
+
+The shim SBAT version is revoked. Use latest tool version with SUSE shim (SBAT=shim,4).
+
+### ISO Won't Boot: "Security Violation"
+
+Normal on first boot. Enroll MOK certificate via MokManager.
+
+### USB Won't Boot
+
+1. Check Secure Boot is enabled
+2. Check CSM/Legacy is disabled
+3. Try different USB port (USB 2.0 vs 3.0)
+4. Verify ISO was written correctly: `dd if=/dev/sdX bs=512 count=1 | hexdump -C`
+
+---
+
+## Output Files
+
+After successful build:
+
+```
+/root/
+├── photon-5.0-*-secureboot.iso     # Final ISO
+├── hab_keys/
+│   ├── MOK.key                      # Private key (keep secure!)
+│   ├── MOK.crt                      # Certificate (PEM)
+│   ├── MOK.der                      # Certificate (DER)
+│   ├── grub-photon-stub.efi         # Signed GRUB stub
+│   └── vmlinuz-mok                  # Signed kernel
+└── 5.0/stage/RPMS/x86_64/
+    ├── shim-signed-mok-*.rpm
+    ├── grub2-efi-image-mok-*.rpm
+    └── linux-mok-*.rpm
+```
