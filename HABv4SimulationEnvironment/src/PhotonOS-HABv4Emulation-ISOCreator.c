@@ -750,11 +750,104 @@ static int download_ventoy_components_fallback(void) {
 }
 
 /* ============================================================================
- * Full Kernel Build (Restored from bash script)
+ * Full Kernel Build
+ * ============================================================================
+ * Directory structure for kernel sources:
+ *   Release 4.0: /root/4.0/SPECS/linux/ (spec files and patches)
+ *   Release 5.0: /root/5.0/SPECS/linux/ + /root/common/SPECS/linux/v6.1/
+ *   Release 6.0: /root/common/SPECS/linux/v6.12/
+ * 
+ * Kernel source tarballs: /root/{release}/stage/SOURCES/linux-{version}.tar.xz
  * ============================================================================ */
+
+/* Find kernel source tarball for the release */
+static int find_kernel_tarball(char *tarball_path, size_t path_size, char *version, size_t ver_size) {
+    char sources_dir[512];
+    snprintf(sources_dir, sizeof(sources_dir), "%s/stage/SOURCES", cfg.photon_dir);
+    
+    DIR *dir = opendir(sources_dir);
+    if (!dir) {
+        log_warn("Sources directory not found: %s", sources_dir);
+        return -1;
+    }
+    
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        if (strncmp(entry->d_name, "linux-6.", 8) == 0 && 
+            (strstr(entry->d_name, ".tar.xz") || strstr(entry->d_name, ".tar.gz"))) {
+            /* Extract version from filename: linux-6.1.159.tar.xz -> 6.1.159 */
+            snprintf(tarball_path, path_size, "%s/%s", sources_dir, entry->d_name);
+            
+            /* Parse version */
+            const char *ver_start = entry->d_name + 6; /* skip "linux-" */
+            const char *ver_end = strstr(ver_start, ".tar");
+            if (ver_end && ver_size > 0) {
+                size_t len = ver_end - ver_start;
+                if (len >= ver_size) len = ver_size - 1;
+                strncpy(version, ver_start, len);
+                version[len] = '\0';
+            }
+            
+            closedir(dir);
+            return 0;
+        }
+    }
+    closedir(dir);
+    return -1;
+}
+
+/* Get kernel config path based on release and architecture */
+static int find_kernel_config(char *config_path, size_t path_size, const char *arch, const char *flavor) {
+    char path[512];
+    
+    /* Determine config filename based on arch and flavor */
+    const char *config_name;
+    if (strcmp(flavor, "esx") == 0) {
+        if (strcmp(arch, "x86_64") == 0) {
+            config_name = "config-esx_x86_64";
+        } else {
+            config_name = "config-esx_aarch64";
+        }
+    } else if (strcmp(flavor, "rt") == 0) {
+        config_name = "config-rt";
+    } else {
+        /* Default/generic config */
+        if (strcmp(arch, "aarch64") == 0) {
+            config_name = "config_aarch64";
+        } else {
+            config_name = "config";
+        }
+    }
+    
+    /* Check release-specific SPECS first */
+    snprintf(path, sizeof(path), "%s/SPECS/linux/%s", cfg.photon_dir, config_name);
+    if (file_exists(path)) {
+        strncpy(config_path, path, path_size - 1);
+        return 0;
+    }
+    
+    /* Check common SPECS based on release */
+    const char *kernel_version_dir = NULL;
+    if (strcmp(cfg.release, "5.0") == 0) {
+        kernel_version_dir = "v6.1";
+    } else if (strcmp(cfg.release, "6.0") == 0) {
+        kernel_version_dir = "v6.12";
+    }
+    
+    if (kernel_version_dir) {
+        snprintf(path, sizeof(path), "/root/common/SPECS/linux/%s/%s", kernel_version_dir, config_name);
+        if (file_exists(path)) {
+            strncpy(config_path, path, path_size - 1);
+            return 0;
+        }
+    }
+    
+    return -1;
+}
 
 static int build_linux_kernel(void) {
     const char *arch = get_host_arch();
+    char cmd[4096];
     
     log_step("Linux %s kernel build...", arch);
     
@@ -764,93 +857,175 @@ static int build_linux_kernel(void) {
         return 0;
     }
     
-    log_warn("Full kernel build requested - this will take several hours!");
+    log_warn("Full kernel build requested - this will take a long time!");
     printf("\n");
     printf("The full kernel build process includes:\n");
-    printf("  1. Downloading kernel source from kernel.org\n");
-    printf("  2. Configuring kernel with Secure Boot options\n");
-    printf("  3. Building kernel and modules\n");
-    printf("  4. Signing kernel with MOK key\n");
-    printf("  5. Signing all modules with kernel module signing key\n");
+    printf("  1. Extracting kernel source tarball\n");
+    printf("  2. Applying Photon OS kernel config\n");
+    printf("  3. Configuring for Secure Boot (MODULE_SIG, LOCK_DOWN)\n");
+    printf("  4. Building kernel and modules\n");
+    printf("  5. Signing kernel with MOK key\n");
+    printf("  6. Signing all modules with kernel module signing key\n");
     printf("\n");
     
-    char kernel_dir[512];
-    snprintf(kernel_dir, sizeof(kernel_dir), "%s/linux-%s", cfg.photon_dir, arch);
-    
-    if (strcmp(arch, "x86_64") == 0) {
-        log_step("Building Linux kernel for x86_64...");
-        
-        /* Check for kernel source */
-        if (!file_exists(kernel_dir)) {
-            log_info("Kernel source not found at %s", kernel_dir);
-            log_info("To build kernel manually:");
-            printf("  1. git clone --depth 1 https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git %s\n", kernel_dir);
-            printf("  2. cd %s\n", kernel_dir);
-            printf("  3. make defconfig\n");
-            printf("  4. Enable CONFIG_MODULE_SIG=y, CONFIG_MODULE_SIG_ALL=y\n");
-            printf("  5. Copy %s/kernel_module_signing.pem to certs/signing_key.pem\n", cfg.keys_dir);
-            printf("  6. make -j$(nproc)\n");
-            printf("  7. Sign vmlinuz with sbsign using MOK.key\n");
-            return 0;
-        }
-        
-        char cmd[2048];
-        
-        /* Copy signing key */
-        snprintf(cmd, sizeof(cmd), "cp '%s/kernel_module_signing.pem' '%s/certs/signing_key.pem'",
-            cfg.keys_dir, kernel_dir);
-        run_cmd(cmd);
-        
-        /* Build kernel */
-        snprintf(cmd, sizeof(cmd), "cd '%s' && make -j$(nproc)", kernel_dir);
-        log_info("Running: make -j$(nproc) in %s", kernel_dir);
-        log_warn("This will take a long time...");
-        
-        if (run_cmd(cmd) != 0) {
-            log_error("Kernel build failed");
-            return -1;
-        }
-        
-        /* Sign kernel */
-        char vmlinuz[512], vmlinuz_signed[512];
-        snprintf(vmlinuz, sizeof(vmlinuz), "%s/arch/x86/boot/bzImage", kernel_dir);
-        snprintf(vmlinuz_signed, sizeof(vmlinuz_signed), "%s/vmlinuz-signed", kernel_dir);
-        
-        if (file_exists(vmlinuz)) {
-            snprintf(cmd, sizeof(cmd),
-                "sbsign --key '%s/MOK.key' --cert '%s/MOK.crt' --output '%s' '%s'",
-                cfg.keys_dir, cfg.keys_dir, vmlinuz_signed, vmlinuz);
-            run_cmd(cmd);
-            log_info("Kernel signed: %s", vmlinuz_signed);
-        }
-        
-        log_info("x86_64 kernel build complete");
-        
-    } else if (strcmp(arch, "aarch64") == 0) {
-        log_step("Building Linux kernel for aarch64...");
-        
-        if (!file_exists(kernel_dir)) {
-            log_info("Kernel source not found at %s", kernel_dir);
-            log_info("For aarch64, consider using linux-imx:");
-            printf("  git clone --depth 1 -b lf-6.6.y https://github.com/nxp-imx/linux-imx.git %s\n", kernel_dir);
-            return 0;
-        }
-        
-        char cmd[2048];
-        snprintf(cmd, sizeof(cmd), "cd '%s' && make -j$(nproc) Image", kernel_dir);
-        log_info("Running: make -j$(nproc) Image in %s", kernel_dir);
-        
-        if (run_cmd(cmd) != 0) {
-            log_error("Kernel build failed");
-            return -1;
-        }
-        
-        log_info("aarch64 kernel build complete");
-        
-    } else {
-        log_warn("Unknown architecture: %s", arch);
+    /* Find kernel source tarball */
+    char tarball_path[512], kernel_version[64];
+    if (find_kernel_tarball(tarball_path, sizeof(tarball_path), 
+                            kernel_version, sizeof(kernel_version)) != 0) {
+        log_error("No kernel source tarball found in %s/stage/SOURCES/", cfg.photon_dir);
+        log_info("Expected: linux-6.x.x.tar.xz");
+        log_info("Download from: https://cdn.kernel.org/pub/linux/kernel/v6.x/");
         return -1;
     }
+    
+    log_info("Found kernel source: %s (version %s)", tarball_path, kernel_version);
+    
+    /* Setup build directory */
+    char build_dir[512], kernel_src[512];
+    snprintf(build_dir, sizeof(build_dir), "%s/kernel-build", cfg.photon_dir);
+    snprintf(kernel_src, sizeof(kernel_src), "%s/linux-%s", build_dir, kernel_version);
+    
+    /* Clean and create build directory */
+    snprintf(cmd, sizeof(cmd), "rm -rf '%s' && mkdir -p '%s'", build_dir, build_dir);
+    run_cmd(cmd);
+    
+    /* Extract kernel source */
+    log_info("Extracting kernel source...");
+    if (strstr(tarball_path, ".tar.xz")) {
+        snprintf(cmd, sizeof(cmd), "tar -xJf '%s' -C '%s'", tarball_path, build_dir);
+    } else {
+        snprintf(cmd, sizeof(cmd), "tar -xzf '%s' -C '%s'", tarball_path, build_dir);
+    }
+    if (run_cmd(cmd) != 0) {
+        log_error("Failed to extract kernel source");
+        return -1;
+    }
+    
+    if (!file_exists(kernel_src)) {
+        log_error("Kernel source directory not found after extraction: %s", kernel_src);
+        return -1;
+    }
+    
+    /* Find and copy kernel config */
+    char config_path[512];
+    const char *flavor = "esx"; /* Default to esx for better VM support */
+    
+    if (find_kernel_config(config_path, sizeof(config_path), arch, flavor) == 0) {
+        log_info("Using kernel config: %s", config_path);
+        snprintf(cmd, sizeof(cmd), "cp '%s' '%s/.config'", config_path, kernel_src);
+        run_cmd(cmd);
+    } else {
+        log_warn("No Photon kernel config found, using defconfig");
+        snprintf(cmd, sizeof(cmd), "cd '%s' && make defconfig", kernel_src);
+        run_cmd(cmd);
+    }
+    
+    /* Configure Secure Boot options */
+    log_info("Configuring kernel for Secure Boot...");
+    snprintf(cmd, sizeof(cmd),
+        "cd '%s' && "
+        "scripts/config --enable CONFIG_MODULE_SIG && "
+        "scripts/config --enable CONFIG_MODULE_SIG_ALL && "
+        "scripts/config --enable CONFIG_MODULE_SIG_SHA512 && "
+        "scripts/config --set-str CONFIG_MODULE_SIG_HASH sha512 && "
+        "scripts/config --enable CONFIG_LOCK_DOWN_KERNEL_FORCE_INTEGRITY && "
+        "scripts/config --enable CONFIG_SECURITY_LOCKDOWN_LSM && "
+        "scripts/config --enable CONFIG_SECURITY_LOCKDOWN_LSM_EARLY && "
+        "scripts/config --enable CONFIG_EFI_STUB && "
+        "scripts/config --enable CONFIG_EFI",
+        kernel_src);
+    run_cmd(cmd);
+    
+    /* Copy module signing key */
+    char signing_key[512];
+    snprintf(signing_key, sizeof(signing_key), "%s/kernel_module_signing.pem", cfg.keys_dir);
+    if (file_exists(signing_key)) {
+        log_info("Installing module signing key...");
+        snprintf(cmd, sizeof(cmd), "cp '%s' '%s/certs/signing_key.pem'", signing_key, kernel_src);
+        run_cmd(cmd);
+        
+        /* Configure kernel to use our signing key */
+        snprintf(cmd, sizeof(cmd),
+            "cd '%s' && "
+            "scripts/config --set-str CONFIG_MODULE_SIG_KEY certs/signing_key.pem && "
+            "scripts/config --enable CONFIG_MODULE_SIG_FORCE",
+            kernel_src);
+        run_cmd(cmd);
+    }
+    
+    /* Update config with new options */
+    snprintf(cmd, sizeof(cmd), "cd '%s' && make olddefconfig", kernel_src);
+    run_cmd(cmd);
+    
+    /* Build kernel */
+    log_step("Building Linux kernel for %s...", arch);
+    log_warn("This will take a very long time (1-4 hours depending on CPU)...");
+    
+    int nproc = 4; /* Default */
+    FILE *fp = popen("nproc", "r");
+    if (fp) {
+        fscanf(fp, "%d", &nproc);
+        pclose(fp);
+    }
+    
+    if (strcmp(arch, "x86_64") == 0) {
+        snprintf(cmd, sizeof(cmd), "cd '%s' && make -j%d bzImage modules 2>&1", kernel_src, nproc);
+    } else if (strcmp(arch, "aarch64") == 0) {
+        snprintf(cmd, sizeof(cmd), "cd '%s' && make -j%d Image modules 2>&1", kernel_src, nproc);
+    } else {
+        log_error("Unsupported architecture: %s", arch);
+        return -1;
+    }
+    
+    log_info("Running: make -j%d in %s", nproc, kernel_src);
+    if (run_cmd(cmd) != 0) {
+        log_error("Kernel build failed");
+        return -1;
+    }
+    
+    /* Find and sign the kernel image */
+    char vmlinuz[512], vmlinuz_signed[512];
+    if (strcmp(arch, "x86_64") == 0) {
+        snprintf(vmlinuz, sizeof(vmlinuz), "%s/arch/x86/boot/bzImage", kernel_src);
+    } else {
+        snprintf(vmlinuz, sizeof(vmlinuz), "%s/arch/arm64/boot/Image", kernel_src);
+    }
+    snprintf(vmlinuz_signed, sizeof(vmlinuz_signed), "%s/vmlinuz-%s-mok", build_dir, kernel_version);
+    
+    if (file_exists(vmlinuz)) {
+        log_info("Signing kernel with MOK key...");
+        snprintf(cmd, sizeof(cmd),
+            "sbsign --key '%s/MOK.key' --cert '%s/MOK.crt' --output '%s' '%s'",
+            cfg.keys_dir, cfg.keys_dir, vmlinuz_signed, vmlinuz);
+        if (run_cmd(cmd) == 0) {
+            log_info("Kernel signed successfully: %s", vmlinuz_signed);
+            
+            /* Copy to a well-known location for ISO build */
+            char final_kernel[512];
+            snprintf(final_kernel, sizeof(final_kernel), "%s/vmlinuz-mok", cfg.keys_dir);
+            snprintf(cmd, sizeof(cmd), "cp '%s' '%s'", vmlinuz_signed, final_kernel);
+            run_cmd(cmd);
+            log_info("Signed kernel available at: %s", final_kernel);
+        } else {
+            log_warn("Failed to sign kernel - sbsign error");
+        }
+    } else {
+        log_error("Kernel image not found: %s", vmlinuz);
+        return -1;
+    }
+    
+    /* Install modules to a staging area */
+    char modules_dir[512];
+    snprintf(modules_dir, sizeof(modules_dir), "%s/modules", build_dir);
+    snprintf(cmd, sizeof(cmd), "cd '%s' && make INSTALL_MOD_PATH='%s' modules_install", 
+             kernel_src, modules_dir);
+    log_info("Installing kernel modules...");
+    run_cmd(cmd);
+    
+    log_info("%s kernel build complete!", arch);
+    log_info("Kernel version: %s", kernel_version);
+    log_info("Build directory: %s", build_dir);
+    log_info("Signed kernel: %s/vmlinuz-mok", cfg.keys_dir);
     
     return 0;
 }
