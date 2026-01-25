@@ -1353,22 +1353,15 @@ static int create_secure_boot_iso(void) {
     snprintf(mok_ks_path, sizeof(mok_ks_path), "%s/mok_ks.cfg", iso_extract);
     snprintf(std_ks_path, sizeof(std_ks_path), "%s/standard_ks.cfg", iso_extract);
     
-    /* Create MOK kickstart - uses MOK-signed packages */
+    /* Create MOK kickstart - uses MOK-signed packages
+     * IMPORTANT: Only specify linux_flavor, packages, bootmode, and ui.
+     * Do NOT specify hostname, password, disk, or partitions - these must be
+     * left out so the installer prompts the user interactively (EULA, disk selection, etc.)
+     * The "ui": true enables interactive mode while packages are enforced. */
     FILE *f = fopen(mok_ks_path, "w");
     if (f) {
         fprintf(f,
             "{\n"
-            "    \"hostname\": \"photon-mok\",\n"
-            "    \"password\": {\n"
-            "        \"crypted\": false,\n"
-            "        \"text\": \"changeme\"\n"
-            "    },\n"
-            "    \"disk\": \"/dev/sda\",\n"
-            "    \"partitions\": [\n"
-            "        {\"mountpoint\": \"/\", \"size\": 0, \"filesystem\": \"ext4\"},\n"
-            "        {\"mountpoint\": \"/boot\", \"size\": 300, \"filesystem\": \"ext4\"},\n"
-            "        {\"size\": 256, \"filesystem\": \"swap\"}\n"
-            "    ],\n"
             "    \"bootmode\": \"efi\",\n"
             "    \"linux_flavor\": \"linux-mok\",\n"
             "    \"packages\": [\n"
@@ -1403,22 +1396,12 @@ static int create_secure_boot_iso(void) {
         log_info("Created MOK kickstart: mok_ks.cfg");
     }
     
-    /* Create standard kickstart - uses original VMware packages */
+    /* Create standard kickstart - uses original VMware packages
+     * Same approach: only enforce packages, let user configure everything else */
     f = fopen(std_ks_path, "w");
     if (f) {
         fprintf(f,
             "{\n"
-            "    \"hostname\": \"photon-standard\",\n"
-            "    \"password\": {\n"
-            "        \"crypted\": false,\n"
-            "        \"text\": \"changeme\"\n"
-            "    },\n"
-            "    \"disk\": \"/dev/sda\",\n"
-            "    \"partitions\": [\n"
-            "        {\"mountpoint\": \"/\", \"size\": 0, \"filesystem\": \"ext4\"},\n"
-            "        {\"mountpoint\": \"/boot\", \"size\": 300, \"filesystem\": \"ext4\"},\n"
-            "        {\"size\": 256, \"filesystem\": \"swap\"}\n"
-            "    ],\n"
             "    \"bootmode\": \"efi\",\n"
             "    \"linux_flavor\": \"linux\",\n"
             "    \"packages\": [\n"
