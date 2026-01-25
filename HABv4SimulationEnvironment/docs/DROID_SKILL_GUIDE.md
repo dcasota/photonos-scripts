@@ -244,6 +244,69 @@ Droid: I'll update SKILL.md with:
 4. Troubleshooting for kernel builds
 ```
 
+## Architecture Decision Records
+
+### ADR-001: MOK Package Integration Approaches
+
+When integrating Custom MOK packages alongside VMware Original packages, several implementation options were evaluated:
+
+#### Option A: GRUB Menu Selection + Separate Package Files
+Two GRUB entries passing different kernel parameters to select package configs.
+- **Pros**: Clear separation at boot menu, no installer UI changes
+- **Cons**: Requires installer patch for parameter handling, two menu entries
+
+#### Option B: Modify packages_minimal.json Only
+Replace packages_minimal.json with MOK packages directly.
+- **Pros**: Simplest implementation, minimal patches
+- **Cons**: No VMware Original option, user doesn't see explicit MOK choice
+
+#### Option C: Add New Entry to build_install_options_all.json (SELECTED)
+Add "Photon MOK Secure Boot" as new package selection in installer UI.
+- **Pros**: Explicit MOK choice, preserves original options, follows installer patterns
+- **Cons**: More complex initrd modification, requires linuxselector.py patch
+
+#### Option D: Dual ISO Approach
+Generate two separate ISOs for MOK and VMware Original.
+- **Pros**: Complete separation, simple per-ISO
+- **Cons**: Two ISOs to manage, doubles storage
+
+#### Option E: GRUB Chainload Approach
+GRUB menu chainloads different configs or installers.
+- **Pros**: VMware Original path completely unmodified
+- **Cons**: Complex GRUB config, Secure Boot signature issues
+
+#### Option F: Installer UI Patch - New Screen
+Add new screen before package selection for boot configuration choice.
+- **Pros**: Clean UX, explicit choice with descriptions
+- **Cons**: Most invasive modification, breaks with installer updates
+
+#### Option G: Environment-Based Auto-Detection
+Auto-detect VMware vs physical and select packages accordingly.
+- **Pros**: Zero user decision, automatic correct selection
+- **Cons**: No override option, may misdetect environments
+
+#### Option H: Kernel Parameter + Installer Patch
+Pass kernel parameter from GRUB, installer reads cmdline to select packages.
+- **Pros**: Clean separation, GRUB controls choice
+- **Cons**: Requires cmdline parsing patch
+
+#### Decision Matrix
+
+| Option | Complexity | User Clarity | Maintainability | Flexibility |
+|--------|------------|--------------|-----------------|-------------|
+| A | Medium | High | Medium | High |
+| B | Low | Low | High | Low |
+| C | Medium | High | Medium | High |
+| D | Low | High | Low | Medium |
+| E | High | High | Low | Medium |
+| F | High | High | Low | High |
+| G | Medium | Low | High | Low |
+| H | Medium | High | Medium | High |
+
+**Selected**: Option C - Best balance of user clarity, maintainability, and flexibility.
+
+---
+
 ## Troubleshooting Droid Issues
 
 ### Skill Not Loading

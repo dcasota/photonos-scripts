@@ -1482,16 +1482,18 @@ static int create_secure_boot_iso(void) {
         log_warn("linuxselector.py not found at expected path");
     }
     
-    /* Modify packages_minimal.json to include MOK-signed packages
-     * This ensures the default "Photon Minimal" installation uses MOK packages */
-    char minimal_packages_json[512];
-    snprintf(minimal_packages_json, sizeof(minimal_packages_json), "%s/installer/packages_minimal.json", initrd_extract);
+    /* Option C: Add "Photon MOK Secure Boot" as new entry in build_install_options_all.json
+     * This preserves original Minimal/Developer/etc options while adding explicit MOK choice.
+     * See ADR-001 in DROID_SKILL_GUIDE.md for rationale. */
+    char options_json[512], mok_packages_json[512];
+    snprintf(options_json, sizeof(options_json), "%s/installer/build_install_options_all.json", initrd_extract);
+    snprintf(mok_packages_json, sizeof(mok_packages_json), "%s/installer/packages_mok.json", initrd_extract);
     
-    if (file_exists(minimal_packages_json)) {
-        log_info("Adding MOK packages to packages_minimal.json...");
+    if (file_exists(options_json)) {
+        log_info("Adding MOK Secure Boot option to installer...");
         
-        /* Overwrite packages_minimal.json with MOK-signed packages */
-        FILE *f = fopen(minimal_packages_json, "w");
+        /* Create packages_mok.json with MOK-signed packages */
+        FILE *f = fopen(mok_packages_json, "w");
         if (f) {
             fprintf(f,
                 "{\n"
@@ -1508,10 +1510,61 @@ static int create_secure_boot_iso(void) {
                 "}\n"
             );
             fclose(f);
-            log_info("Updated packages_minimal.json with MOK packages");
+            log_info("Created packages_mok.json");
         }
+        
+        /* Add MOK option to build_install_options_all.json as first entry
+         * Renumber existing visible options (1->2, 2->3, etc.) */
+        char add_mok_script[512];
+        snprintf(add_mok_script, sizeof(add_mok_script), "%s/add_mok_option.py", work_dir);
+        
+        FILE *pf = fopen(add_mok_script, "w");
+        if (pf) {
+            fprintf(pf,
+                "#!/usr/bin/env python3\n"
+                "import json\n"
+                "import sys\n"
+                "from collections import OrderedDict\n"
+                "\n"
+                "with open(sys.argv[1], 'r') as f:\n"
+                "    options = json.load(f, object_pairs_hook=OrderedDict)\n"
+                "\n"
+                "# Renumber existing visible options (1->2, 2->3, etc.)\n"
+                "for key, value in options.items():\n"
+                "    if value.get('visible', False) and 'title' in value:\n"
+                "        title = value['title']\n"
+                "        if len(title) > 1 and title[0].isdigit() and title[1] == '.':\n"
+                "            new_num = int(title[0]) + 1\n"
+                "            value['title'] = str(new_num) + title[1:]\n"
+                "\n"
+                "# Create new ordered dict with MOK option first\n"
+                "new_options = OrderedDict()\n"
+                "new_options['mok'] = {\n"
+                "    'title': '1. Photon MOK Secure Boot',\n"
+                "    'packagelist_file': 'packages_mok.json',\n"
+                "    'visible': True\n"
+                "}\n"
+                "\n"
+                "# Add all existing options after MOK\n"
+                "for key, value in options.items():\n"
+                "    new_options[key] = value\n"
+                "\n"
+                "with open(sys.argv[1], 'w') as f:\n"
+                "    json.dump(new_options, f, indent=4)\n"
+                "\n"
+                "print('MOK option added as first entry')\n"
+            );
+            fclose(pf);
+            
+            snprintf(cmd, sizeof(cmd), "python3 '%s' '%s' 2>&1", add_mok_script, options_json);
+            run_cmd(cmd);
+            
+            snprintf(cmd, sizeof(cmd), "rm -f '%s'", add_mok_script);
+            run_cmd(cmd);
+        }
+        log_info("Added 'Photon MOK Secure Boot' to installer package selection");
     } else {
-        log_warn("packages_minimal.json not found in initrd");
+        log_warn("build_install_options_all.json not found in initrd");
     }
     
     /* Repack initrd */
