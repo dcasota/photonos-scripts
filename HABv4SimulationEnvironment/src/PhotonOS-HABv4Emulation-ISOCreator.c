@@ -1932,7 +1932,8 @@ static int create_secure_boot_iso(void) {
             iso_extract,
             mok_key,
             mok_crt,
-            cfg.verbose
+            cfg.verbose,
+            cfg.efuse_usb_mode
         );
         
         if (rpm_ret != 0) {

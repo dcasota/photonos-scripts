@@ -490,60 +490,53 @@ static int generate_grub_mok_spec(rpm_build_config_t *config, rpm_package_info_t
         "/boot/efi/EFI/BOOT/grubx64.efi\n"
         "/boot/efi/EFI/BOOT/grub.efi\n"
         "\n"
-        "%%post\n"
-        "# Add eFuse USB verification to grub.cfg\n"
-        "# This script runs after installation to patch the GRUB config\n"
-        "GRUB_CFG=/boot/grub2/grub.cfg\n"
-        "if [ -f \"$GRUB_CFG\" ]; then\n"
-        "    # Check if eFuse verification is already present\n"
-        "    if ! grep -q 'EFUSE_SIM' \"$GRUB_CFG\"; then\n"
-        "        # Create backup\n"
-        "        cp \"$GRUB_CFG\" \"$GRUB_CFG.bak\"\n"
-        "        \n"
-        "        # Create new grub.cfg with eFuse verification\n"
-        "        cat > \"$GRUB_CFG.new\" << 'EFUSEGRUB'\n"
-        "# Begin /boot/grub2/grub.cfg - HABv4 Secure Boot with eFuse Verification\n"
-        "\n"
-        "# eFuse USB dongle verification (HABv4 Security)\n"
-        "set efuse_verified=0\n"
-        "search --no-floppy --label EFUSE_SIM --set=efuse_disk\n"
-        "if [ -n \"$efuse_disk\" ]; then\n"
-        "    if [ -f ($efuse_disk)/efuse_sim/srk_fuse.bin ]; then\n"
-        "        set efuse_verified=1\n"
-        "    fi\n"
-        "fi\n"
-        "\n"
-        "if [ \"$efuse_verified\" = \"0\" ]; then\n"
-        "    echo \"\"\n"
-        "    echo \"=========================================\"\n"
-        "    echo \"  HABv4 SECURITY: eFuse USB Required\"\n"
-        "    echo \"=========================================\"\n"
-        "    echo \"\"\n"
-        "    echo \"Insert eFuse USB dongle (label: EFUSE_SIM)\"\n"
-        "    echo \"and press any key to retry.\"\n"
-        "    echo \"\"\n"
-        "    read -n 1\n"
-        "    configfile /boot/grub2/grub.cfg\n"
-        "fi\n"
-        "\n"
-        "# eFuse verified - continue with normal boot\n"
-        "EFUSEGRUB\n"
-        "        # Append original config (skip any existing header comments)\n"
-        "        sed '1,/^set default/{ /^set default/!d }' \"$GRUB_CFG.bak\" >> \"$GRUB_CFG.new\"\n"
-        "        mv \"$GRUB_CFG.new\" \"$GRUB_CFG\"\n"
-        "    fi\n"
-        "fi\n"
-        "\n"
         "%%changelog\n"
         "* %s HABv4 Project <habv4@local> %%{grub_version}-%%{grub_release}.mok1\n"
-        "- Custom GRUB for installed system with eFuse verification\n"
-        "- Built with grub-mkimage, signed with MOK key\n"
-        "- Post-install script adds eFuse verification to grub.cfg\n",
+        "- Custom GRUB for installed system, signed with MOK key\n"
+        "- Built with grub-mkimage with proper search modules\n",
         grub_pkg->version, grub_pkg->release,
         grub_pkg->version,
         grub_pkg->release,
         date_str
     );
+    
+    /* Conditionally add eFuse verification post-install script */
+    if (config->efuse_usb_mode) {
+        fprintf(f,
+            "\n"
+            "%%post\n"
+            "# Add eFuse USB verification to grub.cfg (HABv4 Security)\n"
+            "GRUB_CFG=/boot/grub2/grub.cfg\n"
+            "if [ -f \"$GRUB_CFG\" ]; then\n"
+            "    if ! grep -q 'EFUSE_SIM' \"$GRUB_CFG\"; then\n"
+            "        cp \"$GRUB_CFG\" \"$GRUB_CFG.bak\"\n"
+            "        cat > \"$GRUB_CFG.new\" << 'EFUSEGRUB'\n"
+            "# HABv4 Secure Boot with eFuse Verification\n"
+            "set efuse_verified=0\n"
+            "search --no-floppy --label EFUSE_SIM --set=efuse_disk\n"
+            "if [ -n \"$efuse_disk\" ]; then\n"
+            "    if [ -f ($efuse_disk)/efuse_sim/srk_fuse.bin ]; then\n"
+            "        set efuse_verified=1\n"
+            "    fi\n"
+            "fi\n"
+            "if [ \"$efuse_verified\" = \"0\" ]; then\n"
+            "    echo \"\"\n"
+            "    echo \"=========================================\"\n"
+            "    echo \"  HABv4 SECURITY: eFuse USB Required\"\n"
+            "    echo \"=========================================\"\n"
+            "    echo \"Insert eFuse USB dongle (label: EFUSE_SIM)\"\n"
+            "    echo \"and press any key to retry.\"\n"
+            "    read -n 1\n"
+            "    configfile /boot/grub2/grub.cfg\n"
+            "fi\n"
+            "EFUSEGRUB\n"
+            "        sed '1,/^set default/{ /^set default/!d }' \"$GRUB_CFG.bak\" >> \"$GRUB_CFG.new\"\n"
+            "        mv \"$GRUB_CFG.new\" \"$GRUB_CFG\"\n"
+            "    fi\n"
+            "fi\n"
+        );
+        log_info("eFuse USB verification will be added to installed system grub.cfg");
+    }
     
     fclose(f);
     log_info("Generated %s", spec_path);
@@ -1108,7 +1101,8 @@ int rpm_patch_secureboot_packages(
     const char *iso_extract_dir,
     const char *mok_key,
     const char *mok_cert,
-    int verbose
+    int verbose,
+    int efuse_usb_mode
 ) {
     g_verbose = verbose;
     
@@ -1145,6 +1139,7 @@ int rpm_patch_secureboot_packages(
     config.mok_cert = strdup(mok_cert);
     config.release = strdup(release);
     config.verbose = verbose;
+    config.efuse_usb_mode = efuse_usb_mode;
     
     /* Get keys_dir from mok_key path (e.g., /root/hab_keys/MOK.key -> /root/hab_keys) */
     char keys_dir[512];
