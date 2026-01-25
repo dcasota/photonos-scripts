@@ -760,39 +760,155 @@ static int download_ventoy_components_fallback(void) {
  * Kernel source tarballs: /root/{release}/stage/SOURCES/linux-{version}.tar.xz
  * ============================================================================ */
 
+/* Get kernel version from spec file */
+static int get_kernel_version_from_spec(char *version, size_t ver_size) {
+    char spec_path[512];
+    snprintf(spec_path, sizeof(spec_path), "%s/SPECS/linux/linux.spec", cfg.photon_dir);
+    
+    FILE *f = fopen(spec_path, "r");
+    if (!f) {
+        log_warn("Spec file not found: %s", spec_path);
+        return -1;
+    }
+    
+    char line[256];
+    while (fgets(line, sizeof(line), f)) {
+        /* Look for "Version:" line */
+        if (strncmp(line, "Version:", 8) == 0) {
+            /* Parse: "Version:        6.1.161" */
+            char *ver_start = line + 8;
+            while (*ver_start == ' ' || *ver_start == '\t') ver_start++;
+            
+            /* Remove trailing whitespace/newline */
+            char *ver_end = ver_start;
+            while (*ver_end && *ver_end != '\n' && *ver_end != '\r' && *ver_end != ' ') ver_end++;
+            *ver_end = '\0';
+            
+            strncpy(version, ver_start, ver_size - 1);
+            version[ver_size - 1] = '\0';
+            fclose(f);
+            return 0;
+        }
+    }
+    
+    fclose(f);
+    return -1;
+}
+
 /* Find kernel source tarball for the release */
 static int find_kernel_tarball(char *tarball_path, size_t path_size, char *version, size_t ver_size) {
     char sources_dir[512];
     snprintf(sources_dir, sizeof(sources_dir), "%s/stage/SOURCES", cfg.photon_dir);
     
+    /* First, try to get version from spec file */
+    char spec_version[64] = {0};
+    if (get_kernel_version_from_spec(spec_version, sizeof(spec_version)) == 0) {
+        /* Look for the specific tarball matching spec version */
+        snprintf(tarball_path, path_size, "%s/linux-%s.tar.xz", sources_dir, spec_version);
+        if (file_exists(tarball_path)) {
+            strncpy(version, spec_version, ver_size - 1);
+            version[ver_size - 1] = '\0';
+            return 0;
+        }
+        
+        /* Try .tar.gz extension */
+        snprintf(tarball_path, path_size, "%s/linux-%s.tar.gz", sources_dir, spec_version);
+        if (file_exists(tarball_path)) {
+            strncpy(version, spec_version, ver_size - 1);
+            version[ver_size - 1] = '\0';
+            return 0;
+        }
+        
+        /* Tarball for spec version not found - warn and offer download URL */
+        log_warn("Kernel tarball for spec version %s not found", spec_version);
+        log_info("Download from: https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-%s.tar.xz", spec_version);
+        log_info("Place in: %s/", sources_dir);
+        log_info("Falling back to scanning for available tarballs...");
+    }
+    
+    /* Fallback: scan directory for any linux-6.x tarball */
     DIR *dir = opendir(sources_dir);
     if (!dir) {
         log_warn("Sources directory not found: %s", sources_dir);
         return -1;
     }
     
+    /* Parse target major.minor from spec version (e.g., 6.1 from 6.1.161) */
+    int target_major = 0, target_minor = 0;
+    if (spec_version[0] != '\0') {
+        sscanf(spec_version, "%d.%d", &target_major, &target_minor);
+    }
+    
+    /* Find the highest version tarball available, preferring same major.minor as spec */
+    char best_tarball[512] = {0};
+    char best_version[64] = {0};
+    int best_major = 0, best_minor = 0, best_patch = 0;
+    int best_matches_series = 0;
+    
     struct dirent *entry;
     while ((entry = readdir(dir)) != NULL) {
         if (strncmp(entry->d_name, "linux-6.", 8) == 0 && 
             (strstr(entry->d_name, ".tar.xz") || strstr(entry->d_name, ".tar.gz"))) {
-            /* Extract version from filename: linux-6.1.159.tar.xz -> 6.1.159 */
-            snprintf(tarball_path, path_size, "%s/%s", sources_dir, entry->d_name);
+            /* Skip firmware tarballs */
+            if (strstr(entry->d_name, "firmware")) continue;
             
-            /* Parse version */
+            /* Extract version from filename: linux-6.1.159.tar.xz -> 6.1.159 */
             const char *ver_start = entry->d_name + 6; /* skip "linux-" */
             const char *ver_end = strstr(ver_start, ".tar");
-            if (ver_end && ver_size > 0) {
-                size_t len = ver_end - ver_start;
-                if (len >= ver_size) len = ver_size - 1;
-                strncpy(version, ver_start, len);
-                version[len] = '\0';
-            }
+            if (!ver_end) continue;
             
-            closedir(dir);
-            return 0;
+            char this_version[64];
+            size_t len = ver_end - ver_start;
+            if (len >= sizeof(this_version)) continue;
+            strncpy(this_version, ver_start, len);
+            this_version[len] = '\0';
+            
+            /* Parse version numbers for comparison */
+            int major = 0, minor = 0, patch = 0;
+            sscanf(this_version, "%d.%d.%d", &major, &minor, &patch);
+            
+            /* Check if this version matches the spec's major.minor series */
+            int matches_series = (target_major > 0 && major == target_major && minor == target_minor);
+            
+            /* Prefer versions that match the spec's series, then highest within that */
+            int better = 0;
+            if (matches_series && !best_matches_series) {
+                /* This matches series, previous best didn't - always better */
+                better = 1;
+            } else if (matches_series == best_matches_series) {
+                /* Both match (or don't) - compare version numbers */
+                if (major > best_major || 
+                    (major == best_major && minor > best_minor) ||
+                    (major == best_major && minor == best_minor && patch > best_patch)) {
+                    better = 1;
+                }
+            }
+            /* If best matches series but this doesn't, keep best */
+            
+            if (better) {
+                best_major = major;
+                best_minor = minor;
+                best_patch = patch;
+                best_matches_series = matches_series;
+                snprintf(best_tarball, sizeof(best_tarball), "%s/%s", sources_dir, entry->d_name);
+                strncpy(best_version, this_version, sizeof(best_version) - 1);
+            }
         }
     }
     closedir(dir);
+    
+    if (best_tarball[0] != '\0') {
+        strncpy(tarball_path, best_tarball, path_size - 1);
+        tarball_path[path_size - 1] = '\0';
+        strncpy(version, best_version, ver_size - 1);
+        version[ver_size - 1] = '\0';
+        
+        if (spec_version[0] != '\0' && strcmp(best_version, spec_version) != 0) {
+            log_warn("Using kernel %s (spec file expects %s)", best_version, spec_version);
+        }
+        return 0;
+    }
+    
     return -1;
 }
 
