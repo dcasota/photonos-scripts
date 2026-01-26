@@ -88,6 +88,115 @@ typedef struct {
 /* Global config */
 static config_t cfg;
 
+/* Valid release versions (whitelist for input validation) */
+static const char *VALID_RELEASES[] = {"4.0", "5.0", "6.0", NULL};
+
+/* ============================================================================
+ * Security Functions
+ * ============================================================================ */
+
+/**
+ * Validate that a path contains no dangerous characters or sequences.
+ * Returns 1 if path is safe, 0 if path contains dangerous content.
+ * 
+ * Security: Prevents command injection and path traversal attacks.
+ */
+static int validate_path_safe(const char *path) {
+    if (!path || !*path) return 0;
+    
+    /* Check for path traversal attempts */
+    if (strstr(path, "..") != NULL) {
+        return 0;
+    }
+    
+    /* Check for shell metacharacters that could enable command injection */
+    const char *dangerous_chars = ";|&$`\\\"'\n\r\t";
+    for (const char *p = path; *p; p++) {
+        if (strchr(dangerous_chars, *p) != NULL) {
+            return 0;
+        }
+    }
+    
+    /* Check for null bytes (could truncate strings) */
+    size_t len = strlen(path);
+    for (size_t i = 0; i < len; i++) {
+        if (path[i] == '\0') return 0;
+    }
+    
+    return 1;
+}
+
+/**
+ * Validate release version against whitelist.
+ * Returns 1 if release is valid, 0 otherwise.
+ * 
+ * Security: Prevents arbitrary input in release parameter.
+ */
+static int validate_release(const char *release) {
+    if (!release || !*release) return 0;
+    
+    for (int i = 0; VALID_RELEASES[i] != NULL; i++) {
+        if (strcmp(release, VALID_RELEASES[i]) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/**
+ * Create a secure temporary directory using mkdtemp().
+ * Returns allocated string with path, or NULL on failure.
+ * Caller must free the returned string.
+ * 
+ * Security: Prevents symlink attacks and race conditions.
+ */
+static char* create_secure_tempdir(const char *prefix) {
+    char template[512];
+    snprintf(template, sizeof(template), "/tmp/%s_XXXXXX", prefix);
+    
+    char *result = mkdtemp(template);
+    if (!result) {
+        return NULL;
+    }
+    
+    /* Set restrictive permissions */
+    chmod(result, 0700);
+    
+    return strdup(result);
+}
+
+/**
+ * Sanitize a command string for logging (mask sensitive paths).
+ * Returns a static buffer - not thread safe, for logging only.
+ * 
+ * Security: Prevents sensitive path disclosure in logs.
+ */
+static const char* sanitize_cmd_for_log(const char *cmd) {
+    static char sanitized[2048];
+    
+    /* Copy command but mask key file paths */
+    strncpy(sanitized, cmd, sizeof(sanitized) - 1);
+    sanitized[sizeof(sanitized) - 1] = '\0';
+    
+    /* Mask private key references */
+    char *key_pos;
+    while ((key_pos = strstr(sanitized, ".key")) != NULL) {
+        /* Find start of path (look backwards for space or quote) */
+        char *path_start = key_pos;
+        while (path_start > sanitized && *path_start != ' ' && *path_start != '\'') {
+            path_start--;
+        }
+        if (*path_start == ' ' || *path_start == '\'') path_start++;
+        
+        /* Replace path with [PRIVATE_KEY] */
+        size_t remaining = strlen(key_pos + 4);
+        memmove(path_start + 13, key_pos + 4, remaining + 1);
+        memcpy(path_start, "[PRIVATE_KEY]", 13);
+    }
+    
+    return sanitized;
+}
+
 /* ============================================================================
  * Utility Functions
  * ============================================================================ */
@@ -130,7 +239,8 @@ static void log_error(const char *fmt, ...) {
 
 static int run_cmd(const char *cmd) {
     if (cfg.verbose) {
-        printf("  $ %s\n", cmd);
+        /* Security: Sanitize command output to mask sensitive paths */
+        printf("  $ %s\n", sanitize_cmd_for_log(cmd));
     }
     int ret = system(cmd);
     return WEXITSTATUS(ret);
@@ -225,7 +335,9 @@ static int generate_mok_key(void) {
     snprintf(key_path, sizeof(key_path), "%s/MOK.key", cfg.keys_dir);
     snprintf(crt_path, sizeof(crt_path), "%s/MOK.crt", cfg.keys_dir);
     snprintf(der_path, sizeof(der_path), "%s/MOK.der", cfg.keys_dir);
-    snprintf(cnf_path, sizeof(cnf_path), "/tmp/mok_%d.cnf", getpid());
+    
+    /* Security: Use keys_dir for temp config instead of predictable /tmp path */
+    snprintf(cnf_path, sizeof(cnf_path), "%s/.mok_config.tmp", cfg.keys_dir);
     
     if (file_exists(key_path)) {
         if (cfg.verbose) log_info("MOK key already exists");
@@ -562,14 +674,18 @@ static int create_efuse_usb(const char *device) {
         return -1;
     }
     
-    char mount_point[256];
-    snprintf(mount_point, sizeof(mount_point), "/tmp/habefuse_%d", getpid());
-    mkdir_p(mount_point);
+    /* Security: Use mkdtemp for secure temp directory */
+    char *mount_point = create_secure_tempdir("habefuse");
+    if (!mount_point) {
+        log_error("Failed to create secure temp directory");
+        return -1;
+    }
     
     snprintf(cmd, sizeof(cmd), "mount '%s' '%s'", partition, mount_point);
     if (run_cmd(cmd) != 0) {
         log_error("Failed to mount partition");
         rmdir(mount_point);
+        free(mount_point);
         return -1;
     }
     
@@ -599,6 +715,7 @@ static int create_efuse_usb(const char *device) {
     snprintf(cmd, sizeof(cmd), "umount '%s'", mount_point);
     run_cmd(cmd);
     rmdir(mount_point);
+    free(mount_point);
     
     log_info("eFuse USB dongle created on %s (label: EFUSE_SIM)", device);
     return 0;
@@ -685,9 +802,12 @@ static int download_ventoy_components_fallback(void) {
     snprintf(shim_path, sizeof(shim_path), "%s/shim-suse.efi", cfg.keys_dir);
     snprintf(mok_path, sizeof(mok_path), "%s/MokManager-suse.efi", cfg.keys_dir);
     
-    char work_dir[256];
-    snprintf(work_dir, sizeof(work_dir), "/tmp/ventoy_%d", getpid());
-    mkdir_p(work_dir);
+    /* Security: Use mkdtemp for secure temp directory */
+    char *work_dir = create_secure_tempdir("ventoy");
+    if (!work_dir) {
+        log_error("Failed to create secure temp directory");
+        return -1;
+    }
     
     char cmd[2048];
     
@@ -700,13 +820,14 @@ static int download_ventoy_components_fallback(void) {
         log_error("Failed to download Ventoy");
         snprintf(cmd, sizeof(cmd), "rm -rf '%s'", work_dir);
         run_cmd(cmd);
+        free(work_dir);
         return -1;
     }
     
     snprintf(cmd, sizeof(cmd), "cd '%s' && tar -xzf ventoy.tar.gz", work_dir);
     run_cmd(cmd);
     
-    char disk_img[512], mount_point[256];
+    char disk_img[512], mount_point[512];
     snprintf(disk_img, sizeof(disk_img), "%s/ventoy-%s/ventoy/ventoy.disk.img", work_dir, VENTOY_VERSION);
     snprintf(mount_point, sizeof(mount_point), "%s/mnt", work_dir);
     
@@ -737,6 +858,7 @@ static int download_ventoy_components_fallback(void) {
     
     snprintf(cmd, sizeof(cmd), "rm -rf '%s'", work_dir);
     run_cmd(cmd);
+    free(work_dir);
     
     if (file_exists(shim_path)) {
         log_info("SUSE shim downloaded");
@@ -2084,9 +2206,14 @@ static int diagnose_iso(const char *iso_path) {
         return -1;
     }
     
-    char work_dir[256], cmd[2048];
-    snprintf(work_dir, sizeof(work_dir), "/tmp/iso_diagnose_%d", getpid());
-    mkdir_p(work_dir);
+    /* Security: Use mkdtemp for secure temp directory */
+    char *work_dir = create_secure_tempdir("iso_diagnose");
+    if (!work_dir) {
+        log_error("Failed to create secure temp directory");
+        return -1;
+    }
+    
+    char cmd[2048];
     
     int errors = 0, warnings = 0;
     
@@ -2272,6 +2399,7 @@ static int diagnose_iso(const char *iso_path) {
     /* Cleanup */
     snprintf(cmd, sizeof(cmd), "rm -rf '%s'", work_dir);
     system(cmd);
+    free(work_dir);
     
     return errors;
 }
@@ -2426,19 +2554,44 @@ int main(int argc, char *argv[]) {
     while ((opt = getopt_long(argc, argv, "r:i:o:k:e:m:bgsERFD:cu:vyh", long_options, NULL)) != -1) {
         switch (opt) {
             case 'r':
+                /* Security: Validate release against whitelist */
+                if (!validate_release(optarg)) {
+                    log_error("Invalid release version: %s (valid: 4.0, 5.0, 6.0)", optarg);
+                    return 1;
+                }
                 strncpy(cfg.release, optarg, sizeof(cfg.release) - 1);
                 snprintf(cfg.photon_dir, sizeof(cfg.photon_dir), "%s/%s", home, cfg.release);
                 break;
             case 'i':
+                /* Security: Validate path for command injection */
+                if (!validate_path_safe(optarg)) {
+                    log_error("Invalid input ISO path (contains dangerous characters)");
+                    return 1;
+                }
                 strncpy(cfg.input_iso, optarg, sizeof(cfg.input_iso) - 1);
                 break;
             case 'o':
+                /* Security: Validate path for command injection */
+                if (!validate_path_safe(optarg)) {
+                    log_error("Invalid output ISO path (contains dangerous characters)");
+                    return 1;
+                }
                 strncpy(cfg.output_iso, optarg, sizeof(cfg.output_iso) - 1);
                 break;
             case 'k':
+                /* Security: Validate path for command injection */
+                if (!validate_path_safe(optarg)) {
+                    log_error("Invalid keys directory path (contains dangerous characters)");
+                    return 1;
+                }
                 strncpy(cfg.keys_dir, optarg, sizeof(cfg.keys_dir) - 1);
                 break;
             case 'e':
+                /* Security: Validate path for command injection */
+                if (!validate_path_safe(optarg)) {
+                    log_error("Invalid efuse directory path (contains dangerous characters)");
+                    return 1;
+                }
                 strncpy(cfg.efuse_dir, optarg, sizeof(cfg.efuse_dir) - 1);
                 break;
             case 'm':
@@ -2458,6 +2611,11 @@ int main(int argc, char *argv[]) {
                 cfg.setup_efuse = 1;
                 break;
             case 'u':
+                /* Security: Validate device path */
+                if (!validate_path_safe(optarg)) {
+                    log_error("Invalid USB device path (contains dangerous characters)");
+                    return 1;
+                }
                 strncpy(cfg.efuse_usb_device, optarg, sizeof(cfg.efuse_usb_device) - 1);
                 break;
             case 'E':
@@ -2470,6 +2628,11 @@ int main(int argc, char *argv[]) {
                 cfg.full_kernel_build = 1;
                 break;
             case 'D':
+                /* Security: Validate path for command injection */
+                if (!validate_path_safe(optarg)) {
+                    log_error("Invalid diagnose ISO path (contains dangerous characters)");
+                    return 1;
+                }
                 strncpy(cfg.diagnose_iso_path, optarg, sizeof(cfg.diagnose_iso_path) - 1);
                 break;
             case 'c':

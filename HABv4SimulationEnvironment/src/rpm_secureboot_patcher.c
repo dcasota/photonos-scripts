@@ -72,9 +72,35 @@ static void log_debug(const char *fmt, ...) {
     printf("\n");
 }
 
+/**
+ * Sanitize command for logging - mask private key paths.
+ * Security: Prevents sensitive path disclosure in logs.
+ */
+static const char* sanitize_cmd_for_log(const char *cmd) {
+    static char sanitized[2048];
+    strncpy(sanitized, cmd, sizeof(sanitized) - 1);
+    sanitized[sizeof(sanitized) - 1] = '\0';
+    
+    /* Mask private key references */
+    char *key_pos;
+    while ((key_pos = strstr(sanitized, ".key")) != NULL) {
+        char *path_start = key_pos;
+        while (path_start > sanitized && *path_start != ' ' && *path_start != '\'') {
+            path_start--;
+        }
+        if (*path_start == ' ' || *path_start == '\'') path_start++;
+        size_t remaining = strlen(key_pos + 4);
+        memmove(path_start + 13, key_pos + 4, remaining + 1);
+        memcpy(path_start, "[PRIVATE_KEY]", 13);
+    }
+    
+    return sanitized;
+}
+
 static int run_cmd(const char *cmd) {
     if (g_verbose) {
-        printf("  $ %s\n", cmd);
+        /* Security: Sanitize command output to mask sensitive paths */
+        printf("  $ %s\n", sanitize_cmd_for_log(cmd));
     }
     int ret = system(cmd);
     return WEXITSTATUS(ret);
@@ -107,6 +133,23 @@ static int run_cmd_output(const char *cmd, char *output, size_t output_size) {
 static int file_exists(const char *path) {
     struct stat st;
     return stat(path, &st) == 0;
+}
+
+/**
+ * Create a secure temporary directory using mkdtemp().
+ * Security: Prevents symlink attacks and race conditions.
+ */
+static char* create_secure_tempdir(const char *prefix) {
+    char template[512];
+    snprintf(template, sizeof(template), "/tmp/%s_XXXXXX", prefix);
+    
+    char *result = mkdtemp(template);
+    if (!result) {
+        return NULL;
+    }
+    
+    chmod(result, 0700);
+    return strdup(result);
 }
 
 static int mkdir_p(const char *path) {
@@ -903,10 +946,12 @@ rpm_validation_result_t* rpm_validate_mok_package(
                             strstr(output, "digests OK") != NULL);
     }
     
-    /* Extract and verify signatures on EFI files */
-    char tmp_dir[256];
-    snprintf(tmp_dir, sizeof(tmp_dir), "/tmp/rpm_validate_%d", getpid());
-    mkdir_p(tmp_dir);
+    /* Security: Use mkdtemp for secure temp directory */
+    char *tmp_dir = create_secure_tempdir("rpm_validate");
+    if (!tmp_dir) {
+        result->error_message = strdup("Failed to create secure temp directory");
+        return result;
+    }
     
     snprintf(cmd, sizeof(cmd), "cd '%s' && rpm2cpio '%s' | cpio -idm 2>/dev/null", 
              tmp_dir, rpm_path);
@@ -955,6 +1000,7 @@ rpm_validation_result_t* rpm_validate_mok_package(
     /* Cleanup */
     snprintf(cmd, sizeof(cmd), "rm -rf '%s'", tmp_dir);
     run_cmd(cmd);
+    free(tmp_dir);
     
     return result;
 }
