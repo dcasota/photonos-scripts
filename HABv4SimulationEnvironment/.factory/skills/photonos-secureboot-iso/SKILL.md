@@ -442,6 +442,7 @@ The tool implements several security measures:
 ### Input Validation
 - **Path validation**: All user-provided paths are validated against shell metacharacters
 - **Release whitelist**: Only valid releases (4.0, 5.0, 6.0) are accepted
+- **Key size whitelist**: Only valid RSA sizes (2048, 3072, 4096) are accepted
 - **Dangerous character rejection**: Paths containing `;|&$\`\"'` and `..` are rejected
 
 ### Secure Temporary Directories
@@ -453,6 +454,30 @@ The tool implements several security measures:
 - Private key paths are masked as `[PRIVATE_KEY]` in verbose output
 - Prevents accidental disclosure of sensitive paths in logs
 
+### Certificate Expiration Monitoring
+- **-C, --check-certs**: Check all certificates for expiration status
+- **-W, --cert-warn=DAYS**: Set warning threshold (default: 30 days)
+- Reports [OK], [WARNING], [EXPIRED] for each certificate
+- Returns exit code 1 if any certificates need attention
+
+```bash
+# Check certificate status
+./PhotonOS-HABv4Emulation-ISOCreator -C
+
+# Warn if certificates expire within 60 days
+./PhotonOS-HABv4Emulation-ISOCreator -C --cert-warn=60
+```
+
+### Configurable Key Sizes
+- **-K, --key-bits=BITS**: Set RSA key size (2048, 3072, 4096)
+- Default: 2048-bit (compatibility)
+- Recommended for high security: 4096-bit
+
+```bash
+# Generate 4096-bit keys valid for 1 year
+./PhotonOS-HABv4Emulation-ISOCreator -K 4096 -m 365 -g
+```
+
 ### Remaining Security Considerations
 
 | Category | Status | Notes |
@@ -461,9 +486,9 @@ The tool implements several security measures:
 | Download integrity | **Not implemented** | Ventoy/ISO downloads not checksum verified |
 | Key storage | **Plain text** | Keys stored unencrypted on filesystem |
 | HSM support | **Not implemented** | No PKCS#11/HSM integration |
-| Certificate expiration | **Not checked** | No warning for expired certificates |
+| Certificate expiration | **Implemented** | -C flag checks, -W sets warning threshold |
+| Configurable key sizes | **Implemented** | -K flag (2048/3072/4096) |
 
 For production deployments in regulated environments, consider:
 1. Adding SHA256 checksum verification for downloads
 2. Using hardware security modules (HSM) for key storage
-3. Implementing certificate expiration monitoring
