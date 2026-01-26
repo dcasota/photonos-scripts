@@ -434,3 +434,36 @@ User: How does the RPM patcher work?
 ```
 
 See [docs/DROID_SKILL_GUIDE.md](../../../docs/DROID_SKILL_GUIDE.md) for complete developer guide.
+
+## Security Measures (v1.8.0)
+
+The tool implements several security measures:
+
+### Input Validation
+- **Path validation**: All user-provided paths are validated against shell metacharacters
+- **Release whitelist**: Only valid releases (4.0, 5.0, 6.0) are accepted
+- **Dangerous character rejection**: Paths containing `;|&$\`\"'` and `..` are rejected
+
+### Secure Temporary Directories
+- Uses `mkdtemp()` instead of predictable `/tmp/prefix_PID` patterns
+- Temp directories created with random suffixes and 0700 permissions
+- Prevents symlink attacks and race conditions (TOCTOU mitigation)
+
+### Log Sanitization
+- Private key paths are masked as `[PRIVATE_KEY]` in verbose output
+- Prevents accidental disclosure of sensitive paths in logs
+
+### Remaining Security Considerations
+
+| Category | Status | Notes |
+|----------|--------|-------|
+| Command injection | **Mitigated** | Path validation, but still uses system() |
+| Download integrity | **Not implemented** | Ventoy/ISO downloads not checksum verified |
+| Key storage | **Plain text** | Keys stored unencrypted on filesystem |
+| HSM support | **Not implemented** | No PKCS#11/HSM integration |
+| Certificate expiration | **Not checked** | No warning for expired certificates |
+
+For production deployments in regulated environments, consider:
+1. Adding SHA256 checksum verification for downloads
+2. Using hardware security modules (HSM) for key storage
+3. Implementing certificate expiration monitoring

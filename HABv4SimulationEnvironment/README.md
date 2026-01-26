@@ -376,6 +376,13 @@ On first boot, the **blue MokManager screen** appears:
 
 ## Version History
 
+- **v1.8.0** - Security hardening:
+  - Input validation: Path sanitization against command injection
+  - Release whitelist: Only valid versions (4.0, 5.0, 6.0) accepted
+  - Secure temp directories: Using mkdtemp() instead of predictable paths
+  - Log sanitization: Private key paths masked in verbose output
+  - TOCTOU mitigation: Atomic temp directory creation
+  - Added grub2-theme to packages_mok.json for proper font/theme support
 - **v1.7.0** - Installed system boot fixes:
   - GRUB for installed system now searches for `/boot/grub2/grub.cfg` (not ISO-specific path)
   - eFuse verification conditional - only added when `--efuse-usb` flag is used
