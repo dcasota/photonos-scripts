@@ -55,6 +55,15 @@ static const int VALID_KEY_SIZES[] = {2048, 3072, 4096, 0};
 #define VENTOY_VERSION "1.1.10"
 #define VENTOY_URL "https://github.com/ventoy/Ventoy/releases/download/v" VENTOY_VERSION "/ventoy-" VENTOY_VERSION "-linux.tar.gz"
 
+/* SHA3-256 checksums for download integrity verification
+ * Security: Prevents man-in-the-middle attacks substituting malicious binaries
+ * To update checksums:
+ *   openssl dgst -sha3-256 ventoy-X.X.X-linux.tar.gz
+ *   (mount ventoy.disk.img and checksum EFI files) */
+#define VENTOY_SHA3_256 "9ef8f77e05e5a0f8231e196cef5759ce1a0ffd31abeac4c1a92f76b9c9a8d620"
+#define SUSE_SHIM_SHA3_256 "7856a4588396b9bc1392af09885beef8833fa86381cf1a2a0f0ac5e6e7411ba5"
+#define SUSE_MOKMANAGER_SHA3_256 "00a3b4653c4098c8d6557b8a2b61c0f7d05b20ee619ec786940d0b28970ee104"
+
 /* ANSI colors */
 #define RED     "\x1b[31m"
 #define GREEN   "\x1b[32m"
@@ -406,6 +415,53 @@ static int check_all_certificates(const char *keys_dir, int warn_days) {
     }
     
     return issues;
+}
+
+/* ============================================================================
+ * Download Integrity Verification
+ * ============================================================================ */
+
+/**
+ * Verify SHA3-256 checksum of a file.
+ * Returns 1 if checksum matches, 0 if mismatch or error.
+ * 
+ * Security: Prevents man-in-the-middle attacks on downloaded files.
+ */
+static int verify_sha3_256(const char *file_path, const char *expected_hash) {
+    char cmd[1024];
+    char output[512];
+    FILE *fp;
+    
+    /* Calculate SHA3-256 using openssl */
+    snprintf(cmd, sizeof(cmd), 
+        "openssl dgst -sha3-256 '%s' 2>/dev/null | awk '{print $NF}'", file_path);
+    
+    fp = popen(cmd, "r");
+    if (!fp) {
+        log_error("Failed to run SHA3-256 verification");
+        return 0;
+    }
+    
+    if (fgets(output, sizeof(output), fp) == NULL) {
+        pclose(fp);
+        log_error("Failed to read SHA3-256 output");
+        return 0;
+    }
+    pclose(fp);
+    
+    /* Remove trailing newline */
+    size_t len = strlen(output);
+    if (len > 0 && output[len-1] == '\n') output[len-1] = '\0';
+    
+    /* Compare hashes (case-insensitive) */
+    if (strcasecmp(output, expected_hash) == 0) {
+        return 1;
+    }
+    
+    log_error("SHA3-256 checksum mismatch!");
+    log_error("  Expected: %s", expected_hash);
+    log_error("  Got:      %s", output);
+    return 0;
 }
 
 /* ============================================================================
@@ -942,6 +998,22 @@ static int download_ventoy_components_fallback(void) {
         return -1;
     }
     
+    /* Security: Verify SHA3-256 checksum to prevent MITM attacks */
+    char ventoy_archive[512];
+    snprintf(ventoy_archive, sizeof(ventoy_archive), "%s/ventoy.tar.gz", work_dir);
+    
+    log_info("Verifying SHA3-256 checksum...");
+    if (!verify_sha3_256(ventoy_archive, VENTOY_SHA3_256)) {
+        log_error("Ventoy archive integrity check FAILED!");
+        log_error("The downloaded file may have been tampered with.");
+        log_error("Please verify your network connection and try again.");
+        snprintf(cmd, sizeof(cmd), "rm -rf '%s'", work_dir);
+        run_cmd(cmd);
+        free(work_dir);
+        return -1;
+    }
+    log_info("SHA3-256 checksum verified OK");
+    
     snprintf(cmd, sizeof(cmd), "cd '%s' && tar -xzf ventoy.tar.gz", work_dir);
     run_cmd(cmd);
     
@@ -979,8 +1051,24 @@ static int download_ventoy_components_fallback(void) {
     free(work_dir);
     
     if (file_exists(shim_path)) {
-        log_info("SUSE shim downloaded");
-        log_info("MokManager downloaded");
+        /* Security: Verify SHA3-256 checksums of extracted EFI binaries */
+        log_info("Verifying extracted EFI binary checksums...");
+        
+        if (!verify_sha3_256(shim_path, SUSE_SHIM_SHA3_256)) {
+            log_error("SUSE shim integrity check FAILED!");
+            log_error("The extracted shim binary does not match expected checksum.");
+            return -1;
+        }
+        log_info("SUSE shim SHA3-256 verified OK");
+        
+        if (!verify_sha3_256(mok_path, SUSE_MOKMANAGER_SHA3_256)) {
+            log_error("MokManager integrity check FAILED!");
+            log_error("The extracted MokManager binary does not match expected checksum.");
+            return -1;
+        }
+        log_info("MokManager SHA3-256 verified OK");
+        
+        log_info("All Ventoy components verified and extracted successfully");
     } else {
         log_error("Failed to extract Ventoy components");
         return -1;
