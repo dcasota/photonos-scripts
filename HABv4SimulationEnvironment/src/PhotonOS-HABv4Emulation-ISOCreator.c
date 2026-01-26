@@ -1597,6 +1597,10 @@ static int create_secure_boot_iso(void) {
     FILE *f = fopen(stub_cfg, "w");
     if (f) {
         fprintf(f,
+            "# Use text mode initially to avoid garbled graphics on some hardware\n"
+            "terminal_output console\n"
+            "# Reset graphics state before loading themed config\n"
+            "set gfxmode=auto\n"
             "search --no-floppy --file --set=root /isolinux/isolinux.cfg\n"
             "set prefix=($root)/boot/grub2\n"
             "configfile ($root)/boot/grub2/grub.cfg\n"
