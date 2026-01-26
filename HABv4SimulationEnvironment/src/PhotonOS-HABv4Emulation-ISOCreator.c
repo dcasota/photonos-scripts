@@ -1492,7 +1492,9 @@ static int create_secure_boot_iso(void) {
     if (file_exists(options_json)) {
         log_info("Adding MOK Secure Boot option to installer...");
         
-        /* Create packages_mok.json with MOK-signed packages */
+        /* Create packages_mok.json with MOK-signed packages
+         * Note: grub2-theme provides /boot/grub2/fonts/ascii.pf2 and theme files
+         * which are required for the themed GRUB menu to display properly */
         FILE *f = fopen(mok_packages_json, "w");
         if (f) {
             fprintf(f,
@@ -1502,6 +1504,7 @@ static int create_secure_boot_iso(void) {
                 "        \"linux-mok\",\n"
                 "        \"initramfs\",\n"
                 "        \"grub2-efi-image-mok\",\n"
+                "        \"grub2-theme\",\n"
                 "        \"shim-signed-mok\",\n"
                 "        \"lvm2\",\n"
                 "        \"less\",\n"
