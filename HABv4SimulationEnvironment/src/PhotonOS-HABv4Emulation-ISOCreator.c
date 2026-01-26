@@ -43,9 +43,14 @@
 /* Default configuration */
 #define DEFAULT_RELEASE "5.0"
 #define DEFAULT_MOK_DAYS 180
+#define DEFAULT_MOK_KEY_BITS 2048
+#define DEFAULT_CERT_WARN_DAYS 30
 #define DEFAULT_KEYS_DIR "/root/hab_keys"
 #define DEFAULT_EFUSE_DIR "/root/efuse_sim"
 #define DEFAULT_EFIBOOT_SIZE_MB 16
+
+/* Valid key sizes (whitelist) */
+static const int VALID_KEY_SIZES[] = {2048, 3072, 4096, 0};
 
 #define VENTOY_VERSION "1.1.10"
 #define VENTOY_URL "https://github.com/ventoy/Ventoy/releases/download/v" VENTOY_VERSION "/ventoy-" VENTOY_VERSION "-linux.tar.gz"
@@ -74,12 +79,15 @@ typedef struct {
     char efuse_usb_device[128];
     char diagnose_iso_path[512];
     int mok_days;
+    int mok_key_bits;         /* RSA key size: 2048, 3072, or 4096 */
+    int cert_warn_days;       /* Days before expiration to warn */
     int build_iso;
     int generate_keys;
     int setup_efuse;
     int full_kernel_build;
     int efuse_usb_mode;
     int rpm_signing;          /* Enable GPG signing of MOK RPM packages */
+    int check_certs;          /* Check certificate expiration */
     int cleanup;
     int verbose;
     int yes_to_all;
@@ -197,6 +205,19 @@ static const char* sanitize_cmd_for_log(const char *cmd) {
     return sanitized;
 }
 
+/**
+ * Validate RSA key size against whitelist.
+ * Returns 1 if valid, 0 otherwise.
+ */
+static int validate_key_size(int bits) {
+    for (int i = 0; VALID_KEY_SIZES[i] != 0; i++) {
+        if (bits == VALID_KEY_SIZES[i]) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 /* ============================================================================
  * Utility Functions
  * ============================================================================ */
@@ -292,6 +313,102 @@ static const char *get_host_arch(void) {
 }
 
 /* ============================================================================
+ * Certificate Monitoring
+ * ============================================================================ */
+
+/**
+ * Check certificate expiration and return days until expiry.
+ * Returns: positive = days remaining, 0 = expired today, negative = already expired
+ * Returns -9999 on error.
+ * 
+ * Security: Monitors certificate validity to prevent using expired certs.
+ */
+static int check_certificate_expiry(const char *cert_path) {
+    char cmd[1024];
+    char output[256];
+    FILE *fp;
+    
+    /* Use openssl to get expiry date in seconds since epoch */
+    snprintf(cmd, sizeof(cmd), 
+        "openssl x509 -in '%s' -noout -enddate 2>/dev/null | "
+        "sed 's/notAfter=//'", cert_path);
+    
+    fp = popen(cmd, "r");
+    if (!fp) return -9999;
+    
+    if (fgets(output, sizeof(output), fp) == NULL) {
+        pclose(fp);
+        return -9999;
+    }
+    pclose(fp);
+    
+    /* Remove trailing newline */
+    size_t len = strlen(output);
+    if (len > 0 && output[len-1] == '\n') output[len-1] = '\0';
+    
+    /* Parse the date and calculate days remaining */
+    snprintf(cmd, sizeof(cmd),
+        "echo $(( ($(date -d '%s' +%%s) - $(date +%%s)) / 86400 ))", output);
+    
+    fp = popen(cmd, "r");
+    if (!fp) return -9999;
+    
+    int days = -9999;
+    if (fscanf(fp, "%d", &days) != 1) {
+        days = -9999;
+    }
+    pclose(fp);
+    
+    return days;
+}
+
+/**
+ * Check all certificates in keys directory and report status.
+ * Returns number of certificates with warnings/errors.
+ */
+static int check_all_certificates(const char *keys_dir, int warn_days) {
+    int issues = 0;
+    const char *cert_files[] = {"MOK.crt", "DB.crt", "KEK.crt", "PK.crt", NULL};
+    
+    log_step("Checking certificate expiration (warn if < %d days)...", warn_days);
+    
+    for (int i = 0; cert_files[i] != NULL; i++) {
+        char cert_path[512];
+        snprintf(cert_path, sizeof(cert_path), "%s/%s", keys_dir, cert_files[i]);
+        
+        if (!file_exists(cert_path)) {
+            continue;  /* Skip non-existent certs */
+        }
+        
+        int days = check_certificate_expiry(cert_path);
+        
+        if (days == -9999) {
+            printf("  " YELLOW "[WARN]" RESET " %s: Unable to check expiration\n", cert_files[i]);
+            issues++;
+        } else if (days < 0) {
+            printf("  " RED "[EXPIRED]" RESET " %s: Expired %d days ago!\n", cert_files[i], -days);
+            issues++;
+        } else if (days == 0) {
+            printf("  " RED "[EXPIRED]" RESET " %s: Expires TODAY!\n", cert_files[i]);
+            issues++;
+        } else if (days <= warn_days) {
+            printf("  " YELLOW "[WARNING]" RESET " %s: Expires in %d days\n", cert_files[i], days);
+            issues++;
+        } else {
+            printf("  " GREEN "[OK]" RESET " %s: Valid for %d more days\n", cert_files[i], days);
+        }
+    }
+    
+    if (issues == 0) {
+        log_info("All certificates are valid");
+    } else {
+        log_warn("%d certificate(s) need attention", issues);
+    }
+    
+    return issues;
+}
+
+/* ============================================================================
  * Key Generation
  * ============================================================================ */
 
@@ -352,7 +469,7 @@ static int generate_mok_key(void) {
     
     fprintf(f,
         "[ req ]\n"
-        "default_bits = 2048\n"
+        "default_bits = %d\n"
         "distinguished_name = req_dn\n"
         "prompt = no\n"
         "x509_extensions = v3_ext\n"
@@ -367,14 +484,15 @@ static int generate_mok_key(void) {
         "authorityKeyIdentifier = keyid:always,issuer\n"
         "basicConstraints = critical, CA:FALSE\n"
         "keyUsage = critical, digitalSignature\n"
-        "extendedKeyUsage = codeSigning\n"
+        "extendedKeyUsage = codeSigning\n",
+        cfg.mok_key_bits
     );
     fclose(f);
     
     snprintf(cmd, sizeof(cmd),
-        "openssl req -new -x509 -newkey rsa:2048 -nodes "
+        "openssl req -new -x509 -newkey rsa:%d -nodes "
         "-keyout '%s' -out '%s' -days %d -config '%s' 2>/dev/null",
-        key_path, crt_path, cfg.mok_days, cnf_path);
+        cfg.mok_key_bits, key_path, crt_path, cfg.mok_days, cnf_path);
     
     if (run_cmd(cmd) != 0) {
         log_error("Failed to generate MOK key");
@@ -388,7 +506,7 @@ static int generate_mok_key(void) {
     run_cmd(cmd);
     
     unlink(cnf_path);
-    log_info("Generated MOK key (validity: %d days)", cfg.mok_days);
+    log_info("Generated MOK key (%d-bit RSA, validity: %d days)", cfg.mok_key_bits, cfg.mok_days);
     return 0;
 }
 
@@ -2482,6 +2600,9 @@ static void show_help(void) {
     printf("  -k, --keys-dir=DIR         Keys directory (default: %s)\n", DEFAULT_KEYS_DIR);
     printf("  -e, --efuse-dir=DIR        eFuse directory (default: %s)\n", DEFAULT_EFUSE_DIR);
     printf("  -m, --mok-days=DAYS        MOK certificate validity in days (default: %d, max: 3650)\n", DEFAULT_MOK_DAYS);
+    printf("  -K, --key-bits=BITS        RSA key size: 2048, 3072, 4096 (default: %d)\n", DEFAULT_MOK_KEY_BITS);
+    printf("  -W, --cert-warn=DAYS       Warn if certificate expires within DAYS (default: %d)\n", DEFAULT_CERT_WARN_DAYS);
+    printf("  -C, --check-certs          Check certificate expiration status\n");
     printf("  -b, --build-iso            Build Secure Boot ISO\n");
     printf("  -g, --generate-keys        Generate cryptographic keys\n");
     printf("  -s, --setup-efuse          Setup eFuse simulation\n");
@@ -2495,6 +2616,11 @@ static void show_help(void) {
     printf("  -y, --yes                  Auto-confirm destructive operations (e.g., erase USB)\n");
     printf("  -h, --help                 Show this help\n");
     printf("\n");
+    printf("Security Options:\n");
+    printf("  --key-bits=4096            Use 4096-bit RSA keys (stronger, slower)\n");
+    printf("  --check-certs              Check all certificates for expiration\n");
+    printf("  --cert-warn=60             Warn 60 days before certificate expiration\n");
+    printf("\n");
     printf("Default behavior (no action flags):\n");
     printf("  When no action flags (-b, -g, -s, -d, -u, -c, -F) are specified,\n");
     printf("  the tool runs: -g -s -d (generate keys, setup eFuse, download Ventoy)\n");
@@ -2503,11 +2629,10 @@ static void show_help(void) {
     printf("  %s                         # Default: setup keys, eFuse, Ventoy\n", PROGRAM_NAME);
     printf("  %s -b                      # Build Secure Boot ISO\n", PROGRAM_NAME);
     printf("  %s -r 4.0 -b               # Build for Photon OS 4.0\n", PROGRAM_NAME);
-    printf("  %s -i in.iso -o out.iso -b # Specify input/output ISO\n", PROGRAM_NAME);
+    printf("  %s -K 4096 -m 365 -g       # Generate 4096-bit keys valid 1 year\n", PROGRAM_NAME);
+    printf("  %s -C                      # Check certificate expiration status\n", PROGRAM_NAME);
     printf("  %s -E -b                   # Build ISO with eFuse USB verification\n", PROGRAM_NAME);
     printf("  %s -R -b                   # Build ISO with RPM signing\n", PROGRAM_NAME);
-    printf("  %s -u /dev/sdb             # Create eFuse USB dongle\n", PROGRAM_NAME);
-    printf("  %s -F                      # Full kernel build (hours)\n", PROGRAM_NAME);
     printf("  %s -D /path/to/iso         # Diagnose existing ISO\n", PROGRAM_NAME);
     printf("  %s -c                      # Cleanup all artifacts\n", PROGRAM_NAME);
     printf("\n");
@@ -2523,6 +2648,8 @@ int main(int argc, char *argv[]) {
     strncpy(cfg.keys_dir, DEFAULT_KEYS_DIR, sizeof(cfg.keys_dir) - 1);
     strncpy(cfg.efuse_dir, DEFAULT_EFUSE_DIR, sizeof(cfg.efuse_dir) - 1);
     cfg.mok_days = DEFAULT_MOK_DAYS;
+    cfg.mok_key_bits = DEFAULT_MOK_KEY_BITS;
+    cfg.cert_warn_days = DEFAULT_CERT_WARN_DAYS;
     
     char *home = getenv("HOME");
     if (!home) home = "/root";
@@ -2535,6 +2662,9 @@ int main(int argc, char *argv[]) {
         {"keys-dir",          required_argument, 0, 'k'},
         {"efuse-dir",         required_argument, 0, 'e'},
         {"mok-days",          required_argument, 0, 'm'},
+        {"key-bits",          required_argument, 0, 'K'},
+        {"cert-warn",         required_argument, 0, 'W'},
+        {"check-certs",       no_argument,       0, 'C'},
         {"build-iso",         no_argument,       0, 'b'},
         {"generate-keys",     no_argument,       0, 'g'},
         {"setup-efuse",       no_argument,       0, 's'},
@@ -2551,7 +2681,7 @@ int main(int argc, char *argv[]) {
     };
     
     int opt;
-    while ((opt = getopt_long(argc, argv, "r:i:o:k:e:m:bgsERFD:cu:vyh", long_options, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "r:i:o:k:e:m:K:W:CbgsERFD:cu:vyh", long_options, NULL)) != -1) {
         switch (opt) {
             case 'r':
                 /* Security: Validate release against whitelist */
@@ -2600,6 +2730,23 @@ int main(int argc, char *argv[]) {
                     log_error("MOK days must be between 1 and 3650");
                     return 1;
                 }
+                break;
+            case 'K':
+                cfg.mok_key_bits = atoi(optarg);
+                if (!validate_key_size(cfg.mok_key_bits)) {
+                    log_error("Invalid key size: %d (valid: 2048, 3072, 4096)", cfg.mok_key_bits);
+                    return 1;
+                }
+                break;
+            case 'W':
+                cfg.cert_warn_days = atoi(optarg);
+                if (cfg.cert_warn_days < 1 || cfg.cert_warn_days > 365) {
+                    log_error("Certificate warning days must be between 1 and 365");
+                    return 1;
+                }
+                break;
+            case 'C':
+                cfg.check_certs = 1;
                 break;
             case 'b':
                 cfg.build_iso = 1;
@@ -2666,6 +2813,17 @@ int main(int argc, char *argv[]) {
         return diagnose_iso(cfg.diagnose_iso_path);
     }
     
+    /* Check certificate expiration if requested */
+    if (cfg.check_certs) {
+        int cert_issues = check_all_certificates(cfg.keys_dir, cfg.cert_warn_days);
+        /* If only checking certs (no other action), exit with appropriate code */
+        if (!cfg.generate_keys && !cfg.setup_efuse && 
+            !cfg.build_iso && !cfg.full_kernel_build &&
+            strlen(cfg.efuse_usb_device) == 0) {
+            return (cert_issues > 0) ? 1 : 0;
+        }
+    }
+    
     /* Handle eFuse USB creation - but don't return early if --build-iso is also set */
     int efuse_usb_requested = (strlen(cfg.efuse_usb_device) > 0);
     if (efuse_usb_requested) {
@@ -2700,7 +2858,9 @@ int main(int argc, char *argv[]) {
     printf("Photon OS Release: %s\n", cfg.release);
     printf("Keys Directory:    %s\n", cfg.keys_dir);
     printf("eFuse Directory:   %s\n", cfg.efuse_dir);
+    printf("MOK Key Size:      %d-bit RSA\n", cfg.mok_key_bits);
     printf("MOK Validity:      %d days\n", cfg.mok_days);
+    printf("Cert Warn Days:    %d\n", cfg.cert_warn_days);
     if (cfg.build_iso) printf("Build ISO:         YES\n");
     if (cfg.efuse_usb_mode) printf("eFuse USB Mode:    ENABLED\n");
     if (cfg.full_kernel_build) printf("Full Kernel Build: YES\n");
