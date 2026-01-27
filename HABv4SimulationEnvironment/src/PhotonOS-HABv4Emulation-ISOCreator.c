@@ -1934,6 +1934,34 @@ static int create_secure_boot_iso(void) {
         log_warn("mk-setup-grub.sh not found in initrd - grub.cfg may have suboptimal settings");
     }
     
+    /* Create dracut config to force-load USB drivers at boot
+     * CRITICAL: The USB drivers must be in the initrd AND configured to load at boot.
+     * Using --add-drivers only includes them in initrd, but force_drivers ensures
+     * they are loaded during early boot before the root filesystem is accessed.
+     * Without this, USB boot will fail with black screen after "UEFI Secure Boot is enabled"
+     * because the kernel cannot access the USB root device.
+     */
+    char dracut_conf_dir[512], usb_boot_conf[512];
+    snprintf(dracut_conf_dir, sizeof(dracut_conf_dir), "%s/etc/dracut.conf.d", initrd_extract);
+    snprintf(usb_boot_conf, sizeof(usb_boot_conf), "%s/usb-boot.conf", dracut_conf_dir);
+    
+    mkdir_p(dracut_conf_dir);
+    
+    FILE *dracut_f = fopen(usb_boot_conf, "w");
+    if (dracut_f) {
+        fprintf(dracut_f,
+            "# Force load USB drivers for USB boot support\n"
+            "# Required for booting from USB devices where USB controllers\n"
+            "# are not detected during initrd generation on a different system\n"
+            "# This ensures USB drivers are loaded early in boot before root mount\n"
+            "force_drivers+=\" usbcore usb-common xhci_hcd xhci_pci ehci_hcd ehci_pci uhci_hcd usb_storage \"\n"
+        );
+        fclose(dracut_f);
+        log_info("Created dracut USB boot config: %s", usb_boot_conf);
+    } else {
+        log_warn("Failed to create dracut USB boot config");
+    }
+    
     /* Repack initrd */
     snprintf(cmd, sizeof(cmd), 
         "cd '%s' && find . | cpio -o -H newc 2>/dev/null | gzip -9 > '%s'",
