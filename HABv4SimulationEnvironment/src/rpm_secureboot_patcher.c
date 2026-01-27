@@ -547,11 +547,13 @@ static int generate_grub_mok_spec(rpm_build_config_t *config, rpm_package_info_t
         date_str
     );
     
-    /* Always add %post script to fix boot parameters for USB/FIPS compatibility */
+    /* Use %posttrans to fix boot parameters AFTER all package operations complete
+     * This ensures we run after the installer creates/modifies grub.cfg */
     fprintf(f,
         "\n"
-        "%%post\n"
+        "%%posttrans\n"
         "# Fix grub.cfg for USB boot reliability and FIPS compatibility\n"
+        "# Using %%posttrans ensures this runs AFTER installer finishes grub.cfg\n"
         "# These parameters match the installer ISO for consistent behavior\n"
         "GRUB_CFG=/boot/grub2/grub.cfg\n"
         "if [ -f \"$GRUB_CFG\" ]; then\n"
