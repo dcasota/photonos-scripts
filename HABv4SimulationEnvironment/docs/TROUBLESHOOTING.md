@@ -625,6 +625,51 @@ If MokManager is only in `\EFI\BOOT\`, shim can't find it and falls back to anot
 
 ## USB Boot Issues
 
+### Black screen after "UEFI Secure Boot is enabled" message (Installed System)
+
+**Cause**: The ESX kernel has USB drivers compiled as **modules** (not built-in), but the initrd generated during installation doesn't include them.
+
+**Explanation**:
+- The **ISO installer** boots fine because VMware's installer initrd includes all necessary drivers
+- The **installed system** generates a new initrd via dracut during package installation
+- Dracut doesn't detect USB boot requirement and omits USB drivers
+- Result: Kernel loads but cannot access root filesystem on USB device
+
+**Key drivers needed for USB boot** (all are modules in ESX kernel):
+- `usbcore`, `usb-common` - USB core subsystem
+- `xhci_hcd`, `xhci_pci` - USB 3.x host controller
+- `ehci_hcd`, `ehci_pci` - USB 2.0 host controller
+- `uhci_hcd` - USB 1.x host controller
+- `usb_storage` - USB mass storage
+
+**Manual Fix for Existing Installation**:
+```bash
+# Mount installed system
+mount /dev/sdX3 /mnt/sdd_root
+mount --bind /dev /mnt/sdd_root/dev
+mount --bind /sys /mnt/sdd_root/sys
+mount --bind /proc /mnt/sdd_root/proc
+
+# Rebuild module dependencies and regenerate initrd with USB drivers
+chroot /mnt/sdd_root /sbin/depmod -a $(ls /mnt/sdd_root/lib/modules/)
+chroot /mnt/sdd_root /usr/sbin/dracut -f \
+    --add-drivers "usbcore usb-common xhci_hcd xhci_pci ehci_hcd ehci_pci uhci_hcd usb_storage" \
+    /boot/initrd.img-$(ls /mnt/sdd_root/lib/modules/) \
+    $(ls /mnt/sdd_root/lib/modules/)
+
+# Cleanup
+umount /mnt/sdd_root/{proc,sys,dev}
+umount /mnt/sdd_root
+```
+
+**Permanent Fix**: Rebuild ISO with latest PhotonOS-HABv4Emulation-ISOCreator (v1.8.0+). The linux-mok package's `%post` script now includes USB drivers in dracut command.
+
+**Verification**:
+```bash
+# Check if USB drivers are in initrd
+lsinitrd /boot/initrd.img-* | grep -E "usbcore|xhci|ehci"
+```
+
 ### USB boots on some machines but not others
 
 **Cause**: Different UEFI implementations.

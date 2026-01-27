@@ -312,8 +312,16 @@ sync
 | Installation takes 2000+ seconds | USB autosuspend | Rebuild ISO (v1.7.0+ adds kernel param) |
 | "grub.efi Not Found" | SUSE shim looks for grub.efi | Rebuild ISO (v1.7.0+ installs both names) |
 | "rpm transaction failed" | Package conflicts | Rebuild ISO (v1.7.0+ fixes Obsoletes) |
+| Black screen after "Secure Boot is enabled" | Missing USB drivers in initrd | Rebuild ISO (v1.8.0+ includes USB drivers) |
 
 ### Detailed Troubleshooting
+
+**Black screen after "UEFI Secure Boot is enabled" message (Installed System):**
+- The ESX kernel has USB drivers as modules (not built-in)
+- Dracut didn't include USB drivers because it didn't detect USB boot requirement
+- The ISO installer works because VMware's installer initrd has all drivers
+- Fix: Rebuild ISO with v1.8.0+ which adds USB drivers to dracut command
+- Manual fix: Regenerate initrd with `--add-drivers "usbcore usb-common xhci_hcd xhci_pci ehci_hcd ehci_pci uhci_hcd usb_storage"`
 
 **Laptop shows gray/red security dialog instead of blue MokManager:**
 - This means CSM/Legacy boot is enabled

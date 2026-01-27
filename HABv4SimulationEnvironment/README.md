@@ -376,7 +376,9 @@ On first boot, the **blue MokManager screen** appears:
 
 ## Version History
 
-- **v1.8.0** - Security hardening:
+- **v1.8.0** - Security hardening and USB boot reliability:
+  - **USB driver support**: ESX kernel USB boot fixed - include USB drivers in initrd via dracut
+  - **Installer template patching**: Patch `mk-setup-grub.sh` in initrd for reliable boot parameters
   - Input validation: Path sanitization against command injection
   - Release whitelist: Only valid versions (4.0, 5.0, 6.0) accepted
   - Secure temp directories: Using mkdtemp() instead of predictable paths
