@@ -1898,6 +1898,47 @@ static int create_secure_boot_iso(void) {
         log_warn("build_install_options_all.json not found in initrd");
     }
     
+    /* Patch mk-setup-grub.sh to fix boot parameters for USB/FIPS compatibility
+     * This is necessary because:
+     * 1. The installer creates grub.cfg from this template AFTER all RPM scriptlets run
+     * 2. Neither %post nor %posttrans can reliably modify grub.cfg
+     * 3. We must patch the template itself to ensure proper boot parameters
+     */
+    char grub_setup_script[512];
+    snprintf(grub_setup_script, sizeof(grub_setup_script), 
+        "%s/usr/lib/python3.11/site-packages/photon_installer/mk-setup-grub.sh", initrd_extract);
+    
+    if (file_exists(grub_setup_script)) {
+        log_info("Patching mk-setup-grub.sh for USB/FIPS boot compatibility...");
+        
+        /* Change gfxpayload=keep to gfxpayload=text */
+        snprintf(cmd, sizeof(cmd), 
+            "sed -i 's/gfxpayload=keep/gfxpayload=text/' '%s'", grub_setup_script);
+        run_cmd(cmd);
+        
+        /* Change terminal_output gfxterm to terminal_output console */
+        snprintf(cmd, sizeof(cmd), 
+            "sed -i 's/terminal_output gfxterm/terminal_output console/' '%s'", grub_setup_script);
+        run_cmd(cmd);
+        
+        /* Add rootwait usbcore.autosuspend=-1 console=tty0 to EXTRA_PARAMS
+         * The script already has EXTRA_PARAMS for nvme, we extend it for all USB boots */
+        snprintf(cmd, sizeof(cmd), 
+            "sed -i 's/EXTRA_PARAMS=\"\"/EXTRA_PARAMS=\"rootwait usbcore.autosuspend=-1 console=tty0\"/' '%s'", 
+            grub_setup_script);
+        run_cmd(cmd);
+        
+        /* Also ensure EXTRA_PARAMS are added even when not empty (nvme case) */
+        snprintf(cmd, sizeof(cmd), 
+            "sed -i 's/EXTRA_PARAMS=rootwait$/EXTRA_PARAMS=\"rootwait usbcore.autosuspend=-1 console=tty0\"/' '%s'", 
+            grub_setup_script);
+        run_cmd(cmd);
+        
+        log_info("Patched mk-setup-grub.sh: gfxpayload=text, console mode, USB params");
+    } else {
+        log_warn("mk-setup-grub.sh not found in initrd - grub.cfg may have suboptimal settings");
+    }
+    
     /* Repack initrd */
     snprintf(cmd, sizeof(cmd), 
         "cd '%s' && find . | cpio -o -H newc 2>/dev/null | gzip -9 > '%s'",
