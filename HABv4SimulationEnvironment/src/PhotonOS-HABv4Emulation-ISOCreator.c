@@ -1909,32 +1909,27 @@ static int create_secure_boot_iso(void) {
         "%s/usr/lib/python3.11/site-packages/photon_installer/mk-setup-grub.sh", initrd_extract);
     
     if (file_exists(grub_setup_script)) {
-        log_info("Patching mk-setup-grub.sh for USB/FIPS boot compatibility...");
+        log_info("Patching mk-setup-grub.sh for USB boot compatibility...");
         
-        /* Change gfxpayload=keep to gfxpayload=text */
-        snprintf(cmd, sizeof(cmd), 
-            "sed -i 's/gfxpayload=keep/gfxpayload=text/' '%s'", grub_setup_script);
-        run_cmd(cmd);
+        /* Keep graphical mode for splash screen - don't change gfxpayload or terminal_output
+         * The black screen issue was caused by missing USB drivers in initrd, not graphics mode.
+         * The linux-mok %post script now includes USB drivers via dracut --add-drivers.
+         */
         
-        /* Change terminal_output gfxterm to terminal_output console */
-        snprintf(cmd, sizeof(cmd), 
-            "sed -i 's/terminal_output gfxterm/terminal_output console/' '%s'", grub_setup_script);
-        run_cmd(cmd);
-        
-        /* Add rootwait usbcore.autosuspend=-1 console=tty0 to EXTRA_PARAMS
+        /* Add rootwait usbcore.autosuspend=-1 to EXTRA_PARAMS for USB boot reliability
          * The script already has EXTRA_PARAMS for nvme, we extend it for all USB boots */
         snprintf(cmd, sizeof(cmd), 
-            "sed -i 's/EXTRA_PARAMS=\"\"/EXTRA_PARAMS=\"rootwait usbcore.autosuspend=-1 console=tty0\"/' '%s'", 
+            "sed -i 's/EXTRA_PARAMS=\"\"/EXTRA_PARAMS=\"rootwait usbcore.autosuspend=-1\"/' '%s'", 
             grub_setup_script);
         run_cmd(cmd);
         
         /* Also ensure EXTRA_PARAMS are added even when not empty (nvme case) */
         snprintf(cmd, sizeof(cmd), 
-            "sed -i 's/EXTRA_PARAMS=rootwait$/EXTRA_PARAMS=\"rootwait usbcore.autosuspend=-1 console=tty0\"/' '%s'", 
+            "sed -i 's/EXTRA_PARAMS=rootwait$/EXTRA_PARAMS=\"rootwait usbcore.autosuspend=-1\"/' '%s'", 
             grub_setup_script);
         run_cmd(cmd);
         
-        log_info("Patched mk-setup-grub.sh: gfxpayload=text, console mode, USB params");
+        log_info("Patched mk-setup-grub.sh: Added USB boot params (kept graphical mode for splash)");
     } else {
         log_warn("mk-setup-grub.sh not found in initrd - grub.cfg may have suboptimal settings");
     }
