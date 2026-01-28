@@ -37,7 +37,7 @@
 
 #include "rpm_secureboot_patcher.h"
 
-#define VERSION "1.8.0"
+#define VERSION "1.9.0"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */
@@ -93,7 +93,6 @@ typedef struct {
     int build_iso;
     int generate_keys;
     int setup_efuse;
-    int full_kernel_build;
     int efuse_usb_mode;
     int rpm_signing;          /* Enable GPG signing of MOK RPM packages */
     int check_certs;          /* Check certificate expiration */
@@ -1295,13 +1294,7 @@ static int build_linux_kernel(void) {
     
     log_step("Linux %s kernel build...", arch);
     
-    if (!cfg.full_kernel_build) {
-        log_info("Skipping full kernel build (use --full-kernel-build to enable)");
-        log_info("Note: Full kernel build takes several hours");
-        return 0;
-    }
-    
-    log_warn("Full kernel build requested - this will take a long time!");
+    log_warn("Kernel build will take a long time (1-4 hours depending on CPU)!");
     printf("\n");
     printf("The full kernel build process includes:\n");
     printf("  1. Extracting kernel source tarball\n");
@@ -1406,6 +1399,29 @@ static int build_linux_kernel(void) {
         "scripts/config --enable CONFIG_SECURITY_LOCKDOWN_LSM_EARLY && "
         "scripts/config --enable CONFIG_EFI_STUB && "
         "scripts/config --enable CONFIG_EFI",
+        kernel_src);
+    run_cmd(cmd);
+    
+    /* Configure USB drivers as built-in for reliable USB boot
+     * This eliminates the need for rd.driver.pre kernel parameters
+     * because the drivers are compiled into the kernel itself.
+     * Essential for both installer (ISO boot) and installed system (USB boot) */
+    log_info("Configuring USB drivers as built-in...");
+    snprintf(cmd, sizeof(cmd),
+        "cd '%s' && "
+        "scripts/config --enable CONFIG_USB && "
+        "scripts/config --enable CONFIG_USB_SUPPORT && "
+        "scripts/config --enable CONFIG_USB_PCI && "
+        "scripts/config --enable CONFIG_USB_XHCI_HCD && "
+        "scripts/config --enable CONFIG_USB_XHCI_PCI && "
+        "scripts/config --enable CONFIG_USB_EHCI_HCD && "
+        "scripts/config --enable CONFIG_USB_EHCI_PCI && "
+        "scripts/config --enable CONFIG_USB_UHCI_HCD && "
+        "scripts/config --enable CONFIG_USB_STORAGE && "
+        "scripts/config --enable CONFIG_USB_UAS && "
+        "scripts/config --enable CONFIG_BLK_DEV_SD && "
+        "scripts/config --enable CONFIG_SCSI && "
+        "scripts/config --enable CONFIG_SCSI_MOD",
         kernel_src);
     run_cmd(cmd);
     
@@ -1916,50 +1932,29 @@ static int create_secure_boot_iso(void) {
          * The linux-mok %post script now includes USB drivers via dracut --add-drivers.
          */
         
-        /* Add rootwait usbcore.autosuspend=-1 to EXTRA_PARAMS for USB boot reliability
-         * The script already has EXTRA_PARAMS for nvme, we extend it for all USB boots */
+        /* Add USB boot parameters to EXTRA_PARAMS:
+         * - rootwait: Wait for root device to appear (essential for USB)
+         * - usbcore.autosuspend=-1: Disable USB autosuspend for reliability
+         * - rd.driver.pre=xhci_pci,ehci_pci,usb_storage: Force-load USB drivers
+         *   early in initrd before root device is accessed
+         *
+         * Using rd.driver.pre kernel parameter is cleaner than dracut config files
+         * because it's visible in grub.cfg and doesn't require modifying initrd.
+         */
         snprintf(cmd, sizeof(cmd), 
-            "sed -i 's/EXTRA_PARAMS=\"\"/EXTRA_PARAMS=\"rootwait usbcore.autosuspend=-1\"/' '%s'", 
+            "sed -i 's/EXTRA_PARAMS=\"\"/EXTRA_PARAMS=\"rootwait usbcore.autosuspend=-1 rd.driver.pre=xhci_pci,ehci_pci,usb_storage\"/' '%s'", 
             grub_setup_script);
         run_cmd(cmd);
         
         /* Also ensure EXTRA_PARAMS are added even when not empty (nvme case) */
         snprintf(cmd, sizeof(cmd), 
-            "sed -i 's/EXTRA_PARAMS=rootwait$/EXTRA_PARAMS=\"rootwait usbcore.autosuspend=-1\"/' '%s'", 
+            "sed -i 's/EXTRA_PARAMS=rootwait$/EXTRA_PARAMS=\"rootwait usbcore.autosuspend=-1 rd.driver.pre=xhci_pci,ehci_pci,usb_storage\"/' '%s'", 
             grub_setup_script);
         run_cmd(cmd);
         
-        log_info("Patched mk-setup-grub.sh: Added USB boot params (kept graphical mode for splash)");
+        log_info("Patched mk-setup-grub.sh: Added USB boot params with rd.driver.pre");
     } else {
         log_warn("mk-setup-grub.sh not found in initrd - grub.cfg may have suboptimal settings");
-    }
-    
-    /* Create dracut config to force-load USB drivers at boot
-     * CRITICAL: The USB drivers must be in the initrd AND configured to load at boot.
-     * Using --add-drivers only includes them in initrd, but force_drivers ensures
-     * they are loaded during early boot before the root filesystem is accessed.
-     * Without this, USB boot will fail with black screen after "UEFI Secure Boot is enabled"
-     * because the kernel cannot access the USB root device.
-     */
-    char dracut_conf_dir[512], usb_boot_conf[512];
-    snprintf(dracut_conf_dir, sizeof(dracut_conf_dir), "%s/etc/dracut.conf.d", initrd_extract);
-    snprintf(usb_boot_conf, sizeof(usb_boot_conf), "%s/usb-boot.conf", dracut_conf_dir);
-    
-    mkdir_p(dracut_conf_dir);
-    
-    FILE *dracut_f = fopen(usb_boot_conf, "w");
-    if (dracut_f) {
-        fprintf(dracut_f,
-            "# Force load USB drivers for USB boot support\n"
-            "# Required for booting from USB devices where USB controllers\n"
-            "# are not detected during initrd generation on a different system\n"
-            "# This ensures USB drivers are loaded early in boot before root mount\n"
-            "force_drivers+=\" usbcore usb-common xhci_hcd xhci_pci ehci_hcd ehci_pci uhci_hcd usb_storage \"\n"
-        );
-        fclose(dracut_f);
-        log_info("Created dracut USB boot config: %s", usb_boot_conf);
-    } else {
-        log_warn("Failed to create dracut USB boot config");
     }
     
     /* Repack initrd */
