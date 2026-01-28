@@ -823,6 +823,54 @@ dmesg | grep -iE "module|signature|lockdown"
 
 ---
 
+## Driver Integration Issues (v1.9.5)
+
+### Wi-Fi not working after installation
+
+**Cause**: Driver firmware not installed or kernel module not loaded.
+
+**Solutions**:
+1. Verify firmware package was installed:
+   ```bash
+   rpm -qa | grep -i firmware
+   ```
+2. Check if kernel module is available:
+   ```bash
+   modinfo iwlwifi
+   ```
+3. Check if firmware files are present:
+   ```bash
+   ls /lib/firmware/iwlwifi-*
+   ```
+4. Check dmesg for driver errors:
+   ```bash
+   dmesg | grep -i iwlwifi
+   ```
+5. Rebuild ISO with `--drivers` if firmware RPM was missing
+
+### Driver not detected during kernel build
+
+**Cause**: RPM filename doesn't match known driver patterns.
+
+**Solutions**:
+1. Check if RPM name contains a supported pattern (iwlwifi, rtw88, brcmfmac, etc.)
+2. Add a new mapping entry in `PhotonOS-HABv4Emulation-ISOCreator.c` for unsupported driver types
+3. Rebuild the tool with `make` and re-run ISO build
+
+### "firmware failed to load" errors in dmesg
+
+**Cause**: Firmware files don't match what the driver expects.
+
+**Solutions**:
+1. Check exact firmware filenames the driver is looking for:
+   ```bash
+   dmesg | grep "firmware"
+   ```
+2. Verify the firmware RPM contains the required files
+3. Some drivers require specific firmware versions - check driver documentation
+
+---
+
 ## Quick Reference
 
 ### Error → Likely Cause → Fix

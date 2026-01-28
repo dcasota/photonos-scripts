@@ -291,6 +291,7 @@ SUSE Shim → Custom GRUB (no shim_lock, MOK-signed) → Kernel (MOK-signed)
 | `-E`, `--efuse-usb` | Require eFuse USB dongle for boot |
 | `-u`, `--create-efuse-usb=DEV` | Create eFuse USB dongle |
 | `-D`, `--diagnose=ISO` | Diagnose existing ISO |
+| `-d`, `--drivers[=DIR]` | Include driver RPMs from directory (default: drivers/RPM) |
 | `-c`, `--clean` | Clean all artifacts |
 | `-v`, `--verbose` | Verbose output |
 | `-y`, `--yes` | Auto-confirm destructive operations |
@@ -365,6 +366,13 @@ On first boot, the **blue MokManager screen** appears:
 
 ## Version History
 
+- **v1.9.5** - Driver integration with `--drivers` parameter:
+  - **New feature**: Include additional driver firmware RPMs in the ISO
+  - **Driver directory**: Place RPMs in `drivers/RPM/` (default) or custom path
+  - **Automatic kernel config**: Detects driver types and enables required kernel modules
+  - **Supported drivers**: Intel Wi-Fi (iwlwifi), Realtek Wi-Fi (rtw88/rtw89), Broadcom (brcmfmac), Qualcomm (ath11k), Intel Ethernet (e1000e, igb, igc), NVIDIA
+  - **Included firmware**: `linux-firmware-iwlwifi-ax211` for Intel Wi-Fi 6E AX211
+  - **Usage**: `./PhotonOS-HABv4Emulation-ISOCreator -b --drivers`
 - **v1.9.4** - Fixed unsigned module rejection during boot:
   - **Root cause**: RPM's `brp-strip` was stripping module signatures during package build
   - **Fix**: Added `%define __strip /bin/true` and `%define __brp_strip /bin/true` to linux-mok.spec

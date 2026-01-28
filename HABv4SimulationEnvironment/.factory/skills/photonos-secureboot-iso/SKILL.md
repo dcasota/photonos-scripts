@@ -61,6 +61,7 @@ This skill covers creating Secure Boot enabled ISOs for Photon OS that work on c
 | `-E`, `--efuse-usb` | Enable eFuse USB verification |
 | `-u`, `--create-efuse-usb=DEV` | Create eFuse USB dongle |
 | `-R`, `--rpm-signing` | Enable GPG signing of MOK RPMs |
+| `-d`, `--drivers[=DIR]` | Include driver RPMs from directory (default: drivers/RPM) |
 | `-c`, `--clean` | Clean all artifacts |
 | `-v`, `--verbose` | Verbose output |
 | `-y`, `--yes` | Auto-confirm destructive operations |
@@ -242,6 +243,54 @@ The `--rpm-signing` option enables GPG signing for compliance:
 rpm -qa gpg-pubkey* --qf '%{NAME}-%{VERSION}-%{RELEASE}\t%{SUMMARY}\n'
 rpm -qa *-mok* --qf '%{NAME}\t%{SIGPGP:pgpsig}\n'
 ```
+
+## Driver Integration (v1.9.5)
+
+The `--drivers` option allows including additional driver firmware RPMs in the ISO:
+
+### Usage
+
+```bash
+# Use default drivers directory (drivers/RPM/)
+./PhotonOS-HABv4Emulation-ISOCreator -b --drivers
+
+# Use custom drivers directory
+./PhotonOS-HABv4Emulation-ISOCreator -b --drivers=/path/to/custom/drivers
+```
+
+### How It Works
+
+1. **Scan**: Tool scans drivers directory for `.rpm` files
+2. **Detect**: RPM names are matched against known driver patterns (iwlwifi, rtw88, brcmfmac, etc.)
+3. **Configure**: Kernel is automatically configured with required modules for detected drivers
+4. **Build**: Kernel is built with driver support enabled
+5. **Package**: Driver RPMs are copied to ISO and added to `packages_mok.json`
+6. **Install**: When selecting "Photon MOK Secure Boot", drivers are installed automatically
+
+### Supported Driver Types
+
+| Pattern | Kernel Modules | Description |
+|---------|---------------|-------------|
+| `iwlwifi` | iwlwifi, iwlmvm, cfg80211, mac80211 | Intel Wi-Fi 6/6E/7 |
+| `rtw88` | rtw88, cfg80211, mac80211 | Realtek Wi-Fi (RTW88) |
+| `rtw89` | rtw89, cfg80211, mac80211 | Realtek Wi-Fi (RTW89) |
+| `brcmfmac` | brcmfmac, brcmutil, cfg80211 | Broadcom Wi-Fi |
+| `ath11k` | ath11k, cfg80211, mac80211 | Qualcomm/Atheros Wi-Fi 6 |
+| `e1000e` | e1000e | Intel Ethernet |
+| `igb` | igb | Intel Gigabit Ethernet |
+| `igc` | igc | Intel I225/I226 Ethernet |
+| `nvidia` | DRM support | NVIDIA GPU (firmware only) |
+
+### Included Firmware
+
+The `drivers/RPM/` directory includes:
+- **`linux-firmware-iwlwifi-ax211`**: Intel Wi-Fi 6E AX211 firmware (PCI IDs: 8086:51f0, 8086:51f1)
+
+### Adding Custom Drivers
+
+1. Place firmware RPM in `drivers/RPM/`
+2. If driver type is not in supported list, add mapping entry in source code
+3. Rebuild ISO with `--drivers`
 
 ## eFuse USB Mode
 
