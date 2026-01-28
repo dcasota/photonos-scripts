@@ -664,6 +664,12 @@ static int generate_linux_mok_spec(rpm_build_config_t *config, rpm_package_info_
     fprintf(f,
         "%%define debug_package %%{nil}\n"
         "\n"
+        "# CRITICAL: Disable stripping of binaries - strip removes module signatures!\n"
+        "# Without this, RPM's brp-strip will remove the cryptographic signatures from\n"
+        "# kernel modules, causing \"Loading of unsigned module is rejected\" errors.\n"
+        "%%define __strip /bin/true\n"
+        "%%define __brp_strip /bin/true\n"
+        "\n"
         "# Derived from %s %s-%s\n"
         "%%define linux_name %s\n"
         "%%define linux_version %s\n"

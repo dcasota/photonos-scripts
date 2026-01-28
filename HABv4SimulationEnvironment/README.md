@@ -365,6 +365,12 @@ On first boot, the **blue MokManager screen** appears:
 
 ## Version History
 
+- **v1.9.4** - Fixed unsigned module rejection during boot:
+  - **Root cause**: RPM's `brp-strip` was stripping module signatures during package build
+  - **Fix**: Added `%define __strip /bin/true` and `%define __brp_strip /bin/true` to linux-mok.spec
+  - **Result**: Kernel modules now retain their cryptographic signatures through the RPM build process
+  - Modules are properly signed with the kernel's built-in signing key
+  - System boots without "Loading of unsigned module is rejected" errors
 - **v1.9.3** - Fixed installed system boot failure:
   - **%post script fix**: Properly handles kernel version mismatch between vmlinuz filename and modules directory
   - **photon.cfg symlink**: Now created using vmlinuz version (matches cfg filename) instead of modules version
