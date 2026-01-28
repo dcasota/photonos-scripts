@@ -312,6 +312,7 @@ sync
 | "grub.efi Not Found" | SUSE shim looks for grub.efi | Rebuild ISO (v1.7.0+ installs both names) |
 | "rpm transaction failed" | Package conflicts | Rebuild ISO (v1.7.0+ fixes Obsoletes) |
 | Black screen after "Secure Boot is enabled" | Missing USB drivers in initrd | Rebuild ISO (v1.8.0+ includes USB drivers) |
+| "Loading of unsigned module is rejected" | Module signatures stripped by RPM | Rebuild ISO (v1.9.4+ preserves signatures) |
 
 ### Detailed Troubleshooting
 
@@ -341,6 +342,12 @@ sync
 **Installed system gets "bad shim signature":**
 - Standard VMware packages were installed (have shim_lock)
 - Fix: Reinstall and select "1. Photon MOK Secure Boot" at package selection
+
+**Installed system boots to emergency mode with "Loading of unsigned module is rejected":**
+- **Root Cause (pre-v1.9.4)**: RPM's `brp-strip` strips ELF binaries during package build, which removes PKCS#7 signatures from kernel modules
+- **Symptoms**: System boots past GRUB, kernel loads, then rejects modules (loop, dm_mod, drm, fuse, etc.) and enters emergency mode
+- **Fix (v1.9.4+)**: Added `%define __strip /bin/true` to linux-mok.spec to preserve module signatures
+- **Diagnosis**: `tail -c 50 /lib/modules/*/kernel/drivers/block/loop.ko | hexdump -C` - signed modules show "~Module signature appended~" at end
 
 ## ISO Structure
 

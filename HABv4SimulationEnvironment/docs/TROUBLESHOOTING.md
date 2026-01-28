@@ -541,6 +541,40 @@ If MokManager is only in `\EFI\BOOT\`, shim can't find it and falls back to anot
 
 ## Module Loading Issues
 
+### "Loading of unsigned module is rejected" (Installed System Boot)
+
+**Cause**: The installed system's kernel modules had their signatures stripped during RPM build.
+
+**Background**: RPM's `brp-strip` automatically strips ELF binaries during package creation. The `strip` command removes the PKCS#7 signatures appended to kernel modules by the kernel build process. The kernel built with `CONFIG_MODULE_SIG_FORCE=y` then rejects all unsigned modules.
+
+**Symptoms**:
+- System boots past GRUB, shows kernel messages
+- Errors like: `Loading of unsigned module is rejected` for loop, dm_mod, drm, fuse, etc.
+- System enters emergency mode
+- `[FAILED] Failed to mount /boot/efi`
+
+**Diagnosis**:
+```bash
+# Check if modules are signed (should show "~Module signature appended~")
+tail -c 50 /lib/modules/*/kernel/drivers/block/loop.ko | hexdump -C
+
+# Signed module shows:
+# ...7e 4d 6f 64 75 6c 65 20 73 69 67 6e 61 74 75 72 65 20 61 70 70 65 6e 64 65 64 7e 0a
+# (~Module signature appended~)
+
+# Unsigned/stripped module shows only zeros at the end
+```
+
+**Solution (v1.9.4+)**: Fixed in v1.9.4 by adding to linux-mok.spec:
+```spec
+%define __strip /bin/true
+%define __brp_strip /bin/true
+```
+
+This prevents RPM from stripping module signatures during package build.
+
+**If using older ISO (pre-v1.9.4)**: Rebuild ISO with latest PhotonOS-HABv4Emulation-ISOCreator.
+
 ### "Lockdown: unsigned module loading is restricted"
 
 **Cause**: Kernel lockdown prevents unsigned module loading.
@@ -811,6 +845,7 @@ dmesg | grep -iE "module|signature|lockdown"
 | Enrollment silently fails | Wrong MokManager (no confirmation) | Rebuild with PhotonOS-HABv4Emulation-ISOCreator |
 | MokManager missing "Delete key" | Using laptop's built-in MokManager | Rebuild with PhotonOS-HABv4Emulation-ISOCreator |
 | Security Violation | Unsigned binary | Enroll Photon OS MOK certificate |
+| Loading of unsigned module rejected | Module signatures stripped by RPM | Rebuild ISO (v1.9.4+ preserves signatures) |
 | Lockdown: unsigned module | Unsigned .ko | Use matching kernel+modules |
 | No space left (efiboot.img) | Image too small | Resize to 16MB |
 | Need to delete MOK keys | Keys enrolled | Use mokutil --delete |
