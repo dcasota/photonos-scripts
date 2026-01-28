@@ -37,7 +37,7 @@
 
 #include "rpm_secureboot_patcher.h"
 
-#define VERSION "1.9.4"
+#define VERSION "1.9.5"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */
@@ -87,6 +87,7 @@ typedef struct {
     char output_iso[512];
     char efuse_usb_device[128];
     char diagnose_iso_path[512];
+    char drivers_dir[512];    /* Custom drivers directory (--drivers=DIR) */
     int mok_days;
     int mok_key_bits;         /* RSA key size: 2048, 3072, or 4096 */
     int cert_warn_days;       /* Days before expiration to warn */
@@ -96,6 +97,7 @@ typedef struct {
     int efuse_usb_mode;
     int rpm_signing;          /* Enable GPG signing of MOK RPM packages */
     int check_certs;          /* Check certificate expiration */
+    int include_drivers;      /* Include driver RPMs from drivers directory */
     int cleanup;
     int verbose;
     int yes_to_all;
@@ -106,6 +108,64 @@ static config_t cfg;
 
 /* Valid release versions (whitelist for input validation) */
 static const char *VALID_RELEASES[] = {"4.0", "5.0", "6.0", NULL};
+
+/* Default drivers directory (relative to source tree) */
+#define DEFAULT_DRIVERS_DIR "drivers/RPM"
+
+/* ============================================================================
+ * Driver-to-Kernel-Config Mapping
+ * ============================================================================
+ * Maps driver RPM name prefixes to required kernel CONFIG options.
+ * When --drivers is specified, the tool scans for RPMs and enables
+ * the corresponding kernel configs during build.
+ * ============================================================================ */
+
+typedef struct {
+    const char *driver_prefix;      /* RPM name prefix to match */
+    const char *description;        /* Human-readable description */
+    const char *kernel_configs;     /* Space-separated CONFIG_* options */
+} driver_kernel_map_t;
+
+static const driver_kernel_map_t DRIVER_KERNEL_MAP[] = {
+    /* Intel Wi-Fi drivers */
+    {"linux-firmware-iwlwifi", "Intel Wi-Fi 6/6E/7 (iwlwifi)",
+     "CONFIG_IWLWIFI=m CONFIG_IWLMVM=m CONFIG_IWLDVM=m"},
+    
+    /* Realtek Wi-Fi drivers */
+    {"linux-firmware-rtw88", "Realtek Wi-Fi (rtw88)",
+     "CONFIG_RTW88=m CONFIG_RTW88_CORE=m CONFIG_RTW88_PCI=m CONFIG_RTW88_USB=m"},
+    {"linux-firmware-rtw89", "Realtek Wi-Fi (rtw89)",
+     "CONFIG_RTW89=m CONFIG_RTW89_CORE=m CONFIG_RTW89_PCI=m"},
+    
+    /* Broadcom Wi-Fi drivers */
+    {"linux-firmware-brcm", "Broadcom Wi-Fi (brcmfmac)",
+     "CONFIG_BRCMFMAC=m CONFIG_BRCMUTIL=m"},
+    
+    /* Qualcomm/Atheros Wi-Fi drivers */
+    {"linux-firmware-ath10k", "Qualcomm Atheros Wi-Fi (ath10k)",
+     "CONFIG_ATH10K=m CONFIG_ATH10K_PCI=m"},
+    {"linux-firmware-ath11k", "Qualcomm Atheros Wi-Fi (ath11k)",
+     "CONFIG_ATH11K=m CONFIG_ATH11K_PCI=m"},
+    
+    /* MediaTek Wi-Fi drivers */
+    {"linux-firmware-mediatek", "MediaTek Wi-Fi (mt76)",
+     "CONFIG_MT76=m CONFIG_MT7921E=m CONFIG_MT7921S=m CONFIG_MT7921U=m"},
+    
+    /* Intel Ethernet drivers */
+    {"linux-firmware-e1000e", "Intel Ethernet (e1000e)",
+     "CONFIG_E1000E=m"},
+    {"linux-firmware-igb", "Intel Gigabit Ethernet (igb)",
+     "CONFIG_IGB=m"},
+    {"linux-firmware-ixgbe", "Intel 10GbE (ixgbe)",
+     "CONFIG_IXGBE=m"},
+    
+    /* NVIDIA GPU drivers (requires proprietary module, just enable deps) */
+    {"nvidia-driver", "NVIDIA GPU (proprietary)",
+     "CONFIG_DRM=m CONFIG_DRM_KMS_HELPER=m"},
+    
+    /* Sentinel */
+    {NULL, NULL, NULL}
+};
 
 /* ============================================================================
  * Security Functions
@@ -1240,6 +1300,283 @@ static int find_kernel_tarball(char *tarball_path, size_t path_size, char *versi
 }
 
 /* Get kernel config path based on release and architecture */
+/* ============================================================================
+ * Driver Integration Functions
+ * ============================================================================ */
+
+/**
+ * Scan drivers directory for RPM files and return count.
+ * Populates driver_rpms array with paths (up to max_rpms).
+ * Returns number of RPMs found.
+ */
+static int scan_driver_rpms(const char *drivers_dir, char driver_rpms[][512], int max_rpms) {
+    int count = 0;
+    
+    if (!dir_exists(drivers_dir)) {
+        return 0;
+    }
+    
+    DIR *dir = opendir(drivers_dir);
+    if (!dir) {
+        return 0;
+    }
+    
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL && count < max_rpms) {
+        /* Only process .rpm files */
+        const char *ext = strstr(entry->d_name, ".rpm");
+        if (ext && ext[4] == '\0') {
+            snprintf(driver_rpms[count], 512, "%s/%s", drivers_dir, entry->d_name);
+            count++;
+        }
+    }
+    closedir(dir);
+    
+    return count;
+}
+
+/**
+ * Extract RPM base name (without version/release/arch) from filename.
+ * Example: "linux-firmware-iwlwifi-ax211-20260128-1.noarch.rpm" -> "linux-firmware-iwlwifi"
+ */
+static void extract_rpm_base_name(const char *rpm_path, char *base_name, size_t size) {
+    /* Get just the filename */
+    const char *filename = strrchr(rpm_path, '/');
+    filename = filename ? filename + 1 : rpm_path;
+    
+    /* Copy to working buffer */
+    char temp[256];
+    strncpy(temp, filename, sizeof(temp) - 1);
+    temp[sizeof(temp) - 1] = '\0';
+    
+    /* Remove .rpm extension */
+    char *ext = strstr(temp, ".rpm");
+    if (ext) *ext = '\0';
+    
+    /* Remove architecture suffix (.noarch, .x86_64, etc.) */
+    char *arch_suffixes[] = {".noarch", ".x86_64", ".aarch64", ".i686", NULL};
+    for (int i = 0; arch_suffixes[i]; i++) {
+        char *arch = strstr(temp, arch_suffixes[i]);
+        if (arch) {
+            *arch = '\0';
+            break;
+        }
+    }
+    
+    /* Remove version-release (find last two '-' before the end) */
+    char *last_dash = strrchr(temp, '-');
+    if (last_dash) {
+        *last_dash = '\0';
+        last_dash = strrchr(temp, '-');
+        if (last_dash) {
+            *last_dash = '\0';
+        }
+    }
+    
+    strncpy(base_name, temp, size - 1);
+    base_name[size - 1] = '\0';
+}
+
+/**
+ * Get kernel configs required for a driver RPM.
+ * Returns the kernel_configs string from DRIVER_KERNEL_MAP, or NULL if not found.
+ */
+static const char* get_kernel_configs_for_driver(const char *rpm_base_name) {
+    for (int i = 0; DRIVER_KERNEL_MAP[i].driver_prefix != NULL; i++) {
+        /* Check if the RPM base name starts with the driver prefix */
+        if (strncmp(rpm_base_name, DRIVER_KERNEL_MAP[i].driver_prefix, 
+                    strlen(DRIVER_KERNEL_MAP[i].driver_prefix)) == 0) {
+            return DRIVER_KERNEL_MAP[i].kernel_configs;
+        }
+    }
+    return NULL;
+}
+
+/**
+ * Apply driver-specific kernel configurations.
+ * Scans drivers directory and enables required kernel configs.
+ * Returns 0 on success, -1 on error.
+ */
+static int apply_driver_kernel_configs(const char *kernel_src, const char *drivers_dir) {
+    char driver_rpms[64][512];
+    int rpm_count = scan_driver_rpms(drivers_dir, driver_rpms, 64);
+    
+    if (rpm_count == 0) {
+        log_info("No driver RPMs found in %s", drivers_dir);
+        return 0;
+    }
+    
+    log_info("Found %d driver RPM(s) in %s", rpm_count, drivers_dir);
+    
+    int configs_applied = 0;
+    char cmd[4096];
+    
+    for (int i = 0; i < rpm_count; i++) {
+        char base_name[256];
+        extract_rpm_base_name(driver_rpms[i], base_name, sizeof(base_name));
+        
+        const char *kernel_configs = get_kernel_configs_for_driver(base_name);
+        if (kernel_configs) {
+            log_info("  Enabling kernel configs for: %s", base_name);
+            
+            /* Parse and apply each config option */
+            char configs_copy[1024];
+            strncpy(configs_copy, kernel_configs, sizeof(configs_copy) - 1);
+            configs_copy[sizeof(configs_copy) - 1] = '\0';
+            
+            char *config = strtok(configs_copy, " ");
+            while (config) {
+                /* Parse CONFIG_NAME=value */
+                char *equals = strchr(config, '=');
+                if (equals) {
+                    *equals = '\0';
+                    char *config_name = config;
+                    char *config_value = equals + 1;
+                    
+                    if (strcmp(config_value, "y") == 0) {
+                        snprintf(cmd, sizeof(cmd), 
+                            "cd '%s' && scripts/config --enable %s", 
+                            kernel_src, config_name);
+                    } else if (strcmp(config_value, "m") == 0) {
+                        snprintf(cmd, sizeof(cmd), 
+                            "cd '%s' && scripts/config --module %s", 
+                            kernel_src, config_name);
+                    } else {
+                        snprintf(cmd, sizeof(cmd), 
+                            "cd '%s' && scripts/config --set-str %s %s", 
+                            kernel_src, config_name, config_value);
+                    }
+                    
+                    if (cfg.verbose) {
+                        printf("    %s=%s\n", config_name, config_value);
+                    }
+                    run_cmd(cmd);
+                    configs_applied++;
+                }
+                config = strtok(NULL, " ");
+            }
+        } else {
+            log_warn("  No kernel config mapping for: %s", base_name);
+        }
+    }
+    
+    if (configs_applied > 0) {
+        log_info("Applied %d driver kernel configurations", configs_applied);
+    }
+    
+    return 0;
+}
+
+/**
+ * Copy driver RPMs to ISO and update packages_mok.json.
+ * Returns 0 on success, -1 on error.
+ */
+static int integrate_driver_rpms(const char *drivers_dir, const char *iso_extract, 
+                                  const char *initrd_extract) {
+    char driver_rpms[64][512];
+    int rpm_count = scan_driver_rpms(drivers_dir, driver_rpms, 64);
+    
+    if (rpm_count == 0) {
+        return 0;
+    }
+    
+    log_info("Integrating %d driver RPM(s) into ISO...", rpm_count);
+    
+    char cmd[2048];
+    char rpms_dir[512];
+    snprintf(rpms_dir, sizeof(rpms_dir), "%s/RPMS/noarch", iso_extract);
+    mkdir_p(rpms_dir);
+    snprintf(rpms_dir, sizeof(rpms_dir), "%s/RPMS/x86_64", iso_extract);
+    mkdir_p(rpms_dir);
+    
+    /* Copy each driver RPM to ISO */
+    for (int i = 0; i < rpm_count; i++) {
+        const char *rpm_path = driver_rpms[i];
+        const char *filename = strrchr(rpm_path, '/');
+        filename = filename ? filename + 1 : rpm_path;
+        
+        /* Determine target directory based on architecture */
+        if (strstr(filename, ".noarch.rpm")) {
+            snprintf(cmd, sizeof(cmd), "cp '%s' '%s/RPMS/noarch/'", rpm_path, iso_extract);
+        } else {
+            snprintf(cmd, sizeof(cmd), "cp '%s' '%s/RPMS/x86_64/'", rpm_path, iso_extract);
+        }
+        run_cmd(cmd);
+        log_info("  Copied: %s", filename);
+    }
+    
+    /* Update packages_mok.json to include driver packages */
+    char packages_json[512];
+    snprintf(packages_json, sizeof(packages_json), "%s/installer/packages_mok.json", initrd_extract);
+    
+    if (file_exists(packages_json)) {
+        log_info("Updating packages_mok.json with driver packages...");
+        
+        /* Create a Python script to add driver packages */
+        char update_script[512];
+        snprintf(update_script, sizeof(update_script), "%s/update_packages.py", iso_extract);
+        
+        FILE *f = fopen(update_script, "w");
+        if (f) {
+            fprintf(f,
+                "#!/usr/bin/env python3\n"
+                "import json\n"
+                "import sys\n"
+                "\n"
+                "with open(sys.argv[1], 'r') as fp:\n"
+                "    data = json.load(fp)\n"
+                "\n"
+                "# Add driver packages\n"
+                "driver_packages = sys.argv[2:]\n"
+                "for pkg in driver_packages:\n"
+                "    if pkg not in data['packages']:\n"
+                "        data['packages'].append(pkg)\n"
+                "        print(f'Added: {pkg}')\n"
+                "\n"
+                "with open(sys.argv[1], 'w') as fp:\n"
+                "    json.dump(data, fp, indent=4)\n"
+            );
+            fclose(f);
+            
+            /* Build command with all driver package names */
+            char pkg_args[2048] = "";
+            for (int i = 0; i < rpm_count; i++) {
+                char base_name[256];
+                extract_rpm_base_name(driver_rpms[i], base_name, sizeof(base_name));
+                
+                /* Append full package name (with version) for better specificity */
+                const char *filename = strrchr(driver_rpms[i], '/');
+                filename = filename ? filename + 1 : driver_rpms[i];
+                char pkg_name[256];
+                strncpy(pkg_name, filename, sizeof(pkg_name) - 1);
+                char *ext = strstr(pkg_name, ".rpm");
+                if (ext) *ext = '\0';
+                /* Remove arch suffix */
+                char *arch = strstr(pkg_name, ".noarch");
+                if (!arch) arch = strstr(pkg_name, ".x86_64");
+                if (arch) *arch = '\0';
+                /* Remove version-release */
+                char *dash = strrchr(pkg_name, '-');
+                if (dash) *dash = '\0';
+                dash = strrchr(pkg_name, '-');
+                if (dash) *dash = '\0';
+                
+                strcat(pkg_args, " '");
+                strcat(pkg_args, pkg_name);
+                strcat(pkg_args, "'");
+            }
+            
+            snprintf(cmd, sizeof(cmd), "python3 '%s' '%s'%s 2>&1", 
+                     update_script, packages_json, pkg_args);
+            run_cmd(cmd);
+            
+            unlink(update_script);
+        }
+    }
+    
+    return 0;
+}
+
 static int find_kernel_config(char *config_path, size_t path_size, const char *arch, const char *flavor) {
     char path[512];
     
@@ -1424,6 +1761,16 @@ static int build_linux_kernel(void) {
         "scripts/config --enable CONFIG_SCSI_MOD",
         kernel_src);
     run_cmd(cmd);
+    
+    /* Apply driver-specific kernel configs if --drivers specified */
+    if (cfg.include_drivers && cfg.drivers_dir[0] != '\0') {
+        log_info("Applying kernel configs for driver packages...");
+        if (apply_driver_kernel_configs(kernel_src, cfg.drivers_dir) == 0) {
+            log_info("Driver kernel configs applied successfully");
+        } else {
+            log_warn("Some driver kernel configs may not have been applied");
+        }
+    }
     
     /* Copy module signing key */
     char signing_key[512];
@@ -1962,6 +2309,17 @@ static int create_secure_boot_iso(void) {
         log_info("Patched mk-setup-grub.sh: Added USB boot params with rd.driver.pre");
     } else {
         log_warn("mk-setup-grub.sh not found in initrd - grub.cfg may have suboptimal settings");
+    }
+    
+    /* Integrate driver RPMs if --drivers specified
+     * This MUST happen BEFORE initrd is repacked so packages_mok.json can be updated */
+    if (cfg.include_drivers && cfg.drivers_dir[0] != '\0') {
+        log_info("Integrating driver RPMs...");
+        if (integrate_driver_rpms(cfg.drivers_dir, iso_extract, initrd_extract) == 0) {
+            log_info("Driver RPMs integrated successfully");
+        } else {
+            log_warn("Some driver RPMs may not have been integrated");
+        }
     }
     
     /* Repack initrd */
@@ -2760,6 +3118,7 @@ static void show_help(void) {
     printf("  -b, --build-iso            Build Secure Boot ISO\n");
     printf("  -g, --generate-keys        Generate cryptographic keys\n");
     printf("  -s, --setup-efuse          Setup eFuse simulation\n");
+    printf("  -d, --drivers[=DIR]        Include driver RPMs (default: drivers/RPM)\n");
     printf("  -u, --create-efuse-usb=DEV Create eFuse USB dongle on device (e.g., /dev/sdb)\n");
     printf("  -E, --efuse-usb            Enable eFuse USB dongle verification in GRUB\n");
     printf("  -R, --rpm-signing          Enable GPG signing of MOK RPM packages\n");
@@ -2822,6 +3181,7 @@ int main(int argc, char *argv[]) {
         {"build-iso",         no_argument,       0, 'b'},
         {"generate-keys",     no_argument,       0, 'g'},
         {"setup-efuse",       no_argument,       0, 's'},
+        {"drivers",           optional_argument, 0, 'd'},
         {"create-efuse-usb",  required_argument, 0, 'u'},
         {"efuse-usb",         no_argument,       0, 'E'},
         {"rpm-signing",       no_argument,       0, 'R'},
@@ -2835,7 +3195,7 @@ int main(int argc, char *argv[]) {
     };
     
     int opt;
-    while ((opt = getopt_long(argc, argv, "r:i:o:k:e:m:K:W:CbgsERFD:cu:vyh", long_options, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "r:i:o:k:e:m:K:W:Cbgsd::ERFD:cu:vyh", long_options, NULL)) != -1) {
         switch (opt) {
             case 'r':
                 /* Security: Validate release against whitelist */
@@ -2910,6 +3270,23 @@ int main(int argc, char *argv[]) {
                 break;
             case 's':
                 cfg.setup_efuse = 1;
+                break;
+            case 'd':
+                cfg.include_drivers = 1;
+                if (optarg) {
+                    /* --drivers=DIR specified */
+                    if (!validate_path_safe(optarg)) {
+                        log_error("Invalid drivers directory path (contains dangerous characters)");
+                        return 1;
+                    }
+                    strncpy(cfg.drivers_dir, optarg, sizeof(cfg.drivers_dir) - 1);
+                } else {
+                    /* --drivers without argument - use default relative to executable */
+                    char exe_dir[512], project_root[512];
+                    get_executable_dir(exe_dir, sizeof(exe_dir));
+                    snprintf(project_root, sizeof(project_root), "%s/..", exe_dir);
+                    snprintf(cfg.drivers_dir, sizeof(cfg.drivers_dir), "%s/%s", project_root, DEFAULT_DRIVERS_DIR);
+                }
                 break;
             case 'u':
                 /* Security: Validate device path */
