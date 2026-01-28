@@ -473,7 +473,7 @@ static int generate_grub_mok_spec(rpm_build_config_t *config, rpm_package_info_t
         "Summary:    Custom GRUB for MOK Secure Boot with eFuse verification\n"
         "Name:       grub2-efi-image-mok\n"
         "Version:    %%{grub_version}\n"
-        "Release:    %%{grub_release}.mok1%%{?dist}\n"
+        "Release:    %%{grub_release}%%{?dist}\n"
         "Group:      System Environment/Base\n"
         "License:    GPLv3+\n"
         "Vendor:     HABv4 Project\n"
@@ -538,7 +538,7 @@ static int generate_grub_mok_spec(rpm_build_config_t *config, rpm_package_info_t
         "/boot/efi/EFI/BOOT/grub.efi\n"
         "\n"
         "%%changelog\n"
-        "* %s HABv4 Project <habv4@local> %%{grub_version}-%%{grub_release}.mok1\n"
+        "* %s HABv4 Project <habv4@local> %%{grub_version}-%%{grub_release}\n"
         "- Custom GRUB for installed system, signed with MOK key\n"
         "- Built with grub-mkimage with proper search modules\n",
         grub_pkg->version, grub_pkg->release,
@@ -673,7 +673,7 @@ static int generate_linux_mok_spec(rpm_build_config_t *config, rpm_package_info_
         "Summary:    Linux kernel signed with MOK key\n"
         "Name:       linux-mok\n"
         "Version:    %%{linux_version}\n"
-        "Release:    %%{linux_release}.mok1%%{?dist}\n"
+        "Release:    %%{linux_release}%%{?dist}\n"
         "Group:      System Environment/Kernel\n"
         "License:    GPLv2\n"
         "Vendor:     VMware, Inc.\n"
@@ -754,11 +754,14 @@ static int generate_linux_mok_spec(rpm_build_config_t *config, rpm_package_info_
         "       ./boot/%%{kernel_file}\n"
         "mv ./boot/%%{kernel_file}.signed ./boot/%%{kernel_file}\n"
         "\n"
-        "# Determine full kernel version for initrd generation\n"
+        "# Determine kernel version from ACTUAL modules directory (not vmlinuz filename)\n"
+        "# This is critical because custom kernel injection may have different version strings\n"
+        "# e.g., vmlinuz-6.1.159-7.ph5-esx but modules in 6.1.159-esx/\n"
         "KVER=\"\"\n"
-        "for vmlinuz in ./boot/vmlinuz-%%{linux_version}-*; do\n"
-        "  if [ -f \"$vmlinuz\" ]; then\n"
-        "    KVER=$(basename \"$vmlinuz\" | sed 's/vmlinuz-//')\n"
+        "for moddir in ./lib/modules/*; do\n"
+        "  if [ -d \"$moddir\" ]; then\n"
+        "    KVER=$(basename \"$moddir\")\n"
+        "    echo \"[INFO] Found modules directory: $KVER\"\n"
         "    break\n"
         "  fi\n"
         "done\n"
@@ -872,7 +875,7 @@ static int generate_linux_mok_spec(rpm_build_config_t *config, rpm_package_info_
         "fi\n"
         "\n"
         "%%changelog\n"
-        "* %s HABv4 Project <habv4@local> %%{linux_version}-%%{linux_release}.mok1\n"
+        "* %s HABv4 Project <habv4@local> %%{linux_version}-%%{linux_release}\n"
         "- MOK-signed variant of %%{linux_name} kernel\n",
         linux_pkg->name, linux_pkg->version, linux_pkg->release,
         linux_pkg->name,
@@ -919,7 +922,7 @@ static int generate_shim_mok_spec(rpm_build_config_t *config,
         "Summary:    SUSE shim for MOK Secure Boot chain\n"
         "Name:       shim-signed-mok\n"
         "Version:    %%{shim_version}\n"
-        "Release:    %%{shim_release}.mok1%%{?dist}\n"
+        "Release:    %%{shim_release}%%{?dist}\n"
         "Group:      System Environment/Base\n"
         "License:    BSD\n"
         "Vendor:     HABv4 Project\n"
@@ -959,7 +962,7 @@ static int generate_shim_mok_spec(rpm_build_config_t *config,
         "/boot/efi/EFI/BOOT/MokManager.efi\n"
         "\n"
         "%%changelog\n"
-        "* %s HABv4 Project <habv4@local> %%{shim_version}-%%{shim_release}.mok1\n"
+        "* %s HABv4 Project <habv4@local> %%{shim_version}-%%{shim_release}\n"
         "- SUSE shim for MOK Secure Boot chain\n"
         "- Replaces VMware shim which has shim_lock issues\n",
         shim_signed_pkg->version, shim_signed_pkg->release,
@@ -1269,29 +1272,73 @@ int rpm_integrate_to_iso(
     rpm_build_config_t *config
 ) {
     log_info("Integrating MOK packages into ISO...");
+    log_debug("Output dir: %s", config->output_dir);
+    log_debug("ISO RPM dir: %s", iso_rpm_dir);
     
     char cmd[1024];
+    glob_t glob_result;
+    char pattern[512];
+    int copied_count = 0;
     
-    /* Copy all MOK RPMs to the ISO */
-    snprintf(cmd, sizeof(cmd), "cp '%s'/*-mok-*.rpm '%s/' 2>/dev/null", 
-             config->output_dir, iso_rpm_dir);
+    /* First, verify that MOK RPMs exist in the output directory */
+    snprintf(pattern, sizeof(pattern), "%s/*-mok-*.rpm", config->output_dir);
     
-    if (run_cmd(cmd) != 0) {
-        /* Try with glob */
-        glob_t glob_result;
-        char pattern[512];
-        snprintf(pattern, sizeof(pattern), "%s/*-mok-*.rpm", config->output_dir);
+    if (glob(pattern, 0, NULL, &glob_result) != 0 || glob_result.gl_pathc == 0) {
+        log_error("No MOK RPMs found in output directory: %s", config->output_dir);
+        log_error("Pattern searched: %s", pattern);
         
-        if (glob(pattern, 0, NULL, &glob_result) == 0) {
-            for (size_t i = 0; i < glob_result.gl_pathc; i++) {
-                snprintf(cmd, sizeof(cmd), "cp '%s' '%s/'", 
-                         glob_result.gl_pathv[i], iso_rpm_dir);
-                run_cmd(cmd);
-                log_info("Copied %s", glob_result.gl_pathv[i]);
-            }
-            globfree(&glob_result);
-        }
+        /* List what's actually in the output directory for debugging */
+        snprintf(cmd, sizeof(cmd), "ls -la '%s/' 2>&1 || echo 'Directory empty or not found'", 
+                 config->output_dir);
+        log_error("Contents of output directory:");
+        run_cmd(cmd);
+        
+        /* Also check rpmbuild RPMS directory */
+        snprintf(cmd, sizeof(cmd), "find '%s/RPMS' -name '*.rpm' 2>/dev/null || echo 'No RPMs in rpmbuild'", 
+                 config->rpmbuild_dir);
+        log_error("Contents of rpmbuild RPMS:");
+        run_cmd(cmd);
+        
+        return RPM_PATCH_ERR_BUILD_FAILED;
     }
+    
+    log_info("Found %zu MOK RPM(s) to integrate", glob_result.gl_pathc);
+    
+    /* Copy each RPM individually with error checking */
+    for (size_t i = 0; i < glob_result.gl_pathc; i++) {
+        const char *rpm_path = glob_result.gl_pathv[i];
+        const char *rpm_name = strrchr(rpm_path, '/');
+        rpm_name = rpm_name ? rpm_name + 1 : rpm_path;
+        
+        snprintf(cmd, sizeof(cmd), "cp '%s' '%s/'", rpm_path, iso_rpm_dir);
+        
+        if (run_cmd(cmd) != 0) {
+            log_error("Failed to copy %s to %s", rpm_name, iso_rpm_dir);
+            globfree(&glob_result);
+            return RPM_PATCH_ERR_BUILD_FAILED;
+        }
+        
+        /* Verify the file was actually copied */
+        char dest_path[1024];
+        snprintf(dest_path, sizeof(dest_path), "%s/%s", iso_rpm_dir, rpm_name);
+        if (!file_exists(dest_path)) {
+            log_error("Copy verification failed: %s not found in %s", rpm_name, iso_rpm_dir);
+            globfree(&glob_result);
+            return RPM_PATCH_ERR_BUILD_FAILED;
+        }
+        
+        log_info("Copied: %s", rpm_name);
+        copied_count++;
+    }
+    
+    globfree(&glob_result);
+    
+    if (copied_count == 0) {
+        log_error("No MOK RPMs were copied to ISO");
+        return RPM_PATCH_ERR_BUILD_FAILED;
+    }
+    
+    log_info("Successfully copied %d MOK RPM(s) to ISO", copied_count);
     
     /* Regenerate repodata to include the new MOK packages
      * Without this, tdnf won't find the MOK packages during installation */
@@ -1300,8 +1347,11 @@ int rpm_integrate_to_iso(
     /* Get the parent RPMS directory (iso_rpm_dir is RPMS/x86_64, we need RPMS) */
     char repo_dir[512];
     strncpy(repo_dir, iso_rpm_dir, sizeof(repo_dir) - 1);
+    repo_dir[sizeof(repo_dir) - 1] = '\0';
     char *last_slash = strrchr(repo_dir, '/');
     if (last_slash) *last_slash = '\0';
+    
+    log_debug("Repository dir for repodata: %s", repo_dir);
     
     /* Remove old repodata and regenerate */
     snprintf(cmd, sizeof(cmd), "rm -rf '%s/repodata'", repo_dir);
@@ -1316,6 +1366,17 @@ int rpm_integrate_to_iso(
             log_error("Please ensure createrepo or createrepo_c is installed");
             return RPM_PATCH_ERR_BUILD_FAILED;
         }
+    }
+    
+    /* Verify MOK packages are in repodata */
+    snprintf(cmd, sizeof(cmd), 
+        "zgrep -l 'grub2-efi-image-mok' '%s/repodata/'*primary.xml.gz 2>/dev/null | head -1",
+        repo_dir);
+    char output[512];
+    if (run_cmd_output(cmd, output, sizeof(output)) != 0 || strlen(output) == 0) {
+        log_warn("Could not verify grub2-efi-image-mok in repodata - installation may fail");
+    } else {
+        log_info("Verified: MOK packages present in repository metadata");
     }
     
     log_info("Repository metadata regenerated");

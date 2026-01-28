@@ -365,6 +365,12 @@ On first boot, the **blue MokManager screen** appears:
 
 ## Version History
 
+- **v1.9.2** - RPM patcher improvements:
+  - **Clean package naming**: Removed redundant `.mok1` suffix from release tags (package name `-mok` suffix is sufficient)
+  - **Better error handling**: `rpm_integrate_to_iso()` now verifies MOK RPMs exist before copying
+  - **Copy verification**: Each RPM copy is verified after the operation
+  - **Repodata verification**: Confirms MOK packages are present in repository metadata after regeneration
+  - **Explicit failure**: Fails with diagnostic information if MOK packages are not found
 - **v1.9.1** - Fix for installed system kernel/modules mismatch:
   - **Custom Kernel Injection**: `linux-mok` RPM now correctly contains the *custom built* kernel and modules instead of re-signed standard ones
   - **Module Path Correction**: Fixed logic to locate modules in build directory

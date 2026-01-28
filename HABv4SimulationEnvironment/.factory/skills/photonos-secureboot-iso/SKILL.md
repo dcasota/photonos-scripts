@@ -320,6 +320,14 @@ sync
 - **Fix (v1.9.1+)**: Tool now injects custom kernel binary/modules into `linux-mok` RPM, ensuring USB drivers are built-in
 - **Manual fix (legacy)**: Regenerate initrd with `--add-drivers "usbcore usb-common xhci_hcd xhci_pci ehci_hcd ehci_pci uhci_hcd usb_storage"`
 
+**linux-mok RPM build fails with depmod "No such file or directory":**
+- **Root Cause (v1.9.1)**: Spec file determined KVER from vmlinuz filename (e.g., `6.1.159-7.ph5-esx`) but custom modules directory has different version (e.g., `6.1.159-esx`)
+- **Fix (v1.9.2+)**: Spec now detects KVER from actual modules directory instead of vmlinuz filename
+
+**MOK packages missing from ISO / "grub2-efi-image-mok package not found" during install:**
+- **Root Cause (pre-1.9.2)**: Silent copy failures with no verification
+- **Fix (v1.9.2+)**: Tool now verifies MOK RPMs exist before copy, validates each copy operation, and confirms packages are in repodata
+
 **Laptop shows gray/red security dialog instead of blue MokManager:**
 - This means CSM/Legacy boot is enabled
 - The laptop's firmware is handling the violation, not shim's MokManager
