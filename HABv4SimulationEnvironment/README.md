@@ -365,6 +365,11 @@ On first boot, the **blue MokManager screen** appears:
 
 ## Version History
 
+- **v1.9.3** - Fixed installed system boot failure:
+  - **%post script fix**: Properly handles kernel version mismatch between vmlinuz filename and modules directory
+  - **photon.cfg symlink**: Now created using vmlinuz version (matches cfg filename) instead of modules version
+  - **initrd symlink**: Automatically creates symlink when initrd filename doesn't match what cfg expects
+  - **Robust detection**: Detects both KVER_MODULES and KVER_VMLINUZ separately to handle custom kernel injection
 - **v1.9.2** - RPM patcher improvements:
   - **Clean package naming**: Removed redundant `.mok1` suffix from release tags (package name `-mok` suffix is sufficient)
   - **Better error handling**: `rpm_integrate_to_iso()` now verifies MOK RPMs exist before copying
