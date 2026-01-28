@@ -316,11 +316,9 @@ sync
 ### Detailed Troubleshooting
 
 **Black screen after "UEFI Secure Boot is enabled" message (Installed System):**
-- The ESX kernel has USB drivers as modules (not built-in)
-- Dracut didn't include USB drivers because it didn't detect USB boot requirement
-- The ISO installer works because VMware's installer initrd has all drivers
-- Fix: Rebuild ISO with v1.8.0+ which adds USB drivers to dracut command
-- Manual fix: Regenerate initrd with `--add-drivers "usbcore usb-common xhci_hcd xhci_pci ehci_hcd ehci_pci uhci_hcd usb_storage"`
+- **Root Cause (v1.9.0)**: Installed system received standard kernel (modules as files) instead of custom kernel (USB built-in)
+- **Fix (v1.9.1+)**: Tool now injects custom kernel binary/modules into `linux-mok` RPM, ensuring USB drivers are built-in
+- **Manual fix (legacy)**: Regenerate initrd with `--add-drivers "usbcore usb-common xhci_hcd xhci_pci ehci_hcd ehci_pci uhci_hcd usb_storage"`
 
 **Laptop shows gray/red security dialog instead of blue MokManager:**
 - This means CSM/Legacy boot is enabled

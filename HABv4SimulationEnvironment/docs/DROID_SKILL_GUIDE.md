@@ -157,6 +157,7 @@ Droid: I'll build the ISO. This now automatically:
 2. Applies Photon OS config (config-esx_x86_64) + edge requirements
 3. Enables CONFIG_MODULE_SIG, CONFIG_LOCK_DOWN, CONFIG_USB=y (built-in)
 4. Builds and signs the kernel with MOK
+5. Injects custom kernel/modules into linux-mok RPM (v1.9.1+)
 [Explains the build process and runs it]
 ```
 

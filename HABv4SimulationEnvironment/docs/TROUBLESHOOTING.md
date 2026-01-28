@@ -627,22 +627,25 @@ If MokManager is only in `\EFI\BOOT\`, shim can't find it and falls back to anot
 
 ### Black screen after "UEFI Secure Boot is enabled" message (Installed System)
 
-**Cause**: The ESX kernel has USB drivers compiled as **modules** (not built-in), but the initrd generated during installation doesn't include them.
+**Root Cause (Fixed in v1.9.1)**: The custom kernel build was not being packaged into the `linux-mok` RPM. The installed system received the standard kernel (modules as external files) instead of the custom-built kernel (USB drivers as built-in).
 
-**Explanation**:
-- The **ISO installer** boots fine because VMware's installer initrd includes all necessary drivers
-- The **installed system** generates a new initrd via dracut during package installation
-- Dracut doesn't detect USB boot requirement and omits USB drivers
-- Result: Kernel loads but cannot access root filesystem on USB device
+**Historical Issue (v1.9.0)**:
+- Tool built custom kernel with `CONFIG_USB=y` (USB drivers built into kernel image)
+- But `rpm_secureboot_patcher` only re-signed the standard kernel from original RPM
+- Installed system got standard kernel with USB as modules (not built-in)
+- Without proper module loading, system froze at boot
 
-**Key drivers needed for USB boot** (all are modules in ESX kernel):
-- `usbcore`, `usb-common` - USB core subsystem
-- `xhci_hcd`, `xhci_pci` - USB 3.x host controller
-- `ehci_hcd`, `ehci_pci` - USB 2.0 host controller
-- `uhci_hcd` - USB 1.x host controller
-- `usb_storage` - USB mass storage
+**Permanent Fix (v1.9.1+)**: The `linux-mok` RPM now correctly contains the custom-built kernel and modules:
+- Custom kernel binary injected during RPM build (replaces standard kernel)
+- Custom modules directory injected (replaces standard modules)
+- `%post` script detects correct kernel version even if filename differs
+- Result: Installed system has USB drivers built into kernel, boots reliably
 
-**Manual Fix for Existing Installation**:
+**If Using Older ISO (v1.8.0-v1.9.0 - Module-Based Approach)**:
+
+The ESX kernel has USB drivers compiled as **modules** (not built-in), and the initrd must include them.
+
+**Manual Fix for v1.8.0-v1.9.0 Installation**:
 ```bash
 # Mount installed system
 mount /dev/sdX3 /mnt/sdd_root
@@ -662,11 +665,14 @@ umount /mnt/sdd_root/{proc,sys,dev}
 umount /mnt/sdd_root
 ```
 
-**Permanent Fix**: Rebuild ISO with latest PhotonOS-HABv4Emulation-ISOCreator (v1.8.0+). The linux-mok package's `%post` script now includes USB drivers in dracut command.
+**Recommended**: Rebuild ISO with latest PhotonOS-HABv4Emulation-ISOCreator (v1.9.1+) for the built-in USB driver approach.
 
 **Verification**:
 ```bash
-# Check if USB drivers are in initrd
+# Check kernel config (v1.9.1+ should show =y)
+zgrep CONFIG_USB /proc/config.gz
+
+# For older versions, check if USB drivers are in initrd
 lsinitrd /boot/initrd.img-* | grep -E "usbcore|xhci|ehci"
 ```
 

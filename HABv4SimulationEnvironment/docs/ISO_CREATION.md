@@ -105,6 +105,7 @@ Generate Initrd (Generic, No-Hostonly)
   - Include critical modules
     ↓
 Build MOK RPM packages
+  - Inject custom kernel/modules into linux-mok (replaces standard binaries)
     ↓
 Create kickstart configuration files
     ↓

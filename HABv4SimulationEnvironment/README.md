@@ -365,6 +365,11 @@ On first boot, the **blue MokManager screen** appears:
 
 ## Version History
 
+- **v1.9.1** - Fix for installed system kernel/modules mismatch:
+  - **Custom Kernel Injection**: `linux-mok` RPM now correctly contains the *custom built* kernel and modules instead of re-signed standard ones
+  - **Module Path Correction**: Fixed logic to locate modules in build directory
+  - **Robust Version Detection**: `%post` script now reliably detects kernel version even if filename differs from internal version (fixes `depmod`/`dracut` failures)
+  - **Result**: Installed system now boots correctly with built-in USB drivers (fixes "black screen" hang)
 - **v1.9.0** - Built-in kernel build and initrd pre-generation:
   - **Kernel build standard**: Custom kernel build is now mandatory and automatic (removed `--full-kernel-build` flag)
   - **USB drivers built-in**: Kernel configured with `CONFIG_USB=y` and related drivers as built-in (not modules) for reliable USB boot
