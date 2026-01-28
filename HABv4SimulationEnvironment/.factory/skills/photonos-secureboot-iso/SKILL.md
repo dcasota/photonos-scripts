@@ -61,7 +61,6 @@ This skill covers creating Secure Boot enabled ISOs for Photon OS that work on c
 | `-E`, `--efuse-usb` | Enable eFuse USB verification |
 | `-u`, `--create-efuse-usb=DEV` | Create eFuse USB dongle |
 | `-R`, `--rpm-signing` | Enable GPG signing of MOK RPMs |
-| `-F`, `--full-kernel-build` | Build kernel from source |
 | `-c`, `--clean` | Clean all artifacts |
 | `-v`, `--verbose` | Verbose output |
 | `-y`, `--yes` | Auto-confirm destructive operations |
@@ -196,7 +195,7 @@ The interactive approach (Option C):
 
 ## Kernel Build Support
 
-The `--full-kernel-build` option builds kernels from Photon OS sources:
+The tool **automatically** builds kernels from Photon OS sources with Secure Boot configuration:
 
 ### Directory Structure Supported
 

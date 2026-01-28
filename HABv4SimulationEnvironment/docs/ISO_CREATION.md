@@ -72,9 +72,6 @@ This will:
 
 # Build with eFuse USB requirement
 ./PhotonOS-HABv4Emulation-ISOCreator --build-iso --efuse-usb
-
-# Build kernel from source (takes hours)
-./PhotonOS-HABv4Emulation-ISOCreator --build-iso --full-kernel-build
 ```
 
 ---
@@ -98,9 +95,16 @@ Discover original RPM packages
     ↓
 Generate MOK variant SPEC files
     ↓
-Build MOK RPM packages
+Build Custom Kernel from Source (Standard)
+  - Apply config-esx_x86_64
+  - Set CONFIG_USB=y (built-in)
+  - Set CONFIG_MODULE_SIG=y
     ↓
-Sign kernel with MOK key
+Generate Initrd (Generic, No-Hostonly)
+  - Include USB drivers
+  - Include critical modules
+    ↓
+Build MOK RPM packages
     ↓
 Create kickstart configuration files
     ↓
@@ -359,17 +363,11 @@ This adds:
     --yes
 ```
 
-### Full Kernel Build
+### Full Kernel Build (Automatic)
 
-Build kernel from source with Secure Boot options:
+The tool **automatically** builds the kernel from source with Secure Boot options. No flag is needed.
 
-```bash
-./PhotonOS-HABv4Emulation-ISOCreator \
-    --build-iso \
-    --full-kernel-build
-```
-
-Requires kernel source in:
+It requires kernel source in:
 - `/root/{release}/stage/SOURCES/linux-*.tar.xz`
 - Config in `/root/{release}/SPECS/linux/` or `/root/common/SPECS/linux/`
 

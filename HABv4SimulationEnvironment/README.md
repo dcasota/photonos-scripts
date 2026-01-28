@@ -107,7 +107,7 @@ Edge devices often require drivers not included in mainline Linux:
 **Challenge**: Out-of-tree modules must be signed with the same key used to build the kernel. Standard Photon OS kernels don't include the signing key.
 
 **HABv4 Solution**: 
-- `--full-kernel-build` option builds kernel with embedded signing key
+- **Built-in custom kernel build**: Tool always builds kernel from source with embedded signing key
 - `CONFIG_MODULE_SIG_KEY` points to user-controlled key
 - All modules signed during build, custom modules can be signed post-build
 
@@ -135,7 +135,7 @@ CONFIG_EFI_STUB=y                          # EFI boot support
 CONFIG_KEXEC_SIG=y                         # Signed kexec images
 ```
 
-**HABv4 Solution**: The `--full-kernel-build` option:
+**HABv4 Solution**: The tool automatically:
 1. Starts from Photon OS kernel source
 2. Applies user-specified config modifications
 3. Enables all Secure Boot options
@@ -180,11 +180,7 @@ GPG-signed packages for supply chain integrity (NIST SI-7, EU CRA Article 10):
 
 ### 4. Custom Kernel Support
 
-Full kernel build with Secure Boot configuration:
-
-```bash
-./PhotonOS-HABv4Emulation-ISOCreator --build-iso --full-kernel-build
-```
+Full kernel build with Secure Boot configuration is now **standard and automatic**.
 
 Supports the Photon OS kernel source directory structure:
 - Release 4.0: `/root/4.0/SPECS/linux/`
@@ -205,14 +201,11 @@ make
 ### 2. Create a Compliant ISO
 
 ```bash
-# Basic Secure Boot ISO
+# Basic Secure Boot ISO (includes custom kernel build)
 ./PhotonOS-HABv4Emulation-ISOCreator -b
 
 # Full compliance build (Secure Boot + RPM signing)
 ./PhotonOS-HABv4Emulation-ISOCreator --build-iso --rpm-signing
-
-# Edge deployment (custom kernel + full signing)
-./PhotonOS-HABv4Emulation-ISOCreator --build-iso --rpm-signing --full-kernel-build
 ```
 
 ### 3. Deploy
@@ -237,7 +230,7 @@ sync
 | Signed bootloaders | NIST CM-14 | Microsoft-signed shim, MOK-signed GRUB |
 | Signed kernel | EU CRA Art. 10 | MOK-signed vmlinuz |
 | Signed packages | FedRAMP, NIS2 | `--rpm-signing` option |
-| Kernel module signing | NIST SI-7 | `--full-kernel-build` with MODULE_SIG |
+| Kernel module signing | NIST SI-7 | Built-in kernel build with MODULE_SIG |
 | Physical presence for key enrollment | Best practice | MokManager requires physical access |
 
 ---
@@ -295,7 +288,6 @@ SUSE Shim → Custom GRUB (no shim_lock, MOK-signed) → Kernel (MOK-signed)
 | `-b`, `--build-iso` | Build Secure Boot ISO |
 | `-r`, `--release=VERSION` | Photon OS version: 4.0, 5.0, 6.0 (default: 5.0) |
 | `-R`, `--rpm-signing` | Enable GPG signing (NIST 800-53, FedRAMP, EU CRA) |
-| `-F`, `--full-kernel-build` | Build kernel with Secure Boot config |
 | `-E`, `--efuse-usb` | Require eFuse USB dongle for boot |
 | `-u`, `--create-efuse-usb=DEV` | Create eFuse USB dongle |
 | `-D`, `--diagnose=ISO` | Diagnose existing ISO |
@@ -306,11 +298,8 @@ SUSE Shim → Custom GRUB (no shim_lock, MOK-signed) → Kernel (MOK-signed)
 ### Examples
 
 ```bash
-# Standard compliance build
+# Standard compliance build (includes custom kernel)
 ./PhotonOS-HABv4Emulation-ISOCreator --build-iso --rpm-signing
-
-# Edge deployment with custom kernel
-./PhotonOS-HABv4Emulation-ISOCreator --release 5.0 --build-iso --full-kernel-build --rpm-signing
 
 # High-security build with hardware token
 ./PhotonOS-HABv4Emulation-ISOCreator --build-iso --rpm-signing --efuse-usb --create-efuse-usb=/dev/sdd -y
@@ -376,6 +365,12 @@ On first boot, the **blue MokManager screen** appears:
 
 ## Version History
 
+- **v1.9.0** - Built-in kernel build and initrd pre-generation:
+  - **Kernel build standard**: Custom kernel build is now mandatory and automatic (removed `--full-kernel-build` flag)
+  - **USB drivers built-in**: Kernel configured with `CONFIG_USB=y` and related drivers as built-in (not modules) for reliable USB boot
+  - **Pre-generated initrd**: Generic initrd generated at build time using `dracut --no-hostonly`, eliminating installation-time dependencies
+  - **Correct module dependencies**: `depmod` run on build host to ensure correct module loading in initrd
+  - **Dracut optimization**: Explicitly includes critical modules and excludes problematic ones (lvm, nbd, etc.)
 - **v1.8.0** - Security hardening and USB boot reliability:
   - **USB driver support**: ESX kernel USB boot fixed - include USB drivers in initrd via dracut
   - **Installer template patching**: Patch `mk-setup-grub.sh` in initrd for reliable boot parameters

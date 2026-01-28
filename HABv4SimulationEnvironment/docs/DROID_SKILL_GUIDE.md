@@ -147,16 +147,16 @@ Droid: I'll analyze the current signing code and propose HSM integration:
 
 ### 1. Kernel Build Support
 
-The tool supports building kernels from Photon OS sources:
+The tool automatically builds kernels from Photon OS sources with Secure Boot configuration:
 
 ```
-User: Build a custom kernel with Secure Boot support for release 5.0
+User: Build a Secure Boot ISO (which includes custom kernel)
 
-Droid: I'll use --full-kernel-build which will:
-1. Find kernel source in /root/5.0/stage/SOURCES/
-2. Apply Photon OS config (config-esx_x86_64)
-3. Enable CONFIG_MODULE_SIG, CONFIG_LOCK_DOWN
-4. Build and sign the kernel
+Droid: I'll build the ISO. This now automatically:
+1. Finds kernel source in /root/5.0/stage/SOURCES/ or common directories
+2. Applies Photon OS config (config-esx_x86_64) + edge requirements
+3. Enables CONFIG_MODULE_SIG, CONFIG_LOCK_DOWN, CONFIG_USB=y (built-in)
+4. Builds and signs the kernel with MOK
 [Explains the build process and runs it]
 ```
 

@@ -11,7 +11,6 @@ This document shows a complete example of building a Photon OS Secure Boot ISO w
     --setup-efuse \
     --create-efuse-usb=/dev/sdd \
     --efuse-usb \
-    --full-kernel-build \
     --rpm-signing \
     --yes
 ```
@@ -25,9 +24,10 @@ This document shows a complete example of building a Photon OS Secure Boot ISO w
 | `--setup-efuse` | Create eFuse simulation directory |
 | `--create-efuse-usb=/dev/sdd` | Format USB drive as eFuse dongle |
 | `--efuse-usb` | Enable eFuse USB verification in GRUB |
-| `--full-kernel-build` | Attempt full kernel build from source |
 | `--rpm-signing` | Enable GPG signing of MOK RPM packages |
 | `--yes` | Auto-confirm destructive operations |
+
+*(Note: Custom kernel build with Secure Boot options is now automatic)*
 
 ## What Gets Created
 
