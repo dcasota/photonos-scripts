@@ -1577,6 +1577,13 @@ static int find_base_iso(char *iso_path, size_t path_size) {
 static int create_secure_boot_iso(void) {
     log_step("Creating Secure Boot ISO...");
     
+    /* Step 0: Build custom kernel with USB drivers as built-in (mandatory in v1.9.0+) */
+    log_info("Building custom kernel with built-in USB drivers...");
+    if (build_linux_kernel() != 0) {
+        log_error("Kernel build failed - cannot create Secure Boot ISO");
+        return -1;
+    }
+    
     char base_iso[512];
     
     if (strlen(cfg.input_iso) > 0) {
@@ -2756,7 +2763,7 @@ static void show_help(void) {
     printf("  -u, --create-efuse-usb=DEV Create eFuse USB dongle on device (e.g., /dev/sdb)\n");
     printf("  -E, --efuse-usb            Enable eFuse USB dongle verification in GRUB\n");
     printf("  -R, --rpm-signing          Enable GPG signing of MOK RPM packages\n");
-    printf("  -F, --full-kernel-build    Build kernel from source (takes hours)\n");
+    /* -F/--full-kernel-build removed in v1.9.0 - kernel build is now mandatory */
     printf("  -D, --diagnose=ISO         Diagnose an existing ISO for Secure Boot issues\n");
     printf("  -c, --clean                Clean up all artifacts\n");
     printf("  -v, --verbose              Verbose output\n");
@@ -2818,7 +2825,7 @@ int main(int argc, char *argv[]) {
         {"create-efuse-usb",  required_argument, 0, 'u'},
         {"efuse-usb",         no_argument,       0, 'E'},
         {"rpm-signing",       no_argument,       0, 'R'},
-        {"full-kernel-build", no_argument,       0, 'F'},
+        /* {"full-kernel-build", no_argument, 0, 'F'}, -- removed in v1.9.0, kernel build is now mandatory */
         {"diagnose",          required_argument, 0, 'D'},
         {"clean",             no_argument,       0, 'c'},
         {"verbose",           no_argument,       0, 'v'},
@@ -2919,7 +2926,8 @@ int main(int argc, char *argv[]) {
                 cfg.rpm_signing = 1;
                 break;
             case 'F':
-                cfg.full_kernel_build = 1;
+                /* -F/--full-kernel-build removed in v1.9.0 - kernel build is now mandatory */
+                log_warn("Option -F/--full-kernel-build is deprecated (kernel build is now mandatory)");
                 break;
             case 'D':
                 /* Security: Validate path for command injection */
@@ -2965,7 +2973,7 @@ int main(int argc, char *argv[]) {
         int cert_issues = check_all_certificates(cfg.keys_dir, cfg.cert_warn_days);
         /* If only checking certs (no other action), exit with appropriate code */
         if (!cfg.generate_keys && !cfg.setup_efuse && 
-            !cfg.build_iso && !cfg.full_kernel_build &&
+            !cfg.build_iso &&
             strlen(cfg.efuse_usb_device) == 0) {
             return (cert_issues > 0) ? 1 : 0;
         }
@@ -2979,8 +2987,7 @@ int main(int argc, char *argv[]) {
     }
     
     /* If no specific action, default to full setup (generate keys) */
-    if (!cfg.generate_keys && !cfg.setup_efuse && 
-        !cfg.build_iso && !cfg.full_kernel_build) {
+    if (!cfg.generate_keys && !cfg.setup_efuse && !cfg.build_iso) {
         cfg.generate_keys = 1;
         cfg.setup_efuse = 1;
     }
@@ -3010,7 +3017,6 @@ int main(int argc, char *argv[]) {
     printf("Cert Warn Days:    %d\n", cfg.cert_warn_days);
     if (cfg.build_iso) printf("Build ISO:         YES\n");
     if (cfg.efuse_usb_mode) printf("eFuse USB Mode:    ENABLED\n");
-    if (cfg.full_kernel_build) printf("Full Kernel Build: YES\n");
     printf("=========================================\n\n");
     
     if (cfg.generate_keys) {
@@ -3024,10 +3030,6 @@ int main(int argc, char *argv[]) {
     /* Create eFuse USB dongle if requested */
     if (efuse_usb_requested) {
         if (create_efuse_usb(cfg.efuse_usb_device) != 0) return 1;
-    }
-    
-    if (cfg.full_kernel_build) {
-        if (build_linux_kernel() != 0) return 1;
     }
     
     verify_installation();
@@ -3051,16 +3053,11 @@ int main(int argc, char *argv[]) {
         printf("  - Create eFuse USB: %s -u /dev/sdX\n", PROGRAM_NAME);
         printf("  - Rebuild with eFuse mode: %s -E -b\n", PROGRAM_NAME);
         printf("  - Cleanup:          %s -c\n", PROGRAM_NAME);
-    } else if (cfg.full_kernel_build) {
-        /* Kernel was built - suggest building ISO */
-        printf("  - Build ISO:        %s -b\n", PROGRAM_NAME);
-        printf("  - Cleanup:          %s -c\n", PROGRAM_NAME);
     } else {
         /* Setup was done - suggest building ISO */
         printf("  - Build ISO:        %s -b\n", PROGRAM_NAME);
         printf("  - With eFuse mode:  %s -E -b\n", PROGRAM_NAME);
         printf("  - Create eFuse USB: %s -u /dev/sdX\n", PROGRAM_NAME);
-        printf("  - Full kernel:      %s -F\n", PROGRAM_NAME);
         printf("  - Cleanup:          %s -c\n", PROGRAM_NAME);
     }
     log_info("=========================================");
