@@ -366,6 +366,11 @@ On first boot, the **blue MokManager screen** appears:
 
 ## Version History
 
+- **v1.9.10** - Wireless regulatory and GRUB splash fixes:
+  - **Removed legacy TKIP crypto configs**: Removed `CONFIG_CRYPTO_MICHAEL_MIC`, `CONFIG_CRYPTO_ARC4`, `CONFIG_CRYPTO_ECB` from WiFi driver mappings - these are only needed for WPA1/TKIP which is legacy/insecure; modern WPA2/WPA3-AES doesn't require them
+  - **Added wireless-regdb package**: Added `wireless-regdb` and `iw` to `packages_mok.json` - provides wireless regulatory database for proper 80MHz channel support, fixes "80MHz not supported, disabling VHT" warning
+  - **Fixed GRUB splash screen on installed systems**: eFuse verification code now restores `terminal_output gfxterm` after verification succeeds, enabling themed boot menu display
+  - **Note**: Users with malformed wpa_supplicant.conf should fix `group=` cipher settings manually (use `group=CCMP` for WPA2-only)
 - **v1.9.9** - Enforce eFuse USB verification on installed systems:
   - **Root cause**: Installer's `mk-setup-grub.sh` generates grub.cfg AFTER all RPM %posttrans scripts run
   - **Result**: eFuse verification code added by grub2-efi-image-mok %posttrans was overwritten
