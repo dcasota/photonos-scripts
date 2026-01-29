@@ -37,7 +37,7 @@
 
 #include "rpm_secureboot_patcher.h"
 
-#define VERSION "1.9.8"
+#define VERSION "1.9.9"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */
@@ -2333,6 +2333,79 @@ static int create_secure_boot_iso(void) {
         run_cmd(cmd);
         
         log_info("Patched mk-setup-grub.sh: Added USB boot params with rd.driver.pre");
+        
+        /* Add eFuse USB verification to installed system's grub.cfg if enabled
+         * This must be added to mk-setup-grub.sh template because:
+         * 1. The installer generates grub.cfg AFTER all RPM %posttrans scripts run
+         * 2. %posttrans modifications get overwritten by mk-setup-grub.sh
+         * 3. Only patching the template ensures eFuse verification persists
+         *
+         * We inject the eFuse verification code BEFORE the menuentry line in the heredoc */
+        if (cfg.efuse_usb_mode) {
+            log_info("Adding eFuse USB verification to installed system grub.cfg...");
+            
+            /* Create a Python script to inject eFuse verification into mk-setup-grub.sh
+             * We insert the eFuse check code just before 'menuentry "Photon"' */
+            char efuse_patch_script[512];
+            snprintf(efuse_patch_script, sizeof(efuse_patch_script), "%s/patch_efuse_grub.py", work_dir);
+            
+            FILE *epf = fopen(efuse_patch_script, "w");
+            if (epf) {
+                fprintf(epf,
+                    "#!/usr/bin/env python3\n"
+                    "import sys\n"
+                    "\n"
+                    "with open(sys.argv[1], 'r') as f:\n"
+                    "    content = f.read()\n"
+                    "\n"
+                    "# eFuse verification code to inject before menuentry\n"
+                    "efuse_code = '''\n"
+                    "# HABv4 eFuse USB Verification\n"
+                    "set efuse_verified=0\n"
+                    "search --no-floppy --label EFUSE_SIM --set=efuse_disk\n"
+                    "if [ -n \"\\\\$efuse_disk\" ]; then\n"
+                    "    if [ -f (\\\\$efuse_disk)/efuse_sim/srk_fuse.bin ]; then\n"
+                    "        set efuse_verified=1\n"
+                    "    fi\n"
+                    "fi\n"
+                    "if [ \"\\\\$efuse_verified\" = \"0\" ]; then\n"
+                    "    terminal_output console\n"
+                    "    echo \"\"\n"
+                    "    echo \"=========================================\"\n"
+                    "    echo \"  HABv4 SECURITY: eFuse USB Required\"\n"
+                    "    echo \"=========================================\"\n"
+                    "    echo \"\"\n"
+                    "    echo \"Insert eFuse USB dongle (label: EFUSE_SIM)\"\n"
+                    "    echo \"and press any key to retry.\"\n"
+                    "    echo \"\"\n"
+                    "    read anykey\n"
+                    "    configfile \\\\${BOOT_DIR}/grub2/grub.cfg\n"
+                    "fi\n"
+                    "\n"
+                    "'''\n"
+                    "\n"
+                    "# Find the menuentry line and insert efuse code before it\n"
+                    "marker = 'menuentry \"Photon\"'\n"
+                    "if marker in content:\n"
+                    "    content = content.replace(marker, efuse_code + marker)\n"
+                    "    print('eFuse verification code injected before menuentry')\n"
+                    "else:\n"
+                    "    print('WARNING: menuentry not found, eFuse code not injected')\n"
+                    "\n"
+                    "with open(sys.argv[1], 'w') as f:\n"
+                    "    f.write(content)\n"
+                );
+                fclose(epf);
+                
+                snprintf(cmd, sizeof(cmd), "python3 '%s' '%s' 2>&1", efuse_patch_script, grub_setup_script);
+                run_cmd(cmd);
+                
+                snprintf(cmd, sizeof(cmd), "rm -f '%s'", efuse_patch_script);
+                run_cmd(cmd);
+                
+                log_info("eFuse USB verification added to mk-setup-grub.sh template");
+            }
+        }
     } else {
         log_warn("mk-setup-grub.sh not found in initrd - grub.cfg may have suboptimal settings");
     }
