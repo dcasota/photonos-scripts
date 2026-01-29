@@ -366,6 +366,16 @@ On first boot, the **blue MokManager screen** appears:
 
 ## Version History
 
+- **v1.9.9** - Enforce eFuse USB verification on installed systems:
+  - **Root cause**: Installer's `mk-setup-grub.sh` generates grub.cfg AFTER all RPM %posttrans scripts run
+  - **Result**: eFuse verification code added by grub2-efi-image-mok %posttrans was overwritten
+  - **Fix**: Inject eFuse verification code directly into mk-setup-grub.sh template (before `menuentry "Photon"`)
+  - **Result**: Installed systems built with `--efuse-usb` now properly require eFuse USB dongle at boot
+- **v1.9.8** - Add WPA2/WPA3 crypto algorithm requirements for WiFi:
+  - **Root cause**: WiFi driver mappings only enabled subsystem configs but not crypto algorithms required by mac80211
+  - **Result**: Kernel panic in `mac80211_new_key+0x138` during WPA key installation
+  - **Fix**: Added 8 crypto configs to all WiFi driver mappings: `CONFIG_CRYPTO_CCM=y`, `CONFIG_CRYPTO_GCM=y`, `CONFIG_CRYPTO_CMAC=y`, `CONFIG_CRYPTO_AES=y`, `CONFIG_CRYPTO_AEAD=y`, `CONFIG_CRYPTO_SEQIV=y`, `CONFIG_CRYPTO_CTR=y`, `CONFIG_CRYPTO_GHASH=y`
+  - **Result**: WiFi WPA2/WPA3 authentication now works correctly without kernel panics
 - **v1.9.7** - Include custom kernel config in linux-mok RPM:
   - **Root cause**: Kernel `.config` file in RPM was from original Photon kernel, not the rebuilt one
   - **Result**: WiFi subsystem configs (`CONFIG_WIRELESS=y`, `CONFIG_WLAN=y`) were not present in installed system

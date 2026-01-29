@@ -823,7 +823,39 @@ dmesg | grep -iE "module|signature|lockdown"
 
 ---
 
-## Driver Integration Issues (v1.9.5/v1.9.6)
+## Driver Integration Issues (v1.9.5-v1.9.8)
+
+### Wi-Fi kernel panic during WPA key installation (v1.9.8 Fix)
+
+**Cause**: WiFi driver mappings enabled WiFi subsystem configs but not the crypto algorithms required by mac80211 for WPA2/WPA3 key management.
+
+**Symptoms**:
+- WiFi driver loads successfully
+- Association and authentication start
+- Kernel panic at `mac80211_new_key+0x138` during key installation
+- System freezes or reboots during WiFi connection
+- wpa_supplicant reports: "Failed to set GTK to the driver"
+
+**Root Cause**: The mac80211 subsystem requires specific crypto algorithms for CCMP/GCMP encryption used in WPA2/WPA3:
+- `CONFIG_CRYPTO_CCM=y` - Counter with CBC-MAC (for CCMP)
+- `CONFIG_CRYPTO_GCM=y` - Galois/Counter Mode (for GCMP)
+- `CONFIG_CRYPTO_CMAC=y` - Cipher-based MAC (for key management)
+- `CONFIG_CRYPTO_AES=y` - AES cipher (core encryption)
+- `CONFIG_CRYPTO_AEAD=y` - Authenticated Encryption
+- `CONFIG_CRYPTO_SEQIV=y` - Sequence Number IV Generator
+- `CONFIG_CRYPTO_CTR=y` - Counter Mode
+- `CONFIG_CRYPTO_GHASH=y` - GHASH message digest (for GCM)
+
+**Solution (v1.9.8+)**: Fixed by adding all 8 crypto configs to every WiFi driver mapping in `DRIVER_KERNEL_MAP[]`.
+
+**If using older ISO (v1.9.5-v1.9.7)**: Rebuild ISO with PhotonOS-HABv4Emulation-ISOCreator v1.9.8+
+
+**Verification**:
+```bash
+# Check crypto algorithm configs in kernel
+zgrep -E "CONFIG_CRYPTO_(CCM|GCM|CMAC|AES|AEAD|SEQIV|CTR|GHASH)" /proc/config.gz
+# All should show =y
+```
 
 ### Wi-Fi not working - Kernel config mismatch (v1.9.7 Fix)
 
@@ -953,6 +985,8 @@ find /lib/modules -name "cfg80211*" -o -name "mac80211*" -o -name "iwlwifi*"
 | grubx64_real.efi not found | GRUB stub search failed | Rebuild with PhotonOS-HABv4Emulation-ISOCreator |
 | BOOT BLOCKED (no Continue) | eFuse USB missing/invalid | Insert eFuse USB or rebuild without eFuse requirement |
 | eFuse USB not detected | Wrong label or not FAT32 | Recreate with `-u /dev/sdX` option |
+| eFuse not enforced on installed system | mk-setup-grub.sh overwrites %posttrans | Rebuild ISO (v1.9.9+ injects into template) |
+| Wi-Fi kernel panic during WPA connect | Missing crypto algorithms (CCM, GCM, etc.) | Rebuild ISO (v1.9.8+ adds crypto configs) |
 | Package names have `.ph5.ph5` | `%{?dist}` in spec doubles dist tag | Rebuild ISO (v1.9.6+ removes `%{?dist}`) |
 | Wi-Fi modules not found | Photon ESX has WIRELESS=n WLAN=n | Rebuild ISO (v1.9.6+ adds WiFi prerequisites) |
 
