@@ -366,6 +366,11 @@ On first boot, the **blue MokManager screen** appears:
 
 ## Version History
 
+- **v1.9.7** - Include custom kernel config in linux-mok RPM:
+  - **Root cause**: Kernel `.config` file in RPM was from original Photon kernel, not the rebuilt one
+  - **Result**: WiFi subsystem configs (`CONFIG_WIRELESS=y`, `CONFIG_WLAN=y`) were not present in installed system
+  - **Fix**: Custom kernel injection now copies `.config` from build directory to `boot/config-*` in RPM
+  - **Result**: Installed system now has correct kernel config with WiFi subsystem enabled
 - **v1.9.6** - Fix double dist tag and WiFi subsystem prerequisites:
   - **Package naming fix**: Removed `%{?dist}` from Release lines in spec templates since original RPM release already contains `.ph5`
   - **Result**: Package names are now `linux-mok-6.1.159-7.ph5.x86_64.rpm` (single `.ph5`) instead of double `.ph5.ph5`

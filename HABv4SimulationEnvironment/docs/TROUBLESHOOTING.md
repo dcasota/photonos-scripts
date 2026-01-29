@@ -825,6 +825,22 @@ dmesg | grep -iE "module|signature|lockdown"
 
 ## Driver Integration Issues (v1.9.5/v1.9.6)
 
+### Wi-Fi not working - Kernel config mismatch (v1.9.7 Fix)
+
+**Cause**: The `boot/config-*` file in the linux-mok RPM was from the original Photon kernel, not the rebuilt custom kernel. Even though the kernel itself was built with WiFi configs enabled, the installed system's config file showed `CONFIG_WIRELESS is not set`.
+
+**Symptoms**:
+- Modules load but wpa_supplicant reports: "Failed to set GTK to the driver"
+- WiFi authentication succeeds but association fails
+- `/boot/config-*` shows `CONFIG_WIRELESS is not set` despite modules being present
+- `dmesg` shows WiFi driver loaded but key installation fails
+
+**Root Cause**: The spec file extracted the config file from the original RPM but didn't replace it with the custom kernel's `.config` during custom kernel injection.
+
+**Solution (v1.9.7+)**: Fixed by adding code to copy the kernel `.config` from the build directory to `boot/config-*` during custom kernel injection in the %prep section.
+
+**If using older ISO (v1.9.5-v1.9.6)**: Rebuild ISO with PhotonOS-HABv4Emulation-ISOCreator v1.9.7+
+
 ### Wi-Fi not working - No kernel modules (v1.9.6 Fix)
 
 **Cause**: Photon ESX kernel has `CONFIG_WIRELESS=n CONFIG_WLAN=n` by default, preventing all WiFi driver modules from being built - even when the driver-specific config is set (e.g., `CONFIG_IWLWIFI=m`).

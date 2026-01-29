@@ -37,7 +37,7 @@
 
 #include "rpm_secureboot_patcher.h"
 
-#define VERSION "1.9.6"
+#define VERSION "1.9.7"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */
