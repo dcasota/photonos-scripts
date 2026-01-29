@@ -2232,14 +2232,18 @@ static int create_secure_boot_iso(void) {
                 "        \"shim-signed-mok\",\n"
                 "        \"lvm2\",\n"
                 "        \"less\",\n"
-                "        \"sudo\"\n"
+                "        \"sudo\",\n"
+                "        \"libnl\",\n"
+                "        \"wireless-regdb\",\n"
+                "        \"iw\"\n"
                 "    ]\n"
                 "}\n"
             );
-            /* Note: wireless-regdb and iw are NOT in Photon OS 5.0 repos.
-             * WiFi regulatory domain will use kernel defaults (restrictive).
-             * User can manually set regulatory domain via kernel parameter or
-             * build custom wireless-regdb package if needed. */
+            /* Note: wireless-regdb and iw are custom-built packages from:
+             * - wireless-regdb: kernel.org wireless regulatory database
+             * - iw: nl80211 wireless configuration utility
+             * These must be placed in drivers/RPM and built with --drivers flag.
+             * libnl is a dependency of iw and IS available in Photon 5.0 repos. */
             fclose(f);
             log_info("Created packages_mok.json");
         }
