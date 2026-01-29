@@ -175,7 +175,33 @@ Droid: I'll build with eFuse verification:
 [Runs: ./PhotonOS-HABv4Emulation-ISOCreator -b -E -u /dev/sdX]
 ```
 
-### 3. Compliance Builds
+### 3. Driver Integration (WiFi, etc.)
+
+For systems requiring additional hardware support:
+
+```
+User: Create an ISO with Intel WiFi 6E AX211 support
+
+Droid: I'll build with driver integration:
+1. Include wireless-regdb for regulatory database
+2. Include iw for wireless configuration utility
+3. Include linux-firmware-iwlwifi-ax211 for Intel WiFi firmware
+4. Enable required kernel configs (WIRELESS, WLAN, CFG80211, MAC80211, crypto)
+5. GPG sign all driver RPMs if --rpm-signing enabled
+[Runs: ./PhotonOS-HABv4Emulation-ISOCreator -b --drivers --rpm-signing]
+```
+
+**Available driver packages in `drivers/RPM/`:**
+- `wireless-regdb-2024.01.23-1.ph5.noarch.rpm` - WiFi regulatory database
+- `iw-6.9-1.ph5.x86_64.rpm` - nl80211 wireless config utility  
+- `linux-firmware-iwlwifi-ax211-20260128-1.noarch.rpm` - Intel WiFi 6E firmware
+
+**Rebuilding driver packages:**
+```bash
+./drivers/build-wireless-packages.sh
+```
+
+### 4. Compliance Builds
 
 For regulated environments:
 

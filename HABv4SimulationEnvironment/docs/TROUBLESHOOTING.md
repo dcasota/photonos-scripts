@@ -823,9 +823,9 @@ dmesg | grep -iE "module|signature|lockdown"
 
 ---
 
-## Driver Integration Issues (v1.9.5-v1.9.11)
+## Driver Integration Issues (v1.9.5-v1.9.12)
 
-### Installer fails with "No matching packages not found" (v1.9.11 Fix)
+### Installer fails with "No matching packages not found" (v1.9.11 Fix, v1.9.12 Permanent Fix)
 
 **Cause**: packages_mok.json referenced packages not available in Photon OS 5.0 repositories.
 
@@ -836,11 +836,17 @@ dmesg | grep -iE "module|signature|lockdown"
 
 **Root Cause (v1.9.10)**: Added `wireless-regdb` and `iw` to packages_mok.json but these packages don't exist in Photon OS 5.0 repos.
 
-**Solution (v1.9.11+)**: Removed `wireless-regdb` and `iw` from packages_mok.json.
+**Solution (v1.9.11)**: Temporarily removed packages from packages_mok.json.
 
-**Note**: For 80MHz/DFS channel support, you can:
-1. Set regulatory domain via kernel parameter: `cfg80211.ieee80211_regdom=US` (or your country code)
-2. Build custom wireless-regdb package from upstream linux-firmware
+**Permanent Solution (v1.9.12)**: Built `wireless-regdb` and `iw` packages from upstream sources:
+- `wireless-regdb-2024.01.23-1.ph5.noarch.rpm` from kernel.org
+- `iw-6.9-1.ph5.x86_64.rpm` from kernel.org
+- Packages are in `drivers/RPM/` and integrated when using `--drivers` flag
+- Build script `drivers/build-wireless-packages.sh` available for rebuilding
+
+**Note**: For full WiFi regulatory support (80MHz channels, DFS):
+1. Use `--drivers` flag when building ISO to include wireless packages
+2. Or set regulatory domain via kernel parameter: `cfg80211.ieee80211_regdom=US`
 
 ### "80MHz not supported, disabling VHT" WiFi warning
 
@@ -1068,8 +1074,8 @@ find /lib/modules -name "cfg80211*" -o -name "mac80211*" -o -name "iwlwifi*"
 | Wi-Fi kernel panic during WPA connect | Missing crypto algorithms (CCM, GCM, etc.) | Rebuild ISO (v1.9.8+ adds crypto configs) |
 | Package names have `.ph5.ph5` | `%{?dist}` in spec doubles dist tag | Rebuild ISO (v1.9.6+ removes `%{?dist}`) |
 | Wi-Fi modules not found | Photon ESX has WIRELESS=n WLAN=n | Rebuild ISO (v1.9.6+ adds WiFi prerequisites) |
-| "80MHz not supported, disabling VHT" | Missing wireless-regdb | Use kernel param `cfg80211.ieee80211_regdom=XX` |
-| Installer fails "packages not found" | wireless-regdb/iw not in Photon 5.0 | Rebuild ISO (v1.9.11+ removes unavailable pkgs) |
+| "80MHz not supported, disabling VHT" | Missing wireless-regdb | Rebuild with `--drivers` (v1.9.12+) or use kernel param |
+| Installer fails "packages not found" | wireless-regdb/iw not in Photon 5.0 | Rebuild ISO with `--drivers` (v1.9.12+ includes packages) |
 | GRUB splash not showing (eFuse mode) | eFuse code doesn't restore gfxterm | Rebuild ISO (v1.9.10+ restores gfxterm) |
 
 ### MokManager Path Reference

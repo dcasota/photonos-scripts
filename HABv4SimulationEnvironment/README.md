@@ -366,11 +366,22 @@ On first boot, the **blue MokManager screen** appears:
 
 ## Version History
 
+- **v1.9.12** - Add wireless-regdb and iw packages for WiFi regulatory support:
+  - **Built from upstream sources**: 
+    - `wireless-regdb-2024.01.23` from kernel.org (regulatory database)
+    - `iw-6.9` from kernel.org (nl80211 wireless configuration utility)
+  - **New files in `drivers/RPM/`**:
+    - `wireless-regdb-2024.01.23-1.ph5.noarch.rpm`
+    - `iw-6.9-1.ph5.x86_64.rpm`
+  - **Spec files added** for rebuilding: `drivers/wireless-regdb/` and `drivers/iw/`
+  - **Build script**: `drivers/build-wireless-packages.sh` for rebuilding RPMs
+  - **Updated packages_mok.json**: Now includes `libnl`, `wireless-regdb`, `iw`
+  - **Driver RPM signing**: Fixed `integrate_driver_rpms()` to GPG sign driver RPMs when `--rpm-signing` enabled
+  - **Result**: Full WiFi regulatory support with 80MHz channels and DFS; use `--drivers` flag to include
 - **v1.9.11** - Fix installer failure due to missing packages:
-  - **Root cause**: `wireless-regdb` and `iw` packages do not exist in Photon OS 5.0 repositories
+  - **Root cause**: `wireless-regdb` and `iw` packages did not exist in Photon OS 5.0 repositories
   - **Result**: Installer failed with "No matching packages not found or not installed" (Error 1011)
-  - **Fix**: Removed `wireless-regdb` and `iw` from `packages_mok.json`
-  - **Note**: WiFi regulatory domain will use kernel defaults (restrictive); users needing 80MHz/DFS channels can build custom packages or set regulatory domain via kernel parameter (`cfg80211.ieee80211_regdom=XX`)
+  - **Fix**: Initially removed packages; now resolved in v1.9.12 by building from upstream sources
 - **v1.9.10** - Wireless regulatory and GRUB splash fixes:
   - **Removed legacy TKIP crypto configs**: Removed `CONFIG_CRYPTO_MICHAEL_MIC`, `CONFIG_CRYPTO_ARC4`, `CONFIG_CRYPTO_ECB` from WiFi driver mappings - these are only needed for WPA1/TKIP which is legacy/insecure; modern WPA2/WPA3-AES doesn't require them
   - ~~**Added wireless-regdb package**~~: (Reverted in v1.9.11 - package not available in Photon OS 5.0)

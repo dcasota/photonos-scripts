@@ -281,10 +281,22 @@ The `--drivers` option allows including additional driver firmware RPMs in the I
 | `igc` | igc | Intel I225/I226 Ethernet |
 | `nvidia` | DRM support | NVIDIA GPU (firmware only) |
 
-### Included Firmware
+### Included Packages (v1.9.12+)
 
 The `drivers/RPM/` directory includes:
-- **`linux-firmware-iwlwifi-ax211`**: Intel Wi-Fi 6E AX211 firmware (PCI IDs: 8086:51f0, 8086:51f1)
+- **`wireless-regdb-2024.01.23-1.ph5.noarch.rpm`**: WiFi regulatory database from kernel.org
+- **`iw-6.9-1.ph5.x86_64.rpm`**: nl80211 wireless configuration utility from kernel.org
+- **`linux-firmware-iwlwifi-ax211-20260128-1.noarch.rpm`**: Intel Wi-Fi 6E AX211 firmware (PCI IDs: 8086:51f0, 8086:51f1)
+
+**Note:** `wireless-regdb` and `iw` are built from upstream sources because they're not available in Photon OS 5.0 repos.
+
+### Rebuilding Driver Packages
+
+Spec files and build script are included:
+```bash
+# Rebuild wireless-regdb and iw from upstream sources
+./drivers/build-wireless-packages.sh
+```
 
 ### Adding Custom Drivers
 

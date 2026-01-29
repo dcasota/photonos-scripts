@@ -1515,20 +1515,41 @@ static int integrate_driver_rpms(const char *drivers_dir, const char *iso_extrac
     snprintf(rpms_dir, sizeof(rpms_dir), "%s/RPMS/x86_64", iso_extract);
     mkdir_p(rpms_dir);
     
-    /* Copy each driver RPM to ISO */
+    /* Copy and optionally sign each driver RPM */
+    char gpg_home[512];
+    snprintf(gpg_home, sizeof(gpg_home), "%s/.gnupg", cfg.keys_dir);
+    int sign_rpms = cfg.rpm_signing && dir_exists(gpg_home);
+    
     for (int i = 0; i < rpm_count; i++) {
         const char *rpm_path = driver_rpms[i];
         const char *filename = strrchr(rpm_path, '/');
         filename = filename ? filename + 1 : rpm_path;
         
         /* Determine target directory based on architecture */
+        char target_rpm[512];
         if (strstr(filename, ".noarch.rpm")) {
-            snprintf(cmd, sizeof(cmd), "cp '%s' '%s/RPMS/noarch/'", rpm_path, iso_extract);
+            snprintf(target_rpm, sizeof(target_rpm), "%s/RPMS/noarch/%s", iso_extract, filename);
         } else {
-            snprintf(cmd, sizeof(cmd), "cp '%s' '%s/RPMS/x86_64/'", rpm_path, iso_extract);
+            snprintf(target_rpm, sizeof(target_rpm), "%s/RPMS/x86_64/%s", iso_extract, filename);
         }
+        
+        /* Copy RPM first */
+        snprintf(cmd, sizeof(cmd), "cp '%s' '%s'", rpm_path, target_rpm);
         run_cmd(cmd);
-        log_info("  Copied: %s", filename);
+        
+        /* Sign the RPM if --rpm-signing enabled */
+        if (sign_rpms) {
+            snprintf(cmd, sizeof(cmd), 
+                "GNUPGHOME='%s' rpm --define '_gpg_name %s' --addsign '%s' 2>/dev/null",
+                gpg_home, GPG_KEY_NAME, target_rpm);
+            if (run_cmd(cmd) == 0) {
+                log_info("  Signed and copied: %s", filename);
+            } else {
+                log_info("  Copied (signing failed): %s", filename);
+            }
+        } else {
+            log_info("  Copied: %s", filename);
+        }
     }
     
     /* Update packages_mok.json to include driver packages */
