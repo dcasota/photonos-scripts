@@ -375,9 +375,10 @@ On first boot, the **blue MokManager screen** appears:
     - `iw-6.9-1.ph5.x86_64.rpm`
   - **Spec files added** for rebuilding: `drivers/wireless-regdb/` and `drivers/iw/`
   - **Build script**: `drivers/build-wireless-packages.sh` for rebuilding RPMs
-  - **Updated packages_mok.json**: Now includes `libnl`, `wireless-regdb`, `iw`
+  - **Updated packages_mok.json**: Now includes `libnl`, `wireless-regdb`, `iw`, `linux-firmware-iwlwifi-ax211`
   - **Driver RPM signing**: Fixed `integrate_driver_rpms()` to GPG sign driver RPMs when `--rpm-signing` enabled
-  - **Result**: Full WiFi regulatory support with 80MHz channels and DFS; use `--drivers` flag to include
+  - **MOK RPM signing fix**: Re-copy signed MOK RPMs to ISO after signing (were copied before signing)
+  - **Result**: All RPMs (MOK and driver) now GPG signed when using `--rpm-signing --drivers`
 - **v1.9.11** - Fix installer failure due to missing packages:
   - **Root cause**: `wireless-regdb` and `iw` packages did not exist in Photon OS 5.0 repositories
   - **Result**: Installer failed with "No matching packages not found or not installed" (Error 1011)

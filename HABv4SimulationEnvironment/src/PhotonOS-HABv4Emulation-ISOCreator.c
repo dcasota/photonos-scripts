@@ -2850,6 +2850,13 @@ static int create_secure_boot_iso(void) {
                     if (rpm_sign_mok_packages(&sign_cfg, gpg_home, GPG_KEY_NAME) != 0) {
                         log_warn("Failed to sign MOK RPM packages");
                     } else {
+                        /* Re-copy signed MOK RPMs to ISO (they were copied before signing) */
+                        log_info("Updating ISO with signed MOK RPMs...");
+                        snprintf(cmd, sizeof(cmd), 
+                            "cp '%s'/*-mok-*.rpm '%s/RPMS/x86_64/' 2>/dev/null", 
+                            output_dir, iso_extract);
+                        run_cmd(cmd);
+                        
                         /* Copy GPG public key to ISO root */
                         char gpg_pub[512], gpg_iso[512];
                         snprintf(gpg_pub, sizeof(gpg_pub), "%s/%s", cfg.keys_dir, GPG_KEY_FILE);
@@ -2857,6 +2864,13 @@ static int create_secure_boot_iso(void) {
                         snprintf(cmd, sizeof(cmd), "cp '%s' '%s'", gpg_pub, gpg_iso);
                         run_cmd(cmd);
                         log_info("GPG public key copied to ISO root");
+                        
+                        /* Regenerate repodata after updating RPMs */
+                        log_info("Regenerating repository metadata...");
+                        snprintf(cmd, sizeof(cmd), 
+                            "cd '%s/RPMS' && createrepo_c --update . 2>/dev/null || createrepo --update . 2>/dev/null",
+                            iso_extract);
+                        run_cmd(cmd);
                     }
                 }
             }
