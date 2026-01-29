@@ -823,7 +823,70 @@ dmesg | grep -iE "module|signature|lockdown"
 
 ---
 
-## Driver Integration Issues (v1.9.5-v1.9.8)
+## Driver Integration Issues (v1.9.5-v1.9.10)
+
+### "80MHz not supported, disabling VHT" WiFi warning (v1.9.10 Fix)
+
+**Cause**: Missing wireless-regdb package which provides the wireless regulatory database.
+
+**Symptoms**:
+- WiFi connects but limited to 40MHz channel width
+- dmesg shows: "80MHz not supported, disabling VHT"
+- Lower than expected WiFi speeds on 5GHz band
+- `iw reg get` shows "country 00: DFS-UNSET"
+
+**Root Cause**: Without wireless-regdb, the kernel doesn't know which channels/bandwidths are allowed in your region, so it defaults to the most restrictive settings.
+
+**Solution (v1.9.10+)**: Fixed by adding `wireless-regdb` and `iw` to `packages_mok.json`.
+
+**If using older ISO (v1.9.5-v1.9.9)**: Rebuild ISO with PhotonOS-HABv4Emulation-ISOCreator v1.9.10+ or manually install:
+```bash
+tdnf install wireless-regdb iw
+# Then set your regulatory domain
+iw reg set US  # or your country code
+```
+
+### GRUB splash screen not showing on installed system (v1.9.10 Fix)
+
+**Cause**: eFuse verification code switches to `terminal_output console` for the error message but never restores `terminal_output gfxterm` after successful verification.
+
+**Symptoms**:
+- Installed system built with `--efuse-usb` shows text-mode GRUB menu instead of themed splash
+- Boot menu shows "Photon" in plain text instead of graphical theme
+- eFuse verification works correctly (blocks boot without dongle)
+
+**Root Cause**: The eFuse verification code injected into mk-setup-grub.sh template was missing `terminal_output gfxterm` after the verification block.
+
+**Solution (v1.9.10+)**: Fixed by adding `terminal_output gfxterm` after the eFuse verification `fi` statement.
+
+**If using older ISO with eFuse mode (v1.9.9)**: Rebuild ISO with PhotonOS-HABv4Emulation-ISOCreator v1.9.10+
+
+### Malformed wpa_supplicant.conf causing WiFi failures
+
+**Cause**: User-created wpa_supplicant.conf with incorrect cipher specifications.
+
+**Symptoms**:
+- wpa_supplicant reports "Failed to set GTK to the driver"
+- WiFi authentication succeeds but key installation fails
+- Configuration shows `group=GROUP5180 5200...` instead of cipher names
+
+**Root Cause**: The `group=` parameter expects cipher names (CCMP, TKIP, etc.), not frequency values. Example malformed config:
+```
+group=GROUP5180 5200 5220...  # WRONG - these are frequencies
+```
+
+**Solution**: Fix wpa_supplicant.conf manually:
+```bash
+# For WPA2-only (recommended):
+group=CCMP
+pairwise=CCMP
+
+# For WPA/WPA2 mixed (legacy):
+group=CCMP TKIP
+pairwise=CCMP TKIP
+```
+
+**Note**: v1.9.10 removed TKIP crypto support (MICHAEL_MIC, ARC4) since modern WPA2-AES networks don't need it. If you specifically need TKIP for legacy networks, you'll need to rebuild the kernel with those configs manually.
 
 ### Wi-Fi kernel panic during WPA key installation (v1.9.8 Fix)
 
@@ -989,6 +1052,8 @@ find /lib/modules -name "cfg80211*" -o -name "mac80211*" -o -name "iwlwifi*"
 | Wi-Fi kernel panic during WPA connect | Missing crypto algorithms (CCM, GCM, etc.) | Rebuild ISO (v1.9.8+ adds crypto configs) |
 | Package names have `.ph5.ph5` | `%{?dist}` in spec doubles dist tag | Rebuild ISO (v1.9.6+ removes `%{?dist}`) |
 | Wi-Fi modules not found | Photon ESX has WIRELESS=n WLAN=n | Rebuild ISO (v1.9.6+ adds WiFi prerequisites) |
+| "80MHz not supported, disabling VHT" | Missing wireless-regdb | Rebuild ISO (v1.9.10+ adds wireless-regdb) |
+| GRUB splash not showing (eFuse mode) | eFuse code doesn't restore gfxterm | Rebuild ISO (v1.9.10+ restores gfxterm) |
 
 ### MokManager Path Reference
 
