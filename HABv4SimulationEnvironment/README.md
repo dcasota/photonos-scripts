@@ -366,9 +366,14 @@ On first boot, the **blue MokManager screen** appears:
 
 ## Version History
 
+- **v1.9.11** - Fix installer failure due to missing packages:
+  - **Root cause**: `wireless-regdb` and `iw` packages do not exist in Photon OS 5.0 repositories
+  - **Result**: Installer failed with "No matching packages not found or not installed" (Error 1011)
+  - **Fix**: Removed `wireless-regdb` and `iw` from `packages_mok.json`
+  - **Note**: WiFi regulatory domain will use kernel defaults (restrictive); users needing 80MHz/DFS channels can build custom packages or set regulatory domain via kernel parameter (`cfg80211.ieee80211_regdom=XX`)
 - **v1.9.10** - Wireless regulatory and GRUB splash fixes:
   - **Removed legacy TKIP crypto configs**: Removed `CONFIG_CRYPTO_MICHAEL_MIC`, `CONFIG_CRYPTO_ARC4`, `CONFIG_CRYPTO_ECB` from WiFi driver mappings - these are only needed for WPA1/TKIP which is legacy/insecure; modern WPA2/WPA3-AES doesn't require them
-  - **Added wireless-regdb package**: Added `wireless-regdb` and `iw` to `packages_mok.json` - provides wireless regulatory database for proper 80MHz channel support, fixes "80MHz not supported, disabling VHT" warning
+  - ~~**Added wireless-regdb package**~~: (Reverted in v1.9.11 - package not available in Photon OS 5.0)
   - **Fixed GRUB splash screen on installed systems**: eFuse verification code now restores `terminal_output gfxterm` after verification succeeds, enabling themed boot menu display
   - **Note**: Users with malformed wpa_supplicant.conf should fix `group=` cipher settings manually (use `group=CCMP` for WPA2-only)
 - **v1.9.9** - Enforce eFuse USB verification on installed systems:

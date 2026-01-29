@@ -2232,12 +2232,14 @@ static int create_secure_boot_iso(void) {
                 "        \"shim-signed-mok\",\n"
                 "        \"lvm2\",\n"
                 "        \"less\",\n"
-                "        \"sudo\",\n"
-                "        \"wireless-regdb\",\n"
-                "        \"iw\"\n"
+                "        \"sudo\"\n"
                 "    ]\n"
                 "}\n"
             );
+            /* Note: wireless-regdb and iw are NOT in Photon OS 5.0 repos.
+             * WiFi regulatory domain will use kernel defaults (restrictive).
+             * User can manually set regulatory domain via kernel parameter or
+             * build custom wireless-regdb package if needed. */
             fclose(f);
             log_info("Created packages_mok.json");
         }

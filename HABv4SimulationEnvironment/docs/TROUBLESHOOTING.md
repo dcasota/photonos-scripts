@@ -823,27 +823,43 @@ dmesg | grep -iE "module|signature|lockdown"
 
 ---
 
-## Driver Integration Issues (v1.9.5-v1.9.10)
+## Driver Integration Issues (v1.9.5-v1.9.11)
 
-### "80MHz not supported, disabling VHT" WiFi warning (v1.9.10 Fix)
+### Installer fails with "No matching packages not found" (v1.9.11 Fix)
 
-**Cause**: Missing wireless-regdb package which provides the wireless regulatory database.
+**Cause**: packages_mok.json referenced packages not available in Photon OS 5.0 repositories.
+
+**Symptoms**:
+- Installer starts but fails during package installation
+- `/var/log/installer.log` shows: "Error(1011) : No matching packages not found or not installed"
+- Installation unmounts and shows exception traceback
+
+**Root Cause (v1.9.10)**: Added `wireless-regdb` and `iw` to packages_mok.json but these packages don't exist in Photon OS 5.0 repos.
+
+**Solution (v1.9.11+)**: Removed `wireless-regdb` and `iw` from packages_mok.json.
+
+**Note**: For 80MHz/DFS channel support, you can:
+1. Set regulatory domain via kernel parameter: `cfg80211.ieee80211_regdom=US` (or your country code)
+2. Build custom wireless-regdb package from upstream linux-firmware
+
+### "80MHz not supported, disabling VHT" WiFi warning
+
+**Cause**: Missing wireless regulatory database.
 
 **Symptoms**:
 - WiFi connects but limited to 40MHz channel width
 - dmesg shows: "80MHz not supported, disabling VHT"
 - Lower than expected WiFi speeds on 5GHz band
-- `iw reg get` shows "country 00: DFS-UNSET"
 
-**Root Cause**: Without wireless-regdb, the kernel doesn't know which channels/bandwidths are allowed in your region, so it defaults to the most restrictive settings.
+**Note**: Photon OS 5.0 does not include `wireless-regdb` or `iw` packages. The kernel uses restrictive defaults (world regulatory domain) which limits channel widths.
 
-**Solution (v1.9.10+)**: Fixed by adding `wireless-regdb` and `iw` to `packages_mok.json`.
-
-**If using older ISO (v1.9.5-v1.9.9)**: Rebuild ISO with PhotonOS-HABv4Emulation-ISOCreator v1.9.10+ or manually install:
+**Workaround**: Set regulatory domain via kernel boot parameter:
 ```bash
-tdnf install wireless-regdb iw
-# Then set your regulatory domain
-iw reg set US  # or your country code
+# Add to GRUB_CMDLINE_LINUX in /etc/default/grub:
+cfg80211.ieee80211_regdom=US  # or your country code
+
+# Then regenerate grub.cfg:
+grub2-mkconfig -o /boot/grub2/grub.cfg
 ```
 
 ### GRUB splash screen not showing on installed system (v1.9.10 Fix)
@@ -1052,7 +1068,8 @@ find /lib/modules -name "cfg80211*" -o -name "mac80211*" -o -name "iwlwifi*"
 | Wi-Fi kernel panic during WPA connect | Missing crypto algorithms (CCM, GCM, etc.) | Rebuild ISO (v1.9.8+ adds crypto configs) |
 | Package names have `.ph5.ph5` | `%{?dist}` in spec doubles dist tag | Rebuild ISO (v1.9.6+ removes `%{?dist}`) |
 | Wi-Fi modules not found | Photon ESX has WIRELESS=n WLAN=n | Rebuild ISO (v1.9.6+ adds WiFi prerequisites) |
-| "80MHz not supported, disabling VHT" | Missing wireless-regdb | Rebuild ISO (v1.9.10+ adds wireless-regdb) |
+| "80MHz not supported, disabling VHT" | Missing wireless-regdb | Use kernel param `cfg80211.ieee80211_regdom=XX` |
+| Installer fails "packages not found" | wireless-regdb/iw not in Photon 5.0 | Rebuild ISO (v1.9.11+ removes unavailable pkgs) |
 | GRUB splash not showing (eFuse mode) | eFuse code doesn't restore gfxterm | Rebuild ISO (v1.9.10+ restores gfxterm) |
 
 ### MokManager Path Reference
