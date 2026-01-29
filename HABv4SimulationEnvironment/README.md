@@ -366,6 +366,13 @@ On first boot, the **blue MokManager screen** appears:
 
 ## Version History
 
+- **v1.9.6** - Fix double dist tag and WiFi subsystem prerequisites:
+  - **Package naming fix**: Removed `%{?dist}` from Release lines in spec templates since original RPM release already contains `.ph5`
+  - **Result**: Package names are now `linux-mok-6.1.159-7.ph5.x86_64.rpm` (single `.ph5`) instead of double `.ph5.ph5`
+  - **WiFi subsystem fix**: Added prerequisite kernel configs to all WiFi driver mappings
+  - **Added configs**: `CONFIG_WIRELESS=y`, `CONFIG_WLAN=y`, `CONFIG_CFG80211=m`, `CONFIG_MAC80211=m`
+  - **Root cause**: Photon ESX kernel has `CONFIG_WIRELESS=n CONFIG_WLAN=n` by default, which prevented WiFi drivers from building
+  - **Result**: Intel AX211 and other WiFi adapters now work correctly on installed systems
 - **v1.9.5** - Driver integration with `--drivers` parameter:
   - **New feature**: Include additional driver firmware RPMs in the ISO
   - **Driver directory**: Place RPMs in `drivers/RPM/` (default) or custom path

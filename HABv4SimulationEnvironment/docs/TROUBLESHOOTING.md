@@ -823,9 +823,42 @@ dmesg | grep -iE "module|signature|lockdown"
 
 ---
 
-## Driver Integration Issues (v1.9.5)
+## Driver Integration Issues (v1.9.5/v1.9.6)
 
-### Wi-Fi not working after installation
+### Wi-Fi not working - No kernel modules (v1.9.6 Fix)
+
+**Cause**: Photon ESX kernel has `CONFIG_WIRELESS=n CONFIG_WLAN=n` by default, preventing all WiFi driver modules from being built - even when the driver-specific config is set (e.g., `CONFIG_IWLWIFI=m`).
+
+**Symptoms**:
+- Firmware files are present in `/lib/firmware/iwlwifi-*`
+- `modprobe iwlwifi` fails with "module not found"
+- `find /lib/modules -name "*iwl*"` returns nothing
+- WiFi adapter not recognized (`ip link` shows no wlan interface)
+
+**Root Cause**: WiFi drivers require these prerequisite kernel configs:
+```kconfig
+CONFIG_WIRELESS=y     # Enable wireless subsystem
+CONFIG_WLAN=y         # Enable WLAN support
+CONFIG_CFG80211=m     # 802.11 configuration API  
+CONFIG_MAC80211=m     # IEEE 802.11 networking stack
+```
+
+**Solution (v1.9.6+)**: Fixed in v1.9.6 by adding prerequisite configs to all WiFi driver mappings. The `DRIVER_KERNEL_MAP` now includes:
+- `CONFIG_WIRELESS=y CONFIG_WLAN=y CONFIG_CFG80211=m CONFIG_MAC80211=m` for all WiFi drivers
+
+**If using older ISO (v1.9.5)**: Rebuild ISO with PhotonOS-HABv4Emulation-ISOCreator v1.9.6+
+
+**Verification**:
+```bash
+# Check WiFi subsystem configs in built kernel
+zgrep -E "CONFIG_(WIRELESS|WLAN|CFG80211|MAC80211)" /proc/config.gz
+# Should show: =y or =m for all four
+
+# Check WiFi modules are present
+find /lib/modules -name "cfg80211*" -o -name "mac80211*" -o -name "iwlwifi*"
+```
+
+### Wi-Fi not working - Firmware missing
 
 **Cause**: Driver firmware not installed or kernel module not loaded.
 
@@ -904,6 +937,8 @@ dmesg | grep -iE "module|signature|lockdown"
 | grubx64_real.efi not found | GRUB stub search failed | Rebuild with PhotonOS-HABv4Emulation-ISOCreator |
 | BOOT BLOCKED (no Continue) | eFuse USB missing/invalid | Insert eFuse USB or rebuild without eFuse requirement |
 | eFuse USB not detected | Wrong label or not FAT32 | Recreate with `-u /dev/sdX` option |
+| Package names have `.ph5.ph5` | `%{?dist}` in spec doubles dist tag | Rebuild ISO (v1.9.6+ removes `%{?dist}`) |
+| Wi-Fi modules not found | Photon ESX has WIRELESS=n WLAN=n | Rebuild ISO (v1.9.6+ adds WiFi prerequisites) |
 
 ### MokManager Path Reference
 
