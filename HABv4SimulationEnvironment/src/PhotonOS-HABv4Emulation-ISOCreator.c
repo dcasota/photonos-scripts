@@ -37,7 +37,7 @@
 
 #include "rpm_secureboot_patcher.h"
 
-#define VERSION "1.9.5"
+#define VERSION "1.9.6"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */
@@ -127,28 +127,40 @@ typedef struct {
 } driver_kernel_map_t;
 
 static const driver_kernel_map_t DRIVER_KERNEL_MAP[] = {
-    /* Intel Wi-Fi drivers */
+    /* ===== Wi-Fi Subsystem Prerequisites =====
+     * These must be enabled FIRST for any Wi-Fi driver to work.
+     * Photon ESX kernel has CONFIG_WIRELESS=n CONFIG_WLAN=n by default.
+     * We include these in each Wi-Fi driver's configs to ensure subsystem is enabled. */
+    
+    /* Intel Wi-Fi drivers (iwlwifi for AX200/AX201/AX210/AX211/BE200 etc.) */
     {"linux-firmware-iwlwifi", "Intel Wi-Fi 6/6E/7 (iwlwifi)",
+     "CONFIG_WIRELESS=y CONFIG_WLAN=y CONFIG_CFG80211=m CONFIG_MAC80211=m "
      "CONFIG_IWLWIFI=m CONFIG_IWLMVM=m CONFIG_IWLDVM=m"},
     
     /* Realtek Wi-Fi drivers */
     {"linux-firmware-rtw88", "Realtek Wi-Fi (rtw88)",
+     "CONFIG_WIRELESS=y CONFIG_WLAN=y CONFIG_CFG80211=m CONFIG_MAC80211=m "
      "CONFIG_RTW88=m CONFIG_RTW88_CORE=m CONFIG_RTW88_PCI=m CONFIG_RTW88_USB=m"},
     {"linux-firmware-rtw89", "Realtek Wi-Fi (rtw89)",
+     "CONFIG_WIRELESS=y CONFIG_WLAN=y CONFIG_CFG80211=m CONFIG_MAC80211=m "
      "CONFIG_RTW89=m CONFIG_RTW89_CORE=m CONFIG_RTW89_PCI=m"},
     
     /* Broadcom Wi-Fi drivers */
     {"linux-firmware-brcm", "Broadcom Wi-Fi (brcmfmac)",
+     "CONFIG_WIRELESS=y CONFIG_WLAN=y CONFIG_CFG80211=m CONFIG_MAC80211=m "
      "CONFIG_BRCMFMAC=m CONFIG_BRCMUTIL=m"},
     
     /* Qualcomm/Atheros Wi-Fi drivers */
     {"linux-firmware-ath10k", "Qualcomm Atheros Wi-Fi (ath10k)",
+     "CONFIG_WIRELESS=y CONFIG_WLAN=y CONFIG_CFG80211=m CONFIG_MAC80211=m "
      "CONFIG_ATH10K=m CONFIG_ATH10K_PCI=m"},
     {"linux-firmware-ath11k", "Qualcomm Atheros Wi-Fi (ath11k)",
+     "CONFIG_WIRELESS=y CONFIG_WLAN=y CONFIG_CFG80211=m CONFIG_MAC80211=m "
      "CONFIG_ATH11K=m CONFIG_ATH11K_PCI=m"},
     
     /* MediaTek Wi-Fi drivers */
     {"linux-firmware-mediatek", "MediaTek Wi-Fi (mt76)",
+     "CONFIG_WIRELESS=y CONFIG_WLAN=y CONFIG_CFG80211=m CONFIG_MAC80211=m "
      "CONFIG_MT76=m CONFIG_MT7921E=m CONFIG_MT7921S=m CONFIG_MT7921U=m"},
     
     /* Intel Ethernet drivers */
