@@ -137,52 +137,45 @@ static const driver_kernel_map_t DRIVER_KERNEL_MAP[] = {
      "CONFIG_WIRELESS=y CONFIG_WLAN=y CONFIG_CFG80211=m CONFIG_MAC80211=m "
      "CONFIG_IWLWIFI=m CONFIG_IWLMVM=m CONFIG_IWLDVM=m "
      "CONFIG_CRYPTO_CCM=y CONFIG_CRYPTO_GCM=y CONFIG_CRYPTO_CMAC=y CONFIG_CRYPTO_AES=y "
-     "CONFIG_CRYPTO_AEAD=y CONFIG_CRYPTO_SEQIV=y CONFIG_CRYPTO_CTR=y CONFIG_CRYPTO_GHASH=y "
-     "CONFIG_CRYPTO_MICHAEL_MIC=y CONFIG_CRYPTO_ARC4=m CONFIG_CRYPTO_ECB=y"},
+     "CONFIG_CRYPTO_AEAD=y CONFIG_CRYPTO_SEQIV=y CONFIG_CRYPTO_CTR=y CONFIG_CRYPTO_GHASH=y"},
     
     /* Realtek Wi-Fi drivers */
     {"linux-firmware-rtw88", "Realtek Wi-Fi (rtw88)",
      "CONFIG_WIRELESS=y CONFIG_WLAN=y CONFIG_CFG80211=m CONFIG_MAC80211=m "
      "CONFIG_RTW88=m CONFIG_RTW88_CORE=m CONFIG_RTW88_PCI=m CONFIG_RTW88_USB=m "
      "CONFIG_CRYPTO_CCM=y CONFIG_CRYPTO_GCM=y CONFIG_CRYPTO_CMAC=y CONFIG_CRYPTO_AES=y "
-     "CONFIG_CRYPTO_AEAD=y CONFIG_CRYPTO_SEQIV=y CONFIG_CRYPTO_CTR=y CONFIG_CRYPTO_GHASH=y "
-     "CONFIG_CRYPTO_MICHAEL_MIC=y CONFIG_CRYPTO_ARC4=m CONFIG_CRYPTO_ECB=y"},
+     "CONFIG_CRYPTO_AEAD=y CONFIG_CRYPTO_SEQIV=y CONFIG_CRYPTO_CTR=y CONFIG_CRYPTO_GHASH=y"},
     {"linux-firmware-rtw89", "Realtek Wi-Fi (rtw89)",
      "CONFIG_WIRELESS=y CONFIG_WLAN=y CONFIG_CFG80211=m CONFIG_MAC80211=m "
      "CONFIG_RTW89=m CONFIG_RTW89_CORE=m CONFIG_RTW89_PCI=m "
      "CONFIG_CRYPTO_CCM=y CONFIG_CRYPTO_GCM=y CONFIG_CRYPTO_CMAC=y CONFIG_CRYPTO_AES=y "
-     "CONFIG_CRYPTO_AEAD=y CONFIG_CRYPTO_SEQIV=y CONFIG_CRYPTO_CTR=y CONFIG_CRYPTO_GHASH=y "
-     "CONFIG_CRYPTO_MICHAEL_MIC=y CONFIG_CRYPTO_ARC4=m CONFIG_CRYPTO_ECB=y"},
+     "CONFIG_CRYPTO_AEAD=y CONFIG_CRYPTO_SEQIV=y CONFIG_CRYPTO_CTR=y CONFIG_CRYPTO_GHASH=y"},
     
     /* Broadcom Wi-Fi drivers */
     {"linux-firmware-brcm", "Broadcom Wi-Fi (brcmfmac)",
      "CONFIG_WIRELESS=y CONFIG_WLAN=y CONFIG_CFG80211=m CONFIG_MAC80211=m "
      "CONFIG_BRCMFMAC=m CONFIG_BRCMUTIL=m "
      "CONFIG_CRYPTO_CCM=y CONFIG_CRYPTO_GCM=y CONFIG_CRYPTO_CMAC=y CONFIG_CRYPTO_AES=y "
-     "CONFIG_CRYPTO_AEAD=y CONFIG_CRYPTO_SEQIV=y CONFIG_CRYPTO_CTR=y CONFIG_CRYPTO_GHASH=y "
-     "CONFIG_CRYPTO_MICHAEL_MIC=y CONFIG_CRYPTO_ARC4=m CONFIG_CRYPTO_ECB=y"},
+     "CONFIG_CRYPTO_AEAD=y CONFIG_CRYPTO_SEQIV=y CONFIG_CRYPTO_CTR=y CONFIG_CRYPTO_GHASH=y"},
     
     /* Qualcomm/Atheros Wi-Fi drivers */
     {"linux-firmware-ath10k", "Qualcomm Atheros Wi-Fi (ath10k)",
      "CONFIG_WIRELESS=y CONFIG_WLAN=y CONFIG_CFG80211=m CONFIG_MAC80211=m "
      "CONFIG_ATH10K=m CONFIG_ATH10K_PCI=m "
      "CONFIG_CRYPTO_CCM=y CONFIG_CRYPTO_GCM=y CONFIG_CRYPTO_CMAC=y CONFIG_CRYPTO_AES=y "
-     "CONFIG_CRYPTO_AEAD=y CONFIG_CRYPTO_SEQIV=y CONFIG_CRYPTO_CTR=y CONFIG_CRYPTO_GHASH=y "
-     "CONFIG_CRYPTO_MICHAEL_MIC=y CONFIG_CRYPTO_ARC4=m CONFIG_CRYPTO_ECB=y"},
+     "CONFIG_CRYPTO_AEAD=y CONFIG_CRYPTO_SEQIV=y CONFIG_CRYPTO_CTR=y CONFIG_CRYPTO_GHASH=y"},
     {"linux-firmware-ath11k", "Qualcomm Atheros Wi-Fi (ath11k)",
      "CONFIG_WIRELESS=y CONFIG_WLAN=y CONFIG_CFG80211=m CONFIG_MAC80211=m "
      "CONFIG_ATH11K=m CONFIG_ATH11K_PCI=m "
      "CONFIG_CRYPTO_CCM=y CONFIG_CRYPTO_GCM=y CONFIG_CRYPTO_CMAC=y CONFIG_CRYPTO_AES=y "
-     "CONFIG_CRYPTO_AEAD=y CONFIG_CRYPTO_SEQIV=y CONFIG_CRYPTO_CTR=y CONFIG_CRYPTO_GHASH=y "
-     "CONFIG_CRYPTO_MICHAEL_MIC=y CONFIG_CRYPTO_ARC4=m CONFIG_CRYPTO_ECB=y"},
+     "CONFIG_CRYPTO_AEAD=y CONFIG_CRYPTO_SEQIV=y CONFIG_CRYPTO_CTR=y CONFIG_CRYPTO_GHASH=y"},
     
     /* MediaTek Wi-Fi drivers */
     {"linux-firmware-mediatek", "MediaTek Wi-Fi (mt76)",
      "CONFIG_WIRELESS=y CONFIG_WLAN=y CONFIG_CFG80211=m CONFIG_MAC80211=m "
      "CONFIG_MT76=m CONFIG_MT7921E=m CONFIG_MT7921S=m CONFIG_MT7921U=m "
      "CONFIG_CRYPTO_CCM=y CONFIG_CRYPTO_GCM=y CONFIG_CRYPTO_CMAC=y CONFIG_CRYPTO_AES=y "
-     "CONFIG_CRYPTO_AEAD=y CONFIG_CRYPTO_SEQIV=y CONFIG_CRYPTO_CTR=y CONFIG_CRYPTO_GHASH=y "
-     "CONFIG_CRYPTO_MICHAEL_MIC=y CONFIG_CRYPTO_ARC4=m CONFIG_CRYPTO_ECB=y"},
+     "CONFIG_CRYPTO_AEAD=y CONFIG_CRYPTO_SEQIV=y CONFIG_CRYPTO_CTR=y CONFIG_CRYPTO_GHASH=y"},
     
     /* Intel Ethernet drivers */
     {"linux-firmware-e1000e", "Intel Ethernet (e1000e)",
@@ -2239,7 +2232,9 @@ static int create_secure_boot_iso(void) {
                 "        \"shim-signed-mok\",\n"
                 "        \"lvm2\",\n"
                 "        \"less\",\n"
-                "        \"sudo\"\n"
+                "        \"sudo\",\n"
+                "        \"wireless-regdb\",\n"
+                "        \"iw\"\n"
                 "    ]\n"
                 "}\n"
             );
@@ -2388,6 +2383,8 @@ static int create_secure_boot_iso(void) {
                     "    read anykey\n"
                     "    configfile \\\\${BOOT_DIR}/grub2/grub.cfg\n"
                     "fi\n"
+                    "# Restore graphical terminal for themed boot menu after eFuse verification\n"
+                    "terminal_output gfxterm\n"
                     "\n"
                     "'''\n"
                     "\n"
