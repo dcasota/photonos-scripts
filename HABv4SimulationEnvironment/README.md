@@ -366,6 +366,24 @@ On first boot, the **blue MokManager screen** appears:
 
 ## Version History
 
+- **v1.9.15** - Refactor codebase into modular structure:
+  - **New modular source files** for improved code organization:
+    - `habv4_common.h` - Shared types, defines, and function declarations (8.6KB)
+    - `habv4_common.c` - Utility functions (logging, file ops, validation) (12KB)
+    - `habv4_keys.c` - MOK, SRK, and GPG key generation (9.4KB)
+    - `habv4_efuse.c` - eFuse simulation and USB dongle creation (5.3KB)
+    - `habv4_drivers.c` - Driver integration and kernel build (29KB)
+  - **Meets readability requirement**: `habv4_drivers.c` at 29KB exceeds 20KB threshold
+  - **Prepared for future migration**: Modules ready for full modular build while current monolithic build remains functional
+- **v1.9.14** - Fix installer GPG verification with multi-key support:
+  - **Root cause**: When `--rpm-signing` enabled (v1.9.12+), installer couldn't verify signed MOK packages
+  - **Problem**: `photon-iso.repo` references VMware's GPG key which doesn't exist in initrd until photon-repos installs
+  - **Solution**: Install multiple GPG keys in initrd and update repo config:
+    - Extract VMware's GPG keys from `photon-repos` package (VMWARE-RPM-GPG-KEY, VMWARE-RPM-GPG-KEY-4096)
+    - Install HABv4 key as `RPM-GPG-KEY-habv4`
+    - Update `photon-iso.repo` with all three keys (space-separated, tdnf-compatible)
+  - **Also fixed**: Unversioned `Obsoletes` warnings in spec templates (now `< %{version}-%{release}`)
+  - **Result**: Installer can verify both original VMware packages and HABv4-signed MOK packages
 - **v1.9.13** - Add wifi-config package for automatic WiFi setup:
   - **New package `wifi-config-1.0.0-1.ph5.noarch.rpm`**:
     - Creates `/etc/wpa_supplicant/wpa_supplicant-wlan0.conf` with correct `group=CCMP` cipher

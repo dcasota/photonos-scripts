@@ -1068,6 +1068,28 @@ find /lib/modules -name "cfg80211*" -o -name "mac80211*" -o -name "iwlwifi*"
 
 ## Quick Reference
 
+### Installer GPG Verification Failure (v1.9.14 Fix)
+
+**Cause**: When using `--rpm-signing` (v1.9.12+), the installer can't verify GPG-signed MOK packages because the signing key is HABv4's key, not VMware's.
+
+**Symptoms**:
+- Installer fails during package verification
+- Error: "package verification failed" or GPG signature errors
+- `tdnf install` fails with signature verification errors
+
+**Root Cause**: `photon-iso.repo` references `/etc/pki/rpm-gpg/VMWARE-RPM-GPG-KEY` which:
+1. Doesn't exist in initrd until `photon-repos` package is installed
+2. Even if it existed, it's VMware's key, not HABv4's signing key
+
+**Solution (v1.9.14+)**: Fixed by installing multiple GPG keys in initrd:
+- Extract VMware's GPG keys (VMWARE-RPM-GPG-KEY, VMWARE-RPM-GPG-KEY-4096) from `photon-repos` RPM
+- Install HABv4 key as `RPM-GPG-KEY-habv4`
+- Update `photon-iso.repo` to reference all three keys (space-separated for tdnf compatibility)
+
+**If using older ISO (v1.9.12-v1.9.13)**: Rebuild ISO with PhotonOS-HABv4Emulation-ISOCreator v1.9.14+
+
+---
+
 ### Error → Likely Cause → Fix
 
 | Error Message | Likely Cause | Quick Fix |
@@ -1107,6 +1129,7 @@ find /lib/modules -name "cfg80211*" -o -name "mac80211*" -o -name "iwlwifi*"
 | Installer fails "packages not found" | wireless-regdb/iw not in Photon 5.0 | Rebuild ISO with `--drivers` (v1.9.12+ includes packages) |
 | WiFi auth fails with ieee80211_add_key WARNING | group=GCCMP typo | Rebuild with `--drivers` (v1.9.13+ has correct config) |
 | GRUB splash not showing (eFuse mode) | eFuse code doesn't restore gfxterm | Rebuild ISO (v1.9.10+ restores gfxterm) |
+| Installer GPG verification fails | HABv4 key not in initrd | Rebuild ISO (v1.9.14+ installs multi-key) |
 
 ### MokManager Path Reference
 

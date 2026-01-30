@@ -374,6 +374,7 @@ sync
 | "rpm transaction failed" | Package conflicts | Rebuild ISO (v1.7.0+ fixes Obsoletes) |
 | Black screen after "Secure Boot is enabled" | Missing USB drivers in initrd | Rebuild ISO (v1.8.0+ includes USB drivers) |
 | "Loading of unsigned module is rejected" | Module signatures stripped by RPM | Rebuild ISO (v1.9.4+ preserves signatures) |
+| Installer GPG verification fails | HABv4 key not in initrd | Rebuild ISO (v1.9.14+ installs multi-key) |
 
 ### Detailed Troubleshooting
 
