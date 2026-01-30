@@ -195,7 +195,7 @@ Droid: I'll build with driver integration:
 **Available driver packages in `drivers/RPM/`:**
 - `wireless-regdb-2024.01.23-1.ph5.noarch.rpm` - WiFi regulatory database
 - `iw-6.9-1.ph5.x86_64.rpm` - nl80211 wireless config utility  
-- `linux-firmware-iwlwifi-ax211-20260128-1.noarch.rpm` - Intel WiFi 6E firmware
+- `linux-firmware-iwlwifi-ax211-20260128-1.ph5.noarch.rpm` - Intel WiFi 6E firmware
 
 **Rebuilding driver packages:**
 ```bash

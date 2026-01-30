@@ -366,6 +366,13 @@ On first boot, the **blue MokManager screen** appears:
 
 ## Version History
 
+- **v1.9.16** - Fix RPM transaction failures and package naming:
+  - **RPM Conflicts fix**: Changed `Obsoletes: package < version` to `Conflicts: package` for MOK packages
+  - **Root cause**: MOK package version (e.g., 6.1.159) could be lower than original ISO package (e.g., 6.12.60)
+  - **Result**: `Obsoletes: linux < 6.1.159` wouldn't apply to `linux-6.12.60`, causing transaction failures
+  - **Package naming fix**: Fixed `linux-firmware-iwlwifi-ax211` missing `.ph5` dist tag
+  - **Spec file compliance**: All driver spec files now use hardcoded `.ph5` (since `%{?dist}` is empty outside Photon build env)
+  - **Added spec file**: `drivers/linux-firmware-iwlwifi-ax211/linux-firmware-iwlwifi-ax211.spec`
 - **v1.9.15** - Refactor codebase into modular structure:
   - **New modular source files** for improved code organization:
     - `habv4_common.h` - Shared types, defines, and function declarations (8.6KB)

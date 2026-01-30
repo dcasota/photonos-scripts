@@ -286,7 +286,7 @@ The `--drivers` option allows including additional driver firmware RPMs in the I
 The `drivers/RPM/` directory includes:
 - **`wireless-regdb-2024.01.23-1.ph5.noarch.rpm`**: WiFi regulatory database from kernel.org
 - **`iw-6.9-1.ph5.x86_64.rpm`**: nl80211 wireless configuration utility from kernel.org
-- **`linux-firmware-iwlwifi-ax211-20260128-1.noarch.rpm`**: Intel Wi-Fi 6E AX211 firmware (PCI IDs: 8086:51f0, 8086:51f1)
+- **`linux-firmware-iwlwifi-ax211-20260128-1.ph5.noarch.rpm`**: Intel Wi-Fi 6E AX211 firmware (PCI IDs: 8086:51f0, 8086:51f1)
 
 **Note:** `wireless-regdb` and `iw` are built from upstream sources because they're not available in Photon OS 5.0 repos.
 
@@ -371,7 +371,7 @@ sync
 | "search.c: no such device" | GRUB searching for ISO path | Rebuild ISO (v1.7.0+ fixes embedded config) |
 | Installation takes 2000+ seconds | USB autosuspend | Rebuild ISO (v1.7.0+ adds kernel param) |
 | "grub.efi Not Found" | SUSE shim looks for grub.efi | Rebuild ISO (v1.7.0+ installs both names) |
-| "rpm transaction failed" | Package conflicts | Rebuild ISO (v1.7.0+ fixes Obsoletes) |
+| "rpm transaction failed" (Error 1525) | MOK version < original version | Rebuild ISO (v1.9.16+ uses Conflicts) |
 | Black screen after "Secure Boot is enabled" | Missing USB drivers in initrd | Rebuild ISO (v1.8.0+ includes USB drivers) |
 | "Loading of unsigned module is rejected" | Module signatures stripped by RPM | Rebuild ISO (v1.9.4+ preserves signatures) |
 | Installer GPG verification fails | HABv4 key not in initrd | Rebuild ISO (v1.9.14+ installs multi-key) |

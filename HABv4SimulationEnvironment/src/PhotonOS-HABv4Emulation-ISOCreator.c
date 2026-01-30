@@ -1363,7 +1363,7 @@ static int scan_driver_rpms(const char *drivers_dir, char driver_rpms[][512], in
 
 /**
  * Extract RPM base name (without version/release/arch) from filename.
- * Example: "linux-firmware-iwlwifi-ax211-20260128-1.noarch.rpm" -> "linux-firmware-iwlwifi"
+ * Example: "linux-firmware-iwlwifi-ax211-20260128-1.ph5.noarch.rpm" -> "linux-firmware-iwlwifi"
  */
 static void extract_rpm_base_name(const char *rpm_path, char *base_name, size_t size) {
     /* Get just the filename */
