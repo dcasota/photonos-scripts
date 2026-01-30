@@ -4,9 +4,16 @@ CC = gcc
 CFLAGS = -Wall -O2 -g -Wno-format-truncation -Wno-stringop-truncation
 TARGET = PhotonOS-HABv4Emulation-ISOCreator
 
-# Sources
+# Main sources (monolithic build - current)
 SRCS = PhotonOS-HABv4Emulation-ISOCreator.c rpm_secureboot_patcher.c
-HDRS = rpm_secureboot_patcher.h
+HDRS = rpm_secureboot_patcher.h habv4_common.h
+
+# Modular sources (for future migration)
+# When ready to switch, replace SRCS with:
+# SRCS_MODULAR = habv4_main.c habv4_common.c habv4_keys.c habv4_efuse.c \
+#                habv4_drivers.c habv4_kernel.c habv4_iso.c habv4_diag.c \
+#                rpm_secureboot_patcher.c
+# HDRS_MODULAR = habv4_common.h rpm_secureboot_patcher.h
 
 # Sub-projects
 HAB_PRELOADER_DIR = hab/preloader
