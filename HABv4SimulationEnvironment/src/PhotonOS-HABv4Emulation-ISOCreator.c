@@ -2456,6 +2456,56 @@ static int create_secure_boot_iso(void) {
         }
     }
     
+    /* Install GPG keys into initrd for RPM signature verification
+     * TDNF supports multiple keys via space-separated paths in gpgkey config.
+     * We install both VMware's keys (from photon-repos) and our HABv4 key
+     * to verify both original Photon packages and our custom MOK packages. */
+    if (cfg.rpm_signing) {
+        char gpg_key_dest_dir[512], photon_iso_repo[512];
+        snprintf(gpg_key_dest_dir, sizeof(gpg_key_dest_dir), "%s/etc/pki/rpm-gpg", initrd_extract);
+        snprintf(photon_iso_repo, sizeof(photon_iso_repo), "%s/etc/yum.repos.d/photon-iso.repo", initrd_extract);
+        
+        log_info("Installing GPG keys into initrd for package verification...");
+        snprintf(cmd, sizeof(cmd), "mkdir -p '%s'", gpg_key_dest_dir);
+        run_cmd(cmd);
+        
+        /* Extract VMware's GPG keys from photon-repos package */
+        char photon_repos_rpm[512];
+        snprintf(photon_repos_rpm, sizeof(photon_repos_rpm), 
+            "%s/RPMS/noarch/photon-repos-*.rpm", iso_extract);
+        snprintf(cmd, sizeof(cmd),
+            "cd '%s' && rpm2cpio %s 2>/dev/null | cpio -idm './etc/pki/rpm-gpg/*' 2>/dev/null",
+            initrd_extract, photon_repos_rpm);
+        if (run_cmd(cmd) == 0) {
+            log_info("VMware GPG keys extracted from photon-repos");
+        }
+        
+        /* Install our HABv4 GPG key */
+        char habv4_key_src[512], habv4_key_dest[512];
+        snprintf(habv4_key_src, sizeof(habv4_key_src), "%s/%s", iso_extract, GPG_KEY_FILE);
+        snprintf(habv4_key_dest, sizeof(habv4_key_dest), "%s/RPM-GPG-KEY-habv4", gpg_key_dest_dir);
+        
+        if (file_exists(habv4_key_src)) {
+            snprintf(cmd, sizeof(cmd), "cp '%s' '%s'", habv4_key_src, habv4_key_dest);
+            run_cmd(cmd);
+            log_info("HABv4 GPG key installed at /etc/pki/rpm-gpg/RPM-GPG-KEY-habv4");
+        } else {
+            log_warn("HABv4 GPG key not found at %s", habv4_key_src);
+        }
+        
+        /* Update photon-iso.repo to include both VMware and HABv4 keys
+         * TDNF supports multiple keys via space-separated paths */
+        if (file_exists(photon_iso_repo)) {
+            snprintf(cmd, sizeof(cmd),
+                "sed -i 's|^gpgkey=.*|gpgkey=file:///etc/pki/rpm-gpg/VMWARE-RPM-GPG-KEY "
+                "file:///etc/pki/rpm-gpg/VMWARE-RPM-GPG-KEY-4096 "
+                "file:///etc/pki/rpm-gpg/RPM-GPG-KEY-habv4|' '%s'",
+                photon_iso_repo);
+            run_cmd(cmd);
+            log_info("Updated photon-iso.repo with VMware + HABv4 GPG keys");
+        }
+    }
+    
     /* Repack initrd */
     snprintf(cmd, sizeof(cmd), 
         "cd '%s' && find . | cpio -o -H newc 2>/dev/null | gzip -9 > '%s'",
