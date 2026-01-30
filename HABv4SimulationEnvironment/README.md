@@ -366,6 +366,19 @@ On first boot, the **blue MokManager screen** appears:
 
 ## Version History
 
+- **v1.9.13** - Add wifi-config package for automatic WiFi setup:
+  - **New package `wifi-config-1.0.0-1.ph5.noarch.rpm`**:
+    - Creates `/etc/wpa_supplicant/wpa_supplicant-wlan0.conf` with correct `group=CCMP` cipher
+    - Creates `/etc/modprobe.d/iwlwifi-lar.conf` with `options iwlwifi lar_disable=1` to fix 80MHz support
+    - Creates `/etc/systemd/network/50-wlan0-dhcp.network` for automatic DHCP
+    - Enables `wpa_supplicant@wlan0.service` via systemd preset
+  - **Fixes addressed**:
+    - "80 MHz not supported, disabling VHT" - caused by Intel iwlwifi LAR (Location Aware Regulatory)
+    - wpa_supplicant cipher typo `group=GCCMP` (should be `group=CCMP`)
+    - Missing systemd-networkd DHCP configuration for wlan0
+  - **Updated packages_mok.json**: Now includes `wifi-config` and `wpa_supplicant`
+  - **Spec file**: `drivers/wifi-config/wifi-config.spec`
+  - **Build script**: `drivers/wifi-config/build-wifi-config.sh`
 - **v1.9.12** - Add wireless-regdb and iw packages for WiFi regulatory support:
   - **Built from upstream sources**: 
     - `wireless-regdb-2024.01.23` from kernel.org (regulatory database)

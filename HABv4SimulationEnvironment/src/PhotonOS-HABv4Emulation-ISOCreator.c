@@ -2255,16 +2255,20 @@ static int create_secure_boot_iso(void) {
                 "        \"less\",\n"
                 "        \"sudo\",\n"
                 "        \"libnl\",\n"
+                "        \"wpa_supplicant\",\n"
                 "        \"wireless-regdb\",\n"
-                "        \"iw\"\n"
+                "        \"iw\",\n"
+                "        \"wifi-config\"\n"
                 "    ]\n"
                 "}\n"
             );
-            /* Note: wireless-regdb and iw are custom-built packages from:
+            /* Note: WiFi packages include:
              * - wireless-regdb: kernel.org wireless regulatory database
              * - iw: nl80211 wireless configuration utility
-             * These must be placed in drivers/RPM and built with --drivers flag.
-             * libnl is a dependency of iw and IS available in Photon 5.0 repos. */
+             * - wifi-config: configures wpa_supplicant, disables iwlwifi LAR, DHCP for wlan0
+             * - wpa_supplicant: from Photon 5.0 repos
+             * - libnl: dependency of iw, from Photon 5.0 repos
+             * Custom packages must be in drivers/RPM and built with --drivers flag. */
             fclose(f);
             log_info("Created packages_mok.json");
         }

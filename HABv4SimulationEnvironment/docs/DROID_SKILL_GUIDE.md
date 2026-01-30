@@ -186,6 +186,7 @@ Droid: I'll build with driver integration:
 1. Include wireless-regdb for regulatory database
 2. Include iw for wireless configuration utility
 3. Include linux-firmware-iwlwifi-ax211 for Intel WiFi firmware
+4. Include wifi-config for automatic wpa_supplicant setup and iwlwifi LAR disable
 4. Enable required kernel configs (WIRELESS, WLAN, CFG80211, MAC80211, crypto)
 5. GPG sign all driver RPMs if --rpm-signing enabled
 [Runs: ./PhotonOS-HABv4Emulation-ISOCreator -b --drivers --rpm-signing]

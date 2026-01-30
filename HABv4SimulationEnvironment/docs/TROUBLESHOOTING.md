@@ -848,24 +848,53 @@ dmesg | grep -iE "module|signature|lockdown"
 1. Use `--drivers` flag when building ISO to include wireless packages
 2. Or set regulatory domain via kernel parameter: `cfg80211.ieee80211_regdom=US`
 
-### "80MHz not supported, disabling VHT" WiFi warning
+### "80MHz not supported, disabling VHT" WiFi warning (v1.9.13 Fix)
 
-**Cause**: Missing wireless regulatory database.
+**Cause**: Intel iwlwifi uses LAR (Location Aware Regulatory) which gets regulatory info from firmware, not system regulatory database.
 
 **Symptoms**:
 - WiFi connects but limited to 40MHz channel width
 - dmesg shows: "80MHz not supported, disabling VHT"
 - Lower than expected WiFi speeds on 5GHz band
+- `iw reg get` shows restrictive regulatory domain
 
-**Note**: Photon OS 5.0 does not include `wireless-regdb` or `iw` packages. The kernel uses restrictive defaults (world regulatory domain) which limits channel widths.
+**Root Cause**: Intel WiFi adapters (iwlwifi) use LAR which overrides the system's wireless-regdb with firmware-based geo-location restrictions.
 
-**Workaround**: Set regulatory domain via kernel boot parameter:
+**Solution (v1.9.13+)**: The `wifi-config` package automatically:
+- Creates `/etc/modprobe.d/iwlwifi-lar.conf` with `options iwlwifi lar_disable=1`
+- This disables LAR and allows the system regulatory database to be used
+- Requires reboot after installation to take effect
+
+**Manual workaround for older ISOs**:
 ```bash
-# Add to GRUB_CMDLINE_LINUX in /etc/default/grub:
-cfg80211.ieee80211_regdom=US  # or your country code
+# Create modprobe config to disable LAR
+echo "options iwlwifi lar_disable=1" > /etc/modprobe.d/iwlwifi-lar.conf
 
-# Then regenerate grub.cfg:
-grub2-mkconfig -o /boot/grub2/grub.cfg
+# Reboot to apply
+reboot
+```
+
+### wpa_supplicant "group=GCCMP" typo causing connection failures (v1.9.13 Fix)
+
+**Cause**: User-created wpa_supplicant.conf with typo `group=GCCMP` instead of `group=CCMP`.
+
+**Symptoms**:
+- WARNING in kernel: `ieee80211_add_key+0x221/0x2d0 [mac80211]`
+- WiFi authenticates but immediately deauthenticates: "by local choice (Reason: 1=UNSPECIFIED)"
+- WPA key installation fails
+
+**Root Cause**: `GCCMP` is not a valid cipher - it should be `CCMP` for WPA2-AES.
+
+**Solution (v1.9.13+)**: The `wifi-config` package creates a correct default `/etc/wpa_supplicant/wpa_supplicant-wlan0.conf` with:
+```
+group=CCMP
+pairwise=CCMP
+```
+
+**Manual fix**:
+```bash
+sed -i 's/group=GCCMP/group=CCMP/' /etc/wpa_supplicant/wpa_supplicant-wlan0.conf
+systemctl restart wpa_supplicant@wlan0
 ```
 
 ### GRUB splash screen not showing on installed system (v1.9.10 Fix)
@@ -1074,8 +1103,9 @@ find /lib/modules -name "cfg80211*" -o -name "mac80211*" -o -name "iwlwifi*"
 | Wi-Fi kernel panic during WPA connect | Missing crypto algorithms (CCM, GCM, etc.) | Rebuild ISO (v1.9.8+ adds crypto configs) |
 | Package names have `.ph5.ph5` | `%{?dist}` in spec doubles dist tag | Rebuild ISO (v1.9.6+ removes `%{?dist}`) |
 | Wi-Fi modules not found | Photon ESX has WIRELESS=n WLAN=n | Rebuild ISO (v1.9.6+ adds WiFi prerequisites) |
-| "80MHz not supported, disabling VHT" | Missing wireless-regdb | Rebuild with `--drivers` (v1.9.12+) or use kernel param |
+| "80MHz not supported, disabling VHT" | iwlwifi LAR overrides regulatory | Rebuild with `--drivers` (v1.9.13+ disables LAR) |
 | Installer fails "packages not found" | wireless-regdb/iw not in Photon 5.0 | Rebuild ISO with `--drivers` (v1.9.12+ includes packages) |
+| WiFi auth fails with ieee80211_add_key WARNING | group=GCCMP typo | Rebuild with `--drivers` (v1.9.13+ has correct config) |
 | GRUB splash not showing (eFuse mode) | eFuse code doesn't restore gfxterm | Rebuild ISO (v1.9.10+ restores gfxterm) |
 
 ### MokManager Path Reference
