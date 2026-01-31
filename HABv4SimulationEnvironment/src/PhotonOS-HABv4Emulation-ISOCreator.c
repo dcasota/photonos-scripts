@@ -2943,11 +2943,15 @@ static int create_secure_boot_iso(void) {
                         run_cmd(cmd);
                         log_info("GPG public key copied to ISO root");
                         
-                        /* Regenerate repodata after updating RPMs */
-                        log_info("Regenerating repository metadata...");
+                        /* Regenerate repodata after updating RPMs
+                         * IMPORTANT: Do NOT use --update flag because it only adds new packages
+                         * and doesn't remove deleted ones from the metadata. We need a full rebuild
+                         * since we removed original packages (linux-6.*, grub2-efi-image-2.*, etc.) */
+                        log_info("Regenerating repository metadata (full rebuild)...");
                         snprintf(cmd, sizeof(cmd), 
-                            "cd '%s/RPMS' && createrepo_c --update . 2>/dev/null || createrepo --update . 2>/dev/null",
-                            iso_extract);
+                            "rm -rf '%s/RPMS/repodata' && "
+                            "(createrepo_c '%s/RPMS' 2>/dev/null || createrepo '%s/RPMS' 2>/dev/null)",
+                            iso_extract, iso_extract, iso_extract);
                         run_cmd(cmd);
                     }
                 }

@@ -366,6 +366,11 @@ On first boot, the **blue MokManager screen** appears:
 
 ## Version History
 
+- **v1.9.22** - Fix repodata to exclude removed original packages:
+  - **Bug**: `createrepo_c --update` only adds new packages, doesn't remove deleted ones
+  - **Impact**: Repodata still referenced removed packages (linux-6.*, grub2-efi-image-2.*, etc.)
+  - **Symptom**: "Failed to install some packages" during installation
+  - **Fix**: Remove old repodata and run `createrepo_c` without `--update` for full rebuild
 - **v1.9.21** - Fix chainloader path in installer ISO grub.cfg:
   - **Bug**: Installer ISO used wrong path `/boot/grub2/grubx64.efi` (doesn't exist)
   - **Fix**: Changed to `/EFI/BOOT/grubx64.efi` (correct location on ISO)
