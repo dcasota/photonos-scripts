@@ -366,6 +366,10 @@ On first boot, the **blue MokManager screen** appears:
 
 ## Version History
 
+- **v1.9.21** - Fix chainloader path in installer ISO grub.cfg:
+  - **Bug**: Installer ISO used wrong path `/boot/grub2/grubx64.efi` (doesn't exist)
+  - **Fix**: Changed to `/EFI/BOOT/grubx64.efi` (correct location on ISO)
+  - **Note**: Installed system path `/EFI/BOOT/grubx64.efi` was already correct
 - **v1.9.20** - Fix eFuse USB hot-plug detection in GRUB:
   - **Problem**: GRUB caches USB devices at startup; `configfile` reload doesn't rescan
   - **Solution**: Use `chainloader` instead of `configfile` to reload GRUB EFI binary
