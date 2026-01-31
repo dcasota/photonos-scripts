@@ -366,6 +366,13 @@ On first boot, the **blue MokManager screen** appears:
 
 ## Version History
 
+- **v1.9.24** - Photon OS 4.0 support and build system fixes:
+  - **Fix**: Add support for Photon OS 4.0 Rev2 ISO download (correct URL and filename)
+  - **Fix**: Clean MOK build directory at start to prevent stale packages from previous builds
+  - **Fix**: Handle multiple vmlinuz files in linux-mok spec (use `head -1` instead of all matches)
+  - **Fix**: Support both 4.0 (5.x kernel) and 5.0 (6.x kernel) package removal patterns
+  - **Packages removed for 4.0**: `linux-5.*`, `linux-secure-5.*`, `linux-rt-5.*`, `linux-aws-5.*`, `linux-secure-devel-*`, `linux-secure-docs-*`
+  - **Tested**: Both Photon OS 4.0 and 5.0 ISOs build successfully with signed MOK packages
 - **v1.9.23** - Remove kernel-dependent packages that require exact version:
   - **Bug**: Packages like `linux-devel`, `linux-drivers-*` require `linux = 6.12.60-14.ph5` (exact)
   - **Impact**: `linux-mok` provides `linux = 6.1.159-7.ph5`, causing unsatisfiable dependencies

@@ -723,8 +723,8 @@ static int generate_linux_mok_spec(rpm_build_config_t *config, rpm_package_info_
         "if [ -f \"$CUSTOM_KERNEL_PATH\" ]; then\n"
         "    echo \"[INFO] Found custom built kernel: $CUSTOM_KERNEL_PATH\"\n"
         "    \n"
-        "    # Find the extracted vmlinuz file to replace\n"
-        "    VMLINUZ_FILE=$(find ./boot -name \"vmlinuz-*\")\n"
+        "    # Find the extracted vmlinuz file to replace (take first one if multiple exist)\n"
+        "    VMLINUZ_FILE=$(find ./boot -name \"vmlinuz-*\" -type f | head -1)\n"
         "    if [ -n \"$VMLINUZ_FILE\" ]; then\n"
         "        echo \"[INFO] Overwriting $VMLINUZ_FILE with custom kernel\"\n"
         "        cp -f \"$CUSTOM_KERNEL_PATH\" \"$VMLINUZ_FILE\"\n"
@@ -1398,11 +1398,19 @@ int rpm_integrate_to_iso(
      * Also remove packages that require exact kernel version (linux = 6.12.60-14.ph5)
      * because linux-mok provides a different version (linux = 6.1.159-7.ph5) */
     log_info("Removing original packages replaced by MOK packages...");
+    /* Remove packages for BOTH 4.0 (5.x kernel) and 5.0 (6.x kernel) */
     snprintf(cmd, sizeof(cmd), 
         "rm -f '%s/grub2-efi-image-2'*.rpm "
         "'%s/shim-signed-1'*.rpm "
+        /* Photon 5.0 kernels */
         "'%s/linux-6.'*.rpm "
         "'%s/linux-esx-6.'*.rpm "
+        /* Photon 4.0 kernels */
+        "'%s/linux-5.'*.rpm "
+        "'%s/linux-esx-5.'*.rpm "
+        "'%s/linux-secure-5.'*.rpm "
+        "'%s/linux-rt-5.'*.rpm "
+        "'%s/linux-aws-5.'*.rpm "
         /* Remove packages that require exact kernel version */
         "'%s/linux-devel-'*.rpm "
         "'%s/linux-docs-'*.rpm "
@@ -1412,10 +1420,17 @@ int rpm_integrate_to_iso(
         "'%s/linux-esx-devel-'*.rpm "
         "'%s/linux-esx-docs-'*.rpm "
         "'%s/linux-esx-drivers-'*.rpm "
+        "'%s/linux-secure-devel-'*.rpm "
+        "'%s/linux-secure-docs-'*.rpm "
+        /* bpftool requires linux-tools which we removed */
+        "'%s/bpftool-'*.rpm "
         "2>/dev/null || true",
-        iso_rpm_dir, iso_rpm_dir, iso_rpm_dir, iso_rpm_dir,
-        iso_rpm_dir, iso_rpm_dir, iso_rpm_dir, iso_rpm_dir,
-        iso_rpm_dir, iso_rpm_dir, iso_rpm_dir, iso_rpm_dir);
+        iso_rpm_dir, iso_rpm_dir, 
+        iso_rpm_dir, iso_rpm_dir,
+        iso_rpm_dir, iso_rpm_dir, iso_rpm_dir, iso_rpm_dir, iso_rpm_dir,
+        iso_rpm_dir, iso_rpm_dir, iso_rpm_dir, iso_rpm_dir, iso_rpm_dir,
+        iso_rpm_dir, iso_rpm_dir, iso_rpm_dir, iso_rpm_dir, iso_rpm_dir,
+        iso_rpm_dir);
     run_cmd(cmd);
     log_info("Removed conflicting original packages from ISO");
     
@@ -1519,7 +1534,13 @@ int rpm_patch_secureboot_packages(
     if (last_slash) *last_slash = '\0';
     config.keys_dir = strdup(keys_dir);
     
-    /* Create work directories */
+    /* Clean and create work directories
+     * This ensures no stale packages from previous builds (e.g., ph5 packages
+     * left over when building ph4) contaminate the current build */
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd), "rm -rf '%s'", config.work_dir);
+    run_cmd(cmd);
+    
     mkdir_p(config.work_dir);
     mkdir_p(config.specs_dir);
     mkdir_p(config.rpmbuild_dir);

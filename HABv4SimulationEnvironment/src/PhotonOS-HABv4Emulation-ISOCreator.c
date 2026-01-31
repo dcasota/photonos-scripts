@@ -1940,12 +1940,18 @@ static int find_base_iso(char *iso_path, size_t path_size) {
     log_info("No base ISO found, attempting download...");
     
     const char *iso_name;
+    const char *url_path;  /* Path component after photon/<release>/ */
+    
     if (strcmp(cfg.release, "5.0") == 0) {
         iso_name = "photon-5.0-dde71ec57.x86_64.iso";
+        url_path = "GA/iso";
     } else if (strcmp(cfg.release, "4.0") == 0) {
-        iso_name = "photon-4.0-ca7c9e933.iso";
+        /* Photon OS 4.0 Rev2 is the latest stable release */
+        iso_name = "photon-4.0-c001795b8.iso";
+        url_path = "Rev2/iso";
     } else if (strcmp(cfg.release, "6.0") == 0) {
         iso_name = "photon-6.0-minimal.iso";
+        url_path = "GA/iso";
     } else {
         log_error("Unknown Photon OS release: %s", cfg.release);
         return -1;
@@ -1956,8 +1962,8 @@ static int find_base_iso(char *iso_path, size_t path_size) {
     char cmd[1024];
     snprintf(cmd, sizeof(cmd),
         "wget -q --show-progress -O '%s' "
-        "'https://packages.vmware.com/photon/%s/GA/iso/%s'",
-        iso_path, cfg.release, iso_name);
+        "'https://packages.vmware.com/photon/%s/%s/%s'",
+        iso_path, cfg.release, url_path, iso_name);
     
     if (run_cmd(cmd) != 0) {
         log_error("Failed to download ISO");
@@ -2917,10 +2923,18 @@ static int create_secure_boot_iso(void) {
                     } else {
                         /* Re-copy signed MOK RPMs to ISO (they were copied before signing) */
                         log_info("Updating ISO with signed MOK RPMs...");
+                        /* Remove the old unsigned MOK RPMs first to ensure fresh copy */
                         snprintf(cmd, sizeof(cmd), 
-                            "cp '%s'/*-mok-*.rpm '%s/RPMS/x86_64/' 2>/dev/null", 
-                            output_dir, iso_extract);
+                            "rm -f '%s/RPMS/x86_64/'*-mok-*.rpm", 
+                            iso_extract);
                         run_cmd(cmd);
+                        /* Copy signed MOK RPMs - use explicit copy without suppressing errors */
+                        snprintf(cmd, sizeof(cmd), 
+                            "cp -v '%s/'*-mok-*.rpm '%s/RPMS/x86_64/'", 
+                            output_dir, iso_extract);
+                        if (run_cmd(cmd) != 0) {
+                            log_error("Failed to copy signed MOK RPMs to ISO");
+                        }
                         
                         /* Remove original packages that conflict with MOK packages
                          * MOK packages use Obsoletes: but file conflicts cause rpm transaction to fail
@@ -2928,11 +2942,19 @@ static int create_secure_boot_iso(void) {
                          * Also remove packages that require exact kernel version (linux = 6.12.60-14.ph5)
                          * because linux-mok provides a different version (linux = 6.1.159-7.ph5) */
                         log_info("Removing original packages replaced by MOK packages...");
+                        /* Remove packages for BOTH 4.0 (5.x kernel) and 5.0 (6.x kernel) */
                         snprintf(cmd, sizeof(cmd), 
                             "rm -f '%s/RPMS/x86_64/grub2-efi-image-2'*.rpm "
                             "'%s/RPMS/x86_64/shim-signed-1'*.rpm "
+                            /* Photon 5.0 kernels */
                             "'%s/RPMS/x86_64/linux-6.'*.rpm "
                             "'%s/RPMS/x86_64/linux-esx-6.'*.rpm "
+                            /* Photon 4.0 kernels */
+                            "'%s/RPMS/x86_64/linux-5.'*.rpm "
+                            "'%s/RPMS/x86_64/linux-esx-5.'*.rpm "
+                            "'%s/RPMS/x86_64/linux-secure-5.'*.rpm "
+                            "'%s/RPMS/x86_64/linux-rt-5.'*.rpm "
+                            "'%s/RPMS/x86_64/linux-aws-5.'*.rpm "
                             /* Remove packages that require exact kernel version */
                             "'%s/RPMS/x86_64/linux-devel-'*.rpm "
                             "'%s/RPMS/x86_64/linux-docs-'*.rpm "
@@ -2942,10 +2964,17 @@ static int create_secure_boot_iso(void) {
                             "'%s/RPMS/x86_64/linux-esx-devel-'*.rpm "
                             "'%s/RPMS/x86_64/linux-esx-docs-'*.rpm "
                             "'%s/RPMS/x86_64/linux-esx-drivers-'*.rpm "
+                            "'%s/RPMS/x86_64/linux-secure-devel-'*.rpm "
+                            "'%s/RPMS/x86_64/linux-secure-docs-'*.rpm "
+                            /* bpftool requires linux-tools which we removed */
+                            "'%s/RPMS/x86_64/bpftool-'*.rpm "
                             "2>/dev/null || true",
-                            iso_extract, iso_extract, iso_extract, iso_extract,
-                            iso_extract, iso_extract, iso_extract, iso_extract,
-                            iso_extract, iso_extract, iso_extract, iso_extract);
+                            iso_extract, iso_extract, 
+                            iso_extract, iso_extract,
+                            iso_extract, iso_extract, iso_extract, iso_extract, iso_extract,
+                            iso_extract, iso_extract, iso_extract, iso_extract, iso_extract,
+                            iso_extract, iso_extract, iso_extract, iso_extract, iso_extract,
+                            iso_extract);
                         run_cmd(cmd);
                         log_info("Removed conflicting original packages from ISO");
                         
