@@ -211,6 +211,28 @@ For Photon OS ISOs, use VMware's full GRUB binary and sign it with your own MOK 
    ./PhotonOS-HABv4Emulation-ISOCreator -r 5.0 -b
    ```
 
+### eFuse USB not detected even when inserted (v1.9.17 Fix)
+
+**Cause**: GRUB stub was missing modules required for USB device detection and label-based search.
+
+**Symptoms**:
+- eFuse USB dongle is properly formatted with label `EFUSE_SIM`
+- Contains valid `/efuse_sim/srk_fuse.bin` file
+- GRUB still shows "HABv4 SECURITY: eFuse USB Required" message
+- Selecting "Retry" doesn't detect the USB
+
+**Root Cause**: The GRUB stub included the `search` module but NOT:
+- `search_label` - Required for `search --label` command
+- `usb`, `usbms`, `scsi`, `disk` - Required for USB device detection
+
+**Solution (v1.9.17+)**: Fixed by adding all required modules to grub2-mkimage:
+- `search_label`, `search_fs_uuid`, `search_fs_file` - All search variants
+- `usb`, `usbms`, `scsi`, `disk` - USB and storage device support
+
+**If using older ISO (pre-v1.9.17)**: Rebuild ISO with PhotonOS-HABv4Emulation-ISOCreator v1.9.17+
+
+---
+
 ### "eFuse USB found but missing srk_fuse.bin"
 
 **Cause**: USB has label `EFUSE_SIM` but doesn't contain required files.
@@ -1124,7 +1146,8 @@ find /lib/modules -name "cfg80211*" -o -name "mac80211*" -o -name "iwlwifi*"
 | can't find command 'reboot' | VMware GRUB missing module | Use "UEFI Firmware Settings" or Ctrl+Alt+Del |
 | grubx64_real.efi not found | GRUB stub search failed | Rebuild with PhotonOS-HABv4Emulation-ISOCreator |
 | BOOT BLOCKED (no Continue) | eFuse USB missing/invalid | Insert eFuse USB or rebuild without eFuse requirement |
-| eFuse USB not detected | Wrong label or not FAT32 | Recreate with `-u /dev/sdX` option |
+| eFuse USB not detected (label/format) | Wrong label or not FAT32 | Recreate with `-u /dev/sdX` option |
+| eFuse USB not detected (GRUB) | Missing GRUB modules | Rebuild ISO (v1.9.17+ adds search_label, usb, usbms) |
 | eFuse not enforced on installed system | mk-setup-grub.sh overwrites %posttrans | Rebuild ISO (v1.9.9+ injects into template) |
 | Wi-Fi kernel panic during WPA connect | Missing crypto algorithms (CCM, GCM, etc.) | Rebuild ISO (v1.9.8+ adds crypto configs) |
 | Package names have `.ph5.ph5` | `%{?dist}` in spec doubles dist tag | Rebuild ISO (v1.9.6+ removes `%{?dist}`) |

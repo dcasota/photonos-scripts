@@ -2561,10 +2561,14 @@ static int create_secure_boot_iso(void) {
     
     /* Build GRUB stub WITHOUT shim_lock module but WITH SBAT data
      * Include probe (for UUID detection), gfxmenu (for themed menus),
-     * png/jpeg/tga (for background images), and gfxterm_background */
+     * png/jpeg/tga (for background images), and gfxterm_background.
+     * CRITICAL: Include search_label for eFuse USB detection by label,
+     * and usb/usbms for USB device support at boot time. */
     snprintf(cmd, sizeof(cmd),
         "grub2-mkimage -O x86_64-efi -o '%s' -c '%s' -p /boot/grub2 --sbat '%s' "
-        "normal search configfile linux chain fat part_gpt part_msdos iso9660 "
+        "normal search search_label search_fs_uuid search_fs_file "
+        "configfile linux chain fat part_gpt part_msdos iso9660 "
+        "usb usbms scsi disk "
         "boot echo reboot halt test true loadenv read all_video gfxterm font efi_gop "
         "probe gfxmenu png jpeg tga gfxterm_background "
         "2>/dev/null",

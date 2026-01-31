@@ -366,6 +366,12 @@ On first boot, the **blue MokManager screen** appears:
 
 ## Version History
 
+- **v1.9.17** - Fix eFuse USB detection in GRUB:
+  - **Root cause**: GRUB stub was missing modules required for USB device and label detection
+  - **Missing modules**: `search_label`, `search_fs_uuid`, `search_fs_file`, `usb`, `usbms`, `scsi`, `disk`
+  - **Symptom**: eFuse USB dongle (label: EFUSE_SIM) not detected even when properly inserted
+  - **Fix**: Added all required modules to grub2-mkimage command
+  - **Note**: The `search` module alone doesn't include label search - `search_label` is required
 - **v1.9.16** - Fix RPM transaction failures and package naming:
   - **RPM Conflicts fix**: Changed `Obsoletes: package < version` to `Conflicts: package` for MOK packages
   - **Root cause**: MOK package version (e.g., 6.1.159) could be lower than original ISO package (e.g., 6.12.60)
