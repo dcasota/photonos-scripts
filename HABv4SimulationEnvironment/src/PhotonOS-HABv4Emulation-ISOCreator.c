@@ -2915,6 +2915,19 @@ static int create_secure_boot_iso(void) {
                             output_dir, iso_extract);
                         run_cmd(cmd);
                         
+                        /* Remove original packages that conflict with MOK packages
+                         * MOK packages use Obsoletes: but file conflicts cause rpm transaction to fail
+                         * if both packages are present in the repo during installation */
+                        log_info("Removing original packages replaced by MOK packages...");
+                        snprintf(cmd, sizeof(cmd), 
+                            "rm -f '%s/RPMS/x86_64/grub2-efi-image-2'*.rpm "
+                            "'%s/RPMS/x86_64/shim-signed-1'*.rpm "
+                            "'%s/RPMS/x86_64/linux-6.'*.rpm "
+                            "'%s/RPMS/x86_64/linux-esx-6.'*.rpm 2>/dev/null || true",
+                            iso_extract, iso_extract, iso_extract, iso_extract);
+                        run_cmd(cmd);
+                        log_info("Removed conflicting original packages from ISO");
+                        
                         /* Copy GPG public key to ISO root */
                         char gpg_pub[512], gpg_iso[512];
                         snprintf(gpg_pub, sizeof(gpg_pub), "%s/%s", cfg.keys_dir, GPG_KEY_FILE);

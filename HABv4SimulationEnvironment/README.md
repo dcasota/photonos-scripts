@@ -366,6 +366,11 @@ On first boot, the **blue MokManager screen** appears:
 
 ## Version History
 
+- **v1.9.19** - Remove conflicting original packages from ISO:
+  - **Root cause**: Even with Epoch and Obsoletes, RPM fails with file conflicts if both original and MOK packages exist in repo
+  - **Solution**: Remove `grub2-efi-image-2*.rpm`, `shim-signed-1*.rpm`, `linux-6.*.rpm`, `linux-esx-6.*.rpm` from ISO
+  - **Where fixed**: Both `rpm_integrate_to_iso()` and post-signing copy in main ISO creator
+  - **Result**: Only MOK packages in repo, no file conflicts during installation
 - **v1.9.18** - Fix MOK package conflicts using RPM Epoch:
   - **Root cause**: MOK packages used `Conflicts:` which prevents installation when `minimal` meta-package requires original packages
   - **Solution**: Added `Epoch: 1` to all MOK packages (linux-mok, grub2-efi-image-mok, shim-signed-mok)

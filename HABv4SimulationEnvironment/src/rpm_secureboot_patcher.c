@@ -1388,6 +1388,20 @@ int rpm_integrate_to_iso(
     
     log_info("Successfully copied %d MOK RPM(s) to ISO", copied_count);
     
+    /* Remove original packages that conflict with MOK packages
+     * MOK packages use Obsoletes: but file conflicts cause rpm transaction to fail
+     * if both packages are present in the repo during installation.
+     * The MOK packages provide the same capabilities, so removing originals is safe. */
+    log_info("Removing original packages replaced by MOK packages...");
+    snprintf(cmd, sizeof(cmd), 
+        "rm -f '%s/grub2-efi-image-2'*.rpm "
+        "'%s/shim-signed-1'*.rpm "
+        "'%s/linux-6.'*.rpm "
+        "'%s/linux-esx-6.'*.rpm 2>/dev/null || true",
+        iso_rpm_dir, iso_rpm_dir, iso_rpm_dir, iso_rpm_dir);
+    run_cmd(cmd);
+    log_info("Removed conflicting original packages from ISO");
+    
     /* Regenerate repodata to include the new MOK packages
      * Without this, tdnf won't find the MOK packages during installation */
     log_info("Regenerating repository metadata...");
