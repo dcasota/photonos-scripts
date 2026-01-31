@@ -366,6 +366,11 @@ On first boot, the **blue MokManager screen** appears:
 
 ## Version History
 
+- **v1.9.25** - Fix unexpanded RPM macro in linux-mok %postun script:
+  - **Bug**: `%{kernel_file#vmlinuz-}` was not expanded during RPM build
+  - **Impact**: Scriptlet tried to access files with literal `%{kernel_file#vmlinuz-}` in path
+  - **Symptom**: `Error(1525) : rpm transaction failed` during installation
+  - **Fix**: Use shell parameter expansion on expanded `%{kernel_file}` variable
 - **v1.9.24** - Photon OS 4.0 support and build system fixes:
   - **Fix**: Add support for Photon OS 4.0 Rev2 ISO download (correct URL and filename)
   - **Fix**: Clean MOK build directory at start to prevent stale packages from previous builds
