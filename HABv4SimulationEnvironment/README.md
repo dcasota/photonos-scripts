@@ -366,6 +366,11 @@ On first boot, the **blue MokManager screen** appears:
 
 ## Version History
 
+- **v1.9.23** - Remove kernel-dependent packages that require exact version:
+  - **Bug**: Packages like `linux-devel`, `linux-drivers-*` require `linux = 6.12.60-14.ph5` (exact)
+  - **Impact**: `linux-mok` provides `linux = 6.1.159-7.ph5`, causing unsatisfiable dependencies
+  - **Fix**: Remove all packages with exact kernel version dependencies from ISO
+  - **Packages removed**: `linux-devel-*`, `linux-docs-*`, `linux-drivers-*`, `linux-tools-*`, `linux-python3-perf-*`, `linux-esx-devel-*`, `linux-esx-docs-*`, `linux-esx-drivers-*`
 - **v1.9.22** - Fix repodata to exclude removed original packages:
   - **Bug**: `createrepo_c --update` only adds new packages, doesn't remove deleted ones
   - **Impact**: Repodata still referenced removed packages (linux-6.*, grub2-efi-image-2.*, etc.)

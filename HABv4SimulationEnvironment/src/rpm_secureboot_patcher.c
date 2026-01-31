@@ -1395,13 +1395,26 @@ int rpm_integrate_to_iso(
     /* Remove original packages that conflict with MOK packages
      * MOK packages use Obsoletes: but file conflicts cause rpm transaction to fail
      * if both packages are present in the repo during installation.
-     * The MOK packages provide the same capabilities, so removing originals is safe. */
+     * Also remove packages that require exact kernel version (linux = 6.12.60-14.ph5)
+     * because linux-mok provides a different version (linux = 6.1.159-7.ph5) */
     log_info("Removing original packages replaced by MOK packages...");
     snprintf(cmd, sizeof(cmd), 
         "rm -f '%s/grub2-efi-image-2'*.rpm "
         "'%s/shim-signed-1'*.rpm "
         "'%s/linux-6.'*.rpm "
-        "'%s/linux-esx-6.'*.rpm 2>/dev/null || true",
+        "'%s/linux-esx-6.'*.rpm "
+        /* Remove packages that require exact kernel version */
+        "'%s/linux-devel-'*.rpm "
+        "'%s/linux-docs-'*.rpm "
+        "'%s/linux-drivers-'*.rpm "
+        "'%s/linux-tools-'*.rpm "
+        "'%s/linux-python3-perf-'*.rpm "
+        "'%s/linux-esx-devel-'*.rpm "
+        "'%s/linux-esx-docs-'*.rpm "
+        "'%s/linux-esx-drivers-'*.rpm "
+        "2>/dev/null || true",
+        iso_rpm_dir, iso_rpm_dir, iso_rpm_dir, iso_rpm_dir,
+        iso_rpm_dir, iso_rpm_dir, iso_rpm_dir, iso_rpm_dir,
         iso_rpm_dir, iso_rpm_dir, iso_rpm_dir, iso_rpm_dir);
     run_cmd(cmd);
     log_info("Removed conflicting original packages from ISO");

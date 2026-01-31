@@ -2924,13 +2924,27 @@ static int create_secure_boot_iso(void) {
                         
                         /* Remove original packages that conflict with MOK packages
                          * MOK packages use Obsoletes: but file conflicts cause rpm transaction to fail
-                         * if both packages are present in the repo during installation */
+                         * if both packages are present in the repo during installation.
+                         * Also remove packages that require exact kernel version (linux = 6.12.60-14.ph5)
+                         * because linux-mok provides a different version (linux = 6.1.159-7.ph5) */
                         log_info("Removing original packages replaced by MOK packages...");
                         snprintf(cmd, sizeof(cmd), 
                             "rm -f '%s/RPMS/x86_64/grub2-efi-image-2'*.rpm "
                             "'%s/RPMS/x86_64/shim-signed-1'*.rpm "
                             "'%s/RPMS/x86_64/linux-6.'*.rpm "
-                            "'%s/RPMS/x86_64/linux-esx-6.'*.rpm 2>/dev/null || true",
+                            "'%s/RPMS/x86_64/linux-esx-6.'*.rpm "
+                            /* Remove packages that require exact kernel version */
+                            "'%s/RPMS/x86_64/linux-devel-'*.rpm "
+                            "'%s/RPMS/x86_64/linux-docs-'*.rpm "
+                            "'%s/RPMS/x86_64/linux-drivers-'*.rpm "
+                            "'%s/RPMS/x86_64/linux-tools-'*.rpm "
+                            "'%s/RPMS/x86_64/linux-python3-perf-'*.rpm "
+                            "'%s/RPMS/x86_64/linux-esx-devel-'*.rpm "
+                            "'%s/RPMS/x86_64/linux-esx-docs-'*.rpm "
+                            "'%s/RPMS/x86_64/linux-esx-drivers-'*.rpm "
+                            "2>/dev/null || true",
+                            iso_extract, iso_extract, iso_extract, iso_extract,
+                            iso_extract, iso_extract, iso_extract, iso_extract,
                             iso_extract, iso_extract, iso_extract, iso_extract);
                         run_cmd(cmd);
                         log_info("Removed conflicting original packages from ISO");
