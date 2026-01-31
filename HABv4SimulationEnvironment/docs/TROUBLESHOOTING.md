@@ -240,6 +240,27 @@ For Photon OS ISOs, use VMware's full GRUB binary and sign it with your own MOK 
 
 ---
 
+### eFuse USB not detected after hot-plug (v1.9.20 Fix)
+
+**Cause**: GRUB caches USB devices at startup. The old "Retry" used `configfile` which reloads config without rescanning USB.
+
+**Symptoms**:
+- eFuse USB was NOT plugged in when GRUB started
+- User plugs in eFuse USB while at the "eFuse USB Required" prompt
+- Pressing "Retry" still doesn't detect the USB
+- Only a full reboot detects the USB
+
+**Root Cause**: `configfile /boot/grub2/grub.cfg` only reloads the configuration file but does NOT rescan USB devices. GRUB's device list is cached at initialization.
+
+**Solution (v1.9.20+)**: Changed "Retry" to use `chainloader` instead of `configfile`:
+- `chainloader /EFI/BOOT/grubx64.efi` reloads the entire GRUB EFI binary
+- This forces complete reinitialization including USB device scanning
+- Newly plugged USB devices are now detected
+
+**If using older ISO (pre-v1.9.20)**: Rebuild ISO, or use "Reboot" option instead of "Retry"
+
+---
+
 ### "eFuse USB found but missing srk_fuse.bin"
 
 **Cause**: USB has label `EFUSE_SIM` but doesn't contain required files.
@@ -1155,6 +1176,7 @@ find /lib/modules -name "cfg80211*" -o -name "mac80211*" -o -name "iwlwifi*"
 | BOOT BLOCKED (no Continue) | eFuse USB missing/invalid | Insert eFuse USB or rebuild without eFuse requirement |
 | eFuse USB not detected (label/format) | Wrong label or not FAT32 | Recreate with `-u /dev/sdX` option |
 | eFuse USB not detected (GRUB) | Missing GRUB modules | Rebuild ISO (v1.9.17+ adds search_label, usb, usbms) |
+| eFuse USB not detected after hot-plug | configfile doesn't rescan USB | Rebuild ISO (v1.9.20+ uses chainloader for Retry) |
 | eFuse not enforced on installed system | mk-setup-grub.sh overwrites %posttrans | Rebuild ISO (v1.9.9+ injects into template) |
 | Wi-Fi kernel panic during WPA connect | Missing crypto algorithms (CCM, GCM, etc.) | Rebuild ISO (v1.9.8+ adds crypto configs) |
 | Package names have `.ph5.ph5` | `%{?dist}` in spec doubles dist tag | Rebuild ISO (v1.9.6+ removes `%{?dist}`) |

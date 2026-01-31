@@ -366,6 +366,12 @@ On first boot, the **blue MokManager screen** appears:
 
 ## Version History
 
+- **v1.9.20** - Fix eFuse USB hot-plug detection in GRUB:
+  - **Problem**: GRUB caches USB devices at startup; `configfile` reload doesn't rescan
+  - **Solution**: Use `chainloader` instead of `configfile` to reload GRUB EFI binary
+  - **How it works**: `chainloader /EFI/BOOT/grubx64.efi` forces complete GRUB reinitialization including USB rescan
+  - **Fixed in**: Installer ISO grub.cfg, installed system grub.cfg (via mk-setup-grub.sh and %posttrans)
+  - **User experience**: Plugging in eFuse USB and pressing "Retry" now detects the newly inserted device
 - **v1.9.19** - Remove conflicting original packages from ISO:
   - **Root cause**: Even with Epoch and Obsoletes, RPM fails with file conflicts if both original and MOK packages exist in repo
   - **Solution**: Remove `grub2-efi-image-2*.rpm`, `shim-signed-1*.rpm`, `linux-6.*.rpm`, `linux-esx-6.*.rpm` from ISO

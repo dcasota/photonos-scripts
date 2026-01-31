@@ -318,6 +318,10 @@ Check for /efuse_sim/srk_fuse.bin
     └─→ Invalid: "BOOT BLOCKED" (only Retry/Reboot)
 ```
 
+**Hot-plug detection (v1.9.20+)**: If eFuse USB is plugged in after GRUB starts, 
+selecting "Retry" uses `chainloader` to reload GRUB and rescan USB devices.
+This fixes the issue where `configfile` reload didn't detect newly inserted USB.
+
 ### USB Contents
 
 ```
