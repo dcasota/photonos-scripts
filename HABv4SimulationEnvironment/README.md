@@ -366,6 +366,12 @@ On first boot, the **blue MokManager screen** appears:
 
 ## Version History
 
+- **v1.9.18** - Fix MOK package conflicts using RPM Epoch:
+  - **Root cause**: MOK packages used `Conflicts:` which prevents installation when `minimal` meta-package requires original packages
+  - **Solution**: Added `Epoch: 1` to all MOK packages (linux-mok, grub2-efi-image-mok, shim-signed-mok)
+  - **How Epoch works**: `1:2.12-1.ph5` is always > `0:2.12-2.ph5` because epoch takes precedence over version/release
+  - **Result**: MOK packages now properly replace originals via `Obsoletes:` while satisfying dependencies via `Provides:`
+  - **RPM behavior**: When `minimal` requires `grub2-efi-image`, RPM sees `grub2-efi-image-mok` provides it and obsoletes the original
 - **v1.9.17** - Fix eFuse USB detection in GRUB:
   - **Root cause**: GRUB stub was missing modules required for USB device and label detection
   - **Missing modules**: `search_label`, `search_fs_uuid`, `search_fs_file`, `usb`, `usbms`, `scsi`, `disk`

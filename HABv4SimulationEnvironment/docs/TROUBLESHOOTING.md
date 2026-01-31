@@ -110,15 +110,21 @@ This document covers common issues and their solutions.
 - File conflicts between `linux-mok` and `grub2-efi-image-mok`
 - MOK packages not indexed in repodata
 
-**Root Cause (v1.9.16 fix)**:
-The MOK packages used `Obsoletes: linux < %{version}-%{release}` but when building a custom kernel (e.g., 6.1.159), this doesn't obsolete the original ISO's newer kernel (e.g., 6.12.60). RPM sees both packages as valid and fails the transaction.
+**Root Cause (v1.9.16-v1.9.17)**:
+The MOK packages used `Conflicts:` which prevents both packages from being installed. But when `minimal` meta-package requires `grub2-efi-image`, RPM can't satisfy the dependency because MOK package conflicts with it.
+
+**Root Cause (v1.9.18 fix)**:
+Used RPM `Epoch:` to ensure MOK packages are always considered newer than originals:
+- `Epoch: 1` added to all MOK packages
+- `1:2.12-1.ph5` > `0:2.12-2.ph5` because epoch takes precedence
+- `Obsoletes:` triggers replacement, `Provides:` satisfies dependencies
 
 **Solutions**:
-1. Rebuild ISO with latest PhotonOS-HABv4Emulation-ISOCreator (v1.9.16+ uses Conflicts instead of Obsoletes)
+1. Rebuild ISO with latest PhotonOS-HABv4Emulation-ISOCreator (v1.9.18+ uses Epoch)
 2. Specific fixes applied:
-   - Changed from `Obsoletes: package < version` to `Conflicts: package`
-   - `Conflicts` prevents both packages from being installed regardless of version
-   - `linux-mok` only includes kernel files (not `/boot/efi`)
+   - Added `Epoch: 1` to linux-mok, grub2-efi-image-mok, shim-signed-mok
+   - Changed `Conflicts:` back to `Obsoletes:` (unversioned)
+   - When `minimal` requires `grub2-efi-image`, RPM sees MOK package provides it
    - Repodata regenerated after adding MOK packages
 
 ### "start_image() returned Not Found"
@@ -1127,7 +1133,7 @@ find /lib/modules -name "cfg80211*" -o -name "mac80211*" -o -name "iwlwifi*"
 | grub.efi Not Found | Missing file | Rebuild ISO (v1.7.0+ installs both names) |
 | search.c: no such device | GRUB searching for ISO path | Rebuild ISO (v1.7.0+ fixes embedded config) |
 | Installation takes 2000+ seconds | USB autosuspend issue | Rebuild ISO (v1.7.0+ adds usbcore.autosuspend=-1) |
-| rpm transaction failed (Error 1525) | MOK version < original version | Rebuild ISO (v1.9.16+ uses Conflicts) |
+| rpm transaction failed (Error 1525) | MOK conflicts with minimal deps | Rebuild ISO (v1.9.18+ uses Epoch) |
 | bad shim signature | Wrong trust chain | Use Fedora shim + Fedora MokManager |
 | MokManager.efi Not Found | Wrong filename or missing from efiboot.img | Rebuild with PhotonOS-HABv4Emulation-ISOCreator |
 | Security Violation (first boot) | MOK certificate not enrolled | Enroll certificate from root `/` |
