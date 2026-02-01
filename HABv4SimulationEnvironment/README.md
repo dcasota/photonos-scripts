@@ -366,6 +366,11 @@ On first boot, the **blue MokManager screen** appears:
 
 ## Version History
 
+- **v1.9.27** - Universal ISO for Physical and Virtual Environments:
+  - **Universal Support**: ISO now supports both MOK-signed installations (for Physical Secure Boot) and original VMware-signed installations (for Virtual Machines) simultaneously.
+  - **Conflict Resolution**: Removed `Epoch` and `Obsoletes` from MOK packages to allow coexistence with original packages.
+  - **Multi-Kernel Discovery**: Enhanced `rpm_secureboot_patcher.c` to discover and build MOK variants for multiple kernels (Standard, ESX) dynamically.
+  - **Installer Options**: User can select "Photon MOK Secure Boot" for physical hardware or standard profiles (Minimal, Real-Time) for virtual environments.
 - **v1.9.26** - Fix Photon 6.0 kernel selection and enable verbose installer logging:
   - **Photon 6.0 Fix**: Specifically detect and select kernel 6.12+ (was picking 6.1 randomly due to glob behavior)
   - **Installer Debugging**: Added automatic patching of `tdnf.py` in initrd to log full JSON output on errors

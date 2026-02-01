@@ -394,7 +394,7 @@ discovered_packages_t* rpm_discover_packages(
                  pkgs->grub_efi->name, pkgs->grub_efi->version);
     }
     
-    /* Find linux kernel by the file it provides */
+    /* Find all linux kernels by vmlinuz files */
     char kernel_pattern[128] = "/boot/vmlinuz-*";
     
     /* For Photon 6.0, we specifically want kernel 6.12+ (which co-exists with 6.1) */
@@ -403,16 +403,85 @@ discovered_packages_t* rpm_discover_packages(
         strcpy(kernel_pattern, "/boot/vmlinuz-6.12*");
     }
     
-    log_debug("Looking for package providing %s", kernel_pattern);
-    char *linux_rpm = find_rpm_providing_file_pattern(rpm_dir, kernel_pattern);
-    if (linux_rpm) {
-        pkgs->linux_kernel = extract_rpm_info(linux_rpm);
-        if (pkgs->linux_kernel) {
-            pkgs->linux_kernel->spec_path = find_spec_for_package(specs_dir, pkgs->linux_kernel->name);
+    log_debug("Looking for packages providing %s", kernel_pattern);
+    
+    /* We need to find ALL RPMs that provide a vmlinuz file */
+    /* This loop mimics find_rpm_providing_file_pattern but collects multiple */
+    DIR *dir = opendir(rpm_dir);
+    if (dir) {
+        struct dirent *entry;
+        char dir_part[256] = "";
+        char file_pattern[256] = "";
+        const char *last_slash = strrchr(kernel_pattern, '/');
+        if (last_slash) {
+            size_t dir_len = last_slash - kernel_pattern;
+            strncpy(dir_part, kernel_pattern, dir_len);
+            dir_part[dir_len] = '\0';
+            strcpy(file_pattern, last_slash + 1);
+        } else {
+            strcpy(file_pattern, kernel_pattern);
         }
-        free(linux_rpm);
-        log_info("Found linux kernel: %s-%s", 
-                 pkgs->linux_kernel->name, pkgs->linux_kernel->version);
+
+        while ((entry = readdir(dir)) != NULL) {
+            if (entry->d_type != DT_REG) continue;
+            if (strstr(entry->d_name, ".rpm") == NULL) continue;
+            if (strstr(entry->d_name, ".src.rpm") != NULL) continue;
+            if (strstr(entry->d_name, "-mok-") != NULL) continue;
+            
+            /* Optimization: Only check packages starting with linux- */
+            if (strncmp(entry->d_name, "linux-", 6) != 0) continue;
+            /* Skip linux-headers, linux-devel, etc. unless they actually provide vmlinuz (they shouldn't) */
+            if (strstr(entry->d_name, "-devel") || strstr(entry->d_name, "-headers") || 
+                strstr(entry->d_name, "-docs") || strstr(entry->d_name, "-drivers")) continue;
+
+            char rpm_path[1024];
+            snprintf(rpm_path, sizeof(rpm_path), "%s/%s", rpm_dir, entry->d_name);
+            
+            /* Check if this RPM provides files matching the pattern */
+            char cmd[1024];
+            char output[4096];
+            /* Create grep pattern from input glob pattern */
+            char grep_expr[256];
+            strncpy(grep_expr, kernel_pattern, sizeof(grep_expr)-1);
+            grep_expr[sizeof(grep_expr)-1] = '\0';
+            
+            /* Remove trailing * if present to make it a prefix match */
+            char *star = strrchr(grep_expr, '*');
+            if (star) *star = '\0';
+            
+            snprintf(cmd, sizeof(cmd), 
+                "rpm -qpl '%s' 2>/dev/null | grep -E '^%s' | head -1",
+                rpm_path, grep_expr);
+                
+            if (run_cmd_output(cmd, output, sizeof(output)) == 0 && strlen(output) > 0) {
+                if (pkgs->kernel_count < MAX_KERNEL_VARIANTS) {
+                    rpm_package_info_t *kpkg = extract_rpm_info(rpm_path);
+                    if (kpkg) {
+                        kpkg->spec_path = find_spec_for_package(specs_dir, kpkg->name);
+                        /* Store kernel variant */
+                        pkgs->linux_kernels[pkgs->kernel_count++] = kpkg;
+                        log_info("Found kernel variant: %s-%s", kpkg->name, kpkg->version);
+                    }
+                } else {
+                    log_warn("Max kernel variants reached, skipping %s", entry->d_name);
+                }
+            }
+        }
+        closedir(dir);
+    }
+    
+    if (pkgs->kernel_count == 0) {
+        /* Fallback to single discovery if loop failed */
+         char *linux_rpm = find_rpm_providing_file_pattern(rpm_dir, kernel_pattern);
+         if (linux_rpm) {
+             rpm_package_info_t *kpkg = extract_rpm_info(linux_rpm);
+             if (kpkg) {
+                 kpkg->spec_path = find_spec_for_package(specs_dir, kpkg->name);
+                 pkgs->linux_kernels[pkgs->kernel_count++] = kpkg;
+                 log_info("Found fallback kernel: %s-%s", kpkg->name, kpkg->version);
+             }
+             free(linux_rpm);
+         }
     }
     
     /* Find shim-signed by the file it provides */
@@ -442,7 +511,7 @@ discovered_packages_t* rpm_discover_packages(
     }
     
     /* Verify we found the required packages */
-    if (!pkgs->grub_efi || !pkgs->linux_kernel || !pkgs->shim_signed) {
+    if (!pkgs->grub_efi || pkgs->kernel_count == 0 || !pkgs->shim_signed) {
         log_error("Failed to discover all required packages");
         rpm_free_discovered_packages(pkgs);
         return NULL;
@@ -653,7 +722,17 @@ static int generate_grub_mok_spec(rpm_build_config_t *config, rpm_package_info_t
  */
 static int generate_linux_mok_spec(rpm_build_config_t *config, rpm_package_info_t *linux_pkg) {
     char spec_path[1024];
-    snprintf(spec_path, sizeof(spec_path), "%s/linux-mok.spec", config->specs_dir);
+    /* Use dynamic spec name based on package name, e.g., linux-rt-mok.spec or linux-mok.spec */
+    char mok_pkg_name[256];
+    
+    if (strcmp(linux_pkg->name, "linux") == 0) {
+        strcpy(mok_pkg_name, "linux-mok");
+    } else {
+        /* e.g., linux-rt -> linux-rt-mok */
+        snprintf(mok_pkg_name, sizeof(mok_pkg_name), "%s-mok", linux_pkg->name);
+    }
+    
+    snprintf(spec_path, sizeof(spec_path), "%s/%s.spec", config->specs_dir, mok_pkg_name);
     
     /* Generate date string for changelog */
     char date_str[64];
@@ -700,9 +779,10 @@ static int generate_linux_mok_spec(rpm_build_config_t *config, rpm_package_info_
         "%%define linux_release %s\n"
         "%%define kernel_file %s\n"
         "\n"
-        "Summary:    Linux kernel signed with MOK key\n"
-        "Name:       linux-mok\n"
-        "Epoch:      1\n"
+        "Summary:    Linux kernel signed with MOK key (%s variant)\n"
+        "Name:       %s\n"
+        "# Epoch removed to allow coexistence with original package\n"
+        "# Epoch:      1\n"
         "Version:    %%{linux_version}\n"
         "Release:    %%{linux_release}\n"
         "Group:      System Environment/Kernel\n"
@@ -710,22 +790,47 @@ static int generate_linux_mok_spec(rpm_build_config_t *config, rpm_package_info_
         "Vendor:     VMware, Inc.\n"
         "Distribution:   Photon\n"
         "\n"
-        "# Epoch ensures this package is always considered newer than original\n"
-        "# (1:6.1.159 > 0:6.12.60 because epoch takes precedence over version)\n"
-        "# Provides satisfies dependencies, Obsoletes triggers replacement\n"
+        "# Provides allows installer to find this as a valid kernel option\n"
         "Provides:   %%{linux_name} = %%{linux_version}-%%{linux_release}\n"
-        "Provides:   linux = %%{linux_version}-%%{linux_release}\n"
-        "Provides:   linux-esx = %%{linux_version}-%%{linux_release}\n"
-        "Provides:   linux-secure\n"
-        "Obsoletes:  linux\n"
-        "Obsoletes:  linux-esx\n"
+        "Provides:   kernel-mok = %%{linux_version}-%%{linux_release}\n",
+        linux_pkg->name, linux_pkg->version, linux_pkg->release,
+        linux_pkg->name,
+        linux_pkg->version,
+        linux_pkg->release,
+        kernel_filename,
+        flavor[0] ? flavor : "standard",
+        mok_pkg_name
+    );
+
+    /* Specific provides for known kernel types */
+    if (strcmp(linux_pkg->name, "linux") == 0) {
+        fprintf(f, "Provides:   linux = %%{linux_version}-%%{linux_release}\n");
+        fprintf(f, "Provides:   linux-mok = %%{linux_version}-%%{linux_release}\n");
+    } else if (strcmp(linux_pkg->name, "linux-esx") == 0) {
+        fprintf(f, "Provides:   linux-esx = %%{linux_version}-%%{linux_release}\n");
+    } else if (strcmp(linux_pkg->name, "linux-rt") == 0) {
+        fprintf(f, "Provides:   linux-rt = %%{linux_version}-%%{linux_release}\n");
+        fprintf(f, "Provides:   linux-rt-mok = %%{linux_version}-%%{linux_release}\n");
+    } else if (strcmp(linux_pkg->name, "linux-aws") == 0) {
+        fprintf(f, "Provides:   linux-aws = %%{linux_version}-%%{linux_release}\n");
+        fprintf(f, "Provides:   linux-aws-mok = %%{linux_version}-%%{linux_release}\n");
+    } else if (strcmp(linux_pkg->name, "linux-secure") == 0) {
+        fprintf(f, "Provides:   linux-secure = %%{linux_version}-%%{linux_release}\n");
+        fprintf(f, "Provides:   linux-secure-mok = %%{linux_version}-%%{linux_release}\n");
+    }
+
+    /* Important: Remove Obsoletes to allow coexistence */
+    /* Obsoletes:  linux */
+    /* Obsoletes:  linux-esx */
+    
+    fprintf(f,
         "\n"
         "BuildRequires:  sbsigntools\n"
         "\n"
         "%%description\n"
         "Linux kernel signed with Machine Owner Key (MOK) for Secure Boot.\n"
-        "This package provides the same kernel as the standard %%{linux_name} package\n"
-        "but with the vmlinuz binary signed using a custom MOK key.\n"
+        "This package provides the %s kernel signed with a custom MOK key.\n"
+        "It can be installed alongside the original unsigned/vendor-signed kernel.\n"
         "\n"
         "%%prep\n"
         "# Extract only kernel boot files from original package (not /boot/efi)\n"
@@ -734,7 +839,24 @@ static int generate_linux_mok_spec(rpm_build_config_t *config, rpm_package_info_
         "\n"
         "# --- CUSTOM KERNEL INJECTION START ---\n"
         "# Check if a custom built kernel exists and use it instead of the one from RPM\n"
-        "CUSTOM_KERNEL_PATH=\"%%{keys_dir}/vmlinuz-mok\"\n"
+        "# For multiple kernels, we look for suffix matching: vmlinuz-mok, vmlinuz-rt-mok, etc.\n",
+        linux_pkg->name
+    );
+
+    /* Logic for custom kernel injection varies by flavor */
+    char custom_kernel_name[64] = "vmlinuz-mok";
+    if (flavor[0]) {
+        /* e.g. vmlinuz-rt-mok */
+        snprintf(custom_kernel_name, sizeof(custom_kernel_name), "vmlinuz-%s-mok", flavor);
+    }
+    
+    fprintf(f,
+        "CUSTOM_KERNEL_PATH=\"%%{keys_dir}/%s\"\n"
+        "# Fallback to generic vmlinuz-mok if specific flavor not found\n"
+        "if [ ! -f \"$CUSTOM_KERNEL_PATH\" ] && [ \"%s\" == \"linux\" ]; then\n"
+        "    CUSTOM_KERNEL_PATH=\"%%{keys_dir}/vmlinuz-mok\"\n"
+        "fi\n"
+        "\n"
         "KERNEL_BUILD_DIR=\"/root/%%{photon_release_ver}/kernel-build\"\n"
         "\n"
         "if [ -f \"$CUSTOM_KERNEL_PATH\" ]; then\n"
@@ -948,11 +1070,7 @@ static int generate_linux_mok_spec(rpm_build_config_t *config, rpm_package_info_
         "%%changelog\n"
         "* %s HABv4 Project <habv4@local> %%{linux_version}-%%{linux_release}\n"
         "- MOK-signed variant of %%{linux_name} kernel\n",
-        linux_pkg->name, linux_pkg->version, linux_pkg->release,
-        linux_pkg->name,
-        linux_pkg->version,
-        linux_pkg->release,
-        kernel_filename,
+        custom_kernel_name, linux_pkg->name,
         date_str
     );
     
@@ -1064,9 +1182,11 @@ int rpm_generate_mok_specs(
         }
     }
     
-    if (packages->linux_kernel) {
-        if (generate_linux_mok_spec(config, packages->linux_kernel) != 0) {
-            return RPM_PATCH_ERR_SPEC_GENERATION_FAILED;
+    if (packages->kernel_count > 0) {
+        for (int i = 0; i < packages->kernel_count; i++) {
+            if (generate_linux_mok_spec(config, packages->linux_kernels[i]) != 0) {
+                return RPM_PATCH_ERR_SPEC_GENERATION_FAILED;
+            }
         }
     }
     
@@ -1165,15 +1285,28 @@ int rpm_build_mok_packages(
         return RPM_PATCH_ERR_BUILD_FAILED;
     }
     
-    /* 3. Build linux-mok */
-    if (build_single_rpm(config, "linux-mok.spec", packages->dist_tag) != 0) {
-        return RPM_PATCH_ERR_BUILD_FAILED;
+    /* 3. Build linux-mok variants */
+    if (packages->kernel_count > 0) {
+        for (int i = 0; i < packages->kernel_count; i++) {
+            char spec_name[256];
+            if (strcmp(packages->linux_kernels[i]->name, "linux") == 0) {
+                strcpy(spec_name, "linux-mok.spec");
+            } else {
+                snprintf(spec_name, sizeof(spec_name), "%s-mok.spec", packages->linux_kernels[i]->name);
+            }
+            
+            if (build_single_rpm(config, spec_name, packages->dist_tag) != 0) {
+                return RPM_PATCH_ERR_BUILD_FAILED;
+            }
+        }
     }
     
     /* Move built RPMs to output directory */
     mkdir_p(config->output_dir);
     char cmd[1024];
-    snprintf(cmd, sizeof(cmd), "cp %s/RPMS/*/*.rpm '%s/' 2>/dev/null", 
+    /* Fix: Add single quotes around paths to handle spaces/special characters
+     * Also fix unexpected EOF in command string construction */
+    snprintf(cmd, sizeof(cmd), "cp '%s/RPMS/'*/*.rpm '%s/' 2>/dev/null", 
              config->rpmbuild_dir, config->output_dir);
     run_cmd(cmd);
     
@@ -1417,42 +1550,46 @@ int rpm_integrate_to_iso(
      * if both packages are present in the repo during installation.
      * Also remove packages that require exact kernel version (linux = 6.12.60-14.ph5)
      * because linux-mok provides a different version (linux = 6.1.159-7.ph5) */
-    log_info("Removing original packages replaced by MOK packages...");
-    /* Remove packages for BOTH 4.0 (5.x kernel) and 5.0 (6.x kernel) */
+    
+    /* MODIFIED: We no longer remove original packages to allow coexistence.
+     * The new MOK packages do not use 'Epoch' or 'Obsoletes', so they can exist
+     * in the repository alongside original packages.
+     * The installer profile will select which one to install.
+     */
+    log_info("Keeping original packages to allow coexistence (MOK vs Original)");
+    /* Fix: Use 'find' for reliable cleanup of conflicting packages.
+     * Shell globbing rm command might fail if list is too long or patterns don't match exactly. */
+    /*
     snprintf(cmd, sizeof(cmd), 
-        "rm -f '%s/grub2-efi-image-2'*.rpm "
-        "'%s/shim-signed-1'*.rpm "
-        /* Photon 5.0 kernels */
-        "'%s/linux-6.'*.rpm "
-        "'%s/linux-esx-6.'*.rpm "
-        /* Photon 4.0 kernels */
-        "'%s/linux-5.'*.rpm "
-        "'%s/linux-esx-5.'*.rpm "
-        "'%s/linux-secure-5.'*.rpm "
-        "'%s/linux-rt-5.'*.rpm "
-        "'%s/linux-aws-5.'*.rpm "
-        /* Remove packages that require exact kernel version */
-        "'%s/linux-devel-'*.rpm "
-        "'%s/linux-docs-'*.rpm "
-        "'%s/linux-drivers-'*.rpm "
-        "'%s/linux-tools-'*.rpm "
-        "'%s/linux-python3-perf-'*.rpm "
-        "'%s/linux-esx-devel-'*.rpm "
-        "'%s/linux-esx-docs-'*.rpm "
-        "'%s/linux-esx-drivers-'*.rpm "
-        "'%s/linux-secure-devel-'*.rpm "
-        "'%s/linux-secure-docs-'*.rpm "
-        /* bpftool requires linux-tools which we removed */
-        "'%s/bpftool-'*.rpm "
-        "2>/dev/null || true",
-        iso_rpm_dir, iso_rpm_dir, 
-        iso_rpm_dir, iso_rpm_dir,
-        iso_rpm_dir, iso_rpm_dir, iso_rpm_dir, iso_rpm_dir, iso_rpm_dir,
-        iso_rpm_dir, iso_rpm_dir, iso_rpm_dir, iso_rpm_dir, iso_rpm_dir,
-        iso_rpm_dir, iso_rpm_dir, iso_rpm_dir, iso_rpm_dir, iso_rpm_dir,
+        "find '%s' -type f \\( "
+        "-name 'grub2-efi-image-2*.rpm' -o "
+        "-name 'shim-signed-1*.rpm' -o "
+        // Kernel 6.x 
+        "-name 'linux-6.*.rpm' -o "
+        "-name 'linux-esx-6.*.rpm' -o "
+        "-name 'linux-rt-6.*.rpm' -o "
+        "-name 'linux-aws-6.*.rpm' -o "
+        "-name 'linux-secure-6.*.rpm' -o "
+        // Kernel 5.x 
+        "-name 'linux-5.*.rpm' -o "
+        "-name 'linux-esx-5.*.rpm' -o "
+        "-name 'linux-secure-5.*.rpm' -o "
+        "-name 'linux-rt-5.*.rpm' -o "
+        "-name 'linux-aws-5.*.rpm' -o "
+        // Devel/Docs/Drivers 
+        "-name 'linux*-devel-*.rpm' -o "
+        "-name 'linux*-docs-*.rpm' -o "
+        "-name 'linux*-drivers-*.rpm' -o "
+        "-name 'linux*-tools-*.rpm' -o "
+        "-name 'linux*-python3-perf-*.rpm' -o "
+        "-name 'bpftool-*.rpm' -o "
+        "-name 'linuxptp-*.rpm' -o "
+        "-name 'linux-rt-stalld-ebpf-plugin-*.rpm' "
+        "\\) -delete",
         iso_rpm_dir);
     run_cmd(cmd);
     log_info("Removed conflicting original packages from ISO");
+    */
     
     /* Regenerate repodata to include the new MOK packages
      * Without this, tdnf won't find the MOK packages during installation */
@@ -1646,7 +1783,13 @@ void rpm_free_package_info(rpm_package_info_t *pkg) {
 void rpm_free_discovered_packages(discovered_packages_t *packages) {
     if (!packages) return;
     rpm_free_package_info(packages->grub_efi);
-    rpm_free_package_info(packages->linux_kernel);
+    
+    if (packages->kernel_count > 0) {
+        for (int i = 0; i < packages->kernel_count; i++) {
+            rpm_free_package_info(packages->linux_kernels[i]);
+        }
+    }
+    
     rpm_free_package_info(packages->shim_signed);
     rpm_free_package_info(packages->shim);
     free(packages->release);

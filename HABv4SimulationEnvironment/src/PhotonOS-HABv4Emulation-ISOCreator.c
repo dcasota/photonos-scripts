@@ -3020,6 +3020,13 @@ static int create_secure_boot_iso(void) {
                             iso_extract, iso_extract, iso_extract, iso_extract, iso_extract,
                             iso_extract);
                         run_cmd(cmd);
+
+                        /* Fix: Ensure 'find' command works on ISO RPM directory to clean remaining conflicting kernel modules/files 
+                         * that might have different naming patterns */
+                        snprintf(cmd, sizeof(cmd), 
+                            "find '%s/RPMS/x86_64' -name 'linux-6.12.60-10.ph5-esx*' -delete 2>/dev/null || true",
+                            iso_extract);
+                        run_cmd(cmd);
                         log_info("Removed conflicting original packages from ISO");
                         
                         /* Copy GPG public key to ISO root */
