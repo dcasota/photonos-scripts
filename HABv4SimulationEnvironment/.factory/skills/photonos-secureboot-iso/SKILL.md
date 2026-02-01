@@ -202,9 +202,11 @@ The tool **automatically** builds kernels from Photon OS sources with Secure Boo
 
 | Release | Kernel Source | Config Location |
 |---------|--------------|-----------------|
-| 4.0 | `/root/4.0/stage/SOURCES/linux-*.tar.xz` | `/root/4.0/SPECS/linux/` |
-| 5.0 | `/root/5.0/stage/SOURCES/linux-6.1.*.tar.xz` | `/root/5.0/SPECS/linux/` or `/root/common/SPECS/linux/v6.1/` |
-| 6.0 | `/root/6.0/stage/SOURCES/linux-6.12.*.tar.xz` | `/root/common/SPECS/linux/v6.12/` |
+| 4.0 | `/root/4.0/stage/SOURCES/linux-*.tar.xz` | `/root/4.0/SPECS/linux/` (legacy) |
+| 5.0 | `/root/5.0/stage/SOURCES/linux-6.1.*.tar.xz` | `/root/5.0/SPECS/linux/` (legacy) |
+| 6.0+ | `/root/6.0/stage/SOURCES/linux-*.tar.xz` | `/root/common/SPECS/linux/vX.Y/` (auto-detect highest) |
+
+**Auto-detection (v1.9.28+)**: For release 6.0 and future releases, the tool automatically scans `/root/common/SPECS/linux/` for version directories (v6.1, v6.12, etc.) and selects the highest version. This ensures Photon 6.0 uses kernel 6.12.x instead of 6.1.x.
 
 ### Build Process
 

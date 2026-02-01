@@ -183,9 +183,11 @@ GPG-signed packages for supply chain integrity (NIST SI-7, EU CRA Article 10):
 Full kernel build with Secure Boot configuration is now **standard and automatic**.
 
 Supports the Photon OS kernel source directory structure:
-- Release 4.0: `/root/4.0/SPECS/linux/`
-- Release 5.0: `/root/5.0/SPECS/linux/` + `/root/common/SPECS/linux/v6.1/`
-- Release 6.0: `/root/common/SPECS/linux/v6.12/`
+- Release 4.0: `/root/4.0/SPECS/linux/` (legacy path)
+- Release 5.0: `/root/5.0/SPECS/linux/` (legacy path)
+- Release 6.0+: `/root/common/SPECS/linux/vX.Y/` (auto-detects highest version)
+
+**Auto-detection (v1.9.28+)**: For Photon OS 6.0 and future releases, the tool automatically scans `/root/common/SPECS/linux/` and selects the highest kernel version available (e.g., v6.12 over v6.1).
 
 ---
 
@@ -366,6 +368,12 @@ On first boot, the **blue MokManager screen** appears:
 
 ## Version History
 
+- **v1.9.28** - Auto-detect highest kernel version for Photon 6.0+:
+  - **Common kernel spec path**: For release 6.0 and future releases, the tool now automatically scans `/root/common/SPECS/linux/` and selects the highest kernel version directory (e.g., v6.12 over v6.1)
+  - **Legacy path preserved**: Releases 4.0 and 5.0 continue using their release-specific `/root/{release}/SPECS/linux/` paths
+  - **Future-proof**: New kernel versions (v7.x, etc.) will be auto-detected without code changes
+  - **Before**: Photon 6.0 incorrectly used kernel 6.1.158 from legacy path
+  - **After**: Photon 6.0 correctly uses kernel 6.12.60 from `/root/common/SPECS/linux/v6.12/`
 - **v1.9.27** - Universal ISO for Physical and Virtual Environments:
   - **Universal Support**: ISO now supports both MOK-signed installations (for Physical Secure Boot) and original VMware-signed installations (for Virtual Machines) simultaneously.
   - **Conflict Resolution**: Removed `Epoch` and `Obsoletes` from MOK packages to allow coexistence with original packages.
