@@ -122,6 +122,16 @@ void log_error(const char *fmt, ...) {
     fprintf(stderr, "\n");
 }
 
+void log_debug(const char *fmt, ...) {
+    if (!cfg.verbose) return;
+    va_list args;
+    printf(CYAN "[DEBUG]" RESET " ");
+    va_start(args, fmt);
+    vprintf(fmt, args);
+    va_end(args);
+    printf("\n");
+}
+
 /* ============================================================================
  * Security/Validation Functions
  * ============================================================================ */

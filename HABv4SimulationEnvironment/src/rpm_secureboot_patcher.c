@@ -172,6 +172,7 @@ static int mkdir_p(const char *path) {
     return mkdir(tmp, 0755);
 }
 
+static char* strdup_safe(const char *s) __attribute__((unused));
 static char* strdup_safe(const char *s) {
     return s ? strdup(s) : NULL;
 }

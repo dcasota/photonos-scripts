@@ -36,6 +36,7 @@
 #include <time.h>
 
 #include "rpm_secureboot_patcher.h"
+#include "hab/iso/hab_iso.h"
 
 #define VERSION "1.9.10"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
@@ -3054,21 +3055,16 @@ static int create_secure_boot_iso(void) {
     }
     
     log_info("Building ISO...");
-    snprintf(cmd, sizeof(cmd),
-        "cd '%s' && xorriso -as mkisofs "
-        "-o '%s' "
-        "-isohybrid-mbr /usr/share/syslinux/isohdpfx.bin "
-        "-c isolinux/boot.cat "
-        "-b isolinux/isolinux.bin "
-        "-no-emul-boot -boot-load-size 4 -boot-info-table "
-        "-eltorito-alt-boot "
-        "-e boot/grub2/efiboot.img "
-        "-no-emul-boot -isohybrid-gpt-basdat "
-        "-V 'PHOTON_SB_%s' "
-        ". 2>&1 | tail -5",
-        iso_extract, output_iso, cfg.release);
     
-    run_cmd(cmd);
+    char volume_id[64];
+    snprintf(volume_id, sizeof(volume_id), "PHOTON_SB_%s", cfg.release);
+    
+    if (repack_iso(iso_extract, output_iso, volume_id) != 0) {
+        log_error("Failed to create ISO");
+        snprintf(cmd, sizeof(cmd), "rm -rf '%s'", work_dir);
+        run_cmd(cmd);
+        return -1;
+    }
     
     snprintf(cmd, sizeof(cmd), "rm -rf '%s'", work_dir);
     run_cmd(cmd);
