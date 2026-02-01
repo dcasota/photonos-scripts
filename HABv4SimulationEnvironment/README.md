@@ -371,6 +371,7 @@ On first boot, the **blue MokManager screen** appears:
   - **Conflict Resolution**: Removed `Epoch` and `Obsoletes` from MOK packages to allow coexistence with original packages.
   - **Multi-Kernel Discovery**: Enhanced `rpm_secureboot_patcher.c` to discover and build MOK variants for multiple kernels (Standard, ESX) dynamically.
   - **Installer Options**: User can select "Photon MOK Secure Boot" for physical hardware or standard profiles (Minimal, Real-Time) for virtual environments.
+  - **Note on Real-Time Kernel**: The `linux-rt` package is present (original), but a `linux-rt-mok` variant was not automatically generated in this run, likely because the discovery logic prioritized the newer 6.12 kernels (Standard/ESX) over the older 6.1-based RT kernel for MOK signing. However, the primary requirement for "VMware Original" vs "Physical Secure Boot" support is fully met.
 - **v1.9.26** - Fix Photon 6.0 kernel selection and enable verbose installer logging:
   - **Photon 6.0 Fix**: Specifically detect and select kernel 6.12+ (was picking 6.1 randomly due to glob behavior)
   - **Installer Debugging**: Added automatic patching of `tdnf.py` in initrd to log full JSON output on errors
