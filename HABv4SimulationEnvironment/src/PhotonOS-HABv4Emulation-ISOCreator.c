@@ -2332,6 +2332,7 @@ static int create_secure_boot_iso(void) {
                 "    \"packages\": [\n"
                 "        \"minimal\",\n"
                 "        \"linux-mok\",\n"
+                "        \"linux-esx-mok\",\n"
                 "        \"initramfs\",\n"
                 "        \"grub2-efi-image-mok\",\n"
                 "        \"grub2-theme\",\n"
@@ -2347,7 +2348,9 @@ static int create_secure_boot_iso(void) {
                 "    ]\n"
                 "}\n"
             );
-            /* Note: WiFi packages include:
+            /* Note: Both linux-mok and linux-esx-mok are included to match the original
+             * packages_minimal.json which includes both linux and linux-esx kernels.
+             * WiFi packages include:
              * - wireless-regdb: kernel.org wireless regulatory database
              * - iw: nl80211 wireless configuration utility
              * - wifi-config: configures wpa_supplicant, disables iwlwifi LAR, DHCP for wlan0
