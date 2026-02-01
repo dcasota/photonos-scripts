@@ -256,11 +256,20 @@ static char* find_rpm_providing_file_pattern(const char *rpm_dir, const char *pa
         char grep_pattern[512];
         snprintf(grep_pattern, sizeof(grep_pattern), "^%s/", dir_part);
         
-        /* For vmlinuz-*, we look for /boot/vmlinuz-<version> */
+        /* For vmlinuz-*, we look for /boot/vmlinuz-<version> matching the pattern */
         if (strstr(file_pattern, "vmlinuz") != NULL) {
+            /* Create grep pattern from input glob pattern */
+            char grep_expr[256];
+            strncpy(grep_expr, pattern, sizeof(grep_expr)-1);
+            grep_expr[sizeof(grep_expr)-1] = '\0';
+            
+            /* Remove trailing * if present to make it a prefix match */
+            char *star = strrchr(grep_expr, '*');
+            if (star) *star = '\0';
+            
             snprintf(cmd, sizeof(cmd), 
-                "rpm -qpl '%s' 2>/dev/null | grep -E '^/boot/vmlinuz-[0-9]' | head -1",
-                rpm_path);
+                "rpm -qpl '%s' 2>/dev/null | grep -E '^%s' | head -1",
+                rpm_path, grep_expr);
         } else {
             snprintf(cmd, sizeof(cmd), 
                 "rpm -qpl '%s' 2>/dev/null | grep '%s' | head -1",
@@ -386,8 +395,16 @@ discovered_packages_t* rpm_discover_packages(
     }
     
     /* Find linux kernel by the file it provides */
-    log_debug("Looking for package providing /boot/vmlinuz-*");
-    char *linux_rpm = find_rpm_providing_file_pattern(rpm_dir, "/boot/vmlinuz-*");
+    char kernel_pattern[128] = "/boot/vmlinuz-*";
+    
+    /* For Photon 6.0, we specifically want kernel 6.12+ (which co-exists with 6.1) */
+    if (release && strcmp(release, "6.0") == 0) {
+        log_debug("Photon 6.0 detected: Preferring kernel 6.12+");
+        strcpy(kernel_pattern, "/boot/vmlinuz-6.12*");
+    }
+    
+    log_debug("Looking for package providing %s", kernel_pattern);
+    char *linux_rpm = find_rpm_providing_file_pattern(rpm_dir, kernel_pattern);
     if (linux_rpm) {
         pkgs->linux_kernel = extract_rpm_info(linux_rpm);
         if (pkgs->linux_kernel) {

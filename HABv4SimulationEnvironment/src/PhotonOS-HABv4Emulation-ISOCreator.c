@@ -2514,6 +2514,50 @@ static int create_secure_boot_iso(void) {
             log_info("Updated photon-iso.repo with VMware + HABv4 GPG keys");
         }
     }
+
+    /* Patch tdnf.py in initrd to enable verbose logging for Error(1525) debugging */
+    char tdnf_py[1024] = "";
+    snprintf(cmd, sizeof(cmd), "find '%s' -name tdnf.py | grep photon_installer | head -1", initrd_extract);
+    FILE *fp_find = popen(cmd, "r");
+    if (fp_find) {
+        if (fgets(tdnf_py, sizeof(tdnf_py), fp_find)) {
+            size_t len = strlen(tdnf_py);
+            if (len > 0 && tdnf_py[len-1] == '\n') tdnf_py[len-1] = '\0';
+        }
+        pclose(fp_find);
+    }
+
+    /* Fallback if find failed */
+    if (strlen(tdnf_py) == 0) {
+        snprintf(tdnf_py, sizeof(tdnf_py), "%s/usr/lib/python3.11/site-packages/photon_installer/tdnf.py", initrd_extract);
+        if (!file_exists(tdnf_py)) {
+            snprintf(tdnf_py, sizeof(tdnf_py), "%s/usr/lib/python3.7/site-packages/photon_installer/tdnf.py", initrd_extract);
+            if (!file_exists(tdnf_py)) {
+                log_warn("Could not find tdnf.py to patch - debug logging will not be enabled");
+                tdnf_py[0] = '\0';
+            }
+        }
+    }
+    
+    if (strlen(tdnf_py) > 0) {
+        log_info("Patching %s for verbose error logging...", tdnf_py);
+        
+        char sed_script[512];
+        snprintf(sed_script, sizeof(sed_script), "%s/patch_tdnf.sed", work_dir);
+        FILE *fp_tdnf = fopen(sed_script, "w");
+        if (fp_tdnf) {
+            /* Use substitution instead of append/insert to avoid syntax issues */
+            /* Add logging after ErrorMessage */
+            fprintf(fp_tdnf, "s/self.logger.error(out_json\\['ErrorMessage'\\])/&\\n                self.logger.error(f'Full TDNF output: {json.dumps(out_json)}')/\\n");
+            /* Add logging before print(out_json) - effectively replacement with log+print */
+            fprintf(fp_tdnf, "s/print(out_json)/self.logger.error(f'Full TDNF output: {json.dumps(out_json)}')\\n                &/\\n");
+            fclose(fp_tdnf);
+            
+            snprintf(cmd, sizeof(cmd), "sed -i -f '%s' '%s'", sed_script, tdnf_py);
+            run_cmd(cmd);
+            unlink(sed_script);
+        }
+    }
     
     /* Repack initrd */
     snprintf(cmd, sizeof(cmd), 
