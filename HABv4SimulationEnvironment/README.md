@@ -368,6 +368,29 @@ On first boot, the **blue MokManager screen** appears:
 
 ## Version History
 
+- **v1.9.31** - Fix linux-mok using wrong kernel modules (flavor-aware module selection):
+  - **Root cause**: linux-mok package was using ESX kernel modules (`6.12.60-esx`) instead of standard modules
+  - **Issue**: The custom kernel injection code didn't match module flavor to package flavor
+  - **Build system**: Creates ONE custom kernel with ESX config, producing modules named `6.12.60-esx`
+  - **Bug**: Both linux-mok and linux-esx-mok tried to use the same ESX modules
+  - **Fix**: Added KERNEL_FLAVOR variable to track which flavor is being built
+  - **Module selection logic**:
+    - For linux-esx-mok: Only use modules with '-esx' suffix
+    - For linux-mok: Only use modules WITHOUT flavor suffix  
+    - If no matching modules found, keep original RPM modules instead of failing
+  - **Result**: Each MOK package now uses correct kernel modules for its variant
+  - **Testing**: Verified linux-mok contains standard modules, linux-esx-mok contains ESX modules
+- **v1.9.30** - Fix installer failure: Prevent file conflicts between linux-mok and linux-esx-mok:
+  - **Root cause**: Both linux-mok and linux-esx-mok RPM packages contained the same ESX kernel files
+  - **File conflicts**: `/boot/vmlinuz-*-esx`, `/boot/System.map-*-esx`, etc. in both packages
+  - **Why it happened**:
+    1. rpmbuild reuses BUILD directory across package builds without cleaning
+    2. Files from previous kernel builds contaminated subsequent builds
+    3. `%install` section used wildcards (`vmlinuz-*`) that captured all files
+  - **Fix 1**: Clean BUILD directory before each kernel build in `build_single_rpm()`
+  - **Fix 2**: Modified `%install` to use specific file patterns instead of wildcards
+  - **Verification**: linux-mok now contains only standard kernel files, linux-esx-mok only ESX files
+  - **Impact**: Eliminated Error(1525) rpm transaction failed during installation
 - **v1.9.29** - Fix installer failure: Include both linux-mok and linux-esx-mok:
   - **Installer fix**: Added `linux-esx-mok` to `packages_mok.json` to match original package selection pattern
   - **Root cause**: Original `packages_minimal.json` includes both `linux` and `linux-esx` kernels, but MOK version only included `linux-mok`

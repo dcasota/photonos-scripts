@@ -20,3 +20,24 @@
 - Always reference and update the session summary before acting.
 
 **Rule**: If a task touches >2 files or any patch/ISO logic, start in Spec Mode.
+
+## Common Debugging Patterns
+
+### Installer Failures (Error 1525)
+When encountering "rpm transaction failed" errors:
+1. Check for file conflicts between MOK packages: `comm -12 <(rpm -qlp linux-mok*.rpm | sort) <(rpm -qlp linux-esx-mok*.rpm | sort)`
+2. Inspect package contents: `rpm -qlp <package.rpm> | grep /boot/`
+3. Look for BUILD directory contamination: Multiple builds accumulating files
+4. Check module directory naming: ESX modules should have `-esx` suffix
+5. Verify flavor matching: Each kernel variant needs matching modules
+
+### rpmbuild Issues
+- rpmbuild reuses BUILD/ directory - clean it between related builds
+- Wildcards in %install can capture unintended files from previous builds
+- Use specific file patterns instead of wildcards for kernel files
+- Custom kernel injection needs flavor awareness for module selection
+
+### ISO Verification
+- Mount ISO and check repodata: `mount -o loop iso /mnt && ls /mnt/RPMS/x86_64/`
+- Compare with original: Check if both kernel variants are present
+- Verify no file overlap between variants: Use rpm -qlp and comm

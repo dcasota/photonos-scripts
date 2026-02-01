@@ -121,12 +121,26 @@ Even with Epoch and Obsoletes, RPM/tdnf fails with file conflicts when both orig
 - `grub2-efi-image` and `grub2-efi-image-mok` both install `/boot/efi/EFI/BOOT/grubx64.efi`
 - `shim-signed` and `shim-signed-mok` both install `/boot/efi/EFI/BOOT/bootx64.efi`
 
+**Root Cause (v1.9.29-v1.9.30 fix)**:
+File conflicts between linux-mok and linux-esx-mok packages:
+- Both packages contained the same ESX kernel files (`/boot/vmlinuz-*-esx`, `/boot/System.map-*-esx`)
+- rpmbuild reuses BUILD/ directory across builds, files accumulated from previous builds
+- `%install` section used wildcards that captured ALL files, not just the specific kernel variant
+
+**Root Cause (v1.9.31 fix)**:
+Module mismatch - linux-mok using wrong kernel modules:
+- linux-mok package contained ESX modules (`6.12.60-esx`) instead of standard modules
+- Custom kernel injection code didn't match module flavor to package flavor
+- Both linux-mok and linux-esx-mok tried to use the same ESX modules from custom build
+
 **Solutions**:
-1. Rebuild ISO with latest PhotonOS-HABv4Emulation-ISOCreator (v1.9.19+ removes originals)
+1. Rebuild ISO with latest PhotonOS-HABv4Emulation-ISOCreator (v1.9.31+)
 2. Specific fixes applied:
-   - Remove original packages from ISO: `grub2-efi-image-2*.rpm`, `shim-signed-1*.rpm`, `linux-6.*.rpm`, `linux-esx-6.*.rpm`
-   - Only MOK packages remain in repository
-   - Repodata regenerated after removing originals and adding MOK packages
+   - **v1.9.19+**: Remove original packages from ISO: `grub2-efi-image-2*.rpm`, `shim-signed-1*.rpm`, `linux-6.*.rpm`, `linux-esx-6.*.rpm`
+   - **v1.9.30+**: Clean BUILD directory before each kernel build to prevent file contamination
+   - **v1.9.30+**: Use specific file patterns instead of wildcards in `%install` section
+   - **v1.9.31+**: Flavor-aware module selection - each MOK package uses correct modules for its variant
+   - Repodata regenerated after all package operations
 
 **Debugging (v1.9.26+)**:
 The installer is now automatically patched during ISO creation to log detailed error information in `/var/log/installer.log` when Error 1525 occurs. 
