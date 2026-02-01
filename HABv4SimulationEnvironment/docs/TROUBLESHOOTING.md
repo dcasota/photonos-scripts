@@ -713,6 +713,98 @@ This prevents RPM from stripping module signatures during package build.
 2. They're usually compatible, prefer xorriso
 3. Install xorriso: `tdnf install xorriso`
 
+### Dracut "will not be installed" Warnings During Initrd Generation
+
+**Symptom**: During kernel build, dracut outputs many warning messages like:
+```
+dracut: dracut module 'btrfs' will not be installed, because command 'btrfs' could not be found!
+dracut: dracut module 'crypt' will not be installed, because command 'cryptsetup' could not be found!
+```
+
+**Cause**: These are **informational warnings**, not errors. Dracut is reporting that optional modules are being skipped because their required tools are not installed on the build host. This is normal behavior for `--no-hostonly` builds.
+
+**Result**: The initrd is created successfully. The final message confirms this:
+```
+dracut: *** Creating initramfs image file '...' done ***
+```
+
+#### Impact Analysis of Missing Dracut Modules
+
+| Tool/Command | Dracut Module | Impact | Severity | Description |
+|-------------|---------------|--------|----------|-------------|
+| `mksh` | mksh | None | 🟢 None | MirBSD Korn Shell - alternative shell. Bash is included and sufficient. |
+| `busybox` | busybox | None | 🟢 None | Compact Unix utilities. Full coreutils available via systemd/bash modules. |
+| `systemd-integritysetup` | systemd-integritysetup | No dm-integrity | 🟡 Low | Cannot use dm-integrity for block device integrity checking. Not needed for standard boot. |
+| `systemd-pcrphase` | systemd-pcrphase | No TPM PCR extension | 🟡 Low | Cannot extend TPM PCRs during boot phases. Only needed for measured boot with TPM. |
+| `systemd-veritysetup` | systemd-veritysetup | No dm-verity | 🟡 Low | Cannot use dm-verity for read-only filesystem verification. Used by immutable/A-B systems. |
+| `dbus-broker` | dbus-broker | None | 🟢 None | Alternative D-Bus implementation. Standard dbus-daemon used if needed. |
+| `rngd` | rngd | Slower entropy | 🟢 None | Hardware RNG daemon. Kernel has built-in entropy sources. |
+| `connmand` | connman | No ConnMan networking | 🟢 None | ConnMan network manager. systemd-networkd or NetworkManager used instead. |
+| `wicked` | network-wicked | No Wicked networking | 🟢 None | SUSE Wicked network manager. Not used on Photon OS. |
+| `bluetoothd` | bluetooth | No Bluetooth in initrd | 🟢 None | Bluetooth not needed during early boot. |
+| `btrfs` | btrfs | No Btrfs root | 🟠 Medium | **Cannot boot from Btrfs filesystem.** Only affects Btrfs users. |
+| `cryptsetup` | crypt | No LUKS encryption | 🟠 Medium | **Cannot boot from encrypted root.** Only affects encrypted disk users. |
+| `dmraid` | dmraid | No fake RAID | 🟡 Low | Cannot use BIOS/firmware RAID (Intel RST, etc.). Hardware RAID unaffected. |
+| `ntfs-3g` | dmsquash-live-ntfs | No NTFS live boot | 🟢 None | Cannot boot live image from NTFS. Not a supported use case. |
+| `mdadm` | mdraid | No software RAID | 🟠 Medium | **Cannot boot from Linux software RAID (md).** Only affects md-raid users. |
+| `multipath` | multipath | No multipath I/O | 🟡 Low | Cannot use multipath storage. Only affects SAN/enterprise storage. |
+| `pcscd` | pcsc | No smart cards | 🟢 None | PC/SC smart card daemon. Not needed for boot. |
+| `tpm2` | tpm2-tss | No TPM2 unsealing | 🟡 Low | Cannot unseal secrets from TPM2. Only affects TPM-based disk encryption. |
+| `mount.cifs` | cifs | No CIFS/SMB root | 🟡 Low | Cannot boot from Windows/Samba share. Rare use case. |
+| `dcbtool`, `fipvlan`, `lldpad`, `fcoemon`, `fcoeadm` | fcoe, fcoe-uefi | No FCoE boot | 🟡 Low | Cannot boot from Fibre Channel over Ethernet. Enterprise SAN only. |
+| `iscsi-iname`, `iscsiadm`, `iscsid` | iscsi | No iSCSI boot | 🟡 Low | Cannot boot from iSCSI targets. Enterprise SAN only. |
+| `rpcbind`/`portmap` | nfs | No NFS root | 🟡 Low | Cannot boot from NFS root filesystem. Diskless workstation use case. |
+| `nvme` | nvmf | No NVMe-oF boot | 🟡 Low | Cannot boot from NVMe over Fabrics. Cutting-edge enterprise only. |
+
+#### Summary by Severity
+
+| Severity | Count | Action Required |
+|----------|-------|-----------------|
+| 🟢 **None** | 10 | No action needed - alternatives exist or not needed |
+| 🟡 **Low** | 10 | No action for typical use - affects niche enterprise/network boot scenarios |
+| 🟠 **Medium** | 3 | **May require action** if using Btrfs, LUKS encryption, or software RAID |
+
+#### Supported vs Unsupported Boot Configurations
+
+For **physical hardware boot with standard disk configurations** (ext4/xfs on single disk or hardware RAID):
+
+| Capability | Status |
+|------------|--------|
+| Boot from USB | ✅ Supported |
+| Boot from SATA/NVMe SSD | ✅ Supported |
+| Boot from ext4/xfs root | ✅ Supported |
+| Boot from LVM | ✅ Supported |
+| Boot from Btrfs | ❌ Not supported |
+| Boot from encrypted LUKS | ❌ Not supported |
+| Boot from software RAID | ❌ Not supported |
+| Network boot (iSCSI/NFS/FCoE) | ❌ Not supported |
+
+#### Enabling Additional Boot Configurations
+
+If you need **Btrfs, LUKS encryption, or software RAID** support, install these packages on the build host before building the ISO:
+
+```bash
+# For Btrfs root filesystem support
+tdnf install btrfs-progs
+
+# For LUKS encrypted root support
+tdnf install cryptsetup
+
+# For Linux software RAID (md) support
+tdnf install mdadm
+```
+
+After installing, rebuild the ISO. Dracut will automatically include these modules.
+
+#### The "Could not fsfreeze" Warning
+
+At the end of dracut output, you may see:
+```
+dracut: Could not fsfreeze /tmp/rpm_mok_build/rpmbuild/BUILD/boot
+```
+
+This is a **harmless warning**. The `fsfreeze` operation is used to freeze the filesystem during image creation for consistency. It fails because the build directory is a temporary location that may not support freeze operations. The initrd image was already successfully created before this message appears.
+
 ---
 
 ## USB Boot Issues
