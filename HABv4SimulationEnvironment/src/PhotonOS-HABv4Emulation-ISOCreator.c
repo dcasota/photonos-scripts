@@ -2492,7 +2492,7 @@ static int create_secure_boot_iso(void) {
         
         /* Install our HABv4 GPG key */
         char habv4_key_src[512], habv4_key_dest[512];
-        snprintf(habv4_key_src, sizeof(habv4_key_src), "%s/%s", iso_extract, GPG_KEY_FILE);
+        snprintf(habv4_key_src, sizeof(habv4_key_src), "%s/%s", cfg.keys_dir, GPG_KEY_FILE);
         snprintf(habv4_key_dest, sizeof(habv4_key_dest), "%s/RPM-GPG-KEY-habv4", gpg_key_dest_dir);
         
         if (file_exists(habv4_key_src)) {

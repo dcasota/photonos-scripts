@@ -41,23 +41,18 @@ int repack_iso(const char *iso_extract_dir, const char *output_iso_path, const c
     
     /* 
      * Use mkisofs/genisoimage/xorrisofs to build the ISO
-     * Flags explanation:
-     * -o : output file
-     * -b : boot image (isolinux.bin)
-     * -c : boot catalog (boot.cat)
-     * -no-emul-boot : "El Torito" no emulation mode
-     * -boot-load-size 4 : load 4 sectors
-     * -boot-info-table : patch boot info table
-     * -eltorito-alt-boot : start second boot entry parameters (for EFI)
-     * -e : EFI boot image
-     * -no-emul-boot : no emulation for EFI
-     * -isohybrid-gpt-basdat : hybrid MBR/GPT
-     * -R : Rock Ridge extensions
-     * -J : Joliet extensions
-     * -V : Volume ID
      */
+    const char *tool = "mkisofs";
+    if (system("which mkisofs >/dev/null 2>&1") != 0) {
+        if (system("which xorrisofs >/dev/null 2>&1") == 0) {
+            tool = "xorrisofs";
+        } else if (system("which genisoimage >/dev/null 2>&1") == 0) {
+            tool = "genisoimage";
+        }
+    }
+
     snprintf(cmd, sizeof(cmd),
-        "mkisofs -R -J -v -V '%s' "
+        "%s -R -J -v -V '%s' "
         "-o '%s' "
         "-b isolinux/isolinux.bin "
         "-c isolinux/boot.cat "
@@ -66,16 +61,7 @@ int repack_iso(const char *iso_extract_dir, const char *output_iso_path, const c
         "-e boot/grub2/efiboot.img "
         "-no-emul-boot -isohybrid-gpt-basdat "
         "'%s' 2>&1",
-        volume_id, output_iso_path, iso_extract_dir);
-        
-    /* If mkisofs is not found, try genisoimage or xorrisofs */
-    if (system("which mkisofs >/dev/null 2>&1") != 0) {
-        if (system("which xorrisofs >/dev/null 2>&1") == 0) {
-            cmd[0] = 'x'; cmd[1] = 'o'; cmd[2] = 'r'; cmd[3] = 'r'; cmd[4] = 'i'; cmd[5] = 's'; cmd[6] = 'o'; cmd[7] = 'f'; cmd[8] = 's';
-        } else if (system("which genisoimage >/dev/null 2>&1") == 0) {
-             cmd[0] = 'g'; cmd[1] = 'e'; cmd[2] = 'n'; cmd[3] = 'i'; cmd[4] = 's'; cmd[5] = 'o'; cmd[6] = 'i'; cmd[7] = 'm'; cmd[8] = 'a'; cmd[9] = 'g'; cmd[10] = 'e';
-        }
-    }
+        tool, volume_id, output_iso_path, iso_extract_dir);
 
     log_debug("ISO build command: %s", cmd);
     
