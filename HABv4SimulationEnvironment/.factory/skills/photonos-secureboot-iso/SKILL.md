@@ -376,7 +376,7 @@ sync
 | "search.c: no such device" | GRUB searching for ISO path | Rebuild ISO (v1.7.0+ fixes embedded config) |
 | Installation takes 2000+ seconds | USB autosuspend | Rebuild ISO (v1.7.0+ adds kernel param) |
 | "grub.efi Not Found" | SUSE shim looks for grub.efi | Rebuild ISO (v1.7.0+ installs both names) |
-| "rpm transaction failed" (Error 1525) | MOK conflicts with minimal deps | Rebuild ISO (v1.9.18+ uses Epoch) |
+| "rpm transaction failed" (Error 1525) | MOK conflicts or scriptlet failure | Rebuild ISO (v1.9.18+) / Check /var/log/installer.log (v1.9.26+) |
 | Black screen after "Secure Boot is enabled" | Missing USB drivers in initrd | Rebuild ISO (v1.8.0+ includes USB drivers) |
 | "Loading of unsigned module is rejected" | Module signatures stripped by RPM | Rebuild ISO (v1.9.4+ preserves signatures) |
 | Installer GPG verification fails | HABv4 key not in initrd | Rebuild ISO (v1.9.14+ installs multi-key) |

@@ -128,6 +128,10 @@ Even with Epoch and Obsoletes, RPM/tdnf fails with file conflicts when both orig
    - Only MOK packages remain in repository
    - Repodata regenerated after removing originals and adding MOK packages
 
+**Debugging (v1.9.26+)**:
+The installer is now automatically patched during ISO creation to log detailed error information in `/var/log/installer.log` when Error 1525 occurs. 
+Look for log entries starting with `Full TDNF output:` to see the exact conflict or dependency failure returned by the package manager.
+
 ### "start_image() returned Not Found"
 
 **Cause**: Shim couldn't find or load GRUB.

@@ -366,6 +366,11 @@ On first boot, the **blue MokManager screen** appears:
 
 ## Version History
 
+- **v1.9.26** - Fix Photon 6.0 kernel selection and enable verbose installer logging:
+  - **Photon 6.0 Fix**: Specifically detect and select kernel 6.12+ (was picking 6.1 randomly due to glob behavior)
+  - **Installer Debugging**: Added automatic patching of `tdnf.py` in initrd to log full JSON output on errors
+  - **Why needed**: `Error(1525) : rpm transaction failed` gives no details; verbose logging reveals the actual conflict/dependency error in `/var/log/installer.log`
+  - **Implementation**: Patches `tdnf.py` using `sed` during ISO creation to intercept and log error responses
 - **v1.9.25** - Fix unexpanded RPM macro in linux-mok %postun script:
   - **Bug**: `%{kernel_file#vmlinuz-}` was not expanded during RPM build
   - **Impact**: Scriptlet tried to access files with literal `%{kernel_file#vmlinuz-}` in path
