@@ -368,6 +368,12 @@ On first boot, the **blue MokManager screen** appears:
 
 ## Version History
 
+- **v1.9.29** - Fix installer failure: Include both linux-mok and linux-esx-mok:
+  - **Installer fix**: Added `linux-esx-mok` to `packages_mok.json` to match original package selection pattern
+  - **Root cause**: Original `packages_minimal.json` includes both `linux` and `linux-esx` kernels, but MOK version only included `linux-mok`
+  - **Symptom**: Installer failed with generic "Installer failed" exception during package installation phase
+  - **Analysis**: Tool built both kernel MOK variants but only listed one in installation manifest
+  - **Result**: Installer now has both kernel packages available, matching the original ISO structure
 - **v1.9.28** - Auto-detect highest kernel version for Photon 6.0+:
   - **Common kernel spec path**: For release 6.0 and future releases, the tool now automatically scans `/root/common/SPECS/linux/` and selects the highest kernel version directory (e.g., v6.12 over v6.1)
   - **Legacy path preserved**: Releases 4.0 and 5.0 continue using their release-specific `/root/{release}/SPECS/linux/` paths

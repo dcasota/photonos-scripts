@@ -2,12 +2,19 @@
 
 ## Session Summary (Updated Live)
 - Current goal: Maintain and improve Photon OS Secure Boot ISO creation tool
-- Last update: v1.9.28 - Auto-detect highest kernel version for Photon 6.0+
+- Last update: v1.9.29 - Fix installer failure by including both kernel MOK variants
 - Key decisions made:
+  - Include both `linux-mok` and `linux-esx-mok` in packages_mok.json (matches original pattern)
   - Use `/root/common/SPECS/linux/vX.Y/` for release 6.0+ (auto-detect highest)
   - Preserve legacy `/root/{release}/SPECS/linux/` for 4.0/5.0
 
-## Recent Changes (v1.9.28)
+## Recent Changes (v1.9.29)
+- Fixed installer failure: Added linux-esx-mok to packages_mok.json
+- Root cause: Original packages_minimal.json has both linux and linux-esx
+- Analysis: ISO comparison revealed missing linux-esx-mok from install manifest
+- Result: Installer now matches original two-kernel pattern
+
+## Previous Changes (v1.9.28)
 - Implemented `find_common_kernel_spec()` to scan version directories
 - Refactored `parse_spec_version()` for reuse
 - Updated `get_kernel_version_from_spec()` with release-based logic

@@ -975,6 +975,44 @@ dmesg | grep -iE "module|signature|lockdown"
 
 ## Driver Integration Issues (v1.9.5-v1.9.12)
 
+### Installer fails with generic "Installer failed" exception (v1.9.29 Fix)
+
+**Symptom**: Installation reaches package installation phase but fails with:
+```
+Exception: Installer failed
+  File ".../photon_installer/installer.py", line 1536, in _install_packages
+    self._exit_gracefully()
+```
+
+**Root Cause**: `packages_mok.json` only included `linux-mok` but original `packages_minimal.json` includes **both** `linux` and `linux-esx` kernels. The installer dependency resolution expected both kernel packages.
+
+**Analysis** (v1.9.29):
+- Original ISO structure:
+  - `packages_minimal.json`: `["minimal", "linux", "linux-esx", "initramfs", ...]`
+  - Contains: `linux-6.1.158` + `linux-esx-6.12.60`
+- Secure boot ISO (before fix):
+  - Built both: `linux-mok-6.12.60` + `linux-esx-mok-6.12.60` 
+  - But `packages_mok.json` only listed: `["minimal", "linux-mok", "initramfs", ...]`
+  - Missing: `linux-esx-mok`
+- Result: Installer failed during package installation with generic exception
+
+**Solution** (v1.9.29): Added `linux-esx-mok` to `packages_mok.json` template to match original two-kernel pattern.
+
+**How to Verify Fix**:
+```bash
+# Mount the secure boot ISO
+mount -o loop photon-*-secureboot.iso /mnt
+
+# Extract packages_mok.json from initrd
+mkdir /tmp/check
+cd /tmp/check
+zcat /mnt/isolinux/initrd.img | cpio -idmv '*packages_mok.json'
+
+# Should contain both kernels
+cat installer/packages_mok.json
+# Expected: "linux-mok" AND "linux-esx-mok"
+```
+
 ### Installer fails with "No matching packages not found" (v1.9.11 Fix, v1.9.12 Permanent Fix)
 
 **Cause**: packages_mok.json referenced packages not available in Photon OS 5.0 repositories.
