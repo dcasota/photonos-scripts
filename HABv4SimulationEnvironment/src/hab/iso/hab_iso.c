@@ -59,7 +59,7 @@ int repack_iso(const char *iso_extract_dir, const char *output_iso_path, const c
         "-no-emul-boot -boot-load-size 4 -boot-info-table "
         "-eltorito-alt-boot "
         "-e boot/grub2/efiboot.img "
-        "-no-emul-boot -isohybrid-gpt-basdat "
+        "-no-emul-boot "
         "'%s' 2>&1",
         tool, volume_id, output_iso_path, iso_extract_dir);
 
