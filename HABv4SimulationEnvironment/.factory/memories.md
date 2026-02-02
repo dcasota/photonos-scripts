@@ -2,7 +2,7 @@
 
 ## Session Summary (Updated Live)
 - Current goal: Maintain and improve Photon OS Secure Boot ISO creation tool
-- Last update: v1.9.31 - Fix linux-mok using wrong kernel modules (flavor-aware selection)
+- Last update: v1.9.32 - Fix installer failure by adding linux-mok to all_linux_flavors
 - Key decisions made:
   - Include both `linux-mok` and `linux-esx-mok` in packages_mok.json (matches original pattern)
   - Use `/root/common/SPECS/linux/vX.Y/` for release 6.0+ (auto-detect highest)
@@ -10,7 +10,13 @@
   - Clean BUILD/ directory before each kernel build to prevent file contamination
   - Match custom kernel modules to package flavor (esx, rt, standard)
 
-## Recent Changes (v1.9.31)
+## Recent Changes (v1.9.32)
+- Fixed installer failure: linux-mok and linux-esx-mok not in installer.py all_linux_flavors
+- Root cause: _adjust_packages_based_on_selected_flavor() couldn't filter MOK packages correctly
+- Implementation: Patch installer.py and linuxselector.py during initrd modification
+- Also improved tdnf.py verbose logging using pure C string manipulation
+
+## Previous Changes (v1.9.31)
 - Fixed module mismatch: linux-mok was using ESX modules instead of standard modules
 - Root cause: Custom kernel injection didn't match module flavor to package flavor
 - Implementation: Added KERNEL_FLAVOR variable and flavor-aware module selection logic

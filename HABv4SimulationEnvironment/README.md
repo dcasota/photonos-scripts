@@ -368,6 +368,13 @@ On first boot, the **blue MokManager screen** appears:
 
 ## Version History
 
+- **v1.9.32** - Fix installer failure: Add linux-mok to all_linux_flavors:
+  - **Root cause**: The installer's `_adjust_packages_based_on_selected_flavor()` uses `all_linux_flavors` list
+  - **Issue**: `linux-mok` and `linux-esx-mok` were not in this list, breaking package filtering
+  - **Fix 1**: Patch `installer.py` to include MOK flavors in `all_linux_flavors`
+  - **Fix 2**: Patch `linuxselector.py` to show both `linux-mok` and `linux-esx-mok` options
+  - **Fix 3**: Improved tdnf.py verbose error logging using pure C string manipulation
+  - **Result**: Kernel selection and filtering now work correctly for MOK variants
 - **v1.9.31** - Fix linux-mok using wrong kernel modules (flavor-aware module selection):
   - **Root cause**: linux-mok package was using ESX kernel modules (`6.12.60-esx`) instead of standard modules
   - **Issue**: The custom kernel injection code didn't match module flavor to package flavor
