@@ -2262,11 +2262,62 @@ static int create_secure_boot_iso(void) {
         }
         
         log_info("Patched installer.py with progress_bar fix");
+        
+        /* Also patch all_linux_flavors to include MOK variants
+         * Without this, _adjust_packages_based_on_selected_flavor() won't correctly
+         * filter linux-mok and linux-esx-mok packages */
+        log_info("Patching installer.py all_linux_flavors for MOK support...");
+        
+        /* Read installer.py and patch all_linux_flavors */
+        FILE *fp_inst = fopen(installer_py, "r");
+        if (fp_inst) {
+            fseek(fp_inst, 0, SEEK_END);
+            long fsize = ftell(fp_inst);
+            fseek(fp_inst, 0, SEEK_SET);
+            
+            char *content = malloc(fsize + 1024);
+            if (content) {
+                size_t read_size = fread(content, 1, fsize, fp_inst);
+                content[read_size] = '\0';
+                fclose(fp_inst);
+                
+                /* Find and patch all_linux_flavors */
+                char *patch_point = strstr(content, "all_linux_flavors = [\"linux\"");
+                if (patch_point) {
+                    /* Build new content with MOK flavors */
+                    char *new_content = malloc(fsize + 1024);
+                    if (new_content) {
+                        size_t prefix_len = patch_point - content;
+                        memcpy(new_content, content, prefix_len);
+                        new_content[prefix_len] = '\0';
+                        
+                        /* Insert MOK flavors at the beginning of the list */
+                        strcat(new_content, "all_linux_flavors = [\"linux-mok\", \"linux-esx-mok\", \"linux\"");
+                        
+                        /* Find end of original "linux" and skip it */
+                        char *after = patch_point + strlen("all_linux_flavors = [\"linux\"");
+                        strcat(new_content, after);
+                        
+                        /* Write back */
+                        FILE *fp_write = fopen(installer_py, "w");
+                        if (fp_write) {
+                            fputs(new_content, fp_write);
+                            fclose(fp_write);
+                            log_info("Added linux-mok and linux-esx-mok to all_linux_flavors");
+                        }
+                        free(new_content);
+                    }
+                }
+                free(content);
+            } else {
+                fclose(fp_inst);
+            }
+        }
     } else {
         log_warn("installer.py not found at expected path");
     }
     
-    /* Patch linuxselector.py to recognize linux-mok kernel flavor
+    /* Patch linuxselector.py to recognize linux-mok and linux-esx-mok kernel flavors
      * The LinuxSelector class has a hardcoded dict of known kernel flavors.
      * Without this patch, selecting packages with linux-mok causes ZeroDivisionError
      * because no menu items are created (linux-mok not in the dict). */
@@ -2275,39 +2326,51 @@ static int create_secure_boot_iso(void) {
         "%s/usr/lib/python3.11/site-packages/photon_installer/linuxselector.py", initrd_extract);
     
     if (file_exists(linuxselector_py)) {
-        log_info("Patching linuxselector.py to recognize linux-mok...");
+        log_info("Patching linuxselector.py to recognize linux-mok and linux-esx-mok...");
         
-        char patch_linux_script[512];
-        snprintf(patch_linux_script, sizeof(patch_linux_script), "%s/patch_linuxselector.py", work_dir);
-        
-        FILE *pf = fopen(patch_linux_script, "w");
-        if (pf) {
-            fprintf(pf,
-                "#!/usr/bin/env python3\n"
-                "import sys\n"
-                "\n"
-                "with open(sys.argv[1], 'r') as f:\n"
-                "    content = f.read()\n"
-                "\n"
-                "# Add linux-mok to the linux_flavors dictionary\n"
-                "old = 'linux_flavors = {\"linux\":\"Generic\"'\n"
-                "new = 'linux_flavors = {\"linux-mok\":\"MOK Secure Boot\", \"linux\":\"Generic\"'\n"
-                "content = content.replace(old, new, 1)\n"
-                "\n"
-                "with open(sys.argv[1], 'w') as f:\n"
-                "    f.write(content)\n"
-                "\n"
-                "print('linuxselector.py patched for linux-mok')\n"
-            );
-            fclose(pf);
+        /* Read file, patch in memory, write back - pure C approach */
+        FILE *fp_ls = fopen(linuxselector_py, "r");
+        if (fp_ls) {
+            fseek(fp_ls, 0, SEEK_END);
+            long fsize = ftell(fp_ls);
+            fseek(fp_ls, 0, SEEK_SET);
             
-            snprintf(cmd, sizeof(cmd), "python3 '%s' '%s' 2>&1", patch_linux_script, linuxselector_py);
-            run_cmd(cmd);
-            
-            snprintf(cmd, sizeof(cmd), "rm -f '%s'", patch_linux_script);
-            run_cmd(cmd);
+            char *content = malloc(fsize + 1024);
+            if (content) {
+                size_t read_size = fread(content, 1, fsize, fp_ls);
+                content[read_size] = '\0';
+                fclose(fp_ls);
+                
+                /* Find and patch linux_flavors dict */
+                char *patch_point = strstr(content, "linux_flavors = {\"linux\":\"Generic\"");
+                if (patch_point) {
+                    char *new_content = malloc(fsize + 1024);
+                    if (new_content) {
+                        size_t prefix_len = patch_point - content;
+                        memcpy(new_content, content, prefix_len);
+                        new_content[prefix_len] = '\0';
+                        
+                        /* Insert MOK flavors at beginning of dict */
+                        strcat(new_content, "linux_flavors = {\"linux-mok\":\"MOK Secure Boot\", \"linux-esx-mok\":\"ESX MOK Secure Boot\", \"linux\":\"Generic\"");
+                        
+                        /* Skip the old part */
+                        char *after = patch_point + strlen("linux_flavors = {\"linux\":\"Generic\"");
+                        strcat(new_content, after);
+                        
+                        FILE *fp_write = fopen(linuxselector_py, "w");
+                        if (fp_write) {
+                            fputs(new_content, fp_write);
+                            fclose(fp_write);
+                            log_info("Added linux-mok and linux-esx-mok to linuxselector.py");
+                        }
+                        free(new_content);
+                    }
+                }
+                free(content);
+            } else {
+                fclose(fp_ls);
+            }
         }
-        log_info("Patched linuxselector.py with linux-mok support");
     } else {
         log_warn("linuxselector.py not found at expected path");
     }
@@ -2624,20 +2687,53 @@ static int create_secure_boot_iso(void) {
     if (strlen(tdnf_py) > 0) {
         log_info("Patching %s for verbose error logging...", tdnf_py);
         
-        char sed_script[512];
-        snprintf(sed_script, sizeof(sed_script), "%s/patch_tdnf.sed", work_dir);
-        FILE *fp_tdnf = fopen(sed_script, "w");
-        if (fp_tdnf) {
-            /* Use substitution instead of append/insert to avoid syntax issues */
-            /* Add logging after ErrorMessage */
-            fprintf(fp_tdnf, "s/self.logger.error(out_json\\['ErrorMessage'\\])/&\\n                self.logger.error(f'Full TDNF output: {json.dumps(out_json)}')/\\n");
-            /* Add logging before print(out_json) - effectively replacement with log+print */
-            fprintf(fp_tdnf, "s/print(out_json)/self.logger.error(f'Full TDNF output: {json.dumps(out_json)}')\\n                &/\\n");
-            fclose(fp_tdnf);
+        /* Read the file, modify in memory, write back - pure C approach */
+        FILE *fp_read = fopen(tdnf_py, "r");
+        if (fp_read) {
+            /* Get file size */
+            fseek(fp_read, 0, SEEK_END);
+            long fsize = ftell(fp_read);
+            fseek(fp_read, 0, SEEK_SET);
             
-            snprintf(cmd, sizeof(cmd), "sed -i -f '%s' '%s'", sed_script, tdnf_py);
-            run_cmd(cmd);
-            unlink(sed_script);
+            char *content = malloc(fsize + 4096); /* Extra space for additions */
+            if (content) {
+                size_t read_size = fread(content, 1, fsize, fp_read);
+                content[read_size] = '\0';
+                fclose(fp_read);
+                
+                /* Find and patch: after "self.logger.error(out_json['ErrorMessage'])" 
+                 * add logging of full JSON output */
+                char *patch_point = strstr(content, "self.logger.error(out_json['ErrorMessage'])");
+                if (patch_point) {
+                    /* Find end of line */
+                    char *eol = strchr(patch_point, '\n');
+                    if (eol) {
+                        /* Build new content with insertion */
+                        char *new_content = malloc(fsize + 4096);
+                        if (new_content) {
+                            size_t prefix_len = eol - content + 1;
+                            memcpy(new_content, content, prefix_len);
+                            
+                            /* Insert debug logging line */
+                            const char *debug_line = "                self.logger.error(f'Full TDNF JSON: {out_json}')\n";
+                            strcpy(new_content + prefix_len, debug_line);
+                            strcat(new_content, eol + 1);
+                            
+                            /* Write back */
+                            FILE *fp_write = fopen(tdnf_py, "w");
+                            if (fp_write) {
+                                fputs(new_content, fp_write);
+                                fclose(fp_write);
+                                log_info("Added verbose TDNF error logging");
+                            }
+                            free(new_content);
+                        }
+                    }
+                }
+                free(content);
+            } else {
+                fclose(fp_read);
+            }
         }
     }
     
