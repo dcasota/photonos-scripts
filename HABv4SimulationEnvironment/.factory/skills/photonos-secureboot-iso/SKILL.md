@@ -144,22 +144,29 @@ The ISO uses a **fully interactive installer** with MOK packages added to the pa
 1. **Single GRUB menu entry**: "Install" launches the interactive installer
 2. **No kickstart files**: Full interactive experience (EULA, disk, hostname, password)
 3. **Modified `build_install_options_all.json`**: Adds "Photon MOK Secure Boot" as first option
-4. **New `packages_mok.json`**: Contains MOK-signed packages
+4. **New `packages_mok.json`**: Contains MOK-signed packages (dynamically generated)
 
 ### Initrd Modifications
 
 The tool modifies the initrd to:
 
-1. **Create `packages_mok.json`** in `/installer/`:
+1. **Create `packages_mok.json`** in `/installer/` (dynamically generated in v1.9.18+):
 ```json
 {
     "packages": [
-        "minimal", "linux-mok", "initramfs",
-        "grub2-efi-image-mok", "shim-signed-mok",
-        "lvm2", "less", "sudo"
+        "bash-completion", "bc", "bridge-utils", "...",
+        "grub2-efi-image-mok",  // Replaces grub2-efi-image
+        "linux-mok",            // Replaces linux/linux-esx
+        "shim-signed-mok",      // Replaces shim-signed
+        "initramfs", "lvm2", "less", "sudo", "..."
     ]
 }
 ```
+
+**Note**: Since v1.9.18, `packages_mok.json` is dynamically generated:
+- The `minimal` meta-package is **expanded** to its direct dependencies
+- `grub2-efi-image` is replaced with `grub2-efi-image-mok`
+- This prevents tdnf from selecting both original and MOK packages (which causes Error 1525)
 
 2. **Modify `build_install_options_all.json`** to add MOK option first:
 ```json

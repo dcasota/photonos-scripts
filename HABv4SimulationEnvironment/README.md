@@ -366,6 +366,22 @@ On first boot, the **blue MokManager screen** appears:
 
 ## Version History
 
+- **v1.9.18** - Dynamic meta-package expansion for MOK installation:
+  - **Root cause**: `minimal` meta-package requires `grub2-efi-image`, which conflicts with `grub2-efi-image-mok` (both install `/boot/efi/EFI/BOOT/grubx64.efi`)
+  - **Problem**: tdnf selects BOTH packages causing Error(1525) rpm transaction failed
+  - **Solution**: Dynamic `packages_mok.json` generation that:
+    - Uses `MOK_REPLACES` mapping to identify base packages replaced by MOK packages
+    - Scans meta-packages (like `minimal`) for conflicting dependencies
+    - Expands meta-packages with conflicts, replacing conflicting deps with MOK versions
+    - Generates conflict-free package list automatically
+  - **MOK_REPLACES mapping**:
+    - `linux-mok` replaces: `linux`, `linux-esx`
+    - `linux-esx-mok` replaces: `linux-esx`
+    - `grub2-efi-image-mok` replaces: `grub2-efi-image`
+    - `shim-signed-mok` replaces: `shim-signed`
+  - **Future-ready**: To add a new MOK package, simply add entry to `MOK_REPLACES` dict
+  - **Epoch in Provides**: All MOK packages now have Epoch in their Provides lines (e.g., `grub2-efi-image = 1:2.12-1.ph5`)
+  - **Result**: Custom MOK installation works without package conflicts
 - **v1.9.17** - Fix eFuse USB detection in GRUB:
   - **Root cause**: GRUB stub was missing modules required for USB device and label detection
   - **Missing modules**: `search_label`, `search_fs_uuid`, `search_fs_file`, `usb`, `usbms`, `scsi`, `disk`

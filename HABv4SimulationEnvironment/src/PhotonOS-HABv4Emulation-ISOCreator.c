@@ -361,6 +361,39 @@ static int run_cmd(const char *cmd) {
     return WEXITSTATUS(ret);
 }
 
+static char *run_cmd_capture(const char *cmd) {
+    FILE *fp = popen(cmd, "r");
+    if (!fp) return NULL;
+    
+    size_t buf_size = 4096;
+    size_t len = 0;
+    char *buf = malloc(buf_size);
+    if (!buf) {
+        pclose(fp);
+        return NULL;
+    }
+    
+    char line[512];
+    while (fgets(line, sizeof(line), fp)) {
+        size_t line_len = strlen(line);
+        if (len + line_len + 1 > buf_size) {
+            buf_size *= 2;
+            char *new_buf = realloc(buf, buf_size);
+            if (!new_buf) {
+                free(buf);
+                pclose(fp);
+                return NULL;
+            }
+            buf = new_buf;
+        }
+        strcpy(buf + len, line);
+        len += line_len;
+    }
+    buf[len] = '\0';
+    pclose(fp);
+    return buf;
+}
+
 static int file_exists(const char *path) {
     struct stat st;
     return stat(path, &st) == 0;
@@ -2237,40 +2270,189 @@ static int create_secure_boot_iso(void) {
     if (file_exists(options_json)) {
         log_info("Adding MOK Secure Boot option to installer...");
         
-        /* Create packages_mok.json with MOK-signed packages
-         * Note: grub2-theme provides /boot/grub2/fonts/ascii.pf2 and theme files
-         * which are required for the themed GRUB menu to display properly */
-        FILE *f = fopen(mok_packages_json, "w");
-        if (f) {
-            fprintf(f,
-                "{\n"
-                "    \"packages\": [\n"
-                "        \"minimal\",\n"
-                "        \"linux-mok\",\n"
-                "        \"initramfs\",\n"
-                "        \"grub2-efi-image-mok\",\n"
-                "        \"grub2-theme\",\n"
-                "        \"shim-signed-mok\",\n"
-                "        \"lvm2\",\n"
-                "        \"less\",\n"
-                "        \"sudo\",\n"
-                "        \"libnl\",\n"
-                "        \"wpa_supplicant\",\n"
-                "        \"wireless-regdb\",\n"
-                "        \"iw\",\n"
-                "        \"wifi-config\"\n"
-                "    ]\n"
+        /* Create packages_mok.json dynamically by:
+         * 1. Using known MOK package -> base package mappings (from our spec templates)
+         * 2. Expanding meta-packages that have conflicting dependencies
+         * 3. Replacing conflicting base packages with MOK versions
+         * 
+         * This approach works because WE control the MOK package specs, so we know
+         * exactly what they Provide/Obsolete without needing to scan the built RPMs.
+         * 
+         * Future-ready: To add a new MOK package, add its mapping to mok_replaces[] below. */
+        
+        char gen_mok_script[512];
+        snprintf(gen_mok_script, sizeof(gen_mok_script), "%s/generate_mok_packages.py", work_dir);
+        
+        FILE *gf = fopen(gen_mok_script, "w");
+        if (gf) {
+            fprintf(gf,
+                "#!/usr/bin/env python3\n"
+                "\"\"\"Dynamic MOK packages.json generator.\n"
+                "\n"
+                "Uses known MOK package mappings to expand meta-packages and replace\n"
+                "conflicting base packages with MOK versions.\n"
+                "\n"
+                "FUTURE-READY: To add a new MOK package:\n"
+                "1. Add entry to MOK_REPLACES dict below\n"
+                "2. Ensure the MOK package spec has Epoch > 0 and Provides/Obsoletes the base\n"
+                "\"\"\"\n"
+                "import subprocess\n"
+                "import json\n"
+                "import sys\n"
+                "import os\n"
+                "import re\n"
+                "\n"
+                "# MOK package mappings: mok_package -> [base_packages_it_replaces]\n"
+                "# These MUST match the Provides/Obsoletes in the MOK package specs\n"
+                "MOK_REPLACES = {\n"
+                "    'linux-mok': ['linux', 'linux-esx'],\n"
+                "    'linux-esx-mok': ['linux-esx'],\n"
+                "    'grub2-efi-image-mok': ['grub2-efi-image'],\n"
+                "    'shim-signed-mok': ['shim-signed'],\n"
                 "}\n"
+                "\n"
+                "def run_rpm(args, rpm_path=None):\n"
+                "    \"\"\"Run rpm command and return output lines.\"\"\"\n"
+                "    cmd = ['rpm']\n"
+                "    if rpm_path:\n"
+                "        cmd.extend(['-qp', rpm_path])\n"
+                "    cmd.extend(args)\n"
+                "    try:\n"
+                "        result = subprocess.run(cmd, capture_output=True, text=True, check=True)\n"
+                "        return [l.strip() for l in result.stdout.strip().split('\\n') if l.strip()]\n"
+                "    except subprocess.CalledProcessError:\n"
+                "        return []\n"
+                "\n"
+                "def get_meta_package_deps(rpm_path):\n"
+                "    \"\"\"Get direct dependencies of a meta-package RPM.\"\"\"\n"
+                "    deps = []\n"
+                "    for req in run_rpm(['--requires'], rpm_path):\n"
+                "        if req.startswith('rpmlib(') or req.startswith('/'):\n"
+                "            continue\n"
+                "        match = re.match(r'^([\\w.-]+)', req)\n"
+                "        if match:\n"
+                "            deps.append(match.group(1))\n"
+                "    return deps\n"
+                "\n"
+                "def find_rpm(rpms_dir, name_pattern):\n"
+                "    \"\"\"Find RPM file matching pattern in directory.\"\"\"\n"
+                "    import glob\n"
+                "    # Search in both x86_64 and noarch\n"
+                "    for subdir in ['x86_64', 'noarch', '.']:\n"
+                "        search_path = os.path.join(rpms_dir, subdir, f'{name_pattern}-[0-9]*.rpm')\n"
+                "        matches = glob.glob(search_path)\n"
+                "        if not name_pattern.endswith('-mok'):\n"
+                "            matches = [m for m in matches if '-mok-' not in os.path.basename(m)]\n"
+                "        if matches:\n"
+                "            return matches[0]\n"
+                "    # Also try direct path (for flat structure)\n"
+                "    matches = glob.glob(os.path.join(rpms_dir, f'{name_pattern}-[0-9]*.rpm'))\n"
+                "    if not name_pattern.endswith('-mok'):\n"
+                "        matches = [m for m in matches if '-mok-' not in os.path.basename(m)]\n"
+                "    return matches[0] if matches else None\n"
+                "\n"
+                "def main():\n"
+                "    if len(sys.argv) < 3:\n"
+                "        print('Usage: generate_mok_packages.py <rpms_dir> <output_json>', file=sys.stderr)\n"
+                "        sys.exit(1)\n"
+                "    \n"
+                "    rpms_dir = sys.argv[1]\n"
+                "    output_json = sys.argv[2]\n"
+                "    \n"
+                "    # Build reverse mapping: base_package -> mok_package\n"
+                "    base_to_mok = {}\n"
+                "    for mok_pkg, base_pkgs in MOK_REPLACES.items():\n"
+                "        for base_pkg in base_pkgs:\n"
+                "            base_to_mok[base_pkg] = mok_pkg\n"
+                "    \n"
+                "    print(f'MOK package mappings:', file=sys.stderr)\n"
+                "    for mok_pkg, base_pkgs in MOK_REPLACES.items():\n"
+                "        print(f'  {mok_pkg} replaces: {base_pkgs}', file=sys.stderr)\n"
+                "    \n"
+                "    # Meta-packages to check for conflicts\n"
+                "    meta_packages = ['minimal']\n"
+                "    extra_packages = [\n"
+                "        'initramfs', 'grub2-theme', 'lvm2', 'less', 'sudo',\n"
+                "        'libnl', 'wpa_supplicant', 'wireless-regdb', 'iw', 'wifi-config'\n"
+                "    ]\n"
+                "    \n"
+                "    final_packages = set()\n"
+                "    expanded_meta = set()\n"
+                "    \n"
+                "    for meta in meta_packages:\n"
+                "        meta_rpm = find_rpm(rpms_dir, meta)\n"
+                "        if not meta_rpm:\n"
+                "            print(f'Warning: {meta} RPM not found, adding as-is', file=sys.stderr)\n"
+                "            final_packages.add(meta)\n"
+                "            continue\n"
+                "        \n"
+                "        deps = get_meta_package_deps(meta_rpm)\n"
+                "        has_conflict = any(dep in base_to_mok for dep in deps)\n"
+                "        \n"
+                "        if has_conflict:\n"
+                "            print(f'Expanding {meta} (has conflicting deps):', file=sys.stderr)\n"
+                "            expanded_meta.add(meta)\n"
+                "            for dep in deps:\n"
+                "                if dep in base_to_mok:\n"
+                "                    mok_name = base_to_mok[dep]\n"
+                "                    print(f'  {dep} -> {mok_name}', file=sys.stderr)\n"
+                "                    final_packages.add(mok_name)\n"
+                "                else:\n"
+                "                    final_packages.add(dep)\n"
+                "        else:\n"
+                "            final_packages.add(meta)\n"
+                "    \n"
+                "    # Add all MOK packages\n"
+                "    for mok_name in MOK_REPLACES.keys():\n"
+                "        final_packages.add(mok_name)\n"
+                "    \n"
+                "    # Add extra packages (unless replaced by MOK)\n"
+                "    for pkg in extra_packages:\n"
+                "        if pkg not in base_to_mok:\n"
+                "            final_packages.add(pkg)\n"
+                "    \n"
+                "    # Remove any base packages that have MOK replacements\n"
+                "    for base_pkg in base_to_mok.keys():\n"
+                "        final_packages.discard(base_pkg)\n"
+                "    \n"
+                "    # Sort and write output\n"
+                "    sorted_packages = sorted(final_packages, key=str.lower)\n"
+                "    output = {'packages': sorted_packages}\n"
+                "    \n"
+                "    with open(output_json, 'w') as f:\n"
+                "        json.dump(output, f, indent=4)\n"
+                "    \n"
+                "    print(f'Generated {output_json} with {len(sorted_packages)} packages', file=sys.stderr)\n"
+                "    if expanded_meta:\n"
+                "        print(f'Expanded meta-packages: {expanded_meta}', file=sys.stderr)\n"
+                "\n"
+                "if __name__ == '__main__':\n"
+                "    main()\n"
             );
-            /* Note: WiFi packages include:
-             * - wireless-regdb: kernel.org wireless regulatory database
-             * - iw: nl80211 wireless configuration utility
-             * - wifi-config: configures wpa_supplicant, disables iwlwifi LAR, DHCP for wlan0
-             * - wpa_supplicant: from Photon 5.0 repos
-             * - libnl: dependency of iw, from Photon 5.0 repos
-             * Custom packages must be in drivers/RPM and built with --drivers flag. */
-            fclose(f);
-            log_info("Created packages_mok.json");
+            fclose(gf);
+            
+            /* Run the dynamic generator using ISO's RPMS directory */
+            char cmd[1024];
+            snprintf(cmd, sizeof(cmd), "python3 '%s' '%s/RPMS' '%s' 2>&1",
+                     gen_mok_script, iso_extract, mok_packages_json);
+            log_info("Generating packages_mok.json dynamically...");
+            char *output = run_cmd_capture(cmd);
+            if (output) {
+                char *line = strtok(output, "\n");
+                while (line) {
+                    log_info("  %s", line);
+                    line = strtok(NULL, "\n");
+                }
+                free(output);
+            }
+            
+            /* Clean up script */
+            snprintf(cmd, sizeof(cmd), "rm -f '%s'", gen_mok_script);
+            run_cmd(cmd);
+            
+            if (!file_exists(mok_packages_json)) {
+                log_error("Failed to generate packages_mok.json");
+            }
         }
         
         /* Add MOK option to build_install_options_all.json as first entry

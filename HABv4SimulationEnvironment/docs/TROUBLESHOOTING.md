@@ -107,19 +107,38 @@ This document covers common issues and their solutions.
 
 **Common issues**:
 - `Obsoletes` with version constraint fails when original has higher version
-- File conflicts between `linux-mok` and `grub2-efi-image-mok`
+- File conflicts between `grub2-efi-image` and `grub2-efi-image-mok` (both install `/boot/efi/EFI/BOOT/grubx64.efi`)
 - MOK packages not indexed in repodata
+- `minimal` meta-package pulls in original packages that conflict with MOK packages
+
+**Root Cause (v1.9.18 fix)**:
+The `minimal` meta-package requires `grub2-efi-image >= 2.06-15`. When installing MOK packages alongside `minimal`, tdnf may select BOTH `grub2-efi-image` (to satisfy minimal's dependency) AND `grub2-efi-image-mok` (explicitly requested). Both packages install `/boot/efi/EFI/BOOT/grubx64.efi`, causing a file conflict.
+
+Even with Epoch:1 on MOK packages, tdnf may not recognize that the explicitly requested MOK package satisfies the meta-package dependency, resulting in both packages being selected for the transaction.
 
 **Root Cause (v1.9.16 fix)**:
 The MOK packages used `Obsoletes: linux < %{version}-%{release}` but when building a custom kernel (e.g., 6.1.159), this doesn't obsolete the original ISO's newer kernel (e.g., 6.12.60). RPM sees both packages as valid and fails the transaction.
 
 **Solutions**:
-1. Rebuild ISO with latest PhotonOS-HABv4Emulation-ISOCreator (v1.9.16+ uses Conflicts instead of Obsoletes)
-2. Specific fixes applied:
-   - Changed from `Obsoletes: package < version` to `Conflicts: package`
-   - `Conflicts` prevents both packages from being installed regardless of version
+1. Rebuild ISO with latest PhotonOS-HABv4Emulation-ISOCreator (v1.9.18+)
+2. v1.9.18 introduces dynamic meta-package expansion:
+   - `packages_mok.json` no longer contains `minimal` meta-package
+   - Instead, all `minimal` dependencies are listed directly
+   - `grub2-efi-image` is replaced with `grub2-efi-image-mok`
+   - This prevents tdnf from selecting conflicting packages
+3. MOK packages now have Epoch in Provides lines (e.g., `grub2-efi-image = 1:2.12-1.ph5`)
+4. Previous fixes still applied:
+   - `Conflicts` prevents both packages from being installed
    - `linux-mok` only includes kernel files (not `/boot/efi`)
    - Repodata regenerated after adding MOK packages
+
+**Manual verification**:
+```bash
+# Check packages_mok.json doesn't contain 'minimal'
+mount -o loop /path/to/secureboot.iso /mnt
+zcat /mnt/isolinux/initrd.img | cpio -idm
+cat installer/packages_mok.json | grep -q '"minimal"' && echo "ERROR: minimal present" || echo "OK: minimal expanded"
+```
 
 ### "start_image() returned Not Found"
 
