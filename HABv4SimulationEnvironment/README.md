@@ -183,11 +183,9 @@ GPG-signed packages for supply chain integrity (NIST SI-7, EU CRA Article 10):
 Full kernel build with Secure Boot configuration is now **standard and automatic**.
 
 Supports the Photon OS kernel source directory structure:
-- Release 4.0: `/root/4.0/SPECS/linux/` (legacy path)
-- Release 5.0: `/root/5.0/SPECS/linux/` (legacy path)
-- Release 6.0+: `/root/common/SPECS/linux/vX.Y/` (auto-detects highest version)
-
-**Auto-detection (v1.9.28+)**: For Photon OS 6.0 and future releases, the tool automatically scans `/root/common/SPECS/linux/` and selects the highest kernel version available (e.g., v6.12 over v6.1).
+- Release 4.0: `/root/4.0/SPECS/linux/`
+- Release 5.0: `/root/5.0/SPECS/linux/` + `/root/common/SPECS/linux/v6.1/`
+- Release 6.0: `/root/common/SPECS/linux/v6.12/`
 
 ---
 
@@ -368,102 +366,22 @@ On first boot, the **blue MokManager screen** appears:
 
 ## Version History
 
-- **v1.9.32** - Fix installer failure: Add linux-mok to all_linux_flavors:
-  - **Root cause**: The installer's `_adjust_packages_based_on_selected_flavor()` uses `all_linux_flavors` list
-  - **Issue**: `linux-mok` and `linux-esx-mok` were not in this list, breaking package filtering
-  - **Fix 1**: Patch `installer.py` to include MOK flavors in `all_linux_flavors`
-  - **Fix 2**: Patch `linuxselector.py` to show both `linux-mok` and `linux-esx-mok` options
-  - **Fix 3**: Improved tdnf.py verbose error logging using pure C string manipulation
-  - **Result**: Kernel selection and filtering now work correctly for MOK variants
-- **v1.9.31** - Fix linux-mok using wrong kernel modules (flavor-aware module selection):
-  - **Root cause**: linux-mok package was using ESX kernel modules (`6.12.60-esx`) instead of standard modules
-  - **Issue**: The custom kernel injection code didn't match module flavor to package flavor
-  - **Build system**: Creates ONE custom kernel with ESX config, producing modules named `6.12.60-esx`
-  - **Bug**: Both linux-mok and linux-esx-mok tried to use the same ESX modules
-  - **Fix**: Added KERNEL_FLAVOR variable to track which flavor is being built
-  - **Module selection logic**:
-    - For linux-esx-mok: Only use modules with '-esx' suffix
-    - For linux-mok: Only use modules WITHOUT flavor suffix  
-    - If no matching modules found, keep original RPM modules instead of failing
-  - **Result**: Each MOK package now uses correct kernel modules for its variant
-  - **Testing**: Verified linux-mok contains standard modules, linux-esx-mok contains ESX modules
-- **v1.9.30** - Fix installer failure: Prevent file conflicts between linux-mok and linux-esx-mok:
-  - **Root cause**: Both linux-mok and linux-esx-mok RPM packages contained the same ESX kernel files
-  - **File conflicts**: `/boot/vmlinuz-*-esx`, `/boot/System.map-*-esx`, etc. in both packages
-  - **Why it happened**:
-    1. rpmbuild reuses BUILD directory across package builds without cleaning
-    2. Files from previous kernel builds contaminated subsequent builds
-    3. `%install` section used wildcards (`vmlinuz-*`) that captured all files
-  - **Fix 1**: Clean BUILD directory before each kernel build in `build_single_rpm()`
-  - **Fix 2**: Modified `%install` to use specific file patterns instead of wildcards
-  - **Verification**: linux-mok now contains only standard kernel files, linux-esx-mok only ESX files
-  - **Impact**: Eliminated Error(1525) rpm transaction failed during installation
-- **v1.9.29** - Fix installer failure: Include both linux-mok and linux-esx-mok:
-  - **Installer fix**: Added `linux-esx-mok` to `packages_mok.json` to match original package selection pattern
-  - **Root cause**: Original `packages_minimal.json` includes both `linux` and `linux-esx` kernels, but MOK version only included `linux-mok`
-  - **Symptom**: Installer failed with generic "Installer failed" exception during package installation phase
-  - **Analysis**: Tool built both kernel MOK variants but only listed one in installation manifest
-  - **Result**: Installer now has both kernel packages available, matching the original ISO structure
-- **v1.9.28** - Auto-detect highest kernel version for Photon 6.0+:
-  - **Common kernel spec path**: For release 6.0 and future releases, the tool now automatically scans `/root/common/SPECS/linux/` and selects the highest kernel version directory (e.g., v6.12 over v6.1)
-  - **Legacy path preserved**: Releases 4.0 and 5.0 continue using their release-specific `/root/{release}/SPECS/linux/` paths
-  - **Future-proof**: New kernel versions (v7.x, etc.) will be auto-detected without code changes
-  - **Before**: Photon 6.0 incorrectly used kernel 6.1.158 from legacy path
-  - **After**: Photon 6.0 correctly uses kernel 6.12.60 from `/root/common/SPECS/linux/v6.12/`
-- **v1.9.27** - Universal ISO for Physical and Virtual Environments:
-  - **Universal Support**: ISO now supports both MOK-signed installations (for Physical Secure Boot) and original VMware-signed installations (for Virtual Machines) simultaneously.
-  - **Conflict Resolution**: Removed `Epoch` and `Obsoletes` from MOK packages to allow coexistence with original packages.
-  - **Multi-Kernel Discovery**: Enhanced `rpm_secureboot_patcher.c` to discover and build MOK variants for multiple kernels (Standard, ESX) dynamically.
-  - **Installer Options**: User can select "Photon MOK Secure Boot" for physical hardware or standard profiles (Minimal, Real-Time) for virtual environments.
-  - **Note on Real-Time Kernel**: The `linux-rt` package is present (original), but a `linux-rt-mok` variant was not automatically generated in this run, likely because the discovery logic prioritized the newer 6.12 kernels (Standard/ESX) over the older 6.1-based RT kernel for MOK signing. However, the primary requirement for "VMware Original" vs "Physical Secure Boot" support is fully met.
-- **v1.9.26** - Fix Photon 6.0 kernel selection and enable verbose installer logging:
-  - **Photon 6.0 Fix**: Specifically detect and select kernel 6.12+ (was picking 6.1 randomly due to glob behavior)
-  - **Installer Debugging**: Added automatic patching of `tdnf.py` in initrd to log full JSON output on errors
-  - **Why needed**: `Error(1525) : rpm transaction failed` gives no details; verbose logging reveals the actual conflict/dependency error in `/var/log/installer.log`
-  - **Implementation**: Patches `tdnf.py` using `sed` during ISO creation to intercept and log error responses
-- **v1.9.25** - Fix unexpanded RPM macro in linux-mok %postun script:
-  - **Bug**: `%{kernel_file#vmlinuz-}` was not expanded during RPM build
-  - **Impact**: Scriptlet tried to access files with literal `%{kernel_file#vmlinuz-}` in path
-  - **Symptom**: `Error(1525) : rpm transaction failed` during installation
-  - **Fix**: Use shell parameter expansion on expanded `%{kernel_file}` variable
-- **v1.9.24** - Photon OS 4.0 support and build system fixes:
-  - **Fix**: Add support for Photon OS 4.0 Rev2 ISO download (correct URL and filename)
-  - **Fix**: Clean MOK build directory at start to prevent stale packages from previous builds
-  - **Fix**: Handle multiple vmlinuz files in linux-mok spec (use `head -1` instead of all matches)
-  - **Fix**: Support both 4.0 (5.x kernel) and 5.0 (6.x kernel) package removal patterns
-  - **Packages removed for 4.0**: `linux-5.*`, `linux-secure-5.*`, `linux-rt-5.*`, `linux-aws-5.*`, `linux-secure-devel-*`, `linux-secure-docs-*`
-  - **Tested**: Both Photon OS 4.0 and 5.0 ISOs build successfully with signed MOK packages
-- **v1.9.23** - Remove kernel-dependent packages that require exact version:
-  - **Bug**: Packages like `linux-devel`, `linux-drivers-*` require `linux = 6.12.60-14.ph5` (exact)
-  - **Impact**: `linux-mok` provides `linux = 6.1.159-7.ph5`, causing unsatisfiable dependencies
-  - **Fix**: Remove all packages with exact kernel version dependencies from ISO
-  - **Packages removed**: `linux-devel-*`, `linux-docs-*`, `linux-drivers-*`, `linux-tools-*`, `linux-python3-perf-*`, `linux-esx-devel-*`, `linux-esx-docs-*`, `linux-esx-drivers-*`
-- **v1.9.22** - Fix repodata to exclude removed original packages:
-  - **Bug**: `createrepo_c --update` only adds new packages, doesn't remove deleted ones
-  - **Impact**: Repodata still referenced removed packages (linux-6.*, grub2-efi-image-2.*, etc.)
-  - **Symptom**: "Failed to install some packages" during installation
-  - **Fix**: Remove old repodata and run `createrepo_c` without `--update` for full rebuild
-- **v1.9.21** - Fix chainloader path in installer ISO grub.cfg:
-  - **Bug**: Installer ISO used wrong path `/boot/grub2/grubx64.efi` (doesn't exist)
-  - **Fix**: Changed to `/EFI/BOOT/grubx64.efi` (correct location on ISO)
-  - **Note**: Installed system path `/EFI/BOOT/grubx64.efi` was already correct
-- **v1.9.20** - Fix eFuse USB hot-plug detection in GRUB:
-  - **Problem**: GRUB caches USB devices at startup; `configfile` reload doesn't rescan
-  - **Solution**: Use `chainloader` instead of `configfile` to reload GRUB EFI binary
-  - **How it works**: `chainloader /EFI/BOOT/grubx64.efi` forces complete GRUB reinitialization including USB rescan
-  - **Fixed in**: Installer ISO grub.cfg, installed system grub.cfg (via mk-setup-grub.sh and %posttrans)
-  - **User experience**: Plugging in eFuse USB and pressing "Retry" now detects the newly inserted device
-- **v1.9.19** - Remove conflicting original packages from ISO:
-  - **Root cause**: Even with Epoch and Obsoletes, RPM fails with file conflicts if both original and MOK packages exist in repo
-  - **Solution**: Remove `grub2-efi-image-2*.rpm`, `shim-signed-1*.rpm`, `linux-6.*.rpm`, `linux-esx-6.*.rpm` from ISO
-  - **Where fixed**: Both `rpm_integrate_to_iso()` and post-signing copy in main ISO creator
-  - **Result**: Only MOK packages in repo, no file conflicts during installation
-- **v1.9.18** - Fix MOK package conflicts using RPM Epoch:
-  - **Root cause**: MOK packages used `Conflicts:` which prevents installation when `minimal` meta-package requires original packages
-  - **Solution**: Added `Epoch: 1` to all MOK packages (linux-mok, grub2-efi-image-mok, shim-signed-mok)
-  - **How Epoch works**: `1:2.12-1.ph5` is always > `0:2.12-2.ph5` because epoch takes precedence over version/release
-  - **Result**: MOK packages now properly replace originals via `Obsoletes:` while satisfying dependencies via `Provides:`
-  - **RPM behavior**: When `minimal` requires `grub2-efi-image`, RPM sees `grub2-efi-image-mok` provides it and obsoletes the original
+- **v1.9.18** - Dynamic meta-package expansion for MOK installation:
+  - **Root cause**: `minimal` meta-package requires `grub2-efi-image`, which conflicts with `grub2-efi-image-mok` (both install `/boot/efi/EFI/BOOT/grubx64.efi`)
+  - **Problem**: tdnf selects BOTH packages causing Error(1525) rpm transaction failed
+  - **Solution**: Dynamic `packages_mok.json` generation that:
+    - Uses `MOK_REPLACES` mapping to identify base packages replaced by MOK packages
+    - Scans meta-packages (like `minimal`) for conflicting dependencies
+    - Expands meta-packages with conflicts, replacing conflicting deps with MOK versions
+    - Generates conflict-free package list automatically
+  - **MOK_REPLACES mapping**:
+    - `linux-mok` replaces: `linux`, `linux-esx`
+    - `linux-esx-mok` replaces: `linux-esx`
+    - `grub2-efi-image-mok` replaces: `grub2-efi-image`
+    - `shim-signed-mok` replaces: `shim-signed`
+  - **Future-ready**: To add a new MOK package, simply add entry to `MOK_REPLACES` dict
+  - **Epoch in Provides**: All MOK packages now have Epoch in their Provides lines (e.g., `grub2-efi-image = 1:2.12-1.ph5`)
+  - **Result**: Custom MOK installation works without package conflicts
 - **v1.9.17** - Fix eFuse USB detection in GRUB:
   - **Root cause**: GRUB stub was missing modules required for USB device and label detection
   - **Missing modules**: `search_label`, `search_fs_uuid`, `search_fs_file`, `usb`, `usbms`, `scsi`, `disk`

@@ -107,44 +107,38 @@ This document covers common issues and their solutions.
 
 **Common issues**:
 - `Obsoletes` with version constraint fails when original has higher version
-- File conflicts between `linux-mok` and `grub2-efi-image-mok`
+- File conflicts between `grub2-efi-image` and `grub2-efi-image-mok` (both install `/boot/efi/EFI/BOOT/grubx64.efi`)
 - MOK packages not indexed in repodata
+- `minimal` meta-package pulls in original packages that conflict with MOK packages
 
-**Root Cause (v1.9.16-v1.9.17)**:
-The MOK packages used `Conflicts:` which prevents both packages from being installed. But when `minimal` meta-package requires `grub2-efi-image`, RPM can't satisfy the dependency because MOK package conflicts with it.
+**Root Cause (v1.9.18 fix)**:
+The `minimal` meta-package requires `grub2-efi-image >= 2.06-15`. When installing MOK packages alongside `minimal`, tdnf may select BOTH `grub2-efi-image` (to satisfy minimal's dependency) AND `grub2-efi-image-mok` (explicitly requested). Both packages install `/boot/efi/EFI/BOOT/grubx64.efi`, causing a file conflict.
 
-**Root Cause (v1.9.18)**:
-Used RPM `Epoch:` to ensure MOK packages are always considered newer than originals.
+Even with Epoch:1 on MOK packages, tdnf may not recognize that the explicitly requested MOK package satisfies the meta-package dependency, resulting in both packages being selected for the transaction.
 
-**Root Cause (v1.9.19 fix)**:
-Even with Epoch and Obsoletes, RPM/tdnf fails with file conflicts when both original and MOK packages exist in the same repository. Example:
-- `grub2-efi-image` and `grub2-efi-image-mok` both install `/boot/efi/EFI/BOOT/grubx64.efi`
-- `shim-signed` and `shim-signed-mok` both install `/boot/efi/EFI/BOOT/bootx64.efi`
-
-**Root Cause (v1.9.29-v1.9.30 fix)**:
-File conflicts between linux-mok and linux-esx-mok packages:
-- Both packages contained the same ESX kernel files (`/boot/vmlinuz-*-esx`, `/boot/System.map-*-esx`)
-- rpmbuild reuses BUILD/ directory across builds, files accumulated from previous builds
-- `%install` section used wildcards that captured ALL files, not just the specific kernel variant
-
-**Root Cause (v1.9.31 fix)**:
-Module mismatch - linux-mok using wrong kernel modules:
-- linux-mok package contained ESX modules (`6.12.60-esx`) instead of standard modules
-- Custom kernel injection code didn't match module flavor to package flavor
-- Both linux-mok and linux-esx-mok tried to use the same ESX modules from custom build
+**Root Cause (v1.9.16 fix)**:
+The MOK packages used `Obsoletes: linux < %{version}-%{release}` but when building a custom kernel (e.g., 6.1.159), this doesn't obsolete the original ISO's newer kernel (e.g., 6.12.60). RPM sees both packages as valid and fails the transaction.
 
 **Solutions**:
-1. Rebuild ISO with latest PhotonOS-HABv4Emulation-ISOCreator (v1.9.31+)
-2. Specific fixes applied:
-   - **v1.9.19+**: Remove original packages from ISO: `grub2-efi-image-2*.rpm`, `shim-signed-1*.rpm`, `linux-6.*.rpm`, `linux-esx-6.*.rpm`
-   - **v1.9.30+**: Clean BUILD directory before each kernel build to prevent file contamination
-   - **v1.9.30+**: Use specific file patterns instead of wildcards in `%install` section
-   - **v1.9.31+**: Flavor-aware module selection - each MOK package uses correct modules for its variant
-   - Repodata regenerated after all package operations
+1. Rebuild ISO with latest PhotonOS-HABv4Emulation-ISOCreator (v1.9.18+)
+2. v1.9.18 introduces dynamic meta-package expansion:
+   - `packages_mok.json` no longer contains `minimal` meta-package
+   - Instead, all `minimal` dependencies are listed directly
+   - `grub2-efi-image` is replaced with `grub2-efi-image-mok`
+   - This prevents tdnf from selecting conflicting packages
+3. MOK packages now have Epoch in Provides lines (e.g., `grub2-efi-image = 1:2.12-1.ph5`)
+4. Previous fixes still applied:
+   - `Conflicts` prevents both packages from being installed
+   - `linux-mok` only includes kernel files (not `/boot/efi`)
+   - Repodata regenerated after adding MOK packages
 
-**Debugging (v1.9.26+)**:
-The installer is now automatically patched during ISO creation to log detailed error information in `/var/log/installer.log` when Error 1525 occurs. 
-Look for log entries starting with `Full TDNF output:` to see the exact conflict or dependency failure returned by the package manager.
+**Manual verification**:
+```bash
+# Check packages_mok.json doesn't contain 'minimal'
+mount -o loop /path/to/secureboot.iso /mnt
+zcat /mnt/isolinux/initrd.img | cpio -idm
+cat installer/packages_mok.json | grep -q '"minimal"' && echo "ERROR: minimal present" || echo "OK: minimal expanded"
+```
 
 ### "start_image() returned Not Found"
 
@@ -255,27 +249,6 @@ For Photon OS ISOs, use VMware's full GRUB binary and sign it with your own MOK 
 - `usb`, `usbms`, `scsi`, `disk` - USB and storage device support
 
 **If using older ISO (pre-v1.9.17)**: Rebuild ISO with PhotonOS-HABv4Emulation-ISOCreator v1.9.17+
-
----
-
-### eFuse USB not detected after hot-plug (v1.9.20 Fix)
-
-**Cause**: GRUB caches USB devices at startup. The old "Retry" used `configfile` which reloads config without rescanning USB.
-
-**Symptoms**:
-- eFuse USB was NOT plugged in when GRUB started
-- User plugs in eFuse USB while at the "eFuse USB Required" prompt
-- Pressing "Retry" still doesn't detect the USB
-- Only a full reboot detects the USB
-
-**Root Cause**: `configfile /boot/grub2/grub.cfg` only reloads the configuration file but does NOT rescan USB devices. GRUB's device list is cached at initialization.
-
-**Solution (v1.9.20+)**: Changed "Retry" to use `chainloader` instead of `configfile`:
-- `chainloader /EFI/BOOT/grubx64.efi` reloads the entire GRUB EFI binary
-- This forces complete reinitialization including USB device scanning
-- Newly plugged USB devices are now detected
-
-**If using older ISO (pre-v1.9.20)**: Rebuild ISO, or use "Reboot" option instead of "Retry"
 
 ---
 
@@ -727,98 +700,6 @@ This prevents RPM from stripping module signatures during package build.
 2. They're usually compatible, prefer xorriso
 3. Install xorriso: `tdnf install xorriso`
 
-### Dracut "will not be installed" Warnings During Initrd Generation
-
-**Symptom**: During kernel build, dracut outputs many warning messages like:
-```
-dracut: dracut module 'btrfs' will not be installed, because command 'btrfs' could not be found!
-dracut: dracut module 'crypt' will not be installed, because command 'cryptsetup' could not be found!
-```
-
-**Cause**: These are **informational warnings**, not errors. Dracut is reporting that optional modules are being skipped because their required tools are not installed on the build host. This is normal behavior for `--no-hostonly` builds.
-
-**Result**: The initrd is created successfully. The final message confirms this:
-```
-dracut: *** Creating initramfs image file '...' done ***
-```
-
-#### Impact Analysis of Missing Dracut Modules
-
-| Tool/Command | Dracut Module | Impact | Severity | Description |
-|-------------|---------------|--------|----------|-------------|
-| `mksh` | mksh | None | 🟢 None | MirBSD Korn Shell - alternative shell. Bash is included and sufficient. |
-| `busybox` | busybox | None | 🟢 None | Compact Unix utilities. Full coreutils available via systemd/bash modules. |
-| `systemd-integritysetup` | systemd-integritysetup | No dm-integrity | 🟡 Low | Cannot use dm-integrity for block device integrity checking. Not needed for standard boot. |
-| `systemd-pcrphase` | systemd-pcrphase | No TPM PCR extension | 🟡 Low | Cannot extend TPM PCRs during boot phases. Only needed for measured boot with TPM. |
-| `systemd-veritysetup` | systemd-veritysetup | No dm-verity | 🟡 Low | Cannot use dm-verity for read-only filesystem verification. Used by immutable/A-B systems. |
-| `dbus-broker` | dbus-broker | None | 🟢 None | Alternative D-Bus implementation. Standard dbus-daemon used if needed. |
-| `rngd` | rngd | Slower entropy | 🟢 None | Hardware RNG daemon. Kernel has built-in entropy sources. |
-| `connmand` | connman | No ConnMan networking | 🟢 None | ConnMan network manager. systemd-networkd or NetworkManager used instead. |
-| `wicked` | network-wicked | No Wicked networking | 🟢 None | SUSE Wicked network manager. Not used on Photon OS. |
-| `bluetoothd` | bluetooth | No Bluetooth in initrd | 🟢 None | Bluetooth not needed during early boot. |
-| `btrfs` | btrfs | No Btrfs root | 🟠 Medium | **Cannot boot from Btrfs filesystem.** Only affects Btrfs users. |
-| `cryptsetup` | crypt | No LUKS encryption | 🟠 Medium | **Cannot boot from encrypted root.** Only affects encrypted disk users. |
-| `dmraid` | dmraid | No fake RAID | 🟡 Low | Cannot use BIOS/firmware RAID (Intel RST, etc.). Hardware RAID unaffected. |
-| `ntfs-3g` | dmsquash-live-ntfs | No NTFS live boot | 🟢 None | Cannot boot live image from NTFS. Not a supported use case. |
-| `mdadm` | mdraid | No software RAID | 🟠 Medium | **Cannot boot from Linux software RAID (md).** Only affects md-raid users. |
-| `multipath` | multipath | No multipath I/O | 🟡 Low | Cannot use multipath storage. Only affects SAN/enterprise storage. |
-| `pcscd` | pcsc | No smart cards | 🟢 None | PC/SC smart card daemon. Not needed for boot. |
-| `tpm2` | tpm2-tss | No TPM2 unsealing | 🟡 Low | Cannot unseal secrets from TPM2. Only affects TPM-based disk encryption. |
-| `mount.cifs` | cifs | No CIFS/SMB root | 🟡 Low | Cannot boot from Windows/Samba share. Rare use case. |
-| `dcbtool`, `fipvlan`, `lldpad`, `fcoemon`, `fcoeadm` | fcoe, fcoe-uefi | No FCoE boot | 🟡 Low | Cannot boot from Fibre Channel over Ethernet. Enterprise SAN only. |
-| `iscsi-iname`, `iscsiadm`, `iscsid` | iscsi | No iSCSI boot | 🟡 Low | Cannot boot from iSCSI targets. Enterprise SAN only. |
-| `rpcbind`/`portmap` | nfs | No NFS root | 🟡 Low | Cannot boot from NFS root filesystem. Diskless workstation use case. |
-| `nvme` | nvmf | No NVMe-oF boot | 🟡 Low | Cannot boot from NVMe over Fabrics. Cutting-edge enterprise only. |
-
-#### Summary by Severity
-
-| Severity | Count | Action Required |
-|----------|-------|-----------------|
-| 🟢 **None** | 10 | No action needed - alternatives exist or not needed |
-| 🟡 **Low** | 10 | No action for typical use - affects niche enterprise/network boot scenarios |
-| 🟠 **Medium** | 3 | **May require action** if using Btrfs, LUKS encryption, or software RAID |
-
-#### Supported vs Unsupported Boot Configurations
-
-For **physical hardware boot with standard disk configurations** (ext4/xfs on single disk or hardware RAID):
-
-| Capability | Status |
-|------------|--------|
-| Boot from USB | ✅ Supported |
-| Boot from SATA/NVMe SSD | ✅ Supported |
-| Boot from ext4/xfs root | ✅ Supported |
-| Boot from LVM | ✅ Supported |
-| Boot from Btrfs | ❌ Not supported |
-| Boot from encrypted LUKS | ❌ Not supported |
-| Boot from software RAID | ❌ Not supported |
-| Network boot (iSCSI/NFS/FCoE) | ❌ Not supported |
-
-#### Enabling Additional Boot Configurations
-
-If you need **Btrfs, LUKS encryption, or software RAID** support, install these packages on the build host before building the ISO:
-
-```bash
-# For Btrfs root filesystem support
-tdnf install btrfs-progs
-
-# For LUKS encrypted root support
-tdnf install cryptsetup
-
-# For Linux software RAID (md) support
-tdnf install mdadm
-```
-
-After installing, rebuild the ISO. Dracut will automatically include these modules.
-
-#### The "Could not fsfreeze" Warning
-
-At the end of dracut output, you may see:
-```
-dracut: Could not fsfreeze /tmp/rpm_mok_build/rpmbuild/BUILD/boot
-```
-
-This is a **harmless warning**. The `fsfreeze` operation is used to freeze the filesystem during image creation for consistency. It fails because the build directory is a temporary location that may not support freeze operations. The initrd image was already successfully created before this message appears.
-
 ---
 
 ## USB Boot Issues
@@ -916,122 +797,6 @@ lsinitrd /boot/initrd.img-* | grep -E "usbcore|xhci|ehci"
 
 ---
 
-## Build Warning Analysis
-
-This section clarifies the impact of various warnings that appear during ISO creation.
-
-### Warning Summary Table
-
-| Warning Type | Count | Severity | Impact | Action Required |
-|--------------|-------|----------|--------|-----------------|
-| GPG TTY warnings | 4 | 🟢 None | Signing succeeds | None |
-| ISO 9660 filename collisions | ~50 | 🟢 None | Auto-handled | None |
-| RPM unversioned Obsoletes | 2 | 🟡 Low | Cosmetic | None |
-| RPM absolute symlink | 1 | 🟢 None | Expected | None |
-| Kernel config symbols | 6 | 🟢 None | Auto-corrected | None |
-| Kernel stack frame size | 2 | 🟡 Low | Negligible | None |
-
-### 1. GPG TTY Warnings (4× during RPM signing)
-
-**Message**: `warning: Could not set GPG_TTY to stdin: Inappropriate ioctl for device`
-
-**Cause**: GPG tries to attach to terminal for interactive passphrase entry, but build runs in non-interactive mode.
-
-**Impact**: **🟢 NONE** - RPM packages are signed successfully. MOK signatures are valid and functional.
-
-**Verification**:
-```bash
-rpm -qp --qf '%{SIGPGP:pgpsig}\n' linux-mok-*.rpm
-# Shows: RSA/SHA256 signature present
-```
-
-### 2. ISO 9660 Filename Collisions (~50× during ISO creation)
-
-**Message**: `Using RUBYG004.RPM;1 for rubygem-google-cloud-env-*.rpm (rubygem-google-cloud-errors-*.rpm)`
-
-**Cause**: ISO 9660 format limits to 8.3 filenames. Long/similar names truncate to same short name.
-
-**Impact**: **🟢 NONE** - Modern systems use Rock Ridge extensions which preserve full filenames. Short names only affect DOS/Win95 compatibility.
-
-**Affected**: Ruby gems, Python packages, PostgreSQL variants (~50 packages).
-
-**Why It Works**: Installer reads full filenames from Rock Ridge metadata, not 8.3 names.
-
-### 3. RPM Unversioned Obsoletes (2× in MOK packages)
-
-**Message**: 
-```
-warning: It's not recommended to have unversioned Obsoletes: Obsoletes: shim-signed
-warning: It's not recommended to have unversioned Obsoletes: Obsoletes: grub2-efi-image
-```
-
-**Cause**: MOK package specs use `Obsoletes: shim-signed` instead of `Obsoletes: shim-signed < version`.
-
-**Impact**: **🟡 LOW - Cosmetic** - Packages work correctly. Obsoletes directive functions as intended.
-
-**Why Acceptable**: MOK packages are custom builds for secure boot ISO, not published to repositories. Unversioned obsoletes means "replace all versions" which is correct for this use case.
-
-### 4. RPM Absolute Symlink (1× in linux-mok)
-
-**Message**: `warning: absolute symlink: /lib/modules/6.12.60-esx/build -> /root/6.0/kernel-build/linux-6.12.60`
-
-**Cause**: Kernel package includes symlink to build directory for module compilation.
-
-**Impact**: **🟢 NONE** - Standard kernel behavior. Symlink is broken on installed systems (build dir doesn't exist). Only matters for out-of-tree module compilation, which requires linux-devel package anyway.
-
-**Same Behavior**: Original Photon kernel packages have identical symlink.
-
-### 5. Kernel Config Symbol Warnings (6× during kernel build)
-
-**Messages**:
-```
-.config:4210:warning: symbol value 'm' invalid for CRYPTO_ARCH_HAVE_LIB_POLY1305
-.config:3658:warning: symbol value 'm' invalid for FSCACHE
-... (4 more similar warnings)
-```
-
-**Cause**: Kernel .config file has invalid values for meta-symbols (architecture capability flags, not actual config options).
-
-**Impact**: **🟢 NONE** - Kernel build system auto-corrects invalid values. These are informational symbols that don't affect actual configuration.
-
-**Result**: Kernel builds with correct settings for all features.
-
-### 6. Kernel Stack Frame Warnings (2× in WireGuard driver)
-
-**Message**: `drivers/net/wireguard/allowedips.c:80: warning: frame size of 1032 bytes is larger than 1024 bytes`
-
-**Cause**: Two WireGuard functions use 1032 bytes of stack (8 bytes over 1024 warning threshold).
-
-**Impact**: **🟡 LOW - Negligible** - Well within safe limits:
-- Warning threshold: 1024 bytes (6% of stack)
-- Actual stack size: 16384 bytes (16KB on x86_64)
-- Remaining safe space: 15,352 bytes (93%)
-
-**Why Acceptable**: WireGuard is upstream kernel code. Maintainers consider this acceptable. Functions are not recursive.
-
-### Functional Impact Summary
-
-| Aspect | Status |
-|--------|--------|
-| **RPM Signatures** | ✅ Valid and functional |
-| **Package Installation** | ✅ All packages install correctly |
-| **Filename Resolution** | ✅ Full names preserved via Rock Ridge |
-| **Kernel Functionality** | ✅ All features work correctly |
-| **Security** | ✅ No security impact from any warnings |
-| **Performance** | ✅ Negligible impact (WireGuard stack: +8 bytes) |
-
-### Conclusion
-
-All warnings are either:
-- **Informational** - Build system handles automatically
-- **Cosmetic** - RPM best practice recommendations
-- **Expected** - Standard kernel/ISO build behavior  
-- **Negligible** - Well within acceptable tolerances
-
-**No action required.** The ISO and all packages function correctly despite these warnings.
-
----
-
 ## Diagnostic Commands
 
 ### Check Secure Boot Status
@@ -1104,44 +869,6 @@ dmesg | grep -iE "module|signature|lockdown"
 ---
 
 ## Driver Integration Issues (v1.9.5-v1.9.12)
-
-### Installer fails with generic "Installer failed" exception (v1.9.29 Fix)
-
-**Symptom**: Installation reaches package installation phase but fails with:
-```
-Exception: Installer failed
-  File ".../photon_installer/installer.py", line 1536, in _install_packages
-    self._exit_gracefully()
-```
-
-**Root Cause**: `packages_mok.json` only included `linux-mok` but original `packages_minimal.json` includes **both** `linux` and `linux-esx` kernels. The installer dependency resolution expected both kernel packages.
-
-**Analysis** (v1.9.29):
-- Original ISO structure:
-  - `packages_minimal.json`: `["minimal", "linux", "linux-esx", "initramfs", ...]`
-  - Contains: `linux-6.1.158` + `linux-esx-6.12.60`
-- Secure boot ISO (before fix):
-  - Built both: `linux-mok-6.12.60` + `linux-esx-mok-6.12.60` 
-  - But `packages_mok.json` only listed: `["minimal", "linux-mok", "initramfs", ...]`
-  - Missing: `linux-esx-mok`
-- Result: Installer failed during package installation with generic exception
-
-**Solution** (v1.9.29): Added `linux-esx-mok` to `packages_mok.json` template to match original two-kernel pattern.
-
-**How to Verify Fix**:
-```bash
-# Mount the secure boot ISO
-mount -o loop photon-*-secureboot.iso /mnt
-
-# Extract packages_mok.json from initrd
-mkdir /tmp/check
-cd /tmp/check
-zcat /mnt/isolinux/initrd.img | cpio -idmv '*packages_mok.json'
-
-# Should contain both kernels
-cat installer/packages_mok.json
-# Expected: "linux-mok" AND "linux-esx-mok"
-```
 
 ### Installer fails with "No matching packages not found" (v1.9.11 Fix, v1.9.12 Permanent Fix)
 
@@ -1419,7 +1146,7 @@ find /lib/modules -name "cfg80211*" -o -name "mac80211*" -o -name "iwlwifi*"
 | grub.efi Not Found | Missing file | Rebuild ISO (v1.7.0+ installs both names) |
 | search.c: no such device | GRUB searching for ISO path | Rebuild ISO (v1.7.0+ fixes embedded config) |
 | Installation takes 2000+ seconds | USB autosuspend issue | Rebuild ISO (v1.7.0+ adds usbcore.autosuspend=-1) |
-| rpm transaction failed (Error 1525) | File conflicts with original pkgs | Rebuild ISO (v1.9.19+ removes originals) |
+| rpm transaction failed (Error 1525) | MOK version < original version | Rebuild ISO (v1.9.16+ uses Conflicts) |
 | bad shim signature | Wrong trust chain | Use Fedora shim + Fedora MokManager |
 | MokManager.efi Not Found | Wrong filename or missing from efiboot.img | Rebuild with PhotonOS-HABv4Emulation-ISOCreator |
 | Security Violation (first boot) | MOK certificate not enrolled | Enroll certificate from root `/` |
@@ -1440,7 +1167,6 @@ find /lib/modules -name "cfg80211*" -o -name "mac80211*" -o -name "iwlwifi*"
 | BOOT BLOCKED (no Continue) | eFuse USB missing/invalid | Insert eFuse USB or rebuild without eFuse requirement |
 | eFuse USB not detected (label/format) | Wrong label or not FAT32 | Recreate with `-u /dev/sdX` option |
 | eFuse USB not detected (GRUB) | Missing GRUB modules | Rebuild ISO (v1.9.17+ adds search_label, usb, usbms) |
-| eFuse USB not detected after hot-plug | configfile doesn't rescan USB | Rebuild ISO (v1.9.20+ uses chainloader for Retry) |
 | eFuse not enforced on installed system | mk-setup-grub.sh overwrites %posttrans | Rebuild ISO (v1.9.9+ injects into template) |
 | Wi-Fi kernel panic during WPA connect | Missing crypto algorithms (CCM, GCM, etc.) | Rebuild ISO (v1.9.8+ adds crypto configs) |
 | Package names have `.ph5.ph5` | `%{?dist}` in spec doubles dist tag | Rebuild ISO (v1.9.6+ removes `%{?dist}`) |

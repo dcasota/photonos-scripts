@@ -36,7 +36,6 @@
 #include <time.h>
 
 #include "rpm_secureboot_patcher.h"
-#include "hab/iso/hab_iso.h"
 
 #define VERSION "1.9.10"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
@@ -360,6 +359,39 @@ static int run_cmd(const char *cmd) {
     }
     int ret = system(cmd);
     return WEXITSTATUS(ret);
+}
+
+static char *run_cmd_capture(const char *cmd) {
+    FILE *fp = popen(cmd, "r");
+    if (!fp) return NULL;
+    
+    size_t buf_size = 4096;
+    size_t len = 0;
+    char *buf = malloc(buf_size);
+    if (!buf) {
+        pclose(fp);
+        return NULL;
+    }
+    
+    char line[512];
+    while (fgets(line, sizeof(line), fp)) {
+        size_t line_len = strlen(line);
+        if (len + line_len + 1 > buf_size) {
+            buf_size *= 2;
+            char *new_buf = realloc(buf, buf_size);
+            if (!new_buf) {
+                free(buf);
+                pclose(fp);
+                return NULL;
+            }
+            buf = new_buf;
+        }
+        strcpy(buf + len, line);
+        len += line_len;
+    }
+    buf[len] = '\0';
+    pclose(fp);
+    return buf;
 }
 
 static int file_exists(const char *path) {
@@ -1168,28 +1200,32 @@ static int download_ventoy_components_fallback(void) {
  * ============================================================================
  * Directory structure for kernel sources:
  *   Release 4.0: /root/4.0/SPECS/linux/ (spec files and patches)
- *   Release 5.0: /root/5.0/SPECS/linux/ (legacy path)
- *   Release 6.0+: /root/common/SPECS/linux/vX.Y/ (new common path)
- * 
- * For release 6.0 and future releases, the tool automatically selects the
- * highest kernel version available in /root/common/SPECS/linux/vX.Y/
+ *   Release 5.0: /root/5.0/SPECS/linux/ + /root/common/SPECS/linux/v6.1/
+ *   Release 6.0: /root/common/SPECS/linux/v6.12/
  * 
  * Kernel source tarballs: /root/{release}/stage/SOURCES/linux-{version}.tar.xz
  * ============================================================================ */
 
-/* Parse Version: field from a spec file */
-static int parse_spec_version(const char *spec_path, char *version, size_t ver_size) {
+/* Get kernel version from spec file */
+static int get_kernel_version_from_spec(char *version, size_t ver_size) {
+    char spec_path[512];
+    snprintf(spec_path, sizeof(spec_path), "%s/SPECS/linux/linux.spec", cfg.photon_dir);
+    
     FILE *f = fopen(spec_path, "r");
     if (!f) {
+        log_warn("Spec file not found: %s", spec_path);
         return -1;
     }
     
     char line[256];
     while (fgets(line, sizeof(line), f)) {
+        /* Look for "Version:" line */
         if (strncmp(line, "Version:", 8) == 0) {
+            /* Parse: "Version:        6.1.161" */
             char *ver_start = line + 8;
             while (*ver_start == ' ' || *ver_start == '\t') ver_start++;
             
+            /* Remove trailing whitespace/newline */
             char *ver_end = ver_start;
             while (*ver_end && *ver_end != '\n' && *ver_end != '\r' && *ver_end != ' ') ver_end++;
             *ver_end = '\0';
@@ -1202,88 +1238,6 @@ static int parse_spec_version(const char *spec_path, char *version, size_t ver_s
     }
     
     fclose(f);
-    return -1;
-}
-
-/* Find highest kernel version directory in /root/common/SPECS/linux/ */
-static int find_common_kernel_spec(char *spec_path, size_t path_size, char *version, size_t ver_size) {
-    const char *common_linux_dir = "/root/common/SPECS/linux";
-    
-    if (!dir_exists(common_linux_dir)) {
-        return -1;
-    }
-    
-    DIR *dir = opendir(common_linux_dir);
-    if (!dir) {
-        return -1;
-    }
-    
-    char highest_ver_dir[512] = {0};
-    int highest_major = 0, highest_minor = 0;
-    
-    struct dirent *entry;
-    while ((entry = readdir(dir)) != NULL) {
-        /* Look for directories named v{major}.{minor} */
-        if (entry->d_name[0] == 'v' && entry->d_type == DT_DIR) {
-            int major = 0, minor = 0;
-            if (sscanf(entry->d_name, "v%d.%d", &major, &minor) == 2) {
-                /* Select highest version */
-                if (major > highest_major || 
-                    (major == highest_major && minor > highest_minor)) {
-                    highest_major = major;
-                    highest_minor = minor;
-                    snprintf(highest_ver_dir, sizeof(highest_ver_dir),
-                             "%s/%s", common_linux_dir, entry->d_name);
-                }
-            }
-        }
-    }
-    closedir(dir);
-    
-    if (highest_ver_dir[0] == '\0') {
-        return -1;
-    }
-    
-    /* Build spec path and verify it exists */
-    snprintf(spec_path, path_size, "%s/linux.spec", highest_ver_dir);
-    if (!file_exists(spec_path)) {
-        return -1;
-    }
-    
-    /* Parse version from spec */
-    if (parse_spec_version(spec_path, version, ver_size) != 0) {
-        return -1;
-    }
-    
-    log_info("Using common kernel spec: %s (v%d.%d series)", spec_path, highest_major, highest_minor);
-    return 0;
-}
-
-/* Get kernel version from spec file
- * For release 6.0+: Uses /root/common/SPECS/linux/v{highest}/ 
- * For release 4.0/5.0: Uses /root/{release}/SPECS/linux/
- */
-static int get_kernel_version_from_spec(char *version, size_t ver_size) {
-    char spec_path[512];
-    
-    /* For release 6.0 and future, use common directory with highest kernel version */
-    float release_num = atof(cfg.release);
-    if (release_num >= 6.0) {
-        if (find_common_kernel_spec(spec_path, sizeof(spec_path), version, ver_size) == 0) {
-            return 0;
-        }
-        log_warn("Common kernel spec not found, falling back to legacy path");
-    }
-    
-    /* Legacy path: /root/{release}/SPECS/linux/linux.spec */
-    snprintf(spec_path, sizeof(spec_path), "%s/SPECS/linux/linux.spec", cfg.photon_dir);
-    
-    if (parse_spec_version(spec_path, version, ver_size) == 0) {
-        log_info("Using legacy kernel spec: %s", spec_path);
-        return 0;
-    }
-    
-    log_warn("Spec file not found: %s", spec_path);
     return -1;
 }
 
@@ -2019,18 +1973,12 @@ static int find_base_iso(char *iso_path, size_t path_size) {
     log_info("No base ISO found, attempting download...");
     
     const char *iso_name;
-    const char *url_path;  /* Path component after photon/<release>/ */
-    
     if (strcmp(cfg.release, "5.0") == 0) {
         iso_name = "photon-5.0-dde71ec57.x86_64.iso";
-        url_path = "GA/iso";
     } else if (strcmp(cfg.release, "4.0") == 0) {
-        /* Photon OS 4.0 Rev2 is the latest stable release */
-        iso_name = "photon-4.0-c001795b8.iso";
-        url_path = "Rev2/iso";
+        iso_name = "photon-4.0-ca7c9e933.iso";
     } else if (strcmp(cfg.release, "6.0") == 0) {
         iso_name = "photon-6.0-minimal.iso";
-        url_path = "GA/iso";
     } else {
         log_error("Unknown Photon OS release: %s", cfg.release);
         return -1;
@@ -2041,8 +1989,8 @@ static int find_base_iso(char *iso_path, size_t path_size) {
     char cmd[1024];
     snprintf(cmd, sizeof(cmd),
         "wget -q --show-progress -O '%s' "
-        "'https://packages.vmware.com/photon/%s/%s/%s'",
-        iso_path, cfg.release, url_path, iso_name);
+        "'https://packages.vmware.com/photon/%s/GA/iso/%s'",
+        iso_path, cfg.release, iso_name);
     
     if (run_cmd(cmd) != 0) {
         log_error("Failed to download ISO");
@@ -2262,62 +2210,11 @@ static int create_secure_boot_iso(void) {
         }
         
         log_info("Patched installer.py with progress_bar fix");
-        
-        /* Also patch all_linux_flavors to include MOK variants
-         * Without this, _adjust_packages_based_on_selected_flavor() won't correctly
-         * filter linux-mok and linux-esx-mok packages */
-        log_info("Patching installer.py all_linux_flavors for MOK support...");
-        
-        /* Read installer.py and patch all_linux_flavors */
-        FILE *fp_inst = fopen(installer_py, "r");
-        if (fp_inst) {
-            fseek(fp_inst, 0, SEEK_END);
-            long fsize = ftell(fp_inst);
-            fseek(fp_inst, 0, SEEK_SET);
-            
-            char *content = malloc(fsize + 1024);
-            if (content) {
-                size_t read_size = fread(content, 1, fsize, fp_inst);
-                content[read_size] = '\0';
-                fclose(fp_inst);
-                
-                /* Find and patch all_linux_flavors */
-                char *patch_point = strstr(content, "all_linux_flavors = [\"linux\"");
-                if (patch_point) {
-                    /* Build new content with MOK flavors */
-                    char *new_content = malloc(fsize + 1024);
-                    if (new_content) {
-                        size_t prefix_len = patch_point - content;
-                        memcpy(new_content, content, prefix_len);
-                        new_content[prefix_len] = '\0';
-                        
-                        /* Insert MOK flavors at the beginning of the list */
-                        strcat(new_content, "all_linux_flavors = [\"linux-mok\", \"linux-esx-mok\", \"linux\"");
-                        
-                        /* Find end of original "linux" and skip it */
-                        char *after = patch_point + strlen("all_linux_flavors = [\"linux\"");
-                        strcat(new_content, after);
-                        
-                        /* Write back */
-                        FILE *fp_write = fopen(installer_py, "w");
-                        if (fp_write) {
-                            fputs(new_content, fp_write);
-                            fclose(fp_write);
-                            log_info("Added linux-mok and linux-esx-mok to all_linux_flavors");
-                        }
-                        free(new_content);
-                    }
-                }
-                free(content);
-            } else {
-                fclose(fp_inst);
-            }
-        }
     } else {
         log_warn("installer.py not found at expected path");
     }
     
-    /* Patch linuxselector.py to recognize linux-mok and linux-esx-mok kernel flavors
+    /* Patch linuxselector.py to recognize linux-mok kernel flavor
      * The LinuxSelector class has a hardcoded dict of known kernel flavors.
      * Without this patch, selecting packages with linux-mok causes ZeroDivisionError
      * because no menu items are created (linux-mok not in the dict). */
@@ -2326,51 +2223,39 @@ static int create_secure_boot_iso(void) {
         "%s/usr/lib/python3.11/site-packages/photon_installer/linuxselector.py", initrd_extract);
     
     if (file_exists(linuxselector_py)) {
-        log_info("Patching linuxselector.py to recognize linux-mok and linux-esx-mok...");
+        log_info("Patching linuxselector.py to recognize linux-mok...");
         
-        /* Read file, patch in memory, write back - pure C approach */
-        FILE *fp_ls = fopen(linuxselector_py, "r");
-        if (fp_ls) {
-            fseek(fp_ls, 0, SEEK_END);
-            long fsize = ftell(fp_ls);
-            fseek(fp_ls, 0, SEEK_SET);
+        char patch_linux_script[512];
+        snprintf(patch_linux_script, sizeof(patch_linux_script), "%s/patch_linuxselector.py", work_dir);
+        
+        FILE *pf = fopen(patch_linux_script, "w");
+        if (pf) {
+            fprintf(pf,
+                "#!/usr/bin/env python3\n"
+                "import sys\n"
+                "\n"
+                "with open(sys.argv[1], 'r') as f:\n"
+                "    content = f.read()\n"
+                "\n"
+                "# Add linux-mok to the linux_flavors dictionary\n"
+                "old = 'linux_flavors = {\"linux\":\"Generic\"'\n"
+                "new = 'linux_flavors = {\"linux-mok\":\"MOK Secure Boot\", \"linux\":\"Generic\"'\n"
+                "content = content.replace(old, new, 1)\n"
+                "\n"
+                "with open(sys.argv[1], 'w') as f:\n"
+                "    f.write(content)\n"
+                "\n"
+                "print('linuxselector.py patched for linux-mok')\n"
+            );
+            fclose(pf);
             
-            char *content = malloc(fsize + 1024);
-            if (content) {
-                size_t read_size = fread(content, 1, fsize, fp_ls);
-                content[read_size] = '\0';
-                fclose(fp_ls);
-                
-                /* Find and patch linux_flavors dict */
-                char *patch_point = strstr(content, "linux_flavors = {\"linux\":\"Generic\"");
-                if (patch_point) {
-                    char *new_content = malloc(fsize + 1024);
-                    if (new_content) {
-                        size_t prefix_len = patch_point - content;
-                        memcpy(new_content, content, prefix_len);
-                        new_content[prefix_len] = '\0';
-                        
-                        /* Insert MOK flavors at beginning of dict */
-                        strcat(new_content, "linux_flavors = {\"linux-mok\":\"MOK Secure Boot\", \"linux-esx-mok\":\"ESX MOK Secure Boot\", \"linux\":\"Generic\"");
-                        
-                        /* Skip the old part */
-                        char *after = patch_point + strlen("linux_flavors = {\"linux\":\"Generic\"");
-                        strcat(new_content, after);
-                        
-                        FILE *fp_write = fopen(linuxselector_py, "w");
-                        if (fp_write) {
-                            fputs(new_content, fp_write);
-                            fclose(fp_write);
-                            log_info("Added linux-mok and linux-esx-mok to linuxselector.py");
-                        }
-                        free(new_content);
-                    }
-                }
-                free(content);
-            } else {
-                fclose(fp_ls);
-            }
+            snprintf(cmd, sizeof(cmd), "python3 '%s' '%s' 2>&1", patch_linux_script, linuxselector_py);
+            run_cmd(cmd);
+            
+            snprintf(cmd, sizeof(cmd), "rm -f '%s'", patch_linux_script);
+            run_cmd(cmd);
         }
+        log_info("Patched linuxselector.py with linux-mok support");
     } else {
         log_warn("linuxselector.py not found at expected path");
     }
@@ -2385,43 +2270,189 @@ static int create_secure_boot_iso(void) {
     if (file_exists(options_json)) {
         log_info("Adding MOK Secure Boot option to installer...");
         
-        /* Create packages_mok.json with MOK-signed packages
-         * Note: grub2-theme provides /boot/grub2/fonts/ascii.pf2 and theme files
-         * which are required for the themed GRUB menu to display properly */
-        FILE *f = fopen(mok_packages_json, "w");
-        if (f) {
-            fprintf(f,
-                "{\n"
-                "    \"packages\": [\n"
-                "        \"minimal\",\n"
-                "        \"linux-mok\",\n"
-                "        \"linux-esx-mok\",\n"
-                "        \"initramfs\",\n"
-                "        \"grub2-efi-image-mok\",\n"
-                "        \"grub2-theme\",\n"
-                "        \"shim-signed-mok\",\n"
-                "        \"lvm2\",\n"
-                "        \"less\",\n"
-                "        \"sudo\",\n"
-                "        \"libnl\",\n"
-                "        \"wpa_supplicant\",\n"
-                "        \"wireless-regdb\",\n"
-                "        \"iw\",\n"
-                "        \"wifi-config\"\n"
-                "    ]\n"
+        /* Create packages_mok.json dynamically by:
+         * 1. Using known MOK package -> base package mappings (from our spec templates)
+         * 2. Expanding meta-packages that have conflicting dependencies
+         * 3. Replacing conflicting base packages with MOK versions
+         * 
+         * This approach works because WE control the MOK package specs, so we know
+         * exactly what they Provide/Obsolete without needing to scan the built RPMs.
+         * 
+         * Future-ready: To add a new MOK package, add its mapping to mok_replaces[] below. */
+        
+        char gen_mok_script[512];
+        snprintf(gen_mok_script, sizeof(gen_mok_script), "%s/generate_mok_packages.py", work_dir);
+        
+        FILE *gf = fopen(gen_mok_script, "w");
+        if (gf) {
+            fprintf(gf,
+                "#!/usr/bin/env python3\n"
+                "\"\"\"Dynamic MOK packages.json generator.\n"
+                "\n"
+                "Uses known MOK package mappings to expand meta-packages and replace\n"
+                "conflicting base packages with MOK versions.\n"
+                "\n"
+                "FUTURE-READY: To add a new MOK package:\n"
+                "1. Add entry to MOK_REPLACES dict below\n"
+                "2. Ensure the MOK package spec has Epoch > 0 and Provides/Obsoletes the base\n"
+                "\"\"\"\n"
+                "import subprocess\n"
+                "import json\n"
+                "import sys\n"
+                "import os\n"
+                "import re\n"
+                "\n"
+                "# MOK package mappings: mok_package -> [base_packages_it_replaces]\n"
+                "# These MUST match the Provides/Obsoletes in the MOK package specs\n"
+                "MOK_REPLACES = {\n"
+                "    'linux-mok': ['linux', 'linux-esx'],\n"
+                "    'linux-esx-mok': ['linux-esx'],\n"
+                "    'grub2-efi-image-mok': ['grub2-efi-image'],\n"
+                "    'shim-signed-mok': ['shim-signed'],\n"
                 "}\n"
+                "\n"
+                "def run_rpm(args, rpm_path=None):\n"
+                "    \"\"\"Run rpm command and return output lines.\"\"\"\n"
+                "    cmd = ['rpm']\n"
+                "    if rpm_path:\n"
+                "        cmd.extend(['-qp', rpm_path])\n"
+                "    cmd.extend(args)\n"
+                "    try:\n"
+                "        result = subprocess.run(cmd, capture_output=True, text=True, check=True)\n"
+                "        return [l.strip() for l in result.stdout.strip().split('\\n') if l.strip()]\n"
+                "    except subprocess.CalledProcessError:\n"
+                "        return []\n"
+                "\n"
+                "def get_meta_package_deps(rpm_path):\n"
+                "    \"\"\"Get direct dependencies of a meta-package RPM.\"\"\"\n"
+                "    deps = []\n"
+                "    for req in run_rpm(['--requires'], rpm_path):\n"
+                "        if req.startswith('rpmlib(') or req.startswith('/'):\n"
+                "            continue\n"
+                "        match = re.match(r'^([\\w.-]+)', req)\n"
+                "        if match:\n"
+                "            deps.append(match.group(1))\n"
+                "    return deps\n"
+                "\n"
+                "def find_rpm(rpms_dir, name_pattern):\n"
+                "    \"\"\"Find RPM file matching pattern in directory.\"\"\"\n"
+                "    import glob\n"
+                "    # Search in both x86_64 and noarch\n"
+                "    for subdir in ['x86_64', 'noarch', '.']:\n"
+                "        search_path = os.path.join(rpms_dir, subdir, f'{name_pattern}-[0-9]*.rpm')\n"
+                "        matches = glob.glob(search_path)\n"
+                "        if not name_pattern.endswith('-mok'):\n"
+                "            matches = [m for m in matches if '-mok-' not in os.path.basename(m)]\n"
+                "        if matches:\n"
+                "            return matches[0]\n"
+                "    # Also try direct path (for flat structure)\n"
+                "    matches = glob.glob(os.path.join(rpms_dir, f'{name_pattern}-[0-9]*.rpm'))\n"
+                "    if not name_pattern.endswith('-mok'):\n"
+                "        matches = [m for m in matches if '-mok-' not in os.path.basename(m)]\n"
+                "    return matches[0] if matches else None\n"
+                "\n"
+                "def main():\n"
+                "    if len(sys.argv) < 3:\n"
+                "        print('Usage: generate_mok_packages.py <rpms_dir> <output_json>', file=sys.stderr)\n"
+                "        sys.exit(1)\n"
+                "    \n"
+                "    rpms_dir = sys.argv[1]\n"
+                "    output_json = sys.argv[2]\n"
+                "    \n"
+                "    # Build reverse mapping: base_package -> mok_package\n"
+                "    base_to_mok = {}\n"
+                "    for mok_pkg, base_pkgs in MOK_REPLACES.items():\n"
+                "        for base_pkg in base_pkgs:\n"
+                "            base_to_mok[base_pkg] = mok_pkg\n"
+                "    \n"
+                "    print(f'MOK package mappings:', file=sys.stderr)\n"
+                "    for mok_pkg, base_pkgs in MOK_REPLACES.items():\n"
+                "        print(f'  {mok_pkg} replaces: {base_pkgs}', file=sys.stderr)\n"
+                "    \n"
+                "    # Meta-packages to check for conflicts\n"
+                "    meta_packages = ['minimal']\n"
+                "    extra_packages = [\n"
+                "        'initramfs', 'grub2-theme', 'lvm2', 'less', 'sudo',\n"
+                "        'libnl', 'wpa_supplicant', 'wireless-regdb', 'iw', 'wifi-config'\n"
+                "    ]\n"
+                "    \n"
+                "    final_packages = set()\n"
+                "    expanded_meta = set()\n"
+                "    \n"
+                "    for meta in meta_packages:\n"
+                "        meta_rpm = find_rpm(rpms_dir, meta)\n"
+                "        if not meta_rpm:\n"
+                "            print(f'Warning: {meta} RPM not found, adding as-is', file=sys.stderr)\n"
+                "            final_packages.add(meta)\n"
+                "            continue\n"
+                "        \n"
+                "        deps = get_meta_package_deps(meta_rpm)\n"
+                "        has_conflict = any(dep in base_to_mok for dep in deps)\n"
+                "        \n"
+                "        if has_conflict:\n"
+                "            print(f'Expanding {meta} (has conflicting deps):', file=sys.stderr)\n"
+                "            expanded_meta.add(meta)\n"
+                "            for dep in deps:\n"
+                "                if dep in base_to_mok:\n"
+                "                    mok_name = base_to_mok[dep]\n"
+                "                    print(f'  {dep} -> {mok_name}', file=sys.stderr)\n"
+                "                    final_packages.add(mok_name)\n"
+                "                else:\n"
+                "                    final_packages.add(dep)\n"
+                "        else:\n"
+                "            final_packages.add(meta)\n"
+                "    \n"
+                "    # Add all MOK packages\n"
+                "    for mok_name in MOK_REPLACES.keys():\n"
+                "        final_packages.add(mok_name)\n"
+                "    \n"
+                "    # Add extra packages (unless replaced by MOK)\n"
+                "    for pkg in extra_packages:\n"
+                "        if pkg not in base_to_mok:\n"
+                "            final_packages.add(pkg)\n"
+                "    \n"
+                "    # Remove any base packages that have MOK replacements\n"
+                "    for base_pkg in base_to_mok.keys():\n"
+                "        final_packages.discard(base_pkg)\n"
+                "    \n"
+                "    # Sort and write output\n"
+                "    sorted_packages = sorted(final_packages, key=str.lower)\n"
+                "    output = {'packages': sorted_packages}\n"
+                "    \n"
+                "    with open(output_json, 'w') as f:\n"
+                "        json.dump(output, f, indent=4)\n"
+                "    \n"
+                "    print(f'Generated {output_json} with {len(sorted_packages)} packages', file=sys.stderr)\n"
+                "    if expanded_meta:\n"
+                "        print(f'Expanded meta-packages: {expanded_meta}', file=sys.stderr)\n"
+                "\n"
+                "if __name__ == '__main__':\n"
+                "    main()\n"
             );
-            /* Note: Both linux-mok and linux-esx-mok are included to match the original
-             * packages_minimal.json which includes both linux and linux-esx kernels.
-             * WiFi packages include:
-             * - wireless-regdb: kernel.org wireless regulatory database
-             * - iw: nl80211 wireless configuration utility
-             * - wifi-config: configures wpa_supplicant, disables iwlwifi LAR, DHCP for wlan0
-             * - wpa_supplicant: from Photon 5.0 repos
-             * - libnl: dependency of iw, from Photon 5.0 repos
-             * Custom packages must be in drivers/RPM and built with --drivers flag. */
-            fclose(f);
-            log_info("Created packages_mok.json");
+            fclose(gf);
+            
+            /* Run the dynamic generator using ISO's RPMS directory */
+            char cmd[1024];
+            snprintf(cmd, sizeof(cmd), "python3 '%s' '%s/RPMS' '%s' 2>&1",
+                     gen_mok_script, iso_extract, mok_packages_json);
+            log_info("Generating packages_mok.json dynamically...");
+            char *output = run_cmd_capture(cmd);
+            if (output) {
+                char *line = strtok(output, "\n");
+                while (line) {
+                    log_info("  %s", line);
+                    line = strtok(NULL, "\n");
+                }
+                free(output);
+            }
+            
+            /* Clean up script */
+            snprintf(cmd, sizeof(cmd), "rm -f '%s'", gen_mok_script);
+            run_cmd(cmd);
+            
+            if (!file_exists(mok_packages_json)) {
+                log_error("Failed to generate packages_mok.json");
+            }
         }
         
         /* Add MOK option to build_install_options_all.json as first entry
@@ -2560,13 +2591,10 @@ static int create_secure_boot_iso(void) {
                     "    echo \"=========================================\"\n"
                     "    echo \"\"\n"
                     "    echo \"Insert eFuse USB dongle (label: EFUSE_SIM)\"\n"
-                    "    echo \"and press any key to rescan USB devices.\"\n"
+                    "    echo \"and press any key to retry.\"\n"
                     "    echo \"\"\n"
-                    "    echo \"NOTE: GRUB will reload to detect newly plugged USB devices.\"\n"
                     "    read anykey\n"
-                    "    # Chainloader reloads GRUB EFI binary, forcing USB device rescan\n"
-                    "    # configfile only reloads config without rescanning devices\n"
-                    "    chainloader /EFI/BOOT/grubx64.efi\n"
+                    "    configfile \\\\${BOOT_DIR}/grub2/grub.cfg\n"
                     "fi\n"
                     "# Restore graphical terminal for themed boot menu after eFuse verification\n"
                     "terminal_output gfxterm\n"
@@ -2636,7 +2664,7 @@ static int create_secure_boot_iso(void) {
         
         /* Install our HABv4 GPG key */
         char habv4_key_src[512], habv4_key_dest[512];
-        snprintf(habv4_key_src, sizeof(habv4_key_src), "%s/%s", cfg.keys_dir, GPG_KEY_FILE);
+        snprintf(habv4_key_src, sizeof(habv4_key_src), "%s/%s", iso_extract, GPG_KEY_FILE);
         snprintf(habv4_key_dest, sizeof(habv4_key_dest), "%s/RPM-GPG-KEY-habv4", gpg_key_dest_dir);
         
         if (file_exists(habv4_key_src)) {
@@ -2657,83 +2685,6 @@ static int create_secure_boot_iso(void) {
                 photon_iso_repo);
             run_cmd(cmd);
             log_info("Updated photon-iso.repo with VMware + HABv4 GPG keys");
-        }
-    }
-
-    /* Patch tdnf.py in initrd to enable verbose logging for Error(1525) debugging */
-    char tdnf_py[1024] = "";
-    snprintf(cmd, sizeof(cmd), "find '%s' -name tdnf.py | grep photon_installer | head -1", initrd_extract);
-    FILE *fp_find = popen(cmd, "r");
-    if (fp_find) {
-        if (fgets(tdnf_py, sizeof(tdnf_py), fp_find)) {
-            size_t len = strlen(tdnf_py);
-            if (len > 0 && tdnf_py[len-1] == '\n') tdnf_py[len-1] = '\0';
-        }
-        pclose(fp_find);
-    }
-
-    /* Fallback if find failed */
-    if (strlen(tdnf_py) == 0) {
-        snprintf(tdnf_py, sizeof(tdnf_py), "%s/usr/lib/python3.11/site-packages/photon_installer/tdnf.py", initrd_extract);
-        if (!file_exists(tdnf_py)) {
-            snprintf(tdnf_py, sizeof(tdnf_py), "%s/usr/lib/python3.7/site-packages/photon_installer/tdnf.py", initrd_extract);
-            if (!file_exists(tdnf_py)) {
-                log_warn("Could not find tdnf.py to patch - debug logging will not be enabled");
-                tdnf_py[0] = '\0';
-            }
-        }
-    }
-    
-    if (strlen(tdnf_py) > 0) {
-        log_info("Patching %s for verbose error logging...", tdnf_py);
-        
-        /* Read the file, modify in memory, write back - pure C approach */
-        FILE *fp_read = fopen(tdnf_py, "r");
-        if (fp_read) {
-            /* Get file size */
-            fseek(fp_read, 0, SEEK_END);
-            long fsize = ftell(fp_read);
-            fseek(fp_read, 0, SEEK_SET);
-            
-            char *content = malloc(fsize + 4096); /* Extra space for additions */
-            if (content) {
-                size_t read_size = fread(content, 1, fsize, fp_read);
-                content[read_size] = '\0';
-                fclose(fp_read);
-                
-                /* Find and patch: after "self.logger.error(out_json['ErrorMessage'])" 
-                 * add logging of full JSON output */
-                char *patch_point = strstr(content, "self.logger.error(out_json['ErrorMessage'])");
-                if (patch_point) {
-                    /* Find end of line */
-                    char *eol = strchr(patch_point, '\n');
-                    if (eol) {
-                        /* Build new content with insertion */
-                        char *new_content = malloc(fsize + 4096);
-                        if (new_content) {
-                            size_t prefix_len = eol - content + 1;
-                            memcpy(new_content, content, prefix_len);
-                            
-                            /* Insert debug logging line */
-                            const char *debug_line = "                self.logger.error(f'Full TDNF JSON: {out_json}')\n";
-                            strcpy(new_content + prefix_len, debug_line);
-                            strcat(new_content, eol + 1);
-                            
-                            /* Write back */
-                            FILE *fp_write = fopen(tdnf_py, "w");
-                            if (fp_write) {
-                                fputs(new_content, fp_write);
-                                fclose(fp_write);
-                                log_info("Added verbose TDNF error logging");
-                            }
-                            free(new_content);
-                        }
-                    }
-                }
-                free(content);
-            } else {
-                fclose(fp_read);
-            }
         }
     }
     
@@ -2984,13 +2935,9 @@ static int create_secure_boot_iso(void) {
                 "    echo \"Insert eFuse USB dongle (label: EFUSE_SIM)\"\n"
                 "    echo \"and select 'Retry' to continue.\"\n"
                 "    echo \"\"\n"
-                "    echo \"NOTE: If USB was just plugged in, Retry will rescan devices.\"\n"
                 "    set timeout=-1\n"
-                "    menuentry \"Retry - Rescan USB devices and check for eFuse\" {\n"
-                "        # Chainloader reloads GRUB EFI binary, forcing USB rescan\n"
-                "        # configfile only reloads config without rescanning devices\n"
-                "        # Note: GRUB EFI is at /EFI/BOOT/ not /boot/grub2/ on installer ISO\n"
-                "        chainloader /EFI/BOOT/grubx64.efi\n"
+                "    menuentry \"Retry - Search for eFuse USB\" {\n"
+                "        configfile /boot/grub2/grub.cfg\n"
                 "    }\n"
                 "    menuentry \"Reboot\" {\n"
                 "        reboot\n"
@@ -3145,67 +3092,10 @@ static int create_secure_boot_iso(void) {
                     } else {
                         /* Re-copy signed MOK RPMs to ISO (they were copied before signing) */
                         log_info("Updating ISO with signed MOK RPMs...");
-                        /* Remove the old unsigned MOK RPMs first to ensure fresh copy */
                         snprintf(cmd, sizeof(cmd), 
-                            "rm -f '%s/RPMS/x86_64/'*-mok-*.rpm", 
-                            iso_extract);
-                        run_cmd(cmd);
-                        /* Copy signed MOK RPMs - use explicit copy without suppressing errors */
-                        snprintf(cmd, sizeof(cmd), 
-                            "cp -v '%s/'*-mok-*.rpm '%s/RPMS/x86_64/'", 
+                            "cp '%s'/*-mok-*.rpm '%s/RPMS/x86_64/' 2>/dev/null", 
                             output_dir, iso_extract);
-                        if (run_cmd(cmd) != 0) {
-                            log_error("Failed to copy signed MOK RPMs to ISO");
-                        }
-                        
-                        /* Remove original packages that conflict with MOK packages
-                         * MOK packages use Obsoletes: but file conflicts cause rpm transaction to fail
-                         * if both packages are present in the repo during installation.
-                         * Also remove packages that require exact kernel version (linux = 6.12.60-14.ph5)
-                         * because linux-mok provides a different version (linux = 6.1.159-7.ph5) */
-                        log_info("Removing original packages replaced by MOK packages...");
-                        /* Remove packages for BOTH 4.0 (5.x kernel) and 5.0 (6.x kernel) */
-                        snprintf(cmd, sizeof(cmd), 
-                            "rm -f '%s/RPMS/x86_64/grub2-efi-image-2'*.rpm "
-                            "'%s/RPMS/x86_64/shim-signed-1'*.rpm "
-                            /* Photon 5.0 kernels */
-                            "'%s/RPMS/x86_64/linux-6.'*.rpm "
-                            "'%s/RPMS/x86_64/linux-esx-6.'*.rpm "
-                            /* Photon 4.0 kernels */
-                            "'%s/RPMS/x86_64/linux-5.'*.rpm "
-                            "'%s/RPMS/x86_64/linux-esx-5.'*.rpm "
-                            "'%s/RPMS/x86_64/linux-secure-5.'*.rpm "
-                            "'%s/RPMS/x86_64/linux-rt-5.'*.rpm "
-                            "'%s/RPMS/x86_64/linux-aws-5.'*.rpm "
-                            /* Remove packages that require exact kernel version */
-                            "'%s/RPMS/x86_64/linux-devel-'*.rpm "
-                            "'%s/RPMS/x86_64/linux-docs-'*.rpm "
-                            "'%s/RPMS/x86_64/linux-drivers-'*.rpm "
-                            "'%s/RPMS/x86_64/linux-tools-'*.rpm "
-                            "'%s/RPMS/x86_64/linux-python3-perf-'*.rpm "
-                            "'%s/RPMS/x86_64/linux-esx-devel-'*.rpm "
-                            "'%s/RPMS/x86_64/linux-esx-docs-'*.rpm "
-                            "'%s/RPMS/x86_64/linux-esx-drivers-'*.rpm "
-                            "'%s/RPMS/x86_64/linux-secure-devel-'*.rpm "
-                            "'%s/RPMS/x86_64/linux-secure-docs-'*.rpm "
-                            /* bpftool requires linux-tools which we removed */
-                            "'%s/RPMS/x86_64/bpftool-'*.rpm "
-                            "2>/dev/null || true",
-                            iso_extract, iso_extract, 
-                            iso_extract, iso_extract,
-                            iso_extract, iso_extract, iso_extract, iso_extract, iso_extract,
-                            iso_extract, iso_extract, iso_extract, iso_extract, iso_extract,
-                            iso_extract, iso_extract, iso_extract, iso_extract, iso_extract,
-                            iso_extract);
                         run_cmd(cmd);
-
-                        /* Fix: Ensure 'find' command works on ISO RPM directory to clean remaining conflicting kernel modules/files 
-                         * that might have different naming patterns */
-                        snprintf(cmd, sizeof(cmd), 
-                            "find '%s/RPMS/x86_64' -name 'linux-6.12.60-10.ph5-esx*' -delete 2>/dev/null || true",
-                            iso_extract);
-                        run_cmd(cmd);
-                        log_info("Removed conflicting original packages from ISO");
                         
                         /* Copy GPG public key to ISO root */
                         char gpg_pub[512], gpg_iso[512];
@@ -3215,15 +3105,11 @@ static int create_secure_boot_iso(void) {
                         run_cmd(cmd);
                         log_info("GPG public key copied to ISO root");
                         
-                        /* Regenerate repodata after updating RPMs
-                         * IMPORTANT: Do NOT use --update flag because it only adds new packages
-                         * and doesn't remove deleted ones from the metadata. We need a full rebuild
-                         * since we removed original packages (linux-6.*, grub2-efi-image-2.*, etc.) */
-                        log_info("Regenerating repository metadata (full rebuild)...");
+                        /* Regenerate repodata after updating RPMs */
+                        log_info("Regenerating repository metadata...");
                         snprintf(cmd, sizeof(cmd), 
-                            "rm -rf '%s/RPMS/repodata' && "
-                            "(createrepo_c '%s/RPMS' 2>/dev/null || createrepo '%s/RPMS' 2>/dev/null)",
-                            iso_extract, iso_extract, iso_extract);
+                            "cd '%s/RPMS' && createrepo_c --update . 2>/dev/null || createrepo --update . 2>/dev/null",
+                            iso_extract);
                         run_cmd(cmd);
                     }
                 }
@@ -3232,16 +3118,21 @@ static int create_secure_boot_iso(void) {
     }
     
     log_info("Building ISO...");
+    snprintf(cmd, sizeof(cmd),
+        "cd '%s' && xorriso -as mkisofs "
+        "-o '%s' "
+        "-isohybrid-mbr /usr/share/syslinux/isohdpfx.bin "
+        "-c isolinux/boot.cat "
+        "-b isolinux/isolinux.bin "
+        "-no-emul-boot -boot-load-size 4 -boot-info-table "
+        "-eltorito-alt-boot "
+        "-e boot/grub2/efiboot.img "
+        "-no-emul-boot -isohybrid-gpt-basdat "
+        "-V 'PHOTON_SB_%s' "
+        ". 2>&1 | tail -5",
+        iso_extract, output_iso, cfg.release);
     
-    char volume_id[64];
-    snprintf(volume_id, sizeof(volume_id), "PHOTON_SB_%s", cfg.release);
-    
-    if (repack_iso(iso_extract, output_iso, volume_id) != 0) {
-        log_error("Failed to create ISO");
-        snprintf(cmd, sizeof(cmd), "rm -rf '%s'", work_dir);
-        run_cmd(cmd);
-        return -1;
-    }
+    run_cmd(cmd);
     
     snprintf(cmd, sizeof(cmd), "rm -rf '%s'", work_dir);
     run_cmd(cmd);
