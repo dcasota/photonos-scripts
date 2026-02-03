@@ -1167,32 +1167,28 @@ static int download_ventoy_components_fallback(void) {
  * ============================================================================
  * Directory structure for kernel sources:
  *   Release 4.0: /root/4.0/SPECS/linux/ (spec files and patches)
- *   Release 5.0: /root/5.0/SPECS/linux/ + /root/common/SPECS/linux/v6.1/
- *   Release 6.0: /root/common/SPECS/linux/v6.12/
+ *   Release 5.0: /root/5.0/SPECS/linux/ (legacy path)
+ *   Release 6.0+: /root/common/SPECS/linux/vX.Y/ (new common path)
+ * 
+ * For release 6.0 and future releases, the tool automatically selects the
+ * highest kernel version available in /root/common/SPECS/linux/vX.Y/
  * 
  * Kernel source tarballs: /root/{release}/stage/SOURCES/linux-{version}.tar.xz
  * ============================================================================ */
 
-/* Get kernel version from spec file */
-static int get_kernel_version_from_spec(char *version, size_t ver_size) {
-    char spec_path[512];
-    snprintf(spec_path, sizeof(spec_path), "%s/SPECS/linux/linux.spec", cfg.photon_dir);
-    
+/* Parse Version: field from a spec file */
+static int parse_spec_version(const char *spec_path, char *version, size_t ver_size) {
     FILE *f = fopen(spec_path, "r");
     if (!f) {
-        log_warn("Spec file not found: %s", spec_path);
         return -1;
     }
     
     char line[256];
     while (fgets(line, sizeof(line), f)) {
-        /* Look for "Version:" line */
         if (strncmp(line, "Version:", 8) == 0) {
-            /* Parse: "Version:        6.1.161" */
             char *ver_start = line + 8;
             while (*ver_start == ' ' || *ver_start == '\t') ver_start++;
             
-            /* Remove trailing whitespace/newline */
             char *ver_end = ver_start;
             while (*ver_end && *ver_end != '\n' && *ver_end != '\r' && *ver_end != ' ') ver_end++;
             *ver_end = '\0';
@@ -1205,6 +1201,88 @@ static int get_kernel_version_from_spec(char *version, size_t ver_size) {
     }
     
     fclose(f);
+    return -1;
+}
+
+/* Find highest kernel version directory in /root/common/SPECS/linux/ */
+static int find_common_kernel_spec(char *spec_path, size_t path_size, char *version, size_t ver_size) {
+    const char *common_linux_dir = "/root/common/SPECS/linux";
+    
+    if (!dir_exists(common_linux_dir)) {
+        return -1;
+    }
+    
+    DIR *dir = opendir(common_linux_dir);
+    if (!dir) {
+        return -1;
+    }
+    
+    char highest_ver_dir[512] = {0};
+    int highest_major = 0, highest_minor = 0;
+    
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        /* Look for directories named v{major}.{minor} */
+        if (entry->d_name[0] == 'v' && entry->d_type == DT_DIR) {
+            int major = 0, minor = 0;
+            if (sscanf(entry->d_name, "v%d.%d", &major, &minor) == 2) {
+                /* Select highest version */
+                if (major > highest_major || 
+                    (major == highest_major && minor > highest_minor)) {
+                    highest_major = major;
+                    highest_minor = minor;
+                    snprintf(highest_ver_dir, sizeof(highest_ver_dir),
+                             "%s/%s", common_linux_dir, entry->d_name);
+                }
+            }
+        }
+    }
+    closedir(dir);
+    
+    if (highest_ver_dir[0] == '\0') {
+        return -1;
+    }
+    
+    /* Build spec path and verify it exists */
+    snprintf(spec_path, path_size, "%s/linux.spec", highest_ver_dir);
+    if (!file_exists(spec_path)) {
+        return -1;
+    }
+    
+    /* Parse version from spec */
+    if (parse_spec_version(spec_path, version, ver_size) != 0) {
+        return -1;
+    }
+    
+    log_info("Using common kernel spec: %s (v%d.%d series)", spec_path, highest_major, highest_minor);
+    return 0;
+}
+
+/* Get kernel version from spec file
+ * For release 6.0+: Uses /root/common/SPECS/linux/v{highest}/ 
+ * For release 4.0/5.0: Uses /root/{release}/SPECS/linux/
+ */
+static int get_kernel_version_from_spec(char *version, size_t ver_size) {
+    char spec_path[512];
+    
+    /* For release 6.0 and future, use common directory with highest kernel version */
+    float release_num = atof(cfg.release);
+    if (release_num >= 6.0) {
+        if (find_common_kernel_spec(spec_path, sizeof(spec_path), version, ver_size) == 0) {
+            return 0;
+        }
+        log_warn("Common kernel spec not found, falling back to legacy path");
+    }
+    
+    /* Legacy path: /root/{release}/SPECS/linux/linux.spec */
+    snprintf(spec_path, sizeof(spec_path), "%s/SPECS/linux/linux.spec", cfg.photon_dir);
+    
+    if (parse_spec_version(spec_path, version, ver_size) == 0) {
+        log_info("Using legacy kernel spec: %s", spec_path);
+        return 0;
+    }
+    
+    log_warn("Spec file not found: %s", spec_path);
     return -1;
 }
 
@@ -2409,10 +2487,13 @@ static int create_secure_boot_iso(void) {
                     "    echo \"=========================================\"\n"
                     "    echo \"\"\n"
                     "    echo \"Insert eFuse USB dongle (label: EFUSE_SIM)\"\n"
-                    "    echo \"and press any key to retry.\"\n"
+                    "    echo \"and press any key to rescan USB devices.\"\n"
                     "    echo \"\"\n"
+                    "    echo \"NOTE: GRUB will reload to detect newly plugged USB devices.\"\n"
                     "    read anykey\n"
-                    "    configfile \\\\${BOOT_DIR}/grub2/grub.cfg\n"
+                    "    # Chainloader reloads GRUB EFI binary, forcing USB device rescan\n"
+                    "    # configfile only reloads config without rescanning devices\n"
+                    "    chainloader /EFI/BOOT/grubx64.efi\n"
                     "fi\n"
                     "# Restore graphical terminal for themed boot menu after eFuse verification\n"
                     "terminal_output gfxterm\n"
@@ -2753,9 +2834,12 @@ static int create_secure_boot_iso(void) {
                 "    echo \"Insert eFuse USB dongle (label: EFUSE_SIM)\"\n"
                 "    echo \"and select 'Retry' to continue.\"\n"
                 "    echo \"\"\n"
+                "    echo \"NOTE: If USB was just plugged in, Retry will rescan devices.\"\n"
                 "    set timeout=-1\n"
-                "    menuentry \"Retry - Search for eFuse USB\" {\n"
-                "        configfile /boot/grub2/grub.cfg\n"
+                "    menuentry \"Retry - Rescan USB devices and check for eFuse\" {\n"
+                "        # Chainloader reloads GRUB EFI binary, forcing USB rescan\n"
+                "        # configfile only reloads config without rescanning devices\n"
+                "        chainloader /boot/grub2/grubx64.efi\n"
                 "    }\n"
                 "    menuentry \"Reboot\" {\n"
                 "        reboot\n"

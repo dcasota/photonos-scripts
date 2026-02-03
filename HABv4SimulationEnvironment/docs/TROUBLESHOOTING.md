@@ -205,11 +205,27 @@ For Photon OS ISOs, use VMware's full GRUB binary and sign it with your own MOK 
 
 **Solutions**:
 1. Insert the eFuse USB dongle (labeled `EFUSE_SIM`) before booting
-2. Select "Retry - Search for eFuse USB" after inserting
+2. Select "Retry - Rescan USB devices and check for eFuse" after inserting
 3. If you don't have an eFuse USB, rebuild ISO without eFuse requirement:
    ```bash
    ./PhotonOS-HABv4Emulation-ISOCreator -r 5.0 -b
    ```
+
+### eFuse USB plugged in after boot not detected (v1.9.34 Fix)
+
+**Cause**: GRUB caches USB devices at startup. The old `configfile` reload only reloads the config without rescanning USB devices.
+
+**Symptoms**:
+- You plug in eFuse USB dongle AFTER GRUB has started
+- Select "Retry" menu option
+- GRUB still shows "eFuse USB Required" even though USB is now inserted
+
+**Solution (v1.9.34+)**: Fixed by using `chainloader` instead of `configfile` to reload GRUB:
+- `chainloader /EFI/BOOT/grubx64.efi` loads and executes a new GRUB EFI binary
+- The new GRUB instance reinitializes all modules including USB
+- USB devices plugged in after initial boot are now detected
+
+**User experience**: Plug in eFuse USB at the prompt, then select "Retry - Rescan USB devices" - the newly inserted USB will be detected.
 
 ### eFuse USB not detected even when inserted (v1.9.17 Fix)
 
