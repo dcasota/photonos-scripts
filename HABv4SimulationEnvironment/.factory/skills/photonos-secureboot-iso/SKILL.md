@@ -380,6 +380,7 @@ sync
 | grub> prompt | Config not found | Rebuild ISO |
 | BOOT BLOCKED | eFuse USB missing | Insert eFuse USB or rebuild without `-E` |
 | eFuse USB not detected | Missing GRUB modules | Rebuild ISO (v1.9.17+ adds search_label, usb, usbms) |
+| eFuse USB plugged after boot not detected | GRUB caches USB devices | Rebuild ISO (v1.9.34+ uses chainloader for USB rescan) |
 | ZeroDivisionError in linuxselector | linux-mok not recognized | Rebuild ISO (v1.6.0+ fixes this) |
 | Installed system fails | Standard packages installed | Reinstall with "Photon MOK Secure Boot" |
 | "search.c: no such device" | GRUB searching for ISO path | Rebuild ISO (v1.7.0+ fixes embedded config) |
