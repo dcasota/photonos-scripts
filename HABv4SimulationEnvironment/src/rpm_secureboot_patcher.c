@@ -1406,6 +1406,21 @@ int rpm_integrate_to_iso(
     
     log_debug("Repository dir for repodata: %s", repo_dir);
     
+    /* Remove original packages that conflict with MOK packages.
+     * The MOK packages have Conflicts: directives, but tdnf still tries to install
+     * the original packages when resolving dependencies from other packages.
+     * Removing the originals ensures only MOK packages can be selected. */
+    log_info("Removing original packages replaced by MOK packages...");
+    snprintf(cmd, sizeof(cmd), 
+        "rm -f '%s/x86_64/grub2-efi-image-2'*.rpm "
+        "'%s/x86_64/shim-signed-1'*.rpm "
+        "'%s/x86_64/linux-6.'*.rpm "
+        "'%s/x86_64/linux-esx-6.'*.rpm "
+        "'%s/x86_64/linux-rt-6.'*.rpm "
+        "2>/dev/null || true",
+        repo_dir, repo_dir, repo_dir, repo_dir, repo_dir);
+    run_cmd(cmd);
+    
     /* Remove packages that require exact kernel version (linux = 6.12.60-14.ph5)
      * because linux-mok provides a different version (linux = 6.1.159-7.ph5).
      * These packages have unsatisfiable dependencies and will cause tdnf to fail. */
