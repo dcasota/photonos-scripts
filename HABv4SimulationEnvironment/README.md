@@ -370,6 +370,25 @@ On first boot, the **blue MokManager screen** appears:
 
 ## Version History
 
+- **v1.9.38** - Security hardening, installer fixes, and debug logging:
+  - **Replace `system()` with `fork()/execl()`**: All 3 `run_cmd()` implementations now use proper `fork()/execl("/bin/sh", ...)` instead of `system()`, eliminating SIGCHLD/SIGINT handling issues and improving signal safety.
+  - **Fix Error(1525) installer failures** (multiple root causes resolved):
+    - Fix `repo_paths` override logic: handle both `/mnt/media/RPMS` and `/mnt/media` (no suffix) by stripping trailing `/RPMS` before appending `/{mok_sub}`
+    - Remove `grub2-efi-image` (original) from `RPMS_MOK/`: prevents `Conflicts:` resolution failure when `minimal` meta-package pulls it in alongside `grub2-efi-image-mok`
+    - Replace `grub2-efi-image` with `grub2-efi-image-mok` in package list when MOK option is selected
+    - Keep all original packages in `RPMS_MOK/` except conflicting `grub2-efi-image` (required by `minimal` meta-package dependency chain)
+    - Remove `wifi-config` package: file conflict with `wpa_supplicant` on `/etc/wpa_supplicant/wpa_supplicant-wlan0.conf`
+    - Add `mok_repo_path` to installer's `known_keys` whitelist (fixes `Exception: Unknown install_config keys`)
+  - **Comprehensive debug logging** for installer diagnostics:
+    - Kernel cmdline `loglevel=7` (maximum kernel debug output)
+    - Pre-install state dump to `/var/log/installer-debug.log` (package list, repo paths, repo config, linux_flavor)
+    - `tdnf --verbose` flag for detailed package resolution output
+    - Enhanced error logging: tdnf exit code, full stderr, and package list on failure
+  - **Fix Photon cert bundle for 6.0+**: Generate from `photon_sb2020.pem + photon_km_2025.pem` when pre-made bundle doesn't exist.
+  - **Fix Python f-string syntax errors**: Extract `.get()` calls to intermediate variables to avoid nested double quotes in Python 3.11 f-strings.
+  - **Suppress cosmetic warnings**: GPG_TTY (`--batch --no-tty`), kernel config (`make olddefconfig 2>/dev/null`), frame-size (filtered).
+  - **Remove unused code**: `strdup_safe()` function deleted.
+  - **Result**: Clean build with zero warnings. 5115 MB ISO verified.
 - **v1.9.37** - Two-repository architecture (Error 1525 definitive fix):
   - **Root cause identified**: Photon OS installer `installer.py` **hardcodes** `packages.append('grub2-efi-image')` on line 361 for EFI bootmode. This is still present in upstream v2.8 (Jan 2026). No previous version (v1.9.0-v1.9.36) identified this root cause.
   - **Two-repository solution**: Creates `RPMS_MOK/` alongside untouched `RPMS/`:
@@ -380,6 +399,7 @@ On first boot, the **blue MokManager screen** appears:
   - **Conflict elimination**: When installer's hardcoded `packages.append('grub2-efi-image')` runs in MOK path, only `grub2-efi-image-mok` (which `Provides: grub2-efi-image`) exists in `RPMS_MOK/` → no conflict
   - **Driver integration**: Drivers now added to ALL `packages_*.json` files (not just `packages_mok.json`)
   - **Result**: Universal ISO where both Custom MOK and VMware Original paths coexist without any package conflicts
+  - **Note**: v1.9.38 further refined the two-repo architecture (repo_paths override, grub2-efi-image removal, debug logging)
 - **v1.9.36** - Fix MOK installation conflict (Error 1525) [SUPERSEDED by v1.9.37]:
   - **Remove original conflicting packages** (from v1.9.19): Remove grub2-efi-image, linux-6.*, linux-esx-6.*, shim-signed from ISO to prevent tdnf from selecting them instead of MOK packages.
   - **Root cause**: Even with dynamic meta-package expansion, other packages in the repository could pull in the original packages, causing file conflicts with MOK packages.

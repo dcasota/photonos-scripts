@@ -105,36 +105,54 @@ This document covers common issues and their solutions.
 
 **Cause**: Package conflicts between MOK packages and original packages.
 
-**True Root Cause (identified in v1.9.37)**:
-The Photon OS installer `installer.py` **hardcodes** `packages.append('grub2-efi-image')` on line 361 for EFI bootmode. This means even when the user selects an option with only MOK packages, the installer forces the original `grub2-efi-image` into the transaction. With both `grub2-efi-image` and `grub2-efi-image-mok` in the same repository, both get selected, and they conflict on `/boot/efi/EFI/BOOT/grubx64.efi`.
+**True Root Cause (identified in v1.9.37, fully resolved in v1.9.38)**:
+The Photon OS installer `installer.py` **hardcodes** `packages.append('grub2-efi-image')` on line 361 for EFI bootmode. This means even when the user selects an option with only MOK packages, the installer forces the original `grub2-efi-image` into the transaction.
 
 This hardcoded line is still present in upstream `photon-os-installer` v2.8 (Jan 2026, master branch).
+
+**Additional root causes discovered in v1.9.38**:
+- `repo_paths` override didn't handle `/mnt/media` (without `/RPMS` suffix)
+- `grub2-efi-image` (original) in `RPMS_MOK/` conflicted with `grub2-efi-image-mok` when `minimal` meta-package pulled it in
+- `wifi-config` package conflicted with `wpa_supplicant` on `/etc/wpa_supplicant/wpa_supplicant-wlan0.conf`
+- `mok_repo_path` not in installer's `known_keys` whitelist
+- Python f-string nested quotes caused SyntaxError in Python 3.11
 
 **Previous approaches that failed**:
 - v1.9.16: `Conflicts:` directives (doesn't prevent tdnf from selecting both)
 - v1.9.18-33: Dynamic meta-package expansion / Epoch (hardcoded append bypasses package list)
 - v1.9.36: Remove original packages from ISO (breaks VMware Original installation)
 
-**Definitive Solution (v1.9.37+): Two-Repository Architecture**:
+**Definitive Solution (v1.9.37+v1.9.38): Two-Repository Architecture**:
 1. `RPMS/` contains all original VMware packages (completely untouched)
-2. `RPMS_MOK/` is a hardlinked copy of `RPMS/` with conflicting packages surgically replaced:
-   - `grub2-efi-image` removed, `grub2-efi-image-mok` added (which `Provides: grub2-efi-image`)
-   - `linux-*`, `linux-esx-*` removed, `linux-mok` added
-   - `shim-signed` removed, `shim-signed-mok` added
+2. `RPMS_MOK/` is a hardlinked copy of `RPMS/` with only `grub2-efi-image` removed:
+   - All other original packages kept (required by `minimal` meta-package dependency chain)
+   - `grub2-efi-image-mok` added (declares `Provides: grub2-efi-image` to satisfy deps)
+   - `linux-mok` added (alongside original kernels)
+   - `shim-signed-mok` added (alongside original shim-signed)
 3. Installer patches:
    - `packageselector.py`: Passes `repo_path` from option JSON to `install_config`
-   - `installer.py`: Overrides `self.repo_paths` when `mok_repo_path` is set
+   - `installer.py`: Overrides `self.repo_paths` when `mok_repo_path` is set; replaces `grub2-efi-image` with `grub2-efi-image-mok` in the package list
+   - `installer.py`: `mok_repo_path` added to `known_keys` whitelist
 4. When installer's hardcoded `packages.append('grub2-efi-image')` runs:
    - VMware Original path: Finds `grub2-efi-image` in `RPMS/` → installs it
-   - Custom MOK path: Only `grub2-efi-image-mok` exists in `RPMS_MOK/` → tdnf resolves to MOK version → no conflict
+   - Custom MOK path: Installer patch replaces it with `grub2-efi-image-mok`; only MOK variant exists in `RPMS_MOK/` → no conflict
+
+**Debug logging (v1.9.38+)**:
+When Error 1525 occurs, check `/var/log/installer-debug.log` on the target system. It contains:
+- Full package list before tdnf runs
+- `repo_paths`, `mok_repo_path`, `linux_flavor`
+- Repo config JSON (baseurl, gpgcheck, enabled)
+- tdnf exit code and full stderr on failure
+
+To collect logs after failure: switch to shell with `Alt+F2`, then `cat /var/log/installer-debug.log`.
 
 **Manual verification**:
 ```bash
 # Verify two-repository structure in ISO
 mount -o loop /path/to/secureboot.iso /mnt
-ls /mnt/RPMS/x86_64/grub2-efi-image-2*.rpm     # Should exist (original)
-ls /mnt/RPMS_MOK/x86_64/grub2-efi-image-mok*.rpm  # Should exist (MOK)
-ls /mnt/RPMS_MOK/x86_64/grub2-efi-image-2*.rpm    # Should NOT exist
+ls /mnt/RPMS/x86_64/grub2-efi-image-2*.rpm        # Should exist (original)
+ls /mnt/RPMS_MOK/x86_64/grub2-efi-image-mok*.rpm   # Should exist (MOK)
+ls /mnt/RPMS_MOK/x86_64/grub2-efi-image-2*.rpm     # Should NOT exist
 ```
 
 ### "start_image() returned Not Found"

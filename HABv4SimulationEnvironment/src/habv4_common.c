@@ -227,8 +227,17 @@ int run_cmd(const char *cmd) {
     if (cfg.verbose) {
         printf("  $ %s\n", sanitize_cmd_for_log(cmd));
     }
-    int ret = system(cmd);
-    return WEXITSTATUS(ret);
+    pid_t pid = fork();
+    if (pid < 0) return -1;
+    if (pid == 0) {
+        execl("/bin/sh", "sh", "-c", cmd, (char *)NULL);
+        _exit(127);
+    }
+    int status;
+    while (waitpid(pid, &status, 0) < 0) {
+        if (errno != EINTR) return -1;
+    }
+    return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
 }
 
 int file_exists(const char *path) {

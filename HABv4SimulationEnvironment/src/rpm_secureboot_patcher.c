@@ -99,11 +99,19 @@ static const char* sanitize_cmd_for_log(const char *cmd) {
 
 static int run_cmd(const char *cmd) {
     if (g_verbose) {
-        /* Security: Sanitize command output to mask sensitive paths */
         printf("  $ %s\n", sanitize_cmd_for_log(cmd));
     }
-    int ret = system(cmd);
-    return WEXITSTATUS(ret);
+    pid_t pid = fork();
+    if (pid < 0) return -1;
+    if (pid == 0) {
+        execl("/bin/sh", "sh", "-c", cmd, (char *)NULL);
+        _exit(127);
+    }
+    int status;
+    while (waitpid(pid, &status, 0) < 0) {
+        if (errno != EINTR) return -1;
+    }
+    return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
 }
 
 static int run_cmd_output(const char *cmd, char *output, size_t output_size) {
@@ -170,10 +178,6 @@ static int mkdir_p(const char *path) {
         }
     }
     return mkdir(tmp, 0755);
-}
-
-static char* strdup_safe(const char *s) {
-    return s ? strdup(s) : NULL;
 }
 
 /* ============================================================================
@@ -1281,10 +1285,13 @@ int rpm_sign_mok_packages(
         
         log_debug("Signing: %s", rpm_path);
         
-        /* Use rpmsign with GNUPGHOME set */
+        /* Use rpmsign with GNUPGHOME set; suppress GPG_TTY warning in non-interactive env */
         snprintf(cmd, sizeof(cmd),
-            "GNUPGHOME='%s' rpmsign "
+            "GPG_TTY=/dev/null GNUPGHOME='%s' rpmsign "
             "--define '_gpg_name %s' "
+            "--define '__gpg_sign_cmd %%{__gpg} gpg --batch --no-tty --no-armor "
+            "--pinentry-mode loopback -u \"%%{_gpg_name}\" -sbo %%{__signature_filename} "
+            "--digest-algo sha256 %%{__plaintext_filename}' "
             "--addsign '%s' 2>&1",
             gpg_home,
             gpg_key_name,
@@ -1360,10 +1367,12 @@ int rpm_integrate_to_iso(
     
     /* RPMS/ is left COMPLETELY UNTOUCHED for VMware Original installation.
      * 
-     * Create RPMS_MOK/ as a hardlinked copy of RPMS/ with surgical replacements:
-     * - Remove original conflicting packages (grub2-efi-image, linux, shim-signed)
-     * - Remove kernel-dependent packages (linux-devel, linux-docs, etc.)
-     * - Add MOK variant packages
+     * Create RPMS_MOK/ as a hardlinked copy of RPMS/ with MOK packages ADDED:
+     * - Keep ALL original packages (required by meta-packages like 'minimal'
+     *   which depend on grub2-efi-image, linux-esx, etc.)
+     * - Add MOK variant packages (grub2-efi-image-mok, linux-mok, shim-signed-mok)
+     * - The installer patch substitutes grub2-efi-image-mok for grub2-efi-image
+     *   when a Custom MOK option is selected.
      * - Regenerate repodata
      *
      * Hardlinks (cp -al) ensure minimal additional disk space usage. */
@@ -1389,41 +1398,17 @@ int rpm_integrate_to_iso(
         }
     }
     
-    /* Remove conflicting original packages from RPMS_MOK */
-    log_info("Removing conflicting original packages from RPMS_MOK/...");
+    /* Remove only grub2-efi-image (original) from RPMS_MOK.
+     * The MOK variant (grub2-efi-image-mok) declares Provides: grub2-efi-image
+     * AND Conflicts: grub2-efi-image. If both RPMs are in the repo, tdnf cannot
+     * resolve the minimal -> grub2-efi-image dependency without a file conflict.
+     * By removing the original, tdnf uses the MOK variant to satisfy the dep. */
+    log_info("Removing conflicting grub2-efi-image from RPMS_MOK/...");
     snprintf(cmd, sizeof(cmd),
-        "rm -f "
-        "'%s/grub2-efi-image-2'*.rpm "
-        "'%s/shim-signed-2'*.rpm '%s/shim-signed-1'*.rpm "
-        "'%s/linux-devel-'*.rpm "
-        "'%s/linux-docs-'*.rpm "
-        "'%s/linux-drivers-'*.rpm "
-        "'%s/linux-tools-'*.rpm "
-        "'%s/linux-python3-perf-'*.rpm "
-        "'%s/linux-esx-devel-'*.rpm "
-        "'%s/linux-esx-docs-'*.rpm "
-        "'%s/linux-esx-drivers-'*.rpm "
-        "2>/dev/null || true",
-        mok_rpm_dir,
-        mok_rpm_dir, mok_rpm_dir,
-        mok_rpm_dir, mok_rpm_dir, mok_rpm_dir, mok_rpm_dir,
-        mok_rpm_dir, mok_rpm_dir, mok_rpm_dir, mok_rpm_dir);
+        "rm -f '%s/grub2-efi-image-2'*.rpm 2>/dev/null", mok_rpm_dir);
     run_cmd(cmd);
     
-    /* Remove the original linux kernel and linux-esx packages.
-     * These match patterns like linux-6.12.60-14.ph5.x86_64.rpm.
-     * We must be careful not to remove linux-api-headers, linux-firmware, etc.
-     * The linux kernel RPM filename starts with 'linux-' followed by a digit. */
-    log_info("Removing original kernel packages from RPMS_MOK/...");
-    snprintf(cmd, sizeof(cmd),
-        "cd '%s' && "
-        "for f in linux-[0-9]*.rpm linux-esx-[0-9]*.rpm; do "
-        "  [ -f \"$f\" ] && rm -f \"$f\" && echo \"Removed: $f\"; "
-        "done 2>/dev/null || true",
-        mok_rpm_dir);
-    run_cmd(cmd);
-    
-    /* Copy MOK RPMs into RPMS_MOK */
+    /* Copy MOK RPMs into RPMS_MOK (alongside the remaining originals) */
     log_info("Adding MOK packages to RPMS_MOK/...");
     int copied_count = 0;
     snprintf(pattern, sizeof(pattern), "%s/*-mok-*.rpm", config->output_dir);

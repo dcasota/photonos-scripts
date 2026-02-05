@@ -31,8 +31,8 @@ To include driver packages in the ISO build:
 2. **Detect**: RPM names are matched against known driver patterns
 3. **Configure**: Kernel is configured with required modules for detected drivers
 4. **Build**: Kernel is built with driver support enabled
-5. **Package**: Driver RPMs are copied to ISO and added to `packages_mok.json`
-6. **Install**: When selecting "Photon MOK Secure Boot", drivers are installed automatically
+5. **Package**: Driver RPMs are copied to ISO and added to all `packages_*.json` files
+6. **Install**: When selecting any installation option, drivers are installed automatically
 
 ## Supported Driver Types
 

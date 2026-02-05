@@ -37,7 +37,7 @@
 
 #include "rpm_secureboot_patcher.h"
 
-#define VERSION "1.9.10"
+#define VERSION "1.9.38"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */
@@ -188,6 +188,12 @@ static const driver_kernel_map_t DRIVER_KERNEL_MAP[] = {
     /* NVIDIA GPU drivers (requires proprietary module, just enable deps) */
     {"nvidia-driver", "NVIDIA GPU (proprietary)",
      "CONFIG_DRM=m CONFIG_DRM_KMS_HELPER=m"},
+    
+    /* Userspace-only packages (no kernel config needed, but recognized to avoid warnings) */
+    {"wireless-regdb", "WiFi regulatory database (userspace)", ""},
+    {"iw", "nl80211 wireless config utility (userspace)", ""},
+    /* wifi-config removed: file conflict with wpa_supplicant on
+     * /etc/wpa_supplicant/wpa_supplicant-wlan0.conf */
     
     /* Sentinel */
     {NULL, NULL, NULL}
@@ -354,11 +360,19 @@ static void log_error(const char *fmt, ...) {
 
 static int run_cmd(const char *cmd) {
     if (cfg.verbose) {
-        /* Security: Sanitize command output to mask sensitive paths */
         printf("  $ %s\n", sanitize_cmd_for_log(cmd));
     }
-    int ret = system(cmd);
-    return WEXITSTATUS(ret);
+    pid_t pid = fork();
+    if (pid < 0) return -1;
+    if (pid == 0) {
+        execl("/bin/sh", "sh", "-c", cmd, (char *)NULL);
+        _exit(127);
+    }
+    int status;
+    while (waitpid(pid, &status, 0) < 0) {
+        if (errno != EINTR) return -1;
+    }
+    return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
 }
 
 static char *run_cmd_capture(const char *cmd) {
@@ -1554,6 +1568,10 @@ static int apply_driver_kernel_configs(const char *kernel_src, const char *drive
         
         const char *kernel_configs = get_kernel_configs_for_driver(base_name);
         if (kernel_configs) {
+            if (kernel_configs[0] == '\0') {
+                log_info("  Recognized (userspace-only, no kernel config): %s", base_name);
+                continue;
+            }
             log_info("  Enabling kernel configs for: %s", base_name);
             
             /* Parse and apply each config option */
@@ -1651,7 +1669,11 @@ static int integrate_driver_rpms(const char *drivers_dir, const char *iso_extrac
         /* Sign the RPM if --rpm-signing enabled */
         if (sign_rpms) {
             snprintf(cmd, sizeof(cmd), 
-                "GNUPGHOME='%s' rpm --define '_gpg_name %s' --addsign '%s' 2>/dev/null",
+                "GPG_TTY=/dev/null GNUPGHOME='%s' rpm --define '_gpg_name %s' "
+                "--define '__gpg_sign_cmd %%{__gpg} gpg --batch --no-tty --no-armor "
+                "--pinentry-mode loopback -u \"%%{_gpg_name}\" -sbo %%{__signature_filename} "
+                "--digest-algo sha256 %%{__plaintext_filename}' "
+                "--addsign '%s' 2>/dev/null",
                 gpg_home, GPG_KEY_NAME, target_rpm);
             if (run_cmd(cmd) == 0) {
                 log_info("  Signed and copied: %s", filename);
@@ -1844,28 +1866,82 @@ static int build_linux_kernel(void) {
         snprintf(cmd, sizeof(cmd), "cp '%s' '%s/.config'", config_path, kernel_src);
         run_cmd(cmd);
         
-        /* Copy Photon certificate bundle if it exists (required by CONFIG_SYSTEM_TRUSTED_KEYS) */
-        char cert_bundle_src[512], cert_bundle_dst[512];
+        /* Provide Photon certificate bundle (required by CONFIG_SYSTEM_TRUSTED_KEYS) */
+        char cert_bundle_dst[512];
+        snprintf(cert_bundle_dst, sizeof(cert_bundle_dst), "%s/photon-cert-bundle.pem", kernel_src);
+        int cert_found = 0;
         
-        /* Try release-specific SPECS first */
+        /* Strategy 1: Try pre-made photon-cert-bundle.pem (Photon 5.0 has it) */
+        char cert_bundle_src[512];
         snprintf(cert_bundle_src, sizeof(cert_bundle_src), "%s/SPECS/linux/photon-cert-bundle.pem", cfg.photon_dir);
-        if (!file_exists(cert_bundle_src)) {
-            /* Try common SPECS */
-            const char *kernel_version_dir = NULL;
-            if (strcmp(cfg.release, "5.0") == 0) kernel_version_dir = "v6.1";
-            else if (strcmp(cfg.release, "6.0") == 0) kernel_version_dir = "v6.12";
-            if (kernel_version_dir) {
-                snprintf(cert_bundle_src, sizeof(cert_bundle_src), "/root/common/SPECS/linux/%s/photon-cert-bundle.pem", kernel_version_dir);
-            }
-        }
-        
         if (file_exists(cert_bundle_src)) {
-            snprintf(cert_bundle_dst, sizeof(cert_bundle_dst), "%s/photon-cert-bundle.pem", kernel_src);
             log_info("Copying Photon certificate bundle...");
             snprintf(cmd, sizeof(cmd), "cp '%s' '%s'", cert_bundle_src, cert_bundle_dst);
             run_cmd(cmd);
-        } else {
-            /* Disable SYSTEM_TRUSTED_KEYS if bundle not found */
+            cert_found = 1;
+        }
+        
+        /* Strategy 2: Generate from individual PEM files (Photon 6.0+) */
+        if (!cert_found) {
+            const char *kernel_version_dir = NULL;
+            if (strcmp(cfg.release, "5.0") == 0) kernel_version_dir = "v6.1";
+            else if (strcmp(cfg.release, "6.0") == 0) kernel_version_dir = "v6.12";
+            
+            if (kernel_version_dir) {
+                char specs_dir[512];
+                snprintf(specs_dir, sizeof(specs_dir), "/root/common/SPECS/linux/%s", kernel_version_dir);
+                
+                /* Check for pre-made bundle in common SPECS */
+                char common_bundle[512];
+                snprintf(common_bundle, sizeof(common_bundle), "%s/photon-cert-bundle.pem", specs_dir);
+                if (file_exists(common_bundle)) {
+                    log_info("Copying Photon certificate bundle from common SPECS...");
+                    snprintf(cmd, sizeof(cmd), "cp '%s' '%s'", common_bundle, cert_bundle_dst);
+                    run_cmd(cmd);
+                    cert_found = 1;
+                } else {
+                    /* Generate from photon_sb2020.pem + photon_km_2025.pem (matches linux.spec) */
+                    char sb_pem[512], km_pem[512];
+                    snprintf(sb_pem, sizeof(sb_pem), "%s/photon_sb2020.pem", specs_dir);
+                    snprintf(km_pem, sizeof(km_pem), "%s/photon_km_2025.pem", specs_dir);
+                    
+                    if (file_exists(sb_pem) || file_exists(km_pem)) {
+                        log_info("Generating Photon certificate bundle from PEM files...");
+                        if (file_exists(sb_pem) && file_exists(km_pem)) {
+                            snprintf(cmd, sizeof(cmd), "cat '%s' '%s' > '%s'", sb_pem, km_pem, cert_bundle_dst);
+                        } else if (file_exists(km_pem)) {
+                            /* ESX variant uses only photon_km_2025.pem */
+                            snprintf(cmd, sizeof(cmd), "cp '%s' '%s'", km_pem, cert_bundle_dst);
+                        } else {
+                            snprintf(cmd, sizeof(cmd), "cp '%s' '%s'", sb_pem, cert_bundle_dst);
+                        }
+                        run_cmd(cmd);
+                        cert_found = 1;
+                    }
+                }
+            }
+        }
+        
+        /* Strategy 3: Also check release-specific SPECS for individual PEM files */
+        if (!cert_found) {
+            char sb_pem[512], km_pem[512];
+            snprintf(sb_pem, sizeof(sb_pem), "%s/SPECS/linux/photon_sb2020.pem", cfg.photon_dir);
+            snprintf(km_pem, sizeof(km_pem), "%s/SPECS/linux/photon_km_2025.pem", cfg.photon_dir);
+            if (file_exists(sb_pem) || file_exists(km_pem)) {
+                log_info("Generating Photon certificate bundle from release SPECS PEM files...");
+                if (file_exists(sb_pem) && file_exists(km_pem)) {
+                    snprintf(cmd, sizeof(cmd), "cat '%s' '%s' > '%s'", sb_pem, km_pem, cert_bundle_dst);
+                } else if (file_exists(km_pem)) {
+                    snprintf(cmd, sizeof(cmd), "cp '%s' '%s'", km_pem, cert_bundle_dst);
+                } else {
+                    snprintf(cmd, sizeof(cmd), "cp '%s' '%s'", sb_pem, cert_bundle_dst);
+                }
+                run_cmd(cmd);
+                cert_found = 1;
+            }
+        }
+        
+        if (!cert_found) {
             log_warn("Photon certificate bundle not found, disabling CONFIG_SYSTEM_TRUSTED_KEYS");
             snprintf(cmd, sizeof(cmd), 
                 "cd '%s' && scripts/config --set-str CONFIG_SYSTEM_TRUSTED_KEYS ''",
@@ -1944,8 +2020,8 @@ static int build_linux_kernel(void) {
         run_cmd(cmd);
     }
     
-    /* Update config with new options */
-    snprintf(cmd, sizeof(cmd), "cd '%s' && make olddefconfig", kernel_src);
+    /* Update config with new options (suppress upstream config value warnings) */
+    snprintf(cmd, sizeof(cmd), "cd '%s' && make olddefconfig 2>/dev/null", kernel_src);
     run_cmd(cmd);
     
     /* Build kernel */
@@ -1959,10 +2035,12 @@ static int build_linux_kernel(void) {
         pclose(fp);
     }
     
+    /* Filter known cosmetic kernel build warnings (frame-larger-than from wireguard) */
+    const char *warn_filter = "2>&1 | grep -v 'frame size of .* bytes is larger than'";
     if (strcmp(arch, "x86_64") == 0) {
-        snprintf(cmd, sizeof(cmd), "cd '%s' && make -j%d bzImage modules 2>&1", kernel_src, nproc);
+        snprintf(cmd, sizeof(cmd), "cd '%s' && make -j%d bzImage modules %s", kernel_src, nproc, warn_filter);
     } else if (strcmp(arch, "aarch64") == 0) {
-        snprintf(cmd, sizeof(cmd), "cd '%s' && make -j%d Image modules 2>&1", kernel_src, nproc);
+        snprintf(cmd, sizeof(cmd), "cd '%s' && make -j%d Image modules %s", kernel_src, nproc, warn_filter);
     } else {
         log_error("Unsupported architecture: %s", arch);
         return -1;
@@ -2532,9 +2610,20 @@ static int create_secure_boot_iso(void) {
                 "with open(sys.argv[1], 'r') as f:\n"
                 "    content = f.read()\n"
                 "\n"
-                "# Insert mok_repo_path override just before the repos setup block.\n"
-                "# When the user selects a Custom MOK option, mok_repo_path is set to 'RPMS_MOK'.\n"
-                "# We override self.repo_paths to use RPMS_MOK/ instead of the default RPMS/.\n"
+                "# 1. Add 'mok_repo_path' to the installer's known_keys whitelist.\n"
+                "#    Without this, _check_install_config() rejects the key with:\n"
+                "#    'Exception: Unknown install_config keys: mok_repo_path'\n"
+                "old_known = \"'user_grub_cfg_file',\\n    }\"\n"
+                "new_known = \"'user_grub_cfg_file',\\n        'mok_repo_path',\\n    }\"\n"
+                "if old_known in content:\n"
+                "    content = content.replace(old_known, new_known, 1)\n"
+                "    print('  Added mok_repo_path to known_keys')\n"
+                "else:\n"
+                "    print('  WARNING: Could not find known_keys insertion point')\n"
+                "\n"
+                "# 2. Insert mok_repo_path override just before the repos setup block.\n"
+                "#    When the user selects a Custom MOK option, mok_repo_path is set to 'RPMS_MOK'.\n"
+                "#    We override self.repo_paths to use RPMS_MOK/ instead of the default RPMS/.\n"
                 "old_repos = (\n"
                 "    '# if \"repos\" key not present in install_config or \"repos=\" provided by user through cmdline prioritize cmdline\\n'\n"
                 "    '        if \"repos\" not in install_config or (self.repo_paths and self.repo_paths != Defaults.REPO_PATHS):'\n"
@@ -2543,11 +2632,17 @@ static int create_secure_boot_iso(void) {
                 "    '# Two-repository architecture: override repo path for Custom MOK installation\\n'\n"
                 "    '        if \"mok_repo_path\" in install_config:\\n'\n"
                 "    '            mok_sub = install_config[\"mok_repo_path\"]\\n'\n"
-                "    '            if self.repo_paths and self.repo_paths.endswith(\"/RPMS\"):\\n'\n"
-                "    '                self.repo_paths = self.repo_paths[:-5] + \"/\" + mok_sub\\n'\n"
-                "    '            elif self.repo_paths == Defaults.REPO_PATHS:\\n'\n"
-                "    '                self.repo_paths = Defaults.MOUNT_PATH + \"/\" + mok_sub\\n'\n"
+                "    '            base = self.repo_paths.rstrip(\"/\")\\n'\n"
+                "    '            if base.endswith(\"/RPMS\"):\\n'\n"
+                "    '                base = base[:-5]\\n'\n"
+                "    '            self.repo_paths = base + \"/\" + mok_sub\\n'\n"
                 "    '            self.logger.info(f\"MOK repo override: {self.repo_paths}\")\\n'\n"
+                "    '            # Replace grub2-efi-image with MOK variant in package list\\n'\n"
+                "    '            pkgs = install_config.get(\"packages\", [])\\n'\n"
+                "    '            if \"grub2-efi-image\" in pkgs:\\n'\n"
+                "    '                idx = pkgs.index(\"grub2-efi-image\")\\n'\n"
+                "    '                pkgs[idx] = \"grub2-efi-image-mok\"\\n'\n"
+                "    '                self.logger.info(\"MOK: replaced grub2-efi-image with grub2-efi-image-mok\")\\n'\n"
                 "    '\\n'\n"
                 "    '        # if \"repos\" key not present in install_config or \"repos=\" provided by user through cmdline prioritize cmdline\\n'\n"
                 "    '        if \"repos\" not in install_config or (self.repo_paths and self.repo_paths != Defaults.REPO_PATHS):'\n"
@@ -2568,6 +2663,123 @@ static int create_secure_boot_iso(void) {
             run_cmd(cmd);
         }
         log_info("Patched installer.py for two-repository support");
+    }
+    
+    /* Patch installer.py to add comprehensive debug logging for Error(1525) diagnosis.
+     * This adds:
+     * - Full package list dump before tdnf runs
+     * - Repo paths and repo config dump
+     * - --verbose flag to the tdnf command
+     * - Full stderr capture to /var/log/installer-debug.log
+     * - Package conflict details on failure */
+    if (file_exists(installer_py)) {
+        log_info("Patching installer.py for debug logging...");
+        
+        char patch_debug_script[512];
+        snprintf(patch_debug_script, sizeof(patch_debug_script), "%s/patch_installer_debug.py", work_dir);
+        
+        FILE *pdf = fopen(patch_debug_script, "w");
+        if (pdf) {
+            fprintf(pdf,
+                "#!/usr/bin/env python3\n"
+                "import sys\n"
+                "\n"
+                "with open(sys.argv[1], 'r') as f:\n"
+                "    content = f.read()\n"
+                "\n"
+                "# 1. Inject debug logging before tdnf runs in _install_packages().\n"
+                "#    Dump package list, repo paths, and repo config to log.\n"
+                "old_adjust = 'self._adjust_packages_based_on_selected_flavor()'\n"
+                "new_adjust = (\n"
+                "    'self._adjust_packages_based_on_selected_flavor()\\n'\n"
+                "    '\\n'\n"
+                "    '        # === Debug logging for Error(1525) diagnosis ===\\n'\n"
+                "    '        import datetime\\n'\n"
+                "    '        dbg_file = \"/var/log/installer-debug.log\"\\n'\n"
+                "    '        try:\\n'\n"
+                "    '            with open(dbg_file, \"a\") as dbg:\\n'\n"
+                "    '                dbg.write(f\"=== Package Installation Debug ({datetime.datetime.now()}) ===\\\\n\")\\n'\n"
+                "    '                dbg.write(f\"repo_paths: {self.repo_paths}\\\\n\")\\n'\n"
+                "    '                lf = self.install_config.get(\\\"linux_flavor\\\", \\\"N/A\\\")\\n'\n"
+                "    '                dbg.write(f\"linux_flavor: {lf}\\\\n\")\\n'\n"
+                "    '                mrp = self.install_config.get(\\\"mok_repo_path\\\", \\\"NOT SET\\\")\\n'\n"
+                "    '                dbg.write(f\"mok_repo_path: {mrp}\\\\n\")\\n'\n"
+                "    '                dbg.write(f\"tdnf_conf: {self.tdnf_conf_path}\\\\n\")\\n'\n"
+                "    '                dbg.write(f\"working_dir: {self.working_directory}\\\\n\")\\n'\n"
+                "    '                dbg.write(f\"photon_root: {self.photon_root}\\\\n\")\\n'\n"
+                "    '                repos = self.install_config.get(\\\"repos\\\", {})\\n'\n"
+                "    '                dbg.write(f\"repos config: {repos}\\\\n\")\\n'\n"
+                "    '                pkgs = self.install_config[\\\"packages\\\"]\\n'\n"
+                "    '                dbg.write(f\"Total packages: {len(pkgs)}\\\\n\")\\n'\n"
+                "    '                for p in sorted(pkgs):\\n'\n"
+                "    '                    dbg.write(f\"  {p}\\\\n\")\\n'\n"
+                "    '                dbg.write(f\"=== End Package List ===\\\\n\\\\n\")\\n'\n"
+                "    '        except Exception as e:\\n'\n"
+                "    '            self.logger.warning(f\"Debug log write failed: {e}\")\\n'\n"
+                "    '        self.logger.info(f\"[DEBUG] repo_paths={self.repo_paths}\")\\n'\n"
+                "    '        _mrp = self.install_config.get(\\\"mok_repo_path\\\", \\\"NOT SET\\\")\\n'\n"
+                "    '        self.logger.info(f\"[DEBUG] mok_repo_path={_mrp}\")\\n'\n"
+                "    '        _lf = self.install_config.get(\\\"linux_flavor\\\", \\\"N/A\\\")\\n'\n"
+                "    '        self.logger.info(f\"[DEBUG] linux_flavor={_lf}\")\\n'\n"
+                "    '        _pkgs = sorted(self.install_config[\\\"packages\\\"])\\n'\n"
+                "    '        self.logger.info(f\"[DEBUG] packages ({len(_pkgs)}): {_pkgs}\")\\n'\n"
+                ")\n"
+                "if old_adjust in content:\n"
+                "    content = content.replace(old_adjust, new_adjust, 1)\n"
+                "    print('  Added debug logging before tdnf install')\n"
+                "else:\n"
+                "    print('  WARNING: Could not find _adjust_packages insertion point')\n"
+                "\n"
+                "# 2. Add --verbose to the tdnf install command in UI mode.\n"
+                "old_tdnf = 'tdnf install -y --releasever'\n"
+                "new_tdnf = 'tdnf install -y --verbose --releasever'\n"
+                "if old_tdnf in content:\n"
+                "    content = content.replace(old_tdnf, new_tdnf, 1)\n"
+                "    print('  Added --verbose to tdnf install command')\n"
+                "\n"
+                "# 3. Enhance error logging: dump stderr to debug log and show more context.\n"
+                "old_fail = (\n"
+                "    'self.logger.error(\"Failed to install some packages\")\\n'\n"
+                "    '            if stderr:\\n'\n"
+                "    '                self.logger.error(stderr.decode())\\n'\n"
+                "    '            self.exit_gracefully()'\n"
+                ")\n"
+                "new_fail = (\n"
+                "    'self.logger.error(\"Failed to install some packages\")\\n'\n"
+                "    '            self.logger.error(f\"tdnf exit code: {retval}\")\\n'\n"
+                "    '            self.logger.error(f\"repo_paths: {self.repo_paths}\")\\n'\n"
+                "    '            _epkgs = self.install_config[\\\"packages\\\"]\\n'\n"
+                "    '            self.logger.error(f\"packages: {_epkgs}\")\\n'\n"
+                "    '            if stderr:\\n'\n"
+                "    '                stderr_text = stderr.decode()\\n'\n"
+                "    '                self.logger.error(stderr_text)\\n'\n"
+                "    '                try:\\n'\n"
+                "    '                    with open(\"/var/log/installer-debug.log\", \"a\") as dbg:\\n'\n"
+                "    '                        dbg.write(f\"=== TDNF FAILURE (exit={retval}) ===\\\\n\")\\n'\n"
+                "    '                        dbg.write(stderr_text)\\n'\n"
+                "    '                        dbg.write(f\"=== END TDNF FAILURE ===\\\\n\\\\n\")\\n'\n"
+                "    '                except Exception:\\n'\n"
+                "    '                    pass\\n'\n"
+                "    '            self.exit_gracefully()'\n"
+                ")\n"
+                "if 'Failed to install some packages' in content:\n"
+                "    content = content.replace(old_fail, new_fail, 1)\n"
+                "    print('  Enhanced error logging on tdnf failure')\n"
+                "\n"
+                "with open(sys.argv[1], 'w') as f:\n"
+                "    f.write(content)\n"
+                "\n"
+                "print('installer.py patched with debug logging')\n"
+            );
+            fclose(pdf);
+            
+            snprintf(cmd, sizeof(cmd), "python3 '%s' '%s' 2>&1", patch_debug_script, installer_py);
+            run_cmd(cmd);
+            
+            snprintf(cmd, sizeof(cmd), "rm -f '%s'", patch_debug_script);
+            run_cmd(cmd);
+        }
+        log_info("Patched installer.py with debug logging");
     }
     
     /* Patch mk-setup-grub.sh to fix boot parameters for USB/FIPS compatibility
@@ -2786,7 +2998,11 @@ static int create_secure_boot_iso(void) {
             "terminal_output console\n"
             "# Reset graphics state before loading themed config\n"
             "set gfxmode=auto\n"
-            "search --no-floppy --file --set=root /isolinux/isolinux.cfg\n"
+            "# Try installed system first (has /boot/grub2/grub.cfg), then ISO\n"
+            "search --no-floppy --file --set=root /boot/grub2/grub.cfg\n"
+            "if [ -z \"$root\" ]; then\n"
+            "    search --no-floppy --file --set=root /isolinux/isolinux.cfg\n"
+            "fi\n"
             "set prefix=($root)/boot/grub2\n"
             "configfile ($root)/boot/grub2/grub.cfg\n"
         );
@@ -3023,7 +3239,7 @@ static int create_secure_boot_iso(void) {
                 "    terminal_output gfxterm\n"
                 "\n"
                 "    menuentry \"Install\" {\n"
-                "        linux /isolinux/vmlinuz root=/dev/ram0 loglevel=3 usbcore.autosuspend=-1 photon.media=LABEL=PHOTON_SB_%s\n"
+                "        linux /isolinux/vmlinuz root=/dev/ram0 loglevel=7 usbcore.autosuspend=-1 photon.media=LABEL=PHOTON_SB_%s\n"
                 "        initrd /isolinux/initrd.img\n"
                 "    }\n"
                 "\n"
@@ -3068,7 +3284,7 @@ static int create_secure_boot_iso(void) {
                 "terminal_output gfxterm\n"
                 "\n"
                 "menuentry \"Install\" {\n"
-                "    linux /isolinux/vmlinuz root=/dev/ram0 loglevel=3 usbcore.autosuspend=-1 photon.media=LABEL=PHOTON_SB_%s\n"
+                "    linux /isolinux/vmlinuz root=/dev/ram0 loglevel=7 usbcore.autosuspend=-1 photon.media=LABEL=PHOTON_SB_%s\n"
                 "    initrd /isolinux/initrd.img\n"
                 "}\n"
                 "\n"

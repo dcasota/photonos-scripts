@@ -381,7 +381,7 @@ sync
 | "search.c: no such device" | GRUB searching for ISO path | Rebuild ISO (v1.7.0+ fixes embedded config) |
 | Installation takes 2000+ seconds | USB autosuspend | Rebuild ISO (v1.7.0+ adds kernel param) |
 | "grub.efi Not Found" | SUSE shim looks for grub.efi | Rebuild ISO (v1.7.0+ installs both names) |
-| "rpm transaction failed" (Error 1525) | Hardcoded grub2-efi-image in installer.py | Rebuild ISO (v1.9.37+ two-repository architecture) |
+| "rpm transaction failed" (Error 1525) | Hardcoded grub2-efi-image + pkg conflicts | Rebuild ISO (v1.9.38+ fully resolved); check `/var/log/installer-debug.log` |
 | Black screen after "Secure Boot is enabled" | Missing USB drivers in initrd | Rebuild ISO (v1.8.0+ includes USB drivers) |
 | "Loading of unsigned module is rejected" | Module signatures stripped by RPM | Rebuild ISO (v1.9.4+ preserves signatures) |
 | Installer GPG verification fails | HABv4 key not in initrd | Rebuild ISO (v1.9.14+ installs multi-key) |
@@ -437,11 +437,11 @@ ISO Root/
 │   ├── efiboot.img                      # EFI System Partition
 │   └── grub.cfg                         # Boot menu
 ├── RPMS/x86_64/                         # VMware Original packages (untouched)
-├── RPMS_MOK/x86_64/                     # MOK packages (hardlinked, conflicts replaced)
-│   ├── grub2-efi-image-mok-*.rpm        # Replaces grub2-efi-image
-│   ├── linux-mok-*.rpm                  # Replaces linux/linux-esx
-│   ├── shim-signed-mok-*.rpm            # Replaces shim-signed
-│   └── ... (hardlinks to RPMS/ for non-conflicting packages)
+├── RPMS_MOK/x86_64/                     # MOK packages (hardlinked + MOK additions)
+│   ├── grub2-efi-image-mok-*.rpm        # Only grub2-efi-image (original) removed
+│   ├── linux-mok-*.rpm                  # Added alongside original kernels
+│   ├── shim-signed-mok-*.rpm            # Added alongside original shim-signed
+│   └── ... (hardlinks to RPMS/ for all other packages)
 └── isolinux/                            # BIOS boot (legacy)
     ├── vmlinuz                          # MOK-signed kernel
     └── initrd.img
@@ -579,7 +579,7 @@ The tool implements several security measures:
 
 | Category | Status | Notes |
 |----------|--------|-------|
-| Command injection | **Mitigated** | Path validation, but still uses system() |
+| Command injection | **Mitigated** | Path validation + fork()/execl() instead of system() (v1.9.38+) |
 | Download integrity | **Not implemented** | Ventoy/ISO downloads not checksum verified |
 | Key storage | **Plain text** | Keys stored unencrypted on filesystem |
 | HSM support | **Not implemented** | No PKCS#11/HSM integration |
