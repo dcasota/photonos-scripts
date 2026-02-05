@@ -366,6 +366,13 @@ On first boot, the **blue MokManager screen** appears:
 
 ## Version History
 
+- **v1.9.35** - Additional fixes integrated from v1.9.21-25:
+  - **Chainloader path fix** (from v1.9.21): Fixed `chainloader /boot/grub2/grubx64.efi` to correct path `/EFI/BOOT/grubx64.efi` in installer ISO grub.cfg.
+  - **Repodata full rebuild** (from v1.9.22): Changed `createrepo_c --update` to `rm -rf repodata && createrepo_c` to properly exclude removed packages.
+  - **Remove kernel-dependent packages** (from v1.9.23): Remove linux-devel, linux-docs, linux-drivers, linux-tools, etc. that require exact kernel version.
+  - **RPM macro fix** (from v1.9.25): Fixed unexpanded `%{kernel_file#vmlinuz-}` in linux-mok %postun script using shell variable expansion.
+  - **GPG key path fix** (from a81140f): Fixed GPG key copy using `keys_dir` instead of `iso_extract`, eliminating "HABv4 GPG key not found" warning.
+  - **Header structure fix**: Fixed `linux_kernels` vs `linux_kernel` mismatch in rpm_secureboot_patcher.h.
 - **v1.9.34** - Selective feature integration (based on v1.9.17):
   - **eFuse USB hot-plug detection** (from v1.9.20): Use `chainloader` instead of `configfile` to reload GRUB EFI binary when retrying eFuse USB detection. This forces complete GRUB reinitialization including USB device rescanning.
   - **Common kernel spec for Photon 6.0+** (from v1.9.28): Auto-detect highest kernel version from `/root/common/SPECS/linux/vX.Y/` for release 6.0+. Legacy path `/root/{release}/SPECS/linux/` still used for 4.0/5.0.

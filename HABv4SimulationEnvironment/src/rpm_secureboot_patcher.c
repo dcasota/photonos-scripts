@@ -919,9 +919,12 @@ static int generate_linux_mok_spec(rpm_build_config_t *config, rpm_package_info_
         "  test -n \"$list\" && ln -sf \"$list\" /boot/photon.cfg\n"
         "fi\n"
         "# Clean up initrd if kernel config is removed\n"
-        "if [ ! -s /boot/linux-%%{kernel_file#vmlinuz-}.cfg ]; then\n"
-        "  rm -f /var/lib/rpm-state/initramfs/pending/%%{kernel_file#vmlinuz-} \\\n"
-        "        /boot/initrd.img-%%{kernel_file#vmlinuz-}\n"
+        "# Note: kernel_file is e.g., vmlinuz-6.1.159-7.ph5-esx, strip vmlinuz- prefix\n"
+        "KVER_FILE=\"%%{kernel_file}\"\n"
+        "KVER_FILE=\"${KVER_FILE#vmlinuz-}\"\n"
+        "if [ ! -s \"/boot/linux-${KVER_FILE}.cfg\" ]; then\n"
+        "  rm -f \"/var/lib/rpm-state/initramfs/pending/${KVER_FILE}\" \\\n"
+        "        \"/boot/initrd.img-${KVER_FILE}\"\n"
         "fi\n"
         "\n"
         "%%changelog\n"
@@ -1402,6 +1405,24 @@ int rpm_integrate_to_iso(
     if (last_slash) *last_slash = '\0';
     
     log_debug("Repository dir for repodata: %s", repo_dir);
+    
+    /* Remove packages that require exact kernel version (linux = 6.12.60-14.ph5)
+     * because linux-mok provides a different version (linux = 6.1.159-7.ph5).
+     * These packages have unsatisfiable dependencies and will cause tdnf to fail. */
+    log_info("Removing packages with exact kernel version dependencies...");
+    snprintf(cmd, sizeof(cmd), 
+        "rm -f '%s/x86_64/linux-devel-'*.rpm "
+        "'%s/x86_64/linux-docs-'*.rpm "
+        "'%s/x86_64/linux-drivers-'*.rpm "
+        "'%s/x86_64/linux-tools-'*.rpm "
+        "'%s/x86_64/linux-python3-perf-'*.rpm "
+        "'%s/x86_64/linux-esx-devel-'*.rpm "
+        "'%s/x86_64/linux-esx-docs-'*.rpm "
+        "'%s/x86_64/linux-esx-drivers-'*.rpm "
+        "2>/dev/null || true",
+        repo_dir, repo_dir, repo_dir, repo_dir,
+        repo_dir, repo_dir, repo_dir, repo_dir);
+    run_cmd(cmd);
     
     /* Remove old repodata and regenerate */
     snprintf(cmd, sizeof(cmd), "rm -rf '%s/repodata'", repo_dir);

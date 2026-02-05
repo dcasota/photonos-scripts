@@ -36,12 +36,7 @@ typedef struct {
 typedef struct {
     /* Original packages */
     rpm_package_info_t *grub_efi;       /* grub2-efi-image */
-    
-    /* Kernel variants (standard, rt, esx, aws, etc.) */
-    #define MAX_KERNEL_VARIANTS 16
-    rpm_package_info_t *linux_kernels[MAX_KERNEL_VARIANTS];
-    int kernel_count;
-    
+    rpm_package_info_t *linux_kernel;   /* linux */
     rpm_package_info_t *shim_signed;    /* shim-signed */
     rpm_package_info_t *shim;           /* shim (for MokManager source) */
     
