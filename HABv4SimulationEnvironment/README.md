@@ -249,12 +249,16 @@ Custom GRUB Stub (grub.efi)
 Boot Menu
     └── Install
         ↓ launches interactive installer
-        Package Selection Screen:
-          1. Photon MOK Secure Boot    ← For physical hardware
-          2. Photon Minimal            ← Original VMware packages
-          3. Photon Developer
-          4. Photon OSTree Host
-          5. Photon Real Time
+        Package Selection Screen (two-repository architecture):
+          1. Photon Minimal (Custom MOK)     ← RPMS_MOK/ repo
+          2. Photon Developer (Custom MOK)   ← RPMS_MOK/ repo
+          3. Photon OSTree Host (Custom MOK) ← RPMS_MOK/ repo
+          4. Photon Real Time (Custom MOK)   ← RPMS_MOK/ repo
+          5. Photon Minimal (VMware Original)     ← RPMS/ repo
+          6. Photon Developer (VMware Original)   ← RPMS/ repo
+          7. Photon OSTree Host (VMware Original) ← RPMS/ repo
+          8. Photon Real Time (VMware Original)   ← RPMS/ repo
+          9. Photon Custom (VMware Original)      ← RPMS/ repo
 ```
 
 ### Why Original Photon OS Fails
@@ -366,7 +370,17 @@ On first boot, the **blue MokManager screen** appears:
 
 ## Version History
 
-- **v1.9.36** - Fix MOK installation conflict (Error 1525):
+- **v1.9.37** - Two-repository architecture (Error 1525 definitive fix):
+  - **Root cause identified**: Photon OS installer `installer.py` **hardcodes** `packages.append('grub2-efi-image')` on line 361 for EFI bootmode. This is still present in upstream v2.8 (Jan 2026). No previous version (v1.9.0-v1.9.36) identified this root cause.
+  - **Two-repository solution**: Creates `RPMS_MOK/` alongside untouched `RPMS/`:
+    - `RPMS/` → VMware Original (completely untouched)
+    - `RPMS_MOK/` → Hardlinked copy with conflicting packages surgically replaced by MOK variants
+  - **Installer patches**: `packageselector.py` passes `repo_path` from option JSON; `installer.py` overrides `self.repo_paths` when `mok_repo_path` is set
+  - **Mirror menu entries**: 4 MOK options + 5 Original options in `build_install_options_all.json`, each MOK entry specifies `"repo_path": "RPMS_MOK"`
+  - **Conflict elimination**: When installer's hardcoded `packages.append('grub2-efi-image')` runs in MOK path, only `grub2-efi-image-mok` (which `Provides: grub2-efi-image`) exists in `RPMS_MOK/` → no conflict
+  - **Driver integration**: Drivers now added to ALL `packages_*.json` files (not just `packages_mok.json`)
+  - **Result**: Universal ISO where both Custom MOK and VMware Original paths coexist without any package conflicts
+- **v1.9.36** - Fix MOK installation conflict (Error 1525) [SUPERSEDED by v1.9.37]:
   - **Remove original conflicting packages** (from v1.9.19): Remove grub2-efi-image, linux-6.*, linux-esx-6.*, shim-signed from ISO to prevent tdnf from selecting them instead of MOK packages.
   - **Root cause**: Even with dynamic meta-package expansion, other packages in the repository could pull in the original packages, causing file conflicts with MOK packages.
   - **Result**: MOK installation now succeeds without "package conflicts with grub2-efi-image provided by grub2-efi-image-2.12-1.ph5" error.

@@ -80,15 +80,15 @@ grub.efi (Custom GRUB stub, MOK-signed, NO shim_lock)
     │
     └─→ "Install" → launches interactive installer
         │
-        ↓ Package Selection Screen (modified build_install_options_all.json)
+        ↓ Package Selection Screen (two-repository architecture, v1.9.37+)
         │
-        ├─→ "1. Photon MOK Secure Boot" → packages_mok.json
+        ├─→ "1-4. Custom MOK options" → packages_*.json + repo_path=RPMS_MOK
+        │   → Uses RPMS_MOK/ repo (conflicting originals replaced by MOK variants)
         │   → Installs: linux-mok, grub2-efi-image-mok, shim-signed-mok
         │
-        ├─→ "2. Photon Minimal" → packages_minimal.json (original)
-        │   → Installs: linux, grub2-efi-image, shim-signed
-        │
-        └─→ "3-5. Developer/OSTree/RT" → respective package files
+        └─→ "5-9. VMware Original options" → packages_*.json (default RPMS/)
+            → Uses RPMS/ repo (untouched original packages)
+            → Installs: linux, grub2-efi-image, shim-signed
 ```
 
 ### Boot Chain (Installed System - MOK Path)
@@ -146,47 +146,42 @@ The ISO uses a **fully interactive installer** with MOK packages added to the pa
 3. **Modified `build_install_options_all.json`**: Adds "Photon MOK Secure Boot" as first option
 4. **New `packages_mok.json`**: Contains MOK-signed packages (dynamically generated)
 
-### Initrd Modifications
+### Initrd Modifications (v1.9.37+)
 
-The tool modifies the initrd to:
+The tool modifies the initrd for two-repository support:
 
-1. **Create `packages_mok.json`** in `/installer/` (dynamically generated in v1.9.18+):
+1. **Create mirror MOK entries in `build_install_options_all.json`**:
 ```json
 {
-    "packages": [
-        "bash-completion", "bc", "bridge-utils", "...",
-        "grub2-efi-image-mok",  // Replaces grub2-efi-image
-        "linux-mok",            // Replaces linux/linux-esx
-        "shim-signed-mok",      // Replaces shim-signed
-        "initramfs", "lvm2", "less", "sudo", "..."
-    ]
-}
-```
-
-**Note**: Since v1.9.18, `packages_mok.json` is dynamically generated:
-- The `minimal` meta-package is **expanded** to its direct dependencies
-- `grub2-efi-image` is replaced with `grub2-efi-image-mok`
-- This prevents tdnf from selecting both original and MOK packages (which causes Error 1525)
-
-2. **Modify `build_install_options_all.json`** to add MOK option first:
-```json
-{
-    "mok": {
-        "title": "1. Photon MOK Secure Boot",
-        "packagelist_file": "packages_mok.json",
+    "mok_minimal": {
+        "title": "1. Photon Minimal (Custom MOK)",
+        "packagelist_file": "packages_minimal.json",
+        "repo_path": "RPMS_MOK",
         "visible": true
     },
     "minimal": {
-        "title": "2. Photon Minimal",
-        ...
+        "title": "5. Photon Minimal (VMware Original)",
+        "packagelist_file": "packages_minimal.json",
+        "visible": true
     }
 }
 ```
+Each original visible option gets a MOK mirror that uses the same package list file but specifies `"repo_path": "RPMS_MOK"`.
 
-3. **Patch `linuxselector.py`** to recognize `linux-mok` kernel:
+2. **Patch `packageselector.py`** to pass `repo_path` from option JSON to `install_config`:
+   - In `load_package_list()`: reads `repo_path` from option and passes as 3rd element of `selected_item_params`
+   - In `exit_function()`: stores `repo_path` as `install_config['mok_repo_path']`
+
+3. **Patch `installer.py`** to use `RPMS_MOK/` repo when `mok_repo_path` is set:
+   - Before repos setup: checks for `mok_repo_path` in `install_config`
+   - Overrides `self.repo_paths` to point to `RPMS_MOK/` subdirectory
+
+4. **Patch `linuxselector.py`** to recognize `linux-mok` kernel:
 ```python
 linux_flavors = {"linux-mok":"MOK Secure Boot", "linux":"Generic", ...}
 ```
+
+**Note**: `packages_mok.json` is **no longer generated** since v1.9.37. All options reuse the original package list files (`packages_minimal.json`, `packages_developer.json`, etc.). The two-repository approach ensures conflicts are eliminated at the repository level, not the package list level.
 
 ### Why Interactive Instead of Kickstart
 
@@ -386,7 +381,7 @@ sync
 | "search.c: no such device" | GRUB searching for ISO path | Rebuild ISO (v1.7.0+ fixes embedded config) |
 | Installation takes 2000+ seconds | USB autosuspend | Rebuild ISO (v1.7.0+ adds kernel param) |
 | "grub.efi Not Found" | SUSE shim looks for grub.efi | Rebuild ISO (v1.7.0+ installs both names) |
-| "rpm transaction failed" (Error 1525) | MOK conflicts or scriptlet failure | Rebuild ISO (v1.9.18+) / Check /var/log/installer.log (v1.9.26+) |
+| "rpm transaction failed" (Error 1525) | Hardcoded grub2-efi-image in installer.py | Rebuild ISO (v1.9.37+ two-repository architecture) |
 | Black screen after "Secure Boot is enabled" | Missing USB drivers in initrd | Rebuild ISO (v1.8.0+ includes USB drivers) |
 | "Loading of unsigned module is rejected" | Module signatures stripped by RPM | Rebuild ISO (v1.9.4+ preserves signatures) |
 | Installer GPG verification fails | HABv4 key not in initrd | Rebuild ISO (v1.9.14+ installs multi-key) |
@@ -441,7 +436,12 @@ ISO Root/
 ├── boot/grub2/
 │   ├── efiboot.img                      # EFI System Partition
 │   └── grub.cfg                         # Boot menu
-├── RPMS/x86_64/                         # Original + MOK RPMs
+├── RPMS/x86_64/                         # VMware Original packages (untouched)
+├── RPMS_MOK/x86_64/                     # MOK packages (hardlinked, conflicts replaced)
+│   ├── grub2-efi-image-mok-*.rpm        # Replaces grub2-efi-image
+│   ├── linux-mok-*.rpm                  # Replaces linux/linux-esx
+│   ├── shim-signed-mok-*.rpm            # Replaces shim-signed
+│   └── ... (hardlinks to RPMS/ for non-conflicting packages)
 └── isolinux/                            # BIOS boot (legacy)
     ├── vmlinuz                          # MOK-signed kernel
     └── initrd.img

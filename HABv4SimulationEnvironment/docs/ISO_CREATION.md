@@ -217,31 +217,19 @@ rpmbuild -bb \
     grub2-efi-image-mok.spec
 ```
 
-### Step 8: Kickstart Creation
+### Step 8: Two-Repository Architecture (v1.9.37+)
 
-Two kickstart files are placed at ISO root:
+**No kickstart files are used.** Instead, the tool creates a two-repository structure:
 
-**mok_ks.cfg:**
-```json
-{
-    "linux_flavor": "linux-mok",
-    "packages": ["minimal", "initramfs", "linux-mok", 
-                 "grub2-efi-image-mok", "shim-signed-mok"],
-    "bootmode": "efi",
-    "ui": true
-}
-```
+1. **`RPMS/`** → VMware Original packages (completely untouched)
+2. **`RPMS_MOK/`** → Hardlinked copy of `RPMS/` with conflicting packages replaced:
+   - `grub2-efi-image` → `grub2-efi-image-mok`
+   - `linux-*`, `linux-esx-*` → `linux-mok`
+   - `shim-signed` → `shim-signed-mok`
+3. Mirror MOK entries in `build_install_options_all.json` with `"repo_path": "RPMS_MOK"`
+4. Installer patches (`packageselector.py`, `installer.py`) redirect MOK options to `RPMS_MOK/`
 
-**standard_ks.cfg:**
-```json
-{
-    "linux_flavor": "linux",
-    "packages": ["minimal", "initramfs", "linux", 
-                 "grub2-efi-image", "shim-signed"],
-    "bootmode": "efi",
-    "ui": true
-}
-```
+This eliminates Error 1525 caused by the installer's hardcoded `packages.append('grub2-efi-image')`.
 
 ### Step 9: Initrd Patching
 
@@ -385,10 +373,11 @@ xorriso -indev photon-secureboot.iso -ls /EFI/BOOT/
 # List root files
 xorriso -indev photon-secureboot.iso -ls /
 
-# Check kickstart files
-xorriso -osirrox on -indev photon-secureboot.iso \
-    -extract /mok_ks.cfg /tmp/mok_ks.cfg
-cat /tmp/mok_ks.cfg
+# Check two-repository structure
+mount -o loop photon-secureboot.iso /mnt
+ls /mnt/RPMS/x86_64/grub2-efi-image-2*.rpm      # Original present
+ls /mnt/RPMS_MOK/x86_64/grub2-efi-image-mok*.rpm # MOK present
+ls /mnt/RPMS_MOK/x86_64/grub2-efi-image-2*.rpm   # Should NOT exist
 ```
 
 ### Verify Signatures

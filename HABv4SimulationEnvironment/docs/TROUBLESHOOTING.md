@@ -105,39 +105,36 @@ This document covers common issues and their solutions.
 
 **Cause**: Package conflicts between MOK packages and original packages.
 
-**Common issues**:
-- `Obsoletes` with version constraint fails when original has higher version
-- File conflicts between `grub2-efi-image` and `grub2-efi-image-mok` (both install `/boot/efi/EFI/BOOT/grubx64.efi`)
-- MOK packages not indexed in repodata
-- `minimal` meta-package pulls in original packages that conflict with MOK packages
+**True Root Cause (identified in v1.9.37)**:
+The Photon OS installer `installer.py` **hardcodes** `packages.append('grub2-efi-image')` on line 361 for EFI bootmode. This means even when the user selects an option with only MOK packages, the installer forces the original `grub2-efi-image` into the transaction. With both `grub2-efi-image` and `grub2-efi-image-mok` in the same repository, both get selected, and they conflict on `/boot/efi/EFI/BOOT/grubx64.efi`.
 
-**Root Cause (v1.9.18 fix)**:
-The `minimal` meta-package requires `grub2-efi-image >= 2.06-15`. When installing MOK packages alongside `minimal`, tdnf may select BOTH `grub2-efi-image` (to satisfy minimal's dependency) AND `grub2-efi-image-mok` (explicitly requested). Both packages install `/boot/efi/EFI/BOOT/grubx64.efi`, causing a file conflict.
+This hardcoded line is still present in upstream `photon-os-installer` v2.8 (Jan 2026, master branch).
 
-Even with Epoch:1 on MOK packages, tdnf may not recognize that the explicitly requested MOK package satisfies the meta-package dependency, resulting in both packages being selected for the transaction.
+**Previous approaches that failed**:
+- v1.9.16: `Conflicts:` directives (doesn't prevent tdnf from selecting both)
+- v1.9.18-33: Dynamic meta-package expansion / Epoch (hardcoded append bypasses package list)
+- v1.9.36: Remove original packages from ISO (breaks VMware Original installation)
 
-**Root Cause (v1.9.16 fix)**:
-The MOK packages used `Obsoletes: linux < %{version}-%{release}` but when building a custom kernel (e.g., 6.1.159), this doesn't obsolete the original ISO's newer kernel (e.g., 6.12.60). RPM sees both packages as valid and fails the transaction.
-
-**Solutions**:
-1. Rebuild ISO with latest PhotonOS-HABv4Emulation-ISOCreator (v1.9.18+)
-2. v1.9.18 introduces dynamic meta-package expansion:
-   - `packages_mok.json` no longer contains `minimal` meta-package
-   - Instead, all `minimal` dependencies are listed directly
-   - `grub2-efi-image` is replaced with `grub2-efi-image-mok`
-   - This prevents tdnf from selecting conflicting packages
-3. MOK packages now have Epoch in Provides lines (e.g., `grub2-efi-image = 1:2.12-1.ph5`)
-4. Previous fixes still applied:
-   - `Conflicts` prevents both packages from being installed
-   - `linux-mok` only includes kernel files (not `/boot/efi`)
-   - Repodata regenerated after adding MOK packages
+**Definitive Solution (v1.9.37+): Two-Repository Architecture**:
+1. `RPMS/` contains all original VMware packages (completely untouched)
+2. `RPMS_MOK/` is a hardlinked copy of `RPMS/` with conflicting packages surgically replaced:
+   - `grub2-efi-image` removed, `grub2-efi-image-mok` added (which `Provides: grub2-efi-image`)
+   - `linux-*`, `linux-esx-*` removed, `linux-mok` added
+   - `shim-signed` removed, `shim-signed-mok` added
+3. Installer patches:
+   - `packageselector.py`: Passes `repo_path` from option JSON to `install_config`
+   - `installer.py`: Overrides `self.repo_paths` when `mok_repo_path` is set
+4. When installer's hardcoded `packages.append('grub2-efi-image')` runs:
+   - VMware Original path: Finds `grub2-efi-image` in `RPMS/` → installs it
+   - Custom MOK path: Only `grub2-efi-image-mok` exists in `RPMS_MOK/` → tdnf resolves to MOK version → no conflict
 
 **Manual verification**:
 ```bash
-# Check packages_mok.json doesn't contain 'minimal'
+# Verify two-repository structure in ISO
 mount -o loop /path/to/secureboot.iso /mnt
-zcat /mnt/isolinux/initrd.img | cpio -idm
-cat installer/packages_mok.json | grep -q '"minimal"' && echo "ERROR: minimal present" || echo "OK: minimal expanded"
+ls /mnt/RPMS/x86_64/grub2-efi-image-2*.rpm     # Should exist (original)
+ls /mnt/RPMS_MOK/x86_64/grub2-efi-image-mok*.rpm  # Should exist (MOK)
+ls /mnt/RPMS_MOK/x86_64/grub2-efi-image-2*.rpm    # Should NOT exist
 ```
 
 ### "start_image() returned Not Found"
@@ -1162,7 +1159,7 @@ find /lib/modules -name "cfg80211*" -o -name "mac80211*" -o -name "iwlwifi*"
 | grub.efi Not Found | Missing file | Rebuild ISO (v1.7.0+ installs both names) |
 | search.c: no such device | GRUB searching for ISO path | Rebuild ISO (v1.7.0+ fixes embedded config) |
 | Installation takes 2000+ seconds | USB autosuspend issue | Rebuild ISO (v1.7.0+ adds usbcore.autosuspend=-1) |
-| rpm transaction failed (Error 1525) | MOK version < original version | Rebuild ISO (v1.9.16+ uses Conflicts) |
+| rpm transaction failed (Error 1525) | Hardcoded grub2-efi-image in installer.py | Rebuild ISO (v1.9.37+ two-repository architecture) |
 | bad shim signature | Wrong trust chain | Use Fedora shim + Fedora MokManager |
 | MokManager.efi Not Found | Wrong filename or missing from efiboot.img | Rebuild with PhotonOS-HABv4Emulation-ISOCreator |
 | Security Violation (first boot) | MOK certificate not enrolled | Enroll certificate from root `/` |

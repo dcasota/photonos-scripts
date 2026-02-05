@@ -102,15 +102,24 @@ Photon OS Installer
 │  6. Shutdown                                                        │
 └─────────────────────────────────────────────────────────────────────┘
                                 │
-                    ┌───────────┴───────────┐
-                    ▼                       ▼
-          Custom MOK Path           VMware Original Path
-          (Physical HW)             (VMware VMs)
-                    │                       │
-                    ▼                       ▼
-            MOK-signed vmlinuz      Chainload grubx64_real.efi
-            + initrd                (VMware's GRUB)
-            + ks=cdrom:/mok_ks.cfg  + ks=cdrom:/standard_ks.cfg
+                                ▼ launches interactive installer
+┌─────────────────────────────────────────────────────────────────────┐
+│                  Package Selection Screen                            │
+│  Two-Repository Architecture (v1.9.37+):                            │
+│                                                                      │
+│  Custom MOK options (use RPMS_MOK/ repo):                           │
+│    1. Photon Minimal (Custom MOK)                                    │
+│    2. Photon Developer (Custom MOK)                                  │
+│    3. Photon OSTree Host (Custom MOK)                                │
+│    4. Photon Real Time (Custom MOK)                                  │
+│                                                                      │
+│  VMware Original options (use RPMS/ repo):                          │
+│    5. Photon Minimal (VMware Original)                               │
+│    6. Photon Developer (VMware Original)                             │
+│    7. Photon OSTree Host (VMware Original)                           │
+│    8. Photon Real Time (VMware Original)                             │
+│    9. Photon Custom (VMware Original)                                │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Installed System Boot (Post-Installation)
@@ -248,28 +257,21 @@ linux-mok:
   Contains: vmlinuz-* (MOK-signed), config-*, System.map-*
 ```
 
-### Kickstart Package Selection
+### Two-Repository Package Selection (v1.9.37+)
 
-**MOK Installation (`mok_ks.cfg`):**
-```json
-{
-    "linux_flavor": "linux-mok",
-    "packages": ["minimal", "initramfs", "linux-mok", 
-                 "grub2-efi-image-mok", "shim-signed-mok"],
-    "bootmode": "efi",
-    "ui": true
-}
-```
+**How it works**: The installer is patched at initrd modification time. No kickstart files are used.
 
-**Standard Installation (`standard_ks.cfg`):**
-```json
-{
-    "linux_flavor": "linux",
-    "packages": ["minimal", "initramfs", "linux", 
-                 "grub2-efi-image", "shim-signed"],
-    "bootmode": "efi",
-    "ui": true
-}
+1. `build_install_options_all.json` contains mirror entries for each option:
+   - MOK entries have `"repo_path": "RPMS_MOK"` → installer uses `RPMS_MOK/` directory
+   - Original entries have no `repo_path` → installer uses default `RPMS/` directory
+
+2. `packageselector.py` is patched to pass `repo_path` through `selected_item_params`
+
+3. `installer.py` is patched to override `self.repo_paths` when `mok_repo_path` is set
+
+**Conflict elimination**: When the installer's hardcoded `packages.append('grub2-efi-image')` executes:
+- VMware Original: Finds `grub2-efi-image` in `RPMS/` → installs it
+- Custom MOK: Finds only `grub2-efi-image-mok` in `RPMS_MOK/` (which `Provides: grub2-efi-image`) → no conflict
 ```
 
 ---
@@ -309,8 +311,6 @@ linux-mok:
 photon-5.0-xxx-secureboot.iso
 ├── ENROLL_THIS_KEY_IN_MOKMANAGER.cer  # MOK certificate for enrollment
 ├── MokManager.efi                      # SUSE MokManager (root)
-├── mok_ks.cfg                         # MOK kickstart
-├── standard_ks.cfg                    # Standard kickstart
 │
 ├── EFI/BOOT/
 │   ├── BOOTX64.EFI                    # SUSE shim
@@ -324,11 +324,14 @@ photon-5.0-xxx-secureboot.iso
 │   ├── grub.cfg                       # Boot menu configuration
 │   └── themes/                        # Photon OS theme
 │
-├── RPMS/x86_64/                       # All RPMs (original + MOK)
-│   ├── shim-signed-mok-*.rpm
-│   ├── grub2-efi-image-mok-*.rpm
-│   ├── linux-mok-*.rpm
-│   └── ... (original packages)
+├── RPMS/x86_64/                       # VMware Original packages (untouched)
+│   └── ... (all original packages)
+│
+├── RPMS_MOK/x86_64/                   # MOK packages (hardlinked copy, conflicts replaced)
+│   ├── grub2-efi-image-mok-*.rpm      # Replaces grub2-efi-image
+│   ├── linux-mok-*.rpm                # Replaces linux/linux-esx
+│   ├── shim-signed-mok-*.rpm          # Replaces shim-signed
+│   └── ... (hardlinks to RPMS/ for non-conflicting packages)
 │
 └── isolinux/                          # BIOS/Legacy boot
     ├── isolinux.bin

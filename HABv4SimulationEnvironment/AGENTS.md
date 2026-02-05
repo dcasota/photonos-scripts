@@ -23,13 +23,23 @@
 
 ## Common Debugging Patterns
 
-### Installer Failures (Error 1525)
-When encountering "rpm transaction failed" errors:
-1. Check for file conflicts between MOK packages: `comm -12 <(rpm -qlp linux-mok*.rpm | sort) <(rpm -qlp linux-esx-mok*.rpm | sort)`
-2. Inspect package contents: `rpm -qlp <package.rpm> | grep /boot/`
-3. Look for BUILD directory contamination: Multiple builds accumulating files
-4. Check module directory naming: ESX modules should have `-esx` suffix
-5. Verify flavor matching: Each kernel variant needs matching modules
+### Installer Failures (Error 1525) - Root Cause and Solution
+**Root cause (identified v1.9.37)**: Photon OS `installer.py` **hardcodes** `packages.append('grub2-efi-image')` for EFI bootmode (line 361). This is still present in upstream v2.8 (Jan 2026).
+
+**Solution**: Two-repository architecture:
+- `RPMS/` → untouched VMware Original packages
+- `RPMS_MOK/` → hardlinked copy with conflicting packages replaced by MOK variants
+- Installer patches (`packageselector.py`, `installer.py`) redirect MOK options to `RPMS_MOK/`
+
+**Previous approaches that failed** (v1.9.16-v1.9.36):
+- Conflicts/Obsoletes directives, Epoch, dynamic meta-package expansion, original package removal
+- None addressed the hardcoded `packages.append()` root cause
+
+When debugging new Error 1525 issues:
+1. Verify two-repository structure: `ls /mnt/RPMS_MOK/x86_64/grub2-efi-image-mok*.rpm`
+2. Verify originals absent from RPMS_MOK: `ls /mnt/RPMS_MOK/x86_64/grub2-efi-image-2*.rpm` (should not exist)
+3. Check installer patches applied: grep for `mok_repo_path` in extracted initrd's `installer.py`
+4. Inspect package contents: `rpm -qlp <package.rpm> | grep /boot/`
 
 ### rpmbuild Issues
 - rpmbuild reuses BUILD/ directory - clean it between related builds

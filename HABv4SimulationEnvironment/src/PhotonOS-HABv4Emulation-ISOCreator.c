@@ -1605,7 +1605,7 @@ static int apply_driver_kernel_configs(const char *kernel_src, const char *drive
 }
 
 /**
- * Copy driver RPMs to ISO and update packages_mok.json.
+ * Copy driver RPMs to ISO and add them to all visible package lists.
  * Returns 0 on success, -1 on error.
  */
 static int integrate_driver_rpms(const char *drivers_dir, const char *iso_extract, 
@@ -1663,14 +1663,33 @@ static int integrate_driver_rpms(const char *drivers_dir, const char *iso_extrac
         }
     }
     
-    /* Update packages_mok.json to include driver packages */
-    char packages_json[512];
-    snprintf(packages_json, sizeof(packages_json), "%s/installer/packages_mok.json", initrd_extract);
-    
-    if (file_exists(packages_json)) {
-        log_info("Updating packages_mok.json with driver packages...");
+    /* Add driver packages to ALL package list JSON files in the installer.
+     * This ensures drivers are available for every installation option
+     * (both Custom MOK and VMware Original). */
+    {
+        /* Build list of driver package names */
+        char pkg_args[2048] = "";
+        for (int i = 0; i < rpm_count; i++) {
+            const char *filename = strrchr(driver_rpms[i], '/');
+            filename = filename ? filename + 1 : driver_rpms[i];
+            char pkg_name[256];
+            strncpy(pkg_name, filename, sizeof(pkg_name) - 1);
+            pkg_name[sizeof(pkg_name) - 1] = '\0';
+            char *ext = strstr(pkg_name, ".rpm");
+            if (ext) *ext = '\0';
+            char *arch_s = strstr(pkg_name, ".noarch");
+            if (!arch_s) arch_s = strstr(pkg_name, ".x86_64");
+            if (arch_s) *arch_s = '\0';
+            char *dash = strrchr(pkg_name, '-');
+            if (dash) *dash = '\0';
+            dash = strrchr(pkg_name, '-');
+            if (dash) *dash = '\0';
+            
+            strcat(pkg_args, " '");
+            strcat(pkg_args, pkg_name);
+            strcat(pkg_args, "'");
+        }
         
-        /* Create a Python script to add driver packages */
         char update_script[512];
         snprintf(update_script, sizeof(update_script), "%s/update_packages.py", iso_extract);
         
@@ -1678,54 +1697,32 @@ static int integrate_driver_rpms(const char *drivers_dir, const char *iso_extrac
         if (f) {
             fprintf(f,
                 "#!/usr/bin/env python3\n"
-                "import json\n"
-                "import sys\n"
+                "import json, sys, glob, os\n"
                 "\n"
-                "with open(sys.argv[1], 'r') as fp:\n"
-                "    data = json.load(fp)\n"
-                "\n"
-                "# Add driver packages\n"
+                "installer_dir = sys.argv[1]\n"
                 "driver_packages = sys.argv[2:]\n"
-                "for pkg in driver_packages:\n"
-                "    if pkg not in data['packages']:\n"
-                "        data['packages'].append(pkg)\n"
-                "        print(f'Added: {pkg}')\n"
                 "\n"
-                "with open(sys.argv[1], 'w') as fp:\n"
-                "    json.dump(data, fp, indent=4)\n"
+                "for json_file in glob.glob(os.path.join(installer_dir, 'packages_*.json')):\n"
+                "    with open(json_file, 'r') as fp:\n"
+                "        data = json.load(fp)\n"
+                "    if 'packages' not in data:\n"
+                "        continue\n"
+                "    changed = False\n"
+                "    for pkg in driver_packages:\n"
+                "        if pkg not in data['packages']:\n"
+                "            data['packages'].append(pkg)\n"
+                "            changed = True\n"
+                "    if changed:\n"
+                "        with open(json_file, 'w') as fp:\n"
+                "            json.dump(data, fp, indent=4)\n"
+                "        print(f'Updated: {os.path.basename(json_file)}')\n"
             );
             fclose(f);
             
-            /* Build command with all driver package names */
-            char pkg_args[2048] = "";
-            for (int i = 0; i < rpm_count; i++) {
-                char base_name[256];
-                extract_rpm_base_name(driver_rpms[i], base_name, sizeof(base_name));
-                
-                /* Append full package name (with version) for better specificity */
-                const char *filename = strrchr(driver_rpms[i], '/');
-                filename = filename ? filename + 1 : driver_rpms[i];
-                char pkg_name[256];
-                strncpy(pkg_name, filename, sizeof(pkg_name) - 1);
-                char *ext = strstr(pkg_name, ".rpm");
-                if (ext) *ext = '\0';
-                /* Remove arch suffix */
-                char *arch = strstr(pkg_name, ".noarch");
-                if (!arch) arch = strstr(pkg_name, ".x86_64");
-                if (arch) *arch = '\0';
-                /* Remove version-release */
-                char *dash = strrchr(pkg_name, '-');
-                if (dash) *dash = '\0';
-                dash = strrchr(pkg_name, '-');
-                if (dash) *dash = '\0';
-                
-                strcat(pkg_args, " '");
-                strcat(pkg_args, pkg_name);
-                strcat(pkg_args, "'");
-            }
-            
-            snprintf(cmd, sizeof(cmd), "python3 '%s' '%s'%s 2>&1", 
-                     update_script, packages_json, pkg_args);
+            char installer_dir[512];
+            snprintf(installer_dir, sizeof(installer_dir), "%s/installer", initrd_extract);
+            snprintf(cmd, sizeof(cmd), "python3 '%s' '%s'%s 2>&1",
+                     update_script, installer_dir, pkg_args);
             run_cmd(cmd);
             
             unlink(update_script);
@@ -2206,9 +2203,10 @@ static int create_secure_boot_iso(void) {
      * values directly and fails if required fields (like disk) are missing.
      *
      * Instead, we modify the initrd to:
-     * 1. Add MOK package options to build_install_options_all.json
-     * 2. Create packages_mok.json with MOK-signed packages
-     * 3. Apply progress_bar bug fix (in case of errors during installation)
+     * 1. Create mirror MOK entries in build_install_options_all.json with repo_path=RPMS_MOK
+     * 2. Patch packageselector.py to pass repo_path to install_config
+     * 3. Patch installer.py to use RPMS_MOK/ repo when mok_repo_path is set
+     * 4. Apply progress_bar bug fix (in case of errors during installation)
      *
      * The GRUB menu will boot WITHOUT ks= parameter, launching the full interactive
      * installer where users can select "Photon MOK Secure Boot" as their package choice. */
@@ -2338,210 +2336,35 @@ static int create_secure_boot_iso(void) {
         log_warn("linuxselector.py not found at expected path");
     }
     
-    /* Option C: Add "Photon MOK Secure Boot" as new entry in build_install_options_all.json
-     * This preserves original Minimal/Developer/etc options while adding explicit MOK choice.
-     * See ADR-001 in DROID_SKILL_GUIDE.md for rationale. */
-    char options_json[512], mok_packages_json[512];
+    /* Two-repository architecture: Create mirror MOK entries in build_install_options_all.json
+     * 
+     * Each visible VMware Original option gets a "(Custom MOK)" mirror that uses the same
+     * packagelist_file but specifies "repo_path": "RPMS_MOK". The patched packageselector.py
+     * and installer.py will use RPMS_MOK/ instead of RPMS/ for those entries.
+     *
+     * This gives users identical flavor choices (minimal, developer, ostree-host, real-time)
+     * and identical kernel choices (generic, hypervisor-optimized) for both installation paths.
+     *
+     * packages_mok.json is NO LONGER needed -- we reuse the same package lists. */
+    char options_json[512];
     snprintf(options_json, sizeof(options_json), "%s/installer/build_install_options_all.json", initrd_extract);
-    snprintf(mok_packages_json, sizeof(mok_packages_json), "%s/installer/packages_mok.json", initrd_extract);
     
     if (file_exists(options_json)) {
-        log_info("Adding MOK Secure Boot option to installer...");
+        log_info("Creating two-repository install options...");
         
-        /* Create packages_mok.json dynamically by:
-         * 1. Using known MOK package -> base package mappings (from our spec templates)
-         * 2. Expanding meta-packages that have conflicting dependencies
-         * 3. Replacing conflicting base packages with MOK versions
-         * 
-         * This approach works because WE control the MOK package specs, so we know
-         * exactly what they Provide/Obsolete without needing to scan the built RPMs.
-         * 
-         * Future-ready: To add a new MOK package, add its mapping to mok_replaces[] below. */
+        char modify_options_script[512];
+        snprintf(modify_options_script, sizeof(modify_options_script), "%s/modify_options.py", work_dir);
         
-        char gen_mok_script[512];
-        snprintf(gen_mok_script, sizeof(gen_mok_script), "%s/generate_mok_packages.py", work_dir);
-        
-        FILE *gf = fopen(gen_mok_script, "w");
-        if (gf) {
-            fprintf(gf,
-                "#!/usr/bin/env python3\n"
-                "\"\"\"Dynamic MOK packages.json generator.\n"
-                "\n"
-                "Uses known MOK package mappings to expand meta-packages and replace\n"
-                "conflicting base packages with MOK versions.\n"
-                "\n"
-                "FUTURE-READY: To add a new MOK package:\n"
-                "1. Add entry to MOK_REPLACES dict below\n"
-                "2. Ensure the MOK package spec has Epoch > 0 and Provides/Obsoletes the base\n"
-                "\"\"\"\n"
-                "import subprocess\n"
-                "import json\n"
-                "import sys\n"
-                "import os\n"
-                "import re\n"
-                "\n"
-                "# MOK package mappings: mok_package -> [base_packages_it_replaces]\n"
-                "# These MUST match the Provides/Obsoletes in the MOK package specs\n"
-                "MOK_REPLACES = {\n"
-                "    'linux-mok': ['linux', 'linux-esx'],\n"
-                "    'linux-esx-mok': ['linux-esx'],\n"
-                "    'grub2-efi-image-mok': ['grub2-efi-image'],\n"
-                "    'shim-signed-mok': ['shim-signed'],\n"
-                "}\n"
-                "\n"
-                "def run_rpm(args, rpm_path=None):\n"
-                "    \"\"\"Run rpm command and return output lines.\"\"\"\n"
-                "    cmd = ['rpm']\n"
-                "    if rpm_path:\n"
-                "        cmd.extend(['-qp', rpm_path])\n"
-                "    cmd.extend(args)\n"
-                "    try:\n"
-                "        result = subprocess.run(cmd, capture_output=True, text=True, check=True)\n"
-                "        return [l.strip() for l in result.stdout.strip().split('\\n') if l.strip()]\n"
-                "    except subprocess.CalledProcessError:\n"
-                "        return []\n"
-                "\n"
-                "def get_meta_package_deps(rpm_path):\n"
-                "    \"\"\"Get direct dependencies of a meta-package RPM.\"\"\"\n"
-                "    deps = []\n"
-                "    for req in run_rpm(['--requires'], rpm_path):\n"
-                "        if req.startswith('rpmlib(') or req.startswith('/'):\n"
-                "            continue\n"
-                "        match = re.match(r'^([\\w.-]+)', req)\n"
-                "        if match:\n"
-                "            deps.append(match.group(1))\n"
-                "    return deps\n"
-                "\n"
-                "def find_rpm(rpms_dir, name_pattern):\n"
-                "    \"\"\"Find RPM file matching pattern in directory.\"\"\"\n"
-                "    import glob\n"
-                "    # Search in both x86_64 and noarch\n"
-                "    for subdir in ['x86_64', 'noarch', '.']:\n"
-                "        search_path = os.path.join(rpms_dir, subdir, f'{name_pattern}-[0-9]*.rpm')\n"
-                "        matches = glob.glob(search_path)\n"
-                "        if not name_pattern.endswith('-mok'):\n"
-                "            matches = [m for m in matches if '-mok-' not in os.path.basename(m)]\n"
-                "        if matches:\n"
-                "            return matches[0]\n"
-                "    # Also try direct path (for flat structure)\n"
-                "    matches = glob.glob(os.path.join(rpms_dir, f'{name_pattern}-[0-9]*.rpm'))\n"
-                "    if not name_pattern.endswith('-mok'):\n"
-                "        matches = [m for m in matches if '-mok-' not in os.path.basename(m)]\n"
-                "    return matches[0] if matches else None\n"
-                "\n"
-                "def main():\n"
-                "    if len(sys.argv) < 3:\n"
-                "        print('Usage: generate_mok_packages.py <rpms_dir> <output_json>', file=sys.stderr)\n"
-                "        sys.exit(1)\n"
-                "    \n"
-                "    rpms_dir = sys.argv[1]\n"
-                "    output_json = sys.argv[2]\n"
-                "    \n"
-                "    # Build reverse mapping: base_package -> mok_package\n"
-                "    base_to_mok = {}\n"
-                "    for mok_pkg, base_pkgs in MOK_REPLACES.items():\n"
-                "        for base_pkg in base_pkgs:\n"
-                "            base_to_mok[base_pkg] = mok_pkg\n"
-                "    \n"
-                "    print(f'MOK package mappings:', file=sys.stderr)\n"
-                "    for mok_pkg, base_pkgs in MOK_REPLACES.items():\n"
-                "        print(f'  {mok_pkg} replaces: {base_pkgs}', file=sys.stderr)\n"
-                "    \n"
-                "    # Meta-packages to check for conflicts\n"
-                "    meta_packages = ['minimal']\n"
-                "    extra_packages = [\n"
-                "        'initramfs', 'grub2-theme', 'lvm2', 'less', 'sudo',\n"
-                "        'libnl', 'wpa_supplicant', 'wireless-regdb', 'iw', 'wifi-config'\n"
-                "    ]\n"
-                "    \n"
-                "    final_packages = set()\n"
-                "    expanded_meta = set()\n"
-                "    \n"
-                "    for meta in meta_packages:\n"
-                "        meta_rpm = find_rpm(rpms_dir, meta)\n"
-                "        if not meta_rpm:\n"
-                "            print(f'Warning: {meta} RPM not found, adding as-is', file=sys.stderr)\n"
-                "            final_packages.add(meta)\n"
-                "            continue\n"
-                "        \n"
-                "        deps = get_meta_package_deps(meta_rpm)\n"
-                "        has_conflict = any(dep in base_to_mok for dep in deps)\n"
-                "        \n"
-                "        if has_conflict:\n"
-                "            print(f'Expanding {meta} (has conflicting deps):', file=sys.stderr)\n"
-                "            expanded_meta.add(meta)\n"
-                "            for dep in deps:\n"
-                "                if dep in base_to_mok:\n"
-                "                    mok_name = base_to_mok[dep]\n"
-                "                    print(f'  {dep} -> {mok_name}', file=sys.stderr)\n"
-                "                    final_packages.add(mok_name)\n"
-                "                else:\n"
-                "                    final_packages.add(dep)\n"
-                "        else:\n"
-                "            final_packages.add(meta)\n"
-                "    \n"
-                "    # Add all MOK packages\n"
-                "    for mok_name in MOK_REPLACES.keys():\n"
-                "        final_packages.add(mok_name)\n"
-                "    \n"
-                "    # Add extra packages (unless replaced by MOK)\n"
-                "    for pkg in extra_packages:\n"
-                "        if pkg not in base_to_mok:\n"
-                "            final_packages.add(pkg)\n"
-                "    \n"
-                "    # Remove any base packages that have MOK replacements\n"
-                "    for base_pkg in base_to_mok.keys():\n"
-                "        final_packages.discard(base_pkg)\n"
-                "    \n"
-                "    # Sort and write output\n"
-                "    sorted_packages = sorted(final_packages, key=str.lower)\n"
-                "    output = {'packages': sorted_packages}\n"
-                "    \n"
-                "    with open(output_json, 'w') as f:\n"
-                "        json.dump(output, f, indent=4)\n"
-                "    \n"
-                "    print(f'Generated {output_json} with {len(sorted_packages)} packages', file=sys.stderr)\n"
-                "    if expanded_meta:\n"
-                "        print(f'Expanded meta-packages: {expanded_meta}', file=sys.stderr)\n"
-                "\n"
-                "if __name__ == '__main__':\n"
-                "    main()\n"
-            );
-            fclose(gf);
-            
-            /* Run the dynamic generator using ISO's RPMS directory */
-            char cmd[1024];
-            snprintf(cmd, sizeof(cmd), "python3 '%s' '%s/RPMS' '%s' 2>&1",
-                     gen_mok_script, iso_extract, mok_packages_json);
-            log_info("Generating packages_mok.json dynamically...");
-            char *output = run_cmd_capture(cmd);
-            if (output) {
-                char *line = strtok(output, "\n");
-                while (line) {
-                    log_info("  %s", line);
-                    line = strtok(NULL, "\n");
-                }
-                free(output);
-            }
-            
-            /* Clean up script */
-            snprintf(cmd, sizeof(cmd), "rm -f '%s'", gen_mok_script);
-            run_cmd(cmd);
-            
-            if (!file_exists(mok_packages_json)) {
-                log_error("Failed to generate packages_mok.json");
-            }
-        }
-        
-        /* Add MOK option to build_install_options_all.json as first entry
-         * Renumber existing visible options (1->2, 2->3, etc.) */
-        char add_mok_script[512];
-        snprintf(add_mok_script, sizeof(add_mok_script), "%s/add_mok_option.py", work_dir);
-        
-        FILE *pf = fopen(add_mok_script, "w");
+        FILE *pf = fopen(modify_options_script, "w");
         if (pf) {
             fprintf(pf,
                 "#!/usr/bin/env python3\n"
+                "\"\"\"Create mirror MOK entries for each visible installation option.\n"
+                "\n"
+                "For each visible option (minimal, developer, ostree_host, realtime),\n"
+                "creates a 'Custom MOK' mirror that uses the same packagelist_file\n"
+                "but adds repo_path=RPMS_MOK. The MOK entries appear first.\n"
+                "\"\"\"\n"
                 "import json\n"
                 "import sys\n"
                 "from collections import OrderedDict\n"
@@ -2549,42 +2372,202 @@ static int create_secure_boot_iso(void) {
                 "with open(sys.argv[1], 'r') as f:\n"
                 "    options = json.load(f, object_pairs_hook=OrderedDict)\n"
                 "\n"
-                "# Renumber existing visible options (1->2, 2->3, etc.)\n"
-                "for key, value in options.items():\n"
-                "    if value.get('visible', False) and 'title' in value:\n"
-                "        title = value['title']\n"
-                "        if len(title) > 1 and title[0].isdigit() and title[1] == '.':\n"
-                "            new_num = int(title[0]) + 1\n"
-                "            value['title'] = str(new_num) + title[1:]\n"
-                "\n"
-                "# Create new ordered dict with MOK option first\n"
                 "new_options = OrderedDict()\n"
-                "new_options['mok'] = {\n"
-                "    'title': '1. Photon MOK Secure Boot',\n"
-                "    'packagelist_file': 'packages_mok.json',\n"
-                "    'visible': True\n"
-                "}\n"
+                "mok_num = 1\n"
+                "orig_num = 1\n"
                 "\n"
-                "# Add all existing options after MOK\n"
+                "# First pass: count visible options for numbering\n"
+                "visible_count = sum(1 for v in options.values() if v.get('visible', False))\n"
+                "orig_start = visible_count + 1\n"
+                "\n"
+                "# Create MOK mirror entries first\n"
                 "for key, value in options.items():\n"
-                "    new_options[key] = value\n"
+                "    if not value.get('visible', False):\n"
+                "        continue\n"
+                "    mok_key = 'mok_' + key\n"
+                "    # Extract base title (remove leading number prefix)\n"
+                "    title = value.get('title', key)\n"
+                "    base_title = title\n"
+                "    if len(title) > 2 and title[0].isdigit() and title[1] == '.':\n"
+                "        base_title = title[2:].strip()\n"
+                "    mok_entry = {\n"
+                "        'title': f'{mok_num}. {base_title} (Custom MOK)',\n"
+                "        'visible': True,\n"
+                "        'repo_path': 'RPMS_MOK'\n"
+                "    }\n"
+                "    # Copy packagelist_file or packages from original\n"
+                "    if 'packagelist_file' in value:\n"
+                "        mok_entry['packagelist_file'] = value['packagelist_file']\n"
+                "    if 'packages' in value:\n"
+                "        mok_entry['packages'] = value['packages']\n"
+                "    if 'include' in value:\n"
+                "        mok_entry['include'] = value['include']\n"
+                "    if 'additional-files' in value:\n"
+                "        mok_entry['additional-files'] = value['additional-files']\n"
+                "    new_options[mok_key] = mok_entry\n"
+                "    mok_num += 1\n"
+                "\n"
+                "# Add original entries with '(VMware Original)' suffix and renumbered\n"
+                "orig_num = mok_num\n"
+                "for key, value in options.items():\n"
+                "    entry = dict(value)\n"
+                "    if entry.get('visible', False):\n"
+                "        title = entry.get('title', key)\n"
+                "        base_title = title\n"
+                "        if len(title) > 2 and title[0].isdigit() and title[1] == '.':\n"
+                "            base_title = title[2:].strip()\n"
+                "        entry['title'] = f'{orig_num}. {base_title} (VMware Original)'\n"
+                "        orig_num += 1\n"
+                "    new_options[key] = entry\n"
                 "\n"
                 "with open(sys.argv[1], 'w') as f:\n"
                 "    json.dump(new_options, f, indent=4)\n"
                 "\n"
-                "print('MOK option added as first entry')\n"
+                "print(f'Created {mok_num - 1} MOK mirror entries + {len(options)} original entries')\n"
             );
             fclose(pf);
             
-            snprintf(cmd, sizeof(cmd), "python3 '%s' '%s' 2>&1", add_mok_script, options_json);
-            run_cmd(cmd);
+            snprintf(cmd, sizeof(cmd), "python3 '%s' '%s' 2>&1", modify_options_script, options_json);
+            char *script_output = run_cmd_capture(cmd);
+            if (script_output) {
+                log_info("  %s", script_output);
+                free(script_output);
+            }
             
-            snprintf(cmd, sizeof(cmd), "rm -f '%s'", add_mok_script);
+            snprintf(cmd, sizeof(cmd), "rm -f '%s'", modify_options_script);
             run_cmd(cmd);
         }
-        log_info("Added 'Photon MOK Secure Boot' to installer package selection");
+        
+        log_info("Two-repository install options created in build_install_options_all.json");
     } else {
         log_warn("build_install_options_all.json not found in initrd");
+    }
+    
+    /* Patch packageselector.py to pass repo_path from JSON to install_config.
+     * When an option has "repo_path": "RPMS_MOK", the selector stores it in
+     * install_config['mok_repo_path'] so the installer uses RPMS_MOK/ instead of RPMS/. */
+    {
+        char packageselector_py[512];
+        snprintf(packageselector_py, sizeof(packageselector_py),
+            "%s/usr/lib/python3.11/site-packages/photon_installer/packageselector.py", initrd_extract);
+        
+        if (file_exists(packageselector_py)) {
+            log_info("Patching packageselector.py for two-repository support...");
+            
+            char patch_pkg_script[512];
+            snprintf(patch_pkg_script, sizeof(patch_pkg_script), "%s/patch_pkgselector.py", work_dir);
+            
+            FILE *ppf = fopen(patch_pkg_script, "w");
+            if (ppf) {
+                fprintf(ppf,
+                    "#!/usr/bin/env python3\n"
+                    "import sys\n"
+                    "\n"
+                    "with open(sys.argv[1], 'r') as f:\n"
+                    "    content = f.read()\n"
+                    "\n"
+                    "# Patch 1: In load_package_list, pass repo_path as 3rd element of selected_item_params\n"
+                    "old_menu_append = (\n"
+                    "    'self.package_menu_items.append((install_option[1][\"title\"],\\n'\n"
+                    "    '                                                self.exit_function,\\n'\n"
+                    "    '                                                [install_option[0], package_list]))'\n"
+                    ")\n"
+                    "new_menu_append = (\n"
+                    "    'repo_path = install_option[1].get(\"repo_path\", None)\\n'\n"
+                    "    '                self.package_menu_items.append((install_option[1][\"title\"],\\n'\n"
+                    "    '                                                self.exit_function,\\n'\n"
+                    "    '                                                [install_option[0], package_list, repo_path]))'\n"
+                    ")\n"
+                    "content = content.replace(old_menu_append, new_menu_append, 1)\n"
+                    "\n"
+                    "# Patch 2: In exit_function, store repo_path in install_config if present\n"
+                    "old_exit = (\n"
+                    "    \"self.install_config['packages'] = selected_item_params[1]\\n\"\n"
+                    "    \"        return ActionResult(True, {'custom': False})\"\n"
+                    ")\n"
+                    "new_exit = (\n"
+                    "    \"self.install_config['packages'] = selected_item_params[1]\\n\"\n"
+                    "    \"        if len(selected_item_params) > 2 and selected_item_params[2]:\\n\"\n"
+                    "    \"            self.install_config['mok_repo_path'] = selected_item_params[2]\\n\"\n"
+                    "    \"        else:\\n\"\n"
+                    "    \"            self.install_config.pop('mok_repo_path', None)\\n\"\n"
+                    "    \"        return ActionResult(True, {'custom': False})\"\n"
+                    ")\n"
+                    "content = content.replace(old_exit, new_exit, 1)\n"
+                    "\n"
+                    "with open(sys.argv[1], 'w') as f:\n"
+                    "    f.write(content)\n"
+                    "\n"
+                    "print('packageselector.py patched for two-repository support')\n"
+                );
+                fclose(ppf);
+                
+                snprintf(cmd, sizeof(cmd), "python3 '%s' '%s' 2>&1", patch_pkg_script, packageselector_py);
+                run_cmd(cmd);
+                
+                snprintf(cmd, sizeof(cmd), "rm -f '%s'", patch_pkg_script);
+                run_cmd(cmd);
+            }
+            log_info("Patched packageselector.py");
+        } else {
+            log_warn("packageselector.py not found at expected path");
+        }
+    }
+    
+    /* Patch installer.py to use mok_repo_path when set.
+     * When install_config['mok_repo_path'] is set (e.g., "RPMS_MOK"),
+     * override repo_paths to point to RPMS_MOK/ instead of RPMS/. */
+    if (file_exists(installer_py)) {
+        log_info("Patching installer.py for two-repository support...");
+        
+        char patch_installer2_script[512];
+        snprintf(patch_installer2_script, sizeof(patch_installer2_script), "%s/patch_installer_repo.py", work_dir);
+        
+        FILE *pi2f = fopen(patch_installer2_script, "w");
+        if (pi2f) {
+            fprintf(pi2f,
+                "#!/usr/bin/env python3\n"
+                "import sys\n"
+                "\n"
+                "with open(sys.argv[1], 'r') as f:\n"
+                "    content = f.read()\n"
+                "\n"
+                "# Insert mok_repo_path override just before the repos setup block.\n"
+                "# When the user selects a Custom MOK option, mok_repo_path is set to 'RPMS_MOK'.\n"
+                "# We override self.repo_paths to use RPMS_MOK/ instead of the default RPMS/.\n"
+                "old_repos = (\n"
+                "    '# if \"repos\" key not present in install_config or \"repos=\" provided by user through cmdline prioritize cmdline\\n'\n"
+                "    '        if \"repos\" not in install_config or (self.repo_paths and self.repo_paths != Defaults.REPO_PATHS):'\n"
+                ")\n"
+                "new_repos = (\n"
+                "    '# Two-repository architecture: override repo path for Custom MOK installation\\n'\n"
+                "    '        if \"mok_repo_path\" in install_config:\\n'\n"
+                "    '            mok_sub = install_config[\"mok_repo_path\"]\\n'\n"
+                "    '            if self.repo_paths and self.repo_paths.endswith(\"/RPMS\"):\\n'\n"
+                "    '                self.repo_paths = self.repo_paths[:-5] + \"/\" + mok_sub\\n'\n"
+                "    '            elif self.repo_paths == Defaults.REPO_PATHS:\\n'\n"
+                "    '                self.repo_paths = Defaults.MOUNT_PATH + \"/\" + mok_sub\\n'\n"
+                "    '            self.logger.info(f\"MOK repo override: {self.repo_paths}\")\\n'\n"
+                "    '\\n'\n"
+                "    '        # if \"repos\" key not present in install_config or \"repos=\" provided by user through cmdline prioritize cmdline\\n'\n"
+                "    '        if \"repos\" not in install_config or (self.repo_paths and self.repo_paths != Defaults.REPO_PATHS):'\n"
+                ")\n"
+                "content = content.replace(old_repos, new_repos, 1)\n"
+                "\n"
+                "with open(sys.argv[1], 'w') as f:\n"
+                "    f.write(content)\n"
+                "\n"
+                "print('installer.py patched for two-repository support')\n"
+            );
+            fclose(pi2f);
+            
+            snprintf(cmd, sizeof(cmd), "python3 '%s' '%s' 2>&1", patch_installer2_script, installer_py);
+            run_cmd(cmd);
+            
+            snprintf(cmd, sizeof(cmd), "rm -f '%s'", patch_installer2_script);
+            run_cmd(cmd);
+        }
+        log_info("Patched installer.py for two-repository support");
     }
     
     /* Patch mk-setup-grub.sh to fix boot parameters for USB/FIPS compatibility
@@ -2709,7 +2692,7 @@ static int create_secure_boot_iso(void) {
     }
     
     /* Integrate driver RPMs if --drivers specified
-     * This MUST happen BEFORE initrd is repacked so packages_mok.json can be updated */
+     * This MUST happen BEFORE initrd is repacked so package list JSONs can be updated */
     if (cfg.include_drivers && cfg.drivers_dir[0] != '\0') {
         log_info("Integrating driver RPMs...");
         if (integrate_driver_rpms(cfg.drivers_dir, iso_extract, initrd_extract) == 0) {

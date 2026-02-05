@@ -1324,149 +1324,173 @@ int rpm_integrate_to_iso(
     const char *iso_rpm_dir,
     rpm_build_config_t *config
 ) {
-    log_info("Integrating MOK packages into ISO...");
+    log_info("Integrating MOK packages into ISO (two-repository architecture)...");
     log_debug("Output dir: %s", config->output_dir);
     log_debug("ISO RPM dir: %s", iso_rpm_dir);
     
-    char cmd[1024];
+    char cmd[2048];
     glob_t glob_result;
     char pattern[512];
-    int copied_count = 0;
     
-    /* First, verify that MOK RPMs exist in the output directory */
+    /* Verify that MOK RPMs exist in the output directory */
     snprintf(pattern, sizeof(pattern), "%s/*-mok-*.rpm", config->output_dir);
     
     if (glob(pattern, 0, NULL, &glob_result) != 0 || glob_result.gl_pathc == 0) {
         log_error("No MOK RPMs found in output directory: %s", config->output_dir);
-        log_error("Pattern searched: %s", pattern);
-        
-        /* List what's actually in the output directory for debugging */
         snprintf(cmd, sizeof(cmd), "ls -la '%s/' 2>&1 || echo 'Directory empty or not found'", 
                  config->output_dir);
-        log_error("Contents of output directory:");
         run_cmd(cmd);
-        
-        /* Also check rpmbuild RPMS directory */
-        snprintf(cmd, sizeof(cmd), "find '%s/RPMS' -name '*.rpm' 2>/dev/null || echo 'No RPMs in rpmbuild'", 
-                 config->rpmbuild_dir);
-        log_error("Contents of rpmbuild RPMS:");
-        run_cmd(cmd);
-        
         return RPM_PATCH_ERR_BUILD_FAILED;
     }
     
     log_info("Found %zu MOK RPM(s) to integrate", glob_result.gl_pathc);
-    
-    /* Copy each RPM individually with error checking */
-    for (size_t i = 0; i < glob_result.gl_pathc; i++) {
-        const char *rpm_path = glob_result.gl_pathv[i];
-        const char *rpm_name = strrchr(rpm_path, '/');
-        rpm_name = rpm_name ? rpm_name + 1 : rpm_path;
-        
-        snprintf(cmd, sizeof(cmd), "cp '%s' '%s/'", rpm_path, iso_rpm_dir);
-        
-        if (run_cmd(cmd) != 0) {
-            log_error("Failed to copy %s to %s", rpm_name, iso_rpm_dir);
-            globfree(&glob_result);
-            return RPM_PATCH_ERR_BUILD_FAILED;
-        }
-        
-        /* Verify the file was actually copied */
-        char dest_path[1024];
-        snprintf(dest_path, sizeof(dest_path), "%s/%s", iso_rpm_dir, rpm_name);
-        if (!file_exists(dest_path)) {
-            log_error("Copy verification failed: %s not found in %s", rpm_name, iso_rpm_dir);
-            globfree(&glob_result);
-            return RPM_PATCH_ERR_BUILD_FAILED;
-        }
-        
-        log_info("Copied: %s", rpm_name);
-        copied_count++;
-    }
-    
     globfree(&glob_result);
     
+    /* Derive iso_extract_dir from iso_rpm_dir (RPMS/x86_64 -> parent of RPMS) */
+    char rpms_dir[512], iso_extract_dir[512];
+    strncpy(rpms_dir, iso_rpm_dir, sizeof(rpms_dir) - 1);
+    rpms_dir[sizeof(rpms_dir) - 1] = '\0';
+    char *slash = strrchr(rpms_dir, '/');
+    if (slash) *slash = '\0'; /* rpms_dir = .../RPMS */
+    
+    strncpy(iso_extract_dir, rpms_dir, sizeof(iso_extract_dir) - 1);
+    iso_extract_dir[sizeof(iso_extract_dir) - 1] = '\0';
+    slash = strrchr(iso_extract_dir, '/');
+    if (slash) *slash = '\0'; /* iso_extract_dir = parent of RPMS */
+    
+    /* RPMS/ is left COMPLETELY UNTOUCHED for VMware Original installation.
+     * 
+     * Create RPMS_MOK/ as a hardlinked copy of RPMS/ with surgical replacements:
+     * - Remove original conflicting packages (grub2-efi-image, linux, shim-signed)
+     * - Remove kernel-dependent packages (linux-devel, linux-docs, etc.)
+     * - Add MOK variant packages
+     * - Regenerate repodata
+     *
+     * Hardlinks (cp -al) ensure minimal additional disk space usage. */
+    
+    char mok_repo_dir[512], mok_rpm_dir[512];
+    snprintf(mok_repo_dir, sizeof(mok_repo_dir), "%s/RPMS_MOK", iso_extract_dir);
+    snprintf(mok_rpm_dir, sizeof(mok_rpm_dir), "%s/RPMS_MOK/x86_64", iso_extract_dir);
+    
+    /* Remove any previous RPMS_MOK directory */
+    snprintf(cmd, sizeof(cmd), "rm -rf '%s'", mok_repo_dir);
+    run_cmd(cmd);
+    
+    /* Create RPMS_MOK as hardlinked copy of RPMS (saves disk space) */
+    log_info("Creating RPMS_MOK/ as hardlinked copy of RPMS/...");
+    snprintf(cmd, sizeof(cmd), "cp -al '%s' '%s'", rpms_dir, mok_repo_dir);
+    if (run_cmd(cmd) != 0) {
+        /* Fallback to regular copy if hardlinks fail (e.g., cross-device) */
+        log_warn("Hardlink copy failed, falling back to regular copy...");
+        snprintf(cmd, sizeof(cmd), "cp -a '%s' '%s'", rpms_dir, mok_repo_dir);
+        if (run_cmd(cmd) != 0) {
+            log_error("Failed to create RPMS_MOK directory");
+            return RPM_PATCH_ERR_BUILD_FAILED;
+        }
+    }
+    
+    /* Remove conflicting original packages from RPMS_MOK */
+    log_info("Removing conflicting original packages from RPMS_MOK/...");
+    snprintf(cmd, sizeof(cmd),
+        "rm -f "
+        "'%s/grub2-efi-image-2'*.rpm "
+        "'%s/shim-signed-2'*.rpm '%s/shim-signed-1'*.rpm "
+        "'%s/linux-devel-'*.rpm "
+        "'%s/linux-docs-'*.rpm "
+        "'%s/linux-drivers-'*.rpm "
+        "'%s/linux-tools-'*.rpm "
+        "'%s/linux-python3-perf-'*.rpm "
+        "'%s/linux-esx-devel-'*.rpm "
+        "'%s/linux-esx-docs-'*.rpm "
+        "'%s/linux-esx-drivers-'*.rpm "
+        "2>/dev/null || true",
+        mok_rpm_dir,
+        mok_rpm_dir, mok_rpm_dir,
+        mok_rpm_dir, mok_rpm_dir, mok_rpm_dir, mok_rpm_dir,
+        mok_rpm_dir, mok_rpm_dir, mok_rpm_dir, mok_rpm_dir);
+    run_cmd(cmd);
+    
+    /* Remove the original linux kernel and linux-esx packages.
+     * These match patterns like linux-6.12.60-14.ph5.x86_64.rpm.
+     * We must be careful not to remove linux-api-headers, linux-firmware, etc.
+     * The linux kernel RPM filename starts with 'linux-' followed by a digit. */
+    log_info("Removing original kernel packages from RPMS_MOK/...");
+    snprintf(cmd, sizeof(cmd),
+        "cd '%s' && "
+        "for f in linux-[0-9]*.rpm linux-esx-[0-9]*.rpm; do "
+        "  [ -f \"$f\" ] && rm -f \"$f\" && echo \"Removed: $f\"; "
+        "done 2>/dev/null || true",
+        mok_rpm_dir);
+    run_cmd(cmd);
+    
+    /* Copy MOK RPMs into RPMS_MOK */
+    log_info("Adding MOK packages to RPMS_MOK/...");
+    int copied_count = 0;
+    snprintf(pattern, sizeof(pattern), "%s/*-mok-*.rpm", config->output_dir);
+    
+    if (glob(pattern, 0, NULL, &glob_result) == 0) {
+        for (size_t i = 0; i < glob_result.gl_pathc; i++) {
+            const char *rpm_path = glob_result.gl_pathv[i];
+            const char *rpm_name = strrchr(rpm_path, '/');
+            rpm_name = rpm_name ? rpm_name + 1 : rpm_path;
+            
+            snprintf(cmd, sizeof(cmd), "cp '%s' '%s/'", rpm_path, mok_rpm_dir);
+            if (run_cmd(cmd) != 0) {
+                log_error("Failed to copy %s to RPMS_MOK", rpm_name);
+                globfree(&glob_result);
+                return RPM_PATCH_ERR_BUILD_FAILED;
+            }
+            log_info("Added to RPMS_MOK: %s", rpm_name);
+            copied_count++;
+        }
+        globfree(&glob_result);
+    }
+    
     if (copied_count == 0) {
-        log_error("No MOK RPMs were copied to ISO");
+        log_error("No MOK RPMs were copied to RPMS_MOK");
         return RPM_PATCH_ERR_BUILD_FAILED;
     }
     
-    log_info("Successfully copied %d MOK RPM(s) to ISO", copied_count);
+    log_info("Copied %d MOK RPM(s) to RPMS_MOK/", copied_count);
     
-    /* Regenerate repodata to include the new MOK packages
-     * Without this, tdnf won't find the MOK packages during installation */
-    log_info("Regenerating repository metadata...");
-    
-    /* Get the parent RPMS directory (iso_rpm_dir is RPMS/x86_64, we need RPMS) */
-    char repo_dir[512];
-    strncpy(repo_dir, iso_rpm_dir, sizeof(repo_dir) - 1);
-    repo_dir[sizeof(repo_dir) - 1] = '\0';
-    char *last_slash = strrchr(repo_dir, '/');
-    if (last_slash) *last_slash = '\0';
-    
-    log_debug("Repository dir for repodata: %s", repo_dir);
-    
-    /* Remove original packages that conflict with MOK packages.
-     * The MOK packages have Conflicts: directives, but tdnf still tries to install
-     * the original packages when resolving dependencies from other packages.
-     * Removing the originals ensures only MOK packages can be selected. */
-    log_info("Removing original packages replaced by MOK packages...");
-    snprintf(cmd, sizeof(cmd), 
-        "rm -f '%s/x86_64/grub2-efi-image-2'*.rpm "
-        "'%s/x86_64/shim-signed-1'*.rpm "
-        "'%s/x86_64/linux-6.'*.rpm "
-        "'%s/x86_64/linux-esx-6.'*.rpm "
-        "'%s/x86_64/linux-rt-6.'*.rpm "
-        "2>/dev/null || true",
-        repo_dir, repo_dir, repo_dir, repo_dir, repo_dir);
+    /* Regenerate repodata for RPMS_MOK only */
+    log_info("Regenerating RPMS_MOK repository metadata...");
+    snprintf(cmd, sizeof(cmd), "rm -rf '%s/repodata'", mok_repo_dir);
     run_cmd(cmd);
     
-    /* Remove packages that require exact kernel version (linux = 6.12.60-14.ph5)
-     * because linux-mok provides a different version (linux = 6.1.159-7.ph5).
-     * These packages have unsatisfiable dependencies and will cause tdnf to fail. */
-    log_info("Removing packages with exact kernel version dependencies...");
-    snprintf(cmd, sizeof(cmd), 
-        "rm -f '%s/x86_64/linux-devel-'*.rpm "
-        "'%s/x86_64/linux-docs-'*.rpm "
-        "'%s/x86_64/linux-drivers-'*.rpm "
-        "'%s/x86_64/linux-tools-'*.rpm "
-        "'%s/x86_64/linux-python3-perf-'*.rpm "
-        "'%s/x86_64/linux-esx-devel-'*.rpm "
-        "'%s/x86_64/linux-esx-docs-'*.rpm "
-        "'%s/x86_64/linux-esx-drivers-'*.rpm "
-        "2>/dev/null || true",
-        repo_dir, repo_dir, repo_dir, repo_dir,
-        repo_dir, repo_dir, repo_dir, repo_dir);
-    run_cmd(cmd);
-    
-    /* Remove old repodata and regenerate */
-    snprintf(cmd, sizeof(cmd), "rm -rf '%s/repodata'", repo_dir);
-    run_cmd(cmd);
-    
-    snprintf(cmd, sizeof(cmd), "createrepo_c '%s' 2>&1", repo_dir);
+    snprintf(cmd, sizeof(cmd), "createrepo_c '%s' 2>&1", mok_repo_dir);
     if (run_cmd(cmd) != 0) {
-        /* Try createrepo if createrepo_c not available */
-        snprintf(cmd, sizeof(cmd), "createrepo '%s' 2>&1", repo_dir);
+        snprintf(cmd, sizeof(cmd), "createrepo '%s' 2>&1", mok_repo_dir);
         if (run_cmd(cmd) != 0) {
-            log_error("Failed to regenerate repodata - MOK packages may not be installable");
-            log_error("Please ensure createrepo or createrepo_c is installed");
+            log_error("Failed to regenerate RPMS_MOK repodata");
             return RPM_PATCH_ERR_BUILD_FAILED;
         }
     }
     
-    /* Verify MOK packages are in repodata */
+    /* Verify MOK packages are in RPMS_MOK repodata */
+    char output[512];
     snprintf(cmd, sizeof(cmd), 
         "zgrep -l 'grub2-efi-image-mok' '%s/repodata/'*primary.xml.gz 2>/dev/null | head -1",
-        repo_dir);
-    char output[512];
+        mok_repo_dir);
     if (run_cmd_output(cmd, output, sizeof(output)) != 0 || strlen(output) == 0) {
-        log_warn("Could not verify grub2-efi-image-mok in repodata - installation may fail");
+        log_warn("Could not verify grub2-efi-image-mok in RPMS_MOK repodata");
     } else {
-        log_info("Verified: MOK packages present in repository metadata");
+        log_info("Verified: MOK packages present in RPMS_MOK repository");
     }
     
-    log_info("Repository metadata regenerated");
-    log_info("MOK packages integrated into ISO");
+    /* Verify original RPMS/ is untouched */
+    snprintf(cmd, sizeof(cmd), 
+        "zgrep -c 'grub2-efi-image-mok' '%s/repodata/'*primary.xml.gz 2>/dev/null || echo 0",
+        rpms_dir);
+    if (run_cmd_output(cmd, output, sizeof(output)) == 0 && atoi(output) > 0) {
+        log_warn("RPMS/ unexpectedly contains MOK packages - VMware Original may be affected");
+    } else {
+        log_info("Verified: Original RPMS/ is untouched");
+    }
+    
+    log_info("Two-repository architecture created:");
+    log_info("  RPMS/     -> VMware Original (untouched)");
+    log_info("  RPMS_MOK/ -> Custom MOK (conflicting packages replaced)");
     return RPM_PATCH_SUCCESS;
 }
 

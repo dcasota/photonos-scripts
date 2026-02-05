@@ -153,12 +153,13 @@ rpm_validation_result_t* rpm_validate_mok_package(
 );
 
 /**
- * Integrate MOK packages into ISO
+ * Integrate MOK packages into ISO using two-repository architecture
  *
- * Copies MOK-signed RPMs to the ISO alongside originals.
- * Both sets of packages will be available for installation.
+ * Creates a separate RPMS_MOK/ directory alongside the original RPMS/.
+ * RPMS/ is left untouched for VMware Original installation.
+ * RPMS_MOK/ is a hardlinked copy with conflicting packages replaced by MOK variants.
  *
- * @param iso_rpm_dir   ISO's RPMS directory
+ * @param iso_rpm_dir   ISO's RPMS/x86_64 directory (used to derive paths)
  * @param config        Build configuration
  * @return              0 on success, negative error code on failure
  */
