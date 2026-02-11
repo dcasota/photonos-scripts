@@ -27,6 +27,7 @@
 #   0.57  17.06.2025   dcasota  data scraping related modifications, in Source0Lookup gitSource/gitBranch/customRegex/replaceStrings added, in CheckUrlHealth new function Convert-ToVersion added, various bugfixes
 #   0.58  29.07.2025   dcasota  various bugfixes
 #   0.59  11.02.2026   dcasota  various bugfixes
+#   0.60  11.02.2026   dcasota  Add timeout handling for git operations to prevent hanging parallel processes
 #
 #  .PREREQUISITES
 #    - Script tested on Microsoft Windows 11
@@ -52,6 +53,41 @@ param (
     [Parameter(Mandatory = $false)][ValidateNotNull()]$GeneratePh4toPh5DiffHigherPackageVersionReport=$true,
     [Parameter(Mandatory = $false)][ValidateNotNull()]$GeneratePh3toPh4DiffHigherPackageVersionReport=$true
 )
+
+# Helper function to run git commands with timeout
+function Invoke-GitWithTimeout {
+    param(
+        [string]$Arguments,
+        [string]$WorkingDirectory = (Get-Location).Path,
+        [int]$TimeoutSeconds = 60
+    )
+    
+    try {
+        $job = Start-Job -ScriptBlock {
+            param($argString, $wd)
+            Set-Location $wd
+            $cmd = "git $argString"
+            $output = Invoke-Expression $cmd 2>&1
+            return $output
+        } -ArgumentList $Arguments, $WorkingDirectory
+        
+        $completed = Wait-Job -Job $job -Timeout $TimeoutSeconds
+        if ($completed) {
+            $result = Receive-Job -Job $job
+            Remove-Job -Job $job -Force
+            return $result
+        } else {
+            Stop-Job -Job $job -Force
+            Remove-Job -Job $job -Force
+            Write-Warning "Git command timed out after $TimeoutSeconds seconds: git $Arguments"
+            throw "Git operation timed out"
+        }
+    }
+    catch {
+        Write-Warning "Git command failed: git $Arguments - Error: $_"
+        throw
+    }
+}
 
 function ParseDirectory {
 	param (
@@ -235,20 +271,32 @@ function GitPhoton {
         $release
     )
     #download from repo
-    if (!(Test-Path -Path (Join-Path -path $SourcePath -childpath "photon-$release")))
+    $photonPath = Join-Path -path $SourcePath -childpath "photon-$release"
+    if (!(Test-Path -Path $photonPath))
     {
         Set-Location $SourcePath
-        git clone -b $release https://github.com/vmware/photon (Join-Path -path $SourcePath -childpath "photon-$release")
-        Set-Location (Join-Path -path $SourcePath -childpath "photon-$release")
+        try {
+            Invoke-GitWithTimeout "clone -b $release https://github.com/vmware/photon `"$photonPath`"" -WorkingDirectory $SourcePath -TimeoutSeconds 300
+            Set-Location $photonPath
+        }
+        catch {
+            Write-Warning "Failed to clone photon-$release repository: $_"
+            return
+        }
     }
     else
     {
-        Set-Location (Join-Path -path $SourcePath -childpath "photon-$release")
-        git fetch
-        if ($release -ieq "master") { git merge origin/master }
-        elseif ($release -ieq "dev") { git merge origin/dev }
-        elseif ($release -ieq "common") { git merge origin/common }
-        else { git merge origin/$release }
+        Set-Location $photonPath
+        try {
+            Invoke-GitWithTimeout "fetch" -WorkingDirectory $photonPath -TimeoutSeconds 120
+            if ($release -ieq "master") { Invoke-GitWithTimeout "merge origin/master" -WorkingDirectory $photonPath -TimeoutSeconds 60 }
+            elseif ($release -ieq "dev") { Invoke-GitWithTimeout "merge origin/dev" -WorkingDirectory $photonPath -TimeoutSeconds 60 }
+            elseif ($release -ieq "common") { Invoke-GitWithTimeout "merge origin/common" -WorkingDirectory $photonPath -TimeoutSeconds 60 }
+            else { Invoke-GitWithTimeout "merge origin/$release" -WorkingDirectory $photonPath -TimeoutSeconds 60 }
+        }
+        catch {
+            Write-Warning "Failed to update photon-$release repository: $_"
+        }
     }
 }
 
@@ -1593,20 +1641,37 @@ function CheckURLHealth {
                     if (!(Test-Path $SourceClonePath)) {
                         Set-Location -Path $ClonePath -ErrorAction Stop
                         # Clone the repository
-                        if (!([string]::IsNullOrEmpty($gitBranch))) {git clone $SourceTagURL -b $gitBranch $repoName 2>&1 | Out-Null}
-                        else {
-                            git clone $SourceTagURL $repoName 2>&1 | Out-Null
-                            # the very first time, you receive the origin names and not the version names. From the 2nd run, all is fine.
-                            cd $SourceClonePath
-                            if (!([string]::IsNullOrEmpty($gitBranch))) {git fetch -b $gitBranch 2>&1 | Out-Null}
-                            else {git fetch 2>&1 | Out-Null}
+                        try {
+                            if (!([string]::IsNullOrEmpty($gitBranch))) {
+                                Invoke-GitWithTimeout "clone $SourceTagURL -b $gitBranch $repoName" -WorkingDirectory $ClonePath -TimeoutSeconds 120 | Out-Null
+                            } else {
+                                Invoke-GitWithTimeout "clone $SourceTagURL $repoName" -WorkingDirectory $ClonePath -TimeoutSeconds 120 | Out-Null
+                                # the very first time, you receive the origin names and not the version names. From the 2nd run, all is fine.
+                                Set-Location $SourceClonePath
+                                if (!([string]::IsNullOrEmpty($gitBranch))) {
+                                    Invoke-GitWithTimeout "fetch -b $gitBranch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 60 | Out-Null
+                                } else {
+                                    Invoke-GitWithTimeout "fetch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 60 | Out-Null
+                                }
+                            }
+                        }
+                        catch {
+                            Write-Warning "Git clone failed for $repoName : $_"
                         }
                     }
                     else {
                         # Navigate to the repository directory
                         Set-Location -Path $SourceClonePath -ErrorAction Stop # --git-dir [...] fetch does not work correctly
-                        if (!([string]::IsNullOrEmpty($gitBranch))) {git fetch -b $gitBranch 2>&1 | Out-Null}
-                        else {git fetch 2>&1 | Out-Null}
+                        try {
+                            if (!([string]::IsNullOrEmpty($gitBranch))) {
+                                Invoke-GitWithTimeout "fetch -b $gitBranch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 60 | Out-Null
+                            } else {
+                                Invoke-GitWithTimeout "fetch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 60 | Out-Null
+                            }
+                        }
+                        catch {
+                            Write-Warning "Git fetch failed for $repoName : $_"
+                        }
                     }
 
                     # override with special cases
@@ -2932,20 +2997,37 @@ function CheckURLHealth {
                     if (!(Test-Path $SourceClonePath)) {
                         Set-Location -Path $ClonePath -ErrorAction Stop
                         # Clone the repository
-                        if (!([string]::IsNullOrEmpty($gitBranch))) {git clone $SourceTagURL -b $gitBranch $repoName 2>&1 | Out-Null}
-                        else {
-                            git clone $SourceTagURL $repoName 2>&1 | Out-Null
-                            # the very first time, you receive the origin names and not the version names. From the 2nd run, all is fine.
-                            cd $SourceClonePath
-                            if (!([string]::IsNullOrEmpty($gitBranch))) {git fetch -b $gitBranch 2>&1 | Out-Null}
-                            else {git fetch 2>&1 | Out-Null}
+                        try {
+                            if (!([string]::IsNullOrEmpty($gitBranch))) {
+                                Invoke-GitWithTimeout "clone $SourceTagURL -b $gitBranch $repoName" -WorkingDirectory $ClonePath -TimeoutSeconds 120 | Out-Null
+                            } else {
+                                Invoke-GitWithTimeout "clone $SourceTagURL $repoName" -WorkingDirectory $ClonePath -TimeoutSeconds 120 | Out-Null
+                                # the very first time, you receive the origin names and not the version names. From the 2nd run, all is fine.
+                                Set-Location $SourceClonePath
+                                if (!([string]::IsNullOrEmpty($gitBranch))) {
+                                    Invoke-GitWithTimeout "fetch -b $gitBranch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 60 | Out-Null
+                                } else {
+                                    Invoke-GitWithTimeout "fetch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 60 | Out-Null
+                                }
+                            }
+                        }
+                        catch {
+                            Write-Warning "Git clone failed for $repoName : $_"
                         }
                     }
                     else {
                         # Navigate to the repository directory
                         Set-Location -Path $SourceClonePath -ErrorAction Stop # --git-dir [...] fetch does not work correctly
-                        if (!([string]::IsNullOrEmpty($gitBranch))) {git fetch -b $gitBranch 2>&1 | Out-Null}
-                        else {git fetch 2>&1 | Out-Null}
+                        try {
+                            if (!([string]::IsNullOrEmpty($gitBranch))) {
+                                Invoke-GitWithTimeout "fetch -b $gitBranch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 60 | Out-Null
+                            } else {
+                                Invoke-GitWithTimeout "fetch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 60 | Out-Null
+                            }
+                        }
+                        catch {
+                            Write-Warning "Git fetch failed for $repoName : $_"
+                        }
                     }
                     # Run git tag -l and collect output in an array
                     if ("" -eq $customRegex) {$Names = git tag -l | Where-Object { $_ -match "^$([regex]::Escape($repoName))-" } | ForEach-Object { $_.Trim()}}
@@ -3260,22 +3342,40 @@ function CheckURLHealth {
                     if (!(Test-Path $SourceClonePath)) {
                         Set-Location -Path $ClonePath -ErrorAction Stop
                         # Clone the repository
-                        if (!([string]::IsNullOrEmpty($gitBranch))) {git clone $SourceTagURL -b $gitBranch $repoName 2>&1 | Out-Null}
-                        else {
-                            git clone $SourceTagURL $repoName 2>&1 | Out-Null
-                            # the very first time, you receive the origin names and not the version names. From the 2nd run, all is fine.
-                            Set-Location -Path $SourceClonePath -ErrorAction Stop
-                            if (!([string]::IsNullOrEmpty($gitBranch))) {git fetch -b $gitBranch 2>&1 | Out-Null}
-                            else {git fetch 2>&1 | Out-Null}
+                        try {
+                            if (!([string]::IsNullOrEmpty($gitBranch))) {
+                                Invoke-GitWithTimeout "clone $SourceTagURL -b $gitBranch $repoName" -WorkingDirectory $ClonePath -TimeoutSeconds 120 | Out-Null
+                            } else {
+                                Invoke-GitWithTimeout "clone $SourceTagURL $repoName" -WorkingDirectory $ClonePath -TimeoutSeconds 120 | Out-Null
+                                # the very first time, you receive the origin names and not the version names. From the 2nd run, all is fine.
+                                Set-Location -Path $SourceClonePath -ErrorAction Stop
+                                if (!([string]::IsNullOrEmpty($gitBranch))) {
+                                    Invoke-GitWithTimeout "fetch -b $gitBranch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 60 | Out-Null
+                                } else {
+                                    Invoke-GitWithTimeout "fetch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 60 | Out-Null
+                                }
+                            }
+                        }
+                        catch {
+                            Write-Warning "Git clone failed for $repoName : $_"
                         }
                     }
                     else {
                         # Navigate to the repository directory
                         Set-Location -Path $SourceClonePath -ErrorAction Stop # --git-dir [...] fetch does not work correctly
-                        if (!([string]::IsNullOrEmpty($gitBranch))) {git fetch -b $gitBranch 2>&1 | Out-Null}
-                        else {git fetch 2>&1 | Out-Null}
+                        try {
+                            if (!([string]::IsNullOrEmpty($gitBranch))) {
+                                Invoke-GitWithTimeout "fetch -b $gitBranch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 60 | Out-Null
+                            } else {
+                                Invoke-GitWithTimeout "fetch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 60 | Out-Null
+                            }
+                        }
+                        catch {
+                            Write-Warning "Git fetch failed for $repoName : $_"
+                        }
                     }
                     # Run git tag -l and collect output in an array
+                    Set-Location -Path $SourceClonePath -ErrorAction SilentlyContinue
                     if ("" -eq $customRegex) {$Names = git tag -l | Where-Object { $_ -match "^$([regex]::Escape($repoName))-" } | ForEach-Object { $_.Trim()}}
                     else {$Names = git tag -l | ForEach-Object { $_.Trim() }}
                     $urlhealth="200"
