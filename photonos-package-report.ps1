@@ -27,7 +27,9 @@
 #   0.57  17.06.2025   dcasota  data scraping related modifications, in Source0Lookup gitSource/gitBranch/customRegex/replaceStrings added, in CheckUrlHealth new function Convert-ToVersion added, various bugfixes
 #   0.58  29.07.2025   dcasota  various bugfixes
 #   0.59  11.02.2026   dcasota  various bugfixes
-#   0.60  11.02.2026   dcasota  Add timeout handling for git operations to prevent hanging parallel processes
+#   0.60  11.02.2026   dcasota  Robustness, security and cross-platform improvements: git timeout handling, safe git calls,
+#                               cross-platform path handling (Join-Path, $HOME fallback), OS detection for winget/Get-Counter/Get-CimInstance,
+#                               List<T> for performance, safe spec parsing with Get-SpecValue helper, security cleanup at script end
 #
 #  .PREREQUISITES
 #    - Script tested on Microsoft Windows 11
@@ -38,8 +40,8 @@
 [CmdletBinding()]
 param (
     [string]$access=$env:GITHUB_TOKEN,
-    [string]$gitlabacess=$env:GITLAB_TOKEN,
-    [string]$sourcepath = $env:PUBLIC,
+    [string]$gitlabaccess=$env:GITLAB_TOKEN,
+    [string]$sourcepath = $(if ($env:PUBLIC) { $env:PUBLIC } else { $HOME }),
     [Parameter(Mandatory = $false)][ValidateNotNull()]$GeneratePh3URLHealthReport=$true,
     [Parameter(Mandatory = $false)][ValidateNotNull()]$GeneratePh4URLHealthReport=$true,
     [Parameter(Mandatory = $false)][ValidateNotNull()]$GeneratePh5URLHealthReport=$true,
@@ -54,6 +56,29 @@ param (
     [Parameter(Mandatory = $false)][ValidateNotNull()]$GeneratePh3toPh4DiffHigherPackageVersionReport=$true
 )
 
+# Convert string parameters to boolean (needed when using -File with $true/$false)
+function Convert-ToBoolean($value) {
+    if ($value -is [bool]) { return $value }
+    if ($value -is [string]) {
+        if ($value -eq '$true' -or $value -eq 'true' -or $value -eq '1') { return $true }
+        if ($value -eq '$false' -or $value -eq 'false' -or $value -eq '0') { return $false }
+    }
+    return [bool]$value
+}
+
+$GeneratePh3URLHealthReport = Convert-ToBoolean $GeneratePh3URLHealthReport
+$GeneratePh4URLHealthReport = Convert-ToBoolean $GeneratePh4URLHealthReport
+$GeneratePh5URLHealthReport = Convert-ToBoolean $GeneratePh5URLHealthReport
+$GeneratePh6URLHealthReport = Convert-ToBoolean $GeneratePh6URLHealthReport
+$GeneratePhCommonURLHealthReport = Convert-ToBoolean $GeneratePhCommonURLHealthReport
+$GeneratePhDevURLHealthReport = Convert-ToBoolean $GeneratePhDevURLHealthReport
+$GeneratePhMasterURLHealthReport = Convert-ToBoolean $GeneratePhMasterURLHealthReport
+$GeneratePhPackageReport = Convert-ToBoolean $GeneratePhPackageReport
+$GeneratePhCommontoPhMasterDiffHigherPackageVersionReport = Convert-ToBoolean $GeneratePhCommontoPhMasterDiffHigherPackageVersionReport
+$GeneratePh5toPh6DiffHigherPackageVersionReport = Convert-ToBoolean $GeneratePh5toPh6DiffHigherPackageVersionReport
+$GeneratePh4toPh5DiffHigherPackageVersionReport = Convert-ToBoolean $GeneratePh4toPh5DiffHigherPackageVersionReport
+$GeneratePh3toPh4DiffHigherPackageVersionReport = Convert-ToBoolean $GeneratePh3toPh4DiffHigherPackageVersionReport
+
 # Helper function to run git commands with timeout
 function Invoke-GitWithTimeout {
     param(
@@ -66,8 +91,9 @@ function Invoke-GitWithTimeout {
         $job = Start-Job -ScriptBlock {
             param($argString, $wd)
             Set-Location $wd
-            $cmd = "git $argString"
-            $output = Invoke-Expression $cmd 2>&1
+            # Split arguments safely and use & operator instead of Invoke-Expression
+            $argArray = $argString -split ' '
+            $output = & git @argArray 2>&1
             return $output
         } -ArgumentList $Arguments, $WorkingDirectory
         
@@ -89,6 +115,20 @@ function Invoke-GitWithTimeout {
     }
 }
 
+# Helper function to safely extract a value from content using pattern
+function Get-SpecValue {
+    param(
+        [string[]]$Content,
+        [string]$Pattern,
+        [string]$Replace
+    )
+    $match = $Content | Select-String -Pattern $Pattern | Select-Object -First 1
+    if ($match) {
+        return ($match.ToString() -ireplace $Replace, "").Trim()
+    }
+    return $null
+}
+
 function ParseDirectory {
 	param (
 		[parameter(Mandatory = $true)]
@@ -96,15 +136,17 @@ function ParseDirectory {
 		[parameter(Mandatory = $true)]
 		[string]$photonDir
 	)
-    $Packages=@()
-    Get-ChildItem -Path "$SourcePath\$photonDir\SPECS" -Recurse -File -Filter "*.spec" | ForEach-Object {
+    $Packages = [System.Collections.Generic.List[PSCustomObject]]::new()
+    $specsPath = Join-Path -Path $SourcePath -ChildPath $photonDir | Join-Path -ChildPath "SPECS"
+    Get-ChildItem -Path $specsPath -Recurse -File -Filter "*.spec" | ForEach-Object {
+        $currentFile = $_
         try
         {
-            $Name = Split-Path -Path $_.DirectoryName -Leaf
-            $content = Get-Content $_.FullName
+            $Name = Split-Path -Path $currentFile.DirectoryName -Leaf
+            $content = Get-Content $currentFile.FullName
 
-            $release=$null
-            $release= (($content | Select-String -Pattern "^Release:")[0].ToString() -replace "Release:", "").Trim()
+            $release = Get-SpecValue -Content $content -Pattern "^Release:" -Replace "Release:"
+            if (-not $release) { continue }
             $release = $release.Replace("%{?dist}","")
             $release = $release.Replace("%{?kat_build:.kat}","")
             $release = $release.Replace("%{?kat_build:.%kat_build}","")
@@ -112,12 +154,14 @@ function ParseDirectory {
             $release = $release.Replace("%{?kernelsubrelease}","")
             $release = $release.Replace(".%{dialogsubversion}","")
 
-            $version=$null
-            $version= (($content | Select-String -Pattern "^Version:")[0].ToString() -ireplace "Version:", "").Trim()
-            if ($null -ne $release) {$version = $version+"-"+$release}
-            $Source0= (($content | Select-String -Pattern "^Source0:")[0].ToString() -ireplace "Source0:", "").Trim()
-
-            if ($content -ilike '*URL:*') { $url = (($content | Select-String -Pattern "^URL:")[0].ToString() -ireplace "URL:", "").Trim() }
+            $version = Get-SpecValue -Content $content -Pattern "^Version:" -Replace "Version:"
+            if (-not $version) { continue }
+            $version = "$version-$release"
+            
+            $Source0 = Get-SpecValue -Content $content -Pattern "^Source0:" -Replace "Source0:"
+            if (-not $Source0) { $Source0 = "" }
+            $url = Get-SpecValue -Content $content -Pattern "^URL:" -Replace "URL:"
+            if (-not $url) { $url = "" }
 
             $SHAName=""
             if ($content -ilike '*%define sha1*') {$SHAName = $content | foreach-object{ if ($_ -ilike '*%define sha1*') {((($_ -split '=')[0]).replace('%define sha1',"")).Trim()}}}
@@ -174,9 +218,9 @@ function ParseDirectory {
             $_repo_ver=""
             if ($content -ilike '*%define _repo_ver*') { $_repo_ver = (($content | Select-String -Pattern '%define _repo_ver')[0].ToString() -ireplace '%define _repo_ver', "").Trim() }
 
-            $Packages +=[PSCustomObject]@{
+            $null = $Packages.Add([PSCustomObject]@{
                 content = $content
-                Spec = $_.Name
+                Spec = $currentFile.Name
                 Version = $version
                 Name = $Name
                 Source0 = $Source0
@@ -198,9 +242,11 @@ function ParseDirectory {
                 xproto_ver = $xproto_ver
                 _url_src = $_url_src
                 _repo_ver = $_repo_ver
-            }
+            })
         }
-        catch{}
+        catch {
+            # Some spec files may not have all expected fields - this is normal
+        }
     }
     return $Packages
 }
@@ -295,7 +341,19 @@ function GitPhoton {
             else { Invoke-GitWithTimeout "merge origin/$release" -WorkingDirectory $photonPath -TimeoutSeconds 60 }
         }
         catch {
+            # If merge fails (e.g., unresolved conflicts), delete and re-clone
             Write-Warning "Failed to update photon-$release repository: $_"
+            Write-Warning "Attempting to delete and re-clone photon-$release..."
+            Set-Location $SourcePath
+            try {
+                Remove-Item -Path $photonPath -Recurse -Force -ErrorAction Stop
+                Invoke-GitWithTimeout "clone -b $release https://github.com/vmware/photon `"$photonPath`"" -WorkingDirectory $SourcePath -TimeoutSeconds 300
+                Set-Location $photonPath
+                Write-Output "Successfully re-cloned photon-$release"
+            }
+            catch {
+                Write-Error "Failed to re-clone photon-$release repository: $_"
+            }
         }
     }
 }
@@ -1047,7 +1105,9 @@ function KojiFedoraProjectLookUp {
         $SourceRPMFileName = ( $Names |Sort-Object {$_ -notlike '<*'},{($_ -replace '^.*?(\d+).*$','$1') -as [int]} | select-object -last 1 ).ToString()
 
         $SourceRPMFileURL= "https://kojipkgs.fedoraproject.org/packages/$ArtefactName/$ArtefactVersion/$NameLatest/src/$SourceRPMFileName"
-    }catch{}
+    }catch{
+        # Silently ignore Koji lookup failures - package may not exist in Fedora
+    }
     return $SourceRPMFileURL
 }
 
@@ -1364,63 +1424,34 @@ function CheckURLHealth {
     # Main routine to get the latest name
     function Get-LatestName {
         param (
-            [Parameter(Mandatory=$true)]
+            [Parameter(Mandatory=$false)]
+            [AllowEmptyString()]
+            [AllowNull()]
             [string[]]$Names
         )
 
-        if (-not $Names) {
+        # Filter out null and empty strings first
+        if ($Names) {
+            $Names = @($Names | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        }
+
+        if (-not $Names -or $Names.Count -eq 0) {
             return ""
         }
 
         # Check if any name matches the version number pattern (dot or hyphen-separated)
-        $isVersionList = $Names | Where-Object { $_ -match '^\d+([.-]\d+)*$' } | Measure-Object | Select-Object -ExpandProperty Count
+        $versionNames = @($Names | Where-Object { $_ -match '^\d+([.-]\d+)*$' })
 
-        if ($isVersionList -gt 0) {
-            # Process version-like names
-            $processedNames = $Names | ForEach-Object {
-                $original = $_
-                if (Test-IntegerLike -Value $original) {
-                    # Treat integer-like strings (e.g., "059") with their numeric value
-                    $numericValue = [double]($original -replace '^0+', '') # Remove leading zeros for numeric comparison
-                    [PSCustomObject]@{
-                        Original = $original
-                        IsIntegerLike = $true
-                        SortValue = $numericValue
-                        Version = $null
-                    }
-                } else {
-                    # Parse version strings (e.g., "0.9", "4-0-0-1")
-                    $version = Convert-ToVersion -VersionInput $original
-                    [PSCustomObject]@{
-                        Original = $original
-                        IsIntegerLike = $false
-                        SortValue = $null
-                        Version = $version
-                    }
+        if ($versionNames -and $versionNames.Count -gt 0) {
+            # Use bubble-sort style to find the maximum using Compare-VersionStrings
+            $latest = $versionNames[0]
+            foreach ($name in $versionNames) {
+                $result = Compare-VersionStrings -Namelatest $name -Version $latest
+                if ($result -eq 1) {
+                    $latest = $name
                 }
             }
-
-            # Sort names using Compare-VersionStrings, ensuring $sortedNames is a collection of PSCustomObjects
-            $sortedNames = $processedNames | Sort-Object -Property @{
-                Expression = {
-                    $current = $_.Original
-                    $maxResult = 0
-                    foreach ($other in $Names) {
-                        if ($other -ne $current) {
-                            $result = Compare-VersionStrings -Namelatest $current -Version $other
-                            if ($result -eq 1 -and $maxResult -lt 1) { $maxResult = 1 }
-                            if ($result -eq -1 -and $maxResult -gt -1) { $maxResult = -1 }
-                        }
-                    }
-                    [tuple]::Create($maxResult, $current)
-                }; Descending = $true
-            }
-
-            # Debug output to verify $sortedNames structure
-            # Write-Output "Sorted Names: $($sortedNames | Format-Table -AutoSize | Out-String)"
-
-            # Return the original string of the latest name
-            return $sortedNames | Select-Object -First 1 -ExpandProperty Original
+            return $latest
         } else {
             # Handle non-version names (sort lexicographically and take the last one)
             try {
@@ -1429,7 +1460,9 @@ function CheckURLHealth {
                 return ($parsedNames | Sort-Object | Select-Object -Last 1).ToString()
             } catch {
                 # Fallback to lexicographic sort of original strings
-                return ($Names | Sort-Object | Select-Object -Last 1).ToString()
+                $sorted = $Names | Sort-Object | Select-Object -Last 1
+                if ($sorted) { return $sorted.ToString() }
+                return ""
             }
         }
     }
@@ -1453,7 +1486,7 @@ function CheckURLHealth {
     $ignore=@()
 
     # In case of debug: uncomment and debug from here
-    # if ($currentTask.spec -ilike 'WALinuxAgent.spec')
+    # if ($currentTask.spec -ilike 'util-linux.spec')
     # {pause}
     # else
     # {return}
@@ -1649,7 +1682,7 @@ function CheckURLHealth {
                                 # the very first time, you receive the origin names and not the version names. From the 2nd run, all is fine.
                                 Set-Location $SourceClonePath
                                 if (!([string]::IsNullOrEmpty($gitBranch))) {
-                                    Invoke-GitWithTimeout "fetch -b $gitBranch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 60 | Out-Null
+                                    Invoke-GitWithTimeout "fetch origin $gitBranch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 60 | Out-Null
                                 } else {
                                     Invoke-GitWithTimeout "fetch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 60 | Out-Null
                                 }
@@ -1664,7 +1697,7 @@ function CheckURLHealth {
                         Set-Location -Path $SourceClonePath -ErrorAction Stop # --git-dir [...] fetch does not work correctly
                         try {
                             if (!([string]::IsNullOrEmpty($gitBranch))) {
-                                Invoke-GitWithTimeout "fetch -b $gitBranch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 60 | Out-Null
+                                Invoke-GitWithTimeout "fetch origin $gitBranch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 60 | Out-Null
                             } else {
                                 Invoke-GitWithTimeout "fetch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 60 | Out-Null
                             }
@@ -1680,7 +1713,9 @@ function CheckURLHealth {
                     if (!([string]::IsNullOrEmpty($customRegex))) {$Names = git tag -l | Where-Object { $_ -match "^$([regex]::Escape($repoName))-" } | ForEach-Object { $_.Trim()}}
                     else {$Names = git tag -l | ForEach-Object { $_.Trim() }}
                     $urlhealth="200"
-                } catch {}
+                } catch {
+                    Write-Warning "Git operation failed for $repoName : $_"
+                }
                 finally {
                     pop-location
                 }
@@ -3005,7 +3040,7 @@ function CheckURLHealth {
                                 # the very first time, you receive the origin names and not the version names. From the 2nd run, all is fine.
                                 Set-Location $SourceClonePath
                                 if (!([string]::IsNullOrEmpty($gitBranch))) {
-                                    Invoke-GitWithTimeout "fetch -b $gitBranch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 60 | Out-Null
+                                    Invoke-GitWithTimeout "fetch origin $gitBranch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 60 | Out-Null
                                 } else {
                                     Invoke-GitWithTimeout "fetch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 60 | Out-Null
                                 }
@@ -3020,7 +3055,7 @@ function CheckURLHealth {
                         Set-Location -Path $SourceClonePath -ErrorAction Stop # --git-dir [...] fetch does not work correctly
                         try {
                             if (!([string]::IsNullOrEmpty($gitBranch))) {
-                                Invoke-GitWithTimeout "fetch -b $gitBranch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 60 | Out-Null
+                                Invoke-GitWithTimeout "fetch origin $gitBranch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 60 | Out-Null
                             } else {
                                 Invoke-GitWithTimeout "fetch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 60 | Out-Null
                             }
@@ -3033,7 +3068,9 @@ function CheckURLHealth {
                     if ("" -eq $customRegex) {$Names = git tag -l | Where-Object { $_ -match "^$([regex]::Escape($repoName))-" } | ForEach-Object { $_.Trim()}}
                     else {$Names = git tag -l | ForEach-Object { $_.Trim() }}
                     $urlhealth="200"
-                } catch {}
+                } catch {
+                    Write-Warning "Git operation failed for $repoName : $_"
+                }
                 finally {
                     pop-location
                 }
@@ -3325,7 +3362,9 @@ function CheckURLHealth {
         elseif ($currentTask.spec -ilike 'xfsprogs.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/fs/xfs/xfsprogs-dev.git"; $replace +="xfsprogs-dev-"; $replace +="v";;$customRegex="xfsprogs"}
         else
         {
-            $SourceTagURL=(split-path $Source0 -Parent).Replace("\","/")
+            if ($Source0) {
+                $SourceTagURL=(split-path $Source0 -Parent).Replace([IO.Path]::DirectorySeparatorChar,"/")
+            }
         }
 
         # Data Scraping Proof of Work
@@ -3350,7 +3389,7 @@ function CheckURLHealth {
                                 # the very first time, you receive the origin names and not the version names. From the 2nd run, all is fine.
                                 Set-Location -Path $SourceClonePath -ErrorAction Stop
                                 if (!([string]::IsNullOrEmpty($gitBranch))) {
-                                    Invoke-GitWithTimeout "fetch -b $gitBranch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 60 | Out-Null
+                                    Invoke-GitWithTimeout "fetch origin $gitBranch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 60 | Out-Null
                                 } else {
                                     Invoke-GitWithTimeout "fetch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 60 | Out-Null
                                 }
@@ -3365,7 +3404,7 @@ function CheckURLHealth {
                         Set-Location -Path $SourceClonePath -ErrorAction Stop # --git-dir [...] fetch does not work correctly
                         try {
                             if (!([string]::IsNullOrEmpty($gitBranch))) {
-                                Invoke-GitWithTimeout "fetch -b $gitBranch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 60 | Out-Null
+                                Invoke-GitWithTimeout "fetch origin $gitBranch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 60 | Out-Null
                             } else {
                                 Invoke-GitWithTimeout "fetch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 60 | Out-Null
                             }
@@ -3379,7 +3418,9 @@ function CheckURLHealth {
                     if ("" -eq $customRegex) {$Names = git tag -l | Where-Object { $_ -match "^$([regex]::Escape($repoName))-" } | ForEach-Object { $_.Trim()}}
                     else {$Names = git tag -l | ForEach-Object { $_.Trim() }}
                     $urlhealth="200"
-                } catch {}
+                } catch {
+                    Write-Warning "Git operation failed for $repoName : $_"
+                }
                 finally {
                     pop-location
                 }
@@ -3402,7 +3443,9 @@ function CheckURLHealth {
                     $Names = $Names  -replace ".tar.lz",""
                     $urlhealth="200"
                 }
-            } catch {}
+            } catch {
+                # Silently ignore web request failures - URL may be temporarily unavailable
+            }
         }
         try {
             if (($SourceTagURL -ne "") -and ($null -ne $Names)) {
@@ -3502,7 +3545,7 @@ function CheckURLHealth {
         }
     }
     # all other types
-    elseif (((urlhealth((split-path $Source0 -Parent).Replace("\","/"))) -eq "200") -or `
+    elseif (($Source0 -and ((urlhealth((split-path $Source0 -Parent).Replace([IO.Path]::DirectorySeparatorChar,"/"))) -eq "200")) -or `
     ($currentTask.spec -ilike "apparmor.spec") -or `
     ($currentTask.spec -ilike "bzr.spec") -or `
     ($currentTask.spec -ilike "chrpath.spec") -or `
@@ -3533,7 +3576,9 @@ function CheckURLHealth {
     ($currentTask.spec -ilike "xmlsec1.spec") -or `
     ($currentTask.spec -ilike "wireguard-tools.spec"))
     {
-        $SourceTagURL=(split-path $Source0 -Parent).Replace("\","/")
+        if ($Source0) {
+            $SourceTagURL=(split-path $Source0 -Parent).Replace([IO.Path]::DirectorySeparatorChar,"/")
+        }
 
         if ($currentTask.spec -ilike "chrpath.spec") {$SourceTagURL="https://codeberg.org/pere/chrpath/tags"}
         if ($currentTask.spec -ilike "apparmor.spec") {$SourceTagURL="https://launchpad.net/apparmor/+download"}
@@ -3940,7 +3985,9 @@ function CheckURLHealth {
                 }
             }
         }
-        catch{}
+        catch {
+            # Silently ignore Koji/Fedora lookup failures
+        }
     }
 
     # -------------------------------------------------------------------------------------------------------------------
@@ -3980,8 +4027,13 @@ function CheckURLHealth {
                 if (($Source0Save -ilike '*.tgz*') -and ($Source0 -ilike '*.tar.gz*')) {$Source0=$Source0.replace(".tar.gz",".tgz")}
                 if (($Source0Save -ilike '*.zip*') -and ($Source0 -ilike '*.tar.gz*')) {$Source0=$Source0.replace(".tar.gz",".zip")}
 
-                $versionshort=[system.string]::concat((($version).Split("."))[0],'.',(($version).Split("."))[1])
-                $UpdateAvailableshort=[system.string]::concat((($UpdateAvailable).Split("."))[0],'.',(($UpdateAvailable).Split("."))[1])
+                $versionshort=[system.string]::concat((([string]$version).Split("."))[0],'.',(([string]$version).Split("."))[1])
+                $UpdateAvailableStr = [string]$UpdateAvailable
+                if ($UpdateAvailableStr -like '*.*') {
+                    $UpdateAvailableshort=[system.string]::concat((($UpdateAvailableStr).Split("."))[0],'.',(($UpdateAvailableStr).Split("."))[1])
+                } else {
+                    $UpdateAvailableshort = $UpdateAvailableStr
+                }
 
                 $UpdateURL=$Source0 -ireplace $version,$UpdateAvailable
                 $HealthUpdateURL = urlhealth($UpdateURL)
@@ -4211,37 +4263,37 @@ function GenerateUrlHealthReports {
     $PackagesMaster = $null
 
     if ($GeneratePh3URLHealthReport) {
-        Write-host "Preparing data for Photon OS 3.0 ..."
+        Write-Host "Preparing data for Photon OS 3.0 ..."
         GitPhoton -release "3.0" -SourcePath $SourcePath
         $Packages3 = ParseDirectory -SourcePath $SourcePath -PhotonDir "photon-3.0"
     }
     if ($GeneratePh4URLHealthReport) {
-        Write-host "Preparing data for Photon OS 4.0 ..."
+        Write-Host "Preparing data for Photon OS 4.0 ..."
         GitPhoton -release "4.0" -SourcePath $SourcePath
         $Packages4 = ParseDirectory -SourcePath $SourcePath -PhotonDir "photon-4.0"
     }
     if ($GeneratePh5URLHealthReport) {
-        Write-host "Preparing data for Photon OS 5.0 ..."
+        Write-Host "Preparing data for Photon OS 5.0 ..."
         GitPhoton -release "5.0" -SourcePath $SourcePath
         $Packages5 = ParseDirectory -SourcePath $SourcePath -PhotonDir "photon-5.0"
     }
     if ($GeneratePh6URLHealthReport) {
-        Write-host "Preparing data for Photon OS 6.0 ..."
+        Write-Host "Preparing data for Photon OS 6.0 ..."
         GitPhoton -release "6.0" -SourcePath $SourcePath
         $Packages6 = ParseDirectory -SourcePath $SourcePath -PhotonDir "photon-6.0"
     }
     if ($GeneratePhCommonURLHealthReport) {
-        Write-host "Preparing data for Photon OS Common ..."
+        Write-Host "Preparing data for Photon OS Common ..."
         GitPhoton -release "common" -SourcePath $SourcePath
         $PackagesCommon = ParseDirectory -SourcePath $SourcePath -PhotonDir "photon-common"
     }
     if ($GeneratePhDevURLHealthReport) {
-        Write-host "Preparing data for Photon OS Development ..."
+        Write-Host "Preparing data for Photon OS Development ..."
         GitPhoton -release "dev" -SourcePath $SourcePath
         $PackagesDev = ParseDirectory -SourcePath $SourcePath -PhotonDir "photon-dev"
     }
     if ($GeneratePhMasterURLHealthReport) {
-        Write-host "Preparing data for Photon OS Master ..."
+        Write-Host "Preparing data for Photon OS Master ..."
         GitPhoton -release "master" -SourcePath $SourcePath
         $PackagesMaster = ParseDirectory -SourcePath $SourcePath -PhotonDir "photon-master"
     }
@@ -4258,7 +4310,7 @@ function GenerateUrlHealthReports {
 
     if ($checkUrlHealthTasks.Count -gt 0) {
         if ($Script:UseParallel) {
-            write-host "Starting parallel URL health report generation for applicable versions ..."
+            Write-Host "Starting parallel URL health report generation for applicable versions ..."
             # Pre-capture all necessary function definitions and data once
             $FunctionDefinitions = @{
                 CheckURLHealth = (Get-Command 'CheckURLHealth' -ErrorAction SilentlyContinue).Definition
@@ -4266,6 +4318,7 @@ function GenerateUrlHealthReports {
                 KojiFedoraProjectLookUp = (Get-Command 'KojiFedoraProjectLookUp' -ErrorAction SilentlyContinue).Definition
                 ModifySpecFile = (Get-Command 'ModifySpecFile' -ErrorAction SilentlyContinue).Definition
                 Source0Lookup = (Get-Command 'Source0Lookup' -ErrorAction SilentlyContinue).Definition
+                'Invoke-GitWithTimeout' = (Get-Command 'Invoke-GitWithTimeout' -ErrorAction SilentlyContinue).Definition
                 HeapSortClass = $HeapSortClassDef
             }
             $ParallelContext = @{
@@ -4296,7 +4349,7 @@ function GenerateUrlHealthReports {
 
                     # Safely reference variables from the parent scope
                     $currentPackage = $_
-                    write-host "Processing $($currentPackage.name) ..."
+                    Write-Host "Processing $($currentPackage.name) ..."
                     [system.string](CheckURLHealth -currentTask $currentPackage -SourcePath $using:ParallelContext.SourcePath -AccessToken $using:ParallelContext.AccessToken -outputfile $using:outputFilePath -photonDir $using:TaskConfig.PhotonDir)
                 } -ThrottleLimit $ThrottleLimit
 
@@ -4315,7 +4368,7 @@ function GenerateUrlHealthReports {
             }
         } else {
             # Fallback to sequential processing
-            write-host "Starting sequential URL health report generation for applicable versions..."
+            Write-Host "Starting sequential URL health report generation for applicable versions..."
             $checkUrlHealthTasks | ForEach-Object {
                 # Safely reference variables from the parent scope
                 $TaskConfig = $_
@@ -4324,63 +4377,117 @@ function GenerateUrlHealthReports {
                 $outputFileName = "photonos-urlhealth-$($TaskConfig.Release)_$((Get-Date).ToString("yyyyMMddHHmm"))"
                 $outputFilePath = Join-Path -Path $sourcePath -ChildPath "$outputFileName.prn"
 
-                # Create a thread-safe collection for all results
-                $results = [System.Collections.Concurrent.ConcurrentBag[object]]::new()
+                # Create a simple array for sequential processing results
+                $results = @()
                 $results += "Spec,Source0 original,Modified Source0 for url health check,UrlHealth,UpdateAvailable,UpdateURL,HealthUpdateURL,Name,SHAName,UpdateDownloadName"
-                $results += $TaskConfig.Packages | ForEach-Object {
-                    # Safely reference variables from the parent scope
-                    $currentPackage = $_
-                    write-host "Processing $($currentPackage.name) ..."
-                    [system.string](CheckURLHealth -currentTask $currentPackage -SourcePath $SourcePath -AccessToken $accessToken -outputfile $outputFilePath -photonDir $TaskConfig.PhotonDir)
+                $packageCount = $TaskConfig.Packages.Count
+                $processedCount = 0
+                foreach ($currentPackage in $TaskConfig.Packages) {
+                    $processedCount++
+                    Write-Host "Processing [$processedCount/$packageCount] $($currentPackage.name) ..."
+                    $result = [system.string](CheckURLHealth -currentTask $currentPackage -SourcePath $SourcePath -AccessToken $accessToken -outputfile $outputFilePath -photonDir $TaskConfig.PhotonDir)
+                    Write-Host "  -> Done: $($currentPackage.name)"
+                    $results += $result
                 }
+                Write-Host "DEBUG: Finished processing all packages for $($TaskConfig.Name)"
+                Write-Host "DEBUG: Results count: $($results.Count)"
                 $sb = New-Object System.Text.StringBuilder
                 $sb.AppendLine("Spec,Source0 original,Modified Source0 for url health check,UrlHealth,UpdateAvailable,UpdateURL,HealthUpdateURL,Name,SHAName,UpdateDownloadName") | Out-Null
+                Write-Host "DEBUG: Filtering results..."
                 # Filter and collect matching items, then sort
                 $filteredResults = $results | ForEach-Object {
                     $pattern = '^(.*?)([a-zA-Z0-9][a-zA-Z0-9._-]*\.spec.*)$'
                     if ($_ -match $pattern) { $matches[2] }
                 } | Sort-Object
+                Write-Host "DEBUG: Filtered results count: $($filteredResults.Count)"
                 # Append sorted results to StringBuilder
                 $filteredResults | ForEach-Object {
                     $sb.AppendLine($_) | Out-Null
                 }
+                Write-Host "DEBUG: Writing to file: $outputFilePath"
                 [System.IO.File]::AppendAllText($outputFilePath, $sb.ToString())
+                Write-Host "DEBUG: Finished writing to file for $($TaskConfig.Name)"
             }
         }
     }
     else {
         write-host "No URL health reports were enabled or no package data found."
     }
+    Write-Host "DEBUG: GenerateUrlHealthReports function completed"
 }
 
+
+# Script execution starts
+Write-Output "=================================================="
+Write-Output "Photon OS Package Report Script v0.60"
+Write-Output "Starting at: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+Write-Output "=================================================="
 
 # Set security protocol to TLS 1.2 and TLS 1.3
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13
 
+# Detect OS platform
+$Script:RunningOnWindows = $PSVersionTable.PSEdition -eq 'Desktop' -or $env:OS -eq 'Windows_NT' -or $IsWindows
+
 # Check if the required commands are available
-$commands = @(
-    @{ Name = "git"; Id = "Git.Git" },
-    @{ Name = "tar"; Id = "GnuWin32.Tar" }
-)
-foreach ($cmd in $commands) {
-    if (-not (Get-Command $cmd.Name -ErrorAction SilentlyContinue)) {
-        Write-Output "$($cmd.Name) not found. Trying to install ..."
-        winget install --id $cmd.Id -e --source winget
+Write-Output "Checking required commands (git, tar)..."
+$requiredCommands = @("git", "tar")
+foreach ($cmdName in $requiredCommands) {
+    if (-not (Get-Command $cmdName -ErrorAction SilentlyContinue)) {
+        Write-Output "$cmdName not found. Trying to install ..."
+        if ($Script:RunningOnWindows) {
+            $wingetId = switch ($cmdName) {
+                "git" { "Git.Git" }
+                "tar" { "GnuWin32.Tar" }
+            }
+            winget install --id $wingetId -e --source winget
+        } else {
+            Write-Warning "Auto-install not supported on this platform. Please install $cmdName manually using your package manager (apt, yum, brew, etc.)"
+        }
         Write-Output "Please restart the script."
         exit
     }
 }
-try { (get-command use-culture).Version.ToString() | Out-Null }
-catch { install-module -name PowerShellCookbook -AllowClobber -Force -Confirm:$false }
+Write-Output "Required commands found."
+
+Write-Output "Checking PowerShellCookbook module..."
+try { 
+    $useCultureCmd = Get-Command use-culture -ErrorAction Stop
+    Write-Output "PowerShellCookbook module is available."
+}
+catch { 
+    Write-Output "PowerShellCookbook module not found. Attempting to install..."
+    try {
+        Install-Module -Name PowerShellCookbook -AllowClobber -Force -Confirm:$false -Scope CurrentUser -ErrorAction Stop
+        Write-Output "PowerShellCookbook module installed."
+    }
+    catch {
+        Write-Warning "Could not install PowerShellCookbook module: $_"
+        Write-Warning "Some culture-specific formatting features may not be available."
+    }
+}
 
 
 # parallel processing support
+Write-Output "Checking parallel processing support..."
 $Script:UseParallel = $PSVersionTable.PSVersion.Major -ge 7 -and $PSVersionTable.PSVersion.Minor -ge 4
-# Get current CPU usage percentage
-$cpuCounter = Get-Counter '\Processor(_Total)\% Processor Time'
-$cpuUsage = [math]::Round($cpuCounter.CounterSamples.CookedValue)
-# Get the number of logical CPU cores
-$cpuCores = (Get-CimInstance -ClassName Win32_Processor).NumberOfLogicalProcessors
+# $Script:UseParallel = $false
+Write-Output "Parallel processing: $($Script:UseParallel)"
+
+# Get current CPU usage and core count (cross-platform)
+Write-Output "Gathering system information..."
+$cpuUsage = 0
+$cpuCores = [Environment]::ProcessorCount
+if ($Script:RunningOnWindows) {
+    try {
+        $cpuCounter = Get-Counter '\Processor(_Total)\% Processor Time' -ErrorAction Stop
+        $cpuUsage = [math]::Round($cpuCounter.CounterSamples.CookedValue)
+        $cpuCores = (Get-CimInstance -ClassName Win32_Processor).NumberOfLogicalProcessors
+    } catch {
+        Write-Warning "Could not get CPU performance counter, using defaults"
+    }
+}
+Write-Output "CPU Cores: $cpuCores, Current CPU Usage: $cpuUsage%"
 # Calculate ThrottleLimit based on CPU usage
 # Example: If CPU usage is low (<50%), use up to 80% of cores; if high, reduce to 20% or a minimum
 if ($cpuUsage -lt 50) {
@@ -4389,6 +4496,27 @@ if ($cpuUsage -lt 50) {
     $throttleLimit = [math]::Max(1, [math]::Round($cpuCores * 0.2))
 }
 $throttleLimit = 20 # Set a hard cap to prevent overloading the system
+
+# Set global variables from script parameters
+$global:sourcepath = $sourcepath
+
+# Validate SourcePath exists
+if (-not (Test-Path -Path $global:sourcepath -PathType Container)) {
+    Write-Error "Source path does not exist or is not a directory: $global:sourcepath"
+    return
+}
+Write-Output "Source path validated: $global:sourcepath"
+
+# SAFETY WARNING: Adding '*' as git safe.directory to handle cross-filesystem ownership issues
+# (e.g., WSL accessing Windows files, network shares, or different user ownership).
+# This bypasses Git's ownership security check for ALL directories globally.
+# This is required because git clone operations create nested subdirectories (e.g., photon-3.0/clones/*)
+# and Git's safe.directory does not support recursive wildcards.
+# Review if this is acceptable for your environment. The entry persists in global git config after script completion.
+# To remove after script: git config --global --unset-all safe.directory
+Write-Output "Adding wildcard to git safe.directory (required for nested clone directories)..."
+git config --global --add safe.directory '*' 2>$null
+$global:ThrottleLimit = $throttleLimit
 
 # Prompt for GitHub access token if not provided
 if (-not $access) {
@@ -4400,6 +4528,9 @@ if (-not $access) {
         Write-Error "Access token cannot be empty"
         return
     }
+}
+else {
+    $global:access = $access
 }
 
 if (-not $gitlabaccess) {
@@ -4426,18 +4557,22 @@ if (-not $gitlabaccess) {
         Write-Error "Failed to update Git configuration: $_"
     }
 }
+else {
+    $global:gitlabaccess = $gitlabaccess
+}
 
 
 # Call the new function
+Write-Host "DEBUG: Calling GenerateUrlHealthReports..."
 $urlHealthPackageData = GenerateUrlHealthReports -SourcePath $global:sourcepath -AccessToken $global:access -ThrottleLimit $global:ThrottleLimit `
-    -GeneratePh3URLHealthReport $GeneratePh3URLHealthReport `
-    -GeneratePh4URLHealthReport $GeneratePh4URLHealthReport `
-    -GeneratePh5URLHealthReport $GeneratePh5URLHealthReport `
-    -GeneratePh6URLHealthReport $GeneratePh6URLHealthReport `
-    -GeneratePhCommonURLHealthReport $GeneratePhCommonURLHealthReport `
-    -GeneratePhDevURLHealthReport $GeneratePhDevURLHealthReport `
-    -GeneratePhMasterURLHealthReport $GeneratePhMasterURLHealthReport
-
+    -GeneratePh3URLHealthReport ([bool]$GeneratePh3URLHealthReport) `
+    -GeneratePh4URLHealthReport ([bool]$GeneratePh4URLHealthReport) `
+    -GeneratePh5URLHealthReport ([bool]$GeneratePh5URLHealthReport) `
+    -GeneratePh6URLHealthReport ([bool]$GeneratePh6URLHealthReport) `
+    -GeneratePhCommonURLHealthReport ([bool]$GeneratePhCommonURLHealthReport) `
+    -GeneratePhDevURLHealthReport ([bool]$GeneratePhDevURLHealthReport) `
+    -GeneratePhMasterURLHealthReport ([bool]$GeneratePhMasterURLHealthReport)
+Write-Host "DEBUG: GenerateUrlHealthReports returned"
 
 # Assign returned package data to existing variables if they were generated
 if ($null -ne $urlHealthPackageData) {
@@ -4558,3 +4693,17 @@ if ($GeneratePh3toPh4DiffHigherPackageVersionReport)
         }
     }
 }
+
+# Security cleanup: Clear sensitive data from memory
+Write-Output "Cleaning up sensitive data..."
+if ($global:access) { Remove-Variable -Name access -Scope Global -ErrorAction SilentlyContinue }
+if ($global:gitlabaccess) { Remove-Variable -Name gitlabaccess -Scope Global -ErrorAction SilentlyContinue }
+if ($global:gitlabusername) { Remove-Variable -Name gitlabusername -Scope Global -ErrorAction SilentlyContinue }
+
+# Clean up git credentials from global config
+if ($Script:RunningOnWindows) {
+    git config --global --unset credential.https://gitlab.freedesktop.org.username 2>$null
+    git config --global --unset credential.https://gitlab.freedesktop.org.password 2>$null
+}
+
+Write-Output "Script completed at: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
