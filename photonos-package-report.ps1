@@ -1486,7 +1486,7 @@ function CheckURLHealth {
     $ignore=@()
 
     # In case of debug: uncomment and debug from here
-    # if ($currentTask.spec -ilike 'util-linux.spec')
+    # if ($currentTask.spec -ilike 'autogen.spec')
     # {pause}
     # else
     # {return}
@@ -1597,9 +1597,9 @@ function CheckURLHealth {
 
     if ($currentTask.spec -eq "libtiff.spec")
     {
-        $UpdateURL="https://download.osgeo.org/libtiff/tiff-4.7.0.tar.xz"
+        $UpdateURL="https://download.osgeo.org/libtiff/tiff-4.7.1.tar.xz"
         $HealthUpdateURL="200"
-        $UpdateAvailable="4.7.0"
+        $UpdateAvailable="4.7.1"
     }
 
     if ($currentTask.spec -eq "mpc.spec")
@@ -1618,39 +1618,38 @@ function CheckURLHealth {
 
     if ($currentTask.spec -eq "runit.spec")
     {
-        $UpdateURL="https://smarden.org/runit/runit-2.2.0.tar.gz"
+        $UpdateURL="https://smarden.org/runit/runit-2.3.0.tar.gz"
         $HealthUpdateURL="200"
-        $UpdateAvailable="2.2.0"
+        $UpdateAvailable="2.3.0"
     }
 
     if ($currentTask.spec -eq "sendmail.spec")
     {
-        $UpdateURL="https://ftp.sendmail.org/sendmail.8.18.1.tar.gz"
+        $UpdateURL="https://ftp.sendmail.org/sendmail.8.18.2.tar.gz"
         $HealthUpdateURL="200"
-        $UpdateAvailable="8.18.1"
+        $UpdateAvailable="8.18.2"
     }
 
     if ($currentTask.spec -eq "zookeeper.spec")
     {
-        $UpdateURL="https://www.apache.org/dyn/closer.lua/zookeeper/zookeeper-3.9.3/apache-zookeeper-3.9.3-bin.tar.gz"
+        $UpdateURL="https://dlcdn.apache.org/zookeeper/zookeeper-3.9.4/apache-zookeeper-3.9.4.tar.gz"
         $HealthUpdateURL="200"
-        $UpdateAvailable="3.9.3"
-    }
-
-    if ($currentTask.spec -eq "pgbackrest.spec")
-    {
-        $UpdateURL="https://github.com/pgbackrest/pgbackrest/archive/refs/tags/release/2.55.1.tar.gz"
-        $HealthUpdateURL="200"
-        $UpdateAvailable="2.55.1"
+        $UpdateAvailable="3.9.4"
     }
 
     if ($currentTask.spec -eq "re2.spec")
     {
-        $UpdateURL="https://github.com/google/re2/releases/download/2024-07-02/re2-2024-07-02.tar.gz"
+        $UpdateURL="https://github.com/google/re2/releases/download/2025-11-05/re2-2025-11-05.tar.gz"
         $HealthUpdateURL="200"
-        $UpdateAvailable="2024-07-02"
+        $UpdateAvailable="2025-11-05"
     }
 
+    # use case of ftp.gnu.org https://github.com/conan-io/conan-center-index/issues/27830
+    # ftp.gnu.org is often down. ftpmirror.gnu.org might redirect to unsecure mirrors.
+    # ftp.funet.fi is very stable and has the same content as ftp.gnu.org.
+    if ($Source0.Contains("ftp.gnu.org")) {
+    $Source0 = $Source0 -replace "ftp.gnu.org", "ftp.funet.fi/pub/gnu/ftp.gnu.org"
+    }
 
     # -------------------------------------------------------------------------------------------------------------------
     # Search updates available depending on the source type
