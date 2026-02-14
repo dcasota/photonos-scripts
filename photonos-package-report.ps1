@@ -86,7 +86,7 @@ function Invoke-GitWithTimeout {
         [string]$WorkingDirectory = (Get-Location).Path,
         [int]$TimeoutSeconds = 60
     )
-    
+
     try {
         $job = Start-Job -ScriptBlock {
             param($argString, $wd)
@@ -96,7 +96,7 @@ function Invoke-GitWithTimeout {
             $output = & git @argArray 2>&1
             return $output
         } -ArgumentList $Arguments, $WorkingDirectory
-        
+
         $completed = Wait-Job -Job $job -Timeout $TimeoutSeconds
         if ($completed) {
             $result = Receive-Job -Job $job
@@ -157,7 +157,7 @@ function ParseDirectory {
             $version = Get-SpecValue -Content $content -Pattern "^Version:" -Replace "Version:"
             if (-not $version) { continue }
             $version = "$version-$release"
-            
+
             $Source0 = Get-SpecValue -Content $content -Pattern "^Source0:" -Replace "Source0:"
             if (-not $Source0) { $Source0 = "" }
             $url = Get-SpecValue -Content $content -Pattern "^URL:" -Replace "URL:"
@@ -387,6 +387,7 @@ bindutils.spec,https://github.com/isc-projects/bind9/archive/refs/tags/v%{versio
 blktrace.spec,,https://git.kernel.org/pub/scm/linux/kernel/git/axboe/blktrace.git,master
 bluez.spec,https://www.kernel.org/pub/linux/bluetooth/bluez-%{version}.tar.xz,https://git.kernel.org/pub/scm/bluetooth/bluez.git,,,
 boost.spec,https://github.com/boostorg/boost/archive/refs/tags/boost-%{version}.tar.gz,https://github.com/boostorg/boost.git
+bpftrace.spec,https://github.com/bpftrace/bpftrace/archive/refs/tags/v%{version}.tar.gz,https://github.com/bpftrace/bpftrace.git
 bridge-utils.spec,,https://git.kernel.org/pub/scm/network/bridge/bridge-utils.git
 btrfs-progs.spec,https://github.com/kdave/btrfs-progs/archive/refs/tags/v%{version}.tar.gz,https://github.com/kdave/btrfs-progs.git
 bubblewrap.spec,https://github.com/containers/bubblewrap/archive/refs/tags/v%{version}.tar.gz,https://github.com/containers/bubblewrap.git
@@ -394,6 +395,7 @@ bzip2.spec,https://github.com/libarchive/bzip2/archive/refs/tags/bzip2-%{version
 c-ares.spec,https://github.com/c-ares/c-ares/archive/refs/tags/cares-%{version}.tar.gz,https://github.com/c-ares/c-ares.git
 cairo.spec,https://gitlab.freedesktop.org/cairo/cairo/-/archive/%{version}/cairo-%{version}.tar.gz,https://gitlab.freedesktop.org/cairo/cairo.git
 calico-confd.spec,https://github.com/kelseyhightower/confd/archive/refs/tags/v%{version}.tar.gz,https://github.com/kelseyhightower/confd.git
+capstone.spec,https://github.com/capstone-engine/capstone/archive/refs/tags/%{version}.tar.gz,https://github.com/capstone-engine/capstone.git
 cassandra.spec,https://github.com/apache/cassandra/archive/refs/tags/cassandra-%{version}.tar.gz,https://github.com/apache/cassandra.git
 cifs-utils.spec,https://download.samba.org/pub/linux-cifs/cifs-utils/cifs-utils-%{version}.tar.bz2,git://git.samba.org/cifs-utils.git
 chkconfig.spec,https://github.com/fedora-sysv/chkconfig/archive/refs/tags/%{version}.tar.gz,https://github.com/fedora-sysv/chkconfig.git
@@ -401,6 +403,7 @@ chrony.spec,https://github.com/mlichvar/chrony/archive/refs/tags/%{version}.tar.
 chrpath.spec,https://codeberg.org/pere/chrpath/archive/release-%{version}.tar.gz,https://codeberg.org/pere/chrpath.git
 clang.spec,https://github.com/llvm/llvm-project/releases/download/llvmorg-%{version}/clang-%{version}.src.tar.xz,https://github.com/llvm/llvm-project.git,,,"llvmorg-"
 cloud-init.spec,https://github.com/canonical/cloud-init/archive/refs/tags/%{version}.tar.gz,https://github.com/canonical/cloud-init.git
+cloud-network-setup.spec,https://github.com/vmware-archive/cloud-network-setup/archive/refs/tags/v%{version}.tar.gz,https://github.com/vmware-archive/cloud-network-setup.git
 cloud-utils.spec,https://github.com/canonical/cloud-utils/archive/refs/tags/%{version}.tar.gz,https://github.com/canonical/cloud-utils.git
 cmake.spec,https://github.com/Kitware/CMake/releases/download/v%{version}/cmake-%{version}.tar.gz,https://github.com/Kitware/CMake.git
 cmocka.spec,https://git.cryptomilk.org/projects/cmocka.git/snapshot/cmocka-%{version}.tar.xz,https://git.cryptomilk.org/projects/cmocka.git
@@ -408,7 +411,7 @@ commons-daemon.spec,https://github.com/apache/commons-daemon/archive/refs/tags/c
 compat-gdbm.spec,https://ftp.gnu.org/gnu/gdbm/gdbm-%{version}.tar.gz
 confd.spec,https://github.com/projectcalico/confd/archive/refs/tags/v%{version}-0.dev.tar.gz,https://github.com/projectcalico/confd.git
 conmon.spec,https://github.com/containers/conmon/archive/refs/tags/v%{version}.tar.gz,https://github.com/containers/conmon.git
-connect-proxy.spec,,https://src.fedoraproject.org/rpms/connect-proxy.git,rawhide
+connect-proxy.spec,https://github.com/gotoh/ssh-connect/archive/refs/tags/%{version}.tar.gz,https://github.com/gotoh/ssh-connect.git
 conntrack-tools.spec,https://www.netfilter.org/projects/conntrack-tools/files/conntrack-tools-%{version}.tar.xz
 containers-common.spec,https://github.com/containers/common/archive/refs/tags/v%{version}.tar.gz,https://github.com/containers/common.git
 coredns.spec,https://github.com/coredns/coredns/archive/refs/tags/v%{version}.tar.gz,https://github.com/coredns/coredns.git
@@ -426,15 +429,17 @@ ddclient.spec,https://github.com/ddclient/ddclient/releases/download/v%{version}
 device-mapper-multipath.spec,https://github.com/opensvc/multipath-tools/archive/refs/tags/%{version}.tar.gz,https://github.com/opensvc/multipath-tools.git
 device-mapper-multipath.spec,https://github.com/opensvc/multipath-tools/archive/refs/tags/%{version}.tar.gz,https://github.com/opensvc/multipath-tools.git
 dialog.spec,https://invisible-island.net/archives/dialog/dialog-%{version}.tgz
-dtc.spec,https://www.kernel.org/pub/software/utils/%{name}/%{name}-%{version}.tar.gz,https://git.kernel.org/pub/scm/utils/dtc/dtc.git
+dkms.spec,https://github.com/dkms-project/dkms/archive/refs/tags/v%{version}.tar.gz,https://github.com/dkms-project/dkms.git
 docbook-xml.spec,https://github.com/docbook/docbook/archive/refs/tags/%{version}.zip,https://github.com/docbook/docbook.git
 docker.spec,https://github.com/moby/moby/archive/refs/tags/v%{version}.tar.gz,https://github.com/moby/moby.git
 docker-20.10.spec,https://github.com/moby/moby/archive/refs/tags/v%{version}.tar.gz,https://github.com/moby/moby.git
 docker-pycreds.spec,https://github.com/shin-/dockerpy-creds/archive/refs/tags/%{version}.tar.gz,https://github.com/shin-/dockerpy-creds.git
+dos2unix.spec,https://waterlan.home.xs4all.nl/dos2unix/dos2unix-%{version}.tar.gz,https://git.code.sf.net/p/dos2unix/dos2unix.git
 dotnet-runtime.spec,https://github.com/dotnet/runtime/archive/refs/tags/v%{version}.tar.gz,https://github.com/dotnet/runtime.git
 dotnet-sdk.spec,https://github.com/dotnet/sdk/archive/refs/tags/v%{version}.tar.gz,https://github.com/dotnet/sdk.git
 doxygen.spec,https://github.com/doxygen/doxygen/archive/refs/tags/Release_%{version}.tar.gz,https://github.com/doxygen/doxygen.git
 dracut.spec,https://github.com/dracutdevs/dracut/archive/refs/tags/%{version}.tar.gz,https://github.com/dracutdevs/dracut.git,,,,"033-502"
+dtc.spec,https://www.kernel.org/pub/software/utils/%{name}/%{name}-%{version}.tar.gz,https://git.kernel.org/pub/scm/utils/dtc/dtc.git
 duktape.spec,https://github.com/svaarala/duktape/archive/refs/tags/v%{version}.tar.gz,https://github.com/svaarala/duktape.git
 ebtables.spec,https://www.netfilter.org/pub/ebtables/ebtables-v%{version}.tar.gz
 ecdsa.spec,https://github.com/tlsfuzzer/python-ecdsa/archive/refs/tags/python-ecdsa-%{version}.tar.gz,https://github.com/tlsfuzzer/python-ecdsa.git
@@ -445,10 +450,12 @@ erlang.spec,https://github.com/erlang/otp/archive/refs/tags/OTP-%{version}.tar.g
 erlang-sd_notify.spec,https://github.com/systemd/erlang-sd_notify/archive/refs/tags/v%{version}.tar.gz,https://github.com/systemd/erlang-sd_notify.git
 ethtool.spec,https://git.kernel.org/pub/scm/network/ethtool/ethtool.git/snapshot/ethtool-%{version}.tar.gz,https://git.kernel.org/pub/scm/network/ethtool/ethtool.git
 expat.spec,https://github.com/libexpat/libexpat/releases/download/R_%{version}/expat-%{version}.tar.xz,https://github.com/libexpat/libexpat.git
+fakeroot.spec,https://salsa.debian.org/clint/fakeroot/-/archive/debian/%{version}/fakeroot-debian-%{version}.tar.gz,https://salsa.debian.org/clint/fakeroot.git
 fakeroot-ng.spec,https://master.dl.sourceforge.net/project/fakerootng/fakeroot-ng/fakeroot-ng-%{version}.tar.gz,https://git.code.sf.net/p/fakerootng/source.git
 fatrace.spec,https://github.com/martinpitt/fatrace/archive/refs/tags/%{version}.tar.gz,https://github.com/martinpitt/fatrace.git
 file.spec,http://ftp.astron.com/pub/file/file-%{version}.tar.gz
 fio.spec,https://git.kernel.org/pub/scm/linux/kernel/git/axboe/fio.git/snapshot/%{name}-%{version}.tar.gz,https://git.kernel.org/pub/scm/linux/kernel/git/axboe/fio.git
+flannel.spec,https://github.com/flannel-io/flannel/archive/refs/tags/v%{version}.tar.gz,https://github.com/flannel-io/flannel.git
 flex.spec,https://github.com/westes/flex/archive/refs/tags/v%{version}.tar.gz,https://github.com/westes/flex.git
 fontconfig.spec,,https://gitlab.freedesktop.org/fontconfig/fontconfig.git
 fping.spec,https://github.com/schweikert/fping/archive/refs/tags/v%{version}.tar.gz,https://github.com/schweikert/fping.git
@@ -480,6 +487,7 @@ haproxy-dataplaneapi.spec,https://github.com/haproxytech/dataplaneapi/archive/re
 harfbuzz.spec,,https://github.com/harfbuzz/harfbuzz.git
 haveged.spec,https://github.com/jirka-h/haveged/archive/refs/tags/v%{version}.tar.gz,https://github.com/jirka-h/haveged.git
 hawkey.spec,https://github.com/rpm-software-management/hawkey/archive/refs/tags/hawkey-%{version}.tar.gz,https://github.com/rpm-software-management/hawkey.git
+heapster.spec,https://github.com/kubernetes-retired/heapster/archive/refs/tags/v%{version}.tar.gz,https://github.com/kubernetes-retired/heapster.git
 httpd.spec,https://github.com/apache/httpd/archive/refs/tags/%{version}.tar.gz,https://github.com/apache/httpd.git
 httpd-mod_jk.spec,https://github.com/apache/tomcat-connectors/archive/refs/tags/JK_%{version}.tar.gz,https://github.com/apache/tomcat-connectors.git,,,"JK_"
 http-parser.spec,https://github.com/nodejs/http-parser/archive/refs/tags/v%{version}.tar.gz,https://github.com/nodejs/http-parser.git
@@ -497,6 +505,7 @@ iputils.spec,https://github.com/iputils/iputils/archive/refs/tags/s%{version}.ta
 ipvsadm.spec,,https://git.kernel.org/pub/scm/utils/kernel/ipvsadm/ipvsadm.git
 ipxe.spec,https://github.com/ipxe/ipxe/archive/refs/tags/v%{version}.tar.gz,https://github.com/ipxe/ipxe.git
 jansson.spec,https://github.com/akheron/jansson/archive/refs/tags/v%{version}.tar.gz,https://github.com/akheron/jansson.git
+jq.spec,https://github.com/jqlang/jq/archive/refs/tags/jq-%{version}.tar.gz,https://github.com/jqlang/jq.git
 json-glib.spec,https://github.com/GNOME/json-glib/archive/refs/tags/%{version}.tar.gz,https://github.com/GNOME/json-glib.git
 kafka.spec,https://github.com/apache/kafka/archive/refs/tags/%{version}.tar.gz,https://github.com/apache/kafka.git,,,"0.10.2.0-KAFKA-5526"
 kbd.spec,https://github.com/legionus/kbd/archive/refs/tags/%{version}.tar.gz,https://github.com/legionus/kbd.git
@@ -505,6 +514,7 @@ kexec-tools.spec,https://www.kernel.org/pub/linux/utils/kernel/kexec/kexec-tools
 keyutils.spec,https://git.kernel.org/pub/scm/linux/kernel/git/dhowells/keyutils.git/snapshot/keyutils-%{version}.tar.gz,https://git.kernel.org/pub/scm/linux/kernel/git/dhowells/keyutils.git
 kmod.spec,,https://git.kernel.org/pub/scm/utils/kernel/kmod/kmod.git,,,
 krb5.spec,https://github.com/krb5/krb5/archive/refs/tags/krb5-%{version}-final.tar.gz,https://github.com/krb5/krb5.git
+kubernetes-dashboard.spec,https://github.com/kubernetes-retired/dashboard/archive/refs/tags/kubernetes-dashboard-%{version}.tar.gz,https://github.com/kubernetes-retired/dashboard.git
 lapack.spec,https://github.com/Reference-LAPACK/lapack/archive/refs/tags/v%{version}.tar.gz,https://github.com/Reference-LAPACK/lapack.git
 lasso.spec,https://dev.entrouvert.org/lasso/lasso-%{version}.tar.gz
 less.spec,https://github.com/gwsw/less/archive/refs/tags/v%{version}.tar.gz,https://github.com/gwsw/less.git
@@ -515,6 +525,7 @@ libatomic_ops.spec,https://github.com/ivmai/libatomic_ops/archive/refs/tags/v%{v
 libcap.spec,,https://git.kernel.org/pub/scm/libs/libcap/libcap.git
 libcap-ng.spec,https://github.com/stevegrubb/libcap-ng/archive/refs/tags/v%{version}.tar.gz,https://github.com/stevegrubb/libcap-ng.git
 libconfig.spec,https://github.com/hyperrealm/libconfig/archive/refs/tags/v%{version}.tar.gz,https://github.com/hyperrealm/libconfig.git
+libdaemon.spec,https://0pointer.de/lennart/projects/libdaemon/libdaemon-%{version}.tar.gz
 libdb.spec,https://github.com/berkeleydb/libdb/archive/refs/tags/v%{version}.tar.gz,https://github.com/berkeleydb/libdb.git
 libdrm.spec,https://gitlab.freedesktop.org/mesa/libdrm/-/archive/libdrm-%{version}/libdrm-libdrm-%{version}.tar.gz,https://gitlab.freedesktop.org/mesa/libdrm.git
 libedit.spec,https://www.thrysoee.dk/editline/libedit-20221030-3.1.tar.gz
@@ -529,9 +540,11 @@ libldb.spec,https://gitlab.com/samba-team/devel/samba/-/archive/ldb-%{version}/s
 liblogging.spec,https://github.com/rsyslog/liblogging/archive/refs/tags/v%{version}.tar.gz
 libjpeg-turbo.spec,https://github.com/libjpeg-turbo/libjpeg-turbo/archive/refs/tags/%{version}.tar.gz
 libmbim.spec,https://gitlab.freedesktop.org/mobile-broadband/libmbim/-/archive/%{version}/libmbim-%{version}.tar.gz,https://gitlab.freedesktop.org/mobile-broadband/libmbim.git
+libmd.spec,https://archive.hadrons.org/software/libmd/libmd-%{version}.tar.xz,https://github.com/guillemj/libmd.git
 libmetalink.spec,https://launchpad.net/libmetalink/trunk/libmetalink-%{version}/+download/libmetalink-%{version}.tar.bz2
 libmnl.spec,https://www.netfilter.org/projects/libmnl/files/libmnl-%{version}.tar.bz2
 libmspack.spec,https://github.com/kyz/libmspack/archive/refs/tags/v%{version}.tar.gz
+libndp.spec,https://github.com/jpirko/libndp/archive/refs/tags/v%{version}.tar.gz,https://github.com/jpirko/libndp.git
 libnetfilter_conntrack.spec,https://www.netfilter.org/projects/libnetfilter_conntrack/files/libnetfilter_conntrack-%{version}.tar.xz
 libnetfilter_cthelper.spec,https://www.netfilter.org/projects/libnetfilter_cthelper/files/libnetfilter_cthelper-%{version}.tar.bz2
 libnetfilter_cttimeout.spec,https://www.netfilter.org/projects/libnetfilter_cttimeout/files/libnetfilter_cttimeout-%{version}.tar.bz2
@@ -539,6 +552,7 @@ libnetfilter_queue.spec,https://www.netfilter.org/projects/libnetfilter_queue/fi
 libnfnetlink.spec,https://wwww.netfilter.org/projects/libnfnetlink/files/libnfnetlink-%{version}.tar.bz2
 libnftnl.spec,https://wwww.netfilter.org/projects/libnftnl/files/libnftnl-%{version}.tar.xz
 libnl.spec,https://github.com/thom311/libnl/archive/refs/tags/libnl%{version}.tar.gz,https://github.com/thom311/libnl.git
+librdkafka.spec,https://github.com/confluentinc/librdkafka/archive/refs/tags/v%{version}.tar.gz,https://github.com/confluentinc/librdkafka.git
 librelp.spec,https://download.rsyslog.com/librelp/librelp-%{version}.tar.gz
 librsync.spec,https://github.com/librsync/librsync/archive/refs/tags/v%{version}.tar.gz,https://github.com/librsync/librsync.git
 libpcap.spec,https://github.com/the-tcpdump-group/libpcap/archive/refs/tags/libpcap-%{version}.tar.gz,https://github.com/the-tcpdump-group/libpcap.git
@@ -578,11 +592,12 @@ lksctp-tools.spec,https://github.com/sctp/lksctp-tools/archive/refs/tags/v%{vers
 lldb.spec,https://github.com/llvm/llvm-project/releases/download/llvmorg-%{version}/lldb-%{version}.src.tar.xz,https://github.com/llvm/llvm-project.git,,,"llvmorg-"
 llvm.spec,https://github.com/llvm/llvm-project/releases/download/llvmorg-%{version}/llvm-%{version}.src.tar.xz,https://github.com/llvm/llvm-project.git,,,"llvmorg-"
 lm-sensors.spec,https://github.com/lm-sensors/lm-sensors/archive/refs/tags/V%{version}.tar.gz,https://github.com/lm-sensors/lm-sensors.git
-lshw.spec,https://github.com/lyonel/lshw/archive/refs/tags/%{version}.tar.gz,https://github.com/lyonel/lshw.git
+lshw.spec,https://github.com/lyonel/lshw/archive/refs/tags/%{version}.tar.gz,https://github.com/lyonel/lshw.git,,,"B."
 lsof.spec,https://github.com/lsof-org/lsof/archive/refs/tags/%{version}.tar.gz,https://github.com/lsof-org/lsof.git
 lttng-tools.spec,https://github.com/lttng/lttng-tools/archive/refs/tags/v%{version}.tar.gz,https://github.com/lttng/lttng-tools.git
 lvm2.spec,https://github.com/lvmteam/lvm2/archive/refs/tags/v%{version}.tar.gz,https://github.com/lvmteam/lvm2.git
 lxcfs.spec,https://github.com/lxc/lxcfs/archive/refs/tags/lxcfs-%{version}.tar.gz,https://github.com/lxc/lxcfs.git
+lzo.spec,http://www.oberhumer.com/opensource/lzo/download/lzo-%{version}.tar.gz
 man-db.spec,https://gitlab.com/man-db/man-db/-/archive/%{version}/man-db-%{version}.tar.gz,https://gitlab.com/man-db/man-db.git
 man-pages.spec,https://git.kernel.org/pub/scm/docs/man-pages/man-pages.git/snapshot/man-pages-%{version}.tar.gz,https://git.kernel.org/pub/scm/docs/man-pages/man-pages.git
 mariadb.spec,https://github.com/MariaDB/server/archive/refs/tags/mariadb-%{version}.tar.gz,https://github.com/MariaDB/server.git
@@ -607,7 +622,9 @@ net-tools.spec,https://github.com/ecki/net-tools/archive/refs/tags/v%{version}.t
 newt.spec,https://github.com/mlichvar/newt/archive/refs/tags/r%{version}.tar.gz,https://github.com/mlichvar/newt.git
 nftables.spec,https://www.netfilter.org/projects/nftables/files/nftables-%{version}.tar.xz
 nginx.spec,https://github.com/nginx/nginx/archive/refs/tags/release-%{version}.tar.gz,https://github.com/nginx/nginx.git
+nmap.spec,https://nmap.org/dist/nmap-%{version}.tar.bz2
 nss-pam-ldapd.spec,https://github.com/arthurdejong/nss-pam-ldapd/archive/refs/tags/%{version}.tar.gz,https://github.com/arthurdejong/nss-pam-ldapd.git
+ntp.spec,https://github.com/ntp-project/ntp/archive/refs/tags/NTP_%{version}.tar.gz,https://github.com/ntp-project/ntp.git,,,"NTP_"
 nodejs.spec,https://github.com/nodejs/node/archive/refs/tags/v%{version}.tar.gz,https://github.com/nodejs/node.git
 openjdk8.spec,https://github.com/openjdk/jdk8u/archive/refs/tags/jdk8u%{subversion}-ga.tar.gz,https://github.com/openjdk/jdk8u.git,,,"jdk8u,-ga"
 openjdk10.spec,https://github.com/openjdk/jdk10u/archive/refs/tags/jdk-%{version}-ga.tar.gz,https://github.com/openjdk/jdk10u.git,,,"jdk-10*"
@@ -636,6 +653,7 @@ perl-Exporter-Tiny.spec,https://github.com/tobyink/p5-exporter-tiny/archive/refs
 perl-File-HomeDir.spec,https://github.com/perl5-utils/File-HomeDir/archive/refs/tags/%{version}.tar.gz,https://github.com/perl5-utils/File-HomeDir.git
 perl-File-Which.spec,https://github.com/uperl/File-Which/archive/refs/tags/v%{version}.tar.gz,https://github.com/uperl/File-Which.git
 perl-IO-Socket-SSL.spec,https://github.com/noxxi/p5-io-socket-ssl/archive/refs/tags/%{version}.tar.gz,https://github.com/noxxi/p5-io-socket-ssl.git
+perl-libintl.spec,https://github.com/gflohr/libintl-perl/archive/refs/tags/v%{version}.tar.gz,https://github.com/gflohr/libintl-perl.git
 perl-List-MoreUtils.spec,https://github.com/perl5-utils/List-MoreUtils/archive/refs/tags/%{version}.tar.gz,https://github.com/perl5-utils/List-MoreUtils.git
 perl-Module-Build.spec,https://github.com/Perl-Toolchain-Gang/Module-Build/archive/refs/tags/%{version}.tar.gz,https://github.com/Perl-Toolchain-Gang/Module-Build.git
 perl-Module-Install.spec,https://github.com/Perl-Toolchain-Gang/Module-Install/archive/refs/tags/%{version}.tar.gz,https://github.com/Perl-Toolchain-Gang/Module-Install.git
@@ -655,6 +673,7 @@ pmd-nextgen.spec,https://github.com/vmware/pmd/archive/refs/tags/v%{version}.tar
 polkit.spec,,https://gitlab.freedesktop.org/polkit/polkit.git
 popt.spec,https://github.com/rpm-software-management/popt/archive/refs/tags/popt-%{version}-release.tar.gz,https://github.com/rpm-software-management/popt.git
 powershell.spec,https://github.com/PowerShell/PowerShell/archive/refs/tags/v%{version}.tar.gz,https://github.com/PowerShell/PowerShell.git
+procmail.spec,https://github.com/BuGlessRB/procmail/archive/refs/tags/v%{version}.tar.gz,https://github.com/BuGlessRB/procmail.git
 protobuf-c.spec,https://github.com/protobuf-c/protobuf-c/archive/refs/tags/v%{version}.tar.gz,https://github.com/protobuf-c/protobuf-c.git
 psmisc.spec,https://gitlab.com/psmisc/psmisc/-/archive/v%{version}/psmisc-v%{version}.tar.gz,https://gitlab.com/psmisc/psmisc.git
 pth.spec,https://ftp.gnu.org/gnu/pth/pth-%{version}.tar.gz,https://gitlab.com/psmisc/psmisc.git
@@ -710,7 +729,7 @@ python-distlib.spec,https://github.com/pypa/distlib/archive/refs/tags/%{version}
 python-distro.spec,https://github.com/python-distro/distro/archive/refs/tags/v%{version}.tar.gz,https://github.com/python-distro/distro.git
 python-dnspython.spec,https://github.com/rthalley/dnspython/archive/refs/tags/v%{version}.tar.gz,https://github.com/rthalley/dnspython.git
 python-docopt.spec,https://github.com/docopt/docopt/archive/refs/tags/%{version}.tar.gz,https://github.com/docopt/docopt.git
-python-docutils.spec,https://netix.dl.sourceforge.net/project/docutils/docutils/%{version}/docutils-%{version}.tar.gz
+python-docutils.spec,https://altushost-swe.dl.sourceforge.net/project/docutils/docutils/%{version}/docutils-%{version}.tar.gz
 python-ecdsa.spec,https://github.com/tlsfuzzer/python-ecdsa/archive/refs/tags/python-ecdsa-%{version}.tar.gz,https://github.com/tlsfuzzer/python-ecdsa.git
 python-email-validator.spec,https://github.com/JoshData/python-email-validator/archive/refs/tags/v%{version}.tar.gz,https://github.com/JoshData/python-email-validator.git
 python-etcd.spec,https://github.com/jplana/python-etcd/archive/refs/tags/%{version}.tar.gz,https://github.com/jplana/python-etcd.git
@@ -762,7 +781,8 @@ python-oauthlib.spec,https://github.com/oauthlib/oauthlib/archive/refs/tags/v%{v
 python-packaging.spec,https://github.com/pypa/packaging/archive/refs/tags/%{version}.tar.gz,https://github.com/pypa/packaging.git
 python-pam.spec,https://github.com/FirefighterBlu3/python-pam/archive/refs/tags/v%{version}.tar.gz,https://github.com/FirefighterBlu3/python-pam.git
 python-pathspec.spec,https://github.com/cpburnz/python-pathspec/archive/refs/tags/v%{version}.tar.gz,https://github.com/cpburnz/python-pathspec.git
-python-pbr.spec,https://opendev.org/openstack/pbr/archive/%{version}.tar.gz,https://opendev.org/openstack/pbr.git,,python-pbr
+python-pbr.spec,https://tarballs.openstack.org/pbr/pbr-%{version}.tar.gz,https://opendev.org/openstack/pbr.git,,python-pbr
+python-pg8000.spec,https://codeberg.org/tlocke/pg8000/archive/%{version}.tar.gz,https://codeberg.org/tlocke/pg8000.git
 python-pefile.spec,https://github.com/erocarrera/pefile/archive/refs/tags/v%{version}.tar.gz,https://github.com/erocarrera/pefile.git
 python-pexpect.spec,https://github.com/pexpect/pexpect/archive/refs/tags/%{version}.tar.gz,https://github.com/pexpect/pexpect.git
 python-pip.spec,https://github.com/pypa/pip/archive/refs/tags/%{version}.tar.gz,https://github.com/pypa/pip.git
@@ -815,6 +835,7 @@ python-rsa.spec,https://github.com/sybrenstuvel/python-rsa/archive/refs/tags/ver
 python-ruamel-yaml.spec,https://files.pythonhosted.org/packages/17/2f/f38332bf6ba751d1c8124ea70681d2b2326d69126d9058fbd9b4c434d268/ruamel.yaml-%{version}.tar.gz
 python-s3transfer.spec,https://github.com/boto/s3transfer/archive/refs/tags/%{version}.tar.gz,https://github.com/boto/s3transfer.git
 python-scp.spec,https://github.com/jbardin/scp.py/archive/refs/tags/v%{version}.tar.gz,https://github.com/jbardin/scp.py.git
+python-scramp.spec,https://codeberg.org/tlocke/scramp/archive/%{version}.tar.gz, https://codeberg.org/tlocke/scramp.git
 python-semantic-version.spec,https://github.com/rbarrois/python-semanticversion/archive/refs/tags/%{version}.tar.gz,https://github.com/rbarrois/python-semanticversion.git
 python-service_identity.spec,https://github.com/pyca/service-identity/archive/refs/tags/%{version}.tar.gz,https://github.com/pyca/service-identity.git
 python-setproctitle.spec,https://github.com/dvarrazzo/py-setproctitle/archive/refs/tags/version-%{version}.tar.gz,https://github.com/dvarrazzo/py-setproctitle.git
@@ -824,6 +845,7 @@ python-setuptools_scm.spec,https://github.com/pypa/setuptools_scm/archive/refs/t
 python-simplejson.spec,https://github.com/simplejson/simplejson/archive/refs/tags/v%{version}.tar.gz,https://github.com/simplejson/simplejson.git
 python-six.spec,https://github.com/benjaminp/six/archive/refs/tags/%{version}.tar.gz,https://github.com/benjaminp/six.git
 python-snowballstemmer.spec,https://github.com/snowballstem/snowball/archive/refs/tags/v%{version}.tar.gz,https://github.com/snowballstem/snowball.git
+python-sortedcontainers.spec,https://github.com/grantjenks/python-sortedcontainers/archive/refs/tags/v%{version}.tar.gz,https://github.com/grantjenks/python-sortedcontainers.git
 python-sphinx.spec,https://github.com/sphinx-doc/sphinx/archive/refs/tags/v%{version}.tar.gz,https://github.com/sphinx-doc/sphinx.git
 python-sphinxcontrib-applehelp.spec,https://github.com/sphinx-doc/sphinxcontrib-applehelp/archive/refs/tags/%{version}.tar.gz,https://github.com/sphinx-doc/sphinxcontrib-applehelp.git
 python-sphinxcontrib-devhelp.spec,https://github.com/sphinx-doc/sphinxcontrib-devhelp/archive/refs/tags/%{version}.tar.gz,https://github.com/sphinx-doc/sphinxcontrib-devhelp.git
@@ -843,6 +865,7 @@ python-tzlocal.spec,https://github.com/regebro/tzlocal/archive/refs/tags/%{versi
 python-ujson.spec,https://github.com/ultrajson/ultrajson/archive/refs/tags/%{version}.tar.gz,https://github.com/ultrajson/ultrajson.git
 python-urllib3.spec,https://github.com/urllib3/urllib3/archive/refs/tags/%{version}.tar.gz,https://github.com/urllib3/urllib3.git
 python-vcversioner.spec,https://github.com/habnabit/vcversioner/archive/refs/tags/%{version}.tar.gz,https://github.com/habnabit/vcversioner.git
+python-versioningit.spec,https://github.com/jwodder/versioningit/archive/refs/tags/v%{version}.tar.gz,https://github.com/jwodder/versioningit.git
 python-virtualenv.spec,https://github.com/pypa/virtualenv/archive/refs/tags/%{version}.tar.gz,https://github.com/pypa/virtualenv.git
 python-wcwidth.spec,https://github.com/jquast/wcwidth/archive/refs/tags/%{version}.tar.gz,https://github.com/jquast/wcwidth.git
 python-webob.spec,https://github.com/Pylons/webob/archive/refs/tags/%{version}.tar.gz,https://github.com/Pylons/webob.git
@@ -870,6 +893,7 @@ rng-tools.spec,https://github.com/nhorman/rng-tools/archive/refs/tags/v%{version
 rpcsvc-proto.spec,https://github.com/thkukuk/rpcsvc-proto/archive/refs/tags/v%{version}.tar.gz,https://github.com/thkukuk/rpcsvc-proto.git
 rpm.spec,https://github.com/rpm-software-management/rpm/archive/refs/tags/rpm-%{version}-release.tar.gz,https://github.com/rpm-software-management/rpm.git,,rpm,"rpm-,-release"
 rrdtool.spec,https://github.com/oetiker/rrdtool-1.x/archive/refs/tags/v%{version}.tar.gz,https://github.com/oetiker/rrdtool-1.x.git
+rsync.spec,https://github.com/RsyncProject/rsync/archive/refs/tags/v%{version}.tar.gz,https://github.com/RsyncProject/rsync.git
 rt-tests.spec,https://git.kernel.org/pub/scm/utils/rt-tests/rt-tests.git/snapshot/rt-tests-%{version}.tar.gz,https://git.kernel.org/pub/scm/utils/rt-tests/rt-tests.git
 ruby.spec,https://github.com/ruby/ruby/archive/refs/tags/v%{version}.tar.gz,https://github.com/ruby/ruby.git,,,"@"
 rust.spec,https://github.com/rust-lang/rust/archive/refs/tags/%{version}.tar.gz,https://github.com/rust-lang/rust.git
@@ -887,6 +911,7 @@ spirv-tools.spec,https://github.com/KhronosGroup/SPIRV-Tools/archive/refs/tags/s
 sqlite.spec,https://github.com/sqlite/sqlite/archive/refs/tags/version-%{version}.tar.gz,https://github.com/sqlite/sqlite.git,,,"version-"
 stalld.spec,,https://git.kernel.org/pub/scm/utils/stalld/stalld.git
 strongswan.spec,https://github.com/strongswan/strongswan/releases/download/%{version}/strongswan-%{version}.tar.bz2,https://github.com/strongswan/strongswan.git
+stunnel.spec,https://github.com/mtrojnar/stunnel/archive/refs/tags/stunnel-%{version}.tar.gz
 subversion.spec,https://github.com/apache/subversion/archive/refs/tags/%{version}.tar.gz,https://github.com/apache/subversion.git
 syslinux.spec,,https://git.kernel.org/pub/scm/boot/syslinux/syslinux.git
 sysstat.spec,https://github.com/sysstat/sysstat/archive/refs/tags/v%{version}.tar.gz,https://github.com/sysstat/sysstat.git
@@ -916,11 +941,13 @@ util-macros.spec,https://ftp.x.org/archive//individual/util/util-macros-%{versio
 uwsgi.spec,https://github.com/unbit/uwsgi/archive/refs/tags/%{version}.tar.gz,https://github.com/unbit/uwsgi.git
 valgrind.spec,https://sourceware.org/pub/valgrind/valgrind-%{version}.tar.bz2
 vim.spec,https://github.com/vim/vim/archive/refs/tags/v%{version}.tar.gz,https://github.com/vim/vim.git
+vsftp.spec,https://security.appspot.com/downloads/vsftpd-%{version}.tar.gz
 vulkan-tools.spec,https://github.com/KhronosGroup/Vulkan-Tools/archive/refs/tags/sdk-%{version}.tar.gz,https://github.com/KhronosGroup/Vulkan-Tools.git
 wavefront-proxy.spec,https://github.com/wavefrontHQ/wavefront-proxy/archive/refs/tags/proxy-%{version}.tar.gz,https://github.com/wavefrontHQ/wavefront-proxy.git
 wayland.spec,https://gitlab.freedesktop.org/wayland/wayland/-/archive/%{version}/wayland-%{version}.tar.gz,https://gitlab.freedesktop.org/wayland/wayland.git
 wayland-protocols.spec,,https://gitlab.freedesktop.org/wayland/wayland-protocols.git
 wget.spec,https://ftp.gnu.org/gnu/wget/wget-%{version}.tar.gz
+whois.spec,https://salsa.debian.org/md/whois/-/archive/%{version}/whois-%{version}.tar.gz,https://salsa.debian.org/md/whois.git
 wireshark.spec,https://github.com/wireshark/wireshark/archive/refs/tags/wireshark-%{version}.tar.gz,https://github.com/wireshark/wireshark.git
 wrapt.spec,https://github.com/GrahamDumpleton/wrapt/archive/refs/tags/%{version}.tar.gz,https://github.com/GrahamDumpleton/wrapt.git
 xerces-c.spec,https://github.com/apache/xerces-c/archive/refs/tags/v%{version}.tar.gz,https://github.com/apache/xerces-c.git
@@ -930,6 +957,7 @@ xml-security-c.spec,https://archive.apache.org/dist/santuario/c-library/xml-secu
 xmlsec1.spec,https://www.aleksey.com/xmlsec/download/xmlsec1-%{version}.tar.gz,https://github.com/lsh123/xmlsec.git
 xz.spec,https://github.com/tukaani-project/xz/archive/refs/tags/v%{version}.tar.gz,https://github.com/tukaani-project/xz.git
 zlib.spec,https://github.com/madler/zlib/archive/refs/tags/v%{version}.tar.gz,https://github.com/madler/zlib.git
+zookeeper.spec,https://github.com/apache/zookeeper/archive/refs/tags/release-%{version}.tar.gz,https://github.com/apache/zookeeper.git
 zsh.spec,https://github.com/zsh-users/zsh/archive/refs/tags/zsh-%{version}.tar.gz,https://github.com/zsh-users/zsh.git
 '@
 $Source0LookupData = $Source0LookupData | convertfrom-csv
@@ -1498,10 +1526,10 @@ function CheckURLHealth {
     $ignore=@()
 
     # In case of debug: uncomment and debug from here
-    # if ($currentTask.spec -ilike 'cmocka.spec')
-    # {pause}
-    # else
-    # {return}
+    if ($currentTask.spec -ilike 'whois.spec')
+    {pause}
+    else
+    {return}
 
     $Source0 = $currentTask.Source0
 
@@ -1517,6 +1545,20 @@ function CheckURLHealth {
         }
     }
 
+    # release-dependant Source0 url lookup. This is a static method and must be checked from time to time.
+    if ($currentTask.spec -eq "motd.spec")
+    {
+        switch ($photonDir) {
+            {($_ -eq "photon-3.0") -or ($_ -eq "photon-4.0")} {
+                $Source0="https://github.com/rtnpro/motdgen/archive/refs/tags/%{version}.tar.gz"
+                $GitSource="https://github.com/rtnpro/motdgen.git"
+            }
+            default {
+                $Source0="https://packages.broadcom.com/artifactory/photon/photon_sources/1.0/photon-motdgen-%{version}.tar.gz"
+                # VMware internal url https://github-vcf.devops.broadcom.net/vcf/photon-motdgen
+            }
+        }
+    }
 
     # -------------------------------------------------------------------------------------------------------------------
     # Most Source0 urls inside the spec files are not the source url but indicate where to find the source.
@@ -1653,7 +1695,7 @@ function CheckURLHealth {
         $UpdateURL="https://files.pythonhosted.org/packages/cb/a5/3d8b3e4511cc21479f78f359b1b21f1fb7c640988765ffd09e55c6605e3b/Js2Py-0.74.tar.gz"
         $HealthUpdateURL="200"
         $UpdateAvailable="0.74"
-    }   
+    }
 
     if ($currentTask.spec -eq "runit.spec")
     {
@@ -1667,20 +1709,6 @@ function CheckURLHealth {
         $UpdateURL="https://ftp.sendmail.org/sendmail.8.18.2.tar.gz"
         $HealthUpdateURL="200"
         $UpdateAvailable="8.18.2"
-    }
-
-    if ($currentTask.spec -eq "zookeeper.spec")
-    {
-        $UpdateURL="https://dlcdn.apache.org/zookeeper/zookeeper-3.9.4/apache-zookeeper-3.9.4.tar.gz"
-        $HealthUpdateURL="200"
-        $UpdateAvailable="3.9.4"
-    }
-
-    if ($currentTask.spec -eq "re2.spec")
-    {
-        $UpdateURL="https://github.com/google/re2/releases/download/2025-11-05/re2-2025-11-05.tar.gz"
-        $HealthUpdateURL="200"
-        $UpdateAvailable="2025-11-05"
     }
 
     # use case of ftp.gnu.org https://github.com/conan-io/conan-center-index/issues/27830
@@ -3009,6 +3037,11 @@ function CheckURLHealth {
             }
         }
     }
+    elseif ($Source0 -ilike '*rubygems.org*')
+    {
+        # TODO
+
+    }
     # Check UpdateAvailable by freedesktop tags detection
     elseif (($Source0 -ilike '*freedesktop.org*') -or ($Source0 -ilike '*https://gitlab.*'))
     {
@@ -3844,6 +3877,9 @@ function CheckURLHealth {
     elseif ($currentTask.Spec -ilike 'fcgi.spec') {$UpdateAvailable=$warning+" See "+ "https://github.com/FastCGI-Archives/fcgi2/archive/refs/tags/%{version}.tar.gz ."}
     elseif ($currentTask.Spec -ilike 'libtar.spec') {$UpdateAvailable=$warning+" See "+ "https://sources.debian.org/patches/libtar"}
     elseif ($currentTask.Spec -ilike 'lightwave.spec') {$UpdateAvailable=$warning}
+    elseif ($currentTask.Spec -ilike 'heapster.spec') {$UpdateAvailable=$warning}
+    elseif ($currentTask.Spec -ilike 'cloud-network-setup.spec') {$UpdateAvailable=$warning}
+    elseif ($currentTask.Spec -ilike 'kubernetes-dashboard.spec') {$UpdateAvailable=$warning}
 
     $warning="Warning: Cannot detect correlating tags from the repo provided."
     if (($currentTask.Spec -ilike 'bluez-tools.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
@@ -3869,7 +3905,6 @@ function CheckURLHealth {
     elseif (($currentTask.Spec -ilike 'python-geomet.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
     elseif (($currentTask.Spec -ilike 'python-pyjsparser.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
     elseif (($currentTask.Spec -ilike 'python-ruamel-yaml.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning+"Also, see "+"https://github.com/commx/ruamel-yaml/archive/refs/tags/%{version}.tar.gz"}
-    elseif (($currentTask.Spec -ilike 'rubygem-aws-sdk-s3.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
     elseif (($currentTask.Spec -ilike 'sqlite2.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
     elseif (($currentTask.Spec -ilike 'tornado.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
 
@@ -3879,6 +3914,7 @@ function CheckURLHealth {
     $warning="Info: Source0 contains a VMware internal url address."
     if ($currentTask.Spec -ilike 'abupdate.spec') {$UpdateAvailable=$warning}
     elseif ($currentTask.Spec -ilike 'ant-contrib.spec') {$UpdateAvailable=$warning}
+    elseif ($currentTask.Spec -ilike 'basic.spec') {$UpdateAvailable=$warning}
     elseif ($currentTask.Spec -ilike 'build-essential.spec') {$UpdateAvailable=$warning}
     elseif ($currentTask.Spec -ilike 'ca-certificates.spec') {$UpdateAvailable=$warning}
     elseif ($currentTask.Spec -ilike 'distrib-compat.spec') {$UpdateAvailable=$warning}
@@ -3891,6 +3927,7 @@ function CheckURLHealth {
     elseif ($currentTask.Spec -ilike 'photon-release.spec') {$UpdateAvailable=$warning}
     elseif ($currentTask.Spec -ilike 'photon-repos.spec') {$UpdateAvailable=$warning}
     elseif ($currentTask.Spec -ilike 'photon-upgrade.spec') {$UpdateAvailable=$warning}
+    elseif ($currentTask.Spec -ilike 'rubygem-async-io.spec') {$UpdateAvailable=$warning}
     elseif ($currentTask.Spec -ilike 'shim-signed.spec') {$UpdateAvailable=$warning}
     elseif ($currentTask.Spec -ilike 'stig-hardening.spec') {$UpdateAvailable=$warning}
 
@@ -4298,37 +4335,37 @@ function GenerateUrlHealthReports {
     $PackagesMaster = $null
 
     if ($GeneratePh3URLHealthReport) {
-        Write-Host "Preparing data for Photon OS 3.0 ..."
+        Write-Output "Preparing data for Photon OS 3.0 ..."
         GitPhoton -release "3.0" -SourcePath $SourcePath
         $Packages3 = ParseDirectory -SourcePath $SourcePath -PhotonDir "photon-3.0"
     }
     if ($GeneratePh4URLHealthReport) {
-        Write-Host "Preparing data for Photon OS 4.0 ..."
+        Write-Output "Preparing data for Photon OS 4.0 ..."
         GitPhoton -release "4.0" -SourcePath $SourcePath
         $Packages4 = ParseDirectory -SourcePath $SourcePath -PhotonDir "photon-4.0"
     }
     if ($GeneratePh5URLHealthReport) {
-        Write-Host "Preparing data for Photon OS 5.0 ..."
+        Write-Output "Preparing data for Photon OS 5.0 ..."
         GitPhoton -release "5.0" -SourcePath $SourcePath
         $Packages5 = ParseDirectory -SourcePath $SourcePath -PhotonDir "photon-5.0"
     }
     if ($GeneratePh6URLHealthReport) {
-        Write-Host "Preparing data for Photon OS 6.0 ..."
+        Write-Output "Preparing data for Photon OS 6.0 ..."
         GitPhoton -release "6.0" -SourcePath $SourcePath
         $Packages6 = ParseDirectory -SourcePath $SourcePath -PhotonDir "photon-6.0"
     }
     if ($GeneratePhCommonURLHealthReport) {
-        Write-Host "Preparing data for Photon OS Common ..."
+        Write-Output "Preparing data for Photon OS Common ..."
         GitPhoton -release "common" -SourcePath $SourcePath
         $PackagesCommon = ParseDirectory -SourcePath $SourcePath -PhotonDir "photon-common"
     }
     if ($GeneratePhDevURLHealthReport) {
-        Write-Host "Preparing data for Photon OS Development ..."
+        Write-Output "Preparing data for Photon OS Development ..."
         GitPhoton -release "dev" -SourcePath $SourcePath
         $PackagesDev = ParseDirectory -SourcePath $SourcePath -PhotonDir "photon-dev"
     }
     if ($GeneratePhMasterURLHealthReport) {
-        Write-Host "Preparing data for Photon OS Master ..."
+        Write-Output "Preparing data for Photon OS Master ..."
         GitPhoton -release "master" -SourcePath $SourcePath
         $PackagesMaster = ParseDirectory -SourcePath $SourcePath -PhotonDir "photon-master"
     }
@@ -4345,7 +4382,7 @@ function GenerateUrlHealthReports {
 
     if ($checkUrlHealthTasks.Count -gt 0) {
         if ($Script:UseParallel) {
-            Write-Host "Starting parallel URL health report generation for applicable versions ..."
+            Write-Output "Starting parallel URL health report generation for applicable versions ..."
             # Pre-capture all necessary function definitions and data once
             $FunctionDefinitions = @{
                 CheckURLHealth = (Get-Command 'CheckURLHealth' -ErrorAction SilentlyContinue).Definition
@@ -4365,7 +4402,7 @@ function GenerateUrlHealthReports {
                 # Safely reference variables from the parent scope
                 $TaskConfig = $_
 
-                Write-host "Generating URLHealth report for $($TaskConfig.Name) ..."
+                Write-Output "Generating URLHealth report for $($TaskConfig.Name) ..."
                 $outputFileName = "photonos-urlhealth-$($TaskConfig.Release)_$((Get-Date).ToString("yyyyMMddHHmm"))"
                 $outputFilePath = Join-Path -Path $sourcePath -ChildPath "$outputFileName.prn"
 
@@ -4384,7 +4421,7 @@ function GenerateUrlHealthReports {
 
                     # Safely reference variables from the parent scope
                     $currentPackage = $_
-                    Write-Host "Processing $($currentPackage.name) ..."
+                    Write-Output "Processing $($currentPackage.name) ..."
                     [system.string](CheckURLHealth -currentTask $currentPackage -SourcePath $using:ParallelContext.SourcePath -AccessToken $using:ParallelContext.AccessToken -outputfile $using:outputFilePath -photonDir $using:TaskConfig.PhotonDir)
                 } -ThrottleLimit $ThrottleLimit
 
@@ -4403,12 +4440,12 @@ function GenerateUrlHealthReports {
             }
         } else {
             # Fallback to sequential processing
-            Write-Host "Starting sequential URL health report generation for applicable versions..."
+            Write-Output "Starting sequential URL health report generation for applicable versions..."
             $checkUrlHealthTasks | ForEach-Object {
                 # Safely reference variables from the parent scope
                 $TaskConfig = $_
 
-                Write-host "Generating URLHealth report for $($TaskConfig.Name) ..."
+                Write-Output "Generating URLHealth report for $($TaskConfig.Name) ..."
                 $outputFileName = "photonos-urlhealth-$($TaskConfig.Release)_$((Get-Date).ToString("yyyyMMddHHmm"))"
                 $outputFilePath = Join-Path -Path $sourcePath -ChildPath "$outputFileName.prn"
 
@@ -4419,36 +4456,36 @@ function GenerateUrlHealthReports {
                 $processedCount = 0
                 foreach ($currentPackage in $TaskConfig.Packages) {
                     $processedCount++
-                    Write-Host "Processing [$processedCount/$packageCount] $($currentPackage.name) ..."
+                    Write-Output "Processing [$processedCount/$packageCount] $($currentPackage.name) ..."
                     $result = [system.string](CheckURLHealth -currentTask $currentPackage -SourcePath $SourcePath -AccessToken $accessToken -outputfile $outputFilePath -photonDir $TaskConfig.PhotonDir)
-                    Write-Host "  -> Done: $($currentPackage.name)"
+                    Write-Output "  -> Done: $($currentPackage.name)"
                     $results += $result
                 }
-                Write-Host "DEBUG: Finished processing all packages for $($TaskConfig.Name)"
-                Write-Host "DEBUG: Results count: $($results.Count)"
+                Write-Output "DEBUG: Finished processing all packages for $($TaskConfig.Name)"
+                Write-Output "DEBUG: Results count: $($results.Count)"
                 $sb = New-Object System.Text.StringBuilder
                 $sb.AppendLine("Spec,Source0 original,Modified Source0 for url health check,UrlHealth,UpdateAvailable,UpdateURL,HealthUpdateURL,Name,SHAName,UpdateDownloadName") | Out-Null
-                Write-Host "DEBUG: Filtering results..."
+                Write-Output "DEBUG: Filtering results..."
                 # Filter and collect matching items, then sort
                 $filteredResults = $results | ForEach-Object {
                     $pattern = '^(.*?)([a-zA-Z0-9][a-zA-Z0-9._-]*\.spec.*)$'
                     if ($_ -match $pattern) { $matches[2] }
                 } | Sort-Object
-                Write-Host "DEBUG: Filtered results count: $($filteredResults.Count)"
+                Write-Output "DEBUG: Filtered results count: $($filteredResults.Count)"
                 # Append sorted results to StringBuilder
                 $filteredResults | ForEach-Object {
                     $sb.AppendLine($_) | Out-Null
                 }
-                Write-Host "DEBUG: Writing to file: $outputFilePath"
+                Write-Output "DEBUG: Writing to file: $outputFilePath"
                 [System.IO.File]::AppendAllText($outputFilePath, $sb.ToString())
-                Write-Host "DEBUG: Finished writing to file for $($TaskConfig.Name)"
+                Write-Output "DEBUG: Finished writing to file for $($TaskConfig.Name)"
             }
         }
     }
     else {
-        write-host "No URL health reports were enabled or no package data found."
+        Write-Output "No URL health reports were enabled or no package data found."
     }
-    Write-Host "DEBUG: GenerateUrlHealthReports function completed"
+    Write-Output "DEBUG: GenerateUrlHealthReports function completed"
 }
 
 
@@ -4486,11 +4523,11 @@ foreach ($cmdName in $requiredCommands) {
 Write-Output "Required commands found."
 
 Write-Output "Checking PowerShellCookbook module..."
-try { 
+try {
     $useCultureCmd = Get-Command use-culture -ErrorAction Stop
     Write-Output "PowerShellCookbook module is available."
 }
-catch { 
+catch {
     Write-Output "PowerShellCookbook module not found. Attempting to install..."
     try {
         Install-Module -Name PowerShellCookbook -AllowClobber -Force -Confirm:$false -Scope CurrentUser -ErrorAction Stop
@@ -4506,7 +4543,7 @@ catch {
 # parallel processing support
 Write-Output "Checking parallel processing support..."
 $Script:UseParallel = $PSVersionTable.PSVersion.Major -ge 7 -and $PSVersionTable.PSVersion.Minor -ge 4
-# $Script:UseParallel = $false
+$Script:UseParallel = $false
 Write-Output "Parallel processing: $($Script:UseParallel)"
 
 # Get current CPU usage and core count (cross-platform)
