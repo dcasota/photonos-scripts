@@ -2720,88 +2720,61 @@ function CheckURLHealth {
          }
     }
 
-    # Check UpdateAvailable by rubygems.org tags detection
+    # Check UpdateAvailable by rubygems.org API (JSON-based, more reliable than HTML scraping)
     elseif ($Source0 -ilike '*rubygems.org*')
     {
-        # Extract SourceTagURL from Source0
-        $SourceTagURL = [System.String]::Concat(('https://rubygems.org/gems/'),$currentTask.gem_name,"/versions")
-        try{
-            $Names = invoke-restmethod -uri $SourceTagURL -TimeoutSec 10 -ErrorAction Stop
-            if ($Names) {
+        # Use RubyGems API for reliable version detection
+        # API endpoint: https://rubygems.org/api/v1/versions/{gem_name}.json
+        $gemName = $currentTask.gem_name
+        if ([string]::IsNullOrEmpty($gemName)) {
+            # Fallback: extract gem name from spec filename (e.g., rubygem-aws-sdk-s3.spec -> aws-sdk-s3)
+            $gemName = $currentTask.spec -replace '^rubygem-', '' -replace '\.spec$', ''
+        }
 
-                $Names = ($Names -split 'a href=') -split '>'
-                $Names = ($Names | foreach-object { if ($_ | select-string -pattern '</a' -simplematch) {$_}}) -replace '"',""
-                $Names = $Names -replace '</a'
+        $apiUrl = "https://rubygems.org/api/v1/versions/$gemName.json"
 
-                $Names = $Names  -replace $replace,""
+        try {
+            $versions = Invoke-RestMethod -Uri $apiUrl -TimeoutSec 10 -ErrorAction Stop
 
-                $Names = $Names  -replace "-java",""
-                $Names = $Names  -replace "-i386-mswin32",""
-                $Names = $Names  -replace "-x86-mswin32",""
-                $Names = $Names  -replace "-x64-mingw-ucrt",""
-                $Names = $Names  -replace "-x86-mingw32",""
-                $Names = $Names  -replace "-x64-mingw32",""
-                $Names = $Names  -replace "-x86-linux",""
-                $Names = $Names  -replace "-x86_64-linux",""
-                $Names = $Names  -replace "-x86_64-darwin",""
-                $Names = $Names  -replace "-arm64-darwin",""
-                $Names = $Names  -replace "-arm-linux",""
-                $Names = $Names  -replace "mswin32",""
-                $Names = $Names  -replace "-aarch64-linux",""
+            if ($versions -and $versions.Count -gt 0) {
+                # Filter out prerelease versions (those with prerelease = true)
+                $stableVersions = $versions | Where-Object { $_.prerelease -eq $false }
 
-                if ($ignore) {$Names = $Names | foreach-object { $NamesObj = $_; foreach ($item in $ignore) {if (!($NamesObj | select-string -pattern $item -simplematch)) {$NamesObj}}}}
+                if ($stableVersions -and $stableVersions.Count -gt 0) {
+                    # Get the latest stable version (first in the list - API returns sorted by created_at desc)
+                    $latestVersion = $stableVersions[0]
+                    $NameLatest = $latestVersion.number
 
-                # remove versions developer, release candidates, alpha versions, preview versions and versions without numbers
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'candidate' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-alpha' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-beta' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.beta' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.0' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.1' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.2' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.3' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.4' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc1' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc2' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc3' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc4' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-preview.' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-dev.' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-pre1' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.pre1' -simplematch)) {$_}}
-
-                $Names = $Names  -replace "v",""
-                $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
-                $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
-
-                # get name latest
-                if (!([string]::IsNullOrEmpty($Names -join ''))) {$NameLatest = Get-LatestName -Names $Names}
+                    # Construct download URL
+                    $SourceTagURL = "https://rubygems.org/downloads/$gemName-$NameLatest.gem"
+                }
             }
         }
-        catch{$NameLatest=""}
+        catch {
+            $NameLatest = ""
+            Write-Warning "RubyGems API call failed for $gemName : $_"
+        }
 
         if ($NameLatest -ne "")
         {
-            if ($version -is [PSCustomObject]) {[string]$version = [string]$version.version}
+            if ($version -is [PSCustomObject]) { [string]$version = [string]$version.version }
 
-            $result = Compare-VersionStrings -Namelatest $Namelatest -Version $version
+            $result = Compare-VersionStrings -Namelatest $NameLatest -Version $version
 
             if ($null -eq $result) {
-                Write-Host "Comparison for $currentTask.spec between $NameLatest and $version failed due to invalid input."
+                Write-Output "Comparison for $($currentTask.spec) between $NameLatest and $version failed due to invalid input."
             }
             elseif ($result -gt 0) {
-                # Write-Host "$Namelatest is higher than $version"
                 $UpdateAvailable = $NameLatest
+                $UpdateURL = $SourceTagURL
             }
             elseif ($result -lt 0) {
-                # Write-Host "$version is higher than $Namelatest"
-                $UpdateAvailable = "Warning: "+$currentTask.spec+" Source0 version "+$version+" is higher than detected latest version "+$NameLatest+" ."
+                $UpdateAvailable = "Warning: " + $currentTask.spec + " Source0 version " + $version + " is higher than detected latest version " + $NameLatest + " ."
             }
             else {
-                # Write-Host "$Namelatest is equal to $version"
                 $UpdateAvailable = "(same version)"
             }
-         }
+        }
     }
 
     # Check UpdateAvailable by sourceforge tags detection
@@ -3036,11 +3009,6 @@ function CheckURLHealth {
                 }
             }
         }
-    }
-    elseif ($Source0 -ilike '*rubygems.org*')
-    {
-        # TODO
-
     }
     # Check UpdateAvailable by freedesktop tags detection
     elseif (($Source0 -ilike '*freedesktop.org*') -or ($Source0 -ilike '*https://gitlab.*'))
