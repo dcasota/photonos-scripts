@@ -482,7 +482,7 @@ gstreamer-plugins-base.spec,https://gstreamer.freedesktop.org/src/gst-plugins-ba
 gtest.spec,https://github.com/google/googletest/archive/refs/tags/release-%{version}.tar.gz,https://github.com/google/googletest.git
 gtk3.spec,https://github.com/GNOME/gtk/archive/refs/tags/%{version}.tar.gz,https://github.com/GNOME/gtk.git
 guile.spec,https://ftp.gnu.org/gnu/guile/guile-%{version}.tar.gz
-haproxy.spec,https://www.haproxy.org/download/2.2/src/haproxy-%{version}.tar.gz
+haproxy.spec,https://www.haproxy.org/download/3.2/src/haproxy-%{version}.tar.gz,http://git.haproxy.org/git/haproxy-3.2.git/
 haproxy-dataplaneapi.spec,https://github.com/haproxytech/dataplaneapi/archive/refs/tags/v%{version}.tar.gz,https://github.com/haproxytech/dataplaneapi.git
 harfbuzz.spec,,https://github.com/harfbuzz/harfbuzz.git
 haveged.spec,https://github.com/jirka-h/haveged/archive/refs/tags/v%{version}.tar.gz,https://github.com/jirka-h/haveged.git
@@ -494,6 +494,7 @@ http-parser.spec,https://github.com/nodejs/http-parser/archive/refs/tags/v%{vers
 i2c-tools.spec,https://git.kernel.org/pub/scm/utils/i2c-tools/i2c-tools.git/snapshot/i2c-tools-%{version}.tar.gz,https://git.kernel.org/pub/scm/utils/i2c-tools/i2c-tools.git
 icu.spec,https://github.com/unicode-org/icu/releases/download/release-73-1/icu4c-73_1-src.tgz,https://github.com/unicode-org/icu.git
 imagemagick.spec,https://github.com/ImageMagick/ImageMagick/archive/refs/tags/%{version}.tar.gz,https://github.com/ImageMagick/ImageMagick.git
+ImageMagick.spec,https://github.com/ImageMagick/ImageMagick/archive/refs/tags/%{version}.tar.gz,https://github.com/ImageMagick/ImageMagick.git
 inih.spec,https://github.com/benhoyt/inih/archive/refs/tags/r%{version}.tar.gz,https://github.com/benhoyt/inih.git,,,"r"
 intltool.spec,https://launchpad.net/intltool/trunk/%{version}/+download/intltool-%{version}.tar.gz
 ipcalc.spec,https://gitlab.com/ipcalc/ipcalc/-/archive/%{version}/ipcalc-%{version}.tar.gz,https://gitlab.com/ipcalc/ipcalc.git
@@ -524,6 +525,7 @@ libarchive.spec,https://github.com/libarchive/libarchive/archive/refs/tags/v%{ve
 libatomic_ops.spec,https://github.com/ivmai/libatomic_ops/archive/refs/tags/v%{version}.tar.gz,https://github.com/ivmai/libatomic_ops.git
 libcap.spec,,https://git.kernel.org/pub/scm/libs/libcap/libcap.git
 libcap-ng.spec,https://github.com/stevegrubb/libcap-ng/archive/refs/tags/v%{version}.tar.gz,https://github.com/stevegrubb/libcap-ng.git
+libclc.spec,https://github.com/llvm/llvm-project/releases/download/llvmorg-%{version}/libclc-%{version}.src.tar.xz
 libconfig.spec,https://github.com/hyperrealm/libconfig/archive/refs/tags/v%{version}.tar.gz,https://github.com/hyperrealm/libconfig.git
 libdaemon.spec,https://0pointer.de/lennart/projects/libdaemon/libdaemon-%{version}.tar.gz
 libdb.spec,https://github.com/berkeleydb/libdb/archive/refs/tags/v%{version}.tar.gz,https://github.com/berkeleydb/libdb.git
@@ -552,6 +554,7 @@ libnetfilter_queue.spec,https://www.netfilter.org/projects/libnetfilter_queue/fi
 libnfnetlink.spec,https://wwww.netfilter.org/projects/libnfnetlink/files/libnfnetlink-%{version}.tar.bz2
 libnftnl.spec,https://wwww.netfilter.org/projects/libnftnl/files/libnftnl-%{version}.tar.xz
 libnl.spec,https://github.com/thom311/libnl/archive/refs/tags/libnl%{version}.tar.gz,https://github.com/thom311/libnl.git
+libnss-ato.spec,https://github.com/donapieppo/libnss-ato/archive/refs/tags/v%{version}.tar.gz,https://github.com/donapieppo/libnss-ato.git
 librdkafka.spec,https://github.com/confluentinc/librdkafka/archive/refs/tags/v%{version}.tar.gz,https://github.com/confluentinc/librdkafka.git
 librelp.spec,https://download.rsyslog.com/librelp/librelp-%{version}.tar.gz
 librsync.spec,https://github.com/librsync/librsync/archive/refs/tags/v%{version}.tar.gz,https://github.com/librsync/librsync.git
@@ -561,6 +564,7 @@ libselinux.spec,https://github.com/SELinuxProject/selinux/archive/refs/tags/libs
 libsigc++.spec,https://github.com/libsigcplusplus/libsigcplusplus/archive/refs/tags/%{version}.tar.gz,https://github.com/libsigcplusplus/libsigcplusplus.git
 libslirp.spec,https://gitlab.freedesktop.org/slirp/libslirp/-/archive/v%{version}/libslirp-v%{version}.tar.gz,https://gitlab.freedesktop.org/slirp/libslirp.git
 libsoup.spec,https://github.com/GNOME/libsoup/archive/refs/tags/%{version}.tar.gz,https://github.com/GNOME/libsoup.git
+libssh.spec,https://www.libssh.org/files/0.11/libssh-%{version}.tar.xz,https://git.libssh.org/projects/libssh.git
 libssh2.spec,https://github.com/libssh2/libssh2/archive/refs/tags/libssh2-%{version}.tar.gz,https://github.com/libssh2/libssh2.git
 libtalloc.spec,https://gitlab.com/samba-team/devel/samba/-/archive/talloc-%{version}/talloc-%{version}.tar.gz
 libtar.spec,https://github.com/tklauser/libtar/archive/refs/tags/v%{version}.tar.gz,https://github.com/tklauser/libtar.git
@@ -590,8 +594,10 @@ Linux-PAM.spec,https://github.com/linux-pam/linux-pam/archive/refs/tags/Linux-PA
 linuxptp.spec,https://github.com/richardcochran/linuxptp/archive/refs/tags/v%{version}.tar.gz,https://github.com/richardcochran/linuxptp.git
 lksctp-tools.spec,https://github.com/sctp/lksctp-tools/archive/refs/tags/v%{version}.tar.gz,https://github.com/sctp/lksctp-tools.git
 lldb.spec,https://github.com/llvm/llvm-project/releases/download/llvmorg-%{version}/lldb-%{version}.src.tar.xz,https://github.com/llvm/llvm-project.git,,,"llvmorg-"
+lldpad.spec,https://ftp-osl.osuosl.org/pub/open-lldp/open-lldp-%{version}.tar.gz
 llvm.spec,https://github.com/llvm/llvm-project/releases/download/llvmorg-%{version}/llvm-%{version}.src.tar.xz,https://github.com/llvm/llvm-project.git,,,"llvmorg-"
 lm-sensors.spec,https://github.com/lm-sensors/lm-sensors/archive/refs/tags/V%{version}.tar.gz,https://github.com/lm-sensors/lm-sensors.git
+log4cpp.spec,https://deac-riga.dl.sourceforge.net/project/log4cpp/log4cpp-1.1.x%20%28new%29/log4cpp-1.1/log4cpp-%{version}.tar.gz?viasf=1,https://git.code.sf.net/p/log4cpp/codegit.git
 lshw.spec,https://github.com/lyonel/lshw/archive/refs/tags/%{version}.tar.gz,https://github.com/lyonel/lshw.git,,,"B."
 lsof.spec,https://github.com/lsof-org/lsof/archive/refs/tags/%{version}.tar.gz,https://github.com/lsof-org/lsof.git
 lttng-tools.spec,https://github.com/lttng/lttng-tools/archive/refs/tags/v%{version}.tar.gz,https://github.com/lttng/lttng-tools.git
@@ -622,10 +628,11 @@ net-tools.spec,https://github.com/ecki/net-tools/archive/refs/tags/v%{version}.t
 newt.spec,https://github.com/mlichvar/newt/archive/refs/tags/r%{version}.tar.gz,https://github.com/mlichvar/newt.git
 nftables.spec,https://www.netfilter.org/projects/nftables/files/nftables-%{version}.tar.xz
 nginx.spec,https://github.com/nginx/nginx/archive/refs/tags/release-%{version}.tar.gz,https://github.com/nginx/nginx.git
-nmap.spec,https://nmap.org/dist/nmap-%{version}.tar.bz2
+nmap.spec,https://nmap.org/dist/nmap-%{version}.tar.bz2,https://github.com/nmap/nmap.git
 nss-pam-ldapd.spec,https://github.com/arthurdejong/nss-pam-ldapd/archive/refs/tags/%{version}.tar.gz,https://github.com/arthurdejong/nss-pam-ldapd.git
 ntp.spec,https://github.com/ntp-project/ntp/archive/refs/tags/NTP_%{version}.tar.gz,https://github.com/ntp-project/ntp.git,,,"NTP_"
 nodejs.spec,https://github.com/nodejs/node/archive/refs/tags/v%{version}.tar.gz,https://github.com/nodejs/node.git
+open-sans-fonts.spec,https://ftp.debian.org/debian/pool/main/f/fonts-open-sans/fonts-open-sans_%{version}.orig.tar.xz,https://github.com/googlefonts/opensans.git
 openjdk8.spec,https://github.com/openjdk/jdk8u/archive/refs/tags/jdk8u%{subversion}-ga.tar.gz,https://github.com/openjdk/jdk8u.git,,,"jdk8u,-ga"
 openjdk10.spec,https://github.com/openjdk/jdk10u/archive/refs/tags/jdk-%{version}-ga.tar.gz,https://github.com/openjdk/jdk10u.git,,,"jdk-10*"
 openjdk11.spec,https://github.com/openjdk/jdk11u/archive/refs/tags/jdk-%{version}.tar.gz,https://github.com/openjdk/jdk11u.git,,,"jdk-11*"
@@ -642,6 +649,10 @@ passwdqc.spec,https://github.com/openwall/passwdqc/archive/refs/tags/PASSWDQC_%{
 password-store.spec,https://github.com/zx2c4/password-store/archive/refs/tags/%{version}.tar.gz,https://github.com/zx2c4/password-store.git
 patch.spec,https://ftp.gnu.org/gnu/patch/patch-%{version}.tar.gz
 pciutils.spec,https://www.kernel.org/pub/software/utils/pciutils/pciutils-%{version}.tar.gz,https://git.kernel.org/pub/scm/utils/pciutils/pciutils.git
+pcre.spec,https://netix.dl.sourceforge.net/project/pcre/pcre/%{version}/pcre-%{version}.tar.bz2,https://github.com/PCRE2Project/pcre1.git
+pcre2.spec,https://github.com/PCRE2Project/pcre2/releases/download/pcre2-%{version}/pcre2-%{version}.tar.gz,https://github.com/PCRE2Project/pcre2.git
+pcstat.spec,https://github.com/tobert/pcstat/archive/refs/tags/v%{version}.tar.gz,https://github.com/tobert/pcstat.git
+perftest.spec,https://github.com/linux-rdma/perftest/archive/refs/tags/%{version}.tar.gz,https://github.com/linux-rdma/perftest.git
 perl.spec,https://github.com/Perl/perl5/archive/refs/tags/v%{version}.tar.gz,https://github.com/Perl/perl5.git
 perl-URI.spec,https://github.com/libwww-perl/URI/archive/refs/tags/v%{version}.tar.gz,https://github.com/libwww-perl/URI.git
 perl-CGI.spec,https://github.com/leejo/CGI.pm/archive/refs/tags/v%{version}.tar.gz,https://github.com/leejo/CGI.pm.git
@@ -680,6 +691,7 @@ pth.spec,https://ftp.gnu.org/gnu/pth/pth-%{version}.tar.gz,https://gitlab.com/ps
 pycurl.spec,https://github.com/pycurl/pycurl/archive/refs/tags/REL_%{version}.tar.gz,https://github.com/pycurl/pycurl.git,,,"REL_"
 pygobject.spec,https://gitlab.gnome.org/GNOME/pygobject/-/archive/%{version}/pygobject-%{version}.tar.gz,https://gitlab.gnome.org/GNOME/pygobject.git
 python3-distro.spec,https://github.com/python-distro/distro/archive/refs/tags/v%{version}.tar.gz,https://github.com/python-distro/distro.git
+python3-gcovr.spec,https://github.com/gcovr/gcovr/archive/refs/tags/%{version}.tar.gz,https://github.com/gcovr/gcovr.git
 python3-pip.spec,https://github.com/pypa/pip/archive/refs/tags/%{version}.tar.gz,https://github.com/pypa/pip.git
 python3-pyroute2.spec,https://github.com/svinota/pyroute2/archive/refs/tags/%{version}.tar.gz,https://github.com/svinota/pyroute2.git
 python3-setuptools.spec,https://github.com/pypa/setuptools/archive/refs/tags/v%{version}.tar.gz,https://github.com/pypa/setuptools.git
@@ -741,6 +753,7 @@ python-future.spec,https://github.com/PythonCharmers/python-future/archive/refs/
 python-futures.spec,https://github.com/agronholm/pythonfutures/archive/refs/tags/%{version}.tar.gz,https://github.com/agronholm/pythonfutures.git
 python-geomet.spec,https://github.com/geomet/geomet/archive/refs/tags/%{version}.tar.gz,https://github.com/geomet/geomet.git
 python-gevent.spec,https://github.com/gevent/gevent/archive/refs/tags/%{version}.tar.gz,https://github.com/gevent/gevent.git
+python-google-auth.spec,https://github.com/googleapis/google-auth-library-python/archive/refs/tags/v%{version}.tar.gz,https://github.com/googleapis/google-auth-library-python.git
 python-graphviz.spec,https://github.com/xflr6/graphviz/archive/refs/tags/%{version}.tar.gz,https://github.com/xflr6/graphviz.git
 python-greenlet.spec,https://github.com/python-greenlet/greenlet/archive/refs/tags/%{version}.tar.gz,https://github.com/python-greenlet/greenlet.git
 python-hatch-fancy-pypi-readme.spec,https://github.com/hynek/hatch-fancy-pypi-readme/archive/refs/tags/%{version}.tar.gz,https://github.com/hynek/hatch-fancy-pypi-readme.git
@@ -761,6 +774,7 @@ python-jmespath.spec,https://github.com/jmespath/jmespath.py/archive/refs/tags/%
 python-jsonpointer.spec,https://github.com/stefankoegl/python-json-pointer/archive/refs/tags/v%{version}.tar.gz,https://github.com/stefankoegl/python-json-pointer.git
 python-jsonpatch.spec,https://github.com/stefankoegl/python-json-patch/archive/refs/tags/v%{version}.tar.gz,https://github.com/stefankoegl/python-json-patch.git
 python-jsonschema.spec,https://github.com/python-jsonschema/jsonschema/archive/refs/tags/v%{version}.tar.gz,https://github.com/python-jsonschema/jsonschema.git
+python-kubernetes.spec,https://github.com/kubernetes-client/python/archive/refs/tags/v%{version}.tar.gz,https://github.com/kubernetes-client/python.git
 python-looseversion.spec,https://github.com/effigies/looseversion/archive/refs/tags/%{version}.tar.gz,https://github.com/effigies/looseversion.git
 python-M2Crypto.spec,https://gitlab.com/m2crypto/m2crypto/-/archive/%{version}/m2crypto-%{version}.tar.gz,https://gitlab.com/m2crypto/m2crypto.git
 python-macholib.spec,https://github.com/ronaldoussoren/macholib/archive/refs/tags/v%{version}.tar.gz,https://github.com/ronaldoussoren/macholib.git
@@ -780,12 +794,15 @@ python-numpy.spec,https://github.com/numpy/numpy/archive/refs/tags/v%{version}.t
 python-oauthlib.spec,https://github.com/oauthlib/oauthlib/archive/refs/tags/v%{version}.tar.gz,https://github.com/oauthlib/oauthlib.git
 python-packaging.spec,https://github.com/pypa/packaging/archive/refs/tags/%{version}.tar.gz,https://github.com/pypa/packaging.git
 python-pam.spec,https://github.com/FirefighterBlu3/python-pam/archive/refs/tags/v%{version}.tar.gz,https://github.com/FirefighterBlu3/python-pam.git
+python-paramiko.spec,https://github.com/paramiko/paramiko/archive/refs/tags/%{version}.tar.gz,https://github.com/paramiko/paramiko.git
 python-pathspec.spec,https://github.com/cpburnz/python-pathspec/archive/refs/tags/v%{version}.tar.gz,https://github.com/cpburnz/python-pathspec.git
 python-pbr.spec,https://tarballs.openstack.org/pbr/pbr-%{version}.tar.gz,https://opendev.org/openstack/pbr.git,,python-pbr
 python-pg8000.spec,https://codeberg.org/tlocke/pg8000/archive/%{version}.tar.gz,https://codeberg.org/tlocke/pg8000.git
 python-pefile.spec,https://github.com/erocarrera/pefile/archive/refs/tags/v%{version}.tar.gz,https://github.com/erocarrera/pefile.git
 python-pexpect.spec,https://github.com/pexpect/pexpect/archive/refs/tags/%{version}.tar.gz,https://github.com/pexpect/pexpect.git
+python-pika.spec,https://github.com/pika/pika/releases/download/%{version}/pika-%{version}.tar.gz,https://github.com/pika/pika.git
 python-pip.spec,https://github.com/pypa/pip/archive/refs/tags/%{version}.tar.gz,https://github.com/pypa/pip.git
+python-platformdirs.spec,https://github.com/tox-dev/platformdirs/archive/refs/tags/%{version}.tar.gz,https://github.com/tox-dev/platformdirs.git
 python-pluggy.spec,https://github.com/pytest-dev/pluggy/archive/refs/tags/%{version}.tar.gz,https://github.com/pytest-dev/pluggy.git
 python-ply.spec,https://github.com/dabeaz/ply/archive/refs/tags/%{version}.tar.gz,https://github.com/dabeaz/ply.git
 python-portalocker.spec,https://github.com/wolph/portalocker/archive/refs/tags/v%{version}.tar.gz,https://github.com/wolph/portalocker.git
@@ -813,6 +830,7 @@ python-pyinstaller.spec,https://github.com/pyinstaller/pyinstaller/archive/refs/
 python-pyinstaller-hooks-contrib.spec,https://github.com/pyinstaller/pyinstaller-hooks-contrib/archive/refs/tags/v%{version}.tar.gz,https://github.com/pyinstaller/pyinstaller-hooks-contrib.git
 python-pyjsparser.spec,https://github.com/PiotrDabkowski/pyjsparser/archive/refs/tags/v%{version}.tar.gz,https://github.com/PiotrDabkowski/pyjsparser.git
 python-pyjwt.spec,https://github.com/jpadilla/pyjwt/archive/refs/tags/%{version}.tar.gz,https://github.com/jpadilla/pyjwt.git
+python-PyJWT.spec,https://github.com/jpadilla/pyjwt/archive/refs/tags/%{version}.tar.gz,https://github.com/jpadilla/pyjwt.git
 python-PyNaCl.spec,https://github.com/pyca/pynacl/archive/refs/tags/%{version}.tar.gz,https://github.com/pyca/pynacl.git
 python-pygobject.spec,https://gitlab.gnome.org/GNOME/pygobject/-/archive/%{version}/pygobject-%{version}.tar.gz,https://gitlab.gnome.org/GNOME/pygobject.git
 python-pyOpenSSL.spec,https://github.com/pyca/pyopenssl/archive/refs/tags/%{version}.tar.gz,https://github.com/pyca/pyopenssl.git
@@ -825,9 +843,11 @@ python-pyvim.spec,https://github.com/prompt-toolkit/pyvim/archive/refs/tags/%{ve
 python-pyvmomi.spec,https://github.com/vmware/pyvmomi/archive/refs/tags/v%{version}.tar.gz,https://github.com/vmware/pyvmomi.git
 python-pywbem.spec,https://github.com/pywbem/pywbem/archive/refs/tags/%{version}.tar.gz,https://github.com/pywbem/pywbem.git
 python-pytz.spec,https://github.com/stub42/pytz/archive/refs/tags/release_%{version}.tar.gz,https://github.com/stub42/pytz.git
+python-pytz-deprecation-shim.spec,https://github.com/pganssle/pytz-deprecation-shim/archive/refs/tags/%{version}.tar.gz,https://github.com/pganssle/pytz-deprecation-shim.git
 python-pyYaml.spec,https://github.com/yaml/pyyaml/archive/refs/tags/%{version}.tar.gz,https://github.com/yaml/pyyaml.git
 python-PyYAML.spec,https://github.com/yaml/pyyaml/archive/refs/tags/%{version}.tar.gz,https://github.com/yaml/pyyaml.git
 python-requests.spec,https://github.com/psf/requests/archive/refs/tags/v%{version}.tar.gz,https://github.com/psf/requests.git
+python-requests-oauthlib.spec,https://github.com/requests/requests-oauthlib/archive/refs/tags/v%{version}.tar.gz,https://github.com/requests/requests-oauthlib.git
 python-requests-unixsocket.spec,https://github.com/msabramo/requests-unixsocket/archive/refs/tags/v%{version}.tar.gz,https://github.com/msabramo/requests-unixsocket.git
 python-requests-toolbelt.spec,https://github.com/requests/toolbelt/archive/refs/tags/%{version}.tar.gz,https://github.com/requests/toolbelt.git
 python-resolvelib.spec,https://github.com/sarugaku/resolvelib/archive/refs/tags/%{version}.tar.gz,https://github.com/sarugaku/resolvelib.git
@@ -881,6 +901,7 @@ python-zope.interface.spec,https://github.com/zopefoundation/zope.interface/arch
 pyYaml.spec,https://github.com/yaml/pyyaml/archive/refs/tags/%{version}.tar.gz,https://github.com/yaml/pyyaml.git
 rabbitmq.spec,https://github.com/rabbitmq/rabbitmq-server/archive/refs/tags/v%{version}.tar.gz,https://github.com/rabbitmq/rabbitmq-server.git
 rabbitmq3.10.spec,https://github.com/rabbitmq/rabbitmq-server/archive/refs/tags/v%{version}.tar.gz,https://github.com/rabbitmq/rabbitmq-server.git
+raspberrypi-firmware.spec,https://github.com/raspberrypi/firmware/archive/refs/tags/%{version}.tar.gz,https://github.com/raspberrypi/firmware.git
 re2.spec,https://github.com/google/re2/archive/refs/tags/%{version}.tar.gz,https://github.com/google/re2.git
 redis.spec,https://github.com/redis/redis/archive/refs/tags/%{version}.tar.gz,https://github.com/redis/redis.git
 repmgr.spec,https://github.com/EnterpriseDB/repmgr/archive/refs/tags/v%{version}.tar.gz,https://github.com/EnterpriseDB/repmgr.git
@@ -889,6 +910,7 @@ repmgr13.spec,https://github.com/EnterpriseDB/repmgr/archive/refs/tags/v%{versio
 repmgr14.spec,https://github.com/EnterpriseDB/repmgr/archive/refs/tags/v%{version}.tar.gz,https://github.com/EnterpriseDB/repmgr.git
 repmgr15.spec,https://github.com/EnterpriseDB/repmgr/archive/refs/tags/v%{version}.tar.gz,https://github.com/EnterpriseDB/repmgr.git
 repmgr16.spec,https://github.com/EnterpriseDB/repmgr/archive/refs/tags/v%{version}.tar.gz,https://github.com/EnterpriseDB/repmgr.git
+repmgr17.spec,https://github.com/EnterpriseDB/repmgr/archive/refs/tags/v%{version}.tar.gz,https://github.com/EnterpriseDB/repmgr.git
 rng-tools.spec,https://github.com/nhorman/rng-tools/archive/refs/tags/v%{version}.tar.gz,https://github.com/nhorman/rng-tools.git
 rpcsvc-proto.spec,https://github.com/thkukuk/rpcsvc-proto/archive/refs/tags/v%{version}.tar.gz,https://github.com/thkukuk/rpcsvc-proto.git
 rpm.spec,https://github.com/rpm-software-management/rpm/archive/refs/tags/rpm-%{version}-release.tar.gz,https://github.com/rpm-software-management/rpm.git,,rpm,"rpm-,-release"
@@ -896,6 +918,7 @@ rrdtool.spec,https://github.com/oetiker/rrdtool-1.x/archive/refs/tags/v%{version
 rsync.spec,https://github.com/RsyncProject/rsync/archive/refs/tags/v%{version}.tar.gz,https://github.com/RsyncProject/rsync.git
 rt-tests.spec,https://git.kernel.org/pub/scm/utils/rt-tests/rt-tests.git/snapshot/rt-tests-%{version}.tar.gz,https://git.kernel.org/pub/scm/utils/rt-tests/rt-tests.git
 ruby.spec,https://github.com/ruby/ruby/archive/refs/tags/v%{version}.tar.gz,https://github.com/ruby/ruby.git,,,"@"
+rubygem-aws-sdk-s3.spec,https://rubygems.org/downloads/aws-sdk-s3-%{version}.gem
 rust.spec,https://github.com/rust-lang/rust/archive/refs/tags/%{version}.tar.gz,https://github.com/rust-lang/rust.git
 rsyslog.spec,https://github.com/rsyslog/rsyslog/archive/refs/tags/v%{version}.tar.gz,https://github.com/rsyslog/rsyslog.git
 rt-tests.spec,,https://git.kernel.org/pub/scm/utils/rt-tests/rt-tests.git
@@ -1526,10 +1549,10 @@ function CheckURLHealth {
     $ignore=@()
 
     # In case of debug: uncomment and debug from here
-    if ($currentTask.spec -ilike 'whois.spec')
-    {pause}
-    else
-    {return}
+    # if ($currentTask.spec -ilike 'rubygem-aws-sdk-s3.spec')
+    # {pause}
+    # else
+    #{return}
 
     $Source0 = $currentTask.Source0
 
@@ -2746,7 +2769,8 @@ function CheckURLHealth {
                     $NameLatest = $latestVersion.number
 
                     # Construct download URL
-                    $SourceTagURL = "https://rubygems.org/downloads/$gemName-$NameLatest.gem"
+                    $UpdateURL = "https://rubygems.org/downloads/$gemName-$NameLatest.gem"
+                    $HealthUpdateURL = urlhealth($UpdateURL)
                 }
             }
         }
@@ -2766,7 +2790,6 @@ function CheckURLHealth {
             }
             elseif ($result -gt 0) {
                 $UpdateAvailable = $NameLatest
-                $UpdateURL = $SourceTagURL
             }
             elseif ($result -lt 0) {
                 $UpdateAvailable = "Warning: " + $currentTask.spec + " Source0 version " + $version + " is higher than detected latest version " + $NameLatest + " ."
@@ -4511,7 +4534,7 @@ catch {
 # parallel processing support
 Write-Output "Checking parallel processing support..."
 $Script:UseParallel = $PSVersionTable.PSVersion.Major -ge 7 -and $PSVersionTable.PSVersion.Minor -ge 4
-$Script:UseParallel = $false
+# $Script:UseParallel = $false
 Write-Output "Parallel processing: $($Script:UseParallel)"
 
 # Get current CPU usage and core count (cross-platform)
