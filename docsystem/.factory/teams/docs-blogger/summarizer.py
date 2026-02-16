@@ -29,14 +29,32 @@ except ImportError:
 DEFAULT_BRANCHES = ['3.0', '4.0', '5.0', '6.0', 'common', 'master']
 XAI_API_URL = 'https://api.x.ai/v1/chat/completions'
 BATCH_SIZE = 20
+REPO_COMMIT_URL = 'https://github.com/vmware/photon/commit'
+
+SYSTEM_PROMPT = """\
+You are a technical writer producing scannable, user-friendly monthly \
+changelogs for Photon OS. Follow these rules strictly:
+
+1. Use bullet points (- ) for EVERY individual change. Never write dense \
+   paragraphs. One change per bullet.
+2. For every commit reference, use a Markdown link: \
+   [short description](https://github.com/vmware/photon/commit/<full_hash>). \
+   Never put bare hashes inline in prose.
+3. Use Keep a Changelog categories: Added, Changed, Fixed, Security, Removed.
+4. Start with a 3-sentence TL;DR, then an Action Required callout.
+5. Write for an external alliance partner audience, not kernel developers. \
+   Explain WHY a change matters, not just what changed.
+6. Do NOT include a "Looking Ahead" section. Do not speculate about future \
+   development.\
+"""
 
 
-def query_grok(prompt, api_key, model='grok-4-0709', max_tokens=4096):
+def query_grok(prompt, api_key, model='grok-4-0709', max_tokens=16384):
     """Send a prompt to the xAI/Grok API and return the response text."""
     payload = {
         'model': model,
         'messages': [
-            {'role': 'system', 'content': 'You are a helpful assistant.'},
+            {'role': 'system', 'content': SYSTEM_PROMPT},
             {'role': 'user', 'content': prompt},
         ],
         'temperature': 0.7,
@@ -69,45 +87,48 @@ def get_single_summary(branch, year, month, commits, api_key, model,
         commits_str += f"Content (diff): {diff_preview}...\n\n"
 
     prompt = f"""
-Provide a comprehensive monthly development summary for Photon OS branch \
-'{branch}' in {year}-{month:02d}{batch_label}.
+Generate a monthly changelog for Photon OS branch '{branch}' in \
+{year}-{month:02d}{batch_label}.
 
-Structure your response with EXACTLY these sections:
+The commit URL base is: {REPO_COMMIT_URL}
 
-## Overview
-Summarise the month's activity: number of commits, major themes, key contributors.
+Structure your response with EXACTLY these sections in this order:
 
-## Infrastructure & Build Changes
-Build system, CI/CD, toolchain, and packaging changes.
+## TL;DR
+Three sentences maximum. Summarise: how many commits, the single biggest \
+theme, and the most critical action a user should take.
 
-## Core System Updates
-Kernel, package manager (tdnf), and core component changes.
+## Action Required
+> **Breaking changes, removals, and mandatory updates go here.**
 
-## Security & Vulnerability Fixes
-CVE patches, security hardening, and vulnerability fixes. List CVE IDs where available.
+Use a Markdown blockquote (>) for each action item. If packages were \
+removed, state the package name, what it provided, and what to migrate to. \
+If a kernel update requires a reboot, say so. If there are no breaking \
+changes, write "> None this month."
 
-## Container & Runtime Updates
-Container technology, Docker, Kubernetes, and runtime changes.
+## Security
+Bullet list. One CVE per bullet. Format each as:
+- **package-name** version: Fix [CVE-YYYY-NNNNN](https://nvd.nist.gov/vuln/detail/CVE-YYYY-NNNNN) — \
+one-sentence plain-English impact. \
+([commit](https://github.com/vmware/photon/commit/FULL_HASH))
 
-## Package Management
-Package additions, version bumps, and removals.
+## Added
+Bullet list of new features, new packages, new capabilities. Link commits.
 
-## Network & Storage Updates
-Networking stack, storage drivers, and filesystem changes.
+## Changed
+Bullet list of version upgrades, config changes, build system modifications. \
+Link commits. State old version → new version where known.
 
-## Pull Request Analysis
-Significant PR merges inferred from Reviewed-on / Change-ID metadata.
+## Fixed
+Bullet list of bug fixes that are NOT security-related. Link commits.
 
-## User Impact Assessment
-### Production Systems
-Changes affecting production deployments.
-### Development Workflows
-Changes affecting developers and contributors.
-### Recommended Actions
-Steps users should consider taking.
+## Removed
+Bullet list of packages, features, or configs that were removed. Explain \
+the user impact of each removal.
 
-## Looking Ahead
-Preview of upcoming development focus areas based on trends.
+## Contributors
+Bullet list of contributors this month, derived from Signed-off-by and \
+Reviewed-by fields.
 
 Commits:
 {commits_str}
@@ -128,14 +149,21 @@ def get_ai_summary(branch, year, month, commits, api_key, model):
                                is_batch=True))
 
     combine_prompt = f"""
-Combine the following sub-summaries into a single comprehensive monthly \
-development summary for Photon OS branch '{branch}' in {year}-{month:02d}.
+Combine the following sub-summaries into a single monthly changelog for \
+Photon OS branch '{branch}' in {year}-{month:02d}.
 
-Keep the mandatory section structure: Overview, Infrastructure & Build \
-Changes, Core System Updates, Security & Vulnerability Fixes, Container \
-& Runtime Updates, Package Management, Network & Storage Updates, Pull \
-Request Analysis, User Impact Assessment (with Production Systems, \
-Development Workflows, Recommended Actions sub-sections), Looking Ahead.
+The commit URL base is: {REPO_COMMIT_URL}
+
+Keep EXACTLY this section order: TL;DR, Action Required, Security, Added, \
+Changed, Fixed, Removed, Contributors.
+
+Rules:
+- Deduplicate entries that appear in multiple batches.
+- Keep bullet-point format throughout. No dense paragraphs.
+- Every commit reference must be a Markdown link to the full commit URL.
+- The TL;DR must be exactly 3 sentences.
+- Action Required uses blockquote (>) format.
+- Do NOT add a "Looking Ahead" or speculation section.
 
 Sub-summaries:
 {chr(10).join(sub_summaries)}
@@ -154,22 +182,29 @@ def generate_markdown(branch, year, month, ai_summary, output_dir):
                              f'photon-{branch}-monthly-{year}-{month:02d}.md')
 
     front_matter = f"""---
-title: "Photon OS {branch} Monthly Summary: {month_name} {year}"
+title: "Photon OS {branch} Changelog: {month_name} {year}"
 date: "{now}"
 draft: false
 author: "docs-lecturer-blogger"
-tags: ["photon-os", "{branch}", "monthly-summary", "development"]
-categories: ["development-updates", "branch-{branch}"]
-summary: "Comprehensive monthly summary of Photon OS {branch} development activities including commits, pull requests, security updates, and user impact analysis."
+tags: ["photon-os", "{branch}", "changelog", "security", "monthly"]
+categories: ["changelog", "branch-{branch}"]
+summary: "Monthly changelog for Photon OS {branch} — security fixes, package updates, breaking changes, and recommended actions for {month_name} {year}."
 ---
 """
 
-    heading = (f'# Photon OS {branch} Monthly Summary: '
+    heading = (f'# Photon OS {branch} Changelog: '
                f'{month_name} {year}\n\n')
-    footer = (f'\n---\n**Monthly Summary Generated**: {now} '
-              f'by docs-lecturer-blogger\n'
-              f'**Repository**: https://github.com/vmware/photon\n'
-              f'**Branch**: {branch}\n'
+    footer = (f'\n---\n'
+              f'*This changelog was generated from '
+              f'[vmware/photon](https://github.com/vmware/photon) '
+              f'commit history by an AI summarizer. '
+              f'All commit hashes and CVE IDs are verifiable against the '
+              f'source repository. If you find inaccuracies, please '
+              f'[open an issue]'
+              f'(https://github.com/dcasota/photonos-scripts/issues).*\n\n'
+              f'**Generated**: {now} | '
+              f'**Branch**: [{branch}]'
+              f'(https://github.com/vmware/photon/tree/{branch}) | '
               f'**Period**: {year}-{month:02d}\n')
 
     with open(file_path, 'w', encoding='utf-8') as f:
