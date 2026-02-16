@@ -1,0 +1,39 @@
+# Build artifacts
+/build/
+/obj/
+*.o
+*.a
+*.so
+*.dylib
+
+# Executable
+/spagat-librarian
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile.cmake
+compile_commands.json
+
+# Database files (local testing)
+*.db
+.spagat.db
+
+# Downloaded dependencies and models
+/_deps/
+/models/
+*.gguf
+*.pllm
+
+# Packages
+*.tar.gz
+*.rpm
+*.deb
