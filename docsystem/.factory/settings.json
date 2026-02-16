@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Execute|Create|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$FACTORY_PROJECT_DIR/.factory/hooks/validate_hugo_frontmatter.py\""
+          }
+        ]
+      }
+    ]
+  }
+}
