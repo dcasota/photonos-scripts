@@ -1,0 +1,101 @@
+# automake
+
+Makefile.in
+
+*.guess
+*.sub
+*.status
+*.log
+*.pc
+*.patch
+*.diff
+
+tags
+
+# autoconf
+/autom4te.cache
+/aclocal.m4
+/compile
+/configure
+/depcomp
+/install-sh
+/missing
+/stamp-h1
+/m4
+ltmain.sh
+libtool
+ar-lib
+
+/solv/.deps
+/solv/.libs
+/common/.deps
+/common/.libs
+/client/.deps
+/client/.libs
+/tools/cli/.deps
+/tools/cli/.libs
+/tools/cli/tdnf
+/tools/cli/lib/.deps
+/tools/cli/lib/.libs
+/tests/atconfig
+/tests/testsuite
+/tests/package.m4
+tests/testroot/
+tests/testsuite.dir/
+/python/.deps
+/python/.libs
+/python/setup.py
+__pycache__/
+.pytest_cache/
+
+# Object files
+*.o
+*.ko
+*.obj
+*.elf
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Libraries
+*.lib
+*.a
+*.la
+*.lo
+
+# Shared objects (inc. Windows DLLs)
+*.dll
+*.so
+*.so.*
+*.dylib
+
+# Executables
+*.exe
+*.out
+*.app
+*.i*86
+*.x86_64
+*.hex
+
+#generated files
+*.pc
+
+# build directory
+build*/
+bin/tdnf
+
+# cmake files
+*.cmake
+CMakeFiles/
+CMakeCache.txt
+
+# cores
+core*
+
+# vi backup
+*.swp
+
+# Apple forks
+._*
+

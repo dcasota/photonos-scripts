@@ -1,0 +1,45 @@
+#!/bin/bash
+
+## file:    mount-small-cache.sh
+## brief:   mounts an intentionally small directory for out-of-diskspace tests.
+
+if [ ${EUID} -ne 0 ]; then
+  echo "Script must be run as root." 1>&2
+  exit 1
+fi
+
+## must match the path set in config.json.in.
+small_cache_path="@CMAKE_CURRENT_BINARY_DIR@/small_cache/"
+quota_size="1M"
+
+check_err() {
+  local rc=$?
+  if [ $rc -ne 0 ]; then
+    echo "$1" 1>&2
+    exit $rc
+  fi
+}
+
+vdisk="virtual_disks"
+ext4_fn="${vdisk}/fs.ext4"
+
+echo "Creating mount point ..."
+if mountpoint ${small_cache_path} &> /dev/null; then
+  umount ${small_cache_path}
+  check_err "ERROR: umount ${small_cache_path}"
+  sync
+fi
+rm -rf ${vdisk} ${small_cache_path}
+mkdir -p ${vdisk} ${small_cache_path}
+check_err "ERROR: failed to mkdir ${vdisk} ${small_cache_path}"
+
+echo "Creating tmpfs ..."
+dd if=/dev/zero of=${ext4_fn} bs=${quota_size} count=1
+check_err "ERROR: dd failed"
+
+mkfs.ext4 ${ext4_fn}
+check_err "ERROR: mkfs.ext4 failed"
+
+echo "Mounting tmpfs at ${small_cache_path} ..."
+mount -o loop,rw,usrquota,grpquota ${ext4_fn} ${small_cache_path}
+check_err "ERROR: failed to mount exf4 tmpfs"

@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+
+set -e
+
+## brief:   Build tdnf rpms using tdnf.spec
+
+if [ ${EUID} -ne 0 ]; then
+  echo "Script must be run as root." 1>&2
+  exit 1
+fi
+
+arch="$(uname -m)"
+project_name="@PROJECT_NAME@"
+project_dir="@CMAKE_SOURCE_DIR@"
+rpmdir="${1:-rpms}"
+
+cd "${project_dir}"
+project_version="@PROJECT_VERSION@"
+rpm_build_path="${project_dir}/rpmbuild"
+full_name="${project_name}-${project_version}"
+specfile="${project_name}".spec
+
+build_tools=(git tar gzip file findutils)
+build_deps=$(rpmspec --parse $specfile | grep ^BuildRequires: | awk '{ print $2; }')
+
+if ! rpm -q ${build_tools[@]} ${build_deps} > /dev/null; then
+  echo "Installing required build tools"
+  if grep -qw ID=photon /etc/os-release; then
+    tdnf install -y --refresh ${build_tools[@]} ${build_deps}
+  elif grep -qw ID=fedora /etc/os-release; then
+    dnf install -y --refresh ${build_tools[@]} ${build_deps}
+  fi
+fi
+
+# https://github.com/actions/checkout/issues/760
+git config --global --add safe.directory $PWD
+
+echo "Creating source tarball"
+tar zcf ${full_name}.tar.gz --transform "s,^,${full_name}/," $(git ls-files)
+
+rm -rf "${rpm_build_path}"
+mkdir -p "${rpm_build_path}"/{SOURCES,BUILD,RPMS/"${arch}"}
+
+mv -f "${full_name}".tar.gz "${rpm_build_path}"/SOURCES
+
+echo "Building ${full_name} RPMs"
+dist=$(rpm -q glibc | cut -d'.' -f3)
+rpmbuild --nocheck -D "dist .${dist}" -D "_topdir ${rpm_build_path}" -bb "${specfile}"
+
+mkdir -p ${rpmdir}
+mv -f "${rpm_build_path}"/RPMS/"${arch}"/*.rpm ${rpmdir}
+echo -e "\n\n--- tdnf rpms are available at $(realpath ${rpmdir}) ---\n\n"
