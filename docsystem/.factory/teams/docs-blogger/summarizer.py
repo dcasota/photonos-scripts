@@ -14,9 +14,13 @@ import sys
 import sqlite3
 import requests
 import json
+import hashlib
 import argparse
 from datetime import datetime, timezone
 from collections import defaultdict
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from db_schema import init_db as schema_init_db
 
 try:
     from tqdm import tqdm
@@ -30,21 +34,6 @@ DEFAULT_BRANCHES = ['3.0', '4.0', '5.0', '6.0', 'common', 'master']
 XAI_API_URL = 'https://api.x.ai/v1/chat/completions'
 BATCH_SIZE = 20
 REPO_COMMIT_URL = 'https://github.com/vmware/photon/commit'
-
-SUMMARIES_SCHEMA = """
-CREATE TABLE IF NOT EXISTS summaries (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    branch TEXT NOT NULL,
-    year INTEGER NOT NULL,
-    month INTEGER NOT NULL,
-    commit_count INTEGER NOT NULL,
-    model TEXT NOT NULL,
-    file_path TEXT,
-    changelog_md TEXT NOT NULL,
-    generated_at TEXT NOT NULL,
-    UNIQUE(branch, year, month)
-)
-"""
 
 SYSTEM_PROMPT = """\
 You are a technical writer producing scannable, user-friendly monthly \
@@ -84,12 +73,6 @@ def query_grok(prompt, api_key, model='grok-4-0709', max_tokens=16384):
     return response.json()['choices'][0]['message']['content'].strip()
 
 
-def ensure_summaries_table(conn):
-    """Create the summaries table if it does not exist."""
-    conn.execute(SUMMARIES_SCHEMA)
-    conn.commit()
-
-
 def has_summary(cur, branch, year, month):
     """Return True if a summary already exists for this branch/year/month."""
     cur.execute(
@@ -115,6 +98,97 @@ def store_summary(conn, branch, year, month, commit_count, model,
     """, (branch, year, month, commit_count, model, file_path, changelog_md,
           now))
     conn.commit()
+
+
+def check_summaries(db_path, branches):
+    """Report summaries table status. Returns JSON-serialisable dict."""
+    status = {'db_path': db_path, 'exists': os.path.exists(db_path),
+              'branches': {}, 'total': 0}
+    if not status['exists']:
+        return status
+    conn, cur = schema_init_db(db_path)
+    for branch in branches:
+        cur.execute("""
+            SELECT year, month, commit_count, model,
+                   length(changelog_md), file_path, generated_at
+            FROM summaries WHERE branch = ?
+            ORDER BY year, month
+        """, (branch,))
+        rows = cur.fetchall()
+        entries = []
+        for r in rows:
+            entries.append({
+                'period': f'{r[0]}-{r[1]:02d}',
+                'commits': r[2], 'model': r[3],
+                'md_bytes': r[4], 'file_path': r[5],
+                'generated_at': r[6],
+            })
+        status['branches'][branch] = {
+            'count': len(entries),
+            'entries': entries,
+        }
+        status['total'] += len(entries)
+    conn.close()
+    return status
+
+
+def export_summaries(db_path, output_dir, branches):
+    """Write all changelogs from DB to disk. Returns manifest dict."""
+    conn, cur = schema_init_db(db_path)
+    manifest = {'exported': [], 'errors': []}
+    for branch in branches:
+        cur.execute("""
+            SELECT year, month, changelog_md
+            FROM summaries WHERE branch = ?
+            ORDER BY year, month
+        """, (branch,))
+        for year, month, changelog_md in cur.fetchall():
+            file_dir = os.path.join(output_dir, str(year), f'{month:02d}')
+            os.makedirs(file_dir, exist_ok=True)
+            file_path = os.path.join(
+                file_dir, f'photon-{branch}-monthly-{year}-{month:02d}.md')
+            try:
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(changelog_md)
+                conn.execute(
+                    'UPDATE summaries SET file_path = ? '
+                    'WHERE branch = ? AND year = ? AND month = ?',
+                    (file_path, branch, year, month))
+                manifest['exported'].append(file_path)
+                print(f'Exported: {file_path}', file=sys.stderr)
+            except Exception as exc:
+                manifest['errors'].append(f'{branch}/{year}-{month:02d}: {exc}')
+    conn.commit()
+    conn.close()
+    return manifest
+
+
+def sync_check(db_path, branches):
+    """Compare DB changelogs against files on disk. Returns drift report."""
+    conn, cur = schema_init_db(db_path)
+    report = {'in_sync': [], 'file_missing': [], 'content_mismatch': [],
+              'orphan_in_db': []}
+    for branch in branches:
+        cur.execute("""
+            SELECT year, month, file_path, changelog_md
+            FROM summaries WHERE branch = ?
+        """, (branch,))
+        for year, month, file_path, changelog_md in cur.fetchall():
+            key = f'{branch}/{year}-{month:02d}'
+            if not file_path or not os.path.exists(file_path):
+                report['file_missing'].append(key)
+                continue
+            with open(file_path, 'r', encoding='utf-8') as f:
+                disk_content = f.read()
+            db_hash = hashlib.sha256(changelog_md.encode()).hexdigest()[:12]
+            disk_hash = hashlib.sha256(disk_content.encode()).hexdigest()[:12]
+            if db_hash == disk_hash:
+                report['in_sync'].append(key)
+            else:
+                report['content_mismatch'].append({
+                    'key': key, 'db_hash': db_hash, 'disk_hash': disk_hash})
+    conn.close()
+    return report
 
 
 def get_single_summary(branch, year, month, commits, api_key, model,
@@ -280,15 +354,39 @@ def main():
                         help='xAI model identifier')
     parser.add_argument('--force', action='store_true',
                         help='Regenerate even if summary exists in DB')
+    parser.add_argument('--check', action='store_true',
+                        help='Report summaries table status without generating')
+    parser.add_argument('--export', action='store_true',
+                        help='Export all DB changelogs to files (no API call)')
+    parser.add_argument('--sync-check', action='store_true',
+                        help='Compare DB changelogs against files on disk')
     args = parser.parse_args()
+
+    db_path = os.path.abspath(args.db_path)
+    output_dir = os.path.abspath(args.output_dir)
+
+    if args.check:
+        status = check_summaries(db_path, args.branches)
+        print(json.dumps(status, indent=2))
+        return
+
+    if args.sync_check:
+        report = sync_check(db_path, args.branches)
+        print(json.dumps(report, indent=2))
+        return
+
+    if args.export:
+        if not os.path.exists(db_path):
+            print(json.dumps({'error': f'Database not found: {db_path}'}))
+            sys.exit(1)
+        manifest = export_summaries(db_path, output_dir, args.branches)
+        print(json.dumps(manifest, indent=2))
+        return
 
     api_key = os.getenv('XAI_API_KEY')
     if not api_key:
         print(json.dumps({'error': 'XAI_API_KEY environment variable not set'}))
         sys.exit(1)
-
-    db_path = os.path.abspath(args.db_path)
-    output_dir = os.path.abspath(args.output_dir)
 
     if not os.path.exists(db_path):
         print(json.dumps({'error': f'Database not found: {db_path}'}))
@@ -308,9 +406,7 @@ def main():
 
     since_date = datetime(args.since_year, 1, 1, tzinfo=timezone.utc)
 
-    conn = sqlite3.connect(db_path)
-    cur = conn.cursor()
-    ensure_summaries_table(conn)
+    conn, cur = schema_init_db(db_path)
     manifest = {'generated': [], 'skipped': [], 'errors': []}
 
     for branch in args.branches:

@@ -74,6 +74,35 @@ skipped branches, and any errors:
 
 Confirm `errors` is empty and all expected files appear in `generated`.
 
+### 4. Check what summaries exist in the DB
+
+```bash
+python3 "$FACTORY_PROJECT_DIR/.factory/skills/photon-summarize/summarizer.py" \
+  --db-path "$FACTORY_PROJECT_DIR/photon_commits.db" \
+  --check
+```
+
+### 5. Export changelogs from DB to files (no API call)
+
+Restores `.md` files from the DB if they were deleted:
+
+```bash
+python3 "$FACTORY_PROJECT_DIR/.factory/skills/photon-summarize/summarizer.py" \
+  --db-path "$FACTORY_PROJECT_DIR/photon_commits.db" \
+  --output-dir "$FACTORY_PROJECT_DIR/content/blog" \
+  --export
+```
+
+### 6. Check DB-to-file sync
+
+Detects drift between DB content and files on disk:
+
+```bash
+python3 "$FACTORY_PROJECT_DIR/.factory/skills/photon-summarize/summarizer.py" \
+  --db-path "$FACTORY_PROJECT_DIR/photon_commits.db" \
+  --sync-check
+```
+
 ## Arguments Reference
 
 | Flag | Default | Description |
@@ -84,13 +113,24 @@ Confirm `errors` is empty and all expected files appear in `generated`.
 | `--since-year` | `2021` | Start year for summaries |
 | `--months` | none (all) | Optional range `YYYY-MM:YYYY-MM` |
 | `--model` | `grok-4-0709` | xAI model identifier |
+| `--force` | off | Regenerate even if summary exists in DB |
+| `--check` | off | Report summaries table status (no generation) |
+| `--export` | off | Write all DB changelogs to files (no API call) |
+| `--sync-check` | off | Compare DB changelogs against files on disk |
+
+## Database Storage
+
+All generated changelogs are stored in the `summaries` table of
+`photon_commits.db` alongside the raw commits. The table schema is
+defined in `db_schema.py` (shared with `importer.py`). Fields:
+`branch`, `year`, `month`, `commit_count`, `model`, `file_path`,
+`changelog_md` (full Hugo markdown), `generated_at`.
 
 ## Blog Post Structure
 
-Each generated post follows the mandatory template from `blogger.md`:
+Each generated post uses Keep a Changelog categories:
 
 - Hugo front matter: `title`, `date`, `author`, `tags`, `categories`, `summary`
-- Sections: Overview, Infrastructure & Build Changes, Core System Updates,
-  Security & Vulnerability Fixes, Container & Runtime Updates, Package
-  Management, Network & Storage Updates, Pull Request Analysis, User
-  Impact Assessment, Looking Ahead
+- Sections: TL;DR, Action Required, Security, Added, Changed, Fixed,
+  Removed, Contributors
+- AI disclaimer footer with verifiable commit/CVE links

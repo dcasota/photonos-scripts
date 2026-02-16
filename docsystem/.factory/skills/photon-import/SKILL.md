@@ -63,14 +63,24 @@ Confirm the JSON output shows `total_new >= 0` and no errors. If
 | `--since-date` | none (all history) | Only import commits after this date |
 | `--check` | off | Report DB status without importing |
 
+## Database Schema
+
+The importer creates the full database schema (shared with `summarizer.py`
+via `db_schema.py`), including both the `commits` and `summaries` tables.
+This means either script can run first on a fresh database.
+
 ## Output
 
-JSON object to stdout:
+JSON object to stdout. The `--check` mode also reports summaries status:
 ```json
 {
   "branches": {
-    "3.0": {"new": 42, "skipped": 1500},
-    "5.0": {"new": 10, "skipped": 800}
+    "3.0": {"commits": 1500, "latest": "2025-01-15T..."},
+    "5.0": {"commits": 800, "latest": "2025-01-20T..."}
+  },
+  "summaries": {
+    "3.0": {"count": 12},
+    "5.0": {"count": 8}
   },
   "total_new": 52
 }

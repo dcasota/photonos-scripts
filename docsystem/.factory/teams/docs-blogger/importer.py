@@ -17,6 +17,9 @@ import json
 import argparse
 from datetime import datetime
 
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from db_schema import init_db as schema_init_db
+
 REPO_URL = 'https://github.com/vmware/photon.git'
 DEFAULT_BRANCHES = ['3.0', '4.0', '5.0', '6.0', 'common', 'master']
 
@@ -99,47 +102,36 @@ def parse_commit_output(output):
 
 
 def init_db(db_path):
-    """Create the commits table if it does not exist."""
-    conn = sqlite3.connect(db_path)
-    cur = conn.cursor()
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS commits (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            branch TEXT NOT NULL,
-            commit_hash TEXT NOT NULL,
-            change_id TEXT,
-            message TEXT,
-            commit_datetime TEXT,
-            signed_off_by TEXT,
-            reviewed_on TEXT,
-            reviewed_by TEXT,
-            tested_by TEXT,
-            content TEXT,
-            UNIQUE(branch, commit_hash)
-        )
-    ''')
-    conn.commit()
+    """Create both commits and summaries tables via shared schema."""
+    conn, _ = schema_init_db(db_path)
     return conn
 
 
 def check_db(db_path, branches):
     """Report database status without importing. Returns JSON-serialisable dict."""
-    status = {'db_path': db_path, 'exists': os.path.exists(db_path), 'branches': {}}
+    status = {'db_path': db_path, 'exists': os.path.exists(db_path),
+              'branches': {}, 'summaries': {}}
     if not status['exists']:
         for b in branches:
-            status['branches'][b] = {'count': 0, 'latest': None}
+            status['branches'][b] = {'commits': 0, 'latest': None}
+            status['summaries'][b] = {'count': 0}
         return status
 
-    conn = sqlite3.connect(db_path)
-    cur = conn.cursor()
+    conn, cur = schema_init_db(db_path)
     for branch in branches:
         cur.execute(
             'SELECT COUNT(*), MAX(commit_datetime) FROM commits WHERE branch = ?',
             (branch,))
         row = cur.fetchone()
         status['branches'][branch] = {
-            'count': row[0] or 0,
+            'commits': row[0] or 0,
             'latest': row[1],
+        }
+        cur.execute(
+            'SELECT COUNT(*) FROM summaries WHERE branch = ?',
+            (branch,))
+        status['summaries'][branch] = {
+            'count': cur.fetchone()[0] or 0,
         }
     conn.close()
     return status
