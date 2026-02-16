@@ -31,6 +31,21 @@ XAI_API_URL = 'https://api.x.ai/v1/chat/completions'
 BATCH_SIZE = 20
 REPO_COMMIT_URL = 'https://github.com/vmware/photon/commit'
 
+SUMMARIES_SCHEMA = """
+CREATE TABLE IF NOT EXISTS summaries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    branch TEXT NOT NULL,
+    year INTEGER NOT NULL,
+    month INTEGER NOT NULL,
+    commit_count INTEGER NOT NULL,
+    model TEXT NOT NULL,
+    file_path TEXT,
+    changelog_md TEXT NOT NULL,
+    generated_at TEXT NOT NULL,
+    UNIQUE(branch, year, month)
+)
+"""
+
 SYSTEM_PROMPT = """\
 You are a technical writer producing scannable, user-friendly monthly \
 changelogs for Photon OS. Follow these rules strictly:
@@ -67,6 +82,39 @@ def query_grok(prompt, api_key, model='grok-4-0709', max_tokens=16384):
     response = requests.post(XAI_API_URL, headers=headers, json=payload)
     response.raise_for_status()
     return response.json()['choices'][0]['message']['content'].strip()
+
+
+def ensure_summaries_table(conn):
+    """Create the summaries table if it does not exist."""
+    conn.execute(SUMMARIES_SCHEMA)
+    conn.commit()
+
+
+def has_summary(cur, branch, year, month):
+    """Return True if a summary already exists for this branch/year/month."""
+    cur.execute(
+        'SELECT 1 FROM summaries WHERE branch = ? AND year = ? AND month = ?',
+        (branch, year, month))
+    return cur.fetchone() is not None
+
+
+def store_summary(conn, branch, year, month, commit_count, model,
+                  file_path, changelog_md):
+    """Insert or replace a changelog in the summaries table."""
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute("""
+        INSERT INTO summaries (branch, year, month, commit_count, model,
+                               file_path, changelog_md, generated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(branch, year, month) DO UPDATE SET
+            commit_count = excluded.commit_count,
+            model = excluded.model,
+            file_path = excluded.file_path,
+            changelog_md = excluded.changelog_md,
+            generated_at = excluded.generated_at
+    """, (branch, year, month, commit_count, model, file_path, changelog_md,
+          now))
+    conn.commit()
 
 
 def get_single_summary(branch, year, month, commits, api_key, model,
@@ -172,7 +220,7 @@ Sub-summaries:
 
 
 def generate_markdown(branch, year, month, ai_summary, output_dir):
-    """Write a Hugo-compatible Markdown blog post and return the file path."""
+    """Write a Hugo-compatible Markdown blog post. Return (file_path, full_md)."""
     month_name = datetime(year, month, 1).strftime('%B')
     now = datetime.now(timezone.utc).isoformat()
 
@@ -207,11 +255,12 @@ summary: "Monthly changelog for Photon OS {branch} — security fixes, package u
               f'(https://github.com/vmware/photon/tree/{branch}) | '
               f'**Period**: {year}-{month:02d}\n')
 
+    full_md = front_matter + '\n' + heading + ai_summary + footer
     with open(file_path, 'w', encoding='utf-8') as f:
-        f.write(front_matter + '\n' + heading + ai_summary + footer)
+        f.write(full_md)
 
     print(f'Generated: {file_path}', file=sys.stderr)
-    return file_path
+    return file_path, full_md
 
 
 def main():
@@ -229,6 +278,8 @@ def main():
                         help='Specific month range YYYY-MM:YYYY-MM (optional)')
     parser.add_argument('--model', default='grok-4-0709',
                         help='xAI model identifier')
+    parser.add_argument('--force', action='store_true',
+                        help='Regenerate even if summary exists in DB')
     args = parser.parse_args()
 
     api_key = os.getenv('XAI_API_KEY')
@@ -259,6 +310,7 @@ def main():
 
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
+    ensure_summaries_table(conn)
     manifest = {'generated': [], 'skipped': [], 'errors': []}
 
     for branch in args.branches:
@@ -298,12 +350,21 @@ def main():
         for year, month in tqdm(sorted_keys,
                                 desc=f'Summarizing {branch}',
                                 unit='month', file=sys.stderr):
+            if not args.force and has_summary(cur, branch, year, month):
+                print(f'Skipping {branch}/{year}-{month:02d} '
+                      f'(already in DB, use --force to regenerate)',
+                      file=sys.stderr)
+                manifest['skipped'].append(f'{branch}/{year}-{month:02d}')
+                continue
+
             commits = groups[(year, month)]
             try:
                 summary = get_ai_summary(branch, year, month, commits,
                                          api_key, args.model)
-                path = generate_markdown(branch, year, month, summary,
-                                         output_dir)
+                path, full_md = generate_markdown(branch, year, month,
+                                                  summary, output_dir)
+                store_summary(conn, branch, year, month, len(commits),
+                              args.model, path, full_md)
                 manifest['generated'].append(path)
             except Exception as exc:
                 err = f'{branch}/{year}-{month:02d}: {exc}'
