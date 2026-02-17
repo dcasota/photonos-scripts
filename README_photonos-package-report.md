@@ -3,62 +3,69 @@
 ## SCRIPT STRUCTURE
 
 ```
-photonos-package-report.ps1 (4,669 lines)
+photonos-package-report.ps1 (~5,022 lines)
 │
 ├── HEADER (Lines 1-58)
 │   ├── Synopsis & Version History
 │   └── Parameter Declarations (13 parameters)
 │
-├── HELPER FUNCTIONS (Lines 60-228)
-│   ├── Invoke-GitWithTimeout    (60-93)    - Git commands with timeout
-│   ├── Get-SpecValue            (96-107)   - Safe spec field extraction
-│   └── ParseDirectory           (109-228)  - Parse .spec files from branch
+├── HELPER FUNCTIONS (Lines 60-253)
+│   ├── Convert-ToBoolean        (60-68)    - Convert string params to bool (-File compat)
+│   ├── Invoke-GitWithTimeout    (83-117)   - Git commands with 600s timeout via Start-Job
+│   ├── Get-SpecValue            (119-130)  - Safe spec field extraction
+│   └── ParseDirectory           (132-253)  - Parse .spec files from branch
 │
-├── CORE FUNCTIONS (Lines 231-1076)
-│   ├── Versioncompare           (231-287)  - Compare version strings
-│   ├── GitPhoton                (289-324)  - Clone/fetch/merge Photon repos
-│   ├── Source0Lookup            (326-890)  - Lookup table for 550+ packages
-│   ├── ModifySpecFile           (892-964)  - Update spec files with new versions
-│   ├── urlhealth                (966-1025) - Check URL HTTP status
-│   └── KojiFedoraProjectLookUp  (1027-1076)- Lookup Fedora Koji packages
+├── CORE FUNCTIONS (Lines 254-1401)
+│   ├── Versioncompare           (254-311)  - Compare version strings
+│   ├── GitPhoton                (312-360)  - Clone/fetch/merge Photon repos
+│   │                                         (delete + re-clone on merge failure)
+│   ├── Source0Lookup            (361-1215) - Lookup table for 848 packages
+│   │                                         (columns: specfile, Source0Lookup, gitSource,
+│   │                                          gitBranch, customRegex, replaceStrings,
+│   │                                          ignoreStrings, isArchived, ArchivationDate)
+│   ├── ModifySpecFile           (1216-1289)- Update spec files with new versions
+│   ├── urlhealth                (1290-1350)- Check URL HTTP status
+│   └── KojiFedoraProjectLookUp  (1351-1401)- Lookup Fedora Koji packages
 │
-├── MAIN PROCESSING FUNCTION (Lines 1079-4394)
-│   └── CheckURLHealth           (1079-4178)- URL health check per package
+├── MAIN PROCESSING FUNCTION (Lines 1403-4553)
+│   └── CheckURLHealth           (1403-4505)- URL health check per package
 │       ├── Version extraction from URLs
-│       ├── Data scraping (GitHub, GitLab, PyPI, RubyGems, etc.)
+│       ├── Data scraping (GitHub, GitLab, PyPI, RubyGems JSON API, etc.)
 │       ├── Update availability detection
+│       ├── GNU FTP mirror fallback (ftp.funet.fi)
 │       └── Spec file modification
-│   └── GenerateUrlHealthReports (4230-4394)- Orchestrates parallel/sequential processing
+│   └── GenerateUrlHealthReports (4555-4699)- Orchestrates parallel/sequential processing
 │
-├── MAIN EXECUTION (Lines 4396-4669)
-│   ├── Initialization           (4396-4478)
+├── MAIN EXECUTION (Lines 4701-5022)
+│   ├── Initialization           (4701-4810)
 │   │   ├── Security protocol setup
 │   │   ├── OS detection
 │   │   ├── Command availability check (git, tar)
 │   │   ├── Module check (PowerShellCookbook)
 │   │   ├── Parallel processing detection
 │   │   ├── CPU/throttle configuration
-│   │   └── Path validation
+│   │   ├── Path validation
+│   │   └── Git safe.directory wildcard (cross-filesystem support)
 │   │
-│   ├── Authentication           (4481-4525)
+│   ├── Authentication           (4812-4870)
 │   │   ├── GitHub token prompt
 │   │   └── GitLab username/token prompt
 │   │
-│   ├── URL Health Reports       (4528-4548)
+│   ├── URL Health Reports       (4872-4892)
 │   │   └── Call GenerateUrlHealthReports()
 │   │
-│   ├── Package Report           (4554-4578)
+│   ├── Package Report           (4894-4930)
 │   │   ├── Git clone/fetch all branches
 │   │   ├── Parse all directories
 │   │   └── Generate package-report.prn
 │   │
-│   ├── Diff Reports             (4580-4656)
+│   ├── Diff Reports             (4932-5008)
 │   │   ├── Common vs Master
 │   │   ├── 5.0 vs 6.0
 │   │   ├── 4.0 vs 5.0
 │   │   └── 3.0 vs 4.0
 │   │
-│   └── Cleanup                  (4658-4669)
+│   └── Cleanup                  (5010-5022)
 │       ├── Clear tokens from memory
 │       └── Remove git credentials
 ```
@@ -185,13 +192,15 @@ photonos-package-report.ps1 (4,669 lines)
 ```
 Main Execution
 │
+├── Convert-ToBoolean()  [applied to all boolean params at startup]
+│
 ├── GenerateUrlHealthReports()
 │   ├── GitPhoton()
-│   │   └── Invoke-GitWithTimeout()
+│   │   └── Invoke-GitWithTimeout()  [600s timeout, delete+re-clone on failure]
 │   ├── ParseDirectory()
 │   │   └── Get-SpecValue()
 │   └── CheckURLHealth()  [parallel or sequential]
-│       ├── Source0Lookup()
+│       ├── Source0Lookup()           [848 packages, 9 columns]
 │       ├── urlhealth()
 │       ├── KojiFedoraProjectLookUp()
 │       ├── Versioncompare()
@@ -224,10 +233,11 @@ Main Execution
 .spec files → ParseDirectory() → Package Objects → CheckURLHealth() → .prn Reports
      │                                                     │
      │                                                     ▼
-     │                                           Source0Lookup() (550+ entries)
+     │                                           Source0Lookup() (848 entries)
      │                                                     │
      │                                                     ▼
-     │                                           Web Scraping (GitHub, PyPI, etc.)
+     │                                           Web Scraping (GitHub, PyPI, RubyGems API,
+     │                                           GitLab, SourceForge, GNU mirrors, etc.)
      │                                                     │
      │                                                     ▼
      └─────────────────────────────────────────→ ModifySpecFile() (optional)
@@ -284,11 +294,12 @@ pwsh -File photonos-package-report.ps1
 
 ## PREREQUISITES
 
-- **Operating System**: Windows 11 (tested), Linux/macOS (cross-platform support in v0.60)
+- **Operating System**: Windows 11 (tested), Linux/WSL/macOS (cross-platform support in v0.60)
 - **PowerShell**: Minimum 5.1, Recommended 7.4+ for parallel processing
 - **Required Commands**: `git`, `tar`
 - **Required Module**: PowerShellCookbook (auto-installed if missing)
 - **API Tokens**: GitHub and GitLab access tokens for API rate limits
+- **Note**: On WSL/cross-filesystem setups, the script automatically adds `git safe.directory '*'` to handle ownership mismatches
 
 ---
 
@@ -297,8 +308,18 @@ pwsh -File photonos-package-report.ps1
 See script header for complete version history. Current version: **0.60**
 
 Key improvements in v0.60:
-- Git timeout handling to prevent hanging
+- Git timeout handling (600s for all operations) to prevent hanging
 - Cross-platform path handling (Windows/Linux/macOS)
-- Security cleanup (clear tokens from memory)
+- Safe git calls (& operator instead of Invoke-Expression)
+- Security cleanup (clear tokens from memory, remove git credentials)
 - Performance improvements (List<T> instead of array +=)
-- Safe spec parsing with null checks
+- Safe spec parsing with Get-SpecValue helper and null checks
+- Convert-ToBoolean for proper -File parameter handling
+- RubyGems version detection via JSON API (replaces HTML scraping)
+- GNU FTP mirror fallback (ftp.funet.fi for ftp.gnu.org)
+- Delete and re-clone on git merge failure
+- Git safe.directory wildcard for WSL/cross-filesystem support
+- Linux compatibility fix for Stop-Job/Remove-Job (no -Force)
+- Test-Path guards before Set-Location after clone
+- Source0Lookup expanded to 848 packages with isArchived/ArchivationDate columns
+- Improved version comparison algorithm (fixes 2.41.3 vs 2.9)
