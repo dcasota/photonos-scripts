@@ -100,11 +100,11 @@ function Invoke-GitWithTimeout {
         $completed = Wait-Job -Job $job -Timeout $TimeoutSeconds
         if ($completed) {
             $result = Receive-Job -Job $job
-            Remove-Job -Job $job -Force
+            Remove-Job -Job $job -ErrorAction SilentlyContinue
             return $result
         } else {
-            Stop-Job -Job $job -Force
-            Remove-Job -Job $job -Force
+            Stop-Job -Job $job -ErrorAction SilentlyContinue
+            Remove-Job -Job $job -ErrorAction SilentlyContinue
             Write-Warning "Git command timed out after $TimeoutSeconds seconds: git $Arguments"
             throw "Git operation timed out"
         }
@@ -1948,11 +1948,15 @@ function CheckURLHealth {
                             } else {
                                 Invoke-GitWithTimeout "clone $SourceTagURL $repoName" -WorkingDirectory $ClonePath -TimeoutSeconds 120 | Out-Null
                                 # the very first time, you receive the origin names and not the version names. From the 2nd run, all is fine.
-                                Set-Location $SourceClonePath
-                                if (!([string]::IsNullOrEmpty($gitBranch))) {
-                                    Invoke-GitWithTimeout "fetch origin $gitBranch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 60 | Out-Null
+                                if (Test-Path $SourceClonePath) {
+                                    Set-Location $SourceClonePath
+                                    if (!([string]::IsNullOrEmpty($gitBranch))) {
+                                        Invoke-GitWithTimeout "fetch origin $gitBranch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 60 | Out-Null
+                                    } else {
+                                        Invoke-GitWithTimeout "fetch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 60 | Out-Null
+                                    }
                                 } else {
-                                    Invoke-GitWithTimeout "fetch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 60 | Out-Null
+                                    Write-Warning "Clone directory not created for $repoName - clone may have failed silently"
                                 }
                             }
                         }
@@ -3278,11 +3282,15 @@ function CheckURLHealth {
                             } else {
                                 Invoke-GitWithTimeout "clone $SourceTagURL $repoName" -WorkingDirectory $ClonePath -TimeoutSeconds 120 | Out-Null
                                 # the very first time, you receive the origin names and not the version names. From the 2nd run, all is fine.
-                                Set-Location $SourceClonePath
-                                if (!([string]::IsNullOrEmpty($gitBranch))) {
-                                    Invoke-GitWithTimeout "fetch origin $gitBranch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 60 | Out-Null
+                                if (Test-Path $SourceClonePath) {
+                                    Set-Location $SourceClonePath
+                                    if (!([string]::IsNullOrEmpty($gitBranch))) {
+                                        Invoke-GitWithTimeout "fetch origin $gitBranch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 60 | Out-Null
+                                    } else {
+                                        Invoke-GitWithTimeout "fetch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 60 | Out-Null
+                                    }
                                 } else {
-                                    Invoke-GitWithTimeout "fetch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 60 | Out-Null
+                                    Write-Warning "Clone directory not created for $repoName - clone may have failed silently"
                                 }
                             }
                         }
@@ -3627,11 +3635,15 @@ function CheckURLHealth {
                             } else {
                                 Invoke-GitWithTimeout "clone $SourceTagURL $repoName" -WorkingDirectory $ClonePath -TimeoutSeconds 120 | Out-Null
                                 # the very first time, you receive the origin names and not the version names. From the 2nd run, all is fine.
-                                Set-Location -Path $SourceClonePath -ErrorAction Stop
-                                if (!([string]::IsNullOrEmpty($gitBranch))) {
-                                    Invoke-GitWithTimeout "fetch origin $gitBranch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 60 | Out-Null
+                                if (Test-Path $SourceClonePath) {
+                                    Set-Location -Path $SourceClonePath -ErrorAction Stop
+                                    if (!([string]::IsNullOrEmpty($gitBranch))) {
+                                        Invoke-GitWithTimeout "fetch origin $gitBranch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 60 | Out-Null
+                                    } else {
+                                        Invoke-GitWithTimeout "fetch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 60 | Out-Null
+                                    }
                                 } else {
-                                    Invoke-GitWithTimeout "fetch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 60 | Out-Null
+                                    Write-Warning "Clone directory not created for $repoName - clone may have failed silently"
                                 }
                             }
                         }
@@ -3654,7 +3666,7 @@ function CheckURLHealth {
                         }
                     }
                     # Run git tag -l and collect output in an array
-                    Set-Location -Path $SourceClonePath -ErrorAction SilentlyContinue
+                    if (Test-Path $SourceClonePath) { Set-Location -Path $SourceClonePath -ErrorAction SilentlyContinue }
                     if ("" -eq $customRegex) {$Names = git tag -l | Where-Object { $_ -match "^$([regex]::Escape($repoName))-" } | ForEach-Object { $_.Trim()}}
                     else {$Names = git tag -l | ForEach-Object { $_.Trim() }}
                     $urlhealth="200"
