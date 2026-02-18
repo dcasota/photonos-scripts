@@ -16,8 +16,18 @@ import requests
 import json
 import hashlib
 import argparse
+import time
 from datetime import datetime, timezone
 from collections import defaultdict
+
+DEBUG = False
+
+
+def debug(msg):
+    """Print debug message with timestamp if DEBUG is enabled."""
+    if DEBUG:
+        ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+        print(f'[DEBUG {ts}] {msg}', file=sys.stderr, flush=True)
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from db_schema import init_db as schema_init_db
@@ -53,8 +63,11 @@ changelogs for Photon OS. Follow these rules strictly:
 """
 
 
-def query_grok(prompt, api_key, model='grok-4-0709', max_tokens=16384):
+def query_grok(prompt, api_key, model='grok-4-0709', max_tokens=16384,
+               timeout=120):
     """Send a prompt to the xAI/Grok API and return the response text."""
+    debug(f'API call starting - model={model}, max_tokens={max_tokens}, '
+          f'prompt_len={len(prompt)}, timeout={timeout}s')
     payload = {
         'model': model,
         'messages': [
@@ -68,9 +81,28 @@ def query_grok(prompt, api_key, model='grok-4-0709', max_tokens=16384):
         'Authorization': f'Bearer {api_key}',
         'Content-Type': 'application/json',
     }
-    response = requests.post(XAI_API_URL, headers=headers, json=payload)
-    response.raise_for_status()
-    return response.json()['choices'][0]['message']['content'].strip()
+    start = time.time()
+    try:
+        response = requests.post(XAI_API_URL, headers=headers, json=payload,
+                                 timeout=timeout)
+        elapsed = time.time() - start
+        debug(f'API response received in {elapsed:.2f}s - status={response.status_code}')
+        response.raise_for_status()
+        result = response.json()['choices'][0]['message']['content'].strip()
+        debug(f'API response parsed successfully - result_len={len(result)}')
+        return result
+    except requests.exceptions.Timeout:
+        elapsed = time.time() - start
+        debug(f'API call TIMED OUT after {elapsed:.2f}s (timeout={timeout}s)')
+        raise
+    except requests.exceptions.ConnectionError as e:
+        elapsed = time.time() - start
+        debug(f'API connection error after {elapsed:.2f}s: {e}')
+        raise
+    except Exception as e:
+        elapsed = time.time() - start
+        debug(f'API call failed after {elapsed:.2f}s: {type(e).__name__}: {e}')
+        raise
 
 
 def has_summary(cur, branch, year, month):
@@ -192,9 +224,10 @@ def sync_check(db_path, branches):
 
 
 def get_single_summary(branch, year, month, commits, api_key, model,
-                       is_batch=False):
+                       is_batch=False, api_timeout=120):
     """Summarize a single batch of commits."""
     batch_label = ' (batch)' if is_batch else ''
+    debug(f'  Building prompt for {len(commits)} commits{batch_label}')
     commits_str = ''
     for c in commits:
         commits_str += f"Commit Hash: {c['commit_hash']}\n"
@@ -255,20 +288,30 @@ Reviewed-by fields.
 Commits:
 {commits_str}
 """
-    return query_grok(prompt, api_key, model)
+    debug(f'  Calling query_grok for single summary ({len(commits)} commits)')
+    return query_grok(prompt, api_key, model, timeout=api_timeout)
 
 
-def get_ai_summary(branch, year, month, commits, api_key, model):
+def get_ai_summary(branch, year, month, commits, api_key, model,
+                   api_timeout=120):
     """Summarize commits, batching if necessary."""
+    debug(f'get_ai_summary: {len(commits)} commits, batch_size={BATCH_SIZE}')
     if len(commits) <= BATCH_SIZE:
-        return get_single_summary(branch, year, month, commits, api_key, model)
+        debug(f'  Single batch - calling get_single_summary directly')
+        return get_single_summary(branch, year, month, commits, api_key, model,
+                                  api_timeout=api_timeout)
 
     sub_summaries = []
+    num_batches = (len(commits) + BATCH_SIZE - 1) // BATCH_SIZE
+    debug(f'  Processing {num_batches} batches')
     for i in range(0, len(commits), BATCH_SIZE):
+        batch_num = i // BATCH_SIZE + 1
         batch = commits[i:i + BATCH_SIZE]
+        debug(f'  Processing batch {batch_num}/{num_batches} '
+              f'({len(batch)} commits)')
         sub_summaries.append(
             get_single_summary(branch, year, month, batch, api_key, model,
-                               is_batch=True))
+                               is_batch=True, api_timeout=api_timeout))
 
     combine_prompt = f"""
 Combine the following sub-summaries into a single monthly changelog for \
@@ -290,7 +333,8 @@ Rules:
 Sub-summaries:
 {chr(10).join(sub_summaries)}
 """
-    return query_grok(combine_prompt, api_key, model)
+    debug(f'  Combining {len(sub_summaries)} sub-summaries')
+    return query_grok(combine_prompt, api_key, model, timeout=api_timeout)
 
 
 def generate_markdown(branch, year, month, ai_summary, output_dir):
@@ -360,7 +404,15 @@ def main():
                         help='Export all DB changelogs to files (no API call)')
     parser.add_argument('--sync-check', action='store_true',
                         help='Compare DB changelogs against files on disk')
+    parser.add_argument('--debug', action='store_true',
+                        help='Enable verbose debug logging with timestamps')
+    parser.add_argument('--api-timeout', type=int, default=120,
+                        help='Timeout in seconds for API calls (default: 120)')
     args = parser.parse_args()
+
+    global DEBUG
+    DEBUG = args.debug
+    debug('Debug mode enabled')
 
     db_path = os.path.abspath(args.db_path)
     output_dir = os.path.abspath(args.output_dir)
@@ -384,6 +436,8 @@ def main():
         return
 
     api_key = os.getenv('XAI_API_KEY')
+    debug(f'XAI_API_KEY check: {"set" if api_key else "NOT SET"} '
+          f'(len={len(api_key) if api_key else 0})')
     if not api_key:
         print(json.dumps({'error': 'XAI_API_KEY environment variable not set'}))
         sys.exit(1)
@@ -391,6 +445,7 @@ def main():
     if not os.path.exists(db_path):
         print(json.dumps({'error': f'Database not found: {db_path}'}))
         sys.exit(1)
+    debug(f'Database found: {db_path}')
 
     # Parse optional month range
     month_start = month_end = None
@@ -405,18 +460,23 @@ def main():
             month_end = month_start
 
     since_date = datetime(args.since_year, 1, 1, tzinfo=timezone.utc)
+    debug(f'Since date filter: {since_date.isoformat()}')
 
+    debug('Initializing database connection...')
     conn, cur = schema_init_db(db_path)
+    debug('Database connection established')
     manifest = {'generated': [], 'skipped': [], 'errors': []}
 
     for branch in args.branches:
         print(f'Processing branch: {branch}', file=sys.stderr)
+        debug(f'Starting branch: {branch}')
         cur.execute("""
             SELECT commit_hash, change_id, message, commit_datetime,
                    signed_off_by, reviewed_on, reviewed_by, tested_by, content
             FROM commits WHERE branch = ? ORDER BY commit_datetime ASC
         """, (branch,))
         rows = cur.fetchall()
+        debug(f'Fetched {len(rows)} commits for branch {branch}')
 
         if not rows:
             print(f'No commits for {branch}, skipping.', file=sys.stderr)
@@ -425,6 +485,7 @@ def main():
 
         filtered = [r for r in rows
                     if datetime.fromisoformat(r[3]) >= since_date]
+        debug(f'Filtered to {len(filtered)} commits since {since_date.year}')
 
         groups = defaultdict(list)
         for row in filtered:
@@ -454,20 +515,35 @@ def main():
                 continue
 
             commits = groups[(year, month)]
+            debug(f'Processing {branch}/{year}-{month:02d}: '
+                  f'{len(commits)} commits')
             try:
+                debug(f'Calling AI summary for {branch}/{year}-{month:02d}...')
+                t0 = time.time()
                 summary = get_ai_summary(branch, year, month, commits,
-                                         api_key, args.model)
+                                         api_key, args.model,
+                                         api_timeout=args.api_timeout)
+                t1 = time.time()
+                debug(f'AI summary completed in {t1-t0:.2f}s - '
+                      f'len={len(summary)}')
+                debug(f'Generating markdown for {branch}/{year}-{month:02d}...')
                 path, full_md = generate_markdown(branch, year, month,
                                                   summary, output_dir)
+                debug(f'Storing summary to DB for {branch}/{year}-{month:02d}...')
                 store_summary(conn, branch, year, month, len(commits),
                               args.model, path, full_md)
                 manifest['generated'].append(path)
+                debug(f'Successfully processed {branch}/{year}-{month:02d}')
             except Exception as exc:
                 err = f'{branch}/{year}-{month:02d}: {exc}'
                 print(f'ERROR: {err}', file=sys.stderr)
                 manifest['errors'].append(err)
 
     conn.close()
+    debug(f'Done. Generated: {len(manifest["generated"])}, '
+          f'Skipped: {len(manifest["skipped"])}, '
+          f'Errors: {len(manifest["errors"])}')
+
     print(json.dumps(manifest, indent=2))
 
 
