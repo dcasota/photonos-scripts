@@ -293,7 +293,7 @@ Commits:
 
 
 def get_ai_summary(branch, year, month, commits, api_key, model,
-                   api_timeout=7200):
+                   api_timeout=7200, combine_max_tokens=131072):
     """Summarize commits, batching if necessary."""
     debug(f'get_ai_summary: {len(commits)} commits, batch_size={BATCH_SIZE}')
     if len(commits) <= BATCH_SIZE:
@@ -333,8 +333,10 @@ Rules:
 Sub-summaries:
 {chr(10).join(sub_summaries)}
 """
-    debug(f'  Combining {len(sub_summaries)} sub-summaries')
-    return query_grok(combine_prompt, api_key, model, timeout=api_timeout)
+    debug(f'  Combining {len(sub_summaries)} sub-summaries '
+          f'(max_tokens={combine_max_tokens})')
+    return query_grok(combine_prompt, api_key, model,
+                      max_tokens=combine_max_tokens, timeout=api_timeout)
 
 
 def generate_markdown(branch, year, month, ai_summary, output_dir):
@@ -408,6 +410,8 @@ def main():
                         help='Enable verbose debug logging with timestamps')
     parser.add_argument('--api-timeout', type=int, default=7200,
                         help='Timeout in seconds for API calls (default: 7200)')
+    parser.add_argument('--combine-max-tokens', type=int, default=131072,
+                        help='Max tokens for the combine step (default: 131072)')
     args = parser.parse_args()
 
     global DEBUG
@@ -522,7 +526,8 @@ def main():
                 t0 = time.time()
                 summary = get_ai_summary(branch, year, month, commits,
                                          api_key, args.model,
-                                         api_timeout=args.api_timeout)
+                                         api_timeout=args.api_timeout,
+                                         combine_max_tokens=args.combine_max_tokens)
                 t1 = time.time()
                 debug(f'AI summary completed in {t1-t0:.2f}s - '
                       f'len={len(summary)}')
