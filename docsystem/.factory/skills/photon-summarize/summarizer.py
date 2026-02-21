@@ -313,6 +313,20 @@ def get_ai_summary(branch, year, month, commits, api_key, model,
             get_single_summary(branch, year, month, batch, api_key, model,
                                is_batch=True, api_timeout=api_timeout))
 
+    if len(sub_summaries) > 5:
+        sub_summaries = _hierarchical_combine(
+            sub_summaries, branch, year, month, api_key, model,
+            combine_max_tokens, api_timeout)
+
+    return _combine_summaries(sub_summaries, branch, year, month, api_key,
+                              model, combine_max_tokens, api_timeout,
+                              is_final=True)
+
+
+def _combine_summaries(sub_summaries, branch, year, month, api_key, model,
+                       max_tokens, api_timeout, is_final=False):
+    """Combine a list of sub-summaries into one via a single API call."""
+    label = 'final' if is_final else 'intermediate'
     combine_prompt = f"""
 Combine the following sub-summaries into a single monthly changelog for \
 Photon OS branch '{branch}' in {year}-{month:02d}.
@@ -333,10 +347,34 @@ Rules:
 Sub-summaries:
 {chr(10).join(sub_summaries)}
 """
-    debug(f'  Combining {len(sub_summaries)} sub-summaries '
-          f'(max_tokens={combine_max_tokens})')
+    debug(f'  {label.capitalize()} combine: {len(sub_summaries)} sub-summaries '
+          f'(max_tokens={max_tokens})')
     return query_grok(combine_prompt, api_key, model,
-                      max_tokens=combine_max_tokens, timeout=api_timeout)
+                      max_tokens=max_tokens, timeout=api_timeout)
+
+
+def _hierarchical_combine(sub_summaries, branch, year, month, api_key, model,
+                          max_tokens, api_timeout):
+    """Reduce sub-summaries by combining in pairs until <= 5 remain."""
+    level = 1
+    while len(sub_summaries) > 5:
+        debug(f'  Hierarchical combine level {level}: '
+              f'{len(sub_summaries)} sub-summaries -> pairs')
+        merged = []
+        for i in range(0, len(sub_summaries), 2):
+            pair = sub_summaries[i:i + 2]
+            if len(pair) == 1:
+                merged.append(pair[0])
+            else:
+                debug(f'  Merging pair {i // 2 + 1}')
+                merged.append(_combine_summaries(
+                    pair, branch, year, month, api_key, model,
+                    max_tokens, api_timeout, is_final=False))
+        sub_summaries = merged
+        level += 1
+    debug(f'  Hierarchical combine done: {len(sub_summaries)} sub-summaries '
+          f'after {level - 1} level(s)')
+    return sub_summaries
 
 
 def generate_markdown(branch, year, month, ai_summary, output_dir):
