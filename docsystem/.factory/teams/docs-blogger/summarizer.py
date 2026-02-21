@@ -64,7 +64,7 @@ changelogs for Photon OS. Follow these rules strictly:
 
 
 def query_grok(prompt, api_key, model='grok-4-0709', max_tokens=16384,
-               timeout=1800):
+               timeout=7200):
     """Send a prompt to the xAI/Grok API and return the response text."""
     debug(f'API call starting - model={model}, max_tokens={max_tokens}, '
           f'prompt_len={len(prompt)}, timeout={timeout}s')
@@ -224,7 +224,7 @@ def sync_check(db_path, branches):
 
 
 def get_single_summary(branch, year, month, commits, api_key, model,
-                       is_batch=False, api_timeout=1800):
+                       is_batch=False, api_timeout=7200):
     """Summarize a single batch of commits."""
     batch_label = ' (batch)' if is_batch else ''
     debug(f'  Building prompt for {len(commits)} commits{batch_label}')
@@ -293,7 +293,7 @@ Commits:
 
 
 def get_ai_summary(branch, year, month, commits, api_key, model,
-                   api_timeout=1800):
+                   api_timeout=7200):
     """Summarize commits, batching if necessary."""
     debug(f'get_ai_summary: {len(commits)} commits, batch_size={BATCH_SIZE}')
     if len(commits) <= BATCH_SIZE:
@@ -406,8 +406,8 @@ def main():
                         help='Compare DB changelogs against files on disk')
     parser.add_argument('--debug', action='store_true',
                         help='Enable verbose debug logging with timestamps')
-    parser.add_argument('--api-timeout', type=int, default=1800,
-                        help='Timeout in seconds for API calls (default: 1800)')
+    parser.add_argument('--api-timeout', type=int, default=7200,
+                        help='Timeout in seconds for API calls (default: 7200)')
     args = parser.parse_args()
 
     global DEBUG
