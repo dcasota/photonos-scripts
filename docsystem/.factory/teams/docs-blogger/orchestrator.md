@@ -26,6 +26,11 @@ Delegate to subagent docs-blogger-blogger:
   Output the JSON manifest of generated files.
 ```
 
+The blogger runs the importer (to fetch new commits) and then the
+summarizer. The summarizer compares the current commit count per
+branch/month against the stored summary and only regenerates months
+where new commits were added. This makes weekly re-runs efficient.
+
 ### Step 2: Validate Output
 
 After the blogger completes:
@@ -38,9 +43,10 @@ After the blogger completes:
    required fields: `title`, `date`, `draft`, `author`, `tags`,
    `categories`, `summary`.
 
-3. **Section check**: Spot-check that posts contain the mandatory
-   sections: Overview, Security & Vulnerability Fixes, User Impact
-   Assessment.
+3. **Section check**: Spot-check that posts contain the mandatory H2
+   sections: `## TL;DR`, `## Action Required`, `## Security`,
+   `## Added`, `## Changed`, `## Fixed`, `## Removed`,
+   `## Contributors`.
 
 4. **File path check**: Confirm files follow the naming convention:
    `content/blog/YYYY/MM/photon-<branch>-monthly-YYYY-MM.md`
@@ -77,6 +83,8 @@ Output a structured report:
 ## Generation Report
 - **Branches processed**: [list]
 - **Total posts generated**: [count]
+- **Posts skipped (up-to-date)**: [count]
+- **Posts regenerated (new commits)**: [count]
 - **Month coverage**: [first month] to [last month]
 - **Errors**: [count or "none"]
 - **Mode**: testing | production
@@ -96,3 +104,4 @@ Before delegating to pr-bot:
 - 100% branch coverage (6/6)
 - No missing months in any branch
 - All front matter fields present
+- All posts use H2 (`##`) section headings

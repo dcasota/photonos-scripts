@@ -46,19 +46,26 @@ monthly Hugo-compatible blog posts from Photon OS commit history.
      --db-path "$FACTORY_PROJECT_DIR/photon_commits.db" \
      --output-dir "$FACTORY_PROJECT_DIR/content/blog" \
      --branches 3.0 4.0 5.0 6.0 common master \
-     --since-year 2021
+     --since-year 2021 \
+     --debug
    ```
 
 4. Parse the JSON manifest from stdout. Verify `errors` is empty.
+
+   The summarizer automatically skips months where the stored
+   `commit_count` matches the current number of commits. Only months
+   with new commits (or no summary yet) are regenerated.
 
 ### Phase 3: Validation
 
 5. For each generated file, verify:
    - Hugo front matter is present and complete (`title`, `date`, `author`,
      `tags`, `categories`, `summary`)
-   - The mandatory sections exist: Overview, Security & Vulnerability Fixes,
-     User Impact Assessment
+   - The mandatory H2 sections exist: `## TL;DR`, `## Action Required`,
+     `## Security`, `## Added`, `## Changed`, `## Fixed`, `## Removed`,
+     `## Contributors`
    - No placeholder text remains
+   - All commit links point to valid vmware/photon commit URLs
 
 6. Report the final list of generated/updated files.
 
@@ -75,6 +82,7 @@ Monthly summaries from 2021 to present, no gaps.
 - Hugo front matter must include `author: "docs-lecturer-blogger"`
 - Changes must be explained from the user's perspective
 - Actionable recommendations must be provided in each post
+- CVE references must include NVD links
 
 ## Output
 
