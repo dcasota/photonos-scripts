@@ -252,6 +252,9 @@ The Python scripts remain fully usable outside Factory:
 
 ```bash
 # Import commits (first run or update)
+python3 importer.py --db-path photon_commits.db --repo-dir photon
+
+# Import commits with more specifications
 python3 importer.py --db-path photon_commits.db --repo-dir photon \
   --branches 3.0 4.0 5.0 6.0 common master --since-date 2021-01-01
 
@@ -259,8 +262,7 @@ python3 importer.py --db-path photon_commits.db --repo-dir photon \
 python3 importer.py --db-path photon_commits.db --check
 
 # Generate summaries (skip months already up-to-date)
-XAI_API_KEY=your-key python3 summarizer.py \
-  --db-path photon_commits.db --output-dir content/blog --debug
+XAI_API_KEY=your-key python3 summarizer.py --db-path photon_commits.db --output-dir content/blog --debug
 
 # Force regenerate a specific month
 XAI_API_KEY=your-key python3 summarizer.py \
