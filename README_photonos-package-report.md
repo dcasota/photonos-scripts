@@ -3,7 +3,7 @@
 ## SCRIPT STRUCTURE
 
 ```
-photonos-package-report.ps1 (~5,022 lines)
+photonos-package-report.ps1 (~5,080 lines)
 │
 ├── HEADER (Lines 1-58)
 │   ├── Synopsis & Version History
@@ -221,7 +221,7 @@ Main Execution
 
 | Report Type | Filename Pattern | Content |
 |-------------|------------------|---------|
-| URL Health | `photonos-urlhealth-{branch}_{timestamp}.prn` | Package URL status, versions, updates |
+| URL Health | `photonos-urlhealth-{branch}_{timestamp}.prn` | Package URL status, versions, updates, isArchived, ArchivationDate |
 | Package Report | `photonos-package-report_{timestamp}.prn` | All packages across all branches |
 | Diff Report | `photonos-diff-report-{v1}-{v2}_{timestamp}.prn` | Packages where older version > newer |
 

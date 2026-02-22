@@ -1790,10 +1790,10 @@ function CheckURLHealth {
     [System.string]$ArchivationDate=""
 
     # In case of debug: uncomment and debug from here
-    if ($currentTask.spec -ilike 'amdvlk.spec')
-    {pause}
-    else
-    {return}
+    # if ($currentTask.spec -ilike 'aufs-util.spec')
+    # {pause}
+    # else
+    # {return}
 
     $Source0 = $currentTask.Source0
 
@@ -4491,6 +4491,9 @@ function CheckURLHealth {
             $UpdateDownloadName = $UpdateDownloadName -ireplace "Rel_",[System.String]::Concat($currentTask.Name,"-")
             $UpdateDownloadName = $UpdateDownloadName -ireplace "_","."
         }
+        if (($UpdateDownloadName.StartsWith("v-", [StringComparison]::OrdinalIgnoreCase))) {
+            $UpdateDownloadName = $UpdateDownloadName -ireplace "v-",[System.String]::Concat($currentTask.Name,"-")
+        }        
 
 
         $SourcesNewDirectory=[System.String](join-path -path (join-path -path $SourcePath -childpath $photonDir) -childpath "SOURCES_NEW")
@@ -4604,7 +4607,7 @@ function CheckURLHealth {
         else {ModifySpecFile -SpecFileName $currentTask.spec -SourcePath $SourcePath -PhotonDir $photonDir -Name $currentTask.name -Update $UpdateAvailable -UpdateDownloadFile $UpdateDownloadFile -OpenJDK8 $false -SHALine $SHALine}
     }
 
-    [System.String]::Concat($currentTask.spec,',',$currentTask.source0,',',$Source0,',',$urlhealth,',',$UpdateAvailable,',',$UpdateURL,',',$HealthUpdateURL,',',$currentTask.Name,',',$SHAValue,',',$UpdateDownloadName)
+    [System.String]::Concat($currentTask.spec,',',$currentTask.source0,',',$Source0,',',$urlhealth,',',$UpdateAvailable,',',$UpdateURL,',',$HealthUpdateURL,',',$currentTask.Name,',',$SHAValue,',',$UpdateDownloadName,',',$isArchived,',',$ArchivationDate)
 }
 
 function GenerateUrlHealthReports {
@@ -4838,7 +4841,7 @@ catch {
 # parallel processing support
 Write-Output "Checking parallel processing support..."
 $Script:UseParallel = $PSVersionTable.PSVersion.Major -ge 7 -and $PSVersionTable.PSVersion.Minor -ge 4
-$Script:UseParallel = $false
+# $Script:UseParallel = $false
 Write-Output "Parallel processing: $($Script:UseParallel)"
 
 # Get current CPU usage and core count (cross-platform)
