@@ -105,12 +105,16 @@ def query_grok(prompt, api_key, model='grok-4-0709', max_tokens=16384,
         raise
 
 
-def has_summary(cur, branch, year, month):
-    """Return True if a summary already exists for this branch/year/month."""
+def has_current_summary(cur, branch, year, month, current_count):
+    """Return True only if a summary exists AND its commit count matches."""
     cur.execute(
-        'SELECT 1 FROM summaries WHERE branch = ? AND year = ? AND month = ?',
+        'SELECT commit_count FROM summaries '
+        'WHERE branch = ? AND year = ? AND month = ?',
         (branch, year, month))
-    return cur.fetchone() is not None
+    row = cur.fetchone()
+    if row is None:
+        return False
+    return row[0] == current_count
 
 
 def store_summary(conn, branch, year, month, commit_count, model,
@@ -589,14 +593,15 @@ def main():
         for year, month in tqdm(sorted_keys,
                                 desc=f'Summarizing {branch}',
                                 unit='month', file=sys.stderr):
-            if not args.force and has_summary(cur, branch, year, month):
+            commits = groups[(year, month)]
+            if not args.force and has_current_summary(
+                    cur, branch, year, month, len(commits)):
                 print(f'Skipping {branch}/{year}-{month:02d} '
-                      f'(already in DB, use --force to regenerate)',
+                      f'(already in DB with {len(commits)} commits, '
+                      f'use --force to regenerate)',
                       file=sys.stderr)
                 manifest['skipped'].append(f'{branch}/{year}-{month:02d}')
                 continue
-
-            commits = groups[(year, month)]
             debug(f'Processing {branch}/{year}-{month:02d}: '
                   f'{len(commits)} commits')
             try:
