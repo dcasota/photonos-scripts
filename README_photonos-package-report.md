@@ -22,7 +22,7 @@ photonos-package-report.ps1 (~5,080 lines)
 │   ├── Source0Lookup            (361-1215) - Lookup table for 848 packages
 │   │                                         (columns: specfile, Source0Lookup, gitSource,
 │   │                                          gitBranch, customRegex, replaceStrings,
-│   │                                          ignoreStrings, isArchived, ArchivationDate)
+│   │                                          ignoreStrings, Warning, ArchivationDate)
 │   ├── ModifySpecFile           (1216-1289)- Update spec files with new versions
 │   ├── urlhealth                (1290-1350)- Check URL HTTP status
 │   └── KojiFedoraProjectLookUp  (1351-1401)- Lookup Fedora Koji packages
@@ -221,7 +221,7 @@ Main Execution
 
 | Report Type | Filename Pattern | Content |
 |-------------|------------------|---------|
-| URL Health | `photonos-urlhealth-{branch}_{timestamp}.prn` | Package URL status, versions, updates, isArchived, ArchivationDate |
+| URL Health | `photonos-urlhealth-{branch}_{timestamp}.prn` | Package URL status, versions, updates, Warning, ArchivationDate |
 | Package Report | `photonos-package-report_{timestamp}.prn` | All packages across all branches |
 | Diff Report | `photonos-diff-report-{v1}-{v2}_{timestamp}.prn` | Packages where older version > newer |
 
@@ -294,7 +294,7 @@ pwsh -File photonos-package-report.ps1
 
 ## PREREQUISITES
 
-- **Operating System**: Windows 11 (tested), Linux/WSL/macOS (cross-platform support since v0.60)
+- **Operating System**: Windows 11 (tested), Photon OS 5.0 with PowerShell Core 7.5.4 (tested), Linux/WSL/macOS (cross-platform support since v0.60)
 - **PowerShell**: Minimum 5.1, Recommended 7.4+ for parallel processing
 - **Required Commands**: `git`, `tar`
 - **Required Module**: PowerShellCookbook (auto-installed if missing)
@@ -309,7 +309,7 @@ See script header for complete version history. Current version: **0.61**
 
 Key improvements in v0.61:
 - Quarterly version format support in Get-LatestName (YYYY.Q#.# for amdvlk, etc.)
-- isArchived/ArchivationDate columns in URL health report output
+- Warning/ArchivationDate columns in URL health report output (warnings no longer overwrite UpdateAvailable)
 - v- prefix handling in UpdateDownloadName
 - Fixed missing $ in runit.spec condition
 
@@ -327,5 +327,5 @@ Key improvements in v0.60:
 - Git safe.directory wildcard for WSL/cross-filesystem support
 - Linux compatibility fix for Stop-Job/Remove-Job (no -Force)
 - Test-Path guards before Set-Location after clone
-- Source0Lookup expanded to 848 packages with isArchived/ArchivationDate columns
+- Source0Lookup expanded to 848 packages with Warning/ArchivationDate columns
 - Improved version comparison algorithm (fixes 2.41.3 vs 2.9)

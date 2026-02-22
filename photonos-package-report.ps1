@@ -30,12 +30,12 @@
 #   0.60  11.02.2026   dcasota  Robustness, security and cross-platform improvements: git timeout handling, safe git calls,
 #                               cross-platform path handling (Join-Path, $HOME fallback), OS detection for winget/Get-Counter/Get-CimInstance,
 #                               List<T> for performance, safe spec parsing with Get-SpecValue helper, security cleanup at script end
-#   0.61  22.02.2026   dcasota  Quarterly version format support (YYYY.Q#.#), isArchived/ArchivationDate output columns,
+#   0.61  22.02.2026   dcasota  Quarterly version format support (YYYY.Q#.#), Warning/ArchivationDate output columns,
 #                               Source0Lookup expansion to 848+ packages, git timeout standardized to 600s,
 #                               Linux compatibility fixes, RubyGems JSON API, GNU FTP mirror fallback
 #
 #  .PREREQUISITES
-#    - Script tested on Microsoft Windows 11
+#    - Script tested on Microsoft Windows 11 and on Photon OS 5.0 with Powershell Core 7.5.4
 #    - Powershell: Minimal version: 5.1
 #                  Recommended version: 7.4 or higher for parallel processing capabilities
 #
@@ -363,7 +363,7 @@ function GitPhoton {
 
 function Source0Lookup {
 $Source0LookupData=@'
-specfile,Source0Lookup,gitSource,gitBranch,customRegex,replaceStrings,ignoreStrings,isArchived,ArchivationDate
+specfile,Source0Lookup,gitSource,gitBranch,customRegex,replaceStrings,ignoreStrings,Warning,ArchivationDate
 abseil-cpp.spec,https://github.com/abseil/abseil-cpp/releases/download/%{version}/abseil-cpp-%{version}.tar.gz,https://github.com/abseil/abseil-cpp.git
 aide.spec,https://github.com/aide/aide/archive/refs/tags/v%{version}.tar.gz,https://github.com/aide/aide.git
 alsa-lib.spec,https://www.alsa-project.org/files/pub/lib/alsa-lib-%{version}.tar.bz2
@@ -404,7 +404,7 @@ bpftrace.spec,https://github.com/bpftrace/bpftrace/archive/refs/tags/v%{version}
 bridge-utils.spec,,https://git.kernel.org/pub/scm/network/bridge/bridge-utils.git
 btrfs-progs.spec,https://github.com/kdave/btrfs-progs/archive/refs/tags/v%{version}.tar.gz,https://github.com/kdave/btrfs-progs.git
 bubblewrap.spec,https://github.com/containers/bubblewrap/archive/refs/tags/v%{version}.tar.gz,https://github.com/containers/bubblewrap.git
-byacc.spec,https://invisible-island.net/archives/byacc/byacc-%{version}.tgz
+byacc.spec,https://invisible-island.net/archives/byacc/current/byacc-%{version}.tgz
 bzip2.spec,https://github.com/libarchive/bzip2/archive/refs/tags/bzip2-%{version}.tar.gz,https://github.com/libarchive/bzip2.git
 c-ares.spec,https://github.com/c-ares/c-ares/archive/refs/tags/v%{version}.tar.gz,https://github.com/c-ares/c-ares.git
 c-rest-engine.spec,https://github.com/vmware-archive/c-rest-engine/archive/refs/tags/%{version}.tar.gz,https://github.com/vmware-archive/c-rest-engine.git
@@ -419,7 +419,7 @@ cassandra.spec,https://github.com/apache/cassandra/archive/refs/tags/cassandra-%
 cereal.spec,https://github.com/USCiLab/cereal/archive/refs/tags/v%{version}.tar.gz,https://github.com/USCiLab/cereal.git
 cgroup-utils.spec,https://github.com/peo3/cgroup-utils/archive/refs/tags/v%{version}.tar.gz,https://github.com/peo3/cgroup-utils.git
 check.spec,https://github.com/libcheck/check/archive/refs/tags/%{version}.tar.gz,https://github.com/libcheck/check.git
-checkpolicy.spec,https://github.com/SELinuxProject/selinux/archive/refs/tags/checkpolicy-%{version}.tar.gz,https://github.com/SELinuxProject/selinux.git
+checkpolicy.spec,https://github.com/SELinuxProject/selinux/archive/refs/tags/checkpolicy-%{version}.tar.gz,https://github.com/SELinuxProject/selinux.git,,,"checkpolicy-","2008*,2009*,2010*,2011*,2012*,2013*,2014*,2015*,2016*,2017*,2018*,2019*,2020*"
 chkconfig.spec,https://github.com/fedora-sysv/chkconfig/archive/refs/tags/%{version}.tar.gz,https://github.com/fedora-sysv/chkconfig.git
 chromium.spec,https://github.com/chromium/chromium/archive/refs/tags/%{version}.tar.gz,https://github.com/chromium/chromium.git
 chrony.spec,https://github.com/mlichvar/chrony/archive/refs/tags/%{version}.tar.gz,https://github.com/mlichvar/chrony.git
@@ -438,7 +438,7 @@ compat-gdbm.spec,https://ftp.gnu.org/gnu/gdbm/gdbm-%{version}.tar.gz
 confd.spec,https://github.com/projectcalico/confd/archive/refs/tags/v%{version}-0.dev.tar.gz,https://github.com/projectcalico/confd.git
 conmon.spec,https://github.com/containers/conmon/archive/refs/tags/v%{version}.tar.gz,https://github.com/containers/conmon.git
 connect-proxy.spec,https://github.com/gotoh/ssh-connect/archive/refs/tags/%{version}.tar.gz,https://github.com/gotoh/ssh-connect.git
-conntrack-tools.spec,https://www.netfilter.org/projects/conntrack-tools/files/conntrack-tools-%{version}.tar.xz
+conntrack-tools.spec,https://www.netfilter.org/projects/conntrack-tools/files/conntrack-tools-%{version}.tar.xz,https://git.netfilter.org/conntrack-tools.git
 consul.spec,https://github.com/hashicorp/consul/archive/refs/tags/v%{version}.tar.gz,https://github.com/hashicorp/consul.git
 containerd.spec,https://github.com/containerd/containerd/archive/refs/tags/v%{version}.tar.gz,https://github.com/containerd/containerd.git
 containers-common.spec,https://github.com/containers/common/archive/refs/tags/v%{version}.tar.gz,https://github.com/containers/common.git
@@ -449,7 +449,7 @@ cracklib.spec,https://github.com/cracklib/cracklib/archive/refs/tags/v%{version}
 crash.spec,https://github.com/crash-utility/crash/archive/refs/tags/%{version}.tar.gz,https://github.com/crash-utility/crash.git
 createrepo_c.spec,https://github.com/rpm-software-management/createrepo_c/archive/refs/tags/%{version}.tar.gz,https://github.com/rpm-software-management/createrepo_c.git
 cri-tools.spec,https://github.com/kubernetes-sigs/cri-tools/archive/refs/tags/v%{version}.tar.gz,https://github.com/kubernetes-sigs/cri-tools.git
-cronie.spec,https://github.com/cronie-crond/cronie/archive/refs/tags/cronie-%{version}.tar.gz,https://github.com/cronie-crond/cronie.git
+cronie.spec,https://github.com/cronie-crond/cronie/archive/refs/tags/cronie-%{version}.tar.gz,https://github.com/cronie-crond/cronie.git,,,"cronie-"
 crun.spec,https://github.com/containers/crun/releases/download/%{version}/crun-%{version}.tar.gz,https://github.com/containers/crun.git
 cryptsetup.spec,https://github.com/mbroz/cryptsetup/archive/refs/tags/v%{version}.tar.gz,https://github.com/mbroz/cryptsetup.git
 cscope.spec,https://unlimited.dl.sourceforge.net/project/cscope/cscope/v%{version}/cscope-%{version}.tar.gz
@@ -472,7 +472,7 @@ ding-libs.spec,https://github.com/SSSD/ding-libs/releases/download/%{version}/di
 distcc.spec,https://github.com/distcc/distcc/releases/download/v%{version}/distcc-%{version}.tar.gz,https://github.com/distcc/distcc.git
 dkms.spec,https://github.com/dkms-project/dkms/archive/refs/tags/v%{version}.tar.gz,https://github.com/dkms-project/dkms.git
 docbook-xml.spec,https://github.com/docbook/docbook/archive/refs/tags/%{version}.zip,https://github.com/docbook/docbook.git
-docker.spec,https://github.com/moby/moby/archive/refs/tags/v%{version}.tar.gz,https://github.com/moby/moby.git
+docker.spec,https://github.com/moby/moby/archive/refs/tags/docker-v%{version}.tar.gz,https://github.com/moby/moby.git,,,"docker-v"
 docker-20.10.spec,https://github.com/moby/moby/archive/refs/tags/v%{version}.tar.gz,https://github.com/moby/moby.git
 docker-buildx.spec,https://github.com/docker/buildx/archive/refs/tags/v%{version}.tar.gz,https://github.com/docker/buildx.git
 docker-compose.spec,https://github.com/docker/compose/archive/refs/tags/v%{version}.tar.gz,https://github.com/docker/compose.git
@@ -486,7 +486,7 @@ dotnet-sdk.spec,https://github.com/dotnet/sdk/archive/refs/tags/v%{version}.tar.
 double-conversion.spec,https://github.com/google/double-conversion/archive/refs/tags/v%{version}.tar.gz,https://github.com/google/double-conversion.git
 doxygen.spec,https://github.com/doxygen/doxygen/archive/refs/tags/Release_%{version}.tar.gz,https://github.com/doxygen/doxygen.git
 dracut.spec,https://github.com/dracutdevs/dracut/archive/refs/tags/%{version}.tar.gz,https://github.com/dracutdevs/dracut.git,,,,"033-502"
-drpm.spec,https://github.com/rpm-software-management/drpm/releases/download/%{version}/drpm-%{version}.tar.bz2,https://github.com/rpm-software-management/drpm.git
+drpm.spec,https://github.com/rpm-software-management/drpm/archive/refs/tags/%{version}.tar.gz,https://github.com/rpm-software-management/drpm.git
 dstat.spec,https://github.com/dstat-real/dstat/archive/refs/tags/v%{version}.tar.gz,https://github.com/dstat-real/dstat.git,,,,,1,2020-11-26
 dtc.spec,https://www.kernel.org/pub/software/utils/%{name}/%{name}-%{version}.tar.gz,https://git.kernel.org/pub/scm/utils/dtc/dtc.git
 duktape.spec,https://github.com/svaarala/duktape/archive/refs/tags/v%{version}.tar.gz,https://github.com/svaarala/duktape.git
@@ -1789,11 +1789,11 @@ function CheckURLHealth {
     $gitBranch=""
     [System.string]$customRegex=""
     $ignore=@()
-    [System.string]$isArchived=""
+    [System.string]$Warning=""
     [System.string]$ArchivationDate=""
 
     # In case of debug: uncomment and debug from here
-    # if ($currentTask.spec -ilike 'aufs-util.spec')
+    # if ($currentTask.spec -ilike 'containers-common.spec')
     # {pause}
     # else
     # {return}
@@ -1908,7 +1908,7 @@ function CheckURLHealth {
         $UpdateUrl="https://deb.debian.org/debian/pool/main/c/cdrkit/cdrkit_1.1.11.orig.tar.gz"
         $HealthUpdateURL="200"
         $UpdateAvailable="1.1.11"
-        $isArchived="1"
+        $Warning="1"
         $ArchivationDate="2021-10-10"
     }
 
@@ -2115,7 +2115,7 @@ function CheckURLHealth {
         try {
             if (($SourceTagURL -ne "") -and ($null -ne $Names)) {
 
-                if ($ignore) {$Names = $Names | foreach-object { $NamesObj = $_; foreach ($item in $ignore) {if (!($NamesObj | select-string -pattern $item -simplematch)) {$NamesObj}}}}
+                if ($ignore) {$Names = $Names | Where-Object { $n = $_; -not ($ignore | Where-Object { $n -like $_ }) }}
 
                 $replace += $currentTask.Name+"."
                 $replace += $currentTask.Name+"-"
@@ -2487,7 +2487,6 @@ function CheckURLHealth {
                     "automake.spec" { $Names = $Names -ireplace "-","."; break }
                     "bcc.spec" {$replace +="src-with-submodule.tar.gz"; break}
                     "bpftrace.spec" {$replace +="binary.tools.man-bundle.tar.xz"; break}
-                    "c-ares.spec" {$replace +="cares-"; break}
                     "calico-cni.spec" {$replace +="calico-amd64"; $replace +="calico-arm64"; break}
                     "calico-confd.spec" {$replace +="-darwin-amd64"; $replace +="confd-"; break}
                     "chrpath.spec" {$replace +="RELEASE_"; break}
@@ -2730,7 +2729,7 @@ function CheckURLHealth {
                     Default {}
                     }
 
-                    if ($ignore) {$Names = $Names | foreach-object { $NamesObj = $_; foreach ($item in $ignore) {if (!($NamesObj | select-string -pattern $item -simplematch)) {$NamesObj}}}}
+                    if ($ignore) {$Names = $Names | Where-Object { $n = $_; -not ($ignore | Where-Object { $n -like $_ }) }}
 
                     $replace += $currentTask.Name + "."
                     $replace += $currentTask.Name + "-"
@@ -2964,7 +2963,7 @@ function CheckURLHealth {
                 elseif ($currentTask.spec -ilike 'xorg-fonts.spec') {$replace +="encodings-"}
 
 
-                if ($ignore) {$Names = $Names | foreach-object { $NamesObj = $_; foreach ($item in $ignore) {if (!($NamesObj | select-string -pattern $item -simplematch)) {$NamesObj}}}}
+                if ($ignore) {$Names = $Names | Where-Object { $n = $_; -not ($ignore | Where-Object { $n -like $_ }) }}
 
                 $replace += $currentTask.Name+"."
                 $replace += $currentTask.Name+"-"
@@ -3173,7 +3172,7 @@ function CheckURLHealth {
                 $Names = $Names  -replace ".tar.xz",""
                 $Names = $Names  -replace ".tar.lz",""
 
-                if ($ignore) {$Names = $Names | foreach-object { $NamesObj = $_; foreach ($item in $ignore) {if (!($NamesObj | select-string -pattern $item -simplematch)) {$NamesObj}}}}
+                if ($ignore) {$Names = $Names | Where-Object { $n = $_; -not ($ignore | Where-Object { $n -like $_ }) }}
 
                 $replace += $currentTask.Name+"."
                 $replace += $currentTask.Name+"-"
@@ -3255,7 +3254,7 @@ function CheckURLHealth {
                 }
                 if ($Names) {
 
-                    if ($ignore) {$Names = $Names | foreach-object { $NamesObj = $_; foreach ($item in $ignore) {if (!($NamesObj | select-string -pattern $item -simplematch)) {$NamesObj}}}}
+                    if ($ignore) {$Names = $Names | Where-Object { $n = $_; -not ($ignore | Where-Object { $n -like $_ }) }}
 
                     $replace += $currentTask.Name+"."
                     $replace += $currentTask.Name+"-"
@@ -3505,7 +3504,7 @@ function CheckURLHealth {
         try {
             if (($SourceTagURL -ne "") -and ($null -ne $Names)) {
 
-                if ($ignore) {$Names = $Names | foreach-object { $NamesObj = $_; foreach ($item in $ignore) {if (!($NamesObj | select-string -pattern $item -simplematch)) {$NamesObj}}}}
+                if ($ignore) {$Names = $Names | Where-Object { $n = $_; -not ($ignore | Where-Object { $n -like $_ }) }}
 
                 $replace += $currentTask.Name+"."
                 $replace += $currentTask.Name+"-"
@@ -3611,7 +3610,7 @@ function CheckURLHealth {
                         $replace +=  [system.string]::concat(($currentTask.Name -ireplace "perl-",""),"-perl-")
                     }
 
-                    if ($ignore) {$Names = $Names | foreach-object { $NamesObj = $_; foreach ($item in $ignore) {if (!($NamesObj | select-string -pattern $item -simplematch)) {$NamesObj}}}}
+                    if ($ignore) {$Names = $Names | Where-Object { $n = $_; -not ($ignore | Where-Object { $n -like $_ }) }}
 
                     $replace += $currentTask.Name+"."
                     $replace += $currentTask.Name+"-"
@@ -3815,7 +3814,7 @@ function CheckURLHealth {
         try {
             if (($SourceTagURL -ne "") -and ($null -ne $Names)) {
 
-                if ($ignore) {$Names = $Names | foreach-object { $NamesObj = $_; foreach ($item in $ignore) {if (!($NamesObj | select-string -pattern $item -simplematch)) {$NamesObj}}}}
+                if ($ignore) {$Names = $Names | Where-Object { $n = $_; -not ($ignore | Where-Object { $n -like $_ }) }}
 
                 $replace += $currentTask.Name+"."
                 $replace += $currentTask.Name+"-"
@@ -4003,6 +4002,15 @@ function CheckURLHealth {
                 $Names = $Names  -replace "docbook-",""
                 $Names = $Names  -replace ".zip",""
             }
+            if ($currentTask.spec -ilike "byacc.spec")
+            {
+                $Names = (invoke-webrequest -uri $SourceTagURL -TimeoutSec 10 -ErrorAction Stop).Links.href
+                if ($Names)
+                {
+                    $Names = $Names | foreach-object { if ($_ | select-string -pattern 'byacc-' -simplematch) {$_}}
+                    $Names = $Names  -replace "byacc-",""
+                }             
+            }            
             if ($currentTask.spec -ilike "json-c.spec")
             {
                 $Names = (invoke-webrequest -uri $SourceTagURL -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop) -split "<"
@@ -4065,7 +4073,7 @@ function CheckURLHealth {
                 elseif ($currentTask.spec -ilike "wireguard-tools.spec") { $replace += "/wireguard-tools/snapshot/wireguard-tools-";$replace += "'"}
 
 
-                if ($ignore) {$Names = $Names | foreach-object { $NamesObj = $_; foreach ($item in $ignore) {if (!($NamesObj | select-string -pattern $item -simplematch)) {$NamesObj}}}}
+                if ($ignore) {$Names = $Names | Where-Object { $n = $_; -not ($ignore | Where-Object { $n -like $_ }) }}
 
                 $replace += $currentTask.Name+"."
                 $replace += $currentTask.Name+"-"
@@ -4157,92 +4165,92 @@ function CheckURLHealth {
     # -------------------------------------------------------------------------------------------------------------------
     # Signalization of not accessible or archived repositories
     # -------------------------------------------------------------------------------------------------------------------
-    $warning="Warning: repo isn't maintained anymore."
-    if ($currentTask.Spec -ilike 'dhcp.spec') {$UpdateAvailable=$warning+" See "+ "https://www.isc.org/dhcp_migration/"}
-    elseif ($currentTask.Spec -ilike 'c-rest-engine.spec') {$UpdateAvailable=$warning}
-    elseif ($currentTask.Spec -ilike 'copenapi.spec') {$UpdateAvailable=$warning}
-    elseif ($currentTask.Spec -ilike 'cloud-network-setup.spec') {$UpdateAvailable=$warning}
-    elseif ($currentTask.Spec -ilike 'confd.spec') {$UpdateAvailable=$warning}
-    elseif ($currentTask.Spec -ilike 'cve-check-tool.spec') {$UpdateAvailable=$warning}
-    elseif ($currentTask.Spec -ilike 'fcgi.spec') {$UpdateAvailable=$warning+" See "+ "https://github.com/FastCGI-Archives/fcgi2/archive/refs/tags/%{version}.tar.gz ."}
-    elseif ($currentTask.Spec -ilike 'heapster.spec') {$UpdateAvailable=$warning}
-    elseif ($currentTask.Spec -ilike 'http-parser.spec') {$UpdateAvailable=$warning}
-    elseif ($currentTask.Spec -ilike 'kubernetes-dashboard.spec') {$UpdateAvailable=$warning}
-    elseif ($currentTask.Spec -ilike 'libtar.spec') {$UpdateAvailable=$warning+" See "+ "https://sources.debian.org/patches/libtar"}
-    elseif ($currentTask.Spec -ilike 'lightwave.spec') {$UpdateAvailable=$warning}
-    elseif ($currentTask.Spec -ilike 'python-argparse.spec') {$UpdateAvailable=$warning}
-    elseif ($currentTask.Spec -ilike 'python-atomicwrites.spec') {$UpdateAvailable=$warning}
-    elseif ($currentTask.Spec -ilike 'python-ipaddr.spec') {$UpdateAvailable=$warning}
-    elseif ($currentTask.Spec -ilike 'python-lockfile.spec') {$UpdateAvailable=$warning}
-    elseif ($currentTask.Spec -ilike 'python-subprocess32.spec') {$UpdateAvailable=$warning}
-    elseif ($currentTask.Spec -ilike 'python-terminaltables.spec') {$UpdateAvailable=$warning}
+    $warningText="Warning: repo isn't maintained anymore."
+    if ($currentTask.Spec -ilike 'dhcp.spec') {$warning=$warningText+" See "+ "https://www.isc.org/dhcp_migration/"}
+    elseif ($currentTask.Spec -ilike 'c-rest-engine.spec') {$warning=$warningText}
+    elseif ($currentTask.Spec -ilike 'copenapi.spec') {$warning=$warningText}
+    elseif ($currentTask.Spec -ilike 'cloud-network-setup.spec') {$warning=$warningText}
+    elseif ($currentTask.Spec -ilike 'confd.spec') {$warning=$warningText}
+    elseif ($currentTask.Spec -ilike 'cve-check-tool.spec') {$warning=$warningText}
+    elseif ($currentTask.Spec -ilike 'fcgi.spec') {$warning=$warningText+" See "+ "https://github.com/FastCGI-Archives/fcgi2/archive/refs/tags/%{version}.tar.gz ."}
+    elseif ($currentTask.Spec -ilike 'heapster.spec') {$warning=$warningText}
+    elseif ($currentTask.Spec -ilike 'http-parser.spec') {$warning=$warningText}
+    elseif ($currentTask.Spec -ilike 'kubernetes-dashboard.spec') {$warning=$warningText}
+    elseif ($currentTask.Spec -ilike 'libtar.spec') {$warning=$warningText+" See "+ "https://sources.debian.org/patches/libtar"}
+    elseif ($currentTask.Spec -ilike 'lightwave.spec') {$warning=$warningText}
+    elseif ($currentTask.Spec -ilike 'python-argparse.spec') {$warning=$warningText}
+    elseif ($currentTask.Spec -ilike 'python-atomicwrites.spec') {$warning=$warningText}
+    elseif ($currentTask.Spec -ilike 'python-ipaddr.spec') {$warning=$warningText}
+    elseif ($currentTask.Spec -ilike 'python-lockfile.spec') {$warning=$warningText}
+    elseif ($currentTask.Spec -ilike 'python-subprocess32.spec') {$warning=$warningText}
+    elseif ($currentTask.Spec -ilike 'python-terminaltables.spec') {$warning=$warningText}
 
-    $warning="Warning: Cannot detect correlating tags from the repo provided."
-    if (($currentTask.Spec -ilike 'bluez-tools.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-    elseif (($currentTask.Spec -ilike 'containers-common.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-    elseif (($currentTask.Spec -ilike 'cpulimit.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-    elseif (($currentTask.Spec -ilike 'dbxtool.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-    elseif (($currentTask.Spec -ilike 'dcerpc.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-    elseif (($currentTask.Spec -ilike 'dotnet-sdk.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-    elseif (($currentTask.Spec -ilike 'dtb-raspberrypi.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-    elseif (($currentTask.Spec -ilike 'fuse-overlayfs-snapshotter.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-    elseif (($currentTask.Spec -ilike 'hawkey.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-    elseif (($currentTask.Spec -ilike 'libgsystem.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-    elseif (($currentTask.Spec -ilike 'libselinux.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-    elseif (($currentTask.Spec -ilike 'libsepol.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-    elseif (($currentTask.Spec -ilike 'libnss-ato.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-    elseif (($currentTask.Spec -ilike 'lightwave.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-    elseif (($currentTask.Spec -ilike 'likewise-open.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-    elseif (($currentTask.Spec -ilike 'linux-firmware.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-    elseif (($currentTask.Spec -ilike 'motd.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-    elseif (($currentTask.Spec -ilike 'netmgmt.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-    elseif (($currentTask.Spec -ilike 'pcstat.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-    elseif (($currentTask.Spec -ilike 'python-backports.ssl_match_hostname.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-    elseif (($currentTask.Spec -ilike 'python-iniparse.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-    elseif (($currentTask.Spec -ilike 'python-geomet.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-    elseif (($currentTask.Spec -ilike 'python-pyjsparser.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-    elseif (($currentTask.Spec -ilike 'python-ruamel-yaml.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning+"Also, see "+"https://github.com/commx/ruamel-yaml/archive/refs/tags/%{version}.tar.gz"}
-    elseif (($currentTask.Spec -ilike 'sqlite2.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
-    elseif (($currentTask.Spec -ilike 'tornado.spec') -and ($UpdateAvailable -eq "")) {$UpdateAvailable=$warning}
+    $warningText="Warning: Cannot detect correlating tags from the repo provided."
+    if (($currentTask.Spec -ilike 'bluez-tools.spec') -and ($UpdateAvailable -eq "")) {$warning=$warningText}
+    elseif (($currentTask.Spec -ilike 'containers-common.spec') -and ($UpdateAvailable -eq "")) {$warning=$warningText}
+    elseif (($currentTask.Spec -ilike 'cpulimit.spec') -and ($UpdateAvailable -eq "")) {$warning=$warningText}
+    elseif (($currentTask.Spec -ilike 'dbxtool.spec') -and ($UpdateAvailable -eq "")) {$warning=$warningText}
+    elseif (($currentTask.Spec -ilike 'dcerpc.spec') -and ($UpdateAvailable -eq "")) {$warning=$warningText}
+    elseif (($currentTask.Spec -ilike 'dotnet-sdk.spec') -and ($UpdateAvailable -eq "")) {$warning=$warningText}
+    elseif (($currentTask.Spec -ilike 'dtb-raspberrypi.spec') -and ($UpdateAvailable -eq "")) {$warning=$warningText}
+    elseif (($currentTask.Spec -ilike 'fuse-overlayfs-snapshotter.spec') -and ($UpdateAvailable -eq "")) {$warning=$warningText}
+    elseif (($currentTask.Spec -ilike 'hawkey.spec') -and ($UpdateAvailable -eq "")) {$warning=$warningText}
+    elseif (($currentTask.Spec -ilike 'libgsystem.spec') -and ($UpdateAvailable -eq "")) {$warning=$warningText}
+    elseif (($currentTask.Spec -ilike 'libselinux.spec') -and ($UpdateAvailable -eq "")) {$warning=$warningText}
+    elseif (($currentTask.Spec -ilike 'libsepol.spec') -and ($UpdateAvailable -eq "")) {$warning=$warningText}
+    elseif (($currentTask.Spec -ilike 'libnss-ato.spec') -and ($UpdateAvailable -eq "")) {$warning=$warningText}
+    elseif (($currentTask.Spec -ilike 'lightwave.spec') -and ($UpdateAvailable -eq "")) {$warning=$warningText}
+    elseif (($currentTask.Spec -ilike 'likewise-open.spec') -and ($UpdateAvailable -eq "")) {$warning=$warningText}
+    elseif (($currentTask.Spec -ilike 'linux-firmware.spec') -and ($UpdateAvailable -eq "")) {$warning=$warningText}
+    elseif (($currentTask.Spec -ilike 'motd.spec') -and ($UpdateAvailable -eq "")) {$warning=$warningText}
+    elseif (($currentTask.Spec -ilike 'netmgmt.spec') -and ($UpdateAvailable -eq "")) {$warning=$warningText}
+    elseif (($currentTask.Spec -ilike 'pcstat.spec') -and ($UpdateAvailable -eq "")) {$warning=$warningText}
+    elseif (($currentTask.Spec -ilike 'python-backports.ssl_match_hostname.spec') -and ($UpdateAvailable -eq "")) {$warning=$warningText}
+    elseif (($currentTask.Spec -ilike 'python-iniparse.spec') -and ($UpdateAvailable -eq "")) {$warning=$warningText}
+    elseif (($currentTask.Spec -ilike 'python-geomet.spec') -and ($UpdateAvailable -eq "")) {$warning=$warningText}
+    elseif (($currentTask.Spec -ilike 'python-pyjsparser.spec') -and ($UpdateAvailable -eq "")) {$warning=$warningText}
+    elseif (($currentTask.Spec -ilike 'python-ruamel-yaml.spec') -and ($UpdateAvailable -eq "")) {$warning=$warningText+" Also, see "+"https://github.com/commx/ruamel-yaml/archive/refs/tags/%{version}.tar.gz"}
+    elseif (($currentTask.Spec -ilike 'sqlite2.spec') -and ($UpdateAvailable -eq "")) {$warning=$warningText}
+    elseif (($currentTask.Spec -ilike 'tornado.spec') -and ($UpdateAvailable -eq "")) {$warning=$warningText}
 
-    $warning="Warning: duplicate of python-pam.spec"
-    if ($currentTask.Spec -ilike 'python-pycodestyle.spec') {$UpdateAvailable=$warning}
+    $warningText="Warning: duplicate of python-pam.spec"
+    if ($currentTask.Spec -ilike 'python-pycodestyle.spec') {$warning=$warningText}
 
-    $warning="Info: Source0 contains a VMware internal url address."
-    if ($currentTask.Spec -ilike 'abupdate.spec') {$UpdateAvailable=$warning}
-    elseif ($currentTask.Spec -ilike 'ant-contrib.spec') {$UpdateAvailable=$warning}
-    elseif ($currentTask.Spec -ilike 'basic.spec') {$UpdateAvailable=$warning}
-    elseif ($currentTask.Spec -ilike 'build-essential.spec') {$UpdateAvailable=$warning}
-    elseif ($currentTask.Spec -ilike 'ca-certificates.spec') {$UpdateAvailable=$warning}
-    elseif ($currentTask.Spec -ilike 'distrib-compat.spec') {$UpdateAvailable=$warning}
-    elseif ($currentTask.Spec -ilike 'docker-vsock.spec') {$UpdateAvailable=$warning}
-    elseif ($currentTask.Spec -ilike 'fipsify.spec') {$UpdateAvailable=$warning}
-    elseif ($currentTask.Spec -ilike 'grub2-theme.spec') {$UpdateAvailable=$warning}
-    elseif ($currentTask.Spec -ilike 'initramfs.spec') {$UpdateAvailable=$warning}
-    elseif ($currentTask.Spec -ilike 'minimal.spec') {$UpdateAvailable=$warning}
-    elseif ($currentTask.Spec -ilike 'photon-iso-config.spec') {$UpdateAvailable=$warning}
-    elseif ($currentTask.Spec -ilike 'photon-release.spec') {$UpdateAvailable=$warning}
-    elseif ($currentTask.Spec -ilike 'photon-repos.spec') {$UpdateAvailable=$warning}
-    elseif ($currentTask.Spec -ilike 'photon-upgrade.spec') {$UpdateAvailable=$warning}
-    elseif ($currentTask.Spec -ilike 'rubygem-async-io.spec') {$UpdateAvailable=$warning}
-    elseif ($currentTask.Spec -ilike 'shim-signed.spec') {$UpdateAvailable=$warning}
-    elseif ($currentTask.Spec -ilike 'stig-hardening.spec') {$UpdateAvailable=$warning}
+    $warningText="Info: Source0 contains a VMware internal url address."
+    if ($currentTask.Spec -ilike 'abupdate.spec') {$warning=$warningText}
+    elseif ($currentTask.Spec -ilike 'ant-contrib.spec') {$warning=$warningText}
+    elseif ($currentTask.Spec -ilike 'basic.spec') {$warning=$warningText}
+    elseif ($currentTask.Spec -ilike 'build-essential.spec') {$warning=$warningText}
+    elseif ($currentTask.Spec -ilike 'ca-certificates.spec') {$warning=$warningText}
+    elseif ($currentTask.Spec -ilike 'distrib-compat.spec') {$warning=$warningText}
+    elseif ($currentTask.Spec -ilike 'docker-vsock.spec') {$warning=$warningText}
+    elseif ($currentTask.Spec -ilike 'fipsify.spec') {$warning=$warningText}
+    elseif ($currentTask.Spec -ilike 'grub2-theme.spec') {$warning=$warningText}
+    elseif ($currentTask.Spec -ilike 'initramfs.spec') {$warning=$warningText}
+    elseif ($currentTask.Spec -ilike 'minimal.spec') {$warning=$warningText}
+    elseif ($currentTask.Spec -ilike 'photon-iso-config.spec') {$warning=$warningText}
+    elseif ($currentTask.Spec -ilike 'photon-release.spec') {$warning=$warningText}
+    elseif ($currentTask.Spec -ilike 'photon-repos.spec') {$warning=$warningText}
+    elseif ($currentTask.Spec -ilike 'photon-upgrade.spec') {$warning=$warningText}
+    elseif ($currentTask.Spec -ilike 'rubygem-async-io.spec') {$warning=$warningText}
+    elseif ($currentTask.Spec -ilike 'shim-signed.spec') {$warning=$warningText}
+    elseif ($currentTask.Spec -ilike 'stig-hardening.spec') {$warning=$warningText}
 
-    $warning="Warning: Source0 seems invalid and no other Official source has been found."
-    if ($currentTask.Spec -ilike 'cdrkit.spec') {$UpdateAvailable=$warning}
-    elseif ($currentTask.Spec -ilike 'crash.spec') {$UpdateAvailable=$warning}
-    elseif ($currentTask.Spec -ilike 'finger.spec') {$UpdateAvailable=$warning}
-    elseif ($currentTask.Spec -ilike 'ndsend.spec') {$UpdateAvailable=$warning}
-    elseif ($currentTask.Spec -ilike 'pcre.spec') {$UpdateAvailable=$warning}
-    elseif ($currentTask.Spec -ilike 'pypam.spec') {$UpdateAvailable=$warning}
+    $warningText="Warning: Source0 seems invalid and no other Official source has been found."
+    if ($currentTask.Spec -ilike 'cdrkit.spec') {$warning=$warningText}
+    elseif ($currentTask.Spec -ilike 'crash.spec') {$warning=$warningText}
+    elseif ($currentTask.Spec -ilike 'finger.spec') {$warning=$warningText}
+    elseif ($currentTask.Spec -ilike 'ndsend.spec') {$warning=$warningText}
+    elseif ($currentTask.Spec -ilike 'pcre.spec') {$warning=$warningText}
+    elseif ($currentTask.Spec -ilike 'pypam.spec') {$warning=$warningText}
 
-    $warning="Info: Source0 contains a static version number."
-    if ($currentTask.Spec -ilike 'autoconf213.spec') {$UpdateAvailable=$warning}
-    elseif ($currentTask.Spec -ilike 'etcd-3.3.27.spec') {$UpdateAvailable=$warning}
+    $warningText="Info: Source0 contains a static version number."
+    if ($currentTask.Spec -ilike 'autoconf213.spec') {$warning=$warningText}
+    elseif ($currentTask.Spec -ilike 'etcd-3.3.27.spec') {$warning=$warningText}
 
-    $warning="Info: Packaging format .bz2 has changed to another one."
-    if ($currentTask.Spec -ilike 'python-twisted.spec') {$UpdateAvailable=$warning}
-    if ($currentTask.Spec -ilike 'conntrack-tools.spec') {$UpdateAvailable=$warning}
+    $warningText="Info: Packaging format .bz2 has changed to another one."
+    if ($currentTask.Spec -ilike 'python-twisted.spec') {$warning=$warningText}
+    if ($currentTask.Spec -ilike 'conntrack-tools.spec') {$warning=$warningText}
 
     # reset to Source0 because of different packaging formats
     if ($currentTask.Spec -ilike 'psmisc.spec') {$Source0 = $currentTask.Source0}
@@ -4369,12 +4377,6 @@ function CheckURLHealth {
         {
             if ($UpdateURL -eq "")
             {
-                if ($currentTask.spec -ilike 'byacc.spec')
-                {
-                    $version = $version -ireplace "2.0.",""
-                }
-
-                if ($currentTask.spec -ilike 'docker.spec') { $Source0=[system.string]::concat("https://github.com/moby/moby/archive/refs/tags/v",$version,".tar.gz") }
 
                 if ($currentTask.spec -ilike 'libqmi.spec') { $Source0=[system.string]::concat("https://gitlab.freedesktop.org/mobile-broadband/libqmi/-/archive/",$version,"/libqmi-",$version,".tar.gz")}
 
@@ -4442,8 +4444,8 @@ function CheckURLHealth {
                                         $HealthUpdateURL = urlhealth($UpdateURL)
                                         if ($HealthUpdateURL -ne "200")
                                         {
-                                            $warning="Warning: Manufacturer may changed version packaging format."
-                                            $UpdateAvailable=$warning
+                                            $warningText="Warning: Manufacturer may changed version packaging format."
+                                            $warning=$warningText
                                             $UpdateURL=""
                                             $HealthUpdateURL =""
                                         }
@@ -4610,7 +4612,7 @@ function CheckURLHealth {
         else {ModifySpecFile -SpecFileName $currentTask.spec -SourcePath $SourcePath -PhotonDir $photonDir -Name $currentTask.name -Update $UpdateAvailable -UpdateDownloadFile $UpdateDownloadFile -OpenJDK8 $false -SHALine $SHALine}
     }
 
-    [System.String]::Concat($currentTask.spec,',',$currentTask.source0,',',$Source0,',',$urlhealth,',',$UpdateAvailable,',',$UpdateURL,',',$HealthUpdateURL,',',$currentTask.Name,',',$SHAValue,',',$UpdateDownloadName,',',$isArchived,',',$ArchivationDate)
+    [System.String]::Concat($currentTask.spec,',',$currentTask.source0,',',$Source0,',',$urlhealth,',',$UpdateAvailable,',',$UpdateURL,',',$HealthUpdateURL,',',$currentTask.Name,',',$SHAValue,',',$UpdateDownloadName,',',$Warning,',',$ArchivationDate)
 }
 
 function GenerateUrlHealthReports {
