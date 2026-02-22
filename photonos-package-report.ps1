@@ -30,6 +30,9 @@
 #   0.60  11.02.2026   dcasota  Robustness, security and cross-platform improvements: git timeout handling, safe git calls,
 #                               cross-platform path handling (Join-Path, $HOME fallback), OS detection for winget/Get-Counter/Get-CimInstance,
 #                               List<T> for performance, safe spec parsing with Get-SpecValue helper, security cleanup at script end
+#   0.61  22.02.2026   dcasota  Quarterly version format support (YYYY.Q#.#), isArchived/ArchivationDate output columns,
+#                               Source0Lookup expansion to 848+ packages, git timeout standardized to 600s,
+#                               Linux compatibility fixes, RubyGems JSON API, GNU FTP mirror fallback
 #
 #  .PREREQUISITES
 #    - Script tested on Microsoft Windows 11
@@ -4789,7 +4792,7 @@ function GenerateUrlHealthReports {
 
 # Script execution starts
 Write-Output "=================================================="
-Write-Output "Photon OS Package Report Script v0.60"
+Write-Output "Photon OS Package Report Script v0.61"
 Write-Output "Starting at: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
 Write-Output "=================================================="
 

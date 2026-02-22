@@ -294,7 +294,7 @@ pwsh -File photonos-package-report.ps1
 
 ## PREREQUISITES
 
-- **Operating System**: Windows 11 (tested), Linux/WSL/macOS (cross-platform support in v0.60)
+- **Operating System**: Windows 11 (tested), Linux/WSL/macOS (cross-platform support since v0.60)
 - **PowerShell**: Minimum 5.1, Recommended 7.4+ for parallel processing
 - **Required Commands**: `git`, `tar`
 - **Required Module**: PowerShellCookbook (auto-installed if missing)
@@ -305,7 +305,13 @@ pwsh -File photonos-package-report.ps1
 
 ## VERSION HISTORY
 
-See script header for complete version history. Current version: **0.60**
+See script header for complete version history. Current version: **0.61**
+
+Key improvements in v0.61:
+- Quarterly version format support in Get-LatestName (YYYY.Q#.# for amdvlk, etc.)
+- isArchived/ArchivationDate columns in URL health report output
+- v- prefix handling in UpdateDownloadName
+- Fixed missing $ in runit.spec condition
 
 Key improvements in v0.60:
 - Git timeout handling (600s for all operations) to prevent hanging
