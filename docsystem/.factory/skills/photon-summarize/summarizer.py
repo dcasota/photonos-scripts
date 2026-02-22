@@ -42,7 +42,7 @@ except ImportError:
 
 DEFAULT_BRANCHES = ['3.0', '4.0', '5.0', '6.0', 'common', 'master']
 XAI_API_URL = 'https://api.x.ai/v1/chat/completions'
-BATCH_SIZE = 20
+BATCH_SIZE = 40
 REPO_COMMIT_URL = 'https://github.com/vmware/photon/commit'
 
 SYSTEM_PROMPT = """\
@@ -318,23 +318,31 @@ def get_ai_summary(branch, year, month, commits, api_key, model,
             sub_summaries, branch, year, month, api_key, model,
             combine_max_tokens, api_timeout)
 
-    return _combine_summaries(sub_summaries, branch, year, month, api_key,
-                              model, combine_max_tokens, api_timeout,
-                              is_final=True)
+    return _combine_final(sub_summaries, branch, year, month, api_key,
+                          model, combine_max_tokens, api_timeout)
 
 
-def _combine_summaries(sub_summaries, branch, year, month, api_key, model,
-                       max_tokens, api_timeout, is_final=False):
-    """Combine a list of sub-summaries into one via a single API call."""
-    label = 'final' if is_final else 'intermediate'
+def _combine_final(sub_summaries, branch, year, month, api_key, model,
+                   max_tokens, api_timeout):
+    """Final combine: produce the full changelog structure."""
     combine_prompt = f"""
 Combine the following sub-summaries into a single monthly changelog for \
 Photon OS branch '{branch}' in {year}-{month:02d}.
 
 The commit URL base is: {REPO_COMMIT_URL}
 
-Keep EXACTLY this section order: TL;DR, Action Required, Security, Added, \
-Changed, Fixed, Removed, Contributors.
+Start your output DIRECTLY with "## TL;DR" — do NOT add a title heading \
+before it.
+
+Use EXACTLY these H2 (##) sections in this order:
+## TL;DR
+## Action Required
+## Security
+## Added
+## Changed
+## Fixed
+## Removed
+## Contributors
 
 Rules:
 - Deduplicate entries that appear in multiple batches.
@@ -343,11 +351,43 @@ Rules:
 - The TL;DR must be exactly 3 sentences.
 - Action Required uses blockquote (>) format.
 - Do NOT add a "Looking Ahead" or speculation section.
+- Do NOT wrap the output in an extra heading or title.
 
 Sub-summaries:
 {chr(10).join(sub_summaries)}
 """
-    debug(f'  {label.capitalize()} combine: {len(sub_summaries)} sub-summaries '
+    debug(f'  Final combine: {len(sub_summaries)} sub-summaries '
+          f'(max_tokens={max_tokens})')
+    return query_grok(combine_prompt, api_key, model,
+                      max_tokens=max_tokens, timeout=api_timeout)
+
+
+def _combine_intermediate(sub_summaries, branch, year, month, api_key, model,
+                          max_tokens, api_timeout):
+    """Intermediate combine: merge into compact categorised bullet lists only."""
+    combine_prompt = f"""
+Merge the following sub-summaries for Photon OS branch '{branch}' in \
+{year}-{month:02d} into a SINGLE consolidated list.
+
+Output ONLY these sections with deduplicated bullet points:
+
+## Security
+## Added
+## Changed
+## Fixed
+## Removed
+
+Rules:
+- Deduplicate identical entries across sub-summaries.
+- Keep one bullet (- ) per change. No prose, no TL;DR, no Action Required, \
+no Contributors.
+- Every commit reference must remain as a Markdown link.
+- Be concise: if two bullets describe the same package update, keep only one.
+
+Sub-summaries:
+{chr(10).join(sub_summaries)}
+"""
+    debug(f'  Intermediate combine: {len(sub_summaries)} sub-summaries '
           f'(max_tokens={max_tokens})')
     return query_grok(combine_prompt, api_key, model,
                       max_tokens=max_tokens, timeout=api_timeout)
@@ -367,9 +407,9 @@ def _hierarchical_combine(sub_summaries, branch, year, month, api_key, model,
                 merged.append(pair[0])
             else:
                 debug(f'  Merging pair {i // 2 + 1}')
-                merged.append(_combine_summaries(
+                merged.append(_combine_intermediate(
                     pair, branch, year, month, api_key, model,
-                    max_tokens, api_timeout, is_final=False))
+                    max_tokens, api_timeout))
         sub_summaries = merged
         level += 1
     debug(f'  Hierarchical combine done: {len(sub_summaries)} sub-summaries '
