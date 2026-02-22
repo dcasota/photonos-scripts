@@ -391,10 +391,11 @@ backward-cpp.spec,https://github.com/bombela/backward-cpp/archive/refs/tags/v%{v
 bash-completion.spec,https://github.com/scop/bash-completion/releases/download/%{version}/bash-completion-%{version}.tar.xz,https://github.com/scop/bash-completion.git
 bats.spec,https://github.com/bats-core/bats-core/archive/refs/tags/v%{version}.tar.gz,https://github.com/bats-core/bats-core.git
 bazel.spec,https://github.com/bazelbuild/bazel/releases/download/%{version}/bazel-%{version}-dist.zip,https://github.com/bazelbuild/bazel.git
-bcc.spec,https://github.com/iovisor/bcc/archive/refs/tags/v%{version}..tar.gz,https://github.com/iovisor/bcc.git
+bcc.spec,https://github.com/iovisor/bcc/archive/refs/tags/v%{version}.tar.gz,https://github.com/iovisor/bcc.git
 bindutils.spec,https://github.com/isc-projects/bind9/archive/refs/tags/v%{version}.tar.gz,https://github.com/isc-projects/bind9.git,,,"wpk-get-rid-of-up-downgrades-,noadaptive,more-adaptive,adaptive"
 blktrace.spec,,https://git.kernel.org/pub/scm/linux/kernel/git/axboe/blktrace.git,master
-bluez.spec,https://www.kernel.org/pub/linux/bluetooth/bluez-%{version}.tar.xz,https://git.kernel.org/pub/scm/bluetooth/bluez.git,,,
+bluez.spec,https://www.kernel.org/pub/linux/bluetooth/bluez-%{version}.tar.xz,https://git.kernel.org/pub/scm/bluetooth/bluez.git
+bluez-tools.spec,,https://github.com/khvzak/bluez-tools.git
 boost.spec,https://github.com/boostorg/boost/archive/refs/tags/boost-%{version}.tar.gz,https://github.com/boostorg/boost.git
 bpftrace.spec,https://github.com/bpftrace/bpftrace/archive/refs/tags/v%{version}.tar.gz,https://github.com/bpftrace/bpftrace.git
 bridge-utils.spec,,https://git.kernel.org/pub/scm/network/bridge/bridge-utils.git
@@ -402,7 +403,7 @@ btrfs-progs.spec,https://github.com/kdave/btrfs-progs/archive/refs/tags/v%{versi
 bubblewrap.spec,https://github.com/containers/bubblewrap/archive/refs/tags/v%{version}.tar.gz,https://github.com/containers/bubblewrap.git
 byacc.spec,https://invisible-island.net/archives/byacc/byacc-%{version}.tgz
 bzip2.spec,https://github.com/libarchive/bzip2/archive/refs/tags/bzip2-%{version}.tar.gz,https://github.com/libarchive/bzip2.git
-c-ares.spec,https://github.com/c-ares/c-ares/archive/refs/tags/cares-%{version}.tar.gz,https://github.com/c-ares/c-ares.git
+c-ares.spec,https://github.com/c-ares/c-ares/archive/refs/tags/v%{version}.tar.gz,https://github.com/c-ares/c-ares.git
 c-rest-engine.spec,https://github.com/vmware-archive/c-rest-engine/archive/refs/tags/%{version}.tar.gz,https://github.com/vmware-archive/c-rest-engine.git
 cairo.spec,https://gitlab.freedesktop.org/cairo/cairo/-/archive/%{version}/cairo-%{version}.tar.gz,https://gitlab.freedesktop.org/cairo/cairo.git
 calico.spec,https://github.com/projectcalico/calico/archive/refs/tags/v%{version}.tar.gz,https://github.com/projectcalico/calico.git
@@ -415,8 +416,9 @@ cassandra.spec,https://github.com/apache/cassandra/archive/refs/tags/cassandra-%
 cereal.spec,https://github.com/USCiLab/cereal/archive/refs/tags/v%{version}.tar.gz,https://github.com/USCiLab/cereal.git
 cgroup-utils.spec,https://github.com/peo3/cgroup-utils/archive/refs/tags/v%{version}.tar.gz,https://github.com/peo3/cgroup-utils.git
 check.spec,https://github.com/libcheck/check/archive/refs/tags/%{version}.tar.gz,https://github.com/libcheck/check.git
-checkpolicy.spec,https://github.com/SELinuxProject/selinux/releases/download/%{version}/checkpolicy-%{version}.tar.gz,https://github.com/SELinuxProject/selinux.git
+checkpolicy.spec,https://github.com/SELinuxProject/selinux/archive/refs/tags/checkpolicy-%{version}.tar.gz,https://github.com/SELinuxProject/selinux.git
 chkconfig.spec,https://github.com/fedora-sysv/chkconfig/archive/refs/tags/%{version}.tar.gz,https://github.com/fedora-sysv/chkconfig.git
+chromium.spec,https://github.com/chromium/chromium/archive/refs/tags/%{version}.tar.gz,https://github.com/chromium/chromium.git
 chrony.spec,https://github.com/mlichvar/chrony/archive/refs/tags/%{version}.tar.gz,https://github.com/mlichvar/chrony.git
 chrpath.spec,https://codeberg.org/pere/chrpath/archive/release-%{version}.tar.gz,https://codeberg.org/pere/chrpath.git
 cifs-utils.spec,https://download.samba.org/pub/linux-cifs/cifs-utils/cifs-utils-%{version}.tar.bz2,git://git.samba.org/cifs-utils.git
@@ -441,13 +443,14 @@ coredns.spec,https://github.com/coredns/coredns/archive/refs/tags/v%{version}.ta
 copenapi.spec,https://github.com/vmware-archive/copenapi/archive/refs/tags/v%{version}.tar.gz,https://github.com/vmware-archive/copenapi.git
 cppcheck.spec,https://github.com/danmar/cppcheck/archive/refs/tags/%{version}.tar.gz,https://github.com/danmar/cppcheck.git
 cracklib.spec,https://github.com/cracklib/cracklib/archive/refs/tags/v%{version}.tar.gz,https://github.com/cracklib/cracklib.git
+crash.spec,https://github.com/crash-utility/crash/archive/refs/tags/%{version}.tar.gz,https://github.com/crash-utility/crash.git
 createrepo_c.spec,https://github.com/rpm-software-management/createrepo_c/archive/refs/tags/%{version}.tar.gz,https://github.com/rpm-software-management/createrepo_c.git
 cri-tools.spec,https://github.com/kubernetes-sigs/cri-tools/archive/refs/tags/v%{version}.tar.gz,https://github.com/kubernetes-sigs/cri-tools.git
-cronie.spec,https://github.com/cronie-crond/cronie/releases/download/cronie-%{version}/cronie-%{version}.tar.gz,https://github.com/cronie-crond/cronie.git
-crun.spec,https://github.com/containers/crun/releases/download/%{version}/crun-%{version}.tar.xz,https://github.com/containers/crun.git
+cronie.spec,https://github.com/cronie-crond/cronie/archive/refs/tags/cronie-%{version}.tar.gz,https://github.com/cronie-crond/cronie.git
+crun.spec,https://github.com/containers/crun/releases/download/%{version}/crun-%{version}.tar.gz,https://github.com/containers/crun.git
 cryptsetup.spec,https://github.com/mbroz/cryptsetup/archive/refs/tags/v%{version}.tar.gz,https://github.com/mbroz/cryptsetup.git
 cscope.spec,https://unlimited.dl.sourceforge.net/project/cscope/cscope/v%{version}/cscope-%{version}.tar.gz
-ctags.spec,https://sf-eu-introserv-1.dl.sourceforge.net/project/ctags/ctags/%{version}/ctags-%{version}.tar.gz
+ctags.spec,https://github.com/universal-ctags/ctags/releases/download/v%{version}/universal-ctags-%{version}.tar.gz,https://github.com/universal-ctags/ctags.git,,,"universal-ctags-"
 cups.spec,https://github.com/OpenPrinting/cups/archive/refs/tags/v%{version}.tar.gz,https://github.com/OpenPrinting/cups.git
 cve-check-tool.spec,https://github.com/clearlinux/cve-check-tool/archive/refs/tags/v%{version}.tar.gz,https://github.com/clearlinux/cve-check-tool.git
 cyrus-sasl.spec,https://github.com/cyrusimap/cyrus-sasl/archive/refs/tags/cyrus-sasl-%{version}.tar.gz,https://github.com/cyrusimap/cyrus-sasl.git
@@ -493,6 +496,7 @@ efivar.spec,https://github.com/rhboot/efivar/releases/download/%{version}/efivar
 elasticsearch.spec,https://github.com/elastic/elasticsearch/archive/refs/tags/v%{version}.tar.gz,https://github.com/elastic/elasticsearch.git
 elixir.spec,https://github.com/elixir-lang/elixir/archive/v%{version}/elixir-%{version}.tar.gz,https://github.com/elixir-lang/elixir.git
 emacs.spec,https://ftp.gnu.org/gnu/emacs/emacs-%{version}.tar.xz
+entchant.spec,https://github.com/rrthomas/enchant/archive/refs/tags/v%{version}.tar.gz,https://github.com/rrthomas/enchant.git
 erlang.spec,https://github.com/erlang/otp/archive/refs/tags/OTP-%{version}.tar.gz,https://github.com/erlang/otp.git,,erlang,"R16B,OTP-,erl_1211-bp"
 erlang-sd_notify.spec,https://github.com/systemd/erlang-sd_notify/archive/refs/tags/v%{version}.tar.gz,https://github.com/systemd/erlang-sd_notify.git
 etcd.spec,https://github.com/etcd-io/etcd/archive/refs/tags/v%{version}.tar.gz,https://github.com/etcd-io/etcd.git
@@ -547,6 +551,7 @@ google-guest-configs.spec,https://github.com/GoogleCloudPlatform/guest-configs/a
 google-guest-oslogin.spec,https://github.com/GoogleCloudPlatform/guest-oslogin/archive/refs/tags/%{version}.tar.gz,https://github.com/GoogleCloudPlatform/guest-oslogin.git
 govmomi.spec,https://github.com/vmware/govmomi/archive/refs/tags/v%{version}.0.tar.gz,https://github.com/vmware/govmomi.git
 gperftools.spec,https://github.com/gperftools/gperftools/releases/download/gperftools-%{version}/gperftools-%{version}.tar.gz,https://github.com/gperftools/gperftools.git
+gptfdisk.spec,https://netix.dl.sourceforge.net/project/gptfdisk/gptfdisk/%{version}/gptfdisk-%{version}.tar.gz,https://git.code.sf.net/p/gptfdisk/code.git
 graphene.spec,https://github.com/ebassi/graphene/archive/refs/tags/%{version}.tar.gz,https://github.com/ebassi/graphene.git
 grpc.spec,https://github.com/grpc/grpc/archive/refs/tags/v%{version}.tar.gz,https://github.com/grpc/grpc.git
 gssntlmssp.spec,https://github.com/gssapi/gss-ntlmssp/releases/download/v%{version}/gssntlmssp-%{version}.tar.gz,https://github.com/gssapi/gss-ntlmssp.git
@@ -557,7 +562,7 @@ gtest.spec,https://github.com/google/googletest/archive/refs/tags/release-%{vers
 gtk3.spec,https://github.com/GNOME/gtk/archive/refs/tags/%{version}.tar.gz,https://github.com/GNOME/gtk.git
 gtk-doc.spec,https://github.com/GNOME/gtk-doc/archive/refs/tags/%{version}.tar.gz,https://github.com/GNOME/gtk-doc.git
 guile.spec,https://ftp.gnu.org/gnu/guile/guile-%{version}.tar.gz
-haproxy.spec,https://www.haproxy.org/download/3.2/src/haproxy-%{version}.tar.gz,http://git.haproxy.org/git/haproxy-3.2.git/
+haproxy.spec,https://www.haproxy.org/download/3.2/src/haproxy-%{version}.tar.gz,https://github.com/haproxy/haproxy.git
 haproxy-dataplaneapi.spec,https://github.com/haproxytech/dataplaneapi/archive/refs/tags/v%{version}.tar.gz,https://github.com/haproxytech/dataplaneapi.git
 harfbuzz.spec,,https://github.com/harfbuzz/harfbuzz.git
 haveged.spec,https://github.com/jirka-h/haveged/archive/refs/tags/v%{version}.tar.gz,https://github.com/jirka-h/haveged.git
@@ -572,6 +577,7 @@ hunspell.spec,https://github.com/hunspell/hunspell/releases/download/v%{version}
 hyperscan.spec,https://github.com/intel/hyperscan/archive/refs/tags/v%{version}.tar.gz,https://github.com/intel/hyperscan.git
 i2c-tools.spec,https://git.kernel.org/pub/scm/utils/i2c-tools/i2c-tools.git/snapshot/i2c-tools-%{version}.tar.gz,https://git.kernel.org/pub/scm/utils/i2c-tools/i2c-tools.git
 iana-etc.spec,https://github.com/Mic92/iana-etc/releases/download/%{version}/iana-etc-%{version}.tar.gz,https://github.com/Mic92/iana-etc.git
+ibmtpm.spec,https://github.com/kgoldman/ibmswtpm2/archive/refs/tags/rev183-%{version}.tar.gz,https://github.com/kgoldman/ibmswtpm2.git,,,"rev183-"
 icu.spec,https://github.com/unicode-org/icu/releases/download/release-73-1/icu4c-73_1-src.tgz,https://github.com/unicode-org/icu.git
 imagemagick.spec,https://github.com/ImageMagick/ImageMagick/archive/refs/tags/%{version}.tar.gz,https://github.com/ImageMagick/ImageMagick.git
 ImageMagick.spec,https://github.com/ImageMagick/ImageMagick/archive/refs/tags/%{version}.tar.gz,https://github.com/ImageMagick/ImageMagick.git
@@ -628,7 +634,7 @@ libcap.spec,,https://git.kernel.org/pub/scm/libs/libcap/libcap.git
 libcap-ng.spec,https://github.com/stevegrubb/libcap-ng/archive/refs/tags/v%{version}.tar.gz,https://github.com/stevegrubb/libcap-ng.git
 libcbor.spec,https://github.com/PJK/libcbor/archive/refs/tags/v%{version}.tar.gz,https://github.com/PJK/libcbor.git
 libcgroup.spec,https://github.com/libcgroup/libcgroup/archive/refs/tags/v%{version}.tar.gz,https://github.com/libcgroup/libcgroup.git
-libclc.spec,https://github.com/llvm/llvm-project/releases/download/llvmorg-%{version}/libclc-%{version}.src.tar.xz,https://github.com/llvm/llvm-project
+libclc.spec,https://github.com/llvm/llvm-project/releases/download/llvmorg-%{version}/libclc-%{version}.src.tar.xz,https://github.com/llvm/llvm-project.git
 libconfig.spec,https://github.com/hyperrealm/libconfig/archive/refs/tags/v%{version}.tar.gz,https://github.com/hyperrealm/libconfig.git
 libdaemon.spec,https://0pointer.de/lennart/projects/libdaemon/libdaemon-%{version}.tar.gz
 libdb.spec,https://github.com/berkeleydb/libdb/archive/refs/tags/v%{version}.tar.gz,https://github.com/berkeleydb/libdb.git
@@ -1026,7 +1032,6 @@ python-requests-unixsocket.spec,https://github.com/msabramo/requests-unixsocket/
 python-requests-toolbelt.spec,https://github.com/requests/toolbelt/archive/refs/tags/%{version}.tar.gz,https://github.com/requests/toolbelt.git
 python-resolvelib.spec,https://github.com/sarugaku/resolvelib/archive/refs/tags/%{version}.tar.gz,https://github.com/sarugaku/resolvelib.git
 python-rsa.spec,https://github.com/sybrenstuvel/python-rsa/archive/refs/tags/version-%{version}.tar.gz,https://github.com/sybrenstuvel/python-rsa.git,,,"version-"
-python-ruamel-yaml.spec,https://files.pythonhosted.org/packages/17/2f/f38332bf6ba751d1c8124ea70681d2b2326d69126d9058fbd9b4c434d268/ruamel.yaml-%{version}.tar.gz
 python-s3transfer.spec,https://github.com/boto/s3transfer/archive/refs/tags/%{version}.tar.gz,https://github.com/boto/s3transfer.git
 python-schedutils.spec,https://git.kernel.org/pub/scm/libs/python/python-schedutils/python-schedutils.git/snapshot/python-schedutils-%{version}.tar.gz,https://git.kernel.org/pub/scm/libs/python/python-schedutils/python-schedutils.git
 python-scp.spec,https://github.com/jbardin/scp.py/archive/refs/tags/v%{version}.tar.gz,https://github.com/jbardin/scp.py.git
@@ -1123,9 +1128,9 @@ slirp4netns.spec,https://github.com/rootless-containers/slirp4netns/archive/refs
 snappy.spec,https://github.com/google/snappy/archive/refs/tags/%{version}.tar.gz,https://github.com/google/snappy.git
 snoopy.spec,https://github.com/a2o/snoopy/archive/refs/tags/snoopy-%{version}.tar.gz,https://github.com/a2o/snoopy.git
 spdlog.spec,https://github.com/gabime/spdlog/archive/refs/tags/v%{version}.tar.gz,https://github.com/gabime/spdlog.git
-spirv-headers.spec,https://github.com/KhronosGroup/SPIRV-Headers/archive/refs/tags/sdk-%{version}.tar.gz,https://github.com/KhronosGroup/SPIRV-Headers.git
+spirv-headers.spec,https://github.com/KhronosGroup/SPIRV-Headers/archive/refs/tags/vulkan-sdk-%{version}.tar.gz,https://github.com/KhronosGroup/SPIRV-Headers.git,,,"vulkan-sdk-"
 spirv-llvm-translator.spec,https://github.com/KhronosGroup/SPIRV-LLVM-Translator/archive/refs/tags/v%{version}.tar.gz,https://github.com/KhronosGroup/SPIRV-LLVM-Translator.git
-spirv-tools.spec,https://github.com/KhronosGroup/SPIRV-Tools/archive/refs/tags/sdk-%{version}.tar.gz,https://github.com/KhronosGroup/SPIRV-Tools.git
+spirv-tools.spec,https://github.com/KhronosGroup/SPIRV-Tools/archive/refs/tags/vulkan-sdk-%{version}.0.tar.gz,https://github.com/KhronosGroup/SPIRV-Tools.git,,,"vulkan-sdk-"
 sqlite.spec,https://github.com/sqlite/sqlite/archive/refs/tags/version-%{version}.tar.gz,https://github.com/sqlite/sqlite.git,,,"version-"
 squashfs-tools.spec,https://github.com/plougher/squashfs-tools/archive/refs/tags/%{version}.tar.gz,https://github.com/plougher/squashfs-tools.git
 sshfs.spec,https://github.com/libfuse/sshfs/archive/refs/tags/sshfs-%{version}.tar.gz,https://github.com/libfuse/sshfs.git
@@ -1191,12 +1196,13 @@ wayland-protocols.spec,,https://gitlab.freedesktop.org/wayland/wayland-protocols
 wget.spec,https://ftp.gnu.org/gnu/wget/wget-%{version}.tar.gz
 whois.spec,https://salsa.debian.org/md/whois/-/archive/%{version}/whois-%{version}.tar.gz,https://salsa.debian.org/md/whois.git
 wireshark.spec,https://github.com/wireshark/wireshark/archive/refs/tags/wireshark-%{version}.tar.gz,https://github.com/wireshark/wireshark.git
+wpa_supplicant.spec,https://w1.fi/releases/wpa_supplicant-%{version}.tar.gz
 wrapt.spec,https://github.com/GrahamDumpleton/wrapt/archive/refs/tags/%{version}.tar.gz,https://github.com/GrahamDumpleton/wrapt.git
 xerces-c.spec,https://github.com/apache/xerces-c/archive/refs/tags/v%{version}.tar.gz,https://github.com/apache/xerces-c.git
 xinetd.spec,https://github.com/xinetd-org/xinetd/archive/refs/tags/xinetd-%{version}.tar.gz,https://github.com/xinetd-org/xinetd.git
 XML-Parser.spec,https://github.com/toddr/XML-Parser/archive/refs/tags/%{version}.tar.gz,https://github.com/toddr/XML-Parser.git
 xml-security-c.spec,https://archive.apache.org/dist/santuario/c-library/xml-security-c-%{version}.tar.gz
-xmlsec1.spec,https://www.aleksey.com/xmlsec/download/xmlsec1-%{version}.tar.gz,https://github.com/lsh123/xmlsec.git
+xmlsec1.spec,https://github.com/lsh123/xmlsec/releases/download/%{version}/xmlsec1-%{version}.tar.gz,https://github.com/lsh123/xmlsec.git
 xxhash.spec,https://github.com/Cyan4973/xxHash/archive/refs/tags/v%{version}.tar.gz,https://github.com/Cyan4973/xxHash.git
 xz.spec,https://github.com/tukaani-project/xz/archive/refs/tags/v%{version}.tar.gz,https://github.com/tukaani-project/xz.git
 yajl.spec,https://github.com/lloyd/yajl/archive/refs/tags/%{version}.tar.gz,https://github.com/lloyd/yajl.git
@@ -1583,6 +1589,13 @@ function CheckURLHealth {
             $date = [int64]$parts[2]  # YYYYMMDD
             return @{ Type = 'VersionDate'; Date = $date; VersionNumber = $versionNumber }
         }
+        # Case 2b: Quarterly version format (YYYY.Q#.#)
+        elseif ($InputVersion -match '^(\d{4})\.Q(\d+)\.(\d+)$') {
+            $year = [int]$Matches[1]
+            $quarter = [int]$Matches[2]
+            $patch = [int]$Matches[3]
+            return @{ Type = 'StandardVersion'; Components = @($year, $quarter, $patch) }
+        }
         # Case 3: Standard version format (X.Y, X.Y.Z, X.Y.Z.W, etc.)
         elseif ($normalizedVersion -match '^\d+(\.\d+)+$') {
             $components = $parts | ForEach-Object { [int]$_ }
@@ -1729,7 +1742,7 @@ function CheckURLHealth {
         }
 
         # Check if any name matches the version number pattern (dot or hyphen-separated)
-        $versionNames = @($Names | Where-Object { $_ -match '^\d+([.-]\d+)*$' })
+        $versionNames = @($Names | Where-Object { $_ -match '^\d+([.-]Q?\d+)*$' })
 
         if ($versionNames -and $versionNames.Count -gt 0) {
             # Use bubble-sort style to find the maximum using Compare-VersionStrings
@@ -1773,12 +1786,14 @@ function CheckURLHealth {
     $gitBranch=""
     [System.string]$customRegex=""
     $ignore=@()
+    [System.string]$isArchived=""
+    [System.string]$ArchivationDate=""
 
     # In case of debug: uncomment and debug from here
-    # if ($currentTask.spec -ilike 'vsftpd.spec')
-    # {pause}
-    # else
-    # {return}
+    if ($currentTask.spec -ilike 'amdvlk.spec')
+    {pause}
+    else
+    {return}
 
     $Source0 = $currentTask.Source0
 
@@ -1841,7 +1856,6 @@ function CheckURLHealth {
             $tmpversion = $tmpversion -ireplace "1.",""
             $version = [System.String]::Concat("1.",[string]$tmpversion.Replace(".",""))
         }
-        elseif ($currentTask.spec -eq "xmlsec1.spec") {if ($version -lt "1.2.30") {$Source0="https://www.aleksey.com/xmlsec/download/older-releases/xmlsec1-%{version}.tar.gz"} else {$Source0="https://www.aleksey.com/xmlsec/download/xmlsec1-%{version}.tar.gz"}}
     }
 
 
@@ -1881,6 +1895,19 @@ function CheckURLHealth {
     # -------------------------------------------------------------------------------------------------------------------
     # anomalies - rework for detection necessary
     # -------------------------------------------------------------------------------------------------------------------
+
+    # The author Jörg Schilling passed away in October 2021.
+    # The original URL http://gd.tuwien.ac.at/utils/schilling/cdrtoolscdrkit-1.1.11.tar.gz is no longer accessible.
+    # The project is unmaintained upstream but still widely packaged in Debian, Ubuntu, Fedora, Arch Linux, Alpine, openSUSE, etc. (package name cdrkit or genisoimage).
+    # Current official continuation (schilytools — the full collection including cdrtools/cdrecord, star, smake, sccs, etc.): https://codeberg.org/schilytools/schilytools
+    if ($currentTask.spec -eq "cdrkit.spec")
+    {
+        $UpdateUrl="https://deb.debian.org/debian/pool/main/c/cdrkit/cdrkit_1.1.11.orig.tar.gz"
+        $HealthUpdateURL="200"
+        $UpdateAvailable="1.1.11"
+        $isArchived="1"
+        $ArchivationDate="2021-10-10"
+    }
 
     if ($currentTask.spec -eq "iptraf.spec")
     {
@@ -1939,11 +1966,18 @@ function CheckURLHealth {
         $UpdateAvailable="1.1.10"
     }
 
-     if ($currentTask.spec -eq "python-Js2Py.spec")
+    if ($currentTask.spec -eq "python-Js2Py.spec")
     {
         $UpdateURL="https://files.pythonhosted.org/packages/cb/a5/3d8b3e4511cc21479f78f359b1b21f1fb7c640988765ffd09e55c6605e3b/Js2Py-0.74.tar.gz"
         $HealthUpdateURL="200"
         $UpdateAvailable="0.74"
+    }
+
+    if ($currentTask.spec -eq "python-ruamel-yaml.spec")
+    {
+        $UpdateURL="https://files.pythonhosted.org/packages/c7/3b/ebda527b56beb90cb7652cb1c7e4f91f48649fbcd8d2eb2fb6e77cd3329b/ruamel_yaml-0.19.1.tar.gz"
+        $HealthUpdateURL="200"
+        $UpdateAvailable="0.19.1"
     }
 
     if ($currentTask.spec -eq "runit.spec")
@@ -1967,11 +2001,33 @@ function CheckURLHealth {
         $UpdateAvailable="3.0.5"
     }
 
+    if ($currentTask.spec -eq "dtb-raspberrypi.spec")
+    {
+        $GitSource="https://github.com/raspberrypi/linux.git"
+        switch ($photonDir) {
+            {($_ -eq "photon-3.0")} {
+                $gitBranch="rpi-4.19.y"
+            }
+            {($_ -eq "photon-4.0")} {
+                $gitBranch="rpi-5.10.y"
+            }
+            {($_ -eq "photon-5.0")} {
+                $gitBranch="rpi-6.1.y"
+            }
+            {($_ -eq "photon-6.0")} {
+                $gitBranch="rpi-6.12.y"
+            }
+            default {
+                $gitBranch="rpi-6.12.y"
+            }
+        }
+    }
+
     # use case of ftp.gnu.org https://github.com/conan-io/conan-center-index/issues/27830
     # ftp.gnu.org is often down. ftpmirror.gnu.org might redirect to unsecure mirrors.
     # ftp.funet.fi is very stable and has the same content as ftp.gnu.org.
     if ($Source0.Contains("ftp.gnu.org")) {
-    $Source0 = $Source0 -replace "ftp.gnu.org", "ftp.funet.fi/pub/gnu/ftp.gnu.org"
+        $Source0 = $Source0 -replace "ftp.gnu.org", "ftp.funet.fi/pub/gnu/ftp.gnu.org"
     }
 
     # -------------------------------------------------------------------------------------------------------------------
@@ -3878,7 +3934,6 @@ function CheckURLHealth {
     ($currentTask.spec -ilike "nftables.spec") -or `
     ($currentTask.spec -ilike "openvswitch.spec") -or `
     ($currentTask.spec -ilike "python-pbr.spec") -or `
-    ($currentTask.spec -ilike "xmlsec1.spec") -or `
     ($currentTask.spec -ilike "wireguard-tools.spec"))
     {
         if ($Source0) {
@@ -4783,7 +4838,7 @@ catch {
 # parallel processing support
 Write-Output "Checking parallel processing support..."
 $Script:UseParallel = $PSVersionTable.PSVersion.Major -ge 7 -and $PSVersionTable.PSVersion.Minor -ge 4
-# $Script:UseParallel = $false
+$Script:UseParallel = $false
 Write-Output "Parallel processing: $($Script:UseParallel)"
 
 # Get current CPU usage and core count (cross-platform)
