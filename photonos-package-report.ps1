@@ -1893,10 +1893,10 @@ function CheckURLHealth {
 
     # IN CASE OF DEBUG: UNCOMMENT AND DEBUG FROM HERE
     # -----------------------------------------------
-    if ($currentTask.spec -ilike 'aufs-util.spec')
-    {pause}
-    else
-    {return}
+    # if ($currentTask.spec -ilike 'aufs-util.spec')
+    # {pause}
+    # else
+    # {return}
     # -----------------------------------------------    
 
     $Source0 = $currentTask.Source0
@@ -4620,6 +4620,7 @@ function GenerateUrlHealthReports {
                 KojiFedoraProjectLookUp = (Get-Command 'KojiFedoraProjectLookUp' -ErrorAction SilentlyContinue).Definition
                 ModifySpecFile = (Get-Command 'ModifySpecFile' -ErrorAction SilentlyContinue).Definition
                 Source0Lookup = (Get-Command 'Source0Lookup' -ErrorAction SilentlyContinue).Definition
+                'Clean-VersionNames' = (Get-Command 'Clean-VersionNames' -ErrorAction SilentlyContinue).Definition
                 'Invoke-GitWithTimeout' = (Get-Command 'Invoke-GitWithTimeout' -ErrorAction SilentlyContinue).Definition
                 HeapSortClass = $HeapSortClassDef
             }
@@ -4775,7 +4776,7 @@ Write-Output "Checking parallel processing support..."
 $Script:UseParallel = $PSVersionTable.PSVersion.Major -ge 7 -and $PSVersionTable.PSVersion.Minor -ge 4
 
 # For testing or troubleshooting, you can disable parallel processing by setting $Script:UseParallel to $false
-$Script:UseParallel = $false
+# $Script:UseParallel = $false
 
 Write-Output "Parallel processing: $($Script:UseParallel)"
 
