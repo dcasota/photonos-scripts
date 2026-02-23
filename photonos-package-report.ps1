@@ -4674,10 +4674,25 @@ function GenerateUrlHealthReports {
                 'Invoke-GitWithTimeout' = (Get-Command 'Invoke-GitWithTimeout' -ErrorAction SilentlyContinue).Definition
                 HeapSortClass = $HeapSortClassDef
             }
+            # Build a single combined init script from all function definitions once,
+            # so each parallel runspace only calls Invoke-Expression once instead of
+            # compiling each function separately (avoids runspace init bottleneck).
+            $initParts = [System.Collections.Generic.List[string]]::new()
+            foreach ($entry in $FunctionDefinitions.GetEnumerator()) {
+                if ($entry.Value) {
+                    if ($entry.Key -eq 'HeapSortClass') {
+                        $initParts.Add($entry.Value)
+                    } else {
+                        $initParts.Add("function $($entry.Key) {`n$($entry.Value)`n}")
+                    }
+                }
+            }
+            $CombinedInitScript = $initParts -join "`n"
+
             $ParallelContext = @{
                 SourcePath = $SourcePath
                 AccessToken = $AccessToken
-                FunctionDefs = $FunctionDefinitions
+                InitScript = $CombinedInitScript
                 DebugLevel = $Script:DebugLevel
                 DebugLogFile = $Script:DebugLogFile
             }
@@ -4691,20 +4706,12 @@ function GenerateUrlHealthReports {
                 $outputFileName = "photonos-urlhealth-$($TaskConfig.Release)_$((Get-Date).ToString("yyyyMMddHHmm"))"
                 $outputFilePath = Join-Path -Path $sourcePath -ChildPath "$outputFileName.prn"
 
-                # Collect results by piping directly into ForEach-Object to avoid
-                # deadlock from $results += ForEach-Object -Parallel (output buffer fills
-                # while main thread waits for pipeline to complete).
+                # Collect results via ConcurrentBag.Add() from within each runspace
+                # to avoid pipeline output buffer deadlocks.
                 $results = [System.Collections.Concurrent.ConcurrentBag[string]]::new()
                 $TaskConfig.Packages | ForEach-Object -parallel {
-                    # Initialize functions in runspace
-                    $FunctionDefs = $using:ParallelContext.FunctionDefs
-                    $FunctionDefs.GetEnumerator() | Where-Object { $_.Value } | ForEach-Object {
-                        if ($_.Key -eq 'HeapSortClass') {
-                        Invoke-Expression $_.Value
-                        } else {
-                        Invoke-Expression "function $($_.Key) { $($_.Value) }"
-                        }
-                    }
+                    # Initialize all functions in runspace with a single Invoke-Expression
+                    Invoke-Expression $using:ParallelContext.InitScript
 
                     # Initialize debug logging in runspace
                     $Script:DebugLevel = $using:ParallelContext.DebugLevel
