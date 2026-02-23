@@ -78,17 +78,17 @@ photonos-package-report.ps1 (~5,170 lines)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              SCRIPT START                                    │
+│                              SCRIPT START                                   │
 └─────────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│  PHASE 1: INITIALIZATION                                                     │
+│  PHASE 1: INITIALIZATION                                                    │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐ │
 │  │ TLS 1.2/1.3 │→ │ OS Detection│→ │ Check git,  │→ │ Check PowerShell    │ │
 │  │ Protocol    │  │ (Windows?)  │  │ tar commands│  │ Cookbook module     │ │
 │  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────────────┘ │
-│                                    │                                         │
+│                                    │                                        │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                          │
 │  │ Parallel    │→ │ CPU/Throttle│→ │ Validate    │                          │
 │  │ Support?    │  │ Calculation │  │ SourcePath  │                          │
@@ -97,7 +97,7 @@ photonos-package-report.ps1 (~5,170 lines)
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│  PHASE 2: AUTHENTICATION                                                     │
+│  PHASE 2: AUTHENTICATION                                                    │
 │  ┌────────────────────────┐       ┌────────────────────────────────────────┐│
 │  │ GitHub Token           │       │ GitLab Username + Token                ││
 │  │ ($env:GITHUB_TOKEN or  │       │ ($env:GITLAB_TOKEN or prompt)          ││
@@ -108,73 +108,73 @@ photonos-package-report.ps1 (~5,170 lines)
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │  PHASE 3: URL HEALTH REPORTS (per enabled branch: 3.0, 4.0, 5.0, 6.0,       │
-│           common, dev, master)                                               │
-│                                                                              │
-│  ┌──────────────────────────────────────────────────────────────────────┐   │
-│  │  GenerateUrlHealthReports()                                          │   │
-│  │  ┌────────────────┐     ┌────────────────┐     ┌──────────────────┐ │   │
-│  │  │ GitPhoton()    │  →  │ ParseDirectory │  →  │ For each package │ │   │
-│  │  │ Clone/Fetch    │     │ Extract .spec  │     │ CheckURLHealth() │ │   │
-│  │  │ Branch         │     │ metadata       │     │                  │ │   │
-│  │  └────────────────┘     └────────────────┘     └────────┬─────────┘ │   │
-│  │                                                          │           │   │
-│  │                    ┌─────────────────────────────────────┘           │   │
-│  │                    ▼                                                 │   │
-│  │  ┌─────────────────────────────────────────────────────────────────┐│   │
-│  │  │  CheckURLHealth() - Per Package                                 ││   │
-│  │  │  ┌──────────────┐  ┌──────────────┐  ┌────────────────────────┐││   │
-│  │  │  │ Source0Lookup│→ │ urlhealth()  │→ │ Data Scraping:         │││   │
-│  │  │  │ Get metadata │  │ Check HTTP   │  │ - GitHub API           │││   │
-│  │  │  │ for package  │  │ status       │  │ - GitLab API           │││   │
-│  │  │  └──────────────┘  └──────────────┘  │ - PyPI, RubyGems       │││   │
-│  │  │                                      │ - SourceForge, GNU     │││   │
-│  │  │                                      │ - Fedora Koji          │││   │
-│  │  │                                      └────────────┬───────────┘││   │
-│  │  │                                                   │            ││   │
-│  │  │  ┌──────────────┐  ┌──────────────┐  ┌───────────▼──────────┐ ││   │
-│  │  │  │ ModifySpec   │← │ Download     │← │ Detect Update        │ ││   │
-│  │  │  │ File()       │  │ New Source   │  │ Available?           │ ││   │
-│  │  │  └──────────────┘  └──────────────┘  └──────────────────────┘ ││   │
-│  │  └─────────────────────────────────────────────────────────────────┘│   │
-│  │                                                                      │   │
-│  │  Processing Mode:                                                    │   │
-│  │  ┌─────────────────────┐  OR  ┌─────────────────────────────────┐   │   │
-│  │  │ PARALLEL (PS 7.4+)  │      │ SEQUENTIAL (PS < 7.4)           │   │   │
-│  │  │ ForEach-Object      │      │ ForEach-Object                  │   │   │
-│  │  │ -Parallel           │      │ (standard)                      │   │   │
-│  │  └─────────────────────┘      └─────────────────────────────────┘   │   │
-│  │                                                                      │   │
-│  │  Output: photonos-urlhealth-{branch}_{timestamp}.prn                │   │
-│  └──────────────────────────────────────────────────────────────────────┘   │
+│           common, dev, master)                                              │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │  GenerateUrlHealthReports()                                         │    │
+│  │  ┌────────────────┐     ┌────────────────┐     ┌──────────────────┐ │    │
+│  │  │ GitPhoton()    │  →  │ ParseDirectory │  →  │ For each package │ │    │
+│  │  │ Clone/Fetch    │     │ Extract .spec  │     │ CheckURLHealth() │ │    │
+│  │  │ Branch         │     │ metadata       │     │                  │ │    │
+│  │  └────────────────┘     └────────────────┘     └────────┬─────────┘ │    │
+│  │                                                          │          │    │
+│  │                    ┌─────────────────────────────────────┘          │    │
+│  │                    ▼                                                │    │
+│  │  ┌─────────────────────────────────────────────────────────────────┐│    │
+│  │  │  CheckURLHealth() - Per Package                                 ││    │
+│  │  │  ┌──────────────┐  ┌──────────────┐  ┌────────────────────────┐ ││    │
+│  │  │  │ Source0Lookup│→ │ urlhealth()  │→ │ Data Scraping:         │ ││    │
+│  │  │  │ Get metadata │  │ Check HTTP   │  │ - GitHub API           │ ││    │
+│  │  │  │ for package  │  │ status       │  │ - GitLab API           │ ││    │
+│  │  │  └──────────────┘  └──────────────┘  │ - PyPI, RubyGems       │ ││    │
+│  │  │                                      │ - SourceForge, GNU     │ ││    │
+│  │  │                                      │ - Fedora Koji          │ ││    │
+│  │  │                                      └────────────┬───────────┘ ││    │
+│  │  │                                                   │             ││    │
+│  │  │  ┌──────────────┐  ┌──────────────┐  ┌───────────▼──────────┐   ││    │
+│  │  │  │ ModifySpec   │← │ Download     │← │ Detect Update        │   ││    │
+│  │  │  │ File()       │  │ New Source   │  │ Available?           │   ││    │
+│  │  │  └──────────────┘  └──────────────┘  └──────────────────────┘   ││    │
+│  │  └─────────────────────────────────────────────────────────────────┘│    │
+│  │                                                                     │    │
+│  │  Processing Mode:                                                   │    │
+│  │  ┌─────────────────────┐  OR  ┌─────────────────────────────────┐   │    │
+│  │  │ PARALLEL (PS 7.4+)  │      │ SEQUENTIAL (PS < 7.4)           │   │    │
+│  │  │ ForEach-Object      │      │ ForEach-Object                  │   │    │
+│  │  │ -Parallel           │      │ (standard)                      │   │    │
+│  │  └─────────────────────┘      └─────────────────────────────────┘   │    │
+│  │                                                                     │    │
+│  │  Output: photonos-urlhealth-{branch}_{timestamp}.prn                │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│  PHASE 4: PACKAGE REPORT (if enabled)                                        │
+│  PHASE 4: PACKAGE REPORT (if enabled)                                       │
 │  ┌────────────────┐     ┌────────────────┐     ┌─────────────────────────┐  │
 │  │ GitPhoton()    │  →  │ ParseDirectory │  →  │ Combine all branches    │  │
 │  │ All 7 branches │     │ All 7 branches │     │ into single report      │  │
 │  └────────────────┘     └────────────────┘     └─────────────────────────┘  │
-│                                                                              │
+│                                                                             │
 │  Output: photonos-package-report_{timestamp}.prn                            │
 └─────────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│  PHASE 5: DIFF REPORTS (if enabled)                                          │
-│  Compare versions between branches, report where older > newer               │
+│  PHASE 5: DIFF REPORTS (if enabled)                                         │
+│  Compare versions between branches, report where older > newer              │
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐              │
-│  │ Common vs Master│  │ 5.0 vs 6.0     │  │ 4.0 vs 5.0     │              │
+│  │ Common vs Master│  │ 5.0 vs 6.0     │  │ 4.0 vs 5.0     │                │
 │  └─────────────────┘  └─────────────────┘  └─────────────────┘              │
-│  ┌─────────────────┐                                                         │
+│  ┌─────────────────┐                                                        │
 │  │ 3.0 vs 4.0     │                                                         │
-│  └─────────────────┘                                                         │
+│  └─────────────────┘                                                        │
 │  Output: photonos-diff-report-{branches}_{timestamp}.prn                    │
 └─────────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│  PHASE 6: CLEANUP                                                            │
+│  PHASE 6: CLEANUP                                                           │
 │  ┌─────────────────────────────┐  ┌─────────────────────────────────────┐   │
 │  │ Clear tokens from memory    │  │ Remove git credentials from config  │   │
 │  │ ($global:access, etc.)      │  │ (gitlab.freedesktop.org)            │   │
@@ -183,7 +183,7 @@ photonos-package-report.ps1 (~5,170 lines)
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              SCRIPT END                                      │
+│                              SCRIPT END                                     │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
