@@ -1231,7 +1231,7 @@ syslinux.spec,,https://git.kernel.org/pub/scm/boot/syslinux/syslinux.git
 syslog-ng.spec,https://github.com/syslog-ng/syslog-ng/archive/refs/tags/syslog-ng-%{version}.tar.gz,https://github.com/syslog-ng/syslog-ng.git
 sysstat.spec,https://github.com/sysstat/sysstat/archive/refs/tags/v%{version}.tar.gz,https://github.com/sysstat/sysstat.git
 systemd.spec,https://github.com/systemd/systemd-stable/archive/refs/tags/v%{version}.tar.gz,https://github.com/systemd/systemd-stable.git
-systemtap.spec,https://sourceware.org/ftp/systemtap/releases/systemtap-%{version}.tar.gz,https://sourceware.org/git/systemtap.git,,,"systemtap-"
+systemtap.spec,https://github.com/cdkey/systemtap/archive/refs/tags/release-%{version}.tar.gz,https://github.com/cdkey/systemtap.git,,,"release-"
 tar.spec,https://ftp.gnu.org/gnu/tar/tar-%{version}.tar.xz
 tboot.spec,https://sourceforge.net/projects/tboot/files/tboot/tboot-%{version}.tar.gz/download
 tcp_wrappers.spec,http://ftp.porcupine.org/pub/security/tcp_wrappers_%{version}.tar.gz
@@ -4691,9 +4691,11 @@ function GenerateUrlHealthReports {
                 $outputFileName = "photonos-urlhealth-$($TaskConfig.Release)_$((Get-Date).ToString("yyyyMMddHHmm"))"
                 $outputFilePath = Join-Path -Path $sourcePath -ChildPath "$outputFileName.prn"
 
-                # Create a thread-safe collection for all results
-                $results = [System.Collections.Concurrent.ConcurrentBag[object]]::new()
-                $results += $TaskConfig.Packages | ForEach-Object -parallel {
+                # Collect results by piping directly into ForEach-Object to avoid
+                # deadlock from $results += ForEach-Object -Parallel (output buffer fills
+                # while main thread waits for pipeline to complete).
+                $results = [System.Collections.Concurrent.ConcurrentBag[string]]::new()
+                $TaskConfig.Packages | ForEach-Object -parallel {
                     # Initialize functions in runspace
                     $FunctionDefs = $using:ParallelContext.FunctionDefs
                     $FunctionDefs.GetEnumerator() | Where-Object { $_.Value } | ForEach-Object {
@@ -4715,9 +4717,10 @@ function GenerateUrlHealthReports {
                     $result = [system.string](CheckURLHealth -currentTask $currentPackage -SourcePath $using:ParallelContext.SourcePath -AccessToken $using:ParallelContext.AccessToken -outputfile $using:outputFilePath -photonDir $using:TaskConfig.PhotonDir)
                     $swPkg.Stop()
                     Write-DebugLog -Level 3 -Message "END   $($currentPackage.name) [parallel] elapsed=$($swPkg.Elapsed.ToString('hh\:mm\:ss\.fff'))"
-                    $result
+                    ($using:results).Add($result)
                 } -ThrottleLimit $ThrottleLimit
 
+                Write-DebugLog -Level 1 -Message "=== PARALLEL COMPLETE: $($TaskConfig.Name) results=$($results.Count) ==="
                 $sb = New-Object System.Text.StringBuilder
                 $sb.AppendLine("Spec,Source0 original,Modified Source0 for url health check,UrlHealth,UpdateAvailable,UpdateURL,HealthUpdateURL,Name,SHAName,UpdateDownloadName,warning,ArchivationDate") | Out-Null
                 # Filter and collect matching items, then sort
@@ -4725,6 +4728,7 @@ function GenerateUrlHealthReports {
                     $pattern = '^(.*?)([a-zA-Z0-9][a-zA-Z0-9._-]*\.spec.*)$'
                     if ($_ -match $pattern) { $matches[2] }
                 } | Sort-Object
+                Write-DebugLog -Level 1 -Message "=== FILTERED: $($TaskConfig.Name) filtered=$($filteredResults.Count) ==="
                 # Append sorted results to StringBuilder
                 $filteredResults | ForEach-Object {
                     $sb.AppendLine($_) | Out-Null
