@@ -710,7 +710,7 @@ libnfnetlink.spec,https://www.netfilter.org/projects/libnfnetlink/files/libnfnet
 libnftnl.spec,https://www.netfilter.org/projects/libnftnl/files/libnftnl-%{version}.tar.xz,https://git.netfilter.org/libnftnl.git,,,"libnftnl-"
 libnl.spec,https://github.com/thom311/libnl/archive/refs/tags/libnl%{version}.tar.gz,https://github.com/thom311/libnl.git
 libnss-ato.spec,https://github.com/donapieppo/libnss-ato/archive/refs/tags/v%{version}.tar.gz,https://github.com/donapieppo/libnss-ato.git
-libnvme.spec,https://github.com/linux-nvme/libnvme/archive/refs/tags/v%{version}.tar.gz,ttps://github.com/linux-nvme/libnvme.git
+libnvme.spec,https://github.com/linux-nvme/libnvme/archive/refs/tags/v%{version}.tar.gz,https://github.com/linux-nvme/libnvme.git
 libpsl.spec,https://github.com/rockdaboot/libpsl/archive/refs/tags/%{version}.tar.gz,https://github.com/rockdaboot/libpsl.git
 libpwquality.spec,https://github.com/libpwquality/libpwquality/releases/download/libpwquality-%{version}/libpwquality-%{version}.tar.bz2,https://github.com/libpwquality/libpwquality.git
 librdkafka.spec,https://github.com/confluentinc/librdkafka/archive/refs/tags/v%{version}.tar.gz,https://github.com/confluentinc/librdkafka.git
@@ -1278,6 +1278,10 @@ function ModifySpecFile {
         [string]$SHALine
     )
     $SpecFile = join-path -path (join-path -path (join-path -path (join-path -path "$SourcePath" -childpath "$photonDir") -childpath "SPECS") -childpath "$Name") -childpath "$SpecFileName"
+    if (!(Test-Path $SpecFile)) {
+        Write-Warning "Spec file not found, skipping modification: $SpecFile"
+        return
+    }
     $object=get-content $SpecFile
 
     $DateEntry = use-culture -Culture en-US {(get-date -UFormat "%a") + " " + (get-date).ToString("MMM") + " " + (get-date -UFormat "%d %Y") }
@@ -2180,9 +2184,14 @@ function CheckURLHealth {
                     # override with special cases
                     if ($currentTask.spec -ilike 'gstreamer-plugins-base.spec') {$repoName="gst-plugins-base-"}
                     # Run git tag -l and collect output in an array
-                    if (!([string]::IsNullOrEmpty($customRegex))) {$Names = git tag -l | Where-Object { $_ -match "^$([regex]::Escape($repoName))-" } | ForEach-Object { $_.Trim()}}
-                    else {$Names = git tag -l | ForEach-Object { $_.Trim() }}
-                    $urlhealth="200"
+                    if ((Test-Path $SourceClonePath) -and (Test-Path (Join-Path $SourceClonePath ".git"))) {
+                        if (!([string]::IsNullOrEmpty($customRegex))) {$Names = git tag -l | Where-Object { $_ -match "^$([regex]::Escape($repoName))-" } | ForEach-Object { $_.Trim()}}
+                        else {$Names = git tag -l | ForEach-Object { $_.Trim() }}
+                        $urlhealth="200"
+                    } else {
+                        Write-Warning "No valid git repository at $SourceClonePath for $repoName - skipping tag listing"
+                        $Names = @()
+                    }
                 } catch {
                     Write-Warning "Git operation failed for $repoName : $_"
                 }
@@ -3510,9 +3519,14 @@ function CheckURLHealth {
                         }
                     }
                     # Run git tag -l and collect output in an array
-                    if ("" -eq $customRegex) {$Names = git tag -l | Where-Object { $_ -match "^$([regex]::Escape($repoName))-" } | ForEach-Object { $_.Trim()}}
-                    else {$Names = git tag -l | ForEach-Object { $_.Trim() }}
-                    $urlhealth="200"
+                    if ((Test-Path $SourceClonePath) -and (Test-Path (Join-Path $SourceClonePath ".git"))) {
+                        if ("" -eq $customRegex) {$Names = git tag -l | Where-Object { $_ -match "^$([regex]::Escape($repoName))-" } | ForEach-Object { $_.Trim()}}
+                        else {$Names = git tag -l | ForEach-Object { $_.Trim() }}
+                        $urlhealth="200"
+                    } else {
+                        Write-Warning "No valid git repository at $SourceClonePath for $repoName - skipping tag listing"
+                        $Names = @()
+                    }
                 } catch {
                     Write-Warning "Git operation failed for $repoName : $_"
                 }
@@ -3863,10 +3877,15 @@ function CheckURLHealth {
                         }
                     }
                     # Run git tag -l and collect output in an array
-                    if (Test-Path $SourceClonePath) { Set-Location -Path $SourceClonePath -ErrorAction SilentlyContinue }
-                    if ("" -eq $customRegex) {$Names = git tag -l | Where-Object { $_ -match "^$([regex]::Escape($repoName))-" } | ForEach-Object { $_.Trim()}}
-                    else {$Names = git tag -l | ForEach-Object { $_.Trim() }}
-                    $urlhealth="200"
+                    if ((Test-Path $SourceClonePath) -and (Test-Path (Join-Path $SourceClonePath ".git"))) {
+                        Set-Location -Path $SourceClonePath -ErrorAction SilentlyContinue
+                        if ("" -eq $customRegex) {$Names = git tag -l | Where-Object { $_ -match "^$([regex]::Escape($repoName))-" } | ForEach-Object { $_.Trim()}}
+                        else {$Names = git tag -l | ForEach-Object { $_.Trim() }}
+                        $urlhealth="200"
+                    } else {
+                        Write-Warning "No valid git repository at $SourceClonePath for $repoName - skipping tag listing"
+                        $Names = @()
+                    }
                 } catch {
                     Write-Warning "Git operation failed for $repoName : $_"
                 }
