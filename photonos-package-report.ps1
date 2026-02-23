@@ -30,15 +30,50 @@
 #   0.60  11.02.2026   dcasota  Robustness, security and cross-platform improvements: git timeout handling, safe git calls,
 #                               cross-platform path handling (Join-Path, $HOME fallback), OS detection for winget/Get-Counter/Get-CimInstance,
 #                               List<T> for performance, safe spec parsing with Get-SpecValue helper, security cleanup at script end
-#   0.61  22.02.2026   dcasota  Quarterly version format support (YYYY.Q#.#), Warning/ArchivationDate output columns,
+#   0.61  23.02.2026   dcasota  Quarterly version format support (YYYY.Q#.#), Warning/ArchivationDate output columns,
 #                               Source0Lookup expansion to 848+ packages, git timeout standardized to 600s,
-#                               Linux compatibility fixes, RubyGems JSON API, GNU FTP mirror fallback
+#                               Linux compatibility fixes, RubyGems JSON API, GNU FTP mirror fallback,
+#                               git fetch --prune --prune-tags --tags to ensure all remote tags are synced
 #
 #  .PREREQUISITES
 #    - Script tested on Microsoft Windows 11 and on Photon OS 5.0 with Powershell Core 7.5.4
 #    - Powershell: Minimal version: 5.1
 #                  Recommended version: 7.4 or higher for parallel processing capabilities
+#  .HINTS
+#   - For best results, run this script on a machine with good network connectivity and sufficient resources, especially if generating URL health reports for many packages.
+#   - To debug:
+#     Open the script in Visual Studio Code,
+#     uncomment "$Script:UseParallel = $false" to disable parallel processing, 
+#     uncomment the debug block in the ParseDirectory function, set the spec file you want to debug in the if condition, for example:
+#          # IN CASE OF DEBUG: UNCOMMENT AND DEBUG FROM HERE
+#          # -----------------------------------------------
+#          if ($currentTask.spec -ilike 'aufs-util.spec')
+#          {pause}
+#          else
+#          {return}
+#          # -----------------------------------------------
+#     set breakpoint on {pause}, step over(F10) and inspect variables as needed.
+#   - To run on Windows: Open Powershell
+#     cd your\path\to\photonos-scripts;
+#     $env:GITHUB_TOKEN="<YOUR GITHUB_TOKEN>"; $env:GITHUB_USERNAME="<your GITHUB_USERNAME>"; $env:GITLAB_TOKEN="<your GITLAB_TOKEN>"; 
+#     pwsh -File .\photonos-package-report.ps1 -sourcepath <path-to-store-the-reports> \
+#          -GeneratePh3URLHealthReport $true -GeneratePh4URLHealthReport $true -GeneratePh5URLHealthReport $true -GeneratePh6URLHealthReport $true \
+#          -GeneratePhCommonURLHealthReport $true -GeneratePhDevURLHealthReport $true -GeneratePhMasterURLHealthReport $true \
+#          -GeneratePhPackageReport $true \
+#          -GeneratePhCommontoPhMasterDiffHigherPackageVersionReport $true -GeneratePh5toPh6DiffHigherPackageVersionReport $true -GeneratePh4toPh5DiffHigherPackageVersionReport $true -GeneratePh3toPh4DiffHigherPackageVersionReport $true
+#   - To run on WSL:
+#     Open Photon OS e.g. "wsl -d Ph5 -u root /bin/bash"
+#     Install Powershell Core: tdnf install powershell -y
+#     cd /your\path/to/photonos-scripts;
+#     export GITHUB_TOKEN="<YOUR GITHUB_TOKEN>"; export GITHUB_USERNAME="<your GITHUB_USERNAME>"; export GITLAB_TOKEN="<your GITLAB_TOKEN>";
+#     pwsh -File ./photonos-package-report.ps1 -sourcepath <path-to-store-the-reports> \
+#          -GeneratePh3URLHealthReport $true -GeneratePh4URLHealthReport $true -GeneratePh5URLHealthReport $true -GeneratePh6URLHealthReport $true \
+#          -GeneratePhCommonURLHealthReport $true -GeneratePhDevURLHealthReport $true -GeneratePhMasterURLHealthReport $true \
+#          -GeneratePhPackageReport $true \
+#          -GeneratePhCommontoPhMasterDiffHigherPackageVersionReport $true -GeneratePh5toPh6DiffHigherPackageVersionReport $true -GeneratePh4toPh5DiffHigherPackageVersionReport $true -GeneratePh3toPh4DiffHigherPackageVersionReport $true
+#   - To run on Photon OS: Open terminal, login as root or a user with sufficient permissions. Same as in WSL.
 #
+
 
 [CmdletBinding()]
 param (
@@ -87,7 +122,7 @@ function Invoke-GitWithTimeout {
     param(
         [string]$Arguments,
         [string]$WorkingDirectory = (Get-Location).Path,
-        [int]$TimeoutSeconds = 60
+        [int]$TimeoutSeconds = 7200 # Default timeout of 2 hours, can be adjusted as needed (kibana, chromium can take a long time to clone)
     )
 
     try {
@@ -325,7 +360,7 @@ function GitPhoton {
     {
         Set-Location $SourcePath
         try {
-            Invoke-GitWithTimeout "clone -b $release https://github.com/vmware/photon `"$photonPath`"" -WorkingDirectory $SourcePath -TimeoutSeconds 600
+            Invoke-GitWithTimeout "clone -b $release https://github.com/vmware/photon `"$photonPath`"" -WorkingDirectory
             Set-Location $photonPath
         }
         catch {
@@ -337,11 +372,11 @@ function GitPhoton {
     {
         Set-Location $photonPath
         try {
-            Invoke-GitWithTimeout "fetch" -WorkingDirectory $photonPath -TimeoutSeconds 600
-            if ($release -ieq "master") { Invoke-GitWithTimeout "merge origin/master" -WorkingDirectory $photonPath -TimeoutSeconds 600 }
-            elseif ($release -ieq "dev") { Invoke-GitWithTimeout "merge origin/dev" -WorkingDirectory $photonPath -TimeoutSeconds 600 }
-            elseif ($release -ieq "common") { Invoke-GitWithTimeout "merge origin/common" -WorkingDirectory $photonPath -TimeoutSeconds 600 }
-            else { Invoke-GitWithTimeout "merge origin/$release" -WorkingDirectory $photonPath -TimeoutSeconds 600 }
+            Invoke-GitWithTimeout "fetch --prune --prune-tags --tags" -WorkingDirectory $photonPath
+            if ($release -ieq "master") { Invoke-GitWithTimeout "merge origin/master" -WorkingDirectory $photonPath }
+            elseif ($release -ieq "dev") { Invoke-GitWithTimeout "merge origin/dev" -WorkingDirectory $photonPath}
+            elseif ($release -ieq "common") { Invoke-GitWithTimeout "merge origin/common" -WorkingDirectory $photonPath}
+            else { Invoke-GitWithTimeout "merge origin/$release" -WorkingDirectory $photonPath}
         }
         catch {
             # If merge fails (e.g., unresolved conflicts), delete and re-clone
@@ -350,7 +385,7 @@ function GitPhoton {
             Set-Location $SourcePath
             try {
                 Remove-Item -Path $photonPath -Recurse -Force -ErrorAction Stop
-                Invoke-GitWithTimeout "clone -b $release https://github.com/vmware/photon `"$photonPath`"" -WorkingDirectory $SourcePath -TimeoutSeconds 600
+                Invoke-GitWithTimeout "clone -b $release https://github.com/vmware/photon `"$photonPath`"" -WorkingDirectory $SourcePath
                 Set-Location $photonPath
                 Write-Output "Successfully re-cloned photon-$release"
             }
@@ -573,7 +608,7 @@ hawkey.spec,https://github.com/rpm-software-management/hawkey/archive/refs/tags/
 heapster.spec,https://github.com/kubernetes-retired/heapster/archive/refs/tags/v%{version}.tar.gz,https://github.com/kubernetes-retired/heapster.git
 hiredis.spec,https://github.com/redis/hiredis/archive/refs/tags/v%{version}.tar.gz,https://github.com/redis/hiredis.git
 htop.spec,https://github.com/htop-dev/htop/archive/refs/tags/%{version}.tar.gz,https://github.com/htop-dev/htop.git
-httpd.spec,https://github.com/apache/httpd/archive/refs/tags/%{version}.tar.gz,https://github.com/apache/httpd.git
+httpd.spec,https://github.com/apache/httpd/archive/refs/tags/%{version}.tar.gz,https://github.com/apache/httpd.git,"trunk"
 httpd-mod_jk.spec,https://github.com/apache/tomcat-connectors/archive/refs/tags/JK_%{version}.tar.gz,https://github.com/apache/tomcat-connectors.git,,,"JK_"
 http-parser.spec,https://github.com/nodejs/http-parser/archive/refs/tags/v%{version}.tar.gz,https://github.com/nodejs/http-parser.git
 hunspell.spec,https://github.com/hunspell/hunspell/releases/download/v%{version}/hunspell-%{version}.tar.gz,https://github.com/hunspell/hunspell.git
@@ -671,8 +706,8 @@ libnetfilter_conntrack.spec,https://www.netfilter.org/projects/libnetfilter_conn
 libnetfilter_cthelper.spec,https://www.netfilter.org/projects/libnetfilter_cthelper/files/libnetfilter_cthelper-%{version}.tar.bz2
 libnetfilter_cttimeout.spec,https://www.netfilter.org/projects/libnetfilter_cttimeout/files/libnetfilter_cttimeout-%{version}.tar.bz2
 libnetfilter_queue.spec,https://www.netfilter.org/projects/libnetfilter_queue/files/libnetfilter_queue-%{version}.tar.bz2
-libnfnetlink.spec,https://wwww.netfilter.org/projects/libnfnetlink/files/libnfnetlink-%{version}.tar.bz2
-libnftnl.spec,https://wwww.netfilter.org/projects/libnftnl/files/libnftnl-%{version}.tar.xz
+libnfnetlink.spec,https://www.netfilter.org/projects/libnfnetlink/files/libnfnetlink-%{version}.tar.bz2,https://git.netfilter.org/libnfnetlink.git
+libnftnl.spec,https://www.netfilter.org/projects/libnftnl/files/libnftnl-%{version}.tar.xz,https://git.netfilter.org/libnftnl.git,,,"libnftnl-"
 libnl.spec,https://github.com/thom311/libnl/archive/refs/tags/libnl%{version}.tar.gz,https://github.com/thom311/libnl.git
 libnss-ato.spec,https://github.com/donapieppo/libnss-ato/archive/refs/tags/v%{version}.tar.gz,https://github.com/donapieppo/libnss-ato.git
 libnvme.spec,https://github.com/linux-nvme/libnvme/archive/refs/tags/v%{version}.tar.gz,ttps://github.com/linux-nvme/libnvme.git
@@ -1148,7 +1183,7 @@ syslinux.spec,,https://git.kernel.org/pub/scm/boot/syslinux/syslinux.git
 syslog-ng.spec,https://github.com/syslog-ng/syslog-ng/archive/refs/tags/syslog-ng-%{version}.tar.gz,https://github.com/syslog-ng/syslog-ng.git
 sysstat.spec,https://github.com/sysstat/sysstat/archive/refs/tags/v%{version}.tar.gz,https://github.com/sysstat/sysstat.git
 systemd.spec,https://github.com/systemd/systemd-stable/archive/refs/tags/v%{version}.tar.gz,https://github.com/systemd/systemd-stable.git
-systemtap.spec,https://sourceware.org/ftp/systemtap/releases/systemtap-%{version}.tar.gz
+systemtap.spec,https://sourceware.org/ftp/systemtap/releases/systemtap-%{version}.tar.gz,https://sourceware.org/git/systemtap.git,,,"systemtap-"
 tar.spec,https://ftp.gnu.org/gnu/tar/tar-%{version}.tar.xz
 tboot.spec,https://sourceforge.net/projects/tboot/files/tboot/tboot-%{version}.tar.gz/download
 tcp_wrappers.spec,http://ftp.porcupine.org/pub/security/tcp_wrappers_%{version}.tar.gz
@@ -1193,6 +1228,7 @@ vulkan-headers.spec,https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/
 vulkan-loader.spec,https://github.com/KhronosGroup/Vulkan-Loader/archive/refs/tags/v%{version}.tar.gz,https://github.com/KhronosGroup/Vulkan-Loader.git
 vulkan-tools.spec,https://github.com/KhronosGroup/Vulkan-Tools/archive/refs/tags/sdk-%{version}.tar.gz,https://github.com/KhronosGroup/Vulkan-Tools.git
 WALinuxAgent.spec,https://github.com/Azure/WALinuxAgent/archive/refs/tags/v%{version}.tar.gz,https://github.com/Azure/WALinuxAgent.git
+wal2json17.spec,https://github.com/eulerto/wal2json/archive/refs/tags/wal2json_%{version}.tar.gz,https://github.com/eulerto/wal2json.git,,,"wal2json_"
 wavefront-proxy.spec,https://github.com/wavefrontHQ/wavefront-proxy/archive/refs/tags/proxy-%{version}.tar.gz,https://github.com/wavefrontHQ/wavefront-proxy.git
 wayland.spec,https://gitlab.freedesktop.org/wayland/wayland/-/archive/%{version}/wayland-%{version}.tar.gz,https://gitlab.freedesktop.org/wayland/wayland.git
 wayland-protocols.spec,,https://gitlab.freedesktop.org/wayland/wayland-protocols.git
@@ -1772,6 +1808,53 @@ function CheckURLHealth {
         }
     }
 
+    function Get-FileHashWithRetry {
+        <#
+        .SYNOPSIS
+            Computes file hash with automatic retry on lock ("being used by another process").
+            Optimized for high-frequency calls (e.g. parallel processing pipelines).
+            Fully cross-platform (PowerShell 7+ / .NET on Linux, macOS, Windows).
+            Cybersecurity: pure built-in cmdlet, bounded execution, specific exception filter.
+        #>
+        [CmdletBinding()]
+        param(
+            [Parameter(Mandatory=$true, Position=0, ValueFromPipeline=$true)]
+            [string]$Path,
+
+            [ValidateSet('SHA1','SHA256','SHA512')]
+            [string]$Algorithm = 'SHA512',
+
+            [int]$TimeoutSeconds = 30,          # short default for performance-critical loops
+            [int]$RetryIntervalMs = 500         # slow polling (500 ms = ~2 checks/sec)
+        )
+
+        $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+        $attempt = 0
+
+        while ((Get-Date) -lt $deadline) {
+            $attempt++
+            try {
+                # Single atomic call: open → hash → close
+                $hashInfo = Get-FileHash -LiteralPath $Path -Algorithm $Algorithm
+                Write-Verbose "Hash succeeded on attempt $attempt for $Path"
+                return $hashInfo
+            }
+            catch [System.IO.IOException] {
+                # Precise lock detection (works identically on Linux and Windows)
+                if ($_.Exception.Message -like '*being used by another process*' -or
+                    $_.Exception.HResult -eq -2147024864) {   # 0x80070020 = ERROR_SHARING_VIOLATION
+
+                    if ((Get-Date) -ge $deadline) { break }
+                    Start-Sleep -Milliseconds $RetryIntervalMs
+                    continue
+                }
+                # Any other IO error (permissions, disk full, etc.) → fail fast
+                throw
+            }
+        }
+
+        throw "Timeout ($TimeoutSeconds s / $attempt attempts) waiting for file to unlock: $Path"
+    }    
 
 
     $UpdateAvailable=""
@@ -1792,11 +1875,13 @@ function CheckURLHealth {
     [System.string]$Warning=""
     [System.string]$ArchivationDate=""
 
-    # In case of debug: uncomment and debug from here
-    # if ($currentTask.spec -ilike 'containers-common.spec')
+    # IN CASE OF DEBUG: UNCOMMENT AND DEBUG FROM HERE
+    # -----------------------------------------------
+    # if ($currentTask.spec -ilike 'httpd.spec')
     # {pause}
     # else
     # {return}
+    # -----------------------------------------------    
 
     $Source0 = $currentTask.Source0
 
@@ -2057,16 +2142,16 @@ function CheckURLHealth {
                         # Clone the repository
                         try {
                             if (!([string]::IsNullOrEmpty($gitBranch))) {
-                                Invoke-GitWithTimeout "clone $SourceTagURL -b $gitBranch $repoName" -WorkingDirectory $ClonePath -TimeoutSeconds 600 | Out-Null
+                                Invoke-GitWithTimeout "clone $SourceTagURL -b $gitBranch $repoName" -WorkingDirectory $ClonePath | Out-Null
                             } else {
-                                Invoke-GitWithTimeout "clone $SourceTagURL $repoName" -WorkingDirectory $ClonePath -TimeoutSeconds 600 | Out-Null
+                                Invoke-GitWithTimeout "clone $SourceTagURL $repoName" -WorkingDirectory $ClonePath | Out-Null
                                 # the very first time, you receive the origin names and not the version names. From the 2nd run, all is fine.
                                 if (Test-Path $SourceClonePath) {
                                     Set-Location $SourceClonePath
                                     if (!([string]::IsNullOrEmpty($gitBranch))) {
-                                        Invoke-GitWithTimeout "fetch origin $gitBranch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 600 | Out-Null
+                                        Invoke-GitWithTimeout "fetch --prune --prune-tags --tags origin $gitBranch" -WorkingDirectory $SourceClonePath| Out-Null
                                     } else {
-                                        Invoke-GitWithTimeout "fetch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 600 | Out-Null
+                                        Invoke-GitWithTimeout "fetch --prune --prune-tags --tags" -WorkingDirectory $SourceClonePath | Out-Null
                                     }
                                 } else {
                                     Write-Warning "Clone directory not created for $repoName - clone may have failed silently"
@@ -2082,9 +2167,9 @@ function CheckURLHealth {
                         Set-Location -Path $SourceClonePath -ErrorAction Stop # --git-dir [...] fetch does not work correctly
                         try {
                             if (!([string]::IsNullOrEmpty($gitBranch))) {
-                                Invoke-GitWithTimeout "fetch origin $gitBranch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 600 | Out-Null
+                                Invoke-GitWithTimeout "fetch --prune --prune-tags --tags origin $gitBranch" -WorkingDirectory $SourceClonePath | Out-Null
                             } else {
-                                Invoke-GitWithTimeout "fetch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 600 | Out-Null
+                                Invoke-GitWithTimeout "fetch --prune --prune-tags --tags" -WorkingDirectory $SourceClonePath | Out-Null
                             }
                         }
                         catch {
@@ -3390,16 +3475,16 @@ function CheckURLHealth {
                         # Clone the repository
                         try {
                             if (!([string]::IsNullOrEmpty($gitBranch))) {
-                                Invoke-GitWithTimeout "clone $SourceTagURL -b $gitBranch $repoName" -WorkingDirectory $ClonePath -TimeoutSeconds 600 | Out-Null
+                                Invoke-GitWithTimeout "clone $SourceTagURL -b $gitBranch $repoName" -WorkingDirectory $ClonePath | Out-Null
                             } else {
-                                Invoke-GitWithTimeout "clone $SourceTagURL $repoName" -WorkingDirectory $ClonePath -TimeoutSeconds 600 | Out-Null
+                                Invoke-GitWithTimeout "clone $SourceTagURL $repoName" -WorkingDirectory $ClonePath | Out-Null
                                 # the very first time, you receive the origin names and not the version names. From the 2nd run, all is fine.
                                 if (Test-Path $SourceClonePath) {
                                     Set-Location $SourceClonePath
                                     if (!([string]::IsNullOrEmpty($gitBranch))) {
-                                        Invoke-GitWithTimeout "fetch origin $gitBranch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 600 | Out-Null
+                                        Invoke-GitWithTimeout "fetch --prune --prune-tags --tags origin $gitBranch" -WorkingDirectory $SourceClonePath | Out-Null
                                     } else {
-                                        Invoke-GitWithTimeout "fetch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 600 | Out-Null
+                                        Invoke-GitWithTimeout "fetch --prune --prune-tags --tags" -WorkingDirectory $SourceClonePath | Out-Null
                                     }
                                 } else {
                                     Write-Warning "Clone directory not created for $repoName - clone may have failed silently"
@@ -3415,9 +3500,9 @@ function CheckURLHealth {
                         Set-Location -Path $SourceClonePath -ErrorAction Stop # --git-dir [...] fetch does not work correctly
                         try {
                             if (!([string]::IsNullOrEmpty($gitBranch))) {
-                                Invoke-GitWithTimeout "fetch origin $gitBranch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 600 | Out-Null
+                                Invoke-GitWithTimeout "fetch --prune --prune-tags --tags origin $gitBranch" -WorkingDirectory $SourceClonePath | Out-Null
                             } else {
-                                Invoke-GitWithTimeout "fetch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 600 | Out-Null
+                                Invoke-GitWithTimeout "fetch --prune --prune-tags --tags" -WorkingDirectory $SourceClonePath | Out-Null
                             }
                         }
                         catch {
@@ -3743,16 +3828,16 @@ function CheckURLHealth {
                         # Clone the repository
                         try {
                             if (!([string]::IsNullOrEmpty($gitBranch))) {
-                                Invoke-GitWithTimeout "clone $SourceTagURL -b $gitBranch $repoName" -WorkingDirectory $ClonePath -TimeoutSeconds 600 | Out-Null
+                                Invoke-GitWithTimeout "clone $SourceTagURL -b $gitBranch $repoName" -WorkingDirectory $ClonePath | Out-Null
                             } else {
-                                Invoke-GitWithTimeout "clone $SourceTagURL $repoName" -WorkingDirectory $ClonePath -TimeoutSeconds 600 | Out-Null
+                                Invoke-GitWithTimeout "clone $SourceTagURL $repoName" -WorkingDirectory $ClonePath | Out-Null
                                 # the very first time, you receive the origin names and not the version names. From the 2nd run, all is fine.
                                 if (Test-Path $SourceClonePath) {
                                     Set-Location -Path $SourceClonePath -ErrorAction Stop
                                     if (!([string]::IsNullOrEmpty($gitBranch))) {
-                                        Invoke-GitWithTimeout "fetch origin $gitBranch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 600 | Out-Null
+                                        Invoke-GitWithTimeout "fetch --prune --prune-tags --tags origin $gitBranch" -WorkingDirectory $SourceClonePath | Out-Null
                                     } else {
-                                        Invoke-GitWithTimeout "fetch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 600 | Out-Null
+                                        Invoke-GitWithTimeout "fetch --prune --prune-tags --tags" -WorkingDirectory $SourceClonePath | Out-Null
                                     }
                                 } else {
                                     Write-Warning "Clone directory not created for $repoName - clone may have failed silently"
@@ -3768,9 +3853,9 @@ function CheckURLHealth {
                         Set-Location -Path $SourceClonePath -ErrorAction Stop # --git-dir [...] fetch does not work correctly
                         try {
                             if (!([string]::IsNullOrEmpty($gitBranch))) {
-                                Invoke-GitWithTimeout "fetch origin $gitBranch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 600 | Out-Null
+                                Invoke-GitWithTimeout "fetch --prune --prune-tags --tags origin $gitBranch" -WorkingDirectory $SourceClonePath | Out-Null
                             } else {
-                                Invoke-GitWithTimeout "fetch" -WorkingDirectory $SourceClonePath -TimeoutSeconds 600 | Out-Null
+                                Invoke-GitWithTimeout "fetch --prune --prune-tags --tags" -WorkingDirectory $SourceClonePath | Out-Null
                             }
                         }
                         catch {
@@ -4249,8 +4334,9 @@ function CheckURLHealth {
     elseif ($currentTask.Spec -ilike 'etcd-3.3.27.spec') {$warning=$warningText}
 
     $warningText="Info: Packaging format .bz2 has changed to another one."
-    if ($currentTask.Spec -ilike 'python-twisted.spec') {$warning=$warningText}
     if ($currentTask.Spec -ilike 'conntrack-tools.spec') {$warning=$warningText}
+    if ($currentTask.Spec -ilike 'libnftnl.spec') {$warning=$warningText}      
+    if ($currentTask.Spec -ilike 'python-twisted.spec') {$warning=$warningText}
 
     # reset to Source0 because of different packaging formats
     if ($currentTask.Spec -ilike 'psmisc.spec') {$Source0 = $currentTask.Source0}
@@ -4598,11 +4684,11 @@ function CheckURLHealth {
         if ($UpdateDownloadFile) {
             if (Test-Path $UpdateDownloadFile)
             {
-                if ($currentTask.content -ilike '*%define sha1*') { $SHAValue = (get-filehash $UpdateDownloadFile -Algorithm SHA1).Hash;$SHALine = [system.string]::concat('%define sha1 ',$currentTask.Name,'=',$SHAValue) }
-                if ($currentTask.content -ilike '*%define sha256*') { $SHAValue = (get-filehash $UpdateDownloadFile -Algorithm SHA256).Hash;$SHALine = [system.string]::concat('%define sha256 ',$currentTask.Name,'=',$SHAValue) }
-                if ($currentTask.content -ilike '*%define sha512*') { $SHAValue = (get-filehash $UpdateDownloadFile -Algorithm SHA512).Hash;$SHALine = [system.string]::concat('%define sha512 ',$currentTask.Name,'=',$SHAValue) }
+                if ($currentTask.content -ilike '*%define sha1*') { $SHAValue = (Get-FileHashWithRetry $UpdateDownloadFile -Algorithm SHA1).Hash;$SHALine = [system.string]::concat('%define sha1 ',$currentTask.Name,'=',$SHAValue) }
+                if ($currentTask.content -ilike '*%define sha256*') { $SHAValue = (Get-FileHashWithRetry $UpdateDownloadFile -Algorithm SHA256).Hash;$SHALine = [system.string]::concat('%define sha256 ',$currentTask.Name,'=',$SHAValue) }
+                if ($currentTask.content -ilike '*%define sha512*') { $SHAValue = (Get-FileHashWithRetry $UpdateDownloadFile -Algorithm SHA512).Hash;$SHALine = [system.string]::concat('%define sha512 ',$currentTask.Name,'=',$SHAValue) }
                     # if the spec file does not contain any sha value, add sha512
-                if ((!($currentTask.content -ilike '*%define sha512*')) -and (!($object -ilike '*%define sha256*')) -and (!($object -ilike '*%define sha1*'))) { $SHAValue = (get-filehash $UpdateDownloadFile -Algorithm SHA512).Hash; $SHALine = [system.string]::concat('%define sha512 ',$currentTask.Name,'=',$SHAValue) }
+                if ((!($currentTask.content -ilike '*%define sha512*')) -and (!($object -ilike '*%define sha256*')) -and (!($object -ilike '*%define sha1*'))) { $SHAValue = (Get-FileHashWithRetry $UpdateDownloadFile -Algorithm SHA512).Hash; $SHALine = [system.string]::concat('%define sha512 ',$currentTask.Name,'=',$SHAValue) }
             }
         }
         # Add a space to signalitze that something went wrong when extracting SHAvalue but do not stop modifying the spec file.
@@ -4729,7 +4815,7 @@ function GenerateUrlHealthReports {
                 } -ThrottleLimit $ThrottleLimit
 
                 $sb = New-Object System.Text.StringBuilder
-                $sb.AppendLine("Spec,Source0 original,Modified Source0 for url health check,UrlHealth,UpdateAvailable,UpdateURL,HealthUpdateURL,Name,SHAName,UpdateDownloadName") | Out-Null
+                $sb.AppendLine("Spec,Source0 original,Modified Source0 for url health check,UrlHealth,UpdateAvailable,UpdateURL,HealthUpdateURL,Name,SHAName,UpdateDownloadName,warning,ArchivationDate") | Out-Null
                 # Filter and collect matching items, then sort
                 $filteredResults = $results | ForEach-Object {
                     $pattern = '^(.*?)([a-zA-Z0-9][a-zA-Z0-9._-]*\.spec.*)$'
@@ -4754,7 +4840,7 @@ function GenerateUrlHealthReports {
 
                 # Create a simple array for sequential processing results
                 $results = @()
-                $results += "Spec,Source0 original,Modified Source0 for url health check,UrlHealth,UpdateAvailable,UpdateURL,HealthUpdateURL,Name,SHAName,UpdateDownloadName"
+                $results += "Spec,Source0 original,Modified Source0 for url health check,UrlHealth,UpdateAvailable,UpdateURL,HealthUpdateURL,Name,SHAName,UpdateDownloadName,warning,ArchivationDate"
                 $packageCount = $TaskConfig.Packages.Count
                 $processedCount = 0
                 foreach ($currentPackage in $TaskConfig.Packages) {
@@ -4767,7 +4853,7 @@ function GenerateUrlHealthReports {
                 Write-Output "DEBUG: Finished processing all packages for $($TaskConfig.Name)"
                 Write-Output "DEBUG: Results count: $($results.Count)"
                 $sb = New-Object System.Text.StringBuilder
-                $sb.AppendLine("Spec,Source0 original,Modified Source0 for url health check,UrlHealth,UpdateAvailable,UpdateURL,HealthUpdateURL,Name,SHAName,UpdateDownloadName") | Out-Null
+                $sb.AppendLine("Spec,Source0 original,Modified Source0 for url health check,UrlHealth,UpdateAvailable,UpdateURL,HealthUpdateURL,Name,SHAName,UpdateDownloadName,warning,ArchivationDate") | Out-Null
                 Write-Output "DEBUG: Filtering results..."
                 # Filter and collect matching items, then sort
                 $filteredResults = $results | ForEach-Object {
