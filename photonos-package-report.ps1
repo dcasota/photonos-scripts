@@ -1881,10 +1881,10 @@ function CheckURLHealth {
 
     # IN CASE OF DEBUG: UNCOMMENT AND DEBUG FROM HERE
     # -----------------------------------------------
-    # if ($currentTask.spec -ilike 'httpd.spec')
-    # {pause}
-    # else
-    # {return}
+    if ($currentTask.spec -ilike 'aufs-util.spec')
+    {pause}
+    else
+    {return}
     # -----------------------------------------------    
 
     $Source0 = $currentTask.Source0
@@ -2139,58 +2139,71 @@ function CheckURLHealth {
                 try {
                     $ClonePath=[System.String](join-path -path (join-path -path $SourcePath -childpath $photonDir) -childpath "clones")
                     if (!(Test-Path $ClonePath)) {New-Item $ClonePath -ItemType Directory}
-                    # Push the current directory to the stack
-                    $SourceClonePath=[System.String](join-path -path $ClonePath -childpath $repoName)
-                    if (!(Test-Path $SourceClonePath)) {
-                        Set-Location -Path $ClonePath -ErrorAction Stop
-                        # Clone the repository
-                        try {
-                            if (!([string]::IsNullOrEmpty($gitBranch))) {
-                                Invoke-GitWithTimeout "clone $SourceTagURL -b $gitBranch $repoName" -WorkingDirectory $ClonePath | Out-Null
-                            } else {
-                                Invoke-GitWithTimeout "clone $SourceTagURL $repoName" -WorkingDirectory $ClonePath | Out-Null
-                                # the very first time, you receive the origin names and not the version names. From the 2nd run, all is fine.
-                                if (Test-Path $SourceClonePath) {
-                                    Set-Location $SourceClonePath
-                                    if (!([string]::IsNullOrEmpty($gitBranch))) {
-                                        Invoke-GitWithTimeout "fetch --prune --prune-tags --tags origin $gitBranch" -WorkingDirectory $SourceClonePath| Out-Null
-                                    } else {
-                                        Invoke-GitWithTimeout "fetch --prune --prune-tags --tags" -WorkingDirectory $SourceClonePath | Out-Null
-                                    }
-                                } else {
-                                    Write-Warning "Clone directory not created for $repoName - clone may have failed silently"
-                                }
-                            }
-                        }
-                        catch {
-                            Write-Warning "Git clone failed for $repoName : $_"
-                        }
-                    }
-                    else {
-                        # Navigate to the repository directory
-                        Set-Location -Path $SourceClonePath -ErrorAction Stop # --git-dir [...] fetch does not work correctly
-                        try {
-                            if (!([string]::IsNullOrEmpty($gitBranch))) {
-                                Invoke-GitWithTimeout "fetch --prune --prune-tags --tags origin $gitBranch" -WorkingDirectory $SourceClonePath | Out-Null
-                            } else {
-                                Invoke-GitWithTimeout "fetch --prune --prune-tags --tags" -WorkingDirectory $SourceClonePath | Out-Null
-                            }
-                        }
-                        catch {
-                            Write-Warning "Git fetch failed for $repoName : $_"
-                        }
-                    }
-
+                    
                     # override with special cases
                     if ($currentTask.spec -ilike 'gstreamer-plugins-base.spec') {$repoName="gst-plugins-base-"}
-                    # Run git tag -l and collect output in an array
-                    if ((Test-Path $SourceClonePath) -and (Test-Path (Join-Path $SourceClonePath ".git"))) {
-                        if (!([string]::IsNullOrEmpty($customRegex))) {$Names = git tag -l | Where-Object { $_ -match "^$([regex]::Escape($repoName))-" } | ForEach-Object { $_.Trim()}}
-                        else {$Names = git tag -l | ForEach-Object { $_.Trim() }}
-                        $urlhealth="200"
-                    } else {
-                        Write-Warning "No valid git repository at $SourceClonePath for $repoName - skipping tag listing"
-                        $Names = @()
+
+                    # Push the current directory to the stack
+                    $SourceClonePath=[System.String](join-path -path $ClonePath -childpath $repoName)
+                    $cloneAttempt = 0
+                    $maxCloneAttempts = 2
+                    while ($cloneAttempt -lt $maxCloneAttempts) {
+                        $cloneAttempt++
+                        if (!(Test-Path $SourceClonePath)) {
+                            Set-Location -Path $ClonePath -ErrorAction Stop
+                            # Clone the repository
+                            try {
+                                if (!([string]::IsNullOrEmpty($gitBranch))) {
+                                    Invoke-GitWithTimeout "clone $SourceTagURL -b $gitBranch $repoName" -WorkingDirectory $ClonePath | Out-Null
+                                } else {
+                                    Invoke-GitWithTimeout "clone $SourceTagURL $repoName" -WorkingDirectory $ClonePath | Out-Null
+                                    # the very first time, you receive the origin names and not the version names. From the 2nd run, all is fine.
+                                    if (Test-Path $SourceClonePath) {
+                                        Set-Location $SourceClonePath
+                                        if (!([string]::IsNullOrEmpty($gitBranch))) {
+                                            Invoke-GitWithTimeout "fetch --prune --prune-tags --tags origin $gitBranch" -WorkingDirectory $SourceClonePath| Out-Null
+                                        } else {
+                                            Invoke-GitWithTimeout "fetch --prune --prune-tags --tags" -WorkingDirectory $SourceClonePath | Out-Null
+                                        }
+                                    } else {
+                                        Write-Warning "Clone directory not created for $repoName - clone may have failed silently"
+                                    }
+                                }
+                            }
+                            catch {
+                                Write-Warning "Git clone failed for $repoName : $_"
+                            }
+                        }
+                        else {
+                            # Navigate to the repository directory
+                            Set-Location -Path $SourceClonePath -ErrorAction Stop # --git-dir [...] fetch does not work correctly
+                            try {
+                                if (!([string]::IsNullOrEmpty($gitBranch))) {
+                                    Invoke-GitWithTimeout "fetch --prune --prune-tags --tags origin $gitBranch" -WorkingDirectory $SourceClonePath | Out-Null
+                                } else {
+                                    Invoke-GitWithTimeout "fetch --prune --prune-tags --tags" -WorkingDirectory $SourceClonePath | Out-Null
+                                }
+                            }
+                            catch {
+                                Write-Warning "Git fetch failed for $repoName : $_"
+                            }
+                        }
+
+                        # Run git tag -l and collect output in an array
+                        if ((Test-Path $SourceClonePath) -and (Test-Path (Join-Path $SourceClonePath ".git"))) {
+                            if (!([string]::IsNullOrEmpty($customRegex))) {$Names = git tag -l | Where-Object { $_ -match "^$([regex]::Escape($repoName))-" } | ForEach-Object { $_.Trim()}}
+                            else {$Names = git tag -l | ForEach-Object { $_.Trim() }}
+                            $urlhealth="200"
+                            break
+                        } else {
+                            if ($cloneAttempt -lt $maxCloneAttempts) {
+                                Write-Warning "No valid git repository at $SourceClonePath for $repoName - deleting and retrying (attempt $cloneAttempt of $maxCloneAttempts)"
+                                if (Test-Path $SourceClonePath) { Remove-Item -Path $SourceClonePath -Recurse -Force -ErrorAction SilentlyContinue }
+                            } else {
+                                Write-Warning "No valid git repository at $SourceClonePath for $repoName after $maxCloneAttempts attempts - skipping tag listing"
+                                $Names = @()
+                            }
+                        }
                     }
                 } catch {
                     Write-Warning "Git operation failed for $repoName : $_"
@@ -3479,53 +3492,64 @@ function CheckURLHealth {
                     if (!(Test-Path $ClonePath)) {New-Item $ClonePath -ItemType Directory}
                     # Push the current directory to the stack
                     $SourceClonePath=[System.String](join-path -path $ClonePath -childpath $repoName)
-                    if (!(Test-Path $SourceClonePath)) {
-                        Set-Location -Path $ClonePath -ErrorAction Stop
-                        # Clone the repository
-                        try {
-                            if (!([string]::IsNullOrEmpty($gitBranch))) {
-                                Invoke-GitWithTimeout "clone $SourceTagURL -b $gitBranch $repoName" -WorkingDirectory $ClonePath | Out-Null
-                            } else {
-                                Invoke-GitWithTimeout "clone $SourceTagURL $repoName" -WorkingDirectory $ClonePath | Out-Null
-                                # the very first time, you receive the origin names and not the version names. From the 2nd run, all is fine.
-                                if (Test-Path $SourceClonePath) {
-                                    Set-Location $SourceClonePath
-                                    if (!([string]::IsNullOrEmpty($gitBranch))) {
-                                        Invoke-GitWithTimeout "fetch --prune --prune-tags --tags origin $gitBranch" -WorkingDirectory $SourceClonePath | Out-Null
-                                    } else {
-                                        Invoke-GitWithTimeout "fetch --prune --prune-tags --tags" -WorkingDirectory $SourceClonePath | Out-Null
-                                    }
+                    $cloneAttempt = 0
+                    $maxCloneAttempts = 2
+                    while ($cloneAttempt -lt $maxCloneAttempts) {
+                        $cloneAttempt++
+                        if (!(Test-Path $SourceClonePath)) {
+                            Set-Location -Path $ClonePath -ErrorAction Stop
+                            # Clone the repository
+                            try {
+                                if (!([string]::IsNullOrEmpty($gitBranch))) {
+                                    Invoke-GitWithTimeout "clone $SourceTagURL -b $gitBranch $repoName" -WorkingDirectory $ClonePath | Out-Null
                                 } else {
-                                    Write-Warning "Clone directory not created for $repoName - clone may have failed silently"
+                                    Invoke-GitWithTimeout "clone $SourceTagURL $repoName" -WorkingDirectory $ClonePath | Out-Null
+                                    # the very first time, you receive the origin names and not the version names. From the 2nd run, all is fine.
+                                    if (Test-Path $SourceClonePath) {
+                                        Set-Location $SourceClonePath
+                                        if (!([string]::IsNullOrEmpty($gitBranch))) {
+                                            Invoke-GitWithTimeout "fetch --prune --prune-tags --tags origin $gitBranch" -WorkingDirectory $SourceClonePath | Out-Null
+                                        } else {
+                                            Invoke-GitWithTimeout "fetch --prune --prune-tags --tags" -WorkingDirectory $SourceClonePath | Out-Null
+                                        }
+                                    } else {
+                                        Write-Warning "Clone directory not created for $repoName - clone may have failed silently"
+                                    }
                                 }
                             }
-                        }
-                        catch {
-                            Write-Warning "Git clone failed for $repoName : $_"
-                        }
-                    }
-                    else {
-                        # Navigate to the repository directory
-                        Set-Location -Path $SourceClonePath -ErrorAction Stop # --git-dir [...] fetch does not work correctly
-                        try {
-                            if (!([string]::IsNullOrEmpty($gitBranch))) {
-                                Invoke-GitWithTimeout "fetch --prune --prune-tags --tags origin $gitBranch" -WorkingDirectory $SourceClonePath | Out-Null
-                            } else {
-                                Invoke-GitWithTimeout "fetch --prune --prune-tags --tags" -WorkingDirectory $SourceClonePath | Out-Null
+                            catch {
+                                Write-Warning "Git clone failed for $repoName : $_"
                             }
                         }
-                        catch {
-                            Write-Warning "Git fetch failed for $repoName : $_"
+                        else {
+                            # Navigate to the repository directory
+                            Set-Location -Path $SourceClonePath -ErrorAction Stop # --git-dir [...] fetch does not work correctly
+                            try {
+                                if (!([string]::IsNullOrEmpty($gitBranch))) {
+                                    Invoke-GitWithTimeout "fetch --prune --prune-tags --tags origin $gitBranch" -WorkingDirectory $SourceClonePath | Out-Null
+                                } else {
+                                    Invoke-GitWithTimeout "fetch --prune --prune-tags --tags" -WorkingDirectory $SourceClonePath | Out-Null
+                                }
+                            }
+                            catch {
+                                Write-Warning "Git fetch failed for $repoName : $_"
+                            }
                         }
-                    }
-                    # Run git tag -l and collect output in an array
-                    if ((Test-Path $SourceClonePath) -and (Test-Path (Join-Path $SourceClonePath ".git"))) {
-                        if ("" -eq $customRegex) {$Names = git tag -l | Where-Object { $_ -match "^$([regex]::Escape($repoName))-" } | ForEach-Object { $_.Trim()}}
-                        else {$Names = git tag -l | ForEach-Object { $_.Trim() }}
-                        $urlhealth="200"
-                    } else {
-                        Write-Warning "No valid git repository at $SourceClonePath for $repoName - skipping tag listing"
-                        $Names = @()
+                        # Run git tag -l and collect output in an array
+                        if ((Test-Path $SourceClonePath) -and (Test-Path (Join-Path $SourceClonePath ".git"))) {
+                            if ("" -eq $customRegex) {$Names = git tag -l | Where-Object { $_ -match "^$([regex]::Escape($repoName))-" } | ForEach-Object { $_.Trim()}}
+                            else {$Names = git tag -l | ForEach-Object { $_.Trim() }}
+                            $urlhealth="200"
+                            break
+                        } else {
+                            if ($cloneAttempt -lt $maxCloneAttempts) {
+                                Write-Warning "No valid git repository at $SourceClonePath for $repoName - deleting and retrying (attempt $cloneAttempt of $maxCloneAttempts)"
+                                if (Test-Path $SourceClonePath) { Remove-Item -Path $SourceClonePath -Recurse -Force -ErrorAction SilentlyContinue }
+                            } else {
+                                Write-Warning "No valid git repository at $SourceClonePath for $repoName after $maxCloneAttempts attempts - skipping tag listing"
+                                $Names = @()
+                            }
+                        }
                     }
                 } catch {
                     Write-Warning "Git operation failed for $repoName : $_"
@@ -3837,54 +3861,65 @@ function CheckURLHealth {
                     if (!(Test-Path $ClonePath)) {New-Item $ClonePath -ItemType Directory}
                     # Push the current directory to the stack
                     $SourceClonePath=[System.String](join-path -path $ClonePath -childpath $repoName)
-                    if (!(Test-Path $SourceClonePath)) {
-                        Set-Location -Path $ClonePath -ErrorAction Stop
-                        # Clone the repository
-                        try {
-                            if (!([string]::IsNullOrEmpty($gitBranch))) {
-                                Invoke-GitWithTimeout "clone $SourceTagURL -b $gitBranch $repoName" -WorkingDirectory $ClonePath | Out-Null
-                            } else {
-                                Invoke-GitWithTimeout "clone $SourceTagURL $repoName" -WorkingDirectory $ClonePath | Out-Null
-                                # the very first time, you receive the origin names and not the version names. From the 2nd run, all is fine.
-                                if (Test-Path $SourceClonePath) {
-                                    Set-Location -Path $SourceClonePath -ErrorAction Stop
-                                    if (!([string]::IsNullOrEmpty($gitBranch))) {
-                                        Invoke-GitWithTimeout "fetch --prune --prune-tags --tags origin $gitBranch" -WorkingDirectory $SourceClonePath | Out-Null
-                                    } else {
-                                        Invoke-GitWithTimeout "fetch --prune --prune-tags --tags" -WorkingDirectory $SourceClonePath | Out-Null
-                                    }
+                    $cloneAttempt = 0
+                    $maxCloneAttempts = 2
+                    while ($cloneAttempt -lt $maxCloneAttempts) {
+                        $cloneAttempt++
+                        if (!(Test-Path $SourceClonePath)) {
+                            Set-Location -Path $ClonePath -ErrorAction Stop
+                            # Clone the repository
+                            try {
+                                if (!([string]::IsNullOrEmpty($gitBranch))) {
+                                    Invoke-GitWithTimeout "clone $SourceTagURL -b $gitBranch $repoName" -WorkingDirectory $ClonePath | Out-Null
                                 } else {
-                                    Write-Warning "Clone directory not created for $repoName - clone may have failed silently"
+                                    Invoke-GitWithTimeout "clone $SourceTagURL $repoName" -WorkingDirectory $ClonePath | Out-Null
+                                    # the very first time, you receive the origin names and not the version names. From the 2nd run, all is fine.
+                                    if (Test-Path $SourceClonePath) {
+                                        Set-Location -Path $SourceClonePath -ErrorAction Stop
+                                        if (!([string]::IsNullOrEmpty($gitBranch))) {
+                                            Invoke-GitWithTimeout "fetch --prune --prune-tags --tags origin $gitBranch" -WorkingDirectory $SourceClonePath | Out-Null
+                                        } else {
+                                            Invoke-GitWithTimeout "fetch --prune --prune-tags --tags" -WorkingDirectory $SourceClonePath | Out-Null
+                                        }
+                                    } else {
+                                        Write-Warning "Clone directory not created for $repoName - clone may have failed silently"
+                                    }
                                 }
                             }
-                        }
-                        catch {
-                            Write-Warning "Git clone failed for $repoName : $_"
-                        }
-                    }
-                    else {
-                        # Navigate to the repository directory
-                        Set-Location -Path $SourceClonePath -ErrorAction Stop # --git-dir [...] fetch does not work correctly
-                        try {
-                            if (!([string]::IsNullOrEmpty($gitBranch))) {
-                                Invoke-GitWithTimeout "fetch --prune --prune-tags --tags origin $gitBranch" -WorkingDirectory $SourceClonePath | Out-Null
-                            } else {
-                                Invoke-GitWithTimeout "fetch --prune --prune-tags --tags" -WorkingDirectory $SourceClonePath | Out-Null
+                            catch {
+                                Write-Warning "Git clone failed for $repoName : $_"
                             }
                         }
-                        catch {
-                            Write-Warning "Git fetch failed for $repoName : $_"
+                        else {
+                            # Navigate to the repository directory
+                            Set-Location -Path $SourceClonePath -ErrorAction Stop # --git-dir [...] fetch does not work correctly
+                            try {
+                                if (!([string]::IsNullOrEmpty($gitBranch))) {
+                                    Invoke-GitWithTimeout "fetch --prune --prune-tags --tags origin $gitBranch" -WorkingDirectory $SourceClonePath | Out-Null
+                                } else {
+                                    Invoke-GitWithTimeout "fetch --prune --prune-tags --tags" -WorkingDirectory $SourceClonePath | Out-Null
+                                }
+                            }
+                            catch {
+                                Write-Warning "Git fetch failed for $repoName : $_"
+                            }
                         }
-                    }
-                    # Run git tag -l and collect output in an array
-                    if ((Test-Path $SourceClonePath) -and (Test-Path (Join-Path $SourceClonePath ".git"))) {
-                        Set-Location -Path $SourceClonePath -ErrorAction SilentlyContinue
-                        if ("" -eq $customRegex) {$Names = git tag -l | Where-Object { $_ -match "^$([regex]::Escape($repoName))-" } | ForEach-Object { $_.Trim()}}
-                        else {$Names = git tag -l | ForEach-Object { $_.Trim() }}
-                        $urlhealth="200"
-                    } else {
-                        Write-Warning "No valid git repository at $SourceClonePath for $repoName - skipping tag listing"
-                        $Names = @()
+                        # Run git tag -l and collect output in an array
+                        if ((Test-Path $SourceClonePath) -and (Test-Path (Join-Path $SourceClonePath ".git"))) {
+                            Set-Location -Path $SourceClonePath -ErrorAction SilentlyContinue
+                            if ("" -eq $customRegex) {$Names = git tag -l | Where-Object { $_ -match "^$([regex]::Escape($repoName))-" } | ForEach-Object { $_.Trim()}}
+                            else {$Names = git tag -l | ForEach-Object { $_.Trim() }}
+                            $urlhealth="200"
+                            break
+                        } else {
+                            if ($cloneAttempt -lt $maxCloneAttempts) {
+                                Write-Warning "No valid git repository at $SourceClonePath for $repoName - deleting and retrying (attempt $cloneAttempt of $maxCloneAttempts)"
+                                if (Test-Path $SourceClonePath) { Remove-Item -Path $SourceClonePath -Recurse -Force -ErrorAction SilentlyContinue }
+                            } else {
+                                Write-Warning "No valid git repository at $SourceClonePath for $repoName after $maxCloneAttempts attempts - skipping tag listing"
+                                $Names = @()
+                            }
+                        }
                     }
                 } catch {
                     Write-Warning "Git operation failed for $repoName : $_"
@@ -4951,7 +4986,10 @@ catch {
 # parallel processing support
 Write-Output "Checking parallel processing support..."
 $Script:UseParallel = $PSVersionTable.PSVersion.Major -ge 7 -and $PSVersionTable.PSVersion.Minor -ge 4
-# $Script:UseParallel = $false
+
+# For testing or troubleshooting, you can disable parallel processing by setting $Script:UseParallel to $false
+$Script:UseParallel = $false
+
 Write-Output "Parallel processing: $($Script:UseParallel)"
 
 # Get current CPU usage and core count (cross-platform)
