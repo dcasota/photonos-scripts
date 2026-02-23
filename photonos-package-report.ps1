@@ -347,6 +347,18 @@ function Versioncompare {
     return $resultAGtrB
 }
 
+function Clean-VersionNames {
+    param([string[]]$Names)
+    if ($null -eq $Names -or $Names.Count -eq 0) { return @() }
+    $Names = @($Names | Where-Object { -not [string]::IsNullOrEmpty($_) } | ForEach-Object {
+        ((($_ -ireplace '^rel/','') -ireplace '^v','') -ireplace '^r','') -replace '_','.'
+    })
+    if ($Names.Count -eq 0) { return @() }
+    $preReleasePattern = 'candidate|-alpha|-beta|\.beta|rc\.[0-4]|rc[1-4]|-preview\.|-dev\.|-pre1|\.pre1'
+    $Names = @($Names | Where-Object { $_ -notmatch $preReleasePattern })
+    return $Names
+}
+
 function GitPhoton {
     param (
         [parameter(Mandatory = $true)]
@@ -2234,33 +2246,7 @@ function CheckURLHealth {
                 $replace +="release"
                 $replace +="-final"
                 foreach ($item in $replace) {$Names = $Names | ForEach-Object { $_ -replace [regex]::Escape($item), "" }}
-                $Names = $Names.Where({ $null -ne $currentTask.Name })
-                $Names = $Names.Where({ "" -ne $currentTask.Name })
-                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^rel/' -simplematch) {$_ -ireplace '^rel/',""} else {$_}}
-                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^v' -simplematch) {$_ -ireplace '^v',""} else {$_}}
-                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^V' -simplematch) {$_ -ireplace '^V',""} else {$_}}
-                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^r' -simplematch) {$_ -ireplace '^r',""} else {$_}}
-                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^R' -simplematch) {$_ -ireplace '^R',""} else {$_}}
-                $Names = $Names | foreach-object { if ($_ | select-string -pattern '_' -simplematch) {$_ -ireplace '_',"."} else {$_}}
-
-                # remove versions developer, release candidates, alpha versions, preview versions and versions without numbers
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'candidate' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-alpha' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-beta' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.beta' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.0' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.1' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.2' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.3' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.4' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc1' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc2' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc3' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc4' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-preview.' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-dev.' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-pre1' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.pre1' -simplematch)) {$_}}
+                $Names = Clean-VersionNames $Names
 
                 if ($currentTask.spec -notlike "amdvlk.spec")
                 {
@@ -2848,35 +2834,7 @@ function CheckURLHealth {
                     $replace += "release"
                     # Do not add [...]replace(($replace[$i]).tolower() because later e.g. for downloading resources the exact case-sensitive match is important.
                     foreach ($item in $replace) {$Names = $Names | ForEach-Object { $_ -replace [regex]::Escape($item), "" }}
-
-                    # $replace | foreach { $Names = $Names -replace $_,""}
-                    $Names = $Names.Where({ $null -ne $currentTask.Name })
-                    $Names = $Names.Where({ "" -ne $currentTask.Name })
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^rel/' -simplematch) { $_ -ireplace '^rel/', "" } else { $_ } }
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^v' -simplematch) { $_ -ireplace '^v', "" } else { $_ } }
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^V' -simplematch) { $_ -ireplace '^V', "" } else { $_ } }
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^r' -simplematch) { $_ -ireplace '^r', "" } else { $_ } }
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^R' -simplematch) { $_ -ireplace '^R', "" } else { $_ } }
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '_' -simplematch) { $_ -ireplace '_', "." } else { $_ } }
-
-                    # remove versions developer, release candidates, alpha versions, preview versions and versions without numbers
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'candidate' -simplematch)) { $_ } }
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-alpha' -simplematch)) { $_ } }
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-beta' -simplematch)) { $_ } }
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.beta' -simplematch)) { $_ } }
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.0' -simplematch)) { $_ } }
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.1' -simplematch)) { $_ } }
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.2' -simplematch)) { $_ } }
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.3' -simplematch)) { $_ } }
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.4' -simplematch)) { $_ } }
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc1' -simplematch)) { $_ } }
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc2' -simplematch)) { $_ } }
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc3' -simplematch)) { $_ } }
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc4' -simplematch)) { $_ } }
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-preview.' -simplematch)) { $_ } }
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-dev.' -simplematch)) { $_ } }
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-pre1' -simplematch)) { $_ } }
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.pre1' -simplematch)) { $_ } }
+                    $Names = Clean-VersionNames $Names
 
                     $Names = $Names -ireplace "v", ""
 
@@ -3082,34 +3040,7 @@ function CheckURLHealth {
                 $replace +="release"
                 # Do not add [...]replace(($replace[$i]).tolower() because later e.g. for downloading resources the exact case-sensitive match is important.
                 foreach ($item in $replace) {$Names = $Names | ForEach-Object { $_ -replace [regex]::Escape($item), "" }}
-
-                $Names = $Names.Where({ $null -ne $currentTask.Name })
-                $Names = $Names.Where({ "" -ne $currentTask.Name })
-                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^rel/' -simplematch) {$_ -ireplace '^rel/',""} else {$_}}
-                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^v' -simplematch) {$_ -ireplace '^v',""} else {$_}}
-                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^V' -simplematch) {$_ -ireplace '^V',""} else {$_}}
-                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^r' -simplematch) {$_ -ireplace '^r',""} else {$_}}
-                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^R' -simplematch) {$_ -ireplace '^R',""} else {$_}}
-                $Names = $Names | foreach-object { if ($_ | select-string -pattern '_' -simplematch) {$_ -ireplace '_',"."} else {$_}}
-
-                # remove versions developer, release candidates, alpha versions, preview versions and versions without numbers
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'candidate' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-alpha' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-beta' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.beta' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.0' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.1' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.2' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.3' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.4' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc1' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc2' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc3' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc4' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-preview.' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-dev.' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-pre1' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.pre1' -simplematch)) {$_}}
+                $Names = Clean-VersionNames $Names
 
                 $Names = $Names  -replace "v",""
                 $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
@@ -3292,25 +3223,7 @@ function CheckURLHealth {
 
                 # Do not add [...]replace(($replace[$i]).tolower() because later e.g. for downloading resources the exact case-sensitive match is important.
                 foreach ($item in $replace) {$Names = $Names | ForEach-Object { $_ -replace [regex]::Escape($item), "" }}
-
-                # remove versions developer, release candidates, alpha versions, preview versions and versions without numbers
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'candidate' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-alpha' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-beta' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.beta' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.0' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.1' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.2' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.3' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.4' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc1' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc2' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc3' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc4' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-preview.' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-dev.' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-pre1' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.pre1' -simplematch)) {$_}}
+                $Names = Clean-VersionNames $Names
 
                 $Names = $Names  -replace "v",""
                 $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
@@ -3370,31 +3283,7 @@ function CheckURLHealth {
 
                     # Do not add [...]replace(($replace[$i]).tolower() because later e.g. for downloading resources the exact case-sensitive match is important.
                     foreach ($item in $replace) {$Names = $Names | ForEach-Object { $_ -replace [regex]::Escape($item), "" }}
-                    $Names = $Names.Where({ $null -ne $currentTask.Name })
-                    $Names = $Names.Where({ "" -ne $currentTask.Name })
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^v' -simplematch) {$_ -ireplace '^v',""} else {$_}}
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^V' -simplematch) {$_ -ireplace '^V',""} else {$_}}
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^r' -simplematch) {$_ -ireplace '^r',""} else {$_}}
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^R' -simplematch) {$_ -ireplace '^R',""} else {$_}}
-
-                    # remove versions developer, release candidates, alpha versions, preview versions and versions without numbers
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'candidate' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-alpha' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-beta' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.beta' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.0' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.1' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.2' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.3' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.4' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc1' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc2' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc3' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc4' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-preview.' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-dev.' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-pre1' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.pre1' -simplematch)) {$_}}
+                    $Names = Clean-VersionNames $Names
 
                     $Names = $Names  -replace "v",""
                     $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
@@ -3638,33 +3527,7 @@ function CheckURLHealth {
                 $replace +="release-"
                 $replace +="release"
                 foreach ($item in $replace) {$Names = $Names | ForEach-Object { $_ -replace [regex]::Escape($item), "" }}
-                $Names = $Names.Where({ $null -ne $currentTask.Name })
-                $Names = $Names.Where({ "" -ne $currentTask.Name })
-                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^rel/' -simplematch) {$_ -ireplace '^rel/',""} else {$_}}
-                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^v' -simplematch) {$_ -ireplace '^v',""} else {$_}}
-                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^V' -simplematch) {$_ -ireplace '^V',""} else {$_}}
-                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^r' -simplematch) {$_ -ireplace '^r',""} else {$_}}
-                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^R' -simplematch) {$_ -ireplace '^R',""} else {$_}}
-                $Names = $Names | foreach-object { if ($_ | select-string -pattern '_' -simplematch) {$_ -ireplace '_',"."} else {$_}}
-
-                # remove versions developer, release candidates, alpha versions, preview versions and versions without numbers
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'candidate' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-alpha' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-beta' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.beta' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.0' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.1' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.2' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.3' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.4' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc1' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc2' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc3' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc4' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-preview.' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-dev.' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-pre1' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.pre1' -simplematch)) {$_}}
+                $Names = Clean-VersionNames $Names
 
                 $Names = $Names  -replace "v",""
                 $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
@@ -3741,31 +3604,7 @@ function CheckURLHealth {
                     $replace +="ver"
 
                     foreach ($item in $replace) {$Names = $Names | ForEach-Object { $_ -replace [regex]::Escape($item), "" }}
-                    $Names = $Names.Where({ $null -ne $currentTask.Name })
-                    $Names = $Names.Where({ "" -ne $currentTask.Name })
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^v' -simplematch) {$_ -ireplace '^v',""} else {$_}}
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^V' -simplematch) {$_ -ireplace '^V',""} else {$_}}
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^r' -simplematch) {$_ -ireplace '^r',""} else {$_}}
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '^R' -simplematch) {$_ -ireplace '^R',""} else {$_}}
-
-                    # remove versions developer, release candidates, alpha versions, preview versions and versions without numbers
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'candidate' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-alpha' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-beta' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.beta' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.0' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.1' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.2' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.3' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.4' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc1' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc2' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc3' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc4' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-preview.' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-dev.' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-pre1' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.pre1' -simplematch)) {$_}}
+                    $Names = Clean-VersionNames $Names
 
                     $Names = $Names  -replace "v",""
                     $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
@@ -3964,33 +3803,7 @@ function CheckURLHealth {
                 $replace +="release-"
                 $replace +="release"
                 foreach ($item in $replace) {$Names = $Names | ForEach-Object { $_ -replace [regex]::Escape($item), "" }}
-                $Names = $Names.Where({ $null -ne $currentTask.Name })
-                $Names = $Names.Where({ "" -ne $currentTask.Name })
-                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^rel/' -simplematch) {$_ -ireplace '^rel/',""} else {$_}}
-                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^v' -simplematch) {$_ -ireplace '^v',""} else {$_}}
-                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^V' -simplematch) {$_ -ireplace '^V',""} else {$_}}
-                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^r' -simplematch) {$_ -ireplace '^r',""} else {$_}}
-                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^R' -simplematch) {$_ -ireplace '^R',""} else {$_}}
-                $Names = $Names | foreach-object { if ($_ | select-string -pattern '_' -simplematch) {$_ -ireplace '_',"."} else {$_}}
-
-                # remove versions developer, release candidates, alpha versions, preview versions and versions without numbers
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'candidate' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-alpha' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-beta' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.beta' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.0' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.1' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.2' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.3' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.4' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc1' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc2' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc3' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc4' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-preview.' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-dev.' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-pre1' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.pre1' -simplematch)) {$_}}
+                $Names = Clean-VersionNames $Names
 
                 $Names = $Names  -replace "v",""
                 $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
@@ -4224,33 +4037,7 @@ function CheckURLHealth {
                 $replace +="release"
                 foreach ($item in $replace) {$Names = $Names | ForEach-Object { $_ -replace [regex]::Escape($item), "" }}
 
-                $Names = $Names.Where({ $null -ne $currentTask.Name })
-                $Names = $Names.Where({ "" -ne $currentTask.Name })
-                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^rel/' -simplematch) {$_ -ireplace '^rel/',""} else {$_}}
-                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^v' -simplematch) {$_ -ireplace '^v',""} else {$_}}
-                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^V' -simplematch) {$_ -ireplace '^V',""} else {$_}}
-                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^r' -simplematch) {$_ -ireplace '^r',""} else {$_}}
-                $Names = $Names | foreach-object { if ($_ | select-string -pattern '^R' -simplematch) {$_ -ireplace '^R',""} else {$_}}
-                $Names = $Names | foreach-object { if ($_ | select-string -pattern '_' -simplematch) {$_ -ireplace '_',"."} else {$_}}
-
-                # remove versions developer, release candidates, alpha versions, preview versions and versions without numbers
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'candidate' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-alpha' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-beta' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.beta' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.0' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.1' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.2' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.3' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc.4' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc1' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc2' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc3' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'rc4' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-preview.' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-dev.' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-pre1' -simplematch)) {$_}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.pre1' -simplematch)) {$_}}
+                $Names = Clean-VersionNames $Names
 
                 if ($currentTask.spec -notlike "tzdata.spec")
                 {
