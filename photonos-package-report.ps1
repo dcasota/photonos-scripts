@@ -55,7 +55,7 @@
 #     set breakpoint on {pause}, step over(F10) and inspect variables as needed.
 #   - To run on Windows: Open Powershell
 #     cd your\path\to\photonos-scripts;
-#     $env:GITHUB_TOKEN="<YOUR GITHUB_TOKEN>"; $env:GITHUB_USERNAME="<your GITHUB_USERNAME>"; $env:GITLAB_TOKEN="<your GITLAB_TOKEN>"; 
+#     $env:GITHUB_TOKEN="<YOUR GITHUB_TOKEN>"; $env:GITLAB_USERNAME="<your GITLAB_USERNAME>"; $env:GITLAB_TOKEN="<your GITLAB_TOKEN>"; 
 #     pwsh -File .\photonos-package-report.ps1 -sourcepath <path-to-store-the-reports> \
 #          -GeneratePh3URLHealthReport $true -GeneratePh4URLHealthReport $true -GeneratePh5URLHealthReport $true -GeneratePh6URLHealthReport $true \
 #          -GeneratePhCommonURLHealthReport $true -GeneratePhDevURLHealthReport $true -GeneratePhMasterURLHealthReport $true \
@@ -65,7 +65,7 @@
 #     Open Photon OS e.g. "wsl -d Ph5 -u root /bin/bash"
 #     Install Powershell Core: tdnf install powershell -y
 #     cd /your\path/to/photonos-scripts;
-#     export GITHUB_TOKEN="<YOUR GITHUB_TOKEN>"; export GITHUB_USERNAME="<your GITHUB_USERNAME>"; export GITLAB_TOKEN="<your GITLAB_TOKEN>";
+#     export GITHUB_TOKEN="<YOUR GITHUB_TOKEN>"; export GITLAB_USERNAME="<your GITLAB_USERNAME>"; export GITLAB_TOKEN="<your GITLAB_TOKEN>";
 #     pwsh -File ./photonos-package-report.ps1 -sourcepath <path-to-store-the-reports> \
 #          -GeneratePh3URLHealthReport $true -GeneratePh4URLHealthReport $true -GeneratePh5URLHealthReport $true -GeneratePh6URLHealthReport $true \
 #          -GeneratePhCommonURLHealthReport $true -GeneratePhDevURLHealthReport $true -GeneratePhMasterURLHealthReport $true \

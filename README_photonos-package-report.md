@@ -3,41 +3,43 @@
 ## SCRIPT STRUCTURE
 
 ```
-photonos-package-report.ps1 (~5,080 lines)
+photonos-package-report.ps1 (~5,170 lines)
 │
-├── HEADER (Lines 1-58)
+├── HEADER (Lines 1-96)
 │   ├── Synopsis & Version History
+│   ├── Prerequisites & Hints (debug, run on Windows/WSL/Photon OS)
 │   └── Parameter Declarations (13 parameters)
 │
-├── HELPER FUNCTIONS (Lines 60-253)
-│   ├── Convert-ToBoolean        (60-68)    - Convert string params to bool (-File compat)
-│   ├── Invoke-GitWithTimeout    (83-117)   - Git commands with 600s timeout via Start-Job
-│   ├── Get-SpecValue            (119-130)  - Safe spec field extraction
-│   └── ParseDirectory           (132-253)  - Parse .spec files from branch
+├── HELPER FUNCTIONS (Lines 98-290)
+│   ├── Convert-ToBoolean        (98-106)   - Convert string params to bool (-File compat)
+│   ├── Invoke-GitWithTimeout    (121-155)  - Git commands with timeout via Start-Job
+│   ├── Get-SpecValue            (157-168)  - Safe spec field extraction
+│   └── ParseDirectory           (170-290)  - Parse .spec files from branch
 │
-├── CORE FUNCTIONS (Lines 254-1401)
-│   ├── Versioncompare           (254-311)  - Compare version strings
-│   ├── GitPhoton                (312-360)  - Clone/fetch/merge Photon repos
+├── CORE FUNCTIONS (Lines 292-1446)
+│   ├── Versioncompare           (292-349)  - Compare version strings
+│   ├── GitPhoton                (350-398)  - Clone/fetch/merge Photon repos
 │   │                                         (delete + re-clone on merge failure)
-│   ├── Source0Lookup            (361-1215) - Lookup table for 848 packages
+│   ├── Source0Lookup            (399-1260) - Lookup table for 848+ packages
 │   │                                         (columns: specfile, Source0Lookup, gitSource,
 │   │                                          gitBranch, customRegex, replaceStrings,
 │   │                                          ignoreStrings, Warning, ArchivationDate)
-│   ├── ModifySpecFile           (1216-1289)- Update spec files with new versions
-│   ├── urlhealth                (1290-1350)- Check URL HTTP status
-│   └── KojiFedoraProjectLookUp  (1351-1401)- Lookup Fedora Koji packages
+│   ├── ModifySpecFile           (1261-1334)- Update spec files with new versions
+│   ├── urlhealth                (1335-1395)- Check URL HTTP status
+│   └── KojiFedoraProjectLookUp  (1396-1446)- Lookup Fedora Koji packages
 │
-├── MAIN PROCESSING FUNCTION (Lines 1403-4553)
-│   └── CheckURLHealth           (1403-4505)- URL health check per package
+├── MAIN PROCESSING FUNCTION (Lines 1448-4702)
+│   └── CheckURLHealth           (1448-4650)- URL health check per package
 │       ├── Version extraction from URLs
 │       ├── Data scraping (GitHub, GitLab, PyPI, RubyGems JSON API, etc.)
 │       ├── Update availability detection
 │       ├── GNU FTP mirror fallback (ftp.funet.fi)
+│       ├── Get-FileHashWithRetry (file hash with lock retry)
 │       └── Spec file modification
-│   └── GenerateUrlHealthReports (4555-4699)- Orchestrates parallel/sequential processing
+│   └── GenerateUrlHealthReports (4704-4848)- Orchestrates parallel/sequential processing
 │
-├── MAIN EXECUTION (Lines 4701-5022)
-│   ├── Initialization           (4701-4810)
+├── MAIN EXECUTION (Lines 4850-5170)
+│   ├── Initialization           (4850-4960)
 │   │   ├── Security protocol setup
 │   │   ├── OS detection
 │   │   ├── Command availability check (git, tar)
@@ -47,25 +49,25 @@ photonos-package-report.ps1 (~5,080 lines)
 │   │   ├── Path validation
 │   │   └── Git safe.directory wildcard (cross-filesystem support)
 │   │
-│   ├── Authentication           (4812-4870)
+│   ├── Authentication           (4962-5020)
 │   │   ├── GitHub token prompt
 │   │   └── GitLab username/token prompt
 │   │
-│   ├── URL Health Reports       (4872-4892)
+│   ├── URL Health Reports       (5022-5042)
 │   │   └── Call GenerateUrlHealthReports()
 │   │
-│   ├── Package Report           (4894-4930)
+│   ├── Package Report           (5044-5080)
 │   │   ├── Git clone/fetch all branches
 │   │   ├── Parse all directories
 │   │   └── Generate package-report.prn
 │   │
-│   ├── Diff Reports             (4932-5008)
+│   ├── Diff Reports             (5082-5158)
 │   │   ├── Common vs Master
 │   │   ├── 5.0 vs 6.0
 │   │   ├── 4.0 vs 5.0
 │   │   └── 3.0 vs 4.0
 │   │
-│   └── Cleanup                  (5010-5022)
+│   └── Cleanup                  (5160-5170)
 │       ├── Clear tokens from memory
 │       └── Remove git credentials
 ```
@@ -196,7 +198,7 @@ Main Execution
 │
 ├── GenerateUrlHealthReports()
 │   ├── GitPhoton()
-│   │   └── Invoke-GitWithTimeout()  [600s timeout, delete+re-clone on failure]
+│   │   └── Invoke-GitWithTimeout()  [fetch --prune --prune-tags --tags, delete+re-clone on failure]
 │   ├── ParseDirectory()
 │   │   └── Get-SpecValue()
 │   └── CheckURLHealth()  [parallel or sequential]
@@ -286,6 +288,7 @@ pwsh -File photonos-package-report.ps1 `
 
 # Use environment variables for tokens
 $env:GITHUB_TOKEN = "your_github_token"
+$env:GITLAB_USERNAME = "your_gitlab_username"
 $env:GITLAB_TOKEN = "your_gitlab_token"
 pwsh -File photonos-package-report.ps1
 ```
@@ -312,6 +315,9 @@ Key improvements in v0.61:
 - Warning/ArchivationDate columns in URL health report output (warnings no longer overwrite UpdateAvailable)
 - v- prefix handling in UpdateDownloadName
 - Fixed missing $ in runit.spec condition
+- git fetch --prune --prune-tags --tags to ensure all remote tags are synced (fixes missing tags like httpd 2.4.66)
+- Get-FileHashWithRetry helper for file hash with automatic retry on lock
+- Fixed GITHUB_USERNAME → GITLAB_USERNAME in usage hints
 
 Key improvements in v0.60:
 - Git timeout handling (600s for all operations) to prevent hanging
