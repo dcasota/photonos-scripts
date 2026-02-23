@@ -91,7 +91,8 @@ param (
     [Parameter(Mandatory = $false)][ValidateNotNull()]$GeneratePhCommontoPhMasterDiffHigherPackageVersionReport=$true,
     [Parameter(Mandatory = $false)][ValidateNotNull()]$GeneratePh5toPh6DiffHigherPackageVersionReport=$true,
     [Parameter(Mandatory = $false)][ValidateNotNull()]$GeneratePh4toPh5DiffHigherPackageVersionReport=$true,
-    [Parameter(Mandatory = $false)][ValidateNotNull()]$GeneratePh3toPh4DiffHigherPackageVersionReport=$true
+    [Parameter(Mandatory = $false)][ValidateNotNull()]$GeneratePh3toPh4DiffHigherPackageVersionReport=$true,
+    [Parameter(Mandatory = $false)][ValidateRange(0,7)][int]$DebugLevel=0
 )
 
 # Convert string parameters to boolean (needed when using -File with $true/$false)
@@ -117,6 +118,30 @@ $GeneratePh5toPh6DiffHigherPackageVersionReport = Convert-ToBoolean $GeneratePh5
 $GeneratePh4toPh5DiffHigherPackageVersionReport = Convert-ToBoolean $GeneratePh4toPh5DiffHigherPackageVersionReport
 $GeneratePh3toPh4DiffHigherPackageVersionReport = Convert-ToBoolean $GeneratePh3toPh4DiffHigherPackageVersionReport
 
+# Debug logging: DebugLevel 0=off, 1=report-level, 3=package-level, 5=detail, 7=trace-all
+$Script:DebugLevel = $DebugLevel
+$Script:DebugLogFile = ""
+if ($Script:DebugLevel -gt 0) {
+    $Script:DebugLogFile = Join-Path -Path $sourcepath -ChildPath "photonos-debug_$((Get-Date).ToString('yyyyMMdd_HHmm')).log"
+    Write-Host "[DEBUG] DebugLevel=$Script:DebugLevel - Logging to $Script:DebugLogFile" -ForegroundColor Cyan
+}
+
+function Write-DebugLog {
+    param(
+        [int]$Level = 3,
+        [string]$Message,
+        [string]$LogFile = "",
+        [int]$RequiredLevel = 0
+    )
+    if ($RequiredLevel -eq 0) { $RequiredLevel = $Script:DebugLevel }
+    if ($LogFile -eq "") { $LogFile = $Script:DebugLogFile }
+    if ($RequiredLevel -lt $Level -or $LogFile -eq "") { return }
+    $ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss.fff')
+    $tid = if ($null -ne [System.Threading.Thread]::CurrentThread) { [System.Threading.Thread]::CurrentThread.ManagedThreadId } else { 0 }
+    $line = "[$ts][T$tid][L$Level] $Message"
+    try { [System.IO.File]::AppendAllText($LogFile, "$line`r`n") } catch {}
+}
+
 # Helper function to run git commands with timeout
 function Invoke-GitWithTimeout {
     param(
@@ -125,6 +150,8 @@ function Invoke-GitWithTimeout {
         [int]$TimeoutSeconds = 7200 # Default timeout of 2 hours, can be adjusted as needed (kibana, chromium can take a long time to clone)
     )
 
+    Write-DebugLog -Level 3 -Message "GIT START: git $Arguments (wd=$WorkingDirectory, timeout=${TimeoutSeconds}s)"
+    $swGit = [System.Diagnostics.Stopwatch]::StartNew()
     try {
         $job = Start-Job -ScriptBlock {
             param($argString, $wd)
@@ -139,15 +166,21 @@ function Invoke-GitWithTimeout {
         if ($completed) {
             $result = Receive-Job -Job $job
             Remove-Job -Job $job -ErrorAction SilentlyContinue
+            $swGit.Stop()
+            Write-DebugLog -Level 3 -Message "GIT END:   git $Arguments elapsed=$($swGit.Elapsed.ToString('hh\:mm\:ss\.fff'))"
             return $result
         } else {
             Stop-Job -Job $job -ErrorAction SilentlyContinue
             Remove-Job -Job $job -ErrorAction SilentlyContinue
+            $swGit.Stop()
+            Write-DebugLog -Level 1 -Message "GIT TIMEOUT: git $Arguments after ${TimeoutSeconds}s (wd=$WorkingDirectory)"
             Write-Warning "Git command timed out after $TimeoutSeconds seconds: git $Arguments"
             throw "Git operation timed out"
         }
     }
     catch {
+        $swGit.Stop()
+        Write-DebugLog -Level 1 -Message "GIT FAIL:  git $Arguments error=$_ elapsed=$($swGit.Elapsed.ToString('hh\:mm\:ss\.fff'))"
         Write-Warning "Git command failed: git $Arguments - Error: $_"
         throw
     }
@@ -350,12 +383,14 @@ function Versioncompare {
 function Clean-VersionNames {
     param([string[]]$Names)
     if ($null -eq $Names -or $Names.Count -eq 0) { return @() }
+    $inputCount = $Names.Count
     $Names = @($Names | Where-Object { -not [string]::IsNullOrEmpty($_) } | ForEach-Object {
         ((($_ -ireplace '^rel/','') -ireplace '^v','') -ireplace '^r','') -replace '_','.'
     })
     if ($Names.Count -eq 0) { return @() }
     $preReleasePattern = 'candidate|-alpha|-beta|\.beta|rc\.[0-4]|rc[1-4]|-preview\.|-dev\.|-pre1|\.pre1'
     $Names = @($Names | Where-Object { $_ -notmatch $preReleasePattern })
+    Write-DebugLog -Level 7 -Message "Clean-VersionNames: in=$inputCount out=$($Names.Count)"
     return $Names
 }
 
@@ -367,6 +402,7 @@ function GitPhoton {
         $release
     )
     #download from repo
+    Write-DebugLog -Level 1 -Message "GitPhoton: release=$release"
     $photonPath = Join-Path -path $SourcePath -childpath "photon-$release"
     if (!(Test-Path -Path $photonPath))
     {
@@ -1353,6 +1389,8 @@ function urlhealth {
         [parameter(Mandatory = $true)]
         $checkurl
     )
+    Write-DebugLog -Level 7 -Message "urlhealth START url=$checkurl"
+    $swUrl = [System.Diagnostics.Stopwatch]::StartNew()
     $urlhealthrc=""
     try
     {
@@ -1407,6 +1445,8 @@ function urlhealth {
             }
         }
     }
+    $swUrl.Stop()
+    Write-DebugLog -Level 7 -Message "urlhealth END   url=$checkurl rc=$urlhealthrc elapsed=$($swUrl.Elapsed.ToString('hh\:mm\:ss\.fff'))"
     return $urlhealthrc
 }
 function KojiFedoraProjectLookUp {
@@ -1873,6 +1913,8 @@ function CheckURLHealth {
     }    
 
 
+    Write-DebugLog -Level 5 -Message "CheckURLHealth ENTER spec=$($currentTask.spec) name=$($currentTask.Name) version=$($currentTask.version) Source0=$($currentTask.Source0)"
+
     $UpdateAvailable=""
     $urlhealth=""
     [System.string]$HealthUpdateURL=""
@@ -2232,6 +2274,7 @@ function CheckURLHealth {
         if ($currentTask.spec -like "openjdk21.spec") { $NameLatest = Get-HighestJdkVersion -Names $Names -MajorRelease 21 -Filter "jdk-21"; $Names=$null}
 
         try {
+            Write-DebugLog -Level 5 -Message "[$($currentTask.spec)] Tag processing: SourceTagURL=$SourceTagURL NamesCount=$(if($Names){$Names.Count}else{'null'})"
             if (($SourceTagURL -ne "") -and ($null -ne $Names)) {
 
                 if ($ignore) {$Names = $Names | Where-Object { $n = $_; -not ($ignore | Where-Object { $n -like $_ }) }}
@@ -2286,9 +2329,11 @@ function CheckURLHealth {
     # Check UpdateAvailable by github tags detection
     else
     {
+    Write-DebugLog -Level 5 -Message "[$($currentTask.spec)] Source0=$Source0 version=$version"
     if ($Source0 -like '*{*') {$urlhealth = "substitution_unfinished"}
     else
     {
+        Write-DebugLog -Level 7 -Message "[$($currentTask.spec)] urlhealth check Source0=$Source0"
         $urlhealth = urlhealth($Source0)
         if ($urlhealth -ne "200")
         {
@@ -2502,6 +2547,7 @@ function CheckURLHealth {
         }
 
         if (!([string]::IsNullOrEmpty($SourceTagURL))) {
+            Write-DebugLog -Level 5 -Message "[$($currentTask.spec)] GitHub API fetch SourceTagURL=$SourceTagURL"
             try{
                 if ($SourceTagURL -ilike '*/releases*')
                 {
@@ -3514,6 +3560,7 @@ function CheckURLHealth {
         }
 
         try {
+            Write-DebugLog -Level 5 -Message "[$($currentTask.spec)] Tag processing: SourceTagURL=$SourceTagURL NamesCount=$(if($Names){$Names.Count}else{'null'})"
             if (($SourceTagURL -ne "") -and ($null -ne $Names)) {
 
                 if ($ignore) {$Names = $Names | Where-Object { $n = $_; -not ($ignore | Where-Object { $n -like $_ }) }}
@@ -3790,6 +3837,7 @@ function CheckURLHealth {
             }
         }
         try {
+            Write-DebugLog -Level 5 -Message "[$($currentTask.spec)] Tag processing: SourceTagURL=$SourceTagURL NamesCount=$(if($Names){$Names.Count}else{'null'})"
             if (($SourceTagURL -ne "") -and ($null -ne $Names)) {
 
                 if ($ignore) {$Names = $Names | Where-Object { $n = $_; -not ($ignore | Where-Object { $n -like $_ }) }}
@@ -4539,6 +4587,7 @@ function CheckURLHealth {
         else {ModifySpecFile -SpecFileName $currentTask.spec -SourcePath $SourcePath -PhotonDir $photonDir -Name $currentTask.name -Update $UpdateAvailable -UpdateDownloadFile $UpdateDownloadFile -OpenJDK8 $false -SHALine $SHALine}
     }
 
+    Write-DebugLog -Level 5 -Message "CheckURLHealth EXIT  spec=$($currentTask.spec) urlhealth=$urlhealth UpdateAvailable=$UpdateAvailable NameLatest=$NameLatest"
     [System.String]::Concat($currentTask.spec,',',$currentTask.source0,',',$Source0,',',$urlhealth,',',$UpdateAvailable,',',$UpdateURL,',',$HealthUpdateURL,',',$currentTask.Name,',',$SHAValue,',',$UpdateDownloadName,',',$Warning,',',$ArchivationDate)
 }
 
@@ -4621,6 +4670,7 @@ function GenerateUrlHealthReports {
                 ModifySpecFile = (Get-Command 'ModifySpecFile' -ErrorAction SilentlyContinue).Definition
                 Source0Lookup = (Get-Command 'Source0Lookup' -ErrorAction SilentlyContinue).Definition
                 'Clean-VersionNames' = (Get-Command 'Clean-VersionNames' -ErrorAction SilentlyContinue).Definition
+                'Write-DebugLog' = (Get-Command 'Write-DebugLog' -ErrorAction SilentlyContinue).Definition
                 'Invoke-GitWithTimeout' = (Get-Command 'Invoke-GitWithTimeout' -ErrorAction SilentlyContinue).Definition
                 HeapSortClass = $HeapSortClassDef
             }
@@ -4628,11 +4678,15 @@ function GenerateUrlHealthReports {
                 SourcePath = $SourcePath
                 AccessToken = $AccessToken
                 FunctionDefs = $FunctionDefinitions
+                DebugLevel = $Script:DebugLevel
+                DebugLogFile = $Script:DebugLogFile
             }
             $checkUrlHealthTasks | ForEach-Object {
                 # Safely reference variables from the parent scope
                 $TaskConfig = $_
 
+                Write-DebugLog -Level 1 -Message "=== REPORT START: $($TaskConfig.Name) (parallel, $($TaskConfig.Packages.Count) packages, ThrottleLimit=$ThrottleLimit) ==="
+                $swReport = [System.Diagnostics.Stopwatch]::StartNew()
                 Write-Output "Generating URLHealth report for $($TaskConfig.Name) ..."
                 $outputFileName = "photonos-urlhealth-$($TaskConfig.Release)_$((Get-Date).ToString("yyyyMMddHHmm"))"
                 $outputFilePath = Join-Path -Path $sourcePath -ChildPath "$outputFileName.prn"
@@ -4650,10 +4704,18 @@ function GenerateUrlHealthReports {
                         }
                     }
 
+                    # Initialize debug logging in runspace
+                    $Script:DebugLevel = $using:ParallelContext.DebugLevel
+                    $Script:DebugLogFile = $using:ParallelContext.DebugLogFile
+
                     # Safely reference variables from the parent scope
                     $currentPackage = $_
-                    Write-Output "Processing $($currentPackage.name) ..."
-                    [system.string](CheckURLHealth -currentTask $currentPackage -SourcePath $using:ParallelContext.SourcePath -AccessToken $using:ParallelContext.AccessToken -outputfile $using:outputFilePath -photonDir $using:TaskConfig.PhotonDir)
+                    Write-DebugLog -Level 3 -Message "START $($currentPackage.name) [parallel]"
+                    $swPkg = [System.Diagnostics.Stopwatch]::StartNew()
+                    $result = [system.string](CheckURLHealth -currentTask $currentPackage -SourcePath $using:ParallelContext.SourcePath -AccessToken $using:ParallelContext.AccessToken -outputfile $using:outputFilePath -photonDir $using:TaskConfig.PhotonDir)
+                    $swPkg.Stop()
+                    Write-DebugLog -Level 3 -Message "END   $($currentPackage.name) [parallel] elapsed=$($swPkg.Elapsed.ToString('hh\:mm\:ss\.fff'))"
+                    $result
                 } -ThrottleLimit $ThrottleLimit
 
                 $sb = New-Object System.Text.StringBuilder
@@ -4668,6 +4730,8 @@ function GenerateUrlHealthReports {
                     $sb.AppendLine($_) | Out-Null
                 }
                 [System.IO.File]::AppendAllText($outputFilePath, $sb.ToString())
+                $swReport.Stop()
+                Write-DebugLog -Level 1 -Message "=== REPORT END: $($TaskConfig.Name) elapsed=$($swReport.Elapsed.ToString('hh\:mm\:ss\.fff')) ==="
             }
         } else {
             # Fallback to sequential processing
@@ -4676,6 +4740,8 @@ function GenerateUrlHealthReports {
                 # Safely reference variables from the parent scope
                 $TaskConfig = $_
 
+                Write-DebugLog -Level 1 -Message "=== REPORT START: $($TaskConfig.Name) (sequential, $($TaskConfig.Packages.Count) packages) ==="
+                $swReport = [System.Diagnostics.Stopwatch]::StartNew()
                 Write-Output "Generating URLHealth report for $($TaskConfig.Name) ..."
                 $outputFileName = "photonos-urlhealth-$($TaskConfig.Release)_$((Get-Date).ToString("yyyyMMddHHmm"))"
                 $outputFilePath = Join-Path -Path $sourcePath -ChildPath "$outputFileName.prn"
@@ -4688,7 +4754,11 @@ function GenerateUrlHealthReports {
                 foreach ($currentPackage in $TaskConfig.Packages) {
                     $processedCount++
                     Write-Output "Processing [$processedCount/$packageCount] $($currentPackage.name) ..."
+                    Write-DebugLog -Level 3 -Message "START [$processedCount/$packageCount] $($currentPackage.name) [sequential]"
+                    $swPkg = [System.Diagnostics.Stopwatch]::StartNew()
                     $result = [system.string](CheckURLHealth -currentTask $currentPackage -SourcePath $SourcePath -AccessToken $accessToken -outputfile $outputFilePath -photonDir $TaskConfig.PhotonDir)
+                    $swPkg.Stop()
+                    Write-DebugLog -Level 3 -Message "END   [$processedCount/$packageCount] $($currentPackage.name) [sequential] elapsed=$($swPkg.Elapsed.ToString('hh\:mm\:ss\.fff'))"
                     Write-Output "  -> Done: $($currentPackage.name)"
                     $results += $result
                 }
@@ -4709,6 +4779,8 @@ function GenerateUrlHealthReports {
                 }
                 Write-Output "DEBUG: Writing to file: $outputFilePath"
                 [System.IO.File]::AppendAllText($outputFilePath, $sb.ToString())
+                $swReport.Stop()
+                Write-DebugLog -Level 1 -Message "=== REPORT END: $($TaskConfig.Name) elapsed=$($swReport.Elapsed.ToString('hh\:mm\:ss\.fff')) ==="
                 Write-Output "DEBUG: Finished writing to file for $($TaskConfig.Name)"
             }
         }
@@ -4823,6 +4895,9 @@ Write-Output "Source path validated: $global:sourcepath"
 Write-Output "Adding wildcard to git safe.directory (required for nested clone directories)..."
 git config --global --add safe.directory '*' 2>$null
 $global:ThrottleLimit = $throttleLimit
+
+Write-DebugLog -Level 1 -Message "=== SCRIPT START: DebugLevel=$Script:DebugLevel Parallel=$Script:UseParallel ThrottleLimit=$throttleLimit CPU=$cpuUsage% Cores=$cpuCores ==="
+Write-DebugLog -Level 1 -Message "=== SourcePath=$sourcepath PSVersion=$($PSVersionTable.PSVersion) ==="
 
 # Prompt for GitHub access token if not provided
 if (-not $access) {
@@ -5013,3 +5088,7 @@ if ($Script:RunningOnWindows) {
 }
 
 Write-Output "Script completed at: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+Write-DebugLog -Level 1 -Message "=== SCRIPT END ==="
+if ($Script:DebugLevel -gt 0 -and $Script:DebugLogFile -ne "") {
+    Write-Host "[DEBUG] Log file: $Script:DebugLogFile" -ForegroundColor Cyan
+}
