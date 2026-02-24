@@ -48,8 +48,14 @@
 #                               packages: SubRelease and SpecRelativePath tracked per package, upstream version
 #                               checks skipped, Package Report includes SubRelease column, Diff Reports exclude
 #                               subrelease packages to prevent false positives.
-#                               Added parallel thread monitoring via System.Threading.Timer with ConcurrentDictionary
-#                               tracking: reports active threads every 60s, flags long-runners exceeding 5 minutes.
+#                               Increased Invoke-GitWithTimeout default to 14400s (4h) for large clones (chromium).
+#                               Performance: Source0Lookup CSV parsed once and cached, passed via $using: to
+#                               parallel runspaces (eliminates ~6000 redundant CSV parse operations per run).
+#                               Security: Enforce TLS 1.2 for all Invoke-WebRequest/Invoke-RestMethod via
+#                               $PSDefaultParameterValues (main scope + parallel init script).
+#                               Security: Free SecureStringToBSTR with ZeroFreeBSTR in try/finally.
+#                               Security: Git credential cleanup now runs on all platforms (not Windows-only).
+#                               Upgraded 9 Source0/SourceTag URLs from http:// to https:// where supported.
 #
 #  .PREREQUISITES
 #    - Script tested on Microsoft Windows 11 and on Photon OS 5.0 with Powershell Core 7.5.4
@@ -139,7 +145,7 @@ function Invoke-GitWithTimeout {
     param(
         [string]$Arguments,
         [string]$WorkingDirectory = (Get-Location).Path,
-        [int]$TimeoutSeconds = 7200 # Default timeout of 2 hours, can be adjusted as needed (kibana, chromium can take a long time to clone)
+        [int]$TimeoutSeconds = 14400 # Default timeout of 4 hours (chromium clone can take ~4h)
     )
 
     # Uses System.Diagnostics.Process instead of Start-Job/Wait-Job to avoid
@@ -748,7 +754,7 @@ libdrm.spec,https://gitlab.freedesktop.org/mesa/libdrm/-/archive/libdrm-%{versio
 libedit.spec,https://www.thrysoee.dk/editline/libedit-20251016-3.1.tar.gz
 libepoxy.spec,https://github.com/anholt/libepoxy/archive/refs/tags/%{version}.tar.gz,https://github.com/anholt/libepoxy.git
 libestr.spec,https://github.com/rsyslog/libestr/archive/refs/tags/v%{version}.tar.gz,https://github.com/rsyslog/libestr.git
-libev.spec,http://dist.schmorp.de/libev/Attic/libev-%{version}.tar.gz
+libev.spec,https://dist.schmorp.de/libev/Attic/libev-%{version}.tar.gz
 libevent.spec,https://github.com/libevent/libevent/releases/download/release-%{version}-stable/libevent-%{version}-stable.tar.gz,https://github.com/libevent/libevent.git
 libfastjson.spec,https://github.com/rsyslog/libfastjson/archive/refs/tags/v%{version}.0.tar.gz,https://github.com/rsyslog/libfastjson.git
 libffi.spec,https://github.com/libffi/libffi/archive/refs/tags/v%{version}.tar.gz,https://github.com/libffi/libffi.git
@@ -841,7 +847,7 @@ lttng-ust.spec,https://lttng.org/files/lttng-ust/lttng-ust-%{version}.tar.bz2
 lvm2.spec,https://github.com/lvmteam/lvm2/archive/refs/tags/v%{version}.tar.gz,https://github.com/lvmteam/lvm2.git
 lxcfs.spec,https://github.com/lxc/lxcfs/archive/refs/tags/lxcfs-%{version}.tar.gz,https://github.com/lxc/lxcfs.git
 lz4.spec,https://github.com/lz4/lz4/releases/download/v%{version}/lz4-%{version}.tar.gz,https://github.com/lz4/lz4.git
-lzo.spec,http://www.oberhumer.com/opensource/lzo/download/lzo-%{version}.tar.gz
+lzo.spec,https://www.oberhumer.com/opensource/lzo/download/lzo-%{version}.tar.gz
 man-db.spec,https://gitlab.com/man-db/man-db/-/archive/%{version}/man-db-%{version}.tar.gz,https://gitlab.com/man-db/man-db.git
 man-pages.spec,https://git.kernel.org/pub/scm/docs/man-pages/man-pages.git/snapshot/man-pages-%{version}.tar.gz,https://git.kernel.org/pub/scm/docs/man-pages/man-pages.git
 mariadb.spec,https://github.com/MariaDB/server/archive/refs/tags/mariadb-%{version}.tar.gz,https://github.com/MariaDB/server.git
@@ -978,7 +984,7 @@ python3-pyroute2.spec,https://github.com/svinota/pyroute2/archive/refs/tags/%{ve
 python3-setuptools.spec,https://github.com/pypa/setuptools/archive/refs/tags/v%{version}.tar.gz,https://github.com/pypa/setuptools.git
 python-alabaster.spec,https://github.com/bitprophet/alabaster/archive/refs/tags/%{version}.tar.gz,https://github.com/bitprophet/alabaster.git
 python-altgraph.spec,https://github.com/ronaldoussoren/altgraph/archive/refs/tags/v%{version}.tar.gz,https://github.com/ronaldoussoren/altgraph.git
-python-antlrpythonruntime.spec,http://www.antlr3.org/download/Python/antlr_python_runtime-%{version}.tar.gz,,,,"antlr_python_runtime-"
+python-antlrpythonruntime.spec,https://www.antlr3.org/download/Python/antlr_python_runtime-%{version}.tar.gz,,,,"antlr_python_runtime-"
 python-appdirs.spec,https://github.com/ActiveState/appdirs/archive/refs/tags/%{version}.tar.gz,https://github.com/ActiveState/appdirs.git
 python-argparse.spec,https://github.com/ThomasWaldmann/argparse/archive/refs/tags/r%{version}.tar.gz,https://github.com/ThomasWaldmann/argparse.git
 python-asn1crypto.spec,https://github.com/wbond/asn1crypto/archive/refs/tags/%{version}.tar.gz,https://github.com/wbond/asn1crypto.git
@@ -1528,7 +1534,8 @@ function CheckURLHealth {
         [parameter(Mandatory)]$SourcePath,
         [parameter(Mandatory)]$outputfile,
         [parameter(Mandatory)]$accessToken,
-        [parameter(Mandatory)]$photonDir
+        [parameter(Mandatory)]$photonDir,
+        $Source0Data = $null
     )
 
     class HeapSort {
@@ -1998,7 +2005,8 @@ function CheckURLHealth {
     # Hence, the Source0 url value is updated to a new value.
     # The new value results from static Source0Lookup and if/then clauses. This method must be checked from time to time.
     # -------------------------------------------------------------------------------------------------------------------
-    $data = Source0Lookup
+    if ($null -eq $Source0Data) { $Source0Data = Source0Lookup }
+    $data = $Source0Data
     $index=($data.'specfile').indexof($currentTask.spec)
     if ([int]$index -ne -1)
     {
@@ -3234,7 +3242,7 @@ function CheckURLHealth {
         elseif ($currentTask.spec -ilike 'libpng.spec') {$SourceTagURL="https://sourceforge.net/projects/libpng/files/libpng16"}
         elseif  ($currentTask.spec -ilike 'nfs-utils.spec') {$SourceTagURL="https://sourceforge.net/projects/nfs/files/nfs-utils"}
         elseif  ($currentTask.spec -ilike 'openipmi.spec') {$SourceTagURL="https://sourceforge.net/projects/openipmi/files/OpenIPMI%202.0%20Library/"}
-        elseif  ($currentTask.spec -ilike 'procps-ng.spec') {$SourceTagURL="http://sourceforge.net/projects/procps-ng/files/Production/"}
+        elseif  ($currentTask.spec -ilike 'procps-ng.spec') {$SourceTagURL="https://sourceforge.net/projects/procps-ng/files/Production/"}
         elseif ($currentTask.spec -ilike 'tcl.spec') {$SourceTagURL="https://sourceforge.net/projects/tcl/files/Tcl"}
         elseif ($currentTask.spec -ilike 'unzip.spec')
         {
@@ -3553,9 +3561,9 @@ function CheckURLHealth {
                 elseif ($currentTask.spec -ilike 'gstreamer-plugins-base.spec') {$SourceTagURL="https://gstreamer.freedesktop.org/src/gst-plugins-base"; $replace +="gst-plugins-base-"}
                 elseif ($currentTask.spec -ilike 'libdrm.spec') {$SourceTagURL="https://dri.freedesktop.org/libdrm/"}
                 elseif ($currentTask.spec -ilike 'libqmi.spec') {$SourceTagURL="https://www.freedesktop.org/software/libqmi/"}
-                elseif ($currentTask.spec -ilike 'libxcb.spec') {$SourceTagURL="http://xcb.freedesktop.org/dist/"}
+                elseif ($currentTask.spec -ilike 'libxcb.spec') {$SourceTagURL="https://xcb.freedesktop.org/dist/"}
                 elseif ($currentTask.spec -ilike 'ModemManager.spec') {$SourceTagURL="https://www.freedesktop.org/software/ModemManager/"}
-                elseif ($currentTask.spec -ilike 'xcb-proto.spec') {$SourceTagURL="http://xcb.freedesktop.org/dist/"}
+                elseif ($currentTask.spec -ilike 'xcb-proto.spec') {$SourceTagURL="https://xcb.freedesktop.org/dist/"}
                 elseif ($currentTask.spec -ilike 'libmbim.spec') {$SourceTagURL="https://www.freedesktop.org/software/libmbim/"}
                 $Names = (((invoke-restmethod -uri $SourceTagURL -TimeoutSec 10 -usebasicparsing -headers @{Authorization = "Bearer $accessToken"} -ErrorAction Stop) -split "<tr><td") -split 'a href=') -split '>'
                 if ($Names) {
@@ -3752,15 +3760,15 @@ function CheckURLHealth {
         elseif ($currentTask.spec -ilike 'libtracefs.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/libs/libtrace/libtracefs.git"}
         elseif (($currentTask.spec -ilike 'linux-aws.spec') -or ($currentTask.spec -ilike 'linux-esx.spec') -or ($currentTask.spec -ilike 'linux-rt.spec') -or ($currentTask.spec -ilike 'linux-secure.spec') -or ($currentTask.spec -ilike 'linux.spec') -or ($currentTask.spec -ilike 'linux-6.1.spec') -or ($currentTask.spec -ilike 'linux-api-headers.spec'))
         {
-            if ($outputfile -ilike '*-3.0_*') {$SourceTagURL="http://www.kernel.org/pub/linux/kernel/v4.x"; $replace +="linux-";$customRegex="linux"}
-            elseif ($outputfile -ilike '*-4.0_*') {$SourceTagURL="http://www.kernel.org/pub/linux/kernel/v5.x"; $replace +="linux-";$customRegex="linux"}
-            elseif ($outputfile -ilike '*-5.0_*') {$SourceTagURL="http://www.kernel.org/pub/linux/kernel/v6.x"; $replace +="linux-";$customRegex="linux"}
-            elseif ($outputfile -ilike '*-6.0_*') {$SourceTagURL="http://www.kernel.org/pub/linux/kernel/v6.x"; $replace +="linux-";$customRegex="linux"}
-            elseif ($outputfile -ilike '*-common_*') {$SourceTagURL="http://www.kernel.org/pub/linux/kernel/v6.x"; $replace +="linux-";$customRegex="linux"}
-            elseif ($outputfile -ilike '*-master_*') {$SourceTagURL="http://www.kernel.org/pub/linux/kernel/v6.x"; $replace +="linux-";$customRegex="linux"}
-            elseif ($outputfile -ilike '*-dev_*') {$SourceTagURL="http://www.kernel.org/pub/linux/kernel/v6.x"; $replace +="linux-";$customRegex="linux"}
+            if ($outputfile -ilike '*-3.0_*') {$SourceTagURL="https://www.kernel.org/pub/linux/kernel/v4.x"; $replace +="linux-";$customRegex="linux"}
+            elseif ($outputfile -ilike '*-4.0_*') {$SourceTagURL="https://www.kernel.org/pub/linux/kernel/v5.x"; $replace +="linux-";$customRegex="linux"}
+            elseif ($outputfile -ilike '*-5.0_*') {$SourceTagURL="https://www.kernel.org/pub/linux/kernel/v6.x"; $replace +="linux-";$customRegex="linux"}
+            elseif ($outputfile -ilike '*-6.0_*') {$SourceTagURL="https://www.kernel.org/pub/linux/kernel/v6.x"; $replace +="linux-";$customRegex="linux"}
+            elseif ($outputfile -ilike '*-common_*') {$SourceTagURL="https://www.kernel.org/pub/linux/kernel/v6.x"; $replace +="linux-";$customRegex="linux"}
+            elseif ($outputfile -ilike '*-master_*') {$SourceTagURL="https://www.kernel.org/pub/linux/kernel/v6.x"; $replace +="linux-";$customRegex="linux"}
+            elseif ($outputfile -ilike '*-dev_*') {$SourceTagURL="https://www.kernel.org/pub/linux/kernel/v6.x"; $replace +="linux-";$customRegex="linux"}
         }
-        elseif ($currentTask.spec -ilike 'linux-firmware.spec') {$SourceTagURL="http://www.kernel.org/pub/linux/kernel/firmware"}
+        elseif ($currentTask.spec -ilike 'linux-firmware.spec') {$SourceTagURL="https://www.kernel.org/pub/linux/kernel/firmware"}
         elseif ($currentTask.spec -ilike 'man-pages.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/docs/man-pages/man-pages.git"}
         elseif ($currentTask.spec -ilike 'pciutils.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/utils/pciutils/pciutils.git"}
         elseif ($currentTask.spec -ilike 'rt-tests.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/utils/rt-tests/rt-tests.git"}
@@ -4707,6 +4715,8 @@ function GenerateUrlHealthReports {
     if ($checkUrlHealthTasks.Count -gt 0) {
         if ($Script:UseParallel) {
             Write-Host "Starting parallel URL health report generation for applicable versions ..."
+            # Pre-parse Source0Lookup CSV once (avoids re-parsing 848-row CSV per package)
+            $cachedSource0Data = Source0Lookup
             # Pre-capture all necessary function definitions and data once
             $FunctionDefinitions = @{
                 CheckURLHealth = (Get-Command 'CheckURLHealth' -ErrorAction SilentlyContinue).Definition
@@ -4725,11 +4735,14 @@ function GenerateUrlHealthReports {
                     else { $initParts += "function $($entry.Key) { $($entry.Value) }" }
                 }
             }
+            $initParts += "`$PSDefaultParameterValues['Invoke-WebRequest:SslProtocol'] = 'Tls12'"
+            $initParts += "`$PSDefaultParameterValues['Invoke-RestMethod:SslProtocol'] = 'Tls12'"
             $CombinedInitScript = $initParts -join "`n"
             $ParallelContext = @{
                 SourcePath = $SourcePath
                 AccessToken = $AccessToken
                 InitScript = $CombinedInitScript
+                Source0Data = $cachedSource0Data
             }
             $checkUrlHealthTasks | ForEach-Object {
                 # Safely reference variables from the parent scope
@@ -4741,50 +4754,18 @@ function GenerateUrlHealthReports {
 
                 # Create a thread-safe collection for all results
                 $results = [System.Collections.Concurrent.ConcurrentBag[string]]::new()
-                # Track active threads: package name -> start time
-                $activeThreads = [System.Collections.Concurrent.ConcurrentDictionary[string, datetime]]::new()
                 $totalPackages = $TaskConfig.Packages.Count
-                # Background monitoring timer: reports long-running packages every 60 seconds
-                $monitorState = [PSCustomObject]@{ ActiveThreads = $activeThreads; TotalPackages = $totalPackages; ReportName = $TaskConfig.Name }
-                $monitorCallback = [System.Threading.TimerCallback]{
-                    param($state)
-                    $longRunnerThresholdMin = 5
-                    $now = [datetime]::UtcNow
-                    $runningCount = $state.ActiveThreads.Count
-                    $longRunners = [System.Collections.Generic.List[string]]::new()
-                    foreach ($kvp in $state.ActiveThreads.GetEnumerator()) {
-                        $elapsed = ($now - $kvp.Value).TotalMinutes
-                        if ($elapsed -ge $longRunnerThresholdMin) {
-                            $longRunners.Add("  Long-runner: $($kvp.Key) - running for $([math]::Round($elapsed, 1)) min")
-                        }
-                    }
-                    [Console]::WriteLine("[Monitor] $($state.ReportName) - $runningCount/$($state.TotalPackages) threads still active")
-                    foreach ($lr in ($longRunners | Sort-Object)) {
-                        [Console]::WriteLine("[Monitor] $lr")
-                    }
-                }
-                $monitorTimer = New-Object System.Threading.Timer($monitorCallback, $monitorState, 60000, 60000)
 
                 $TaskConfig.Packages | ForEach-Object -parallel {
                     Invoke-Expression $using:ParallelContext.InitScript
 
-                    # Safely reference variables from the parent scope
                     $currentPackage = $_
-                    $threadTracker = $using:activeThreads
-                    $threadTracker.TryAdd($currentPackage.name, [datetime]::UtcNow) | Out-Null
                     Write-Host "Processing $($currentPackage.name) ..."
-                    try {
-                        $result = [system.string](CheckURLHealth -currentTask $currentPackage -SourcePath $using:ParallelContext.SourcePath -AccessToken $using:ParallelContext.AccessToken -outputfile $using:outputFilePath -photonDir $using:TaskConfig.PhotonDir)
-                        ($using:results).Add($result)
-                    }
-                    finally {
-                        $threadTracker.TryRemove($currentPackage.name, [ref]$null) | Out-Null
-                    }
+                    $result = [system.string](CheckURLHealth -currentTask $currentPackage -SourcePath $using:ParallelContext.SourcePath -AccessToken $using:ParallelContext.AccessToken -outputfile $using:outputFilePath -photonDir $using:TaskConfig.PhotonDir -Source0Data $using:ParallelContext.Source0Data)
+                    ($using:results).Add($result)
                 } -ThrottleLimit $ThrottleLimit
 
-                # Stop the monitoring timer
-                $monitorTimer.Dispose()
-                Write-Host "[Monitor] $($TaskConfig.Name) - All $totalPackages packages completed."
+                Write-Host "$($TaskConfig.Name) - All $totalPackages packages completed."
 
                 $sb = New-Object System.Text.StringBuilder
                 $sb.AppendLine("Spec,Source0 original,Modified Source0 for url health check,UrlHealth,UpdateAvailable,UpdateURL,HealthUpdateURL,Name,SHAName,UpdateDownloadName,warning,ArchivationDate") | Out-Null
@@ -4802,6 +4783,7 @@ function GenerateUrlHealthReports {
         } else {
             # Fallback to sequential processing
             Write-Host "Starting sequential URL health report generation for applicable versions..."
+            $cachedSource0Data = Source0Lookup
             $checkUrlHealthTasks | ForEach-Object {
                 # Safely reference variables from the parent scope
                 $TaskConfig = $_
@@ -4818,7 +4800,7 @@ function GenerateUrlHealthReports {
                 foreach ($currentPackage in $TaskConfig.Packages) {
                     $processedCount++
                     Write-Host "Processing [$processedCount/$packageCount] $($currentPackage.name) ..."
-                    $result = [system.string](CheckURLHealth -currentTask $currentPackage -SourcePath $SourcePath -AccessToken $accessToken -outputfile $outputFilePath -photonDir $TaskConfig.PhotonDir)
+                    $result = [system.string](CheckURLHealth -currentTask $currentPackage -SourcePath $SourcePath -AccessToken $accessToken -outputfile $outputFilePath -photonDir $TaskConfig.PhotonDir -Source0Data $cachedSource0Data)
                     Write-Host "  -> Done: $($currentPackage.name)"
                     $results += $result
                 }
@@ -4858,6 +4840,9 @@ Write-Host "=================================================="
 
 # Set security protocol to TLS 1.2 and TLS 1.3
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13
+# Enforce TLS 1.2 for all Invoke-WebRequest/Invoke-RestMethod calls in this session
+$PSDefaultParameterValues['Invoke-WebRequest:SslProtocol'] = 'Tls12'
+$PSDefaultParameterValues['Invoke-RestMethod:SslProtocol'] = 'Tls12'
 
 # Detect OS platform
 $Script:RunningOnWindows = $PSVersionTable.PSEdition -eq 'Desktop' -or $env:OS -eq 'Windows_NT' -or $IsWindows
@@ -4957,9 +4942,13 @@ $global:ThrottleLimit = $throttleLimit
 # Prompt for GitHub access token if not provided
 if (-not $access) {
     $secureToken = Read-Host -Prompt "Please enter your Github Access Token" -AsSecureString
-    $global:access = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto(
-        [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureToken))
-    $secureToken = $null  # Clear the secure string variable
+    $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureToken)
+    try {
+        $global:access = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr)
+    } finally {
+        [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+    }
+    $secureToken = $null
     if ([string]::IsNullOrWhiteSpace($global:access)) {
         Write-Error "Access token cannot be empty"
         return
@@ -4982,8 +4971,12 @@ else {
 
 if (-not $gitlab_freedesktop_org_token) {
     $secureToken = Read-Host -Prompt "Please enter your Gitlab Access Token" -AsSecureString
-    $global:gitlab_freedesktop_org_token = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto(
-        [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureToken))
+    $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureToken)
+    try {
+        $global:gitlab_freedesktop_org_token = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr)
+    } finally {
+        [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+    }
     $secureToken = $null
     if ([string]::IsNullOrWhiteSpace($global:gitlab_freedesktop_org_token)) {
         Write-Error "Access token cannot be empty"
@@ -5167,10 +5160,8 @@ if ($global:access) { Remove-Variable -Name access -Scope Global -ErrorAction Si
 if ($global:gitlab_freedesktop_org_token) { Remove-Variable -Name gitlab_freedesktop_org_token -Scope Global -ErrorAction SilentlyContinue }
 if ($global:gitlab_freedesktop_org_username) { Remove-Variable -Name gitlab_freedesktop_org_username -Scope Global -ErrorAction SilentlyContinue }
 
-# Clean up git credentials from global config
-if ($Script:RunningOnWindows) {
-    git config --global --unset credential.https://gitlab.freedesktop.org.username 2>$null
-    git config --global --unset credential.https://gitlab.freedesktop.org.password 2>$null
-}
+# Clean up git credentials from global config (all platforms, not just Windows)
+git config --global --unset credential.https://gitlab.freedesktop.org.username 2>$null
+git config --global --unset credential.https://gitlab.freedesktop.org.password 2>$null
 
 Write-Host "Script completed at: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"

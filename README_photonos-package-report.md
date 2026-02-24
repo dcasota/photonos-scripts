@@ -97,7 +97,8 @@ photonos-package-report.ps1 (~5,176 lines)
 │  PHASE 1: INITIALIZATION                                                    │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐ │
 │  │ TLS 1.2/1.3 │→ │ OS Detection│→ │ Check git,  │→ │ Check PowerShell    │ │
-│  │ Protocol    │  │ (Windows?)  │  │ tar commands│  │ Cookbook module     │ │
+│  │ Protocol +  │  │ (Windows?)  │  │ tar commands│  │ Cookbook module     │ │
+│  │ SslProtocol │  │             │  │             │  │                     │ │
 │  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────────────┘ │
 │                                    │                                        │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                          │
@@ -341,7 +342,12 @@ Key improvements in v0.62:
 - **GitLab credential refactor:** Renamed env vars to `GITLAB_FREEDESKTOP_ORG_USERNAME` / `GITLAB_FREEDESKTOP_ORG_TOKEN`, added dedicated parameters, git credentials configured unconditionally (not only from prompt path)
 - **ModifySpecFile collision fix:** Output filename derived from `$SpecFileName` (e.g. `linux-aws-5.10.spec`) instead of `$Name` (e.g. `linux-5.10.spec`) to prevent parallel file lock conflicts for linux variant specs
 - **Numeric subrelease directory support:** Detects vendor-pinned packages in `SPECS/91/` etc.; tags with `SubRelease` property, skips upstream version checks, adds `SubRelease` column to Package Report, excludes from Diff Reports to prevent false positives
-- **Parallel thread monitoring:** `System.Threading.Timer` + `ConcurrentDictionary` tracks active threads, reports every 60s via `[Console]::WriteLine`, flags packages running longer than 5 minutes (e.g. chromium, systemtap clones)
+- **Clone timeout increase:** `Invoke-GitWithTimeout` default raised to 14400s (4 hours) for large clones like chromium
+- **Source0Lookup caching:** CSV parsed once and passed via `$using:` to parallel runspaces, eliminating ~6000 redundant parse operations per run
+- **TLS 1.2 enforcement:** `$PSDefaultParameterValues` sets `-SslProtocol Tls12` for all `Invoke-WebRequest`/`Invoke-RestMethod` calls in both main scope and parallel init script
+- **Secure token cleanup:** `SecureStringToBSTR` results freed with `ZeroFreeBSTR` in `try/finally` to clear plaintext from unmanaged memory
+- **Cross-platform credential cleanup:** Git credential `--unset` now runs on all platforms (previously Windows-only, leaving tokens in `~/.gitconfig` on Linux)
+- **HTTPS upgrades:** 9 Source0/SourceTag URLs upgraded from `http://` to `https://` (kernel.org, freedesktop.org, schmorp.de, oberhumer.com, antlr3.org, sourceforge.net)
 
 Key improvements in v0.61:
 - Quarterly version format support in Get-LatestName (YYYY.Q#.# for amdvlk, etc.)
