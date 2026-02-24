@@ -1,4 +1,4 @@
-﻿# .SYNOPSIS
+# .SYNOPSIS
 #  This VMware Photon OS github branches packages (specs) report script creates various excel prn.
 #
 # .NOTES
@@ -34,6 +34,22 @@
 #                               Source0Lookup expansion to 848+ packages, git timeout standardized to 600s,
 #                               Linux compatibility fixes, RubyGems JSON API, GNU FTP mirror fallback,
 #                               git fetch --prune --prune-tags --tags to ensure all remote tags are synced
+#   0.62  24.02.2026   dcasota  Fix parallel deadlock: replaced Start-Job/Wait-Job with System.Diagnostics.Process
+#                               in Invoke-GitWithTimeout to avoid runspace deadlocks in ForEach-Object -Parallel.
+#                               Added 120s timeouts to bare git tag -l, HttpWebRequest, and WebClient calls.
+#                               Added per-repo named mutex to serialize parallel git clone/fetch operations.
+#                               Wrapped 165+ pipeline reassignments in @() to prevent null propagation.
+#                               Added null guards for Get-HighestJdkVersion and .ToString() on pipeline results.
+#                               Renamed GitLab env vars to GITLAB_FREEDESKTOP_ORG_USERNAME/TOKEN with dedicated
+#                               $gitlab_freedesktop_org_username and $gitlab_freedesktop_org_token parameters.
+#                               Git credentials now configured regardless of whether env vars or prompts are used.
+#                               Fixed ModifySpecFile output filename collision by using $SpecFileName instead of $Name.
+#                               Added numeric subrelease directory detection (e.g. SPECS/91/) for vendor-pinned
+#                               packages: SubRelease and SpecRelativePath tracked per package, upstream version
+#                               checks skipped, Package Report includes SubRelease column, Diff Reports exclude
+#                               subrelease packages to prevent false positives.
+#                               Added parallel thread monitoring via System.Threading.Timer with ConcurrentDictionary
+#                               tracking: reports active threads every 60s, flags long-runners exceeding 5 minutes.
 #
 #  .PREREQUISITES
 #    - Script tested on Microsoft Windows 11 and on Photon OS 5.0 with Powershell Core 7.5.4
@@ -55,7 +71,7 @@
 #     set breakpoint on {pause}, step over(F10) and inspect variables as needed.
 #   - To run on Windows: Open Powershell
 #     cd your\path\to\photonos-scripts;
-#     $env:GITHUB_TOKEN="<YOUR GITHUB_TOKEN>"; $env:GITLAB_USERNAME="<your GITLAB_USERNAME>"; $env:GITLAB_TOKEN="<your GITLAB_TOKEN>"; 
+#     $env:GITHUB_TOKEN="<YOUR GITHUB_TOKEN>"; $env:GITLAB_FREEDESKTOP_ORG_USERNAME="<your GITLAB_USERNAME>"; $env:GITLAB_FREEDESKTOP_ORG_TOKEN="<your GITLAB_TOKEN>"; 
 #     pwsh -File .\photonos-package-report.ps1 -sourcepath <path-to-store-the-reports> \
 #          -GeneratePh3URLHealthReport $true -GeneratePh4URLHealthReport $true -GeneratePh5URLHealthReport $true -GeneratePh6URLHealthReport $true \
 #          -GeneratePhCommonURLHealthReport $true -GeneratePhDevURLHealthReport $true -GeneratePhMasterURLHealthReport $true \
@@ -65,7 +81,7 @@
 #     Open Photon OS e.g. "wsl -d Ph5 -u root /bin/bash"
 #     Install Powershell Core: tdnf install powershell -y
 #     cd /your\path/to/photonos-scripts;
-#     export GITHUB_TOKEN="<YOUR GITHUB_TOKEN>"; export GITLAB_USERNAME="<your GITLAB_USERNAME>"; export GITLAB_TOKEN="<your GITLAB_TOKEN>";
+#     export GITHUB_TOKEN="<YOUR GITHUB_TOKEN>"; export GITLAB_FREEDESKTOP_ORG_USERNAME="<your GITLAB_USERNAME>"; export GITLAB_FREEDESKTOP_ORG_TOKEN="<your GITLAB_TOKEN>";
 #     pwsh -File ./photonos-package-report.ps1 -sourcepath <path-to-store-the-reports> \
 #          -GeneratePh3URLHealthReport $true -GeneratePh4URLHealthReport $true -GeneratePh5URLHealthReport $true -GeneratePh6URLHealthReport $true \
 #          -GeneratePhCommonURLHealthReport $true -GeneratePhDevURLHealthReport $true -GeneratePhMasterURLHealthReport $true \
@@ -78,7 +94,8 @@
 [CmdletBinding()]
 param (
     [string]$access=$env:GITHUB_TOKEN,
-    [string]$gitlabaccess=$env:GITLAB_TOKEN,
+    [string]$gitlab_freedesktop_org_username=$env:GITLAB_FREEDESKTOP_ORG_USERNAME,
+    [string]$gitlab_freedesktop_org_token=$env:GITLAB_FREEDESKTOP_ORG_TOKEN,
     [string]$sourcepath = $(if ($env:PUBLIC) { $env:PUBLIC } else { $HOME }),
     [Parameter(Mandatory = $false)][ValidateNotNull()]$GeneratePh3URLHealthReport=$true,
     [Parameter(Mandatory = $false)][ValidateNotNull()]$GeneratePh4URLHealthReport=$true,
@@ -125,27 +142,59 @@ function Invoke-GitWithTimeout {
         [int]$TimeoutSeconds = 7200 # Default timeout of 2 hours, can be adjusted as needed (kibana, chromium can take a long time to clone)
     )
 
+    # Uses System.Diagnostics.Process instead of Start-Job/Wait-Job to avoid
+    # deadlocks when called from ForEach-Object -Parallel runspaces.
     try {
-        $job = Start-Job -ScriptBlock {
-            param($argString, $wd)
-            Set-Location $wd
-            # Split arguments safely and use & operator instead of Invoke-Expression
-            $argArray = $argString -split ' '
-            $output = & git @argArray 2>&1
-            return $output
-        } -ArgumentList $Arguments, $WorkingDirectory
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = "git"
+        $psi.Arguments = $Arguments
+        $psi.WorkingDirectory = $WorkingDirectory
+        $psi.UseShellExecute = $false
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError = $true
+        $psi.CreateNoWindow = $true
 
-        $completed = Wait-Job -Job $job -Timeout $TimeoutSeconds
-        if ($completed) {
-            $result = Receive-Job -Job $job
-            Remove-Job -Job $job -ErrorAction SilentlyContinue
-            return $result
-        } else {
-            Stop-Job -Job $job -ErrorAction SilentlyContinue
-            Remove-Job -Job $job -ErrorAction SilentlyContinue
+        $process = New-Object System.Diagnostics.Process
+        $process.StartInfo = $psi
+
+        $stdoutBuilder = New-Object System.Text.StringBuilder
+        $stderrBuilder = New-Object System.Text.StringBuilder
+
+        $stdoutEvent = Register-ObjectEvent -InputObject $process -EventName OutputDataReceived -Action {
+            if ($null -ne $EventArgs.Data) { $Event.MessageData.AppendLine($EventArgs.Data) | Out-Null }
+        } -MessageData $stdoutBuilder
+        $stderrEvent = Register-ObjectEvent -InputObject $process -EventName ErrorDataReceived -Action {
+            if ($null -ne $EventArgs.Data) { $Event.MessageData.AppendLine($EventArgs.Data) | Out-Null }
+        } -MessageData $stderrBuilder
+
+        $process.Start() | Out-Null
+        $process.BeginOutputReadLine()
+        $process.BeginErrorReadLine()
+
+        $completed = $process.WaitForExit($TimeoutSeconds * 1000)
+
+        if (-not $completed) {
+            try { $process.Kill() } catch {}
+            Unregister-Event -SourceIdentifier $stdoutEvent.Name -ErrorAction SilentlyContinue
+            Unregister-Event -SourceIdentifier $stderrEvent.Name -ErrorAction SilentlyContinue
             Write-Warning "Git command timed out after $TimeoutSeconds seconds: git $Arguments"
             throw "Git operation timed out"
         }
+
+        # Allow async event handlers to finish
+        $process.WaitForExit()
+
+        Unregister-Event -SourceIdentifier $stdoutEvent.Name -ErrorAction SilentlyContinue
+        Unregister-Event -SourceIdentifier $stderrEvent.Name -ErrorAction SilentlyContinue
+
+        $stdout = $stdoutBuilder.ToString()
+        $stderr = $stderrBuilder.ToString()
+
+        if ($process.ExitCode -ne 0 -and -not [string]::IsNullOrWhiteSpace($stderr)) {
+            Write-Warning "Git stderr: $stderr"
+        }
+
+        return $stdout
     }
     catch {
         Write-Warning "Git command failed: git $Arguments - Error: $_"
@@ -181,6 +230,11 @@ function ParseDirectory {
         try
         {
             $Name = Split-Path -Path $currentFile.DirectoryName -Leaf
+            # Detect numeric subrelease directories (e.g. SPECS/91/dbus/ -> SubRelease="91")
+            $specRelPath = $currentFile.DirectoryName.Substring($specsPath.Length + 1)
+            $pathParts = $specRelPath -split '[/\\]'
+            $subRelease = ($pathParts | Where-Object { $_ -match '^\d+$' } | Select-Object -First 1)
+            if (-not $subRelease) { $subRelease = "" }
             $content = Get-Content $currentFile.FullName
 
             $release = Get-SpecValue -Content $content -Pattern "^Release:" -Replace "Release:"
@@ -261,6 +315,8 @@ function ParseDirectory {
                 Spec = $currentFile.Name
                 Version = $version
                 Name = $Name
+                SubRelease = $subRelease
+                SpecRelativePath = $specRelPath
                 Source0 = $Source0
                 url = $url
                 SHAName = $SHAName
@@ -1342,7 +1398,8 @@ function ModifySpecFile {
             if ($Update -is [system.string]) {
                 if ([System.IO.Path]::GetExtension($Update.Trim())) {$Update = [System.IO.Path]::GetFileNameWithoutExtension($Update.Trim())} # Strips .asc if present
             }
-            $filename = (Join-Path -Path $SpecsNewDirectory -ChildPath ([system.string]::concat($Name,"-",$Update.Trim(),".spec"))).Trim()
+            $specBaseName = [System.IO.Path]::GetFileNameWithoutExtension($SpecFileName)
+            $filename = (Join-Path -Path $SpecsNewDirectory -ChildPath ([system.string]::concat($specBaseName,"-",$Update.Trim(),".spec"))).Trim()
             $FileModified | Set-Content $filename -Force -Confirm:$false
         }
     }
@@ -1359,6 +1416,7 @@ function urlhealth {
         # Create a web request with HEAD method
         $request = [System.Net.HttpWebRequest]::Create($checkurl)
         $request.Method = "HEAD"
+        $request.Timeout = 120000
 
         # Get the response
         $rc = $request.GetResponse()
@@ -1441,18 +1499,20 @@ function KojiFedoraProjectLookUp {
 
         $SourceTagURL="https://kojipkgs.fedoraproject.org/packages/$ArtefactName/$ArtefactVersion"
         $Names = ((invoke-restmethod -uri $SourceTagURL -usebasicparsing -TimeoutSec 10 -ErrorAction Stop) -split '/">') -split '/</a>'
-        $Names = $Names | foreach-object { if (!($_ | select-string -pattern '<' -simplematch)) {$_}}
-        $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
+        $Names = @($Names | foreach-object { if (!($_ | select-string -pattern '<' -simplematch)) {$_}})
+        $Names = @($Names | foreach-object { if ($_ -match '\d') {$_}})
 
-        $NameLatest = ( $Names |Sort-Object {$_ -notlike '<*'},{($_ -replace '^.*?(\d+).*$','$1') -as [int]} | select-object -last 1 ).ToString()
+        $lastItem = $Names | Sort-Object {$_ -notlike '<*'},{($_ -replace '^.*?(\d+).*$','$1') -as [int]} | select-object -last 1
+        if ($lastItem) { $NameLatest = $lastItem.ToString() }
 
         $SourceTagURL="https://kojipkgs.fedoraproject.org/packages/$ArtefactName/$ArtefactVersion/$NameLatest/src/"
 
         $Names = ((invoke-restmethod -uri $SourceTagURL -usebasicparsing -TimeoutSec 10 -ErrorAction Stop) -split '<a href="') -split '"'
-        $Names = $Names | foreach-object { if (!($_ | select-string -pattern '<' -simplematch)) {$_}}
-        $Names = $Names | foreach-object { if (($_ | select-string -pattern '.src.rpm' -simplematch)) {$_}}
+        $Names = @($Names | foreach-object { if (!($_ | select-string -pattern '<' -simplematch)) {$_}})
+        $Names = @($Names | foreach-object { if (($_ | select-string -pattern '.src.rpm' -simplematch)) {$_}})
 
-        $SourceRPMFileName = ( $Names |Sort-Object {$_ -notlike '<*'},{($_ -replace '^.*?(\d+).*$','$1') -as [int]} | select-object -last 1 ).ToString()
+        $lastItem = $Names | Sort-Object {$_ -notlike '<*'},{($_ -replace '^.*?(\d+).*$','$1') -as [int]} | select-object -last 1
+        if ($lastItem) { $SourceRPMFileName = $lastItem.ToString() }
 
         $SourceRPMFileURL= "https://kojipkgs.fedoraproject.org/packages/$ArtefactName/$ArtefactVersion/$NameLatest/src/$SourceRPMFileName"
     }catch{
@@ -1899,6 +1959,11 @@ function CheckURLHealth {
     # {return}
     # -----------------------------------------------    
 
+    # Skip upstream version check for vendor-pinned subrelease packages (e.g. SPECS/91/dbus/)
+    if ($currentTask.SubRelease) {
+        return [System.String]::Concat($currentTask.spec,',',$currentTask.source0,',,pinned,,,,',$currentTask.Name,',,,vendor-pinned (subrelease ',$currentTask.SubRelease,'),')
+    }
+
     $Source0 = $currentTask.Source0
 
     # cut last index in $currentTask.version and save value in $version
@@ -2148,12 +2213,18 @@ function CheckURLHealth {
             if ($SourceTagURL -match "/([^/]+)\.git$") {
                 $repoName = $Matches[1]
                 Push-Location
+                $repoMutex = $null
                 try {
                     $ClonePath=[System.String](join-path -path (join-path -path $SourcePath -childpath $photonDir) -childpath "clones")
                     if (!(Test-Path $ClonePath)) {New-Item $ClonePath -ItemType Directory}
                     
                     # override with special cases
                     if ($currentTask.spec -ilike 'gstreamer-plugins-base.spec') {$repoName="gst-plugins-base-"}
+
+                    # Acquire a named mutex to prevent parallel runspaces from colliding on the same repo
+                    $mutexName = "Global\photon-clone-$($photonDir)-$($repoName)" -replace '[\\/:*?"<>|]', '_'
+                    $repoMutex = New-Object System.Threading.Mutex($false, $mutexName)
+                    try { $repoMutex.WaitOne(120000) | Out-Null } catch [System.Threading.AbandonedMutexException] { }
 
                     # Push the current directory to the stack
                     $SourceClonePath=[System.String](join-path -path $ClonePath -childpath $repoName)
@@ -2203,8 +2274,10 @@ function CheckURLHealth {
 
                         # Run git tag -l and collect output in an array
                         if ((Test-Path $SourceClonePath) -and (Test-Path (Join-Path $SourceClonePath ".git"))) {
-                            if (!([string]::IsNullOrEmpty($customRegex))) {$Names = git tag -l | Where-Object { $_ -match "^$([regex]::Escape($repoName))-" } | ForEach-Object { $_.Trim()}}
-                            else {$Names = git tag -l | ForEach-Object { $_.Trim() }}
+                            $tagOutput = Invoke-GitWithTimeout "tag -l" -WorkingDirectory $SourceClonePath -TimeoutSeconds 120
+                            $tagLines = @($tagOutput -split "`r?`n" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+                            if (!([string]::IsNullOrEmpty($customRegex))) {$Names = @($tagLines | Where-Object { $_ -match "^$([regex]::Escape($repoName))-" } | ForEach-Object { $_.Trim()})}
+                            else {$Names = @($tagLines | ForEach-Object { $_.Trim() })}
                             $urlhealth="200"
                             break
                         } else {
@@ -2221,20 +2294,21 @@ function CheckURLHealth {
                     Write-Warning "Git operation failed for $repoName : $_"
                 }
                 finally {
+                    if ($repoMutex) { try { $repoMutex.ReleaseMutex() } catch {} ; $repoMutex.Dispose() }
                     pop-location
                 }
             }
         }
 
         # special cases
-        if ($currentTask.spec -like "openjdk11.spec") { $NameLatest = Get-HighestJdkVersion -Names $Names -MajorRelease 11 -Filter "jdk-11"; $Names=$null}
-        if ($currentTask.spec -like "openjdk17.spec") { $NameLatest = Get-HighestJdkVersion -Names $Names -MajorRelease 17 -Filter "jdk-17"; $Names=$null}
-        if ($currentTask.spec -like "openjdk21.spec") { $NameLatest = Get-HighestJdkVersion -Names $Names -MajorRelease 21 -Filter "jdk-21"; $Names=$null}
+        if ($currentTask.spec -like "openjdk11.spec") { if ($null -ne $Names -and $Names.Count -gt 0) { $NameLatest = Get-HighestJdkVersion -Names $Names -MajorRelease 11 -Filter "jdk-11" }; $Names=$null}
+        if ($currentTask.spec -like "openjdk17.spec") { if ($null -ne $Names -and $Names.Count -gt 0) { $NameLatest = Get-HighestJdkVersion -Names $Names -MajorRelease 17 -Filter "jdk-17" }; $Names=$null}
+        if ($currentTask.spec -like "openjdk21.spec") { if ($null -ne $Names -and $Names.Count -gt 0) { $NameLatest = Get-HighestJdkVersion -Names $Names -MajorRelease 21 -Filter "jdk-21" }; $Names=$null}
 
         try {
             if (($SourceTagURL -ne "") -and ($null -ne $Names)) {
 
-                if ($ignore) {$Names = $Names | Where-Object { $n = $_; -not ($ignore | Where-Object { $n -like $_ }) }}
+                if ($ignore) {$Names = @($Names | Where-Object { $n = $_; -not ($ignore | Where-Object { $n -like $_ }) })}
 
                 $replace += $currentTask.Name+"."
                 $replace += $currentTask.Name+"-"
@@ -2245,14 +2319,14 @@ function CheckURLHealth {
                 $replace +="release-"
                 $replace +="release"
                 $replace +="-final"
-                foreach ($item in $replace) {$Names = $Names | ForEach-Object { $_ -replace [regex]::Escape($item), "" }}
+                foreach ($item in $replace) {$Names = @($Names | ForEach-Object { $_ -replace [regex]::Escape($item), "" })}
                 $Names = Clean-VersionNames $Names
 
                 if ($currentTask.spec -notlike "amdvlk.spec")
                 {
                     $Names = $Names  -replace "v",""
-                    $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
-                    $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
+                    $Names = @($Names | foreach-object { if ($_ -match '\d') {$_}})
+                    $Names = @($Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}})
                 }
 
                 # get name latest
@@ -2549,19 +2623,19 @@ function CheckURLHealth {
                     if ([string]::IsNullOrEmpty($Names))
                     {
                         $Names = ((invoke-restmethod -uri $tmpUrl -usebasicparsing -TimeoutSec 10 -headers @{Authorization = "Bearer $accessToken"} -ErrorAction Stop) -split "href") -split "rel="
-                        $Names = $Names | foreach-object { if (($_ | select-string -pattern '/archive/refs/tags' -simplematch)) {$_}}
-                        $Names = ($Names | foreach-object { split-path $_ -leaf }) -ireplace '" ',""
+                        $Names = @($Names | foreach-object { if (($_ | select-string -pattern '/archive/refs/tags' -simplematch)) {$_}})
+                        $Names = @(($Names | foreach-object { split-path $_ -leaf })) -ireplace '" ',""
                     }
 
                 }
 
                 if ($Names) {
                     # remove ending
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.whl' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.asc' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.dmg' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.zip' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.exe' -simplematch)) {$_}}
+                    $Names = @($Names | foreach-object { if (!($_ | select-string -pattern '.whl' -simplematch)) {$_}})
+                    $Names = @($Names | foreach-object { if (!($_ | select-string -pattern '.asc' -simplematch)) {$_}})
+                    $Names = @($Names | foreach-object { if (!($_ | select-string -pattern '.dmg' -simplematch)) {$_}})
+                    $Names = @($Names | foreach-object { if (!($_ | select-string -pattern '.zip' -simplematch)) {$_}})
+                    $Names = @($Names | foreach-object { if (!($_ | select-string -pattern '.exe' -simplematch)) {$_}})
                     $Names = $Names -replace ".tar.gz",""
                     $Names = $Names -replace ".tar.bz2",""
                     $Names = $Names -replace ".tar.xz",""
@@ -2572,9 +2646,9 @@ function CheckURLHealth {
                     "aide.spec" {$replace +="cs.tut.fi.import"; $replace+=".release"; break}
                     "apache-tomcat.spec"
                     {
-                        if ($outputfile -ilike '*-3.0_*') { $Names = $Names | foreach-object { if ($_ -like '8.*') {$_}}}
-                        elseif ($outputfile -ilike '*-4.0_*') { $Names = $Names | foreach-object { if ($_ -like '8.*') {$_}}}
-                        elseif ($outputfile -ilike '*-5.0_*') { $Names = $Names | foreach-object { if ($_ -like '10.*') {$_}}}
+                        if ($outputfile -ilike '*-3.0_*') { $Names = @($Names | foreach-object { if ($_ -like '8.*') {$_}})}
+                        elseif ($outputfile -ilike '*-4.0_*') { $Names = @($Names | foreach-object { if ($_ -like '8.*') {$_}})}
+                        elseif ($outputfile -ilike '*-5.0_*') { $Names = @($Names | foreach-object { if ($_ -like '10.*') {$_}})}
                     }
                     "at-spi2-core.spec" {$replace +="AT_SPI2_CORE_3_6_3"; $replace +="AT_SPI2_CORE_"; break}
                     "automake.spec" { $Names = $Names -ireplace "-","."; break }
@@ -2592,19 +2666,19 @@ function CheckURLHealth {
                         $replace +="v"
                         break
                     }
-                    "docker-20.10.spec" {$Names = $Names | foreach-object { if (!($_ | select-string -pattern 'xdocs-v' -simplematch)) {$_}}; break}
+                    "docker-20.10.spec" {$Names = @($Names | foreach-object { if (!($_ | select-string -pattern 'xdocs-v' -simplematch)) {$_}}); break}
                     "dracut.spec" {$replace +="RHEL-"; break}
                     "ecdsa.spec" {$replace +="python-ecdsa-"; break}
                     "efibootmgr.spec" {$replace +="rhel-";$replace +="Revision_"; $replace+="release-tag"; $replace +="-branchpoint"; break}
                     "frr.spec" {$replace +="reindent-master-";$replace +="reindent-"; $replace +="before"; $replace +="after"; break}
                     "fribidi.spec" {$replace +="INIT"; break}
-                    "falco.spec" { $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'agent/' -simplematch)) {$_}} ; break}
+                    "falco.spec" { $Names = @($Names | foreach-object { if (!($_ | select-string -pattern 'agent/' -simplematch)) {$_}}) ; break}
                     "fuse-overlayfs.spec.spec" {$replace +="aarch64"; break}
                     "glib.spec"
                     {
                         $replace +="start"; $replace +="PRE_CLEANUP"; $replace +="GNOME_PRINT_"
-                        $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'GTK_' -simplematch)) {$_}}
-                        $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'gobject_' -simplematch)) {$_}}
+                        $Names = @($Names | foreach-object { if (!($_ | select-string -pattern 'GTK_' -simplematch)) {$_}})
+                        $Names = @($Names | foreach-object { if (!($_ | select-string -pattern 'gobject_' -simplematch)) {$_}})
                         break
                     }
                     "glibmm.spec"
@@ -2614,8 +2688,8 @@ function CheckURLHealth {
                     }
                     "glib-networking.spec" {$replace +="glib-"; break}
                     "glslang.spec" {
-                        $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'untagged-' -simplematch)) {$_}}
-                        $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'vulkan-' -simplematch)) {$_}}
+                        $Names = @($Names | foreach-object { if (!($_ | select-string -pattern 'untagged-' -simplematch)) {$_}})
+                        $Names = @($Names | foreach-object { if (!($_ | select-string -pattern 'vulkan-' -simplematch)) {$_}})
                         $replace +="master-tot";$replace +="main-tot";$replace +="sdk-"; $replace +="SDK-candidate-26-Jul-2020";$replace+="Overload400-PrecQual"
                         $replace +="SDK-candidate";$replace+="SDK-candidate-2";$replace+="GL_EXT_shader_subgroup_extended_types-2016-05-10";$replace+="SPIRV99"
                         break
@@ -2624,8 +2698,8 @@ function CheckURLHealth {
                     "gobject-introspection.spec" {$replace +="INITIAL_RELEASE"; $replace +="GOBJECT_INTROSPECTION_"; break}
                     "go.spec"
                     {
-                        $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'weekly' -simplematch)) {$_}}
-                        $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'release' -simplematch)) {$_}}
+                        $Names = @($Names | foreach-object { if (!($_ | select-string -pattern 'weekly' -simplematch)) {$_}})
+                        $Names = @($Names | foreach-object { if (!($_ | select-string -pattern 'release' -simplematch)) {$_}})
                         break
                     }
                     "gstreamer.spec" {$replace +="sharp-"; break}
@@ -2633,21 +2707,21 @@ function CheckURLHealth {
                     "gtk-doc.spec" {$replace +="GTK_DOC_"; $replace +="start"; break}
                     "httpd.spec"
                     {
-                        $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'apache' -simplematch)) {$_}}
-                        $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'mpm-' -simplematch)) {$_}}
-                        $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'djg' -simplematch)) {$_}}
-                        $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'dg_' -simplematch)) {$_}}
-                        $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'wrowe' -simplematch)) {$_}}
-                        $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'striker' -simplematch)) {$_}}
-                        $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'PCRE_' -simplematch)) {$_}}
-                        $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'MOD_SSL_' -simplematch)) {$_}}
-                        $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'HTTPD_LDAP_' -simplematch)) {$_}}
+                        $Names = @($Names | foreach-object { if (!($_ | select-string -pattern 'apache' -simplematch)) {$_}})
+                        $Names = @($Names | foreach-object { if (!($_ | select-string -pattern 'mpm-' -simplematch)) {$_}})
+                        $Names = @($Names | foreach-object { if (!($_ | select-string -pattern 'djg' -simplematch)) {$_}})
+                        $Names = @($Names | foreach-object { if (!($_ | select-string -pattern 'dg_' -simplematch)) {$_}})
+                        $Names = @($Names | foreach-object { if (!($_ | select-string -pattern 'wrowe' -simplematch)) {$_}})
+                        $Names = @($Names | foreach-object { if (!($_ | select-string -pattern 'striker' -simplematch)) {$_}})
+                        $Names = @($Names | foreach-object { if (!($_ | select-string -pattern 'PCRE_' -simplematch)) {$_}})
+                        $Names = @($Names | foreach-object { if (!($_ | select-string -pattern 'MOD_SSL_' -simplematch)) {$_}})
+                        $Names = @($Names | foreach-object { if (!($_ | select-string -pattern 'HTTPD_LDAP_' -simplematch)) {$_}})
                         break
                     }
                     "icu.spec"
                     {
-                        $Names = $Names | foreach-object { if (($_ | select-string -pattern 'release-' -simplematch)) {$_ -ireplace 'release-',""}}
-                        $Names = $Names | foreach-object { $_ -ireplace '-',"."}
+                        $Names = @($Names | foreach-object { if (($_ | select-string -pattern 'release-' -simplematch)) {$_ -ireplace 'release-',""}})
+                        $Names = @($Names | foreach-object { $_ -ireplace '-',"."})
                         break
                     }
                     "inih.spec" {$replace +="r"; break}
@@ -2670,37 +2744,37 @@ function CheckURLHealth {
                     "libsoup.spec"
                     {
                         $replace +="SOUP_"; $replace +="libsoup-pre214-branch-base"; $replace +="libsoup-hacking-branch-base"; $replace +="LIB"; $replace +="soup-2-0-branch-base"
-                        $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'gnome-' -simplematch)) {$_}}
+                        $Names = @($Names | foreach-object { if (!($_ | select-string -pattern 'gnome-' -simplematch)) {$_}})
                         break
                     }
-                    "libX11.spec" { $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'xf86-' -simplematch)) {$_}} ; break}
+                    "libX11.spec" { $Names = @($Names | foreach-object { if (!($_ | select-string -pattern 'xf86-' -simplematch)) {$_}}) ; break}
                     "libXinerama.spec" {$replace +="XORG-7_1"; break}
                     "libxml2.spec"
                     {
-                        $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'LIBXML2' -simplematch)) {$_}}
+                        $Names = @($Names | foreach-object { if (!($_ | select-string -pattern 'LIBXML2' -simplematch)) {$_}})
                         break
                     }
                     "libxslt.spec" {$replace +="LIXSLT_"; break}
                     "linux-PAM.spec" {$replace +="pam_unix_refactor"; break}
                     "lm-sensors.spec"
                     {
-                        $Names = $Names | foreach-object { if ($_ | select-string -pattern '-' -simplematch) {$_ -ireplace '-',"."} else {$_}}
+                        $Names = @($Names | foreach-object { if ($_ | select-string -pattern '-' -simplematch) {$_ -ireplace '-',"."} else {$_}})
                         $replace +="i2c.2.8.km2"; $replace+="v."
                         break
                     }
                     "lshw.spec"
                     {
-                        $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'A.' -simplematch)) {$_}}
-                        $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'T.' -simplematch)) {$_}}
+                        $Names = @($Names | foreach-object { if (!($_ | select-string -pattern 'A.' -simplematch)) {$_}})
+                        $Names = @($Names | foreach-object { if (!($_ | select-string -pattern 'T.' -simplematch)) {$_}})
                         $Names = $Names -ireplace "B.","9999" # tag detection for later
                     }
-                    "lz4.spec" { $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'r' -simplematch)) {$_}} ; break}
+                    "lz4.spec" { $Names = @($Names | foreach-object { if (!($_ | select-string -pattern 'r' -simplematch)) {$_}}) ; break}
                     "mariadb.spec"
                     {
-                        $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'toku' -simplematch)) {$_}}
-                        $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'serg-' -simplematch)) {$_}}
-                        $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'percona-' -simplematch)) {$_}}
-                        $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'mysql-' -simplematch)) {$_}}
+                        $Names = @($Names | foreach-object { if (!($_ | select-string -pattern 'toku' -simplematch)) {$_}})
+                        $Names = @($Names | foreach-object { if (!($_ | select-string -pattern 'serg-' -simplematch)) {$_}})
+                        $Names = @($Names | foreach-object { if (!($_ | select-string -pattern 'percona-' -simplematch)) {$_}})
+                        $Names = @($Names | foreach-object { if (!($_ | select-string -pattern 'mysql-' -simplematch)) {$_}})
                         break
                     }
                     "mc.spec" {$replace +="mc-"; break}
@@ -2708,7 +2782,7 @@ function CheckURLHealth {
                     {
                         $SourceTagURL="https://github.com/archlinux/mkinitcpio/tags"
                         $Names = (invoke-webrequest $SourceTagURL -UseBasicParsing -headers $headers -Method Get -TimeoutSec 10 -ErrorAction Stop).links.href
-                        $Names = $Names | foreach-object { if ($_ | select-string -pattern '.tar.' -simplematch) {$_}}
+                        $Names = @($Names | foreach-object { if ($_ | select-string -pattern '.tar.' -simplematch) {$_}})
                         $Names = $Names -replace "/archlinux/mkinitcpio/archive/refs/tags/v",""
                         $Names = $Names -replace ".tar.gz",""
                         break
@@ -2725,7 +2799,7 @@ function CheckURLHealth {
                     "newt.spec" {$replace +="r"; $Names = $Names -replace "-","."; break}
                     "ninja-build.spec"
                     {
-                        $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'release-' -simplematch)) {$_}}
+                        $Names = @($Names | foreach-object { if (!($_ | select-string -pattern 'release-' -simplematch)) {$_}})
                         break
                     }
                     "open-vm-tools.spec" {$replace +="stable-"; break}
@@ -2738,7 +2812,7 @@ function CheckURLHealth {
                     "python-decorator.spec"
                     {
                         $Names = (invoke-webrequest $SourceTagURL -headers $headers -method Get -TimeoutSec 10 -ErrorAction Stop).links.href
-                        $Names = $Names | foreach-object { if ($_ | select-string -pattern '.tar.' -simplematch) {$_}}
+                        $Names = @($Names | foreach-object { if ($_ | select-string -pattern '.tar.' -simplematch) {$_}})
                         $Names = $Names -replace "/micheles/decorator/archive/refs/tags/",""
                         $Names = $Names -replace ".tar.gz",""
                         break
@@ -2747,13 +2821,13 @@ function CheckURLHealth {
                     "python-fuse.spec" {$replace +="start"; break}
                     "python-hatchling.spec"
                     {
-                        $Names = $Names | foreach-object { if ($_ | select-string -pattern 'hatchling-' -simplematch) {$_}}
+                        $Names = @($Names | foreach-object { if ($_ | select-string -pattern 'hatchling-' -simplematch) {$_}})
                         $replace +="hatchling-v"
                     }
                     "python-hypothesis.spec"
                     {
                         $Names = (invoke-webrequest $SourceTagURL -UseBasicParsing -headers $headers -Method Get -TimeoutSec 10 -ErrorAction Stop).links.href
-                        $Names = $Names | foreach-object { if ($_ | select-string -pattern '.tar.' -simplematch) {$_}}
+                        $Names = @($Names | foreach-object { if ($_ | select-string -pattern '.tar.' -simplematch) {$_}})
                         $Names = $Names -replace "/HypothesisWorks/hypothesis/archive/refs/tags/hypothesis-python-",""
                         $Names = $Names -replace ".tar.gz",""
                         break
@@ -2768,7 +2842,7 @@ function CheckURLHealth {
                     "python-webob.spec" {$replace +="sprint-coverage"; break}
                     "python-pytz.spec" {$replace +="release_"; break}
                     "rabbitmq3.10.spec" {
-                        $Names = $Names | foreach-object { if ($_ | select-string -pattern 'v3.10.' -simplematch) {$_}}
+                        $Names = @($Names | foreach-object { if ($_ | select-string -pattern 'v3.10.' -simplematch) {$_}})
                         break
                     }
                     "ragel.spec" {$replace +="ragel-pre-colm"; $replace +="ragel-barracuda-v5"; $replace +="barracuda-v4"; $replace +="barracuda-v3"; $replace +="barracuda-v2"; $replace +="barracuda-v1"; break}
@@ -2778,7 +2852,7 @@ function CheckURLHealth {
                     "selinux-policy.spec"
                     {
                         $Names = (invoke-webrequest $SourceTagURL -UseBasicParsing -headers $headers -Method Get -TimeoutSec 10 -ErrorAction Stop).links.href
-                        $Names = $Names | foreach-object { if ($_ | select-string -pattern '.tar.' -simplematch) {$_}}
+                        $Names = @($Names | foreach-object { if ($_ | select-string -pattern '.tar.' -simplematch) {$_}})
                         $Names = $Names -replace "/fedora-selinux/selinux-policy/archive/refs/tags/v",""
                         $Names = $Names -replace ".tar.gz",""
                         $replace +="y2023"
@@ -2787,16 +2861,16 @@ function CheckURLHealth {
                     "spirv-tools.spec" {$replace +="sdk-"; break}
                     "sysdig.spec" {
                         $replace +="sysdig-inspect/"; $replace +="simpledriver-auto-dragent-20170906"; $replace +="s20171003"
-                        $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'falco/' -simplematch)) {$_}}
+                        $Names = @($Names | foreach-object { if (!($_ | select-string -pattern 'falco/' -simplematch)) {$_}})
                         break
                     }
                     "systemd.spec"
                     {
-                        $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'systemd-v' -simplematch)) {$_}}
-                        $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'udev-' -simplematch)) {$_}}
+                        $Names = @($Names | foreach-object { if (!($_ | select-string -pattern 'systemd-v' -simplematch)) {$_}})
+                        $Names = @($Names | foreach-object { if (!($_ | select-string -pattern 'udev-' -simplematch)) {$_}})
                         $Names = $Names -ireplace "v",""
                         $Names = $Names -ireplace "-","."
-                        $Names = $Names | foreach-object { try{if ([int]$_ -gt 173) {$_}}catch{}}
+                        $Names = @($Names | foreach-object { try{if ([int]$_ -gt 173) {$_}}catch{}})
                         break
                     }
                     "squashfs-tools.spec" {$replace +="CVE-2021-41072"; break}
@@ -2807,22 +2881,22 @@ function CheckURLHealth {
                     "wavefront-proxy.spec" {$replace +="wavefront-";$replace +="proxy-"; break}
                     "xinetd.spec"
                     {
-                        $Names = $Names | foreach-object { if ($_ | select-string -pattern '-' -simplematch) {$_ -ireplace '-',"."} else {$_}}
+                        $Names = @($Names | foreach-object { if ($_ | select-string -pattern '-' -simplematch) {$_ -ireplace '-',"."} else {$_}})
                         $replace +="xinetd."
                         $replace +="20030122"
                         break
                     }
                     "xxhash.spec"
                     {
-                        $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'r' -simplematch)) {$_}}
+                        $Names = @($Names | foreach-object { if (!($_ | select-string -pattern 'r' -simplematch)) {$_}})
                         break
                     }
-                    "zsh.spec" {$Names = $Names | foreach-object { if (!($_ | select-string -pattern '-test' -simplematch)) {$_}} ; break}
+                    "zsh.spec" {$Names = @($Names | foreach-object { if (!($_ | select-string -pattern '-test' -simplematch)) {$_}}) ; break}
                     "zstd.spec" {$replace +="zstd"; break}
                     Default {}
                     }
 
-                    if ($ignore) {$Names = $Names | Where-Object { $n = $_; -not ($ignore | Where-Object { $n -like $_ }) }}
+                    if ($ignore) {$Names = @($Names | Where-Object { $n = $_; -not ($ignore | Where-Object { $n -like $_ }) })}
 
                     $replace += $currentTask.Name + "."
                     $replace += $currentTask.Name + "-"
@@ -2833,14 +2907,14 @@ function CheckURLHealth {
                     $replace += "release-"
                     $replace += "release"
                     # Do not add [...]replace(($replace[$i]).tolower() because later e.g. for downloading resources the exact case-sensitive match is important.
-                    foreach ($item in $replace) {$Names = $Names | ForEach-Object { $_ -replace [regex]::Escape($item), "" }}
+                    foreach ($item in $replace) {$Names = @($Names | ForEach-Object { $_ -replace [regex]::Escape($item), "" })}
                     $Names = Clean-VersionNames $Names
 
                     $Names = $Names -ireplace "v", ""
 
                     if ($currentTask.spec -notlike "amdvlk.spec") {
-                        $Names = $Names | foreach-object { if ($_ -match '\d') { $_ } }
-                        $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) { $_ } }
+                        $Names = @($Names | foreach-object { if ($_ -match '\d') { $_ } })
+                        $Names = @($Names | foreach-object { if (!($_ -match '[a-zA-Z]')) { $_ } })
                     }
 
                     # get name latest
@@ -2890,23 +2964,24 @@ function CheckURLHealth {
             $SourceTagURL="https://ftp.mozilla.org/pub/firefox/releases/"
             $Names = ((invoke-restmethod -uri $SourceTagURL -usebasicparsing -TimeoutSec 10 -ErrorAction Stop) -split 'a href=') -split '>'
             if ($Names) {
-                $Names = ($Names | foreach-object { if ($_ | select-string -pattern '</a' -simplematch) {$_}}) -replace '"',""
+                $Names = @(($Names | foreach-object { if ($_ | select-string -pattern '</a' -simplematch) {$_}})) -replace '"',""
                 $Names = $Names -replace '/</a'
 
                 if ($currentTask.spec -ilike 'mozjs60.spec')
                 {
-                    $Names = $Names | foreach-object { if ($_ -match '60.') {$_}}
+                    $Names = @($Names | foreach-object { if ($_ -match '60.') {$_}})
                     $Names = $Names -replace "esr"
                 }
-                $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
-                $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
+                $Names = @($Names | foreach-object { if ($_ -match '\d') {$_}})
+                $Names = @($Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}})
                 if ($Names -ilike '*.*')
                 {
-                    $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
+                    $lastItem = $Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1
+                    if ($lastItem) { $NameLatest = $lastItem.ToString() }
                 }
                 else
                 {
-                    try{$NameLatest = ($Names | convertfrom-json | sort-object |select-object -last 1).ToString()}catch{}
+                    try{$lastItem = $Names | convertfrom-json | sort-object | select-object -last 1; if ($lastItem) { $NameLatest = $lastItem.ToString() }}catch{}
                 }
                 if ($currentTask.spec -ilike 'mozjs60.spec') {$SourceTagURL=$SourceTagURL+$NameLatest+"esr/source/"}
                 else {$SourceTagURL=$SourceTagURL+$NameLatest+"/source/"}
@@ -2917,14 +2992,15 @@ function CheckURLHealth {
             $SourceTagURL="https://ftp.mozilla.org/pub/security/nss/releases/"
             $Names = ((invoke-restmethod -uri $SourceTagURL -TimeoutSec 10 -usebasicparsing -ErrorAction Stop) -split 'a href=') -split '>'
             if ($Names) {
-                $Names = ($Names | foreach-object { if ($_ | select-string -pattern '</a' -simplematch) {$_}}) -replace '"',""
+                $Names = @(($Names | foreach-object { if ($_ | select-string -pattern '</a' -simplematch) {$_}})) -replace '"',""
                 $Names = $Names -replace '/</a',""
                 $Names = $Names -replace "NSS_",""
                 $Names = $Names -replace "_RTM",""
                 $Names = $Names -replace "_","."
-                $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
-                $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
-                $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
+                $Names = @($Names | foreach-object { if ($_ -match '\d') {$_}})
+                $Names = @($Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}})
+                $lastItem = $Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1
+                    if ($lastItem) { $NameLatest = $lastItem.ToString() }
                 $NameLatest = $NameLatest.replace(".","_")
                 $SourceTagURL=[System.String]::Concat($SourceTagURL,"NSS_",$NameLatest,"_RTM/src/")
             }
@@ -2934,18 +3010,19 @@ function CheckURLHealth {
             $SourceTagURL="https://ftp.mozilla.org/pub/nspr/releases/"
             $Names = ((invoke-restmethod -uri $SourceTagURL -TimeoutSec 10 -usebasicparsing -ErrorAction Stop) -split 'a href=') -split '>'
             if ($Names) {
-                $Names = ($Names | foreach-object { if ($_ | select-string -pattern '</a' -simplematch) {$_}}) -replace '"',""
+                $Names = @(($Names | foreach-object { if ($_ | select-string -pattern '</a' -simplematch) {$_}})) -replace '"',""
                 $Names = $Names -replace '/</a'
                 $Names = $Names -replace "v"
-                $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
-                $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
+                $Names = @($Names | foreach-object { if ($_ -match '\d') {$_}})
+                $Names = @($Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}})
                 if ($Names -ilike '*.*')
                 {
-                    $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
+                    $lastItem = $Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1
+                    if ($lastItem) { $NameLatest = $lastItem.ToString() }
                 }
                 else
                 {
-                    try{$NameLatest = ($Names | convertfrom-json | sort-object |select-object -last 1).ToString()}catch{}
+                    try{$lastItem = $Names | convertfrom-json | sort-object | select-object -last 1; if ($lastItem) { $NameLatest = $lastItem.ToString() }}catch{}
                 }
                 $SourceTagURL=$SourceTagURL+"v"+$NameLatest+"/src/"
             }
@@ -2958,35 +3035,36 @@ function CheckURLHealth {
                 $SourceTagURL="https://www.python.org/ftp/python/"
                 $Names = ((invoke-restmethod -uri $SourceTagURL -TimeoutSec 10 -usebasicparsing -ErrorAction Stop) -split 'a href=') -split '>'
                 if ($Names) {
-                    $Names = ($Names | foreach-object { if ($_ | select-string -pattern '</a' -simplematch) {$_}}) -replace '"',""
+                    $Names = @(($Names | foreach-object { if ($_ | select-string -pattern '</a' -simplematch) {$_}})) -replace '"',""
                     $Names = $Names -replace '/</a'
 
                     if ($currentTask.spec -ilike 'python2.spec')
                     {
-                        $Names = $Names | foreach-object { if ($_ -match '^2.') {$_}}
+                        $Names = @($Names | foreach-object { if ($_ -match '^2.') {$_}})
                     }
                     elseif ($currentTask.spec -ilike 'python3.spec')
                     {
-                        $Names = $Names | foreach-object { if ($_ -match '^3.') {$_}}
+                        $Names = @($Names | foreach-object { if ($_ -match '^3.') {$_}})
                     }
                     # Do not add [...]replace(($replace[$i]).tolower() because later e.g. for downloading resources the exact case-sensitive match is important.
-                    foreach ($item in $replace) {$Names = $Names | ForEach-Object { $_ -replace [regex]::Escape($item), "" }}
-                    $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
-                    $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
-                    $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
+                    foreach ($item in $replace) {$Names = @($Names | ForEach-Object { $_ -replace [regex]::Escape($item), "" })}
+                    $Names = @($Names | foreach-object { if ($_ -match '\d') {$_}})
+                    $Names = @($Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}})
+                    $lastItem = $Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1
+                    if ($lastItem) { $NameLatest = $lastItem.ToString() }
                     $SourceTagURL=$SourceTagURL+$NameLatest
                     $Names = ((((invoke-restmethod -uri $SourceTagURL -TimeoutSec 10 -usebasicparsing -ErrorAction Stop) -split "<tr><td") -split 'a href=') -split '>') -split "title="
                     if ($Names) {
-                        $Names = $Names | foreach-object { if ($_ | select-string -pattern '.tar.' -simplematch) {$_}}
-                        $Names = ($Names | foreach-object { if (!($_ | select-string -pattern '</a' -simplematch)) {$_}}) -ireplace '"',""
-                        $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.sig' -simplematch)) {$_}}
+                        $Names = @($Names | foreach-object { if ($_ | select-string -pattern '.tar.' -simplematch) {$_}})
+                        $Names = @(($Names | foreach-object { if (!($_ | select-string -pattern '</a' -simplematch)) {$_}})) -ireplace '"',""
+                        $Names = @($Names | foreach-object { if (!($_ | select-string -pattern '.sig' -simplematch)) {$_}})
                         $Names = $Names  -replace ".tar.gz",""
                         $Names = $Names  -replace ".tar.bz2",""
                         $Names = $Names  -replace ".tar.xz",""
                         $Names = $Names  -replace ".tar.lz",""
                         $Names = $Names -ireplace "Python-",""
-                        $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
-                        $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
+                        $Names = @($Names | foreach-object { if ($_ -match '\d') {$_}})
+                        $Names = @($Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}})
                         if ([string]::IsNullOrEmpty($Names)) {$replace +=$NameLatest}
                     }
                 }
@@ -3002,9 +3080,9 @@ function CheckURLHealth {
         try{
             $Names = ((((invoke-restmethod -uri $SourceTagURL -TimeoutSec 10 -usebasicparsing -ErrorAction Stop) -split "<tr><td") -split 'a href=') -split '>') -split "title="
             if ($Names) {
-                $Names = $Names | foreach-object { if ($_ | select-string -pattern '.tar.' -simplematch) {$_}}
-                $Names = ($Names | foreach-object { if (!($_ | select-string -pattern '</a' -simplematch)) {$_}}) -ireplace '"',""
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.sig' -simplematch)) {$_}}
+                $Names = @($Names | foreach-object { if ($_ | select-string -pattern '.tar.' -simplematch) {$_}})
+                $Names = @(($Names | foreach-object { if (!($_ | select-string -pattern '</a' -simplematch)) {$_}})) -ireplace '"',""
+                $Names = @($Names | foreach-object { if (!($_ | select-string -pattern '.sig' -simplematch)) {$_}})
                 $Names = $Names  -replace ".tar.gz",""
                 $Names = $Names  -replace ".tar.bz2",""
                 $Names = $Names  -replace ".tar.xz",""
@@ -3023,12 +3101,12 @@ function CheckURLHealth {
                 elseif ($currentTask.spec -ilike 'nss.spec') {$replace +="/pub/security/nss/releases/NSS_"+$NameLatest+"_RTM/src/"}
                 elseif ($currentTask.spec -ilike 'proto.spec') {$replace +="xproto-"}
                 elseif ($currentTask.spec -ilike 'samba-client.spec') {$replace +="samba-"}
-                elseif ($currentTask.spec -ilike 'wget.spec') {$Names = $Names | foreach-object { if (!($_ | select-string -pattern 'wget2-' -simplematch)) {$_}}}
+                elseif ($currentTask.spec -ilike 'wget.spec') {$Names = @($Names | foreach-object { if (!($_ | select-string -pattern 'wget2-' -simplematch)) {$_}})}
                 elseif ($currentTask.spec -ilike 'xorg-applications.spec') {$replace +="bdftopcf-"}
                 elseif ($currentTask.spec -ilike 'xorg-fonts.spec') {$replace +="encodings-"}
 
 
-                if ($ignore) {$Names = $Names | Where-Object { $n = $_; -not ($ignore | Where-Object { $n -like $_ }) }}
+                if ($ignore) {$Names = @($Names | Where-Object { $n = $_; -not ($ignore | Where-Object { $n -like $_ }) })}
 
                 $replace += $currentTask.Name+"."
                 $replace += $currentTask.Name+"-"
@@ -3039,12 +3117,12 @@ function CheckURLHealth {
                 $replace +="release-"
                 $replace +="release"
                 # Do not add [...]replace(($replace[$i]).tolower() because later e.g. for downloading resources the exact case-sensitive match is important.
-                foreach ($item in $replace) {$Names = $Names | ForEach-Object { $_ -replace [regex]::Escape($item), "" }}
+                foreach ($item in $replace) {$Names = @($Names | ForEach-Object { $_ -replace [regex]::Escape($item), "" })}
                 $Names = Clean-VersionNames $Names
 
                 $Names = $Names  -replace "v",""
-                $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
-                $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
+                $Names = @($Names | foreach-object { if ($_ -match '\d') {$_}})
+                $Names = @($Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}})
 
                 # get name latest
                 if (!([string]::IsNullOrEmpty($Names -join ''))) {$NameLatest = Get-LatestName -Names $Names}
@@ -3181,16 +3259,17 @@ function CheckURLHealth {
                 {
                     $Names = $Names  -replace "libusb-compat-",""
                     $Names = $Names  -replace "libusb-",""
-                    $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
-                    $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
+                    $Names = @($Names | foreach-object { if ($_ -match '\d') {$_}})
+                    $Names = @($Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}})
 
                     if ($Names -ilike '*.*')
                     {
-                        $NameLatest = ($Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1).ToString()
+                        $lastItem = $Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1
+                    if ($lastItem) { $NameLatest = $lastItem.ToString() }
                     }
                     else
                     {
-                        try{$NameLatest = ($Names | convertfrom-json | sort-object |select-object -last 1).ToString()}catch{}
+                        try{$lastItem = $Names | convertfrom-json | sort-object | select-object -last 1; if ($lastItem) { $NameLatest = $lastItem.ToString() }}catch{}
                     }
                     $SourceTagURL="https://sourceforge.net/projects/libusb/files/libusb-"+$NameLatest
                     $Names = (((invoke-restmethod -uri $SourceTagURL -TimeoutSec 10 -ErrorAction Stop) -split 'net.sf.files = {') -split "}};")[1] -split '{'
@@ -3198,11 +3277,11 @@ function CheckURLHealth {
                 }
                 elseif ($currentTask.spec -ilike 'tboot.spec')
                 {
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '2007' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '2008' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '2009' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '2010' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '2011' -simplematch)) {$_}}
+                    $Names = @($Names | foreach-object { if (!($_ | select-string -pattern '2007' -simplematch)) {$_}})
+                    $Names = @($Names | foreach-object { if (!($_ | select-string -pattern '2008' -simplematch)) {$_}})
+                    $Names = @($Names | foreach-object { if (!($_ | select-string -pattern '2009' -simplematch)) {$_}})
+                    $Names = @($Names | foreach-object { if (!($_ | select-string -pattern '2010' -simplematch)) {$_}})
+                    $Names = @($Names | foreach-object { if (!($_ | select-string -pattern '2011' -simplematch)) {$_}})
                 }
 
                 $Names = $Names  -replace ".tar.gz",""
@@ -3210,7 +3289,7 @@ function CheckURLHealth {
                 $Names = $Names  -replace ".tar.xz",""
                 $Names = $Names  -replace ".tar.lz",""
 
-                if ($ignore) {$Names = $Names | Where-Object { $n = $_; -not ($ignore | Where-Object { $n -like $_ }) }}
+                if ($ignore) {$Names = @($Names | Where-Object { $n = $_; -not ($ignore | Where-Object { $n -like $_ }) })}
 
                 $replace += $currentTask.Name+"."
                 $replace += $currentTask.Name+"-"
@@ -3222,12 +3301,12 @@ function CheckURLHealth {
                 $replace +="ver"
 
                 # Do not add [...]replace(($replace[$i]).tolower() because later e.g. for downloading resources the exact case-sensitive match is important.
-                foreach ($item in $replace) {$Names = $Names | ForEach-Object { $_ -replace [regex]::Escape($item), "" }}
+                foreach ($item in $replace) {$Names = @($Names | ForEach-Object { $_ -replace [regex]::Escape($item), "" })}
                 $Names = Clean-VersionNames $Names
 
                 $Names = $Names  -replace "v",""
-                $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
-                $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
+                $Names = @($Names | foreach-object { if ($_ -match '\d') {$_}})
+                $Names = @($Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}})
 
                 # get name latest
                 if (!([string]::IsNullOrEmpty($Names -join ''))) {$NameLatest = Get-LatestName -Names $Names}
@@ -3274,7 +3353,7 @@ function CheckURLHealth {
                 }
                 if ($Names) {
 
-                    if ($ignore) {$Names = $Names | Where-Object { $n = $_; -not ($ignore | Where-Object { $n -like $_ }) }}
+                    if ($ignore) {$Names = @($Names | Where-Object { $n = $_; -not ($ignore | Where-Object { $n -like $_ }) })}
 
                     $replace += $currentTask.Name+"."
                     $replace += $currentTask.Name+"-"
@@ -3282,16 +3361,16 @@ function CheckURLHealth {
                     $replace +="ver"
 
                     # Do not add [...]replace(($replace[$i]).tolower() because later e.g. for downloading resources the exact case-sensitive match is important.
-                    foreach ($item in $replace) {$Names = $Names | ForEach-Object { $_ -replace [regex]::Escape($item), "" }}
+                    foreach ($item in $replace) {$Names = @($Names | ForEach-Object { $_ -replace [regex]::Escape($item), "" })}
                     $Names = Clean-VersionNames $Names
 
                     $Names = $Names  -replace "v",""
-                    $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
-                    $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
+                    $Names = @($Names | foreach-object { if ($_ -match '\d') {$_}})
+                    $Names = @($Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}})
 
                     if ($currentTask.spec -ilike 'atk.spec')
                     {
-                        $Names = $Names | foreach-object {$_.tolower().replace("_",".")}
+                        $Names = @($Names | foreach-object {$_.tolower().replace("_",".")})
                     }
 
                     # get name latest
@@ -3376,9 +3455,14 @@ function CheckURLHealth {
             if ($SourceTagURL -match "/([^/]+)\.git$") {
                 $repoName = $Matches[1]
                 Push-Location
+                $repoMutex = $null
                 try {
                     $ClonePath=[System.String](join-path -path (join-path -path $SourcePath -childpath $photonDir) -childpath "clones")
                     if (!(Test-Path $ClonePath)) {New-Item $ClonePath -ItemType Directory}
+                    # Acquire a named mutex to prevent parallel runspaces from colliding on the same repo
+                    $mutexName = "Global\photon-clone-$($photonDir)-$($repoName)" -replace '[\\/:*?"<>|]', '_'
+                    $repoMutex = New-Object System.Threading.Mutex($false, $mutexName)
+                    try { $repoMutex.WaitOne(120000) | Out-Null } catch [System.Threading.AbandonedMutexException] { }
                     # Push the current directory to the stack
                     $SourceClonePath=[System.String](join-path -path $ClonePath -childpath $repoName)
                     $cloneAttempt = 0
@@ -3426,8 +3510,10 @@ function CheckURLHealth {
                         }
                         # Run git tag -l and collect output in an array
                         if ((Test-Path $SourceClonePath) -and (Test-Path (Join-Path $SourceClonePath ".git"))) {
-                            if ("" -eq $customRegex) {$Names = git tag -l | Where-Object { $_ -match "^$([regex]::Escape($repoName))-" } | ForEach-Object { $_.Trim()}}
-                            else {$Names = git tag -l | ForEach-Object { $_.Trim() }}
+                            $tagOutput = Invoke-GitWithTimeout "tag -l" -WorkingDirectory $SourceClonePath -TimeoutSeconds 120
+                            $tagLines = @($tagOutput -split "`r?`n" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+                            if ("" -eq $customRegex) {$Names = @($tagLines | Where-Object { $_ -match "^$([regex]::Escape($repoName))-" } | ForEach-Object { $_.Trim()})}
+                            else {$Names = @($tagLines | ForEach-Object { $_.Trim() })}
                             $urlhealth="200"
                             break
                         } else {
@@ -3444,6 +3530,7 @@ function CheckURLHealth {
                     Write-Warning "Git operation failed for $repoName : $_"
                 }
                 finally {
+                    if ($repoMutex) { try { $repoMutex.ReleaseMutex() } catch {} ; $repoMutex.Dispose() }
                     pop-location
                 }
             }
@@ -3472,12 +3559,12 @@ function CheckURLHealth {
                 elseif ($currentTask.spec -ilike 'libmbim.spec') {$SourceTagURL="https://www.freedesktop.org/software/libmbim/"}
                 $Names = (((invoke-restmethod -uri $SourceTagURL -TimeoutSec 10 -usebasicparsing -headers @{Authorization = "Bearer $accessToken"} -ErrorAction Stop) -split "<tr><td") -split 'a href=') -split '>'
                 if ($Names) {
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '</a' -simplematch) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'commit' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern "'" -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '"' -simplematch)) {$_}}
+                    $Names = @($Names | foreach-object { if ($_ | select-string -pattern '</a' -simplematch) {$_}})
+                    $Names = @($Names | foreach-object { if (!($_ | select-string -pattern 'commit' -simplematch)) {$_}})
+                    $Names = @($Names | foreach-object { if (!($_ | select-string -pattern "'" -simplematch)) {$_}})
+                    $Names = @($Names | foreach-object { if (!($_ | select-string -pattern '"' -simplematch)) {$_}})
                     $Names = $Names -ireplace '</a',""
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.sig' -simplematch)) {$_}}
+                    $Names = @($Names | foreach-object { if (!($_ | select-string -pattern '.sig' -simplematch)) {$_}})
                     $Names = $Names  -replace ".tar.gz",""
                     $Names = $Names  -replace ".tar.bz2",""
                     $Names = $Names  -replace ".tar.xz",""
@@ -3516,7 +3603,7 @@ function CheckURLHealth {
         try {
             if (($SourceTagURL -ne "") -and ($null -ne $Names)) {
 
-                if ($ignore) {$Names = $Names | Where-Object { $n = $_; -not ($ignore | Where-Object { $n -like $_ }) }}
+                if ($ignore) {$Names = @($Names | Where-Object { $n = $_; -not ($ignore | Where-Object { $n -like $_ }) })}
 
                 $replace += $currentTask.Name+"."
                 $replace += $currentTask.Name+"-"
@@ -3526,17 +3613,17 @@ function CheckURLHealth {
                 $replace +="release_"
                 $replace +="release-"
                 $replace +="release"
-                foreach ($item in $replace) {$Names = $Names | ForEach-Object { $_ -replace [regex]::Escape($item), "" }}
+                foreach ($item in $replace) {$Names = @($Names | ForEach-Object { $_ -replace [regex]::Escape($item), "" })}
                 $Names = Clean-VersionNames $Names
 
                 $Names = $Names  -replace "v",""
-                $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
-                $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
+                $Names = @($Names | foreach-object { if ($_ -match '\d') {$_}})
+                $Names = @($Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}})
 
                 # post check
                 if ($currentTask.spec -ilike 'atk.spec')
                 {
-                    $Names = $Names | foreach-object {$_.tolower().replace("_",".")}
+                    $Names = @($Names | foreach-object {$_.tolower().replace("_",".")})
                 }
 
                 # get name latest
@@ -3583,7 +3670,7 @@ function CheckURLHealth {
                 }
 
                 if ($Names) {
-                    $Names = ($Names | foreach-object { if ($_ | select-string -pattern '</a' -simplematch) {$_}}) -replace '"',""
+                    $Names = @(($Names | foreach-object { if ($_ | select-string -pattern '</a' -simplematch) {$_}})) -replace '"',""
                     $Names = $Names -replace '</a'
 
                     $Names = $Names  -replace ".tar.gz",""
@@ -3596,19 +3683,19 @@ function CheckURLHealth {
                         $replace +=  [system.string]::concat(($currentTask.Name -ireplace "perl-",""),"-perl-")
                     }
 
-                    if ($ignore) {$Names = $Names | Where-Object { $n = $_; -not ($ignore | Where-Object { $n -like $_ }) }}
+                    if ($ignore) {$Names = @($Names | Where-Object { $n = $_; -not ($ignore | Where-Object { $n -like $_ }) })}
 
                     $replace += $currentTask.Name+"."
                     $replace += $currentTask.Name+"-"
                     $replace += $currentTask.Name+"_"
                     $replace +="ver"
 
-                    foreach ($item in $replace) {$Names = $Names | ForEach-Object { $_ -replace [regex]::Escape($item), "" }}
+                    foreach ($item in $replace) {$Names = @($Names | ForEach-Object { $_ -replace [regex]::Escape($item), "" })}
                     $Names = Clean-VersionNames $Names
 
                     $Names = $Names  -replace "v",""
-                    $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
-                    $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
+                    $Names = @($Names | foreach-object { if ($_ -match '\d') {$_}})
+                    $Names = @($Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}})
 
                     # get name latest
                     if (!([string]::IsNullOrEmpty($Names -join ''))) {$NameLatest = Get-LatestName -Names $Names}
@@ -3695,9 +3782,14 @@ function CheckURLHealth {
             if ($SourceTagURL -match "/([^/]+)\.git$") {
                 $repoName = $Matches[1]
                 Push-Location
+                $repoMutex = $null
                 try {
                     $ClonePath=[System.String](join-path -path (join-path -path $SourcePath -childpath $photonDir) -childpath "clones")
                     if (!(Test-Path $ClonePath)) {New-Item $ClonePath -ItemType Directory}
+                    # Acquire a named mutex to prevent parallel runspaces from colliding on the same repo
+                    $mutexName = "Global\photon-clone-$($photonDir)-$($repoName)" -replace '[\\/:*?"<>|]', '_'
+                    $repoMutex = New-Object System.Threading.Mutex($false, $mutexName)
+                    try { $repoMutex.WaitOne(120000) | Out-Null } catch [System.Threading.AbandonedMutexException] { }
                     # Push the current directory to the stack
                     $SourceClonePath=[System.String](join-path -path $ClonePath -childpath $repoName)
                     $cloneAttempt = 0
@@ -3746,8 +3838,10 @@ function CheckURLHealth {
                         # Run git tag -l and collect output in an array
                         if ((Test-Path $SourceClonePath) -and (Test-Path (Join-Path $SourceClonePath ".git"))) {
                             Set-Location -Path $SourceClonePath -ErrorAction SilentlyContinue
-                            if ("" -eq $customRegex) {$Names = git tag -l | Where-Object { $_ -match "^$([regex]::Escape($repoName))-" } | ForEach-Object { $_.Trim()}}
-                            else {$Names = git tag -l | ForEach-Object { $_.Trim() }}
+                            $tagOutput = Invoke-GitWithTimeout "tag -l" -WorkingDirectory $SourceClonePath -TimeoutSeconds 120
+                            $tagLines = @($tagOutput -split "`r?`n" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+                            if ("" -eq $customRegex) {$Names = @($tagLines | Where-Object { $_ -match "^$([regex]::Escape($repoName))-" } | ForEach-Object { $_.Trim()})}
+                            else {$Names = @($tagLines | ForEach-Object { $_.Trim() })}
                             $urlhealth="200"
                             break
                         } else {
@@ -3764,6 +3858,7 @@ function CheckURLHealth {
                     Write-Warning "Git operation failed for $repoName : $_"
                 }
                 finally {
+                    if ($repoMutex) { try { $repoMutex.ReleaseMutex() } catch {} ; $repoMutex.Dispose() }
                     pop-location
                 }
             }
@@ -3773,12 +3868,12 @@ function CheckURLHealth {
             try{
                 $Names = (((invoke-restmethod -uri $SourceTagURL -TimeoutSec 10 -usebasicparsing -ErrorAction Stop) -split "<tr><td") -split 'a href=') -split '>'
                 if ($Names) {
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '</a' -simplematch) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern 'commit' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern "'" -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '"' -simplematch)) {$_}}
+                    $Names = @($Names | foreach-object { if ($_ | select-string -pattern '</a' -simplematch) {$_}})
+                    $Names = @($Names | foreach-object { if (!($_ | select-string -pattern 'commit' -simplematch)) {$_}})
+                    $Names = @($Names | foreach-object { if (!($_ | select-string -pattern "'" -simplematch)) {$_}})
+                    $Names = @($Names | foreach-object { if (!($_ | select-string -pattern '"' -simplematch)) {$_}})
                     $Names = $Names -ireplace '</a',""
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.sig' -simplematch)) {$_}}
+                    $Names = @($Names | foreach-object { if (!($_ | select-string -pattern '.sig' -simplematch)) {$_}})
                     $Names = $Names  -replace ".tar.gz",""
                     $Names = $Names  -replace ".tar.bz2",""
                     $Names = $Names  -replace ".tar.xz",""
@@ -3792,7 +3887,7 @@ function CheckURLHealth {
         try {
             if (($SourceTagURL -ne "") -and ($null -ne $Names)) {
 
-                if ($ignore) {$Names = $Names | Where-Object { $n = $_; -not ($ignore | Where-Object { $n -like $_ }) }}
+                if ($ignore) {$Names = @($Names | Where-Object { $n = $_; -not ($ignore | Where-Object { $n -like $_ }) })}
 
                 $replace += $currentTask.Name+"."
                 $replace += $currentTask.Name+"-"
@@ -3802,34 +3897,34 @@ function CheckURLHealth {
                 $replace +="release_"
                 $replace +="release-"
                 $replace +="release"
-                foreach ($item in $replace) {$Names = $Names | ForEach-Object { $_ -replace [regex]::Escape($item), "" }}
+                foreach ($item in $replace) {$Names = @($Names | ForEach-Object { $_ -replace [regex]::Escape($item), "" })}
                 $Names = Clean-VersionNames $Names
 
                 $Names = $Names  -replace "v",""
-                $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
-                $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
+                $Names = @($Names | foreach-object { if ($_ -match '\d') {$_}})
+                $Names = @($Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}})
 
                 # post check
                 if (($currentTask.spec -ilike 'linux-aws.spec') -or ($currentTask.spec -ilike 'linux-esx.spec') -or ($currentTask.spec -ilike 'linux-rt.spec') -or ($currentTask.spec -ilike 'linux-secure.spec') -or ($currentTask.spec -ilike 'linux.spec') -or ($currentTask.spec -ilike 'linux-api-headers.spec'))
                 {
-                    if ($outputfile -ilike '*-3.0_*') {$Names = $Names | foreach-object { if ($_ | select-string -pattern '4.19.' -simplematch) {$_}}}
-                    elseif ($outputfile -ilike '*-4.0_*') {$Names = $Names | foreach-object { if ($_ | select-string -pattern '5.10.' -simplematch) {$_}}}
-                    elseif ($outputfile -ilike '*-5.0_*') {$Names = $Names | foreach-object { if ($_ | select-string -pattern '6.1.' -simplematch) {$_}}}
-                    elseif ($outputfile -ilike '*-6.0_*') {$Names = $Names | foreach-object { if ($_ | select-string -pattern '6.1.' -simplematch) {$_}}}
-                    elseif ($outputfile -ilike '*-common_*') {$Names = $Names | foreach-object { if ($_ | select-string -pattern '6.12.' -simplematch) {$_}}}
-                    elseif ($outputfile -ilike '*-master_*') {$Names = $Names | foreach-object { if ($_ | select-string -pattern '6.1.' -simplematch) {$_}}}
-                    elseif ($outputfile -ilike '*-dev_*') {$Names = $Names | foreach-object { if ($_ | select-string -pattern '6.1.' -simplematch) {$_}}}
+                    if ($outputfile -ilike '*-3.0_*') {$Names = @($Names | foreach-object { if ($_ | select-string -pattern '4.19.' -simplematch) {$_}})}
+                    elseif ($outputfile -ilike '*-4.0_*') {$Names = @($Names | foreach-object { if ($_ | select-string -pattern '5.10.' -simplematch) {$_}})}
+                    elseif ($outputfile -ilike '*-5.0_*') {$Names = @($Names | foreach-object { if ($_ | select-string -pattern '6.1.' -simplematch) {$_}})}
+                    elseif ($outputfile -ilike '*-6.0_*') {$Names = @($Names | foreach-object { if ($_ | select-string -pattern '6.1.' -simplematch) {$_}})}
+                    elseif ($outputfile -ilike '*-common_*') {$Names = @($Names | foreach-object { if ($_ | select-string -pattern '6.12.' -simplematch) {$_}})}
+                    elseif ($outputfile -ilike '*-master_*') {$Names = @($Names | foreach-object { if ($_ | select-string -pattern '6.1.' -simplematch) {$_}})}
+                    elseif ($outputfile -ilike '*-dev_*') {$Names = @($Names | foreach-object { if ($_ | select-string -pattern '6.1.' -simplematch) {$_}})}
                 }
                 if ($currentTask.spec -ilike 'kexec-tools.spec')
                 {
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '2006' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '2007' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '2008' -simplematch)) {$_}}
+                    $Names = @($Names | foreach-object { if (!($_ | select-string -pattern '2006' -simplematch)) {$_}})
+                    $Names = @($Names | foreach-object { if (!($_ | select-string -pattern '2007' -simplematch)) {$_}})
+                    $Names = @($Names | foreach-object { if (!($_ | select-string -pattern '2008' -simplematch)) {$_}})
                 }
                 if ($currentTask.spec -ilike 'libcap.spec')
                 {
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '2006' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '2007' -simplematch)) {$_}}
+                    $Names = @($Names | foreach-object { if (!($_ | select-string -pattern '2006' -simplematch)) {$_}})
+                    $Names = @($Names | foreach-object { if (!($_ | select-string -pattern '2007' -simplematch)) {$_}})
                 }
 
                 # get name latest
@@ -3959,15 +4054,15 @@ function CheckURLHealth {
                 $Names = (invoke-webrequest -UseBasicParsing -uri $SourceTagURL -TimeoutSec 10 -ErrorAction Stop).Links.href
                 if ($Names)
                 {
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern 'byacc-' -simplematch) {$_}}
+                    $Names = @($Names | foreach-object { if ($_ | select-string -pattern 'byacc-' -simplematch) {$_}})
                     $Names = $Names  -replace "byacc-",""
                 }             
             }            
             if ($currentTask.spec -ilike "json-c.spec")
             {
                 $Names = (invoke-webrequest -UseBasicParsing -uri $SourceTagURL -TimeoutSec 10 -ErrorAction Stop) -split "<"
-                $Names = $Names | foreach-object { if ($_ | select-string -pattern 'Key>releases/json-c-' -simplematch) {$_ -ireplace "Key>releases/json-c-",""}}
-                $Names = $Names | foreach-object { if (!($_ | select-string -pattern '-nodoc.tar.gz' -simplematch)) {$_}}
+                $Names = @($Names | foreach-object { if ($_ | select-string -pattern 'Key>releases/json-c-' -simplematch) {$_ -ireplace "Key>releases/json-c-",""}})
+                $Names = @($Names | foreach-object { if (!($_ | select-string -pattern '-nodoc.tar.gz' -simplematch)) {$_}})
             }
 
             if (!([Object]::ReferenceEquals($Names,$null)))
@@ -3976,14 +4071,14 @@ function CheckURLHealth {
                 {
                     if (((($Names | foreach-object { if ($_ | select-string -pattern '.tar.' -simplematch) {$_}}).count) -eq 0) -or ($_.spec -ilike "dialog.spec") -or ($_.spec -ilike "byacc.spec"))
                     {
-                        $Names = $Names | foreach-object { if ($_ | select-string -pattern '.tgz' -simplematch) {$_}}
+                        $Names = @($Names | foreach-object { if ($_ | select-string -pattern '.tgz' -simplematch) {$_}})
                     }
                     else
                     {
-                        $Names = $Names | foreach-object { if ($_ | select-string -pattern '.tar.' -simplematch) {$_}}
+                        $Names = @($Names | foreach-object { if ($_ | select-string -pattern '.tar.' -simplematch) {$_}})
                     }
-                    $Names = ($Names | foreach-object { if (!($_ | select-string -pattern '</a' -simplematch)) {$_}}) -ireplace '"',""
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.tgz.asc' -simplematch)) {$_}}
+                    $Names = @(($Names | foreach-object { if (!($_ | select-string -pattern '</a' -simplematch)) {$_}})) -ireplace '"',""
+                    $Names = @($Names | foreach-object { if (!($_ | select-string -pattern '.tgz.asc' -simplematch)) {$_}})
                     $Names = $Names  -replace "-src.tar.gz",""
                     $Names = $Names  -replace ".tar.gz",""
                     $Names = $Names  -replace ".tar.bz2",""
@@ -3994,13 +4089,13 @@ function CheckURLHealth {
 
                 if ($currentTask.spec -ilike "chrpath.spec")
                 {
-                    $Names = $Names | foreach-object { ($_ -split "href=") -split 'rel='}
-                    $Names = ($Names | foreach-object { if (($_ | select-string -pattern '/pere/chrpath' -simplematch)) {$_}}) -ireplace '/pere/chrpath/archive/release-',""
+                    $Names = @($Names | foreach-object { ($_ -split "href=") -split 'rel='})
+                    $Names = @(($Names | foreach-object { if (($_ | select-string -pattern '/pere/chrpath' -simplematch)) {$_}}) -ireplace '/pere/chrpath/archive/release-',"")
                 }
 
                 if (($currentTask.spec -ilike "apparmor.spec") -or ($currentTask.spec -ilike "bzr.spec") -or ($currentTask.spec -ilike "intltool.spec") -or ($currentTask.spec -ilike "libmetalink.spec") -or ($currentTask.spec -ilike "itstool.spec") -or ($currentTask.spec -ilike "openssl.spec") -or ($currentTask.spec -ilike "openssl-fips-provider.spec"))
                 {
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern '/' -simplematch) {($_ -split '/')[-1]}}
+                    $Names = @($Names | foreach-object { if ($_ | select-string -pattern '/' -simplematch) {($_ -split '/')[-1]}})
                 }
                 elseif ($currentTask.spec -ilike "curl.spec") { $Names = $Names  -replace "download/","" }
                 elseif ($currentTask.spec -ilike "js.spec") { $replace += "/pub/js/"; $replace +="-1.0.0"}
@@ -4008,10 +4103,10 @@ function CheckURLHealth {
                 elseif ($currentTask.spec -ilike "ltrace.spec") { $replace += ".orig" }
                 elseif ($currentTask.spec -ilike "tzdata.spec")
                 {
-                    $Names = $Names | foreach-object { if ($_ | select-string -pattern 'tzdata' -simplematch) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.tar.z' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.asc' -simplematch)) {$_}}
-                    $Names = $Names | foreach-object { if (!($_ | select-string -pattern '.sign' -simplematch)) {$_}}
+                    $Names = @($Names | foreach-object { if ($_ | select-string -pattern 'tzdata' -simplematch) {$_}})
+                    $Names = @($Names | foreach-object { if (!($_ | select-string -pattern '.tar.z' -simplematch)) {$_}})
+                    $Names = @($Names | foreach-object { if (!($_ | select-string -pattern '.asc' -simplematch)) {$_}})
+                    $Names = @($Names | foreach-object { if (!($_ | select-string -pattern '.sign' -simplematch)) {$_}})
                     $replace += "beta"
                 }
                 elseif ($currentTask.spec -ilike "qemu-img.spec") { $replace += "qemu-" }
@@ -4025,7 +4120,7 @@ function CheckURLHealth {
                 elseif ($currentTask.spec -ilike "wireguard-tools.spec") { $replace += "/wireguard-tools/snapshot/wireguard-tools-";$replace += "'"}
 
 
-                if ($ignore) {$Names = $Names | Where-Object { $n = $_; -not ($ignore | Where-Object { $n -like $_ }) }}
+                if ($ignore) {$Names = @($Names | Where-Object { $n = $_; -not ($ignore | Where-Object { $n -like $_ }) })}
 
                 $replace += $currentTask.Name+"."
                 $replace += $currentTask.Name+"-"
@@ -4035,14 +4130,14 @@ function CheckURLHealth {
                 $replace +="release_"
                 $replace +="release-"
                 $replace +="release"
-                foreach ($item in $replace) {$Names = $Names | ForEach-Object { $_ -replace [regex]::Escape($item), "" }}
+                foreach ($item in $replace) {$Names = @($Names | ForEach-Object { $_ -replace [regex]::Escape($item), "" })}
                 $Names = Clean-VersionNames $Names
 
                 if ($currentTask.spec -notlike "tzdata.spec")
                 {
                     $Names = $Names  -replace "v",""
-                    $Names = $Names | foreach-object { if ($_ -match '\d') {$_}}
-                    $Names = $Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}}
+                    $Names = @($Names | foreach-object { if ($_ -match '\d') {$_}})
+                    $Names = @($Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}})
                 }
 
                 # get name latest
@@ -4476,7 +4571,7 @@ function CheckURLHealth {
             {
                 try {
                     # Invoke-WebRequest -Uri $UpdateURL -UseBasicParsing -Verbose:$false -OutFile $UpdateDownloadFile -TimeoutSec 10
-                    (New-Object System.Net.WebClient).DownloadFile($UpdateURL, $UpdateDownloadFile)
+                    Invoke-WebRequest -Uri $UpdateURL -UseBasicParsing -OutFile $UpdateDownloadFile -TimeoutSec 120 -ErrorAction Stop
                 }
                 catch
                 {
@@ -4646,15 +4741,50 @@ function GenerateUrlHealthReports {
 
                 # Create a thread-safe collection for all results
                 $results = [System.Collections.Concurrent.ConcurrentBag[string]]::new()
+                # Track active threads: package name -> start time
+                $activeThreads = [System.Collections.Concurrent.ConcurrentDictionary[string, datetime]]::new()
+                $totalPackages = $TaskConfig.Packages.Count
+                # Background monitoring timer: reports long-running packages every 60 seconds
+                $monitorState = [PSCustomObject]@{ ActiveThreads = $activeThreads; TotalPackages = $totalPackages; ReportName = $TaskConfig.Name }
+                $monitorCallback = [System.Threading.TimerCallback]{
+                    param($state)
+                    $longRunnerThresholdMin = 5
+                    $now = [datetime]::UtcNow
+                    $runningCount = $state.ActiveThreads.Count
+                    $longRunners = [System.Collections.Generic.List[string]]::new()
+                    foreach ($kvp in $state.ActiveThreads.GetEnumerator()) {
+                        $elapsed = ($now - $kvp.Value).TotalMinutes
+                        if ($elapsed -ge $longRunnerThresholdMin) {
+                            $longRunners.Add("  Long-runner: $($kvp.Key) - running for $([math]::Round($elapsed, 1)) min")
+                        }
+                    }
+                    [Console]::WriteLine("[Monitor] $($state.ReportName) - $runningCount/$($state.TotalPackages) threads still active")
+                    foreach ($lr in ($longRunners | Sort-Object)) {
+                        [Console]::WriteLine("[Monitor] $lr")
+                    }
+                }
+                $monitorTimer = New-Object System.Threading.Timer($monitorCallback, $monitorState, 60000, 60000)
+
                 $TaskConfig.Packages | ForEach-Object -parallel {
                     Invoke-Expression $using:ParallelContext.InitScript
 
                     # Safely reference variables from the parent scope
                     $currentPackage = $_
+                    $threadTracker = $using:activeThreads
+                    $threadTracker.TryAdd($currentPackage.name, [datetime]::UtcNow) | Out-Null
                     Write-Host "Processing $($currentPackage.name) ..."
-                    $result = [system.string](CheckURLHealth -currentTask $currentPackage -SourcePath $using:ParallelContext.SourcePath -AccessToken $using:ParallelContext.AccessToken -outputfile $using:outputFilePath -photonDir $using:TaskConfig.PhotonDir)
-                    ($using:results).Add($result)
+                    try {
+                        $result = [system.string](CheckURLHealth -currentTask $currentPackage -SourcePath $using:ParallelContext.SourcePath -AccessToken $using:ParallelContext.AccessToken -outputfile $using:outputFilePath -photonDir $using:TaskConfig.PhotonDir)
+                        ($using:results).Add($result)
+                    }
+                    finally {
+                        $threadTracker.TryRemove($currentPackage.name, [ref]$null) | Out-Null
+                    }
                 } -ThrottleLimit $ThrottleLimit
+
+                # Stop the monitoring timer
+                $monitorTimer.Dispose()
+                Write-Host "[Monitor] $($TaskConfig.Name) - All $totalPackages packages completed."
 
                 $sb = New-Object System.Text.StringBuilder
                 $sb.AppendLine("Spec,Source0 original,Modified Source0 for url health check,UrlHealth,UpdateAvailable,UpdateURL,HealthUpdateURL,Name,SHAName,UpdateDownloadName,warning,ArchivationDate") | Out-Null
@@ -4722,7 +4852,7 @@ function GenerateUrlHealthReports {
 
 # Script execution starts
 Write-Host "=================================================="
-Write-Host "Photon OS Package Report Script v0.61"
+Write-Host "Photon OS Package Report Script v0.62"
 Write-Host "Starting at: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
 Write-Host "=================================================="
 
@@ -4839,32 +4969,37 @@ else {
     $global:access = $access
 }
 
-if (-not $gitlabaccess) {
-    $global:gitlabusername = Read-Host -Prompt "Please enter your Gitlab username"
-    if ([string]::IsNullOrWhiteSpace($global:gitlabusername)) {
+if (-not $gitlab_freedesktop_org_username) {
+    $global:gitlab_freedesktop_org_username = Read-Host -Prompt "Please enter your Gitlab username"
+    if ([string]::IsNullOrWhiteSpace($global:gitlab_freedesktop_org_username)) {
         Write-Error "Username cannot be empty"
         return
     }
+}
+else {
+    $global:gitlab_freedesktop_org_username = $gitlab_freedesktop_org_username
+}
 
+if (-not $gitlab_freedesktop_org_token) {
     $secureToken = Read-Host -Prompt "Please enter your Gitlab Access Token" -AsSecureString
-    $global:gitlabaccess = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto(
+    $global:gitlab_freedesktop_org_token = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto(
         [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureToken))
-    $secureToken = $null  # Clear the secure string variable
-    if ([string]::IsNullOrWhiteSpace($global:gitlabaccess)) {
+    $secureToken = $null
+    if ([string]::IsNullOrWhiteSpace($global:gitlab_freedesktop_org_token)) {
         Write-Error "Access token cannot be empty"
         return
     }
-
-    try {
-        git config --global credential.https://gitlab.freedesktop.org.username $global:gitlabusername
-        git config --global credential.https://gitlab.freedesktop.org.password $global:gitlabaccess
-        Write-Host "Git configuration updated successfully."
-    } catch {
-        Write-Error "Failed to update Git configuration: $_"
-    }
 }
 else {
-    $global:gitlabaccess = $gitlabaccess
+    $global:gitlab_freedesktop_org_token = $gitlab_freedesktop_org_token
+}
+
+try {
+    git config --global credential.https://gitlab.freedesktop.org.username $global:gitlab_freedesktop_org_username
+    git config --global credential.https://gitlab.freedesktop.org.password $global:gitlab_freedesktop_org_token
+    Write-Host "Git configuration updated successfully."
+} catch {
+    Write-Error "Failed to update Git configuration: $_"
 }
 
 
@@ -4911,17 +5046,43 @@ if ($GeneratePhPackageReport)
     $PackagesCommon=ParseDirectory -SourcePath $SourcePath -PhotonDir photon-common
     $PackagesDev=ParseDirectory -SourcePath $SourcePath -PhotonDir photon-dev
     $PackagesMaster=ParseDirectory -SourcePath $SourcePath -PhotonDir photon-master
-    $result = $Packages3,$Packages4,$Packages5,$Packages6,$PackagesCommon,$PackagesDev,$PackagesMaster| foreach-object{$currentTask}|Select-Object Spec,`
-    @{l='photon-3.0';e={if($currentTask.Spec -in $Packages3.Spec) {$Packages3[$Packages3.Spec.IndexOf($currentTask.Spec)].version}}},`
-    @{l='photon-4.0';e={if($currentTask.Spec -in $Packages4.Spec) {$Packages4[$Packages4.Spec.IndexOf($currentTask.Spec)].version}}},`
-    @{l='photon-5.0';e={if($currentTask.Spec -in $Packages5.Spec) {$Packages5[$Packages5.Spec.IndexOf($currentTask.Spec)].version}}},`
-    @{l='photon-6.0';e={if($currentTask.Spec -in $Packages6.Spec) {$Packages6[$Packages6.Spec.IndexOf($currentTask.Spec)].version}}},`
-    @{l='photon-common';e={if($currentTask.Spec -in $PackagesCommon.Spec) {$PackagesCommon[$PackagesCommon.Spec.IndexOf($currentTask.Spec)].version}}},`
-    @{l='photon-dev';e={if($currentTask.Spec -in $PackagesDev.Spec) {$PackagesDev[$PackagesDev.Spec.IndexOf($currentTask.Spec)].version}}},`
-    @{l='photon-master';e={if($currentTask.Spec -in $PackagesMaster.Spec) {$PackagesMaster[$PackagesMaster.Spec.IndexOf($currentTask.Spec)].version}}} -Unique | Sort-object Spec
+    # Filter out subrelease packages for cross-release comparison (they are vendor-pinned)
+    $Packages3Main = @($Packages3 | Where-Object { -not $_.SubRelease })
+    $Packages4Main = @($Packages4 | Where-Object { -not $_.SubRelease })
+    $Packages5Main = @($Packages5 | Where-Object { -not $_.SubRelease })
+    $Packages6Main = @($Packages6 | Where-Object { -not $_.SubRelease })
+    $PackagesCommonMain = @($PackagesCommon | Where-Object { -not $_.SubRelease })
+    $PackagesDevMain = @($PackagesDev | Where-Object { -not $_.SubRelease })
+    $PackagesMasterMain = @($PackagesMaster | Where-Object { -not $_.SubRelease })
+    $result = $Packages3Main,$Packages4Main,$Packages5Main,$Packages6Main,$PackagesCommonMain,$PackagesDevMain,$PackagesMasterMain| foreach-object{$currentTask}|Select-Object Spec,`
+    @{l='SubRelease';e={""}},`
+    @{l='photon-3.0';e={if($currentTask.Spec -in $Packages3Main.Spec) {$Packages3Main[$Packages3Main.Spec.IndexOf($currentTask.Spec)].version}}},`
+    @{l='photon-4.0';e={if($currentTask.Spec -in $Packages4Main.Spec) {$Packages4Main[$Packages4Main.Spec.IndexOf($currentTask.Spec)].version}}},`
+    @{l='photon-5.0';e={if($currentTask.Spec -in $Packages5Main.Spec) {$Packages5Main[$Packages5Main.Spec.IndexOf($currentTask.Spec)].version}}},`
+    @{l='photon-6.0';e={if($currentTask.Spec -in $Packages6Main.Spec) {$Packages6Main[$Packages6Main.Spec.IndexOf($currentTask.Spec)].version}}},`
+    @{l='photon-common';e={if($currentTask.Spec -in $PackagesCommonMain.Spec) {$PackagesCommonMain[$PackagesCommonMain.Spec.IndexOf($currentTask.Spec)].version}}},`
+    @{l='photon-dev';e={if($currentTask.Spec -in $PackagesDevMain.Spec) {$PackagesDevMain[$PackagesDevMain.Spec.IndexOf($currentTask.Spec)].version}}},`
+    @{l='photon-master';e={if($currentTask.Spec -in $PackagesMasterMain.Spec) {$PackagesMasterMain[$PackagesMasterMain.Spec.IndexOf($currentTask.Spec)].version}}} -Unique | Sort-object Spec
+    # Append subrelease packages as separate rows
+    $subReleasePackages = @($Packages3,$Packages4,$Packages5,$Packages6,$PackagesCommon,$PackagesDev,$PackagesMaster | ForEach-Object{$_} | Where-Object { $_.SubRelease })
+    foreach ($srPkg in $subReleasePackages) {
+        $srRow = [PSCustomObject]@{
+            Spec = $srPkg.Spec
+            SubRelease = $srPkg.SubRelease
+            'photon-3.0' = if($srPkg.Spec -in $Packages3.Spec -and ($Packages3 | Where-Object { $_.Spec -eq $srPkg.Spec -and $_.SubRelease -eq $srPkg.SubRelease })) {($Packages3 | Where-Object { $_.Spec -eq $srPkg.Spec -and $_.SubRelease -eq $srPkg.SubRelease } | Select-Object -First 1).Version} else {""}
+            'photon-4.0' = if($srPkg.Spec -in $Packages4.Spec -and ($Packages4 | Where-Object { $_.Spec -eq $srPkg.Spec -and $_.SubRelease -eq $srPkg.SubRelease })) {($Packages4 | Where-Object { $_.Spec -eq $srPkg.Spec -and $_.SubRelease -eq $srPkg.SubRelease } | Select-Object -First 1).Version} else {""}
+            'photon-5.0' = if($srPkg.Spec -in $Packages5.Spec -and ($Packages5 | Where-Object { $_.Spec -eq $srPkg.Spec -and $_.SubRelease -eq $srPkg.SubRelease })) {($Packages5 | Where-Object { $_.Spec -eq $srPkg.Spec -and $_.SubRelease -eq $srPkg.SubRelease } | Select-Object -First 1).Version} else {""}
+            'photon-6.0' = if($srPkg.Spec -in $Packages6.Spec -and ($Packages6 | Where-Object { $_.Spec -eq $srPkg.Spec -and $_.SubRelease -eq $srPkg.SubRelease })) {($Packages6 | Where-Object { $_.Spec -eq $srPkg.Spec -and $_.SubRelease -eq $srPkg.SubRelease } | Select-Object -First 1).Version} else {""}
+            'photon-common' = ""
+            'photon-dev' = ""
+            'photon-master' = ""
+        }
+        $result += $srRow
+    }
+    $result = $result | Sort-Object Spec, SubRelease -Unique
     $outputfile="$env:public\photonos-package-report_$((get-date).tostring("yyyMMddHHmm")).prn"
-    "Spec"+","+"photon-3.0"+","+"photon-4.0"+","+"photon-5.0"+","+"photon-6.0"+","+"photon-common"+","+"photon-dev"+","+"photon-master"| out-file $outputfile
-    $result | foreach-object { $currentTask.Spec+","+$currentTask."photon-3.0"+","+$currentTask."photon-4.0"+","+$currentTask."photon-5.0"+","+$currentTask."photon-6.0"+","+$currentTask."photon-common"+","+$currentTask."photon-dev"+","+$currentTask."photon-master"} |  out-file $outputfile -append
+    "Spec"+","+"SubRelease"+","+"photon-3.0"+","+"photon-4.0"+","+"photon-5.0"+","+"photon-6.0"+","+"photon-common"+","+"photon-dev"+","+"photon-master"| out-file $outputfile
+    $result | foreach-object { $currentTask.Spec+","+$currentTask.SubRelease+","+$currentTask."photon-3.0"+","+$currentTask."photon-4.0"+","+$currentTask."photon-5.0"+","+$currentTask."photon-6.0"+","+$currentTask."photon-common"+","+$currentTask."photon-dev"+","+$currentTask."photon-master"} |  out-file $outputfile -append
 }
 
 if ($GeneratePhCommontoPhMasterDiffHigherPackageVersionReport)
@@ -4930,7 +5091,7 @@ if ($GeneratePhCommontoPhMasterDiffHigherPackageVersionReport)
     $outputfile1="$env:public\photonos-diff-report-common-master_$((get-date).tostring("yyyMMddHHmm")).prn"
     "Spec"+","+"photon-common"+","+"photon-master"| out-file $outputfile1
     $result | foreach-object {
-        # Write-Host $currentTask.spec
+        if ($currentTask.SubRelease) { return }
         if ((!([string]::IsNullOrEmpty($currentTask.'photon-common'))) -and (!([string]::IsNullOrEmpty($currentTask.'photon-master'))))
         {
             $versionCompare1 = VersionCompare $currentTask.'photon-common' $currentTask.'photon-master'
@@ -4949,7 +5110,7 @@ if ($GeneratePh5toPh6DiffHigherPackageVersionReport)
     $outputfile1="$env:public\photonos-diff-report-5.0-6.0_$((get-date).tostring("yyyMMddHHmm")).prn"
     "Spec"+","+"photon-5.0"+","+"photon-6.0"| out-file $outputfile1
     $result | foreach-object {
-        # Write-Host $currentTask.spec
+        if ($currentTask.SubRelease) { return }
         if ((!([string]::IsNullOrEmpty($currentTask.'photon-5.0'))) -and (!([string]::IsNullOrEmpty($currentTask.'photon-6.0'))))
         {
             $versionCompare1 = VersionCompare $currentTask.'photon-5.0' $currentTask.'photon-6.0'
@@ -4968,7 +5129,7 @@ if ($GeneratePh4toPh5DiffHigherPackageVersionReport)
     $outputfile1="$env:public\photonos-diff-report-4.0-5.0_$((get-date).tostring("yyyMMddHHmm")).prn"
     "Spec"+","+"photon-4.0"+","+"photon-5.0"| out-file $outputfile1
     $result | foreach-object {
-        # Write-Host $currentTask.spec
+        if ($currentTask.SubRelease) { return }
         if ((!([string]::IsNullOrEmpty($currentTask.'photon-4.0'))) -and (!([string]::IsNullOrEmpty($currentTask.'photon-5.0'))))
         {
             $versionCompare1 = VersionCompare $currentTask.'photon-4.0' $currentTask.'photon-5.0'
@@ -4987,7 +5148,7 @@ if ($GeneratePh3toPh4DiffHigherPackageVersionReport)
     $outputfile2="$env:public\photonos-diff-report-3.0-4.0_$((get-date).tostring("yyyMMddHHmm")).prn"
     "Spec"+","+"photon-3.0"+","+"photon-4.0"| out-file $outputfile2
     $result | foreach-object {
-        # Write-Host $currentTask.spec
+        if ($currentTask.SubRelease) { return }
         if ((!([string]::IsNullOrEmpty($currentTask.'photon-3.0'))) -and (!([string]::IsNullOrEmpty($currentTask.'photon-4.0'))))
         {
             $versionCompare2 = VersionCompare $currentTask.'photon-3.0' $currentTask.'photon-4.0'
@@ -5003,8 +5164,8 @@ if ($GeneratePh3toPh4DiffHigherPackageVersionReport)
 # Security cleanup: Clear sensitive data from memory
 Write-Host "Cleaning up sensitive data..."
 if ($global:access) { Remove-Variable -Name access -Scope Global -ErrorAction SilentlyContinue }
-if ($global:gitlabaccess) { Remove-Variable -Name gitlabaccess -Scope Global -ErrorAction SilentlyContinue }
-if ($global:gitlabusername) { Remove-Variable -Name gitlabusername -Scope Global -ErrorAction SilentlyContinue }
+if ($global:gitlab_freedesktop_org_token) { Remove-Variable -Name gitlab_freedesktop_org_token -Scope Global -ErrorAction SilentlyContinue }
+if ($global:gitlab_freedesktop_org_username) { Remove-Variable -Name gitlab_freedesktop_org_username -Scope Global -ErrorAction SilentlyContinue }
 
 # Clean up git credentials from global config
 if ($Script:RunningOnWindows) {

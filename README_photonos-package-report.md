@@ -3,42 +3,50 @@
 ## SCRIPT STRUCTURE
 
 ```
-photonos-package-report.ps1 (~5,170 lines)
+photonos-package-report.ps1 (~5,176 lines)
 │
-├── HEADER (Lines 1-96)
+├── HEADER (Lines 1-113)
 │   ├── Synopsis & Version History
 │   ├── Prerequisites & Hints (debug, run on Windows/WSL/Photon OS)
-│   └── Parameter Declarations (13 parameters)
+│   └── Parameter Declarations (15 parameters)
 │
-├── HELPER FUNCTIONS (Lines 98-290)
-│   ├── Convert-ToBoolean        (98-106)   - Convert string params to bool (-File compat)
-│   ├── Invoke-GitWithTimeout    (121-155)  - Git commands with timeout via Start-Job
-│   ├── Get-SpecValue            (157-168)  - Safe spec field extraction
-│   └── ParseDirectory           (170-290)  - Parse .spec files from branch
+├── HELPER FUNCTIONS (Lines 115-347)
+│   ├── Convert-ToBoolean        (115-123)  - Convert string params to bool (-File compat)
+│   ├── Invoke-GitWithTimeout    (138-204)  - Git commands with timeout via System.Diagnostics.Process
+│   │                                         (async stdout/stderr event handlers, no runspace deadlocks)
+│   ├── Get-SpecValue            (206-217)  - Safe spec field extraction
+│   └── ParseDirectory           (219-347)  - Parse .spec files from branch
+│                                              (detects numeric subrelease dirs e.g. SPECS/91/)
 │
-├── CORE FUNCTIONS (Lines 292-1446)
-│   ├── Versioncompare           (292-349)  - Compare version strings
-│   ├── GitPhoton                (350-398)  - Clone/fetch/merge Photon repos
+├── CORE FUNCTIONS (Lines 348-1522)
+│   ├── Versioncompare           (348-405)  - Compare version strings
+│   ├── Clean-VersionNames       (406-416)  - Extract clean version names from raw strings
+│   ├── GitPhoton                (418-465)  - Clone/fetch/merge Photon repos
 │   │                                         (delete + re-clone on merge failure)
-│   ├── Source0Lookup            (399-1260) - Lookup table for 848+ packages
+│   ├── Source0Lookup            (467-1327) - Lookup table for 848+ packages
 │   │                                         (columns: specfile, Source0Lookup, gitSource,
 │   │                                          gitBranch, customRegex, replaceStrings,
 │   │                                          ignoreStrings, Warning, ArchivationDate)
-│   ├── ModifySpecFile           (1261-1334)- Update spec files with new versions
-│   ├── urlhealth                (1335-1395)- Check URL HTTP status
-│   └── KojiFedoraProjectLookUp  (1396-1446)- Lookup Fedora Koji packages
+│   ├── ModifySpecFile           (1329-1406)- Update spec files with new versions
+│   │                                         (output filename from $SpecFileName to avoid collisions)
+│   ├── urlhealth                (1408-1468)- Check URL HTTP status (120s timeout)
+│   └── KojiFedoraProjectLookUp  (1470-1522)- Lookup Fedora Koji packages
 │
-├── MAIN PROCESSING FUNCTION (Lines 1448-4702)
-│   └── CheckURLHealth           (1448-4650)- URL health check per package
+├── MAIN PROCESSING FUNCTION (Lines 1524-4848)
+│   └── CheckURLHealth           (1524-4637)- URL health check per package
+│       ├── Subrelease early-return (vendor-pinned packages skip all checks)
 │       ├── Version extraction from URLs
 │       ├── Data scraping (GitHub, GitLab, PyPI, RubyGems JSON API, etc.)
 │       ├── Update availability detection
 │       ├── GNU FTP mirror fallback (ftp.funet.fi)
+│       ├── Per-repo named mutex for parallel clone/fetch serialization
 │       ├── Get-FileHashWithRetry (file hash with lock retry)
 │       └── Spec file modification
-│   └── GenerateUrlHealthReports (4704-4848)- Orchestrates parallel/sequential processing
+│   └── GenerateUrlHealthReports (4639-4848)- Orchestrates parallel/sequential processing
+│       └── Parallel monitoring: ConcurrentDictionary + System.Threading.Timer
+│           (reports active threads every 60s, flags long-runners > 5 min)
 │
-├── MAIN EXECUTION (Lines 4850-5170)
+├── MAIN EXECUTION (Lines 4850-5176)
 │   ├── Initialization           (4850-4960)
 │   │   ├── Security protocol setup
 │   │   ├── OS detection
@@ -49,25 +57,28 @@ photonos-package-report.ps1 (~5,170 lines)
 │   │   ├── Path validation
 │   │   └── Git safe.directory wildcard (cross-filesystem support)
 │   │
-│   ├── Authentication           (4962-5020)
+│   ├── Authentication           (4962-5002)
 │   │   ├── GitHub token prompt
 │   │   └── GitLab username/token prompt
+│   │       (env: GITLAB_FREEDESKTOP_ORG_USERNAME / GITLAB_FREEDESKTOP_ORG_TOKEN)
+│   │       Git credentials configured unconditionally
 │   │
-│   ├── URL Health Reports       (5022-5042)
+│   ├── URL Health Reports       (5004-5028)
 │   │   └── Call GenerateUrlHealthReports()
 │   │
-│   ├── Package Report           (5044-5080)
+│   ├── Package Report           (5030-5100)
 │   │   ├── Git clone/fetch all branches
 │   │   ├── Parse all directories
+│   │   ├── SubRelease column for vendor-pinned packages
 │   │   └── Generate package-report.prn
 │   │
-│   ├── Diff Reports             (5082-5158)
-│   │   ├── Common vs Master
-│   │   ├── 5.0 vs 6.0
-│   │   ├── 4.0 vs 5.0
-│   │   └── 3.0 vs 4.0
+│   ├── Diff Reports             (5102-5162)
+│   │   ├── Common vs Master (subrelease rows excluded)
+│   │   ├── 5.0 vs 6.0      (subrelease rows excluded)
+│   │   ├── 4.0 vs 5.0      (subrelease rows excluded)
+│   │   └── 3.0 vs 4.0      (subrelease rows excluded)
 │   │
-│   └── Cleanup                  (5160-5170)
+│   └── Cleanup                  (5164-5176)
 │       ├── Clear tokens from memory
 │       └── Remove git credentials
 ```
@@ -100,8 +111,10 @@ photonos-package-report.ps1 (~5,170 lines)
 │  PHASE 2: AUTHENTICATION                                                    │
 │  ┌────────────────────────┐       ┌────────────────────────────────────────┐│
 │  │ GitHub Token           │       │ GitLab Username + Token                ││
-│  │ ($env:GITHUB_TOKEN or  │       │ ($env:GITLAB_TOKEN or prompt)          ││
-│  │  prompt)               │       │ + Configure git credentials            ││
+│  │ ($env:GITHUB_TOKEN or  │       │ ($env:GITLAB_FREEDESKTOP_ORG_USERNAME  ││
+│  │  prompt)               │       │  + $env:GITLAB_FREEDESKTOP_ORG_TOKEN   ││
+│  │                        │       │  or prompt)                            ││
+│  │                        │       │ Git credentials always configured      ││
 │  └────────────────────────┘       └────────────────────────────────────────┘│
 └─────────────────────────────────────────────────────────────────────────────┘
                                     │
@@ -141,7 +154,10 @@ photonos-package-report.ps1 (~5,170 lines)
 │  │  ┌─────────────────────┐  OR  ┌─────────────────────────────────┐   │    │
 │  │  │ PARALLEL (PS 7.4+)  │      │ SEQUENTIAL (PS < 7.4)           │   │    │
 │  │  │ ForEach-Object      │      │ ForEach-Object                  │   │    │
-│  │  │ -Parallel           │      │ (standard)                      │   │    │
+│  │  │ -Parallel            │      │ (standard)                      │   │    │
+│  │  │ + Thread Monitoring │      │                                 │   │    │
+│  │  │   (60s timer, 5min  │      │                                 │   │    │
+│  │  │    long-runner flag) │      │                                 │   │    │
 │  │  └─────────────────────┘      └─────────────────────────────────┘   │    │
 │  │                                                                     │    │
 │  │  Output: photonos-urlhealth-{branch}_{timestamp}.prn                │    │
@@ -198,15 +214,21 @@ Main Execution
 │
 ├── GenerateUrlHealthReports()
 │   ├── GitPhoton()
-│   │   └── Invoke-GitWithTimeout()  [fetch --prune --prune-tags --tags, delete+re-clone on failure]
+│   │   └── Invoke-GitWithTimeout()  [System.Diagnostics.Process, async event handlers]
 │   ├── ParseDirectory()
 │   │   └── Get-SpecValue()
-│   └── CheckURLHealth()  [parallel or sequential]
+│   │   └── SubRelease detection (numeric SPECS/ subdirs)
+│   └── CheckURLHealth()  [parallel with monitoring, or sequential]
+│       ├── [subrelease early-return for vendor-pinned packages]
 │       ├── Source0Lookup()           [848 packages, 9 columns]
-│       ├── urlhealth()
+│       ├── urlhealth()              [120s timeout]
 │       ├── KojiFedoraProjectLookUp()
 │       ├── Versioncompare()
-│       └── ModifySpecFile()
+│       ├── Clean-VersionNames()
+│       └── ModifySpecFile()         [$SpecFileName-based output naming]
+│
+├── Parallel Monitoring (System.Threading.Timer + ConcurrentDictionary)
+│   └── Reports active threads every 60s, flags long-runners > 5 min
 │
 ├── GitPhoton() [for Package Report]
 │   └── Invoke-GitWithTimeout()
@@ -214,7 +236,7 @@ Main Execution
 ├── ParseDirectory() [for Package Report]
 │   └── Get-SpecValue()
 │
-└── Versioncompare() [for Diff Reports]
+└── Versioncompare() [for Diff Reports, subrelease rows excluded]
 ```
 
 ---
@@ -223,9 +245,9 @@ Main Execution
 
 | Report Type | Filename Pattern | Content |
 |-------------|------------------|---------|
-| URL Health | `photonos-urlhealth-{branch}_{timestamp}.prn` | Package URL status, versions, updates, Warning, ArchivationDate |
-| Package Report | `photonos-package-report_{timestamp}.prn` | All packages across all branches |
-| Diff Report | `photonos-diff-report-{v1}-{v2}_{timestamp}.prn` | Packages where older version > newer |
+| URL Health | `photonos-urlhealth-{branch}_{timestamp}.prn` | Package URL status, versions, updates, Warning, ArchivationDate. Vendor-pinned packages show `UrlHealth=pinned`. |
+| Package Report | `photonos-package-report_{timestamp}.prn` | All packages across all branches with SubRelease column (vendor-pinned packages listed separately) |
+| Diff Report | `photonos-diff-report-{v1}-{v2}_{timestamp}.prn` | Packages where older version > newer (subrelease packages excluded) |
 
 ---
 
@@ -252,7 +274,8 @@ Main Execution
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `access` | string | `$env:GITHUB_TOKEN` | GitHub API access token |
-| `gitlabaccess` | string | `$env:GITLAB_TOKEN` | GitLab API access token |
+| `gitlab_freedesktop_org_username` | string | `$env:GITLAB_FREEDESKTOP_ORG_USERNAME` | GitLab username for gitlab.freedesktop.org |
+| `gitlab_freedesktop_org_token` | string | `$env:GITLAB_FREEDESKTOP_ORG_TOKEN` | GitLab access token for gitlab.freedesktop.org |
 | `sourcepath` | string | `$env:PUBLIC` or `$HOME` | Working directory for git clones |
 | `GeneratePh3URLHealthReport` | bool | `$true` | Generate URL health report for Photon 3.0 |
 | `GeneratePh4URLHealthReport` | bool | `$true` | Generate URL health report for Photon 4.0 |
@@ -288,8 +311,8 @@ pwsh -File photonos-package-report.ps1 `
 
 # Use environment variables for tokens
 $env:GITHUB_TOKEN = "your_github_token"
-$env:GITLAB_USERNAME = "your_gitlab_username"
-$env:GITLAB_TOKEN = "your_gitlab_token"
+$env:GITLAB_FREEDESKTOP_ORG_USERNAME = "your_gitlab_username"
+$env:GITLAB_FREEDESKTOP_ORG_TOKEN = "your_gitlab_token"
 pwsh -File photonos-package-report.ps1
 ```
 
@@ -308,7 +331,17 @@ pwsh -File photonos-package-report.ps1
 
 ## VERSION HISTORY
 
-See script header for complete version history. Current version: **0.61**
+See script header for complete version history. Current version: **0.62**
+
+Key improvements in v0.62:
+- **Parallel deadlock fix:** Replaced `Start-Job`/`Wait-Job` with `System.Diagnostics.Process` + async stdout/stderr event handlers in `Invoke-GitWithTimeout` to prevent runspace deadlocks inside `ForEach-Object -Parallel`
+- **Timeout hardening:** Added 120s timeouts to bare `git tag -l` calls, `HttpWebRequest`, and `Invoke-WebRequest` (replaced `WebClient.DownloadFile`)
+- **Per-repo named mutex:** Serializes parallel `git clone`/`fetch` operations per repository to prevent file lock collisions
+- **Null propagation prevention:** Wrapped 165+ pipeline reassignments in `@()` and added null guards for `Get-HighestJdkVersion` and `.ToString()` calls
+- **GitLab credential refactor:** Renamed env vars to `GITLAB_FREEDESKTOP_ORG_USERNAME` / `GITLAB_FREEDESKTOP_ORG_TOKEN`, added dedicated parameters, git credentials configured unconditionally (not only from prompt path)
+- **ModifySpecFile collision fix:** Output filename derived from `$SpecFileName` (e.g. `linux-aws-5.10.spec`) instead of `$Name` (e.g. `linux-5.10.spec`) to prevent parallel file lock conflicts for linux variant specs
+- **Numeric subrelease directory support:** Detects vendor-pinned packages in `SPECS/91/` etc.; tags with `SubRelease` property, skips upstream version checks, adds `SubRelease` column to Package Report, excludes from Diff Reports to prevent false positives
+- **Parallel thread monitoring:** `System.Threading.Timer` + `ConcurrentDictionary` tracks active threads, reports every 60s via `[Console]::WriteLine`, flags packages running longer than 5 minutes (e.g. chromium, systemtap clones)
 
 Key improvements in v0.61:
 - Quarterly version format support in Get-LatestName (YYYY.Q#.# for amdvlk, etc.)
