@@ -3,7 +3,7 @@
 ## SCRIPT STRUCTURE
 
 ```
-photonos-package-report.ps1 (~5,176 lines)
+photonos-package-report.ps1 (~5,238 lines)
 │
 ├── HEADER (Lines 1-113)
 │   ├── Synopsis & Version History
@@ -194,7 +194,7 @@ photonos-package-report.ps1 (~5,176 lines)
 │  PHASE 6: CLEANUP                                                           │
 │  ┌─────────────────────────────┐  ┌─────────────────────────────────────┐   │
 │  │ Clear tokens from memory    │  │ Remove git credentials from config  │   │
-│  │ ($global:access, etc.)      │  │ (gitlab.freedesktop.org)            │   │
+│  │ ($global:github_token, etc.)│  │ (gitlab.freedesktop.org)            │   │
 │  └─────────────────────────────┘  └─────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────────────────┘
                                     │
@@ -274,7 +274,7 @@ Main Execution
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `access` | string | `$env:GITHUB_TOKEN` | GitHub API access token |
+| `github_token` | string | `$env:GITHUB_TOKEN` | GitHub API access token |
 | `gitlab_freedesktop_org_username` | string | `$env:GITLAB_FREEDESKTOP_ORG_USERNAME` | GitLab username for gitlab.freedesktop.org |
 | `gitlab_freedesktop_org_token` | string | `$env:GITLAB_FREEDESKTOP_ORG_TOKEN` | GitLab access token for gitlab.freedesktop.org |
 | `sourcepath` | string | `$env:PUBLIC` or `$HOME` | Working directory for git clones |
@@ -338,6 +338,11 @@ Key improvements in v0.64:
 - **Artifact directories moved to photon-upstreams/:** `clones`, `SOURCES_NEW`, `SPECS_NEW`, and `SOURCES_KojiFedora` are now created under `$sourcepath/photon-upstreams/photon-{branch}/` instead of inside the git repo directories. This keeps git repos clean, allows `git reset --hard` and re-clone without losing cached data, and preserves expensive clones (e.g. chromium) across repo resets.
 - **New `$UpstreamsPath` parameter:** Added to `ModifySpecFile`, `CheckURLHealth`, and `GenerateUrlHealthReports` to thread the upstreams directory through the call chain including parallel runspaces.
 - **Fixed hardcoded output paths:** Package Report and all Diff Report output paths were hardcoded to `$env:public`, ignoring the `-sourcepath` parameter and failing on Linux. Now uses `Join-Path $sourcepath` for cross-platform compatibility.
+- **HTTP post buffer for large repos:** Added `git config --global http.postBuffer 524288000` (500MB) to prevent SChannel/curl `server closed abruptly` errors during fetch of extremely large repositories (llvm-project, rust, chromium).
+- **Clone .git validation in CheckURLHealth:** All 3 clone logic blocks now validate `.git` directory existence before fetch. If the directory exists but `.git` is missing (interrupted/corrupted clone), the directory is removed and a re-clone is triggered via the retry loop.
+- **Force-fetch for diverged tags:** Added `--force` to all fetch commands in CheckURLHealth. Upstream repos sometimes rewrite/force-push tags; without `--force`, git rejects the update with "would clobber existing tag". Since this script is a read-only consumer, force-overwriting local tags is the correct behavior.
+- **Fixed per-repo mutex for parallel safety:** Removed branch-specific `$photonDir` from the mutex name so concurrent access to the same upstream repo (e.g. llvm-project from photon-5.0 and photon-6.0) is properly serialized. Increased mutex timeout from 120s to 600s for large repo fetches.
+- **Renamed `$access` parameter to `$github_token`:** For consistency with `$gitlab_freedesktop_org_username` and `$gitlab_freedesktop_org_token`.
 
 Key improvements in v0.63:
 - **Invoke-GitWithTimeout now throws on non-zero exit codes:** Previously, git failures (e.g. "not a git repository", merge conflicts) were only logged as warnings but did not throw, making the catch/re-clone fallback in GitPhoton unreachable dead code

@@ -75,6 +75,19 @@
 #                               Fixed Package Report and Diff Report output paths: replaced hardcoded
 #                               $env:public with Join-Path $sourcepath for cross-platform compatibility
 #                               and to respect the -sourcepath parameter on all platforms.
+#                               Added git config http.postBuffer 524288000 (500MB) to prevent SChannel
+#                               buffer overflow on large repo fetches (llvm-project, rust, chromium).
+#                               Added .git directory validation before fetch in all 3 CheckURLHealth
+#                               clone blocks: missing .git triggers directory removal and re-clone.
+#                               Added --force to all fetch commands in CheckURLHealth to allow
+#                               overwriting locally cached tags that diverged from remote (force-pushed
+#                               tags on upstream repos like chardet, dotnet/runtime, sqlite, stalld).
+#                               Fixed per-repo mutex: removed branch-specific $photonDir from mutex
+#                               name to properly serialize concurrent access to the same upstream repo
+#                               across different Photon branches; increased mutex timeout from 120s to
+#                               600s for large repo fetches.
+#                               Renamed script parameter $access to $github_token for consistency with
+#                               $gitlab_freedesktop_org_username and $gitlab_freedesktop_org_token.
 #
 #  .PREREQUISITES
 #    - Script tested on Microsoft Windows 11 and on Photon OS 5.0 with Powershell Core 7.5.4
@@ -118,7 +131,7 @@
 
 [CmdletBinding()]
 param (
-    [string]$access=$env:GITHUB_TOKEN,
+    [string]$github_token=$env:GITHUB_TOKEN,
     [string]$gitlab_freedesktop_org_username=$env:GITLAB_FREEDESKTOP_ORG_USERNAME,
     [string]$gitlab_freedesktop_org_token=$env:GITLAB_FREEDESKTOP_ORG_TOKEN,
     [string]$sourcepath = $(if ($env:PUBLIC) { $env:PUBLIC } else { $HOME }),
@@ -2258,9 +2271,9 @@ function CheckURLHealth {
                     if ($currentTask.spec -ilike 'gstreamer-plugins-base.spec') {$repoName="gst-plugins-base-"}
 
                     # Acquire a named mutex to prevent parallel runspaces from colliding on the same repo
-                    $mutexName = "Global\photon-clone-$($photonDir)-$($repoName)" -replace '[\\/:*?"<>|]', '_'
+                    $mutexName = "Global\photon-clone-$($repoName)" -replace '[\\/:*?"<>|]', '_'
                     $repoMutex = New-Object System.Threading.Mutex($false, $mutexName)
-                    try { $repoMutex.WaitOne(120000) | Out-Null } catch [System.Threading.AbandonedMutexException] { }
+                    try { $repoMutex.WaitOne(600000) | Out-Null } catch [System.Threading.AbandonedMutexException] { }
 
                     # Push the current directory to the stack
                     $SourceClonePath=[System.String](join-path -path $ClonePath -childpath $repoName)
@@ -2280,9 +2293,9 @@ function CheckURLHealth {
                                     if (Test-Path $SourceClonePath) {
                                         Set-Location $SourceClonePath
                                         if (!([string]::IsNullOrEmpty($gitBranch))) {
-                                            Invoke-GitWithTimeout "fetch --prune --prune-tags --tags origin $gitBranch" -WorkingDirectory $SourceClonePath| Out-Null
+                                            Invoke-GitWithTimeout "fetch --prune --prune-tags --tags --force origin $gitBranch" -WorkingDirectory $SourceClonePath| Out-Null
                                         } else {
-                                            Invoke-GitWithTimeout "fetch --prune --prune-tags --tags" -WorkingDirectory $SourceClonePath | Out-Null
+                                            Invoke-GitWithTimeout "fetch --prune --prune-tags --tags --force" -WorkingDirectory $SourceClonePath | Out-Null
                                         }
                                     } else {
                                         Write-Warning "Clone directory not created for $repoName - clone may have failed silently"
@@ -2294,13 +2307,19 @@ function CheckURLHealth {
                             }
                         }
                         else {
+                            # Validate .git exists before fetching; if missing, treat as failed clone
+                            if (!(Test-Path (Join-Path $SourceClonePath ".git"))) {
+                                Write-Warning "Directory $repoName exists but is not a git repository. Removing for re-clone..."
+                                Remove-Item -Path $SourceClonePath -Recurse -Force -ErrorAction SilentlyContinue
+                                continue
+                            }
                             # Navigate to the repository directory
                             Set-Location -Path $SourceClonePath -ErrorAction Stop # --git-dir [...] fetch does not work correctly
                             try {
                                 if (!([string]::IsNullOrEmpty($gitBranch))) {
-                                    Invoke-GitWithTimeout "fetch --prune --prune-tags --tags origin $gitBranch" -WorkingDirectory $SourceClonePath | Out-Null
+                                    Invoke-GitWithTimeout "fetch --prune --prune-tags --tags --force origin $gitBranch" -WorkingDirectory $SourceClonePath | Out-Null
                                 } else {
-                                    Invoke-GitWithTimeout "fetch --prune --prune-tags --tags" -WorkingDirectory $SourceClonePath | Out-Null
+                                    Invoke-GitWithTimeout "fetch --prune --prune-tags --tags --force" -WorkingDirectory $SourceClonePath | Out-Null
                                 }
                             }
                             catch {
@@ -3496,9 +3515,9 @@ function CheckURLHealth {
                     $ClonePath=[System.String](join-path -path (join-path -path $UpstreamsPath -childpath $photonDir) -childpath "clones")
                     if (!(Test-Path $ClonePath)) {New-Item $ClonePath -ItemType Directory}
                     # Acquire a named mutex to prevent parallel runspaces from colliding on the same repo
-                    $mutexName = "Global\photon-clone-$($photonDir)-$($repoName)" -replace '[\\/:*?"<>|]', '_'
+                    $mutexName = "Global\photon-clone-$($repoName)" -replace '[\\/:*?"<>|]', '_'
                     $repoMutex = New-Object System.Threading.Mutex($false, $mutexName)
-                    try { $repoMutex.WaitOne(120000) | Out-Null } catch [System.Threading.AbandonedMutexException] { }
+                    try { $repoMutex.WaitOne(600000) | Out-Null } catch [System.Threading.AbandonedMutexException] { }
                     # Push the current directory to the stack
                     $SourceClonePath=[System.String](join-path -path $ClonePath -childpath $repoName)
                     $cloneAttempt = 0
@@ -3517,9 +3536,9 @@ function CheckURLHealth {
                                     if (Test-Path $SourceClonePath) {
                                         Set-Location $SourceClonePath
                                         if (!([string]::IsNullOrEmpty($gitBranch))) {
-                                            Invoke-GitWithTimeout "fetch --prune --prune-tags --tags origin $gitBranch" -WorkingDirectory $SourceClonePath | Out-Null
+                                            Invoke-GitWithTimeout "fetch --prune --prune-tags --tags --force origin $gitBranch" -WorkingDirectory $SourceClonePath | Out-Null
                                         } else {
-                                            Invoke-GitWithTimeout "fetch --prune --prune-tags --tags" -WorkingDirectory $SourceClonePath | Out-Null
+                                            Invoke-GitWithTimeout "fetch --prune --prune-tags --tags --force" -WorkingDirectory $SourceClonePath | Out-Null
                                         }
                                     } else {
                                         Write-Warning "Clone directory not created for $repoName - clone may have failed silently"
@@ -3531,13 +3550,19 @@ function CheckURLHealth {
                             }
                         }
                         else {
+                            # Validate .git exists before fetching; if missing, treat as failed clone
+                            if (!(Test-Path (Join-Path $SourceClonePath ".git"))) {
+                                Write-Warning "Directory $repoName exists but is not a git repository. Removing for re-clone..."
+                                Remove-Item -Path $SourceClonePath -Recurse -Force -ErrorAction SilentlyContinue
+                                continue
+                            }
                             # Navigate to the repository directory
                             Set-Location -Path $SourceClonePath -ErrorAction Stop # --git-dir [...] fetch does not work correctly
                             try {
                                 if (!([string]::IsNullOrEmpty($gitBranch))) {
-                                    Invoke-GitWithTimeout "fetch --prune --prune-tags --tags origin $gitBranch" -WorkingDirectory $SourceClonePath | Out-Null
+                                    Invoke-GitWithTimeout "fetch --prune --prune-tags --tags --force origin $gitBranch" -WorkingDirectory $SourceClonePath | Out-Null
                                 } else {
-                                    Invoke-GitWithTimeout "fetch --prune --prune-tags --tags" -WorkingDirectory $SourceClonePath | Out-Null
+                                    Invoke-GitWithTimeout "fetch --prune --prune-tags --tags --force" -WorkingDirectory $SourceClonePath | Out-Null
                                 }
                             }
                             catch {
@@ -3823,9 +3848,9 @@ function CheckURLHealth {
                     $ClonePath=[System.String](join-path -path (join-path -path $UpstreamsPath -childpath $photonDir) -childpath "clones")
                     if (!(Test-Path $ClonePath)) {New-Item $ClonePath -ItemType Directory}
                     # Acquire a named mutex to prevent parallel runspaces from colliding on the same repo
-                    $mutexName = "Global\photon-clone-$($photonDir)-$($repoName)" -replace '[\\/:*?"<>|]', '_'
+                    $mutexName = "Global\photon-clone-$($repoName)" -replace '[\\/:*?"<>|]', '_'
                     $repoMutex = New-Object System.Threading.Mutex($false, $mutexName)
-                    try { $repoMutex.WaitOne(120000) | Out-Null } catch [System.Threading.AbandonedMutexException] { }
+                    try { $repoMutex.WaitOne(600000) | Out-Null } catch [System.Threading.AbandonedMutexException] { }
                     # Push the current directory to the stack
                     $SourceClonePath=[System.String](join-path -path $ClonePath -childpath $repoName)
                     $cloneAttempt = 0
@@ -3844,9 +3869,9 @@ function CheckURLHealth {
                                     if (Test-Path $SourceClonePath) {
                                         Set-Location -Path $SourceClonePath -ErrorAction Stop
                                         if (!([string]::IsNullOrEmpty($gitBranch))) {
-                                            Invoke-GitWithTimeout "fetch --prune --prune-tags --tags origin $gitBranch" -WorkingDirectory $SourceClonePath | Out-Null
+                                            Invoke-GitWithTimeout "fetch --prune --prune-tags --tags --force origin $gitBranch" -WorkingDirectory $SourceClonePath | Out-Null
                                         } else {
-                                            Invoke-GitWithTimeout "fetch --prune --prune-tags --tags" -WorkingDirectory $SourceClonePath | Out-Null
+                                            Invoke-GitWithTimeout "fetch --prune --prune-tags --tags --force" -WorkingDirectory $SourceClonePath | Out-Null
                                         }
                                     } else {
                                         Write-Warning "Clone directory not created for $repoName - clone may have failed silently"
@@ -3858,13 +3883,19 @@ function CheckURLHealth {
                             }
                         }
                         else {
+                            # Validate .git exists before fetching; if missing, treat as failed clone
+                            if (!(Test-Path (Join-Path $SourceClonePath ".git"))) {
+                                Write-Warning "Directory $repoName exists but is not a git repository. Removing for re-clone..."
+                                Remove-Item -Path $SourceClonePath -Recurse -Force -ErrorAction SilentlyContinue
+                                continue
+                            }
                             # Navigate to the repository directory
                             Set-Location -Path $SourceClonePath -ErrorAction Stop # --git-dir [...] fetch does not work correctly
                             try {
                                 if (!([string]::IsNullOrEmpty($gitBranch))) {
-                                    Invoke-GitWithTimeout "fetch --prune --prune-tags --tags origin $gitBranch" -WorkingDirectory $SourceClonePath | Out-Null
+                                    Invoke-GitWithTimeout "fetch --prune --prune-tags --tags --force origin $gitBranch" -WorkingDirectory $SourceClonePath | Out-Null
                                 } else {
-                                    Invoke-GitWithTimeout "fetch --prune --prune-tags --tags" -WorkingDirectory $SourceClonePath | Out-Null
+                                    Invoke-GitWithTimeout "fetch --prune --prune-tags --tags --force" -WorkingDirectory $SourceClonePath | Out-Null
                                 }
                             }
                             catch {
@@ -4973,25 +5004,29 @@ Write-Host "Upstreams path: $global:upstreamsPath"
 # To remove after script: git config --global --unset-all safe.directory
 Write-Host "Adding wildcard to git safe.directory (required for clone directories in photon-upstreams)..."
 git config --global --add safe.directory '*' 2>$null
+
+# Increase HTTP post buffer to 500MB for large repos (llvm-project, rust, chromium)
+# Prevents SChannel/curl "server closed abruptly" errors during fetch-pack on Windows
+git config --global http.postBuffer 524288000 2>$null
 $global:ThrottleLimit = $throttleLimit
 
 # Prompt for GitHub access token if not provided
-if (-not $access) {
+if (-not $github_token) {
     $secureToken = Read-Host -Prompt "Please enter your Github Access Token" -AsSecureString
     $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureToken)
     try {
-        $global:access = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr)
+        $global:github_token = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr)
     } finally {
         [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
     }
     $secureToken = $null
-    if ([string]::IsNullOrWhiteSpace($global:access)) {
+    if ([string]::IsNullOrWhiteSpace($global:github_token)) {
         Write-Error "Access token cannot be empty"
         return
     }
 }
 else {
-    $global:access = $access
+    $global:github_token = $github_token
 }
 
 if (-not $gitlab_freedesktop_org_username) {
@@ -5034,7 +5069,7 @@ try {
 
 # Call the new function
 Write-Host "DEBUG: Calling GenerateUrlHealthReports..."
-$urlHealthPackageData = GenerateUrlHealthReports -SourcePath $global:sourcepath -UpstreamsPath $global:upstreamsPath -AccessToken $global:access -ThrottleLimit $global:ThrottleLimit `
+$urlHealthPackageData = GenerateUrlHealthReports -SourcePath $global:sourcepath -UpstreamsPath $global:upstreamsPath -AccessToken $global:github_token -ThrottleLimit $global:ThrottleLimit `
     -GeneratePh3URLHealthReport ([bool]$GeneratePh3URLHealthReport) `
     -GeneratePh4URLHealthReport ([bool]$GeneratePh4URLHealthReport) `
     -GeneratePh5URLHealthReport ([bool]$GeneratePh5URLHealthReport) `
@@ -5192,7 +5227,7 @@ if ($GeneratePh3toPh4DiffHigherPackageVersionReport)
 
 # Security cleanup: Clear sensitive data from memory
 Write-Host "Cleaning up sensitive data..."
-if ($global:access) { Remove-Variable -Name access -Scope Global -ErrorAction SilentlyContinue }
+if ($global:github_token) { Remove-Variable -Name github_token -Scope Global -ErrorAction SilentlyContinue }
 if ($global:gitlab_freedesktop_org_token) { Remove-Variable -Name gitlab_freedesktop_org_token -Scope Global -ErrorAction SilentlyContinue }
 if ($global:gitlab_freedesktop_org_username) { Remove-Variable -Name gitlab_freedesktop_org_username -Scope Global -ErrorAction SilentlyContinue }
 
