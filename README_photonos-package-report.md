@@ -332,7 +332,12 @@ pwsh -File photonos-package-report.ps1
 
 ## VERSION HISTORY
 
-See script header for complete version history. Current version: **0.63**
+See script header for complete version history. Current version: **0.64**
+
+Key improvements in v0.64:
+- **Artifact directories moved to photon-upstreams/:** `clones`, `SOURCES_NEW`, `SPECS_NEW`, and `SOURCES_KojiFedora` are now created under `$sourcepath/photon-upstreams/photon-{branch}/` instead of inside the git repo directories. This keeps git repos clean, allows `git reset --hard` and re-clone without losing cached data, and preserves expensive clones (e.g. chromium) across repo resets.
+- **New `$UpstreamsPath` parameter:** Added to `ModifySpecFile`, `CheckURLHealth`, and `GenerateUrlHealthReports` to thread the upstreams directory through the call chain including parallel runspaces.
+- **Fixed hardcoded output paths:** Package Report and all Diff Report output paths were hardcoded to `$env:public`, ignoring the `-sourcepath` parameter and failing on Linux. Now uses `Join-Path $sourcepath` for cross-platform compatibility.
 
 Key improvements in v0.63:
 - **Invoke-GitWithTimeout now throws on non-zero exit codes:** Previously, git failures (e.g. "not a git repository", merge conflicts) were only logged as warnings but did not throw, making the catch/re-clone fallback in GitPhoton unreachable dead code
