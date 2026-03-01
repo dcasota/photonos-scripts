@@ -56,6 +56,13 @@
 #                               Security: Free SecureStringToBSTR with ZeroFreeBSTR in try/finally.
 #                               Security: Git credential cleanup now runs on all platforms (not Windows-only).
 #                               Upgraded 9 Source0/SourceTag URLs from http:// to https:// where supported.
+#   0.63  01.03.2026   dcasota  GitPhoton robustness: Invoke-GitWithTimeout now throws on non-zero git exit
+#                               codes so that the catch/re-clone fallback in GitPhoton is reachable.
+#                               GitPhoton validates .git directory existence before fetch/update; automatically
+#                               removes and re-clones directories missing .git metadata.
+#                               Replaced git merge with git reset --hard origin/$release to eliminate merge
+#                               conflicts (this script is a read-only consumer of Photon repos).
+#                               Fixed pre-existing bug: clone call passed -WorkingDirectory without a value.
 #
 #  .PREREQUISITES
 #    - Script tested on Microsoft Windows 11 and on Photon OS 5.0 with Powershell Core 7.5.4
@@ -196,8 +203,11 @@ function Invoke-GitWithTimeout {
         $stdout = $stdoutBuilder.ToString()
         $stderr = $stderrBuilder.ToString()
 
-        if ($process.ExitCode -ne 0 -and -not [string]::IsNullOrWhiteSpace($stderr)) {
-            Write-Warning "Git stderr: $stderr"
+        if ($process.ExitCode -ne 0) {
+            if (-not [string]::IsNullOrWhiteSpace($stderr)) {
+                Write-Warning "Git stderr: $stderr"
+            }
+            throw "Git command failed with exit code $($process.ExitCode): $stderr"
         }
 
         return $stdout
@@ -430,11 +440,17 @@ function GitPhoton {
     )
     #download from repo
     $photonPath = Join-Path -path $SourcePath -childpath "photon-$release"
-    if (!(Test-Path -Path $photonPath))
+    $gitDir = Join-Path -Path $photonPath -ChildPath ".git"
+    if (!(Test-Path -Path $photonPath) -or !(Test-Path -Path $gitDir))
     {
+        # Remove incomplete directory if it exists but has no .git
+        if (Test-Path -Path $photonPath) {
+            Write-Warning "Directory photon-$release exists but is not a git repository. Removing and re-cloning..."
+            Remove-Item -Path $photonPath -Recurse -Force -ErrorAction SilentlyContinue
+        }
         Set-Location $SourcePath
         try {
-            Invoke-GitWithTimeout "clone -b $release https://github.com/vmware/photon `"$photonPath`"" -WorkingDirectory
+            Invoke-GitWithTimeout "clone -b $release https://github.com/vmware/photon `"$photonPath`"" -WorkingDirectory $SourcePath
             Set-Location $photonPath
         }
         catch {
@@ -447,13 +463,10 @@ function GitPhoton {
         Set-Location $photonPath
         try {
             Invoke-GitWithTimeout "fetch --prune --prune-tags --tags" -WorkingDirectory $photonPath
-            if ($release -ieq "master") { Invoke-GitWithTimeout "merge origin/master" -WorkingDirectory $photonPath }
-            elseif ($release -ieq "dev") { Invoke-GitWithTimeout "merge origin/dev" -WorkingDirectory $photonPath}
-            elseif ($release -ieq "common") { Invoke-GitWithTimeout "merge origin/common" -WorkingDirectory $photonPath}
-            else { Invoke-GitWithTimeout "merge origin/$release" -WorkingDirectory $photonPath}
+            Invoke-GitWithTimeout "reset --hard origin/$release" -WorkingDirectory $photonPath
         }
         catch {
-            # If merge fails (e.g., unresolved conflicts), delete and re-clone
+            # If fetch/reset fails, delete and re-clone
             Write-Warning "Failed to update photon-$release repository: $_"
             Write-Warning "Attempting to delete and re-clone photon-$release..."
             Set-Location $SourcePath

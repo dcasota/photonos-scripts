@@ -21,8 +21,8 @@ photonos-package-report.ps1 (~5,176 lines)
 ├── CORE FUNCTIONS (Lines 348-1522)
 │   ├── Versioncompare           (348-405)  - Compare version strings
 │   ├── Clean-VersionNames       (406-416)  - Extract clean version names from raw strings
-│   ├── GitPhoton                (418-465)  - Clone/fetch/merge Photon repos
-│   │                                         (delete + re-clone on merge failure)
+│   ├── GitPhoton                (418-465)  - Clone/fetch/reset Photon repos
+│   │                                         (.git validation, reset --hard, re-clone fallback)
 │   ├── Source0Lookup            (467-1327) - Lookup table for 848+ packages
 │   │                                         (columns: specfile, Source0Lookup, gitSource,
 │   │                                          gitBranch, customRegex, replaceStrings,
@@ -332,7 +332,13 @@ pwsh -File photonos-package-report.ps1
 
 ## VERSION HISTORY
 
-See script header for complete version history. Current version: **0.62**
+See script header for complete version history. Current version: **0.63**
+
+Key improvements in v0.63:
+- **Invoke-GitWithTimeout now throws on non-zero exit codes:** Previously, git failures (e.g. "not a git repository", merge conflicts) were only logged as warnings but did not throw, making the catch/re-clone fallback in GitPhoton unreachable dead code
+- **GitPhoton .git directory validation:** Before attempting fetch/update, the function now checks that `.git` exists inside the branch directory; directories missing git metadata are automatically removed and re-cloned
+- **Replaced git merge with git reset --hard:** Since this script is a read-only consumer of Photon repos, `git reset --hard origin/$release` is used instead of `git merge`, eliminating merge conflicts entirely
+- **Fixed clone -WorkingDirectory bug:** The initial clone call passed `-WorkingDirectory` without a value; now correctly passes `-WorkingDirectory $SourcePath`
 
 Key improvements in v0.62:
 - **Parallel deadlock fix:** Replaced `Start-Job`/`Wait-Job` with `System.Diagnostics.Process` + async stdout/stderr event handlers in `Invoke-GitWithTimeout` to prevent runspace deadlocks inside `ForEach-Object -Parallel`
