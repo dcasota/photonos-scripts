@@ -3,7 +3,7 @@
 ## SCRIPT STRUCTURE
 
 ```
-photonos-package-report.ps1 (~5,238 lines)
+photonos-package-report.ps1 (~5,330 lines)
 │
 ├── HEADER (Lines 1-113)
 │   ├── Synopsis & Version History
@@ -40,6 +40,7 @@ photonos-package-report.ps1 (~5,238 lines)
 │       ├── Update availability detection
 │       ├── GNU FTP mirror fallback (ftp.funet.fi)
 │       ├── Per-repo named mutex for parallel clone/fetch serialization
+│       ├── Wait-ForFetchCompletion (poll-based parallel fetch serialization)
 │       ├── Get-FileHashWithRetry (file hash with lock retry)
 │       └── Spec file modification
 │   └── GenerateUrlHealthReports (4639-4848)- Orchestrates parallel/sequential processing
@@ -226,6 +227,8 @@ Main Execution
 │       ├── KojiFedoraProjectLookUp()
 │       ├── Versioncompare()
 │       ├── Clean-VersionNames()
+│       ├── Wait-ForFetchCompletion() [poll-based parallel fetch serialization]
+│       ├── Get-FileHashWithRetry()  [file hash with lock retry]
 │       └── ModifySpecFile()         [$SpecFileName-based output naming]
 │
 ├── Parallel Monitoring (System.Threading.Timer + ConcurrentDictionary)
@@ -343,6 +346,7 @@ Key improvements in v0.64:
 - **Force-fetch for diverged tags:** Added `--force` to all fetch commands in CheckURLHealth. Upstream repos sometimes rewrite/force-push tags; without `--force`, git rejects the update with "would clobber existing tag". Since this script is a read-only consumer, force-overwriting local tags is the correct behavior.
 - **Fixed per-repo mutex for parallel safety:** Removed branch-specific `$photonDir` from the mutex name so concurrent access to the same upstream repo (e.g. llvm-project from photon-5.0 and photon-6.0) is properly serialized. Increased mutex timeout from 120s to 600s for large repo fetches.
 - **Renamed `$access` parameter to `$github_token`:** For consistency with `$gitlab_freedesktop_org_username` and `$gitlab_freedesktop_org_token`.
+- **Poll-based fetch completion detection (`Wait-ForFetchCompletion`):** Replaced direct mutex-only serialization in all 3 clone blocks with a new helper function that mirrors the `Get-FileHashWithRetry` pattern. The first thread to reach a repo acquires the mutex and performs the fetch; all other threads poll the repo's `FETCH_HEAD` timestamp every 3 seconds and proceed immediately when it becomes fresh (written during the current script run), without acquiring the mutex or performing a redundant fetch. This eliminates redundant network transfers for shared repos like llvm-project (referenced by clang, lldb, compiler-rt, llvm specs).
 
 Key improvements in v0.63:
 - **Invoke-GitWithTimeout now throws on non-zero exit codes:** Previously, git failures (e.g. "not a git repository", merge conflicts) were only logged as warnings but did not throw, making the catch/re-clone fallback in GitPhoton unreachable dead code
