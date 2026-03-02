@@ -27,80 +27,11 @@
 #   0.57  17.06.2025   dcasota  data scraping related modifications, in Source0Lookup gitSource/gitBranch/customRegex/replaceStrings added, in CheckUrlHealth new function Convert-ToVersion added, various bugfixes
 #   0.58  29.07.2025   dcasota  various bugfixes
 #   0.59  11.02.2026   dcasota  various bugfixes
-#   0.60  11.02.2026   dcasota  Robustness, security and cross-platform improvements: git timeout handling, safe git calls,
-#                               cross-platform path handling (Join-Path, $HOME fallback), OS detection for winget/Get-Counter/Get-CimInstance,
-#                               List<T> for performance, safe spec parsing with Get-SpecValue helper, security cleanup at script end
-#   0.61  23.02.2026   dcasota  Quarterly version format support (YYYY.Q#.#), Warning/ArchivationDate output columns,
-#                               Source0Lookup expansion to 848+ packages, git timeout standardized to 600s,
-#                               Linux compatibility fixes, RubyGems JSON API, GNU FTP mirror fallback,
-#                               git fetch --prune --prune-tags --tags to ensure all remote tags are synced
-#   0.62  24.02.2026   dcasota  Fix parallel deadlock: replaced Start-Job/Wait-Job with System.Diagnostics.Process
-#                               in Invoke-GitWithTimeout to avoid runspace deadlocks in ForEach-Object -Parallel.
-#                               Added 120s timeouts to bare git tag -l, HttpWebRequest, and WebClient calls.
-#                               Added per-repo named mutex to serialize parallel git clone/fetch operations.
-#                               Wrapped 165+ pipeline reassignments in @() to prevent null propagation.
-#                               Added null guards for Get-HighestJdkVersion and .ToString() on pipeline results.
-#                               Renamed GitLab env vars to GITLAB_FREEDESKTOP_ORG_USERNAME/TOKEN with dedicated
-#                               $gitlab_freedesktop_org_username and $gitlab_freedesktop_org_token parameters.
-#                               Git credentials now configured regardless of whether env vars or prompts are used.
-#                               Fixed ModifySpecFile output filename collision by using $SpecFileName instead of $Name.
-#                               Added numeric subrelease directory detection (e.g. SPECS/91/) for vendor-pinned
-#                               packages: SubRelease and SpecRelativePath tracked per package, upstream version
-#                               checks skipped, Package Report includes SubRelease column, Diff Reports exclude
-#                               subrelease packages to prevent false positives.
-#                               Increased Invoke-GitWithTimeout default to 14400s (4h) for large clones (chromium).
-#                               Performance: Source0Lookup CSV parsed once and cached, passed via $using: to
-#                               parallel runspaces (eliminates ~6000 redundant CSV parse operations per run).
-#                               Security: Enforce TLS 1.2 for all Invoke-WebRequest/Invoke-RestMethod via
-#                               $PSDefaultParameterValues (main scope + parallel init script).
-#                               Security: Free SecureStringToBSTR with ZeroFreeBSTR in try/finally.
-#                               Security: Git credential cleanup now runs on all platforms (not Windows-only).
-#                               Upgraded 9 Source0/SourceTag URLs from http:// to https:// where supported.
-#   0.63  01.03.2026   dcasota  GitPhoton robustness: Invoke-GitWithTimeout now throws on non-zero git exit
-#                               codes so that the catch/re-clone fallback in GitPhoton is reachable.
-#                               GitPhoton validates .git directory existence before fetch/update; automatically
-#                               removes and re-clones directories missing .git metadata.
-#                               Replaced git merge with git reset --hard origin/$release to eliminate merge
-#                               conflicts (this script is a read-only consumer of Photon repos).
-#                               Fixed pre-existing bug: clone call passed -WorkingDirectory without a value.
-#   0.64  01.03.2026   dcasota  Moved artifact directories (clones, SOURCES_NEW, SPECS_NEW, SOURCES_KojiFedora)
-#                               out of git repo directories into a separate photon-upstreams/ directory.
-#                               This keeps git repos clean (no untracked artifact dirs), allows git reset
-#                               --hard and re-clone recovery without destroying cached clones/downloads,
-#                               and preserves expensive clone data (e.g. chromium) across repo resets.
-#                               New directory layout: $sourcepath/photon-upstreams/photon-{branch}/{clones,
-#                               SOURCES_NEW, SPECS_NEW, SOURCES_KojiFedora}.
-#                               Added $UpstreamsPath parameter to ModifySpecFile, CheckURLHealth, and
-#                               GenerateUrlHealthReports functions.
-#                               Fixed Package Report and Diff Report output paths: replaced hardcoded
-#                               $env:public with Join-Path $sourcepath for cross-platform compatibility
-#                               and to respect the -sourcepath parameter on all platforms.
-#                               Added git config http.postBuffer 524288000 (500MB) to prevent SChannel
-#                               buffer overflow on large repo fetches (llvm-project, rust, chromium).
-#                               Added .git directory validation before fetch in all 3 CheckURLHealth
-#                               clone blocks: missing .git triggers directory removal and re-clone.
-#                               Added --force to all fetch commands in CheckURLHealth to allow
-#                               overwriting locally cached tags that diverged from remote (force-pushed
-#                               tags on upstream repos like chardet, dotnet/runtime, sqlite, stalld).
-#                               Fixed per-repo mutex: removed branch-specific $photonDir from mutex
-#                               name to properly serialize concurrent access to the same upstream repo
-#                               across different Photon branches; increased mutex timeout from 120s to
-#                               600s for large repo fetches.
-#                               Renamed script parameter $access to $github_token for consistency with
-#                               $gitlab_freedesktop_org_username and $gitlab_freedesktop_org_token.
-#                               Replaced direct mutex acquisition in all 3 clone blocks with new
-#                               Wait-ForFetchCompletion helper function (poll-based completion detection,
-#                               mirrors Get-FileHashWithRetry pattern): first thread acquires mutex and
-#                               fetches; waiting threads poll FETCH_HEAD timestamp every 3s and proceed
-#                               immediately when the fetch completes, without performing redundant fetches.
-#                               Added $ScriptStartTime parameter threaded through GenerateUrlHealthReports
-#                               and CheckURLHealth (including parallel context) for FETCH_HEAD freshness
-#                               detection.
-#                               Added netcat.spec special-case handling: version extracted from CVS
-#                               revision in openbsd/src netcat.c header, commit_id from GitHub Commits
-#                               API, tarball self-built via shallow clone of openbsd/src (usr.bin/nc).
-#                               Added %global commit_id replacement in ModifySpecFile.
-#                               Added %{commit_id} macro substitution for Source0 URL resolution.
+#   0.60  11.02.2026   dcasota  Robustness, security and cross-platform improvements (see README for details)
+#   0.61  23.02.2026   dcasota  Version format, Warning/ArchivationDate columns, Source0Lookup expansion (see README for details)
+#   0.62  24.02.2026   dcasota  Parallel deadlock fix, mutex serialization, subrelease detection, caching, security (see README for details)
+#   0.63  01.03.2026   dcasota  GitPhoton robustness: throw on git errors, .git validation, reset --hard (see README for details)
+#   0.64  01.03.2026   dcasota  Artifact restructure, git fetch fixes, poll-based fetch, netcat.spec handling (see README for details)
 #
 #  .PREREQUISITES
 #    - Script tested on Microsoft Windows 11 and on Photon OS 5.0 with Powershell Core 7.5.4
