@@ -1398,7 +1398,7 @@ function ModifySpecFile {
         if ($Update)
         {
             if ($Update -is [system.string]) {
-                if ([System.IO.Path]::GetExtension($Update.Trim())) {$Update = [System.IO.Path]::GetFileNameWithoutExtension($Update.Trim())} # Strips .asc if present
+                if ([System.IO.Path]::GetExtension($Update.Trim()) -ieq '.asc') {$Update = [System.IO.Path]::GetFileNameWithoutExtension($Update.Trim())} # Strips .asc if present
             }
             $specBaseName = [System.IO.Path]::GetFileNameWithoutExtension($SpecFileName)
             $filename = (Join-Path -Path $SpecsNewDirectory -ChildPath ([system.string]::concat($specBaseName,"-",$Update.Trim(),".spec"))).Trim()
@@ -2032,10 +2032,10 @@ function CheckURLHealth {
 
     # IN CASE OF DEBUG: UNCOMMENT AND DEBUG FROM HERE
     # -----------------------------------------------
-    # if ($currentTask.spec -ilike 'netcat.spec')
-    # {pause}
-    # else
-    # {return}
+    if ($currentTask.spec -ilike 'netcat.spec')
+    {pause}
+    else
+    {return}
     # -----------------------------------------------    
 
     # Skip upstream version check for vendor-pinned subrelease packages (e.g. SPECS/91/dbus/)
