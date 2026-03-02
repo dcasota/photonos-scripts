@@ -31,7 +31,7 @@
 #   0.61  23.02.2026   dcasota  Version format, Warning/ArchivationDate columns, Source0Lookup expansion (see README for details)
 #   0.62  24.02.2026   dcasota  Parallel deadlock fix, mutex serialization, subrelease detection, caching, security (see README for details)
 #   0.63  01.03.2026   dcasota  GitPhoton robustness: throw on git errors, .git validation, reset --hard (see README for details)
-#   0.64  01.03.2026   dcasota  Artifact restructure, git fetch fixes, poll-based fetch, netcat.spec handling (see README for details)
+#   0.64  01.03.2026   dcasota  Artifact restructure, git fetch fixes, poll-based fetch, netcat.spec, .asc version fix, Source0Lookup fixes (see README for details)
 #
 #  .PREREQUISITES
 #    - Script tested on Microsoft Windows 11 and on Photon OS 5.0 with Powershell Core 7.5.4
@@ -39,6 +39,8 @@
 #                  Recommended version: 7.4 or higher for parallel processing capabilities
 #  .HINTS
 #   - For best results, run this script on a machine with good network connectivity and sufficient resources, especially if generating URL health reports for many packages.
+#   - Some git sources (e.g. https://git.netfilter.org/libnetfilter_conntrack.git) may not be downloadable at any time from all locations.
+#     Try VPN connections if you encounter connectivity issues.
 #   - To debug:
 #     Open the script in Visual Studio Code,
 #     uncomment "$Script:UseParallel = $false" to disable parallel processing, 
@@ -595,7 +597,7 @@ efivar.spec,https://github.com/rhboot/efivar/releases/download/%{version}/efivar
 elasticsearch.spec,https://github.com/elastic/elasticsearch/archive/refs/tags/v%{version}.tar.gz,https://github.com/elastic/elasticsearch.git
 elixir.spec,https://github.com/elixir-lang/elixir/archive/v%{version}/elixir-%{version}.tar.gz,https://github.com/elixir-lang/elixir.git
 emacs.spec,https://ftp.gnu.org/gnu/emacs/emacs-%{version}.tar.xz
-entchant.spec,https://github.com/rrthomas/enchant/archive/refs/tags/v%{version}.tar.gz,https://github.com/rrthomas/enchant.git
+enchant.spec,https://github.com/rrthomas/enchant/releases/download/v%{version}/enchant-%{version}.tar.gz,https://github.com/rrthomas/enchant.git,,,"enchant-"
 erlang.spec,https://github.com/erlang/otp/archive/refs/tags/OTP-%{version}.tar.gz,https://github.com/erlang/otp.git,,erlang,"R16B,OTP-,erl_1211-bp"
 erlang-sd_notify.spec,https://github.com/systemd/erlang-sd_notify/archive/refs/tags/v%{version}.tar.gz,https://github.com/systemd/erlang-sd_notify.git
 etcd.spec,https://github.com/etcd-io/etcd/archive/refs/tags/v%{version}.tar.gz,https://github.com/etcd-io/etcd.git
@@ -763,12 +765,12 @@ libmnl.spec,https://www.netfilter.org/projects/libmnl/files/libmnl-%{version}.ta
 libmspack.spec,https://github.com/kyz/libmspack/archive/refs/tags/v%{version}.tar.gz,https://github.com/kyz/libmspack.git
 libndp.spec,https://github.com/jpirko/libndp/archive/refs/tags/v%{version}.tar.gz,https://github.com/jpirko/libndp.git
 libnetconf2.spec,https://github.com/CESNET/libnetconf2/archive/refs/tags/v%{version}.tar.gz,https://github.com/CESNET/libnetconf2.git
-libnetfilter_conntrack.spec,https://www.netfilter.org/projects/libnetfilter_conntrack/files/libnetfilter_conntrack-%{version}.tar.xz
+libnetfilter_conntrack.spec,https://www.netfilter.org/projects/libnetfilter_conntrack/files/libnetfilter_conntrack-%{version}.tar.xz,https://git.netfilter.org/libnetfilter_conntrack.git,,,"libnetfilter_conntrack-",,"Info: Packaging format .bz2 has changed to .tar.xz."
 libnetfilter_cthelper.spec,https://www.netfilter.org/projects/libnetfilter_cthelper/files/libnetfilter_cthelper-%{version}.tar.bz2
 libnetfilter_cttimeout.spec,https://www.netfilter.org/projects/libnetfilter_cttimeout/files/libnetfilter_cttimeout-%{version}.tar.bz2
 libnetfilter_queue.spec,https://www.netfilter.org/projects/libnetfilter_queue/files/libnetfilter_queue-%{version}.tar.bz2
 libnfnetlink.spec,https://www.netfilter.org/projects/libnfnetlink/files/libnfnetlink-%{version}.tar.bz2,https://git.netfilter.org/libnfnetlink.git
-libnftnl.spec,https://www.netfilter.org/projects/libnftnl/files/libnftnl-%{version}.tar.xz,https://git.netfilter.org/libnftnl.git,,,"libnftnl-"
+libnftnl.spec,https://www.netfilter.org/projects/libnftnl/files/libnftnl-%{version}.tar.xz,https://git.netfilter.org/libnftnl.git,,,"libnftnl-",,"Info: Packaging format .bz2 has changed to .tar.xz."
 libnl.spec,https://github.com/thom311/libnl/archive/refs/tags/libnl%{version}.tar.gz,https://github.com/thom311/libnl.git
 libnss-ato.spec,https://github.com/donapieppo/libnss-ato/archive/refs/tags/v%{version}.tar.gz,https://github.com/donapieppo/libnss-ato.git
 libnvme.spec,https://github.com/linux-nvme/libnvme/archive/refs/tags/v%{version}.tar.gz,https://github.com/linux-nvme/libnvme.git
@@ -1159,7 +1161,7 @@ python-systemd.spec,https://github.com/systemd/python-systemd/archive/refs/tags/
 python-terminaltables.spec,https://github.com/Robpol86/terminaltables/archive/refs/tags/v%{version}.tar.gz,https://github.com/Robpol86/terminaltables.git
 python-toml.spec,https://github.com/uiri/toml/archive/refs/tags/%{version}.tar.gz,https://github.com/uiri/toml.git
 python-tornado.spec,https://github.com/tornadoweb/tornado/archive/refs/tags/v%{version}.tar.gz,https://github.com/tornadoweb/tornado.git
-python-Twisted.spec,https://github.com/twisted/twisted/archive/refs/tags/twisted-%{version}.tar.gz,https://github.com/twisted/twisted.git
+python-Twisted.spec,https://github.com/twisted/twisted/archive/refs/tags/twisted-%{version}.tar.gz,https://github.com/twisted/twisted.git,,,"twisted-","Info: Packaging format .bz2 has changed to another one."
 python-typing.spec,https://github.com/python/typing/archive/refs/tags/%{version}.tar.gz,https://github.com/python/typing.git
 python-typing-extensions.spec,https://github.com/python/typing_extensions/archive/refs/tags/%{version}.tar.gz,https://github.com/python/typing_extensions.git
 python-tzlocal.spec,https://github.com/regebro/tzlocal/archive/refs/tags/%{version}.tar.gz,https://github.com/regebro/tzlocal.git
@@ -2032,10 +2034,10 @@ function CheckURLHealth {
 
     # IN CASE OF DEBUG: UNCOMMENT AND DEBUG FROM HERE
     # -----------------------------------------------
-    if ($currentTask.spec -ilike 'netcat.spec')
-    {pause}
-    else
-    {return}
+    # if ($currentTask.spec -ilike 'backward-cpp.spec')
+    # {pause}
+    # else
+    # {return}
     # -----------------------------------------------    
 
     # Skip upstream version check for vendor-pinned subrelease packages (e.g. SPECS/91/dbus/)
@@ -2272,6 +2274,8 @@ function CheckURLHealth {
             }
         }
     }
+   
+
 
     # use case of ftp.gnu.org https://github.com/conan-io/conan-center-index/issues/27830
     # ftp.gnu.org is often down. ftpmirror.gnu.org might redirect to unsecure mirrors.
@@ -4394,10 +4398,7 @@ function CheckURLHealth {
     if ($currentTask.Spec -ilike 'autoconf213.spec') {$warning=$warningText}
     elseif ($currentTask.Spec -ilike 'etcd-3.3.27.spec') {$warning=$warningText}
 
-    $warningText="Info: Packaging format .bz2 has changed to another one."
-    if ($currentTask.Spec -ilike 'conntrack-tools.spec') {$warning=$warningText}
-    if ($currentTask.Spec -ilike 'libnftnl.spec') {$warning=$warningText}      
-    if ($currentTask.Spec -ilike 'python-twisted.spec') {$warning=$warningText}
+
 
     # reset to Source0 because of different packaging formats
     if ($currentTask.Spec -ilike 'psmisc.spec') {$Source0 = $currentTask.Source0}
@@ -5068,7 +5069,7 @@ Write-Host "Checking parallel processing support..."
 $Script:UseParallel = $PSVersionTable.PSVersion.Major -ge 7 -and $PSVersionTable.PSVersion.Minor -ge 4
 
 # For testing or troubleshooting, you can disable parallel processing by setting $Script:UseParallel to $false
-$Script:UseParallel = $false
+# $Script:UseParallel = $false
 
 Write-Host "Parallel processing: $($Script:UseParallel)"
 

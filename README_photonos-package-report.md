@@ -351,7 +351,7 @@ Current version: **0.64**. Full details for each version below; the script heade
 
 ### v0.64 (01.03.2026)
 
-**Artifact restructure, git fetch fixes, poll-based fetch completion, netcat.spec handling**
+**Artifact restructure, git fetch fixes, poll-based fetch completion, netcat.spec, .asc version fix, Source0Lookup fixes**
 
 - **Artifact directories moved to photon-upstreams/:** `clones`, `SOURCES_NEW`, `SPECS_NEW`, and `SOURCES_KojiFedora` are now created under `$sourcepath/photon-upstreams/photon-{branch}/` instead of inside the git repo directories. This keeps git repos clean, allows `git reset --hard` and re-clone without losing cached data, and preserves expensive clones (e.g. chromium) across repo resets.
 - **New `$UpstreamsPath` parameter:** Added to `ModifySpecFile`, `CheckURLHealth`, and `GenerateUrlHealthReports` to thread the upstreams directory through the call chain including parallel runspaces.
@@ -363,7 +363,9 @@ Current version: **0.64**. Full details for each version below; the script heade
 - **Renamed `$access` parameter to `$github_token`:** For consistency with `$gitlab_freedesktop_org_username` and `$gitlab_freedesktop_org_token`.
 - **Poll-based fetch completion detection (`Wait-ForFetchCompletion`):** Replaced direct mutex-only serialization in all 3 clone blocks with a new helper function that mirrors the `Get-FileHashWithRetry` pattern. The first thread to reach a repo acquires the mutex and performs the fetch; all other threads poll the repo's `FETCH_HEAD` timestamp every 3 seconds and proceed immediately when it becomes fresh (written during the current script run), without acquiring the mutex or performing a redundant fetch. This eliminates redundant network transfers for shared repos like llvm-project (referenced by clang, lldb, compiler-rt, llvm specs).
 - **Added `$ScriptStartTime` parameter:** Threaded through `GenerateUrlHealthReports` and `CheckURLHealth` (including parallel context) for `FETCH_HEAD` freshness detection.
-- **netcat.spec special-case handling:** Version extracted from CVS revision ID in `openbsd/src` `netcat.c` header comment via `$OpenBSD: netcat.c,v` regex. Commit ID fetched from GitHub Commits API for `usr.bin/nc` directory. Source tarball self-built via shallow clone of `openbsd/src` (clone, move `usr.bin/nc` to `nc-<commit_id>`, create `.tar.xz`). Added `%global commit_id` replacement in `ModifySpecFile` and `%{commit_id}` macro substitution for Source0 URL resolution. Added `commit_id` extraction in `ParseDirectory`.
+- **netcat.spec special-case handling:** Version extracted from CVS revision ID in `openbsd/src` `netcat.c` header comment via `$OpenBSD: netcat.c,v` regex. Commit ID fetched from GitHub Commits API for `usr.bin/nc` directory. Source tarball built from existing persistent clone (Copy-Item from `clones/src/usr.bin/nc`, not a redundant shallow clone). Added `%global commit_id` replacement in `ModifySpecFile` and `%{commit_id}` macro substitution for Source0 URL resolution. Added `commit_id` extraction in `ParseDirectory`.
+- **Fixed ModifySpecFile version truncation (.asc bug):** `GetExtension("1.238")` returned `".238"`, truncating the version to `"1"` and producing filenames like `netcat-1.spec` instead of `netcat-1.238.spec`. Now only strips the extension when it is actually `.asc`.
+- **Source0Lookup fixes:** Fixed `entchant.spec` typo to `enchant.spec` with corrected release download URL. Added `libnetfilter_conntrack` git source. Moved packaging format change warnings from hardcoded `if` blocks into Source0Lookup CSV Warning column (`libnftnl`, `python-Twisted`).
 
 ### v0.63 (01.03.2026)
 
