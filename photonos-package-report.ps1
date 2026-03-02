@@ -96,6 +96,11 @@
 #                               Added $ScriptStartTime parameter threaded through GenerateUrlHealthReports
 #                               and CheckURLHealth (including parallel context) for FETCH_HEAD freshness
 #                               detection.
+#                               Added netcat.spec special-case handling: version extracted from CVS
+#                               revision in openbsd/src netcat.c header, commit_id from GitHub Commits
+#                               API, tarball self-built via shallow clone of openbsd/src (usr.bin/nc).
+#                               Added %global commit_id replacement in ModifySpecFile.
+#                               Added %{commit_id} macro substitution for Source0 URL resolution.
 #
 #  .PREREQUISITES
 #    - Script tested on Microsoft Windows 11 and on Photon OS 5.0 with Powershell Core 7.5.4
@@ -359,6 +364,10 @@ function ParseDirectory {
             $_repo_ver=""
             if ($content -ilike '*%define _repo_ver*') { $_repo_ver = (($content | Select-String -Pattern '%define _repo_ver')[0].ToString() -ireplace '%define _repo_ver', "").Trim() }
 
+            $commit_id=""
+            if ($content -ilike '*%global commit_id*') { $commit_id = (($content | Select-String -Pattern '%global commit_id')[0].ToString() -ireplace '%global commit_id', "").Trim() }
+            if ($content -ilike '*%define commit_id*') { $commit_id = (($content | Select-String -Pattern '%define commit_id')[0].ToString() -ireplace '%define commit_id', "").Trim() }
+
             $null = $Packages.Add([PSCustomObject]@{
                 content = $content
                 Spec = $currentFile.Name
@@ -385,6 +394,7 @@ function ParseDirectory {
                 xproto_ver = $xproto_ver
                 _url_src = $_url_src
                 _repo_ver = $_repo_ver
+                commit_id = $commit_id
             })
         }
         catch {
@@ -917,6 +927,7 @@ ndctl.spec,https://github.com/pmem/ndctl/archive/refs/tags/v%{version}.tar.gz,ht
 nerdctl.spec,https://github.com/containerd/nerdctl/archive/refs/tags/v%{version}.tar.gz,https://github.com/containerd/nerdctl.git
 net-snmp.spec,https://github.com/net-snmp/net-snmp/archive/refs/tags/v%{version}.tar.gz,https://github.com/net-snmp/net-snmp.git
 net-tools.spec,https://github.com/ecki/net-tools/archive/refs/tags/v%{version}.tar.gz,https://github.com/ecki/net-tools.git
+netcat.spec,https://packages.broadcom.com/photon/photon_sources/1.0/nc-%{commit_id}.tar.xz,,,netcat_cvs_revision,,,,
 netkit-telnet.spec,https://salsa.debian.org/debian/netkit-telnet/-/archive/debian/%{version}/netkit-telnet-debian-%{version}.tar.gz,https://salsa.debian.org/debian/netkit-telnet.git
 netmgmt.spec,https://github.com/vmware/photonos-netmgr/archive/refs/tags/v%{version}.tar.gz,https://github.com/vmware/photonos-netmgr.git
 network-config-manager.spec,https://github.com/vmware/network-config-manager/archive/refs/tags/v%{version}.tar.gz,https://github.com/vmware/network-config-manager.git
@@ -1397,7 +1408,9 @@ function ModifySpecFile {
         [parameter(Mandatory = $true)]
         [boolean]$OpenJDK8,
         [parameter(Mandatory = $true)]
-        [string]$SHALine
+        [string]$SHALine,
+        [parameter(Mandatory = $false)]
+        [string]$CommitId = ""
     )
     $SpecFile = join-path -path (join-path -path (join-path -path (join-path -path "$SourcePath" -childpath "$photonDir") -childpath "SPECS") -childpath "$Name") -childpath "$SpecFileName"
     if (!(Test-Path $SpecFile)) {
@@ -1437,6 +1450,10 @@ function ModifySpecFile {
             elseif ($line -ilike '%define subversion*')
             {
                 $FileModified += [system.string]::concat('%define subversion ',$Update)
+            }
+            elseif (($line -ilike '%global commit_id*') -and ($CommitId -ne ""))
+            {
+                $FileModified += [system.string]::concat('%global commit_id ',$CommitId)
             }
             else {$FileModified += $line}
         }
@@ -2190,6 +2207,7 @@ function CheckURLHealth {
         if ($Source0 -ilike '*%{xproto_ver}*') { $Source0 = $Source0 -ireplace '%{xproto_ver}',$currentTask.xproto_ver}
         if ($Source0 -ilike '*%{_url_src}*') { $Source0 = $Source0 -ireplace '%{_url_src}',$currentTask._url_src }
         if ($Source0 -ilike '*%{_repo_ver}*') { $Source0 = $Source0 -ireplace '%{_repo_ver}',$currentTask._repo_ver}
+        if ($Source0 -ilike '*%{commit_id}*') { $Source0 = $Source0 -ireplace '%{commit_id}',$currentTask.commit_id }
     }
 
 
@@ -2442,6 +2460,27 @@ function CheckURLHealth {
         if ($currentTask.spec -like "openjdk11.spec") { if ($null -ne $Names -and $Names.Count -gt 0) { $NameLatest = Get-HighestJdkVersion -Names $Names -MajorRelease 11 -Filter "jdk-11" }; $Names=$null}
         if ($currentTask.spec -like "openjdk17.spec") { if ($null -ne $Names -and $Names.Count -gt 0) { $NameLatest = Get-HighestJdkVersion -Names $Names -MajorRelease 17 -Filter "jdk-17" }; $Names=$null}
         if ($currentTask.spec -like "openjdk21.spec") { if ($null -ne $Names -and $Names.Count -gt 0) { $NameLatest = Get-HighestJdkVersion -Names $Names -MajorRelease 21 -Filter "jdk-21" }; $Names=$null}
+
+        # netcat.spec: version from CVS revision in netcat.c header, commit_id from GitHub Commits API
+        if ($currentTask.spec -ilike "netcat.spec") {
+            try {
+                $netcatRawUrl = "https://raw.githubusercontent.com/openbsd/src/master/usr.bin/nc/netcat.c"
+                $netcatContent = (Invoke-WebRequest -Uri $netcatRawUrl -UseBasicParsing -TimeoutSec 30 -ErrorAction Stop).Content
+                if ($netcatContent -match '\$OpenBSD:\s+netcat\.c,v\s+(\d+\.\d+)') {
+                    $NameLatest = $Matches[1]
+                    $urlhealth = "200"
+                }
+                $commitsApiUrl = "https://api.github.com/repos/openbsd/src/commits?path=usr.bin/nc&per_page=1"
+                $headers = @{ Authorization = "Bearer $accessToken"; "User-Agent" = "photonos-package-report" }
+                $commitResponse = Invoke-RestMethod -Uri $commitsApiUrl -Headers $headers -TimeoutSec 30 -ErrorAction Stop
+                if ($commitResponse -and $commitResponse.Count -gt 0) {
+                    $Script:netcatCommitId = $commitResponse[0].sha.Substring(0, 7)
+                }
+            }
+            catch {
+                Write-Warning "netcat.spec version extraction failed: $_"
+            }
+        }
 
         try {
             if (($SourceTagURL -ne "") -and ($null -ne $Names)) {
@@ -4547,6 +4586,16 @@ function CheckURLHealth {
     # -------------------------------------------------------------------------------------------------------------------
     # Check health of UpdateURLs
     # -------------------------------------------------------------------------------------------------------------------
+
+    # netcat.spec: self-built tarball from openbsd/src shallow clone
+    if (($currentTask.spec -ilike 'netcat.spec') -and ($UpdateAvailable -ne "") -and
+        ($UpdateAvailable -notlike '*Warning*') -and ($UpdateAvailable -notlike '*same version*') -and
+        (-not [string]::IsNullOrEmpty($Script:netcatCommitId))) {
+        $UpdateDownloadName = "nc-$($Script:netcatCommitId).tar.xz"
+        $UpdateURL = "self-built from https://github.com/openbsd/src (usr.bin/nc)"
+        $HealthUpdateURL = "200"
+    }
+
     if (!(($UpdateAvailable -ilike '*Warning*') -or ($UpdateAvailable -ilike '*Info*') -or ($UpdateAvailable -ilike '*same version*')))
     {
         $versionedUpdateAvailable=$UpdateAvailable
@@ -4646,8 +4695,13 @@ function CheckURLHealth {
     # -------------------------------------------------------------------------------------------------------------------
     if ($HealthUpdateURL -eq "200")
     {
-        $UpdateDownloadName = ($UpdateURL -split '/')[-1]
-        $SaveUpdateDownloadName = $UpdateDownloadName
+        if ($currentTask.spec -ilike 'netcat.spec') {
+            $SaveUpdateDownloadName = $UpdateDownloadName
+        }
+        else {
+            $UpdateDownloadName = ($UpdateURL -split '/')[-1]
+            $SaveUpdateDownloadName = $UpdateDownloadName
+        }
 
         # exceptions
         # common exception
@@ -4683,7 +4737,43 @@ function CheckURLHealth {
 
         $UpdateDownloadFile=[System.String](Join-Path -Path $SourcesNewDirectory -ChildPath $UpdateDownloadName).Trim()
         if (!(Test-Path $UpdateDownloadFile)) {
-            if ($SourceRPMFile -ne "") # Fedora case
+            if (($currentTask.spec -ilike 'netcat.spec') -and (-not [string]::IsNullOrEmpty($Script:netcatCommitId))) {
+                # Build tarball from shallow clone of openbsd/src
+                $uniqueTmpPath = Join-Path -Path $SourcePath -ChildPath "tmp_$([System.Guid]::NewGuid().ToString())"
+                try {
+                    if (!(Test-Path $uniqueTmpPath)) { New-Item $uniqueTmpPath -ItemType Directory | Out-Null }
+                    Invoke-GitWithTimeout "clone https://github.com/openbsd/src.git --depth 1" -WorkingDirectory $uniqueTmpPath -TimeoutSeconds 600
+                    $srcNcPath = Join-Path $uniqueTmpPath (Join-Path "src" (Join-Path "usr.bin" "nc"))
+                    $tarDirName = "nc-$($Script:netcatCommitId)"
+                    $tarDirPath = Join-Path $uniqueTmpPath $tarDirName
+                    if (Test-Path $srcNcPath) {
+                        Move-Item -Path $srcNcPath -Destination $tarDirPath -Force
+                        $tarProcess = [System.Diagnostics.Process]::new()
+                        $tarProcess.StartInfo.FileName = "tar"
+                        $tarProcess.StartInfo.Arguments = "cJf `"$UpdateDownloadFile`" `"$tarDirName`""
+                        $tarProcess.StartInfo.UseShellExecute = $false
+                        $tarProcess.StartInfo.CreateNoWindow = $true
+                        $tarProcess.StartInfo.WorkingDirectory = $uniqueTmpPath
+                        $tarProcess.Start() | Out-Null
+                        if (-not $tarProcess.WaitForExit(120000)) { $tarProcess.Kill() }
+                        $tarProcess.Dispose()
+                        if (Test-Path $UpdateDownloadFile) {
+                            Write-Host "netcat tarball created: $UpdateDownloadFile"
+                        } else {
+                            Write-Warning "Failed to create netcat tarball: $UpdateDownloadFile"
+                        }
+                    } else {
+                        Write-Warning "openbsd/src clone missing usr.bin/nc directory"
+                    }
+                }
+                catch {
+                    Write-Warning "netcat tarball creation failed: $_"
+                }
+                finally {
+                    Remove-Item -Path $uniqueTmpPath -Recurse -Force -ErrorAction SilentlyContinue
+                }
+            }
+            elseif ($SourceRPMFile -ne "") # Fedora case
             {
                 try {
                     # Generate a unique temporary directory for each thread
@@ -4786,6 +4876,7 @@ function CheckURLHealth {
         if ([string]::IsNullOrEmpty($SHALine)) { $SHALine=" " }
 
         if ($currentTask.Spec -ilike 'openjdk8.spec') {ModifySpecFile -SpecFileName $currentTask.spec -SourcePath $SourcePath -PhotonDir $photonDir -UpstreamsPath $UpstreamsPath -Name $currentTask.name -Update $UpdateAvailable -UpdateDownloadFile $UpdateDownloadFile -OpenJDK8 $true -SHALine $SHALine}
+        elseif ($currentTask.Spec -ilike 'netcat.spec') {ModifySpecFile -SpecFileName $currentTask.spec -SourcePath $SourcePath -PhotonDir $photonDir -UpstreamsPath $UpstreamsPath -Name $currentTask.name -Update $UpdateAvailable -UpdateDownloadFile $UpdateDownloadFile -OpenJDK8 $false -SHALine $SHALine -CommitId $Script:netcatCommitId}
         else {ModifySpecFile -SpecFileName $currentTask.spec -SourcePath $SourcePath -PhotonDir $photonDir -UpstreamsPath $UpstreamsPath -Name $currentTask.name -Update $UpdateAvailable -UpdateDownloadFile $UpdateDownloadFile -OpenJDK8 $false -SHALine $SHALine}
     }
 
