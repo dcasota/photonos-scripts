@@ -349,7 +349,7 @@ For production use, running on Photon OS or another Linux distribution with Powe
 
 Current version: **0.64**. Full details for each version below; the script header contains one-line summaries.
 
-### v0.64 (01.03.2026)
+### v0.64 (02.03.2026)
 
 **Artifact restructure, git fetch fixes, poll-based fetch completion, netcat.spec, .asc version fix, Source0Lookup fixes**
 
@@ -366,6 +366,8 @@ Current version: **0.64**. Full details for each version below; the script heade
 - **netcat.spec special-case handling:** Version extracted from CVS revision ID in `openbsd/src` `netcat.c` header comment via `$OpenBSD: netcat.c,v` regex. Commit ID fetched from GitHub Commits API for `usr.bin/nc` directory. Source tarball built from existing persistent clone (Copy-Item from `clones/src/usr.bin/nc`, not a redundant shallow clone). Added `%global commit_id` replacement in `ModifySpecFile` and `%{commit_id}` macro substitution for Source0 URL resolution. Added `commit_id` extraction in `ParseDirectory`.
 - **Fixed ModifySpecFile version truncation (.asc bug):** `GetExtension("1.238")` returned `".238"`, truncating the version to `"1"` and producing filenames like `netcat-1.spec` instead of `netcat-1.238.spec`. Now only strips the extension when it is actually `.asc`.
 - **Source0Lookup fixes:** Fixed `entchant.spec` typo to `enchant.spec` with corrected release download URL. Added `libnetfilter_conntrack` git source. Moved packaging format change warnings from hardcoded `if` blocks into Source0Lookup CSV Warning column (`libnftnl`, `python-Twisted`).
+- **Removed `git reset --hard` from GitPhoton:** Since the script only reads spec files and does not modify the working tree, `reset --hard` is unnecessary and can cause issues with interrupted operations.
+- **Added WSL performance warning:** Documented that WSL `/mnt/` paths should not be used due to POSIX-to-NTFS translation overhead; recommend native Linux filesystem paths instead.
 
 ### v0.63 (01.03.2026)
 

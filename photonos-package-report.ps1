@@ -31,7 +31,7 @@
 #   0.61  23.02.2026   dcasota  Version format, Warning/ArchivationDate columns, Source0Lookup expansion (see README for details)
 #   0.62  24.02.2026   dcasota  Parallel deadlock fix, mutex serialization, subrelease detection, caching, security (see README for details)
 #   0.63  01.03.2026   dcasota  GitPhoton robustness: throw on git errors, .git validation, reset --hard (see README for details)
-#   0.64  01.03.2026   dcasota  Artifact restructure, git fetch fixes, poll-based fetch, netcat.spec, .asc version fix, Source0Lookup fixes (see README for details)
+#   0.64  02.03.2026   dcasota  Artifact restructure, git fetch fixes, poll-based fetch, netcat.spec, .asc version fix, Source0Lookup fixes (see README for details)
 #
 #  .PREREQUISITES
 #    - Script tested on Microsoft Windows 11 and on Photon OS 5.0 with Powershell Core 7.5.4
@@ -41,6 +41,10 @@
 #   - For best results, run this script on a machine with good network connectivity and sufficient resources, especially if generating URL health reports for many packages.
 #   - Some git sources (e.g. https://git.netfilter.org/libnetfilter_conntrack.git) may not be downloadable at any time from all locations.
 #     Try VPN connections if you encounter connectivity issues.
+#   - If using Windows with WSL, do not use /mnt/ paths. 
+#     WSL /mnt/ paths operate over a POSIX-to-NTFS translation layer that adds massive latency per filesystem operation. 
+#     A git fetch that takes seconds on native Linux or even native Windows can take tens of minutes or more on WSL when the repo is on an NTFS mount!
+#     The solution is to use a native Linux filesystem path (e.g. ~/photon-data) inside WSL's ext4 or use Linux without WSL.
 #   - To debug:
 #     Open the script in Visual Studio Code,
 #     uncomment "$Script:UseParallel = $false" to disable parallel processing, 
@@ -439,7 +443,8 @@ function GitPhoton {
         Set-Location $photonPath
         try {
             Invoke-GitWithTimeout "fetch --prune --prune-tags --tags" -WorkingDirectory $photonPath
-            Invoke-GitWithTimeout "reset --hard origin/$release" -WorkingDirectory $photonPath
+            # unnecessary to reset hard to origin since we only read spec files and don't care about local changes, and it can cause issues if the repo is in a bad state (e.g. due to interrupted fetch/clone)
+            # Invoke-GitWithTimeout "reset --hard origin/$release" -WorkingDirectory $photonPath
         }
         catch {
             # If fetch/reset fails, delete and re-clone
