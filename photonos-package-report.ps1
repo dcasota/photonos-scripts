@@ -858,7 +858,7 @@ ndctl.spec,https://github.com/pmem/ndctl/archive/refs/tags/v%{version}.tar.gz,ht
 nerdctl.spec,https://github.com/containerd/nerdctl/archive/refs/tags/v%{version}.tar.gz,https://github.com/containerd/nerdctl.git
 net-snmp.spec,https://github.com/net-snmp/net-snmp/archive/refs/tags/v%{version}.tar.gz,https://github.com/net-snmp/net-snmp.git
 net-tools.spec,https://github.com/ecki/net-tools/archive/refs/tags/v%{version}.tar.gz,https://github.com/ecki/net-tools.git
-netcat.spec,https://packages.broadcom.com/photon/photon_sources/1.0/nc-%{commit_id}.tar.xz,,,netcat_cvs_revision,,,,
+netcat.spec,,https://github.com/openbsd/src.git
 netkit-telnet.spec,https://salsa.debian.org/debian/netkit-telnet/-/archive/debian/%{version}/netkit-telnet-debian-%{version}.tar.gz,https://salsa.debian.org/debian/netkit-telnet.git
 netmgmt.spec,https://github.com/vmware/photonos-netmgr/archive/refs/tags/v%{version}.tar.gz,https://github.com/vmware/photonos-netmgr.git
 network-config-manager.spec,https://github.com/vmware/network-config-manager/archive/refs/tags/v%{version}.tar.gz,https://github.com/vmware/network-config-manager.git
@@ -2032,7 +2032,7 @@ function CheckURLHealth {
 
     # IN CASE OF DEBUG: UNCOMMENT AND DEBUG FROM HERE
     # -----------------------------------------------
-    # if ($currentTask.spec -ilike 'aufs-util.spec')
+    # if ($currentTask.spec -ilike 'netcat.spec')
     # {pause}
     # else
     # {return}
@@ -4420,12 +4420,15 @@ function CheckURLHealth {
             if (!(Test-Path $DownloadPath)) {New-Item $DownloadPath -ItemType Directory}
 
             $SourceRPMFileName = ($SourceRPMFileURL -split '/')[-1]
-            $SourceRPMFile = Join-Path $DownloadPath $SourceRPMFileName
-            if (!(Test-Path $SourceRPMFile)) {
-                try {
-                    Invoke-WebRequest -UseBasicParsing -Uri $SourceRPMFileURL -OutFile $SourceRPMFile -TimeoutSec 10 -ErrorAction Stop
+            if ($SourceRPMFileName -ne "")
+            {
+                $SourceRPMFile = Join-Path $DownloadPath $SourceRPMFileName
+                if (!(Test-Path $SourceRPMFile)) {
+                    try {
+                        Invoke-WebRequest -UseBasicParsing -Uri $SourceRPMFileURL -OutFile $SourceRPMFile -TimeoutSec 10 -ErrorAction Stop
+                    }
+                    catch{$SourceRPMFile=""}
                 }
-                catch{$SourceRPMFile=""}
             }
             if ($SourceRPMFile -ne "")
             {
@@ -4669,16 +4672,16 @@ function CheckURLHealth {
         $UpdateDownloadFile=[System.String](Join-Path -Path $SourcesNewDirectory -ChildPath $UpdateDownloadName).Trim()
         if (!(Test-Path $UpdateDownloadFile)) {
             if (($currentTask.spec -ilike 'netcat.spec') -and (-not [string]::IsNullOrEmpty($Script:netcatCommitId))) {
-                # Build tarball from shallow clone of openbsd/src
-                $uniqueTmpPath = Join-Path -Path $SourcePath -ChildPath "tmp_$([System.Guid]::NewGuid().ToString())"
-                try {
-                    if (!(Test-Path $uniqueTmpPath)) { New-Item $uniqueTmpPath -ItemType Directory | Out-Null }
-                    Invoke-GitWithTimeout "clone https://github.com/openbsd/src.git --depth 1" -WorkingDirectory $uniqueTmpPath -TimeoutSeconds 600
-                    $srcNcPath = Join-Path $uniqueTmpPath (Join-Path "src" (Join-Path "usr.bin" "nc"))
-                    $tarDirName = "nc-$($Script:netcatCommitId)"
-                    $tarDirPath = Join-Path $uniqueTmpPath $tarDirName
-                    if (Test-Path $srcNcPath) {
-                        Move-Item -Path $srcNcPath -Destination $tarDirPath -Force
+                # Reuse the existing openbsd/src clone from the standard clone block
+                $existingClonePath = Join-Path (Join-Path (Join-Path $UpstreamsPath $photonDir) "clones") "src"
+                $srcNcPath = Join-Path $existingClonePath (Join-Path "usr.bin" "nc")
+                if ((Test-Path $existingClonePath) -and (Test-Path $srcNcPath)) {
+                    $uniqueTmpPath = Join-Path -Path $SourcePath -ChildPath "tmp_$([System.Guid]::NewGuid().ToString())"
+                    try {
+                        if (!(Test-Path $uniqueTmpPath)) { New-Item $uniqueTmpPath -ItemType Directory | Out-Null }
+                        $tarDirName = "nc-$($Script:netcatCommitId)"
+                        $tarDirPath = Join-Path $uniqueTmpPath $tarDirName
+                        Copy-Item -Path $srcNcPath -Destination $tarDirPath -Recurse -Force
                         $tarProcess = [System.Diagnostics.Process]::new()
                         $tarProcess.StartInfo.FileName = "tar"
                         $tarProcess.StartInfo.Arguments = "cJf `"$UpdateDownloadFile`" `"$tarDirName`""
@@ -4693,15 +4696,15 @@ function CheckURLHealth {
                         } else {
                             Write-Warning "Failed to create netcat tarball: $UpdateDownloadFile"
                         }
-                    } else {
-                        Write-Warning "openbsd/src clone missing usr.bin/nc directory"
                     }
-                }
-                catch {
-                    Write-Warning "netcat tarball creation failed: $_"
-                }
-                finally {
-                    Remove-Item -Path $uniqueTmpPath -Recurse -Force -ErrorAction SilentlyContinue
+                    catch {
+                        Write-Warning "netcat tarball creation failed: $_"
+                    }
+                    finally {
+                        Remove-Item -Path $uniqueTmpPath -Recurse -Force -ErrorAction SilentlyContinue
+                    }
+                } else {
+                    Write-Warning "openbsd/src clone not found at $existingClonePath - cannot build netcat tarball"
                 }
             }
             elseif ($SourceRPMFile -ne "") # Fedora case
@@ -5065,7 +5068,7 @@ Write-Host "Checking parallel processing support..."
 $Script:UseParallel = $PSVersionTable.PSVersion.Major -ge 7 -and $PSVersionTable.PSVersion.Minor -ge 4
 
 # For testing or troubleshooting, you can disable parallel processing by setting $Script:UseParallel to $false
-# $Script:UseParallel = $false
+$Script:UseParallel = $false
 
 Write-Host "Parallel processing: $($Script:UseParallel)"
 
