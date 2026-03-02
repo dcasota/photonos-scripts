@@ -324,12 +324,24 @@ pwsh -File photonos-package-report.ps1
 
 ## PREREQUISITES
 
-- **Operating System**: Windows 11 (tested), Photon OS 5.0 with PowerShell Core 7.5.4 (tested), Linux/WSL/macOS (cross-platform support since v0.60)
+- **Operating System**: **Linux recommended** (Photon OS 5.0 tested with PowerShell Core 7.5.4). Windows 11 tested but has known limitations (see below). WSL/macOS also supported (cross-platform since v0.60).
 - **PowerShell**: Minimum 5.1, Recommended 7.4+ for parallel processing
 - **Required Commands**: `git`, `tar`
 - **Required Module**: PowerShellCookbook (auto-installed if missing)
 - **API Tokens**: GitHub and GitLab access tokens for API rate limits
 - **Note**: On WSL/cross-filesystem setups, the script automatically adds `git safe.directory '*'` to handle ownership mismatches
+
+### Why Linux is Recommended
+
+Running on Windows introduces several platform-specific issues that do not occur on Linux:
+
+1. **NTFS trailing-dot restriction:** Some upstream repos (e.g. hashicorp/consul) have branch names containing path components that end with a dot (e.g. `backport/ce_1.21.5./sec/constant-time-compare`). On Windows, NTFS/Win32 silently strips trailing dots from directory names, which prevents git from creating the ref tracking file at `.git/refs/remotes/origin/...`. The fetch fails with `error: cannot lock ref ... unable to create directory`. On Linux (ext4, xfs, btrfs), trailing dots in directory names are fully supported and these fetches complete without error.
+
+2. **SChannel TLS buffer limitations:** Windows uses the SChannel TLS backend for HTTPS git operations. Very large repos (llvm-project, rust, chromium with 7+ GB packfiles) can exhaust SChannel's internal buffers during fetch, causing `curl 56 schannel: server closed abruptly` errors. While `http.postBuffer` mitigates the upload side, the receive path remains vulnerable. On Linux, git uses OpenSSL which handles large transfers more reliably.
+
+3. **File path length limits:** Windows has a default 260-character path limit (`MAX_PATH`). Deeply nested clone paths inside `photon-upstreams/photon-{branch}/clones/{repo}/...` can exceed this. Linux has a 4096-character limit per path component, making this a non-issue.
+
+For production use, running on Photon OS or another Linux distribution with PowerShell Core 7.4+ is recommended to avoid these platform limitations entirely.
 
 ---
 
