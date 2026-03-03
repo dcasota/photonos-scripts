@@ -1728,6 +1728,15 @@ function CheckURLHealth {
             $components = $parts | ForEach-Object { [int]$_ }
             return @{ Type = 'StandardVersion'; Components = $components }
         }
+        # Case 3b: Version with letter suffixes (e.g., 1.9.15p5, 2.4.1a3) - split letter-embedded segments into numeric parts
+        elseif ($normalizedVersion -match '^\d+(\.\d+)*\.\d+[a-zA-Z]\d+$') {
+            $components = @()
+            foreach ($part in $parts) {
+                $subParts = [regex]::Split($part, '[a-zA-Z]+') | Where-Object { $_ -ne '' }
+                foreach ($sp in $subParts) { $components += [int]$sp }
+            }
+            return @{ Type = 'StandardVersion'; Components = $components }
+        }
         # Case 4: Integer-like numeric (e.g., 001 to 059)
         elseif ($InputVersion -match '^\d+$') {
             $trimmed = $InputVersion.TrimStart('0')
@@ -2039,7 +2048,7 @@ function CheckURLHealth {
 
     # IN CASE OF DEBUG: UNCOMMENT AND DEBUG FROM HERE
     # -----------------------------------------------
-    # if ($currentTask.spec -ilike 'backward-cpp.spec')
+    # if ($currentTask.spec -ilike 'apache-ant.spec')
     # {pause}
     # else
     # {return}
