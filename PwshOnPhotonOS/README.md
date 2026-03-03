@@ -1,1 +1,1 @@
-
+This directory contains resources for installing and running PowerShell Core on VMware Photon OS, including a Dockerfile for containerized deployment, findings from NuGet/Gallery integration testing, and status screenshots. The `releases/` subdirectory contains version-specific installation scripts for PowerShell 6.x through 7.3.x (including previews and release candidates).
