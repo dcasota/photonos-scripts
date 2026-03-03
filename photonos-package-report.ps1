@@ -5241,7 +5241,7 @@ if ($GeneratePhPackageReport)
     $PackagesCommonMain = @($PackagesCommon | Where-Object { -not $_.SubRelease })
     $PackagesDevMain = @($PackagesDev | Where-Object { -not $_.SubRelease })
     $PackagesMasterMain = @($PackagesMaster | Where-Object { -not $_.SubRelease })
-    $result = $Packages3Main,$Packages4Main,$Packages5Main,$Packages6Main,$PackagesCommonMain,$PackagesDevMain,$PackagesMasterMain| foreach-object{$currentTask}|Select-Object Spec,`
+    $result = @($Packages3Main,$Packages4Main,$Packages5Main,$Packages6Main,$PackagesCommonMain,$PackagesDevMain,$PackagesMasterMain| foreach-object{$currentTask}|Select-Object Spec,`
     @{l='SubRelease';e={""}},`
     @{l='photon-3.0';e={if($currentTask.Spec -in $Packages3Main.Spec) {$Packages3Main[$Packages3Main.Spec.IndexOf($currentTask.Spec)].version}}},`
     @{l='photon-4.0';e={if($currentTask.Spec -in $Packages4Main.Spec) {$Packages4Main[$Packages4Main.Spec.IndexOf($currentTask.Spec)].version}}},`
@@ -5249,7 +5249,7 @@ if ($GeneratePhPackageReport)
     @{l='photon-6.0';e={if($currentTask.Spec -in $Packages6Main.Spec) {$Packages6Main[$Packages6Main.Spec.IndexOf($currentTask.Spec)].version}}},`
     @{l='photon-common';e={if($currentTask.Spec -in $PackagesCommonMain.Spec) {$PackagesCommonMain[$PackagesCommonMain.Spec.IndexOf($currentTask.Spec)].version}}},`
     @{l='photon-dev';e={if($currentTask.Spec -in $PackagesDevMain.Spec) {$PackagesDevMain[$PackagesDevMain.Spec.IndexOf($currentTask.Spec)].version}}},`
-    @{l='photon-master';e={if($currentTask.Spec -in $PackagesMasterMain.Spec) {$PackagesMasterMain[$PackagesMasterMain.Spec.IndexOf($currentTask.Spec)].version}}} -Unique | Sort-object Spec
+    @{l='photon-master';e={if($currentTask.Spec -in $PackagesMasterMain.Spec) {$PackagesMasterMain[$PackagesMasterMain.Spec.IndexOf($currentTask.Spec)].version}}} -Unique | Sort-object Spec)
     # Append subrelease packages as separate rows
     $subReleasePackages = @($Packages3,$Packages4,$Packages5,$Packages6,$PackagesCommon,$PackagesDev,$PackagesMaster | ForEach-Object{$_} | Where-Object { $_.SubRelease })
     foreach ($srPkg in $subReleasePackages) {
