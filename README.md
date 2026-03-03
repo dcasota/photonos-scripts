@@ -3,13 +3,13 @@ This repo contains a bunch of Photon OS related scripts.
 Photon OS is a VMware by Broadcom operating system for open source Linux container host for cloud-native applications. It runs on x86_64 + arm64 processors and on several hyperscaler clouds. See https://vmware.github.io/photon.
 
 # Photon OS as internal appliance development platform
-A bunch of commercial VMware by Broadcom products are delivered as appliances, delivered as ISO or OVA, using a closed-source Photon OS flavor as underlying operating system. To get an idea, see some weblinks:  
+A bunch of commercial VMware by Broadcom products are delivered as appliances, as ISO or OVA, using a closed-source Photon OS edition as underlying operating system. To get an idea, see some weblinks:  
   
 Holorouter:                                                      https://vmware.github.io/Holodeck/#what-is-holodeck  
 vCenter Server :                                                 https://knowledge.broadcom.com/external/article?legacyId=96577  
 vSphere Supervisor Services and Standalone Components:           https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vsphere-supervisor-services-and-standalone-components/latest/release-notes/vmware-vkr-release-notes.html  
 
-While the commercial appliances today use a certain subrelease of Photon OS which is strictly maintained for the appliance development and maintenance, people must differentiate it from the open-source variants of Photon OS.
+Each of the commercial appliances today use a certain subrelease of Photon OS which is strict for the appliance development and maintenance workflows. It must be differentiated from the open-source variants of Photon OS.
 
  The actual open-source Photon OS releases are 1:1 related to Linux kernel releases.
 | Linux kernel  |   Photon OS   | Lifecycle |  
