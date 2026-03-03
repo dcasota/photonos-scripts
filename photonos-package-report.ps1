@@ -1400,7 +1400,7 @@ function ModifySpecFile {
 
     if ($null -ne $FileModified) {
         $SpecsNewDirectory=join-path -path (join-path -path (join-path -path "$UpstreamsPath" -childpath "$photonDir") -childpath "SPECS_NEW") -childpath "$Name"
-        if (!(Test-Path $SpecsNewDirectory)) {New-Item $SpecsNewDirectory -ItemType Directory}
+        if (!(Test-Path $SpecsNewDirectory)) {New-Item $SpecsNewDirectory -ItemType Directory -ErrorAction SilentlyContinue}
 
         if ($Update)
         {
