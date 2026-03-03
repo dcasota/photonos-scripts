@@ -963,7 +963,7 @@ pmd-nextgen.spec,https://github.com/vmware/pmd/archive/refs/tags/v%{version}.tar
 podman.spec,https://github.com/containers/podman/archive/refs/tags/v%{version}.tar.gz,https://github.com/containers/podman.git
 policycoreutils.spec,https://github.com/SELinuxProject/selinux/releases/download/%{version}/policycoreutils-%{version}.tar.gz,https://github.com/SELinuxProject/selinux.git
 polkit.spec,,https://gitlab.freedesktop.org/polkit/polkit.git
-popt.spec,https://github.com/rpm-software-management/popt/archive/refs/tags/popt-%{version}-release.tar.gz,https://github.com/rpm-software-management/popt.git
+popt.spec,https://github.com/rpm-software-management/popt/archive/refs/tags/popt-%{version}-release.tar.gz,https://github.com/rpm-software-management/popt.git,,^popt-[\d.]+-release$
 powershell.spec,https://github.com/PowerShell/PowerShell/archive/refs/tags/v%{version}.tar.gz,https://github.com/PowerShell/PowerShell.git
 procmail.spec,https://github.com/BuGlessRB/procmail/archive/refs/tags/v%{version}.tar.gz,https://github.com/BuGlessRB/procmail.git
 protobuf.spec,https://github.com/protocolbuffers/protobuf/archive/refs/tags/v%{version}.tar.gz,https://github.com/protocolbuffers/protobuf.git
@@ -1042,8 +1042,8 @@ python-greenlet.spec,https://github.com/python-greenlet/greenlet/archive/refs/ta
 python-hatch-fancy-pypi-readme.spec,https://github.com/hynek/hatch-fancy-pypi-readme/archive/refs/tags/%{version}.tar.gz,https://github.com/hynek/hatch-fancy-pypi-readme.git
 python-hatch-vcs.spec,https://github.com/ofek/hatch-vcs/archive/refs/tags/v%{version}.tar.gz,https://github.com/ofek/hatch-vcs.git
 python-hatchling.spec,https://github.com/pypa/hatch/archive/refs/tags/hatchling-v%{version}.tar.gz,https://github.com/pypa/hatch.git
-python-hyperlink.spec,https://github.com/python-hyper/hyperlink/archive/refs/tags/v%{version}.tar.gz,https://github.com/python-hyper/hyperlink.git
-python-hypothesis.spec,https://github.com/HypothesisWorks/hypothesis/archive/refs/tags/hypothesis-python-%{version}.tar.gz,https://github.com/HypothesisWorks/hypothesis.git
+python-hyperlink.spec,https://github.com/python-hyper/hyperlink/archive/refs/tags/v%{version}.tar.gz,https://github.com/python-hyper/hyperlink.git,,,"hatchling-"
+python-hypothesis.spec,https://github.com/HypothesisWorks/hypothesis/archive/refs/tags/hypothesis-python-%{version}.tar.gz,https://github.com/HypothesisWorks/hypothesis.git,,,"hypothesis-python-"
 python-idna.spec,https://github.com/kjd/idna/archive/refs/tags/v%{version}.tar.gz,https://github.com/kjd/idna.git
 python-imagesize.spec,https://github.com/shibukawa/imagesize_py/archive/refs/tags/%{version}.tar.gz,https://github.com/shibukawa/imagesize_py.git
 python-importlib-metadata.spec,https://github.com/python/importlib_metadata/archive/refs/tags/v%{version}.tar.gz,https://github.com/python/importlib_metadata.git
@@ -1252,7 +1252,7 @@ syslinux.spec,,https://git.kernel.org/pub/scm/boot/syslinux/syslinux.git
 syslog-ng.spec,https://github.com/syslog-ng/syslog-ng/archive/refs/tags/syslog-ng-%{version}.tar.gz,https://github.com/syslog-ng/syslog-ng.git
 sysstat.spec,https://github.com/sysstat/sysstat/archive/refs/tags/v%{version}.tar.gz,https://github.com/sysstat/sysstat.git
 systemd.spec,https://github.com/systemd/systemd-stable/archive/refs/tags/v%{version}.tar.gz,https://github.com/systemd/systemd-stable.git
-systemtap.spec,https://github.com/cdkey/systemtap/archive/refs/tags/release-%{version}.tar.gz,https://github.com/cdkey/systemtap.git,,,"release-"
+systemtap.spec,https://sourceware.org/ftp/systemtap/releases/systemtap-%{version}.tar.gz,https://sourceware.org/git/systemtap.git
 tar.spec,https://ftp.gnu.org/gnu/tar/tar-%{version}.tar.xz
 tboot.spec,https://sourceforge.net/projects/tboot/files/tboot/tboot-%{version}.tar.gz/download
 tcp_wrappers.spec,http://ftp.porcupine.org/pub/security/tcp_wrappers_%{version}.tar.gz
@@ -1298,7 +1298,7 @@ vulkan-loader.spec,https://github.com/KhronosGroup/Vulkan-Loader/archive/refs/ta
 vulkan-tools.spec,https://github.com/KhronosGroup/Vulkan-Tools/archive/refs/tags/sdk-%{version}.tar.gz,https://github.com/KhronosGroup/Vulkan-Tools.git
 WALinuxAgent.spec,https://github.com/Azure/WALinuxAgent/archive/refs/tags/v%{version}.tar.gz,https://github.com/Azure/WALinuxAgent.git
 wal2json17.spec,https://github.com/eulerto/wal2json/archive/refs/tags/wal2json_%{version}.tar.gz,https://github.com/eulerto/wal2json.git,,,"wal2json_"
-wavefront-proxy.spec,https://github.com/wavefrontHQ/wavefront-proxy/archive/refs/tags/proxy-%{version}.tar.gz,https://github.com/wavefrontHQ/wavefront-proxy.git
+wavefront-proxy.spec,https://github.com/wavefrontHQ/wavefront-proxy/archive/refs/tags/proxy-%{version}.tar.gz,https://github.com/wavefrontHQ/wavefront-proxy.git,,,"proxy-"
 wayland.spec,https://gitlab.freedesktop.org/wayland/wayland/-/archive/%{version}/wayland-%{version}.tar.gz,https://gitlab.freedesktop.org/wayland/wayland.git
 wayland-protocols.spec,,https://gitlab.freedesktop.org/wayland/wayland-protocols.git
 wget.spec,https://ftp.gnu.org/gnu/wget/wget-%{version}.tar.gz
@@ -1311,6 +1311,8 @@ xinetd.spec,https://github.com/xinetd-org/xinetd/archive/refs/tags/xinetd-%{vers
 XML-Parser.spec,https://github.com/toddr/XML-Parser/archive/refs/tags/%{version}.tar.gz,https://github.com/toddr/XML-Parser.git
 xml-security-c.spec,https://archive.apache.org/dist/santuario/c-library/xml-security-c-%{version}.tar.gz
 xmlsec1.spec,https://github.com/lsh123/xmlsec/releases/download/%{version}/xmlsec1-%{version}.tar.gz,https://github.com/lsh123/xmlsec.git
+xorg-applications.spec,https://www.x.org/archive/individual/util/bdftopcf-%{version}.tar.xz,,,,,"bdftopcf-","Info: Packaging format .tar.gz has changed to tar.xz."
+
 xxhash.spec,https://github.com/Cyan4973/xxHash/archive/refs/tags/v%{version}.tar.gz,https://github.com/Cyan4973/xxHash.git
 xz.spec,https://github.com/tukaani-project/xz/archive/refs/tags/v%{version}.tar.gz,https://github.com/tukaani-project/xz.git
 yajl.spec,https://github.com/lloyd/yajl/archive/refs/tags/%{version}.tar.gz,https://github.com/lloyd/yajl.git
@@ -2389,7 +2391,7 @@ function CheckURLHealth {
                     if ((Test-Path $SourceClonePath) -and (Test-Path (Join-Path $SourceClonePath ".git"))) {
                         $tagOutput = Invoke-GitWithTimeout "tag -l" -WorkingDirectory $SourceClonePath -TimeoutSeconds 120
                         $tagLines = @($tagOutput -split "`r?`n" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-                        if (!([string]::IsNullOrEmpty($customRegex))) {$Names = @($tagLines | Where-Object { $_ -match "^$([regex]::Escape($repoName))-" } | ForEach-Object { $_.Trim()})}
+                        if (!([string]::IsNullOrEmpty($customRegex))) {$Names = @($tagLines | Where-Object { $_ -match $customRegex } | ForEach-Object { $_.Trim()})}
                         else {$Names = @($tagLines | ForEach-Object { $_.Trim() })}
                         $urlhealth="200"
                     } else {
@@ -3658,7 +3660,7 @@ function CheckURLHealth {
                     if ((Test-Path $SourceClonePath) -and (Test-Path (Join-Path $SourceClonePath ".git"))) {
                         $tagOutput = Invoke-GitWithTimeout "tag -l" -WorkingDirectory $SourceClonePath -TimeoutSeconds 120
                         $tagLines = @($tagOutput -split "`r?`n" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-                        if ("" -eq $customRegex) {$Names = @($tagLines | Where-Object { $_ -match "^$([regex]::Escape($repoName))-" } | ForEach-Object { $_.Trim()})}
+                        if (!([string]::IsNullOrEmpty($customRegex))) {$Names = @($tagLines | Where-Object { $_ -match $customRegex } | ForEach-Object { $_.Trim()})}
                         else {$Names = @($tagLines | ForEach-Object { $_.Trim() })}
                         $urlhealth="200"
                     } else {
@@ -3874,30 +3876,30 @@ function CheckURLHealth {
         # Hardcoded SourceTagURL from Source0 because detection from Source0 url would have a worse ratio
         if ($currentTask.spec -ilike 'autofs.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/linux/storage/autofs/autofs.git"}
         elseif ($currentTask.spec -ilike 'blktrace.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/linux/kernel/git/axboe/blktrace.git"; $branch="master"}
-        elseif ($currentTask.spec -ilike 'bluez.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/bluetooth/bluez.git";$customRegex="bluez"} #ausnahme
+        elseif ($currentTask.spec -ilike 'bluez.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/bluetooth/bluez.git";$customRegex="^[\d.]+$"} #ausnahme
         elseif ($currentTask.spec -ilike 'bridge-utils.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/network/bridge/bridge-utils.git"}
         elseif ($currentTask.spec -ilike 'dtc.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/utils/dtc/dtc.git";}
         elseif ($currentTask.spec -ilike 'ethtool.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/network/ethtool/ethtool.git"}
         elseif ($currentTask.spec -ilike 'fio.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/linux/kernel/git/axboe/fio.git"}
         elseif ($currentTask.spec -ilike 'git.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/git/git.git"}
         elseif ($currentTask.spec -ilike 'i2c-tools.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/utils/i2c-tools/i2c-tools.git"}
-        elseif ($currentTask.spec -ilike 'iproute2.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/network/iproute2/iproute2.git";$customRegex="iproute2"}
+        elseif ($currentTask.spec -ilike 'iproute2.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/network/iproute2/iproute2.git";$customRegex="^v?[\d.]+$"}
         elseif ($currentTask.spec -ilike 'ipvsadm.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/utils/kernel/ipvsadm/ipvsadm.git/"}
         elseif ($currentTask.spec -ilike 'kexec-tools.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/utils/kernel/kexec/kexec-tools.git"}
         elseif ($currentTask.spec -ilike 'keyutils.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/linux/kernel/git/dhowells/keyutils.git"}
-        elseif ($currentTask.spec -ilike 'kmod.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/utils/kernel/kmod/kmod.git";;$customRegex="kmod"}
+        elseif ($currentTask.spec -ilike 'kmod.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/utils/kernel/kmod/kmod.git";$customRegex="^v?\d+$"}
         elseif ($currentTask.spec -ilike 'libcap.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/libs/libcap/libcap.git"}
         elseif ($currentTask.spec -ilike 'libtraceevent.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/libs/libtrace/libtraceevent.git"}
         elseif ($currentTask.spec -ilike 'libtracefs.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/libs/libtrace/libtracefs.git"}
         elseif (($currentTask.spec -ilike 'linux-aws.spec') -or ($currentTask.spec -ilike 'linux-esx.spec') -or ($currentTask.spec -ilike 'linux-rt.spec') -or ($currentTask.spec -ilike 'linux-secure.spec') -or ($currentTask.spec -ilike 'linux.spec') -or ($currentTask.spec -ilike 'linux-6.1.spec') -or ($currentTask.spec -ilike 'linux-api-headers.spec'))
         {
-            if ($outputfile -ilike '*-3.0_*') {$SourceTagURL="https://www.kernel.org/pub/linux/kernel/v4.x"; $replace +="linux-";$customRegex="linux"}
-            elseif ($outputfile -ilike '*-4.0_*') {$SourceTagURL="https://www.kernel.org/pub/linux/kernel/v5.x"; $replace +="linux-";$customRegex="linux"}
-            elseif ($outputfile -ilike '*-5.0_*') {$SourceTagURL="https://www.kernel.org/pub/linux/kernel/v6.x"; $replace +="linux-";$customRegex="linux"}
-            elseif ($outputfile -ilike '*-6.0_*') {$SourceTagURL="https://www.kernel.org/pub/linux/kernel/v6.x"; $replace +="linux-";$customRegex="linux"}
-            elseif ($outputfile -ilike '*-common_*') {$SourceTagURL="https://www.kernel.org/pub/linux/kernel/v6.x"; $replace +="linux-";$customRegex="linux"}
-            elseif ($outputfile -ilike '*-master_*') {$SourceTagURL="https://www.kernel.org/pub/linux/kernel/v6.x"; $replace +="linux-";$customRegex="linux"}
-            elseif ($outputfile -ilike '*-dev_*') {$SourceTagURL="https://www.kernel.org/pub/linux/kernel/v6.x"; $replace +="linux-";$customRegex="linux"}
+            if ($outputfile -ilike '*-3.0_*') {$SourceTagURL="https://www.kernel.org/pub/linux/kernel/v4.x"; $replace +="linux-";$customRegex="^linux-[\d.]+$"}
+            elseif ($outputfile -ilike '*-4.0_*') {$SourceTagURL="https://www.kernel.org/pub/linux/kernel/v5.x"; $replace +="linux-";$customRegex="^linux-[\d.]+$"}
+            elseif ($outputfile -ilike '*-5.0_*') {$SourceTagURL="https://www.kernel.org/pub/linux/kernel/v6.x"; $replace +="linux-";$customRegex="^linux-[\d.]+$"}
+            elseif ($outputfile -ilike '*-6.0_*') {$SourceTagURL="https://www.kernel.org/pub/linux/kernel/v6.x"; $replace +="linux-";$customRegex="^linux-[\d.]+$"}
+            elseif ($outputfile -ilike '*-common_*') {$SourceTagURL="https://www.kernel.org/pub/linux/kernel/v6.x"; $replace +="linux-";$customRegex="^linux-[\d.]+$"}
+            elseif ($outputfile -ilike '*-master_*') {$SourceTagURL="https://www.kernel.org/pub/linux/kernel/v6.x"; $replace +="linux-";$customRegex="^linux-[\d.]+$"}
+            elseif ($outputfile -ilike '*-dev_*') {$SourceTagURL="https://www.kernel.org/pub/linux/kernel/v6.x"; $replace +="linux-";$customRegex="^linux-[\d.]+$"}
         }
         elseif ($currentTask.spec -ilike 'linux-firmware.spec') {$SourceTagURL="https://www.kernel.org/pub/linux/kernel/firmware"}
         elseif ($currentTask.spec -ilike 'man-pages.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/docs/man-pages/man-pages.git"}
@@ -3907,7 +3909,7 @@ function CheckURLHealth {
         elseif ($currentTask.spec -ilike 'syslinux.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/boot/syslinux/syslinux.git"}
         elseif ($currentTask.spec -ilike 'trace-cmd.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/utils/trace-cmd/trace-cmd.git"; $replace +="v"}
         elseif ($currentTask.spec -ilike 'usbutils.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/linux/kernel/git/gregkh/usbutils.git"}
-        elseif ($currentTask.spec -ilike 'xfsprogs.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/fs/xfs/xfsprogs-dev.git"; $replace +="xfsprogs-dev-"; $replace +="v";;$customRegex="xfsprogs"}
+        elseif ($currentTask.spec -ilike 'xfsprogs.spec') {$SourceTagURL="https://git.kernel.org/pub/scm/fs/xfs/xfsprogs-dev.git"; $replace +="xfsprogs-dev-"; $replace +="v";$customRegex="^(v|xfsprogs-dev-)[\d.]+$"}
         else
         {
             if ($Source0) {
@@ -3996,7 +3998,7 @@ function CheckURLHealth {
                         Set-Location -Path $SourceClonePath -ErrorAction SilentlyContinue
                         $tagOutput = Invoke-GitWithTimeout "tag -l" -WorkingDirectory $SourceClonePath -TimeoutSeconds 120
                         $tagLines = @($tagOutput -split "`r?`n" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-                        if ("" -eq $customRegex) {$Names = @($tagLines | Where-Object { $_ -match "^$([regex]::Escape($repoName))-" } | ForEach-Object { $_.Trim()})}
+                        if (!([string]::IsNullOrEmpty($customRegex))) {$Names = @($tagLines | Where-Object { $_ -match $customRegex } | ForEach-Object { $_.Trim()})}
                         else {$Names = @($tagLines | ForEach-Object { $_.Trim() })}
                         $urlhealth="200"
                     } else {
