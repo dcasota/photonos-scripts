@@ -351,7 +351,7 @@ Current version: **0.64**. Full details for each version below; the script heade
 
 ### v0.64 (03.03.2026)
 
-**Artifact restructure, git fetch fixes, poll-based fetch completion, netcat.spec, .asc version fix, Source0Lookup fixes**
+**Artifact restructure, git fetch fixes, poll-based fetch completion, netcat.spec, .asc version fix, Source0Lookup fixes, patchlevel-aware version detection, customRegex as regex**
 
 - **Artifact directories moved to photon-upstreams/:** `clones`, `SOURCES_NEW`, `SPECS_NEW`, and `SOURCES_KojiFedora` are now created under `$sourcepath/photon-upstreams/photon-{branch}/` instead of inside the git repo directories. This keeps git repos clean, allows `git reset --hard` and re-clone without losing cached data, and preserves expensive clones (e.g. chromium) across repo resets.
 - **New `$UpstreamsPath` parameter:** Added to `ModifySpecFile`, `CheckURLHealth`, and `GenerateUrlHealthReports` to thread the upstreams directory through the call chain including parallel runspaces.
@@ -368,6 +368,12 @@ Current version: **0.64**. Full details for each version below; the script heade
 - **Source0Lookup fixes:** Fixed `entchant.spec` typo to `enchant.spec` with corrected release download URL. Added `libnetfilter_conntrack` git source. Moved packaging format change warnings from hardcoded `if` blocks into Source0Lookup CSV Warning column (`libnftnl`, `python-Twisted`).
 - **Removed `git reset --hard` from GitPhoton:** Since the script only reads spec files and does not modify the working tree, `reset --hard` is unnecessary and can cause issues with interrupted operations.
 - **Added WSL performance warning:** Documented that WSL `/mnt/` paths should not be used due to POSIX-to-NTFS translation overhead; recommend native Linux filesystem paths instead.
+- **Fixed Package Report op_Addition error:** Wrapped `$result` pipeline in `@()` to ensure array type when the pipeline returns a single object.
+- **Fixed pgbackrest version slash:** Added `release/` to the tag replace array in all 6 clone blocks so tags like `release/2.58.0` are cleaned correctly instead of leaving a leading `/`.
+- **Fixed SPECS_NEW race condition:** Added `-ErrorAction SilentlyContinue` to `New-Item` in `ModifySpecFile` to handle parallel TOCTOU races.
+- **Parse-Version letter-suffix support (Case 3b):** Versions with embedded letter suffixes like `1.9.15p5` or `4.2.8p18` are now split on the letter boundary and parsed as `StandardVersion` components (e.g. `@(1,9,15,5)`), instead of falling through to string comparison.
+- **Patchlevel-aware `[a-zA-Z]` filter:** The version filter that discards strings containing letters now strips `[pP]\d+` patchlevel patterns before checking, so versions like openssh `V_10_2_P1` and sudo `1.9.15p5` survive filtering while `rc1`, `beta2`, etc. are still rejected. Applied to all 14 filter locations.
+- **customRegex as actual regex:** The `customRegex` CSV/hardcoded field is now used as a real regex pattern for tag filtering (`-match $customRegex`) instead of being a flag. All existing values converted to proper patterns (bluez, iproute2, kmod, linux, xfsprogs). Added customRegex for `popt.spec` (`^popt-[\d.]+-release$`) and `libevent.spec` (`^release-[\d.]+-stable$`).
 
 ### v0.63 (01.03.2026)
 

@@ -31,7 +31,7 @@
 #   0.61  23.02.2026   dcasota  Version format, Warning/ArchivationDate columns, Source0Lookup expansion (see README for details)
 #   0.62  24.02.2026   dcasota  Parallel deadlock fix, mutex serialization, subrelease detection, caching, security (see README for details)
 #   0.63  01.03.2026   dcasota  GitPhoton robustness: throw on git errors, .git validation, reset --hard (see README for details)
-#   0.64  03.03.2026   dcasota  Artifact restructure, git fetch fixes, poll-based fetch, netcat.spec, .asc version fix, Source0Lookup fixes (see README for details)
+#   0.64  03.03.2026   dcasota  Artifact restructure, git fetch fixes, poll-based fetch, netcat.spec, .asc version fix, Source0Lookup fixes, patchlevel-aware version detection, customRegex as regex (see README for details)
 #
 #  .PREREQUISITES
 #    - Script tested on Microsoft Windows 11 and on Photon OS 5.0 with Powershell Core 7.5.4
@@ -661,7 +661,7 @@ gptfdisk.spec,https://netix.dl.sourceforge.net/project/gptfdisk/gptfdisk/%{versi
 graphene.spec,https://github.com/ebassi/graphene/archive/refs/tags/%{version}.tar.gz,https://github.com/ebassi/graphene.git
 grpc.spec,https://github.com/grpc/grpc/archive/refs/tags/v%{version}.tar.gz,https://github.com/grpc/grpc.git
 gssntlmssp.spec,https://github.com/gssapi/gss-ntlmssp/releases/download/v%{version}/gssntlmssp-%{version}.tar.gz,https://github.com/gssapi/gss-ntlmssp.git
-gst-plugins-bad.spec,,https://gitlab.freedesktop.org/gstreamer/gst-plugins-bad.git
+gst-plugins-bad.spec,https://gitlab.freedesktop.org/gstreamer/gst-plugins-bad/-/archive/%{version}/gst-plugins-bad-%{version}.tar.gz,https://gitlab.freedesktop.org/gstreamer/gst-plugins-bad.git,,,"gst-plugins-bad-",,"Info: Packaging format .tar.xz has changed to e.g. .tar.gz"
 gstreamer.spec,,https://gitlab.freedesktop.org/gstreamer/gstreamer.git
 gstreamer-plugins-base.spec,https://gstreamer.freedesktop.org/src/gst-plugins-base/gst-plugins-base-%{version}.tar.xz,https://gitlab.freedesktop.org/gstreamer/gstreamer.git,,gst-plugins-base-
 gtest.spec,https://github.com/google/googletest/archive/refs/tags/release-%{version}.tar.gz,https://github.com/google/googletest.git
@@ -1312,7 +1312,6 @@ XML-Parser.spec,https://github.com/toddr/XML-Parser/archive/refs/tags/%{version}
 xml-security-c.spec,https://archive.apache.org/dist/santuario/c-library/xml-security-c-%{version}.tar.gz
 xmlsec1.spec,https://github.com/lsh123/xmlsec/releases/download/%{version}/xmlsec1-%{version}.tar.gz,https://github.com/lsh123/xmlsec.git
 xorg-applications.spec,https://www.x.org/archive/individual/util/bdftopcf-%{version}.tar.xz,,,,,"bdftopcf-","Info: Packaging format .tar.gz has changed to tar.xz."
-
 xxhash.spec,https://github.com/Cyan4973/xxHash/archive/refs/tags/v%{version}.tar.gz,https://github.com/Cyan4973/xxHash.git
 xz.spec,https://github.com/tukaani-project/xz/archive/refs/tags/v%{version}.tar.gz,https://github.com/tukaani-project/xz.git
 yajl.spec,https://github.com/lloyd/yajl/archive/refs/tags/%{version}.tar.gz,https://github.com/lloyd/yajl.git
@@ -2269,6 +2268,7 @@ function CheckURLHealth {
         $UpdateAvailable="3.0.5"
     }
 
+    # the logic for raspberrypi/linux.git is complex because of the multiple branches and the fact that the spec file does not contain the branch information. Hence, the branch is determined by the photon release and not by the spec file version. This logic must be checked from time to time.
     if ($currentTask.spec -eq "dtb-raspberrypi.spec")
     {
         $GitSource="https://github.com/raspberrypi/linux.git"
@@ -2284,9 +2284,11 @@ function CheckURLHealth {
             }
             {($_ -eq "photon-6.0")} {
                 $gitBranch="rpi-6.12.y"
+                $replace += "rpi-6.12.y_"
             }
             default {
                 $gitBranch="rpi-6.12.y"
+                $replace += "stable_"                
             }
         }
     }
@@ -4359,18 +4361,15 @@ function CheckURLHealth {
 
     $warningText="Warning: Cannot detect correlating tags from the repo provided."
     if (($currentTask.Spec -ilike 'bluez-tools.spec') -and ($UpdateAvailable -eq "")) {$warning=$warningText}
-    elseif (($currentTask.Spec -ilike 'containers-common.spec') -and ($UpdateAvailable -eq "")) {$warning=$warningText}
     elseif (($currentTask.Spec -ilike 'cpulimit.spec') -and ($UpdateAvailable -eq "")) {$warning=$warningText}
     elseif (($currentTask.Spec -ilike 'dbxtool.spec') -and ($UpdateAvailable -eq "")) {$warning=$warningText}
     elseif (($currentTask.Spec -ilike 'dcerpc.spec') -and ($UpdateAvailable -eq "")) {$warning=$warningText}
     elseif (($currentTask.Spec -ilike 'dotnet-sdk.spec') -and ($UpdateAvailable -eq "")) {$warning=$warningText}
-    elseif (($currentTask.Spec -ilike 'dtb-raspberrypi.spec') -and ($UpdateAvailable -eq "")) {$warning=$warningText}
     elseif (($currentTask.Spec -ilike 'fuse-overlayfs-snapshotter.spec') -and ($UpdateAvailable -eq "")) {$warning=$warningText}
     elseif (($currentTask.Spec -ilike 'hawkey.spec') -and ($UpdateAvailable -eq "")) {$warning=$warningText}
     elseif (($currentTask.Spec -ilike 'libgsystem.spec') -and ($UpdateAvailable -eq "")) {$warning=$warningText}
     elseif (($currentTask.Spec -ilike 'libselinux.spec') -and ($UpdateAvailable -eq "")) {$warning=$warningText}
     elseif (($currentTask.Spec -ilike 'libsepol.spec') -and ($UpdateAvailable -eq "")) {$warning=$warningText}
-    elseif (($currentTask.Spec -ilike 'libnss-ato.spec') -and ($UpdateAvailable -eq "")) {$warning=$warningText}
     elseif (($currentTask.Spec -ilike 'lightwave.spec') -and ($UpdateAvailable -eq "")) {$warning=$warningText}
     elseif (($currentTask.Spec -ilike 'likewise-open.spec') -and ($UpdateAvailable -eq "")) {$warning=$warningText}
     elseif (($currentTask.Spec -ilike 'linux-firmware.spec') -and ($UpdateAvailable -eq "")) {$warning=$warningText}
