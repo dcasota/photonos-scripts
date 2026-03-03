@@ -36,7 +36,7 @@ Building open-source Photon OS happens in three stages:
   
 In Step 1, the core toolchain packages built is about 14 packages:  
 ['filesystem', 'linux-api-headers', 'glibc', 'zlib', 'file', 'binutils', 'gmp', 'mpfr', 'mpc', 'gcc', 'pkg-config', 'ncurses', 'readline', 'bash'].  
-Additional ~112 packages are processed in Step 2. In Step 3, the majority of packages is processed. Those number may vary with the release. Photon OS 6.0 includes more than 1100 packages. Each package is represented by a spec file which contains manufacturer information.
+Additional ~112 packages are processed in Step 2. In Step 3, the majority of packages is processed. Those number may vary with the release. Photon OS 6.0 includes more than 1020 packages. Each package is represented by a spec file which contains Photon OS information to build the vendor package as rpm.
 
 The Photon OS team focuses on keeping the essential packages up to date. Most packages belong to those of Step 1 and Step 2.
 
