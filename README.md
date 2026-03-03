@@ -50,9 +50,10 @@ See some personal scramblings:
 
 # Photon OS package Report
 The Photon OS package report tool is a powershellcore-compatible script https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report/photonos-package-report.ps1 which analyzes each open-source vendor package and checks if there is a newer version available. For each package it locally clones the source, downloads the latest release, creates a newer spec file. It also creates various raw reports stored in https://github.com/dcasota/photonos-scripts/tree/master/photonos-package-report/scans.
-
+  
+  
 Latest run: March 2, 2026
-Url health
+url health
 - [Photon OS 4.0](https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report/scans/photonos-urlhealth-4.0_202603021624.prn)
 - [Photon OS 5.0](https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report/scans/photonos-urlhealth-5.0_202603021904.prn)
 - [Photon OS 6.0](https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report/scans/photonos-urlhealth-6.0_202603022032.prn)
@@ -65,8 +66,10 @@ difference report
 - [5.0 <> 6.0](https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report/scans/photonos-diff-report-5.0-6.0_202603030204.prn)
 - [common <>master](https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report/scans/photonos-diff-report-common-master_202603030204.prn)
 
-[package report with all packages per Photon OS release version](https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report/scans/photonos-package-report_202603030204.prn)
-
+package report with all packages per Photon OS release version
+[Download](https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report/scans/photonos-package-report_202603030204.prn)
+  
+  
 The powershellcore script contains a base of download urls for each package. In examines the original download url Source0 inside the spec file. The comma delimited .prn report files contains spec file name, the Source0 original value, the corrected Source0 url after research, the url health check value (200=ok), an "UpdateAvailable" signalisation and much more. For analysis purposes, the reports can be stored e.g. inside a database.
 
 Photon OS package report is a base for further testings. Package work typically starts with 'there is a version of package x in relation to y, which is not or it is integrated to photon release z only.' With the latest tdnf package manager improvements, build system managers can monitor which packages are used during the build process only, which requirements are needed, and by using package report too process first smoke tests with newer releases. This is a step towards handy interoperability lookups of packages release/flavor/architecture like the inter-product viewer in VMware vSphere interoperability guide.
@@ -86,8 +89,8 @@ In a Non-vSphere hyperscaler environment - this chapter is Microsoft Azure speci
 ```create-AzImage-PhotonOS.ps1``` creates an Azure Generation V2 image, per default of VMware Photon OS 4.0.  
 ```create-AzVM_FromImage-PhotonOS.ps1``` provisions on Azure a Photon OS VM with the Azure image created using ```create-AzImage-PhotonOS.ps1```.
 
-# Use Case 4 - PowerCLI on Photon OS
-"VMware PowerCLI is a suite of PowerShell modules to manage VMware products and services. VMware PowerCLI includes over 800 cmdlets to easily manage your infrastructure on a global scale." See the weblink https://developer.broadcom.com/powercli).
+# PowerCLI on Photon OS
+"VMware PowerCLI is a suite of PowerShell modules to manage VMware products and services. VMware PowerCLI includes over 800 cmdlets to easily manage your infrastructure on a global scale." See the weblink https://developer.broadcom.com/powercli.
 Actually there is no single package for PowerCLI. Powershell must always have already been installed.
 There are three different installation options - container-based, photon os built-in and scripted install.
 
@@ -132,11 +135,8 @@ The idea of developing a testing workflow for side-by-side installation combinat
 Docker in most Linux distros has built-in support. Photon OS' architecture strength is the maintenance of all flavors from security-hardened to hardware-optimized. This combination is highly preferred for some container purposes.
 See some personal docker container learning progress with [Potree - a WebGL based viewer for large point clouds](https://github.com/dcasota/photonos-scripts/wiki/Configure-Potree,-a-WebGL-based-viewer-for-large-point-clouds,-on-VMware-Photon-OS).
 
-# Use Case 7 - ISO build machine on Photon OS
-From a packages update service consistency perspective, there is always a good moment for creating an ISO binary.
-Photon OS can be used as ISO build platform. Some personal progress using Photon OS as Photon OS ISO build machine has been documented on [How to build the Photon OS ISO file](https://github.com/dcasota/photonos-scripts/wiki/How-to-build-the-Photon-OS-ISO-file). Photon OS could be used to create eg. Microsoft Windows ISO builds from [uupdump.net](https://uupdump.net) as well.
 
-# Use Case 8 - Automated Kernel Patch Backporting and CVE Coverage Tracking
+# Automated Kernel Patch Backporting and CVE Coverage Tracking
 As security is paramount for Photon OS, keeping kernel patches up-to-date and tracking CVE coverage is critical. The [kernelpatches](kernelpatches/) solution provides automated kernel patch backporting and comprehensive CVE coverage tracking for Photon OS.
 
 ## Goal and Key Features
