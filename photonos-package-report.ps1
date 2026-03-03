@@ -2433,6 +2433,7 @@ function CheckURLHealth {
                 $replace += $currentTask.Name
                 $replace +="ver"
                 $replace +="release_"
+                $replace +="release/"
                 $replace +="release-"
                 $replace +="release"
                 $replace +="-final"
@@ -3231,6 +3232,7 @@ function CheckURLHealth {
                 $replace += $currentTask.Name
                 $replace +="ver"
                 $replace +="release_"
+                $replace +="release/"
                 $replace +="release-"
                 $replace +="release"
                 # Do not add [...]replace(($replace[$i]).tolower() because later e.g. for downloading resources the exact case-sensitive match is important.
@@ -3413,6 +3415,7 @@ function CheckURLHealth {
                 $replace += $currentTask.Name+"_"
                 $replace += $currentTask.Name
                 $replace +="release_"
+                $replace +="release/"
                 $replace +="release-"
                 $replace +="release"
                 $replace +="ver"
@@ -3737,6 +3740,7 @@ function CheckURLHealth {
                 $replace += $currentTask.Name
                 $replace +="ver"
                 $replace +="release_"
+                $replace +="release/"
                 $replace +="release-"
                 $replace +="release"
                 foreach ($item in $replace) {$Names = @($Names | ForEach-Object { $_ -replace [regex]::Escape($item), "" })}
@@ -4030,6 +4034,7 @@ function CheckURLHealth {
                 $replace += $currentTask.Name
                 $replace +="ver"
                 $replace +="release_"
+                $replace +="release/"
                 $replace +="release-"
                 $replace +="release"
                 foreach ($item in $replace) {$Names = @($Names | ForEach-Object { $_ -replace [regex]::Escape($item), "" })}
@@ -4263,6 +4268,7 @@ function CheckURLHealth {
                 $replace += $currentTask.Name
                 $replace +="ver"
                 $replace +="release_"
+                $replace +="release/"
                 $replace +="release-"
                 $replace +="release"
                 foreach ($item in $replace) {$Names = @($Names | ForEach-Object { $_ -replace [regex]::Escape($item), "" })}
