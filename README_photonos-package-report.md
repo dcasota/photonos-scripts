@@ -349,7 +349,7 @@ For production use, running on Photon OS or another Linux distribution with Powe
 
 Current version: **0.64**. Full details for each version below; the script header contains one-line summaries.
 
-### v0.64 (02.03.2026)
+### v0.64 (03.03.2026)
 
 **Artifact restructure, git fetch fixes, poll-based fetch completion, netcat.spec, .asc version fix, Source0Lookup fixes**
 

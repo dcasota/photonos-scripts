@@ -31,7 +31,7 @@
 #   0.61  23.02.2026   dcasota  Version format, Warning/ArchivationDate columns, Source0Lookup expansion (see README for details)
 #   0.62  24.02.2026   dcasota  Parallel deadlock fix, mutex serialization, subrelease detection, caching, security (see README for details)
 #   0.63  01.03.2026   dcasota  GitPhoton robustness: throw on git errors, .git validation, reset --hard (see README for details)
-#   0.64  02.03.2026   dcasota  Artifact restructure, git fetch fixes, poll-based fetch, netcat.spec, .asc version fix, Source0Lookup fixes (see README for details)
+#   0.64  03.03.2026   dcasota  Artifact restructure, git fetch fixes, poll-based fetch, netcat.spec, .asc version fix, Source0Lookup fixes (see README for details)
 #
 #  .PREREQUISITES
 #    - Script tested on Microsoft Windows 11 and on Photon OS 5.0 with Powershell Core 7.5.4
