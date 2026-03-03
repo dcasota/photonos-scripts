@@ -749,7 +749,7 @@ libedit.spec,https://www.thrysoee.dk/editline/libedit-20251016-3.1.tar.gz
 libepoxy.spec,https://github.com/anholt/libepoxy/archive/refs/tags/%{version}.tar.gz,https://github.com/anholt/libepoxy.git
 libestr.spec,https://github.com/rsyslog/libestr/archive/refs/tags/v%{version}.tar.gz,https://github.com/rsyslog/libestr.git
 libev.spec,https://dist.schmorp.de/libev/Attic/libev-%{version}.tar.gz
-libevent.spec,https://github.com/libevent/libevent/releases/download/release-%{version}-stable/libevent-%{version}-stable.tar.gz,https://github.com/libevent/libevent.git
+libevent.spec,https://github.com/libevent/libevent/releases/download/release-%{version}-stable/libevent-%{version}-stable.tar.gz,https://github.com/libevent/libevent.git,,^release-[\d.]+-stable$
 libfastjson.spec,https://github.com/rsyslog/libfastjson/archive/refs/tags/v%{version}.0.tar.gz,https://github.com/rsyslog/libfastjson.git
 libffi.spec,https://github.com/libffi/libffi/archive/refs/tags/v%{version}.tar.gz,https://github.com/libffi/libffi.git
 libfido2.spec,https://github.com/Yubico/libfido2/archive/refs/tags/%{version}.tar.gz,https://github.com/Yubico/libfido2.git
@@ -767,7 +767,7 @@ libmbim.spec,https://gitlab.freedesktop.org/mobile-broadband/libmbim/-/archive/%
 libmd.spec,https://archive.hadrons.org/software/libmd/libmd-%{version}.tar.xz,https://github.com/guillemj/libmd.git
 libmetalink.spec,https://github.com/metalink-dev/libmetalink/releases/download/release-%{version}/libmetalink-%{version}.tar.bz2,https://github.com/metalink-dev/libmetalink.git
 libmnl.spec,https://www.netfilter.org/projects/libmnl/files/libmnl-%{version}.tar.bz2
-libmspack.spec,https://github.com/kyz/libmspack/archive/refs/tags/v%{version}.tar.gz,https://github.com/kyz/libmspack.git
+libmspack.spec,https://github.com/kyz/libmspack/archive/refs/tags/v%{version}.tar.gz,https://github.com/kyz/libmspack.git,,,".1alpha"
 libndp.spec,https://github.com/jpirko/libndp/archive/refs/tags/v%{version}.tar.gz,https://github.com/jpirko/libndp.git
 libnetconf2.spec,https://github.com/CESNET/libnetconf2/archive/refs/tags/v%{version}.tar.gz,https://github.com/CESNET/libnetconf2.git
 libnetfilter_conntrack.spec,https://www.netfilter.org/projects/libnetfilter_conntrack/files/libnetfilter_conntrack-%{version}.tar.xz,https://git.netfilter.org/libnetfilter_conntrack.git,,,"libnetfilter_conntrack-",,"Info: Packaging format .bz2 has changed to .tar.xz."
