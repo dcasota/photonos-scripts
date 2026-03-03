@@ -2455,7 +2455,7 @@ function CheckURLHealth {
                 {
                     $Names = $Names  -replace "v",""
                     $Names = @($Names | foreach-object { if ($_ -match '\d') {$_}})
-                    $Names = @($Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}})
+                    $Names = @($Names | foreach-object { if (!(($_ -replace '[pP]\d+', '') -match '[a-zA-Z]')) {$_}})
                 }
 
                 # get name latest
@@ -3102,7 +3102,7 @@ function CheckURLHealth {
                     $Names = $Names -replace "esr"
                 }
                 $Names = @($Names | foreach-object { if ($_ -match '\d') {$_}})
-                $Names = @($Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}})
+                $Names = @($Names | foreach-object { if (!(($_ -replace '[pP]\d+', '') -match '[a-zA-Z]')) {$_}})
                 if ($Names -ilike '*.*')
                 {
                     $lastItem = $Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1
@@ -3127,7 +3127,7 @@ function CheckURLHealth {
                 $Names = $Names -replace "_RTM",""
                 $Names = $Names -replace "_","."
                 $Names = @($Names | foreach-object { if ($_ -match '\d') {$_}})
-                $Names = @($Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}})
+                $Names = @($Names | foreach-object { if (!(($_ -replace '[pP]\d+', '') -match '[a-zA-Z]')) {$_}})
                 $lastItem = $Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1
                     if ($lastItem) { $NameLatest = $lastItem.ToString() }
                 $NameLatest = $NameLatest.replace(".","_")
@@ -3143,7 +3143,7 @@ function CheckURLHealth {
                 $Names = $Names -replace '/</a'
                 $Names = $Names -replace "v"
                 $Names = @($Names | foreach-object { if ($_ -match '\d') {$_}})
-                $Names = @($Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}})
+                $Names = @($Names | foreach-object { if (!(($_ -replace '[pP]\d+', '') -match '[a-zA-Z]')) {$_}})
                 if ($Names -ilike '*.*')
                 {
                     $lastItem = $Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1
@@ -3178,7 +3178,7 @@ function CheckURLHealth {
                     # Do not add [...]replace(($replace[$i]).tolower() because later e.g. for downloading resources the exact case-sensitive match is important.
                     foreach ($item in $replace) {$Names = @($Names | ForEach-Object { $_ -replace [regex]::Escape($item), "" })}
                     $Names = @($Names | foreach-object { if ($_ -match '\d') {$_}})
-                    $Names = @($Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}})
+                    $Names = @($Names | foreach-object { if (!(($_ -replace '[pP]\d+', '') -match '[a-zA-Z]')) {$_}})
                     $lastItem = $Names | foreach-object {$tag = $_ ; $tmpversion = [version]::new(); if ([version]::TryParse($tag, [ref]$tmpversion)) {$tmpversion} else {$tag}} | sort-object | select-object -last 1
                     if ($lastItem) { $NameLatest = $lastItem.ToString() }
                     $SourceTagURL=$SourceTagURL+$NameLatest
@@ -3193,7 +3193,7 @@ function CheckURLHealth {
                         $Names = $Names  -replace ".tar.lz",""
                         $Names = $Names -ireplace "Python-",""
                         $Names = @($Names | foreach-object { if ($_ -match '\d') {$_}})
-                        $Names = @($Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}})
+                        $Names = @($Names | foreach-object { if (!(($_ -replace '[pP]\d+', '') -match '[a-zA-Z]')) {$_}})
                         if ([string]::IsNullOrEmpty($Names)) {$replace +=$NameLatest}
                     }
                 }
@@ -3252,7 +3252,7 @@ function CheckURLHealth {
 
                 $Names = $Names  -replace "v",""
                 $Names = @($Names | foreach-object { if ($_ -match '\d') {$_}})
-                $Names = @($Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}})
+                $Names = @($Names | foreach-object { if (!(($_ -replace '[pP]\d+', '') -match '[a-zA-Z]')) {$_}})
 
                 # get name latest
                 if (!([string]::IsNullOrEmpty($Names -join ''))) {$NameLatest = Get-LatestName -Names $Names}
@@ -3390,7 +3390,7 @@ function CheckURLHealth {
                     $Names = $Names  -replace "libusb-compat-",""
                     $Names = $Names  -replace "libusb-",""
                     $Names = @($Names | foreach-object { if ($_ -match '\d') {$_}})
-                    $Names = @($Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}})
+                    $Names = @($Names | foreach-object { if (!(($_ -replace '[pP]\d+', '') -match '[a-zA-Z]')) {$_}})
 
                     if ($Names -ilike '*.*')
                     {
@@ -3437,7 +3437,7 @@ function CheckURLHealth {
 
                 $Names = $Names  -replace "v",""
                 $Names = @($Names | foreach-object { if ($_ -match '\d') {$_}})
-                $Names = @($Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}})
+                $Names = @($Names | foreach-object { if (!(($_ -replace '[pP]\d+', '') -match '[a-zA-Z]')) {$_}})
 
                 # get name latest
                 if (!([string]::IsNullOrEmpty($Names -join ''))) {$NameLatest = Get-LatestName -Names $Names}
@@ -3497,7 +3497,7 @@ function CheckURLHealth {
 
                     $Names = $Names  -replace "v",""
                     $Names = @($Names | foreach-object { if ($_ -match '\d') {$_}})
-                    $Names = @($Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}})
+                    $Names = @($Names | foreach-object { if (!(($_ -replace '[pP]\d+', '') -match '[a-zA-Z]')) {$_}})
 
                     if ($currentTask.spec -ilike 'atk.spec')
                     {
@@ -3759,7 +3759,7 @@ function CheckURLHealth {
 
                 $Names = $Names  -replace "v",""
                 $Names = @($Names | foreach-object { if ($_ -match '\d') {$_}})
-                $Names = @($Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}})
+                $Names = @($Names | foreach-object { if (!(($_ -replace '[pP]\d+', '') -match '[a-zA-Z]')) {$_}})
 
                 # post check
                 if ($currentTask.spec -ilike 'atk.spec')
@@ -3836,7 +3836,7 @@ function CheckURLHealth {
 
                     $Names = $Names  -replace "v",""
                     $Names = @($Names | foreach-object { if ($_ -match '\d') {$_}})
-                    $Names = @($Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}})
+                    $Names = @($Names | foreach-object { if (!(($_ -replace '[pP]\d+', '') -match '[a-zA-Z]')) {$_}})
 
                     # get name latest
                     if (!([string]::IsNullOrEmpty($Names -join ''))) {$NameLatest = Get-LatestName -Names $Names}
@@ -4053,7 +4053,7 @@ function CheckURLHealth {
 
                 $Names = $Names  -replace "v",""
                 $Names = @($Names | foreach-object { if ($_ -match '\d') {$_}})
-                $Names = @($Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}})
+                $Names = @($Names | foreach-object { if (!(($_ -replace '[pP]\d+', '') -match '[a-zA-Z]')) {$_}})
 
                 # post check
                 if (($currentTask.spec -ilike 'linux-aws.spec') -or ($currentTask.spec -ilike 'linux-esx.spec') -or ($currentTask.spec -ilike 'linux-rt.spec') -or ($currentTask.spec -ilike 'linux-secure.spec') -or ($currentTask.spec -ilike 'linux.spec') -or ($currentTask.spec -ilike 'linux-api-headers.spec'))
@@ -4289,7 +4289,7 @@ function CheckURLHealth {
                 {
                     $Names = $Names  -replace "v",""
                     $Names = @($Names | foreach-object { if ($_ -match '\d') {$_}})
-                    $Names = @($Names | foreach-object { if (!($_ -match '[a-zA-Z]')) {$_}})
+                    $Names = @($Names | foreach-object { if (!(($_ -replace '[pP]\d+', '') -match '[a-zA-Z]')) {$_}})
                 }
 
                 # get name latest
