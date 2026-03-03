@@ -36,9 +36,9 @@ Building open-source Photon OS happens in three stages:
   
 In Step 1, the core toolchain packages built is about 14 packages:  
 ['filesystem', 'linux-api-headers', 'glibc', 'zlib', 'file', 'binutils', 'gmp', 'mpfr', 'mpc', 'gcc', 'pkg-config', 'ncurses', 'readline', 'bash'].  
-Additional ~112 packages are processed in Step 2. In Step 3, the mayjority of packages is processed. Those number may vary with the release. Photon OS 6.0 includes more than 1100 packages. Each package is represented by a spec file which contains manufacturer information.
+Additional ~112 packages are processed in Step 2. In Step 3, the majority of packages is processed. Those number may vary with the release. Photon OS 6.0 includes more than 1100 packages. Each package is represented by a spec file which contains manufacturer information.
 
-The Photon OS team focuses on keeping the essential packages up to date. The majority of these packages are created during Step 1 and Step 2.
+The Photon OS team focuses on keeping the essential packages up to date. Most packages belong to those of Step 1 and Step 2.
 
 Productizing the Photon Platform was a strategy until 2017, see the Product lifecycle matrix (search for "VMware Photon Platform"):  https://support.broadcom.com/group/ecx/productlifecycle  
 However, cve operations became somewhat difficult and time consuming. For humans it takes time to clearly understand every single mitigation. This wasn't feasible at that time for customers.
