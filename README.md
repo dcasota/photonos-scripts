@@ -9,9 +9,15 @@ Holorouter:                                                      https://vmware.
 vCenter Server :                                                 https://knowledge.broadcom.com/external/article?legacyId=96577  
 vSphere Supervisor Services and Standalone Components:           https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vsphere-supervisor-services-and-standalone-components/latest/release-notes/vmware-vkr-release-notes.html  
 
-Each of the commercial appliances today use a certain subrelease of Photon OS which is strict for the appliance development and maintenance workflows. It must be differentiated from the open-source variants of Photon OS.
+There isn't a customer product SKU Photon Platform 2.x, 3.x or 4.x. Hence you cannot buy standalone Photon Platform support. 
+Before strictly separating commercial components, there was a VMware Photon Platform 1.x. It hit End of General Support on 2019-03-02.
 
- The actual open-source Photon OS releases are 1:1 related to Linux kernel releases.
+Commercial appliances each run a specific Photon OS subrelease, governed by strict product development and maintenance rules. Paid support today covers the entire VMware Cloud Foundation bundle.
+
+Note that open-source Photon OS, unlike some other Linux distributions, does not offer paid support. Starting in 2024, the Photon OS maintenance team has prioritised releasing security updates.
+
+The actual open-source Photon OS releases are 1:1 related to Linux kernel releases.  
+
 | Linux kernel  |   Photon OS   | Lifecycle |  
 | ------------- | ------------- | --------- |
 |     4.4       |      1.x      |    EOL    |
@@ -192,14 +198,6 @@ For Photon OS as a security-focused platform, this tool addresses several critic
 - **Version Management** - Handles multiple kernel versions (4.x/5.10, 5.x/6.1, 6.x/6.12) simultaneously
 
 For detailed documentation, architecture, API reference, and complete command options, see the [kernelpatches README](kernelpatches/README.md).
-
-# Photon OS components in commercial products and open-source Photon OS
-From a paid support perspective, open source Photon OS has nothing to do with the VMware commercial products in which some Photon OS components are a customized part of. VCSA, vSphere Replication, Workstation, vRealize Operations, and much more run on a strict VMware governance for that commercial product.
-
-There isn't a customer product SKU Photon Platform 2.x, 3.x or 4.x. Hence you cannot buy official Photon Platform support. 
-
-Before strictly separating commercial components, there was a VMware Photon Platform 1.x. It hit End of General Support on 2019-03-02.
-For VMware products' Enterprise Application Policy, see https://www.vmware.com/support/policies/enterprise-application.html.
 
 # Archive
 
