@@ -26,6 +26,8 @@ if ping -c 4 www.google.ch > /dev/null 2>&1; then
   cd "$BASE_DIR/$RELEASE_BRANCH"
   git fetch
   git merge --autostash
+  # Ensure photon-subrelease is 91 so the 6.1.x kernel specs are active
+  sed -i 's/"photon-subrelease":.*/"photon-subrelease": "91",/' build-config.json
   for i in {1..10}; do
     sudo make -j$(( $(nproc) - 1 )) image IMG_NAME=iso THREADS=$(( $(nproc) - 1 ));
     # Wait up to 30 seconds for ISO to appear

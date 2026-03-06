@@ -26,6 +26,14 @@ if ping -c 4 www.google.ch > /dev/null 2>&1; then
   cd "$BASE_DIR/$RELEASE_BRANCH"
   git fetch
   git merge --autostash
+  # Ensure photon-subrelease is 92 so the 6.12.x kernel specs are active
+  sed -i 's/"photon-subrelease":.*/"photon-subrelease": "92",/' build-config.json
+  # Ensure photon-mainline matches subrelease to skip snapshot (fips-canister not in snapshots)
+  if ! grep -q '"photon-mainline"' build-config.json; then
+    sed -i '/"photon-subrelease"/a\    "photon-mainline": "92",' build-config.json
+  else
+    sed -i 's/"photon-mainline":.*/"photon-mainline": "92",/' build-config.json
+  fi
   for i in {1..10}; do
     sudo make -j$(( $(nproc) - 1 )) image IMG_NAME=iso THREADS=$(( $(nproc) - 1 ));
     # Wait up to 30 seconds for ISO to appear
