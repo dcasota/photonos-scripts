@@ -40,7 +40,39 @@ A `.github/` structure that implements a multi-agent CI pipeline with strict rol
 | HIGH | CI job warns, build may fail | C2: transitive dependency gap |
 | WARNING | Logged, informational | C4: overlapping specs (versions match) |
 
-## Directory Structure
+## Specifications (specs/)
+
+Following the [SDD-book-tracking-app](https://github.com/sitoader/SDD-book-tracking-app) pattern:
+
+```
+specs/
+├── prd.md                                   # Product Requirements Document with REQ-1..REQ-10
+├── features/                                # Feature Requirement Documents (one per constellation)
+│   ├── c1-package-split-merge.md            # FRD-C1: subpackage diff, consumer detection
+│   ├── c2-version-bump-deps.md              # FRD-C2: cross-gating dependency analysis
+│   ├── c3-subrelease-boundary.md            # FRD-C3: boundary mismatch + tdnf upgrade conflict
+│   ├── c4-cross-branch-contamination.md     # FRD-C4: common/ spec divergence
+│   ├── c5-fips-canister.md                  # FRD-C5: kernel-canister version coupling
+│   └── c6-snapshot-url.md                   # FRD-C6: Artifactory URL validation
+├── adr/                                     # Architecture Decision Records
+│   ├── 0001-snapshot-bypass-via-photon-mainline.md
+│   ├── 0002-tdnf-upgrade-conflict.md
+│   └── 0003-detection-agent-architecture.md
+├── tasks/                                   # Numbered implementation tasks with dependencies
+│   ├── 001-task-spec-parser-inventory.md
+│   ├── 002-task-output-schema.md
+│   ├── 003-task-ci-workflow.md
+│   ├── 004-task-c1-c2-detectors.md
+│   ├── 005-task-c3-detector.md
+│   ├── 006-task-c4-c5-c6-detectors.md
+│   ├── 007-task-reference-validation.md
+│   └── 008-task-adr-documentation.md
+└── findings/                                # Timestamped scan results
+    ├── 2026-03-06-findings.json             # Machine-readable (97 findings)
+    └── 2026-03-06-findings.md               # Human-readable with remediation
+```
+
+## CI Structure (.github/)
 
 ```
 .github/
