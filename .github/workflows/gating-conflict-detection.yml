@@ -1,0 +1,167 @@
+name: Gating Conflict Detection
+
+on:
+  pull_request:
+    branches: [common, '4.0', '5.0', '6.0']
+    paths:
+      - 'SPECS/**'
+      - 'build-config.json'
+  workflow_dispatch:
+    inputs:
+      branches:
+        description: 'Branches to check (comma-separated)'
+        default: '4.0,5.0,6.0'
+      check_urls:
+        description: 'Enable snapshot URL validation'
+        type: boolean
+        default: true
+  schedule:
+    # Daily scan at 06:00 UTC
+    - cron: '0 6 * * *'
+
+env:
+  PHOTON_REPO: vmware/photon
+
+jobs:
+  detect-conflicts:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout CI tooling
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github
+          path: ci
+
+      - name: Checkout common branch
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.PHOTON_REPO }}
+          ref: common
+          path: workspace/common
+
+      - name: Checkout release branches
+        run: |
+          for branch in 4.0 5.0 6.0; do
+            git clone --branch "$branch" --depth 1 \
+              "https://github.com/${{ env.PHOTON_REPO }}.git" "workspace/$branch" 2>/dev/null || \
+              echo "::warning::Branch $branch not found, skipping"
+          done
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests jsonschema
+
+      - name: Phase 0 -- Build Tree Inventory
+        run: |
+          python3 ci/.github/scripts/photon-gating-agent.py \
+            --base-dir workspace \
+            --branches "${{ github.event.inputs.branches || '4.0,5.0,6.0' }}" \
+            --arch x86_64 \
+            --phase inventory \
+            --output gating-inventory.json
+
+      - name: Phase 1 -- Conflict Detection
+        run: |
+          python3 ci/.github/scripts/photon-gating-agent.py \
+            --base-dir workspace \
+            --branches "${{ github.event.inputs.branches || '4.0,5.0,6.0' }}" \
+            --arch x86_64 \
+            ${{ github.event.inputs.check_urls == 'true' && '--check-urls' || '' }} \
+            --inventory gating-inventory.json \
+            --json-output findings.json \
+            --md-output findings.md
+
+      - name: Validate findings schema
+        run: |
+          python3 -c "
+          import json, jsonschema
+          schema = json.load(open('ci/.github/gating-findings-schema.json'))
+          findings = json.load(open('findings.json'))
+          jsonschema.validate(findings, schema)
+          print('Schema validation passed')
+          "
+
+      - name: Quality rubric check
+        run: |
+          python3 -c "
+          import json, sys, os
+
+          findings = json.load(open('findings.json'))
+          errors = []
+
+          # D1: inventory was produced
+          if not os.path.exists('gating-inventory.json'):
+              errors.append('D1: gating-inventory.json not found')
+
+          for f in findings.get('findings', []):
+              fid = f.get('id', '?')
+              # D2: spec_paths
+              if not f.get('spec_paths'):
+                  errors.append(f'D2: {fid} missing spec_paths')
+              # D3: branch + subrelease
+              if not f.get('branch') or f.get('subrelease') is None:
+                  errors.append(f'D3: {fid} missing branch/subrelease')
+              # D4: C1 subpackages
+              if f.get('constellation') == 'C1' and not f.get('missing_subpackages'):
+                  errors.append(f'D4: {fid} C1 missing subpackages list')
+              # D5: C5 canister
+              if f.get('constellation') == 'C5' and not f.get('canister_version'):
+                  errors.append(f'D5: {fid} C5 missing canister_version')
+              # D6: C6 url/status
+              if f.get('constellation') == 'C6':
+                  if not f.get('url') or f.get('http_status') is None:
+                      errors.append(f'D6: {fid} C6 missing url/http_status')
+              # D7: remediation keys
+              rem = f.get('remediation', {})
+              if not rem.get('config_keys'):
+                  errors.append(f'D7: {fid} missing remediation config_keys')
+
+          if errors:
+              print('Quality rubric FAILED:')
+              for e in errors:
+                  print(f'  {e}')
+              sys.exit(1)
+          print('Quality rubric passed')
+          "
+
+      - name: Evaluate findings and set exit code
+        id: evaluate
+        run: |
+          python3 -c "
+          import json, sys
+          findings = json.load(open('findings.json'))
+          all_findings = findings.get('findings', [])
+          blockers = [f for f in all_findings if f.get('severity') in ('BLOCKING', 'CRITICAL')]
+          warnings = [f for f in all_findings if f.get('severity') in ('HIGH', 'WARNING')]
+
+          for b in blockers:
+              print(f\"::error::[{b['constellation']}] {b.get('branch','?')}/{b.get('package','?')}: {b['description']}\")
+          for w in warnings:
+              print(f\"::warning::[{w['constellation']}] {w.get('branch','?')}/{w.get('package','?')}: {w['description']}\")
+
+          summary = findings.get('summary', {})
+          total = summary.get('total_findings', len(all_findings))
+          print(f'Scan complete: {total} findings, {len(blockers)} blockers, {len(warnings)} warnings')
+
+          if blockers:
+              sys.exit(1)
+          "
+
+      - name: Upload findings artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gating-findings
+          path: |
+            findings.json
+            findings.md
+            gating-inventory.json
