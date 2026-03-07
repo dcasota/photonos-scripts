@@ -118,8 +118,8 @@ jobs:
         id: run
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLAB_FREEDESKTOP_ORG_USERNAME: ${{ secrets.GITLAB_FREEDESKTOP_ORG_USERNAME }}
-          GITLAB_FREEDESKTOP_ORG_TOKEN: ${{ secrets.GITLAB_FREEDESKTOP_ORG_TOKEN }}
+          GITLAB_FREEDESKTOP_ORG_USERNAME: ${{ secrets.GITLAB_FREEDESKTOP_ORG_USERNAME || 'ci-runner' }}
+          GITLAB_FREEDESKTOP_ORG_TOKEN: ${{ secrets.GITLAB_FREEDESKTOP_ORG_TOKEN || 'none' }}
         run: |
           SCRIPT="ci/photonos-package-report/photonos-package-report.ps1"
 
