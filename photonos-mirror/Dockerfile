@@ -65,8 +65,6 @@ RUN git clone --depth 1 https://github.com/vmware/photon.git \
         ${MIRROR_DIR}/repos/photon-os-installer \
     && git clone --depth 1 https://github.com/vmware/tdnf.git \
         ${MIRROR_DIR}/repos/tdnf \
-    && git clone --depth 1 https://github.com/vmware/vcf-security-and-compliance-guidelines.git \
-        ${MIRROR_DIR}/repos/vcf-security-and-compliance-guidelines \
     && git clone --depth 1 https://github.com/vmware/photon-docker-image.git \
         ${MIRROR_DIR}/repos/photon-docker-image \
     && git clone --depth 1 https://github.com/vmware/dod-compliance-and-automation.git \

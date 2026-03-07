@@ -11,7 +11,6 @@ Docker image based on `photon:5.0-20251221` that mirrors Photon OS documentation
 | vmware/photon | https://github.com/vmware/photon | `/mirror/repos/photon/` |
 | vmware/photon-os-installer | https://github.com/vmware/photon-os-installer | `/mirror/repos/photon-os-installer/` |
 | vmware/tdnf | https://github.com/vmware/tdnf | `/mirror/repos/tdnf/` |
-| vmware/vcf-security-and-compliance-guidelines | https://github.com/vmware/vcf-security-and-compliance-guidelines | `/mirror/repos/vcf-security-and-compliance-guidelines/` |
 | vmware/photon-docker-image | https://github.com/vmware/photon-docker-image | `/mirror/repos/photon-docker-image/` |
 | vmware/dod-compliance-and-automation | https://github.com/vmware/dod-compliance-and-automation | `/mirror/repos/dod-compliance-and-automation/` |
 | vmware/open-vm-tools | https://github.com/vmware/open-vm-tools | `/mirror/repos/open-vm-tools/` |
