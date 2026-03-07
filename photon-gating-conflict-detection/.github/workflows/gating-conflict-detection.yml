@@ -133,28 +133,91 @@ jobs:
           print('Quality rubric passed')
           "
 
-      - name: Evaluate findings and set exit code
+      - name: Evaluate findings
         id: evaluate
         run: |
-          python3 -c "
-          import json, sys
+          python3 << 'EVAL_EOF'
+          import json, os
+
           findings = json.load(open('findings.json'))
           all_findings = findings.get('findings', [])
+          metadata = findings.get('metadata', {})
+          summary = findings.get('summary', {})
           blockers = [f for f in all_findings if f.get('severity') in ('BLOCKING', 'CRITICAL')]
           warnings = [f for f in all_findings if f.get('severity') in ('HIGH', 'WARNING')]
-
-          for b in blockers:
-              print(f\"::error::[{b['constellation']}] {b.get('branch','?')}/{b.get('package','?')}: {b['description']}\")
-          for w in warnings:
-              print(f\"::warning::[{w['constellation']}] {w.get('branch','?')}/{w.get('package','?')}: {w['description']}\")
-
-          summary = findings.get('summary', {})
           total = summary.get('total_findings', len(all_findings))
-          print(f'Scan complete: {total} findings, {len(blockers)} blockers, {len(warnings)} warnings')
+          can_proceed = len(blockers) == 0
 
-          if blockers:
-              sys.exit(1)
-          "
+          # Annotations (visible in PR files tab and Actions log)
+          for b in blockers:
+              print(f"::error::[{b['constellation']}] {b.get('branch','?')}/{b.get('package','?')}: {b['description']}")
+          for w in warnings:
+              print(f"::warning::[{w['constellation']}] {w.get('branch','?')}/{w.get('package','?')}: {w['description']}")
+
+          # Output variables for downstream jobs
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as gh_out:
+              gh_out.write(f"has_blockers={'true' if blockers else 'false'}\n")
+              gh_out.write(f"total_findings={total}\n")
+              gh_out.write(f"blocker_count={len(blockers)}\n")
+              gh_out.write(f"warning_count={len(warnings)}\n")
+
+          # Job Summary (renders as markdown in the Actions run page)
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as gh_summary:
+              icon = '🔴' if blockers else '🟢'
+              gh_summary.write(f"# {icon} Gating Conflict Detection\n\n")
+              gh_summary.write(f"**Scan time**: {metadata.get('timestamp', 'N/A')}  \n")
+              gh_summary.write(f"**Branches**: {', '.join(metadata.get('branches_scanned', []))}  \n")
+              gh_summary.write(f"**Build can proceed**: {'No' if blockers else 'Yes'}\n\n")
+
+              gh_summary.write("## Summary\n\n")
+              gh_summary.write("| Metric | Count |\n")
+              gh_summary.write("|--------|-------|\n")
+              gh_summary.write(f"| Total findings | {total} |\n")
+              gh_summary.write(f"| Blockers/Critical | {len(blockers)} |\n")
+              gh_summary.write(f"| High/Warning | {len(warnings)} |\n\n")
+
+              by_con = summary.get('by_constellation', {})
+              if by_con:
+                  con_labels = {
+                      'C1': 'Package split/merge',
+                      'C2': 'Version bump deps',
+                      'C3': 'Subrelease boundary',
+                      'C4': 'Cross-branch contamination',
+                      'C5': 'FIPS canister coupling',
+                      'C6': 'Snapshot URL availability',
+                  }
+                  gh_summary.write("## By Constellation\n\n")
+                  gh_summary.write("| ID | Description | Count |\n")
+                  gh_summary.write("|----|-------------|-------|\n")
+                  for con in ['C1','C2','C3','C4','C5','C6']:
+                      count = by_con.get(con, 0)
+                      if count:
+                          gh_summary.write(f"| {con} | {con_labels.get(con, '')} | {count} |\n")
+                  gh_summary.write("\n")
+
+              if blockers:
+                  gh_summary.write("## Blockers\n\n")
+                  gh_summary.write("| Constellation | Branch | Package | Description |\n")
+                  gh_summary.write("|--------------|--------|---------|-------------|\n")
+                  for b in blockers:
+                      desc = b['description'][:120].replace('|', '\\|')
+                      gh_summary.write(f"| {b['constellation']} | {b.get('branch','?')} | {b.get('package','?')} | {desc} |\n")
+                  gh_summary.write("\n")
+
+              if warnings:
+                  gh_summary.write("<details><summary>Warnings ({0})</summary>\n\n".format(len(warnings)))
+                  gh_summary.write("| Constellation | Branch | Package | Description |\n")
+                  gh_summary.write("|--------------|--------|---------|-------------|\n")
+                  for w in warnings:
+                      desc = w['description'][:120].replace('|', '\\|')
+                      gh_summary.write(f"| {w['constellation']} | {w.get('branch','?')} | {w.get('package','?')} | {desc} |\n")
+                  gh_summary.write("\n</details>\n\n")
+
+              gh_summary.write("---\n*Full findings available in the `gating-findings` artifact.*\n")
+
+          print(f"Scan complete: {total} findings, {len(blockers)} blockers, {len(warnings)} warnings")
+          print(f"Build can proceed: {can_proceed}")
+          EVAL_EOF
 
       - name: Upload findings artifacts
         if: always()
