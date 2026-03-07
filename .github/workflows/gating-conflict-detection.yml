@@ -104,8 +104,8 @@ jobs:
 
           for f in findings.get('findings', []):
               fid = f.get('id', '?')
-              # D2: spec_paths
-              if not f.get('spec_paths'):
+              # D2: spec_paths (C6 findings may have empty spec_paths)
+              if not f.get('spec_paths') and f.get('constellation') != 'C6':
                   errors.append(f'D2: {fid} missing spec_paths')
               # D3: branch + subrelease
               if not f.get('branch') or f.get('subrelease') is None:
