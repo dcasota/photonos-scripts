@@ -1,0 +1,192 @@
+name: Photon OS Package Report
+
+on:
+  workflow_dispatch:
+    inputs:
+      report_type:
+        description: 'Report type to generate'
+        type: choice
+        options:
+          - all
+          - urlhealth
+          - package
+          - diff
+        default: 'all'
+      branches:
+        description: 'Branches for URL health (comma-separated)'
+        default: '3.0,4.0,5.0,6.0,common,dev,master'
+      urlhealth_branches:
+        description: 'Override: enable only these URL health branches (comma-separated, empty=use branches input)'
+        default: ''
+  schedule:
+    # Weekly scan on Sunday at 02:00 UTC
+    - cron: '0 2 * * 0'
+
+env:
+  REPORT_DIR: ${{ github.workspace }}/reports
+
+jobs:
+  package-report:
+    runs-on: self-hosted
+    timeout-minutes: 720
+
+    steps:
+      - name: Checkout CI tooling
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            photonos-package-report/.github
+            photonos-package-report/photonos-package-report.ps1
+          path: ci
+
+      - name: Ensure PowerShell is installed
+        run: |
+          if ! command -v pwsh &>/dev/null; then
+            echo "Installing PowerShell via tdnf..."
+            tdnf install -y powershell
+          fi
+          pwsh --version
+
+      - name: Ensure git and tar are available
+        run: |
+          for cmd in git tar; do
+            if ! command -v "$cmd" &>/dev/null; then
+              echo "::error::Required command '$cmd' not found"
+              exit 1
+            fi
+          done
+          git --version
+          tar --version | head -1
+
+      - name: Prepare report directory
+        run: mkdir -p "$REPORT_DIR"
+
+      - name: Determine report flags
+        id: flags
+        run: |
+          REPORT_TYPE="${{ github.event.inputs.report_type || 'all' }}"
+          BRANCHES="${{ github.event.inputs.branches || '3.0,4.0,5.0,6.0,common,dev,master' }}"
+          UH_OVERRIDE="${{ github.event.inputs.urlhealth_branches }}"
+
+          # Default all to false
+          PH3_UH=false; PH4_UH=false; PH5_UH=false; PH6_UH=false
+          COMMON_UH=false; DEV_UH=false; MASTER_UH=false
+          PKG=false; DIFF_CM=false; DIFF_56=false; DIFF_45=false; DIFF_34=false
+
+          # Determine which URL health branches to enable
+          if [ "$REPORT_TYPE" = "all" ] || [ "$REPORT_TYPE" = "urlhealth" ]; then
+            UH_LIST="${UH_OVERRIDE:-$BRANCHES}"
+            for b in $(echo "$UH_LIST" | tr ',' ' '); do
+              case "$b" in
+                3.0)    PH3_UH=true ;;
+                4.0)    PH4_UH=true ;;
+                5.0)    PH5_UH=true ;;
+                6.0)    PH6_UH=true ;;
+                common) COMMON_UH=true ;;
+                dev)    DEV_UH=true ;;
+                master) MASTER_UH=true ;;
+              esac
+            done
+          fi
+
+          if [ "$REPORT_TYPE" = "all" ] || [ "$REPORT_TYPE" = "package" ]; then
+            PKG=true
+          fi
+
+          if [ "$REPORT_TYPE" = "all" ] || [ "$REPORT_TYPE" = "diff" ]; then
+            DIFF_CM=true; DIFF_56=true; DIFF_45=true; DIFF_34=true
+          fi
+
+          # Write outputs
+          {
+            echo "ph3_uh=$PH3_UH"
+            echo "ph4_uh=$PH4_UH"
+            echo "ph5_uh=$PH5_UH"
+            echo "ph6_uh=$PH6_UH"
+            echo "common_uh=$COMMON_UH"
+            echo "dev_uh=$DEV_UH"
+            echo "master_uh=$MASTER_UH"
+            echo "pkg=$PKG"
+            echo "diff_cm=$DIFF_CM"
+            echo "diff_56=$DIFF_56"
+            echo "diff_45=$DIFF_45"
+            echo "diff_34=$DIFF_34"
+            echo "report_type=$REPORT_TYPE"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Run package report
+        id: run
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLAB_FREEDESKTOP_ORG_USERNAME: ${{ secrets.GITLAB_FREEDESKTOP_ORG_USERNAME }}
+          GITLAB_FREEDESKTOP_ORG_TOKEN: ${{ secrets.GITLAB_FREEDESKTOP_ORG_TOKEN }}
+        run: |
+          SCRIPT="ci/photonos-package-report/photonos-package-report.ps1"
+
+          pwsh -File "$SCRIPT" \
+            -sourcepath "$REPORT_DIR" \
+            -GeneratePh3URLHealthReport        "${{ steps.flags.outputs.ph3_uh }}" \
+            -GeneratePh4URLHealthReport        "${{ steps.flags.outputs.ph4_uh }}" \
+            -GeneratePh5URLHealthReport        "${{ steps.flags.outputs.ph5_uh }}" \
+            -GeneratePh6URLHealthReport        "${{ steps.flags.outputs.ph6_uh }}" \
+            -GeneratePhCommonURLHealthReport   "${{ steps.flags.outputs.common_uh }}" \
+            -GeneratePhDevURLHealthReport      "${{ steps.flags.outputs.dev_uh }}" \
+            -GeneratePhMasterURLHealthReport   "${{ steps.flags.outputs.master_uh }}" \
+            -GeneratePhPackageReport           "${{ steps.flags.outputs.pkg }}" \
+            -GeneratePhCommontoPhMasterDiffHigherPackageVersionReport "${{ steps.flags.outputs.diff_cm }}" \
+            -GeneratePh5toPh6DiffHigherPackageVersionReport          "${{ steps.flags.outputs.diff_56 }}" \
+            -GeneratePh4toPh5DiffHigherPackageVersionReport          "${{ steps.flags.outputs.diff_45 }}" \
+            -GeneratePh3toPh4DiffHigherPackageVersionReport          "${{ steps.flags.outputs.diff_34 }}"
+
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Generate summary
+        if: always()
+        run: |
+          python3 << 'SUMMARY_EOF'
+          import os, glob
+
+          report_dir = os.environ.get('REPORT_DIR', 'reports')
+          report_type = "${{ steps.flags.outputs.report_type }}"
+
+          prn_files = sorted(glob.glob(os.path.join(report_dir, '**', '*.prn'), recursive=True))
+
+          summary_path = os.environ.get('GITHUB_STEP_SUMMARY', '/dev/null')
+          with open(summary_path, 'a') as s:
+              s.write("# Photon OS Package Report\n\n")
+              s.write(f"**Report type**: {report_type}  \n")
+              s.write(f"**Output directory**: `{report_dir}`  \n")
+              s.write(f"**Files generated**: {len(prn_files)}\n\n")
+
+              if prn_files:
+                  s.write("## Generated Reports\n\n")
+                  s.write("| File | Size |\n")
+                  s.write("|------|------|\n")
+                  for f in prn_files:
+                      name = os.path.basename(f)
+                      size = os.path.getsize(f)
+                      if size > 1024*1024:
+                          size_str = f"{size/1024/1024:.1f} MB"
+                      elif size > 1024:
+                          size_str = f"{size/1024:.1f} KB"
+                      else:
+                          size_str = f"{size} B"
+                      s.write(f"| `{name}` | {size_str} |\n")
+                  s.write("\n")
+              else:
+                  s.write("::warning::No .prn report files were generated.\n\n")
+
+              s.write("---\n*Full reports available in the `package-reports` artifact.*\n")
+
+          print(f"Summary written: {len(prn_files)} report files found")
+          SUMMARY_EOF
+
+      - name: Upload report artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-reports
+          path: |
+            ${{ env.REPORT_DIR }}/*.prn
+          retention-days: 90
+          if-no-files-found: warn
