@@ -5257,15 +5257,15 @@ if ($GeneratePhPackageReport)
     $PackagesCommonMain = @($PackagesCommon | Where-Object { -not $_.SubRelease })
     $PackagesDevMain = @($PackagesDev | Where-Object { -not $_.SubRelease })
     $PackagesMasterMain = @($PackagesMaster | Where-Object { -not $_.SubRelease })
-    $result = @($Packages3Main,$Packages4Main,$Packages5Main,$Packages6Main,$PackagesCommonMain,$PackagesDevMain,$PackagesMasterMain| foreach-object{$currentTask}|Select-Object Spec,`
+    $result = @($Packages3Main,$Packages4Main,$Packages5Main,$Packages6Main,$PackagesCommonMain,$PackagesDevMain,$PackagesMasterMain| foreach-object{$_}|Select-Object Spec,`
     @{l='SubRelease';e={""}},`
-    @{l='photon-3.0';e={if($currentTask.Spec -in $Packages3Main.Spec) {$Packages3Main[$Packages3Main.Spec.IndexOf($currentTask.Spec)].version}}},`
-    @{l='photon-4.0';e={if($currentTask.Spec -in $Packages4Main.Spec) {$Packages4Main[$Packages4Main.Spec.IndexOf($currentTask.Spec)].version}}},`
-    @{l='photon-5.0';e={if($currentTask.Spec -in $Packages5Main.Spec) {$Packages5Main[$Packages5Main.Spec.IndexOf($currentTask.Spec)].version}}},`
-    @{l='photon-6.0';e={if($currentTask.Spec -in $Packages6Main.Spec) {$Packages6Main[$Packages6Main.Spec.IndexOf($currentTask.Spec)].version}}},`
-    @{l='photon-common';e={if($currentTask.Spec -in $PackagesCommonMain.Spec) {$PackagesCommonMain[$PackagesCommonMain.Spec.IndexOf($currentTask.Spec)].version}}},`
-    @{l='photon-dev';e={if($currentTask.Spec -in $PackagesDevMain.Spec) {$PackagesDevMain[$PackagesDevMain.Spec.IndexOf($currentTask.Spec)].version}}},`
-    @{l='photon-master';e={if($currentTask.Spec -in $PackagesMasterMain.Spec) {$PackagesMasterMain[$PackagesMasterMain.Spec.IndexOf($currentTask.Spec)].version}}} -Unique | Sort-object Spec)
+    @{l='photon-3.0';e={if($_.Spec -in $Packages3Main.Spec) {$Packages3Main[$Packages3Main.Spec.IndexOf($_.Spec)].version}}},`
+    @{l='photon-4.0';e={if($_.Spec -in $Packages4Main.Spec) {$Packages4Main[$Packages4Main.Spec.IndexOf($_.Spec)].version}}},`
+    @{l='photon-5.0';e={if($_.Spec -in $Packages5Main.Spec) {$Packages5Main[$Packages5Main.Spec.IndexOf($_.Spec)].version}}},`
+    @{l='photon-6.0';e={if($_.Spec -in $Packages6Main.Spec) {$Packages6Main[$Packages6Main.Spec.IndexOf($_.Spec)].version}}},`
+    @{l='photon-common';e={if($_.Spec -in $PackagesCommonMain.Spec) {$PackagesCommonMain[$PackagesCommonMain.Spec.IndexOf($_.Spec)].version}}},`
+    @{l='photon-dev';e={if($_.Spec -in $PackagesDevMain.Spec) {$PackagesDevMain[$PackagesDevMain.Spec.IndexOf($_.Spec)].version}}},`
+    @{l='photon-master';e={if($_.Spec -in $PackagesMasterMain.Spec) {$PackagesMasterMain[$PackagesMasterMain.Spec.IndexOf($_.Spec)].version}}} -Unique | Sort-object Spec)
     # Append subrelease packages as separate rows
     $subReleasePackages = @($Packages3,$Packages4,$Packages5,$Packages6,$PackagesCommon,$PackagesDev,$PackagesMaster | ForEach-Object{$_} | Where-Object { $_.SubRelease })
     foreach ($srPkg in $subReleasePackages) {
@@ -5285,7 +5285,7 @@ if ($GeneratePhPackageReport)
     $result = $result | Sort-Object Spec, SubRelease -Unique
     $outputfile=Join-Path -Path $global:sourcepath -ChildPath "photonos-package-report_$((get-date).tostring("yyyMMddHHmm")).prn"
     "Spec"+","+"SubRelease"+","+"photon-3.0"+","+"photon-4.0"+","+"photon-5.0"+","+"photon-6.0"+","+"photon-common"+","+"photon-dev"+","+"photon-master"| out-file $outputfile
-    $result | foreach-object { $currentTask.Spec+","+$currentTask.SubRelease+","+$currentTask."photon-3.0"+","+$currentTask."photon-4.0"+","+$currentTask."photon-5.0"+","+$currentTask."photon-6.0"+","+$currentTask."photon-common"+","+$currentTask."photon-dev"+","+$currentTask."photon-master"} |  out-file $outputfile -append
+    $result | foreach-object { $_.Spec+","+$_.SubRelease+","+$_."photon-3.0"+","+$_."photon-4.0"+","+$_."photon-5.0"+","+$_."photon-6.0"+","+$_."photon-common"+","+$_."photon-dev"+","+$_."photon-master"} |  out-file $outputfile -append
 }
 
 if ($GeneratePhCommontoPhMasterDiffHigherPackageVersionReport)
@@ -5294,13 +5294,13 @@ if ($GeneratePhCommontoPhMasterDiffHigherPackageVersionReport)
     $outputfile1=Join-Path -Path $global:sourcepath -ChildPath "photonos-diff-report-common-master_$((get-date).tostring("yyyMMddHHmm")).prn"
     "Spec"+","+"photon-common"+","+"photon-master"| out-file $outputfile1
     $result | foreach-object {
-        if ($currentTask.SubRelease) { return }
-        if ((!([string]::IsNullOrEmpty($currentTask.'photon-common'))) -and (!([string]::IsNullOrEmpty($currentTask.'photon-master'))))
+        if ($_.SubRelease) { return }
+        if ((!([string]::IsNullOrEmpty($_.'photon-common'))) -and (!([string]::IsNullOrEmpty($_.'photon-master'))))
         {
-            $versionCompare1 = VersionCompare $currentTask.'photon-common' $currentTask.'photon-master'
+            $versionCompare1 = VersionCompare $_.'photon-common' $_.'photon-master'
             if ($versionCompare1 -eq 1)
             {
-                $diffspec1=[System.String]::Concat($currentTask.spec, ',',$currentTask.'photon-common',',',$currentTask.'photon-master')
+                $diffspec1=[System.String]::Concat($_.spec, ',',$_.'photon-common',',',$_.'photon-master')
                 $diffspec1 | out-file $outputfile1 -append
             }
         }
@@ -5313,13 +5313,13 @@ if ($GeneratePh5toPh6DiffHigherPackageVersionReport)
     $outputfile1=Join-Path -Path $global:sourcepath -ChildPath "photonos-diff-report-5.0-6.0_$((get-date).tostring("yyyMMddHHmm")).prn"
     "Spec"+","+"photon-5.0"+","+"photon-6.0"| out-file $outputfile1
     $result | foreach-object {
-        if ($currentTask.SubRelease) { return }
-        if ((!([string]::IsNullOrEmpty($currentTask.'photon-5.0'))) -and (!([string]::IsNullOrEmpty($currentTask.'photon-6.0'))))
+        if ($_.SubRelease) { return }
+        if ((!([string]::IsNullOrEmpty($_.'photon-5.0'))) -and (!([string]::IsNullOrEmpty($_.'photon-6.0'))))
         {
-            $versionCompare1 = VersionCompare $currentTask.'photon-5.0' $currentTask.'photon-6.0'
+            $versionCompare1 = VersionCompare $_.'photon-5.0' $_.'photon-6.0'
             if ($versionCompare1 -eq 1)
             {
-                $diffspec1=[System.String]::Concat($currentTask.spec, ',',$currentTask.'photon-5.0',',',$currentTask.'photon-6.0')
+                $diffspec1=[System.String]::Concat($_.spec, ',',$_.'photon-5.0',',',$_.'photon-6.0')
                 $diffspec1 | out-file $outputfile1 -append
             }
         }
@@ -5332,13 +5332,13 @@ if ($GeneratePh4toPh5DiffHigherPackageVersionReport)
     $outputfile1=Join-Path -Path $global:sourcepath -ChildPath "photonos-diff-report-4.0-5.0_$((get-date).tostring("yyyMMddHHmm")).prn"
     "Spec"+","+"photon-4.0"+","+"photon-5.0"| out-file $outputfile1
     $result | foreach-object {
-        if ($currentTask.SubRelease) { return }
-        if ((!([string]::IsNullOrEmpty($currentTask.'photon-4.0'))) -and (!([string]::IsNullOrEmpty($currentTask.'photon-5.0'))))
+        if ($_.SubRelease) { return }
+        if ((!([string]::IsNullOrEmpty($_.'photon-4.0'))) -and (!([string]::IsNullOrEmpty($_.'photon-5.0'))))
         {
-            $versionCompare1 = VersionCompare $currentTask.'photon-4.0' $currentTask.'photon-5.0'
+            $versionCompare1 = VersionCompare $_.'photon-4.0' $_.'photon-5.0'
             if ($versionCompare1 -eq 1)
             {
-                $diffspec1=[System.String]::Concat($currentTask.spec, ',',$currentTask.'photon-4.0',',',$currentTask.'photon-5.0')
+                $diffspec1=[System.String]::Concat($_.spec, ',',$_.'photon-4.0',',',$_.'photon-5.0')
                 $diffspec1 | out-file $outputfile1 -append
             }
         }
@@ -5351,13 +5351,13 @@ if ($GeneratePh3toPh4DiffHigherPackageVersionReport)
     $outputfile2=Join-Path -Path $global:sourcepath -ChildPath "photonos-diff-report-3.0-4.0_$((get-date).tostring("yyyMMddHHmm")).prn"
     "Spec"+","+"photon-3.0"+","+"photon-4.0"| out-file $outputfile2
     $result | foreach-object {
-        if ($currentTask.SubRelease) { return }
-        if ((!([string]::IsNullOrEmpty($currentTask.'photon-3.0'))) -and (!([string]::IsNullOrEmpty($currentTask.'photon-4.0'))))
+        if ($_.SubRelease) { return }
+        if ((!([string]::IsNullOrEmpty($_.'photon-3.0'))) -and (!([string]::IsNullOrEmpty($_.'photon-4.0'))))
         {
-            $versionCompare2 = VersionCompare $currentTask.'photon-3.0' $currentTask.'photon-4.0'
+            $versionCompare2 = VersionCompare $_.'photon-3.0' $_.'photon-4.0'
             if ($versionCompare2 -eq 1)
             {
-                $diffspec2=[System.String]::Concat($currentTask.spec, ',',$currentTask.'photon-3.0',',',$currentTask.'photon-4.0')
+                $diffspec2=[System.String]::Concat($_.spec, ',',$_.'photon-3.0',',',$_.'photon-4.0')
                 $diffspec2 | out-file $outputfile2 -append
             }
         }
