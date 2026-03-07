@@ -34,7 +34,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           sparse-checkout: |
-            .github
+            photon-gating-conflict-detection/.github
           path: ci
 
       - name: Checkout common branch
@@ -62,7 +62,7 @@ jobs:
 
       - name: Phase 0 -- Build Tree Inventory
         run: |
-          python3 ci/.github/scripts/photon-gating-agent.py \
+          python3 ci/photon-gating-conflict-detection/.github/scripts/photon-gating-agent.py \
             --base-dir workspace \
             --branches "${{ github.event.inputs.branches || '4.0,5.0,6.0' }}" \
             --arch x86_64 \
@@ -71,7 +71,7 @@ jobs:
 
       - name: Phase 1 -- Conflict Detection
         run: |
-          python3 ci/.github/scripts/photon-gating-agent.py \
+          python3 ci/photon-gating-conflict-detection/.github/scripts/photon-gating-agent.py \
             --base-dir workspace \
             --branches "${{ github.event.inputs.branches || '4.0,5.0,6.0' }}" \
             --arch x86_64 \
@@ -84,7 +84,7 @@ jobs:
         run: |
           python3 -c "
           import json, jsonschema
-          schema = json.load(open('ci/.github/gating-findings-schema.json'))
+          schema = json.load(open('ci/photon-gating-conflict-detection/.github/gating-findings-schema.json'))
           findings = json.load(open('findings.json'))
           jsonschema.validate(findings, schema)
           print('Schema validation passed')
