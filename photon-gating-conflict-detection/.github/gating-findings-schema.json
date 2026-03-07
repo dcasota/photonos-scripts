@@ -43,7 +43,7 @@
             "enum": ["BLOCKING", "CRITICAL", "HIGH", "WARNING", "INFO"]
           },
           "branch": { "type": "string" },
-          "subrelease": { "type": "integer" },
+          "subrelease": { "oneOf": [{ "type": "integer" }, { "type": "string" }] },
           "package": { "type": "string" },
           "description": { "type": "string" },
           "spec_paths": {

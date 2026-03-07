@@ -980,7 +980,7 @@ def generate_json_output(inventory, findings, args=None):
                 "subpackages": f.get("missing_subpackages", []),
                 "consuming_specs": f.get("consumers", []),
                 "branches": [f.get("branch", "")],
-                "snapshots": [f.get("subrelease", 0)],
+                "snapshots": [int(s) for s in str(f.get("subrelease", 0)).split("/") if s.isdigit()],
                 "architectures": [args.arch if args else "x86_64"],
             },
         })
