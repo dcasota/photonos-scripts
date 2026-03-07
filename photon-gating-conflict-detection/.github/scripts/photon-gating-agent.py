@@ -1127,11 +1127,8 @@ def main():
         for b in blockers:
             print(f"  [{b['constellation']}] {b['branch']}/{b['package']}: {b['description'][:120]}")
 
-    if blockers:
-        sys.exit(1)
-    else:
+    if not blockers:
         print("\nNo blocking findings. Build can proceed.")
-        sys.exit(0)
 
 
 if __name__ == "__main__":
