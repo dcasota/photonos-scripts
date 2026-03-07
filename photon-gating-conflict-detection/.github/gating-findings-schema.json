@@ -31,8 +31,8 @@
         "properties": {
           "id": {
             "type": "string",
-            "pattern": "^F-[0-9]+$",
-            "description": "Unique finding identifier (e.g., F-001)"
+            "pattern": "^C[0-9]+-",
+            "description": "Unique finding identifier (e.g., C3-5.0-systemd-dfd7ac5e)"
           },
           "constellation": {
             "type": "string",
@@ -85,21 +85,16 @@
           },
           "remediation": {
             "type": "object",
-            "required": ["strategy", "config_keys"],
+            "required": ["action", "config_keys"],
             "properties": {
-              "strategy": { "type": "string" },
+              "action": {
+                "type": "string",
+                "description": "Human-readable remediation action"
+              },
               "config_keys": {
                 "type": "array",
-                "items": {
-                  "type": "object",
-                  "required": ["file", "key", "value"],
-                  "properties": {
-                    "file": { "type": "string" },
-                    "key": { "type": "string" },
-                    "value": { "type": "string" }
-                  }
-                },
-                "description": "Exact build-config.json keys to set"
+                "items": { "type": "string" },
+                "description": "build-config.json keys relevant to the fix"
               }
             }
           }

@@ -937,14 +937,33 @@ def severity_rank(s):
     return {"BLOCKING": 0, "CRITICAL": 1, "HIGH": 2, "WARNING": 3}.get(s, 99)
 
 
-def generate_json_output(inventory, findings):
+def generate_json_output(inventory, findings, args=None):
     findings_sorted = sorted(findings, key=lambda f: severity_rank(f.get("severity", "")))
+    branches_scanned = list(inventory["branches"].keys())
+    timestamp = datetime.now(timezone.utc).isoformat()
+
+    total_specs = sum(b.get("spec_count", 0) for b in inventory["branches"].values())
+    total_gated = sum(len(b.get("gated_subdirs", [])) for b in inventory["branches"].values())
+
+    blockers = [f for f in findings_sorted if f.get("severity") in ("BLOCKING", "CRITICAL")]
+
+    metadata = {
+        "timestamp": timestamp,
+        "base_dir": args.base_dir if args else ".",
+        "branches_scanned": branches_scanned,
+        "arch": args.arch if args else "x86_64",
+        "agent_version": "1.0.0",
+        "check_urls_enabled": args.check_urls if args else False,
+        "total_specs_scanned": total_specs,
+        "total_gated_specs": total_gated,
+    }
+
     summary = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
         "total_findings": len(findings),
         "by_severity": {},
         "by_constellation": {},
-        "branches_scanned": list(inventory["branches"].keys()),
+        "branches_affected": list(set(f.get("branch", "") for f in findings_sorted)),
+        "build_can_proceed": len(blockers) == 0,
     }
     for f in findings:
         sev = f.get("severity", "UNKNOWN")
@@ -952,20 +971,37 @@ def generate_json_output(inventory, findings):
         con = f.get("constellation", "?")
         summary["by_constellation"][con] = summary["by_constellation"].get(con, 0) + 1
 
+    traceability = []
+    for f in findings_sorted:
+        traceability.append({
+            "finding_id": f.get("id", ""),
+            "blast_radius": {
+                "spec": f.get("package", ""),
+                "subpackages": f.get("missing_subpackages", []),
+                "consuming_specs": f.get("consumers", []),
+                "branches": [f.get("branch", "")],
+                "snapshots": [f.get("subrelease", 0)],
+                "architectures": [args.arch if args else "x86_64"],
+            },
+        })
+
     return {
-        "schema_version": "1.0",
-        "summary": summary,
+        "metadata": metadata,
+        "inventory_ref": args.inventory or "gating-inventory.json" if args else "gating-inventory.json",
         "findings": findings_sorted,
+        "traceability": traceability,
+        "summary": summary,
     }
 
 
 def generate_md_output(findings_doc):
     lines = []
     lines.append("# Gating Conflict Detection Findings\n")
+    metadata = findings_doc.get("metadata", {})
     summary = findings_doc.get("summary", {})
-    lines.append(f"**Scan time**: {summary.get('timestamp', 'N/A')}\n")
+    lines.append(f"**Scan time**: {metadata.get('timestamp', 'N/A')}\n")
     lines.append(f"**Total findings**: {summary.get('total_findings', 0)}\n")
-    lines.append(f"**Branches scanned**: {', '.join(summary.get('branches_scanned', []))}\n")
+    lines.append(f"**Branches scanned**: {', '.join(metadata.get('branches_scanned', []))}\n")
 
     lines.append("\n## Summary by Severity\n")
     lines.append("| Severity | Count |")
@@ -1101,7 +1137,7 @@ def main():
     findings = deduped
 
     # Output
-    findings_doc = generate_json_output(inventory, findings)
+    findings_doc = generate_json_output(inventory, findings, args=args)
 
     with open(args.json_output, "w") as f:
         json.dump(findings_doc, f, indent=2)
