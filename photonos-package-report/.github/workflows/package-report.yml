@@ -28,7 +28,7 @@ env:
 jobs:
   package-report:
     runs-on: self-hosted
-    timeout-minutes: 720
+    timeout-minutes: 2880
 
     steps:
       - name: Checkout CI tooling
