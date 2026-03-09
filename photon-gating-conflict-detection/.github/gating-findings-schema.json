@@ -66,8 +66,8 @@
             "description": "Required for C5 findings"
           },
           "http_status": {
-            "type": "integer",
-            "description": "Required for C6 findings"
+            "type": ["integer", "null"],
+            "description": "HTTP status code for C6 findings (null when URL checking is disabled)"
           },
           "url": {
             "type": "string",
