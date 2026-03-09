@@ -18,6 +18,18 @@ on:
       urlhealth_branches:
         description: 'Override: enable only these URL health branches (comma-separated, empty=use branches input)'
         default: ''
+      sourcepath:
+        description: 'Root path for photon branch clones'
+        default: ''
+      clonepath:
+        description: 'Path for upstream git clones (default: upstreamspath/<branch>/clones)'
+        default: ''
+      upstreamspath:
+        description: 'Path for SOURCES_NEW/SPECS_NEW/SOURCES_KojiFedora (default: sourcepath/photon-upstreams)'
+        default: ''
+      reportpath:
+        description: 'Path for .prn report output files (default: sourcepath)'
+        default: ''
   schedule:
     # Weekly scan on Sunday at 02:00 UTC
     - cron: '0 2 * * 0'
@@ -128,8 +140,27 @@ jobs:
         run: |
           SCRIPT="ci/photonos-package-report/photonos-package-report.ps1"
 
-          pwsh -File "$SCRIPT" \
-            -sourcepath "$REPORT_DIR" \
+          # Use custom sourcepath if provided, otherwise default to REPORT_DIR
+          SRCPATH="${{ github.event.inputs.sourcepath }}"
+          if [ -z "$SRCPATH" ]; then
+            SRCPATH="$REPORT_DIR"
+          fi
+
+          # Build optional path arguments
+          EXTRA_ARGS=""
+          if [ -n "${{ github.event.inputs.clonepath }}" ]; then
+            EXTRA_ARGS="$EXTRA_ARGS -clonepath \"${{ github.event.inputs.clonepath }}\""
+          fi
+          if [ -n "${{ github.event.inputs.upstreamspath }}" ]; then
+            EXTRA_ARGS="$EXTRA_ARGS -upstreamspath \"${{ github.event.inputs.upstreamspath }}\""
+          fi
+          if [ -n "${{ github.event.inputs.reportpath }}" ]; then
+            EXTRA_ARGS="$EXTRA_ARGS -reportpath \"${{ github.event.inputs.reportpath }}\""
+          fi
+
+          eval pwsh -File "$SCRIPT" \
+            -sourcepath "$SRCPATH" \
+            $EXTRA_ARGS \
             -GeneratePh3URLHealthReport        "${{ steps.flags.outputs.ph3_uh }}" \
             -GeneratePh4URLHealthReport        "${{ steps.flags.outputs.ph4_uh }}" \
             -GeneratePh5URLHealthReport        "${{ steps.flags.outputs.ph5_uh }}" \
@@ -152,6 +183,9 @@ jobs:
           import os, glob
 
           report_dir = os.environ.get('REPORT_DIR', 'reports')
+          custom_reportpath = "${{ github.event.inputs.reportpath }}"
+          if custom_reportpath:
+              report_dir = custom_reportpath
           report_type = "${{ steps.flags.outputs.report_type }}"
 
           prn_files = sorted(glob.glob(os.path.join(report_dir, '**', '*.prn'), recursive=True))
@@ -192,21 +226,25 @@ jobs:
         with:
           name: package-reports
           path: |
-            ${{ env.REPORT_DIR }}/*.prn
+            ${{ github.event.inputs.reportpath || env.REPORT_DIR }}/*.prn
           retention-days: 90
           if-no-files-found: warn
 
       - name: Commit reports to scans directory
         if: always()
         run: |
+          ACTUAL_REPORT_DIR="${{ github.event.inputs.reportpath }}"
+          if [ -z "$ACTUAL_REPORT_DIR" ]; then
+            ACTUAL_REPORT_DIR="$REPORT_DIR"
+          fi
           SCANS_DIR="repo/photonos-package-report/scans"
           mkdir -p "$SCANS_DIR"
-          PRN_COUNT=$(find "$REPORT_DIR" -maxdepth 1 -name '*.prn' -type f | wc -l)
+          PRN_COUNT=$(find "$ACTUAL_REPORT_DIR" -maxdepth 1 -name '*.prn' -type f 2>/dev/null | wc -l)
           if [ "$PRN_COUNT" -eq 0 ]; then
             echo "No .prn files to commit"
             exit 0
           fi
-          cp "$REPORT_DIR"/*.prn "$SCANS_DIR/"
+          cp "$ACTUAL_REPORT_DIR"/*.prn "$SCANS_DIR/"
           cd repo
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
