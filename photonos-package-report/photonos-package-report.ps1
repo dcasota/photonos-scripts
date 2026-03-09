@@ -85,6 +85,9 @@ param (
     [string]$gitlab_freedesktop_org_username=$env:GITLAB_FREEDESKTOP_ORG_USERNAME,
     [string]$gitlab_freedesktop_org_token=$env:GITLAB_FREEDESKTOP_ORG_TOKEN,
     [string]$sourcepath = $(if ($env:PUBLIC) { $env:PUBLIC } else { $HOME }),
+    [string]$clonepath = "",
+    [string]$upstreamspath = "",
+    [string]$reportpath = "",
     [Parameter(Mandatory = $false)][ValidateNotNull()]$GeneratePh3URLHealthReport=$true,
     [Parameter(Mandatory = $false)][ValidateNotNull()]$GeneratePh4URLHealthReport=$true,
     [Parameter(Mandatory = $false)][ValidateNotNull()]$GeneratePh5URLHealthReport=$true,
@@ -564,7 +567,7 @@ cython.spec,https://github.com/cython/cython/releases/download/%{version}/cython
 cython3.spec,https://github.com/cython/cython/archive/refs/tags/%{version}.tar.gz,https://github.com/cython/cython.git
 dbus.spec,,https://gitlab.freedesktop.org/dbus/dbus.git
 dbus-broker.spec,https://github.com/bus1/dbus-broker/releases/download/v%{version}/dbus-broker-%{version}.tar.xz,https://github.com/bus1/dbus-broker.git
-dbus-glib.spec,,https://gitlab.freedesktop.org/dbus/dbus-glib.git
+dbus-glib.spec,https://dbus.freedesktop.org/releases/dbus-glib/dbus-glib-%{version}.tar.gz,https://gitlab.freedesktop.org/dbus/dbus-glib.git
 dbus-python.spec,,https://gitlab.freedesktop.org/dbus/dbus-python.git
 dbxtool.spec,https://github.com/rhboot/dbxtool/releases/download/dbxtool-%{version}/dbxtool-%{version}.tar.bz2,https://github.com/rhboot/dbxtool.git,,,,,1,2022-08-24
 ddclient.spec,https://github.com/ddclient/ddclient/releases/download/v%{version}/ddclient-%{version}.tar.gz,https://github.com/ddclient/ddclient.git
@@ -670,7 +673,7 @@ gtk-doc.spec,https://github.com/GNOME/gtk-doc/archive/refs/tags/%{version}.tar.g
 guile.spec,https://ftp.gnu.org/gnu/guile/guile-%{version}.tar.gz
 haproxy.spec,https://www.haproxy.org/download/3.2/src/haproxy-%{version}.tar.gz,https://github.com/haproxy/haproxy.git
 haproxy-dataplaneapi.spec,https://github.com/haproxytech/dataplaneapi/archive/refs/tags/v%{version}.tar.gz,https://github.com/haproxytech/dataplaneapi.git
-harfbuzz.spec,,https://github.com/harfbuzz/harfbuzz.git
+harfbuzz.spec,https://github.com/harfbuzz/harfbuzz/releases/download/%{version}/harfbuzz-%{version}.tar.xz,https://github.com/harfbuzz/harfbuzz.git
 haveged.spec,https://github.com/jirka-h/haveged/archive/refs/tags/v%{version}.tar.gz,https://github.com/jirka-h/haveged.git
 hawkey.spec,https://github.com/rpm-software-management/hawkey/archive/refs/tags/hawkey-%{version}.tar.gz,https://github.com/rpm-software-management/hawkey.git
 heapster.spec,https://github.com/kubernetes-retired/heapster/archive/refs/tags/v%{version}.tar.gz,https://github.com/kubernetes-retired/heapster.git
@@ -695,7 +698,7 @@ intltool.spec,https://launchpad.net/intltool/trunk/%{version}/+download/intltool
 ipcalc.spec,https://gitlab.com/ipcalc/ipcalc/-/archive/%{version}/ipcalc-%{version}.tar.gz,https://gitlab.com/ipcalc/ipcalc.git
 iperf.spec,https://github.com/esnet/iperf/archive/refs/tags/%{version}.tar.gz,https://github.com/esnet/iperf.git
 ipmitool.spec,https://github.com/ipmitool/ipmitool/archive/refs/tags/IPMITOOL_%{version}.tar.gz,https://github.com/ipmitool/ipmitool.git
-iproute2.spec,,https://git.kernel.org/pub/scm/network/iproute2/iproute2.git,,,
+iproute2.spec,https://www.kernel.org/pub/linux/utils/net/iproute2/iproute2-%{version}.tar.xz,https://git.kernel.org/pub/scm/network/iproute2/iproute2.git,,,
 ipset.spec,https://ipset.netfilter.org/ipset-%{version}.tar.bz2
 iptables.spec,https://www.netfilter.org/projects/iptables/files/iptables-%{version}.tar.xz
 iptraf-ng.spec,https://github.com/iptraf-ng/iptraf-ng/archive/refs/tags/v%{version}.tar.gz,https://github.com/iptraf-ng/iptraf-ng.git
@@ -717,7 +720,7 @@ keepalived.spec,https://github.com/acassen/keepalived/archive/refs/tags/v%{versi
 kexec-tools.spec,https://www.kernel.org/pub/linux/utils/kernel/kexec/kexec-tools-%{version}.tar.xz,https://git.kernel.org/pub/scm/utils/kernel/kexec/kexec-tools.git
 keyutils.spec,https://git.kernel.org/pub/scm/linux/kernel/git/dhowells/keyutils.git/snapshot/keyutils-%{version}.tar.gz,https://git.kernel.org/pub/scm/linux/kernel/git/dhowells/keyutils.git
 kibana.spec,https://github.com/elastic/kibana/archive/refs/tags/v%{version}.tar.gz,https://github.com/elastic/kibana.git
-kmod.spec,,https://git.kernel.org/pub/scm/utils/kernel/kmod/kmod.git,,,
+kmod.spec,https://www.kernel.org/pub/linux/utils/kernel/kmod/kmod-%{version}.tar.xz,https://git.kernel.org/pub/scm/utils/kernel/kmod/kmod.git,,,
 kpatch.spec,https://github.com/dynup/kpatch/archive/refs/tags/v%{version}.tar.gz,https://github.com/dynup/kpatch.git
 krb5.spec,https://github.com/krb5/krb5/archive/refs/tags/krb5-%{version}-final.tar.gz,https://github.com/krb5/krb5.git
 ktap.spec,https://github.com/ktap/ktap/archive/refs/tags/v%{version}.tar.gz,https://github.com/ktap/ktap.git
@@ -803,8 +806,8 @@ libtevent.spec,https://gitlab.com/samba-team/devel/samba/-/archive/tevent-%{vers
 libteam.spec,https://github.com/jpirko/libteam/archive/refs/tags/v%{version}.tar.gz,https://github.com/jpirko/libteam.git
 libtiff.spec,,https://gitlab.com/libtiff/libtiff.git
 libtirpc.spec,https://unlimited.dl.sourceforge.net/project/libtirpc/libtirpc/%{version}/libtirpc-%{version}.tar.bz2,git://linux-nfs.org/~steved/libtirpc.git
-libtraceevent.spec,,https://git.kernel.org/pub/scm/libs/libtrace/libtraceevent.git
-libtracefs.spec,,https://git.kernel.org/pub/scm/libs/libtrace/libtracefs.git
+libtraceevent.spec,https://git.kernel.org/pub/scm/libs/libtrace/libtraceevent.git/snapshot/libtraceevent-%{version}.tar.gz,https://git.kernel.org/pub/scm/libs/libtrace/libtraceevent.git
+libtracefs.spec,https://git.kernel.org/pub/scm/libs/libtrace/libtracefs.git/snapshot/libtracefs-%{version}.tar.gz,https://git.kernel.org/pub/scm/libs/libtrace/libtracefs.git
 libuv.spec,https://github.com/libuv/libuv/archive/refs/tags/v%{version}.tar.gz,https://github.com/libuv/libuv.git
 libvirt.spec,https://github.com/libvirt/libvirt/archive/refs/tags/v%{version}.tar.gz,https://github.com/libvirt/libvirt.git
 libwebp.spec,https://github.com/webmproject/libwebp/archive/refs/tags/v%{version}.tar.gz,https://github.com/webmproject/libwebp.git
@@ -850,7 +853,7 @@ memcached.spec,https://github.com/memcached/memcached/archive/refs/tags/%{versio
 mesa.spec,https://gitlab.freedesktop.org/mesa/mesa/-/archive/mesa-%{version}/mesa-mesa-%{version}.tar.gz,https://gitlab.freedesktop.org/mesa/mesa.git
 meson.spec,https://github.com/mesonbuild/meson/releases/download/%{version}/meson-%{version}.tar.gz,https://github.com/mesonbuild/meson.git
 mkinitcpio.spec,https://github.com/archlinux/mkinitcpio/archive/refs/tags/v%{version}.tar.gz,https://github.com/archlinux/mkinitcpio.git
-mm-common.spec,,https://gitlab.gnome.org/GNOME/mm-common.git
+mm-common.spec,https://gitlab.gnome.org/GNOME/mm-common/-/archive/%{version}/mm-common-%{version}.tar.gz,https://gitlab.gnome.org/GNOME/mm-common.git
 ModemManager.spec,,https://gitlab.freedesktop.org/modemmanager/modemmanager.git
 modemmanager.spec,,https://gitlab.freedesktop.org/modemmanager/modemmanager.git
 mokutil.spec,https://github.com/lcp/mokutil/archive/refs/tags/%{version}.tar.gz,https://github.com/lcp/mokutil.git
@@ -1110,7 +1113,6 @@ python-pydantic.spec,https://github.com/pydantic/pydantic/archive/refs/tags/v%{v
 python-pyflakes.spec,https://github.com/PyCQA/pyflakes/archive/refs/tags/%{version}.tar.gz,https://github.com/PyCQA/pyflakes.git
 python-Pygments.spec,https://github.com/pygments/pygments/archive/refs/tags/%{version}.tar.gz,https://github.com/pygments/pygments.git
 python-pygments.spec,https://github.com/pygments/pygments/archive/refs/tags/%{version}.tar.gz,https://github.com/pygments/pygments.git
-python-pygobject.spec,,https://gitlab.gnome.org/GNOME/pygobject.git
 python-PyHamcrest.spec,https://github.com/hamcrest/PyHamcrest/archive/refs/tags/V%{version}.tar.gz,https://github.com/hamcrest/PyHamcrest.git
 python-pyhamcrest.spec,https://github.com/hamcrest/PyHamcrest/archive/refs/tags/V%{version}.tar.gz,https://github.com/hamcrest/PyHamcrest.git
 python-pyinstaller.spec,https://github.com/pyinstaller/pyinstaller/archive/refs/tags/v%{version}.tar.gz,https://github.com/pyinstaller/pyinstaller.git
@@ -1242,7 +1244,7 @@ sqlite.spec,https://github.com/sqlite/sqlite/archive/refs/tags/version-%{version
 squashfs-tools.spec,https://github.com/plougher/squashfs-tools/archive/refs/tags/%{version}.tar.gz,https://github.com/plougher/squashfs-tools.git
 sshfs.spec,https://github.com/libfuse/sshfs/archive/refs/tags/sshfs-%{version}.tar.gz,https://github.com/libfuse/sshfs.git
 sssd.spec,https://github.com/SSSD/sssd/archive/refs/tags/%{version}.tar.gz,https://github.com/SSSD/sssd.git
-stalld.spec,,https://git.kernel.org/pub/scm/utils/stalld/stalld.git
+stalld.spec,https://gitlab.com/rt-linux-tools/stalld/-/archive/v%{version}/stalld-v%{version}.tar.gz,https://git.kernel.org/pub/scm/utils/stalld/stalld.git
 strongswan.spec,https://github.com/strongswan/strongswan/releases/download/%{version}/strongswan-%{version}.tar.bz2,https://github.com/strongswan/strongswan.git
 stunnel.spec,https://github.com/mtrojnar/stunnel/archive/refs/tags/stunnel-%{version}.tar.gz,https://github.com/mtrojnar/stunnel.git
 subversion.spec,https://github.com/apache/subversion/archive/refs/tags/%{version}.tar.gz,https://github.com/apache/subversion.git
@@ -1271,7 +1273,7 @@ tpm2-pkcs11.spec,https://github.com/tpm2-software/tpm2-pkcs11/archive/refs/tags/
 tpm2-pytss.spec,https://github.com/tpm2-software/tpm2-pytss/archive/refs/tags/%{version}.tar.gz,https://github.com/tpm2-software/tpm2-pytss.git
 tpm2-tools.spec,https://github.com/tpm2-software/tpm2-tools/archive/refs/tags/%{version}.tar.gz,https://github.com/tpm2-software/tpm2-tools.git
 tpm2-tss.spec,https://github.com/tpm2-software/tpm2-tss/archive/refs/tags/%{version}.tar.gz,https://github.com/tpm2-software/tpm2-tss.git
-trace-cmd.spec,,https://git.kernel.org/pub/scm/utils/trace-cmd/trace-cmd.git
+trace-cmd.spec,https://git.kernel.org/pub/scm/utils/trace-cmd/trace-cmd.git/snapshot/trace-cmd-v%{version}.tar.gz,https://git.kernel.org/pub/scm/utils/trace-cmd/trace-cmd.git
 tree.spec,https://gitlab.com/OldManProgrammer/unix-tree/-/archive/%{version}/unix-tree-%{version}.tar.gz,https://gitlab.com/OldManProgrammer/unix-tree.git
 trousers.spec,https://sourceforge.net/projects/trousers/files/trousers/%{version}/trousers-%{version}.tar.gz/download
 tuna.spec,https://www.kernel.org/pub/software/utils/tuna/tuna-%{version}.tar.gz,https://git.kernel.org/pub/scm/utils/tuna/tuna.git
@@ -1541,6 +1543,7 @@ function CheckURLHealth {
         [parameter(Mandatory)]$photonDir,
         [parameter(Mandatory)]$UpstreamsPath,
         [parameter(Mandatory)][DateTime]$ScriptStartTime,
+        [string]$CloneBasePath = "",
         $Source0Data = $null
     )
 
@@ -2318,7 +2321,11 @@ function CheckURLHealth {
                 Push-Location
                 $fetchState = $null
                 try {
-                    $ClonePath=[System.String](join-path -path (join-path -path $UpstreamsPath -childpath $photonDir) -childpath "clones")
+                    if ([string]::IsNullOrEmpty($CloneBasePath)) {
+                        $ClonePath=[System.String](join-path -path (join-path -path $UpstreamsPath -childpath $photonDir) -childpath "clones")
+                    } else {
+                        $ClonePath=[System.String](join-path -path $CloneBasePath -childpath $photonDir)
+                    }
                     if (!(Test-Path $ClonePath)) {New-Item $ClonePath -ItemType Directory}
                     
                     # override with special cases
@@ -3590,7 +3597,11 @@ function CheckURLHealth {
                 Push-Location
                 $fetchState = $null
                 try {
-                    $ClonePath=[System.String](join-path -path (join-path -path $UpstreamsPath -childpath $photonDir) -childpath "clones")
+                    if ([string]::IsNullOrEmpty($CloneBasePath)) {
+                        $ClonePath=[System.String](join-path -path (join-path -path $UpstreamsPath -childpath $photonDir) -childpath "clones")
+                    } else {
+                        $ClonePath=[System.String](join-path -path $CloneBasePath -childpath $photonDir)
+                    }
                     if (!(Test-Path $ClonePath)) {New-Item $ClonePath -ItemType Directory}
 
                     $SourceClonePath=[System.String](join-path -path $ClonePath -childpath $repoName)
@@ -3927,7 +3938,11 @@ function CheckURLHealth {
                 Push-Location
                 $fetchState = $null
                 try {
-                    $ClonePath=[System.String](join-path -path (join-path -path $UpstreamsPath -childpath $photonDir) -childpath "clones")
+                    if ([string]::IsNullOrEmpty($CloneBasePath)) {
+                        $ClonePath=[System.String](join-path -path (join-path -path $UpstreamsPath -childpath $photonDir) -childpath "clones")
+                    } else {
+                        $ClonePath=[System.String](join-path -path $CloneBasePath -childpath $photonDir)
+                    }
                     if (!(Test-Path $ClonePath)) {New-Item $ClonePath -ItemType Directory}
 
                     $SourceClonePath=[System.String](join-path -path $ClonePath -childpath $repoName)
@@ -4655,7 +4670,13 @@ function CheckURLHealth {
             $SaveUpdateDownloadName = $UpdateDownloadName
         }
         else {
-            $UpdateDownloadName = ($UpdateURL -split '/')[-1]
+            # SourceForge URLs end with /download as redirect trigger -- use the penultimate segment
+            if ($UpdateURL -match '/download$') {
+                $segments = $UpdateURL -split '/'
+                $UpdateDownloadName = $segments[-2]
+            } else {
+                $UpdateDownloadName = ($UpdateURL -split '/')[-1]
+            }
             $SaveUpdateDownloadName = $UpdateDownloadName
         }
 
@@ -4673,7 +4694,7 @@ function CheckURLHealth {
         }
         # exceptions to add the $currentTask.name to the UpdateDownloadName
         # regex pattern that removes all the target extensions (.tar.gz, .tar.xz, .tgz, .tar.lz, .tar.bz2)
-        $tmpName = [System.String]($UpdateDownloadName -replace "\.tar\.(gz|xz|lz|bz2)|\.tgz","")
+        $tmpName = [System.String]($UpdateDownloadName -replace "\.tar\.(gz|xz|lz|bz2)|\.tgz|\.zip|\.gem","")
         if (!("$tmpName" -match '[A-Za-z]')) { $UpdateDownloadName = [System.String]::Concat($currentTask.Name,"-",$UpdateDownloadName) }
         # A few sources do not contain their name in the download name, but only "release-" or "rel_".
         # Accordingly to https://packages.vmware.com/photon/photon_sources/1.0/ the downloadname must be [name]-[version].[ending].
@@ -4695,7 +4716,11 @@ function CheckURLHealth {
         if (!(Test-Path $UpdateDownloadFile)) {
             if (($currentTask.spec -ilike 'netcat.spec') -and (-not [string]::IsNullOrEmpty($Script:netcatCommitId))) {
                 # Reuse the existing openbsd/src clone from the standard clone block
-                $existingClonePath = Join-Path (Join-Path (Join-Path $UpstreamsPath $photonDir) "clones") "src"
+                if ([string]::IsNullOrEmpty($CloneBasePath)) {
+                    $existingClonePath = Join-Path (Join-Path (Join-Path $UpstreamsPath $photonDir) "clones") "src"
+                } else {
+                    $existingClonePath = Join-Path (Join-Path $CloneBasePath $photonDir) "src"
+                }
                 $srcNcPath = Join-Path $existingClonePath (Join-Path "usr.bin" "nc")
                 if ((Test-Path $existingClonePath) -and (Test-Path $srcNcPath)) {
                     $uniqueTmpPath = Join-Path -Path $SourcePath -ChildPath "tmp_$([System.Guid]::NewGuid().ToString())"
@@ -4814,6 +4839,21 @@ function CheckURLHealth {
             }
         }
 
+        # Content-type validation: detect HTML downloaded instead of archive
+        if (($UpdateDownloadFile) -and (Test-Path $UpdateDownloadFile)) {
+            $fileSize = (Get-Item $UpdateDownloadFile).Length
+            if ($fileSize -lt 500000) {
+                try {
+                    $headBytes = [System.IO.File]::ReadAllBytes($UpdateDownloadFile)[0..([math]::Min(512, $fileSize - 1))]
+                    $headText = [System.Text.Encoding]::UTF8.GetString($headBytes)
+                    if ($headText -match '^\s*<(!DOCTYPE|html|!--)' -or $headText -match '^\s*<!doctype\s+html') {
+                        Write-Warning "Downloaded HTML instead of archive for $($currentTask.Name): $UpdateDownloadFile (from $UpdateURL)"
+                        Remove-Item -Path $UpdateDownloadFile -Force -ErrorAction SilentlyContinue
+                    }
+                } catch {}
+            }
+        }
+
         # get SHA value
         [system.string]$SHALine=""
         [system.string]$SHAValue=""
@@ -4843,6 +4883,8 @@ function GenerateUrlHealthReports {
     param (
         [string]$SourcePath,
         [string]$UpstreamsPath,
+        [string]$ReportPath,
+        [string]$ClonePath,
         [string]$accessToken,
         [DateTime]$ScriptStartTime,
         [int]$ThrottleLimit,
@@ -4938,6 +4980,7 @@ function GenerateUrlHealthReports {
             $ParallelContext = @{
                 SourcePath = $SourcePath
                 UpstreamsPath = $UpstreamsPath
+                ClonePath = $ClonePath
                 AccessToken = $AccessToken
                 ScriptStartTime = $ScriptStartTime
                 InitScript = $CombinedInitScript
@@ -4949,7 +4992,7 @@ function GenerateUrlHealthReports {
 
                 Write-Host "Generating URLHealth report for $($TaskConfig.Name) ..."
                 $outputFileName = "photonos-urlhealth-$($TaskConfig.Release)_$((Get-Date).ToString("yyyyMMddHHmm"))"
-                $outputFilePath = Join-Path -Path $sourcePath -ChildPath "$outputFileName.prn"
+                $outputFilePath = Join-Path -Path $ReportPath -ChildPath "$outputFileName.prn"
 
                 # Create a thread-safe collection for all results
                 $results = [System.Collections.Concurrent.ConcurrentBag[string]]::new()
@@ -4960,7 +5003,7 @@ function GenerateUrlHealthReports {
 
                     $currentPackage = $_
                     Write-Host "Processing $($currentPackage.name) ..."
-                    $result = [system.string](CheckURLHealth -currentTask $currentPackage -SourcePath $using:ParallelContext.SourcePath -AccessToken $using:ParallelContext.AccessToken -outputfile $using:outputFilePath -photonDir $using:TaskConfig.PhotonDir -UpstreamsPath $using:ParallelContext.UpstreamsPath -ScriptStartTime $using:ParallelContext.ScriptStartTime -Source0Data $using:ParallelContext.Source0Data)
+                    $result = [system.string](CheckURLHealth -currentTask $currentPackage -SourcePath $using:ParallelContext.SourcePath -AccessToken $using:ParallelContext.AccessToken -outputfile $using:outputFilePath -photonDir $using:TaskConfig.PhotonDir -UpstreamsPath $using:ParallelContext.UpstreamsPath -ScriptStartTime $using:ParallelContext.ScriptStartTime -CloneBasePath $using:ParallelContext.ClonePath -Source0Data $using:ParallelContext.Source0Data)
                     ($using:results).Add($result)
                 } -ThrottleLimit $ThrottleLimit
 
@@ -4989,7 +5032,7 @@ function GenerateUrlHealthReports {
 
                 Write-Host "Generating URLHealth report for $($TaskConfig.Name) ..."
                 $outputFileName = "photonos-urlhealth-$($TaskConfig.Release)_$((Get-Date).ToString("yyyyMMddHHmm"))"
-                $outputFilePath = Join-Path -Path $sourcePath -ChildPath "$outputFileName.prn"
+                $outputFilePath = Join-Path -Path $ReportPath -ChildPath "$outputFileName.prn"
 
                 # Create a simple array for sequential processing results
                 $results = @()
@@ -4999,7 +5042,7 @@ function GenerateUrlHealthReports {
                 foreach ($currentPackage in $TaskConfig.Packages) {
                     $processedCount++
                     Write-Host "Processing [$processedCount/$packageCount] $($currentPackage.name) ..."
-                    $result = [system.string](CheckURLHealth -currentTask $currentPackage -SourcePath $SourcePath -AccessToken $accessToken -outputfile $outputFilePath -photonDir $TaskConfig.PhotonDir -UpstreamsPath $UpstreamsPath -ScriptStartTime $ScriptStartTime -Source0Data $cachedSource0Data)
+                    $result = [system.string](CheckURLHealth -currentTask $currentPackage -SourcePath $SourcePath -AccessToken $accessToken -outputfile $outputFilePath -photonDir $TaskConfig.PhotonDir -UpstreamsPath $UpstreamsPath -ScriptStartTime $ScriptStartTime -CloneBasePath $ClonePath -Source0Data $cachedSource0Data)
                     Write-Host "  -> Done: $($currentPackage.name)"
                     $results += $result
                 }
@@ -5127,11 +5170,35 @@ if (-not (Test-Path -Path $global:sourcepath -PathType Container)) {
 }
 Write-Host "Source path validated: $global:sourcepath"
 
-# Create photon-upstreams directory for artifact storage (clones, SOURCES_NEW, SPECS_NEW, SOURCES_KojiFedora)
-# This keeps artifact directories outside the git repos so they survive git reset --hard and re-clones.
-$global:upstreamsPath = Join-Path -Path $global:sourcepath -ChildPath "photon-upstreams"
+# Upstreams path: where SOURCES_NEW, SPECS_NEW, SOURCES_KojiFedora are stored
+# Defaults to $sourcepath/photon-upstreams if not specified
+if ([string]::IsNullOrEmpty($upstreamspath)) {
+    $global:upstreamsPath = Join-Path -Path $global:sourcepath -ChildPath "photon-upstreams"
+} else {
+    $global:upstreamsPath = $upstreamspath
+}
 if (!(Test-Path $global:upstreamsPath)) { New-Item $global:upstreamsPath -ItemType Directory | Out-Null }
 Write-Host "Upstreams path: $global:upstreamsPath"
+
+# Clone path: where git clones of upstream repositories are stored
+# Defaults to $upstreamsPath/<branch>/clones if not specified
+if ([string]::IsNullOrEmpty($clonepath)) {
+    $global:clonepath = ""
+} else {
+    $global:clonepath = $clonepath
+    if (!(Test-Path $global:clonepath)) { New-Item $global:clonepath -ItemType Directory | Out-Null }
+    Write-Host "Clone path: $global:clonepath"
+}
+
+# Report path: where .prn report files are written
+# Defaults to $sourcepath if not specified
+if ([string]::IsNullOrEmpty($reportpath)) {
+    $global:reportpath = $global:sourcepath
+} else {
+    $global:reportpath = $reportpath
+    if (!(Test-Path $global:reportpath)) { New-Item $global:reportpath -ItemType Directory | Out-Null }
+}
+Write-Host "Report path: $global:reportpath"
 
 # SAFETY WARNING: Adding '*' as git safe.directory to handle cross-filesystem ownership issues
 # (e.g., WSL accessing Windows files, network shares, or different user ownership).
@@ -5208,7 +5275,7 @@ try {
 
 # Call the new function
 Write-Host "DEBUG: Calling GenerateUrlHealthReports..."
-$urlHealthPackageData = GenerateUrlHealthReports -SourcePath $global:sourcepath -UpstreamsPath $global:upstreamsPath -AccessToken $global:github_token -ScriptStartTime $global:scriptStartTime -ThrottleLimit $global:ThrottleLimit `
+$urlHealthPackageData = GenerateUrlHealthReports -SourcePath $global:sourcepath -UpstreamsPath $global:upstreamsPath -ReportPath $global:reportpath -ClonePath $global:clonepath -AccessToken $global:github_token -ScriptStartTime $global:scriptStartTime -ThrottleLimit $global:ThrottleLimit `
     -GeneratePh3URLHealthReport ([bool]$GeneratePh3URLHealthReport) `
     -GeneratePh4URLHealthReport ([bool]$GeneratePh4URLHealthReport) `
     -GeneratePh5URLHealthReport ([bool]$GeneratePh5URLHealthReport) `
@@ -5283,7 +5350,7 @@ if ($GeneratePhPackageReport)
         $result += $srRow
     }
     $result = $result | Sort-Object Spec, SubRelease -Unique
-    $outputfile=Join-Path -Path $global:sourcepath -ChildPath "photonos-package-report_$((get-date).tostring("yyyMMddHHmm")).prn"
+    $outputfile=Join-Path -Path $global:reportpath -ChildPath "photonos-package-report_$((get-date).tostring("yyyMMddHHmm")).prn"
     "Spec"+","+"SubRelease"+","+"photon-3.0"+","+"photon-4.0"+","+"photon-5.0"+","+"photon-6.0"+","+"photon-common"+","+"photon-dev"+","+"photon-master"| out-file $outputfile
     $result | foreach-object { $_.Spec+","+$_.SubRelease+","+$_."photon-3.0"+","+$_."photon-4.0"+","+$_."photon-5.0"+","+$_."photon-6.0"+","+$_."photon-common"+","+$_."photon-dev"+","+$_."photon-master"} |  out-file $outputfile -append
 }
@@ -5291,7 +5358,7 @@ if ($GeneratePhPackageReport)
 if ($GeneratePhCommontoPhMasterDiffHigherPackageVersionReport)
 {
     Write-Host "Generating difference report of common packages with a higher version than same master package ..."
-    $outputfile1=Join-Path -Path $global:sourcepath -ChildPath "photonos-diff-report-common-master_$((get-date).tostring("yyyMMddHHmm")).prn"
+    $outputfile1=Join-Path -Path $global:reportpath -ChildPath "photonos-diff-report-common-master_$((get-date).tostring("yyyMMddHHmm")).prn"
     "Spec"+","+"photon-common"+","+"photon-master"| out-file $outputfile1
     $result | foreach-object {
         if ($_.SubRelease) { return }
@@ -5310,7 +5377,7 @@ if ($GeneratePhCommontoPhMasterDiffHigherPackageVersionReport)
 if ($GeneratePh5toPh6DiffHigherPackageVersionReport)
 {
     Write-Host "Generating difference report of 5.0 packages with a higher version than same 6.0 package ..."
-    $outputfile1=Join-Path -Path $global:sourcepath -ChildPath "photonos-diff-report-5.0-6.0_$((get-date).tostring("yyyMMddHHmm")).prn"
+    $outputfile1=Join-Path -Path $global:reportpath -ChildPath "photonos-diff-report-5.0-6.0_$((get-date).tostring("yyyMMddHHmm")).prn"
     "Spec"+","+"photon-5.0"+","+"photon-6.0"| out-file $outputfile1
     $result | foreach-object {
         if ($_.SubRelease) { return }
@@ -5329,7 +5396,7 @@ if ($GeneratePh5toPh6DiffHigherPackageVersionReport)
 if ($GeneratePh4toPh5DiffHigherPackageVersionReport)
 {
     Write-Host "Generating difference report of 4.0 packages with a higher version than same 5.0 package ..."
-    $outputfile1=Join-Path -Path $global:sourcepath -ChildPath "photonos-diff-report-4.0-5.0_$((get-date).tostring("yyyMMddHHmm")).prn"
+    $outputfile1=Join-Path -Path $global:reportpath -ChildPath "photonos-diff-report-4.0-5.0_$((get-date).tostring("yyyMMddHHmm")).prn"
     "Spec"+","+"photon-4.0"+","+"photon-5.0"| out-file $outputfile1
     $result | foreach-object {
         if ($_.SubRelease) { return }
@@ -5348,7 +5415,7 @@ if ($GeneratePh4toPh5DiffHigherPackageVersionReport)
 if ($GeneratePh3toPh4DiffHigherPackageVersionReport)
 {
     Write-Host "Generating difference report of 3.0 packages with a higher version than same 4.0 package ..."
-    $outputfile2=Join-Path -Path $global:sourcepath -ChildPath "photonos-diff-report-3.0-4.0_$((get-date).tostring("yyyMMddHHmm")).prn"
+    $outputfile2=Join-Path -Path $global:reportpath -ChildPath "photonos-diff-report-3.0-4.0_$((get-date).tostring("yyyMMddHHmm")).prn"
     "Spec"+","+"photon-3.0"+","+"photon-4.0"| out-file $outputfile2
     $result | foreach-object {
         if ($_.SubRelease) { return }
