@@ -60,7 +60,7 @@
 #   - To run on Windows: Open Powershell
 #     cd your\path\to\photonos-scripts;
 #     $env:GITHUB_TOKEN="<YOUR GITHUB_TOKEN>"; $env:GITLAB_FREEDESKTOP_ORG_USERNAME="<your GITLAB_USERNAME>"; $env:GITLAB_FREEDESKTOP_ORG_TOKEN="<your GITLAB_TOKEN>"; 
-#     pwsh -File .\photonos-package-report.ps1 -sourcepath <path-to-store-the-reports> \
+#     pwsh -File .\photonos-package-report.ps1 -workingDir <path-for-branch-clones-and-upstreams> \
 #          -GeneratePh3URLHealthReport $true -GeneratePh4URLHealthReport $true -GeneratePh5URLHealthReport $true -GeneratePh6URLHealthReport $true \
 #          -GeneratePhCommonURLHealthReport $true -GeneratePhDevURLHealthReport $true -GeneratePhMasterURLHealthReport $true \
 #          -GeneratePhPackageReport $true \
@@ -70,7 +70,7 @@
 #     Install Powershell Core: tdnf install powershell -y
 #     cd /your\path/to/photonos-scripts;
 #     export GITHUB_TOKEN="<YOUR GITHUB_TOKEN>"; export GITLAB_FREEDESKTOP_ORG_USERNAME="<your GITLAB_USERNAME>"; export GITLAB_FREEDESKTOP_ORG_TOKEN="<your GITLAB_TOKEN>";
-#     pwsh -File ./photonos-package-report.ps1 -sourcepath <path-to-store-the-reports> \
+#     pwsh -File ./photonos-package-report.ps1 -workingDir <path-for-branch-clones-and-upstreams> \
 #          -GeneratePh3URLHealthReport $true -GeneratePh4URLHealthReport $true -GeneratePh5URLHealthReport $true -GeneratePh6URLHealthReport $true \
 #          -GeneratePhCommonURLHealthReport $true -GeneratePhDevURLHealthReport $true -GeneratePhMasterURLHealthReport $true \
 #          -GeneratePhPackageReport $true \
@@ -84,10 +84,9 @@ param (
     [string]$github_token=$env:GITHUB_TOKEN,
     [string]$gitlab_freedesktop_org_username=$env:GITLAB_FREEDESKTOP_ORG_USERNAME,
     [string]$gitlab_freedesktop_org_token=$env:GITLAB_FREEDESKTOP_ORG_TOKEN,
-    [string]$sourcepath = $(if ($env:PUBLIC) { $env:PUBLIC } else { $HOME }),
-    [string]$clonepath = "",
-    [string]$upstreamspath = "",
-    [string]$reportpath = "",
+    [string]$workingDir = $(if ($env:PUBLIC) { $env:PUBLIC } else { $HOME }),
+    [string]$upstreamsDir = "",
+    [string]$scansDir = "",
     [Parameter(Mandatory = $false)][ValidateNotNull()]$GeneratePh3URLHealthReport=$true,
     [Parameter(Mandatory = $false)][ValidateNotNull()]$GeneratePh4URLHealthReport=$true,
     [Parameter(Mandatory = $false)][ValidateNotNull()]$GeneratePh5URLHealthReport=$true,
@@ -5206,44 +5205,34 @@ if ($cpuUsage -lt 50) {
 $throttleLimit = 20 # Set a hard cap to prevent overloading the system
 
 # Set global variables from script parameters
-$global:sourcepath = $sourcepath
+$global:workingDir = $workingDir
 
-# Validate SourcePath exists
-if (-not (Test-Path -Path $global:sourcepath -PathType Container)) {
-    Write-Error "Source path does not exist or is not a directory: $global:sourcepath"
+# Validate workingDir exists
+if (-not (Test-Path -Path $global:workingDir -PathType Container)) {
+    Write-Error "Working directory does not exist or is not a directory: $global:workingDir"
     return
 }
-Write-Host "Source path validated: $global:sourcepath"
+Write-Host "Working directory validated: $global:workingDir"
 
-# Upstreams path: where SOURCES_NEW, SPECS_NEW, SOURCES_KojiFedora are stored
-# Defaults to $sourcepath/photon-upstreams if not specified
-if ([string]::IsNullOrEmpty($upstreamspath)) {
-    $global:upstreamsPath = Join-Path -Path $global:sourcepath -ChildPath "photon-upstreams"
+# Upstreams directory: where clones/, SOURCES_NEW, SPECS_NEW, SOURCES_KojiFedora are stored
+# Defaults to <workingDir>/photon-upstreams
+if ([string]::IsNullOrEmpty($upstreamsDir)) {
+    $global:upstreamsDir = Join-Path -Path $global:workingDir -ChildPath "photon-upstreams"
 } else {
-    $global:upstreamsPath = $upstreamspath
+    $global:upstreamsDir = $upstreamsDir
 }
-if (!(Test-Path $global:upstreamsPath)) { New-Item $global:upstreamsPath -ItemType Directory | Out-Null }
-Write-Host "Upstreams path: $global:upstreamsPath"
+if (!(Test-Path $global:upstreamsDir)) { New-Item $global:upstreamsDir -ItemType Directory | Out-Null }
+Write-Host "Upstreams directory: $global:upstreamsDir"
 
-# Clone path: where git clones of upstream repositories are stored
-# Defaults to $upstreamsPath/<branch>/clones if not specified
-if ([string]::IsNullOrEmpty($clonepath)) {
-    $global:clonepath = ""
+# Scans directory: where .prn report files are written
+# Defaults to <workingDir>/scans
+if ([string]::IsNullOrEmpty($scansDir)) {
+    $global:scansDir = Join-Path -Path $global:workingDir -ChildPath "scans"
 } else {
-    $global:clonepath = $clonepath
-    if (!(Test-Path $global:clonepath)) { New-Item $global:clonepath -ItemType Directory | Out-Null }
-    Write-Host "Clone path: $global:clonepath"
+    $global:scansDir = $scansDir
 }
-
-# Report path: where .prn report files are written
-# Defaults to $sourcepath if not specified
-if ([string]::IsNullOrEmpty($reportpath)) {
-    $global:reportpath = $global:sourcepath
-} else {
-    $global:reportpath = $reportpath
-    if (!(Test-Path $global:reportpath)) { New-Item $global:reportpath -ItemType Directory | Out-Null }
-}
-Write-Host "Report path: $global:reportpath"
+if (!(Test-Path $global:scansDir)) { New-Item $global:scansDir -ItemType Directory | Out-Null }
+Write-Host "Scans directory: $global:scansDir"
 
 # --- Disk space pre-flight check ---
 $requiredMB = 1024  # Base 1 GB for reports + temp files
@@ -5253,11 +5242,9 @@ $branchCount = @($GeneratePh3URLHealthReport, $GeneratePh4URLHealthReport,
     $GeneratePhMasterURLHealthReport) | Where-Object { $_ } | Measure-Object |
     Select-Object -ExpandProperty Count
 $requiredMB += $branchCount * 500
-if (-not [string]::IsNullOrEmpty($global:clonepath)) {
-    $requiredMB += $branchCount * 30000
-}
+$requiredMB += $branchCount * 30000  # upstream clones ~30 GB/branch
 if ($GeneratePhPackageReport) { $requiredMB += 3500 }
-foreach ($checkPath in @($global:sourcepath, $global:upstreamsPath, $global:reportpath, $global:clonepath) |
+foreach ($checkPath in @($global:workingDir, $global:upstreamsDir, $global:scansDir) |
     Where-Object { -not [string]::IsNullOrEmpty($_) } | Select-Object -Unique) {
     if (-not (Test-DiskSpace -Path $checkPath -RequiredMB $requiredMB -Operation "full report generation")) {
         Write-Error "Insufficient disk space on $checkPath. Need ~$([math]::Round($requiredMB/1024, 1)) GB free. Aborting."
@@ -5341,7 +5328,7 @@ try {
 
 # Call the new function
 Write-Host "DEBUG: Calling GenerateUrlHealthReports..."
-$urlHealthPackageData = GenerateUrlHealthReports -SourcePath $global:sourcepath -UpstreamsPath $global:upstreamsPath -ReportPath $global:reportpath -ClonePath $global:clonepath -AccessToken $global:github_token -ScriptStartTime $global:scriptStartTime -ThrottleLimit $global:ThrottleLimit `
+$urlHealthPackageData = GenerateUrlHealthReports -SourcePath $global:workingDir -UpstreamsPath $global:upstreamsDir -ReportPath $global:scansDir -ClonePath "" -AccessToken $global:github_token -ScriptStartTime $global:scriptStartTime -ThrottleLimit $global:ThrottleLimit `
     -GeneratePh3URLHealthReport ([bool]$GeneratePh3URLHealthReport) `
     -GeneratePh4URLHealthReport ([bool]$GeneratePh4URLHealthReport) `
     -GeneratePh5URLHealthReport ([bool]$GeneratePh5URLHealthReport) `
@@ -5366,22 +5353,22 @@ if ($GeneratePhPackageReport)
 {
     Write-Host "Generating Package Report ..."
     # fetch + merge per branch
-    GitPhoton -release "3.0" -sourcePath $SourcePath
-    GitPhoton -release "4.0" -sourcePath $SourcePath
-    GitPhoton -release "5.0" -sourcePath $SourcePath
-    GitPhoton -release "6.0" -sourcePath $SourcePath
-    GitPhoton -release master -sourcePath $SourcePath
-    GitPhoton -release dev -sourcePath $SourcePath
-    GitPhoton -release common -sourcePath $SourcePath
-    Set-location  $SourcePath
+    GitPhoton -release "3.0" -SourcePath $global:workingDir
+    GitPhoton -release "4.0" -SourcePath $global:workingDir
+    GitPhoton -release "5.0" -SourcePath $global:workingDir
+    GitPhoton -release "6.0" -SourcePath $global:workingDir
+    GitPhoton -release master -SourcePath $global:workingDir
+    GitPhoton -release dev -SourcePath $global:workingDir
+    GitPhoton -release common -SourcePath $global:workingDir
+    Set-location $global:workingDir
     # read all files from branch
-    $Packages3=ParseDirectory -SourcePath $SourcePath -PhotonDir photon-3.0
-    $Packages4=ParseDirectory -SourcePath $SourcePath -PhotonDir photon-4.0
-    $Packages5=ParseDirectory -SourcePath $SourcePath -PhotonDir photon-5.0
-    $Packages6=ParseDirectory -SourcePath $SourcePath -PhotonDir photon-6.0
-    $PackagesCommon=ParseDirectory -SourcePath $SourcePath -PhotonDir photon-common
-    $PackagesDev=ParseDirectory -SourcePath $SourcePath -PhotonDir photon-dev
-    $PackagesMaster=ParseDirectory -SourcePath $SourcePath -PhotonDir photon-master
+    $Packages3=ParseDirectory -SourcePath $global:workingDir -PhotonDir photon-3.0
+    $Packages4=ParseDirectory -SourcePath $global:workingDir -PhotonDir photon-4.0
+    $Packages5=ParseDirectory -SourcePath $global:workingDir -PhotonDir photon-5.0
+    $Packages6=ParseDirectory -SourcePath $global:workingDir -PhotonDir photon-6.0
+    $PackagesCommon=ParseDirectory -SourcePath $global:workingDir -PhotonDir photon-common
+    $PackagesDev=ParseDirectory -SourcePath $global:workingDir -PhotonDir photon-dev
+    $PackagesMaster=ParseDirectory -SourcePath $global:workingDir -PhotonDir photon-master
     # Filter out subrelease packages for cross-release comparison (they are vendor-pinned)
     $Packages3Main = @($Packages3 | Where-Object { -not $_.SubRelease })
     $Packages4Main = @($Packages4 | Where-Object { -not $_.SubRelease })
@@ -5416,7 +5403,7 @@ if ($GeneratePhPackageReport)
         $result += $srRow
     }
     $result = $result | Sort-Object Spec, SubRelease -Unique
-    $outputfile=Join-Path -Path $global:reportpath -ChildPath "photonos-package-report_$((get-date).tostring("yyyMMddHHmm")).prn"
+    $outputfile=Join-Path -Path $global:scansDir -ChildPath "photonos-package-report_$((get-date).tostring("yyyMMddHHmm")).prn"
     "Spec"+","+"SubRelease"+","+"photon-3.0"+","+"photon-4.0"+","+"photon-5.0"+","+"photon-6.0"+","+"photon-common"+","+"photon-dev"+","+"photon-master"| out-file $outputfile
     $result | foreach-object { $_.Spec+","+$_.SubRelease+","+$_."photon-3.0"+","+$_."photon-4.0"+","+$_."photon-5.0"+","+$_."photon-6.0"+","+$_."photon-common"+","+$_."photon-dev"+","+$_."photon-master"} |  out-file $outputfile -append
 }
@@ -5424,7 +5411,7 @@ if ($GeneratePhPackageReport)
 if ($GeneratePhCommontoPhMasterDiffHigherPackageVersionReport)
 {
     Write-Host "Generating difference report of common packages with a higher version than same master package ..."
-    $outputfile1=Join-Path -Path $global:reportpath -ChildPath "photonos-diff-report-common-master_$((get-date).tostring("yyyMMddHHmm")).prn"
+    $outputfile1=Join-Path -Path $global:scansDir -ChildPath "photonos-diff-report-common-master_$((get-date).tostring("yyyMMddHHmm")).prn"
     "Spec"+","+"photon-common"+","+"photon-master"| out-file $outputfile1
     $result | foreach-object {
         if ($_.SubRelease) { return }
@@ -5443,7 +5430,7 @@ if ($GeneratePhCommontoPhMasterDiffHigherPackageVersionReport)
 if ($GeneratePh5toPh6DiffHigherPackageVersionReport)
 {
     Write-Host "Generating difference report of 5.0 packages with a higher version than same 6.0 package ..."
-    $outputfile1=Join-Path -Path $global:reportpath -ChildPath "photonos-diff-report-5.0-6.0_$((get-date).tostring("yyyMMddHHmm")).prn"
+    $outputfile1=Join-Path -Path $global:scansDir -ChildPath "photonos-diff-report-5.0-6.0_$((get-date).tostring("yyyMMddHHmm")).prn"
     "Spec"+","+"photon-5.0"+","+"photon-6.0"| out-file $outputfile1
     $result | foreach-object {
         if ($_.SubRelease) { return }
@@ -5462,7 +5449,7 @@ if ($GeneratePh5toPh6DiffHigherPackageVersionReport)
 if ($GeneratePh4toPh5DiffHigherPackageVersionReport)
 {
     Write-Host "Generating difference report of 4.0 packages with a higher version than same 5.0 package ..."
-    $outputfile1=Join-Path -Path $global:reportpath -ChildPath "photonos-diff-report-4.0-5.0_$((get-date).tostring("yyyMMddHHmm")).prn"
+    $outputfile1=Join-Path -Path $global:scansDir -ChildPath "photonos-diff-report-4.0-5.0_$((get-date).tostring("yyyMMddHHmm")).prn"
     "Spec"+","+"photon-4.0"+","+"photon-5.0"| out-file $outputfile1
     $result | foreach-object {
         if ($_.SubRelease) { return }
@@ -5481,7 +5468,7 @@ if ($GeneratePh4toPh5DiffHigherPackageVersionReport)
 if ($GeneratePh3toPh4DiffHigherPackageVersionReport)
 {
     Write-Host "Generating difference report of 3.0 packages with a higher version than same 4.0 package ..."
-    $outputfile2=Join-Path -Path $global:reportpath -ChildPath "photonos-diff-report-3.0-4.0_$((get-date).tostring("yyyMMddHHmm")).prn"
+    $outputfile2=Join-Path -Path $global:scansDir -ChildPath "photonos-diff-report-3.0-4.0_$((get-date).tostring("yyyMMddHHmm")).prn"
     "Spec"+","+"photon-3.0"+","+"photon-4.0"| out-file $outputfile2
     $result | foreach-object {
         if ($_.SubRelease) { return }

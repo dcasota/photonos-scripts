@@ -18,17 +18,14 @@ on:
       urlhealth_branches:
         description: 'Override: enable only these URL health branches (comma-separated, empty=use branches input)'
         default: ''
-      sourcepath:
-        description: 'Root path for photon branch clones'
+      workingDir:
+        description: 'Working directory for branch clones and upstreams (default: $HOME)'
         default: ''
-      clonepath:
-        description: 'Path for upstream git clones (default: upstreamspath/<branch>/clones)'
+      upstreamsDir:
+        description: 'Directory for clones/SOURCES_NEW/SPECS_NEW (default: workingDir/photon-upstreams)'
         default: ''
-      upstreamspath:
-        description: 'Path for SOURCES_NEW/SPECS_NEW/SOURCES_KojiFedora (default: sourcepath/photon-upstreams)'
-        default: ''
-      reportpath:
-        description: 'Path for .prn report output files (default: sourcepath)'
+      scansDir:
+        description: 'Directory for .prn report output files (default: workingDir/scans)'
         default: ''
   schedule:
     # Weekly scan on Sunday at 02:00 UTC
@@ -74,6 +71,11 @@ jobs:
           done
           git --version
           tar --version | head -1
+
+      - name: Check disk space
+        run: |
+          echo "## Disk Space" >> "$GITHUB_STEP_SUMMARY"
+          df -h | grep -E 'Filesystem|/mnt/|/$' | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Prepare report directory
         run: mkdir -p "$REPORT_DIR"
@@ -140,26 +142,23 @@ jobs:
         run: |
           SCRIPT="ci/photonos-package-report/photonos-package-report.ps1"
 
-          # Use custom sourcepath if provided, otherwise default to REPORT_DIR
-          SRCPATH="${{ github.event.inputs.sourcepath }}"
-          if [ -z "$SRCPATH" ]; then
-            SRCPATH="$REPORT_DIR"
+          # Use custom workingDir if provided, otherwise default to REPORT_DIR
+          WDIR="${{ github.event.inputs.workingDir }}"
+          if [ -z "$WDIR" ]; then
+            WDIR="$REPORT_DIR"
           fi
 
-          # Build optional path arguments
+          # Build optional directory arguments
           EXTRA_ARGS=""
-          if [ -n "${{ github.event.inputs.clonepath }}" ]; then
-            EXTRA_ARGS="$EXTRA_ARGS -clonepath \"${{ github.event.inputs.clonepath }}\""
+          if [ -n "${{ github.event.inputs.upstreamsDir }}" ]; then
+            EXTRA_ARGS="$EXTRA_ARGS -upstreamsDir \"${{ github.event.inputs.upstreamsDir }}\""
           fi
-          if [ -n "${{ github.event.inputs.upstreamspath }}" ]; then
-            EXTRA_ARGS="$EXTRA_ARGS -upstreamspath \"${{ github.event.inputs.upstreamspath }}\""
-          fi
-          if [ -n "${{ github.event.inputs.reportpath }}" ]; then
-            EXTRA_ARGS="$EXTRA_ARGS -reportpath \"${{ github.event.inputs.reportpath }}\""
+          if [ -n "${{ github.event.inputs.scansDir }}" ]; then
+            EXTRA_ARGS="$EXTRA_ARGS -scansDir \"${{ github.event.inputs.scansDir }}\""
           fi
 
           eval pwsh -File "$SCRIPT" \
-            -sourcepath "$SRCPATH" \
+            -workingDir "$WDIR" \
             $EXTRA_ARGS \
             -GeneratePh3URLHealthReport        "${{ steps.flags.outputs.ph3_uh }}" \
             -GeneratePh4URLHealthReport        "${{ steps.flags.outputs.ph4_uh }}" \
@@ -183,9 +182,12 @@ jobs:
           import os, glob
 
           report_dir = os.environ.get('REPORT_DIR', 'reports')
-          custom_reportpath = "${{ github.event.inputs.reportpath }}"
-          if custom_reportpath:
-              report_dir = custom_reportpath
+          custom_workingdir = "${{ github.event.inputs.workingDir }}"
+          custom_scansdir = "${{ github.event.inputs.scansDir }}"
+          if custom_scansdir:
+              report_dir = custom_scansdir
+          elif custom_workingdir:
+              report_dir = os.path.join(custom_workingdir, "scans")
           report_type = "${{ steps.flags.outputs.report_type }}"
 
           prn_files = sorted(glob.glob(os.path.join(report_dir, '**', '*.prn'), recursive=True))
@@ -220,23 +222,34 @@ jobs:
           print(f"Summary written: {len(prn_files)} report files found")
           SUMMARY_EOF
 
+      - name: Resolve scans directory
+        if: always()
+        id: resolve_scans
+        run: |
+          SCANS="${{ github.event.inputs.scansDir }}"
+          if [ -z "$SCANS" ]; then
+            WDIR="${{ github.event.inputs.workingDir }}"
+            if [ -z "$WDIR" ]; then
+              WDIR="$REPORT_DIR"
+            fi
+            SCANS="$WDIR/scans"
+          fi
+          echo "dir=$SCANS" >> "$GITHUB_OUTPUT"
+
       - name: Upload report artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: package-reports
           path: |
-            ${{ github.event.inputs.reportpath || env.REPORT_DIR }}/*.prn
+            ${{ steps.resolve_scans.outputs.dir }}/*.prn
           retention-days: 90
           if-no-files-found: warn
 
       - name: Commit reports to scans directory
         if: always()
         run: |
-          ACTUAL_REPORT_DIR="${{ github.event.inputs.reportpath }}"
-          if [ -z "$ACTUAL_REPORT_DIR" ]; then
-            ACTUAL_REPORT_DIR="$REPORT_DIR"
-          fi
+          ACTUAL_REPORT_DIR="${{ steps.resolve_scans.outputs.dir }}"
           SCANS_DIR="repo/photonos-package-report/scans"
           mkdir -p "$SCANS_DIR"
           PRN_COUNT=$(find "$ACTUAL_REPORT_DIR" -maxdepth 1 -name '*.prn' -type f 2>/dev/null | wc -l)

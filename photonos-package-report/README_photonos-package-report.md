@@ -280,7 +280,9 @@ Main Execution
 | `github_token` | string | `$env:GITHUB_TOKEN` | GitHub API access token |
 | `gitlab_freedesktop_org_username` | string | `$env:GITLAB_FREEDESKTOP_ORG_USERNAME` | GitLab username for gitlab.freedesktop.org |
 | `gitlab_freedesktop_org_token` | string | `$env:GITLAB_FREEDESKTOP_ORG_TOKEN` | GitLab access token for gitlab.freedesktop.org |
-| `sourcepath` | string | `$env:PUBLIC` or `$HOME` | Working directory for git clones |
+| `workingDir` | string | `$env:PUBLIC` or `$HOME` | Working directory for branch clones and upstreams |
+| `upstreamsDir` | string | `<workingDir>/photon-upstreams` | Directory for clones/SOURCES_NEW/SPECS_NEW/SOURCES_KojiFedora |
+| `scansDir` | string | `<workingDir>/scans` | Directory for .prn report output files |
 | `GeneratePh3URLHealthReport` | bool | `$true` | Generate URL health report for Photon 3.0 |
 | `GeneratePh4URLHealthReport` | bool | `$true` | Generate URL health report for Photon 4.0 |
 | `GeneratePh5URLHealthReport` | bool | `$true` | Generate URL health report for Photon 5.0 |
@@ -353,9 +355,9 @@ Current version: **0.64**. Full details for each version below; the script heade
 
 **Artifact restructure, git fetch fixes, poll-based fetch completion, netcat.spec, .asc version fix, Source0Lookup fixes, patchlevel-aware version detection, customRegex as regex**
 
-- **Artifact directories moved to photon-upstreams/:** `clones`, `SOURCES_NEW`, `SPECS_NEW`, and `SOURCES_KojiFedora` are now created under `$sourcepath/photon-upstreams/photon-{branch}/` instead of inside the git repo directories. This keeps git repos clean, allows `git reset --hard` and re-clone without losing cached data, and preserves expensive clones (e.g. chromium) across repo resets.
+- **Artifact directories moved to photon-upstreams/:** `clones`, `SOURCES_NEW`, `SPECS_NEW`, and `SOURCES_KojiFedora` are now created under `$workingDir/photon-upstreams/photon-{branch}/` instead of inside the git repo directories. This keeps git repos clean, allows `git reset --hard` and re-clone without losing cached data, and preserves expensive clones (e.g. chromium) across repo resets.
 - **New `$UpstreamsPath` parameter:** Added to `ModifySpecFile`, `CheckURLHealth`, and `GenerateUrlHealthReports` to thread the upstreams directory through the call chain including parallel runspaces.
-- **Fixed hardcoded output paths:** Package Report and all Diff Report output paths were hardcoded to `$env:public`, ignoring the `-sourcepath` parameter and failing on Linux. Now uses `Join-Path $sourcepath` for cross-platform compatibility.
+- **Fixed hardcoded output paths:** Package Report and all Diff Report output paths were hardcoded to `$env:public`, ignoring the `-workingDir` parameter and failing on Linux. Now uses `$scansDir` for cross-platform compatibility.
 - **HTTP post buffer for large repos:** Added `git config --global http.postBuffer 524288000` (500MB) to prevent SChannel/curl `server closed abruptly` errors during fetch of extremely large repositories (llvm-project, rust, chromium).
 - **Clone .git validation in CheckURLHealth:** All 3 clone logic blocks now validate `.git` directory existence before fetch. If the directory exists but `.git` is missing (interrupted/corrupted clone), the directory is removed and a re-clone is triggered via the retry loop.
 - **Force-fetch for diverged tags:** Added `--force` to all fetch commands in CheckURLHealth. Upstream repos sometimes rewrite/force-push tags; without `--force`, git rejects the update with "would clobber existing tag". Since this script is a read-only consumer, force-overwriting local tags is the correct behavior.
