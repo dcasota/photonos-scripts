@@ -4991,6 +4991,7 @@ function GenerateUrlHealthReports {
                 Source0Lookup = (Get-Command 'Source0Lookup' -ErrorAction SilentlyContinue).Definition
                 'Invoke-GitWithTimeout' = (Get-Command 'Invoke-GitWithTimeout' -ErrorAction SilentlyContinue).Definition
                 'Clean-VersionNames' = (Get-Command 'Clean-VersionNames' -ErrorAction SilentlyContinue).Definition
+                'Test-DiskSpace' = (Get-Command 'Test-DiskSpace' -ErrorAction SilentlyContinue).Definition
                 HeapSortClass = $HeapSortClassDef
             }
             $initParts = @()
