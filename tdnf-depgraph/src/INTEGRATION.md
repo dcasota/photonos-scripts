@@ -9,6 +9,7 @@ into the vmware/tdnf source tree.
 |---|---|
 | `solv/tdnfdepgraph.c` | `solv_tdnfdepgraph.c` |
 | `client/depgraph.c` | `client_depgraph.c` |
+| `client/specparse.c` | `client_specparse.c` |
 | `tools/cli/lib/depgraph.c` | `cli_depgraph.c` |
 
 ## Modifications to Existing Files
@@ -66,7 +67,7 @@ add_library(${LIB_TDNF_SOLV} STATIC
 
 ### 6. `client/CMakeLists.txt`
 
-Add `depgraph.c` to the source list:
+Add `depgraph.c` and `specparse.c` to the source list:
 ```cmake
 add_library(${LIB_TDNF} SHARED
     api.c
@@ -89,6 +90,7 @@ add_library(${LIB_TDNF} SHARED
     history.c
     varsdir.c
     depgraph.c               # <-- ADD THIS LINE
+    specparse.c              # <-- ADD THIS LINE
 )
 ```
 
@@ -161,13 +163,16 @@ make
 # Test: JSON with branch metadata
 ./bin/tdnf depgraph --json --setopt branch=5.0 > /tmp/depgraph-5.0.json
 
-# Test: per-branch via --releasever
-./bin/tdnf depgraph --json --releasever=3.0 --setopt branch=3.0 > /tmp/depgraph-3.0.json
-./bin/tdnf depgraph --json --releasever=4.0 --setopt branch=4.0 > /tmp/depgraph-4.0.json
+# Test: per-branch from vmware/photon spec files
+git clone --depth 1 --branch 5.0 https://github.com/vmware/photon.git /tmp/photon-5.0
+./bin/tdnf depgraph --json --setopt specsdir=/tmp/photon-5.0/SPECS --setopt branch=5.0
+
+git clone --depth 1 --branch 6.0 https://github.com/vmware/photon.git /tmp/photon-6.0
+./bin/tdnf depgraph --json --setopt specsdir=/tmp/photon-6.0/SPECS --setopt branch=6.0
 
 # Test: DOT with branch label
-./bin/tdnf depgraph dot --setopt branch=5.0 > /tmp/depgraph-5.0.dot
+./bin/tdnf depgraph dot --setopt specsdir=/tmp/photon-5.0/SPECS --setopt branch=5.0
 
-# Test: 6.0 from local build RPMS
-./bin/tdnf depgraph --json -c /path/to/tdnf-6.0.conf --setopt branch=6.0 > /tmp/depgraph-6.0.json
+# Test: from binary repos via --releasever (3.0-5.0 have Broadcom repos)
+./bin/tdnf depgraph --json --releasever=4.0 --setopt branch=4.0
 ```

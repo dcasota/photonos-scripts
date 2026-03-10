@@ -242,8 +242,9 @@ TDNFCliDepGraphCommand(
     PTDNF_CMD_OPT pSetOpt = NULL;
     int nDotOutput = 0;
     const char *pszBranch = NULL;
+    const char *pszSpecsDir = NULL;
 
-    if (!pContext || !pContext->hTdnf || !pCmdArgs)
+    if (!pContext || !pCmdArgs)
     {
         dwError = ERROR_TDNF_CLI_INVALID_ARGUMENT;
         BAIL_ON_CLI_ERROR(dwError);
@@ -259,6 +260,10 @@ TDNFCliDepGraphCommand(
         {
             pszBranch = pSetOpt->pszOptValue;
         }
+        else if (strcasecmp(pSetOpt->pszOptName, "specsdir") == 0)
+        {
+            pszSpecsDir = pSetOpt->pszOptValue;
+        }
     }
 
     /* Also allow "tdnf depgraph dot" as subcommand */
@@ -268,7 +273,19 @@ TDNFCliDepGraphCommand(
         nDotOutput = 1;
     }
 
-    dwError = TDNFCliInvokeDepGraph(pContext, &pGraph);
+    if (pszSpecsDir)
+    {
+        dwError = TDNFBuildDepGraphFromSpecs(pszSpecsDir, &pGraph);
+    }
+    else
+    {
+        if (!pContext->hTdnf)
+        {
+            dwError = ERROR_TDNF_CLI_INVALID_ARGUMENT;
+            BAIL_ON_CLI_ERROR(dwError);
+        }
+        dwError = TDNFCliInvokeDepGraph(pContext, &pGraph);
+    }
     BAIL_ON_CLI_ERROR(dwError);
 
     if (pszBranch)

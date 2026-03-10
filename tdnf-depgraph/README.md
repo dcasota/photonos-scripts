@@ -46,19 +46,26 @@ See [plan-tdnf-depgraph-c-extension.md](plan-tdnf-depgraph-c-extension.md) for t
 A `tdnf depgraph` command that can be invoked as:
 
 ```bash
-# Full JSON graph for the current system's repos
-tdnf depgraph --json > dependency-graph.json
+# Per-branch from vmware/photon spec files (authoritative source)
+git clone --depth 1 --branch 5.0 https://github.com/vmware/photon.git /tmp/ph5
+tdnf depgraph --json --setopt specsdir=/tmp/ph5/SPECS --setopt branch=5.0
 
-# Per-branch graphs via --releasever and --setopt branch=<name>
-tdnf depgraph --json --releasever=3.0 --setopt branch=3.0 > depgraph-3.0.json
-tdnf depgraph --json --releasever=4.0 --setopt branch=4.0 > depgraph-4.0.json
-tdnf depgraph --json --releasever=5.0 --setopt branch=5.0 > depgraph-5.0.json
+git clone --depth 1 --branch 6.0 https://github.com/vmware/photon.git /tmp/ph6
+tdnf depgraph --json --setopt specsdir=/tmp/ph6/SPECS --setopt branch=6.0
 
-# 6.0 (local build RPMS, no public Broadcom repo yet)
-tdnf depgraph --json -c /path/to/tdnf-6.0.conf --setopt branch=6.0 > depgraph-6.0.json
+# All branches
+for b in 3.0 4.0 5.0 6.0 common master dev; do
+  git clone --depth 1 --branch $b https://github.com/vmware/photon.git /tmp/ph-$b
+  tdnf depgraph --json --setopt specsdir=/tmp/ph-$b/SPECS --setopt branch=$b \
+    > dependency-graph-$b-$(date -u +%Y%m%d_%H%M%S).json
+done
+
+# From binary repos via --releasever (3.0-5.0 have Broadcom repos)
+tdnf depgraph --json --releasever=4.0 --setopt branch=4.0
 
 # Graphviz visualization with branch label
-tdnf depgraph dot --setopt branch=5.0 | dot -Tsvg -o photon5-deps.svg
+tdnf depgraph dot --setopt specsdir=/tmp/ph5/SPECS --setopt branch=5.0 \
+  | dot -Tsvg -o photon5-deps.svg
 ```
 
 The JSON output feeds directly into the `qubo_builder.py` script from the [QUBO PQC migration implementation plan](../photon-gating-conflict-detection/specs/), replacing the need for any external dependency extraction tooling.
@@ -78,8 +85,9 @@ The `src/` directory contains the complete, ready-to-integrate C source code:
 | File | tdnf target path | Description |
 |---|---|---|
 | [src/solv_tdnfdepgraph.c](src/solv_tdnfdepgraph.c) | `solv/tdnfdepgraph.c` | Pool walk, edge resolution via `FOR_PROVIDES` (~250 LOC) |
-| [src/client_depgraph.c](src/client_depgraph.c) | `client/depgraph.c` | API entry point, refresh, delegation (~45 LOC) |
-| [src/cli_depgraph.c](src/cli_depgraph.c) | `tools/cli/lib/depgraph.c` | CLI handler, JSON/DOT/adjacency output (~240 LOC) |
+| [src/client_depgraph.c](src/client_depgraph.c) | `client/depgraph.c` | API entry point, refresh, delegation (~50 LOC) |
+| [src/client_specparse.c](src/client_specparse.c) | `client/specparse.c` | Spec file parser: walks SPECS/, expands macros, builds graph (~430 LOC) |
+| [src/cli_depgraph.c](src/cli_depgraph.c) | `tools/cli/lib/depgraph.c` | CLI handler, JSON/DOT/adjacency output, `--setopt specsdir=` (~290 LOC) |
 | [src/tdnftypes_depgraph.h](src/tdnftypes_depgraph.h) | append to `include/tdnftypes.h` | Struct and enum definitions |
 | [src/tdnf_depgraph_api.h](src/tdnf_depgraph_api.h) | append to `include/tdnf.h` | Public API declaration |
 | [src/tdnfcli_depgraph.h](src/tdnfcli_depgraph.h) | append to `include/tdnfcli.h` | CLI command declaration |
@@ -104,14 +112,23 @@ scans/
 
 Each JSON file contains a `metadata.branch` field identifying the source branch.
 
-### Branches and Repo Sources
+### Data Source
 
-| Branch | Binary repo source | Notes |
-|--------|-------------------|-------|
-| 3.0, 4.0, 5.0 | Broadcom Artifactory (`--releasever=X.0`) | Public release/updates repos |
-| 6.0 | Local build RPMS or workflow input `local_rpms_6` | No public Broadcom repo yet |
-| master, dev | Broadcom 5.0 repos (`--releasever=5.0`) | Both currently track photon-release 5.0 |
-| common | Broadcom 5.0 repos (`--releasever=5.0`) | Only 4 specs (linux, stalld, etc.) |
+All branches are parsed from `.spec` files in `vmware/photon` via `--setopt specsdir=`.
+The spec parser recognizes: `Requires`, `BuildRequires`, `Conflicts`, `BuildConflicts`,
+`Obsoletes`, `Recommends`, `Suggests`, `Supplements`, `Enhances`,
+`Requires(pre)`, `Requires(post)`, `Requires(preun)`, `Requires(postun)`,
+`Provides`, and `%package` subpackages with `%{name}`/`%{version}` macro expansion.
+
+| Branch | Specs | Nodes | Edges |
+|--------|-------|-------|-------|
+| 3.0 | ~906 | ~1781 | ~7526 |
+| 4.0 | ~1035 | ~1838 | ~8097 |
+| 5.0 | ~1072 | ~2004 | ~9341 |
+| 6.0 | ~1094 | ~1982 | ~9149 |
+| common | ~6 | ~1 | ~0 |
+| master | ~1091 | ~1961 | ~8967 |
+| dev | ~1091 | ~1961 | ~8967 |
 
 ### GitHub Actions Workflow
 
@@ -120,10 +137,11 @@ The `.github/workflows/depgraph-scan.yml` workflow:
 - Runs **weekly** (Monday 03:00 UTC) or on-demand via `workflow_dispatch`
 - Accepts `branches` input (default: `3.0,4.0,5.0,6.0,common,master,dev`)
 - Uses a **self-hosted runner** on Photon OS (requires `tdnf`, `cmake`, `gcc`)
-- Builds tdnf with the depgraph C extension, then iterates each branch
-- Saves `dependency-graph-<branch>-<datetime>.json` per branch to `scans/`
+- Builds tdnf with depgraph + specparse C extensions
+- Clones each `vmware/photon` branch (sparse checkout, SPECS/ only)
+- Generates `dependency-graph-<branch>-<datetime>.json` per branch
 - Uploads all JSON files as a GitHub Actions artifact (90-day retention)
-- Commits and pushes to the repo
+- Commits and pushes to `scans/`
 
 ## Plans
 

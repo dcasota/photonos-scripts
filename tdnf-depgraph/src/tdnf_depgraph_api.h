@@ -20,4 +20,11 @@ TDNFFreeDepGraph(
     PTDNF_DEP_GRAPH pGraph
     );
 
+// specparse.c
+uint32_t
+TDNFBuildDepGraphFromSpecs(
+    const char *pszSpecsDir,
+    PTDNF_DEP_GRAPH *ppGraph
+    );
+
 /* ---- end depgraph API ---- */
