@@ -1,0 +1,221 @@
+name: Dependency Graph Scan
+
+on:
+  workflow_dispatch:
+    inputs:
+      branches:
+        description: 'Photon OS branches to scan (comma-separated)'
+        default: '3.0,4.0,5.0,6.0,common,master,dev'
+  schedule:
+    # Weekly scan on Monday at 03:00 UTC
+    - cron: '0 3 * * 1'
+
+jobs:
+  depgraph:
+    runs-on: self-hosted
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          path: repo
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout CI tooling (sparse)
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            tdnf-depgraph
+          path: ci
+
+      - name: Install build dependencies
+        run: |
+          echo "## Environment" >> "$GITHUB_STEP_SUMMARY"
+          tdnf --version | tee -a "$GITHUB_STEP_SUMMARY"
+          cat /etc/photon-release | tee -a "$GITHUB_STEP_SUMMARY"
+
+          for pkg in cmake gcc libsolv-devel rpm-devel curl-devel openssl-devel \
+                     sqlite-devel tdnf-devel libxml2-devel gpgme-devel; do
+            if ! rpm -q "$pkg" &>/dev/null; then
+              tdnf install -y "$pkg"
+            fi
+          done
+
+      - name: Clone and build tdnf with depgraph extension
+        run: |
+          TDNF_VER=$(tdnf --version | awk '{print $NF}')
+          echo "Building against tdnf v${TDNF_VER}"
+          git clone --depth 1 --branch "v${TDNF_VER}" \
+            https://github.com/vmware/tdnf.git tdnf-src 2>/dev/null || \
+          git clone --depth 1 https://github.com/vmware/tdnf.git tdnf-src
+
+          SRC="ci/tdnf-depgraph/src"
+
+          # New source files
+          cp "$SRC/solv_tdnfdepgraph.c"  tdnf-src/solv/tdnfdepgraph.c
+          cp "$SRC/client_depgraph.c"    tdnf-src/client/depgraph.c
+          cp "$SRC/client_specparse.c"   tdnf-src/client/specparse.c
+          cp "$SRC/cli_depgraph.c"       tdnf-src/tools/cli/lib/depgraph.c
+
+          # Patch headers (append type defs, API, CLI, solv prototypes)
+          python3 << 'PYEOF'
+          import re, textwrap
+
+          def patch_before_closing(path, insert, sentinel='#ifdef __cplusplus\n}\n#endif'):
+              with open(path) as f:
+                  content = f.read()
+              content = content.replace(sentinel, insert + '\n\n' + sentinel, 1)
+              with open(path, 'w') as f:
+                  f.write(content)
+
+          # tdnftypes.h - add struct definitions
+          with open('ci/tdnf-depgraph/src/tdnftypes_depgraph.h') as f:
+              raw = f.read()
+          block = re.search(r'/\* ---- begin depgraph.*?/\* ---- end depgraph types ---- \*/', raw, re.DOTALL)
+          patch_before_closing('tdnf-src/include/tdnftypes.h', block.group())
+
+          # tdnf.h - add API
+          api = textwrap.dedent("""
+          // depgraph.c
+          uint32_t TDNFDepGraph(PTDNF pTdnf, PTDNF_DEP_GRAPH *ppGraph);
+          void TDNFFreeDepGraph(PTDNF_DEP_GRAPH pGraph);
+          // specparse.c
+          uint32_t TDNFBuildDepGraphFromSpecs(const char *pszSpecsDir, PTDNF_DEP_GRAPH *ppGraph);
+          """).strip()
+          patch_before_closing('tdnf-src/include/tdnf.h', api)
+
+          # tdnfcli.h - add CLI commands
+          cli = textwrap.dedent("""
+          uint32_t TDNFCliDepGraphCommand(PTDNF_CLI_CONTEXT pContext, PTDNF_CMD_ARGS pCmdArgs);
+          uint32_t TDNFCliInvokeDepGraph(PTDNF_CLI_CONTEXT pContext, PTDNF_DEP_GRAPH *ppGraph);
+          """).strip()
+          patch_before_closing('tdnf-src/include/tdnfcli.h', cli)
+
+          # solv/prototypes.h - add solv prototypes
+          proto = textwrap.dedent("""
+          uint32_t SolvBuildDepGraph(PSolvSack pSack, PTDNF_DEP_GRAPH *ppGraph);
+          void SolvFreeDepGraph(PTDNF_DEP_GRAPH pGraph);
+          """).strip()
+          patch_before_closing('tdnf-src/solv/prototypes.h', proto)
+          PYEOF
+
+          # Patch CMakeLists
+          sed -i 's/simplequery\.c$/simplequery.c\n    tdnfdepgraph.c/' tdnf-src/solv/CMakeLists.txt
+          sed -i 's/varsdir\.c$/varsdir.c\n    depgraph.c\n    specparse.c/' tdnf-src/client/CMakeLists.txt
+          sed -i 's/updateinfocmd\.c$/updateinfocmd.c\n    depgraph.c/' tdnf-src/tools/cli/lib/CMakeLists.txt
+
+          # Patch dispatch table
+          sed -i '/"count",.*TDNFCliCountCommand/a\    {"depgraph",           TDNFCliDepGraphCommand, false},' tdnf-src/tools/cli/main.c
+
+          # Build
+          cd tdnf-src && mkdir -p build && cd build
+          cmake .. -Wno-dev 2>&1 | tail -3
+          make -j$(nproc) 2>&1 | tail -5
+          echo "Build complete"
+
+      - name: Clone vmware/photon branches and generate dependency graphs
+        id: generate
+        run: |
+          DATETIME=$(date -u +%Y%m%d_%H%M%S)
+          echo "datetime=$DATETIME" >> "$GITHUB_OUTPUT"
+
+          BRANCHES="${{ github.event.inputs.branches || '3.0,4.0,5.0,6.0,common,master,dev' }}"
+          TDNF="tdnf-src/build/bin/tdnf"
+          TDNF_ENV="LD_LIBRARY_PATH=tdnf-src/build/lib"
+
+          mkdir -p /tmp/depgraph-scans
+
+          echo "## Dependency Graph Scan" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Branch | Specs | Nodes | Edges | Requires | BuildRequires | Conflicts | File |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|--------|-------|-------|-------|----------|---------------|-----------|------|" >> "$GITHUB_STEP_SUMMARY"
+
+          for BRANCH in $(echo "$BRANCHES" | tr ',' ' '); do
+            SAFE_BRANCH=$(echo "$BRANCH" | tr '/' '-')
+            FILENAME="dependency-graph-${SAFE_BRANCH}-${DATETIME}.json"
+            OUTPATH="/tmp/depgraph-scans/${FILENAME}"
+            CLONE_DIR="/tmp/photon-clone-${SAFE_BRANCH}"
+
+            echo "=== Branch: ${BRANCH} ==="
+
+            # Clone only the SPECS directory from vmware/photon
+            if [ ! -d "$CLONE_DIR" ]; then
+              git clone --depth 1 --branch "$BRANCH" --filter=blob:none --sparse \
+                https://github.com/vmware/photon.git "$CLONE_DIR" 2>&1 | tail -1
+              cd "$CLONE_DIR" && git sparse-checkout set SPECS && cd -
+            fi
+
+            SPEC_COUNT=$(find "${CLONE_DIR}/SPECS" -name '*.spec' 2>/dev/null | wc -l)
+            echo "  Specs: ${SPEC_COUNT}"
+
+            if [ "$SPEC_COUNT" -eq 0 ]; then
+              echo "| ${BRANCH} | 0 | - | - | - | - | - | skipped |" >> "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+
+            # Generate depgraph from spec files
+            env $TDNF_ENV $TDNF depgraph --json \
+              --setopt specsdir="${CLONE_DIR}/SPECS" \
+              --setopt branch="${BRANCH}" 2>/dev/null > "$OUTPATH"
+
+            # Validate and extract stats
+            STATS=$(python3 -c "
+          import json
+          from collections import Counter
+          with open('${OUTPATH}') as f:
+              d = json.load(f)
+          c = Counter(e['type'] for e in d['edges'])
+          req = c.get('requires', 0)
+          breq = c.get('buildrequires', 0)
+          conf = c.get('conflicts', 0)
+          print(f\"{d['node_count']} {d['edge_count']} {req} {breq} {conf}\")
+          " 2>/dev/null)
+
+            if [ -n "$STATS" ]; then
+              read NODES EDGES REQ BREQ CONF <<< "$STATS"
+              echo "  -> ${NODES} nodes, ${EDGES} edges"
+              echo "| ${BRANCH} | ${SPEC_COUNT} | ${NODES} | ${EDGES} | ${REQ} | ${BREQ} | ${CONF} | \`${FILENAME}\` |" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "  -> FAILED to parse output"
+              echo "| ${BRANCH} | ${SPEC_COUNT} | - | - | - | - | - | failed |" >> "$GITHUB_STEP_SUMMARY"
+              rm -f "$OUTPATH"
+            fi
+          done
+
+          FILE_COUNT=$(ls /tmp/depgraph-scans/*.json 2>/dev/null | wc -l)
+          echo "file_count=$FILE_COUNT" >> "$GITHUB_OUTPUT"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Total**: ${FILE_COUNT} graphs generated at ${DATETIME}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload artifacts
+        if: steps.generate.outputs.file_count != '0'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-graphs
+          path: /tmp/depgraph-scans/*.json
+          retention-days: 90
+
+      - name: Commit to scans directory
+        if: steps.generate.outputs.file_count != '0'
+        run: |
+          SCANS_DIR="repo/tdnf-depgraph/scans"
+          mkdir -p "$SCANS_DIR"
+          cp /tmp/depgraph-scans/*.json "$SCANS_DIR/"
+
+          cd repo
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tdnf-depgraph/scans/
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            DATETIME="${{ steps.generate.outputs.datetime }}"
+            FILE_COUNT="${{ steps.generate.outputs.file_count }}"
+            git commit -m "Add dependency graph scans (${FILE_COUNT} branches, ${DATETIME})"
+            git push
+          fi
+
+      - name: Cleanup
+        if: always()
+        run: rm -rf tdnf-src /tmp/depgraph-scans /tmp/photon-clone-*
