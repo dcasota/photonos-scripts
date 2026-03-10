@@ -6,19 +6,7 @@
  * of the License are located in the COPYING file of this distribution.
  */
 
-/*
- * tools/cli/lib/depgraph.c
- *
- * CLI handler for `tdnf depgraph`. Supports three output formats:
- *   --json        JSON with nodes and edges arrays (default if --json global flag)
- *   --dot         Graphviz DOT format
- *   (default)     Adjacency list: one line per package
- *
- * Place this file in tdnf/tools/cli/lib/ and add to tools/cli/lib/CMakeLists.txt.
- */
-
 #include "includes.h"
-#include "../../../llconf/nodes.h"
 
 static const char *
 DepEdgeTypeName(TDNF_DEP_EDGE_TYPE nType)
@@ -45,26 +33,17 @@ TDNFCliDepGraphPrintJson(
     uint32_t dwError = 0;
     uint32_t i;
     struct json_dump *jd = NULL;
-    struct json_dump *jd_meta = NULL;
     struct json_dump *jd_nodes = NULL;
     struct json_dump *jd_edges = NULL;
-    struct json_dump *jd_node = NULL;
-    struct json_dump *jd_edge = NULL;
+    struct json_dump *jd_item = NULL;
     PTDNF_DEP_EDGE pEdge = NULL;
 
     jd = jd_create(4096);
     CHECK_JD_NULL(jd);
     CHECK_JD_RC(jd_map_start(jd));
 
-    /* metadata */
-    jd_meta = jd_create(0);
-    CHECK_JD_NULL(jd_meta);
-    CHECK_JD_RC(jd_map_start(jd_meta));
-    CHECK_JD_RC(jd_map_add_string(jd_meta, "generator", "tdnf depgraph"));
-    CHECK_JD_RC(jd_map_add_int(jd_meta, "node_count", pGraph->dwNodeCount));
-    CHECK_JD_RC(jd_map_add_int(jd_meta, "edge_count", pGraph->dwEdgeCount));
-    CHECK_JD_RC(jd_map_add_child(jd, "metadata", jd_meta));
-    JD_SAFE_DESTROY(jd_meta);
+    CHECK_JD_RC(jd_map_add_int(jd, "node_count", pGraph->dwNodeCount));
+    CHECK_JD_RC(jd_map_add_int(jd, "edge_count", pGraph->dwEdgeCount));
 
     /* nodes */
     jd_nodes = jd_create(4096);
@@ -73,28 +52,26 @@ TDNFCliDepGraphPrintJson(
 
     for (i = 0; i < pGraph->dwNodeCount; i++)
     {
-        jd_node = jd_create(0);
-        CHECK_JD_NULL(jd_node);
-        CHECK_JD_RC(jd_map_start(jd_node));
+        jd_item = jd_create(0);
+        CHECK_JD_NULL(jd_item);
+        CHECK_JD_RC(jd_map_start(jd_item));
 
-        CHECK_JD_RC(jd_map_add_int(jd_node, "id", i));
-        CHECK_JD_RC(jd_map_add_string(jd_node, "name",
+        CHECK_JD_RC(jd_map_add_int(jd_item, "id", i));
+        CHECK_JD_RC(jd_map_add_string(jd_item, "name",
                                        pGraph->pNodes[i].pszName));
-        CHECK_JD_RC(jd_map_add_string(jd_node, "nevra",
+        CHECK_JD_RC(jd_map_add_string(jd_item, "nevra",
                                        pGraph->pNodes[i].pszNevra));
-        CHECK_JD_RC(jd_map_add_string(jd_node, "arch",
+        CHECK_JD_RC(jd_map_add_string(jd_item, "arch",
                                        pGraph->pNodes[i].pszArch));
-        CHECK_JD_RC(jd_map_add_string(jd_node, "evr",
+        CHECK_JD_RC(jd_map_add_string(jd_item, "evr",
                                        pGraph->pNodes[i].pszEvr));
-        CHECK_JD_RC(jd_map_add_string(jd_node, "repo",
+        CHECK_JD_RC(jd_map_add_string(jd_item, "repo",
                                        pGraph->pNodes[i].pszRepo));
-        CHECK_JD_RC(jd_map_add_int(jd_node, "reverse_dep_count",
+        CHECK_JD_RC(jd_map_add_int(jd_item, "reverse_dep_count",
                                     pGraph->pNodes[i].dwReverseDepCount));
-        CHECK_JD_RC(jd_map_add_bool(jd_node, "is_source",
-                                     pGraph->pNodes[i].nIsSource));
 
-        CHECK_JD_RC(jd_list_add_child(jd_nodes, jd_node));
-        JD_SAFE_DESTROY(jd_node);
+        CHECK_JD_RC(jd_list_add_child(jd_nodes, jd_item));
+        JD_SAFE_DESTROY(jd_item);
     }
 
     CHECK_JD_RC(jd_map_add_child(jd, "nodes", jd_nodes));
@@ -110,17 +87,17 @@ TDNFCliDepGraphPrintJson(
         for (pEdge = pGraph->pNodes[i].pEdgesOut; pEdge;
              pEdge = pEdge->pNext)
         {
-            jd_edge = jd_create(0);
-            CHECK_JD_NULL(jd_edge);
-            CHECK_JD_RC(jd_map_start(jd_edge));
+            jd_item = jd_create(0);
+            CHECK_JD_NULL(jd_item);
+            CHECK_JD_RC(jd_map_start(jd_item));
 
-            CHECK_JD_RC(jd_map_add_int(jd_edge, "from", pEdge->dwFromIdx));
-            CHECK_JD_RC(jd_map_add_int(jd_edge, "to", pEdge->dwToIdx));
-            CHECK_JD_RC(jd_map_add_string(jd_edge, "type",
+            CHECK_JD_RC(jd_map_add_int(jd_item, "from", pEdge->dwFromIdx));
+            CHECK_JD_RC(jd_map_add_int(jd_item, "to", pEdge->dwToIdx));
+            CHECK_JD_RC(jd_map_add_string(jd_item, "type",
                                            DepEdgeTypeName(pEdge->nType)));
 
-            CHECK_JD_RC(jd_list_add_child(jd_edges, jd_edge));
-            JD_SAFE_DESTROY(jd_edge);
+            CHECK_JD_RC(jd_list_add_child(jd_edges, jd_item));
+            JD_SAFE_DESTROY(jd_item);
         }
     }
 
@@ -134,11 +111,9 @@ cleanup:
     return dwError;
 
 error:
-    JD_SAFE_DESTROY(jd_meta);
     JD_SAFE_DESTROY(jd_nodes);
     JD_SAFE_DESTROY(jd_edges);
-    JD_SAFE_DESTROY(jd_node);
-    JD_SAFE_DESTROY(jd_edge);
+    JD_SAFE_DESTROY(jd_item);
     goto cleanup;
 }
 
@@ -227,8 +202,8 @@ TDNFCliDepGraphCommand(
 {
     uint32_t dwError = 0;
     PTDNF_DEP_GRAPH pGraph = NULL;
+    PTDNF_CMD_OPT pSetOpt = NULL;
     int nDotOutput = 0;
-    struct cnfnode *cn = NULL;
 
     if (!pContext || !pContext->hTdnf || !pCmdArgs)
     {
@@ -236,16 +211,23 @@ TDNFCliDepGraphCommand(
         BAIL_ON_CLI_ERROR(dwError);
     }
 
-    /* Check for --dot option */
-    for (cn = pCmdArgs->cn_setopts->first_child; cn; cn = cn->next)
+    /* Check for --setopt dot=1 */
+    for (pSetOpt = pCmdArgs->pSetOpt; pSetOpt; pSetOpt = pSetOpt->pNext)
     {
-        if (strcasecmp(cn->name, "dot") == 0)
+        if (strcasecmp(pSetOpt->pszOptName, "dot") == 0)
         {
             nDotOutput = 1;
         }
     }
 
-    dwError = TDNFDepGraph(pContext->hTdnf, &pGraph);
+    /* Also allow "tdnf depgraph dot" as subcommand */
+    if (pCmdArgs->nCmdCount > 1 &&
+        strcasecmp(pCmdArgs->ppszCmds[1], "dot") == 0)
+    {
+        nDotOutput = 1;
+    }
+
+    dwError = TDNFCliInvokeDepGraph(pContext, &pGraph);
     BAIL_ON_CLI_ERROR(dwError);
 
     pr_info("Dependency graph: %u nodes, %u edges\n",
@@ -268,7 +250,7 @@ TDNFCliDepGraphCommand(
 cleanup:
     if (pGraph)
     {
-        SolvFreeDepGraph(pGraph);
+        TDNFFreeDepGraph(pGraph);
     }
     return dwError;
 

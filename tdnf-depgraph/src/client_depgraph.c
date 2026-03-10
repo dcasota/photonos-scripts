@@ -47,3 +47,11 @@ error:
     }
     goto cleanup;
 }
+
+void
+TDNFFreeDepGraph(
+    PTDNF_DEP_GRAPH pGraph
+    )
+{
+    SolvFreeDepGraph(pGraph);
+}

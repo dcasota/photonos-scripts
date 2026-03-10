@@ -15,4 +15,9 @@ TDNFDepGraph(
     PTDNF_DEP_GRAPH *ppGraph
     );
 
+void
+TDNFFreeDepGraph(
+    PTDNF_DEP_GRAPH pGraph
+    );
+
 /* ---- end depgraph API ---- */

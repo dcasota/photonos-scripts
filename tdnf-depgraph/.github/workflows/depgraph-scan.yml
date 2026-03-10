@@ -1,0 +1,240 @@
+name: Dependency Graph Scan
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly scan on Monday at 03:00 UTC
+    - cron: '0 3 * * 1'
+
+jobs:
+  depgraph:
+    runs-on: self-hosted
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          path: repo
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout CI tooling (sparse)
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            tdnf-depgraph
+          path: ci
+
+      - name: Verify tdnf and build dependencies
+        run: |
+          echo "## Environment" >> "$GITHUB_STEP_SUMMARY"
+          tdnf --version | tee -a "$GITHUB_STEP_SUMMARY"
+          cat /etc/photon-release | tee -a "$GITHUB_STEP_SUMMARY"
+
+          for pkg in cmake gcc libsolv-devel rpm-devel curl-devel openssl-devel \
+                     sqlite-devel tdnf-devel libxml2-devel gpgme-devel; do
+            if ! rpm -q "$pkg" &>/dev/null; then
+              echo "Installing $pkg..."
+              tdnf install -y "$pkg"
+            fi
+          done
+
+      - name: Clone tdnf source
+        run: |
+          TDNF_VER=$(tdnf --version | awk '{print $NF}')
+          echo "Building against tdnf v${TDNF_VER}"
+          git clone --depth 1 --branch "v${TDNF_VER}" \
+            https://github.com/vmware/tdnf.git tdnf-src 2>/dev/null || \
+          git clone --depth 1 https://github.com/vmware/tdnf.git tdnf-src
+
+      - name: Integrate depgraph extension
+        run: |
+          SRC="ci/tdnf-depgraph/src"
+
+          # Copy new source files
+          cp "$SRC/solv_tdnfdepgraph.c"  tdnf-src/solv/tdnfdepgraph.c
+          cp "$SRC/client_depgraph.c"    tdnf-src/client/depgraph.c
+          cp "$SRC/cli_depgraph.c"       tdnf-src/tools/cli/lib/depgraph.c
+
+          # Append type definitions to include/tdnftypes.h
+          python3 -c "
+          import re
+          with open('tdnf-src/include/tdnftypes.h') as f:
+              content = f.read()
+          insert = open('$SRC/tdnftypes_depgraph.h').read()
+          # Extract only the type block between markers
+          block = re.search(r'/\* ---- begin depgraph.*?/\* ---- end depgraph types ---- \*/', insert, re.DOTALL)
+          if block:
+              insert = block.group()
+          content = content.replace('#ifdef __cplusplus\n}\n#endif', insert + '\n\n#ifdef __cplusplus\n}\n#endif')
+          with open('tdnf-src/include/tdnftypes.h', 'w') as f:
+              f.write(content)
+          "
+
+          # Append API to include/tdnf.h
+          python3 -c "
+          import re
+          with open('tdnf-src/include/tdnf.h') as f:
+              content = f.read()
+          api = '''
+          // depgraph.c
+          uint32_t
+          TDNFDepGraph(
+              PTDNF pTdnf,
+              PTDNF_DEP_GRAPH *ppGraph
+              );
+
+          void
+          TDNFFreeDepGraph(
+              PTDNF_DEP_GRAPH pGraph
+              );
+          '''
+          import textwrap
+          api = textwrap.dedent(api).strip() + '\n'
+          content = content.replace('#ifdef __cplusplus\n}\n#endif\n\n#endif//TDNF_H_',
+                                    api + '\n#ifdef __cplusplus\n}\n#endif\n\n#endif//TDNF_H_')
+          with open('tdnf-src/include/tdnf.h', 'w') as f:
+              f.write(content)
+          "
+
+          # Append CLI declarations to include/tdnfcli.h
+          python3 -c "
+          with open('tdnf-src/include/tdnfcli.h') as f:
+              content = f.read()
+          cli = '''
+          // depgraph.c
+          uint32_t
+          TDNFCliDepGraphCommand(
+              PTDNF_CLI_CONTEXT pContext,
+              PTDNF_CMD_ARGS pCmdArgs
+              );
+
+          uint32_t
+          TDNFCliInvokeDepGraph(
+              PTDNF_CLI_CONTEXT pContext,
+              PTDNF_DEP_GRAPH *ppGraph
+              );
+          '''
+          import textwrap
+          cli = textwrap.dedent(cli).strip() + '\n'
+          content = content.replace('#ifdef __cplusplus\n}\n#endif\n\n#endif//TDNF_H_',
+                                    cli + '\n#ifdef __cplusplus\n}\n#endif\n\n#endif//TDNF_H_')
+          with open('tdnf-src/include/tdnfcli.h', 'w') as f:
+              f.write(content)
+          "
+
+          # Append solv prototypes
+          python3 -c "
+          with open('tdnf-src/solv/prototypes.h') as f:
+              content = f.read()
+          proto = '''
+          // tdnfdepgraph.c
+          uint32_t
+          SolvBuildDepGraph(
+              PSolvSack pSack,
+              PTDNF_DEP_GRAPH *ppGraph
+              );
+
+          void
+          SolvFreeDepGraph(
+              PTDNF_DEP_GRAPH pGraph
+              );
+          '''
+          import textwrap
+          proto = textwrap.dedent(proto).strip() + '\n'
+          content = content.replace('#ifdef __cplusplus\n}\n#endif',
+                                    proto + '\n#ifdef __cplusplus\n}\n#endif')
+          with open('tdnf-src/solv/prototypes.h', 'w') as f:
+              f.write(content)
+          "
+
+          # Add source files to CMakeLists
+          sed -i 's/simplequery\.c$/simplequery.c\n    tdnfdepgraph.c/' tdnf-src/solv/CMakeLists.txt
+          sed -i 's/varsdir\.c$/varsdir.c\n    depgraph.c/' tdnf-src/client/CMakeLists.txt
+          sed -i 's/updateinfocmd\.c$/updateinfocmd.c\n    depgraph.c/' tdnf-src/tools/cli/lib/CMakeLists.txt
+
+          # Add command to dispatch table in main.c
+          sed -i '/"count",.*TDNFCliCountCommand/a\    {"depgraph",           TDNFCliDepGraphCommand, false},' tdnf-src/tools/cli/main.c
+
+          echo "Integration complete"
+
+      - name: Build tdnf with depgraph
+        run: |
+          cd tdnf-src
+          mkdir -p build && cd build
+          cmake .. -Wno-dev 2>&1 | tail -3
+          make -j$(nproc) 2>&1 | tail -5
+          echo "Build complete: $(ls -lh ../build/bin/tdnf)"
+
+      - name: Generate dependency graph
+        id: generate
+        run: |
+          DATETIME=$(date -u +%Y%m%d_%H%M%S)
+          FILENAME="dependency-graph-${DATETIME}.json"
+          echo "filename=$FILENAME" >> "$GITHUB_OUTPUT"
+
+          cd tdnf-src
+          LD_LIBRARY_PATH=build/lib ./build/bin/tdnf depgraph --json 2>/dev/null > "/tmp/${FILENAME}"
+
+          # Validate JSON and extract stats
+          python3 -c "
+          import json, sys
+          with open('/tmp/${FILENAME}') as f:
+              d = json.load(f)
+          nodes = d['node_count']
+          edges = d['edge_count']
+          print(f'Nodes: {nodes}, Edges: {edges}')
+          sys.exit(0 if nodes > 0 else 1)
+          "
+
+          SIZE=$(du -h "/tmp/${FILENAME}" | cut -f1)
+          echo "Generated: ${FILENAME} (${SIZE})"
+
+          # Summary
+          python3 << PYEOF >> "$GITHUB_STEP_SUMMARY"
+          import json
+          with open('/tmp/${FILENAME}') as f:
+              d = json.load(f)
+          from collections import Counter
+          ec = Counter(e['type'] for e in d['edges'])
+          print("## Dependency Graph")
+          print(f"- **Nodes**: {d['node_count']}")
+          print(f"- **Edges**: {d['edge_count']}")
+          print(f"- **File**: \`${FILENAME}\`")
+          print()
+          print("### Edge types")
+          print("| Type | Count |")
+          print("|------|-------|")
+          for t, n in ec.most_common():
+              print(f"| {t} | {n} |")
+          PYEOF
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-graph
+          path: /tmp/${{ steps.generate.outputs.filename }}
+          retention-days: 90
+
+      - name: Commit to scans directory
+        run: |
+          FILENAME="${{ steps.generate.outputs.filename }}"
+          SCANS_DIR="repo/tdnf-depgraph/scans"
+          mkdir -p "$SCANS_DIR"
+
+          cp "/tmp/${FILENAME}" "$SCANS_DIR/"
+
+          cd repo
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "tdnf-depgraph/scans/${FILENAME}"
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Add dependency graph scan ${FILENAME}"
+            git push
+          fi
+
+      - name: Cleanup build artifacts
+        if: always()
+        run: rm -rf tdnf-src

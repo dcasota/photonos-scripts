@@ -6,17 +6,6 @@
  * of the License are located in the COPYING file of this distribution.
  */
 
-/*
- * solv/tdnfdepgraph.c
- *
- * Walks the libsolv Pool to build a complete RPM dependency graph.
- * Resolves Requires, Conflicts, Obsoletes, Recommends, Suggests,
- * Supplements, and Enhances via FOR_PROVIDES -- the same resolution
- * path used by tdnf install/update.
- *
- * Place this file in tdnf/solv/ and add to solv/CMakeLists.txt.
- */
-
 #include "includes.h"
 
 static uint32_t
@@ -59,40 +48,39 @@ error:
     goto cleanup;
 }
 
+typedef struct {
+    Id nSolvableKey;
+    TDNF_DEP_EDGE_TYPE nEdgeType;
+    int nReverse;
+} DEP_KEY_MAP;
+
 static void
-SolvDepGraphWalkDepArray(
-    Pool *pPool,
-    Id *pIdArray,
+SolvDepGraphResolveDeps(
+    Pool *pool,
+    Solvable *pSolv,
     PTDNF_DEP_GRAPH pGraph,
     uint32_t *pIdxMap,
     uint32_t dwSrcIdx,
+    Id nSolvableKey,
     TDNF_DEP_EDGE_TYPE nType,
     int nReverse
     )
 {
-    Id dep;
-    Id provider, pp;
+    Queue qDeps = {0};
+    int i;
+    Id dep, provider, pp;
 
-    if (!pIdArray)
-        return;
+    queue_init(&qDeps);
+    solvable_lookup_deparray(pSolv, nSolvableKey, &qDeps, -1);
 
-    while ((dep = *pIdArray++) != 0)
+    for (i = 0; i < qDeps.count; i++)
     {
-        if (ISRELDEP(dep))
-        {
-            Reldep *rd = GETRELDEP(pPool, dep);
-            if (rd->flags == REL_AND || rd->flags == REL_OR ||
-                rd->flags == REL_WITH || rd->flags == REL_WITHOUT ||
-                rd->flags == REL_COND || rd->flags == REL_UNLESS)
-            {
-                continue;
-            }
-        }
+        dep = qDeps.elements[i];
 
         FOR_PROVIDES(provider, pp, dep)
         {
             if (provider <= 0 ||
-                provider >= pPool->nsolvables)
+                provider >= pool->nsolvables)
                 continue;
 
             uint32_t dwProviderIdx = pIdxMap[provider];
@@ -107,6 +95,8 @@ SolvDepGraphWalkDepArray(
                 SolvDepGraphAddEdge(pGraph, dwProviderIdx, dwSrcIdx, nType);
         }
     }
+
+    queue_free(&qDeps);
 }
 
 uint32_t
@@ -116,7 +106,7 @@ SolvBuildDepGraph(
     )
 {
     uint32_t dwError = 0;
-    Pool *pPool = NULL;
+    Pool *pool = NULL;
     PTDNF_DEP_GRAPH pGraph = NULL;
     uint32_t *pIdxMap = NULL;
     uint32_t dwNodeCount = 0;
@@ -129,13 +119,10 @@ SolvBuildDepGraph(
         BAIL_ON_TDNF_ERROR(dwError);
     }
 
-    pPool = pSack->pPool;
+    pool = pSack->pPool;
 
-    /* First pass: count solvables */
     FOR_POOL_SOLVABLES(p)
     {
-        if (pPool->considered && !MAPTST(pPool->considered, p))
-            continue;
         dwNodeCount++;
     }
 
@@ -155,26 +142,22 @@ SolvBuildDepGraph(
 
     pGraph->dwNodeCount = dwNodeCount;
 
-    /* Solvable ID -> node index map */
-    dwError = TDNFAllocateMemory(pPool->nsolvables, sizeof(uint32_t),
+    dwError = TDNFAllocateMemory(pool->nsolvables, sizeof(uint32_t),
                                  (void **)&pIdxMap);
     BAIL_ON_TDNF_ERROR(dwError);
 
-    memset(pIdxMap, 0xff, pPool->nsolvables * sizeof(uint32_t));
+    memset(pIdxMap, 0xff, pool->nsolvables * sizeof(uint32_t));
 
-    /* Second pass: populate nodes */
+    /* Populate nodes */
     uint32_t dwIdx = 0;
     FOR_POOL_SOLVABLES(p)
     {
-        if (pPool->considered && !MAPTST(pPool->considered, p))
-            continue;
-
-        s = pool_id2solvable(pPool, p);
+        s = pool_id2solvable(pool, p);
         pIdxMap[p] = dwIdx;
 
-        const char *pszName = pool_id2str(pPool, s->name);
-        const char *pszArch = pool_id2str(pPool, s->arch);
-        const char *pszEvr = pool_id2str(pPool, s->evr);
+        const char *pszName = pool_id2str(pool, s->name);
+        const char *pszArch = pool_id2str(pool, s->arch);
+        const char *pszEvr  = pool_id2str(pool, s->evr);
         const char *pszRepo = s->repo ? s->repo->name : "(none)";
 
         dwError = TDNFAllocateString(pszName,
@@ -205,80 +188,35 @@ SolvBuildDepGraph(
         dwIdx++;
     }
 
-    /* Third pass: resolve dependencies and build edges */
+    /* Resolve dependencies and build edges */
+    static const DEP_KEY_MAP depKeys[] = {
+        { SOLVABLE_REQUIRES,    DEP_EDGE_REQUIRES,    0 },
+        { SOLVABLE_CONFLICTS,   DEP_EDGE_CONFLICTS,   1 },
+        { SOLVABLE_OBSOLETES,   DEP_EDGE_OBSOLETES,   1 },
+        { SOLVABLE_RECOMMENDS,  DEP_EDGE_RECOMMENDS,  0 },
+        { SOLVABLE_SUGGESTS,    DEP_EDGE_SUGGESTS,    0 },
+        { SOLVABLE_SUPPLEMENTS, DEP_EDGE_SUPPLEMENTS, 0 },
+        { SOLVABLE_ENHANCES,    DEP_EDGE_ENHANCES,    0 },
+    };
+
     FOR_POOL_SOLVABLES(p)
     {
-        if (pPool->considered && !MAPTST(pPool->considered, p))
-            continue;
-
         uint32_t dwSrcIdx = pIdxMap[p];
-        s = pool_id2solvable(pPool, p);
+        s = pool_id2solvable(pool, p);
 
         int nIsSource = pGraph->pNodes[dwSrcIdx].nIsSource;
-        TDNF_DEP_EDGE_TYPE nReqType = nIsSource ?
-            DEP_EDGE_BUILDREQUIRES : DEP_EDGE_REQUIRES;
 
-        /* Requires (or BuildRequires for src packages) */
-        if (s->requires)
+        for (int k = 0; k < (int)(sizeof(depKeys) / sizeof(depKeys[0])); k++)
         {
-            SolvDepGraphWalkDepArray(
-                pPool,
-                pPool->idarraydata + s->requires,
-                pGraph, pIdxMap, dwSrcIdx, nReqType, 0);
-        }
+            TDNF_DEP_EDGE_TYPE nType = depKeys[k].nEdgeType;
 
-        /* Conflicts: src -> conflicting package */
-        if (s->conflicts)
-        {
-            SolvDepGraphWalkDepArray(
-                pPool,
-                pPool->idarraydata + s->conflicts,
-                pGraph, pIdxMap, dwSrcIdx, DEP_EDGE_CONFLICTS, 1);
-        }
+            /* Tag Requires from source packages as BuildRequires */
+            if (nIsSource && nType == DEP_EDGE_REQUIRES)
+                nType = DEP_EDGE_BUILDREQUIRES;
 
-        /* Obsoletes: src -> obsoleted package */
-        if (s->obsoletes)
-        {
-            SolvDepGraphWalkDepArray(
-                pPool,
-                pPool->idarraydata + s->obsoletes,
-                pGraph, pIdxMap, dwSrcIdx, DEP_EDGE_OBSOLETES, 1);
-        }
-
-        /* Recommends */
-        if (s->recommends)
-        {
-            SolvDepGraphWalkDepArray(
-                pPool,
-                pPool->idarraydata + s->recommends,
-                pGraph, pIdxMap, dwSrcIdx, DEP_EDGE_RECOMMENDS, 0);
-        }
-
-        /* Suggests */
-        if (s->suggests)
-        {
-            SolvDepGraphWalkDepArray(
-                pPool,
-                pPool->idarraydata + s->suggests,
-                pGraph, pIdxMap, dwSrcIdx, DEP_EDGE_SUGGESTS, 0);
-        }
-
-        /* Supplements */
-        if (s->supplements)
-        {
-            SolvDepGraphWalkDepArray(
-                pPool,
-                pPool->idarraydata + s->supplements,
-                pGraph, pIdxMap, dwSrcIdx, DEP_EDGE_SUPPLEMENTS, 0);
-        }
-
-        /* Enhances */
-        if (s->enhances)
-        {
-            SolvDepGraphWalkDepArray(
-                pPool,
-                pPool->idarraydata + s->enhances,
-                pGraph, pIdxMap, dwSrcIdx, DEP_EDGE_ENHANCES, 0);
+            SolvDepGraphResolveDeps(
+                pool, s, pGraph, pIdxMap, dwSrcIdx,
+                depKeys[k].nSolvableKey, nType, depKeys[k].nReverse);
         }
     }
 

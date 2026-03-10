@@ -24,7 +24,8 @@ Append the contents of `tdnftypes_depgraph.h` before the closing:
 
 ### 2. `include/tdnf.h`
 
-Append the contents of `tdnf_depgraph_api.h` before the closing:
+Append the contents of `tdnf_depgraph_api.h` (includes `TDNFDepGraph` and `TDNFFreeDepGraph`)
+before the closing:
 ```c
 #ifdef __cplusplus
 }
