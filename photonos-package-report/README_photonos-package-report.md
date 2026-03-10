@@ -347,6 +347,22 @@ For production use, running on Photon OS or another Linux distribution with Powe
 
 ---
 
+## `photon-mainline` Key Impact
+
+On March 5, 2026, [vmware/photon@d78115d](https://github.com/vmware/photon/commit/d78115d55de328a4559b39432da9c507794c0394) introduced a new `"photon-mainline"` key in `build-config.json` on the 5.0 branch, sitting alongside the existing `"photon-subrelease"`. Both currently share the value `92`. The new key separates the mainline iteration counter (`photon-mainline`) from the vendor-pinned package directory identifier (`photon-subrelease`); in the future these values may diverge.
+
+**Current state:** `ParseDirectory` discovers subreleases entirely by scanning numeric subdirectories under `SPECS/` (e.g. `SPECS/91/`, `SPECS/92/`). It does not read `build-config.json`. Since both keys are `92` today, no behaviour change occurs.
+
+**Future risk:** If `photon-mainline` and `photon-subrelease` diverge, the script would need to:
+
+1. Read `build-config.json` from the cloned Photon repository.
+2. Distinguish "current mainline" packages from "old subrelease-pinned" packages.
+3. Adjust report labeling and diff-report filtering accordingly.
+
+**References:** [5.0 branch build-config.json](https://github.com/vmware/photon/blob/5.0/build-config.json), [master branch build-config.json](https://github.com/vmware/photon/blob/master/build-config.json)
+
+---
+
 ## VERSION HISTORY
 
 Current version: **0.64**. Full details for each version below; the script header contains one-line summaries.
