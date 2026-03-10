@@ -22,7 +22,7 @@ on:
         description: 'Working directory for branch clones and upstreams (default: $HOME)'
         default: ''
       upstreamsDir:
-        description: 'Directory for clones/SOURCES_NEW/SPECS_NEW (default: workingDir/photon-upstreams)'
+        description: 'Upstreams base directory (default: workingDir/photon-upstreams). Per-branch subdirs: clones, SOURCES_NEW, SPECS_NEW, SOURCES_KojiFedora'
         default: ''
       scansDir:
         description: 'Directory for .prn report output files (default: workingDir/scans)'
