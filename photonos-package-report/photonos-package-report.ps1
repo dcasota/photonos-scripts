@@ -241,12 +241,12 @@ function Get-SpecValue {
 function ParseDirectory {
 	param (
 		[parameter(Mandatory = $true)]
-		[string]$SourcePath,
+		[string]$WorkingDir,
 		[parameter(Mandatory = $true)]
 		[string]$photonDir
 	)
     $Packages = [System.Collections.Generic.List[PSCustomObject]]::new()
-    $specsPath = Join-Path -Path $SourcePath -ChildPath $photonDir | Join-Path -ChildPath "SPECS"
+    $specsPath = Join-Path -Path $WorkingDir -ChildPath $photonDir | Join-Path -ChildPath "SPECS"
     Get-ChildItem -Path $specsPath -Recurse -File -Filter "*.spec" | ForEach-Object {
         $currentFile = $_
         try
@@ -445,12 +445,12 @@ function Clean-VersionNames {
 function GitPhoton {
     param (
         [parameter(Mandatory = $true)]
-        [string]$SourcePath,
+        [string]$WorkingDir,
         [parameter(Mandatory = $true)]
         $release
     )
     #download from repo
-    $photonPath = Join-Path -path $SourcePath -childpath "photon-$release"
+    $photonPath = Join-Path -path $WorkingDir -childpath "photon-$release"
     $gitDir = Join-Path -Path $photonPath -ChildPath ".git"
     if (!(Test-Path -Path $photonPath) -or !(Test-Path -Path $gitDir))
     {
@@ -459,13 +459,13 @@ function GitPhoton {
             Write-Warning "Directory photon-$release exists but is not a git repository. Removing and re-cloning..."
             Remove-Item -Path $photonPath -Recurse -Force -ErrorAction SilentlyContinue
         }
-        if (-not (Test-DiskSpace -Path $SourcePath -RequiredMB 1024 -Operation "clone photon-$release")) {
+        if (-not (Test-DiskSpace -Path $WorkingDir -RequiredMB 1024 -Operation "clone photon-$release")) {
             Write-Error "Insufficient disk space to clone photon-$release. Skipping."
             return
         }
-        Set-Location $SourcePath
+        Set-Location $WorkingDir
         try {
-            Invoke-GitWithTimeout "clone -b $release https://github.com/vmware/photon `"$photonPath`"" -WorkingDirectory $SourcePath
+            Invoke-GitWithTimeout "clone -b $release https://github.com/vmware/photon `"$photonPath`"" -WorkingDirectory $WorkingDir
             Set-Location $photonPath
         }
         catch {
@@ -485,10 +485,10 @@ function GitPhoton {
             # If fetch/reset fails, delete and re-clone
             Write-Warning "Failed to update photon-$release repository: $_"
             Write-Warning "Attempting to delete and re-clone photon-$release..."
-            Set-Location $SourcePath
+            Set-Location $WorkingDir
             try {
                 Remove-Item -Path $photonPath -Recurse -Force -ErrorAction Stop
-                Invoke-GitWithTimeout "clone -b $release https://github.com/vmware/photon `"$photonPath`"" -WorkingDirectory $SourcePath
+                Invoke-GitWithTimeout "clone -b $release https://github.com/vmware/photon `"$photonPath`"" -WorkingDirectory $WorkingDir
                 Set-Location $photonPath
                 Write-Host "Successfully re-cloned photon-$release"
             }
@@ -1367,11 +1367,11 @@ function ModifySpecFile {
         [parameter(Mandatory = $true)]
         [string]$SpecFileName,
         [parameter(Mandatory = $true)]
-        [string]$SourcePath,
+        [string]$WorkingDir,
         [parameter(Mandatory = $true)]
         [string]$photonDir,
         [parameter(Mandatory = $true)]
-        [string]$UpstreamsPath,
+        [string]$UpstreamsDir,
         [parameter(Mandatory = $true)]
         [string]$Name,
         [parameter(Mandatory = $true)]
@@ -1385,7 +1385,7 @@ function ModifySpecFile {
         [parameter(Mandatory = $false)]
         [string]$CommitId = ""
     )
-    $SpecFile = join-path -path (join-path -path (join-path -path (join-path -path "$SourcePath" -childpath "$photonDir") -childpath "SPECS") -childpath "$Name") -childpath "$SpecFileName"
+    $SpecFile = join-path -path (join-path -path (join-path -path (join-path -path "$WorkingDir" -childpath "$photonDir") -childpath "SPECS") -childpath "$Name") -childpath "$SpecFileName"
     if (!(Test-Path $SpecFile)) {
         Write-Warning "Spec file not found, skipping modification: $SpecFile"
         return
@@ -1434,7 +1434,7 @@ function ModifySpecFile {
     }
 
     if ($null -ne $FileModified) {
-        $SpecsNewDirectory=join-path -path (join-path -path (join-path -path "$UpstreamsPath" -childpath "$photonDir") -childpath "SPECS_NEW") -childpath "$Name"
+        $SpecsNewDirectory=join-path -path (join-path -path (join-path -path "$UpstreamsDir" -childpath "$photonDir") -childpath "SPECS_NEW") -childpath "$Name"
         if (!(Test-Path $SpecsNewDirectory)) {New-Item $SpecsNewDirectory -ItemType Directory -ErrorAction SilentlyContinue}
 
         if ($Update)
@@ -1569,13 +1569,12 @@ function CheckURLHealth {
       [CmdletBinding()]
       Param(
         [parameter(Mandatory)]$currentTask,
-        [parameter(Mandatory)]$SourcePath,
+        [parameter(Mandatory)]$WorkingDir,
         [parameter(Mandatory)]$outputfile,
         [parameter(Mandatory)]$accessToken,
         [parameter(Mandatory)]$photonDir,
-        [parameter(Mandatory)]$UpstreamsPath,
+        [parameter(Mandatory)]$UpstreamsDir,
         [parameter(Mandatory)][DateTime]$ScriptStartTime,
-        [string]$CloneBasePath = "",
         $Source0Data = $null
     )
 
@@ -2353,11 +2352,7 @@ function CheckURLHealth {
                 Push-Location
                 $fetchState = $null
                 try {
-                    if ([string]::IsNullOrEmpty($CloneBasePath)) {
-                        $ClonePath=[System.String](join-path -path (join-path -path $UpstreamsPath -childpath $photonDir) -childpath "clones")
-                    } else {
-                        $ClonePath=[System.String](join-path -path $CloneBasePath -childpath $photonDir)
-                    }
+                    $ClonePath=[System.String](join-path -path (join-path -path $UpstreamsDir -childpath $photonDir) -childpath "clones")
                     if (!(Test-Path $ClonePath)) {New-Item $ClonePath -ItemType Directory}
                     
                     # override with special cases
@@ -3633,11 +3628,7 @@ function CheckURLHealth {
                 Push-Location
                 $fetchState = $null
                 try {
-                    if ([string]::IsNullOrEmpty($CloneBasePath)) {
-                        $ClonePath=[System.String](join-path -path (join-path -path $UpstreamsPath -childpath $photonDir) -childpath "clones")
-                    } else {
-                        $ClonePath=[System.String](join-path -path $CloneBasePath -childpath $photonDir)
-                    }
+                    $ClonePath=[System.String](join-path -path (join-path -path $UpstreamsDir -childpath $photonDir) -childpath "clones")
                     if (!(Test-Path $ClonePath)) {New-Item $ClonePath -ItemType Directory}
 
                     $SourceClonePath=[System.String](join-path -path $ClonePath -childpath $repoName)
@@ -3978,11 +3969,7 @@ function CheckURLHealth {
                 Push-Location
                 $fetchState = $null
                 try {
-                    if ([string]::IsNullOrEmpty($CloneBasePath)) {
-                        $ClonePath=[System.String](join-path -path (join-path -path $UpstreamsPath -childpath $photonDir) -childpath "clones")
-                    } else {
-                        $ClonePath=[System.String](join-path -path $CloneBasePath -childpath $photonDir)
-                    }
+                    $ClonePath=[System.String](join-path -path (join-path -path $UpstreamsDir -childpath $photonDir) -childpath "clones")
                     if (!(Test-Path $ClonePath)) {New-Item $ClonePath -ItemType Directory}
 
                     $SourceClonePath=[System.String](join-path -path $ClonePath -childpath $repoName)
@@ -4497,7 +4484,7 @@ function CheckURLHealth {
     if ($SourceRPMFileURL)
     {
         try {
-            $DownloadPath=[System.String](join-path -path (join-path -path $UpstreamsPath -childpath $photonDir) -childpath "SOURCES_KojiFedora")
+            $DownloadPath=[System.String](join-path -path (join-path -path $UpstreamsDir -childpath $photonDir) -childpath "SOURCES_KojiFedora")
             if (!(Test-Path $DownloadPath)) {New-Item $DownloadPath -ItemType Directory}
 
             $SourceRPMFileName = ($SourceRPMFileURL -split '/')[-1]
@@ -4753,21 +4740,17 @@ function CheckURLHealth {
         }        
 
 
-        $SourcesNewDirectory=[System.String](join-path -path (join-path -path $UpstreamsPath -childpath $photonDir) -childpath "SOURCES_NEW")
+        $SourcesNewDirectory=[System.String](join-path -path (join-path -path $UpstreamsDir -childpath $photonDir) -childpath "SOURCES_NEW")
         if (!(Test-Path $SourcesNewDirectory)) {New-Item $SourcesNewDirectory -ItemType Directory}
 
         $UpdateDownloadFile=[System.String](Join-Path -Path $SourcesNewDirectory -ChildPath $UpdateDownloadName).Trim()
         if (!(Test-Path $UpdateDownloadFile)) {
             if (($currentTask.spec -ilike 'netcat.spec') -and (-not [string]::IsNullOrEmpty($Script:netcatCommitId))) {
                 # Reuse the existing openbsd/src clone from the standard clone block
-                if ([string]::IsNullOrEmpty($CloneBasePath)) {
-                    $existingClonePath = Join-Path (Join-Path (Join-Path $UpstreamsPath $photonDir) "clones") "src"
-                } else {
-                    $existingClonePath = Join-Path (Join-Path $CloneBasePath $photonDir) "src"
-                }
+                $existingClonePath = Join-Path (Join-Path (Join-Path $UpstreamsDir $photonDir) "clones") "src"
                 $srcNcPath = Join-Path $existingClonePath (Join-Path "usr.bin" "nc")
                 if ((Test-Path $existingClonePath) -and (Test-Path $srcNcPath)) {
-                    $uniqueTmpPath = Join-Path -Path $SourcePath -ChildPath "tmp_$([System.Guid]::NewGuid().ToString())"
+                    $uniqueTmpPath = Join-Path -Path $WorkingDir -ChildPath "tmp_$([System.Guid]::NewGuid().ToString())"
                     try {
                         if (!(Test-Path $uniqueTmpPath)) { New-Item $uniqueTmpPath -ItemType Directory | Out-Null }
                         $tarDirName = "nc-$($Script:netcatCommitId)"
@@ -4802,7 +4785,7 @@ function CheckURLHealth {
             {
                 try {
                     # Generate a unique temporary directory for each thread
-                    $uniqueTmpPath = Join-Path -Path $SourcePath -ChildPath "tmp_$([System.Guid]::NewGuid().ToString())"
+                    $uniqueTmpPath = Join-Path -Path $WorkingDir -ChildPath "tmp_$([System.Guid]::NewGuid().ToString())"
                     if (!(Test-Path $uniqueTmpPath)) {New-Item $uniqueTmpPath -ItemType Directory}
 
                     $nestedFiles = @()
@@ -4915,9 +4898,9 @@ function CheckURLHealth {
         # Add a space to signalitze that something went wrong when extracting SHAvalue but do not stop modifying the spec file.
         if ([string]::IsNullOrEmpty($SHALine)) { $SHALine=" " }
 
-        if ($currentTask.Spec -ilike 'openjdk8.spec') {ModifySpecFile -SpecFileName $currentTask.spec -SourcePath $SourcePath -PhotonDir $photonDir -UpstreamsPath $UpstreamsPath -Name $currentTask.name -Update $UpdateAvailable -UpdateDownloadFile $UpdateDownloadFile -OpenJDK8 $true -SHALine $SHALine}
-        elseif ($currentTask.Spec -ilike 'netcat.spec') {ModifySpecFile -SpecFileName $currentTask.spec -SourcePath $SourcePath -PhotonDir $photonDir -UpstreamsPath $UpstreamsPath -Name $currentTask.name -Update $UpdateAvailable -UpdateDownloadFile $UpdateDownloadFile -OpenJDK8 $false -SHALine $SHALine -CommitId $Script:netcatCommitId}
-        else {ModifySpecFile -SpecFileName $currentTask.spec -SourcePath $SourcePath -PhotonDir $photonDir -UpstreamsPath $UpstreamsPath -Name $currentTask.name -Update $UpdateAvailable -UpdateDownloadFile $UpdateDownloadFile -OpenJDK8 $false -SHALine $SHALine}
+        if ($currentTask.Spec -ilike 'openjdk8.spec') {ModifySpecFile -SpecFileName $currentTask.spec -WorkingDir $WorkingDir -PhotonDir $photonDir -UpstreamsDir $UpstreamsDir -Name $currentTask.name -Update $UpdateAvailable -UpdateDownloadFile $UpdateDownloadFile -OpenJDK8 $true -SHALine $SHALine}
+        elseif ($currentTask.Spec -ilike 'netcat.spec') {ModifySpecFile -SpecFileName $currentTask.spec -WorkingDir $WorkingDir -PhotonDir $photonDir -UpstreamsDir $UpstreamsDir -Name $currentTask.name -Update $UpdateAvailable -UpdateDownloadFile $UpdateDownloadFile -OpenJDK8 $false -SHALine $SHALine -CommitId $Script:netcatCommitId}
+        else {ModifySpecFile -SpecFileName $currentTask.spec -WorkingDir $WorkingDir -PhotonDir $photonDir -UpstreamsDir $UpstreamsDir -Name $currentTask.name -Update $UpdateAvailable -UpdateDownloadFile $UpdateDownloadFile -OpenJDK8 $false -SHALine $SHALine}
     }
 
     [System.String]::Concat($currentTask.spec,',',$currentTask.source0,',',$Source0,',',$urlhealth,',',$UpdateAvailable,',',$UpdateURL,',',$HealthUpdateURL,',',$currentTask.Name,',',$SHAValue,',',$UpdateDownloadName,',',$Warning,',',$ArchivationDate)
@@ -4925,10 +4908,9 @@ function CheckURLHealth {
 
 function GenerateUrlHealthReports {
     param (
-        [string]$SourcePath,
-        [string]$UpstreamsPath,
-        [string]$ReportPath,
-        [string]$ClonePath,
+        [string]$WorkingDir,
+        [string]$UpstreamsDir,
+        [string]$ScansDir,
         [string]$accessToken,
         [DateTime]$ScriptStartTime,
         [int]$ThrottleLimit,
@@ -4951,38 +4933,38 @@ function GenerateUrlHealthReports {
 
     if ($GeneratePh3URLHealthReport) {
         Write-Host "Preparing data for Photon OS 3.0 ..."
-        GitPhoton -release "3.0" -SourcePath $SourcePath
-        $Packages3 = ParseDirectory -SourcePath $SourcePath -PhotonDir "photon-3.0"
+        GitPhoton -release "3.0" -WorkingDir $WorkingDir
+        $Packages3 = ParseDirectory -WorkingDir $WorkingDir -PhotonDir "photon-3.0"
     }
     if ($GeneratePh4URLHealthReport) {
         Write-Host "Preparing data for Photon OS 4.0 ..."
-        GitPhoton -release "4.0" -SourcePath $SourcePath
-        $Packages4 = ParseDirectory -SourcePath $SourcePath -PhotonDir "photon-4.0"
+        GitPhoton -release "4.0" -WorkingDir $WorkingDir
+        $Packages4 = ParseDirectory -WorkingDir $WorkingDir -PhotonDir "photon-4.0"
     }
     if ($GeneratePh5URLHealthReport) {
         Write-Host "Preparing data for Photon OS 5.0 ..."
-        GitPhoton -release "5.0" -SourcePath $SourcePath
-        $Packages5 = ParseDirectory -SourcePath $SourcePath -PhotonDir "photon-5.0"
+        GitPhoton -release "5.0" -WorkingDir $WorkingDir
+        $Packages5 = ParseDirectory -WorkingDir $WorkingDir -PhotonDir "photon-5.0"
     }
     if ($GeneratePh6URLHealthReport) {
         Write-Host "Preparing data for Photon OS 6.0 ..."
-        GitPhoton -release "6.0" -SourcePath $SourcePath
-        $Packages6 = ParseDirectory -SourcePath $SourcePath -PhotonDir "photon-6.0"
+        GitPhoton -release "6.0" -WorkingDir $WorkingDir
+        $Packages6 = ParseDirectory -WorkingDir $WorkingDir -PhotonDir "photon-6.0"
     }
     if ($GeneratePhCommonURLHealthReport) {
         Write-Host "Preparing data for Photon OS Common ..."
-        GitPhoton -release "common" -SourcePath $SourcePath
-        $PackagesCommon = ParseDirectory -SourcePath $SourcePath -PhotonDir "photon-common"
+        GitPhoton -release "common" -WorkingDir $WorkingDir
+        $PackagesCommon = ParseDirectory -WorkingDir $WorkingDir -PhotonDir "photon-common"
     }
     if ($GeneratePhDevURLHealthReport) {
         Write-Host "Preparing data for Photon OS Development ..."
-        GitPhoton -release "dev" -SourcePath $SourcePath
-        $PackagesDev = ParseDirectory -SourcePath $SourcePath -PhotonDir "photon-dev"
+        GitPhoton -release "dev" -WorkingDir $WorkingDir
+        $PackagesDev = ParseDirectory -WorkingDir $WorkingDir -PhotonDir "photon-dev"
     }
     if ($GeneratePhMasterURLHealthReport) {
         Write-Host "Preparing data for Photon OS Master ..."
-        GitPhoton -release "master" -SourcePath $SourcePath
-        $PackagesMaster = ParseDirectory -SourcePath $SourcePath -PhotonDir "photon-master"
+        GitPhoton -release "master" -WorkingDir $WorkingDir
+        $PackagesMaster = ParseDirectory -WorkingDir $WorkingDir -PhotonDir "photon-master"
     }
 
     # Initialize and populate the list of tasks for URL health checks
@@ -5022,9 +5004,8 @@ function GenerateUrlHealthReports {
             $initParts += "`$PSDefaultParameterValues['Invoke-RestMethod:SslProtocol'] = 'Tls12'"
             $CombinedInitScript = $initParts -join "`n"
             $ParallelContext = @{
-                SourcePath = $SourcePath
-                UpstreamsPath = $UpstreamsPath
-                ClonePath = $ClonePath
+                WorkingDir = $WorkingDir
+                UpstreamsDir = $UpstreamsDir
                 AccessToken = $AccessToken
                 ScriptStartTime = $ScriptStartTime
                 InitScript = $CombinedInitScript
@@ -5036,7 +5017,7 @@ function GenerateUrlHealthReports {
 
                 Write-Host "Generating URLHealth report for $($TaskConfig.Name) ..."
                 $outputFileName = "photonos-urlhealth-$($TaskConfig.Release)_$((Get-Date).ToString("yyyyMMddHHmm"))"
-                $outputFilePath = Join-Path -Path $ReportPath -ChildPath "$outputFileName.prn"
+                $outputFilePath = Join-Path -Path $ScansDir -ChildPath "$outputFileName.prn"
 
                 # Create a thread-safe collection for all results
                 $results = [System.Collections.Concurrent.ConcurrentBag[string]]::new()
@@ -5047,7 +5028,7 @@ function GenerateUrlHealthReports {
 
                     $currentPackage = $_
                     Write-Host "Processing $($currentPackage.name) ..."
-                    $result = [system.string](CheckURLHealth -currentTask $currentPackage -SourcePath $using:ParallelContext.SourcePath -AccessToken $using:ParallelContext.AccessToken -outputfile $using:outputFilePath -photonDir $using:TaskConfig.PhotonDir -UpstreamsPath $using:ParallelContext.UpstreamsPath -ScriptStartTime $using:ParallelContext.ScriptStartTime -CloneBasePath $using:ParallelContext.ClonePath -Source0Data $using:ParallelContext.Source0Data)
+                    $result = [system.string](CheckURLHealth -currentTask $currentPackage -WorkingDir $using:ParallelContext.WorkingDir -AccessToken $using:ParallelContext.AccessToken -outputfile $using:outputFilePath -photonDir $using:TaskConfig.PhotonDir -UpstreamsDir $using:ParallelContext.UpstreamsDir -ScriptStartTime $using:ParallelContext.ScriptStartTime -Source0Data $using:ParallelContext.Source0Data)
                     ($using:results).Add($result)
                 } -ThrottleLimit $ThrottleLimit
 
@@ -5076,7 +5057,7 @@ function GenerateUrlHealthReports {
 
                 Write-Host "Generating URLHealth report for $($TaskConfig.Name) ..."
                 $outputFileName = "photonos-urlhealth-$($TaskConfig.Release)_$((Get-Date).ToString("yyyyMMddHHmm"))"
-                $outputFilePath = Join-Path -Path $ReportPath -ChildPath "$outputFileName.prn"
+                $outputFilePath = Join-Path -Path $ScansDir -ChildPath "$outputFileName.prn"
 
                 # Create a simple array for sequential processing results
                 $results = @()
@@ -5086,7 +5067,7 @@ function GenerateUrlHealthReports {
                 foreach ($currentPackage in $TaskConfig.Packages) {
                     $processedCount++
                     Write-Host "Processing [$processedCount/$packageCount] $($currentPackage.name) ..."
-                    $result = [system.string](CheckURLHealth -currentTask $currentPackage -SourcePath $SourcePath -AccessToken $accessToken -outputfile $outputFilePath -photonDir $TaskConfig.PhotonDir -UpstreamsPath $UpstreamsPath -ScriptStartTime $ScriptStartTime -CloneBasePath $ClonePath -Source0Data $cachedSource0Data)
+                    $result = [system.string](CheckURLHealth -currentTask $currentPackage -WorkingDir $WorkingDir -AccessToken $accessToken -outputfile $outputFilePath -photonDir $TaskConfig.PhotonDir -UpstreamsDir $UpstreamsDir -ScriptStartTime $ScriptStartTime -Source0Data $cachedSource0Data)
                     Write-Host "  -> Done: $($currentPackage.name)"
                     $results += $result
                 }
@@ -5328,7 +5309,7 @@ try {
 
 # Call the new function
 Write-Host "DEBUG: Calling GenerateUrlHealthReports..."
-$urlHealthPackageData = GenerateUrlHealthReports -SourcePath $global:workingDir -UpstreamsPath $global:upstreamsDir -ReportPath $global:scansDir -ClonePath "" -AccessToken $global:github_token -ScriptStartTime $global:scriptStartTime -ThrottleLimit $global:ThrottleLimit `
+$urlHealthPackageData = GenerateUrlHealthReports -WorkingDir $global:workingDir -UpstreamsDir $global:upstreamsDir -ScansDir $global:scansDir -AccessToken $global:github_token -ScriptStartTime $global:scriptStartTime -ThrottleLimit $global:ThrottleLimit `
     -GeneratePh3URLHealthReport ([bool]$GeneratePh3URLHealthReport) `
     -GeneratePh4URLHealthReport ([bool]$GeneratePh4URLHealthReport) `
     -GeneratePh5URLHealthReport ([bool]$GeneratePh5URLHealthReport) `
@@ -5353,22 +5334,22 @@ if ($GeneratePhPackageReport)
 {
     Write-Host "Generating Package Report ..."
     # fetch + merge per branch
-    GitPhoton -release "3.0" -SourcePath $global:workingDir
-    GitPhoton -release "4.0" -SourcePath $global:workingDir
-    GitPhoton -release "5.0" -SourcePath $global:workingDir
-    GitPhoton -release "6.0" -SourcePath $global:workingDir
-    GitPhoton -release master -SourcePath $global:workingDir
-    GitPhoton -release dev -SourcePath $global:workingDir
-    GitPhoton -release common -SourcePath $global:workingDir
+    GitPhoton -release "3.0" -WorkingDir $global:workingDir
+    GitPhoton -release "4.0" -WorkingDir $global:workingDir
+    GitPhoton -release "5.0" -WorkingDir $global:workingDir
+    GitPhoton -release "6.0" -WorkingDir $global:workingDir
+    GitPhoton -release master -WorkingDir $global:workingDir
+    GitPhoton -release dev -WorkingDir $global:workingDir
+    GitPhoton -release common -WorkingDir $global:workingDir
     Set-location $global:workingDir
     # read all files from branch
-    $Packages3=ParseDirectory -SourcePath $global:workingDir -PhotonDir photon-3.0
-    $Packages4=ParseDirectory -SourcePath $global:workingDir -PhotonDir photon-4.0
-    $Packages5=ParseDirectory -SourcePath $global:workingDir -PhotonDir photon-5.0
-    $Packages6=ParseDirectory -SourcePath $global:workingDir -PhotonDir photon-6.0
-    $PackagesCommon=ParseDirectory -SourcePath $global:workingDir -PhotonDir photon-common
-    $PackagesDev=ParseDirectory -SourcePath $global:workingDir -PhotonDir photon-dev
-    $PackagesMaster=ParseDirectory -SourcePath $global:workingDir -PhotonDir photon-master
+    $Packages3=ParseDirectory -WorkingDir $global:workingDir -PhotonDir photon-3.0
+    $Packages4=ParseDirectory -WorkingDir $global:workingDir -PhotonDir photon-4.0
+    $Packages5=ParseDirectory -WorkingDir $global:workingDir -PhotonDir photon-5.0
+    $Packages6=ParseDirectory -WorkingDir $global:workingDir -PhotonDir photon-6.0
+    $PackagesCommon=ParseDirectory -WorkingDir $global:workingDir -PhotonDir photon-common
+    $PackagesDev=ParseDirectory -WorkingDir $global:workingDir -PhotonDir photon-dev
+    $PackagesMaster=ParseDirectory -WorkingDir $global:workingDir -PhotonDir photon-master
     # Filter out subrelease packages for cross-release comparison (they are vendor-pinned)
     $Packages3Main = @($Packages3 | Where-Object { -not $_.SubRelease })
     $Packages4Main = @($Packages4 | Where-Object { -not $_.SubRelease })
