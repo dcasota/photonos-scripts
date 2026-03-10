@@ -5216,14 +5216,31 @@ if (!(Test-Path $global:scansDir)) { New-Item $global:scansDir -ItemType Directo
 Write-Host "Scans directory: $global:scansDir"
 
 # --- Disk space pre-flight check ---
+# Estimate incremental space needed (not total) by checking what already exists
 $requiredMB = 1024  # Base 1 GB for reports + temp files
-$branchCount = @($GeneratePh3URLHealthReport, $GeneratePh4URLHealthReport,
-    $GeneratePh5URLHealthReport, $GeneratePh6URLHealthReport,
-    $GeneratePhCommonURLHealthReport, $GeneratePhDevURLHealthReport,
-    $GeneratePhMasterURLHealthReport) | Where-Object { $_ } | Measure-Object |
-    Select-Object -ExpandProperty Count
-$requiredMB += $branchCount * 500
-$requiredMB += $branchCount * 30000  # upstream clones ~30 GB/branch
+$branchMap = @{
+    "3.0" = $GeneratePh3URLHealthReport; "4.0" = $GeneratePh4URLHealthReport
+    "5.0" = $GeneratePh5URLHealthReport; "6.0" = $GeneratePh6URLHealthReport
+    "common" = $GeneratePhCommonURLHealthReport; "dev" = $GeneratePhDevURLHealthReport
+    "master" = $GeneratePhMasterURLHealthReport
+}
+$branchCount = ($branchMap.Values | Where-Object { $_ } | Measure-Object).Count
+$requiredMB += $branchCount * 500  # URL health scan overhead per branch
+foreach ($entry in $branchMap.GetEnumerator()) {
+    if ($entry.Value) {
+        $cloneDir = Join-Path -Path $global:upstreamsDir -ChildPath "photon-$($entry.Key)" | Join-Path -ChildPath "clones"
+        if (Test-Path $cloneDir) {
+            $existingCount = (Get-ChildItem -Path $cloneDir -Directory -ErrorAction SilentlyContinue | Measure-Object).Count
+            if ($existingCount -gt 50) {
+                $requiredMB += 2000  # Incremental: existing clones need ~2 GB for updates
+            } else {
+                $requiredMB += 30000  # Fresh: ~30 GB for full clone set
+            }
+        } else {
+            $requiredMB += 30000
+        }
+    }
+}
 if ($GeneratePhPackageReport) { $requiredMB += 3500 }
 foreach ($checkPath in @($global:workingDir, $global:upstreamsDir, $global:scansDir) |
     Where-Object { -not [string]::IsNullOrEmpty($_) } | Select-Object -Unique) {
