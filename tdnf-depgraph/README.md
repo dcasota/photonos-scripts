@@ -69,11 +69,26 @@ The JSON output feeds directly into the `qubo_builder.py` script from the [QUBO 
 | 2 (fallback) | `tdnf repoquery --json` via external scripts | Viable but limited (no BuildRequires, subprocess overhead) |
 | 3 (deprecated) | `.spec` file parsing | Superseded by analysis showing tdnf already has the data |
 
-## Files
+## Implementation
+
+The `src/` directory contains the complete, ready-to-integrate C source code:
+
+| File | tdnf target path | Description |
+|---|---|---|
+| [src/solv_tdnfdepgraph.c](src/solv_tdnfdepgraph.c) | `solv/tdnfdepgraph.c` | Pool walk, edge resolution via `FOR_PROVIDES` (~250 LOC) |
+| [src/client_depgraph.c](src/client_depgraph.c) | `client/depgraph.c` | API entry point, refresh, delegation (~45 LOC) |
+| [src/cli_depgraph.c](src/cli_depgraph.c) | `tools/cli/lib/depgraph.c` | CLI handler, JSON/DOT/adjacency output (~240 LOC) |
+| [src/tdnftypes_depgraph.h](src/tdnftypes_depgraph.h) | append to `include/tdnftypes.h` | Struct and enum definitions |
+| [src/tdnf_depgraph_api.h](src/tdnf_depgraph_api.h) | append to `include/tdnf.h` | Public API declaration |
+| [src/tdnfcli_depgraph.h](src/tdnfcli_depgraph.h) | append to `include/tdnfcli.h` | CLI command declaration |
+| [src/solv_prototypes_depgraph.h](src/solv_prototypes_depgraph.h) | append to `solv/prototypes.h` | Solv layer prototypes |
+| [src/INTEGRATION.md](src/INTEGRATION.md) | -- | Step-by-step integration guide for all existing file modifications |
+
+## Plans
 
 | File | Description |
 |---|---|
-| [plan-tdnf-depgraph-c-extension.md](plan-tdnf-depgraph-c-extension.md) | Complete design for the native `tdnf depgraph` C extension (~505 LOC) |
+| [plan-tdnf-depgraph-c-extension.md](plan-tdnf-depgraph-c-extension.md) | Complete design for the native `tdnf depgraph` C extension |
 | [plan-rpm-dependency-graph-via-tdnf.md](plan-rpm-dependency-graph-via-tdnf.md) | Analysis of tdnf's existing repoquery/solv capabilities and the external-script fallback plan |
 
 ## Related
