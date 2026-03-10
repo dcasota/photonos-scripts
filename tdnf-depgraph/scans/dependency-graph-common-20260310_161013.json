@@ -1,0 +1,1 @@
+{"metadata":{"generator":"tdnf depgraph","timestamp":"2026-03-10T16:10:34Z","branch":"common"},"node_count":1,"edge_count":0,"nodes":[{"id":0,"name":"stalld","nevra":"stalld","arch":"x86_64","evr":"","repo":"stalld/stalld.spec","reverse_dep_count":0}],"edges":[]}
