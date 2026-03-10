@@ -75,6 +75,11 @@ jobs:
           git --version
           tar --version | head -1
 
+      - name: Check disk space
+        run: |
+          echo "## Disk Space" >> "$GITHUB_STEP_SUMMARY"
+          df -h | grep -E 'Filesystem|/mnt/|/$' | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: Prepare report directory
         run: mkdir -p "$REPORT_DIR"
 

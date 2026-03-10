@@ -125,6 +125,35 @@ $GeneratePh5toPh6DiffHigherPackageVersionReport = Convert-ToBoolean $GeneratePh5
 $GeneratePh4toPh5DiffHigherPackageVersionReport = Convert-ToBoolean $GeneratePh4toPh5DiffHigherPackageVersionReport
 $GeneratePh3toPh4DiffHigherPackageVersionReport = Convert-ToBoolean $GeneratePh3toPh4DiffHigherPackageVersionReport
 
+function Test-DiskSpace {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][long]$RequiredMB,
+        [string]$Operation = "operation"
+    )
+    try {
+        $resolvedPath = if (Test-Path $Path) { (Resolve-Path $Path).Path } else { $Path }
+        if ($IsLinux -or $IsMacOS) {
+            $dfLine = & df -BM $resolvedPath 2>&1 | Select-Object -Last 1
+            if ($dfLine -match '(\d+)M\s+\d+%') {
+                $availMB = [long]$Matches[1]
+            } else { return $true }
+        } else {
+            $root = [System.IO.Path]::GetPathRoot($resolvedPath)
+            $drv = Get-PSDrive -Name ($root.TrimEnd(':\')) -ErrorAction Stop
+            $availMB = [math]::Floor($drv.Free / 1MB)
+        }
+        if ($availMB -lt $RequiredMB) {
+            Write-Warning ("DISK SPACE LOW: {0} MB available, {1} MB required for {2} on {3}" -f $availMB, $RequiredMB, $Operation, $resolvedPath)
+            return $false
+        }
+        return $true
+    } catch {
+        Write-Warning "Disk space check failed for ${Path}: $_ - proceeding"
+        return $true
+    }
+}
+
 # Helper function to run git commands with timeout
 function Invoke-GitWithTimeout {
     param(
@@ -430,6 +459,10 @@ function GitPhoton {
         if (Test-Path -Path $photonPath) {
             Write-Warning "Directory photon-$release exists but is not a git repository. Removing and re-cloning..."
             Remove-Item -Path $photonPath -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        if (-not (Test-DiskSpace -Path $SourcePath -RequiredMB 1024 -Operation "clone photon-$release")) {
+            Write-Error "Insufficient disk space to clone photon-$release. Skipping."
+            return
         }
         Set-Location $SourcePath
         try {
@@ -2337,6 +2370,9 @@ function CheckURLHealth {
                     $fetchState = Wait-ForFetchCompletion -SourceClonePath $SourceClonePath -RepoName $repoName -ScriptStartTime $ScriptStartTime
 
                     if (-not $fetchState.AlreadyFetched) {
+                        if (-not (Test-DiskSpace -Path $ClonePath -RequiredMB 512 -Operation "clone $repoName")) {
+                            Write-Warning "DISK SPACE LOW: Skipping clone of $repoName - insufficient space"
+                        } else {
                         $cloneAttempt = 0
                         $maxCloneAttempts = 2
                         while ($cloneAttempt -lt $maxCloneAttempts) {
@@ -2394,6 +2430,7 @@ function CheckURLHealth {
                                 }
                             }
                         }
+                        } # end disk space else
                     }
 
                     # Run git tag -l (both fetched-by-us and already-fetched paths converge here)
@@ -3610,6 +3647,9 @@ function CheckURLHealth {
                     $fetchState = Wait-ForFetchCompletion -SourceClonePath $SourceClonePath -RepoName $repoName -ScriptStartTime $ScriptStartTime
 
                     if (-not $fetchState.AlreadyFetched) {
+                        if (-not (Test-DiskSpace -Path $ClonePath -RequiredMB 512 -Operation "clone $repoName")) {
+                            Write-Warning "DISK SPACE LOW: Skipping clone of $repoName - insufficient space"
+                        } else {
                         $cloneAttempt = 0
                         $maxCloneAttempts = 2
                         while ($cloneAttempt -lt $maxCloneAttempts) {
@@ -3667,6 +3707,7 @@ function CheckURLHealth {
                                 }
                             }
                         }
+                        } # end disk space else
                     }
 
                     # Run git tag -l (both fetched-by-us and already-fetched paths converge here)
@@ -3951,6 +3992,9 @@ function CheckURLHealth {
                     $fetchState = Wait-ForFetchCompletion -SourceClonePath $SourceClonePath -RepoName $repoName -ScriptStartTime $ScriptStartTime
 
                     if (-not $fetchState.AlreadyFetched) {
+                        if (-not (Test-DiskSpace -Path $ClonePath -RequiredMB 512 -Operation "clone $repoName")) {
+                            Write-Warning "DISK SPACE LOW: Skipping clone of $repoName - insufficient space"
+                        } else {
                         $cloneAttempt = 0
                         $maxCloneAttempts = 2
                         while ($cloneAttempt -lt $maxCloneAttempts) {
@@ -4008,6 +4052,7 @@ function CheckURLHealth {
                                 }
                             }
                         }
+                        } # end disk space else
                     }
 
                     # Run git tag -l (both fetched-by-us and already-fetched paths converge here)
@@ -5199,6 +5244,27 @@ if ([string]::IsNullOrEmpty($reportpath)) {
     if (!(Test-Path $global:reportpath)) { New-Item $global:reportpath -ItemType Directory | Out-Null }
 }
 Write-Host "Report path: $global:reportpath"
+
+# --- Disk space pre-flight check ---
+$requiredMB = 1024  # Base 1 GB for reports + temp files
+$branchCount = @($GeneratePh3URLHealthReport, $GeneratePh4URLHealthReport,
+    $GeneratePh5URLHealthReport, $GeneratePh6URLHealthReport,
+    $GeneratePhCommonURLHealthReport, $GeneratePhDevURLHealthReport,
+    $GeneratePhMasterURLHealthReport) | Where-Object { $_ } | Measure-Object |
+    Select-Object -ExpandProperty Count
+$requiredMB += $branchCount * 500
+if (-not [string]::IsNullOrEmpty($global:clonepath)) {
+    $requiredMB += $branchCount * 30000
+}
+if ($GeneratePhPackageReport) { $requiredMB += 3500 }
+foreach ($checkPath in @($global:sourcepath, $global:upstreamsPath, $global:reportpath, $global:clonepath) |
+    Where-Object { -not [string]::IsNullOrEmpty($_) } | Select-Object -Unique) {
+    if (-not (Test-DiskSpace -Path $checkPath -RequiredMB $requiredMB -Operation "full report generation")) {
+        Write-Error "Insufficient disk space on $checkPath. Need ~$([math]::Round($requiredMB/1024, 1)) GB free. Aborting."
+        return
+    }
+}
+Write-Host "Disk space pre-flight: OK (~$([math]::Round($requiredMB/1024, 1)) GB estimated, all paths have sufficient space)"
 
 # SAFETY WARNING: Adding '*' as git safe.directory to handle cross-filesystem ownership issues
 # (e.g., WSL accessing Windows files, network shares, or different user ownership).
