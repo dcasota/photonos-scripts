@@ -155,13 +155,19 @@ mkdir build && cd build
 cmake ..
 make
 
-# Test: adjacency list
+# Test: adjacency list (current system)
 ./bin/tdnf depgraph
 
-# Test: JSON output
-./bin/tdnf depgraph --json > /tmp/depgraph.json
-python3 -c "import json; d=json.load(open('/tmp/depgraph.json')); print(f\"{d['metadata']['node_count']} nodes, {d['metadata']['edge_count']} edges\")"
+# Test: JSON with branch metadata
+./bin/tdnf depgraph --json --setopt branch=5.0 > /tmp/depgraph-5.0.json
 
-# Test: DOT output
-./bin/tdnf depgraph --dot > /tmp/depgraph.dot
+# Test: per-branch via --releasever
+./bin/tdnf depgraph --json --releasever=3.0 --setopt branch=3.0 > /tmp/depgraph-3.0.json
+./bin/tdnf depgraph --json --releasever=4.0 --setopt branch=4.0 > /tmp/depgraph-4.0.json
+
+# Test: DOT with branch label
+./bin/tdnf depgraph dot --setopt branch=5.0 > /tmp/depgraph-5.0.dot
+
+# Test: 6.0 from local build RPMS
+./bin/tdnf depgraph --json -c /path/to/tdnf-6.0.conf --setopt branch=6.0 > /tmp/depgraph-6.0.json
 ```

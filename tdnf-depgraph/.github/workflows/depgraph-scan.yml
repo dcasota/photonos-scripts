@@ -2,6 +2,13 @@ name: Dependency Graph Scan
 
 on:
   workflow_dispatch:
+    inputs:
+      branches:
+        description: 'Branches to scan (comma-separated)'
+        default: '3.0,4.0,5.0,6.0,common,master,dev'
+      local_rpms_6:
+        description: 'Path to local 6.0 RPMS directory (with repodata/)'
+        default: ''
   schedule:
     # Weekly scan on Monday at 03:00 UTC
     - cron: '0 3 * * 1'
@@ -9,7 +16,7 @@ on:
 jobs:
   depgraph:
     runs-on: self-hosted
-    timeout-minutes: 60
+    timeout-minutes: 120
 
     steps:
       - name: Checkout repository
@@ -51,32 +58,30 @@ jobs:
         run: |
           SRC="ci/tdnf-depgraph/src"
 
-          # Copy new source files
           cp "$SRC/solv_tdnfdepgraph.c"  tdnf-src/solv/tdnfdepgraph.c
           cp "$SRC/client_depgraph.c"    tdnf-src/client/depgraph.c
           cp "$SRC/cli_depgraph.c"       tdnf-src/tools/cli/lib/depgraph.c
 
-          # Append type definitions to include/tdnftypes.h
-          python3 -c "
+          # Patch include/tdnftypes.h
+          python3 << 'PYEOF'
           import re
           with open('tdnf-src/include/tdnftypes.h') as f:
               content = f.read()
-          insert = open('$SRC/tdnftypes_depgraph.h').read()
-          # Extract only the type block between markers
+          insert = open('ci/tdnf-depgraph/src/tdnftypes_depgraph.h').read()
           block = re.search(r'/\* ---- begin depgraph.*?/\* ---- end depgraph types ---- \*/', insert, re.DOTALL)
           if block:
               insert = block.group()
           content = content.replace('#ifdef __cplusplus\n}\n#endif', insert + '\n\n#ifdef __cplusplus\n}\n#endif')
           with open('tdnf-src/include/tdnftypes.h', 'w') as f:
               f.write(content)
-          "
+          PYEOF
 
-          # Append API to include/tdnf.h
-          python3 -c "
-          import re
+          # Patch include/tdnf.h
+          python3 << 'PYEOF'
+          import textwrap
           with open('tdnf-src/include/tdnf.h') as f:
               content = f.read()
-          api = '''
+          api = textwrap.dedent("""
           // depgraph.c
           uint32_t
           TDNFDepGraph(
@@ -88,20 +93,19 @@ jobs:
           TDNFFreeDepGraph(
               PTDNF_DEP_GRAPH pGraph
               );
-          '''
-          import textwrap
-          api = textwrap.dedent(api).strip() + '\n'
+          """).strip() + '\n'
           content = content.replace('#ifdef __cplusplus\n}\n#endif\n\n#endif//TDNF_H_',
                                     api + '\n#ifdef __cplusplus\n}\n#endif\n\n#endif//TDNF_H_')
           with open('tdnf-src/include/tdnf.h', 'w') as f:
               f.write(content)
-          "
+          PYEOF
 
-          # Append CLI declarations to include/tdnfcli.h
-          python3 -c "
+          # Patch include/tdnfcli.h
+          python3 << 'PYEOF'
+          import textwrap
           with open('tdnf-src/include/tdnfcli.h') as f:
               content = f.read()
-          cli = '''
+          cli = textwrap.dedent("""
           // depgraph.c
           uint32_t
           TDNFCliDepGraphCommand(
@@ -114,20 +118,19 @@ jobs:
               PTDNF_CLI_CONTEXT pContext,
               PTDNF_DEP_GRAPH *ppGraph
               );
-          '''
-          import textwrap
-          cli = textwrap.dedent(cli).strip() + '\n'
+          """).strip() + '\n'
           content = content.replace('#ifdef __cplusplus\n}\n#endif\n\n#endif//TDNF_H_',
                                     cli + '\n#ifdef __cplusplus\n}\n#endif\n\n#endif//TDNF_H_')
           with open('tdnf-src/include/tdnfcli.h', 'w') as f:
               f.write(content)
-          "
+          PYEOF
 
-          # Append solv prototypes
-          python3 -c "
+          # Patch solv/prototypes.h
+          python3 << 'PYEOF'
+          import textwrap
           with open('tdnf-src/solv/prototypes.h') as f:
               content = f.read()
-          proto = '''
+          proto = textwrap.dedent("""
           // tdnfdepgraph.c
           uint32_t
           SolvBuildDepGraph(
@@ -139,21 +142,19 @@ jobs:
           SolvFreeDepGraph(
               PTDNF_DEP_GRAPH pGraph
               );
-          '''
-          import textwrap
-          proto = textwrap.dedent(proto).strip() + '\n'
+          """).strip() + '\n'
           content = content.replace('#ifdef __cplusplus\n}\n#endif',
                                     proto + '\n#ifdef __cplusplus\n}\n#endif')
           with open('tdnf-src/solv/prototypes.h', 'w') as f:
               f.write(content)
-          "
+          PYEOF
 
-          # Add source files to CMakeLists
+          # Patch CMakeLists
           sed -i 's/simplequery\.c$/simplequery.c\n    tdnfdepgraph.c/' tdnf-src/solv/CMakeLists.txt
           sed -i 's/varsdir\.c$/varsdir.c\n    depgraph.c/' tdnf-src/client/CMakeLists.txt
           sed -i 's/updateinfocmd\.c$/updateinfocmd.c\n    depgraph.c/' tdnf-src/tools/cli/lib/CMakeLists.txt
 
-          # Add command to dispatch table in main.c
+          # Patch dispatch table
           sed -i '/"count",.*TDNFCliCountCommand/a\    {"depgraph",           TDNFCliDepGraphCommand, false},' tdnf-src/tools/cli/main.c
 
           echo "Integration complete"
@@ -166,75 +167,167 @@ jobs:
           make -j$(nproc) 2>&1 | tail -5
           echo "Build complete: $(ls -lh ../build/bin/tdnf)"
 
-      - name: Generate dependency graph
+      - name: Generate dependency graphs for all branches
         id: generate
         run: |
           DATETIME=$(date -u +%Y%m%d_%H%M%S)
-          FILENAME="dependency-graph-${DATETIME}.json"
-          echo "filename=$FILENAME" >> "$GITHUB_OUTPUT"
+          echo "datetime=$DATETIME" >> "$GITHUB_OUTPUT"
 
-          cd tdnf-src
-          LD_LIBRARY_PATH=build/lib ./build/bin/tdnf depgraph --json 2>/dev/null > "/tmp/${FILENAME}"
+          BRANCHES="${{ github.event.inputs.branches || '3.0,4.0,5.0,6.0,common,master,dev' }}"
+          LOCAL_6="${{ github.event.inputs.local_rpms_6 }}"
+          TDNF="tdnf-src/build/bin/tdnf"
+          TDNF_ENV="LD_LIBRARY_PATH=tdnf-src/build/lib"
 
-          # Validate JSON and extract stats
-          python3 -c "
-          import json, sys
-          with open('/tmp/${FILENAME}') as f:
-              d = json.load(f)
-          nodes = d['node_count']
-          edges = d['edge_count']
-          print(f'Nodes: {nodes}, Edges: {edges}')
-          sys.exit(0 if nodes > 0 else 1)
-          "
+          mkdir -p /tmp/depgraph-scans
+          GENERATED=""
+          SKIPPED=""
 
-          SIZE=$(du -h "/tmp/${FILENAME}" | cut -f1)
-          echo "Generated: ${FILENAME} (${SIZE})"
+          echo "## Dependency Graph Scan" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Branch | Nodes | Edges | File | Status |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|--------|-------|-------|------|--------|" >> "$GITHUB_STEP_SUMMARY"
 
-          # Summary
-          python3 << PYEOF >> "$GITHUB_STEP_SUMMARY"
+          for BRANCH in $(echo "$BRANCHES" | tr ',' ' '); do
+            SAFE_BRANCH=$(echo "$BRANCH" | tr '/' '-')
+            FILENAME="dependency-graph-${SAFE_BRANCH}-${DATETIME}.json"
+            OUTPATH="/tmp/depgraph-scans/${FILENAME}"
+
+            # Determine releasever and repo config for this branch
+            TDNF_ARGS="--refresh --json --setopt branch=${BRANCH}"
+            EXTRA_ARGS=""
+            SKIP=0
+
+            case "$BRANCH" in
+              3.0|4.0|5.0)
+                # Broadcom binary repos exist
+                EXTRA_ARGS="--releasever=${BRANCH}"
+                ;;
+              6.0)
+                # No public Broadcom repos; use local RPMS if available
+                if [ -n "$LOCAL_6" ] && [ -d "$LOCAL_6/repodata" ]; then
+                  mkdir -p /tmp/tdnf-6.0/etc/tdnf /tmp/tdnf-6.0/etc/yum.repos.d /tmp/tdnf-6.0/cache
+                  cat > /tmp/tdnf-6.0/etc/yum.repos.d/photon-local.repo << REPOEOF
+          [photon-local]
+          name=Photon 6.0 Local Build
+          baseurl=file://${LOCAL_6}
+          gpgcheck=0
+          enabled=1
+          REPOEOF
+                  cat > /tmp/tdnf-6.0/etc/tdnf/tdnf.conf << CONFEOF
+          [main]
+          gpgcheck=0
+          installonly_limit=3
+          repodir=/tmp/tdnf-6.0/etc/yum.repos.d
+          cachedir=/tmp/tdnf-6.0/cache
+          CONFEOF
+                  EXTRA_ARGS="-c /tmp/tdnf-6.0/etc/tdnf/tdnf.conf --releasever=6.0"
+                elif [ -d "$HOME/6.0/stage/RPMS/repodata" ]; then
+                  mkdir -p /tmp/tdnf-6.0/etc/tdnf /tmp/tdnf-6.0/etc/yum.repos.d /tmp/tdnf-6.0/cache
+                  cat > /tmp/tdnf-6.0/etc/yum.repos.d/photon-local.repo << REPOEOF
+          [photon-local]
+          name=Photon 6.0 Local Build
+          baseurl=file://$HOME/6.0/stage/RPMS
+          gpgcheck=0
+          enabled=1
+          REPOEOF
+                  cat > /tmp/tdnf-6.0/etc/tdnf/tdnf.conf << CONFEOF
+          [main]
+          gpgcheck=0
+          installonly_limit=3
+          repodir=/tmp/tdnf-6.0/etc/yum.repos.d
+          cachedir=/tmp/tdnf-6.0/cache
+          CONFEOF
+                  EXTRA_ARGS="-c /tmp/tdnf-6.0/etc/tdnf/tdnf.conf --releasever=6.0"
+                else
+                  echo "| ${BRANCH} | - | - | - | skipped (no binary repo) |" >> "$GITHUB_STEP_SUMMARY"
+                  SKIPPED="${SKIPPED} ${BRANCH}"
+                  SKIP=1
+                fi
+                ;;
+              master|dev)
+                # master and dev both track 5.0 packages currently
+                EXTRA_ARGS="--releasever=5.0"
+                ;;
+              common)
+                # common branch has only 4 packages (linux, stalld, etc.)
+                # Use 5.0 repos as the base since common overlays on 5.0
+                EXTRA_ARGS="--releasever=5.0"
+                ;;
+              *)
+                echo "| ${BRANCH} | - | - | - | skipped (unknown) |" >> "$GITHUB_STEP_SUMMARY"
+                SKIPPED="${SKIPPED} ${BRANCH}"
+                SKIP=1
+                ;;
+            esac
+
+            if [ "$SKIP" -eq 1 ]; then
+              continue
+            fi
+
+            echo "Generating depgraph for branch ${BRANCH}..."
+            env $TDNF_ENV $TDNF $EXTRA_ARGS depgraph $TDNF_ARGS 2>/dev/null > "$OUTPATH"
+
+            # Validate and extract stats
+            STATS=$(python3 -c "
           import json
-          with open('/tmp/${FILENAME}') as f:
+          with open('${OUTPATH}') as f:
               d = json.load(f)
-          from collections import Counter
-          ec = Counter(e['type'] for e in d['edges'])
-          print("## Dependency Graph")
-          print(f"- **Nodes**: {d['node_count']}")
-          print(f"- **Edges**: {d['edge_count']}")
-          print(f"- **File**: \`${FILENAME}\`")
-          print()
-          print("### Edge types")
-          print("| Type | Count |")
-          print("|------|-------|")
-          for t, n in ec.most_common():
-              print(f"| {t} | {n} |")
-          PYEOF
+          print(f\"{d['node_count']} {d['edge_count']}\")
+          " 2>/dev/null)
 
-      - name: Upload artifact
+            if [ -n "$STATS" ]; then
+              NODES=$(echo "$STATS" | cut -d' ' -f1)
+              EDGES=$(echo "$STATS" | cut -d' ' -f2)
+              SIZE=$(du -h "$OUTPATH" | cut -f1)
+              echo "  -> ${NODES} nodes, ${EDGES} edges (${SIZE})"
+              echo "| ${BRANCH} | ${NODES} | ${EDGES} | \`${FILENAME}\` | ok |" >> "$GITHUB_STEP_SUMMARY"
+              GENERATED="${GENERATED} ${FILENAME}"
+            else
+              echo "  -> FAILED"
+              echo "| ${BRANCH} | - | - | \`${FILENAME}\` | failed |" >> "$GITHUB_STEP_SUMMARY"
+              rm -f "$OUTPATH"
+            fi
+          done
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$SKIPPED" ]; then
+            echo "**Skipped**:${SKIPPED}" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          # Count generated files
+          FILE_COUNT=$(ls /tmp/depgraph-scans/*.json 2>/dev/null | wc -l)
+          echo "file_count=$FILE_COUNT" >> "$GITHUB_OUTPUT"
+          echo "Generated ${FILE_COUNT} dependency graph files"
+
+      - name: Upload artifacts
+        if: steps.generate.outputs.file_count != '0'
         uses: actions/upload-artifact@v4
         with:
-          name: dependency-graph
-          path: /tmp/${{ steps.generate.outputs.filename }}
+          name: dependency-graphs
+          path: /tmp/depgraph-scans/*.json
           retention-days: 90
 
       - name: Commit to scans directory
+        if: steps.generate.outputs.file_count != '0'
         run: |
-          FILENAME="${{ steps.generate.outputs.filename }}"
           SCANS_DIR="repo/tdnf-depgraph/scans"
           mkdir -p "$SCANS_DIR"
 
-          cp "/tmp/${FILENAME}" "$SCANS_DIR/"
+          cp /tmp/depgraph-scans/*.json "$SCANS_DIR/"
 
           cd repo
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add "tdnf-depgraph/scans/${FILENAME}"
+          git add tdnf-depgraph/scans/
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "Add dependency graph scan ${FILENAME}"
+            DATETIME="${{ steps.generate.outputs.datetime }}"
+            FILE_COUNT="${{ steps.generate.outputs.file_count }}"
+            git commit -m "Add dependency graph scans (${FILE_COUNT} branches, ${DATETIME})"
             git push
           fi
 
       - name: Cleanup build artifacts
         if: always()
-        run: rm -rf tdnf-src
+        run: rm -rf tdnf-src /tmp/depgraph-scans /tmp/tdnf-6.0
