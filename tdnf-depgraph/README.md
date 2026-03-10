@@ -2,7 +2,7 @@
 
 ## Problem Statement
 
-The [Sovereign Supply Chain Safety](../photon-gating-conflict-detection/) initiative for VMware Photon OS requires a complete RPM dependency graph to formulate a QUBO-optimized post-quantum cryptography (PQC) migration plan. The QUBO objective function depends on three inputs:
+The Sovereign Supply Chain Safety initiative for VMware Photon OS requires a complete RPM dependency graph to formulate a QUBO-optimized post-quantum cryptography (PQC) migration plan. The QUBO objective function depends on three inputs:
 
 1. **A cryptographic vulnerability inventory** per package (from Snyk Code scans)
 2. **A cost vector** per package (LOC, crypto call density, reverse dependency fan-out)
