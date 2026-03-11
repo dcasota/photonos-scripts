@@ -133,6 +133,22 @@ jobs:
             echo "report_type=$REPORT_TYPE"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Snapshot existing .prn files
+        id: snapshot
+        run: |
+          SCANS="${{ github.event.inputs.scansDir }}"
+          if [ -z "$SCANS" ]; then
+            WDIR="${{ github.event.inputs.workingDir }}"
+            if [ -z "$WDIR" ]; then WDIR="$REPORT_DIR"; fi
+            SCANS="$WDIR/scans"
+          fi
+          mkdir -p "$SCANS"
+          MANIFEST="/tmp/prn-before-run.txt"
+          find "$SCANS" -maxdepth 1 -name '*.prn' -type f -printf '%f\n' | sort > "$MANIFEST"
+          echo "manifest=$MANIFEST" >> "$GITHUB_OUTPUT"
+          echo "scans_dir=$SCANS" >> "$GITHUB_OUTPUT"
+          echo "Pre-existing .prn files: $(wc -l < "$MANIFEST")"
+
       - name: Run package report
         id: run
         env:
@@ -181,22 +197,23 @@ jobs:
           python3 << 'SUMMARY_EOF'
           import os, glob
 
-          report_dir = os.environ.get('REPORT_DIR', 'reports')
-          custom_workingdir = "${{ github.event.inputs.workingDir }}"
-          custom_scansdir = "${{ github.event.inputs.scansDir }}"
-          if custom_scansdir:
-              report_dir = custom_scansdir
-          elif custom_workingdir:
-              report_dir = os.path.join(custom_workingdir, "scans")
+          manifest_path = "${{ steps.snapshot.outputs.manifest }}"
+          scans_dir = "${{ steps.snapshot.outputs.scans_dir }}"
           report_type = "${{ steps.flags.outputs.report_type }}"
 
-          prn_files = sorted(glob.glob(os.path.join(report_dir, '**', '*.prn'), recursive=True))
+          pre_existing = set()
+          if os.path.exists(manifest_path):
+              with open(manifest_path) as f:
+                  pre_existing = {line.strip() for line in f if line.strip()}
+
+          all_prn = sorted(glob.glob(os.path.join(scans_dir, '*.prn')))
+          prn_files = [f for f in all_prn if os.path.basename(f) not in pre_existing]
 
           summary_path = os.environ.get('GITHUB_STEP_SUMMARY', '/dev/null')
           with open(summary_path, 'a') as s:
               s.write("# Photon OS Package Report\n\n")
               s.write(f"**Report type**: {report_type}  \n")
-              s.write(f"**Output directory**: `{report_dir}`  \n")
+              s.write(f"**Output directory**: `{scans_dir}`  \n")
               s.write(f"**Files generated**: {len(prn_files)}\n\n")
 
               if prn_files:
@@ -222,42 +239,46 @@ jobs:
           print(f"Summary written: {len(prn_files)} report files found")
           SUMMARY_EOF
 
-      - name: Resolve scans directory
+      - name: Collect new reports
         if: always()
-        id: resolve_scans
+        id: collect
         run: |
-          SCANS="${{ github.event.inputs.scansDir }}"
-          if [ -z "$SCANS" ]; then
-            WDIR="${{ github.event.inputs.workingDir }}"
-            if [ -z "$WDIR" ]; then
-              WDIR="$REPORT_DIR"
+          SCANS="${{ steps.snapshot.outputs.scans_dir }}"
+          MANIFEST="${{ steps.snapshot.outputs.manifest }}"
+          STAGING="/tmp/new-reports"
+          mkdir -p "$STAGING"
+
+          NEW_COUNT=0
+          for f in "$SCANS"/*.prn; do
+            [ -f "$f" ] || continue
+            BASENAME="$(basename "$f")"
+            if ! grep -qxF "$BASENAME" "$MANIFEST"; then
+              cp "$f" "$STAGING/"
+              NEW_COUNT=$((NEW_COUNT + 1))
+              echo "  NEW: $BASENAME"
             fi
-            SCANS="$WDIR/scans"
-          fi
-          echo "dir=$SCANS" >> "$GITHUB_OUTPUT"
+          done
+
+          echo "new_count=$NEW_COUNT" >> "$GITHUB_OUTPUT"
+          echo "staging=$STAGING" >> "$GITHUB_OUTPUT"
+          echo "New .prn files from this run: $NEW_COUNT"
 
       - name: Upload report artifacts
-        if: always()
+        if: always() && steps.collect.outputs.new_count != '0'
         uses: actions/upload-artifact@v4
         with:
           name: package-reports
-          path: |
-            ${{ steps.resolve_scans.outputs.dir }}/*.prn
+          path: /tmp/new-reports/*.prn
           retention-days: 90
           if-no-files-found: warn
 
       - name: Commit reports to scans directory
-        if: always()
+        if: always() && steps.collect.outputs.new_count != '0'
         run: |
-          ACTUAL_REPORT_DIR="${{ steps.resolve_scans.outputs.dir }}"
+          STAGING="${{ steps.collect.outputs.staging }}"
           SCANS_DIR="repo/photonos-package-report/scans"
           mkdir -p "$SCANS_DIR"
-          PRN_COUNT=$(find "$ACTUAL_REPORT_DIR" -maxdepth 1 -name '*.prn' -type f 2>/dev/null | wc -l)
-          if [ "$PRN_COUNT" -eq 0 ]; then
-            echo "No .prn files to commit"
-            exit 0
-          fi
-          cp "$ACTUAL_REPORT_DIR"/*.prn "$SCANS_DIR/"
+          cp "$STAGING"/*.prn "$SCANS_DIR/"
           cd repo
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
