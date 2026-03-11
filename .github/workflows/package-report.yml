@@ -74,8 +74,7 @@ jobs:
 
       - name: Check disk space
         run: |
-          echo "## Disk Space" >> "$GITHUB_STEP_SUMMARY"
-          df -h | grep -E 'Filesystem|/mnt/|/$' | tee -a "$GITHUB_STEP_SUMMARY"
+          df -h | grep -E 'Filesystem|/mnt/|/$'
 
       - name: Prepare report directory
         run: mkdir -p "$REPORT_DIR"
@@ -213,7 +212,6 @@ jobs:
           with open(summary_path, 'a') as s:
               s.write("# Photon OS Package Report\n\n")
               s.write(f"**Report type**: {report_type}  \n")
-              s.write(f"**Output directory**: `{scans_dir}`  \n")
               s.write(f"**Files generated**: {len(prn_files)}\n\n")
 
               if prn_files:
