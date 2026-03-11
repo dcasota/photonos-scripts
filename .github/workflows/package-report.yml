@@ -32,6 +32,7 @@ on:
     - cron: '0 2 * * 0'
 
 env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   REPORT_DIR: ${{ github.workspace }}/reports
 
 jobs:

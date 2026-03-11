@@ -10,6 +10,9 @@ on:
     # Weekly scan on Monday at 03:00 UTC
     - cron: '0 3 * * 1'
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   depgraph:
     runs-on: self-hosted

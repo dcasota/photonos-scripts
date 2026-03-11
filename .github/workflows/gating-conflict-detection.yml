@@ -20,6 +20,7 @@ on:
     - cron: '0 6 * * *'
 
 env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   PHOTON_REPO: vmware/photon
 
 jobs:
