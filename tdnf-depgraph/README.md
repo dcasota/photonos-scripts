@@ -8,7 +8,7 @@ The Sovereign Supply Chain Safety initiative for VMware Photon OS requires a com
 2. **A cost vector** per package (LOC, crypto call density, reverse dependency fan-out)
 3. **A directed dependency graph** encoding which packages depend on which others, including `Requires`, `BuildRequires`, `Conflicts`, `Obsoletes`, `Recommends`, and other RPM relationship types
 
-Without the dependency graph, the QUBO formulation cannot enforce its constraint term -- penalizing migration of a package before its dependencies are migrated -- and cannot compute the minimum simultaneous migration set (SC-1) or the bootstrap signing ordering (SC-3).
+Without the dependency graph, the QUBO formulation cannot enforce its constraint term - penalizing migration of a package before its dependencies are migrated - and cannot compute the minimum simultaneous migration set (SC-1) or the bootstrap signing ordering (SC-3).
 
 ## Initial Approach: External Scripts Parsing .spec Files
 
@@ -29,12 +29,12 @@ See [plan-rpm-dependency-graph-via-tdnf.md](plan-rpm-dependency-graph-via-tdnf.m
 
 ## Preferred Approach: Native C Extension in tdnf
 
-Analysis of the [vmware/tdnf](https://github.com/vmware/tdnf) source code reveals that **the complete dependency graph is already materialized in memory** inside the libsolv `Pool` object after `TDNFOpenHandle()` calls `pool_createwhatprovides()`. The graph exists -- it simply has no command to export it.
+Analysis of the [vmware/tdnf](https://github.com/vmware/tdnf) source code reveals that **the complete dependency graph is already materialized in memory** inside the libsolv `Pool` object after `TDNFOpenHandle()` calls `pool_createwhatprovides()`. The graph exists - it simply has no command to export it.
 
 A native `tdnf depgraph` command, implemented as a ~505-line C extension following tdnf's existing three-layer architecture (solv / client / CLI), would:
 
 - Walk the libsolv Pool in a single process with zero serialization overhead
-- Resolve every `Requires` dependency via the `FOR_PROVIDES` macro -- the identical resolution path used by `tdnf install`
+- Resolve every `Requires` dependency via the `FOR_PROVIDES` macro - the identical resolution path used by `tdnf install`
 - Include `BuildRequires` natively from source solvables when the source repo is enabled (no `.spec` parsing needed)
 - Export the graph as JSON (for QUBO consumption), DOT (for Graphviz visualization), or adjacency list
 - Compute reverse dependency counts per node (directly feeding the QUBO cost vector)
@@ -92,7 +92,7 @@ The `src/` directory contains the complete, ready-to-integrate C source code:
 | [src/tdnf_depgraph_api.h](src/tdnf_depgraph_api.h) | append to `include/tdnf.h` | Public API declaration |
 | [src/tdnfcli_depgraph.h](src/tdnfcli_depgraph.h) | append to `include/tdnfcli.h` | CLI command declaration |
 | [src/solv_prototypes_depgraph.h](src/solv_prototypes_depgraph.h) | append to `solv/prototypes.h` | Solv layer prototypes |
-| [src/INTEGRATION.md](src/INTEGRATION.md) | -- | Step-by-step integration guide for all existing file modifications |
+| [src/INTEGRATION.md](src/INTEGRATION.md) | - | Step-by-step integration guide for all existing file modifications |
 
 ## Scans
 
@@ -152,6 +152,6 @@ The `.github/workflows/depgraph-scan.yml` workflow:
 
 ## Related
 
-- [vmware/tdnf](https://github.com/vmware/tdnf) -- Tiny Dandified Yum, the Photon OS package manager
-- [photon-gating-conflict-detection/](../photon-gating-conflict-detection/) -- Supply chain gating agent and QUBO migration specs
-- [Implementation Plan: QUBO-Formulated PQC Migration with Autoresearch](../photon-gating-conflict-detection/specs/) -- The broader migration plan that consumes the dependency graph
+- [vmware/tdnf](https://github.com/vmware/tdnf) - Tiny Dandified Yum, the Photon OS package manager
+- [photon-gating-conflict-detection/](../photon-gating-conflict-detection/) - Supply chain gating agent and QUBO migration specs
+- [Implementation Plan: QUBO-Formulated PQC Migration with Autoresearch](../photon-gating-conflict-detection/specs/) - The broader migration plan that consumes the dependency graph
