@@ -1,0 +1,184 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Upstream Dependency Scanner Manifest",
+  "description": "Machine-readable output from the upstream source code dependency scanner. Produced by manifest_writer.c for each scanned branch.",
+  "type": "object",
+  "required": ["metadata", "patched_specs", "severity_summary"],
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "description": "Scan run metadata",
+      "required": ["generator", "timestamp", "branch", "specs_scanned", "specs_patched"],
+      "properties": {
+        "generator": {
+          "type": "string",
+          "const": "upstream-dep-scanner",
+          "description": "Fixed identifier for the scanner tool"
+        },
+        "timestamp": {
+          "type": "string",
+          "pattern": "^[0-9]{8}_[0-9]{6}$",
+          "description": "Scan timestamp in YYYYMMDD_HHMMSS format"
+        },
+        "branch": {
+          "type": "string",
+          "description": "Photon OS branch scanned (e.g., '5.0', 'master', 'common')"
+        },
+        "specs_scanned": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total number of spec file nodes parsed (current + latest)"
+        },
+        "specs_patched": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of spec files that received patch directives"
+        },
+        "scanner_version": {
+          "type": "string",
+          "description": "Scanner build version (optional, for future use)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "patched_specs": {
+      "type": "array",
+      "description": "List of spec files that received one or more patch directives",
+      "items": {
+        "type": "object",
+        "required": ["package", "original_spec", "patched_spec", "additions"],
+        "properties": {
+          "package": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Photon package name (e.g., 'docker-compose')"
+          },
+          "original_spec": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Absolute path to the original (unmodified) spec file"
+          },
+          "patched_spec": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Absolute path to the generated patched spec file in SPECS_DEPFIX/"
+          },
+          "additions": {
+            "type": "array",
+            "description": "List of directives added to this spec file",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["type", "value", "source", "evidence", "severity"],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": ["Requires", "Conflicts", "Provides", "Obsoletes", "BuildRequires", "Recommends", "Suggests", "Supplements", "Enhances"],
+                  "description": "RPM directive type being added"
+                },
+                "section": {
+                  "type": "string",
+                  "description": "Spec section where the directive is added (empty string for header section)"
+                },
+                "value": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Full directive value (e.g., 'docker >= 28.0', 'docker-engine < 28.3', 'docker-api = 1.52')"
+                },
+                "source": {
+                  "type": "string",
+                  "enum": ["go.mod", "pyproject", "api-constant", "tarball", "spec"],
+                  "description": "Provenance of this directive: which analyzer discovered it"
+                },
+                "evidence": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Human-readable evidence trail (e.g., 'go.mod: github.com/docker/docker v28.5.1')"
+                },
+                "severity": {
+                  "type": "string",
+                  "enum": ["critical", "important", "informational"],
+                  "description": "Severity of the missing directive: critical (missing Requires/Conflicts), important (missing Provides), informational (advisory)"
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "conflicts_detected": {
+      "type": "array",
+      "description": "API version conflict records (Docker SDK-to-API mappings)",
+      "items": {
+        "type": "object",
+        "required": ["type", "consumer", "consumer_version", "provider", "provider_version", "required_api", "provided_range", "status", "note"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Conflict type (e.g., 'docker-api')"
+          },
+          "consumer": {
+            "type": "string",
+            "description": "Package consuming the API (e.g., 'docker-compose')"
+          },
+          "consumer_version": {
+            "type": "string",
+            "description": "Version of the consumer package"
+          },
+          "provider": {
+            "type": "string",
+            "description": "Package providing the API (e.g., 'docker-engine')"
+          },
+          "provider_version": {
+            "type": "string",
+            "description": "Version of the provider package"
+          },
+          "required_api": {
+            "type": "string",
+            "description": "API version required by consumer (e.g., '1.52 (from SDK v28.5.1)')"
+          },
+          "provided_range": {
+            "type": "string",
+            "description": "API version range provided by engine (e.g., '1.24..1.52')"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["ok", "BROKEN"],
+            "description": "Compatibility status: 'ok' if API is within range, 'BROKEN' if incompatible"
+          },
+          "note": {
+            "type": "string",
+            "description": "Human-readable explanation of the compatibility check"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "severity_summary": {
+      "type": "object",
+      "description": "Aggregate counts of patch directives by severity",
+      "required": ["critical", "important", "informational"],
+      "properties": {
+        "critical": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Count of critical severity additions (missing Requires/Conflicts)"
+        },
+        "important": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Count of important severity additions (missing Provides)"
+        },
+        "informational": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Count of informational severity additions (advisory)"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
