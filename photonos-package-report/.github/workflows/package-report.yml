@@ -222,6 +222,24 @@ jobs:
           print(f"Summary written: {len(prn_files)} report files found")
           SUMMARY_EOF
 
+      - name: Generate URL health issue summaries
+        if: always()
+        run: |
+          SCANS="${{ github.event.inputs.scansDir }}"
+          if [ -z "$SCANS" ]; then
+            WDIR="${{ github.event.inputs.workingDir }}"
+            if [ -z "$WDIR" ]; then
+              WDIR="$REPORT_DIR"
+            fi
+            SCANS="$WDIR/scans"
+          fi
+          SCRIPT="repo/.github/scripts/generate-urlhealth-summary.py"
+          if [ -f "$SCRIPT" ]; then
+            python3 "$SCRIPT" "$SCANS"
+          else
+            echo "::warning::URL health summary script not found at $SCRIPT"
+          fi
+
       - name: Resolve scans directory
         if: always()
         id: resolve_scans
@@ -243,6 +261,7 @@ jobs:
           name: package-reports
           path: |
             ${{ steps.resolve_scans.outputs.dir }}/*.prn
+            ${{ steps.resolve_scans.outputs.dir }}/*.md
           retention-days: 90
           if-no-files-found: warn
 
@@ -257,7 +276,8 @@ jobs:
             echo "No .prn files to commit"
             exit 0
           fi
-          cp "$ACTUAL_REPORT_DIR"/*.prn "$SCANS_DIR/"
+          cp "$ACTUAL_REPORT_DIR"/*.prn "$SCANS_DIR/" 2>/dev/null || true
+          cp "$ACTUAL_REPORT_DIR"/*.md "$SCANS_DIR/" 2>/dev/null || true
           cd repo
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

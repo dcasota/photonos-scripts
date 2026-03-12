@@ -237,6 +237,17 @@ jobs:
           print(f"Summary written: {len(prn_files)} report files found")
           SUMMARY_EOF
 
+      - name: Generate URL health issue summaries
+        if: always()
+        run: |
+          SCANS="${{ steps.snapshot.outputs.scans_dir }}"
+          SCRIPT="repo/.github/scripts/generate-urlhealth-summary.py"
+          if [ -f "$SCRIPT" ]; then
+            python3 "$SCRIPT" "$SCANS"
+          else
+            echo "::warning::URL health summary script not found at $SCRIPT"
+          fi
+
       - name: Collect new reports
         if: always()
         id: collect
@@ -257,6 +268,13 @@ jobs:
             fi
           done
 
+          # Also collect generated .md issue summaries
+          for f in "$SCANS"/photonos-urlhealth-issues-*.md; do
+            [ -f "$f" ] || continue
+            cp "$f" "$STAGING/"
+            echo "  NEW: $(basename "$f")"
+          done
+
           echo "new_count=$NEW_COUNT" >> "$GITHUB_OUTPUT"
           echo "staging=$STAGING" >> "$GITHUB_OUTPUT"
           echo "New .prn files from this run: $NEW_COUNT"
@@ -266,7 +284,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: package-reports
-          path: /tmp/new-reports/*.prn
+          path: |
+            /tmp/new-reports/*.prn
+            /tmp/new-reports/*.md
           retention-days: 90
           if-no-files-found: warn
 
@@ -276,7 +296,8 @@ jobs:
           STAGING="${{ steps.collect.outputs.staging }}"
           SCANS_DIR="repo/photonos-package-report/scans"
           mkdir -p "$SCANS_DIR"
-          cp "$STAGING"/*.prn "$SCANS_DIR/"
+          cp "$STAGING"/*.prn "$SCANS_DIR/" 2>/dev/null || true
+          cp "$STAGING"/*.md "$SCANS_DIR/" 2>/dev/null || true
           cd repo
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
