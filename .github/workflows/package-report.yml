@@ -32,7 +32,6 @@ on:
     - cron: '0 2 * * 0'
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   REPORT_DIR: ${{ github.workspace }}/reports
 
 jobs:
@@ -42,14 +41,14 @@ jobs:
 
     steps:
       - name: Checkout CI tooling
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           sparse-checkout: |
             photonos-package-report
           path: ci
 
       - name: Checkout full repo for commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           path: repo
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -264,7 +263,7 @@ jobs:
 
       - name: Upload report artifacts
         if: always() && steps.collect.outputs.new_count != '0'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: package-reports
           path: /tmp/new-reports/*.prn

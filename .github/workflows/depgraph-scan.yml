@@ -10,9 +10,6 @@ on:
     # Weekly scan on Monday at 03:00 UTC
     - cron: '0 3 * * 1'
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   depgraph:
     runs-on: self-hosted
@@ -20,13 +17,13 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           path: repo
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Checkout CI tooling (sparse)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           sparse-checkout: |
             tdnf-depgraph
@@ -193,7 +190,7 @@ jobs:
 
       - name: Upload artifacts
         if: steps.generate.outputs.file_count != '0'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dependency-graphs
           path: /tmp/depgraph-scans/*.json

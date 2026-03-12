@@ -20,7 +20,6 @@ on:
     - cron: '0 6 * * *'
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   PHOTON_REPO: vmware/photon
 
 jobs:
@@ -32,14 +31,14 @@ jobs:
 
     steps:
       - name: Checkout CI tooling
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           sparse-checkout: |
             photon-gating-conflict-detection/.github
           path: ci
 
       - name: Checkout common branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: ${{ env.PHOTON_REPO }}
           ref: common
@@ -54,7 +53,7 @@ jobs:
           done
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.11'
 
@@ -76,7 +75,7 @@ jobs:
             --base-dir workspace \
             --branches "${{ github.event.inputs.branches || '4.0,5.0,6.0' }}" \
             --arch x86_64 \
-            ${{ github.event.inputs.check_urls == 'true' && '--check-urls' || '' }} \
+            ${{ (github.event.inputs.check_urls || 'true') == 'true' && '--check-urls' || '' }} \
             --inventory gating-inventory.json \
             --json-output findings.json \
             --md-output findings.md
@@ -117,10 +116,10 @@ jobs:
               # D5: C5 canister
               if f.get('constellation') == 'C5' and not f.get('canister_version'):
                   errors.append(f'D5: {fid} C5 missing canister_version')
-              # D6: C6 url/status
+              # D6: C6 url/status (http_status may be null when --check-urls is disabled)
               if f.get('constellation') == 'C6':
-                  if not f.get('url') or f.get('http_status') is None:
-                      errors.append(f'D6: {fid} C6 missing url/http_status')
+                  if not f.get('url'):
+                      errors.append(f'D6: {fid} C6 missing url')
               # D7: remediation keys
               rem = f.get('remediation', {})
               if not rem.get('config_keys'):
@@ -222,7 +221,7 @@ jobs:
 
       - name: Upload findings artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: gating-findings
           path: |
