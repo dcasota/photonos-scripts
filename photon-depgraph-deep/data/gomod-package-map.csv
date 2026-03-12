@@ -1,0 +1,52 @@
+# Go module path -> Photon OS package name mapping
+# Format: module_path,photon_package
+# Longest prefix match is used for resolution
+#
+# Docker ecosystem
+github.com/docker/docker,docker
+github.com/moby/moby,docker
+github.com/docker/compose,docker-compose
+github.com/docker/cli,docker
+github.com/docker/buildx,docker-buildx
+github.com/containerd/containerd,containerd
+github.com/opencontainers/runc,runc
+github.com/opencontainers/image-spec,oci-image-spec
+github.com/opencontainers/runtime-spec,oci-runtime-spec
+#
+# Kubernetes ecosystem
+k8s.io/kubernetes,kubernetes
+k8s.io/client-go,kubernetes
+k8s.io/api,kubernetes
+k8s.io/apimachinery,kubernetes
+github.com/kubernetes/kubernetes,kubernetes
+#
+# etcd
+go.etcd.io/etcd,etcd
+github.com/etcd-io/etcd,etcd
+#
+# CoreDNS
+github.com/coredns/coredns,coredns
+#
+# Networking
+github.com/flannel-io/flannel,flannel
+github.com/projectcalico/calico,calico
+github.com/containernetworking/cni,cni
+github.com/containernetworking/plugins,cni
+#
+# Monitoring
+github.com/influxdata/telegraf,telegraf
+github.com/prometheus/prometheus,prometheus
+github.com/grafana/grafana,grafana
+#
+# Build tools
+github.com/golang/go,go
+golang.org/x/tools,go
+#
+# Security
+github.com/hashicorp/vault,vault
+github.com/hashicorp/consul,consul
+#
+# Misc
+github.com/git-lfs/git-lfs,git-lfs
+github.com/minio/minio,minio
+github.com/nats-io/nats-server,nats-server

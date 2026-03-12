@@ -1,0 +1,196 @@
+name: Dependency Graph Deep Scan
+
+on:
+  workflow_dispatch:
+    inputs:
+      branches:
+        description: 'Photon OS branches to scan (comma-separated)'
+        default: '5.0'
+      upstreamsDir:
+        description: 'photon-upstreams base directory (default: /mnt/d/Users/Public/photon-upstreams)'
+        default: '/mnt/d/Users/Public/photon-upstreams'
+      patch_specs:
+        description: 'Generate patched spec files with missing declarations'
+        type: boolean
+        default: true
+
+jobs:
+  deep-scan:
+    runs-on: self-hosted
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          path: repo
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout CI tooling (sparse)
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            photon-depgraph-deep
+          path: ci
+
+      - name: Install build dependencies
+        run: |
+          echo "## Environment" >> "$GITHUB_STEP_SUMMARY"
+          cat /etc/photon-release 2>/dev/null | tee -a "$GITHUB_STEP_SUMMARY" || true
+          gcc --version | head -1 | tee -a "$GITHUB_STEP_SUMMARY"
+          cmake --version | head -1 | tee -a "$GITHUB_STEP_SUMMARY"
+
+          for pkg in cmake gcc json-c-devel json-c; do
+            if ! rpm -q "$pkg" &>/dev/null; then
+              tdnf install -y "$pkg"
+            fi
+          done
+
+      - name: Build photon-depgraph-deep
+        run: |
+          cd ci/photon-depgraph-deep
+          mkdir -p build && cd build
+          cmake ..
+          make -j$(nproc) 2>&1 | tail -5
+          echo "Build complete"
+
+      - name: Run deep scan per branch
+        id: scan
+        run: |
+          DATETIME=$(date -u +%Y%m%d_%H%M%S)
+          echo "datetime=$DATETIME" >> "$GITHUB_OUTPUT"
+
+          BRANCHES="${{ github.event.inputs.branches || '5.0' }}"
+          UPSTREAMS_BASE="${{ github.event.inputs.upstreamsDir || '/mnt/d/Users/Public/photon-upstreams' }}"
+          PATCH_SPECS="${{ github.event.inputs.patch_specs }}"
+          SCANNER="ci/photon-depgraph-deep/build/photon-depgraph-deep"
+          DATA_DIR="ci/photon-depgraph-deep/data"
+          OUTPUT_BASE="/tmp/depgraph-deep-output"
+
+          echo "## Dependency Graph Deep Scan" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          TOTAL_PATCHED=0
+          TOTAL_ISSUES=0
+
+          for BRANCH in $(echo "$BRANCHES" | tr ',' ' '); do
+            SAFE_BRANCH=$(echo "$BRANCH" | tr '/' '-')
+            OUTPUT_DIR="${OUTPUT_BASE}/${SAFE_BRANCH}"
+            CLONE_DIR="/tmp/photon-clone-deep-${SAFE_BRANCH}"
+            UPSTREAMS_DIR="${UPSTREAMS_BASE}/photon-${BRANCH}"
+
+            echo "=== Branch: ${BRANCH} ==="
+
+            # Clean up output directory for this branch
+            rm -rf "${OUTPUT_DIR}"
+            mkdir -p "${OUTPUT_DIR}"
+
+            # Clone only the SPECS directory from vmware/photon
+            if [ ! -d "$CLONE_DIR" ]; then
+              git clone --depth 1 --branch "$BRANCH" --filter=blob:none --sparse \
+                https://github.com/vmware/photon.git "$CLONE_DIR" 2>&1 | tail -1
+              cd "$CLONE_DIR" && git sparse-checkout set SPECS && cd -
+            else
+              cd "$CLONE_DIR" && git pull --ff-only 2>/dev/null || true && cd -
+            fi
+
+            SPEC_COUNT=$(find "${CLONE_DIR}/SPECS" -name '*.spec' 2>/dev/null | wc -l)
+            echo "  Specs: ${SPEC_COUNT}"
+
+            if [ "$SPEC_COUNT" -eq 0 ]; then
+              echo "| ${BRANCH} | 0 | - | - | - | skipped |" >> "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+
+            # Build scanner arguments
+            ARGS="--specs-dir ${CLONE_DIR}/SPECS"
+            ARGS="${ARGS} --output-dir ${OUTPUT_DIR}"
+            ARGS="${ARGS} --data-dir ${DATA_DIR}"
+            ARGS="${ARGS} --branch ${BRANCH}"
+            ARGS="${ARGS} --json"
+
+            if [ -d "${UPSTREAMS_DIR}/clones" ]; then
+              ARGS="${ARGS} --upstreams-dir ${UPSTREAMS_DIR}"
+              echo "  Upstreams: ${UPSTREAMS_DIR}"
+            else
+              echo "  Upstreams: not found at ${UPSTREAMS_DIR}, running Phase 1 only"
+            fi
+
+            if [ "$PATCH_SPECS" != "false" ]; then
+              ARGS="${ARGS} --patch-specs"
+            fi
+
+            # Run scanner
+            $SCANNER $ARGS 2>&1 | tee "/tmp/depgraph-deep-${SAFE_BRANCH}.log"
+
+            # Extract stats from manifest
+            MANIFEST=$(ls "${OUTPUT_DIR}"/depfix-manifest-*.json 2>/dev/null | head -1)
+            if [ -n "$MANIFEST" ] && [ -f "$MANIFEST" ]; then
+              STATS=$(python3 -c "
+          import json
+          d = json.load(open('${MANIFEST}'))
+          m = d['metadata']
+          s = d['severity_summary']
+          patched = m['specs_patched']
+          issues = s['critical'] + s['important'] + s['informational']
+          print(f\"{m['specs_scanned']} {patched} {issues} {s['critical']} {s['important']} {s['informational']}\")
+          " 2>/dev/null)
+
+              if [ -n "$STATS" ]; then
+                read SCANNED PATCHED ISSUES CRIT IMP INFO <<< "$STATS"
+                TOTAL_PATCHED=$((TOTAL_PATCHED + PATCHED))
+                TOTAL_ISSUES=$((TOTAL_ISSUES + ISSUES))
+
+                echo "" >> "$GITHUB_STEP_SUMMARY"
+                echo "### Branch ${BRANCH}" >> "$GITHUB_STEP_SUMMARY"
+                echo "" >> "$GITHUB_STEP_SUMMARY"
+                echo "| Metric | Value |" >> "$GITHUB_STEP_SUMMARY"
+                echo "|--------|-------|" >> "$GITHUB_STEP_SUMMARY"
+                echo "| Specs scanned | ${SCANNED} |" >> "$GITHUB_STEP_SUMMARY"
+                echo "| Specs patched | ${PATCHED} |" >> "$GITHUB_STEP_SUMMARY"
+                echo "| Critical | ${CRIT} |" >> "$GITHUB_STEP_SUMMARY"
+                echo "| Important | ${IMP} |" >> "$GITHUB_STEP_SUMMARY"
+                echo "| Informational | ${INFO} |" >> "$GITHUB_STEP_SUMMARY"
+
+                # List patched specs
+                if [ "$PATCHED" -gt 0 ]; then
+                  echo "" >> "$GITHUB_STEP_SUMMARY"
+                  echo "<details><summary>Patched specs (${PATCHED})</summary>" >> "$GITHUB_STEP_SUMMARY"
+                  echo "" >> "$GITHUB_STEP_SUMMARY"
+                  python3 -c "
+          import json
+          d = json.load(open('${MANIFEST}'))
+          for p in d['patched_specs']:
+              adds = ', '.join([a['value'] for a in p['additions']])
+              print(f\"- **{p['package']}**: {adds}\")
+          " >> "$GITHUB_STEP_SUMMARY" 2>/dev/null
+                  echo "" >> "$GITHUB_STEP_SUMMARY"
+                  echo "</details>" >> "$GITHUB_STEP_SUMMARY"
+                fi
+              fi
+            fi
+          done
+
+          echo "total_patched=$TOTAL_PATCHED" >> "$GITHUB_OUTPUT"
+          echo "total_issues=$TOTAL_ISSUES" >> "$GITHUB_OUTPUT"
+          FILE_COUNT=$(find "${OUTPUT_BASE}" -name '*.json' 2>/dev/null | wc -l)
+          echo "file_count=$FILE_COUNT" >> "$GITHUB_OUTPUT"
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Total**: ${TOTAL_PATCHED} specs patched, ${TOTAL_ISSUES} issues across all branches" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload scan results
+        if: steps.scan.outputs.file_count != '0'
+        uses: actions/upload-artifact@v7
+        with:
+          name: depgraph-deep-${{ steps.scan.outputs.datetime }}
+          path: |
+            /tmp/depgraph-deep-output/**/depfix-manifest-*.json
+            /tmp/depgraph-deep-output/**/dependency-graph-*-deep-*.json
+            /tmp/depgraph-deep-output/**/SPECS_DEPFIX/**
+          retention-days: 90
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -rf /tmp/depgraph-deep-output /tmp/photon-clone-deep-* /tmp/depgraph-deep-*.log

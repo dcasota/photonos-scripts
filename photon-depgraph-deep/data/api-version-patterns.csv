@@ -1,0 +1,15 @@
+# API version constant extraction patterns
+# Format: package,filepath,pattern_prefix,type,virtual_name
+# pattern_prefix: literal string to search for; value extracted from next "quoted" string
+# type: provides = add as virtual provide, requires = add as virtual require edge
+#
+# Docker Engine API versions
+docker,daemon/config/config.go,MaxAPIVersion = ",provides,docker-api
+docker,daemon/config/config.go,defaultMinAPIVersion = ",provides,docker-api-min
+docker,client/client.go,DefaultVersion = ",provides,docker-client-api
+#
+# containerd API
+containerd,version/version.go,Version = ",provides,containerd-api
+#
+# Kubernetes API
+kubernetes,staging/src/k8s.io/apimachinery/pkg/util/version/version.go,MajorMinor = ",provides,kubernetes-api
