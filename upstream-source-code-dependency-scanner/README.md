@@ -73,13 +73,36 @@ Options:
   --help                Show this help
 ```
 
+### Expected directory layout
+
+The scanner expects the same directory layout produced by the [package-report workflow](../.github/workflows/package-report.yml):
+
+```
+workingDir/                          (e.g. /mnt/d/Users/Public)
+  photon-3.0/SPECS/                  branch clone (vmware/photon branch 3.0)
+  photon-4.0/SPECS/
+  photon-5.0/SPECS/
+  photon-6.0/SPECS/
+  photon-master/SPECS/
+  photon-dev/SPECS/
+  photon-common/SPECS/
+  photon-upstreams/                  upstreamsDir
+    photon-3.0/clones/               upstream source repos for branch 3.0
+    photon-5.0/clones/
+    ...
+  scans/                             scansDir
+    photonos-urlhealth-5.0_*.prn     PRN package report files
+    photonos-urlhealth-6.0_*.prn
+    ...
+```
+
 ### Example: Full scan with PRN mapping and spec patching
 
 ```bash
 ./build/upstream-dep-scanner \
-  --specs-dir /path/to/photon-5.0/SPECS \
-  --upstreams-dir /path/to/photon-upstreams/photon-5.0 \
-  --prn-file /path/to/photonos-urlhealth-5.0_YYYYMMDD.prn \
+  --specs-dir /mnt/d/Users/Public/photon-5.0/SPECS \
+  --upstreams-dir /mnt/d/Users/Public/photon-upstreams/photon-5.0 \
+  --prn-file /mnt/d/Users/Public/scans/photonos-urlhealth-5.0_202603110042.prn \
   --output-dir ./output \
   --data-dir ./data \
   --branch 5.0 \
@@ -91,7 +114,7 @@ Options:
 
 ```bash
 ./build/upstream-dep-scanner \
-  --specs-dir /path/to/photon-5.0/SPECS \
+  --specs-dir /mnt/d/Users/Public/photon-5.0/SPECS \
   --output-dir ./output \
   --branch 5.0 \
   --json
@@ -167,16 +190,22 @@ The `depfix-manifest-*.json` lists every patched spec with full evidence, plus d
 
 ## CI Workflow
 
-The [upstream-source-code-dependency-scanner.yml](../.github/workflows/upstream-source-code-dependency-scanner.yml) workflow runs on the self-hosted runner and:
+The [upstream-source-code-dependency-scanner.yml](../.github/workflows/upstream-source-code-dependency-scanner.yml) workflow runs on the self-hosted runner and uses the same three-directory convention as [package-report.yml](../.github/workflows/package-report.yml):
+
+| Parameter | Default | Contents |
+|-----------|---------|----------|
+| `workingDir` | `/mnt/d/Users/Public` | Branch clones: `photon-3.0/`, `photon-4.0/`, ..., `photon-master/` |
+| `upstreamsDir` | `workingDir/photon-upstreams` | Per-branch upstream source clones: `photon-{branch}/clones/` |
+| `scansDir` | `workingDir/scans` | PRN package report files from the package-report workflow |
+
+Workflow steps:
 
 1. Builds the scanner from source
-2. Uses branch repos from `workingDir/photon-{branch}/SPECS` (with sparse clone fallback)
-3. Loads PRN package report files for authoritative package-to-clone mapping
-4. Runs all three phases using `photon-upstreams` clones
+2. Uses branch repos from `workingDir/photon-{branch}/SPECS` (with sparse clone fallback from GitHub)
+3. Loads PRN package report files from `scansDir` (fallback: committed files in repo)
+4. Runs all three phases using upstream clones from `upstreamsDir/photon-{branch}/clones/`
 5. Generates a **Findings Summary** highlighting API conflicts and constraint violations
 6. Uploads JSON files and `SPECS_DEPFIX/` as a GitHub Actions artifact
-
-Default configuration uses `/mnt/d/Users/Public` as the working directory containing both the branch repos and `photon-upstreams`.
 
 ## Validated Results (Photon 5.0)
 
