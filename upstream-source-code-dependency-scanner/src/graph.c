@@ -314,6 +314,9 @@ edge_type_str(EdgeType t)
         case EDGE_RECOMMENDS:    return "Recommends";
         case EDGE_SUGGESTS:      return "Suggests";
         case EDGE_SUPPLEMENTS:   return "Supplements";
+        case EDGE_ENHANCES:      return "Enhances";
+        case EDGE_BUILDCONFLICTS: return "BuildConflicts";
+        case EDGE_ORDERWITH:     return "OrderWithRequires";
         default:                 return "Unknown";
     }
 }
@@ -327,6 +330,7 @@ edge_source_str(EdgeSource s)
         case EDGE_SRC_GOMOD:        return "go.mod";
         case EDGE_SRC_PYPROJECT:    return "pyproject";
         case EDGE_SRC_API_CONSTANT: return "api-constant";
+        case EDGE_SRC_TARBALL:      return "tarball";
         default:                    return "unknown";
     }
 }

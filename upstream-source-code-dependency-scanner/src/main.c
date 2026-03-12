@@ -16,6 +16,7 @@
 #include "manifest_writer.h"
 #include "json_output.h"
 #include "prn_parser.h"
+#include "tarball_analyzer.h"
 
 static void usage(const char *pszProg)
 {
@@ -24,7 +25,9 @@ static void usage(const char *pszProg)
         "\n"
         "Options:\n"
         "  --specs-dir DIR       Path to vmware/photon SPECS/ directory (required)\n"
+        "  --specs-new-dir DIR   Path to SPECS_NEW/ directory (latest version specs)\n"
         "  --upstreams-dir DIR   Path to photon-upstreams/{branch}/ directory\n"
+        "  --sources-dir DIR     Path to photon_sources/1.0/ (current release tarballs)\n"
         "  --output-dir DIR      Output directory (default: ./output)\n"
         "  --data-dir DIR        Data directory with CSV mappings (default: ./data)\n"
         "  --branch NAME         Branch name (default: 5.0)\n"
@@ -35,10 +38,99 @@ static void usage(const char *pszProg)
         pszProg);
 }
 
+/* Check if a node has BuildRequires: go (indicating it's a Go package) */
+static int
+node_has_go_buildrequires(DepGraph *pGraph, uint32_t dwNodeIdx)
+{
+    for (uint32_t i = 0; i < pGraph->dwEdgeCount; i++)
+    {
+        GraphEdge *pEdge = &pGraph->pEdges[i];
+        if (pEdge->dwFromIdx != dwNodeIdx)
+            continue;
+        if (pEdge->nType != EDGE_BUILDREQUIRES)
+            continue;
+        if (pEdge->nSource != EDGE_SRC_SPEC)
+            continue;
+        if (strcasecmp(pEdge->szTargetName, "go") == 0 ||
+            strcasecmp(pEdge->szTargetName, "golang") == 0)
+            return 1;
+    }
+    return 0;
+}
+
+/* Check if a node already has gomod-inferred edges (already analyzed from clone) */
+static int
+node_has_gomod_edges(DepGraph *pGraph, uint32_t dwNodeIdx)
+{
+    for (uint32_t i = 0; i < pGraph->dwEdgeCount; i++)
+    {
+        GraphEdge *pEdge = &pGraph->pEdges[i];
+        if (pEdge->dwFromIdx == dwNodeIdx &&
+            (pEdge->nSource == EDGE_SRC_GOMOD || pEdge->nSource == EDGE_SRC_TARBALL))
+            return 1;
+    }
+    return 0;
+}
+
+/* Analyze sources from tarballs in a flat source directory.
+   Only considers Go packages (BuildRequires: go) that were not
+   already analyzed from clones. */
+static void
+analyze_tarball_sources(DepGraph *pGraph, const char *pszSourcesDir,
+                        const GomodPackageMap *pGomodMap)
+{
+    if (!pGraph || !pszSourcesDir || !pGomodMap)
+        return;
+
+    struct stat st;
+    if (stat(pszSourcesDir, &st) != 0 || !S_ISDIR(st.st_mode))
+        return;
+
+    uint32_t dwAnalyzed = 0;
+    uint32_t dwSkippedClone = 0;
+    for (uint32_t i = 0; i < pGraph->dwNodeCount; i++)
+    {
+        GraphNode *pNode = &pGraph->pNodes[i];
+        if (pNode->bIsSubpackage || !pNode->szVersion[0])
+            continue;
+
+        /* Only analyze Go packages */
+        if (!node_has_go_buildrequires(pGraph, i))
+            continue;
+
+        /* Skip if already analyzed from clone */
+        if (node_has_gomod_edges(pGraph, i))
+        {
+            dwSkippedClone++;
+            continue;
+        }
+
+        char szTarball[MAX_PATH_LEN];
+        if (tarball_find_source(pszSourcesDir, pNode->szName,
+                                pNode->szVersion,
+                                szTarball, sizeof(szTarball)) == 0)
+        {
+            if (tarball_analyze_gomod(pGraph, szTarball,
+                                      pNode->szName, pGomodMap) == 0)
+            {
+                dwAnalyzed++;
+            }
+        }
+    }
+
+    if (dwAnalyzed > 0 || dwSkippedClone > 0)
+    {
+        fprintf(stderr, "[Tarball] Analyzed %u source tarballs (%u skipped, already from clones)\n",
+                dwAnalyzed, dwSkippedClone);
+    }
+}
+
 int main(int argc, char *argv[])
 {
     const char *pszSpecsDir = NULL;
+    const char *pszSpecsNewDir = NULL;
     const char *pszUpstreamsDir = NULL;
+    const char *pszSourcesDir = NULL;
     const char *pszOutputDir = "./output";
     const char *pszDataDir = "./data";
     const char *pszBranch = "5.0";
@@ -48,7 +140,9 @@ int main(int argc, char *argv[])
 
     static struct option aoLong[] = {
         {"specs-dir",     required_argument, 0, 's'},
+        {"specs-new-dir", required_argument, 0, 'n'},
         {"upstreams-dir", required_argument, 0, 'u'},
+        {"sources-dir",   required_argument, 0, 'S'},
         {"output-dir",    required_argument, 0, 'o'},
         {"data-dir",      required_argument, 0, 'd'},
         {"branch",        required_argument, 0, 'b'},
@@ -60,12 +154,14 @@ int main(int argc, char *argv[])
     };
 
     int nOpt;
-    while ((nOpt = getopt_long(argc, argv, "s:u:o:d:b:r:jph", aoLong, NULL)) != -1)
+    while ((nOpt = getopt_long(argc, argv, "s:n:u:S:o:d:b:r:jph", aoLong, NULL)) != -1)
     {
         switch (nOpt)
         {
             case 's': pszSpecsDir = optarg; break;
+            case 'n': pszSpecsNewDir = optarg; break;
             case 'u': pszUpstreamsDir = optarg; break;
+            case 'S': pszSourcesDir = optarg; break;
             case 'o': pszOutputDir = optarg; break;
             case 'd': pszDataDir = optarg; break;
             case 'b': pszBranch = optarg; break;
@@ -123,20 +219,65 @@ int main(int argc, char *argv[])
         }
     }
 
-    /* Phase 1: Parse spec files */
-    fprintf(stderr, "[Phase 1] Parsing spec files from %s ...\n", pszSpecsDir);
+    /* Load gomod-package-map early; needed by multiple phases */
+    char szMapPath[MAX_PATH_LEN];
+    snprintf(szMapPath, sizeof(szMapPath), "%s/gomod-package-map.csv", pszDataDir);
+
+    GomodPackageMap gomodMap;
+    memset(&gomodMap, 0, sizeof(gomodMap));
+    int bHaveGomodMap = (gomod_map_load(&gomodMap, szMapPath) == 0);
+
+    /* ================================================================
+       Phase 1a: Parse current release spec files
+       ================================================================ */
+    fprintf(stderr, "[Phase 1a] Parsing current specs from %s ...\n", pszSpecsDir);
     int nRc = spec_parse_directory(&graph, pszSpecsDir);
     if (nRc != 0)
     {
         fprintf(stderr, "Warning: spec parsing returned %d errors\n", nRc);
     }
-    fprintf(stderr, "[Phase 1] Done: %u nodes, %u edges\n",
+    fprintf(stderr, "[Phase 1a] Done: %u nodes, %u edges\n",
             graph.dwNodeCount, graph.dwEdgeCount);
 
     uint32_t dwSpecsScanned = graph.dwNodeCount;
     uint32_t dwPhase1Edges = graph.dwEdgeCount;
 
-    /* Phase 2: Upstream source analysis (if upstreams-dir provided) */
+    /* ================================================================
+       Phase 1b: Parse latest version specs from SPECS_NEW (if provided)
+       ================================================================ */
+    uint32_t dwLatestNodesStart = graph.dwNodeCount;
+    if (pszSpecsNewDir)
+    {
+        struct stat stNew;
+        if (stat(pszSpecsNewDir, &stNew) == 0 && S_ISDIR(stNew.st_mode))
+        {
+            fprintf(stderr, "[Phase 1b] Parsing latest specs from %s ...\n",
+                    pszSpecsNewDir);
+            nRc = spec_parse_directory(&graph, pszSpecsNewDir);
+            if (nRc != 0)
+            {
+                fprintf(stderr, "Warning: SPECS_NEW parsing returned %d errors\n", nRc);
+            }
+
+            /* Tag nodes from SPECS_NEW as latest */
+            for (uint32_t i = dwLatestNodesStart; i < graph.dwNodeCount; i++)
+            {
+                graph.pNodes[i].bIsLatest = 1;
+            }
+
+            fprintf(stderr, "[Phase 1b] Done: %u latest nodes added (%u total nodes)\n",
+                    graph.dwNodeCount - dwLatestNodesStart, graph.dwNodeCount);
+            dwSpecsScanned = graph.dwNodeCount;
+        }
+        else
+        {
+            fprintf(stderr, "[Phase 1b] Skipped: %s not found\n", pszSpecsNewDir);
+        }
+    }
+
+    /* ================================================================
+       Phase 2: Upstream source analysis
+       ================================================================ */
     if (pszUpstreamsDir)
     {
         char szClonesDir[MAX_PATH_LEN];
@@ -145,13 +286,8 @@ int main(int argc, char *argv[])
         struct stat st;
         if (stat(szClonesDir, &st) == 0 && S_ISDIR(st.st_mode))
         {
-            /* Phase 2a: Go module analysis */
-            char szMapPath[MAX_PATH_LEN];
-            snprintf(szMapPath, sizeof(szMapPath), "%s/gomod-package-map.csv", pszDataDir);
-
-            GomodPackageMap gomodMap;
-            memset(&gomodMap, 0, sizeof(gomodMap));
-            if (gomod_map_load(&gomodMap, szMapPath) == 0)
+            /* Phase 2a: Go module analysis from clones */
+            if (bHaveGomodMap)
             {
                 fprintf(stderr, "[Phase 2a] Analyzing Go modules in %s ...\n", szClonesDir);
                 gomod_analyze_clones(&graph, szClonesDir, &gomodMap, pPrnMap);
@@ -195,10 +331,39 @@ int main(int argc, char *argv[])
         {
             fprintf(stderr, "[Phase 2] Skipped: %s not found\n", szClonesDir);
         }
+
+        /* Phase 2d: Tarball analysis for SOURCES_NEW (latest version tarballs) */
+        if (bHaveGomodMap)
+        {
+            char szSourcesNewDir[MAX_PATH_LEN];
+            snprintf(szSourcesNewDir, sizeof(szSourcesNewDir),
+                     "%s/SOURCES_NEW", pszUpstreamsDir);
+            struct stat stSrcNew;
+            if (stat(szSourcesNewDir, &stSrcNew) == 0 && S_ISDIR(stSrcNew.st_mode))
+            {
+                uint32_t dwPreEdges = graph.dwEdgeCount;
+                fprintf(stderr, "[Phase 2d] Analyzing SOURCES_NEW tarballs in %s ...\n",
+                        szSourcesNewDir);
+                analyze_tarball_sources(&graph, szSourcesNewDir, &gomodMap);
+                fprintf(stderr, "[Phase 2d] Done: %u edges total (+%u from tarballs)\n",
+                        graph.dwEdgeCount, graph.dwEdgeCount - dwPreEdges);
+            }
+        }
     }
     else
     {
         fprintf(stderr, "[Phase 2] Skipped: no --upstreams-dir provided\n");
+    }
+
+    /* Phase 2e: Tarball analysis for current release sources */
+    if (pszSourcesDir && bHaveGomodMap)
+    {
+        uint32_t dwPreEdges = graph.dwEdgeCount;
+        fprintf(stderr, "[Phase 2e] Analyzing current source tarballs in %s ...\n",
+                pszSourcesDir);
+        analyze_tarball_sources(&graph, pszSourcesDir, &gomodMap);
+        fprintf(stderr, "[Phase 2e] Done: %u edges total (+%u from tarballs)\n",
+                graph.dwEdgeCount, graph.dwEdgeCount - dwPreEdges);
     }
 
     /* Load Docker SDK-to-API version map */
@@ -219,7 +384,9 @@ int main(int argc, char *argv[])
         }
     }
 
-    /* Phase 3: Conflict detection and spec patching */
+    /* ================================================================
+       Phase 3: Conflict detection and spec patching
+       ================================================================ */
     fprintf(stderr, "[Phase 3] Running conflict detection ...\n");
     uint32_t dwIssues = conflict_detect(&graph,
                                         sdkMap.dwCount > 0 ? &sdkMap : NULL);
@@ -248,6 +415,11 @@ int main(int argc, char *argv[])
     fprintf(stderr, "\n=== Summary ===\n");
     fprintf(stderr, "Branch:           %s\n", pszBranch);
     fprintf(stderr, "Nodes:            %u\n", graph.dwNodeCount);
+    if (pszSpecsNewDir)
+    {
+        fprintf(stderr, "  current:        %u\n", dwLatestNodesStart);
+        fprintf(stderr, "  latest:         %u\n", graph.dwNodeCount - dwLatestNodesStart);
+    }
     fprintf(stderr, "Edges (total):    %u\n", graph.dwEdgeCount);
     fprintf(stderr, "  spec-declared:  %u\n", dwPhase1Edges);
     fprintf(stderr, "  inferred:       %u\n", graph.dwEdgeCount - dwPhase1Edges);

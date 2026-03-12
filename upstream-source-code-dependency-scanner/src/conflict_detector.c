@@ -119,12 +119,53 @@ provider_has_provides_edge(DepGraph *pGraph, uint32_t dwProviderIdx,
     return 0;
 }
 
-static void
+/* Global deduplication: skip if identical (directive, value) already in set.
+   Returns 1 if patch was added, 0 if duplicate was suppressed. */
+static int
 add_patch_to_set(SpecPatchSet *pSet, SpecPatch *pPatch)
 {
+    for (SpecPatch *p = pSet->pAdditions; p; p = p->pNext)
+    {
+        if (strcmp(p->szDirective, pPatch->szDirective) == 0 &&
+            strcmp(p->szValue, pPatch->szValue) == 0)
+        {
+            free(pPatch);
+            return 0;
+        }
+    }
     pPatch->pNext = pSet->pAdditions;
     pSet->pAdditions = pPatch;
     pSet->dwAdditionCount++;
+    return 1;
+}
+
+/* Find the Docker SDK version string from a gomod edge's evidence field */
+static int
+extract_docker_sdk_version(const GraphEdge *pEdge, char *pszSdkVer, size_t nLen)
+{
+    const char *pSdk = strstr(pEdge->szEvidence, "github.com/docker/docker ");
+    if (!pSdk) pSdk = strstr(pEdge->szEvidence, "github.com/moby/moby ");
+    if (!pSdk) pSdk = strstr(pEdge->szEvidence, "github.com/docker/cli ");
+    if (!pSdk)
+        return -1;
+
+    pSdk = strchr(pSdk, ' ');
+    if (!pSdk)
+        return -1;
+    pSdk++;
+
+    snprintf(pszSdkVer, nLen, "%s", pSdk);
+
+    /* Strip +incompatible */
+    char *pInc = strstr(pszSdkVer, "+");
+    if (pInc) *pInc = '\0';
+
+    /* Strip trailing whitespace */
+    char *pEnd = pszSdkVer + strlen(pszSdkVer) - 1;
+    while (pEnd > pszSdkVer && (*pEnd == ' ' || *pEnd == '\n' || *pEnd == '\r'))
+        *pEnd-- = '\0';
+
+    return 0;
 }
 
 uint32_t
@@ -143,7 +184,8 @@ conflict_detect(DepGraph *pGraph, const DockerSdkApiMap *pSdkMap)
         GraphEdge *pEdge = &pGraph->pEdges[i];
 
         if (pEdge->nSource != EDGE_SRC_GOMOD &&
-            pEdge->nSource != EDGE_SRC_PYPROJECT)
+            pEdge->nSource != EDGE_SRC_PYPROJECT &&
+            pEdge->nSource != EDGE_SRC_TARBALL)
         {
             continue;
         }
@@ -190,8 +232,7 @@ conflict_detect(DepGraph *pGraph, const DockerSdkApiMap *pSdkMap)
                  "%s", pEdge->szEvidence);
         pPatch->nSeverity = SEVERITY_CRITICAL;
 
-        add_patch_to_set(pSet, pPatch);
-        dwIssueCount++;
+        dwIssueCount += add_patch_to_set(pSet, pPatch);
     }
 
     /* 2. Missing virtual provides detection */
@@ -236,24 +277,19 @@ conflict_detect(DepGraph *pGraph, const DockerSdkApiMap *pSdkMap)
                  "%s", pVirt->szEvidence);
         pPatch->nSeverity = SEVERITY_IMPORTANT;
 
-        add_patch_to_set(pSet, pPatch);
-        dwIssueCount++;
+        dwIssueCount += add_patch_to_set(pSet, pPatch);
     }
 
     /* 3. API version conflict detection + Conflicts: patch generation.
        For each gomod edge targeting "docker", resolve the Docker SDK version
        to a REST API version, then compare against the engine's min/max API.
-       Track emitted (consumer, conflict_value) to avoid duplicates when
-       go.mod lists both docker/docker and docker/cli at the same major. */
-    #define MAX_DEDUP 512
-    struct { uint32_t dwFromIdx; char szValue[MAX_VERSION_LEN]; } dedup[MAX_DEDUP];
-    uint32_t dwDedupCount = 0;
-
+       Global dedup in add_patch_to_set() handles duplicate suppression. */
     for (uint32_t i = 0; i < pGraph->dwEdgeCount; i++)
     {
         GraphEdge *pEdge = &pGraph->pEdges[i];
 
-        if (pEdge->nSource != EDGE_SRC_GOMOD)
+        if (pEdge->nSource != EDGE_SRC_GOMOD &&
+            pEdge->nSource != EDGE_SRC_TARBALL)
         {
             continue;
         }
@@ -274,31 +310,10 @@ conflict_detect(DepGraph *pGraph, const DockerSdkApiMap *pSdkMap)
             continue;
         }
 
-        /* Extract the SDK version from evidence: "go.mod: github.com/docker/docker vX.Y.Z" */
-        const char *pSdk = strstr(pEdge->szEvidence, "github.com/docker/docker ");
-        if (!pSdk) pSdk = strstr(pEdge->szEvidence, "github.com/moby/moby ");
-        if (!pSdk) pSdk = strstr(pEdge->szEvidence, "github.com/docker/cli ");
-        if (!pSdk)
-        {
-            continue;
-        }
-        /* Advance past the module name to the version */
-        pSdk = strchr(pSdk, ' ');
-        if (!pSdk)
-        {
-            continue;
-        }
-        pSdk++;
         char szSdkVer[MAX_VERSION_LEN];
-        snprintf(szSdkVer, sizeof(szSdkVer), "%s", pSdk);
-        /* Strip +incompatible */
-        char *pInc = strstr(szSdkVer, "+");
-        if (pInc) *pInc = '\0';
-        /* Strip trailing whitespace */
-        char *pEnd = szSdkVer + strlen(szSdkVer) - 1;
-        while (pEnd > szSdkVer && (*pEnd == ' ' || *pEnd == '\n' || *pEnd == '\r'))
+        if (extract_docker_sdk_version(pEdge, szSdkVer, sizeof(szSdkVer)) != 0)
         {
-            *pEnd-- = '\0';
+            continue;
         }
 
         /* Map SDK version to API version */
@@ -395,9 +410,9 @@ conflict_detect(DepGraph *pGraph, const DockerSdkApiMap *pSdkMap)
 
         graph_add_conflict(pGraph, pRec);
 
-        /* Generate Conflicts: patch on the consumer spec.
-           The consumer needs an engine that supports its client API version.
-           Find the minimum engine version that provides that API. */
+        /* Generate lower-bound Conflicts: patch on the consumer spec.
+           The consumer needs an engine >= the version that first provides
+           the required API level. */
         const char *pszMinEngine = NULL;
         if (pSdkMap)
         {
@@ -406,31 +421,9 @@ conflict_detect(DepGraph *pGraph, const DockerSdkApiMap *pSdkMap)
 
         if (pszMinEngine)
         {
-            /* Deduplicate: skip if same consumer already has this Conflicts value */
-            char szConflictVal[MAX_VERSION_LEN];
+            char szConflictVal[MAX_NAME_LEN];
             snprintf(szConflictVal, sizeof(szConflictVal), "%s < %s",
                      pszEngineSubpkg, pszMinEngine);
-            int bDup = 0;
-            for (uint32_t d = 0; d < dwDedupCount; d++)
-            {
-                if (dedup[d].dwFromIdx == pEdge->dwFromIdx &&
-                    strcmp(dedup[d].szValue, szConflictVal) == 0)
-                {
-                    bDup = 1;
-                    break;
-                }
-            }
-            if (bDup)
-                goto skip_conflict_patch;
-
-            if (dwDedupCount < MAX_DEDUP)
-            {
-                dedup[dwDedupCount].dwFromIdx = pEdge->dwFromIdx;
-                snprintf(dedup[dwDedupCount].szValue,
-                         sizeof(dedup[dwDedupCount].szValue),
-                         "%s", szConflictVal);
-                dwDedupCount++;
-            }
 
             SpecPatchSet *pSet = find_or_create_patchset(
                 pGraph, pConsumer->szSpecPath, pConsumer->szName);
@@ -445,17 +438,60 @@ conflict_detect(DepGraph *pGraph, const DockerSdkApiMap *pSdkMap)
                              "Conflicts");
                     snprintf(pPatch->szValue, sizeof(pPatch->szValue),
                              "%s", szConflictVal);
-                    pPatch->nSource = EDGE_SRC_GOMOD;
+                    pPatch->nSource = pEdge->nSource;
                     snprintf(pPatch->szEvidence, sizeof(pPatch->szEvidence),
                              "go.mod docker SDK %s -> API %s, "
                              "requires engine >= %s",
                              szSdkVer, pszClientApi, pszMinEngine);
                     pPatch->nSeverity = SEVERITY_CRITICAL;
-                    add_patch_to_set(pSet, pPatch);
-                    dwIssueCount++;
+                    dwIssueCount += add_patch_to_set(pSet, pPatch);
                 }
             }
-            skip_conflict_patch: ;
+        }
+
+        /* Upper-bound Conflicts: if the client API exceeds what the current
+           engine can provide (max API), generate Conflicts: > engine_ver.
+           This is a cross-version constellation check -- the latest version
+           requires an API newer than what the current engine supports. */
+        if (pszServerMaxApi &&
+            version_compare(pszClientApi, pszServerMaxApi) > 0)
+        {
+            /* The consumer requires API pszClientApi which exceeds the
+               engine's max API. Find the engine version that first requires
+               an API higher than what this consumer can handle. */
+            const char *pszMaxEngine = docker_api_to_min_engine(
+                pSdkMap, pszServerMaxApi);
+            if (pszMaxEngine)
+            {
+                char szUpperVal[MAX_NAME_LEN];
+                snprintf(szUpperVal, sizeof(szUpperVal), "%s > %s",
+                         pszEngineSubpkg, pszMaxEngine);
+
+                SpecPatchSet *pSet = find_or_create_patchset(
+                    pGraph, pConsumer->szSpecPath, pConsumer->szName);
+                if (pSet)
+                {
+                    SpecPatch *pPatch = calloc(1, sizeof(SpecPatch));
+                    if (pPatch)
+                    {
+                        snprintf(pPatch->szPackage, sizeof(pPatch->szPackage),
+                                 "%s", pConsumer->szName);
+                        snprintf(pPatch->szDirective,
+                                 sizeof(pPatch->szDirective), "Conflicts");
+                        snprintf(pPatch->szValue, sizeof(pPatch->szValue),
+                                 "%s", szUpperVal);
+                        pPatch->nSource = pEdge->nSource;
+                        snprintf(pPatch->szEvidence,
+                                 sizeof(pPatch->szEvidence),
+                                 "client requires API %s but engine max API "
+                                 "is %s (engine %s provides up to %s)",
+                                 pszClientApi, pszServerMaxApi,
+                                 pszMaxEngine, pszServerMaxApi);
+                        pPatch->nSeverity = SEVERITY_CRITICAL;
+                        dwIssueCount += add_patch_to_set(pSet, pPatch);
+                    }
+                }
+            }
         }
 
         /* If BROKEN, also add a Conflicts: for the upper bound */
@@ -478,7 +514,7 @@ conflict_detect(DepGraph *pGraph, const DockerSdkApiMap *pSdkMap)
                                  sizeof(pPatch->szDirective), "Conflicts");
                         snprintf(pPatch->szValue, sizeof(pPatch->szValue),
                                  "%s >= %s", pszEngineSubpkg, pszBreakEngine);
-                        pPatch->nSource = EDGE_SRC_GOMOD;
+                        pPatch->nSource = pEdge->nSource;
                         snprintf(pPatch->szEvidence,
                                  sizeof(pPatch->szEvidence),
                                  "client API %s < engine minAPI %s "
@@ -486,8 +522,7 @@ conflict_detect(DepGraph *pGraph, const DockerSdkApiMap *pSdkMap)
                                  pszClientApi, pszServerMinApi,
                                  pszBreakEngine, pszServerMinApi);
                         pPatch->nSeverity = SEVERITY_CRITICAL;
-                        add_patch_to_set(pSet, pPatch);
-                        dwIssueCount++;
+                        dwIssueCount += add_patch_to_set(pSet, pPatch);
                     }
                 }
             }

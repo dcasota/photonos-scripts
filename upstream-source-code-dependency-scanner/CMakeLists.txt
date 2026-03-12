@@ -22,6 +22,7 @@ set(SOURCES
     src/manifest_writer.c
     src/json_output.c
     src/prn_parser.c
+    src/tarball_analyzer.c
 )
 
 add_executable(upstream-dep-scanner ${SOURCES})

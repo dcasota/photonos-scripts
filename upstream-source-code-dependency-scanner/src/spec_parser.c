@@ -301,14 +301,17 @@ static void parse_define_line(ParseContext *pCtx, const char *pszLine)
 
 static EdgeType dep_tag_to_type(const char *pszTag)
 {
-    if (strncasecmp(pszTag, "BuildRequires", 13) == 0)  return EDGE_BUILDREQUIRES;
-    if (strncasecmp(pszTag, "Requires", 8) == 0)        return EDGE_REQUIRES;
-    if (strncasecmp(pszTag, "Provides", 8) == 0)        return EDGE_PROVIDES;
-    if (strncasecmp(pszTag, "Conflicts", 9) == 0)       return EDGE_CONFLICTS;
-    if (strncasecmp(pszTag, "Obsoletes", 9) == 0)       return EDGE_OBSOLETES;
-    if (strncasecmp(pszTag, "Recommends", 10) == 0)     return EDGE_RECOMMENDS;
-    if (strncasecmp(pszTag, "Suggests", 8) == 0)        return EDGE_SUGGESTS;
-    if (strncasecmp(pszTag, "Supplements", 11) == 0)    return EDGE_SUPPLEMENTS;
+    if (strncasecmp(pszTag, "BuildConflicts", 14) == 0)  return EDGE_BUILDCONFLICTS;
+    if (strncasecmp(pszTag, "BuildRequires", 13) == 0)   return EDGE_BUILDREQUIRES;
+    if (strncasecmp(pszTag, "OrderWithRequires", 17) == 0) return EDGE_ORDERWITH;
+    if (strncasecmp(pszTag, "Requires", 8) == 0)         return EDGE_REQUIRES;
+    if (strncasecmp(pszTag, "Provides", 8) == 0)         return EDGE_PROVIDES;
+    if (strncasecmp(pszTag, "Conflicts", 9) == 0)        return EDGE_CONFLICTS;
+    if (strncasecmp(pszTag, "Obsoletes", 9) == 0)        return EDGE_OBSOLETES;
+    if (strncasecmp(pszTag, "Recommends", 10) == 0)      return EDGE_RECOMMENDS;
+    if (strncasecmp(pszTag, "Suggests", 8) == 0)         return EDGE_SUGGESTS;
+    if (strncasecmp(pszTag, "Supplements", 11) == 0)     return EDGE_SUPPLEMENTS;
+    if (strncasecmp(pszTag, "Enhances", 8) == 0)         return EDGE_ENHANCES;
     return EDGE_TYPE_COUNT;
 }
 
@@ -317,6 +320,7 @@ static int is_dep_tag(const char *pszLine)
     static const char *aTags[] = {
         "Requires:", "BuildRequires:", "Provides:", "Conflicts:",
         "Obsoletes:", "Recommends:", "Suggests:", "Supplements:",
+        "Enhances:", "BuildConflicts:", "OrderWithRequires:",
         NULL
     };
     for (int i = 0; aTags[i]; i++)
@@ -335,7 +339,7 @@ static int is_dep_tag(const char *pszLine)
 }
 
 static void process_dep_entry(ParseContext *pCtx, EdgeType nType,
-                              const char *pszRaw)
+                              const char *pszRaw, const char *pszQualifier)
 {
     char szExpanded[MAX_LINE_LEN];
     snprintf(szExpanded, sizeof(szExpanded), "%s", pszRaw);
@@ -368,8 +372,17 @@ static void process_dep_entry(ParseContext *pCtx, EdgeType nType,
     int32_t nToIdx = graph_find_node(pCtx->pGraph, szTarget);
     uint32_t dwTo = (nToIdx >= 0) ? (uint32_t)nToIdx : UINT32_MAX;
 
-    graph_add_edge(pCtx->pGraph, pCtx->dwCurrentNodeIdx, dwTo,
-                   nType, EDGE_SRC_SPEC, nOp, szVer, szExpanded, szTarget);
+    int nRc = graph_add_edge(pCtx->pGraph, pCtx->dwCurrentNodeIdx, dwTo,
+                             nType, EDGE_SRC_SPEC, nOp, szVer, szExpanded, szTarget);
+
+    /* Store the qualifier on the newly added edge */
+    if (nRc == 0 && pszQualifier && pszQualifier[0] &&
+        pCtx->pGraph->dwEdgeCount > 0)
+    {
+        GraphEdge *pEdge = &pCtx->pGraph->pEdges[pCtx->pGraph->dwEdgeCount - 1];
+        snprintf(pEdge->szQualifier, sizeof(pEdge->szQualifier),
+                 "%s", pszQualifier);
+    }
 }
 
 static void process_dep_line(ParseContext *pCtx, const char *pszLine)
@@ -387,10 +400,23 @@ static void process_dep_line(ParseContext *pCtx, const char *pszLine)
     memcpy(szTag, pszLine, cbTag);
     szTag[cbTag] = '\0';
 
-    /* Strip (pre), (post), etc. from Requires(...) */
+    /* Extract qualifier from Requires(qualifier) before stripping */
+    char szQualifier[MAX_QUALIFIER_LEN];
+    szQualifier[0] = '\0';
     char *pParen = strchr(szTag, '(');
     if (pParen)
+    {
+        char *pClose = strchr(pParen + 1, ')');
+        if (pClose)
+        {
+            size_t cbQual = (size_t)(pClose - pParen - 1);
+            if (cbQual >= MAX_QUALIFIER_LEN)
+                cbQual = MAX_QUALIFIER_LEN - 1;
+            memcpy(szQualifier, pParen + 1, cbQual);
+            szQualifier[cbQual] = '\0';
+        }
         *pParen = '\0';
+    }
 
     EdgeType nType = dep_tag_to_type(szTag);
     if (nType == EDGE_TYPE_COUNT)
@@ -411,7 +437,7 @@ static void process_dep_line(ParseContext *pCtx, const char *pszLine)
     {
         str_trim(pTok);
         if (pTok[0] != '\0')
-            process_dep_entry(pCtx, nType, pTok);
+            process_dep_entry(pCtx, nType, pTok, szQualifier);
         pTok = strtok_r(NULL, ",", &pSave);
     }
 }
@@ -488,6 +514,60 @@ static void parse_header_field(ParseContext *pCtx, const char *pszLine)
         str_trim(szExpanded);
         expand_macros(pCtx, szExpanded, sizeof(szExpanded));
         snprintf(pCtx->szEpoch, sizeof(pCtx->szEpoch), "%s", szExpanded);
+    }
+
+    /* Architecture/OS exclusion directives -- store on current node */
+    if (pCtx->dwCurrentNodeIdx != UINT32_MAX &&
+        pCtx->dwCurrentNodeIdx < pCtx->pGraph->dwNodeCount)
+    {
+        GraphNode *pNode = &pCtx->pGraph->pNodes[pCtx->dwCurrentNodeIdx];
+
+        if (strncasecmp(pszLine, "ExcludeArch:", 12) == 0)
+        {
+            snprintf(szExpanded, sizeof(szExpanded), "%s", pszLine + 12);
+            str_trim(szExpanded);
+            expand_macros(pCtx, szExpanded, sizeof(szExpanded));
+            snprintf(pNode->szExcludeArch, sizeof(pNode->szExcludeArch),
+                     "%s", szExpanded);
+        }
+        else if (strncasecmp(pszLine, "ExclusiveArch:", 14) == 0)
+        {
+            snprintf(szExpanded, sizeof(szExpanded), "%s", pszLine + 14);
+            str_trim(szExpanded);
+            expand_macros(pCtx, szExpanded, sizeof(szExpanded));
+            snprintf(pNode->szExclusiveArch, sizeof(pNode->szExclusiveArch),
+                     "%s", szExpanded);
+        }
+        else if (strncasecmp(pszLine, "ExcludeOS:", 10) == 0)
+        {
+            snprintf(szExpanded, sizeof(szExpanded), "%s", pszLine + 10);
+            str_trim(szExpanded);
+            expand_macros(pCtx, szExpanded, sizeof(szExpanded));
+            snprintf(pNode->szExcludeOS, sizeof(pNode->szExcludeOS),
+                     "%s", szExpanded);
+        }
+        else if (strncasecmp(pszLine, "ExclusiveOS:", 12) == 0)
+        {
+            snprintf(szExpanded, sizeof(szExpanded), "%s", pszLine + 12);
+            str_trim(szExpanded);
+            expand_macros(pCtx, szExpanded, sizeof(szExpanded));
+            snprintf(pNode->szExclusiveOS, sizeof(pNode->szExclusiveOS),
+                     "%s", szExpanded);
+        }
+        else if (strncasecmp(pszLine, "BuildArch:", 10) == 0 ||
+                 strncasecmp(pszLine, "BuildArchitectures:", 19) == 0)
+        {
+            const char *pVal = strchr(pszLine, ':');
+            if (pVal)
+            {
+                pVal++;
+                snprintf(szExpanded, sizeof(szExpanded), "%s", pVal);
+                str_trim(szExpanded);
+                expand_macros(pCtx, szExpanded, sizeof(szExpanded));
+                snprintf(pNode->szBuildArch, sizeof(pNode->szBuildArch),
+                         "%s", szExpanded);
+            }
+        }
     }
 }
 

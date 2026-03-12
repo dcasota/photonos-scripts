@@ -231,9 +231,11 @@ find_insertion_point(char **ppLines, uint32_t dwCount,
                      const char *pszSection, const char *pszDirective)
 {
     int bIsRequires = (strcasecmp(pszDirective, "Requires") == 0 ||
-                       strcasecmp(pszDirective, "BuildRequires") == 0);
+                       strcasecmp(pszDirective, "BuildRequires") == 0 ||
+                       strcasecmp(pszDirective, "OrderWithRequires") == 0);
     int bIsProvides = (strcasecmp(pszDirective, "Provides") == 0);
-    int bIsConflicts = (strcasecmp(pszDirective, "Conflicts") == 0);
+    int bIsConflicts = (strcasecmp(pszDirective, "Conflicts") == 0 ||
+                        strcasecmp(pszDirective, "BuildConflicts") == 0);
 
     /* Determine section boundaries */
     int32_t dwSectionStart = -1;

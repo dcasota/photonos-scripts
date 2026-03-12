@@ -118,8 +118,25 @@ json_output_write(const DepGraph *pGraph, const char *pszOutputDir)
                                json_object_new_string(pN->szSpecPath));
         json_object_object_add(pEntry, "is_subpackage",
                                json_object_new_boolean(pN->bIsSubpackage));
+        json_object_object_add(pEntry, "is_latest",
+                               json_object_new_boolean(pN->bIsLatest));
         json_object_object_add(pEntry, "parent",
                                json_object_new_string(pN->szParentPackage));
+        if (pN->szExcludeArch[0])
+            json_object_object_add(pEntry, "exclude_arch",
+                                   json_object_new_string(pN->szExcludeArch));
+        if (pN->szExclusiveArch[0])
+            json_object_object_add(pEntry, "exclusive_arch",
+                                   json_object_new_string(pN->szExclusiveArch));
+        if (pN->szExcludeOS[0])
+            json_object_object_add(pEntry, "exclude_os",
+                                   json_object_new_string(pN->szExcludeOS));
+        if (pN->szExclusiveOS[0])
+            json_object_object_add(pEntry, "exclusive_os",
+                                   json_object_new_string(pN->szExclusiveOS));
+        if (pN->szBuildArch[0])
+            json_object_object_add(pEntry, "build_arch",
+                                   json_object_new_string(pN->szBuildArch));
 
         json_object_array_add(pObj, pEntry);
     }
@@ -161,6 +178,9 @@ json_output_write(const DepGraph *pGraph, const char *pszOutputDir)
                                json_object_new_string(pE->szEvidence));
         json_object_object_add(pEntry, "target_name",
                                json_object_new_string(pE->szTargetName));
+        if (pE->szQualifier[0])
+            json_object_object_add(pEntry, "qualifier",
+                                   json_object_new_string(pE->szQualifier));
 
         json_object_array_add(pObj, pEntry);
     }

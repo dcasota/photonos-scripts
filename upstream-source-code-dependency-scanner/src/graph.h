@@ -11,12 +11,16 @@
 #define MAX_PATH_LEN      512
 #define MAX_SECTION_LEN   128
 #define MAX_DIRECTIVE_LEN  32
+#define MAX_QUALIFIER_LEN  32
+#define MAX_ARCH_LEN      256
+#define MAX_OS_LEN        128
 #define MAX_LINE_LEN     4096
+#define MAX_MODULE_PATH_LEN 512
 
 #define INITIAL_NODE_CAP  2048
 #define INITIAL_EDGE_CAP  16384
 
-/* Edge types */
+/* Edge types (per RPM spec: https://rpm.org/docs/4.20.x/manual/spec.html) */
 typedef enum {
     EDGE_REQUIRES = 0,
     EDGE_BUILDREQUIRES,
@@ -26,6 +30,9 @@ typedef enum {
     EDGE_RECOMMENDS,
     EDGE_SUGGESTS,
     EDGE_SUPPLEMENTS,
+    EDGE_ENHANCES,
+    EDGE_BUILDCONFLICTS,
+    EDGE_ORDERWITH,
     EDGE_TYPE_COUNT
 } EdgeType;
 
@@ -34,7 +41,8 @@ typedef enum {
     EDGE_SRC_SPEC = 0,
     EDGE_SRC_GOMOD,
     EDGE_SRC_PYPROJECT,
-    EDGE_SRC_API_CONSTANT
+    EDGE_SRC_API_CONSTANT,
+    EDGE_SRC_TARBALL
 } EdgeSource;
 
 /* Severity for spec patches */
@@ -64,6 +72,13 @@ typedef struct {
     char     szSpecPath[MAX_PATH_LEN];
     char     szParentPackage[MAX_NAME_LEN]; /* empty if main package */
     uint32_t bIsSubpackage;
+    uint32_t bIsLatest;                     /* 1 if from SPECS_NEW */
+    /* Architecture/OS exclusion directives */
+    char     szExcludeArch[MAX_ARCH_LEN];
+    char     szExclusiveArch[MAX_ARCH_LEN];
+    char     szExcludeOS[MAX_OS_LEN];
+    char     szExclusiveOS[MAX_OS_LEN];
+    char     szBuildArch[MAX_VERSION_LEN];
 } GraphNode;
 
 /* Edge: dependency relationship */
@@ -76,6 +91,7 @@ typedef struct {
     char        szConstraintVer[MAX_VERSION_LEN];
     char        szEvidence[MAX_EVIDENCE_LEN];
     char        szTargetName[MAX_NAME_LEN]; /* raw target before resolution */
+    char        szQualifier[MAX_QUALIFIER_LEN]; /* e.g. "pre", "post" for Requires(qualifier) */
 } GraphEdge;
 
 /* Virtual provide: e.g. docker-api = 1.53 */
