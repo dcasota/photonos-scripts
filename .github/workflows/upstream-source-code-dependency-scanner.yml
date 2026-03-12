@@ -5,7 +5,7 @@ on:
     inputs:
       branches:
         description: 'Photon OS branches to scan (comma-separated)'
-        default: '5.0'
+        default: '3.0,4.0,5.0,6.0,master,dev,common'
       workingDir:
         description: 'Base directory containing photon-{branch} repos and photon-upstreams'
         default: '/mnt/d/Users/Public'
@@ -60,7 +60,7 @@ jobs:
           DATETIME=$(date -u +%Y%m%d_%H%M%S)
           echo "datetime=$DATETIME" >> "$GITHUB_OUTPUT"
 
-          BRANCHES="${{ github.event.inputs.branches || '5.0' }}"
+          BRANCHES="${{ github.event.inputs.branches || '3.0,4.0,5.0,6.0,master,dev,common' }}"
           WORKING_DIR="${{ github.event.inputs.workingDir || '/mnt/d/Users/Public' }}"
           PATCH_SPECS="${{ github.event.inputs.patch_specs }}"
           SCANNER="ci/upstream-source-code-dependency-scanner/build/upstream-dep-scanner"
@@ -118,8 +118,11 @@ jobs:
             ARGS="${ARGS} --branch ${BRANCH}"
             ARGS="${ARGS} --json"
 
-            # Find the latest PRN file for this branch
+            # Find the latest PRN file for this branch (check multiple locations)
             PRN_FILE=$(ls -t "${WORKING_DIR}"/photonos-urlhealth-${BRANCH}_*.prn 2>/dev/null | head -1)
+            if [ -z "$PRN_FILE" ]; then
+              PRN_FILE=$(ls -t "${WORKING_DIR}"/photonos-package-report/scans/photonos-urlhealth-${BRANCH}_*.prn 2>/dev/null | head -1)
+            fi
             if [ -z "$PRN_FILE" ]; then
               PRN_FILE=$(ls -t repo/photonos-package-report/scans/photonos-urlhealth-${BRANCH}_*.prn 2>/dev/null | head -1)
             fi
