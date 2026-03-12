@@ -205,8 +205,10 @@ _parse_setup_py(DepGraph *pGraph, const char *pszPath,
         fclose(fp);
         return -1;
     }
-    fread(pBuf, 1, (size_t)nLen, fp);
-    pBuf[nLen] = '\0';
+    {
+        size_t nRead = fread(pBuf, 1, (size_t)nLen, fp);
+        pBuf[nRead] = '\0';
+    }
     fclose(fp);
 
     pStart = strstr(pBuf, "install_requires");

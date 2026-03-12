@@ -2,11 +2,11 @@
 
 ## Overview
 
-photon-depgraph-deep is a standalone C program (~4100 LOC across 12 source files) that builds an enriched dependency graph for Photon OS packages. Unlike the existing [tdnf-depgraph](../tdnf-depgraph/) scanner (which patches tdnf itself and only sees spec-declared dependencies), this scanner also analyzes upstream source code to discover implicit API-level dependencies that specs fail to declare.
+upstream-source-code-dependency-scanner is a standalone C program (~4400 LOC across 13 source files) that builds an enriched dependency graph for Photon OS packages. Unlike the existing [tdnf-depgraph](../tdnf-depgraph/) scanner (which patches tdnf itself and only sees spec-declared dependencies), this scanner also analyzes upstream source code to discover implicit API-level dependencies that specs fail to declare.
 
 ```
                 ┌─────────────────────────────────────────────────────┐
-                │              photon-depgraph-deep                    │
+                │        upstream-source-code-dependency-scanner       │
                 │                                                     │
   SPECS/*.spec ─┤  Phase 1          Phase 2            Phase 3        │
                 │  ┌──────────┐    ┌──────────────┐   ┌────────────┐  │─▶ SPECS_DEPFIX/
@@ -125,6 +125,7 @@ Sections like `%prep`, `%build`, `%install`, `%check`, `%files`, `%changelog` ar
 |------|---------|
 | `gomod_analyzer.c/h` | Parse `go.mod` files from upstream clones |
 | `gomod_to_package_map.c/h` | Map Go module paths to Photon package names |
+| `prn_parser.c/h` | Parse PRN package report files for package-to-clone mapping |
 
 For each clone in `photon-upstreams/{branch}/clones/` that contains a `go.mod`:
 
@@ -205,10 +206,10 @@ For each `SpecPatchSet`:
    - Fallback: after `%description` of the target section
 3. Insert a marked block:
    ```spec
-   # --- begin depgraph-deep additions (auto-generated) ---
-   # Source: go.mod: github.com/docker/docker v28.5.2
+   # --- begin upstream-dep-scanner additions (auto-generated) ---
+   # Source: go.mod: github.com/docker/docker v28.5.1
    Requires:       docker >= 28.0
-   # --- end depgraph-deep additions ---
+   # --- end upstream-dep-scanner additions ---
    ```
 4. Prepend a `%changelog` entry documenting each addition
 

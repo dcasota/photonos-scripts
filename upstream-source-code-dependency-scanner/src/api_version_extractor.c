@@ -79,27 +79,40 @@ api_patterns_load(ApiVersionPatterns *pPatterns, const char *pszCsvPath)
     return 0;
 }
 
-/* Try to find clone directory for a package name. The clone dir may match the
-   package name directly, or with python3-/python- prefix stripped, etc. */
+/* Try to find clone directory for a package name.
+   Priority: PRN map -> direct name -> python prefix strip. */
 static int
 _find_clone_dir(const char *pszClonesDir, const char *pszPackage,
-                char *pszOut, size_t nMax)
+                char *pszOut, size_t nMax, const PrnMap *pPrnMap)
 {
     struct stat st;
 
+    /* 1. PRN map lookup (authoritative: spec Source0 -> github repo name) */
+    if (pPrnMap)
+    {
+        const char *pszClone = prn_map_find_clone(pPrnMap, pszPackage);
+        if (pszClone && !strstr(pszClone, "..") && !strchr(pszClone, '/'))
+        {
+            snprintf(pszOut, nMax, "%s/%s", pszClonesDir, pszClone);
+            if (stat(pszOut, &st) == 0 && S_ISDIR(st.st_mode))
+                return 0;
+        }
+    }
+
+    /* 2. Direct package name match */
+    if (strstr(pszPackage, "..") || strchr(pszPackage, '/'))
+        return -1;
     snprintf(pszOut, nMax, "%s/%s", pszClonesDir, pszPackage);
     if (stat(pszOut, &st) == 0 && S_ISDIR(st.st_mode))
         return 0;
 
-    /* try stripping python3- prefix */
+    /* 3. Strip python3-/python- prefix */
     if (strncmp(pszPackage, "python3-", 8) == 0)
     {
         snprintf(pszOut, nMax, "%s/%s", pszClonesDir, pszPackage + 8);
         if (stat(pszOut, &st) == 0 && S_ISDIR(st.st_mode))
             return 0;
     }
-
-    /* try stripping python- prefix */
     if (strncmp(pszPackage, "python-", 7) == 0)
     {
         snprintf(pszOut, nMax, "%s/%s", pszClonesDir, pszPackage + 7);
@@ -126,14 +139,21 @@ _extract_value(const char *pszContent, const char *pszPattern,
 
     p = pFound + strlen(pszPattern);
 
-    /* skip whitespace to reach the quote */
-    while (*p && isspace((unsigned char)*p))
+    /* If the pattern already ends with '"', we're inside the quoted value.
+       Otherwise, skip whitespace and look for opening quote. */
+    if (strlen(pszPattern) > 0 && pszPattern[strlen(pszPattern) - 1] == '"')
+    {
+        /* Already past the opening quote */
+    }
+    else
+    {
+        while (*p && isspace((unsigned char)*p))
+            p++;
+        if (*p != '"')
+            return -1;
         p++;
+    }
 
-    if (*p != '"')
-        return -1;
-
-    p++;
     i = 0;
     while (*p && *p != '"' && i < nMax - 1)
         pszOut[i++] = *p++;
@@ -147,7 +167,8 @@ _extract_value(const char *pszContent, const char *pszPattern,
 
 int
 api_version_extract(DepGraph *pGraph, const char *pszClonesDir,
-                    const ApiVersionPatterns *pPatterns)
+                    const ApiVersionPatterns *pPatterns,
+                    const PrnMap *pPrnMap)
 {
     uint32_t i;
 
@@ -167,7 +188,11 @@ api_version_extract(DepGraph *pGraph, const char *pszClonesDir,
         char szEvidence[MAX_EVIDENCE_LEN];
 
         if (_find_clone_dir(pszClonesDir, pEntry->szPackage,
-                            szCloneDir, sizeof(szCloneDir)) != 0)
+                            szCloneDir, sizeof(szCloneDir), pPrnMap) != 0)
+            continue;
+
+        /* Reject file paths with traversal sequences */
+        if (strstr(pEntry->szFilePath, ".."))
             continue;
 
         snprintf(szFullPath, sizeof(szFullPath), "%s/%s",
@@ -193,8 +218,10 @@ api_version_extract(DepGraph *pGraph, const char *pszClonesDir,
             fclose(fp);
             continue;
         }
-        fread(pBuf, 1, (size_t)nLen, fp);
-        pBuf[nLen] = '\0';
+        {
+            size_t nRead = fread(pBuf, 1, (size_t)nLen, fp);
+            pBuf[nRead] = '\0';
+        }
         fclose(fp);
 
         if (_extract_value(pBuf, pEntry->szPattern,
@@ -236,4 +263,117 @@ api_version_extract(DepGraph *pGraph, const char *pszClonesDir,
     }
 
     return 0;
+}
+
+int
+docker_sdk_map_load(DockerSdkApiMap *pMap, const char *pszCsvPath)
+{
+    FILE *fp = NULL;
+    char szLine[MAX_LINE_LEN];
+
+    if (!pMap || !pszCsvPath)
+    {
+        return -1;
+    }
+
+    memset(pMap, 0, sizeof(*pMap));
+
+    fp = fopen(pszCsvPath, "r");
+    if (!fp)
+    {
+        return -1;
+    }
+
+    while (fgets(szLine, sizeof(szLine), fp))
+    {
+        char *p = szLine;
+        while (*p == ' ' || *p == '\t') p++;
+        if (*p == '#' || *p == '\n' || *p == '\r' || *p == '\0')
+        {
+            continue;
+        }
+
+        if (pMap->dwCount >= MAX_SDK_MAP_ENTRIES)
+        {
+            break;
+        }
+
+        char szMin[32], szMax[32], szApi[32];
+        if (sscanf(p, "%31[^,],%31[^,],%31[^\r\n]", szMin, szMax, szApi) == 3)
+        {
+            pMap->entries[pMap->dwCount].fSdkMin = atof(szMin);
+            pMap->entries[pMap->dwCount].fSdkMax = atof(szMax);
+            snprintf(pMap->entries[pMap->dwCount].szApiVersion,
+                     sizeof(pMap->entries[0].szApiVersion), "%s", szApi);
+            pMap->dwCount++;
+        }
+    }
+
+    fclose(fp);
+    return 0;
+}
+
+const char *
+docker_sdk_to_api_version(const DockerSdkApiMap *pMap,
+                          const char *pszSdkVersion)
+{
+    double fSdk;
+
+    if (!pMap || !pszSdkVersion || !*pszSdkVersion)
+    {
+        return NULL;
+    }
+
+    if (pszSdkVersion[0] == 'v')
+    {
+        pszSdkVersion++;
+    }
+
+    /* Parse major.minor as a float matching how the CSV stores ranges.
+       E.g. "28.5.1" -> 28.5 to match CSV range "28.3,28.5" */
+    fSdk = atof(pszSdkVersion);
+    if (fSdk < 0.1)
+    {
+        return NULL;
+    }
+
+    for (uint32_t i = 0; i < pMap->dwCount; i++)
+    {
+        if (fSdk >= pMap->entries[i].fSdkMin &&
+            fSdk <= pMap->entries[i].fSdkMax)
+        {
+            return pMap->entries[i].szApiVersion;
+        }
+    }
+
+    return NULL;
+}
+
+const char *
+docker_api_to_min_engine(const DockerSdkApiMap *pMap,
+                         const char *pszApiVersion)
+{
+    static char szResult[32];
+
+    if (!pMap || !pszApiVersion || !*pszApiVersion)
+    {
+        return NULL;
+    }
+
+    for (uint32_t i = 0; i < pMap->dwCount; i++)
+    {
+        if (strcmp(pMap->entries[i].szApiVersion, pszApiVersion) == 0)
+        {
+            snprintf(szResult, sizeof(szResult), "%.1f",
+                     pMap->entries[i].fSdkMin);
+            char *pDot = strchr(szResult, '.');
+            if (pDot && strcmp(pDot, ".0") == 0)
+            {
+                *pDot = '\0';
+            }
+            return szResult;
+        }
+    }
+
+    return NULL;
 }

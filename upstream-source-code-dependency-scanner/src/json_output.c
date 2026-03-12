@@ -57,7 +57,7 @@ json_output_write(const DepGraph *pGraph, const char *pszOutputDir)
     /* metadata */
     pObj = json_object_new_object();
     json_object_object_add(pObj, "generator",
-                           json_object_new_string("photon-depgraph-deep"));
+                           json_object_new_string("upstream-dep-scanner"));
     json_object_object_add(pObj, "timestamp",
                            json_object_new_string(szTimestamp));
     json_object_object_add(pObj, "branch",

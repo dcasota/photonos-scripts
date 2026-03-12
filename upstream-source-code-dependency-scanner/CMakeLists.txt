@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(photon-depgraph-deep C)
+project(upstream-dep-scanner C)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -21,13 +21,14 @@ set(SOURCES
     src/spec_patcher.c
     src/manifest_writer.c
     src/json_output.c
+    src/prn_parser.c
 )
 
-add_executable(photon-depgraph-deep ${SOURCES})
-target_include_directories(photon-depgraph-deep PRIVATE
+add_executable(upstream-dep-scanner ${SOURCES})
+target_include_directories(upstream-dep-scanner PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${JSON_C_INCLUDE_DIRS}
 )
-target_link_libraries(photon-depgraph-deep ${JSON_C_LIBRARIES})
+target_link_libraries(upstream-dep-scanner ${JSON_C_LIBRARIES})
 
-install(TARGETS photon-depgraph-deep DESTINATION bin)
+install(TARGETS upstream-dep-scanner DESTINATION bin)

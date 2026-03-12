@@ -104,6 +104,11 @@ graph_add_node(DepGraph *pGraph, const char *pszName,
     if (pGraph->dwNodeCount >= pGraph->dwNodeCap)
     {
         uint32_t dwNewCap = pGraph->dwNodeCap * 2;
+        if (dwNewCap < pGraph->dwNodeCap || /* overflow check */
+            (size_t)dwNewCap * sizeof(GraphNode) / sizeof(GraphNode) != dwNewCap)
+        {
+            return (uint32_t)-1;
+        }
         GraphNode *pNew = realloc(pGraph->pNodes,
                                   dwNewCap * sizeof(GraphNode));
         if (!pNew)
@@ -162,6 +167,10 @@ graph_add_edge(DepGraph *pGraph, uint32_t dwFrom, uint32_t dwTo,
     if (pGraph->dwEdgeCount >= pGraph->dwEdgeCap)
     {
         uint32_t dwNewCap = pGraph->dwEdgeCap * 2;
+        if (dwNewCap < pGraph->dwEdgeCap)
+        {
+            return -1;
+        }
         GraphEdge *pNew = realloc(pGraph->pEdges,
                                   dwNewCap * sizeof(GraphEdge));
         if (!pNew)
@@ -214,6 +223,10 @@ graph_add_virtual(DepGraph *pGraph, const char *pszName,
     if (pGraph->dwVirtualCount >= pGraph->dwVirtualCap)
     {
         uint32_t dwNewCap = pGraph->dwVirtualCap * 2;
+        if (dwNewCap < pGraph->dwVirtualCap)
+        {
+            return -1;
+        }
         VirtualProvide *pNew = realloc(pGraph->pVirtuals,
                                        dwNewCap * sizeof(VirtualProvide));
         if (!pNew)

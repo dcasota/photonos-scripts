@@ -56,12 +56,21 @@ typedef struct {
 
 static void str_trim(char *psz)
 {
-    char *pEnd;
-    while (isspace((unsigned char)*psz))
-        memmove(psz, psz + 1, strlen(psz));
-    pEnd = psz + strlen(psz) - 1;
-    while (pEnd >= psz && isspace((unsigned char)*pEnd))
-        *pEnd-- = '\0';
+    if (!psz || !*psz)
+        return;
+    /* Trim leading whitespace (single memmove) */
+    char *pStart = psz;
+    while (isspace((unsigned char)*pStart))
+        pStart++;
+    if (pStart != psz)
+    {
+        size_t cbLen = strlen(pStart);
+        memmove(psz, pStart, cbLen + 1);
+    }
+    /* Trim trailing whitespace */
+    size_t cbLen = strlen(psz);
+    while (cbLen > 0 && isspace((unsigned char)psz[cbLen - 1]))
+        psz[--cbLen] = '\0';
 }
 
 static void expand_macros(ParseContext *pCtx, char *pszBuf, size_t cbBuf)
@@ -626,6 +635,27 @@ int spec_parse_file(DepGraph *pGraph, const char *pszSpecPath)
                     ctx.szEpoch, ctx.szSpecPath, "");
                 ctx.dwCurrentNodeIdx = ctx.dwMainNodeIdx;
                 bMainNodeCreated = 1;
+            }
+
+            /* Backfill version/release if node was created before those fields */
+            if (bMainNodeCreated && ctx.dwMainNodeIdx < pGraph->dwNodeCount)
+            {
+                GraphNode *pN = &pGraph->pNodes[ctx.dwMainNodeIdx];
+                if (!pN->szVersion[0] && ctx.szVersion[0])
+                {
+                    snprintf(pN->szVersion, sizeof(pN->szVersion),
+                             "%s", ctx.szVersion);
+                }
+                if (!pN->szRelease[0] && ctx.szRelease[0])
+                {
+                    snprintf(pN->szRelease, sizeof(pN->szRelease),
+                             "%s", ctx.szRelease);
+                }
+                if (!pN->szEpoch[0] && ctx.szEpoch[0])
+                {
+                    snprintf(pN->szEpoch, sizeof(pN->szEpoch),
+                             "%s", ctx.szEpoch);
+                }
             }
         }
 

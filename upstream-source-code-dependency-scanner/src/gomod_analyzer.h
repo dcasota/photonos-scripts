@@ -3,12 +3,14 @@
 
 #include "graph.h"
 #include "gomod_to_package_map.h"
+#include "prn_parser.h"
 
 /* Analyze all go.mod files in photon-upstreams clones directory.
    pszClonesDir: path to photon-upstreams/{branch}/clones/
+   pPrnMap: optional PRN-derived clone-to-package mapping (may be NULL).
    Adds inferred edges to pGraph. Returns 0 on success. */
 int gomod_analyze_clones(DepGraph *pGraph, const char *pszClonesDir,
-                         const GomodPackageMap *pMap);
+                         const GomodPackageMap *pMap, const PrnMap *pPrnMap);
 
 /* Parse a single go.mod file and add inferred edges.
    pszPackageName: the Photon package name that owns this go.mod. */

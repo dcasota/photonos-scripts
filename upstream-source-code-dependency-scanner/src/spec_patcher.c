@@ -233,6 +233,7 @@ find_insertion_point(char **ppLines, uint32_t dwCount,
     int bIsRequires = (strcasecmp(pszDirective, "Requires") == 0 ||
                        strcasecmp(pszDirective, "BuildRequires") == 0);
     int bIsProvides = (strcasecmp(pszDirective, "Provides") == 0);
+    int bIsConflicts = (strcasecmp(pszDirective, "Conflicts") == 0);
 
     /* Determine section boundaries */
     int32_t dwSectionStart = -1;
@@ -318,7 +319,7 @@ find_insertion_point(char **ppLines, uint32_t dwCount,
     }
 
     /* Fallback: insert after %description of this section */
-    if (bIsRequires || bIsProvides)
+    if (bIsRequires || bIsProvides || bIsConflicts)
     {
         for (int32_t i = dwSectionStart; i < dwSectionEnd; i++)
         {
@@ -439,15 +440,19 @@ spec_patch_file(const SpecPatchSet *pSet)
     /* Copy original lines and inject at insertion points */
     uint32_t dwOutCount = 0;
 
-    /* Helper to append a line */
+    /* Helper to append a line with allocation checks */
     #define APPEND_LINE(line) do { \
+        char *_ln = (line); \
+        if (!_ln) goto cleanup; \
         if (dwOutCount >= dwOutCap) { \
-            dwOutCap *= 2; \
-            char **ppNew = realloc(ppOut, dwOutCap * sizeof(char *)); \
-            if (!ppNew) goto cleanup; \
+            uint32_t _newcap = dwOutCap * 2; \
+            if (_newcap < dwOutCap) { free(_ln); goto cleanup; } \
+            char **ppNew = realloc(ppOut, _newcap * sizeof(char *)); \
+            if (!ppNew) { free(_ln); goto cleanup; } \
             ppOut = ppNew; \
+            dwOutCap = _newcap; \
         } \
-        ppOut[dwOutCount++] = (line); \
+        ppOut[dwOutCount++] = _ln; \
     } while (0)
 
     /* We process original lines, and after certain lines, inject blocks */
@@ -461,7 +466,7 @@ spec_patch_file(const SpecPatchSet *pSet)
             if (groups[g].dwInsertAfter == (int32_t)i)
             {
                 APPEND_LINE(strdup(
-                    "# --- begin depgraph-deep additions (auto-generated) ---\n"));
+                    "# --- begin upstream-dep-scanner additions (auto-generated) ---\n"));
 
                 for (const SpecPatch *pPatch = pSet->pAdditions;
                      pPatch; pPatch = pPatch->pNext)
@@ -484,7 +489,7 @@ spec_patch_file(const SpecPatchSet *pSet)
                 }
 
                 APPEND_LINE(strdup(
-                    "# --- end depgraph-deep additions ---\n"));
+                    "# --- end upstream-dep-scanner additions ---\n"));
             }
         }
 
@@ -498,7 +503,7 @@ spec_patch_file(const SpecPatchSet *pSet)
 
             char szEntry[MAX_LINE_LEN];
             snprintf(szEntry, sizeof(szEntry),
-                     "* %s depgraph-deep <depgraph-deep@photon> %%{version}-%%{release}\n",
+                     "* %s upstream-dep-scanner <upstream-dep-scanner@photon> %%{version}-%%{release}\n",
                      szDate);
             APPEND_LINE(strdup(szEntry));
 
@@ -546,10 +551,26 @@ spec_patch_all(DepGraph *pGraph, const char *pszOutputDir,
         return 0;
     }
 
+    /* Reject branch names with path traversal */
+    if (strstr(pszBranch, "..") || strchr(pszBranch, '/'))
+    {
+        fprintf(stderr, "spec_patcher: rejecting unsafe branch name '%s'\n",
+                pszBranch);
+        return 0;
+    }
+
     uint32_t dwPatched = 0;
 
     for (SpecPatchSet *pSet = pGraph->pPatchSets; pSet; pSet = pSet->pNext)
     {
+        /* Reject package/branch names with path traversal sequences */
+        if (strstr(pSet->szPackageName, "..") || strchr(pSet->szPackageName, '/'))
+        {
+            fprintf(stderr, "spec_patcher: rejecting unsafe package name '%s'\n",
+                    pSet->szPackageName);
+            continue;
+        }
+
         /* Extract basename from spec path */
         char szSpecCopy[MAX_PATH_LEN];
         snprintf(szSpecCopy, sizeof(szSpecCopy), "%s", pSet->szSpecPath);
@@ -561,6 +582,14 @@ spec_patch_all(DepGraph *pGraph, const char *pszOutputDir,
         else
         {
             pszBase = szSpecCopy;
+        }
+
+        /* Reject basenames with path traversal */
+        if (strstr(pszBase, "..") || strchr(pszBase, '/'))
+        {
+            fprintf(stderr, "spec_patcher: rejecting unsafe spec basename '%s'\n",
+                    pszBase);
+            continue;
         }
 
         /* Build output directory */

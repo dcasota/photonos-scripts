@@ -15,6 +15,7 @@
 #include "spec_patcher.h"
 #include "manifest_writer.h"
 #include "json_output.h"
+#include "prn_parser.h"
 
 static void usage(const char *pszProg)
 {
@@ -27,6 +28,7 @@ static void usage(const char *pszProg)
         "  --output-dir DIR      Output directory (default: ./output)\n"
         "  --data-dir DIR        Data directory with CSV mappings (default: ./data)\n"
         "  --branch NAME         Branch name (default: 5.0)\n"
+        "  --prn-file FILE       PRN package report file (for package->clone mapping)\n"
         "  --json                Write enriched dependency graph JSON\n"
         "  --patch-specs         Generate patched spec files in SPECS_DEPFIX/\n"
         "  --help                Show this help\n",
@@ -40,6 +42,7 @@ int main(int argc, char *argv[])
     const char *pszOutputDir = "./output";
     const char *pszDataDir = "./data";
     const char *pszBranch = "5.0";
+    const char *pszPrnFile = NULL;
     int bJson = 0;
     int bPatchSpecs = 0;
 
@@ -49,6 +52,7 @@ int main(int argc, char *argv[])
         {"output-dir",    required_argument, 0, 'o'},
         {"data-dir",      required_argument, 0, 'd'},
         {"branch",        required_argument, 0, 'b'},
+        {"prn-file",      required_argument, 0, 'r'},
         {"json",          no_argument,       0, 'j'},
         {"patch-specs",   no_argument,       0, 'p'},
         {"help",          no_argument,       0, 'h'},
@@ -56,7 +60,7 @@ int main(int argc, char *argv[])
     };
 
     int nOpt;
-    while ((nOpt = getopt_long(argc, argv, "s:u:o:d:b:jph", aoLong, NULL)) != -1)
+    while ((nOpt = getopt_long(argc, argv, "s:u:o:d:b:r:jph", aoLong, NULL)) != -1)
     {
         switch (nOpt)
         {
@@ -65,6 +69,7 @@ int main(int argc, char *argv[])
             case 'o': pszOutputDir = optarg; break;
             case 'd': pszDataDir = optarg; break;
             case 'b': pszBranch = optarg; break;
+            case 'r': pszPrnFile = optarg; break;
             case 'j': bJson = 1; break;
             case 'p': bPatchSpecs = 1; break;
             case 'h': usage(argv[0]); return 0;
@@ -79,6 +84,18 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    /* Reject path traversal in branch name and output dir */
+    if (strstr(pszBranch, ".."))
+    {
+        fprintf(stderr, "Error: branch name must not contain '..'\n");
+        return 1;
+    }
+    if (strstr(pszOutputDir, ".."))
+    {
+        fprintf(stderr, "Error: output directory must not contain '..'\n");
+        return 1;
+    }
+
     mkdir(pszOutputDir, 0755);
 
     DepGraph graph;
@@ -86,6 +103,24 @@ int main(int argc, char *argv[])
     {
         fprintf(stderr, "Error: failed to initialize graph\n");
         return 1;
+    }
+
+    /* Load PRN package->clone mapping if provided */
+    PrnMap prnMap;
+    memset(&prnMap, 0, sizeof(prnMap));
+    const PrnMap *pPrnMap = NULL;
+    if (pszPrnFile)
+    {
+        if (prn_map_load(&prnMap, pszPrnFile) == 0)
+        {
+            fprintf(stderr, "[Data] Loaded PRN map: %u package->clone entries from %s\n",
+                    prnMap.dwCount, pszPrnFile);
+            pPrnMap = &prnMap;
+        }
+        else
+        {
+            fprintf(stderr, "[Data] Warning: could not load PRN file %s\n", pszPrnFile);
+        }
     }
 
     /* Phase 1: Parse spec files */
@@ -119,7 +154,7 @@ int main(int argc, char *argv[])
             if (gomod_map_load(&gomodMap, szMapPath) == 0)
             {
                 fprintf(stderr, "[Phase 2a] Analyzing Go modules in %s ...\n", szClonesDir);
-                gomod_analyze_clones(&graph, szClonesDir, &gomodMap);
+                gomod_analyze_clones(&graph, szClonesDir, &gomodMap, pPrnMap);
                 fprintf(stderr, "[Phase 2a] Done: %u edges total (+%u inferred)\n",
                         graph.dwEdgeCount, graph.dwEdgeCount - dwPhase1Edges);
             }
@@ -143,7 +178,7 @@ int main(int argc, char *argv[])
             if (api_patterns_load(&apiPatterns, szPatternsPath) == 0)
             {
                 fprintf(stderr, "[Phase 2c] Extracting API version constants ...\n");
-                api_version_extract(&graph, szClonesDir, &apiPatterns);
+                api_version_extract(&graph, szClonesDir, &apiPatterns, pPrnMap);
                 fprintf(stderr, "[Phase 2c] Done: %u virtual provides\n",
                         graph.dwVirtualCount);
             }
@@ -166,9 +201,28 @@ int main(int argc, char *argv[])
         fprintf(stderr, "[Phase 2] Skipped: no --upstreams-dir provided\n");
     }
 
+    /* Load Docker SDK-to-API version map */
+    DockerSdkApiMap sdkMap;
+    memset(&sdkMap, 0, sizeof(sdkMap));
+    {
+        char szSdkMapPath[MAX_PATH_LEN];
+        snprintf(szSdkMapPath, sizeof(szSdkMapPath),
+                 "%s/docker-api-version-map.csv", pszDataDir);
+        if (docker_sdk_map_load(&sdkMap, szSdkMapPath) == 0)
+        {
+            fprintf(stderr, "[Data] Loaded Docker SDK-to-API map: %u entries\n",
+                    sdkMap.dwCount);
+        }
+        else
+        {
+            fprintf(stderr, "[Data] Warning: could not load %s\n", szSdkMapPath);
+        }
+    }
+
     /* Phase 3: Conflict detection and spec patching */
     fprintf(stderr, "[Phase 3] Running conflict detection ...\n");
-    uint32_t dwIssues = conflict_detect(&graph);
+    uint32_t dwIssues = conflict_detect(&graph,
+                                        sdkMap.dwCount > 0 ? &sdkMap : NULL);
     fprintf(stderr, "[Phase 3] Found %u issues\n", dwIssues);
 
     uint32_t dwSpecsPatched = 0;
