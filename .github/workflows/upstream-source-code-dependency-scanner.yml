@@ -7,8 +7,14 @@ on:
         description: 'Photon OS branches to scan (comma-separated)'
         default: '3.0,4.0,5.0,6.0,master,dev,common'
       workingDir:
-        description: 'Base directory containing photon-{branch} repos and photon-upstreams'
+        description: 'Working directory for branch clones (photon-3.0/, photon-4.0/, etc.). Default: /mnt/d/Users/Public'
         default: '/mnt/d/Users/Public'
+      upstreamsDir:
+        description: 'Upstreams base directory (default: workingDir/photon-upstreams). Per-branch subdirs: clones/'
+        default: ''
+      scansDir:
+        description: 'Directory for .prn report files (default: workingDir/scans)'
+        default: ''
       patch_specs:
         description: 'Generate patched spec files with missing declarations'
         type: boolean
@@ -62,6 +68,19 @@ jobs:
 
           BRANCHES="${{ github.event.inputs.branches || '3.0,4.0,5.0,6.0,master,dev,common' }}"
           WORKING_DIR="${{ github.event.inputs.workingDir || '/mnt/d/Users/Public' }}"
+
+          # Upstreams directory: default to workingDir/photon-upstreams
+          UPSTREAMS_BASE="${{ github.event.inputs.upstreamsDir }}"
+          if [ -z "$UPSTREAMS_BASE" ]; then
+            UPSTREAMS_BASE="${WORKING_DIR}/photon-upstreams"
+          fi
+
+          # Scans directory: default to workingDir/scans
+          SCANS_DIR="${{ github.event.inputs.scansDir }}"
+          if [ -z "$SCANS_DIR" ]; then
+            SCANS_DIR="${WORKING_DIR}/scans"
+          fi
+
           PATCH_SPECS="${{ github.event.inputs.patch_specs }}"
           SCANNER="ci/upstream-source-code-dependency-scanner/build/upstream-dep-scanner"
           DATA_DIR="ci/upstream-source-code-dependency-scanner/data"
@@ -70,6 +89,13 @@ jobs:
           echo "## Upstream Source Code Dependency Scanner" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "Scan date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Parameter | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|-----------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Branches | ${BRANCHES} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| workingDir | ${WORKING_DIR} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| upstreamsDir | ${UPSTREAMS_BASE} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| scansDir | ${SCANS_DIR} |" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
           TOTAL_PATCHED=0
@@ -81,7 +107,7 @@ jobs:
             SAFE_BRANCH=$(echo "$BRANCH" | tr '/' '-')
             OUTPUT_DIR="${OUTPUT_BASE}/${SAFE_BRANCH}"
             BRANCH_REPO="${WORKING_DIR}/photon-${BRANCH}"
-            UPSTREAMS_DIR="${WORKING_DIR}/photon-upstreams/photon-${BRANCH}"
+            UPSTREAMS_DIR="${UPSTREAMS_BASE}/photon-${BRANCH}"
 
             echo "=== Branch: ${BRANCH} ==="
 
@@ -118,11 +144,10 @@ jobs:
             ARGS="${ARGS} --branch ${BRANCH}"
             ARGS="${ARGS} --json"
 
-            # Find the latest PRN file for this branch (check multiple locations)
-            PRN_FILE=$(ls -t "${WORKING_DIR}"/photonos-urlhealth-${BRANCH}_*.prn 2>/dev/null | head -1)
-            if [ -z "$PRN_FILE" ]; then
-              PRN_FILE=$(ls -t "${WORKING_DIR}"/photonos-package-report/scans/photonos-urlhealth-${BRANCH}_*.prn 2>/dev/null | head -1)
-            fi
+            # Find the latest PRN file for this branch
+            # 1. scansDir (primary, matches package-report output location)
+            # 2. repo checkout (fallback to committed PRN files)
+            PRN_FILE=$(ls -t "${SCANS_DIR}"/photonos-urlhealth-${BRANCH}_*.prn 2>/dev/null | head -1)
             if [ -z "$PRN_FILE" ]; then
               PRN_FILE=$(ls -t repo/photonos-package-report/scans/photonos-urlhealth-${BRANCH}_*.prn 2>/dev/null | head -1)
             fi
