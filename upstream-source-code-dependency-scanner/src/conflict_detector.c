@@ -242,7 +242,13 @@ conflict_detect(DepGraph *pGraph, const DockerSdkApiMap *pSdkMap)
 
     /* 3. API version conflict detection + Conflicts: patch generation.
        For each gomod edge targeting "docker", resolve the Docker SDK version
-       to a REST API version, then compare against the engine's min/max API. */
+       to a REST API version, then compare against the engine's min/max API.
+       Track emitted (consumer, conflict_value) to avoid duplicates when
+       go.mod lists both docker/docker and docker/cli at the same major. */
+    #define MAX_DEDUP 512
+    struct { uint32_t dwFromIdx; char szValue[MAX_VERSION_LEN]; } dedup[MAX_DEDUP];
+    uint32_t dwDedupCount = 0;
+
     for (uint32_t i = 0; i < pGraph->dwEdgeCount; i++)
     {
         GraphEdge *pEdge = &pGraph->pEdges[i];
@@ -400,6 +406,32 @@ conflict_detect(DepGraph *pGraph, const DockerSdkApiMap *pSdkMap)
 
         if (pszMinEngine)
         {
+            /* Deduplicate: skip if same consumer already has this Conflicts value */
+            char szConflictVal[MAX_VERSION_LEN];
+            snprintf(szConflictVal, sizeof(szConflictVal), "%s < %s",
+                     pszEngineSubpkg, pszMinEngine);
+            int bDup = 0;
+            for (uint32_t d = 0; d < dwDedupCount; d++)
+            {
+                if (dedup[d].dwFromIdx == pEdge->dwFromIdx &&
+                    strcmp(dedup[d].szValue, szConflictVal) == 0)
+                {
+                    bDup = 1;
+                    break;
+                }
+            }
+            if (bDup)
+                goto skip_conflict_patch;
+
+            if (dwDedupCount < MAX_DEDUP)
+            {
+                dedup[dwDedupCount].dwFromIdx = pEdge->dwFromIdx;
+                snprintf(dedup[dwDedupCount].szValue,
+                         sizeof(dedup[dwDedupCount].szValue),
+                         "%s", szConflictVal);
+                dwDedupCount++;
+            }
+
             SpecPatchSet *pSet = find_or_create_patchset(
                 pGraph, pConsumer->szSpecPath, pConsumer->szName);
             if (pSet)
@@ -412,7 +444,7 @@ conflict_detect(DepGraph *pGraph, const DockerSdkApiMap *pSdkMap)
                     snprintf(pPatch->szDirective, sizeof(pPatch->szDirective),
                              "Conflicts");
                     snprintf(pPatch->szValue, sizeof(pPatch->szValue),
-                             "%s < %s", pszEngineSubpkg, pszMinEngine);
+                             "%s", szConflictVal);
                     pPatch->nSource = EDGE_SRC_GOMOD;
                     snprintf(pPatch->szEvidence, sizeof(pPatch->szEvidence),
                              "go.mod docker SDK %s -> API %s, "
@@ -423,6 +455,7 @@ conflict_detect(DepGraph *pGraph, const DockerSdkApiMap *pSdkMap)
                     dwIssueCount++;
                 }
             }
+            skip_conflict_patch: ;
         }
 
         /* If BROKEN, also add a Conflicts: for the upper bound */
