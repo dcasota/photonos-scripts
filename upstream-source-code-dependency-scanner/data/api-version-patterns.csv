@@ -3,8 +3,9 @@
 # pattern_prefix: literal string to search for; value extracted from next "quoted" string
 # type: provides = add as virtual provide, requires = add as virtual require edge
 #
-# Docker Engine API versions
-docker,daemon/config/config.go,MaxAPIVersion = ",provides,docker-api
+# Docker Engine API versions (api/common.go since Docker 25+, daemon/config for older)
+docker,api/common.go,DefaultVersion = ",provides,docker-api
+docker,api/common.go,MinSupportedAPIVersion = ",provides,docker-api-min
 docker,daemon/config/config.go,defaultMinAPIVersion = ",provides,docker-api-min
 docker,client/client.go,DefaultVersion = ",provides,docker-client-api
 #
