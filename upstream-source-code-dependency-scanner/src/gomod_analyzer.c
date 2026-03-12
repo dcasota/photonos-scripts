@@ -93,18 +93,40 @@ _git_show_to_file(const char *pszCloneDir, const char *pszRef,
 }
 
 static void
-gomod_extract_major_constraint(const char *pszVersion, char *pszOut, size_t nOutLen)
+gomod_extract_major_constraint(const char *pszVersion, char *pszOut,
+                               size_t nOutLen, const char *pszModulePath)
 {
     int nMajor = 0;
+    int nMinor = 0;
+    const char *pVer = pszVersion;
 
-    /* Version format: vX.Y.Z or vX.Y.Z+incompatible */
-    if (pszVersion && pszVersion[0] == 'v')
+    if (!pVer || !*pVer)
     {
-        nMajor = atoi(pszVersion + 1);
+        snprintf(pszOut, nOutLen, "0.0");
+        return;
     }
-    else if (pszVersion)
+
+    if (pVer[0] == 'v')
+        pVer++;
+
+    nMajor = atoi(pVer);
+    const char *pDot = strchr(pVer, '.');
+    if (pDot)
+        nMinor = atoi(pDot + 1);
+
+    /* k8s.io convention: v0.X.Y maps to Kubernetes 1.X */
+    if (nMajor == 0 && pszModulePath &&
+        strncmp(pszModulePath, "k8s.io/", 7) == 0)
     {
-        nMajor = atoi(pszVersion);
+        snprintf(pszOut, nOutLen, "1.%d", nMinor);
+        return;
+    }
+
+    /* For v0.X.Y modules, preserve major.minor instead of collapsing to 0.0 */
+    if (nMajor == 0)
+    {
+        snprintf(pszOut, nOutLen, "%d.%d", nMajor, nMinor);
+        return;
     }
 
     snprintf(pszOut, nOutLen, "%d.0", nMajor);
@@ -202,7 +224,8 @@ gomod_parse_file(DepGraph *pGraph, const char *pszGomodPath,
         }
 
         pszMappedPkg = gomod_map_lookup(pMap, szModulePath);
-        if (!pszMappedPkg || strcmp(pszMappedPkg, pszPackageName) == 0)
+        if (!pszMappedPkg || strcmp(pszMappedPkg, pszPackageName) == 0 ||
+            strcmp(pszMappedPkg, "SKIP") == 0)
         {
             continue;
         }
@@ -214,7 +237,7 @@ gomod_parse_file(DepGraph *pGraph, const char *pszGomodPath,
         }
 
         gomod_extract_major_constraint(szVersion, szConstraint,
-                                       sizeof(szConstraint));
+                                       sizeof(szConstraint), szModulePath);
 
         snprintf(szEvidence, sizeof(szEvidence), "go.mod: %s %s",
                  szModulePath, szVersion);

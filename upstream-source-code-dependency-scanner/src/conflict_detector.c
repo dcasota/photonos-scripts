@@ -36,27 +36,6 @@ find_or_create_patchset(DepGraph *pGraph, const char *szSpecPath,
     return pSet;
 }
 
-static void
-extract_major_version(const char *pszVersion, char *pszOut, size_t nOutLen)
-{
-    if (!pszVersion || !*pszVersion)
-    {
-        snprintf(pszOut, nOutLen, "0.0");
-        return;
-    }
-
-    char szBuf[MAX_VERSION_LEN];
-    snprintf(szBuf, sizeof(szBuf), "%s", pszVersion);
-
-    char *pDot = strchr(szBuf, '.');
-    if (pDot)
-    {
-        *pDot = '\0';
-    }
-
-    snprintf(pszOut, nOutLen, "%s.0", szBuf);
-}
-
 static int
 has_spec_edge_for(DepGraph *pGraph, uint32_t dwFromIdx,
                   uint32_t dwToIdx, const char *pszTargetName)
@@ -119,20 +98,139 @@ provider_has_provides_edge(DepGraph *pGraph, uint32_t dwProviderIdx,
     return 0;
 }
 
-/* Global deduplication: skip if identical (directive, value) already in set.
-   Returns 1 if patch was added, 0 if duplicate was suppressed. */
+/* Parse "target op version" from a patch value string.
+   E.g. "docker >= 28.0" -> target="docker", op=">=", ver="28.0"
+   Returns 0 on success, -1 if not parseable. */
+static int
+parse_patch_value(const char *pszValue, char *pszTarget, size_t nTargetLen,
+                  char *pszOp, size_t nOpLen,
+                  char *pszVer, size_t nVerLen)
+{
+    char szBuf[MAX_NAME_LEN];
+    snprintf(szBuf, sizeof(szBuf), "%s", pszValue);
+
+    char *pSpace = strchr(szBuf, ' ');
+    if (!pSpace)
+        return -1;
+
+    *pSpace = '\0';
+    snprintf(pszTarget, nTargetLen, "%s", szBuf);
+
+    char *pOp = pSpace + 1;
+    while (*pOp == ' ') pOp++;
+    if (!*pOp)
+        return -1;
+
+    char *pVer = pOp;
+    while (*pVer && *pVer != ' ') pVer++;
+    if (*pVer)
+    {
+        char szOp[8];
+        size_t nLen = (size_t)(pVer - pOp);
+        if (nLen >= sizeof(szOp)) nLen = sizeof(szOp) - 1;
+        memcpy(szOp, pOp, nLen);
+        szOp[nLen] = '\0';
+        snprintf(pszOp, nOpLen, "%s", szOp);
+
+        pVer++;
+        while (*pVer == ' ') pVer++;
+        snprintf(pszVer, nVerLen, "%s", pVer);
+    }
+    else
+    {
+        return -1;
+    }
+
+    return 0;
+}
+
+/* Global deduplication with version-strength consolidation.
+   - Exact (directive, value) duplicates are suppressed.
+   - For "Requires: X >= A" and "Requires: X >= B", keep only the higher.
+   - For "Conflicts: X < A" and "Conflicts: X < B", keep only the higher.
+   Returns 1 if patch was added (or replaced), 0 if suppressed. */
 static int
 add_patch_to_set(SpecPatchSet *pSet, SpecPatch *pPatch)
 {
+    char szNewTarget[MAX_NAME_LEN], szNewOp[8], szNewVer[MAX_VERSION_LEN];
+    int bNewParsed = parse_patch_value(pPatch->szValue, szNewTarget,
+                        sizeof(szNewTarget), szNewOp, sizeof(szNewOp),
+                        szNewVer, sizeof(szNewVer));
+
     for (SpecPatch *p = pSet->pAdditions; p; p = p->pNext)
     {
-        if (strcmp(p->szDirective, pPatch->szDirective) == 0 &&
-            strcmp(p->szValue, pPatch->szValue) == 0)
+        if (strcmp(p->szDirective, pPatch->szDirective) != 0)
+            continue;
+
+        /* Exact duplicate */
+        if (strcmp(p->szValue, pPatch->szValue) == 0)
         {
             free(pPatch);
             return 0;
         }
+
+        /* Version-strength consolidation */
+        if (bNewParsed != 0)
+            continue;
+
+        char szOldTarget[MAX_NAME_LEN], szOldOp[8], szOldVer[MAX_VERSION_LEN];
+        if (parse_patch_value(p->szValue, szOldTarget, sizeof(szOldTarget),
+                              szOldOp, sizeof(szOldOp),
+                              szOldVer, sizeof(szOldVer)) != 0)
+            continue;
+
+        if (strcmp(szNewTarget, szOldTarget) != 0)
+            continue;
+        if (strcmp(szNewOp, szOldOp) != 0)
+            continue;
+
+        /* Same directive, same target, same operator -- keep strongest.
+           For >= : higher version wins (stronger requirement).
+           For < : higher version wins (less restrictive, subsumes lower).
+           For > : lower version wins (more restrictive upper bound). */
+        int nCmp = version_compare(szNewVer, szOldVer);
+
+        if (strcmp(szNewOp, ">=") == 0 || strcmp(szNewOp, "<") == 0)
+        {
+            if (nCmp > 0)
+            {
+                /* New is stronger/subsumes old -- replace */
+                snprintf(p->szValue, sizeof(p->szValue),
+                         "%s", pPatch->szValue);
+                snprintf(p->szEvidence, sizeof(p->szEvidence),
+                         "%s", pPatch->szEvidence);
+                p->nSource = pPatch->nSource;
+                free(pPatch);
+                return 0;
+            }
+            else
+            {
+                /* Old is stronger -- suppress new */
+                free(pPatch);
+                return 0;
+            }
+        }
+        else if (strcmp(szNewOp, ">") == 0)
+        {
+            if (nCmp < 0)
+            {
+                /* New is more restrictive -- replace */
+                snprintf(p->szValue, sizeof(p->szValue),
+                         "%s", pPatch->szValue);
+                snprintf(p->szEvidence, sizeof(p->szEvidence),
+                         "%s", pPatch->szEvidence);
+                p->nSource = pPatch->nSource;
+                free(pPatch);
+                return 0;
+            }
+            else
+            {
+                free(pPatch);
+                return 0;
+            }
+        }
     }
+
     pPatch->pNext = pSet->pAdditions;
     pSet->pAdditions = pPatch;
     pSet->dwAdditionCount++;
@@ -204,9 +302,9 @@ conflict_detect(DepGraph *pGraph, const DockerSdkApiMap *pSdkMap)
             pszTargetName = pGraph->pNodes[pEdge->dwToIdx].szName;
         }
 
-        char szMajorVer[MAX_VERSION_LEN];
-        extract_major_version(pEdge->szConstraintVer, szMajorVer,
-                              sizeof(szMajorVer));
+        const char *pszConstraintVer = pEdge->szConstraintVer;
+        if (!pszConstraintVer[0])
+            pszConstraintVer = "0.0";
 
         SpecPatchSet *pSet = find_or_create_patchset(
             pGraph, pFromNode->szSpecPath, pFromNode->szName);
@@ -226,7 +324,7 @@ conflict_detect(DepGraph *pGraph, const DockerSdkApiMap *pSdkMap)
         snprintf(pPatch->szDirective, sizeof(pPatch->szDirective),
                  "Requires");
         snprintf(pPatch->szValue, sizeof(pPatch->szValue),
-                 "%s >= %s", pszTargetName, szMajorVer);
+                 "%s >= %s", pszTargetName, pszConstraintVer);
         pPatch->nSource = pEdge->nSource;
         snprintf(pPatch->szEvidence, sizeof(pPatch->szEvidence),
                  "%s", pEdge->szEvidence);

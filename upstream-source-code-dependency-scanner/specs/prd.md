@@ -67,8 +67,8 @@ This project delivers an automated dependency scanner that:
 
 - [SC-1] Scanner detects all known docker-compose dependencies (docker, containerd, kubernetes, docker-buildx)
 - [SC-2] Docker API version extraction produces correct `docker-api = 1.52` virtual provide
-- [SC-3] Cross-version detection generates both `Conflicts: docker-engine < 28.3` and `Conflicts: docker-engine > 29`
-- [SC-4] No duplicate `Requires:` or `Conflicts:` entries in any patched spec
+- [SC-3] Cross-version detection generates consolidated `Conflicts: docker-engine < 29.2` (strongest lower-bound) and `Conflicts: docker-engine > 29` (upper-bound)
+- [SC-4] No duplicate or redundant `Requires:` or `Conflicts:` entries in any patched spec -- version-strength consolidation keeps only the strongest constraint per `(directive, target, operator)` triple
 - [SC-5] Tarball analysis finds go.mod in SOURCES_NEW packages without clones
 - [SC-6] Full 7-branch scan completes within CI timeout (120 minutes)
 - [SC-7] JSON manifest validates against `depfix-manifest-schema.json`
@@ -114,9 +114,9 @@ The scanner must extract Docker/containerd API version constants from source cod
 
 **Related**: FRD-api-constellation, ADR-0003
 
-### [REQ-6] Global Deduplication
+### [REQ-6] Global Deduplication and Version-Strength Consolidation
 
-All patch directives must be globally deduplicated by `(directive, value)` pair. When multiple source edges produce identical directives (e.g., docker/docker and docker/cli both yield `Requires: docker >= 28.0`), only one is emitted.
+All patch directives must be globally deduplicated. Beyond exact `(directive, value)` matching, the scanner performs version-strength consolidation: when multiple source edges produce `Requires: X >= A` and `Requires: X >= B`, only the stronger (higher version) survives. Similarly, `Conflicts: X < A` entries are consolidated to the highest lower-bound. Go sub-modules with independent version schemes (e.g., `moby/moby/client`, `moby/moby/api`, `containerd/containerd/api`) are excluded via SKIP entries in `gomod-package-map.csv` to prevent spurious low-version requirements.
 
 **Related**: FRD-deduplication
 

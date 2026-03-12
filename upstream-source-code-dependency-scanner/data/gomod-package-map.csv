@@ -5,10 +5,13 @@
 # Docker ecosystem
 github.com/docker/docker,docker
 github.com/moby/moby,docker
+github.com/moby/moby/client,SKIP
+github.com/moby/moby/api,SKIP
 github.com/docker/compose,docker-compose
 github.com/docker/cli,docker
 github.com/docker/buildx,docker-buildx
 github.com/containerd/containerd,containerd
+github.com/containerd/containerd/api,SKIP
 github.com/opencontainers/runc,runc
 github.com/opencontainers/image-spec,oci-image-spec
 github.com/opencontainers/runtime-spec,oci-runtime-spec

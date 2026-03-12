@@ -22,15 +22,19 @@ This rubric defines pass/fail criteria for the upstream dependency scanner pipel
 | S8 | Every `patched_specs[].additions[].source` is one of `go.mod`, `pyproject`, `api-constant`, `tarball`, `spec` | Enum validation |
 | S9 | `severity_summary.critical + severity_summary.important + severity_summary.informational` equals total additions count | Sum matches `∑ patched_specs[].additions.length` |
 | S10 | No duplicate `(type, value)` pairs within any single `patched_specs[].additions[]` array | Uniqueness check per spec |
+| S11a | No weaker `Requires: X >= A` when a stronger `Requires: X >= B` (B > A) exists for the same target | Version-strength consolidation |
+| S11b | No weaker `Conflicts: X < A` when a stronger `Conflicts: X < B` (B > A) exists for the same target | Lower-bound consolidation |
+| S11c | No `Requires:` entries from SKIP-mapped Go sub-modules (moby/moby/client, moby/moby/api, containerd/containerd/api) | SKIP mapping check |
 
 ### SHOULD (Log warning if violated)
 
 | # | Criterion | Notes |
 |---|-----------|-------|
-| S11 | `specs_patched` matches `patched_specs.length` | Consistency check |
-| S12 | `conflicts_detected[]` is present and populated for branches with Docker packages | Empty only if no Docker SDK edges |
-| S13 | Manifest file name follows `depfix-manifest-{branch}-{YYYYMMDD_HHMMSS}.json` | Timestamp format validation |
-| S14 | All spec paths in manifest are absolute paths | Start with `/` |
+| S12 | `specs_patched` matches `patched_specs.length` | Consistency check |
+| S13 | `conflicts_detected[]` is present and populated for branches with Docker packages | Empty only if no Docker SDK edges |
+| S14 | Manifest file name follows `depfix-manifest-{branch}-{YYYYMMDD_HHMMSS}.json` | Timestamp format validation |
+| S15 | All spec paths in manifest are absolute paths | Start with `/` |
+| S16 | k8s.io module versions follow v0.X.Y → 1.X convention | `kubernetes >= 1.32` not `kubernetes >= 0.0` |
 
 ---
 

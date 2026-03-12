@@ -23,46 +23,37 @@ Multiple analysis phases may independently discover the same dependency. For exa
 - Issue count accuracy: `conflict_detect()` return value counts only non-duplicate additions
 - `add_patch_to_set()` performs O(n) uniqueness check before insertion
 - Deduplication operates at the `(szDirective, szValue)` level within each `SpecPatchSet`
+- Version-strength consolidation: when multiple edges yield `Requires: X >= A` and `Requires: X >= B`, only the stronger (higher version) is kept
+- Conflicts consolidation: multiple `Conflicts: X < A` entries are reduced to the strongest (highest lower-bound); multiple `Conflicts: X > A` entries keep the most restrictive (lowest upper-bound)
 
 ---
 
 ## 2. Functional Requirements
 
-### 2.1 Duplicate Detection in add_patch_to_set()
+### 2.1 Duplicate Detection and Version-Strength Consolidation in add_patch_to_set()
 
-**Description**: The `add_patch_to_set()` function performs a uniqueness check before adding a new `SpecPatch` to a `SpecPatchSet`. Two patches are considered duplicates if they have the same directive type and target value.
+**Description**: The `add_patch_to_set()` function performs both exact-duplicate detection and version-strength consolidation. For the same `(directive, target, operator)` triple, only the strongest version is kept.
 
 **Comparison fields**:
 - `szDirective`: The RPM directive (e.g., `"Requires"`, `"Conflicts"`, `"Provides"`)
-- `szValue`: The full value string including version constraint (e.g., `"docker >= 28.0"`)
+- `szValue`: Parsed into `(target, operator, version)` for consolidation
 
-**Implementation**:
-```c
-static int add_patch_to_set(SpecPatchSet *pSet, SpecPatch *pPatch)
-{
-    for (SpecPatch *p = pSet->pAdditions; p; p = p->pNext)
-    {
-        if (strcmp(p->szDirective, pPatch->szDirective) == 0 &&
-            strcmp(p->szValue, pPatch->szValue) == 0)
-        {
-            /* Duplicate -- suppress */
-            free(pPatch);
-            return 0;
-        }
-    }
-    /* Unique -- insert */
-    pPatch->pNext = pSet->pAdditions;
-    pSet->pAdditions = pPatch;
-    pSet->dwAdditionCount++;
-    return 1;
-}
-```
+**Consolidation rules**:
+
+| Directive + Operator | Rule | Example |
+|---------------------|------|---------|
+| `Requires: X >= A` | Higher version wins | `docker >= 29.0` subsumes `docker >= 28.0` |
+| `Conflicts: X < A` | Higher version wins (subsumes lower) | `docker-engine < 29.2` subsumes `docker-engine < 28.3` |
+| `Conflicts: X > A` | Lower version wins (more restrictive) | `docker-engine > 28` preferred over `docker-engine > 29` |
+| Exact duplicate | Suppressed | `docker >= 28.0` + `docker >= 28.0` → one entry |
 
 **Acceptance Criteria**:
 - Returns `1` when a new unique patch is added (counted as an issue)
-- Returns `0` when a duplicate is suppressed (not counted as an issue)
+- Returns `0` when a duplicate or weaker version is suppressed (not counted)
+- When a stronger version replaces a weaker one, the existing patch is updated in-place (evidence and source updated, no new node added)
 - Freed memory of suppressed duplicate patch to prevent leaks
 - Comparison is case-sensitive (RPM directives and package names are case-sensitive)
+- Patches with unparseable values (no operator) fall through to exact-match dedup only
 
 ### 2.2 Issue Count Accuracy
 
@@ -118,12 +109,14 @@ static int add_patch_to_set(SpecPatchSet *pSet, SpecPatch *pPatch)
 
 ## 4. Edge Cases
 
-- **Same directive, different versions**: `Requires: docker >= 28.0` and `Requires: docker >= 28.5.1` are NOT duplicates (different `szValue`). Both are emitted.
-- **Same target, different directive types**: `Requires: docker` and `Conflicts: docker < 25.0` are NOT duplicates (different `szDirective`). Both are emitted.
-- **Version constraint normalization**: Version strings are compared as raw strings, not semantically. `>= 28.0` and `>= 28.0.0` are treated as different values.
+- **Same directive, different versions, same target and operator**: `Requires: docker >= 28.0` and `Requires: docker >= 29.0` are consolidated -- the stronger (`>= 29.0`) wins and the weaker is suppressed. The existing patch is updated in-place.
+- **Same target, different directive types**: `Requires: docker >= 29.0` and `Conflicts: docker-engine < 29.2` are NOT duplicates (different `szDirective`). Both are emitted.
+- **Same target, different operators**: `Conflicts: docker-engine < 29.2` and `Conflicts: docker-engine > 29` are NOT consolidated (different operators `<` vs `>`). Both are emitted as they express different constraint bounds.
+- **Version comparison**: Uses `version_compare()` (segmented RPM-style) for semantic ordering, not raw string comparison.
+- **Unparseable values**: Patches whose values cannot be decomposed into `(target, operator, version)` (e.g., bare package names) fall through to exact-match dedup only.
 - **Empty patch set**: A spec with zero unique additions gets no `SpecPatchSet` entry.
 - **All duplicates**: If every inferred edge for a spec produces a duplicate, `dwAdditionCount` stays at its previous value and no new issues are counted.
-- **Order dependence**: The first unique patch for a given `(directive, value)` is kept; subsequent duplicates are discarded. Evidence from the first source is preserved.
+- **Replacement evidence**: When a stronger version replaces a weaker one, the evidence and source are updated to reflect the stronger edge's provenance.
 
 ---
 

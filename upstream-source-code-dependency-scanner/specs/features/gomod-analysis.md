@@ -89,12 +89,23 @@ require (
 
 **Mapping rules**:
 1. Exact match: `github.com/docker/docker` → `docker`
-2. Prefix match: `github.com/docker/docker/client` → `docker` (longest prefix wins)
-3. No match: module is not a Photon package → skip (no edge created)
+2. Prefix match: `github.com/docker/docker/pkg/foo` → `docker` (longest prefix wins)
+3. SKIP entry: `github.com/moby/moby/client,SKIP` → edge is not created. Used for Go sub-modules with independent version schemes that do not correspond to the parent package version (e.g., `moby/moby/client v0.2.2` is NOT docker v0.2).
+4. No match: module is not a Photon package → skip (no edge created)
+
+**SKIP entries** (sub-modules with independent versioning):
+
+| Module Path | Reason |
+|-------------|--------|
+| `github.com/moby/moby/client` | Sub-module v0.2.2; version does not correspond to docker engine |
+| `github.com/moby/moby/api` | API definition sub-module v1.53.0; not a runtime package version |
+| `github.com/containerd/containerd/api` | API definition sub-module; independent version from containerd |
 
 **Acceptance Criteria**:
 - `gomod_map_lookup()` returns the correct Photon package for known Go module paths
-- Prefix matching handles sub-paths within the same repository
+- `gomod_map_lookup()` returns `"SKIP"` for explicitly excluded sub-modules
+- Edges are not created when the mapped package is `"SKIP"`
+- Prefix matching handles sub-paths; longest prefix wins, so `moby/moby/client` (SKIP) takes priority over `moby/moby` (docker)
 - Unknown modules (e.g., `golang.org/x/sys`) are silently skipped if not in the map
 - Map supports up to `MAX_MAP_ENTRIES` (1024) entries
 
@@ -107,11 +118,22 @@ require (
 - `nSource = EDGE_SRC_GOMOD`
 - `szTargetName` = Photon package name from mapping
 - `nConstraintOp = CONSTRAINT_GE`
-- `szConstraintVer` = module version from go.mod (sans `v` prefix)
+- `szConstraintVer` = major version constraint extracted by `gomod_extract_major_constraint()`
 - `szEvidence` = go.mod path and module path for traceability
 
+**Version constraint extraction** (`gomod_extract_major_constraint`):
+
+| Module version | Module path | Constraint | Rule |
+|---------------|-------------|------------|------|
+| `v28.5.1` | `github.com/docker/docker` | `28.0` | Standard: major.0 |
+| `v0.32.3` | `k8s.io/api` | `1.32` | k8s.io convention: v0.X.Y → Kubernetes 1.X |
+| `v0.29.1` | `github.com/docker/buildx` | `0.29` | v0.X.Y: preserve major.minor |
+| `v2.1.4` | `github.com/containerd/containerd/v2` | `2.0` | Standard: major.0 |
+
 **Acceptance Criteria**:
-- docker-compose's go.mod `require github.com/docker/docker v28.5.1` → edge: docker-compose → docker `>= 28.5.1` (source: gomod)
+- docker-compose's go.mod `require github.com/docker/docker v28.5.1` → edge: docker-compose → docker `>= 28.0` (source: gomod)
+- k8s.io modules use the Kubernetes versioning convention: `k8s.io/api v0.32.3` → `kubernetes >= 1.32`
+- v0.X.Y modules preserve `major.minor`: `docker/buildx v0.29.1` → `docker-buildx >= 0.29`
 - Edges reference the correct source node index (`dwFromIdx` matches the owning package)
 - Target resolution (`dwToIdx`) is attempted; set to `UINT32_MAX` if target package not in graph
 
