@@ -20,12 +20,42 @@ on:
     # Weekly incremental import on Monday at 04:00 UTC
     - cron: '0 4 * * 1'
 
+env:
+  ARTIFACT_NAME: photon-commits-db
+  # GitHub Free plan artifact storage limit (bytes)
+  STORAGE_LIMIT_BYTES: 524288000
+
 jobs:
   import-commits:
     runs-on: self-hosted
     timeout-minutes: 360
 
     steps:
+      - name: Check artifact storage quota
+        id: quota
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Sum all current artifact sizes in this repo
+          USED=$(gh api /repos/${{ github.repository }}/actions/artifacts \
+            --jq '[.artifacts[].size_in_bytes] | add // 0' 2>/dev/null || echo 0)
+          LIMIT=${{ env.STORAGE_LIMIT_BYTES }}
+          AVAIL=$((LIMIT - USED))
+          echo "Artifact storage: used=$(numfmt --to=iec $USED), available=$(numfmt --to=iec $AVAIL), limit=$(numfmt --to=iec $LIMIT)"
+          echo "used=$USED" >> "$GITHUB_OUTPUT"
+          echo "available=$AVAIL" >> "$GITHUB_OUTPUT"
+
+          # Check if this is the first run (no photon-commits-db artifact exists)
+          EXISTING=$(gh api /repos/${{ github.repository }}/actions/artifacts \
+            --jq '[.artifacts[] | select(.name == "photon-commits-db")] | length' 2>/dev/null || echo 0)
+          if [ "$EXISTING" -eq 0 ]; then
+            echo "first_run=true" >> "$GITHUB_OUTPUT"
+            echo "First run detected -- will seed and upload initial database"
+          else
+            echo "first_run=false" >> "$GITHUB_OUTPUT"
+            echo "Existing photon-commits-db artifact(s) found: $EXISTING"
+          fi
+
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
@@ -58,21 +88,92 @@ jobs:
             echo "seeded=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Upload seed database as initial artifact
-        if: steps.seed.outputs.seeded == 'true'
+      # First run: compress and upload the seed DB, then stop
+      - name: Compress seed database (first run)
+        if: steps.quota.outputs.first_run == 'true' && steps.seed.outputs.seeded == 'true'
+        id: compress_seed
+        run: |
+          echo "Compressing seed database with gzip -9..."
+          tar -cf - photon_commits.db | gzip -9 > photon_commits.db.tar.gz
+          SIZE=$(stat -c%s photon_commits.db.tar.gz)
+          AVAIL=${{ steps.quota.outputs.available }}
+          echo "Compressed size: $(numfmt --to=iec $SIZE)"
+          echo "Available quota: $(numfmt --to=iec $AVAIL)"
+          echo "compressed_size=$SIZE" >> "$GITHUB_OUTPUT"
+          if [ "$SIZE" -gt "$AVAIL" ]; then
+            echo "::error::Compressed DB ($SIZE bytes) exceeds available storage ($AVAIL bytes)"
+            exit 1
+          fi
+
+      - name: Upload seed database (first run)
+        if: steps.quota.outputs.first_run == 'true' && steps.seed.outputs.seeded == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: photon-commits-db-seed
-          path: photon_commits.db
+          name: ${{ env.ARTIFACT_NAME }}
+          path: photon_commits.db.tar.gz
           retention-days: 90
 
+      - name: Generate seed summary (first run)
+        if: steps.quota.outputs.first_run == 'true' && steps.seed.outputs.seeded == 'true'
+        run: |
+          python3 repo/docsystem/.factory/skills/photon-import/importer.py \
+            --db-path photon_commits.db \
+            --check | tee db-status.json
+
+          python3 << 'SUMMARY_EOF'
+          import json, os
+
+          status = {}
+          if os.path.exists('db-status.json'):
+              status = json.load(open('db-status.json'))
+
+          branches = status.get('branches', {})
+          summary_path = os.environ.get('GITHUB_STEP_SUMMARY', '/dev/null')
+          with open(summary_path, 'a') as s:
+              s.write("# Photon Commits Database (Initial Seed Upload)\n\n")
+              total = sum(b.get('commits', 0) for b in branches.values())
+              s.write(f"**Total commits**: {total:,}  \n")
+              compressed = os.path.getsize('photon_commits.db.tar.gz') if os.path.exists('photon_commits.db.tar.gz') else 0
+              raw = os.path.getsize('photon_commits.db') if os.path.exists('photon_commits.db') else 0
+              s.write(f"**Raw size**: {raw/1024/1024:.0f} MB  \n")
+              s.write(f"**Compressed size**: {compressed/1024/1024:.0f} MB  \n\n")
+              if branches:
+                  s.write("## Branch Status\n\n")
+                  s.write("| Branch | Commits | Latest Commit |\n")
+                  s.write("|--------|---------|---------------|\n")
+                  for name in sorted(branches):
+                      info = branches[name]
+                      latest = (info.get('latest') or 'N/A')[:19]
+                      s.write(f"| {name} | {info.get('commits', 0):,} | {latest} |\n")
+              s.write("\n---\n*Seed database uploaded as `photon-commits-db` artifact (tar.gz).*\n")
+          SUMMARY_EOF
+
+      # First run ends here -- skip import
       - name: Check database status (pre-import)
+        if: steps.quota.outputs.first_run == 'false'
         run: |
           python3 repo/docsystem/.factory/skills/photon-import/importer.py \
             --db-path photon_commits.db \
             --check
 
+      - name: Estimate upload size and check quota
+        if: steps.quota.outputs.first_run == 'false'
+        id: precheck
+        run: |
+          # Estimate: compressed DB will be ~22% of raw size (measured ratio)
+          RAW=$(stat -c%s photon_commits.db 2>/dev/null || echo 0)
+          ESTIMATED_COMPRESSED=$((RAW * 22 / 100))
+          AVAIL=${{ steps.quota.outputs.available }}
+          echo "Estimated compressed upload: $(numfmt --to=iec $ESTIMATED_COMPRESSED)"
+          echo "Available quota: $(numfmt --to=iec $AVAIL)"
+          if [ "$ESTIMATED_COMPRESSED" -gt "$AVAIL" ]; then
+            echo "::error::Estimated upload ($ESTIMATED_COMPRESSED bytes) exceeds available storage ($AVAIL bytes). Clean up old artifacts first."
+            exit 1
+          fi
+          echo "Quota check passed"
+
       - name: Import commits
+        if: steps.quota.outputs.first_run == 'false'
         run: |
           BRANCHES="${{ github.event.inputs.branches || '3.0 4.0 5.0 6.0 common master' }}"
           SINCE="${{ github.event.inputs.since_date }}"
@@ -85,14 +186,28 @@ jobs:
           python3 repo/docsystem/.factory/skills/photon-import/importer.py $ARGS
 
       - name: Check database status (post-import)
+        if: steps.quota.outputs.first_run == 'false'
         id: post
         run: |
           python3 repo/docsystem/.factory/skills/photon-import/importer.py \
             --db-path photon_commits.db \
             --check | tee db-status.json
 
+      - name: Compress database
+        if: steps.quota.outputs.first_run == 'false'
+        run: |
+          echo "Compressing database with gzip -9..."
+          tar -cf - photon_commits.db | gzip -9 > photon_commits.db.tar.gz
+          SIZE=$(stat -c%s photon_commits.db.tar.gz)
+          AVAIL=${{ steps.quota.outputs.available }}
+          echo "Compressed size: $(numfmt --to=iec $SIZE)"
+          if [ "$SIZE" -gt "$AVAIL" ]; then
+            echo "::error::Compressed DB ($SIZE bytes) exceeds available storage ($AVAIL bytes)"
+            exit 1
+          fi
+
       - name: Generate summary
-        if: always()
+        if: always() && steps.quota.outputs.first_run == 'false'
         run: |
           python3 << 'SUMMARY_EOF'
           import json, os
@@ -102,16 +217,15 @@ jobs:
               status = json.load(open('db-status.json'))
 
           branches = status.get('branches', {})
-          summaries = status.get('summaries', {})
-
           summary_path = os.environ.get('GITHUB_STEP_SUMMARY', '/dev/null')
           with open(summary_path, 'a') as s:
               s.write("# Photon Commits Database\n\n")
-
               total = sum(b.get('commits', 0) for b in branches.values())
               s.write(f"**Total commits**: {total:,}  \n")
-              s.write(f"**DB path**: `photon_commits.db`\n\n")
-
+              compressed = os.path.getsize('photon_commits.db.tar.gz') if os.path.exists('photon_commits.db.tar.gz') else 0
+              raw = os.path.getsize('photon_commits.db') if os.path.exists('photon_commits.db') else 0
+              s.write(f"**Raw size**: {raw/1024/1024:.0f} MB  \n")
+              s.write(f"**Compressed size**: {compressed/1024/1024:.0f} MB  \n\n")
               if branches:
                   s.write("## Branch Status\n\n")
                   s.write("| Branch | Commits | Latest Commit |\n")
@@ -121,15 +235,14 @@ jobs:
                       latest = (info.get('latest') or 'N/A')[:19]
                       s.write(f"| {name} | {info.get('commits', 0):,} | {latest} |\n")
                   s.write("\n")
-
-              s.write("---\n*Database available in the `photon-commits-db` artifact.*\n")
+              s.write("---\n*Database available in the `photon-commits-db` artifact (tar.gz).*\n")
           SUMMARY_EOF
 
       - name: Upload photon_commits.db
-        if: always()
+        if: steps.quota.outputs.first_run == 'false'
         uses: actions/upload-artifact@v7
         with:
-          name: photon-commits-db
-          path: photon_commits.db
+          name: ${{ env.ARTIFACT_NAME }}
+          path: photon_commits.db.tar.gz
           retention-days: 90
           if-no-files-found: warn
