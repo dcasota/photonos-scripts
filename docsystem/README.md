@@ -32,10 +32,34 @@ find . -type f -name "*.sh" -exec sudo chmod +x {} \;
 ./Droid-configurator.sh
 ```
 
+## Blog Post Generation Pipeline
+
+The docsystem includes an end-to-end pipeline for generating monthly
+Photon OS changelog blog posts from git history:
+
+1. **Import commits** -- `photon-import` skill clones vmware/photon and
+   populates `photon_commits.db`
+2. **Generate summaries** -- `photon-summarize` skill uses xAI/Grok to
+   produce Hugo-compatible blog posts in `content/blog/`
+3. **Batch backfill** -- `generate_all_missing.sh` runs the summarizer
+   across all branches and date ranges with resumability
+
+```bash
+# Quick start: generate all missing blog posts
+cd $HOME/photonos-scripts/docsystem
+export XAI_API_KEY="your-key"
+python3 .factory/skills/photon-import/importer.py --db-path photon_commits.db --repo-dir photon
+./generate_all_missing.sh
+```
+
+See `.factory/commands/generate-missing-blogs.md` for full batch usage,
+or invoke the AI-driven alternative via `droid /generate-missing-blogs`.
+
 ## Directory Structure
 
 ```
 docsystem/
+├── generate_all_missing.sh          # Batch blog post generation (all branches)
 ├── tools/                           # Documentation tools and utilities
 │   ├── Ollama-installer/           # LLM server installation
 │   ├── CodingAI-installers/        # AI coding assistants

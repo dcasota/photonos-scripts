@@ -126,6 +126,23 @@ defined in `db_schema.py` (shared with `importer.py`). Fields:
 `branch`, `year`, `month`, `commit_count`, `model`, `file_path`,
 `changelog_md` (full Hugo markdown), `generated_at`.
 
+## Batch Generation (All Missing Posts)
+
+For a one-shot backfill of all missing blog posts across every branch,
+use the `generate_all_missing.sh` convenience script at the docsystem
+root:
+
+```bash
+cd $HOME/photonos-scripts/docsystem
+export XAI_API_KEY="your-key"
+./generate_all_missing.sh
+```
+
+The script invokes this summarizer skill for each branch with predefined
+date ranges (2021 to present), tracks completed batches for resumability,
+and continues on per-batch failure. See
+`.factory/commands/generate-missing-blogs.md` for full details.
+
 ## Blog Post Structure
 
 Each generated post uses Keep a Changelog categories:
