@@ -67,6 +67,12 @@ jobs:
           python3 -m pip install --quiet tqdm 2>/dev/null || \
             python3 -m pip install --quiet --user tqdm
 
+      - name: Clean stale working directory
+        run: |
+          # Remove leftover DB from previous runs to avoid stale data
+          rm -f photon_commits.db photon_commits.db.tar.gz
+          echo "Working directory cleaned"
+
       - name: Seed database from local copy
         id: seed
         run: |
@@ -75,7 +81,7 @@ jobs:
             LOCAL_DB="$HOME/photonos-scripts/docsystem/photon_commits.db"
           fi
           SEED="${{ github.event.inputs.seed_from_local }}"
-          if [ "$SEED" != "false" ] && [ -f "$LOCAL_DB" ] && [ ! -f photon_commits.db ]; then
+          if [ "$SEED" != "false" ] && [ -f "$LOCAL_DB" ]; then
             echo "Seeding from $LOCAL_DB ($(du -h "$LOCAL_DB" | cut -f1))..."
             cp "$LOCAL_DB" photon_commits.db
             echo "seeded=true" >> "$GITHUB_OUTPUT"
@@ -83,7 +89,7 @@ jobs:
             if [ "$SEED" != "false" ] && [ ! -f "$LOCAL_DB" ]; then
               echo "Seed DB not found at $LOCAL_DB -- starting fresh"
             else
-              echo "Starting with empty database"
+              echo "Seeding disabled -- starting with empty database"
             fi
             echo "seeded=false" >> "$GITHUB_OUTPUT"
           fi
