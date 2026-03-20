@@ -1,5 +1,18 @@
 # Photon OS Documentation System (docsystem)
 
+> Following the [SDD-book-tracking-app](https://github.com/sitoader/SDD-book-tracking-app) pattern for Spec-Driven Development.
+
+## Spec-Driven Development (SDD)
+
+This project uses the SDD pattern with formal specifications:
+
+- **[specs/prd.md](specs/prd.md)** -- Product Requirements Document (10 requirements)
+- **[specs/features/](specs/features/)** -- 6 Feature Requirement Documents
+- **[specs/adr/](specs/adr/)** -- 4 Architecture Decision Records
+- **[specs/tasks/](specs/tasks/)** -- 8 implementation tasks in 3 phases
+- **[.github/agents/](/.github/agents/)** -- 5 agent definitions (orchestrator, analyst, generator, checker, tracker)
+- **[.github/prompts/](/.github/prompts/)** -- 4 reusable prompt templates
+
 ## Overview
 
 The docsystem directory contains comprehensive tools and automation for managing, improving, and publishing Photon OS documentation. It includes installers for documentation platforms, quality assessment tools, migration utilities, and a complete multi-team AI-powered documentation swarm system.
