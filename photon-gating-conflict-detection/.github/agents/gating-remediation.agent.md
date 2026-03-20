@@ -62,6 +62,27 @@ You are the **Gating Remediation Agent**. You receive conflict findings from the
 
 **Tertiary**: Clear `package-repo-snapshot-file-url` to `""` (affects all branches sharing common/).
 
+## Spec-Level Remediation (fix-gating-conflict.sh)
+
+When the primary `photon-mainline` bypass is not acceptable, use the
+`fix-gating-conflict.sh` script in `.github/scripts/` to directly swap
+`build_if` guards in the spec files. This activates the new split spec
+at the current subrelease without changing build-config.json.
+
+```bash
+# Preview changes (dry run)
+.github/scripts/fix-gating-conflict.sh -p libcap -b /path/to/5.0 --dry-run
+
+# Apply fix and rebuild the package
+.github/scripts/fix-gating-conflict.sh -p libcap -b /path/to/5.0 --build
+
+# Revert all changes
+.github/scripts/fix-gating-conflict.sh -p libcap -b /path/to/5.0 --revert
+```
+
+The script supports `--package`, `--build-root`, `--subrelease`, `--dry-run`,
+`--build`, and `--revert` options. See `--help` for full usage.
+
 ## Execution Protocol
 
 1. **Receive findings** from `gating-detector` (as `findings.json`)

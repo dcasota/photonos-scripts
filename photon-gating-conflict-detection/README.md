@@ -91,12 +91,25 @@ specs/
 │   ├── modernize-gating.prompt.md           # Deep phased assessment (assess/strategy/execute)
 │   ├── traceability.prompt.md               # Full blast-radius traceability matrix
 │   └── generate-agents.prompt.md            # Agent ecosystem bootstrap/validation
-├── scripts/                                 # Python implementation
-│   └── .gitkeep                             # Placeholder for photon-gating-agent.py
+├── scripts/                                 # Implementation scripts
+│   ├── photon-gating-agent.py               # Python detection engine
+│   └── fix-gating-conflict.sh               # Spec-level remediation (swap build_if guards)
 ├── workflows/
 │   └── gating-conflict-detection.yml        # GitHub Actions CI pipeline
 ├── gating-findings-schema.json              # JSON Schema for machine-readable findings
 └── quality-rubric.md                        # Pass/fail criteria for all agent outputs
+```
+
+### Spec-Level Remediation Script
+
+When the `photon-mainline` bypass strategy is not suitable, `fix-gating-conflict.sh` provides direct spec-level remediation. It swaps the `build_if` guards between old and new spec files so the new split package becomes active at the current subrelease, then optionally rebuilds the package and updates the local RPM repo metadata. Supports `--dry-run`, `--revert`, configurable `--package` and `--build-root`.
+
+```bash
+# Preview what would change
+.github/scripts/fix-gating-conflict.sh -p libcap -b ~/5.0 --dry-run
+
+# Apply fix and rebuild
+.github/scripts/fix-gating-conflict.sh -p libcap -b ~/5.0 --build
 ```
 
 ### Key Design Decisions

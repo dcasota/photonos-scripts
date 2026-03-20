@@ -57,9 +57,21 @@ Produce `remediation-plan.json` listing all edits:
 - In `--interactive` mode: display the plan as a markdown diff and wait for approval
 - In `--apply` mode: proceed directly to execution
 
-### 6. Execute via build-config-fixer
+### 6. Execute remediation
 
-Delegate to `build-config-fixer` agent with the approved `remediation-plan.json`.
+**For build-config edits** (primary strategy): delegate to `build-config-fixer`
+agent with the approved `remediation-plan.json`.
+
+**For spec-level fixes** (secondary strategy, when snapshot bypass is not
+acceptable): run `fix-gating-conflict.sh` for each affected package:
+
+```bash
+.github/scripts/fix-gating-conflict.sh \
+  -p <package> -b <build-root> --build
+```
+
+The script swaps `build_if` guards, optionally rebuilds the package, and
+supports `--dry-run` for preview and `--revert` for rollback.
 
 ### 7. Verify
 
