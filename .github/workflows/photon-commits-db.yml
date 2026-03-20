@@ -9,8 +9,11 @@ on:
       since_date:
         description: 'Only import commits after this date (ISO or git date format, empty = all history)'
         default: ''
+      seed_db_path:
+        description: 'Path to local seed database (default: $HOME/photonos-scripts/docsystem/photon_commits.db)'
+        default: ''
       seed_from_local:
-        description: 'Seed DB from existing local docsystem/photon_commits.db if present'
+        description: 'Seed DB from existing local database if present'
         type: boolean
         default: true
   schedule:
@@ -37,14 +40,21 @@ jobs:
       - name: Seed database from local copy
         id: seed
         run: |
-          LOCAL_DB="$HOME/photonos-scripts/docsystem/photon_commits.db"
+          LOCAL_DB="${{ github.event.inputs.seed_db_path }}"
+          if [ -z "$LOCAL_DB" ]; then
+            LOCAL_DB="$HOME/photonos-scripts/docsystem/photon_commits.db"
+          fi
           SEED="${{ github.event.inputs.seed_from_local }}"
           if [ "$SEED" != "false" ] && [ -f "$LOCAL_DB" ] && [ ! -f photon_commits.db ]; then
-            echo "Seeding from existing local database ($(du -h "$LOCAL_DB" | cut -f1))..."
+            echo "Seeding from $LOCAL_DB ($(du -h "$LOCAL_DB" | cut -f1))..."
             cp "$LOCAL_DB" photon_commits.db
             echo "seeded=true" >> "$GITHUB_OUTPUT"
           else
-            echo "Starting with empty database"
+            if [ "$SEED" != "false" ] && [ ! -f "$LOCAL_DB" ]; then
+              echo "Seed DB not found at $LOCAL_DB -- starting fresh"
+            else
+              echo "Starting with empty database"
+            fi
             echo "seeded=false" >> "$GITHUB_OUTPUT"
           fi
 
