@@ -17,3 +17,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - Task 007: docx_writer.h/c — .docx ZIP creation with OOXML document assembly
 - Task 008: main.c — CLI entry point with --db, --import, --report arguments
 - Task 009: Unit tests and integration test
+- README.md — usage guide, build instructions, security overview
+- ARCHITECTURE.md — component diagram, data model, query details, .docx generation
+- database-report.yml — self-hosted GitHub Actions workflow (build, test, import, report, upload)

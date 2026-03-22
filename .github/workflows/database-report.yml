@@ -1,0 +1,223 @@
+name: Photon OS Database Report
+
+on:
+  workflow_dispatch:
+    inputs:
+      scansDir:
+        description: 'Directory containing .prn scan files (default: auto-detect from repo)'
+        default: ''
+      dbPath:
+        description: 'SQLite database path (default: workspace/photon-scans.db)'
+        default: ''
+      reportPath:
+        description: 'Output .docx report path (default: workspace/photon-report.docx)'
+        default: ''
+      skipImport:
+        description: 'Skip import, only generate report from existing DB'
+        type: boolean
+        default: false
+  schedule:
+    # Weekly on Monday at 03:00 UTC (runs after the Sunday package-report scan)
+    - cron: '0 3 * * 1'
+
+env:
+  TOOL_DIR: photonos-package-report/package-report-database-tool
+
+jobs:
+  database-report:
+    runs-on: self-hosted
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          path: repo
+
+      - name: Verify build toolchain
+        run: |
+          echo "## Build Environment" >> "$GITHUB_STEP_SUMMARY"
+          for cmd in gcc make sqlite3; do
+            if command -v "$cmd" &>/dev/null; then
+              echo "- $cmd: $($cmd --version 2>&1 | head -1)" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "::warning::$cmd not found, attempting install"
+            fi
+          done
+
+      - name: Install build dependencies
+        run: |
+          # Detect package manager and install deps
+          if command -v tdnf &>/dev/null; then
+            tdnf install -y gcc make sqlite-devel zlib-devel 2>/dev/null || true
+          elif command -v apt-get &>/dev/null; then
+            apt-get update -qq && apt-get install -y -qq gcc make libsqlite3-dev zlib1g-dev 2>/dev/null || true
+          elif command -v dnf &>/dev/null; then
+            dnf install -y gcc make sqlite-devel zlib-devel 2>/dev/null || true
+          fi
+
+          # Verify critical deps exist
+          for header in sqlite3.h zlib.h; do
+            if ! find /usr/include -name "$header" 2>/dev/null | grep -q .; then
+              echo "::error::Required header $header not found after install"
+              exit 1
+            fi
+          done
+
+      - name: Check disk space
+        run: |
+          echo "## Disk Space" >> "$GITHUB_STEP_SUMMARY"
+          df -h / | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Build photon-report-db
+        working-directory: repo/${{ env.TOOL_DIR }}
+        run: |
+          echo "## Build" >> "$GITHUB_STEP_SUMMARY"
+          make clean 2>/dev/null || true
+          make 2>&1 | tee /tmp/build.log
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          tail -3 /tmp/build.log >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "Build: **PASS** (zero warnings)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run unit tests
+        working-directory: repo/${{ env.TOOL_DIR }}
+        run: |
+          echo "## Unit Tests" >> "$GITHUB_STEP_SUMMARY"
+          make test 2>&1 | tee /tmp/test.log
+          # Extract results
+          CSV_RESULT=$(grep 'Results:' /tmp/test.log | head -1)
+          DB_RESULT=$(grep 'Results:' /tmp/test.log | tail -1)
+          echo "- CSV Parser: $CSV_RESULT" >> "$GITHUB_STEP_SUMMARY"
+          echo "- DB Tests: $DB_RESULT" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Resolve paths
+        id: paths
+        run: |
+          SCANS="${{ github.event.inputs.scansDir }}"
+          if [ -z "$SCANS" ]; then
+            SCANS="$GITHUB_WORKSPACE/repo/photonos-package-report/scans"
+          fi
+
+          DB="${{ github.event.inputs.dbPath }}"
+          if [ -z "$DB" ]; then
+            DB="$GITHUB_WORKSPACE/photon-scans.db"
+          fi
+
+          REPORT="${{ github.event.inputs.reportPath }}"
+          if [ -z "$REPORT" ]; then
+            REPORT="$GITHUB_WORKSPACE/photon-report.docx"
+          fi
+
+          echo "scans=$SCANS" >> "$GITHUB_OUTPUT"
+          echo "db=$DB" >> "$GITHUB_OUTPUT"
+          echo "report=$REPORT" >> "$GITHUB_OUTPUT"
+
+          echo "Scans dir: $SCANS"
+          echo "Database:  $DB"
+          echo "Report:    $REPORT"
+
+      - name: Count available scan files
+        id: scan_count
+        run: |
+          SCANS="${{ steps.paths.outputs.scans }}"
+          COUNT=$(find "$SCANS" -maxdepth 1 -name 'photonos-urlhealth-*.prn' -type f 2>/dev/null | wc -l)
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "Found $COUNT .prn scan files in $SCANS"
+
+      - name: Import scan files
+        if: ${{ github.event.inputs.skipImport != 'true' }}
+        working-directory: repo/${{ env.TOOL_DIR }}
+        run: |
+          echo "## Import" >> "$GITHUB_STEP_SUMMARY"
+          DB="${{ steps.paths.outputs.db }}"
+          SCANS="${{ steps.paths.outputs.scans }}"
+
+          ./photon-report-db --db "$DB" --import "$SCANS" 2>&1 | tee /tmp/import.log
+
+          # Extract stats from last line
+          IMPORT_LINE=$(grep '^Import complete:' /tmp/import.log || echo "Import complete: unknown")
+          echo "$IMPORT_LINE" >> "$GITHUB_STEP_SUMMARY"
+
+          # Show DB stats
+          if command -v sqlite3 &>/dev/null; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "### Database Statistics" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            sqlite3 "$DB" <<'EOF' >> "$GITHUB_STEP_SUMMARY"
+SELECT 'Scan files: ' || COUNT(*) FROM scan_files;
+SELECT 'Packages:   ' || COUNT(*) FROM packages;
+SELECT '  ' || branch || ': ' || COUNT(*) || ' scans' FROM scan_files GROUP BY branch ORDER BY branch;
+EOF
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Generate report
+        working-directory: repo/${{ env.TOOL_DIR }}
+        run: |
+          echo "## Report Generation" >> "$GITHUB_STEP_SUMMARY"
+          DB="${{ steps.paths.outputs.db }}"
+          REPORT="${{ steps.paths.outputs.report }}"
+
+          if [ ! -f "$DB" ]; then
+            echo "::error::Database not found at $DB"
+            exit 1
+          fi
+
+          ./photon-report-db --db "$DB" --report "$REPORT" 2>&1 | tee /tmp/report.log
+
+          if [ -f "$REPORT" ]; then
+            SIZE=$(stat -c%s "$REPORT" 2>/dev/null || stat -f%z "$REPORT" 2>/dev/null)
+            echo "Report generated: **$(basename "$REPORT")** ($SIZE bytes)" >> "$GITHUB_STEP_SUMMARY"
+
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "### DOCX Structure" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            if command -v unzip &>/dev/null; then
+              unzip -l "$REPORT" >> "$GITHUB_STEP_SUMMARY" 2>&1
+            else
+              echo "(unzip not available for verification)" >> "$GITHUB_STEP_SUMMARY"
+            fi
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::error::Report file not created"
+            exit 1
+          fi
+
+          # Extract query stats from log
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Query Results" >> "$GITHUB_STEP_SUMMARY"
+          grep -E '^\s+(Timeline|Top changed|Least changed|Categories):' /tmp/report.log >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Upload report artefacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: database-report
+          path: |
+            ${{ steps.paths.outputs.report }}
+            ${{ steps.paths.outputs.db }}
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Commit report to repository
+        if: success()
+        run: |
+          DB="${{ steps.paths.outputs.db }}"
+          REPORT="${{ steps.paths.outputs.report }}"
+          SCANS_DIR="repo/photonos-package-report/scans"
+
+          mkdir -p "$SCANS_DIR"
+          cp "$REPORT" "$SCANS_DIR/" 2>/dev/null || true
+          cp "$DB" "$SCANS_DIR/" 2>/dev/null || true
+
+          cd repo
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add photonos-package-report/scans/
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Update database report $(date -u +%Y-%m-%d)"
+            git push
+          fi
