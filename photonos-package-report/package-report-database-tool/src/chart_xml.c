@@ -228,3 +228,125 @@ char *chart_xml_pie(const category_data_t *data)
     strbuf_free(&sb);
     return result;
 }
+
+static double drift_get_pct(const category_drift_data_t *data,
+                            const char *branch, const char *dt, const char *cat)
+{
+    for (int i = 0; i < data->count; i++) {
+        if (strcmp(data->points[i].branch, branch) == 0 &&
+            strcmp(data->points[i].scan_datetime, dt) == 0 &&
+            strcmp(data->points[i].category, cat) == 0)
+            return data->points[i].percentage;
+    }
+    return 0.0;
+}
+
+static int drift_collect_datetimes(const category_drift_data_t *data,
+                                   char out[][16], int max)
+{
+    int n = 0;
+    for (int i = 0; i < data->count; i++) {
+        int found = 0;
+        for (int j = 0; j < n; j++) {
+            if (strcmp(out[j], data->points[i].scan_datetime) == 0) { found = 1; break; }
+        }
+        if (!found && n < max) {
+            secure_strncpy(out[n], data->points[i].scan_datetime, 16);
+            n++;
+        }
+    }
+    return n;
+}
+
+char *chart_xml_bar3d_drift(const category_drift_data_t *data)
+{
+    if (!data || data->count == 0)
+        return NULL;
+
+    char datetimes[512][16];
+    int ndt = drift_collect_datetimes(data, datetimes, 512);
+
+    strbuf_t sb;
+    strbuf_init(&sb);
+
+    strbuf_append(&sb,
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n"
+        "<c:chartSpace xmlns:c=\"http://schemas.openxmlformats.org/drawingml/2006/chart\" "
+        "xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" "
+        "xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">\r\n"
+        "<c:chart>"
+        "<c:view3D><c:rotX val=\"15\"/><c:rotY val=\"20\"/><c:rAngAx val=\"0\"/>"
+        "<c:perspective val=\"30\"/></c:view3D>\r\n"
+        "<c:plotArea><c:layout/>\r\n"
+        "<c:bar3DChart><c:barDir val=\"col\"/><c:grouping val=\"stacked\"/>"
+        "<c:varyColors val=\"0\"/>\r\n");
+
+    int total_x = data->nbranches * ndt;
+
+    for (int c = 0; c < data->ncategories; c++) {
+        int ci = c % 7;
+        char *esc_cat = secure_xml_escape(data->categories[c]);
+        strbuf_printf(&sb, "<c:ser><c:idx val=\"%d\"/><c:order val=\"%d\"/>\r\n", c, c);
+        strbuf_printf(&sb, "<c:tx><c:strRef><c:strCache><c:ptCount val=\"1\"/>"
+            "<c:pt idx=\"0\"><c:v>%s</c:v></c:pt></c:strCache></c:strRef></c:tx>\r\n",
+            esc_cat ? esc_cat : data->categories[c]);
+        free(esc_cat);
+
+        strbuf_printf(&sb,
+            "<c:spPr><a:solidFill><a:srgbClr val=\"%s\"/></a:solidFill></c:spPr>\r\n",
+            series_colors[ci]);
+
+        strbuf_printf(&sb, "<c:cat><c:strRef><c:strCache><c:ptCount val=\"%d\"/>\r\n", total_x);
+        int xi = 0;
+        for (int b = 0; b < data->nbranches; b++) {
+            for (int d = 0; d < ndt; d++) {
+                char label[64];
+                snprintf(label, sizeof(label), "%.15s|%.15s", data->branches[b], datetimes[d]);
+                char *esc = secure_xml_escape(label);
+                strbuf_printf(&sb, "<c:pt idx=\"%d\"><c:v>%s</c:v></c:pt>\r\n",
+                    xi, esc ? esc : label);
+                free(esc);
+                xi++;
+            }
+        }
+        strbuf_append(&sb, "</c:strCache></c:strRef></c:cat>\r\n");
+
+        strbuf_printf(&sb, "<c:val><c:numRef><c:numCache><c:formatCode>0.0</c:formatCode>"
+            "<c:ptCount val=\"%d\"/>\r\n", total_x);
+        xi = 0;
+        for (int b = 0; b < data->nbranches; b++) {
+            for (int d = 0; d < ndt; d++) {
+                double pct = drift_get_pct(data, data->branches[b], datetimes[d],
+                                           data->categories[c]);
+                strbuf_printf(&sb, "<c:pt idx=\"%d\"><c:v>%.1f</c:v></c:pt>\r\n", xi, pct);
+                xi++;
+            }
+        }
+        strbuf_append(&sb, "</c:numCache></c:numRef></c:val>\r\n");
+        strbuf_append(&sb, "</c:ser>\r\n");
+    }
+
+    strbuf_append(&sb,
+        "<c:axId val=\"1\"/><c:axId val=\"2\"/><c:axId val=\"3\"/>\r\n"
+        "</c:bar3DChart>\r\n"
+        "<c:catAx><c:axId val=\"1\"/><c:scaling><c:orientation val=\"minMax\"/></c:scaling>"
+        "<c:delete val=\"0\"/><c:axPos val=\"b\"/><c:crossAx val=\"2\"/>"
+        "<c:txPr><a:bodyPr rot=\"-5400000\" vert=\"horz\"/><a:lstStyle/>"
+        "<a:p><a:pPr><a:defRPr sz=\"600\"/></a:pPr><a:endParaRPr lang=\"en-US\"/></a:p></c:txPr>"
+        "</c:catAx>\r\n"
+        "<c:valAx><c:axId val=\"2\"/><c:scaling><c:orientation val=\"minMax\"/></c:scaling>"
+        "<c:delete val=\"0\"/><c:axPos val=\"l\"/><c:crossAx val=\"1\"/>"
+        "<c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/>"
+        "<a:p><a:r><a:t>%</a:t></a:r></a:p></c:rich></c:tx></c:title>"
+        "</c:valAx>\r\n"
+        "<c:serAx><c:axId val=\"3\"/><c:scaling><c:orientation val=\"minMax\"/></c:scaling>"
+        "<c:delete val=\"0\"/><c:axPos val=\"b\"/><c:crossAx val=\"2\"/></c:serAx>\r\n"
+        "</c:plotArea>\r\n"
+        "<c:legend><c:legendPos val=\"b\"/><c:overlay val=\"0\"/></c:legend>\r\n"
+        "<c:plotVisOnly val=\"1\"/></c:chart></c:chartSpace>\r\n");
+
+    char *result = sb.data;
+    sb.data = NULL;
+    strbuf_free(&sb);
+    return result;
+}

@@ -97,19 +97,21 @@ int main(int argc, char **argv)
         top_changed_data_t top_changed;
         least_changed_data_t least_changed;
         category_data_t categories;
+        category_drift_data_t drift;
 
         memset(&timeline, 0, sizeof(timeline));
         memset(&top_changed, 0, sizeof(top_changed));
         memset(&least_changed, 0, sizeof(least_changed));
         memset(&categories, 0, sizeof(categories));
+        memset(&drift, 0, sizeof(drift));
 
         int qrc = 0;
         printf("  Querying timeline data...\n");
         qrc |= db_query_timeline(&db, &timeline);
         printf("  Timeline: %d data points\n", timeline.count);
 
-        printf("  Querying top-changed 5.0 packages...\n");
-        qrc |= db_query_top_changed_5(&db, &top_changed, 10);
+        printf("  Querying top-changed packages (all branches)...\n");
+        qrc |= db_query_top_changed(&db, &top_changed, 10);
         printf("  Top changed: %d packages\n", top_changed.count);
 
         printf("  Querying least-changed packages...\n");
@@ -120,12 +122,17 @@ int main(int argc, char **argv)
         qrc |= db_query_categories(&db, &categories);
         printf("  Categories: %d groups, %d total packages\n", categories.count, categories.total);
 
+        printf("  Querying category drift...\n");
+        qrc |= db_query_category_drift(&db, &drift);
+        printf("  Category drift: %d points, %d categories, %d branches\n",
+               drift.count, drift.ncategories, drift.nbranches);
+
         if (qrc != 0) {
             fprintf(stderr, "Warning: some queries failed, report may be incomplete\n");
         }
 
         if (docx_write_report(report_path, &timeline, &top_changed,
-                              &least_changed, &categories) != 0) {
+                              &least_changed, &categories, &drift) != 0) {
             fprintf(stderr, "Failed to write report\n");
             exit_code = 1;
         } else {
@@ -136,6 +143,7 @@ int main(int argc, char **argv)
         top_changed_data_free(&top_changed);
         least_changed_data_free(&least_changed);
         category_data_free(&categories);
+        category_drift_data_free(&drift);
     }
 
     db_close(&db);

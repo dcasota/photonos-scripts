@@ -23,4 +23,9 @@ char *chart_xml_timeline(const timeline_data_t *data);
    Returns malloc'd XML string; caller frees. */
 char *chart_xml_pie(const category_data_t *data);
 
+/* Generate OOXML chart XML for a 3D bar chart showing category drift.
+   X-axis: scan runs, Y-axis: branches, Z-axis: percentage.
+   Returns malloc'd XML string; caller frees. */
+char *chart_xml_bar3d_drift(const category_drift_data_t *data);
+
 #endif

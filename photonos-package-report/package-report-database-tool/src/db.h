@@ -53,7 +53,7 @@ typedef struct {
 int db_query_timeline(db_t *db, timeline_data_t *out);
 void timeline_data_free(timeline_data_t *data);
 
-/* Top-changed package result */
+/* Top-changed package result (all branches) */
 typedef struct {
     char name[256];
     int changes_2023;
@@ -61,6 +61,7 @@ typedef struct {
     int changes_2025;
     int changes_2026;
     int total;
+    char branches[128];
 } top_changed_t;
 
 typedef struct {
@@ -68,7 +69,7 @@ typedef struct {
     int count;
 } top_changed_data_t;
 
-int db_query_top_changed_5(db_t *db, top_changed_data_t *out, int limit);
+int db_query_top_changed(db_t *db, top_changed_data_t *out, int limit);
 void top_changed_data_free(top_changed_data_t *data);
 
 /* Least-changed package result */
@@ -101,5 +102,25 @@ typedef struct {
 
 int db_query_categories(db_t *db, category_data_t *out);
 void category_data_free(category_data_t *data);
+
+/* Category drift over time per branch */
+typedef struct {
+    char branch[16];
+    char scan_datetime[16];
+    char category[64];
+    double percentage;
+} category_drift_point_t;
+
+typedef struct {
+    category_drift_point_t *points;
+    int count;
+    char categories[32][64];
+    int ncategories;
+    char branches[16][16];
+    int nbranches;
+} category_drift_data_t;
+
+int db_query_category_drift(db_t *db, category_drift_data_t *out);
+void category_drift_data_free(category_drift_data_t *data);
 
 #endif

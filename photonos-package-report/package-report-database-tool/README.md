@@ -17,16 +17,16 @@ report with embedded OOXML charts.
    `UpdateAvailable` is a version string, and `UpdateDownloadName` matches
    `name-version.tar.*`, plotted per branch over time (dotted series for
    3.0, 4.0, 5.0, 6.0, common, master, dev).
-2. **Top 10 most-changed 5.0 packages** (2023--current) with per-year
-   breakdown (2023 / 2024 / 2025 / 2026).
-3. **Least-changed packages** across all branches (2023--current), excluding
-   VMware-internal (`vmware.com`, `broadcom.com` in Source0 or warning) and
-   archived packages (non-empty `ArchivationDate`).
-4. **Pie chart** categorising packages by source domain (github.com, pypi,
-   kernel.org, freedesktop.org, gnu.org, rubygems.org, sourceforge.net,
-   cpan.org, gnome.org, x.org, apache.org, gnupg.org, netfilter.org,
-   pagure.org, mozilla.org, gitlab.com, No URL, Other) with count and
-   percentage.
+2. **Top 10 most-changed packages** across **all branches** (2023--current)
+   with per-year breakdown (2023 / 2024 / 2025 / 2026) and branch list.
+3. **Least-changed packages** present in all 7 branches (3.0, 4.0, 5.0,
+   6.0, common, dev, master) from 2023--current, excluding VMware-internal
+   (`vmware.com`, `broadcom.com` in Source0 or warning) and archived
+   packages (non-empty `ArchivationDate`).
+4. **Source category drift** -- pie chart categorising packages by source
+   domain (categories >= 3% shown individually, rest merged into Other),
+   plus a 3D stacked bar chart showing how each category's percentage
+   drifts over time per branch and scan run.
 
 ## Prerequisites
 
@@ -103,7 +103,7 @@ Generate a report from an existing database:
 
 Generated from 170 scan files (branches 3.0, 4.0, 5.0, 6.0, common, dev,
 master) spanning 2023-02 to 2026-03, producing a 144,292-row database
-(42 MB) and a 59 KB `.docx`.
+(42 MB) and a ~1 MB `.docx` (8 OOXML parts including 3 charts).
 
 ### Database statistics
 
@@ -126,53 +126,87 @@ OOXML line chart with 64 data points across 7 branch series.
 Each point counts packages with `UrlHealth = 200`, a versioned
 `UpdateAvailable`, and `UpdateDownloadName` matching `name-version.tar.*`.
 
-### Section 2 -- Top 10 most-changed 5.0 packages
-
-| Package | 2023 | 2024 | 2025 | 2026 | Total |
-|---------|-----:|-----:|-----:|-----:|------:|
-| linux | 1 | 5 | 2 | 21 | **29** |
-| vim | 1 | 7 | 3 | 13 | **24** |
-| openjdk | 0 | 0 | 0 | 23 | **23** |
-| python-botocore | 1 | 5 | 4 | 11 | **21** |
-| runc | 1 | 5 | 1 | 13 | **20** |
-| python-boto3 | 1 | 5 | 4 | 10 | **20** |
-| chromium | 0 | 7 | 5 | 8 | **20** |
-| aws-sdk-cpp | 1 | 5 | 3 | 10 | **19** |
-| gawk | 1 | 1 | 2 | 14 | **18** |
-| docker-compose | 1 | 5 | 2 | 10 | **18** |
-
-### Section 3 -- Least-changed packages (sample)
-
-Packages that never changed `UpdateAvailable` across any branch, excluding
-VMware-internal and archived packages:
-
 ```
-ant-contrib          (3.0, 4.0, 5.0)
-apache-tomcat-9      (6.0, dev, master)
-autoconf-2.13        (4.0, 5.0)
-calico-cni           (3.0, 4.0, 5.0)
-calico-felix         (3.0, 4.0, 5.0)
-confd                (3.0, 4.0, 5.0)
-eventlog             (3.0, 4.0, 5.0, 6.0)
-fakeroot             (5.0, 6.0, dev, master)
-filesystem           (3.0, 4.0, 5.0, 6.0, dev, master)
-hyper-v              (3.0, 4.0, 5.0, 6.0, dev, master)
+Qualifying packages per branch over time (sampled)
+
+ 1100 |                                                      *  *
+ 1000 |                              *     *  *        *  *
+  900 |            *        *     *           *  *  *
+  800 |         *     *  *        *
+  700 |
+  600 |
+  500 |
+  400 |         *
+  300 |
+  200 |   *  *  *
+  100 |   *
+    0 +---*-----*-------*--------*--------*--------*--------*----->
+      2023-02  2023-11  2024-03  2024-09  2025-02  2026-02  2026-03
+
+  --- 3.0 (41 scans, 146..893)      --- 4.0 (33 scans, 187..1011)
+  --- 5.0 (35 scans, 191..1067)     --- 6.0 (20 scans, 345..1067)
+  --- common (20 scans, 0..6)       --- dev (10 scans, 349..1053)
+  --- master (11 scans, 349..1053)
 ```
 
-### Section 4 -- Source category pie chart
+### Section 2 -- Top 10 most-changed packages (all branches)
 
-Categories below 3.0% are merged into "Other".
+| Package | 2023 | 2024 | 2025 | 2026 | Total | Branches |
+|---------|-----:|-----:|-----:|-----:|------:|----------|
+| linux | 3 | 16 | 6 | 96 | **121** | 3.0,4.0,5.0,6.0,common,dev,master |
+| vim | 3 | 23 | 11 | 72 | **109** | 3.0,4.0,5.0,6.0,dev,master |
+| openjdk | 0 | 0 | 0 | 95 | **95** | 4.0,5.0,6.0,dev,master |
+| python-botocore | 3 | 17 | 13 | 61 | **94** | 3.0,4.0,5.0,6.0,dev,master |
+| python-boto3 | 3 | 17 | 13 | 60 | **93** | 3.0,4.0,5.0,6.0,dev,master |
+| aws-sdk-cpp | 3 | 16 | 12 | 60 | **91** | 3.0,4.0,5.0,6.0,dev,master |
+| nodejs | 3 | 15 | 7 | 64 | **89** | 3.0,4.0,5.0,6.0,dev,master |
+| docker | 0 | 18 | 7 | 51 | **76** | 3.0,4.0,5.0,6.0,dev,master |
+| rubygem-aws-partitions | 3 | 17 | 11 | 43 | **74** | 3.0,4.0,5.0,6.0,dev,master |
+| ansible-community-general | 3 | 17 | 10 | 43 | **73** | 3.0,4.0,5.0,6.0,dev,master |
+
+### Section 3 -- Least-changed packages
+
+Packages present in **all 7 branches** (3.0, 4.0, 5.0, 6.0, common, dev,
+master) that changed `UpdateAvailable` the fewest times across all scans.
+Excludes VMware-internal and archived packages.
+
+Only 4 packages exist across all 7 branches:
+
+| Package | Branches | Total Changes |
+|---------|----------|-----:|
+| linux-rt | 3.0,4.0,5.0,6.0,common,dev,master | 29 |
+| linux-esx | 3.0,4.0,5.0,6.0,common,dev,master | 36 |
+| stalld | 3.0,4.0,5.0,6.0,common,dev,master | 36 |
+| linux | 3.0,4.0,5.0,6.0,common,dev,master | 121 |
+
+Note: No package has zero changes across all branches. Most packages only
+appear in a subset of branches, which is why the earlier list (before
+requiring all 7) was longer.
+
+### Section 4 -- Source category drift
+
+Categories below 3.0% are merged into "Other". "(scan issues)" denotes
+entries with bare filenames or unresolved RPM `%{name}` macro templates.
+
+**Pie chart (latest scan per branch):**
 
 | Category | Count | % |
 |----------|------:|----:|
 | Other | 485 | 30.8 |
 | github.com | 426 | 27.0 |
-| No URL | 201 | 12.8 |
+| (scan issues) | 201 | 12.8 |
 | pypi | 161 | 10.2 |
 | rubygems.org | 126 | 8.0 |
 | gnu.org | 64 | 4.1 |
 | sourceforge.net | 63 | 4.0 |
 | cpan.org | 49 | 3.1 |
+
+**3D bar chart** shows how each category's percentage drifts over time
+(x-axis: scan runs grouped by branch, z-axis: percentage). Generated from
+1,300 data points across 9 merged categories and 7 branches. The chart
+reveals that `github.com`'s share grew from ~18% (2023) to ~27% (2026)
+across most branches, while `(scan issues)` decreased as spec files gained
+proper Source0 URLs.
 
 ### .docx structure
 
@@ -180,15 +214,16 @@ Categories below 3.0% are merged into "Other".
 $ unzip -l photon-report.docx
   Length      Date    Time    Name
 ---------  ---------- -----   ----
-      810  00-00-1980 00:00   [Content_Types].xml
+      936  00-00-1980 00:00   [Content_Types].xml
       299  00-00-1980 00:00   _rels/.rels
-    15282  00-00-1980 00:00   word/document.xml
+     8677  00-00-1980 00:00   word/document.xml
      1022  00-00-1980 00:00   word/styles.xml
-      550  00-00-1980 00:00   word/_rels/document.xml.rels
-    39274  00-00-1980 00:00   word/charts/chart1.xml
-     1609  00-00-1980 00:00   word/charts/chart2.xml
+      683  00-00-1980 00:00   word/_rels/document.xml.rels
+    39274  00-00-1980 00:00   word/charts/chart1.xml   (timeline line chart)
+     1616  00-00-1980 00:00   word/charts/chart2.xml   (category pie chart)
+   967551  00-00-1980 00:00   word/charts/chart3.xml   (3D category drift)
 ---------                     -------
-    58846                     7 files
+  1020058                     8 files
 ```
 
 ### Duplicate handling

@@ -168,6 +168,7 @@ static char *gen_content_types(void)
         "<Override PartName=\"/word/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml\"/>"
         "<Override PartName=\"/word/charts/chart1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.drawingml.chart+xml\"/>"
         "<Override PartName=\"/word/charts/chart2.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.drawingml.chart+xml\"/>"
+        "<Override PartName=\"/word/charts/chart3.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.drawingml.chart+xml\"/>"
         "</Types>");
 }
 
@@ -188,6 +189,7 @@ static char *gen_doc_rels(void)
         "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles\" Target=\"styles.xml\"/>"
         "<Relationship Id=\"rId2\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart\" Target=\"charts/chart1.xml\"/>"
         "<Relationship Id=\"rId3\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart\" Target=\"charts/chart2.xml\"/>"
+        "<Relationship Id=\"rId4\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart\" Target=\"charts/chart3.xml\"/>"
         "</Relationships>");
 }
 
@@ -292,8 +294,8 @@ static char *gen_document(const top_changed_data_t *top_changed,
                       "and correct UpdateDownloadName (name-version.tar.*), per branch over time.");
     doc_add_chart_ref(&sb, "rId2");
 
-    /* Section 2: Top 10 Most-Changed 5.0 Packages */
-    doc_add_heading(&sb, "2. Top 10 Most-Changed 5.0 Packages (2023-current)", "Heading2");
+    /* Section 2: Top 10 Most-Changed Packages (all branches) */
+    doc_add_heading(&sb, "2. Top 10 Most-Changed Packages (all branches, 2023-current)", "Heading2");
     if (top_changed && top_changed->count > 0) {
         strbuf_append(&sb,
             "<w:tbl><w:tblPr><w:tblStyle w:val=\"TableGrid\"/>"
@@ -306,6 +308,7 @@ static char *gen_document(const top_changed_data_t *top_changed,
         doc_add_cell(&sb, "2025");
         doc_add_cell(&sb, "2026");
         doc_add_cell(&sb, "Total");
+        doc_add_cell(&sb, "Branches");
         strbuf_append(&sb, "</w:tr>\r\n");
 
         for (int i = 0; i < top_changed->count; i++) {
@@ -323,11 +326,12 @@ static char *gen_document(const top_changed_data_t *top_changed,
             doc_add_cell(&sb, buf);
             snprintf(buf, sizeof(buf), "%d", it->total);
             doc_add_cell(&sb, buf);
+            doc_add_cell(&sb, it->branches);
             strbuf_append(&sb, "</w:tr>\r\n");
         }
         strbuf_append(&sb, "</w:tbl>\r\n");
     } else {
-        doc_add_para(&sb, "No change data available for branch 5.0.");
+        doc_add_para(&sb, "No change data available.");
     }
 
     /* Section 3: Least-Changed Packages */
@@ -358,10 +362,13 @@ static char *gen_document(const top_changed_data_t *top_changed,
         doc_add_para(&sb, "No change data available.");
     }
 
-    /* Section 4: Pie Chart */
-    doc_add_heading(&sb, "4. Package Source Categories", "Heading2");
-    doc_add_para(&sb, "Distribution of packages by source URL domain (latest scan per branch).");
+    /* Section 4: Source Category Drift */
+    doc_add_heading(&sb, "4. Source Category Drift", "Heading2");
+    doc_add_para(&sb, "Distribution of packages by source URL domain (latest scan per branch). "
+                      "Categories below 3% are merged into Other.");
     doc_add_chart_ref(&sb, "rId3");
+    doc_add_para(&sb, "3D chart showing category percentage drift over time per branch.");
+    doc_add_chart_ref(&sb, "rId4");
 
     strbuf_append(&sb, "</w:body></w:document>\r\n");
 
@@ -375,7 +382,8 @@ int docx_write_report(const char *output_path,
                       const timeline_data_t *timeline,
                       const top_changed_data_t *top_changed,
                       const least_changed_data_t *least_changed,
-                      const category_data_t *categories)
+                      const category_data_t *categories,
+                      const category_drift_data_t *drift)
 {
     if (!output_path)
         return -1;
@@ -394,6 +402,7 @@ int docx_write_report(const char *output_path,
     char *document = gen_document(top_changed, least_changed);
     char *chart1 = chart_xml_timeline(timeline);
     char *chart2 = chart_xml_pie(categories);
+    char *chart3 = chart_xml_bar3d_drift(drift);
 
     int rc = 0;
 
@@ -419,6 +428,10 @@ int docx_write_report(const char *output_path,
         if (zip_add_file(&z, "word/charts/chart2.xml", chart2, strlen(chart2)) != 0)
             rc = -1;
     }
+    if (chart3) {
+        if (zip_add_file(&z, "word/charts/chart3.xml", chart3, strlen(chart3)) != 0)
+            rc = -1;
+    }
 
 cleanup:
     free(content_types);
@@ -428,6 +441,7 @@ cleanup:
     free(document);
     free(chart1);
     free(chart2);
+    free(chart3);
 
     if (zip_close(&z) != 0)
         rc = -1;

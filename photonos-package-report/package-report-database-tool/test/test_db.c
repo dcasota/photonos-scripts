@@ -200,7 +200,10 @@ static void test_docx_generation(void)
     cat.items[1].count = 30;
     cat.items[1].percentage = 30.0;
 
-    int rc = docx_write_report(docxpath, &tl, &tc, &lc, &cat);
+    category_drift_data_t drift;
+    memset(&drift, 0, sizeof(drift));
+
+    int rc = docx_write_report(docxpath, &tl, &tc, &lc, &cat, &drift);
     if (rc != 0) {
         FAIL("docx_write_report failed");
     } else {

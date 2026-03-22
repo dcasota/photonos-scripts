@@ -401,24 +401,21 @@ void timeline_data_free(timeline_data_t *data)
     data->count = 0;
 }
 
-int db_query_top_changed_5(db_t *db, top_changed_data_t *out, int limit)
+int db_query_top_changed(db_t *db, top_changed_data_t *out, int limit)
 {
     memset(out, 0, sizeof(*out));
 
-    /* This query finds packages in branch 5.0 where update_available changed
-       between consecutive scans, grouped by year */
     const char *sql =
         "WITH ordered AS ("
-        "  SELECT p.name, p.update_available, sf.scan_datetime,"
-        "    LAG(p.update_available) OVER (PARTITION BY p.name ORDER BY sf.scan_datetime) AS prev_ua"
+        "  SELECT p.name, p.update_available, sf.branch, sf.scan_datetime,"
+        "    LAG(p.update_available) OVER (PARTITION BY p.name, sf.branch ORDER BY sf.scan_datetime) AS prev_ua"
         "  FROM packages p"
         "  JOIN scan_files sf ON p.scan_file_id = sf.id"
-        "  WHERE sf.branch = '5.0'"
-        "    AND sf.scan_datetime >= '2023'"
+        "  WHERE sf.scan_datetime >= '2023'"
         "    AND p.name IS NOT NULL AND LENGTH(p.name) > 0"
         "),"
         "changes AS ("
-        "  SELECT name, scan_datetime,"
+        "  SELECT name, branch, scan_datetime,"
         "    CASE WHEN update_available != prev_ua AND prev_ua IS NOT NULL THEN 1 ELSE 0 END AS changed"
         "  FROM ordered"
         ")"
@@ -427,7 +424,8 @@ int db_query_top_changed_5(db_t *db, top_changed_data_t *out, int limit)
         "  SUM(CASE WHEN scan_datetime LIKE '2024%' THEN changed ELSE 0 END) as c24,"
         "  SUM(CASE WHEN scan_datetime LIKE '2025%' THEN changed ELSE 0 END) as c25,"
         "  SUM(CASE WHEN scan_datetime LIKE '2026%' THEN changed ELSE 0 END) as c26,"
-        "  SUM(changed) as total "
+        "  SUM(changed) as total,"
+        "  GROUP_CONCAT(DISTINCT branch) as branches "
         "FROM changes "
         "GROUP BY name "
         "HAVING total > 0 "
@@ -447,12 +445,15 @@ int db_query_top_changed_5(db_t *db, top_changed_data_t *out, int limit)
 
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         top_changed_t *it = &out->items[out->count];
-        secure_strncpy(it->name, (const char *)sqlite3_column_text(stmt, 0), sizeof(it->name));
+        const char *n = (const char *)sqlite3_column_text(stmt, 0);
+        const char *b = (const char *)sqlite3_column_text(stmt, 6);
+        secure_strncpy(it->name, n ? n : "", sizeof(it->name));
         it->changes_2023 = sqlite3_column_int(stmt, 1);
         it->changes_2024 = sqlite3_column_int(stmt, 2);
         it->changes_2025 = sqlite3_column_int(stmt, 3);
         it->changes_2026 = sqlite3_column_int(stmt, 4);
         it->total = sqlite3_column_int(stmt, 5);
+        secure_strncpy(it->branches, b ? b : "", sizeof(it->branches));
         out->count++;
     }
     sqlite3_finalize(stmt);
@@ -490,11 +491,16 @@ int db_query_least_changed(db_t *db, least_changed_data_t *out)
         "  SELECT name, branch,"
         "    CASE WHEN update_available != prev_ua AND prev_ua IS NOT NULL THEN 1 ELSE 0 END AS changed"
         "  FROM ordered"
+        "),"
+        "pkg_summary AS ("
+        "  SELECT name, GROUP_CONCAT(DISTINCT branch) as branches,"
+        "    COUNT(DISTINCT branch) as nbranches, SUM(changed) as total"
+        "  FROM changes GROUP BY name"
         ")"
-        "SELECT name, GROUP_CONCAT(DISTINCT branch) as branches, SUM(changed) as total "
-        "FROM changes "
-        "GROUP BY name "
-        "ORDER BY total ASC "
+        "SELECT name, branches, total "
+        "FROM pkg_summary "
+        "WHERE nbranches = (SELECT COUNT(DISTINCT branch) FROM scan_files) "
+        "ORDER BY total ASC, name ASC "
         "LIMIT 50";
 
     sqlite3_stmt *stmt = NULL;
@@ -548,7 +554,7 @@ int db_query_categories(db_t *db, category_data_t *out)
         "raw_cats AS ("
         "  SELECT "
         "    CASE "
-        "      WHEN url NOT LIKE '%://%' THEN 'No URL'"
+        "      WHEN url NOT LIKE '%://%' THEN '(scan issues)'"
         "      WHEN url LIKE '%github.com%' THEN 'github.com'"
         "      WHEN url LIKE '%pythonhosted.org%' OR url LIKE '%pypi.python.org%'"
         "           OR url LIKE '%pypi.io%' OR url LIKE '%pypi.org%' THEN 'pypi'"
@@ -614,5 +620,123 @@ void category_data_free(category_data_t *data)
 {
     free(data->items);
     data->items = NULL;
+    data->count = 0;
+}
+
+static int find_or_add_str(char arr[][64], int *count, int max, const char *val, size_t sz)
+{
+    for (int i = 0; i < *count; i++)
+        if (strcmp(arr[i], val) == 0) return i;
+    if (*count >= max) return -1;
+    secure_strncpy(arr[*count], val, sz);
+    (*count)++;
+    return *count - 1;
+}
+
+static int find_or_add_br(char arr[][16], int *count, int max, const char *val)
+{
+    for (int i = 0; i < *count; i++)
+        if (strcmp(arr[i], val) == 0) return i;
+    if (*count >= max) return -1;
+    secure_strncpy(arr[*count], val, 16);
+    (*count)++;
+    return *count - 1;
+}
+
+int db_query_category_drift(db_t *db, category_drift_data_t *out)
+{
+    memset(out, 0, sizeof(*out));
+
+    const char *sql =
+        "WITH categorized AS ("
+        "  SELECT sf.branch, sf.scan_datetime, p.name,"
+        "    COALESCE(NULLIF(p.source0_original,''), p.modified_source0) as url"
+        "  FROM packages p"
+        "  JOIN scan_files sf ON p.scan_file_id = sf.id"
+        "  WHERE p.name IS NOT NULL AND LENGTH(p.name) > 0"
+        "),"
+        "raw_cats AS ("
+        "  SELECT branch, scan_datetime,"
+        "    CASE"
+        "      WHEN url IS NULL OR LENGTH(url) = 0 OR url NOT LIKE '%://%' THEN '(scan issues)'"
+        "      WHEN url LIKE '%github.com%' THEN 'github.com'"
+        "      WHEN url LIKE '%pythonhosted.org%' OR url LIKE '%pypi.python.org%'"
+        "           OR url LIKE '%pypi.io%' OR url LIKE '%pypi.org%' THEN 'pypi'"
+        "      WHEN url LIKE '%kernel.org%' THEN 'kernel.org'"
+        "      WHEN url LIKE '%freedesktop.org%' THEN 'freedesktop.org'"
+        "      WHEN url LIKE '%gnu.org%' THEN 'gnu.org'"
+        "      WHEN url LIKE '%rubygems.org%' THEN 'rubygems.org'"
+        "      WHEN url LIKE '%sourceforge.net%' THEN 'sourceforge.net'"
+        "      WHEN url LIKE '%cpan.org%' THEN 'cpan.org'"
+        "      WHEN url LIKE '%gnome.org%' THEN 'gnome.org'"
+        "      WHEN url LIKE '%x.org%' OR url LIKE '%xorg%' THEN 'x.org'"
+        "      WHEN url LIKE '%apache.org%' THEN 'apache.org'"
+        "      WHEN url LIKE '%gnupg.org%' OR url LIKE '%gnupg%' THEN 'gnupg.org'"
+        "      WHEN url LIKE '%netfilter.org%' THEN 'netfilter.org'"
+        "      WHEN url LIKE '%pagure.org%' THEN 'pagure.org'"
+        "      WHEN url LIKE '%mozilla.org%' THEN 'mozilla.org'"
+        "      WHEN url LIKE '%gitlab.com%' THEN 'gitlab.com'"
+        "      ELSE 'Other'"
+        "    END as category,"
+        "    COUNT(*) as cnt"
+        "  FROM categorized"
+        "  GROUP BY branch, scan_datetime, category"
+        "),"
+        "scan_totals AS ("
+        "  SELECT branch, scan_datetime, SUM(cnt) as total"
+        "  FROM raw_cats GROUP BY branch, scan_datetime"
+        "),"
+        "with_pct AS ("
+        "  SELECT r.branch, r.scan_datetime, r.category,"
+        "    ROUND(r.cnt * 100.0 / st.total, 1) as pct"
+        "  FROM raw_cats r"
+        "  JOIN scan_totals st ON r.branch = st.branch AND r.scan_datetime = st.scan_datetime"
+        "),"
+        "global_totals AS ("
+        "  SELECT category, SUM(cnt) as gcnt FROM raw_cats GROUP BY category"
+        "),"
+        "total_all AS (SELECT SUM(gcnt) as n FROM global_totals) "
+        "SELECT w.branch, w.scan_datetime, "
+        "  CASE WHEN g.gcnt * 100.0 / t.n >= 3.0 THEN w.category ELSE 'Other' END as cat,"
+        "  SUM(w.pct) as pct "
+        "FROM with_pct w "
+        "JOIN global_totals g ON g.category = w.category "
+        "CROSS JOIN total_all t "
+        "GROUP BY w.branch, w.scan_datetime, cat "
+        "ORDER BY w.branch, w.scan_datetime, cat";
+
+    sqlite3_stmt *stmt = NULL;
+    int rc = sqlite3_prepare_v2(db->handle, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "Category drift query error: %s\n", sqlite3_errmsg(db->handle));
+        return -1;
+    }
+
+    int cap = 8192;
+    out->points = malloc(sizeof(category_drift_point_t) * (size_t)cap);
+    if (!out->points) { sqlite3_finalize(stmt); return -1; }
+
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        if (out->count >= cap) break;
+        category_drift_point_t *pt = &out->points[out->count];
+        const char *br = (const char *)sqlite3_column_text(stmt, 0);
+        const char *dt = (const char *)sqlite3_column_text(stmt, 1);
+        const char *cat = (const char *)sqlite3_column_text(stmt, 2);
+        secure_strncpy(pt->branch, br ? br : "", sizeof(pt->branch));
+        secure_strncpy(pt->scan_datetime, dt ? dt : "", sizeof(pt->scan_datetime));
+        secure_strncpy(pt->category, cat ? cat : "", sizeof(pt->category));
+        pt->percentage = sqlite3_column_double(stmt, 3);
+        find_or_add_str(out->categories, &out->ncategories, 32, pt->category, 64);
+        find_or_add_br(out->branches, &out->nbranches, 16, pt->branch);
+        out->count++;
+    }
+    sqlite3_finalize(stmt);
+    return 0;
+}
+
+void category_drift_data_free(category_drift_data_t *data)
+{
+    free(data->points);
+    data->points = NULL;
     data->count = 0;
 }
