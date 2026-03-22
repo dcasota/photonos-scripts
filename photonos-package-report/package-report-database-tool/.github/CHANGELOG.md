@@ -20,3 +20,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - README.md — usage guide, build instructions, security overview
 - ARCHITECTURE.md — component diagram, data model, query details, .docx generation
 - database-report.yml — self-hosted GitHub Actions workflow (build, test, import, report, upload)
+- reports/ directory with .gitignore for generated output
+- report-<datetime>.docx auto-naming when --report points to a directory
+- 3D stacked bar chart (c:bar3DChart) for source category drift over time
+- db_query_category_drift() — per-scan per-branch category percentage tracking
+- db_query_top_changed() — all-branches top-changed query (replaces 5.0-only)
+
+### Changed
+- Section 2: top-changed now covers all branches, not just 5.0
+- Section 3: least-changed requires presence in all 7 branches
+- Section 4: renamed to "Source Category Drift", "No URL" → "(scan issues)"
+- Source categories: 10 new domains (pypi, gnome.org, x.org, apache.org, etc.)
+- Categories below 3% merged into "Other" via SQL CTE threshold
+- Upgraded actions/checkout@v4 → v6, actions/upload-artifact@v4 → v6 (Node.js 24)
+
+### Fixed
+- YAML heredoc syntax error in database-report.yml (line 149)
+- .docx missing word/settings.xml, webSettings.xml, fontTable.xml (Word refused to open)
+- .docx missing <w:tblGrid> elements in tables (OOXML strict compliance)
+- Duplicate docPr id="1" on all chart drawings (OOXML requires unique ids)
+- "paguire.io" typo → "pagure.org" in category CASE statement
