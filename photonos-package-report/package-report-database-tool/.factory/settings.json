@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Create",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$FACTORY_PROJECT_DIR/.factory/hooks/validate_c_build.py\""
+          }
+        ]
+      }
+    ]
+  }
+}

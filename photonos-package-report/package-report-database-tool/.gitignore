@@ -1,0 +1,17 @@
+# Build artifacts
+*.o
+photon-report-db
+test/test_csv_parser
+test/test_db
+test/test_*.db
+test/test_output.docx
+
+# Generated databases and reports
+*.db
+*.docx
+
+# CMake
+build/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
