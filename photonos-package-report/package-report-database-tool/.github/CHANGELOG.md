@@ -27,6 +27,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - db_query_top_changed() — all-branches top-changed query (replaces 5.0-only)
 
 ### Changed
+- Section 4: pie chart now shows branch 5.0 only (was all branches)
+- Section 4: replaced 3D bar chart with 2D 100%-stacked bar chart for 5.0 branch
 - Section 2: top-changed now covers all branches, not just 5.0
 - Section 3: least-changed requires presence in all 7 branches
 - Section 4: renamed to "Source Category Drift", "No URL" → "(scan issues)"

@@ -28,4 +28,8 @@ char *chart_xml_pie(const category_data_t *data);
    Returns malloc'd XML string; caller frees. */
 char *chart_xml_bar3d_drift(const category_drift_data_t *data);
 
+/* Generate OOXML 2D percentStacked bar chart for a single branch.
+   Returns malloc'd XML string; caller frees. */
+char *chart_xml_bar_stacked_branch(const category_drift_data_t *data, const char *branch);
+
 #endif

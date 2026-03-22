@@ -19,13 +19,26 @@ typedef struct {
         unsigned int local_offset;
     } entries[48];
     int nentries;
+    unsigned short dos_time;
+    unsigned short dos_date;
 } zipwriter_t;
 
 static int zip_open(zipwriter_t *z, const char *path)
 {
     memset(z, 0, sizeof(*z));
     z->fp = fopen(path, "wb");
-    return z->fp ? 0 : -1;
+    if (!z->fp) return -1;
+
+    /* Encode current UTC time as MS-DOS timestamp */
+    time_t now = time(NULL);
+    struct tm *tm = gmtime(&now);
+    z->dos_time = (unsigned short)(((tm->tm_hour & 0x1F) << 11) |
+                                   ((tm->tm_min & 0x3F) << 5) |
+                                   ((tm->tm_sec / 2) & 0x1F));
+    z->dos_date = (unsigned short)((((tm->tm_year - 80) & 0x7F) << 9) |
+                                   (((tm->tm_mon + 1) & 0x0F) << 5) |
+                                   (tm->tm_mday & 0x1F));
+    return 0;
 }
 
 static void zip_write16(FILE *f, unsigned short v)
@@ -79,8 +92,8 @@ static int zip_add_file(zipwriter_t *z, const char *name, const void *data, size
     zip_write16(z->fp, 20);           /* version needed */
     zip_write16(z->fp, 0);            /* flags */
     zip_write16(z->fp, 8);            /* compression: deflate */
-    zip_write16(z->fp, 0);            /* mod time */
-    zip_write16(z->fp, 0);            /* mod date */
+    zip_write16(z->fp, z->dos_time);  /* mod time */
+    zip_write16(z->fp, z->dos_date);  /* mod date */
     zip_write32(z->fp, crc);
     zip_write32(z->fp, comp_size);
     zip_write32(z->fp, (unsigned int)len);
@@ -394,40 +407,37 @@ static char *gen_document(const top_changed_data_t *top_changed,
 
     /* Section 3: Least-Changed Packages */
     doc_add_heading(&sb, "3. Least-Changed Packages (all branches, 2023-current)", "Heading2");
-    doc_add_para(&sb, "Excludes VMware-internal and archived packages.");
+    doc_add_para(&sb, "Packages with the same release version in every scan. "
+                      "Excludes VMware-internal and archived packages.");
     if (least_changed && least_changed->count > 0) {
-        strbuf_append(&sb,
-            "<w:tbl><w:tblPr><w:tblStyle w:val=\"TableGrid\"/>"
-            "<w:tblW w:w=\"0\" w:type=\"auto\"/></w:tblPr>"
-            "<w:tblGrid><w:gridCol w:w=\"3000\"/><w:gridCol w:w=\"4500\"/>"
-            "<w:gridCol w:w=\"1500\"/></w:tblGrid>\r\n");
-        strbuf_append(&sb, "<w:tr>");
-        doc_add_cell(&sb, "Package");
-        doc_add_cell(&sb, "Branches");
-        doc_add_cell(&sb, "Total Changes");
-        strbuf_append(&sb, "</w:tr>\r\n");
-
+        char list_buf[8192];
+        int pos = 0;
         for (int i = 0; i < least_changed->count; i++) {
-            const least_changed_t *it = &least_changed->items[i];
-            char buf[32];
-            strbuf_append(&sb, "<w:tr>");
-            doc_add_cell(&sb, it->name);
-            doc_add_cell(&sb, it->branches);
-            snprintf(buf, sizeof(buf), "%d", it->total_changes);
-            doc_add_cell(&sb, buf);
-            strbuf_append(&sb, "</w:tr>\r\n");
+            if (i > 0)
+                pos += snprintf(list_buf + pos, sizeof(list_buf) - (size_t)pos, ", ");
+            pos += snprintf(list_buf + pos, sizeof(list_buf) - (size_t)pos, "%s",
+                           least_changed->items[i].name);
+            if (pos >= (int)sizeof(list_buf) - 64) break;
         }
-        strbuf_append(&sb, "</w:tbl>\r\n");
+        char count_buf[64];
+        snprintf(count_buf, sizeof(count_buf), "%d packages: ", least_changed->count);
+        strbuf_append(&sb, "<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>");
+        strbuf_append(&sb, count_buf);
+        strbuf_append(&sb, "</w:t></w:r><w:r><w:t xml:space=\"preserve\">");
+        char *esc = secure_xml_escape(list_buf);
+        strbuf_append(&sb, esc ? esc : list_buf);
+        free(esc);
+        strbuf_append(&sb, "</w:t></w:r></w:p>\r\n");
     } else {
-        doc_add_para(&sb, "No change data available.");
+        doc_add_para(&sb, "No packages found with unchanged release across all scans.");
     }
 
     /* Section 4: Source Category Drift */
     doc_add_heading(&sb, "4. Source Category Drift", "Heading2");
-    doc_add_para(&sb, "Distribution of packages by source URL domain (latest scan per branch). "
+    doc_add_para(&sb, "Distribution of packages by source URL domain for branch 5.0 (latest scan). "
                       "Categories below 3% are merged into Other.");
     doc_add_chart_ref(&sb, "rId3");
-    doc_add_para(&sb, "3D chart showing category percentage drift over time per branch.");
+    doc_add_para(&sb, "Category percentage drift over time for 5.0 branch.");
     doc_add_chart_ref(&sb, "rId4");
 
     strbuf_append(&sb, "</w:body></w:document>\r\n");
@@ -465,7 +475,7 @@ int docx_write_report(const char *output_path,
     char *document = gen_document(top_changed, least_changed);
     char *chart1 = chart_xml_timeline(timeline);
     char *chart2 = chart_xml_pie(categories);
-    char *chart3 = chart_xml_bar3d_drift(drift);
+    char *chart3 = chart_xml_bar_stacked_branch(drift, "5.0");
 
     int rc = 0;
 
@@ -487,18 +497,12 @@ int docx_write_report(const char *output_path,
         goto cleanup;
     }
 
-    if (chart1) {
-        if (zip_add_file(&z, "word/charts/chart1.xml", chart1, strlen(chart1)) != 0)
-            rc = -1;
-    }
-    if (chart2) {
-        if (zip_add_file(&z, "word/charts/chart2.xml", chart2, strlen(chart2)) != 0)
-            rc = -1;
-    }
-    if (chart3) {
-        if (zip_add_file(&z, "word/charts/chart3.xml", chart3, strlen(chart3)) != 0)
-            rc = -1;
-    }
+    if (chart1 && zip_add_file(&z, "word/charts/chart1.xml", chart1, strlen(chart1)) != 0)
+        rc = -1;
+    if (chart2 && zip_add_file(&z, "word/charts/chart2.xml", chart2, strlen(chart2)) != 0)
+        rc = -1;
+    if (chart3 && zip_add_file(&z, "word/charts/chart3.xml", chart3, strlen(chart3)) != 0)
+        rc = -1;
 
 cleanup:
     free(content_types);

@@ -363,11 +363,12 @@ int db_query_timeline(db_t *db, timeline_data_t *out)
         "  AND p.update_available NOT IN ('', '(same version)', 'pinned') "
         "  AND p.update_available IS NOT NULL "
         "  AND LENGTH(p.update_available) > 0 "
-        "  AND p.update_download_name IS NOT NULL "
-        "  AND LENGTH(p.update_download_name) > 0 "
-        "  AND p.update_download_name LIKE '%-%.tar%' "
+        "  AND (sf.schema_version = 5 OR ("
+        "    p.update_download_name IS NOT NULL "
+        "    AND LENGTH(p.update_download_name) > 0 "
+        "    AND p.update_download_name LIKE '%-%.tar%')) "
         "GROUP BY sf.branch, sf.scan_datetime "
-        "ORDER BY sf.branch, sf.scan_datetime";
+        "ORDER BY sf.scan_datetime, sf.branch";
 
     sqlite3_stmt *stmt = NULL;
     int rc = sqlite3_prepare_v2(db->handle, sql, -1, &stmt, NULL);
@@ -472,36 +473,27 @@ int db_query_least_changed(db_t *db, least_changed_data_t *out)
     memset(out, 0, sizeof(*out));
 
     const char *sql =
-        "WITH ordered AS ("
-        "  SELECT p.name, p.update_available, sf.branch, sf.scan_datetime,"
-        "    p.warning, p.source0_original, p.archivation_date,"
-        "    LAG(p.update_available) OVER (PARTITION BY p.name, sf.branch ORDER BY sf.scan_datetime) AS prev_ua"
+        "WITH valid_pkgs AS ("
+        "  SELECT p.name, p.update_available, sf.branch, sf.scan_datetime"
         "  FROM packages p"
         "  JOIN scan_files sf ON p.scan_file_id = sf.id"
         "  WHERE sf.scan_datetime >= '2023'"
         "    AND p.name IS NOT NULL AND LENGTH(p.name) > 0"
+        "    AND p.update_available IS NOT NULL AND LENGTH(p.update_available) > 0"
+        "    AND p.update_available NOT IN ('(same version)', 'pinned')"
         "    AND (p.warning IS NULL OR p.warning NOT LIKE '%VMware internal%')"
         "    AND (p.source0_original IS NULL OR (p.source0_original NOT LIKE '%vmware.com%'"
         "         AND p.source0_original NOT LIKE '%broadcom.com%'"
         "         AND p.source0_original NOT LIKE '%packages.vmware.com%'"
         "         AND p.source0_original NOT LIKE '%packages.broadcom.com%'))"
         "    AND (p.archivation_date IS NULL OR LENGTH(p.archivation_date) = 0)"
-        "),"
-        "changes AS ("
-        "  SELECT name, branch,"
-        "    CASE WHEN update_available != prev_ua AND prev_ua IS NOT NULL THEN 1 ELSE 0 END AS changed"
-        "  FROM ordered"
-        "),"
-        "pkg_summary AS ("
-        "  SELECT name, GROUP_CONCAT(DISTINCT branch) as branches,"
-        "    COUNT(DISTINCT branch) as nbranches, SUM(changed) as total"
-        "  FROM changes GROUP BY name"
         ")"
-        "SELECT name, branches, total "
-        "FROM pkg_summary "
-        "WHERE nbranches = (SELECT COUNT(DISTINCT branch) FROM scan_files) "
-        "ORDER BY total ASC, name ASC "
-        "LIMIT 50";
+        "SELECT name, GROUP_CONCAT(DISTINCT branch) as branches, 0 "
+        "FROM valid_pkgs "
+        "GROUP BY name "
+        "HAVING COUNT(DISTINCT update_available) = 1 "
+        "ORDER BY name ASC "
+        "LIMIT 200";
 
     sqlite3_stmt *stmt = NULL;
     int rc = sqlite3_prepare_v2(db->handle, sql, -1, &stmt, NULL);
@@ -593,6 +585,84 @@ int db_query_categories(db_t *db, category_data_t *out)
         fprintf(stderr, "Category query error: %s\n", sqlite3_errmsg(db->handle));
         return -1;
     }
+
+    int cap = 32;
+    out->items = malloc(sizeof(category_t) * (size_t)cap);
+    if (!out->items) { sqlite3_finalize(stmt); return -1; }
+    out->total = 0;
+
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        if (out->count >= cap) break;
+        category_t *it = &out->items[out->count];
+        secure_strncpy(it->category, (const char *)sqlite3_column_text(stmt, 0), sizeof(it->category));
+        it->count = sqlite3_column_int(stmt, 1);
+        out->total += it->count;
+        out->count++;
+    }
+    sqlite3_finalize(stmt);
+
+    for (int i = 0; i < out->count; i++) {
+        out->items[i].percentage = out->total > 0 ?
+            (double)out->items[i].count / (double)out->total * 100.0 : 0.0;
+    }
+    return 0;
+}
+
+int db_query_categories_branch(db_t *db, category_data_t *out, const char *branch)
+{
+    memset(out, 0, sizeof(*out));
+
+    const char *sql =
+        "WITH latest_scan AS ("
+        "  SELECT MAX(scan_datetime) as max_dt FROM scan_files WHERE branch = ?1"
+        "),"
+        "latest_pkgs AS ("
+        "  SELECT DISTINCT p.name, COALESCE(NULLIF(p.source0_original,''), p.modified_source0) as url"
+        "  FROM packages p"
+        "  JOIN scan_files sf ON p.scan_file_id = sf.id"
+        "  JOIN latest_scan ls ON sf.scan_datetime = ls.max_dt"
+        "  WHERE sf.branch = ?1 AND p.name IS NOT NULL AND LENGTH(p.name) > 0"
+        "),"
+        "raw_cats AS ("
+        "  SELECT "
+        "    CASE "
+        "      WHEN url NOT LIKE '%://%' THEN '(scan issues)'"
+        "      WHEN url LIKE '%github.com%' THEN 'github.com'"
+        "      WHEN url LIKE '%pythonhosted.org%' OR url LIKE '%pypi.python.org%'"
+        "           OR url LIKE '%pypi.io%' OR url LIKE '%pypi.org%' THEN 'pypi'"
+        "      WHEN url LIKE '%kernel.org%' THEN 'kernel.org'"
+        "      WHEN url LIKE '%freedesktop.org%' THEN 'freedesktop.org'"
+        "      WHEN url LIKE '%gnu.org%' THEN 'gnu.org'"
+        "      WHEN url LIKE '%rubygems.org%' THEN 'rubygems.org'"
+        "      WHEN url LIKE '%sourceforge.net%' THEN 'sourceforge.net'"
+        "      WHEN url LIKE '%cpan.org%' THEN 'cpan.org'"
+        "      WHEN url LIKE '%gnome.org%' THEN 'gnome.org'"
+        "      WHEN url LIKE '%x.org%' OR url LIKE '%xorg%' THEN 'x.org'"
+        "      WHEN url LIKE '%apache.org%' THEN 'apache.org'"
+        "      WHEN url LIKE '%gnupg.org%' OR url LIKE '%gnupg%' THEN 'gnupg.org'"
+        "      WHEN url LIKE '%netfilter.org%' THEN 'netfilter.org'"
+        "      WHEN url LIKE '%pagure.org%' THEN 'pagure.org'"
+        "      WHEN url LIKE '%mozilla.org%' THEN 'mozilla.org'"
+        "      WHEN url LIKE '%gitlab.com%' THEN 'gitlab.com'"
+        "      ELSE 'Other'"
+        "    END as category,"
+        "    COUNT(*) as cnt "
+        "  FROM latest_pkgs "
+        "  WHERE url IS NOT NULL AND LENGTH(url) > 0 "
+        "  GROUP BY category"
+        "),"
+        "total AS (SELECT SUM(cnt) as n FROM raw_cats) "
+        "SELECT "
+        "  CASE WHEN cnt * 100.0 / total.n >= 3.0 THEN category ELSE 'Other' END as cat,"
+        "  SUM(cnt) as cnt "
+        "FROM raw_cats, total "
+        "GROUP BY cat "
+        "ORDER BY cnt DESC";
+
+    sqlite3_stmt *stmt = NULL;
+    int rc = sqlite3_prepare_v2(db->handle, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) return -1;
+    sqlite3_bind_text(stmt, 1, branch, -1, SQLITE_STATIC);
 
     int cap = 32;
     out->items = malloc(sizeof(category_t) * (size_t)cap);

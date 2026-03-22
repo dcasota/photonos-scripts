@@ -53,7 +53,7 @@ main.c
 | `security.c` | 138 | `realpath()` validation, filename checks, `secure_xml_escape()`, `secure_strncpy()` |
 | `csv_parser.c` | 306 | Encoding detection (UTF-16LE BOM), schema detection (5/12 col), CSV field parsing with quote handling |
 | `db.c` | 600 | Schema DDL, dedup (`scan_files.filename UNIQUE`), transactional insert, 4 report queries (timeline, top-changed, least-changed, categories) |
-| `chart_xml.c` | 370 | OOXML `<c:lineChart>`, `<c:pieChart>`, and `<c:bar3DChart>` DrawingML generation with dynamic series |
+| `chart_xml.c` | 710 | OOXML `<c:scatterChart>`, `<c:pieChart>`, and `<c:barChart percentStacked>` DrawingML generation |
 | `docx_writer.c` | 520 | Minimal ZIP writer (raw zlib deflate), OOXML content types, relationships, settings, fonts, `<w:document>` with tables, `<w:tblGrid>`, and inline chart references with unique `docPr` ids |
 
 ## 3. Data model
@@ -153,15 +153,17 @@ Uses the latest scan per branch (`MAX(scan_datetime) GROUP BY branch`),
 then counts distinct package names per category. Categories below 3% are
 merged into "Other" via a CTE threshold.
 
-Rendered as a `<c:pieChart>` with labels showing `category (count, pct%)`.
+Rendered as a `<c:pieChart>` for **branch 5.0 only**, with labels
+showing `category (count, pct%)`.
 
 ### Q5 -- Category drift
 
 Computes the percentage of each source category per `(branch, scan_datetime)`.
 Categories below 3% globally are merged into "Other".
 
-Rendered as a `<c:bar3DChart>` (stacked columns) with 3D perspective,
-one series per category, x-axis showing `branch|datetime` labels.
+Rendered as a `<c:barChart grouping="percentStacked">` (2D 100%-stacked
+columns) for the **5.0 branch**, with quarterly time slots on the X-axis
+and Y-axis fixed 0%-100%.
 
 ## 5. .docx generation
 
@@ -176,9 +178,9 @@ word/settings.xml            Document settings (compat mode 15 / Word 2013+)
 word/webSettings.xml         Web rendering options
 word/fontTable.xml           Font declarations (Calibri, Times New Roman)
 word/_rels/document.xml.rels Relationship IDs (rId1..rId7: styles, charts, settings, fonts)
-word/charts/chart1.xml       Timeline line chart (DrawingML c:lineChart)
-word/charts/chart2.xml       Category pie chart (DrawingML c:pieChart)
-word/charts/chart3.xml       Category drift 3D bar chart (DrawingML c:bar3DChart)
+word/charts/chart1.xml       Timeline scatter chart (DrawingML c:scatterChart)
+word/charts/chart2.xml       Category pie chart for 5.0 (DrawingML c:pieChart)
+word/charts/chart3.xml       Category drift stacked bar for 5.0 (DrawingML c:barChart)
 ```
 
 ZIP creation uses raw `zlib` deflate (no minizip dependency). Each file is

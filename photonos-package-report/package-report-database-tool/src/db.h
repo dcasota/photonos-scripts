@@ -101,6 +101,7 @@ typedef struct {
 } category_data_t;
 
 int db_query_categories(db_t *db, category_data_t *out);
+int db_query_categories_branch(db_t *db, category_data_t *out, const char *branch);
 void category_data_free(category_data_t *data);
 
 /* Category drift over time per branch */

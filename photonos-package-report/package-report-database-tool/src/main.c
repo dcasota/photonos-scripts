@@ -134,8 +134,8 @@ int main(int argc, char **argv)
         qrc |= db_query_least_changed(&db, &least_changed);
         printf("  Least changed: %d packages\n", least_changed.count);
 
-        printf("  Querying source categories...\n");
-        qrc |= db_query_categories(&db, &categories);
+        printf("  Querying source categories (branch 5.0)...\n");
+        qrc |= db_query_categories_branch(&db, &categories, "5.0");
         printf("  Categories: %d groups, %d total packages\n", categories.count, categories.total);
 
         printf("  Querying category drift...\n");

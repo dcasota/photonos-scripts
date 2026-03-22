@@ -23,10 +23,10 @@ report with embedded OOXML charts.
    6.0, common, dev, master) from 2023--current, excluding VMware-internal
    (`vmware.com`, `broadcom.com` in Source0 or warning) and archived
    packages (non-empty `ArchivationDate`).
-4. **Source category drift** -- pie chart categorising packages by source
-   domain (categories >= 3% shown individually, rest merged into Other),
-   plus a 3D stacked bar chart showing how each category's percentage
-   drifts over time per branch and scan run.
+4. **Source category drift** -- pie chart categorising branch 5.0 packages
+   by source domain (categories >= 3% shown individually, rest merged
+   into Other), plus a 2D 100%-stacked bar chart showing how each
+   category's percentage drifts over time for the 5.0 branch.
 
 ## Prerequisites
 
@@ -197,25 +197,11 @@ requiring all 7) was longer.
 Categories below 3.0% are merged into "Other". "(scan issues)" denotes
 entries with bare filenames or unresolved RPM `%{name}` macro templates.
 
-**Pie chart (latest scan per branch):**
+**Pie chart** shows the distribution for **branch 5.0 only** (latest scan).
 
-| Category | Count | % |
-|----------|------:|----:|
-| Other | 485 | 30.8 |
-| github.com | 426 | 27.0 |
-| (scan issues) | 201 | 12.8 |
-| pypi | 161 | 10.2 |
-| rubygems.org | 126 | 8.0 |
-| gnu.org | 64 | 4.1 |
-| sourceforge.net | 63 | 4.0 |
-| cpan.org | 49 | 3.1 |
-
-**3D bar chart** shows how each category's percentage drifts over time
-(x-axis: scan runs grouped by branch, z-axis: percentage). Generated from
-1,300 data points across 9 merged categories and 7 branches. The chart
-reveals that `github.com`'s share grew from ~18% (2023) to ~27% (2026)
-across most branches, while `(scan issues)` decreased as spec files gained
-proper Source0 URLs.
+**2D 100%-stacked bar chart** shows how each category's percentage drifts
+over time for the 5.0 branch. Quarterly time slots on the X-axis,
+Y-axis fixed 0-100%. Generated from drift data across 9 merged categories.
 
 ### .docx structure
 
@@ -232,8 +218,8 @@ $ unzip -l report-202603220748.docx
       533  00-00-1980 00:00   word/fontTable.xml
      1084  00-00-1980 00:00   word/_rels/document.xml.rels
     39274  00-00-1980 00:00   word/charts/chart1.xml   (timeline line chart)
-     1616  00-00-1980 00:00   word/charts/chart2.xml   (category pie chart)
-   967551  00-00-1980 00:00   word/charts/chart3.xml   (3D category drift)
+     1616  00-00-1980 00:00   word/charts/chart2.xml   (category pie chart, 5.0)
+     nnnn  00-00-1980 00:00   word/charts/chart3.xml   (2D stacked drift, 5.0)
 ---------                     -------
   1022565                     11 files
 ```
@@ -302,7 +288,7 @@ package-report-database-tool/
 │   ├── security.c / .h        Input validation, path sanitisation, XML escaping
 │   ├── csv_parser.c / .h      CSV/PRN parsing (UTF-16LE + UTF-8, 5/12-col)
 │   ├── db.c / .h              SQLite schema, import, report queries
-│   ├── chart_xml.c / .h       OOXML DrawingML chart XML generation (line, pie, 3D bar)
+│   ├── chart_xml.c / .h       OOXML DrawingML chart XML generation (scatter, pie, stacked bar)
 │   └── docx_writer.c / .h     .docx ZIP creation + OOXML document assembly
 ├── test/                       Unit and integration tests
 ├── reports/                    Generated report output directory (.gitignored)
