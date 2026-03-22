@@ -22,9 +22,11 @@ report with embedded OOXML charts.
 3. **Least-changed packages** across all branches (2023--current), excluding
    VMware-internal (`vmware.com`, `broadcom.com` in Source0 or warning) and
    archived packages (non-empty `ArchivationDate`).
-4. **Pie chart** categorising packages by source domain (github.com,
+4. **Pie chart** categorising packages by source domain (github.com, pypi,
    kernel.org, freedesktop.org, gnu.org, rubygems.org, sourceforge.net,
-   \*cpan.org, paguire.io, Other) with count and percentage.
+   cpan.org, gnome.org, x.org, apache.org, gnupg.org, netfilter.org,
+   pagure.org, mozilla.org, gitlab.com, No URL, Other) with count and
+   percentage.
 
 ## Prerequisites
 
@@ -101,7 +103,7 @@ Generate a report from an existing database:
 
 Generated from 170 scan files (branches 3.0, 4.0, 5.0, 6.0, common, dev,
 master) spanning 2023-02 to 2026-03, producing a 144,292-row database
-(42 MB) and a 59 KB `.docx`.
+(42 MB) and a 60 KB `.docx`.
 
 ### Database statistics
 
@@ -161,14 +163,24 @@ hyper-v              (3.0, 4.0, 5.0, 6.0, dev, master)
 
 | Category | Count | % |
 |----------|------:|----:|
-| Other | 771 | 49.0 |
 | github.com | 426 | 27.0 |
+| Other | 283 | 18.0 |
+| No URL | 201 | 12.8 |
+| pypi | 161 | 10.2 |
 | rubygems.org | 126 | 8.0 |
 | gnu.org | 64 | 4.1 |
 | sourceforge.net | 63 | 4.0 |
 | cpan.org | 49 | 3.1 |
 | kernel.org | 47 | 3.0 |
+| x.org | 35 | 2.2 |
+| gnome.org | 31 | 2.0 |
 | freedesktop.org | 29 | 1.8 |
+| apache.org | 18 | 1.1 |
+| gnupg.org | 14 | 0.9 |
+| netfilter.org | 13 | 0.8 |
+| mozilla.org | 7 | 0.4 |
+| pagure.org | 4 | 0.3 |
+| gitlab.com | 4 | 0.3 |
 
 ### .docx structure
 
@@ -182,9 +194,9 @@ $ unzip -l photon-report.docx
      1022  00-00-1980 00:00   word/styles.xml
       550  00-00-1980 00:00   word/_rels/document.xml.rels
     39274  00-00-1980 00:00   word/charts/chart1.xml
-     1618  00-00-1980 00:00   word/charts/chart2.xml
+     2533  00-00-1980 00:00   word/charts/chart2.xml
 ---------                     -------
-    58855                     7 files
+    59770                     7 files
 ```
 
 ### Duplicate handling

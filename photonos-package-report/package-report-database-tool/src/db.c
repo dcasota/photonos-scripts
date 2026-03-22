@@ -547,14 +547,24 @@ int db_query_categories(db_t *db, category_data_t *out)
         ")"
         "SELECT "
         "  CASE "
+        "    WHEN url NOT LIKE '%://%' THEN 'No URL'"
         "    WHEN url LIKE '%github.com%' THEN 'github.com'"
+        "    WHEN url LIKE '%pythonhosted.org%' OR url LIKE '%pypi.python.org%'"
+        "         OR url LIKE '%pypi.io%' OR url LIKE '%pypi.org%' THEN 'pypi'"
         "    WHEN url LIKE '%kernel.org%' THEN 'kernel.org'"
         "    WHEN url LIKE '%freedesktop.org%' THEN 'freedesktop.org'"
-        "    WHEN url LIKE '%gnu.org%' OR url LIKE '%ftp.gnu.org%' THEN 'gnu.org'"
+        "    WHEN url LIKE '%gnu.org%' THEN 'gnu.org'"
         "    WHEN url LIKE '%rubygems.org%' THEN 'rubygems.org'"
         "    WHEN url LIKE '%sourceforge.net%' THEN 'sourceforge.net'"
         "    WHEN url LIKE '%cpan.org%' THEN 'cpan.org'"
-        "    WHEN url LIKE '%paguire.io%' THEN 'paguire.io'"
+        "    WHEN url LIKE '%gnome.org%' THEN 'gnome.org'"
+        "    WHEN url LIKE '%x.org%' OR url LIKE '%xorg%' THEN 'x.org'"
+        "    WHEN url LIKE '%apache.org%' THEN 'apache.org'"
+        "    WHEN url LIKE '%gnupg.org%' OR url LIKE '%gnupg%' THEN 'gnupg.org'"
+        "    WHEN url LIKE '%netfilter.org%' THEN 'netfilter.org'"
+        "    WHEN url LIKE '%pagure.org%' THEN 'pagure.org'"
+        "    WHEN url LIKE '%mozilla.org%' THEN 'mozilla.org'"
+        "    WHEN url LIKE '%gitlab.com%' THEN 'gitlab.com'"
         "    ELSE 'Other'"
         "  END as category,"
         "  COUNT(*) as cnt "
@@ -570,7 +580,7 @@ int db_query_categories(db_t *db, category_data_t *out)
         return -1;
     }
 
-    int cap = 16;
+    int cap = 32;
     out->items = malloc(sizeof(category_t) * (size_t)cap);
     if (!out->items) { sqlite3_finalize(stmt); return -1; }
     out->total = 0;
