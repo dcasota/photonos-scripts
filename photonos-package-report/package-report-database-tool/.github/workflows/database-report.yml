@@ -144,11 +144,9 @@ jobs:
             echo "" >> "$GITHUB_STEP_SUMMARY"
             echo "### Database Statistics" >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
-            sqlite3 "$DB" <<'EOF' >> "$GITHUB_STEP_SUMMARY"
-SELECT 'Scan files: ' || COUNT(*) FROM scan_files;
-SELECT 'Packages:   ' || COUNT(*) FROM packages;
-SELECT '  ' || branch || ': ' || COUNT(*) || ' scans' FROM scan_files GROUP BY branch ORDER BY branch;
-EOF
+            sqlite3 "$DB" "SELECT 'Scan files: ' || COUNT(*) FROM scan_files;" >> "$GITHUB_STEP_SUMMARY"
+            sqlite3 "$DB" "SELECT 'Packages:   ' || COUNT(*) FROM packages;" >> "$GITHUB_STEP_SUMMARY"
+            sqlite3 "$DB" "SELECT '  ' || branch || ': ' || COUNT(*) || ' scans' FROM scan_files GROUP BY branch ORDER BY branch;" >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
           fi
 
