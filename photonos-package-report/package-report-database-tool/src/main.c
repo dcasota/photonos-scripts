@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <time.h>
 
 static void print_usage(const char *prog)
 {
@@ -91,7 +93,21 @@ int main(int argc, char **argv)
 
     /* Report */
     if (report_path && exit_code == 0) {
-        printf("Generating report: %s\n", report_path);
+        /* If report_path is a directory, generate report-<datetime>.docx inside it */
+        char resolved_report[MAX_PATH_LEN];
+        struct stat st_rp;
+        const char *final_report = report_path;
+        if (stat(report_path, &st_rp) == 0 && S_ISDIR(st_rp.st_mode)) {
+            time_t now = time(NULL);
+            struct tm *tm = gmtime(&now);
+            snprintf(resolved_report, sizeof(resolved_report),
+                     "%s/report-%04d%02d%02d%02d%02d.docx",
+                     report_path,
+                     tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
+                     tm->tm_hour, tm->tm_min);
+            final_report = resolved_report;
+        }
+        printf("Generating report: %s\n", final_report);
 
         timeline_data_t timeline;
         top_changed_data_t top_changed;
@@ -131,12 +147,12 @@ int main(int argc, char **argv)
             fprintf(stderr, "Warning: some queries failed, report may be incomplete\n");
         }
 
-        if (docx_write_report(report_path, &timeline, &top_changed,
+        if (docx_write_report(final_report, &timeline, &top_changed,
                               &least_changed, &categories, &drift) != 0) {
             fprintf(stderr, "Failed to write report\n");
             exit_code = 1;
         } else {
-            printf("Report written: %s\n", report_path);
+            printf("Report written: %s\n", final_report);
         }
 
         timeline_data_free(&timeline);

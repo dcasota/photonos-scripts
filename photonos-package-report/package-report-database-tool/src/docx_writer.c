@@ -17,7 +17,7 @@ typedef struct {
         unsigned int comp_size;
         unsigned int uncomp_size;
         unsigned int local_offset;
-    } entries[32];
+    } entries[48];
     int nentries;
 } zipwriter_t;
 
@@ -44,7 +44,7 @@ static void zip_write32(FILE *f, unsigned int v)
 
 static int zip_add_file(zipwriter_t *z, const char *name, const void *data, size_t len)
 {
-    if (!z->fp || z->nentries >= 32)
+    if (!z->fp || z->nentries >= 48)
         return -1;
 
     unsigned int crc = crc32(0L, Z_NULL, 0);
@@ -166,6 +166,9 @@ static char *gen_content_types(void)
         "<Default Extension=\"xml\" ContentType=\"application/xml\"/>"
         "<Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/>"
         "<Override PartName=\"/word/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml\"/>"
+        "<Override PartName=\"/word/settings.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml\"/>"
+        "<Override PartName=\"/word/webSettings.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.webSettings+xml\"/>"
+        "<Override PartName=\"/word/fontTable.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.fontTable+xml\"/>"
         "<Override PartName=\"/word/charts/chart1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.drawingml.chart+xml\"/>"
         "<Override PartName=\"/word/charts/chart2.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.drawingml.chart+xml\"/>"
         "<Override PartName=\"/word/charts/chart3.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.drawingml.chart+xml\"/>"
@@ -190,6 +193,9 @@ static char *gen_doc_rels(void)
         "<Relationship Id=\"rId2\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart\" Target=\"charts/chart1.xml\"/>"
         "<Relationship Id=\"rId3\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart\" Target=\"charts/chart2.xml\"/>"
         "<Relationship Id=\"rId4\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart\" Target=\"charts/chart3.xml\"/>"
+        "<Relationship Id=\"rId5\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings\" Target=\"settings.xml\"/>"
+        "<Relationship Id=\"rId6\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/webSettings\" Target=\"webSettings.xml\"/>"
+        "<Relationship Id=\"rId7\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/fontTable\" Target=\"fontTable.xml\"/>"
         "</Relationships>");
 }
 
@@ -214,6 +220,49 @@ static char *gen_styles(void)
         "<w:insideV w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"000000\"/>"
         "</w:tblBorders></w:tblPr></w:style>"
         "</w:styles>");
+}
+
+static char *gen_settings(void)
+{
+    return strdup(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n"
+        "<w:settings xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" "
+        "xmlns:o=\"urn:schemas-microsoft-com:office:office\" "
+        "xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" "
+        "xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" "
+        "xmlns:v=\"urn:schemas-microsoft-com:vml\">"
+        "<w:zoom w:percent=\"100\"/>"
+        "<w:defaultTabStop w:val=\"720\"/>"
+        "<w:characterSpacingControl w:val=\"doNotCompress\"/>"
+        "<w:compat><w:compatSetting w:name=\"compatibilityMode\" "
+        "w:uri=\"http://schemas.microsoft.com/office/word\" w:val=\"15\"/></w:compat>"
+        "</w:settings>");
+}
+
+static char *gen_web_settings(void)
+{
+    return strdup(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n"
+        "<w:webSettings xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" "
+        "xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">"
+        "<w:optimizeForBrowser/>"
+        "<w:allowPNG/>"
+        "</w:webSettings>");
+}
+
+static char *gen_font_table(void)
+{
+    return strdup(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n"
+        "<w:fonts xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" "
+        "xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">"
+        "<w:font w:name=\"Calibri\"><w:panose1 w:val=\"020F0502020204030204\"/>"
+        "<w:charset w:val=\"00\"/><w:family w:val=\"swiss\"/>"
+        "<w:pitch w:val=\"variable\"/></w:font>"
+        "<w:font w:name=\"Times New Roman\"><w:panose1 w:val=\"02020603050405020304\"/>"
+        "<w:charset w:val=\"00\"/><w:family w:val=\"roman\"/>"
+        "<w:pitch w:val=\"variable\"/></w:font>"
+        "</w:fonts>");
 }
 
 /* Helper: add a heading paragraph */
@@ -299,7 +348,11 @@ static char *gen_document(const top_changed_data_t *top_changed,
     if (top_changed && top_changed->count > 0) {
         strbuf_append(&sb,
             "<w:tbl><w:tblPr><w:tblStyle w:val=\"TableGrid\"/>"
-            "<w:tblW w:w=\"0\" w:type=\"auto\"/></w:tblPr>\r\n");
+            "<w:tblW w:w=\"0\" w:type=\"auto\"/></w:tblPr>"
+            "<w:tblGrid><w:gridCol w:w=\"2400\"/><w:gridCol w:w=\"900\"/>"
+            "<w:gridCol w:w=\"900\"/><w:gridCol w:w=\"900\"/>"
+            "<w:gridCol w:w=\"900\"/><w:gridCol w:w=\"900\"/>"
+            "<w:gridCol w:w=\"3100\"/></w:tblGrid>\r\n");
         /* Header row */
         strbuf_append(&sb, "<w:tr>");
         doc_add_cell(&sb, "Package");
@@ -340,7 +393,9 @@ static char *gen_document(const top_changed_data_t *top_changed,
     if (least_changed && least_changed->count > 0) {
         strbuf_append(&sb,
             "<w:tbl><w:tblPr><w:tblStyle w:val=\"TableGrid\"/>"
-            "<w:tblW w:w=\"0\" w:type=\"auto\"/></w:tblPr>\r\n");
+            "<w:tblW w:w=\"0\" w:type=\"auto\"/></w:tblPr>"
+            "<w:tblGrid><w:gridCol w:w=\"3000\"/><w:gridCol w:w=\"4500\"/>"
+            "<w:gridCol w:w=\"1500\"/></w:tblGrid>\r\n");
         strbuf_append(&sb, "<w:tr>");
         doc_add_cell(&sb, "Package");
         doc_add_cell(&sb, "Branches");
@@ -399,6 +454,9 @@ int docx_write_report(const char *output_path,
     char *rels = gen_rels();
     char *doc_rels = gen_doc_rels();
     char *styles = gen_styles();
+    char *settings = gen_settings();
+    char *web_settings = gen_web_settings();
+    char *font_table = gen_font_table();
     char *document = gen_document(top_changed, least_changed);
     char *chart1 = chart_xml_timeline(timeline);
     char *chart2 = chart_xml_pie(categories);
@@ -406,7 +464,8 @@ int docx_write_report(const char *output_path,
 
     int rc = 0;
 
-    if (!content_types || !rels || !doc_rels || !styles || !document) {
+    if (!content_types || !rels || !doc_rels || !styles || !settings ||
+        !web_settings || !font_table || !document) {
         rc = -1;
         goto cleanup;
     }
@@ -415,6 +474,9 @@ int docx_write_report(const char *output_path,
         zip_add_file(&z, "_rels/.rels", rels, strlen(rels)) != 0 ||
         zip_add_file(&z, "word/document.xml", document, strlen(document)) != 0 ||
         zip_add_file(&z, "word/styles.xml", styles, strlen(styles)) != 0 ||
+        zip_add_file(&z, "word/settings.xml", settings, strlen(settings)) != 0 ||
+        zip_add_file(&z, "word/webSettings.xml", web_settings, strlen(web_settings)) != 0 ||
+        zip_add_file(&z, "word/fontTable.xml", font_table, strlen(font_table)) != 0 ||
         zip_add_file(&z, "word/_rels/document.xml.rels", doc_rels, strlen(doc_rels)) != 0) {
         rc = -1;
         goto cleanup;
@@ -438,6 +500,9 @@ cleanup:
     free(rels);
     free(doc_rels);
     free(styles);
+    free(settings);
+    free(web_settings);
+    free(font_table);
     free(document);
     free(chart1);
     free(chart2);

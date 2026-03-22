@@ -10,7 +10,7 @@ on:
         description: 'SQLite database path (default: workspace/photon-scans.db)'
         default: ''
       reportPath:
-        description: 'Output .docx report path (default: workspace/photon-report.docx)'
+        description: 'Output report directory (default: reports/ -- generates report-<datetime>.docx)'
         default: ''
       skipImport:
         description: 'Skip import, only generate report from existing DB'
@@ -106,8 +106,9 @@ jobs:
 
           REPORT="${{ github.event.inputs.reportPath }}"
           if [ -z "$REPORT" ]; then
-            REPORT="$GITHUB_WORKSPACE/photon-report.docx"
+            REPORT="$GITHUB_WORKSPACE/repo/${{ env.TOOL_DIR }}/reports"
           fi
+          mkdir -p "$REPORT"
 
           echo "scans=$SCANS" >> "$GITHUB_OUTPUT"
           echo "db=$DB" >> "$GITHUB_OUTPUT"
@@ -164,28 +165,35 @@ jobs:
 
           ./photon-report-db --db "$DB" --report "$REPORT" 2>&1 | tee /tmp/report.log
 
-          if [ -f "$REPORT" ]; then
-            SIZE=$(stat -c%s "$REPORT" 2>/dev/null || stat -f%z "$REPORT" 2>/dev/null)
-            echo "Report generated: **$(basename "$REPORT")** ($SIZE bytes)" >> "$GITHUB_STEP_SUMMARY"
+          # The tool auto-generates report-<datetime>.docx inside the directory
+          DOCX_FILE=$(find "$REPORT" -maxdepth 1 -name 'report-*.docx' -type f -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
+          if [ -z "$DOCX_FILE" ]; then
+            DOCX_FILE=$(ls -t "$REPORT"/report-*.docx 2>/dev/null | head -1)
+          fi
+          echo "docx_file=$DOCX_FILE" >> "$GITHUB_OUTPUT"
+
+          if [ -n "$DOCX_FILE" ] && [ -f "$DOCX_FILE" ]; then
+            SIZE=$(stat -c%s "$DOCX_FILE" 2>/dev/null || stat -f%z "$DOCX_FILE" 2>/dev/null)
+            echo "Report generated: **$(basename "$DOCX_FILE")** ($SIZE bytes)" >> "$GITHUB_STEP_SUMMARY"
 
             echo "" >> "$GITHUB_STEP_SUMMARY"
             echo "### DOCX Structure" >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
             if command -v unzip &>/dev/null; then
-              unzip -l "$REPORT" >> "$GITHUB_STEP_SUMMARY" 2>&1
+              unzip -l "$DOCX_FILE" >> "$GITHUB_STEP_SUMMARY" 2>&1
             else
               echo "(unzip not available for verification)" >> "$GITHUB_STEP_SUMMARY"
             fi
             echo '```' >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "::error::Report file not created"
+            echo "::error::Report file not created in $REPORT"
             exit 1
           fi
 
           # Extract query stats from log
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "### Query Results" >> "$GITHUB_STEP_SUMMARY"
-          grep -E '^\s+(Timeline|Top changed|Least changed|Categories):' /tmp/report.log >> "$GITHUB_STEP_SUMMARY" || true
+          grep -E '^\s+(Timeline|Top changed|Least changed|Categories|Category drift):' /tmp/report.log >> "$GITHUB_STEP_SUMMARY" || true
 
       - name: Upload report artefacts
         if: always()
@@ -193,7 +201,7 @@ jobs:
         with:
           name: database-report
           path: |
-            ${{ steps.paths.outputs.report }}
+            ${{ steps.paths.outputs.report }}/report-*.docx
             ${{ steps.paths.outputs.db }}
           retention-days: 90
           if-no-files-found: warn
@@ -202,11 +210,11 @@ jobs:
         if: success()
         run: |
           DB="${{ steps.paths.outputs.db }}"
-          REPORT="${{ steps.paths.outputs.report }}"
+          REPORTS_DIR="${{ steps.paths.outputs.report }}"
           SCANS_DIR="repo/photonos-package-report/scans"
 
           mkdir -p "$SCANS_DIR"
-          cp "$REPORT" "$SCANS_DIR/" 2>/dev/null || true
+          cp "$REPORTS_DIR"/report-*.docx "$SCANS_DIR/" 2>/dev/null || true
           cp "$DB" "$SCANS_DIR/" 2>/dev/null || true
 
           cd repo
