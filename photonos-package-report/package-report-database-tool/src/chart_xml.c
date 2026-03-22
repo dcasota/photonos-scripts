@@ -584,11 +584,21 @@ char *chart_xml_bar_stacked_branch(const category_drift_data_t *data, const char
 
     if (ndt == 0) return NULL;
 
-    double last_fx = 2023.0;
-    for (int d = 0; d < ndt; d++) {
+    /* Dynamic start: round first scan datetime down to quarter boundary */
+    double first_fx = dt_to_fracyear(datetimes[0]);
+    double last_fx = first_fx;
+    for (int d = 1; d < ndt; d++) {
         double fx = dt_to_fracyear(datetimes[d]);
         if (fx > last_fx) last_fx = fx;
     }
+    int start_year = (int)first_fx;
+    double start_frac = first_fx - start_year;
+    double x_min;
+    if (start_frac < 0.25) x_min = (double)start_year;
+    else if (start_frac < 0.5) x_min = start_year + 0.25;
+    else if (start_frac < 0.75) x_min = start_year + 0.5;
+    else x_min = start_year + 0.75;
+
     double end_frac = last_fx + 0.25;
     int end_year = (int)end_frac;
     double rem = end_frac - end_year;
@@ -597,7 +607,7 @@ char *chart_xml_bar_stacked_branch(const category_drift_data_t *data, const char
     else if (rem <= 0.5) x_max = end_year + 0.5;
     else x_max = end_year + 1.0;
 
-    int nslots = (int)((x_max - 2023.0) / 0.25 + 0.5);
+    int nslots = (int)((x_max - x_min) / 0.25 + 0.5);
     if (nslots < 1) nslots = 1;
     if (nslots > 64) nslots = 64;
 
@@ -606,7 +616,7 @@ char *chart_xml_bar_stacked_branch(const category_drift_data_t *data, const char
     for (int c = 0; c < data->ncategories && c < 32; c++) {
         double last_pct = 0.0;
         for (int s = 0; s < nslots; s++) {
-            double slot_start = 2023.0 + s * 0.25;
+            double slot_start = x_min + s * 0.25;
             double slot_end = slot_start + 0.25;
             double best = 0.0;
             int found_slot = 0;
@@ -659,7 +669,7 @@ char *chart_xml_bar_stacked_branch(const category_drift_data_t *data, const char
 
         strbuf_printf(&sb, "<c:cat><c:strRef><c:strCache><c:ptCount val=\"%d\"/>\r\n", nslots);
         for (int s = 0; s < nslots; s++) {
-            double slot_start = 2023.0 + s * 0.25;
+            double slot_start = x_min + s * 0.25;
             int yr = (int)slot_start;
             double frac = slot_start - yr;
             if (frac < 0.01)
