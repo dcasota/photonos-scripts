@@ -295,27 +295,32 @@ static void doc_add_cell(strbuf_t *sb, const char *text)
     free(esc);
 }
 
-/* Helper: inline chart reference */
+/* Helper: inline chart reference (docPr id must be unique per document) */
+static int s_next_docpr_id = 1;
+
 static void doc_add_chart_ref(strbuf_t *sb, const char *rid)
 {
+    int dpid = s_next_docpr_id++;
     strbuf_printf(sb,
         "<w:p><w:r>"
         "<w:drawing>"
         "<wp:inline xmlns:wp=\"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing\" "
         "distT=\"0\" distB=\"0\" distL=\"0\" distR=\"0\">"
         "<wp:extent cx=\"5486400\" cy=\"3200400\"/>"
-        "<wp:docPr id=\"1\" name=\"Chart\"/>"
+        "<wp:docPr id=\"%d\" name=\"Chart %d\"/>"
         "<a:graphic xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\">"
         "<a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/chart\">"
         "<c:chart xmlns:c=\"http://schemas.openxmlformats.org/drawingml/2006/chart\" "
         "xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" "
         "r:id=\"%s\"/>"
-        "</a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>\r\n", rid);
+        "</a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>\r\n",
+        dpid, dpid, rid);
 }
 
 static char *gen_document(const top_changed_data_t *top_changed,
                           const least_changed_data_t *least_changed)
 {
+    s_next_docpr_id = 1;
     strbuf_t sb;
     strbuf_init(&sb);
 
