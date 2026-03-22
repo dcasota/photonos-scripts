@@ -103,7 +103,7 @@ Generate a report from an existing database:
 
 Generated from 170 scan files (branches 3.0, 4.0, 5.0, 6.0, common, dev,
 master) spanning 2023-02 to 2026-03, producing a 144,292-row database
-(42 MB) and a 60 KB `.docx`.
+(42 MB) and a 59 KB `.docx`.
 
 ### Database statistics
 
@@ -161,26 +161,18 @@ hyper-v              (3.0, 4.0, 5.0, 6.0, dev, master)
 
 ### Section 4 -- Source category pie chart
 
+Categories below 3.0% are merged into "Other".
+
 | Category | Count | % |
 |----------|------:|----:|
+| Other | 485 | 30.8 |
 | github.com | 426 | 27.0 |
-| Other | 283 | 18.0 |
 | No URL | 201 | 12.8 |
 | pypi | 161 | 10.2 |
 | rubygems.org | 126 | 8.0 |
 | gnu.org | 64 | 4.1 |
 | sourceforge.net | 63 | 4.0 |
 | cpan.org | 49 | 3.1 |
-| kernel.org | 47 | 3.0 |
-| x.org | 35 | 2.2 |
-| gnome.org | 31 | 2.0 |
-| freedesktop.org | 29 | 1.8 |
-| apache.org | 18 | 1.1 |
-| gnupg.org | 14 | 0.9 |
-| netfilter.org | 13 | 0.8 |
-| mozilla.org | 7 | 0.4 |
-| pagure.org | 4 | 0.3 |
-| gitlab.com | 4 | 0.3 |
 
 ### .docx structure
 
@@ -194,9 +186,9 @@ $ unzip -l photon-report.docx
      1022  00-00-1980 00:00   word/styles.xml
       550  00-00-1980 00:00   word/_rels/document.xml.rels
     39274  00-00-1980 00:00   word/charts/chart1.xml
-     2533  00-00-1980 00:00   word/charts/chart2.xml
+     1609  00-00-1980 00:00   word/charts/chart2.xml
 ---------                     -------
-    59770                     7 files
+    58846                     7 files
 ```
 
 ### Duplicate handling
