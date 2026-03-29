@@ -1181,7 +1181,7 @@ python-semantic-version.spec,https://github.com/rbarrois/python-semanticversion/
 python-service_identity.spec,https://github.com/pyca/service-identity/archive/refs/tags/%{version}.tar.gz,https://github.com/pyca/service-identity.git
 python-setproctitle.spec,https://github.com/dvarrazzo/py-setproctitle/archive/refs/tags/version-%{version}.tar.gz,https://github.com/dvarrazzo/py-setproctitle.git,,,"version-"
 python-setuptools.spec,https://github.com/pypa/setuptools/archive/refs/tags/v%{version}.tar.gz,https://github.com/pypa/setuptools.git
-python-setuptools-rust.spec,https://github.com/PyO3/setuptools-rust/archive/refs/tags/v%{version}.tar.gz,https://github.com/PyO3/setuptools-rust.git
+python-setuptools-rust.spec,https://files.pythonhosted.org/packages/source/s/setuptools-rust/setuptools_rust-%{version}.tar.gz,https://github.com/PyO3/setuptools-rust.git
 python-setuptools_scm.spec,https://github.com/pypa/setuptools_scm/archive/refs/tags/v%{version}.tar.gz,https://github.com/pypa/setuptools_scm.git
 python-simplejson.spec,https://github.com/simplejson/simplejson/archive/refs/tags/v%{version}.tar.gz,https://github.com/simplejson/simplejson.git
 python-six.spec,https://github.com/benjaminp/six/archive/refs/tags/%{version}.tar.gz,https://github.com/benjaminp/six.git
