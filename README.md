@@ -129,7 +129,7 @@ Side-by-side-installations in nowadays work fine. This wasn't always the case, s
   
 ![side-side-installation](https://github.com/dcasota/photonos-scripts/blob/master/PwshOnPhotonOS/side-side-installation.png).
 
-The idea of developing a testing workflow for side-by-side installation combinations using [VMware Tanzu Community Edition](https://tanzucommunityedition.io/) came up as some sort of basics for 'PowerCLI runspace per release'.  
+The idea of developing a testing workflow for side-by-side installation combinations using [VMware Tanzu Community Edition](https://github.com/vmware-tanzu/community-edition) came up as some sort of basics for 'PowerCLI runspace per release'.  
 ![Status Oct21](https://github.com/dcasota/photonos-scripts/blob/master/PwshOnPhotonOS/Status_Oct21.png)
 
 # Learning from Kube Academy
