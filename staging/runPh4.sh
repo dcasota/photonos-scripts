@@ -27,7 +27,8 @@ if ping -c 4 www.google.ch > /dev/null 2>&1; then
   git fetch
   git merge --autostash
   for i in {1..10}; do
-    sudo make -j$(( $(nproc) - 1 )) image IMG_NAME=iso THREADS=$(( $(nproc) - 1 ));
+    # sudo make -j$(( $(nproc) - 1 )) image IMG_NAME=iso THREADS=$(( $(nproc) - 1 ));
+    sudo make -j2 image IMG_NAME=iso THREADS=2;
     # Wait up to 30 seconds for ISO to appear
     timeout=30
     while [ $timeout -gt 0 ]; do

@@ -63,6 +63,43 @@ print(cfg['photon-build-param']['photon-subrelease'])
   echo "[runPh6] FIPS kernel: CONFIG_CRYPTO_FIPS=y (built-in)"
   echo "[runPh6] FIPS userspace: openssl-fips-provider (fips.so)"
 
+  # ── Fix OpenJDK WSL2 detection in chroot ───────────────────────────
+  if grep -qi 'microsoft\|wsl' /proc/version 2>/dev/null; then
+    for jdk_spec in SPECS/openjdk/openjdk*.spec; do
+      [ -f "$jdk_spec" ] || continue
+      if grep -q 'sh ./configure' "$jdk_spec" && ! grep -q 'build=x86_64-unknown-linux-gnu' "$jdk_spec"; then
+        sed -i 's|--disable-warnings-as-errors$|--disable-warnings-as-errors \\\n    --build=x86_64-unknown-linux-gnu|' "$jdk_spec"
+        echo "[runPh6] Fixed $(basename "$jdk_spec"): added --build for WSL2"
+      fi
+    done
+  fi
+
+  # ── Pre-fetch sources missing from Broadcom mirror ─────────────
+  fetch_missing_source() {
+    archive="$1"; url="$2"; destdir="$BASE_DIR/$RELEASE_BRANCH/stage/SOURCES"
+    [ -f "$destdir/$archive" ] && return 0
+    echo "[runPh6] Fetching missing source: $archive"
+    mkdir -p "$destdir"
+    wget -q "$url" -O "$destdir/$archive" 2>/dev/null && return 0
+    echo "[runPh6] WARNING: Failed to fetch $archive from $url"
+    return 1
+  }
+
+  find "$BASE_DIR/$RELEASE_BRANCH/SPECS" -name config.yaml -print0 2>/dev/null | while IFS= read -r -d '' cfg; do
+    python3 -c "
+import yaml, sys
+with open('$cfg') as f:
+    data = yaml.safe_load(f)
+for s in data.get('sources', []):
+    a = s.get('archive', '')
+    u = s.get('url', '')
+    if a and u:
+        print(a + '|' + u)
+" 2>/dev/null | while IFS='|' read -r archive url; do
+      fetch_missing_source "$archive" "$url"
+    done
+  done
+
   # ── Free disk space and clean stale build artifacts ─────────────
   for mp in $(mount 2>/dev/null | grep "stage/photonroot" | awk '{print $3}' | sort -r); do
     umount "$mp" 2>/dev/null || umount -l "$mp" 2>/dev/null
@@ -85,15 +122,16 @@ print(cfg['photon-build-param']['photon-subrelease'])
   # ── Build loop ────────────────────────────────────────────────────
   for i in $(seq 1 10); do
     sudo make -j$(( $(nproc) - 1 )) image IMG_NAME=iso THREADS=$(( $(nproc) - 1 ));
+    # 6.0 uses docker-based ISO assembly; output lands in stage/iso/ not stage/
     timeout=30
     while [ $timeout -gt 0 ]; do
-      if ls stage/*.iso 1>/dev/null 2>&1; then
+      if ls stage/*.iso stage/iso/*.iso 1>/dev/null 2>&1; then
         break
       fi
       sleep 1
       timeout=$((timeout - 1))
     done
-    if sudo mv stage/*.iso "$OUTPUT_DIR"; then
+    if sudo mv stage/*.iso "$OUTPUT_DIR" 2>/dev/null || sudo mv stage/iso/*.iso "$OUTPUT_DIR" 2>/dev/null; then
       exit 0
     fi
   done
