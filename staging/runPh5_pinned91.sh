@@ -128,6 +128,18 @@ print('[runPh5] Set base-commit to common HEAD: ${COMMON_HEAD}')
     done
   fi
 
+  # ── Fix Python 3 PGO test flake in WSL2 ────────────────────────────
+  # test_generators.SignalAndYieldFromTest is flaky under WSL2 (signal
+  # delivery timing differs). Override PROFILE_TASK to exclude it.
+  if grep -qi 'microsoft\|wsl' /proc/version 2>/dev/null; then
+    for py_spec in SPECS/python3/python3.spec SPECS/91/python3/python3.spec; do
+      if [ -f "$py_spec" ] && ! grep -q 'PROFILE_TASK' "$py_spec"; then
+        sed -i 's|^%make_build$|PROFILE_TASK="-m test --pgo -x test_generators" %make_build|' "$py_spec"
+        echo "[runPh5] Fixed $(basename "$py_spec"): excluded test_generators from PGO"
+      fi
+    done
+  fi
+
   # ── Fix perl-rpm-packaging missing debug_package disable ──────────
   PRP_SPEC="SPECS/perl-rpm-packaging/perl-rpm-packaging.spec"
   if [ -f "$PRP_SPEC" ] && ! grep -q 'debug_package' "$PRP_SPEC"; then

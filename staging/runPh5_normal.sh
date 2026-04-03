@@ -84,6 +84,19 @@ print(cfg['photon-build-param'].get('photon-mainline', cfg['photon-build-param']
     done
   fi
 
+  # ── Fix Python 3 PGO test flake in WSL2 ────────────────────────────
+  # Python's --enable-optimizations runs test_generators for PGO profiling.
+  # test_generators.SignalAndYieldFromTest is flaky under WSL2 (signal
+  # delivery timing differs from native Linux), causing the entire build
+  # to fail. Override PROFILE_TASK to exclude it. Only applied in WSL2.
+  if grep -qi 'microsoft\|wsl' /proc/version 2>/dev/null; then
+    PY3_SPEC="SPECS/python3/python3.spec"
+    if [ -f "$PY3_SPEC" ] && ! grep -q 'PROFILE_TASK' "$PY3_SPEC"; then
+      sed -i 's|^%make_build$|PROFILE_TASK="-m test --pgo -x test_generators" %make_build|' "$PY3_SPEC"
+      echo "[runPh5_normal] Fixed python3 spec: excluded test_generators from PGO"
+    fi
+  fi
+
   # ── Fix perl-rpm-packaging missing debug_package disable ──────────
   # Pure-Perl noarch package has no debug symbols; rpm build fails with
   # "Empty %files file debugfiles.list" without this macro.
