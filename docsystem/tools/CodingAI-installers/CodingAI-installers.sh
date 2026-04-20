@@ -35,6 +35,17 @@ chmod +x ./snyk
 mv ./snyk /usr/local/bin/
 echo "Installation finished. Start SnykCLI with 'snyk'."
 
+echo Installing Snyk Agent Scan ...
+# https://github.com/snyk/agent-scan
+uvx snyk-agent-scan@latest
+# uvx snyk-agent-scan@latest --skills
+# export SNYK_TOKEN=your-api-token-here
+echo "Installation finished."
+
+echo Installing cli-continues ...
+npm install -g continues    # gives you `continues` and `cont`
+echo "Installation finished. Start cli-continues with 'continues'."
+
 echo Installing FactoryAI Droid CLI ...
 # https://docs.factory.ai/guides/building/droid-exec-tutorial
 # Install Bun
@@ -83,7 +94,9 @@ echo "Installation finished. Start Claude Code with 'claude'."
 
 echo Installing Microsoft Copilot CLI ...
 # https://docs.github.com/en/copilot/how-tos/use-copilot-agents/use-copilot-cli
-npm install -g @github/copilot
+# npm install -g @github/copilot
+wget -qO- https://gh.io/copilot-install | bash
+# curl -fsSL https://gh.io/copilot-install | VERSION="v0.0.369" PREFIX="$HOME/custom" bash
 echo "Installation finished. Start Copilot CLI with 'copilot'."
 
 echo Installing Cursor CLI ...
