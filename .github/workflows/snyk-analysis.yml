@@ -33,6 +33,24 @@ jobs:
     timeout-minutes: 2880
 
     steps:
+      - name: Verify SNYK_TOKEN is configured
+        env:
+          # Pass the repo secret under a different name so it does not shadow
+          # a host-env SNYK_TOKEN when the secret is empty (self-hosted runner).
+          SNYK_TOKEN_SECRET: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          if [ -n "${SNYK_TOKEN_SECRET:-}" ]; then
+            echo "SNYK_TOKEN found in repo secret (length=${#SNYK_TOKEN_SECRET})"
+          elif [ -n "${SNYK_TOKEN:-}" ]; then
+            echo "SNYK_TOKEN found in runner env (length=${#SNYK_TOKEN})"
+          else
+            echo "::error::SNYK_TOKEN is set neither as a repo secret nor as a runner host env var."
+            echo "::error::Get a token from https://app.snyk.io/account, then either:"
+            echo "::error::  - add it under Settings -> Secrets and variables -> Actions, or"
+            echo "::error::  - export it on the self-hosted runner (e.g. via \$HOME/actions-runner/.env, then restart)."
+            exit 1
+          fi
+
       - name: Checkout repo
         uses: actions/checkout@v6
         with:
@@ -59,21 +77,15 @@ jobs:
 
       - name: Install / update Snyk CLI
         env:
-          # Pass the repo secret under a different name so it does not shadow
-          # a host-env SNYK_TOKEN when the secret is empty (self-hosted runner).
+          # Repo-secret value (may be empty); fall back to host-env SNYK_TOKEN.
           SNYK_TOKEN_SECRET: ${{ secrets.SNYK_TOKEN }}
         run: |
-          # Resolve SNYK_TOKEN: repo secret wins, else use host env.
+          # Resolve SNYK_TOKEN: repo secret wins, else use host env (already in scope on self-hosted runners).
           if [ -n "${SNYK_TOKEN_SECRET:-}" ]; then
             export SNYK_TOKEN="$SNYK_TOKEN_SECRET"
-            echo "SNYK_TOKEN found in repo secret (length=${#SNYK_TOKEN})"
-          elif [ -n "${SNYK_TOKEN:-}" ]; then
-            echo "SNYK_TOKEN found in runner env (length=${#SNYK_TOKEN})"
-          else
-            echo "::error::SNYK_TOKEN is set neither as a repo secret nor as a runner host env var."
-            echo "::error::Get a token from https://app.snyk.io/account, then either:"
-            echo "::error::  - add it under Settings -> Secrets and variables -> Actions, or"
-            echo "::error::  - export it on the self-hosted runner (e.g. via \$HOME/actions-runner/.env, then restart)."
+          fi
+          if [ -z "${SNYK_TOKEN:-}" ]; then
+            echo "::error::SNYK_TOKEN not resolved at run time."
             exit 1
           fi
           INSTALL_DIR="$HOME/.local/bin"
