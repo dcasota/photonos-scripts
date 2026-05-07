@@ -108,11 +108,16 @@ jobs:
           # Patch dispatch table
           sed -i '/"count",.*TDNFCliCountCommand/a\    {"depgraph",           TDNFCliDepGraphCommand, false},' tdnf-src/tools/cli/main.c
 
-          # Build
+          # Build (use pipefail so a make failure isn't masked by tail)
+          set -o pipefail
           cd tdnf-src && mkdir -p build && cd build
           cmake .. -Wno-dev 2>&1 | tail -3
-          make -j$(nproc) 2>&1 | tail -5
-          echo "Build complete"
+          make -j$(nproc) 2>&1 | tee /tmp/tdnf-build.log | tail -5
+          if [ ! -x bin/tdnf ]; then
+            echo "::error::tdnf binary not produced — see /tmp/tdnf-build.log"
+            exit 1
+          fi
+          echo "Build complete: $(./bin/tdnf --version 2>&1 | head -1)"
 
       - name: Clone vmware/photon branches and generate dependency graphs
         id: generate
@@ -154,10 +159,14 @@ jobs:
               continue
             fi
 
-            # Generate depgraph from spec files
+            # Generate depgraph from spec files (capture stderr to a log so failures surface)
+            ERR_LOG="/tmp/depgraph-${SAFE_BRANCH}.err"
             env $TDNF_ENV $TDNF depgraph --json \
               --setopt specsdir="${CLONE_DIR}/SPECS" \
-              --setopt branch="${BRANCH}" 2>/dev/null > "$OUTPATH"
+              --setopt branch="${BRANCH}" 2>"$ERR_LOG" > "$OUTPATH" || {
+              echo "::warning::tdnf depgraph failed for ${BRANCH} (exit $?), stderr:"
+              tail -20 "$ERR_LOG"
+            }
 
             # Validate and extract stats
             STATS=$(python3 -c "

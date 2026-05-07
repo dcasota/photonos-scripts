@@ -7,6 +7,7 @@
  */
 
 #include "includes.h"
+#include "../llconf/nodes.h"
 
 static const char *
 DepEdgeTypeName(TDNF_DEP_EDGE_TYPE nType)
@@ -239,7 +240,7 @@ TDNFCliDepGraphCommand(
 {
     uint32_t dwError = 0;
     PTDNF_DEP_GRAPH pGraph = NULL;
-    PTDNF_CMD_OPT pSetOpt = NULL;
+    struct cnfnode *cn = NULL;
     int nDotOutput = 0;
     const char *pszBranch = NULL;
     const char *pszSpecsDir = NULL;
@@ -250,19 +251,22 @@ TDNFCliDepGraphCommand(
         BAIL_ON_CLI_ERROR(dwError);
     }
 
-    for (pSetOpt = pCmdArgs->pSetOpt; pSetOpt; pSetOpt = pSetOpt->pNext)
+    if (pCmdArgs->cn_setopts != NULL)
     {
-        if (strcasecmp(pSetOpt->pszOptName, "dot") == 0)
+        for (cn = pCmdArgs->cn_setopts->first_child; cn; cn = cn->next)
         {
-            nDotOutput = 1;
-        }
-        else if (strcasecmp(pSetOpt->pszOptName, "branch") == 0)
-        {
-            pszBranch = pSetOpt->pszOptValue;
-        }
-        else if (strcasecmp(pSetOpt->pszOptName, "specsdir") == 0)
-        {
-            pszSpecsDir = pSetOpt->pszOptValue;
+            if (strcasecmp(cn->name, "dot") == 0)
+            {
+                nDotOutput = 1;
+            }
+            else if (strcasecmp(cn->name, "branch") == 0)
+            {
+                pszBranch = cn->value;
+            }
+            else if (strcasecmp(cn->name, "specsdir") == 0)
+            {
+                pszSpecsDir = cn->value;
+            }
         }
     }
 

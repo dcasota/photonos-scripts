@@ -69,6 +69,7 @@ SolvDepGraphResolveDeps(
     Queue qDeps = {0};
     int i;
     Id dep, provider, pp;
+    uint32_t dwProviderIdx;
 
     queue_init(&qDeps);
     solvable_lookup_deparray(pSolv, nSolvableKey, &qDeps, -1);
@@ -83,7 +84,7 @@ SolvDepGraphResolveDeps(
                 provider >= pool->nsolvables)
                 continue;
 
-            uint32_t dwProviderIdx = pIdxMap[provider];
+            dwProviderIdx = pIdxMap[provider];
             if (dwProviderIdx == (uint32_t)-1)
                 continue;
             if (dwProviderIdx == dwSrcIdx)
@@ -110,8 +111,26 @@ SolvBuildDepGraph(
     PTDNF_DEP_GRAPH pGraph = NULL;
     uint32_t *pIdxMap = NULL;
     uint32_t dwNodeCount = 0;
+    uint32_t dwIdx = 0;
+    uint32_t dwSrcIdx;
+    int nIsSource;
+    int k;
     Id p;
     Solvable *s;
+    const char *pszName;
+    const char *pszArch;
+    const char *pszEvr;
+    const char *pszRepo;
+    TDNF_DEP_EDGE_TYPE nType;
+    static const DEP_KEY_MAP depKeys[] = {
+        { SOLVABLE_REQUIRES,    DEP_EDGE_REQUIRES,    0 },
+        { SOLVABLE_CONFLICTS,   DEP_EDGE_CONFLICTS,   1 },
+        { SOLVABLE_OBSOLETES,   DEP_EDGE_OBSOLETES,   1 },
+        { SOLVABLE_RECOMMENDS,  DEP_EDGE_RECOMMENDS,  0 },
+        { SOLVABLE_SUGGESTS,    DEP_EDGE_SUGGESTS,    0 },
+        { SOLVABLE_SUPPLEMENTS, DEP_EDGE_SUPPLEMENTS, 0 },
+        { SOLVABLE_ENHANCES,    DEP_EDGE_ENHANCES,    0 },
+    };
 
     if (!pSack || !pSack->pPool || !ppGraph)
     {
@@ -149,16 +168,15 @@ SolvBuildDepGraph(
     memset(pIdxMap, 0xff, pool->nsolvables * sizeof(uint32_t));
 
     /* Populate nodes */
-    uint32_t dwIdx = 0;
     FOR_POOL_SOLVABLES(p)
     {
         s = pool_id2solvable(pool, p);
         pIdxMap[p] = dwIdx;
 
-        const char *pszName = pool_id2str(pool, s->name);
-        const char *pszArch = pool_id2str(pool, s->arch);
-        const char *pszEvr  = pool_id2str(pool, s->evr);
-        const char *pszRepo = s->repo ? s->repo->name : "(none)";
+        pszName = pool_id2str(pool, s->name);
+        pszArch = pool_id2str(pool, s->arch);
+        pszEvr  = pool_id2str(pool, s->evr);
+        pszRepo = s->repo ? s->repo->name : "(none)";
 
         dwError = TDNFAllocateString(pszName,
                                      &pGraph->pNodes[dwIdx].pszName);
@@ -189,26 +207,16 @@ SolvBuildDepGraph(
     }
 
     /* Resolve dependencies and build edges */
-    static const DEP_KEY_MAP depKeys[] = {
-        { SOLVABLE_REQUIRES,    DEP_EDGE_REQUIRES,    0 },
-        { SOLVABLE_CONFLICTS,   DEP_EDGE_CONFLICTS,   1 },
-        { SOLVABLE_OBSOLETES,   DEP_EDGE_OBSOLETES,   1 },
-        { SOLVABLE_RECOMMENDS,  DEP_EDGE_RECOMMENDS,  0 },
-        { SOLVABLE_SUGGESTS,    DEP_EDGE_SUGGESTS,    0 },
-        { SOLVABLE_SUPPLEMENTS, DEP_EDGE_SUPPLEMENTS, 0 },
-        { SOLVABLE_ENHANCES,    DEP_EDGE_ENHANCES,    0 },
-    };
-
     FOR_POOL_SOLVABLES(p)
     {
-        uint32_t dwSrcIdx = pIdxMap[p];
+        dwSrcIdx = pIdxMap[p];
         s = pool_id2solvable(pool, p);
 
-        int nIsSource = pGraph->pNodes[dwSrcIdx].nIsSource;
+        nIsSource = pGraph->pNodes[dwSrcIdx].nIsSource;
 
-        for (int k = 0; k < (int)(sizeof(depKeys) / sizeof(depKeys[0])); k++)
+        for (k = 0; k < (int)(sizeof(depKeys) / sizeof(depKeys[0])); k++)
         {
-            TDNF_DEP_EDGE_TYPE nType = depKeys[k].nEdgeType;
+            nType = depKeys[k].nEdgeType;
 
             /* Tag Requires from source packages as BuildRequires */
             if (nIsSource && nType == DEP_EDGE_REQUIRES)
