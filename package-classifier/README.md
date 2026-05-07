@@ -1,4 +1,4 @@
-# classifier
+# package-classifier
 
 Two-step pipeline that classifies upstream package source URLs against an LLM
 to surface cybersecurity-relevant tools across the Photon OS branches.
@@ -76,7 +76,7 @@ If none is set the script runs in fallback-only mode.
 tdnf install -y powershell gh
 gh auth login
 
-cd classifier
+cd package-classifier
 pwsh ./Get-PackageReportUrls.ps1 -Verbose
 export XAI_API_KEY=xai-...
 pwsh ./Get-CybersecurityToolsWithGrok.ps1 -InputFile urls.txt -Verbose
