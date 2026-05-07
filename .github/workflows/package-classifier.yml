@@ -1,0 +1,241 @@
+name: Package Classifier (URL -> Cybersecurity Tools)
+
+on:
+  workflow_dispatch:
+    inputs:
+      source:
+        description: 'Where to source URLs from'
+        type: choice
+        options:
+          - committed_scans
+          - latest_artifact
+        default: 'committed_scans'
+      runId:
+        description: 'Pin a specific package-report run id (only used when source=latest_artifact; empty=latest success)'
+        default: ''
+      maxUrls:
+        description: 'Cap on URLs processed (0 = no cap; small values for smoke tests)'
+        default: '0'
+      maxAlternatives:
+        description: 'Top-N alternatives to research per package (0 disables, cuts tokens ~50%)'
+        default: '3'
+      model:
+        description: 'xAI Grok model id'
+        default: 'grok-4.3'
+      emitTsv:
+        description: 'Also emit a flat TSV (one row per package + alternative)'
+        type: boolean
+        default: true
+      resume:
+        description: 'Skip URLs already classified in the existing output file'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  classify:
+    runs-on: self-hosted
+    timeout-minutes: 2880
+
+    env:
+      # Persistent on the self-hosted runner; the script's -Resume default
+      # picks up unfinished work across runs.
+      WORKING_DIR: ${{ github.workspace }}/package-classifier-output
+
+    steps:
+      - name: Verify XAI_API_KEY is configured
+        env:
+          # Pass the repo secret under a different name so it does not shadow
+          # a host-env XAI_API_KEY when the secret is empty (self-hosted runner).
+          XAI_API_KEY_SECRET: ${{ secrets.XAI_API_KEY }}
+        run: |
+          if [ -n "${XAI_API_KEY_SECRET:-}" ]; then
+            echo "XAI_API_KEY found in repo secret (length=${#XAI_API_KEY_SECRET})"
+          elif [ -n "${XAI_API_KEY:-}" ]; then
+            echo "XAI_API_KEY found in runner env (length=${#XAI_API_KEY})"
+          else
+            echo "::error::XAI_API_KEY is set neither as a repo secret nor as a runner host env var."
+            echo "::error::Get a key at https://x.ai/api, then either:"
+            echo "::error::  - add it under Settings -> Secrets and variables -> Actions, or"
+            echo "::error::  - export it on the self-hosted runner (e.g. via \$HOME/actions-runner/.env, then restart)."
+            exit 1
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          path: repo
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout package-classifier (sparse)
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            package-classifier
+          path: ci
+
+      - name: Verify prerequisites
+        run: |
+          for cmd in pwsh gh; do
+            if ! command -v "$cmd" &>/dev/null; then
+              echo "::error::Missing required command: $cmd  (Photon OS: tdnf install -y $cmd)"
+              exit 1
+            fi
+          done
+          pwsh --version
+          gh --version | head -1
+
+      - name: Prepare workspace + summary
+        run: |
+          mkdir -p "$WORKING_DIR"
+          echo "## Package Classifier"        >> "$GITHUB_STEP_SUMMARY"
+          echo ""                             >> "$GITHUB_STEP_SUMMARY"
+          echo "| Parameter | Value |"        >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|"                    >> "$GITHUB_STEP_SUMMARY"
+          echo "| source | ${{ github.event.inputs.source }} |"                     >> "$GITHUB_STEP_SUMMARY"
+          echo "| runId | ${{ github.event.inputs.runId || '(latest success)' }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| maxUrls | ${{ github.event.inputs.maxUrls }} |"                   >> "$GITHUB_STEP_SUMMARY"
+          echo "| maxAlternatives | ${{ github.event.inputs.maxAlternatives }} |"   >> "$GITHUB_STEP_SUMMARY"
+          echo "| model | ${{ github.event.inputs.model }} |"                       >> "$GITHUB_STEP_SUMMARY"
+          echo "| emitTsv | ${{ github.event.inputs.emitTsv }} |"                   >> "$GITHUB_STEP_SUMMARY"
+          echo "| resume | ${{ github.event.inputs.resume }} |"                     >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build urls.txt
+        id: urls
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -o pipefail
+          if [ "${{ github.event.inputs.source }}" = "latest_artifact" ]; then
+            ARGS=""
+            if [ -n "${{ github.event.inputs.runId }}" ]; then
+              ARGS="-RunId ${{ github.event.inputs.runId }}"
+            fi
+            pwsh -File ci/package-classifier/Get-PackageReportUrls.ps1 \
+              -OutputFile "$WORKING_DIR/urls.txt" \
+              $ARGS \
+              -Verbose
+          else
+            # committed_scans: read directly from the repo checkout
+            pwsh -File ci/package-classifier/Get-PackageReportUrls.ps1 \
+              -ScansDir "repo/photonos-package-report/scans" \
+              -OutputFile "$WORKING_DIR/urls.txt" \
+              -Verbose
+          fi
+
+          # Optional cap (smoke tests)
+          MAX="${{ github.event.inputs.maxUrls }}"
+          if [ "$MAX" != "0" ] && [ -n "$MAX" ]; then
+            head -n "$MAX" "$WORKING_DIR/urls.txt" > "$WORKING_DIR/urls.capped.txt"
+            mv "$WORKING_DIR/urls.capped.txt" "$WORKING_DIR/urls.txt"
+            echo "Capped urls.txt to $MAX entries"
+          fi
+
+          URL_COUNT=$(wc -l < "$WORKING_DIR/urls.txt" || echo 0)
+          echo "url_count=$URL_COUNT" >> "$GITHUB_OUTPUT"
+          echo ""                                   >> "$GITHUB_STEP_SUMMARY"
+          echo "**URLs to classify:** $URL_COUNT"   >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Classify URLs with Grok
+        env:
+          # Same coalesce shape as the verify step.
+          XAI_API_KEY_SECRET: ${{ secrets.XAI_API_KEY }}
+        run: |
+          set -o pipefail
+          if [ -n "${XAI_API_KEY_SECRET:-}" ]; then
+            export XAI_API_KEY="$XAI_API_KEY_SECRET"
+          fi
+          if [ -z "${XAI_API_KEY:-}" ]; then
+            echo "::error::XAI_API_KEY not resolved at run time."
+            exit 1
+          fi
+
+          EMIT_TSV_ARG=""
+          if [ "${{ github.event.inputs.emitTsv }}" = "true" ]; then
+            EMIT_TSV_ARG="-EmitTsv"
+          fi
+          RESUME_VAL='$true'
+          if [ "${{ github.event.inputs.resume }}" != "true" ]; then
+            RESUME_VAL='$false'
+          fi
+
+          eval pwsh -File ci/package-classifier/Get-CybersecurityToolsWithGrok.ps1 \
+            -InputFile "\"$WORKING_DIR/urls.txt\"" \
+            -OutputFile "\"$WORKING_DIR/cybersecurity_tools.jsonl\"" \
+            -Model "${{ github.event.inputs.model }}" \
+            -MaxAlternatives "${{ github.event.inputs.maxAlternatives }}" \
+            $EMIT_TSV_ARG \
+            -Resume $RESUME_VAL \
+            -Verbose
+
+      - name: Compute summary stats
+        id: stats
+        if: always()
+        run: |
+          OUT="$WORKING_DIR/cybersecurity_tools.jsonl"
+          if [ ! -s "$OUT" ]; then
+            echo "lines=0" >> "$GITHUB_OUTPUT"
+            echo "No output file produced." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          LINES=$(wc -l < "$OUT")
+          DEGRADED=$(grep -c '"degraded":true' "$OUT" || echo 0)
+          echo "lines=$LINES" >> "$GITHUB_OUTPUT"
+          echo ""                                              >> "$GITHUB_STEP_SUMMARY"
+          echo "**Records written:** $LINES (degraded: $DEGRADED)" >> "$GITHUB_STEP_SUMMARY"
+          echo "**TopN by composite_score:**"                   >> "$GITHUB_STEP_SUMMARY"
+          echo ""                                              >> "$GITHUB_STEP_SUMMARY"
+          echo '| Tool | Branch winner | Composite |'           >> "$GITHUB_STEP_SUMMARY"
+          echo '|---|---|---|'                                  >> "$GITHUB_STEP_SUMMARY"
+          python3 -c "
+          import json, heapq
+          rows = []
+          with open('$OUT') as f:
+              for line in f:
+                  try:
+                      d = json.loads(line)
+                  except Exception:
+                      continue
+                  cs = d.get('composite_score')
+                  if cs is None:
+                      continue
+                  rows.append((float(cs), d.get('tool_name',''), d.get('ranking_winner','')))
+          for cs, name, winner in heapq.nlargest(10, rows):
+              print(f'| {name} | {winner} | {cs} |')
+          " >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload artifacts
+        if: always() && steps.urls.outputs.url_count != '0'
+        uses: actions/upload-artifact@v7
+        with:
+          name: package-classifier-${{ github.run_id }}
+          path: |
+            ${{ env.WORKING_DIR }}/urls.txt
+            ${{ env.WORKING_DIR }}/cybersecurity_tools.jsonl
+            ${{ env.WORKING_DIR }}/cybersecurity_tools.tsv
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Commit results to repo
+        if: success() && steps.stats.outputs.lines != '0'
+        run: |
+          STAMP=$(date -u +%Y%m%d_%H%M%S)
+          DEST="repo/package-classifier/scans"
+          mkdir -p "$DEST"
+          cp "$WORKING_DIR/cybersecurity_tools.jsonl" "$DEST/cybersecurity_tools_${STAMP}.jsonl" 2>/dev/null || true
+          if [ -f "$WORKING_DIR/cybersecurity_tools.tsv" ]; then
+            cp "$WORKING_DIR/cybersecurity_tools.tsv" "$DEST/cybersecurity_tools_${STAMP}.tsv"
+          fi
+          cd repo
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-classifier/scans/
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Package classifier results ${STAMP} (${{ steps.stats.outputs.lines }} entries)"
+            git pull --rebase origin master
+            git push
+          fi
