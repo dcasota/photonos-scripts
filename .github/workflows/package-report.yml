@@ -152,9 +152,29 @@ jobs:
         id: run
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLAB_FREEDESKTOP_ORG_USERNAME: ${{ secrets.GITLAB_FREEDESKTOP_ORG_USERNAME || 'ci-runner' }}
-          GITLAB_FREEDESKTOP_ORG_TOKEN: ${{ secrets.GITLAB_FREEDESKTOP_ORG_TOKEN || 'none' }}
+          # Pass repo-secret values under "_SECRET" names so an empty secret
+          # does not shadow a host-env value of the same name on the
+          # self-hosted runner. Coalesce in bash below: secret > host env >
+          # literal fallback. These credentials are optional — when none of
+          # the three sources is set the script falls back to 'ci-runner'/'none'
+          # and runs in degraded mode (no GitLab API access).
+          GITLAB_FREEDESKTOP_ORG_USERNAME_SECRET: ${{ secrets.GITLAB_FREEDESKTOP_ORG_USERNAME }}
+          GITLAB_FREEDESKTOP_ORG_TOKEN_SECRET: ${{ secrets.GITLAB_FREEDESKTOP_ORG_TOKEN }}
         run: |
+          # Resolve GitLab credentials: repo secret > runner host env > literal fallback.
+          if [ -n "${GITLAB_FREEDESKTOP_ORG_USERNAME_SECRET:-}" ]; then
+            export GITLAB_FREEDESKTOP_ORG_USERNAME="$GITLAB_FREEDESKTOP_ORG_USERNAME_SECRET"
+          fi
+          if [ -z "${GITLAB_FREEDESKTOP_ORG_USERNAME:-}" ]; then
+            export GITLAB_FREEDESKTOP_ORG_USERNAME="ci-runner"
+          fi
+          if [ -n "${GITLAB_FREEDESKTOP_ORG_TOKEN_SECRET:-}" ]; then
+            export GITLAB_FREEDESKTOP_ORG_TOKEN="$GITLAB_FREEDESKTOP_ORG_TOKEN_SECRET"
+          fi
+          if [ -z "${GITLAB_FREEDESKTOP_ORG_TOKEN:-}" ]; then
+            export GITLAB_FREEDESKTOP_ORG_TOKEN="none"
+          fi
+
           SCRIPT="ci/photonos-package-report/photonos-package-report.ps1"
 
           # Use custom workingDir if provided, otherwise default to REPORT_DIR
