@@ -222,6 +222,9 @@ jobs:
             DATETIME="${{ steps.generate.outputs.datetime }}"
             FILE_COUNT="${{ steps.generate.outputs.file_count }}"
             git commit -m "Add dependency graph scans (${FILE_COUNT} branches, ${DATETIME})"
+            # Other workflows commit to scans/ in parallel; rebase before push
+            # to avoid the "fetch first" rejection that previously failed this step.
+            git pull --rebase origin master
             git push
           fi
 
