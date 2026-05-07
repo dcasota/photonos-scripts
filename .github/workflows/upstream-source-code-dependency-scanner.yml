@@ -7,8 +7,8 @@ on:
         description: 'Photon OS branches to scan (comma-separated)'
         default: '3.0,4.0,5.0,6.0,master,dev,common'
       workingDir:
-        description: 'Working directory for branch clones (photon-3.0/, photon-4.0/, etc.). Default: /mnt/d/Users/Public'
-        default: '/mnt/d/Users/Public'
+        description: 'Working directory containing photon-upstreams/ (default: $GITHUB_WORKSPACE/reports — matches package-report.yml so this consumer sees its clones)'
+        default: ''
       upstreamsDir:
         description: 'Upstreams base directory (default: workingDir/photon-upstreams). Per-branch subdirs: clones/'
         default: ''
@@ -70,7 +70,14 @@ jobs:
           echo "datetime=$DATETIME" >> "$GITHUB_OUTPUT"
 
           BRANCHES="${{ github.event.inputs.branches || '3.0,4.0,5.0,6.0,master,dev,common' }}"
-          WORKING_DIR="${{ github.event.inputs.workingDir || '/mnt/d/Users/Public' }}"
+          WORKING_DIR="${{ github.event.inputs.workingDir }}"
+          if [ -z "$WORKING_DIR" ]; then
+            # Match package-report.yml's default: $GITHUB_WORKSPACE/reports.
+            # This is where package-report.yml writes photon-upstreams/photon-<branch>/clones/,
+            # so Phase 2 (gomod / pyproject / tarball analysis) can find the source clones
+            # and emit the edges that drive spec patching.
+            WORKING_DIR="${{ github.workspace }}/reports"
+          fi
 
           # Upstreams directory: default to workingDir/photon-upstreams
           UPSTREAMS_BASE="${{ github.event.inputs.upstreamsDir }}"
