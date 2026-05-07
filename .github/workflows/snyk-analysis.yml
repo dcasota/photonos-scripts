@@ -1,0 +1,216 @@
+name: Snyk Analysis
+
+on:
+  workflow_dispatch:
+    inputs:
+      branches:
+        description: 'Photon branches to scan (comma-separated)'
+        default: '3.0,4.0,5.0,6.0,common,dev,master'
+      workingDir:
+        description: 'Working directory containing photon-upstreams/ (default: $GITHUB_WORKSPACE/reports — matches package-report)'
+        default: ''
+      upstreamsDir:
+        description: 'Override upstreams base dir (default: workingDir/photon-upstreams)'
+        default: ''
+      maxSubdirs:
+        description: 'Cap packages scanned per branch (0 = no cap; useful for smoke tests)'
+        default: '0'
+      force:
+        description: 'Re-scan packages whose log already exists'
+        type: boolean
+        default: false
+      reparse:
+        description: 'Re-import logs already in the SQLite DB'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  snyk-analysis:
+    runs-on: self-hosted
+    timeout-minutes: 2880
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v6
+        with:
+          path: repo
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout SnykAnalysis (sparse)
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            SnykAnalysis
+          path: ci
+
+      - name: Verify prerequisites
+        run: |
+          for cmd in pwsh sqlite3 curl tar; do
+            if ! command -v "$cmd" &>/dev/null; then
+              echo "::error::Missing required command: $cmd"
+              exit 1
+            fi
+          done
+          pwsh --version
+          sqlite3 --version
+
+      - name: Install / update Snyk CLI
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          if [ -z "$SNYK_TOKEN" ]; then
+            echo "::error::SNYK_TOKEN secret is not set on this repo. Add it under Settings → Secrets → Actions."
+            exit 1
+          fi
+          INSTALL_DIR="$HOME/.local/bin"
+          mkdir -p "$INSTALL_DIR"
+          export PATH="$INSTALL_DIR:$PATH"
+          if ! command -v snyk &>/dev/null; then
+            echo "Installing snyk CLI to $INSTALL_DIR/snyk"
+            curl -fsSL --compressed -o "$INSTALL_DIR/snyk" https://static.snyk.io/cli/latest/snyk-linux
+            chmod +x "$INSTALL_DIR/snyk"
+          fi
+          snyk --version
+          snyk auth "$SNYK_TOKEN"
+          echo "$INSTALL_DIR" >> "$GITHUB_PATH"
+
+      - name: Resolve directories
+        id: dirs
+        run: |
+          WDIR="${{ github.event.inputs.workingDir }}"
+          if [ -z "$WDIR" ]; then WDIR="${{ github.workspace }}/reports"; fi
+          UDIR="${{ github.event.inputs.upstreamsDir }}"
+          if [ -z "$UDIR" ]; then UDIR="$WDIR/photon-upstreams"; fi
+          mkdir -p "$WDIR" "$UDIR"
+          echo "workingDir=$WDIR"   >> "$GITHUB_OUTPUT"
+          echo "upstreamsDir=$UDIR" >> "$GITHUB_OUTPUT"
+          echo "## Snyk Analysis"               >> "$GITHUB_STEP_SUMMARY"
+          echo ""                               >> "$GITHUB_STEP_SUMMARY"
+          echo "| Parameter | Value |"          >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|"                      >> "$GITHUB_STEP_SUMMARY"
+          echo "| branches | ${{ github.event.inputs.branches }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| workingDir | \`$WDIR\` |"     >> "$GITHUB_STEP_SUMMARY"
+          echo "| upstreamsDir | \`$UDIR\` |"   >> "$GITHUB_STEP_SUMMARY"
+          echo "| maxSubdirs | ${{ github.event.inputs.maxSubdirs }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| force | ${{ github.event.inputs.force }} |"   >> "$GITHUB_STEP_SUMMARY"
+          echo "| reparse | ${{ github.event.inputs.reparse }} |" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Scan branches
+        env:
+          UDIR: ${{ steps.dirs.outputs.upstreamsDir }}
+          BRANCHES: ${{ github.event.inputs.branches }}
+          MAX_SUBDIRS: ${{ github.event.inputs.maxSubdirs }}
+          FORCE: ${{ github.event.inputs.force }}
+        run: |
+          set +e
+          SCRIPT="ci/SnykAnalysis/Run-SnykOnSubdirs.ps1"
+          missing=0; scanned=0
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Per-branch scan status" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Branch | clones dir | Status |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          for B in $(echo "$BRANCHES" | tr ',' ' '); do
+            CLONES="$UDIR/photon-$B/clones"
+            if [ ! -d "$CLONES" ]; then
+              echo "| $B | \`$CLONES\` | missing — skipped |" >> "$GITHUB_STEP_SUMMARY"
+              missing=$((missing+1))
+              continue
+            fi
+            COUNT=$(find "$CLONES" -mindepth 1 -maxdepth 1 -type d | wc -l)
+            if [ "$COUNT" -eq 0 ]; then
+              echo "| $B | \`$CLONES\` | empty — skipped |" >> "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+            FORCE_FLAG=""; [ "$FORCE" = "true" ] && FORCE_FLAG="-Force"
+            echo "::group::Branch $B ($COUNT subdirs)"
+            pwsh -File "$SCRIPT" \
+              -BaseDir "$CLONES" \
+              -Branch "$B" \
+              -MaxSubdirs "$MAX_SUBDIRS" \
+              $FORCE_FLAG
+            rc=$?
+            echo "::endgroup::"
+            STATUS=$([ $rc -eq 0 ] && echo "ok ($COUNT subdirs)" || echo "completed with failures (rc=$rc)")
+            echo "| $B | \`$CLONES\` | $STATUS |" >> "$GITHUB_STEP_SUMMARY"
+            scanned=$((scanned+1))
+          done
+          echo "scanned_branches=$scanned" >> "$GITHUB_OUTPUT"
+          echo "missing_branches=$missing" >> "$GITHUB_OUTPUT"
+          if [ "$scanned" -eq 0 ]; then
+            echo "::error::No branches were scanned (all clones dirs missing or empty). Run package-report first to populate $UDIR."
+            exit 1
+          fi
+
+      - name: Parse logs into SQLite
+        env:
+          UDIR: ${{ steps.dirs.outputs.upstreamsDir }}
+          REPARSE: ${{ github.event.inputs.reparse }}
+        run: |
+          DB="ci/SnykAnalysis/snyk_issues.db"
+          REPARSE_FLAG=""; [ "$REPARSE" = "true" ] && REPARSE_FLAG="-Reparse"
+          pwsh -File "ci/SnykAnalysis/Parse-SnykLogs.ps1" \
+            -Directory "$UDIR" \
+            -Database "$DB" \
+            $REPARSE_FLAG
+          echo "DB_PATH=$DB" >> "$GITHUB_ENV"
+
+      - name: Generate reports
+        run: |
+          STAMP=$(date -u +%Y%m%d_%H%M%S)
+          OUTDIR="ci/SnykAnalysis/scans"
+          mkdir -p "$OUTDIR"
+          pwsh -File "ci/SnykAnalysis/Generate-SnykReport.ps1" \
+            -Database "$DB_PATH" \
+            -Format markdown \
+            -ReportFile "$OUTDIR/SnykReport_${STAMP}.md"
+          pwsh -File "ci/SnykAnalysis/Generate-SnykReport.ps1" \
+            -Database "$DB_PATH" \
+            -Format json \
+            -ReportFile "$OUTDIR/SnykReport_${STAMP}.json"
+          for B in $(echo "${{ github.event.inputs.branches }}" | tr ',' ' '); do
+            pwsh -File "ci/SnykAnalysis/Generate-SnykReport.ps1" \
+              -Database "$DB_PATH" \
+              -Format markdown \
+              -Branch "$B" \
+              -ReportFile "$OUTDIR/SnykReport_${B}_${STAMP}.md" || true
+          done
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Combined report (latest run per package/branch)" >> "$GITHUB_STEP_SUMMARY"
+          cat "$OUTDIR/SnykReport_${STAMP}.md" >> "$GITHUB_STEP_SUMMARY"
+          echo "report_stamp=$STAMP" >> "$GITHUB_OUTPUT"
+          echo "report_dir=$OUTDIR" >> "$GITHUB_OUTPUT"
+        id: report
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: snyk-analysis-${{ steps.report.outputs.report_stamp }}
+          path: |
+            ci/SnykAnalysis/scans/SnykReport_*.md
+            ci/SnykAnalysis/scans/SnykReport_*.json
+            ci/SnykAnalysis/snyk_issues.db
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Commit reports + DB to repo
+        if: always()
+        run: |
+          DEST="repo/SnykAnalysis/scans"
+          mkdir -p "$DEST"
+          cp ci/SnykAnalysis/scans/SnykReport_*.md   "$DEST/" 2>/dev/null || true
+          cp ci/SnykAnalysis/scans/SnykReport_*.json "$DEST/" 2>/dev/null || true
+          cp ci/SnykAnalysis/snyk_issues.db          "repo/SnykAnalysis/" 2>/dev/null || true
+          cd repo
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add SnykAnalysis/scans/ SnykAnalysis/snyk_issues.db
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Snyk analysis $(date -u +%Y-%m-%d)"
+            git push
+          fi

@@ -1,151 +1,108 @@
 # SnykAnalysis
 
-A set of PowerShell scripts for running [Snyk](https://snyk.io/) code analysis across multiple project directories, parsing the results into a SQLite database, and generating summary reports.
+PowerShell scripts for running [Snyk](https://snyk.io/) Code analysis across the
+upstream-source clone trees produced by `photonos-package-report.ps1`, parsing the
+results into a normalized SQLite database, and generating per-branch reports.
+
+Designed to chain into the photonos-scripts workflow sequence:
+
+```
+photon-commits-db          ──► commits.db
+package-report             ──► photon-upstreams/photon-<branch>/clones/<pkg>/<src>
+upstream-source-code-dependency-scanner
+                           ──► depfix manifests
+SnykAnalysis (this dir)    ──► snyk_issues.db, SnykReport_*.{txt,md,json}
+```
 
 ## Prerequisites
 
-- **PowerShell** (5.1+ or PowerShell 7+)
-- **Snyk CLI** installed and authenticated (`snyk auth`)
-- **sqlite3** command-line tool
+- PowerShell 7+ (5.1 also works)
+- [Snyk CLI](https://docs.snyk.io/snyk-cli/install-the-snyk-cli) on PATH; authenticated via `snyk auth $SNYK_TOKEN`
+- `sqlite3` on PATH
 
 ## Scripts
 
 ### Run-SnykOnSubdirs.ps1
 
-Loops through all immediate subdirectories of a given base directory and runs `snyk code test` on each one. Output is redirected to timestamped log files placed alongside the subdirectories.
+Runs `snyk code test` on each immediate subdirectory of `-BaseDir`, writing one
+log per subdir. Idempotent (skips a package whose log already exists; override
+with `-Force`).
 
 ```powershell
-./Run-SnykOnSubdirs.ps1 -BaseDir /path/to/projects
+./Run-SnykOnSubdirs.ps1 -BaseDir <upstreamsDir>/photon-5.0/clones -Branch 5.0
 ```
 
-**Parameters:**
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `BaseDir` | Yes | Path to the base directory containing project subdirectories |
+Parameters:
 
-**Output:** One `<subdirname>_snyk_<datetime>.log` file per subdirectory.
+| Parameter | Default | Notes |
+|---|---|---|
+| `-BaseDir` | (required) | The `clones/` directory of one Photon branch |
+| `-LogDir` | `$BaseDir` | Where logs are written |
+| `-Branch` | `''` | Embedded in log filename: `<pkg>_snyk_<branch>_<ts>.log` |
+| `-Skip` | `@()` | Package names to skip |
+| `-MaxSubdirs` | `0` | Cap subdirs processed (0 = no cap) |
+| `-Force` | off | Re-scan packages with an existing log |
+
+Exit code: `0` if all scans succeeded (snyk exit 0/1/3 = success), `1` if any failed.
 
 ### Parse-SnykLogs.ps1
 
-Parses `*_snyk*.log` files (produced by `Run-SnykOnSubdirs.ps1`) and stores the parsed issues into per-file tables in a SQLite database.
+Parses `*_snyk*.log` files into a normalized SQLite schema. Idempotent on
+`runs.log_file` — re-running on the same logs is a no-op unless `-Reparse` is set.
 
 ```powershell
-./Parse-SnykLogs.ps1 -Directory /path/to/logs -Database snyk_issues.db
+./Parse-SnykLogs.ps1 -Directory <logDir> -Database snyk_issues.db
 ```
 
-**Parameters:**
-| Parameter | Required | Default | Description |
-|-----------|----------|---------|-------------|
-| `Directory` | No | `.` | Directory to scan for log files |
-| `Database` | No | `snyk_issues.db` | SQLite database file path |
-| `Recursive` | No | `$true` | Whether to scan subdirectories recursively |
+Schema:
 
-**Output:** A SQLite database with one table per log file, each containing parsed issue records (priority, title, finding ID, path, line number, info, and summary counts).
+- `runs(run_id, package, branch, datetime, log_file UNIQUE, log_size, project_path, total_issues, ignored_issues, open_issues)`
+- `issues(issue_id, run_id, priority, title, finding_id, path, line_num, info)` (FK runs)
+- view `v_latest_run` — one row per `(package,branch)` with the latest datetime
+
+Branch is extracted from the log filename if it embeds `_snyk_<branch>_<ts>.log`,
+or from a path containing `photon-<branch>/clones/`. Override with `-Branch`.
 
 ### Generate-SnykReport.ps1
 
-Generates a structured text report from the SQLite database, including category breakdowns (with a crypto-related filter), summary statistics, and a per-package overview based on the latest run of each source package.
+Builds a report from the normalized schema. Three output formats: text, Markdown
+(suitable for `$GITHUB_STEP_SUMMARY`), JSON (for downstream tooling).
 
 ```powershell
-./Generate-SnykReport.ps1 -Database snyk_issues.db
+./Generate-SnykReport.ps1 -Database snyk_issues.db -Format markdown -Branch 5.0
 ```
 
-**Parameters:**
-| Parameter | Required | Default | Description |
-|-----------|----------|---------|-------------|
-| `Database` | No | `snyk_issues.db` | SQLite database file path |
-| `ReportFile` | No | `SnykReport_<datetime>.txt` | Output report file path |
+Sections:
 
-**Output:** A text report containing:
-- Top 10 HIGH-priority issue categories (with and without "crypto" in the title)
-- Top 10 MEDIUM-priority issue categories
-- Summary counts by severity
-- Top 10 source packages ranked by total issues
+- Summary (latest run per package/branch): totals by priority, crypto split
+- Per-branch breakdown (when not filtered)
+- Top-N High categories with `crypto` in title
+- Top-N High categories without `crypto`
+- Top-N Medium categories
+- Top-N packages by total issues
 
-## Typical Workflow
+## Typical workflow
 
 ```powershell
-# 1. Run Snyk on all project subdirectories
-./Run-SnykOnSubdirs.ps1 -BaseDir /path/to/projects
+# 1. Per branch: scan the clone tree produced by photonos-package-report
+./Run-SnykOnSubdirs.ps1 -BaseDir <upstreamsDir>/photon-3.0/clones -Branch 3.0
+./Run-SnykOnSubdirs.ps1 -BaseDir <upstreamsDir>/photon-4.0/clones -Branch 4.0
+./Run-SnykOnSubdirs.ps1 -BaseDir <upstreamsDir>/photon-5.0/clones -Branch 5.0
+./Run-SnykOnSubdirs.ps1 -BaseDir <upstreamsDir>/photon-6.0/clones -Branch 6.0
+./Run-SnykOnSubdirs.ps1 -BaseDir <upstreamsDir>/photon-common/clones -Branch common
+./Run-SnykOnSubdirs.ps1 -BaseDir <upstreamsDir>/photon-dev/clones    -Branch dev
+./Run-SnykOnSubdirs.ps1 -BaseDir <upstreamsDir>/photon-master/clones -Branch master
 
-# 2. Parse the generated log files into a database
-./Parse-SnykLogs.ps1 -Directory /path/to/projects
+# 2. Parse all logs into one database
+./Parse-SnykLogs.ps1 -Directory <upstreamsDir> -Database snyk_issues.db
 
-# 3. Generate a summary report
-./Generate-SnykReport.ps1
+# 3. Generate report (overall + per branch)
+./Generate-SnykReport.ps1 -Database snyk_issues.db -Format markdown
+./Generate-SnykReport.ps1 -Database snyk_issues.db -Format markdown -Branch 5.0
 ```
 
-## Example Report
+## CI
 
-Below is an example report generated by `Generate-SnykReport.ps1`, demonstrating the kind of output SnykAnalysis produces. This particular run processed 459 Snyk log files covering major open-source packages.
-
-```
-# Snyk Issues Report (crypto filter + package breakdown)
-Generated: 02/16/2026 20:16:00
-Database: ./snyk_issues.db
-Total runs processed: 459
-
-## Issue Category Overview (all issues)
-
-### Top 10 High Categories with "crypto" in title (case-independent)
-
-Category                                         Count
---------                                         -----
-Use of a Broken or Risky Cryptographic Algorithm   188
-Hardcoded Non-Cryptographic Secret                  15
-Use of Hardcoded Cryptographic Key                   3
-
-### Top 10 High Categories without "crypto" (case-independent)
-
-Category                                                     Count
---------                                                     -----
-Hardcoded Secret                                               131
-Potential Negative Number Used as Index                         94
-Path Traversal                                                  37
-Command Injection                                               37
-Server-Side Request Forgery (SSRF)                              32
-Size Used as Index                                              26
-Use of Externally-Controlled Format String                      24
-Generation of Error Message Containing Sensitive Information    17
-XML External Entity (XXE) Injection                             15
-Cross-site Scripting (XSS)                                      13
-
-### Top 10 Medium Categories
-
-Category                                                Count
---------                                                -----
-Integer Overflow                                         4533
-Path Traversal                                           3663
-Potential buffer overflow from usage of unsafe function  2002
-Use After Free                                           1579
-Missing Release of Memory after Effective Lifetime       1478
-Dereference of a NULL Pointer                            1427
-Buffer Overflow                                          1286
-Double Free                                              1042
-Command Injection                                         750
-Insecure Xml Parser (Python < 3.11)                       168
-
-## Summary Overview (latest run per source package only)
-- Total issues overall: 43114
-- High with crypto: 206
-- High without crypto: 486
-- Medium: 19008
-- Low: 23290
-
-## Source Package Overview (latest run per source package only)
-
-### Top 10 Source Packages with most issues (with breakdown)
-
-Package                       Total Issues High (+ crypto) High Medium  Low
--------                       ------------ --------------- ---- ------  ---
-jdk21u                               2982              54  106    871 2005
-jdk11u                               2878              54  103    943 1832
-jdk17u                               2737              53  102    815 1820
-llvm-project                         2637               0   36    610 1991
-node                                 2486               3   21    598 1867
-runtime                              2024              20   28    405 1591
-subversion                           1468               0    0    168 1300
-mysql-server                         1178               1   23    560  595
-wireshark                             946               0    7    261  678
-openssh-portable                      896               0    0    370  526
-```
+See `.github/workflows/snyk-analysis.yml` for the GitHub Actions workflow that
+chains all three scripts on the self-hosted runner. Requires repo secret
+`SNYK_TOKEN`.

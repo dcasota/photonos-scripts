@@ -1,125 +1,220 @@
 <#
 .SYNOPSIS
-    Generates a structured Snyk issues report from the snyk_issues.db database (crypto filter + package breakdown).
+    Generates a Snyk issues report from snyk_issues.db (normalized schema).
+
+.DESCRIPTION
+    Consumes the normalized schema produced by Parse-SnykLogs.ps1:
+        runs(run_id, package, branch, datetime, ...)
+        issues(run_id, priority, title, finding_id, path, line_num, info)
+        v_latest_run — one row per (package,branch), the latest run
+
+    Emits text by default; -Format Markdown for GH step summaries; -Format Json for tooling.
+    -Branch filters the package overview to a single branch (categories still cover all data).
+
+.PARAMETER Database
+    SQLite database file. Default: snyk_issues.db.
+
+.PARAMETER ReportFile
+    Output report path. Default: SnykReport_<datetime>.<ext>.
+
+.PARAMETER Format
+    text | markdown | json
+
+.PARAMETER Branch
+    Limit the package overview / summary to one branch (e.g. "5.0").
+
+.PARAMETER TopN
+    Max rows in each top-N table. Default 10.
 #>
-param (
-    [string]$Database = "snyk_issues.db",
-    [string]$ReportFile = "SnykReport_$(Get-Date -Format 'yyyyMMdd_HHmmss').txt"   # UPDATED default
+[CmdletBinding()]
+param(
+    [string]$Database  = 'snyk_issues.db',
+    [ValidateSet('text','markdown','json')]
+    [string]$Format    = 'text',
+    [string]$ReportFile = '',
+    [string]$Branch    = '',
+    [int]$TopN         = 10
 )
 
-# Verify database exists
-if (-not (Test-Path $Database)) {
-    Write-Error "Database '$Database' not found. Run the parser script first."
-    exit 1
+$ErrorActionPreference = 'Stop'
+
+if (-not (Test-Path -LiteralPath $Database)) {
+    Write-Error "Database '$Database' not found. Run Parse-SnykLogs.ps1 first."
+    exit 2
+}
+if (-not (Get-Command sqlite3 -ErrorAction SilentlyContinue)) {
+    Write-Error "sqlite3 not found on PATH."
+    exit 2
 }
 
-Write-Host "Generating report from $Database ..." -ForegroundColor Cyan
-
-# Get all snyk_* tables
-$tablesRaw = & sqlite3 $Database "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'snyk_%';"
-$tables = $tablesRaw -split "`n" | Where-Object { $_ -ne '' }
-
-$allIssues = @()
-$header = "SourcePackage,Filename,Datetime,Priority,Title,FindingID,Path,LineNum,Info,TotalIssues,IgnoredIssues,OpenIssues"
-
-foreach ($tbl in $tables) {
-    $query = "SELECT SourcePackage,Filename,Datetime,Priority,Title,FindingID,Path,LineNum,Info,TotalIssues,IgnoredIssues,OpenIssues FROM `"$tbl`""
-    $csvData = & sqlite3 -csv $Database $query
-    if ($csvData) {
-        $csvWithHeader = $header + "`n" + ($csvData -join "`n")
-        $allIssues += $csvWithHeader | ConvertFrom-Csv
-    }
+if ([string]::IsNullOrEmpty($ReportFile)) {
+    $ext = switch ($Format) { 'markdown' { 'md' } 'json' { 'json' } default { 'txt' } }
+    $ReportFile = "SnykReport_$(Get-Date -Format 'yyyyMMdd_HHmmss').$ext"
 }
 
-if ($allIssues.Count -eq 0) {
-    Write-Host "No issues found in database." -ForegroundColor Yellow
-    "No data available." | Out-File $ReportFile
-    exit 0
+function Q([string]$query) {
+    # Returns CSV rows; first row = header. Caller parses.
+    $csv = & sqlite3 -header -csv $Database $query
+    if (-not $csv) { return @() }
+    $csv | ConvertFrom-Csv
 }
 
-# Latest run per source package (max Datetime per SourcePackage)
-$latestIssues = $allIssues | Group-Object SourcePackage | ForEach-Object {
-    $grp = $_.Group
-    $maxDt = ($grp | Measure-Object -Property Datetime -Maximum).Maximum
-    $grp | Where-Object { $_.Datetime -eq $maxDt }
-}
+$brEsc = if ($Branch) { $Branch -replace "'", "''" } else { '' }
+$branchFilter   = if ($Branch) { "AND r.branch = '$brEsc'" } else { '' }
+$branchFilterLR = if ($Branch) { "WHERE branch = '$brEsc'" } else { '' }
 
-# === Issue Category Overview (all issues) ===
-$highCryptoCats = $allIssues |
-    Where-Object { $_.Priority -eq 'HIGH' -and $_.Title -like '*crypto*' } |
-    Group-Object Title |
-    Sort-Object Count -Descending |
-    Select-Object @{Name='Category';Expression={$_.Name}}, @{Name='Count';Expression={$_.Count}} -First 10
-
-$highNoCryptoCats = $allIssues |
-    Where-Object { $_.Priority -eq 'HIGH' -and $_.Title -notlike '*crypto*' } |
-    Group-Object Title |
-    Sort-Object Count -Descending |
-    Select-Object @{Name='Category';Expression={$_.Name}}, @{Name='Count';Expression={$_.Count}} -First 10
-
-$mediumCats = $allIssues |
-    Where-Object { $_.Priority -eq 'MEDIUM' } |
-    Group-Object Title |
-    Sort-Object Count -Descending |
-    Select-Object @{Name='Category';Expression={$_.Name}}, @{Name='Count';Expression={$_.Count}} -First 10
-
-# === Summary Overview (latest runs only) ===
-$totalOverall = $latestIssues.Count
-$highCryptoSum = ($latestIssues | Where-Object { $_.Priority -eq 'HIGH' -and $_.Title -like '*crypto*' }).Count
-$highNoCryptoSum = ($latestIssues | Where-Object { $_.Priority -eq 'HIGH' -and $_.Title -notlike '*crypto*' }).Count
-$mediumSum = ($latestIssues | Where-Object Priority -eq 'MEDIUM').Count
-$lowSum = ($latestIssues | Where-Object Priority -eq 'LOW').Count
-
-# === Source Package Overview (latest runs only) ===
-$pkgData = $latestIssues | Group-Object SourcePackage | ForEach-Object {
-    $pkg = $_.Name
-    $rows = $_.Group
-    $total = $rows.Count
-    $highCrypto = ($rows | Where-Object { $_.Priority -eq 'HIGH' -and $_.Title -like '*crypto*' }).Count
-    $highTotal = ($rows | Where-Object { $_.Priority -eq 'HIGH' }).Count
-    $medium = ($rows | Where-Object { $_.Priority -eq 'MEDIUM' }).Count
-    $low = ($rows | Where-Object { $_.Priority -eq 'LOW' }).Count
-    [PSCustomObject]@{
-        Package           = $pkg
-        'Total Issues'    = $total
-        'High (+ crypto)' = $highCrypto
-        'High'            = $highTotal
-        'Medium'          = $medium
-        'Low'             = $low
-    }
-} | Sort-Object 'Total Issues' -Descending | Select-Object -First 10
-
-# Build report
-$report = @"
-# Snyk Issues Report (crypto filter + package breakdown)
-Generated: $(Get-Date)
-Database: $Database
-Total runs processed: $($tables.Count)
-
-## Issue Category Overview (all issues)
-
-### Top 10 High Categories with "crypto" in title (case-independent)
-$($highCryptoCats | Format-Table -AutoSize | Out-String)
-
-### Top 10 High Categories without "crypto" (case-independent)
-$($highNoCryptoCats | Format-Table -AutoSize | Out-String)
-
-### Top 10 Medium Categories
-$($mediumCats | Format-Table -AutoSize | Out-String)
-
-## Summary Overview (latest run per source package only)
-- Total issues overall: $totalOverall
-- High with crypto: $highCryptoSum
-- High without crypto: $highNoCryptoSum
-- Medium: $mediumSum
-- Low: $lowSum
-
-## Source Package Overview (latest run per source package only)
-
-### Top 10 Source Packages with most issues (with breakdown)
-$($pkgData | Format-Table -AutoSize | Out-String)
+# === Aggregates over ALL data (categories) ===
+$highCryptoCats = Q @"
+  SELECT i.title AS Category, COUNT(*) AS Count
+  FROM issues i JOIN runs r ON r.run_id = i.run_id
+  WHERE i.priority = 'HIGH' AND lower(i.title) LIKE '%crypto%' $branchFilter
+  GROUP BY i.title ORDER BY Count DESC LIMIT $TopN;
 "@
 
-$report | Out-File -FilePath $ReportFile -Encoding utf8
-Write-Host "Report saved to: $ReportFile" -ForegroundColor Green
-Write-Host "Open the file for full formatted view." -ForegroundColor Cyan
+$highNonCryptoCats = Q @"
+  SELECT i.title AS Category, COUNT(*) AS Count
+  FROM issues i JOIN runs r ON r.run_id = i.run_id
+  WHERE i.priority = 'HIGH' AND lower(i.title) NOT LIKE '%crypto%' $branchFilter
+  GROUP BY i.title ORDER BY Count DESC LIMIT $TopN;
+"@
+
+$mediumCats = Q @"
+  SELECT i.title AS Category, COUNT(*) AS Count
+  FROM issues i JOIN runs r ON r.run_id = i.run_id
+  WHERE i.priority = 'MEDIUM' $branchFilter
+  GROUP BY i.title ORDER BY Count DESC LIMIT $TopN;
+"@
+
+# === Summary over LATEST runs only ===
+$summary = Q @"
+  SELECT
+    SUM(CASE WHEN i.priority='HIGH' AND lower(i.title) LIKE '%crypto%' THEN 1 ELSE 0 END) AS HighCrypto,
+    SUM(CASE WHEN i.priority='HIGH' AND lower(i.title) NOT LIKE '%crypto%' THEN 1 ELSE 0 END) AS HighNonCrypto,
+    SUM(CASE WHEN i.priority='MEDIUM' THEN 1 ELSE 0 END) AS Medium,
+    SUM(CASE WHEN i.priority='LOW' THEN 1 ELSE 0 END) AS Low,
+    COUNT(*) AS Total
+  FROM issues i
+  JOIN ( SELECT run_id FROM v_latest_run $branchFilterLR ) lr ON lr.run_id = i.run_id
+  WHERE i.priority IN ('HIGH','MEDIUM','LOW');
+"@ | Select-Object -First 1
+
+# === Top packages (latest run per pkg/branch) ===
+$topPackages = Q @"
+  WITH lr AS ( SELECT run_id,package,branch FROM v_latest_run $branchFilterLR )
+  SELECT lr.package AS Package, lr.branch AS Branch, COUNT(*) AS TotalIssues,
+    SUM(CASE WHEN i.priority='HIGH' AND lower(i.title) LIKE '%crypto%' THEN 1 ELSE 0 END) AS HighCrypto,
+    SUM(CASE WHEN i.priority='HIGH' THEN 1 ELSE 0 END) AS High,
+    SUM(CASE WHEN i.priority='MEDIUM' THEN 1 ELSE 0 END) AS Medium,
+    SUM(CASE WHEN i.priority='LOW' THEN 1 ELSE 0 END) AS Low
+  FROM issues i JOIN lr ON lr.run_id = i.run_id
+  WHERE i.priority IN ('HIGH','MEDIUM','LOW')
+  GROUP BY lr.package, lr.branch ORDER BY TotalIssues DESC LIMIT $TopN;
+"@
+
+# === Per-branch breakdown (latest run per pkg) ===
+$perBranch = Q @"
+  WITH lr AS ( SELECT run_id,branch FROM v_latest_run )
+  SELECT COALESCE(NULLIF(lr.branch,''),'(unknown)') AS Branch,
+    COUNT(DISTINCT lr.run_id) AS Packages,
+    SUM(CASE WHEN i.priority='HIGH' THEN 1 ELSE 0 END) AS High,
+    SUM(CASE WHEN i.priority='MEDIUM' THEN 1 ELSE 0 END) AS Medium,
+    SUM(CASE WHEN i.priority='LOW' THEN 1 ELSE 0 END) AS Low,
+    COUNT(*) AS TotalIssues
+  FROM issues i JOIN lr ON lr.run_id = i.run_id
+  WHERE i.priority IN ('HIGH','MEDIUM','LOW')
+  GROUP BY lr.branch ORDER BY TotalIssues DESC;
+"@
+
+$totalRuns = (Q "SELECT COUNT(*) AS C FROM runs;").C
+$now       = Get-Date
+
+if ($Format -eq 'json') {
+    $payload = [ordered]@{
+        generated  = $now.ToString('o')
+        database   = $Database
+        branch     = $Branch
+        total_runs = [int]$totalRuns
+        summary    = $summary
+        per_branch = @($perBranch)
+        categories = [ordered]@{
+            high_crypto     = @($highCryptoCats)
+            high_non_crypto = @($highNonCryptoCats)
+            medium          = @($mediumCats)
+        }
+        top_packages = @($topPackages)
+    }
+    $payload | ConvertTo-Json -Depth 6 | Out-File -LiteralPath $ReportFile -Encoding utf8
+    Write-Host "Report saved (JSON): $ReportFile" -ForegroundColor Green
+    return
+}
+
+function FmtTable($data, [string[]]$cols) {
+    if (-not $data -or @($data).Count -eq 0) { return "(none)`n" }
+    if ($Format -eq 'markdown') {
+        $h = ($cols -join ' | '); $sep = (($cols | ForEach-Object { '---' }) -join ' | ')
+        $rows = foreach ($r in $data) { ($cols | ForEach-Object { "$($r.$_)" }) -join ' | ' }
+        return "| $h |`n| $sep |`n" + (($rows | ForEach-Object { "| $_ |" }) -join "`n") + "`n"
+    }
+    return ($data | Select-Object $cols | Format-Table -AutoSize | Out-String)
+}
+
+$brFilter = if ($Branch) { " (branch=$Branch)" } else { '' }
+
+$report = if ($Format -eq 'markdown') { @"
+# Snyk Issues Report$brFilter
+
+- Generated: $now
+- Database: $Database
+- Total runs: $totalRuns
+
+## Summary (latest run per package/branch)
+
+| Metric | Value |
+|---|---|
+| Total issues | $($summary.Total) |
+| High (crypto) | $($summary.HighCrypto) |
+| High (non-crypto) | $($summary.HighNonCrypto) |
+| Medium | $($summary.Medium) |
+| Low | $($summary.Low) |
+
+## Per-branch breakdown
+$(FmtTable $perBranch @('Branch','Packages','High','Medium','Low','TotalIssues'))
+
+## Top High categories (crypto)
+$(FmtTable $highCryptoCats @('Category','Count'))
+
+## Top High categories (non-crypto)
+$(FmtTable $highNonCryptoCats @('Category','Count'))
+
+## Top Medium categories
+$(FmtTable $mediumCats @('Category','Count'))
+
+## Top $TopN packages
+$(FmtTable $topPackages @('Package','Branch','TotalIssues','HighCrypto','High','Medium','Low'))
+"@ } else { @"
+# Snyk Issues Report$brFilter
+Generated: $now
+Database:  $Database
+Total runs: $totalRuns
+
+## Summary (latest run per package/branch)
+- Total issues: $($summary.Total)
+- High (crypto): $($summary.HighCrypto)
+- High (non-crypto): $($summary.HighNonCrypto)
+- Medium: $($summary.Medium)
+- Low:    $($summary.Low)
+
+## Per-branch breakdown
+$(FmtTable $perBranch @('Branch','Packages','High','Medium','Low','TotalIssues'))
+## Top High categories (crypto)
+$(FmtTable $highCryptoCats @('Category','Count'))
+## Top High categories (non-crypto)
+$(FmtTable $highNonCryptoCats @('Category','Count'))
+## Top Medium categories
+$(FmtTable $mediumCats @('Category','Count'))
+## Top $TopN packages
+$(FmtTable $topPackages @('Package','Branch','TotalIssues','HighCrypto','High','Medium','Low'))
+"@ }
+
+$report | Out-File -LiteralPath $ReportFile -Encoding utf8
+Write-Host "Report saved: $ReportFile" -ForegroundColor Green
