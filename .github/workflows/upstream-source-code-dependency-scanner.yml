@@ -102,10 +102,10 @@ jobs:
           echo "| Parameter | Value |" >> "$GITHUB_STEP_SUMMARY"
           echo "|-----------|-------|" >> "$GITHUB_STEP_SUMMARY"
           echo "| Branches | ${BRANCHES} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| workingDir | ${WORKING_DIR} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| upstreamsDir | ${UPSTREAMS_BASE} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| scansDir | ${SCANS_DIR} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| sourcesDir | ${SOURCES_DIR} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| workingDir | (not shown) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| upstreamsDir | (not shown) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| scansDir | (not shown) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| sourcesDir | (not shown) |" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
           TOTAL_PATCHED=0
@@ -139,7 +139,7 @@ jobs:
             fi
 
             SPEC_COUNT=$(find "${SPECS_DIR}" -name '*.spec' 2>/dev/null | wc -l)
-            echo "  Specs dir: ${SPECS_DIR}"
+            echo "  Specs dir: (not shown)"
             echo "  Specs: ${SPEC_COUNT}"
 
             if [ "$SPEC_COUNT" -eq 0 ]; then
@@ -162,29 +162,29 @@ jobs:
             fi
             if [ -n "$PRN_FILE" ]; then
               ARGS="${ARGS} --prn-file ${PRN_FILE}"
-              echo "  PRN file: ${PRN_FILE}"
+              echo "  PRN file: (not shown)"
             else
               echo "  PRN file: not found (package->clone mapping will use heuristics)"
             fi
 
             if [ -d "${UPSTREAMS_DIR}/clones" ]; then
               ARGS="${ARGS} --upstreams-dir ${UPSTREAMS_DIR}"
-              echo "  Upstreams: ${UPSTREAMS_DIR}"
+              echo "  Upstreams: (not shown)"
             else
-              echo "  Upstreams: not found at ${UPSTREAMS_DIR}, running Phase 1 only"
+              echo "  Upstreams: not found, running Phase 1 only"
             fi
 
             # SPECS_NEW directory for latest version analysis
             SPECS_NEW_DIR="${UPSTREAMS_DIR}/SPECS_NEW"
             if [ -d "${SPECS_NEW_DIR}" ]; then
               ARGS="${ARGS} --specs-new-dir ${SPECS_NEW_DIR}"
-              echo "  SPECS_NEW: ${SPECS_NEW_DIR}"
+              echo "  SPECS_NEW: (not shown)"
             fi
 
             # Source tarballs directory for current release analysis
             if [ -d "${SOURCES_DIR}" ]; then
               ARGS="${ARGS} --sources-dir ${SOURCES_DIR}"
-              echo "  Sources: ${SOURCES_DIR}"
+              echo "  Sources: (not shown)"
             fi
 
             if [ "$PATCH_SPECS" != "false" ]; then
