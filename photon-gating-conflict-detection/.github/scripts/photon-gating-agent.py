@@ -1285,7 +1285,14 @@ def main():
     if blockers:
         print(f"\nBLOCKERS/CRITICAL:")
         for b in blockers:
-            print(f"  [{b['constellation']}] {b['branch']}/{b['package']}: {b['description'][:120]}")
+            d = b['description']
+            # Soft cap for terminal readability; word-boundary ellipsis instead
+            # of a mid-word slice. Full text is always preserved in findings.json
+            # and findings.md, so the line cap here is purely cosmetic.
+            if len(d) > 180:
+                cut = d.rfind(' ', 0, 180)
+                d = (d[:cut] if cut > 0 else d[:180]) + ' ...'
+            print(f"  [{b['constellation']}] {b['branch']}/{b['package']}: {d}")
 
     if not blockers:
         print("\nNo blocking findings. Build can proceed.")

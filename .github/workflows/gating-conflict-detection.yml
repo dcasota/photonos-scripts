@@ -200,7 +200,9 @@ jobs:
                   gh_summary.write("| Constellation | Branch | Package | Description |\n")
                   gh_summary.write("|--------------|--------|---------|-------------|\n")
                   for b in blockers:
-                      desc = b['description'][:120].replace('|', '\\|')
+                      # Render full description; markdown tables wrap long cells.
+                      # Only escape pipe characters that would break the row.
+                      desc = b['description'].replace('|', '\\|').replace('\n', ' ')
                       gh_summary.write(f"| {b['constellation']} | {b.get('branch','?')} | {b.get('package','?')} | {desc} |\n")
                   gh_summary.write("\n")
 
@@ -209,7 +211,7 @@ jobs:
                   gh_summary.write("| Constellation | Branch | Package | Description |\n")
                   gh_summary.write("|--------------|--------|---------|-------------|\n")
                   for w in warnings:
-                      desc = w['description'][:120].replace('|', '\\|')
+                      desc = w['description'].replace('|', '\\|').replace('\n', ' ')
                       gh_summary.write(f"| {w['constellation']} | {w.get('branch','?')} | {w.get('package','?')} | {desc} |\n")
                   gh_summary.write("\n</details>\n\n")
 
