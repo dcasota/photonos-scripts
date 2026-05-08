@@ -348,7 +348,9 @@ def detect_c1_package_split(inventory, findings):
             if is_active(old, subrelease) and not is_active(spec, subrelease):
                 if added:
                     # Check if any other spec requires the new subpackages
-                    consumers = find_consumers(added, main_specs + branch.get("common_specs", []))
+                    consumers = find_consumers(
+                        added, main_specs + branch.get("common_specs", []),
+                        target_pkg=name, subrelease=subrelease)
                     if consumers:
                         findings.append(make_finding(
                             "C1", "CRITICAL", name, branch_name, subrelease,
@@ -377,7 +379,9 @@ def detect_c1_package_split(inventory, findings):
                         ))
 
             if removed and is_active(spec, subrelease) and not is_active(old, subrelease):
-                consumers = find_consumers(removed, main_specs + branch.get("common_specs", []))
+                consumers = find_consumers(
+                    removed, main_specs + branch.get("common_specs", []),
+                    target_pkg=name, subrelease=subrelease)
                 if consumers:
                     findings.append(make_finding(
                         "C1", "HIGH", name, branch_name, subrelease,
@@ -393,10 +397,27 @@ def detect_c1_package_split(inventory, findings):
                     ))
 
 
-def find_consumers(package_names, all_specs):
-    """Find specs that Require or BuildRequire any of the given package names."""
+def find_consumers(package_names, all_specs, target_pkg=None, subrelease=None):
+    """Find specs that Require or BuildRequire any of the given package names.
+
+    Filters that exist to avoid the self-referential false positive seen
+    on 5.0/tdnf (run 25541029522): the gated SPECS/91 spec is also walked
+    into ``main_specs`` (os.walk recursion), and its parent-package
+    `requires` array contains its own subpackage's `Requires:` line after
+    %{name} expansion -- so without these filters, a package can appear
+    to "require itself" via a removed subpackage.
+
+    - target_pkg: if set, skip specs whose name equals it (self-match).
+    - subrelease: if set, skip specs that are not active at this
+      subrelease (so a gated SPECS/91/foo.spec is excluded when the new
+      mainline foo.spec is the one being analyzed).
+    """
     consumers = set()
     for spec in all_specs:
+        if target_pkg is not None and spec.get("name") == target_pkg:
+            continue
+        if subrelease is not None and not is_active(spec, subrelease):
+            continue
         all_deps = spec.get("requires", []) + spec.get("build_requires", [])
         for dep in all_deps:
             clean = dep.split(">=")[0].split("<=")[0].split(">")[0].split("<")[0].strip()
