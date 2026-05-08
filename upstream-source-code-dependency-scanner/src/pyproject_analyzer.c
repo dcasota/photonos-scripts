@@ -18,35 +18,97 @@ _strip_trailing_whitespace(char *psz)
     }
 }
 
-/* Extract bare package name from a Python dependency string like
-   "requests>=2.0", "six", "PyYAML!=3.0,>=2.0". Writes into pszOut. */
+/* Extract the bare package name AND the first version constraint from a
+   Python dependency string like "requests>=2.0", "six", "PyYAML!=3.0,>=2.0".
+   On output:
+     pszOutName is filled with the lowercased, hyphen-normalised name;
+     *pnOutOp   is set to one of CONSTRAINT_NONE/EQ/GE/GT/LE/LT;
+     pszOutVer  is filled with the version literal (no operator), e.g. "2.0".
+   When no constraint is parseable, pszOutVer stays empty and *pnOutOp is
+   CONSTRAINT_NONE. PEP-508 environment markers (anything after ';' or
+   compound expressions joined by ',') are deliberately collapsed: we keep
+   the FIRST simple constraint we find and drop the rest -- conservative
+   but predictable for downstream RPM-style emission. */
 static void
-_extract_dep_name(const char *pszRaw, char *pszOut, size_t nMax)
+_extract_dep_name(const char *pszRaw,
+                  char *pszOutName, size_t nMaxName,
+                  ConstraintOp *pnOutOp, char *pszOutVer, size_t nMaxVer)
 {
     size_t i = 0;
     const char *p = pszRaw;
+
+    if (pnOutOp) *pnOutOp = CONSTRAINT_NONE;
+    if (pszOutVer && nMaxVer) pszOutVer[0] = '\0';
 
     /* skip leading whitespace and quotes */
     while (*p && (isspace((unsigned char)*p) || *p == '\'' || *p == '"'))
         p++;
 
-    while (*p && i < nMax - 1)
+    while (*p && i < nMaxName - 1)
     {
-        if (*p == '>' || *p == '<' || *p == '=' || *p == '!' ||
+        if (*p == '>' || *p == '<' || *p == '=' || *p == '!' || *p == '~' ||
             *p == ';' || *p == '[' || *p == '\'' || *p == '"' ||
             *p == ',' || *p == ' ' || *p == '\t')
             break;
-        pszOut[i++] = (char)tolower((unsigned char)*p);
+        pszOutName[i++] = (char)tolower((unsigned char)*p);
         p++;
     }
-    pszOut[i] = '\0';
+    pszOutName[i] = '\0';
 
     /* normalise: replace _ with - */
-    for (i = 0; pszOut[i]; i++)
+    for (i = 0; pszOutName[i]; i++)
     {
-        if (pszOut[i] == '_')
-            pszOut[i] = '-';
+        if (pszOutName[i] == '_')
+            pszOutName[i] = '-';
     }
+
+    /* skip whitespace, brackets, then read a single version-constraint operator */
+    while (*p && (isspace((unsigned char)*p) || *p == '['))
+        p++;
+    /* PEP 508: support [extras] in brackets -- skip to closing ']' */
+    if (*p == '[')
+    {
+        while (*p && *p != ']') p++;
+        if (*p == ']') p++;
+        while (*p && isspace((unsigned char)*p)) p++;
+    }
+
+    /* Stop on environment markers (';') or alternative ('|') -- ignore those */
+    if (*p == '\0' || *p == ';' || *p == ',')
+        return;
+
+    /* Parse operator. Supported: ==, !=, >=, <=, >, <, ~=, === (treat as ==).
+       Skip operators we cannot map to RPM (e.g. !=) by leaving op=NONE. */
+    ConstraintOp op = CONSTRAINT_NONE;
+    if (p[0] == '>' && p[1] == '=') { op = CONSTRAINT_GE; p += 2; }
+    else if (p[0] == '<' && p[1] == '=') { op = CONSTRAINT_LE; p += 2; }
+    else if (p[0] == '=' && p[1] == '=') { op = CONSTRAINT_EQ; p += 2; }
+    else if (p[0] == '~' && p[1] == '=') { op = CONSTRAINT_GE; p += 2; }
+    else if (p[0] == '>') { op = CONSTRAINT_GT; p += 1; }
+    else if (p[0] == '<') { op = CONSTRAINT_LT; p += 1; }
+    else if (p[0] == '=') { op = CONSTRAINT_EQ; p += 1; }
+    else
+        return; /* unsupported operator (e.g. !=); leave constraint empty */
+
+    /* extra '=' after triple === is fine */
+    if (*p == '=') p++;
+    while (*p && isspace((unsigned char)*p)) p++;
+
+    /* Read version literal until comparator/separator/marker */
+    size_t v = 0;
+    while (*p && v < nMaxVer - 1)
+    {
+        if (*p == ',' || *p == ';' || *p == ' ' || *p == '\t' ||
+            *p == '\'' || *p == '"' || *p == '<' || *p == '>' || *p == '=' ||
+            *p == '!')
+            break;
+        pszOutVer[v++] = *p;
+        p++;
+    }
+    if (pszOutVer && nMaxVer) pszOutVer[v] = '\0';
+
+    if (pnOutOp && pszOutVer && pszOutVer[0])
+        *pnOutOp = op;
 }
 
 /* Try to find a Photon node matching a Python dependency name. */
@@ -94,10 +156,13 @@ _add_python_dep(DepGraph *pGraph, const char *pszPkgName,
                 const char *pszDepRaw)
 {
     char szDep[MAX_NAME_LEN];
+    char szVer[MAX_VERSION_LEN];
+    ConstraintOp eOp = CONSTRAINT_NONE;
     int32_t nFrom, nTo;
     char szEvidence[MAX_EVIDENCE_LEN];
 
-    _extract_dep_name(pszDepRaw, szDep, sizeof(szDep));
+    _extract_dep_name(pszDepRaw, szDep, sizeof(szDep),
+                      &eOp, szVer, sizeof(szVer));
     if (szDep[0] == '\0')
         return;
 
@@ -112,7 +177,7 @@ _add_python_dep(DepGraph *pGraph, const char *pszPkgName,
     snprintf(szEvidence, sizeof(szEvidence), "pyproject: %s", pszDepRaw);
     graph_add_edge(pGraph, (uint32_t)nFrom, (uint32_t)nTo,
                    EDGE_REQUIRES, EDGE_SRC_PYPROJECT,
-                   CONSTRAINT_NONE, "", szEvidence, szDep);
+                   eOp, szVer, szEvidence, szDep);
 }
 
 static int

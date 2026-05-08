@@ -276,35 +276,50 @@ conflict_detect(DepGraph *pGraph, const DockerSdkApiMap *pSdkMap)
         return 0;
     }
 
-    /* 1. Missing dependency detection */
+    /* 1. Missing dependency detection
+       Generic missing-Requires path. EDGE_SRC_GOMOD is intentionally
+       excluded here: vendored Go modules in go.mod do NOT correspond to
+       runtime RPM Requires for the way Photon ships Go binaries (deps are
+       statically linked at build time). The legitimate gomod use case --
+       Docker SDK <-> engine API compatibility -- has its own dedicated
+       path further below (section 3) which emits Conflicts: patches with
+       proper version semantics. */
     for (uint32_t i = 0; i < pGraph->dwEdgeCount; i++)
     {
         GraphEdge *pEdge = &pGraph->pEdges[i];
 
-        if (pEdge->nSource != EDGE_SRC_GOMOD &&
-            pEdge->nSource != EDGE_SRC_PYPROJECT &&
+        if (pEdge->nSource != EDGE_SRC_PYPROJECT &&
             pEdge->nSource != EDGE_SRC_TARBALL)
         {
             continue;
         }
 
+        /* Prefer the resolved target node's name (Photon-style, e.g.
+           "python3-requests") over the raw edge target text (upstream PyPI
+           name, e.g. "requests"). This is what the spec already declares,
+           and it's what a meaningful Requires: patch must reference. */
+        const char *pszResolvedTarget = NULL;
+        if (pEdge->dwToIdx < pGraph->dwNodeCount &&
+            pGraph->pNodes[pEdge->dwToIdx].szName[0])
+        {
+            pszResolvedTarget = pGraph->pNodes[pEdge->dwToIdx].szName;
+        }
+        else if (pEdge->szTargetName[0])
+        {
+            pszResolvedTarget = pEdge->szTargetName;
+        }
+        else
+        {
+            continue;
+        }
+
         if (has_spec_edge_for(pGraph, pEdge->dwFromIdx,
-                              pEdge->dwToIdx, pEdge->szTargetName))
+                              pEdge->dwToIdx, pszResolvedTarget))
         {
             continue;
         }
 
         GraphNode *pFromNode = &pGraph->pNodes[pEdge->dwFromIdx];
-
-        const char *pszTargetName = pEdge->szTargetName;
-        if (!pszTargetName[0] && pEdge->dwToIdx < pGraph->dwNodeCount)
-        {
-            pszTargetName = pGraph->pNodes[pEdge->dwToIdx].szName;
-        }
-
-        const char *pszConstraintVer = pEdge->szConstraintVer;
-        if (!pszConstraintVer[0])
-            pszConstraintVer = "0.0";
 
         SpecPatchSet *pSet = find_or_create_patchset(
             pGraph, pFromNode->szSpecPath, pFromNode->szName);
@@ -323,8 +338,31 @@ conflict_detect(DepGraph *pGraph, const DockerSdkApiMap *pSdkMap)
                  "%s", pFromNode->szName);
         snprintf(pPatch->szDirective, sizeof(pPatch->szDirective),
                  "Requires");
-        snprintf(pPatch->szValue, sizeof(pPatch->szValue),
-                 "%s >= %s", pszTargetName, pszConstraintVer);
+
+        /* Only emit a version constraint when the upstream metadata
+           actually carried one. The previous fallback "%s >= 0.0" produced
+           tautological patches that obscured real version requirements. */
+        if (pEdge->szConstraintVer[0])
+        {
+            const char *pszOp = ">=";
+            switch (pEdge->nConstraintOp)
+            {
+                case CONSTRAINT_EQ: pszOp = "=";  break;
+                case CONSTRAINT_GE: pszOp = ">="; break;
+                case CONSTRAINT_GT: pszOp = ">";  break;
+                case CONSTRAINT_LE: pszOp = "<="; break;
+                case CONSTRAINT_LT: pszOp = "<";  break;
+                default:            pszOp = ">="; break;
+            }
+            snprintf(pPatch->szValue, sizeof(pPatch->szValue),
+                     "%s %s %s", pszResolvedTarget, pszOp, pEdge->szConstraintVer);
+        }
+        else
+        {
+            snprintf(pPatch->szValue, sizeof(pPatch->szValue),
+                     "%s", pszResolvedTarget);
+        }
+
         pPatch->nSource = pEdge->nSource;
         snprintf(pPatch->szEvidence, sizeof(pPatch->szEvidence),
                  "%s", pEdge->szEvidence);
