@@ -152,23 +152,29 @@ jobs:
             exit 1
           fi
 
-          EMIT_TSV_ARG=""
-          if [ "${{ github.event.inputs.emitTsv }}" = "true" ]; then
-            EMIT_TSV_ARG="-EmitTsv"
-          fi
-          RESUME_VAL='$true'
-          if [ "${{ github.event.inputs.resume }}" != "true" ]; then
-            RESUME_VAL='$false'
-          fi
-
-          eval pwsh -File ci/package-classifier/Get-CybersecurityToolsWithGrok.ps1 \
-            -InputFile "\"$WORKING_DIR/urls.txt\"" \
-            -OutputFile "\"$WORKING_DIR/cybersecurity_tools.jsonl\"" \
-            -Model "${{ github.event.inputs.model }}" \
-            -MaxAlternatives "${{ github.event.inputs.maxAlternatives }}" \
-            $EMIT_TSV_ARG \
-            -Resume $RESUME_VAL \
+          # Build pwsh args via a bash array. Avoids the eval+`$true` trap that
+          # bash-interpolates a PowerShell boolean literal to empty (which broke
+          # run 25566595394 with "Missing an argument for parameter 'Resume'").
+          PWSH_ARGS=(
+            -File ci/package-classifier/Get-CybersecurityToolsWithGrok.ps1
+            -InputFile  "$WORKING_DIR/urls.txt"
+            -OutputFile "$WORKING_DIR/cybersecurity_tools.jsonl"
+            -Model           "${{ github.event.inputs.model }}"
+            -MaxAlternatives "${{ github.event.inputs.maxAlternatives }}"
             -Verbose
+          )
+          if [ "${{ github.event.inputs.emitTsv }}" = "true" ]; then
+            PWSH_ARGS+=(-EmitTsv)
+          fi
+          # Pass -Resume:<bool> using the colon syntax + literal $true/$false.
+          # Single quotes prevent bash from expanding the dollar-sigil; pwsh's
+          # parameter parser handles the colon-bound PowerShell boolean token.
+          if [ "${{ github.event.inputs.resume }}" = "true" ]; then
+            PWSH_ARGS+=('-Resume:$true')
+          else
+            PWSH_ARGS+=('-Resume:$false')
+          fi
+          pwsh "${PWSH_ARGS[@]}"
 
       - name: Compute summary stats
         id: stats
