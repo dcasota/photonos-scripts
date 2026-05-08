@@ -85,6 +85,11 @@ def parse_spec(spec_path):
         "requires": [],
         "build_requires": [],
         "provides": [],
+        # per_subpackage["<full-pkg-name>"] = {requires, build_requires, provides}
+        # Allows find_consumers to attribute a Requires line to the actual
+        # subpackage that declared it inside its %package block, not to the
+        # main spec package. Honoured by find_consumers when present.
+        "per_subpackage": {},
     }
 
     first_line = content.split("\n")[0] if content else ""
@@ -142,6 +147,72 @@ def parse_spec(spec_path):
         if prov and not prov.startswith("%"):
             result["provides"].append(prov)
 
+    # ---- Subpackage-scoped pass (option 3) ----
+    # Walk the spec line-by-line tracking the current %package scope so each
+    # Requires/BuildRequires/Provides line is attributed to the *subpackage*
+    # that declared it, not to the main package. The flat arrays above remain
+    # populated for backward compatibility.
+    base_name = result["name"] or ""
+
+    def _resolve_subpkg_full_name(raw_name, has_dash_n):
+        # Resolve %{name} macro and apply RPM's <name>-<sub> vs -n <literal>
+        # naming rule. Empty input => main package.
+        if not raw_name:
+            return base_name
+        resolved = raw_name.replace("%{name}", base_name)
+        if has_dash_n:
+            return resolved
+        if "%{name}" in raw_name:
+            return resolved
+        return f"{base_name}-{resolved}" if base_name else resolved
+
+    def _clean_dep(raw):
+        d = raw.strip().split()[0]
+        d = re.sub(r'%\{name\}', base_name, d)
+        d = re.sub(r'%\{version\}.*', "", d)
+        if d and not d.startswith("%"):
+            return d
+        return None
+
+    if base_name:
+        result["per_subpackage"][base_name] = {
+            "requires": [], "build_requires": [], "provides": [],
+        }
+    current_scope = base_name
+    package_directive_re = re.compile(r'^%package\s+(-n\s+)?(.+)$', re.IGNORECASE)
+    for line in content.split("\n"):
+        sm = package_directive_re.match(line)
+        if sm:
+            has_n = bool(sm.group(1))
+            raw_sub = sm.group(2).strip()
+            full = _resolve_subpkg_full_name(raw_sub, has_n)
+            current_scope = full
+            if full and full not in result["per_subpackage"]:
+                result["per_subpackage"][full] = {
+                    "requires": [], "build_requires": [], "provides": [],
+                }
+            continue
+        if not current_scope:
+            continue
+        rm = re.match(r'^Requires:\s*(.+)', line, re.IGNORECASE)
+        if rm:
+            d = _clean_dep(rm.group(1))
+            if d:
+                result["per_subpackage"][current_scope]["requires"].append(d)
+            continue
+        bm = re.match(r'^BuildRequires:\s*(.+)', line, re.IGNORECASE)
+        if bm:
+            d = _clean_dep(bm.group(1))
+            if d:
+                result["per_subpackage"][current_scope]["build_requires"].append(d)
+            continue
+        pm = re.match(r'^Provides:\s*(.+)', line, re.IGNORECASE)
+        if pm:
+            d = _clean_dep(pm.group(1))
+            if d:
+                result["per_subpackage"][current_scope]["provides"].append(d)
+            continue
+
     return result
 
 
@@ -189,11 +260,22 @@ def full_package_names(spec):
 # ---------------------------------------------------------------------------
 
 def scan_specs(spec_dir, prefix=""):
-    """Recursively find and parse all .spec files under spec_dir."""
+    """Recursively find and parse all .spec files under spec_dir.
+
+    Excludes numeric top-level subdirs (e.g. SPECS/91/, SPECS/92/) because
+    those are gated subrelease overlays scanned independently into
+    ``branch.gated_subdirs[N]``. Including them in the regular scan would
+    place the same spec into both buckets and cause find_consumers to
+    self-match the gated copy against the mainline package (the
+    tdnf-python false positive in run 25541029522).
+    """
     specs = []
     if not os.path.isdir(spec_dir):
         return specs
-    for root, dirs, files in os.walk(spec_dir):
+    for root, dirs, files in os.walk(spec_dir, followlinks=False):
+        if root == spec_dir:
+            # Top-level only: drop numeric dirs (gated subrelease overlays).
+            dirs[:] = [d for d in dirs if not d.isdigit()]
         for fn in files:
             if fn.endswith(".spec"):
                 path = os.path.join(root, fn)
@@ -398,19 +480,20 @@ def detect_c1_package_split(inventory, findings):
 
 
 def find_consumers(package_names, all_specs, target_pkg=None, subrelease=None):
-    """Find specs that Require or BuildRequire any of the given package names.
+    """Find specs (or subpackages) that Require/BuildRequire any of the given names.
 
-    Filters that exist to avoid the self-referential false positive seen
-    on 5.0/tdnf (run 25541029522): the gated SPECS/91 spec is also walked
-    into ``main_specs`` (os.walk recursion), and its parent-package
-    `requires` array contains its own subpackage's `Requires:` line after
-    %{name} expansion -- so without these filters, a package can appear
-    to "require itself" via a removed subpackage.
+    Defenses against the self-referential false positive class seen on
+    5.0/tdnf in run 25541029522:
+      - target_pkg: skip specs whose top-level name matches (self-match)
+      - subrelease: skip specs gated off at this subrelease
+      - per-subpackage attribution: when ``spec["per_subpackage"]`` is
+        present, walk it instead of the flat requires arrays so a match
+        is attributed to the exact subpackage that declared the Requires
+        (e.g. ``tdnf-pytests`` rather than just ``tdnf``).
 
-    - target_pkg: if set, skip specs whose name equals it (self-match).
-    - subrelease: if set, skip specs that are not active at this
-      subrelease (so a gated SPECS/91/foo.spec is excluded when the new
-      mainline foo.spec is the one being analyzed).
+    Returns a set of consumer names. With per_subpackage data, those are
+    full subpackage names; otherwise it falls back to the spec's main
+    package name.
     """
     consumers = set()
     for spec in all_specs:
@@ -418,11 +501,31 @@ def find_consumers(package_names, all_specs, target_pkg=None, subrelease=None):
             continue
         if subrelease is not None and not is_active(spec, subrelease):
             continue
-        all_deps = spec.get("requires", []) + spec.get("build_requires", [])
+        per_sub = spec.get("per_subpackage") or {}
+        if per_sub:
+            for sub_name, sub_data in per_sub.items():
+                # Skip the target package itself even if represented as a
+                # subpackage entry under the same name.
+                if target_pkg is not None and sub_name == target_pkg:
+                    continue
+                deps = (sub_data.get("requires") or []) + \
+                       (sub_data.get("build_requires") or [])
+                for dep in deps:
+                    clean = dep.split(">=")[0].split("<=")[0] \
+                               .split(">")[0].split("<")[0].strip()
+                    if clean in package_names:
+                        consumers.add(sub_name)
+                        break
+            continue
+        # Fallback: legacy flat-arrays path (for inventories produced by
+        # older versions of parse_spec without per_subpackage data).
+        all_deps = (spec.get("requires") or []) + (spec.get("build_requires") or [])
         for dep in all_deps:
-            clean = dep.split(">=")[0].split("<=")[0].split(">")[0].split("<")[0].strip()
+            clean = dep.split(">=")[0].split("<=")[0] \
+                       .split(">")[0].split("<")[0].strip()
             if clean in package_names:
                 consumers.add(spec.get("name", spec.get("path", "?")))
+                break
     return consumers
 
 
