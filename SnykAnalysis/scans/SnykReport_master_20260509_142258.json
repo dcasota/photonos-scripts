@@ -1,0 +1,21 @@
+{
+  "generated": "2026-05-09T16:23:15.4714650+02:00",
+  "generated_local": "05/09/2026 16:23:15",
+  "database": "ci/SnykAnalysis/snyk_issues.db",
+  "branch": "master",
+  "tool": "SnykCLI",
+  "total_source_packages": 0,
+  "summary": {
+    "HighCrypto": "",
+    "HighNonCrypto": "",
+    "Medium": "",
+    "Low": "",
+    "Total": null
+  },
+  "top_high_categories": [],
+  "top_packages": [],
+  "top_packages_by_high_crypto": [],
+  "top_packages_by_high": [],
+  "top_packages_by_medium": [],
+  "top_packages_by_low": []
+}

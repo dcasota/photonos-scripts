@@ -1,0 +1,287 @@
+{
+  "generated": "2026-05-09T16:22:59.8935682+02:00",
+  "generated_local": "05/09/2026 16:22:59",
+  "database": "ci/SnykAnalysis/snyk_issues.db",
+  "branch": "",
+  "tool": "SnykCLI",
+  "total_source_packages": 740,
+  "summary": {
+    "HighCrypto": "5",
+    "HighNonCrypto": "34",
+    "Medium": "1488",
+    "Low": "4281",
+    "Total": "5808"
+  },
+  "top_high_categories": [
+    {
+      "Category": "Command Injection",
+      "Count": "8"
+    },
+    {
+      "Category": "Path Traversal",
+      "Count": "6"
+    },
+    {
+      "Category": "Use of a Broken or Risky Cryptographic Algorithm",
+      "Count": "4"
+    },
+    {
+      "Category": "Use of Externally-Controlled Format String",
+      "Count": "4"
+    },
+    {
+      "Category": "Cross-site Scripting (XSS)",
+      "Count": "4"
+    },
+    {
+      "Category": "Potential Negative Number Used as Index",
+      "Count": "3"
+    },
+    {
+      "Category": "Unsafe Reflection",
+      "Count": "2"
+    },
+    {
+      "Category": "Server-Side Request Forgery (SSRF)",
+      "Count": "2"
+    },
+    {
+      "Category": "Use of Hardcoded, Security-relevant Constants",
+      "Count": "1"
+    },
+    {
+      "Category": "Size Used as Index",
+      "Count": "1"
+    }
+  ],
+  "top_packages": [
+    {
+      "Package": "zstd",
+      "TotalIssues": "10",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "1",
+      "Low": "9"
+    },
+    {
+      "Package": "zsh",
+      "TotalIssues": "10",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "1",
+      "Low": "9"
+    },
+    {
+      "Package": "zlib",
+      "TotalIssues": "10",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "1",
+      "Low": "9"
+    },
+    {
+      "Package": "zchunk",
+      "TotalIssues": "10",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "1",
+      "Low": "9"
+    },
+    {
+      "Package": "xz",
+      "TotalIssues": "10",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "1",
+      "Low": "9"
+    },
+    {
+      "Package": "xxHash",
+      "TotalIssues": "10",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "1",
+      "Low": "9"
+    },
+    {
+      "Package": "xmlsec",
+      "TotalIssues": "10",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "1",
+      "Low": "9"
+    },
+    {
+      "Package": "xfsprogs-dev",
+      "TotalIssues": "10",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "1",
+      "Low": "9"
+    },
+    {
+      "Package": "xerces-c",
+      "TotalIssues": "10",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "1",
+      "Low": "9"
+    },
+    {
+      "Package": "wireshark",
+      "TotalIssues": "10",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "1",
+      "Low": "9"
+    }
+  ],
+  "top_packages_by_high_crypto": [
+    {
+      "Package": "python-systemd",
+      "Count": "1"
+    },
+    {
+      "Package": "modemmanager",
+      "Count": "1"
+    },
+    {
+      "Package": "lxml",
+      "Count": "1"
+    },
+    {
+      "Package": "lxcfs",
+      "Count": "1"
+    },
+    {
+      "Package": "Module-Build",
+      "Count": "1"
+    }
+  ],
+  "top_packages_by_high": [
+    {
+      "Package": "termshark",
+      "Count": "5"
+    },
+    {
+      "Package": "glide",
+      "Count": "5"
+    },
+    {
+      "Package": "pycryptodome",
+      "Count": "2"
+    },
+    {
+      "Package": "python-systemd",
+      "Count": "1"
+    },
+    {
+      "Package": "python-rsa",
+      "Count": "1"
+    },
+    {
+      "Package": "python-prompt-toolkit",
+      "Count": "1"
+    },
+    {
+      "Package": "python-pathspec",
+      "Count": "1"
+    },
+    {
+      "Package": "python-pam",
+      "Count": "1"
+    },
+    {
+      "Package": "python-linux-procfs",
+      "Count": "1"
+    },
+    {
+      "Package": "pycurl",
+      "Count": "1"
+    }
+  ],
+  "top_packages_by_medium": [
+    {
+      "Package": "libnfnetlink",
+      "Count": "10"
+    },
+    {
+      "Package": "linuxptp",
+      "Count": "9"
+    },
+    {
+      "Package": "libtar",
+      "Count": "9"
+    },
+    {
+      "Package": "libconfig",
+      "Count": "9"
+    },
+    {
+      "Package": "greenlet",
+      "Count": "9"
+    },
+    {
+      "Package": "nss-pam-ldapd",
+      "Count": "8"
+    },
+    {
+      "Package": "libteam",
+      "Count": "8"
+    },
+    {
+      "Package": "lapack",
+      "Count": "8"
+    },
+    {
+      "Package": "kube-bench",
+      "Count": "8"
+    },
+    {
+      "Package": "ipcalc",
+      "Count": "8"
+    }
+  ],
+  "top_packages_by_low": [
+    {
+      "Package": "vernemq",
+      "Count": "10"
+    },
+    {
+      "Package": "util-linux",
+      "Count": "10"
+    },
+    {
+      "Package": "utf8proc",
+      "Count": "10"
+    },
+    {
+      "Package": "urllib3",
+      "Count": "10"
+    },
+    {
+      "Package": "pyroute2",
+      "Count": "10"
+    },
+    {
+      "Package": "pyparsing",
+      "Count": "10"
+    },
+    {
+      "Package": "pyopenssl",
+      "Count": "10"
+    },
+    {
+      "Package": "pynacl",
+      "Count": "10"
+    },
+    {
+      "Package": "pyjwt",
+      "Count": "10"
+    },
+    {
+      "Package": "pyinstaller",
+      "Count": "10"
+    }
+  ]
+}

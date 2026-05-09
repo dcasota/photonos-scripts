@@ -1,0 +1,234 @@
+{
+  "generated": "2026-05-09T16:23:06.4968431+02:00",
+  "generated_local": "05/09/2026 16:23:06",
+  "database": "ci/SnykAnalysis/snyk_issues.db",
+  "branch": "5.0",
+  "tool": "SnykCLI",
+  "total_source_packages": 691,
+  "summary": {
+    "HighCrypto": "0",
+    "HighNonCrypto": "8",
+    "Medium": "352",
+    "Low": "857",
+    "Total": "1217"
+  },
+  "top_high_categories": [
+    {
+      "Category": "Command Injection",
+      "Count": "3"
+    },
+    {
+      "Category": "Path Traversal",
+      "Count": "2"
+    },
+    {
+      "Category": "Cross-site Scripting (XSS)",
+      "Count": "2"
+    },
+    {
+      "Category": "Selection of Less-Secure Algorithm During Negotiation (SSL instead of TLS)",
+      "Count": "1"
+    }
+  ],
+  "top_packages": [
+    {
+      "Package": "zstd",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    },
+    {
+      "Package": "zsh",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    },
+    {
+      "Package": "zookeeper",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    },
+    {
+      "Package": "zlib",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    },
+    {
+      "Package": "zchunk",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    },
+    {
+      "Package": "yamlloader",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    },
+    {
+      "Package": "yaml-cpp",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    },
+    {
+      "Package": "yajl",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    },
+    {
+      "Package": "xz",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    },
+    {
+      "Package": "xxHash",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    }
+  ],
+  "top_packages_by_high_crypto": [],
+  "top_packages_by_high": [
+    {
+      "Package": "termshark",
+      "Count": "1"
+    },
+    {
+      "Package": "python-rsa",
+      "Count": "1"
+    },
+    {
+      "Package": "python-prompt-toolkit",
+      "Count": "1"
+    },
+    {
+      "Package": "python-pathspec",
+      "Count": "1"
+    },
+    {
+      "Package": "python-pam",
+      "Count": "1"
+    },
+    {
+      "Package": "python-linux-procfs",
+      "Count": "1"
+    },
+    {
+      "Package": "glide",
+      "Count": "1"
+    },
+    {
+      "Package": "dns",
+      "Count": "1"
+    }
+  ],
+  "top_packages_by_medium": [
+    {
+      "Package": "pyserial",
+      "Count": "2"
+    },
+    {
+      "Package": "pciutils",
+      "Count": "2"
+    },
+    {
+      "Package": "password-store",
+      "Count": "2"
+    },
+    {
+      "Package": "pandoc",
+      "Count": "2"
+    },
+    {
+      "Package": "packaging",
+      "Count": "2"
+    },
+    {
+      "Package": "nss-pam-ldapd",
+      "Count": "2"
+    },
+    {
+      "Package": "netaddr",
+      "Count": "2"
+    },
+    {
+      "Package": "msr-tools",
+      "Count": "2"
+    },
+    {
+      "Package": "linuxptp",
+      "Count": "2"
+    },
+    {
+      "Package": "libteam",
+      "Count": "2"
+    }
+  ],
+  "top_packages_by_low": [
+    {
+      "Package": "zstd",
+      "Count": "2"
+    },
+    {
+      "Package": "zsh",
+      "Count": "2"
+    },
+    {
+      "Package": "zookeeper",
+      "Count": "2"
+    },
+    {
+      "Package": "zlib",
+      "Count": "2"
+    },
+    {
+      "Package": "zchunk",
+      "Count": "2"
+    },
+    {
+      "Package": "yamlloader",
+      "Count": "2"
+    },
+    {
+      "Package": "yaml-cpp",
+      "Count": "2"
+    },
+    {
+      "Package": "yajl",
+      "Count": "2"
+    },
+    {
+      "Package": "xz",
+      "Count": "2"
+    },
+    {
+      "Package": "xxHash",
+      "Count": "2"
+    }
+  ]
+}
