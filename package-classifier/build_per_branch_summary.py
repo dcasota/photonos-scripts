@@ -113,6 +113,14 @@ def render_markdown(branch: str, records: list[dict], top_n: int,
             alts = [alts]
         elif not isinstance(alts, list):
             alts = []
+        # Drop any "alternative" whose name is the package itself -- Grok
+        # often returns the package as a candidate in its own ranking pool,
+        # which is not useful in an "alternatives" column.
+        self_name = (r.get("tool_name") or "").strip().lower()
+        if self_name:
+            alts = [a for a in alts
+                    if isinstance(a, dict)
+                    and (a.get("name") or "").strip().lower() != self_name]
         # Top-3 alternatives by composite_score (alternatives carry their own
         # composite_score; preserve the order the classifier emitted but cap at 3).
         try:
@@ -165,6 +173,14 @@ def render_text(branch: str, records: list[dict], top_n: int,
             alts = [alts]
         elif not isinstance(alts, list):
             alts = []
+        # Drop any "alternative" whose name is the package itself -- Grok
+        # often returns the package as a candidate in its own ranking pool,
+        # which is not useful in an "alternatives" column.
+        self_name = (r.get("tool_name") or "").strip().lower()
+        if self_name:
+            alts = [a for a in alts
+                    if isinstance(a, dict)
+                    and (a.get("name") or "").strip().lower() != self_name]
         try:
             alts_sorted = sorted(alts, key=lambda a: composite_for_dedup(a), reverse=True)
         except Exception:
@@ -197,6 +213,11 @@ def render_json(branch: str, records: list[dict], top_n: int,
             a = [a]
         elif not isinstance(a, list):
             a = []
+        self_name = (r.get("tool_name") or "").strip().lower()
+        if self_name:
+            a = [x for x in a
+                 if isinstance(x, dict)
+                 and (x.get("name") or "").strip().lower() != self_name]
         return a[:3]
     payload = {
         "branch": branch,

@@ -278,5 +278,9 @@ jobs:
             echo "No changes to commit"
           else
             git commit -m "Snyk analysis $(date -u +%Y-%m-%d)"
+            # Other workflows (e.g. package-classifier, package-report) commit
+            # to scans/ in parallel; rebase before push to avoid the
+            # non-fast-forward rejection that previously failed run 25603659225.
+            git pull --rebase origin master
             git push
           fi
