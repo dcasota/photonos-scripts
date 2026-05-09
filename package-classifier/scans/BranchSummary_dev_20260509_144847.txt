@@ -1,0 +1,75 @@
+Package Classifier -- Branch dev
+
+Generated: 2026-05-09T14:48:47+00:00
+Records considered (this branch): 1685; deduplicated: 10 of top 10
+
+ 1. Python  --  composite_score 93.9
+    https://www.python.org/
+    Resume: General-purpose high-level programming language with batteries-included stdlib and interpreter.
+    Top alternatives:
+      1. Go  (91.1)  -- Superior reputation and low issue volume offset by narrower library ecosystem.
+      2. Node.js  (85.8)  -- Strong popularity and integration but higher CVE count and ecosystem noise.
+
+ 2. spdlog  --  composite_score 93.4
+    https://github.com/gabime/spdlog
+    Resume: Very fast C++ logging library with header-only option, formatting and sinks.
+    Top alternatives:
+      1. glog  (76.8)  -- Solid reputation but lower popularity and more issues than spdlog.
+      2. Boost.Log  (70.8)  -- Excellent docs and reputation but poor popularity and integration friction.
+
+ 3. click  --  composite_score 93.4
+    https://click.palletsprojects.com/
+    Resume: Python package for creating composable command-line interfaces with decorators and automatic help generation.
+    Top alternatives:
+      1. typer  (92.4)  -- Very close popularity and integration; slightly younger ecosystem.
+      2. argparse  (83.2)  -- Zero dependencies but lower usability and popularity scores.
+
+ 4. requests  --  composite_score 92.5
+    https://requests.readthedocs.io/
+    Resume: Elegant and simple HTTP library for Python, built for human beings.
+    Top alternatives:
+      1. httpx  (89.4)  -- Strong modern alternative with async, excellent security posture.
+      2. aiohttp  (80.8)  -- Good for async workloads but higher issue volume.
+
+ 5. PostgreSQL  --  composite_score 92.4
+    https://www.postgresql.org/
+    Resume: Open-source object-relational database management system (RDBMS).
+    Top alternatives:
+      1. SQLite  (87.2)  -- Excellent reputation and simplicity but lower popularity for server workloads.
+      2. MySQL  (85.3)  -- Strong popularity and integration but more CVEs and older docs lower the score.
+
+ 6. NumPy  --  composite_score 92.3
+    https://numpy.org
+    Resume: Fundamental package for scientific computing with Python, providing multi-dimensional arrays and mathematical functions.
+    Top alternatives:
+      1. Pandas  (93.9)  -- Superior popularity and reputation offset slightly lower integration for pure array use.
+      2. JAX  (92.4)  -- Excellent reputation and low issues but lower integration for general CPU use.
+
+ 7. pytest  --  composite_score 92.1
+    https://docs.pytest.org/
+    Resume: The pytest framework makes it easy to write small tests, yet scales to support complex functional testing for applications and libraries.
+    Top alternatives:
+      1. unittest  (83.0)  -- Zero dependencies but lower feature richness and community momentum.
+      2. nose2  (69.5)  -- Lower activity and outdated docs reduce overall score.
+
+ 8. fonts-open-sans  --  composite_score 91.7
+    https://fonts.google.com/specimen/Open+Sans
+    Resume: Humanist sans-serif typeface designed by Steve Matteson, commissioned by Google.
+    Top alternatives:
+      1. fonts-roboto  (96.0)  -- Higher ecosystem activity and fresher releases than Open Sans.
+      2. fonts-lato  (93.1)  -- Similar style, slightly lower documentation freshness.
+
+ 9. networkx  --  composite_score 91.5
+    https://github.com/networkx/networkx
+    Resume: Python library for creating, manipulating, and studying the structure, dynamics, and functions of complex networks/graphs.
+    Top alternatives:
+      1. python-igraph  (80.5)  -- Strong performance and low CVE count but lower popularity and integration friction.
+      2. graph-tool  (70.8)  -- Excellent performance but poor integration ease and smallest community.
+
+10. pydantic  --  composite_score 91.5
+    https://github.com/pydantic/pydantic
+    Resume: Data validation and settings management using Python type annotations.
+    Top alternatives:
+      1. marshmallow  (85.8)  -- Strong reputation and solid ecosystem but lower popularity and integration ease.
+      2. cerberus  (73.4)  -- Good security profile but dated docs, low activity and popularity.
+

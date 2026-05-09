@@ -1,0 +1,1058 @@
+{
+  "branch": "dev",
+  "generated": "2026-05-09T14:48:47+00:00",
+  "records_considered": 1685,
+  "top_n": 10,
+  "tools": [
+    {
+      "rank": 1,
+      "tool_name": "Python",
+      "composite_score": 93.9,
+      "weblink": "https://www.python.org/",
+      "summary": "General-purpose high-level programming language with batteries-included stdlib and interpreter.",
+      "language": "C, Python",
+      "license": "PSF License",
+      "last_release": "2023-12",
+      "metrics": {
+        "popularity": {
+          "stars": 62000,
+          "score": 96
+        },
+        "reputation": {
+          "cves_12mo": 4,
+          "score": 92
+        },
+        "integration": {
+          "score": 98,
+          "notes": "Native support across OSes, clouds and major frameworks"
+        },
+        "documentation": {
+          "last_doc_update": "2023-12",
+          "score": 97
+        },
+        "ecosystem": {
+          "issues_12mo": 1350,
+          "prs_12mo": 920,
+          "score": 88
+        }
+      },
+      "url": "https://www.python.org/ftp/python/3.11.7/Python-3.11.7.tar.xz",
+      "alternatives": [
+        {
+          "name": "Go",
+          "weblink": "https://go.dev/",
+          "summary": "Statically typed compiled language focused on simplicity, concurrency and fast builds.",
+          "language": "Go",
+          "license": "BSD-3-Clause",
+          "last_release": "2024-02",
+          "metrics": {
+            "popularity": {
+              "stars": 125000,
+              "score": 88
+            },
+            "reputation": {
+              "cves_12mo": 2,
+              "score": 96
+            },
+            "integration": {
+              "score": 85,
+              "notes": "Excellent for CLI/services but fewer data-science libs"
+            },
+            "documentation": {
+              "last_doc_update": "2024-02",
+              "score": 94
+            },
+            "ecosystem": {
+              "issues_12mo": 420,
+              "prs_12mo": 310,
+              "score": 92
+            }
+          },
+          "rationale": "Superior reputation and low issue volume offset by narrower library ecosystem.",
+          "composite_score": 91.1,
+          "rank": 2
+        },
+        {
+          "name": "Node.js",
+          "weblink": "https://nodejs.org/",
+          "summary": "JavaScript runtime built on V8 for server-side and CLI applications.",
+          "language": "C++, JavaScript",
+          "license": "MIT",
+          "last_release": "2024-04",
+          "metrics": {
+            "popularity": {
+              "stars": 105000,
+              "score": 85
+            },
+            "reputation": {
+              "cves_12mo": 7,
+              "score": 85
+            },
+            "integration": {
+              "score": 92,
+              "notes": "Huge npm ecosystem but dependency bloat common"
+            },
+            "documentation": {
+              "last_doc_update": "2024-04",
+              "score": 90
+            },
+            "ecosystem": {
+              "issues_12mo": 980,
+              "prs_12mo": 650,
+              "score": 80
+            }
+          },
+          "rationale": "Strong popularity and integration but higher CVE count and ecosystem noise.",
+          "composite_score": 85.8,
+          "rank": 3
+        }
+      ],
+      "ranking_winner": "Python"
+    },
+    {
+      "rank": 2,
+      "tool_name": "spdlog",
+      "composite_score": 93.4,
+      "weblink": "https://github.com/gabime/spdlog",
+      "summary": "Very fast C++ logging library with header-only option, formatting and sinks.",
+      "language": "C++",
+      "license": "MIT",
+      "last_release": "2025-01",
+      "metrics": {
+        "popularity": {
+          "stars": 25000,
+          "score": 95
+        },
+        "reputation": {
+          "cves_12mo": 0,
+          "score": 98
+        },
+        "integration": {
+          "score": 92,
+          "notes": "CMake, Conan, vcpkg support; header-only or compiled"
+        },
+        "documentation": {
+          "last_doc_update": "2025-01",
+          "score": 90
+        },
+        "ecosystem": {
+          "issues_12mo": 45,
+          "prs_12mo": 30,
+          "score": 85
+        }
+      },
+      "url": "https://github.com/gabime/spdlog/archive/refs/tags/v1.17.0.tar.gz",
+      "alternatives": [
+        {
+          "name": "glog",
+          "weblink": "https://github.com/google/glog",
+          "summary": "C++ implementation of the Google logging module.",
+          "language": "C++",
+          "license": "BSD-3-Clause",
+          "last_release": "2024-10",
+          "metrics": {
+            "popularity": {
+              "stars": 7200,
+              "score": 75
+            },
+            "reputation": {
+              "cves_12mo": 1,
+              "score": 85
+            },
+            "integration": {
+              "score": 80,
+              "notes": "CMake, Bazel; requires more setup"
+            },
+            "documentation": {
+              "last_doc_update": "2024-06",
+              "score": 70
+            },
+            "ecosystem": {
+              "issues_12mo": 120,
+              "prs_12mo": 25,
+              "score": 65
+            }
+          },
+          "rationale": "Solid reputation but lower popularity and more issues than spdlog.",
+          "composite_score": 76.8,
+          "rank": 1
+        },
+        {
+          "name": "Boost.Log",
+          "weblink": "https://github.com/boostorg/log",
+          "summary": "Flexible and extensible C++ logging framework from Boost.",
+          "language": "C++",
+          "license": "BSL-1.0",
+          "last_release": "2024-12",
+          "metrics": {
+            "popularity": {
+              "stars": 180,
+              "score": 40
+            },
+            "reputation": {
+              "cves_12mo": 0,
+              "score": 95
+            },
+            "integration": {
+              "score": 65,
+              "notes": "Heavy Boost dependency"
+            },
+            "documentation": {
+              "last_doc_update": "2024-12",
+              "score": 85
+            },
+            "ecosystem": {
+              "issues_12mo": 30,
+              "prs_12mo": 15,
+              "score": 80
+            }
+          },
+          "rationale": "Excellent docs and reputation but poor popularity and integration friction.",
+          "composite_score": 70.8,
+          "rank": 2
+        }
+      ],
+      "ranking_winner": "spdlog"
+    },
+    {
+      "rank": 3,
+      "tool_name": "click",
+      "composite_score": 93.4,
+      "weblink": "https://click.palletsprojects.com/",
+      "summary": "Python package for creating composable command-line interfaces with decorators and automatic help generation.",
+      "language": "Python",
+      "license": "BSD-3-Clause",
+      "last_release": "2024-09",
+      "metrics": {
+        "popularity": {
+          "stars": 15200,
+          "score": 92
+        },
+        "reputation": {
+          "cves_12mo": 0,
+          "score": 98
+        },
+        "integration": {
+          "score": 95,
+          "notes": "pip install click; decorator-based API integrates easily with any Python CLI"
+        },
+        "documentation": {
+          "last_doc_update": "2024-09",
+          "score": 94
+        },
+        "ecosystem": {
+          "issues_12mo": 48,
+          "prs_12mo": 31,
+          "score": 88
+        }
+      },
+      "url": "https://github.com/pallets/click/archive/refs/tags/8.3.3.tar.gz",
+      "alternatives": [
+        {
+          "name": "typer",
+          "weblink": "https://typer.tiangolo.com/",
+          "summary": "Modern Python CLI framework built on Click and type hints for rapid development.",
+          "language": "Python",
+          "license": "MIT",
+          "last_release": "2024-07",
+          "metrics": {
+            "popularity": {
+              "stars": 14800,
+              "score": 90
+            },
+            "reputation": {
+              "cves_12mo": 0,
+              "score": 97
+            },
+            "integration": {
+              "score": 96,
+              "notes": "pip install typer; leverages Pydantic and type hints"
+            },
+            "documentation": {
+              "last_doc_update": "2024-06",
+              "score": 91
+            },
+            "ecosystem": {
+              "issues_12mo": 62,
+              "prs_12mo": 27,
+              "score": 85
+            }
+          },
+          "rationale": "Very close popularity and integration; slightly younger ecosystem.",
+          "composite_score": 92.4,
+          "rank": 2
+        },
+        {
+          "name": "argparse",
+          "weblink": "https://docs.python.org/3/library/argparse.html",
+          "summary": "Python standard library module for parsing command-line arguments.",
+          "language": "Python",
+          "license": "PSF",
+          "last_release": null,
+          "metrics": {
+            "popularity": {
+              "stars": null,
+              "score": 75
+            },
+            "reputation": {
+              "cves_12mo": 0,
+              "score": 99
+            },
+            "integration": {
+              "score": 70,
+              "notes": "No install needed; verbose imperative API"
+            },
+            "documentation": {
+              "last_doc_update": "2024-06",
+              "score": 85
+            },
+            "ecosystem": {
+              "issues_12mo": null,
+              "prs_12mo": null,
+              "score": 80
+            }
+          },
+          "rationale": "Zero dependencies but lower usability and popularity scores.",
+          "composite_score": 83.2,
+          "rank": 3
+        }
+      ],
+      "ranking_winner": "click"
+    },
+    {
+      "rank": 4,
+      "tool_name": "requests",
+      "composite_score": 92.5,
+      "weblink": "https://requests.readthedocs.io/",
+      "summary": "Elegant and simple HTTP library for Python, built for human beings.",
+      "language": "Python",
+      "license": "Apache-2.0",
+      "last_release": "2024-05",
+      "metrics": {
+        "popularity": {
+          "stars": 51500,
+          "score": 95
+        },
+        "reputation": {
+          "cves_12mo": 1,
+          "score": 90
+        },
+        "integration": {
+          "score": 98,
+          "notes": "pip install; minimal config"
+        },
+        "documentation": {
+          "last_doc_update": "2024-05",
+          "score": 95
+        },
+        "ecosystem": {
+          "issues_12mo": 120,
+          "prs_12mo": 85,
+          "score": 85
+        }
+      },
+      "url": "https://github.com/psf/requests/archive/refs/tags/v2.33.1.tar.gz",
+      "alternatives": [
+        {
+          "name": "httpx",
+          "weblink": "https://www.python-httpx.org/",
+          "summary": "Next-generation HTTP client for Python with async support.",
+          "language": "Python",
+          "license": "BSD-3-Clause",
+          "last_release": "2024-06",
+          "metrics": {
+            "popularity": {
+              "stars": 13500,
+              "score": 82
+            },
+            "reputation": {
+              "cves_12mo": 0,
+              "score": 95
+            },
+            "integration": {
+              "score": 92,
+              "notes": "pip install; async/sync APIs"
+            },
+            "documentation": {
+              "last_doc_update": "2024-06",
+              "score": 93
+            },
+            "ecosystem": {
+              "issues_12mo": 95,
+              "prs_12mo": 70,
+              "score": 88
+            }
+          },
+          "rationale": "Strong modern alternative with async, excellent security posture.",
+          "composite_score": 89.4,
+          "rank": 2
+        },
+        {
+          "name": "aiohttp",
+          "weblink": "https://docs.aiohttp.org/",
+          "summary": "Async HTTP client/server framework for Python.",
+          "language": "Python",
+          "license": "Apache-2.0",
+          "last_release": "2024-04",
+          "metrics": {
+            "popularity": {
+              "stars": 14800,
+              "score": 80
+            },
+            "reputation": {
+              "cves_12mo": 2,
+              "score": 80
+            },
+            "integration": {
+              "score": 85,
+              "notes": "Requires async context"
+            },
+            "documentation": {
+              "last_doc_update": "2024-04",
+              "score": 88
+            },
+            "ecosystem": {
+              "issues_12mo": 180,
+              "prs_12mo": 110,
+              "score": 75
+            }
+          },
+          "rationale": "Good for async workloads but higher issue volume.",
+          "composite_score": 80.8,
+          "rank": 3
+        }
+      ],
+      "ranking_winner": "requests"
+    },
+    {
+      "rank": 5,
+      "tool_name": "PostgreSQL",
+      "composite_score": 92.4,
+      "weblink": "https://www.postgresql.org/",
+      "summary": "Open-source object-relational database management system (RDBMS).",
+      "language": "C",
+      "license": "PostgreSQL License",
+      "last_release": "2024-11",
+      "metrics": {
+        "popularity": {
+          "stars": 15000,
+          "score": 95
+        },
+        "reputation": {
+          "cves_12mo": 8,
+          "score": 88
+        },
+        "integration": {
+          "score": 96,
+          "notes": "Native drivers and ORMs for nearly all languages and frameworks"
+        },
+        "documentation": {
+          "last_doc_update": "2024-11",
+          "score": 98
+        },
+        "ecosystem": {
+          "issues_12mo": 320,
+          "prs_12mo": 210,
+          "score": 87
+        }
+      },
+      "url": "http://ftp.postgresql.org/pub/source/v16.6/postgresql-16.6.tar.bz2",
+      "alternatives": [
+        {
+          "name": "SQLite",
+          "weblink": "https://www.sqlite.org/",
+          "summary": "Lightweight, serverless, embedded SQL database engine.",
+          "language": "C",
+          "license": "Public Domain",
+          "last_release": "2024-10",
+          "metrics": {
+            "popularity": {
+              "stars": 6200,
+              "score": 78
+            },
+            "reputation": {
+              "cves_12mo": 2,
+              "score": 96
+            },
+            "integration": {
+              "score": 90,
+              "notes": "Zero-config, ubiquitous in mobile/desktop apps"
+            },
+            "documentation": {
+              "last_doc_update": "2024-10",
+              "score": 92
+            },
+            "ecosystem": {
+              "issues_12mo": 95,
+              "prs_12mo": 60,
+              "score": 82
+            }
+          },
+          "rationale": "Excellent reputation and simplicity but lower popularity for server workloads.",
+          "composite_score": 87.2,
+          "rank": 2
+        },
+        {
+          "name": "MySQL",
+          "weblink": "https://www.mysql.com/",
+          "summary": "Widely-used open-source relational database, now under Oracle.",
+          "language": "C++",
+          "license": "GPLv2",
+          "last_release": "2024-07",
+          "metrics": {
+            "popularity": {
+              "stars": 9800,
+              "score": 88
+            },
+            "reputation": {
+              "cves_12mo": 12,
+              "score": 82
+            },
+            "integration": {
+              "score": 94,
+              "notes": "Excellent PHP/Java connectors and cloud hosting options"
+            },
+            "documentation": {
+              "last_doc_update": "2024-07",
+              "score": 85
+            },
+            "ecosystem": {
+              "issues_12mo": 410,
+              "prs_12mo": 180,
+              "score": 78
+            }
+          },
+          "rationale": "Strong popularity and integration but more CVEs and older docs lower the score.",
+          "composite_score": 85.3,
+          "rank": 3
+        }
+      ],
+      "ranking_winner": "PostgreSQL"
+    },
+    {
+      "rank": 6,
+      "tool_name": "NumPy",
+      "composite_score": 92.3,
+      "weblink": "https://numpy.org",
+      "summary": "Fundamental package for scientific computing with Python, providing multi-dimensional arrays and mathematical functions.",
+      "language": "Python",
+      "license": "BSD-3-Clause",
+      "last_release": "2022-10",
+      "metrics": {
+        "popularity": {
+          "stars": 22000,
+          "score": 95
+        },
+        "reputation": {
+          "cves_12mo": 2,
+          "score": 90
+        },
+        "integration": {
+          "score": 98,
+          "notes": "Core Python library, pip install numpy"
+        },
+        "documentation": {
+          "last_doc_update": "2023-09",
+          "score": 95
+        },
+        "ecosystem": {
+          "issues_12mo": 1200,
+          "prs_12mo": 800,
+          "score": 85
+        }
+      },
+      "url": "https://github.com/numpy/numpy/archive/refs/tags/v1.23.4.tar.gz",
+      "alternatives": [
+        {
+          "name": "Pandas",
+          "weblink": "https://pandas.pydata.org",
+          "summary": "Data analysis library providing DataFrame structures built on NumPy arrays.",
+          "language": "Python",
+          "license": "BSD-3-Clause",
+          "last_release": "2023-08",
+          "metrics": {
+            "popularity": {
+              "stars": 34000,
+              "score": 97
+            },
+            "reputation": {
+              "cves_12mo": 1,
+              "score": 95
+            },
+            "integration": {
+              "score": 92,
+              "notes": "pip install pandas; depends on NumPy"
+            },
+            "documentation": {
+              "last_doc_update": "2023-08",
+              "score": 93
+            },
+            "ecosystem": {
+              "issues_12mo": 900,
+              "prs_12mo": 650,
+              "score": 88
+            }
+          },
+          "rationale": "Superior popularity and reputation offset slightly lower integration for pure array use.",
+          "composite_score": 93.9,
+          "rank": 1
+        },
+        {
+          "name": "JAX",
+          "weblink": "https://github.com/google/jax",
+          "summary": "Autograd and XLA-based numerical computing library with NumPy-compatible API.",
+          "language": "Python",
+          "license": "Apache-2.0",
+          "last_release": "2023-09",
+          "metrics": {
+            "popularity": {
+              "stars": 21000,
+              "score": 93
+            },
+            "reputation": {
+              "cves_12mo": 0,
+              "score": 98
+            },
+            "integration": {
+              "score": 85,
+              "notes": "pip install jax; GPU/TPU focus"
+            },
+            "documentation": {
+              "last_doc_update": "2023-09",
+              "score": 88
+            },
+            "ecosystem": {
+              "issues_12mo": 450,
+              "prs_12mo": 320,
+              "score": 90
+            }
+          },
+          "rationale": "Excellent reputation and low issues but lower integration for general CPU use.",
+          "composite_score": 92.4,
+          "rank": 3
+        }
+      ],
+      "ranking_winner": "Pandas"
+    },
+    {
+      "rank": 7,
+      "tool_name": "pytest",
+      "composite_score": 92.1,
+      "weblink": "https://docs.pytest.org/",
+      "summary": "The pytest framework makes it easy to write small tests, yet scales to support complex functional testing for applications and libraries.",
+      "language": "Python",
+      "license": "MIT",
+      "last_release": "2022-08",
+      "metrics": {
+        "popularity": {
+          "stars": 10500,
+          "score": 95
+        },
+        "reputation": {
+          "cves_12mo": 0,
+          "score": 95
+        },
+        "integration": {
+          "score": 92,
+          "notes": "Rich plugin ecosystem and simple pip install"
+        },
+        "documentation": {
+          "last_doc_update": "2023-09",
+          "score": 90
+        },
+        "ecosystem": {
+          "issues_12mo": 320,
+          "prs_12mo": 180,
+          "score": 85
+        }
+      },
+      "url": "https://github.com/pytest-dev/pytest/archive/refs/tags/7.1.2.tar.gz",
+      "alternatives": [
+        {
+          "name": "unittest",
+          "weblink": "https://docs.python.org/3/library/unittest.html",
+          "summary": "Python's built-in unit testing framework inspired by JUnit.",
+          "language": "Python",
+          "license": "PSF",
+          "last_release": null,
+          "metrics": {
+            "popularity": {
+              "stars": null,
+              "score": 70
+            },
+            "reputation": {
+              "cves_12mo": 0,
+              "score": 95
+            },
+            "integration": {
+              "score": 85,
+              "notes": "No install needed, part of stdlib"
+            },
+            "documentation": {
+              "last_doc_update": "2023-06",
+              "score": 88
+            },
+            "ecosystem": {
+              "issues_12mo": 50,
+              "prs_12mo": 30,
+              "score": 80
+            }
+          },
+          "rationale": "Zero dependencies but lower feature richness and community momentum.",
+          "composite_score": 83.0,
+          "rank": 2
+        },
+        {
+          "name": "nose2",
+          "weblink": "https://nose2.io/",
+          "summary": "Next generation of nose, extending unittest with plugins.",
+          "language": "Python",
+          "license": "BSD",
+          "last_release": "2021-07",
+          "metrics": {
+            "popularity": {
+              "stars": 720,
+              "score": 55
+            },
+            "reputation": {
+              "cves_12mo": 0,
+              "score": 90
+            },
+            "integration": {
+              "score": 70,
+              "notes": "Plugin-based but less active than pytest"
+            },
+            "documentation": {
+              "last_doc_update": "2021-07",
+              "score": 65
+            },
+            "ecosystem": {
+              "issues_12mo": 45,
+              "prs_12mo": 12,
+              "score": 60
+            }
+          },
+          "rationale": "Lower activity and outdated docs reduce overall score.",
+          "composite_score": 69.5,
+          "rank": 3
+        }
+      ],
+      "ranking_winner": "pytest"
+    },
+    {
+      "rank": 8,
+      "tool_name": "fonts-open-sans",
+      "composite_score": 91.7,
+      "weblink": "https://fonts.google.com/specimen/Open+Sans",
+      "summary": "Humanist sans-serif typeface designed by Steve Matteson, commissioned by Google.",
+      "language": null,
+      "license": "Apache-2.0",
+      "last_release": "2013-07",
+      "metrics": {
+        "popularity": {
+          "stars": null,
+          "score": null
+        },
+        "reputation": {
+          "cves_12mo": 0,
+          "score": 100
+        },
+        "integration": {
+          "score": 90,
+          "notes": "Simple font install via package manager or download"
+        },
+        "documentation": {
+          "last_doc_update": "2023-05",
+          "score": 85
+        },
+        "ecosystem": {
+          "issues_12mo": null,
+          "prs_12mo": null,
+          "score": null
+        }
+      },
+      "url": "https://ftp.debian.org/debian/pool/main/f/fonts-open-sans/fonts-open-sans_1.10.orig.tar.xz",
+      "alternatives": [
+        {
+          "name": "fonts-roboto",
+          "weblink": "https://fonts.google.com/specimen/Roboto",
+          "summary": "Modern sans-serif typeface family by Google, default on Android.",
+          "language": null,
+          "license": "Apache-2.0",
+          "last_release": "2023-01",
+          "metrics": {
+            "popularity": {
+              "stars": null,
+              "score": null
+            },
+            "reputation": {
+              "cves_12mo": 0,
+              "score": 100
+            },
+            "integration": {
+              "score": 92,
+              "notes": "Widely available, easy install"
+            },
+            "documentation": {
+              "last_doc_update": "2024-01",
+              "score": 90
+            },
+            "ecosystem": {
+              "issues_12mo": null,
+              "prs_12mo": null,
+              "score": null
+            }
+          },
+          "rationale": "Higher ecosystem activity and fresher releases than Open Sans.",
+          "composite_score": 96.0,
+          "rank": 1
+        },
+        {
+          "name": "fonts-lato",
+          "weblink": "https://fonts.google.com/specimen/Lato",
+          "summary": "Semi-rounded sans-serif by \u0141ukasz Dziedzic, popular web font.",
+          "language": null,
+          "license": "OFL-1.1",
+          "last_release": "2014-09",
+          "metrics": {
+            "popularity": {
+              "stars": null,
+              "score": null
+            },
+            "reputation": {
+              "cves_12mo": 0,
+              "score": 100
+            },
+            "integration": {
+              "score": 88,
+              "notes": "Easy via Google Fonts CDN or packages"
+            },
+            "documentation": {
+              "last_doc_update": "2022-11",
+              "score": 80
+            },
+            "ecosystem": {
+              "issues_12mo": null,
+              "prs_12mo": null,
+              "score": null
+            }
+          },
+          "rationale": "Similar style, slightly lower documentation freshness.",
+          "composite_score": 93.1,
+          "rank": 2
+        }
+      ],
+      "ranking_winner": "fonts-roboto"
+    },
+    {
+      "rank": 9,
+      "tool_name": "networkx",
+      "composite_score": 91.5,
+      "weblink": "https://github.com/networkx/networkx",
+      "summary": "Python library for creating, manipulating, and studying the structure, dynamics, and functions of complex networks/graphs.",
+      "language": "Python",
+      "license": "BSD-3-Clause",
+      "last_release": "2023-09",
+      "metrics": {
+        "popularity": {
+          "stars": 14000,
+          "score": 95
+        },
+        "reputation": {
+          "cves_12mo": 0,
+          "score": 95
+        },
+        "integration": {
+          "score": 90,
+          "notes": "pip install networkx; pure Python with optional C extensions"
+        },
+        "documentation": {
+          "last_doc_update": "2023-09",
+          "score": 95
+        },
+        "ecosystem": {
+          "issues_12mo": 320,
+          "prs_12mo": 180,
+          "score": 80
+        }
+      },
+      "url": "https://github.com/networkx/networkx/archive/networkx-3.2.tar.gz",
+      "alternatives": [
+        {
+          "name": "python-igraph",
+          "weblink": "https://github.com/igraph/python-igraph",
+          "summary": "High-performance graph library with Python bindings to the igraph C core.",
+          "language": "Python/C",
+          "license": "GPL-2.0-or-later",
+          "last_release": "2023-11",
+          "metrics": {
+            "popularity": {
+              "stars": 1100,
+              "score": 65
+            },
+            "reputation": {
+              "cves_12mo": 0,
+              "score": 95
+            },
+            "integration": {
+              "score": 75,
+              "notes": "Requires compilation of C core; wheels available for major platforms"
+            },
+            "documentation": {
+              "last_doc_update": "2023-11",
+              "score": 85
+            },
+            "ecosystem": {
+              "issues_12mo": 95,
+              "prs_12mo": 60,
+              "score": 85
+            }
+          },
+          "rationale": "Strong performance and low CVE count but lower popularity and integration friction.",
+          "composite_score": 80.5,
+          "rank": 2
+        },
+        {
+          "name": "graph-tool",
+          "weblink": "https://git.skewed.de/count0/graph-tool",
+          "summary": "Efficient Python module for manipulation and statistical analysis of graphs.",
+          "language": "Python/C++",
+          "license": "LGPL-3.0",
+          "last_release": "2023-06",
+          "metrics": {
+            "popularity": {
+              "stars": 450,
+              "score": 45
+            },
+            "reputation": {
+              "cves_12mo": 0,
+              "score": 95
+            },
+            "integration": {
+              "score": 55,
+              "notes": "Complex build from source; limited binary distributions"
+            },
+            "documentation": {
+              "last_doc_update": "2023-06",
+              "score": 70
+            },
+            "ecosystem": {
+              "issues_12mo": 40,
+              "prs_12mo": 25,
+              "score": 90
+            }
+          },
+          "rationale": "Excellent performance but poor integration ease and smallest community.",
+          "composite_score": 70.8,
+          "rank": 3
+        }
+      ],
+      "ranking_winner": "networkx"
+    },
+    {
+      "rank": 10,
+      "tool_name": "pydantic",
+      "composite_score": 91.5,
+      "weblink": "https://github.com/pydantic/pydantic",
+      "summary": "Data validation and settings management using Python type annotations.",
+      "language": "Python",
+      "license": "MIT",
+      "last_release": "2024-10",
+      "metrics": {
+        "popularity": {
+          "stars": 21000,
+          "score": 92
+        },
+        "reputation": {
+          "cves_12mo": 1,
+          "score": 95
+        },
+        "integration": {
+          "score": 90,
+          "notes": "Native Python type integration, FastAPI native support"
+        },
+        "documentation": {
+          "last_doc_update": "2024-10",
+          "score": 95
+        },
+        "ecosystem": {
+          "issues_12mo": 420,
+          "prs_12mo": 310,
+          "score": 85
+        }
+      },
+      "url": "https://github.com/pydantic/pydantic/archive/refs/tags/v2.13.4.tar.gz",
+      "alternatives": [
+        {
+          "name": "marshmallow",
+          "weblink": "https://github.com/marshmallow-code/marshmallow",
+          "summary": "Lightweight library for converting complex objects to and from primitive types.",
+          "language": "Python",
+          "license": "MIT",
+          "last_release": "2024-09",
+          "metrics": {
+            "popularity": {
+              "stars": 6900,
+              "score": 78
+            },
+            "reputation": {
+              "cves_12mo": 0,
+              "score": 98
+            },
+            "integration": {
+              "score": 75,
+              "notes": "Requires explicit schema definitions"
+            },
+            "documentation": {
+              "last_doc_update": "2024-08",
+              "score": 85
+            },
+            "ecosystem": {
+              "issues_12mo": 180,
+              "prs_12mo": 95,
+              "score": 88
+            }
+          },
+          "rationale": "Strong reputation and solid ecosystem but lower popularity and integration ease.",
+          "composite_score": 85.8,
+          "rank": 2
+        },
+        {
+          "name": "cerberus",
+          "weblink": "https://github.com/pyeve/cerberus",
+          "summary": "Lightweight, extensible data validation library for Python.",
+          "language": "Python",
+          "license": "ISC",
+          "last_release": "2023-05",
+          "metrics": {
+            "popularity": {
+              "stars": 1500,
+              "score": 55
+            },
+            "reputation": {
+              "cves_12mo": 0,
+              "score": 98
+            },
+            "integration": {
+              "score": 65,
+              "notes": "Schema-only approach, less Pythonic"
+            },
+            "documentation": {
+              "last_doc_update": "2022-11",
+              "score": 60
+            },
+            "ecosystem": {
+              "issues_12mo": 45,
+              "prs_12mo": 12,
+              "score": 78
+            }
+          },
+          "rationale": "Good security profile but dated docs, low activity and popularity.",
+          "composite_score": 73.4,
+          "rank": 3
+        }
+      ],
+      "ranking_winner": "pydantic"
+    }
+  ]
+}
