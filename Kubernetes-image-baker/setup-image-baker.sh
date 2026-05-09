@@ -48,7 +48,17 @@ step "[1/10] Host prereqs"
 NEED=()
 need curl       || NEED+=(curl)
 need docker     || NEED+=(docker)
+# mkfs.* — vcf kr bake formats both root (xfs) and boot (ext4) partitions
+# directly via mkfs binaries on the host; missing any of these aborts step 9.
+# mkfs.fat is required for the EFI partition.
 need mkfs.xfs   || NEED+=(xfsprogs)
+need mkfs.ext4  || NEED+=(e2fsprogs)
+need mkfs.fat   || case "$PKG_MGR" in tdnf|dnf) NEED+=(dosfstools);; apt-get) NEED+=(dosfstools);; esac
+# jq — the bake's /tmp/export-system-info.sh uses jq; absent on minimal hosts.
+need jq         || NEED+=(jq)
+# parted — partitioning; not strictly required by the plugin but the post-bake
+# repair uses blkid+losetup which usually share a package with parted.
+need parted     || NEED+=(parted)
 need bsdtar     || case "$PKG_MGR" in tdnf|dnf) NEED+=(libarchive);; apt-get) NEED+=(libarchive-tools);; esac
 need gcc        || NEED+=(gcc)
 need qemu-img   || case "$PKG_MGR" in tdnf|dnf) NEED+=(qemu-img);; apt-get) NEED+=(qemu-utils);; esac
@@ -309,10 +319,11 @@ RUN mkdir -p /etc/systemd/system/kubelet.service.d && \\
       > /etc/systemd/system/kubelet.service
 
 # 5. WSL host fix: LD_PRELOAD shim that sanitises /proc/cmdline.
-#    Use POSIX 'tr' rather than bash's \${var//pat/} — Ubuntu's /bin/sh is
-#    dash and doesn't support parameter substitution.
+#    Use 'sed' for backslash-stripping: photon:5.0 has no 'tr' (toybox
+#    omits it) and ubuntu's /bin/sh is dash which can't do \${var//pat/}.
+#    sed exists in both base images.
 COPY cmdline-fixup.so /usr/local/lib/cmdline-fixup.so
-RUN ${CAT_BIN} /proc/cmdline | tr -d '\\\\' > /etc/cmdline-sanitized && \\
+RUN ${CAT_BIN} /proc/cmdline | sed 's|\\\\||g' > /etc/cmdline-sanitized && \\
     echo '/usr/local/lib/cmdline-fixup.so' > /etc/ld.so.preload
 EOF
 
