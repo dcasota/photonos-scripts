@@ -36,6 +36,11 @@
 
 .PARAMETER Reparse
     Drop+reimport rows for any log that already exists in runs.log_file.
+
+.PARAMETER Rebuild
+    Wipe the runs+issues tables before parsing and re-import every log from
+    scratch. Use this once after upgrading from a parser version that wrote
+    invalid run_ids (the pre-fix `last_insert_rowid()` chain).
 #>
 [CmdletBinding()]
 param(
@@ -43,7 +48,8 @@ param(
     [string]$Database  = 'snyk_issues.db',
     [bool]$Recursive   = $true,
     [string]$Branch    = '',
-    [switch]$Reparse
+    [switch]$Reparse,
+    [switch]$Rebuild
 )
 
 $ErrorActionPreference = 'Stop'
@@ -95,6 +101,23 @@ try {
     $schema | Out-File -LiteralPath $tmp.FullName -Encoding utf8
     & sqlite3 $Database ".read $($tmp.FullName)"
 } finally { Remove-Item -LiteralPath $tmp.FullName -Force -ErrorAction SilentlyContinue }
+
+# One-time wipe: drop every row before re-parsing. Used to recover from the
+# `last_insert_rowid()` regression which left orphan run_ids in `issues`.
+if ($Rebuild) {
+    Write-Host "Rebuild requested - wiping runs+issues before re-parse" -ForegroundColor Yellow
+    & sqlite3 $Database "DELETE FROM issues; DELETE FROM runs; VACUUM;"
+    $Reparse = $true   # force re-import even if a stale row was missed
+}
+
+# Defensive orphan cleanup: drop any issue whose run_id no longer (or never)
+# pointed at a real run. Cheap when there's nothing to do, decisive when the
+# DB carries leftovers from a past parser bug.
+$orphanCount = (& sqlite3 $Database "SELECT COUNT(*) FROM issues WHERE run_id NOT IN (SELECT run_id FROM runs);").Trim()
+if ($orphanCount -and [int]$orphanCount -gt 0) {
+    Write-Host "Cleaning up $orphanCount orphaned issue rows (run_id not in runs)" -ForegroundColor Yellow
+    & sqlite3 $Database "DELETE FROM issues WHERE run_id NOT IN (SELECT run_id FROM runs);"
+}
 
 # Discover logs
 $logFiles = Get-ChildItem -Path $Directory -Recurse:$Recursive -Filter '*_snyk*.log' -File -ErrorAction SilentlyContinue
@@ -194,11 +217,30 @@ foreach ($logFile in $logFiles) {
         }
     }
 
-    # Build SQL: replace any existing run for this log_file, then INSERT
+    # Build SQL: replace any existing run for this log_file, then INSERT.
+    #
+    # Bug fix: previous version used `last_insert_rowid()` for run_id in
+    # every issue VALUES tuple. SQLite updates last_insert_rowid() after
+    # EACH row insert inside a multi-row INSERT, so issues #2..N pointed
+    # at the previous issue's auto-increment id (an orphaned row), not at
+    # the run. With FK enforcement off (SQLite default), the bad inserts
+    # were silently accepted; the v_latest_run JOIN dropped 99% of issues
+    # at report time. See run analysis: 290k orphan run_ids in issues vs
+    # 3.3k real runs, jdk21u with 2997 issues showed only 2 in reports.
+    #
+    # Fix: reference the run via a deterministic subquery on log_file
+    # (UNIQUE), so all VALUES tuples bind to the same run_id regardless
+    # of last_insert_rowid() drift. Also explicitly delete any orphaned
+    # issues for this log before re-inserting (FK ON DELETE CASCADE
+    # doesn't fire when foreign_keys=OFF).
+    $logSql = Sql $logPath
     $sql  = "BEGIN;`n"
-    if ($existing) { $sql += "DELETE FROM runs WHERE log_file=$(Sql $logPath);`n" }
+    if ($existing) {
+        $sql += "DELETE FROM issues WHERE run_id IN (SELECT run_id FROM runs WHERE log_file=$logSql);`n"
+        $sql += "DELETE FROM runs WHERE log_file=$logSql;`n"
+    }
     $sql += "INSERT INTO runs (package,branch,datetime,log_file,log_size,project_path,total_issues,ignored_issues,open_issues) VALUES ("
-    $sql += "$(Sql $package),$(Sql $br),$(Sql $datetime),$(Sql $logPath),$($logFile.Length),"
+    $sql += "$(Sql $package),$(Sql $br),$(Sql $datetime),$logSql,$($logFile.Length),"
     $sql += "$(Sql $projectPath),$totalIssues,$ignoredIssues,$openIssues);`n"
     $sql += "INSERT INTO issues (run_id,priority,title,finding_id,path,line_num,info)`n"
     if ($issues.Count -gt 0) {
@@ -206,7 +248,7 @@ foreach ($logFile in $logFiles) {
         $rows = @()
         foreach ($iss in $issues) {
             $ln = if ($iss.LineNum -match '^\d+$') { $iss.LineNum } else { 'NULL' }
-            $rows += "  (last_insert_rowid(),$(Sql $iss.Priority),$(Sql $iss.Title),$(Sql $iss.FindingID),$(Sql $iss.Path),$ln,$(Sql $iss.Info))"
+            $rows += "  ((SELECT run_id FROM runs WHERE log_file=$logSql),$(Sql $iss.Priority),$(Sql $iss.Title),$(Sql $iss.FindingID),$(Sql $iss.Path),$ln,$(Sql $iss.Info))"
         }
         $sql += ($rows -join ",`n") + ";`n"
     } else {

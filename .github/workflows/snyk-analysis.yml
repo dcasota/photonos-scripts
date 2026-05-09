@@ -23,6 +23,10 @@ on:
         description: 'Re-import logs already in the SQLite DB'
         type: boolean
         default: false
+      rebuild:
+        description: 'Wipe runs+issues and re-parse from scratch (one-time recovery from the run_id corruption fix)'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -188,13 +192,16 @@ jobs:
         env:
           UDIR: ${{ steps.dirs.outputs.upstreamsDir }}
           REPARSE: ${{ github.event.inputs.reparse }}
+          REBUILD: ${{ github.event.inputs.rebuild }}
         run: |
           DB="ci/SnykAnalysis/snyk_issues.db"
-          REPARSE_FLAG=""; [ "$REPARSE" = "true" ] && REPARSE_FLAG="-Reparse"
+          PARSE_ARGS=()
+          [ "$REPARSE" = "true" ] && PARSE_ARGS+=("-Reparse")
+          [ "$REBUILD" = "true" ] && PARSE_ARGS+=("-Rebuild")
           pwsh -File "ci/SnykAnalysis/Parse-SnykLogs.ps1" \
             -Directory "$UDIR" \
             -Database "$DB" \
-            $REPARSE_FLAG
+            "${PARSE_ARGS[@]}"
           echo "DB_PATH=$DB" >> "$GITHUB_ENV"
 
       - name: Generate reports
