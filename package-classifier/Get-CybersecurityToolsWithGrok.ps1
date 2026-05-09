@@ -142,7 +142,10 @@ if (-not (Test-Path -LiteralPath $InputFile)) {
     Write-Error "Input file not found: $InputFile"
     exit 1
 }
-$urls = Get-Content -LiteralPath $InputFile | ForEach-Object { $_.Trim() } | Where-Object { $_ }
+# @(...) wrap forces array semantics: when the file is empty or every line
+# is filtered out, Where-Object returns $null, and .Count on $null fails
+# under Set-StrictMode -Version Latest.
+$urls = @(Get-Content -LiteralPath $InputFile | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 Write-Host "Loaded $($urls.Count) URLs from $InputFile"
 
 $cybersecurityKeywords = @(
@@ -167,45 +170,74 @@ Write-Verbose ("Output mode: {0} ({1})" -f ($(if ($isNdjson) { 'NDJSON' } else {
 # and therefore default to 'full' processing in the main loop.
 $triage = @{}
 if ($isNdjson -and $Resume -and (Test-Path -LiteralPath $OutputFile)) {
+    # Strict mode hits property-access on records that omit optional fields;
+    # wrap each line's triage inside a try/catch and use safe accessors so
+    # one weird record can't take the whole step down.
+    function _SafeGet([object]$obj, [string]$prop) {
+        try {
+            if ($null -eq $obj) { return $null }
+            if ($obj.PSObject -and $obj.PSObject.Properties[$prop]) { return $obj.$prop }
+        } catch {}
+        return $null
+    }
     $now = (Get-Date).ToUniversalTime()
     foreach ($line in (Get-Content -LiteralPath $OutputFile)) {
         if (-not $line) { continue }
-        try { $rec = $line | ConvertFrom-Json -ErrorAction Stop } catch { continue }
-        if (-not $rec.PSObject.Properties['url'] -or -not $rec.url) { continue }
-
-        # When duplicate URLs exist (legacy / smart-resume re-emission), the
-        # latest by generated_at wins. Falling back to "no timestamp" treats
-        # the line as the freshest (parser may not have recorded one).
-        $existing = $null
-        if ($triage.ContainsKey($rec.url)) { $existing = $triage[$rec.url].Record }
-        if ($existing) {
-            $existingTs = try { [datetime]::Parse([string]$existing.generated_at) } catch { [datetime]::MinValue }
-            $newTs      = try { [datetime]::Parse([string]$rec.generated_at)     } catch { [datetime]::MinValue }
-            if ($newTs -lt $existingTs) { continue }
-        }
-
-        # Decide action.
-        $hasSummary = $rec.PSObject.Properties['summary']      -and $rec.summary -and ([string]$rec.summary).Trim() -ne '' -and $rec.summary -ne 'No description available.' -and $rec.summary -ne 'Description not provided by AI.'
-        $hasAlts    = $rec.PSObject.Properties['alternatives'] -and $rec.alternatives -and (@($rec.alternatives)).Count -gt 0
-
-        $ageDays = $null
         try {
-            $ts = [datetime]::Parse([string]$rec.generated_at)
-            $ageDays = [int]($now - $ts.ToUniversalTime()).TotalDays
-        } catch {}
+            $rec = $line | ConvertFrom-Json -ErrorAction Stop
+            $rurl = _SafeGet $rec 'url'
+            if (-not $rurl) { continue }
 
-        if (-not $hasSummary -or -not $hasAlts) {
-            $action = 'full'
-        } elseif ($StaleAfterDays -gt 0 -and $null -ne $ageDays -and $ageDays -gt $StaleAfterDays) {
-            $action = 'alts_only'
-        } else {
-            $action = 'skip'
+            # Resolve duplicates: latest generated_at wins (legacy + smart-resume
+            # may both write multiple lines per URL).
+            $existing = $null
+            if ($triage.ContainsKey($rurl)) { $existing = $triage[$rurl].Record }
+            if ($existing) {
+                $exTsStr = _SafeGet $existing 'generated_at'
+                $newTsStr = _SafeGet $rec      'generated_at'
+                $existingTs = try { [datetime]::Parse([string]$exTsStr)  } catch { [datetime]::MinValue }
+                $newTs      = try { [datetime]::Parse([string]$newTsStr) } catch { [datetime]::MinValue }
+                if ($newTs -lt $existingTs) { continue }
+            }
+
+            $sumVal  = _SafeGet $rec 'summary'
+            $altsVal = _SafeGet $rec 'alternatives'
+            $hasSummary = $sumVal -and ([string]$sumVal).Trim() -ne '' -and
+                          $sumVal -ne 'No description available.' -and
+                          $sumVal -ne 'Description not provided by AI.'
+            $hasAlts    = $false
+            if ($null -ne $altsVal) {
+                $altsArr = @($altsVal)
+                $hasAlts = $altsArr.Count -gt 0
+            }
+
+            $ageDays = $null
+            $tsStr = _SafeGet $rec 'generated_at'
+            if ($tsStr) {
+                try {
+                    $ts = [datetime]::Parse([string]$tsStr)
+                    $ageDays = [int]($now - $ts.ToUniversalTime()).TotalDays
+                } catch {}
+            }
+
+            if (-not $hasSummary -or -not $hasAlts) {
+                $action = 'full'
+            } elseif ($StaleAfterDays -gt 0 -and $null -ne $ageDays -and $ageDays -gt $StaleAfterDays) {
+                $action = 'alts_only'
+            } else {
+                $action = 'skip'
+            }
+            $triage[$rurl] = @{ Action = $action; Record = $rec }
+        } catch {
+            Write-Verbose "Triage: skipping malformed line ($($_.Exception.Message))"
+            continue
         }
-        $triage[$rec.url] = @{ Action = $action; Record = $rec }
     }
-    $skipCount  = ($triage.Values | Where-Object { $_.Action -eq 'skip'      }).Count
-    $fullCount  = ($triage.Values | Where-Object { $_.Action -eq 'full'      }).Count
-    $altsCount  = ($triage.Values | Where-Object { $_.Action -eq 'alts_only' }).Count
+    # @(...) wraps Where-Object output so .Count is reliable under strict mode
+    # (Where-Object on an empty pipeline returns $null, not an empty array).
+    $skipCount = @($triage.Values | Where-Object { $_.Action -eq 'skip'      }).Count
+    $fullCount = @($triage.Values | Where-Object { $_.Action -eq 'full'      }).Count
+    $altsCount = @($triage.Values | Where-Object { $_.Action -eq 'alts_only' }).Count
     Write-Host ("Resume triage: skip={0} reprocess={1} alts-only={2} (StaleAfterDays={3})" -f $skipCount, $fullCount, $altsCount, $StaleAfterDays)
 }
 
