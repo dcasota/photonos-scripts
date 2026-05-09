@@ -1,0 +1,251 @@
+{
+  "generated": "2026-05-09T03:30:34.5302381+02:00",
+  "database": "ci/SnykAnalysis/snyk_issues.db",
+  "branch": "",
+  "total_runs": 3319,
+  "summary": {
+    "HighCrypto": "5",
+    "HighNonCrypto": "34",
+    "Medium": "1488",
+    "Low": "4281",
+    "Total": "5808"
+  },
+  "per_branch": [
+    {
+      "Branch": "6.0",
+      "Packages": "691",
+      "High": "9",
+      "Medium": "309",
+      "Low": "906",
+      "TotalIssues": "1224"
+    },
+    {
+      "Branch": "5.0",
+      "Packages": "689",
+      "High": "8",
+      "Medium": "352",
+      "Low": "857",
+      "TotalIssues": "1217"
+    },
+    {
+      "Branch": "dev",
+      "Packages": "677",
+      "High": "8",
+      "Medium": "268",
+      "Low": "906",
+      "TotalIssues": "1182"
+    },
+    {
+      "Branch": "4.0",
+      "Packages": "662",
+      "High": "12",
+      "Medium": "234",
+      "Low": "917",
+      "TotalIssues": "1163"
+    },
+    {
+      "Branch": "3.0",
+      "Packages": "581",
+      "High": "2",
+      "Medium": "324",
+      "Low": "694",
+      "TotalIssues": "1020"
+    },
+    {
+      "Branch": "common",
+      "Packages": "1",
+      "High": "0",
+      "Medium": "1",
+      "Low": "1",
+      "TotalIssues": "2"
+    }
+  ],
+  "categories": {
+    "high_crypto": [
+      {
+        "Category": "Use of a Broken or Risky Cryptographic Algorithm",
+        "Count": "4"
+      },
+      {
+        "Category": "Hardcoded Non-Cryptographic Secret",
+        "Count": "1"
+      }
+    ],
+    "high_non_crypto": [
+      {
+        "Category": "Command Injection",
+        "Count": "8"
+      },
+      {
+        "Category": "Path Traversal",
+        "Count": "6"
+      },
+      {
+        "Category": "Use of Externally-Controlled Format String",
+        "Count": "4"
+      },
+      {
+        "Category": "Cross-site Scripting (XSS)",
+        "Count": "4"
+      },
+      {
+        "Category": "Potential Negative Number Used as Index",
+        "Count": "3"
+      },
+      {
+        "Category": "Unsafe Reflection",
+        "Count": "2"
+      },
+      {
+        "Category": "Server-Side Request Forgery (SSRF)",
+        "Count": "2"
+      },
+      {
+        "Category": "Use of Hardcoded, Security-relevant Constants",
+        "Count": "1"
+      },
+      {
+        "Category": "Size Used as Index",
+        "Count": "1"
+      },
+      {
+        "Category": "Selection of Less-Secure Algorithm During Negotiation (SSL instead of TLS)",
+        "Count": "1"
+      }
+    ],
+    "medium": [
+      {
+        "Category": "Integer Overflow",
+        "Count": "354"
+      },
+      {
+        "Category": "Potential buffer overflow from usage of unsafe function",
+        "Count": "211"
+      },
+      {
+        "Category": "Buffer Overflow",
+        "Count": "157"
+      },
+      {
+        "Category": "Dereference of a NULL Pointer",
+        "Count": "107"
+      },
+      {
+        "Category": "Double Free",
+        "Count": "103"
+      },
+      {
+        "Category": "Command Injection",
+        "Count": "94"
+      },
+      {
+        "Category": "Use After Free",
+        "Count": "91"
+      },
+      {
+        "Category": "Insecure Xml Parser (Python < 3.11)",
+        "Count": "91"
+      },
+      {
+        "Category": "Path Traversal",
+        "Count": "38"
+      },
+      {
+        "Category": "Server-Side Request Forgery (SSRF)",
+        "Count": "37"
+      }
+    ]
+  },
+  "top_packages": [
+    {
+      "Package": "CMake    │",
+      "Branch": "3.0",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "1",
+      "Low": "1"
+    },
+    {
+      "Package": "CMake    │",
+      "Branch": "4.0",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    },
+    {
+      "Package": "CMake    │",
+      "Branch": "5.0",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    },
+    {
+      "Package": "CMake    │",
+      "Branch": "6.0",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    },
+    {
+      "Package": "DBD-SQLite    │",
+      "Branch": "3.0",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "1",
+      "Low": "1"
+    },
+    {
+      "Package": "DBD-SQLite    │",
+      "Branch": "4.0",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    },
+    {
+      "Package": "DBD-SQLite    │",
+      "Branch": "5.0",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "1",
+      "Low": "1"
+    },
+    {
+      "Package": "DBD-SQLite    │",
+      "Branch": "6.0",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    },
+    {
+      "Package": "ImageMagick    │",
+      "Branch": "3.0",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "1",
+      "Low": "1"
+    },
+    {
+      "Package": "ImageMagick    │",
+      "Branch": "4.0",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "1",
+      "Low": "1"
+    }
+  ]
+}
