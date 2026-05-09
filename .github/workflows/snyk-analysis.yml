@@ -266,6 +266,7 @@ jobs:
         run: |
           DEST="repo/SnykAnalysis/scans"
           mkdir -p "$DEST"
+          cp ci/SnykAnalysis/scans/SnykReport_*.txt  "$DEST/" 2>/dev/null || true
           cp ci/SnykAnalysis/scans/SnykReport_*.md   "$DEST/" 2>/dev/null || true
           cp ci/SnykAnalysis/scans/SnykReport_*.json "$DEST/" 2>/dev/null || true
           cp ci/SnykAnalysis/snyk_issues.db          "repo/SnykAnalysis/" 2>/dev/null || true
