@@ -1,0 +1,128 @@
+name: Photon OS Offline Mirror
+
+on:
+  workflow_dispatch:
+    inputs:
+      targetDir:
+        description: 'Local directory on the runner to extract the mirror into (default: $HOME/photonos-mirror)'
+        default: ''
+      imageTag:
+        description: 'Tag for the built Docker image'
+        default: 'photonos-mirror:latest'
+      keepImage:
+        description: 'Keep the Docker image after extraction'
+        type: boolean
+        default: false
+      cleanTarget:
+        description: 'Remove existing files in targetDir before extraction'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  photonos-mirror:
+    runs-on: self-hosted
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout photonos-mirror (sparse)
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            photonos-mirror
+          path: ci
+
+      - name: Verify prerequisites
+        run: |
+          for cmd in docker du tar; do
+            if ! command -v "$cmd" &>/dev/null; then
+              echo "::error::Missing required command: $cmd"
+              exit 1
+            fi
+          done
+          docker version --format 'Docker server: {{.Server.Version}} (API {{.Server.APIVersion}})' \
+            || { echo "::error::Docker daemon not reachable"; exit 1; }
+
+      - name: Resolve targetDir
+        id: target
+        env:
+          INPUT_TARGET: ${{ github.event.inputs.targetDir }}
+        run: |
+          TGT="$INPUT_TARGET"
+          if [ -z "$TGT" ]; then TGT="$HOME/photonos-mirror"; fi
+          # Make absolute (docker -v requires absolute paths)
+          case "$TGT" in
+            /*) ;;
+            ~*) TGT="${TGT/#\~/$HOME}" ;;
+             *) TGT="$(pwd)/$TGT" ;;
+          esac
+          echo "targetDir=$TGT" >> "$GITHUB_OUTPUT"
+          echo "## Photon OS Offline Mirror"            >> "$GITHUB_STEP_SUMMARY"
+          echo ""                                       >> "$GITHUB_STEP_SUMMARY"
+          echo "| Parameter | Value |"                  >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|"                              >> "$GITHUB_STEP_SUMMARY"
+          echo "| targetDir | \`$TGT\` |"               >> "$GITHUB_STEP_SUMMARY"
+          echo "| imageTag | \`${{ github.event.inputs.imageTag }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| keepImage | ${{ github.event.inputs.keepImage }} |"   >> "$GITHUB_STEP_SUMMARY"
+          echo "| cleanTarget | ${{ github.event.inputs.cleanTarget }} |" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Prepare target directory
+        env:
+          TGT: ${{ steps.target.outputs.targetDir }}
+          CLEAN: ${{ github.event.inputs.cleanTarget }}
+        run: |
+          if [ "$CLEAN" = "true" ] && [ -d "$TGT" ]; then
+            echo "Cleaning existing $TGT"
+            rm -rf "${TGT:?}/"*
+          fi
+          mkdir -p "$TGT"
+          ls -la "$TGT" || true
+
+      - name: Build mirror image
+        env:
+          TAG: ${{ github.event.inputs.imageTag }}
+        run: |
+          # Build is where the heavy lifting happens (wget mirroring + git clones).
+          # No --no-cache by default so repeated runs benefit from layer caching.
+          docker build -t "$TAG" ci/photonos-mirror
+
+      - name: Extract mirror to targetDir
+        env:
+          TGT: ${{ steps.target.outputs.targetDir }}
+          TAG: ${{ github.event.inputs.imageTag }}
+        run: |
+          # Run a one-shot container that copies /mirror/* to the bind-mount.
+          # `:rw,z` is needed on SELinux-enforced hosts; harmless elsewhere.
+          docker run --rm -v "$TGT:/export" "$TAG" \
+            sh -c 'cp -a /mirror/. /export/ && echo "Extracted contents:" && du -sh /export/*'
+
+      - name: Mirror summary
+        env:
+          TGT: ${{ steps.target.outputs.targetDir }}
+        run: |
+          echo ""                                                   >> "$GITHUB_STEP_SUMMARY"
+          echo "### Mirror contents (\`$TGT\`)"                     >> "$GITHUB_STEP_SUMMARY"
+          echo ""                                                   >> "$GITHUB_STEP_SUMMARY"
+          echo "| Component | Size |"                               >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|"                                          >> "$GITHUB_STEP_SUMMARY"
+          if [ -d "$TGT" ]; then
+            for d in "$TGT"/*; do
+              [ -e "$d" ] || continue
+              size=$(du -sh "$d" 2>/dev/null | awk '{print $1}')
+              name=$(basename "$d")
+              echo "| \`$name\` | $size |"                          >> "$GITHUB_STEP_SUMMARY"
+            done
+            total=$(du -sh "$TGT" 2>/dev/null | awk '{print $1}')
+            echo "| **Total** | **$total** |"                       >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "| _(empty)_ | - |"                                >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Cleanup image
+        if: github.event.inputs.keepImage != 'true'
+        env:
+          TAG: ${{ github.event.inputs.imageTag }}
+        run: |
+          docker image rm "$TAG" 2>/dev/null || true
