@@ -89,7 +89,17 @@ param(
     [int]$RequestTimeoutSec    = 90,
     [bool]$Resume              = $true,
     [switch]$EmitTsv,
-    [switch]$StrictValidation
+    [switch]$StrictValidation,
+    # Smart-resume aging:
+    #   - URLs with no existing record: process (full prompt).
+    #   - URLs whose existing record is missing summary OR alternatives:
+    #     process (full prompt) to fill the gap.
+    #   - URLs whose record has summary + alternatives but generated_at is
+    #     older than -StaleAfterDays days (default 30): refresh ONLY the
+    #     alternatives via a smaller prompt; keep summary/metrics intact.
+    #   - URLs whose record is fresh: skip (resume).
+    # Set to 0 to disable aging entirely (any existing record is fresh).
+    [int]$StaleAfterDays       = 30
 )
 
 $ErrorActionPreference = 'Stop'
@@ -152,16 +162,51 @@ $isNdjson = $ext -ne '.json'   # default: NDJSON unless extension is .json
 Write-Verbose ("Output mode: {0} ({1})" -f ($(if ($isNdjson) { 'NDJSON' } else { 'JSON array' })), $OutputFile)
 
 # --- Resume support: read existing URLs from NDJSON output ---------------
-$alreadyDone = New-Object System.Collections.Generic.HashSet[string]
+# Smart-resume triage map: url -> @{ Action = 'skip'|'full'|'alts_only'; Record = <existing object> }.
+# Built from the existing NDJSON. URLs not present at all are not in the map
+# and therefore default to 'full' processing in the main loop.
+$triage = @{}
 if ($isNdjson -and $Resume -and (Test-Path -LiteralPath $OutputFile)) {
-    Get-Content -LiteralPath $OutputFile | ForEach-Object {
-        if (-not $_) { return }
+    $now = (Get-Date).ToUniversalTime()
+    foreach ($line in (Get-Content -LiteralPath $OutputFile)) {
+        if (-not $line) { continue }
+        try { $rec = $line | ConvertFrom-Json -ErrorAction Stop } catch { continue }
+        if (-not $rec.PSObject.Properties['url'] -or -not $rec.url) { continue }
+
+        # When duplicate URLs exist (legacy / smart-resume re-emission), the
+        # latest by generated_at wins. Falling back to "no timestamp" treats
+        # the line as the freshest (parser may not have recorded one).
+        $existing = $null
+        if ($triage.ContainsKey($rec.url)) { $existing = $triage[$rec.url].Record }
+        if ($existing) {
+            $existingTs = try { [datetime]::Parse([string]$existing.generated_at) } catch { [datetime]::MinValue }
+            $newTs      = try { [datetime]::Parse([string]$rec.generated_at)     } catch { [datetime]::MinValue }
+            if ($newTs -lt $existingTs) { continue }
+        }
+
+        # Decide action.
+        $hasSummary = $rec.PSObject.Properties['summary']      -and $rec.summary -and ([string]$rec.summary).Trim() -ne '' -and $rec.summary -ne 'No description available.' -and $rec.summary -ne 'Description not provided by AI.'
+        $hasAlts    = $rec.PSObject.Properties['alternatives'] -and $rec.alternatives -and (@($rec.alternatives)).Count -gt 0
+
+        $ageDays = $null
         try {
-            $u = ($_ | ConvertFrom-Json -ErrorAction Stop).url
-            if ($u) { [void]$alreadyDone.Add($u) }
-        } catch { }
+            $ts = [datetime]::Parse([string]$rec.generated_at)
+            $ageDays = [int]($now - $ts.ToUniversalTime()).TotalDays
+        } catch {}
+
+        if (-not $hasSummary -or -not $hasAlts) {
+            $action = 'full'
+        } elseif ($StaleAfterDays -gt 0 -and $null -ne $ageDays -and $ageDays -gt $StaleAfterDays) {
+            $action = 'alts_only'
+        } else {
+            $action = 'skip'
+        }
+        $triage[$rec.url] = @{ Action = $action; Record = $rec }
     }
-    Write-Host "Resume: $($alreadyDone.Count) URLs already classified — they will be skipped."
+    $skipCount  = ($triage.Values | Where-Object { $_.Action -eq 'skip'      }).Count
+    $fullCount  = ($triage.Values | Where-Object { $_.Action -eq 'full'      }).Count
+    $altsCount  = ($triage.Values | Where-Object { $_.Action -eq 'alts_only' }).Count
+    Write-Host ("Resume triage: skip={0} reprocess={1} alts-only={2} (StaleAfterDays={3})" -f $skipCount, $fullCount, $altsCount, $StaleAfterDays)
 }
 
 # --- Helpers --------------------------------------------------------------
@@ -287,6 +332,29 @@ alternatives is an array of objects: { rank (1..$MaxAlt), name, weblink, summary
 "@
 }
 
+# Alternatives-only refresh prompt: used when an existing record is older
+# than -StaleAfterDays days but its summary/metrics are still considered
+# valid. Asks Grok to re-rank alternatives only, given the package context
+# from the existing record. The cost is roughly half a full prompt.
+function Build-AltsOnlyPrompt {
+    param([string]$Url, [int]$MaxAlt, [string]$ToolName, [string]$Summary)
+    @"
+Refresh ONLY the alternatives ranking for the package below. Do not re-identify the package; do not re-emit summary/metrics for the package itself.
+
+Package URL: '$Url'
+Package name: '$ToolName'
+Existing summary (use as context, do not re-emit): "$Summary"
+
+Conduct ongoing research about package alternatives which can do what the package does and calculate a dynamic ranking of the top $MaxAlt alternatives (or less if not possible). The calculation must consider popularity (e.g. github stars), reputation (e.g. amount of vulnerabilities found in the last 12 months), integration ease, documentation actuality, ecosystem e.g. amount of github issues in the last 12 months, etc.
+
+For each alternative emit metrics with sub-objects matching the main schema: popularity {stars (int|null), score (0..100|null)}, reputation {cves_12mo (int|null), score (0..100|null)}, integration {score (0..100|null), notes (string|null)}, documentation {last_doc_update (yyyy-mm|null), score (0..100|null)}, ecosystem {issues_12mo (int|null), prs_12mo (int|null), score (0..100|null)}. Compute composite_score 0..100 = round(0.30*popularity.score + 0.30*reputation.score + 0.15*integration.score + 0.10*documentation.score + 0.15*ecosystem.score, 1).
+
+Respond with ONLY a single JSON object (no markdown, no fencing) with exactly two keys:
+  alternatives: array of { rank (1..$MaxAlt), name, weblink, summary, language, license, last_release, metrics, composite_score, rationale }
+  ranking_winner: name of the candidate (alternatives + the package itself) with the highest composite_score
+"@
+}
+
 # --- API smoke test (best effort) ----------------------------------------
 if ($useApi) {
     try {
@@ -326,15 +394,33 @@ foreach ($url in $urls) {
         Write-Warning "[$idx/$($urls.Count)] Skipping non-http(s) URL: $url"
         $skipped++; continue
     }
-    if ($alreadyDone.Contains($url)) { $resumed++; continue }
 
-    Write-Host "[$idx/$($urls.Count)] $url"
+    # Smart-resume action lookup: skip / full / alts_only.
+    $action = 'full'
+    $existingRec = $null
+    if ($triage.ContainsKey($url)) {
+        $action      = $triage[$url].Action
+        $existingRec = $triage[$url].Record
+    }
+    if ($action -eq 'skip') {
+        $resumed++; continue
+    }
+
+    $tag = if ($action -eq 'alts_only') { 'refresh-alts' } else { 'process' }
+    Write-Host "[$idx/$($urls.Count)] [$tag] $url"
     $degraded = $false
     $rec = $null
 
     if ($useApi) {
+        $prompt = if ($action -eq 'alts_only') {
+            $extName  = if ($existingRec -and $existingRec.PSObject.Properties['tool_name']) { [string]$existingRec.tool_name } else { '' }
+            $extSummary = if ($existingRec -and $existingRec.PSObject.Properties['summary'])   { [string]$existingRec.summary   } else { '' }
+            Build-AltsOnlyPrompt -Url $url -MaxAlt $MaxAlternatives -ToolName $extName -Summary $extSummary
+        } else {
+            Build-Prompt -Url $url -MaxAlt $MaxAlternatives
+        }
         $body = @{
-            messages    = @(@{ role = 'user'; content = (Build-Prompt -Url $url -MaxAlt $MaxAlternatives) })
+            messages    = @(@{ role = 'user'; content = $prompt })
             model       = $Model
             stream      = $false
             temperature = 0.2
@@ -342,8 +428,17 @@ foreach ($url in $urls) {
         try {
             $resp = Invoke-GrokWithRetry -Body $body -Attempts $MaxRetries -BaseDelay $RetryDelaySeconds
             $text = ($resp.choices[0].message.content).Trim() -replace '^```(?:json)?\s*','' -replace '\s*```$',''
-            $rec = $text | ConvertFrom-Json -ErrorAction Stop
+            $parsed = $text | ConvertFrom-Json -ErrorAction Stop
             $apiOk++
+            if ($action -eq 'alts_only' -and $existingRec) {
+                # Splice fresh alternatives + ranking_winner into the existing record.
+                # Preserve everything else (summary, metrics, composite_score, language, …).
+                $rec = $existingRec.PSObject.Copy()
+                if ($parsed.PSObject.Properties['alternatives'])   { $rec.alternatives = $parsed.alternatives }
+                if ($parsed.PSObject.Properties['ranking_winner']) { $rec.ranking_winner = $parsed.ranking_winner }
+            } else {
+                $rec = $parsed
+            }
         } catch {
             Write-Verbose "API/parse failed for $url : $($_.Exception.Message)"
             $apiFail++
@@ -432,6 +527,40 @@ foreach ($url in $urls) {
 # --- Final write for JSON-array mode -------------------------------------
 if (-not $isNdjson) {
     Write-JsonArrayFile -Path $OutputFile -Records $results.ToArray()
+}
+
+# --- NDJSON post-run dedup -----------------------------------------------
+# Smart-resume appends new lines for URLs that already had a (stale) record.
+# Collapse to one record per URL keeping the latest by generated_at, so the
+# committed file stays a clean canonical snapshot.
+if ($isNdjson -and (Test-Path -LiteralPath $OutputFile)) {
+    $byUrl = @{}
+    foreach ($line in (Get-Content -LiteralPath $OutputFile)) {
+        if (-not $line) { continue }
+        try { $r = $line | ConvertFrom-Json -ErrorAction Stop } catch { continue }
+        if (-not $r.PSObject.Properties['url'] -or -not $r.url) { continue }
+        $tsNew = try { [datetime]::Parse([string]$r.generated_at) } catch { [datetime]::MinValue }
+        if (-not $byUrl.ContainsKey($r.url)) {
+            $byUrl[$r.url] = @{ Ts = $tsNew; Line = $line }
+        } else {
+            if ($tsNew -ge $byUrl[$r.url].Ts) {
+                $byUrl[$r.url] = @{ Ts = $tsNew; Line = $line }
+            }
+        }
+    }
+    $before = (Get-Content -LiteralPath $OutputFile | Measure-Object -Line).Lines
+    $kept   = $byUrl.Count
+    if ($kept -lt $before) {
+        $tmp = "$OutputFile.tmp"
+        if ($PSVersionTable.PSVersion.Major -ge 7) {
+            ($byUrl.Values | ForEach-Object { $_.Line }) | Out-File -LiteralPath $tmp -Encoding utf8NoBOM
+        } else {
+            $abs = if ([System.IO.Path]::IsPathRooted($tmp)) { $tmp } else { Join-Path (Get-Location).Path $tmp }
+            [System.IO.File]::WriteAllText($abs, (($byUrl.Values | ForEach-Object { $_.Line }) -join "`n") + "`n", (New-Object System.Text.UTF8Encoding $false))
+        }
+        Move-Item -LiteralPath $tmp -Destination $OutputFile -Force
+        Write-Host ("NDJSON dedup: kept {0} of {1} lines (one record per URL)" -f $kept, $before)
+    }
 }
 
 # --- Optional flat TSV view ----------------------------------------------
