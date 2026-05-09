@@ -1,0 +1,16 @@
+Package Classifier -- Branch common
+
+Generated: 2026-05-09T15:40:10+00:00
+Records considered (this branch): 4; deduplicated: 2 of top 10
+
+ 1. Linux  --  composite_score 83.5
+    https://www.kernel.org/
+    Resume: Core of the Linux OS managing hardware, processes, memory and drivers.
+    Top alternatives:
+      1. FreeBSD  (71.0)  -- Strong reputation and documentation offset lower popularity.
+      2. OpenBSD  (66.7)  -- Best-in-class reputation but weakest integration and popularity.
+
+ 2. stalld  --  composite_score 76.5
+    https://gitlab.com/rt-linux-tools/stalld
+    Resume: Daemon that monitors Linux thread starvation and temporarily boosts priority of starved threads to prevent indefinite blocking.
+

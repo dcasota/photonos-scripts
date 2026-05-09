@@ -1,0 +1,1126 @@
+{
+  "branch": "master",
+  "generated": "2026-05-09T15:40:10+00:00",
+  "records_considered": 603,
+  "top_n": 10,
+  "tools": [
+    {
+      "rank": 1,
+      "tool_name": "Python",
+      "composite_score": 93.9,
+      "weblink": "https://www.python.org/",
+      "summary": "General-purpose high-level programming language with batteries-included stdlib and interpreter.",
+      "language": "C, Python",
+      "license": "PSF License",
+      "last_release": "2023-12",
+      "metrics": {
+        "popularity": {
+          "stars": 62000,
+          "score": 96
+        },
+        "reputation": {
+          "cves_12mo": 4,
+          "score": 92
+        },
+        "integration": {
+          "score": 98,
+          "notes": "Native support across OSes, clouds and major frameworks"
+        },
+        "documentation": {
+          "last_doc_update": "2023-12",
+          "score": 97
+        },
+        "ecosystem": {
+          "issues_12mo": 1350,
+          "prs_12mo": 920,
+          "score": 88
+        }
+      },
+      "url": "https://www.python.org/ftp/python/3.11.7/Python-3.11.7.tar.xz",
+      "alternatives": [
+        {
+          "name": "Go",
+          "weblink": "https://go.dev/",
+          "summary": "Statically typed compiled language focused on simplicity, concurrency and fast builds.",
+          "language": "Go",
+          "license": "BSD-3-Clause",
+          "last_release": "2024-02",
+          "metrics": {
+            "popularity": {
+              "stars": 125000,
+              "score": 88
+            },
+            "reputation": {
+              "cves_12mo": 2,
+              "score": 96
+            },
+            "integration": {
+              "score": 85,
+              "notes": "Excellent for CLI/services but fewer data-science libs"
+            },
+            "documentation": {
+              "last_doc_update": "2024-02",
+              "score": 94
+            },
+            "ecosystem": {
+              "issues_12mo": 420,
+              "prs_12mo": 310,
+              "score": 92
+            }
+          },
+          "rationale": "Superior reputation and low issue volume offset by narrower library ecosystem.",
+          "composite_score": 91.1,
+          "rank": 2
+        },
+        {
+          "name": "Node.js",
+          "weblink": "https://nodejs.org/",
+          "summary": "JavaScript runtime built on V8 for server-side and CLI applications.",
+          "language": "C++, JavaScript",
+          "license": "MIT",
+          "last_release": "2024-04",
+          "metrics": {
+            "popularity": {
+              "stars": 105000,
+              "score": 85
+            },
+            "reputation": {
+              "cves_12mo": 7,
+              "score": 85
+            },
+            "integration": {
+              "score": 92,
+              "notes": "Huge npm ecosystem but dependency bloat common"
+            },
+            "documentation": {
+              "last_doc_update": "2024-04",
+              "score": 90
+            },
+            "ecosystem": {
+              "issues_12mo": 980,
+              "prs_12mo": 650,
+              "score": 80
+            }
+          },
+          "rationale": "Strong popularity and integration but higher CVE count and ecosystem noise.",
+          "composite_score": 85.8,
+          "rank": 3
+        }
+      ],
+      "ranking_winner": "Python"
+    },
+    {
+      "rank": 2,
+      "tool_name": "PostgreSQL",
+      "composite_score": 92.4,
+      "weblink": "https://www.postgresql.org/",
+      "summary": "Open-source object-relational database management system (RDBMS).",
+      "language": "C",
+      "license": "PostgreSQL License",
+      "last_release": "2024-11",
+      "metrics": {
+        "popularity": {
+          "stars": 15000,
+          "score": 95
+        },
+        "reputation": {
+          "cves_12mo": 8,
+          "score": 88
+        },
+        "integration": {
+          "score": 96,
+          "notes": "Native drivers and ORMs for nearly all languages and frameworks"
+        },
+        "documentation": {
+          "last_doc_update": "2024-11",
+          "score": 98
+        },
+        "ecosystem": {
+          "issues_12mo": 320,
+          "prs_12mo": 210,
+          "score": 87
+        }
+      },
+      "url": "http://ftp.postgresql.org/pub/source/v16.6/postgresql-16.6.tar.bz2",
+      "alternatives": [
+        {
+          "name": "SQLite",
+          "weblink": "https://www.sqlite.org/",
+          "summary": "Lightweight, serverless, embedded SQL database engine.",
+          "language": "C",
+          "license": "Public Domain",
+          "last_release": "2024-10",
+          "metrics": {
+            "popularity": {
+              "stars": 6200,
+              "score": 78
+            },
+            "reputation": {
+              "cves_12mo": 2,
+              "score": 96
+            },
+            "integration": {
+              "score": 90,
+              "notes": "Zero-config, ubiquitous in mobile/desktop apps"
+            },
+            "documentation": {
+              "last_doc_update": "2024-10",
+              "score": 92
+            },
+            "ecosystem": {
+              "issues_12mo": 95,
+              "prs_12mo": 60,
+              "score": 82
+            }
+          },
+          "rationale": "Excellent reputation and simplicity but lower popularity for server workloads.",
+          "composite_score": 87.2,
+          "rank": 2
+        },
+        {
+          "name": "MySQL",
+          "weblink": "https://www.mysql.com/",
+          "summary": "Widely-used open-source relational database, now under Oracle.",
+          "language": "C++",
+          "license": "GPLv2",
+          "last_release": "2024-07",
+          "metrics": {
+            "popularity": {
+              "stars": 9800,
+              "score": 88
+            },
+            "reputation": {
+              "cves_12mo": 12,
+              "score": 82
+            },
+            "integration": {
+              "score": 94,
+              "notes": "Excellent PHP/Java connectors and cloud hosting options"
+            },
+            "documentation": {
+              "last_doc_update": "2024-07",
+              "score": 85
+            },
+            "ecosystem": {
+              "issues_12mo": 410,
+              "prs_12mo": 180,
+              "score": 78
+            }
+          },
+          "rationale": "Strong popularity and integration but more CVEs and older docs lower the score.",
+          "composite_score": 85.3,
+          "rank": 3
+        }
+      ],
+      "ranking_winner": "PostgreSQL"
+    },
+    {
+      "rank": 3,
+      "tool_name": "networkx",
+      "composite_score": 91.5,
+      "weblink": "https://github.com/networkx/networkx",
+      "summary": "Python library for creating, manipulating, and studying the structure, dynamics, and functions of complex networks/graphs.",
+      "language": "Python",
+      "license": "BSD-3-Clause",
+      "last_release": "2023-09",
+      "metrics": {
+        "popularity": {
+          "stars": 14000,
+          "score": 95
+        },
+        "reputation": {
+          "cves_12mo": 0,
+          "score": 95
+        },
+        "integration": {
+          "score": 90,
+          "notes": "pip install networkx; pure Python with optional C extensions"
+        },
+        "documentation": {
+          "last_doc_update": "2023-09",
+          "score": 95
+        },
+        "ecosystem": {
+          "issues_12mo": 320,
+          "prs_12mo": 180,
+          "score": 80
+        }
+      },
+      "url": "https://github.com/networkx/networkx/archive/networkx-3.2.tar.gz",
+      "alternatives": [
+        {
+          "name": "python-igraph",
+          "weblink": "https://github.com/igraph/python-igraph",
+          "summary": "High-performance graph library with Python bindings to the igraph C core.",
+          "language": "Python/C",
+          "license": "GPL-2.0-or-later",
+          "last_release": "2023-11",
+          "metrics": {
+            "popularity": {
+              "stars": 1100,
+              "score": 65
+            },
+            "reputation": {
+              "cves_12mo": 0,
+              "score": 95
+            },
+            "integration": {
+              "score": 75,
+              "notes": "Requires compilation of C core; wheels available for major platforms"
+            },
+            "documentation": {
+              "last_doc_update": "2023-11",
+              "score": 85
+            },
+            "ecosystem": {
+              "issues_12mo": 95,
+              "prs_12mo": 60,
+              "score": 85
+            }
+          },
+          "rationale": "Strong performance and low CVE count but lower popularity and integration friction.",
+          "composite_score": 80.5,
+          "rank": 2
+        },
+        {
+          "name": "graph-tool",
+          "weblink": "https://git.skewed.de/count0/graph-tool",
+          "summary": "Efficient Python module for manipulation and statistical analysis of graphs.",
+          "language": "Python/C++",
+          "license": "LGPL-3.0",
+          "last_release": "2023-06",
+          "metrics": {
+            "popularity": {
+              "stars": 450,
+              "score": 45
+            },
+            "reputation": {
+              "cves_12mo": 0,
+              "score": 95
+            },
+            "integration": {
+              "score": 55,
+              "notes": "Complex build from source; limited binary distributions"
+            },
+            "documentation": {
+              "last_doc_update": "2023-06",
+              "score": 70
+            },
+            "ecosystem": {
+              "issues_12mo": 40,
+              "prs_12mo": 25,
+              "score": 90
+            }
+          },
+          "rationale": "Excellent performance but poor integration ease and smallest community.",
+          "composite_score": 70.8,
+          "rank": 3
+        }
+      ],
+      "ranking_winner": "networkx"
+    },
+    {
+      "rank": 4,
+      "tool_name": "curl",
+      "composite_score": 91.4,
+      "weblink": "https://curl.se",
+      "summary": "Command-line tool and library for transferring data with URLs, supporting HTTP, FTP and dozens of other protocols.",
+      "language": "C",
+      "license": "curl",
+      "last_release": "2024-09",
+      "metrics": {
+        "popularity": {
+          "stars": 36000,
+          "score": 95
+        },
+        "reputation": {
+          "cves_12mo": 4,
+          "score": 85
+        },
+        "integration": {
+          "score": 98,
+          "notes": "Native CLI + libcurl bindings in virtually every language"
+        },
+        "documentation": {
+          "last_doc_update": "2024-09",
+          "score": 95
+        },
+        "ecosystem": {
+          "issues_12mo": 420,
+          "prs_12mo": 310,
+          "score": 88
+        }
+      },
+      "url": "http://curl.haxx.se/download/curl-8.20.0.tar.xz",
+      "alternatives": [
+        {
+          "name": "aria2",
+          "weblink": "https://aria2.github.io",
+          "summary": "Lightweight multi-protocol command-line download utility with torrent and metalink support.",
+          "language": "C++",
+          "license": "GPL-2.0",
+          "last_release": "2023-11",
+          "metrics": {
+            "popularity": {
+              "stars": 34000,
+              "score": 92
+            },
+            "reputation": {
+              "cves_12mo": 0,
+              "score": 100
+            },
+            "integration": {
+              "score": 78,
+              "notes": "Excellent for bulk downloads, RPC interface"
+            },
+            "documentation": {
+              "last_doc_update": "2023-11",
+              "score": 75
+            },
+            "ecosystem": {
+              "issues_12mo": 95,
+              "prs_12mo": 55,
+              "score": 82
+            }
+          },
+          "rationale": "High popularity and clean security record; slightly dated docs and narrower protocol focus.",
+          "composite_score": 89.1,
+          "rank": 1
+        },
+        {
+          "name": "httpie",
+          "weblink": "https://httpie.io",
+          "summary": "Modern command-line HTTP client with intuitive syntax and JSON support.",
+          "language": "Python",
+          "license": "BSD-3-Clause",
+          "last_release": "2024-06",
+          "metrics": {
+            "popularity": {
+              "stars": 32000,
+              "score": 90
+            },
+            "reputation": {
+              "cves_12mo": 2,
+              "score": 90
+            },
+            "integration": {
+              "score": 88,
+              "notes": "Great CLI UX, Python library available"
+            },
+            "documentation": {
+              "last_doc_update": "2024-06",
+              "score": 92
+            },
+            "ecosystem": {
+              "issues_12mo": 310,
+              "prs_12mo": 180,
+              "score": 80
+            }
+          },
+          "rationale": "User-friendly HTTP focus but lacks breadth of protocols and raw performance of curl.",
+          "composite_score": 88.4,
+          "rank": 2
+        },
+        {
+          "name": "wget",
+          "weblink": "https://www.gnu.org/software/wget/",
+          "summary": "Non-interactive network downloader supporting HTTP, HTTPS, FTP and mirroring.",
+          "language": "C",
+          "license": "GPL-3.0",
+          "last_release": "2024-05",
+          "metrics": {
+            "popularity": {
+              "stars": 680,
+              "score": 62
+            },
+            "reputation": {
+              "cves_12mo": 1,
+              "score": 95
+            },
+            "integration": {
+              "score": 85,
+              "notes": "Simple CLI, limited library usage"
+            },
+            "documentation": {
+              "last_doc_update": "2024-05",
+              "score": 80
+            },
+            "ecosystem": {
+              "issues_12mo": 85,
+              "prs_12mo": 40,
+              "score": 78
+            }
+          },
+          "rationale": "Mature, trusted downloader but smaller community and fewer protocols than curl.",
+          "composite_score": 79.6,
+          "rank": 3
+        }
+      ],
+      "ranking_winner": "curl"
+    },
+    {
+      "rank": 5,
+      "tool_name": "coreutils",
+      "composite_score": 90.5,
+      "weblink": "https://www.gnu.org/software/coreutils/",
+      "summary": "GNU core utilities for basic file, shell and text manipulation",
+      "language": "C",
+      "license": "GPL-3.0-or-later",
+      "last_release": "2022-04",
+      "metrics": {
+        "popularity": {
+          "stars": null,
+          "score": 95
+        },
+        "reputation": {
+          "cves_12mo": 2,
+          "score": 85
+        },
+        "integration": {
+          "score": 98,
+          "notes": "POSIX standard, ubiquitous in Linux distros"
+        },
+        "documentation": {
+          "last_doc_update": "2022-04",
+          "score": 90
+        },
+        "ecosystem": {
+          "issues_12mo": null,
+          "prs_12mo": null,
+          "score": 80
+        }
+      },
+      "url": "http://ftp.funet.fi/pub/gnu/ftp.gnu.org/gnu/coreutils/coreutils-9.1.tar.xz",
+      "alternatives": [
+        {
+          "name": "uutils/coreutils",
+          "weblink": "https://github.com/uutils/coreutils",
+          "summary": "Cross-platform Rust rewrite of GNU coreutils",
+          "language": "Rust",
+          "license": "MIT",
+          "last_release": "2023-09",
+          "metrics": {
+            "popularity": {
+              "stars": 14500,
+              "score": 88
+            },
+            "reputation": {
+              "cves_12mo": 0,
+              "score": 95
+            },
+            "integration": {
+              "score": 75,
+              "notes": "Good but not yet full GNU parity"
+            },
+            "documentation": {
+              "last_doc_update": "2023-09",
+              "score": 85
+            },
+            "ecosystem": {
+              "issues_12mo": 320,
+              "prs_12mo": 180,
+              "score": 78
+            }
+          },
+          "rationale": "Strong modern security posture and rising popularity",
+          "composite_score": 86.4,
+          "rank": 2
+        },
+        {
+          "name": "busybox",
+          "weblink": "https://busybox.net/",
+          "summary": "Single-binary multi-tool implementation of many Unix utilities",
+          "language": "C",
+          "license": "GPL-2.0-only",
+          "last_release": "2023-05",
+          "metrics": {
+            "popularity": {
+              "stars": null,
+              "score": 80
+            },
+            "reputation": {
+              "cves_12mo": 5,
+              "score": 70
+            },
+            "integration": {
+              "score": 85,
+              "notes": "Excellent for embedded systems"
+            },
+            "documentation": {
+              "last_doc_update": "2023-05",
+              "score": 75
+            },
+            "ecosystem": {
+              "issues_12mo": null,
+              "prs_12mo": null,
+              "score": 65
+            }
+          },
+          "rationale": "Compact but higher CVE count and slower release cadence",
+          "composite_score": 75.0,
+          "rank": 3
+        }
+      ],
+      "ranking_winner": "coreutils"
+    },
+    {
+      "rank": 6,
+      "tool_name": "wireguard-tools",
+      "composite_score": 90.4,
+      "weblink": "https://www.wireguard.com/",
+      "summary": "Command-line tools for configuring and managing WireGuard VPN tunnels.",
+      "language": "C",
+      "license": "GPL-2.0",
+      "last_release": "2026-02",
+      "metrics": {
+        "popularity": {
+          "stars": 9500,
+          "score": 92
+        },
+        "reputation": {
+          "cves_12mo": 1,
+          "score": 95
+        },
+        "integration": {
+          "score": 88,
+          "notes": "Simple CLI and kernel module integration on Linux/BSD"
+        },
+        "documentation": {
+          "last_doc_update": "2025-01",
+          "score": 90
+        },
+        "ecosystem": {
+          "issues_12mo": 120,
+          "prs_12mo": 85,
+          "score": 85
+        }
+      },
+      "url": "https://git.zx2c4.com/wireguard-tools/snapshot/wireguard-tools-1.0.20260223.tar.xz",
+      "alternatives": [
+        {
+          "name": "OpenVPN",
+          "weblink": "https://openvpn.net/",
+          "summary": "Mature open-source VPN daemon supporting SSL/TLS tunnels.",
+          "language": "C",
+          "license": "GPL-2.0",
+          "last_release": "2025-03",
+          "metrics": {
+            "popularity": {
+              "stars": 11200,
+              "score": 85
+            },
+            "reputation": {
+              "cves_12mo": 3,
+              "score": 82
+            },
+            "integration": {
+              "score": 78,
+              "notes": "Requires config files and certificates; broad platform support"
+            },
+            "documentation": {
+              "last_doc_update": "2024-11",
+              "score": 85
+            },
+            "ecosystem": {
+              "issues_12mo": 310,
+              "prs_12mo": 95,
+              "score": 72
+            }
+          },
+          "rationale": "Very popular with solid docs but higher CVE count and more ecosystem noise.",
+          "composite_score": 81.1,
+          "rank": 2
+        },
+        {
+          "name": "strongSwan",
+          "weblink": "https://www.strongswan.org/",
+          "summary": "IPsec-based VPN solution with IKEv2 support and modular architecture.",
+          "language": "C",
+          "license": "GPL-2.0",
+          "last_release": "2025-06",
+          "metrics": {
+            "popularity": {
+              "stars": 2400,
+              "score": 65
+            },
+            "reputation": {
+              "cves_12mo": 2,
+              "score": 88
+            },
+            "integration": {
+              "score": 70,
+              "notes": "Complex config for IPsec; good for enterprise"
+            },
+            "documentation": {
+              "last_doc_update": "2025-02",
+              "score": 82
+            },
+            "ecosystem": {
+              "issues_12mo": 95,
+              "prs_12mo": 40,
+              "score": 80
+            }
+          },
+          "rationale": "Lower popularity but good reputation and manageable issue volume.",
+          "composite_score": 76.6,
+          "rank": 3
+        }
+      ],
+      "ranking_winner": "wireguard-tools"
+    },
+    {
+      "rank": 7,
+      "tool_name": "OpenSSL",
+      "composite_score": 89.8,
+      "weblink": "https://www.openssl.org",
+      "summary": "Full-featured toolkit for SSL/TLS protocols, cryptography, and secure communications.",
+      "language": "C",
+      "license": "Apache-2.0",
+      "last_release": "2024-09",
+      "metrics": {
+        "popularity": {
+          "stars": 26000,
+          "score": 92
+        },
+        "reputation": {
+          "cves_12mo": 4,
+          "score": 85
+        },
+        "integration": {
+          "score": 95,
+          "notes": "Native bindings in nearly all languages and OSes"
+        },
+        "documentation": {
+          "last_doc_update": "2024-09",
+          "score": 90
+        },
+        "ecosystem": {
+          "issues_12mo": 320,
+          "prs_12mo": 180,
+          "score": 88
+        }
+      },
+      "url": "http://www.openssl.org/source/openssl-4.0.0.tar.gz",
+      "alternatives": [
+        {
+          "name": "BoringSSL",
+          "weblink": "https://boringssl.googlesource.com/boringssl",
+          "summary": "Google-maintained fork of OpenSSL focused on modern TLS and minimalism.",
+          "language": "C",
+          "license": "OpenSSL/ISC",
+          "last_release": "2024-10",
+          "metrics": {
+            "popularity": {
+              "stars": 6800,
+              "score": 78
+            },
+            "reputation": {
+              "cves_12mo": 2,
+              "score": 92
+            },
+            "integration": {
+              "score": 85,
+              "notes": "Excellent in Go and Chromium ecosystems"
+            },
+            "documentation": {
+              "last_doc_update": "2024-08",
+              "score": 75
+            },
+            "ecosystem": {
+              "issues_12mo": 95,
+              "prs_12mo": 110,
+              "score": 82
+            }
+          },
+          "rationale": "Highest reputation and strong integration in modern stacks despite lower popularity.",
+          "composite_score": 83.6,
+          "rank": 1
+        },
+        {
+          "name": "wolfSSL",
+          "weblink": "https://www.wolfssl.com",
+          "summary": "Lightweight, portable TLS library optimized for embedded and IoT use cases.",
+          "language": "C",
+          "license": "GPL-2.0/Commercial",
+          "last_release": "2024-10",
+          "metrics": {
+            "popularity": {
+              "stars": 2200,
+              "score": 68
+            },
+            "reputation": {
+              "cves_12mo": 3,
+              "score": 88
+            },
+            "integration": {
+              "score": 82,
+              "notes": "Strong embedded support and hardware acceleration"
+            },
+            "documentation": {
+              "last_doc_update": "2024-09",
+              "score": 85
+            },
+            "ecosystem": {
+              "issues_12mo": 110,
+              "prs_12mo": 65,
+              "score": 80
+            }
+          },
+          "rationale": "Good documentation and integration for constrained environments.",
+          "composite_score": 79.6,
+          "rank": 2
+        },
+        {
+          "name": "LibreSSL",
+          "weblink": "https://www.libressl.org",
+          "summary": "Fork of OpenSSL emphasizing security, simplicity and code auditability.",
+          "language": "C",
+          "license": "Apache-2.0/ISC",
+          "last_release": "2024-05",
+          "metrics": {
+            "popularity": {
+              "stars": 1400,
+              "score": 62
+            },
+            "reputation": {
+              "cves_12mo": 1,
+              "score": 95
+            },
+            "integration": {
+              "score": 78,
+              "notes": "Default in OpenBSD and some Linux distros"
+            },
+            "documentation": {
+              "last_doc_update": "2024-03",
+              "score": 70
+            },
+            "ecosystem": {
+              "issues_12mo": 45,
+              "prs_12mo": 30,
+              "score": 88
+            }
+          },
+          "rationale": "Best-in-class reputation and clean ecosystem offset by smaller community.",
+          "composite_score": 79.0,
+          "rank": 3
+        }
+      ],
+      "ranking_winner": "OpenSSL"
+    },
+    {
+      "rank": 8,
+      "tool_name": "activesupport",
+      "composite_score": 89.5,
+      "weblink": "https://rubygems.org/gems/activesupport",
+      "summary": "Toolkit of support libraries and Ruby core extensions extracted from the Rails framework.",
+      "language": "Ruby",
+      "license": "MIT",
+      "last_release": "2024-10",
+      "metrics": {
+        "popularity": {
+          "stars": 55000,
+          "score": 95
+        },
+        "reputation": {
+          "cves_12mo": 2,
+          "score": 85
+        },
+        "integration": {
+          "score": 95,
+          "notes": "Core Rails dependency, seamless Bundler integration"
+        },
+        "documentation": {
+          "last_doc_update": "2024-10",
+          "score": 90
+        },
+        "ecosystem": {
+          "issues_12mo": 120,
+          "prs_12mo": 85,
+          "score": 80
+        }
+      },
+      "url": "https://rubygems.org/downloads/activesupport-8.1.3.gem",
+      "alternatives": [
+        {
+          "name": "facets",
+          "weblink": "https://github.com/rubyworks/facets",
+          "summary": "Comprehensive library of core extensions for Ruby.",
+          "language": "Ruby",
+          "license": "Ruby",
+          "last_release": "2023-05",
+          "metrics": {
+            "popularity": {
+              "stars": 850,
+              "score": 45
+            },
+            "reputation": {
+              "cves_12mo": 0,
+              "score": 95
+            },
+            "integration": {
+              "score": 60,
+              "notes": "Standalone gem, requires manual requires"
+            },
+            "documentation": {
+              "last_doc_update": "2022-11",
+              "score": 55
+            },
+            "ecosystem": {
+              "issues_12mo": 15,
+              "prs_12mo": 8,
+              "score": 75
+            }
+          },
+          "rationale": "Broad extensions but lower popularity and outdated docs.",
+          "composite_score": 67.8,
+          "rank": 2
+        },
+        {
+          "name": "powerpack",
+          "weblink": "https://github.com/banister/powerpack",
+          "summary": "Useful extensions to core Ruby classes.",
+          "language": "Ruby",
+          "license": "MIT",
+          "last_release": "2019-12",
+          "metrics": {
+            "popularity": {
+              "stars": 320,
+              "score": 30
+            },
+            "reputation": {
+              "cves_12mo": 0,
+              "score": 95
+            },
+            "integration": {
+              "score": 50,
+              "notes": "Minimal dependencies but limited scope"
+            },
+            "documentation": {
+              "last_doc_update": "2018-06",
+              "score": 40
+            },
+            "ecosystem": {
+              "issues_12mo": 5,
+              "prs_12mo": 2,
+              "score": 85
+            }
+          },
+          "rationale": "Lightweight but stale and narrow feature set.",
+          "composite_score": 61.8,
+          "rank": 3
+        }
+      ],
+      "ranking_winner": "activesupport"
+    },
+    {
+      "rank": 9,
+      "tool_name": "sed",
+      "composite_score": 89.5,
+      "weblink": "https://www.gnu.org/software/sed/",
+      "summary": "GNU stream editor for filtering and transforming text streams using simple scripts.",
+      "language": "C",
+      "license": "GPL-3.0-or-later",
+      "last_release": "2020-01",
+      "metrics": {
+        "popularity": {
+          "stars": null,
+          "score": 85
+        },
+        "reputation": {
+          "cves_12mo": 0,
+          "score": 95
+        },
+        "integration": {
+          "score": 95,
+          "notes": "POSIX standard, preinstalled on all Unix-like systems"
+        },
+        "documentation": {
+          "last_doc_update": "2020-01",
+          "score": 80
+        },
+        "ecosystem": {
+          "issues_12mo": 5,
+          "prs_12mo": 2,
+          "score": 90
+        }
+      },
+      "url": "http://ftp.funet.fi/pub/gnu/ftp.gnu.org/gnu/sed/sed-4.8.tar.xz",
+      "alternatives": [
+        {
+          "name": "gawk",
+          "weblink": "https://www.gnu.org/software/gawk/",
+          "summary": "GNU implementation of awk for pattern scanning and text processing.",
+          "language": "C",
+          "license": "GPL-3.0-or-later",
+          "last_release": "2023-11",
+          "metrics": {
+            "popularity": {
+              "stars": null,
+              "score": 80
+            },
+            "reputation": {
+              "cves_12mo": 0,
+              "score": 95
+            },
+            "integration": {
+              "score": 90,
+              "notes": "POSIX standard, widely preinstalled"
+            },
+            "documentation": {
+              "last_doc_update": "2023-11",
+              "score": 85
+            },
+            "ecosystem": {
+              "issues_12mo": 12,
+              "prs_12mo": 8,
+              "score": 85
+            }
+          },
+          "rationale": "Higher recency and similar ubiquity; slightly broader scripting capability than sed.",
+          "composite_score": 87.2,
+          "rank": 1
+        },
+        {
+          "name": "perl",
+          "weblink": "https://www.perl.org/",
+          "summary": "High-level scripting language with powerful regex and text processing.",
+          "language": "C",
+          "license": "Artistic-1.0-Perl",
+          "last_release": "2024-02",
+          "metrics": {
+            "popularity": {
+              "stars": null,
+              "score": 75
+            },
+            "reputation": {
+              "cves_12mo": 2,
+              "score": 85
+            },
+            "integration": {
+              "score": 75,
+              "notes": "Requires install on minimal systems"
+            },
+            "documentation": {
+              "last_doc_update": "2024-02",
+              "score": 90
+            },
+            "ecosystem": {
+              "issues_12mo": 150,
+              "prs_12mo": 80,
+              "score": 70
+            }
+          },
+          "rationale": "More powerful but heavier; excellent docs offset moderate ecosystem noise.",
+          "composite_score": 78.8,
+          "rank": 2
+        }
+      ],
+      "ranking_winner": "sed"
+    },
+    {
+      "rank": 10,
+      "tool_name": "nokogiri",
+      "composite_score": 89.5,
+      "weblink": "https://nokogiri.org",
+      "summary": "Nokogiri is an HTML, XML, SAX, and Reader parser with XPath and CSS selector support.",
+      "language": "Ruby",
+      "license": "MIT",
+      "last_release": "2024-02",
+      "metrics": {
+        "popularity": {
+          "stars": 6100,
+          "score": 95
+        },
+        "reputation": {
+          "cves_12mo": 2,
+          "score": 85
+        },
+        "integration": {
+          "score": 95,
+          "notes": "Native extensions; widely used in Rails"
+        },
+        "documentation": {
+          "last_doc_update": "2024-02",
+          "score": 90
+        },
+        "ecosystem": {
+          "issues_12mo": 85,
+          "prs_12mo": 40,
+          "score": 80
+        }
+      },
+      "url": "https://rubygems.org/downloads/nokogiri-1.16.2.gem",
+      "alternatives": [
+        {
+          "name": "ox",
+          "weblink": "https://github.com/ohler55/ox",
+          "summary": "Fast XML and HTML parser for Ruby with simple API.",
+          "language": "Ruby",
+          "license": "MIT",
+          "last_release": "2024-01",
+          "metrics": {
+            "popularity": {
+              "stars": 850,
+              "score": 65
+            },
+            "reputation": {
+              "cves_12mo": 0,
+              "score": 95
+            },
+            "integration": {
+              "score": 80,
+              "notes": "Native C extension, easy drop-in for XML"
+            },
+            "documentation": {
+              "last_doc_update": "2023-11",
+              "score": 70
+            },
+            "ecosystem": {
+              "issues_12mo": 25,
+              "prs_12mo": 12,
+              "score": 85
+            }
+          },
+          "rationale": "Strong speed and zero recent CVEs; lower popularity and docs freshness.",
+          "composite_score": 79.8,
+          "rank": 2
+        },
+        {
+          "name": "oga",
+          "weblink": "https://github.com/yorickpeterse/oga",
+          "summary": "Pure Ruby XML and HTML parser with XPath support.",
+          "language": "Ruby",
+          "license": "MIT",
+          "last_release": "2023-06",
+          "metrics": {
+            "popularity": {
+              "stars": 420,
+              "score": 50
+            },
+            "reputation": {
+              "cves_12mo": 0,
+              "score": 95
+            },
+            "integration": {
+              "score": 70,
+              "notes": "Pure Ruby, no native deps"
+            },
+            "documentation": {
+              "last_doc_update": "2022-12",
+              "score": 60
+            },
+            "ecosystem": {
+              "issues_12mo": 15,
+              "prs_12mo": 8,
+              "score": 88
+            }
+          },
+          "rationale": "Good for pure-Ruby environments; lower popularity and stale docs.",
+          "composite_score": 73.2,
+          "rank": 3
+        }
+      ],
+      "ranking_winner": "nokogiri"
+    }
+  ]
+}
