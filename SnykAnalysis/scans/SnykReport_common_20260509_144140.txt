@@ -1,0 +1,50 @@
+Snyk Issues Report (common)
+
+Generated: 05/09/2026 16:41:52
+Total source packages processed: 1
+Tool used: SnykCLI
+
+
+Summary
+- Total issues overall: 2
+- High with crypto: 0
+- High without crypto: 0
+- Medium: 1
+- Low: 1
+
+
+Top 10 High Categories
+(none)
+
+
+Top 10 Source Packages with most issues (with breakdown)
+
+Package TotalIssues HighCrypto High Medium Low
+------- ----------- ---------- ---- ------ ---
+stalld  2           0          0    1      1
+
+
+
+Top 10 Source Packages with most issues on Level "High (+ crypto)"
+(none)
+
+
+Top 10 Source Packages with most issues on Level "High"
+(none)
+
+
+Top 10 Source Packages with most issues on Level "Medium"
+
+Package Count
+------- -----
+stalld  1
+
+
+
+Top 10 Source Packages with most issues on Level "Low"
+
+Package Count
+------- -----
+stalld  1
+
+

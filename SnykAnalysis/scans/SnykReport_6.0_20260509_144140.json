@@ -1,0 +1,250 @@
+{
+  "generated": "2026-05-09T16:41:51.5429878+02:00",
+  "generated_local": "05/09/2026 16:41:51",
+  "database": "ci/SnykAnalysis/snyk_issues.db",
+  "branch": "6.0",
+  "tool": "SnykCLI",
+  "total_source_packages": 693,
+  "summary": {
+    "HighCrypto": "0",
+    "HighNonCrypto": "9",
+    "Medium": "309",
+    "Low": "906",
+    "Total": "1224"
+  },
+  "top_high_categories": [
+    {
+      "Category": "Server-Side Request Forgery (SSRF)",
+      "Count": "2"
+    },
+    {
+      "Category": "Potential Negative Number Used as Index",
+      "Count": "2"
+    },
+    {
+      "Category": "Size Used as Index",
+      "Count": "1"
+    },
+    {
+      "Category": "Regular expression injection",
+      "Count": "1"
+    },
+    {
+      "Category": "Path Traversal",
+      "Count": "1"
+    },
+    {
+      "Category": "Cross-site Scripting (XSS)",
+      "Count": "1"
+    },
+    {
+      "Category": "Command Injection",
+      "Count": "1"
+    }
+  ],
+  "top_packages": [
+    {
+      "Package": "zstd",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    },
+    {
+      "Package": "zsh",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    },
+    {
+      "Package": "zookeeper",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    },
+    {
+      "Package": "zlib",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    },
+    {
+      "Package": "zchunk",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    },
+    {
+      "Package": "yamlloader",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    },
+    {
+      "Package": "yaml-cpp",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    },
+    {
+      "Package": "yajl",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    },
+    {
+      "Package": "xz",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    },
+    {
+      "Package": "xxHash",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    }
+  ],
+  "top_packages_by_high_crypto": [],
+  "top_packages_by_high": [
+    {
+      "Package": "termshark",
+      "Count": "1"
+    },
+    {
+      "Package": "pycryptodome",
+      "Count": "1"
+    },
+    {
+      "Package": "otp",
+      "Count": "1"
+    },
+    {
+      "Package": "ostree",
+      "Count": "1"
+    },
+    {
+      "Package": "libpwquality",
+      "Count": "1"
+    },
+    {
+      "Package": "libpsl",
+      "Count": "1"
+    },
+    {
+      "Package": "influxdb",
+      "Count": "1"
+    },
+    {
+      "Package": "incremental",
+      "Count": "1"
+    },
+    {
+      "Package": "glide",
+      "Count": "1"
+    }
+  ],
+  "top_packages_by_medium": [
+    {
+      "Package": "tzlocal",
+      "Count": "2"
+    },
+    {
+      "Package": "tomcat-native",
+      "Count": "2"
+    },
+    {
+      "Package": "synce4l",
+      "Count": "2"
+    },
+    {
+      "Package": "stalld",
+      "Count": "2"
+    },
+    {
+      "Package": "spdlog",
+      "Count": "2"
+    },
+    {
+      "Package": "repmgr",
+      "Count": "2"
+    },
+    {
+      "Package": "ragel",
+      "Count": "2"
+    },
+    {
+      "Package": "pluggy",
+      "Count": "2"
+    },
+    {
+      "Package": "pkgconfig",
+      "Count": "2"
+    },
+    {
+      "Package": "pandoc",
+      "Count": "2"
+    }
+  ],
+  "top_packages_by_low": [
+    {
+      "Package": "zstd",
+      "Count": "2"
+    },
+    {
+      "Package": "zsh",
+      "Count": "2"
+    },
+    {
+      "Package": "zookeeper",
+      "Count": "2"
+    },
+    {
+      "Package": "zlib",
+      "Count": "2"
+    },
+    {
+      "Package": "zchunk",
+      "Count": "2"
+    },
+    {
+      "Package": "yamlloader",
+      "Count": "2"
+    },
+    {
+      "Package": "yaml-cpp",
+      "Count": "2"
+    },
+    {
+      "Package": "yajl",
+      "Count": "2"
+    },
+    {
+      "Package": "xz",
+      "Count": "2"
+    },
+    {
+      "Package": "xxHash",
+      "Count": "2"
+    }
+  ]
+}

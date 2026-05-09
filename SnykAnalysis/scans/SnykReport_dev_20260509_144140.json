@@ -1,0 +1,247 @@
+{
+  "generated": "2026-05-09T16:41:56.3888811+02:00",
+  "generated_local": "05/09/2026 16:41:56",
+  "database": "ci/SnykAnalysis/snyk_issues.db",
+  "branch": "dev",
+  "tool": "SnykCLI",
+  "total_source_packages": 685,
+  "summary": {
+    "HighCrypto": "1",
+    "HighNonCrypto": "7",
+    "Medium": "268",
+    "Low": "906",
+    "Total": "1182"
+  },
+  "top_high_categories": [
+    {
+      "Category": "Unsafe Reflection",
+      "Count": "2"
+    },
+    {
+      "Category": "Command Injection",
+      "Count": "2"
+    },
+    {
+      "Category": "Use of Hardcoded, Security-relevant Constants",
+      "Count": "1"
+    },
+    {
+      "Category": "Path Traversal",
+      "Count": "1"
+    },
+    {
+      "Category": "Hardcoded Non-Cryptographic Secret",
+      "Count": "1"
+    },
+    {
+      "Category": "Cross-site Scripting (XSS)",
+      "Count": "1"
+    }
+  ],
+  "top_packages": [
+    {
+      "Package": "zstd",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "1",
+      "Low": "1"
+    },
+    {
+      "Package": "zsh",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "1",
+      "Low": "1"
+    },
+    {
+      "Package": "zookeeper",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "1",
+      "Low": "1"
+    },
+    {
+      "Package": "zlib",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "1",
+      "Low": "1"
+    },
+    {
+      "Package": "zchunk",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "1",
+      "Low": "1"
+    },
+    {
+      "Package": "yamlloader",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "1",
+      "Low": "1"
+    },
+    {
+      "Package": "yaml-cpp",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "1",
+      "Low": "1"
+    },
+    {
+      "Package": "yajl",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "1",
+      "Low": "1"
+    },
+    {
+      "Package": "xz",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "1",
+      "Low": "1"
+    },
+    {
+      "Package": "xxHash",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "1",
+      "Low": "1"
+    }
+  ],
+  "top_packages_by_high_crypto": [
+    {
+      "Package": "python-systemd",
+      "Count": "1"
+    }
+  ],
+  "top_packages_by_high": [
+    {
+      "Package": "termshark",
+      "Count": "1"
+    },
+    {
+      "Package": "python-systemd",
+      "Count": "1"
+    },
+    {
+      "Package": "ncurses-snapshots",
+      "Count": "1"
+    },
+    {
+      "Package": "keepalived",
+      "Count": "1"
+    },
+    {
+      "Package": "kbd",
+      "Count": "1"
+    },
+    {
+      "Package": "kapacitor",
+      "Count": "1"
+    },
+    {
+      "Package": "glide",
+      "Count": "1"
+    },
+    {
+      "Package": "distro",
+      "Count": "1"
+    }
+  ],
+  "top_packages_by_medium": [
+    {
+      "Package": "wcwidth",
+      "Count": "2"
+    },
+    {
+      "Package": "python-prompt-toolkit",
+      "Count": "2"
+    },
+    {
+      "Package": "linuxptp",
+      "Count": "2"
+    },
+    {
+      "Package": "libtar",
+      "Count": "2"
+    },
+    {
+      "Package": "libnfnetlink",
+      "Count": "2"
+    },
+    {
+      "Package": "libconfig",
+      "Count": "2"
+    },
+    {
+      "Package": "ding-libs",
+      "Count": "2"
+    },
+    {
+      "Package": "defusedxml",
+      "Count": "2"
+    },
+    {
+      "Package": "code",
+      "Count": "2"
+    },
+    {
+      "Package": "click",
+      "Count": "2"
+    }
+  ],
+  "top_packages_by_low": [
+    {
+      "Package": "vernemq",
+      "Count": "2"
+    },
+    {
+      "Package": "uwsgi",
+      "Count": "2"
+    },
+    {
+      "Package": "util-linux",
+      "Count": "2"
+    },
+    {
+      "Package": "utf8proc",
+      "Count": "2"
+    },
+    {
+      "Package": "usbutils",
+      "Count": "2"
+    },
+    {
+      "Package": "urllib3",
+      "Count": "2"
+    },
+    {
+      "Package": "unixODBC",
+      "Count": "2"
+    },
+    {
+      "Package": "unix-tree",
+      "Count": "2"
+    },
+    {
+      "Package": "unbound",
+      "Count": "2"
+    },
+    {
+      "Package": "ultrajson",
+      "Count": "2"
+    }
+  ]
+}
