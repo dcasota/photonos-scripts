@@ -1,0 +1,135 @@
+name: Bake and scan VKR image
+
+# All version pins live in lib/common.sh. The workflow inputs let you
+# override the most useful ones per-run; everything else falls through
+# to the defaults in common.sh.
+
+on:
+  workflow_dispatch:
+    inputs:
+      os_target:
+        description: 'OS target'
+        default: 'photon'
+        required: true
+        type: choice
+        options: [photon, ubuntu, rhel]
+      vkr_k8s_version:
+        description: 'VKR Kubernetes version (e.g. 1.32.10)'
+        default: '1.32.10'
+        required: true
+      vkr_tag:
+        description: 'VKR OCI tag (e.g. v1.32.10_vmware.1-fips-vkr.2)'
+        default: 'v1.32.10_vmware.1-fips-vkr.2'
+        required: true
+      vkr_inner_version:
+        description: 'Path inside vkr-artifact-server (e.g. v1.32.10+vmware.1-fips)'
+        default: 'v1.32.10+vmware.1-fips'
+        required: true
+      grype_fail_on:
+        description: 'Grype severity threshold'
+        default: 'high'
+        type: choice
+        options: [low, medium, high, critical]
+      skip_stig:
+        description: 'Skip STIG step (set 1 to skip the QEMU/KVM boot)'
+        default: '0'
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  bake-and-scan:
+    # /dev/kvm needed for STIG. ubuntu-22.04 GHA runners typically have it
+    # via nested virt; otherwise switch to a self-hosted runner.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+
+    env:
+      OS_TARGET:         ${{ github.event.inputs.os_target }}
+      VKR_K8S_VERSION:   ${{ github.event.inputs.vkr_k8s_version }}
+      VKR_TAG:           ${{ github.event.inputs.vkr_tag }}
+      VKR_INNER_VERSION: ${{ github.event.inputs.vkr_inner_version }}
+      GRYPE_FAIL_ON:     ${{ github.event.inputs.grype_fail_on }}
+      SKIP_STIG:         ${{ github.event.inputs.skip_stig }}
+      WORKDIR:           ${{ github.workspace }}/work
+      SBOM_DIR:          ${{ github.workspace }}/sbom
+      REPORT_DIR:        ${{ github.workspace }}/scan-reports
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: KVM preflight
+        if: ${{ github.event.inputs.skip_stig != '1' }}
+        run: |
+          if [ ! -r /dev/kvm ] || [ ! -w /dev/kvm ]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq qemu-kvm
+            sudo chmod 666 /dev/kvm || true
+          fi
+          ls -la /dev/kvm
+          kvm-ok || true
+
+      - name: Run setup-image-baker.sh (build + bake + OVA)
+        run: |
+          mkdir -p "$WORKDIR"
+          chmod +x ./setup-image-baker.sh ./scan-baked-ova.sh ./lib/common.sh
+          ./setup-image-baker.sh
+
+      - name: Locate baked OVA
+        id: ova
+        run: |
+          OVA=$(find "$WORKDIR/artifacts" -name '*.ova' | head -1)
+          [ -n "$OVA" ] || { echo "no OVA found"; exit 1; }
+          # The image-name component used everywhere downstream
+          IMG=$(basename "$OVA" .ova)
+          echo "path=$OVA" >> "$GITHUB_OUTPUT"
+          echo "name=$IMG" >> "$GITHUB_OUTPUT"
+
+      - name: Scan the OVA (Syft + Grype + STIG)
+        run: |
+          ./scan-baked-ova.sh "${{ steps.ova.outputs.path }}" "${{ steps.ova.outputs.name }}"
+
+      - name: Convert Grype JSON to SARIF
+        if: always()
+        run: |
+          if [ -f "$SBOM_DIR/${{ steps.ova.outputs.name }}.cdx.json" ]; then
+            grype "sbom:$SBOM_DIR/${{ steps.ova.outputs.name }}.cdx.json" -o sarif \
+                > "$REPORT_DIR/${{ steps.ova.outputs.name }}.grype.sarif" || true
+          fi
+
+      - name: Convert STIG results to STIG Checklist + SARIF (via SAF CLI)
+        if: always() && github.event.inputs.skip_stig != '1'
+        run: |
+          npm install -g @mitre/saf
+          if [ -f "$REPORT_DIR/${{ steps.ova.outputs.name }}.stig.json" ]; then
+            saf convert hdf2ckl   -i "$REPORT_DIR/${{ steps.ova.outputs.name }}.stig.json" \
+                                  -o "$REPORT_DIR/${{ steps.ova.outputs.name }}.ckl"   || true
+            saf convert hdf2sarif -i "$REPORT_DIR/${{ steps.ova.outputs.name }}.stig.json" \
+                                  -o "$REPORT_DIR/${{ steps.ova.outputs.name }}.stig.sarif" || true
+          fi
+
+      - name: Upload Grype SARIF
+        if: always() && hashFiles(format('{0}/{1}.grype.sarif', env.REPORT_DIR, steps.ova.outputs.name)) != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ${{ env.REPORT_DIR }}/${{ steps.ova.outputs.name }}.grype.sarif
+          category: grype
+
+      - name: Upload STIG SARIF
+        if: always() && hashFiles(format('{0}/{1}.stig.sarif', env.REPORT_DIR, steps.ova.outputs.name)) != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ${{ env.REPORT_DIR }}/${{ steps.ova.outputs.name }}.stig.sarif
+          category: stig
+
+      - name: Upload all artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vkr-image-bundle-${{ github.run_id }}
+          path: |
+            ${{ steps.ova.outputs.path }}
+            ${{ env.SBOM_DIR }}
+            ${{ env.REPORT_DIR }}
+          retention-days: 30
