@@ -1,0 +1,116 @@
+Snyk Issues Report (dev)
+
+Generated: 05/09/2026 19:55:40
+Total source packages processed: 685
+Tool used: SnykCLI
+
+
+Summary
+- Total issues overall: 56789
+- High with crypto: 193
+- High without crypto: 720
+- Medium: 21592
+- Low: 34284
+
+
+Top 10 High Categories
+
+Category                                                     Count
+--------                                                     -----
+Use of a Broken or Risky Cryptographic Algorithm             140
+Cross-site Scripting (XSS)                                   127
+Potential Negative Number Used as Index                      116
+Path Traversal                                               107
+Hardcoded Secret                                             90
+Command Injection                                            62
+Hardcoded Non-Cryptographic Secret                           48
+Generation of Error Message Containing Sensitive Information 38
+Size Used as Index                                           35
+XML External Entity (XXE) Injection                          33
+
+
+
+Top 10 Source Packages with most issues (with breakdown)
+
+Package          TotalIssues HighCrypto High Medium Low
+-------          ----------- ---------- ---- ------ ---
+jdk21u           2997        54         105  727    2165
+jdk11u           2855        54         105  785    1965
+node             2837        5          22   429    2386
+llvm-project     2828        0          39   450    2339
+runtime          2012        20         28   240    1744
+subversion       1471        0          0    49     1422
+mysql-server     1343        1          27   608    708
+wireshark        1143        0          6    170    967
+src              1004        0          6    708    290
+openssh-portable 939         0          0    363    576
+
+
+
+Top 10 Source Packages with most issues on Level "High (+ crypto)"
+
+Package         Count
+-------         -----
+jdk21u          54
+jdk11u          54
+python          28
+runtime         20
+tornado         5
+node            5
+pycryptodome    4
+unbound         2
+rabbitmq-server 2
+podman          2
+
+
+
+Top 10 Source Packages with most issues on Level "High"
+
+Package      Count
+-------      -----
+tomcat       142
+jdk21u       105
+jdk11u       105
+llvm-project 39
+go           34
+runtime      28
+python       28
+podman       28
+mysql-server 27
+node         22
+
+
+
+Top 10 Source Packages with most issues on Level "Medium"
+
+Package      Count
+-------      -----
+jdk11u       785
+jdk21u       727
+src          708
+aufs-linux   654
+mysql-server 608
+cups         592
+util-linux   493
+server       478
+crash        467
+llvm-project 450
+
+
+
+Top 10 Source Packages with most issues on Level "Low"
+
+Package          Count
+-------          -----
+node             2386
+llvm-project     2339
+jdk21u           2165
+jdk11u           1965
+runtime          1744
+subversion       1422
+wireshark        967
+zsh              737
+mysql-server     708
+openssh-portable 576
+
+

@@ -1,0 +1,307 @@
+{
+  "generated": "2026-05-09T19:55:29.6734587+02:00",
+  "generated_local": "05/09/2026 19:55:29",
+  "database": "ci/SnykAnalysis/snyk_issues.db",
+  "branch": "3.0",
+  "tool": "SnykCLI",
+  "total_source_packages": 583,
+  "summary": {
+    "HighCrypto": "302",
+    "HighNonCrypto": "864",
+    "Medium": "20246",
+    "Low": "36428",
+    "Total": "57840"
+  },
+  "top_high_categories": [
+    {
+      "Category": "Use of a Broken or Risky Cryptographic Algorithm",
+      "Count": "245"
+    },
+    {
+      "Category": "Hardcoded Secret",
+      "Count": "169"
+    },
+    {
+      "Category": "Cross-site Scripting (XSS)",
+      "Count": "126"
+    },
+    {
+      "Category": "Potential Negative Number Used as Index",
+      "Count": "114"
+    },
+    {
+      "Category": "Path Traversal",
+      "Count": "88"
+    },
+    {
+      "Category": "Regular Expression Denial of Service (ReDoS)",
+      "Count": "72"
+    },
+    {
+      "Category": "DOM-based Cross-site Scripting (XSS)",
+      "Count": "61"
+    },
+    {
+      "Category": "Hardcoded Non-Cryptographic Secret",
+      "Count": "53"
+    },
+    {
+      "Category": "Size Used as Index",
+      "Count": "36"
+    },
+    {
+      "Category": "XML External Entity (XXE) Injection",
+      "Count": "35"
+    }
+  ],
+  "top_packages": [
+    {
+      "Package": "jdk11u",
+      "TotalIssues": "2855",
+      "HighCrypto": "54",
+      "High": "105",
+      "Medium": "785",
+      "Low": "1965"
+    },
+    {
+      "Package": "llvm-project",
+      "TotalIssues": "2775",
+      "HighCrypto": "0",
+      "High": "39",
+      "Medium": "445",
+      "Low": "2291"
+    },
+    {
+      "Package": "node",
+      "TotalIssues": "2744",
+      "HighCrypto": "5",
+      "High": "23",
+      "Medium": "422",
+      "Low": "2299"
+    },
+    {
+      "Package": "jdk17u",
+      "TotalIssues": "2733",
+      "HighCrypto": "53",
+      "High": "101",
+      "Medium": "675",
+      "Low": "1957"
+    },
+    {
+      "Package": "jdk10u",
+      "TotalIssues": "2462",
+      "HighCrypto": "54",
+      "High": "95",
+      "Medium": "691",
+      "Low": "1676"
+    },
+    {
+      "Package": "jdk8u",
+      "TotalIssues": "2347",
+      "HighCrypto": "54",
+      "High": "97",
+      "Medium": "844",
+      "Low": "1406"
+    },
+    {
+      "Package": "runtime",
+      "TotalIssues": "1990",
+      "HighCrypto": "20",
+      "High": "28",
+      "Medium": "240",
+      "Low": "1722"
+    },
+    {
+      "Package": "kibana",
+      "TotalIssues": "1874",
+      "HighCrypto": "35",
+      "High": "169",
+      "Medium": "159",
+      "Low": "1546"
+    },
+    {
+      "Package": "subversion",
+      "TotalIssues": "1470",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "49",
+      "Low": "1421"
+    },
+    {
+      "Package": "elasticsearch",
+      "TotalIssues": "1448",
+      "HighCrypto": "2",
+      "High": "16",
+      "Medium": "81",
+      "Low": "1351"
+    }
+  ],
+  "top_packages_by_high_crypto": [
+    {
+      "Package": "jdk8u",
+      "Count": "54"
+    },
+    {
+      "Package": "jdk11u",
+      "Count": "54"
+    },
+    {
+      "Package": "jdk10u",
+      "Count": "54"
+    },
+    {
+      "Package": "jdk17u",
+      "Count": "53"
+    },
+    {
+      "Package": "kibana",
+      "Count": "35"
+    },
+    {
+      "Package": "runtime",
+      "Count": "20"
+    },
+    {
+      "Package": "tornado",
+      "Count": "5"
+    },
+    {
+      "Package": "node",
+      "Count": "5"
+    },
+    {
+      "Package": "pycryptodome",
+      "Count": "4"
+    },
+    {
+      "Package": "unbound",
+      "Count": "2"
+    }
+  ],
+  "top_packages_by_high": [
+    {
+      "Package": "kibana",
+      "Count": "169"
+    },
+    {
+      "Package": "tomcat",
+      "Count": "142"
+    },
+    {
+      "Package": "jdk11u",
+      "Count": "105"
+    },
+    {
+      "Package": "jdk17u",
+      "Count": "101"
+    },
+    {
+      "Package": "jdk8u",
+      "Count": "97"
+    },
+    {
+      "Package": "jdk10u",
+      "Count": "95"
+    },
+    {
+      "Package": "llvm-project",
+      "Count": "39"
+    },
+    {
+      "Package": "lightwave",
+      "Count": "29"
+    },
+    {
+      "Package": "runtime",
+      "Count": "28"
+    },
+    {
+      "Package": "mysql-server",
+      "Count": "27"
+    }
+  ],
+  "top_packages_by_medium": [
+    {
+      "Package": "jdk8u",
+      "Count": "844"
+    },
+    {
+      "Package": "jdk11u",
+      "Count": "785"
+    },
+    {
+      "Package": "src",
+      "Count": "696"
+    },
+    {
+      "Package": "jdk10u",
+      "Count": "691"
+    },
+    {
+      "Package": "jdk17u",
+      "Count": "675"
+    },
+    {
+      "Package": "mysql-server",
+      "Count": "608"
+    },
+    {
+      "Package": "util-linux",
+      "Count": "488"
+    },
+    {
+      "Package": "server",
+      "Count": "481"
+    },
+    {
+      "Package": "crash",
+      "Count": "467"
+    },
+    {
+      "Package": "llvm-project",
+      "Count": "445"
+    }
+  ],
+  "top_packages_by_low": [
+    {
+      "Package": "node",
+      "Count": "2299"
+    },
+    {
+      "Package": "llvm-project",
+      "Count": "2291"
+    },
+    {
+      "Package": "jdk11u",
+      "Count": "1965"
+    },
+    {
+      "Package": "jdk17u",
+      "Count": "1957"
+    },
+    {
+      "Package": "runtime",
+      "Count": "1722"
+    },
+    {
+      "Package": "jdk10u",
+      "Count": "1676"
+    },
+    {
+      "Package": "kibana",
+      "Count": "1546"
+    },
+    {
+      "Package": "subversion",
+      "Count": "1421"
+    },
+    {
+      "Package": "jdk8u",
+      "Count": "1406"
+    },
+    {
+      "Package": "elasticsearch",
+      "Count": "1351"
+    }
+  ]
+}

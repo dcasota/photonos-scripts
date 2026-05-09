@@ -1,0 +1,307 @@
+{
+  "generated": "2026-05-09T19:55:41.9231271+02:00",
+  "generated_local": "05/09/2026 19:55:41",
+  "database": "ci/SnykAnalysis/snyk_issues.db",
+  "branch": "dev",
+  "tool": "SnykCLI",
+  "total_source_packages": 685,
+  "summary": {
+    "HighCrypto": "193",
+    "HighNonCrypto": "720",
+    "Medium": "21592",
+    "Low": "34284",
+    "Total": "56789"
+  },
+  "top_high_categories": [
+    {
+      "Category": "Use of a Broken or Risky Cryptographic Algorithm",
+      "Count": "140"
+    },
+    {
+      "Category": "Cross-site Scripting (XSS)",
+      "Count": "127"
+    },
+    {
+      "Category": "Potential Negative Number Used as Index",
+      "Count": "116"
+    },
+    {
+      "Category": "Path Traversal",
+      "Count": "107"
+    },
+    {
+      "Category": "Hardcoded Secret",
+      "Count": "90"
+    },
+    {
+      "Category": "Command Injection",
+      "Count": "62"
+    },
+    {
+      "Category": "Hardcoded Non-Cryptographic Secret",
+      "Count": "48"
+    },
+    {
+      "Category": "Generation of Error Message Containing Sensitive Information",
+      "Count": "38"
+    },
+    {
+      "Category": "Size Used as Index",
+      "Count": "35"
+    },
+    {
+      "Category": "XML External Entity (XXE) Injection",
+      "Count": "33"
+    }
+  ],
+  "top_packages": [
+    {
+      "Package": "jdk21u",
+      "TotalIssues": "2997",
+      "HighCrypto": "54",
+      "High": "105",
+      "Medium": "727",
+      "Low": "2165"
+    },
+    {
+      "Package": "jdk11u",
+      "TotalIssues": "2855",
+      "HighCrypto": "54",
+      "High": "105",
+      "Medium": "785",
+      "Low": "1965"
+    },
+    {
+      "Package": "node",
+      "TotalIssues": "2837",
+      "HighCrypto": "5",
+      "High": "22",
+      "Medium": "429",
+      "Low": "2386"
+    },
+    {
+      "Package": "llvm-project",
+      "TotalIssues": "2828",
+      "HighCrypto": "0",
+      "High": "39",
+      "Medium": "450",
+      "Low": "2339"
+    },
+    {
+      "Package": "runtime",
+      "TotalIssues": "2012",
+      "HighCrypto": "20",
+      "High": "28",
+      "Medium": "240",
+      "Low": "1744"
+    },
+    {
+      "Package": "subversion",
+      "TotalIssues": "1471",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "49",
+      "Low": "1422"
+    },
+    {
+      "Package": "mysql-server",
+      "TotalIssues": "1343",
+      "HighCrypto": "1",
+      "High": "27",
+      "Medium": "608",
+      "Low": "708"
+    },
+    {
+      "Package": "wireshark",
+      "TotalIssues": "1143",
+      "HighCrypto": "0",
+      "High": "6",
+      "Medium": "170",
+      "Low": "967"
+    },
+    {
+      "Package": "src",
+      "TotalIssues": "1004",
+      "HighCrypto": "0",
+      "High": "6",
+      "Medium": "708",
+      "Low": "290"
+    },
+    {
+      "Package": "openssh-portable",
+      "TotalIssues": "939",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "363",
+      "Low": "576"
+    }
+  ],
+  "top_packages_by_high_crypto": [
+    {
+      "Package": "jdk21u",
+      "Count": "54"
+    },
+    {
+      "Package": "jdk11u",
+      "Count": "54"
+    },
+    {
+      "Package": "python",
+      "Count": "28"
+    },
+    {
+      "Package": "runtime",
+      "Count": "20"
+    },
+    {
+      "Package": "tornado",
+      "Count": "5"
+    },
+    {
+      "Package": "node",
+      "Count": "5"
+    },
+    {
+      "Package": "pycryptodome",
+      "Count": "4"
+    },
+    {
+      "Package": "unbound",
+      "Count": "2"
+    },
+    {
+      "Package": "rabbitmq-server",
+      "Count": "2"
+    },
+    {
+      "Package": "podman",
+      "Count": "2"
+    }
+  ],
+  "top_packages_by_high": [
+    {
+      "Package": "tomcat",
+      "Count": "142"
+    },
+    {
+      "Package": "jdk21u",
+      "Count": "105"
+    },
+    {
+      "Package": "jdk11u",
+      "Count": "105"
+    },
+    {
+      "Package": "llvm-project",
+      "Count": "39"
+    },
+    {
+      "Package": "go",
+      "Count": "34"
+    },
+    {
+      "Package": "runtime",
+      "Count": "28"
+    },
+    {
+      "Package": "python",
+      "Count": "28"
+    },
+    {
+      "Package": "podman",
+      "Count": "28"
+    },
+    {
+      "Package": "mysql-server",
+      "Count": "27"
+    },
+    {
+      "Package": "node",
+      "Count": "22"
+    }
+  ],
+  "top_packages_by_medium": [
+    {
+      "Package": "jdk11u",
+      "Count": "785"
+    },
+    {
+      "Package": "jdk21u",
+      "Count": "727"
+    },
+    {
+      "Package": "src",
+      "Count": "708"
+    },
+    {
+      "Package": "aufs-linux",
+      "Count": "654"
+    },
+    {
+      "Package": "mysql-server",
+      "Count": "608"
+    },
+    {
+      "Package": "cups",
+      "Count": "592"
+    },
+    {
+      "Package": "util-linux",
+      "Count": "493"
+    },
+    {
+      "Package": "server",
+      "Count": "478"
+    },
+    {
+      "Package": "crash",
+      "Count": "467"
+    },
+    {
+      "Package": "llvm-project",
+      "Count": "450"
+    }
+  ],
+  "top_packages_by_low": [
+    {
+      "Package": "node",
+      "Count": "2386"
+    },
+    {
+      "Package": "llvm-project",
+      "Count": "2339"
+    },
+    {
+      "Package": "jdk21u",
+      "Count": "2165"
+    },
+    {
+      "Package": "jdk11u",
+      "Count": "1965"
+    },
+    {
+      "Package": "runtime",
+      "Count": "1744"
+    },
+    {
+      "Package": "subversion",
+      "Count": "1422"
+    },
+    {
+      "Package": "wireshark",
+      "Count": "967"
+    },
+    {
+      "Package": "zsh",
+      "Count": "737"
+    },
+    {
+      "Package": "mysql-server",
+      "Count": "708"
+    },
+    {
+      "Package": "openssh-portable",
+      "Count": "576"
+    }
+  ]
+}
