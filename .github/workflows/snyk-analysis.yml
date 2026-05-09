@@ -97,7 +97,17 @@ jobs:
             chmod +x "$INSTALL_DIR/snyk"
           fi
           snyk --version
-          snyk auth "$SNYK_TOKEN"
+          # `snyk auth` is for caching the token to ~/.config/configstore/snyk.json;
+          # the CLI also honours $SNYK_TOKEN from the environment on every call.
+          # Skipping the auth network round-trip avoids hard-failing this step
+          # when Snyk's auth service is in maintenance (SNYK-0099 / 503), as
+          # observed in run 25603232753. SNYK_TOKEN is already exported above.
+          if [ -f "$HOME/.config/configstore/snyk.json" ]; then
+            echo "Using cached Snyk auth ($HOME/.config/configstore/snyk.json)"
+          else
+            echo "No cached Snyk auth; running 'snyk auth' (one-time, may fail under SNYK-0099)"
+            snyk auth "$SNYK_TOKEN" || echo "::warning::snyk auth failed; SNYK_TOKEN env will be used at scan time instead"
+          fi
           echo "$INSTALL_DIR" >> "$GITHUB_PATH"
 
       - name: Resolve directories
@@ -127,8 +137,15 @@ jobs:
           BRANCHES: ${{ github.event.inputs.branches }}
           MAX_SUBDIRS: ${{ github.event.inputs.maxSubdirs }}
           FORCE: ${{ github.event.inputs.force }}
+          # Snyk CLI honours SNYK_TOKEN env at every scan call; this is the
+          # fallback if ~/.config/configstore/snyk.json was not populated
+          # (e.g. when Snyk's auth service was in maintenance during install).
+          SNYK_TOKEN_SECRET: ${{ secrets.SNYK_TOKEN }}
         run: |
           set +e
+          if [ -n "${SNYK_TOKEN_SECRET:-}" ]; then
+            export SNYK_TOKEN="$SNYK_TOKEN_SECRET"
+          fi
           SCRIPT="ci/SnykAnalysis/Run-SnykOnSubdirs.ps1"
           missing=0; scanned=0
           echo "" >> "$GITHUB_STEP_SUMMARY"
