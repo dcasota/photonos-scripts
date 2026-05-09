@@ -229,21 +229,23 @@ jobs:
             done
           done
 
-          # Step summary: combined report + a links-table to the per-branch reports.
+          # Step summary: per-branch reports as the primary content, each in
+          # a collapsible <details> block so the page stays navigable. The
+          # "(all branches)" combined report is preserved as a file artifact
+          # but no longer pasted into the step summary -- per request.
           echo ""                                               >> "$GITHUB_STEP_SUMMARY"
-          echo "### Combined report (all branches)"             >> "$GITHUB_STEP_SUMMARY"
-          cat "$OUTDIR/SnykReport_${STAMP}.md"                  >> "$GITHUB_STEP_SUMMARY"
-          echo ""                                               >> "$GITHUB_STEP_SUMMARY"
-          echo "### Per-branch reports"                         >> "$GITHUB_STEP_SUMMARY"
-          echo ""                                               >> "$GITHUB_STEP_SUMMARY"
-          echo "| Branch | Files |"                             >> "$GITHUB_STEP_SUMMARY"
-          echo "|---|---|"                                      >> "$GITHUB_STEP_SUMMARY"
           for B in $(echo "${{ github.event.inputs.branches }}" | tr ',' ' '); do
-            files=""
-            for ext in txt md json; do
-              [ -f "$OUTDIR/SnykReport_${B}_${STAMP}.${ext}" ] && files="$files \`SnykReport_${B}_${STAMP}.${ext}\`"
-            done
-            echo "| ${B} | ${files:-(none)} |"                  >> "$GITHUB_STEP_SUMMARY"
+            BRMD="$OUTDIR/SnykReport_${B}_${STAMP}.md"
+            if [ -f "$BRMD" ]; then
+              echo ""                                            >> "$GITHUB_STEP_SUMMARY"
+              echo "<details><summary><b>Branch ${B}</b> — \`SnykReport_${B}_${STAMP}.{txt,md,json}\`</summary>" >> "$GITHUB_STEP_SUMMARY"
+              echo ""                                            >> "$GITHUB_STEP_SUMMARY"
+              cat "$BRMD"                                        >> "$GITHUB_STEP_SUMMARY"
+              echo ""                                            >> "$GITHUB_STEP_SUMMARY"
+              echo "</details>"                                  >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "**Branch ${B}**: no report generated"        >> "$GITHUB_STEP_SUMMARY"
+            fi
           done
 
           echo "report_stamp=$STAMP" >> "$GITHUB_OUTPUT"

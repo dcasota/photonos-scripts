@@ -58,11 +58,20 @@ def composite_for_dedup(d: dict) -> float:
         return -1.0
 
 
+def _norm_name(name: str | None) -> str:
+    """Aggressive normalization for dedup: lowercase + strip everything that
+    isn't a letter or digit. Catches near-duplicates like 'fmt' vs '{fmt}',
+    'NumPy' vs 'numpy', 'Click' vs 'click ' etc. — the classifier sometimes
+    emits the same tool with brand stylization or trailing punctuation."""
+    import re as _re
+    return _re.sub(r"[^a-z0-9]+", "", (name or "").lower())
+
+
 def dedup_by_tool(records: list[dict]) -> list[dict]:
-    """Keep the highest-composite record per tool_name (case-insensitive)."""
+    """Keep the highest-composite record per normalized tool_name."""
     by_key: dict[str, dict] = {}
     for r in records:
-        key = (r.get("tool_name") or "").strip().lower()
+        key = _norm_name(r.get("tool_name"))
         if not key:
             continue
         if key not in by_key or composite_for_dedup(r) > composite_for_dedup(by_key[key]):
@@ -115,12 +124,13 @@ def render_markdown(branch: str, records: list[dict], top_n: int,
             alts = []
         # Drop any "alternative" whose name is the package itself -- Grok
         # often returns the package as a candidate in its own ranking pool,
-        # which is not useful in an "alternatives" column.
-        self_name = (r.get("tool_name") or "").strip().lower()
-        if self_name:
+        # which is not useful in an "alternatives" column. Use the same
+        # normalisation as dedup so '{fmt}' and 'fmt' are treated as one.
+        self_norm = _norm_name(r.get("tool_name"))
+        if self_norm:
             alts = [a for a in alts
                     if isinstance(a, dict)
-                    and (a.get("name") or "").strip().lower() != self_name]
+                    and _norm_name(a.get("name")) != self_norm]
         # Top-3 alternatives by composite_score (alternatives carry their own
         # composite_score; preserve the order the classifier emitted but cap at 3).
         try:
@@ -175,12 +185,13 @@ def render_text(branch: str, records: list[dict], top_n: int,
             alts = []
         # Drop any "alternative" whose name is the package itself -- Grok
         # often returns the package as a candidate in its own ranking pool,
-        # which is not useful in an "alternatives" column.
-        self_name = (r.get("tool_name") or "").strip().lower()
-        if self_name:
+        # which is not useful in an "alternatives" column. Use the same
+        # normalisation as dedup so '{fmt}' and 'fmt' are treated as one.
+        self_norm = _norm_name(r.get("tool_name"))
+        if self_norm:
             alts = [a for a in alts
                     if isinstance(a, dict)
-                    and (a.get("name") or "").strip().lower() != self_name]
+                    and _norm_name(a.get("name")) != self_norm]
         try:
             alts_sorted = sorted(alts, key=lambda a: composite_for_dedup(a), reverse=True)
         except Exception:
@@ -213,11 +224,11 @@ def render_json(branch: str, records: list[dict], top_n: int,
             a = [a]
         elif not isinstance(a, list):
             a = []
-        self_name = (r.get("tool_name") or "").strip().lower()
-        if self_name:
+        self_norm = _norm_name(r.get("tool_name"))
+        if self_norm:
             a = [x for x in a
                  if isinstance(x, dict)
-                 and (x.get("name") or "").strip().lower() != self_name]
+                 and _norm_name(x.get("name")) != self_norm]
         return a[:3]
     payload = {
         "branch": branch,
