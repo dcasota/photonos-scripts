@@ -181,10 +181,14 @@ jobs:
           echo "DB_PATH=$DB" >> "$GITHUB_ENV"
 
       - name: Generate reports
+        id: report
         run: |
           STAMP=$(date -u +%Y%m%d_%H%M%S)
           OUTDIR="ci/SnykAnalysis/scans"
           mkdir -p "$OUTDIR"
+
+          # Combined report across all branches (markdown for the step summary,
+          # JSON for downstream tooling).
           pwsh -File "ci/SnykAnalysis/Generate-SnykReport.ps1" \
             -Database "$DB_PATH" \
             -Format markdown \
@@ -193,19 +197,40 @@ jobs:
             -Database "$DB_PATH" \
             -Format json \
             -ReportFile "$OUTDIR/SnykReport_${STAMP}.json"
+
+          # Per-branch reports in three formats: txt (matches the requested
+          # text layout), md (renders nicely in the step summary / on github
+          # blob view), and json (programmatic consumers).
           for B in $(echo "${{ github.event.inputs.branches }}" | tr ',' ' '); do
-            pwsh -File "ci/SnykAnalysis/Generate-SnykReport.ps1" \
-              -Database "$DB_PATH" \
-              -Format markdown \
-              -Branch "$B" \
-              -ReportFile "$OUTDIR/SnykReport_${B}_${STAMP}.md" || true
+            for FMT in text markdown json; do
+              EXT=$(case "$FMT" in text) echo txt;; markdown) echo md;; json) echo json;; esac)
+              pwsh -File "ci/SnykAnalysis/Generate-SnykReport.ps1" \
+                -Database "$DB_PATH" \
+                -Format "$FMT" \
+                -Branch "$B" \
+                -ReportFile "$OUTDIR/SnykReport_${B}_${STAMP}.${EXT}" || true
+            done
           done
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "### Combined report (latest run per package/branch)" >> "$GITHUB_STEP_SUMMARY"
-          cat "$OUTDIR/SnykReport_${STAMP}.md" >> "$GITHUB_STEP_SUMMARY"
+
+          # Step summary: combined report + a links-table to the per-branch reports.
+          echo ""                                               >> "$GITHUB_STEP_SUMMARY"
+          echo "### Combined report (all branches)"             >> "$GITHUB_STEP_SUMMARY"
+          cat "$OUTDIR/SnykReport_${STAMP}.md"                  >> "$GITHUB_STEP_SUMMARY"
+          echo ""                                               >> "$GITHUB_STEP_SUMMARY"
+          echo "### Per-branch reports"                         >> "$GITHUB_STEP_SUMMARY"
+          echo ""                                               >> "$GITHUB_STEP_SUMMARY"
+          echo "| Branch | Files |"                             >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|"                                      >> "$GITHUB_STEP_SUMMARY"
+          for B in $(echo "${{ github.event.inputs.branches }}" | tr ',' ' '); do
+            files=""
+            for ext in txt md json; do
+              [ -f "$OUTDIR/SnykReport_${B}_${STAMP}.${ext}" ] && files="$files \`SnykReport_${B}_${STAMP}.${ext}\`"
+            done
+            echo "| ${B} | ${files:-(none)} |"                  >> "$GITHUB_STEP_SUMMARY"
+          done
+
           echo "report_stamp=$STAMP" >> "$GITHUB_OUTPUT"
-          echo "report_dir=$OUTDIR" >> "$GITHUB_OUTPUT"
-        id: report
+          echo "report_dir=$OUTDIR"  >> "$GITHUB_OUTPUT"
 
       - name: Upload artifacts
         if: always()

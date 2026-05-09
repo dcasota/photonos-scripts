@@ -129,7 +129,13 @@ foreach ($logFile in $logFiles) {
     $content     = Get-Content -LiteralPath $logPath
     $projectPath = $null; $totalIssues = 0; $ignoredIssues = 0; $openIssues = 0
     foreach ($line in $content) {
-        if ($line -match 'Project path:\s*(.+)')     { $projectPath   = $matches[1].Trim() }
+        if ($line -match 'Project path:\s*(.+)') {
+            # Snyk CLI output framing uses U+2502 (BOX DRAWINGS LIGHT VERTICAL)
+            # as a tree-indent border; strip it plus surrounding whitespace
+            # so the captured path doesn't end with "<pkg>    │".
+            $projectPath = $matches[1] -replace '[│\s]+$', ''
+            $projectPath = $projectPath.Trim()
+        }
         if ($line -match 'Total issues:\s*(\d+)')    { $totalIssues   = [int]$matches[1] }
         if ($line -match 'Ignored issues:\s*(\d+)')  { $ignoredIssues = [int]$matches[1] }
         if ($line -match 'Open issues:\s*(\d+)')     { $openIssues    = [int]$matches[1] }
@@ -140,6 +146,9 @@ foreach ($logFile in $logFiles) {
     } else {
         ([IO.Path]::GetFileNameWithoutExtension($logFile.Name) -split '_snyk')[0]
     }
+    # Defence-in-depth: also strip any U+2502 + trailing whitespace from the
+    # final package name (handles older logs that slipped through).
+    $package = ($package -replace '[│\s]+$', '').Trim()
 
     $datetime = ''
     if ($logFile.Name -match '_snyk[^_]*_(\d{8})_(\d{6})\.log$') {

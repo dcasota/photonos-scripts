@@ -6,10 +6,21 @@
     Consumes the normalized schema produced by Parse-SnykLogs.ps1:
         runs(run_id, package, branch, datetime, ...)
         issues(run_id, priority, title, finding_id, path, line_num, info)
-        v_latest_run — one row per (package,branch), the latest run
+        v_latest_run -- one row per (package,branch), the latest run
 
-    Emits text by default; -Format Markdown for GH step summaries; -Format Json for tooling.
-    -Branch filters the package overview to a single branch (categories still cover all data).
+    Emits text by default; -Format markdown for GH step summaries; -Format json
+    for tooling. -Branch filters every section to that branch -- intended for
+    per-branch reports run from the workflow's `for B in branches` loop.
+
+    Report layout:
+      - Header: Generated, Total source packages processed, Tool used: SnykCLI
+      - Summary (5 metrics)
+      - Top 10 High Categories (combined; crypto + non-crypto)
+      - Top 10 Source Packages with most issues (with severity breakdown columns)
+      - Top 10 Source Packages on Level "High (+ crypto)"
+      - Top 10 Source Packages on Level "High"
+      - Top 10 Source Packages on Level "Medium"
+      - Top 10 Source Packages on Level "Low"
 
 .PARAMETER Database
     SQLite database file. Default: snyk_issues.db.
@@ -21,7 +32,7 @@
     text | markdown | json
 
 .PARAMETER Branch
-    Limit the package overview / summary to one branch (e.g. "5.0").
+    Limit every section to one branch (e.g. "5.0"). Empty = all branches.
 
 .PARAMETER TopN
     Max rows in each top-N table. Default 10.
@@ -38,6 +49,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# PS 7.2+ defaults to ANSI rendering for Format-Table, which inserts U+2502
+# vertical-bar box characters between columns and corrupts plain-text output.
+# Force plain rendering when the property is available.
+if ($PSStyle) { $PSStyle.OutputRendering = 'PlainText' }
+
 if (-not (Test-Path -LiteralPath $Database)) {
     Write-Error "Database '$Database' not found. Run Parse-SnykLogs.ps1 first."
     exit 2
@@ -53,101 +69,114 @@ if ([string]::IsNullOrEmpty($ReportFile)) {
 }
 
 function Q([string]$query) {
-    # Returns CSV rows; first row = header. Caller parses.
     $csv = & sqlite3 -header -csv $Database $query
     if (-not $csv) { return @() }
     $csv | ConvertFrom-Csv
 }
 
+# Branch filter is applied uniformly. When the report covers a single branch,
+# every aggregate is restricted -- categories included.
 $brEsc = if ($Branch) { $Branch -replace "'", "''" } else { '' }
 $branchFilter   = if ($Branch) { "AND r.branch = '$brEsc'" } else { '' }
 $branchFilterLR = if ($Branch) { "WHERE branch = '$brEsc'" } else { '' }
 
-# === Aggregates over ALL data (categories) ===
-$highCryptoCats = Q @"
+# ------------------------------------------------------------------
+# Aggregates
+# ------------------------------------------------------------------
+
+# Top 10 High categories (combined: crypto + non-crypto, sorted by count).
+$highCats = Q @"
   SELECT i.title AS Category, COUNT(*) AS Count
   FROM issues i JOIN runs r ON r.run_id = i.run_id
-  WHERE i.priority = 'HIGH' AND lower(i.title) LIKE '%crypto%' $branchFilter
+  WHERE i.priority = 'HIGH' $branchFilter
   GROUP BY i.title ORDER BY Count DESC LIMIT $TopN;
 "@
 
-$highNonCryptoCats = Q @"
-  SELECT i.title AS Category, COUNT(*) AS Count
-  FROM issues i JOIN runs r ON r.run_id = i.run_id
-  WHERE i.priority = 'HIGH' AND lower(i.title) NOT LIKE '%crypto%' $branchFilter
-  GROUP BY i.title ORDER BY Count DESC LIMIT $TopN;
-"@
-
-$mediumCats = Q @"
-  SELECT i.title AS Category, COUNT(*) AS Count
-  FROM issues i JOIN runs r ON r.run_id = i.run_id
-  WHERE i.priority = 'MEDIUM' $branchFilter
-  GROUP BY i.title ORDER BY Count DESC LIMIT $TopN;
-"@
-
-# === Summary over LATEST runs only ===
+# Summary over LATEST runs only (matches the example block layout).
 $summary = Q @"
   SELECT
     SUM(CASE WHEN i.priority='HIGH' AND lower(i.title) LIKE '%crypto%' THEN 1 ELSE 0 END) AS HighCrypto,
     SUM(CASE WHEN i.priority='HIGH' AND lower(i.title) NOT LIKE '%crypto%' THEN 1 ELSE 0 END) AS HighNonCrypto,
     SUM(CASE WHEN i.priority='MEDIUM' THEN 1 ELSE 0 END) AS Medium,
     SUM(CASE WHEN i.priority='LOW' THEN 1 ELSE 0 END) AS Low,
-    COUNT(*) AS Total
+    SUM(CASE WHEN i.priority IN ('HIGH','MEDIUM','LOW') THEN 1 ELSE 0 END) AS Total
   FROM issues i
-  JOIN ( SELECT run_id FROM v_latest_run $branchFilterLR ) lr ON lr.run_id = i.run_id
-  WHERE i.priority IN ('HIGH','MEDIUM','LOW');
+  JOIN ( SELECT run_id FROM v_latest_run $branchFilterLR ) lr ON lr.run_id = i.run_id;
 "@ | Select-Object -First 1
 
-# === Top packages (latest run per pkg/branch) ===
+# Total source packages processed = unique packages with a latest run.
+$totalPackages = (Q @"
+  SELECT COUNT(DISTINCT package) AS C FROM v_latest_run $branchFilterLR;
+"@).C
+
+# Top N packages with the most issues (with breakdown columns).
 $topPackages = Q @"
   WITH lr AS ( SELECT run_id,package,branch FROM v_latest_run $branchFilterLR )
-  SELECT lr.package AS Package, lr.branch AS Branch, COUNT(*) AS TotalIssues,
+  SELECT lr.package AS Package,
+    SUM(CASE WHEN i.priority IN ('HIGH','MEDIUM','LOW') THEN 1 ELSE 0 END) AS TotalIssues,
     SUM(CASE WHEN i.priority='HIGH' AND lower(i.title) LIKE '%crypto%' THEN 1 ELSE 0 END) AS HighCrypto,
     SUM(CASE WHEN i.priority='HIGH' THEN 1 ELSE 0 END) AS High,
     SUM(CASE WHEN i.priority='MEDIUM' THEN 1 ELSE 0 END) AS Medium,
     SUM(CASE WHEN i.priority='LOW' THEN 1 ELSE 0 END) AS Low
   FROM issues i JOIN lr ON lr.run_id = i.run_id
   WHERE i.priority IN ('HIGH','MEDIUM','LOW')
-  GROUP BY lr.package, lr.branch ORDER BY TotalIssues DESC LIMIT $TopN;
+  GROUP BY lr.package ORDER BY TotalIssues DESC LIMIT $TopN;
 "@
 
-# === Per-branch breakdown (latest run per pkg) ===
-$perBranch = Q @"
-  WITH lr AS ( SELECT run_id,branch FROM v_latest_run )
-  SELECT COALESCE(NULLIF(lr.branch,''),'(unknown)') AS Branch,
-    COUNT(DISTINCT lr.run_id) AS Packages,
-    SUM(CASE WHEN i.priority='HIGH' THEN 1 ELSE 0 END) AS High,
-    SUM(CASE WHEN i.priority='MEDIUM' THEN 1 ELSE 0 END) AS Medium,
-    SUM(CASE WHEN i.priority='LOW' THEN 1 ELSE 0 END) AS Low,
-    COUNT(*) AS TotalIssues
-  FROM issues i JOIN lr ON lr.run_id = i.run_id
-  WHERE i.priority IN ('HIGH','MEDIUM','LOW')
-  GROUP BY lr.branch ORDER BY TotalIssues DESC;
+# Top N packages by a single severity bucket.
+function TopPackagesBy([string]$bucket) {
+    # bucket: 'HighCrypto' | 'High' | 'Medium' | 'Low'
+    $where = switch ($bucket) {
+        'HighCrypto' { "i.priority='HIGH' AND lower(i.title) LIKE '%crypto%'" }
+        'High'       { "i.priority='HIGH'" }
+        'Medium'     { "i.priority='MEDIUM'" }
+        'Low'        { "i.priority='LOW'" }
+    }
+    Q @"
+      WITH lr AS ( SELECT run_id,package FROM v_latest_run $branchFilterLR )
+      SELECT lr.package AS Package, COUNT(*) AS Count
+      FROM issues i JOIN lr ON lr.run_id = i.run_id
+      WHERE $where
+      GROUP BY lr.package
+      HAVING Count > 0
+      ORDER BY Count DESC LIMIT $TopN;
 "@
+}
+$topHighCrypto = TopPackagesBy 'HighCrypto'
+$topHigh       = TopPackagesBy 'High'
+$topMedium     = TopPackagesBy 'Medium'
+$topLow        = TopPackagesBy 'Low'
 
-$totalRuns = (Q "SELECT COUNT(*) AS C FROM runs;").C
-$now       = Get-Date
+$now           = Get-Date
+$generatedFmt  = $now.ToString('MM/dd/yyyy HH:mm:ss')
 
+# ------------------------------------------------------------------
+# JSON output
+# ------------------------------------------------------------------
 if ($Format -eq 'json') {
     $payload = [ordered]@{
-        generated  = $now.ToString('o')
-        database   = $Database
-        branch     = $Branch
-        total_runs = [int]$totalRuns
-        summary    = $summary
-        per_branch = @($perBranch)
-        categories = [ordered]@{
-            high_crypto     = @($highCryptoCats)
-            high_non_crypto = @($highNonCryptoCats)
-            medium          = @($mediumCats)
-        }
-        top_packages = @($topPackages)
+        generated                   = $now.ToString('o')
+        generated_local             = $generatedFmt
+        database                    = $Database
+        branch                      = $Branch
+        tool                        = 'SnykCLI'
+        total_source_packages       = [int]$totalPackages
+        summary                     = $summary
+        top_high_categories         = @($highCats)
+        top_packages                = @($topPackages)
+        top_packages_by_high_crypto = @($topHighCrypto)
+        top_packages_by_high        = @($topHigh)
+        top_packages_by_medium      = @($topMedium)
+        top_packages_by_low         = @($topLow)
     }
     $payload | ConvertTo-Json -Depth 6 | Out-File -LiteralPath $ReportFile -Encoding utf8
     Write-Host "Report saved (JSON): $ReportFile" -ForegroundColor Green
     return
 }
 
+# ------------------------------------------------------------------
+# Text / Markdown output
+# ------------------------------------------------------------------
 function FmtTable($data, [string[]]$cols) {
     if (-not $data -or @($data).Count -eq 0) { return "(none)`n" }
     if ($Format -eq 'markdown') {
@@ -158,63 +187,86 @@ function FmtTable($data, [string[]]$cols) {
     return ($data | Select-Object $cols | Format-Table -AutoSize | Out-String)
 }
 
-$brFilter = if ($Branch) { " (branch=$Branch)" } else { '' }
+$brSuffix = if ($Branch) { " ($Branch)" } else { ' (all branches)' }
 
-$report = if ($Format -eq 'markdown') { @"
-# Snyk Issues Report$brFilter
+if ($Format -eq 'markdown') {
+    $report = @"
+# Snyk Issues Report$brSuffix
 
-- Generated: $now
-- Database: $Database
-- Total runs: $totalRuns
+Generated: $generatedFmt
+Total source packages processed: $totalPackages
+Tool used: SnykCLI
 
-## Summary (latest run per package/branch)
+## Summary
 
-| Metric | Value |
+| Metric | Count |
 |---|---|
-| Total issues | $($summary.Total) |
-| High (crypto) | $($summary.HighCrypto) |
-| High (non-crypto) | $($summary.HighNonCrypto) |
+| Total issues overall | $($summary.Total) |
+| High with crypto | $($summary.HighCrypto) |
+| High without crypto | $($summary.HighNonCrypto) |
 | Medium | $($summary.Medium) |
 | Low | $($summary.Low) |
 
-## Per-branch breakdown
-$(FmtTable $perBranch @('Branch','Packages','High','Medium','Low','TotalIssues'))
+## Top $TopN High Categories
 
-## Top High categories (crypto)
-$(FmtTable $highCryptoCats @('Category','Count'))
+$(FmtTable $highCats @('Category','Count'))
 
-## Top High categories (non-crypto)
-$(FmtTable $highNonCryptoCats @('Category','Count'))
+## Top $TopN Source Packages with most issues (with breakdown)
 
-## Top Medium categories
-$(FmtTable $mediumCats @('Category','Count'))
+$(FmtTable $topPackages @('Package','TotalIssues','HighCrypto','High','Medium','Low'))
 
-## Top $TopN packages
-$(FmtTable $topPackages @('Package','Branch','TotalIssues','HighCrypto','High','Medium','Low'))
-"@ } else { @"
-# Snyk Issues Report$brFilter
-Generated: $now
-Database:  $Database
-Total runs: $totalRuns
+## Top $TopN Source Packages with most issues on Level "High (+ crypto)"
 
-## Summary (latest run per package/branch)
-- Total issues: $($summary.Total)
-- High (crypto): $($summary.HighCrypto)
-- High (non-crypto): $($summary.HighNonCrypto)
+$(FmtTable $topHighCrypto @('Package','Count'))
+
+## Top $TopN Source Packages with most issues on Level "High"
+
+$(FmtTable $topHigh @('Package','Count'))
+
+## Top $TopN Source Packages with most issues on Level "Medium"
+
+$(FmtTable $topMedium @('Package','Count'))
+
+## Top $TopN Source Packages with most issues on Level "Low"
+
+$(FmtTable $topLow @('Package','Count'))
+"@
+} else {
+    $report = @"
+Snyk Issues Report$brSuffix
+
+Generated: $generatedFmt
+Total source packages processed: $totalPackages
+Tool used: SnykCLI
+
+
+Summary
+- Total issues overall: $($summary.Total)
+- High with crypto: $($summary.HighCrypto)
+- High without crypto: $($summary.HighNonCrypto)
 - Medium: $($summary.Medium)
-- Low:    $($summary.Low)
+- Low: $($summary.Low)
 
-## Per-branch breakdown
-$(FmtTable $perBranch @('Branch','Packages','High','Medium','Low','TotalIssues'))
-## Top High categories (crypto)
-$(FmtTable $highCryptoCats @('Category','Count'))
-## Top High categories (non-crypto)
-$(FmtTable $highNonCryptoCats @('Category','Count'))
-## Top Medium categories
-$(FmtTable $mediumCats @('Category','Count'))
-## Top $TopN packages
-$(FmtTable $topPackages @('Package','Branch','TotalIssues','HighCrypto','High','Medium','Low'))
-"@ }
+
+Top $TopN High Categories
+$(FmtTable $highCats @('Category','Count'))
+
+Top $TopN Source Packages with most issues (with breakdown)
+$(FmtTable $topPackages @('Package','TotalIssues','HighCrypto','High','Medium','Low'))
+
+Top $TopN Source Packages with most issues on Level "High (+ crypto)"
+$(FmtTable $topHighCrypto @('Package','Count'))
+
+Top $TopN Source Packages with most issues on Level "High"
+$(FmtTable $topHigh @('Package','Count'))
+
+Top $TopN Source Packages with most issues on Level "Medium"
+$(FmtTable $topMedium @('Package','Count'))
+
+Top $TopN Source Packages with most issues on Level "Low"
+$(FmtTable $topLow @('Package','Count'))
+"@
+}
 
 $report | Out-File -LiteralPath $ReportFile -Encoding utf8
 Write-Host "Report saved: $ReportFile" -ForegroundColor Green
