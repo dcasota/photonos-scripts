@@ -1,0 +1,267 @@
+{
+  "generated": "2026-05-09T16:49:58.6371755+02:00",
+  "generated_local": "05/09/2026 16:49:58",
+  "database": "ci/SnykAnalysis/snyk_issues.db",
+  "branch": "4.0",
+  "tool": "SnykCLI",
+  "total_source_packages": 666,
+  "summary": {
+    "HighCrypto": "4",
+    "HighNonCrypto": "8",
+    "Medium": "234",
+    "Low": "917",
+    "Total": "1163"
+  },
+  "top_high_categories": [
+    {
+      "Category": "Use of a Broken or Risky Cryptographic Algorithm",
+      "Count": "4"
+    },
+    {
+      "Category": "Use of Externally-Controlled Format String",
+      "Count": "4"
+    },
+    {
+      "Category": "Potential Negative Number Used as Index",
+      "Count": "1"
+    },
+    {
+      "Category": "Path Traversal",
+      "Count": "1"
+    },
+    {
+      "Category": "DOM-based Cross-site Scripting (XSS)",
+      "Count": "1"
+    },
+    {
+      "Category": "Command Injection",
+      "Count": "1"
+    }
+  ],
+  "top_packages": [
+    {
+      "Package": "zstd",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    },
+    {
+      "Package": "zsh",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    },
+    {
+      "Package": "zookeeper",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    },
+    {
+      "Package": "zlib",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    },
+    {
+      "Package": "zchunk",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    },
+    {
+      "Package": "yamlloader",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    },
+    {
+      "Package": "yaml-cpp",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    },
+    {
+      "Package": "xz",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    },
+    {
+      "Package": "xxHash",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    },
+    {
+      "Package": "xmlsec",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    }
+  ],
+  "top_packages_by_high_crypto": [
+    {
+      "Package": "modemmanager",
+      "Count": "1"
+    },
+    {
+      "Package": "lxml",
+      "Count": "1"
+    },
+    {
+      "Package": "lxcfs",
+      "Count": "1"
+    },
+    {
+      "Package": "Module-Build",
+      "Count": "1"
+    }
+  ],
+  "top_packages_by_high": [
+    {
+      "Package": "termshark",
+      "Count": "1"
+    },
+    {
+      "Package": "pycurl",
+      "Count": "1"
+    },
+    {
+      "Package": "pycryptodome",
+      "Count": "1"
+    },
+    {
+      "Package": "pycparser",
+      "Count": "1"
+    },
+    {
+      "Package": "pyasn1-modules",
+      "Count": "1"
+    },
+    {
+      "Package": "ninja",
+      "Count": "1"
+    },
+    {
+      "Package": "modemmanager",
+      "Count": "1"
+    },
+    {
+      "Package": "lxml",
+      "Count": "1"
+    },
+    {
+      "Package": "lxcfs",
+      "Count": "1"
+    },
+    {
+      "Package": "glide",
+      "Count": "1"
+    }
+  ],
+  "top_packages_by_medium": [
+    {
+      "Package": "pluggy",
+      "Count": "2"
+    },
+    {
+      "Package": "nss-pam-ldapd",
+      "Count": "2"
+    },
+    {
+      "Package": "linuxptp",
+      "Count": "2"
+    },
+    {
+      "Package": "libteam",
+      "Count": "2"
+    },
+    {
+      "Package": "libtar",
+      "Count": "2"
+    },
+    {
+      "Package": "libnfnetlink",
+      "Count": "2"
+    },
+    {
+      "Package": "libconfig",
+      "Count": "2"
+    },
+    {
+      "Package": "ipcalc",
+      "Count": "2"
+    },
+    {
+      "Package": "i2c-tools",
+      "Count": "2"
+    },
+    {
+      "Package": "greenlet",
+      "Count": "2"
+    }
+  ],
+  "top_packages_by_low": [
+    {
+      "Package": "zstd",
+      "Count": "2"
+    },
+    {
+      "Package": "zsh",
+      "Count": "2"
+    },
+    {
+      "Package": "zookeeper",
+      "Count": "2"
+    },
+    {
+      "Package": "zlib",
+      "Count": "2"
+    },
+    {
+      "Package": "zchunk",
+      "Count": "2"
+    },
+    {
+      "Package": "yamlloader",
+      "Count": "2"
+    },
+    {
+      "Package": "yaml-cpp",
+      "Count": "2"
+    },
+    {
+      "Package": "xz",
+      "Count": "2"
+    },
+    {
+      "Package": "xxHash",
+      "Count": "2"
+    },
+    {
+      "Package": "xmlsec",
+      "Count": "2"
+    }
+  ]
+}

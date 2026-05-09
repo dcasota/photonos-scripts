@@ -1,0 +1,202 @@
+{
+  "generated": "2026-05-09T16:49:56.3306921+02:00",
+  "generated_local": "05/09/2026 16:49:56",
+  "database": "ci/SnykAnalysis/snyk_issues.db",
+  "branch": "3.0",
+  "tool": "SnykCLI",
+  "total_source_packages": 583,
+  "summary": {
+    "HighCrypto": "0",
+    "HighNonCrypto": "2",
+    "Medium": "324",
+    "Low": "694",
+    "Total": "1020"
+  },
+  "top_high_categories": [
+    {
+      "Category": "Path Traversal",
+      "Count": "1"
+    },
+    {
+      "Category": "Command Injection",
+      "Count": "1"
+    }
+  ],
+  "top_packages": [
+    {
+      "Package": "zstd",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    },
+    {
+      "Package": "zsh",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    },
+    {
+      "Package": "zlib",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    },
+    {
+      "Package": "zchunk",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    },
+    {
+      "Package": "yarn",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    },
+    {
+      "Package": "xz",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    },
+    {
+      "Package": "xxHash",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    },
+    {
+      "Package": "xmlsec",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    },
+    {
+      "Package": "xinetd",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    },
+    {
+      "Package": "xfsprogs-dev",
+      "TotalIssues": "2",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "2"
+    }
+  ],
+  "top_packages_by_high_crypto": [],
+  "top_packages_by_high": [
+    {
+      "Package": "termshark",
+      "Count": "1"
+    },
+    {
+      "Package": "glide",
+      "Count": "1"
+    }
+  ],
+  "top_packages_by_medium": [
+    {
+      "Package": "pciutils",
+      "Count": "2"
+    },
+    {
+      "Package": "netaddr",
+      "Count": "2"
+    },
+    {
+      "Package": "msr-tools",
+      "Count": "2"
+    },
+    {
+      "Package": "m2r",
+      "Count": "2"
+    },
+    {
+      "Package": "linuxptp",
+      "Count": "2"
+    },
+    {
+      "Package": "libteam",
+      "Count": "2"
+    },
+    {
+      "Package": "libtar",
+      "Count": "2"
+    },
+    {
+      "Package": "libnfnetlink",
+      "Count": "2"
+    },
+    {
+      "Package": "lapack",
+      "Count": "2"
+    },
+    {
+      "Package": "kube-bench",
+      "Count": "2"
+    }
+  ],
+  "top_packages_by_low": [
+    {
+      "Package": "zstd",
+      "Count": "2"
+    },
+    {
+      "Package": "zsh",
+      "Count": "2"
+    },
+    {
+      "Package": "zlib",
+      "Count": "2"
+    },
+    {
+      "Package": "zchunk",
+      "Count": "2"
+    },
+    {
+      "Package": "yarn",
+      "Count": "2"
+    },
+    {
+      "Package": "xz",
+      "Count": "2"
+    },
+    {
+      "Package": "xxHash",
+      "Count": "2"
+    },
+    {
+      "Package": "xmlsec",
+      "Count": "2"
+    },
+    {
+      "Package": "xinetd",
+      "Count": "2"
+    },
+    {
+      "Package": "xfsprogs-dev",
+      "Count": "2"
+    }
+  ]
+}

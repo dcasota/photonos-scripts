@@ -1,0 +1,87 @@
+Snyk Issues Report (3.0)
+
+Generated: 05/09/2026 16:49:54
+Total source packages processed: 583
+Tool used: SnykCLI
+
+
+Summary
+- Total issues overall: 1020
+- High with crypto: 0
+- High without crypto: 2
+- Medium: 324
+- Low: 694
+
+
+Top 10 High Categories
+
+Category          Count
+--------          -----
+Path Traversal    1
+Command Injection 1
+
+
+
+Top 10 Source Packages with most issues (with breakdown)
+
+Package      TotalIssues HighCrypto High Medium Low
+-------      ----------- ---------- ---- ------ ---
+zstd         2           0          0    0      2
+zsh          2           0          0    0      2
+zlib         2           0          0    0      2
+zchunk       2           0          0    0      2
+yarn         2           0          0    0      2
+xz           2           0          0    0      2
+xxHash       2           0          0    0      2
+xmlsec       2           0          0    0      2
+xinetd       2           0          0    0      2
+xfsprogs-dev 2           0          0    0      2
+
+
+
+Top 10 Source Packages with most issues on Level "High (+ crypto)"
+(none)
+
+
+Top 10 Source Packages with most issues on Level "High"
+
+Package   Count
+-------   -----
+termshark 1
+glide     1
+
+
+
+Top 10 Source Packages with most issues on Level "Medium"
+
+Package      Count
+-------      -----
+pciutils     2
+netaddr      2
+msr-tools    2
+m2r          2
+linuxptp     2
+libteam      2
+libtar       2
+libnfnetlink 2
+lapack       2
+kube-bench   2
+
+
+
+Top 10 Source Packages with most issues on Level "Low"
+
+Package      Count
+-------      -----
+zstd         2
+zsh          2
+zlib         2
+zchunk       2
+yarn         2
+xz           2
+xxHash       2
+xmlsec       2
+xinetd       2
+xfsprogs-dev 2
+
+
