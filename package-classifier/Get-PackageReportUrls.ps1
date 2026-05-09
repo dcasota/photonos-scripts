@@ -63,7 +63,11 @@ param(
     [string[]]$Branches        = @('3.0','4.0','5.0','6.0','common','dev','master'),
     [string]$ScansDir          = '',
     [bool]$IncludeUpdateUrls   = $true,
-    [string]$ArtifactName      = 'package-reports'
+    [string]$ArtifactName      = 'package-reports',
+    # When set, also writes a JSON sidecar mapping each emitted URL to the list
+    # of branches that referenced it. Consumed by build_per_branch_summary.py
+    # to attribute classifier records back to source branches.
+    [string]$BranchMapFile     = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -136,6 +140,9 @@ if ($pickedFiles.Count -eq 0) {
 # --- 3. Extract URLs ------------------------------------------------------
 $urls = New-Object System.Collections.Generic.HashSet[string]
 $rowsByBranch = @{}
+# url -> sorted unique list of branches that referenced this URL (for the
+# optional sidecar)
+$urlBranches = @{}
 foreach ($entry in $pickedFiles.GetEnumerator()) {
     $branch = $entry.Key
     $path   = $entry.Value
@@ -147,8 +154,16 @@ foreach ($entry in $pickedFiles.GetEnumerator()) {
         if ($cols.Count -lt 6) { continue }
         $u3 = $cols[2].Trim()
         $u6 = $cols[5].Trim()
-        if ($u3 -match '^https?://') { [void]$urls.Add($u3); $rows++ }
-        if ($IncludeUpdateUrls -and $u6 -match '^https?://') { [void]$urls.Add($u6) }
+        if ($u3 -match '^https?://') {
+            [void]$urls.Add($u3); $rows++
+            if (-not $urlBranches.ContainsKey($u3)) { $urlBranches[$u3] = New-Object System.Collections.Generic.HashSet[string] }
+            [void]$urlBranches[$u3].Add($branch)
+        }
+        if ($IncludeUpdateUrls -and $u6 -match '^https?://') {
+            [void]$urls.Add($u6)
+            if (-not $urlBranches.ContainsKey($u6)) { $urlBranches[$u6] = New-Object System.Collections.Generic.HashSet[string] }
+            [void]$urlBranches[$u6].Add($branch)
+        }
     }
     $rowsByBranch[$branch] = $rows
 }
@@ -162,7 +177,29 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
     [System.IO.File]::WriteAllText($absPath, ($sorted -join "`n") + "`n", (New-Object System.Text.UTF8Encoding $false))
 }
 
-# --- 5. Summary -----------------------------------------------------------
+# --- 5. Optional sidecar: URL -> [branches] ------------------------------
+if ($BranchMapFile) {
+    $map = [ordered]@{}
+    foreach ($u in ($urls | Sort-Object)) {
+        $brs = $urlBranches[$u]
+        if ($brs) { $map[$u] = ($brs | Sort-Object) } else { $map[$u] = @() }
+    }
+    $payload = [ordered]@{
+        generated = (Get-Date).ToUniversalTime().ToString('o')
+        branches  = @($Branches)
+        url_count = $urls.Count
+        urls      = $map
+    }
+    if ($PSVersionTable.PSVersion.Major -ge 7) {
+        $payload | ConvertTo-Json -Depth 6 | Out-File -LiteralPath $BranchMapFile -Encoding utf8NoBOM
+    } else {
+        $absPath = if ([System.IO.Path]::IsPathRooted($BranchMapFile)) { $BranchMapFile } else { Join-Path (Get-Location).Path $BranchMapFile }
+        [System.IO.File]::WriteAllText($absPath, ($payload | ConvertTo-Json -Depth 6), (New-Object System.Text.UTF8Encoding $false))
+    }
+    Write-Host "Wrote URL->branches sidecar to $BranchMapFile"
+}
+
+# --- 6. Summary -----------------------------------------------------------
 Write-Host ""
 Write-Host "Wrote $($urls.Count) unique URLs to $OutputFile"
 Write-Host ("{0,-8} {1,8}" -f 'Branch', 'Source0')
@@ -173,7 +210,7 @@ foreach ($b in $Branches) {
     }
 }
 
-# --- 6. Cleanup -----------------------------------------------------------
+# --- 7. Cleanup -----------------------------------------------------------
 if ($tempDir -and (Test-Path -LiteralPath $tempDir)) {
     Remove-Item -LiteralPath $tempDir -Recurse -Force -ErrorAction SilentlyContinue
 }
