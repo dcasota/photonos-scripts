@@ -147,6 +147,29 @@ $topHigh       = TopPackagesBy 'High'
 $topMedium     = TopPackagesBy 'Medium'
 $topLow        = TopPackagesBy 'Low'
 
+# Top N packages for a specific HIGH category title.
+function TopPackagesByCategory([string]$title) {
+    $tEsc = $title -replace "'", "''"
+    Q @"
+      WITH lr AS ( SELECT run_id,package FROM v_latest_run $branchFilterLR )
+      SELECT lr.package AS Package, COUNT(*) AS Count
+      FROM issues i JOIN lr ON lr.run_id = i.run_id
+      WHERE i.priority='HIGH' AND i.title='$tEsc'
+      GROUP BY lr.package
+      HAVING Count > 0
+      ORDER BY Count DESC LIMIT $TopN;
+"@
+}
+
+# For each Top N High Category, capture the Top N packages contributing to it.
+$highCatTopPkgs = foreach ($cat in $highCats) {
+    [pscustomobject]@{
+        Category = $cat.Category
+        Count    = $cat.Count
+        Packages = @(TopPackagesByCategory $cat.Category)
+    }
+}
+
 $now           = Get-Date
 $generatedFmt  = $now.ToString('MM/dd/yyyy HH:mm:ss')
 
@@ -163,6 +186,7 @@ if ($Format -eq 'json') {
         total_source_packages       = [int]$totalPackages
         summary                     = $summary
         top_high_categories         = @($highCats)
+        top_packages_per_high_category = @($highCatTopPkgs)
         top_packages                = @($topPackages)
         top_packages_by_high_crypto = @($topHighCrypto)
         top_packages_by_high        = @($topHigh)
@@ -189,6 +213,18 @@ function FmtTable($data, [string[]]$cols) {
 
 $brSuffix = if ($Branch) { " ($Branch)" } else { ' (all branches)' }
 
+# Per-category sub-sections that follow the Top N High Categories table.
+# Built upfront so the here-strings below stay simple.
+$highCatBlocksMd  = ''
+$highCatBlocksTxt = ''
+foreach ($entry in $highCatTopPkgs) {
+    $heading = "Top $TopN Packages with HIGH issues in category ""$($entry.Category)"" (category total=$($entry.Count))"
+    $highCatBlocksMd  += "### $heading`n`n"
+    $highCatBlocksMd  += (FmtTable $entry.Packages @('Package','Count')) + "`n"
+    $highCatBlocksTxt += "$heading`n"
+    $highCatBlocksTxt += (FmtTable $entry.Packages @('Package','Count')) + "`n"
+}
+
 if ($Format -eq 'markdown') {
     $report = @"
 # Snyk Issues Report$brSuffix
@@ -211,6 +247,7 @@ Tool used: SnykCLI
 
 $(FmtTable $highCats @('Category','Count'))
 
+$highCatBlocksMd
 ## Top $TopN Source Packages with most issues (with breakdown)
 
 $(FmtTable $topPackages @('Package','TotalIssues','HighCrypto','High','Medium','Low'))
@@ -251,6 +288,7 @@ Summary
 Top $TopN High Categories
 $(FmtTable $highCats @('Category','Count'))
 
+$highCatBlocksTxt
 Top $TopN Source Packages with most issues (with breakdown)
 $(FmtTable $topPackages @('Package','TotalIssues','HighCrypto','High','Medium','Low'))
 
