@@ -1,0 +1,719 @@
+{
+  "branch": "dev",
+  "generated": "2026-05-10T22:42:48+00:00",
+  "records_considered": 1682,
+  "top_n": 10,
+  "alternatives_outscoring_package": [
+    {
+      "package": "ecdsa",
+      "package_score": 82.4,
+      "alt_name": "cryptography",
+      "alt_score": 90.2,
+      "alt_weblink": "https://github.com/pyca/cryptography",
+      "delta": 7.8,
+      "rationale": "Direct functional replacement providing equivalent ECDSA sign/verify operations on the same curves with nearly identical API patterns."
+    },
+    {
+      "package": "openjdk",
+      "package_score": 83.5,
+      "alt_name": "Amazon Corretto",
+      "alt_score": 84.7,
+      "alt_weblink": "https://aws.amazon.com/corretto/",
+      "delta": 1.2,
+      "rationale": "Binary-compatible OpenJDK build offering identical runtime semantics and tooling."
+    },
+    {
+      "package": "openjdk",
+      "package_score": 83.5,
+      "alt_name": "Eclipse Temurin",
+      "alt_score": 84.6,
+      "alt_weblink": "https://adoptium.net/",
+      "delta": 1.1,
+      "rationale": "TCK-certified OpenJDK distribution providing identical JVM behavior and command-line interface."
+    }
+  ],
+  "tools": [
+    {
+      "rank": 1,
+      "package": "p",
+      "tool_name": "pytest",
+      "composite_score": 93.8,
+      "weblink": "https://docs.pytest.org/",
+      "summary": "Python testing framework that makes it easy to write, organize and run tests with fixtures and plugins.",
+      "language": "Python",
+      "license": "MIT",
+      "last_release": null,
+      "metrics": {
+        "popularity": {
+          "stars": 12000,
+          "score": 95
+        },
+        "reputation": {
+          "cves_12mo": 0,
+          "score": 98
+        },
+        "integration": {
+          "score": 92,
+          "notes": "Extensive plugin ecosystem and IDE support"
+        },
+        "documentation": {
+          "last_doc_update": "2024-09",
+          "score": 95
+        },
+        "ecosystem": {
+          "issues_12mo": 420,
+          "prs_12mo": 310,
+          "score": 88
+        }
+      },
+      "url": "https://github.com/pytest-dev/pytest/archive/refs/tags/9.0.3.tar.gz",
+      "alternatives": [],
+      "ranking_winner": "pytest"
+    },
+    {
+      "rank": 2,
+      "package": "c",
+      "tool_name": "coreutils",
+      "composite_score": 92.8,
+      "weblink": "https://www.gnu.org/software/coreutils/",
+      "summary": "GNU collection of basic file, shell and text manipulation utilities (ls, cp, cat, etc.).",
+      "language": "C",
+      "license": "GPL-3.0-or-later",
+      "last_release": "2022-04",
+      "metrics": {
+        "popularity": {
+          "stars": null,
+          "score": 95
+        },
+        "reputation": {
+          "cves_12mo": 1,
+          "score": 92
+        },
+        "integration": {
+          "score": 98,
+          "notes": "Standard POSIX CLI tools present on virtually all Unix-like systems."
+        },
+        "documentation": {
+          "last_doc_update": "2022-04",
+          "score": 90
+        },
+        "ecosystem": {
+          "issues_12mo": 120,
+          "prs_12mo": 85,
+          "score": 88
+        }
+      },
+      "url": "http://ftp.funet.fi/pub/gnu/ftp.gnu.org/gnu/coreutils/coreutils-9.1.tar.xz",
+      "alternatives": [
+        {
+          "name": "uutils-coreutils",
+          "weblink": "https://github.com/uutils/coreutils",
+          "summary": "Cross-platform Rust rewrite of the GNU coreutils.",
+          "language": "Rust",
+          "license": "MIT",
+          "last_release": "2024-09",
+          "metrics": {
+            "popularity": {
+              "stars": 18500,
+              "score": 88
+            },
+            "reputation": {
+              "cves_12mo": 0,
+              "score": 95
+            },
+            "integration": {
+              "score": 85,
+              "notes": "Drop-in CLI replacement; many commands work identically."
+            },
+            "documentation": {
+              "last_doc_update": "2024-09",
+              "score": 82
+            },
+            "ecosystem": {
+              "issues_12mo": 95,
+              "prs_12mo": 110,
+              "score": 90
+            }
+          },
+          "rationale": "Direct functional CLI replacement providing the same utilities with compatible command-line behavior.",
+          "composite_score": 89.4,
+          "rank": 1
+        }
+      ],
+      "ranking_winner": "coreutils"
+    },
+    {
+      "rank": 3,
+      "package": "r",
+      "tool_name": "nokogiri",
+      "composite_score": 92.5,
+      "weblink": "https://nokogiri.org/",
+      "summary": "Nokogiri is an HTML, XML, SAX, and Reader parser with XPath and CSS selector support.",
+      "language": "Ruby",
+      "license": "MIT",
+      "last_release": "2024-02",
+      "metrics": {
+        "popularity": {
+          "stars": 6200,
+          "score": 95
+        },
+        "reputation": {
+          "cves_12mo": 0,
+          "score": 95
+        },
+        "integration": {
+          "score": 95,
+          "notes": "gem install nokogiri; native extensions required"
+        },
+        "documentation": {
+          "last_doc_update": "2024-02",
+          "score": 90
+        },
+        "ecosystem": {
+          "issues_12mo": 120,
+          "prs_12mo": 45,
+          "score": 85
+        }
+      },
+      "url": "https://rubygems.org/downloads/nokogiri-1.16.2.gem",
+      "alternatives": [
+        {
+          "name": "ox",
+          "weblink": "https://github.com/ohler55/ox",
+          "summary": "Fast, simple XML and HTML parser for Ruby with Ox and Ox::Sax APIs.",
+          "language": "Ruby",
+          "license": "MIT",
+          "last_release": "2024-03",
+          "metrics": {
+            "popularity": {
+              "stars": 850,
+              "score": 75
+            },
+            "reputation": {
+              "cves_12mo": 0,
+              "score": 95
+            },
+            "integration": {
+              "score": 85,
+              "notes": "gem install ox"
+            },
+            "documentation": {
+              "last_doc_update": "2023-12",
+              "score": 75
+            },
+            "ecosystem": {
+              "issues_12mo": 25,
+              "prs_12mo": 10,
+              "score": 90
+            }
+          },
+          "rationale": "Direct drop-in XML/HTML parser replacement for Nokogiri use cases with comparable Ruby APIs.",
+          "composite_score": 84.8,
+          "rank": 1
+        },
+        {
+          "name": "oga",
+          "weblink": "https://github.com/yorickpeterse/oga",
+          "summary": "Pure-Ruby XML and HTML parser with XPath support.",
+          "language": "Ruby",
+          "license": "MPL-2.0",
+          "last_release": "2023-10",
+          "metrics": {
+            "popularity": {
+              "stars": 1100,
+              "score": 70
+            },
+            "reputation": {
+              "cves_12mo": 0,
+              "score": 95
+            },
+            "integration": {
+              "score": 80,
+              "notes": "gem install oga"
+            },
+            "documentation": {
+              "last_doc_update": "2023-06",
+              "score": 70
+            },
+            "ecosystem": {
+              "issues_12mo": 15,
+              "prs_12mo": 5,
+              "score": 85
+            }
+          },
+          "rationale": "Pure-Ruby XML/HTML parser that can replace Nokogiri for parsing and querying without native deps.",
+          "composite_score": 81.2,
+          "rank": 2
+        }
+      ],
+      "ranking_winner": "nokogiri"
+    },
+    {
+      "rank": 4,
+      "package": "f",
+      "tool_name": "Linux From Scratch",
+      "composite_score": 92.5,
+      "weblink": "http://www.linuxfromscratch.org",
+      "summary": "Instructions for building a complete Linux system from source code.",
+      "language": null,
+      "license": "CC-BY-NC-SA-2.5",
+      "last_release": "2023-03",
+      "metrics": {
+        "popularity": {
+          "stars": null,
+          "score": null
+        },
+        "reputation": {
+          "cves_12mo": 0,
+          "score": 95
+        },
+        "integration": {
+          "score": null,
+          "notes": null
+        },
+        "documentation": {
+          "last_doc_update": "2023-03",
+          "score": 90
+        },
+        "ecosystem": {
+          "issues_12mo": null,
+          "prs_12mo": null,
+          "score": null
+        }
+      },
+      "url": "http://www.linuxfromscratch.org",
+      "alternatives": [],
+      "ranking_winner": "Linux From Scratch"
+    },
+    {
+      "rank": 5,
+      "package": "g",
+      "tool_name": "benchmark",
+      "composite_score": 92.4,
+      "weblink": "https://github.com/google/benchmark",
+      "summary": "Microbenchmark support library for C++",
+      "language": "C++",
+      "license": "Apache-2.0",
+      "last_release": "2024-09",
+      "metrics": {
+        "popularity": {
+          "stars": 8500,
+          "score": 92
+        },
+        "reputation": {
+          "cves_12mo": 0,
+          "score": 98
+        },
+        "integration": {
+          "score": 95,
+          "notes": "CMake and Bazel integration, header+lib"
+        },
+        "documentation": {
+          "last_doc_update": "2024-09",
+          "score": 88
+        },
+        "ecosystem": {
+          "issues_12mo": 45,
+          "prs_12mo": 30,
+          "score": 85
+        }
+      },
+      "url": "https://github.com/google/benchmark/archive/refs/tags/v1.9.5.tar.gz",
+      "alternatives": [
+        {
+          "name": "nanobench",
+          "weblink": "https://github.com/martinus/nanobench",
+          "summary": "Header-only microbenchmarking library for C++",
+          "language": "C++",
+          "license": "MIT",
+          "last_release": "2024-06",
+          "metrics": {
+            "popularity": {
+              "stars": 1400,
+              "score": 78
+            },
+            "reputation": {
+              "cves_12mo": 0,
+              "score": 97
+            },
+            "integration": {
+              "score": 92,
+              "notes": "Single-header, CMake support"
+            },
+            "documentation": {
+              "last_doc_update": "2024-06",
+              "score": 85
+            },
+            "ecosystem": {
+              "issues_12mo": 12,
+              "prs_12mo": 8,
+              "score": 90
+            }
+          },
+          "rationale": "Direct drop-in microbenchmarking replacement with similar API for timing C++ code snippets.",
+          "composite_score": 88.3,
+          "rank": 1
+        },
+        {
+          "name": "celero",
+          "weblink": "https://github.com/DigitalInBlue/Celero",
+          "summary": "C++ benchmarking framework with statistical analysis",
+          "language": "C++",
+          "license": "Apache-2.0",
+          "last_release": "2023-12",
+          "metrics": {
+            "popularity": {
+              "stars": 780,
+              "score": 65
+            },
+            "reputation": {
+              "cves_12mo": 0,
+              "score": 96
+            },
+            "integration": {
+              "score": 80,
+              "notes": "CMake, requires build"
+            },
+            "documentation": {
+              "last_doc_update": "2023-12",
+              "score": 75
+            },
+            "ecosystem": {
+              "issues_12mo": 8,
+              "prs_12mo": 5,
+              "score": 88
+            }
+          },
+          "rationale": "Functional replacement providing comparable C++ microbenchmark harness and reporting.",
+          "composite_score": 81.0,
+          "rank": 2
+        }
+      ],
+      "ranking_winner": "benchmark"
+    },
+    {
+      "rank": 6,
+      "package": "n",
+      "tool_name": "Node.js",
+      "composite_score": 91.8,
+      "weblink": "https://nodejs.org",
+      "summary": "JavaScript runtime built on Chrome V8 engine for server-side execution",
+      "language": "JavaScript",
+      "license": "MIT",
+      "last_release": null,
+      "metrics": {
+        "popularity": {
+          "stars": 105000,
+          "score": 95
+        },
+        "reputation": {
+          "cves_12mo": 12,
+          "score": 85
+        },
+        "integration": {
+          "score": 98,
+          "notes": "Industry standard with vast npm ecosystem"
+        },
+        "documentation": {
+          "last_doc_update": "2024-10",
+          "score": 95
+        },
+        "ecosystem": {
+          "issues_12mo": 850,
+          "prs_12mo": 420,
+          "score": 90
+        }
+      },
+      "url": "https://github.com/nodejs/node/archive/refs/tags/v26.0.0.tar.gz",
+      "alternatives": [
+        {
+          "name": "Deno",
+          "weblink": "https://deno.com",
+          "summary": "Secure JavaScript/TypeScript runtime with built-in tooling",
+          "language": "JavaScript",
+          "license": "MIT",
+          "last_release": "2024-10",
+          "metrics": {
+            "popularity": {
+              "stars": 98000,
+              "score": 88
+            },
+            "reputation": {
+              "cves_12mo": 3,
+              "score": 95
+            },
+            "integration": {
+              "score": 82,
+              "notes": "Native ESM and permissions model"
+            },
+            "documentation": {
+              "last_doc_update": "2024-10",
+              "score": 92
+            },
+            "ecosystem": {
+              "issues_12mo": 320,
+              "prs_12mo": 180,
+              "score": 85
+            }
+          },
+          "rationale": "Direct runtime replacement supporting same JS APIs with minimal migration for many server scripts",
+          "composite_score": 89.2,
+          "rank": 1
+        },
+        {
+          "name": "Bun",
+          "weblink": "https://bun.sh",
+          "summary": "Fast all-in-one JavaScript runtime and toolkit",
+          "language": "JavaScript",
+          "license": "MIT",
+          "last_release": "2024-10",
+          "metrics": {
+            "popularity": {
+              "stars": 75000,
+              "score": 82
+            },
+            "reputation": {
+              "cves_12mo": 5,
+              "score": 90
+            },
+            "integration": {
+              "score": 78,
+              "notes": "Node-compatible APIs with faster startup"
+            },
+            "documentation": {
+              "last_doc_update": "2024-09",
+              "score": 85
+            },
+            "ecosystem": {
+              "issues_12mo": 410,
+              "prs_12mo": 210,
+              "score": 80
+            }
+          },
+          "rationale": "Drop-in JS runtime alternative with Node.js compatibility layer for many existing scripts and modules",
+          "composite_score": 83.8,
+          "rank": 2
+        }
+      ],
+      "ranking_winner": "Node.js"
+    },
+    {
+      "rank": 7,
+      "package": "k",
+      "tool_name": "Apache Kafka",
+      "composite_score": 91.5,
+      "weblink": "https://kafka.apache.org/",
+      "summary": "Distributed event streaming platform for high-throughput publish-subscribe messaging and real-time data pipelines.",
+      "language": "Java",
+      "license": "Apache-2.0",
+      "last_release": "2024-08",
+      "metrics": {
+        "popularity": {
+          "stars": 28000,
+          "score": 95
+        },
+        "reputation": {
+          "cves_12mo": 3,
+          "score": 85
+        },
+        "integration": {
+          "score": 95,
+          "notes": "Mature client libraries and connectors across ecosystems"
+        },
+        "documentation": {
+          "last_doc_update": "2024-08",
+          "score": 95
+        },
+        "ecosystem": {
+          "issues_12mo": 420,
+          "prs_12mo": 310,
+          "score": 90
+        }
+      },
+      "url": "https://github.com/apache/kafka/archive/refs/tags/4.2.0.tar.gz",
+      "alternatives": [
+        {
+          "name": "Apache Pulsar",
+          "weblink": "https://pulsar.apache.org/",
+          "summary": "Cloud-native distributed pub-sub messaging system with tiered storage and multi-tenancy.",
+          "language": "Java",
+          "license": "Apache-2.0",
+          "last_release": "2024-07",
+          "metrics": {
+            "popularity": {
+              "stars": 14200,
+              "score": 82
+            },
+            "reputation": {
+              "cves_12mo": 2,
+              "score": 88
+            },
+            "integration": {
+              "score": 85,
+              "notes": "Kafka compatibility layer and native clients"
+            },
+            "documentation": {
+              "last_doc_update": "2024-07",
+              "score": 88
+            },
+            "ecosystem": {
+              "issues_12mo": 310,
+              "prs_12mo": 240,
+              "score": 82
+            }
+          },
+          "rationale": "Direct drop-in replacement at the distributed log/streaming layer with Kafka protocol compatibility and similar producer/consumer APIs.",
+          "composite_score": 84.8,
+          "rank": 1
+        }
+      ],
+      "ranking_winner": "Apache Kafka"
+    },
+    {
+      "rank": 8,
+      "package": "x",
+      "tool_name": "xxHash",
+      "composite_score": 90.4,
+      "weblink": "https://github.com/Cyan4973/xxHash",
+      "summary": "Extremely fast non-cryptographic hash algorithm for checksums and data integrity.",
+      "language": "C",
+      "license": "BSD-2-Clause",
+      "last_release": "2021-07",
+      "metrics": {
+        "popularity": {
+          "stars": 8200,
+          "score": 92
+        },
+        "reputation": {
+          "cves_12mo": 0,
+          "score": 95
+        },
+        "integration": {
+          "score": 88,
+          "notes": "Simple C API, header-only option available"
+        },
+        "documentation": {
+          "last_doc_update": "2023-05",
+          "score": 85
+        },
+        "ecosystem": {
+          "issues_12mo": 12,
+          "prs_12mo": 8,
+          "score": 90
+        }
+      },
+      "url": "https://github.com/Cyan4973/xxHash/archive/refs/tags/v0.8.1.tar.gz",
+      "alternatives": [],
+      "ranking_winner": "xxHash"
+    },
+    {
+      "rank": 9,
+      "package": "s",
+      "tool_name": "sqlite",
+      "composite_score": 90.4,
+      "weblink": "https://www.sqlite.org/",
+      "summary": "Self-contained, serverless, zero-configuration, transactional SQL database engine.",
+      "language": "C",
+      "license": "Public Domain",
+      "last_release": null,
+      "metrics": {
+        "popularity": {
+          "stars": 7200,
+          "score": 92
+        },
+        "reputation": {
+          "cves_12mo": 3,
+          "score": 88
+        },
+        "integration": {
+          "score": 95,
+          "notes": "Widely supported via native bindings and drivers"
+        },
+        "documentation": {
+          "last_doc_update": "2024-05",
+          "score": 98
+        },
+        "ecosystem": {
+          "issues_12mo": 180,
+          "prs_12mo": 95,
+          "score": 85
+        }
+      },
+      "url": "https://github.com/sqlite/sqlite/archive/refs/tags/version-3.53.1.tar.gz",
+      "alternatives": [],
+      "ranking_winner": "sqlite"
+    },
+    {
+      "rank": 10,
+      "package": "t",
+      "tool_name": "tmux",
+      "composite_score": 90.4,
+      "weblink": "https://github.com/tmux/tmux",
+      "summary": "Terminal multiplexer for managing multiple sessions, windows and panes inside a single terminal.",
+      "language": "C",
+      "license": "ISC",
+      "last_release": "2024-10",
+      "metrics": {
+        "popularity": {
+          "stars": 34000,
+          "score": 92
+        },
+        "reputation": {
+          "cves_12mo": 0,
+          "score": 95
+        },
+        "integration": {
+          "score": 88,
+          "notes": "Standard CLI flags and config syntax widely supported"
+        },
+        "documentation": {
+          "last_doc_update": "2024-10",
+          "score": 90
+        },
+        "ecosystem": {
+          "issues_12mo": 180,
+          "prs_12mo": 95,
+          "score": 85
+        }
+      },
+      "url": "https://github.com/tmux/tmux/archive/refs/tags/3.5.tar.gz",
+      "alternatives": [
+        {
+          "name": "screen",
+          "weblink": "https://www.gnu.org/software/screen/",
+          "summary": "Classic terminal multiplexer supporting session detachment and multiple windows.",
+          "language": "C",
+          "license": "GPL-3.0",
+          "last_release": "2024-02",
+          "metrics": {
+            "popularity": {
+              "stars": 1200,
+              "score": 65
+            },
+            "reputation": {
+              "cves_12mo": 1,
+              "score": 85
+            },
+            "integration": {
+              "score": 82,
+              "notes": "Very similar CLI usage pattern for basic workflows"
+            },
+            "documentation": {
+              "last_doc_update": "2023-06",
+              "score": 70
+            },
+            "ecosystem": {
+              "issues_12mo": 40,
+              "prs_12mo": 15,
+              "score": 75
+            }
+          },
+          "rationale": "Direct functional replacement providing the same terminal multiplexing capabilities via comparable CLI commands and session handling.",
+          "composite_score": 75.6,
+          "rank": 1
+        }
+      ],
+      "ranking_winner": "tmux"
+    }
+  ]
+}

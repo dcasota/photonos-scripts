@@ -1,0 +1,70 @@
+Package Classifier -- Branch master
+
+Generated: 2026-05-10T22:42:48+00:00
+Records considered (this branch): 600; deduplicated: 10 of top 10
+
+ 1. p  --  composite_score 93.1
+    https://www.python.org/
+    Resume: Core Python programming language distribution (interpreter and standard library).
+
+ 2. c  --  composite_score 92.8
+    https://www.gnu.org/software/coreutils/
+    Resume: GNU collection of basic file, shell and text manipulation utilities (ls, cp, cat, etc.).
+    Top alternatives:
+      1. uutils-coreutils  (89.4)  -- Direct functional CLI replacement providing the same utilities with compatible command-line behavior.
+
+ 3. r  --  composite_score 92.5
+    https://nokogiri.org/
+    Resume: Nokogiri is an HTML, XML, SAX, and Reader parser with XPath and CSS selector support.
+    Top alternatives:
+      1. ox  (84.8)  -- Direct drop-in XML/HTML parser replacement for Nokogiri use cases with comparable Ruby APIs.
+      2. oga  (81.2)  -- Pure-Ruby XML/HTML parser that can replace Nokogiri for parsing and querying without native deps.
+
+ 4. f  --  composite_score 92.5
+    http://www.linuxfromscratch.org
+    Resume: Instructions for building a complete Linux system from source code.
+
+ 5. g  --  composite_score 89.8
+    https://gcc.gnu.org/
+    Resume: GNU Compiler Collection: optimizing C/C++/Fortran/Go/etc. compilers and toolchain.
+    Top alternatives:
+      1. clang  (91.6)  -- Direct C/C++ compiler replacement; same CLI flags and language support allow swapping via CC variable with minimal changes.
+
+ 6. s  --  composite_score 89.0
+    https://www.sudo.ws/sudo/
+    Resume: Allows permitted users to execute commands as the superuser or another user as specified by a security policy.
+    Top alternatives:
+      1. doas  (82.5)  -- Direct CLI replacement providing equivalent privilege escalation with simpler policy syntax.
+
+ 7. l  --  composite_score 88.4
+    https://libsodium.org/
+    Resume: Portable C library for modern cryptography: encryption, signatures, password hashing, key exchange.
+
+ 8. b  --  composite_score 87.4
+    https://www.gnu.org/software/bash/
+    Resume: GNU Bourne Again SHell, standard Unix command-line interpreter and scripting language.
+    Top alternatives:
+      1. zsh  (87.7)  -- Direct CLI shell replacement supporting nearly all bash syntax and scripts with minimal changes.
+      2. fish  (85.5)  -- Functional CLI shell swap for interactive sessions and simple scripting use cases.
+      3. dash  (77.0)  -- Minimal POSIX shell drop-in for bash scripts that avoid bashisms.
+
+ 9. w  --  composite_score 86.8
+    https://github.com/gorakhargosh/watchdog
+    Resume: Python API and shell utilities to monitor file system events.
+    Top alternatives:
+      1. watchfiles  (85.0)  -- Direct drop-in for file-system event monitoring in Python with comparable Observer-like usage and active maintenance.
+
+10. t  --  composite_score 86.5
+    https://www.iana.org/time-zones
+    Resume: IANA Time Zone Database (tzdata) - authoritative source of timezone definitions, offsets and transition rules.
+
+Alternatives outscoring the package
+  7 alternative(s) score higher than the corresponding package.
+    1. z (51.5)  ->  7-Zip (84.0, +32.5)  -- Direct CLI replacement for ZIP archive creation/extraction using identical file format and comparable command-line flags.
+    2. i (80.5)  ->  nftables (85.9, +5.4)  -- Direct drop-in CLI replacement at same kernel layer for packet filtering/NAT use cases.
+    3. m (82.4)  ->  Ninja (85.8, +3.4)  -- Direct functional replacement as a low-level build executor invoked identically via CLI for the same generated build graphs.
+    4. m (82.4)  ->  Meson (85.7, +3.3)  -- Provides equivalent CLI-driven build automation for the same native project use cases.
+    5. n (83.5)  ->  ncat (86.6, +3.1)  -- Direct CLI drop-in replacement for nc TCP/UDP use cases with added features.
+    6. g (89.8)  ->  clang (91.6, +1.8)  -- Direct C/C++ compiler replacement; same CLI flags and language support allow swapping via CC variable with minimal changes.
+    7. b (87.4)  ->  zsh (87.7, +0.3)  -- Direct CLI shell replacement supporting nearly all bash syntax and scripts with minimal changes.
+

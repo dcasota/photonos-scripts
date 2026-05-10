@@ -1,0 +1,555 @@
+{
+  "branch": "3.0",
+  "generated": "2026-05-10T22:42:48+00:00",
+  "records_considered": 1001,
+  "top_n": 10,
+  "alternatives_outscoring_package": [
+    {
+      "package": "ecdsa",
+      "package_score": 82.4,
+      "alt_name": "cryptography",
+      "alt_score": 90.2,
+      "alt_weblink": "https://github.com/pyca/cryptography",
+      "delta": 7.8,
+      "rationale": "Direct functional replacement providing equivalent ECDSA sign/verify operations on the same curves with nearly identical API patterns."
+    },
+    {
+      "package": "python-pycryptodome",
+      "package_score": 82.9,
+      "alt_name": "cryptography",
+      "alt_score": 89.1,
+      "alt_weblink": "https://github.com/pyca/cryptography",
+      "delta": 6.2,
+      "rationale": "Direct functional replacement offering equivalent cryptographic primitives with comparable usage patterns in Python."
+    },
+    {
+      "package": "openjdk",
+      "package_score": 83.5,
+      "alt_name": "Amazon Corretto",
+      "alt_score": 84.7,
+      "alt_weblink": "https://aws.amazon.com/corretto/",
+      "delta": 1.2,
+      "rationale": "Binary-compatible OpenJDK build offering identical runtime semantics and tooling."
+    },
+    {
+      "package": "openjdk",
+      "package_score": 83.5,
+      "alt_name": "Eclipse Temurin",
+      "alt_score": 84.6,
+      "alt_weblink": "https://adoptium.net/",
+      "delta": 1.1,
+      "rationale": "TCK-certified OpenJDK distribution providing identical JVM behavior and command-line interface."
+    }
+  ],
+  "tools": [
+    {
+      "rank": 1,
+      "package": "p",
+      "tool_name": "pytest",
+      "composite_score": 93.8,
+      "weblink": "https://docs.pytest.org/",
+      "summary": "Python testing framework that makes it easy to write, organize and run tests with fixtures and plugins.",
+      "language": "Python",
+      "license": "MIT",
+      "last_release": null,
+      "metrics": {
+        "popularity": {
+          "stars": 12000,
+          "score": 95
+        },
+        "reputation": {
+          "cves_12mo": 0,
+          "score": 98
+        },
+        "integration": {
+          "score": 92,
+          "notes": "Extensive plugin ecosystem and IDE support"
+        },
+        "documentation": {
+          "last_doc_update": "2024-09",
+          "score": 95
+        },
+        "ecosystem": {
+          "issues_12mo": 420,
+          "prs_12mo": 310,
+          "score": 88
+        }
+      },
+      "url": "https://github.com/pytest-dev/pytest/archive/refs/tags/9.0.3.tar.gz",
+      "alternatives": [],
+      "ranking_winner": "pytest"
+    },
+    {
+      "rank": 2,
+      "package": "g",
+      "tool_name": "git",
+      "composite_score": 92.4,
+      "weblink": "https://git-scm.com",
+      "summary": "Distributed version control system for tracking source code changes during development.",
+      "language": "C",
+      "license": "GPL-2.0-only",
+      "last_release": null,
+      "metrics": {
+        "popularity": {
+          "stars": 52000,
+          "score": 95
+        },
+        "reputation": {
+          "cves_12mo": 3,
+          "score": 85
+        },
+        "integration": {
+          "score": 98,
+          "notes": "Ubiquitous CLI and library bindings across IDEs and CI systems."
+        },
+        "documentation": {
+          "last_doc_update": "2024-05",
+          "score": 95
+        },
+        "ecosystem": {
+          "issues_12mo": 420,
+          "prs_12mo": 310,
+          "score": 92
+        }
+      },
+      "url": "https://www.kernel.org/pub/software/scm/git/git-2.54.0.tar.xz",
+      "alternatives": [],
+      "ranking_winner": "git"
+    },
+    {
+      "rank": 3,
+      "package": "n",
+      "tool_name": "Node.js",
+      "composite_score": 91.8,
+      "weblink": "https://nodejs.org",
+      "summary": "JavaScript runtime built on Chrome V8 engine for server-side execution",
+      "language": "JavaScript",
+      "license": "MIT",
+      "last_release": null,
+      "metrics": {
+        "popularity": {
+          "stars": 105000,
+          "score": 95
+        },
+        "reputation": {
+          "cves_12mo": 12,
+          "score": 85
+        },
+        "integration": {
+          "score": 98,
+          "notes": "Industry standard with vast npm ecosystem"
+        },
+        "documentation": {
+          "last_doc_update": "2024-10",
+          "score": 95
+        },
+        "ecosystem": {
+          "issues_12mo": 850,
+          "prs_12mo": 420,
+          "score": 90
+        }
+      },
+      "url": "https://github.com/nodejs/node/archive/refs/tags/v26.0.0.tar.gz",
+      "alternatives": [
+        {
+          "name": "Deno",
+          "weblink": "https://deno.com",
+          "summary": "Secure JavaScript/TypeScript runtime with built-in tooling",
+          "language": "JavaScript",
+          "license": "MIT",
+          "last_release": "2024-10",
+          "metrics": {
+            "popularity": {
+              "stars": 98000,
+              "score": 88
+            },
+            "reputation": {
+              "cves_12mo": 3,
+              "score": 95
+            },
+            "integration": {
+              "score": 82,
+              "notes": "Native ESM and permissions model"
+            },
+            "documentation": {
+              "last_doc_update": "2024-10",
+              "score": 92
+            },
+            "ecosystem": {
+              "issues_12mo": 320,
+              "prs_12mo": 180,
+              "score": 85
+            }
+          },
+          "rationale": "Direct runtime replacement supporting same JS APIs with minimal migration for many server scripts",
+          "composite_score": 89.2,
+          "rank": 1
+        },
+        {
+          "name": "Bun",
+          "weblink": "https://bun.sh",
+          "summary": "Fast all-in-one JavaScript runtime and toolkit",
+          "language": "JavaScript",
+          "license": "MIT",
+          "last_release": "2024-10",
+          "metrics": {
+            "popularity": {
+              "stars": 75000,
+              "score": 82
+            },
+            "reputation": {
+              "cves_12mo": 5,
+              "score": 90
+            },
+            "integration": {
+              "score": 78,
+              "notes": "Node-compatible APIs with faster startup"
+            },
+            "documentation": {
+              "last_doc_update": "2024-09",
+              "score": 85
+            },
+            "ecosystem": {
+              "issues_12mo": 410,
+              "prs_12mo": 210,
+              "score": 80
+            }
+          },
+          "rationale": "Drop-in JS runtime alternative with Node.js compatibility layer for many existing scripts and modules",
+          "composite_score": 83.8,
+          "rank": 2
+        }
+      ],
+      "ranking_winner": "Node.js"
+    },
+    {
+      "rank": 4,
+      "package": "k",
+      "tool_name": "Apache Kafka",
+      "composite_score": 91.5,
+      "weblink": "https://kafka.apache.org/",
+      "summary": "Distributed event streaming platform for high-throughput publish-subscribe messaging and real-time data pipelines.",
+      "language": "Java",
+      "license": "Apache-2.0",
+      "last_release": "2024-08",
+      "metrics": {
+        "popularity": {
+          "stars": 28000,
+          "score": 95
+        },
+        "reputation": {
+          "cves_12mo": 3,
+          "score": 85
+        },
+        "integration": {
+          "score": 95,
+          "notes": "Mature client libraries and connectors across ecosystems"
+        },
+        "documentation": {
+          "last_doc_update": "2024-08",
+          "score": 95
+        },
+        "ecosystem": {
+          "issues_12mo": 420,
+          "prs_12mo": 310,
+          "score": 90
+        }
+      },
+      "url": "https://github.com/apache/kafka/archive/refs/tags/4.2.0.tar.gz",
+      "alternatives": [
+        {
+          "name": "Apache Pulsar",
+          "weblink": "https://pulsar.apache.org/",
+          "summary": "Cloud-native distributed pub-sub messaging system with tiered storage and multi-tenancy.",
+          "language": "Java",
+          "license": "Apache-2.0",
+          "last_release": "2024-07",
+          "metrics": {
+            "popularity": {
+              "stars": 14200,
+              "score": 82
+            },
+            "reputation": {
+              "cves_12mo": 2,
+              "score": 88
+            },
+            "integration": {
+              "score": 85,
+              "notes": "Kafka compatibility layer and native clients"
+            },
+            "documentation": {
+              "last_doc_update": "2024-07",
+              "score": 88
+            },
+            "ecosystem": {
+              "issues_12mo": 310,
+              "prs_12mo": 240,
+              "score": 82
+            }
+          },
+          "rationale": "Direct drop-in replacement at the distributed log/streaming layer with Kafka protocol compatibility and similar producer/consumer APIs.",
+          "composite_score": 84.8,
+          "rank": 1
+        }
+      ],
+      "ranking_winner": "Apache Kafka"
+    },
+    {
+      "rank": 5,
+      "package": "r",
+      "tool_name": "rust",
+      "composite_score": 91.2,
+      "weblink": "https://www.rust-lang.org/",
+      "summary": "Systems programming language emphasizing memory safety, concurrency, and performance without GC.",
+      "language": "Rust",
+      "license": "Apache-2.0/MIT",
+      "last_release": null,
+      "metrics": {
+        "popularity": {
+          "stars": 95000,
+          "score": 95
+        },
+        "reputation": {
+          "cves_12mo": 2,
+          "score": 92
+        },
+        "integration": {
+          "score": 85,
+          "notes": "Toolchain install via rustup; broad stdlib and Cargo ecosystem."
+        },
+        "documentation": {
+          "last_doc_update": "2024-10",
+          "score": 95
+        },
+        "ecosystem": {
+          "issues_12mo": 4200,
+          "prs_12mo": 3100,
+          "score": 88
+        }
+      },
+      "url": "https://github.com/rust-lang/rust/archive/refs/tags/1.95.0.tar.gz",
+      "alternatives": [],
+      "ranking_winner": "rust"
+    },
+    {
+      "rank": 6,
+      "package": "x",
+      "tool_name": "xxHash",
+      "composite_score": 90.4,
+      "weblink": "https://github.com/Cyan4973/xxHash",
+      "summary": "Extremely fast non-cryptographic hash algorithm for checksums and data integrity.",
+      "language": "C",
+      "license": "BSD-2-Clause",
+      "last_release": "2021-07",
+      "metrics": {
+        "popularity": {
+          "stars": 8200,
+          "score": 92
+        },
+        "reputation": {
+          "cves_12mo": 0,
+          "score": 95
+        },
+        "integration": {
+          "score": 88,
+          "notes": "Simple C API, header-only option available"
+        },
+        "documentation": {
+          "last_doc_update": "2023-05",
+          "score": 85
+        },
+        "ecosystem": {
+          "issues_12mo": 12,
+          "prs_12mo": 8,
+          "score": 90
+        }
+      },
+      "url": "https://github.com/Cyan4973/xxHash/archive/refs/tags/v0.8.1.tar.gz",
+      "alternatives": [],
+      "ranking_winner": "xxHash"
+    },
+    {
+      "rank": 7,
+      "package": "s",
+      "tool_name": "sqlite",
+      "composite_score": 90.4,
+      "weblink": "https://www.sqlite.org/",
+      "summary": "Self-contained, serverless, zero-configuration, transactional SQL database engine.",
+      "language": "C",
+      "license": "Public Domain",
+      "last_release": null,
+      "metrics": {
+        "popularity": {
+          "stars": 7200,
+          "score": 92
+        },
+        "reputation": {
+          "cves_12mo": 3,
+          "score": 88
+        },
+        "integration": {
+          "score": 95,
+          "notes": "Widely supported via native bindings and drivers"
+        },
+        "documentation": {
+          "last_doc_update": "2024-05",
+          "score": 98
+        },
+        "ecosystem": {
+          "issues_12mo": 180,
+          "prs_12mo": 95,
+          "score": 85
+        }
+      },
+      "url": "https://github.com/sqlite/sqlite/archive/refs/tags/version-3.53.1.tar.gz",
+      "alternatives": [],
+      "ranking_winner": "sqlite"
+    },
+    {
+      "rank": 8,
+      "package": "a",
+      "tool_name": "community.general",
+      "composite_score": 90.1,
+      "weblink": "https://github.com/ansible-collections/community.general",
+      "summary": "Ansible collection providing general-purpose modules and plugins for system automation and administration.",
+      "language": "Python",
+      "license": "GPL-3.0-or-later",
+      "last_release": "2023-09",
+      "metrics": {
+        "popularity": {
+          "stars": 680000,
+          "score": 95
+        },
+        "reputation": {
+          "cves_12mo": 2,
+          "score": 85
+        },
+        "integration": {
+          "score": 92,
+          "notes": "Native Ansible integration via collections"
+        },
+        "documentation": {
+          "last_doc_update": "2023-09",
+          "score": 90
+        },
+        "ecosystem": {
+          "issues_12mo": 420,
+          "prs_12mo": 310,
+          "score": 88
+        }
+      },
+      "url": "https://github.com/ansible-collections/community.general/archive/refs/tags/5.6.0.tar.gz",
+      "alternatives": [],
+      "ranking_winner": "community.general"
+    },
+    {
+      "rank": 9,
+      "package": "c",
+      "tool_name": "curl",
+      "composite_score": 90.1,
+      "weblink": "https://curl.se/",
+      "summary": "Command line tool and library for transferring data via URLs supporting HTTP, FTP and dozens of other protocols.",
+      "language": "C",
+      "license": "curl",
+      "last_release": "2024-07",
+      "metrics": {
+        "popularity": {
+          "stars": 36000,
+          "score": 92
+        },
+        "reputation": {
+          "cves_12mo": 4,
+          "score": 85
+        },
+        "integration": {
+          "score": 95,
+          "notes": "Ubiquitous CLI and libcurl bindings in virtually every language and OS"
+        },
+        "documentation": {
+          "last_doc_update": "2024-07",
+          "score": 98
+        },
+        "ecosystem": {
+          "issues_12mo": 420,
+          "prs_12mo": 310,
+          "score": 88
+        }
+      },
+      "url": "http://curl.haxx.se/download/curl-8.20.0.tar.xz",
+      "alternatives": [
+        {
+          "name": "wget",
+          "weblink": "https://www.gnu.org/software/wget/",
+          "summary": "Non-interactive CLI network downloader supporting HTTP, HTTPS, FTP and mirroring.",
+          "language": "C",
+          "license": "GPL-3.0",
+          "last_release": "2024-05",
+          "metrics": {
+            "popularity": {
+              "stars": 680,
+              "score": 68
+            },
+            "reputation": {
+              "cves_12mo": 1,
+              "score": 92
+            },
+            "integration": {
+              "score": 82,
+              "notes": "Direct CLI drop-in for most curl download use-cases"
+            },
+            "documentation": {
+              "last_doc_update": "2024-05",
+              "score": 85
+            },
+            "ecosystem": {
+              "issues_12mo": 85,
+              "prs_12mo": 40,
+              "score": 75
+            }
+          },
+          "rationale": "Primary CLI HTTP/FTP downloader offering nearly identical command-line usage patterns for the same transfer tasks.",
+          "composite_score": 80.0,
+          "rank": 1
+        }
+      ],
+      "ranking_winner": "curl"
+    },
+    {
+      "rank": 10,
+      "package": "t",
+      "tool_name": "tzdata",
+      "composite_score": 90.0,
+      "weblink": "https://www.iana.org/time-zones",
+      "summary": "Official IANA Time Zone Database providing tzdata files for global timezone rules and transitions.",
+      "language": null,
+      "license": "Public Domain",
+      "last_release": "2023-03",
+      "metrics": {
+        "popularity": {
+          "stars": null,
+          "score": null
+        },
+        "reputation": {
+          "cves_12mo": 0,
+          "score": 95
+        },
+        "integration": {
+          "score": 90,
+          "notes": "Standard system tzdata format consumable by most OSes and runtimes"
+        },
+        "documentation": {
+          "last_doc_update": "2023-03",
+          "score": 85
+        },
+        "ecosystem": {
+          "issues_12mo": null,
+          "prs_12mo": null,
+          "score": null
+        }
+      },
+      "url": "https://data.iana.org/time-zones/releases/tzdata2023c.tar.gz",
+      "alternatives": [],
+      "ranking_winner": "tzdata"
+    }
+  ]
+}
