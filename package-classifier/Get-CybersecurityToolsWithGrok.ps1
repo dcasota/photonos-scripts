@@ -204,15 +204,18 @@ if ($isNdjson -and $Resume -and (Test-Path -LiteralPath $OutputFile)) {
             }
 
             $sumVal  = _SafeGet $rec 'summary'
-            $altsVal = _SafeGet $rec 'alternatives'
+            $csVal   = _SafeGet $rec 'composite_score'
             $hasSummary = $sumVal -and ([string]$sumVal).Trim() -ne '' -and
                           $sumVal -ne 'No description available.' -and
                           $sumVal -ne 'Description not provided by AI.'
-            $hasAlts    = $false
-            if ($null -ne $altsVal) {
-                $altsArr = @($altsVal)
-                $hasAlts = $altsArr.Count -gt 0
-            }
+            # `alternatives` may legitimately be null/[] when the (tightened)
+            # prompt finds no direct functional replacement — that is a
+            # successful classification, not an incomplete record. The signal
+            # that the classifier ran is a non-null composite_score; older
+            # gates that required non-empty alternatives forced ~70% of records
+            # to be re-classified on every resume (run 25641031454, cancelled).
+            $hasScore   = $null -ne $csVal
+            $isClassified = $hasSummary -and $hasScore
 
             $ageDays = $null
             $tsStr = _SafeGet $rec 'generated_at'
@@ -223,7 +226,7 @@ if ($isNdjson -and $Resume -and (Test-Path -LiteralPath $OutputFile)) {
                 } catch {}
             }
 
-            if (-not $hasSummary -or -not $hasAlts) {
+            if (-not $isClassified) {
                 $action = 'full'
             } elseif ($StaleAfterDays -gt 0 -and $null -ne $ageDays -and $ageDays -gt $StaleAfterDays) {
                 $action = 'alts_only'
