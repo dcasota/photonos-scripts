@@ -1,0 +1,25 @@
+# Package Classifier — Branch common
+
+_Generated: 2026-05-10T22:51:46+00:00_  
+_Records considered (this branch): 7; deduplicated: 4 of top 10_  
+
+### 1. v6.12 — composite_score 84.0
+[https://www.kernel.org/](https://www.kernel.org/)  
+**Resume:** Core of the Linux operating system, managing hardware and system resources.
+
+### 2. v6.1 — composite_score 81.5
+[https://www.kernel.org/](https://www.kernel.org/)  
+**Resume:** Core OS kernel providing hardware abstraction, process scheduling, memory management and drivers for Linux systems.
+
+### 3. linux — composite_score 80.5
+[https://www.kernel.org/](https://www.kernel.org/)  
+**Resume:** Core OS kernel providing hardware abstraction, process scheduling, memory management and drivers for Linux systems.
+
+### 4. stalld — composite_score 64.4
+[https://gitlab.com/rt-linux-tools/stalld](https://gitlab.com/rt-linux-tools/stalld)  
+**Resume:** Daemon that monitors and mitigates thread starvation on Linux by temporarily boosting starved thread priorities.
+
+## Alternatives outscoring the package
+
+_No alternative beats its package in this branch._
+
