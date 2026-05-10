@@ -173,10 +173,16 @@ foreach ($entry in $pickedFiles.GetEnumerator()) {
         $u3 = $cols[2].Trim()
         $u6 = $cols[5].Trim()
         # Resolve the Photon package name: prefer the dedicated Name column
-        # (col 7) when present, else strip ".spec" from the Spec column (col 0).
-        $pkgName = if ($cols.Count -gt 7 -and $cols[7].Trim()) { $cols[7].Trim() }
-                   elseif ($cols[0]) { ($cols[0].Trim() -ireplace '\.spec$', '') }
-                   else { '' }
+        # (col 7) when present and not version-like, else strip ".spec" from
+        # the Spec column (col 0). Kernel SPECs (linux.spec, linux-esx.spec)
+        # populate Name with the upstream tag (e.g. "v6.12") instead of the
+        # package name; the version-shaped regex below catches that.
+        $col7 = if ($cols.Count -gt 7) { $cols[7].Trim() } else { '' }
+        $col7LooksLikeVersion = $col7 -match '^v?\d+(\.\d+)+'
+        $specName = if ($cols[0]) { ($cols[0].Trim() -ireplace '\.spec$', '') } else { '' }
+        $pkgName = if ($col7 -and -not $col7LooksLikeVersion) { $col7 }
+                   elseif ($specName)                         { $specName }
+                   else                                       { '' }
         if ($u3 -match '^https?://') {
             if (Test-IsSyntheticPhotonUrl $u3) { $skippedSynthetic++ }
             else {
