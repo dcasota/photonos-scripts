@@ -1,0 +1,120 @@
+{
+  "branch": "common",
+  "generated": "2026-05-10T22:54:49+00:00",
+  "records_considered": 7,
+  "top_n": 10,
+  "alternatives_outscoring_package": [],
+  "tools": [
+    {
+      "rank": 1,
+      "package": "linux-esx",
+      "tool_name": "Linux Kernel",
+      "composite_score": 84.0,
+      "weblink": "https://www.kernel.org/",
+      "summary": "Core of the Linux operating system, managing hardware and system resources.",
+      "language": "C",
+      "license": "GPL-2.0",
+      "last_release": null,
+      "metrics": {
+        "popularity": {
+          "stars": 180000,
+          "score": 95
+        },
+        "reputation": {
+          "cves_12mo": 120,
+          "score": 70
+        },
+        "integration": {
+          "score": 85,
+          "notes": "Widely integrated via distros and build systems"
+        },
+        "documentation": {
+          "last_doc_update": "2024-12",
+          "score": 90
+        },
+        "ecosystem": {
+          "issues_12mo": 8500,
+          "prs_12mo": 12000,
+          "score": 80
+        }
+      },
+      "url": "http://www.kernel.org/pub/linux/kernel/v6.x/linux-6.12.69.tar.xz",
+      "alternatives": [],
+      "ranking_winner": "Linux Kernel"
+    },
+    {
+      "rank": 2,
+      "package": "linux",
+      "tool_name": "Linux Kernel",
+      "composite_score": 81.5,
+      "weblink": "https://www.kernel.org/",
+      "summary": "Monolithic kernel managing hardware, processes, memory and drivers for Linux OS distributions.",
+      "language": "C",
+      "license": "GPL-2.0",
+      "last_release": null,
+      "metrics": {
+        "popularity": {
+          "stars": null,
+          "score": 95
+        },
+        "reputation": {
+          "cves_12mo": 120,
+          "score": 60
+        },
+        "integration": {
+          "score": 90,
+          "notes": "Standard build toolchain and distro integration"
+        },
+        "documentation": {
+          "last_doc_update": "2024-12",
+          "score": 85
+        },
+        "ecosystem": {
+          "issues_12mo": 8500,
+          "prs_12mo": 12000,
+          "score": 80
+        }
+      },
+      "url": "http://www.kernel.org/pub/linux/kernel/v6.x/linux-6.12.69-acvp}.tar.xz",
+      "alternatives": [],
+      "ranking_winner": "Linux Kernel"
+    },
+    {
+      "rank": 3,
+      "package": "stalld",
+      "tool_name": "stalld",
+      "composite_score": 64.4,
+      "weblink": "https://gitlab.com/rt-linux-tools/stalld",
+      "summary": "Daemon that monitors and mitigates thread starvation on Linux by temporarily boosting starved thread priorities.",
+      "language": "C",
+      "license": "GPL-2.0-only",
+      "last_release": "2024-04",
+      "metrics": {
+        "popularity": {
+          "stars": 48,
+          "score": 28
+        },
+        "reputation": {
+          "cves_12mo": 0,
+          "score": 95
+        },
+        "integration": {
+          "score": 75,
+          "notes": "Simple CLI flags and systemd unit; no library API"
+        },
+        "documentation": {
+          "last_doc_update": "2024-03",
+          "score": 70
+        },
+        "ecosystem": {
+          "issues_12mo": 4,
+          "prs_12mo": 2,
+          "score": 82
+        }
+      },
+      "url": "https://gitlab.com/rt-linux-tools/stalld/-/archive/v1.19.1/stalld-v1.19.1.tar.gz",
+      "alternatives": [],
+      "ranking_winner": "stalld"
+    }
+  ]
+}
