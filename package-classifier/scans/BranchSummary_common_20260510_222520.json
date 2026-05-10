@@ -1,0 +1,81 @@
+{
+  "branch": "common",
+  "generated": "2026-05-10T22:25:20+00:00",
+  "records_considered": 4,
+  "top_n": 10,
+  "alternatives_outscoring_package": [],
+  "tools": [
+    {
+      "rank": 1,
+      "tool_name": "Linux Kernel",
+      "composite_score": 80.5,
+      "weblink": "https://www.kernel.org/",
+      "summary": "Core OS kernel providing hardware abstraction, process scheduling, memory management and drivers for Linux systems.",
+      "language": "C",
+      "license": "GPL-2.0",
+      "last_release": null,
+      "metrics": {
+        "popularity": {
+          "stars": 170000,
+          "score": 95
+        },
+        "reputation": {
+          "cves_12mo": 120,
+          "score": 60
+        },
+        "integration": {
+          "score": 70,
+          "notes": "Requires full OS rebuild and boot integration"
+        },
+        "documentation": {
+          "last_doc_update": "2024-04",
+          "score": 85
+        },
+        "ecosystem": {
+          "issues_12mo": 8500,
+          "prs_12mo": 4200,
+          "score": 90
+        }
+      },
+      "url": "http://www.kernel.org/pub/linux/kernel/v6.x/linux-6.1.83.tar.xz",
+      "alternatives": [],
+      "ranking_winner": "Linux Kernel"
+    },
+    {
+      "rank": 2,
+      "tool_name": "stalld",
+      "composite_score": 64.4,
+      "weblink": "https://gitlab.com/rt-linux-tools/stalld",
+      "summary": "Daemon that monitors and mitigates thread starvation on Linux by temporarily boosting starved thread priorities.",
+      "language": "C",
+      "license": "GPL-2.0-only",
+      "last_release": "2024-04",
+      "metrics": {
+        "popularity": {
+          "stars": 48,
+          "score": 28
+        },
+        "reputation": {
+          "cves_12mo": 0,
+          "score": 95
+        },
+        "integration": {
+          "score": 75,
+          "notes": "Simple CLI flags and systemd unit; no library API"
+        },
+        "documentation": {
+          "last_doc_update": "2024-03",
+          "score": 70
+        },
+        "ecosystem": {
+          "issues_12mo": 4,
+          "prs_12mo": 2,
+          "score": 82
+        }
+      },
+      "url": "https://gitlab.com/rt-linux-tools/stalld/-/archive/v1.19.1/stalld-v1.19.1.tar.gz",
+      "alternatives": [],
+      "ranking_winner": "stalld"
+    }
+  ]
+}
