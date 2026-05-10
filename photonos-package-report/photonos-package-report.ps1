@@ -2159,7 +2159,19 @@ function CheckURLHealth {
     }
 
 
-    if ($Source0 -ilike '*%{url}*') { $Source0 = $Source0 -ireplace '%{url}',$currentTask.url }
+    if ($Source0 -ilike '*%{url}*') {
+        # RPM substitutes %{url} literally, so a SPEC that writes `Source0: %{url}license.txt`
+        # against `URL: https://vmware.github.io/photon` (no trailing slash) produces
+        # `https://vmware.github.io/photonlicense.txt` — a malformed URL that later confuses
+        # downstream tools (the package-classifier in particular kept resolving such URLs to
+        # "Photon" the distro). When %{url} is immediately followed by a path-like character
+        # AND the URL value has no trailing slash, splice a `/` in to keep the path well-formed.
+        $base = $currentTask.url
+        if ($base -and ($base -notmatch '/$') -and ($Source0 -match '%\{url\}[A-Za-z0-9.]')) {
+            $base = $base + '/'
+        }
+        $Source0 = $Source0 -ireplace '%\{url\}', $base
+    }
     # add url path if necessary and possible
     if (($Source0 -notlike '*//*') -and ($currentTask.url -ne ""))
     {

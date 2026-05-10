@@ -143,6 +143,19 @@ $rowsByBranch = @{}
 # url -> sorted unique list of branches that referenced this URL (for the
 # optional sidecar)
 $urlBranches = @{}
+
+# Defensive filter for the well-known photon-OS macro-expansion artefact:
+# old photonos-package-report runs substituted `%{url}` literally against
+# `URL: https://vmware.github.io/photon` (no trailing slash), producing
+# malformed URLs like `https://vmware.github.io/photonlicense.txt` or
+# `https://vmware.github.io/photonphoton-upgrade.sh`. The classifier then
+# resolved them all to "Photon" the distro and burned API calls. Skip any
+# URL where /photon is followed by something other than `/` or end-of-path.
+function Test-IsSyntheticPhotonUrl([string]$u) {
+    return ($u -match '^https?://vmware\.github\.io/photon($|[^/])')
+}
+$skippedSynthetic = 0
+
 foreach ($entry in $pickedFiles.GetEnumerator()) {
     $branch = $entry.Key
     $path   = $entry.Value
@@ -155,17 +168,27 @@ foreach ($entry in $pickedFiles.GetEnumerator()) {
         $u3 = $cols[2].Trim()
         $u6 = $cols[5].Trim()
         if ($u3 -match '^https?://') {
-            [void]$urls.Add($u3); $rows++
-            if (-not $urlBranches.ContainsKey($u3)) { $urlBranches[$u3] = New-Object System.Collections.Generic.HashSet[string] }
-            [void]$urlBranches[$u3].Add($branch)
+            if (Test-IsSyntheticPhotonUrl $u3) { $skippedSynthetic++ }
+            else {
+                [void]$urls.Add($u3); $rows++
+                if (-not $urlBranches.ContainsKey($u3)) { $urlBranches[$u3] = New-Object System.Collections.Generic.HashSet[string] }
+                [void]$urlBranches[$u3].Add($branch)
+            }
         }
         if ($IncludeUpdateUrls -and $u6 -match '^https?://') {
-            [void]$urls.Add($u6)
-            if (-not $urlBranches.ContainsKey($u6)) { $urlBranches[$u6] = New-Object System.Collections.Generic.HashSet[string] }
-            [void]$urlBranches[$u6].Add($branch)
+            if (Test-IsSyntheticPhotonUrl $u6) { $skippedSynthetic++ }
+            else {
+                [void]$urls.Add($u6)
+                if (-not $urlBranches.ContainsKey($u6)) { $urlBranches[$u6] = New-Object System.Collections.Generic.HashSet[string] }
+                [void]$urlBranches[$u6].Add($branch)
+            }
         }
     }
     $rowsByBranch[$branch] = $rows
+}
+
+if ($skippedSynthetic -gt 0) {
+    Write-Host "Skipped $skippedSynthetic synthetic vmware.github.io/photon* URLs (no real source archive)."
 }
 
 # --- 4. Write urls.txt ----------------------------------------------------
