@@ -1,0 +1,36 @@
+{
+  "generated": "2026-05-10T09:11:08.1262295+02:00",
+  "generated_local": "05/10/2026 09:11:08",
+  "database": "ci/SnykAnalysis/snyk_issues.db",
+  "branch": "common",
+  "tool": "SnykCLI",
+  "total_source_packages": 1,
+  "summary": {
+    "HighCrypto": "0",
+    "HighNonCrypto": "0",
+    "Medium": "8",
+    "Low": "0",
+    "Total": "8"
+  },
+  "top_high_categories": [],
+  "top_packages_per_high_category": [],
+  "top_packages": [
+    {
+      "Package": "stalld",
+      "TotalIssues": "8",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "8",
+      "Low": "0"
+    }
+  ],
+  "top_packages_by_high_crypto": [],
+  "top_packages_by_high": [],
+  "top_packages_by_medium": [
+    {
+      "Package": "stalld",
+      "Count": "8"
+    }
+  ],
+  "top_packages_by_low": []
+}

@@ -1,0 +1,250 @@
+# Snyk Issues Report (4.0)
+
+Generated: 05/10/2026 09:10:59
+Total source packages processed: 666
+Tool used: SnykCLI
+
+## Summary
+
+| Metric | Count |
+|---|---|
+| Total issues overall | 61240 |
+| High with crypto | 270 |
+| High without crypto | 816 |
+| Medium | 22890 |
+| Low | 37264 |
+
+## Top 10 High Categories
+
+| Category | Count |
+| --- | --- |
+| Use of a Broken or Risky Cryptographic Algorithm | 247 |
+| Hardcoded Secret | 169 |
+| Cross-site Scripting (XSS) | 129 |
+| Potential Negative Number Used as Index | 116 |
+| Path Traversal | 109 |
+| Command Injection | 64 |
+| Size Used as Index | 37 |
+| Generation of Error Message Containing Sensitive Information | 36 |
+| XML External Entity (XXE) Injection | 33 |
+| Server-Side Request Forgery (SSRF) | 26 |
+
+
+### Top 10 Packages with HIGH issues in category "Use of a Broken or Risky Cryptographic Algorithm" (category total=247)
+
+| Package | Count |
+| --- | --- |
+| jdk8u | 54 |
+| jdk21u | 54 |
+| jdk11u | 54 |
+| jdk17u | 53 |
+| runtime | 19 |
+| pycryptodome | 3 |
+| podman | 2 |
+| common | 2 |
+| apr-util | 2 |
+| apr | 2 |
+
+### Top 10 Packages with HIGH issues in category "Hardcoded Secret" (category total=169)
+
+| Package | Count |
+| --- | --- |
+| jdk11u | 44 |
+| jdk21u | 43 |
+| jdk17u | 42 |
+| jdk8u | 37 |
+| tomcat | 1 |
+| runtime | 1 |
+| kafka | 1 |
+
+### Top 10 Packages with HIGH issues in category "Cross-site Scripting (XSS)" (category total=129)
+
+| Package | Count |
+| --- | --- |
+| tomcat | 90 |
+| kapacitor | 15 |
+| uwsgi | 4 |
+| freetds | 4 |
+| zookeeper | 2 |
+| gevent | 2 |
+| buildx | 2 |
+| tornado | 1 |
+| tiptop | 1 |
+| runtime | 1 |
+
+### Top 10 Packages with HIGH issues in category "Potential Negative Number Used as Index" (category total=116)
+
+| Package | Count |
+| --- | --- |
+| llvm-project | 35 |
+| wireshark | 6 |
+| redis | 6 |
+| server | 5 |
+| mysql-server | 5 |
+| node | 4 |
+| nvme-cli | 3 |
+| ntp | 3 |
+| systemtap | 2 |
+| ruby | 2 |
+
+### Top 10 Packages with HIGH issues in category "Path Traversal" (category total=109)
+
+| Package | Count |
+| --- | --- |
+| tomcat | 40 |
+| ruby | 18 |
+| podman | 8 |
+| govmomi | 7 |
+| telegraf | 6 |
+| zookeeper | 4 |
+| runtime | 3 |
+| go | 3 |
+| common | 3 |
+| src | 2 |
+
+### Top 10 Packages with HIGH issues in category "Command Injection" (category total=64)
+
+| Package | Count |
+| --- | --- |
+| go | 19 |
+| podman | 8 |
+| common | 7 |
+| termshark | 4 |
+| etcd | 4 |
+| containerd | 4 |
+| moby | 3 |
+| libcap | 3 |
+| heapster | 2 |
+| buildx | 2 |
+
+### Top 10 Packages with HIGH issues in category "Size Used as Index" (category total=37)
+
+| Package | Count |
+| --- | --- |
+| mysql-server | 17 |
+| src | 3 |
+| protobuf | 3 |
+| leveldb | 3 |
+| llvm-project | 2 |
+| kexec-tools | 2 |
+| u-boot | 1 |
+| pmd-next-gen | 1 |
+| pmd | 1 |
+| node | 1 |
+
+### Top 10 Packages with HIGH issues in category "Generation of Error Message Containing Sensitive Information" (category total=36)
+
+| Package | Count |
+| --- | --- |
+| go | 11 |
+| podman | 6 |
+| plugins | 6 |
+| kubernetes | 6 |
+| common | 6 |
+| etcd | 1 |
+
+### Top 10 Packages with HIGH issues in category "XML External Entity (XXE) Injection" (category total=33)
+
+| Package | Count |
+| --- | --- |
+| xmlsec | 14 |
+| xerces-c | 7 |
+| libxslt | 6 |
+| tomcat | 4 |
+| runtime | 1 |
+| libxml2 | 1 |
+
+### Top 10 Packages with HIGH issues in category "Server-Side Request Forgery (SSRF)" (category total=26)
+
+| Package | Count |
+| --- | --- |
+| kafka | 11 |
+| podman | 4 |
+| common | 3 |
+| tomcat | 2 |
+| moby | 2 |
+| node | 1 |
+| glide | 1 |
+| bcc | 1 |
+| bazel | 1 |
+
+
+## Top 10 Source Packages with most issues (with breakdown)
+
+| Package | TotalIssues | HighCrypto | High | Medium | Low |
+| --- | --- | --- | --- | --- | --- |
+| jdk21u | 2997 | 54 | 105 | 727 | 2165 |
+| jdk11u | 2855 | 54 | 105 | 785 | 1965 |
+| llvm-project | 2775 | 0 | 39 | 445 | 2291 |
+| node | 2744 | 5 | 23 | 422 | 2299 |
+| jdk17u | 2733 | 53 | 101 | 675 | 1957 |
+| jdk8u | 2347 | 54 | 97 | 844 | 1406 |
+| runtime | 1990 | 20 | 28 | 240 | 1722 |
+| subversion | 1470 | 0 | 0 | 49 | 1421 |
+| mysql-server | 1343 | 1 | 27 | 608 | 708 |
+| wireshark | 1140 | 0 | 6 | 167 | 967 |
+
+
+## Top 10 Source Packages with most issues on Level "High (+ crypto)"
+
+| Package | Count |
+| --- | --- |
+| jdk8u | 54 |
+| jdk21u | 54 |
+| jdk11u | 54 |
+| jdk17u | 53 |
+| runtime | 20 |
+| tornado | 5 |
+| node | 5 |
+| pycryptodome | 4 |
+| unbound | 2 |
+| rabbitmq-server | 2 |
+
+
+## Top 10 Source Packages with most issues on Level "High"
+
+| Package | Count |
+| --- | --- |
+| tomcat | 142 |
+| jdk21u | 105 |
+| jdk11u | 105 |
+| jdk17u | 101 |
+| jdk8u | 97 |
+| llvm-project | 39 |
+| go | 34 |
+| runtime | 28 |
+| podman | 28 |
+| mysql-server | 27 |
+
+
+## Top 10 Source Packages with most issues on Level "Medium"
+
+| Package | Count |
+| --- | --- |
+| jdk8u | 844 |
+| jdk11u | 785 |
+| jdk21u | 727 |
+| src | 696 |
+| jdk17u | 675 |
+| mysql-server | 608 |
+| cups | 588 |
+| util-linux | 488 |
+| server | 481 |
+| crash | 467 |
+
+
+## Top 10 Source Packages with most issues on Level "Low"
+
+| Package | Count |
+| --- | --- |
+| node | 2299 |
+| llvm-project | 2291 |
+| jdk21u | 2165 |
+| jdk11u | 1965 |
+| jdk17u | 1957 |
+| runtime | 1722 |
+| subversion | 1421 |
+| jdk8u | 1406 |
+| wireshark | 967 |
+| zsh | 738 |
+
