@@ -108,6 +108,58 @@ def clean_alts(record: dict, top: int = 3) -> list[dict]:
     return alts[:top]
 
 
+def alts_beating_self(record: dict) -> list[dict]:
+    """Return alternatives whose composite_score is strictly greater than the
+    package's own. Self-named entries are filtered out. Sorted by score desc.
+
+    Used for the "Alternatives outscoring the package" branch section: for
+    each package, surface every alternative where the dynamic ranking says
+    the alternative beats the incumbent.
+    """
+    pkg_score = composite_for_dedup(record)
+    if pkg_score < 0:
+        return []
+    alts = record.get("alternatives") or []
+    if isinstance(alts, dict):
+        alts = [alts]
+    elif not isinstance(alts, list):
+        return []
+    self_norm = _norm_name(record.get("tool_name"))
+    out = []
+    for a in alts:
+        if not isinstance(a, dict):
+            continue
+        if self_norm and _norm_name(a.get("name")) == self_norm:
+            continue
+        if composite_for_dedup(a) > pkg_score:
+            out.append(a)
+    return sorted(out, key=composite_for_dedup, reverse=True)
+
+
+def build_better_alt_rows(records: list[dict]) -> list[dict]:
+    """For every dedup'd record in `records`, emit one row per alternative
+    that outscores the package. Sorted by score delta (desc) -- biggest
+    gaps surface first. Returns a flat list of dict rows ready to render.
+    """
+    deduped = dedup_by_tool(records)
+    rows = []
+    for r in deduped:
+        pkg_name  = r.get("tool_name") or "(unnamed)"
+        pkg_score = composite_for_dedup(r)
+        for a in alts_beating_self(r):
+            a_score = composite_for_dedup(a)
+            rows.append({
+                "package":         pkg_name,
+                "package_score":   r.get("composite_score"),
+                "alt_name":        a.get("name") or "(unnamed)",
+                "alt_score":       a.get("composite_score"),
+                "alt_weblink":     a.get("weblink") or "",
+                "delta":           round(a_score - pkg_score, 1),
+                "rationale":       a.get("rationale") or "",
+            })
+    return sorted(rows, key=lambda r: r["delta"], reverse=True)
+
+
 def build_per_branch_records(jsonl_rows: list[dict],
                              url_to_branches: dict[str, list[str]],
                              branches: list[str]) -> dict[str, list[dict]]:
@@ -157,6 +209,25 @@ def render_markdown(branch: str, records: list[dict], top_n: int,
                 rat   = truncate(a.get("rationale") or "", 160).replace("|", r"\|")
                 out.append(f"| {j} | {aname} | {acs_str} | {rat} |")
         out.append("")
+
+    # Branch-wide cross-cut: every alternative across all packages in this
+    # branch that beats its incumbent. Independent of the top-N filter.
+    better_rows = build_better_alt_rows(records)
+    out.append("## Alternatives outscoring the package")
+    out.append("")
+    if not better_rows:
+        out.append("_No alternative beats its package in this branch._")
+    else:
+        out.append(f"_{len(better_rows)} alternative(s) score higher than the corresponding package._")
+        out.append("")
+        out.append("| # | Package | Pkg score | Alternative | Alt score | Δ | Rationale |")
+        out.append("|---|---|---|---|---|---|---|")
+        for k, row in enumerate(better_rows, 1):
+            pkg = str(row["package"]).replace("|", r"\|")
+            alt = str(row["alt_name"]).replace("|", r"\|")
+            rat = truncate(row["rationale"], 140).replace("|", r"\|")
+            out.append(f"| {k} | {pkg} | {row['package_score']} | {alt} | {row['alt_score']} | +{row['delta']} | {rat} |")
+    out.append("")
     return "\n".join(out)
 
 
@@ -196,6 +267,23 @@ def render_text(branch: str, records: list[dict], top_n: int,
                     line += f"  -- {rat}"
                 out.append(line)
         out.append("")
+
+    # Branch-wide cross-cut: every alternative across all packages in this
+    # branch that beats its incumbent. Independent of the top-N filter.
+    better_rows = build_better_alt_rows(records)
+    out.append("Alternatives outscoring the package")
+    if not better_rows:
+        out.append("  (none)")
+    else:
+        out.append(f"  {len(better_rows)} alternative(s) score higher than the corresponding package.")
+        for k, row in enumerate(better_rows, 1):
+            rat = truncate(row["rationale"], 140)
+            line = (f"  {k:>3}. {row['package']} ({row['package_score']})"
+                    f"  ->  {row['alt_name']} ({row['alt_score']}, +{row['delta']})")
+            if rat:
+                line += f"  -- {rat}"
+            out.append(line)
+    out.append("")
     return "\n".join(out)
 
 
@@ -212,6 +300,7 @@ def render_json(branch: str, records: list[dict], top_n: int,
         "generated": generated,
         "records_considered": len(records),
         "top_n": top_n,
+        "alternatives_outscoring_package": build_better_alt_rows(records),
         "tools": [
             {
                 "rank":             i + 1,
@@ -299,6 +388,27 @@ def main() -> int:
                 alt_lines.append(f"{j+1}. {aname} ({acs})")
             alt_cell = "<br>".join(alt_lines) if alt_lines else "_(none)_"
             combined.append(f"| {i} | {name} | {cs_str} | {sm} | {alt_cell} |")
+
+        # Branch-wide cross-cut: alternatives outscoring their package.
+        # Shown as a collapsible block to keep the run page navigable when
+        # a branch has dozens of beating alternatives.
+        better_rows = build_better_alt_rows(recs)
+        combined.append("")
+        combined.append(f"<details><summary><b>Alternatives outscoring the package</b> "
+                        f"({len(better_rows)} found)</summary>")
+        combined.append("")
+        if not better_rows:
+            combined.append("_No alternative beats its package in this branch._")
+        else:
+            combined.append("| # | Package | Pkg score | Alternative | Alt score | Δ | Rationale |")
+            combined.append("|---|---|---|---|---|---|---|")
+            for k, row in enumerate(better_rows, 1):
+                pkg = str(row["package"]).replace("|", r"\|")
+                alt = str(row["alt_name"]).replace("|", r"\|")
+                rat = truncate(row["rationale"], 140).replace("|", r"\|")
+                combined.append(f"| {k} | {pkg} | {row['package_score']} | {alt} | "
+                                f"{row['alt_score']} | +{row['delta']} | {rat} |")
+        combined.append("</details>")
     print("\n".join(combined))
     return 0
 
