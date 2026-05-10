@@ -79,6 +79,35 @@ def dedup_by_tool(records: list[dict]) -> list[dict]:
     return list(by_key.values())
 
 
+def clean_alts(record: dict, top: int = 3) -> list[dict]:
+    """Return up to `top` alternatives for a record, with the package itself
+    filtered out and the remainder sorted by composite_score (desc).
+
+    Grok regularly returns the package itself as a candidate inside its own
+    alternatives ranking pool (observed for Python, requests, pydantic,
+    PyJWT, etc.). That entry is not an "alternative" and must not appear in
+    any of the rendered tables. Centralised here so per-branch and combined
+    renderers behave identically.
+    """
+    alts = record.get("alternatives") or []
+    # PowerShell ConvertTo-Json serialises a single-element array as a bare
+    # object instead of a 1-element list. Coerce back.
+    if isinstance(alts, dict):
+        alts = [alts]
+    elif not isinstance(alts, list):
+        alts = []
+    self_norm = _norm_name(record.get("tool_name"))
+    if self_norm:
+        alts = [a for a in alts
+                if isinstance(a, dict)
+                and _norm_name(a.get("name")) != self_norm]
+    try:
+        alts = sorted(alts, key=composite_for_dedup, reverse=True)
+    except Exception:
+        pass
+    return alts[:top]
+
+
 def build_per_branch_records(jsonl_rows: list[dict],
                              url_to_branches: dict[str, list[str]],
                              branches: list[str]) -> dict[str, list[dict]]:
@@ -115,29 +144,7 @@ def render_markdown(branch: str, records: list[dict], top_n: int,
         if weblink:
             out.append(f"[{weblink}]({weblink})  ")
         out.append(f"**Resume:** {summary}")
-        alts = r.get("alternatives") or []
-        # PowerShell ConvertTo-Json serialises a single-element array as a
-        # bare object instead of a 1-element list. Coerce back.
-        if isinstance(alts, dict):
-            alts = [alts]
-        elif not isinstance(alts, list):
-            alts = []
-        # Drop any "alternative" whose name is the package itself -- Grok
-        # often returns the package as a candidate in its own ranking pool,
-        # which is not useful in an "alternatives" column. Use the same
-        # normalisation as dedup so '{fmt}' and 'fmt' are treated as one.
-        self_norm = _norm_name(r.get("tool_name"))
-        if self_norm:
-            alts = [a for a in alts
-                    if isinstance(a, dict)
-                    and _norm_name(a.get("name")) != self_norm]
-        # Top-3 alternatives by composite_score (alternatives carry their own
-        # composite_score; preserve the order the classifier emitted but cap at 3).
-        try:
-            alts_sorted = sorted(alts, key=lambda a: composite_for_dedup(a), reverse=True)
-        except Exception:
-            alts_sorted = alts
-        top3 = alts_sorted[:3]
+        top3 = clean_alts(r, 3)
         if top3:
             out.append("\n**Top alternatives:**")
             out.append("")
@@ -176,27 +183,7 @@ def render_text(branch: str, records: list[dict], top_n: int,
         if wl:
             out.append(f"    {wl}")
         out.append(f"    Resume: {truncate(r.get('summary'), 200)}")
-        alts = r.get("alternatives") or []
-        # PowerShell ConvertTo-Json serialises a single-element array as a
-        # bare object instead of a 1-element list. Coerce back.
-        if isinstance(alts, dict):
-            alts = [alts]
-        elif not isinstance(alts, list):
-            alts = []
-        # Drop any "alternative" whose name is the package itself -- Grok
-        # often returns the package as a candidate in its own ranking pool,
-        # which is not useful in an "alternatives" column. Use the same
-        # normalisation as dedup so '{fmt}' and 'fmt' are treated as one.
-        self_norm = _norm_name(r.get("tool_name"))
-        if self_norm:
-            alts = [a for a in alts
-                    if isinstance(a, dict)
-                    and _norm_name(a.get("name")) != self_norm]
-        try:
-            alts_sorted = sorted(alts, key=lambda a: composite_for_dedup(a), reverse=True)
-        except Exception:
-            alts_sorted = alts
-        top3 = alts_sorted[:3]
+        top3 = clean_alts(r, 3)
         if top3:
             out.append("    Top alternatives:")
             for j, a in enumerate(top3, 1):
@@ -219,17 +206,7 @@ def render_json(branch: str, records: list[dict], top_n: int,
         key=composite_for_dedup, reverse=True,
     )[:top_n]
     def _alts(r):
-        a = r.get("alternatives") or []
-        if isinstance(a, dict):
-            a = [a]
-        elif not isinstance(a, list):
-            a = []
-        self_norm = _norm_name(r.get("tool_name"))
-        if self_norm:
-            a = [x for x in a
-                 if isinstance(x, dict)
-                 and _norm_name(x.get("name")) != self_norm]
-        return a[:3]
+        return clean_alts(r, 3)
     payload = {
         "branch": branch,
         "generated": generated,
@@ -314,12 +291,7 @@ def main() -> int:
             cs   = r.get("composite_score")
             cs_str = f"{cs}" if cs is not None else "n/a"
             sm   = truncate(r.get("summary"), 140).replace("|", r"\|")
-            alts = r.get("alternatives") or []
-            if isinstance(alts, dict):
-                alts = [alts]
-            elif not isinstance(alts, list):
-                alts = []
-            alts = alts[:3]
+            alts = clean_alts(r, 3)
             alt_lines = []
             for j, a in enumerate(alts):
                 aname = (a.get("name") or "?").replace("|", r"\|")
