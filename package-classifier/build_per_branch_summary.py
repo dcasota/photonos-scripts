@@ -176,6 +176,23 @@ def build_better_alt_rows(records: list[dict]) -> list[dict]:
     return sorted(rows, key=lambda r: r["delta"], reverse=True)
 
 
+def _as_list(value) -> list:
+    """Coerce a sidecar value to a list.
+
+    PowerShell's ConvertTo-Json serializes a 1-element array as a bare
+    scalar -- so the sidecar JSON returns a string when a URL maps to
+    exactly one branch or package. Iterating it char-by-char ("spdlog"
+    -> ['s','p',...]) corrupted the displayed package name and silently
+    dropped single-branch URLs from per-branch records (run 25641789908
+    showed packages as single characters). Normalize to a real list.
+    """
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple)):
+        return list(value)
+    return [value]
+
+
 def build_per_branch_records(jsonl_rows: list[dict],
                              url_to_branches: dict[str, list[str]],
                              branches: list[str],
@@ -192,10 +209,10 @@ def build_per_branch_records(jsonl_rows: list[dict],
         if not url:
             continue
         if not rec.get("_pkg_name"):
-            pkgs = url_to_packages.get(url) or []
+            pkgs = _as_list(url_to_packages.get(url))
             if pkgs:
                 rec["_pkg_name"] = pkgs[0]
-        for b in url_to_branches.get(url, []):
+        for b in _as_list(url_to_branches.get(url)):
             if b in branches:
                 by_branch[b].append(rec)
     return {b: by_branch.get(b, []) for b in branches}

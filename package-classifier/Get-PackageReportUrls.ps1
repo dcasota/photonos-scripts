@@ -223,10 +223,19 @@ if ($BranchMapFile) {
     $map = [ordered]@{}
     $pkgMap = [ordered]@{}
     foreach ($u in ($urls | Sort-Object)) {
+        # PowerShell preserves Object[] when assigned via the *statement*
+        # form of `if`, but unwraps the single-element array when the value
+        # comes from the *expression* form (`$x = if (...) { @(...) }`).
+        # ConvertTo-Json then serializes the unwrapped scalar as a bare
+        # JSON string, breaking downstream readers (single-branch URLs got
+        # dropped, package names rendered as a single character — see
+        # run 25641789908). Keep the statement form here.
         $brs = $urlBranches[$u]
-        if ($brs) { $map[$u] = ($brs | Sort-Object) } else { $map[$u] = @() }
+        if ($brs) { $map[$u] = @($brs | Sort-Object) }
+        else      { $map[$u] = @() }
         $pkgs = $urlPackages[$u]
-        if ($pkgs) { $pkgMap[$u] = ($pkgs | Sort-Object) } else { $pkgMap[$u] = @() }
+        if ($pkgs) { $pkgMap[$u] = @($pkgs | Sort-Object) }
+        else       { $pkgMap[$u] = @() }
     }
     $payload = [ordered]@{
         generated       = (Get-Date).ToUniversalTime().ToString('o')
