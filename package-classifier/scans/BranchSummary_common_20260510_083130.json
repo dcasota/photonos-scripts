@@ -1,0 +1,150 @@
+{
+  "branch": "common",
+  "generated": "2026-05-10T08:31:30+00:00",
+  "records_considered": 4,
+  "top_n": 10,
+  "alternatives_outscoring_package": [],
+  "tools": [
+    {
+      "rank": 1,
+      "tool_name": "Linux",
+      "composite_score": 83.5,
+      "weblink": "https://www.kernel.org/",
+      "summary": "Core of the Linux OS managing hardware, processes, memory and drivers.",
+      "language": "C",
+      "license": "GPL-2.0-only",
+      "last_release": null,
+      "metrics": {
+        "popularity": {
+          "stars": 170000,
+          "score": 95
+        },
+        "reputation": {
+          "cves_12mo": 180,
+          "score": 65
+        },
+        "integration": {
+          "score": 90,
+          "notes": "Widely supported by all major distros and hardware vendors"
+        },
+        "documentation": {
+          "last_doc_update": "2024-03",
+          "score": 85
+        },
+        "ecosystem": {
+          "issues_12mo": 8500,
+          "prs_12mo": 12000,
+          "score": 80
+        }
+      },
+      "url": "http://www.kernel.org/pub/linux/kernel/v6.x/linux-6.1.83.tar.xz",
+      "alternatives": [
+        {
+          "name": "FreeBSD",
+          "weblink": "https://www.freebsd.org/",
+          "summary": "Unix-like OS kernel with strong focus on performance and security features.",
+          "language": "C",
+          "license": "BSD-2-Clause",
+          "last_release": "2024-03",
+          "metrics": {
+            "popularity": {
+              "stars": 8200,
+              "score": 55
+            },
+            "reputation": {
+              "cves_12mo": 45,
+              "score": 80
+            },
+            "integration": {
+              "score": 70,
+              "notes": "Excellent docs but smaller hardware ecosystem"
+            },
+            "documentation": {
+              "last_doc_update": "2024-02",
+              "score": 88
+            },
+            "ecosystem": {
+              "issues_12mo": 1200,
+              "prs_12mo": 950,
+              "score": 75
+            }
+          },
+          "rationale": "Strong reputation and documentation offset lower popularity.",
+          "composite_score": 71.0,
+          "rank": 1
+        },
+        {
+          "name": "OpenBSD",
+          "weblink": "https://www.openbsd.org/",
+          "summary": "Security-focused Unix kernel emphasizing correctness and minimal attack surface.",
+          "language": "C",
+          "license": "ISC",
+          "last_release": "2024-04",
+          "metrics": {
+            "popularity": {
+              "stars": 3100,
+              "score": 40
+            },
+            "reputation": {
+              "cves_12mo": 12,
+              "score": 95
+            },
+            "integration": {
+              "score": 55,
+              "notes": "Limited hardware support and driver availability"
+            },
+            "documentation": {
+              "last_doc_update": "2024-01",
+              "score": 82
+            },
+            "ecosystem": {
+              "issues_12mo": 380,
+              "prs_12mo": 210,
+              "score": 65
+            }
+          },
+          "rationale": "Best-in-class reputation but weakest integration and popularity.",
+          "composite_score": 66.7,
+          "rank": 2
+        }
+      ],
+      "ranking_winner": "Linux"
+    },
+    {
+      "rank": 2,
+      "tool_name": "stalld",
+      "composite_score": 76.5,
+      "weblink": "https://gitlab.com/rt-linux-tools/stalld",
+      "summary": "Daemon that monitors Linux thread starvation and temporarily boosts priority of starved threads to prevent indefinite blocking.",
+      "language": "C",
+      "license": "GPL-2.0-only",
+      "last_release": "2024-09",
+      "metrics": {
+        "popularity": {
+          "stars": null,
+          "score": 45
+        },
+        "reputation": {
+          "cves_12mo": 0,
+          "score": 95
+        },
+        "integration": {
+          "score": 80,
+          "notes": "Simple systemd service; config via CLI flags or /etc/sysconfig/stalld"
+        },
+        "documentation": {
+          "last_doc_update": "2024-09",
+          "score": 75
+        },
+        "ecosystem": {
+          "issues_12mo": 4,
+          "prs_12mo": 2,
+          "score": 85
+        }
+      },
+      "url": "https://gitlab.com/rt-linux-tools/stalld/-/archive/v1.26.3/stalld-v1.26.3.tar.gz",
+      "alternatives": [],
+      "ranking_winner": "stalld"
+    }
+  ]
+}

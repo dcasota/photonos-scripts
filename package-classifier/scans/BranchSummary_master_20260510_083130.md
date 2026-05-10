@@ -1,0 +1,597 @@
+# Package Classifier — Branch master
+
+_Generated: 2026-05-10T08:31:30+00:00_  
+_Records considered (this branch): 602; deduplicated: 10 of top 10_  
+
+### 1. Python — composite_score 93.9
+[https://www.python.org/](https://www.python.org/)  
+**Resume:** General-purpose high-level programming language with batteries-included stdlib and interpreter.
+
+**Top alternatives:**
+
+| # | Name | Composite | Rationale |
+|---|---|---|---|
+| 1 | Go | 91.1 | Superior reputation and low issue volume offset by narrower library ecosystem. |
+| 2 | Node.js | 85.8 | Strong popularity and integration but higher CVE count and ecosystem noise. |
+
+### 2. PostgreSQL — composite_score 92.4
+[https://www.postgresql.org/](https://www.postgresql.org/)  
+**Resume:** Open-source object-relational database management system (RDBMS).
+
+**Top alternatives:**
+
+| # | Name | Composite | Rationale |
+|---|---|---|---|
+| 1 | SQLite | 87.2 | Excellent reputation and simplicity but lower popularity for server workloads. |
+| 2 | MySQL | 85.3 | Strong popularity and integration but more CVEs and older docs lower the score. |
+
+### 3. networkx — composite_score 91.5
+[https://github.com/networkx/networkx](https://github.com/networkx/networkx)  
+**Resume:** Python library for creating, manipulating, and studying the structure, dynamics, and functions of complex networks/graphs.
+
+**Top alternatives:**
+
+| # | Name | Composite | Rationale |
+|---|---|---|---|
+| 1 | python-igraph | 80.5 | Strong performance and low CVE count but lower popularity and integration friction. |
+| 2 | graph-tool | 70.8 | Excellent performance but poor integration ease and smallest community. |
+
+### 4. curl — composite_score 91.4
+[https://curl.se](https://curl.se)  
+**Resume:** Command-line tool and library for transferring data with URLs, supporting HTTP, FTP and dozens of other protocols.
+
+**Top alternatives:**
+
+| # | Name | Composite | Rationale |
+|---|---|---|---|
+| 1 | aria2 | 89.1 | High popularity and clean security record; slightly dated docs and narrower protocol focus. |
+| 2 | httpie | 88.4 | User-friendly HTTP focus but lacks breadth of protocols and raw performance of curl. |
+| 3 | wget | 79.6 | Mature, trusted downloader but smaller community and fewer protocols than curl. |
+
+### 5. coreutils — composite_score 90.5
+[https://www.gnu.org/software/coreutils/](https://www.gnu.org/software/coreutils/)  
+**Resume:** GNU core utilities for basic file, shell and text manipulation
+
+**Top alternatives:**
+
+| # | Name | Composite | Rationale |
+|---|---|---|---|
+| 1 | uutils/coreutils | 86.4 | Strong modern security posture and rising popularity |
+| 2 | busybox | 75.0 | Compact but higher CVE count and slower release cadence |
+
+### 6. wireguard-tools — composite_score 90.4
+[https://www.wireguard.com/](https://www.wireguard.com/)  
+**Resume:** Command-line tools for configuring and managing WireGuard VPN tunnels.
+
+**Top alternatives:**
+
+| # | Name | Composite | Rationale |
+|---|---|---|---|
+| 1 | OpenVPN | 81.1 | Very popular with solid docs but higher CVE count and more ecosystem noise. |
+| 2 | strongSwan | 76.6 | Lower popularity but good reputation and manageable issue volume. |
+
+### 7. OpenSSL — composite_score 89.8
+[https://www.openssl.org](https://www.openssl.org)  
+**Resume:** Full-featured toolkit for SSL/TLS protocols, cryptography, and secure communications.
+
+**Top alternatives:**
+
+| # | Name | Composite | Rationale |
+|---|---|---|---|
+| 1 | BoringSSL | 83.6 | Highest reputation and strong integration in modern stacks despite lower popularity. |
+| 2 | wolfSSL | 79.6 | Good documentation and integration for constrained environments. |
+| 3 | LibreSSL | 79.0 | Best-in-class reputation and clean ecosystem offset by smaller community. |
+
+### 8. activesupport — composite_score 89.5
+[https://rubygems.org/gems/activesupport](https://rubygems.org/gems/activesupport)  
+**Resume:** Toolkit of support libraries and Ruby core extensions extracted from the Rails framework.
+
+**Top alternatives:**
+
+| # | Name | Composite | Rationale |
+|---|---|---|---|
+| 1 | facets | 67.8 | Broad extensions but lower popularity and outdated docs. |
+| 2 | powerpack | 61.8 | Lightweight but stale and narrow feature set. |
+
+### 9. sed — composite_score 89.5
+[https://www.gnu.org/software/sed/](https://www.gnu.org/software/sed/)  
+**Resume:** GNU stream editor for filtering and transforming text streams using simple scripts.
+
+**Top alternatives:**
+
+| # | Name | Composite | Rationale |
+|---|---|---|---|
+| 1 | gawk | 87.2 | Higher recency and similar ubiquity; slightly broader scripting capability than sed. |
+| 2 | perl | 78.8 | More powerful but heavier; excellent docs offset moderate ecosystem noise. |
+
+### 10. nokogiri — composite_score 89.5
+[https://nokogiri.org](https://nokogiri.org)  
+**Resume:** Nokogiri is an HTML, XML, SAX, and Reader parser with XPath and CSS selector support.
+
+**Top alternatives:**
+
+| # | Name | Composite | Rationale |
+|---|---|---|---|
+| 1 | ox | 79.8 | Strong speed and zero recent CVEs; lower popularity and docs freshness. |
+| 2 | oga | 73.2 | Good for pure-Ruby environments; lower popularity and stale docs. |
+
+## Alternatives outscoring the package
+
+_473 alternative(s) score higher than the corresponding package._
+
+| # | Package | Pkg score | Alternative | Alt score | Δ | Rationale |
+|---|---|---|---|---|---|---|
+| 1 | commons-httpclient | 36.5 | okhttp | 89.0 | +52.5 | Highest popularity, active maintenance, strong ecosystem metrics. |
+| 2 | gnome-common | 41.5 | Meson | 90.5 | +49.0 | Highest adoption, active maintenance, excellent GNOME integration |
+| 3 | tcp_wrappers | 39.5 | firewalld | 87.9 | +48.4 | Strong popularity and integration; slightly edges nftables on composite. |
+| 4 | commons-httpclient | 36.5 | httpcomponents-client | 84.0 | +47.5 | Best reputation and direct lineage; slightly lower popularity than OkHttp. |
+| 5 | ant-contrib | 42.5 | Gradle | 89.8 | +47.3 | Highest popularity, active maintenance, excellent docs and integration. |
+| 6 | hpricot | 42.5 | nokogiri | 89.8 | +47.3 | Dominant, actively maintained parser with superior speed and features |
+| 7 | tcp_wrappers | 39.5 | nftables | 85.2 | +45.7 | Highest scores across integration, docs and ecosystem with active maintenance. |
+| 8 | commons-httpclient | 36.5 | java.net.http.HttpClient | 80.6 | +44.1 | Excellent integration and zero CVEs; lower ecosystem visibility. |
+| 9 | zip | 42.5 | rubyzip | 86.0 | +43.5 | Highest popularity, active maintenance, strong docs and ecosystem |
+| 10 | intltool | 46.5 | gettext | 89.0 | +42.5 | Highest maturity, broadest adoption and active maintenance. |
+| 11 | gnome-common | 41.5 | CMake | 83.2 | +41.7 | Strong ecosystem and popularity but slightly lower GNOME-native fit |
+| 12 | CppUnit | 49.5 | GoogleTest | 90.8 | +41.3 | Highest popularity, active maintenance, excellent integration |
+| 13 | mingetty | 42.5 | agetty | 83.8 | +41.3 | Highest popularity, active maintenance, excellent integration |
+| 14 | ant-contrib | 42.5 | Apache Maven | 83.2 | +40.7 | Strong ecosystem and reputation but lower Ant-task compatibility than Gradle. |
+| 15 | ipaddr | 52.5 | ipaddress | 92.9 | +40.4 | Official stdlib replacement with highest integration and docs |
+| 16 | AutoGen | 52.5 | Jinja2 | 92.8 | +40.3 | Highest popularity, active maintenance, excellent docs and integration. |
+| 17 | GConf | 38.5 | libconfig | 78.8 | +40.3 | High popularity and clean design for general use. |
+| 18 | Info-ZIP Zip | 47.5 | 7-Zip | 87.0 | +39.5 | Highest popularity, active maintenance, broad format support. |
+| 19 | docbook-xsl | 52.5 | pandoc | 92.0 | +39.5 | Highest popularity, active maintenance, broad ecosystem and integration. |
+| 20 | CppUnit | 49.5 | Catch2 | 87.2 | +37.7 | Very popular, header-only ease, strong recent activity |
+| 21 | sendmail | 47.5 | postfix | 84.8 | +37.3 | Highest overall scores in popularity, reputation and integration. |
+| 22 | libdnet | 46.5 | libtins | 83.0 | +36.5 | Highest overall scores across popularity, docs and activity. |
+| 23 | libdnet | 46.5 | Scapy | 83.0 | +36.5 | Extremely popular with excellent docs but different language. |
+| 24 | backports.ssl_match_hostname | 58.5 | requests | 94.1 | +35.6 | Highest popularity and solid metrics; wraps secure lower layers |
+| 25 | stig-hardening-ph5 | 51.5 | scap-security-guide | 86.0 | +34.5 | Highest overall scores across popularity, docs and integration; broad distro coverage |
+| 26 | thread_safe | 55.5 | concurrent-ruby | 89.4 | +33.9 | Highest popularity, active maintenance, supersedes thread_safe |
+| 27 | tclap | 59.0 | CLI11 | 92.8 | +33.8 | Highest popularity, active maintenance, excellent docs and integration |
+| 28 | backports.ssl_match_hostname | 58.5 | ssl (stdlib) | 92.3 | +33.8 | Native, actively maintained, highest integration and docs scores |
+| 29 | GConf | 38.5 | dconf | 71.2 | +32.7 | Direct successor with active maintenance and superior integration. |
+| 30 | lockfile | 55.5 | filelock | 88.0 | +32.5 | Highest popularity, excellent maintenance, modern docs and broad adoption. |
+| 31 | libXt | 52.5 | Qt | 84.8 | +32.3 | Top popularity and documentation; slightly lower reputation score due to more CVEs. |
+| 32 | docbook-xsl | 52.5 | sphinx | 84.5 | +32.0 | Excellent docs and reputation, slightly lower stars than Pandoc. |
+| 33 | tcp_wrappers | 39.5 | iptables | 71.2 | +31.7 | Mature but lower scores than nftables/firewalld due to legacy status. |
+| 34 | trousers | 51.5 | tpm2-tss | 83.0 | +31.5 | Highest activity, best docs and integration for current TPM 2.0 needs. |
+| 35 | sendmail | 47.5 | opensmtpd | 78.9 | +31.4 | Excellent security record and clean design but smaller ecosystem. |
+| 36 | libXt | 52.5 | GTK | 83.8 | +31.3 | Highest overall scores in popularity, integration and docs; widely adopted. |
+| 37 | libdaemon | 52.5 | systemd | 83.8 | +31.3 | Highest popularity and docs; replaces most libdaemon use cases on Linux. |
+| 38 | hpricot | 42.5 | oga | 73.5 | +31.0 | Lightweight alternative when native extensions are undesirable |
+| 39 | ant-contrib | 42.5 | Apache Ant | 72.8 | +30.3 | Direct host for the original package but low popularity and stagnant growth. |
+| 40 | LZO | 58.5 | LZ4 | 88.4 | +29.9 | Highest popularity, active maintenance, excellent speed and integration. |
+| 41 | ipaddr | 52.5 | netaddr | 82.3 | +29.8 | Actively maintained, broad features, solid ecosystem |
+| 42 | atftp | 48.5 | dnsmasq | 78.2 | +29.7 | Broad ecosystem and recent activity offset minor CVEs. |
+| 43 | slang | 52.5 | ncurses | 82.0 | +29.5 | Highest adoption, active maintenance and best integration across ecosystems. |
+| 44 | mlocate | 59.5 | fd | 88.5 | +29.0 | Outstanding popularity and ecosystem but lower integration score for classic locate use-case. |
+| 45 | stig-hardening-ph5 | 51.5 | stig-hardening | 80.5 | +29.0 | Strong integration and reputation; slightly lower popularity than scap-security-guide |
+| 46 | backports.ssl_match_hostname | 58.5 | urllib3 | 87.3 | +28.8 | Strong ecosystem and popularity with good security track record |
+| 47 | intltool | 46.5 | itstool | 75.2 | +28.7 | Direct functional replacement for XML use-cases with better modernity. |
+| 48 | GConf | 38.5 | KConfig | 67.2 | +28.7 | Strong reputation and docs but less GNOME-native. |
+| 49 | cdrkit | 51.5 | xorriso | 80.1 | +28.6 | Actively maintained, excellent docs and integration, zero recent CVEs. |
+| 50 | nspr | 58.5 | libuv | 87.1 | +28.6 | Exceptional popularity and modern maintenance; slightly narrower scope than NSPR. |
+| 51 | ronn | 61.8 | pandoc | 90.4 | +28.6 | Highest popularity, active maintenance, excellent docs and integration |
+| 52 | atftp | 48.5 | tftp-hpa | 77.0 | +28.5 | Actively maintained, high integration and documentation scores. |
+| 53 | libXi | 58.5 | libinput | 86.8 | +28.3 | Highest activity, modern API, strong ecosystem and docs |
+| 54 | docbook-xsl | 52.5 | asciidoctor | 80.5 | +28.0 | Solid modern alternative with strong DocBook output capability. |
+| 55 | tclap | 59.0 | cxxopts | 86.8 | +27.8 | Good balance of simplicity, popularity and recent activity |
+| 56 | ltrace | 58.5 | strace | 86.2 | +27.7 | Highest popularity, active maintenance, broad ecosystem support despite syscall vs library focus difference. |
+| 57 | xmlstarlet | 61.5 | yq | 89.1 | +27.6 | Highest popularity, active maintenance, broad format support including XML, excellent docs |
+| 58 | ltrace | 58.5 | bpftrace | 85.8 | +27.3 | Excellent modern alternative with high activity and extensibility for library tracing via uprobes. |
+| 59 | syslog_protocol | 55.5 | syslog | 82.8 | +27.3 | Native, actively maintained via Ruby, high integration and docs. |
+| 60 | libdnet | 46.5 | libnet | 73.8 | +27.3 | Closest functional match with better maintenance than libdnet. |
+| 61 | Perl4-CoreLibs | 62.5 | Getopt::Long | 89.8 | +27.3 | Direct functional replacement with far superior maintenance, docs and integration. |
+| 62 | unf_ext | 66.5 | Ruby built-in unicode_normalize | 93.6 | +27.1 | Native, fast, no gem needed for basic normalization |
+| 63 | xproto | 48.5 | xorgproto | 75.5 | +27.0 | Direct successor with higher activity and integration scores. |
+| 64 | ebtables | 58.5 | nftables | 85.2 | +26.7 | Highest popularity, active maintenance, full ebtables feature parity plus more. |
+| 65 | dig_rb | 62.5 | backports | 88.5 | +26.0 | Actively maintained, broad coverage, high adoption. |
+| 66 | cscope | 62.5 | Universal Ctags | 88.4 | +25.9 | Highest activity, broad language support, excellent editor ecosystem and recent releases. |
+| 67 | LZO | 58.5 | Snappy | 84.2 | +25.7 | Strong reputation and speed profile, slightly behind LZ4 in activity. |
+| 68 | Info-ZIP Zip | 47.5 | libarchive | 72.8 | +25.3 | Modern, widely integrated in OSes, good library usability. |
+| 69 | Info-ZIP Zip | 47.5 | minizip | 72.8 | +25.3 | Lightweight and secure but lower ecosystem activity. |
+| 70 | xproto | 48.5 | wayland | 73.5 | +25.0 | Functional successor for new development despite protocol shift. |
+| 71 | nspr | 58.5 | glib | 83.4 | +24.9 | Top popularity and documentation; slightly lower reputation due to higher CVE count. |
+| 72 | dejavu-fonts | 64.5 | noto-fonts | 89.4 | +24.9 | Highest activity, broadest coverage, maintained by Google. |
+| 73 | libretls | 57.4 | LibreSSL | 82.1 | +24.7 | Highest overall balance of popularity, active maintenance and native libtls API. |
+| 74 | trousers | 51.5 | wolfTPM | 76.0 | +24.5 | Good portability and activity but narrower Linux desktop focus. |
+| 75 | http-parser | 58.5 | http_parser.rb | 82.8 | +24.3 | Highest popularity, active ecosystem, strong integration and maintained docs |
+| 76 | xmlto | 68.5 | pandoc | 92.8 | +24.3 | Highest popularity, excellent docs and integration; far broader format support. |
+| 77 | DBIx-Simple | 61.5 | DBI | 85.8 | +24.3 | Best integration and ecosystem; direct low-level access. |
+| 78 | unzip | 60.5 | 7-Zip | 84.6 | +24.1 | Highest popularity and active maintenance with broad ecosystem. |
+| 79 | watchdog | 62.5 | supervisor | 86.6 | +24.1 | Very popular, excellent docs, strong ecosystem despite Python overhead. |
+| 80 | isc-dhcp | 61.5 | dnsmasq | 85.1 | +23.6 | Excellent reputation, tiny footprint and very active for its scope. |
+| 81 | libnetfilter_cthelper | 62.5 | nftables | 86.0 | +23.5 | Actively maintained, broad ecosystem adoption and superior documentation. |
+| 82 | unzip | 60.5 | libarchive | 83.8 | +23.3 | Excellent integration and low CVE count with modern releases. |
+| 83 | mlocate | 59.5 | plocate | 82.8 | +23.3 | Highest scores in popularity, recency, and integration; direct successor to mlocate. |
+| 84 | trollop | 62.5 | thor | 85.8 | +23.3 | Highest popularity and maintenance; widely adopted in Ruby ecosystem. |
+| 85 | GNU patch | 66.5 | Git | 89.8 | +23.3 | Highest popularity, active maintenance and seamless integration. |
+| 86 | Photon OS | 65.3 | Alpine Linux | 88.4 | +23.1 | Highest popularity, best container integration and freshest docs. |
+| 87 | sendmail | 47.5 | exim | 70.4 | +22.9 | Strong flexibility and decent reputation but lower popularity than Postfix. |
+| 88 | Expect | 66.5 | pexpect | 89.4 | +22.9 | Highest popularity, active maintenance, excellent Python integration. |
+| 89 | Tcl | 64.5 | Lua | 87.2 | +22.7 | Superior embedding integration and reputation; lower popularity than Python. |
+| 90 | Tcl | 64.5 | Python | 86.8 | +22.3 | Highest popularity, strong integration and documentation outweigh moderate CVE count. |
+| 91 | lockfile | 55.5 | portalocker | 77.8 | +22.3 | Solid reputation and Windows focus but lower stars and activity than filelock. |
+| 92 | nspr | 58.5 | apr | 80.6 | +22.1 | Highest balanced scores across popularity, integration and ecosystem; strong reputation. |
+| 93 | libretls | 57.4 | OpenSSL | 79.5 | +22.1 | Dominant ecosystem and documentation but lower reputation score due to CVE volume. |
+| 94 | tevent | 68.5 | libuv | 90.4 | +21.9 | Top composite due to popularity, zero CVEs and fresh docs. |
+| 95 | Texinfo | 66.8 | Sphinx | 88.6 | +21.8 | Highest popularity, modern ecosystem and excellent multi-format output. |
+| 96 | crash-gcore-command | 64.5 | gdb | 86.2 | +21.7 | Broad ecosystem and documentation outweigh minor CVE count. |
+| 97 | runit | 62.5 | systemd | 84.0 | +21.5 | Dominant popularity and integration offset by higher CVE count. |
+| 98 | ivykis | 62.5 | libevent | 84.0 | +21.5 | Highest popularity, strong ecosystem and documentation |
+| 99 | Lasso | 61.5 | PySAML2 | 82.6 | +21.1 | Highest activity, modern docs, strong Python ecosystem fit. |
+| 100 | ffi-compiler | 66.5 | ffi | 87.2 | +20.7 | Higher popularity, active maintenance, simpler integration for most FFI needs. |
+| 101 | crash-gcore-command | 64.5 | crash | 85.2 | +20.7 | Highest popularity, active maintenance and native functionality. |
+| 102 | isc-dhcp | 61.5 | kea | 82.2 | +20.7 | Actively maintained successor with superior API, docs and lower CVE rate. |
+| 103 | dejagnu | 67.5 | CTest | 88.1 | +20.6 | Highest popularity, active maintenance, excellent docs and CMake ecosystem integration. |
+| 104 | fluent-plugin-vmware-loginsight | 52.2 | fluent-plugin-syslog | 72.8 | +20.6 | Higher activity, maintained, leverages standard syslog which Log Insight supports directly |
+| 105 | declarative | 64.5 | dry-struct | 84.9 | +20.4 | Highest overall scores in popularity, docs and ecosystem activity. |
+| 106 | font-util | 64.5 | freetype | 84.6 | +20.1 | Excellent popularity and docs outweigh moderate CVE count. |
+| 107 | LZO | 58.5 | zlib | 78.6 | +20.1 | Unmatched ecosystem reach and integration despite slightly lower raw speed. |
+| 108 | xproto | 48.5 | xcb-proto | 68.6 | +20.1 | Complementary protocol layer with better current maintenance. |
+| 109 | gnome-common | 41.5 | Autotools | 61.2 | +19.7 | Direct predecessor but outdated for new projects |
+| 110 | DBIx-Simple | 61.5 | DBIx-Class | 81.2 | +19.7 | Highest overall scores in popularity, docs and ecosystem activity. |
+| 111 | fluent-plugin-vmware-loginsight | 52.2 | vmware-log-collector | 71.8 | +19.6 | Official support and best integration but closed source and less flexible than Fluentd |
+| 112 | cool.io | 67.5 | async | 87.0 | +19.5 | Highest popularity, active maintenance, excellent docs |
+| 113 | watchdog | 62.5 | monit | 81.9 | +19.4 | Higher popularity, active maintenance, better docs and integration. |
+| 114 | webrick | 68.9 | puma | 88.0 | +19.1 | Highest popularity, strong ecosystem and integration; minor recent CVE offset by rapid fixes |
+| 115 | runit | 62.5 | s6 | 81.6 | +19.1 | Highest scores in documentation, integration and recent activity. |
+| 116 | libICE | 68.5 | D-Bus | 87.2 | +18.7 | Superior popularity, integration and documentation; actively maintained IPC standard. |
+| 117 | httpclient | 71.4 | faraday | 90.0 | +18.6 | Highest popularity, active maintenance and flexible integration. |
+| 118 | gnu-efi | 67.5 | EDK II | 86.1 | +18.6 | Highest popularity, active maintenance and superior documentation outweigh moderate CVE count |
+| 119 | libXcursor | 68.5 | GLFW | 87.1 | +18.6 | Excellent popularity/reputation balance and modern graphics focus. |
+| 120 | http-parser | 58.5 | webrick | 76.8 | +18.3 | Excellent integration and currency but lower parser-specific performance |
+| 121 | docutils | 74.5 | Pandoc | 92.8 | +18.3 | Exceptional popularity, zero CVEs and strong documentation but lower native Python integration score. |
+| 122 | libtool | 70.5 | Meson | 88.7 | +18.2 | Strong scores across all criteria with very low CVE count. |
+| 123 | tclap | 59.0 | docopt.cpp | 77.2 | +18.2 | Solid but less active than top alternatives |
+| 124 | SCons | 67.9 | CMake | 85.9 | +18.0 | Highest popularity, strong ecosystem and documentation with broad adoption. |
+| 125 | File-Remove | 66.5 | Path-Tiny | 84.4 | +17.9 | Higher popularity, better docs and integration than File-Remove. |
+| 126 | trousers | 51.5 | ibmtss | 69.2 | +17.7 | Strong reputation and recent releases but smaller community. |
+| 127 | xmlto | 68.5 | asciidoctor | 86.2 | +17.7 | Strong modern alternative for documentation workflows; slightly narrower XML focus. |
+| 128 | tevent | 68.5 | libevent | 86.0 | +17.5 | Highest popularity and integration scores outweigh minor CVE. |
+| 129 | atftp | 48.5 | inetutils | 65.8 | +17.3 | Stable GNU project with good reputation but lower popularity. |
+| 130 | Lasso | 61.5 | SimpleSAMLphp | 78.7 | +17.2 | Very popular, frequent releases, broad PHP integration. |
+| 131 | watchdog | 62.5 | systemd | 79.7 | +17.2 | Ubiquitous on Linux, highest integration score, but more CVEs. |
+| 132 | libedit | 70.5 | readline | 87.6 | +17.1 | Highest popularity and integration; minor recent CVE offset by strong docs and ecosystem. |
+| 133 | libgcrypt | 72.5 | libsodium | 89.5 | +17.0 | Best reputation and ecosystem health; strong popularity with modern projects. |
+| 134 | libtool | 70.5 | CMake | 87.4 | +16.9 | Highest popularity, active maintenance and superior integration for new projects. |
+| 135 | cdrkit | 51.5 | libburn | 68.2 | +16.7 | Good API integration and maintenance, modest popularity. |
+| 136 | authbind | 71.5 | Linux capabilities | 88.2 | +16.7 | Native kernel support, highest integration and documentation scores, minimal attack surface. |
+| 137 | ntpsec | 71.5 | chrony | 88.1 | +16.6 | Highest popularity, zero recent CVEs, excellent docs and integration. |
+| 138 | optimist | 71.4 | thor | 88.0 | +16.6 | Highest popularity and strong ecosystem support outweigh minor issue volume. |
+| 139 | virt-what | 72.5 | systemd-detect-virt | 89.0 | +16.5 | Highest integration and docs; ubiquitous on modern Linux. |
+| 140 | tboot | 62.5 | TrenchBoot | 79.0 | +16.5 | Higher activity, better docs and integration than tboot. |
+| 141 | lockfile | 55.5 | fasteners | 71.9 | +16.4 | Broader sync tools but less focused and lower recent activity. |
+| 142 | libICE | 68.5 | Wayland Protocols | 84.8 | +16.3 | Strong forward-looking alternative with good metrics; not a direct drop-in for ICE protocol. |
+| 143 | dejavu-fonts | 64.5 | liberation-fonts | 80.8 | +16.3 | Strong compatibility focus and good distro integration. |
+| 144 | Parse::Yapp | 68.5 | Marpa::R2 | 84.8 | +16.3 | Highest overall scores in documentation freshness, integration and ecosystem activity. |
+| 145 | fluent-plugin-remote_syslog | 62.5 | fluent-plugin-syslog | 78.6 | +16.1 | Higher activity, better docs and TLS features |
+| 146 | SCons | 67.9 | Meson | 84.0 | +16.1 | Excellent reputation and documentation with growing popularity. |
+| 147 | Mercurial | 72.5 | Git | 88.5 | +16.0 | Highest popularity, ecosystem and integration scores outweigh moderate CVE count |
+| 148 | patch | 71.2 | git | 87.2 | +16.0 | Highest popularity, modern docs and seamless integration outweigh moderate ecosystem noise. |
+| 149 | mlocate | 59.5 | GNU findutils | 75.5 | +16.0 | Excellent integration and documentation but slightly lower popularity than plocate. |
+| 150 | trollop | 62.5 | slop | 78.5 | +16.0 | Lightweight and close in spirit to Trollop with decent activity. |
+| 151 | libXext | 55.5 | libxcb | 71.4 | +15.9 | Higher activity, better docs and integration than libXext while covering similar low-level needs. |
+| 152 | IPC::Run | 70.5 | IPC::Cmd | 86.4 | +15.9 | Actively maintained core module with superior docs and integration. |
+| 153 | help2man | 72.5 | pandoc | 88.2 | +15.7 | Highest popularity, active ecosystem and excellent docs outweigh minor CVE |
+| 154 | nicstat | 62.5 | vnstat | 78.2 | +15.7 | Actively maintained, strong docs and integration, zero recent CVEs. |
+| 155 | ebtables | 58.5 | iptables | 74.0 | +15.5 | Widely known but lower bridge-specific capability and declining ecosystem. |
+| 156 | hdparm | 62.5 | smartmontools | 78.0 | +15.5 | Broader device support, active maintenance, higher ecosystem activity |
+| 157 | pyproject-hooks | 72.5 | build | 88.0 | +15.5 | Higher popularity, better docs and integration than pyproject-hooks while covering same use case. |
+| 158 | npth | 69.5 | pthreads | 85.0 | +15.5 | Highest popularity and integration; minor recent CVEs in implementations. |
+| 159 | yajl-ruby | 74.0 | oj | 89.4 | +15.4 | Highest popularity, active maintenance, excellent performance and docs |
+| 160 | crash-gcore-command | 64.5 | kdump | 79.8 | +15.3 | Strong reputation and docs but lower integration flexibility for gcore. |
+| 161 | ed | 67.8 | sed | 83.1 | +15.3 | Higher popularity and integration; direct functional superset for scripted edits. |
+| 162 | docutils | 74.5 | Sphinx | 89.6 | +15.1 | Highest popularity, active maintenance and superior integration outweigh slightly higher recent CVEs. |
+| 163 | itstool | 62.5 | translate-toolkit | 77.5 | +15.0 | Popular Python ecosystem with broad format support. |
+| 164 | builder | 72.5 | nokogiri | 87.4 | +14.9 | Highest popularity, active maintenance, broad ecosystem despite occasional CVEs. |
+| 165 | IPC::Run | 70.5 | Capture::Tiny | 85.3 | +14.8 | Lightweight, widely adopted, excellent maintenance record. |
+| 166 | llhttp-ffi | 66.5 | http_parser.rb | 81.2 | +14.7 | Highest popularity and ecosystem maturity; still the de-facto choice despite older upstream parser. |
+| 167 | itstool | 62.5 | po4a | 77.2 | +14.7 | Higher activity, better docs and integration than itstool. |
+| 168 | cscope | 62.5 | GNU Global | 77.1 | +14.6 | Strong documentation and integration; lower popularity than ctags but more features than cscope. |
+| 169 | bdftopcf | 61.5 | FontForge | 76.0 | +14.5 | High popularity and active maintenance outweigh heavier footprint. |
+| 170 | byacc | 71.5 | bison | 86.0 | +14.5 | Highest popularity, active maintenance, broad ecosystem and superior documentation. |
+| 171 | Texinfo | 66.8 | Doxygen | 81.3 | +14.5 | Strong for API docs and diagrams; slightly older release cadence. |
+| 172 | libgssglue | 65.5 | mit-krb5 | 80.0 | +14.5 | Dominant ecosystem and documentation; minor CVE impact offset by rapid fixes. |
+| 173 | libunistring | 68.5 | utf8proc | 83.0 | +14.5 | Strong reputation, integration and ecosystem scores with zero recent CVEs. |
+| 174 | xmlstarlet | 61.5 | libxml2-utils | 76.0 | +14.5 | Ubiquitous availability and integration, solid maintenance by GNOME project |
+| 175 | trollop | 62.5 | optimist | 77.0 | +14.5 | Actively maintained successor with better docs and similar API. |
+| 176 | http_parser.rb | 67.5 | llhttp | 81.9 | +14.4 | Highest popularity, active maintenance, strong security track record. |
+| 177 | libxml-ruby | 70.5 | nokogiri | 84.8 | +14.3 | Highest popularity and best docs; minor recent CVEs offset by rapid fixes. |
+| 178 | iotop | 66.5 | atop | 80.8 | +14.3 | Higher activity, better docs and maintained ecosystem |
+| 179 | bdwgc | 77.4 | mimalloc | 91.5 | +14.1 | Superior popularity, zero recent CVEs, excellent docs and integration. |
+| 180 | domain_name | 72.5 | public_suffix | 86.6 | +14.1 | Higher popularity, active maintenance, strong ecosystem |
+| 181 | libksba | 74.5 | OpenSSL | 88.5 | +14.0 | Highest popularity and integration; minor CVE count offset by rapid fixes |
+| 182 | Squid | 74.6 | Nginx | 88.5 | +13.9 | Highest popularity and integration scores outweigh slightly higher recent CVEs. |
+| 183 | tdb | 68.5 | lmdb | 82.4 | +13.9 | Higher popularity and better concurrency model than TDB while remaining lightweight. |
+| 184 | Photon OS | 65.3 | Fedora CoreOS | 79.2 | +13.9 | Strong immutable model and modern tooling; slightly lower popularity than Alpine. |
+| 185 | ed | 67.8 | ex | 81.6 | +13.8 | Strong ecosystem and docs; offers ed compatibility plus modern features. |
+| 186 | font-util | 64.5 | fontconfig | 78.2 | +13.7 | Higher popularity, active maintenance, broad ecosystem integration. |
+| 187 | mingetty | 42.5 | mgetty | 56.2 | +13.7 | More features than mingetty but less active than agetty |
+| 188 | diffutils | 74.5 | difftastic | 88.0 | +13.5 | High popularity, modern language, active maintenance, syntax awareness. |
+| 189 | bc | 71.5 | python | 85.0 | +13.5 | Highest popularity and integration but heavier than bc |
+| 190 | byacc | 71.5 | antlr | 84.8 | +13.3 | Very popular with excellent docs but higher complexity and more CVEs than byacc. |
+| 191 | libXi | 58.5 | libevdev | 71.8 | +13.3 | Lower-level building block; less direct replacement for XInput |
+| 192 | tboot | 62.5 | Linux IMA/EVM | 75.8 | +13.3 | Excellent integration but broader scope than pure TXT launch. |
+| 193 | rdiscount | 75.4 | redcarpet | 88.6 | +13.2 | Highest popularity and strong ecosystem balance |
+| 194 | lsscsi | 73.5 | lsblk | 86.6 | +13.1 | Highest popularity, best docs and integration; minor CVE noise. |
+| 195 | google-logging-utils | 72.5 | lograge | 85.6 | +13.1 | Excellent popularity and zero CVEs but older docs and less Google-specific |
+| 196 | HTTP-Message | 73.4 | Mojo-Message | 86.4 | +13.0 | High popularity and docs but heavier integration |
+| 197 | gdbm | 71.5 | lmdb | 84.5 | +13.0 | Higher popularity, better performance and modern maintenance than gdbm. |
+| 198 | cool.io | 67.5 | eventmachine | 80.4 | +12.9 | Very popular but slightly lower reputation due to recent CVE |
+| 199 | libretls | 57.4 | GnuTLS | 70.2 | +12.8 | Solid reputation and docs but lower popularity and integration ease for libtls users. |
+| 200 | libXfixes | 66.5 | libxcb | 79.2 | +12.7 | Higher activity, better docs and integration; superset functionality for most X11 needs. |
+| 201 | NSS | 69.5 | OpenSSL | 82.2 | +12.7 | Highest popularity and integration; strong documentation outweighs moderate CVE count. |
+| 202 | xmlstarlet | 61.5 | xidel | 74.2 | +12.7 | Strong XML/HTML extraction focus, recent releases, smaller but healthy community |
+| 203 | libXrender | 70.5 | cairo | 83.2 | +12.7 | Much higher popularity and documentation; abstracts Xrender details. |
+| 204 | netrc | 76.5 | dotenv | 89.1 | +12.6 | Higher popularity and maintenance but solves broader env config, not netrc-specific |
+| 205 | http-form_data | 71.5 | multipart-post | 84.1 | +12.6 | Higher popularity, active maintenance, strong ecosystem metrics. |
+| 206 | Guile | 74.5 | Racket | 87.0 | +12.5 | Highest popularity, active maintenance and best documentation outweigh slightly higher issue volume. |
+| 207 | libXext | 55.5 | libX11 | 68.0 | +12.5 | Broader scope and more active maintenance than libXext; slight CVE risk. |
+| 208 | NSS | 69.5 | BoringSSL | 82.0 | +12.5 | Excellent reputation and low CVE count; strong ecosystem activity. |
+| 209 | gdbm | 71.5 | leveldb | 84.0 | +12.5 | Very high adoption and stars, solid reputation, though docs lag. |
+| 210 | libXcursor | 68.5 | SDL2 | 81.0 | +12.5 | High popularity, active maintenance and broad ecosystem outweigh slightly higher CVE count. |
+| 211 | dejagnu | 67.5 | Bats | 79.9 | +12.4 | Good popularity and activity but narrower scope than DejaGnu. |
+| 212 | HTTP-Message | 73.4 | requests | 85.7 | +12.3 | Best overall metrics outside Perl ecosystem |
+| 213 | Valgrind | 71.5 | AddressSanitizer | 83.8 | +12.3 | Highest integration and documentation scores with broad compiler ecosystem adoption. |
+| 214 | libXfont2 | 66.5 | freetype | 78.8 | +12.3 | Broad adoption and superior docs make it top general-purpose alternative despite marginally higher CVE count. |
+| 215 | ivykis | 62.5 | libev | 74.8 | +12.3 | Good reputation and low activity, solid but dated |
+| 216 | groff | 71.5 | mandoc | 83.6 | +12.1 | Modern, actively maintained, better docs and integration than groff for man pages. |
+| 217 | File-Remove | 66.5 | File-Path | 78.5 | +12.0 | Bundled with Perl, reliable for basic removal tasks. |
+| 218 | Data::Dump | 80.5 | Data::Dumper | 92.4 | +11.9 | Highest integration and popularity as core module with excellent maintenance. |
+| 219 | traceroute | 71.5 | mtr | 83.0 | +11.5 | Highest popularity and active maintenance with good integration. |
+| 220 | multi_json | 76.6 | oj | 88.1 | +11.5 | Highest popularity and recent activity with strong performance. |
+| 221 | async-pool | 72.5 | connection_pool | 83.8 | +11.3 | Highest popularity and solid reputation but lacks native async support. |
+| 222 | protocol-http1 | 71.5 | net/http | 82.8 | +11.3 | Unmatched integration and baseline popularity in Ruby. |
+| 223 | bdwgc | 77.4 | jemalloc | 88.6 | +11.2 | Very high adoption and strong reputation; slightly older docs. |
+| 224 | declarative | 64.5 | values | 75.6 | +11.1 | Strong reputation and ecosystem with good integration simplicity. |
+| 225 | sigdump | 70.5 | debug | 81.6 | +11.1 | Best docs, integration and maintenance as stdlib successor |
+| 226 | librelp | 71.8 | rsyslog | 82.8 | +11.0 | Highest popularity and documentation; direct superset of librelp functionality. |
+| 227 | google-apis-storage_v1 | 78.4 | google-cloud-storage | 89.4 | +11.0 | Higher integration ease and documentation freshness outweigh lower star count; preferred official library |
+| 228 | libev | 76.5 | libuv | 87.5 | +11.0 | Highest popularity, active maintenance, broad ecosystem |
+| 229 | async-pool | 72.5 | async | 83.4 | +10.9 | Excellent ecosystem and docs but requires async-pool for pooling. |
+| 230 | OpenIPMI | 66.5 | ipmitool | 77.4 | +10.9 | Highest adoption and easiest integration despite older last release. |
+| 231 | xml-security-c | 68.5 | Botan | 79.4 | +10.9 | Highest popularity and documentation but not a drop-in XML-security replacement. |
+| 232 | protocol-http1 | 71.5 | async-http | 82.3 | +10.8 | Higher popularity, strong ecosystem activity and maintained docs. |
+| 233 | mime-types-data | 78.4 | marcel | 89.2 | +10.8 | Highest popularity, strong Rails integration and recent activity |
+| 234 | async-http | 76.5 | faraday | 87.2 | +10.7 | Excellent ecosystem and integration flexibility despite minor CVE. |
+| 235 | protocol-http | 71.5 | async-http | 82.1 | +10.6 | Higher popularity, strong ecosystem and integration within same project family. |
+| 236 | xml-security-c | 68.5 | xmlsec | 79.1 | +10.6 | Higher popularity, fresher releases, better integration options outweigh slightly higher recent CVEs. |
+| 237 | recursive-open-struct | 78.4 | hashie | 88.9 | +10.5 | Highest popularity, active maintenance, strong docs and ecosystem |
+| 238 | libecap | 53.5 | c-icap | 64.0 | +10.5 | Higher activity and documentation outweigh protocol overhead versus eCAP. |
+| 239 | google-logging-utils | 72.5 | google-cloud-logging | 82.9 | +10.4 | Higher popularity, fresher releases and better docs outweigh minor CVE |
+| 240 | console | 78.5 | pry | 88.9 | +10.4 | Highest popularity and mature ecosystem outweigh slightly higher issue volume. |
+| 241 | io-event | 80.4 | async | 90.7 | +10.3 | Highest popularity and best integration within the same ecosystem. |
+| 242 | shim | 79.4 | systemd-boot | 89.6 | +10.2 | Higher popularity, fresher docs, strong systemd ecosystem and comparable security posture. |
+| 243 | inotify-tools | 74.5 | fswatch | 84.6 | +10.1 | Higher popularity, recent activity, cross-platform support and better docs outweigh minor ecosystem size. |
+| 244 | libXrandr | 66.5 | wlroots | 76.6 | +10.1 | Strong ecosystem momentum and modern relevance but higher integration cost for X11-centric codebases |
+| 245 | AutoGen | 52.5 | m4 | 62.6 | +10.1 | Lightweight, widely available, but lower-level than AutoGen. |
+| 246 | Texinfo | 66.8 | AsciiDoc | 76.4 | +9.6 | Good balance but smaller community than Sphinx. |
+| 247 | remote_syslog_sender | 68.9 | logstash-logger | 78.5 | +9.6 | Higher popularity and fresher docs outweigh slightly busier issue tracker |
+| 248 | protocol-http2 | 68.5 | nghttp2 | 78.1 | +9.6 | Top popularity and docs but lower integration ease due to native deps. |
+| 249 | highline | 76.5 | tty-prompt | 86.1 | +9.6 | Higher popularity, fresher releases, better docs and active maintenance. |
+| 250 | libnetfilter_cthelper | 62.5 | conntrack-tools | 72.1 | +9.6 | Direct Netfilter lineage with helper management but lower activity than nftables. |
+| 251 | lttng-ust | 74.5 | bpftrace | 84.0 | +9.5 | Highest popularity and modern eBPF adoption outweighs slightly higher recent CVEs. |
+| 252 | protocol-http2 | 68.5 | http-2 | 78.0 | +9.5 | Highest popularity and solid reputation; slightly dated docs. |
+| 253 | libunistring | 68.5 | ICU | 78.0 | +9.5 | Highest popularity and documentation quality outweigh moderate CVE count. |
+| 254 | protocol-hpack | 71.4 | http-2 | 80.9 | +9.5 | Highest popularity and solid reputation; broader HTTP/2 scope. |
+| 255 | async-http | 76.5 | http | 85.9 | +9.4 | Highest popularity and strong recent activity with good docs. |
+| 256 | fluentd | 79.9 | vector | 89.2 | +9.3 | Excellent reputation and popularity, modern language |
+| 257 | Types-Serialiser | 71.5 | Cpanel-JSON-XS | 80.8 | +9.3 | Highest activity, best docs and integration scores |
+| 258 | protocol-http1 | 71.5 | http | 80.8 | +9.3 | Strong stars and reputation offset by older documentation. |
+| 259 | findutils | 81.8 | fd | 91.1 | +9.3 | Highest popularity and modern UX while maintaining strong security posture. |
+| 260 | fiber-annotation | 68.5 | fiber-local | 77.8 | +9.3 | Higher activity, maintained by same org, direct evolution of annotation concept. |
+| 261 | webrick | 68.9 | unicorn | 78.0 | +9.1 | Solid reputation and low activity but dated docs and lower popularity |
+| 262 | async-io | 79.5 | async | 88.6 | +9.1 | Best overall balance with active maintenance and tight integration. |
+| 263 | SCons | 67.9 | Ninja | 76.9 | +9.0 | Strong reputation and ecosystem but lower integration flexibility as standalone tool. |
+| 264 | xcb-proto | 76.5 | wayland-protocols | 85.5 | +9.0 | Higher popularity, active ecosystem and modern alternative to X11 protocols |
+| 265 | dialog | 78.5 | gum | 87.5 | +9.0 | Strong popularity, docs and zero CVEs outweigh ecosystem activity. |
+| 266 | digest-crc | 82.0 | zlib | 91.0 | +9.0 | Highest composite due to being built-in, extremely reliable and always up-to-date docs, but limited to CRC32 only. |
+| 267 | cdrkit | 51.5 | cdrtools | 60.4 | +8.9 | Upstream of cdrkit, recent releases but smaller community. |
+| 268 | http_parser.rb | 67.5 | http-2 | 76.4 | +8.9 | Good Ruby integration and ecosystem health, slightly lower popularity. |
+| 269 | mini_portile | 70.4 | rake-compiler | 79.2 | +8.8 | Higher popularity and fresher docs but less specialized for port/miniature builds. |
+| 270 | httpclient | 71.4 | rest-client | 80.1 | +8.7 | Strong popularity but slightly dated docs and one recent CVE. |
+| 271 | jsonpath | 68.5 | jmespath | 77.1 | +8.6 | Higher activity, better docs and integration than jsonpath. |
+| 272 | libgssglue | 65.5 | libgssapi | 74.1 | +8.6 | Higher activity, better docs and integration than legacy libgssglue. |
+| 273 | OpenIPMI | 66.5 | FreeIPMI | 75.1 | +8.6 | Recent release, clean reputation and solid documentation. |
+| 274 | protocol-hpack | 71.4 | nghttp2 | 80.0 | +8.6 | Best overall popularity and docs but lower integration ease for pure-Ruby use. |
+| 275 | Boehm GC | 78.5 | jemalloc | 87.1 | +8.6 | Superior popularity, active maintenance and broad adoption outweigh lack of full GC semantics. |
+| 276 | inotify-tools | 74.5 | Watchman | 83.0 | +8.5 | Highest popularity and strong docs but heavier integration and slight reputation dip from recent CVE. |
+| 277 | xtrans | 62.5 | libxcb | 71.0 | +8.5 | Higher activity, better documentation and integration; replaces xtrans usage in modern X clients. |
+| 278 | httpclient | 71.4 | excon | 79.9 | +8.5 | Solid reputation and recent activity but lower popularity. |
+| 279 | libXfont2 | 66.5 | fontconfig | 75.0 | +8.5 | Higher popularity and better integration ecosystem offset by slightly more CVEs and activity. |
+| 280 | libwww-perl | 79.4 | HTTP::Tiny | 87.9 | +8.5 | Lightweight, core Perl, highest integration and ecosystem scores. |
+| 281 | libwww-perl | 79.4 | Mojo::UserAgent | 87.9 | +8.5 | Excellent popularity and docs but heavier integration. |
+| 282 | libnetfilter_cttimeout | 62.5 | conntrack-tools | 71.0 | +8.5 | Broader maintenance and features; indirect timeout support via conntrack. |
+| 283 | glibc | 80.5 | musl | 88.9 | +8.4 | Higher popularity, far fewer recent CVEs, simpler codebase and active maintenance. |
+| 284 | installer | 78.5 | pip | 86.8 | +8.3 | Highest popularity and integration; actively maintained superset of installer functionality. |
+| 285 | libpipeline | 68.5 | Boost.Process | 76.8 | +8.3 | Higher integration score and fresher docs outweigh lower C-native focus. |
+| 286 | bison | 81.5 | ANTLR | 89.8 | +8.3 | Highest popularity, active maintenance, broad language support and modern docs. |
+| 287 | mustache | 78.5 | liquid | 86.6 | +8.1 | Highest popularity, active maintenance, strong ecosystem. |
+| 288 | lsscsi | 73.5 | lshw | 81.6 | +8.1 | Strong reputation and ecosystem; slightly lower popularity than lsblk. |
+| 289 | fluent-plugin-s3 | 79.5 | vector | 87.6 | +8.1 | Top popularity and solid reputation; slightly lower ecosystem score due to volume |
+| 290 | cpio | 78.5 | tar | 86.5 | +8.0 | Higher popularity, better integration and documentation freshness. |
+| 291 | which | 72.5 | busybox | 80.5 | +8.0 | Higher activity, recent releases, strong embedded integration outweighs minor CVEs. |
+| 292 | ffi-compiler | 66.5 | rake-compiler | 74.4 | +7.9 | Broader extension build tool; more active than ffi-compiler but less FFI-specific. |
+| 293 | http-form_data | 71.5 | faraday-multipart | 79.3 | +7.8 | Good integration and docs but narrower scope than multipart-post. |
+| 294 | Types-Serialiser | 71.5 | JSON-MaybeXS | 79.3 | +7.8 | Excellent integration and ecosystem health |
+| 295 | ipaddr | 52.5 | ipcalc | 60.2 | +7.7 | Lightweight but outdated and less popular |
+| 296 | wget | 77.5 | curl | 85.2 | +7.7 | Highest popularity, best docs and integration; slightly more CVEs but actively maintained. |
+| 297 | builder | 72.5 | ox | 80.2 | +7.7 | Strong performance and zero recent CVEs, good activity level. |
+| 298 | libxml-ruby | 70.5 | ox | 78.2 | +7.7 | Strong speed and zero CVEs; weaker docs than Nokogiri. |
+| 299 | SWIG | 82.4 | pybind11 | 90.1 | +7.7 | Highest popularity and integration scores; preferred for Python-centric projects. |
+| 300 | unf | 66.5 | unicode_utils | 74.2 | +7.7 | Higher popularity, maintained longer, broader Unicode feature set |
+| 301 | libgcrypt | 72.5 | OpenSSL | 80.2 | +7.7 | Highest popularity and integration; acceptable reputation despite higher CVE count due to massive usage surface. |
+| 302 | libmnl | 72.4 | libnl | 80.0 | +7.6 | Higher popularity, better docs and integration outweigh minor CVE. |
+| 303 | Emacs | 74.4 | Neovim | 82.0 | +7.6 | Excellent balance of popularity, low CVEs and modern ecosystem activity. |
+| 304 | libev | 76.5 | libevent | 84.1 | +7.6 | Strong reputation and solid integration scores |
+| 305 | Clone | 76.5 | Storable | 84.0 | +7.5 | Core module with highest integration and recent maintenance |
+| 306 | unf_ext | 66.5 | unf | 74.0 | +7.5 | Direct dependent of unf_ext, maintained wrapper |
+| 307 | http | 81.5 | faraday | 89.0 | +7.5 | Highest popularity, excellent docs and integration flexibility. |
+| 308 | othercertdata.txt | 76.0 | ca-certificates | 83.5 | +7.5 | Higher integration and documentation scores; actively maintained by Mozilla with broad ecosystem adoption. |
+| 309 | IPC::Run | 70.5 | IPC::Open3 | 78.0 | +7.5 | Built-in but lower-level than IPC::Run; strong ecosystem stability. |
+| 310 | tomli | 87.8 | tomllib | 95.3 | +7.5 | Highest integration and reputation due to stdlib status and active maintenance. |
+| 311 | timers | 83.4 | concurrent-ruby | 90.7 | +7.3 | Highest popularity and strong maintenance with broad integration. |
+| 312 | Boehm GC | 78.5 | tcmalloc | 85.7 | +7.2 | Excellent reputation and recent activity; slightly lower integration ease than jemalloc. |
+| 313 | cpulimit | 80.4 | systemd | 87.5 | +7.1 | Highest integration and docs; native in modern Linux |
+| 314 | mpc | 76.5 | mpfr | 83.5 | +7.0 | Higher popularity and fresher releases; foundational for complex libs. |
+| 315 | rest-client | 80.5 | faraday | 87.5 | +7.0 | Highest overall scores due to active maintenance, strong docs and broad ecosystem adoption. |
+| 316 | bdwgc | 77.4 | tcmalloc | 84.4 | +7.0 | Strong reputation and recent activity but lower integration flexibility than mimalloc. |
+| 317 | photongrub2-theme | 82.5 | grub2-themes | 89.4 | +6.9 | Highest popularity and active maintenance; broad compatibility |
+| 318 | async-io | 79.5 | nio4r | 86.4 | +6.9 | Higher popularity and proven integration across ecosystem. |
+| 319 | Parse::Yapp | 68.5 | Parse::RecDescent | 75.3 | +6.8 | Good usability but lower performance for complex LALR grammars. |
+| 320 | Lasso | 61.5 | OpenSAML | 68.2 | +6.7 | Enterprise-grade, good reputation but lower recent momentum than PySAML2. |
+| 321 | elfutils | 74.5 | GNU Binutils | 81.2 | +6.7 | Highest ecosystem maturity and integration despite slightly higher CVE count. |
+| 322 | elfutils | 74.5 | patchelf | 81.2 | +6.7 | Excellent reputation and active GitHub community for its narrow purpose. |
+| 323 | libpciaccess | 72.5 | pciutils | 79.2 | +6.7 | Higher popularity and better maintained; direct functional overlap for PCI config access. |
+| 324 | wheel | 82.4 | setuptools | 89.0 | +6.6 | Highest adoption and integration; minor CVE offset by rapid fixes. |
+| 325 | librelp | 71.8 | syslog-ng | 78.4 | +6.6 | Strong ecosystem and docs; comparable reliability features. |
+| 326 | mime-types-data | 78.4 | mini_mime | 85.0 | +6.6 | Excellent lightweight profile and ecosystem health |
+| 327 | mime-types-data | 78.4 | mime-types | 85.0 | +6.6 | Strong popularity but slightly lower integration score |
+| 328 | libedit | 70.5 | linenoise | 77.0 | +6.5 | Strong reputation and popularity; weaker docs and integration limit ranking. |
+| 329 | rest-client | 80.5 | httparty | 86.9 | +6.4 | Strong popularity and clean API; slightly behind Faraday on documentation freshness. |
+| 330 | Emacs | 74.4 | Vim | 80.8 | +6.4 | Strong reputation and stable ecosystem but lower modern integration scores. |
+| 331 | gettext | 79.5 | Boost.Locale | 85.9 | +6.4 | Excellent reputation and ecosystem activity; lower integration score due to Boost dependency. |
+| 332 | dejagnu | 67.5 | Autotest | 73.8 | +6.3 | Native GNU toolchain fit, strong reputation, moderate activity. |
+| 333 | libpng | 81.5 | stb_image | 87.8 | +6.3 | Higher popularity and zero recent CVEs outweigh slightly lower ecosystem activity. |
+| 334 | libXdmcp | 65.5 | libxcb | 71.7 | +6.2 | Higher popularity and integration; broader ecosystem but slightly more CVEs. |
+| 335 | Guile | 74.5 | Chicken Scheme | 80.7 | +6.2 | Strong integration scores and zero recent CVEs place it above Guile despite lower popularity. |
+| 336 | iptables | 80.5 | nftables | 86.6 | +6.1 | Higher scores in reputation, integration and ecosystem; official successor. |
+| 337 | MPFR | 78.5 | Boost.Multiprecision | 84.6 | +6.1 | Strong popularity and docs but C++ focus and minor CVE reduce score vs pure C options |
+| 338 | parted | 76.8 | fdisk | 82.8 | +6.0 | Highest integration and ecosystem activity. |
+| 339 | GRUB | 80.5 | systemd-boot | 86.5 | +6.0 | Higher reputation and integration scores due to fewer CVEs and tight systemd integration. |
+| 340 | NetAddr-IP | 72.8 | Net-IP | 78.8 | +6.0 | More actively maintained with recent releases and better docs |
+| 341 | inotify-tools | 74.5 | entr | 80.4 | +5.9 | Excellent integration and ecosystem health with very low maintenance overhead. |
+| 342 | libpipeline | 68.5 | subprocess.h | 74.4 | +5.9 | Excellent integration and permissive license but weaker documentation. |
+| 343 | nicstat | 62.5 | nload | 68.4 | +5.9 | Moderate activity, decent ecosystem but dated last release. |
+| 344 | Squid | 74.6 | Varnish Cache | 80.4 | +5.8 | Strong reputation and ecosystem with fewer CVEs; lower popularity than Nginx. |
+| 345 | optimist | 71.4 | slop | 77.2 | +5.8 | Good balance of simplicity and metrics but dated documentation lowers score. |
+| 346 | google-cloud-core | 79.4 | aws-sdk-core | 85.1 | +5.7 | Highest popularity and strong docs; minor CVE impact offset by ecosystem size. |
+| 347 | common-sense | 72.5 | Modern::Perl | 78.2 | +5.7 | More actively maintained, similar pragma approach |
+| 348 | alsa-lib | 70.1 | PipeWire | 75.8 | +5.7 | Highest popularity and documentation freshness with solid Linux ecosystem momentum. |
+| 349 | binutils | 72.5 | LLVM | 78.1 | +5.6 | Highest popularity, active ecosystem and modern defaults outweigh moderate CVE count. |
+| 350 | google-cloud-errors | 72.5 | google-cloud-core | 78.1 | +5.6 | Higher integration score and more active maintenance as foundational gem |
+| 351 | fluent-plugin-s3 | 79.5 | fluent-bit | 85.1 | +5.6 | Higher popularity, active maintenance, strong docs outweigh minor CVEs |
+| 352 | LMDB | 82.4 | RocksDB | 88.0 | +5.6 | Highest popularity and active maintenance outweigh minor CVE count. |
+| 353 | ruamel.yaml | 78.5 | PyYAML | 84.1 | +5.6 | Highest popularity and integration; minor CVE offset by massive adoption. |
+| 354 | build | 84.5 | hatch | 90.0 | +5.5 | Highest popularity and docs freshness with strong reputation |
+| 355 | sigdump | 70.5 | rbtrace | 76.0 | +5.5 | Higher popularity and active use for runtime inspection |
+| 356 | representable | 79.0 | roar | 84.4 | +5.4 | Higher popularity, fresher releases and docs, strong ecosystem synergy. |
+| 357 | rdiscount | 75.4 | kramdown | 80.8 | +5.4 | Strong pure-Ruby integration and docs |
+| 358 | llhttp-ffi | 66.5 | http-2 | 71.8 | +5.3 | Good maintenance and docs but narrower scope (HTTP/2 only). |
+| 359 | Types-Serialiser | 71.5 | JSON-XS | 76.8 | +5.3 | Strong popularity and reputation but lower recent activity |
+| 360 | strace | 82.4 | bpftrace | 87.7 | +5.3 | Highest popularity and reputation; modern eBPF approach with active ecosystem. |
+| 361 | dwarves | 71.5 | bloaty | 76.8 | +5.3 | Strong popularity and solid DWARF support but less specialized in struct holes. |
+| 362 | which | 72.5 | toybox | 77.8 | +5.3 | Zero CVEs, active development, permissive license; lower popularity than BusyBox. |
+| 363 | google-apis-iamcredentials_v1 | 79.5 | googleauth | 84.7 | +5.2 | Broader adoption and higher popularity; often used together with the IAM credentials client |
+| 364 | json-c | 82.4 | cJSON | 87.6 | +5.2 | Highest popularity and easiest integration; minor recent CVE offset by rapid fix. |
+| 365 | nio4r | 84.8 | async | 90.0 | +5.2 | Higher popularity, active maintenance, same author ecosystem |
+| 366 | fluentd | 79.9 | fluent-bit | 85.0 | +5.1 | Superior performance, fewer CVEs, active ecosystem |
+| 367 | Emacs | 74.4 | Visual Studio Code | 79.5 | +5.1 | Highest popularity and integration scores outweigh moderate CVE count. |
+| 368 | alsa-utils | 80.5 | PipeWire | 85.6 | +5.1 | Higher popularity and better modern integration than ALSA-utils |
+| 369 | iotop | 66.5 | dstat | 71.6 | +5.1 | Good flexibility but lower recent activity than atop |
+| 370 | wheel | 82.4 | build | 87.4 | +5.0 | Modern, secure, strong docs; slightly lower ecosystem volume. |
+| 371 | Nettle | 78.5 | mbed TLS | 83.5 | +5.0 | Strong reputation and documentation with solid embedded focus. |
+| 372 | xmlto | 68.5 | xsltproc | 73.5 | +5.0 | Direct low-level alternative; slightly lower reputation due to one recent CVE. |
+| 373 | libmicrohttpd | 79.5 | mongoose | 84.4 | +4.9 | Highest popularity and strong integration outweigh slightly higher recent CVEs. |
+| 374 | tinydir | 78.4 | libuv | 83.2 | +4.8 | Highest popularity and docs but heavier integration and slightly lower ecosystem score. |
+| 375 | AppArmor | 78.4 | SELinux | 83.2 | +4.8 | Highest popularity and strong ecosystem despite slightly more CVEs. |
+| 376 | libXrandr | 66.5 | libxcb | 71.2 | +4.7 | Higher popularity, active maintenance and direct RandR protocol access without Xlib wrapper overhead |
+| 377 | wget | 77.5 | aria2 | 82.2 | +4.7 | Excellent reputation and ecosystem activity; docs slightly stale. |
+| 378 | async-http | 76.5 | excon | 81.2 | +4.7 | Solid reputation and speed but weaker documentation freshness. |
+| 379 | nc | 82.8 | ncat | 87.5 | +4.7 | Highest popularity and active maintenance with broad platform support. |
+| 380 | nfs-utils | 76.5 | sshfs | 81.0 | +4.5 | Highest popularity and zero recent CVEs; documentation stale and not a true NFS replacement. |
+| 381 | ipset | 82.5 | nftables | 87.0 | +4.5 | Higher popularity, better integration and active development as the iptables successor. |
+| 382 | libXrender | 70.5 | libxcb-render | 75.0 | +4.5 | Higher activity, better maintained, direct protocol access with lower latency. |
+| 383 | lru_redux | 74.4 | active_support | 78.8 | +4.4 | Highest popularity and docs but heavier integration. |
+| 384 | traceroute | 71.5 | tracepath | 75.8 | +4.3 | Strong integration and reputation, lower popularity than mtr. |
+| 385 | serverengine | 79.4 | puma | 83.6 | +4.2 | Highest popularity and docs; minor recent CVEs offset by strong ecosystem |
+| 386 | mime-types | 80.2 | marcel | 84.4 | +4.2 | Higher popularity, fresher releases and Rails-native integration |
+| 387 | rdiscount | 75.4 | commonmarker | 79.6 | +4.2 | Excellent docs and active maintenance |
+| 388 | grep | 87.5 | ripgrep | 91.6 | +4.1 | Highest popularity and modern performance; minor CVE offset by rapid fixes. |
+| 389 | DBIx-Simple | 61.5 | Rose-DB-Object | 65.6 | +4.1 | Balanced but lower activity and documentation freshness. |
+| 390 | mustache | 78.5 | slim | 82.5 | +4.0 | Good balance of activity and popularity for markup templating. |
+| 391 | JSON-XS | 82.5 | JSON::PP | 86.4 | +3.9 | Best integration and zero dependencies |
+| 392 | dnsmasq | 82.8 | Unbound | 86.6 | +3.8 | Highest reputation and docs; strong privacy focus. |
+| 393 | patch | 71.2 | quilt | 75.0 | +3.8 | Strong reputation and ecosystem activity but lower popularity than git. |
+| 394 | Tcl | 64.5 | Perl | 68.2 | +3.7 | Solid reputation but lower popularity and integration scores than top two. |
+| 395 | serverengine | 79.4 | unicorn | 83.0 | +3.6 | Strong reputation and low activity; dated docs and releases lower score |
+| 396 | traces | 71.5 | opentelemetry-ruby | 75.0 | +3.5 | Higher popularity, better docs and ecosystem maturity outweigh minor CVE. |
+| 397 | gzip | 87.8 | zstd | 91.2 | +3.4 | Highest popularity and modern performance with active maintenance. |
+| 398 | GNU Make | 86.4 | CMake | 89.8 | +3.4 | Highest popularity and integration scores outweigh minor CVE count. |
+| 399 | Linux From Scratch | 76.4 | Yocto Project | 79.8 | +3.4 | Highest integration and balanced scores across categories. |
+| 400 | io-event | 80.4 | nio4r | 83.8 | +3.4 | Solid reputation and maintained but narrower scope. |
+| 401 | ruamel.yaml | 78.5 | strictyaml | 81.9 | +3.4 | Excellent safety and docs; lower integration breadth than full YAML libs. |
+| 402 | Nettle | 78.5 | OpenSSL | 81.8 | +3.3 | Highest popularity and integration despite moderate recent CVEs. |
+| 403 | MPFR | 78.5 | Arb | 81.8 | +3.3 | Higher popularity and active ecosystem outweigh slightly lower integration maturity |
+| 404 | Linux From Scratch | 76.4 | Buildroot | 79.6 | +3.2 | Strong integration scores offset by lower popularity. |
+| 405 | webrick | 68.9 | thin | 72.0 | +3.1 | Decent popularity but weaker documentation and integration scores |
+| 406 | gettext | 79.5 | ICU | 82.6 | +3.1 | Higher popularity, fresher docs and active ecosystem outweigh slightly more CVEs. |
+| 407 | Suricata | 85.9 | Zeek | 89.0 | +3.1 | Higher popularity and fewer CVEs; excellent docs but integration less turnkey for IPS use. |
+| 408 | libksba | 74.5 | Botan | 77.5 | +3.0 | Excellent reputation and docs; lower ecosystem activity |
+| 409 | ronn | 61.8 | ronn-ng | 64.8 | +3.0 | Direct successor with updates but low adoption |
+| 410 | JSON-XS | 82.5 | Cpanel::JSON::XS | 85.4 | +2.9 | Higher activity and maintenance than original JSON-XS |
+| 411 | tzinfo-data | 82.4 | tzinfo | 85.1 | +2.7 | Strong popularity and docs but needs tzinfo-data for full offline use. |
+| 412 | FreeType | 85.4 | HarfBuzz | 88.1 | +2.7 | Strong popularity and reputation but slightly lower integration for pure rendering. |
+| 413 | bdftopcf | 61.5 | otf2bdf | 64.2 | +2.7 | Lightweight but indirect workflow and low adoption. |
+| 414 | m4 | 75.5 | cpp | 78.2 | +2.7 | Highest integration and freshest updates but slightly lower reputation due to occasional CVEs. |
+| 415 | GRUB | 80.5 | rEFInd | 83.2 | +2.7 | Excellent reputation and docs but lower popularity and integration ease. |
+| 416 | vsftpd | 76.5 | Pure-FTPd | 79.1 | +2.6 | Higher activity, fresher docs and releases outweigh slightly lower reputation score. |
+| 417 | http-accept | 80.5 | rack | 83.1 | +2.6 | High popularity and docs but includes unnecessary overhead and one recent CVE. |
+| 418 | aws-sdk-kms | 87.4 | boto3 | 90.0 | +2.6 | Highest popularity and docs; minor CVE offset by rapid fixes |
+| 419 | tzinfo | 82.4 | activesupport | 85.0 | +2.6 | Massive popularity and integration but slightly more CVEs and ecosystem noise. |
+| 420 | tinycdb | 70.5 | cdb | 73.0 | +2.5 | Higher popularity and reference status outweighs older docs. |
+| 421 | nicstat | 62.5 | iftop | 65.0 | +2.5 | Mature but stagnant; still useful for live traffic views. |
+| 422 | libbsd | 70.5 | musl | 73.0 | +2.5 | Strong reputation and documentation but lower integration ease for existing glibc-based projects. |
+| 423 | gpgme | 82.4 | sequoia-openpgp | 84.8 | +2.4 | Highest scores in reputation and documentation; strong modern alternative for OpenPGP. |
+| 424 | talloc | 72.5 | Boehm GC | 74.8 | +2.3 | Higher popularity and active releases but different GC model rather than explicit pools. |
+| 425 | json-c | 82.4 | yyjson | 84.7 | +2.3 | Excellent performance and clean codebase; smaller community than cJSON. |
+| 426 | cpio | 78.5 | libarchive | 80.8 | +2.3 | Strong library integration and GitHub presence offset by more issues. |
+| 427 | libgcrypt | 72.5 | mbed TLS | 74.8 | +2.3 | Solid reputation and documentation; lower popularity outside embedded niche. |
+| 428 | sshpass | 76.8 | pexpect | 79.0 | +2.2 | Strong popularity, recent activity and docs outweigh library integration overhead |
+| 429 | http-cookie | 82.5 | faraday | 84.6 | +2.1 | Higher popularity and active maintenance offset slightly broader scope |
+| 430 | alsa-lib | 70.1 | JACK Audio Connection Kit | 72.2 | +2.1 | Strong reputation and ecosystem but dated docs and lower adoption. |
+| 431 | tzinfo-data | 82.4 | activesupport | 84.4 | +2.0 | Excellent popularity but lower integration/reputation scores outside Rails. |
+| 432 | Nettle | 78.5 | Libgcrypt | 80.5 | +2.0 | Very close GNU sibling with excellent reputation and low activity. |
+| 433 | nio4r | 84.8 | concurrent-ruby | 86.8 | +2.0 | Very popular with strong ecosystem but broader scope |
+| 434 | timers | 83.4 | async | 85.4 | +2.0 | Same author, modern async focus, excellent recent activity. |
+| 435 | timers | 83.4 | rufus-scheduler | 85.4 | +2.0 | Mature scheduler but slightly lower integration score for pure timers. |
+| 436 | mini_mime | 79.4 | marcel | 81.4 | +2.0 | Higher popularity and active Rails backing but slightly heavier |
+| 437 | lru_redux | 74.4 | lru | 76.3 | +1.9 | Higher recency and activity outweigh lower stars. |
+| 438 | domain_name | 72.5 | simpleidn | 74.4 | +1.9 | Specialized, less maintained, limited feature breadth |
+| 439 | msgpack | 85.4 | oj | 87.2 | +1.8 | Superior popularity and integration but slightly lower reputation |
+| 440 | recursive-open-struct | 78.4 | dry-struct | 80.2 | +1.8 | Modern, actively maintained, but heavier than simple recursive OpenStruct |
+| 441 | libmicrohttpd | 79.5 | civetweb | 81.3 | +1.8 | Balanced scores with permissive license and solid reputation. |
+| 442 | io-event | 80.4 | eventmachine | 82.2 | +1.8 | Very popular but aging documentation and slower release cadence. |
+| 443 | wheel | 82.4 | flit | 84.1 | +1.7 | Lightweight and secure but narrower scope than setuptools. |
+| 444 | npth | 69.5 | C11 threads | 71.2 | +1.7 | Standardized but lower adoption and portability than pthreads. |
+| 445 | fluent-plugin-systemd | 78.5 | fluent-plugin-prometheus | 80.1 | +1.6 | Better popularity and docs but lower direct integration for pure journald log shipping. |
+| 446 | libXfixes | 66.5 | libX11 | 68.0 | +1.5 | Broader scope, more maintenance than libXfixes alone. |
+| 447 | traces | 71.5 | ddtrace | 73.0 | +1.5 | Strong popularity and integration but higher issue volume and CVEs. |
+| 448 | firefox | 76.5 | chromium | 78.0 | +1.5 | Highest popularity and ecosystem activity outweighs slightly higher CVE count. |
+| 449 | firefox | 76.5 | brave | 78.0 | +1.5 | Good balance of popularity, reputation and smaller active ecosystem. |
+| 450 | libtasn1 | 72.5 | asn1c | 73.9 | +1.4 | Strong popularity and active repo but older docs and generated-code workflow reduce integration score. |
+| 451 | cpulimit | 80.4 | cgroups | 81.7 | +1.3 | Strong kernel integration but lower ease-of-use |
+| 452 | libtiff | 73.4 | ImageMagick | 74.6 | +1.2 | Highest popularity and integration outweighs higher CVE count. |
+| 453 | GNU Make | 86.4 | Meson | 87.6 | +1.2 | Balanced scores with excellent documentation freshness. |
+| 454 | multi_json | 76.6 | json | 77.8 | +1.2 | Excellent integration and official status but lower stars. |
+| 455 | QEMU | 79.5 | VirtualBox | 80.6 | +1.1 | Higher reputation and fewer recent CVEs offset lower popularity. |
+| 456 | representable | 79.0 | active_model_serializers | 80.1 | +1.1 | Very popular but dated, Rails-tied, weaker recent activity. |
+| 457 | GCC | 87.4 | Clang | 88.4 | +1.0 | Higher popularity, better diagnostics and modern ecosystem outweigh slightly higher recent CVEs. |
+| 458 | bash | 87.4 | fish | 88.4 | +1.0 | Highest GitHub activity and cleanest recent security record; excellent docs. |
+| 459 | libXt | 52.5 | libXaw | 53.5 | +1.0 | Closest functional peer but far lower adoption and maintenance activity. |
+| 460 | pyelftools | 86.4 | LIEF | 87.4 | +1.0 | Higher popularity and fresher docs outweigh slightly lower ecosystem score. |
+| 461 | http | 81.5 | rest-client | 82.4 | +0.9 | Mature and popular but older maintenance and docs. |
+| 462 | yajl-ruby | 74.0 | json | 74.8 | +0.8 | Ubiquitous, zero-install, solid but slower than specialized libs |
+| 463 | remote_syslog_sender | 68.9 | fluent-logger | 69.7 | +0.8 | Strong docs and recent release but lower integration simplicity and one CVE |
+| 464 | Data::Dump | 80.5 | Data::Printer | 81.1 | +0.6 | Strong feature set and docs but lower recent activity than core. |
+| 465 | libtiff | 73.4 | GraphicsMagick | 73.9 | +0.5 | Strong reputation and ecosystem stability but lower popularity. |
+| 466 | http-cookie | 82.5 | rest-client | 83.0 | +0.5 | Solid reputation but older last release and less active ecosystem |
+| 467 | xcb-proto | 76.5 | libxcb | 77.0 | +0.5 | Closely related but higher-level implementation with solid reputation |
+| 468 | net-http | 88.5 | faraday | 88.9 | +0.4 | Highest popularity and strong ecosystem balance. |
+| 469 | iptables | 80.5 | firewalld | 80.8 | +0.3 | Strong reputation and docs; good for desktop/server use cases. |
+| 470 | Parse::Yapp | 68.5 | Parse::Eyapp | 68.8 | +0.3 | Closest functional match to Yapp with modest improvements and maintenance. |
+| 471 | Open vSwitch | 83.4 | Cilium | 83.6 | +0.2 | Superior popularity and docs offset by higher recent CVEs and ecosystem activity. |
+| 472 | mpc | 76.5 | arb | 76.6 | +0.1 | Native complex support with good activity; slightly lower integration maturity. |
+| 473 | socat | 88.0 | ncat | 88.1 | +0.1 | Highest popularity and docs; minor recent CVEs offset by strong integration. |
+

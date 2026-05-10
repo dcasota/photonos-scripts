@@ -1,0 +1,5385 @@
+{
+  "branch": "master",
+  "generated": "2026-05-10T08:31:30+00:00",
+  "records_considered": 602,
+  "top_n": 10,
+  "alternatives_outscoring_package": [
+    {
+      "package": "commons-httpclient",
+      "package_score": 36.5,
+      "alt_name": "okhttp",
+      "alt_score": 89.0,
+      "alt_weblink": "https://square.github.io/okhttp/",
+      "delta": 52.5,
+      "rationale": "Highest popularity, active maintenance, strong ecosystem metrics."
+    },
+    {
+      "package": "gnome-common",
+      "package_score": 41.5,
+      "alt_name": "Meson",
+      "alt_score": 90.5,
+      "alt_weblink": "https://mesonbuild.com",
+      "delta": 49.0,
+      "rationale": "Highest adoption, active maintenance, excellent GNOME integration"
+    },
+    {
+      "package": "tcp_wrappers",
+      "package_score": 39.5,
+      "alt_name": "firewalld",
+      "alt_score": 87.9,
+      "alt_weblink": "https://firewalld.org/",
+      "delta": 48.4,
+      "rationale": "Strong popularity and integration; slightly edges nftables on composite."
+    },
+    {
+      "package": "commons-httpclient",
+      "package_score": 36.5,
+      "alt_name": "httpcomponents-client",
+      "alt_score": 84.0,
+      "alt_weblink": "https://hc.apache.org/httpcomponents-client-5.3.x/index.html",
+      "delta": 47.5,
+      "rationale": "Best reputation and direct lineage; slightly lower popularity than OkHttp."
+    },
+    {
+      "package": "ant-contrib",
+      "package_score": 42.5,
+      "alt_name": "Gradle",
+      "alt_score": 89.8,
+      "alt_weblink": "https://gradle.org/",
+      "delta": 47.3,
+      "rationale": "Highest popularity, active maintenance, excellent docs and integration."
+    },
+    {
+      "package": "hpricot",
+      "package_score": 42.5,
+      "alt_name": "nokogiri",
+      "alt_score": 89.8,
+      "alt_weblink": "https://nokogiri.org",
+      "delta": 47.3,
+      "rationale": "Dominant, actively maintained parser with superior speed and features"
+    },
+    {
+      "package": "tcp_wrappers",
+      "package_score": 39.5,
+      "alt_name": "nftables",
+      "alt_score": 85.2,
+      "alt_weblink": "https://netfilter.org/projects/nftables/",
+      "delta": 45.7,
+      "rationale": "Highest scores across integration, docs and ecosystem with active maintenance."
+    },
+    {
+      "package": "commons-httpclient",
+      "package_score": 36.5,
+      "alt_name": "java.net.http.HttpClient",
+      "alt_score": 80.6,
+      "alt_weblink": "https://docs.oracle.com/en/java/javase/21/docs/api/java.net.http/java/net/http/HttpClient.html",
+      "delta": 44.1,
+      "rationale": "Excellent integration and zero CVEs; lower ecosystem visibility."
+    },
+    {
+      "package": "zip",
+      "package_score": 42.5,
+      "alt_name": "rubyzip",
+      "alt_score": 86.0,
+      "alt_weblink": "https://rubygems.org/gems/rubyzip",
+      "delta": 43.5,
+      "rationale": "Highest popularity, active maintenance, strong docs and ecosystem"
+    },
+    {
+      "package": "intltool",
+      "package_score": 46.5,
+      "alt_name": "gettext",
+      "alt_score": 89.0,
+      "alt_weblink": "https://www.gnu.org/software/gettext/",
+      "delta": 42.5,
+      "rationale": "Highest maturity, broadest adoption and active maintenance."
+    },
+    {
+      "package": "gnome-common",
+      "package_score": 41.5,
+      "alt_name": "CMake",
+      "alt_score": 83.2,
+      "alt_weblink": "https://cmake.org",
+      "delta": 41.7,
+      "rationale": "Strong ecosystem and popularity but slightly lower GNOME-native fit"
+    },
+    {
+      "package": "CppUnit",
+      "package_score": 49.5,
+      "alt_name": "GoogleTest",
+      "alt_score": 90.8,
+      "alt_weblink": "https://github.com/google/googletest",
+      "delta": 41.3,
+      "rationale": "Highest popularity, active maintenance, excellent integration"
+    },
+    {
+      "package": "mingetty",
+      "package_score": 42.5,
+      "alt_name": "agetty",
+      "alt_score": 83.8,
+      "alt_weblink": "https://github.com/util-linux/util-linux",
+      "delta": 41.3,
+      "rationale": "Highest popularity, active maintenance, excellent integration"
+    },
+    {
+      "package": "ant-contrib",
+      "package_score": 42.5,
+      "alt_name": "Apache Maven",
+      "alt_score": 83.2,
+      "alt_weblink": "https://maven.apache.org/",
+      "delta": 40.7,
+      "rationale": "Strong ecosystem and reputation but lower Ant-task compatibility than Gradle."
+    },
+    {
+      "package": "ipaddr",
+      "package_score": 52.5,
+      "alt_name": "ipaddress",
+      "alt_score": 92.9,
+      "alt_weblink": "https://docs.python.org/3/library/ipaddress.html",
+      "delta": 40.4,
+      "rationale": "Official stdlib replacement with highest integration and docs"
+    },
+    {
+      "package": "AutoGen",
+      "package_score": 52.5,
+      "alt_name": "Jinja2",
+      "alt_score": 92.8,
+      "alt_weblink": "https://jinja.palletsprojects.com/",
+      "delta": 40.3,
+      "rationale": "Highest popularity, active maintenance, excellent docs and integration."
+    },
+    {
+      "package": "GConf",
+      "package_score": 38.5,
+      "alt_name": "libconfig",
+      "alt_score": 78.8,
+      "alt_weblink": "https://github.com/hyperrealm/libconfig",
+      "delta": 40.3,
+      "rationale": "High popularity and clean design for general use."
+    },
+    {
+      "package": "Info-ZIP Zip",
+      "package_score": 47.5,
+      "alt_name": "7-Zip",
+      "alt_score": 87.0,
+      "alt_weblink": "https://www.7-zip.org/",
+      "delta": 39.5,
+      "rationale": "Highest popularity, active maintenance, broad format support."
+    },
+    {
+      "package": "docbook-xsl",
+      "package_score": 52.5,
+      "alt_name": "pandoc",
+      "alt_score": 92.0,
+      "alt_weblink": "https://pandoc.org/",
+      "delta": 39.5,
+      "rationale": "Highest popularity, active maintenance, broad ecosystem and integration."
+    },
+    {
+      "package": "CppUnit",
+      "package_score": 49.5,
+      "alt_name": "Catch2",
+      "alt_score": 87.2,
+      "alt_weblink": "https://github.com/catchorg/Catch2",
+      "delta": 37.7,
+      "rationale": "Very popular, header-only ease, strong recent activity"
+    },
+    {
+      "package": "sendmail",
+      "package_score": 47.5,
+      "alt_name": "postfix",
+      "alt_score": 84.8,
+      "alt_weblink": "https://www.postfix.org/",
+      "delta": 37.3,
+      "rationale": "Highest overall scores in popularity, reputation and integration."
+    },
+    {
+      "package": "libdnet",
+      "package_score": 46.5,
+      "alt_name": "libtins",
+      "alt_score": 83.0,
+      "alt_weblink": "https://github.com/mfontanini/libtins",
+      "delta": 36.5,
+      "rationale": "Highest overall scores across popularity, docs and activity."
+    },
+    {
+      "package": "libdnet",
+      "package_score": 46.5,
+      "alt_name": "Scapy",
+      "alt_score": 83.0,
+      "alt_weblink": "https://github.com/secdev/scapy",
+      "delta": 36.5,
+      "rationale": "Extremely popular with excellent docs but different language."
+    },
+    {
+      "package": "backports.ssl_match_hostname",
+      "package_score": 58.5,
+      "alt_name": "requests",
+      "alt_score": 94.1,
+      "alt_weblink": "https://github.com/psf/requests",
+      "delta": 35.6,
+      "rationale": "Highest popularity and solid metrics; wraps secure lower layers"
+    },
+    {
+      "package": "stig-hardening-ph5",
+      "package_score": 51.5,
+      "alt_name": "scap-security-guide",
+      "alt_score": 86.0,
+      "alt_weblink": "https://github.com/ComplianceAsCode/content",
+      "delta": 34.5,
+      "rationale": "Highest overall scores across popularity, docs and integration; broad distro coverage"
+    },
+    {
+      "package": "thread_safe",
+      "package_score": 55.5,
+      "alt_name": "concurrent-ruby",
+      "alt_score": 89.4,
+      "alt_weblink": "https://github.com/ruby-concurrency/concurrent-ruby",
+      "delta": 33.9,
+      "rationale": "Highest popularity, active maintenance, supersedes thread_safe"
+    },
+    {
+      "package": "tclap",
+      "package_score": 59.0,
+      "alt_name": "CLI11",
+      "alt_score": 92.8,
+      "alt_weblink": "https://github.com/CLIUtils/CLI11",
+      "delta": 33.8,
+      "rationale": "Highest popularity, active maintenance, excellent docs and integration"
+    },
+    {
+      "package": "backports.ssl_match_hostname",
+      "package_score": 58.5,
+      "alt_name": "ssl (stdlib)",
+      "alt_score": 92.3,
+      "alt_weblink": "https://docs.python.org/3/library/ssl.html",
+      "delta": 33.8,
+      "rationale": "Native, actively maintained, highest integration and docs scores"
+    },
+    {
+      "package": "GConf",
+      "package_score": 38.5,
+      "alt_name": "dconf",
+      "alt_score": 71.2,
+      "alt_weblink": "https://gitlab.gnome.org/GNOME/dconf",
+      "delta": 32.7,
+      "rationale": "Direct successor with active maintenance and superior integration."
+    },
+    {
+      "package": "lockfile",
+      "package_score": 55.5,
+      "alt_name": "filelock",
+      "alt_score": 88.0,
+      "alt_weblink": "https://pypi.org/project/filelock/",
+      "delta": 32.5,
+      "rationale": "Highest popularity, excellent maintenance, modern docs and broad adoption."
+    },
+    {
+      "package": "libXt",
+      "package_score": 52.5,
+      "alt_name": "Qt",
+      "alt_score": 84.8,
+      "alt_weblink": "https://www.qt.io/",
+      "delta": 32.3,
+      "rationale": "Top popularity and documentation; slightly lower reputation score due to more CVEs."
+    },
+    {
+      "package": "docbook-xsl",
+      "package_score": 52.5,
+      "alt_name": "sphinx",
+      "alt_score": 84.5,
+      "alt_weblink": "https://www.sphinx-doc.org/",
+      "delta": 32.0,
+      "rationale": "Excellent docs and reputation, slightly lower stars than Pandoc."
+    },
+    {
+      "package": "tcp_wrappers",
+      "package_score": 39.5,
+      "alt_name": "iptables",
+      "alt_score": 71.2,
+      "alt_weblink": "https://netfilter.org/projects/iptables/",
+      "delta": 31.7,
+      "rationale": "Mature but lower scores than nftables/firewalld due to legacy status."
+    },
+    {
+      "package": "trousers",
+      "package_score": 51.5,
+      "alt_name": "tpm2-tss",
+      "alt_score": 83.0,
+      "alt_weblink": "https://github.com/tpm2-software/tpm2-tss",
+      "delta": 31.5,
+      "rationale": "Highest activity, best docs and integration for current TPM 2.0 needs."
+    },
+    {
+      "package": "sendmail",
+      "package_score": 47.5,
+      "alt_name": "opensmtpd",
+      "alt_score": 78.9,
+      "alt_weblink": "https://www.opensmtpd.org/",
+      "delta": 31.4,
+      "rationale": "Excellent security record and clean design but smaller ecosystem."
+    },
+    {
+      "package": "libXt",
+      "package_score": 52.5,
+      "alt_name": "GTK",
+      "alt_score": 83.8,
+      "alt_weblink": "https://www.gtk.org/",
+      "delta": 31.3,
+      "rationale": "Highest overall scores in popularity, integration and docs; widely adopted."
+    },
+    {
+      "package": "libdaemon",
+      "package_score": 52.5,
+      "alt_name": "systemd",
+      "alt_score": 83.8,
+      "alt_weblink": "https://systemd.io/",
+      "delta": 31.3,
+      "rationale": "Highest popularity and docs; replaces most libdaemon use cases on Linux."
+    },
+    {
+      "package": "hpricot",
+      "package_score": 42.5,
+      "alt_name": "oga",
+      "alt_score": 73.5,
+      "alt_weblink": "https://github.com/yorickpeterse/oga",
+      "delta": 31.0,
+      "rationale": "Lightweight alternative when native extensions are undesirable"
+    },
+    {
+      "package": "ant-contrib",
+      "package_score": 42.5,
+      "alt_name": "Apache Ant",
+      "alt_score": 72.8,
+      "alt_weblink": "https://ant.apache.org/",
+      "delta": 30.3,
+      "rationale": "Direct host for the original package but low popularity and stagnant growth."
+    },
+    {
+      "package": "LZO",
+      "package_score": 58.5,
+      "alt_name": "LZ4",
+      "alt_score": 88.4,
+      "alt_weblink": "https://github.com/lz4/lz4",
+      "delta": 29.9,
+      "rationale": "Highest popularity, active maintenance, excellent speed and integration."
+    },
+    {
+      "package": "ipaddr",
+      "package_score": 52.5,
+      "alt_name": "netaddr",
+      "alt_score": 82.3,
+      "alt_weblink": "https://pypi.org/project/netaddr/",
+      "delta": 29.8,
+      "rationale": "Actively maintained, broad features, solid ecosystem"
+    },
+    {
+      "package": "atftp",
+      "package_score": 48.5,
+      "alt_name": "dnsmasq",
+      "alt_score": 78.2,
+      "alt_weblink": "https://thekelleys.org.uk/dnsmasq/",
+      "delta": 29.7,
+      "rationale": "Broad ecosystem and recent activity offset minor CVEs."
+    },
+    {
+      "package": "slang",
+      "package_score": 52.5,
+      "alt_name": "ncurses",
+      "alt_score": 82.0,
+      "alt_weblink": "https://invisible-island.net/ncurses/",
+      "delta": 29.5,
+      "rationale": "Highest adoption, active maintenance and best integration across ecosystems."
+    },
+    {
+      "package": "mlocate",
+      "package_score": 59.5,
+      "alt_name": "fd",
+      "alt_score": 88.5,
+      "alt_weblink": "https://github.com/sharkdp/fd",
+      "delta": 29.0,
+      "rationale": "Outstanding popularity and ecosystem but lower integration score for classic locate use-case."
+    },
+    {
+      "package": "stig-hardening-ph5",
+      "package_score": 51.5,
+      "alt_name": "stig-hardening",
+      "alt_score": 80.5,
+      "alt_weblink": "https://github.com/ansible-lockdown",
+      "delta": 29.0,
+      "rationale": "Strong integration and reputation; slightly lower popularity than scap-security-guide"
+    },
+    {
+      "package": "backports.ssl_match_hostname",
+      "package_score": 58.5,
+      "alt_name": "urllib3",
+      "alt_score": 87.3,
+      "alt_weblink": "https://github.com/urllib3/urllib3",
+      "delta": 28.8,
+      "rationale": "Strong ecosystem and popularity with good security track record"
+    },
+    {
+      "package": "intltool",
+      "package_score": 46.5,
+      "alt_name": "itstool",
+      "alt_score": 75.2,
+      "alt_weblink": "http://itstool.org/",
+      "delta": 28.7,
+      "rationale": "Direct functional replacement for XML use-cases with better modernity."
+    },
+    {
+      "package": "GConf",
+      "package_score": 38.5,
+      "alt_name": "KConfig",
+      "alt_score": 67.2,
+      "alt_weblink": "https://invent.kde.org/frameworks/kconfig",
+      "delta": 28.7,
+      "rationale": "Strong reputation and docs but less GNOME-native."
+    },
+    {
+      "package": "cdrkit",
+      "package_score": 51.5,
+      "alt_name": "xorriso",
+      "alt_score": 80.1,
+      "alt_weblink": "https://www.gnu.org/software/xorriso",
+      "delta": 28.6,
+      "rationale": "Actively maintained, excellent docs and integration, zero recent CVEs."
+    },
+    {
+      "package": "nspr",
+      "package_score": 58.5,
+      "alt_name": "libuv",
+      "alt_score": 87.1,
+      "alt_weblink": "https://github.com/libuv/libuv",
+      "delta": 28.6,
+      "rationale": "Exceptional popularity and modern maintenance; slightly narrower scope than NSPR."
+    },
+    {
+      "package": "ronn",
+      "package_score": 61.8,
+      "alt_name": "pandoc",
+      "alt_score": 90.4,
+      "alt_weblink": "https://pandoc.org",
+      "delta": 28.6,
+      "rationale": "Highest popularity, active maintenance, excellent docs and integration"
+    },
+    {
+      "package": "atftp",
+      "package_score": 48.5,
+      "alt_name": "tftp-hpa",
+      "alt_score": 77.0,
+      "alt_weblink": "https://git.kernel.org/pub/scm/network/tftp/tftp-hpa.git",
+      "delta": 28.5,
+      "rationale": "Actively maintained, high integration and documentation scores."
+    },
+    {
+      "package": "libXi",
+      "package_score": 58.5,
+      "alt_name": "libinput",
+      "alt_score": 86.8,
+      "alt_weblink": "https://www.freedesktop.org/wiki/Software/libinput/",
+      "delta": 28.3,
+      "rationale": "Highest activity, modern API, strong ecosystem and docs"
+    },
+    {
+      "package": "docbook-xsl",
+      "package_score": 52.5,
+      "alt_name": "asciidoctor",
+      "alt_score": 80.5,
+      "alt_weblink": "https://asciidoctor.org/",
+      "delta": 28.0,
+      "rationale": "Solid modern alternative with strong DocBook output capability."
+    },
+    {
+      "package": "tclap",
+      "package_score": 59.0,
+      "alt_name": "cxxopts",
+      "alt_score": 86.8,
+      "alt_weblink": "https://github.com/jarro2783/cxxopts",
+      "delta": 27.8,
+      "rationale": "Good balance of simplicity, popularity and recent activity"
+    },
+    {
+      "package": "ltrace",
+      "package_score": 58.5,
+      "alt_name": "strace",
+      "alt_score": 86.2,
+      "alt_weblink": "https://strace.io/",
+      "delta": 27.7,
+      "rationale": "Highest popularity, active maintenance, broad ecosystem support despite syscall vs library focus difference."
+    },
+    {
+      "package": "xmlstarlet",
+      "package_score": 61.5,
+      "alt_name": "yq",
+      "alt_score": 89.1,
+      "alt_weblink": "https://github.com/mikefarah/yq",
+      "delta": 27.6,
+      "rationale": "Highest popularity, active maintenance, broad format support including XML, excellent docs"
+    },
+    {
+      "package": "ltrace",
+      "package_score": 58.5,
+      "alt_name": "bpftrace",
+      "alt_score": 85.8,
+      "alt_weblink": "https://github.com/bpftrace/bpftrace",
+      "delta": 27.3,
+      "rationale": "Excellent modern alternative with high activity and extensibility for library tracing via uprobes."
+    },
+    {
+      "package": "syslog_protocol",
+      "package_score": 55.5,
+      "alt_name": "syslog",
+      "alt_score": 82.8,
+      "alt_weblink": "https://ruby-doc.org/stdlib-2.7.0/libdoc/syslog/rdoc/Syslog.html",
+      "delta": 27.3,
+      "rationale": "Native, actively maintained via Ruby, high integration and docs."
+    },
+    {
+      "package": "libdnet",
+      "package_score": 46.5,
+      "alt_name": "libnet",
+      "alt_score": 73.8,
+      "alt_weblink": "https://github.com/libnet/libnet",
+      "delta": 27.3,
+      "rationale": "Closest functional match with better maintenance than libdnet."
+    },
+    {
+      "package": "Perl4-CoreLibs",
+      "package_score": 62.5,
+      "alt_name": "Getopt::Long",
+      "alt_score": 89.8,
+      "alt_weblink": "https://metacpan.org/pod/Getopt::Long",
+      "delta": 27.3,
+      "rationale": "Direct functional replacement with far superior maintenance, docs and integration."
+    },
+    {
+      "package": "unf_ext",
+      "package_score": 66.5,
+      "alt_name": "Ruby built-in unicode_normalize",
+      "alt_score": 93.6,
+      "alt_weblink": "https://ruby-doc.org/core/String.html#method-i-unicode_normalize",
+      "delta": 27.1,
+      "rationale": "Native, fast, no gem needed for basic normalization"
+    },
+    {
+      "package": "xproto",
+      "package_score": 48.5,
+      "alt_name": "xorgproto",
+      "alt_score": 75.5,
+      "alt_weblink": "https://gitlab.freedesktop.org/xorg/proto/xorgproto",
+      "delta": 27.0,
+      "rationale": "Direct successor with higher activity and integration scores."
+    },
+    {
+      "package": "ebtables",
+      "package_score": 58.5,
+      "alt_name": "nftables",
+      "alt_score": 85.2,
+      "alt_weblink": "https://www.netfilter.org/projects/nftables/",
+      "delta": 26.7,
+      "rationale": "Highest popularity, active maintenance, full ebtables feature parity plus more."
+    },
+    {
+      "package": "dig_rb",
+      "package_score": 62.5,
+      "alt_name": "backports",
+      "alt_score": 88.5,
+      "alt_weblink": "https://github.com/marcandre/backports",
+      "delta": 26.0,
+      "rationale": "Actively maintained, broad coverage, high adoption."
+    },
+    {
+      "package": "cscope",
+      "package_score": 62.5,
+      "alt_name": "Universal Ctags",
+      "alt_score": 88.4,
+      "alt_weblink": "https://ctags.io",
+      "delta": 25.9,
+      "rationale": "Highest activity, broad language support, excellent editor ecosystem and recent releases."
+    },
+    {
+      "package": "LZO",
+      "package_score": 58.5,
+      "alt_name": "Snappy",
+      "alt_score": 84.2,
+      "alt_weblink": "https://github.com/google/snappy",
+      "delta": 25.7,
+      "rationale": "Strong reputation and speed profile, slightly behind LZ4 in activity."
+    },
+    {
+      "package": "Info-ZIP Zip",
+      "package_score": 47.5,
+      "alt_name": "libarchive",
+      "alt_score": 72.8,
+      "alt_weblink": "https://libarchive.org/",
+      "delta": 25.3,
+      "rationale": "Modern, widely integrated in OSes, good library usability."
+    },
+    {
+      "package": "Info-ZIP Zip",
+      "package_score": 47.5,
+      "alt_name": "minizip",
+      "alt_score": 72.8,
+      "alt_weblink": "https://github.com/madler/zlib",
+      "delta": 25.3,
+      "rationale": "Lightweight and secure but lower ecosystem activity."
+    },
+    {
+      "package": "xproto",
+      "package_score": 48.5,
+      "alt_name": "wayland",
+      "alt_score": 73.5,
+      "alt_weblink": "https://wayland.freedesktop.org/",
+      "delta": 25.0,
+      "rationale": "Functional successor for new development despite protocol shift."
+    },
+    {
+      "package": "nspr",
+      "package_score": 58.5,
+      "alt_name": "glib",
+      "alt_score": 83.4,
+      "alt_weblink": "https://gitlab.gnome.org/GNOME/glib",
+      "delta": 24.9,
+      "rationale": "Top popularity and documentation; slightly lower reputation due to higher CVE count."
+    },
+    {
+      "package": "dejavu-fonts",
+      "package_score": 64.5,
+      "alt_name": "noto-fonts",
+      "alt_score": 89.4,
+      "alt_weblink": "https://github.com/googlefonts/noto-fonts",
+      "delta": 24.9,
+      "rationale": "Highest activity, broadest coverage, maintained by Google."
+    },
+    {
+      "package": "libretls",
+      "package_score": 57.4,
+      "alt_name": "LibreSSL",
+      "alt_score": 82.1,
+      "alt_weblink": "https://www.libressl.org/",
+      "delta": 24.7,
+      "rationale": "Highest overall balance of popularity, active maintenance and native libtls API."
+    },
+    {
+      "package": "trousers",
+      "package_score": 51.5,
+      "alt_name": "wolfTPM",
+      "alt_score": 76.0,
+      "alt_weblink": "https://github.com/wolfSSL/wolfTPM",
+      "delta": 24.5,
+      "rationale": "Good portability and activity but narrower Linux desktop focus."
+    },
+    {
+      "package": "http-parser",
+      "package_score": 58.5,
+      "alt_name": "http_parser.rb",
+      "alt_score": 82.8,
+      "alt_weblink": "https://github.com/tmm1/http_parser.rb",
+      "delta": 24.3,
+      "rationale": "Highest popularity, active ecosystem, strong integration and maintained docs"
+    },
+    {
+      "package": "xmlto",
+      "package_score": 68.5,
+      "alt_name": "pandoc",
+      "alt_score": 92.8,
+      "alt_weblink": "https://pandoc.org",
+      "delta": 24.3,
+      "rationale": "Highest popularity, excellent docs and integration; far broader format support."
+    },
+    {
+      "package": "DBIx-Simple",
+      "package_score": 61.5,
+      "alt_name": "DBI",
+      "alt_score": 85.8,
+      "alt_weblink": "https://metacpan.org/dist/DBI",
+      "delta": 24.3,
+      "rationale": "Best integration and ecosystem; direct low-level access."
+    },
+    {
+      "package": "unzip",
+      "package_score": 60.5,
+      "alt_name": "7-Zip",
+      "alt_score": 84.6,
+      "alt_weblink": "https://www.7-zip.org/",
+      "delta": 24.1,
+      "rationale": "Highest popularity and active maintenance with broad ecosystem."
+    },
+    {
+      "package": "watchdog",
+      "package_score": 62.5,
+      "alt_name": "supervisor",
+      "alt_score": 86.6,
+      "alt_weblink": "http://supervisord.org/",
+      "delta": 24.1,
+      "rationale": "Very popular, excellent docs, strong ecosystem despite Python overhead."
+    },
+    {
+      "package": "isc-dhcp",
+      "package_score": 61.5,
+      "alt_name": "dnsmasq",
+      "alt_score": 85.1,
+      "alt_weblink": "https://thekelleys.org.uk/dnsmasq/",
+      "delta": 23.6,
+      "rationale": "Excellent reputation, tiny footprint and very active for its scope."
+    },
+    {
+      "package": "libnetfilter_cthelper",
+      "package_score": 62.5,
+      "alt_name": "nftables",
+      "alt_score": 86.0,
+      "alt_weblink": "https://nftables.org/",
+      "delta": 23.5,
+      "rationale": "Actively maintained, broad ecosystem adoption and superior documentation."
+    },
+    {
+      "package": "unzip",
+      "package_score": 60.5,
+      "alt_name": "libarchive",
+      "alt_score": 83.8,
+      "alt_weblink": "https://www.libarchive.org/",
+      "delta": 23.3,
+      "rationale": "Excellent integration and low CVE count with modern releases."
+    },
+    {
+      "package": "mlocate",
+      "package_score": 59.5,
+      "alt_name": "plocate",
+      "alt_score": 82.8,
+      "alt_weblink": "https://plocate.sesse.net",
+      "delta": 23.3,
+      "rationale": "Highest scores in popularity, recency, and integration; direct successor to mlocate."
+    },
+    {
+      "package": "trollop",
+      "package_score": 62.5,
+      "alt_name": "thor",
+      "alt_score": 85.8,
+      "alt_weblink": "https://github.com/rails/thor",
+      "delta": 23.3,
+      "rationale": "Highest popularity and maintenance; widely adopted in Ruby ecosystem."
+    },
+    {
+      "package": "GNU patch",
+      "package_score": 66.5,
+      "alt_name": "Git",
+      "alt_score": 89.8,
+      "alt_weblink": "https://git-scm.com/",
+      "delta": 23.3,
+      "rationale": "Highest popularity, active maintenance and seamless integration."
+    },
+    {
+      "package": "Photon OS",
+      "package_score": 65.3,
+      "alt_name": "Alpine Linux",
+      "alt_score": 88.4,
+      "alt_weblink": "https://alpinelinux.org",
+      "delta": 23.1,
+      "rationale": "Highest popularity, best container integration and freshest docs."
+    },
+    {
+      "package": "sendmail",
+      "package_score": 47.5,
+      "alt_name": "exim",
+      "alt_score": 70.4,
+      "alt_weblink": "https://www.exim.org/",
+      "delta": 22.9,
+      "rationale": "Strong flexibility and decent reputation but lower popularity than Postfix."
+    },
+    {
+      "package": "Expect",
+      "package_score": 66.5,
+      "alt_name": "pexpect",
+      "alt_score": 89.4,
+      "alt_weblink": "https://github.com/pexpect/pexpect",
+      "delta": 22.9,
+      "rationale": "Highest popularity, active maintenance, excellent Python integration."
+    },
+    {
+      "package": "Tcl",
+      "package_score": 64.5,
+      "alt_name": "Lua",
+      "alt_score": 87.2,
+      "alt_weblink": "https://www.lua.org/",
+      "delta": 22.7,
+      "rationale": "Superior embedding integration and reputation; lower popularity than Python."
+    },
+    {
+      "package": "Tcl",
+      "package_score": 64.5,
+      "alt_name": "Python",
+      "alt_score": 86.8,
+      "alt_weblink": "https://www.python.org/",
+      "delta": 22.3,
+      "rationale": "Highest popularity, strong integration and documentation outweigh moderate CVE count."
+    },
+    {
+      "package": "lockfile",
+      "package_score": 55.5,
+      "alt_name": "portalocker",
+      "alt_score": 77.8,
+      "alt_weblink": "https://pypi.org/project/portalocker/",
+      "delta": 22.3,
+      "rationale": "Solid reputation and Windows focus but lower stars and activity than filelock."
+    },
+    {
+      "package": "nspr",
+      "package_score": 58.5,
+      "alt_name": "apr",
+      "alt_score": 80.6,
+      "alt_weblink": "https://apr.apache.org/",
+      "delta": 22.1,
+      "rationale": "Highest balanced scores across popularity, integration and ecosystem; strong reputation."
+    },
+    {
+      "package": "libretls",
+      "package_score": 57.4,
+      "alt_name": "OpenSSL",
+      "alt_score": 79.5,
+      "alt_weblink": "https://www.openssl.org/",
+      "delta": 22.1,
+      "rationale": "Dominant ecosystem and documentation but lower reputation score due to CVE volume."
+    },
+    {
+      "package": "tevent",
+      "package_score": 68.5,
+      "alt_name": "libuv",
+      "alt_score": 90.4,
+      "alt_weblink": "https://libuv.org/",
+      "delta": 21.9,
+      "rationale": "Top composite due to popularity, zero CVEs and fresh docs."
+    },
+    {
+      "package": "Texinfo",
+      "package_score": 66.8,
+      "alt_name": "Sphinx",
+      "alt_score": 88.6,
+      "alt_weblink": "https://www.sphinx-doc.org/",
+      "delta": 21.8,
+      "rationale": "Highest popularity, modern ecosystem and excellent multi-format output."
+    },
+    {
+      "package": "crash-gcore-command",
+      "package_score": 64.5,
+      "alt_name": "gdb",
+      "alt_score": 86.2,
+      "alt_weblink": "https://www.gnu.org/software/gdb/",
+      "delta": 21.7,
+      "rationale": "Broad ecosystem and documentation outweigh minor CVE count."
+    },
+    {
+      "package": "runit",
+      "package_score": 62.5,
+      "alt_name": "systemd",
+      "alt_score": 84.0,
+      "alt_weblink": "https://systemd.io/",
+      "delta": 21.5,
+      "rationale": "Dominant popularity and integration offset by higher CVE count."
+    },
+    {
+      "package": "ivykis",
+      "package_score": 62.5,
+      "alt_name": "libevent",
+      "alt_score": 84.0,
+      "alt_weblink": "https://libevent.org/",
+      "delta": 21.5,
+      "rationale": "Highest popularity, strong ecosystem and documentation"
+    },
+    {
+      "package": "Lasso",
+      "package_score": 61.5,
+      "alt_name": "PySAML2",
+      "alt_score": 82.6,
+      "alt_weblink": "https://github.com/IdentityPython/pysaml2",
+      "delta": 21.1,
+      "rationale": "Highest activity, modern docs, strong Python ecosystem fit."
+    },
+    {
+      "package": "ffi-compiler",
+      "package_score": 66.5,
+      "alt_name": "ffi",
+      "alt_score": 87.2,
+      "alt_weblink": "https://github.com/ffi/ffi",
+      "delta": 20.7,
+      "rationale": "Higher popularity, active maintenance, simpler integration for most FFI needs."
+    },
+    {
+      "package": "crash-gcore-command",
+      "package_score": 64.5,
+      "alt_name": "crash",
+      "alt_score": 85.2,
+      "alt_weblink": "https://github.com/crash-utility/crash",
+      "delta": 20.7,
+      "rationale": "Highest popularity, active maintenance and native functionality."
+    },
+    {
+      "package": "isc-dhcp",
+      "package_score": 61.5,
+      "alt_name": "kea",
+      "alt_score": 82.2,
+      "alt_weblink": "https://www.isc.org/kea/",
+      "delta": 20.7,
+      "rationale": "Actively maintained successor with superior API, docs and lower CVE rate."
+    },
+    {
+      "package": "dejagnu",
+      "package_score": 67.5,
+      "alt_name": "CTest",
+      "alt_score": 88.1,
+      "alt_weblink": "https://cmake.org/cmake/help/latest/manual/ctest.1.html",
+      "delta": 20.6,
+      "rationale": "Highest popularity, active maintenance, excellent docs and CMake ecosystem integration."
+    },
+    {
+      "package": "fluent-plugin-vmware-loginsight",
+      "package_score": 52.2,
+      "alt_name": "fluent-plugin-syslog",
+      "alt_score": 72.8,
+      "alt_weblink": "https://github.com/fluent/fluent-plugin-syslog",
+      "delta": 20.6,
+      "rationale": "Higher activity, maintained, leverages standard syslog which Log Insight supports directly"
+    },
+    {
+      "package": "declarative",
+      "package_score": 64.5,
+      "alt_name": "dry-struct",
+      "alt_score": 84.9,
+      "alt_weblink": "https://dry-rb.org/gems/dry-struct",
+      "delta": 20.4,
+      "rationale": "Highest overall scores in popularity, docs and ecosystem activity."
+    },
+    {
+      "package": "font-util",
+      "package_score": 64.5,
+      "alt_name": "freetype",
+      "alt_score": 84.6,
+      "alt_weblink": "https://freetype.org/",
+      "delta": 20.1,
+      "rationale": "Excellent popularity and docs outweigh moderate CVE count."
+    },
+    {
+      "package": "LZO",
+      "package_score": 58.5,
+      "alt_name": "zlib",
+      "alt_score": 78.6,
+      "alt_weblink": "https://zlib.net/",
+      "delta": 20.1,
+      "rationale": "Unmatched ecosystem reach and integration despite slightly lower raw speed."
+    },
+    {
+      "package": "xproto",
+      "package_score": 48.5,
+      "alt_name": "xcb-proto",
+      "alt_score": 68.6,
+      "alt_weblink": "https://gitlab.freedesktop.org/xorg/lib/xcb-proto",
+      "delta": 20.1,
+      "rationale": "Complementary protocol layer with better current maintenance."
+    },
+    {
+      "package": "gnome-common",
+      "package_score": 41.5,
+      "alt_name": "Autotools",
+      "alt_score": 61.2,
+      "alt_weblink": "https://www.gnu.org/software/automake",
+      "delta": 19.7,
+      "rationale": "Direct predecessor but outdated for new projects"
+    },
+    {
+      "package": "DBIx-Simple",
+      "package_score": 61.5,
+      "alt_name": "DBIx-Class",
+      "alt_score": 81.2,
+      "alt_weblink": "https://metacpan.org/dist/DBIx-Class",
+      "delta": 19.7,
+      "rationale": "Highest overall scores in popularity, docs and ecosystem activity."
+    },
+    {
+      "package": "fluent-plugin-vmware-loginsight",
+      "package_score": 52.2,
+      "alt_name": "vmware-log-collector",
+      "alt_score": 71.8,
+      "alt_weblink": "https://docs.vmware.com/en/VMware-vRealize-Log-Insight/",
+      "delta": 19.6,
+      "rationale": "Official support and best integration but closed source and less flexible than Fluentd"
+    },
+    {
+      "package": "cool.io",
+      "package_score": 67.5,
+      "alt_name": "async",
+      "alt_score": 87.0,
+      "alt_weblink": "https://github.com/socketry/async",
+      "delta": 19.5,
+      "rationale": "Highest popularity, active maintenance, excellent docs"
+    },
+    {
+      "package": "watchdog",
+      "package_score": 62.5,
+      "alt_name": "monit",
+      "alt_score": 81.9,
+      "alt_weblink": "https://mmonit.com/monit/",
+      "delta": 19.4,
+      "rationale": "Higher popularity, active maintenance, better docs and integration."
+    },
+    {
+      "package": "webrick",
+      "package_score": 68.9,
+      "alt_name": "puma",
+      "alt_score": 88.0,
+      "alt_weblink": "https://github.com/puma/puma",
+      "delta": 19.1,
+      "rationale": "Highest popularity, strong ecosystem and integration; minor recent CVE offset by rapid fixes"
+    },
+    {
+      "package": "runit",
+      "package_score": 62.5,
+      "alt_name": "s6",
+      "alt_score": 81.6,
+      "alt_weblink": "https://skarnet.org/software/s6/",
+      "delta": 19.1,
+      "rationale": "Highest scores in documentation, integration and recent activity."
+    },
+    {
+      "package": "libICE",
+      "package_score": 68.5,
+      "alt_name": "D-Bus",
+      "alt_score": 87.2,
+      "alt_weblink": "https://www.freedesktop.org/wiki/Software/dbus/",
+      "delta": 18.7,
+      "rationale": "Superior popularity, integration and documentation; actively maintained IPC standard."
+    },
+    {
+      "package": "httpclient",
+      "package_score": 71.4,
+      "alt_name": "faraday",
+      "alt_score": 90.0,
+      "alt_weblink": "https://github.com/lostisland/faraday",
+      "delta": 18.6,
+      "rationale": "Highest popularity, active maintenance and flexible integration."
+    },
+    {
+      "package": "gnu-efi",
+      "package_score": 67.5,
+      "alt_name": "EDK II",
+      "alt_score": 86.1,
+      "alt_weblink": "https://github.com/tianocore/edk2",
+      "delta": 18.6,
+      "rationale": "Highest popularity, active maintenance and superior documentation outweigh moderate CVE count"
+    },
+    {
+      "package": "libXcursor",
+      "package_score": 68.5,
+      "alt_name": "GLFW",
+      "alt_score": 87.1,
+      "alt_weblink": "https://www.glfw.org/",
+      "delta": 18.6,
+      "rationale": "Excellent popularity/reputation balance and modern graphics focus."
+    },
+    {
+      "package": "http-parser",
+      "package_score": 58.5,
+      "alt_name": "webrick",
+      "alt_score": 76.8,
+      "alt_weblink": "https://github.com/ruby/webrick",
+      "delta": 18.3,
+      "rationale": "Excellent integration and currency but lower parser-specific performance"
+    },
+    {
+      "package": "docutils",
+      "package_score": 74.5,
+      "alt_name": "Pandoc",
+      "alt_score": 92.8,
+      "alt_weblink": "https://pandoc.org/",
+      "delta": 18.3,
+      "rationale": "Exceptional popularity, zero CVEs and strong documentation but lower native Python integration score."
+    },
+    {
+      "package": "libtool",
+      "package_score": 70.5,
+      "alt_name": "Meson",
+      "alt_score": 88.7,
+      "alt_weblink": "https://mesonbuild.com/",
+      "delta": 18.2,
+      "rationale": "Strong scores across all criteria with very low CVE count."
+    },
+    {
+      "package": "tclap",
+      "package_score": 59.0,
+      "alt_name": "docopt.cpp",
+      "alt_score": 77.2,
+      "alt_weblink": "https://github.com/docopt/docopt.cpp",
+      "delta": 18.2,
+      "rationale": "Solid but less active than top alternatives"
+    },
+    {
+      "package": "SCons",
+      "package_score": 67.9,
+      "alt_name": "CMake",
+      "alt_score": 85.9,
+      "alt_weblink": "https://cmake.org",
+      "delta": 18.0,
+      "rationale": "Highest popularity, strong ecosystem and documentation with broad adoption."
+    },
+    {
+      "package": "File-Remove",
+      "package_score": 66.5,
+      "alt_name": "Path-Tiny",
+      "alt_score": 84.4,
+      "alt_weblink": "https://metacpan.org/dist/Path-Tiny",
+      "delta": 17.9,
+      "rationale": "Higher popularity, better docs and integration than File-Remove."
+    },
+    {
+      "package": "trousers",
+      "package_score": 51.5,
+      "alt_name": "ibmtss",
+      "alt_score": 69.2,
+      "alt_weblink": "https://sourceforge.net/projects/ibmtpm20tss/",
+      "delta": 17.7,
+      "rationale": "Strong reputation and recent releases but smaller community."
+    },
+    {
+      "package": "xmlto",
+      "package_score": 68.5,
+      "alt_name": "asciidoctor",
+      "alt_score": 86.2,
+      "alt_weblink": "https://asciidoctor.org",
+      "delta": 17.7,
+      "rationale": "Strong modern alternative for documentation workflows; slightly narrower XML focus."
+    },
+    {
+      "package": "tevent",
+      "package_score": 68.5,
+      "alt_name": "libevent",
+      "alt_score": 86.0,
+      "alt_weblink": "https://libevent.org/",
+      "delta": 17.5,
+      "rationale": "Highest popularity and integration scores outweigh minor CVE."
+    },
+    {
+      "package": "atftp",
+      "package_score": 48.5,
+      "alt_name": "inetutils",
+      "alt_score": 65.8,
+      "alt_weblink": "https://www.gnu.org/software/inetutils/",
+      "delta": 17.3,
+      "rationale": "Stable GNU project with good reputation but lower popularity."
+    },
+    {
+      "package": "Lasso",
+      "package_score": 61.5,
+      "alt_name": "SimpleSAMLphp",
+      "alt_score": 78.7,
+      "alt_weblink": "https://simplesamlphp.org/",
+      "delta": 17.2,
+      "rationale": "Very popular, frequent releases, broad PHP integration."
+    },
+    {
+      "package": "watchdog",
+      "package_score": 62.5,
+      "alt_name": "systemd",
+      "alt_score": 79.7,
+      "alt_weblink": "https://systemd.io/",
+      "delta": 17.2,
+      "rationale": "Ubiquitous on Linux, highest integration score, but more CVEs."
+    },
+    {
+      "package": "libedit",
+      "package_score": 70.5,
+      "alt_name": "readline",
+      "alt_score": 87.6,
+      "alt_weblink": "https://tiswww.cwru.edu/php/chet/readline/rltop.html",
+      "delta": 17.1,
+      "rationale": "Highest popularity and integration; minor recent CVE offset by strong docs and ecosystem."
+    },
+    {
+      "package": "libgcrypt",
+      "package_score": 72.5,
+      "alt_name": "libsodium",
+      "alt_score": 89.5,
+      "alt_weblink": "https://libsodium.org/",
+      "delta": 17.0,
+      "rationale": "Best reputation and ecosystem health; strong popularity with modern projects."
+    },
+    {
+      "package": "libtool",
+      "package_score": 70.5,
+      "alt_name": "CMake",
+      "alt_score": 87.4,
+      "alt_weblink": "https://cmake.org/",
+      "delta": 16.9,
+      "rationale": "Highest popularity, active maintenance and superior integration for new projects."
+    },
+    {
+      "package": "cdrkit",
+      "package_score": 51.5,
+      "alt_name": "libburn",
+      "alt_score": 68.2,
+      "alt_weblink": "https://dev.lovelyhq.com/libburnia/libburn",
+      "delta": 16.7,
+      "rationale": "Good API integration and maintenance, modest popularity."
+    },
+    {
+      "package": "authbind",
+      "package_score": 71.5,
+      "alt_name": "Linux capabilities",
+      "alt_score": 88.2,
+      "alt_weblink": "https://man7.org/linux/man-pages/man7/capabilities.7.html",
+      "delta": 16.7,
+      "rationale": "Native kernel support, highest integration and documentation scores, minimal attack surface."
+    },
+    {
+      "package": "ntpsec",
+      "package_score": 71.5,
+      "alt_name": "chrony",
+      "alt_score": 88.1,
+      "alt_weblink": "https://chrony-project.org/",
+      "delta": 16.6,
+      "rationale": "Highest popularity, zero recent CVEs, excellent docs and integration."
+    },
+    {
+      "package": "optimist",
+      "package_score": 71.4,
+      "alt_name": "thor",
+      "alt_score": 88.0,
+      "alt_weblink": "https://github.com/rails/thor",
+      "delta": 16.6,
+      "rationale": "Highest popularity and strong ecosystem support outweigh minor issue volume."
+    },
+    {
+      "package": "virt-what",
+      "package_score": 72.5,
+      "alt_name": "systemd-detect-virt",
+      "alt_score": 89.0,
+      "alt_weblink": "https://www.freedesktop.org/software/systemd/man/systemd-detect-virt.html",
+      "delta": 16.5,
+      "rationale": "Highest integration and docs; ubiquitous on modern Linux."
+    },
+    {
+      "package": "tboot",
+      "package_score": 62.5,
+      "alt_name": "TrenchBoot",
+      "alt_score": 79.0,
+      "alt_weblink": "https://github.com/TrenchBoot",
+      "delta": 16.5,
+      "rationale": "Higher activity, better docs and integration than tboot."
+    },
+    {
+      "package": "lockfile",
+      "package_score": 55.5,
+      "alt_name": "fasteners",
+      "alt_score": 71.9,
+      "alt_weblink": "https://pypi.org/project/fasteners/",
+      "delta": 16.4,
+      "rationale": "Broader sync tools but less focused and lower recent activity."
+    },
+    {
+      "package": "libICE",
+      "package_score": 68.5,
+      "alt_name": "Wayland Protocols",
+      "alt_score": 84.8,
+      "alt_weblink": "https://wayland.freedesktop.org/",
+      "delta": 16.3,
+      "rationale": "Strong forward-looking alternative with good metrics; not a direct drop-in for ICE protocol."
+    },
+    {
+      "package": "dejavu-fonts",
+      "package_score": 64.5,
+      "alt_name": "liberation-fonts",
+      "alt_score": 80.8,
+      "alt_weblink": "https://github.com/liberationfonts/liberation-fonts",
+      "delta": 16.3,
+      "rationale": "Strong compatibility focus and good distro integration."
+    },
+    {
+      "package": "Parse::Yapp",
+      "package_score": 68.5,
+      "alt_name": "Marpa::R2",
+      "alt_score": 84.8,
+      "alt_weblink": "https://metacpan.org/dist/Marpa-R2",
+      "delta": 16.3,
+      "rationale": "Highest overall scores in documentation freshness, integration and ecosystem activity."
+    },
+    {
+      "package": "fluent-plugin-remote_syslog",
+      "package_score": 62.5,
+      "alt_name": "fluent-plugin-syslog",
+      "alt_score": 78.6,
+      "alt_weblink": "https://github.com/cloudfoundry/fluent-plugin-syslog",
+      "delta": 16.1,
+      "rationale": "Higher activity, better docs and TLS features"
+    },
+    {
+      "package": "SCons",
+      "package_score": 67.9,
+      "alt_name": "Meson",
+      "alt_score": 84.0,
+      "alt_weblink": "https://mesonbuild.com",
+      "delta": 16.1,
+      "rationale": "Excellent reputation and documentation with growing popularity."
+    },
+    {
+      "package": "Mercurial",
+      "package_score": 72.5,
+      "alt_name": "Git",
+      "alt_score": 88.5,
+      "alt_weblink": "https://git-scm.com/",
+      "delta": 16.0,
+      "rationale": "Highest popularity, ecosystem and integration scores outweigh moderate CVE count"
+    },
+    {
+      "package": "patch",
+      "package_score": 71.2,
+      "alt_name": "git",
+      "alt_score": 87.2,
+      "alt_weblink": "https://git-scm.com/",
+      "delta": 16.0,
+      "rationale": "Highest popularity, modern docs and seamless integration outweigh moderate ecosystem noise."
+    },
+    {
+      "package": "mlocate",
+      "package_score": 59.5,
+      "alt_name": "GNU findutils",
+      "alt_score": 75.5,
+      "alt_weblink": "https://www.gnu.org/software/findutils",
+      "delta": 16.0,
+      "rationale": "Excellent integration and documentation but slightly lower popularity than plocate."
+    },
+    {
+      "package": "trollop",
+      "package_score": 62.5,
+      "alt_name": "slop",
+      "alt_score": 78.5,
+      "alt_weblink": "https://github.com/leejarvis/slop",
+      "delta": 16.0,
+      "rationale": "Lightweight and close in spirit to Trollop with decent activity."
+    },
+    {
+      "package": "libXext",
+      "package_score": 55.5,
+      "alt_name": "libxcb",
+      "alt_score": 71.4,
+      "alt_weblink": "https://gitlab.freedesktop.org/xorg/lib/libxcb",
+      "delta": 15.9,
+      "rationale": "Higher activity, better docs and integration than libXext while covering similar low-level needs."
+    },
+    {
+      "package": "IPC::Run",
+      "package_score": 70.5,
+      "alt_name": "IPC::Cmd",
+      "alt_score": 86.4,
+      "alt_weblink": "https://metacpan.org/pod/IPC::Cmd",
+      "delta": 15.9,
+      "rationale": "Actively maintained core module with superior docs and integration."
+    },
+    {
+      "package": "help2man",
+      "package_score": 72.5,
+      "alt_name": "pandoc",
+      "alt_score": 88.2,
+      "alt_weblink": "https://pandoc.org/",
+      "delta": 15.7,
+      "rationale": "Highest popularity, active ecosystem and excellent docs outweigh minor CVE"
+    },
+    {
+      "package": "nicstat",
+      "package_score": 62.5,
+      "alt_name": "vnstat",
+      "alt_score": 78.2,
+      "alt_weblink": "https://humdi.net/vnstat/",
+      "delta": 15.7,
+      "rationale": "Actively maintained, strong docs and integration, zero recent CVEs."
+    },
+    {
+      "package": "ebtables",
+      "package_score": 58.5,
+      "alt_name": "iptables",
+      "alt_score": 74.0,
+      "alt_weblink": "https://www.netfilter.org/projects/iptables/",
+      "delta": 15.5,
+      "rationale": "Widely known but lower bridge-specific capability and declining ecosystem."
+    },
+    {
+      "package": "hdparm",
+      "package_score": 62.5,
+      "alt_name": "smartmontools",
+      "alt_score": 78.0,
+      "alt_weblink": "https://www.smartmontools.org/",
+      "delta": 15.5,
+      "rationale": "Broader device support, active maintenance, higher ecosystem activity"
+    },
+    {
+      "package": "pyproject-hooks",
+      "package_score": 72.5,
+      "alt_name": "build",
+      "alt_score": 88.0,
+      "alt_weblink": "https://github.com/pypa/build",
+      "delta": 15.5,
+      "rationale": "Higher popularity, better docs and integration than pyproject-hooks while covering same use case."
+    },
+    {
+      "package": "npth",
+      "package_score": 69.5,
+      "alt_name": "pthreads",
+      "alt_score": 85.0,
+      "alt_weblink": "https://man7.org/linux/man-pages/man7/pthreads.7.html",
+      "delta": 15.5,
+      "rationale": "Highest popularity and integration; minor recent CVEs in implementations."
+    },
+    {
+      "package": "yajl-ruby",
+      "package_score": 74.0,
+      "alt_name": "oj",
+      "alt_score": 89.4,
+      "alt_weblink": "https://github.com/ohler55/oj",
+      "delta": 15.4,
+      "rationale": "Highest popularity, active maintenance, excellent performance and docs"
+    },
+    {
+      "package": "crash-gcore-command",
+      "package_score": 64.5,
+      "alt_name": "kdump",
+      "alt_score": 79.8,
+      "alt_weblink": "https://www.kernel.org/doc/html/latest/admin-guide/kdump.html",
+      "delta": 15.3,
+      "rationale": "Strong reputation and docs but lower integration flexibility for gcore."
+    },
+    {
+      "package": "ed",
+      "package_score": 67.8,
+      "alt_name": "sed",
+      "alt_score": 83.1,
+      "alt_weblink": "https://www.gnu.org/software/sed/",
+      "delta": 15.3,
+      "rationale": "Higher popularity and integration; direct functional superset for scripted edits."
+    },
+    {
+      "package": "docutils",
+      "package_score": 74.5,
+      "alt_name": "Sphinx",
+      "alt_score": 89.6,
+      "alt_weblink": "https://www.sphinx-doc.org/",
+      "delta": 15.1,
+      "rationale": "Highest popularity, active maintenance and superior integration outweigh slightly higher recent CVEs."
+    },
+    {
+      "package": "itstool",
+      "package_score": 62.5,
+      "alt_name": "translate-toolkit",
+      "alt_score": 77.5,
+      "alt_weblink": "https://github.com/translate/translate",
+      "delta": 15.0,
+      "rationale": "Popular Python ecosystem with broad format support."
+    },
+    {
+      "package": "builder",
+      "package_score": 72.5,
+      "alt_name": "nokogiri",
+      "alt_score": 87.4,
+      "alt_weblink": "https://rubygems.org/gems/nokogiri",
+      "delta": 14.9,
+      "rationale": "Highest popularity, active maintenance, broad ecosystem despite occasional CVEs."
+    },
+    {
+      "package": "IPC::Run",
+      "package_score": 70.5,
+      "alt_name": "Capture::Tiny",
+      "alt_score": 85.3,
+      "alt_weblink": "https://metacpan.org/pod/Capture::Tiny",
+      "delta": 14.8,
+      "rationale": "Lightweight, widely adopted, excellent maintenance record."
+    },
+    {
+      "package": "llhttp-ffi",
+      "package_score": 66.5,
+      "alt_name": "http_parser.rb",
+      "alt_score": 81.2,
+      "alt_weblink": "https://github.com/tmm1/http_parser.rb",
+      "delta": 14.7,
+      "rationale": "Highest popularity and ecosystem maturity; still the de-facto choice despite older upstream parser."
+    },
+    {
+      "package": "itstool",
+      "package_score": 62.5,
+      "alt_name": "po4a",
+      "alt_score": 77.2,
+      "alt_weblink": "https://po4a.org/",
+      "delta": 14.7,
+      "rationale": "Higher activity, better docs and integration than itstool."
+    },
+    {
+      "package": "cscope",
+      "package_score": 62.5,
+      "alt_name": "GNU Global",
+      "alt_score": 77.1,
+      "alt_weblink": "https://www.gnu.org/software/global",
+      "delta": 14.6,
+      "rationale": "Strong documentation and integration; lower popularity than ctags but more features than cscope."
+    },
+    {
+      "package": "bdftopcf",
+      "package_score": 61.5,
+      "alt_name": "FontForge",
+      "alt_score": 76.0,
+      "alt_weblink": "https://fontforge.org/",
+      "delta": 14.5,
+      "rationale": "High popularity and active maintenance outweigh heavier footprint."
+    },
+    {
+      "package": "byacc",
+      "package_score": 71.5,
+      "alt_name": "bison",
+      "alt_score": 86.0,
+      "alt_weblink": "https://www.gnu.org/software/bison/",
+      "delta": 14.5,
+      "rationale": "Highest popularity, active maintenance, broad ecosystem and superior documentation."
+    },
+    {
+      "package": "Texinfo",
+      "package_score": 66.8,
+      "alt_name": "Doxygen",
+      "alt_score": 81.3,
+      "alt_weblink": "https://www.doxygen.nl/",
+      "delta": 14.5,
+      "rationale": "Strong for API docs and diagrams; slightly older release cadence."
+    },
+    {
+      "package": "libgssglue",
+      "package_score": 65.5,
+      "alt_name": "mit-krb5",
+      "alt_score": 80.0,
+      "alt_weblink": "https://github.com/krb5/krb5",
+      "delta": 14.5,
+      "rationale": "Dominant ecosystem and documentation; minor CVE impact offset by rapid fixes."
+    },
+    {
+      "package": "libunistring",
+      "package_score": 68.5,
+      "alt_name": "utf8proc",
+      "alt_score": 83.0,
+      "alt_weblink": "https://github.com/JuliaStrings/utf8proc",
+      "delta": 14.5,
+      "rationale": "Strong reputation, integration and ecosystem scores with zero recent CVEs."
+    },
+    {
+      "package": "xmlstarlet",
+      "package_score": 61.5,
+      "alt_name": "libxml2-utils",
+      "alt_score": 76.0,
+      "alt_weblink": "https://gitlab.gnome.org/GNOME/libxml2",
+      "delta": 14.5,
+      "rationale": "Ubiquitous availability and integration, solid maintenance by GNOME project"
+    },
+    {
+      "package": "trollop",
+      "package_score": 62.5,
+      "alt_name": "optimist",
+      "alt_score": 77.0,
+      "alt_weblink": "https://github.com/ManageIQ/optimist",
+      "delta": 14.5,
+      "rationale": "Actively maintained successor with better docs and similar API."
+    },
+    {
+      "package": "http_parser.rb",
+      "package_score": 67.5,
+      "alt_name": "llhttp",
+      "alt_score": 81.9,
+      "alt_weblink": "https://github.com/nodejs/llhttp",
+      "delta": 14.4,
+      "rationale": "Highest popularity, active maintenance, strong security track record."
+    },
+    {
+      "package": "libxml-ruby",
+      "package_score": 70.5,
+      "alt_name": "nokogiri",
+      "alt_score": 84.8,
+      "alt_weblink": "https://github.com/sparklemotion/nokogiri",
+      "delta": 14.3,
+      "rationale": "Highest popularity and best docs; minor recent CVEs offset by rapid fixes."
+    },
+    {
+      "package": "iotop",
+      "package_score": 66.5,
+      "alt_name": "atop",
+      "alt_score": 80.8,
+      "alt_weblink": "https://www.atoptool.nl/",
+      "delta": 14.3,
+      "rationale": "Higher activity, better docs and maintained ecosystem"
+    },
+    {
+      "package": "bdwgc",
+      "package_score": 77.4,
+      "alt_name": "mimalloc",
+      "alt_score": 91.5,
+      "alt_weblink": "https://github.com/microsoft/mimalloc",
+      "delta": 14.1,
+      "rationale": "Superior popularity, zero recent CVEs, excellent docs and integration."
+    },
+    {
+      "package": "domain_name",
+      "package_score": 72.5,
+      "alt_name": "public_suffix",
+      "alt_score": 86.6,
+      "alt_weblink": "https://github.com/weppos/publicsuffix-ruby",
+      "delta": 14.1,
+      "rationale": "Higher popularity, active maintenance, strong ecosystem"
+    },
+    {
+      "package": "libksba",
+      "package_score": 74.5,
+      "alt_name": "OpenSSL",
+      "alt_score": 88.5,
+      "alt_weblink": "https://www.openssl.org/",
+      "delta": 14.0,
+      "rationale": "Highest popularity and integration; minor CVE count offset by rapid fixes"
+    },
+    {
+      "package": "Squid",
+      "package_score": 74.6,
+      "alt_name": "Nginx",
+      "alt_score": 88.5,
+      "alt_weblink": "https://nginx.org/",
+      "delta": 13.9,
+      "rationale": "Highest popularity and integration scores outweigh slightly higher recent CVEs."
+    },
+    {
+      "package": "tdb",
+      "package_score": 68.5,
+      "alt_name": "lmdb",
+      "alt_score": 82.4,
+      "alt_weblink": "https://www.symas.com/lmdb",
+      "delta": 13.9,
+      "rationale": "Higher popularity and better concurrency model than TDB while remaining lightweight."
+    },
+    {
+      "package": "Photon OS",
+      "package_score": 65.3,
+      "alt_name": "Fedora CoreOS",
+      "alt_score": 79.2,
+      "alt_weblink": "https://fedoraproject.org/coreos",
+      "delta": 13.9,
+      "rationale": "Strong immutable model and modern tooling; slightly lower popularity than Alpine."
+    },
+    {
+      "package": "ed",
+      "package_score": 67.8,
+      "alt_name": "ex",
+      "alt_score": 81.6,
+      "alt_weblink": "https://vimhelp.org/",
+      "delta": 13.8,
+      "rationale": "Strong ecosystem and docs; offers ed compatibility plus modern features."
+    },
+    {
+      "package": "font-util",
+      "package_score": 64.5,
+      "alt_name": "fontconfig",
+      "alt_score": 78.2,
+      "alt_weblink": "https://www.freedesktop.org/wiki/Software/fontconfig/",
+      "delta": 13.7,
+      "rationale": "Higher popularity, active maintenance, broad ecosystem integration."
+    },
+    {
+      "package": "mingetty",
+      "package_score": 42.5,
+      "alt_name": "mgetty",
+      "alt_score": 56.2,
+      "alt_weblink": "https://github.com/yetzt/mgetty",
+      "delta": 13.7,
+      "rationale": "More features than mingetty but less active than agetty"
+    },
+    {
+      "package": "diffutils",
+      "package_score": 74.5,
+      "alt_name": "difftastic",
+      "alt_score": 88.0,
+      "alt_weblink": "https://github.com/Wilfred/difftastic",
+      "delta": 13.5,
+      "rationale": "High popularity, modern language, active maintenance, syntax awareness."
+    },
+    {
+      "package": "bc",
+      "package_score": 71.5,
+      "alt_name": "python",
+      "alt_score": 85.0,
+      "alt_weblink": "https://www.python.org/",
+      "delta": 13.5,
+      "rationale": "Highest popularity and integration but heavier than bc"
+    },
+    {
+      "package": "byacc",
+      "package_score": 71.5,
+      "alt_name": "antlr",
+      "alt_score": 84.8,
+      "alt_weblink": "https://www.antlr.org/",
+      "delta": 13.3,
+      "rationale": "Very popular with excellent docs but higher complexity and more CVEs than byacc."
+    },
+    {
+      "package": "libXi",
+      "package_score": 58.5,
+      "alt_name": "libevdev",
+      "alt_score": 71.8,
+      "alt_weblink": "https://www.freedesktop.org/wiki/Software/libevdev/",
+      "delta": 13.3,
+      "rationale": "Lower-level building block; less direct replacement for XInput"
+    },
+    {
+      "package": "tboot",
+      "package_score": 62.5,
+      "alt_name": "Linux IMA/EVM",
+      "alt_score": 75.8,
+      "alt_weblink": "https://sourceforge.net/projects/linux-ima/",
+      "delta": 13.3,
+      "rationale": "Excellent integration but broader scope than pure TXT launch."
+    },
+    {
+      "package": "rdiscount",
+      "package_score": 75.4,
+      "alt_name": "redcarpet",
+      "alt_score": 88.6,
+      "alt_weblink": "https://github.com/vmg/redcarpet",
+      "delta": 13.2,
+      "rationale": "Highest popularity and strong ecosystem balance"
+    },
+    {
+      "package": "lsscsi",
+      "package_score": 73.5,
+      "alt_name": "lsblk",
+      "alt_score": 86.6,
+      "alt_weblink": "https://github.com/util-linux/util-linux",
+      "delta": 13.1,
+      "rationale": "Highest popularity, best docs and integration; minor CVE noise."
+    },
+    {
+      "package": "google-logging-utils",
+      "package_score": 72.5,
+      "alt_name": "lograge",
+      "alt_score": 85.6,
+      "alt_weblink": "https://rubygems.org/gems/lograge",
+      "delta": 13.1,
+      "rationale": "Excellent popularity and zero CVEs but older docs and less Google-specific"
+    },
+    {
+      "package": "HTTP-Message",
+      "package_score": 73.4,
+      "alt_name": "Mojo-Message",
+      "alt_score": 86.4,
+      "alt_weblink": "https://metacpan.org/dist/Mojolicious",
+      "delta": 13.0,
+      "rationale": "High popularity and docs but heavier integration"
+    },
+    {
+      "package": "gdbm",
+      "package_score": 71.5,
+      "alt_name": "lmdb",
+      "alt_score": 84.5,
+      "alt_weblink": "https://www.symas.com/lmdb",
+      "delta": 13.0,
+      "rationale": "Higher popularity, better performance and modern maintenance than gdbm."
+    },
+    {
+      "package": "cool.io",
+      "package_score": 67.5,
+      "alt_name": "eventmachine",
+      "alt_score": 80.4,
+      "alt_weblink": "https://github.com/eventmachine/eventmachine",
+      "delta": 12.9,
+      "rationale": "Very popular but slightly lower reputation due to recent CVE"
+    },
+    {
+      "package": "libretls",
+      "package_score": 57.4,
+      "alt_name": "GnuTLS",
+      "alt_score": 70.2,
+      "alt_weblink": "https://www.gnutls.org/",
+      "delta": 12.8,
+      "rationale": "Solid reputation and docs but lower popularity and integration ease for libtls users."
+    },
+    {
+      "package": "libXfixes",
+      "package_score": 66.5,
+      "alt_name": "libxcb",
+      "alt_score": 79.2,
+      "alt_weblink": "https://gitlab.freedesktop.org/xorg/lib/libxcb",
+      "delta": 12.7,
+      "rationale": "Higher activity, better docs and integration; superset functionality for most X11 needs."
+    },
+    {
+      "package": "NSS",
+      "package_score": 69.5,
+      "alt_name": "OpenSSL",
+      "alt_score": 82.2,
+      "alt_weblink": "https://www.openssl.org/",
+      "delta": 12.7,
+      "rationale": "Highest popularity and integration; strong documentation outweighs moderate CVE count."
+    },
+    {
+      "package": "xmlstarlet",
+      "package_score": 61.5,
+      "alt_name": "xidel",
+      "alt_score": 74.2,
+      "alt_weblink": "https://github.com/benibela/xidel",
+      "delta": 12.7,
+      "rationale": "Strong XML/HTML extraction focus, recent releases, smaller but healthy community"
+    },
+    {
+      "package": "libXrender",
+      "package_score": 70.5,
+      "alt_name": "cairo",
+      "alt_score": 83.2,
+      "alt_weblink": "https://cairographics.org",
+      "delta": 12.7,
+      "rationale": "Much higher popularity and documentation; abstracts Xrender details."
+    },
+    {
+      "package": "netrc",
+      "package_score": 76.5,
+      "alt_name": "dotenv",
+      "alt_score": 89.1,
+      "alt_weblink": "https://github.com/bkeepers/dotenv",
+      "delta": 12.6,
+      "rationale": "Higher popularity and maintenance but solves broader env config, not netrc-specific"
+    },
+    {
+      "package": "http-form_data",
+      "package_score": 71.5,
+      "alt_name": "multipart-post",
+      "alt_score": 84.1,
+      "alt_weblink": "https://github.com/socketry/multipart-post",
+      "delta": 12.6,
+      "rationale": "Higher popularity, active maintenance, strong ecosystem metrics."
+    },
+    {
+      "package": "Guile",
+      "package_score": 74.5,
+      "alt_name": "Racket",
+      "alt_score": 87.0,
+      "alt_weblink": "https://racket-lang.org/",
+      "delta": 12.5,
+      "rationale": "Highest popularity, active maintenance and best documentation outweigh slightly higher issue volume."
+    },
+    {
+      "package": "libXext",
+      "package_score": 55.5,
+      "alt_name": "libX11",
+      "alt_score": 68.0,
+      "alt_weblink": "https://gitlab.freedesktop.org/xorg/lib/libx11",
+      "delta": 12.5,
+      "rationale": "Broader scope and more active maintenance than libXext; slight CVE risk."
+    },
+    {
+      "package": "NSS",
+      "package_score": 69.5,
+      "alt_name": "BoringSSL",
+      "alt_score": 82.0,
+      "alt_weblink": "https://boringssl.googlesource.com/boringssl/",
+      "delta": 12.5,
+      "rationale": "Excellent reputation and low CVE count; strong ecosystem activity."
+    },
+    {
+      "package": "gdbm",
+      "package_score": 71.5,
+      "alt_name": "leveldb",
+      "alt_score": 84.0,
+      "alt_weblink": "https://github.com/google/leveldb",
+      "delta": 12.5,
+      "rationale": "Very high adoption and stars, solid reputation, though docs lag."
+    },
+    {
+      "package": "libXcursor",
+      "package_score": 68.5,
+      "alt_name": "SDL2",
+      "alt_score": 81.0,
+      "alt_weblink": "https://www.libsdl.org/",
+      "delta": 12.5,
+      "rationale": "High popularity, active maintenance and broad ecosystem outweigh slightly higher CVE count."
+    },
+    {
+      "package": "dejagnu",
+      "package_score": 67.5,
+      "alt_name": "Bats",
+      "alt_score": 79.9,
+      "alt_weblink": "https://github.com/bats-core/bats-core",
+      "delta": 12.4,
+      "rationale": "Good popularity and activity but narrower scope than DejaGnu."
+    },
+    {
+      "package": "HTTP-Message",
+      "package_score": 73.4,
+      "alt_name": "requests",
+      "alt_score": 85.7,
+      "alt_weblink": "https://github.com/psf/requests",
+      "delta": 12.3,
+      "rationale": "Best overall metrics outside Perl ecosystem"
+    },
+    {
+      "package": "Valgrind",
+      "package_score": 71.5,
+      "alt_name": "AddressSanitizer",
+      "alt_score": 83.8,
+      "alt_weblink": "https://clang.llvm.org/docs/AddressSanitizer.html",
+      "delta": 12.3,
+      "rationale": "Highest integration and documentation scores with broad compiler ecosystem adoption."
+    },
+    {
+      "package": "libXfont2",
+      "package_score": 66.5,
+      "alt_name": "freetype",
+      "alt_score": 78.8,
+      "alt_weblink": "https://gitlab.freedesktop.org/freetype/freetype",
+      "delta": 12.3,
+      "rationale": "Broad adoption and superior docs make it top general-purpose alternative despite marginally higher CVE count."
+    },
+    {
+      "package": "ivykis",
+      "package_score": 62.5,
+      "alt_name": "libev",
+      "alt_score": 74.8,
+      "alt_weblink": "http://software.schmorp.de/pkg/libev.html",
+      "delta": 12.3,
+      "rationale": "Good reputation and low activity, solid but dated"
+    },
+    {
+      "package": "groff",
+      "package_score": 71.5,
+      "alt_name": "mandoc",
+      "alt_score": 83.6,
+      "alt_weblink": "https://mandoc.bsd.lv/",
+      "delta": 12.1,
+      "rationale": "Modern, actively maintained, better docs and integration than groff for man pages."
+    },
+    {
+      "package": "File-Remove",
+      "package_score": 66.5,
+      "alt_name": "File-Path",
+      "alt_score": 78.5,
+      "alt_weblink": "https://metacpan.org/dist/File-Path",
+      "delta": 12.0,
+      "rationale": "Bundled with Perl, reliable for basic removal tasks."
+    },
+    {
+      "package": "Data::Dump",
+      "package_score": 80.5,
+      "alt_name": "Data::Dumper",
+      "alt_score": 92.4,
+      "alt_weblink": "https://metacpan.org/dist/Data-Dumper",
+      "delta": 11.9,
+      "rationale": "Highest integration and popularity as core module with excellent maintenance."
+    },
+    {
+      "package": "traceroute",
+      "package_score": 71.5,
+      "alt_name": "mtr",
+      "alt_score": 83.0,
+      "alt_weblink": "https://github.com/traviscross/mtr",
+      "delta": 11.5,
+      "rationale": "Highest popularity and active maintenance with good integration."
+    },
+    {
+      "package": "multi_json",
+      "package_score": 76.6,
+      "alt_name": "oj",
+      "alt_score": 88.1,
+      "alt_weblink": "https://github.com/ohler55/oj",
+      "delta": 11.5,
+      "rationale": "Highest popularity and recent activity with strong performance."
+    },
+    {
+      "package": "async-pool",
+      "package_score": 72.5,
+      "alt_name": "connection_pool",
+      "alt_score": 83.8,
+      "alt_weblink": "https://github.com/mperham/connection_pool",
+      "delta": 11.3,
+      "rationale": "Highest popularity and solid reputation but lacks native async support."
+    },
+    {
+      "package": "protocol-http1",
+      "package_score": 71.5,
+      "alt_name": "net/http",
+      "alt_score": 82.8,
+      "alt_weblink": "https://ruby-doc.org/stdlib/libdoc/net/http/rdoc/Net/HTTP.html",
+      "delta": 11.3,
+      "rationale": "Unmatched integration and baseline popularity in Ruby."
+    },
+    {
+      "package": "bdwgc",
+      "package_score": 77.4,
+      "alt_name": "jemalloc",
+      "alt_score": 88.6,
+      "alt_weblink": "https://github.com/jemalloc/jemalloc",
+      "delta": 11.2,
+      "rationale": "Very high adoption and strong reputation; slightly older docs."
+    },
+    {
+      "package": "declarative",
+      "package_score": 64.5,
+      "alt_name": "values",
+      "alt_score": 75.6,
+      "alt_weblink": "https://github.com/tcrayford/Values",
+      "delta": 11.1,
+      "rationale": "Strong reputation and ecosystem with good integration simplicity."
+    },
+    {
+      "package": "sigdump",
+      "package_score": 70.5,
+      "alt_name": "debug",
+      "alt_score": 81.6,
+      "alt_weblink": "https://github.com/ruby/debug",
+      "delta": 11.1,
+      "rationale": "Best docs, integration and maintenance as stdlib successor"
+    },
+    {
+      "package": "librelp",
+      "package_score": 71.8,
+      "alt_name": "rsyslog",
+      "alt_score": 82.8,
+      "alt_weblink": "https://github.com/rsyslog/rsyslog",
+      "delta": 11.0,
+      "rationale": "Highest popularity and documentation; direct superset of librelp functionality."
+    },
+    {
+      "package": "google-apis-storage_v1",
+      "package_score": 78.4,
+      "alt_name": "google-cloud-storage",
+      "alt_score": 89.4,
+      "alt_weblink": "https://rubygems.org/gems/google-cloud-storage",
+      "delta": 11.0,
+      "rationale": "Higher integration ease and documentation freshness outweigh lower star count; preferred official library"
+    },
+    {
+      "package": "libev",
+      "package_score": 76.5,
+      "alt_name": "libuv",
+      "alt_score": 87.5,
+      "alt_weblink": "https://libuv.org",
+      "delta": 11.0,
+      "rationale": "Highest popularity, active maintenance, broad ecosystem"
+    },
+    {
+      "package": "async-pool",
+      "package_score": 72.5,
+      "alt_name": "async",
+      "alt_score": 83.4,
+      "alt_weblink": "https://github.com/socketry/async",
+      "delta": 10.9,
+      "rationale": "Excellent ecosystem and docs but requires async-pool for pooling."
+    },
+    {
+      "package": "OpenIPMI",
+      "package_score": 66.5,
+      "alt_name": "ipmitool",
+      "alt_score": 77.4,
+      "alt_weblink": "https://github.com/ipmitool/ipmitool",
+      "delta": 10.9,
+      "rationale": "Highest adoption and easiest integration despite older last release."
+    },
+    {
+      "package": "xml-security-c",
+      "package_score": 68.5,
+      "alt_name": "Botan",
+      "alt_score": 79.4,
+      "alt_weblink": "https://botan.randombit.net/",
+      "delta": 10.9,
+      "rationale": "Highest popularity and documentation but not a drop-in XML-security replacement."
+    },
+    {
+      "package": "protocol-http1",
+      "package_score": 71.5,
+      "alt_name": "async-http",
+      "alt_score": 82.3,
+      "alt_weblink": "https://github.com/socketry/async-http",
+      "delta": 10.8,
+      "rationale": "Higher popularity, strong ecosystem activity and maintained docs."
+    },
+    {
+      "package": "mime-types-data",
+      "package_score": 78.4,
+      "alt_name": "marcel",
+      "alt_score": 89.2,
+      "alt_weblink": "https://rubygems.org/gems/marcel",
+      "delta": 10.8,
+      "rationale": "Highest popularity, strong Rails integration and recent activity"
+    },
+    {
+      "package": "async-http",
+      "package_score": 76.5,
+      "alt_name": "faraday",
+      "alt_score": 87.2,
+      "alt_weblink": "https://github.com/lostisland/faraday",
+      "delta": 10.7,
+      "rationale": "Excellent ecosystem and integration flexibility despite minor CVE."
+    },
+    {
+      "package": "protocol-http",
+      "package_score": 71.5,
+      "alt_name": "async-http",
+      "alt_score": 82.1,
+      "alt_weblink": "https://github.com/socketry/async-http",
+      "delta": 10.6,
+      "rationale": "Higher popularity, strong ecosystem and integration within same project family."
+    },
+    {
+      "package": "xml-security-c",
+      "package_score": 68.5,
+      "alt_name": "xmlsec",
+      "alt_score": 79.1,
+      "alt_weblink": "https://www.aleksey.com/xmlsec/",
+      "delta": 10.6,
+      "rationale": "Higher popularity, fresher releases, better integration options outweigh slightly higher recent CVEs."
+    },
+    {
+      "package": "recursive-open-struct",
+      "package_score": 78.4,
+      "alt_name": "hashie",
+      "alt_score": 88.9,
+      "alt_weblink": "https://github.com/hashie/hashie",
+      "delta": 10.5,
+      "rationale": "Highest popularity, active maintenance, strong docs and ecosystem"
+    },
+    {
+      "package": "libecap",
+      "package_score": 53.5,
+      "alt_name": "c-icap",
+      "alt_score": 64.0,
+      "alt_weblink": "http://c-icap.sourceforge.net/",
+      "delta": 10.5,
+      "rationale": "Higher activity and documentation outweigh protocol overhead versus eCAP."
+    },
+    {
+      "package": "google-logging-utils",
+      "package_score": 72.5,
+      "alt_name": "google-cloud-logging",
+      "alt_score": 82.9,
+      "alt_weblink": "https://rubygems.org/gems/google-cloud-logging",
+      "delta": 10.4,
+      "rationale": "Higher popularity, fresher releases and better docs outweigh minor CVE"
+    },
+    {
+      "package": "console",
+      "package_score": 78.5,
+      "alt_name": "pry",
+      "alt_score": 88.9,
+      "alt_weblink": "https://github.com/pry/pry",
+      "delta": 10.4,
+      "rationale": "Highest popularity and mature ecosystem outweigh slightly higher issue volume."
+    },
+    {
+      "package": "io-event",
+      "package_score": 80.4,
+      "alt_name": "async",
+      "alt_score": 90.7,
+      "alt_weblink": "https://github.com/socketry/async",
+      "delta": 10.3,
+      "rationale": "Highest popularity and best integration within the same ecosystem."
+    },
+    {
+      "package": "shim",
+      "package_score": 79.4,
+      "alt_name": "systemd-boot",
+      "alt_score": 89.6,
+      "alt_weblink": "https://github.com/systemd/systemd/tree/main/src/boot",
+      "delta": 10.2,
+      "rationale": "Higher popularity, fresher docs, strong systemd ecosystem and comparable security posture."
+    },
+    {
+      "package": "inotify-tools",
+      "package_score": 74.5,
+      "alt_name": "fswatch",
+      "alt_score": 84.6,
+      "alt_weblink": "https://github.com/emcrisostomo/fswatch",
+      "delta": 10.1,
+      "rationale": "Higher popularity, recent activity, cross-platform support and better docs outweigh minor ecosystem size."
+    },
+    {
+      "package": "libXrandr",
+      "package_score": 66.5,
+      "alt_name": "wlroots",
+      "alt_score": 76.6,
+      "alt_weblink": "https://gitlab.freedesktop.org/wlroots/wlroots",
+      "delta": 10.1,
+      "rationale": "Strong ecosystem momentum and modern relevance but higher integration cost for X11-centric codebases"
+    },
+    {
+      "package": "AutoGen",
+      "package_score": 52.5,
+      "alt_name": "m4",
+      "alt_score": 62.6,
+      "alt_weblink": "https://www.gnu.org/software/m4/",
+      "delta": 10.1,
+      "rationale": "Lightweight, widely available, but lower-level than AutoGen."
+    },
+    {
+      "package": "Texinfo",
+      "package_score": 66.8,
+      "alt_name": "AsciiDoc",
+      "alt_score": 76.4,
+      "alt_weblink": "https://asciidoc.org/",
+      "delta": 9.6,
+      "rationale": "Good balance but smaller community than Sphinx."
+    },
+    {
+      "package": "remote_syslog_sender",
+      "package_score": 68.9,
+      "alt_name": "logstash-logger",
+      "alt_score": 78.5,
+      "alt_weblink": "https://github.com/dwbutler/logstash-logger",
+      "delta": 9.6,
+      "rationale": "Higher popularity and fresher docs outweigh slightly busier issue tracker"
+    },
+    {
+      "package": "protocol-http2",
+      "package_score": 68.5,
+      "alt_name": "nghttp2",
+      "alt_score": 78.1,
+      "alt_weblink": "https://github.com/nghttp2/nghttp2",
+      "delta": 9.6,
+      "rationale": "Top popularity and docs but lower integration ease due to native deps."
+    },
+    {
+      "package": "highline",
+      "package_score": 76.5,
+      "alt_name": "tty-prompt",
+      "alt_score": 86.1,
+      "alt_weblink": "https://github.com/piotrmurach/tty-prompt",
+      "delta": 9.6,
+      "rationale": "Higher popularity, fresher releases, better docs and active maintenance."
+    },
+    {
+      "package": "libnetfilter_cthelper",
+      "package_score": 62.5,
+      "alt_name": "conntrack-tools",
+      "alt_score": 72.1,
+      "alt_weblink": "https://conntrack-tools.netfilter.org/",
+      "delta": 9.6,
+      "rationale": "Direct Netfilter lineage with helper management but lower activity than nftables."
+    },
+    {
+      "package": "lttng-ust",
+      "package_score": 74.5,
+      "alt_name": "bpftrace",
+      "alt_score": 84.0,
+      "alt_weblink": "https://github.com/bpftrace/bpftrace",
+      "delta": 9.5,
+      "rationale": "Highest popularity and modern eBPF adoption outweighs slightly higher recent CVEs."
+    },
+    {
+      "package": "protocol-http2",
+      "package_score": 68.5,
+      "alt_name": "http-2",
+      "alt_score": 78.0,
+      "alt_weblink": "https://github.com/igrigorik/http-2",
+      "delta": 9.5,
+      "rationale": "Highest popularity and solid reputation; slightly dated docs."
+    },
+    {
+      "package": "libunistring",
+      "package_score": 68.5,
+      "alt_name": "ICU",
+      "alt_score": 78.0,
+      "alt_weblink": "https://icu.unicode.org/",
+      "delta": 9.5,
+      "rationale": "Highest popularity and documentation quality outweigh moderate CVE count."
+    },
+    {
+      "package": "protocol-hpack",
+      "package_score": 71.4,
+      "alt_name": "http-2",
+      "alt_score": 80.9,
+      "alt_weblink": "https://github.com/igrigorik/http-2",
+      "delta": 9.5,
+      "rationale": "Highest popularity and solid reputation; broader HTTP/2 scope."
+    },
+    {
+      "package": "async-http",
+      "package_score": 76.5,
+      "alt_name": "http",
+      "alt_score": 85.9,
+      "alt_weblink": "https://github.com/httprb/http",
+      "delta": 9.4,
+      "rationale": "Highest popularity and strong recent activity with good docs."
+    },
+    {
+      "package": "fluentd",
+      "package_score": 79.9,
+      "alt_name": "vector",
+      "alt_score": 89.2,
+      "alt_weblink": "https://vector.dev",
+      "delta": 9.3,
+      "rationale": "Excellent reputation and popularity, modern language"
+    },
+    {
+      "package": "Types-Serialiser",
+      "package_score": 71.5,
+      "alt_name": "Cpanel-JSON-XS",
+      "alt_score": 80.8,
+      "alt_weblink": "https://metacpan.org/release/Cpanel-JSON-XS",
+      "delta": 9.3,
+      "rationale": "Highest activity, best docs and integration scores"
+    },
+    {
+      "package": "protocol-http1",
+      "package_score": 71.5,
+      "alt_name": "http",
+      "alt_score": 80.8,
+      "alt_weblink": "https://github.com/httprb/http",
+      "delta": 9.3,
+      "rationale": "Strong stars and reputation offset by older documentation."
+    },
+    {
+      "package": "findutils",
+      "package_score": 81.8,
+      "alt_name": "fd",
+      "alt_score": 91.1,
+      "alt_weblink": "https://github.com/sharkdp/fd",
+      "delta": 9.3,
+      "rationale": "Highest popularity and modern UX while maintaining strong security posture."
+    },
+    {
+      "package": "fiber-annotation",
+      "package_score": 68.5,
+      "alt_name": "fiber-local",
+      "alt_score": 77.8,
+      "alt_weblink": "https://github.com/socketry/fiber-local",
+      "delta": 9.3,
+      "rationale": "Higher activity, maintained by same org, direct evolution of annotation concept."
+    },
+    {
+      "package": "webrick",
+      "package_score": 68.9,
+      "alt_name": "unicorn",
+      "alt_score": 78.0,
+      "alt_weblink": "https://github.com/defunkt/unicorn",
+      "delta": 9.1,
+      "rationale": "Solid reputation and low activity but dated docs and lower popularity"
+    },
+    {
+      "package": "async-io",
+      "package_score": 79.5,
+      "alt_name": "async",
+      "alt_score": 88.6,
+      "alt_weblink": "https://github.com/socketry/async",
+      "delta": 9.1,
+      "rationale": "Best overall balance with active maintenance and tight integration."
+    },
+    {
+      "package": "SCons",
+      "package_score": 67.9,
+      "alt_name": "Ninja",
+      "alt_score": 76.9,
+      "alt_weblink": "https://ninja-build.org",
+      "delta": 9.0,
+      "rationale": "Strong reputation and ecosystem but lower integration flexibility as standalone tool."
+    },
+    {
+      "package": "xcb-proto",
+      "package_score": 76.5,
+      "alt_name": "wayland-protocols",
+      "alt_score": 85.5,
+      "alt_weblink": "https://wayland.freedesktop.org/",
+      "delta": 9.0,
+      "rationale": "Higher popularity, active ecosystem and modern alternative to X11 protocols"
+    },
+    {
+      "package": "dialog",
+      "package_score": 78.5,
+      "alt_name": "gum",
+      "alt_score": 87.5,
+      "alt_weblink": "https://github.com/charmbracelet/gum",
+      "delta": 9.0,
+      "rationale": "Strong popularity, docs and zero CVEs outweigh ecosystem activity."
+    },
+    {
+      "package": "digest-crc",
+      "package_score": 82.0,
+      "alt_name": "zlib",
+      "alt_score": 91.0,
+      "alt_weblink": "https://ruby-doc.org/stdlib/lib/zlib.html",
+      "delta": 9.0,
+      "rationale": "Highest composite due to being built-in, extremely reliable and always up-to-date docs, but limited to CRC32 only."
+    },
+    {
+      "package": "cdrkit",
+      "package_score": 51.5,
+      "alt_name": "cdrtools",
+      "alt_score": 60.4,
+      "alt_weblink": "https://sourceforge.net/projects/cdrtools/",
+      "delta": 8.9,
+      "rationale": "Upstream of cdrkit, recent releases but smaller community."
+    },
+    {
+      "package": "http_parser.rb",
+      "package_score": 67.5,
+      "alt_name": "http-2",
+      "alt_score": 76.4,
+      "alt_weblink": "https://github.com/igrigorik/http-2",
+      "delta": 8.9,
+      "rationale": "Good Ruby integration and ecosystem health, slightly lower popularity."
+    },
+    {
+      "package": "mini_portile",
+      "package_score": 70.4,
+      "alt_name": "rake-compiler",
+      "alt_score": 79.2,
+      "alt_weblink": "https://github.com/rake-compiler/rake-compiler",
+      "delta": 8.8,
+      "rationale": "Higher popularity and fresher docs but less specialized for port/miniature builds."
+    },
+    {
+      "package": "httpclient",
+      "package_score": 71.4,
+      "alt_name": "rest-client",
+      "alt_score": 80.1,
+      "alt_weblink": "https://github.com/rest-client/rest-client",
+      "delta": 8.7,
+      "rationale": "Strong popularity but slightly dated docs and one recent CVE."
+    },
+    {
+      "package": "jsonpath",
+      "package_score": 68.5,
+      "alt_name": "jmespath",
+      "alt_score": 77.1,
+      "alt_weblink": "https://rubygems.org/gems/jmespath",
+      "delta": 8.6,
+      "rationale": "Higher activity, better docs and integration than jsonpath."
+    },
+    {
+      "package": "libgssglue",
+      "package_score": 65.5,
+      "alt_name": "libgssapi",
+      "alt_score": 74.1,
+      "alt_weblink": "https://github.com/gssapi/libgssapi",
+      "delta": 8.6,
+      "rationale": "Higher activity, better docs and integration than legacy libgssglue."
+    },
+    {
+      "package": "OpenIPMI",
+      "package_score": 66.5,
+      "alt_name": "FreeIPMI",
+      "alt_score": 75.1,
+      "alt_weblink": "https://www.gnu.org/software/freeipmi/",
+      "delta": 8.6,
+      "rationale": "Recent release, clean reputation and solid documentation."
+    },
+    {
+      "package": "protocol-hpack",
+      "package_score": 71.4,
+      "alt_name": "nghttp2",
+      "alt_score": 80.0,
+      "alt_weblink": "https://github.com/nghttp2/nghttp2",
+      "delta": 8.6,
+      "rationale": "Best overall popularity and docs but lower integration ease for pure-Ruby use."
+    },
+    {
+      "package": "Boehm GC",
+      "package_score": 78.5,
+      "alt_name": "jemalloc",
+      "alt_score": 87.1,
+      "alt_weblink": "http://jemalloc.net/",
+      "delta": 8.6,
+      "rationale": "Superior popularity, active maintenance and broad adoption outweigh lack of full GC semantics."
+    },
+    {
+      "package": "inotify-tools",
+      "package_score": 74.5,
+      "alt_name": "Watchman",
+      "alt_score": 83.0,
+      "alt_weblink": "https://github.com/facebook/watchman",
+      "delta": 8.5,
+      "rationale": "Highest popularity and strong docs but heavier integration and slight reputation dip from recent CVE."
+    },
+    {
+      "package": "xtrans",
+      "package_score": 62.5,
+      "alt_name": "libxcb",
+      "alt_score": 71.0,
+      "alt_weblink": "https://gitlab.freedesktop.org/xorg/lib/libxcb",
+      "delta": 8.5,
+      "rationale": "Higher activity, better documentation and integration; replaces xtrans usage in modern X clients."
+    },
+    {
+      "package": "httpclient",
+      "package_score": 71.4,
+      "alt_name": "excon",
+      "alt_score": 79.9,
+      "alt_weblink": "https://github.com/excon/excon",
+      "delta": 8.5,
+      "rationale": "Solid reputation and recent activity but lower popularity."
+    },
+    {
+      "package": "libXfont2",
+      "package_score": 66.5,
+      "alt_name": "fontconfig",
+      "alt_score": 75.0,
+      "alt_weblink": "https://gitlab.freedesktop.org/fontconfig/fontconfig",
+      "delta": 8.5,
+      "rationale": "Higher popularity and better integration ecosystem offset by slightly more CVEs and activity."
+    },
+    {
+      "package": "libwww-perl",
+      "package_score": 79.4,
+      "alt_name": "HTTP::Tiny",
+      "alt_score": 87.9,
+      "alt_weblink": "https://metacpan.org/dist/HTTP-Tiny",
+      "delta": 8.5,
+      "rationale": "Lightweight, core Perl, highest integration and ecosystem scores."
+    },
+    {
+      "package": "libwww-perl",
+      "package_score": 79.4,
+      "alt_name": "Mojo::UserAgent",
+      "alt_score": 87.9,
+      "alt_weblink": "https://metacpan.org/dist/Mojolicious",
+      "delta": 8.5,
+      "rationale": "Excellent popularity and docs but heavier integration."
+    },
+    {
+      "package": "libnetfilter_cttimeout",
+      "package_score": 62.5,
+      "alt_name": "conntrack-tools",
+      "alt_score": 71.0,
+      "alt_weblink": "https://conntrack-tools.netfilter.org/",
+      "delta": 8.5,
+      "rationale": "Broader maintenance and features; indirect timeout support via conntrack."
+    },
+    {
+      "package": "glibc",
+      "package_score": 80.5,
+      "alt_name": "musl",
+      "alt_score": 88.9,
+      "alt_weblink": "https://musl.libc.org/",
+      "delta": 8.4,
+      "rationale": "Higher popularity, far fewer recent CVEs, simpler codebase and active maintenance."
+    },
+    {
+      "package": "installer",
+      "package_score": 78.5,
+      "alt_name": "pip",
+      "alt_score": 86.8,
+      "alt_weblink": "https://github.com/pypa/pip",
+      "delta": 8.3,
+      "rationale": "Highest popularity and integration; actively maintained superset of installer functionality."
+    },
+    {
+      "package": "libpipeline",
+      "package_score": 68.5,
+      "alt_name": "Boost.Process",
+      "alt_score": 76.8,
+      "alt_weblink": "https://www.boost.org/doc/libs/release/libs/process/",
+      "delta": 8.3,
+      "rationale": "Higher integration score and fresher docs outweigh lower C-native focus."
+    },
+    {
+      "package": "bison",
+      "package_score": 81.5,
+      "alt_name": "ANTLR",
+      "alt_score": 89.8,
+      "alt_weblink": "https://www.antlr.org/",
+      "delta": 8.3,
+      "rationale": "Highest popularity, active maintenance, broad language support and modern docs."
+    },
+    {
+      "package": "mustache",
+      "package_score": 78.5,
+      "alt_name": "liquid",
+      "alt_score": 86.6,
+      "alt_weblink": "https://github.com/Shopify/liquid",
+      "delta": 8.1,
+      "rationale": "Highest popularity, active maintenance, strong ecosystem."
+    },
+    {
+      "package": "lsscsi",
+      "package_score": 73.5,
+      "alt_name": "lshw",
+      "alt_score": 81.6,
+      "alt_weblink": "https://github.com/lyonel/lshw",
+      "delta": 8.1,
+      "rationale": "Strong reputation and ecosystem; slightly lower popularity than lsblk."
+    },
+    {
+      "package": "fluent-plugin-s3",
+      "package_score": 79.5,
+      "alt_name": "vector",
+      "alt_score": 87.6,
+      "alt_weblink": "https://github.com/vectordotdev/vector",
+      "delta": 8.1,
+      "rationale": "Top popularity and solid reputation; slightly lower ecosystem score due to volume"
+    },
+    {
+      "package": "cpio",
+      "package_score": 78.5,
+      "alt_name": "tar",
+      "alt_score": 86.5,
+      "alt_weblink": "https://www.gnu.org/software/tar/",
+      "delta": 8.0,
+      "rationale": "Higher popularity, better integration and documentation freshness."
+    },
+    {
+      "package": "which",
+      "package_score": 72.5,
+      "alt_name": "busybox",
+      "alt_score": 80.5,
+      "alt_weblink": "https://busybox.net/",
+      "delta": 8.0,
+      "rationale": "Higher activity, recent releases, strong embedded integration outweighs minor CVEs."
+    },
+    {
+      "package": "ffi-compiler",
+      "package_score": 66.5,
+      "alt_name": "rake-compiler",
+      "alt_score": 74.4,
+      "alt_weblink": "https://github.com/rake-compiler/rake-compiler",
+      "delta": 7.9,
+      "rationale": "Broader extension build tool; more active than ffi-compiler but less FFI-specific."
+    },
+    {
+      "package": "http-form_data",
+      "package_score": 71.5,
+      "alt_name": "faraday-multipart",
+      "alt_score": 79.3,
+      "alt_weblink": "https://github.com/lostisland/faraday-multipart",
+      "delta": 7.8,
+      "rationale": "Good integration and docs but narrower scope than multipart-post."
+    },
+    {
+      "package": "Types-Serialiser",
+      "package_score": 71.5,
+      "alt_name": "JSON-MaybeXS",
+      "alt_score": 79.3,
+      "alt_weblink": "https://metacpan.org/release/JSON-MaybeXS",
+      "delta": 7.8,
+      "rationale": "Excellent integration and ecosystem health"
+    },
+    {
+      "package": "ipaddr",
+      "package_score": 52.5,
+      "alt_name": "ipcalc",
+      "alt_score": 60.2,
+      "alt_weblink": "https://pypi.org/project/ipcalc/",
+      "delta": 7.7,
+      "rationale": "Lightweight but outdated and less popular"
+    },
+    {
+      "package": "wget",
+      "package_score": 77.5,
+      "alt_name": "curl",
+      "alt_score": 85.2,
+      "alt_weblink": "https://curl.se/",
+      "delta": 7.7,
+      "rationale": "Highest popularity, best docs and integration; slightly more CVEs but actively maintained."
+    },
+    {
+      "package": "builder",
+      "package_score": 72.5,
+      "alt_name": "ox",
+      "alt_score": 80.2,
+      "alt_weblink": "https://rubygems.org/gems/ox",
+      "delta": 7.7,
+      "rationale": "Strong performance and zero recent CVEs, good activity level."
+    },
+    {
+      "package": "libxml-ruby",
+      "package_score": 70.5,
+      "alt_name": "ox",
+      "alt_score": 78.2,
+      "alt_weblink": "https://github.com/ohler55/ox",
+      "delta": 7.7,
+      "rationale": "Strong speed and zero CVEs; weaker docs than Nokogiri."
+    },
+    {
+      "package": "SWIG",
+      "package_score": 82.4,
+      "alt_name": "pybind11",
+      "alt_score": 90.1,
+      "alt_weblink": "https://github.com/pybind/pybind11",
+      "delta": 7.7,
+      "rationale": "Highest popularity and integration scores; preferred for Python-centric projects."
+    },
+    {
+      "package": "unf",
+      "package_score": 66.5,
+      "alt_name": "unicode_utils",
+      "alt_score": 74.2,
+      "alt_weblink": "https://github.com/lang/unicode_utils",
+      "delta": 7.7,
+      "rationale": "Higher popularity, maintained longer, broader Unicode feature set"
+    },
+    {
+      "package": "libgcrypt",
+      "package_score": 72.5,
+      "alt_name": "OpenSSL",
+      "alt_score": 80.2,
+      "alt_weblink": "https://www.openssl.org/",
+      "delta": 7.7,
+      "rationale": "Highest popularity and integration; acceptable reputation despite higher CVE count due to massive usage surface."
+    },
+    {
+      "package": "libmnl",
+      "package_score": 72.4,
+      "alt_name": "libnl",
+      "alt_score": 80.0,
+      "alt_weblink": "https://www.infradead.org/~tgr/libnl/",
+      "delta": 7.6,
+      "rationale": "Higher popularity, better docs and integration outweigh minor CVE."
+    },
+    {
+      "package": "Emacs",
+      "package_score": 74.4,
+      "alt_name": "Neovim",
+      "alt_score": 82.0,
+      "alt_weblink": "https://neovim.io/",
+      "delta": 7.6,
+      "rationale": "Excellent balance of popularity, low CVEs and modern ecosystem activity."
+    },
+    {
+      "package": "libev",
+      "package_score": 76.5,
+      "alt_name": "libevent",
+      "alt_score": 84.1,
+      "alt_weblink": "https://libevent.org",
+      "delta": 7.6,
+      "rationale": "Strong reputation and solid integration scores"
+    },
+    {
+      "package": "Clone",
+      "package_score": 76.5,
+      "alt_name": "Storable",
+      "alt_score": 84.0,
+      "alt_weblink": "https://metacpan.org/dist/Storable",
+      "delta": 7.5,
+      "rationale": "Core module with highest integration and recent maintenance"
+    },
+    {
+      "package": "unf_ext",
+      "package_score": 66.5,
+      "alt_name": "unf",
+      "alt_score": 74.0,
+      "alt_weblink": "https://github.com/knu/ruby-unf",
+      "delta": 7.5,
+      "rationale": "Direct dependent of unf_ext, maintained wrapper"
+    },
+    {
+      "package": "http",
+      "package_score": 81.5,
+      "alt_name": "faraday",
+      "alt_score": 89.0,
+      "alt_weblink": "https://github.com/lostisland/faraday",
+      "delta": 7.5,
+      "rationale": "Highest popularity, excellent docs and integration flexibility."
+    },
+    {
+      "package": "othercertdata.txt",
+      "package_score": 76.0,
+      "alt_name": "ca-certificates",
+      "alt_score": 83.5,
+      "alt_weblink": "https://wiki.mozilla.org/CA/Included_Certificates",
+      "delta": 7.5,
+      "rationale": "Higher integration and documentation scores; actively maintained by Mozilla with broad ecosystem adoption."
+    },
+    {
+      "package": "IPC::Run",
+      "package_score": 70.5,
+      "alt_name": "IPC::Open3",
+      "alt_score": 78.0,
+      "alt_weblink": "https://perldoc.perl.org/IPC::Open3",
+      "delta": 7.5,
+      "rationale": "Built-in but lower-level than IPC::Run; strong ecosystem stability."
+    },
+    {
+      "package": "tomli",
+      "package_score": 87.8,
+      "alt_name": "tomllib",
+      "alt_score": 95.3,
+      "alt_weblink": "https://docs.python.org/3/library/tomllib.html",
+      "delta": 7.5,
+      "rationale": "Highest integration and reputation due to stdlib status and active maintenance."
+    },
+    {
+      "package": "timers",
+      "package_score": 83.4,
+      "alt_name": "concurrent-ruby",
+      "alt_score": 90.7,
+      "alt_weblink": "https://github.com/ruby-concurrency/concurrent-ruby",
+      "delta": 7.3,
+      "rationale": "Highest popularity and strong maintenance with broad integration."
+    },
+    {
+      "package": "Boehm GC",
+      "package_score": 78.5,
+      "alt_name": "tcmalloc",
+      "alt_score": 85.7,
+      "alt_weblink": "https://github.com/google/tcmalloc",
+      "delta": 7.2,
+      "rationale": "Excellent reputation and recent activity; slightly lower integration ease than jemalloc."
+    },
+    {
+      "package": "cpulimit",
+      "package_score": 80.4,
+      "alt_name": "systemd",
+      "alt_score": 87.5,
+      "alt_weblink": "https://systemd.io/",
+      "delta": 7.1,
+      "rationale": "Highest integration and docs; native in modern Linux"
+    },
+    {
+      "package": "mpc",
+      "package_score": 76.5,
+      "alt_name": "mpfr",
+      "alt_score": 83.5,
+      "alt_weblink": "https://www.mpfr.org/",
+      "delta": 7.0,
+      "rationale": "Higher popularity and fresher releases; foundational for complex libs."
+    },
+    {
+      "package": "rest-client",
+      "package_score": 80.5,
+      "alt_name": "faraday",
+      "alt_score": 87.5,
+      "alt_weblink": "https://github.com/lostisland/faraday",
+      "delta": 7.0,
+      "rationale": "Highest overall scores due to active maintenance, strong docs and broad ecosystem adoption."
+    },
+    {
+      "package": "bdwgc",
+      "package_score": 77.4,
+      "alt_name": "tcmalloc",
+      "alt_score": 84.4,
+      "alt_weblink": "https://github.com/google/tcmalloc",
+      "delta": 7.0,
+      "rationale": "Strong reputation and recent activity but lower integration flexibility than mimalloc."
+    },
+    {
+      "package": "photongrub2-theme",
+      "package_score": 82.5,
+      "alt_name": "grub2-themes",
+      "alt_score": 89.4,
+      "alt_weblink": "https://github.com/vinceliuice/grub2-themes",
+      "delta": 6.9,
+      "rationale": "Highest popularity and active maintenance; broad compatibility"
+    },
+    {
+      "package": "async-io",
+      "package_score": 79.5,
+      "alt_name": "nio4r",
+      "alt_score": 86.4,
+      "alt_weblink": "https://github.com/socketry/nio4r",
+      "delta": 6.9,
+      "rationale": "Higher popularity and proven integration across ecosystem."
+    },
+    {
+      "package": "Parse::Yapp",
+      "package_score": 68.5,
+      "alt_name": "Parse::RecDescent",
+      "alt_score": 75.3,
+      "alt_weblink": "https://metacpan.org/dist/Parse-RecDescent",
+      "delta": 6.8,
+      "rationale": "Good usability but lower performance for complex LALR grammars."
+    },
+    {
+      "package": "Lasso",
+      "package_score": 61.5,
+      "alt_name": "OpenSAML",
+      "alt_score": 68.2,
+      "alt_weblink": "https://wiki.shibboleth.net/confluence/display/OS30/Home",
+      "delta": 6.7,
+      "rationale": "Enterprise-grade, good reputation but lower recent momentum than PySAML2."
+    },
+    {
+      "package": "elfutils",
+      "package_score": 74.5,
+      "alt_name": "GNU Binutils",
+      "alt_score": 81.2,
+      "alt_weblink": "https://www.gnu.org/software/binutils/",
+      "delta": 6.7,
+      "rationale": "Highest ecosystem maturity and integration despite slightly higher CVE count."
+    },
+    {
+      "package": "elfutils",
+      "package_score": 74.5,
+      "alt_name": "patchelf",
+      "alt_score": 81.2,
+      "alt_weblink": "https://github.com/NixOS/patchelf",
+      "delta": 6.7,
+      "rationale": "Excellent reputation and active GitHub community for its narrow purpose."
+    },
+    {
+      "package": "libpciaccess",
+      "package_score": 72.5,
+      "alt_name": "pciutils",
+      "alt_score": 79.2,
+      "alt_weblink": "https://mj.ucw.cz/sw/pciutils/",
+      "delta": 6.7,
+      "rationale": "Higher popularity and better maintained; direct functional overlap for PCI config access."
+    },
+    {
+      "package": "wheel",
+      "package_score": 82.4,
+      "alt_name": "setuptools",
+      "alt_score": 89.0,
+      "alt_weblink": "https://github.com/pypa/setuptools",
+      "delta": 6.6,
+      "rationale": "Highest adoption and integration; minor CVE offset by rapid fixes."
+    },
+    {
+      "package": "librelp",
+      "package_score": 71.8,
+      "alt_name": "syslog-ng",
+      "alt_score": 78.4,
+      "alt_weblink": "https://github.com/syslog-ng/syslog-ng",
+      "delta": 6.6,
+      "rationale": "Strong ecosystem and docs; comparable reliability features."
+    },
+    {
+      "package": "mime-types-data",
+      "package_score": 78.4,
+      "alt_name": "mini_mime",
+      "alt_score": 85.0,
+      "alt_weblink": "https://rubygems.org/gems/mini_mime",
+      "delta": 6.6,
+      "rationale": "Excellent lightweight profile and ecosystem health"
+    },
+    {
+      "package": "mime-types-data",
+      "package_score": 78.4,
+      "alt_name": "mime-types",
+      "alt_score": 85.0,
+      "alt_weblink": "https://rubygems.org/gems/mime-types",
+      "delta": 6.6,
+      "rationale": "Strong popularity but slightly lower integration score"
+    },
+    {
+      "package": "libedit",
+      "package_score": 70.5,
+      "alt_name": "linenoise",
+      "alt_score": 77.0,
+      "alt_weblink": "https://github.com/antirez/linenoise",
+      "delta": 6.5,
+      "rationale": "Strong reputation and popularity; weaker docs and integration limit ranking."
+    },
+    {
+      "package": "rest-client",
+      "package_score": 80.5,
+      "alt_name": "httparty",
+      "alt_score": 86.9,
+      "alt_weblink": "https://github.com/jnunemaker/httparty",
+      "delta": 6.4,
+      "rationale": "Strong popularity and clean API; slightly behind Faraday on documentation freshness."
+    },
+    {
+      "package": "Emacs",
+      "package_score": 74.4,
+      "alt_name": "Vim",
+      "alt_score": 80.8,
+      "alt_weblink": "https://www.vim.org/",
+      "delta": 6.4,
+      "rationale": "Strong reputation and stable ecosystem but lower modern integration scores."
+    },
+    {
+      "package": "gettext",
+      "package_score": 79.5,
+      "alt_name": "Boost.Locale",
+      "alt_score": 85.9,
+      "alt_weblink": "https://www.boost.org/doc/libs/release/libs/locale/",
+      "delta": 6.4,
+      "rationale": "Excellent reputation and ecosystem activity; lower integration score due to Boost dependency."
+    },
+    {
+      "package": "dejagnu",
+      "package_score": 67.5,
+      "alt_name": "Autotest",
+      "alt_score": 73.8,
+      "alt_weblink": "https://www.gnu.org/software/autoconf/manual/autoconf-2.71/html_node/Using-Autotest.html",
+      "delta": 6.3,
+      "rationale": "Native GNU toolchain fit, strong reputation, moderate activity."
+    },
+    {
+      "package": "libpng",
+      "package_score": 81.5,
+      "alt_name": "stb_image",
+      "alt_score": 87.8,
+      "alt_weblink": "https://github.com/nothings/stb",
+      "delta": 6.3,
+      "rationale": "Higher popularity and zero recent CVEs outweigh slightly lower ecosystem activity."
+    },
+    {
+      "package": "libXdmcp",
+      "package_score": 65.5,
+      "alt_name": "libxcb",
+      "alt_score": 71.7,
+      "alt_weblink": "https://gitlab.freedesktop.org/xorg/lib/libxcb",
+      "delta": 6.2,
+      "rationale": "Higher popularity and integration; broader ecosystem but slightly more CVEs."
+    },
+    {
+      "package": "Guile",
+      "package_score": 74.5,
+      "alt_name": "Chicken Scheme",
+      "alt_score": 80.7,
+      "alt_weblink": "https://call-cc.org/",
+      "delta": 6.2,
+      "rationale": "Strong integration scores and zero recent CVEs place it above Guile despite lower popularity."
+    },
+    {
+      "package": "iptables",
+      "package_score": 80.5,
+      "alt_name": "nftables",
+      "alt_score": 86.6,
+      "alt_weblink": "https://netfilter.org/projects/nftables/",
+      "delta": 6.1,
+      "rationale": "Higher scores in reputation, integration and ecosystem; official successor."
+    },
+    {
+      "package": "MPFR",
+      "package_score": 78.5,
+      "alt_name": "Boost.Multiprecision",
+      "alt_score": 84.6,
+      "alt_weblink": "https://www.boost.org/doc/libs/release/libs/multiprecision/",
+      "delta": 6.1,
+      "rationale": "Strong popularity and docs but C++ focus and minor CVE reduce score vs pure C options"
+    },
+    {
+      "package": "parted",
+      "package_score": 76.8,
+      "alt_name": "fdisk",
+      "alt_score": 82.8,
+      "alt_weblink": "https://git.kernel.org/pub/scm/utils/util-linux/util-linux.git",
+      "delta": 6.0,
+      "rationale": "Highest integration and ecosystem activity."
+    },
+    {
+      "package": "GRUB",
+      "package_score": 80.5,
+      "alt_name": "systemd-boot",
+      "alt_score": 86.5,
+      "alt_weblink": "https://systemd.io/BOOT/",
+      "delta": 6.0,
+      "rationale": "Higher reputation and integration scores due to fewer CVEs and tight systemd integration."
+    },
+    {
+      "package": "NetAddr-IP",
+      "package_score": 72.8,
+      "alt_name": "Net-IP",
+      "alt_score": 78.8,
+      "alt_weblink": "https://metacpan.org/dist/Net-IP",
+      "delta": 6.0,
+      "rationale": "More actively maintained with recent releases and better docs"
+    },
+    {
+      "package": "inotify-tools",
+      "package_score": 74.5,
+      "alt_name": "entr",
+      "alt_score": 80.4,
+      "alt_weblink": "https://github.com/eradman/entr",
+      "delta": 5.9,
+      "rationale": "Excellent integration and ecosystem health with very low maintenance overhead."
+    },
+    {
+      "package": "libpipeline",
+      "package_score": 68.5,
+      "alt_name": "subprocess.h",
+      "alt_score": 74.4,
+      "alt_weblink": "https://github.com/sheredom/subprocess.h",
+      "delta": 5.9,
+      "rationale": "Excellent integration and permissive license but weaker documentation."
+    },
+    {
+      "package": "nicstat",
+      "package_score": 62.5,
+      "alt_name": "nload",
+      "alt_score": 68.4,
+      "alt_weblink": "https://github.com/rolandriegel/nload",
+      "delta": 5.9,
+      "rationale": "Moderate activity, decent ecosystem but dated last release."
+    },
+    {
+      "package": "Squid",
+      "package_score": 74.6,
+      "alt_name": "Varnish Cache",
+      "alt_score": 80.4,
+      "alt_weblink": "https://varnish-cache.org/",
+      "delta": 5.8,
+      "rationale": "Strong reputation and ecosystem with fewer CVEs; lower popularity than Nginx."
+    },
+    {
+      "package": "optimist",
+      "package_score": 71.4,
+      "alt_name": "slop",
+      "alt_score": 77.2,
+      "alt_weblink": "https://github.com/leejarvis/slop",
+      "delta": 5.8,
+      "rationale": "Good balance of simplicity and metrics but dated documentation lowers score."
+    },
+    {
+      "package": "google-cloud-core",
+      "package_score": 79.4,
+      "alt_name": "aws-sdk-core",
+      "alt_score": 85.1,
+      "alt_weblink": "https://rubygems.org/gems/aws-sdk-core",
+      "delta": 5.7,
+      "rationale": "Highest popularity and strong docs; minor CVE impact offset by ecosystem size."
+    },
+    {
+      "package": "common-sense",
+      "package_score": 72.5,
+      "alt_name": "Modern::Perl",
+      "alt_score": 78.2,
+      "alt_weblink": "https://metacpan.org/pod/Modern::Perl",
+      "delta": 5.7,
+      "rationale": "More actively maintained, similar pragma approach"
+    },
+    {
+      "package": "alsa-lib",
+      "package_score": 70.1,
+      "alt_name": "PipeWire",
+      "alt_score": 75.8,
+      "alt_weblink": "https://pipewire.org/",
+      "delta": 5.7,
+      "rationale": "Highest popularity and documentation freshness with solid Linux ecosystem momentum."
+    },
+    {
+      "package": "binutils",
+      "package_score": 72.5,
+      "alt_name": "LLVM",
+      "alt_score": 78.1,
+      "alt_weblink": "https://llvm.org/",
+      "delta": 5.6,
+      "rationale": "Highest popularity, active ecosystem and modern defaults outweigh moderate CVE count."
+    },
+    {
+      "package": "google-cloud-errors",
+      "package_score": 72.5,
+      "alt_name": "google-cloud-core",
+      "alt_score": 78.1,
+      "alt_weblink": "https://rubygems.org/gems/google-cloud-core",
+      "delta": 5.6,
+      "rationale": "Higher integration score and more active maintenance as foundational gem"
+    },
+    {
+      "package": "fluent-plugin-s3",
+      "package_score": 79.5,
+      "alt_name": "fluent-bit",
+      "alt_score": 85.1,
+      "alt_weblink": "https://github.com/fluent/fluent-bit",
+      "delta": 5.6,
+      "rationale": "Higher popularity, active maintenance, strong docs outweigh minor CVEs"
+    },
+    {
+      "package": "LMDB",
+      "package_score": 82.4,
+      "alt_name": "RocksDB",
+      "alt_score": 88.0,
+      "alt_weblink": "https://github.com/facebook/rocksdb",
+      "delta": 5.6,
+      "rationale": "Highest popularity and active maintenance outweigh minor CVE count."
+    },
+    {
+      "package": "ruamel.yaml",
+      "package_score": 78.5,
+      "alt_name": "PyYAML",
+      "alt_score": 84.1,
+      "alt_weblink": "https://pypi.org/project/PyYAML/",
+      "delta": 5.6,
+      "rationale": "Highest popularity and integration; minor CVE offset by massive adoption."
+    },
+    {
+      "package": "build",
+      "package_score": 84.5,
+      "alt_name": "hatch",
+      "alt_score": 90.0,
+      "alt_weblink": "https://github.com/pypa/hatch",
+      "delta": 5.5,
+      "rationale": "Highest popularity and docs freshness with strong reputation"
+    },
+    {
+      "package": "sigdump",
+      "package_score": 70.5,
+      "alt_name": "rbtrace",
+      "alt_score": 76.0,
+      "alt_weblink": "https://github.com/tmm1/rbtrace",
+      "delta": 5.5,
+      "rationale": "Higher popularity and active use for runtime inspection"
+    },
+    {
+      "package": "representable",
+      "package_score": 79.0,
+      "alt_name": "roar",
+      "alt_score": 84.4,
+      "alt_weblink": "https://github.com/trailblazer/roar",
+      "delta": 5.4,
+      "rationale": "Higher popularity, fresher releases and docs, strong ecosystem synergy."
+    },
+    {
+      "package": "rdiscount",
+      "package_score": 75.4,
+      "alt_name": "kramdown",
+      "alt_score": 80.8,
+      "alt_weblink": "https://github.com/gettalong/kramdown",
+      "delta": 5.4,
+      "rationale": "Strong pure-Ruby integration and docs"
+    },
+    {
+      "package": "llhttp-ffi",
+      "package_score": 66.5,
+      "alt_name": "http-2",
+      "alt_score": 71.8,
+      "alt_weblink": "https://github.com/igrigorik/http-2",
+      "delta": 5.3,
+      "rationale": "Good maintenance and docs but narrower scope (HTTP/2 only)."
+    },
+    {
+      "package": "Types-Serialiser",
+      "package_score": 71.5,
+      "alt_name": "JSON-XS",
+      "alt_score": 76.8,
+      "alt_weblink": "https://metacpan.org/release/JSON-XS",
+      "delta": 5.3,
+      "rationale": "Strong popularity and reputation but lower recent activity"
+    },
+    {
+      "package": "strace",
+      "package_score": 82.4,
+      "alt_name": "bpftrace",
+      "alt_score": 87.7,
+      "alt_weblink": "https://github.com/bpftrace/bpftrace",
+      "delta": 5.3,
+      "rationale": "Highest popularity and reputation; modern eBPF approach with active ecosystem."
+    },
+    {
+      "package": "dwarves",
+      "package_score": 71.5,
+      "alt_name": "bloaty",
+      "alt_score": 76.8,
+      "alt_weblink": "https://github.com/google/bloaty",
+      "delta": 5.3,
+      "rationale": "Strong popularity and solid DWARF support but less specialized in struct holes."
+    },
+    {
+      "package": "which",
+      "package_score": 72.5,
+      "alt_name": "toybox",
+      "alt_score": 77.8,
+      "alt_weblink": "https://landley.net/toybox/",
+      "delta": 5.3,
+      "rationale": "Zero CVEs, active development, permissive license; lower popularity than BusyBox."
+    },
+    {
+      "package": "google-apis-iamcredentials_v1",
+      "package_score": 79.5,
+      "alt_name": "googleauth",
+      "alt_score": 84.7,
+      "alt_weblink": "https://rubygems.org/gems/googleauth",
+      "delta": 5.2,
+      "rationale": "Broader adoption and higher popularity; often used together with the IAM credentials client"
+    },
+    {
+      "package": "json-c",
+      "package_score": 82.4,
+      "alt_name": "cJSON",
+      "alt_score": 87.6,
+      "alt_weblink": "https://github.com/DaveGamble/cJSON",
+      "delta": 5.2,
+      "rationale": "Highest popularity and easiest integration; minor recent CVE offset by rapid fix."
+    },
+    {
+      "package": "nio4r",
+      "package_score": 84.8,
+      "alt_name": "async",
+      "alt_score": 90.0,
+      "alt_weblink": "https://github.com/socketry/async",
+      "delta": 5.2,
+      "rationale": "Higher popularity, active maintenance, same author ecosystem"
+    },
+    {
+      "package": "fluentd",
+      "package_score": 79.9,
+      "alt_name": "fluent-bit",
+      "alt_score": 85.0,
+      "alt_weblink": "https://fluentbit.io",
+      "delta": 5.1,
+      "rationale": "Superior performance, fewer CVEs, active ecosystem"
+    },
+    {
+      "package": "Emacs",
+      "package_score": 74.4,
+      "alt_name": "Visual Studio Code",
+      "alt_score": 79.5,
+      "alt_weblink": "https://code.visualstudio.com/",
+      "delta": 5.1,
+      "rationale": "Highest popularity and integration scores outweigh moderate CVE count."
+    },
+    {
+      "package": "alsa-utils",
+      "package_score": 80.5,
+      "alt_name": "PipeWire",
+      "alt_score": 85.6,
+      "alt_weblink": "https://pipewire.org/",
+      "delta": 5.1,
+      "rationale": "Higher popularity and better modern integration than ALSA-utils"
+    },
+    {
+      "package": "iotop",
+      "package_score": 66.5,
+      "alt_name": "dstat",
+      "alt_score": 71.6,
+      "alt_weblink": "https://github.com/dstat-real/dstat",
+      "delta": 5.1,
+      "rationale": "Good flexibility but lower recent activity than atop"
+    },
+    {
+      "package": "wheel",
+      "package_score": 82.4,
+      "alt_name": "build",
+      "alt_score": 87.4,
+      "alt_weblink": "https://github.com/pypa/build",
+      "delta": 5.0,
+      "rationale": "Modern, secure, strong docs; slightly lower ecosystem volume."
+    },
+    {
+      "package": "Nettle",
+      "package_score": 78.5,
+      "alt_name": "mbed TLS",
+      "alt_score": 83.5,
+      "alt_weblink": "https://github.com/Mbed-TLS/mbedtls",
+      "delta": 5.0,
+      "rationale": "Strong reputation and documentation with solid embedded focus."
+    },
+    {
+      "package": "xmlto",
+      "package_score": 68.5,
+      "alt_name": "xsltproc",
+      "alt_score": 73.5,
+      "alt_weblink": "http://xmlsoft.org/xslt/xsltproc.html",
+      "delta": 5.0,
+      "rationale": "Direct low-level alternative; slightly lower reputation due to one recent CVE."
+    },
+    {
+      "package": "libmicrohttpd",
+      "package_score": 79.5,
+      "alt_name": "mongoose",
+      "alt_score": 84.4,
+      "alt_weblink": "https://github.com/cesanta/mongoose",
+      "delta": 4.9,
+      "rationale": "Highest popularity and strong integration outweigh slightly higher recent CVEs."
+    },
+    {
+      "package": "tinydir",
+      "package_score": 78.4,
+      "alt_name": "libuv",
+      "alt_score": 83.2,
+      "alt_weblink": "https://github.com/libuv/libuv",
+      "delta": 4.8,
+      "rationale": "Highest popularity and docs but heavier integration and slightly lower ecosystem score."
+    },
+    {
+      "package": "AppArmor",
+      "package_score": 78.4,
+      "alt_name": "SELinux",
+      "alt_score": 83.2,
+      "alt_weblink": "https://github.com/SELinuxProject/selinux",
+      "delta": 4.8,
+      "rationale": "Highest popularity and strong ecosystem despite slightly more CVEs."
+    },
+    {
+      "package": "libXrandr",
+      "package_score": 66.5,
+      "alt_name": "libxcb",
+      "alt_score": 71.2,
+      "alt_weblink": "https://gitlab.freedesktop.org/xorg/lib/libxcb",
+      "delta": 4.7,
+      "rationale": "Higher popularity, active maintenance and direct RandR protocol access without Xlib wrapper overhead"
+    },
+    {
+      "package": "wget",
+      "package_score": 77.5,
+      "alt_name": "aria2",
+      "alt_score": 82.2,
+      "alt_weblink": "https://aria2.github.io/",
+      "delta": 4.7,
+      "rationale": "Excellent reputation and ecosystem activity; docs slightly stale."
+    },
+    {
+      "package": "async-http",
+      "package_score": 76.5,
+      "alt_name": "excon",
+      "alt_score": 81.2,
+      "alt_weblink": "https://github.com/excon/excon",
+      "delta": 4.7,
+      "rationale": "Solid reputation and speed but weaker documentation freshness."
+    },
+    {
+      "package": "nc",
+      "package_score": 82.8,
+      "alt_name": "ncat",
+      "alt_score": 87.5,
+      "alt_weblink": "https://nmap.org/ncat/",
+      "delta": 4.7,
+      "rationale": "Highest popularity and active maintenance with broad platform support."
+    },
+    {
+      "package": "nfs-utils",
+      "package_score": 76.5,
+      "alt_name": "sshfs",
+      "alt_score": 81.0,
+      "alt_weblink": "https://github.com/libfuse/sshfs",
+      "delta": 4.5,
+      "rationale": "Highest popularity and zero recent CVEs; documentation stale and not a true NFS replacement."
+    },
+    {
+      "package": "ipset",
+      "package_score": 82.5,
+      "alt_name": "nftables",
+      "alt_score": 87.0,
+      "alt_weblink": "https://nftables.org/",
+      "delta": 4.5,
+      "rationale": "Higher popularity, better integration and active development as the iptables successor."
+    },
+    {
+      "package": "libXrender",
+      "package_score": 70.5,
+      "alt_name": "libxcb-render",
+      "alt_score": 75.0,
+      "alt_weblink": "https://gitlab.freedesktop.org/xorg/lib/libxcb",
+      "delta": 4.5,
+      "rationale": "Higher activity, better maintained, direct protocol access with lower latency."
+    },
+    {
+      "package": "lru_redux",
+      "package_score": 74.4,
+      "alt_name": "active_support",
+      "alt_score": 78.8,
+      "alt_weblink": "https://github.com/rails/rails/tree/main/activesupport",
+      "delta": 4.4,
+      "rationale": "Highest popularity and docs but heavier integration."
+    },
+    {
+      "package": "traceroute",
+      "package_score": 71.5,
+      "alt_name": "tracepath",
+      "alt_score": 75.8,
+      "alt_weblink": "https://github.com/iputils/iputils",
+      "delta": 4.3,
+      "rationale": "Strong integration and reputation, lower popularity than mtr."
+    },
+    {
+      "package": "serverengine",
+      "package_score": 79.4,
+      "alt_name": "puma",
+      "alt_score": 83.6,
+      "alt_weblink": "https://github.com/puma/puma",
+      "delta": 4.2,
+      "rationale": "Highest popularity and docs; minor recent CVEs offset by strong ecosystem"
+    },
+    {
+      "package": "mime-types",
+      "package_score": 80.2,
+      "alt_name": "marcel",
+      "alt_score": 84.4,
+      "alt_weblink": "https://github.com/rails/marcel",
+      "delta": 4.2,
+      "rationale": "Higher popularity, fresher releases and Rails-native integration"
+    },
+    {
+      "package": "rdiscount",
+      "package_score": 75.4,
+      "alt_name": "commonmarker",
+      "alt_score": 79.6,
+      "alt_weblink": "https://github.com/gjtorikian/commonmarker",
+      "delta": 4.2,
+      "rationale": "Excellent docs and active maintenance"
+    },
+    {
+      "package": "grep",
+      "package_score": 87.5,
+      "alt_name": "ripgrep",
+      "alt_score": 91.6,
+      "alt_weblink": "https://github.com/BurntSushi/ripgrep",
+      "delta": 4.1,
+      "rationale": "Highest popularity and modern performance; minor CVE offset by rapid fixes."
+    },
+    {
+      "package": "DBIx-Simple",
+      "package_score": 61.5,
+      "alt_name": "Rose-DB-Object",
+      "alt_score": 65.6,
+      "alt_weblink": "https://metacpan.org/dist/Rose-DB-Object",
+      "delta": 4.1,
+      "rationale": "Balanced but lower activity and documentation freshness."
+    },
+    {
+      "package": "mustache",
+      "package_score": 78.5,
+      "alt_name": "slim",
+      "alt_score": 82.5,
+      "alt_weblink": "https://github.com/slim-template/slim",
+      "delta": 4.0,
+      "rationale": "Good balance of activity and popularity for markup templating."
+    },
+    {
+      "package": "JSON-XS",
+      "package_score": 82.5,
+      "alt_name": "JSON::PP",
+      "alt_score": 86.4,
+      "alt_weblink": "https://metacpan.org/dist/JSON-PP",
+      "delta": 3.9,
+      "rationale": "Best integration and zero dependencies"
+    },
+    {
+      "package": "dnsmasq",
+      "package_score": 82.8,
+      "alt_name": "Unbound",
+      "alt_score": 86.6,
+      "alt_weblink": "https://nlnetlabs.nl/projects/unbound/",
+      "delta": 3.8,
+      "rationale": "Highest reputation and docs; strong privacy focus."
+    },
+    {
+      "package": "patch",
+      "package_score": 71.2,
+      "alt_name": "quilt",
+      "alt_score": 75.0,
+      "alt_weblink": "https://savannah.nongnu.org/projects/quilt/",
+      "delta": 3.8,
+      "rationale": "Strong reputation and ecosystem activity but lower popularity than git."
+    },
+    {
+      "package": "Tcl",
+      "package_score": 64.5,
+      "alt_name": "Perl",
+      "alt_score": 68.2,
+      "alt_weblink": "https://www.perl.org/",
+      "delta": 3.7,
+      "rationale": "Solid reputation but lower popularity and integration scores than top two."
+    },
+    {
+      "package": "serverengine",
+      "package_score": 79.4,
+      "alt_name": "unicorn",
+      "alt_score": 83.0,
+      "alt_weblink": "https://github.com/defunkt/unicorn",
+      "delta": 3.6,
+      "rationale": "Strong reputation and low activity; dated docs and releases lower score"
+    },
+    {
+      "package": "traces",
+      "package_score": 71.5,
+      "alt_name": "opentelemetry-ruby",
+      "alt_score": 75.0,
+      "alt_weblink": "https://github.com/open-telemetry/opentelemetry-ruby",
+      "delta": 3.5,
+      "rationale": "Higher popularity, better docs and ecosystem maturity outweigh minor CVE."
+    },
+    {
+      "package": "gzip",
+      "package_score": 87.8,
+      "alt_name": "zstd",
+      "alt_score": 91.2,
+      "alt_weblink": "https://facebook.github.io/zstd/",
+      "delta": 3.4,
+      "rationale": "Highest popularity and modern performance with active maintenance."
+    },
+    {
+      "package": "GNU Make",
+      "package_score": 86.4,
+      "alt_name": "CMake",
+      "alt_score": 89.8,
+      "alt_weblink": "https://cmake.org/",
+      "delta": 3.4,
+      "rationale": "Highest popularity and integration scores outweigh minor CVE count."
+    },
+    {
+      "package": "Linux From Scratch",
+      "package_score": 76.4,
+      "alt_name": "Yocto Project",
+      "alt_score": 79.8,
+      "alt_weblink": "https://www.yoctoproject.org",
+      "delta": 3.4,
+      "rationale": "Highest integration and balanced scores across categories."
+    },
+    {
+      "package": "io-event",
+      "package_score": 80.4,
+      "alt_name": "nio4r",
+      "alt_score": 83.8,
+      "alt_weblink": "https://github.com/socketry/nio4r",
+      "delta": 3.4,
+      "rationale": "Solid reputation and maintained but narrower scope."
+    },
+    {
+      "package": "ruamel.yaml",
+      "package_score": 78.5,
+      "alt_name": "strictyaml",
+      "alt_score": 81.9,
+      "alt_weblink": "https://pypi.org/project/strictyaml/",
+      "delta": 3.4,
+      "rationale": "Excellent safety and docs; lower integration breadth than full YAML libs."
+    },
+    {
+      "package": "Nettle",
+      "package_score": 78.5,
+      "alt_name": "OpenSSL",
+      "alt_score": 81.8,
+      "alt_weblink": "https://www.openssl.org/",
+      "delta": 3.3,
+      "rationale": "Highest popularity and integration despite moderate recent CVEs."
+    },
+    {
+      "package": "MPFR",
+      "package_score": 78.5,
+      "alt_name": "Arb",
+      "alt_score": 81.8,
+      "alt_weblink": "https://arblib.org/",
+      "delta": 3.3,
+      "rationale": "Higher popularity and active ecosystem outweigh slightly lower integration maturity"
+    },
+    {
+      "package": "Linux From Scratch",
+      "package_score": 76.4,
+      "alt_name": "Buildroot",
+      "alt_score": 79.6,
+      "alt_weblink": "https://buildroot.org",
+      "delta": 3.2,
+      "rationale": "Strong integration scores offset by lower popularity."
+    },
+    {
+      "package": "webrick",
+      "package_score": 68.9,
+      "alt_name": "thin",
+      "alt_score": 72.0,
+      "alt_weblink": "https://github.com/macournoyer/thin",
+      "delta": 3.1,
+      "rationale": "Decent popularity but weaker documentation and integration scores"
+    },
+    {
+      "package": "gettext",
+      "package_score": 79.5,
+      "alt_name": "ICU",
+      "alt_score": 82.6,
+      "alt_weblink": "https://icu.unicode.org/",
+      "delta": 3.1,
+      "rationale": "Higher popularity, fresher docs and active ecosystem outweigh slightly more CVEs."
+    },
+    {
+      "package": "Suricata",
+      "package_score": 85.9,
+      "alt_name": "Zeek",
+      "alt_score": 89.0,
+      "alt_weblink": "https://zeek.org/",
+      "delta": 3.1,
+      "rationale": "Higher popularity and fewer CVEs; excellent docs but integration less turnkey for IPS use."
+    },
+    {
+      "package": "libksba",
+      "package_score": 74.5,
+      "alt_name": "Botan",
+      "alt_score": 77.5,
+      "alt_weblink": "https://botan.randombit.net/",
+      "delta": 3.0,
+      "rationale": "Excellent reputation and docs; lower ecosystem activity"
+    },
+    {
+      "package": "ronn",
+      "package_score": 61.8,
+      "alt_name": "ronn-ng",
+      "alt_score": 64.8,
+      "alt_weblink": "https://github.com/apjanke/ronn-ng",
+      "delta": 3.0,
+      "rationale": "Direct successor with updates but low adoption"
+    },
+    {
+      "package": "JSON-XS",
+      "package_score": 82.5,
+      "alt_name": "Cpanel::JSON::XS",
+      "alt_score": 85.4,
+      "alt_weblink": "https://metacpan.org/dist/Cpanel-JSON-XS",
+      "delta": 2.9,
+      "rationale": "Higher activity and maintenance than original JSON-XS"
+    },
+    {
+      "package": "tzinfo-data",
+      "package_score": 82.4,
+      "alt_name": "tzinfo",
+      "alt_score": 85.1,
+      "alt_weblink": "https://rubygems.org/gems/tzinfo",
+      "delta": 2.7,
+      "rationale": "Strong popularity and docs but needs tzinfo-data for full offline use."
+    },
+    {
+      "package": "FreeType",
+      "package_score": 85.4,
+      "alt_name": "HarfBuzz",
+      "alt_score": 88.1,
+      "alt_weblink": "https://harfbuzz.org/",
+      "delta": 2.7,
+      "rationale": "Strong popularity and reputation but slightly lower integration for pure rendering."
+    },
+    {
+      "package": "bdftopcf",
+      "package_score": 61.5,
+      "alt_name": "otf2bdf",
+      "alt_score": 64.2,
+      "alt_weblink": "https://github.com/jirutka/otf2bdf",
+      "delta": 2.7,
+      "rationale": "Lightweight but indirect workflow and low adoption."
+    },
+    {
+      "package": "m4",
+      "package_score": 75.5,
+      "alt_name": "cpp",
+      "alt_score": 78.2,
+      "alt_weblink": "https://gcc.gnu.org/",
+      "delta": 2.7,
+      "rationale": "Highest integration and freshest updates but slightly lower reputation due to occasional CVEs."
+    },
+    {
+      "package": "GRUB",
+      "package_score": 80.5,
+      "alt_name": "rEFInd",
+      "alt_score": 83.2,
+      "alt_weblink": "https://www.rodsbooks.com/refind/",
+      "delta": 2.7,
+      "rationale": "Excellent reputation and docs but lower popularity and integration ease."
+    },
+    {
+      "package": "vsftpd",
+      "package_score": 76.5,
+      "alt_name": "Pure-FTPd",
+      "alt_score": 79.1,
+      "alt_weblink": "https://www.pureftpd.org/",
+      "delta": 2.6,
+      "rationale": "Higher activity, fresher docs and releases outweigh slightly lower reputation score."
+    },
+    {
+      "package": "http-accept",
+      "package_score": 80.5,
+      "alt_name": "rack",
+      "alt_score": 83.1,
+      "alt_weblink": "https://github.com/rack/rack",
+      "delta": 2.6,
+      "rationale": "High popularity and docs but includes unnecessary overhead and one recent CVE."
+    },
+    {
+      "package": "aws-sdk-kms",
+      "package_score": 87.4,
+      "alt_name": "boto3",
+      "alt_score": 90.0,
+      "alt_weblink": "https://pypi.org/project/boto3/",
+      "delta": 2.6,
+      "rationale": "Highest popularity and docs; minor CVE offset by rapid fixes"
+    },
+    {
+      "package": "tzinfo",
+      "package_score": 82.4,
+      "alt_name": "activesupport",
+      "alt_score": 85.0,
+      "alt_weblink": "https://github.com/rails/rails/tree/main/activesupport",
+      "delta": 2.6,
+      "rationale": "Massive popularity and integration but slightly more CVEs and ecosystem noise."
+    },
+    {
+      "package": "tinycdb",
+      "package_score": 70.5,
+      "alt_name": "cdb",
+      "alt_score": 73.0,
+      "alt_weblink": "https://cr.yp.to/cdb.html",
+      "delta": 2.5,
+      "rationale": "Higher popularity and reference status outweighs older docs."
+    },
+    {
+      "package": "nicstat",
+      "package_score": 62.5,
+      "alt_name": "iftop",
+      "alt_score": 65.0,
+      "alt_weblink": "http://www.ex-parrot.com/pdw/iftop/",
+      "delta": 2.5,
+      "rationale": "Mature but stagnant; still useful for live traffic views."
+    },
+    {
+      "package": "libbsd",
+      "package_score": 70.5,
+      "alt_name": "musl",
+      "alt_score": 73.0,
+      "alt_weblink": "https://musl.libc.org/",
+      "delta": 2.5,
+      "rationale": "Strong reputation and documentation but lower integration ease for existing glibc-based projects."
+    },
+    {
+      "package": "gpgme",
+      "package_score": 82.4,
+      "alt_name": "sequoia-openpgp",
+      "alt_score": 84.8,
+      "alt_weblink": "https://sequoia-pgp.org/",
+      "delta": 2.4,
+      "rationale": "Highest scores in reputation and documentation; strong modern alternative for OpenPGP."
+    },
+    {
+      "package": "talloc",
+      "package_score": 72.5,
+      "alt_name": "Boehm GC",
+      "alt_score": 74.8,
+      "alt_weblink": "https://www.hboehm.info/gc/",
+      "delta": 2.3,
+      "rationale": "Higher popularity and active releases but different GC model rather than explicit pools."
+    },
+    {
+      "package": "json-c",
+      "package_score": 82.4,
+      "alt_name": "yyjson",
+      "alt_score": 84.7,
+      "alt_weblink": "https://github.com/ibireme/yyjson",
+      "delta": 2.3,
+      "rationale": "Excellent performance and clean codebase; smaller community than cJSON."
+    },
+    {
+      "package": "cpio",
+      "package_score": 78.5,
+      "alt_name": "libarchive",
+      "alt_score": 80.8,
+      "alt_weblink": "https://www.libarchive.org/",
+      "delta": 2.3,
+      "rationale": "Strong library integration and GitHub presence offset by more issues."
+    },
+    {
+      "package": "libgcrypt",
+      "package_score": 72.5,
+      "alt_name": "mbed TLS",
+      "alt_score": 74.8,
+      "alt_weblink": "https://www.trustedfirmware.org/projects/mbed-tls/",
+      "delta": 2.3,
+      "rationale": "Solid reputation and documentation; lower popularity outside embedded niche."
+    },
+    {
+      "package": "sshpass",
+      "package_score": 76.8,
+      "alt_name": "pexpect",
+      "alt_score": 79.0,
+      "alt_weblink": "https://github.com/pexpect/pexpect",
+      "delta": 2.2,
+      "rationale": "Strong popularity, recent activity and docs outweigh library integration overhead"
+    },
+    {
+      "package": "http-cookie",
+      "package_score": 82.5,
+      "alt_name": "faraday",
+      "alt_score": 84.6,
+      "alt_weblink": "https://github.com/lostisland/faraday",
+      "delta": 2.1,
+      "rationale": "Higher popularity and active maintenance offset slightly broader scope"
+    },
+    {
+      "package": "alsa-lib",
+      "package_score": 70.1,
+      "alt_name": "JACK Audio Connection Kit",
+      "alt_score": 72.2,
+      "alt_weblink": "https://jackaudio.org/",
+      "delta": 2.1,
+      "rationale": "Strong reputation and ecosystem but dated docs and lower adoption."
+    },
+    {
+      "package": "tzinfo-data",
+      "package_score": 82.4,
+      "alt_name": "activesupport",
+      "alt_score": 84.4,
+      "alt_weblink": "https://rubygems.org/gems/activesupport",
+      "delta": 2.0,
+      "rationale": "Excellent popularity but lower integration/reputation scores outside Rails."
+    },
+    {
+      "package": "Nettle",
+      "package_score": 78.5,
+      "alt_name": "Libgcrypt",
+      "alt_score": 80.5,
+      "alt_weblink": "https://www.gnupg.org/software/libgcrypt/",
+      "delta": 2.0,
+      "rationale": "Very close GNU sibling with excellent reputation and low activity."
+    },
+    {
+      "package": "nio4r",
+      "package_score": 84.8,
+      "alt_name": "concurrent-ruby",
+      "alt_score": 86.8,
+      "alt_weblink": "https://github.com/ruby-concurrency/concurrent-ruby",
+      "delta": 2.0,
+      "rationale": "Very popular with strong ecosystem but broader scope"
+    },
+    {
+      "package": "timers",
+      "package_score": 83.4,
+      "alt_name": "async",
+      "alt_score": 85.4,
+      "alt_weblink": "https://github.com/socketry/async",
+      "delta": 2.0,
+      "rationale": "Same author, modern async focus, excellent recent activity."
+    },
+    {
+      "package": "timers",
+      "package_score": 83.4,
+      "alt_name": "rufus-scheduler",
+      "alt_score": 85.4,
+      "alt_weblink": "https://github.com/jmettraux/rufus-scheduler",
+      "delta": 2.0,
+      "rationale": "Mature scheduler but slightly lower integration score for pure timers."
+    },
+    {
+      "package": "mini_mime",
+      "package_score": 79.4,
+      "alt_name": "marcel",
+      "alt_score": 81.4,
+      "alt_weblink": "https://github.com/rails/marcel",
+      "delta": 2.0,
+      "rationale": "Higher popularity and active Rails backing but slightly heavier"
+    },
+    {
+      "package": "lru_redux",
+      "package_score": 74.4,
+      "alt_name": "lru",
+      "alt_score": 76.3,
+      "alt_weblink": "https://github.com/arthurnn/lru",
+      "delta": 1.9,
+      "rationale": "Higher recency and activity outweigh lower stars."
+    },
+    {
+      "package": "domain_name",
+      "package_score": 72.5,
+      "alt_name": "simpleidn",
+      "alt_score": 74.4,
+      "alt_weblink": "https://github.com/mbj/simpleidn",
+      "delta": 1.9,
+      "rationale": "Specialized, less maintained, limited feature breadth"
+    },
+    {
+      "package": "msgpack",
+      "package_score": 85.4,
+      "alt_name": "oj",
+      "alt_score": 87.2,
+      "alt_weblink": "https://github.com/ohler55/oj",
+      "delta": 1.8,
+      "rationale": "Superior popularity and integration but slightly lower reputation"
+    },
+    {
+      "package": "recursive-open-struct",
+      "package_score": 78.4,
+      "alt_name": "dry-struct",
+      "alt_score": 80.2,
+      "alt_weblink": "https://github.com/dry-rb/dry-struct",
+      "delta": 1.8,
+      "rationale": "Modern, actively maintained, but heavier than simple recursive OpenStruct"
+    },
+    {
+      "package": "libmicrohttpd",
+      "package_score": 79.5,
+      "alt_name": "civetweb",
+      "alt_score": 81.3,
+      "alt_weblink": "https://github.com/civetweb/civetweb",
+      "delta": 1.8,
+      "rationale": "Balanced scores with permissive license and solid reputation."
+    },
+    {
+      "package": "io-event",
+      "package_score": 80.4,
+      "alt_name": "eventmachine",
+      "alt_score": 82.2,
+      "alt_weblink": "https://github.com/eventmachine/eventmachine",
+      "delta": 1.8,
+      "rationale": "Very popular but aging documentation and slower release cadence."
+    },
+    {
+      "package": "wheel",
+      "package_score": 82.4,
+      "alt_name": "flit",
+      "alt_score": 84.1,
+      "alt_weblink": "https://github.com/pypa/flit",
+      "delta": 1.7,
+      "rationale": "Lightweight and secure but narrower scope than setuptools."
+    },
+    {
+      "package": "npth",
+      "package_score": 69.5,
+      "alt_name": "C11 threads",
+      "alt_score": 71.2,
+      "alt_weblink": "https://en.cppreference.com/w/c/thread",
+      "delta": 1.7,
+      "rationale": "Standardized but lower adoption and portability than pthreads."
+    },
+    {
+      "package": "fluent-plugin-systemd",
+      "package_score": 78.5,
+      "alt_name": "fluent-plugin-prometheus",
+      "alt_score": 80.1,
+      "alt_weblink": "https://github.com/fluent/fluent-plugin-prometheus",
+      "delta": 1.6,
+      "rationale": "Better popularity and docs but lower direct integration for pure journald log shipping."
+    },
+    {
+      "package": "libXfixes",
+      "package_score": 66.5,
+      "alt_name": "libX11",
+      "alt_score": 68.0,
+      "alt_weblink": "https://gitlab.freedesktop.org/xorg/lib/libx11",
+      "delta": 1.5,
+      "rationale": "Broader scope, more maintenance than libXfixes alone."
+    },
+    {
+      "package": "traces",
+      "package_score": 71.5,
+      "alt_name": "ddtrace",
+      "alt_score": 73.0,
+      "alt_weblink": "https://github.com/DataDog/dd-trace-rb",
+      "delta": 1.5,
+      "rationale": "Strong popularity and integration but higher issue volume and CVEs."
+    },
+    {
+      "package": "firefox",
+      "package_score": 76.5,
+      "alt_name": "chromium",
+      "alt_score": 78.0,
+      "alt_weblink": "https://www.chromium.org/",
+      "delta": 1.5,
+      "rationale": "Highest popularity and ecosystem activity outweighs slightly higher CVE count."
+    },
+    {
+      "package": "firefox",
+      "package_score": 76.5,
+      "alt_name": "brave",
+      "alt_score": 78.0,
+      "alt_weblink": "https://brave.com/",
+      "delta": 1.5,
+      "rationale": "Good balance of popularity, reputation and smaller active ecosystem."
+    },
+    {
+      "package": "libtasn1",
+      "package_score": 72.5,
+      "alt_name": "asn1c",
+      "alt_score": 73.9,
+      "alt_weblink": "https://github.com/vlm/asn1c",
+      "delta": 1.4,
+      "rationale": "Strong popularity and active repo but older docs and generated-code workflow reduce integration score."
+    },
+    {
+      "package": "cpulimit",
+      "package_score": 80.4,
+      "alt_name": "cgroups",
+      "alt_score": 81.7,
+      "alt_weblink": "https://www.kernel.org/doc/Documentation/cgroup-v2.txt",
+      "delta": 1.3,
+      "rationale": "Strong kernel integration but lower ease-of-use"
+    },
+    {
+      "package": "libtiff",
+      "package_score": 73.4,
+      "alt_name": "ImageMagick",
+      "alt_score": 74.6,
+      "alt_weblink": "https://imagemagick.org/",
+      "delta": 1.2,
+      "rationale": "Highest popularity and integration outweighs higher CVE count."
+    },
+    {
+      "package": "GNU Make",
+      "package_score": 86.4,
+      "alt_name": "Meson",
+      "alt_score": 87.6,
+      "alt_weblink": "https://mesonbuild.com/",
+      "delta": 1.2,
+      "rationale": "Balanced scores with excellent documentation freshness."
+    },
+    {
+      "package": "multi_json",
+      "package_score": 76.6,
+      "alt_name": "json",
+      "alt_score": 77.8,
+      "alt_weblink": "https://github.com/ruby/json",
+      "delta": 1.2,
+      "rationale": "Excellent integration and official status but lower stars."
+    },
+    {
+      "package": "QEMU",
+      "package_score": 79.5,
+      "alt_name": "VirtualBox",
+      "alt_score": 80.6,
+      "alt_weblink": "https://www.virtualbox.org/",
+      "delta": 1.1,
+      "rationale": "Higher reputation and fewer recent CVEs offset lower popularity."
+    },
+    {
+      "package": "representable",
+      "package_score": 79.0,
+      "alt_name": "active_model_serializers",
+      "alt_score": 80.1,
+      "alt_weblink": "https://github.com/rails-api/active_model_serializers",
+      "delta": 1.1,
+      "rationale": "Very popular but dated, Rails-tied, weaker recent activity."
+    },
+    {
+      "package": "GCC",
+      "package_score": 87.4,
+      "alt_name": "Clang",
+      "alt_score": 88.4,
+      "alt_weblink": "https://clang.llvm.org/",
+      "delta": 1.0,
+      "rationale": "Higher popularity, better diagnostics and modern ecosystem outweigh slightly higher recent CVEs."
+    },
+    {
+      "package": "bash",
+      "package_score": 87.4,
+      "alt_name": "fish",
+      "alt_score": 88.4,
+      "alt_weblink": "https://fishshell.com/",
+      "delta": 1.0,
+      "rationale": "Highest GitHub activity and cleanest recent security record; excellent docs."
+    },
+    {
+      "package": "libXt",
+      "package_score": 52.5,
+      "alt_name": "libXaw",
+      "alt_score": 53.5,
+      "alt_weblink": "https://www.x.org/wiki/",
+      "delta": 1.0,
+      "rationale": "Closest functional peer but far lower adoption and maintenance activity."
+    },
+    {
+      "package": "pyelftools",
+      "package_score": 86.4,
+      "alt_name": "LIEF",
+      "alt_score": 87.4,
+      "alt_weblink": "https://github.com/lief-project/LIEF",
+      "delta": 1.0,
+      "rationale": "Higher popularity and fresher docs outweigh slightly lower ecosystem score."
+    },
+    {
+      "package": "http",
+      "package_score": 81.5,
+      "alt_name": "rest-client",
+      "alt_score": 82.4,
+      "alt_weblink": "https://github.com/rest-client/rest-client",
+      "delta": 0.9,
+      "rationale": "Mature and popular but older maintenance and docs."
+    },
+    {
+      "package": "yajl-ruby",
+      "package_score": 74.0,
+      "alt_name": "json",
+      "alt_score": 74.8,
+      "alt_weblink": "https://github.com/ruby/json",
+      "delta": 0.8,
+      "rationale": "Ubiquitous, zero-install, solid but slower than specialized libs"
+    },
+    {
+      "package": "remote_syslog_sender",
+      "package_score": 68.9,
+      "alt_name": "fluent-logger",
+      "alt_score": 69.7,
+      "alt_weblink": "https://github.com/fluent/fluent-logger-ruby",
+      "delta": 0.8,
+      "rationale": "Strong docs and recent release but lower integration simplicity and one CVE"
+    },
+    {
+      "package": "Data::Dump",
+      "package_score": 80.5,
+      "alt_name": "Data::Printer",
+      "alt_score": 81.1,
+      "alt_weblink": "https://metacpan.org/dist/Data-Printer",
+      "delta": 0.6,
+      "rationale": "Strong feature set and docs but lower recent activity than core."
+    },
+    {
+      "package": "libtiff",
+      "package_score": 73.4,
+      "alt_name": "GraphicsMagick",
+      "alt_score": 73.9,
+      "alt_weblink": "http://www.graphicsmagick.org/",
+      "delta": 0.5,
+      "rationale": "Strong reputation and ecosystem stability but lower popularity."
+    },
+    {
+      "package": "http-cookie",
+      "package_score": 82.5,
+      "alt_name": "rest-client",
+      "alt_score": 83.0,
+      "alt_weblink": "https://github.com/rest-client/rest-client",
+      "delta": 0.5,
+      "rationale": "Solid reputation but older last release and less active ecosystem"
+    },
+    {
+      "package": "xcb-proto",
+      "package_score": 76.5,
+      "alt_name": "libxcb",
+      "alt_score": 77.0,
+      "alt_weblink": "https://xcb.freedesktop.org/",
+      "delta": 0.5,
+      "rationale": "Closely related but higher-level implementation with solid reputation"
+    },
+    {
+      "package": "net-http",
+      "package_score": 88.5,
+      "alt_name": "faraday",
+      "alt_score": 88.9,
+      "alt_weblink": "https://github.com/lostisland/faraday",
+      "delta": 0.4,
+      "rationale": "Highest popularity and strong ecosystem balance."
+    },
+    {
+      "package": "iptables",
+      "package_score": 80.5,
+      "alt_name": "firewalld",
+      "alt_score": 80.8,
+      "alt_weblink": "https://firewalld.org/",
+      "delta": 0.3,
+      "rationale": "Strong reputation and docs; good for desktop/server use cases."
+    },
+    {
+      "package": "Parse::Yapp",
+      "package_score": 68.5,
+      "alt_name": "Parse::Eyapp",
+      "alt_score": 68.8,
+      "alt_weblink": "https://metacpan.org/dist/Parse-Eyapp",
+      "delta": 0.3,
+      "rationale": "Closest functional match to Yapp with modest improvements and maintenance."
+    },
+    {
+      "package": "Open vSwitch",
+      "package_score": 83.4,
+      "alt_name": "Cilium",
+      "alt_score": 83.6,
+      "alt_weblink": "https://cilium.io/",
+      "delta": 0.2,
+      "rationale": "Superior popularity and docs offset by higher recent CVEs and ecosystem activity."
+    },
+    {
+      "package": "mpc",
+      "package_score": 76.5,
+      "alt_name": "arb",
+      "alt_score": 76.6,
+      "alt_weblink": "https://arblib.org/",
+      "delta": 0.1,
+      "rationale": "Native complex support with good activity; slightly lower integration maturity."
+    },
+    {
+      "package": "socat",
+      "package_score": 88.0,
+      "alt_name": "ncat",
+      "alt_score": 88.1,
+      "alt_weblink": "https://nmap.org/ncat/",
+      "delta": 0.1,
+      "rationale": "Highest popularity and docs; minor recent CVEs offset by strong integration."
+    }
+  ],
+  "tools": [
+    {
+      "rank": 1,
+      "tool_name": "Python",
+      "composite_score": 93.9,
+      "weblink": "https://www.python.org/",
+      "summary": "General-purpose high-level programming language with batteries-included stdlib and interpreter.",
+      "language": "C, Python",
+      "license": "PSF License",
+      "last_release": "2023-12",
+      "metrics": {
+        "popularity": {
+          "stars": 62000,
+          "score": 96
+        },
+        "reputation": {
+          "cves_12mo": 4,
+          "score": 92
+        },
+        "integration": {
+          "score": 98,
+          "notes": "Native support across OSes, clouds and major frameworks"
+        },
+        "documentation": {
+          "last_doc_update": "2023-12",
+          "score": 97
+        },
+        "ecosystem": {
+          "issues_12mo": 1350,
+          "prs_12mo": 920,
+          "score": 88
+        }
+      },
+      "url": "https://www.python.org/ftp/python/3.11.7/Python-3.11.7.tar.xz",
+      "alternatives": [
+        {
+          "name": "Go",
+          "weblink": "https://go.dev/",
+          "summary": "Statically typed compiled language focused on simplicity, concurrency and fast builds.",
+          "language": "Go",
+          "license": "BSD-3-Clause",
+          "last_release": "2024-02",
+          "metrics": {
+            "popularity": {
+              "stars": 125000,
+              "score": 88
+            },
+            "reputation": {
+              "cves_12mo": 2,
+              "score": 96
+            },
+            "integration": {
+              "score": 85,
+              "notes": "Excellent for CLI/services but fewer data-science libs"
+            },
+            "documentation": {
+              "last_doc_update": "2024-02",
+              "score": 94
+            },
+            "ecosystem": {
+              "issues_12mo": 420,
+              "prs_12mo": 310,
+              "score": 92
+            }
+          },
+          "rationale": "Superior reputation and low issue volume offset by narrower library ecosystem.",
+          "composite_score": 91.1,
+          "rank": 2
+        },
+        {
+          "name": "Node.js",
+          "weblink": "https://nodejs.org/",
+          "summary": "JavaScript runtime built on V8 for server-side and CLI applications.",
+          "language": "C++, JavaScript",
+          "license": "MIT",
+          "last_release": "2024-04",
+          "metrics": {
+            "popularity": {
+              "stars": 105000,
+              "score": 85
+            },
+            "reputation": {
+              "cves_12mo": 7,
+              "score": 85
+            },
+            "integration": {
+              "score": 92,
+              "notes": "Huge npm ecosystem but dependency bloat common"
+            },
+            "documentation": {
+              "last_doc_update": "2024-04",
+              "score": 90
+            },
+            "ecosystem": {
+              "issues_12mo": 980,
+              "prs_12mo": 650,
+              "score": 80
+            }
+          },
+          "rationale": "Strong popularity and integration but higher CVE count and ecosystem noise.",
+          "composite_score": 85.8,
+          "rank": 3
+        }
+      ],
+      "ranking_winner": "Python"
+    },
+    {
+      "rank": 2,
+      "tool_name": "PostgreSQL",
+      "composite_score": 92.4,
+      "weblink": "https://www.postgresql.org/",
+      "summary": "Open-source object-relational database management system (RDBMS).",
+      "language": "C",
+      "license": "PostgreSQL License",
+      "last_release": "2024-11",
+      "metrics": {
+        "popularity": {
+          "stars": 15000,
+          "score": 95
+        },
+        "reputation": {
+          "cves_12mo": 8,
+          "score": 88
+        },
+        "integration": {
+          "score": 96,
+          "notes": "Native drivers and ORMs for nearly all languages and frameworks"
+        },
+        "documentation": {
+          "last_doc_update": "2024-11",
+          "score": 98
+        },
+        "ecosystem": {
+          "issues_12mo": 320,
+          "prs_12mo": 210,
+          "score": 87
+        }
+      },
+      "url": "http://ftp.postgresql.org/pub/source/v16.6/postgresql-16.6.tar.bz2",
+      "alternatives": [
+        {
+          "name": "SQLite",
+          "weblink": "https://www.sqlite.org/",
+          "summary": "Lightweight, serverless, embedded SQL database engine.",
+          "language": "C",
+          "license": "Public Domain",
+          "last_release": "2024-10",
+          "metrics": {
+            "popularity": {
+              "stars": 6200,
+              "score": 78
+            },
+            "reputation": {
+              "cves_12mo": 2,
+              "score": 96
+            },
+            "integration": {
+              "score": 90,
+              "notes": "Zero-config, ubiquitous in mobile/desktop apps"
+            },
+            "documentation": {
+              "last_doc_update": "2024-10",
+              "score": 92
+            },
+            "ecosystem": {
+              "issues_12mo": 95,
+              "prs_12mo": 60,
+              "score": 82
+            }
+          },
+          "rationale": "Excellent reputation and simplicity but lower popularity for server workloads.",
+          "composite_score": 87.2,
+          "rank": 2
+        },
+        {
+          "name": "MySQL",
+          "weblink": "https://www.mysql.com/",
+          "summary": "Widely-used open-source relational database, now under Oracle.",
+          "language": "C++",
+          "license": "GPLv2",
+          "last_release": "2024-07",
+          "metrics": {
+            "popularity": {
+              "stars": 9800,
+              "score": 88
+            },
+            "reputation": {
+              "cves_12mo": 12,
+              "score": 82
+            },
+            "integration": {
+              "score": 94,
+              "notes": "Excellent PHP/Java connectors and cloud hosting options"
+            },
+            "documentation": {
+              "last_doc_update": "2024-07",
+              "score": 85
+            },
+            "ecosystem": {
+              "issues_12mo": 410,
+              "prs_12mo": 180,
+              "score": 78
+            }
+          },
+          "rationale": "Strong popularity and integration but more CVEs and older docs lower the score.",
+          "composite_score": 85.3,
+          "rank": 3
+        }
+      ],
+      "ranking_winner": "PostgreSQL"
+    },
+    {
+      "rank": 3,
+      "tool_name": "networkx",
+      "composite_score": 91.5,
+      "weblink": "https://github.com/networkx/networkx",
+      "summary": "Python library for creating, manipulating, and studying the structure, dynamics, and functions of complex networks/graphs.",
+      "language": "Python",
+      "license": "BSD-3-Clause",
+      "last_release": "2023-09",
+      "metrics": {
+        "popularity": {
+          "stars": 14000,
+          "score": 95
+        },
+        "reputation": {
+          "cves_12mo": 0,
+          "score": 95
+        },
+        "integration": {
+          "score": 90,
+          "notes": "pip install networkx; pure Python with optional C extensions"
+        },
+        "documentation": {
+          "last_doc_update": "2023-09",
+          "score": 95
+        },
+        "ecosystem": {
+          "issues_12mo": 320,
+          "prs_12mo": 180,
+          "score": 80
+        }
+      },
+      "url": "https://github.com/networkx/networkx/archive/networkx-3.2.tar.gz",
+      "alternatives": [
+        {
+          "name": "python-igraph",
+          "weblink": "https://github.com/igraph/python-igraph",
+          "summary": "High-performance graph library with Python bindings to the igraph C core.",
+          "language": "Python/C",
+          "license": "GPL-2.0-or-later",
+          "last_release": "2023-11",
+          "metrics": {
+            "popularity": {
+              "stars": 1100,
+              "score": 65
+            },
+            "reputation": {
+              "cves_12mo": 0,
+              "score": 95
+            },
+            "integration": {
+              "score": 75,
+              "notes": "Requires compilation of C core; wheels available for major platforms"
+            },
+            "documentation": {
+              "last_doc_update": "2023-11",
+              "score": 85
+            },
+            "ecosystem": {
+              "issues_12mo": 95,
+              "prs_12mo": 60,
+              "score": 85
+            }
+          },
+          "rationale": "Strong performance and low CVE count but lower popularity and integration friction.",
+          "composite_score": 80.5,
+          "rank": 2
+        },
+        {
+          "name": "graph-tool",
+          "weblink": "https://git.skewed.de/count0/graph-tool",
+          "summary": "Efficient Python module for manipulation and statistical analysis of graphs.",
+          "language": "Python/C++",
+          "license": "LGPL-3.0",
+          "last_release": "2023-06",
+          "metrics": {
+            "popularity": {
+              "stars": 450,
+              "score": 45
+            },
+            "reputation": {
+              "cves_12mo": 0,
+              "score": 95
+            },
+            "integration": {
+              "score": 55,
+              "notes": "Complex build from source; limited binary distributions"
+            },
+            "documentation": {
+              "last_doc_update": "2023-06",
+              "score": 70
+            },
+            "ecosystem": {
+              "issues_12mo": 40,
+              "prs_12mo": 25,
+              "score": 90
+            }
+          },
+          "rationale": "Excellent performance but poor integration ease and smallest community.",
+          "composite_score": 70.8,
+          "rank": 3
+        }
+      ],
+      "ranking_winner": "networkx"
+    },
+    {
+      "rank": 4,
+      "tool_name": "curl",
+      "composite_score": 91.4,
+      "weblink": "https://curl.se",
+      "summary": "Command-line tool and library for transferring data with URLs, supporting HTTP, FTP and dozens of other protocols.",
+      "language": "C",
+      "license": "curl",
+      "last_release": "2024-09",
+      "metrics": {
+        "popularity": {
+          "stars": 36000,
+          "score": 95
+        },
+        "reputation": {
+          "cves_12mo": 4,
+          "score": 85
+        },
+        "integration": {
+          "score": 98,
+          "notes": "Native CLI + libcurl bindings in virtually every language"
+        },
+        "documentation": {
+          "last_doc_update": "2024-09",
+          "score": 95
+        },
+        "ecosystem": {
+          "issues_12mo": 420,
+          "prs_12mo": 310,
+          "score": 88
+        }
+      },
+      "url": "http://curl.haxx.se/download/curl-8.20.0.tar.xz",
+      "alternatives": [
+        {
+          "name": "aria2",
+          "weblink": "https://aria2.github.io",
+          "summary": "Lightweight multi-protocol command-line download utility with torrent and metalink support.",
+          "language": "C++",
+          "license": "GPL-2.0",
+          "last_release": "2023-11",
+          "metrics": {
+            "popularity": {
+              "stars": 34000,
+              "score": 92
+            },
+            "reputation": {
+              "cves_12mo": 0,
+              "score": 100
+            },
+            "integration": {
+              "score": 78,
+              "notes": "Excellent for bulk downloads, RPC interface"
+            },
+            "documentation": {
+              "last_doc_update": "2023-11",
+              "score": 75
+            },
+            "ecosystem": {
+              "issues_12mo": 95,
+              "prs_12mo": 55,
+              "score": 82
+            }
+          },
+          "rationale": "High popularity and clean security record; slightly dated docs and narrower protocol focus.",
+          "composite_score": 89.1,
+          "rank": 1
+        },
+        {
+          "name": "httpie",
+          "weblink": "https://httpie.io",
+          "summary": "Modern command-line HTTP client with intuitive syntax and JSON support.",
+          "language": "Python",
+          "license": "BSD-3-Clause",
+          "last_release": "2024-06",
+          "metrics": {
+            "popularity": {
+              "stars": 32000,
+              "score": 90
+            },
+            "reputation": {
+              "cves_12mo": 2,
+              "score": 90
+            },
+            "integration": {
+              "score": 88,
+              "notes": "Great CLI UX, Python library available"
+            },
+            "documentation": {
+              "last_doc_update": "2024-06",
+              "score": 92
+            },
+            "ecosystem": {
+              "issues_12mo": 310,
+              "prs_12mo": 180,
+              "score": 80
+            }
+          },
+          "rationale": "User-friendly HTTP focus but lacks breadth of protocols and raw performance of curl.",
+          "composite_score": 88.4,
+          "rank": 2
+        },
+        {
+          "name": "wget",
+          "weblink": "https://www.gnu.org/software/wget/",
+          "summary": "Non-interactive network downloader supporting HTTP, HTTPS, FTP and mirroring.",
+          "language": "C",
+          "license": "GPL-3.0",
+          "last_release": "2024-05",
+          "metrics": {
+            "popularity": {
+              "stars": 680,
+              "score": 62
+            },
+            "reputation": {
+              "cves_12mo": 1,
+              "score": 95
+            },
+            "integration": {
+              "score": 85,
+              "notes": "Simple CLI, limited library usage"
+            },
+            "documentation": {
+              "last_doc_update": "2024-05",
+              "score": 80
+            },
+            "ecosystem": {
+              "issues_12mo": 85,
+              "prs_12mo": 40,
+              "score": 78
+            }
+          },
+          "rationale": "Mature, trusted downloader but smaller community and fewer protocols than curl.",
+          "composite_score": 79.6,
+          "rank": 3
+        }
+      ],
+      "ranking_winner": "curl"
+    },
+    {
+      "rank": 5,
+      "tool_name": "coreutils",
+      "composite_score": 90.5,
+      "weblink": "https://www.gnu.org/software/coreutils/",
+      "summary": "GNU core utilities for basic file, shell and text manipulation",
+      "language": "C",
+      "license": "GPL-3.0-or-later",
+      "last_release": "2022-04",
+      "metrics": {
+        "popularity": {
+          "stars": null,
+          "score": 95
+        },
+        "reputation": {
+          "cves_12mo": 2,
+          "score": 85
+        },
+        "integration": {
+          "score": 98,
+          "notes": "POSIX standard, ubiquitous in Linux distros"
+        },
+        "documentation": {
+          "last_doc_update": "2022-04",
+          "score": 90
+        },
+        "ecosystem": {
+          "issues_12mo": null,
+          "prs_12mo": null,
+          "score": 80
+        }
+      },
+      "url": "http://ftp.funet.fi/pub/gnu/ftp.gnu.org/gnu/coreutils/coreutils-9.1.tar.xz",
+      "alternatives": [
+        {
+          "name": "uutils/coreutils",
+          "weblink": "https://github.com/uutils/coreutils",
+          "summary": "Cross-platform Rust rewrite of GNU coreutils",
+          "language": "Rust",
+          "license": "MIT",
+          "last_release": "2023-09",
+          "metrics": {
+            "popularity": {
+              "stars": 14500,
+              "score": 88
+            },
+            "reputation": {
+              "cves_12mo": 0,
+              "score": 95
+            },
+            "integration": {
+              "score": 75,
+              "notes": "Good but not yet full GNU parity"
+            },
+            "documentation": {
+              "last_doc_update": "2023-09",
+              "score": 85
+            },
+            "ecosystem": {
+              "issues_12mo": 320,
+              "prs_12mo": 180,
+              "score": 78
+            }
+          },
+          "rationale": "Strong modern security posture and rising popularity",
+          "composite_score": 86.4,
+          "rank": 2
+        },
+        {
+          "name": "busybox",
+          "weblink": "https://busybox.net/",
+          "summary": "Single-binary multi-tool implementation of many Unix utilities",
+          "language": "C",
+          "license": "GPL-2.0-only",
+          "last_release": "2023-05",
+          "metrics": {
+            "popularity": {
+              "stars": null,
+              "score": 80
+            },
+            "reputation": {
+              "cves_12mo": 5,
+              "score": 70
+            },
+            "integration": {
+              "score": 85,
+              "notes": "Excellent for embedded systems"
+            },
+            "documentation": {
+              "last_doc_update": "2023-05",
+              "score": 75
+            },
+            "ecosystem": {
+              "issues_12mo": null,
+              "prs_12mo": null,
+              "score": 65
+            }
+          },
+          "rationale": "Compact but higher CVE count and slower release cadence",
+          "composite_score": 75.0,
+          "rank": 3
+        }
+      ],
+      "ranking_winner": "coreutils"
+    },
+    {
+      "rank": 6,
+      "tool_name": "wireguard-tools",
+      "composite_score": 90.4,
+      "weblink": "https://www.wireguard.com/",
+      "summary": "Command-line tools for configuring and managing WireGuard VPN tunnels.",
+      "language": "C",
+      "license": "GPL-2.0",
+      "last_release": "2026-02",
+      "metrics": {
+        "popularity": {
+          "stars": 9500,
+          "score": 92
+        },
+        "reputation": {
+          "cves_12mo": 1,
+          "score": 95
+        },
+        "integration": {
+          "score": 88,
+          "notes": "Simple CLI and kernel module integration on Linux/BSD"
+        },
+        "documentation": {
+          "last_doc_update": "2025-01",
+          "score": 90
+        },
+        "ecosystem": {
+          "issues_12mo": 120,
+          "prs_12mo": 85,
+          "score": 85
+        }
+      },
+      "url": "https://git.zx2c4.com/wireguard-tools/snapshot/wireguard-tools-1.0.20260223.tar.xz",
+      "alternatives": [
+        {
+          "name": "OpenVPN",
+          "weblink": "https://openvpn.net/",
+          "summary": "Mature open-source VPN daemon supporting SSL/TLS tunnels.",
+          "language": "C",
+          "license": "GPL-2.0",
+          "last_release": "2025-03",
+          "metrics": {
+            "popularity": {
+              "stars": 11200,
+              "score": 85
+            },
+            "reputation": {
+              "cves_12mo": 3,
+              "score": 82
+            },
+            "integration": {
+              "score": 78,
+              "notes": "Requires config files and certificates; broad platform support"
+            },
+            "documentation": {
+              "last_doc_update": "2024-11",
+              "score": 85
+            },
+            "ecosystem": {
+              "issues_12mo": 310,
+              "prs_12mo": 95,
+              "score": 72
+            }
+          },
+          "rationale": "Very popular with solid docs but higher CVE count and more ecosystem noise.",
+          "composite_score": 81.1,
+          "rank": 2
+        },
+        {
+          "name": "strongSwan",
+          "weblink": "https://www.strongswan.org/",
+          "summary": "IPsec-based VPN solution with IKEv2 support and modular architecture.",
+          "language": "C",
+          "license": "GPL-2.0",
+          "last_release": "2025-06",
+          "metrics": {
+            "popularity": {
+              "stars": 2400,
+              "score": 65
+            },
+            "reputation": {
+              "cves_12mo": 2,
+              "score": 88
+            },
+            "integration": {
+              "score": 70,
+              "notes": "Complex config for IPsec; good for enterprise"
+            },
+            "documentation": {
+              "last_doc_update": "2025-02",
+              "score": 82
+            },
+            "ecosystem": {
+              "issues_12mo": 95,
+              "prs_12mo": 40,
+              "score": 80
+            }
+          },
+          "rationale": "Lower popularity but good reputation and manageable issue volume.",
+          "composite_score": 76.6,
+          "rank": 3
+        }
+      ],
+      "ranking_winner": "wireguard-tools"
+    },
+    {
+      "rank": 7,
+      "tool_name": "OpenSSL",
+      "composite_score": 89.8,
+      "weblink": "https://www.openssl.org",
+      "summary": "Full-featured toolkit for SSL/TLS protocols, cryptography, and secure communications.",
+      "language": "C",
+      "license": "Apache-2.0",
+      "last_release": "2024-09",
+      "metrics": {
+        "popularity": {
+          "stars": 26000,
+          "score": 92
+        },
+        "reputation": {
+          "cves_12mo": 4,
+          "score": 85
+        },
+        "integration": {
+          "score": 95,
+          "notes": "Native bindings in nearly all languages and OSes"
+        },
+        "documentation": {
+          "last_doc_update": "2024-09",
+          "score": 90
+        },
+        "ecosystem": {
+          "issues_12mo": 320,
+          "prs_12mo": 180,
+          "score": 88
+        }
+      },
+      "url": "http://www.openssl.org/source/openssl-4.0.0.tar.gz",
+      "alternatives": [
+        {
+          "name": "BoringSSL",
+          "weblink": "https://boringssl.googlesource.com/boringssl",
+          "summary": "Google-maintained fork of OpenSSL focused on modern TLS and minimalism.",
+          "language": "C",
+          "license": "OpenSSL/ISC",
+          "last_release": "2024-10",
+          "metrics": {
+            "popularity": {
+              "stars": 6800,
+              "score": 78
+            },
+            "reputation": {
+              "cves_12mo": 2,
+              "score": 92
+            },
+            "integration": {
+              "score": 85,
+              "notes": "Excellent in Go and Chromium ecosystems"
+            },
+            "documentation": {
+              "last_doc_update": "2024-08",
+              "score": 75
+            },
+            "ecosystem": {
+              "issues_12mo": 95,
+              "prs_12mo": 110,
+              "score": 82
+            }
+          },
+          "rationale": "Highest reputation and strong integration in modern stacks despite lower popularity.",
+          "composite_score": 83.6,
+          "rank": 1
+        },
+        {
+          "name": "wolfSSL",
+          "weblink": "https://www.wolfssl.com",
+          "summary": "Lightweight, portable TLS library optimized for embedded and IoT use cases.",
+          "language": "C",
+          "license": "GPL-2.0/Commercial",
+          "last_release": "2024-10",
+          "metrics": {
+            "popularity": {
+              "stars": 2200,
+              "score": 68
+            },
+            "reputation": {
+              "cves_12mo": 3,
+              "score": 88
+            },
+            "integration": {
+              "score": 82,
+              "notes": "Strong embedded support and hardware acceleration"
+            },
+            "documentation": {
+              "last_doc_update": "2024-09",
+              "score": 85
+            },
+            "ecosystem": {
+              "issues_12mo": 110,
+              "prs_12mo": 65,
+              "score": 80
+            }
+          },
+          "rationale": "Good documentation and integration for constrained environments.",
+          "composite_score": 79.6,
+          "rank": 2
+        },
+        {
+          "name": "LibreSSL",
+          "weblink": "https://www.libressl.org",
+          "summary": "Fork of OpenSSL emphasizing security, simplicity and code auditability.",
+          "language": "C",
+          "license": "Apache-2.0/ISC",
+          "last_release": "2024-05",
+          "metrics": {
+            "popularity": {
+              "stars": 1400,
+              "score": 62
+            },
+            "reputation": {
+              "cves_12mo": 1,
+              "score": 95
+            },
+            "integration": {
+              "score": 78,
+              "notes": "Default in OpenBSD and some Linux distros"
+            },
+            "documentation": {
+              "last_doc_update": "2024-03",
+              "score": 70
+            },
+            "ecosystem": {
+              "issues_12mo": 45,
+              "prs_12mo": 30,
+              "score": 88
+            }
+          },
+          "rationale": "Best-in-class reputation and clean ecosystem offset by smaller community.",
+          "composite_score": 79.0,
+          "rank": 3
+        }
+      ],
+      "ranking_winner": "OpenSSL"
+    },
+    {
+      "rank": 8,
+      "tool_name": "activesupport",
+      "composite_score": 89.5,
+      "weblink": "https://rubygems.org/gems/activesupport",
+      "summary": "Toolkit of support libraries and Ruby core extensions extracted from the Rails framework.",
+      "language": "Ruby",
+      "license": "MIT",
+      "last_release": "2024-10",
+      "metrics": {
+        "popularity": {
+          "stars": 55000,
+          "score": 95
+        },
+        "reputation": {
+          "cves_12mo": 2,
+          "score": 85
+        },
+        "integration": {
+          "score": 95,
+          "notes": "Core Rails dependency, seamless Bundler integration"
+        },
+        "documentation": {
+          "last_doc_update": "2024-10",
+          "score": 90
+        },
+        "ecosystem": {
+          "issues_12mo": 120,
+          "prs_12mo": 85,
+          "score": 80
+        }
+      },
+      "url": "https://rubygems.org/downloads/activesupport-8.1.3.gem",
+      "alternatives": [
+        {
+          "name": "facets",
+          "weblink": "https://github.com/rubyworks/facets",
+          "summary": "Comprehensive library of core extensions for Ruby.",
+          "language": "Ruby",
+          "license": "Ruby",
+          "last_release": "2023-05",
+          "metrics": {
+            "popularity": {
+              "stars": 850,
+              "score": 45
+            },
+            "reputation": {
+              "cves_12mo": 0,
+              "score": 95
+            },
+            "integration": {
+              "score": 60,
+              "notes": "Standalone gem, requires manual requires"
+            },
+            "documentation": {
+              "last_doc_update": "2022-11",
+              "score": 55
+            },
+            "ecosystem": {
+              "issues_12mo": 15,
+              "prs_12mo": 8,
+              "score": 75
+            }
+          },
+          "rationale": "Broad extensions but lower popularity and outdated docs.",
+          "composite_score": 67.8,
+          "rank": 2
+        },
+        {
+          "name": "powerpack",
+          "weblink": "https://github.com/banister/powerpack",
+          "summary": "Useful extensions to core Ruby classes.",
+          "language": "Ruby",
+          "license": "MIT",
+          "last_release": "2019-12",
+          "metrics": {
+            "popularity": {
+              "stars": 320,
+              "score": 30
+            },
+            "reputation": {
+              "cves_12mo": 0,
+              "score": 95
+            },
+            "integration": {
+              "score": 50,
+              "notes": "Minimal dependencies but limited scope"
+            },
+            "documentation": {
+              "last_doc_update": "2018-06",
+              "score": 40
+            },
+            "ecosystem": {
+              "issues_12mo": 5,
+              "prs_12mo": 2,
+              "score": 85
+            }
+          },
+          "rationale": "Lightweight but stale and narrow feature set.",
+          "composite_score": 61.8,
+          "rank": 3
+        }
+      ],
+      "ranking_winner": "activesupport"
+    },
+    {
+      "rank": 9,
+      "tool_name": "sed",
+      "composite_score": 89.5,
+      "weblink": "https://www.gnu.org/software/sed/",
+      "summary": "GNU stream editor for filtering and transforming text streams using simple scripts.",
+      "language": "C",
+      "license": "GPL-3.0-or-later",
+      "last_release": "2020-01",
+      "metrics": {
+        "popularity": {
+          "stars": null,
+          "score": 85
+        },
+        "reputation": {
+          "cves_12mo": 0,
+          "score": 95
+        },
+        "integration": {
+          "score": 95,
+          "notes": "POSIX standard, preinstalled on all Unix-like systems"
+        },
+        "documentation": {
+          "last_doc_update": "2020-01",
+          "score": 80
+        },
+        "ecosystem": {
+          "issues_12mo": 5,
+          "prs_12mo": 2,
+          "score": 90
+        }
+      },
+      "url": "http://ftp.funet.fi/pub/gnu/ftp.gnu.org/gnu/sed/sed-4.8.tar.xz",
+      "alternatives": [
+        {
+          "name": "gawk",
+          "weblink": "https://www.gnu.org/software/gawk/",
+          "summary": "GNU implementation of awk for pattern scanning and text processing.",
+          "language": "C",
+          "license": "GPL-3.0-or-later",
+          "last_release": "2023-11",
+          "metrics": {
+            "popularity": {
+              "stars": null,
+              "score": 80
+            },
+            "reputation": {
+              "cves_12mo": 0,
+              "score": 95
+            },
+            "integration": {
+              "score": 90,
+              "notes": "POSIX standard, widely preinstalled"
+            },
+            "documentation": {
+              "last_doc_update": "2023-11",
+              "score": 85
+            },
+            "ecosystem": {
+              "issues_12mo": 12,
+              "prs_12mo": 8,
+              "score": 85
+            }
+          },
+          "rationale": "Higher recency and similar ubiquity; slightly broader scripting capability than sed.",
+          "composite_score": 87.2,
+          "rank": 1
+        },
+        {
+          "name": "perl",
+          "weblink": "https://www.perl.org/",
+          "summary": "High-level scripting language with powerful regex and text processing.",
+          "language": "C",
+          "license": "Artistic-1.0-Perl",
+          "last_release": "2024-02",
+          "metrics": {
+            "popularity": {
+              "stars": null,
+              "score": 75
+            },
+            "reputation": {
+              "cves_12mo": 2,
+              "score": 85
+            },
+            "integration": {
+              "score": 75,
+              "notes": "Requires install on minimal systems"
+            },
+            "documentation": {
+              "last_doc_update": "2024-02",
+              "score": 90
+            },
+            "ecosystem": {
+              "issues_12mo": 150,
+              "prs_12mo": 80,
+              "score": 70
+            }
+          },
+          "rationale": "More powerful but heavier; excellent docs offset moderate ecosystem noise.",
+          "composite_score": 78.8,
+          "rank": 2
+        }
+      ],
+      "ranking_winner": "sed"
+    },
+    {
+      "rank": 10,
+      "tool_name": "nokogiri",
+      "composite_score": 89.5,
+      "weblink": "https://nokogiri.org",
+      "summary": "Nokogiri is an HTML, XML, SAX, and Reader parser with XPath and CSS selector support.",
+      "language": "Ruby",
+      "license": "MIT",
+      "last_release": "2024-02",
+      "metrics": {
+        "popularity": {
+          "stars": 6100,
+          "score": 95
+        },
+        "reputation": {
+          "cves_12mo": 2,
+          "score": 85
+        },
+        "integration": {
+          "score": 95,
+          "notes": "Native extensions; widely used in Rails"
+        },
+        "documentation": {
+          "last_doc_update": "2024-02",
+          "score": 90
+        },
+        "ecosystem": {
+          "issues_12mo": 85,
+          "prs_12mo": 40,
+          "score": 80
+        }
+      },
+      "url": "https://rubygems.org/downloads/nokogiri-1.16.2.gem",
+      "alternatives": [
+        {
+          "name": "ox",
+          "weblink": "https://github.com/ohler55/ox",
+          "summary": "Fast XML and HTML parser for Ruby with simple API.",
+          "language": "Ruby",
+          "license": "MIT",
+          "last_release": "2024-01",
+          "metrics": {
+            "popularity": {
+              "stars": 850,
+              "score": 65
+            },
+            "reputation": {
+              "cves_12mo": 0,
+              "score": 95
+            },
+            "integration": {
+              "score": 80,
+              "notes": "Native C extension, easy drop-in for XML"
+            },
+            "documentation": {
+              "last_doc_update": "2023-11",
+              "score": 70
+            },
+            "ecosystem": {
+              "issues_12mo": 25,
+              "prs_12mo": 12,
+              "score": 85
+            }
+          },
+          "rationale": "Strong speed and zero recent CVEs; lower popularity and docs freshness.",
+          "composite_score": 79.8,
+          "rank": 2
+        },
+        {
+          "name": "oga",
+          "weblink": "https://github.com/yorickpeterse/oga",
+          "summary": "Pure Ruby XML and HTML parser with XPath support.",
+          "language": "Ruby",
+          "license": "MIT",
+          "last_release": "2023-06",
+          "metrics": {
+            "popularity": {
+              "stars": 420,
+              "score": 50
+            },
+            "reputation": {
+              "cves_12mo": 0,
+              "score": 95
+            },
+            "integration": {
+              "score": 70,
+              "notes": "Pure Ruby, no native deps"
+            },
+            "documentation": {
+              "last_doc_update": "2022-12",
+              "score": 60
+            },
+            "ecosystem": {
+              "issues_12mo": 15,
+              "prs_12mo": 8,
+              "score": 88
+            }
+          },
+          "rationale": "Good for pure-Ruby environments; lower popularity and stale docs.",
+          "composite_score": 73.2,
+          "rank": 3
+        }
+      ],
+      "ranking_winner": "nokogiri"
+    }
+  ]
+}
