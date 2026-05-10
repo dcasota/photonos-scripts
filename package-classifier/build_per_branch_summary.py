@@ -137,27 +137,41 @@ def alts_beating_self(record: dict) -> list[dict]:
 
 
 def build_better_alt_rows(records: list[dict]) -> list[dict]:
-    """For every dedup'd record in `records`, emit one row per alternative
-    that outscores the package. Sorted by score delta (desc) -- biggest
-    gaps surface first. Returns a flat list of dict rows ready to render.
+    """For every dedup'd record in `records`, emit ONE row per package whose
+    alternatives include at least one entry outscoring it. The beating
+    alternatives are collapsed into a single `beating_alts` list (sorted by
+    delta desc) so a package never appears in more than one row.
+
+    Sorted by max delta (desc) so the biggest "you should switch" signals
+    surface first.
     """
     deduped = dedup_by_tool(records)
     rows = []
     for r in deduped:
-        pkg_name  = r.get("tool_name") or "(unnamed)"
+        beating = alts_beating_self(r)
+        if not beating:
+            continue
         pkg_score = composite_for_dedup(r)
-        for a in alts_beating_self(r):
+        alts_payload = []
+        for a in beating:
             a_score = composite_for_dedup(a)
-            rows.append({
-                "package":         pkg_name,
-                "package_score":   r.get("composite_score"),
-                "alt_name":        a.get("name") or "(unnamed)",
-                "alt_score":       a.get("composite_score"),
-                "alt_weblink":     a.get("weblink") or "",
-                "delta":           round(a_score - pkg_score, 1),
-                "rationale":       a.get("rationale") or "",
+            alts_payload.append({
+                "name":      a.get("name") or "(unnamed)",
+                "score":     a.get("composite_score"),
+                "weblink":   a.get("weblink") or "",
+                "delta":     round(a_score - pkg_score, 1),
+                "rationale": a.get("rationale") or "",
             })
-    return sorted(rows, key=lambda r: r["delta"], reverse=True)
+        # alts_beating_self() already sorts by score desc, which is the
+        # same order as delta desc (delta = alt_score - pkg_score, with
+        # pkg_score fixed per package).
+        rows.append({
+            "package":       r.get("tool_name") or "(unnamed)",
+            "package_score": r.get("composite_score"),
+            "max_delta":     alts_payload[0]["delta"],
+            "beating_alts":  alts_payload,
+        })
+    return sorted(rows, key=lambda r: r["max_delta"], reverse=True)
 
 
 def build_per_branch_records(jsonl_rows: list[dict],
@@ -218,15 +232,23 @@ def render_markdown(branch: str, records: list[dict], top_n: int,
     if not better_rows:
         out.append("_No alternative beats its package in this branch._")
     else:
-        out.append(f"_{len(better_rows)} alternative(s) score higher than the corresponding package._")
+        total_alts = sum(len(r["beating_alts"]) for r in better_rows)
+        out.append(f"_{len(better_rows)} package(s) have higher-scoring alternatives ({total_alts} beating alternatives total)._")
         out.append("")
-        out.append("| # | Package | Pkg score | Alternative | Alt score | Δ | Rationale |")
-        out.append("|---|---|---|---|---|---|---|")
+        out.append("| # | Package | Pkg score | Better alternatives (name, score, Δ) | Δ_max |")
+        out.append("|---|---|---|---|---|")
         for k, row in enumerate(better_rows, 1):
             pkg = str(row["package"]).replace("|", r"\|")
-            alt = str(row["alt_name"]).replace("|", r"\|")
-            rat = truncate(row["rationale"], 140).replace("|", r"\|")
-            out.append(f"| {k} | {pkg} | {row['package_score']} | {alt} | {row['alt_score']} | +{row['delta']} | {rat} |")
+            alts_cell_lines = []
+            for a in row["beating_alts"]:
+                aname = str(a["name"]).replace("|", r"\|")
+                rat   = truncate(a["rationale"], 110).replace("|", r"\|")
+                line  = f"{aname} ({a['score']}, +{a['delta']})"
+                if rat:
+                    line += f" — {rat}"
+                alts_cell_lines.append(line)
+            alts_cell = "<br>".join(alts_cell_lines)
+            out.append(f"| {k} | {pkg} | {row['package_score']} | {alts_cell} | +{row['max_delta']} |")
     out.append("")
     return "\n".join(out)
 
@@ -275,14 +297,16 @@ def render_text(branch: str, records: list[dict], top_n: int,
     if not better_rows:
         out.append("  (none)")
     else:
-        out.append(f"  {len(better_rows)} alternative(s) score higher than the corresponding package.")
+        total_alts = sum(len(r["beating_alts"]) for r in better_rows)
+        out.append(f"  {len(better_rows)} package(s) have higher-scoring alternatives ({total_alts} beating alternatives total).")
         for k, row in enumerate(better_rows, 1):
-            rat = truncate(row["rationale"], 140)
-            line = (f"  {k:>3}. {row['package']} ({row['package_score']})"
-                    f"  ->  {row['alt_name']} ({row['alt_score']}, +{row['delta']})")
-            if rat:
-                line += f"  -- {rat}"
-            out.append(line)
+            out.append(f"  {k:>3}. {row['package']} ({row['package_score']}, Δ_max=+{row['max_delta']})")
+            for j, a in enumerate(row["beating_alts"], 1):
+                rat = truncate(a["rationale"], 130)
+                line = f"        {j}. {a['name']} ({a['score']}, +{a['delta']})"
+                if rat:
+                    line += f"  -- {rat}"
+                out.append(line)
     out.append("")
     return "\n".join(out)
 
@@ -393,21 +417,28 @@ def main() -> int:
         # Shown as a collapsible block to keep the run page navigable when
         # a branch has dozens of beating alternatives.
         better_rows = build_better_alt_rows(recs)
+        total_alts = sum(len(r["beating_alts"]) for r in better_rows)
         combined.append("")
         combined.append(f"<details><summary><b>Alternatives outscoring the package</b> "
-                        f"({len(better_rows)} found)</summary>")
+                        f"({len(better_rows)} package(s), {total_alts} beating alts)</summary>")
         combined.append("")
         if not better_rows:
             combined.append("_No alternative beats its package in this branch._")
         else:
-            combined.append("| # | Package | Pkg score | Alternative | Alt score | Δ | Rationale |")
-            combined.append("|---|---|---|---|---|---|---|")
+            combined.append("| # | Package | Pkg score | Better alternatives (name, score, Δ) | Δ_max |")
+            combined.append("|---|---|---|---|---|")
             for k, row in enumerate(better_rows, 1):
                 pkg = str(row["package"]).replace("|", r"\|")
-                alt = str(row["alt_name"]).replace("|", r"\|")
-                rat = truncate(row["rationale"], 140).replace("|", r"\|")
-                combined.append(f"| {k} | {pkg} | {row['package_score']} | {alt} | "
-                                f"{row['alt_score']} | +{row['delta']} | {rat} |")
+                alts_cell_lines = []
+                for a in row["beating_alts"]:
+                    aname = str(a["name"]).replace("|", r"\|")
+                    rat   = truncate(a["rationale"], 110).replace("|", r"\|")
+                    line  = f"{aname} ({a['score']}, +{a['delta']})"
+                    if rat:
+                        line += f" — {rat}"
+                    alts_cell_lines.append(line)
+                alts_cell = "<br>".join(alts_cell_lines)
+                combined.append(f"| {k} | {pkg} | {row['package_score']} | {alts_cell} | +{row['max_delta']} |")
         combined.append("</details>")
     print("\n".join(combined))
     return 0
