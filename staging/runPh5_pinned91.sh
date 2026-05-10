@@ -22,14 +22,23 @@ COMMON_BRANCH="${2:-common}"
 RELEASE_BRANCH="${3:-5.0}"
 OUTPUT_DIR="${4:-/mnt/c/Users/dcaso/Downloads/Ph-Builds}"
 
+# Pinned91 has libcap 2.66 (no libcap-libs split). The >= 92 ecosystem
+# upgraded to libcap 2.77, splitting out libcap-libs which has
+# Conflicts: libcap < 2.77-1. Remove libcap-libs from the tdnf view so
+# transitive deps don't pull it in and conflict with the local libcap 2.66.
+# Use file (sudo env propagation is unreliable) — TDNFSandbox.py reads it.
+export PHOTON_TDNF_EXCLUDE_PKGS="libcap-libs*"
+echo "libcap-libs*" > /tmp/photon-tdnf-exclude-pkgs.txt
+trap 'rm -f /tmp/photon-tdnf-exclude-pkgs.txt' EXIT INT TERM
+
 sleep 3
 if ping -c 4 www.google.ch > /dev/null 2>&1; then
   if [ ! -d "$BASE_DIR/$COMMON_BRANCH" ]; then
     git clone https://github.com/dcasota/photonos-scripts.git -b "$COMMON_BRANCH" "$BASE_DIR/$COMMON_BRANCH"
   fi
   cd "$BASE_DIR/$COMMON_BRANCH"
-  git fetch
-  git merge
+  git fetch 2>/dev/null || true
+  git merge 2>/dev/null || true
   cd "$BASE_DIR"
   if [ ! -d "$BASE_DIR/$RELEASE_BRANCH" ]; then
     git clone https://github.com/dcasota/photonos-scripts.git -b "$RELEASE_BRANCH" "$BASE_DIR/$RELEASE_BRANCH"
@@ -118,8 +127,8 @@ print('[runPh5] Set base-commit to common HEAD: ${COMMON_HEAD}')
   done
 
   # ── Fix OpenJDK WSL2 detection in chroot ───────────────────────────
-  if grep -qi 'microsoft\|wsl' /proc/version 2>/dev/null; then
-    for jdk_spec in SPECS/openjdk/openjdk*.spec; do
+  if grep -qiE 'microsoft|wsl' /proc/version 2>/dev/null; then
+    for jdk_spec in SPECS/openjdk/openjdk*.spec "$BASE_DIR/$COMMON_BRANCH"/SPECS/openjdk/openjdk*.spec; do
       [ -f "$jdk_spec" ] || continue
       if grep -q 'sh ./configure' "$jdk_spec" && ! grep -q 'build=x86_64-unknown-linux-gnu' "$jdk_spec"; then
         sed -i 's|--disable-warnings-as-errors$|--disable-warnings-as-errors \\\n    --build=x86_64-unknown-linux-gnu|' "$jdk_spec"
@@ -131,7 +140,7 @@ print('[runPh5] Set base-commit to common HEAD: ${COMMON_HEAD}')
   # ── Fix Python 3 PGO test flake in WSL2 ────────────────────────────
   # test_generators.SignalAndYieldFromTest is flaky under WSL2 (signal
   # delivery timing differs). Override PROFILE_TASK to exclude it.
-  if grep -qi 'microsoft\|wsl' /proc/version 2>/dev/null; then
+  if grep -qiE 'microsoft|wsl' /proc/version 2>/dev/null; then
     for py_spec in SPECS/python3/python3.spec SPECS/91/python3/python3.spec; do
       if [ -f "$py_spec" ] && ! grep -q 'PROFILE_TASK' "$py_spec"; then
         sed -i 's|^%make_build$|PROFILE_TASK="-m test --pgo -x test_generators" %make_build|' "$py_spec"
@@ -140,11 +149,28 @@ print('[runPh5] Set base-commit to common HEAD: ${COMMON_HEAD}')
     done
   fi
 
-  # ── Fix perl-rpm-packaging missing debug_package disable ──────────
-  PRP_SPEC="SPECS/perl-rpm-packaging/perl-rpm-packaging.spec"
-  if [ -f "$PRP_SPEC" ] && ! grep -q 'debug_package' "$PRP_SPEC"; then
-    sed -i '/%global build_if/a %define debug_package %{nil}' "$PRP_SPEC"
-    echo "[runPh5] Fixed perl-rpm-packaging: added debug_package disable"
+  # ── Fix rubygem sandbox DNS failure ──────────────────────────────
+  # gem install inside the build sandbox tries to resolve dependencies
+  # from rubygems.org, but the sandbox has no DNS. Rebuild ruby RPM with
+  # --ignore-dependencies in the gem_install macro. RPM handles deps at
+  # the package level via BuildRequires/Requires.
+  RUBY91_MACROS="SPECS/91/ruby/macros.ruby"
+  if [ -f "$RUBY91_MACROS" ] && ! grep -q 'ignore-dependencies' "$RUBY91_MACROS"; then
+    sed -i 's|%{gem_binary} install --bindir|%{gem_binary} install --ignore-dependencies --bindir|' "$RUBY91_MACROS"
+    # Bump ruby release to force RPM rebuild with fixed macros
+    RUBY91_SPEC="SPECS/91/ruby/ruby.spec"
+    if [ -f "$RUBY91_SPEC" ]; then
+      sed -i 's|^Release:.*3\.1%|Release:        3.2%|' "$RUBY91_SPEC"
+    fi
+    # Remove old ruby RPMs and sandboxBase to force rebuild
+    _rpms="$BASE_DIR/$RELEASE_BRANCH/stage/RPMS/x86_64"
+    _noarch="$BASE_DIR/$RELEASE_BRANCH/stage/RPMS/noarch"
+    rm -f "$_rpms"/ruby-3.4.7-3.1.ph5.x86_64.rpm \
+          "$_rpms"/ruby-devel-3.4.7-3.1.ph5.x86_64.rpm \
+          "$_rpms"/ruby-debuginfo-3.4.7-3.1.ph5.x86_64.rpm \
+          "$_noarch"/ruby-macros-3.4.7-3.1.ph5.noarch.rpm 2>/dev/null
+    rm -rf "$BASE_DIR/$RELEASE_BRANCH/stage/images/sandboxBase"
+    echo "[runPh5] Fixed macros.ruby: added --ignore-dependencies, bumped ruby to 3.2"
   fi
 
   # ── Fix python3-setuptools circular wheel dependency ──────────────
@@ -161,28 +187,6 @@ print('[runPh5] Set base-commit to common HEAD: ${COMMON_HEAD}')
     sed -i '/install.*python_wheel_dir/d' "$SETUPTOOLS_SPEC"
     sed -i '/install.*python_wheel_name/d' "$SETUPTOOLS_SPEC"
     sed -i '/mkdir.*python_wheel_dir/d' "$SETUPTOOLS_SPEC"
-  fi
-
-  # ── Ensure builder-pkg-preq.json has libcap-libs ──────────────────
-  if [ -f data/builder-pkg-preq.json ]; then
-    python3 -c "
-import json, sys
-with open('data/builder-pkg-preq.json', 'r') as f:
-    data = json.load(f)
-rpms = data.get('listToolChainRPMsToInstall', [])
-if 'libcap-libs' in rpms:
-    sys.exit(0)
-try:
-    idx = rpms.index('libcap')
-    rpms.insert(idx + 1, 'libcap-libs')
-except ValueError:
-    rpms.append('libcap-libs')
-data['listToolChainRPMsToInstall'] = rpms
-with open('data/builder-pkg-preq.json', 'w') as f:
-    json.dump(data, f, indent=4)
-    f.write('\n')
-print('[runPh5] Added libcap-libs to builder-pkg-preq.json')
-" 2>/dev/null
   fi
 
   # ── Pre-fetch sources missing from Broadcom mirror ─────────────
@@ -295,12 +299,14 @@ for s in data.get('sources', []):
       --downloadonly --downloaddir="$NOARCHDIR" systemd-rpm-macros 2>/dev/null
   fi
 
-  # ── Fix sandbox bootstrap: remove rpm 6.x RPMs if deps missing ──
-  # rpm-build 6.x requires perl-rpm-packaging. If it hasn't been built,
-  # remove rpm 6.x so tdnf falls back to rpm 4.x for bootstrapping.
-  if ls "$RPMSDIR"/rpm-build-6.*.rpm >/dev/null 2>&1 && \
-     ! ls "$RPMSDIR"/perl-rpm-packaging-*.rpm >/dev/null 2>&1; then
-    echo "[runPh5] Removing rpm 6.x RPMs (perl-rpm-packaging not yet built)"
+  # ── Fix sandbox bootstrap: remove rpm 6.x RPMs unconditionally ──
+  # rpm-libs 6.x requires libcap-libs which only exists at >= 92 (split
+  # from libcap 2.77). At pinned91, libcap-libs doesn't exist, so rpm 6.x
+  # can't satisfy its deps. Force tdnf to fall back to rpm 4.18.0.
+  # Also remove rpm-sequoia (deps of rpm 6.x).
+  if ls "$RPMSDIR"/rpm-build-6.*.rpm >/dev/null 2>&1 || \
+     ls "$RPMSDIR"/rpm-sequoia*.rpm >/dev/null 2>&1; then
+    echo "[runPh5] Removing rpm 6.x and rpm-sequoia RPMs (incompatible with pinned91 libcap)"
     rm -f "$RPMSDIR"/rpm-6.*.rpm "$RPMSDIR"/rpm-build-6.*.rpm \
           "$RPMSDIR"/rpm-build-libs-6.*.rpm "$RPMSDIR"/rpm-libs-6.*.rpm \
           "$RPMSDIR"/rpm-devel-6.*.rpm "$RPMSDIR"/rpm-lang-6.*.rpm \
@@ -325,6 +331,21 @@ for s in data.get('sources', []):
     rm -rf "$BASE_DIR/$RELEASE_BRANCH/stage/images/sandboxBase"
   fi
 
+  # ── Remove >= 92 util-linux RPMs to avoid version conflicts ────
+  # The >= 92 util-linux split logger-bin into a separate subpackage
+  # with a "conflicts with util-linux < X" dependency that breaks
+  # pinned91's util-linux-2.38-9.1. Remove the >= 92 versions.
+  if ls "$RPMSDIR"/util-linux-2.38-10*.rpm >/dev/null 2>&1; then
+    echo "[runPh5] Removing util-linux >= 92 RPMs (logger-bin conflict)"
+    rm -f "$RPMSDIR"/util-linux-2.38-10*.rpm "$RPMSDIR"/util-linux-2.38-9.ph5*.rpm \
+          "$RPMSDIR"/util-linux-libs-2.38-10*.rpm "$RPMSDIR"/util-linux-libs-2.38-9.ph5*.rpm \
+          "$RPMSDIR"/util-linux-devel-2.38-10*.rpm "$RPMSDIR"/util-linux-devel-2.38-9.ph5*.rpm \
+          "$RPMSDIR"/util-linux-debuginfo-2.38-10*.rpm "$RPMSDIR"/util-linux-debuginfo-2.38-9.ph5*.rpm \
+          "$RPMSDIR"/util-linux-lang-2.38-10*.rpm "$RPMSDIR"/util-linux-lang-2.38-9.ph5*.rpm \
+          "$RPMSDIR"/logger-bin-2.38-10*.rpm "$RPMSDIR"/logger-bin-2.38-9.ph5*.rpm 2>/dev/null
+    rm -rf "$BASE_DIR/$RELEASE_BRANCH/stage/images/sandboxBase"
+  fi
+
   # ── Download rpm-build 4.18.0 from remote if no usable version ─────
   if ! ls "$RPMSDIR"/rpm-build-4.18.0-*.rpm >/dev/null 2>&1 && \
      ! ls "$RPMSDIR"/rpm-build-6.*.rpm >/dev/null 2>&1; then
@@ -334,14 +355,29 @@ for s in data.get('sources', []):
     rm -rf "$BASE_DIR/$RELEASE_BRANCH/stage/images/sandboxBase"
   fi
 
+  # ── Helper: clean stale chroot mounts and sandbox dirs ──────────
+  clean_stale_sandboxes() {
+    # Remove leftover Docker containers from prior failed builds.
+    # These block sandbox creation when tdnf.clean() races on remove.
+    stale=$(docker ps -a --filter "name=photon-sandbox-tdnf-" --format "{{.Names}}" 2>/dev/null)
+    if [ -n "$stale" ]; then
+      echo "$stale" | xargs -r docker rm -f 2>/dev/null
+      echo "[runPh5] Removed stale Docker sandbox containers"
+    fi
+    for mp in $(mount 2>/dev/null | grep "$BASE_DIR/$RELEASE_BRANCH/stage/photonroot" | awk '{print $3}' | sort -r); do
+      umount "$mp" 2>/dev/null || umount -l "$mp" 2>/dev/null
+    done
+    sync
+    sleep 1
+    if [ -d "$BASE_DIR/$RELEASE_BRANCH/stage/photonroot" ]; then
+      find "$BASE_DIR/$RELEASE_BRANCH/stage/photonroot" -mindepth 1 -maxdepth 1 \
+        -exec rm -rf {} + 2>/dev/null
+      echo "[runPh5] Cleaned stale build sandboxes"
+    fi
+  }
+
   # ── Free disk space and clean stale build artifacts ─────────────
-  for mp in $(mount 2>/dev/null | grep "stage/photonroot" | awk '{print $3}' | sort -r); do
-    umount "$mp" 2>/dev/null || umount -l "$mp" 2>/dev/null
-  done
-  if [ -d "$BASE_DIR/$RELEASE_BRANCH/stage/photonroot" ]; then
-    rm -rf "$BASE_DIR/$RELEASE_BRANCH/stage/photonroot"/*
-    echo "[runPh5] Cleaned stale build sandboxes"
-  fi
+  clean_stale_sandboxes
   if [ -d "$BASE_DIR/$RELEASE_BRANCH/stage/SRPMS" ]; then
     rm -rf "$BASE_DIR/$RELEASE_BRANCH/stage/SRPMS"/*
     echo "[runPh5] Cleaned stale SRPMs"
@@ -355,7 +391,11 @@ for s in data.get('sources', []):
 
   # ── Build loop ────────────────────────────────────────────────────
   for i in $(seq 1 10); do
-    sudo make -j2 image IMG_NAME=iso THREADS=2;
+    if [ "$i" -gt 1 ]; then
+      echo "[runPh5] Retry $i: cleaning stale sandboxes from previous attempt"
+      clean_stale_sandboxes
+    fi
+    sudo PHOTON_TDNF_EXCLUDE_PKGS="$PHOTON_TDNF_EXCLUDE_PKGS" make -j2 image IMG_NAME=iso THREADS=2;
     # ISO may land in stage/*.iso or stage/iso/*.iso
     timeout=60
     while [ $timeout -gt 0 ]; do
