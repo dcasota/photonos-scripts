@@ -67,11 +67,25 @@ def _norm_name(name: str | None) -> str:
     return _re.sub(r"[^a-z0-9]+", "", (name or "").lower())
 
 
+def pkg_name(record: dict) -> str:
+    """Photon-side display name for a record.
+
+    Prefers `_pkg_name` (derived from the Photon SPEC filename, e.g.
+    `perl-WWW-Curl` from `perl-WWW-Curl.spec`) so the report shows the
+    Photon package identity rather than Grok's upstream tool name (e.g.
+    `WWW::Curl`). Falls back to `tool_name` when no SPEC mapping exists
+    (e.g. records sourced from URLs not in url_to_packages).
+    """
+    return record.get("_pkg_name") or record.get("tool_name") or "(unnamed)"
+
+
 def dedup_by_tool(records: list[dict]) -> list[dict]:
-    """Keep the highest-composite record per normalized tool_name."""
+    """Keep the highest-composite record per normalized Photon package name
+    (SPEC-derived) -- so two SPECs with the same upstream tool name remain
+    distinct, and two URLs of the same SPEC collapse together."""
     by_key: dict[str, dict] = {}
     for r in records:
-        key = _norm_name(r.get("tool_name"))
+        key = _norm_name(pkg_name(r))
         if not key:
             continue
         if key not in by_key or composite_for_dedup(r) > composite_for_dedup(by_key[key]):
@@ -146,12 +160,12 @@ def build_better_alt_rows(records: list[dict]) -> list[dict]:
     deduped = dedup_by_tool(records)
     rows = []
     for r in deduped:
-        pkg_name  = r.get("tool_name") or "(unnamed)"
+        display   = pkg_name(r)
         pkg_score = composite_for_dedup(r)
         for a in alts_beating_self(r):
             a_score = composite_for_dedup(a)
             rows.append({
-                "package":         pkg_name,
+                "package":         display,
                 "package_score":   r.get("composite_score"),
                 "alt_name":        a.get("name") or "(unnamed)",
                 "alt_score":       a.get("composite_score"),
@@ -164,12 +178,23 @@ def build_better_alt_rows(records: list[dict]) -> list[dict]:
 
 def build_per_branch_records(jsonl_rows: list[dict],
                              url_to_branches: dict[str, list[str]],
-                             branches: list[str]) -> dict[str, list[dict]]:
+                             branches: list[str],
+                             url_to_packages: dict[str, list[str]] | None = None
+                             ) -> dict[str, list[dict]]:
+    """Map each record to the branches it belongs to. Also enriches the
+    record with `_pkg_name` (the Photon SPEC-derived name) when the URL
+    has a matching entry in `url_to_packages` — used by `pkg_name()` for
+    display and dedup."""
+    url_to_packages = url_to_packages or {}
     by_branch: dict[str, list[dict]] = defaultdict(list)
     for rec in jsonl_rows:
         url = rec.get("url")
         if not url:
             continue
+        if not rec.get("_pkg_name"):
+            pkgs = url_to_packages.get(url) or []
+            if pkgs:
+                rec["_pkg_name"] = pkgs[0]
         for b in url_to_branches.get(url, []):
             if b in branches:
                 by_branch[b].append(rec)
@@ -189,7 +214,7 @@ def render_markdown(branch: str, records: list[dict], top_n: int,
         out.append("\n_No classifier records mapped to this branch._\n")
         return "\n".join(out)
     for i, r in enumerate(deduped, 1):
-        name   = r.get("tool_name") or "(unnamed)"
+        name   = pkg_name(r)
         cs     = r.get("composite_score")
         cs_str = f"{cs}" if cs is not None else "n/a"
         weblink = r.get("weblink") or ""
@@ -248,7 +273,7 @@ def render_text(branch: str, records: list[dict], top_n: int,
         out.append("No classifier records mapped to this branch.")
         return "\n".join(out)
     for i, r in enumerate(deduped, 1):
-        name = r.get("tool_name") or "(unnamed)"
+        name = pkg_name(r)
         cs   = r.get("composite_score")
         cs_str = f"{cs}" if cs is not None else "n/a"
         out.append(f"{i:>2}. {name}  --  composite_score {cs_str}")
@@ -306,6 +331,7 @@ def render_json(branch: str, records: list[dict], top_n: int,
         "tools": [
             {
                 "rank":             i + 1,
+                "package":          pkg_name(r),
                 "tool_name":        r.get("tool_name"),
                 "composite_score":  r.get("composite_score"),
                 "weblink":          r.get("weblink"),
@@ -347,9 +373,10 @@ def main() -> int:
     with open(args.url_map, "r", encoding="utf-8") as fh:
         umap = json.load(fh)
     url_to_branches = umap.get("urls") or {}
+    url_to_packages = umap.get("url_to_packages") or {}
 
     branches = [b.strip() for b in args.branches.split(",") if b.strip()]
-    by_branch = build_per_branch_records(rows, url_to_branches, branches)
+    by_branch = build_per_branch_records(rows, url_to_branches, branches, url_to_packages)
 
     generated = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
 
@@ -375,10 +402,10 @@ def main() -> int:
         if not deduped:
             combined.append("_No records mapped to this branch._\n")
             continue
-        combined.append("| # | Tool | Score | Resume | Top-3 alternatives |")
+        combined.append("| # | Package | Score | Resume | Top-3 alternatives |")
         combined.append("|---|---|---|---|---|")
         for i, r in enumerate(deduped, 1):
-            name = (r.get("tool_name") or "(unnamed)").replace("|", r"\|")
+            name = pkg_name(r).replace("|", r"\|")
             cs   = r.get("composite_score")
             cs_str = f"{cs}" if cs is not None else "n/a"
             sm   = truncate(r.get("summary"), 140).replace("|", r"\|")

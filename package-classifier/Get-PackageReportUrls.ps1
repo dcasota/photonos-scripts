@@ -143,6 +143,11 @@ $rowsByBranch = @{}
 # url -> sorted unique list of branches that referenced this URL (for the
 # optional sidecar)
 $urlBranches = @{}
+# url -> sorted unique list of Photon package names (SPEC filename minus
+# ".spec") that reference this URL. Lets downstream reports display the
+# Photon-side identity (e.g. "perl-WWW-Curl") instead of Grok's upstream
+# tool name (e.g. "WWW::Curl").
+$urlPackages = @{}
 
 # Defensive filter for the well-known photon-OS macro-expansion artefact:
 # old photonos-package-report runs substituted `%{url}` literally against
@@ -167,12 +172,21 @@ foreach ($entry in $pickedFiles.GetEnumerator()) {
         if ($cols.Count -lt 6) { continue }
         $u3 = $cols[2].Trim()
         $u6 = $cols[5].Trim()
+        # Resolve the Photon package name: prefer the dedicated Name column
+        # (col 7) when present, else strip ".spec" from the Spec column (col 0).
+        $pkgName = if ($cols.Count -gt 7 -and $cols[7].Trim()) { $cols[7].Trim() }
+                   elseif ($cols[0]) { ($cols[0].Trim() -ireplace '\.spec$', '') }
+                   else { '' }
         if ($u3 -match '^https?://') {
             if (Test-IsSyntheticPhotonUrl $u3) { $skippedSynthetic++ }
             else {
                 [void]$urls.Add($u3); $rows++
                 if (-not $urlBranches.ContainsKey($u3)) { $urlBranches[$u3] = New-Object System.Collections.Generic.HashSet[string] }
                 [void]$urlBranches[$u3].Add($branch)
+                if ($pkgName) {
+                    if (-not $urlPackages.ContainsKey($u3)) { $urlPackages[$u3] = New-Object System.Collections.Generic.HashSet[string] }
+                    [void]$urlPackages[$u3].Add($pkgName)
+                }
             }
         }
         if ($IncludeUpdateUrls -and $u6 -match '^https?://') {
@@ -181,6 +195,10 @@ foreach ($entry in $pickedFiles.GetEnumerator()) {
                 [void]$urls.Add($u6)
                 if (-not $urlBranches.ContainsKey($u6)) { $urlBranches[$u6] = New-Object System.Collections.Generic.HashSet[string] }
                 [void]$urlBranches[$u6].Add($branch)
+                if ($pkgName) {
+                    if (-not $urlPackages.ContainsKey($u6)) { $urlPackages[$u6] = New-Object System.Collections.Generic.HashSet[string] }
+                    [void]$urlPackages[$u6].Add($pkgName)
+                }
             }
         }
     }
@@ -203,15 +221,19 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
 # --- 5. Optional sidecar: URL -> [branches] ------------------------------
 if ($BranchMapFile) {
     $map = [ordered]@{}
+    $pkgMap = [ordered]@{}
     foreach ($u in ($urls | Sort-Object)) {
         $brs = $urlBranches[$u]
         if ($brs) { $map[$u] = ($brs | Sort-Object) } else { $map[$u] = @() }
+        $pkgs = $urlPackages[$u]
+        if ($pkgs) { $pkgMap[$u] = ($pkgs | Sort-Object) } else { $pkgMap[$u] = @() }
     }
     $payload = [ordered]@{
-        generated = (Get-Date).ToUniversalTime().ToString('o')
-        branches  = @($Branches)
-        url_count = $urls.Count
-        urls      = $map
+        generated       = (Get-Date).ToUniversalTime().ToString('o')
+        branches        = @($Branches)
+        url_count       = $urls.Count
+        urls            = $map
+        url_to_packages = $pkgMap
     }
     if ($PSVersionTable.PSVersion.Major -ge 7) {
         $payload | ConvertTo-Json -Depth 6 | Out-File -LiteralPath $BranchMapFile -Encoding utf8NoBOM
