@@ -11,10 +11,13 @@
     For each URL the script asks Grok-4.3 to:
       (1) identify the package (name, weblink, summary, language, license,
           last_release),
-      (2) research alternatives that do what the package does and produce
-          a dynamic ranking of the top 3 alternatives (or fewer when
-          appropriate) plus the package itself, considering popularity
-          (e.g. github stars), reputation (e.g. CVEs in the last 12 months),
+      (2) research direct functional replacements for the package -- only
+          packages a current user could swap in without re-architecting
+          their code (same problem, same abstraction layer, same language
+          /runtime, same usage pattern, actively distributed) -- and
+          produce a dynamic ranking of up to 3 such replacements (fewer
+          when fewer qualify; no padding) considering popularity (e.g.
+          github stars), reputation (e.g. CVEs in the last 12 months),
           integration ease, documentation actuality, and ecosystem
           (e.g. github issues in the last 12 months),
       (3) emit per-candidate metrics with sub-scores (0..100) and a
@@ -341,7 +344,9 @@ function Get-MetricsScore {
 function Build-Prompt {
     param([string]$Url, [int]$MaxAlt)
     $altClause = if ($MaxAlt -gt 0) {
-        "Conduct ongoing research about package alternatives which can do what the package does and calculate a dynamic ranking of the top $MaxAlt alternatives (or less if not possible) and the package itself. The calculation must consider popularity (e.g. github stars), reputation (e.g. amount of vulnerabilities found in the last 12 months), integration ease, documentation actuality, ecosystem e.g. amount of github issues in the last 12 months, etc."
+        @"
+Identify up to $MaxAlt direct functional replacements for the package — packages a current user could swap in for the same use cases without re-architecting their code. Apply strict inclusion criteria: (a) solves the same concrete problem at the same layer of abstraction (HTTP client -> HTTP client, not HTTP client -> web framework; data-validation library -> data-validation library, not -> ORM); (b) targets the same primary language/runtime when applicable (Python library -> Python library; do NOT cross ecosystems or list a different programming language as an alternative to a library); (c) offers a comparable usage pattern (sync stays with sync, async stays with async, CLI stays with CLI, daemon stays with daemon, blocking stays with blocking); (d) is actively distributed and consumable today (no abandoned projects, no proof-of-concept forks). Explicitly EXCLUDE: the package itself; ports / renamed forks sharing the same codebase or maintainers; lower-level building blocks the package is built on (unless they are themselves a viable user-facing replacement); broader ecosystem peers that overlap only partially. Return fewer than $MaxAlt if fewer qualify; do NOT pad with weak matches. Then rank the qualifying replacements considering popularity (e.g. github stars), reputation (e.g. amount of vulnerabilities found in the last 12 months), integration ease, documentation actuality, and ecosystem activity (e.g. amount of github issues in the last 12 months). Each alternative's `rationale` must briefly state how it is a direct drop-in / functional replacement for the package.
+"@
     } else {
         "Skip alternatives research; emit alternatives: []."
     }
@@ -377,7 +382,7 @@ Package URL: '$Url'
 Package name: '$ToolName'
 Existing summary (use as context, do not re-emit): "$Summary"
 
-Conduct ongoing research about package alternatives which can do what the package does and calculate a dynamic ranking of the top $MaxAlt alternatives (or less if not possible). The calculation must consider popularity (e.g. github stars), reputation (e.g. amount of vulnerabilities found in the last 12 months), integration ease, documentation actuality, ecosystem e.g. amount of github issues in the last 12 months, etc.
+Identify up to $MaxAlt direct functional replacements for the package — packages a current user could swap in for the same use cases without re-architecting their code. Apply strict inclusion criteria: (a) solves the same concrete problem at the same layer of abstraction (HTTP client -> HTTP client, not HTTP client -> web framework; data-validation library -> data-validation library, not -> ORM); (b) targets the same primary language/runtime when applicable (Python library -> Python library; do NOT cross ecosystems or list a different programming language as an alternative to a library); (c) offers a comparable usage pattern (sync stays with sync, async stays with async, CLI stays with CLI, daemon stays with daemon, blocking stays with blocking); (d) is actively distributed and consumable today (no abandoned projects, no proof-of-concept forks). Explicitly EXCLUDE: the package itself; ports / renamed forks sharing the same codebase or maintainers; lower-level building blocks the package is built on (unless they are themselves a viable user-facing replacement); broader ecosystem peers that overlap only partially. Return fewer than $MaxAlt if fewer qualify; do NOT pad with weak matches. Then rank the qualifying replacements considering popularity (e.g. github stars), reputation (e.g. amount of vulnerabilities found in the last 12 months), integration ease, documentation actuality, and ecosystem activity (e.g. amount of github issues in the last 12 months). Each alternative's `rationale` must briefly state how it is a direct drop-in / functional replacement for the package.
 
 For each alternative emit metrics with sub-objects matching the main schema: popularity {stars (int|null), score (0..100|null)}, reputation {cves_12mo (int|null), score (0..100|null)}, integration {score (0..100|null), notes (string|null)}, documentation {last_doc_update (yyyy-mm|null), score (0..100|null)}, ecosystem {issues_12mo (int|null), prs_12mo (int|null), score (0..100|null)}. Compute composite_score 0..100 = round(0.30*popularity.score + 0.30*reputation.score + 0.15*integration.score + 0.10*documentation.score + 0.15*ecosystem.score, 1).
 
