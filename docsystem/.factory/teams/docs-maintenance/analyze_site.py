@@ -1,4 +1,10 @@
-import xml.etree.ElementTree as ET
+try:
+    # Security: prefer defusedxml to defeat XML external entity / billion-laughs
+    # style attacks when parsing sitemap files. Falls back to the stdlib parser
+    # only when defusedxml is not installed; sitemap files are external inputs.
+    import defusedxml.ElementTree as ET
+except ImportError:
+    import xml.etree.ElementTree as ET  # noqa: S405  (fallback only)
 import csv
 import json
 import os

@@ -23,6 +23,19 @@ from db_schema import init_db as schema_init_db
 REPO_URL = 'https://github.com/vmware/photon.git'
 DEFAULT_BRANCHES = ['3.0', '4.0', '5.0', '6.0', 'common', 'master']
 
+# Security: refnames passed to git must match this conservative subset to
+# block names that look like CLI options (e.g. '-c', '--exec') or contain
+# shell metacharacters. Pre-validated by validate_refname() at every entry
+# point that takes a branch/commit-hash value from argv.
+_REFNAME_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._/-]*$')
+
+
+def validate_refname(name):
+    """Return name unchanged if it is a safe git refname, else raise ValueError."""
+    if not isinstance(name, str) or not _REFNAME_RE.match(name):
+        raise ValueError(f'unsafe git refname: {name!r}')
+    return name
+
 try:
     from tqdm import tqdm
 except ImportError:
@@ -155,6 +168,9 @@ def import_commits(db_path, repo_dir, branches, since_date=None):
     result = {'branches': {}, 'total_new': 0}
 
     for branch in branches:
+        # Security: refuse branch names that look like git CLI options or
+        # contain shell metacharacters. branches is operator-supplied.
+        validate_refname(branch)
         print(f'Processing branch: {branch}', file=sys.stderr)
         run_command(['git', 'checkout', '-B', branch, f'origin/{branch}'], cwd=repo_dir)
 
@@ -172,6 +188,9 @@ def import_commits(db_path, repo_dir, branches, since_date=None):
                                 desc=f'Importing {branch}',
                                 unit='commit',
                                 file=sys.stderr):
+            # Security: commit_hash came out of `git rev-list HEAD` so it is
+            # already a SHA; re-validate defensively.
+            validate_refname(commit_hash)
             output = run_command(
                 ['git', 'show', '--pretty=fuller', '-p', commit_hash],
                 cwd=repo_dir)

@@ -1,0 +1,97 @@
+{
+  "subdir": "docsystem",
+  "scan_date": "2026-05-11",
+  "note": "docsystem contains first-party Factory tooling (.factory/, tools/) and a checkout of the upstream vmware/photon repo under docsystem/photon/ which is used as input content. The latter is untracked. Snyk scanned everything; only first-party findings were considered for patching in iter 1. The long tail (>30) is deferred per the project plan.",
+  "accepted": [
+    {
+      "rule": "python/InsecureXmlParser",
+      "location": ".factory/teams/docs-maintenance/analyze_site.py:11",
+      "bucket": "HARD-FIX",
+      "reason": "Swapped to defusedxml.ElementTree with a stdlib fallback."
+    },
+    {
+      "rule": "python/CommandInjection",
+      "location": ".factory/skills/photon-import/importer.py:159 (branch flow)",
+      "bucket": "HARD-FIX",
+      "reason": "Added validate_refname() (regex ^[A-Za-z0-9][A-Za-z0-9._/-]*$) that rejects branch names starting with '-' or containing shell metacharacters. Called at the top of every loop iteration before any git command is run. Snyk still flags the call site because it does not recognize the validator; runtime defence is in place."
+    },
+    {
+      "rule": "python/CommandInjection",
+      "location": ".factory/skills/photon-import/importer.py:164",
+      "bucket": "HARD-FIX",
+      "reason": "Same validate_refname guard."
+    },
+    {
+      "rule": "python/CommandInjection",
+      "location": ".factory/skills/photon-import/importer.py:175",
+      "bucket": "HARD-FIX",
+      "reason": "validate_refname applied to commit_hash on each iteration."
+    },
+    {
+      "rule": "python/CommandInjection",
+      "location": ".factory/teams/docs-blogger/importer.py:159",
+      "bucket": "HARD-FIX",
+      "reason": "Same fix applied to the docs-blogger copy of the importer."
+    },
+    {
+      "rule": "python/CommandInjection",
+      "location": ".factory/teams/docs-blogger/importer.py:164",
+      "bucket": "HARD-FIX",
+      "reason": "Same."
+    },
+    {
+      "rule": "python/CommandInjection",
+      "location": ".factory/teams/docs-blogger/importer.py:175",
+      "bucket": "HARD-FIX",
+      "reason": "Same."
+    },
+    {
+      "rule": "python/CommandInjection",
+      "location": "photon/support/package-builder/BuilderClient.py:148",
+      "bucket": "NOT-OUR-CODE",
+      "reason": "Inside docsystem/photon, a vendored checkout of github.com/vmware/photon. Untracked in our repo."
+    },
+    {
+      "rule": "python/PT",
+      "location": ".factory/hooks/validate_hugo_frontmatter.py:57",
+      "bucket": "DESIGN-DECISION",
+      "reason": "Hugo front-matter pre-commit hook. project_dir comes from FACTORY_PROJECT_DIR env var set by the Factory tooling; operator-supplied by contract."
+    },
+    {
+      "rule": "python/PT",
+      "location": ".factory/skills/photon-summarize/summarizer.py:187/217/461/618",
+      "bucket": "DESIGN-DECISION",
+      "reason": "Factory skill driven by argparse / env config; paths point at the local SQLite db and Hugo content tree under operator's PHOTON_DOCS_DIR."
+    },
+    {
+      "rule": "python/PT",
+      "location": ".factory/teams/docs-blogger/summarizer.py:187/217/461/618",
+      "bucket": "DESIGN-DECISION",
+      "reason": "Same; this is the docs-blogger copy of the summarizer."
+    },
+    {
+      "rule": "python/PT",
+      "location": "tools/mirror-repository/mirror-repository.py:258/290",
+      "bucket": "DESIGN-DECISION",
+      "reason": "CLI tool for mirroring a git repository to a local cache; --output is operator-supplied."
+    },
+    {
+      "rule": "python/PT",
+      "location": "tools/photonos-docs-lecturer/plugins/documentation_lecturer.py:898/2496/2832/3043",
+      "bucket": "DESIGN-DECISION",
+      "reason": "Documentation lecturer plugin reads/writes under its plugin data directory, configured via env vars / argparse."
+    }
+  ],
+  "deferred": {
+    "rationale": "Remaining 73 findings live in docsystem/photon/ which is an untracked vendored checkout of github.com/vmware/photon, plus a small first-party tail in tools/ and .factory/ that follows the same env-var/CLI design contract documented above. The user has explicitly carved out a separate budget for the docsystem subdir per the project plan; one iteration was performed and the long tail is deferred.",
+    "issue_ids": [
+      "All cpp/IntegerOverflow (11) -- photon/SPECS/linux/canister_builder + photon/tools/src/contain (vendored)",
+      "All cpp/PT (4) -- photon/SPECS/linux/canister_builder/crypto/gen_canister_relocs.c (vendored)",
+      "All cpp/CommandInjection (1) -- photon/tools/src/contain/contain.c (vendored)",
+      "All python/Ssrf (4) -- photon/tools/scripts/repo_sync/repo_sync.py (vendored)",
+      "53 of 66 python/PT -- inside photon/ (vendored)",
+      "13 first-party python/PT in .factory/ + tools/ -- documented as DESIGN-DECISION above"
+    ],
+    "next_iteration_recommendation": "Decide whether docsystem/photon should be added to a Snyk path-ignore list (it is upstream code, scanned only because docsystem ships content generated from it). Adding photon/ to .snyk excludes would drop ~73 findings without any code change."
+  }
+}
