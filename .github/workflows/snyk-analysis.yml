@@ -166,20 +166,27 @@ jobs:
           fi
           SCRIPT="ci/SnykAnalysis/Run-SnykOnSubdirs.ps1"
           missing=0; scanned=0
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "### Per-branch scan status" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Branch | clones dir | Status |" >> "$GITHUB_STEP_SUMMARY"
-          echo "|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          # Per-branch status snippets get injected into each branch's report
+          # in the "Generate reports" step. We do NOT write a top-level
+          # "Per-branch scan status" table to the step summary anymore --
+          # all status lives inside the per-branch collapsible.
+          mkdir -p "$RUNNER_TEMP/branch_status"
           for B in $(echo "$BRANCHES" | tr ',' ' '); do
             CLONES="$UDIR/photon-$B/clones"
+            SNIPPET="$RUNNER_TEMP/branch_status/branch_${B}.md"
+            : > "$SNIPPET"
+            echo "## Processing status (branch $B)"       >> "$SNIPPET"
+            echo ""                                       >> "$SNIPPET"
+            echo "| Step | Detail |"                      >> "$SNIPPET"
+            echo "|---|---|"                              >> "$SNIPPET"
             if [ ! -d "$CLONES" ]; then
-              echo "| $B | \`$CLONES\` | missing — skipped |" >> "$GITHUB_STEP_SUMMARY"
+              echo "| SAST scan | \`$CLONES\` missing — skipped |" >> "$SNIPPET"
               missing=$((missing+1))
               continue
             fi
             COUNT=$(find "$CLONES" -mindepth 1 -maxdepth 1 -type d | wc -l)
             if [ "$COUNT" -eq 0 ]; then
-              echo "| $B | \`$CLONES\` | empty — skipped |" >> "$GITHUB_STEP_SUMMARY"
+              echo "| SAST scan | \`$CLONES\` empty — skipped |" >> "$SNIPPET"
               continue
             fi
             FORCE_FLAG=""; [ "$FORCE" = "true" ] && FORCE_FLAG="-Force"
@@ -192,7 +199,7 @@ jobs:
             rc=$?
             echo "::endgroup::"
             STATUS=$([ $rc -eq 0 ] && echo "ok ($COUNT subdirs)" || echo "completed with failures (rc=$rc)")
-            echo "| $B | \`$CLONES\` | $STATUS |" >> "$GITHUB_STEP_SUMMARY"
+            echo "| SAST scan | $STATUS |"                >> "$SNIPPET"
             scanned=$((scanned+1))
           done
           echo "scanned_branches=$scanned" >> "$GITHUB_OUTPUT"
@@ -234,16 +241,27 @@ jobs:
           # produces its own scan entry.
           AGENT_DIRS=( .claude .cursor .gemini .codex .windsurf .aider .amp .kiro .opencode )
 
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "### Per-branch agent-scan coverage" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Branch | Configs found | Scans run | Failed |" >> "$GITHUB_STEP_SUMMARY"
-          echo "|---|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          # The per-branch status snippet (started in "Scan branches") gets
+          # a new row per branch for agent-scan coverage. Each snippet lands
+          # inside that branch's report in "Generate reports".
+          mkdir -p "$RUNNER_TEMP/branch_status"
 
           total_runs=0; total_failed=0
           for B in $(echo "$BRANCHES" | tr ',' ' '); do
             CLONES="$UDIR/photon-$B/clones"
+            SNIPPET="$RUNNER_TEMP/branch_status/branch_${B}.md"
+            # If the SAST step didn't create the snippet (e.g. dispatched
+            # with this step alone), bootstrap a fresh one.
+            if [ ! -f "$SNIPPET" ]; then
+              {
+                echo "## Processing status (branch $B)"
+                echo ""
+                echo "| Step | Detail |"
+                echo "|---|---|"
+              } > "$SNIPPET"
+            fi
             if [ ! -d "$CLONES" ]; then
-              echo "| $B | _(clones dir missing)_ | 0 | 0 |" >> "$GITHUB_STEP_SUMMARY"
+              echo "| Agent-scan coverage | _(clones dir missing)_ |" >> "$SNIPPET"
               continue
             fi
 
@@ -312,9 +330,9 @@ jobs:
 
             total_runs=$((total_runs + n_run))
             total_failed=$((total_failed + n_fail))
-            echo "| $B | $n_found | $n_run | $n_fail |" >> "$GITHUB_STEP_SUMMARY"
+            echo "| Agent-scan coverage | configs found=$n_found, scans run=$n_run, failed=$n_fail |" >> "$SNIPPET"
           done
-          echo "Total agent-scan runs: $total_runs (failed: $total_failed)" >> "$GITHUB_STEP_SUMMARY"
+          echo "Total agent-scan runs: $total_runs (failed: $total_failed)"
 
       - name: Parse logs into SQLite
         env:
@@ -357,15 +375,23 @@ jobs:
 
           # Per-branch reports in three formats: txt (matches the requested
           # text layout), md (renders nicely in the step summary / on github
-          # blob view), and json (programmatic consumers).
+          # blob view), and json (programmatic consumers). Each per-branch
+          # report inlines its own "Processing status" snippet (SAST status +
+          # agent-scan coverage), assembled in the two scan steps above.
           for B in $(echo "${{ github.event.inputs.branches }}" | tr ',' ' '); do
+            STATUS_FILE="$RUNNER_TEMP/branch_status/branch_${B}.md"
+            STATUS_ARGS=()
+            if [ -f "$STATUS_FILE" ]; then
+              STATUS_ARGS=( -BranchStatusFile "$STATUS_FILE" )
+            fi
             for FMT in text markdown json; do
               EXT=$(case "$FMT" in text) echo txt;; markdown) echo md;; json) echo json;; esac)
               pwsh -File "ci/SnykAnalysis/Generate-SnykReport.ps1" \
                 -Database "$DB_PATH" \
                 -Format "$FMT" \
                 -Branch "$B" \
-                -ReportFile "$OUTDIR/SnykReport_${B}_${STAMP}.${EXT}" || true
+                -ReportFile "$OUTDIR/SnykReport_${B}_${STAMP}.${EXT}" \
+                "${STATUS_ARGS[@]}" || true
             done
           done
 

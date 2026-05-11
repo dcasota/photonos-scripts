@@ -44,7 +44,12 @@ param(
     [string]$Format    = 'text',
     [string]$ReportFile = '',
     [string]$Branch    = '',
-    [int]$TopN         = 10
+    [int]$TopN         = 10,
+    # Per-branch status snippet (markdown or plain text) injected immediately
+    # after the "Low" section. Used to embed the workflow's per-branch SAST
+    # scan status and agent-scan coverage inside each branch's report so the
+    # step summary doesn't carry redundant top-level tables.
+    [string]$BranchStatusFile = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -296,6 +301,13 @@ function FmtTable($data, [string[]]$cols) {
 
 $brSuffix = if ($Branch) { " ($Branch)" } else { ' (all branches)' }
 
+# Read the per-branch status snippet (if supplied). We treat the file as
+# an opaque chunk -- the workflow assembles it.
+$branchStatusSnippet = ''
+if ($BranchStatusFile -and (Test-Path -LiteralPath $BranchStatusFile)) {
+    $branchStatusSnippet = (Get-Content -LiteralPath $BranchStatusFile -Raw).Trim()
+}
+
 # Per-category sub-sections that follow the Top N High Categories table.
 # Built upfront so the here-strings below stay simple.
 $highCatBlocksMd  = ''
@@ -351,6 +363,7 @@ $(FmtTable $topMedium @('Package','Count'))
 
 $(FmtTable $topLow @('Package','Count'))
 
+$(if ($branchStatusSnippet) { "$branchStatusSnippet`n" })
 $(if ($agentScansAvail -and $agentSummary -and [int]($agentSummary.Scans) -gt 0) {@"
 ## Agent Components (snyk-agent-scan)
 
@@ -412,6 +425,7 @@ $(FmtTable $topMedium @('Package','Count'))
 Top $TopN Source Packages with most issues on Level "Low"
 $(FmtTable $topLow @('Package','Count'))
 
+$(if ($branchStatusSnippet) { "$branchStatusSnippet`n" })
 $(if ($agentScansAvail -and $agentSummary -and [int]($agentSummary.Scans) -gt 0) {@"
 Agent Components (snyk-agent-scan)
 - Scans: $($agentSummary.Scans)
