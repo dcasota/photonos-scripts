@@ -1,0 +1,25 @@
+{
+  "subdir": "photon-gating-conflict-detection",
+  "accepted": [
+    {
+      "ruleId": "python/PT",
+      "severity": "note",
+      "count": 11,
+      "files": [
+        ".github/scripts/photon-gating-agent.py:70",
+        ".github/scripts/photon-gating-agent.py:275",
+        ".github/scripts/photon-gating-agent.py:282",
+        ".github/scripts/photon-gating-agent.py:310",
+        ".github/scripts/photon-gating-agent.py:321",
+        ".github/scripts/photon-gating-agent.py:341",
+        ".github/scripts/photon-gating-agent.py:351",
+        ".github/scripts/photon-gating-agent.py:1201",
+        ".github/scripts/photon-gating-agent.py:1219",
+        ".github/scripts/photon-gating-agent.py:1267",
+        ".github/scripts/photon-gating-agent.py:1271"
+      ],
+      "category": "DESIGN-DECISION",
+      "reason": "photon-gating-agent.py is a CLI tool whose purpose is to read SPEC files at user-supplied paths (e.g. --specs-dir, --output-dir). The argparse parameters explicitly model the tool's contract: the operator points it at the photon-upstreams clone tree from CI. Adding realpath+commonpath guards is not meaningful because the tool has no fixed base directory; the operator selects it. Workflow-controlled invocation, no external attacker surface. Accepted as intentional CLI design."
+    }
+  ]
+}
