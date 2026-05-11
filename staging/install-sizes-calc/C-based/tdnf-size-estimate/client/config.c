@@ -71,6 +71,8 @@ static uint32_t TDNFParseOSInfo(PTDNF_CONF pConf, const char *os_rel_fn)
 
                 beg += 1;
                 end = strrchr(beg, '"');
+                if (end == NULL)
+                    continue;
                 *end = '\0';
                 snprintf(buf, s, "%s=%s", key, beg);
             }
@@ -273,6 +275,7 @@ TDNFConfigFromCnfTree(PTDNF_CONF pConf, struct cnfnode *cn_top)
                     if (rpmtransflags_map[i].name == NULL) {
                         pr_err("unknown tsflag '%s'\n", token);
                         free(value);
+                        value = NULL;
                         dwError = ERROR_TDNF_INVALID_PARAMETER;
                         BAIL_ON_TDNF_ERROR(dwError);
                     }
@@ -282,6 +285,7 @@ TDNFConfigFromCnfTree(PTDNF_CONF pConf, struct cnfnode *cn_top)
                     }
                 }
                 free(value);
+                value = NULL;
             }
         }
     }

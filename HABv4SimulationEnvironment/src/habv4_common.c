@@ -284,26 +284,37 @@ int check_certificate_expiry(const char *cert_path) {
     char cmd[1024];
     char output[256];
     FILE *fp;
-    
-    snprintf(cmd, sizeof(cmd), 
+
+    snprintf(cmd, sizeof(cmd),
         "openssl x509 -in '%s' -noout -enddate 2>/dev/null | "
         "sed 's/notAfter=//'", cert_path);
-    
+
     fp = popen(cmd, "r");
     if (!fp) return -9999;
-    
+
     if (fgets(output, sizeof(output), fp) == NULL) {
         pclose(fp);
         return -9999;
     }
     pclose(fp);
-    
+
     size_t len = strlen(output);
     if (len > 0 && output[len-1] == '\n') output[len-1] = '\0';
-    
+
+    /* Security: openssl notAfter output must look like an RFC 5280 generalized
+     * date (alnum, space, ':', '-', '+'). Reject anything else before passing
+     * to a shell. Stops command injection via a maliciously-crafted cert. */
+    for (size_t i = 0; output[i]; i++) {
+        unsigned char c = (unsigned char)output[i];
+        int ok = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+                 (c >= '0' && c <= '9') || c == ' ' || c == ':' ||
+                 c == '-' || c == '+' || c == '.' || c == ',';
+        if (!ok) return -9999;
+    }
+
     snprintf(cmd, sizeof(cmd),
         "echo $(( ($(date -d '%s' +%%s) - $(date +%%s)) / 86400 ))", output);
-    
+
     fp = popen(cmd, "r");
     if (!fp) return -9999;
     

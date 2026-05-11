@@ -1,0 +1,15 @@
+# Snyk policy file (https://docs.snyk.io/manage-issues/snyk-configuration/the-.snyk-file)
+# Excludes from Snyk Code/SAST scanning. The package-classifier scans/
+# directory is workflow output (JSONL + .md + .tsv) and not source code;
+# its 103MB+ footprint was triggering 403 Forbidden from the Snyk Code API.
+version: v1.0.0
+exclude:
+  code:
+    - 'package-classifier/scans/**'
+    - 'package-classifier/__pycache__/**'
+    - 'photonos-package-report/scans/**'
+    - 'SnykAnalysis/scans/**'
+    - 'SnykAnalysis/self-scan/**'
+    - 'cve-aggregator/**/cves/**'
+    - '**/__pycache__/**'
+    - 'reports/**'

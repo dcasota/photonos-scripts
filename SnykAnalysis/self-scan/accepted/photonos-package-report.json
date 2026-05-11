@@ -1,0 +1,73 @@
+{
+  "subdir": "photonos-package-report",
+  "scan_date": "2026-05-11",
+  "accepted": [
+    {
+      "rule": "cpp/AllocOfStrlen",
+      "location": "package-report-database-tool/src/docx_writer.c:68",
+      "bucket": "FALSE-POSITIVE",
+      "reason": "zip_add_file() is given the binary payload length of XML buffers (via strlen at the call sites), and internally allocates compressBound(len) bytes for raw deflate output. The strlen result is not used to size a buffer that must hold the source plus a NUL terminator; it sizes the deflate output (which is binary, no terminator). Off-by-one is not reachable."
+    },
+    {
+      "rule": "cpp/BufferOverflow",
+      "location": "package-report-database-tool/src/db.c:38",
+      "bucket": "FALSE-POSITIVE",
+      "reason": "Inside sha256_hash(), msg is calloc'd with new_len + 8 bytes where new_len = len + padding (>= len + 1, aligned to 56 mod 64). memcpy(msg, data, len) writes exactly len bytes into a buffer of size >= len + 9. Additionally compute_file_sha256() bounds the input length to MAX_FILE_SIZE before passing to sha256_hash."
+    },
+    {
+      "rule": "cpp/ImproperNullTermination",
+      "location": "package-report-database-tool/src/csv_parser.c:86",
+      "bucket": "FALSE-POSITIVE",
+      "reason": "The buffer comes from fgets() in csv_parse_file(), which always NUL-terminates. The memmove uses strlen(p) on the same NUL-terminated buffer."
+    },
+    {
+      "rule": "cpp/ImproperNullTermination",
+      "location": "package-report-database-tool/src/csv_parser.c:177",
+      "bucket": "FALSE-POSITIVE",
+      "reason": "strip_trailing_whitespace operates on the same fgets()-produced line which is NUL-terminated. strlen is safe."
+    },
+    {
+      "rule": "cpp/ImproperNullTermination",
+      "location": "package-report-database-tool/src/docx_writer.c:428",
+      "bucket": "FALSE-POSITIVE",
+      "reason": "strbuf_append is called with the output of secure_xml_escape (heap-allocated, NUL-terminated by the escape routine) or with list_buf which is built up via snprintf and explicitly NUL-terminated."
+    },
+    {
+      "rule": "cpp/ImproperNullTermination/test",
+      "location": "package-report-database-tool/test/test_csv_parser.c:121",
+      "bucket": "FALSE-POSITIVE",
+      "reason": "secure_xml_escape() is invoked with a string literal in a unit test; the literal is NUL-terminated by the compiler."
+    },
+    {
+      "rule": "cpp/InsecureStorage",
+      "location": "package-report-database-tool/src/db.c:88",
+      "bucket": "DESIGN-DECISION",
+      "reason": "The tool is by design a SQLite-backed package report database. The plaintext SQLite file is the application's primary on-disk artifact and is intended to be world-readable on developer workstations; it does not store credentials or other secrets."
+    },
+    {
+      "rule": "cpp/PT",
+      "location": "package-report-database-tool/src/main.c:85",
+      "bucket": "DESIGN-DECISION",
+      "reason": "photon-report-db is a CLI tool. The --import argument is the operator-supplied scan directory. Restricting paths would make the tool unusable. Path is consumed by db_import_directory which iterates via opendir(); no shell expansion or symlink walking occurs."
+    },
+    {
+      "rule": "cpp/PT",
+      "location": "package-report-database-tool/src/main.c:150",
+      "bucket": "DESIGN-DECISION",
+      "reason": "photon-report-db is a CLI tool. The --report argument is the operator-supplied output path or directory. fopen of the operator-chosen target is the documented contract."
+    },
+    {
+      "rule": "cpp/WeakGuard/test",
+      "location": "package-report-database-tool/test/test_db.c:149",
+      "bucket": "FALSE-POSITIVE",
+      "reason": "The strcmp in question is in a unit test asserting that the 'github.com' source category is present in the seeded test database. It is not a security guard."
+    }
+  ],
+  "hard_fixes": [
+    {
+      "rule": "cpp/DerefNull/test",
+      "location": "package-report-database-tool/test/test_csv_parser.c:104",
+      "fix": "Added null-check on fopen result before fclose to avoid passing NULL to fclose when /tmp/test_empty.prn cannot be created."
+    }
+  ]
+}

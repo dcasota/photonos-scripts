@@ -17,6 +17,7 @@ Usage:
 import argparse
 import asyncio
 import lzma
+import os
 import subprocess
 import sys
 import tarfile
@@ -510,10 +511,17 @@ async def download_kernel_tarball(
         console.print(f"    [red]Failed to download tarball after {max_retries} attempts[/red]")
         return None
     
-    # Extract tarball
+    # Extract tarball with TarSlip protection: validate every member's
+    # resolved path stays under extract_dir before calling extractall.
     console.print(f"    Extracting {tarball_name}...")
     try:
+        extract_root = os.path.realpath(str(extract_dir))
         with tarfile.open(tarball_path, "r:xz") as tar:
+            for m in tar.getmembers():
+                dest = os.path.realpath(os.path.join(extract_root, m.name))
+                if not (dest == extract_root or
+                        dest.startswith(extract_root + os.sep)):
+                    raise RuntimeError(f"tar slip detected: {m.name}")
             tar.extractall(path=extract_dir)
         console.print(f"    Extracted to: {source_dir}")
         return source_dir

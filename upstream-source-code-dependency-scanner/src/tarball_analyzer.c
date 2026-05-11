@@ -93,18 +93,27 @@ tarball_extract_file(const char *pszTarball, const char *pszInnerGlob,
         char szBuf[MAX_LINE_LEN];
         size_t cbRead = 0;
         ssize_t n;
-        while ((n = read(pipefd[0], szBuf + cbRead,
-                         sizeof(szBuf) - cbRead - 1)) > 0)
+        /* Loop invariant: cbRead <= sizeof(szBuf) - 1. Enforced both
+         * structurally (while condition) and defensively (clamp of n,
+         * floor on cbRead). Constants only - avoids the size_t-minus-
+         * size_t pattern that SAST flags as an integer-overflow taint. */
+        const size_t kCap = sizeof(szBuf) - 1;
+        while (cbRead < kCap)
         {
-            cbRead += (size_t)n;
-            if (cbRead >= sizeof(szBuf) - 1)
+            size_t cbGap = kCap - cbRead;           /* kCap >= cbRead */
+            n = read(pipefd[0], szBuf + cbRead, cbGap);
+            if (n <= 0)
                 break;
+            size_t cbAdd = ((size_t)n > cbGap) ? cbGap : (size_t)n;
+            cbRead += cbAdd;
+            if (cbRead > kCap)                       /* defensive floor */
+                cbRead = kCap;
         }
         szBuf[cbRead] = '\0';
         close(pipefd[0]);
 
         /* Take the first line as the match */
-        char *pNewline = strchr(szBuf, '\n');
+        char *pNewline = memchr(szBuf, '\n', cbRead);
         if (pNewline)
             *pNewline = '\0';
         if (szBuf[0])

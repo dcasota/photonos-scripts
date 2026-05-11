@@ -67,9 +67,16 @@ struct cnfnode *parse_varsdirs(char *dirs[])
                     goto error;
             }
             /* strip trailing spaces and newlines */
-            p = buf + strlen(buf)-1;
-            while (p >= buf && isspace(*p)) p--;
-            p[1] = 0;
+            {
+                size_t blen = strnlen(buf, sizeof(buf));
+                if (blen > 0) {
+                    p = buf + blen - 1;
+                    while (p >= buf && isspace((unsigned char)*p)) p--;
+                    p[1] = 0;
+                } else {
+                    buf[0] = 0;
+                }
+            }
 
             cn_var = create_cnfnode(dent->d_name);
             cnfnode_setval(cn_var, buf);

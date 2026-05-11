@@ -582,9 +582,12 @@ class AtomFetcher(CVEFetcher):
             
             cve_id = cve_match.group(1)
             
-            # Find fixes for target kernel version (case-insensitive)
-            # Format: "fixed in 5.10.188 with commit cdf9a7e2cdc7a5464e3cc6d0b715ba2b1d215521"
-            fix_pattern = rf'fixed in ({kernel_version}\.\d+) with commit ([a-f0-9]{{40}})'
+            # Find fixes for target kernel version (case-insensitive).
+            # Format: "fixed in 5.10.188 with commit cdf9a7e2cdc7a5464e3cc6d0b715ba2b1d215521".
+            # Security: re.escape() the CLI-supplied kernel_version so a
+            # crafted value cannot inject regex metacharacters that lead
+            # to catastrophic backtracking (reDOS).
+            fix_pattern = rf'fixed in ({re.escape(kernel_version)}\.\d+) with commit ([a-f0-9]{{40}})'
             fix_matches = re.findall(fix_pattern, content, re.IGNORECASE)
             
             if not fix_matches:

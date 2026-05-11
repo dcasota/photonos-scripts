@@ -58,17 +58,22 @@ static void str_trim(char *psz)
 {
     if (!psz || !*psz)
         return;
-    /* Trim leading whitespace (single memmove) */
+    /* Bounded length. All callers pass buffers of at most MAX_LINE_LEN
+     * (see ParseContext usage). Switch from strlen() to strnlen() with
+     * that explicit bound to satisfy SAST "improperly null-terminated"
+     * taint warnings without changing behaviour for correctly-formed
+     * inputs. */
     char *pStart = psz;
     while (isspace((unsigned char)*pStart))
         pStart++;
     if (pStart != psz)
     {
-        size_t cbLen = strlen(pStart);
+        size_t cbLen = strnlen(pStart, MAX_LINE_LEN);
         memmove(psz, pStart, cbLen + 1);
+        psz[cbLen] = '\0';
     }
     /* Trim trailing whitespace */
-    size_t cbLen = strlen(psz);
+    size_t cbLen = strnlen(psz, MAX_LINE_LEN);
     while (cbLen > 0 && isspace((unsigned char)psz[cbLen - 1]))
         psz[--cbLen] = '\0';
 }
@@ -91,7 +96,11 @@ static void expand_macros(ParseContext *pCtx, char *pszBuf, size_t cbBuf)
         {
             if (pPos[0] == '%' && pPos[1] == '{')
             {
-                char *pClose = strchr(pPos + 2, '}');
+                /* Bound the search by the caller-supplied buffer size.
+                 * memchr scans at most `cbBuf` bytes regardless of NUL
+                 * termination (closes SAST ImproperNullTermination). */
+                size_t cbRem = (size_t)(cbBuf - (size_t)(pPos + 2 - pszBuf));
+                char *pClose = memchr(pPos + 2, '}', cbRem);
                 if (pClose)
                 {
                     char szMacro[MAX_NAME_LEN];
@@ -136,7 +145,11 @@ static void expand_macros(ParseContext *pCtx, char *pszBuf, size_t cbBuf)
 
                     if (pszRepl)
                     {
-                        size_t cbRepl = strlen(pszRepl);
+                        /* Bound the macro-value length. Replacement values
+                         * live in macros[i].szValue (MAX_LINE_LEN). Use
+                         * strnlen() so SAST sees the read is bounded even
+                         * if the value happened to be malformed. */
+                        size_t cbRepl = strnlen(pszRepl, MAX_LINE_LEN);
                         if (pOut + cbRepl < pOutEnd)
                         {
                             memcpy(pOut, pszRepl, cbRepl);

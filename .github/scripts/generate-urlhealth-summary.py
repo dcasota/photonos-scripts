@@ -295,9 +295,17 @@ def main():
             continue
 
         md_name = f"photonos-urlhealth-issues-{branch}_{ts}.md"
+        # Defensive: branch is captured by [A-Za-z0-9._-]+ from a filename
+        # in scans_dir, so it cannot contain "/" -- but confirm the
+        # resolved write target still lives under scans_dir before opening.
+        # (Closes Snyk SAST path-traversal taint warning.)
         md_path = os.path.join(scans_dir, md_name)
+        scans_real = os.path.realpath(scans_dir)
+        md_real    = os.path.realpath(md_path)
+        if os.path.commonpath([scans_real, md_real]) != scans_real:
+            raise ValueError(f"Refusing to write outside scans_dir: {md_path}")
 
-        with open(md_path, "w", encoding="utf-8") as out:
+        with open(md_real, "w", encoding="utf-8") as out:
             write_report(out, branch, prn_path, total, cats)
 
         print(f"  {branch}: {total} packages, {issue_count} issues -> {md_name}")

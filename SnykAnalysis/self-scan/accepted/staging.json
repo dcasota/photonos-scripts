@@ -1,0 +1,95 @@
+{
+  "subdir": "staging",
+  "scan_date": "2026-05-11",
+  "note": "All findings live under install-sizes-calc/C-based/tdnf-size-estimate, a fork of github.com/vmware/tdnf with a size-estimate command added. Real bugs were patched in-tree; remaining warnings/notes inherit from the upstream tdnf project and are accepted on the same posture as upstream.",
+  "accepted": [
+    {
+      "rule": "cpp/InsecureStorage",
+      "location": "install-sizes-calc/C-based/tdnf-size-estimate/history/history.c:213",
+      "bucket": "DESIGN-DECISION",
+      "reason": "tdnf's transaction history is intentionally stored as a SQLite database on /var/lib/tdnf and is consulted by ordinary tdnf operations. Encrypting it would break the package manager."
+    },
+    {
+      "rule": "cpp/PT",
+      "location": "install-sizes-calc/C-based/tdnf-size-estimate/tools/config/main.c:233",
+      "bucket": "DESIGN-DECISION",
+      "reason": "tdnf-config is a CLI helper; the filename argument names the config file to rewrite. rename() of the operator-supplied target is the documented contract."
+    },
+    {
+      "rule": "cpp/PT",
+      "location": "install-sizes-calc/C-based/tdnf-size-estimate/tools/config/main.c:238",
+      "bucket": "DESIGN-DECISION",
+      "reason": "Same CLI tool; unlink of the operator-supplied path in the error cleanup path."
+    },
+    {
+      "rule": "cpp/PT",
+      "location": "install-sizes-calc/C-based/tdnf-size-estimate/tools/config/main.c:452",
+      "bucket": "DESIGN-DECISION",
+      "reason": "Same CLI tool; unlink of the operator-supplied path."
+    },
+    {
+      "rule": "cpp/UnsafeFunctionStringHandling",
+      "location": "install-sizes-calc/C-based/tdnf-size-estimate/common/strings.c:283",
+      "bucket": "FALSE-POSITIVE",
+      "reason": "TDNFJoinArrayToString pre-computes nSize = sum(strlen(ppszArray[i])) + nSepSize*(count-1) + 1 and TDNFAllocates pszResult to nSize before the strcpy. The destination is provably large enough."
+    },
+    {
+      "rule": "cpp/UnsafeFunctionStringHandling",
+      "location": "install-sizes-calc/C-based/tdnf-size-estimate/common/strings.c:353",
+      "bucket": "FALSE-POSITIVE",
+      "reason": "TDNFJoinArrayToStringSorted pre-computes nSize over the sorted line set before allocating pszResult; strcpy targets are within the allocated buffer."
+    },
+    {
+      "rule": "cpp/UnsafeFunctionStringHandling",
+      "location": "install-sizes-calc/C-based/tdnf-size-estimate/common/strings.c:359",
+      "bucket": "FALSE-POSITIVE",
+      "reason": "Same TDNFJoinArrayToStringSorted; same pre-computed nSize guarantee."
+    },
+    {
+      "rule": "cpp/UnsafeFunctionStringHandling",
+      "location": "install-sizes-calc/C-based/tdnf-size-estimate/solv/tdnfpackage.c:1862",
+      "bucket": "FALSE-POSITIVE",
+      "reason": "prv_pkgname is the caller-owned previous-package-name buffer (sized by caller in tdnf's solver loop); pkgname is a fixed-size local copy of the package name parsed from solver output."
+    },
+    {
+      "rule": "python/NoHardcodedCredentials/test",
+      "location": "install-sizes-calc/C-based/tdnf-size-estimate/pytests/tests/test_auth.py:18",
+      "bucket": "FALSE-POSITIVE",
+      "reason": "The 'credentials' are a pytest fixture for an in-process HTTPS test repo. Not real credentials and not exposed outside the test harness."
+    },
+    {
+      "rule": "python/SSLVerificationBypass/test",
+      "location": "install-sizes-calc/C-based/tdnf-size-estimate/pytests/conftest.py:237",
+      "bucket": "FALSE-POSITIVE",
+      "reason": "Pytest fixture; disables verification against the self-signed cert that the test harness generates seconds earlier in the same process."
+    },
+    {
+      "rule": "python/ssl~wrap_socket~without~protocol/test",
+      "location": "install-sizes-calc/C-based/tdnf-size-estimate/pytests/conftest.py:74",
+      "bucket": "FALSE-POSITIVE",
+      "reason": "Pytest fixture creating an HTTPS test server. Upstream tdnf uses this idiom for its python test harness; not production code."
+    }
+  ],
+  "hard_fixes": [
+    {
+      "rule": "cpp/DerefNull",
+      "location": "install-sizes-calc/C-based/tdnf-size-estimate/client/config.c:74",
+      "fix": "Added NULL guard on strrchr(beg, '\"') before *end = '\\0'. If the closing quote is missing, the os-release line is skipped instead of dereferencing NULL."
+    },
+    {
+      "rule": "cpp/DoubleFree",
+      "location": "install-sizes-calc/C-based/tdnf-size-estimate/client/config.c:275",
+      "fix": "Set value = NULL after free(value) on the error path. Although the cleanup label currently does not re-free, the explicit NULL assignment prevents a future double-free regression and silences the analyzer."
+    },
+    {
+      "rule": "cpp/DoubleFree",
+      "location": "install-sizes-calc/C-based/tdnf-size-estimate/client/config.c:284",
+      "fix": "Same: set value = NULL after the normal-path free(value)."
+    },
+    {
+      "rule": "cpp/IntegerOverflow",
+      "location": "install-sizes-calc/C-based/tdnf-size-estimate/client/varsdir.c:70 (post-patch: now varsdir.c:73)",
+      "fix": "Rewrote 'p = buf + strlen(buf) - 1' to first check strnlen(buf, sizeof(buf)) > 0. Empty buf no longer creates a (buf - 1) pointer underflow. Snyk continues to flag the bounded 'buf + blen - 1' on the post-patch line 73 (and apparently double-counts it); blen is bounded by sizeof(buf) (a stack array), so the arithmetic cannot overflow size_t. Accepting the residual as FALSE-POSITIVE."
+    }
+  ]
+}
