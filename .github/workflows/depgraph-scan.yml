@@ -35,12 +35,61 @@ jobs:
           tdnf --version | tee -a "$GITHUB_STEP_SUMMARY"
           cat /etc/photon-release | tee -a "$GITHUB_STEP_SUMMARY"
 
+          # Self-healing install. The latest -devel package in photon-updates
+          # occasionally lands before its matching binary (observed 2026-05-11:
+          # rpm-devel-6.0.1-4.ph5 was published while rpm-6.0.1-4.ph5 was not
+          # mirrored, breaking the solver with exit 21). Strategy:
+          #   1. Try the simple install.
+          #   2. If that fails, refresh metadata once and retry.
+          #   3. If still failing, install the second-newest available
+          #      version of the offending package -- usually carried by
+          #      the photon base repo and known to have a matching binary.
+          install_with_fallback() {
+            local pkg="$1"
+            if rpm -q "$pkg" &>/dev/null; then
+              echo "$pkg already installed"
+              return 0
+            fi
+            if tdnf install -y "$pkg" 2>&1; then return 0; fi
+            echo "::warning::tdnf install $pkg failed; refreshing metadata and retrying"
+            tdnf makecache --refresh 2>/dev/null || true
+            if tdnf install -y "$pkg" 2>&1; then return 0; fi
+            echo "::warning::tdnf install $pkg still failing; falling back to older version"
+            # Parse `tdnf list available <pkg>`:
+            #   pkg.<arch>    <evr>    <repo>
+            # collect all versions newest-first, skip the (broken) latest,
+            # try each older one until one installs.
+            local versions
+            versions=$(tdnf list available "$pkg" 2>/dev/null \
+                       | awk -v p="$pkg" '$1 ~ "^"p"\\." && $2 ~ /-/ { print $2 }' \
+                       | sort -Vr)
+            if [ -z "$versions" ]; then
+              echo "::error::No alternate versions of $pkg available in any enabled repo"
+              return 1
+            fi
+            local first=1
+            for v in $versions; do
+              if [ "$first" -eq 1 ]; then
+                first=0
+                echo "  skipping latest version (just failed): $v"
+                continue
+              fi
+              echo "  trying $pkg-$v"
+              if tdnf install -y "$pkg-$v" 2>&1; then
+                echo "::notice::Installed $pkg-$v as fallback (unresolvable latest version)"
+                return 0
+              fi
+            done
+            echo "::error::All available versions of $pkg failed to install"
+            return 1
+          }
+
+          rc=0
           for pkg in cmake gcc libsolv-devel rpm-devel curl-devel openssl-devel \
                      sqlite-devel tdnf-devel libxml2-devel gpgme-devel; do
-            if ! rpm -q "$pkg" &>/dev/null; then
-              tdnf install -y "$pkg"
-            fi
+            install_with_fallback "$pkg" || rc=$?
           done
+          exit $rc
 
       - name: Clone and build tdnf with depgraph extension
         run: |
