@@ -1,0 +1,35 @@
+{
+  "generated": "2026-05-11T12:07:07.1280691+02:00",
+  "generated_local": "05/11/2026 12:07:07",
+  "database": "ci/SnykAnalysis/snyk_issues.db",
+  "branch": "master",
+  "tool": "SnykCLI",
+  "total_source_packages": 0,
+  "summary": {
+    "HighCrypto": "",
+    "HighNonCrypto": "",
+    "Medium": "",
+    "Low": "",
+    "Total": null
+  },
+  "top_high_categories": [],
+  "top_packages_per_high_category": [],
+  "top_packages": [],
+  "top_packages_by_high_crypto": [],
+  "top_packages_by_high": [],
+  "top_packages_by_medium": [],
+  "top_packages_by_low": [],
+  "agent_scan": {
+    "summary": {
+      "Scans": "0",
+      "PackagesScanned": "0",
+      "TotalIssues": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "0"
+    },
+    "by_agent_type": [],
+    "top_packages": [],
+    "top_codes": []
+  }
+}

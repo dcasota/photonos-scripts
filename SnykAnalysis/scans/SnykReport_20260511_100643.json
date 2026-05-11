@@ -1,0 +1,779 @@
+{
+  "generated": "2026-05-11T12:06:46.2767117+02:00",
+  "generated_local": "05/11/2026 12:06:46",
+  "database": "ci/SnykAnalysis/snyk_issues.db",
+  "branch": "",
+  "tool": "SnykCLI",
+  "total_source_packages": 740,
+  "summary": {
+    "HighCrypto": "1225",
+    "HighNonCrypto": "3670",
+    "Medium": "108738",
+    "Low": "179746",
+    "Total": "293379"
+  },
+  "top_high_categories": [
+    {
+      "Category": "Use of a Broken or Risky Cryptographic Algorithm",
+      "Count": "1018"
+    },
+    {
+      "Category": "Hardcoded Secret",
+      "Count": "690"
+    },
+    {
+      "Category": "Potential Negative Number Used as Index",
+      "Count": "586"
+    },
+    {
+      "Category": "Cross-site Scripting (XSS)",
+      "Count": "456"
+    },
+    {
+      "Category": "Path Traversal",
+      "Count": "440"
+    },
+    {
+      "Category": "Command Injection",
+      "Count": "280"
+    },
+    {
+      "Category": "Hardcoded Non-Cryptographic Secret",
+      "Count": "186"
+    },
+    {
+      "Category": "Size Used as Index",
+      "Count": "180"
+    },
+    {
+      "Category": "Generation of Error Message Containing Sensitive Information",
+      "Count": "162"
+    },
+    {
+      "Category": "XML External Entity (XXE) Injection",
+      "Count": "159"
+    }
+  ],
+  "top_packages_per_high_category": [
+    {
+      "Category": "Use of a Broken or Risky Cryptographic Algorithm",
+      "Count": "1018",
+      "Packages": [
+        {
+          "Package": "jdk11u",
+          "Count": "270"
+        },
+        {
+          "Package": "jdk21u",
+          "Count": "216"
+        },
+        {
+          "Package": "jdk17u",
+          "Count": "212"
+        },
+        {
+          "Package": "jdk8u",
+          "Count": "108"
+        },
+        {
+          "Package": "runtime",
+          "Count": "95"
+        },
+        {
+          "Package": "jdk10u",
+          "Count": "54"
+        },
+        {
+          "Package": "pycryptodome",
+          "Count": "15"
+        },
+        {
+          "Package": "apr-util",
+          "Count": "10"
+        },
+        {
+          "Package": "apr",
+          "Count": "10"
+        },
+        {
+          "Package": "podman",
+          "Count": "8"
+        }
+      ]
+    },
+    {
+      "Category": "Hardcoded Secret",
+      "Count": "690",
+      "Packages": [
+        {
+          "Package": "jdk11u",
+          "Count": "220"
+        },
+        {
+          "Package": "jdk21u",
+          "Count": "172"
+        },
+        {
+          "Package": "jdk17u",
+          "Count": "168"
+        },
+        {
+          "Package": "jdk8u",
+          "Count": "74"
+        },
+        {
+          "Package": "jdk10u",
+          "Count": "34"
+        },
+        {
+          "Package": "elasticsearch",
+          "Count": "7"
+        },
+        {
+          "Package": "runtime",
+          "Count": "5"
+        },
+        {
+          "Package": "kafka",
+          "Count": "5"
+        },
+        {
+          "Package": "tomcat",
+          "Count": "3"
+        },
+        {
+          "Package": "lightwave",
+          "Count": "2"
+        }
+      ]
+    },
+    {
+      "Category": "Potential Negative Number Used as Index",
+      "Count": "586",
+      "Packages": [
+        {
+          "Package": "llvm-project",
+          "Count": "175"
+        },
+        {
+          "Package": "wireshark",
+          "Count": "30"
+        },
+        {
+          "Package": "redis",
+          "Count": "30"
+        },
+        {
+          "Package": "server",
+          "Count": "25"
+        },
+        {
+          "Package": "mysql-server",
+          "Count": "25"
+        },
+        {
+          "Package": "node",
+          "Count": "20"
+        },
+        {
+          "Package": "ntp",
+          "Count": "15"
+        },
+        {
+          "Package": "nvme-cli",
+          "Count": "14"
+        },
+        {
+          "Package": "systemtap",
+          "Count": "10"
+        },
+        {
+          "Package": "ruby",
+          "Count": "10"
+        }
+      ]
+    },
+    {
+      "Category": "Cross-site Scripting (XSS)",
+      "Count": "456",
+      "Packages": [
+        {
+          "Package": "tomcat",
+          "Count": "270"
+        },
+        {
+          "Package": "kapacitor",
+          "Count": "75"
+        },
+        {
+          "Package": "freetds",
+          "Count": "20"
+        },
+        {
+          "Package": "uwsgi",
+          "Count": "16"
+        },
+        {
+          "Package": "gevent",
+          "Count": "10"
+        },
+        {
+          "Package": "zookeeper",
+          "Count": "8"
+        },
+        {
+          "Package": "buildx",
+          "Count": "6"
+        },
+        {
+          "Package": "tornado",
+          "Count": "5"
+        },
+        {
+          "Package": "runtime",
+          "Count": "5"
+        },
+        {
+          "Package": "rabbitmq-server",
+          "Count": "5"
+        }
+      ]
+    },
+    {
+      "Category": "Path Traversal",
+      "Count": "440",
+      "Packages": [
+        {
+          "Package": "tomcat",
+          "Count": "120"
+        },
+        {
+          "Package": "ruby",
+          "Count": "90"
+        },
+        {
+          "Package": "govmomi",
+          "Count": "35"
+        },
+        {
+          "Package": "podman",
+          "Count": "32"
+        },
+        {
+          "Package": "telegraf",
+          "Count": "30"
+        },
+        {
+          "Package": "zookeeper",
+          "Count": "16"
+        },
+        {
+          "Package": "runtime",
+          "Count": "15"
+        },
+        {
+          "Package": "go",
+          "Count": "12"
+        },
+        {
+          "Package": "common",
+          "Count": "12"
+        },
+        {
+          "Package": "src",
+          "Count": "10"
+        }
+      ]
+    },
+    {
+      "Category": "Command Injection",
+      "Count": "280",
+      "Packages": [
+        {
+          "Package": "go",
+          "Count": "76"
+        },
+        {
+          "Package": "podman",
+          "Count": "32"
+        },
+        {
+          "Package": "common",
+          "Count": "28"
+        },
+        {
+          "Package": "termshark",
+          "Count": "20"
+        },
+        {
+          "Package": "containerd",
+          "Count": "20"
+        },
+        {
+          "Package": "etcd",
+          "Count": "16"
+        },
+        {
+          "Package": "moby",
+          "Count": "15"
+        },
+        {
+          "Package": "libcap",
+          "Count": "15"
+        },
+        {
+          "Package": "heapster",
+          "Count": "10"
+        },
+        {
+          "Package": "buildx",
+          "Count": "6"
+        }
+      ]
+    },
+    {
+      "Category": "Hardcoded Non-Cryptographic Secret",
+      "Count": "186",
+      "Packages": [
+        {
+          "Package": "python",
+          "Count": "56"
+        },
+        {
+          "Package": "kibana",
+          "Count": "35"
+        },
+        {
+          "Package": "tornado",
+          "Count": "25"
+        },
+        {
+          "Package": "node",
+          "Count": "25"
+        },
+        {
+          "Package": "rabbitmq-server",
+          "Count": "10"
+        },
+        {
+          "Package": "pyzmq",
+          "Count": "5"
+        },
+        {
+          "Package": "pydantic",
+          "Count": "5"
+        },
+        {
+          "Package": "pycryptodome",
+          "Count": "5"
+        },
+        {
+          "Package": "gevent",
+          "Count": "5"
+        },
+        {
+          "Package": "cloud-init",
+          "Count": "5"
+        }
+      ]
+    },
+    {
+      "Category": "Size Used as Index",
+      "Count": "180",
+      "Packages": [
+        {
+          "Package": "mysql-server",
+          "Count": "85"
+        },
+        {
+          "Package": "src",
+          "Count": "15"
+        },
+        {
+          "Package": "protobuf",
+          "Count": "15"
+        },
+        {
+          "Package": "leveldb",
+          "Count": "15"
+        },
+        {
+          "Package": "llvm-project",
+          "Count": "10"
+        },
+        {
+          "Package": "kexec-tools",
+          "Count": "10"
+        },
+        {
+          "Package": "u-boot",
+          "Count": "5"
+        },
+        {
+          "Package": "libqmi",
+          "Count": "5"
+        },
+        {
+          "Package": "geos",
+          "Count": "5"
+        },
+        {
+          "Package": "bind9",
+          "Count": "5"
+        }
+      ]
+    },
+    {
+      "Category": "Generation of Error Message Containing Sensitive Information",
+      "Count": "162",
+      "Packages": [
+        {
+          "Package": "go",
+          "Count": "44"
+        },
+        {
+          "Package": "plugins",
+          "Count": "30"
+        },
+        {
+          "Package": "kubernetes",
+          "Count": "30"
+        },
+        {
+          "Package": "podman",
+          "Count": "24"
+        },
+        {
+          "Package": "common",
+          "Count": "24"
+        },
+        {
+          "Package": "dataplaneapi",
+          "Count": "6"
+        },
+        {
+          "Package": "etcd",
+          "Count": "4"
+        }
+      ]
+    },
+    {
+      "Category": "XML External Entity (XXE) Injection",
+      "Count": "159",
+      "Packages": [
+        {
+          "Package": "xmlsec",
+          "Count": "70"
+        },
+        {
+          "Package": "xerces-c",
+          "Count": "35"
+        },
+        {
+          "Package": "libxslt",
+          "Count": "30"
+        },
+        {
+          "Package": "tomcat",
+          "Count": "12"
+        },
+        {
+          "Package": "runtime",
+          "Count": "5"
+        },
+        {
+          "Package": "libxml2",
+          "Count": "5"
+        },
+        {
+          "Package": "lightwave",
+          "Count": "2"
+        }
+      ]
+    }
+  ],
+  "top_packages": [
+    {
+      "Package": "jdk11u",
+      "TotalIssues": "14275",
+      "HighCrypto": "270",
+      "High": "525",
+      "Medium": "3925",
+      "Low": "9825"
+    },
+    {
+      "Package": "llvm-project",
+      "TotalIssues": "13928",
+      "HighCrypto": "0",
+      "High": "195",
+      "Medium": "2230",
+      "Low": "11503"
+    },
+    {
+      "Package": "node",
+      "TotalIssues": "13813",
+      "HighCrypto": "25",
+      "High": "114",
+      "Medium": "2117",
+      "Low": "11582"
+    },
+    {
+      "Package": "jdk21u",
+      "TotalIssues": "11988",
+      "HighCrypto": "216",
+      "High": "420",
+      "Medium": "2908",
+      "Low": "8660"
+    },
+    {
+      "Package": "jdk17u",
+      "TotalIssues": "10932",
+      "HighCrypto": "212",
+      "High": "404",
+      "Medium": "2700",
+      "Low": "7828"
+    },
+    {
+      "Package": "runtime",
+      "TotalIssues": "9972",
+      "HighCrypto": "100",
+      "High": "140",
+      "Medium": "1200",
+      "Low": "8632"
+    },
+    {
+      "Package": "subversion",
+      "TotalIssues": "7351",
+      "HighCrypto": "0",
+      "High": "0",
+      "Medium": "245",
+      "Low": "7106"
+    },
+    {
+      "Package": "mysql-server",
+      "TotalIssues": "6715",
+      "HighCrypto": "5",
+      "High": "135",
+      "Medium": "3040",
+      "Low": "3540"
+    },
+    {
+      "Package": "wireshark",
+      "TotalIssues": "5703",
+      "HighCrypto": "0",
+      "High": "30",
+      "Medium": "838",
+      "Low": "4835"
+    },
+    {
+      "Package": "src",
+      "TotalIssues": "4972",
+      "HighCrypto": "0",
+      "High": "30",
+      "Medium": "3492",
+      "Low": "1450"
+    }
+  ],
+  "top_packages_by_high_crypto": [
+    {
+      "Package": "jdk11u",
+      "Count": "270"
+    },
+    {
+      "Package": "jdk21u",
+      "Count": "216"
+    },
+    {
+      "Package": "jdk17u",
+      "Count": "212"
+    },
+    {
+      "Package": "jdk8u",
+      "Count": "108"
+    },
+    {
+      "Package": "runtime",
+      "Count": "100"
+    },
+    {
+      "Package": "python",
+      "Count": "56"
+    },
+    {
+      "Package": "jdk10u",
+      "Count": "54"
+    },
+    {
+      "Package": "kibana",
+      "Count": "35"
+    },
+    {
+      "Package": "tornado",
+      "Count": "25"
+    },
+    {
+      "Package": "node",
+      "Count": "25"
+    }
+  ],
+  "top_packages_by_high": [
+    {
+      "Package": "jdk11u",
+      "Count": "525"
+    },
+    {
+      "Package": "tomcat",
+      "Count": "426"
+    },
+    {
+      "Package": "jdk21u",
+      "Count": "420"
+    },
+    {
+      "Package": "jdk17u",
+      "Count": "404"
+    },
+    {
+      "Package": "llvm-project",
+      "Count": "195"
+    },
+    {
+      "Package": "jdk8u",
+      "Count": "194"
+    },
+    {
+      "Package": "kibana",
+      "Count": "169"
+    },
+    {
+      "Package": "runtime",
+      "Count": "140"
+    },
+    {
+      "Package": "go",
+      "Count": "136"
+    },
+    {
+      "Package": "mysql-server",
+      "Count": "135"
+    }
+  ],
+  "top_packages_by_medium": [
+    {
+      "Package": "jdk11u",
+      "Count": "3925"
+    },
+    {
+      "Package": "src",
+      "Count": "3492"
+    },
+    {
+      "Package": "mysql-server",
+      "Count": "3040"
+    },
+    {
+      "Package": "jdk21u",
+      "Count": "2908"
+    },
+    {
+      "Package": "jdk17u",
+      "Count": "2700"
+    },
+    {
+      "Package": "util-linux",
+      "Count": "2445"
+    },
+    {
+      "Package": "server",
+      "Count": "2402"
+    },
+    {
+      "Package": "cups",
+      "Count": "2356"
+    },
+    {
+      "Package": "crash",
+      "Count": "2335"
+    },
+    {
+      "Package": "llvm-project",
+      "Count": "2230"
+    }
+  ],
+  "top_packages_by_low": [
+    {
+      "Package": "node",
+      "Count": "11582"
+    },
+    {
+      "Package": "llvm-project",
+      "Count": "11503"
+    },
+    {
+      "Package": "jdk11u",
+      "Count": "9825"
+    },
+    {
+      "Package": "jdk21u",
+      "Count": "8660"
+    },
+    {
+      "Package": "runtime",
+      "Count": "8632"
+    },
+    {
+      "Package": "jdk17u",
+      "Count": "7828"
+    },
+    {
+      "Package": "subversion",
+      "Count": "7106"
+    },
+    {
+      "Package": "wireshark",
+      "Count": "4835"
+    },
+    {
+      "Package": "zsh",
+      "Count": "3689"
+    },
+    {
+      "Package": "mysql-server",
+      "Count": "3540"
+    }
+  ],
+  "agent_scan": {
+    "summary": {
+      "Scans": "85",
+      "PackagesScanned": "20",
+      "TotalIssues": "0",
+      "High": "0",
+      "Medium": "0",
+      "Low": "0"
+    },
+    "by_agent_type": [
+      {
+        "AgentType": "claude",
+        "Packages": "10",
+        "Issues": "0"
+      },
+      {
+        "AgentType": "codex",
+        "Packages": "1",
+        "Issues": "0"
+      },
+      {
+        "AgentType": "cursor",
+        "Packages": "1",
+        "Issues": "0"
+      },
+      {
+        "AgentType": "gemini",
+        "Packages": "10",
+        "Issues": "0"
+      }
+    ],
+    "top_packages": [],
+    "top_codes": []
+  }
+}
