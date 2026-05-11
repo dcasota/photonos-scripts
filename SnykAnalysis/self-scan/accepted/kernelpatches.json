@@ -1,0 +1,35 @@
+{
+  "subdir": "kernelpatches",
+  "scan_date": "2026-05-11",
+  "note": "kernelpatches is a CLI tool for orchestrating Photon kernel CVE backports. All findings flow from argparse-supplied --kernel-version / --output-dir / --photon-base into paths or URL/regex composition.",
+  "accepted": [
+    {"rule": "python/PT", "location": "scripts/cve_coverage_build_workflow.py:350", "bucket": "DESIGN-DECISION", "reason": "ensure_photon_repo() opens an internal clone directory rooted at the CLI-supplied repo_base; CLI-by-design."},
+    {"rule": "python/PT", "location": "scripts/cve_coverage_build_workflow.py:434", "bucket": "DESIGN-DECISION", "reason": "matrix_dir under CLI-supplied output_dir; CLI-by-design."},
+    {"rule": "python/PT", "location": "scripts/cve_coverage_build_workflow.py:437", "bucket": "DESIGN-DECISION", "reason": "matrix.save_json target path under CLI-supplied output_dir."},
+    {"rule": "python/PT", "location": "scripts/cve_coverage_build_workflow.py:487", "bucket": "DESIGN-DECISION", "reason": "Patch download path under CLI-supplied output_dir."},
+    {"rule": "python/PT", "location": "scripts/cve_coverage_build_workflow.py:533", "bucket": "DESIGN-DECISION", "reason": "Spec file under CLI-supplied repo_base/SPECS."},
+    {"rule": "python/PT", "location": "scripts/cve_coverage_build_workflow.py:622", "bucket": "DESIGN-DECISION", "reason": "stable_patches dir under CLI-supplied output_dir."},
+    {"rule": "python/PT", "location": "scripts/cve_coverage_build_workflow.py:626", "bucket": "DESIGN-DECISION", "reason": "download_file target path under CLI-supplied output_dir."},
+    {"rule": "python/PT", "location": "scripts/cve_coverage_build_workflow.py:661", "bucket": "DESIGN-DECISION", "reason": "Patch dir under CLI-supplied output_dir."},
+    {"rule": "python/PT", "location": "scripts/cve_coverage_build_workflow.py:717", "bucket": "DESIGN-DECISION", "reason": "Report file under CLI-supplied output_dir."},
+    {"rule": "python/PT", "location": "scripts/cve_coverage_build_workflow.py:819", "bucket": "DESIGN-DECISION", "reason": "Phase summary file under CLI-supplied output_dir."},
+    {"rule": "python/PT", "location": "scripts/cve_gap_detection.py:81", "bucket": "DESIGN-DECISION", "reason": "CLI tool reads a CLI-supplied report path."},
+    {"rule": "python/PT", "location": "scripts/cve_gap_detection.py:130", "bucket": "DESIGN-DECISION", "reason": "Same."},
+    {"rule": "python/PT", "location": "scripts/cve_gap_detection.py:728", "bucket": "DESIGN-DECISION", "reason": "Same."},
+    {"rule": "python/PT", "location": "scripts/generate_full_matrix.py:434", "bucket": "DESIGN-DECISION", "reason": "Tarball download path under CLI-supplied output_dir."},
+    {"rule": "python/PT", "location": "scripts/generate_full_matrix.py:453", "bucket": "DESIGN-DECISION", "reason": "Same tarball download path."},
+    {"rule": "python/PT", "location": "scripts/generate_full_matrix.py:483", "bucket": "DESIGN-DECISION", "reason": "Same."},
+    {"rule": "python/PT", "location": "scripts/generate_full_matrix.py:497", "bucket": "DESIGN-DECISION", "reason": "Same."},
+    {"rule": "python/PT", "location": "scripts/generate_full_matrix.py:517", "bucket": "DESIGN-DECISION", "reason": "Extract destination under CLI-supplied output_dir; the *content* of the tar is now TarSlip-guarded."},
+    {"rule": "python/PT", "location": "scripts/generate_full_matrix.py:642", "bucket": "DESIGN-DECISION", "reason": "Source tree under CLI-supplied output_dir."},
+    {"rule": "python/Ssrf", "location": "scripts/cve_coverage_build_workflow.py:626", "bucket": "FALSE-POSITIVE", "reason": "download_file() target URL is built from get_kernel_org_url(self.kernel_version), which hardcodes https://cdn.kernel.org/pub/linux/kernel/vX.x/. The host is not attacker-controllable; only the path segment (kernel version) is, and that has been validated by argparse."}
+  ],
+  "hard_fixes": [
+    {"rule": "python/TarSlip", "location": "scripts/generate_full_matrix.py:517", "fix": "Wrapped tarfile.extractall in a TarSlip-guard loop: realpath each member against the extract root before extractall, raise RuntimeError on slip. Added 'import os'."},
+    {"rule": "python/TarSlip", "location": "scripts/generate_full_matrix.py:434/453/497/642", "fix": "Same fix at L517 dominates the four other Snyk-flagged data-flow sinks; they were tainted-flow alerts pointing at the integrity-check and download call sites for the same downstream extract."},
+    {"rule": "python/TarSlip", "location": "scripts/source_verification.py:212", "fix": "Replaced the bare tar.extract loop with a realpath-validated TarSlip guard before each tar.extract(member) call. Added 'import os'."},
+    {"rule": "python/reDOS", "location": "scripts/generate_full_matrix.py:85 (sink: cve_sources.py:587)", "fix": "Wrapped kernel_version with re.escape() inside the fix_pattern f-string so CLI-supplied regex metacharacters cannot induce catastrophic backtracking."},
+    {"rule": "python/unquoted_csv_writer", "location": "scripts/cve_coverage_build_workflow.py:438 (sink: cve_matrix.py save_csv / save_stable_patch_csv)", "fix": "Set csv.writer(..., quoting=csv.QUOTE_ALL) on the two writers in cve_matrix.py to defeat CSV-injection via cell content that starts with =, +, -, @."},
+    {"rule": "python/unquoted_csv_writer", "location": "scripts/cve_coverage_build_workflow.py:439", "fix": "Same fix."}
+  ]
+}

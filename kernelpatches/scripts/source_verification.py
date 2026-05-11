@@ -7,6 +7,7 @@ to check if CVE patches are already included before adding them to spec files.
 
 import hashlib
 import lzma
+import os
 import re
 import shutil
 import tarfile
@@ -201,14 +202,25 @@ class SourceVerifier:
         logger.info(f"Extracting source tarball to: {self._temp_dir}")
         
         try:
-            # Extract with progress logging
+            # Extract with progress logging and TarSlip protection: validate
+            # every member's resolved path stays under the temp dir before
+            # calling tar.extract.
+            extract_root = os.path.realpath(str(self._temp_dir))
             with lzma.open(tarball_path) as xz_file:
                 with tarfile.open(fileobj=xz_file, mode='r:') as tar:
                     members = tar.getmembers()
                     total_members = len(members)
                     logger.info(f"Extracting {total_members} files...")
-                    
+
                     for idx, member in enumerate(members):
+                        dest = os.path.realpath(
+                            os.path.join(extract_root, member.name)
+                        )
+                        if not (dest == extract_root or
+                                dest.startswith(extract_root + os.sep)):
+                            raise RuntimeError(
+                                f"tar slip detected: {member.name}"
+                            )
                         tar.extract(member, self._temp_dir)
                         if (idx + 1) % 10000 == 0:
                             logger.debug(f"  Extracted {idx + 1}/{total_members} files")

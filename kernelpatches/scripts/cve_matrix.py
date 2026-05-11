@@ -527,7 +527,7 @@ class CVECoverageMatrix:
         headers.extend(["References", "Fix Commits", "Published"])
         
         with open(output_path, "w", newline="") as f:
-            writer = csv.writer(f)
+            writer = csv.writer(f, quoting=csv.QUOTE_ALL)
             
             writer.writerow(headers)
             
@@ -570,7 +570,7 @@ class CVECoverageMatrix:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         
         with open(output_path, "w", newline="") as f:
-            writer = csv.writer(f)
+            writer = csv.writer(f, quoting=csv.QUOTE_ALL)
             
             # Build headers dynamically based on kernel versions
             # Use photon_version (e.g., 5.10.247) instead of kernel series (e.g., 5.10)
