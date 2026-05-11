@@ -5201,10 +5201,13 @@ $throttleLimit = 20 # Set a hard cap to prevent overloading the system
 # Set global variables from script parameters
 $global:workingDir = $workingDir
 
-# Validate workingDir exists
+# Validate workingDir exists. Use `exit 1` (not `return`) so pwsh -File
+# propagates a non-zero exit code to the calling shell -- otherwise CI
+# wrappers see a clean exit and report false-positive success
+# (run 25670305654).
 if (-not (Test-Path -Path $global:workingDir -PathType Container)) {
     Write-Error "Working directory does not exist or is not a directory: $global:workingDir"
-    return
+    exit 1
 }
 Write-Host "Working directory validated: $global:workingDir"
 
@@ -5242,15 +5245,19 @@ $requiredMB += $branchCount * 500  # URL health scan overhead per branch
 foreach ($entry in $branchMap.GetEnumerator()) {
     if ($entry.Value) {
         $cloneDir = Join-Path -Path $global:upstreamsDir -ChildPath "photon-$($entry.Key)" | Join-Path -ChildPath "clones"
+        # Heuristic: a fresh first-time clone of all upstream tarball repos
+        # needs ~30 GB. But "few clones" (<50) does NOT necessarily mean
+        # "first run": photon-master and photon-common are meta-branches
+        # that intentionally have near-zero clones, and demanding 30 GB
+        # for each blocked run 25670305654 with a 76 GB pre-flight ask.
+        #
+        # Signal "we've been here before" by the clones dir existing AT ALL
+        # (the script creates it on first successful pass). Only branches
+        # with no clones dir yet get the worst-case 30 GB budget.
         if (Test-Path $cloneDir) {
-            $existingCount = (Get-ChildItem -Path $cloneDir -Directory -ErrorAction SilentlyContinue | Measure-Object).Count
-            if ($existingCount -gt 50) {
-                $requiredMB += 2000  # Incremental: existing clones need ~2 GB for updates
-            } else {
-                $requiredMB += 30000  # Fresh: ~30 GB for full clone set
-            }
+            $requiredMB += 2000  # Incremental: existing clones need ~2 GB for updates
         } else {
-            $requiredMB += 30000
+            $requiredMB += 30000  # Fresh: ~30 GB for full clone set
         }
     }
 }
@@ -5259,7 +5266,9 @@ foreach ($checkPath in @($global:workingDir, $global:upstreamsDir, $global:scans
     Where-Object { -not [string]::IsNullOrEmpty($_) } | Select-Object -Unique) {
     if (-not (Test-DiskSpace -Path $checkPath -RequiredMB $requiredMB -Operation "full report generation")) {
         Write-Error "Insufficient disk space on $checkPath. Need ~$([math]::Round($requiredMB/1024, 1)) GB free. Aborting."
-        return
+        # `exit 1` so pwsh propagates a non-zero exit code -- the prior
+        # `return` left pwsh exiting 0 and the workflow falsely passed.
+        exit 1
     }
 }
 Write-Host "Disk space pre-flight: OK (~$([math]::Round($requiredMB/1024, 1)) GB estimated, all paths have sufficient space)"

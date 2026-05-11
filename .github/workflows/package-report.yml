@@ -192,6 +192,10 @@ jobs:
             EXTRA_ARGS="$EXTRA_ARGS -scansDir \"${{ github.event.inputs.scansDir }}\""
           fi
 
+          # Propagate pwsh's exit code. Previously a trailing `echo "exit_code=$?"`
+          # always succeeded, so `bash -e` saw a clean step regardless of the
+          # PowerShell script aborting (e.g. Write-Error on insufficient disk
+          # in run 25670305654 produced a false-positive successful run).
           eval pwsh -File "$SCRIPT" \
             -workingDir "$WDIR" \
             $EXTRA_ARGS \
@@ -207,8 +211,12 @@ jobs:
             -GeneratePh5toPh6DiffHigherPackageVersionReport          "${{ steps.flags.outputs.diff_56 }}" \
             -GeneratePh4toPh5DiffHigherPackageVersionReport          "${{ steps.flags.outputs.diff_45 }}" \
             -GeneratePh3toPh4DiffHigherPackageVersionReport          "${{ steps.flags.outputs.diff_34 }}"
-
-          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+          rc=$?
+          echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::photonos-package-report.ps1 exited with code $rc"
+            exit "$rc"
+          fi
 
       - name: Generate summary
         if: always()
