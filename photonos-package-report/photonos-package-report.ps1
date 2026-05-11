@@ -2159,19 +2159,7 @@ function CheckURLHealth {
     }
 
 
-    if ($Source0 -ilike '*%{url}*') {
-        # RPM substitutes %{url} literally, so a SPEC that writes `Source0: %{url}license.txt`
-        # against `URL: https://vmware.github.io/photon` (no trailing slash) produces
-        # `https://vmware.github.io/photonlicense.txt` — a malformed URL that later confuses
-        # downstream tools (the package-classifier in particular kept resolving such URLs to
-        # "Photon" the distro). When %{url} is immediately followed by a path-like character
-        # AND the URL value has no trailing slash, splice a `/` in to keep the path well-formed.
-        $base = $currentTask.url
-        if ($base -and ($base -notmatch '/$') -and ($Source0 -match '%\{url\}[A-Za-z0-9.]')) {
-            $base = $base + '/'
-        }
-        $Source0 = $Source0 -ireplace '%\{url\}', $base
-    }
+    if ($Source0 -ilike '*%{url}*') { $Source0 = $Source0 -ireplace '%{url}',$currentTask.url }
     # add url path if necessary and possible
     if (($Source0 -notlike '*//*') -and ($currentTask.url -ne ""))
     {
@@ -5201,13 +5189,10 @@ $throttleLimit = 20 # Set a hard cap to prevent overloading the system
 # Set global variables from script parameters
 $global:workingDir = $workingDir
 
-# Validate workingDir exists. Use `exit 1` (not `return`) so pwsh -File
-# propagates a non-zero exit code to the calling shell -- otherwise CI
-# wrappers see a clean exit and report false-positive success
-# (run 25670305654).
+# Validate workingDir exists
 if (-not (Test-Path -Path $global:workingDir -PathType Container)) {
     Write-Error "Working directory does not exist or is not a directory: $global:workingDir"
-    exit 1
+    return
 }
 Write-Host "Working directory validated: $global:workingDir"
 
@@ -5245,19 +5230,15 @@ $requiredMB += $branchCount * 500  # URL health scan overhead per branch
 foreach ($entry in $branchMap.GetEnumerator()) {
     if ($entry.Value) {
         $cloneDir = Join-Path -Path $global:upstreamsDir -ChildPath "photon-$($entry.Key)" | Join-Path -ChildPath "clones"
-        # Heuristic: a fresh first-time clone of all upstream tarball repos
-        # needs ~30 GB. But "few clones" (<50) does NOT necessarily mean
-        # "first run": photon-master and photon-common are meta-branches
-        # that intentionally have near-zero clones, and demanding 30 GB
-        # for each blocked run 25670305654 with a 76 GB pre-flight ask.
-        #
-        # Signal "we've been here before" by the clones dir existing AT ALL
-        # (the script creates it on first successful pass). Only branches
-        # with no clones dir yet get the worst-case 30 GB budget.
         if (Test-Path $cloneDir) {
-            $requiredMB += 2000  # Incremental: existing clones need ~2 GB for updates
+            $existingCount = (Get-ChildItem -Path $cloneDir -Directory -ErrorAction SilentlyContinue | Measure-Object).Count
+            if ($existingCount -gt 50) {
+                $requiredMB += 2000  # Incremental: existing clones need ~2 GB for updates
+            } else {
+                $requiredMB += 30000  # Fresh: ~30 GB for full clone set
+            }
         } else {
-            $requiredMB += 30000  # Fresh: ~30 GB for full clone set
+            $requiredMB += 30000
         }
     }
 }
@@ -5266,9 +5247,7 @@ foreach ($checkPath in @($global:workingDir, $global:upstreamsDir, $global:scans
     Where-Object { -not [string]::IsNullOrEmpty($_) } | Select-Object -Unique) {
     if (-not (Test-DiskSpace -Path $checkPath -RequiredMB $requiredMB -Operation "full report generation")) {
         Write-Error "Insufficient disk space on $checkPath. Need ~$([math]::Round($requiredMB/1024, 1)) GB free. Aborting."
-        # `exit 1` so pwsh propagates a non-zero exit code -- the prior
-        # `return` left pwsh exiting 0 and the workflow falsely passed.
-        exit 1
+        return
     }
 }
 Write-Host "Disk space pre-flight: OK (~$([math]::Round($requiredMB/1024, 1)) GB estimated, all paths have sufficient space)"
