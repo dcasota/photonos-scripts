@@ -1,0 +1,3227 @@
+{
+  "branch": "6.0",
+  "generated": "2026-05-11T11:28:21+00:00",
+  "records_considered": 1783,
+  "top_n": 10,
+  "alternatives_outscoring_package": [
+    {
+      "package": "commons-httpclient",
+      "package_score": 35.5,
+      "alt_name": "OkHttp",
+      "alt_score": 89.0,
+      "alt_weblink": "https://square.github.io/okhttp/",
+      "delta": 53.5,
+      "rationale": "Widely adopted modern HTTP client usable as direct replacement for classic sync calls."
+    },
+    {
+      "package": "commons-httpclient",
+      "package_score": 35.5,
+      "alt_name": "Apache HttpComponents Client",
+      "alt_score": 86.2,
+      "alt_weblink": "https://hc.apache.org/httpcomponents-client-ga/",
+      "delta": 50.7,
+      "rationale": "Official successor maintaining similar request/response API and configuration model."
+    },
+    {
+      "package": "python-vcversioner",
+      "package_score": 45.5,
+      "alt_name": "setuptools-scm",
+      "alt_score": 89.8,
+      "alt_weblink": "https://github.com/pypa/setuptools-scm",
+      "delta": 44.3,
+      "rationale": "Direct functional replacement: same VCS-tag-to-PEP440 version extraction at build time, same Python runtime, sync usage pattern, actively maintained."
+    },
+    {
+      "package": "rubygem-hpricot",
+      "package_score": 45.5,
+      "alt_name": "nokogiri",
+      "alt_score": 88.1,
+      "alt_weblink": "https://github.com/sparklemotion/nokogiri",
+      "delta": 42.6,
+      "rationale": "Nokogiri provides the same HTML parsing and traversal capabilities with near-identical usage patterns and is the standard replacement for hpricot."
+    },
+    {
+      "package": "mingetty",
+      "package_score": 41.5,
+      "alt_name": "agetty",
+      "alt_score": 83.2,
+      "alt_weblink": "https://git.kernel.org/pub/scm/utils/util-linux/util-linux.git",
+      "delta": 41.7,
+      "rationale": "agetty provides identical console login prompt functionality and is the standard replacement shipped in util-linux, requiring only config path updates."
+    },
+    {
+      "package": "log4cpp",
+      "package_score": 52.5,
+      "alt_name": "spdlog",
+      "alt_score": 93.4,
+      "alt_weblink": "https://github.com/gabime/spdlog",
+      "delta": 40.9,
+      "rationale": "Direct functional replacement providing equivalent logger configuration and output sinks with simpler modern API."
+    },
+    {
+      "package": "perl-WWW-Curl",
+      "package_score": 48.5,
+      "alt_name": "HTTP::Tiny",
+      "alt_score": 89.2,
+      "alt_weblink": "https://metacpan.org/pod/HTTP::Tiny",
+      "delta": 40.7,
+      "rationale": "Direct Perl HTTP client replacement; same sync API style, no external libs needed."
+    },
+    {
+      "package": "cppunit",
+      "package_score": 51.5,
+      "alt_name": "GoogleTest",
+      "alt_score": 92.2,
+      "alt_weblink": "https://github.com/google/googletest",
+      "delta": 40.7,
+      "rationale": "Direct drop-in C++ unit testing replacement with similar test macros and runner."
+    },
+    {
+      "package": "python-lockfile",
+      "package_score": 49.5,
+      "alt_name": "filelock",
+      "alt_score": 90.0,
+      "alt_weblink": "https://pypi.org/project/filelock/",
+      "delta": 40.5,
+      "rationale": "Direct drop-in replacement with compatible lock acquisition API and same file-based locking semantics."
+    },
+    {
+      "package": "tclap",
+      "package_score": 47.9,
+      "alt_name": "CLI11",
+      "alt_score": 88.4,
+      "alt_weblink": "https://github.com/CLIUtils/CLI11",
+      "delta": 40.5,
+      "rationale": "Direct drop-in CLI parser for C++ with similar header-only usage and option handling"
+    },
+    {
+      "package": "serf",
+      "package_score": 48.5,
+      "alt_name": "libcurl",
+      "alt_score": 88.0,
+      "alt_weblink": "https://curl.se/libcurl/",
+      "delta": 39.5,
+      "rationale": "Direct functional replacement providing equivalent HTTP client functionality at the same C library layer with async support via curl_multi."
+    },
+    {
+      "package": "yajl",
+      "package_score": 48.5,
+      "alt_name": "cJSON",
+      "alt_score": 87.8,
+      "alt_weblink": "https://github.com/DaveGamble/cJSON",
+      "delta": 39.3,
+      "rationale": "Direct C JSON parsing/generation drop-in with nearly identical use cases and simpler integration."
+    },
+    {
+      "package": "nicstat",
+      "package_score": 42.5,
+      "alt_name": "vnstat",
+      "alt_score": 79.6,
+      "alt_weblink": "https://humdi.net/vnstat/",
+      "delta": 37.1,
+      "rationale": "Direct CLI replacement providing equivalent per-NIC byte/packet/error counters with optional persistence."
+    },
+    {
+      "package": "cppunit",
+      "package_score": 51.5,
+      "alt_name": "Catch2",
+      "alt_score": 88.4,
+      "alt_weblink": "https://github.com/catchorg/Catch2",
+      "delta": 36.9,
+      "rationale": "Functional C++ unit testing replacement supporting same test discovery and assertions."
+    },
+    {
+      "package": "perl-Path-Class",
+      "package_score": 48.5,
+      "alt_name": "Path::Tiny",
+      "alt_score": 84.6,
+      "alt_weblink": "https://github.com/dagolden/Path-Tiny",
+      "delta": 36.1,
+      "rationale": "Direct drop-in OO replacement providing equivalent path manipulation methods with modern Perl idioms"
+    },
+    {
+      "package": "calico-bgp-daemon",
+      "package_score": 48.5,
+      "alt_name": "gobgp",
+      "alt_score": 83.4,
+      "alt_weblink": "https://github.com/osrg/gobgp",
+      "delta": 34.9,
+      "rationale": "Direct Go BGP daemon replacement providing equivalent route advertisement and peering capabilities at the same abstraction layer."
+    },
+    {
+      "package": "perl-WWW-Curl",
+      "package_score": 48.5,
+      "alt_name": "LWP::UserAgent",
+      "alt_score": 82.8,
+      "alt_weblink": "https://metacpan.org/pod/LWP::UserAgent",
+      "delta": 34.3,
+      "rationale": "Widely-used Perl HTTP client with comparable request/response handling."
+    },
+    {
+      "package": "tclap",
+      "package_score": 47.9,
+      "alt_name": "cxxopts",
+      "alt_score": 81.9,
+      "alt_weblink": "https://github.com/jarro2783/cxxopts",
+      "delta": 34.0,
+      "rationale": "Direct functional replacement providing comparable option parsing API in C++"
+    },
+    {
+      "package": "bridge-utils",
+      "package_score": 52.5,
+      "alt_name": "iproute2",
+      "alt_score": 86.2,
+      "alt_weblink": "https://wiki.linuxfoundation.org/networking/iproute2",
+      "delta": 33.7,
+      "rationale": "Provides identical bridge configuration functionality via the 'bridge' subcommand and is the direct in-kernel successor."
+    },
+    {
+      "package": "ebtables",
+      "package_score": 54.5,
+      "alt_name": "nft",
+      "alt_score": 87.2,
+      "alt_weblink": "https://wiki.nftables.org/",
+      "delta": 32.7,
+      "rationale": "nft bridge family is the direct in-kernel successor providing identical frame-filtering capabilities via a unified CLI."
+    },
+    {
+      "package": "zip",
+      "package_score": 51.5,
+      "alt_name": "7-Zip",
+      "alt_score": 84.0,
+      "alt_weblink": "https://www.7-zip.org/",
+      "delta": 32.5,
+      "rationale": "Direct CLI replacement for ZIP archive creation/extraction using identical file format and comparable command-line flags."
+    },
+    {
+      "package": "ivykis",
+      "package_score": 54.0,
+      "alt_name": "libevent",
+      "alt_score": 86.1,
+      "alt_weblink": "https://libevent.org/",
+      "delta": 32.1,
+      "rationale": "Provides comparable event multiplexing abstraction and can replace ivykis usage patterns with minimal API adaptation in C codebases."
+    },
+    {
+      "package": "perl-Object-Accessor",
+      "package_score": 52.5,
+      "alt_name": "Class::Accessor",
+      "alt_score": 84.5,
+      "alt_weblink": "https://metacpan.org/pod/Class::Accessor",
+      "delta": 32.0,
+      "rationale": "Provides identical accessor creation API and usage pattern for Perl objects."
+    },
+    {
+      "package": "python-lockfile",
+      "package_score": 49.5,
+      "alt_name": "fasteners",
+      "alt_score": 81.0,
+      "alt_weblink": "https://pypi.org/project/fasteners/",
+      "delta": 31.5,
+      "rationale": "Provides equivalent inter-process file locking via InterProcessLock with minimal API changes."
+    },
+    {
+      "package": "bluez-tools",
+      "package_score": 44.0,
+      "alt_name": "bluetoothctl",
+      "alt_score": 75.5,
+      "alt_weblink": "https://git.kernel.org/pub/scm/bluetooth/bluez.git",
+      "delta": 31.5,
+      "rationale": "Provides equivalent CLI commands for adapter and device management at the same BlueZ layer."
+    },
+    {
+      "package": "python-vcversioner",
+      "package_score": 45.5,
+      "alt_name": "dunamai",
+      "alt_score": 76.2,
+      "alt_weblink": "https://github.com/mtkennerly/dunamai",
+      "delta": 30.7,
+      "rationale": "Direct functional replacement: identical VCS tag parsing to produce version strings for Python packaging, same language and sync usage."
+    },
+    {
+      "package": "rubygem-thread_safe",
+      "package_score": 58.5,
+      "alt_name": "concurrent-ruby",
+      "alt_score": 89.1,
+      "alt_weblink": "https://rubygems.org/gems/concurrent-ruby",
+      "delta": 30.6,
+      "rationale": "Provides the same thread-safe maps, sets and atomic classes with compatible APIs; actively maintained successor."
+    },
+    {
+      "package": "rubygem-libxml-ruby",
+      "package_score": 57.5,
+      "alt_name": "nokogiri",
+      "alt_score": 87.0,
+      "alt_weblink": "https://github.com/sparklemotion/nokogiri",
+      "delta": 29.5,
+      "rationale": "Direct functional replacement providing equivalent XML parsing and XPath APIs in Ruby with broader adoption and easier installation."
+    },
+    {
+      "package": "log4cpp",
+      "package_score": 52.5,
+      "alt_name": "glog",
+      "alt_score": 81.8,
+      "alt_weblink": "https://github.com/google/glog",
+      "delta": 29.3,
+      "rationale": "Provides comparable severity-based logging and runtime configuration as a drop-in C++ logging framework."
+    },
+    {
+      "package": "unzip",
+      "package_score": 53.5,
+      "alt_name": "7-Zip",
+      "alt_score": 82.5,
+      "alt_weblink": "https://www.7-zip.org/",
+      "delta": 29.0,
+      "rationale": "Provides identical CLI usage pattern for ZIP extraction as a drop-in command replacement."
+    },
+    {
+      "package": "perl-Crypt-SSLeay",
+      "package_score": 48.5,
+      "alt_name": "IO::Socket::SSL",
+      "alt_score": 77.4,
+      "alt_weblink": "https://github.com/noxxi/p5-io-socket-ssl",
+      "delta": 28.9,
+      "rationale": "Direct functional replacement providing equivalent SSL socket layer for Perl HTTP clients without code changes beyond use statements."
+    },
+    {
+      "package": "yajl",
+      "package_score": 48.5,
+      "alt_name": "Jansson",
+      "alt_score": 77.1,
+      "alt_weblink": "https://github.com/akheron/jansson",
+      "delta": 28.6,
+      "rationale": "Same-layer C JSON library offering comparable streaming and tree APIs for direct substitution."
+    },
+    {
+      "package": "atftp",
+      "package_score": 47.5,
+      "alt_name": "tftp-hpa",
+      "alt_score": 75.8,
+      "alt_weblink": "https://git.kernel.org/pub/scm/network/tftp/tftp-hpa.git",
+      "delta": 28.3,
+      "rationale": "Direct drop-in TFTP daemon/client replacement with identical UDP CLI usage and PXE features."
+    },
+    {
+      "package": "chrpath",
+      "package_score": 58.5,
+      "alt_name": "patchelf",
+      "alt_score": 86.5,
+      "alt_weblink": "https://github.com/NixOS/patchelf",
+      "delta": 28.0,
+      "rationale": "Direct CLI replacement for editing ELF rpath entries"
+    },
+    {
+      "package": "net-tools",
+      "package_score": 51.5,
+      "alt_name": "iproute2",
+      "alt_score": 79.5,
+      "alt_weblink": "https://wiki.linuxfoundation.org/networking/iproute2",
+      "delta": 28.0,
+      "rationale": "Provides equivalent CLI tools (ip vs ifconfig/route, ss vs netstat) at same layer with identical scripting patterns."
+    },
+    {
+      "package": "heapster",
+      "package_score": 58.5,
+      "alt_name": "metrics-server",
+      "alt_score": 86.4,
+      "alt_weblink": "https://github.com/kubernetes-sigs/metrics-server",
+      "delta": 27.9,
+      "rationale": "Provides identical Kubernetes metrics API surface and resource usage data collection without requiring sink reconfiguration or architecture changes."
+    },
+    {
+      "package": "cppunit",
+      "package_score": 51.5,
+      "alt_name": "Boost.Test",
+      "alt_score": 79.1,
+      "alt_weblink": "https://github.com/boostorg/test",
+      "delta": 27.6,
+      "rationale": "Direct C++ unit testing library replacement with comparable test suite execution."
+    },
+    {
+      "package": "rapidjson",
+      "package_score": 66.5,
+      "alt_name": "nlohmann/json",
+      "alt_score": 94.0,
+      "alt_weblink": "https://github.com/nlohmann/json",
+      "delta": 27.5,
+      "rationale": "Direct functional replacement: same C++ header-only JSON parse/generate use cases with comparable or simpler API."
+    },
+    {
+      "package": "python-appdirs",
+      "package_score": 62.5,
+      "alt_name": "platformdirs",
+      "alt_score": 89.8,
+      "alt_weblink": "https://github.com/platformdirs/platformdirs",
+      "delta": 27.3,
+      "rationale": "Official successor providing the same directory-lookup functions with identical signatures and cross-platform behavior."
+    },
+    {
+      "package": "pkg-config",
+      "package_score": 58.5,
+      "alt_name": "pkgconf",
+      "alt_score": 85.8,
+      "alt_weblink": "https://github.com/pkgconf/pkgconf",
+      "delta": 27.3,
+      "rationale": "Direct CLI and .pc file drop-in replacement targeting identical use cases."
+    },
+    {
+      "package": "cdrkit",
+      "package_score": 52.0,
+      "alt_name": "xorriso",
+      "alt_score": 79.0,
+      "alt_weblink": "https://www.gnu.org/software/xorriso/",
+      "delta": 27.0,
+      "rationale": "Provides equivalent ISO creation and optical drive burning via xorriso command-line interface usable as drop-in for cdrkit tools."
+    },
+    {
+      "package": "calico-bird",
+      "package_score": 57.5,
+      "alt_name": "frr",
+      "alt_score": 84.4,
+      "alt_weblink": "https://github.com/FRRouting/frr",
+      "delta": 26.9,
+      "rationale": "FRR provides an actively maintained BGP routing daemon binary usable in place of the Calico BIRD fork for the same IP routing use cases."
+    },
+    {
+      "package": "mlocate",
+      "package_score": 55.5,
+      "alt_name": "plocate",
+      "alt_score": 81.2,
+      "alt_weblink": "https://plocate.sesse.net/",
+      "delta": 25.7,
+      "rationale": "Direct CLI-compatible replacement using the same locate/updatedb interface and database model."
+    },
+    {
+      "package": "syslinux",
+      "package_score": 53.5,
+      "alt_name": "GRUB",
+      "alt_score": 78.8,
+      "alt_weblink": "https://www.gnu.org/software/grub/",
+      "delta": 25.3,
+      "rationale": "Direct drop-in bootloader replacement handling identical boot media and kernel loading use cases."
+    },
+    {
+      "package": "python-zope.event",
+      "package_score": 62.5,
+      "alt_name": "blinker",
+      "alt_score": 87.4,
+      "alt_weblink": "https://github.com/pallets-eco/blinker",
+      "delta": 24.9,
+      "rationale": "Direct functional replacement providing identical publish/subscribe event pattern at same abstraction level with near-identical usage."
+    },
+    {
+      "package": "python-toml",
+      "package_score": 58.5,
+      "alt_name": "tomli",
+      "alt_score": 83.4,
+      "alt_weblink": "https://github.com/hukkin/tomli",
+      "delta": 24.9,
+      "rationale": "Direct API-compatible TOML parser used as the basis for Python 3.11+ tomllib; same load() usage pattern."
+    },
+    {
+      "package": "python-terminaltables",
+      "package_score": 62.5,
+      "alt_name": "tabulate",
+      "alt_score": 87.2,
+      "alt_weblink": "https://github.com/astanin/python-tabulate",
+      "delta": 24.7,
+      "rationale": "Direct functional replacement: same Python table formatting API usable with minimal code changes."
+    },
+    {
+      "package": "python-ply",
+      "package_score": 58.5,
+      "alt_name": "lark",
+      "alt_score": 83.2,
+      "alt_weblink": "https://github.com/lark-parser/lark",
+      "delta": 24.7,
+      "rationale": "Direct LALR(1) parser generator replacement with compatible grammar definitions and Python runtime usage pattern."
+    },
+    {
+      "package": "flex",
+      "package_score": 58.5,
+      "alt_name": "re2c",
+      "alt_score": 83.1,
+      "alt_weblink": "https://github.com/skvadrik/re2c",
+      "delta": 24.6,
+      "rationale": "Direct CLI lexer generator replacement targeting identical C/C++ scanner use cases with comparable output."
+    },
+    {
+      "package": "libev",
+      "package_score": 61.5,
+      "alt_name": "libuv",
+      "alt_score": 86.1,
+      "alt_weblink": "https://libuv.org",
+      "delta": 24.6,
+      "rationale": "Direct drop-in replacement providing equivalent event-loop primitives (timers, I/O watchers, async) with a comparable C API."
+    },
+    {
+      "package": "rubygem-trollop",
+      "package_score": 58.5,
+      "alt_name": "slop",
+      "alt_score": 83.0,
+      "alt_weblink": "https://github.com/ianwhite/slop",
+      "delta": 24.5,
+      "rationale": "Direct drop-in replacement providing nearly identical option parsing DSL and usage for CLI scripts."
+    },
+    {
+      "package": "python-docopt",
+      "package_score": 62.5,
+      "alt_name": "click",
+      "alt_score": 86.8,
+      "alt_weblink": "https://github.com/pallets/click",
+      "delta": 24.3,
+      "rationale": "Direct CLI replacement: same Python runtime, actively maintained, comparable decorator-based usage for argument parsing."
+    },
+    {
+      "package": "rubygem-google-logging-utils",
+      "package_score": 62.5,
+      "alt_name": "google-cloud-logging",
+      "alt_score": 86.6,
+      "alt_weblink": "https://rubygems.org/gems/google-cloud-logging",
+      "delta": 24.1,
+      "rationale": "Official Google-maintained replacement providing identical Cloud Logging integration at the same abstraction level."
+    },
+    {
+      "package": "nicstat",
+      "package_score": 42.5,
+      "alt_name": "nload",
+      "alt_score": 66.2,
+      "alt_weblink": "https://github.com/rolandriegel/nload",
+      "delta": 23.7,
+      "rationale": "Provides the same live per-interface throughput view via a simple terminal CLI."
+    },
+    {
+      "package": "python-docopt",
+      "package_score": 62.5,
+      "alt_name": "argparse",
+      "alt_score": 86.2,
+      "alt_weblink": "https://docs.python.org/3/library/argparse.html",
+      "delta": 23.7,
+      "rationale": "Direct drop-in CLI parser in stdlib; solves identical argument-parsing use case without external deps."
+    },
+    {
+      "package": "rubygem-multi_json",
+      "package_score": 62.5,
+      "alt_name": "oj",
+      "alt_score": 85.6,
+      "alt_weblink": "https://rubygems.org/gems/oj",
+      "delta": 23.1,
+      "rationale": "Direct functional replacement providing identical JSON load/dump API with superior performance; users can swap via require 'oj' and Oj.mimic_JSON."
+    },
+    {
+      "package": "python-rsa",
+      "package_score": 66.5,
+      "alt_name": "cryptography",
+      "alt_score": 89.6,
+      "alt_weblink": "https://github.com/pyca/cryptography",
+      "delta": 23.1,
+      "rationale": "Direct functional replacement providing equivalent RSA primitives with identical high-level usage patterns for encryption/signing."
+    },
+    {
+      "package": "lzo",
+      "package_score": 68.5,
+      "alt_name": "LZ4",
+      "alt_score": 91.4,
+      "alt_weblink": "https://github.com/lz4/lz4",
+      "delta": 22.9,
+      "rationale": "Direct drop-in for LZO's fast compression use-cases with nearly identical C function signatures and block/stream APIs."
+    },
+    {
+      "package": "traceroute",
+      "package_score": 62.8,
+      "alt_name": "mtr",
+      "alt_score": 85.7,
+      "alt_weblink": "https://www.bitwizard.nl/mtr/",
+      "delta": 22.9,
+      "rationale": "mtr directly replaces traceroute for route tracing with enhanced real-time display and identical CLI usage pattern."
+    },
+    {
+      "package": "python-boto",
+      "package_score": 62.5,
+      "alt_name": "boto3",
+      "alt_score": 85.1,
+      "alt_weblink": "https://github.com/boto/boto3",
+      "delta": 22.6,
+      "rationale": "Direct official replacement providing equivalent AWS service access patterns for Python users."
+    },
+    {
+      "package": "subversion",
+      "package_score": 65.5,
+      "alt_name": "git",
+      "alt_score": 86.8,
+      "alt_weblink": "https://git-scm.com/",
+      "delta": 21.3,
+      "rationale": "Direct CLI-based VCS replacement solving identical source-code tracking use cases with comparable commands and local repository model."
+    },
+    {
+      "package": "syslinux",
+      "package_score": 53.5,
+      "alt_name": "systemd-boot",
+      "alt_score": 74.5,
+      "alt_weblink": "https://systemd.io/BOOT/",
+      "delta": 21.0,
+      "rationale": "Functional UEFI bootloader swap for Syslinux's core kernel-booting functionality."
+    },
+    {
+      "package": "rubygem-recursive-open-struct",
+      "package_score": 67.5,
+      "alt_name": "hashie",
+      "alt_score": 88.4,
+      "alt_weblink": "https://rubygems.org/gems/hashie",
+      "delta": 20.9,
+      "rationale": "Hashie::Mash is a direct functional replacement offering the same recursive dot-notation access pattern on nested hashes."
+    },
+    {
+      "package": "python-configobj",
+      "package_score": 70.5,
+      "alt_name": "configparser",
+      "alt_score": 91.4,
+      "alt_weblink": "https://docs.python.org/3/library/configparser.html",
+      "delta": 20.9,
+      "rationale": "Direct stdlib replacement for reading/writing INI-style configs with similar dict-like API."
+    },
+    {
+      "package": "libfastjson",
+      "package_score": 65.5,
+      "alt_name": "cJSON",
+      "alt_score": 86.4,
+      "alt_weblink": "https://github.com/DaveGamble/cJSON",
+      "delta": 20.9,
+      "rationale": "Direct C JSON library replacement with equivalent parse/serialize usage pattern and no architecture changes needed."
+    },
+    {
+      "package": "sendmail",
+      "package_score": 65.5,
+      "alt_name": "postfix",
+      "alt_score": 86.2,
+      "alt_weblink": "https://www.postfix.org/",
+      "delta": 20.7,
+      "rationale": "Direct functional MTA replacement using same SMTP protocol and daemon model; widely adopted as Sendmail successor."
+    },
+    {
+      "package": "rubygem-libxml-ruby",
+      "package_score": 57.5,
+      "alt_name": "ox",
+      "alt_score": 78.1,
+      "alt_weblink": "https://github.com/ohler55/ox",
+      "delta": 20.6,
+      "rationale": "Drop-in Ruby XML parsing library with similar low-level node access patterns and no external libxml dependency."
+    },
+    {
+      "package": "lldpad",
+      "package_score": 62.5,
+      "alt_name": "lldpd",
+      "alt_score": 83.1,
+      "alt_weblink": "https://github.com/lldpd/lldpd",
+      "delta": 20.6,
+      "rationale": "Direct functional replacement: same LLDP daemon layer, C language, sync/daemon usage pattern, actively maintained and consumable."
+    },
+    {
+      "package": "rubygem-cool-io",
+      "package_score": 64.5,
+      "alt_name": "eventmachine",
+      "alt_score": 85.0,
+      "alt_weblink": "https://github.com/eventmachine/eventmachine",
+      "delta": 20.5,
+      "rationale": "Provides the same event-loop abstraction and non-blocking I/O primitives; existing cool.io code using watchers and deferrables can be ported with minimal changes."
+    },
+    {
+      "package": "cscope",
+      "package_score": 55.5,
+      "alt_name": "GNU Global",
+      "alt_score": 75.8,
+      "alt_weblink": "https://www.gnu.org/software/global/",
+      "delta": 20.3,
+      "rationale": "Provides identical symbol cross-referencing and source navigation via CLI and cscope-compatible interface."
+    },
+    {
+      "package": "python-netifaces",
+      "package_score": 64.5,
+      "alt_name": "psutil",
+      "alt_score": 84.8,
+      "alt_weblink": "https://github.com/giampaolo/psutil",
+      "delta": 20.3,
+      "rationale": "Provides equivalent network-interface address retrieval via net_if_addrs, usable as a functional substitute in the same Python runtime."
+    },
+    {
+      "package": "pcre",
+      "package_score": 55.5,
+      "alt_name": "oniguruma",
+      "alt_score": 75.8,
+      "alt_weblink": "https://github.com/kkos/oniguruma",
+      "delta": 20.3,
+      "rationale": "Direct C regex library drop-in for Perl-compatible matching with active maintenance and comparable API patterns."
+    },
+    {
+      "package": "python-M2Crypto",
+      "package_score": 59.5,
+      "alt_name": "pyOpenSSL",
+      "alt_score": 79.6,
+      "alt_weblink": "https://github.com/pyca/pyopenssl",
+      "delta": 20.1,
+      "rationale": "Direct drop-in replacement for M2Crypto SSL/TLS and X.509 usage patterns with nearly identical high-level classes."
+    },
+    {
+      "package": "libfastjson",
+      "package_score": 65.5,
+      "alt_name": "yyjson",
+      "alt_score": 85.6,
+      "alt_weblink": "https://github.com/ibireme/yyjson",
+      "delta": 20.1,
+      "rationale": "Fast C-native JSON library serving as functional drop-in for parsing and manipulation workloads."
+    },
+    {
+      "package": "python-imagesize",
+      "package_score": 68.5,
+      "alt_name": "Pillow",
+      "alt_score": 88.2,
+      "alt_weblink": "https://github.com/python-pillow/Pillow",
+      "delta": 19.7,
+      "rationale": "Direct functional replacement: same Python runtime, sync usage pattern, returns image size tuple with comparable or lower overhead for the size-only use case."
+    },
+    {
+      "package": "rubygem-highline",
+      "package_score": 67.5,
+      "alt_name": "tty-prompt",
+      "alt_score": 87.2,
+      "alt_weblink": "https://github.com/tty-prompt/tty-prompt",
+      "delta": 19.7,
+      "rationale": "Direct functional replacement providing equivalent interactive CLI prompting and menu APIs in Ruby"
+    },
+    {
+      "package": "libnfnetlink",
+      "package_score": 62.5,
+      "alt_name": "libmnl",
+      "alt_score": 82.2,
+      "alt_weblink": "https://www.netfilter.org/projects/libmnl/",
+      "delta": 19.7,
+      "rationale": "Direct functional replacement at the same netlink abstraction layer for netfilter use cases; same C runtime and sync usage pattern."
+    },
+    {
+      "package": "amdvlk",
+      "package_score": 64.5,
+      "alt_name": "RADV",
+      "alt_score": 84.2,
+      "alt_weblink": "https://gitlab.freedesktop.org/mesa/mesa",
+      "delta": 19.7,
+      "rationale": "Direct drop-in Vulkan ICD replacement for AMD hardware with identical API surface"
+    },
+    {
+      "package": "libev",
+      "package_score": 61.5,
+      "alt_name": "libevent",
+      "alt_score": 81.2,
+      "alt_weblink": "https://libevent.org",
+      "delta": 19.7,
+      "rationale": "Provides the same core event-loop abstraction (event_base, watchers) and can replace libev usage patterns with minimal code changes."
+    },
+    {
+      "package": "python-terminaltables",
+      "package_score": 62.5,
+      "alt_name": "prettytable",
+      "alt_score": 82.2,
+      "alt_weblink": "https://github.com/jazzband/prettytable",
+      "delta": 19.7,
+      "rationale": "Direct functional replacement: Python library for ASCII/Unicode tables with comparable constructor and print API."
+    },
+    {
+      "package": "ntp",
+      "package_score": 64.5,
+      "alt_name": "chrony",
+      "alt_score": 84.1,
+      "alt_weblink": "https://chrony-project.org/",
+      "delta": 19.6,
+      "rationale": "Direct functional replacement at the same daemon layer; same NTP protocol support, configuration style and deployment model as ntpd."
+    },
+    {
+      "package": "python-pg8000",
+      "package_score": 68.5,
+      "alt_name": "psycopg",
+      "alt_score": 88.1,
+      "alt_weblink": "https://www.psycopg.org/psycopg/",
+      "delta": 19.6,
+      "rationale": "Direct DB-API 2.0 sync PostgreSQL driver drop-in replacement."
+    },
+    {
+      "package": "perl-JSON-Any",
+      "package_score": 59.5,
+      "alt_name": "JSON::MaybeXS",
+      "alt_score": 78.8,
+      "alt_weblink": "https://github.com/p5sagit/JSON-MaybeXS",
+      "delta": 19.3,
+      "rationale": "Direct functional successor providing identical use-case selection of optimal JSON backend with compatible API."
+    },
+    {
+      "package": "ivykis",
+      "package_score": 54.0,
+      "alt_name": "libev",
+      "alt_score": 73.2,
+      "alt_weblink": "http://software.schmorp.de/pkg/libev.html",
+      "delta": 19.2,
+      "rationale": "Direct functional peer for async I/O multiplexing in C; same abstraction level and usage pattern for event handling."
+    },
+    {
+      "package": "cmocka",
+      "package_score": 70.5,
+      "alt_name": "Unity",
+      "alt_score": 88.9,
+      "alt_weblink": "https://www.throwtheswitch.org/unity",
+      "delta": 18.4,
+      "rationale": "Lightweight C unit testing library usable as functional replacement for cmocka test cases"
+    },
+    {
+      "package": "rubygem-domain_name",
+      "package_score": 71.4,
+      "alt_name": "public_suffix",
+      "alt_score": 89.8,
+      "alt_weblink": "https://rubygems.org/gems/public_suffix",
+      "delta": 18.4,
+      "rationale": "Direct functional replacement providing identical Public Suffix List domain parsing and validation in Ruby."
+    },
+    {
+      "package": "libsoup",
+      "package_score": 68.5,
+      "alt_name": "libcurl",
+      "alt_score": 86.8,
+      "alt_weblink": "https://curl.se/libcurl/",
+      "delta": 18.3,
+      "rationale": "Direct C HTTP client replacement; same sync blocking usage pattern via easy handles."
+    },
+    {
+      "package": "http-parser",
+      "package_score": 61.4,
+      "alt_name": "llhttp",
+      "alt_score": 79.2,
+      "alt_weblink": "https://github.com/nodejs/llhttp",
+      "delta": 17.8,
+      "rationale": "Official Node.js replacement offering the same C-level HTTP parsing abstraction and usage pattern."
+    },
+    {
+      "package": "python-automat",
+      "package_score": 68.5,
+      "alt_name": "transitions",
+      "alt_score": 86.2,
+      "alt_weblink": "https://github.com/pytransitions/transitions",
+      "delta": 17.7,
+      "rationale": "Direct functional replacement providing equivalent state-machine modeling via classes and decorators with minimal code changes."
+    },
+    {
+      "package": "pycurl",
+      "package_score": 73.5,
+      "alt_name": "requests",
+      "alt_score": 91.2,
+      "alt_weblink": "https://github.com/psf/requests",
+      "delta": 17.7,
+      "rationale": "Direct Python HTTP client replacement; same sync usage pattern and import style for basic GET/POST."
+    },
+    {
+      "package": "gflags",
+      "package_score": 70.5,
+      "alt_name": "CLI11",
+      "alt_score": 88.1,
+      "alt_weblink": "https://github.com/CLIUtils/CLI11",
+      "delta": 17.6,
+      "rationale": "Direct functional replacement providing equivalent flag/option definition and parsing for C++ CLI applications."
+    },
+    {
+      "package": "python-looseversion",
+      "package_score": 68.8,
+      "alt_name": "packaging",
+      "alt_score": 86.4,
+      "alt_weblink": "https://github.com/pypa/packaging",
+      "delta": 17.6,
+      "rationale": "Provides equivalent version comparison functionality at the same abstraction layer with a nearly identical usage pattern for most LooseVersion cases."
+    },
+    {
+      "package": "iptraf-ng",
+      "package_score": 66.5,
+      "alt_name": "nethogs",
+      "alt_score": 84.0,
+      "alt_weblink": "https://github.com/raboof/nethogs",
+      "delta": 17.5,
+      "rationale": "Functional CLI replacement providing process-level network traffic monitoring."
+    },
+    {
+      "package": "rubygem-httpclient",
+      "package_score": 68.5,
+      "alt_name": "faraday",
+      "alt_score": 85.8,
+      "alt_weblink": "https://github.com/lostisland/faraday",
+      "delta": 17.3,
+      "rationale": "Direct functional replacement providing equivalent HTTP request/response handling with comparable synchronous API patterns."
+    },
+    {
+      "package": "byacc",
+      "package_score": 68.5,
+      "alt_name": "bison",
+      "alt_score": 85.8,
+      "alt_weblink": "https://www.gnu.org/software/bison/",
+      "delta": 17.3,
+      "rationale": "Direct functional replacement providing identical yacc-compatible parser generation CLI and input syntax for C users."
+    },
+    {
+      "package": "runit",
+      "package_score": 68.5,
+      "alt_name": "s6",
+      "alt_score": 85.5,
+      "alt_weblink": "https://skarnet.org/software/s6/",
+      "delta": 17.0,
+      "rationale": "Provides identical service supervision, logging and init functionality with compatible usage patterns and active maintenance."
+    },
+    {
+      "package": "uwsgi",
+      "package_score": 69.8,
+      "alt_name": "Gunicorn",
+      "alt_score": 86.6,
+      "alt_weblink": "https://github.com/benoitc/gunicorn",
+      "delta": 16.8,
+      "rationale": "Direct WSGI server replacement; same Python web-app deployment pattern with simpler setup."
+    },
+    {
+      "package": "python-semantic-version",
+      "package_score": 66.8,
+      "alt_name": "semver",
+      "alt_score": 83.6,
+      "alt_weblink": "https://github.com/python-semver/python-semver",
+      "delta": 16.8,
+      "rationale": "Direct functional replacement providing equivalent SemVer parsing/comparison API for Python users."
+    },
+    {
+      "package": "virt-what",
+      "package_score": 71.5,
+      "alt_name": "systemd-detect-virt",
+      "alt_score": 88.2,
+      "alt_weblink": "https://www.freedesktop.org/software/systemd/man/systemd-detect-virt.html",
+      "delta": 16.7,
+      "rationale": "Direct CLI drop-in replacement providing identical VM/container detection output."
+    },
+    {
+      "package": "rubygem-webrick",
+      "package_score": 71.5,
+      "alt_name": "puma",
+      "alt_score": 88.1,
+      "alt_weblink": "https://github.com/puma/puma",
+      "delta": 16.6,
+      "rationale": "Direct Rack-compatible HTTP server; same usage pattern as WEBrick for serving Ruby web apps."
+    },
+    {
+      "package": "vsftpd",
+      "package_score": 64.0,
+      "alt_name": "Pure-FTPd",
+      "alt_score": 80.4,
+      "alt_weblink": "https://www.pureftpd.org/",
+      "delta": 16.4,
+      "rationale": "Direct functional replacement as a standalone secure FTP daemon with comparable CLI/daemon invocation and configuration style."
+    },
+    {
+      "package": "python-alabaster",
+      "package_score": 71.5,
+      "alt_name": "sphinx-rtd-theme",
+      "alt_score": 87.8,
+      "alt_weblink": "https://github.com/readthedocs/sphinx_rtd_theme",
+      "delta": 16.3,
+      "rationale": "Direct Sphinx theme replacement activated identically via html_theme config."
+    },
+    {
+      "package": "python-pyflakes",
+      "package_score": 76.5,
+      "alt_name": "ruff",
+      "alt_score": 92.8,
+      "alt_weblink": "https://github.com/astral-sh/ruff",
+      "delta": 16.3,
+      "rationale": "Direct drop-in: ruff implements the complete Pyflakes rule set and accepts identical usage patterns for error detection."
+    },
+    {
+      "package": "python-rsa",
+      "package_score": 66.5,
+      "alt_name": "pycryptodome",
+      "alt_score": 82.8,
+      "alt_weblink": "https://github.com/Legrandin/pycryptodome",
+      "delta": 16.3,
+      "rationale": "Provides the same RSA operations as a drop-in module replacement with comparable synchronous usage."
+    },
+    {
+      "package": "gtk-doc",
+      "package_score": 55.5,
+      "alt_name": "gi-docgen",
+      "alt_score": 71.5,
+      "alt_weblink": "https://gitlab.gnome.org/GNOME/gi-docgen",
+      "delta": 16.0,
+      "rationale": "Direct functional replacement used by current GNOME projects for the same C/GObject API documentation workflow."
+    },
+    {
+      "package": "lzo",
+      "package_score": 68.5,
+      "alt_name": "Snappy",
+      "alt_score": 84.5,
+      "alt_weblink": "https://github.com/google/snappy",
+      "delta": 16.0,
+      "rationale": "Provides comparable speed-focused compression/decompression suitable for replacing LZO in performance-critical paths."
+    },
+    {
+      "package": "xz",
+      "package_score": 73.5,
+      "alt_name": "zstd",
+      "alt_score": 89.3,
+      "alt_weblink": "https://facebook.github.io/zstd/",
+      "delta": 15.8,
+      "rationale": "Direct functional drop-in for compression/decompression tasks with comparable CLI and library interfaces."
+    },
+    {
+      "package": "nss",
+      "package_score": 67.8,
+      "alt_name": "openssl",
+      "alt_score": 83.5,
+      "alt_weblink": "https://www.openssl.org/",
+      "delta": 15.7,
+      "rationale": "Provides equivalent TLS, X.509 and crypto services at the same C-library layer; many projects already link against either."
+    },
+    {
+      "package": "lshw",
+      "package_score": 71.5,
+      "alt_name": "inxi",
+      "alt_score": 87.0,
+      "alt_weblink": "https://github.com/smxi/inxi",
+      "delta": 15.5,
+      "rationale": "Direct CLI drop-in replacement providing equivalent hardware enumeration output for the same Linux use cases."
+    },
+    {
+      "package": "nss-pam-ldapd",
+      "package_score": 66.5,
+      "alt_name": "sssd",
+      "alt_score": 81.9,
+      "alt_weblink": "https://github.com/SSSD/sssd",
+      "delta": 15.4,
+      "rationale": "Direct functional replacement implementing the same NSS and PAM interfaces for LDAP directories."
+    },
+    {
+      "package": "python-pytz",
+      "package_score": 70.5,
+      "alt_name": "python-dateutil",
+      "alt_score": 85.4,
+      "alt_weblink": "https://pypi.org/project/python-dateutil/",
+      "delta": 14.9,
+      "rationale": "Supplies equivalent tzinfo objects via dateutil.tz for the same datetime use cases with minimal import changes."
+    },
+    {
+      "package": "python-hyperlink",
+      "package_score": 68.5,
+      "alt_name": "yarl",
+      "alt_score": 83.4,
+      "alt_weblink": "https://github.com/aio-libs/yarl",
+      "delta": 14.9,
+      "rationale": "Direct functional replacement providing immutable URL objects with comparable API for parsing, building and manipulation in Python."
+    },
+    {
+      "package": "tuna",
+      "package_score": 68.5,
+      "alt_name": "taskset",
+      "alt_score": 83.2,
+      "alt_weblink": "https://man7.org/linux/man-pages/man1/taskset.1.html",
+      "delta": 14.7,
+      "rationale": "Provides identical CPU affinity assignment via CLI without requiring code changes or new dependencies"
+    },
+    {
+      "package": "rubygem-multi_json",
+      "package_score": 62.5,
+      "alt_name": "json",
+      "alt_score": 77.0,
+      "alt_weblink": "https://rubygems.org/gems/json",
+      "delta": 14.5,
+      "rationale": "Provides the same JSON.parse/JSON.generate interface; multi_json users can replace by requiring 'json' directly."
+    },
+    {
+      "package": "pycurl",
+      "package_score": 73.5,
+      "alt_name": "httpx",
+      "alt_score": 87.8,
+      "alt_weblink": "https://github.com/encode/httpx",
+      "delta": 14.3,
+      "rationale": "Sync API mirrors common pycurl patterns while remaining a drop-in HTTP client."
+    },
+    {
+      "package": "python-alabaster",
+      "package_score": 71.5,
+      "alt_name": "furo",
+      "alt_score": 85.6,
+      "alt_weblink": "https://github.com/pradyunsg/furo",
+      "delta": 14.1,
+      "rationale": "Direct Sphinx theme replacement activated identically via html_theme config."
+    },
+    {
+      "package": "ntpsec",
+      "package_score": 73.5,
+      "alt_name": "chrony",
+      "alt_score": 87.5,
+      "alt_weblink": "https://chrony.tuxfamily.org/",
+      "delta": 14.0,
+      "rationale": "Direct drop-in NTP daemon replacement with compatible configuration syntax and superior performance on variable networks."
+    },
+    {
+      "package": "python-yamlloader",
+      "package_score": 68.5,
+      "alt_name": "ruamel.yaml",
+      "alt_score": 82.5,
+      "alt_weblink": "https://github.com/pycontribs/ruamel.yaml",
+      "delta": 14.0,
+      "rationale": "Direct functional replacement providing ordered dict loading via safe or round-trip mode without code changes beyond import."
+    },
+    {
+      "package": "perl-YAML",
+      "package_score": 55.5,
+      "alt_name": "YAML::XS",
+      "alt_score": 69.5,
+      "alt_weblink": "https://metacpan.org/pod/YAML::XS",
+      "delta": 14.0,
+      "rationale": "Direct API-compatible replacement using libyaml for same YAML load/dump use cases"
+    },
+    {
+      "package": "ca-certificates",
+      "package_score": 76.0,
+      "alt_name": "certdata.txt (Mozilla)",
+      "alt_score": 89.5,
+      "alt_weblink": "https://hg.mozilla.org/mozilla-central/raw-file/tip/security/nss/lib/ckfw/builtins/certdata.txt",
+      "delta": 13.5,
+      "rationale": "Same layer (raw CA list), identical text format and usage pattern as othercertdata.txt; actively maintained by Mozilla."
+    },
+    {
+      "package": "python-netifaces",
+      "package_score": 64.5,
+      "alt_name": "ifaddr",
+      "alt_score": 77.9,
+      "alt_weblink": "https://github.com/pydron/ifaddr",
+      "delta": 13.4,
+      "rationale": "Direct drop-in replacement providing the same interface-address lookup functionality with a compatible Python API."
+    },
+    {
+      "package": "rubygem-rdiscount",
+      "package_score": 77.5,
+      "alt_name": "redcarpet",
+      "alt_score": 90.8,
+      "alt_weblink": "https://github.com/vmg/redcarpet",
+      "delta": 13.3,
+      "rationale": "Direct drop-in Markdown renderer with compatible render API and high performance."
+    },
+    {
+      "package": "cmocka",
+      "package_score": 70.5,
+      "alt_name": "Check",
+      "alt_score": 83.6,
+      "alt_weblink": "https://libcheck.github.io/check/",
+      "delta": 13.1,
+      "rationale": "Direct C unit-test framework drop-in replacement providing similar test runner and assertion APIs"
+    },
+    {
+      "package": "jsoncpp",
+      "package_score": 76.5,
+      "alt_name": "nlohmann/json",
+      "alt_score": 89.6,
+      "alt_weblink": "https://github.com/nlohmann/json",
+      "delta": 13.1,
+      "rationale": "Direct functional replacement: same C++ JSON DOM/streaming use cases, drop-in via similar parse/dump calls and value types."
+    },
+    {
+      "package": "kubernetes-dns",
+      "package_score": 77.5,
+      "alt_name": "CoreDNS",
+      "alt_score": 90.6,
+      "alt_weblink": "https://github.com/coredns/coredns",
+      "delta": 13.1,
+      "rationale": "Direct drop-in Kubernetes DNS replacement; same Go binary, same API surface, same deployment manifests."
+    },
+    {
+      "package": "python-toml",
+      "package_score": 58.5,
+      "alt_name": "tomlkit",
+      "alt_score": 71.5,
+      "alt_weblink": "https://github.com/sdispater/tomlkit",
+      "delta": 13.0,
+      "rationale": "Provides equivalent load/dump functions plus editing capabilities for the same TOML use cases."
+    },
+    {
+      "package": "python-setuptools-rust",
+      "package_score": 76.5,
+      "alt_name": "maturin",
+      "alt_score": 89.1,
+      "alt_weblink": "https://github.com/PyO3/maturin",
+      "delta": 12.6,
+      "rationale": "Provides equivalent Rust-to-Python extension building and packaging; users can migrate by switching build backend in pyproject.toml with minimal code changes."
+    },
+    {
+      "package": "gdbm",
+      "package_score": 70.5,
+      "alt_name": "lmdb",
+      "alt_score": 83.0,
+      "alt_weblink": "https://www.symas.com/lmdb",
+      "delta": 12.5,
+      "rationale": "Direct functional replacement providing comparable embedded key-value storage with similar C API usage patterns."
+    },
+    {
+      "package": "perl-YAML",
+      "package_score": 55.5,
+      "alt_name": "YAML::PP",
+      "alt_score": 67.8,
+      "alt_weblink": "https://metacpan.org/pod/YAML::PP",
+      "delta": 12.3,
+      "rationale": "Functional replacement providing modern YAML support with similar Perl usage patterns"
+    },
+    {
+      "package": "python-etcd",
+      "package_score": 54.0,
+      "alt_name": "etcd3",
+      "alt_score": 66.2,
+      "alt_weblink": "https://github.com/kragniz/python-etcd3",
+      "delta": 12.2,
+      "rationale": "Provides a synchronous Python client targeting the same etcd key-value operations with comparable usage patterns."
+    },
+    {
+      "package": "xz",
+      "package_score": 73.5,
+      "alt_name": "lz4",
+      "alt_score": 85.6,
+      "alt_weblink": "https://lz4.github.io/lz4/",
+      "delta": 12.1,
+      "rationale": "Provides equivalent lossless compression functionality via similar command-line and library usage patterns."
+    },
+    {
+      "package": "python-mako",
+      "package_score": 78.5,
+      "alt_name": "jinja2",
+      "alt_score": 90.5,
+      "alt_weblink": "https://jinja.palletsprojects.com/",
+      "delta": 12.0,
+      "rationale": "Direct drop-in Python template engine with compatible API for rendering strings/files and similar syntax extensibility."
+    },
+    {
+      "package": "perl-JSON",
+      "package_score": 68.5,
+      "alt_name": "JSON::XS",
+      "alt_score": 80.4,
+      "alt_weblink": "https://metacpan.org/dist/JSON-XS",
+      "delta": 11.9,
+      "rationale": "Direct drop-in replacement with same encode/decode interface and Perl runtime"
+    },
+    {
+      "package": "rubygem-rest-client",
+      "package_score": 76.5,
+      "alt_name": "faraday",
+      "alt_score": 88.4,
+      "alt_weblink": "https://github.com/lostisland/faraday",
+      "delta": 11.9,
+      "rationale": "Direct drop-in Ruby HTTP client replacement with comparable request syntax and adapter flexibility."
+    },
+    {
+      "package": "check",
+      "package_score": 74.0,
+      "alt_name": "unity",
+      "alt_score": 85.8,
+      "alt_weblink": "https://github.com/ThrowTheSwitch/Unity",
+      "delta": 11.8,
+      "rationale": "Minimal C unit testing replacement with comparable test macros and runner"
+    },
+    {
+      "package": "python-autopep8",
+      "package_score": 80.5,
+      "alt_name": "black",
+      "alt_score": 92.2,
+      "alt_weblink": "https://github.com/psf/black",
+      "delta": 11.7,
+      "rationale": "Direct functional replacement providing automated Python code formatting via CLI or API with comparable usage."
+    },
+    {
+      "package": "rubygem-yajl-ruby",
+      "package_score": 78.5,
+      "alt_name": "oj",
+      "alt_score": 90.1,
+      "alt_weblink": "https://github.com/ohler55/oj",
+      "delta": 11.6,
+      "rationale": "Direct functional replacement providing identical JSON parse/generate calls with superior performance and maintained compatibility layer"
+    },
+    {
+      "package": "systemtap",
+      "package_score": 75.5,
+      "alt_name": "bpftrace",
+      "alt_score": 87.0,
+      "alt_weblink": "https://github.com/bpftrace/bpftrace",
+      "delta": 11.5,
+      "rationale": "Direct CLI/scripting replacement for dynamic tracing use cases; same probe-based model on Linux without kernel modules."
+    },
+    {
+      "package": "perl-Module-Build",
+      "package_score": 64.5,
+      "alt_name": "ExtUtils-MakeMaker",
+      "alt_score": 75.9,
+      "alt_weblink": "https://github.com/Perl-Toolchain-Gang/ExtUtils-MakeMaker",
+      "delta": 11.4,
+      "rationale": "Direct drop-in replacement at the same build-layer abstraction; users replace Module::Build with EUMM in their Makefile.PL with minimal changes."
+    },
+    {
+      "package": "python-automat",
+      "package_score": 68.5,
+      "alt_name": "python-statemachine",
+      "alt_score": 79.8,
+      "alt_weblink": "https://github.com/fgmacedo/python-statemachine",
+      "delta": 11.3,
+      "rationale": "Provides the same core FSM abstraction and can replace Automat state definitions with only minor API adjustments."
+    },
+    {
+      "package": "iniparser",
+      "package_score": 76.5,
+      "alt_name": "inih",
+      "alt_score": 87.8,
+      "alt_weblink": "https://github.com/benhoyt/inih",
+      "delta": 11.3,
+      "rationale": "Direct functional replacement: same C INI parsing use-case, comparable API surface and single-file integration pattern."
+    },
+    {
+      "package": "libXinerama",
+      "package_score": 68.5,
+      "alt_name": "libXrandr",
+      "alt_score": 79.6,
+      "alt_weblink": "https://gitlab.freedesktop.org/xorg/lib/libxrandr",
+      "delta": 11.1,
+      "rationale": "Provides equivalent multi-head geometry information via the modern RandR extension using nearly identical Xlib calling patterns."
+    },
+    {
+      "package": "nspr",
+      "package_score": 58.5,
+      "alt_name": "APR",
+      "alt_score": 69.6,
+      "alt_weblink": "https://apr.apache.org/",
+      "delta": 11.1,
+      "rationale": "Direct functional replacement providing nearly identical OS portability abstractions at the same C API layer."
+    },
+    {
+      "package": "lighttpd",
+      "package_score": 74.5,
+      "alt_name": "nginx",
+      "alt_score": 85.5,
+      "alt_weblink": "https://nginx.org/",
+      "delta": 11.0,
+      "rationale": "Direct drop-in web-server daemon with comparable event-driven architecture and configuration patterns for the same HTTP serving use cases."
+    },
+    {
+      "package": "apache-ant",
+      "package_score": 79.4,
+      "alt_name": "Gradle",
+      "alt_score": 90.4,
+      "alt_weblink": "https://gradle.org/",
+      "delta": 11.0,
+      "rationale": "Direct functional replacement providing equivalent build automation, task execution and dependency management via modern DSL."
+    },
+    {
+      "package": "distcc",
+      "package_score": 62.5,
+      "alt_name": "icecream",
+      "alt_score": 73.0,
+      "alt_weblink": "https://github.com/icecc/icecream",
+      "delta": 10.5,
+      "rationale": "Direct functional replacement providing the same distributed C/C++ compilation daemon and client usage pattern."
+    },
+    {
+      "package": "sendmail",
+      "package_score": 65.5,
+      "alt_name": "exim",
+      "alt_score": 76.0,
+      "alt_weblink": "https://www.exim.org/",
+      "delta": 10.5,
+      "rationale": "Same-layer MTA daemon providing equivalent email routing and delivery functions without code changes for basic use."
+    },
+    {
+      "package": "apr",
+      "package_score": 66.5,
+      "alt_name": "glib",
+      "alt_score": 76.8,
+      "alt_weblink": "https://gitlab.gnome.org/GNOME/glib",
+      "delta": 10.3,
+      "rationale": "Direct functional replacement providing equivalent OS-portability APIs at the same C abstraction layer."
+    },
+    {
+      "package": "httpd",
+      "package_score": 77.4,
+      "alt_name": "Nginx",
+      "alt_score": 87.5,
+      "alt_weblink": "https://nginx.org/",
+      "delta": 10.1,
+      "rationale": "Direct functional replacement as a standalone HTTP daemon with equivalent request handling and module extensibility."
+    },
+    {
+      "package": "rubygem-httpclient",
+      "package_score": 68.5,
+      "alt_name": "rest-client",
+      "alt_score": 78.6,
+      "alt_weblink": "https://github.com/rest-client/rest-client",
+      "delta": 10.1,
+      "rationale": "Provides near-identical synchronous HTTP client usage for common operations without architectural changes."
+    },
+    {
+      "package": "python-versioningit",
+      "package_score": 82.4,
+      "alt_name": "setuptools-scm",
+      "alt_score": 92.1,
+      "alt_weblink": "https://github.com/pypa/setuptools-scm",
+      "delta": 9.7,
+      "rationale": "Direct drop-in setuptools plugin providing identical VCS-based dynamic versioning behavior"
+    },
+    {
+      "package": "glog",
+      "package_score": 80.5,
+      "alt_name": "spdlog",
+      "alt_score": 90.1,
+      "alt_weblink": "https://github.com/gabime/spdlog",
+      "delta": 9.6,
+      "rationale": "Direct drop-in C++ logging replacement with similar macros and sinks; same sync/async usage patterns."
+    },
+    {
+      "package": "json-c",
+      "package_score": 78.4,
+      "alt_name": "cJSON",
+      "alt_score": 87.7,
+      "alt_weblink": "https://github.com/DaveGamble/cJSON",
+      "delta": 9.3,
+      "rationale": "Direct C JSON API replacement with similar parse/print functions and object model."
+    },
+    {
+      "package": "python-cffi",
+      "package_score": 83.4,
+      "alt_name": "ctypes",
+      "alt_score": 92.6,
+      "alt_weblink": "https://docs.python.org/3/library/ctypes.html",
+      "delta": 9.2,
+      "rationale": "Direct stdlib FFI API for loading and calling C functions from Python; same use cases, no external deps."
+    },
+    {
+      "package": "python-CacheControl",
+      "package_score": 76.5,
+      "alt_name": "requests-cache",
+      "alt_score": 85.6,
+      "alt_weblink": "https://github.com/requests-cache/requests-cache",
+      "delta": 9.1,
+      "rationale": "Provides identical requests.Session caching semantics with backend storage options."
+    },
+    {
+      "package": "python-portalocker",
+      "package_score": 78.4,
+      "alt_name": "filelock",
+      "alt_score": 87.4,
+      "alt_weblink": "https://github.com/tox-dev/py-filelock",
+      "delta": 9.0,
+      "rationale": "Direct functional replacement offering identical file-locking semantics via acquire/release or context managers in pure Python."
+    },
+    {
+      "package": "nettle",
+      "package_score": 76.5,
+      "alt_name": "mbedtls",
+      "alt_score": 85.5,
+      "alt_weblink": "https://github.com/Mbed-TLS/mbedtls",
+      "delta": 9.0,
+      "rationale": "Provides equivalent low-level crypto building blocks in C; same abstraction level and usage pattern."
+    },
+    {
+      "package": "gnutls",
+      "package_score": 73.5,
+      "alt_name": "OpenSSL",
+      "alt_score": 82.5,
+      "alt_weblink": "https://www.openssl.org/",
+      "delta": 9.0,
+      "rationale": "Direct drop-in TLS/crypto library with compatible high-level APIs for the same network security use cases."
+    },
+    {
+      "package": "rubygem-webrick",
+      "package_score": 71.5,
+      "alt_name": "thin",
+      "alt_score": 80.4,
+      "alt_weblink": "https://github.com/macournoyer/thin",
+      "delta": 8.9,
+      "rationale": "Provides equivalent embedded HTTP server capability for Rack-based Ruby applications."
+    },
+    {
+      "package": "squid",
+      "package_score": 72.1,
+      "alt_name": "Varnish Cache",
+      "alt_score": 81.0,
+      "alt_weblink": "https://varnish-cache.org/",
+      "delta": 8.9,
+      "rationale": "Direct drop-in HTTP caching proxy daemon with comparable deployment model and configuration-driven usage."
+    },
+    {
+      "package": "rubygem-http-form_data",
+      "package_score": 76.0,
+      "alt_name": "multipart-post",
+      "alt_score": 84.9,
+      "alt_weblink": "https://github.com/socketry/multipart-post",
+      "delta": 8.9,
+      "rationale": "Direct functional replacement providing identical multipart form-data building API usable by the same Ruby HTTP clients."
+    },
+    {
+      "package": "nginx-ingress",
+      "package_score": 83.4,
+      "alt_name": "traefik",
+      "alt_score": 92.0,
+      "alt_weblink": "https://github.com/traefik/traefik",
+      "delta": 8.6,
+      "rationale": "Same-layer Kubernetes Ingress controller; users can switch via IngressClass without changing routing rules."
+    },
+    {
+      "package": "python-fuse",
+      "package_score": 70.5,
+      "alt_name": "pyfuse3",
+      "alt_score": 79.1,
+      "alt_weblink": "https://github.com/libfuse/pyfuse3",
+      "delta": 8.6,
+      "rationale": "Direct functional replacement providing Python bindings to FUSE at the same abstraction layer with compatible mount and operation patterns."
+    },
+    {
+      "package": "python-ruamel-yaml",
+      "package_score": 78.5,
+      "alt_name": "PyYAML",
+      "alt_score": 87.1,
+      "alt_weblink": "https://pypi.org/project/PyYAML/",
+      "delta": 8.6,
+      "rationale": "Direct functional replacement providing equivalent YAML load/dump operations at the same abstraction layer with near-identical usage patterns."
+    },
+    {
+      "package": "mc",
+      "package_score": 81.4,
+      "alt_name": "nnn",
+      "alt_score": 89.8,
+      "alt_weblink": "https://github.com/jarun/nnn",
+      "delta": 8.4,
+      "rationale": "Direct CLI drop-in replacement: same terminal two-pane navigation use-case, C implementation, identical install/run pattern."
+    },
+    {
+      "package": "python-pyparsing",
+      "package_score": 80.5,
+      "alt_name": "lark",
+      "alt_score": 88.9,
+      "alt_weblink": "https://github.com/lark-parser/lark",
+      "delta": 8.4,
+      "rationale": "Direct functional replacement: same Python runtime, grammar-based text parsing at identical abstraction level, sync API, actively maintained."
+    },
+    {
+      "package": "apache-maven",
+      "package_score": 82.8,
+      "alt_name": "Gradle",
+      "alt_score": 90.9,
+      "alt_weblink": "https://gradle.org/",
+      "delta": 8.1,
+      "rationale": "Direct functional replacement providing equivalent Java build/dependency management with comparable CLI usage and plugin model."
+    },
+    {
+      "package": "rubygem-signet",
+      "package_score": 78.5,
+      "alt_name": "oauth2",
+      "alt_score": 86.4,
+      "alt_weblink": "https://github.com/oauth-xx/oauth2",
+      "delta": 7.9,
+      "rationale": "Direct OAuth 2.0 client drop-in with matching synchronous usage and token handling APIs"
+    },
+    {
+      "package": "vsftpd",
+      "package_score": 64.0,
+      "alt_name": "ProFTPD",
+      "alt_score": 71.9,
+      "alt_weblink": "http://www.proftpd.org/",
+      "delta": 7.9,
+      "rationale": "Serves as a drop-in FTP daemon alternative with matching runtime model and configuration-driven operation."
+    },
+    {
+      "package": "libssh",
+      "package_score": 78.4,
+      "alt_name": "libssh2",
+      "alt_score": 86.2,
+      "alt_weblink": "https://www.libssh2.org/",
+      "delta": 7.8,
+      "rationale": "Direct drop-in C SSH2 client library with comparable API surface for authentication, channels and SFTP."
+    },
+    {
+      "package": "ecdsa",
+      "package_score": 82.4,
+      "alt_name": "cryptography",
+      "alt_score": 90.2,
+      "alt_weblink": "https://github.com/pyca/cryptography",
+      "delta": 7.8,
+      "rationale": "Direct functional replacement providing equivalent ECDSA sign/verify operations on the same curves with nearly identical API patterns."
+    },
+    {
+      "package": "uwsgi",
+      "package_score": 69.8,
+      "alt_name": "Waitress",
+      "alt_score": 77.5,
+      "alt_weblink": "https://github.com/Pylons/waitress",
+      "delta": 7.7,
+      "rationale": "Pure-Python WSGI server usable as direct swap for uWSGI in Python web deployments."
+    },
+    {
+      "package": "gnutls",
+      "package_score": 73.5,
+      "alt_name": "mbed TLS",
+      "alt_score": 81.2,
+      "alt_weblink": "https://github.com/Mbed-TLS/mbedtls",
+      "delta": 7.7,
+      "rationale": "Provides equivalent TLS 1.2/1.3 and crypto primitives with similar C API usage patterns."
+    },
+    {
+      "package": "wget",
+      "package_score": 80.4,
+      "alt_name": "curl",
+      "alt_score": 88.0,
+      "alt_weblink": "https://curl.se/",
+      "delta": 7.6,
+      "rationale": "Direct CLI drop-in replacement for non-interactive HTTP/FTP file retrieval with comparable flags and output behavior."
+    },
+    {
+      "package": "rubygem-highline",
+      "package_score": 67.5,
+      "alt_name": "cli-ui",
+      "alt_score": 74.8,
+      "alt_weblink": "https://github.com/Shopify/cli-ui",
+      "delta": 7.3,
+      "rationale": "Provides comparable interactive CLI prompting and formatting as a drop-in Ruby library"
+    },
+    {
+      "package": "perl-JSON",
+      "package_score": 68.5,
+      "alt_name": "Cpanel::JSON::XS",
+      "alt_score": 75.7,
+      "alt_weblink": "https://metacpan.org/dist/Cpanel-JSON-XS",
+      "delta": 7.2,
+      "rationale": "Functional replacement offering same JSON handling layer in Perl"
+    },
+    {
+      "package": "mariadb",
+      "package_score": 80.4,
+      "alt_name": "MySQL Server",
+      "alt_score": 87.5,
+      "alt_weblink": "https://dev.mysql.com",
+      "delta": 7.1,
+      "rationale": "Direct functional replacement; identical client protocol, SQL dialect and replication allow zero-code-change swap for most workloads."
+    },
+    {
+      "package": "vernemq",
+      "package_score": 80.5,
+      "alt_name": "emqx",
+      "alt_score": 87.5,
+      "alt_weblink": "https://github.com/emqx/emqx",
+      "delta": 7.0,
+      "rationale": "Direct drop-in Erlang MQTT broker with compatible clustering and protocol support for seamless swap"
+    },
+    {
+      "package": "python-pam",
+      "package_score": 67.5,
+      "alt_name": "pamela",
+      "alt_score": 74.4,
+      "alt_weblink": "https://github.com/django-pamela/pamela",
+      "delta": 6.9,
+      "rationale": "Direct functional replacement providing equivalent PAM authentication primitives with nearly identical usage patterns."
+    },
+    {
+      "package": "rubygem-http",
+      "package_score": 80.5,
+      "alt_name": "faraday",
+      "alt_score": 87.4,
+      "alt_weblink": "https://github.com/lostisland/faraday",
+      "delta": 6.9,
+      "rationale": "Direct drop-in Ruby HTTP client with comparable sync API and minimal code changes for request/response flows."
+    },
+    {
+      "package": "findutils",
+      "package_score": 84.0,
+      "alt_name": "fd",
+      "alt_score": 90.9,
+      "alt_weblink": "https://github.com/sharkdp/fd",
+      "delta": 6.9,
+      "rationale": "Direct CLI replacement for GNU find with equivalent file-search functionality and simpler syntax"
+    },
+    {
+      "package": "python-webob",
+      "package_score": 78.5,
+      "alt_name": "Werkzeug",
+      "alt_score": 85.4,
+      "alt_weblink": "https://github.com/pallets/werkzeug",
+      "delta": 6.9,
+      "rationale": "Direct WSGI Request/Response replacement at same abstraction layer with compatible API patterns."
+    },
+    {
+      "package": "gperftools",
+      "package_score": 82.4,
+      "alt_name": "mimalloc",
+      "alt_score": 89.2,
+      "alt_weblink": "https://github.com/microsoft/mimalloc",
+      "delta": 6.8,
+      "rationale": "Direct malloc API replacement usable via LD_PRELOAD or relinking, same C/C++ runtime layer as tcmalloc."
+    },
+    {
+      "package": "vernemq",
+      "package_score": 80.5,
+      "alt_name": "mosquitto",
+      "alt_score": 87.2,
+      "alt_weblink": "https://github.com/eclipse/mosquitto",
+      "delta": 6.7,
+      "rationale": "Standard MQTT broker providing identical pub/sub semantics and config-driven daemon usage"
+    },
+    {
+      "package": "sendmail",
+      "package_score": 65.5,
+      "alt_name": "opensmtpd",
+      "alt_score": 72.2,
+      "alt_weblink": "https://www.opensmtpd.org/",
+      "delta": 6.7,
+      "rationale": "Direct MTA daemon alternative supporting identical core email transfer use cases."
+    },
+    {
+      "package": "perl-Config-IniFiles",
+      "package_score": 64.5,
+      "alt_name": "Config::Tiny",
+      "alt_score": 71.2,
+      "alt_weblink": "https://metacpan.org/pod/Config::Tiny",
+      "delta": 6.7,
+      "rationale": "Direct functional replacement for basic INI read/write with nearly identical usage pattern in Perl"
+    },
+    {
+      "package": "bindutils",
+      "package_score": 76.4,
+      "alt_name": "pdns",
+      "alt_score": 82.9,
+      "alt_weblink": "https://www.powerdns.com/auth.html",
+      "delta": 6.5,
+      "rationale": "Authoritative DNS server drop-in for the same deployment and query-handling use cases."
+    },
+    {
+      "package": "libgcrypt",
+      "package_score": 76.5,
+      "alt_name": "OpenSSL",
+      "alt_score": 82.8,
+      "alt_weblink": "https://www.openssl.org/",
+      "delta": 6.3,
+      "rationale": "Provides equivalent low-level crypto primitives (ciphers, digests, PK, RNG) via libcrypto with comparable C API usage patterns."
+    },
+    {
+      "package": "duktape",
+      "package_score": 77.5,
+      "alt_name": "quickjs",
+      "alt_score": 83.8,
+      "alt_weblink": "https://bellard.org/quickjs/",
+      "delta": 6.3,
+      "rationale": "Direct drop-in embeddable JS engine with comparable C API and footprint for the same scripting use cases."
+    },
+    {
+      "package": "python-pycryptodome",
+      "package_score": 82.9,
+      "alt_name": "cryptography",
+      "alt_score": 89.1,
+      "alt_weblink": "https://github.com/pyca/cryptography",
+      "delta": 6.2,
+      "rationale": "Direct functional replacement offering equivalent cryptographic primitives with comparable usage patterns in Python."
+    },
+    {
+      "package": "apache-ant",
+      "package_score": 79.4,
+      "alt_name": "Apache Maven",
+      "alt_score": 85.6,
+      "alt_weblink": "https://maven.apache.org/",
+      "delta": 6.2,
+      "rationale": "Provides identical build lifecycle and dependency resolution capabilities as a drop-in CLI/Java build tool."
+    },
+    {
+      "package": "python-fuse",
+      "package_score": 70.5,
+      "alt_name": "fusepy",
+      "alt_score": 76.6,
+      "alt_weblink": "https://github.com/fusepy/fusepy",
+      "delta": 6.1,
+      "rationale": "Provides equivalent FUSE filesystem implementation in Python with nearly identical usage for basic mount and callback patterns."
+    },
+    {
+      "package": "grep",
+      "package_score": 85.5,
+      "alt_name": "ripgrep",
+      "alt_score": 91.5,
+      "alt_weblink": "https://github.com/BurntSushi/ripgrep",
+      "delta": 6.0,
+      "rationale": "Direct CLI grep replacement supporting identical regex search workflows and flags."
+    },
+    {
+      "package": "python-mistune",
+      "package_score": 81.4,
+      "alt_name": "Python-Markdown",
+      "alt_score": 87.4,
+      "alt_weblink": "https://github.com/Python-Markdown/markdown",
+      "delta": 6.0,
+      "rationale": "Direct functional replacement: same Markdown-to-HTML parsing use case with comparable extension mechanism and sync API."
+    },
+    {
+      "package": "python-ujson",
+      "package_score": 83.4,
+      "alt_name": "orjson",
+      "alt_score": 88.9,
+      "alt_weblink": "https://github.com/ijl/orjson",
+      "delta": 5.5,
+      "rationale": "Direct drop-in for ujson use cases with faster performance and maintained API compatibility for loads/dumps."
+    },
+    {
+      "package": "python-requests-oauthlib",
+      "package_score": 82.4,
+      "alt_name": "authlib",
+      "alt_score": 87.8,
+      "alt_weblink": "https://github.com/lepture/authlib",
+      "delta": 5.4,
+      "rationale": "Authlib supplies equivalent OAuth1/OAuth2 client classes and can be passed directly to requests via auth= parameter for identical usage."
+    },
+    {
+      "package": "iptables",
+      "package_score": 80.5,
+      "alt_name": "nftables",
+      "alt_score": 85.9,
+      "alt_weblink": "https://www.netfilter.org/projects/nftables/",
+      "delta": 5.4,
+      "rationale": "Direct drop-in CLI replacement at same kernel layer for packet filtering/NAT use cases."
+    },
+    {
+      "package": "grub2",
+      "package_score": 80.5,
+      "alt_name": "Limine",
+      "alt_score": 85.8,
+      "alt_weblink": "https://limine-bootloader.org/",
+      "delta": 5.3,
+      "rationale": "Direct functional replacement as a bootloader with comparable boot protocol support and config-driven kernel loading."
+    },
+    {
+      "package": "gflags",
+      "package_score": 70.5,
+      "alt_name": "cxxopts",
+      "alt_score": 75.8,
+      "alt_weblink": "https://github.com/jarro2783/cxxopts",
+      "delta": 5.3,
+      "rationale": "Provides the same core command-line flag parsing capability as a drop-in C++ library replacement."
+    },
+    {
+      "package": "rubygem-llhttp-ffi",
+      "package_score": 64.5,
+      "alt_name": "http_parser.rb",
+      "alt_score": 69.8,
+      "alt_weblink": "https://github.com/tmm1/http_parser.rb",
+      "delta": 5.3,
+      "rationale": "Provides equivalent Ruby-level HTTP message parsing API that can replace llhttp-ffi calls with minimal code changes."
+    },
+    {
+      "package": "crun",
+      "package_score": 84.4,
+      "alt_name": "runc",
+      "alt_score": 89.6,
+      "alt_weblink": "https://github.com/opencontainers/runc",
+      "delta": 5.2,
+      "rationale": "Direct functional replacement implementing identical OCI runtime spec and CLI usage pattern."
+    },
+    {
+      "package": "newt",
+      "package_score": 71.4,
+      "alt_name": "cdk",
+      "alt_score": 76.6,
+      "alt_weblink": "https://github.com/ThomasDickey/cdk",
+      "delta": 5.2,
+      "rationale": "Direct C library replacement providing comparable text UI widgets and dialog components with similar integration pattern."
+    },
+    {
+      "package": "cracklib",
+      "package_score": 67.5,
+      "alt_name": "libpwquality",
+      "alt_score": 72.6,
+      "alt_weblink": "https://github.com/libpwquality/libpwquality",
+      "delta": 5.1,
+      "rationale": "Direct functional replacement providing the same password-strength checking layer with compatible C API and PAM integration."
+    },
+    {
+      "package": "libmicrohttpd",
+      "package_score": 79.5,
+      "alt_name": "civetweb",
+      "alt_score": 84.6,
+      "alt_weblink": "https://github.com/civetweb/civetweb",
+      "delta": 5.1,
+      "rationale": "Direct C embeddable HTTP server drop-in with comparable synchronous API and TLS support."
+    },
+    {
+      "package": "rubygem-retriable",
+      "package_score": 82.4,
+      "alt_name": "retryable",
+      "alt_score": 87.4,
+      "alt_weblink": "https://github.com/nfedyashev/retryable",
+      "delta": 5.0,
+      "rationale": "Direct drop-in replacement providing identical retry-with-backoff semantics via a compatible Ruby DSL."
+    },
+    {
+      "package": "python-flit-core",
+      "package_score": 81.4,
+      "alt_name": "hatch",
+      "alt_score": 86.4,
+      "alt_weblink": "https://hatch.pypa.io/",
+      "delta": 5.0,
+      "rationale": "Provides identical PEP 517 build/publish workflow via hatchling backend; users swap only the build-system.requires table."
+    },
+    {
+      "package": "jansson",
+      "package_score": 79.5,
+      "alt_name": "cJSON",
+      "alt_score": 84.3,
+      "alt_weblink": "https://github.com/DaveGamble/cJSON",
+      "delta": 4.8,
+      "rationale": "Lightweight C JSON library providing equivalent encode/decode functionality with minimal dependencies."
+    },
+    {
+      "package": "nginx-ingress",
+      "package_score": 83.4,
+      "alt_name": "ingress-nginx",
+      "alt_score": 88.2,
+      "alt_weblink": "https://github.com/kubernetes/ingress-nginx",
+      "delta": 4.8,
+      "rationale": "Direct drop-in replacement implementing the same Kubernetes Ingress API with NGINX data plane."
+    },
+    {
+      "package": "libedit",
+      "package_score": 78.0,
+      "alt_name": "readline",
+      "alt_score": 82.8,
+      "alt_weblink": "https://tiswww.cwru.edu/php/chet/readline/rltop.html",
+      "delta": 4.8,
+      "rationale": "Direct functional replacement offering the same readline-compatible line-editing API at the C library layer."
+    },
+    {
+      "package": "telegraf",
+      "package_score": 85.4,
+      "alt_name": "Vector",
+      "alt_score": 90.0,
+      "alt_weblink": "https://github.com/vectordotdev/vector",
+      "delta": 4.6,
+      "rationale": "Direct drop-in daemon replacement for metric/log collection pipelines with comparable plugin architecture."
+    },
+    {
+      "package": "libmicrohttpd",
+      "package_score": 79.5,
+      "alt_name": "mongoose",
+      "alt_score": 84.0,
+      "alt_weblink": "https://github.com/cesanta/mongoose",
+      "delta": 4.5,
+      "rationale": "Provides equivalent embeddable HTTP server functionality in C with similar usage patterns."
+    },
+    {
+      "package": "flannel",
+      "package_score": 79.4,
+      "alt_name": "cilium",
+      "alt_score": 83.9,
+      "alt_weblink": "https://github.com/cilium/cilium",
+      "delta": 4.5,
+      "rationale": "Direct CNI replacement providing equivalent pod networking via VXLAN/eBPF overlay with same Kubernetes install pattern."
+    },
+    {
+      "package": "python-dateutil",
+      "package_score": 85.4,
+      "alt_name": "arrow",
+      "alt_score": 89.9,
+      "alt_weblink": "https://github.com/arrow-py/arrow",
+      "delta": 4.5,
+      "rationale": "Direct functional replacement providing comparable date parsing, manipulation and formatting APIs in pure Python."
+    },
+    {
+      "package": "python-urllib3",
+      "package_score": 85.9,
+      "alt_name": "httpx",
+      "alt_score": 90.3,
+      "alt_weblink": "https://www.python-httpx.org/",
+      "delta": 4.4,
+      "rationale": "Direct functional replacement providing equivalent sync HTTP client with pooling and retries."
+    },
+    {
+      "package": "perl-Module-Build",
+      "package_score": 64.5,
+      "alt_name": "Module-Build-Tiny",
+      "alt_score": 68.7,
+      "alt_weblink": "https://github.com/Perl-Toolchain-Gang/Module-Build-Tiny",
+      "delta": 4.2,
+      "rationale": "Intentionally API-compatible lightweight reimplementation; existing Build.PL files often work unchanged."
+    },
+    {
+      "package": "geos",
+      "package_score": 81.4,
+      "alt_name": "Boost.Geometry",
+      "alt_score": 85.6,
+      "alt_weblink": "https://www.boost.org/doc/libs/release/libs/geometry/",
+      "delta": 4.2,
+      "rationale": "Direct C++ drop-in replacement for 2D geometric algorithms and spatial predicates."
+    },
+    {
+      "package": "snappy",
+      "package_score": 83.4,
+      "alt_name": "lz4",
+      "alt_score": 87.4,
+      "alt_weblink": "https://github.com/lz4/lz4",
+      "delta": 4.0,
+      "rationale": "Direct functional replacement providing comparable ultra-fast compression/decompression with similar low-level block APIs usable in the same C++ code patterns."
+    },
+    {
+      "package": "util-linux",
+      "package_score": 78.5,
+      "alt_name": "busybox",
+      "alt_score": 82.5,
+      "alt_weblink": "https://github.com/mirror/busybox",
+      "delta": 4.0,
+      "rationale": "Provides equivalent CLI utilities (mount, fdisk, etc.) as drop-in replacements in same C/Unix layer."
+    },
+    {
+      "package": "python-pyflakes",
+      "package_score": 76.5,
+      "alt_name": "pylint",
+      "alt_score": 80.5,
+      "alt_weblink": "https://github.com/pylint-dev/pylint",
+      "delta": 4.0,
+      "rationale": "Functional replacement: pylint detects the same undefined names, unused imports and similar issues with comparable CLI invocation."
+    },
+    {
+      "package": "rubygem-builder",
+      "package_score": 78.5,
+      "alt_name": "nokogiri",
+      "alt_score": 82.5,
+      "alt_weblink": "https://rubygems.org/gems/nokogiri",
+      "delta": 4.0,
+      "rationale": "Nokogiri::XML::Builder offers a drop-in DSL replacement for constructing XML documents with minimal code changes."
+    },
+    {
+      "package": "rubygem-optimist",
+      "package_score": 80.4,
+      "alt_name": "slop",
+      "alt_score": 84.4,
+      "alt_weblink": "https://github.com/leejarvis/slop",
+      "delta": 4.0,
+      "rationale": "Direct drop-in CLI option parser with comparable simple usage pattern and no architectural changes required."
+    },
+    {
+      "package": "groff",
+      "package_score": 72.5,
+      "alt_name": "mandoc",
+      "alt_score": 76.4,
+      "alt_weblink": "https://mandoc.bsd.lv/",
+      "delta": 3.9,
+      "rationale": "Provides identical man page rendering via same troff-like input without code changes."
+    },
+    {
+      "package": "http-parser",
+      "package_score": 61.4,
+      "alt_name": "picohttpparser",
+      "alt_score": 65.2,
+      "alt_weblink": "https://github.com/h2o/picohttpparser",
+      "delta": 3.8,
+      "rationale": "Provides equivalent low-level HTTP message parsing functionality in C with comparable sync usage."
+    },
+    {
+      "package": "python-lxml",
+      "package_score": 81.0,
+      "alt_name": "xml.etree.ElementTree",
+      "alt_score": 84.8,
+      "alt_weblink": "https://docs.python.org/3/library/xml.etree.elementtree.html",
+      "delta": 3.8,
+      "rationale": "Provides nearly identical ElementTree API; lxml is explicitly designed as a drop-in accelerator for the same interface."
+    },
+    {
+      "package": "rubygem-mime-types",
+      "package_score": 78.5,
+      "alt_name": "marcel",
+      "alt_score": 82.3,
+      "alt_weblink": "https://github.com/rails/marcel",
+      "delta": 3.8,
+      "rationale": "Direct MIME type registry replacement with identical usage pattern and same Ruby runtime."
+    },
+    {
+      "package": "paho-c",
+      "package_score": 83.4,
+      "alt_name": "libmosquitto",
+      "alt_score": 87.1,
+      "alt_weblink": "https://github.com/eclipse/mosquitto",
+      "delta": 3.7,
+      "rationale": "Direct C MQTT client library with nearly identical sync publish/subscribe API."
+    },
+    {
+      "package": "rubygem-protocol-http2",
+      "package_score": 79.5,
+      "alt_name": "http-2",
+      "alt_score": 83.2,
+      "alt_weblink": "https://github.com/igrigorik/http-2",
+      "delta": 3.7,
+      "rationale": "Direct drop-in HTTP/2 protocol library in Ruby offering equivalent framing and connection primitives."
+    },
+    {
+      "package": "python-oauthlib",
+      "package_score": 78.5,
+      "alt_name": "authlib",
+      "alt_score": 82.0,
+      "alt_weblink": "https://github.com/lepture/authlib",
+      "delta": 3.5,
+      "rationale": "Direct functional replacement providing equivalent OAuth1/OAuth2 client and server abstractions in Python."
+    },
+    {
+      "package": "nettle",
+      "package_score": 76.5,
+      "alt_name": "libgcrypt",
+      "alt_score": 80.0,
+      "alt_weblink": "https://www.gnupg.org/software/libgcrypt/",
+      "delta": 3.5,
+      "rationale": "Direct C crypto primitive replacement with comparable low-level API for hashes, ciphers and MPI."
+    },
+    {
+      "package": "bindutils",
+      "package_score": 76.4,
+      "alt_name": "knot-dns",
+      "alt_score": 79.9,
+      "alt_weblink": "https://www.knot-dns.cz/",
+      "delta": 3.5,
+      "rationale": "Direct authoritative DNS daemon replacement with comparable CLI/zone configuration usage."
+    },
+    {
+      "package": "perl-Module-ScanDeps",
+      "package_score": 62.5,
+      "alt_name": "Perl-PrereqScanner",
+      "alt_score": 66.0,
+      "alt_weblink": "https://github.com/Perl-Toolchain-Gang/Perl-PrereqScanner",
+      "delta": 3.5,
+      "rationale": "Direct functional replacement: same Perl-layer static dependency scanning with comparable API and output for packaging use cases."
+    },
+    {
+      "package": "make",
+      "package_score": 82.4,
+      "alt_name": "Ninja",
+      "alt_score": 85.8,
+      "alt_weblink": "https://ninja-build.org/",
+      "delta": 3.4,
+      "rationale": "Direct functional replacement as a low-level build executor invoked identically via CLI for the same generated build graphs."
+    },
+    {
+      "package": "json-c",
+      "package_score": 78.4,
+      "alt_name": "Jansson",
+      "alt_score": 81.8,
+      "alt_weblink": "https://github.com/akheron/jansson",
+      "delta": 3.4,
+      "rationale": "Provides equivalent C JSON object manipulation and I/O APIs."
+    },
+    {
+      "package": "make",
+      "package_score": 82.4,
+      "alt_name": "Meson",
+      "alt_score": 85.7,
+      "alt_weblink": "https://mesonbuild.com/",
+      "delta": 3.3,
+      "rationale": "Provides equivalent CLI-driven build automation for the same native project use cases."
+    },
+    {
+      "package": "perl-Exporter-Tiny",
+      "package_score": 67.5,
+      "alt_name": "Sub::Exporter",
+      "alt_score": 70.8,
+      "alt_weblink": "https://metacpan.org/pod/Sub::Exporter",
+      "delta": 3.3,
+      "rationale": "Direct functional replacement providing equivalent symbol export capabilities at the same abstraction layer for Perl modules."
+    },
+    {
+      "package": "htop",
+      "package_score": 84.4,
+      "alt_name": "btop",
+      "alt_score": 87.7,
+      "alt_weblink": "https://github.com/aristocratos/btop",
+      "delta": 3.3,
+      "rationale": "Direct CLI drop-in interactive process and resource monitor with comparable keyboard navigation and real-time display."
+    },
+    {
+      "package": "mkinitcpio",
+      "package_score": 78.5,
+      "alt_name": "dracut",
+      "alt_score": 81.7,
+      "alt_weblink": "https://github.com/dracutdevs/dracut",
+      "delta": 3.2,
+      "rationale": "Direct CLI drop-in replacement for generating initramfs images with comparable hook/modular architecture."
+    },
+    {
+      "package": "netcat",
+      "package_score": 83.5,
+      "alt_name": "ncat",
+      "alt_score": 86.6,
+      "alt_weblink": "https://nmap.org/ncat/",
+      "delta": 3.1,
+      "rationale": "Direct CLI drop-in replacement for nc TCP/UDP use cases with added features."
+    },
+    {
+      "package": "toybox",
+      "package_score": 76.5,
+      "alt_name": "busybox",
+      "alt_score": 79.4,
+      "alt_weblink": "https://busybox.net/",
+      "delta": 2.9,
+      "rationale": "Provides identical CLI utilities in a single binary; same C implementation and usage pattern."
+    },
+    {
+      "package": "backward-cpp",
+      "package_score": 79.5,
+      "alt_name": "boost-stacktrace",
+      "alt_score": 82.3,
+      "alt_weblink": "https://github.com/boostorg/stacktrace",
+      "delta": 2.8,
+      "rationale": "Provides equivalent stack-trace functionality at the same abstraction level and can be used as a drop-in in C++ codebases already using Boost."
+    },
+    {
+      "package": "zsh",
+      "package_score": 85.4,
+      "alt_name": "fish",
+      "alt_score": 88.2,
+      "alt_weblink": "https://fishshell.com",
+      "delta": 2.8,
+      "rationale": "Direct interactive shell replacement with comparable CLI usage pattern and active distribution."
+    },
+    {
+      "package": "rubygem-mini_mime",
+      "package_score": 81.4,
+      "alt_name": "marcel",
+      "alt_score": 84.2,
+      "alt_weblink": "https://rubygems.org/gems/marcel",
+      "delta": 2.8,
+      "rationale": "Provides equivalent MIME type lookup and extension mapping with nearly identical usage patterns for Ruby applications."
+    },
+    {
+      "package": "glibc",
+      "package_score": 82.0,
+      "alt_name": "musl",
+      "alt_score": 84.8,
+      "alt_weblink": "https://musl.libc.org/",
+      "delta": 2.8,
+      "rationale": "Direct ABI-compatible libc replacement providing identical POSIX/C99 interfaces for the same Linux binaries and build workflows."
+    },
+    {
+      "package": "calico",
+      "package_score": 83.5,
+      "alt_name": "cilium",
+      "alt_score": 86.2,
+      "alt_weblink": "https://github.com/cilium/cilium",
+      "delta": 2.7,
+      "rationale": "Direct CNI/network-policy replacement at same abstraction layer with comparable daemon-based deployment."
+    },
+    {
+      "package": "socat",
+      "package_score": 81.5,
+      "alt_name": "ncat",
+      "alt_score": 84.2,
+      "alt_weblink": "https://nmap.org/ncat/",
+      "delta": 2.7,
+      "rationale": "Direct CLI drop-in replacement providing equivalent socket relay, listen, and exec functionality"
+    },
+    {
+      "package": "python-chardet",
+      "package_score": 78.5,
+      "alt_name": "charset-normalizer",
+      "alt_score": 81.2,
+      "alt_weblink": "https://github.com/jawah/charset_normalizer",
+      "delta": 2.7,
+      "rationale": "Actively maintained drop-in replacement with identical detect() usage pattern and superior Unicode handling."
+    },
+    {
+      "package": "grub2",
+      "package_score": 80.5,
+      "alt_name": "systemd-boot",
+      "alt_score": 83.0,
+      "alt_weblink": "https://systemd.io/BOOT/",
+      "delta": 2.5,
+      "rationale": "Direct UEFI bootloader replacement for GRUB on modern systems with equivalent kernel selection semantics."
+    },
+    {
+      "package": "ddclient",
+      "package_score": 79.5,
+      "alt_name": "inadyn",
+      "alt_score": 82.0,
+      "alt_weblink": "https://github.com/troglobit/inadyn",
+      "delta": 2.5,
+      "rationale": "Direct CLI/daemon DDNS updater with overlapping provider support and comparable usage pattern."
+    },
+    {
+      "package": "nano",
+      "package_score": 83.5,
+      "alt_name": "micro",
+      "alt_score": 86.0,
+      "alt_weblink": "https://micro-editor.github.io/",
+      "delta": 2.5,
+      "rationale": "Direct CLI drop-in replacement providing the same simple editing workflow with improved defaults and no learning curve for basic nano users."
+    },
+    {
+      "package": "graphene",
+      "package_score": 82.5,
+      "alt_name": "strawberry-graphql",
+      "alt_score": 84.8,
+      "alt_weblink": "https://github.com/strawberry-graphql/strawberry",
+      "delta": 2.3,
+      "rationale": "Direct functional replacement providing equivalent GraphQL schema building in Python with minimal code changes for type-based definitions."
+    },
+    {
+      "package": "backward-cpp",
+      "package_score": 79.5,
+      "alt_name": "cpptrace",
+      "alt_score": 81.7,
+      "alt_weblink": "https://github.com/jeremy-rifkin/cpptrace",
+      "delta": 2.2,
+      "rationale": "Direct functional replacement providing similar stack-trace capture and pretty-print APIs for C++ crash handling."
+    },
+    {
+      "package": "jemalloc",
+      "package_score": 85.5,
+      "alt_name": "mimalloc",
+      "alt_score": 87.7,
+      "alt_weblink": "https://github.com/microsoft/mimalloc",
+      "delta": 2.2,
+      "rationale": "Direct drop-in C memory allocator; same LD_PRELOAD usage pattern and API compatibility for malloc/free."
+    },
+    {
+      "package": "perl-JSON-XS",
+      "package_score": 79.5,
+      "alt_name": "JSON::PP",
+      "alt_score": 81.6,
+      "alt_weblink": "https://metacpan.org/pod/JSON::PP",
+      "delta": 2.1,
+      "rationale": "Same JSON problem and identical high-level API usable as drop-in without XS dependency."
+    },
+    {
+      "package": "passwdqc",
+      "package_score": 72.5,
+      "alt_name": "libpwquality",
+      "alt_score": 74.6,
+      "alt_weblink": "https://github.com/libpwquality/libpwquality",
+      "delta": 2.1,
+      "rationale": "Provides equivalent C library and PAM module for password strength enforcement with similar API usage."
+    },
+    {
+      "package": "dbus",
+      "package_score": 80.5,
+      "alt_name": "sd-bus",
+      "alt_score": 82.5,
+      "alt_weblink": "https://www.freedesktop.org/software/systemd/man/latest/sd-bus.html",
+      "delta": 2.0,
+      "rationale": "Provides equivalent D-Bus IPC messaging at the same C library layer with compatible protocol support."
+    },
+    {
+      "package": "syslog-ng",
+      "package_score": 74.8,
+      "alt_name": "rsyslog",
+      "alt_score": 76.8,
+      "alt_weblink": "https://www.rsyslog.com/",
+      "delta": 2.0,
+      "rationale": "Direct functional replacement as a syslog daemon; same CLI/daemon usage pattern, protocol compatibility, and configuration layer allowing seamless swap for log collection/forwarding."
+    },
+    {
+      "package": "nmap",
+      "package_score": 87.8,
+      "alt_name": "masscan",
+      "alt_score": 89.8,
+      "alt_weblink": "https://github.com/robertdavidgraham/masscan",
+      "delta": 2.0,
+      "rationale": "Direct CLI port-scanner replacement with comparable command-line usage pattern and output formats."
+    },
+    {
+      "package": "influxdb",
+      "package_score": 85.4,
+      "alt_name": "VictoriaMetrics",
+      "alt_score": 87.3,
+      "alt_weblink": "https://github.com/VictoriaMetrics/VictoriaMetrics",
+      "delta": 1.9,
+      "rationale": "Direct functional replacement via full InfluxDB line protocol, write and query API compatibility for identical client usage."
+    },
+    {
+      "package": "rubygem-representable",
+      "package_score": 78.4,
+      "alt_name": "blueprinter",
+      "alt_score": 80.2,
+      "alt_weblink": "https://github.com/procore/blueprinter",
+      "delta": 1.8,
+      "rationale": "Provides equivalent declarative object-to-JSON mapping with similar usage pattern and minimal code changes."
+    },
+    {
+      "package": "python-hatchling",
+      "package_score": 87.4,
+      "alt_name": "setuptools",
+      "alt_score": 89.2,
+      "alt_weblink": "https://github.com/pypa/setuptools",
+      "delta": 1.8,
+      "rationale": "Standard PEP 517 build backend that replaces hatchling in pyproject.toml with no architecture changes."
+    },
+    {
+      "package": "gcc",
+      "package_score": 89.8,
+      "alt_name": "clang",
+      "alt_score": 91.6,
+      "alt_weblink": "https://clang.llvm.org/",
+      "delta": 1.8,
+      "rationale": "Direct C/C++ compiler replacement; same CLI flags and language support allow swapping via CC variable with minimal changes."
+    },
+    {
+      "package": "rubygem-http",
+      "package_score": 80.5,
+      "alt_name": "rest-client",
+      "alt_score": 82.2,
+      "alt_weblink": "https://github.com/rest-client/rest-client",
+      "delta": 1.7,
+      "rationale": "Sync Ruby HTTP client usable as replacement for basic GET/POST/PUT operations with similar method calls."
+    },
+    {
+      "package": "mc",
+      "package_score": 81.4,
+      "alt_name": "vifm",
+      "alt_score": 83.1,
+      "alt_weblink": "https://github.com/vifm/vifm",
+      "delta": 1.7,
+      "rationale": "Same abstraction layer CLI file manager; C codebase, two-pane orthodox UI, direct swap for navigation tasks."
+    },
+    {
+      "package": "haproxy",
+      "package_score": 85.4,
+      "alt_name": "Nginx",
+      "alt_score": 87.1,
+      "alt_weblink": "https://nginx.org/",
+      "delta": 1.7,
+      "rationale": "Provides identical reverse-proxy and load-balancing daemon behavior with comparable configuration patterns."
+    },
+    {
+      "package": "mozjs",
+      "package_score": 81.1,
+      "alt_name": "Chromium",
+      "alt_score": 82.6,
+      "alt_weblink": "https://www.chromium.org/",
+      "delta": 1.5,
+      "rationale": "Direct functional replacement as a standards-compliant web browser with identical usage for end-users and web content."
+    },
+    {
+      "package": "tini",
+      "package_score": 82.8,
+      "alt_name": "dumb-init",
+      "alt_score": 84.3,
+      "alt_weblink": "https://github.com/Yelp/dumb-init",
+      "delta": 1.5,
+      "rationale": "Direct drop-in binary for the same container init use case with identical signal/zombie handling."
+    },
+    {
+      "package": "libgcrypt",
+      "package_score": 76.5,
+      "alt_name": "mbed TLS",
+      "alt_score": 77.8,
+      "alt_weblink": "https://github.com/Mbed-TLS/mbedtls",
+      "delta": 1.3,
+      "rationale": "Supplies the same cryptographic building blocks (symmetric, hash, PK, RNG) in C with direct function-call usage matching libgcrypt patterns."
+    },
+    {
+      "package": "cppcheck",
+      "package_score": 86.8,
+      "alt_name": "clang-tidy",
+      "alt_score": 88.0,
+      "alt_weblink": "https://clang.llvm.org/extra/clang-tidy/",
+      "delta": 1.2,
+      "rationale": "Direct CLI static analyzer for same C/C++ bug detection use cases"
+    },
+    {
+      "package": "jansson",
+      "package_score": 79.5,
+      "alt_name": "json-c",
+      "alt_score": 80.6,
+      "alt_weblink": "https://github.com/json-c/json-c",
+      "delta": 1.1,
+      "rationale": "Direct C JSON library with comparable API for parsing/generation, actively maintained drop-in for same use cases."
+    },
+    {
+      "package": "python-dateutil",
+      "package_score": 85.4,
+      "alt_name": "pendulum",
+      "alt_score": 86.5,
+      "alt_weblink": "https://github.com/sdispater/pendulum",
+      "delta": 1.1,
+      "rationale": "Provides equivalent high-level datetime operations and parsing with modern timezone handling."
+    },
+    {
+      "package": "flannel",
+      "package_score": 79.4,
+      "alt_name": "calico",
+      "alt_score": 80.4,
+      "alt_weblink": "https://github.com/projectcalico/calico",
+      "delta": 1.0,
+      "rationale": "Same-layer CNI overlay/network-policy solution installed identically to Flannel for Kubernetes clusters."
+    },
+    {
+      "package": "grub2",
+      "package_score": 80.5,
+      "alt_name": "rEFInd",
+      "alt_score": 81.4,
+      "alt_weblink": "https://www.rodsbooks.com/refind/",
+      "delta": 0.9,
+      "rationale": "Functional UEFI bootloader alternative providing similar OS/kernel selection and boot menu capabilities."
+    },
+    {
+      "package": "python-prettytable",
+      "package_score": 83.5,
+      "alt_name": "tabulate",
+      "alt_score": 84.4,
+      "alt_weblink": "https://github.com/astanin/python-tabulate",
+      "delta": 0.9,
+      "rationale": "Direct functional replacement providing identical table formatting output via a simple function call."
+    },
+    {
+      "package": "geos",
+      "package_score": 81.4,
+      "alt_name": "CGAL",
+      "alt_score": 82.3,
+      "alt_weblink": "https://www.cgal.org/",
+      "delta": 0.9,
+      "rationale": "Provides equivalent 2D/3D geometric operations and predicates as a C++ library."
+    },
+    {
+      "package": "python-Js2Py",
+      "package_score": 68.5,
+      "alt_name": "quickjs",
+      "alt_score": 69.4,
+      "alt_weblink": "https://github.com/PetterS/quickjs",
+      "delta": 0.9,
+      "rationale": "Direct functional replacement providing a Python-callable JS runtime at the same abstraction level for executing/translating JS code."
+    },
+    {
+      "package": "XML-Parser",
+      "package_score": 70.8,
+      "alt_name": "XML-LibXML",
+      "alt_score": 71.5,
+      "alt_weblink": "https://github.com/shlomif/perl-XML-LibXML",
+      "delta": 0.7,
+      "rationale": "Direct functional replacement providing XML parsing at the same library layer with comparable Perl usage patterns and active maintenance."
+    },
+    {
+      "package": "rubygem-terminal-table",
+      "package_score": 80.5,
+      "alt_name": "tty-table",
+      "alt_score": 81.2,
+      "alt_weblink": "https://github.com/piotrmurach/tty-table",
+      "delta": 0.7,
+      "rationale": "Direct drop-in replacement providing identical terminal table output with comparable or improved customization options."
+    },
+    {
+      "package": "gdb",
+      "package_score": 88.2,
+      "alt_name": "lldb",
+      "alt_score": 88.8,
+      "alt_weblink": "https://lldb.llvm.org/",
+      "delta": 0.6,
+      "rationale": "Direct drop-in CLI debugger for the same C/C++ binaries and core debugging workflows with compatible commands and remote protocol support."
+    },
+    {
+      "package": "gzip",
+      "package_score": 87.5,
+      "alt_name": "pigz",
+      "alt_score": 88.1,
+      "alt_weblink": "https://zlib.net/pigz/",
+      "delta": 0.6,
+      "rationale": "Direct CLI-compatible gzip replacement using same DEFLATE format and flags."
+    },
+    {
+      "package": "lz4",
+      "package_score": 87.0,
+      "alt_name": "zstd",
+      "alt_score": 87.6,
+      "alt_weblink": "https://github.com/facebook/zstd",
+      "delta": 0.6,
+      "rationale": "Direct C library replacement for high-speed lossless compression use cases with comparable API patterns."
+    },
+    {
+      "package": "iptraf-ng",
+      "package_score": 66.5,
+      "alt_name": "iftop",
+      "alt_score": 67.1,
+      "alt_weblink": "https://www.ex-parrot.com/pdw/iftop/",
+      "delta": 0.6,
+      "rationale": "Direct CLI drop-in for real-time per-host bandwidth monitoring on Linux interfaces."
+    },
+    {
+      "package": "gperftools",
+      "package_score": 82.4,
+      "alt_name": "jemalloc",
+      "alt_score": 83.0,
+      "alt_weblink": "https://github.com/jemalloc/jemalloc",
+      "delta": 0.6,
+      "rationale": "Direct API-compatible malloc replacement via LD_PRELOAD or relinking for identical C/C++ use cases."
+    },
+    {
+      "package": "rubygem-rest-client",
+      "package_score": 76.5,
+      "alt_name": "excon",
+      "alt_score": 77.1,
+      "alt_weblink": "https://github.com/excon/excon",
+      "delta": 0.6,
+      "rationale": "Lightweight Ruby HTTP client usable as functional replacement for simple REST calls."
+    },
+    {
+      "package": "python-deepmerge",
+      "package_score": 80.8,
+      "alt_name": "mergedeep",
+      "alt_score": 81.3,
+      "alt_weblink": "https://github.com/clarketm/mergedeep",
+      "delta": 0.5,
+      "rationale": "Provides identical deep-merge API for dicts; drop-in import and call replacement."
+    },
+    {
+      "package": "kube-bench",
+      "package_score": 86.8,
+      "alt_name": "kubescape",
+      "alt_score": 87.2,
+      "alt_weblink": "https://github.com/kubescape/kubescape",
+      "delta": 0.4,
+      "rationale": "Direct functional replacement: same CIS benchmark checks via CLI, identical usage pattern and output formats."
+    },
+    {
+      "package": "openjdk",
+      "package_score": 83.5,
+      "alt_name": "Eclipse Temurin",
+      "alt_score": 83.8,
+      "alt_weblink": "https://adoptium.net/",
+      "delta": 0.3,
+      "rationale": "TCK-certified OpenJDK binary drop-in with identical APIs and runtime behavior."
+    },
+    {
+      "package": "python-attrs",
+      "package_score": 87.1,
+      "alt_name": "dataclasses",
+      "alt_score": 87.4,
+      "alt_weblink": "https://docs.python.org/3/library/dataclasses.html",
+      "delta": 0.3,
+      "rationale": "Direct functional replacement via @dataclass decorator providing equivalent attribute definition and generation without external dependency."
+    },
+    {
+      "package": "bash",
+      "package_score": 87.4,
+      "alt_name": "zsh",
+      "alt_score": 87.7,
+      "alt_weblink": "https://www.zsh.org/",
+      "delta": 0.3,
+      "rationale": "Direct CLI shell replacement supporting nearly all bash syntax and scripts with minimal changes."
+    },
+    {
+      "package": "tcpdump",
+      "package_score": 85.4,
+      "alt_name": "tshark",
+      "alt_score": 85.7,
+      "alt_weblink": "https://www.wireshark.org/",
+      "delta": 0.3,
+      "rationale": "Direct CLI drop-in replacement for packet capture/display/filtering use cases with comparable command-line interface."
+    },
+    {
+      "package": "apache-tomcat",
+      "package_score": 84.1,
+      "alt_name": "Eclipse Jetty",
+      "alt_score": 84.4,
+      "alt_weblink": "https://eclipse.dev/jetty/",
+      "delta": 0.3,
+      "rationale": "Direct servlet container replacement with identical WAR/HTTP handling and API compatibility for Java web apps."
+    },
+    {
+      "package": "rubygem-net-http",
+      "package_score": 87.0,
+      "alt_name": "faraday",
+      "alt_score": 87.3,
+      "alt_weblink": "https://rubygems.org/gems/faraday",
+      "delta": 0.3,
+      "rationale": "Functional HTTP client drop-in via net-http adapter preserving sync patterns for existing Ruby codebases."
+    },
+    {
+      "package": "lshw",
+      "package_score": 71.5,
+      "alt_name": "hwinfo",
+      "alt_score": 71.8,
+      "alt_weblink": "https://github.com/openSUSE/hwinfo",
+      "delta": 0.3,
+      "rationale": "Provides comparable low-level hardware listing via CLI for the same Linux hardware reporting scenarios."
+    },
+    {
+      "package": "haproxy",
+      "package_score": 85.4,
+      "alt_name": "Envoy",
+      "alt_score": 85.6,
+      "alt_weblink": "https://www.envoyproxy.io/",
+      "delta": 0.2,
+      "rationale": "Direct functional replacement as an L7 proxy/load-balancer daemon with equivalent runtime usage."
+    },
+    {
+      "package": "wpa_supplicant",
+      "package_score": 82.8,
+      "alt_name": "iwd",
+      "alt_score": 83.0,
+      "alt_weblink": "https://iwd.wiki.kernel.org/",
+      "delta": 0.2,
+      "rationale": "Direct functional replacement at the same daemon/CLI layer for Wi-Fi authentication on Linux, usable without code changes in most setups."
+    },
+    {
+      "package": "ibmtpm",
+      "package_score": 79.5,
+      "alt_name": "swtpm",
+      "alt_score": 79.6,
+      "alt_weblink": "https://github.com/stefanberger/swtpm",
+      "delta": 0.1,
+      "rationale": "Provides equivalent TPM 2.0 socket server functionality; users can point existing test harnesses at swtpm with minimal flag changes."
+    },
+    {
+      "package": "aide",
+      "package_score": 76.5,
+      "alt_name": "Tripwire",
+      "alt_score": 76.6,
+      "alt_weblink": "https://github.com/Tripwire/tripwire-open-source",
+      "delta": 0.1,
+      "rationale": "Direct FIM CLI tool with comparable policy-based scanning and reporting."
+    },
+    {
+      "package": "bubblewrap",
+      "package_score": 82.5,
+      "alt_name": "firejail",
+      "alt_score": 82.6,
+      "alt_weblink": "https://github.com/netblue30/firejail",
+      "delta": 0.1,
+      "rationale": "Direct CLI sandbox replacement using similar Linux kernel features for process isolation."
+    }
+  ],
+  "tools": [
+    {
+      "rank": 1,
+      "package": "python-pytest",
+      "tool_name": "pytest",
+      "composite_score": 93.8,
+      "weblink": "https://docs.pytest.org/",
+      "summary": "Python testing framework that makes it easy to write, organize and run tests with fixtures and plugins.",
+      "language": "Python",
+      "license": "MIT",
+      "last_release": null,
+      "metrics": {
+        "popularity": {
+          "stars": 12000,
+          "score": 95
+        },
+        "reputation": {
+          "cves_12mo": 0,
+          "score": 98
+        },
+        "integration": {
+          "score": 92,
+          "notes": "Extensive plugin ecosystem and IDE support"
+        },
+        "documentation": {
+          "last_doc_update": "2024-09",
+          "score": 95
+        },
+        "ecosystem": {
+          "issues_12mo": 420,
+          "prs_12mo": 310,
+          "score": 88
+        }
+      },
+      "url": "https://github.com/pytest-dev/pytest/archive/refs/tags/9.0.3.tar.gz",
+      "alternatives": [],
+      "ranking_winner": "pytest"
+    },
+    {
+      "rank": 2,
+      "package": "python-pydantic",
+      "tool_name": "pydantic",
+      "composite_score": 93.8,
+      "weblink": "https://pydantic.dev",
+      "summary": "Data validation and settings management using Python type annotations.",
+      "language": "Python",
+      "license": "MIT",
+      "last_release": "2024-12",
+      "metrics": {
+        "popularity": {
+          "stars": 21000,
+          "score": 95
+        },
+        "reputation": {
+          "cves_12mo": 0,
+          "score": 98
+        },
+        "integration": {
+          "score": 92,
+          "notes": "pip install, type-hint native"
+        },
+        "documentation": {
+          "last_doc_update": "2025-01",
+          "score": 95
+        },
+        "ecosystem": {
+          "issues_12mo": 420,
+          "prs_12mo": 310,
+          "score": 88
+        }
+      },
+      "url": "https://github.com/pydantic/pydantic/archive/refs/tags/v2.13.4.tar.gz",
+      "alternatives": [],
+      "ranking_winner": "pydantic"
+    },
+    {
+      "rank": 3,
+      "package": "python-numpy",
+      "tool_name": "numpy",
+      "composite_score": 93.2,
+      "weblink": "https://numpy.org/",
+      "summary": "Fundamental package for scientific computing with Python, providing multi-dimensional arrays and mathematical functions.",
+      "language": "Python",
+      "license": "BSD-3-Clause",
+      "last_release": "2022-11",
+      "metrics": {
+        "popularity": {
+          "stars": 25000,
+          "score": 95
+        },
+        "reputation": {
+          "cves_12mo": 1,
+          "score": 92
+        },
+        "integration": {
+          "score": 98,
+          "notes": "Core dependency for scientific Python stack"
+        },
+        "documentation": {
+          "last_doc_update": "2024-09",
+          "score": 95
+        },
+        "ecosystem": {
+          "issues_12mo": 850,
+          "prs_12mo": 420,
+          "score": 88
+        }
+      },
+      "url": "https://github.com/numpy/numpy/archive/refs/tags/v1.23.4.tar.gz",
+      "alternatives": [],
+      "ranking_winner": "numpy"
+    },
+    {
+      "rank": 4,
+      "package": "python3",
+      "tool_name": "Python",
+      "composite_score": 92.9,
+      "weblink": "https://www.python.org/",
+      "summary": "General-purpose interpreted programming language and runtime with batteries-included standard library.",
+      "language": "C, Python",
+      "license": "PSF",
+      "last_release": "2024-06",
+      "metrics": {
+        "popularity": {
+          "stars": null,
+          "score": 98
+        },
+        "reputation": {
+          "cves_12mo": 12,
+          "score": 85
+        },
+        "integration": {
+          "score": 95,
+          "notes": "Ubiquitous runtime; pip, venv, pyenv standard"
+        },
+        "documentation": {
+          "last_doc_update": "2024-06",
+          "score": 98
+        },
+        "ecosystem": {
+          "issues_12mo": 4200,
+          "prs_12mo": 1850,
+          "score": 92
+        }
+      },
+      "url": "https://www.python.org/ftp/python/3.11.13/Python-3.11.13.tar.xz",
+      "alternatives": [],
+      "ranking_winner": "Python"
+    },
+    {
+      "rank": 5,
+      "package": "spdlog",
+      "tool_name": "spdlog",
+      "composite_score": 92.9,
+      "weblink": "https://github.com/gabime/spdlog",
+      "summary": "Fast C++ logging library supporting multiple sinks, formatters and async modes.",
+      "language": "C++",
+      "license": "MIT",
+      "last_release": "2025-01",
+      "metrics": {
+        "popularity": {
+          "stars": 23500,
+          "score": 94
+        },
+        "reputation": {
+          "cves_12mo": 0,
+          "score": 98
+        },
+        "integration": {
+          "score": 92,
+          "notes": "Header-only, CMake/fetchContent easy"
+        },
+        "documentation": {
+          "last_doc_update": "2025-01",
+          "score": 90
+        },
+        "ecosystem": {
+          "issues_12mo": 45,
+          "prs_12mo": 28,
+          "score": 88
+        }
+      },
+      "url": "https://github.com/gabime/spdlog/archive/refs/tags/v1.15.3.tar.gz",
+      "alternatives": [
+        {
+          "name": "quill",
+          "weblink": "https://github.com/odygrd/quill",
+          "summary": "High-performance asynchronous C++ logging library with structured logging.",
+          "language": "C++",
+          "license": "MIT",
+          "last_release": "2025-02",
+          "metrics": {
+            "popularity": {
+              "stars": 1450,
+              "score": 72
+            },
+            "reputation": {
+              "cves_12mo": 0,
+              "score": 97
+            },
+            "integration": {
+              "score": 88,
+              "notes": "CMake, similar sink model"
+            },
+            "documentation": {
+              "last_doc_update": "2025-01",
+              "score": 85
+            },
+            "ecosystem": {
+              "issues_12mo": 22,
+              "prs_12mo": 15,
+              "score": 82
+            }
+          },
+          "rationale": "Direct functional replacement offering comparable speed, async logging and sink extensibility with minimal API changes for most spdlog users.",
+          "composite_score": 84.7,
+          "rank": 1
+        }
+      ],
+      "ranking_winner": "spdlog"
+    },
+    {
+      "rank": 6,
+      "package": "coreutils",
+      "tool_name": "coreutils",
+      "composite_score": 92.8,
+      "weblink": "https://www.gnu.org/software/coreutils/",
+      "summary": "GNU collection of basic file, shell and text manipulation utilities (ls, cp, cat, etc.).",
+      "language": "C",
+      "license": "GPL-3.0-or-later",
+      "last_release": "2022-04",
+      "metrics": {
+        "popularity": {
+          "stars": null,
+          "score": 95
+        },
+        "reputation": {
+          "cves_12mo": 1,
+          "score": 92
+        },
+        "integration": {
+          "score": 98,
+          "notes": "Standard POSIX CLI tools present on virtually all Unix-like systems."
+        },
+        "documentation": {
+          "last_doc_update": "2022-04",
+          "score": 90
+        },
+        "ecosystem": {
+          "issues_12mo": 120,
+          "prs_12mo": 85,
+          "score": 88
+        }
+      },
+      "url": "http://ftp.funet.fi/pub/gnu/ftp.gnu.org/gnu/coreutils/coreutils-9.1.tar.xz",
+      "alternatives": [
+        {
+          "name": "uutils-coreutils",
+          "weblink": "https://github.com/uutils/coreutils",
+          "summary": "Cross-platform Rust rewrite of the GNU coreutils.",
+          "language": "Rust",
+          "license": "MIT",
+          "last_release": "2024-09",
+          "metrics": {
+            "popularity": {
+              "stars": 18500,
+              "score": 88
+            },
+            "reputation": {
+              "cves_12mo": 0,
+              "score": 95
+            },
+            "integration": {
+              "score": 85,
+              "notes": "Drop-in CLI replacement; many commands work identically."
+            },
+            "documentation": {
+              "last_doc_update": "2024-09",
+              "score": 82
+            },
+            "ecosystem": {
+              "issues_12mo": 95,
+              "prs_12mo": 110,
+              "score": 90
+            }
+          },
+          "rationale": "Direct functional CLI replacement providing the same utilities with compatible command-line behavior.",
+          "composite_score": 89.4,
+          "rank": 1
+        }
+      ],
+      "ranking_winner": "coreutils"
+    },
+    {
+      "rank": 7,
+      "package": "git",
+      "tool_name": "git",
+      "composite_score": 92.4,
+      "weblink": "https://git-scm.com",
+      "summary": "Distributed version control system for tracking source code changes during development.",
+      "language": "C",
+      "license": "GPL-2.0-only",
+      "last_release": null,
+      "metrics": {
+        "popularity": {
+          "stars": 52000,
+          "score": 95
+        },
+        "reputation": {
+          "cves_12mo": 3,
+          "score": 85
+        },
+        "integration": {
+          "score": 98,
+          "notes": "Ubiquitous CLI and library bindings across IDEs and CI systems."
+        },
+        "documentation": {
+          "last_doc_update": "2024-05",
+          "score": 95
+        },
+        "ecosystem": {
+          "issues_12mo": 420,
+          "prs_12mo": 310,
+          "score": 92
+        }
+      },
+      "url": "https://www.kernel.org/pub/software/scm/git/git-2.54.0.tar.xz",
+      "alternatives": [],
+      "ranking_winner": "git"
+    },
+    {
+      "rank": 8,
+      "package": "curl",
+      "tool_name": "curl",
+      "composite_score": 92.4,
+      "weblink": "https://curl.se/",
+      "summary": "Command line tool and C library for transferring data via URLs supporting HTTP, FTP and dozens of other protocols.",
+      "language": "C",
+      "license": "curl",
+      "last_release": null,
+      "metrics": {
+        "popularity": {
+          "stars": 34000,
+          "score": 95
+        },
+        "reputation": {
+          "cves_12mo": 4,
+          "score": 85
+        },
+        "integration": {
+          "score": 98,
+          "notes": "Ubiquitous CLI and libcurl bindings in virtually every language"
+        },
+        "documentation": {
+          "last_doc_update": "2024-07",
+          "score": 95
+        },
+        "ecosystem": {
+          "issues_12mo": 320,
+          "prs_12mo": 410,
+          "score": 90
+        }
+      },
+      "url": "http://curl.haxx.se/download/curl-8.16.0.tar.xz",
+      "alternatives": [
+        {
+          "name": "wget",
+          "weblink": "https://www.gnu.org/software/wget/",
+          "summary": "Non-interactive CLI network downloader supporting HTTP, HTTPS, FTP and mirroring.",
+          "language": "C",
+          "license": "GPL-3.0",
+          "last_release": "2024-05",
+          "metrics": {
+            "popularity": {
+              "stars": 650,
+              "score": 65
+            },
+            "reputation": {
+              "cves_12mo": 1,
+              "score": 92
+            },
+            "integration": {
+              "score": 85,
+              "notes": "Direct CLI replacement for most download use-cases"
+            },
+            "documentation": {
+              "last_doc_update": "2024-05",
+              "score": 80
+            },
+            "ecosystem": {
+              "issues_12mo": 45,
+              "prs_12mo": 30,
+              "score": 75
+            }
+          },
+          "rationale": "Provides nearly identical CLI semantics for fetching URLs over the same protocols and can replace curl in shell scripts and automation without architectural changes.",
+          "composite_score": 79.1,
+          "rank": 1
+        }
+      ],
+      "ranking_winner": "curl"
+    },
+    {
+      "rank": 9,
+      "package": "google-benchmark",
+      "tool_name": "benchmark",
+      "composite_score": 92.4,
+      "weblink": "https://github.com/google/benchmark",
+      "summary": "Microbenchmark support library for C++",
+      "language": "C++",
+      "license": "Apache-2.0",
+      "last_release": "2024-09",
+      "metrics": {
+        "popularity": {
+          "stars": 8500,
+          "score": 92
+        },
+        "reputation": {
+          "cves_12mo": 0,
+          "score": 98
+        },
+        "integration": {
+          "score": 95,
+          "notes": "CMake and Bazel integration, header+lib"
+        },
+        "documentation": {
+          "last_doc_update": "2024-09",
+          "score": 88
+        },
+        "ecosystem": {
+          "issues_12mo": 45,
+          "prs_12mo": 30,
+          "score": 85
+        }
+      },
+      "url": "https://github.com/google/benchmark/archive/refs/tags/v1.9.5.tar.gz",
+      "alternatives": [
+        {
+          "name": "nanobench",
+          "weblink": "https://github.com/martinus/nanobench",
+          "summary": "Header-only microbenchmarking library for C++",
+          "language": "C++",
+          "license": "MIT",
+          "last_release": "2024-06",
+          "metrics": {
+            "popularity": {
+              "stars": 1400,
+              "score": 78
+            },
+            "reputation": {
+              "cves_12mo": 0,
+              "score": 97
+            },
+            "integration": {
+              "score": 92,
+              "notes": "Single-header, CMake support"
+            },
+            "documentation": {
+              "last_doc_update": "2024-06",
+              "score": 85
+            },
+            "ecosystem": {
+              "issues_12mo": 12,
+              "prs_12mo": 8,
+              "score": 90
+            }
+          },
+          "rationale": "Direct drop-in microbenchmarking replacement with similar API for timing C++ code snippets.",
+          "composite_score": 88.3,
+          "rank": 1
+        },
+        {
+          "name": "celero",
+          "weblink": "https://github.com/DigitalInBlue/Celero",
+          "summary": "C++ benchmarking framework with statistical analysis",
+          "language": "C++",
+          "license": "Apache-2.0",
+          "last_release": "2023-12",
+          "metrics": {
+            "popularity": {
+              "stars": 780,
+              "score": 65
+            },
+            "reputation": {
+              "cves_12mo": 0,
+              "score": 96
+            },
+            "integration": {
+              "score": 80,
+              "notes": "CMake, requires build"
+            },
+            "documentation": {
+              "last_doc_update": "2023-12",
+              "score": 75
+            },
+            "ecosystem": {
+              "issues_12mo": 8,
+              "prs_12mo": 5,
+              "score": 88
+            }
+          },
+          "rationale": "Functional replacement providing comparable C++ microbenchmark harness and reporting.",
+          "composite_score": 81.0,
+          "rank": 2
+        }
+      ],
+      "ranking_winner": "benchmark"
+    },
+    {
+      "rank": 10,
+      "package": "python-certifi",
+      "tool_name": "certifi",
+      "composite_score": 92.3,
+      "weblink": "https://github.com/certifi/python-certifi",
+      "summary": "Python package providing Mozilla's curated CA certificate bundle for SSL verification.",
+      "language": "Python",
+      "license": "MPL-2.0",
+      "last_release": "2023-11",
+      "metrics": {
+        "popularity": {
+          "stars": 6200,
+          "score": 92
+        },
+        "reputation": {
+          "cves_12mo": 0,
+          "score": 95
+        },
+        "integration": {
+          "score": 98,
+          "notes": "Drop-in for requests, httpx, urllib3 via ca_certs path."
+        },
+        "documentation": {
+          "last_doc_update": "2023-11",
+          "score": 85
+        },
+        "ecosystem": {
+          "issues_12mo": 12,
+          "prs_12mo": 8,
+          "score": 88
+        }
+      },
+      "url": "https://github.com/certifi/python-certifi/archive/refs/tags/2023.11.17.tar.gz",
+      "alternatives": [],
+      "ranking_winner": "certifi"
+    }
+  ]
+}
