@@ -1,0 +1,107 @@
+{
+  "subdir": "HABv4SimulationEnvironment",
+  "scan_date": "2026-05-11",
+  "note": "PhotonOS-HABv4Emulation-ISOCreator is a privileged CLI tool that builds and signs Photon OS ISOs as root. It already validates every CLI argument via validate_path_safe (rejects ;|&$`\\\"'\\n\\r\\t and ..) and validate_release. The operator's HOME env var is operator-controlled.",
+  "accepted": [
+    {
+      "rule": "cpp/ClearTextLogging",
+      "location": "src/PhotonOS-HABv4Emulation-ISOCreator.c:815",
+      "bucket": "FALSE-POSITIVE",
+      "reason": "GPG_KEY_EMAIL is a compile-time constant 'habv4-rpm@local' used only as the UID of the locally-generated RPM signing key. Not a credential."
+    },
+    {
+      "rule": "cpp/ClearTextLogging",
+      "location": "src/habv4_keys.c:255",
+      "bucket": "FALSE-POSITIVE",
+      "reason": "Same: 'habv4-rpm@local' is the literal UID for the generated GPG key."
+    },
+    {
+      "rule": "cpp/CommandInjection",
+      "location": "src/PhotonOS-HABv4Emulation-ISOCreator.c:360",
+      "bucket": "DESIGN-DECISION",
+      "reason": "run_cmd() is the central system() wrapper. Snyk's flow shows env-var HOME -> cfg.photon_dir -> snprintf into cmd. HOME is operator-controlled (and this tool runs as root by design); all CLI inputs that compose cmd are pre-validated by validate_path_safe."
+    },
+    {
+      "rule": "cpp/CommandInjection",
+      "location": "src/PhotonOS-HABv4Emulation-ISOCreator.c:1590",
+      "bucket": "DESIGN-DECISION",
+      "reason": "scripts/config kernel-config setter; arguments come from a fixed driver-to-kconfig table and the kernel_src path which is built from cfg.photon_dir (validated)."
+    },
+    {
+      "rule": "cpp/CommandInjection",
+      "location": "src/PhotonOS-HABv4Emulation-ISOCreator.c:1831",
+      "bucket": "DESIGN-DECISION",
+      "reason": "Internal kernel-build command; sources cfg.photon_dir which is HOME + validated release."
+    },
+    {
+      "rule": "cpp/CommandInjection",
+      "location": "src/PhotonOS-HABv4Emulation-ISOCreator.c:1926",
+      "bucket": "DESIGN-DECISION",
+      "reason": "scripts/config command path; same internal kernel_src composition as 1590."
+    },
+    {
+      "rule": "cpp/CommandInjection",
+      "location": "src/PhotonOS-HABv4Emulation-ISOCreator.c:1975",
+      "bucket": "DESIGN-DECISION",
+      "reason": "Internal build orchestration in the same kernel-build flow."
+    },
+    {
+      "rule": "cpp/CommandInjection",
+      "location": "src/PhotonOS-HABv4Emulation-ISOCreator.c:1994",
+      "bucket": "DESIGN-DECISION",
+      "reason": "Same."
+    },
+    {
+      "rule": "cpp/CommandInjection",
+      "location": "src/PhotonOS-HABv4Emulation-ISOCreator.c:2073",
+      "bucket": "DESIGN-DECISION",
+      "reason": "Same internal kernel-build pipeline; cfg.photon_dir + fixed templates."
+    },
+    {
+      "rule": "cpp/CommandInjection",
+      "location": "src/rpm_secureboot_patcher.c:110",
+      "bucket": "FALSE-POSITIVE",
+      "reason": "popen() inside run_cmd_output is a generic helper; caller-side cmds are composed from mkdtemp paths and rpm filenames discovered via opendir+readdir, all on root-only paths."
+    },
+    {
+      "rule": "cpp/CommandInjection",
+      "location": "src/rpm_secureboot_patcher.c:1239",
+      "bucket": "FALSE-POSITIVE",
+      "reason": "'rm -rf <tmp_dir>' where tmp_dir is the mkdtemp result (/tmp/XXXXXX); no operator-controlled or attacker-controlled content."
+    },
+    {
+      "rule": "cpp/PT",
+      "location": "src/PhotonOS-HABv4Emulation-ISOCreator.c:1214",
+      "bucket": "DESIGN-DECISION",
+      "reason": "spec_path is derived from cfg.photon_dir (HOME + validated release). Tool is a root CLI for building Photon ISOs; reading spec files from the operator's home is the documented contract."
+    },
+    {
+      "rule": "cpp/PT",
+      "location": "src/PhotonOS-HABv4Emulation-ISOCreator.c:1313",
+      "bucket": "DESIGN-DECISION",
+      "reason": "Same: kernel source path under cfg.photon_dir/SPECS/linux/."
+    }
+  ],
+  "hard_fixes": [
+    {
+      "rule": "cpp/CommandInjection",
+      "location": "src/PhotonOS-HABv4Emulation-ISOCreator.c:480",
+      "fix": "Added whitelist sanitizer on the openssl notAfter output before formatting it into a shell 'date -d' command. Reject any character outside [A-Za-z0-9 :+-.,] so a maliciously-crafted cert cannot inject shell syntax through the certificate's NotAfter field."
+    },
+    {
+      "rule": "cpp/CommandInjection",
+      "location": "src/habv4_common.c:307",
+      "fix": "Same defensive whitelist sanitizer in habv4_common.c's check_certificate_expiry; rejects any char outside [A-Za-z0-9 :+-.,] before piping the openssl output into 'date -d'."
+    },
+    {
+      "rule": "cpp/UnsafeFunctionStringHandling",
+      "location": "src/rpm_secureboot_patcher.c:236",
+      "fix": "Replaced strcpy(file_pattern, last_slash + 1) with snprintf bounded by sizeof(file_pattern); also bounds-clamped the memcpy into dir_part so an oversized pattern can no longer overflow either buffer."
+    },
+    {
+      "rule": "cpp/UnsafeFunctionStringHandling",
+      "location": "src/rpm_secureboot_patcher.c:238",
+      "fix": "Same: strcpy(file_pattern, pattern) replaced with snprintf bounded by sizeof(file_pattern)."
+    }
+  ]
+}

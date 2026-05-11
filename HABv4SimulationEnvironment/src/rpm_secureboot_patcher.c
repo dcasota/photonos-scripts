@@ -230,12 +230,13 @@ static char* find_rpm_providing_file_pattern(const char *rpm_dir, const char *pa
     char file_pattern[256] = "";
     const char *last_slash = strrchr(pattern, '/');
     if (last_slash) {
-        size_t dir_len = last_slash - pattern;
-        strncpy(dir_part, pattern, dir_len);
+        size_t dir_len = (size_t)(last_slash - pattern);
+        if (dir_len >= sizeof(dir_part)) dir_len = sizeof(dir_part) - 1;
+        memcpy(dir_part, pattern, dir_len);
         dir_part[dir_len] = '\0';
-        strcpy(file_pattern, last_slash + 1);
+        snprintf(file_pattern, sizeof(file_pattern), "%s", last_slash + 1);
     } else {
-        strcpy(file_pattern, pattern);
+        snprintf(file_pattern, sizeof(file_pattern), "%s", pattern);
     }
     
     dir = opendir(rpm_dir);
