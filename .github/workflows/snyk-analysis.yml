@@ -27,6 +27,17 @@ on:
         description: 'Wipe runs+issues and re-parse from scratch (one-time recovery from the run_id corruption fix)'
         type: boolean
         default: false
+      runAgentScan:
+        description: 'Run snyk-agent-scan on cloned packages (extension; scans .claude/.cursor/.gemini/.codex/... dirs)'
+        type: boolean
+        default: true
+      agentScanArgs:
+        description: 'Extra args for snyk-agent-scan (e.g. --no-skills). --json + --dangerously-run-mcp-servers are always added.'
+        default: ''
+      agentScanForce:
+        description: 'Re-run agent-scan for configs whose .json already exists'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -134,6 +145,9 @@ jobs:
           echo "| maxSubdirs | ${{ github.event.inputs.maxSubdirs }} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| force | ${{ github.event.inputs.force }} |"   >> "$GITHUB_STEP_SUMMARY"
           echo "| reparse | ${{ github.event.inputs.reparse }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| runAgentScan | ${{ github.event.inputs.runAgentScan }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| agentScanArgs | \`${{ github.event.inputs.agentScanArgs }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| agentScanForce | ${{ github.event.inputs.agentScanForce }} |" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Scan branches
         env:
@@ -188,6 +202,120 @@ jobs:
             exit 1
           fi
 
+      - name: Scan agent components with Snyk Agent Scan
+        if: github.event.inputs.runAgentScan == 'true'
+        env:
+          UDIR: ${{ steps.dirs.outputs.upstreamsDir }}
+          BRANCHES: ${{ github.event.inputs.branches }}
+          MAX_SUBDIRS: ${{ github.event.inputs.maxSubdirs }}
+          AGENT_FORCE: ${{ github.event.inputs.agentScanForce }}
+          AGENT_ARGS: ${{ github.event.inputs.agentScanArgs }}
+          SNYK_TOKEN_SECRET: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          set +e
+          if [ -n "${SNYK_TOKEN_SECRET:-}" ]; then
+            export SNYK_TOKEN="$SNYK_TOKEN_SECRET"
+          fi
+
+          # Bootstrap uv (provides `uvx` to run snyk-agent-scan@latest without
+          # a persistent install). Installs to ~/.local/bin -- same convention
+          # the snyk CLI step uses.
+          if ! command -v uv &>/dev/null; then
+            echo "Installing uv to $HOME/.local/bin"
+            curl -LsSf https://astral.sh/uv/install.sh | sh
+          fi
+          export PATH="$HOME/.local/bin:$PATH"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          uv --version
+
+          STAMP=$(date -u +%Y%m%d_%H%M%S)
+          # Dotdirs we recognise as agent-config containers. Order matters
+          # only for tie-breaking in the SQLite report; otherwise each match
+          # produces its own scan entry.
+          AGENT_DIRS=( .claude .cursor .gemini .codex .windsurf .aider .amp .kiro .opencode )
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Per-branch agent-scan coverage" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Branch | Configs found | Scans run | Failed |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+
+          total_runs=0; total_failed=0
+          for B in $(echo "$BRANCHES" | tr ',' ' '); do
+            CLONES="$UDIR/photon-$B/clones"
+            if [ ! -d "$CLONES" ]; then
+              echo "| $B | _(clones dir missing)_ | 0 | 0 |" >> "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+
+            # Build the find expression (dynamically -- one -name per AGENT_DIRS entry)
+            FIND_EXPR=()
+            for d in "${AGENT_DIRS[@]}"; do
+              FIND_EXPR+=( -name "$d" -o )
+            done
+            unset 'FIND_EXPR[${#FIND_EXPR[@]}-1]'  # drop trailing -o
+
+            # depth 4: catches both `clones/<pkg>/.claude` and the nested
+            # `clones/<pkg>/<sub>/.claude` example (calico/goldmane case).
+            mapfile -t MATCHES < <(find "$CLONES" -mindepth 2 -maxdepth 4 -type d \( "${FIND_EXPR[@]}" \) 2>/dev/null)
+            n_found=${#MATCHES[@]}
+            n_run=0; n_fail=0
+
+            echo "::group::Branch $B: agent-scan over $n_found config dir(s)"
+            for CFG in "${MATCHES[@]}"; do
+              # Skip empty bin
+              [ -d "$CFG" ] || continue
+
+              # Derive: package = first path component below clones/
+              REL="${CFG#$CLONES/}"
+              PKG="${REL%%/*}"
+              AGENT="$(basename "$CFG")"; AGENT="${AGENT#.}"
+
+              # Apply maxSubdirs cap per branch
+              if [ "$MAX_SUBDIRS" != "0" ] && [ "$n_run" -ge "$MAX_SUBDIRS" ]; then
+                echo "  reached MAX_SUBDIRS=$MAX_SUBDIRS for $B; stopping"
+                break
+              fi
+
+              PKG_ROOT="$CLONES/$PKG"
+              LOG="$PKG_ROOT/${PKG}_agentscan_${B}_${AGENT}_${STAMP}.json"
+
+              # Skip when a log already exists and force is false. Match SAST
+              # step's idempotency via filename uniqueness.
+              if [ "$AGENT_FORCE" != "true" ]; then
+                EXISTING=$(find "$PKG_ROOT" -maxdepth 1 -name "${PKG}_agentscan_${B}_${AGENT}_*.json" -print -quit 2>/dev/null)
+                if [ -n "$EXISTING" ]; then
+                  echo "  skip $PKG/.$AGENT (already scanned: $(basename "$EXISTING"))"
+                  continue
+                fi
+              fi
+
+              echo "  scanning $PKG/.$AGENT -> $(basename "$LOG")"
+              # `uvx snyk-agent-scan@latest scan` is the entrypoint; we add
+              # --json for parsable output, --dangerously-run-mcp-servers
+              # because the runner is non-interactive (per upstream README),
+              # and --suppress-mcpserver-io=true to keep the log clean.
+              # Any user-supplied $AGENT_ARGS go through last.
+              uvx snyk-agent-scan@latest scan \
+                  --json \
+                  --dangerously-run-mcp-servers \
+                  --suppress-mcpserver-io=true \
+                  $AGENT_ARGS \
+                  "$CFG" > "$LOG" 2> "${LOG%.json}.stderr"
+              rc=$?
+              if [ "$rc" -ne 0 ]; then
+                echo "::warning::agent-scan rc=$rc for $PKG/.$AGENT (see stderr sibling)"
+                n_fail=$((n_fail+1))
+              fi
+              n_run=$((n_run+1))
+            done
+            echo "::endgroup::"
+
+            total_runs=$((total_runs + n_run))
+            total_failed=$((total_failed + n_fail))
+            echo "| $B | $n_found | $n_run | $n_fail |" >> "$GITHUB_STEP_SUMMARY"
+          done
+          echo "Total agent-scan runs: $total_runs (failed: $total_failed)" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Parse logs into SQLite
         env:
           UDIR: ${{ steps.dirs.outputs.upstreamsDir }}
@@ -199,6 +327,11 @@ jobs:
           [ "$REPARSE" = "true" ] && PARSE_ARGS+=("-Reparse")
           [ "$REBUILD" = "true" ] && PARSE_ARGS+=("-Rebuild")
           pwsh -File "ci/SnykAnalysis/Parse-SnykLogs.ps1" \
+            -Directory "$UDIR" \
+            -Database "$DB" \
+            "${PARSE_ARGS[@]}"
+          # Also import any agent-scan JSON outputs into the same DB.
+          pwsh -File "ci/SnykAnalysis/Parse-AgentScanLogs.ps1" \
             -Directory "$UDIR" \
             -Database "$DB" \
             "${PARSE_ARGS[@]}"

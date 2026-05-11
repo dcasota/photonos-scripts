@@ -63,6 +63,34 @@ Schema:
 Branch is extracted from the log filename if it embeds `_snyk_<branch>_<ts>.log`,
 or from a path containing `photon-<branch>/clones/`. Override with `-Branch`.
 
+### Parse-AgentScanLogs.ps1
+
+Companion parser for the **Snyk Agent Scan** extension. Walks
+`*_agentscan_*.json` files (emitted by the workflow's agent-scan step) and
+imports them into the same SQLite DB used by `Parse-SnykLogs.ps1`.
+
+```powershell
+./Parse-AgentScanLogs.ps1 -Directory <upstreamsDir> -Database snyk_issues.db
+```
+
+Adds three objects to the DB (idempotent, additive — coexists with `runs` /
+`issues`):
+
+- `agent_scans(scan_id, package, branch, datetime, agent_type, config_path, log_file UNIQUE, log_size, total_issues, scan_version)`
+- `agent_issues(issue_id, scan_id, code, severity, category, artefact, message, raw)` (FK)
+- view `v_latest_agent_scan` — one row per `(package, branch, agent_type)` with the newest datetime
+
+Filename convention (set by `snyk-analysis.yml`):
+
+```
+<package>_agentscan_<branch>_<agent_type>_<YYYYMMDD_HHMMSS>.json
+e.g.  calico_agentscan_5.0_claude_20260511_103000.json
+```
+
+`agent_type` is the dotdir name stripped of its leading `.` (`claude`,
+`cursor`, `gemini`, `codex`, …). The parser is defensive: unknown JSON
+shapes are still recorded with the raw payload in `agent_issues.raw`.
+
 ### Generate-SnykReport.ps1
 
 Builds a report from the normalized schema. Three output formats: text, Markdown
@@ -80,6 +108,10 @@ Sections:
 - Top-N High categories without `crypto`
 - Top-N Medium categories
 - Top-N packages by total issues
+- **Agent Components (snyk-agent-scan)** — only rendered if `agent_scans`
+  has rows for the branch. Includes total scans / packages / issues,
+  coverage by agent type (Claude / Cursor / Gemini / Codex / …), the top
+  issue codes, and the top packages with agent-component issues.
 
 ## Typical workflow
 
@@ -93,10 +125,26 @@ Sections:
 ./Run-SnykOnSubdirs.ps1 -BaseDir <upstreamsDir>/photon-dev/clones    -Branch dev
 ./Run-SnykOnSubdirs.ps1 -BaseDir <upstreamsDir>/photon-master/clones -Branch master
 
-# 2. Parse all logs into one database
-./Parse-SnykLogs.ps1 -Directory <upstreamsDir> -Database snyk_issues.db
+# 2. (optional) Snyk Agent Scan extension: scan every AI-assistant config
+#    dotdir (.claude / .cursor / .gemini / .codex / ...) under each clone.
+#    Requires `uvx` (uv package manager) on PATH and a Snyk account.
+for AGENT_DIR in $(find <upstreamsDir> -mindepth 4 -maxdepth 6 -type d \( \
+    -name .claude -o -name .cursor -o -name .gemini -o -name .codex -o \
+    -name .windsurf -o -name .aider -o -name .amp -o -name .kiro -o -name .opencode \)); do
+    PKG_ROOT="$(dirname "$AGENT_DIR")"
+    PKG="$(basename "$PKG_ROOT")"
+    BR="$(echo "$AGENT_DIR" | sed -n 's|.*/photon-\([^/]*\)/clones/.*|\1|p')"
+    AGENT="${AGENT_DIR##*/.}"
+    STAMP="$(date -u +%Y%m%d_%H%M%S)"
+    uvx snyk-agent-scan@latest scan --json --dangerously-run-mcp-servers \
+        "$AGENT_DIR" > "$PKG_ROOT/${PKG}_agentscan_${BR}_${AGENT}_${STAMP}.json"
+done
 
-# 3. Generate report (overall + per branch)
+# 3. Parse all logs into one database (SAST + agent-scan)
+./Parse-SnykLogs.ps1      -Directory <upstreamsDir> -Database snyk_issues.db
+./Parse-AgentScanLogs.ps1 -Directory <upstreamsDir> -Database snyk_issues.db
+
+# 4. Generate report (overall + per branch)
 ./Generate-SnykReport.ps1 -Database snyk_issues.db -Format markdown
 ./Generate-SnykReport.ps1 -Database snyk_issues.db -Format markdown -Branch 5.0
 ```

@@ -174,6 +174,81 @@ $now           = Get-Date
 $generatedFmt  = $now.ToString('MM/dd/yyyy HH:mm:ss')
 
 # ------------------------------------------------------------------
+# Agent-scan aggregates (snyk-agent-scan; only populated if the
+# agent_scans table exists and contains rows for this branch)
+# ------------------------------------------------------------------
+$agentScansAvail = $false
+try {
+    $check = (& sqlite3 $Database "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='agent_scans';").Trim()
+    if ($check -eq '1') { $agentScansAvail = $true }
+} catch {}
+
+$branchFilterAgent   = if ($Branch) { "AND s.branch = '$brEsc'" } else { '' }
+$branchFilterAgentLR = if ($Branch) { "WHERE branch = '$brEsc'" } else { '' }
+
+$agentSummary     = $null
+$agentByType      = @()
+$agentTopPackages = @()
+$agentTopCats     = @()
+if ($agentScansAvail) {
+    # Aggregate scan counts and issue-severity counts separately so the join
+    # doesn't multiply totals. Two CTEs feed the single output row.
+    $agentSummary = Q @"
+      WITH
+        scn AS (
+          SELECT COUNT(*) AS Scans, COUNT(DISTINCT package) AS PackagesScanned,
+                 COALESCE(SUM(total_issues), 0) AS TotalIssues
+          FROM agent_scans s WHERE 1=1 $branchFilterAgent
+        ),
+        sev AS (
+          SELECT
+            SUM(CASE WHEN ai.severity IN ('HIGH','CRITICAL') THEN 1 ELSE 0 END) AS High,
+            SUM(CASE WHEN ai.severity = 'MEDIUM' THEN 1 ELSE 0 END)             AS Medium,
+            SUM(CASE WHEN ai.severity IN ('LOW','INFO') THEN 1 ELSE 0 END)      AS Low
+          FROM agent_issues ai
+          JOIN agent_scans s ON s.scan_id = ai.scan_id
+          WHERE 1=1 $branchFilterAgent
+        )
+      SELECT scn.Scans, scn.PackagesScanned, scn.TotalIssues,
+             COALESCE(sev.High,0) AS High, COALESCE(sev.Medium,0) AS Medium, COALESCE(sev.Low,0) AS Low
+      FROM scn LEFT JOIN sev;
+"@ | Select-Object -First 1
+
+    $agentByType = Q @"
+      SELECT COALESCE(s.agent_type,'(unknown)') AS AgentType,
+             COUNT(DISTINCT s.package) AS Packages,
+             COUNT(ai.issue_id) AS Issues
+      FROM agent_scans s
+      LEFT JOIN agent_issues ai ON ai.scan_id = s.scan_id
+      WHERE 1=1 $branchFilterAgent
+      GROUP BY s.agent_type ORDER BY Issues DESC;
+"@
+
+    $agentTopPackages = Q @"
+      SELECT s.package AS Package,
+             COALESCE(s.agent_type,'?') AS AgentType,
+             COUNT(ai.issue_id) AS Issues,
+             COALESCE((SELECT code FROM agent_issues a2 WHERE a2.scan_id = s.scan_id GROUP BY code ORDER BY COUNT(*) DESC LIMIT 1), '') AS TopCode
+      FROM agent_scans s
+      LEFT JOIN agent_issues ai ON ai.scan_id = s.scan_id
+      WHERE 1=1 $branchFilterAgent
+      GROUP BY s.scan_id
+      HAVING Issues > 0
+      ORDER BY Issues DESC LIMIT $TopN;
+"@
+
+    $agentTopCats = Q @"
+      SELECT COALESCE(ai.code,'(unknown)') AS Code,
+             COALESCE(ai.category,'') AS Category,
+             COUNT(*) AS Count
+      FROM agent_issues ai
+      JOIN agent_scans s ON s.scan_id = ai.scan_id
+      WHERE 1=1 $branchFilterAgent
+      GROUP BY ai.code, ai.category ORDER BY Count DESC LIMIT $TopN;
+"@
+}
+
+# ------------------------------------------------------------------
 # JSON output
 # ------------------------------------------------------------------
 if ($Format -eq 'json') {
@@ -192,6 +267,14 @@ if ($Format -eq 'json') {
         top_packages_by_high        = @($topHigh)
         top_packages_by_medium      = @($topMedium)
         top_packages_by_low         = @($topLow)
+        agent_scan = if ($agentScansAvail) {
+            [ordered]@{
+                summary       = $agentSummary
+                by_agent_type = @($agentByType)
+                top_packages  = @($agentTopPackages)
+                top_codes     = @($agentTopCats)
+            }
+        } else { $null }
     }
     $payload | ConvertTo-Json -Depth 6 | Out-File -LiteralPath $ReportFile -Encoding utf8
     Write-Host "Report saved (JSON): $ReportFile" -ForegroundColor Green
@@ -267,6 +350,31 @@ $(FmtTable $topMedium @('Package','Count'))
 ## Top $TopN Source Packages with most issues on Level "Low"
 
 $(FmtTable $topLow @('Package','Count'))
+
+$(if ($agentScansAvail -and $agentSummary -and [int]($agentSummary.Scans) -gt 0) {@"
+## Agent Components (snyk-agent-scan)
+
+| Metric | Count |
+|---|---|
+| Scans | $($agentSummary.Scans) |
+| Packages scanned | $($agentSummary.PackagesScanned) |
+| Total issues | $($agentSummary.TotalIssues) |
+| High / Critical | $($agentSummary.High) |
+| Medium | $($agentSummary.Medium) |
+| Low / Info | $($agentSummary.Low) |
+
+### Coverage by agent type
+
+$(FmtTable $agentByType @('AgentType','Packages','Issues'))
+
+### Top $TopN Agent-Component Issue Codes
+
+$(FmtTable $agentTopCats @('Code','Category','Count'))
+
+### Top $TopN Packages with Agent-Component Issues
+
+$(FmtTable $agentTopPackages @('Package','AgentType','Issues','TopCode'))
+"@})
 "@
 } else {
     $report = @"
@@ -303,6 +411,26 @@ $(FmtTable $topMedium @('Package','Count'))
 
 Top $TopN Source Packages with most issues on Level "Low"
 $(FmtTable $topLow @('Package','Count'))
+
+$(if ($agentScansAvail -and $agentSummary -and [int]($agentSummary.Scans) -gt 0) {@"
+Agent Components (snyk-agent-scan)
+- Scans: $($agentSummary.Scans)
+- Packages scanned: $($agentSummary.PackagesScanned)
+- Total issues: $($agentSummary.TotalIssues)
+- High / Critical: $($agentSummary.High)
+- Medium: $($agentSummary.Medium)
+- Low / Info: $($agentSummary.Low)
+
+
+Coverage by agent type
+$(FmtTable $agentByType @('AgentType','Packages','Issues'))
+
+Top $TopN Agent-Component Issue Codes
+$(FmtTable $agentTopCats @('Code','Category','Count'))
+
+Top $TopN Packages with Agent-Component Issues
+$(FmtTable $agentTopPackages @('Package','AgentType','Issues','TopCode'))
+"@})
 "@
 }
 
