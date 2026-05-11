@@ -1,0 +1,16 @@
+subdir	code_status	code_issues	oss_status	oss_issues	container_status	container_issues
+.github	ok(1)	1	no-manifest	0	no-dockerfile	0
+cve-aggregator	ok(1)	11	no-manifest	0	no-dockerfile	0
+Kubernetes-image-baker	no-supported-files	0	no-manifest	0	no-dockerfile	0
+package-classifier	ok(1)	2	no-manifest	0	no-dockerfile	0
+SnykAnalysis	no-supported-files	0	no-manifest	0	no-dockerfile	0
+tdnf-depgraph	error(0)	0	no-manifest	0	no-dockerfile	0
+photon-gating-conflict-detection	ok(1)	11	no-manifest	0	no-dockerfile	0
+HABv4SimulationEnvironment	ok(1)	17	no-manifest	0	no-dockerfile	0
+photonos-package-report	ok(1)	11	no-manifest	0	no-dockerfile	0
+kernelpatches	ok(1)	29	error(2)	0	no-dockerfile	0
+upstream-source-code-dependency-scanner	ok(1)	6	no-manifest	0	no-dockerfile	0
+vCenter-CVE-drift-analyzer	error(0)	0	error(3)	0	no-dockerfile	0
+PwshOnPhotonOS	no-supported-files	0	no-manifest	0	ok(0)	0
+staging	ok(1)	15	no-manifest	0	no-dockerfile	0
+docsystem	ok(1)	94	error(3)	0	no-dockerfile	0
