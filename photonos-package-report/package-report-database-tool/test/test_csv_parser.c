@@ -101,6 +101,7 @@ static void test_empty_file(void)
     TEST(parse_empty_file);
     const char *tmpfile = "/tmp/test_empty.prn";
     FILE *f = fopen(tmpfile, "w");
+    if (!f) { FAIL("could not create empty tmp file"); return; }
     fclose(f);
 
     csv_data_t data;
