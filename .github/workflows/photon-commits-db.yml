@@ -22,8 +22,11 @@ on:
 
 env:
   ARTIFACT_NAME: photon-commits-db
-  # GitHub Free plan artifact storage limit (bytes)
-  STORAGE_LIMIT_BYTES: 524288000
+  # GitHub Pro plan artifact storage limit: 2 GB for a personal account.
+  # (Free plan was 500 MB / 524_288_000; raised after upgrade 2026-05-11
+  # because the compressed photon_commits.db has grown past 350 MB and
+  # the prior cap blocked weekly imports.)
+  STORAGE_LIMIT_BYTES: 2147483648
 
 jobs:
   import-commits:
