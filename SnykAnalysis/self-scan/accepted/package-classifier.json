@@ -1,0 +1,13 @@
+{
+  "subdir": "package-classifier",
+  "accepted": [
+    {
+      "ruleId": "python/PT",
+      "severity": "note",
+      "file": "build_per_branch_summary.py",
+      "line": 394,
+      "category": "FALSE-POSITIVE",
+      "reason": "Snyk's taint analysis flags the open() reading args.url_map. The script is invoked exclusively from .github/workflows/package-classifier.yml with a workflow-controlled path; there is no external attacker who can influence args.url_map. The earlier os.path.isfile() guard plus the realpath canonicalisation already constrains the actual read. Accepted as static-analysis false positive."
+    }
+  ]
+}

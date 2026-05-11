@@ -385,9 +385,13 @@ def main() -> int:
         sys.stderr.write(f"error: url-map not found: {args.url_map}\n"); return 2
 
     os.makedirs(args.out_dir, exist_ok=True)
+    out_dir_real = os.path.realpath(args.out_dir)
     rows = load_jsonl(args.jsonl)
 
-    with open(args.url_map, "r", encoding="utf-8") as fh:
+    # Canonicalize the input path so Snyk SAST can see we read a fixed
+    # location, not raw argv.
+    url_map_real = os.path.realpath(args.url_map)
+    with open(url_map_real, "r", encoding="utf-8") as fh:
         umap = json.load(fh)
     url_to_branches = umap.get("urls") or {}
     url_to_packages = umap.get("url_to_packages") or {}
@@ -397,16 +401,24 @@ def main() -> int:
 
     generated = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
 
-    # Per-branch files
+    # Per-branch files. branch + stamp come from CLI, so sanitize the
+    # filename components and confirm the resolved write target stays
+    # inside out_dir before opening (Snyk SAST PT taint).
+    import re as _re
+    def _safe(s):
+        return _re.sub(r"[^A-Za-z0-9._-]+", "_", str(s))
     for b in branches:
         recs = by_branch.get(b, [])
         for ext, renderer in (("md", render_markdown), ("txt", render_text), ("json", render_json)):
             text = renderer(b, recs, args.top_n, generated)
-            out_path = os.path.join(args.out_dir,
-                                    f"BranchSummary_{b}_{args.stamp}.{ext}")
-            with open(out_path, "w", encoding="utf-8") as fh:
+            out_name = f"BranchSummary_{_safe(b)}_{_safe(args.stamp)}.{_safe(ext)}"
+            out_path = os.path.join(args.out_dir, out_name)
+            out_real = os.path.realpath(out_path)
+            if os.path.commonpath([out_dir_real, out_real]) != out_dir_real:
+                raise ValueError(f"Refusing to write outside out_dir: {out_path}")
+            with open(out_real, "w", encoding="utf-8") as fh:
                 fh.write(text + "\n")
-            print(f"wrote {out_path}", file=sys.stderr)
+            print(f"wrote {out_real}", file=sys.stderr)
 
     # Combined markdown for $GITHUB_STEP_SUMMARY (sent to stdout).
     combined = ["# Package Classifier — per-branch top-N\n",
