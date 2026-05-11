@@ -35,21 +35,14 @@ jobs:
           tdnf --version | tee -a "$GITHUB_STEP_SUMMARY"
           cat /etc/photon-release | tee -a "$GITHUB_STEP_SUMMARY"
 
-          # Self-healing install. The photon-updates repo occasionally
-          # publishes a new -devel package before its matching binary build
-          # gets mirrored (observed 2026-05-11: rpm-devel-6.0.1-4.ph5 needs
-          # rpm = 6.0.1-4.ph5, but the rpm binary is absent — solver exit 21.
-          # Same pattern just hit tdnf-devel-3.6.4-2.ph5 needing tdnf=3.6.4-2).
-          # The Photon base repo does not carry these -devel packages so a
-          # "second-newest version" fallback finds nothing.
-          #
-          # Strategy:
-          #   1. Try `tdnf install -y <pkg>`.
-          #   2. On failure, refresh metadata and retry once.
-          #   3. On failure, retry with `--disablerepo=photon-updates` so
-          #      tdnf is forced to use the photon base repo only — which
-          #      carries a self-consistent older pair (e.g. rpm-6.0.0 plus
-          #      rpm-devel-6.0.0). Slightly older but always installable.
+          # Self-healing install. The simple `tdnf install -y <pkg>` path
+          # is enough most of the time, but Photon's major version bumps
+          # (e.g. rpm 4.18 -> 6.0.1 on 2026-05-11) leave orphan dependents
+          # like `drpm` whose old ABI (librpm.so.9) blocks the upgrade --
+          # the solver refuses, reporting "providers can't be installed".
+          # `--allowerasing` lets tdnf remove the orphan(s) so the upgrade
+          # proceeds (e.g. drpm is dropped and createrepo_c upgrades to a
+          # version that no longer needs it).
           install_with_fallback() {
             local pkg="$1"
             if rpm -q "$pkg" &>/dev/null; then
@@ -57,12 +50,9 @@ jobs:
               return 0
             fi
             if tdnf install -y "$pkg" 2>&1; then return 0; fi
-            echo "::warning::tdnf install $pkg failed; refreshing metadata and retrying"
-            tdnf makecache --refresh 2>/dev/null || true
-            if tdnf install -y "$pkg" 2>&1; then return 0; fi
-            echo "::warning::Still failing; retrying with photon-updates disabled (use base repo only)"
-            if tdnf install -y --disablerepo=photon-updates "$pkg" 2>&1; then
-              echo "::notice::Installed $pkg from photon base repo (photon-updates skew)"
+            echo "::warning::tdnf install $pkg failed; retrying with --allowerasing --refresh"
+            if tdnf install -y --allowerasing --refresh "$pkg" 2>&1; then
+              echo "::notice::Installed $pkg with --allowerasing (orphan dependent removed)"
               return 0
             fi
             echo "::error::All install paths for $pkg exhausted"
