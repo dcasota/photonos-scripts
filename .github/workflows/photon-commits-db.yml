@@ -22,11 +22,6 @@ on:
 
 env:
   ARTIFACT_NAME: photon-commits-db
-  # GitHub Pro plan artifact storage limit: 2 GB for a personal account.
-  # (Free plan was 500 MB / 524_288_000; raised after upgrade 2026-05-11
-  # because the compressed photon_commits.db has grown past 350 MB and
-  # the prior cap blocked weekly imports.)
-  STORAGE_LIMIT_BYTES: 2147483648
 
 jobs:
   import-commits:
@@ -38,15 +33,37 @@ jobs:
         id: quota
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Configurable artifact-storage limit. Defaults to the GitHub Pro
+          # tier (2 GB) -- the plan this repo runs under as of 2026-05-11.
+          # Override per-repo without editing the workflow via:
+          #   Settings → Secrets and variables → Actions → Variables →
+          #   ACTIONS_STORAGE_LIMIT_BYTES
+          # Reference public quotas (subject to change):
+          #     Free          524288000   (500 MB)
+          #     Pro / Team   2147483648   (2 GB)
+          #     Enterprise  53687091200   (50 GB)
+          # Reading the plan via the API would require a token scope that
+          # the default GITHUB_TOKEN does not carry, so this variable is
+          # the simplest portable knob.
+          LIMIT_OVERRIDE: ${{ vars.ACTIONS_STORAGE_LIMIT_BYTES }}
         run: |
+          if [ -n "${LIMIT_OVERRIDE:-}" ]; then
+            LIMIT="$LIMIT_OVERRIDE"
+            SRC="repository variable ACTIONS_STORAGE_LIMIT_BYTES"
+          else
+            LIMIT=2147483648
+            SRC="default (GitHub Pro -- 2 GB)"
+          fi
           # Sum all current artifact sizes in this repo
           USED=$(gh api /repos/${{ github.repository }}/actions/artifacts \
             --jq '[.artifacts[].size_in_bytes] | add // 0' 2>/dev/null || echo 0)
-          LIMIT=${{ env.STORAGE_LIMIT_BYTES }}
           AVAIL=$((LIMIT - USED))
+          echo "Limit source: $SRC"
           echo "Artifact storage: used=$(numfmt --to=iec $USED), available=$(numfmt --to=iec $AVAIL), limit=$(numfmt --to=iec $LIMIT)"
           echo "used=$USED" >> "$GITHUB_OUTPUT"
           echo "available=$AVAIL" >> "$GITHUB_OUTPUT"
+          echo "limit=$LIMIT" >> "$GITHUB_OUTPUT"
+          echo "limit_source=$SRC" >> "$GITHUB_OUTPUT"
 
           # Check if this is the first run (no photon-commits-db artifact exists)
           EXISTING=$(gh api /repos/${{ github.repository }}/actions/artifacts \
