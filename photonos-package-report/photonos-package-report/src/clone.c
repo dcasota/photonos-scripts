@@ -13,6 +13,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/file.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -132,6 +133,25 @@ int pr_clone_ensure(const char *clone_root,
     char *git_dir = NULL;
     if (asprintf(&git_dir, "%s/.git", clone_path) < 0) { free(clone_path); return -1; }
 
+    /* Phase 7: per-repo flock so concurrent workers can't collide on
+     * the same clone directory. Mirrors PS L 2028 Wait-ForFetchCompletion
+     * mutex (simplified — flock is sufficient when we always finish a
+     * clone/fetch under the lock, which our path does).
+     *
+     * Lock-file path: <clone_root>/.<repo_name>.lock. We never delete
+     * the lock file — leaving it in place is harmless and avoids races
+     * around unlink. */
+    char *lock_path = NULL;
+    int   lock_fd   = -1;
+    if (asprintf(&lock_path, "%s/.%s.lock", clone_root, repo_name) >= 0) {
+        lock_fd = open(lock_path, O_CREAT | O_RDWR, 0644);
+        if (lock_fd >= 0) {
+            /* Block until acquired — short critical section. */
+            (void)flock(lock_fd, LOCK_EX);
+        }
+        free(lock_path);
+    }
+
     /* PS L 2390-2421: up to 2 attempts, deleting and re-cloning on
      * a corrupt working tree. */
     int rc = -1;
@@ -153,6 +173,11 @@ int pr_clone_ensure(const char *clone_root,
         if (attempt == 1) {
             rm_rf(clone_path);
         }
+    }
+
+    if (lock_fd >= 0) {
+        flock(lock_fd, LOCK_UN);
+        close(lock_fd);
     }
     free(git_dir);
     free(clone_path);
