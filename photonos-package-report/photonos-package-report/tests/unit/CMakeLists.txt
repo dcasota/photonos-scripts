@@ -87,3 +87,32 @@ target_link_libraries(test_phase5 PRIVATE ${CURL_LIBRARIES})
 target_compile_options(test_phase5 PRIVATE -Wall -Wextra -O0 -g -D_GNU_SOURCE ${CURL_CFLAGS_OTHER})
 
 add_test(NAME test_phase5 COMMAND test_phase5)
+
+# ----- Phase 6a unit tests (pr_state + prn writer + CheckURLHealth) ---
+set_source_files_properties(${PR_GEN_HOOK_DISPATCH} PROPERTIES GENERATED TRUE)
+
+add_executable(test_phase6
+    test_phase6.c
+    ${CMAKE_SOURCE_DIR}/src/state.c
+    ${CMAKE_SOURCE_DIR}/src/strutil.c
+    ${CMAKE_SOURCE_DIR}/src/source0_substitute.c
+    ${CMAKE_SOURCE_DIR}/src/source0_lookup.c
+    ${CMAKE_SOURCE_DIR}/src/urlhealth.c
+    ${CMAKE_SOURCE_DIR}/src/prn_writer.c
+    ${CMAKE_SOURCE_DIR}/src/check_urlhealth.c
+    ${CMAKE_SOURCE_DIR}/src/hook_dispatch.c
+    ${CMAKE_SOURCE_DIR}/src/task.c
+    ${PR_GEN_HOOK_DISPATCH}
+    ${PR_HOOK_SOURCES}
+)
+add_dependencies(test_phase6 pr-source0-lookup-data pr-hook-dispatch)
+target_include_directories(test_phase6 PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${PR_GEN_DIR}
+    ${PCRE2_INCLUDE_DIRS}
+    ${CURL_INCLUDE_DIRS}
+)
+target_link_libraries(test_phase6 PRIVATE pthread ${PCRE2_LIBRARIES} ${CURL_LIBRARIES})
+target_compile_options(test_phase6 PRIVATE -Wall -Wextra -O0 -g -D_GNU_SOURCE ${PCRE2_CFLAGS_OTHER} ${CURL_CFLAGS_OTHER})
+
+add_test(NAME test_phase6 COMMAND test_phase6)

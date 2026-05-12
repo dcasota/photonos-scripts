@@ -26,9 +26,14 @@
 #include <pwd.h>
 
 #include "pr_types.h"
+#include "pr_check_urlhealth.h"
+#include "pr_prn.h"
+#include "source0_lookup.h"
+#include <time.h>
 
-/* Forward declaration for the Phase 2 parity helper. Defined at bottom. */
+/* Forward declarations for helper subcommands. */
 static int dump_tasks_main(const char *working_dir, const char *branch);
+static int generate_urlhealth_main(const pr_params_t *params, const char *branch);
 
 /* Helper: getenv() returning const char *""  rather than NULL,
  * matching the PS implicit-empty semantics for $env:FOO when unset. */
@@ -135,9 +140,11 @@ int main(int argc, char **argv)
         OPT_GeneratePh5toPh6DiffHigherPackageVersionReport,
         OPT_GeneratePh4toPh5DiffHigherPackageVersionReport,
         OPT_GeneratePh3toPh4DiffHigherPackageVersionReport,
-        OPT_dump_tasks,  /* Phase 2 parity helper, not present in PS. */
+        OPT_dump_tasks,                /* Phase 2 parity helper, not in PS. */
+        OPT_generate_urlhealth_report, /* Phase 6a end-to-end pipeline.    */
     };
-    const char *dump_tasks_branch = NULL;
+    const char *dump_tasks_branch          = NULL;
+    const char *generate_urlhealth_branch  = NULL;
     static const struct option long_opts[] = {
         { "github_token",                                                       required_argument, 0, OPT_github_token },
         { "gitlab_freedesktop_org_username",                                    required_argument, 0, OPT_gitlab_freedesktop_org_username },
@@ -159,6 +166,7 @@ int main(int argc, char **argv)
         { "GeneratePh4toPh5DiffHigherPackageVersionReport",                     required_argument, 0, OPT_GeneratePh4toPh5DiffHigherPackageVersionReport },
         { "GeneratePh3toPh4DiffHigherPackageVersionReport",                     required_argument, 0, OPT_GeneratePh3toPh4DiffHigherPackageVersionReport },
         { "dump-tasks",                                                         required_argument, 0, OPT_dump_tasks },
+        { "generate-urlhealth-report",                                          required_argument, 0, OPT_generate_urlhealth_report },
         { "help",                                                               no_argument,       0, 'h' },
         { 0, 0, 0, 0 },
     };
@@ -192,6 +200,8 @@ int main(int argc, char **argv)
             params.GeneratePh3toPh4DiffHigherPackageVersionReport = convert_to_boolean(optarg); break;
         case OPT_dump_tasks:
             dump_tasks_branch = optarg; break;
+        case OPT_generate_urlhealth_report:
+            generate_urlhealth_branch = optarg; break;
         case 'h':
             usage(argv[0]);
             return 0;
@@ -247,6 +257,10 @@ int main(int argc, char **argv)
      * tools/dump-tasks.ps1. */
     if (dump_tasks_branch != NULL && dump_tasks_branch[0] != '\0') {
         return dump_tasks_main(params.workingDir, dump_tasks_branch);
+    }
+
+    if (generate_urlhealth_branch != NULL && generate_urlhealth_branch[0] != '\0') {
+        return generate_urlhealth_main(&params, generate_urlhealth_branch);
     }
 
     return 0;
@@ -349,5 +363,76 @@ static int dump_tasks_main(const char *working_dir, const char *branch)
     }
 
     pr_task_list_free(&list);
+    return 0;
+}
+
+/* ===== Phase 6a: --generate-urlhealth-report <branch> ===============
+ *
+ * Walks parse_directory(workingDir, branch) → for each task, calls
+ * check_urlhealth() → writes a .prn file named
+ *
+ *   photonos-urlhealth-<branch>_<yyyyMMddHHmm>.prn
+ *
+ * under scansDir (defaults to workingDir if -scansDir was not given).
+ *
+ * Sequential only. Parallel runspaces land in Phase 7. Columns past
+ * UrlHealth are stubbed until Phase 6b-6f; the row schema itself is
+ * already the final PS L 4933 layout. */
+
+static int generate_urlhealth_main(const pr_params_t *params, const char *branch)
+{
+    pr_task_list_t list;
+    pr_task_list_init(&list);
+    if (parse_directory(params->workingDir, branch, &list) != 0) {
+        pr_task_list_free(&list);
+        return 1;
+    }
+
+    /* Source0LookupData (Phase 3a). Loaded once and shared across tasks. */
+    pr_source0_lookup_table_t lut;
+    if (source0_lookup(&lut) != 0) {
+        pr_task_list_free(&list);
+        return 1;
+    }
+
+    /* Build output path. */
+    const char *scans_dir = (params->scansDir && params->scansDir[0])
+                            ? params->scansDir : params->workingDir;
+    time_t now = time(NULL);
+    struct tm tm; localtime_r(&now, &tm);
+    char ts[16];
+    strftime(ts, sizeof ts, "%Y%m%d%H%M", &tm);
+
+    char out_path[PR_MAX_PATH];
+    snprintf(out_path, sizeof out_path,
+             "%s/photonos-urlhealth-%s_%s.prn", scans_dir, branch, ts);
+
+    pr_prn_t *p = pr_prn_open(out_path);
+    if (!p) {
+        fprintf(stderr, "generate_urlhealth: cannot open %s\n", out_path);
+        pr_source0_lookup_free(&lut);
+        pr_task_list_free(&list);
+        return 1;
+    }
+
+    /* Build rows for every task. */
+    char **rows = (char **)calloc(list.count, sizeof *rows);
+    if (!rows) {
+        pr_prn_close(p); pr_source0_lookup_free(&lut); pr_task_list_free(&list);
+        return 1;
+    }
+    for (size_t i = 0; i < list.count; i++) {
+        rows[i] = check_urlhealth(&list.items[i], &lut);
+    }
+    pr_prn_append_rows(p, rows, list.count);
+
+    for (size_t i = 0; i < list.count; i++) free(rows[i]);
+    free(rows);
+
+    pr_prn_close(p);
+    pr_source0_lookup_free(&lut);
+    pr_task_list_free(&list);
+
+    fprintf(stderr, "Wrote %s\n", out_path);
     return 0;
 }

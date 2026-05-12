@@ -97,6 +97,9 @@ add_executable(photonos-package-report
     src/source0_substitute.c
     src/urlhealth.c
     src/koji.c
+    src/state.c
+    src/prn_writer.c
+    src/check_urlhealth.c
     ${PR_GEN_HOOK_DISPATCH}
     ${PR_HOOK_SOURCES}
 )
