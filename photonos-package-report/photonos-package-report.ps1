@@ -87,6 +87,12 @@ param (
     [string]$workingDir = $(if ($env:PUBLIC) { $env:PUBLIC } else { $HOME }),
     [string]$upstreamsDir = "",
     [string]$scansDir = "",
+    # Comma-separated substrings. If the LEAF (filename) of $UpdateDownloadFile
+    # contains any of these (case-insensitive), the tarball-build/fetch block
+    # in CheckURLHealth is skipped — substitution + urlhealth still run.
+    # Use case: avoid expensive re-downloads of huge sources (e.g.
+    # "firmware,chromium") on every package-report run.
+    [string]$UpstreamsExclusionList = "",
     [Parameter(Mandatory = $false)][ValidateNotNull()]$GeneratePh3URLHealthReport=$true,
     [Parameter(Mandatory = $false)][ValidateNotNull()]$GeneratePh4URLHealthReport=$true,
     [Parameter(Mandatory = $false)][ValidateNotNull()]$GeneratePh5URLHealthReport=$true,
@@ -1575,7 +1581,10 @@ function CheckURLHealth {
         [parameter(Mandatory)]$photonDir,
         [parameter(Mandatory)]$UpstreamsDir,
         [parameter(Mandatory)][DateTime]$ScriptStartTime,
-        $Source0Data = $null
+        $Source0Data = $null,
+        # Forwarded from the top-level script param; explicit here because
+        # parallel runspaces don't see outer script scope.
+        [string]$UpstreamsExclusionList = ""
     )
 
     class HeapSort {
@@ -4744,7 +4753,24 @@ function CheckURLHealth {
         if (!(Test-Path $SourcesNewDirectory)) {New-Item $SourcesNewDirectory -ItemType Directory}
 
         $UpdateDownloadFile=[System.String](Join-Path -Path $SourcesNewDirectory -ChildPath $UpdateDownloadName).Trim()
-        if (!(Test-Path $UpdateDownloadFile)) {
+
+        # Optional skip: when -UpstreamsExclusionList contains a substring of
+        # the download filename (LEAF, case-insensitive), do NOT fetch/build
+        # the tarball. Substitution + urlhealth still run downstream.
+        # Typical: skip huge re-downloads of `firmware`, `chromium`.
+        $shouldFetch = $true
+        if (-not [string]::IsNullOrWhiteSpace($UpstreamsExclusionList)) {
+            $leaf = Split-Path -Leaf $UpdateDownloadFile
+            foreach ($filter in ($UpstreamsExclusionList -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })) {
+                if ($leaf.IndexOf($filter, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                    Write-Host "Skipping upstream tarball fetch for $($currentTask.Spec): filter '$filter' matches leaf '$leaf'"
+                    $shouldFetch = $false
+                    break
+                }
+            }
+        }
+
+        if ($shouldFetch -and !(Test-Path $UpdateDownloadFile)) {
             if (($currentTask.spec -ilike 'netcat.spec') -and (-not [string]::IsNullOrEmpty($Script:netcatCommitId))) {
                 # Reuse the existing openbsd/src clone from the standard clone block
                 $existingClonePath = Join-Path (Join-Path (Join-Path $UpstreamsDir $photonDir) "clones") "src"
@@ -5011,6 +5037,7 @@ function GenerateUrlHealthReports {
                 ScriptStartTime = $ScriptStartTime
                 InitScript = $CombinedInitScript
                 Source0Data = $cachedSource0Data
+                UpstreamsExclusionList = $UpstreamsExclusionList
             }
             $checkUrlHealthTasks | ForEach-Object {
                 # Safely reference variables from the parent scope
@@ -5029,7 +5056,7 @@ function GenerateUrlHealthReports {
 
                     $currentPackage = $_
                     Write-Host "Processing $($currentPackage.name) ..."
-                    $result = [system.string](CheckURLHealth -currentTask $currentPackage -WorkingDir $using:ParallelContext.WorkingDir -AccessToken $using:ParallelContext.AccessToken -outputfile $using:outputFilePath -photonDir $using:TaskConfig.PhotonDir -UpstreamsDir $using:ParallelContext.UpstreamsDir -ScriptStartTime $using:ParallelContext.ScriptStartTime -Source0Data $using:ParallelContext.Source0Data)
+                    $result = [system.string](CheckURLHealth -currentTask $currentPackage -WorkingDir $using:ParallelContext.WorkingDir -AccessToken $using:ParallelContext.AccessToken -outputfile $using:outputFilePath -photonDir $using:TaskConfig.PhotonDir -UpstreamsDir $using:ParallelContext.UpstreamsDir -ScriptStartTime $using:ParallelContext.ScriptStartTime -Source0Data $using:ParallelContext.Source0Data -UpstreamsExclusionList $using:ParallelContext.UpstreamsExclusionList)
                     ($using:results).Add($result)
                 } -ThrottleLimit $ThrottleLimit
 
@@ -5068,7 +5095,7 @@ function GenerateUrlHealthReports {
                 foreach ($currentPackage in $TaskConfig.Packages) {
                     $processedCount++
                     Write-Host "Processing [$processedCount/$packageCount] $($currentPackage.name) ..."
-                    $result = [system.string](CheckURLHealth -currentTask $currentPackage -WorkingDir $WorkingDir -AccessToken $accessToken -outputfile $outputFilePath -photonDir $TaskConfig.PhotonDir -UpstreamsDir $UpstreamsDir -ScriptStartTime $ScriptStartTime -Source0Data $cachedSource0Data)
+                    $result = [system.string](CheckURLHealth -currentTask $currentPackage -WorkingDir $WorkingDir -AccessToken $accessToken -outputfile $outputFilePath -photonDir $TaskConfig.PhotonDir -UpstreamsDir $UpstreamsDir -ScriptStartTime $ScriptStartTime -Source0Data $cachedSource0Data -UpstreamsExclusionList $UpstreamsExclusionList)
                     Write-Host "  -> Done: $($currentPackage.name)"
                     $results += $result
                 }

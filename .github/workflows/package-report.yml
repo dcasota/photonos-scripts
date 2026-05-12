@@ -27,6 +27,9 @@ on:
       scansDir:
         description: 'Directory for .prn report output files (default: workingDir/scans)'
         default: ''
+      upstreams_exclusion_list:
+        description: 'Comma-separated substrings; when an upstream download filename contains any (case-insensitive, matched on basename), the tarball fetch is skipped. Substitution + urlhealth still run. Example: "firmware,chromium"'
+        default: ''
   schedule:
     # Weekly scan on Sunday at 02:00 UTC
     - cron: '0 2 * * 0'
@@ -190,6 +193,9 @@ jobs:
           fi
           if [ -n "${{ github.event.inputs.scansDir }}" ]; then
             EXTRA_ARGS="$EXTRA_ARGS -scansDir \"${{ github.event.inputs.scansDir }}\""
+          fi
+          if [ -n "${{ github.event.inputs.upstreams_exclusion_list }}" ]; then
+            EXTRA_ARGS="$EXTRA_ARGS -UpstreamsExclusionList \"${{ github.event.inputs.upstreams_exclusion_list }}\""
           fi
 
           # Propagate pwsh's exit code. Previously a trailing `echo "exit_code=$?"`
