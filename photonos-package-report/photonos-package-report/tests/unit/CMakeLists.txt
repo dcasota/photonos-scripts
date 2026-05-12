@@ -108,6 +108,7 @@ add_executable(test_phase6
     ${CMAKE_SOURCE_DIR}/src/latest_name.c
     ${CMAKE_SOURCE_DIR}/src/version.c
     ${CMAKE_SOURCE_DIR}/src/url_util.c
+    ${CMAKE_SOURCE_DIR}/src/sha.c
     ${PR_GEN_HOOK_DISPATCH}
     ${PR_HOOK_SOURCES}
 )
@@ -117,8 +118,9 @@ target_include_directories(test_phase6 PRIVATE
     ${PR_GEN_DIR}
     ${PCRE2_INCLUDE_DIRS}
     ${CURL_INCLUDE_DIRS}
+    ${OPENSSL_INCLUDE_DIRS}
 )
-target_link_libraries(test_phase6 PRIVATE pthread ${PCRE2_LIBRARIES} ${CURL_LIBRARIES})
+target_link_libraries(test_phase6 PRIVATE pthread ${PCRE2_LIBRARIES} ${CURL_LIBRARIES} ${OPENSSL_LIBRARIES})
 target_compile_options(test_phase6 PRIVATE -Wall -Wextra -O0 -g -D_GNU_SOURCE ${PCRE2_CFLAGS_OTHER} ${CURL_CFLAGS_OTHER})
 
 add_test(NAME test_phase6 COMMAND test_phase6)
@@ -180,3 +182,22 @@ target_include_directories(test_phase6e PRIVATE ${CMAKE_SOURCE_DIR}/include)
 target_compile_options(test_phase6e PRIVATE -Wall -Wextra -O0 -g -D_GNU_SOURCE)
 
 add_test(NAME test_phase6e COMMAND test_phase6e)
+
+# ----- Phase 6f unit tests (SHA helpers + diff_report) ----------------
+add_executable(test_phase6f
+    test_phase6f.c
+    ${CMAKE_SOURCE_DIR}/src/sha.c
+    ${CMAKE_SOURCE_DIR}/src/diff_report.c
+    ${CMAKE_SOURCE_DIR}/src/version.c
+    ${CMAKE_SOURCE_DIR}/src/task.c
+)
+target_include_directories(test_phase6f PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${PCRE2_INCLUDE_DIRS}
+    ${CURL_INCLUDE_DIRS}
+    ${OPENSSL_INCLUDE_DIRS}
+)
+target_link_libraries(test_phase6f PRIVATE pthread ${PCRE2_LIBRARIES} ${CURL_LIBRARIES} ${OPENSSL_LIBRARIES})
+target_compile_options(test_phase6f PRIVATE -Wall -Wextra -O0 -g -D_GNU_SOURCE ${PCRE2_CFLAGS_OTHER} ${CURL_CFLAGS_OTHER} ${OPENSSL_CFLAGS_OTHER})
+
+add_test(NAME test_phase6f COMMAND test_phase6f)
