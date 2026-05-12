@@ -16,6 +16,7 @@ add_executable(test_phase2
     ${CMAKE_SOURCE_DIR}/src/task.c
     ${CMAKE_SOURCE_DIR}/src/spec_value.c
     ${CMAKE_SOURCE_DIR}/src/parse_directory.c
+    ${CMAKE_SOURCE_DIR}/src/strutil.c
 )
 target_include_directories(test_phase2 PRIVATE
     ${CMAKE_SOURCE_DIR}/include
@@ -58,3 +59,15 @@ target_include_directories(test_phase3b PRIVATE ${CMAKE_SOURCE_DIR}/include)
 target_compile_options(test_phase3b PRIVATE -Wall -Wextra -O0 -g -D_GNU_SOURCE)
 
 add_test(NAME test_phase3b COMMAND test_phase3b)
+
+# ----- Phase 4 unit tests (Source0 substitution core) ----------------
+add_executable(test_phase4
+    test_phase4.c
+    ${CMAKE_SOURCE_DIR}/src/strutil.c
+    ${CMAKE_SOURCE_DIR}/src/source0_substitute.c
+    ${CMAKE_SOURCE_DIR}/src/task.c
+)
+target_include_directories(test_phase4 PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_compile_options(test_phase4 PRIVATE -Wall -Wextra -O0 -g -D_GNU_SOURCE)
+
+add_test(NAME test_phase4 COMMAND test_phase4)
