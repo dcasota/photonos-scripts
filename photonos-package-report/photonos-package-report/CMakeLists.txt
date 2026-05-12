@@ -11,8 +11,9 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # Phase 1 used libc + pthread; Phase 2 added PCRE2; Phase 3 adds the
 # bash+awk Source0LookupData generator (no extra runtime deps).
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(PCRE2 REQUIRED libpcre2-8)
-pkg_check_modules(CURL  REQUIRED libcurl)
+pkg_check_modules(PCRE2   REQUIRED libpcre2-8)
+pkg_check_modules(CURL    REQUIRED libcurl)
+pkg_check_modules(OPENSSL REQUIRED openssl)
 
 # ----- Phase 3 generator: embedded Source0LookupData CSV -------------
 # Runs at build time. Output lives under ${CMAKE_BINARY_DIR}/generated
@@ -107,6 +108,8 @@ add_executable(photonos-package-report
     src/heapsort.c
     src/jdk.c
     src/url_util.c
+    src/sha.c
+    src/diff_report.c
     ${PR_GEN_HOOK_DISPATCH}
     ${PR_HOOK_SOURCES}
 )
@@ -118,9 +121,10 @@ target_include_directories(photonos-package-report PRIVATE
     ${PR_GEN_DIR}
     ${PCRE2_INCLUDE_DIRS}
     ${CURL_INCLUDE_DIRS}
+    ${OPENSSL_INCLUDE_DIRS}
 )
-target_link_libraries(photonos-package-report PRIVATE pthread ${PCRE2_LIBRARIES} ${CURL_LIBRARIES})
-target_compile_options(photonos-package-report PRIVATE -Wall -Wextra -O2 -D_GNU_SOURCE ${PCRE2_CFLAGS_OTHER} ${CURL_CFLAGS_OTHER})
+target_link_libraries(photonos-package-report PRIVATE pthread ${PCRE2_LIBRARIES} ${CURL_LIBRARIES} ${OPENSSL_LIBRARIES})
+target_compile_options(photonos-package-report PRIVATE -Wall -Wextra -O2 -D_GNU_SOURCE ${PCRE2_CFLAGS_OTHER} ${CURL_CFLAGS_OTHER} ${OPENSSL_CFLAGS_OTHER})
 
 # ----- Tests --------------------------------------------------------
 enable_testing()

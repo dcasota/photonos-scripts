@@ -20,6 +20,7 @@
 #include "pr_hook.h"
 #include "pr_latest.h"
 #include "pr_state.h"
+#include "pr_sha.h"
 #include "pr_substitute.h"
 #include "pr_url_util.h"
 #include "pr_urlhealth.h"
@@ -167,6 +168,29 @@ char *check_urlhealth(pr_task_t                       *task,
                             if (rc == 1) {
                                 free(state.UpdateAvailable);
                                 state.UpdateAvailable = dup_or_empty(latest);
+                            }
+
+                            /* Phase 6f col 9 SHAValue (PS L 4912-4921):
+                             * download UpdateURL, hash with the algorithm
+                             * the spec file currently uses. Default
+                             * SHA512 when no sha define is present.
+                             * Hidden behind PR_TEST_NETWORK gate. */
+                            if (state.UpdateURL && state.UpdateURL[0]) {
+                                pr_sha_alg_t alg = PR_SHA512;
+                                /* Inspect task->content for sha1/256/512
+                                 * defines. PS L 4917-4919 form. */
+                                for (size_t li = 0; li < task->content_lines; li++) {
+                                    const char *line = task->content[li];
+                                    if (line == NULL) continue;
+                                    if (strstr(line, "%define sha1")   != NULL) { alg = PR_SHA1;   break; }
+                                    if (strstr(line, "%define sha256") != NULL) { alg = PR_SHA256; break; }
+                                    if (strstr(line, "%define sha512") != NULL) { alg = PR_SHA512; break; }
+                                }
+                                char *hex = pr_sha_of_url(alg, state.UpdateURL);
+                                if (hex) {
+                                    free(state.SHAValue);
+                                    state.SHAValue = hex;
+                                }
                             }
                         }
                         free(latest);
