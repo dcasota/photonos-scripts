@@ -12,6 +12,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # bash+awk Source0LookupData generator (no extra runtime deps).
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(PCRE2 REQUIRED libpcre2-8)
+pkg_check_modules(CURL  REQUIRED libcurl)
 
 # ----- Phase 3 generator: embedded Source0LookupData CSV -------------
 # Runs at build time. Output lives under ${CMAKE_BINARY_DIR}/generated
@@ -94,6 +95,8 @@ add_executable(photonos-package-report
     src/hook_dispatch.c
     src/strutil.c
     src/source0_substitute.c
+    src/urlhealth.c
+    src/koji.c
     ${PR_GEN_HOOK_DISPATCH}
     ${PR_HOOK_SOURCES}
 )
@@ -104,9 +107,10 @@ target_include_directories(photonos-package-report PRIVATE
     include
     ${PR_GEN_DIR}
     ${PCRE2_INCLUDE_DIRS}
+    ${CURL_INCLUDE_DIRS}
 )
-target_link_libraries(photonos-package-report PRIVATE pthread ${PCRE2_LIBRARIES})
-target_compile_options(photonos-package-report PRIVATE -Wall -Wextra -O2 -D_GNU_SOURCE ${PCRE2_CFLAGS_OTHER})
+target_link_libraries(photonos-package-report PRIVATE pthread ${PCRE2_LIBRARIES} ${CURL_LIBRARIES})
+target_compile_options(photonos-package-report PRIVATE -Wall -Wextra -O2 -D_GNU_SOURCE ${PCRE2_CFLAGS_OTHER} ${CURL_CFLAGS_OTHER})
 
 # ----- Tests --------------------------------------------------------
 enable_testing()

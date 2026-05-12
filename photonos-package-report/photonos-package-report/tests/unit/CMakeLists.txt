@@ -71,3 +71,19 @@ target_include_directories(test_phase4 PRIVATE ${CMAKE_SOURCE_DIR}/include)
 target_compile_options(test_phase4 PRIVATE -Wall -Wextra -O0 -g -D_GNU_SOURCE)
 
 add_test(NAME test_phase4 COMMAND test_phase4)
+
+# ----- Phase 5 unit tests (urlhealth + Koji parsers) ------------------
+add_executable(test_phase5
+    test_phase5.c
+    ${CMAKE_SOURCE_DIR}/src/strutil.c
+    ${CMAKE_SOURCE_DIR}/src/urlhealth.c
+    ${CMAKE_SOURCE_DIR}/src/koji.c
+)
+target_include_directories(test_phase5 PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CURL_INCLUDE_DIRS}
+)
+target_link_libraries(test_phase5 PRIVATE ${CURL_LIBRARIES})
+target_compile_options(test_phase5 PRIVATE -Wall -Wextra -O0 -g -D_GNU_SOURCE ${CURL_CFLAGS_OTHER})
+
+add_test(NAME test_phase5 COMMAND test_phase5)
