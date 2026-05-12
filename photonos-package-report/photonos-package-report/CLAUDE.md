@@ -42,15 +42,27 @@ tools/parity-diff.sh build/photonos-package-report ../photonos-package-report.ps
 
 ## Phase tracker (always include in status replies)
 
+Numeric phases 0-9 are the linear code-port lane. Phase M is an
+ongoing **parallel** track that picks up new sections of the maintainer
+runbook as features land in the numeric phases — it is never "done"
+while the tool is live.
+
 | Phase | Title | Status |
 |-------|-------|--------|
-| 0 | SDD scaffold | in progress |
-| 1 | Foundation (params, types, diskspace, git-timeout) | pending |
-| 2 | Spec ingestion (Get-AllSpecs port) | pending |
-| 3 | Embedded data (Source0LookupData + spec-hook dispatch) | pending |
-| 4 | Substitution core (%{url}/%{name}/%{version}/...) | pending |
-| 5 | Network & lookups (urlhealth, GitHub/GitLab tags, Koji) | pending |
-| 6 | CheckURLHealth main path + .prn assembly | pending |
-| 7 | Cluster orchestrator + parallel runspace mirror | pending |
-| 8 | CI side-by-side parity gate | pending |
-| 9 | Retirement (PS → staging/legacy/, C-only) | pending |
+| 0  | SDD scaffold                                          | done (#52)  |
+| 1  | Foundation (params, types, diskspace, git-timeout)    | done (#53)  |
+| 2  | Spec ingestion (Get-SpecValue + ParseDirectory)       | done (#54)  |
+| 3a | Source0LookupData embed (bash+awk + C parser)         | done (#55)  |
+| 3b | spec-hook dispatch (extract-spec-hooks + skeletons)   | next        |
+| 4  | Substitution core (%{url}/%{name}/%{version}/...)     | pending     |
+| 5  | Network & lookups (urlhealth, GitHub/GitLab tags, Koji) | pending   |
+| 6  | CheckURLHealth main path + .prn assembly              | pending     |
+| 7  | Cluster orchestrator + parallel runspace mirror       | pending     |
+| 8  | CI side-by-side parity gate                           | pending     |
+| 9  | Retirement (PS → staging/legacy/, C-only)             | pending     |
+| M  | Maintainer ops & debug tooling — `docs/maintainer-runbook.md`, `.vscode/` | ongoing |
+
+When you land a feature in a numeric phase that changes a workflow the
+maintainer cares about (new flag, new override mechanism, new generator),
+update the matching section of `docs/maintainer-runbook.md` in the same
+PR. The runbook is the operability source-of-truth.
