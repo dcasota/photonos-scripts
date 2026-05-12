@@ -1,0 +1,242 @@
+name: Photon OS Package Report (C-side parity)
+
+# Phase 8 task 081. Runs the C port of photonos-package-report against
+# the working state captured by the PS-side workflow, diffs the .prn
+# outputs, and appends a row to tools/parity-journal.tsv.
+#
+# Triggers:
+#   - workflow_run on success of "Photon OS Package Report"
+#   - workflow_dispatch with explicit snapshot run id (manual replay)
+#
+# This workflow does NOT produce production .prn files; the PS workflow
+# remains the source-of-truth until Phase 9 retirement.
+
+on:
+  workflow_run:
+    workflows: ["Photon OS Package Report"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      snapshot_run_id:
+        description: 'PS run id whose parity-snapshot-<id> artifact to consume'
+        required: true
+
+permissions:
+  contents: write   # commit the journal back to master
+  actions:  read    # download artifact from the triggering workflow
+
+jobs:
+  parity:
+    # Only run on success of upstream PS workflow (or on manual dispatch).
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: self-hosted
+    timeout-minutes: 480
+
+    steps:
+      - name: Determine PS run id
+        id: ps_run
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            ID="${{ github.event.inputs.snapshot_run_id }}"
+          else
+            ID="${{ github.event.workflow_run.id }}"
+          fi
+          if [ -z "$ID" ]; then
+            echo "::error::Could not resolve PS run id"; exit 1
+          fi
+          echo "id=$ID" >> "$GITHUB_OUTPUT"
+          echo "Resolved PS run id: $ID"
+
+      - name: Checkout repo
+        uses: actions/checkout@v6
+        with:
+          path: repo
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install build deps
+        run: |
+          # Idempotent: tdnf install reports "already installed" cleanly.
+          tdnf install -y cmake gcc libcurl-devel pcre2-devel pkg-config make tar gzip git || true
+          cmake --version
+          gcc --version | head -1
+
+      - name: Build C binary
+        run: |
+          cd repo/photonos-package-report
+          cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel
+          ls -lh build/photonos-package-report
+
+      - name: Download parity snapshot
+        id: dl
+        uses: actions/download-artifact@v5
+        with:
+          name: parity-snapshot-${{ steps.ps_run.outputs.id }}
+          path: snapshot-raw
+          run-id: ${{ steps.ps_run.outputs.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract snapshot
+        id: extract
+        run: |
+          mkdir -p snapshot
+          cd snapshot
+          # The artifact contains exactly one tar.gz; find and extract it.
+          TAR=$(ls ../snapshot-raw/*.tar.gz | head -1)
+          tar -xzf "$TAR"
+          ls -la
+          if [ ! -s prn-snapshot ] || [ -z "$(ls prn-snapshot/*.prn 2>/dev/null)" ]; then
+            echo "::error::snapshot has no prn-snapshot/*.prn — nothing to diff"
+            exit 1
+          fi
+          echo "dir=$(pwd)" >> "$GITHUB_OUTPUT"
+
+      - name: Reconstruct working tree from manifests
+        id: reconstruct
+        run: |
+          WDIR="${RUNNER_TEMP:-/tmp}/parity-c-wd"
+          UPSTREAMS="$WDIR/photon-upstreams"
+          SCRIPT="repo/.github/scripts/parity-reconstruct.sh"
+          chmod +x "$SCRIPT" || true
+          "$SCRIPT" "${{ steps.extract.outputs.dir }}" "$WDIR" "$UPSTREAMS"
+          echo "wdir=$WDIR" >> "$GITHUB_OUTPUT"
+          echo "upstreams=$UPSTREAMS" >> "$GITHUB_OUTPUT"
+
+      - name: Determine enabled branches from snapshot
+        id: branches
+        run: |
+          # PS files in the snapshot follow: photonos-urlhealth-<branch>_<YYYYMMDDHHMM>.prn
+          SNAP="${{ steps.extract.outputs.dir }}"
+          BRANCHES=$(ls "$SNAP"/prn-snapshot/photonos-urlhealth-*.prn 2>/dev/null \
+                     | sed -E 's|.*photonos-urlhealth-(.+)_[0-9]+\.prn|\1|' \
+                     | sort -u)
+          echo "Branches in snapshot:"
+          printf '  %s\n' $BRANCHES
+
+          PH3=false; PH4=false; PH5=false; PH6=false
+          COMMON=false; DEV=false; MASTER=false
+          for b in $BRANCHES; do
+            case "$b" in
+              3.0)    PH3=true ;;
+              4.0)    PH4=true ;;
+              5.0)    PH5=true ;;
+              6.0)    PH6=true ;;
+              common) COMMON=true ;;
+              dev)    DEV=true ;;
+              master) MASTER=true ;;
+            esac
+          done
+          {
+            echo "ph3=$PH3"
+            echo "ph4=$PH4"
+            echo "ph5=$PH5"
+            echo "ph6=$PH6"
+            echo "common=$COMMON"
+            echo "dev=$DEV"
+            echo "master=$MASTER"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Run C binary (-ThrottleLimit 1)
+        id: c_run
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd repo/photonos-package-report
+          WDIR="${{ steps.reconstruct.outputs.wdir }}"
+          UPSTREAMS="${{ steps.reconstruct.outputs.upstreams }}"
+          SCANS="$WDIR/scans"
+          mkdir -p "$SCANS"
+
+          # Run with -ThrottleLimit 1 per ADR-0009 to keep stderr ordering
+          # byte-stable during the parity window.
+          ./build/photonos-package-report \
+            -workingDir   "$WDIR" \
+            -upstreamsDir "$UPSTREAMS" \
+            -scansDir     "$SCANS" \
+            -ThrottleLimit 1 \
+            -github_token "$GITHUB_TOKEN" \
+            -GeneratePh3URLHealthReport      "${{ steps.branches.outputs.ph3 }}" \
+            -GeneratePh4URLHealthReport      "${{ steps.branches.outputs.ph4 }}" \
+            -GeneratePh5URLHealthReport      "${{ steps.branches.outputs.ph5 }}" \
+            -GeneratePh6URLHealthReport      "${{ steps.branches.outputs.ph6 }}" \
+            -GeneratePhCommonURLHealthReport "${{ steps.branches.outputs.common }}" \
+            -GeneratePhDevURLHealthReport    "${{ steps.branches.outputs.dev }}" \
+            -GeneratePhMasterURLHealthReport "${{ steps.branches.outputs.master }}" \
+            -GeneratePhPackageReport         "false"
+
+          echo "scans=$SCANS" >> "$GITHUB_OUTPUT"
+          ls -l "$SCANS"
+
+      - name: Run parity-diff per branch
+        id: diff
+        run: |
+          SNAP="${{ steps.extract.outputs.dir }}"
+          PS_DIR="$SNAP/prn-snapshot"
+          C_DIR="${{ steps.c_run.outputs.scans }}"
+          DIFF="repo/photonos-package-report/tools/parity-diff.sh"
+          JNL="repo/photonos-package-report/tools/parity-journal.tsv"
+          APPEND="repo/photonos-package-report/tools/parity-journal-append.sh"
+          PS_RID="${{ steps.ps_run.outputs.id }}"
+          C_RID="${{ github.run_id }}"
+
+          chmod +x "$DIFF" "$APPEND" || true
+
+          {
+            echo "# Parity diff verdict"
+            echo
+            echo "| Branch | Verdict | Strict rows | Soft rows |"
+            echo "|--------|---------|-------------|-----------|"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          overall="green"
+          for ps_prn in "$PS_DIR"/photonos-urlhealth-*.prn; do
+            [ -f "$ps_prn" ] || continue
+            base=$(basename "$ps_prn")
+            branch=$(echo "$base" | sed -E 's|photonos-urlhealth-(.+)_[0-9]+\.prn|\1|')
+            c_prn=$(ls -t "$C_DIR"/photonos-urlhealth-"$branch"_*.prn 2>/dev/null | head -1)
+            if [ -z "$c_prn" ]; then
+              echo "::error::parity-diff: no C output for branch $branch"
+              "$APPEND" "$JNL" "$PS_RID" "$C_RID" "$branch" 1 0 strict
+              overall="strict"
+              echo "| $branch | **strict** | n/a | n/a (no C output) |" >> "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+
+            # The diff script exits 1 on strict but we want to keep going.
+            result=$("$DIFF" "$ps_prn" "$c_prn" -q 2>/dev/null) || true
+            verdict=$(echo "$result" | awk '{print $1}')
+            strict=$(echo "$result" | awk '{print $2}')
+            soft=$(echo "$result"   | awk '{print $3}')
+
+            "$APPEND" "$JNL" "$PS_RID" "$C_RID" "$branch" "${strict:-0}" "${soft:-0}" "${verdict:-strict}"
+
+            case "$verdict" in
+              strict) overall="strict" ;;
+              soft)   [ "$overall" = "green" ] && overall="soft" ;;
+            esac
+
+            echo "| $branch | $verdict | $strict | $soft |" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+          {
+            echo
+            echo "**Overall: \`$overall\`**"
+            echo
+            echo "PS run [\`$PS_RID\`](https://github.com/${{ github.repository }}/actions/runs/$PS_RID) · C run \`$C_RID\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "overall=$overall" >> "$GITHUB_OUTPUT"
+
+      - name: Commit journal
+        if: always() && steps.diff.outputs.overall != ''
+        run: |
+          cd repo
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add photonos-package-report/tools/parity-journal.tsv
+          if git diff --cached --quiet; then
+            echo "No journal changes to commit"
+          else
+            git commit -m "parity: PS=${{ steps.ps_run.outputs.id }} C=${{ github.run_id }} overall=${{ steps.diff.outputs.overall }}"
+            git push
+          fi

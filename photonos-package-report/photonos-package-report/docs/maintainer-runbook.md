@@ -332,3 +332,114 @@ into `build/generated/source0_lookup_data.h`.
   PS-source: photonos-package-report.ps1 L <start>-<end>
   Parity: <strict|semantic|n/a>
   ```
+
+---
+
+## 9. Reading the parity gate verdict
+
+Phase 8 (PR-pending) ships a three-workflow parity harness around the
+PS-side production workflow. The gate decides whether a PR is allowed
+to merge based on how recent runs have diffed.
+
+### Workflow shape
+
+```
+package-report.yml (PS)         package-report-C.yml (C)         parity-check.yml (gate)
+─────────────────────           ────────────────────────         ──────────────────────
+schedule / dispatch             workflow_run trigger             pull_request trigger
+       │                              │                                 │
+       ▼                              ▼                                 ▼
+  produce .prn                   download parity-snapshot         read parity-journal.tsv
+       │                         reconstruct working tree         apply 30/60/90 ladder
+       ▼                         build C / run C                  set commit status
+  upload parity-snapshot         parity-diff per branch
+                                 append journal row + commit
+```
+
+### The 30/60/90-day ladder (ADR-0009)
+
+| Days since clock start | Latest verdict → gate state |
+|---|---|
+| 0-30   | any → `pass` (soft window, informational) |
+| 30-60  | green→`pass`, else `warn` |
+| 60-90  | green→`pass`, soft→`warn`, strict→`fail` (PR blocked) |
+| 90+    | any → `pass` (cutover-ready; Phase 9 retirement trigger) |
+
+The clock starts with the first row in `tools/parity-journal.tsv`. The
+gate workflow (`parity-check.yml`) runs on every PR; it reads the
+journal as-checked-in and emits a `parity-gate` commit status.
+
+### Journal schema
+
+`tools/parity-journal.tsv` — one row per (PS run, C run, branch):
+
+```
+ts             ISO 8601 UTC
+ps_run_id      GitHub run id of the PS workflow
+c_run_id       GitHub run id of the C workflow run
+branch         3.0 | 4.0 | 5.0 | 6.0 | common | dev | master
+strict_rows    rows differing in non-volatile columns
+soft_rows      rows differing only in cols 4 and/or 7
+volatile_only  "true" iff soft_rows > 0 AND strict_rows == 0
+verdict        green | soft | strict
+```
+
+Volatile columns are 4 (`UrlHealth`) and 7 (`HealthUpdateURL`) — both
+HTTP status codes that legitimately shift day-to-day (ADR-0006). All
+other columns are strict.
+
+### Manual snapshot replay
+
+You can re-run the C workflow against any past PS snapshot:
+
+```sh
+# 1. Find the PS run id you want to replay against.
+gh run list --workflow="Photon OS Package Report" --limit 5
+
+# 2. Trigger the C workflow with that id (no PS rerun).
+gh workflow run "Photon OS Package Report (C-side parity)" \
+   -f snapshot_run_id=<PS_RUN_ID>
+```
+
+For fully-offline replay:
+
+```sh
+gh run download <PS_RUN_ID> -n parity-snapshot-<PS_RUN_ID> -D /tmp/snap
+cd /tmp/snap && tar -xzf parity-snapshot-*.tar.gz
+
+# Reconstruct working tree from manifests.
+.github/scripts/parity-reconstruct.sh /tmp/snap /tmp/wd /tmp/wd/photon-upstreams
+
+# Build + run C with the same -ThrottleLimit 1 the workflow uses.
+cmake --build build
+./build/photonos-package-report \
+   -workingDir /tmp/wd -upstreamsDir /tmp/wd/photon-upstreams \
+   -scansDir /tmp/wd/scans -ThrottleLimit 1 \
+   -GeneratePh6URLHealthReport true   # ...etc per branches in /tmp/snap/prn-snapshot/
+
+# Diff a single branch.
+./tools/parity-diff.sh \
+   /tmp/snap/prn-snapshot/photonos-urlhealth-6.0_*.prn \
+   /tmp/wd/scans/photonos-urlhealth-6.0_*.prn
+```
+
+### Common gate-verdict troubleshooting
+
+| Verdict | Meaning | First thing to check |
+|---|---|---|
+| `green` | byte-identical PRN | nothing to do |
+| `soft`  | only cols 4 / 7 differ | day-to-day HTTP flux; ignore unless persistent |
+| `strict` | non-volatile column drift | run replay (above) locally and `diff` the .prn pair to find the offending spec |
+| `no-data` | journal empty | first paired run hasn't happened yet; not an error |
+
+### When the clock should be reset
+
+Resetting means deleting `parity-journal.tsv` and re-committing. Do this
+only when:
+
+* The PS script itself has been intentionally changed and the previous
+  parity baseline is no longer the canonical target.
+* The C-side ADR-0006 column set has changed (new column added, etc.).
+
+In both cases open a separate PR that resets the journal explicitly
+with a justification linked to the ADR or PRD change.
