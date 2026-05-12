@@ -3,8 +3,13 @@
  * Mirrors photonos-package-report.ps1 L 83-131 verbatim in execution order:
  *   1. `param()` block at L 83-108 → argument parsing in argv → pr_params_t.
  *   2. Convert-ToBoolean applied to each boolean parameter at L 120-131.
- *   3. (Phase 1 stops here. Subsequent phases extend main() to mirror the
- *      pre-flight, GitPhoton, GenerateUrlHealthReports calls in PS L 5200+.)
+ *   3. (Subsequent phases extend main() to mirror the pre-flight,
+ *      GitPhoton, GenerateUrlHealthReports calls in PS L 5200+.)
+ *
+ * Phase 2 adds a non-PS hidden helper mode: `--dump-tasks <branch>` which
+ * runs parse_directory() and emits each task as one JSON line to stdout.
+ * The parity harness uses this against a PS-side equivalent dump to prove
+ * Get-SpecValue + ParseDirectory produce bit-identical task lists.
  *
  * The argument-parsing block uses getopt_long_only so that single-dash long
  * options (`-workingDir <p>`) match the PS native syntax. The order of
@@ -19,6 +24,11 @@
 #include <getopt.h>
 #include <locale.h>
 #include <pwd.h>
+
+#include "pr_types.h"
+
+/* Forward declaration for the Phase 2 parity helper. Defined at bottom. */
+static int dump_tasks_main(const char *working_dir, const char *branch);
 
 /* Helper: getenv() returning const char *""  rather than NULL,
  * matching the PS implicit-empty semantics for $env:FOO when unset. */
@@ -125,7 +135,9 @@ int main(int argc, char **argv)
         OPT_GeneratePh5toPh6DiffHigherPackageVersionReport,
         OPT_GeneratePh4toPh5DiffHigherPackageVersionReport,
         OPT_GeneratePh3toPh4DiffHigherPackageVersionReport,
+        OPT_dump_tasks,  /* Phase 2 parity helper, not present in PS. */
     };
+    const char *dump_tasks_branch = NULL;
     static const struct option long_opts[] = {
         { "github_token",                                                       required_argument, 0, OPT_github_token },
         { "gitlab_freedesktop_org_username",                                    required_argument, 0, OPT_gitlab_freedesktop_org_username },
@@ -146,6 +158,7 @@ int main(int argc, char **argv)
         { "GeneratePh5toPh6DiffHigherPackageVersionReport",                     required_argument, 0, OPT_GeneratePh5toPh6DiffHigherPackageVersionReport },
         { "GeneratePh4toPh5DiffHigherPackageVersionReport",                     required_argument, 0, OPT_GeneratePh4toPh5DiffHigherPackageVersionReport },
         { "GeneratePh3toPh4DiffHigherPackageVersionReport",                     required_argument, 0, OPT_GeneratePh3toPh4DiffHigherPackageVersionReport },
+        { "dump-tasks",                                                         required_argument, 0, OPT_dump_tasks },
         { "help",                                                               no_argument,       0, 'h' },
         { 0, 0, 0, 0 },
     };
@@ -177,6 +190,8 @@ int main(int argc, char **argv)
             params.GeneratePh4toPh5DiffHigherPackageVersionReport = convert_to_boolean(optarg); break;
         case OPT_GeneratePh3toPh4DiffHigherPackageVersionReport:
             params.GeneratePh3toPh4DiffHigherPackageVersionReport = convert_to_boolean(optarg); break;
+        case OPT_dump_tasks:
+            dump_tasks_branch = optarg; break;
         case 'h':
             usage(argv[0]);
             return 0;
@@ -199,7 +214,11 @@ int main(int argc, char **argv)
 
     /* Phase 1 stop point: print resolved params to stdout for the harness.
      * Subsequent phases extend main() to mirror PS L 5200+ (pre-flight,
-     * GitPhoton, GenerateUrlHealthReports). */
+     * GitPhoton, GenerateUrlHealthReports).
+     *
+     * When --dump-tasks <branch> is specified, the param echo is skipped:
+     * the parity harness compares ONLY the JSON dump on stdout. */
+    if (dump_tasks_branch == NULL) {
     printf("github_token=%s\n",                                                 params.github_token);
     printf("gitlab_freedesktop_org_username=%s\n",                              params.gitlab_freedesktop_org_username);
     printf("gitlab_freedesktop_org_token=%s\n",                                 params.gitlab_freedesktop_org_token);
@@ -219,6 +238,116 @@ int main(int argc, char **argv)
     printf("GeneratePh5toPh6DiffHigherPackageVersionReport=%d\n",               params.GeneratePh5toPh6DiffHigherPackageVersionReport);
     printf("GeneratePh4toPh5DiffHigherPackageVersionReport=%d\n",               params.GeneratePh4toPh5DiffHigherPackageVersionReport);
     printf("GeneratePh3toPh4DiffHigherPackageVersionReport=%d\n",               params.GeneratePh3toPh4DiffHigherPackageVersionReport);
+    }
 
+    /* ===== Phase 2 parity helper: --dump-tasks <branch> ============
+     * Bypasses the rest of the PS workflow and emits the ParseDirectory
+     * result as one JSON line per task, in PS source order. The parity
+     * harness compares this against an equivalent PS dump produced by
+     * tools/dump-tasks.ps1. */
+    if (dump_tasks_branch != NULL && dump_tasks_branch[0] != '\0') {
+        return dump_tasks_main(params.workingDir, dump_tasks_branch);
+    }
+
+    return 0;
+}
+
+/* ===== Phase 2 parity helper: --dump-tasks <branch> =================
+ *
+ * One JSON object per task, one line per task, no surrounding array.
+ * Field order matches the PS PSCustomObject construction in
+ * photonos-package-report.ps1 L 345-372 exactly:
+ *   Spec, Version, Name, SubRelease, SpecRelativePath, Source0, url,
+ *   SHAName, srcname, gem_name, group, extra_version, main_version,
+ *   upstreamversion, dialogsubversion, subversion, byaccdate,
+ *   libedit_release, libedit_version, ncursessubversion, cpan_name,
+ *   xproto_ver, _url_src, _repo_ver, commit_id.
+ * The `content` array is NOT emitted (it's deterministic per file and
+ * would balloon the dump). The PS side dump-tasks helper omits it too.
+ *
+ * Records are sorted by SpecRelativePath then Spec before emission so
+ * the C and PS dumps stay byte-identical regardless of underlying
+ * filesystem ordering (ADR-0006 bit-identical mandate). */
+
+static void json_escape(FILE *out, const char *s)
+{
+    if (s == NULL) { fputs("\"\"", out); return; }
+    fputc('"', out);
+    for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
+        switch (*p) {
+        case '"':  fputs("\\\"", out); break;
+        case '\\': fputs("\\\\", out); break;
+        case '\b': fputs("\\b",  out); break;
+        case '\f': fputs("\\f",  out); break;
+        case '\n': fputs("\\n",  out); break;
+        case '\r': fputs("\\r",  out); break;
+        case '\t': fputs("\\t",  out); break;
+        default:
+            if (*p < 0x20) fprintf(out, "\\u%04x", *p);
+            else fputc(*p, out);
+        }
+    }
+    fputc('"', out);
+}
+
+static int task_sort_cmp(const void *a, const void *b)
+{
+    const pr_task_t *ta = (const pr_task_t *)a;
+    const pr_task_t *tb = (const pr_task_t *)b;
+    int r = strcmp(ta->SpecRelativePath ? ta->SpecRelativePath : "",
+                   tb->SpecRelativePath ? tb->SpecRelativePath : "");
+    if (r != 0) return r;
+    return strcmp(ta->Spec ? ta->Spec : "", tb->Spec ? tb->Spec : "");
+}
+
+static int dump_tasks_main(const char *working_dir, const char *branch)
+{
+    pr_task_list_t list;
+    pr_task_list_init(&list);
+    if (parse_directory(working_dir, branch, &list) != 0) {
+        pr_task_list_free(&list);
+        return 1;
+    }
+
+    qsort(list.items, list.count, sizeof *list.items, task_sort_cmp);
+
+    for (size_t i = 0; i < list.count; i++) {
+        pr_task_t *t = &list.items[i];
+        FILE *o = stdout;
+        fputc('{', o);
+        #define FIELD(name) do { \
+            fputs("\"" #name "\":", o); \
+            json_escape(o, t->name); \
+        } while (0)
+        FIELD(Spec);              fputc(',', o);
+        FIELD(Version);           fputc(',', o);
+        FIELD(Name);              fputc(',', o);
+        FIELD(SubRelease);        fputc(',', o);
+        FIELD(SpecRelativePath);  fputc(',', o);
+        FIELD(Source0);           fputc(',', o);
+        FIELD(url);               fputc(',', o);
+        FIELD(SHAName);           fputc(',', o);
+        FIELD(srcname);           fputc(',', o);
+        FIELD(gem_name);          fputc(',', o);
+        FIELD(group);             fputc(',', o);
+        FIELD(extra_version);     fputc(',', o);
+        FIELD(main_version);      fputc(',', o);
+        FIELD(upstreamversion);   fputc(',', o);
+        FIELD(dialogsubversion);  fputc(',', o);
+        FIELD(subversion);        fputc(',', o);
+        FIELD(byaccdate);         fputc(',', o);
+        FIELD(libedit_release);   fputc(',', o);
+        FIELD(libedit_version);   fputc(',', o);
+        FIELD(ncursessubversion); fputc(',', o);
+        FIELD(cpan_name);         fputc(',', o);
+        FIELD(xproto_ver);        fputc(',', o);
+        FIELD(_url_src);          fputc(',', o);
+        FIELD(_repo_ver);         fputc(',', o);
+        FIELD(commit_id);
+        #undef FIELD
+        fputs("}\n", o);
+    }
+
+    pr_task_list_free(&list);
     return 0;
 }
