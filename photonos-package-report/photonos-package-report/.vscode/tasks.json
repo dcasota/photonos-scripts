@@ -1,0 +1,52 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "CMake: configure (Debug)",
+            "type": "shell",
+            "command": "cmake",
+            "args": ["-B", "build", "-S", ".", "-DCMAKE_BUILD_TYPE=Debug"],
+            "group": "build",
+            "problemMatcher": []
+        },
+        {
+            "label": "Build (Debug)",
+            "type": "shell",
+            "command": "cmake",
+            "args": ["--build", "build"],
+            "dependsOn": "CMake: configure (Debug)",
+            "group": { "kind": "build", "isDefault": true },
+            "problemMatcher": ["$gcc"]
+        },
+        {
+            "label": "Run tests",
+            "type": "shell",
+            "command": "ctest",
+            "args": ["--test-dir", "build", "--output-on-failure"],
+            "dependsOn": "Build (Debug)",
+            "group": { "kind": "test", "isDefault": true },
+            "problemMatcher": []
+        },
+        {
+            "label": "Regenerate Source0LookupData header",
+            "type": "shell",
+            "command": "sh",
+            "args": [
+                "-c",
+                "./tools/extract-source0-lookup.sh ../photonos-package-report.ps1 | ./tools/csv-to-c-string.sh > build/generated/source0_lookup_data.h && echo 'Regenerated build/generated/source0_lookup_data.h'"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "Dump tasks (fixture tree)",
+            "type": "shell",
+            "command": "./build/photonos-package-report",
+            "args": [
+                "-workingDir", "${workspaceFolder}/tests/fixtures",
+                "--dump-tasks", "photon-fixture"
+            ],
+            "dependsOn": "Build (Debug)",
+            "problemMatcher": []
+        }
+    ]
+}

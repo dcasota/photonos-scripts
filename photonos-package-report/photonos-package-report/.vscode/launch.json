@@ -1,0 +1,101 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug photonos-package-report (fixture tree)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/photonos-package-report",
+            "args": [
+                "-workingDir", "${workspaceFolder}/tests/fixtures",
+                "--dump-tasks", "photon-fixture"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "preLaunchTask": "Build (Debug)",
+            "setupCommands": [
+                { "description": "Enable pretty-printing for gdb",
+                  "text": "-enable-pretty-printing",
+                  "ignoreFailures": true }
+            ]
+        },
+        {
+            "name": "Debug test_phase1",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/tests/unit/test_phase1",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "preLaunchTask": "Build (Debug)",
+            "setupCommands": [
+                { "description": "Enable pretty-printing for gdb",
+                  "text": "-enable-pretty-printing",
+                  "ignoreFailures": true }
+            ]
+        },
+        {
+            "name": "Debug test_phase2",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/tests/unit/test_phase2",
+            "args": ["${workspaceFolder}/tests/fixtures"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "preLaunchTask": "Build (Debug)",
+            "setupCommands": [
+                { "description": "Enable pretty-printing for gdb",
+                  "text": "-enable-pretty-printing",
+                  "ignoreFailures": true }
+            ]
+        },
+        {
+            "name": "Debug test_phase3",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/tests/unit/test_phase3",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "preLaunchTask": "Build (Debug)",
+            "setupCommands": [
+                { "description": "Enable pretty-printing for gdb",
+                  "text": "-enable-pretty-printing",
+                  "ignoreFailures": true }
+            ]
+        },
+        {
+            "name": "Debug photonos-package-report (sequential, real tree)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/photonos-package-report",
+            "args": [
+                "-workingDir", "${env:HOME}/photonos",
+                "-ThrottleLimit", "1"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "preLaunchTask": "Build (Debug)",
+            "setupCommands": [
+                { "description": "Enable pretty-printing for gdb",
+                  "text": "-enable-pretty-printing",
+                  "ignoreFailures": true }
+            ]
+        }
+    ]
+}
