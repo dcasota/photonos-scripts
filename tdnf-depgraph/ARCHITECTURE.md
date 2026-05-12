@@ -86,5 +86,5 @@ New work begins by writing the spec, gating implementation behind a merged spec 
 | Cycle detection — PRD | 1 | `specs/prd.md` | complete |
 | Cycle detection — ADRs 0001–0006 | 3 | `specs/adr/` | complete |
 | Cycle detection — feature specs | 4 | `specs/features/{cycle-detection,subrelease-flavors}.md` | complete |
-| Cycle detection — task breakdown | 5 | `specs/tasks/0001-task-cycles-post-step.md` | pending |
-| Cycle detection — implementation | 6 | per-task PRs | pending |
+| Cycle detection — task breakdown | 5 | `specs/tasks/{README,012..017}.md` | complete |
+| Cycle detection — implementation | 6 | per-task PRs (012 → 013 → 014 → 015; 016, 017 in parallel) | pending |
