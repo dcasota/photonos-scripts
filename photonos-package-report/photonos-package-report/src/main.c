@@ -421,9 +421,19 @@ static int generate_urlhealth_main(const pr_params_t *params, const char *branch
         pr_prn_close(p); pr_source0_lookup_free(&lut); pr_task_list_free(&list);
         return 1;
     }
-    for (size_t i = 0; i < list.count; i++) {
-        rows[i] = check_urlhealth(&list.items[i], &lut);
+    /* Phase 6d: pass upstreamsDir/photonDir as the clone root so the
+     * git-tag chain populates UpdateDownloadName / UpdateAvailable
+     * when PR_TEST_NETWORK=1 is set. */
+    char *clone_root = NULL;
+    const char *up_dir = (params->upstreamsDir && params->upstreamsDir[0])
+                         ? params->upstreamsDir : params->workingDir;
+    if (asprintf(&clone_root, "%s/%s/clones", up_dir, branch) < 0) {
+        clone_root = NULL;
     }
+    for (size_t i = 0; i < list.count; i++) {
+        rows[i] = check_urlhealth(&list.items[i], &lut, clone_root);
+    }
+    free(clone_root);
     pr_prn_append_rows(p, rows, list.count);
 
     for (size_t i = 0; i < list.count; i++) free(rows[i]);

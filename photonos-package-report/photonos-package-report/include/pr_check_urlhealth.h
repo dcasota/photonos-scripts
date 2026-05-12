@@ -27,8 +27,17 @@
 #include "source0_lookup.h"
 
 /* Returns a malloc'd 12-column comma-separated row mirroring PS L 4933.
- * Columns currently stubbed to "" are commented as such inside the body. */
+ * Columns currently stubbed to "" are commented as such inside the body.
+ *
+ * `clone_root`: directory under which per-repo clones live. When set
+ * (non-NULL and non-empty) AND the Source0Lookup row exposes a
+ * gitSource, runs the Phase 6d local-clone + `git tag -l` chain to
+ * populate columns 5 (UpdateAvailable) and 10 (UpdateDownloadName).
+ *
+ * Pass NULL/"" to skip the git step entirely (used by the existing
+ * unit tests so they stay offline-hermetic). */
 char *check_urlhealth(pr_task_t                       *task,
-                      const pr_source0_lookup_table_t *lookup_table);
+                      const pr_source0_lookup_table_t *lookup_table,
+                      const char                      *clone_root);
 
 #endif /* PR_CHECK_URLHEALTH_H */

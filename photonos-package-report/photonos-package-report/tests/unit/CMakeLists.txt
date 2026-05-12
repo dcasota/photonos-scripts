@@ -102,6 +102,11 @@ add_executable(test_phase6
     ${CMAKE_SOURCE_DIR}/src/check_urlhealth.c
     ${CMAKE_SOURCE_DIR}/src/hook_dispatch.c
     ${CMAKE_SOURCE_DIR}/src/task.c
+    ${CMAKE_SOURCE_DIR}/src/clone.c
+    ${CMAKE_SOURCE_DIR}/src/git_tags.c
+    ${CMAKE_SOURCE_DIR}/src/git_with_timeout.c
+    ${CMAKE_SOURCE_DIR}/src/latest_name.c
+    ${CMAKE_SOURCE_DIR}/src/version.c
     ${PR_GEN_HOOK_DISPATCH}
     ${PR_HOOK_SOURCES}
 )
@@ -146,3 +151,19 @@ target_link_libraries(test_phase6c PRIVATE pthread ${PCRE2_LIBRARIES})
 target_compile_options(test_phase6c PRIVATE -Wall -Wextra -O0 -g -D_GNU_SOURCE ${PCRE2_CFLAGS_OTHER})
 
 add_test(NAME test_phase6c COMMAND test_phase6c)
+
+# ----- Phase 6d unit tests (local-clone manager + git tag enumeration)
+add_executable(test_phase6d
+    test_phase6d.c
+    ${CMAKE_SOURCE_DIR}/src/clone.c
+    ${CMAKE_SOURCE_DIR}/src/git_tags.c
+    ${CMAKE_SOURCE_DIR}/src/git_with_timeout.c
+)
+target_include_directories(test_phase6d PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${PCRE2_INCLUDE_DIRS}
+)
+target_link_libraries(test_phase6d PRIVATE pthread ${PCRE2_LIBRARIES})
+target_compile_options(test_phase6d PRIVATE -Wall -Wextra -O0 -g -D_GNU_SOURCE ${PCRE2_CFLAGS_OTHER})
+
+add_test(NAME test_phase6d COMMAND test_phase6d)

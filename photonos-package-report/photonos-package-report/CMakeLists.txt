@@ -103,6 +103,7 @@ add_executable(photonos-package-report
     src/version.c
     src/latest_name.c
     src/git_tags.c
+    src/clone.c
     ${PR_GEN_HOOK_DISPATCH}
     ${PR_HOOK_SOURCES}
 )

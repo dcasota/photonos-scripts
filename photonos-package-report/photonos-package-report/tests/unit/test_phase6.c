@@ -165,7 +165,7 @@ static void test_check_urlhealth_shape(void)
     t.Version = (char *)"2.10";
     t.url     = (char *)"";
 
-    char *row = check_urlhealth(&t, NULL);
+    char *row = check_urlhealth(&t, NULL, NULL);
     if (!row) { failures++; fprintf(stderr, "  FAIL: NULL row\n"); return; }
     EXPECT_INT(count_commas(row), 11);  /* 12 cols → 11 commas */
     /* Starts with the spec basename. */

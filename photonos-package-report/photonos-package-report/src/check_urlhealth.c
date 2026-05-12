@@ -15,10 +15,14 @@
  */
 /* _GNU_SOURCE for asprintf is provided via CMake; do not redefine. */
 #include "pr_check_urlhealth.h"
+#include "pr_clone.h"
+#include "pr_git_tags.h"
 #include "pr_hook.h"
+#include "pr_latest.h"
 #include "pr_state.h"
 #include "pr_substitute.h"
 #include "pr_urlhealth.h"
+#include "pr_version.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -49,7 +53,8 @@ static char *dup_or_empty(const char *s)
 }
 
 char *check_urlhealth(pr_task_t                       *task,
-                      const pr_source0_lookup_table_t *lookup_table)
+                      const pr_source0_lookup_table_t *lookup_table,
+                      const char                      *clone_root)
 {
     if (task == NULL || task->Spec == NULL) return NULL;
 
@@ -88,8 +93,54 @@ char *check_urlhealth(pr_task_t                       *task,
     /* Phase 5 urlhealth probe. Skipped offline so ctest stays hermetic. */
     int health = 0;
     const char *netenv = getenv("PR_TEST_NETWORK");
-    if (netenv && strcmp(netenv, "1") == 0) {
+    int allow_network = (netenv && strcmp(netenv, "1") == 0);
+    if (allow_network) {
         health = urlhealth(state.Source0);
+    }
+
+    /* Phase 6d: when the Source0Lookup row has a gitSource AND a
+     * clone_root is configured AND the network is allowed, run the
+     * clone+fetch+tag chain to populate UpdateDownloadName (col 10)
+     * and UpdateAvailable (col 5). */
+    if (allow_network && clone_root && clone_root[0] != '\0'
+        && row && row->gitSource && row->gitSource[0] != '\0') {
+
+        char *repo_name = pr_extract_repo_name(row->gitSource);
+        if (repo_name) {
+            if (pr_clone_ensure(clone_root,
+                                row->gitSource,
+                                row->gitBranch,
+                                repo_name) == 0) {
+                /* List tags. */
+                char *clone_path = NULL;
+                if (asprintf(&clone_path, "%s/%s", clone_root, repo_name) > 0) {
+                    char  **names = NULL;
+                    size_t  n     = 0;
+                    if (pr_clone_list_tags(clone_path, row->customRegex,
+                                           &names, &n) == 0 && n > 0) {
+                        char *latest = pr_get_latest_name(names, n);
+                        if (latest && latest[0]) {
+                            free(state.UpdateDownloadName);
+                            state.UpdateDownloadName = latest;
+                            latest = NULL;  /* moved */
+
+                            /* UpdateAvailable: set to NameLatest iff
+                             * pr_version_compare(NameLatest, task.version) == 1. */
+                            int rc = pr_version_compare(state.UpdateDownloadName,
+                                                        task->Version ? task->Version : "");
+                            if (rc == 1) {
+                                free(state.UpdateAvailable);
+                                state.UpdateAvailable = dup_or_empty(state.UpdateDownloadName);
+                            }
+                        }
+                        free(latest);
+                    }
+                    pr_git_tags_free(names, n);
+                    free(clone_path);
+                }
+            }
+            free(repo_name);
+        }
     }
 
     /* PS L 4933: assemble the 12-column row.
