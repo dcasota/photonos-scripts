@@ -33,6 +33,39 @@ int convert_to_boolean(const char *value);
  */
 int test_disk_space(const char *path, long required_mb, const char *operation);
 
+/* --- PS L 234-245: function Get-SpecValue -------------------------- */
+/* Returns the FIRST matching line (full line text) with the given
+ * case-insensitive regex `replace` pattern stripped out, then trimmed.
+ *
+ * Returns malloc'd NUL-terminated string on match (caller frees), or NULL
+ * if no line in `content` matches `pattern`. Mirrors PS:
+ *
+ *     $match = $Content | Select-String -Pattern $Pattern | Select-Object -First 1
+ *     if ($match) { return ($match.ToString() -ireplace $Replace, "").Trim() }
+ *     return $null
+ */
+char *get_spec_value(char **content, size_t n_lines,
+                     const char *pattern, const char *replace);
+
+/* --- PS L 247-379: function ParseDirectory ------------------------- */
+/* Walks <working_dir>/<photon_dir>/SPECS recursively, parses every *.spec
+ * file, and appends one pr_task_t per spec to *out.
+ *
+ * Behaviour 1:1 with PS, including:
+ *   - subRelease detection: first numeric segment in the relative path
+ *   - skip-file (PS `continue`) when Release: or Version: is absent
+ *   - %{?dist}, %{?kat_build:...}, %{?kernelsubrelease}, .%{dialogsubversion}
+ *     stripped from $release (PS L 270-275)
+ *   - $version concatenated with "-$release" (PS L 279)
+ *   - empty Source0 / URL coerced to "" (PS L 282 / 284)
+ *   - SHAName detected from %define sha1/sha256/sha512 (mutually exclusive)
+ *   - 17 inline %define / %global captures
+ *
+ * Returns 0 on success.
+ */
+int parse_directory(const char *working_dir, const char *photon_dir,
+                    pr_task_list_t *out);
+
 /* --- PS L 163-231: function Invoke-GitWithTimeout ------------------ */
 /* Runs `git <arguments>` in working_directory with a wall-clock timeout.
  *
