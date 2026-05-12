@@ -107,6 +107,7 @@ add_executable(test_phase6
     ${CMAKE_SOURCE_DIR}/src/git_with_timeout.c
     ${CMAKE_SOURCE_DIR}/src/latest_name.c
     ${CMAKE_SOURCE_DIR}/src/version.c
+    ${CMAKE_SOURCE_DIR}/src/url_util.c
     ${PR_GEN_HOOK_DISPATCH}
     ${PR_HOOK_SOURCES}
 )
@@ -167,3 +168,15 @@ target_link_libraries(test_phase6d PRIVATE pthread ${PCRE2_LIBRARIES})
 target_compile_options(test_phase6d PRIVATE -Wall -Wextra -O0 -g -D_GNU_SOURCE ${PCRE2_CFLAGS_OTHER})
 
 add_test(NAME test_phase6d COMMAND test_phase6d)
+
+# ----- Phase 6e unit tests (HeapSort + JDK picker + URL basename) ----
+add_executable(test_phase6e
+    test_phase6e.c
+    ${CMAKE_SOURCE_DIR}/src/heapsort.c
+    ${CMAKE_SOURCE_DIR}/src/jdk.c
+    ${CMAKE_SOURCE_DIR}/src/url_util.c
+)
+target_include_directories(test_phase6e PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_compile_options(test_phase6e PRIVATE -Wall -Wextra -O0 -g -D_GNU_SOURCE)
+
+add_test(NAME test_phase6e COMMAND test_phase6e)
