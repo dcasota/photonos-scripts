@@ -38,7 +38,50 @@ add_custom_command(
 
 add_custom_target(pr-source0-lookup-data DEPENDS ${PR_GEN_HEADER})
 
-# ----- Phase 1 + 2 + 3 executable -----------------------------------
+# ----- Phase 3b generator: per-spec hook dispatch table --------------
+# Scans src/hooks/*.c on every build, regenerates the dispatch table.
+file(GLOB PR_HOOK_SOURCES CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/src/hooks/*.c")
+set(PR_GEN_HOOK_DISPATCH ${PR_GEN_DIR}/pr_hook_dispatch.c)
+
+add_custom_command(
+    OUTPUT  ${PR_GEN_HOOK_DISPATCH}
+    COMMAND sh -c
+        "'${CMAKE_SOURCE_DIR}/tools/generate-hook-dispatch.sh' \
+         '${CMAKE_SOURCE_DIR}/src/hooks' \
+         > '${PR_GEN_HOOK_DISPATCH}'"
+    DEPENDS
+        ${CMAKE_SOURCE_DIR}/tools/generate-hook-dispatch.sh
+        ${PR_HOOK_SOURCES}
+    VERBATIM
+    COMMENT "Regenerating per-spec hook dispatch table"
+)
+
+add_custom_target(pr-hook-dispatch DEPENDS ${PR_GEN_HOOK_DISPATCH})
+
+# Run the drift check at configure time. Warning-only during Phase
+# 3b-6; flip to fatal in Phase 7 via -DPR_HOOKS_PS_ONLY_FATAL=ON.
+option(PR_HOOKS_PS_ONLY_FATAL "Treat PS-only hooks (unported) as fatal" OFF)
+set(_drift_env "")
+if(PR_HOOKS_PS_ONLY_FATAL)
+    set(_drift_env "PR_HOOKS_PS_ONLY_FATAL=1")
+endif()
+execute_process(
+    COMMAND env ${_drift_env}
+            sh "${CMAKE_SOURCE_DIR}/tools/spec-hooks-drift-check.sh"
+            "${CMAKE_SOURCE_DIR}"
+    RESULT_VARIABLE _drift_rc
+    OUTPUT_VARIABLE _drift_out
+    ERROR_VARIABLE  _drift_err
+)
+message(STATUS "spec-hooks-drift: ${_drift_out}")
+if(NOT _drift_rc EQUAL 0)
+    message(WARNING "spec-hooks-drift-check.sh:\n${_drift_err}")
+    if(PR_HOOKS_PS_ONLY_FATAL)
+        message(FATAL_ERROR "spec-hooks drift is fatal in this phase")
+    endif()
+endif()
+
+# ----- Phase 1 + 2 + 3 + 3b executable ------------------------------
 add_executable(photonos-package-report
     src/main.c
     src/convert.c
@@ -48,9 +91,12 @@ add_executable(photonos-package-report
     src/spec_value.c
     src/parse_directory.c
     src/source0_lookup.c
+    src/hook_dispatch.c
+    ${PR_GEN_HOOK_DISPATCH}
+    ${PR_HOOK_SOURCES}
 )
 
-add_dependencies(photonos-package-report pr-source0-lookup-data)
+add_dependencies(photonos-package-report pr-source0-lookup-data pr-hook-dispatch)
 
 target_include_directories(photonos-package-report PRIVATE
     include
