@@ -31,7 +31,7 @@ PS-source: photonos-package-report.ps1 L <start>-<end>
 Parity: <strict|soft|n/a>
 ```
 
-## Build & test (once Phase 1 lands)
+## Build & test
 
 ```bash
 cmake -B build -S .
@@ -53,11 +53,16 @@ while the tool is live.
 | 1  | Foundation (params, types, diskspace, git-timeout)    | done (#53)  |
 | 2  | Spec ingestion (Get-SpecValue + ParseDirectory)       | done (#54)  |
 | 3a | Source0LookupData embed (bash+awk + C parser)         | done (#55)  |
-| 3b | spec-hook dispatch (extract-spec-hooks + skeletons)   | next        |
-| 4  | Substitution core (%{url}/%{name}/%{version}/...)     | pending     |
-| 5  | Network & lookups (urlhealth, GitHub/GitLab tags, Koji) | pending   |
-| 6  | CheckURLHealth main path + .prn assembly              | pending     |
-| 7  | Cluster orchestrator + parallel runspace mirror       | pending     |
+| 3b | spec-hook dispatch (extract-spec-hooks + skeletons)   | done (#57)  |
+| 4  | Substitution core (%{url}/%{name}/%{version}/...)     | done (#58)  |
+| 5  | Network & lookups (urlhealth, GitHub/GitLab tags, Koji) | done (#59) |
+| 6  | CheckURLHealth main path + .prn assembly              | done (#60)  |
+| 6b | Version-compare (`compare_versions`)                  | done (#61)  |
+| 6c | Git-tag detection (GitHub/GitLab API + heuristics)    | done (#62)  |
+| 6d | Local clone fetch + per-repo cache                    | done (#63)  |
+| 6e | Heap-sort JDK URLs                                    | done (#64)  |
+| 6f | SHA helpers + cross-branch diff (col 9 wired)         | done (#65)  |
+| 7  | Cluster orchestrator + parallel runspace mirror (`-ThrottleLimit`) | done (#66) |
 | 8  | CI side-by-side parity gate                           | pending     |
 | 9  | Retirement (PS → staging/legacy/, C-only)             | pending     |
 | M  | Maintainer ops & debug tooling — `docs/maintainer-runbook.md`, `.vscode/` | ongoing |

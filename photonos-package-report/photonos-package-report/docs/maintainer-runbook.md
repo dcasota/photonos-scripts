@@ -79,50 +79,101 @@ via `tools/extract-source0-lookup.sh`.
 
 ## 2. Pinning a package to a specific version (per-spec exception)
 
-The PS script (and the C port, once Phase 3b lands) supports per-spec
-override blocks. These are gated by `if ($currentTask.spec -ilike 'X.spec')`
-in PS and become `hook_X_spec()` functions in C.
+The PS script and the C port both support per-spec override blocks.
+In PS they are gated by `if ($currentTask.spec -ilike 'X.spec')`; in C
+they live in their own translation unit under `src/hooks/<name>.c` and
+are wired in by a generated dispatch table (`build/generated/pr_hook_dispatch.c`)
+rebuilt on every CMake build.
 
-### Example (already in PS, awaiting C port in Phase 3b)
+PS remains the source-of-truth per CLAUDE.md invariant #2 — add the
+exception there first, then mirror it to C.
+
+### File-naming convention
+
+| PS basename            | C hook file               | C symbol                        |
+|------------------------|---------------------------|---------------------------------|
+| `inih.spec`            | `src/hooks/inih.c`        | `hook_inih_spec`                |
+| `open-vm-tools.spec`   | `src/hooks/open_vm_tools.c` | `hook_open_vm_tools_spec`     |
+| `samba-client.spec`    | `src/hooks/samba_client.c`  | `hook_samba_client_spec`      |
+
+Rules: strip `.spec` from the filename, map `-` → `_` in both the
+filename and the symbol, prefix `hook_` and suffix `_spec` on the symbol.
+
+### Example (currently ported: inih, open-vm-tools, samba-client)
 
 ```powershell
 # photonos-package-report.ps1 L 4727-4733
 if ($currentTask.spec -ilike 'inih.spec') {
     $UpdateDownloadName = $UpdateDownloadName -ireplace "^r","libinih-"
 }
-if ($currentTask.spec -ilike 'open-vm-tools.spec') {
-    $UpdateDownloadName = [System.String]::Concat("open-vm-tools-",$UpdateDownloadName)
-}
-if ($currentTask.spec -ilike 'samba-client.spec') {
-    $UpdateDownloadName = $UpdateDownloadName -ireplace "samba-samba-","samba-"
-}
 ```
 
-### Procedure (PS-side; canonical until Phase 3b lands)
+The matching C hook (`src/hooks/inih.c`) implements the same body
+against `pr_task_t`/`pr_state_t`. The `pr_state_t` struct grew its
+`UpdateDownloadName` field in Phase 4/6; hooks ported before that field
+landed compile as no-ops with the PS body in a `/* TODO */` comment.
+
+### Procedure
 
 1. Open `../photonos-package-report.ps1`.
-2. Find the exception cluster matching your case (URL prefix, tag prefix,
-   filename rewrite). Common clusters live around PS L 2140-2200
-   (Source0 substitution) and L 4720-4760 (UpdateDownloadName).
+2. Find the exception cluster matching your case. Common clusters live
+   around PS L 2140-2200 (Source0 substitution) and L 4720-4760
+   (UpdateDownloadName).
 3. Append a new `if ($currentTask.spec -ilike 'your-spec.spec') { ... }`
    in **alphabetical order** within the cluster.
-4. Commit. The C `spec-hook-extractor` agent will pick up the new block
-   on its next run, emit a skeleton `src/check_urlhealth/hooks/your_spec.c`
-   with the PS body embedded as a comment, and add the dispatch entry.
-5. Hand-port the body to C, run `ctest`, open a PR.
+4. Run the extractor and confirm your new block is detected:
 
-### Where the hook ends up in C (post Phase 3b)
+   ```sh
+   ./tools/extract-spec-hooks.sh ../photonos-package-report.ps1 \
+     | grep '^your-spec\.spec'
+   ```
+
+   Output is TSV: `<spec-basename>\t<start-line>\t<end-line>`. One row per
+   block (a spec may have several scattered blocks).
+
+5. Create (or edit) the matching C file under `src/hooks/`. Signature is fixed:
+
+   ```c
+   #include "pr_hook.h"
+   int hook_<name>_spec(pr_task_t *task, pr_state_t *state) {
+       /* hand-port of PS body */
+       return 0;  /* non-zero to abort the per-task workflow */
+   }
+   ```
+
+   No registration needed — `tools/generate-hook-dispatch.sh` scans
+   `src/hooks/*.c` on every build and emits the sorted dispatch array
+   automatically.
+
+6. Build + test:
+
+   ```sh
+   cmake --build build
+   ctest --test-dir build -R test_phase3b --output-on-failure
+   ```
+
+   `test_phase3b` validates that `pr_hooks_find("your-spec.spec")` returns
+   non-NULL and that `pr_hooks_run` invokes your hook on a task with the
+   matching `Spec`.
+
+7. Open a PR using the standard commit-message template.
+
+### Drift between PS and C
+
+```sh
+./tools/spec-hooks-drift-check.sh .
+```
+
+The argument is the C project root (the script resolves
+`<root>/../photonos-package-report.ps1` for the PS side). Output header:
 
 ```
-src/check_urlhealth/hooks/inih.c              # generated skeleton, then hand-edited
-src/check_urlhealth/pr_spec_dispatch.h        # auto-generated dispatch table
+spec-hooks-drift: PS=96  C=3  PS-only=93  C-only=0
 ```
 
-Hook signature is fixed:
-
-```c
-int hook_inih_spec(pr_task_t *task, pr_state_t *state);
-```
+`PS-only` is the long tail of unported specs; `C-only` is always an error
+(an invented hook with no PS counterpart). Phase 7+ flips PS-only to a
+hard error via the env var `PR_HOOKS_PS_ONLY_FATAL=1`.
 
 ---
 
@@ -174,9 +225,10 @@ VS Code: install the **C/C++** and **CMake Tools** extensions.
 
 ### Debug a single test
 
-1. `F5` → pick **Debug test_phase2** (or `_phase1`, `_phase3`).
-2. The launch config runs the test binary with the fixture-dir argument
-   the harness uses.
+1. `F5` → pick **Debug test_phaseN**. One launch config per merged phase:
+   `1`, `2`, `3`, `3b`, `4`, `5`, `6`, `6b`, `6c`, `6d`, `6e`, `6f`, `7`.
+2. `test_phase2` is the only one that takes a fixture-dir argument
+   (`${workspaceFolder}/tests/fixtures`); the rest run with `"args": []`.
 
 ### Why gdb and not lldb
 
@@ -187,20 +239,23 @@ but the shipped `launch.json` uses gdb to keep the runbook reproducible.
 
 ## 5. Running sequentially vs in parallel
 
-The parallel worker pool is a **Phase 7** feature (pthread mirror of
-`ForEach-Object -Parallel -ThrottleLimit 20` from PS L 5061 / L 5214).
-Until Phase 7 lands, the C port is sequential by construction.
+The parallel worker pool is a pthread mirror of
+`ForEach-Object -Parallel -ThrottleLimit 20` (PS L 5061 / L 5214),
+landed in Phase 7 (PR #66). The dispatch decision lives in
+`src/main.c:443` — if `params->ThrottleLimit <= 1` the loop runs
+sequentially, otherwise `pr_pool_create(N)` spawns N workers
+(`src/pool.c`).
 
-### Once Phase 7 lands (planned flag)
+### Usage
 
 ```sh
-# Default: ThrottleLimit auto-detected, capped at 20 (matches PS L 5210-5214).
+# Default: ThrottleLimit = 20 (matches PS L 5214).
 ./build/photonos-package-report -workingDir /var/photonos
 
 # Force sequential — useful for gdb, valgrind, or determinism while diffing .prn.
 ./build/photonos-package-report -workingDir /var/photonos -ThrottleLimit 1
 
-# Bound the pool explicitly.
+# Bound the pool explicitly. Clamp is [1, 256]; values outside snap to bounds.
 ./build/photonos-package-report -workingDir /var/photonos -ThrottleLimit 4
 ```
 
@@ -209,10 +264,25 @@ Until Phase 7 lands, the C port is sequential by construction.
 * **Debugging.** gdb in one thread is dramatically easier than 20.
 * **Parity diffing.** Two parallel runs of the PS script can yield
   identical `.prn` output but different stderr-warning order. Phase 8's
-  parity gate runs **both PS and C with `-ThrottleLimit 1`** while it
-  computes the bit-identical `.prn` diff. Reproduce locally the same way.
+  parity gate (pending) is planned to run **both PS and C with
+  `-ThrottleLimit 1`** while computing the bit-identical `.prn` diff.
+  Reproduce locally the same way.
 * **Rate-limited remotes.** GitHub API can 429 you out from a 20-wide
-  fanout; drop to 4 or below to stay under the unauthenticated cap.
+  fanout; drop to 4 or below to stay under the unauthenticated cap, or
+  pass `-github_token <PAT>` to lift to the authenticated 5000/h cap.
+
+### Per-repo fetch arbitration
+
+Parallel workers can collide on the same `git fetch` directory when two
+specs in the same run share an upstream repository. Phase 7 added
+`flock(LOCK_EX)` around the clone/fetch critical section
+(`src/pr_clone.c:150`), so concurrent fetches against the same repo
+serialise themselves automatically — no extra config needed. The
+unlock fires after the fetch completes (`src/pr_clone.c:179`).
+
+If you see "Resource temporarily unavailable" or "Cannot fetch — another
+process holds the lock" from inside a worker, lower `-ThrottleLimit` to
+reduce contention or check `lsof | grep $repo/.git` for stuck holders.
 
 ---
 
