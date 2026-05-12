@@ -100,6 +100,7 @@ add_executable(photonos-package-report
     src/state.c
     src/prn_writer.c
     src/check_urlhealth.c
+    src/version.c
     ${PR_GEN_HOOK_DISPATCH}
     ${PR_HOOK_SOURCES}
 )
