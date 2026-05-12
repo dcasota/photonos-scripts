@@ -1,0 +1,98 @@
+name: Parity gate (PR)
+
+# Phase 8 task 083. Applies the 30/60/90-day strictness ladder from
+# ADR-0009 to tools/parity-journal.tsv and emits a commit status.
+#
+# Runs on every PR. Reads the journal at PR base; does NOT trigger
+# a parity run. The journal is updated by package-report-C.yml on
+# its own schedule (which itself is gated by the PS workflow).
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents:        read
+  statuses:        write
+  pull-requests:   write   # to comment, optional
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Apply gate
+        id: gate
+        run: |
+          set -e
+          JNL="photonos-package-report/tools/parity-journal.tsv"
+          GATE="photonos-package-report/tools/parity-gate.sh"
+          chmod +x "$GATE" || true
+
+          # Tolerate exit codes for the verdict capture; we want the
+          # state/window strings even on a fail verdict.
+          result=$("$GATE" "$JNL" 2>/dev/null) || rc=$? && rc=0
+          rc=${rc:-0}
+
+          state=$(echo "$result"   | awk '{print $1}')
+          days=$(echo "$result"    | awk '{print $2}')
+          window=$(echo "$result"  | awk '{print $3}')
+          latest=$(echo "$result"  | awk '{print $4}')
+          rows=$(echo "$result"    | awk '{print $5}')
+
+          {
+            echo "state=$state"
+            echo "days=$days"
+            echo "window=$window"
+            echo "latest=$latest"
+            echo "rows=$rows"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "# Parity gate"
+            echo
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| State            | \`$state\` |"
+            echo "| Days since start | $days |"
+            echo "| Window           | $window |"
+            echo "| Latest verdict   | \`$latest\` |"
+            echo "| Journal rows     | $rows |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Post commit status
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          STATE="${{ steps.gate.outputs.state }}"
+          WINDOW="${{ steps.gate.outputs.window }}"
+          LATEST="${{ steps.gate.outputs.latest }}"
+          DAYS="${{ steps.gate.outputs.days }}"
+
+          # Map gate-state → commit-status state.
+          case "$STATE" in
+            pass)    cs=success; desc="parity ok (window=$WINDOW, day=$DAYS, latest=$LATEST)" ;;
+            warn)    cs=success; desc="parity warning (window=$WINDOW, day=$DAYS, latest=$LATEST)" ;;
+            fail)    cs=failure; desc="parity strict-fail (window=$WINDOW, day=$DAYS, latest=$LATEST)" ;;
+            no-data) cs=success; desc="parity clock not started (no journal data)" ;;
+            *)       cs=error;   desc="parity gate produced unknown state $STATE" ;;
+          esac
+
+          gh api \
+            -H "Accept: application/vnd.github+json" \
+            "repos/${{ github.repository }}/statuses/${{ github.event.pull_request.head.sha }}" \
+            -f "state=$cs" \
+            -f "context=parity-gate" \
+            -f "description=$desc" \
+            -f "target_url=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+      - name: Fail PR if strict-fail window
+        run: |
+          if [ "${{ steps.gate.outputs.state }}" = "fail" ]; then
+            echo "::error::Parity gate failed (strict-fail window 60-90 days)"
+            exit 1
+          fi

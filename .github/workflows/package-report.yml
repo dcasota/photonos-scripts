@@ -313,6 +313,40 @@ jobs:
           echo "staging=$STAGING" >> "$GITHUB_OUTPUT"
           echo "New .prn files from this run: $NEW_COUNT"
 
+      - name: Capture parity snapshot
+        if: always() && steps.collect.outputs.new_count != '0'
+        id: parity_snapshot
+        run: |
+          # Phase 8 task 080 (ADR-0009, FRD-016): freeze the PS-side input
+          # state so the C-side workflow can replay against bit-identical
+          # inputs. The artifact carries manifests (clone SHAs, tarball
+          # sha256s) + the .prn outputs PS produced — not the working-tree
+          # bytes themselves (those are reconstructible from the manifests).
+          WDIR="${{ github.event.inputs.workingDir }}"
+          [ -z "$WDIR" ] && WDIR="$REPORT_DIR"
+          UPSTREAMS="${{ github.event.inputs.upstreamsDir }}"
+          [ -z "$UPSTREAMS" ] && UPSTREAMS="$WDIR/photon-upstreams"
+          STAGING="${{ steps.collect.outputs.staging }}"
+
+          OUT="/tmp/parity-snapshot-${{ github.run_id }}.tar.gz"
+          SCRIPT="repo/.github/scripts/parity-snapshot.sh"
+          chmod +x "$SCRIPT" || true
+
+          "$SCRIPT" "$WDIR" "$UPSTREAMS" "$STAGING" "$OUT"
+          echo "tar=$OUT" >> "$GITHUB_OUTPUT"
+
+      - name: Upload parity snapshot artifact
+        if: always() && steps.parity_snapshot.outputs.tar != ''
+        uses: actions/upload-artifact@v7
+        with:
+          # Name embeds the PS run id so the C workflow can find it via
+          # the workflow_run.id payload field. Retention matches the
+          # ADR-0009 90-day clock plus 5 days slack.
+          name: parity-snapshot-${{ github.run_id }}
+          path: ${{ steps.parity_snapshot.outputs.tar }}
+          retention-days: 95
+          if-no-files-found: warn
+
       - name: Upload report artifacts
         if: always() && steps.collect.outputs.new_count != '0'
         uses: actions/upload-artifact@v7
