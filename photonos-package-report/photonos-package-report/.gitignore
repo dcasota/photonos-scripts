@@ -1,0 +1,7 @@
+build/
+*.o
+*.so
+*.a
+photonos-package-report
+core
+.cache/

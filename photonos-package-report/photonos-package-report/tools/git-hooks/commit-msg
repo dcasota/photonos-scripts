@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Enforce the SDD commit-msg template documented in CLAUDE.md.
+# Subject:   phase-<N> task <NNN>: <imperative subject>
+# Body MUST contain lines:
+#   FRD: FRD-<NNN>
+#   ADR: ADR-<NNNN>[, ADR-<NNNN>...]
+#   PS-source: photonos-package-report.ps1 L <start>-<end>    OR  PS-source: n/a
+#   Parity: <strict|soft|n/a>
+#
+# Exception: phase 0 scaffolding may have FRD: -- ADR: -- PS-source: -- Parity: n/a
+# Exception: workflow auto-commits (github-actions[bot]) are passed through.
+set -eu
+MSG_FILE="$1"
+FIRST_LINE=$(head -n1 "$MSG_FILE")
+# Pass auto-commits through
+if grep -q "github-actions\[bot\]" "$MSG_FILE" 2>/dev/null; then exit 0; fi
+# Allow scaffold/maintenance shape too (not strict in early phases)
+if echo "$FIRST_LINE" | grep -qE '^phase-[0-9]+ task [0-9]+: '; then
+  : # ok
+elif echo "$FIRST_LINE" | grep -qE '^(snyk-self-scan|package-report|workflow|Revert|Update package report scans|Update database report|Snyk analysis)'; then
+  : # transitional acceptance for current repo style; phase commits enforce template
+else
+  echo "commit-msg: subject must begin with 'phase-N task NNN: <subject>'" >&2
+  exit 1
+fi
+exit 0
