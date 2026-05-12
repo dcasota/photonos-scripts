@@ -116,3 +116,17 @@ target_link_libraries(test_phase6 PRIVATE pthread ${PCRE2_LIBRARIES} ${CURL_LIBR
 target_compile_options(test_phase6 PRIVATE -Wall -Wextra -O0 -g -D_GNU_SOURCE ${PCRE2_CFLAGS_OTHER} ${CURL_CFLAGS_OTHER})
 
 add_test(NAME test_phase6 COMMAND test_phase6)
+
+# ----- Phase 6b unit tests (Parse-Version + Compare-VersionStrings) --
+add_executable(test_phase6b
+    test_phase6b.c
+    ${CMAKE_SOURCE_DIR}/src/version.c
+)
+target_include_directories(test_phase6b PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${PCRE2_INCLUDE_DIRS}
+)
+target_link_libraries(test_phase6b PRIVATE pthread ${PCRE2_LIBRARIES})
+target_compile_options(test_phase6b PRIVATE -Wall -Wextra -O0 -g -D_GNU_SOURCE ${PCRE2_CFLAGS_OTHER})
+
+add_test(NAME test_phase6b COMMAND test_phase6b)
