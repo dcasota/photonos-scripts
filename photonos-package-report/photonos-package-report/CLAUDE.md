@@ -31,7 +31,7 @@ PS-source: photonos-package-report.ps1 L <start>-<end>
 Parity: <strict|soft|n/a>
 ```
 
-## Build & test (once Phase 1 lands)
+## Build & test
 
 ```bash
 cmake -B build -S .
@@ -42,15 +42,32 @@ tools/parity-diff.sh build/photonos-package-report ../photonos-package-report.ps
 
 ## Phase tracker (always include in status replies)
 
+Numeric phases 0-9 are the linear code-port lane. Phase M is an
+ongoing **parallel** track that picks up new sections of the maintainer
+runbook as features land in the numeric phases — it is never "done"
+while the tool is live.
+
 | Phase | Title | Status |
 |-------|-------|--------|
-| 0 | SDD scaffold | in progress |
-| 1 | Foundation (params, types, diskspace, git-timeout) | pending |
-| 2 | Spec ingestion (Get-AllSpecs port) | pending |
-| 3 | Embedded data (Source0LookupData + spec-hook dispatch) | pending |
-| 4 | Substitution core (%{url}/%{name}/%{version}/...) | pending |
-| 5 | Network & lookups (urlhealth, GitHub/GitLab tags, Koji) | pending |
-| 6 | CheckURLHealth main path + .prn assembly | pending |
-| 7 | Cluster orchestrator + parallel runspace mirror | pending |
-| 8 | CI side-by-side parity gate | pending |
-| 9 | Retirement (PS → staging/legacy/, C-only) | pending |
+| 0  | SDD scaffold                                          | done (#52)  |
+| 1  | Foundation (params, types, diskspace, git-timeout)    | done (#53)  |
+| 2  | Spec ingestion (Get-SpecValue + ParseDirectory)       | done (#54)  |
+| 3a | Source0LookupData embed (bash+awk + C parser)         | done (#55)  |
+| 3b | spec-hook dispatch (extract-spec-hooks + skeletons)   | done (#57)  |
+| 4  | Substitution core (%{url}/%{name}/%{version}/...)     | done (#58)  |
+| 5  | Network & lookups (urlhealth, GitHub/GitLab tags, Koji) | done (#59) |
+| 6  | CheckURLHealth main path + .prn assembly              | done (#60)  |
+| 6b | Version-compare (`compare_versions`)                  | done (#61)  |
+| 6c | Git-tag detection (GitHub/GitLab API + heuristics)    | done (#62)  |
+| 6d | Local clone fetch + per-repo cache                    | done (#63)  |
+| 6e | Heap-sort JDK URLs                                    | done (#64)  |
+| 6f | SHA helpers + cross-branch diff (col 9 wired)         | done (#65)  |
+| 7  | Cluster orchestrator + parallel runspace mirror (`-ThrottleLimit`) | done (#66) |
+| 8  | CI side-by-side parity gate                           | pending     |
+| 9  | Retirement (PS → staging/legacy/, C-only)             | pending     |
+| M  | Maintainer ops & debug tooling — `docs/maintainer-runbook.md`, `.vscode/` | ongoing |
+
+When you land a feature in a numeric phase that changes a workflow the
+maintainer cares about (new flag, new override mechanism, new generator),
+update the matching section of `docs/maintainer-runbook.md` in the same
+PR. The runbook is the operability source-of-truth.
