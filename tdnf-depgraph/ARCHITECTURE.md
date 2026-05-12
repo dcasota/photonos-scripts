@@ -85,6 +85,6 @@ New work begins by writing the spec, gating implementation behind a merged spec 
 | Cycle detection (libselinux ↔ python3 class of bugs) | 0 — SDD scaffolding | this file + `specs/README.md` | complete |
 | Cycle detection — PRD | 1 | `specs/prd.md` | complete |
 | Cycle detection — ADRs 0001–0006 | 3 | `specs/adr/` | complete |
-| Cycle detection — feature specs | 4 | `specs/features/` | pending |
+| Cycle detection — feature specs | 4 | `specs/features/{cycle-detection,subrelease-flavors}.md` | complete |
 | Cycle detection — task breakdown | 5 | `specs/tasks/0001-task-cycles-post-step.md` | pending |
 | Cycle detection — implementation | 6 | per-task PRs | pending |
