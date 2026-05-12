@@ -81,7 +81,7 @@ if(NOT _drift_rc EQUAL 0)
     endif()
 endif()
 
-# ----- Phase 1 + 2 + 3 + 3b executable ------------------------------
+# ----- Phase 1 + 2 + 3 + 3b + 4 executable --------------------------
 add_executable(photonos-package-report
     src/main.c
     src/convert.c
@@ -92,6 +92,8 @@ add_executable(photonos-package-report
     src/parse_directory.c
     src/source0_lookup.c
     src/hook_dispatch.c
+    src/strutil.c
+    src/source0_substitute.c
     ${PR_GEN_HOOK_DISPATCH}
     ${PR_HOOK_SOURCES}
 )

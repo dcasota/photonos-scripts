@@ -44,6 +44,7 @@
 /* _GNU_SOURCE is provided via target_compile_options(-D_GNU_SOURCE) in
  * CMakeLists.txt; do not redefine here. */
 #include "photonos_package_report.h"
+#include "pr_strutil.h"  /* str_replace_all */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -72,42 +73,10 @@ static char *xstrdup(const char *s)
 /* "" → malloc'd zero-length string. Used when PS coerces $null to "". */
 static char *empty_dup(void) { return xstrdup(""); }
 
-/* String.Replace(a,b) on a heap-allocated `in`. Frees `in`, returns new
- * heap string. Replaces ALL non-overlapping occurrences. Case-SENSITIVE
- * because PS [string]::Replace is case-sensitive (PS L 270-275 uses it). */
-static char *str_replace_all(char *in, const char *a, const char *b)
-{
-    if (in == NULL || a == NULL || a[0] == '\0') return in;
-    size_t alen = strlen(a);
-    size_t blen = b ? strlen(b) : 0;
-    /* Count occurrences. */
-    size_t count = 0;
-    for (const char *p = in; (p = strstr(p, a)) != NULL; p += alen) count++;
-    if (count == 0) return in;
-    size_t in_len  = strlen(in);
-    size_t out_len = in_len + count * (blen > alen ? blen - alen : 0)
-                            - count * (alen > blen ? alen - blen : 0);
-    char *out = (char *)malloc(out_len + 1);
-    if (!out) return in;
-    char *o = out;
-    const char *cur = in;
-    while (1) {
-        const char *hit = strstr(cur, a);
-        if (!hit) {
-            size_t tail = strlen(cur);
-            memcpy(o, cur, tail);
-            o += tail;
-            break;
-        }
-        memcpy(o, cur, (size_t)(hit - cur));
-        o += hit - cur;
-        if (blen) { memcpy(o, b, blen); o += blen; }
-        cur = hit + alen;
-    }
-    *o = '\0';
-    free(in);
-    return out;
-}
+/* str_replace_all now lives in src/strutil.c (shared with the Phase 4
+ * substitution module). Same semantics: case-SENSITIVE literal replace
+ * of every non-overlapping occurrence; frees `in` and returns a new
+ * heap pointer. */
 
 /* True iff line begins with `needle` after skipping leading spaces/tabs.
  * Used for PS `$content -ilike '*X*'` shortcut — but ilike is a SUBSTRING
