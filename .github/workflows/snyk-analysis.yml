@@ -417,14 +417,40 @@ jobs:
           echo "report_stamp=$STAMP" >> "$GITHUB_OUTPUT"
           echo "report_dir=$OUTDIR"  >> "$GITHUB_OUTPUT"
 
+      - name: Stage per-package logs for artifact
+        if: always()
+        env:
+          UDIR: ${{ steps.dirs.outputs.upstreamsDir }}
+          STAMP: ${{ steps.report.outputs.report_stamp }}
+        run: |
+          # Gather the per-package raw outputs into a single staging dir so
+          # the upload step can pick them up with a relative-path glob. The
+          # files live scattered across <upstreamsDir>/photon-*/clones/<pkg>/
+          # which may be on an absolute path (custom workingDir) that
+          # upload-artifact can't follow. Copy under the staged subtree.
+          STAGE="ci/SnykAnalysis/scans/per-package-logs"
+          mkdir -p "$STAGE"
+          # Per-package Snyk SAST logs (one .log per scanned package).
+          count_snyk=$(find "$UDIR" -name '*_snyk_*.log' -print 2>/dev/null \
+                       -exec cp --parents -t "$STAGE/" {} \; | wc -l)
+          # Per-(package,agent) Snyk Agent Scan JSON + sibling stderr.
+          count_agent=$(find "$UDIR" -name '*_agentscan_*.json' -print 2>/dev/null \
+                        -exec cp --parents -t "$STAGE/" {} \; | wc -l)
+          find "$UDIR" -name '*_agentscan_*.stderr' \
+              -exec cp --parents -t "$STAGE/" {} \; 2>/dev/null || true
+          echo "Staged $count_snyk per-package Snyk logs and $count_agent agent-scan JSON files into $STAGE"
+          du -sh "$STAGE" 2>/dev/null
+
       - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: snyk-analysis-${{ steps.report.outputs.report_stamp }}
           path: |
+            ci/SnykAnalysis/scans/SnykReport_*.txt
             ci/SnykAnalysis/scans/SnykReport_*.md
             ci/SnykAnalysis/scans/SnykReport_*.json
+            ci/SnykAnalysis/scans/per-package-logs/**
             ci/SnykAnalysis/snyk_issues.db
           retention-days: 90
           if-no-files-found: warn
