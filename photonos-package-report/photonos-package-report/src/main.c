@@ -27,6 +27,7 @@
 
 #include "pr_types.h"
 #include "pr_check_urlhealth.h"
+#include "pr_pool.h"
 #include "pr_prn.h"
 #include "source0_lookup.h"
 #include <time.h>
@@ -118,6 +119,7 @@ int main(int argc, char **argv)
     params.GeneratePh5toPh6DiffHigherPackageVersionReport                      = 1;  /* L 105 */
     params.GeneratePh4toPh5DiffHigherPackageVersionReport                      = 1;  /* L 106 */
     params.GeneratePh3toPh4DiffHigherPackageVersionReport                      = 1;  /* L 107 */
+    params.ThrottleLimit                                                       = 20; /* PS L 5214 */
 
     /* Long-option table, declaration order matches PS param-block order. */
     enum {
@@ -142,6 +144,7 @@ int main(int argc, char **argv)
         OPT_GeneratePh3toPh4DiffHigherPackageVersionReport,
         OPT_dump_tasks,                /* Phase 2 parity helper, not in PS. */
         OPT_generate_urlhealth_report, /* Phase 6a end-to-end pipeline.    */
+        OPT_throttle_limit,            /* Phase 7 worker count override.   */
     };
     const char *dump_tasks_branch          = NULL;
     const char *generate_urlhealth_branch  = NULL;
@@ -167,6 +170,7 @@ int main(int argc, char **argv)
         { "GeneratePh3toPh4DiffHigherPackageVersionReport",                     required_argument, 0, OPT_GeneratePh3toPh4DiffHigherPackageVersionReport },
         { "dump-tasks",                                                         required_argument, 0, OPT_dump_tasks },
         { "generate-urlhealth-report",                                          required_argument, 0, OPT_generate_urlhealth_report },
+        { "ThrottleLimit",                                                      required_argument, 0, OPT_throttle_limit },
         { "help",                                                               no_argument,       0, 'h' },
         { 0, 0, 0, 0 },
     };
@@ -202,6 +206,11 @@ int main(int argc, char **argv)
             dump_tasks_branch = optarg; break;
         case OPT_generate_urlhealth_report:
             generate_urlhealth_branch = optarg; break;
+        case OPT_throttle_limit:
+            params.ThrottleLimit = (int)strtol(optarg, NULL, 10);
+            if (params.ThrottleLimit < 1)   params.ThrottleLimit = 1;
+            if (params.ThrottleLimit > 256) params.ThrottleLimit = 256;
+            break;
         case 'h':
             usage(argv[0]);
             return 0;
@@ -430,8 +439,45 @@ static int generate_urlhealth_main(const pr_params_t *params, const char *branch
     if (asprintf(&clone_root, "%s/%s/clones", up_dir, branch) < 0) {
         clone_root = NULL;
     }
-    for (size_t i = 0; i < list.count; i++) {
-        rows[i] = check_urlhealth(&list.items[i], &lut, clone_root);
+
+    /* Phase 7: parallel execution when ThrottleLimit > 1. */
+    if (params->ThrottleLimit <= 1) {
+        for (size_t i = 0; i < list.count; i++) {
+            rows[i] = check_urlhealth(&list.items[i], &lut, clone_root);
+        }
+    } else {
+        /* Per-task closure capturing (task, lut, clone_root) so the
+         * worker function only takes one `void *`. */
+        typedef struct {
+            pr_task_t                       *task;
+            const pr_source0_lookup_table_t *lut;
+            const char                      *clone_root;
+        } closure_t;
+        closure_t *closures = (closure_t *)calloc(list.count, sizeof *closures);
+        if (!closures) {
+            free(rows); free(clone_root);
+            pr_prn_close(p); pr_source0_lookup_free(&lut); pr_task_list_free(&list);
+            return 1;
+        }
+        pr_pool_t *pool = pr_pool_create(params->ThrottleLimit);
+        if (!pool) { free(closures); free(rows); free(clone_root);
+                     pr_prn_close(p); pr_source0_lookup_free(&lut);
+                     pr_task_list_free(&list); return 1; }
+        for (size_t i = 0; i < list.count; i++) {
+            closures[i] = (closure_t){ &list.items[i], &lut, clone_root };
+        }
+        /* Worker thunk — declared inline via a static helper. */
+        extern void *pr_check_urlhealth_worker(void *arg);  /* below */
+        for (size_t i = 0; i < list.count; i++) {
+            pr_pool_submit(pool, pr_check_urlhealth_worker, &closures[i]);
+        }
+        size_t n_out = 0;
+        void **results = pr_pool_run(pool, &n_out);
+        for (size_t i = 0; i < list.count && i < n_out; i++) {
+            rows[i] = (char *)results[i];
+        }
+        free(results);
+        free(closures);
     }
     free(clone_root);
     pr_prn_append_rows(p, rows, list.count);
@@ -445,4 +491,18 @@ static int generate_urlhealth_main(const pr_params_t *params, const char *branch
 
     fprintf(stderr, "Wrote %s\n", out_path);
     return 0;
+}
+
+/* Phase 7 worker thunk. Closure: { pr_task_t *, source0 lookup,
+ * clone_root }. Returns a malloc'd row string the parent collects. */
+typedef struct {
+    pr_task_t                       *task;
+    const pr_source0_lookup_table_t *lut;
+    const char                      *clone_root;
+} pr_check_urlhealth_closure_t;
+
+void *pr_check_urlhealth_worker(void *arg)
+{
+    pr_check_urlhealth_closure_t *c = (pr_check_urlhealth_closure_t *)arg;
+    return (void *)check_urlhealth(c->task, c->lut, c->clone_root);
 }

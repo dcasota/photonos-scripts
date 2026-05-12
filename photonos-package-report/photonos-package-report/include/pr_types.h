@@ -38,6 +38,9 @@ typedef struct {
     int GeneratePh5toPh6DiffHigherPackageVersionReport;                        /* L 105 */
     int GeneratePh4toPh5DiffHigherPackageVersionReport;                        /* L 106 */
     int GeneratePh3toPh4DiffHigherPackageVersionReport;                        /* L 107 */
+    /* Phase 7: parallel worker count. Mirrors PS L 5214
+     * `$throttleLimit = 20` hard cap. 1 = sequential. */
+    int ThrottleLimit;
 } pr_params_t;
 
 /* ===== Per-spec task — mirrors PS PSCustomObject built at L 345-372 ====

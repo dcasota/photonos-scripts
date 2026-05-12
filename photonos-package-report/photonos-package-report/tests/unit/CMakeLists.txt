@@ -201,3 +201,14 @@ target_link_libraries(test_phase6f PRIVATE pthread ${PCRE2_LIBRARIES} ${CURL_LIB
 target_compile_options(test_phase6f PRIVATE -Wall -Wextra -O0 -g -D_GNU_SOURCE ${PCRE2_CFLAGS_OTHER} ${CURL_CFLAGS_OTHER} ${OPENSSL_CFLAGS_OTHER})
 
 add_test(NAME test_phase6f COMMAND test_phase6f)
+
+# ----- Phase 7 unit tests (pthread worker pool) -----------------------
+add_executable(test_phase7
+    test_phase7.c
+    ${CMAKE_SOURCE_DIR}/src/pool.c
+)
+target_include_directories(test_phase7 PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(test_phase7 PRIVATE pthread)
+target_compile_options(test_phase7 PRIVATE -Wall -Wextra -O0 -g -D_GNU_SOURCE)
+
+add_test(NAME test_phase7 COMMAND test_phase7)
