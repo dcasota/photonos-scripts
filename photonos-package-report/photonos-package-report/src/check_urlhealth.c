@@ -21,6 +21,7 @@
 #include "pr_latest.h"
 #include "pr_state.h"
 #include "pr_substitute.h"
+#include "pr_url_util.h"
 #include "pr_urlhealth.h"
 #include "pr_version.h"
 
@@ -120,17 +121,52 @@ char *check_urlhealth(pr_task_t                       *task,
                                            &names, &n) == 0 && n > 0) {
                         char *latest = pr_get_latest_name(names, n);
                         if (latest && latest[0]) {
-                            free(state.UpdateDownloadName);
-                            state.UpdateDownloadName = latest;
-                            latest = NULL;  /* moved */
+                            /* Phase 6e: construct UpdateURL by re-running
+                             * the Source0 substitution with version=NameLatest
+                             * against the RAW Source0Lookup template (PS L
+                             * 4659-4710 normal-path logic, simplified). */
+                            const char *template = (row->Source0Lookup
+                                                    && row->Source0Lookup[0])
+                                                   ? row->Source0Lookup
+                                                   : (task->Source0 ? task->Source0 : "");
+                            char *update_url = dup_or_empty(template);
+                            if (update_url) {
+                                pr_source0_substitute(task, &update_url, latest);
+                                free(state.UpdateURL);
+                                state.UpdateURL = update_url;
+                            }
 
-                            /* UpdateAvailable: set to NameLatest iff
+                            /* HealthUpdateURL (col 7): urlhealth probe of
+                             * the rewritten UpdateURL. Same network gate. */
+                            if (state.UpdateURL && state.UpdateURL[0]) {
+                                int h = urlhealth(state.UpdateURL);
+                                char buf[16];
+                                snprintf(buf, sizeof buf, "%d", h);
+                                free(state.HealthUpdateURL);
+                                state.HealthUpdateURL = strdup(buf);
+                            }
+
+                            /* UpdateDownloadName (col 10): PS L 4716-4718
+                             * — basename of UpdateURL, with SourceForge
+                             * /download → penultimate segment. */
+                            char *dl_name = pr_basename_from_url(state.UpdateURL);
+                            if (dl_name) {
+                                free(state.UpdateDownloadName);
+                                state.UpdateDownloadName = dl_name;
+                            } else {
+                                /* Fallback: keep the raw NameLatest if
+                                 * we couldn't derive a basename. */
+                                free(state.UpdateDownloadName);
+                                state.UpdateDownloadName = dup_or_empty(latest);
+                            }
+
+                            /* UpdateAvailable (col 5): set to NameLatest iff
                              * pr_version_compare(NameLatest, task.version) == 1. */
-                            int rc = pr_version_compare(state.UpdateDownloadName,
+                            int rc = pr_version_compare(latest,
                                                         task->Version ? task->Version : "");
                             if (rc == 1) {
                                 free(state.UpdateAvailable);
-                                state.UpdateAvailable = dup_or_empty(state.UpdateDownloadName);
+                                state.UpdateAvailable = dup_or_empty(latest);
                             }
                         }
                         free(latest);
