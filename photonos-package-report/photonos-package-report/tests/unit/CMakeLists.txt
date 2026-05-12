@@ -41,12 +41,20 @@ target_compile_options(test_phase3 PRIVATE -Wall -Wextra -O0 -g -D_GNU_SOURCE)
 
 add_test(NAME test_phase3 COMMAND test_phase3)
 
-# The byte-identical-against-PS-source parity test was removed: the PS
-# embed contains stylistic quoting (`"trunk"` etc.) that has no effect
-# on `ConvertFrom-Csv` output and therefore none on the .prn outputs the
-# real parity gate cares about. test_phase3 instead validates SEMANTIC
-# parity (per-field) and an emit→re-parse roundtrip.
-#
-# tests/parity/source0-lookup-roundtrip.sh remains in the tree as a
-# diagnostic tool (callable manually) and as a placeholder for the
-# Phase 8 end-to-end .prn parity harness.
+# ----- Phase 3b unit tests (per-spec hook dispatch) ------------------
+# Mark the generated dispatch source as GENERATED so CMake doesn't try
+# to validate its existence at configure time (it lands at build time
+# via the pr-hook-dispatch custom target).
+set_source_files_properties(${PR_GEN_HOOK_DISPATCH} PROPERTIES GENERATED TRUE)
+
+add_executable(test_phase3b
+    test_phase3b.c
+    ${CMAKE_SOURCE_DIR}/src/hook_dispatch.c
+    ${PR_GEN_HOOK_DISPATCH}
+    ${PR_HOOK_SOURCES}
+)
+add_dependencies(test_phase3b pr-hook-dispatch)
+target_include_directories(test_phase3b PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_compile_options(test_phase3b PRIVATE -Wall -Wextra -O0 -g -D_GNU_SOURCE)
+
+add_test(NAME test_phase3b COMMAND test_phase3b)
