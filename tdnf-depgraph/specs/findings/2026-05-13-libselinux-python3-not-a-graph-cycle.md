@@ -1,6 +1,6 @@
 # Finding 2026-05-13: libselinux ↔ python3 is not a graph-level cycle
 
-**Status**: Open — affects PRD AC-1 and task 016
+**Status**: Addressed — PRD v1.1 and task 016 amended on 2026-05-13. New open question Q4 opened in the PRD for the separate spec-source-coupling initiative.
 **Discovered while implementing**: [task 012 (cycle engine)](../tasks/012-task-cycle-engine.md)
 **Affects**: [prd.md §6 AC-1](../prd.md), [tasks/016-task-regression-fixture.md](../tasks/016-task-regression-fixture.md)
 
@@ -53,15 +53,18 @@ The spec-level "loop" the Photon team identified — *"to build libselinux you n
 2. **Task 016 (regression fixture)** as written cannot be satisfied; the unit test it specifies would fail on the real 2026-05-11 data.
 3. **Task 012's "AC-1 hook" acceptance criterion** is similarly unmet. Every other criterion in task 012 (AC-2 determinism, AC-5 schema, empty/self-loop/mixed cases, sub-package resolution, iterative-Tarjan depth) passes.
 
-## Recommended follow-up
+## Resolution (2026-05-13)
 
-A new SDD phase ("Phase 2 — Dev Lead review continued, post-implementation finding") should:
+PR `sdd/depgraph-phase-1b-amend-ac1` amended the PRD to v1.1 and rewrote task 016:
 
-1. Amend the PRD: rewrite AC-1 to anchor on a cycle that **does** exist in the fixture. Candidates:
-   - **cyc-010** `python3-attrs ↔ python3-pytest` (buildrequires, length 2) — small, clear, illustrates the buildrequires class.
-   - **cyc-002** the 37-node toolchain SCC — illustrates the typical "expected to be bootstrap_resolved once preq is loaded" case.
-2. Amend task 016's acceptance test to check for the chosen cycle. Once the real `data/builder-pkg-preq.json` is loaded into the test, assert that the toolchain SCC becomes `bootstrap_resolved: true` and the python3-attrs/pytest cycle (if not pre-staged) becomes the actionable signal.
-3. Open a separate finding/initiative: **does the C extension need to propagate source-level BuildRequires to subpackages?** If the answer is yes, a future extension would surface the libselinux ↔ python3 coupling as a real graph cycle. If no, this finding documents the limitation explicitly.
+1. **PRD AC-1 rewritten** to anchor on `path_names == ["python3-attrs", "python3-pytest", "python3-attrs"]` (the lone buildrequires cycle, length 2, `bootstrap_resolved: false`) plus a structural assertion that the fixture produces exactly 12 SCCs, one of size 37 containing `python3`, `gcc`, `bash`, `cmake`, `openssl`.
+2. **PRD G1 success metric rewritten** to match.
+3. **PRD G3 success metric rewritten** to anchor on the 37-node toolchain SCC flipping to `bootstrap_resolved: true` once the branch's real `builder-pkg-preq.json` loads — replacing the (incorrect) claim about a libselinux ↔ python3 SCC.
+4. **PRD G4 v1-key list corrected** to `metadata.{generator, timestamp, branch}` (the keys the C extension actually emits) rather than the aspirational `branch`/`specsdir`/`generated_at` of v1.0.
+5. **Task 016 rewritten** with three concrete test cases: `python3-attrs ↔ python3-pytest` cycle presence, structural 12-SCCs / one-size-37 assertion, and the bootstrap-resolved flip on the toolchain SCC.
+6. **New PRD Open Question Q4**: should the C `tdnf-depgraph` extension propagate source-level `BuildRequires` to subpackages, so that spec-source-couplings (like the original libselinux ↔ python3 incident) surface as graph cycles? Recommendation: separate initiative, its own PRD.
+
+This finding remains in `specs/findings/` as the empirical record of why the v1.0 PRD's AC-1 could not be satisfied.
 
 ## Pointer
 
