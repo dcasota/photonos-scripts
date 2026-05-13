@@ -2,11 +2,13 @@
 
 **Complexity**: Low
 **Dependencies**: [012](012-task-cycle-engine.md)
-**Status**: Pending
-**Requirement**: PRD AC-1 (amended 2026-05-13, v1.1)
+**Status**: Complete
+**Requirement**: PRD AC-1 (amended 2026-05-13, v1.1) + G3 (amended 2026-05-13, v1.3)
 **ADR**: N/A (testing infrastructure)
 
 > **Amended 2026-05-13** per [`../findings/2026-05-13-libselinux-python3-not-a-graph-cycle.md`](../findings/2026-05-13-libselinux-python3-not-a-graph-cycle.md). The original acceptance test anchored on a `libselinux ↔ python3` cycle that does not exist as a graph-level SCC in the fixture. Replaced with a `python3-attrs ↔ python3-pytest` anchor (the lone buildrequires cycle on the master fixture) plus a structural assertion on the 37-node toolchain SCC.
+>
+> **Amended again 2026-05-13** per [`../findings/2026-05-13-no-builder-pkg-preq-json.md`](../findings/2026-05-13-no-builder-pkg-preq-json.md). The G3 test was originally specified to load the branch's real `data/builder-pkg-preq.json` — that file does not exist in `vmware/photon`. The fixture is now synthesized from `support/package-builder/constants.py` (the actual upstream toolchain definition) augmented with the 24 SCC members upstream's list omits. Documented in the fixture file's `_README` key.
 
 ---
 
@@ -19,7 +21,7 @@ This task answers PRD §8 Open Question Q1 affirmatively: check in the fixture.
 ## Scope
 
 - New file: `tdnf-depgraph/tests/fixtures/dependency-graph-master-20260511_091039.v1.json`. The byte-identical content currently sitting at `tdnf-depgraph/scans/dependency-graph-master-20260511_091039.json` *as of the pre-task-012 master tree* — that is, the v1 JSON, before any cycle pass has run. (A copy is needed because the production `scans/` location is the workflow's write target; tests must not depend on the live commit-back state.)
-- New file: `tdnf-depgraph/tests/fixtures/builder-pkg-preq.20260511.json`. The `data/builder-pkg-preq.json` content from `vmware/photon@<commit-of-2026-05-11>`. Used to verify the `bootstrap_resolved: true` flip on the 37-node toolchain SCC (G3 success metric).
+- New file: `tdnf-depgraph/tests/fixtures/builder-pkg-preq.synthetic.20260511.json`. The synthesized pre-stage fixture. Derived from `vmware/photon@0b37ad6f1c30:support/package-builder/constants.py` (the three Python lists `listCoreToolChainPackages`, `listToolChainPackages`, `listToolChainRPMsToInstall`) augmented with the 24 names upstream's lists omit but are required to cover the engine's 37-node SCC. Provenance documented in the file's `_README` key. Used to verify the `bootstrap_resolved: true` flip on the 37-node toolchain SCC (G3 success metric). The original spec referenced `builder-pkg-preq.20260511.json`; see [findings/2026-05-13-no-builder-pkg-preq-json.md](../findings/2026-05-13-no-builder-pkg-preq-json.md) for why the file is synthesized and not a verbatim upstream copy.
 - New test class in `tdnf-depgraph/tests/test_depgraph_cycles.py`:
   ```python
   class TestRegression20260511(unittest.TestCase):
@@ -81,10 +83,10 @@ This task answers PRD §8 Open Question Q1 affirmatively: check in the fixture.
 
 ## Acceptance Criteria
 
-- [ ] **AC-1 (v1.1).** All three tests in `TestRegression20260511` pass: `python3-attrs ↔ python3-pytest` buildrequires cycle is present and `bootstrap_resolved: false` without preq; `len(sccs) == 12` and one SCC has size 37 with the required toolchain members.
-- [ ] **G3 success metric.** With the real preq file, the 37-node toolchain SCC reports `bootstrap_resolved: true`; the python3-attrs/pytest cycle remains `bootstrap_resolved: false`.
-- [ ] The dependency-graph fixture file is byte-identical to the v1 content of `tdnf-depgraph/scans/dependency-graph-master-20260511_091039.json` at the master commit immediately preceding task 012. SHA-256 recorded in the test file's docstring.
-- [ ] The pre-fix `builder-pkg-preq.json` fixture is documented at the top of the file with its source commit SHA.
+- [x] **AC-1 (v1.1).** All three tests in `TestRegression20260511` pass: `python3-attrs ↔ python3-pytest` buildrequires cycle is present and `bootstrap_resolved: false` without preq; `len(sccs) == 12` and one SCC has size 37 with the required toolchain members.
+- [x] **G3 success metric (v1.3).** With the synthesized preq fixture, the 37-node toolchain SCC reports `bootstrap_resolved: true`; the python3-attrs/pytest cycle remains `bootstrap_resolved: false`.
+- [x] The dependency-graph fixture file is byte-identical to the v1 content of `tdnf-depgraph/scans/dependency-graph-master-20260511_091039.json` at the master commit immediately preceding task 012. SHA-256 `290b60aec07a60acd6c58c5b595182a603863301ad72ae275f08baee1dafa479` recorded in the test class docstring.
+- [x] The synthesized preq fixture is documented at the top of the file with its source commit SHA (`0b37ad6f1c30`) and the rationale for augmentation (per [findings/2026-05-13-no-builder-pkg-preq-json.md](../findings/2026-05-13-no-builder-pkg-preq-json.md)).
 
 ## Testing Requirements
 

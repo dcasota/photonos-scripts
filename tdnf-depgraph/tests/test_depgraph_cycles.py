@@ -295,5 +295,76 @@ class TestConflictsExcluded(unittest.TestCase):
         self.assertEqual(out["cycles"], [])
 
 
+class TestRegression20260511(unittest.TestCase):
+    """PRD AC-1 v1.1 regression coverage on the 2026-05-11 master fixture.
+
+    The fixture (`tests/fixtures/dependency-graph-master-20260511_091039.v1.json`)
+    is byte-identical to the v1 JSON emitted by workflow run 25661049895 and
+    committed at `tdnf-depgraph/scans/dependency-graph-master-20260511_091039.json`
+    on the master commit immediately preceding task 012. SHA-256:
+        290b60aec07a60acd6c58c5b595182a603863301ad72ae275f08baee1dafa479
+
+    The preq fixture is synthesized; upstream's `data/builder-pkg-preq.json`
+    does not exist (see `specs/findings/2026-05-13-no-builder-pkg-preq-json.md`).
+    """
+
+    FIXTURE = (
+        HERE / "fixtures" / "dependency-graph-master-20260511_091039.v1.json"
+    )
+    PREQ = HERE / "fixtures" / "builder-pkg-preq.synthetic.20260511.json"
+
+    def _run(self, preq=None):
+        return dc.run(
+            str(self.FIXTURE),
+            preq_path=(str(preq) if preq else None),
+            flavor="",
+            specsdir_meta="SPECS",
+        )
+
+    def test_python3_attrs_pytest_buildrequires_cycle(self):
+        """AC-1 anchor: the lone buildrequires cycle on the master fixture."""
+        out = self._run(preq=None)
+        cycles = out["cycles"]
+        self.assertTrue(
+            any(
+                c["category"] == "buildrequires"
+                and c["length"] == 2
+                and not c["bootstrap_resolved"]
+                and c["path_names"]
+                == ["python3-attrs", "python3-pytest", "python3-attrs"]
+                for c in cycles
+            ),
+            "expected python3-attrs <-> python3-pytest buildrequires cycle; "
+            f"got cycles: {[c['path_names'] for c in cycles]}",
+        )
+
+    def test_twelve_sccs_one_of_size_37(self):
+        """AC-1 structural anchor: 12 SCCs; one toolchain SCC of size 37."""
+        out = self._run(preq=None)
+        self.assertEqual(len(out["sccs"]), 12)
+        big = [s for s in out["sccs"] if s["size"] == 37]
+        self.assertEqual(len(big), 1)
+        names = set(big[0]["names"])
+        for required in {"python3", "gcc", "bash", "cmake", "openssl"}:
+            self.assertIn(required, names)
+
+    def test_toolchain_scc_bootstrap_resolved_with_preq(self):
+        """G3 success metric (v1.2): with the synthesized preq fixture
+        covering all 37 toolchain SCC members, the SCC reports
+        `bootstrap_resolved: true`; the python3-attrs/pytest cycle remains
+        `bootstrap_resolved: false` (those packages are not in the preq).
+        """
+        out = self._run(preq=self.PREQ)
+        toolchain = next(s for s in out["sccs"] if s["size"] == 37)
+        self.assertTrue(toolchain["bootstrap_resolved"])
+        attrs_pytest = next(
+            c
+            for c in out["cycles"]
+            if c["path_names"]
+            == ["python3-attrs", "python3-pytest", "python3-attrs"]
+        )
+        self.assertFalse(attrs_pytest["bootstrap_resolved"])
+
+
 if __name__ == "__main__":
     unittest.main()

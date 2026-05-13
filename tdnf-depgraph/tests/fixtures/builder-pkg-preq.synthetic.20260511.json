@@ -1,0 +1,91 @@
+{
+  "_README": [
+    "Synthesized pre-stage package list used by TestRegression20260511 to",
+    "exercise the engine's bootstrap_resolved classification (PRD G3, AC-1).",
+    "",
+    "PROVENANCE: The PRD v1.0 referenced 'data/builder-pkg-preq.json' as the",
+    "canonical pre-stage list, but no such file exists in vmware/photon. The",
+    "upstream pre-stage definition lives in support/package-builder/constants.py",
+    "as three Python lists: listCoreToolChainPackages, listToolChainPackages,",
+    "listToolChainRPMsToInstall. See:",
+    "  https://github.com/vmware/photon/blob/0b37ad6f1c30/support/package-builder/constants.py",
+    "",
+    "This fixture is the union of those three lists at commit 0b37ad6f1c30",
+    "(vmware/photon master tip as of 2026-05-11), augmented with the seven",
+    "packages whose presence in the 37-node toolchain SCC is documented in",
+    "findings/2026-05-13-no-builder-pkg-preq-json.md. The augmentation is",
+    "required because upstream's listToolChainRPMsToInstall does not enumerate",
+    "every SCC member -- a discrepancy tracked by PRD Q5 (whether the engine's",
+    "SCC-membership classification should be relaxed, or upstream should expand",
+    "the canonical pre-stage list).",
+    "",
+    "The engine walks any JSON structure and collects every string leaf into",
+    "the pre-stage set, so the partitioning here is documentary only -- only",
+    "the string values matter for classification.",
+    "",
+    "Frozen-in-time: this fixture pins the 2026-05-11 master state. Do not",
+    "update it on later refresh; create a new dated fixture if a future scan",
+    "needs separate regression coverage."
+  ],
+  "_source_commit": "0b37ad6f1c30 (vmware/photon master, 2025-05-09 -- the master tip current on 2026-05-11)",
+  "_fixture_version": "20260511.v1",
+
+  "listCoreToolChainPackages": [
+    "filesystem", "linux-api-headers", "glibc", "glibc-libs", "libxcrypt",
+    "zlib", "file", "binutils", "gmp", "mpfr", "mpc", "mpc-devel", "gcc",
+    "pkg-config", "ncurses", "readline", "bash"
+  ],
+
+  "listToolChainPackages": [
+    "filesystem", "linux-api-headers", "glibc", "zlib", "file", "binutils",
+    "gmp", "libselinux", "mpfr", "mpc", "gcc", "pkg-config", "ncurses",
+    "bash", "bzip2", "sed", "procps-ng", "coreutils", "m4", "grep", "readline",
+    "diffutils", "gawk", "findutils", "gettext", "gzip", "make", "patch",
+    "util-linux", "attr", "libacl", "tar", "xz", "libtool", "flex", "bison",
+    "popt", "nspr", "sqlite", "nss", "elfutils", "expat", "libffi",
+    "libpipeline", "gdbm", "perl", "texinfo", "autoconf", "automake",
+    "openssl", "zstd", "rpm", "dwz", "debugedit", "pandoc-bin", "help2man",
+    "pcre", "pcre2"
+  ],
+
+  "listToolChainRPMsToInstall": [
+    "filesystem", "linux-api-headers", "glibc", "glibc-libs", "glibc-devel",
+    "glibc-iconv", "glibc-tools", "libxcrypt", "libxcrypt-devel", "zlib",
+    "zlib-devel", "file-libs", "file", "binutils", "binutils-libs",
+    "binutils-devel", "gmp", "gmp-devel", "libselinux", "mpfr", "mpfr-devel",
+    "mpc", "mpc-devel", "libgcc", "libgcc-devel", "libgcc-atomic",
+    "libstdc++", "libstdc++-devel", "libgomp", "libgomp-devel", "gcc",
+    "pkg-config", "ncurses", "ncurses-libs", "ncurses-devel",
+    "ncurses-terminfo", "bash", "bzip2", "bzip2-libs", "bzip2-devel", "sed",
+    "procps-ng", "coreutils", "m4", "grep", "readline", "diffutils", "gawk",
+    "findutils", "gettext", "gettext-libs", "gettext-devel", "gzip", "make",
+    "patch", "util-linux", "util-linux-libs", "util-linux-devel", "attr",
+    "libacl", "tar", "xz", "xz-libs", "libtool", "flex", "flex-devel",
+    "readline-devel", "popt", "popt-devel", "nspr", "nspr-devel", "sqlite",
+    "sqlite-libs", "nss", "nss-libs", "nss-devel", "elfutils-libelf",
+    "elfutils", "elfutils-libelf-devel", "elfutils-devel", "expat",
+    "expat-libs", "libffi", "libpipeline", "gdbm", "perl", "texinfo",
+    "autoconf", "automake", "openssl", "openssl-libs", "openssl-devel",
+    "libcap", "zstd", "zstd-libs", "zstd-devel", "lua", "lua-libs",
+    "lua-devel", "rpm", "rpm-build", "rpm-devel", "rpm-libs",
+    "rpm-build-libs", "rpm-sign-libs", "cpio", "debugedit", "pcre-libs",
+    "pcre2", "pcre2-libs", "pcre2-devel"
+  ],
+
+  "_augmentation_for_37_node_scc": [
+    "autogen",
+    "ca-certificates",
+    "cmake",
+    "curl", "curl-devel", "curl-libs",
+    "dejagnu",
+    "e2fsprogs", "e2fsprogs-devel",
+    "expect", "expect-devel",
+    "guile", "guile-devel",
+    "krb5", "krb5-devel",
+    "libarchive", "libarchive-devel",
+    "libffi-devel",
+    "libssh2", "libssh2-devel",
+    "python3", "python3-libs",
+    "tcl", "tcl-devel"
+  ]
+}

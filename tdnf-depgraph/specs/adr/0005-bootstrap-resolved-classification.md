@@ -1,7 +1,9 @@
 # ADR-0005: Bootstrap-Resolved Cycle Classification
 
 **Date**: 2026-05-13
-**Status**: Accepted
+**Status**: Accepted (amended 2026-05-13 per [findings/2026-05-13-no-builder-pkg-preq-json.md](../findings/2026-05-13-no-builder-pkg-preq-json.md))
+
+> **Note (amended 2026-05-13).** This ADR was drafted on the (incorrect) assumption that `data/builder-pkg-preq.json` exists in `vmware/photon`. Empirical verification on 2026-05-13 confirmed it does not — see [findings/2026-05-13-no-builder-pkg-preq-json.md](../findings/2026-05-13-no-builder-pkg-preq-json.md). The canonical pre-stage definition lives in `support/package-builder/constants.py` (three Python lists), and is partial w.r.t. the engine's 37-node toolchain SCC. The engine's `load_preq()` walks any JSON file with string leaves regardless of provenance, so the ADR's *mechanism* is correct; only the *source-of-truth* references in §Context, §Decision Drivers and §Decision below are aspirational until either upstream produces a comprehensive JSON pre-stage list, or operators / tests supply a synthesized one (which task 016 does, for testing only). The strict-membership rule (Option 3 below) remains in force — see PRD Q5 for the open question on whether to relax it.
 
 ## Context
 
