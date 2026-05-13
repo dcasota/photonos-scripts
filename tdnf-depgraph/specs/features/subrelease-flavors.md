@@ -34,12 +34,21 @@ See PRD acceptance criteria AC-3 and AC-4. In brief:
 After the branch's sparse checkout completes (the existing `git sparse-checkout set SPECS` step), enumerate flavors as follows:
 
 ```bash
-FLAVORS=("")     # element 1: empty token = base scan
-mapfile -t -O 1 FLAVORS < <(
-  find "${CLONE_DIR}/SPECS" -maxdepth 1 -mindepth 1 -type d \
-       -regex '.*/SPECS/[0-9]+' -printf '%f\n' | sort
+FLAVORS=("")     # element 0: empty token = base scan
+mapfile -t _NUMERIC < <(
+  shopt -s nullglob
+  for _entry in "${CLONE_DIR}/SPECS"/*/; do
+    _name="${_entry%/}"; _name="${_name##*/}"
+    [[ "$_name" =~ ^[0-9]+$ ]] && printf '%s\n' "$_name"
+  done | sort
 )
+FLAVORS+=("${_NUMERIC[@]}")
+unset _NUMERIC
 ```
+
+Pure bash + `shopt -s nullglob`: the `find -regex`/`-printf` form is a GNU
+extension and not portable to the toybox/bfs `find` shipped on the self-hosted
+runner (see [finding 2026-05-13b](../findings/2026-05-13-find-regex-portability.md)).
 
 Result examples:
 
