@@ -282,7 +282,11 @@ jobs:
               CYCLES_OK=1
               PREQ_ARGS=()
               [ -f "$PREQ_PATH" ] && PREQ_ARGS=(--preq "$PREQ_PATH")
-              if ! python3 "${GITHUB_WORKSPACE}/tdnf-depgraph/tools/depgraph_cycles.py" \
+              # The workflow's sparse checkout puts tdnf-depgraph at ci/ (see
+              # the "Checkout CI tooling (sparse)" step). $GITHUB_WORKSPACE's
+              # root has no tdnf-depgraph/ directly -- run 25797494578
+              # failed with "No such file or directory" by using that path.
+              if ! python3 ci/tdnf-depgraph/tools/depgraph_cycles.py \
                    --input "$OUTPATH" "${PREQ_ARGS[@]}" \
                    --flavor "$FLAVOR" --specsdir-meta "$SPECSDIR_META" \
                    2>"$CYCLES_LOG"; then
