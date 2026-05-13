@@ -2,9 +2,9 @@
 
 ## tdnf-depgraph — Cycle Detection & Sub-Release Flavors
 
-**Version**: 1.2
+**Version**: 1.3
 **Last Updated**: 2026-05-13
-**Status**: Accepted — Active (amended 2026-05-13 per [findings/2026-05-13-libselinux-python3-not-a-graph-cycle.md](findings/2026-05-13-libselinux-python3-not-a-graph-cycle.md) and [findings/2026-05-13-upstream-no-spec92.md](findings/2026-05-13-upstream-no-spec92.md))
+**Status**: Accepted — Active (amended 2026-05-13 per [findings/2026-05-13-libselinux-python3-not-a-graph-cycle.md](findings/2026-05-13-libselinux-python3-not-a-graph-cycle.md), [findings/2026-05-13-upstream-no-spec92.md](findings/2026-05-13-upstream-no-spec92.md), and [findings/2026-05-13-no-builder-pkg-preq-json.md](findings/2026-05-13-no-builder-pkg-preq-json.md))
 
 ---
 
@@ -79,9 +79,11 @@ The workflow discovers `SPECS/[0-9]+/` overlay directories after sparse-checkout
 
 ### G3 — Distinguish actionable from bootstrap-resolved cycles
 
-Every cycle carries a `bootstrap_resolved` boolean derived from the branch's `data/builder-pkg-preq.json`. Cycles where every member is pre-staged are reported but never trip `fail_on_buildrequires_cycle`. The toolchain SCC (37 members: gcc, openssl, python3, bash, cmake, …) is the canonical example: every member is part of the bootstrap pre-stage list, so the SCC reports `bootstrap_resolved: true` and falls below the action threshold.
+Every cycle carries a `bootstrap_resolved` boolean derived from a pre-stage package list supplied via the engine's `--preq` argument. Cycles where every member is pre-staged are reported but never trip `fail_on_buildrequires_cycle`. The toolchain SCC (37 members: gcc, openssl, python3, bash, cmake, …) is the canonical example: every member is part of the bootstrap pre-stage list, so the SCC reports `bootstrap_resolved: true` and falls below the action threshold.
 
-**Success metric:** On the 2026-05-11 master scan with the branch's real `data/builder-pkg-preq.json` loaded, the 37-node toolchain SCC reports `bootstrap_resolved: true` and is excluded from the `unresolved` summary counter. The `python3-attrs ↔ python3-pytest` cycle remains `bootstrap_resolved: false` (those packages are not in the bootstrap pre-stage list).
+> **Note (amended 2026-05-13, v1.3).** The v1.0/v1.1/v1.2 drafts asserted that the pre-stage list comes from `data/builder-pkg-preq.json` in the cloned `vmware/photon` branch. That file does not exist upstream — see [findings/2026-05-13-no-builder-pkg-preq-json.md](findings/2026-05-13-no-builder-pkg-preq-json.md). The canonical pre-stage list lives in `support/package-builder/constants.py` (three Python lists), and even the most-expansive of those lists omits 24 of the 37 members of the engine's toolchain SCC. The engine's `load_preq()` walks any JSON file with string leaves, so the workflow stays as designed (preq missing → `::warning::` + every cycle classified `bootstrap_resolved: false` per ADR-0005), while regression tests feed a synthesized fixture that mirrors upstream's lists augmented to cover the SCC. See Q5 below for the open question on whether the engine's all-members-must-match rule should be relaxed.
+
+**Success metric (amended 2026-05-13, v1.3):** On the 2026-05-11 master fixture, when fed the synthesized pre-stage list at `tdnf-depgraph/tests/fixtures/builder-pkg-preq.synthetic.20260511.json` (derived from upstream `support/package-builder/constants.py` at commit `0b37ad6f1c30`, augmented to cover the engine's 37-node toolchain SCC; see [findings/2026-05-13-no-builder-pkg-preq-json.md](findings/2026-05-13-no-builder-pkg-preq-json.md)), the 37-node toolchain SCC reports `bootstrap_resolved: true` and is excluded from the `unresolved` summary counter. The `python3-attrs ↔ python3-pytest` cycle remains `bootstrap_resolved: false` (those packages are not in the pre-stage list).
 
 ### G4 — Backwards-compatible artifact schema
 
@@ -153,6 +155,7 @@ Decisions agreed before ADR drafting; ADRs in Phase 3 document the rationale:
 - **Q2.** When a non-trivial SCC has only `requires` edges (runtime cycle, no build-time edges), should we still emit a `cycles[]` entry with `category: "requires"`? Recommendation: yes — informational, no failure impact. *(Resolved 2026-05-13: yes — engine in task 012 emits them; see cyc-001/004/005/006-009/011/012 on the master fixture.)*
 - **Q3.** Should `metadata.flavor` be `""` or `null` for the base scan (no overlay)? Recommendation: `""` for consistent string typing. *(Resolved 2026-05-13: `""` — implemented in task 012's engine.)*
 - **Q4 (new, opened 2026-05-13 by finding).** Should the C `tdnf-depgraph` extension propagate source-level `BuildRequires` from a `.spec` to its subpackages, so that spec-source-couplings (like the libselinux ↔ python3 incident) surface as graph cycles? Recommendation: separate initiative — its own PRD. Not in scope for the current cycle-detection work.
+- **Q5 (new, opened 2026-05-13 by finding).** Upstream's pre-stage list (`support/package-builder/constants.py`, `listToolChainRPMsToInstall`) omits 24 of the 37 members of the toolchain SCC the engine discovers (`autogen`, `cmake`, `curl*`, `dejagnu`, `e2fsprogs*`, `expect*`, `guile*`, `krb5*`, `libarchive*`, `libffi-devel`, `libssh2*`, `python3*`, `tcl*`). With the engine's strict "every SCC member must be in pre-stage set" rule (ADR-0005), the SCC stays `bootstrap_resolved: false` against upstream's real list. Should the rule be relaxed (e.g. `≥80%` of members)? Recommendation: keep strict rule; use synthesized fixtures for testing; revisit only if upstream cooperation produces a comprehensive list or if false-positive rate from the strict rule becomes a problem in practice. Not in scope for the current cycle-detection work.
 
 ---
 
@@ -169,6 +172,7 @@ Decisions agreed before ADR drafting; ADRs in Phase 3 document the rationale:
 
 ## Changelog
 
+- **1.3 (2026-05-13)** — G3 success metric re-anchored on a synthesized pre-stage fixture (`tdnf-depgraph/tests/fixtures/builder-pkg-preq.synthetic.20260511.json`) after empirical verification that upstream `vmware/photon` has no `data/builder-pkg-preq.json`. The canonical pre-stage list lives in `support/package-builder/constants.py` and is partial w.r.t. the engine's 37-node toolchain SCC (24 names missing). G3 narrative explains the gap; new Q5 opened on whether to relax the engine's strict-membership rule. ADR-0005 and task 016 brought into line. See [`findings/2026-05-13-no-builder-pkg-preq-json.md`](findings/2026-05-13-no-builder-pkg-preq-json.md).
 - **1.2 (2026-05-13)** — AC-3 and the G2 success metric re-anchored on dynamic `N+1` (where `N` is the count of `SPECS/[0-9]+/` subdirs on the cloned upstream HEAD) instead of a hardcoded `{90,91,92}`. The verification run `25795445195` proved the workflow's dynamic discovery is correct, while empirically demonstrating that `vmware/photon@5.0` carries only `SPECS/90` and `SPECS/91` today (no `SPECS/92`). The §1 Purpose statement was updated likewise. ADR-0002 and FRD-subrelease-flavors brought into line. See [`findings/2026-05-13-upstream-no-spec92.md`](findings/2026-05-13-upstream-no-spec92.md).
 - **1.1 (2026-05-13)** — AC-1 and G1/G3 success metrics re-anchored on cycles that exist in the binary-package edge graph (`python3-attrs ↔ python3-pytest` for the actionable buildrequires class; 37-node toolchain SCC for the `bootstrap_resolved` transition). Q1–Q3 resolved. New Q4 opened: should the C extension propagate source-level `BuildRequires` to subpackages? G4 v1-key list corrected (`generator`/`timestamp`/`branch`, not `branch`/`specsdir`/`generated_at` — the engine preserves whatever v1 keys are present regardless). See [`findings/2026-05-13-libselinux-python3-not-a-graph-cycle.md`](findings/2026-05-13-libselinux-python3-not-a-graph-cycle.md).
 - **1.0 (2026-05-13)** — Initial draft.

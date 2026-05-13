@@ -1,0 +1,35 @@
+name: tdnf-depgraph tests
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'tdnf-depgraph/tools/**'
+      - 'tdnf-depgraph/tests/**'
+      - '.github/workflows/tdnf-depgraph-tests.yml'
+  pull_request:
+    paths:
+      - 'tdnf-depgraph/tools/**'
+      - 'tdnf-depgraph/tests/**'
+      - '.github/workflows/tdnf-depgraph-tests.yml'
+  workflow_dispatch:
+
+jobs:
+  unittest:
+    # Per task 016 testing requirements: pytest-equivalent runs on every
+    # PR touching the cycle engine or its tests, gating before merge.
+    # GitHub-hosted ubuntu-latest is sufficient — the engine is Python-3
+    # stdlib only and the regression fixture lives in-tree.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Run depgraph_cycles test suite
+        run: python3 -m unittest discover -s tdnf-depgraph/tests -v
