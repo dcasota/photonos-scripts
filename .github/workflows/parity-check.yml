@@ -29,9 +29,13 @@ jobs:
         id: gate
         run: |
           set -e
-          JNL="photonos-package-report/tools/parity-journal.tsv"
-          GATE="photonos-package-report/tools/parity-gate.sh"
-          chmod +x "$GATE" || true
+          JNL="photonos-package-report/photonos-package-report/tools/parity-journal.tsv"
+          GATE="photonos-package-report/photonos-package-report/tools/parity-gate.sh"
+          if [ ! -f "$GATE" ]; then
+            echo "::error::parity-gate script missing: $GATE"
+            exit 1
+          fi
+          chmod +x "$GATE"
 
           # Tolerate exit codes for the verdict capture; we want the
           # state/window strings even on a fail verdict.
@@ -43,6 +47,14 @@ jobs:
           window=$(echo "$result"  | awk '{print $3}')
           latest=$(echo "$result"  | awk '{print $4}')
           rows=$(echo "$result"    | awk '{print $5}')
+
+          # Guard against silent-empty captures (e.g. script absent, bad
+          # shell, broken upstream). Without this, an empty $state would
+          # flow through and post a bogus "error" commit status on every PR.
+          if [ -z "$state" ]; then
+            echo "::error::parity-gate produced empty stdout (rc=$rc) — refusing to post bogus status"
+            exit 1
+          fi
 
           {
             echo "state=$state"

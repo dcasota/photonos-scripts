@@ -62,7 +62,7 @@ jobs:
 
       - name: Build C binary
         run: |
-          cd repo/photonos-package-report
+          cd repo/photonos-package-report/photonos-package-report
           cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
           cmake --build build --parallel
           ls -lh build/photonos-package-report
@@ -141,7 +141,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cd repo/photonos-package-report
+          cd repo/photonos-package-report/photonos-package-report
           WDIR="${{ steps.reconstruct.outputs.wdir }}"
           UPSTREAMS="${{ steps.reconstruct.outputs.upstreams }}"
           SCANS="$WDIR/scans"
@@ -173,9 +173,9 @@ jobs:
           SNAP="${{ steps.extract.outputs.dir }}"
           PS_DIR="$SNAP/prn-snapshot"
           C_DIR="${{ steps.c_run.outputs.scans }}"
-          DIFF="repo/photonos-package-report/tools/parity-diff.sh"
-          JNL="repo/photonos-package-report/tools/parity-journal.tsv"
-          APPEND="repo/photonos-package-report/tools/parity-journal-append.sh"
+          DIFF="repo/photonos-package-report/photonos-package-report/tools/parity-diff.sh"
+          JNL="repo/photonos-package-report/photonos-package-report/tools/parity-journal.tsv"
+          APPEND="repo/photonos-package-report/photonos-package-report/tools/parity-journal-append.sh"
           PS_RID="${{ steps.ps_run.outputs.id }}"
           C_RID="${{ github.run_id }}"
 
@@ -233,7 +233,7 @@ jobs:
           cd repo
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add photonos-package-report/tools/parity-journal.tsv
+          git add photonos-package-report/photonos-package-report/tools/parity-journal.tsv
           if git diff --cached --quiet; then
             echo "No journal changes to commit"
           else
