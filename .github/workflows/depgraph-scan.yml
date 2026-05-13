@@ -61,7 +61,7 @@ jobs:
 
           rc=0
           for pkg in cmake gcc libsolv-devel rpm-devel curl-devel openssl-devel \
-                     sqlite-devel tdnf-devel libxml2-devel gpgme-devel; do
+                     sqlite-devel tdnf-devel libxml2-devel gpgme-devel jq; do
             install_with_fallback "$pkg" || rc=$?
           done
           exit $rc
@@ -157,8 +157,14 @@ jobs:
 
           echo "## Dependency Graph Scan" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Branch | Flavor | Specs | Nodes | Edges | Requires | BuildRequires | Conflicts | File |" >> "$GITHUB_STEP_SUMMARY"
-          echo "|--------|--------|-------|-------|-------|----------|---------------|-----------|------|" >> "$GITHUB_STEP_SUMMARY"
+          # Per FRD-cycle-detection §2.6 (task 014). Edge-type counts
+          # (Requires/BuildRequires/Conflicts) are now derivable from the
+          # v2 artifact JSON; the summary surfaces actionable cycle counts
+          # instead so reviewers see status without opening artifacts.
+          echo "| Branch | Flavor | Specs | Nodes | Edges | Cycles | BR-Cycles | Self-loops | Unresolved | Bootstrap-Resolved | File |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|--------|--------|-------|-------|-------|--------|-----------|------------|------------|--------------------|------|" >> "$GITHUB_STEP_SUMMARY"
+          # Cycle-block accumulator (rendered after the table at end of step).
+          : > /tmp/cycle-blocks.md
 
           for BRANCH in $(echo "$BRANCHES" | tr ',' ' '); do
             SAFE_BRANCH=$(echo "$BRANCH" | tr '/' '-')
@@ -175,7 +181,7 @@ jobs:
 
             if [ ! -d "${CLONE_DIR}/SPECS" ]; then
               echo "  No SPECS/ dir on this branch"
-              echo "| ${BRANCH} | - | 0 | - | - | - | - | - | skipped |" >> "$GITHUB_STEP_SUMMARY"
+              echo "| ${BRANCH} | - | 0 | - | - | - | - | - | - | - | skipped |" >> "$GITHUB_STEP_SUMMARY"
               continue
             fi
 
@@ -228,7 +234,7 @@ jobs:
               echo "  - Flavor ${FLAVOR_LABEL}: ${SPEC_COUNT} specs -> ${FILENAME}"
 
               if [ "$SPEC_COUNT" -eq 0 ]; then
-                echo "| ${BRANCH} | ${FLAVOR_LABEL} | 0 | - | - | - | - | - | skipped |" >> "$GITHUB_STEP_SUMMARY"
+                echo "| ${BRANCH} | ${FLAVOR_LABEL} | 0 | - | - | - | - | - | - | - | skipped |" >> "$GITHUB_STEP_SUMMARY"
                 continue
               fi
 
@@ -245,28 +251,90 @@ jobs:
                 tail -20 "$ERR_LOG"
               }
 
-              # Validate and extract stats
+              # Validate and extract base node/edge counts from the v1 JSON.
               STATS=$(python3 -c "
           import json
-          from collections import Counter
           with open('${OUTPATH}') as f:
               d = json.load(f)
-          c = Counter(e['type'] for e in d['edges'])
-          req = c.get('requires', 0)
-          breq = c.get('buildrequires', 0)
-          conf = c.get('conflicts', 0)
-          print(f\"{d['node_count']} {d['edge_count']} {req} {breq} {conf}\")
+          print(f\"{d['node_count']} {d['edge_count']}\")
           " 2>/dev/null)
 
-              if [ -n "$STATS" ]; then
-                read NODES EDGES REQ BREQ CONF <<< "$STATS"
-                echo "    -> ${NODES} nodes, ${EDGES} edges"
-                echo "| ${BRANCH} | ${FLAVOR_LABEL} | ${SPEC_COUNT} | ${NODES} | ${EDGES} | ${REQ} | ${BREQ} | ${CONF} | \`${FILENAME}\` |" >> "$GITHUB_STEP_SUMMARY"
-              else
+              if [ -z "$STATS" ]; then
                 echo "    -> FAILED to parse output"
-                echo "| ${BRANCH} | ${FLAVOR_LABEL} | ${SPEC_COUNT} | - | - | - | - | - | failed |" >> "$GITHUB_STEP_SUMMARY"
+                echo "| ${BRANCH} | ${FLAVOR_LABEL} | ${SPEC_COUNT} | - | - | - | - | - | - | - | failed |" >> "$GITHUB_STEP_SUMMARY"
                 rm -f "$OUTPATH"
+                continue
               fi
+              read NODES EDGES <<< "$STATS"
+              echo "    -> ${NODES} nodes, ${EDGES} edges"
+
+              # --- Cycle pass (task 014) -------------------------------------
+              # Run depgraph_cycles.py in-place: rewrites the JSON to schema v2
+              # with sccs[], cycles[], cycle_summary{}. The engine is preq-aware:
+              # missing data/builder-pkg-preq.json is logged WARN and treated as
+              # empty (every cycle conservatively classified bootstrap_resolved
+              # = false per ADR-0005). Engine never propagates a non-zero exit
+              # for the empty-graph or missing-preq cases; only argparse or I/O
+              # errors fail. Per task 014 IN: surface those as ::error::
+              # annotations but do NOT fail the job (task 015 owns the gate).
+              PREQ_PATH="${CLONE_DIR}/data/builder-pkg-preq.json"
+              CYCLES_LOG="/tmp/depgraph-cycles-${FILE_TOKEN}.err"
+              CYCLES_OK=1
+              PREQ_ARGS=()
+              [ -f "$PREQ_PATH" ] && PREQ_ARGS=(--preq "$PREQ_PATH")
+              if ! python3 "${GITHUB_WORKSPACE}/tdnf-depgraph/tools/depgraph_cycles.py" \
+                   --input "$OUTPATH" "${PREQ_ARGS[@]}" \
+                   --flavor "$FLAVOR" --specsdir-meta "$SPECSDIR_META" \
+                   2>"$CYCLES_LOG"; then
+                echo "::error::cycle engine failed for ${BRANCH}/${FLAVOR_LABEL}"
+                tail -20 "$CYCLES_LOG" || true
+                CYCLES_OK=0
+              fi
+              # Engine WARNs to stderr if the preq file is missing; promote to
+              # a one-shot workflow annotation per AC of task 014.
+              if grep -q '^WARN: preq file' "$CYCLES_LOG" 2>/dev/null; then
+                echo "::warning::data/builder-pkg-preq.json missing for ${BRANCH}/${FLAVOR_LABEL}; cycles classified conservatively (bootstrap_resolved=false)"
+              fi
+
+              # Parse the engine's one-line stderr summary into table values.
+              CYC="-"; BRC="-"; SLF="-"; UNR="-"; BST="-"
+              SUMMARY_LINE=$(grep '^cyc-engine:' "$CYCLES_LOG" 2>/dev/null | tail -1 || true)
+              if [ -n "$SUMMARY_LINE" ]; then
+                CYC=$(sed -n 's/.* cycles=\([0-9]*\).*/\1/p' <<<"$SUMMARY_LINE")
+                BRC=$(sed -n 's/.* br=\([0-9]*\).*/\1/p'     <<<"$SUMMARY_LINE")
+                SLF=$(sed -n 's/.* self=\([0-9]*\).*/\1/p'   <<<"$SUMMARY_LINE")
+                UNR=$(sed -n 's/.* unresolved=\([0-9]*\).*/\1/p' <<<"$SUMMARY_LINE")
+                BST=$(sed -n 's/.* bootstrap=\([0-9]*\).*/\1/p'  <<<"$SUMMARY_LINE")
+              fi
+              if [ "$CYCLES_OK" = "0" ]; then
+                CYC="?"; BRC="?"; SLF="?"; UNR="?"; BST="?"
+              fi
+              echo "    -> cycles=${CYC} br=${BRC} self=${SLF} unresolved=${UNR} bootstrap=${BST}"
+              echo "| ${BRANCH} | ${FLAVOR_LABEL} | ${SPEC_COUNT} | ${NODES} | ${EDGES} | ${CYC} | ${BRC} | ${SLF} | ${UNR} | ${BST} | \`${FILENAME}\` |" >> "$GITHUB_STEP_SUMMARY"
+
+              # Per-(branch,flavor) representative-cycles block (up to 10).
+              # Path truncation per FRD §2.6: when path_names has more than 9
+              # elements (i.e. cycle length > 8 hops), render as
+              # "first-3 → … → last-2". jq is now a build-deps prerequisite.
+              if [ "$CYCLES_OK" = "1" ] && [ "${CYC:-0}" != "0" ] && [ "$CYC" != "-" ] && [ "$CYC" != "?" ]; then
+                TOTAL=$(jq '.cycles | length' "$OUTPATH")
+                SHOWING=$(( TOTAL < 10 ? TOTAL : 10 ))
+                {
+                  echo ""
+                  echo "#### ${BRANCH} / ${FLAVOR_LABEL} — representative cycles (${TOTAL} found, showing ${SHOWING})"
+                  jq -r '
+                    def fmt_path:
+                      if length > 9 then
+                        (.[0:3] | join(" → ")) + " → … → " + (.[-2:] | join(" → "))
+                      else
+                        join(" → ")
+                      end;
+                    .cycles[:10][]
+                    | "- \(.id) (\(.category), \(if .bootstrap_resolved then "bootstrap-resolved" else "unresolved" end)): \(.path_names | fmt_path)"
+                  ' "$OUTPATH"
+                } >> /tmp/cycle-blocks.md
+              fi
+              # --------------------------------------------------------------
             done
           done
 
@@ -274,6 +342,12 @@ jobs:
           echo "file_count=$FILE_COUNT" >> "$GITHUB_OUTPUT"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "**Total**: ${FILE_COUNT} graphs generated at ${DATETIME}" >> "$GITHUB_STEP_SUMMARY"
+          # Per FRD §2.6: cycle blocks rendered after the summary table.
+          if [ -s /tmp/cycle-blocks.md ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "### Representative cycles" >> "$GITHUB_STEP_SUMMARY"
+            cat /tmp/cycle-blocks.md >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Upload artifacts
         if: steps.generate.outputs.file_count != '0'
@@ -308,4 +382,4 @@ jobs:
 
       - name: Cleanup
         if: always()
-        run: rm -rf tdnf-src /tmp/depgraph-scans /tmp/photon-clone-* /tmp/photon-overlay-*
+        run: rm -rf tdnf-src /tmp/depgraph-scans /tmp/photon-clone-* /tmp/photon-overlay-* /tmp/depgraph-cycles-*.err /tmp/cycle-blocks.md
