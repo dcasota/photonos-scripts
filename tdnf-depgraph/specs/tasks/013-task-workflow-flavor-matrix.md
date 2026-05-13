@@ -2,7 +2,7 @@
 
 **Complexity**: Medium
 **Dependencies**: [012](012-task-cycle-engine.md)
-**Status**: Pending
+**Status**: Complete
 **Requirement**: PRD G2 (AC-3, AC-4)
 **Feature**: [FRD-subrelease-flavors](../features/subrelease-flavors.md)
 **ADR**: [ADR-0002](../adr/0002-subrelease-overlay-flavors.md)

@@ -157,13 +157,11 @@ jobs:
 
           echo "## Dependency Graph Scan" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Branch | Specs | Nodes | Edges | Requires | BuildRequires | Conflicts | File |" >> "$GITHUB_STEP_SUMMARY"
-          echo "|--------|-------|-------|-------|----------|---------------|-----------|------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Branch | Flavor | Specs | Nodes | Edges | Requires | BuildRequires | Conflicts | File |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|--------|--------|-------|-------|-------|----------|---------------|-----------|------|" >> "$GITHUB_STEP_SUMMARY"
 
           for BRANCH in $(echo "$BRANCHES" | tr ',' ' '); do
             SAFE_BRANCH=$(echo "$BRANCH" | tr '/' '-')
-            FILENAME="dependency-graph-${SAFE_BRANCH}-${DATETIME}.json"
-            OUTPATH="/tmp/depgraph-scans/${FILENAME}"
             CLONE_DIR="/tmp/photon-clone-${SAFE_BRANCH}"
 
             echo "=== Branch: ${BRANCH} ==="
@@ -175,25 +173,72 @@ jobs:
               cd "$CLONE_DIR" && git sparse-checkout set SPECS && cd -
             fi
 
-            SPEC_COUNT=$(find "${CLONE_DIR}/SPECS" -name '*.spec' 2>/dev/null | wc -l)
-            echo "  Specs: ${SPEC_COUNT}"
-
-            if [ "$SPEC_COUNT" -eq 0 ]; then
-              echo "| ${BRANCH} | 0 | - | - | - | - | - | skipped |" >> "$GITHUB_STEP_SUMMARY"
+            if [ ! -d "${CLONE_DIR}/SPECS" ]; then
+              echo "  No SPECS/ dir on this branch"
+              echo "| ${BRANCH} | - | 0 | - | - | - | - | - | skipped |" >> "$GITHUB_STEP_SUMMARY"
               continue
             fi
 
-            # Generate depgraph from spec files (capture stderr to a log so failures surface)
-            ERR_LOG="/tmp/depgraph-${SAFE_BRANCH}.err"
-            env $TDNF_ENV $TDNF depgraph --json \
-              --setopt specsdir="${CLONE_DIR}/SPECS" \
-              --setopt branch="${BRANCH}" 2>"$ERR_LOG" > "$OUTPATH" || {
-              echo "::warning::tdnf depgraph failed for ${BRANCH} (exit $?), stderr:"
-              tail -20 "$ERR_LOG"
-            }
+            # Discover sub-release flavors per FRD-subrelease-flavors §2.1:
+            # base (empty token) + each SPECS/[0-9]+/ subdir found.
+            # Per ADR-0002 the list is dynamic -- no hardcoded 90/91/92.
+            FLAVORS=("")
+            mapfile -t -O 1 FLAVORS < <(
+              find "${CLONE_DIR}/SPECS" -maxdepth 1 -mindepth 1 -type d \
+                   -regex '.*/SPECS/[0-9]+' -printf '%f\n' | sort
+            )
+            echo "  Flavors: [${FLAVORS[*]}]  (${#FLAVORS[@]} total)"
 
-            # Validate and extract stats
-            STATS=$(python3 -c "
+            for FLAVOR in "${FLAVORS[@]}"; do
+              # Resolve flavor-dependent paths and filename token. Per the repo
+              # owner's 2026-05-13 decision: unflavored branches keep the v1
+              # filename so existing consumers do not break.
+              if [ -z "$FLAVOR" ]; then
+                SPECS_DIR="${CLONE_DIR}/SPECS"
+                FILE_TOKEN="${SAFE_BRANCH}"
+                SPECSDIR_META="SPECS"
+                FLAVOR_LABEL="-"
+              else
+                SPECS_DIR="/tmp/photon-overlay-${SAFE_BRANCH}-${FLAVOR}"
+                FILE_TOKEN="${SAFE_BRANCH}-${FLAVOR}"
+                SPECSDIR_META="SPECS+SPECS/${FLAVOR}"
+                FLAVOR_LABEL="${FLAVOR}"
+                # Overlay assembly per FRD-subrelease-flavors §2.2: copy the
+                # contents of SPECS/ into the overlay, then overlay SPECS/<F>/
+                # on top. cp -a "X/." copies contents, so same-name files
+                # from the second source overwrite the base.
+                rm -rf "$SPECS_DIR"
+                mkdir -p "$SPECS_DIR"
+                cp -a "${CLONE_DIR}/SPECS/." "$SPECS_DIR/"
+                cp -a "${CLONE_DIR}/SPECS/${FLAVOR}/." "$SPECS_DIR/"
+              fi
+
+              FILENAME="dependency-graph-${FILE_TOKEN}-${DATETIME}.json"
+              OUTPATH="/tmp/depgraph-scans/${FILENAME}"
+
+              SPEC_COUNT=$(find "$SPECS_DIR" -name '*.spec' 2>/dev/null | wc -l)
+              echo "  - Flavor ${FLAVOR_LABEL}: ${SPEC_COUNT} specs -> ${FILENAME}"
+
+              if [ "$SPEC_COUNT" -eq 0 ]; then
+                echo "| ${BRANCH} | ${FLAVOR_LABEL} | 0 | - | - | - | - | - | skipped |" >> "$GITHUB_STEP_SUMMARY"
+                continue
+              fi
+
+              # Generate depgraph from spec files (capture stderr to a log).
+              # --setopt flavor=<F> is consumed by the cycle pass in task 014;
+              # the C extension ignores unknown --setopt keys, so this is safe
+              # to pass today.
+              ERR_LOG="/tmp/depgraph-${FILE_TOKEN}.err"
+              env $TDNF_ENV $TDNF depgraph --json \
+                --setopt specsdir="$SPECS_DIR" \
+                --setopt branch="${BRANCH}" \
+                --setopt flavor="${FLAVOR}" 2>"$ERR_LOG" > "$OUTPATH" || {
+                echo "::warning::tdnf depgraph failed for ${BRANCH}/${FLAVOR_LABEL} (exit $?), stderr:"
+                tail -20 "$ERR_LOG"
+              }
+
+              # Validate and extract stats
+              STATS=$(python3 -c "
           import json
           from collections import Counter
           with open('${OUTPATH}') as f:
@@ -205,15 +250,16 @@ jobs:
           print(f\"{d['node_count']} {d['edge_count']} {req} {breq} {conf}\")
           " 2>/dev/null)
 
-            if [ -n "$STATS" ]; then
-              read NODES EDGES REQ BREQ CONF <<< "$STATS"
-              echo "  -> ${NODES} nodes, ${EDGES} edges"
-              echo "| ${BRANCH} | ${SPEC_COUNT} | ${NODES} | ${EDGES} | ${REQ} | ${BREQ} | ${CONF} | \`${FILENAME}\` |" >> "$GITHUB_STEP_SUMMARY"
-            else
-              echo "  -> FAILED to parse output"
-              echo "| ${BRANCH} | ${SPEC_COUNT} | - | - | - | - | - | failed |" >> "$GITHUB_STEP_SUMMARY"
-              rm -f "$OUTPATH"
-            fi
+              if [ -n "$STATS" ]; then
+                read NODES EDGES REQ BREQ CONF <<< "$STATS"
+                echo "    -> ${NODES} nodes, ${EDGES} edges"
+                echo "| ${BRANCH} | ${FLAVOR_LABEL} | ${SPEC_COUNT} | ${NODES} | ${EDGES} | ${REQ} | ${BREQ} | ${CONF} | \`${FILENAME}\` |" >> "$GITHUB_STEP_SUMMARY"
+              else
+                echo "    -> FAILED to parse output"
+                echo "| ${BRANCH} | ${FLAVOR_LABEL} | ${SPEC_COUNT} | - | - | - | - | - | failed |" >> "$GITHUB_STEP_SUMMARY"
+                rm -f "$OUTPATH"
+              fi
+            done
           done
 
           FILE_COUNT=$(ls /tmp/depgraph-scans/*.json 2>/dev/null | wc -l)
@@ -254,4 +300,4 @@ jobs:
 
       - name: Cleanup
         if: always()
-        run: rm -rf tdnf-src /tmp/depgraph-scans /tmp/photon-clone-*
+        run: rm -rf tdnf-src /tmp/depgraph-scans /tmp/photon-clone-* /tmp/photon-overlay-*
