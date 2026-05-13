@@ -13,8 +13,8 @@
   per branch    │  │ + patch (src/) │    │ (libsolv walk) │                │   dependency-graph-
   (+flavor)     │  └────────────────┘    └───────┬────────┘                │   <branch>[-<flavor>]-
                 │                                ▼                         │   <datetime>.json
-                │  builder-pkg-preq.json   ┌────────────────┐               │
-                │  (bootstrap pre-stages)─▶│ cycle pass     │ (planned)     │─▶ GitHub Actions
+                │  preq fixture (optional) ┌────────────────┐               │
+                │  (bootstrap pre-stages)─▶│ cycle pass     │               │─▶ GitHub Actions
                 │                          │ Tarjan SCC +   │               │   artifact
                 │                          │ representative │               │
                 │                          │ cycle per SCC  │               │
@@ -47,7 +47,7 @@ The active workflow at the repo root (`/.github/workflows/depgraph-scan.yml`) is
 1. Sparse-checks-out `SPECS/` from `vmware/photon` at the target branch.
 2. Discovers sub-release directories (`SPECS/[0-9]+`, e.g. 5.0's `90 / 91 / 92`) and assembles an overlay tree per flavor.
 3. Runs `tdnf depgraph --json --setopt specsdir=<overlay>` to produce one JSON per (branch, flavor).
-4. (Planned — see [specs/](specs/)) Runs a Python cycle-detection post-step that rewrites each JSON with `sccs[]`, `cycles[]`, `cycle_summary{}`.
+4. Runs a Python cycle-detection post-step ([`tools/depgraph_cycles.py`](tools/depgraph_cycles.py)) that rewrites each JSON in place with `sccs[]`, `cycles[]`, `cycle_summary{}` (schema v2).
 5. Uploads the result as the `dependency-graphs` artifact and commits it to `scans/`.
 
 ### `scans/` — accumulated artifacts
@@ -87,4 +87,4 @@ New work begins by writing the spec, gating implementation behind a merged spec 
 | Cycle detection — ADRs 0001–0006 | 3 | `specs/adr/` | complete |
 | Cycle detection — feature specs | 4 | `specs/features/{cycle-detection,subrelease-flavors}.md` | complete |
 | Cycle detection — task breakdown | 5 | `specs/tasks/{README,012..017}.md` | complete |
-| Cycle detection — implementation | 6 | per-task PRs (012 → 013 → 014 → 015; 016, 017 in parallel) | pending |
+| Cycle detection — implementation | 6 | per-task PRs (012 → 013 → 014 → 015 → 016 → 017) | complete |

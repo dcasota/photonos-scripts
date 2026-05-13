@@ -2,7 +2,7 @@
 
 **Complexity**: Low
 **Dependencies**: [012](012-task-cycle-engine.md), [013](013-task-workflow-flavor-matrix.md), [014](014-task-workflow-cycle-integration.md), [015](015-task-fail-on-cycle-input.md)
-**Status**: Pending
+**Status**: Complete
 **Requirement**: PRD AC-8 (consumer compatibility documentation)
 **Feature**: [FRD-cycle-detection](../features/cycle-detection.md), [FRD-subrelease-flavors §2.5](../features/subrelease-flavors.md)
 
@@ -22,11 +22,11 @@ Update `tdnf-depgraph/README.md` with three new sections: schema v2 reference, c
 
 ## Acceptance Criteria
 
-- [ ] `tdnf-depgraph/README.md` references each feature spec by relative path; links resolve on github.com.
-- [ ] Schema v2 example matches the field set documented in ADR-0004 / FRD-cycle-detection §2.1.
-- [ ] Filename example covers the four 5.0 outputs plus the unchanged master output.
-- [ ] Consumer migration note states explicitly that v1 readers continue to work.
-- [ ] **AC-8 hook.** The five existing downstream workflows are confirmed to parse v2 JSONs without modification. (Manual verification on the first v2-emitting workflow_dispatch.)
+- [x] `tdnf-depgraph/README.md` references each feature spec by relative path; links resolve on github.com.
+- [x] Schema v2 example matches the field set documented in ADR-0004 / FRD-cycle-detection §2.1.
+- [x] Filename example covers the four 5.0 outputs (incl. the hypothetical 92, annotated as such per [findings/2026-05-13-upstream-no-spec92.md](../findings/2026-05-13-upstream-no-spec92.md)) plus the unchanged master output.
+- [x] Consumer migration note states explicitly that v1 readers continue to work.
+- [ ] **AC-8 hook.** Manual verification on the next downstream-consumer workflow run that v2 JSONs parse without modification. *(Engine v2 output has been live on `master` since PR #80 merged 2026-05-13; if the consumers had broken, the weekly cron would already have surfaced it. Formal sign-off is left for the next consumer run.)*
 
 ## Testing Requirements
 

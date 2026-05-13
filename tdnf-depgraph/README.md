@@ -134,14 +134,109 @@ The spec parser recognizes: `Requires`, `BuildRequires`, `Conflicts`, `BuildConf
 
 The `.github/workflows/depgraph-scan.yml` workflow:
 
-- Runs **weekly** (Monday 03:00 UTC) or on-demand via `workflow_dispatch`
-- Accepts `branches` input (default: `3.0,4.0,5.0,6.0,common,master,dev`)
-- Uses a **self-hosted runner** on Photon OS (requires `tdnf`, `cmake`, `gcc`)
-- Builds tdnf with depgraph + specparse C extensions
-- Clones each `vmware/photon` branch (sparse checkout, SPECS/ only)
-- Generates `dependency-graph-<branch>-<datetime>.json` per branch
-- Uploads all JSON files as a GitHub Actions artifact (90-day retention)
-- Commits and pushes to `scans/`
+- Runs **weekly** (Monday 03:00 UTC) or on-demand via `workflow_dispatch`.
+- Inputs:
+  - `branches` (default: `3.0,4.0,5.0,6.0,common,master,dev`).
+  - `fail_on_buildrequires_cycle` (default: `false`). When `true`, the run fails if any unresolved `buildrequires` cycle is detected across all emitted artifacts. The scheduled cron trigger never sets this, so the weekly scan stays observational.
+- Uses a **self-hosted runner** on Photon OS (requires `tdnf`, `cmake`, `gcc`, `jq`).
+- Builds tdnf with depgraph + specparse C extensions.
+- Clones each `vmware/photon` branch (sparse checkout, `SPECS/` only).
+- Discovers per-branch sub-release flavors dynamically (`SPECS/[0-9]+/`) and runs the C extension once per (branch, flavor) overlay.
+- Runs the Python cycle pass ([`tools/depgraph_cycles.py`](tools/depgraph_cycles.py)) over every emitted JSON, rewriting it in place to schema v2 (`sccs` / `cycles` / `cycle_summary` / `metadata.flavor` / `metadata.cycles_engine`).
+- Uploads all JSON files as a GitHub Actions artifact (90-day retention).
+- Commits and pushes to `scans/`.
+
+See [`specs/features/cycle-detection.md`](specs/features/cycle-detection.md) and [`specs/features/subrelease-flavors.md`](specs/features/subrelease-flavors.md) for the full functional specs, [`specs/adr/`](specs/adr/) for the design decisions, and [`specs/findings/`](specs/findings/) for empirical findings that re-anchored the acceptance criteria during implementation.
+
+## Schema v2 (cycle detection)
+
+PR #79 / #80 added a Python cycle pass that rewrites every emitted JSON to **schema v2**. v1 keys are preserved unchanged; v2 only adds new top-level keys. See [`specs/features/cycle-detection.md` §2.1](specs/features/cycle-detection.md) and [`specs/adr/0004-schema-v2-additive.md`](specs/adr/0004-schema-v2-additive.md) for the full reference.
+
+Top-level additions:
+
+| Key | Type | Notes |
+|---|---|---|
+| `metadata.schema_version` | int | `1` (v1) or `2` (post-cycle-pass). |
+| `metadata.flavor` | string | `""` for base; numeric token for `SPECS/[0-9]+/` overlays. |
+| `metadata.specsdir` | string | `"SPECS"` for base; `"SPECS+SPECS/<F>"` for overlays. |
+| `metadata.cycles_engine` | string | Engine version tag, e.g. `"tarjan-py-v1"`. |
+| `sccs[]` | list | One entry per non-trivial strongly-connected component: `{id, size, members, names, edge_types_present, bootstrap_resolved}`. |
+| `cycles[]` | list | One **shortest representative** cycle per SCC: `{id, scc_id, category, length, path_ids, path_names, edge_types, bootstrap_resolved, representative, scc_size}`. |
+| `cycle_summary{}` | dict | Aggregate counters: `{total, buildrequires, requires, mixed, self_loops, bootstrap_resolved, unresolved}`. |
+
+Minimal v2 example (truncated):
+
+```json
+{
+  "metadata": {
+    "generator": "tdnf depgraph",
+    "timestamp": "2026-05-13T11:58:09Z",
+    "branch": "5.0",
+    "schema_version": 2,
+    "flavor": "91",
+    "specsdir": "SPECS+SPECS/91",
+    "cycles_engine": "tarjan-py-v1"
+  },
+  "node_count": 1822,
+  "edge_count": 11240,
+  "nodes": [...],
+  "edges": [...],
+  "sccs": [
+    {"id": "scc-012", "size": 2,
+     "members": [1043, 1057], "names": ["python3-py", "python3-pytest"],
+     "edge_types_present": ["buildrequires"], "bootstrap_resolved": false}
+  ],
+  "cycles": [
+    {"id": "cyc-012", "scc_id": "scc-012", "category": "buildrequires",
+     "length": 2, "path_ids": [1043, 1057, 1043],
+     "path_names": ["python3-py", "python3-pytest", "python3-py"],
+     "edge_types": ["buildrequires", "buildrequires"],
+     "bootstrap_resolved": false, "representative": true, "scc_size": 2}
+  ],
+  "cycle_summary": {
+    "total": 14, "buildrequires": 1, "requires": 11, "mixed": 2,
+    "self_loops": 0, "bootstrap_resolved": 0, "unresolved": 14
+  }
+}
+```
+
+Only one cycle per SCC is emitted (the BFS-shortest representative); `scc_size` and `members[]` tell consumers how many alternative cycles the SCC contains. Determinism is guaranteed across runs of the same input — see [`specs/features/cycle-detection.md` §2.5](specs/features/cycle-detection.md).
+
+## Sub-release flavors
+
+Photon 5.0 ships `SPECS/[0-9]+/` overlay directories (today: `SPECS/90`, `SPECS/91`; flavor `92` is hypothetical — see [`specs/findings/2026-05-13-upstream-no-spec92.md`](specs/findings/2026-05-13-upstream-no-spec92.md)). The workflow scans each overlay as a first-class flavor, emitting one JSON per (branch, flavor). Discovery is dynamic — adding `SPECS/92/` (or a `SPECS/N/` on any other branch) is picked up automatically with no code change. Full spec: [`specs/features/subrelease-flavors.md`](specs/features/subrelease-flavors.md).
+
+**Filename convention.** Unflavored branches keep the v1 filename; numeric flavors gain a `-<flavor>-` suffix:
+
+| Branch | Flavor | Filename |
+|---|---|---|
+| 5.0 | `""` (base) | `dependency-graph-5.0-<datetime>.json` |
+| 5.0 | `90` | `dependency-graph-5.0-90-<datetime>.json` |
+| 5.0 | `91` | `dependency-graph-5.0-91-<datetime>.json` |
+| 5.0 | `92` *(when upstream adds it)* | `dependency-graph-5.0-92-<datetime>.json` |
+| master / 3.0 / 4.0 / 6.0 / common / dev | `""` (base) | `dependency-graph-<branch>-<datetime>.json` (unchanged) |
+
+Each emitted file carries `metadata.flavor` matching its overlay (`""` for base, numeric string otherwise) and `metadata.specsdir` describing the merged spec source (`"SPECS"` vs `"SPECS+SPECS/<F>"`).
+
+## Consumer compatibility
+
+Schema v2 is **additive**: every v1 key is preserved in name, position, and semantics. v1 readers continue to work without modification. v2-aware readers branch on `metadata.schema_version`.
+
+Existing in-repo consumers (`gating-conflict-detection`, `package-classifier`, `snyk-analysis`, `upstream-source-code-dependency-scanner`, `photonos-package-report`) all iterate `tdnf-depgraph/scans/dependency-graph-<branch>-*.json` and parse the v1 fields they need; none require migration. The full migration table — including the snippet for base-only consumers that don't want to ingest per-flavor scans — lives at [`specs/features/subrelease-flavors.md` §2.5](specs/features/subrelease-flavors.md).
+
+For a base-only consumer (drop every per-flavor scan):
+
+```python
+for path in glob("tdnf-depgraph/scans/dependency-graph-*.json"):
+    with open(path) as f:
+        d = json.load(f)
+    # Base-only filter (v2-aware):
+    if d.get("metadata", {}).get("flavor", "") != "":
+        continue
+    # ... existing logic ...
+```
+
+A consumer that wants every flavor needs no change; the existing glob naturally picks them up.
 
 ## Plans
 
