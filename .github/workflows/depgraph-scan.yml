@@ -6,8 +6,14 @@ on:
       branches:
         description: 'Photon OS branches to scan (comma-separated)'
         default: '3.0,4.0,5.0,6.0,common,master,dev'
+      fail_on_buildrequires_cycle:
+        description: 'Fail the run if any unresolved buildrequires cycle is detected'
+        type: boolean
+        default: false
   schedule:
-    # Weekly scan on Monday at 03:00 UTC
+    # Weekly scan on Monday at 03:00 UTC. The cron trigger never sets the
+    # fail_on_buildrequires_cycle input, so the scheduled scan stays in
+    # observational mode regardless of cycle status.
     - cron: '0 3 * * 1'
 
 jobs:
@@ -383,6 +389,37 @@ jobs:
             git pull --rebase origin master
             git push
           fi
+
+      # Fail-on-cycle gate per task 015 / ADR-0006. Runs AFTER Upload +
+      # Commit so the artifacts (the evidence behind the failure) are
+      # preserved even on a red run, and BEFORE Cleanup so /tmp/depgraph-scans
+      # is still intact. Aggregates across every emitted (branch, flavor)
+      # JSON; only `category=="buildrequires" && bootstrap_resolved==false`
+      # cycles trip the gate (mixed/requires/self-loop never fail it,
+      # bootstrap_resolved=true cycles never fail it).
+      - name: Fail on unresolved buildrequires cycle (gate)
+        if: github.event.inputs.fail_on_buildrequires_cycle == 'true' && steps.generate.outputs.file_count != '0'
+        run: |
+          UNRESOLVED_BR=$(jq -s '
+            [ .[] | .cycles[] |
+              select(.category == "buildrequires" and .bootstrap_resolved == false) ]
+            | length' /tmp/depgraph-scans/*.json)
+          echo "Unresolved buildrequires cycles across all (branch, flavor): ${UNRESOLVED_BR}"
+          if [ "${UNRESOLVED_BR:-0}" -gt 0 ]; then
+            # Surface the first few offending cycles so the reviewer sees
+            # the cause in the Actions UI without opening the summary or
+            # downloading the artifact.
+            jq -s -r '
+              [ .[] | .cycles[] |
+                select(.category == "buildrequires" and .bootstrap_resolved == false)
+                | {id, scc_id, length, path: (.path_names | join(" → "))} ]
+              | .[0:5][]
+              | "  - \(.id) (scc=\(.scc_id), len=\(.length)): \(.path)"
+            ' /tmp/depgraph-scans/*.json
+            echo "::error::Found ${UNRESOLVED_BR} unresolved buildrequires cycle(s); failing per fail_on_buildrequires_cycle=true"
+            exit 1
+          fi
+          echo "::notice::No unresolved buildrequires cycles; fail-gate satisfied."
 
       - name: Cleanup
         if: always()
