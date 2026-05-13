@@ -9,7 +9,7 @@
 | [014](014-task-workflow-cycle-integration.md) | Workflow YAML: invoke `depgraph_cycles.py` per output file + extend `$GITHUB_STEP_SUMMARY` | Medium | 012, 013 | [FRD-cycle-detection](../features/cycle-detection.md) §2.6 | Complete |
 | [015](015-task-fail-on-cycle-input.md) | Workflow YAML: `fail_on_buildrequires_cycle` input + cross-file aggregation + exit-code logic | Low | 014 | [ADR-0006](../adr/0006-fail-on-buildrequires-cycle-input.md) | Complete |
 | [016](016-task-regression-fixture.md) | Check in 2026-05-11 master JSON as `tests/fixtures/`; add unit test enforcing AC-1 | Low | 012 | [PRD §6 AC-1](../prd.md) | Complete |
-| [017](017-task-docs-update.md) | Update `tdnf-depgraph/README.md` with schema v2 section + consumer migration note | Low | 012–016 | [FRD-subrelease-flavors](../features/subrelease-flavors.md) §2.5 | Pending |
+| [017](017-task-docs-update.md) | Update `tdnf-depgraph/README.md` with schema v2 section + consumer migration note | Low | 012–016 | [FRD-subrelease-flavors](../features/subrelease-flavors.md) §2.5 | Complete |
 
 ## Quality Gates
 
