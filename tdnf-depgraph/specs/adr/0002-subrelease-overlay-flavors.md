@@ -1,11 +1,11 @@
 # ADR-0002: Sub-Release Overlay Flavors
 
 **Date**: 2026-05-13
-**Status**: Accepted
+**Status**: Accepted (amended 2026-05-13 per [findings/2026-05-13-find-regex-portability.md](../findings/2026-05-13-find-regex-portability.md) and [findings/2026-05-13-upstream-no-spec92.md](../findings/2026-05-13-upstream-no-spec92.md))
 
 ## Context
 
-Photon 5.0's `vmware/photon` checkout contains a top-level `SPECS/` tree and additional sub-release directories `SPECS/90/`, `SPECS/91/`, `SPECS/92/`. The latter hold per-flavor overrides — most commonly the kernel and kernel-adjacent specs — while everything else comes from the base `SPECS/` tree. The 2026-05-12 fix at `vmware/photon@8fb8549c` was applied to *both* `SPECS/libselinux/libselinux.spec` *and* `SPECS/91/libselinux/libselinux.spec` because each flavor is built independently from its own merged view.
+Photon 5.0's `vmware/photon` checkout contains a top-level `SPECS/` tree and additional sub-release directories under it. As of 2026-05-13 those are `SPECS/90/` and `SPECS/91/` only; the original v1 draft of this ADR also listed `SPECS/92/`, but empirical verification (run `25795445195`, plus the GitHub Contents API on `vmware/photon@5.0`) confirmed no `SPECS/92/` exists today — see [findings/2026-05-13-upstream-no-spec92.md](../findings/2026-05-13-upstream-no-spec92.md). The sub-release directories hold per-flavor overrides — most commonly the kernel and kernel-adjacent specs — while everything else comes from the base `SPECS/` tree. The 2026-05-12 fix at `vmware/photon@8fb8549c` was applied to *both* `SPECS/libselinux/libselinux.spec` *and* `SPECS/91/libselinux/libselinux.spec` because each flavor is built independently from its own merged view.
 
 Today's *Dependency Graph Scan* emits a single graph per branch by pointing `tdnf depgraph --setopt specsdir=` at `SPECS/`. Sub-release content is therefore ignored: scans of 5.0 do not see what builds for 5.0.91 actually depend on. The PRD requires per-flavor visibility (G2) so that flavor-specific cycles do not hide behind the base view.
 
@@ -14,7 +14,7 @@ The question is not whether to scan sub-releases — it is what *flavor* means w
 ## Decision Drivers
 
 - **Match build reality.** When the Photon build system constructs a 5.0.91 image, it composes `SPECS/` with `SPECS/91/` on top. The graph we emit for the `91` flavor should reflect what is actually built.
-- **Discoverability.** The sub-release directory layout is conventional but not centrally declared. Hardcoding `90/91/92` will silently misbehave when 6.0 or `dev` grow their own sub-releases.
+- **Discoverability.** The sub-release directory layout is conventional but not centrally declared. Hardcoding a flavor list will silently misbehave when upstream adds, removes, or renames sub-releases — and demonstrably did mislead earlier drafts of this PRD into asserting that `SPECS/92` existed when it does not.
 - **Stability of consumer contracts.** Downstream consumers parse filenames; the existing per-branch filenames must not change for branches that have no sub-releases.
 
 ## Considered Options
@@ -51,7 +51,7 @@ Maintain a JSON file (or workflow input) enumerating the flavors per branch.
 For each (branch, flavor) pair:
 
 1. Sparse-checkout `SPECS/` from the target branch.
-2. Discover flavors dynamically: `find SPECS -maxdepth 1 -mindepth 1 -type d -regex 'SPECS/[0-9]+' -printf '%f\n' | sort`.
+2. Discover flavors dynamically with a portable bash glob — iterate `SPECS/*/`, keep basenames matching `^[0-9]+$`, sort. (The v1 draft of this ADR prescribed `find -regex … -printf`, but those are GNU-find extensions that the self-hosted runner's `find` rejects with `bad arg`; see [findings/2026-05-13-find-regex-portability.md](../findings/2026-05-13-find-regex-portability.md). The canonical recipe lives in [FRD-subrelease-flavors §2.1](../features/subrelease-flavors.md).)
 3. For the empty (base) flavor, run `tdnf depgraph --setopt specsdir=SPECS`.
 4. For each numeric flavor `N`, materialize an overlay at `/tmp/photon-overlay-<branch>-<N>/` by:
    - `cp -a SPECS/. overlay/`
@@ -62,7 +62,7 @@ For each (branch, flavor) pair:
 
 ## Consequences
 
-- Photon 5.0 emits four files per run: base + 90 + 91 + 92. Branches 3.0/4.0/6.0/common/master/dev emit one file each with names unchanged.
+- Photon 5.0 emits `N+1` files per run, where `N` is the number of `SPECS/[0-9]+/` subdirectories present on the cloned upstream HEAD. As of 2026-05-13 that is three files (base + `90` + `91`). Branches 3.0/4.0/6.0/common/master/dev emit one file each with names unchanged.
 - A future Photon 6.0 or `dev` sub-release directory is picked up automatically with no code change.
 - Workflow cleanup must delete `/tmp/photon-overlay-*` between runs; covered as part of the existing `cleanup` step.
 - Consumers that today iterate `tdnf-depgraph/scans/dependency-graph-5.0-*.json` will see new files matching the same glob. They must guard on `metadata.flavor` if they want only the base view. This is documented in the feature spec and the v2 schema notes.

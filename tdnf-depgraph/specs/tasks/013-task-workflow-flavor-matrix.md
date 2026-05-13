@@ -44,11 +44,12 @@ Extend `.github/workflows/depgraph-scan.yml` so that, per branch, the workflow d
 
 ## Acceptance Criteria
 
-- [ ] **AC-3.** Workflow_dispatch on `branches: 5.0` produces four files in the `dependency-graphs` artifact:
-  - `dependency-graph-5.0-<datetime>.json`
+- [x] **AC-3.** Workflow_dispatch on `branches: 5.0` produces `N+1` files in the `dependency-graphs` artifact, where `N` = the count of `SPECS/[0-9]+/` subdirectories on the cloned `vmware/photon@5.0` HEAD. As of 2026-05-13 `N=2` (overlays `90`, `91`), so three files:
+  - `dependency-graph-5.0-<datetime>.json` (base)
   - `dependency-graph-5.0-90-<datetime>.json`
   - `dependency-graph-5.0-91-<datetime>.json`
-  - `dependency-graph-5.0-92-<datetime>.json`
+
+  *Amended 2026-05-13: original AC enumerated a fourth file `dependency-graph-5.0-92-<datetime>.json`; that overlay does not exist in upstream — see [findings/2026-05-13-upstream-no-spec92.md](../findings/2026-05-13-upstream-no-spec92.md). Verified by run [25795445195](https://github.com/dcasota/photonos-scripts/actions/runs/25795445195).*
 - [ ] **AC-4.** Workflow_dispatch on `branches: 3.0,4.0,6.0,common,master,dev` produces six files whose names match the v1 convention (no `-<flavor>-` suffix).
 - [ ] Each emitted file's `metadata.flavor` matches the flavor it represents (`""` for base, numeric string otherwise). *(Set by `--setopt flavor=`; the field will be visible after task 014 lands.)*
 - [ ] `metadata.specsdir` reads `SPECS` for base and `SPECS+SPECS/<F>` for numeric flavors. *(Same caveat as above.)*

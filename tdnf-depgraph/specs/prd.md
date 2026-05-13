@@ -2,9 +2,9 @@
 
 ## tdnf-depgraph — Cycle Detection & Sub-Release Flavors
 
-**Version**: 1.1
+**Version**: 1.2
 **Last Updated**: 2026-05-13
-**Status**: Accepted — Active (amended 2026-05-13 per [findings/2026-05-13-libselinux-python3-not-a-graph-cycle.md](findings/2026-05-13-libselinux-python3-not-a-graph-cycle.md))
+**Status**: Accepted — Active (amended 2026-05-13 per [findings/2026-05-13-libselinux-python3-not-a-graph-cycle.md](findings/2026-05-13-libselinux-python3-not-a-graph-cycle.md) and [findings/2026-05-13-upstream-no-spec92.md](findings/2026-05-13-upstream-no-spec92.md))
 
 ---
 
@@ -25,7 +25,7 @@ python3-pytest        --buildrequires--> python3-attrs
 
 The largest entanglement is a 37-node toolchain SCC (`autogen, bash, cmake, curl, gcc, openssl, python3, readline, tcl, util-linux, …`) which is expected to flip to `bootstrap_resolved: true` once the branch's `data/builder-pkg-preq.json` is loaded.
 
-This PRD specifies adding **cycle detection** to the artifact, and — as a prerequisite — **first-class sub-release flavors** so that Photon 5.0's `SPECS/`, `SPECS/90`, `SPECS/91`, `SPECS/92` overlays are scanned independently rather than collapsed into a single "5.0" graph.
+This PRD specifies adding **cycle detection** to the artifact, and — as a prerequisite — **first-class sub-release flavors** so that Photon 5.0's `SPECS/` plus each `SPECS/[0-9]+/` overlay is scanned independently rather than collapsed into a single "5.0" graph. (Today, on `vmware/photon@5.0`, the overlays are `SPECS/90` and `SPECS/91`; the discovery is dynamic so additional overlays such as `SPECS/92` would be picked up automatically if/when they appear — see [findings/2026-05-13-upstream-no-spec92.md](findings/2026-05-13-upstream-no-spec92.md).)
 
 ---
 
@@ -73,9 +73,9 @@ Every JSON the workflow emits has a `cycles[]` array and a `cycle_summary{}` cou
 
 ### G2 — First-class sub-release flavors
 
-The workflow discovers `SPECS/[0-9]+/` overlay directories after sparse-checkout and emits one JSON per (branch, flavor) pair. Discovery is dynamic (no hardcoded `90/91/92`), so when Photon 6.0 or `dev` grow sub-release dirs they pick up automatically.
+The workflow discovers `SPECS/[0-9]+/` overlay directories after sparse-checkout and emits one JSON per (branch, flavor) pair. Discovery is dynamic (no hardcoded flavor list), so when Photon 6.0 or `dev` grow sub-release dirs they pick up automatically.
 
-**Success metric:** A workflow_dispatch on Photon 5.0 produces four artifact files (base + 90 + 91 + 92). Each contains `metadata.flavor` matching its overlay. The base 5.0 file keeps its existing filename `dependency-graph-5.0-<datetime>.json`; non-base flavors gain a `-<flavor>` suffix.
+**Success metric:** A workflow_dispatch on Photon 5.0 produces `N+1` artifact files, where `N` = the number of `SPECS/[0-9]+/` subdirectories present on the cloned `vmware/photon@5.0` HEAD. As of 2026-05-13 `N=2` (overlays: `90`, `91`), yielding three files. Each contains `metadata.flavor` matching its overlay. The base 5.0 file keeps its existing filename `dependency-graph-5.0-<datetime>.json`; non-base flavors gain a `-<flavor>` suffix.
 
 ### G3 — Distinguish actionable from bootstrap-resolved cycles
 
@@ -115,7 +115,7 @@ The cycle-detection initiative is complete when all of the following hold:
 |---|-----------|----------|
 | AC-1 | Regression scan on `tdnf-depgraph/scans/dependency-graph-master-20260511_091039.json` produces a cycle with `path_names == ["python3-attrs", "python3-pytest", "python3-attrs"]`, `category: "buildrequires"`, `length: 2`, and (with empty preq) `bootstrap_resolved: false`. The same scan also produces exactly 12 SCCs, one of which has size 37 and includes the names `python3`, `gcc`, `bash`, `cmake`, `openssl`. *(Amended 2026-05-13: original AC-1 anchored on `libselinux ↔ python3` which is a spec-source coupling, not a graph cycle — see [findings/2026-05-13-libselinux-python3-not-a-graph-cycle.md](findings/2026-05-13-libselinux-python3-not-a-graph-cycle.md).)* | `specs/tasks/016-task-regression-fixture.md` |
 | AC-2 | Re-running the detector on the same input JSON twice produces byte-identical `cycles[]` and `sccs[]` arrays (deterministic ordering). | T1 unit test |
-| AC-3 | Workflow_dispatch on Photon 5.0 produces four artifact files: `dependency-graph-5.0-<datetime>.json` (base) and `dependency-graph-5.0-{90,91,92}-<datetime>.json` (overlays). | T3 |
+| AC-3 | Workflow_dispatch on Photon 5.0 produces `N+1` artifact files, where `N` is the count of `SPECS/[0-9]+/` subdirectories on the cloned `vmware/photon@5.0` HEAD at run time. Filenames: `dependency-graph-5.0-<datetime>.json` (base) + one `dependency-graph-5.0-<flavor>-<datetime>.json` per discovered overlay. *(Today: `N=2`, overlays `{90,91}`, three files — verified by run `25795445195`. Amended 2026-05-13: original AC-3 anchored on a hardcoded `{90,91,92}` enumeration, but upstream has no `SPECS/92/` — see [findings/2026-05-13-upstream-no-spec92.md](findings/2026-05-13-upstream-no-spec92.md). The AC is now state-anchored on whatever upstream actually exposes.)* | T3 |
 | AC-4 | Workflow_dispatch on Photon 3.0/4.0/6.0/common/master/dev produces files whose names are unchanged from v1 (`dependency-graph-<branch>-<datetime>.json`). | T3 |
 | AC-5 | `metadata.schema_version == 2` in every emitted file; every v1 key preserved unchanged in field name and semantics. | T2 |
 | AC-6 | `fail_on_buildrequires_cycle=true` causes the job to exit non-zero when any `bootstrap_resolved: false`, `category: "buildrequires"` cycle exists, and to exit zero otherwise. `bootstrap_resolved: true` cycles never trip the gate. | T5 |
@@ -129,7 +129,7 @@ The cycle-detection initiative is complete when all of the following hold:
 Decisions agreed before ADR drafting; ADRs in Phase 3 document the rationale:
 
 1. **Cycle pass runs in Python, post-process to the C binary's JSON output** — not in the `tdnf depgraph` C extension. Cheaper iteration; the artifact contains everything needed.
-2. **Subrelease scanning uses overlay merge** — for flavor `N`, the spec tree is `SPECS/` with `SPECS/<N>/` files copied on top. Same-name wins. Discovery is dynamic (`find SPECS -maxdepth 1 -mindepth 1 -type d -regex 'SPECS/[0-9]+'`).
+2. **Subrelease scanning uses overlay merge** — for flavor `N`, the spec tree is `SPECS/` with `SPECS/<N>/` files copied on top. Same-name wins. Discovery is dynamic (portable bash glob: iterate `SPECS/*/`, keep entries whose basename matches `^[0-9]+$`). *(The original draft prescribed `find -regex … -printf`; that's a GNU extension the self-hosted runner's `find` rejects — see [findings/2026-05-13-find-regex-portability.md](findings/2026-05-13-find-regex-portability.md).)*
 3. **Cycle algorithm = Tarjan SCC + shortest representative cycle per SCC via BFS** — not Johnson's full enumeration. `scc_size` field tells consumers when the representative is one of many.
 4. **Schema bump 1 → 2 is purely additive.** No v1 field changes name, position, or semantics.
 5. **Filename compatibility.** Unflavored branches keep `dependency-graph-<branch>-<datetime>.json`. Only Photon 5.0's non-base flavors gain a `-<flavor>` suffix. Confirmed by repo owner on 2026-05-13.
@@ -169,5 +169,6 @@ Decisions agreed before ADR drafting; ADRs in Phase 3 document the rationale:
 
 ## Changelog
 
+- **1.2 (2026-05-13)** — AC-3 and the G2 success metric re-anchored on dynamic `N+1` (where `N` is the count of `SPECS/[0-9]+/` subdirs on the cloned upstream HEAD) instead of a hardcoded `{90,91,92}`. The verification run `25795445195` proved the workflow's dynamic discovery is correct, while empirically demonstrating that `vmware/photon@5.0` carries only `SPECS/90` and `SPECS/91` today (no `SPECS/92`). The §1 Purpose statement was updated likewise. ADR-0002 and FRD-subrelease-flavors brought into line. See [`findings/2026-05-13-upstream-no-spec92.md`](findings/2026-05-13-upstream-no-spec92.md).
 - **1.1 (2026-05-13)** — AC-1 and G1/G3 success metrics re-anchored on cycles that exist in the binary-package edge graph (`python3-attrs ↔ python3-pytest` for the actionable buildrequires class; 37-node toolchain SCC for the `bootstrap_resolved` transition). Q1–Q3 resolved. New Q4 opened: should the C extension propagate source-level `BuildRequires` to subpackages? G4 v1-key list corrected (`generator`/`timestamp`/`branch`, not `branch`/`specsdir`/`generated_at` — the engine preserves whatever v1 keys are present regardless). See [`findings/2026-05-13-libselinux-python3-not-a-graph-cycle.md`](findings/2026-05-13-libselinux-python3-not-a-graph-cycle.md).
 - **1.0 (2026-05-13)** — Initial draft.
