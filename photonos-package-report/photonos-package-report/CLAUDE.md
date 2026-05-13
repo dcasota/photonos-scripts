@@ -63,7 +63,7 @@ while the tool is live.
 | 6e | Heap-sort JDK URLs                                    | done (#64)  |
 | 6f | SHA helpers + cross-branch diff (col 9 wired)         | done (#65)  |
 | 7  | Cluster orchestrator + parallel runspace mirror (`-ThrottleLimit`) | done (#66) |
-| 8  | CI side-by-side parity gate                           | pending     |
+| 8  | CI side-by-side parity gate                           | done (#67)  |
 | 9  | Retirement (PS → staging/legacy/, C-only)             | pending     |
 | M  | Maintainer ops & debug tooling — `docs/maintainer-runbook.md`, `.vscode/` | ongoing |
 
