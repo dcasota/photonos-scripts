@@ -11,7 +11,7 @@
 
 ### Purpose
 
-Scan Photon sub-release directories (`SPECS/[0-9]+/` overlays) as first-class flavors. Photon 5.0's `SPECS/90`, `SPECS/91`, `SPECS/92` produce distinct dependency graphs that reflect how the build system actually composes spec trees for each sub-release; the base `SPECS/` continues to produce a single non-flavored scan.
+Scan Photon sub-release directories (`SPECS/[0-9]+/` overlays) as first-class flavors. Photon 5.0's discoverable overlays (today: `SPECS/90` and `SPECS/91`; the original v1 draft also claimed `SPECS/92` but that does not exist upstream — see [findings/2026-05-13-upstream-no-spec92.md](../findings/2026-05-13-upstream-no-spec92.md)) produce distinct dependency graphs that reflect how the build system actually composes spec trees for each sub-release; the base `SPECS/` continues to produce a single non-flavored scan.
 
 ### Value Proposition
 
@@ -21,7 +21,7 @@ Today's single-graph-per-branch model collapses flavor-specific differences. The
 
 See PRD acceptance criteria AC-3 and AC-4. In brief:
 
-- Workflow_dispatch on Photon 5.0 produces four output files (base + 90 + 91 + 92).
+- Workflow_dispatch on Photon 5.0 produces `N+1` output files, where `N` is the count of `SPECS/[0-9]+/` subdirectories on the cloned upstream HEAD. As of 2026-05-13, `N=2` (overlays `90`, `91`) → three files.
 - Workflow_dispatch on Photon 3.0/4.0/6.0/common/master/dev produces output files whose names are unchanged from v1.
 - Adding (or removing) a `SPECS/<N>/` directory on any branch is picked up automatically, with no code change.
 
@@ -52,16 +52,16 @@ runner (see [finding 2026-05-13b](../findings/2026-05-13-find-regex-portability.
 
 Result examples:
 
-| Branch | Discovered `FLAVORS` |
+| Branch (state on 2026-05-13) | Discovered `FLAVORS` |
 |---|---|
-| 5.0 | `("" "90" "91" "92")` |
-| 6.0 | `("")`  *(if no SPECS/[0-9]+ dirs exist today)* |
+| 5.0 | `("" "90" "91")` *(verified by run [25795445195](https://github.com/dcasota/photonos-scripts/actions/runs/25795445195))* |
+| 6.0 | `("")` |
 | 4.0 | `("")` |
 | common | `("")` |
 | master | `("")` |
 | dev | `("")` |
 
-A future Photon 6.0 sub-release directory (say `SPECS/95`) is picked up automatically on the next workflow run. No hardcoded list of numeric tokens exists anywhere in the workflow or in the cycle pass.
+A future Photon 5.0 sub-release directory (say `SPECS/92`) or a 6.0 sub-release is picked up automatically on the next workflow run. No hardcoded list of numeric tokens exists anywhere in the workflow or in the cycle pass.
 
 ### 2.2 Overlay assembly
 
@@ -101,7 +101,7 @@ The `<datetime>` token uses the existing format `YYYYMMDD_HHMMSS` (UTC). The `<b
 | 5.0 | `""` | `dependency-graph-5.0-20260518_030000.json` |
 | 5.0 | `90` | `dependency-graph-5.0-90-20260518_030000.json` |
 | 5.0 | `91` | `dependency-graph-5.0-91-20260518_030000.json` |
-| 5.0 | `92` | `dependency-graph-5.0-92-20260518_030000.json` |
+| 5.0 | `92` *(hypothetical — not currently in upstream)* | `dependency-graph-5.0-92-20260518_030000.json` |
 | master | `""` | `dependency-graph-master-20260518_030000.json` |
 | 6.0 | `""` | `dependency-graph-6.0-20260518_030000.json` |
 
