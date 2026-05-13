@@ -2,7 +2,7 @@
 
 **Complexity**: Medium
 **Dependencies**: [012](012-task-cycle-engine.md)
-**Status**: Complete
+**Status**: Complete (with fix-up: see [finding 2026-05-13b](../findings/2026-05-13-find-regex-portability.md))
 **Requirement**: PRD G2 (AC-3, AC-4)
 **Feature**: [FRD-subrelease-flavors](../features/subrelease-flavors.md)
 **ADR**: [ADR-0002](../adr/0002-subrelease-overlay-flavors.md)
@@ -16,13 +16,17 @@ Extend `.github/workflows/depgraph-scan.yml` so that, per branch, the workflow d
 ## Scope
 
 - Modify `.github/workflows/depgraph-scan.yml` (the active workflow at the repo root).
-- After the existing `git sparse-checkout set SPECS` step, enumerate flavors per [FRD-subrelease-flavors §2.1](../features/subrelease-flavors.md):
+- After the existing `git sparse-checkout set SPECS` step, enumerate flavors per [FRD-subrelease-flavors §2.1](../features/subrelease-flavors.md). The published recipe uses a portable pure-bash glob — `find -regex`/`-printf` are GNU extensions and were rejected by the self-hosted runner's `find` (see [finding 2026-05-13b](../findings/2026-05-13-find-regex-portability.md)):
   ```bash
   FLAVORS=("")
-  mapfile -t -O 1 FLAVORS < <(
-    find "${CLONE_DIR}/SPECS" -maxdepth 1 -mindepth 1 -type d \
-         -regex '.*/SPECS/[0-9]+' -printf '%f\n' | sort
+  mapfile -t _NUMERIC < <(
+    shopt -s nullglob
+    for _entry in "${CLONE_DIR}/SPECS"/*/; do
+      _name="${_entry%/}"; _name="${_name##*/}"
+      [[ "$_name" =~ ^[0-9]+$ ]] && printf '%s\n' "$_name"
+    done | sort
   )
+  FLAVORS+=("${_NUMERIC[@]}")
   ```
 - Wrap the existing per-branch body in an inner `for FLAVOR in "${FLAVORS[@]}"` loop per [FRD-subrelease-flavors §2.4](../features/subrelease-flavors.md).
 - Assemble the overlay per [§2.2](../features/subrelease-flavors.md) for numeric flavors only; base flavor uses `SPECS/` directly.

@@ -182,11 +182,19 @@ jobs:
             # Discover sub-release flavors per FRD-subrelease-flavors §2.1:
             # base (empty token) + each SPECS/[0-9]+/ subdir found.
             # Per ADR-0002 the list is dynamic -- no hardcoded 90/91/92.
+            # Use a pure-bash glob instead of `find -regex -printf`: the
+            # self-hosted runner ships a toybox/bfs `find` that rejects
+            # GNU-style -regex (`find: bad arg '.*/SPECS/[0-9]+'`).
             FLAVORS=("")
-            mapfile -t -O 1 FLAVORS < <(
-              find "${CLONE_DIR}/SPECS" -maxdepth 1 -mindepth 1 -type d \
-                   -regex '.*/SPECS/[0-9]+' -printf '%f\n' | sort
+            mapfile -t _NUMERIC < <(
+              shopt -s nullglob
+              for _entry in "${CLONE_DIR}/SPECS"/*/; do
+                _name="${_entry%/}"; _name="${_name##*/}"
+                [[ "$_name" =~ ^[0-9]+$ ]] && printf '%s\n' "$_name"
+              done | sort
             )
+            FLAVORS+=("${_NUMERIC[@]}")
+            unset _NUMERIC
             echo "  Flavors: [${FLAVORS[*]}]  (${#FLAVORS[@]} total)"
 
             for FLAVOR in "${FLAVORS[@]}"; do
