@@ -2,9 +2,9 @@
 
 ## tdnf-depgraph — Cycle Detection & Sub-Release Flavors
 
-**Version**: 1.0
+**Version**: 1.1
 **Last Updated**: 2026-05-13
-**Status**: Draft — Phase 1
+**Status**: Accepted — Active (amended 2026-05-13 per [findings/2026-05-13-libselinux-python3-not-a-graph-cycle.md](findings/2026-05-13-libselinux-python3-not-a-graph-cycle.md))
 
 ---
 
@@ -12,18 +12,18 @@
 
 The *Dependency Graph Scan* workflow exports an RPM dependency graph for every Photon OS branch and commits it to `tdnf-depgraph/scans/`. The graph captures `Requires`, `BuildRequires`, and `Conflicts` edges over every spec and binary node, and is consumed by downstream initiatives (Snyk classifier, package report, gating-conflict detector, the PQC QUBO formulation in `upstream-source-code-dependency-scanner`).
 
-The graph contains everything needed to detect circular dependencies between packages — but the workflow itself never analyses it. On 2026-04-15 the Photon team identified a build-time loop, `libselinux ↔ python3`: `libselinux.spec` carried a `python3` sub-package, which required `python3` to be already built, while `python3-pip` / `python3-setuptools` / `python3-devel` build-required `libselinux`. The fix landed on `vmware/photon@8fb8549c` on 2026-05-12, splitting the python3 bindings into a separate `libselinux-python3.spec` and adding `libselinux`/`libsepol` to `data/builder-pkg-preq.json` so the bootstrap can pre-stage them.
+The graph contains everything needed to detect circular dependencies between packages — but the workflow itself never analyses it. The motivating incident is the `libselinux ↔ python3` build-time coupling that landed as `vmware/photon@8fb8549c` on 2026-05-12: `libselinux.spec` carried a `python3` sub-package, while `libselinux` build-required `python3-pip` / `python3-setuptools` / `python3-devel`. The fix split the python3 bindings into a separate `libselinux-python3.spec` and added `libselinux`/`libsepol` to `data/builder-pkg-preq.json` so the bootstrap can pre-stage them.
 
-The latest *Dependency Graph Scan* run prior to the fix (`25661049895`, 2026-05-11 09:10 UTC) emitted a graph whose edges encode exactly this cycle:
+> **Note (amended 2026-05-13).** The libselinux ↔ python3 coupling is a **spec-source-coupling**, not a graph-level cycle. The C extension records `BuildRequires` against source-package nodes only and does not propagate them to subpackages, so the coupling does not surface as a directed SCC in the exported binary-package edge graph. See [findings/2026-05-13-libselinux-python3-not-a-graph-cycle.md](findings/2026-05-13-libselinux-python3-not-a-graph-cycle.md) for the empirical analysis. Acceptance criteria below are anchored on cycles that **do** exist in the 2026-05-11 master fixture; whether to extend the C extension to propagate source-level BuildRequires to subpackages is a separate initiative.
+
+The latest *Dependency Graph Scan* run prior to the fix (`25661049895`, 2026-05-11 09:10 UTC) emitted a graph that, when analysed by the cycle engine, contains **twelve** strongly-connected components. The most concrete actionable cycle is:
 
 ```
-libselinux (id 1155) --buildrequires--> python3-pip       (466)
-libselinux (id 1155) --buildrequires--> python3-setuptools(462)
-libselinux (id 1155) --buildrequires--> python3-devel     (458)
-libselinux-python3   (1158) --requires--> libselinux       (1155)
+python3-attrs (id …) --buildrequires--> python3-pytest
+python3-pytest        --buildrequires--> python3-attrs
 ```
 
-The cycle was present in the data, ~27 hours before the manual fix, but the workflow neither flagged it in the Actions summary nor failed the run. The same gap will hide the next cycle.
+The largest entanglement is a 37-node toolchain SCC (`autogen, bash, cmake, curl, gcc, openssl, python3, readline, tcl, util-linux, …`) which is expected to flip to `bootstrap_resolved: true` once the branch's `data/builder-pkg-preq.json` is loaded.
 
 This PRD specifies adding **cycle detection** to the artifact, and — as a prerequisite — **first-class sub-release flavors** so that Photon 5.0's `SPECS/`, `SPECS/90`, `SPECS/91`, `SPECS/92` overlays are scanned independently rather than collapsed into a single "5.0" graph.
 
@@ -40,7 +40,7 @@ This PRD specifies adding **cycle detection** to the artifact, and — as a prer
 - Augment the existing artifact JSON schema additively: bump `metadata.schema_version` 1 → 2; add `sccs[]`, `cycles[]`, `cycle_summary{}`, and `metadata.flavor`. All v1 keys preserved.
 - Optional fail-on-cycle gate: a new workflow input `fail_on_buildrequires_cycle` (default `false`). When `true`, the job exits non-zero if any `bootstrap_resolved: false` `buildrequires` cycle is found.
 - Update the GitHub Actions step summary table to surface cycle counts per (branch, flavor), plus a fenced block listing up to the first ten representative cycles per scan.
-- Regression coverage on the 2026-05-11 master snapshot to prove the detector finds the documented libselinux ↔ python3 cycle.
+- Regression coverage on the 2026-05-11 master snapshot to prove the detector finds the cycles documented in this PRD (specifically `python3-attrs ↔ python3-pytest` for the actionable buildrequires class, and the 37-node toolchain SCC for the `bootstrap_resolved` transition once the real `builder-pkg-preq.json` loads).
 
 ### Out of Scope
 
@@ -69,7 +69,7 @@ This PRD specifies adding **cycle detection** to the artifact, and — as a prer
 
 Every JSON the workflow emits has a `cycles[]` array and a `cycle_summary{}` counter. If the input graph is acyclic, both are empty / zero. If it contains cycles, every non-trivial SCC contributes at least one representative cycle.
 
-**Success metric:** Re-running the detector on the saved 2026-05-11 master JSON produces a cycle entry whose `path_names` contains both `libselinux` and a `python3-*` node, `category: "buildrequires"`, `bootstrap_resolved: false`.
+**Success metric:** Re-running the detector on the saved 2026-05-11 master JSON produces a cycle entry with `path_names == ["python3-attrs", "python3-pytest", "python3-attrs"]`, `category: "buildrequires"`, `length: 2`, and (with empty preq) `bootstrap_resolved: false`. The same scan also yields a 37-member SCC whose members include `python3`, `gcc`, `bash`, `cmake`, `openssl`.
 
 ### G2 — First-class sub-release flavors
 
@@ -79,13 +79,13 @@ The workflow discovers `SPECS/[0-9]+/` overlay directories after sparse-checkout
 
 ### G3 — Distinguish actionable from bootstrap-resolved cycles
 
-Every cycle carries a `bootstrap_resolved` boolean derived from the branch's `data/builder-pkg-preq.json`. Cycles where every member is pre-staged are reported but never trip `fail_on_buildrequires_cycle`. The 2026-05-12 amendment to `builder-pkg-preq.json` (libselinux/libsepol) is the canonical example: post-fix, any residual `libselinux ↔ python3` cycle becomes `bootstrap_resolved: true` and falls below the action threshold.
+Every cycle carries a `bootstrap_resolved` boolean derived from the branch's `data/builder-pkg-preq.json`. Cycles where every member is pre-staged are reported but never trip `fail_on_buildrequires_cycle`. The toolchain SCC (37 members: gcc, openssl, python3, bash, cmake, …) is the canonical example: every member is part of the bootstrap pre-stage list, so the SCC reports `bootstrap_resolved: true` and falls below the action threshold.
 
-**Success metric:** On a post-fix master scan, the libselinux ↔ python3 SCC — if any edges still exist — is reported with `bootstrap_resolved: true` and excluded from the `unresolved` summary counter.
+**Success metric:** On the 2026-05-11 master scan with the branch's real `data/builder-pkg-preq.json` loaded, the 37-node toolchain SCC reports `bootstrap_resolved: true` and is excluded from the `unresolved` summary counter. The `python3-attrs ↔ python3-pytest` cycle remains `bootstrap_resolved: false` (those packages are not in the bootstrap pre-stage list).
 
 ### G4 — Backwards-compatible artifact schema
 
-`metadata.schema_version` bumps from 1 to 2. All v1 keys (`metadata.{branch,specsdir,generated_at}`, `node_count`, `edge_count`, `nodes`, `edges`) are preserved unchanged. Consumers branch on `schema_version` to opt into the new fields.
+`metadata.schema_version` bumps from 1 to 2. All v1 keys (`metadata.{generator,timestamp,branch}`, `node_count`, `edge_count`, `nodes`, `edges`) are preserved unchanged. Consumers branch on `schema_version` to opt into the new fields. *(Amended 2026-05-13: the v1 metadata keys are `generator` / `timestamp` / `branch` as actually emitted by the C extension, not `branch` / `specsdir` / `generated_at` as the v1.0 draft asserted; the engine preserves whatever v1 keys are present.)*
 
 **Success metric:** Downstream consumers `gating-conflict-detection`, `package-classifier`, `snyk-analysis`, and `upstream-source-code-dependency-scanner` continue to parse v2 JSONs without modification.
 
@@ -113,7 +113,7 @@ The cycle-detection initiative is complete when all of the following hold:
 
 | # | Criterion | Verifier |
 |---|-----------|----------|
-| AC-1 | Regression scan on `vmware/photon` at the 2026-05-11 commit produces a cycle whose `path_names` contains both `libselinux` and a `python3-*` node, with `category: "buildrequires"` and `bootstrap_resolved: false`. | `specs/tasks/0001-task-cycles-post-step.md` T6 |
+| AC-1 | Regression scan on `tdnf-depgraph/scans/dependency-graph-master-20260511_091039.json` produces a cycle with `path_names == ["python3-attrs", "python3-pytest", "python3-attrs"]`, `category: "buildrequires"`, `length: 2`, and (with empty preq) `bootstrap_resolved: false`. The same scan also produces exactly 12 SCCs, one of which has size 37 and includes the names `python3`, `gcc`, `bash`, `cmake`, `openssl`. *(Amended 2026-05-13: original AC-1 anchored on `libselinux ↔ python3` which is a spec-source coupling, not a graph cycle — see [findings/2026-05-13-libselinux-python3-not-a-graph-cycle.md](findings/2026-05-13-libselinux-python3-not-a-graph-cycle.md).)* | `specs/tasks/016-task-regression-fixture.md` |
 | AC-2 | Re-running the detector on the same input JSON twice produces byte-identical `cycles[]` and `sccs[]` arrays (deterministic ordering). | T1 unit test |
 | AC-3 | Workflow_dispatch on Photon 5.0 produces four artifact files: `dependency-graph-5.0-<datetime>.json` (base) and `dependency-graph-5.0-{90,91,92}-<datetime>.json` (overlays). | T3 |
 | AC-4 | Workflow_dispatch on Photon 3.0/4.0/6.0/common/master/dev produces files whose names are unchanged from v1 (`dependency-graph-<branch>-<datetime>.json`). | T3 |
@@ -149,16 +149,25 @@ Decisions agreed before ADR drafting; ADRs in Phase 3 document the rationale:
 
 ### Open questions for Dev Lead review
 
-- **Q1.** Should the 2026-05-11 snapshot live permanently as `tdnf-depgraph/tests/fixtures/` for ongoing regression coverage, or be rebuilt on demand? Recommendation: check in (small file, anchors AC-1).
-- **Q2.** When a non-trivial SCC has only `requires` edges (runtime cycle, no build-time edges), should we still emit a `cycles[]` entry with `category: "requires"`? Recommendation: yes — informational, no failure impact.
-- **Q3.** Should `metadata.flavor` be `""` or `null` for the base scan (no overlay)? Recommendation: `""` for consistent string typing.
+- **Q1.** Should the 2026-05-11 snapshot live permanently as `tdnf-depgraph/tests/fixtures/` for ongoing regression coverage, or be rebuilt on demand? Recommendation: check in (small file, anchors AC-1). *(Resolved 2026-05-13: yes — task 016 checks it in.)*
+- **Q2.** When a non-trivial SCC has only `requires` edges (runtime cycle, no build-time edges), should we still emit a `cycles[]` entry with `category: "requires"`? Recommendation: yes — informational, no failure impact. *(Resolved 2026-05-13: yes — engine in task 012 emits them; see cyc-001/004/005/006-009/011/012 on the master fixture.)*
+- **Q3.** Should `metadata.flavor` be `""` or `null` for the base scan (no overlay)? Recommendation: `""` for consistent string typing. *(Resolved 2026-05-13: `""` — implemented in task 012's engine.)*
+- **Q4 (new, opened 2026-05-13 by finding).** Should the C `tdnf-depgraph` extension propagate source-level `BuildRequires` from a `.spec` to its subpackages, so that spec-source-couplings (like the libselinux ↔ python3 incident) surface as graph cycles? Recommendation: separate initiative — its own PRD. Not in scope for the current cycle-detection work.
 
 ---
 
 ## 9. References
 
-- Photon commit fixing the libselinux ↔ python3 loop: `vmware/photon@8fb8549c`
-- The workflow run that captured the cycle in data but didn't flag it: [`actions/runs/25661049895`](https://github.com/dcasota/photonos-scripts/actions/runs/25661049895)
+- Motivating Photon commit (`libselinux ↔ python3` spec-source coupling fix): `vmware/photon@8fb8549c`
+- The workflow run that captured the source-level edges but didn't flag any graph cycle: [`actions/runs/25661049895`](https://github.com/dcasota/photonos-scripts/actions/runs/25661049895)
 - Workflow source: [`.github/workflows/depgraph-scan.yml`](../../.github/workflows/depgraph-scan.yml)
 - Subproject architecture: [`../ARCHITECTURE.md`](../ARCHITECTURE.md)
+- Empirical finding amending AC-1: [`findings/2026-05-13-libselinux-python3-not-a-graph-cycle.md`](findings/2026-05-13-libselinux-python3-not-a-graph-cycle.md)
 - Related SDD initiatives following the same pattern: [`../../upstream-source-code-dependency-scanner/specs/prd.md`](../../upstream-source-code-dependency-scanner/specs/prd.md), [`../../vCenter-CVE-drift-analyzer/specs/prd.md`](../../vCenter-CVE-drift-analyzer/specs/prd.md)
+
+---
+
+## Changelog
+
+- **1.1 (2026-05-13)** — AC-1 and G1/G3 success metrics re-anchored on cycles that exist in the binary-package edge graph (`python3-attrs ↔ python3-pytest` for the actionable buildrequires class; 37-node toolchain SCC for the `bootstrap_resolved` transition). Q1–Q3 resolved. New Q4 opened: should the C extension propagate source-level `BuildRequires` to subpackages? G4 v1-key list corrected (`generator`/`timestamp`/`branch`, not `branch`/`specsdir`/`generated_at` — the engine preserves whatever v1 keys are present regardless). See [`findings/2026-05-13-libselinux-python3-not-a-graph-cycle.md`](findings/2026-05-13-libselinux-python3-not-a-graph-cycle.md).
+- **1.0 (2026-05-13)** — Initial draft.
