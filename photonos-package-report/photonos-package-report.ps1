@@ -87,11 +87,13 @@ param (
     [string]$workingDir = $(if ($env:PUBLIC) { $env:PUBLIC } else { $HOME }),
     [string]$upstreamsDir = "",
     [string]$scansDir = "",
-    # Comma-separated substrings. If the LEAF (filename) of $UpdateDownloadFile
-    # contains any of these (case-insensitive), the tarball-build/fetch block
-    # in CheckURLHealth is skipped — substitution + urlhealth still run.
-    # Use case: avoid expensive re-downloads of huge sources (e.g.
-    # "firmware,chromium") on every package-report run.
+    # Comma-separated substrings (case-insensitive). Applied against TWO keys:
+    #   1. LEAF of $UpdateDownloadFile — skips tarball build/fetch into SOURCES_NEW.
+    #   2. $repoName from *.git URL    — skips git-clone creation under clones/.
+    # When a filter matches, that step is bypassed; substitution + urlhealth
+    # still run downstream (tag detection falls back to the non-git path).
+    # Use case: avoid expensive re-downloads + 50–70 GB clones of huge sources
+    # (e.g. "firmware,chromium") on every package-report run.
     [string]$UpstreamsExclusionList = "",
     [Parameter(Mandatory = $false)][ValidateNotNull()]$GeneratePh3URLHealthReport=$true,
     [Parameter(Mandatory = $false)][ValidateNotNull()]$GeneratePh4URLHealthReport=$true,
@@ -2367,12 +2369,27 @@ function CheckURLHealth {
                     # override with special cases
                     if ($currentTask.spec -ilike 'gstreamer-plugins-base.spec') {$repoName="gst-plugins-base-"}
 
+                    # Optional skip: when -UpstreamsExclusionList contains a substring of
+                    # $repoName (case-insensitive), do NOT clone the repo into clones/.
+                    # Companion to the tarball-fetch skip in CheckURLHealth's SOURCES_NEW
+                    # block. Typical: skip 55 GB `firmware` + 67 GB `chromium` clones.
+                    $skipClone = $false
+                    if (-not [string]::IsNullOrWhiteSpace($UpstreamsExclusionList)) {
+                        foreach ($filter in ($UpstreamsExclusionList -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })) {
+                            if ($repoName.IndexOf($filter, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                                Write-Host "Skipping upstream clone for $($currentTask.Spec): filter '$filter' matches repo '$repoName'"
+                                $skipClone = $true
+                                break
+                            }
+                        }
+                    }
+
                     $SourceClonePath=[System.String](join-path -path $ClonePath -childpath $repoName)
 
                     # Poll-based completion detection: first thread fetches, others wait and observe FETCH_HEAD
                     $fetchState = Wait-ForFetchCompletion -SourceClonePath $SourceClonePath -RepoName $repoName -ScriptStartTime $ScriptStartTime
 
-                    if (-not $fetchState.AlreadyFetched) {
+                    if ((-not $fetchState.AlreadyFetched) -and (-not $skipClone)) {
                         if (-not (Test-DiskSpace -Path $ClonePath -RequiredMB 512 -Operation "clone $repoName")) {
                             Write-Warning "DISK SPACE LOW: Skipping clone of $repoName - insufficient space"
                         } else {
@@ -3642,10 +3659,24 @@ function CheckURLHealth {
 
                     $SourceClonePath=[System.String](join-path -path $ClonePath -childpath $repoName)
 
+                    # Optional skip: when -UpstreamsExclusionList contains a substring of
+                    # $repoName (case-insensitive), do NOT clone the repo into clones/.
+                    # See parameter doc at top of script.
+                    $skipClone = $false
+                    if (-not [string]::IsNullOrWhiteSpace($UpstreamsExclusionList)) {
+                        foreach ($filter in ($UpstreamsExclusionList -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })) {
+                            if ($repoName.IndexOf($filter, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                                Write-Host "Skipping upstream clone for $($currentTask.Spec): filter '$filter' matches repo '$repoName'"
+                                $skipClone = $true
+                                break
+                            }
+                        }
+                    }
+
                     # Poll-based completion detection: first thread fetches, others wait and observe FETCH_HEAD
                     $fetchState = Wait-ForFetchCompletion -SourceClonePath $SourceClonePath -RepoName $repoName -ScriptStartTime $ScriptStartTime
 
-                    if (-not $fetchState.AlreadyFetched) {
+                    if ((-not $fetchState.AlreadyFetched) -and (-not $skipClone)) {
                         if (-not (Test-DiskSpace -Path $ClonePath -RequiredMB 512 -Operation "clone $repoName")) {
                             Write-Warning "DISK SPACE LOW: Skipping clone of $repoName - insufficient space"
                         } else {
@@ -3983,10 +4014,24 @@ function CheckURLHealth {
 
                     $SourceClonePath=[System.String](join-path -path $ClonePath -childpath $repoName)
 
+                    # Optional skip: when -UpstreamsExclusionList contains a substring of
+                    # $repoName (case-insensitive), do NOT clone the repo into clones/.
+                    # See parameter doc at top of script.
+                    $skipClone = $false
+                    if (-not [string]::IsNullOrWhiteSpace($UpstreamsExclusionList)) {
+                        foreach ($filter in ($UpstreamsExclusionList -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })) {
+                            if ($repoName.IndexOf($filter, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                                Write-Host "Skipping upstream clone for $($currentTask.Spec): filter '$filter' matches repo '$repoName'"
+                                $skipClone = $true
+                                break
+                            }
+                        }
+                    }
+
                     # Poll-based completion detection: first thread fetches, others wait and observe FETCH_HEAD
                     $fetchState = Wait-ForFetchCompletion -SourceClonePath $SourceClonePath -RepoName $repoName -ScriptStartTime $ScriptStartTime
 
-                    if (-not $fetchState.AlreadyFetched) {
+                    if ((-not $fetchState.AlreadyFetched) -and (-not $skipClone)) {
                         if (-not (Test-DiskSpace -Path $ClonePath -RequiredMB 512 -Operation "clone $repoName")) {
                             Write-Warning "DISK SPACE LOW: Skipping clone of $repoName - insufficient space"
                         } else {
