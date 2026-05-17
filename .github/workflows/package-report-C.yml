@@ -23,6 +23,9 @@ on:
       upstreams_exclusion_list:
         description: 'Comma-separated substrings (case-insensitive). Must mirror the PS workflow value so both sides skip the same clones. See package-report.yml for semantics.'
         default: 'firmware,chromium'
+      throttle_limit:
+        description: 'Concurrency for CheckURLHealth (sequential clones on-demand at -ThrottleLimit 1 take many hours for full multi-branch snapshots). Drop to 1 when chasing a strict-diff that needs byte-stable stderr ordering.'
+        default: '8'
 
 permissions:
   contents: write   # commit the journal back to master
@@ -139,7 +142,7 @@ jobs:
             echo "master=$MASTER"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Run C binary (-ThrottleLimit 1)
+      - name: Run C binary
         id: c_run
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -159,13 +162,25 @@ jobs:
             UPSTREAMS_EXCL="firmware,chromium"
           fi
 
-          # Run with -ThrottleLimit 1 per ADR-0009 to keep stderr ordering
-          # byte-stable during the parity window.
+          # ADR-0009 originally pinned -ThrottleLimit 1 for byte-stable
+          # stderr ordering. In practice the snapshot manifest carries
+          # ~4000 specs with .git Source0 — on-demand clones serially
+          # exceed the 8-hour workflow timeout. parity-diff.sh only
+          # compares .prn output (which is already byte-stable via
+          # FRD-013 sort + single-writer regardless of throttle), so
+          # we can safely parallelise the runtime. Drop back to 1 via
+          # workflow_dispatch input when chasing a strict-diff that
+          # needs deterministic stderr.
+          THROTTLE="${{ github.event.inputs.throttle_limit }}"
+          if [ -z "$THROTTLE" ]; then
+            THROTTLE="8"
+          fi
+
           ./build/photonos-package-report \
             -workingDir   "$WDIR" \
             -upstreamsDir "$UPSTREAMS" \
             -scansDir     "$SCANS" \
-            -ThrottleLimit 1 \
+            -ThrottleLimit "$THROTTLE" \
             -github_token "$GITHUB_TOKEN" \
             -UpstreamsExclusionList "$UPSTREAMS_EXCL" \
             -GeneratePh3URLHealthReport      "${{ steps.branches.outputs.ph3 }}" \
