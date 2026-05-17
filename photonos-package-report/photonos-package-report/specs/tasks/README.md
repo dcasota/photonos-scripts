@@ -171,6 +171,7 @@ amendment (or new FRD if scope warrants).
 | M05 | C-side `.prn` upload as workflow artifact in `package-report-C.yml`. Today the runner cleans `_temp/` at job end and the C-side `.prn` is lost, blocking post-hoc strict-diff investigation. Acceptance: `gh run download <id> -n c-side-prn-<id>` returns 7 files. **Implemented** in workflow YAML; smoke-test pending next workflow_dispatch. | FRD-017 | 0006 | n/a | n/a |
 | M06 | Diff-analysis baseline. Run C binary against snapshot SHAs locally, run `diff_analyzer.py` per branch, ship 7 markdown files under `docs/prn-analysis/diff-c-vs-ps-photon-<branch>.md`. Buckets specs by column-set signature with sample values. | FRD-017 | 0006 | n/a | n/a |
 | M07 | Per-bucket convergence loop (parent task; spawns Mxx subtasks). Iterates the priority list in [`TODO.md`](../../../../TODO.md) §3. Each bucket = one PR following the 9-step recipe (read bucket → trace to source → fix direction per CLAUDE.md invariant 2 → spec → implement → smoke test → PR → parity-gate → merge). | FRD-011, FRD-014 | 0006 | varies | strict |
+| M08 | `%{version}` substitution cut: mirror PS L 2111-2119 to strip the trailing `-release` from `task->Version` before substitution (with dot-suffix preservation for Photon dist tags). Fixes the dominant ~550-spec-per-branch diff signature `Source0_modified,UpdateAvailable,UpdateURL,SHAName,UpdateDownloadName`. Smoke: 946 of 1034 photon-4.0 specs now have matching col-3 vs ~2 before. | FRD-011 | 0006 | 2111-2119 | strict |
 
 ---
 
