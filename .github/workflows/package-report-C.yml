@@ -145,7 +145,13 @@ jobs:
       - name: Run C binary
         id: c_run
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN:    ${{ secrets.GITHUB_TOKEN }}
+          # check_urlhealth() gates all network work (urlhealth HEAD
+          # probes + pr_clone_ensure tag-detect chain) on this env var
+          # so ctest stays offline-hermetic by default. CI parity NEEDS
+          # the network paths to run — without it, cols 4/5/6/7/10 are
+          # all empty on the C side and every row diffs strict.
+          PR_TEST_NETWORK: "1"
         run: |
           cd repo/photonos-package-report/photonos-package-report
           WDIR="${{ steps.reconstruct.outputs.wdir }}"
