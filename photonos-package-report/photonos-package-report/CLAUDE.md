@@ -64,8 +64,9 @@ while the tool is live.
 | 6f | SHA helpers + cross-branch diff (col 9 wired)         | done (#65)  |
 | 7  | Cluster orchestrator + parallel runspace mirror (`-ThrottleLimit`) | done (#66) |
 | 8  | CI side-by-side parity gate                           | done (#67)  |
-| 9  | Retirement (PS → staging/legacy/, C-only)             | pending     |
-| M  | Maintainer ops & debug tooling — `docs/maintainer-runbook.md`, `.vscode/`; M01 mirrors PS PR #84 (`-UpstreamsExclusionList` skips clone creation); M02 multi-branch dispatcher in `main.c` | ongoing |
+| 8.5 | Parity convergence loop — per-bucket PS↔C diff fixes (TODO §3) | in progress |
+| 9  | Retirement (PS → staging/legacy/, C-only)             | pending (gated on 90d green journal) |
+| M  | Maintainer ops & debug tooling — `docs/maintainer-runbook.md`, `.vscode/`; M01 PR #84 mirror (`-UpstreamsExclusionList` clone-skip); M02 multi-branch dispatcher; M03 `photon-` prefix on SPECS path; M04 partial-clone speedup + token-leak hardening | ongoing |
 
 When you land a feature in a numeric phase that changes a workflow the
 maintainer cares about (new flag, new override mechanism, new generator),
