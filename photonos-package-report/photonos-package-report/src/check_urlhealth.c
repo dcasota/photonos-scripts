@@ -54,6 +54,58 @@ static char *dup_or_empty(const char *s)
     return p;
 }
 
+/* PS L 2111-2119: "cut last index in $currentTask.version and save value
+ * in $version". Mirror byte-for-byte.
+ *
+ *   $versionArray = ($currentTask.version).split("-")
+ *   if ($versionArray.length -gt 0) {
+ *       $version = $versionArray[0]
+ *       for ($i=1; $i -lt ($versionArray.length-1); $i++) {
+ *           $version = concat($version, "-", $versionArray[$i])
+ *       }
+ *       if ($versionArray[length-1] -ilike '*.*') {
+ *           if (last("." split of last element) -ne "") {
+ *               $version = concat($version, "-", that-last-dot-split-element)
+ *           }
+ *       }
+ *   }
+ *
+ * Equivalent in C: take task_version[0..last_dash) as the prefix; if the
+ * last "-"-separated element contains a '.', append "-" + the part after
+ * its last '.'. The "loop concat" is implicit because strrchr finds the
+ * LAST dash, so the prefix already includes intermediate dashes. */
+static char *version_cut(const char *task_version)
+{
+    if (task_version == NULL || *task_version == '\0') return dup_or_empty("");
+
+    const char *last_dash = strrchr(task_version, '-');
+    size_t prefix_len = last_dash ? (size_t)(last_dash - task_version)
+                                  : strlen(task_version);
+
+    /* "Last element" is everything after the last '-', or the whole
+     * string if there is none (mirroring PS when versionArray.length=1). */
+    const char *last_part = last_dash ? last_dash + 1 : task_version;
+    const char *last_dot_in_part = strrchr(last_part, '.');
+
+    if (last_dot_in_part && *(last_dot_in_part + 1)) {
+        const char *suffix = last_dot_in_part + 1;
+        size_t suffix_len = strlen(suffix);
+        char *out = (char *)malloc(prefix_len + 1 + suffix_len + 1);
+        if (!out) return dup_or_empty("");
+        memcpy(out, task_version, prefix_len);
+        out[prefix_len] = '-';
+        memcpy(out + prefix_len + 1, suffix, suffix_len);
+        out[prefix_len + 1 + suffix_len] = '\0';
+        return out;
+    }
+
+    char *out = (char *)malloc(prefix_len + 1);
+    if (!out) return dup_or_empty("");
+    memcpy(out, task_version, prefix_len);
+    out[prefix_len] = '\0';
+    return out;
+}
+
 char *check_urlhealth(pr_task_t                       *task,
                       const pr_source0_lookup_table_t *lookup_table,
                       const char                      *clone_root,
@@ -82,10 +134,11 @@ char *check_urlhealth(pr_task_t                       *task,
         state.ArchivationDate = dup_or_empty(row->ArchivationDate);
     }
 
-    /* PS L 2108: $version cut. Phase 6b refines this; for 6a we use
-     * task->Version verbatim. */
+    /* PS L 2111-2119: cut the trailing "-release" off task->Version
+     * (with dot-suffix preservation for Photon-style dist tags like
+     * "ph5"). See version_cut() above. */
     free(state.version);
-    state.version = dup_or_empty(task->Version);
+    state.version = version_cut(task->Version);
 
     /* Phase 3b per-spec exception hook. */
     pr_hooks_run(task, &state);
