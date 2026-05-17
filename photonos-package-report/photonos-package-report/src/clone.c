@@ -6,6 +6,7 @@
 #include "pr_git_tags.h"
 #include "photonos_package_report.h"  /* invoke_git_with_timeout from Phase 1 */
 
+#include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -13,6 +14,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/file.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -56,6 +58,56 @@ static int mkdir_p(const char *path)
     if (rc != 0 && errno == EEXIST) rc = 0;
     free(copy);
     return rc;
+}
+
+/* Case-insensitive substring (POSIX strcasestr is GNU/BSD only; roll
+ * our own to keep src/clone.c self-contained). Returns 1 iff `needle`
+ * occurs in `haystack` ignoring ASCII case. */
+static int ci_substr(const char *haystack, const char *needle)
+{
+    if (!haystack || !needle || !*needle) return 0;
+    size_t hl = strlen(haystack);
+    size_t nl = strlen(needle);
+    if (nl > hl) return 0;
+    for (size_t i = 0; i + nl <= hl; i++) {
+        if (strncasecmp(haystack + i, needle, nl) == 0) return 1;
+    }
+    return 0;
+}
+
+/* --- pr_should_skip_clone ------------------------------------------- */
+
+int pr_should_skip_clone(const char *repo_name, const char *exclusion_list)
+{
+    if (!repo_name || !exclusion_list || !*exclusion_list) return 0;
+
+    /* Walk comma-separated tokens. Trim ASCII whitespace. Empty tokens
+     * (consecutive commas, all-whitespace cells) are skipped. */
+    const char *p = exclusion_list;
+    while (*p) {
+        const char *comma = strchr(p, ',');
+        const char *end   = comma ? comma : p + strlen(p);
+
+        const char *tok_start = p;
+        const char *tok_end   = end;
+        while (tok_start < tok_end && isspace((unsigned char)*tok_start)) tok_start++;
+        while (tok_end > tok_start && isspace((unsigned char)*(tok_end - 1))) tok_end--;
+
+        size_t len = (size_t)(tok_end - tok_start);
+        if (len > 0) {
+            char *tok = (char *)malloc(len + 1);
+            if (!tok) return 0;
+            memcpy(tok, tok_start, len);
+            tok[len] = '\0';
+            int hit = ci_substr(repo_name, tok);
+            free(tok);
+            if (hit) return 1;
+        }
+
+        if (!comma) break;
+        p = comma + 1;
+    }
+    return 0;
 }
 
 /* --- pr_extract_repo_name ------------------------------------------ */

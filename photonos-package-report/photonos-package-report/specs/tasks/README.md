@@ -155,6 +155,19 @@ Legend:
 
 ---
 
+## Phase M — Maintainer ops mirrors
+
+Small user-facing PS features that land after the linear 0-9 stream
+get mirrored here. Numbered M01…Mnn, independent of the numeric
+phase task ids. Each task lands in a single PR alongside an FRD
+amendment (or new FRD if scope warrants).
+
+| Task | Subject | FRD | ADR | PS-L | Parity |
+|---|---|---|---|---|---|
+| M01 | Mirror PS PR #84: extend `-UpstreamsExclusionList` to skip clone creation in C (`pr_should_skip_clone` + guard at `check_urlhealth.c:107-115`) | FRD-012 | 0001,0006 | 2369-2392, 3659-3679, 4014-4034 | strict |
+
+---
+
 ## Risk register (cross-phase)
 
 | Risk | Phase | Mitigation |

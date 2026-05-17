@@ -42,6 +42,17 @@ int pr_clone_ensure(const char *clone_root,
                     const char *git_branch,
                     const char *repo_name);
 
+/* Return 1 iff any comma-separated, trimmed, non-empty filter from
+ * `exclusion_list` is a case-insensitive substring of `repo_name`.
+ * Empty / NULL list ⇒ never skip.
+ *
+ * Mirrors PS L 2376-2386 (and L 3665-3675, 4020-4030): the symmetric
+ * dual-key check against `$repoName` extracted from the `*.git` URL.
+ *
+ * Used by check_urlhealth() to bypass pr_clone_ensure for huge clones
+ * (firmware ≈ 55 GB, chromium ≈ 67 GB per branch). */
+int pr_should_skip_clone(const char *repo_name, const char *exclusion_list);
+
 /* Run `git tag -l` in the clone directory and parse the output.
  * Optional case-sensitive PCRE2 filter via `custom_regex`.
  *
