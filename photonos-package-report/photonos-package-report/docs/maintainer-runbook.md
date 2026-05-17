@@ -179,18 +179,69 @@ hard error via the env var `PR_HOOKS_PS_ONLY_FATAL=1`.
 
 ## 3. Excluding a package entirely (`UpstreamsExclusionList`)
 
-If a package is breaking the upstream clone phase (firmware blobs,
-chromium, etc.) you can short-circuit it with the existing
-`-UpstreamsExclusionList` argument. Mirrored 1:1 in the C port.
+If a package's upstream clone is large enough to push the runner against
+disk limits (firmware blobs, chromium, etc.), short-circuit it with
+`-UpstreamsExclusionList`.
 
 ```sh
-./build/photonos-package-report \
+pwsh -File ./photonos-package-report.ps1 \
     -workingDir   /var/photonos \
     -UpstreamsExclusionList 'firmware,chromium,my-broken-pkg'
 ```
 
-Comma-separated, case-sensitive, no spaces. Matched against `Name` (the
-directory leaf under `SPECS/`).
+Comma-separated, **case-insensitive substring match**, no spaces around
+the commas. The list is applied against **two** keys, each independently:
+
+| # | Key                                       | What gets skipped                  | PS site             |
+|---|-------------------------------------------|------------------------------------|---------------------|
+| 1 | `repoName` (leaf of `*.git` URL)          | `git clone` into `clones/<repo>`   | L 2392 / 3679 / 4034 |
+| 2 | leaf of `$UpdateDownloadFile` (tarball)   | tarball build/fetch into `SOURCES_NEW` | L 4790            |
+
+When key 1 fires, `$repoName/.git` is never created → the downstream
+`git tag -l` block falls through cleanly and version detection uses
+the non-git heuristic path (Source0 parent + `customRegex`). When key 2
+fires, the tarball block is bypassed; substitution + urlhealth still run.
+
+Default (empty list): both keys are no-ops; behaviour matches pre-flag
+runs byte-for-byte.
+
+### Disk-space recovery on the runner
+
+Activating the exclusion **does not delete existing clones** — it only
+prevents future creation. After the flag is in your operator config,
+free space manually:
+
+```sh
+# Example: actions-runner installation. ~122 GB recovered per branch.
+for b in 3.0 4.0 5.0 6.0 common dev master; do
+    rm -rf "/root/actions-runner/_work/photonos-scripts/photonos-scripts/reports/photon-upstreams/photon-$b/clones/firmware"
+    rm -rf "/root/actions-runner/_work/photonos-scripts/photonos-scripts/reports/photon-upstreams/photon-$b/clones/chromium"
+done
+```
+
+Without the flag, the very next run re-clones both (`firmware` ≈ 55 GB,
+`chromium` ≈ 67 GB per branch — measured 2026-05-17). With the flag, the
+slots stay empty.
+
+### Parity-gate interaction
+
+The C port currently honours `-UpstreamsExclusionList` only for the
+tarball half (key 2). Until the C side also honours key 1, passing
+`firmware,chromium` to the PS workflow without also passing it to the
+C workflow will diverge on rows where git-tag detection ran on one
+side and the non-git fallback ran on the other → **strict-fail** on
+columns 5/6 of those spec rows.
+
+Operational rule until the C-side migration lands:
+
+* **Do not** set `-UpstreamsExclusionList` on the production PS
+  workflow (`package-report.yml`) yet. The flag is safe in ad-hoc
+  manual runs and in any C-side workflow that explicitly forwards
+  the same value.
+* The dual-key matching is already wired in `package-report.ps1` so
+  the symmetric C-side change (Phase 9 follow-on or its own SDD spec
+  under Phase M) is a straight port; no PS-side rework needed when
+  the C side catches up.
 
 ---
 
