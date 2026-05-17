@@ -19,6 +19,30 @@ This FRD specifies the 1:1 C port of the corresponding section of the PowerShell
 
 (To be expanded by the dev agent at the start of the phase that implements this FRD; the implementation must be a literal, line-ordered translation of the PS source range above. No reordering, no merging of cases.)
 
+### 2.1 Multi-branch dispatcher (Phase M task M02)
+
+When the hidden `--generate-urlhealth-report <branch>` flag is unset,
+the C binary MUST iterate the 7 `-GeneratePh*URLHealthReport` flags
+and call `generate_urlhealth_main(&params, "<branch>")` for each
+enabled branch:
+
+| Flag | Branch arg |
+|---|---|
+| `GeneratePh3URLHealthReport`      | `"3.0"`    |
+| `GeneratePh4URLHealthReport`      | `"4.0"`    |
+| `GeneratePh5URLHealthReport`      | `"5.0"`    |
+| `GeneratePh6URLHealthReport`      | `"6.0"`    |
+| `GeneratePhCommonURLHealthReport` | `"common"` |
+| `GeneratePhDevURLHealthReport`    | `"dev"`    |
+| `GeneratePhMasterURLHealthReport` | `"master"` |
+
+Mirrors PS `photonos-package-report.ps1` L 5040-5215 (cluster
+orchestrator loop). Per-branch failures (e.g. `parse_directory`
+on a missing SPECS tree) are soft — they emit `::warning::` and the
+loop continues to the next branch. The process exit code reflects
+the last non-zero return from `generate_urlhealth_main`. When no
+flag is enabled, exit code is 0 (no-op).
+
 ## 3. Bit-identical assertions
 
 - All non-volatile bytes of the implementation's outputs must match PS output exactly.

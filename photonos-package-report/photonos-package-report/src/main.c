@@ -17,6 +17,7 @@
  */
 #include "photonos_package_report.h"
 
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -270,6 +271,44 @@ int main(int argc, char **argv)
 
     if (generate_urlhealth_branch != NULL && generate_urlhealth_branch[0] != '\0') {
         return generate_urlhealth_main(&params, generate_urlhealth_branch);
+    }
+
+    /* Phase M task M02: multi-branch dispatcher.
+     *
+     * When the hidden --generate-urlhealth-report flag is NOT given,
+     * fall through to PS-style behaviour: iterate the 7 GeneratePh*
+     * URL-health flags and call generate_urlhealth_main() for each
+     * enabled branch. Mirrors PS photonos-package-report.ps1 L 5040-5215
+     * (the cluster orchestrator loop).
+     *
+     * A failed branch (missing SPECS, parse_directory error, …) only
+     * sets the exit code; remaining branches still run. PS-side errors
+     * are similarly soft per-branch. */
+    {
+        static const struct { int enabled_offset; const char *branch; }
+            branch_dispatch[] = {
+                { offsetof(pr_params_t, GeneratePh3URLHealthReport),      "3.0"    },
+                { offsetof(pr_params_t, GeneratePh4URLHealthReport),      "4.0"    },
+                { offsetof(pr_params_t, GeneratePh5URLHealthReport),      "5.0"    },
+                { offsetof(pr_params_t, GeneratePh6URLHealthReport),      "6.0"    },
+                { offsetof(pr_params_t, GeneratePhCommonURLHealthReport), "common" },
+                { offsetof(pr_params_t, GeneratePhDevURLHealthReport),    "dev"    },
+                { offsetof(pr_params_t, GeneratePhMasterURLHealthReport), "master" },
+            };
+        int any_enabled = 0;
+        int rc          = 0;
+        for (size_t i = 0; i < sizeof branch_dispatch / sizeof branch_dispatch[0]; i++) {
+            int enabled = *(int *)((char *)&params + branch_dispatch[i].enabled_offset);
+            if (!enabled) continue;
+            any_enabled = 1;
+            int br_rc = generate_urlhealth_main(&params, branch_dispatch[i].branch);
+            if (br_rc != 0) {
+                fprintf(stderr, "::warning::generate_urlhealth_main(%s) returned %d\n",
+                        branch_dispatch[i].branch, br_rc);
+                rc = br_rc;
+            }
+        }
+        if (any_enabled) return rc;
     }
 
     return 0;
