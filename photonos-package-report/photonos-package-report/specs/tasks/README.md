@@ -168,6 +168,9 @@ amendment (or new FRD if scope warrants).
 | M02 | Multi-branch dispatcher in `main.c` so the 7 `-GeneratePh*URLHealthReport` flags actually drive iteration (was silently dropped, causing parity-journal strict-fails) | FRD-015 | 0001 | 5040-5215 | strict |
 | M03 | `generate_urlhealth_main` prefixes `photon-` when constructing the on-disk SPECS path + clone_root (matches PS L 461, L 5304). Without this, M02's bare-tag branches hit `parse_directory: SPECS path not a directory`. | FRD-015 | 0001 | 461, 5304 | strict |
 | M04 | `do_clone` switches to `--no-checkout --filter=blob:none` partial clone (10-100× speedup for big repos: llvm-project, dotnet/runtime, elasticsearch). Mask `github_token` / `gitlab_freedesktop_org_token` in main.c param echo, drop `-github_token` CLI arg in workflow (was leaking to ps(1) on the runner). | FRD-012 | 0001,0006 | n/a | strict |
+| M05 | C-side `.prn` upload as workflow artifact in `package-report-C.yml`. Today the runner cleans `_temp/` at job end and the C-side `.prn` is lost, blocking post-hoc strict-diff investigation. Acceptance: `gh run download <id> -n c-side-prn-<id>` returns 7 files. | FRD-017 | 0006 | n/a | n/a |
+| M06 | Diff-analysis baseline. Run C binary against snapshot SHAs locally, run `diff_analyzer.py` per branch, ship 7 markdown files under `docs/prn-analysis/diff-c-vs-ps-photon-<branch>.md`. Buckets specs by column-set signature with sample values. | FRD-017 | 0006 | n/a | n/a |
+| M07 | Per-bucket convergence loop (parent task; spawns Mxx subtasks). Iterates the priority list in [`TODO.md`](../../../../TODO.md) §3. Each bucket = one PR following the 9-step recipe (read bucket → trace to source → fix direction per CLAUDE.md invariant 2 → spec → implement → smoke test → PR → parity-gate → merge). | FRD-011, FRD-014 | 0006 | varies | strict |
 
 ---
 
