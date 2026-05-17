@@ -56,7 +56,8 @@ static char *dup_or_empty(const char *s)
 
 char *check_urlhealth(pr_task_t                       *task,
                       const pr_source0_lookup_table_t *lookup_table,
-                      const char                      *clone_root)
+                      const char                      *clone_root,
+                      const char                      *exclusion_list)
 {
     if (task == NULL || task->Spec == NULL) return NULL;
 
@@ -109,7 +110,20 @@ char *check_urlhealth(pr_task_t                       *task,
 
         char *repo_name = pr_extract_repo_name(row->gitSource);
         if (repo_name) {
-            if (pr_clone_ensure(clone_root,
+            /* Mirror PS L 2376-2392 (and L 3665-3679, 4020-4034):
+             * skip clone creation when -UpstreamsExclusionList matches
+             * $repoName, case-insensitive substring. The downstream
+             * "no .git → fall through" path here is equivalent to PS's
+             * silent skip of the `git tag -l` block when $SourceClonePath
+             * was never created. */
+            int skip_clone = pr_should_skip_clone(repo_name, exclusion_list);
+            if (skip_clone) {
+                fprintf(stderr,
+                        "Skipping upstream clone for %s: exclusion-list "
+                        "matches repo '%s'\n",
+                        task->Spec, repo_name);
+            }
+            if (!skip_clone && pr_clone_ensure(clone_root,
                                 row->gitSource,
                                 row->gitBranch,
                                 repo_name) == 0) {

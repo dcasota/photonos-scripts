@@ -66,6 +66,60 @@ static void test_extract_repo_name(void)
     EXPECT_NULL(pr_extract_repo_name(NULL));
 }
 
+/* --- pr_should_skip_clone ------------------------------------------ */
+#define EXPECT_INT_EQ(actual, expected) do {                                   \
+    int _a = (actual);                                                         \
+    int _e = (expected);                                                       \
+    if (_a != _e) {                                                            \
+        fprintf(stderr, "  FAIL %s:%d: expected %d got %d\n",                  \
+                __FILE__, __LINE__, _e, _a);                                   \
+        failures++;                                                            \
+    }                                                                          \
+} while (0)
+
+static void test_should_skip_clone(void)
+{
+    fprintf(stderr, "[test_should_skip_clone]\n");
+
+    /* Empty / NULL list → never skip. */
+    EXPECT_INT_EQ(pr_should_skip_clone("firmware", NULL), 0);
+    EXPECT_INT_EQ(pr_should_skip_clone("firmware", ""),   0);
+
+    /* NULL repo_name → never skip. */
+    EXPECT_INT_EQ(pr_should_skip_clone(NULL, "firmware"), 0);
+
+    /* Single match. */
+    EXPECT_INT_EQ(pr_should_skip_clone("firmware", "firmware"), 1);
+
+    /* Multi-token, first match. */
+    EXPECT_INT_EQ(pr_should_skip_clone("firmware", "firmware,chromium"), 1);
+
+    /* Multi-token, second match. */
+    EXPECT_INT_EQ(pr_should_skip_clone("chromium", "firmware,chromium"), 1);
+
+    /* No match in multi-token. */
+    EXPECT_INT_EQ(pr_should_skip_clone("cairo", "firmware,chromium"), 0);
+
+    /* Case-insensitive. */
+    EXPECT_INT_EQ(pr_should_skip_clone("Firmware", "firmware"), 1);
+    EXPECT_INT_EQ(pr_should_skip_clone("firmware", "FIRMWARE"), 1);
+
+    /* Substring (not just exact). */
+    EXPECT_INT_EQ(pr_should_skip_clone("linux-firmware", "firmware"), 1);
+    EXPECT_INT_EQ(pr_should_skip_clone("chromium-browser", "chromium"), 1);
+
+    /* Whitespace trimming. */
+    EXPECT_INT_EQ(pr_should_skip_clone("firmware", "  firmware  ,chromium"), 1);
+    EXPECT_INT_EQ(pr_should_skip_clone("chromium", "firmware , chromium "),  1);
+
+    /* Empty tokens (consecutive commas, all-whitespace cells) skip. */
+    EXPECT_INT_EQ(pr_should_skip_clone("firmware", ",,firmware,,"), 1);
+    EXPECT_INT_EQ(pr_should_skip_clone("cairo",    ",   ,"),        0);
+
+    /* Filter longer than repo name → no match. */
+    EXPECT_INT_EQ(pr_should_skip_clone("fw", "firmware"), 0);
+}
+
 /* --- Local-bare-repo integration ----------------------------------- */
 
 static int have_git(void)
@@ -157,6 +211,7 @@ static void test_clone_and_tags(void)
 int main(void)
 {
     test_extract_repo_name();
+    test_should_skip_clone();
     test_clone_and_tags();
 
     if (failures == 0) {

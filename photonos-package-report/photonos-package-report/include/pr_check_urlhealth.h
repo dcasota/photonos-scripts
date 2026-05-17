@@ -35,9 +35,17 @@
  * populate columns 5 (UpdateAvailable) and 10 (UpdateDownloadName).
  *
  * Pass NULL/"" to skip the git step entirely (used by the existing
- * unit tests so they stay offline-hermetic). */
+ * unit tests so they stay offline-hermetic).
+ *
+ * `exclusion_list`: comma-separated, case-insensitive substring list
+ * matched against `repo_name` (extracted from `gitSource`'s `.git`
+ * URL). When matched, the per-repo clone under `clone_root` is NOT
+ * created — mirrors PS PR #84 (PS L 2376-2392, 3665-3679, 4020-4034).
+ * Pass NULL/"" to disable. Tag detection falls through cleanly to
+ * the no-`.git` path. */
 char *check_urlhealth(pr_task_t                       *task,
                       const pr_source0_lookup_table_t *lookup_table,
-                      const char                      *clone_root);
+                      const char                      *clone_root,
+                      const char                      *exclusion_list);
 
 #endif /* PR_CHECK_URLHEALTH_H */

@@ -225,23 +225,23 @@ slots stay empty.
 
 ### Parity-gate interaction
 
-The C port currently honours `-UpstreamsExclusionList` only for the
-tarball half (key 2). Until the C side also honours key 1, passing
-`firmware,chromium` to the PS workflow without also passing it to the
-C workflow will diverge on rows where git-tag detection ran on one
-side and the non-git fallback ran on the other → **strict-fail** on
-columns 5/6 of those spec rows.
+Both ports honour `-UpstreamsExclusionList` against `repo_name`
+(key 1) symmetrically:
 
-Operational rule until the C-side migration lands:
+* PS — three guard blocks at L 2369-2392, 3659-3679, 4014-4034.
+* C — `pr_should_skip_clone()` in `src/clone.c`, gated at
+  `src/check_urlhealth.c:107-115`. See FRD-012 §2.1 and Phase M task M01.
 
-* **Do not** set `-UpstreamsExclusionList` on the production PS
-  workflow (`package-report.yml`) yet. The flag is safe in ad-hoc
-  manual runs and in any C-side workflow that explicitly forwards
-  the same value.
-* The dual-key matching is already wired in `package-report.ps1` so
-  the symmetric C-side change (Phase 9 follow-on or its own SDD spec
-  under Phase M) is a straight port; no PS-side rework needed when
-  the C side catches up.
+The tarball half (key 2) has no C counterpart today because the C
+port never downloads tarballs to `SOURCES_NEW` — it only HEAD-probes
+URLs. A future C-side tarball downloader will need to add the matching
+guard at that add-site (FRD-012 §2.1).
+
+**Safe to set on both workflows** — pass the same list to PS
+(`package-report.yml`) and C (`package-report-C.yml`). When both
+sides skip the clone for a matched spec, both fall through to the
+non-git tag-detection path and produce byte-identical `.prn` rows.
+No carve-out needed in `tools/parity-diff.sh`.
 
 ---
 
