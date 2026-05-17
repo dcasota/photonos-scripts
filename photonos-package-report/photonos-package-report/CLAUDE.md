@@ -64,7 +64,7 @@ while the tool is live.
 | 6f | SHA helpers + cross-branch diff (col 9 wired)         | done (#65)  |
 | 7  | Cluster orchestrator + parallel runspace mirror (`-ThrottleLimit`) | done (#66) |
 | 8  | CI side-by-side parity gate                           | done (#67)  |
-| 8.5 | Parity convergence loop — per-bucket PS↔C diff fixes (TODO §3) | in progress |
+| 8.5 | Parity convergence loop — per-bucket PS↔C diff fixes (see [TODO.md](../../TODO.md) §3) | in progress |
 | 9  | Retirement (PS → staging/legacy/, C-only)             | pending (gated on 90d green journal) |
 | M  | Maintainer ops & debug tooling — `docs/maintainer-runbook.md`, `.vscode/`; M01 PR #84 mirror (`-UpstreamsExclusionList` clone-skip); M02 multi-branch dispatcher; M03 `photon-` prefix on SPECS path; M04 partial-clone speedup + token-leak hardening | ongoing |
 
@@ -72,3 +72,10 @@ When you land a feature in a numeric phase that changes a workflow the
 maintainer cares about (new flag, new override mechanism, new generator),
 update the matching section of `docs/maintainer-runbook.md` in the same
 PR. The runbook is the operability source-of-truth.
+
+## Active program of work
+
+[`TODO.md`](../../TODO.md) at the repo root tracks the in-flight
+program of work — Phase-M backlog, Stage-3 per-bucket convergence
+priorities, and the user-checkpoint list (ADR-0012, ADR-0013, VPN
+provisioning). Update TODO.md whenever a PR lands.
