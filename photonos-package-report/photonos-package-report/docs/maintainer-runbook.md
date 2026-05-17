@@ -459,7 +459,18 @@ gh run download <PS_RUN_ID> -n parity-snapshot-<PS_RUN_ID> -D /tmp/snap
 cd /tmp/snap && tar -xzf parity-snapshot-*.tar.gz
 
 # Reconstruct working tree from manifests.
+# Default: branch clones only; upstream clones are NOT pre-created
+# (the C binary recreates them on-demand via pr_clone_ensure). The
+# snapshot's upstream manifest commonly contains thousands of entries
+# — pre-cloning them serially would exceed the workflow timeout.
 .github/scripts/parity-reconstruct.sh /tmp/snap /tmp/wd /tmp/wd/photon-upstreams
+
+# Opt-in: SHA-pin every upstream clone for byte-stable parity. Slow.
+# Useful when chasing a strict-diff and you need both sides locked to
+# the exact upstream commits the PS run saw. Bounded parallelism via
+# PARITY_PRECLONE_JOBS (default 8, max 32).
+# PARITY_PRECLONE_UPSTREAMS=1 PARITY_PRECLONE_JOBS=16 \
+#     .github/scripts/parity-reconstruct.sh /tmp/snap /tmp/wd /tmp/wd/photon-upstreams
 
 # Build + run C with the same -ThrottleLimit 1 the workflow uses.
 cmake --build build
