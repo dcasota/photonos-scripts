@@ -429,9 +429,24 @@ static int dump_tasks_main(const char *working_dir, const char *branch)
 
 static int generate_urlhealth_main(const pr_params_t *params, const char *branch)
 {
+    /* `branch` is the bare PS-side tag — "3.0", "master", … — that names
+     * the output `.prn` and matches the `-GeneratePh*URLHealthReport`
+     * flag. The on-disk directory layout follows PS L 461:
+     *
+     *     $photonPath = Join-Path $WorkingDir "photon-$release"
+     *
+     * so SPECS lives under `<workingDir>/photon-<branch>/SPECS`. Compute
+     * that prefix once here. */
+    char photon_dir[64];
+    int n = snprintf(photon_dir, sizeof photon_dir, "photon-%s", branch);
+    if (n < 0 || (size_t)n >= sizeof photon_dir) {
+        fprintf(stderr, "generate_urlhealth: branch '%s' too long\n", branch);
+        return 1;
+    }
+
     pr_task_list_t list;
     pr_task_list_init(&list);
-    if (parse_directory(params->workingDir, branch, &list) != 0) {
+    if (parse_directory(params->workingDir, photon_dir, &list) != 0) {
         pr_task_list_free(&list);
         return 1;
     }
@@ -469,13 +484,15 @@ static int generate_urlhealth_main(const pr_params_t *params, const char *branch
         pr_prn_close(p); pr_source0_lookup_free(&lut); pr_task_list_free(&list);
         return 1;
     }
-    /* Phase 6d: pass upstreamsDir/photonDir as the clone root so the
-     * git-tag chain populates UpdateDownloadName / UpdateAvailable
-     * when PR_TEST_NETWORK=1 is set. */
+    /* Phase 6d: pass upstreamsDir/photon-<branch>/clones as the clone
+     * root so the git-tag chain populates UpdateDownloadName /
+     * UpdateAvailable when PR_TEST_NETWORK=1 is set. Same photon-
+     * prefix convention as parse_directory above (PS L 5304:
+     *   $cloneDir = Join-Path $upstreamsDir "photon-$($entry.Key)" "clones"). */
     char *clone_root = NULL;
     const char *up_dir = (params->upstreamsDir && params->upstreamsDir[0])
                          ? params->upstreamsDir : params->workingDir;
-    if (asprintf(&clone_root, "%s/%s/clones", up_dir, branch) < 0) {
+    if (asprintf(&clone_root, "%s/%s/clones", up_dir, photon_dir) < 0) {
         clone_root = NULL;
     }
 
