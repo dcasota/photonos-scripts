@@ -239,13 +239,42 @@ char *check_urlhealth(pr_task_t                       *task,
                                 state.UpdateDownloadName = dup_or_empty(latest);
                             }
 
-                            /* UpdateAvailable (col 5): set to NameLatest iff
-                             * pr_version_compare(NameLatest, task.version) == 1. */
+                            /* UpdateAvailable (col 5) per PS L 2538-2553:
+                             *
+                             *   $result = Compare-VersionStrings $Namelatest $version
+                             *   if ($result -gt 0) $UpdateAvailable = $NameLatest
+                             *   elseif ($result -lt 0) $UpdateAvailable = "Warning: ..."
+                             *   else                   $UpdateAvailable = "(same version)"
+                             *
+                             * The compare in PS uses `$version` (the cut form from
+                             * L 2114), NOT $currentTask.version (the uncut "X-Y"
+                             * form). Mirror that here — pass state.version, not
+                             * task->Version, otherwise tomcat9-style packages
+                             * with Release suffix never match "same". */
                             int rc = pr_version_compare(latest,
-                                                        task->Version ? task->Version : "");
+                                                        state.version ? state.version : "");
+                            free(state.UpdateAvailable);
                             if (rc == 1) {
-                                free(state.UpdateAvailable);
                                 state.UpdateAvailable = dup_or_empty(latest);
+                            } else if (rc == 0) {
+                                state.UpdateAvailable = dup_or_empty("(same version)");
+                            } else if (rc == -1) {
+                                /* PS warning text — note the lone-space before
+                                 * the trailing period; must match byte-for-byte. */
+                                char *warn = NULL;
+                                if (asprintf(&warn,
+                                             "Warning: %s Source0 version %s is higher than detected latest version %s .",
+                                             task->Spec ? task->Spec : "",
+                                             state.version ? state.version : "",
+                                             latest) < 0) {
+                                    warn = NULL;
+                                }
+                                state.UpdateAvailable = warn ? warn : dup_or_empty("");
+                            } else {
+                                /* rc == -2 (parse error): PS Write-Host the
+                                 * "comparison failed" diagnostic and leaves
+                                 * $UpdateAvailable as its prior empty default. */
+                                state.UpdateAvailable = dup_or_empty("");
                             }
 
                             /* Phase 6f col 9 SHAValue (PS L 4912-4921):
