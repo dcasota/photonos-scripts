@@ -20,6 +20,9 @@ on:
       snapshot_run_id:
         description: 'PS run id whose parity-snapshot-<id> artifact to consume'
         required: true
+      upstreams_exclusion_list:
+        description: 'Comma-separated substrings (case-insensitive). Must mirror the PS workflow value so both sides skip the same clones. See package-report.yml for semantics.'
+        default: 'firmware,chromium'
 
 permissions:
   contents: write   # commit the journal back to master
@@ -147,6 +150,15 @@ jobs:
           SCANS="$WDIR/scans"
           mkdir -p "$SCANS"
 
+          # Mirror the PS workflow's exclusion list so both sides skip
+          # the same clones (firmware ~55 GB, chromium ~67 GB per branch).
+          # On workflow_run (auto), inputs context is empty → fall back
+          # to the same baseline default as PS.
+          UPSTREAMS_EXCL="${{ github.event.inputs.upstreams_exclusion_list }}"
+          if [ -z "$UPSTREAMS_EXCL" ]; then
+            UPSTREAMS_EXCL="firmware,chromium"
+          fi
+
           # Run with -ThrottleLimit 1 per ADR-0009 to keep stderr ordering
           # byte-stable during the parity window.
           ./build/photonos-package-report \
@@ -155,6 +167,7 @@ jobs:
             -scansDir     "$SCANS" \
             -ThrottleLimit 1 \
             -github_token "$GITHUB_TOKEN" \
+            -UpstreamsExclusionList "$UPSTREAMS_EXCL" \
             -GeneratePh3URLHealthReport      "${{ steps.branches.outputs.ph3 }}" \
             -GeneratePh4URLHealthReport      "${{ steps.branches.outputs.ph4 }}" \
             -GeneratePh5URLHealthReport      "${{ steps.branches.outputs.ph5 }}" \
