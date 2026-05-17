@@ -166,6 +166,7 @@ amendment (or new FRD if scope warrants).
 |---|---|---|---|---|---|
 | M01 | Mirror PS PR #84: extend `-UpstreamsExclusionList` to skip clone creation in C (`pr_should_skip_clone` + guard at `check_urlhealth.c:107-115`) | FRD-012 | 0001,0006 | 2369-2392, 3659-3679, 4014-4034 | strict |
 | M02 | Multi-branch dispatcher in `main.c` so the 7 `-GeneratePh*URLHealthReport` flags actually drive iteration (was silently dropped, causing parity-journal strict-fails) | FRD-015 | 0001 | 5040-5215 | strict |
+| M03 | `generate_urlhealth_main` prefixes `photon-` when constructing the on-disk SPECS path + clone_root (matches PS L 461, L 5304). Without this, M02's bare-tag branches hit `parse_directory: SPECS path not a directory`. | FRD-015 | 0001 | 461, 5304 | strict |
 
 ---
 
