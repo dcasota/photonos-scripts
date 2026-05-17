@@ -65,7 +65,7 @@ while the tool is live.
 | 7  | Cluster orchestrator + parallel runspace mirror (`-ThrottleLimit`) | done (#66) |
 | 8  | CI side-by-side parity gate                           | done (#67)  |
 | 9  | Retirement (PS → staging/legacy/, C-only)             | pending     |
-| M  | Maintainer ops & debug tooling — `docs/maintainer-runbook.md`, `.vscode/`; task M01 mirrors PS PR #84 (`-UpstreamsExclusionList` skips clone creation) | ongoing |
+| M  | Maintainer ops & debug tooling — `docs/maintainer-runbook.md`, `.vscode/`; M01 mirrors PS PR #84 (`-UpstreamsExclusionList` skips clone creation); M02 multi-branch dispatcher in `main.c` | ongoing |
 
 When you land a feature in a numeric phase that changes a workflow the
 maintainer cares about (new flag, new override mechanism, new generator),
