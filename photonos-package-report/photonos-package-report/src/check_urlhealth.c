@@ -21,6 +21,7 @@
 #include "pr_latest.h"
 #include "pr_state.h"
 #include "pr_sha.h"
+#include "pr_strutil.h"
 #include "pr_substitute.h"
 #include "pr_url_util.h"
 #include "pr_urlhealth.h"
@@ -145,6 +146,16 @@ char *check_urlhealth(pr_task_t                       *task,
 
     /* Phase 4 substitution (PS L 2172-2199). */
     pr_source0_substitute(task, &state.Source0, state.version);
+
+    /* PS L 2343-2346: ftp.gnu.org is frequently down. Rewrite to the
+     * FUNET mirror which holds an identical archive layout. Applies
+     * post-substitution, pre-urlhealth. The rewrite is case-insensitive
+     * (`-replace` in PS without `c` flag); `istr_replace_all` matches. */
+    if (state.Source0 && strstr(state.Source0, "ftp.gnu.org") != NULL) {
+        state.Source0 = istr_replace_all(state.Source0,
+                                         "ftp.gnu.org",
+                                         "ftp.funet.fi/pub/gnu/ftp.gnu.org");
+    }
 
     /* Phase 5 urlhealth probe. Skipped offline so ctest stays hermetic. */
     int health = 0;
