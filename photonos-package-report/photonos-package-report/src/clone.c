@@ -139,11 +139,22 @@ static int do_clone(const char *clone_root,
                     const char *git_branch,
                     const char *repo_name)
 {
+    /* Partial clone: --no-checkout skips populating the working tree;
+     * --filter=blob:none defers blob fetches. The C binary only ever
+     * calls `git tag -l` on the result (see pr_clone_list_tags), so
+     * blobs are never demanded and tags resolve from the lightweight
+     * commit/tree object set. For big repos (llvm-project, dotnet/
+     * runtime, elasticsearch, …) this cuts clone time 10–100×.
+     *
+     * Parity impact: zero. `.prn` columns 5/6/10 depend only on the
+     * tag list, which is identical between full and partial clones. */
     char *args = NULL;
     if (git_branch && git_branch[0]) {
-        if (asprintf(&args, "clone %s -b %s %s", git_url, git_branch, repo_name) < 0) return -1;
+        if (asprintf(&args, "clone --no-checkout --filter=blob:none %s -b %s %s",
+                     git_url, git_branch, repo_name) < 0) return -1;
     } else {
-        if (asprintf(&args, "clone %s %s", git_url, repo_name) < 0) return -1;
+        if (asprintf(&args, "clone --no-checkout --filter=blob:none %s %s",
+                     git_url, repo_name) < 0) return -1;
     }
     char *stdout_buf = NULL;
     int rc = invoke_git_with_timeout(args, clone_root, 0, &stdout_buf);

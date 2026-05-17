@@ -182,12 +182,16 @@ jobs:
             THROTTLE="8"
           fi
 
+          # Token is read from $GITHUB_TOKEN env (env_or() default in
+          # main.c L101). Passing it as -github_token would leak the
+          # value into the runner's ps(1) output for the lifetime of
+          # the binary — env vars are scoped to the process and not
+          # visible in argv.
           ./build/photonos-package-report \
             -workingDir   "$WDIR" \
             -upstreamsDir "$UPSTREAMS" \
             -scansDir     "$SCANS" \
             -ThrottleLimit "$THROTTLE" \
-            -github_token "$GITHUB_TOKEN" \
             -UpstreamsExclusionList "$UPSTREAMS_EXCL" \
             -GeneratePh3URLHealthReport      "${{ steps.branches.outputs.ph3 }}" \
             -GeneratePh4URLHealthReport      "${{ steps.branches.outputs.ph4 }}" \

@@ -239,9 +239,14 @@ int main(int argc, char **argv)
      * When --dump-tasks <branch> is specified, the param echo is skipped:
      * the parity harness compares ONLY the JSON dump on stdout. */
     if (dump_tasks_branch == NULL) {
-    printf("github_token=%s\n",                                                 params.github_token);
+    /* Mask secret values in the param echo. CI runners mask via the
+     * `***` substitution on workflow log lines, but local invocations
+     * (gdb, smoke tests) emit the raw value otherwise. Keep a non-empty
+     * "(set)" marker so operators can still tell whether a token was
+     * supplied. */
+    printf("github_token=%s\n",                                                 (params.github_token && params.github_token[0]) ? "(set)" : "");
     printf("gitlab_freedesktop_org_username=%s\n",                              params.gitlab_freedesktop_org_username);
-    printf("gitlab_freedesktop_org_token=%s\n",                                 params.gitlab_freedesktop_org_token);
+    printf("gitlab_freedesktop_org_token=%s\n",                                 (params.gitlab_freedesktop_org_token && params.gitlab_freedesktop_org_token[0]) ? "(set)" : "");
     printf("workingDir=%s\n",                                                   params.workingDir);
     printf("upstreamsDir=%s\n",                                                 params.upstreamsDir);
     printf("scansDir=%s\n",                                                     params.scansDir);
