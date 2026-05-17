@@ -205,6 +205,21 @@ jobs:
           echo "scans=$SCANS" >> "$GITHUB_OUTPUT"
           ls -l "$SCANS"
 
+      # M05 (FRD-017): preserve C-side .prn for post-hoc strict-diff
+      # investigation. The runner cleans _temp/ at job end, so without
+      # this upload the .prn that parity-diff judged is lost. `always()`
+      # ensures we get the artifact even if parity-diff fails — that's
+      # exactly when it's most needed. Retention matches ADR-0009's
+      # 30-day soft window.
+      - name: Upload C-side .prn
+        if: always() && steps.c_run.outputs.scans != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: c-side-prn-${{ github.run_id }}
+          path: ${{ steps.c_run.outputs.scans }}/photonos-urlhealth-*.prn
+          if-no-files-found: warn
+          retention-days: 30
+
       - name: Run parity-diff per branch
         id: diff
         run: |
