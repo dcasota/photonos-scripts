@@ -49,7 +49,9 @@ FRD-018), M21 (post-strip filters), ADR-0014 (multi-SHA Draft).
 | #118 | **M22** — Clean-VersionNames pre-release filter | PS L 441-451. Anchored `rel/`/`v`/`r` strips, `_`→`.`, drop `candidate\|-alpha\|-beta\|.beta\|rc.[0-4]\|rc[1-4]\|-preview.\|-dev.\|-pre1\|.pre1`. Wired into both git-tag and scraper pipelines between M19 and M21. |
 | #120 | **M23** — Scraper pre-filter (extension strip + `.tar.` keep) | PS L 4321-4341. Without it, scraper-path candidates like `autogen-5.18.16.tar.xz` got dropped by M21's no-alpha-after-`[pP]N` rule because `tar/xz` counts as alpha. Targets the dominant ~189-spec `cols[5 6 7 9 10]` bucket per branch on 5.0 post-M21-wired. |
 | #121 | **ADR-0015 Draft** — Stable-source SHA for github auto-archives | Option A: when col 6 is a github `archive/refs/tags/` URL, probe `releases/download/<tag>/<asset>` and compute col-9 SHA against the stable asset. Targets the ~75 col[9]-only specs/branch. Composes with ADR-0014. Status Draft, pending user decision. |
-| TBD  | **M24** — download_name_post Release/Rel_/v- prefix swaps | PS L 4786-4793. Replaces `Release_`/`Release-`/`Rel_` and `v-` prefixes with `<task.Name>-`. Targets col[10]-only bucket (8 specs on 5.0, e.g. chrpath PS=`chrpath-0.18.tar.gz` vs C=`release-0.18.tar.gz`) and the tail of cols[5 6 7 10]/cols[5 6 7 9 10] post-M23. |
+| #122 | **M24** — download_name_post Release/Rel_/v- prefix swaps | PS L 4786-4793. Replaces `Release_`/`Release-`/`Rel_` and `v-` prefixes with `<task.Name>-`. Targets col[10]-only bucket (8 specs on 5.0, e.g. chrpath PS=`chrpath-0.18.tar.gz` vs C=`release-0.18.tar.gz`) and the tail of cols[5 6 7 10]/cols[5 6 7 9 10] post-M23. |
+| #123 | **TODO refresh** post-M22/M23/M24 | Strike shipped units; document PS snapshot refresh cadence + dead-code cleanup deferral. |
+| TBD  | **M25** — Per-spec download-name rules (inih, open-vm-tools, samba-client, httpd-mod_jk) | PS L 4772-4779. inih sample: PS=`libinih-62.tar.gz` vs C=`r62.tar.gz`. Inlined into `download_name_post` since PS handles them as a flat if-chain, not via hooks. |
 
 ### Journal trajectory (strict_rows per branch)
 
