@@ -1519,6 +1519,55 @@ function urlhealth {
     }
     return $urlhealthrc
 }
+
+function Resolve-StableSourceURL {
+    # ADR-0015 (Accepted Option A) — stable-source URL resolver for
+    # GitHub auto-archive URLs whose SHA drifts when GitHub
+    # regenerates the tarball on demand.
+    #
+    # Probes release-asset URL variants via HEAD. Returns the first
+    # 200 hit, or $null if no variant matches or the input is not a
+    # github archive URL.
+    #
+    # Per-host allowlist: github.com only (initially).
+    param(
+        [parameter(Mandatory=$true)][string]$SpecName,
+        [parameter(Mandatory=$false)][string]$LatestTag,
+        [parameter(Mandatory=$true)][string]$CurrentURL
+    )
+    if ([string]::IsNullOrWhiteSpace($CurrentURL)) { return $null }
+    if (-not ($CurrentURL -match '^https://github\.com/([^/]+/[^/]+)/archive/refs/tags/(.+)\.(tar\.gz|tar\.xz|tar\.bz2|tar\.lz|tgz|zip)$')) {
+        return $null
+    }
+    $orgProj = $Matches[1]
+    $tag     = $Matches[2]
+
+    # Candidate project names: spec basename (stripped of .spec) and
+    # the github-repo project (last segment of org/proj).
+    $specProj   = $SpecName -ireplace '\.spec$', ''
+    $githubProj = ($orgProj -split '/')[-1]
+    $projCandidates = @($specProj, $githubProj) | Where-Object { -not [string]::IsNullOrEmpty($_) } | Select-Object -Unique
+
+    # Candidate URLs, in order of likelihood:
+    # 1. releases/download/<tag>/<tag>.tar.gz   (no project prefix)
+    # 2. For each (project, ext): releases/download/<tag>/<proj>-<tag><ext>
+    $candidates = @()
+    $candidates += "https://github.com/$orgProj/releases/download/$tag/$tag.tar.gz"
+    foreach ($p in $projCandidates) {
+        foreach ($ext in @('.tar.gz', '.tar.xz', '.tar.bz2', '.tgz')) {
+            $candidates += "https://github.com/$orgProj/releases/download/$tag/$p-$tag$ext"
+        }
+    }
+
+    foreach ($url in $candidates) {
+        try {
+            $resp = Invoke-WebRequest -Uri $url -Method Head -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop -MaximumRedirection 5
+            if ([int]$resp.StatusCode -eq 200) { return $url }
+        } catch {}
+    }
+    return $null
+}
+
 function KojiFedoraProjectLookUp {
 # https://koji.fedoraproject.org/ contains a lot of Linux source packages.
 # Beside the fedora packages, the source is included, but it has to be extracted from the appropriate package. Inside that download source package, you find the .tar.gz bits.
@@ -4956,15 +5005,37 @@ function CheckURLHealth {
         [system.string]$SHALine=""
         [system.string]$SHAValue=""
 
-        if ($UpdateDownloadFile) {
-            if (Test-Path $UpdateDownloadFile)
+        # ADR-0015 (Accepted Option A): for github auto-archive URLs,
+        # the SHA against the auto-archive drifts (GitHub regenerates
+        # the tarball on demand). Probe the corresponding
+        # releases/download/<tag>/<asset> URL and, if available, hash
+        # against the stable asset. The auto-archive remains
+        # downloaded for ModifySpecFile / UpdateDownloadFile uses;
+        # only the col-9 .prn value is sourced from the stable URL.
+        [system.string]$ShaSourceFile = $UpdateDownloadFile
+        $stableSourceURL = Resolve-StableSourceURL -SpecName $currentTask.spec -LatestTag $UpdateAvailable -CurrentURL $UpdateURL
+        if (-not [string]::IsNullOrEmpty($stableSourceURL)) {
+            $stableFile = [system.string](Join-Path -Path (Split-Path $UpdateDownloadFile -Parent) -ChildPath ([System.Guid]::NewGuid().ToString() + ".stable")).Trim()
+            try {
+                Invoke-WebRequest -Uri $stableSourceURL -UseBasicParsing -OutFile $stableFile -TimeoutSec 60 -ErrorAction Stop
+                if (Test-Path $stableFile) { $ShaSourceFile = $stableFile }
+            } catch {}
+        }
+
+        if ($ShaSourceFile) {
+            if (Test-Path $ShaSourceFile)
             {
-                if ($currentTask.content -ilike '*%define sha1*') { $SHAValue = (Get-FileHashWithRetry $UpdateDownloadFile -Algorithm SHA1).Hash;$SHALine = [system.string]::concat('%define sha1 ',$currentTask.Name,'=',$SHAValue) }
-                if ($currentTask.content -ilike '*%define sha256*') { $SHAValue = (Get-FileHashWithRetry $UpdateDownloadFile -Algorithm SHA256).Hash;$SHALine = [system.string]::concat('%define sha256 ',$currentTask.Name,'=',$SHAValue) }
-                if ($currentTask.content -ilike '*%define sha512*') { $SHAValue = (Get-FileHashWithRetry $UpdateDownloadFile -Algorithm SHA512).Hash;$SHALine = [system.string]::concat('%define sha512 ',$currentTask.Name,'=',$SHAValue) }
+                if ($currentTask.content -ilike '*%define sha1*') { $SHAValue = (Get-FileHashWithRetry $ShaSourceFile -Algorithm SHA1).Hash;$SHALine = [system.string]::concat('%define sha1 ',$currentTask.Name,'=',$SHAValue) }
+                if ($currentTask.content -ilike '*%define sha256*') { $SHAValue = (Get-FileHashWithRetry $ShaSourceFile -Algorithm SHA256).Hash;$SHALine = [system.string]::concat('%define sha256 ',$currentTask.Name,'=',$SHAValue) }
+                if ($currentTask.content -ilike '*%define sha512*') { $SHAValue = (Get-FileHashWithRetry $ShaSourceFile -Algorithm SHA512).Hash;$SHALine = [system.string]::concat('%define sha512 ',$currentTask.Name,'=',$SHAValue) }
                     # if the spec file does not contain any sha value, add sha512
-                if ((!($currentTask.content -ilike '*%define sha512*')) -and (!($object -ilike '*%define sha256*')) -and (!($object -ilike '*%define sha1*'))) { $SHAValue = (Get-FileHashWithRetry $UpdateDownloadFile -Algorithm SHA512).Hash; $SHALine = [system.string]::concat('%define sha512 ',$currentTask.Name,'=',$SHAValue) }
+                if ((!($currentTask.content -ilike '*%define sha512*')) -and (!($object -ilike '*%define sha256*')) -and (!($object -ilike '*%define sha1*'))) { $SHAValue = (Get-FileHashWithRetry $ShaSourceFile -Algorithm SHA512).Hash; $SHALine = [system.string]::concat('%define sha512 ',$currentTask.Name,'=',$SHAValue) }
             }
+        }
+
+        # Clean up the temporary stable-asset file if we created one.
+        if (-not [string]::IsNullOrEmpty($stableSourceURL) -and $ShaSourceFile -ne $UpdateDownloadFile) {
+            Remove-Item -Path $ShaSourceFile -Force -ErrorAction SilentlyContinue
         }
         # Add a space to signalitze that something went wrong when extracting SHAvalue but do not stop modifying the spec file.
         if ([string]::IsNullOrEmpty($SHALine)) { $SHALine=" " }

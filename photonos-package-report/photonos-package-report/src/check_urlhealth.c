@@ -24,6 +24,7 @@
 #include "pr_sha.h"
 #include "pr_scraper.h"
 #include "pr_spec_warnings.h"
+#include "pr_stable_source.h"
 #include "pr_strutil.h"
 #include "pr_substitute.h"
 #include "pr_url_util.h"
@@ -922,7 +923,17 @@ char *check_urlhealth(pr_task_t                       *task,
                                     if (strstr(line, "%define sha256") != NULL) { alg = PR_SHA256; break; }
                                     if (strstr(line, "%define sha512") != NULL) { alg = PR_SHA512; break; }
                                 }
-                                char *hex = pr_sha_of_url(alg, state.UpdateURL);
+                                /* ADR-0015 (Option A): for github auto-archive
+                                 * URLs, probe the corresponding release-asset
+                                 * URL. On match, hash against the stable
+                                 * asset; otherwise fall back to UpdateURL.
+                                 * col 6 (UpdateURL) stays user-facing. */
+                                char *sha_url = pr_resolve_stable_source_url(
+                                    task->Spec, latest, state.UpdateURL);
+                                const char *hash_url = sha_url
+                                    ? sha_url : state.UpdateURL;
+                                char *hex = pr_sha_of_url(alg, hash_url);
+                                free(sha_url);
                                 if (hex) {
                                     free(state.SHAValue);
                                     state.SHAValue = hex;
@@ -1047,7 +1058,13 @@ char *check_urlhealth(pr_task_t                       *task,
                                 if (strstr(line, "%define sha256") != NULL) { alg = PR_SHA256; break; }
                                 if (strstr(line, "%define sha512") != NULL) { alg = PR_SHA512; break; }
                             }
-                            char *hex = pr_sha_of_url(alg, state.UpdateURL);
+                            /* ADR-0015 (Option A): stable-source override. */
+                            char *sha_url = pr_resolve_stable_source_url(
+                                task->Spec, latest, state.UpdateURL);
+                            const char *hash_url = sha_url ? sha_url
+                                                            : state.UpdateURL;
+                            char *hex = pr_sha_of_url(alg, hash_url);
+                            free(sha_url);
                             if (hex) {
                                 free(state.SHAValue);
                                 state.SHAValue = hex;

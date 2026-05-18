@@ -54,7 +54,9 @@ FRD-018), M21 (post-strip filters), ADR-0014 (multi-SHA Draft).
 | #124 | **M25** — Per-spec download-name rules (inih, open-vm-tools, samba-client, httpd-mod_jk) | PS L 4772-4779. inih sample: PS=`libinih-62.tar.gz` vs C=`r62.tar.gz`. Inlined into `download_name_post` since PS handles them as a flat if-chain, not via hooks. |
 | #125 | **M26** — Source0Lookup.ignoreStrings filter | PS L 2152 + 2505. C parsed col 7 of Source0LookupData but never applied it. New `apply_ignore_strings()` using `fnmatch(FNM_CASEFOLD)`. checkpolicy.spec sample: PS=`3.10` vs C=`20200710` (date-format tag the filter drops). |
 | #126 | **M27** — Per-spec strip-token table | PS L 2839 switch (~76 simple entries ported). New `src/per_spec_strip.c` with static table keyed on spec name (case-insensitive). Custom-filter switch arms deferred to per-spec hooks. |
-| TBD  | **M28+M29** — Per-spec drop-substring + global-replace filters | PS L 2839 switch — complex arms. M28: docker-20.10/falco/glib/glslang/go/httpd drop blacklists (case-insensitive substring match). M29: automake/newt/salt3 global "-" → "." replace. Same module as M27. |
+| #127 | **M28+M29** — Per-spec drop-substring + global-replace filters | PS L 2839 switch — complex arms. M28: docker-20.10/falco/glib/glslang/go/httpd drop blacklists (case-insensitive substring match). M29: automake/newt/salt3 global "-" → "." replace. Same module as M27. |
+| #128 | **ADR-0014 + ADR-0015 promoted to Accepted, Stage 6 documented** | User decisions 2026-05-18 evening. ADR-0014 → Option B (cols 13/14 schema). ADR-0015 → Option A (col-9 stable URL override). Stage 6 → WireGuard policy routing (runbook §10). Per-upstream family priority → atom-feed parser. |
+| TBD  | **M30** — ADR-0015 impl: stable-source SHA for github auto-archives | PS + C coordinated. New `src/stable_source.c` + PS `Resolve-StableSourceURL`. When col 6 is github `archive/refs/tags/`, probe `releases/download/<tag>/<asset>` variants via HEAD; first 200 hashed for col 9. col 6 unchanged. Targets col[9]-only bucket (200 on 3.0, 140 on 4.0, 24 on 5.0/6.0). |
 
 ### Journal trajectory (strict_rows per branch)
 
