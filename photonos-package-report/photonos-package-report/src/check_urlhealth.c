@@ -256,67 +256,56 @@ char *check_urlhealth(pr_task_t                       *task,
                                            &names, &n) == 0 && n > 0) {
                         char *latest = pr_get_latest_name(names, n);
                         if (latest && latest[0]) {
-                            /* Phase 6e: construct UpdateURL by re-running
-                             * the Source0 substitution with version=NameLatest
-                             * against the RAW Source0Lookup template (PS L
-                             * 4659-4710 normal-path logic, simplified). */
-                            const char *template = (row->Source0Lookup
-                                                    && row->Source0Lookup[0])
-                                                   ? row->Source0Lookup
-                                                   : (task->Source0 ? task->Source0 : "");
-                            char *update_url = dup_or_empty(template);
-                            if (update_url) {
-                                pr_source0_substitute(task, &update_url, latest);
-                                free(state.UpdateURL);
-                                state.UpdateURL = update_url;
-                            }
-
-                            /* HealthUpdateURL (col 7): urlhealth probe of
-                             * the rewritten UpdateURL. Same network gate. */
-                            if (state.UpdateURL && state.UpdateURL[0]) {
-                                int h = urlhealth(state.UpdateURL);
-                                char buf[16];
-                                snprintf(buf, sizeof buf, "%d", h);
-                                free(state.HealthUpdateURL);
-                                state.HealthUpdateURL = strdup(buf);
-                            }
-
-                            /* UpdateDownloadName (col 10): PS L 4755-4793
-                             * — basename of UpdateURL (with SourceForge
-                             * /download → penultimate segment handled
-                             * inside pr_basename_from_url), then PS
-                             * post-processing (v-strip + name-prefix
-                             * for numeric-only basenames). */
-                            char *dl_name = pr_basename_from_url(state.UpdateURL);
-                            if (dl_name) {
-                                dl_name = download_name_post(dl_name,
-                                              task->Name ? task->Name : "");
-                                free(state.UpdateDownloadName);
-                                state.UpdateDownloadName = dl_name;
-                            } else {
-                                /* Fallback: keep the raw NameLatest if
-                                 * we couldn't derive a basename. */
-                                free(state.UpdateDownloadName);
-                                state.UpdateDownloadName = dup_or_empty(latest);
-                            }
-
-                            /* UpdateAvailable (col 5) per PS L 2538-2553:
+                            /* PS L 2538-2553: compare first; only the
+                             * rc == 1 (newer) branch goes on to build
+                             * UpdateURL / probe / download-name / SHA.
+                             * rc == 0 ("(same version)") and rc == -1
+                             * (warning) leave UpdateURL / HealthUpdateURL
+                             * / SHAName / UpdateDownloadName all empty —
+                             * see apr-util.spec sample: PS emits only
+                             * UpdateAvailable=(same version), nothing else.
                              *
-                             *   $result = Compare-VersionStrings $Namelatest $version
-                             *   if ($result -gt 0) $UpdateAvailable = $NameLatest
-                             *   elseif ($result -lt 0) $UpdateAvailable = "Warning: ..."
-                             *   else                   $UpdateAvailable = "(same version)"
-                             *
-                             * The compare in PS uses `$version` (the cut form from
-                             * L 2114), NOT $currentTask.version (the uncut "X-Y"
-                             * form). Mirror that here — pass state.version, not
-                             * task->Version, otherwise tomcat9-style packages
-                             * with Release suffix never match "same". */
+                             * Compare against state.version (cut form
+                             * from M08), NOT task->Version. */
                             int rc = pr_version_compare(latest,
                                                         state.version ? state.version : "");
                             free(state.UpdateAvailable);
                             if (rc == 1) {
                                 state.UpdateAvailable = dup_or_empty(latest);
+
+                                /* Phase 6e: construct UpdateURL via
+                                 * re-substitution with version=NameLatest. */
+                                const char *template = (row->Source0Lookup
+                                                        && row->Source0Lookup[0])
+                                                       ? row->Source0Lookup
+                                                       : (task->Source0 ? task->Source0 : "");
+                                char *update_url = dup_or_empty(template);
+                                if (update_url) {
+                                    pr_source0_substitute(task, &update_url, latest);
+                                    free(state.UpdateURL);
+                                    state.UpdateURL = update_url;
+                                }
+
+                                /* HealthUpdateURL (col 7). */
+                                if (state.UpdateURL && state.UpdateURL[0]) {
+                                    int h = urlhealth(state.UpdateURL);
+                                    char buf[16];
+                                    snprintf(buf, sizeof buf, "%d", h);
+                                    free(state.HealthUpdateURL);
+                                    state.HealthUpdateURL = strdup(buf);
+                                }
+
+                                /* UpdateDownloadName (col 10) — PS L 4755-4793. */
+                                char *dl_name = pr_basename_from_url(state.UpdateURL);
+                                if (dl_name) {
+                                    dl_name = download_name_post(dl_name,
+                                                  task->Name ? task->Name : "");
+                                    free(state.UpdateDownloadName);
+                                    state.UpdateDownloadName = dl_name;
+                                } else {
+                                    free(state.UpdateDownloadName);
+                                    state.UpdateDownloadName = dup_or_empty(latest);
+                                }
                             } else if (rc == 0) {
                                 state.UpdateAvailable = dup_or_empty("(same version)");
                             } else if (rc == -1) {
@@ -332,9 +321,8 @@ char *check_urlhealth(pr_task_t                       *task,
                                 }
                                 state.UpdateAvailable = warn ? warn : dup_or_empty("");
                             } else {
-                                /* rc == -2 (parse error): PS Write-Host the
-                                 * "comparison failed" diagnostic and leaves
-                                 * $UpdateAvailable as its prior empty default. */
+                                /* rc == -2 (parse error). PS leaves
+                                 * UpdateAvailable empty; mirror. */
                                 state.UpdateAvailable = dup_or_empty("");
                             }
 
