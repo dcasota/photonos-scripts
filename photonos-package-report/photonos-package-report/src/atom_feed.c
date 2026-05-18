@@ -114,20 +114,19 @@ int pr_scrape_atom_feed(const char *url, char ***out_names, size_t *out_n)
     curl_easy_setopt(c, CURLOPT_URL,            url);
     curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(c, CURLOPT_TIMEOUT_MS,     20000L);
-    /* gitlab.freedesktop.org's bot detection triggers on Chrome-style
-     * user agents and returns an HTML challenge page instead of the
-     * atom feed. PS's `Invoke-RestMethod` default UA carries
-     * "PowerShell" / "WindowsPowerShell" and is whitelisted.
-     * Empirically tested with `curl -A "PowerShell" ...` returns the
-     * proper atom XML where Chrome UA returns the challenge page.
+    /* gitlab.freedesktop.org's bot detection (within.website Anubis)
+     * returns an HTML challenge page for Chrome-style UAs AND the
+     * verbose `Mozilla/5.0 (...) WindowsPowerShell/5.1...` UA.
      *
-     * Using a PowerShell-style UA here matches PS behaviour and
-     * avoids the bot challenge for gitlab.freedesktop.org and
-     * gitlab.com. Other hosts in the per-spec URL table
-     * (gitlab.gnome.org) accept both UAs. */
-    curl_easy_setopt(c, CURLOPT_USERAGENT,
-        "Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) "
-        "WindowsPowerShell/5.1.19041.5072");
+     * Empirically tested across the M33 atom-feed hosts:
+     *   curl -A "Mozilla/5.0 ... Chrome/113"   → challenge HTML
+     *   curl -A "Mozilla/5.0 ... PowerShell/x" → challenge HTML
+     *   curl -A "PowerShell"                   → atom XML (all hosts)
+     *
+     * The bot detector matches on the long token + Mozilla prefix.
+     * A bare `PowerShell` UA passes the allowlist on
+     * gitlab.freedesktop.org, gitlab.com, and gitlab.gnome.org. */
+    curl_easy_setopt(c, CURLOPT_USERAGENT, "PowerShell");
     curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, body_write_cb);
     curl_easy_setopt(c, CURLOPT_WRITEDATA,     &body);
     curl_easy_setopt(c, CURLOPT_ACCEPT_ENCODING, "");
