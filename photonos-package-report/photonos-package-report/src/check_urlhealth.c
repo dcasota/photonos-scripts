@@ -379,9 +379,46 @@ static void apply_replace_strings(char **names, size_t n,
  * the second char is not '-', strip the leading 'v'.
  * PS L 4782-4783: strip the well-known archive extensions; if the
  * remainder has NO alpha character, prepend "<task.Name>-".
+ * PS L 4786-4791 (M24): if the name starts with `Release` or `Rel_`
+ * (case-INsensitive), replace those prefix tokens with
+ * `<task.Name>-` and turn remaining `_` into `.`. Targets specs that
+ * tag releases like `release-0.18.tar.gz` (chrpath) or `Rel_2.0.tar.gz`.
+ * PS L 4792-4793 (M24): if the name starts with `v-` (case-INsensitive),
+ * replace that prefix with `<task.Name>-`. Targets amdvlk-style
+ * `v-2024.Q3.1.tar.gz`.
  *
  * Mutates the passed string in place where possible; otherwise returns
  * a newly-allocated replacement. Caller owns the result. */
+static int starts_with_icase(const char *s, const char *prefix)
+{
+    if (s == NULL || prefix == NULL) return 0;
+    size_t pl = strlen(prefix);
+    if (strlen(s) < pl) return 0;
+    return strncasecmp(s, prefix, pl) == 0;
+}
+
+/* PS `-ireplace '<prefix>', '<replacement>'` for a leading prefix only —
+ * anchored at offset 0 by virtue of the prefix being a literal substring
+ * that we only ever match once. PS's -ireplace operator scans globally
+ * but for the prefix-strip patterns below the prefix only appears once
+ * per name; treating as anchored matches PS bytes. */
+static char *replace_leading_icase(char *s, const char *prefix,
+                                   const char *replacement)
+{
+    if (s == NULL || prefix == NULL || *prefix == '\0') return s;
+    if (!starts_with_icase(s, prefix)) return s;
+    size_t pl = strlen(prefix);
+    size_t rl = strlen(replacement ? replacement : "");
+    size_t sl = strlen(s);
+    size_t tail = sl - pl;
+    char *out = (char *)malloc(rl + tail + 1);
+    if (!out) return s;
+    if (rl) memcpy(out, replacement, rl);
+    memcpy(out + rl, s + pl, tail + 1);
+    free(s);
+    return out;
+}
+
 static char *download_name_post(char *raw, const char *task_name)
 {
     if (raw == NULL) return NULL;
@@ -424,10 +461,47 @@ static char *download_name_post(char *raw, const char *task_name)
                 out[nl] = '-';
                 memcpy(out + nl + 1, raw, rl + 1);
                 free(raw);
-                return out;
+                raw = out;
             }
         }
     }
+
+    /* M24 — PS L 4786-4791: Release/Rel_ prefix replacement. PS branches
+     * on `StartsWith("Release", OrdinalIgnoreCase) || StartsWith("Rel_", ...)`
+     * then runs four -ireplace ops in order: `Release_`, `Release-`, `Rel_`,
+     * and final `_`→`.`. */
+    if (task_name && task_name[0]
+        && (starts_with_icase(raw, "Release") || starts_with_icase(raw, "Rel_"))) {
+        size_t nl = strlen(task_name);
+        char *name_dash = (char *)malloc(nl + 2);
+        if (name_dash) {
+            memcpy(name_dash, task_name, nl);
+            name_dash[nl] = '-';
+            name_dash[nl + 1] = '\0';
+            raw = replace_leading_icase(raw, "Release_", name_dash);
+            raw = replace_leading_icase(raw, "Release-", name_dash);
+            raw = replace_leading_icase(raw, "Rel_",     name_dash);
+            free(name_dash);
+        }
+        /* PS L 4790 `-ireplace "_","."` runs after the prefix swap.
+         * istr_replace_all is case-insensitive but for `_` the case
+         * distinction is moot. */
+        raw = str_replace_all(raw, "_", ".");
+    }
+
+    /* M24 — PS L 4792-4793: `v-` prefix replacement. */
+    if (task_name && task_name[0] && starts_with_icase(raw, "v-")) {
+        size_t nl = strlen(task_name);
+        char *name_dash = (char *)malloc(nl + 2);
+        if (name_dash) {
+            memcpy(name_dash, task_name, nl);
+            name_dash[nl] = '-';
+            name_dash[nl + 1] = '\0';
+            raw = replace_leading_icase(raw, "v-", name_dash);
+            free(name_dash);
+        }
+    }
+
     return raw;
 }
 
