@@ -45,7 +45,8 @@ FRD-018), M21 (post-strip filters), ADR-0014 (multi-SHA Draft).
 | #113 | ADR-0014 multi-SHA Draft | User direction; pending decision. |
 | #114 | **M20** — HTTP listing scraper (FRD-018) | New `src/scraper.c`. Targets the dominant non-git update detection gap. **−47 strict / +17 soft on 4.0.** |
 | #115 | **M21** — Post-strip filters | PS L 2522-2524. Drops scraper-noise hrefs (`?C=S;O=A`, `LATEST-IS-X`, `..`). |
-| TBD  | **M22** — Clean-VersionNames pre-release filter | PS L 441-451. Anchored `rel/`/`v`/`r` strips, `_`→`.`, drop `candidate\|-alpha\|-beta\|.beta\|rc.[0-4]\|rc[1-4]\|-preview.\|-dev.\|-pre1\|.pre1`. Wired into both git-tag and scraper pipelines between M19 and M21. |
+| #117 | **M21 followup** — wire `apply_name_post_filters` into scraper path | One missing call site in `src/check_urlhealth.c` (M20 scraper branch). Validation run 26044019950: strict_rows dropped **149-290 per branch** (35-57% cumulative reduction from initial). The post-strip filters were only applied on the git-tag path until this commit. |
+| #118 | **M22** — Clean-VersionNames pre-release filter | PS L 441-451. Anchored `rel/`/`v`/`r` strips, `_`→`.`, drop `candidate\|-alpha\|-beta\|.beta\|rc.[0-4]\|rc[1-4]\|-preview.\|-dev.\|-pre1\|.pre1`. Wired into both git-tag and scraper pipelines between M19 and M21. |
 
 ### Journal trajectory (strict_rows per branch)
 
@@ -55,10 +56,12 @@ Initial             919  1034  1113  1093    6   1090   1090
 After M14 unmask    795   841   849   832    6    833    834
 After M16           774   822   835   817    6    818    816
 After M20           748   774   766   766    6    767    769
-After M21          (pending validation — run 26035713128)
+After M21-wired     599   563   476   476    5    481    482  ← run 26044019950
+                  (-149)(-211)(-290)(-290) (-1) (-286) (-287)
+After M22          (pending validation — fresh dispatch against master 610ce20)
 
-Δ from initial    -171  -260  -347  -327    --   -323   -321
-% reduction        19%   25%   31%   30%    --    30%    29%
+Δ from initial    -320  -471  -637  -617    -1   -609   -608
+% reduction        35%   46%   57%   56%    --    56%    56%
 ```
 
 ### Critical findings (preserved as memory entries)
