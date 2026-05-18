@@ -55,6 +55,62 @@ static char *dup_or_empty(const char *s)
     return p;
 }
 
+/* PS L 4770: if download name starts with case-insensitive 'v' AND
+ * the second char is not '-', strip the leading 'v'.
+ * PS L 4782-4783: strip the well-known archive extensions; if the
+ * remainder has NO alpha character, prepend "<task.Name>-".
+ *
+ * Mutates the passed string in place where possible; otherwise returns
+ * a newly-allocated replacement. Caller owns the result. */
+static char *download_name_post(char *raw, const char *task_name)
+{
+    if (raw == NULL) return NULL;
+
+    /* L 4770: optional 'v' strip. */
+    if ((raw[0] == 'v' || raw[0] == 'V') && raw[1] && raw[1] != '-') {
+        memmove(raw, raw + 1, strlen(raw));
+    }
+
+    /* L 4782-4783: compute tmpName = basename minus extension. */
+    if (task_name && task_name[0]) {
+        static const char *exts[] = {
+            ".tar.gz", ".tar.xz", ".tar.lz", ".tar.bz2",
+            ".tgz",    ".zip",    ".gem",
+            NULL,
+        };
+        size_t rl = strlen(raw);
+        size_t tmp_len = rl;
+        for (int i = 0; exts[i]; i++) {
+            size_t el = strlen(exts[i]);
+            if (rl >= el && strncasecmp(raw + rl - el, exts[i], el) == 0) {
+                tmp_len = rl - el;
+                break;
+            }
+        }
+        /* Does the un-extensioned remainder contain any alpha char? */
+        int has_alpha = 0;
+        for (size_t i = 0; i < tmp_len; i++) {
+            unsigned char c = (unsigned char)raw[i];
+            if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) {
+                has_alpha = 1; break;
+            }
+        }
+        if (!has_alpha) {
+            /* Prepend "<task_name>-". */
+            size_t nl = strlen(task_name);
+            char *out = (char *)malloc(nl + 1 + rl + 1);
+            if (out) {
+                memcpy(out, task_name, nl);
+                out[nl] = '-';
+                memcpy(out + nl + 1, raw, rl + 1);
+                free(raw);
+                return out;
+            }
+        }
+    }
+    return raw;
+}
+
 /* PS L 2111-2119: "cut last index in $currentTask.version and save value
  * in $version". Mirror byte-for-byte.
  *
@@ -225,11 +281,16 @@ char *check_urlhealth(pr_task_t                       *task,
                                 state.HealthUpdateURL = strdup(buf);
                             }
 
-                            /* UpdateDownloadName (col 10): PS L 4716-4718
-                             * — basename of UpdateURL, with SourceForge
-                             * /download → penultimate segment. */
+                            /* UpdateDownloadName (col 10): PS L 4755-4793
+                             * — basename of UpdateURL (with SourceForge
+                             * /download → penultimate segment handled
+                             * inside pr_basename_from_url), then PS
+                             * post-processing (v-strip + name-prefix
+                             * for numeric-only basenames). */
                             char *dl_name = pr_basename_from_url(state.UpdateURL);
                             if (dl_name) {
+                                dl_name = download_name_post(dl_name,
+                                              task->Name ? task->Name : "");
                                 free(state.UpdateDownloadName);
                                 state.UpdateDownloadName = dl_name;
                             } else {
