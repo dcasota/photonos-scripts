@@ -1,10 +1,10 @@
 # ADR-0015 — Stable-source SHA for github auto-archives
 
-**Status**: Draft
+**Status**: Accepted (Option A)
 
 **Date**: 2026-05-18
 
-**Deciders**: TBD (user gate)
+**Deciders**: dcasota (2026-05-18 evening)
 
 ## Context
 
@@ -106,9 +106,10 @@ real bugs where the SHA computation logic itself drifts.
 
 ## Decision
 
-**Pending user input.** Agent recommendation: **Option A (col-9
-override with auto-archive fallback)**, gated by a per-host
-allowlist (initially `github.com` only).
+**Accepted: Option A (col-9 override with auto-archive fallback)** on
+2026-05-18. Initial per-host allowlist: `github.com` only. Composes
+with ADR-0014 (Accepted same day) — col 9's stable URL is also the
+source for the new cols 13/14 SHA-256/SHA-512 hashes.
 
 Reasons:
 
