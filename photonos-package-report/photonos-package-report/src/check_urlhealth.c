@@ -623,6 +623,10 @@ char *check_urlhealth(pr_task_t                       *task,
             apply_replace_strings(names, n, row ? row->replaceStrings : NULL);
             apply_name_replace_augmentations(names, n,
                                              task->Name ? task->Name : "");
+            /* M21 (PS L 2522-2524): v-strip + has-digit + no-alpha-
+             * after-[pP]\d+-strip. Drops scraper noise like
+             * `LATEST-IS-X`, `?C=S;O=A`, `..`. */
+            apply_name_post_filters(names, n);
             char *latest = pr_get_latest_name(names, n);
             if (latest && latest[0]) {
                 /* Strip common file extensions if present — listing
