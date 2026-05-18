@@ -56,6 +56,55 @@ static char *dup_or_empty(const char *s)
     return p;
 }
 
+/* PS L 2151 + L 2516-2517: apply Source0Lookup's `replaceStrings`
+ * column to each tag name in-place. Splits comma-separated tokens,
+ * strips ASCII whitespace, and replaces all occurrences of each token
+ * with the empty string in each name.
+ *
+ * Used to normalise tag names before version comparison, e.g.
+ * `llvmorg-22.1.5` → `22.1.5` when replaceStrings contains "llvmorg-".
+ *
+ * PS's `-replace [regex]::Escape($item), ""` semantically equals a
+ * literal-substring strip — no regex metachars survive the Escape().
+ *
+ * The `names[]` array is owned by the caller (pr_clone_list_tags);
+ * we may free + replace individual entries. */
+static void apply_replace_strings(char **names, size_t n,
+                                  const char *replace_strings)
+{
+    if (names == NULL || replace_strings == NULL || *replace_strings == '\0') return;
+
+    /* Walk comma-separated tokens. */
+    const char *p = replace_strings;
+    while (*p) {
+        const char *comma = strchr(p, ',');
+        const char *end = comma ? comma : p + strlen(p);
+        const char *tok_start = p;
+        const char *tok_end = end;
+        /* Trim ASCII whitespace. */
+        while (tok_start < tok_end && (*tok_start == ' ' || *tok_start == '\t')) tok_start++;
+        while (tok_end > tok_start && (*(tok_end - 1) == ' ' || *(tok_end - 1) == '\t')) tok_end--;
+
+        size_t tok_len = (size_t)(tok_end - tok_start);
+        if (tok_len > 0) {
+            char *tok = (char *)malloc(tok_len + 1);
+            if (tok) {
+                memcpy(tok, tok_start, tok_len);
+                tok[tok_len] = '\0';
+                /* Strip all occurrences of `tok` from each name. */
+                for (size_t i = 0; i < n; i++) {
+                    if (names[i] == NULL) continue;
+                    names[i] = istr_replace_all(names[i], tok, "");
+                }
+                free(tok);
+            }
+        }
+
+        if (!comma) break;
+        p = comma + 1;
+    }
+}
+
 /* PS L 4770: if download name starts with case-insensitive 'v' AND
  * the second char is not '-', strip the leading 'v'.
  * PS L 4782-4783: strip the well-known archive extensions; if the
@@ -255,6 +304,12 @@ char *check_urlhealth(pr_task_t                       *task,
                     size_t  n     = 0;
                     if (pr_clone_list_tags(clone_path, row->customRegex,
                                            &names, &n) == 0 && n > 0) {
+                        /* Apply replaceStrings from Source0Lookup row
+                         * (PS L 2151). For clang/llvm specs this
+                         * strips the `llvmorg-` prefix off tag names
+                         * so version compare sees "22.1.5" not
+                         * "llvmorg-22.1.5". */
+                        apply_replace_strings(names, n, row->replaceStrings);
                         char *latest = pr_get_latest_name(names, n);
                         if (latest && latest[0]) {
                             /* PS L 2538-2553: compare first; only the
