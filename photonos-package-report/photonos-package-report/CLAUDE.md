@@ -66,7 +66,7 @@ while the tool is live.
 | 8  | CI side-by-side parity gate                           | done (#67)  |
 | 8.5 | Parity convergence loop — per-bucket PS↔C diff fixes (see [TODO.md](../../TODO.md) §3) | in progress |
 | 9  | Retirement (PS → staging/legacy/, C-only)             | pending (gated on 90d green journal) |
-| M  | Maintainer ops & debug tooling — `docs/maintainer-runbook.md`, `.vscode/`; M01 PR #84 mirror (`-UpstreamsExclusionList` clone-skip); M02 multi-branch dispatcher; M03 `photon-` prefix on SPECS path; M04 partial-clone speedup + token-leak hardening | ongoing |
+| M  | Maintainer ops + Phase 8.5 convergence backlog — see `specs/tasks/README.md` for M01-M21 task table and `TODO.md` for the dual-goal program (parity gap + vendor-info quality) | ongoing |
 
 When you land a feature in a numeric phase that changes a workflow the
 maintainer cares about (new flag, new override mechanism, new generator),
@@ -77,5 +77,70 @@ PR. The runbook is the operability source-of-truth.
 
 [`TODO.md`](../../TODO.md) at the repo root tracks the in-flight
 program of work — Phase-M backlog, Stage-3 per-bucket convergence
-priorities, and the user-checkpoint list (ADR-0012, ADR-0013, VPN
-provisioning). Update TODO.md whenever a PR lands.
+priorities, and the user-checkpoint list (now: ADR-0014 multi-SHA
+Draft, on-demand VPN). Update TODO.md whenever a PR lands.
+
+## Goal (dual, user-direction 2026-05-18)
+
+The convergence loop targets TWO goals in parallel:
+
+1. **Shrink the C↔PS `.prn` parity gap** — ADR-0009 90-day-green
+   journal verdict is the floor.
+2. **Maximize accessible vendor package information** — the cells
+   `UpdateAvailable`, `UpdateURL`, `SHAName`, `UpdateDownloadName`
+   should reflect upstream truth, not just C-matches-PS.
+
+When goals conflict (PS has a stale URL and C mirrors it), prefer
+fixing the Source0Lookup row / Phase-3b hook so BOTH sides improve.
+
+## Session-context cheat-sheet (key findings preserved)
+
+For a fresh session: the convergence loop has shipped M01-M21 in
+Phase M, mostly bug-fixes / mirror ports of PS features the C port
+lacked. The remaining gap is dominated by **per-package depth
+investigation** (per-upstream-family scrapers, per-spec adapter
+exceptions). See `feedback_per_package_depth_investigation.md`
+memory entry.
+
+**Architectural decisions made:** ADR-0012 (subrelease layout) and
+ADR-0013 (Source0Lookup split) both Accepted as Option A (status
+quo). ADR-0014 (multi-SHA) Draft, pending user decision.
+
+**Critical mechanics**:
+
+- `parity-diff.sh` compares `.prn` files **line-by-line at the same
+  row index** — not joining on Spec. C's `.prn` row sort MUST match
+  PS's `Sort-Object Spec, SubRelease` (case-INsensitive). Fixed in
+  M14; before that, almost every row mismatched purely from sort
+  order. If you ever change the row-output ordering, this is the
+  one thing not to break.
+- Source0Lookup matching is **case-SENSITIVE** (PS `.IndexOf`).
+  Warnings/hooks are **case-INsensitive** (PS `-ilike`). Preserve
+  this asymmetry — see `feedback_source0lookup_case_sensitivity.md`.
+- `task.Version` is `"Version-Release"` form (PS L 281). `version_cut()`
+  in `src/check_urlhealth.c` strips the trailing `-release` (with
+  Photon dist-tag preservation) before substitution. This is M08.
+- SPECS/91/ + SPECS/90/ subreleases short-circuit via M17's
+  `pinned`-sentinel emission. parse_directory already captures
+  task.SubRelease.
+- HTTP listing scraping for non-git specs lives in `src/scraper.c`
+  (M20, FRD-018). Filtered via M21 to drop sort-query hrefs and
+  symlink-style names.
+
+**Validation cadence:** every PR followed by a
+`gh workflow run "Photon OS Package Report (C-side parity)"
+-f snapshot_run_id=25991871716 -f throttle_limit=8` and a 1-2h
+wait. Journal lands automatically. Diff baseline refresh via
+`tools/diff_analyzer.py <PS-snapshot-dir> <C-artifact-dir>
+docs/prn-analysis`.
+
+**Known transient infra issues:**
+
+- WSL2 host occasionally loses TLS connectivity to
+  `*.actions.githubusercontent.com` (broker / pipelinesghubeus3)
+  while `api.github.com` stays healthy. Symptom: runner offline +
+  jobs stuck queued. Recovery: `systemctl restart
+  actions.runner.dcasota-photonos-scripts.photon5-local.service`
+  after connectivity returns. Seen 2026-05-17 and 2026-05-18.
+- Disk-fill from on-demand clones on a non-`/tmp` non-cleaning path.
+  Recovery: kill in-flight C binary, `rm -rf <upstreams-dir>`.

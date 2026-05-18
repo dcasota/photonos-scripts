@@ -180,84 +180,69 @@ For each diff-signature bucket, in descending order of affected-count:
 9. **Update spec status** (`Implemented` if final task, else leave
    `Accepted`). Already part of the merged PR.
 
-### Initial priority bucket list
+### Status — shared-infrastructure phase complete (M01-M21)
 
-(To be filled in from Stage 2 outputs. Skeleton based on prior
-4.0/5.0 PS-side analysis that already exists in
-`docs/prn-analysis/photon-4.0.md` and `photon-5.0-normal.md`. The
-C-side diff buckets may differ — Stage 2 will show.)
+M01-M21 covered shared infrastructure: pinned-sentinel emission,
+case-insensitive sort, version-cut, substitution rewrites, warning
+table, replaceStrings application, post-strip filters, HTTP listing
+scraper. Cumulative parity gap closed by ~30% (varies per branch).
 
-- [ ] **Bucket 1 — SHAName (col 9) always empty in C.**
-      C port doesn't compute SHA-512 of UpdateURL body.
-      Affects: every spec with a populated UpdateURL on the PS side
-      (~80% of "complete" PS rows). Highest leverage.
-      Touches: new `src/sha512_download.c`, `pr_clone_ensure` companion.
-      FRD: extend FRD-014 (.prn row assembly).
-- [ ] **Bucket 2 — warning (col 11) always empty in C.**
-      C port doesn't emit the warning strings ("Manufacturer may
-      changed version packaging format", "Info: VMware internal URL",
-      etc.). Affects: ~100 specs per branch.
-      Touches: `src/check_urlhealth.c` per-warning emission logic.
-      FRD: extend FRD-011 (CheckURLHealth orchestrator).
-- [ ] **Bucket 3 — ArchivationDate (col 12) always empty in C.**
-      C port reads it from lookup row but may not propagate. Affects:
-      every archived spec (~5 per branch). FRD-014.
-- [ ] **Bucket 4 — `pinned` short-circuit (SPECS/91, SPECS/90).**
-      C port doesn't recognise the subrelease path → walks full
-      pipeline → diverges. Affects: 16 specs (91) + ~53 specs (90)
-      once snapshot refreshes. New FRD or extension of FRD-002
-      (parse_directory).
-- [ ] **Bucket 5 — Source0 substitution edge cases.**
-      Specific cols 2/3 mismatches indicating substitution gaps
-      (GitHub archive-URL, RubyGems, CPAN, X.Org). Each
-      sub-bucket = one PR. PS-side already has the logic; gap is in
-      C. FRD-004 (substitution core).
-- [ ] *(remainder filled by Stage 2 data)*
+See `specs/tasks/README.md` for the full M01-M21 task table.
 
----
+### Residual buckets after M21 (the per-package depth territory)
 
-## Stage 4 — Per-release × subrelease coverage
+Per `feedback_per_package_depth_investigation.md` memory entry: the
+remaining gap is **per-package investigation** — each spec in these
+buckets has its own upstream naming scheme / download convention /
+update-detection mechanism.
 
-The PS workflow currently outputs **one `.prn` per branch**. SPECS/90
-and SPECS/91 rows are folded into the parent branch's `.prn` and
-identified via the `vendor-pinned (subrelease N)` warning + `pinned`
-sentinel in col 4.
+Categories (approximate counts per 4.0 after M21 era):
 
-- [ ] **Decision A:** Keep the single-file-per-branch layout, with
-      pinned-emit logic recognising SPECS/<N>/. Lowest impact on tooling.
-- [ ] **Decision B:** Split `.prn` per subrelease
-      (`photonos-urlhealth-5.0-90.prn`, `-91.prn`, default).
-      Requires per-subrelease GeneratePhXURLHealthReport flag,
-      `.prn` filename change, parity-diff awareness, journal schema
-      update. Higher impact.
-- [ ] **Required ADR.** Whichever decision is made, capture it in
-      `specs/adr/0012-subrelease-output-layout.md`. Reviewed +
-      Accepted before any task in this stage starts.
+- ~280 `UpdateAvailable,UpdateURL,SHAName,UpdateDownloadName,warning`
+  GConf-style: scraper returns candidate name(s) but PS's downstream
+  filtering / regex differs per upstream family.
+- ~190 `UpdateAvailable,UpdateURL,SHAName,UpdateDownloadName`
+  ImageMagick-style: C scraper picks a wrong "latest" because the
+  per-family filter (release vs RC vs nightly) isn't implemented.
+- ~75 `SHAName` only — github auto-archive instability. Defer or
+  resolve via ADR-0014 (multi-SHA / stable-source SHA).
+- ~70 `UpdateAvailable` only — non-git "(same version)" path not
+  emitting when scraper finds the current version.
+- ~65 `UpdateAvailable,warning` — autogen-style: PS detected
+  "(same version)", C scraper picks up a sort-query-string href.
+  Some covered by M21; remainder is per-spec edge cases.
+- ~18 `Source0_modified` only — per-spec URL rewrite differences
+  (ModemManager directory vs file URLs etc.).
+
+### Next-units priority (dual-axis: parity + vendor-info)
+
+| Unit | Parity Δ | Info Δ | Effort | Notes |
+|---|---|---|---|---|
+| **Per-upstream-family FRDs** | high | very-high | per-family weeks | gnome.org filter, sourceforge filter, launchpad filter — each refines what the scraper does for a specific listing layout |
+| **ADR-0014 multi-SHA** Accepted + impl | medium | high | 1-2 PRs | drafted; awaiting decision |
+| **M22+ Source0Lookup row repairs** | low | high | 1 PR per spec | one PR per dead-URL spec (bluez-tools→github, etc.) |
+| **`(same version)` for non-git path** | medium | low | 1 PR | when scraper finds latest == current spec version |
+| **`Clean-VersionNames` port** | medium | medium | 1 PR | additional post-filter from PS that's not yet ported |
+| **ADR-0015 stable-source SHA** for github auto-archives | medium | high | needs ADR | switch col-9 source from auto-archive to release-asset where available |
 
 ---
 
-## Stage 5 — Source0Lookup split decision
+## Stage 4 — Per-release × subrelease coverage   ✅ DECIDED
 
-Today: one embedded CSV at PS L 509-1366 (~855 rows) shared across all
-branches and subreleases.
+ADR-0012 → **Accepted Option A (status quo, pinned-sentinel)** on
+2026-05-18. PS L 2104-2106 already emits the sentinel row. M17
+implements the matching C-side short-circuit. No schema change.
 
-Risk: ambiguity when a spec has different upstream conventions per
-release. E.g. `dbus` SPECS/91 → pinned, SPECS/main → upstream; same
-`Source0Lookup` row applied to both yields a wrong result in one case.
+---
 
-- [ ] **Survey** how many specs would actually need per-release
-      divergent Source0Lookup entries. Likely small set — mostly
-      vendor-pinned subrelease entries.
-- [ ] **Option A:** Add a `subrelease` column to the CSV; PS picks
-      the row matching the current SPECS subpath. Backwards-compatible.
-- [ ] **Option B:** Split CSV into per-release files at PS-source
-      level (`Source0Lookup-3.0`, etc.). Larger churn; needs each
-      .ps1 maintainer touching the right file.
-- [ ] **Option C:** Status quo. Document the limitation in
-      `docs/maintainer-runbook.md` §1. Lowest cost; accepts the few
-      cases where per-release differs.
-- [ ] **ADR:** `specs/adr/0013-source0lookup-per-release.md`. Reviewed
-      + Accepted gates this work.
+## Stage 5 — Source0Lookup split decision   ✅ DECIDED
+
+ADR-0013 → **Accepted Option A (status quo, case-variant rows)** on
+2026-05-18. The same conceptual package is listed twice in
+Source0LookupData with different filename casings (PS L 2147
+`.IndexOf` is case-sensitive). Documented in maintainer-runbook §1.
+No schema change. See `feedback_source0lookup_case_sensitivity.md`
+memory entry.
 
 ---
 
@@ -300,17 +285,16 @@ producer.
 
 ## Checkpoints (where the AI pauses for your input)
 
-These are non-trivial / non-reversible decisions where the agent
-should stop and confirm rather than guess:
+Updated 2026-05-18 with status:
 
-1. **End of Stage 2** — diff-signature taxonomy. Confirm the buckets
-   before mass-generating fix PRs.
-2. **Before Stage 4** — single-file vs. split-`.prn` (ADR-0012).
-3. **Before Stage 5** — Source0Lookup CSV restructure (ADR-0013).
-4. **Stage 6** — VPN/proxy provisioning decision.
-5. **Before any PS-side edit that touches more than 3 lookup rows**,
-   or any change to the substitution sequence at PS L 2161-2199
-   (CLAUDE.md invariant 3).
+1. ~~End of Stage 2 — diff-signature taxonomy~~ ✅ approved; M08-M21 followed.
+2. ~~ADR-0012 — single-file vs. split-`.prn`~~ ✅ Option A.
+3. ~~ADR-0013 — Source0Lookup CSV restructure~~ ✅ Option A.
+4. **ADR-0014** — multi-SHA emission strategy. Draft pending user decision.
+5. **Stage 6** — VPN/proxy provisioning decision (operator-only).
+6. **Per-PS-edit guards** — any PS edit touching >3 lookup rows
+   or the L 2161-2199 substitution sequence (CLAUDE.md invariant 3)
+   still pauses for confirmation.
 
 For everything else: proceed.
 
