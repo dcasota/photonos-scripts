@@ -298,9 +298,11 @@ Updated 2026-05-18 with status:
 1. ~~End of Stage 2 — diff-signature taxonomy~~ ✅ approved; M08-M21 followed.
 2. ~~ADR-0012 — single-file vs. split-`.prn`~~ ✅ Option A.
 3. ~~ADR-0013 — Source0Lookup CSV restructure~~ ✅ Option A.
-4. **ADR-0014** — multi-SHA emission strategy. Draft pending user decision.
-5. **Stage 6** — VPN/proxy provisioning decision (operator-only).
-6. **Per-PS-edit guards** — any PS edit touching >3 lookup rows
+4. ~~**ADR-0014** — multi-SHA emission strategy~~ ✅ Option B (new cols 13/14).
+5. ~~**ADR-0015** — stable-source SHA for github auto-archives~~ ✅ Option A (col-9 override).
+6. ~~**Stage 6** — VPN/proxy provisioning direction~~ ✅ WireGuard with policy routing (operator implementation; runbook §10).
+7. **Per-upstream-family scrapers** ✅ atom-feed parser is next implementation focus (FRD-019 to be drafted).
+8. **Per-PS-edit guards** — any PS edit touching >3 lookup rows
    or the L 2161-2199 substitution sequence (CLAUDE.md invariant 3)
    still pauses for confirmation.
 

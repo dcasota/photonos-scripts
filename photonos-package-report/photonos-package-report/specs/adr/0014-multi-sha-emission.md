@@ -1,10 +1,10 @@
 # ADR-0014 — Multi-SHA emission strategy
 
-**Status**: Draft
+**Status**: Accepted (Option B)
 
 **Date**: 2026-05-18
 
-**Deciders**: TBD (user gate)
+**Deciders**: dcasota (2026-05-18 evening)
 
 ## Context
 
@@ -65,9 +65,8 @@ row" assumptions.
 
 ## Decision
 
-**Pending user input.** Agent recommendation: **Option B (additional
-columns)**, gated by a clean coordinated PS + C + tooling rollout.
-Reasons:
+**Accepted: Option B (additional columns 13/14)** on 2026-05-18.
+Coordinated PS + C + tooling rollout in one PR. Reasons:
 
 - Cleanest data model. Consumers that don't care about the new
   columns ignore them.

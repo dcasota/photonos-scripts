@@ -534,3 +534,70 @@ only when:
 
 In both cases open a separate PR that resets the journal explicitly
 with a justification linked to the ADR or PRD change.
+
+---
+
+## 10. On-demand VPN for blocked upstream hosts (Stage 6)
+
+Some upstream hosts (`netfilter.org`, geo-restricted release mirrors)
+return 5xx, redirect loops, or 403 when probed from the runner's
+egress IP. C reports those as `no_update_available` / `url_unhealthy`,
+which dilutes the parity-gate signal — the data is present upstream
+but the runner can't see it.
+
+**Decision (2026-05-18): WireGuard with policy routing.**
+
+A WireGuard interface activates when an in-flight clone or probe
+targets a known-blocked CIDR. Implementation owned by the operator
+(needs host root + ISP egress allocation); the agent does not have
+sufficient privilege.
+
+### Design contract for the operator
+
+1. Maintain a small allowlist of blocked-host CIDRs (initially the
+   netfilter.org public IPs; expand as new hosts surface in the
+   `cols[3 4]` / `cols[5]` residual buckets).
+2. `wg-quick up <iface>` activates a tunnel keyed on dest CIDR via
+   `ip rule add to <CIDR> table <N>` + `ip route add default via
+   <wg-peer> table <N>`.
+3. Per-spec or per-host overrides MAY be added to
+   `tools/clone-config.sh` (a new file) that maps spec names to
+   require-VPN flags. Current C code already honours the runner's
+   default routing table; no in-binary changes are needed.
+
+### Affected specs (post-M21-wired residual sample)
+
+The `netfilter.org` family — at minimum:
+
+- `libnetfilter_conntrack.spec`
+- `libnetfilter_cthelper.spec`
+- `libnetfilter_cttimeout.spec`
+- `libnetfilter_queue.spec`
+- `libnfnetlink.spec`
+- `libnftnl.spec`
+- `libmnl.spec`
+- `nftables.spec`
+- `conntrack-tools.spec`
+- `iptables.spec`
+- `ebtables.spec`
+- `ipset.spec`
+
+PS handles these with a custom Referer in `urlhealth()` (L 1486-1495);
+when the WireGuard tunnel is up, the C `urlhealth()` libcurl probe
+follows the same routing and observes the same upstream contents.
+
+### Alternatives considered
+
+- HTTP/SOCKS5 proxy with `git config http.<base>.proxy` — cheaper but
+  doesn't help git clones for these repos.
+- `gh api`-cached fetcher (offline manifest) — doesn't help
+  per-probe network operations.
+- Accepting the blocked-host residual as "parity-gate known
+  limitations" — weakens the strict-diff signal as more hosts go
+  geo-restricted over time. Rejected.
+
+### Status
+
+- Decided 2026-05-18.
+- Operator implementation TBD; agent will track residual specs in
+  the journal as the VPN comes online.
