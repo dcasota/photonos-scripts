@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <unistd.h>
 #include <sys/file.h>
 
@@ -86,12 +87,27 @@ const char *pr_prn_strip(const char *row)
     return out;
 }
 
-/* qsort comparator: locale-C strcmp ascending. */
+/* qsort comparator: case-insensitive ascending.
+ *
+ * PS L 5476 sorts the result with `Sort-Object Spec, SubRelease -Unique`.
+ * PowerShell's `Sort-Object` is case-insensitive by default. Our rows
+ * begin with the Spec basename followed by ',' (Spec is col 1), so
+ * sorting the full row string with strcasecmp gives the same primary
+ * ordering as PS. Strict-byte equality on ties (case-only differences
+ * in identical strings) would require strcasecmp+strcmp tiebreaking,
+ * but PS's behaviour on a true case-only tie is undefined too — using
+ * strcasecmp alone is the simplest faithful port.
+ *
+ * Pre-M14 used strcmp, which is case-sensitive ASCII (capitals sort
+ * before lowercase). That made `GConf.spec` come before `abseil-cpp.spec`
+ * in the C output while PS put them in case-insensitive order. The
+ * resulting line-by-line position mismatch made parity-diff.sh see
+ * almost every row as strict-different even when content was identical. */
 static int cmp_str_asc(const void *a, const void *b)
 {
     const char *const *sa = (const char *const *)a;
     const char *const *sb = (const char *const *)b;
-    return strcmp(*sa, *sb);
+    return strcasecmp(*sa, *sb);
 }
 
 int pr_prn_append_rows(pr_prn_t *ctx, char **rows, size_t n_rows)
