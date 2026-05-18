@@ -15,6 +15,7 @@
  */
 /* _GNU_SOURCE for asprintf is provided via CMake; do not redefine. */
 #include "pr_check_urlhealth.h"
+#include "pr_atom_feed.h"
 #include "pr_clone.h"
 #include "pr_git_tags.h"
 #include "pr_hook.h"
@@ -985,13 +986,26 @@ char *check_urlhealth(pr_task_t                       *task,
      * extracts <a href> values, and runs them through the same
      * version-name filter pipeline as git tags.
      *
-     * Gate: only when allow_network=1, the row is missing a gitSource
-     * (or no row at all), and UpdateAvailable is still empty (i.e. the
-     * git path above didn't run). The original urlhealth must be 200 —
-     * a dead Source0 means the listing parent is probably dead too. */
+     * M33 / FRD-019: per-spec atom-feed override. PS L 3815-3866
+     * dispatcher sets `$SourceTagURL` to an atom-feed URL for ~27
+     * specs (dbus, fontconfig, gstreamer, libdrm, mesa, pixman, ...).
+     * PS uses it as a FALLBACK when the github-tag-list path returned
+     * no Names. C mirrors: if the spec has an atom override AND
+     * UpdateAvailable is still empty after the git-tag path, dispatch
+     * to the atom-feed parser. Otherwise fall through to the existing
+     * HTML listing scraper (M20).
+     *
+     * Gate: allow_network=1, UpdateAvailable empty (git path didn't
+     * fill it), AND either (a) no gitSource OR (b) the spec has an
+     * atom override. The original urlhealth must be 200 — a dead
+     * Source0 means the listing parent is probably dead too. */
+    const char *atom_url = pr_per_spec_source_tag_url(task->Spec);
     if (allow_network && health == 200
         && (state.UpdateAvailable == NULL || state.UpdateAvailable[0] == '\0')
-        && (row == NULL || row->gitSource == NULL || row->gitSource[0] == '\0')
+        && (atom_url != NULL
+            || row == NULL
+            || row->gitSource == NULL
+            || row->gitSource[0] == '\0')
         && state.Source0 && state.Source0[0]) {
         /* Compute dirname(Source0) — strip from the last '/'. */
         char *parent = dup_or_empty(state.Source0);
@@ -1002,11 +1016,24 @@ char *check_urlhealth(pr_task_t                       *task,
         }
         char **names = NULL;
         size_t  n     = 0;
-        if (pr_scrape_listing(parent, &names, &n) == 0 && n > 0) {
-            /* M23 (PS L 4321-4341): scraper-only pre-filter.
-             * Drop HTML/sig noise, keep .tar.* (or .tgz fallback),
-             * strip archive extensions BEFORE name-strip pipeline. */
-            apply_scraper_pre_filters(names, n);
+        /* M33 / FRD-019: when this spec has an atom-feed URL override,
+         * dispatch to pr_scrape_atom_feed against the override URL.
+         * Otherwise fall through to the HTML listing scraper.
+         * The M23 pre-filter is skipped on the atom path — atom titles
+         * are tag names, not file basenames. */
+        int used_atom = 0;
+        int scrape_ok = 0;
+        if (atom_url != NULL) {
+            scrape_ok = (pr_scrape_atom_feed(atom_url, &names, &n) == 0);
+            used_atom = 1;
+        } else {
+            scrape_ok = (pr_scrape_listing(parent, &names, &n) == 0);
+        }
+        if (scrape_ok && n > 0) {
+            if (!used_atom) {
+                /* M23 (PS L 4321-4341) — HTML href path only. */
+                apply_scraper_pre_filters(names, n);
+            }
             apply_replace_strings(names, n, row ? row->replaceStrings : NULL);
             /* M26 (PS L 2152 + L 4376): drop candidates matching
              * Source0Lookup.ignoreStrings glob list (only when a row

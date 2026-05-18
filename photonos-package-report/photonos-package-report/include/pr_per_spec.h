@@ -45,4 +45,15 @@ void pr_apply_per_spec_drop_substrings(const char *spec_name,
 void pr_apply_per_spec_global_replace(const char *spec_name,
                                       char **names, size_t n);
 
+/* M33 / FRD-019 — per-spec SourceTagURL override (atom-feed dispatch).
+ *
+ * Returns a static, non-NULL atom-feed URL when the spec has an
+ * override registered (PS L 3815-3866). Returns NULL when there is
+ * no override.
+ *
+ * The returned pointer is owned by the table (static string literal)
+ * — caller must not free.
+ */
+const char *pr_per_spec_source_tag_url(const char *spec_name);
+
 #endif /* PR_PER_SPEC_H */
