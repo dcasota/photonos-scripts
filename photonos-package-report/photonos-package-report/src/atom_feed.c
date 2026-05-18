@@ -114,9 +114,20 @@ int pr_scrape_atom_feed(const char *url, char ***out_names, size_t *out_n)
     curl_easy_setopt(c, CURLOPT_URL,            url);
     curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(c, CURLOPT_TIMEOUT_MS,     20000L);
+    /* gitlab.freedesktop.org's bot detection triggers on Chrome-style
+     * user agents and returns an HTML challenge page instead of the
+     * atom feed. PS's `Invoke-RestMethod` default UA carries
+     * "PowerShell" / "WindowsPowerShell" and is whitelisted.
+     * Empirically tested with `curl -A "PowerShell" ...` returns the
+     * proper atom XML where Chrome UA returns the challenge page.
+     *
+     * Using a PowerShell-style UA here matches PS behaviour and
+     * avoids the bot challenge for gitlab.freedesktop.org and
+     * gitlab.com. Other hosts in the per-spec URL table
+     * (gitlab.gnome.org) accept both UAs. */
     curl_easy_setopt(c, CURLOPT_USERAGENT,
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/113.0.0.0 Safari/537.36");
+        "Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) "
+        "WindowsPowerShell/5.1.19041.5072");
     curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, body_write_cb);
     curl_easy_setopt(c, CURLOPT_WRITEDATA,     &body);
     curl_easy_setopt(c, CURLOPT_ACCEPT_ENCODING, "");
