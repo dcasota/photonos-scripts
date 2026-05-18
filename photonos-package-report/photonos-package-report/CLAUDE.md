@@ -66,7 +66,7 @@ while the tool is live.
 | 8  | CI side-by-side parity gate                           | done (#67)  |
 | 8.5 | Parity convergence loop — per-bucket PS↔C diff fixes (see [TODO.md](../../TODO.md) §3) | in progress |
 | 9  | Retirement (PS → staging/legacy/, C-only)             | pending (gated on 90d green journal) |
-| M  | Maintainer ops + Phase 8.5 convergence backlog — see `specs/tasks/README.md` for M01-M21 task table and `TODO.md` for the dual-goal program (parity gap + vendor-info quality) | ongoing |
+| M  | Maintainer ops + Phase 8.5 convergence backlog — see `specs/tasks/README.md` for the M01-M33 task table and `TODO.md` for the dual-goal program (parity gap + vendor-info quality) | ongoing |
 
 When you land a feature in a numeric phase that changes a workflow the
 maintainer cares about (new flag, new override mechanism, new generator),
@@ -77,8 +77,12 @@ PR. The runbook is the operability source-of-truth.
 
 [`TODO.md`](../../TODO.md) at the repo root tracks the in-flight
 program of work — Phase-M backlog, Stage-3 per-bucket convergence
-priorities, and the user-checkpoint list (now: ADR-0014 multi-SHA
-Draft, on-demand VPN). Update TODO.md whenever a PR lands.
+priorities, and the user-checkpoint list. Update TODO.md whenever a
+PR lands.
+
+**2026-05-18 evening checkpoint resolved**: ADR-0014 + ADR-0015 both
+Accepted; Stage 6 → WireGuard direction documented; per-upstream-
+family priority → atom-feed parser (FRD-019).
 
 ## Goal (dual, user-direction 2026-05-18)
 
@@ -95,16 +99,23 @@ fixing the Source0Lookup row / Phase-3b hook so BOTH sides improve.
 
 ## Session-context cheat-sheet (key findings preserved)
 
-For a fresh session: the convergence loop has shipped M01-M21 in
-Phase M, mostly bug-fixes / mirror ports of PS features the C port
-lacked. The remaining gap is dominated by **per-package depth
-investigation** (per-upstream-family scrapers, per-spec adapter
-exceptions). See `feedback_per_package_depth_investigation.md`
-memory entry.
+For a fresh session: the convergence loop has shipped M01-M33 in
+Phase M. Session 1 (M01-M21) covered shared infrastructure +
+post-strip filters. Session 2 (M22-M33) added Clean-VersionNames,
+scraper extension pre-strip, download-name post-processing, per-
+spec strip tables / drop blacklists / global-replace tables,
+ignoreStrings filter, stable-source SHA (ADR-0015 impl), multi-SHA
+schema (ADR-0014 impl, env-var gated), and the atom-feed parser
++ dispatcher (FRD-019). The remaining gap is dominated by
+**per-spec hooks for the complex L 2839 switch arms** and **stale
+PS snapshot artifacts** (e.g. ansible-posix temporal drift). See
+`feedback_per_package_depth_investigation.md` memory entry.
 
-**Architectural decisions made:** ADR-0012 (subrelease layout) and
-ADR-0013 (Source0Lookup split) both Accepted as Option A (status
-quo). ADR-0014 (multi-SHA) Draft, pending user decision.
+**Architectural decisions made:** ADR-0012 (subrelease layout),
+ADR-0013 (Source0Lookup split), ADR-0014 (multi-SHA cols 13/14
+schema), ADR-0015 (stable-source SHA for github auto-archives) all
+Accepted. Implementation PRs shipped for ADR-0014 (env-var gated)
+and ADR-0015 (live).
 
 **Critical mechanics**:
 
