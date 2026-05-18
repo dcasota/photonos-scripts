@@ -220,6 +220,37 @@ char *check_urlhealth(pr_task_t                       *task,
 {
     if (task == NULL || task->Spec == NULL) return NULL;
 
+    /* PS L 2104-2106: vendor-pinned subrelease short-circuit. When the
+     * SPECS/<digits>/<spec>/<spec>.spec path produced a non-empty
+     * SubRelease in parse_directory, PS bypasses the full pipeline and
+     * emits a fixed-shape "pinned" row:
+     *
+     *     <Spec>,<Source0 original>,,pinned,,,,<Name>,,,vendor-pinned (subrelease N),
+     *
+     *   col 3 (Source0 modified) — empty
+     *   col 4 UrlHealth          — literal "pinned" (sentinel)
+     *   cols 5,6,7               — empty
+     *   col 8 Name               — task.Name
+     *   cols 9,10                — empty
+     *   col 11 warning           — "vendor-pinned (subrelease <N>)"
+     *   col 12 ArchivationDate   — empty
+     *
+     * ADR-0012 Option A: keep PS's sentinel encoding (no schema change).
+     */
+    if (task->SubRelease && task->SubRelease[0] != '\0') {
+        char *out = NULL;
+        if (asprintf(&out,
+                     "%s,%s,,pinned,,,,%s,,,vendor-pinned (subrelease %s),",
+                     task->Spec,
+                     task->Source0 ? task->Source0 : "",
+                     task->Name    ? task->Name    : "",
+                     task->SubRelease) < 0) {
+            return NULL;
+        }
+        (void)lookup_table; (void)clone_root; (void)exclusion_list;
+        return out;
+    }
+
     pr_state_t state;
     pr_state_init(&state);
 
