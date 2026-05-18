@@ -53,7 +53,8 @@ FRD-018), M21 (post-strip filters), ADR-0014 (multi-SHA Draft).
 | #123 | **TODO refresh** post-M22/M23/M24 | Strike shipped units; document PS snapshot refresh cadence + dead-code cleanup deferral. |
 | #124 | **M25** — Per-spec download-name rules (inih, open-vm-tools, samba-client, httpd-mod_jk) | PS L 4772-4779. inih sample: PS=`libinih-62.tar.gz` vs C=`r62.tar.gz`. Inlined into `download_name_post` since PS handles them as a flat if-chain, not via hooks. |
 | #125 | **M26** — Source0Lookup.ignoreStrings filter | PS L 2152 + 2505. C parsed col 7 of Source0LookupData but never applied it. New `apply_ignore_strings()` using `fnmatch(FNM_CASEFOLD)`. checkpolicy.spec sample: PS=`3.10` vs C=`20200710` (date-format tag the filter drops). |
-| TBD  | **M27** — Per-spec strip-token table | PS L 2839 switch (~76 simple entries ported). New `src/per_spec_strip.c` with static table keyed on spec name (case-insensitive). Custom-filter switch arms deferred to per-spec hooks. |
+| #126 | **M27** — Per-spec strip-token table | PS L 2839 switch (~76 simple entries ported). New `src/per_spec_strip.c` with static table keyed on spec name (case-insensitive). Custom-filter switch arms deferred to per-spec hooks. |
+| TBD  | **M28+M29** — Per-spec drop-substring + global-replace filters | PS L 2839 switch — complex arms. M28: docker-20.10/falco/glib/glslang/go/httpd drop blacklists (case-insensitive substring match). M29: automake/newt/salt3 global "-" → "." replace. Same module as M27. |
 
 ### Journal trajectory (strict_rows per branch)
 

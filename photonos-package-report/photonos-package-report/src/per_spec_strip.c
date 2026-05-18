@@ -226,3 +226,107 @@ void pr_apply_per_spec_strip_tokens(const char *spec_name,
         }
     }
 }
+
+/* M28 — per-spec drop-substring blacklists.
+ *
+ * PS pattern at L 2839 switch:
+ *   $Names = @($Names | foreach-object { if (!($_ | select-string
+ *      -pattern 'X' -simplematch)) {$_}})
+ *
+ * Drop any candidate name containing any of the blacklisted substrings.
+ * `select-string -simplematch` is case-INsensitive by default. */
+static const char *const k_drop_docker_20_10[] = {"xdocs-v", NULL};
+static const char *const k_drop_falco[]        = {"agent/", NULL};
+static const char *const k_drop_glib[]         = {"GTK_", "gobject_", NULL};
+static const char *const k_drop_glslang[]      = {"untagged-", "vulkan-", NULL};
+static const char *const k_drop_go[]           = {"weekly", "release", NULL};
+static const char *const k_drop_httpd[]        = {"apache", "mpm-", "djg", "dg_", "wrowe", "striker", "PCRE_", "MOD_SSL_", "HTTPD_LDAP_", NULL};
+
+static const struct per_spec_entry g_per_spec_drop_table[] = {
+    {"docker-20.10.spec", k_drop_docker_20_10},
+    {"falco.spec",        k_drop_falco},
+    {"glib.spec",         k_drop_glib},
+    {"glslang.spec",      k_drop_glslang},
+    {"go.spec",           k_drop_go},
+    {"httpd.spec",        k_drop_httpd},
+};
+
+static const size_t g_per_spec_drop_table_count =
+    sizeof g_per_spec_drop_table / sizeof g_per_spec_drop_table[0];
+
+/* Case-insensitive substring match (PS `select-string -simplematch`). */
+static int contains_icase(const char *hay, const char *needle)
+{
+    if (hay == NULL || needle == NULL) return 0;
+    return strcasestr(hay, needle) != NULL;
+}
+
+void pr_apply_per_spec_drop_substrings(const char *spec_name,
+                                       char **names, size_t n)
+{
+    if (spec_name == NULL || names == NULL || n == 0) return;
+
+    const char *const *substrings = NULL;
+    for (size_t e = 0; e < g_per_spec_drop_table_count; e++) {
+        if (strcasecmp(g_per_spec_drop_table[e].spec_name, spec_name) == 0) {
+            substrings = g_per_spec_drop_table[e].tokens;
+            break;
+        }
+    }
+    if (substrings == NULL) return;
+
+    for (size_t i = 0; i < n; i++) {
+        if (names[i] == NULL) continue;
+        for (int s = 0; substrings[s] != NULL; s++) {
+            if (contains_icase(names[i], substrings[s])) {
+                free(names[i]);
+                names[i] = NULL;
+                break;
+            }
+        }
+    }
+}
+
+/* M29 — per-spec global character replacement.
+ *
+ * PS pattern at L 2849, 2929, 2965:
+ *   $Names = $Names -ireplace "X","Y"       (case-insensitive)
+ *   $Names = $Names -replace  "X","Y"       (case-sensitive)
+ *
+ * The cases we port here are all single-character substitutions
+ * ("-" → ".") where case has no effect. For the literal substring
+ * replace we use `istr_replace_all` defensively. */
+struct per_spec_replace {
+    const char *spec_name;
+    const char *from;
+    const char *to;
+};
+
+static const struct per_spec_replace g_per_spec_replace_table[] = {
+    {"automake.spec", "-", "."},
+    {"newt.spec",     "-", "."},
+    {"salt3.spec",    "-", "."},
+};
+
+static const size_t g_per_spec_replace_table_count =
+    sizeof g_per_spec_replace_table / sizeof g_per_spec_replace_table[0];
+
+void pr_apply_per_spec_global_replace(const char *spec_name,
+                                      char **names, size_t n)
+{
+    if (spec_name == NULL || names == NULL || n == 0) return;
+
+    const struct per_spec_replace *match = NULL;
+    for (size_t e = 0; e < g_per_spec_replace_table_count; e++) {
+        if (strcasecmp(g_per_spec_replace_table[e].spec_name, spec_name) == 0) {
+            match = &g_per_spec_replace_table[e];
+            break;
+        }
+    }
+    if (match == NULL) return;
+
+    for (size_t i = 0; i < n; i++) {
+        if (names[i] == NULL) continue;
+        names[i] = istr_replace_all(names[i], match->from, match->to);
+    }
+}
