@@ -180,16 +180,17 @@ For each diff-signature bucket, in descending order of affected-count:
 9. **Update spec status** (`Implemented` if final task, else leave
    `Accepted`). Already part of the merged PR.
 
-### Status — shared-infrastructure phase complete (M01-M21)
+### Status — shared-infrastructure phase complete (M01-M22)
 
-M01-M21 covered shared infrastructure: pinned-sentinel emission,
+M01-M22 covered shared infrastructure: pinned-sentinel emission,
 case-insensitive sort, version-cut, substitution rewrites, warning
 table, replaceStrings application, post-strip filters, HTTP listing
-scraper. Cumulative parity gap closed by ~30% (varies per branch).
+scraper, Clean-VersionNames pre-release filter. Cumulative parity gap
+closed by ~30% (varies per branch).
 
-See `specs/tasks/README.md` for the full M01-M21 task table.
+See `specs/tasks/README.md` for the full M01-M22 task table.
 
-### Residual buckets after M21 (the per-package depth territory)
+### Residual buckets after M22 (the per-package depth territory)
 
 Per `feedback_per_package_depth_investigation.md` memory entry: the
 remaining gap is **per-package investigation** — each spec in these
@@ -222,7 +223,7 @@ Categories (approximate counts per 4.0 after M21 era):
 | **ADR-0014 multi-SHA** Accepted + impl | medium | high | 1-2 PRs | drafted; awaiting decision |
 | **M22+ Source0Lookup row repairs** | low | high | 1 PR per spec | one PR per dead-URL spec (bluez-tools→github, etc.) |
 | **`(same version)` for non-git path** | medium | low | 1 PR | when scraper finds latest == current spec version |
-| **`Clean-VersionNames` port** | medium | medium | 1 PR | additional post-filter from PS that's not yet ported |
+| ~~**`Clean-VersionNames` port**~~ ✅ M22 | medium | medium | 1 PR | shipped — pre-release filter + anchored prefix strips + `_`→`.` |
 | **ADR-0015 stable-source SHA** for github auto-archives | medium | high | needs ADR | switch col-9 source from auto-archive to release-asset where available |
 
 ---

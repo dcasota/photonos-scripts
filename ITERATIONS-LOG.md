@@ -45,6 +45,7 @@ FRD-018), M21 (post-strip filters), ADR-0014 (multi-SHA Draft).
 | #113 | ADR-0014 multi-SHA Draft | User direction; pending decision. |
 | #114 | **M20** — HTTP listing scraper (FRD-018) | New `src/scraper.c`. Targets the dominant non-git update detection gap. **−47 strict / +17 soft on 4.0.** |
 | #115 | **M21** — Post-strip filters | PS L 2522-2524. Drops scraper-noise hrefs (`?C=S;O=A`, `LATEST-IS-X`, `..`). |
+| TBD  | **M22** — Clean-VersionNames pre-release filter | PS L 441-451. Anchored `rel/`/`v`/`r` strips, `_`→`.`, drop `candidate\|-alpha\|-beta\|.beta\|rc.[0-4]\|rc[1-4]\|-preview.\|-dev.\|-pre1\|.pre1`. Wired into both git-tag and scraper pipelines between M19 and M21. |
 
 ### Journal trajectory (strict_rows per branch)
 
