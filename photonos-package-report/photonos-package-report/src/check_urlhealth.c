@@ -419,13 +419,60 @@ static char *replace_leading_icase(char *s, const char *prefix,
     return out;
 }
 
-static char *download_name_post(char *raw, const char *task_name)
+static char *download_name_post(char *raw, const char *task_name,
+                                const char *task_spec)
 {
     if (raw == NULL) return NULL;
+
 
     /* L 4770: optional 'v' strip. */
     if ((raw[0] == 'v' || raw[0] == 'V') && raw[1] && raw[1] != '-') {
         memmove(raw, raw + 1, strlen(raw));
+    }
+
+    /* M25 — PS L 4772-4779: four per-spec overrides applied AFTER the
+     * common L 4770 v-strip but BEFORE the L 4782-4793 generic post-
+     * processing. PS handles them as a flat if-chain inside CheckURLHealth
+     * (not via Phase-3b hooks), so the natural C placement is inline here.
+     * Each rule is anchored to the leading prefix of the basename. */
+    if (task_spec && task_spec[0]) {
+        if (strcasecmp(task_spec, "inih.spec") == 0) {
+            /* PS L 4772: $UpdateDownloadName -ireplace "^r","libinih-".
+             * Strips ONE leading 'r' (case-insensitive) anchored by `^`. */
+            raw = replace_leading_icase(raw, "r", "libinih-");
+        } else if (strcasecmp(task_spec, "open-vm-tools.spec") == 0) {
+            /* PS L 4773: prepend "open-vm-tools-". Unconditional. */
+            const char *pfx = "open-vm-tools-";
+            size_t pl = strlen(pfx);
+            size_t rl = strlen(raw);
+            char *out = (char *)malloc(pl + rl + 1);
+            if (out) {
+                memcpy(out, pfx, pl);
+                memcpy(out + pl, raw, rl + 1);
+                free(raw);
+                raw = out;
+            }
+        } else if (strcasecmp(task_spec, "samba-client.spec") == 0) {
+            /* PS L 4774: -ireplace "samba-samba-","samba-" — global,
+             * not anchored. Collapses duplicated prefix. */
+            raw = istr_replace_all(raw, "samba-samba-", "samba-");
+        } else if (strcasecmp(task_spec, "httpd-mod_jk.spec") == 0) {
+            /* PS L 4775-4779: three sequential -ireplace ops then prepend.
+             * `JK_` and `_` are case-insensitive globals; the prepend is
+             * unconditional. */
+            raw = istr_replace_all(raw, "JK_", "");
+            raw = istr_replace_all(raw, "_",   ".");
+            const char *pfx = "tomcat-connectors-";
+            size_t pl = strlen(pfx);
+            size_t rl = strlen(raw);
+            char *out = (char *)malloc(pl + rl + 1);
+            if (out) {
+                memcpy(out, pfx, pl);
+                memcpy(out + pl, raw, rl + 1);
+                free(raw);
+                raw = out;
+            }
+        }
     }
 
     /* L 4782-4783: compute tmpName = basename minus extension. */
@@ -765,7 +812,8 @@ char *check_urlhealth(pr_task_t                       *task,
                                     char *dl_name = pr_basename_from_url(state.UpdateURL);
                                     if (dl_name) {
                                         dl_name = download_name_post(dl_name,
-                                                      task->Name ? task->Name : "");
+                                                      task->Name ? task->Name : "",
+                                                      task->Spec ? task->Spec : "");
                                         free(state.UpdateDownloadName);
                                         state.UpdateDownloadName = dl_name;
                                     } else {
@@ -915,7 +963,8 @@ char *check_urlhealth(pr_task_t                       *task,
                             char *dl_name = pr_basename_from_url(state.UpdateURL);
                             if (dl_name) {
                                 dl_name = download_name_post(dl_name,
-                                              task->Name ? task->Name : "");
+                                              task->Name ? task->Name : "",
+                                              task->Spec ? task->Spec : "");
                                 free(state.UpdateDownloadName);
                                 state.UpdateDownloadName = dl_name;
                             }
