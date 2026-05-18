@@ -19,6 +19,7 @@
 #include "pr_git_tags.h"
 #include "pr_hook.h"
 #include "pr_latest.h"
+#include "pr_per_spec.h"
 #include "pr_state.h"
 #include "pr_sha.h"
 #include "pr_scraper.h"
@@ -785,6 +786,10 @@ char *check_urlhealth(pr_task_t                       *task,
                         /* M26 (PS L 2152 + 2505): drop candidates matching
                          * Source0Lookup.ignoreStrings glob list. */
                         apply_ignore_strings(names, n, row->ignoreStrings);
+                        /* M27 (PS L 2839 switch): per-spec strip tokens for
+                         * ~76 specs that need custom prefix/substring strips
+                         * beyond the generic M19 augmentations. */
+                        pr_apply_per_spec_strip_tokens(task->Spec, names, n);
                         /* M19 (PS L 2507-2516): augment with Name-based
                          * tokens + common release/ver/-final patterns. */
                         apply_name_replace_augmentations(names, n,
