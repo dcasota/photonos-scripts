@@ -57,6 +57,79 @@ static char *dup_or_empty(const char *s)
     return p;
 }
 
+/* PS L 2520-2525: post-strip name filter pipeline for non-amdvlk.
+ *
+ *   $Names = $Names -replace "v",""                       # all 'v' → ''
+ *   $Names = where { $_ -match '\d' }                      # keep has-digit
+ *   $Names = where {
+ *       !(($_ -replace '[pP]\d+', '') -match '[a-zA-Z]')   # no alpha after stripping pN
+ *   }
+ *
+ * Mutates names[] in place. Entries that don't survive are freed and
+ * set to NULL (caller must skip NULL).
+ *
+ * The amdvlk.spec exception isn't ported here — that spec has its
+ * own hook path. Callers can skip this function for amdvlk-style
+ * cases if needed. */
+static int has_any_digit(const char *s)
+{
+    if (s == NULL) return 0;
+    for (const char *p = s; *p; p++) {
+        if (*p >= '0' && *p <= '9') return 1;
+    }
+    return 0;
+}
+
+static int has_any_alpha_after_pN_strip(const char *s)
+{
+    if (s == NULL) return 0;
+    /* Strip [pP]\d+ patterns: any 'p' or 'P' immediately followed by
+     * one or more digits. Then check if remainder has alpha. */
+    size_t n = strlen(s);
+    char *tmp = (char *)malloc(n + 1);
+    if (!tmp) return 0;
+    size_t k = 0;
+    for (size_t i = 0; i < n; ) {
+        if ((s[i] == 'p' || s[i] == 'P') && i + 1 < n
+            && s[i+1] >= '0' && s[i+1] <= '9') {
+            /* Skip p/P + run of digits. */
+            i++;
+            while (i < n && s[i] >= '0' && s[i] <= '9') i++;
+        } else {
+            tmp[k++] = s[i];
+            i++;
+        }
+    }
+    tmp[k] = '\0';
+    int has_alpha = 0;
+    for (size_t i = 0; i < k; i++) {
+        unsigned char c = (unsigned char)tmp[i];
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) {
+            has_alpha = 1; break;
+        }
+    }
+    free(tmp);
+    return has_alpha;
+}
+
+static void apply_name_post_filters(char **names, size_t n)
+{
+    if (names == NULL) return;
+    for (size_t i = 0; i < n; i++) {
+        if (names[i] == NULL) continue;
+        /* L 2522: replace all 'v' with '' (case-sensitive lowercase). */
+        names[i] = istr_replace_all(names[i], "v", "");
+        /* L 2523: keep only has-digit. */
+        if (!has_any_digit(names[i])) {
+            free(names[i]); names[i] = NULL; continue;
+        }
+        /* L 2524: keep only if no alpha after [pP]\d+ strip. */
+        if (has_any_alpha_after_pN_strip(names[i])) {
+            free(names[i]); names[i] = NULL; continue;
+        }
+    }
+}
+
 /* PS L 2507-2516: augment the per-name strip list with common
  * Photon-style patterns: `<Name>.`, `<Name>-`, `<Name>_`, `<Name>`,
  * `ver`, `release_`, `release/`, `release-`, `release`, `-final`.
@@ -389,6 +462,9 @@ char *check_urlhealth(pr_task_t                       *task,
                          * tokens + common release/ver/-final patterns. */
                         apply_name_replace_augmentations(names, n,
                                                          task->Name ? task->Name : "");
+                        /* M21 (PS L 2522-2524): post-strip filters —
+                         * v-strip + has-digit + no-alpha-after-pN-strip. */
+                        apply_name_post_filters(names, n);
                         char *latest = pr_get_latest_name(names, n);
                         if (latest && latest[0]) {
                             /* PS L 2538-2553: compare first; only the
