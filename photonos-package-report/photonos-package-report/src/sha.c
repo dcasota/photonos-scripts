@@ -126,3 +126,81 @@ char *pr_sha_of_url(pr_sha_alg_t alg, const char *url)
     unlink(tmpl);
     return hex;
 }
+
+/* ADR-0014 multi-hash: one libcurl GET, two EVP_MD_CTX. */
+struct multi_ctx {
+    EVP_MD_CTX *c256;
+    EVP_MD_CTX *c512;
+    int        err;
+};
+
+static size_t write_to_multi(char *p, size_t s, size_t n, void *u)
+{
+    struct multi_ctx *m = (struct multi_ctx *)u;
+    size_t bytes = s * n;
+    if (m->err) return bytes;
+    if (m->c256 && EVP_DigestUpdate(m->c256, p, bytes) != 1) { m->err = 1; }
+    if (m->c512 && EVP_DigestUpdate(m->c512, p, bytes) != 1) { m->err = 1; }
+    return bytes;
+}
+
+int pr_sha_of_url_multi(const char *url,
+                        char **sha256_hex,
+                        char **sha512_hex)
+{
+    if (sha256_hex) *sha256_hex = NULL;
+    if (sha512_hex) *sha512_hex = NULL;
+    if (url == NULL || url[0] == '\0') return -1;
+    if (sha256_hex == NULL && sha512_hex == NULL) return -1;
+
+    struct multi_ctx m = { NULL, NULL, 0 };
+    if (sha256_hex) {
+        m.c256 = EVP_MD_CTX_new();
+        if (!m.c256) goto err;
+        if (EVP_DigestInit_ex(m.c256, EVP_sha256(), NULL) != 1) goto err;
+    }
+    if (sha512_hex) {
+        m.c512 = EVP_MD_CTX_new();
+        if (!m.c512) goto err;
+        if (EVP_DigestInit_ex(m.c512, EVP_sha512(), NULL) != 1) goto err;
+    }
+
+    CURL *c = curl_easy_init();
+    if (!c) goto err;
+    curl_easy_setopt(c, CURLOPT_URL,            url);
+    curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(c, CURLOPT_TIMEOUT_MS,     120000);
+    curl_easy_setopt(c, CURLOPT_WRITEFUNCTION,  write_to_multi);
+    curl_easy_setopt(c, CURLOPT_WRITEDATA,      &m);
+    curl_easy_setopt(c, CURLOPT_USERAGENT,      "photonos-package-report/C");
+    CURLcode rc = curl_easy_perform(c);
+    long status = 0;
+    curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &status);
+    curl_easy_cleanup(c);
+
+    if (rc != CURLE_OK || status < 200 || status >= 300 || m.err) goto err;
+
+    unsigned char digest[EVP_MAX_MD_SIZE];
+    unsigned int  digest_len = 0;
+    if (m.c256) {
+        if (EVP_DigestFinal_ex(m.c256, digest, &digest_len) != 1) goto err;
+        *sha256_hex = to_hex_upper(digest, digest_len);
+        EVP_MD_CTX_free(m.c256); m.c256 = NULL;
+        if (!*sha256_hex) goto err;
+    }
+    if (m.c512) {
+        if (EVP_DigestFinal_ex(m.c512, digest, &digest_len) != 1) goto err;
+        *sha512_hex = to_hex_upper(digest, digest_len);
+        EVP_MD_CTX_free(m.c512); m.c512 = NULL;
+        if (!*sha512_hex) goto err;
+    }
+
+    return 0;
+
+err:
+    if (m.c256) EVP_MD_CTX_free(m.c256);
+    if (m.c512) EVP_MD_CTX_free(m.c512);
+    if (sha256_hex && *sha256_hex) { free(*sha256_hex); *sha256_hex = NULL; }
+    if (sha512_hex && *sha512_hex) { free(*sha512_hex); *sha512_hex = NULL; }
+    return -1;
+}

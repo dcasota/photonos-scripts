@@ -37,4 +37,14 @@ char *pr_sha_file(pr_sha_alg_t alg, const char *path);
  * hash failure. */
 char *pr_sha_of_url(pr_sha_alg_t alg, const char *url);
 
+/* ADR-0014 (Option B): single libcurl GET, fan bytes into multiple
+ * EVP_MD_CTX hashers. On success fills *sha256_hex and *sha512_hex
+ * with malloc'd uppercase-hex digests and returns 0. On any
+ * transport/I-O/hash error returns -1 and both outputs are NULL.
+ *
+ * Either output pointer may be NULL to skip that algorithm. */
+int pr_sha_of_url_multi(const char *url,
+                        char **sha256_hex,
+                        char **sha512_hex);
+
 #endif /* PR_SHA_H */

@@ -36,6 +36,14 @@ struct pr_state {
     char *SHAValue;
     char *Warning;
     char *ArchivationDate;
+    /* ADR-0014 (Accepted Option B): col 13 / col 14 SHA-256 / SHA-512.
+     * Computed alongside SHAValue (col 9) from the same source URL
+     * (which, per ADR-0015, may be a stable release-asset URL when one
+     * resolves). Emission gated by env var PR_EMIT_MULTI_SHA — when
+     * unset the `.prn` row stays 12 cols (backward-compat with the
+     * cached PS snapshot). */
+    char *SHA256Name;
+    char *SHA512Name;
 };
 
 typedef struct pr_state pr_state_t;

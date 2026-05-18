@@ -23,6 +23,8 @@ void pr_state_init(pr_state_t *s)
     s->SHAValue           = new_empty();
     s->Warning            = new_empty();
     s->ArchivationDate    = new_empty();
+    s->SHA256Name         = new_empty();
+    s->SHA512Name         = new_empty();
 }
 
 void pr_state_free(pr_state_t *s)
@@ -37,5 +39,7 @@ void pr_state_free(pr_state_t *s)
     free(s->SHAValue);
     free(s->Warning);
     free(s->ArchivationDate);
+    free(s->SHA256Name);
+    free(s->SHA512Name);
     memset(s, 0, sizeof *s);
 }

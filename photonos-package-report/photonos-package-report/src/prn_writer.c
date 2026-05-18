@@ -20,11 +20,20 @@
 #include <unistd.h>
 #include <sys/file.h>
 
-/* PS L 5068: header literal, verbatim. */
+/* PS L 5068: header literal, verbatim. ADR-0014 (Accepted Option B):
+ * when PR_EMIT_MULTI_SHA env var is set, append `,SHA256Name,SHA512Name`
+ * for cols 13/14. The default 12-col header keeps the cached PS snapshot
+ * comparison stable until the snapshot is refreshed with the matching
+ * PS-side change. */
 const char PR_PRN_HEADER[] =
     "Spec,Source0 original,Modified Source0 for url health check,"
     "UrlHealth,UpdateAvailable,UpdateURL,HealthUpdateURL,Name,SHAName,"
     "UpdateDownloadName,warning,ArchivationDate";
+
+static const char PR_PRN_HEADER_MULTI[] =
+    "Spec,Source0 original,Modified Source0 for url health check,"
+    "UrlHealth,UpdateAvailable,UpdateURL,HealthUpdateURL,Name,SHAName,"
+    "UpdateDownloadName,warning,ArchivationDate,SHA256Name,SHA512Name";
 
 struct pr_prn {
     FILE       *f;
@@ -56,8 +65,12 @@ pr_prn_t *pr_prn_open(const char *path)
         return NULL;
     }
 
-    /* Header. */
-    fwrite(PR_PRN_HEADER, 1, sizeof(PR_PRN_HEADER) - 1, ctx->f);
+    /* Header — ADR-0014: 14-col header when PR_EMIT_MULTI_SHA is set. */
+    if (getenv("PR_EMIT_MULTI_SHA") != NULL) {
+        fwrite(PR_PRN_HEADER_MULTI, 1, sizeof(PR_PRN_HEADER_MULTI) - 1, ctx->f);
+    } else {
+        fwrite(PR_PRN_HEADER, 1, sizeof(PR_PRN_HEADER) - 1, ctx->f);
+    }
     fputc('\n', ctx->f);
     return ctx;
 }

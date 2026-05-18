@@ -5022,6 +5022,12 @@ function CheckURLHealth {
             } catch {}
         }
 
+        # ADR-0014 (Accepted Option B): cols 13 (SHA256Name) + 14
+        # (SHA512Name) computed against the same stable source URL.
+        # Emission of the new cols gated by env var PR_EMIT_MULTI_SHA.
+        [system.string]$SHA256Name = ""
+        [system.string]$SHA512Name = ""
+
         if ($ShaSourceFile) {
             if (Test-Path $ShaSourceFile)
             {
@@ -5030,6 +5036,13 @@ function CheckURLHealth {
                 if ($currentTask.content -ilike '*%define sha512*') { $SHAValue = (Get-FileHashWithRetry $ShaSourceFile -Algorithm SHA512).Hash;$SHALine = [system.string]::concat('%define sha512 ',$currentTask.Name,'=',$SHAValue) }
                     # if the spec file does not contain any sha value, add sha512
                 if ((!($currentTask.content -ilike '*%define sha512*')) -and (!($object -ilike '*%define sha256*')) -and (!($object -ilike '*%define sha1*'))) { $SHAValue = (Get-FileHashWithRetry $ShaSourceFile -Algorithm SHA512).Hash; $SHALine = [system.string]::concat('%define sha512 ',$currentTask.Name,'=',$SHAValue) }
+                # ADR-0014: always compute SHA-256 and SHA-512 alongside
+                # the spec's preferred algorithm. Get-FileHashWithRetry
+                # streams from local file so two extra calls are cheap.
+                if (-not [string]::IsNullOrEmpty($env:PR_EMIT_MULTI_SHA)) {
+                    $SHA256Name = (Get-FileHashWithRetry $ShaSourceFile -Algorithm SHA256).Hash
+                    $SHA512Name = (Get-FileHashWithRetry $ShaSourceFile -Algorithm SHA512).Hash
+                }
             }
         }
 
@@ -5045,7 +5058,13 @@ function CheckURLHealth {
         else {ModifySpecFile -SpecFileName $currentTask.spec -WorkingDir $WorkingDir -PhotonDir $photonDir -UpstreamsDir $UpstreamsDir -Name $currentTask.name -Update $UpdateAvailable -UpdateDownloadFile $UpdateDownloadFile -OpenJDK8 $false -SHALine $SHALine}
     }
 
-    [System.String]::Concat($currentTask.spec,',',$currentTask.source0,',',$Source0,',',$urlhealth,',',$UpdateAvailable,',',$UpdateURL,',',$HealthUpdateURL,',',$currentTask.Name,',',$SHAValue,',',$UpdateDownloadName,',',$Warning,',',$ArchivationDate)
+    # ADR-0014 (Option B) row assembly: when PR_EMIT_MULTI_SHA is set,
+    # append cols 13/14. Otherwise 12-col row, byte-identical to pre-ADR.
+    if (-not [string]::IsNullOrEmpty($env:PR_EMIT_MULTI_SHA)) {
+        [System.String]::Concat($currentTask.spec,',',$currentTask.source0,',',$Source0,',',$urlhealth,',',$UpdateAvailable,',',$UpdateURL,',',$HealthUpdateURL,',',$currentTask.Name,',',$SHAValue,',',$UpdateDownloadName,',',$Warning,',',$ArchivationDate,',',$SHA256Name,',',$SHA512Name)
+    } else {
+        [System.String]::Concat($currentTask.spec,',',$currentTask.source0,',',$Source0,',',$urlhealth,',',$UpdateAvailable,',',$UpdateURL,',',$HealthUpdateURL,',',$currentTask.Name,',',$SHAValue,',',$UpdateDownloadName,',',$Warning,',',$ArchivationDate)
+    }
 }
 
 function GenerateUrlHealthReports {
@@ -5179,7 +5198,7 @@ function GenerateUrlHealthReports {
                 Write-Host "$($TaskConfig.Name) - All $totalPackages packages completed."
 
                 $sb = New-Object System.Text.StringBuilder
-                $sb.AppendLine("Spec,Source0 original,Modified Source0 for url health check,UrlHealth,UpdateAvailable,UpdateURL,HealthUpdateURL,Name,SHAName,UpdateDownloadName,warning,ArchivationDate") | Out-Null
+                $sb.AppendLine($(if (-not [string]::IsNullOrEmpty($env:PR_EMIT_MULTI_SHA)) { "Spec,Source0 original,Modified Source0 for url health check,UrlHealth,UpdateAvailable,UpdateURL,HealthUpdateURL,Name,SHAName,UpdateDownloadName,warning,ArchivationDate,SHA256Name,SHA512Name" } else { "Spec,Source0 original,Modified Source0 for url health check,UrlHealth,UpdateAvailable,UpdateURL,HealthUpdateURL,Name,SHAName,UpdateDownloadName,warning,ArchivationDate" })) | Out-Null
                 # Filter and collect matching items, then sort
                 $filteredResults = $results | ForEach-Object {
                     $pattern = '^(.*?)([a-zA-Z0-9][a-zA-Z0-9._-]*\.spec.*)$'
@@ -5205,7 +5224,7 @@ function GenerateUrlHealthReports {
 
                 # Create a simple array for sequential processing results
                 $results = @()
-                $results += "Spec,Source0 original,Modified Source0 for url health check,UrlHealth,UpdateAvailable,UpdateURL,HealthUpdateURL,Name,SHAName,UpdateDownloadName,warning,ArchivationDate"
+                $results += $(if (-not [string]::IsNullOrEmpty($env:PR_EMIT_MULTI_SHA)) { "Spec,Source0 original,Modified Source0 for url health check,UrlHealth,UpdateAvailable,UpdateURL,HealthUpdateURL,Name,SHAName,UpdateDownloadName,warning,ArchivationDate,SHA256Name,SHA512Name" } else { "Spec,Source0 original,Modified Source0 for url health check,UrlHealth,UpdateAvailable,UpdateURL,HealthUpdateURL,Name,SHAName,UpdateDownloadName,warning,ArchivationDate" })
                 $packageCount = $TaskConfig.Packages.Count
                 $processedCount = 0
                 foreach ($currentPackage in $TaskConfig.Packages) {
@@ -5218,7 +5237,7 @@ function GenerateUrlHealthReports {
                 Write-Host "DEBUG: Finished processing all packages for $($TaskConfig.Name)"
                 Write-Host "DEBUG: Results count: $($results.Count)"
                 $sb = New-Object System.Text.StringBuilder
-                $sb.AppendLine("Spec,Source0 original,Modified Source0 for url health check,UrlHealth,UpdateAvailable,UpdateURL,HealthUpdateURL,Name,SHAName,UpdateDownloadName,warning,ArchivationDate") | Out-Null
+                $sb.AppendLine($(if (-not [string]::IsNullOrEmpty($env:PR_EMIT_MULTI_SHA)) { "Spec,Source0 original,Modified Source0 for url health check,UrlHealth,UpdateAvailable,UpdateURL,HealthUpdateURL,Name,SHAName,UpdateDownloadName,warning,ArchivationDate,SHA256Name,SHA512Name" } else { "Spec,Source0 original,Modified Source0 for url health check,UrlHealth,UpdateAvailable,UpdateURL,HealthUpdateURL,Name,SHAName,UpdateDownloadName,warning,ArchivationDate" })) | Out-Null
                 Write-Host "DEBUG: Filtering results..."
                 # Filter and collect matching items, then sort
                 $filteredResults = $results | ForEach-Object {
