@@ -33,6 +33,7 @@
 #include <pcre2.h>
 #include <pthread.h>
 #include <strings.h>
+#include <fnmatch.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -367,6 +368,55 @@ static void apply_replace_strings(char **names, size_t n,
                     names[i] = istr_replace_all(names[i], tok, "");
                 }
                 free(tok);
+            }
+        }
+
+        if (!comma) break;
+        p = comma + 1;
+    }
+}
+
+/* M26 — PS L 2152 + L 2505 (and scraper mirror at L 4376):
+ * Source0Lookup `ignoreStrings` column. Comma-separated list of glob
+ * patterns; PS `-like` semantics with `*` wildcard, case-INsensitive.
+ * Drop any candidate name matching ANY pattern.
+ *
+ * Sample (checkpolicy.spec L 568):
+ *   ignoreStrings = "2008*,2009*,2010*,...,2020*"
+ * Used to filter out date-format tags from upstreams that mix
+ * date-based and version-based tag conventions (e.g. SELinuxProject).
+ *
+ * Mutates names[] in place. Dropped entries are freed and set to NULL.
+ * Reuses fnmatch(3) with FNM_CASEFOLD for the glob match. */
+static void apply_ignore_strings(char **names, size_t n,
+                                 const char *ignore_strings)
+{
+    if (names == NULL || ignore_strings == NULL || *ignore_strings == '\0') return;
+
+    /* Walk comma-separated patterns. */
+    const char *p = ignore_strings;
+    while (*p) {
+        const char *comma = strchr(p, ',');
+        const char *end = comma ? comma : p + strlen(p);
+        const char *tok_start = p;
+        const char *tok_end = end;
+        /* Trim ASCII whitespace. */
+        while (tok_start < tok_end && (*tok_start == ' ' || *tok_start == '\t')) tok_start++;
+        while (tok_end > tok_start && (*(tok_end - 1) == ' ' || *(tok_end - 1) == '\t')) tok_end--;
+
+        size_t tok_len = (size_t)(tok_end - tok_start);
+        if (tok_len > 0) {
+            char *pattern = (char *)malloc(tok_len + 1);
+            if (pattern) {
+                memcpy(pattern, tok_start, tok_len);
+                pattern[tok_len] = '\0';
+                for (size_t i = 0; i < n; i++) {
+                    if (names[i] == NULL) continue;
+                    if (fnmatch(pattern, names[i], FNM_CASEFOLD) == 0) {
+                        free(names[i]); names[i] = NULL;
+                    }
+                }
+                free(pattern);
             }
         }
 
@@ -732,6 +782,9 @@ char *check_urlhealth(pr_task_t                       *task,
                          * so version compare sees "22.1.5" not
                          * "llvmorg-22.1.5". */
                         apply_replace_strings(names, n, row->replaceStrings);
+                        /* M26 (PS L 2152 + 2505): drop candidates matching
+                         * Source0Lookup.ignoreStrings glob list. */
+                        apply_ignore_strings(names, n, row->ignoreStrings);
                         /* M19 (PS L 2507-2516): augment with Name-based
                          * tokens + common release/ver/-final patterns. */
                         apply_name_replace_augmentations(names, n,
@@ -904,6 +957,10 @@ char *check_urlhealth(pr_task_t                       *task,
              * strip archive extensions BEFORE name-strip pipeline. */
             apply_scraper_pre_filters(names, n);
             apply_replace_strings(names, n, row ? row->replaceStrings : NULL);
+            /* M26 (PS L 2152 + L 4376): drop candidates matching
+             * Source0Lookup.ignoreStrings glob list (only when a row
+             * exists — scraper-only fallback specs have no row). */
+            apply_ignore_strings(names, n, row ? row->ignoreStrings : NULL);
             apply_name_replace_augmentations(names, n,
                                              task->Name ? task->Name : "");
             /* M22 (PS L 441-451 Clean-VersionNames): leading rel//v/r
