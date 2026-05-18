@@ -330,3 +330,64 @@ void pr_apply_per_spec_global_replace(const char *spec_name,
         names[i] = istr_replace_all(names[i], match->from, match->to);
     }
 }
+
+/* M33 / FRD-019 — per-spec SourceTagURL override table.
+ *
+ * Mirrors PS L 3815-3866. When PS's standard github-tag-list path
+ * returns no Names, PS falls back to the spec's atom-feed URL. The C
+ * port wires this override into the non-git scraper dispatcher
+ * (check_urlhealth.c) — when this function returns non-NULL, we
+ * skip dirname(state.Source0) and use the override URL instead, then
+ * dispatch to the atom-feed parser since these URLs all end with
+ * `?format=atom`. */
+struct per_spec_url {
+    const char *spec_name;
+    const char *url;
+};
+
+static const struct per_spec_url g_per_spec_url_table[] = {
+    /* PS L 3687 — gnome.org atom feed (single-entry; outside the L 3815+ block). */
+    {"python-pygobject.spec",     "https://gitlab.gnome.org/GNOME/pygobject/-/tags?format=atom"},
+
+    /* PS L 3815-3866 — atom-feed dispatcher entries. */
+    {"asciidoc3.spec",            "https://gitlab.com/asciidoc3/asciidoc3/-/tags?format=atom"},
+    {"atk.spec",                  "https://gitlab.gnome.org/Archive/atk/-/tags?format=atom"},
+    {"cairo.spec",                "https://gitlab.freedesktop.org/cairo/cairo/-/tags?format=atom"},
+    {"dbus.spec",                 "https://gitlab.freedesktop.org/dbus/dbus/-/tags?format=atom"},
+    {"dbus-glib.spec",            "https://gitlab.freedesktop.org/dbus/dbus-glib/-/tags?format=atom"},
+    {"dbus-python.spec",          "https://gitlab.freedesktop.org/dbus/dbus-python/-/tags?format=atom"},
+    {"fontconfig.spec",           "https://gitlab.freedesktop.org/fontconfig/fontconfig/-/tags?format=atom"},
+    {"gstreamer.spec",            "https://gitlab.freedesktop.org/gstreamer/gstreamer/-/tags?format=atom"},
+    {"ipcalc.spec",               "https://gitlab.com/ipcalc/ipcalc/-/tags?format=atom"},
+    {"libslirp.spec",             "https://gitlab.freedesktop.org/slirp/libslirp/-/tags?format=atom"},
+    {"libtiff.spec",              "https://gitlab.com/libtiff/libtiff/-/tags?format=atom"},
+    {"libx11.spec",               "https://gitlab.freedesktop.org/xorg/lib/libx11/-/tags?format=atom"},
+    {"libxinerama.spec",          "https://gitlab.freedesktop.org/xorg/lib/libxinerama/-/tags?format=atom"},
+    {"man-db.spec",               "https://gitlab.com/man-db/man-db/-/tags?format=atom"},
+    {"mesa.spec",                 "https://gitlab.freedesktop.org/mesa/mesa/-/tags?format=atom"},
+    {"mm-common.spec",            "https://gitlab.gnome.org/GNOME/mm-common/-/tags?format=atom"},
+    {"modemmanager.spec",         "https://gitlab.freedesktop.org/modemmanager/modemmanager/-/tags?format=atom"},
+    {"pixman.spec",               "https://gitlab.freedesktop.org/pixman/pixman/-/tags?format=atom"},
+    {"pkg-config.spec",           "https://gitlab.freedesktop.org/pkg-config/pkg-config/-/tags?format=atom"},
+    {"polkit.spec",               "https://gitlab.freedesktop.org/polkit/polkit/-/tags?format=atom"},
+    {"psmisc.spec",               "https://gitlab.com/psmisc/psmisc/-/tags?format=atom"},
+    {"pygobject.spec",            "https://gitlab.gnome.org/GNOME/pygobject/-/tags?format=atom"},
+    {"python-M2Crypto.spec",      "https://gitlab.com/m2crypto/m2crypto/-/tags?format=atom"},
+    {"shared-mime-info.spec",     "https://gitlab.freedesktop.org/xdg/shared-mime-info/-/tags?format=atom"},
+    {"wayland.spec",              "https://gitlab.freedesktop.org/wayland/wayland/-/tags?format=atom"},
+    {"wayland-protocols.spec",    "https://gitlab.freedesktop.org/wayland/wayland-protocols/-/tags?format=atom"},
+};
+
+static const size_t g_per_spec_url_table_count =
+    sizeof g_per_spec_url_table / sizeof g_per_spec_url_table[0];
+
+const char *pr_per_spec_source_tag_url(const char *spec_name)
+{
+    if (spec_name == NULL) return NULL;
+    for (size_t e = 0; e < g_per_spec_url_table_count; e++) {
+        if (strcasecmp(g_per_spec_url_table[e].spec_name, spec_name) == 0) {
+            return g_per_spec_url_table[e].url;
+        }
+    }
+    return NULL;
+}
