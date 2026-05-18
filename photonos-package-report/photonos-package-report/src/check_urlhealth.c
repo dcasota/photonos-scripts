@@ -56,6 +56,49 @@ static char *dup_or_empty(const char *s)
     return p;
 }
 
+/* PS L 2507-2516: augment the per-name strip list with common
+ * Photon-style patterns: `<Name>.`, `<Name>-`, `<Name>_`, `<Name>`,
+ * `ver`, `release_`, `release/`, `release-`, `release`, `-final`.
+ *
+ * Applied after Source0Lookup.replaceStrings (`apply_replace_strings`)
+ * and before pr_get_latest_name. Mirrors PS's foreach loop that
+ * re-runs each token through every tag name via -replace regex-escape.
+ *
+ * Helps for tags like `expat-2.7.0` → `2.7.0`, `release-1.5` → `1.5`. */
+static void apply_name_replace_augmentations(char **names, size_t n,
+                                             const char *task_name)
+{
+    if (names == NULL) return;
+    if (task_name == NULL) task_name = "";
+
+    /* Build the Name-derived tokens dynamically. */
+    char *name_dot = NULL, *name_dash = NULL, *name_under = NULL;
+    if (task_name[0]) {
+        if (asprintf(&name_dot,   "%s.", task_name) < 0) name_dot = NULL;
+        if (asprintf(&name_dash,  "%s-", task_name) < 0) name_dash = NULL;
+        if (asprintf(&name_under, "%s_", task_name) < 0) name_under = NULL;
+    }
+
+    const char *tokens[] = {
+        name_dot, name_dash, name_under, task_name,
+        "ver", "release_", "release/", "release-", "release", "-final",
+        NULL,
+    };
+
+    for (int t = 0; tokens[t]; t++) {
+        const char *tok = tokens[t];
+        if (tok == NULL || *tok == '\0') continue;
+        for (size_t i = 0; i < n; i++) {
+            if (names[i] == NULL) continue;
+            names[i] = istr_replace_all(names[i], tok, "");
+        }
+    }
+
+    free(name_dot);
+    free(name_dash);
+    free(name_under);
+}
+
 /* PS L 2151 + L 2516-2517: apply Source0Lookup's `replaceStrings`
  * column to each tag name in-place. Splits comma-separated tokens,
  * strips ASCII whitespace, and replaces all occurrences of each token
@@ -341,6 +384,10 @@ char *check_urlhealth(pr_task_t                       *task,
                          * so version compare sees "22.1.5" not
                          * "llvmorg-22.1.5". */
                         apply_replace_strings(names, n, row->replaceStrings);
+                        /* M19 (PS L 2507-2516): augment with Name-based
+                         * tokens + common release/ver/-final patterns. */
+                        apply_name_replace_augmentations(names, n,
+                                                         task->Name ? task->Name : "");
                         char *latest = pr_get_latest_name(names, n);
                         if (latest && latest[0]) {
                             /* PS L 2538-2553: compare first; only the
@@ -374,24 +421,49 @@ char *check_urlhealth(pr_task_t                       *task,
                                 }
 
                                 /* HealthUpdateURL (col 7). */
+                                int h = 0;
                                 if (state.UpdateURL && state.UpdateURL[0]) {
-                                    int h = urlhealth(state.UpdateURL);
+                                    h = urlhealth(state.UpdateURL);
                                     char buf[16];
                                     snprintf(buf, sizeof buf, "%d", h);
                                     free(state.HealthUpdateURL);
                                     state.HealthUpdateURL = strdup(buf);
                                 }
 
-                                /* UpdateDownloadName (col 10) — PS L 4755-4793. */
-                                char *dl_name = pr_basename_from_url(state.UpdateURL);
-                                if (dl_name) {
-                                    dl_name = download_name_post(dl_name,
-                                                  task->Name ? task->Name : "");
-                                    free(state.UpdateDownloadName);
-                                    state.UpdateDownloadName = dl_name;
-                                } else {
-                                    free(state.UpdateDownloadName);
-                                    state.UpdateDownloadName = dup_or_empty(latest);
+                                /* M18 (PS L 4727-4733): HEAD-fail
+                                 * detection. PS retries up to 3 URL
+                                 * constructions; on the final failure
+                                 * it emits the "Manufacturer may
+                                 * changed version packaging format"
+                                 * warning AND clears UpdateURL +
+                                 * HealthUpdateURL. C does the simple
+                                 * single-attempt variant — emit the
+                                 * warning + clear after one failed
+                                 * HEAD. Multi-fallback URL
+                                 * construction is a separate task. */
+                                if (h != 0 && h != 200) {
+                                    free(state.Warning);
+                                    state.Warning = dup_or_empty(
+                                        "Warning: Manufacturer may changed version packaging format.");
+                                    free(state.UpdateURL);
+                                    state.UpdateURL = dup_or_empty("");
+                                    free(state.HealthUpdateURL);
+                                    state.HealthUpdateURL = dup_or_empty("");
+                                }
+
+                                /* UpdateDownloadName (col 10) — PS L 4755-4793.
+                                 * Skip when M18 cleared UpdateURL. */
+                                if (state.UpdateURL && state.UpdateURL[0]) {
+                                    char *dl_name = pr_basename_from_url(state.UpdateURL);
+                                    if (dl_name) {
+                                        dl_name = download_name_post(dl_name,
+                                                      task->Name ? task->Name : "");
+                                        free(state.UpdateDownloadName);
+                                        state.UpdateDownloadName = dl_name;
+                                    } else {
+                                        free(state.UpdateDownloadName);
+                                        state.UpdateDownloadName = dup_or_empty(latest);
+                                    }
                                 }
                             } else if (rc == 0) {
                                 state.UpdateAvailable = dup_or_empty("(same version)");
