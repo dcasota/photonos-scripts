@@ -217,14 +217,21 @@ Categories (approximate counts per 4.0 after M21 era):
 
 ### Next-units priority (dual-axis: parity + vendor-info)
 
+Re-ranked 2026-05-18 after M22/M23/M24 + ADR-0015 Draft landed.
+
 | Unit | Parity Δ | Info Δ | Effort | Notes |
 |---|---|---|---|---|
 | **Per-upstream-family FRDs** | high | very-high | per-family weeks | gnome.org filter, sourceforge filter, launchpad filter — each refines what the scraper does for a specific listing layout |
-| **ADR-0014 multi-SHA** Accepted + impl | medium | high | 1-2 PRs | drafted; awaiting decision |
+| **ADR-0014 multi-SHA** Accepted + impl | medium | high | 1-2 PRs | drafted; awaiting user decision |
+| **ADR-0015 stable-source SHA** Accepted + impl | medium | high | 1 PR + per-host follow-ups | drafted as #121; awaiting user decision (TODO §6 checkpoint) |
+| **PS snapshot refresh cadence** | medium | n/a | operator task | several col[5]-only / col[5 6 9 10] diffs are temporal upstream drift between snapshot date and C run date (ansible-posix 2.1.0 vs 2.2.0). Stale-snapshot residual specs cannot be fixed in C |
 | **M22+ Source0Lookup row repairs** | low | high | 1 PR per spec | one PR per dead-URL spec (bluez-tools→github, etc.) |
-| ~~**`(same version)` for non-git path**~~ ✅ | medium | low | 0 PR | already emitted at `check_urlhealth.c:790-791` (M20 scraper path mirrors PS L 4413-4434 rc==0 branch) |
-| ~~**`Clean-VersionNames` port**~~ ✅ M22 | medium | medium | 1 PR | shipped — pre-release filter + anchored prefix strips + `_`→`.` |
-| **ADR-0015 stable-source SHA** for github auto-archives | medium | high | needs ADR | switch col-9 source from auto-archive to release-asset where available |
+| **Per-spec hook ports** (~200 sites) | mixed | mixed | 1 PR per ~5 hooks | only inih / open-vm-tools / samba-client ported. Remaining hooks generate per-spec SourceTagURL overrides, custom href filters, etc. PS dispatcher at L 3961-3996 + 3770-3813 lists candidates |
+| **Dead-code cleanup**: post-`pr_get_latest_name` extension strip in scraper path | n/a | n/a | small PR | M23 makes it redundant. Defer until post-M23 workflow run confirms zero behavioural difference |
+| ~~**`(same version)` for non-git path**~~ ✅ | medium | low | 0 PR | already emitted at `check_urlhealth.c:790-791` (M20 scraper path) |
+| ~~**`Clean-VersionNames` port**~~ ✅ M22 (#118) | medium | medium | 1 PR | shipped — pre-release filter + anchored prefix strips + `_`→`.` |
+| ~~**Scraper extension pre-strip**~~ ✅ M23 (#120) | very-high | very-high | 1 PR | shipped — targets the 189-spec `cols[5 6 7 9 10]` bucket |
+| ~~**download_name_post Release/Rel_/v-**~~ ✅ M24 (#122) | medium | medium | 1 PR | shipped — targets col[10]-only bucket |
 
 ---
 
