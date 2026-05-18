@@ -21,6 +21,7 @@
 #include "pr_latest.h"
 #include "pr_state.h"
 #include "pr_sha.h"
+#include "pr_spec_warnings.h"
 #include "pr_strutil.h"
 #include "pr_substitute.h"
 #include "pr_url_util.h"
@@ -356,6 +357,17 @@ char *check_urlhealth(pr_task_t                       *task,
                 }
             }
             free(repo_name);
+        }
+    }
+
+    /* PS L 4442-4520: per-spec warning table. Overrides any warning
+     * set earlier from Source0Lookup row->Warning. PS "last match wins"
+     * across the 6 chains. */
+    {
+        const char *w = pr_spec_warning(task->Spec, state.UpdateAvailable);
+        if (w) {
+            free(state.Warning);
+            state.Warning = dup_or_empty(w);
         }
     }
 

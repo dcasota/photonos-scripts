@@ -105,6 +105,7 @@ add_executable(photonos-package-report
     src/latest_name.c
     src/git_tags.c
     src/clone.c
+    src/spec_warnings.c
     src/heapsort.c
     src/jdk.c
     src/url_util.c
