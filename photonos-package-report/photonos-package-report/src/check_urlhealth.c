@@ -21,6 +21,7 @@
 #include "pr_latest.h"
 #include "pr_state.h"
 #include "pr_sha.h"
+#include "pr_scraper.h"
 #include "pr_spec_warnings.h"
 #include "pr_strutil.h"
 #include "pr_substitute.h"
@@ -516,6 +517,125 @@ char *check_urlhealth(pr_task_t                       *task,
             }
             free(repo_name);
         }
+    }
+
+    /* M20 / FRD-018: non-git update detection via HTTP listing scrape.
+     *
+     * When the spec has NO gitSource (or the row didn't load), PS
+     * (L 4258-4283) GETs the directory-listing parent of Source0,
+     * extracts <a href> values, and runs them through the same
+     * version-name filter pipeline as git tags.
+     *
+     * Gate: only when allow_network=1, the row is missing a gitSource
+     * (or no row at all), and UpdateAvailable is still empty (i.e. the
+     * git path above didn't run). The original urlhealth must be 200 —
+     * a dead Source0 means the listing parent is probably dead too. */
+    if (allow_network && health == 200
+        && (state.UpdateAvailable == NULL || state.UpdateAvailable[0] == '\0')
+        && (row == NULL || row->gitSource == NULL || row->gitSource[0] == '\0')
+        && state.Source0 && state.Source0[0]) {
+        /* Compute dirname(Source0) — strip from the last '/'. */
+        char *parent = dup_or_empty(state.Source0);
+        char *last_slash = strrchr(parent, '/');
+        if (last_slash && last_slash != parent) {
+            /* Keep trailing slash for directory-listing semantics. */
+            last_slash[1] = '\0';
+        }
+        char **names = NULL;
+        size_t  n     = 0;
+        if (pr_scrape_listing(parent, &names, &n) == 0 && n > 0) {
+            apply_replace_strings(names, n, row ? row->replaceStrings : NULL);
+            apply_name_replace_augmentations(names, n,
+                                             task->Name ? task->Name : "");
+            char *latest = pr_get_latest_name(names, n);
+            if (latest && latest[0]) {
+                /* Strip common file extensions if present — listing
+                 * hrefs are often like "GConf-3.2.6.tar.xz". */
+                static const char *exts[] = {
+                    ".tar.gz", ".tar.xz", ".tar.lz", ".tar.bz2",
+                    ".tgz",    ".zip",    ".gem",
+                    NULL,
+                };
+                size_t ll = strlen(latest);
+                for (int e = 0; exts[e]; e++) {
+                    size_t el = strlen(exts[e]);
+                    if (ll >= el && strncasecmp(latest + ll - el, exts[e], el) == 0) {
+                        latest[ll - el] = '\0';
+                        break;
+                    }
+                }
+                int rc = pr_version_compare(latest,
+                                            state.version ? state.version : "");
+                free(state.UpdateAvailable);
+                if (rc == 1) {
+                    state.UpdateAvailable = dup_or_empty(latest);
+                    /* Build UpdateURL via re-substitution. */
+                    const char *template = (row && row->Source0Lookup && row->Source0Lookup[0])
+                                           ? row->Source0Lookup
+                                           : (task->Source0 ? task->Source0 : "");
+                    char *update_url = dup_or_empty(template);
+                    if (update_url) {
+                        pr_source0_substitute(task, &update_url, latest);
+                        free(state.UpdateURL);
+                        state.UpdateURL = update_url;
+                    }
+                    if (state.UpdateURL && state.UpdateURL[0]) {
+                        int h = urlhealth(state.UpdateURL);
+                        char buf[16];
+                        snprintf(buf, sizeof buf, "%d", h);
+                        free(state.HealthUpdateURL);
+                        state.HealthUpdateURL = strdup(buf);
+                        if (h != 0 && h != 200) {
+                            free(state.Warning);
+                            state.Warning = dup_or_empty(
+                                "Warning: Manufacturer may changed version packaging format.");
+                            free(state.UpdateURL);
+                            state.UpdateURL = dup_or_empty("");
+                            free(state.HealthUpdateURL);
+                            state.HealthUpdateURL = dup_or_empty("");
+                        } else {
+                            char *dl_name = pr_basename_from_url(state.UpdateURL);
+                            if (dl_name) {
+                                dl_name = download_name_post(dl_name,
+                                              task->Name ? task->Name : "");
+                                free(state.UpdateDownloadName);
+                                state.UpdateDownloadName = dl_name;
+                            }
+                            /* SHA computation reusing the existing
+                             * pattern: walk content for sha define. */
+                            pr_sha_alg_t alg = PR_SHA512;
+                            for (size_t li = 0; li < task->content_lines; li++) {
+                                const char *line = task->content[li];
+                                if (line == NULL) continue;
+                                if (strstr(line, "%define sha1")   != NULL) { alg = PR_SHA1;   break; }
+                                if (strstr(line, "%define sha256") != NULL) { alg = PR_SHA256; break; }
+                                if (strstr(line, "%define sha512") != NULL) { alg = PR_SHA512; break; }
+                            }
+                            char *hex = pr_sha_of_url(alg, state.UpdateURL);
+                            if (hex) {
+                                free(state.SHAValue);
+                                state.SHAValue = hex;
+                            }
+                        }
+                    }
+                } else if (rc == 0) {
+                    state.UpdateAvailable = dup_or_empty("(same version)");
+                } else if (rc == -1) {
+                    char *warn = NULL;
+                    if (asprintf(&warn,
+                                 "Warning: %s Source0 version %s is higher than detected latest version %s .",
+                                 task->Spec ? task->Spec : "",
+                                 state.version ? state.version : "",
+                                 latest) < 0) warn = NULL;
+                    state.UpdateAvailable = warn ? warn : dup_or_empty("");
+                } else {
+                    state.UpdateAvailable = dup_or_empty("");
+                }
+            }
+            free(latest);
+            pr_git_tags_free(names, n);
+        }
+        free(parent);
     }
 
     /* PS L 4442-4520: per-spec warning table. Overrides any warning
