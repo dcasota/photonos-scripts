@@ -1,7 +1,27 @@
-# TODO — C-port parity convergence
+# TODO — C-port parity convergence + vendor-info quality
 
-Living plan for closing the PS↔C `.prn` parity gap. Git-based, spec-driven,
-small-patch discipline. AI agent executes autonomously between checkpoints.
+Living plan for **two parallel goals** toward 90 days green:
+
+1. **Shrink the C↔PS `.prn` parity gap** — close cell-level diffs so
+   the ADR-0009 journal verdicts trend green.
+2. **Maximize accessible vendor package information** — make
+   `UpdateAvailable`, `UpdateURL`, `SHAName`, `UpdateDownloadName`
+   actually reflect upstream truth. Stale URLs / empty cells / wrong
+   versions are defects regardless of whether PS and C agree on them.
+
+ADR-0009 (90-day green) is the floor, not the ceiling. The journal
+verdict says "PS and C agree" — it doesn't say "the report is useful".
+
+When the goals conflict (e.g. PS has a stale URL and C correctly
+mirrors it), prefer the fix that scores on **both axes** — typically
+that means fixing the Source0Lookup row / Phase-3b hook / upstream
+adapter rather than blindly mirroring PS. PS modifications flow under
+CLAUDE.md invariant 2 (PS is upstream-of-C source-of-truth), so
+PS-side fixes are valid and welcome — they make BOTH sides better
+simultaneously.
+
+Git-based, spec-driven, small-patch discipline. AI agent executes
+autonomously between checkpoints.
 
 ## Methodology
 
