@@ -47,6 +47,7 @@ FRD-018), M21 (post-strip filters), ADR-0014 (multi-SHA Draft).
 | #115 | **M21** — Post-strip filters | PS L 2522-2524. Drops scraper-noise hrefs (`?C=S;O=A`, `LATEST-IS-X`, `..`). |
 | #117 | **M21 followup** — wire `apply_name_post_filters` into scraper path | One missing call site in `src/check_urlhealth.c` (M20 scraper branch). Validation run 26044019950: strict_rows dropped **149-290 per branch** (35-57% cumulative reduction from initial). The post-strip filters were only applied on the git-tag path until this commit. |
 | #118 | **M22** — Clean-VersionNames pre-release filter | PS L 441-451. Anchored `rel/`/`v`/`r` strips, `_`→`.`, drop `candidate\|-alpha\|-beta\|.beta\|rc.[0-4]\|rc[1-4]\|-preview.\|-dev.\|-pre1\|.pre1`. Wired into both git-tag and scraper pipelines between M19 and M21. |
+| TBD  | **M23** — Scraper pre-filter (extension strip + `.tar.` keep) | PS L 4321-4341. Without it, scraper-path candidates like `autogen-5.18.16.tar.xz` got dropped by M21's no-alpha-after-`[pP]N` rule because `tar/xz` counts as alpha. Targets the dominant ~189-spec `cols[5 6 7 9 10]` bucket per branch on 5.0 post-M21-wired. |
 
 ### Journal trajectory (strict_rows per branch)
 

@@ -212,6 +212,77 @@ static void apply_clean_version_names(char **names, size_t n)
     }
 }
 
+/* M23 — PS L 4321-4341 scraper pre-filter pipeline.
+ *
+ * Applied to scraper hrefs BEFORE the standard
+ * apply_name_replace_augmentations / apply_clean_version_names /
+ * apply_name_post_filters chain. Without this pre-step, candidates
+ * like `autogen-5.18.16.tar.xz` get dropped by M21's
+ * no-alpha-after-[pP]N rule (tar/xz are alpha residue), so the
+ * scraper-path UpdateAvailable / UpdateURL / SHAName /
+ * UpdateDownloadName cells stay empty for the ~189-spec
+ * `cols[5 6 7 9 10]` bucket per branch.
+ *
+ * Steps:
+ *   1. (PS L 4333) drop hrefs that contain `</a` — leftover from
+ *      raw-HTML href extraction.
+ *   2. (PS L 4334) drop hrefs that contain `.tgz.asc` — signature
+ *      files, not archives.
+ *   3. (PS L 4325-4332) two-pass keep filter: if any candidate
+ *      contains `.tar.`, keep only those; else keep only `.tgz`.
+ *      Per-spec `dialog` / `byacc` exceptions are deferred to
+ *      future per-spec hooks (PS L 4325 disjunction).
+ *   4. (PS L 4335-4340) strip the well-known archive extensions
+ *      from each surviving candidate, in PS order:
+ *      `-src.tar.gz`, `.tar.gz`, `.tar.bz2`, `.tar.xz`, `.tar.lz`,
+ *      `.tgz`.
+ *
+ * Mutates names[] in place. Dropped entries are freed and set to
+ * NULL. Surviving entries are reallocated by str_replace_all. */
+static void apply_scraper_pre_filters(char **names, size_t n)
+{
+    if (names == NULL || n == 0) return;
+
+    /* Steps 1+2: drop </a and .tgz.asc noise. */
+    for (size_t i = 0; i < n; i++) {
+        if (names[i] == NULL) continue;
+        if (strstr(names[i], "</a") != NULL
+            || strstr(names[i], ".tgz.asc") != NULL) {
+            free(names[i]); names[i] = NULL;
+        }
+    }
+
+    /* Step 3: keep .tar. if present in any survivor; else keep .tgz. */
+    int has_tar = 0;
+    for (size_t i = 0; i < n; i++) {
+        if (names[i] && strstr(names[i], ".tar.") != NULL) { has_tar = 1; break; }
+    }
+    const char *keep_marker = has_tar ? ".tar." : ".tgz";
+    for (size_t i = 0; i < n; i++) {
+        if (names[i] == NULL) continue;
+        if (strstr(names[i], keep_marker) == NULL) {
+            free(names[i]); names[i] = NULL;
+        }
+    }
+
+    /* Step 4: strip archive extensions, PS order. PS uses `-replace`
+     * (case-sensitive literal — `[regex]::Escape` style on a static
+     * suffix) so str_replace_all is the right helper. */
+    static const char *strip_exts[] = {
+        "-src.tar.gz", ".tar.gz", ".tar.bz2", ".tar.xz", ".tar.lz", ".tgz",
+        NULL,
+    };
+    for (size_t i = 0; i < n; i++) {
+        if (names[i] == NULL) continue;
+        for (int e = 0; strip_exts[e]; e++) {
+            names[i] = str_replace_all(names[i], strip_exts[e], "");
+        }
+        if (names[i] == NULL || names[i][0] == '\0') {
+            free(names[i]); names[i] = NULL;
+        }
+    }
+}
+
 /* PS L 2507-2516: augment the per-name strip list with common
  * Photon-style patterns: `<Name>.`, `<Name>-`, `<Name>_`, `<Name>`,
  * `ver`, `release_`, `release/`, `release-`, `release`, `-final`.
@@ -706,6 +777,10 @@ char *check_urlhealth(pr_task_t                       *task,
         char **names = NULL;
         size_t  n     = 0;
         if (pr_scrape_listing(parent, &names, &n) == 0 && n > 0) {
+            /* M23 (PS L 4321-4341): scraper-only pre-filter.
+             * Drop HTML/sig noise, keep .tar.* (or .tgz fallback),
+             * strip archive extensions BEFORE name-strip pipeline. */
+            apply_scraper_pre_filters(names, n);
             apply_replace_strings(names, n, row ? row->replaceStrings : NULL);
             apply_name_replace_augmentations(names, n,
                                              task->Name ? task->Name : "");
