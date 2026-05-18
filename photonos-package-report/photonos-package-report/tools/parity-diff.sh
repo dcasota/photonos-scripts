@@ -4,8 +4,8 @@
 # Phase 8 task 082. ADR-0006 (bit-identical parity) + ADR-0009 (parity gate)
 # + FRD-016 (parity harness).
 #
-# The .prn is a 12-column CSV produced by both the PS script and the C
-# port:
+# The .prn is a 12-column CSV (or 14-column when PR_EMIT_MULTI_SHA is
+# set, per ADR-0014) produced by both the PS script and the C port:
 #
 #   col 1   Spec
 #   col 2   Source0 original
@@ -19,10 +19,18 @@
 #   col 10  UpdateDownloadName
 #   col 11  warning
 #   col 12  ArchivationDate
+#   col 13  SHA256Name                — ADR-0014 (optional, gated by env)
+#   col 14  SHA512Name                — ADR-0014 (optional, gated by env)
 #
 # Volatile columns (4 and 7) are soft-diffed; all other columns are
-# strict — one byte ≠ → strict-diff verdict. The verdict feeds into the
-# 30/60/90-day ladder in tools/parity-gate.sh (task 083).
+# strict — one byte ≠ → strict-diff verdict. The col-13/14 additions
+# are strict (no volatility — they're SHA digests of the stable source
+# URL per ADR-0015). The verdict feeds into the 30/60/90-day ladder
+# in tools/parity-gate.sh (task 083).
+#
+# The per-row loop already iterates max(npf, ncf), so 14-col PS rows
+# vs 12-col C rows (or vice versa during rollout) diff strict on cols
+# 13/14 with empty PS side — that surfaces the coordination need.
 #
 # Usage:
 #   parity-diff.sh <ps.prn> <c.prn> [-q]

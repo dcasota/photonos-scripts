@@ -932,12 +932,40 @@ char *check_urlhealth(pr_task_t                       *task,
                                     task->Spec, latest, state.UpdateURL);
                                 const char *hash_url = sha_url
                                     ? sha_url : state.UpdateURL;
-                                char *hex = pr_sha_of_url(alg, hash_url);
-                                free(sha_url);
-                                if (hex) {
-                                    free(state.SHAValue);
-                                    state.SHAValue = hex;
+                                /* ADR-0014 (Option B): single GET, dual-hash
+                                 * when PR_EMIT_MULTI_SHA is set. Otherwise
+                                 * the single-algorithm pr_sha_of_url. */
+                                if (getenv("PR_EMIT_MULTI_SHA") != NULL) {
+                                    char *h256 = NULL, *h512 = NULL;
+                                    if (pr_sha_of_url_multi(hash_url, &h256, &h512) == 0) {
+                                        free(state.SHA256Name); state.SHA256Name = h256;
+                                        free(state.SHA512Name); state.SHA512Name = h512;
+                                        /* SHAValue (col 9) keeps the spec's
+                                         * preferred algorithm for backward
+                                         * compat. Pick from the multi result. */
+                                        const char *primary =
+                                            (alg == PR_SHA256) ? h256 :
+                                            (alg == PR_SHA512) ? h512 : NULL;
+                                        if (primary) {
+                                            free(state.SHAValue);
+                                            state.SHAValue = strdup(primary);
+                                        } else {
+                                            /* SHA1 still needs single hash. */
+                                            char *h1 = pr_sha_of_url(PR_SHA1, hash_url);
+                                            if (h1) {
+                                                free(state.SHAValue);
+                                                state.SHAValue = h1;
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    char *hex = pr_sha_of_url(alg, hash_url);
+                                    if (hex) {
+                                        free(state.SHAValue);
+                                        state.SHAValue = hex;
+                                    }
                                 }
+                                free(sha_url);
                             }
                         }
                         free(latest);
@@ -1063,12 +1091,31 @@ char *check_urlhealth(pr_task_t                       *task,
                                 task->Spec, latest, state.UpdateURL);
                             const char *hash_url = sha_url ? sha_url
                                                             : state.UpdateURL;
-                            char *hex = pr_sha_of_url(alg, hash_url);
-                            free(sha_url);
-                            if (hex) {
-                                free(state.SHAValue);
-                                state.SHAValue = hex;
+                            /* ADR-0014 (Option B): multi-hash when env var set. */
+                            if (getenv("PR_EMIT_MULTI_SHA") != NULL) {
+                                char *h256 = NULL, *h512 = NULL;
+                                if (pr_sha_of_url_multi(hash_url, &h256, &h512) == 0) {
+                                    free(state.SHA256Name); state.SHA256Name = h256;
+                                    free(state.SHA512Name); state.SHA512Name = h512;
+                                    const char *primary =
+                                        (alg == PR_SHA256) ? h256 :
+                                        (alg == PR_SHA512) ? h512 : NULL;
+                                    if (primary) {
+                                        free(state.SHAValue);
+                                        state.SHAValue = strdup(primary);
+                                    } else {
+                                        char *h1 = pr_sha_of_url(PR_SHA1, hash_url);
+                                        if (h1) { free(state.SHAValue); state.SHAValue = h1; }
+                                    }
+                                }
+                            } else {
+                                char *hex = pr_sha_of_url(alg, hash_url);
+                                if (hex) {
+                                    free(state.SHAValue);
+                                    state.SHAValue = hex;
+                                }
                             }
+                            free(sha_url);
                         }
                     }
                 } else if (rc == 0) {
@@ -1114,31 +1161,59 @@ char *check_urlhealth(pr_task_t                       *task,
         state.Source0 = dup_or_empty("");
     }
 
-    /* PS L 4933: assemble the 12-column row.
+    /* PS L 4933: assemble the row.
      *
      *   $currentTask.spec , $currentTask.source0 , $Source0 ,
      *   $urlhealth , $UpdateAvailable , $UpdateURL , $HealthUpdateURL ,
      *   $currentTask.Name , $SHAValue , $UpdateDownloadName , $Warning ,
      *   $ArchivationDate
+     *
+     * ADR-0014 (Accepted Option B): when PR_EMIT_MULTI_SHA env var is
+     * set, append cols 13 (SHA256Name) + 14 (SHA512Name). The cached
+     * PS snapshot is 12-col; when the operator refreshes the PS
+     * snapshot with the matching PS-side change, flip the env var to
+     * activate 14-col emission. Default is 12-col so the parity-gate
+     * stays consistent during rollout.
      */
+    const int emit_multi_sha = getenv("PR_EMIT_MULTI_SHA") != NULL;
     char *out = NULL;
-    if (asprintf(&out,
-                 "%s,%s,%s,%d,%s,%s,%s,%s,%s,%s,%s,%s",
-                 task->Spec,                                      /*  1 Spec */
-                 task->Source0 ? task->Source0 : "",              /*  2 Source0 original */
-                 state.Source0,                                   /*  3 Source0 (rewritten) */
-                 health,                                          /*  4 UrlHealth (0 offline) */
-                 state.UpdateAvailable,                           /*  5 — Phase 6b */
-                 state.UpdateURL,                                 /*  6 — Phase 6c */
-                 state.HealthUpdateURL,                           /*  7 — Phase 6c */
-                 task->Name,                                      /*  8 Name */
-                 state.SHAValue,                                  /*  9 — Phase 6d */
-                 state.UpdateDownloadName,                        /* 10 — Phase 6c */
-                 state.Warning,                                   /* 11 from lookup row */
-                 state.ArchivationDate                            /* 12 from lookup row */
-                 ) < 0) {
-        out = NULL;
+    int rc;
+    if (emit_multi_sha) {
+        rc = asprintf(&out,
+                     "%s,%s,%s,%d,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s",
+                     task->Spec,
+                     task->Source0 ? task->Source0 : "",
+                     state.Source0,
+                     health,
+                     state.UpdateAvailable,
+                     state.UpdateURL,
+                     state.HealthUpdateURL,
+                     task->Name,
+                     state.SHAValue,
+                     state.UpdateDownloadName,
+                     state.Warning,
+                     state.ArchivationDate,
+                     state.SHA256Name,                            /* 13 — ADR-0014 */
+                     state.SHA512Name                             /* 14 — ADR-0014 */
+                     );
+    } else {
+        rc = asprintf(&out,
+                     "%s,%s,%s,%d,%s,%s,%s,%s,%s,%s,%s,%s",
+                     task->Spec,                                      /*  1 Spec */
+                     task->Source0 ? task->Source0 : "",              /*  2 Source0 original */
+                     state.Source0,                                   /*  3 Source0 (rewritten) */
+                     health,                                          /*  4 UrlHealth (0 offline) */
+                     state.UpdateAvailable,                           /*  5 — Phase 6b */
+                     state.UpdateURL,                                 /*  6 — Phase 6c */
+                     state.HealthUpdateURL,                           /*  7 — Phase 6c */
+                     task->Name,                                      /*  8 Name */
+                     state.SHAValue,                                  /*  9 — Phase 6d */
+                     state.UpdateDownloadName,                        /* 10 — Phase 6c */
+                     state.Warning,                                   /* 11 from lookup row */
+                     state.ArchivationDate                            /* 12 from lookup row */
+                     );
     }
+    if (rc < 0) out = NULL;
 
     pr_state_free(&state);
     return out;

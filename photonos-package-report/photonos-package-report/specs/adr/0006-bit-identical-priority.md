@@ -13,7 +13,7 @@ The script's output (`.prn` files, URL-health markdown summaries, package-report
 
 ## Rationale
 
-- `.prn` output is a CSV consumed by other tools that parse columns 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 strictly. Even reordering would silently break consumers.
+- `.prn` output is a CSV consumed by other tools that parse columns 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 strictly. Per ADR-0014 (Accepted Option B), columns 13 (`SHA256Name`) and 14 (`SHA512Name`) are appended when the `PR_EMIT_MULTI_SHA` env var is set; those are also strict-compared. Even reordering would silently break consumers.
 - PS `Sort-Object` post-processing is alphabetical OrdinalIgnoreCase. The C app uses `setlocale(LC_ALL, "C")` + `strcasecmp` to match byte-for-byte.
 - The recent `%{version}` regression demonstrated that even invisible runspace-state shifts cause cascading downstream noise. We will not accept a port that's "almost identical".
 

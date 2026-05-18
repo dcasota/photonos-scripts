@@ -35,26 +35,41 @@ COL_NAMES = [
     "UrlHealth", "UpdateAvailable", "UpdateURL",
     "HealthUpdateURL", "Name", "SHAName",
     "UpdateDownloadName", "warning", "ArchivationDate",
+    # ADR-0014 (Accepted Option B) — optional 14-col schema.
+    "SHA256Name", "SHA512Name",
 ]
 VOLATILE = {3, 6}  # UrlHealth, HealthUpdateURL (0-indexed)
 BRANCHES = ("3.0", "4.0", "5.0", "6.0", "common", "dev", "master")
+N_COLS_DEFAULT = 12
+N_COLS_MULTI_SHA = 14  # ADR-0014 14-col schema when PR_EMIT_MULTI_SHA set
 
 
 def read_prn(path):
-    """Return dict spec → 12-col row list."""
+    """Return dict spec → row list. Accepts both the legacy 12-col rows
+    and the ADR-0014 14-col rows; pads to whichever the file uses."""
     out = {}
     with open(path) as f:
         reader = csv.reader(f)
-        next(reader, None)  # header
+        header = next(reader, None)
+        n_cols = len(header) if header else N_COLS_DEFAULT
         for r in reader:
-            r = r + [""] * (12 - len(r))
-            out[r[0]] = r[:12]
+            r = r + [""] * (n_cols - len(r))
+            out[r[0]] = r[:n_cols]
     return out
 
 
 def diff_signature(ps_row, c_row):
     """Tuple of column indices where rows differ, ignoring volatile."""
-    return tuple(i for i in range(12) if i not in VOLATILE and ps_row[i] != c_row[i])
+    max_cols = max(len(ps_row), len(c_row))
+    diffs = []
+    for i in range(max_cols):
+        if i in VOLATILE:
+            continue
+        pv = ps_row[i] if i < len(ps_row) else ""
+        cv = c_row[i]  if i < len(c_row)  else ""
+        if pv != cv:
+            diffs.append(i)
+    return tuple(diffs)
 
 
 def cause_label(diffs):

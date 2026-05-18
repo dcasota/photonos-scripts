@@ -11,7 +11,14 @@
 
 ## 1. Overview
 
-12-col CSV row + post-branch sort.
+12-col CSV row + post-branch sort. Per ADR-0014 (Accepted Option B,
+2026-05-18), the schema optionally grows to 14 cols (adding
+`SHA256Name`, `SHA512Name`) when the `PR_EMIT_MULTI_SHA` env var is
+set. The default remains 12-col so a cached PS snapshot can still
+diff cleanly against current C output during the rollout window.
+After the operator regenerates the PS snapshot with the matching
+PS-side change, the env var is flipped on for both PS and C and the
+14-col schema becomes the steady state.
 
 This FRD specifies the 1:1 C port of the corresponding section of the PowerShell script. It captures the bit-identical assertions, dependencies, and acceptance tests required for the C implementation to ship.
 
