@@ -26,4 +26,23 @@
 void pr_apply_per_spec_strip_tokens(const char *spec_name,
                                     char **names, size_t n);
 
+/* M28 — drop candidate names that contain ANY of the per-spec
+ * blacklist substrings (PS pattern:
+ *   `$Names = @($Names | foreach-object { if (!($_ | select-string
+ *      -pattern 'X' -simplematch)) {$_}})`).
+ * Match is case-INsensitive (PS `select-string -simplematch` default).
+ * Dropped entries are freed and set to NULL.
+ *
+ * Covers the PS L 2839 switch arms for docker-20.10, falco, glib (in
+ * addition to its M27 strip tokens), glslang (likewise), go, httpd. */
+void pr_apply_per_spec_drop_substrings(const char *spec_name,
+                                       char **names, size_t n);
+
+/* M29 — per-spec global character replacement (PS pattern:
+ *   `$Names = $Names -ireplace "-",".":` or `-replace "-",".";`).
+ * For each candidate, replace every occurrence of `from` with `to`.
+ * Currently covers automake, newt, salt3 ("-" → "."). */
+void pr_apply_per_spec_global_replace(const char *spec_name,
+                                      char **names, size_t n);
+
 #endif /* PR_PER_SPEC_H */

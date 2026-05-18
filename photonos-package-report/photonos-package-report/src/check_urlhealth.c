@@ -790,6 +790,13 @@ char *check_urlhealth(pr_task_t                       *task,
                          * ~76 specs that need custom prefix/substring strips
                          * beyond the generic M19 augmentations. */
                         pr_apply_per_spec_strip_tokens(task->Spec, names, n);
+                        /* M28 (PS L 2839 switch): per-spec drop-substring
+                         * blacklists for specs whose tag stream includes
+                         * unwanted branch/test/feature tags. */
+                        pr_apply_per_spec_drop_substrings(task->Spec, names, n);
+                        /* M29 (PS L 2849, 2929, 2965): per-spec global
+                         * character replacement ("-" → "."). */
+                        pr_apply_per_spec_global_replace(task->Spec, names, n);
                         /* M19 (PS L 2507-2516): augment with Name-based
                          * tokens + common release/ver/-final patterns. */
                         apply_name_replace_augmentations(names, n,
