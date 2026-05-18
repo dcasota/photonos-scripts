@@ -29,6 +29,11 @@
 #include "pr_urlhealth.h"
 #include "pr_version.h"
 
+#define PCRE2_CODE_UNIT_WIDTH 8
+#include <pcre2.h>
+#include <pthread.h>
+#include <strings.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -125,6 +130,83 @@ static void apply_name_post_filters(char **names, size_t n)
         }
         /* L 2524: keep only if no alpha after [pP]\d+ strip. */
         if (has_any_alpha_after_pN_strip(names[i])) {
+            free(names[i]); names[i] = NULL; continue;
+        }
+    }
+}
+
+/* M22 — PS L 441-451 Clean-VersionNames.
+ *
+ *   $Names = ((($_ -ireplace '^rel/','') -ireplace '^v','') -ireplace '^r','') -replace '_','.'
+ *   $preReleasePattern = 'candidate|-alpha|-beta|\.beta|rc\.[0-4]|rc[1-4]|-preview\.|-dev\.|-pre1|\.pre1'
+ *   $Names = $Names | Where-Object { $_ -notmatch $preReleasePattern }
+ *
+ * The three -ireplace ops are anchored (`^`) so they fire at most once
+ * each, in order. -notmatch is case-INsensitive (PCRE2_CASELESS).
+ *
+ * Pipeline placement: between apply_name_replace_augmentations (M19) and
+ * apply_name_post_filters (M21). M22 sees the raw candidate set after
+ * Source0Lookup.replaceStrings and the Name-token augmentations; it
+ * normalises prefixes and removes pre-release tags before M21's
+ * lowercase-v strip / has-digit / no-alpha-after-pN gauntlet runs.
+ *
+ * Mutates names[] in place. Dropped entries are freed and set to NULL. */
+static pcre2_code     *RE_PRE_RELEASE;
+static pthread_once_t  g_pre_release_once = PTHREAD_ONCE_INIT;
+
+static void init_re_pre_release(void)
+{
+    int        err_code = 0;
+    PCRE2_SIZE err_off  = 0;
+    RE_PRE_RELEASE = pcre2_compile(
+        (PCRE2_SPTR)"candidate|-alpha|-beta|\\.beta|rc\\.[0-4]|rc[1-4]|-preview\\.|-dev\\.|-pre1|\\.pre1",
+        PCRE2_ZERO_TERMINATED, PCRE2_CASELESS, &err_code, &err_off, NULL);
+    if (!RE_PRE_RELEASE) {
+        PCRE2_UCHAR ebuf[256];
+        pcre2_get_error_message(err_code, ebuf, sizeof ebuf);
+        fprintf(stderr, "check_urlhealth.c: pre-release re_compile failed: %s\n", (char *)ebuf);
+        abort();
+    }
+}
+
+static int matches_pre_release(const char *s)
+{
+    if (s == NULL || *s == '\0') return 0;
+    pthread_once(&g_pre_release_once, init_re_pre_release);
+    pcre2_match_data *md = pcre2_match_data_create_from_pattern(RE_PRE_RELEASE, NULL);
+    int rc = pcre2_match(RE_PRE_RELEASE, (PCRE2_SPTR)s, PCRE2_ZERO_TERMINATED,
+                          0, 0, md, NULL);
+    pcre2_match_data_free(md);
+    return rc >= 0;
+}
+
+static void strip_prefix_icase_inplace(char *s, const char *prefix)
+{
+    if (s == NULL || prefix == NULL || *prefix == '\0') return;
+    size_t plen = strlen(prefix);
+    if (strncasecmp(s, prefix, plen) == 0) {
+        memmove(s, s + plen, strlen(s + plen) + 1);
+    }
+}
+
+static void apply_clean_version_names(char **names, size_t n)
+{
+    if (names == NULL) return;
+    for (size_t i = 0; i < n; i++) {
+        if (names[i] == NULL) continue;
+        /* L 445: anchored case-insensitive leading-prefix strips, in order. */
+        strip_prefix_icase_inplace(names[i], "rel/");
+        strip_prefix_icase_inplace(names[i], "v");
+        strip_prefix_icase_inplace(names[i], "r");
+        /* L 445: literal underscore → dot. PS's `-replace '_','.'` would
+         * be regex-aware in principle, but the source token is a literal
+         * underscore so str_replace_all (case-sensitive literal) matches. */
+        names[i] = str_replace_all(names[i], "_", ".");
+        if (names[i] == NULL || names[i][0] == '\0') {
+            free(names[i]); names[i] = NULL; continue;
+        }
+        /* L 448-449: drop pre-release candidates. */
+        if (matches_pre_release(names[i])) {
             free(names[i]); names[i] = NULL; continue;
         }
     }
@@ -462,6 +544,10 @@ char *check_urlhealth(pr_task_t                       *task,
                          * tokens + common release/ver/-final patterns. */
                         apply_name_replace_augmentations(names, n,
                                                          task->Name ? task->Name : "");
+                        /* M22 (PS L 441-451 Clean-VersionNames): leading
+                         * rel//v/r strips, _→. replace, drop pre-release
+                         * candidates (alpha/beta/rc/preview/dev/pre). */
+                        apply_clean_version_names(names, n);
                         /* M21 (PS L 2522-2524): post-strip filters —
                          * v-strip + has-digit + no-alpha-after-pN-strip. */
                         apply_name_post_filters(names, n);
@@ -623,6 +709,9 @@ char *check_urlhealth(pr_task_t                       *task,
             apply_replace_strings(names, n, row ? row->replaceStrings : NULL);
             apply_name_replace_augmentations(names, n,
                                              task->Name ? task->Name : "");
+            /* M22 (PS L 441-451 Clean-VersionNames): leading rel//v/r
+             * strips, _→. replace, drop pre-release candidates. */
+            apply_clean_version_names(names, n);
             /* M21 (PS L 2522-2524): v-strip + has-digit + no-alpha-
              * after-[pP]\d+-strip. Drops scraper noise like
              * `LATEST-IS-X`, `?C=S;O=A`, `..`. */
