@@ -371,6 +371,18 @@ char *check_urlhealth(pr_task_t                       *task,
         }
     }
 
+    /* PS L 4527: if no update was detected AND the original urlhealth
+     * probe didn't succeed, blank out Source0. Signals "we tried but
+     * couldn't verify upstream — don't expose a dead URL in the report".
+     *
+     *   if (($UpdateAvailable -eq "") -and ($urlhealth -ne "200")) {$Source0=""}
+     */
+    if ((state.UpdateAvailable == NULL || state.UpdateAvailable[0] == '\0')
+        && health != 200) {
+        free(state.Source0);
+        state.Source0 = dup_or_empty("");
+    }
+
     /* PS L 4933: assemble the 12-column row.
      *
      *   $currentTask.spec , $currentTask.source0 , $Source0 ,
