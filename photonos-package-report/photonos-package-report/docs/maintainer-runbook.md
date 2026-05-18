@@ -68,12 +68,41 @@ via `tools/extract-source0-lookup.sh`.
   first/last row markers, so an accidental delete is caught.
 * The emit→reparse roundtrip would catch quoting errors.
 
+### Per-release divergence — the case-variant convention (ADR-0013)
+
+When the **same conceptual package** has different upstream
+conventions across photon branches, add **two rows** with different
+filename casings, one per branch. PS L 2147's `.IndexOf` is
+**case-sensitive**, so the rows match different `parse_directory`
+outputs depending on which branch's filesystem casing the spec uses.
+
+Example: if `Linux-PAM.spec` exists on photon-4.0 but `linux-pam.spec`
+exists on photon-5.0, the CSV carries two rows:
+
+```csv
+Linux-PAM.spec,<url-for-4.0>,<gitSource-for-4.0>,...
+linux-pam.spec,<url-for-5.0>,<gitSource-for-5.0>,...
+```
+
+This convention works **only because** Source0Lookup matching is
+case-sensitive. Don't change `lookup_row()` in C to use
+`strcasecmp` — that would collapse the two rows and apply the wrong
+adapter on one branch. (Memory entry
+`feedback_source0lookup_case_sensitivity.md` guards this.)
+
+If a case-variant won't fit (the basename is identical across
+branches but upstream differs), use a Phase-3b hook
+(`src/hooks/<name>.c`) instead.
+
 ### Pitfalls
 
 * **Do not** edit the C side header (`build/generated/source0_lookup_data.h`)
   — it is regenerated on every build and your changes will be lost.
 * The upstream PS script is the **single source of truth**. Bug fixes
   flow PS → spec → C, never the reverse (CLAUDE.md invariant #2).
+* **Source0Lookup matching is case-sensitive; warnings + hooks are
+  case-insensitive** (PS `.IndexOf` vs `-ilike`). Preserve this
+  asymmetry — see ADR-0013 and the case-variant convention above.
 
 ---
 

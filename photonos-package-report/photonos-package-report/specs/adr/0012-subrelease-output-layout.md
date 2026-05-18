@@ -1,10 +1,10 @@
 # ADR-0012 — Subrelease output layout
 
-**Status**: Draft
+**Status**: Accepted (Option A — status quo / pinned-sentinel)
 
-**Date**: 2026-05-17
+**Date**: 2026-05-18
 
-**Deciders**: TBD (user gate per TODO §4 checkpoint)
+**Deciders**: user (TODO §4 checkpoint), 2026-05-18
 
 ## Context
 
@@ -72,11 +72,25 @@ single-per-branch.
 
 ## Decision
 
-**Pending user input (TODO §4 checkpoint).** Reviewing the C port's
-current state, Option C (add col 13) is the agent's recommendation:
-smallest tooling delta with cleanest data model. Option A keeps
-working until SPECS/90 makes the duplicate-basename problem painful;
-not actively broken today.
+**Option A — status quo / pinned-sentinel.**
+
+Rationale:
+- PS already implements this at L 2104-2106 (vendor-pinned short-circuit
+  that emits the fixed-shape sentinel row).
+- ADR-0006 (bit-identical `.prn`) is best served by NOT changing the
+  schema. Any of Options B/C requires coordinated changes across PS,
+  C, `parity-diff.sh`, the journal schema, and the runbook.
+- The duplicate-basename problem (`dbus.spec` from SPECS/ vs SPECS/91/)
+  is real but already solved: the rows differ in cols 4 (`UrlHealth`),
+  11 (`warning`), and other columns the pipeline fills for the
+  non-pinned variant. Consumers that need to disambiguate inspect
+  col 4 = `pinned` and col 11 = `vendor-pinned (subrelease N)`.
+- M17 (Phase M task) is the matching C-side implementation. After it
+  lands, both PS and C emit byte-identical pinned rows.
+
+If a future need arises to slice `.prn` by subrelease without parsing
+sentinels (e.g. for the kernel-CVE-gate skill), revisit with a new
+ADR. For now, the sentinel encoding is sufficient.
 
 ## Consequences
 

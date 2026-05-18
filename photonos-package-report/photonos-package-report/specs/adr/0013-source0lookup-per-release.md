@@ -1,10 +1,10 @@
 # ADR-0013 — Source0Lookup per-release scoping
 
-**Status**: Draft
+**Status**: Accepted (Option A — status quo + case-variant rows)
 
-**Date**: 2026-05-17
+**Date**: 2026-05-18
 
-**Deciders**: TBD (user gate per TODO §5 checkpoint)
+**Deciders**: user (TODO §5 checkpoint), 2026-05-18
 
 ## Context
 
@@ -93,25 +93,32 @@ differences (overrides). Lookup falls through default → subrelease.
 
 ## Decision
 
-**Pending user input (TODO §5 checkpoint).** Agent recommendation
-on first glance: Option B (add subrelease column). It's the smallest
-backward-compat-preserving schema change and matches how SPECS/<N>/
-is already organised on the filesystem.
+**Option A — status quo + case-variant rows + hook blocks.**
 
-But the right answer depends on **how many specs would actually need
-divergent Source0Lookup entries**. If the answer is < 20, Option A
-(status quo + hook blocks) wins. If 20-50, Option B. If > 50,
-consider C or D.
+Rationale:
+- The convention is already in use: per-branch divergence is captured
+  by listing the **same conceptual package twice in Source0LookupData
+  with different filename casings** (e.g. `Linux-PAM.spec` and
+  `linux-pam.spec`). PS L 2147's `.IndexOf` is case-sensitive, so the
+  two rows match different branches' specs correctly.
+- Captured as a memory entry in 2026-05-18 to ensure future Phase-M
+  work preserves the asymmetric case-sensitivity (Source0Lookup
+  case-sensitive; warnings/hooks case-insensitive).
+- Genuinely per-spec divergence beyond what case-variants cover is
+  already handled by Phase 3b hooks (`src/hooks/<name>.c` in C,
+  `if ($currentTask.spec -ilike ...) {...}` chains in PS).
+- Schema change would require: extract-source0-lookup.sh,
+  csv-to-c-string.sh, `pr_source0_lookup_t`, the embedded CSV format,
+  parity-diff.sh column awareness. High coordination cost for a
+  problem the case-variant convention already solves.
 
-**Pre-decision survey task** (block on this before deciding):
+**Documentation updated:** `docs/maintainer-runbook.md` §1 (Adding a
+Source0LookupData row) describes the case-variant convention so future
+contributors know to use it when adding per-branch-divergent rows.
 
-```sh
-# For each spec under SPECS/91/, compare its Source0Lookup row's
-# expected Source0 against the actual Source0 in the .spec. Count
-# divergences.
-```
-
-Output of that survey gates which option is selected.
+If the residual divergence past hooks + case-variants grows beyond
+maintainable hand-curation (e.g. >100 case-variant rows), revisit
+with a new ADR proposing Option B (add subrelease column).
 
 ## Consequences
 
