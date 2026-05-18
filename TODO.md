@@ -222,7 +222,7 @@ Categories (approximate counts per 4.0 after M21 era):
 | **Per-upstream-family FRDs** | high | very-high | per-family weeks | gnome.org filter, sourceforge filter, launchpad filter — each refines what the scraper does for a specific listing layout |
 | **ADR-0014 multi-SHA** Accepted + impl | medium | high | 1-2 PRs | drafted; awaiting decision |
 | **M22+ Source0Lookup row repairs** | low | high | 1 PR per spec | one PR per dead-URL spec (bluez-tools→github, etc.) |
-| **`(same version)` for non-git path** | medium | low | 1 PR | when scraper finds latest == current spec version |
+| ~~**`(same version)` for non-git path**~~ ✅ | medium | low | 0 PR | already emitted at `check_urlhealth.c:790-791` (M20 scraper path mirrors PS L 4413-4434 rc==0 branch) |
 | ~~**`Clean-VersionNames` port**~~ ✅ M22 | medium | medium | 1 PR | shipped — pre-release filter + anchored prefix strips + `_`→`.` |
 | **ADR-0015 stable-source SHA** for github auto-archives | medium | high | needs ADR | switch col-9 source from auto-archive to release-asset where available |
 
