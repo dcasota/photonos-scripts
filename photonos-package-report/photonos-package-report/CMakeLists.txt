@@ -109,6 +109,7 @@ add_executable(photonos-package-report
     src/spec_warnings.c
     src/per_spec_strip.c
     src/stable_source.c
+    src/atom_feed.c
     src/heapsort.c
     src/jdk.c
     src/url_util.c
