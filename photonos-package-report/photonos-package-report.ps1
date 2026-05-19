@@ -5153,6 +5153,12 @@ function GenerateUrlHealthReports {
                 'Invoke-GitWithTimeout' = (Get-Command 'Invoke-GitWithTimeout' -ErrorAction SilentlyContinue).Definition
                 'Clean-VersionNames' = (Get-Command 'Clean-VersionNames' -ErrorAction SilentlyContinue).Definition
                 'Test-DiskSpace' = (Get-Command 'Test-DiskSpace' -ErrorAction SilentlyContinue).Definition
+                # ADR-0015 (Accepted Option A): Resolve-StableSourceURL needs
+                # to be visible inside ForEach-Object -Parallel runspaces.
+                # Without this propagation each runspace fails with "term
+                # not recognized" and the SHA computation falls back to
+                # the auto-archive — defeating the ADR.
+                'Resolve-StableSourceURL' = (Get-Command 'Resolve-StableSourceURL' -ErrorAction SilentlyContinue).Definition
                 HeapSortClass = $HeapSortClassDef
             }
             $initParts = @()
