@@ -85,6 +85,14 @@ jobs:
       - name: Extract snapshot
         id: extract
         run: |
+          # Clean any stale snapshot/ from prior workflow runs. The self-
+          # hosted runner persists this directory between jobs unless we
+          # remove it explicitly. Past incidents (run 26101453292, see
+          # ITERATIONS-LOG entry "stale-snapshot bug 2026-05-19") had the
+          # for-loop iterate over both today's freshly-extracted files AND
+          # leftover .prn files from a May 17 baseline run — making journal
+          # numbers reflect the wrong PS file.
+          rm -rf snapshot
           mkdir -p snapshot
           cd snapshot
           # The artifact contains exactly one tar.gz; find and extract it.
@@ -95,6 +103,28 @@ jobs:
             echo "::error::snapshot has no prn-snapshot/*.prn — nothing to diff"
             exit 1
           fi
+          # Even within a freshly-extracted tarball, the PS workflow may
+          # have included multiple `.prn` files per branch when its own
+          # scans/ dir accumulated files across runs (until that workflow
+          # is also patched). Keep only the NEWEST per branch so the
+          # parity-diff for-loop doesn't double-count.
+          for branch_glob in prn-snapshot/photonos-urlhealth-*.prn; do
+            [ -f "$branch_glob" ] || continue
+            base=$(basename "$branch_glob")
+            branch=$(echo "$base" | sed -E 's|photonos-urlhealth-(.+)_[0-9]+\.prn|\1|')
+            # First time we see this branch — keep newest, drop the rest.
+            if [ -z "${SEEN:+x}" ] || ! echo " $SEEN " | grep -q " $branch "; then
+              keep=$(ls -t prn-snapshot/photonos-urlhealth-"$branch"_*.prn 2>/dev/null | head -1)
+              for stale in $(ls prn-snapshot/photonos-urlhealth-"$branch"_*.prn 2>/dev/null); do
+                if [ "$stale" != "$keep" ]; then
+                  echo "  dropping stale: $stale (keeping $keep)"
+                  rm -f "$stale"
+                fi
+              done
+              SEEN="${SEEN:-} $branch"
+            fi
+          done
+          echo "Files after dedup:"; ls prn-snapshot/photonos-urlhealth-*.prn
           echo "dir=$(pwd)" >> "$GITHUB_OUTPUT"
 
       - name: Reconstruct working tree from manifests
