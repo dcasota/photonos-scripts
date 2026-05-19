@@ -60,7 +60,9 @@ FRD-018), M21 (post-strip filters), ADR-0014 (multi-SHA Draft).
 | #130 | **M31** — ADR-0014 impl: cols 13/14 SHA256Name/SHA512Name schema | PS + C + parity-diff + diff_analyzer. New `pr_sha_of_url_multi` (single GET, dual hash). pr_state_t grows two fields. Schema growth gated by env var `PR_EMIT_MULTI_SHA` (default off → 12-col matches cached snapshot). Operator regenerates PS snapshot with env var on for cutover. ADR-0006 strict-col set amended. |
 | #131 | **FRD-019 Draft** — atom-feed tag-list scraper | ~30+ specs use `?format=atom` URLs that current HTML href scraper returns 0 candidates for. Multi-PR rollout planned (PR-A this draft, PR-B parser, PR-C URL overrides, PR-D dispatcher wiring, PR-E validation). |
 | #132 | **M32** — Atom-feed parser (FRD-019 PR-B) | New `src/atom_feed.c` + `include/pr_atom_feed.h`. PCRE2-based `<entry><title>X</title>` extraction with 5-standard XML entity decode. Not yet wired into the scraper dispatcher — FRD-019 PR-C lands the per-spec URL override + dispatcher wiring. |
-| TBD  | **M33** — Atom-feed dispatcher (FRD-019 PR-C+D bundled) | 27-entry per-spec URL override table + dispatcher wiring in check_urlhealth.c. Calls `pr_scrape_atom_feed` when override exists; otherwise `pr_scrape_listing`. Gate updated to allow this branch for gitSource-bearing specs (PS L 3815-3866 fallback semantics). |
+| #133 | **M33** — Atom-feed dispatcher (FRD-019 PR-C+D bundled) | 27-entry per-spec URL override table + dispatcher wiring in check_urlhealth.c. Calls `pr_scrape_atom_feed` when override exists; otherwise `pr_scrape_listing`. Gate updated to allow this branch for gitSource-bearing specs (PS L 3815-3866 fallback semantics). |
+| #134 | **CLAUDE.md refresh** post-M22-M33 | Session-context cheatsheet rewritten. Phase tracker M01-M21 → M01-M33. |
+| #135 | **M32 fix** — bare `PowerShell` UA for atom-feed parser | gitlab.freedesktop.org Anubis anti-bot rejects Chrome-style + verbose PS UAs but allows bare `PowerShell`. Caught locally via curl probe with the new HTTP-allowlist permission grant. Would have made M32 inert for all gitlab.freedesktop.org specs. |
 
 ### Journal trajectory (strict_rows per branch)
 
@@ -71,12 +73,29 @@ After M14 unmask    795   841   849   832    6    833    834
 After M16           774   822   835   817    6    818    816
 After M20           748   774   766   766    6    767    769
 After M21-wired     599   563   476   476    5    481    482  ← run 26044019950
-                  (-149)(-211)(-290)(-290) (-1) (-286) (-287)
-After M22          (pending validation — fresh dispatch against master 610ce20)
+After M22-M33       571   518   414   416    6    423    425  ← run 26061463483
+                  ( -28)( -45)( -62)( -60)( +1)( -58)( -57)
 
-Δ from initial    -320  -471  -637  -617    -1   -609   -608
-% reduction        35%   46%   57%   56%    --    56%    56%
+Δ from initial    -348  -516  -699  -677    --   -667   -665
+% reduction        38%   50%   63%   62%    --    61%    61%
 ```
+
+### 5.0 residual buckets post-M22-M33 (vs pre-M23 baseline)
+
+| Cols signature       | Pre-M23 | Post-M22-M33 | Δ      | Cause |
+|----------------------|--------:|-------------:|-------:|-------|
+| 5 6 7 9 10           |     189 |          106 |    −83 | M23 + M27/M28/M29 working; residual is per-spec fetch failures |
+| 5 only               |      98 |           76 |    −22 | M23 reduced; remainder = stale snapshot / atom hosts not yet wired |
+| 9 only               |      24 |           47 |   +23  | M30 stable-URL diverges from cached PS auto-archive SHA |
+| 6 7 9                |       0 |           40 |   +40  | new M30 pattern (stable-URL changes col 6 too via re-substitution) |
+| 5 11                 |      24 |            5 |   −19  | M21+M22 cleared warning-attached subset |
+| 3 4                  |      16 |           15 |    −1  | per-spec hooks (kernel.org cgit etc.), unaddressed |
+
+Net: −62 strict on 5.0. The +63 from M30-induced col[9] / cols[6 7 9] will
+clear once the PS snapshot is regenerated with the matching PS-side patch
+(Resolve-StableSourceURL); after that, the M30 contribution flips from
+~+60 to ~−40 to −60 (the actual auto-archive drift the ADR was designed
+to close).
 
 ### Critical findings (preserved as memory entries)
 
