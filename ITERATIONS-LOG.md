@@ -63,39 +63,75 @@ FRD-018), M21 (post-strip filters), ADR-0014 (multi-SHA Draft).
 | #133 | **M33** — Atom-feed dispatcher (FRD-019 PR-C+D bundled) | 27-entry per-spec URL override table + dispatcher wiring in check_urlhealth.c. Calls `pr_scrape_atom_feed` when override exists; otherwise `pr_scrape_listing`. Gate updated to allow this branch for gitSource-bearing specs (PS L 3815-3866 fallback semantics). |
 | #134 | **CLAUDE.md refresh** post-M22-M33 | Session-context cheatsheet rewritten. Phase tracker M01-M21 → M01-M33. |
 | #135 | **M32 fix** — bare `PowerShell` UA for atom-feed parser | gitlab.freedesktop.org Anubis anti-bot rejects Chrome-style + verbose PS UAs but allows bare `PowerShell`. Caught locally via curl probe with the new HTTP-allowlist permission grant. Would have made M32 inert for all gitlab.freedesktop.org specs. |
+| #137 | **M30 fix** — propagate `Resolve-StableSourceURL` into PS parallel runspaces | The function was undefined inside `ForEach-Object -Parallel` workers → ADR-0015 inert PS-side. Added to the FunctionDefinitions init-script table. |
+| #138 | **harness fix** — fresh `snapshot/` dir + per-branch dedup in C workflow | first attempt at the stale-snapshot bug. |
+| #139 | **harness fix (ROOT CAUSE)** — select snapshot tarball by exact PS run id | `snapshot-raw/` accumulated tarballs; `ls\|head -1` picked the alphabetically-smallest = oldest run id = May 17 baseline. Every C run since ~May 17 silently diffed against the stale baseline. |
+| #140 | **harness fix** — dedup by filename-timestamp + clean PS staging dir | C dedup used `ls -t` (mtime); tar gives equal mtimes → tied to oldest filename. PS `/tmp/new-reports` staging accumulated across runs. |
+
+### The 2026-05-19/20 stale-snapshot saga
+
+For ~3 days the journal numbers were measured against a **frozen May 17
+PS baseline**, not the PS run that triggered each C run. Root cause:
+the C workflow's `snapshot-raw/` download dir accumulated tarballs and
+`ls *.tar.gz | head -1` deterministically picked the oldest run id
+(`25991871716`). Three compounding bugs (#137 runspace, #139 tarball
+select, #140 mtime-dedup + PS staging) all had to be fixed before a C
+run would diff against the correct fresh PS snapshot. Diagnosis was
+driven by the new read-only HTTP + pwsh permission grants
+(local `parity-diff.sh` reproduction + per-file SHA probes).
+
+Lesson: the journal is only as trustworthy as the snapshot-selection
+logic. A green/strict number means nothing if it's diffing the wrong
+input pair. Always cross-check journal numbers against a local
+`parity-diff.sh` of the artifacts when a result looks anomalous.
 
 ### Journal trajectory (strict_rows per branch)
+
+NOTE: rows from `After M14` through `After M22-M33` were all measured
+against the **stale May 17 PS baseline** (the snapshot-selection bug
+above). They're internally consistent — C genuinely converged toward
+the May 17 PS output — but the absolute numbers and especially the
+col[9]/cols[6 7 9] buckets were distorted. The `Clean baseline` row is
+the first **trustworthy** measurement (journal == local diff on all 7
+branches, verified).
 
 ```
 Run / Branch        3.0  4.0   5.0   6.0  common  dev   master
 Initial             919  1034  1113  1093    6   1090   1090
-After M14 unmask    795   841   849   832    6    833    834
-After M16           774   822   835   817    6    818    816
-After M20           748   774   766   766    6    767    769
-After M21-wired     599   563   476   476    5    481    482  ← run 26044019950
-After M22-M33       571   518   414   416    6    423    425  ← run 26061463483
-                  ( -28)( -45)( -62)( -60)( +1)( -58)( -57)
+After M14 unmask    795   841   849   832    6    833    834   (vs stale)
+After M16           774   822   835   817    6    818    816   (vs stale)
+After M20           748   774   766   766    6    767    769   (vs stale)
+After M21-wired     599   563   476   476    5    481    482   (vs stale)
+After M22-M33       571   518   414   416    6    423    425   (vs stale)
+Clean baseline      551   484   392   373    5    386    381   ← run 26160062078
+                                                              (journal==local-diff ✓)
 
-Δ from initial    -348  -516  -699  -677    --   -667   -665
-% reduction        38%   50%   63%   62%    --    61%    61%
+Δ from initial    -368  -550  -721  -720    -1   -704   -709
+% reduction        40%   53%   65%   66%    --    65%    65%
 ```
 
-### 5.0 residual buckets post-M22-M33 (vs pre-M23 baseline)
+### 5.0 residual buckets — clean baseline (run 26160062078, trustworthy)
 
-| Cols signature       | Pre-M23 | Post-M22-M33 | Δ      | Cause |
-|----------------------|--------:|-------------:|-------:|-------|
-| 5 6 7 9 10           |     189 |          106 |    −83 | M23 + M27/M28/M29 working; residual is per-spec fetch failures |
-| 5 only               |      98 |           76 |    −22 | M23 reduced; remainder = stale snapshot / atom hosts not yet wired |
-| 9 only               |      24 |           47 |   +23  | M30 stable-URL diverges from cached PS auto-archive SHA |
-| 6 7 9                |       0 |           40 |   +40  | new M30 pattern (stable-URL changes col 6 too via re-substitution) |
-| 5 11                 |      24 |            5 |   −19  | M21+M22 cleared warning-attached subset |
-| 3 4                  |      16 |           15 |    −1  | per-spec hooks (kernel.org cgit etc.), unaddressed |
+| Cols signature  | Count | Cause / next step |
+|-----------------|------:|-------------------|
+| 5 6 7 9 10      |   106 | per-spec scraper fetch failures (per-upstream-family adapters needed) |
+| 5 only          |    73 | `(same version)` not emitted where PS detects it; atom hosts not all wired |
+| 6 7 9           |    40 | version-detection differences (C picks different latest than PS) |
+| 9 only          |    23 | github auto-archive SHA drift for specs WITHOUT a release-asset (ADR-0015 can't help; bounded by the ~7h PS→C run gap) |
+| 5 11            |    20 | UpdateAvailable + warning combinations |
+| 4 6 7 9 10 11   |    17 | mixed (volatile col 4 + detection) |
+| 3 4             |    15 | per-spec Source0 rewrites (kernel.org cgit etc.), unported |
+| 3 only          |    14 | per-spec Source0 rewrites |
 
-Net: −62 strict on 5.0. The +63 from M30-induced col[9] / cols[6 7 9] will
-clear once the PS snapshot is regenerated with the matching PS-side patch
-(Resolve-StableSourceURL); after that, the M30 contribution flips from
-~+60 to ~−40 to −60 (the actual auto-archive drift the ADR was designed
-to close).
+Total 5.0: 392 strict / 63 soft.
+
+The col[9]-only (23) + cols[6 7 9] (40) are the temporal-drift +
+version-detection territory. ADR-0015 closes the subset of github
+auto-archive specs that publish a release-asset; the remainder drift
+because the auto-archive is regenerated server-side between the PS run
+and the (clone-bound, ~4h-later) C run. Closing these fully needs
+either tarball caching (download once, hash both sides from the same
+bytes) or running PS+C back-to-back with no GitHub-regeneration window.
 
 ### Critical findings (preserved as memory entries)
 
