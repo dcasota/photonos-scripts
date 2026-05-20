@@ -105,6 +105,7 @@ add_executable(test_phase6
     ${CMAKE_SOURCE_DIR}/src/per_spec_strip.c
     ${CMAKE_SOURCE_DIR}/src/stable_source.c
     ${CMAKE_SOURCE_DIR}/src/atom_feed.c
+    ${CMAKE_SOURCE_DIR}/src/rubygems.c
     ${CMAKE_SOURCE_DIR}/src/hook_dispatch.c
     ${CMAKE_SOURCE_DIR}/src/task.c
     ${CMAKE_SOURCE_DIR}/src/clone.c
