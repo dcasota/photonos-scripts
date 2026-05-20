@@ -312,6 +312,15 @@ jobs:
           SCANS="${{ steps.snapshot.outputs.scans_dir }}"
           MANIFEST="${{ steps.snapshot.outputs.manifest }}"
           STAGING="/tmp/new-reports"
+          # Clean STAGING first. On the self-hosted runner /tmp/new-reports
+          # persists across runs; without this the staging dir accumulates
+          # every PS run's .prn files, and the parity-snapshot tarball then
+          # bundles all of them (e.g. four 5.0 files from four runs). The
+          # downstream C workflow has to dedup, and a single bug there
+          # (mtime ties) silently selects the wrong PS file. Cleaning here
+          # makes the snapshot contain exactly this run's outputs. See the
+          # 2026-05-20 staging-accumulation incident.
+          rm -rf "$STAGING"
           mkdir -p "$STAGING"
 
           NEW_COUNT=0

@@ -126,25 +126,33 @@ jobs:
           fi
           # Even within a freshly-extracted tarball, the PS workflow may
           # have included multiple `.prn` files per branch when its own
-          # scans/ dir accumulated files across runs (until that workflow
-          # is also patched). Keep only the NEWEST per branch so the
-          # parity-diff for-loop doesn't double-count.
-          for branch_glob in prn-snapshot/photonos-urlhealth-*.prn; do
-            [ -f "$branch_glob" ] || continue
-            base=$(basename "$branch_glob")
-            branch=$(echo "$base" | sed -E 's|photonos-urlhealth-(.+)_[0-9]+\.prn|\1|')
-            # First time we see this branch — keep newest, drop the rest.
-            if [ -z "${SEEN:+x}" ] || ! echo " $SEEN " | grep -q " $branch "; then
-              keep=$(ls -t prn-snapshot/photonos-urlhealth-"$branch"_*.prn 2>/dev/null | head -1)
-              for stale in $(ls prn-snapshot/photonos-urlhealth-"$branch"_*.prn 2>/dev/null); do
-                if [ "$stale" != "$keep" ]; then
-                  echo "  dropping stale: $stale (keeping $keep)"
-                  rm -f "$stale"
-                fi
-              done
-              SEEN="${SEEN:-} $branch"
-            fi
+          # STAGING dir accumulated files across runs. Keep only the
+          # NEWEST per branch so the parity-diff for-loop doesn't
+          # double-count.
+          #
+          # CRITICAL: dedup by the FILENAME-embedded timestamp
+          # (photonos-urlhealth-<branch>_<YYYYMMDDHHMM>.prn), NOT by
+          # file mtime. `tar -xzf` gives every extracted file the same
+          # mtime, so `ls -t` ties arbitrarily — in practice it kept the
+          # OLDEST filename, making the journal record the wrong (stale)
+          # PS file's diff (see the 2026-05-20 dedup-by-mtime incident,
+          # run 26140575536: journal recorded 425 = the 09:20 file while
+          # the true 05:54 file gave 366). Lexical sort of the
+          # zero-padded YYYYMMDDHHMM suffix is correct chronological order.
+          for branch in $(ls prn-snapshot/photonos-urlhealth-*.prn 2>/dev/null \
+                          | sed -E 's|.*photonos-urlhealth-(.+)_[0-9]+\.prn|\1|' \
+                          | sort -u); do
+            keep=$(ls -1 prn-snapshot/photonos-urlhealth-"$branch"_*.prn 2>/dev/null \
+                   | sort | tail -1)
+            for f in $(ls -1 prn-snapshot/photonos-urlhealth-"$branch"_*.prn 2>/dev/null); do
+              if [ "$f" != "$keep" ]; then
+                echo "  dropping stale: $f (keeping $keep)"
+                rm -f "$f"
+              fi
+            done
           done
+          echo "Files after filename-timestamp dedup:"
+          ls prn-snapshot/photonos-urlhealth-*.prn
           echo "Files after dedup:"; ls prn-snapshot/photonos-urlhealth-*.prn
           echo "dir=$(pwd)" >> "$GITHUB_OUTPUT"
 
