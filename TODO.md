@@ -180,58 +180,80 @@ For each diff-signature bucket, in descending order of affected-count:
 9. **Update spec status** (`Implemented` if final task, else leave
    `Accepted`). Already part of the merged PR.
 
-### Status — shared-infrastructure phase complete (M01-M22)
+### Status — M01-M33 shipped; harness corrected (2026-05-20)
 
-M01-M22 covered shared infrastructure: pinned-sentinel emission,
-case-insensitive sort, version-cut, substitution rewrites, warning
-table, replaceStrings application, post-strip filters, HTTP listing
-scraper, Clean-VersionNames pre-release filter. Cumulative parity gap
-closed by ~30% (varies per branch).
+M01-M21 (Session 1): shared infrastructure — pinned-sentinel, case-
+insensitive sort, version-cut, substitution rewrites, warning table,
+replaceStrings, post-strip filters, HTTP listing scraper.
 
-See `specs/tasks/README.md` for the full M01-M22 task table.
+M22-M33 (Session 2): Clean-VersionNames, scraper extension pre-strip,
+download_name_post Release/Rel_/v-, per-spec download rules,
+ignoreStrings filter, per-spec strip-token table (~76 specs),
+per-spec drop-substring + global-replace, ADR-0015 stable-source SHA
+(M30), ADR-0014 multi-SHA cols 13/14 (M31, env-gated), atom-feed
+parser + dispatcher (M32/M33, FRD-019).
 
-### Residual buckets after M22 (the per-package depth territory)
+**Trustworthy baseline (run 26160062078, journal == local-diff verified):**
 
-Per `feedback_per_package_depth_investigation.md` memory entry: the
-remaining gap is **per-package investigation** — each spec in these
-buckets has its own upstream naming scheme / download convention /
-update-detection mechanism.
+| Branch | Initial | Now | % closed |
+|--------|--------:|----:|---------:|
+| 3.0    |  919 | 551 | 40% |
+| 4.0    | 1034 | 484 | 53% |
+| 5.0    | 1113 | 392 | 65% |
+| 6.0    | 1093 | 373 | 66% |
+| dev    | 1090 | 386 | 65% |
+| master | 1090 | 381 | 65% |
 
-Categories (approximate counts per 4.0 after M21 era):
+NOTE: journal rows before run 26160062078 were measured against a
+**frozen May 17 PS baseline** (snapshot-selection bug, fixed in PRs
+#137-#140). They were internally consistent but distorted on the
+col[9]/cols[6 7 9] SHA buckets. Always cross-check anomalous journal
+numbers against a local `parity-diff.sh` of the artifacts. See
+ITERATIONS-LOG "stale-snapshot saga".
 
-- ~280 `UpdateAvailable,UpdateURL,SHAName,UpdateDownloadName,warning`
-  GConf-style: scraper returns candidate name(s) but PS's downstream
-  filtering / regex differs per upstream family.
-- ~190 `UpdateAvailable,UpdateURL,SHAName,UpdateDownloadName`
-  ImageMagick-style: C scraper picks a wrong "latest" because the
-  per-family filter (release vs RC vs nightly) isn't implemented.
-- ~75 `SHAName` only — github auto-archive instability. Defer or
-  resolve via ADR-0014 (multi-SHA / stable-source SHA).
-- ~70 `UpdateAvailable` only — non-git "(same version)" path not
-  emitting when scraper finds the current version.
-- ~65 `UpdateAvailable,warning` — autogen-style: PS detected
-  "(same version)", C scraper picks up a sort-query-string href.
-  Some covered by M21; remainder is per-spec edge cases.
-- ~18 `Source0_modified` only — per-spec URL rewrite differences
-  (ModemManager directory vs file URLs etc.).
+See `specs/tasks/README.md` for the full M01-M33 task table.
+
+### Residual buckets — clean 5.0 baseline (run 26160062078, 392 strict)
+
+Per `feedback_per_package_depth_investigation.md`: the remaining gap
+is **per-package investigation** — each spec has its own upstream
+naming scheme / download convention / update-detection mechanism.
+
+Trustworthy 5.0 bucket counts (journal == local-diff verified):
+
+- **106 `cols[5 6 7 9 10]`** — per-spec scraper fetch failures; the
+  scraper returns no candidate or the wrong one. Needs per-upstream-
+  family adapters (gnome.org, sourceforge, launchpad listing layouts).
+- **73 `col[5]` only** — `(same version)` not emitted where PS detects
+  it; some atom-feed hosts beyond the 27 wired in M33.
+- **40 `cols[6 7 9]`** — version-detection differences (C picks a
+  different "latest" than PS); per-family release-vs-RC-vs-nightly
+  filtering not implemented.
+- **23 `col[9]` only** — github auto-archive SHA drift for specs
+  WITHOUT a release-asset. ADR-0015 can't help these; only tarball
+  caching or back-to-back PS+C runs (no GitHub-regeneration window)
+  would close them.
+- **20 `cols[5 11]`** — UpdateAvailable + warning combinations.
+- **~29 `col[3]` / `cols[3 4]`** — per-spec Source0 rewrites
+  (kernel.org cgit, ModemManager dir-vs-file), unported per-spec hooks.
 
 ### Next-units priority (dual-axis: parity + vendor-info)
 
-Re-ranked 2026-05-18 after M22/M23/M24 + ADR-0015 Draft landed.
+Re-ranked 2026-05-20 against the trustworthy clean baseline.
 
 | Unit | Parity Δ | Info Δ | Effort | Notes |
 |---|---|---|---|---|
-| **Per-upstream-family FRDs** | high | very-high | per-family weeks | gnome.org filter, sourceforge filter, launchpad filter — each refines what the scraper does for a specific listing layout |
-| **ADR-0014 multi-SHA** Accepted + impl | medium | high | 1-2 PRs | drafted; awaiting user decision |
-| **ADR-0015 stable-source SHA** Accepted + impl | medium | high | 1 PR + per-host follow-ups | drafted as #121; awaiting user decision (TODO §6 checkpoint) |
-| **PS snapshot refresh cadence** | medium | n/a | operator task | several col[5]-only / col[5 6 9 10] diffs are temporal upstream drift between snapshot date and C run date (ansible-posix 2.1.0 vs 2.2.0). Stale-snapshot residual specs cannot be fixed in C |
-| **M22+ Source0Lookup row repairs** | low | high | 1 PR per spec | one PR per dead-URL spec (bluez-tools→github, etc.) |
-| **Per-spec hook ports** (~200 sites) | mixed | mixed | 1 PR per ~5 hooks | only inih / open-vm-tools / samba-client ported. Remaining hooks generate per-spec SourceTagURL overrides, custom href filters, etc. PS dispatcher at L 3961-3996 + 3770-3813 lists candidates |
-| **Dead-code cleanup**: post-`pr_get_latest_name` extension strip in scraper path | n/a | n/a | small PR | M23 makes it redundant. Defer until post-M23 workflow run confirms zero behavioural difference |
-| ~~**`(same version)` for non-git path**~~ ✅ | medium | low | 0 PR | already emitted at `check_urlhealth.c:790-791` (M20 scraper path) |
-| ~~**`Clean-VersionNames` port**~~ ✅ M22 (#118) | medium | medium | 1 PR | shipped — pre-release filter + anchored prefix strips + `_`→`.` |
-| ~~**Scraper extension pre-strip**~~ ✅ M23 (#120) | very-high | very-high | 1 PR | shipped — targets the 189-spec `cols[5 6 7 9 10]` bucket |
-| ~~**download_name_post Release/Rel_/v-**~~ ✅ M24 (#122) | medium | medium | 1 PR | shipped — targets col[10]-only bucket |
+| **Per-upstream-family scraper adapters** | very-high | very-high | per-family weeks | the 106-spec `cols[5 6 7 9 10]` bucket. gnome.org / sourceforge / launchpad listing layouts; each is a per-host href/version filter. Atom-feed (M33) was the first family; this is the rest. Validate per-family with single-branch 5.0 cycles |
+| **`(same version)` emission + remaining atom hosts** | high | medium | 1-2 PRs | the 73-spec `col[5]` bucket — specs where PS emits `(same version)` but C doesn't (scraper found nothing, or atom host beyond the 27 wired) |
+| **Per-family version-detection (release vs RC vs nightly)** | medium | high | 1 PR per family | the 40-spec `cols[6 7 9]` bucket — C picks a different "latest" than PS |
+| **ADR-0015 release-asset coverage expansion** | medium | high | per-host PRs | extend `pr_resolve_stable_source_url` beyond github (gitlab releases, sourceforge) to shrink the 23-spec `col[9]` auto-archive-drift bucket |
+| **Tarball-cache for SHA stability** | medium | n/a | needs ADR | the ultimate fix for col[9] drift: download tarball once, hash both PS+C from the same bytes. Alternative to running PS+C back-to-back |
+| **Per-spec Source0 rewrite hooks** | low | medium | 1 PR per ~5 specs | the ~29 `col[3]`/`cols[3 4]` bucket — kernel.org cgit, ModemManager dir-vs-file. PS dispatcher L 3961-3996 lists candidates |
+| **Dead-code cleanup**: post-`pr_get_latest_name` ext-strip | n/a | n/a | small PR | M23 made it redundant; safe to remove (clean run confirmed no behavioural diff) |
+| ~~ADR-0014 multi-SHA cols 13/14~~ ✅ M31 (#130) | — | — | — | shipped, env-gated (`PR_EMIT_MULTI_SHA`); operator flips on after coordinated PS-snapshot cutover |
+| ~~ADR-0015 stable-source SHA~~ ✅ M30 (#129, #137) | — | — | — | shipped live; bounded by release-asset availability |
+| ~~Atom-feed scraper (FRD-019)~~ ✅ M32/M33 (#132/#133) | — | — | — | parser + 27-spec dispatcher; bare `PowerShell` UA (#135) |
+| ~~Scraper extension pre-strip~~ ✅ M23 · ~~Clean-VersionNames~~ ✅ M22 · ~~download_name_post~~ ✅ M24/M25 · ~~ignoreStrings~~ ✅ M26 · ~~per-spec tables~~ ✅ M27/M28/M29 | — | — | — | all shipped Session 2 |
 
 ---
 
@@ -301,10 +323,18 @@ Updated 2026-05-18 with status:
 4. ~~**ADR-0014** — multi-SHA emission strategy~~ ✅ Option B (new cols 13/14).
 5. ~~**ADR-0015** — stable-source SHA for github auto-archives~~ ✅ Option A (col-9 override).
 6. ~~**Stage 6** — VPN/proxy provisioning direction~~ ✅ WireGuard with policy routing (operator implementation; runbook §10).
-7. **Per-upstream-family scrapers** ✅ atom-feed parser is next implementation focus (FRD-019 to be drafted).
+7. ~~**Per-upstream-family scrapers** — atom-feed first~~ ✅ FRD-019
+   atom-feed parser + dispatcher shipped (M32/M33). gnome.org /
+   sourceforge / launchpad families are the next adapters.
 8. **Per-PS-edit guards** — any PS edit touching >3 lookup rows
    or the L 2161-2199 substitution sequence (CLAUDE.md invariant 3)
    still pauses for confirmation.
+9. **Harness trust** — journal numbers are only valid if the C run
+   diffed against the snapshot from the PS run that triggered it.
+   The 2026-05-19/20 stale-snapshot saga (PRs #137-#140) proved a
+   green/strict count can silently reflect the wrong input pair.
+   When a number looks anomalous, cross-check with a local
+   `parity-diff.sh` of the downloaded artifacts before acting.
 
 For everything else: proceed.
 
