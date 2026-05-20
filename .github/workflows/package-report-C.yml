@@ -73,6 +73,15 @@ jobs:
           cmake --build build --parallel
           ls -lh build/photonos-package-report
 
+      - name: Clean snapshot download dir
+        run: |
+          # download-artifact does not clean its target dir; on the
+          # self-hosted runner snapshot-raw/ accumulates tarballs from
+          # prior C runs. Remove it so only this run's tarball is
+          # present (defence-in-depth alongside the exact-name select
+          # in Extract snapshot).
+          rm -rf snapshot-raw
+
       - name: Download parity snapshot
         id: dl
         uses: actions/download-artifact@v5
@@ -85,18 +94,30 @@ jobs:
       - name: Extract snapshot
         id: extract
         run: |
-          # Clean any stale snapshot/ from prior workflow runs. The self-
-          # hosted runner persists this directory between jobs unless we
-          # remove it explicitly. Past incidents (run 26101453292, see
-          # ITERATIONS-LOG entry "stale-snapshot bug 2026-05-19") had the
-          # for-loop iterate over both today's freshly-extracted files AND
-          # leftover .prn files from a May 17 baseline run — making journal
-          # numbers reflect the wrong PS file.
+          # ROOT CAUSE of the 2026-05-19/20 stale-snapshot incidents:
+          # the download-artifact step writes into snapshot-raw/ WITHOUT
+          # cleaning it, so tarballs from previous C runs accumulate
+          # there. The old `ls ../snapshot-raw/*.tar.gz | head -1` then
+          # picked the ALPHABETICALLY-FIRST tarball — i.e. the smallest
+          # (oldest) run id, e.g. parity-snapshot-25991871716.tar.gz
+          # (the May 17 baseline) — regardless of which PS run actually
+          # triggered this C run. Every diff since silently used the
+          # May 17 snapshot.
+          #
+          # Fix: clean both dirs AND select the tarball by the exact
+          # resolved PS run id.
           rm -rf snapshot
           mkdir -p snapshot
           cd snapshot
-          # The artifact contains exactly one tar.gz; find and extract it.
-          TAR=$(ls ../snapshot-raw/*.tar.gz | head -1)
+          PS_RID="${{ steps.ps_run.outputs.id }}"
+          TAR="../snapshot-raw/parity-snapshot-${PS_RID}.tar.gz"
+          if [ ! -f "$TAR" ]; then
+            # Fall back to newest-by-mtime if the exact-name file isn't
+            # present (e.g. artifact naming drift), but log loudly.
+            echo "::warning::exact tarball $TAR not found; falling back to newest"
+            TAR=$(ls -t ../snapshot-raw/*.tar.gz | head -1)
+          fi
+          echo "Using snapshot tarball: $TAR (PS run $PS_RID)"
           tar -xzf "$TAR"
           ls -la
           if [ ! -s prn-snapshot ] || [ -z "$(ls prn-snapshot/*.prn 2>/dev/null)" ]; then
