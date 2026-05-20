@@ -110,6 +110,7 @@ add_executable(photonos-package-report
     src/per_spec_strip.c
     src/stable_source.c
     src/atom_feed.c
+    src/rubygems.c
     src/heapsort.c
     src/jdk.c
     src/url_util.c

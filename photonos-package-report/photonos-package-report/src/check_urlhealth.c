@@ -21,6 +21,7 @@
 #include "pr_hook.h"
 #include "pr_latest.h"
 #include "pr_per_spec.h"
+#include "pr_rubygems.h"
 #include "pr_state.h"
 #include "pr_sha.h"
 #include "pr_scraper.h"
@@ -977,6 +978,86 @@ char *check_urlhealth(pr_task_t                       *task,
             }
             free(repo_name);
         }
+    }
+
+    /* M34 / FRD-020: rubygems.org JSON-API update detection.
+     *
+     * PS L 3402-3456: when Source0 points at rubygems.org, PS queries
+     * the RubyGems versions API instead of HTML-scraping (which is
+     * useless for rubygems.org/downloads/). The C scraper had no
+     * rubygems handling, leaving ~64 rubygem-* specs per branch in the
+     * cols[5 6 7 9 10] residual bucket. Mirror PS exactly: gem_name
+     * from task (fallback: spec minus `rubygem-` prefix / `.spec`
+     * suffix), GET the API, take the newest non-prerelease version,
+     * build the .gem download URL, compare, emit. */
+    if (allow_network
+        && (state.UpdateAvailable == NULL || state.UpdateAvailable[0] == '\0')
+        && state.Source0 && strstr(state.Source0, "rubygems.org") != NULL) {
+        const char *gem = (task->gem_name && task->gem_name[0])
+                          ? task->gem_name : NULL;
+        char *gem_fallback = NULL;
+        if (gem == NULL && task->Spec) {
+            /* spec minus leading "rubygem-" and trailing ".spec". */
+            const char *s = task->Spec;
+            if (strncmp(s, "rubygem-", 8) == 0) s += 8;
+            size_t sl = strlen(s);
+            if (sl > 5 && strcmp(s + sl - 5, ".spec") == 0) sl -= 5;
+            gem_fallback = (char *)malloc(sl + 1);
+            if (gem_fallback) { memcpy(gem_fallback, s, sl); gem_fallback[sl] = '\0'; gem = gem_fallback; }
+        }
+        char *latest = gem ? pr_rubygems_latest_version(gem) : NULL;
+        if (latest && latest[0]) {
+            int rc = pr_version_compare(latest, state.version ? state.version : "");
+            free(state.UpdateAvailable);
+            if (rc == 1) {
+                state.UpdateAvailable = dup_or_empty(latest);
+                char *update_url = NULL;
+                if (asprintf(&update_url,
+                             "https://rubygems.org/downloads/%s-%s.gem",
+                             gem, latest) >= 0) {
+                    free(state.UpdateURL);
+                    state.UpdateURL = update_url;
+                    int h = urlhealth(state.UpdateURL);
+                    char buf[16]; snprintf(buf, sizeof buf, "%d", h);
+                    free(state.HealthUpdateURL); state.HealthUpdateURL = strdup(buf);
+                    /* UpdateDownloadName = <gem>-<latest>.gem basename. */
+                    char *dl = pr_basename_from_url(state.UpdateURL);
+                    if (dl) {
+                        dl = download_name_post(dl, task->Name ? task->Name : "",
+                                                task->Spec ? task->Spec : "");
+                        free(state.UpdateDownloadName); state.UpdateDownloadName = dl;
+                    }
+                    /* SHA (col 9): rubygems .gem files are immutable
+                     * stored blobs — no auto-archive drift — so hash
+                     * the download URL directly. */
+                    if (state.UpdateURL[0]) {
+                        pr_sha_alg_t alg = PR_SHA512;
+                        for (size_t li = 0; li < task->content_lines; li++) {
+                            const char *line = task->content[li];
+                            if (line == NULL) continue;
+                            if (strstr(line, "%define sha1")   != NULL) { alg = PR_SHA1;   break; }
+                            if (strstr(line, "%define sha256") != NULL) { alg = PR_SHA256; break; }
+                            if (strstr(line, "%define sha512") != NULL) { alg = PR_SHA512; break; }
+                        }
+                        char *hex = pr_sha_of_url(alg, state.UpdateURL);
+                        if (hex) { free(state.SHAValue); state.SHAValue = hex; }
+                    }
+                }
+            } else if (rc == 0) {
+                state.UpdateAvailable = dup_or_empty("(same version)");
+            } else if (rc == -1) {
+                char *warn = NULL;
+                if (asprintf(&warn,
+                             "Warning: %s Source0 version %s is higher than detected latest version %s .",
+                             task->Spec ? task->Spec : "",
+                             state.version ? state.version : "", latest) < 0) warn = NULL;
+                state.UpdateAvailable = warn ? warn : dup_or_empty("");
+            } else {
+                state.UpdateAvailable = dup_or_empty("");
+            }
+        }
+        free(latest);
+        free(gem_fallback);
     }
 
     /* M20 / FRD-018: non-git update detection via HTTP listing scrape.
