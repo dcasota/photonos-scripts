@@ -180,7 +180,7 @@ For each diff-signature bucket, in descending order of affected-count:
 9. **Update spec status** (`Implemented` if final task, else leave
    `Accepted`). Already part of the merged PR.
 
-### Status — M01-M33 shipped; harness corrected (2026-05-20)
+### Status — M01-M34 shipped; harness corrected (2026-05-20)
 
 M01-M21 (Session 1): shared infrastructure — pinned-sentinel, case-
 insensitive sort, version-cut, substitution rewrites, warning table,
@@ -192,6 +192,12 @@ ignoreStrings filter, per-spec strip-token table (~76 specs),
 per-spec drop-substring + global-replace, ADR-0015 stable-source SHA
 (M30), ADR-0014 multi-SHA cols 13/14 (M31, env-gated), atom-feed
 parser + dispatcher (M32/M33, FRD-019).
+
+M34 (#143): rubygems.org JSON-API adapter — first per-upstream-family
+update-detection adapter (vs the HTML scraper). Queries
+`api/v1/versions/<gem>.json`, newest non-prerelease, builds the `.gem`
+URL + SHA. Closes the dominant rubygem-* slice (~64 specs/branch) of
+the cols[5 6 7 9 10] bucket. Validation: run 26185297395 (5.0).
 
 **Trustworthy baseline (run 26160062078, journal == local-diff verified):**
 
@@ -243,7 +249,7 @@ Re-ranked 2026-05-20 against the trustworthy clean baseline.
 
 | Unit | Parity Δ | Info Δ | Effort | Notes |
 |---|---|---|---|---|
-| **Per-upstream-family scraper adapters** | very-high | very-high | per-family weeks | the 106-spec `cols[5 6 7 9 10]` bucket. gnome.org / sourceforge / launchpad listing layouts; each is a per-host href/version filter. Atom-feed (M33) was the first family; this is the rest. Validate per-family with single-branch 5.0 cycles |
+| **Per-upstream-family adapters** | very-high | very-high | per-family weeks | the 106-spec `cols[5 6 7 9 10]` bucket. Atom-feed (M33) + rubygems (M34) done. Next family scoped: **sourceforge (M35)** — PS L 3459-3568. SourceTagURL = strip {sourceforge.net/, downloads.project/, projects/, prdownloads., downloads., download., gkernel/files/, sourceforge/} from Source0, take split("/")[0], build `sourceforge.net/projects/<n>/files/<n>`; ~10 per-spec URL overrides (docbook-xsl, expect, fakeroot-ng, libpng, nfs-utils, openipmi, procps-ng, tcl, unzip, zip); fetch page, extract `net.sf.files = {...}};` JSON block, pull `"name":` values; per-spec filters (libusb two-stage fetch, tboot 2007-2011 drops); strip tar exts + ignore + replace tokens + Clean-VersionNames + strip v + digit/alpha filters; Get-LatestName. After sourceforge: gnome.org, launchpad. Validate per-family with single-branch 5.0 cycles |
 | **`(same version)` emission + remaining atom hosts** | high | medium | 1-2 PRs | the 73-spec `col[5]` bucket — specs where PS emits `(same version)` but C doesn't (scraper found nothing, or atom host beyond the 27 wired) |
 | **Per-family version-detection (release vs RC vs nightly)** | medium | high | 1 PR per family | the 40-spec `cols[6 7 9]` bucket — C picks a different "latest" than PS |
 | **ADR-0015 release-asset coverage expansion** | medium | high | per-host PRs | extend `pr_resolve_stable_source_url` beyond github (gitlab releases, sourceforge) to shrink the 23-spec `col[9]` auto-archive-drift bucket |
