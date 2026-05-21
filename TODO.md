@@ -205,7 +205,7 @@ the cols[5 6 7 9 10] bucket. Validation: run 26185297395 (5.0).
 |--------|--------:|----:|---------:|-----------|
 | 3.0    |  919 | 551 | 40% | 26160062078 |
 | 4.0    | 1034 | 484 | 53% | 26160062078 |
-| 5.0    | 1113 | **197** | **82%** | 26230052436 (post-M38) |
+| 5.0    | 1113 | **198** | **82%** | 26233502563 (post-M39, ±noise) |
 | 6.0    | 1093 | 373 | 66% | 26160062078 |
 | dev    | 1090 | 386 | 65% | 26160062078 |
 | master | 1090 | 381 | 65% | 26160062078 |
@@ -225,16 +225,33 @@ in the github special-case list so M38 does not touch it). gitSource
 github path untouched. Remaining github: amdvlk (Q-version via API path),
 libmspack/python-pexpect (have gitSource — git path failing).
 
-**M39 shipped (samba atom, run 26231942567):** journal showed 197→203
-(+6) but this is NOISE-DOMINATED, not a regression. M39 fixed libldb +
-samba-client; the 9 apparent regressions (libXext, libXfont2, libXrandr,
-libpciaccess, xcb-proto, calico, nerdctl, ntpsec, openipmi) are all
-transient: the X.org/freedesktop specs show col5 going empty (atom-fetch
-failures — gitlab.freedesktop.org Anubis anti-bot is known-flaky), and
-calico/ntpsec show identical col5/col6 (differ only in volatile col9
-SHA). M39's code CANNOT touch these specs (apply_samba_tokens is a no-op
-for non-samba; atom overrides return URLs only for the 5 samba specs).
-Re-run dispatched (26233502563) for a clean number.
+**M39 validated FULL SUCCESS (samba atom, re-run 26233502563 = 198):**
+all 5 samba specs now DETECT correctly (col5/col6 match PS): libldb +
+samba-client are full matches; libtalloc(2.4.4)/libtdb(1.4.15)/
+libtevent(0.17.1) match on detection but remain STRICT-diff ONLY on col9
+SHA — the gitlab `/-/archive/<tag>` auto-archive SHA drift (same class as
+github auto-archive; ADR-0015 can't help, no release asset). The first
+M39 run (26231942567 = 203) was noise-dominated; this re-run (198)
+confirms the −5 detection signal is at the noise floor.
+
+**>>> STRATEGIC INFLECTION (2026-05-21): detection adapters essentially
+DONE. <<<** M34-M39 closed the major upstream families (rubygems,
+sourceforge, CPAN, github-html, samba, GNU/funet). col5 (UpdateAvailable)
++ col6 (UpdateURL) detection is now correct across them. The DOMINANT
+residual on 5.0 (~198 strict) is no longer missing detection — it is:
+  (1) col9 SHA-drift on github/gitlab AUTO-ARCHIVE tarballs (regenerated
+      per-request → SHA differs PS-snapshot-vs-C-run; ~30-40 specs). Only
+      fixable by tarball-cache (hash once, share both sides) — NOT by
+      detection code. ADR/operator decision.
+  (2) transient col3/col4/col7 network jitter (~±5-9/run).
+  (3) the deterministic, code-fixable remainders: sort-collation (~12,
+      touches do-not-break invariant → operator) and col3/col3-4 Source0
+      rewrites (~14, per-spec hooks — the one remaining ABOVE-noise
+      deterministic unit).
+Recommendation: the high-leverage detection phase is complete; further
+single-spec adapters are sub-noise. Next code unit = col3 Source0
+rewrites (deterministic). Parallel gating decision (operator) = col9
+tarball-cache vs soft-col9 in the ADR-0009 verdict.
 
 **METHODOLOGY ESCALATION (was: transient-noise observation):** this run
 proved the per-run network jitter (~±9 specs in col5-fetch-fail + col9-
