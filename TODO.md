@@ -282,17 +282,30 @@ tarball-cache vs soft-col9 in the ADR-0009 verdict.
     `PR_SHA_CACHE`. pr_sha_of_url_cached / _multi_cached hash
     <upstreams>/<branch>/SOURCES_NEW/<UpdateDownloadName> (the SAME file
     PS writes). Inert until the env var is set.
-  - [TODO — final activation, needs disk-management care] workflow step:
-    (1) set `PR_SHA_CACHE=1` in package-report-C.yml's binary invocation;
-    (2) STOP cleaning SOURCES_NEW between runs so PS→C (same self-hosted
-    host) share tarballs; (3) add an LRU prune keeping SOURCES_NEW under a
-    cap (~200 GB; 603 GB free now) that NEVER touches firmware/chromium —
-    this is the disk-fill guard (the recurring hazard per CLAUDE.md), so
-    get the prune right before flipping persistence on. Benefit accrues in
-    the LIVE scheduled PS→C flow over a few runs (warm cache); NOT visible
-    in snapshot-replay validation (replay reconstructs upstreams w/o PS
-    bytes). Exit: once warm + col9 parity holds, set `PR_STRICT_COL9=1`
-    and start col9's own 90-day strict-green clock.
+  - [BLOCKED on architecture decision] cache ACTIVATION. Investigated
+    2026-05-21: the C workflow (package-report-C.yml) reconstructs an
+    EPHEMERAL upstreams tree at `$RUNNER_TEMP/parity-c-wd/photon-upstreams`
+    (parity-reconstruct.sh) — isolated from PS's persistent
+    `$HOME/photon-upstreams`, and the snapshot carries only the tarball
+    sha256 MANIFEST, not the bytes. So PS and C do NOT share SOURCES_NEW;
+    `PR_SHA_CACHE=1` alone writes into an ephemeral dir that's discarded.
+    Two real activation paths, each a tradeoff (operator decision):
+      (A) BUNDLE tarball bytes in the snapshot + reconstruct extracts them
+          into C's SOURCES_NEW. Keeps replay-isolation/reproducibility.
+          BUT only fixes the ~7 byte-drift rows (the 27 PS-empty have NO
+          PS bytes to bundle), and inflates the artifact (auto-archive
+          source tarballs, ~0.5-1 GB/branch).
+      (B) PERSISTENT shared SOURCES_NEW: point C at PS's `$HOME/photon-
+          upstreams` (live workflow_run flow only, same host) + LRU prune
+          (<200 GB, never firmware/chromium). Warm cache fills PS-empties
+          over runs AND kills byte-drift. BUT breaks snapshot-replay
+          reproducibility (manual replays would hash current host bytes,
+          not the snapshot's). Disk-fill hazard → prune must be correct.
+    RECOMMENDATION: defer. soft-col9 (#149) already unblocks green for ALL
+    col9 cases now; the cache only matters for eventually re-tightening
+    col9 to strict (`PR_STRICT_COL9=1`), which is a later milestone. Pick
+    (A) vs (B) when that milestone is scheduled. Mechanism (#150) is ready
+    for either.
 
 **METHODOLOGY ESCALATION (was: transient-noise observation):** this run
 proved the per-run network jitter (~±9 specs in col5-fetch-fail + col9-
