@@ -406,5 +406,15 @@ jobs:
             echo "No changes to commit"
           else
             git commit -m "Update package report scans $(date -u +%Y-%m-%d)"
-            git push
+            # Retry push with rebase: concurrent jobs (C-side journal,
+            # doc commits) can advance master between fetch and push.
+            for attempt in 1 2 3 4 5; do
+              if git push; then
+                echo "push ok (attempt $attempt)"
+                break
+              fi
+              echo "push rejected, rebasing (attempt $attempt)"
+              git pull --rebase --autostash origin "$(git rev-parse --abbrev-ref HEAD)" || true
+              sleep $(( attempt * 3 ))
+            done
           fi
