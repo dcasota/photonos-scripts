@@ -67,6 +67,18 @@ static char *dup_or_empty(const char *s)
     return p;
 }
 
+/* PS L 2395-2397: ftp.gnu.org is frequently down; rewrite to the FUNET
+ * mirror (identical archive layout, very stable). PS applies this once
+ * to $Source0 before update detection, so every URL later derived from
+ * it (the probe Source0 AND the constructed UpdateURL) inherits the
+ * mirror. istr_replace_all is a no-op when the needle is absent and
+ * frees its input on rewrite, so reassignment is always safe. */
+static char *funet_mirror(char *url)
+{
+    return istr_replace_all(url, "ftp.gnu.org",
+                            "ftp.funet.fi/pub/gnu/ftp.gnu.org");
+}
+
 /* PS L 2520-2525: post-strip name filter pipeline for non-amdvlk.
  *
  *   $Names = $Names -replace "v",""                       # all 'v' → ''
@@ -729,15 +741,9 @@ char *check_urlhealth(pr_task_t                       *task,
     /* Phase 4 substitution (PS L 2172-2199). */
     pr_source0_substitute(task, &state.Source0, state.version);
 
-    /* PS L 2343-2346: ftp.gnu.org is frequently down. Rewrite to the
-     * FUNET mirror which holds an identical archive layout. Applies
-     * post-substitution, pre-urlhealth. The rewrite is case-insensitive
-     * (`-replace` in PS without `c` flag); `istr_replace_all` matches. */
-    if (state.Source0 && strstr(state.Source0, "ftp.gnu.org") != NULL) {
-        state.Source0 = istr_replace_all(state.Source0,
-                                         "ftp.gnu.org",
-                                         "ftp.funet.fi/pub/gnu/ftp.gnu.org");
-    }
+    /* PS L 2395-2397: rewrite ftp.gnu.org → FUNET mirror, post-
+     * substitution / pre-urlhealth. See funet_mirror(). */
+    state.Source0 = funet_mirror(state.Source0);
 
     /* Phase 5 urlhealth probe. Skipped offline so ctest stays hermetic. */
     int health = 0;
@@ -839,6 +845,7 @@ char *check_urlhealth(pr_task_t                       *task,
                                 char *update_url = dup_or_empty(template);
                                 if (update_url) {
                                     pr_source0_substitute(task, &update_url, latest);
+                                    update_url = funet_mirror(update_url);
                                     free(state.UpdateURL);
                                     state.UpdateURL = update_url;
                                 }
@@ -1158,6 +1165,9 @@ char *check_urlhealth(pr_task_t                       *task,
                     char *update_url = dup_or_empty(template);
                     if (update_url) {
                         pr_source0_substitute(task, &update_url, latest);
+                        /* PS rewrites $Source0 (L2395) before deriving the
+                         * UpdateURL, so the mirror propagates here too. */
+                        update_url = funet_mirror(update_url);
                         free(state.UpdateURL);
                         state.UpdateURL = update_url;
                     }
