@@ -199,16 +199,42 @@ update-detection adapter (vs the HTML scraper). Queries
 URL + SHA. Closes the dominant rubygem-* slice (~64 specs/branch) of
 the cols[5 6 7 9 10] bucket. Validation: run 26185297395 (5.0).
 
-**Trustworthy baseline (run 26160062078, journal == local-diff verified):**
+**Trustworthy baseline (journal == local-diff verified):**
 
-| Branch | Initial | Now | % closed |
-|--------|--------:|----:|---------:|
-| 3.0    |  919 | 551 | 40% |
-| 4.0    | 1034 | 484 | 53% |
-| 5.0    | 1113 | 392 | 65% |
-| 6.0    | 1093 | 373 | 66% |
-| dev    | 1090 | 386 | 65% |
-| master | 1090 | 381 | 65% |
+| Branch | Initial | Now | % closed | as-of run |
+|--------|--------:|----:|---------:|-----------|
+| 3.0    |  919 | 551 | 40% | 26160062078 |
+| 4.0    | 1034 | 484 | 53% | 26160062078 |
+| 5.0    | 1113 | **266** | **76%** | 26201671031 (post-M34) |
+| 6.0    | 1093 | 373 | 66% | 26160062078 |
+| dev    | 1090 | 386 | 65% | 26160062078 |
+| master | 1090 | 381 | 65% | 26160062078 |
+
+**M34 validated (5.0, run 26201671031):** 392→266 strict (−126).
+117 rubygem specs in 5.0, only 11 still mismatched → M34 closed ~106.
+Journal == local parity-diff (266/60) confirmed. No regressions: the
+improvement is concentrated in rubygem-* rows. Other branches not yet
+re-run post-M34 (single-branch validation per memory guidance).
+
+**M36 (in flight): ftp.gnu.org → FUNET mirror on the UpdateURL.** The
+funet rewrite (PS L2395) was applied to the probe Source0 (col 3) but
+NOT to the constructed UpdateURL — so col 6 kept the canonical
+`ftp.gnu.org` (health 0 from the runner) and col 9 SHA stayed empty for
+~40 GNU specs (`cols[6 7 9]`: bash, coreutils, grep, gawk, glibc, …).
+Extracted a `funet_mirror()` helper and applied it at both UpdateURL
+build sites. Validate via single-branch 5.0.
+
+**NEW FINDING — sort-collation divergence (CHECKPOINT, touches the
+"do-not-break" sort invariant):** 12 rows in 5.0 are misaligned (col[1]
+Spec mismatch cascades) because C sorts with `strcasecmp` (ordinal:
+`-`<`.`<`_`) while PS's .NET `Sort-Object` is culture word-sort
+(`_`<`-`<`.`, hyphen treated as ignorable). Affected: python-backports_abc,
+python-backports.ssl_match_hostname, python-setuptools_scm,
+python-setuptools-rust, rubygem-http_parser.rb + http-* cluster,
+rubygem-unf_ext/unf. Fixing requires emulating .NET word-sort
+(ignorable-char rules) or linking ICU — both carry global-realignment
+regression risk. **Decision needed before touching `prn_writer.c`
+cmp_str_asc.** Est. ~12 rows/branch (~70 total).
 
 NOTE: journal rows before run 26160062078 were measured against a
 **frozen May 17 PS baseline** (snapshot-selection bug, fixed in PRs
