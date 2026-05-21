@@ -320,12 +320,17 @@ tarball-cache vs soft-col9 in the ADR-0009 verdict.
           BUT only fixes the ~7 byte-drift rows (the 27 PS-empty have NO
           PS bytes to bundle), and inflates the artifact (auto-archive
           source tarballs, ~0.5-1 GB/branch).
-      (B) PERSISTENT shared SOURCES_NEW: point C at PS's `$HOME/photon-
-          upstreams` (live workflow_run flow only, same host) + LRU prune
-          (<200 GB, never firmware/chromium). Warm cache fills PS-empties
-          over runs AND kills byte-drift. BUT breaks snapshot-replay
-          reproducibility (manual replays would hash current host bytes,
-          not the snapshot's). Disk-fill hazard → prune must be correct.
+      (B) PERSISTENT shared SOURCES_NEW: point C at the persistent
+          `…/reports/photon-upstreams/photon-<branch>/SOURCES_NEW` that PS
+          already writes (CONFIRMED present on the runner, ~46 GB total /
+          ~6.5-8.3 GB per branch — the 611 GB upstreams footprint is
+          dominated by git CLONES, not tarballs). So persisting
+          SOURCES_NEW is disk-CHEAP; a prune cap is almost moot for the
+          tarballs themselves. Warm cache fills PS-empties over runs AND
+          kills byte-drift. Tradeoff is reproducibility, NOT disk: breaks
+          snapshot-replay isolation (manual replays would hash current
+          host bytes, not the snapshot's). The live workflow_run flow
+          (PS→C same host) is the natural fit.
     RECOMMENDATION: defer. soft-col9 (#149) already unblocks green for ALL
     col9 cases now; the cache only matters for eventually re-tightening
     col9 to strict (`PR_STRICT_COL9=1`), which is a later milestone. Pick
