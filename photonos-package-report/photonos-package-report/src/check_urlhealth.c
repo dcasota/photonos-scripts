@@ -86,6 +86,28 @@ static int spec_eq(const char *spec, const char *name)
     return spec != NULL && strcasecmp(spec, name) == 0;
 }
 
+/* Tarball-cache path for col9 (ADR-0009 amendment, 2026-05-21). When
+ * PR_SHA_CACHE=1 is set, returns a malloc'd path
+ * <upstreams>/<branch>/SOURCES_NEW/<download_name> — the SAME file the
+ * PS run writes — derived from clone_root (= <upstreams>/<branch>/clones).
+ * So PS and C hash byte-identical tarballs and col9 stops drifting.
+ * Returns NULL (→ legacy /tmp download) when caching is off or inputs
+ * are missing. */
+static char *col9_cache_path(const char *clone_root, const char *download_name)
+{
+    if (getenv("PR_SHA_CACHE") == NULL) return NULL;
+    if (clone_root == NULL || clone_root[0] == '\0') return NULL;
+    if (download_name == NULL || download_name[0] == '\0') return NULL;
+    const char *suffix = "/clones";
+    size_t cl = strlen(clone_root), sl = strlen(suffix);
+    if (cl < sl || strcmp(clone_root + cl - sl, suffix) != 0) return NULL;
+    char *cache = NULL;
+    if (asprintf(&cache, "%.*s/SOURCES_NEW/%s",
+                 (int)(cl - sl), clone_root, download_name) < 0)
+        return NULL;
+    return cache;
+}
+
 /* M35: sourceforge specs whose PS quirks are NOT yet ported — unzip/zip
  * need a $version munge (PS L 3487/3493) and libusb needs a two-stage
  * fetch (PS L 3503-3522). Skip the sourceforge fetch for these so they
@@ -1028,12 +1050,14 @@ char *check_urlhealth(pr_task_t                       *task,
                                     task->Spec, latest, state.UpdateURL);
                                 const char *hash_url = sha_url
                                     ? sha_url : state.UpdateURL;
+                                char *cache_file = col9_cache_path(
+                                    clone_root, state.UpdateDownloadName);
                                 /* ADR-0014 (Option B): single GET, dual-hash
                                  * when PR_EMIT_MULTI_SHA is set. Otherwise
                                  * the single-algorithm pr_sha_of_url. */
                                 if (getenv("PR_EMIT_MULTI_SHA") != NULL) {
                                     char *h256 = NULL, *h512 = NULL;
-                                    if (pr_sha_of_url_multi(hash_url, &h256, &h512) == 0) {
+                                    if (pr_sha_of_url_multi_cached(hash_url, &h256, &h512, cache_file) == 0) {
                                         free(state.SHA256Name); state.SHA256Name = h256;
                                         free(state.SHA512Name); state.SHA512Name = h512;
                                         /* SHAValue (col 9) keeps the spec's
@@ -1047,7 +1071,7 @@ char *check_urlhealth(pr_task_t                       *task,
                                             state.SHAValue = strdup(primary);
                                         } else {
                                             /* SHA1 still needs single hash. */
-                                            char *h1 = pr_sha_of_url(PR_SHA1, hash_url);
+                                            char *h1 = pr_sha_of_url_cached(PR_SHA1, hash_url, cache_file);
                                             if (h1) {
                                                 free(state.SHAValue);
                                                 state.SHAValue = h1;
@@ -1055,12 +1079,13 @@ char *check_urlhealth(pr_task_t                       *task,
                                         }
                                     }
                                 } else {
-                                    char *hex = pr_sha_of_url(alg, hash_url);
+                                    char *hex = pr_sha_of_url_cached(alg, hash_url, cache_file);
                                     if (hex) {
                                         free(state.SHAValue);
                                         state.SHAValue = hex;
                                     }
                                 }
+                                free(cache_file);
                                 free(sha_url);
                             }
                         }
@@ -1133,8 +1158,11 @@ char *check_urlhealth(pr_task_t                       *task,
                             if (strstr(line, "%define sha256") != NULL) { alg = PR_SHA256; break; }
                             if (strstr(line, "%define sha512") != NULL) { alg = PR_SHA512; break; }
                         }
-                        char *hex = pr_sha_of_url(alg, state.UpdateURL);
+                        char *cache_file = col9_cache_path(
+                            clone_root, state.UpdateDownloadName);
+                        char *hex = pr_sha_of_url_cached(alg, state.UpdateURL, cache_file);
                         if (hex) { free(state.SHAValue); state.SHAValue = hex; }
+                        free(cache_file);
                     }
                 }
             } else if (rc == 0) {
@@ -1357,10 +1385,12 @@ char *check_urlhealth(pr_task_t                       *task,
                                 task->Spec, latest, state.UpdateURL);
                             const char *hash_url = sha_url ? sha_url
                                                             : state.UpdateURL;
+                            char *cache_file = col9_cache_path(
+                                clone_root, state.UpdateDownloadName);
                             /* ADR-0014 (Option B): multi-hash when env var set. */
                             if (getenv("PR_EMIT_MULTI_SHA") != NULL) {
                                 char *h256 = NULL, *h512 = NULL;
-                                if (pr_sha_of_url_multi(hash_url, &h256, &h512) == 0) {
+                                if (pr_sha_of_url_multi_cached(hash_url, &h256, &h512, cache_file) == 0) {
                                     free(state.SHA256Name); state.SHA256Name = h256;
                                     free(state.SHA512Name); state.SHA512Name = h512;
                                     const char *primary =
@@ -1370,17 +1400,18 @@ char *check_urlhealth(pr_task_t                       *task,
                                         free(state.SHAValue);
                                         state.SHAValue = strdup(primary);
                                     } else {
-                                        char *h1 = pr_sha_of_url(PR_SHA1, hash_url);
+                                        char *h1 = pr_sha_of_url_cached(PR_SHA1, hash_url, cache_file);
                                         if (h1) { free(state.SHAValue); state.SHAValue = h1; }
                                     }
                                 }
                             } else {
-                                char *hex = pr_sha_of_url(alg, hash_url);
+                                char *hex = pr_sha_of_url_cached(alg, hash_url, cache_file);
                                 if (hex) {
                                     free(state.SHAValue);
                                     state.SHAValue = hex;
                                 }
                             }
+                            free(cache_file);
                             free(sha_url);
                         }
                     }

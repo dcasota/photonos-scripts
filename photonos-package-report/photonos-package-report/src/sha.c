@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 static const EVP_MD *md_for(pr_sha_alg_t alg)
@@ -90,6 +91,92 @@ cleanup:
 static size_t write_to_file(char *p, size_t s, size_t n, void *u)
 {
     return fwrite(p, s, n, (FILE *)u);
+}
+
+/* mkdir -p the parent directory of `path` (best-effort). */
+static void mkdir_parents(const char *path)
+{
+    char *dup = strdup(path);
+    if (!dup) return;
+    for (char *p = dup + 1; *p; p++) {
+        if (*p == '/') {
+            *p = '\0';
+            mkdir(dup, 0775);
+            *p = '/';
+        }
+    }
+    free(dup);
+}
+
+/* Download `url` into `dest` (persistent path). Creates parent dirs.
+ * Returns 0 on a 2xx response with the file written, -1 otherwise
+ * (and removes any partial file). */
+static int download_url_to_file(const char *url, const char *dest)
+{
+    mkdir_parents(dest);
+    FILE *f = fopen(dest, "w+b");
+    if (!f) return -1;
+    CURL *c = curl_easy_init();
+    if (!c) { fclose(f); unlink(dest); return -1; }
+    curl_easy_setopt(c, CURLOPT_URL,            url);
+    curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(c, CURLOPT_TIMEOUT_MS,     120000);
+    curl_easy_setopt(c, CURLOPT_WRITEFUNCTION,  write_to_file);
+    curl_easy_setopt(c, CURLOPT_WRITEDATA,      f);
+    curl_easy_setopt(c, CURLOPT_USERAGENT,      "photonos-package-report/C");
+    CURLcode rc = curl_easy_perform(c);
+    long status = 0;
+    curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &status);
+    curl_easy_cleanup(c);
+    fflush(f);
+    fclose(f);
+    if (rc != CURLE_OK || status < 200 || status >= 300) {
+        unlink(dest);
+        return -1;
+    }
+    return 0;
+}
+
+char *pr_sha_of_url_cached(pr_sha_alg_t alg, const char *url,
+                           const char *cache_file)
+{
+    if (cache_file == NULL || cache_file[0] == '\0')
+        return pr_sha_of_url(alg, url);
+    /* Already present (e.g. fetched by the PS run): hash in place so PS
+     * and C produce byte-identical col9. */
+    if (access(cache_file, R_OK) == 0)
+        return pr_sha_file(alg, cache_file);
+    /* Not cached: download into the cache path, persist, hash. */
+    if (download_url_to_file(url, cache_file) != 0)
+        return NULL;
+    return pr_sha_file(alg, cache_file);
+}
+
+int pr_sha_of_url_multi_cached(const char *url,
+                               char **sha256_hex,
+                               char **sha512_hex,
+                               const char *cache_file)
+{
+    if (cache_file == NULL || cache_file[0] == '\0')
+        return pr_sha_of_url_multi(url, sha256_hex, sha512_hex);
+    if (sha256_hex) *sha256_hex = NULL;
+    if (sha512_hex) *sha512_hex = NULL;
+    if (access(cache_file, R_OK) != 0
+        && download_url_to_file(url, cache_file) != 0)
+        return -1;
+    if (sha256_hex) {
+        *sha256_hex = pr_sha_file(PR_SHA256, cache_file);
+        if (!*sha256_hex) goto fail;
+    }
+    if (sha512_hex) {
+        *sha512_hex = pr_sha_file(PR_SHA512, cache_file);
+        if (!*sha512_hex) goto fail;
+    }
+    return 0;
+fail:
+    if (sha256_hex && *sha256_hex) { free(*sha256_hex); *sha256_hex = NULL; }
+    if (sha512_hex && *sha512_hex) { free(*sha512_hex); *sha512_hex = NULL; }
+    return -1;
 }
 
 char *pr_sha_of_url(pr_sha_alg_t alg, const char *url)
