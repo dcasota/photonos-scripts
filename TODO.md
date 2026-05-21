@@ -263,14 +263,32 @@ verified. This is the trustworthy current floor for 5.0.
 
 REMAINING-GAP MAP off the fresh 147 (this is the path to green):
   - **~30+ C-empty col5 = the BIG one.** PS detects, C emits nothing.
-    Root: PS's non-git detection section **L3200-3400** is only partly
-    ported. It has (a) per-host blocks — mozjs (L3206), nss (L3234),
-    nspr (L3252) [mozilla family, 3]; (b) a generic parent-dir scrape
-    with per-spec $replace tokens — grub2 (L3336), freetype2 (L3337),
-    + many; (c) pure-generic hosts C's M20 scraper fails on (ipset
-    netfilter, curl, openssl, savannah, kernel.org, launchpad, qemu,
-    pythonhosted, json-c, openvswitch...). NEXT: port L3200-3400
-    family-by-family; biggest coherent unit = mozilla (mozjs/nss/nspr).
+    Two PS sources, both per-spec-exception-heavy ("the work IS the
+    exceptions" per feedback_per_package_depth_investigation):
+    (i) **L3200-3400 per-host blocks**: mozilla mozjs(L3206)/nss(L3234)/
+        nspr(L3252) — each TWO-STAGE (fetch releases listing → latest →
+        build versioned NSS_X_RTM / vX / firefox-releases URL); python2/3
+        (L3274); + generic scrape with per-spec $replace tokens
+        (grub2 L3336, freetype2 L3337, ...).
+    (ii) **L4260-4450+ "all other types" block** = the big one. Default
+        SourceTagURL=dirname(Source0); ~13 per-spec URL overrides
+        (apparmor/bzr/intltool→launchpad/+download, ipset→install.html,
+        itstool→itstool.org/download.html, js→archive.mozilla, json-c→
+        s3 releases, openvswitch→/download, python-pbr→opendev/tags,
+        wireguard-tools→git.zx2c4, chrpath→codeberg/tags, xmlsec1); a
+        DIFFERENT extraction than C's M20 href-regex (PS splits on
+        `<tr><td` / `a href=` / `>` / `title=`) + a Chrome-UA+full-
+        headers fallback for bot-walled pages; then dozens of per-spec
+        name transforms (docbook-xml two-stage L4338, byacc L4354, json-c
+        S3-XML `<Key>` parse L4363, chrpath, apparmor/bzr/intltool/itstool/
+        openssl path-split-last-segment L4398, curl, js, lsscsi=030,
+        ltrace .orig, tzdata, ...).
+    PORT STRATEGY: do it in small validated PRs — easiest first (the
+    ~13 override table + path-split transform recovers apparmor/intltool/
+    itstool/openvswitch/openssl), then the per-spec quirks (json-c S3,
+    docbook two-stage, mozilla two-stage) individually. Each touches the
+    shared scraper path, so validate each against a fresh cycle for
+    regressions before merge. NOT to be rushed at marathon-depth.
   - ~44 col3 / col3-4: Source0 rewrites; several PS-stale / C-more-
     correct (mirroring DEGRADES C — candidate for soft or accept, not
     fix).
