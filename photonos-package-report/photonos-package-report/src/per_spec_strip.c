@@ -376,6 +376,14 @@ static const struct per_spec_url g_per_spec_url_table[] = {
     {"shared-mime-info.spec",     "https://gitlab.freedesktop.org/xdg/shared-mime-info/-/tags?format=atom"},
     {"wayland.spec",              "https://gitlab.freedesktop.org/wayland/wayland/-/tags?format=atom"},
     {"wayland-protocols.spec",    "https://gitlab.freedesktop.org/wayland/wayland-protocols/-/tags?format=atom"},
+    /* M39 / PS L 3691-3695: samba family — single repo, filtered by a
+     * per-library `search=` query. Each also strips its own prefix token
+     * (see apply_samba_tokens in check_urlhealth.c). */
+    {"libldb.spec",               "https://gitlab.com/samba-team/devel/samba/-/tags?sort=updated_desc&search=ldb*&format=atom"},
+    {"libtalloc.spec",            "https://gitlab.com/samba-team/devel/samba/-/tags?sort=updated_desc&search=talloc*&format=atom"},
+    {"libtdb.spec",               "https://gitlab.com/samba-team/devel/samba/-/tags?sort=updated_desc&search=tdb*&format=atom"},
+    {"libtevent.spec",            "https://gitlab.com/samba-team/devel/samba/-/tags?sort=updated_desc&search=tevent*&format=atom"},
+    {"samba-client.spec",         "https://gitlab.com/samba-team/devel/samba/-/tags?sort=updated_desc&search=samba*&format=atom"},
 };
 
 static const size_t g_per_spec_url_table_count =

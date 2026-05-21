@@ -114,6 +114,24 @@ static void drop_year_names(char **names, size_t n)
     }
 }
 
+/* M39 / PS L 3691-3695: the samba-family atom feeds return tags named
+ * "<lib>-<ver>" (ldb-2.9.2, talloc-2.4.2, ...); strip the per-spec
+ * prefix token so the version pipeline isolates the number. */
+static void apply_samba_tokens(const char *spec, char **names, size_t n)
+{
+    const char *tok = NULL;
+    if      (spec_eq(spec, "libldb.spec"))       tok = "ldb-";
+    else if (spec_eq(spec, "libtalloc.spec"))    tok = "talloc-";
+    else if (spec_eq(spec, "libtdb.spec"))       tok = "tdb-";
+    else if (spec_eq(spec, "libtevent.spec"))    tok = "tevent-";
+    else if (spec_eq(spec, "samba-client.spec")) tok = "samba-";
+    if (tok == NULL) return;
+    for (size_t i = 0; i < n; i++) {
+        if (names[i] == NULL) continue;
+        names[i] = istr_replace_all(names[i], tok, "");
+    }
+}
+
 /* M37: a spec's Source0 points at a CPAN author directory. PS L 3933
  * gates the CPAN branch on the host alone, independent of Source0
  * health. The three forms PS recognises (L 3933). */
@@ -1242,6 +1260,10 @@ char *check_urlhealth(pr_task_t                       *task,
                     names[i] = istr_replace_all(names[i], "python-networkx-", "");
                     names[i] = istr_replace_all(names[i], "networkx-", "");
                 }
+            }
+            /* M39 / PS L 3691-3695: samba-family per-library prefix token. */
+            if (used_atom) {
+                apply_samba_tokens(task->Spec, names, n);
             }
             apply_replace_strings(names, n, row ? row->replaceStrings : NULL);
             /* M26 (PS L 2152 + L 4376): drop candidates matching
