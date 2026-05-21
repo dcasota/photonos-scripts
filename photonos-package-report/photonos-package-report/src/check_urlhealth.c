@@ -113,6 +113,40 @@ static void drop_year_names(char **names, size_t n)
     }
 }
 
+/* M37: a spec's Source0 points at a CPAN author directory. PS L 3933
+ * gates the CPAN branch on the host alone, independent of Source0
+ * health. The three forms PS recognises (L 3933). */
+static int cpan_eligible_source0(const char *source0)
+{
+    return source0 != NULL
+        && (strstr(source0, "cpan.metacpan.org/authors")     != NULL
+            || strstr(source0, "search.cpan.org/CPAN/authors") != NULL
+            || strstr(source0, "cpan.org/authors")           != NULL);
+}
+
+/* M37 / PS L 3955-3958: CPAN author-dir listings hold tarballs named
+ * "<Module>-<ver>.tar.gz" with NO "perl-" prefix, so the generic
+ * Name-token strip (which uses the full "perl-<Module>") never fires.
+ * Add the prefix-stripped strip tokens "<Module>-" then "<Module>-perl-"
+ * (PS array order). No-op for non perl-* specs. */
+static void apply_cpan_perl_tokens(char **names, size_t n, const char *task_name)
+{
+    if (names == NULL || task_name == NULL) return;
+    if (strncasecmp(task_name, "perl-", 5) != 0) return;
+    const char *bare = task_name + 5;
+    if (bare[0] == '\0') return;
+    char *tok_dash = NULL, *tok_perl = NULL;
+    if (asprintf(&tok_dash, "%s-",      bare) < 0) tok_dash = NULL;
+    if (asprintf(&tok_perl, "%s-perl-", bare) < 0) tok_perl = NULL;
+    for (size_t i = 0; i < n; i++) {
+        if (names[i] == NULL) continue;
+        if (tok_dash) names[i] = istr_replace_all(names[i], tok_dash, "");
+        if (tok_perl) names[i] = istr_replace_all(names[i], tok_perl, "");
+    }
+    free(tok_dash);
+    free(tok_perl);
+}
+
 /* PS L 2520-2525: post-strip name filter pipeline for non-amdvlk.
  *
  *   $Names = $Names -replace "v",""                       # all 'v' → ''
@@ -1129,7 +1163,11 @@ char *check_urlhealth(pr_task_t                       *task,
     int sf_eligible = state.Source0
                       && strstr(state.Source0, "sourceforge.net") != NULL
                       && !sourceforge_deferred(task->Spec);
-    if (allow_network && (health == 200 || sf_eligible)
+    /* M37: CPAN author-dir specs are likewise admitted regardless of
+     * Source0 health (PS L 3933). The fetch is the normal listing scrape
+     * of dirname(Source0) — only the perl-* strip tokens differ. */
+    int cpan_eligible = cpan_eligible_source0(state.Source0);
+    if (allow_network && (health == 200 || sf_eligible || cpan_eligible)
         && (state.UpdateAvailable == NULL || state.UpdateAvailable[0] == '\0')
         && (atom_url != NULL
             || row == NULL
@@ -1182,6 +1220,11 @@ char *check_urlhealth(pr_task_t                       *task,
              * Source0Lookup.ignoreStrings glob list (only when a row
              * exists — scraper-only fallback specs have no row). */
             apply_ignore_strings(names, n, row ? row->ignoreStrings : NULL);
+            /* M37 / PS L 3955-3958: CPAN prefix-stripped tokens, added
+             * before the generic Name tokens (PS $replace array order). */
+            if (cpan_eligible) {
+                apply_cpan_perl_tokens(names, n, task->Name ? task->Name : "");
+            }
             apply_name_replace_augmentations(names, n,
                                              task->Name ? task->Name : "");
             /* M22 (PS L 441-451 Clean-VersionNames): leading rel//v/r
