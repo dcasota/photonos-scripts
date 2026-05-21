@@ -274,6 +274,26 @@ single-spec adapters are sub-noise. Next code unit = col3 Source0
 rewrites (deterministic). Parallel gating decision (operator) = col9
 tarball-cache vs soft-col9 in the ADR-0009 verdict.
 
+**col9 STRATEGY — operator chose "both: cache now, soft fallback" (2026-05-21):**
+  - [DONE #149] soft-col9 in parity-diff.sh — LIVE. col9 joins cols 4/7 as
+    soft; reversible via `PR_STRICT_COL9=1`. 5.0 effect: strict 198→163.
+    ADR-0009 amended.
+  - [DONE #150] tarball-cache MECHANISM (C side) — merged, env-gated by
+    `PR_SHA_CACHE`. pr_sha_of_url_cached / _multi_cached hash
+    <upstreams>/<branch>/SOURCES_NEW/<UpdateDownloadName> (the SAME file
+    PS writes). Inert until the env var is set.
+  - [TODO — final activation, needs disk-management care] workflow step:
+    (1) set `PR_SHA_CACHE=1` in package-report-C.yml's binary invocation;
+    (2) STOP cleaning SOURCES_NEW between runs so PS→C (same self-hosted
+    host) share tarballs; (3) add an LRU prune keeping SOURCES_NEW under a
+    cap (~200 GB; 603 GB free now) that NEVER touches firmware/chromium —
+    this is the disk-fill guard (the recurring hazard per CLAUDE.md), so
+    get the prune right before flipping persistence on. Benefit accrues in
+    the LIVE scheduled PS→C flow over a few runs (warm cache); NOT visible
+    in snapshot-replay validation (replay reconstructs upstreams w/o PS
+    bytes). Exit: once warm + col9 parity holds, set `PR_STRICT_COL9=1`
+    and start col9's own 90-day strict-green clock.
+
 **METHODOLOGY ESCALATION (was: transient-noise observation):** this run
 proved the per-run network jitter (~±9 specs in col5-fetch-fail + col9-
 SHA) now EXCEEDS the per-PR signal (M39 = −5). Single-snapshot
