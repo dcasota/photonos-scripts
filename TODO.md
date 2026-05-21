@@ -205,7 +205,7 @@ the cols[5 6 7 9 10] bucket. Validation: run 26185297395 (5.0).
 |--------|--------:|----:|---------:|-----------|
 | 3.0    |  919 | 551 | 40% | 26160062078 |
 | 4.0    | 1034 | 484 | 53% | 26160062078 |
-| 5.0    | 1113 | **213** | **81%** | 26226086868 (post-M35) |
+| 5.0    | 1113 | **206** | **81%** | 26228183563 (post-M37) |
 | 6.0    | 1093 | 373 | 66% | 26160062078 |
 | dev    | 1090 | 386 | 65% | 26160062078 |
 | master | 1090 | 381 | 65% | 26160062078 |
@@ -215,6 +215,17 @@ the cols[5 6 7 9 10] bucket. Validation: run 26185297395 (5.0).
 Journal == local parity-diff (266/60) confirmed. No regressions: the
 improvement is concentrated in rubygem-* rows. Other branches not yet
 re-run post-M34 (single-branch validation per memory guidance).
+
+**M37 validated (5.0, run 26228183563):** 213→206 strict (−7).
+CPAN author-dir detection — 8 perl-* specs fixed (perl-Canary-Stability,
+perl-common-sense, perl-DBIx-Simple, perl-JSON-XS, perl-NetAddr-IP,
+perl-Parse-Yapp, perl-Perl4-CoreLibs, perl-Types-Serialiser). One
+APPARENT regression (lasso.spec) was transient network noise:
+dev.entrouvert.org returned 503 during this C run vs 200 in the PS
+snapshot → empty-Source0 logic blanked col3. lasso is NOT cpan and my
+code does not touch it; resolves on re-run. Remaining biggest families:
+github (12, mixed: amdvlk Q-version, hwloc/jna no-gitSource gap), samba
+(5), openssl (2), launchpad (2).
 
 **M35 validated (5.0, run 26226086868):** 227→213 strict (−14).
 sourceforge adapter — 14 specs fixed (cppunit, docbook-xsl, expect,
