@@ -18,6 +18,7 @@
 #include "pr_atom_feed.h"
 #include "pr_clone.h"
 #include "pr_git_tags.h"
+#include "pr_github_tags.h"
 #include "pr_hook.h"
 #include "pr_latest.h"
 #include "pr_per_spec.h"
@@ -1167,7 +1168,16 @@ char *check_urlhealth(pr_task_t                       *task,
      * Source0 health (PS L 3933). The fetch is the normal listing scrape
      * of dirname(Source0) — only the perl-* strip tokens differ. */
     int cpan_eligible = cpan_eligible_source0(state.Source0);
-    if (allow_network && (health == 200 || sf_eligible || cpan_eligible)
+    /* M38: github special-case specs with NO gitSource scrape the HTML
+     * tags page (PS L 2766/2817-2818), independent of Source0 health.
+     * Specs WITH a gitSource are handled by the Phase-6d git path above
+     * and must not be disturbed, so require gitSource to be absent. */
+    int gh_eligible = state.Source0
+                      && strstr(state.Source0, "github.com") != NULL
+                      && (row == NULL || row->gitSource == NULL
+                          || row->gitSource[0] == '\0')
+                      && pr_github_is_html_tags_spec(task->Spec);
+    if (allow_network && (health == 200 || sf_eligible || cpan_eligible || gh_eligible)
         && (state.UpdateAvailable == NULL || state.UpdateAvailable[0] == '\0')
         && (atom_url != NULL
             || row == NULL
@@ -1190,8 +1200,17 @@ char *check_urlhealth(pr_task_t                       *task,
          * are tag names, not file basenames. */
         int used_atom = 0;
         int used_sf   = 0;
+        int used_gh   = 0;
         int scrape_ok = 0;
-        if (sf_eligible) {
+        if (gh_eligible) {
+            /* M38: github special-case HTML tags page. */
+            char *gh_url = pr_github_tags_html_url(state.Source0);
+            if (gh_url) {
+                scrape_ok = (pr_github_scrape_tags_html(gh_url, &names, &n) == 0);
+                used_gh = 1;
+                free(gh_url);
+            }
+        } else if (sf_eligible) {
             /* M35: SourceForge — derive the project files URL and parse
              * the embedded net.sf.files JSON instead of HTML hrefs. */
             char *sf_url = pr_sourceforge_tag_url(task->Spec, state.Source0);
@@ -1207,13 +1226,22 @@ char *check_urlhealth(pr_task_t                       *task,
             scrape_ok = (pr_scrape_listing(parent, &names, &n) == 0);
         }
         if (scrape_ok && n > 0) {
-            if (!used_atom && !used_sf) {
+            if (!used_atom && !used_sf && !used_gh) {
                 /* M23 (PS L 4321-4341) — HTML href path only. */
                 apply_scraper_pre_filters(names, n);
             }
             /* M35 / PS L 3525-3529: tboot year-stamped dir drops. */
             if (used_sf && spec_eq(task->Spec, "tboot.spec")) {
                 drop_year_names(names, n);
+            }
+            /* M38 / PS L 2888 switch "python-networkx.spec": extra strip
+             * tokens so "networkx-X" / "python-networkx-X" reduce to X. */
+            if (used_gh && spec_eq(task->Spec, "python-networkx.spec")) {
+                for (size_t i = 0; i < n; i++) {
+                    if (names[i] == NULL) continue;
+                    names[i] = istr_replace_all(names[i], "python-networkx-", "");
+                    names[i] = istr_replace_all(names[i], "networkx-", "");
+                }
             }
             apply_replace_strings(names, n, row ? row->replaceStrings : NULL);
             /* M26 (PS L 2152 + L 4376): drop candidates matching

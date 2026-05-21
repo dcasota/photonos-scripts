@@ -112,6 +112,7 @@ add_executable(photonos-package-report
     src/atom_feed.c
     src/rubygems.c
     src/sourceforge.c
+    src/github_tags.c
     src/heapsort.c
     src/jdk.c
     src/url_util.c
