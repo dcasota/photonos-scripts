@@ -47,4 +47,18 @@ int pr_sha_of_url_multi(const char *url,
                         char **sha256_hex,
                         char **sha512_hex);
 
+/* Tarball-cache variants (ADR-0009 amendment, 2026-05-21). When
+ * `cache_file` is non-NULL, the tarball is read from / written to that
+ * persistent path (the shared SOURCES_NEW the PS run also uses) so PS
+ * and C hash byte-identical bytes: if the file already exists it is
+ * hashed in place; otherwise `url` is downloaded INTO it (creating
+ * parent dirs) and then hashed. When `cache_file` is NULL these behave
+ * exactly like their non-cached counterparts. */
+char *pr_sha_of_url_cached(pr_sha_alg_t alg, const char *url,
+                           const char *cache_file);
+int   pr_sha_of_url_multi_cached(const char *url,
+                                 char **sha256_hex,
+                                 char **sha512_hex,
+                                 const char *cache_file);
+
 #endif /* PR_SHA_H */
