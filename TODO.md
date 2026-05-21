@@ -255,6 +255,31 @@ OPERATOR INPUT NEEDED: tarball-cache (option a) only pays off with
 persistent disk; otherwise (b) soft-col9 is the realistic route to a
 green journal given C ≥ PS on col9.
 
+**RESIDUAL MAP (5.0, soft-col9 = 163 strict, 2026-05-21):** no
+high-leverage coherent unit remains; it is a long tail —
+  - ~38 C-empty col5: 7 sourceforge-deferred (unzip/zip version-munge +
+    libusb two-stage — M35 skipped these), 3 mozilla, 2 openssl, 2
+    launchpad, + ~20 singleton per-spec families.
+  - ~17 both-version: mostly TEMPORAL (C ran a day after the PS snapshot
+    → detected newer upstream releases; C is MORE current — same
+    temporal-gap class as col9). A few real: amdvlk (Q-version format),
+    gtest (v-prefix).
+  - ~27 col3 / col3-4: Source0 rewrites; several are PS-stale / C-more-
+    correct (mirroring would DEGRADE C per dual-goal — low value).
+  - transient freedesktop-atom (Anubis) fetch failures.
+  - operator-gated: sort-collation (~12), col9 cache activation.
+NEXT-UNIT OPTIONS (pick by value):
+  (1) back-to-back PS+C validation to kill the col5+col9 temporal gap —
+      HIGHEST leverage for the 90-day-green goal (the temporal gap, not
+      detection, is now the dominant strict-diff source). Architecture
+      change (same fork as col9 cache option B).
+  (2) M40: finish deferred sourceforge unzip/zip (simple version-munge);
+      libusb two-stage separately. Deterministic, ~2-3 specs.
+  (3) per-spec long-tail (amdvlk Q-version, gtest v-prefix, mozilla,
+      openssl, launchpad) — exception-heavy, low yield per unit.
+The detection-adapter phase (M34-M39) delivered the bulk; from here the
+gains are per-spec or gated on the temporal-gap architecture decision.
+
 **>>> STRATEGIC INFLECTION (2026-05-21): detection adapters essentially
 DONE. <<<** M34-M39 closed the major upstream families (rubygems,
 sourceforge, CPAN, github-html, samba, GNU/funet). col5 (UpdateAvailable)
