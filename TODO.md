@@ -255,6 +255,33 @@ OPERATOR INPUT NEEDED: tarball-cache (option a) only pays off with
 persistent disk; otherwise (b) soft-col9 is the realistic route to a
 green journal given C ≥ PS on col9.
 
+**FRESH-CYCLE BASELINE (5.0, run 26244061890, 2026-05-21 18:26): 147
+strict / 95 soft.** Achieved via: fresh same-hour PS→C cycle (PS
+26243226678 → live C auto-trigger; ~20-min gap, kills the temporal col5
+inflation) + M40 (unzip/zip) + soft-col9. Journal == local diff (147)
+verified. This is the trustworthy current floor for 5.0.
+
+REMAINING-GAP MAP off the fresh 147 (this is the path to green):
+  - **~30+ C-empty col5 = the BIG one.** PS detects, C emits nothing.
+    Root: PS's non-git detection section **L3200-3400** is only partly
+    ported. It has (a) per-host blocks — mozjs (L3206), nss (L3234),
+    nspr (L3252) [mozilla family, 3]; (b) a generic parent-dir scrape
+    with per-spec $replace tokens — grub2 (L3336), freetype2 (L3337),
+    + many; (c) pure-generic hosts C's M20 scraper fails on (ipset
+    netfilter, curl, openssl, savannah, kernel.org, launchpad, qemu,
+    pythonhosted, json-c, openvswitch...). NEXT: port L3200-3400
+    family-by-family; biggest coherent unit = mozilla (mozjs/nss/nspr).
+  - ~44 col3 / col3-4: Source0 rewrites; several PS-stale / C-more-
+    correct (mirroring DEGRADES C — candidate for soft or accept, not
+    fix).
+  - col11 warning-table diffs (~within the col[4 6 7 9 10 11] bucket).
+  - real per-spec bugs: amdvlk (Q-version sort), gtest (v-prefix kept by
+    PS), lsscsi (C=030), linux-esx/rt (C picks 6.19 vs PS 6.1 — wrong
+    kernel branch), qemu (PS value "/9.1.2" looks like a PS glitch).
+PROGRESS: 5.0 392 (session start) → 147 (fresh, soft-col9). Detection
+adapters for the major families done; remaining is the L3200-3400
+per-host long tail + col3/col11 + ~5 real bugs.
+
 **RESIDUAL MAP (5.0, soft-col9 = 163 strict, 2026-05-21):** no
 high-leverage coherent unit remains; it is a long tail —
   - ~38 C-empty col5: 7 sourceforge-deferred (unzip/zip version-munge +
