@@ -205,7 +205,7 @@ the cols[5 6 7 9 10] bucket. Validation: run 26185297395 (5.0).
 |--------|--------:|----:|---------:|-----------|
 | 3.0    |  919 | 551 | 40% | 26160062078 |
 | 4.0    | 1034 | 484 | 53% | 26160062078 |
-| 5.0    | 1113 | **206** | **81%** | 26228183563 (post-M37) |
+| 5.0    | 1113 | **197** | **82%** | 26230052436 (post-M38) |
 | 6.0    | 1093 | 373 | 66% | 26160062078 |
 | dev    | 1090 | 386 | 65% | 26160062078 |
 | master | 1090 | 381 | 65% | 26160062078 |
@@ -215,6 +215,24 @@ the cols[5 6 7 9 10] bucket. Validation: run 26185297395 (5.0).
 Journal == local parity-diff (266/60) confirmed. No regressions: the
 improvement is concentrated in rubygem-* rows. Other branches not yet
 re-run post-M34 (single-branch validation per memory guidance).
+
+**M38 validated (5.0, run 26230052436):** 206→197 strict (−9).
+github HTML tags-page detection — 9 specs fixed (hwloc, jna, libmodulemd,
+libnsl, lmdb, npth, paho-c, python-networkx, python-wheel). One apparent
+regression (mysql.spec) was a transient col9 SHA-download blip (C had the
+SHA in the prior run, empty here; everything else identical; mysql is NOT
+in the github special-case list so M38 does not touch it). gitSource
+github path untouched. Remaining github: amdvlk (Q-version via API path),
+libmspack/python-pexpect (have gitSource — git path failing).
+
+**TRANSIENT-NOISE OBSERVATION (relevant to ADR-0009 90-day verdict):**
+across the M34-M38 single-snapshot validations, ~1-2 specs flip per run
+in the volatile col3 (Source0 blanked on transient non-200 health) and
+col9 (SHA download failure) columns — lasso (503), mysql (SHA), openipmi
+(recovered). These are NOT code defects; they are the PS-snapshot-vs-
+C-run temporal gap. The 90-day-green verdict will need to tolerate this
+col3/col9 jitter (as cols 4/7 are already soft) OR adopt back-to-back
+PS+C runs to remove the temporal gap. See the 23-31 row col[9] bucket.
 
 **M37 validated (5.0, run 26228183563):** 213→206 strict (−7).
 CPAN author-dir detection — 8 perl-* specs fixed (perl-Canary-Stability,
