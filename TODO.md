@@ -205,7 +205,7 @@ the cols[5 6 7 9 10] bucket. Validation: run 26185297395 (5.0).
 |--------|--------:|----:|---------:|-----------|
 | 3.0    |  919 | 551 | 40% | 26160062078 |
 | 4.0    | 1034 | 484 | 53% | 26160062078 |
-| 5.0    | 1113 | **266** | **76%** | 26201671031 (post-M34) |
+| 5.0    | 1113 | **227** | **80%** | 26212147597 (post-M36) |
 | 6.0    | 1093 | 373 | 66% | 26160062078 |
 | dev    | 1090 | 386 | 65% | 26160062078 |
 | master | 1090 | 381 | 65% | 26160062078 |
@@ -216,13 +216,13 @@ Journal == local parity-diff (266/60) confirmed. No regressions: the
 improvement is concentrated in rubygem-* rows. Other branches not yet
 re-run post-M34 (single-branch validation per memory guidance).
 
-**M36 (in flight): ftp.gnu.org → FUNET mirror on the UpdateURL.** The
-funet rewrite (PS L2395) was applied to the probe Source0 (col 3) but
-NOT to the constructed UpdateURL — so col 6 kept the canonical
-`ftp.gnu.org` (health 0 from the runner) and col 9 SHA stayed empty for
-~40 GNU specs (`cols[6 7 9]`: bash, coreutils, grep, gawk, glibc, …).
-Extracted a `funet_mirror()` helper and applied it at both UpdateURL
-build sites. Validate via single-branch 5.0.
+**M36 validated (5.0, run 26212147597):** 266→227 strict (−39).
+ftp.gnu.org→FUNET mirror was applied to the probe Source0 (col 3) but
+NOT the constructed UpdateURL, so ~40 GNU specs (`cols[6 7 9]`: bash,
+coreutils, grep, gawk, glibc, …) got an unreachable col 6 + empty col 9
+SHA. Extracted `funet_mirror()`, applied at both UpdateURL build sites.
+`cols[6 7 9]` bucket went 40→0; bash/grep/coreutils match PS byte-for-
+byte. Journal == local diff (227/60) confirmed.
 
 **NEW FINDING — sort-collation divergence (CHECKPOINT, touches the
 "do-not-break" sort invariant):** 12 rows in 5.0 are misaligned (col[1]
