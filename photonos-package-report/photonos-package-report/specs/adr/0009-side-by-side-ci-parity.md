@@ -40,3 +40,26 @@ The retirement PR (Phase 9 task 090) is opened automatically once a workflow run
 
 - **Direct cutover after Phase 7**: rejected, see Context.
 - **Side-by-side forever**: pays double compute cost forever; rejected once parity is proven.
+
+## Amendment 2026-05-21 — col9 (SHA) interim-soft during tarball-cache warm-up
+
+Measured on branch 5.0 (run 26233502563): of ~35 strict rows differing
+in col9 (SHAValue), **27 are PS-empty / C-has-a-real-SHA** — i.e. PS's
+`Get-FileHashWithRetry` left col9 empty because its tarball fetch into
+`SOURCES_NEW` failed, while C's live download succeeded. Only ~7 are
+genuine byte-drift (github/gitlab auto-archive tarballs regenerated
+between the PS-snapshot and C-run), and ~1 is a C-side transient. So the
+col9 gap is dominated by **PS deficiency, not C error** — C is the more
+correct implementation on those cells.
+
+Decision (operator, 2026-05-21): treat **col9 as SOFT** in
+`parity-diff.sh` (joining cols 4/7) so the per-run SHA jitter stops
+masking real convergence and the journal can reach green. In parallel,
+build a **persistent shared `SOURCES_NEW` cache** on the self-hosted
+runner so PS and C hash byte-identical tarballs (fills PS's empties AND
+kills the byte-drift — dual-goal-positive). Once the cache is warm and
+col9 parity holds, re-enable strict col9 via `PR_STRICT_COL9=1` and
+resume the 90-day strict-green clock for col9.
+
+The 90-day-green timeline above applies to the strict columns; col9 runs
+its own clock starting when `PR_STRICT_COL9=1` is set.
