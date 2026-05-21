@@ -108,15 +108,24 @@ static char *col9_cache_path(const char *clone_root, const char *download_name)
     return cache;
 }
 
-/* M35: sourceforge specs whose PS quirks are NOT yet ported — unzip/zip
- * need a $version munge (PS L 3487/3493) and libusb needs a two-stage
- * fetch (PS L 3503-3522). Skip the sourceforge fetch for these so they
- * fall through rather than emit a wrong single-stage result. */
+/* M35/M40: sourceforge specs whose PS quirks are NOT yet ported. libusb
+ * needs a two-stage fetch (PS L 3503-3522) — still deferred. unzip/zip
+ * are handled via munge_sf_version (M40). */
 static int sourceforge_deferred(const char *spec)
 {
-    return spec_eq(spec, "unzip.spec")
-        || spec_eq(spec, "zip.spec")
-        || spec_eq(spec, "libusb.spec");
+    return spec_eq(spec, "libusb.spec");
+}
+
+/* M40 / PS L 3487,3493: the infozip unzip/zip SourceForge listings name
+ * their version directories without a dot (unzip60, zip30). PS munges
+ * the spec version to the same dot-less form before comparing, so it
+ * reads "(same version)" instead of "60 > 6.0 = update". */
+static const char *munge_sf_version(const char *spec, const char *version)
+{
+    if (version == NULL) return version;
+    if (spec_eq(spec, "unzip.spec") && strcmp(version, "6.0") == 0) return "60";
+    if (spec_eq(spec, "zip.spec")   && strcmp(version, "3.0") == 0) return "30";
+    return version;
 }
 
 /* M35 / PS L 3525-3529: tboot's sourceforge listing carries old
@@ -1329,8 +1338,10 @@ char *check_urlhealth(pr_task_t                       *task,
                         break;
                     }
                 }
-                int rc = pr_version_compare(latest,
-                                            state.version ? state.version : "");
+                /* M40: unzip/zip dot-less version munge for the compare. */
+                const char *cmp_ver = munge_sf_version(
+                    task->Spec, state.version ? state.version : "");
+                int rc = pr_version_compare(latest, cmp_ver);
                 free(state.UpdateAvailable);
                 if (rc == 1) {
                     state.UpdateAvailable = dup_or_empty(latest);
@@ -1422,7 +1433,7 @@ char *check_urlhealth(pr_task_t                       *task,
                     if (asprintf(&warn,
                                  "Warning: %s Source0 version %s is higher than detected latest version %s .",
                                  task->Spec ? task->Spec : "",
-                                 state.version ? state.version : "",
+                                 cmp_ver,
                                  latest) < 0) warn = NULL;
                     state.UpdateAvailable = warn ? warn : dup_or_empty("");
                 } else {
