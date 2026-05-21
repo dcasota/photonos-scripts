@@ -25,6 +25,7 @@
 #include "pr_state.h"
 #include "pr_sha.h"
 #include "pr_scraper.h"
+#include "pr_sourceforge.h"
 #include "pr_spec_warnings.h"
 #include "pr_stable_source.h"
 #include "pr_strutil.h"
@@ -77,6 +78,39 @@ static char *funet_mirror(char *url)
 {
     return istr_replace_all(url, "ftp.gnu.org",
                             "ftp.funet.fi/pub/gnu/ftp.gnu.org");
+}
+
+static int spec_eq(const char *spec, const char *name)
+{
+    return spec != NULL && strcasecmp(spec, name) == 0;
+}
+
+/* M35: sourceforge specs whose PS quirks are NOT yet ported — unzip/zip
+ * need a $version munge (PS L 3487/3493) and libusb needs a two-stage
+ * fetch (PS L 3503-3522). Skip the sourceforge fetch for these so they
+ * fall through rather than emit a wrong single-stage result. */
+static int sourceforge_deferred(const char *spec)
+{
+    return spec_eq(spec, "unzip.spec")
+        || spec_eq(spec, "zip.spec")
+        || spec_eq(spec, "libusb.spec");
+}
+
+/* M35 / PS L 3525-3529: tboot's sourceforge listing carries old
+ * year-stamped directories (2007-2011); drop them before version sort. */
+static void drop_year_names(char **names, size_t n)
+{
+    static const char *const years[] = {
+        "2007", "2008", "2009", "2010", "2011", NULL,
+    };
+    for (size_t i = 0; i < n; i++) {
+        if (names[i] == NULL) continue;
+        for (int y = 0; years[y]; y++) {
+            if (strstr(names[i], years[y]) != NULL) {
+                free(names[i]); names[i] = NULL; break;
+            }
+        }
+    }
 }
 
 /* PS L 2520-2525: post-strip name filter pipeline for non-amdvlk.
@@ -1088,7 +1122,14 @@ char *check_urlhealth(pr_task_t                       *task,
      * atom override. The original urlhealth must be 200 — a dead
      * Source0 means the listing parent is probably dead too. */
     const char *atom_url = pr_per_spec_source_tag_url(task->Spec);
-    if (allow_network && health == 200
+    /* M35: PS reaches the sourceforge branch (L 3460) on the Source0 host
+     * alone, independent of Source0 health — the project "files" landing
+     * page is a different URL than the (often non-200) download Source0.
+     * Admit such specs to the detection block regardless of `health`. */
+    int sf_eligible = state.Source0
+                      && strstr(state.Source0, "sourceforge.net") != NULL
+                      && !sourceforge_deferred(task->Spec);
+    if (allow_network && (health == 200 || sf_eligible)
         && (state.UpdateAvailable == NULL || state.UpdateAvailable[0] == '\0')
         && (atom_url != NULL
             || row == NULL
@@ -1110,17 +1151,31 @@ char *check_urlhealth(pr_task_t                       *task,
          * The M23 pre-filter is skipped on the atom path — atom titles
          * are tag names, not file basenames. */
         int used_atom = 0;
+        int used_sf   = 0;
         int scrape_ok = 0;
-        if (atom_url != NULL) {
+        if (sf_eligible) {
+            /* M35: SourceForge — derive the project files URL and parse
+             * the embedded net.sf.files JSON instead of HTML hrefs. */
+            char *sf_url = pr_sourceforge_tag_url(task->Spec, state.Source0);
+            if (sf_url) {
+                scrape_ok = (pr_sourceforge_fetch_names(sf_url, &names, &n) == 0);
+                used_sf = 1;
+                free(sf_url);
+            }
+        } else if (atom_url != NULL) {
             scrape_ok = (pr_scrape_atom_feed(atom_url, &names, &n) == 0);
             used_atom = 1;
         } else {
             scrape_ok = (pr_scrape_listing(parent, &names, &n) == 0);
         }
         if (scrape_ok && n > 0) {
-            if (!used_atom) {
+            if (!used_atom && !used_sf) {
                 /* M23 (PS L 4321-4341) — HTML href path only. */
                 apply_scraper_pre_filters(names, n);
+            }
+            /* M35 / PS L 3525-3529: tboot year-stamped dir drops. */
+            if (used_sf && spec_eq(task->Spec, "tboot.spec")) {
+                drop_year_names(names, n);
             }
             apply_replace_strings(names, n, row ? row->replaceStrings : NULL);
             /* M26 (PS L 2152 + L 4376): drop candidates matching
