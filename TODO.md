@@ -205,7 +205,7 @@ the cols[5 6 7 9 10] bucket. Validation: run 26185297395 (5.0).
 |--------|--------:|----:|---------:|-----------|
 | 3.0    |  919 | 551 | 40% | 26160062078 |
 | 4.0    | 1034 | 484 | 53% | 26160062078 |
-| 5.0    | 1113 | **227** | **80%** | 26212147597 (post-M36) |
+| 5.0    | 1113 | **213** | **81%** | 26226086868 (post-M35) |
 | 6.0    | 1093 | 373 | 66% | 26160062078 |
 | dev    | 1090 | 386 | 65% | 26160062078 |
 | master | 1090 | 381 | 65% | 26160062078 |
@@ -215,6 +215,16 @@ the cols[5 6 7 9 10] bucket. Validation: run 26185297395 (5.0).
 Journal == local parity-diff (266/60) confirmed. No regressions: the
 improvement is concentrated in rubygem-* rows. Other branches not yet
 re-run post-M34 (single-branch validation per memory guidance).
+
+**M35 validated (5.0, run 26226086868):** 227→213 strict (−14).
+sourceforge adapter — 14 specs fixed (cppunit, docbook-xsl, expect,
+hdparm, inotify-tools, libdnet, mingetty, nano, scons, sshpass, tcl,
+trousers, watchdog, xmlstarlet), ZERO regressions from the gate
+relaxation. Journal == local diff (213/60). Deferred: unzip/zip munge,
+libusb two-stage. Remaining biggest families in cols[5 6 7 9 10]:
+github (12, mixed causes — amdvlk Q-version quirk, hwloc/jna no-gitSource
+detection gap), CPAN (8, clean metacpan-API adapter → M37 next), samba
+(5), openssl (2), launchpad (2).
 
 **M36 validated (5.0, run 26212147597):** 266→227 strict (−39).
 ftp.gnu.org→FUNET mirror was applied to the probe Source0 (col 3) but
