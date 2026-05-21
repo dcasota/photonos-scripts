@@ -225,6 +225,27 @@ in the github special-case list so M38 does not touch it). gitSource
 github path untouched. Remaining github: amdvlk (Q-version via API path),
 libmspack/python-pexpect (have gitSource — git path failing).
 
+**M39 shipped (samba atom, run 26231942567):** journal showed 197→203
+(+6) but this is NOISE-DOMINATED, not a regression. M39 fixed libldb +
+samba-client; the 9 apparent regressions (libXext, libXfont2, libXrandr,
+libpciaccess, xcb-proto, calico, nerdctl, ntpsec, openipmi) are all
+transient: the X.org/freedesktop specs show col5 going empty (atom-fetch
+failures — gitlab.freedesktop.org Anubis anti-bot is known-flaky), and
+calico/ntpsec show identical col5/col6 (differ only in volatile col9
+SHA). M39's code CANNOT touch these specs (apply_samba_tokens is a no-op
+for non-samba; atom overrides return URLs only for the 5 samba specs).
+Re-run dispatched (26233502563) for a clean number.
+
+**METHODOLOGY ESCALATION (was: transient-noise observation):** this run
+proved the per-run network jitter (~±9 specs in col5-fetch-fail + col9-
+SHA) now EXCEEDS the per-PR signal (M39 = −5). Single-snapshot
+validation is no longer reliable for small PRs. NEXT: (a) validate by
+re-run-and-take-best, or better (b) move to back-to-back PS+C runs to
+kill the temporal gap, and (c) decide with operator whether col3
+(Source0-blanked-on-non-200) and col9 (SHA) should be SOFT like cols
+4/7 in the ADR-0009 90-day verdict. This is now the gating issue for
+trustworthy convergence measurement, ahead of further per-spec adapters.
+
 **TRANSIENT-NOISE OBSERVATION (relevant to ADR-0009 90-day verdict):**
 across the M34-M38 single-snapshot validations, ~1-2 specs flip per run
 in the volatile col3 (Source0 blanked on transient non-200 health) and
