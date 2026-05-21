@@ -234,6 +234,27 @@ github auto-archive; ADR-0015 can't help, no release asset). The first
 M39 run (26231942567 = 203) was noise-dominated; this re-run (198)
 confirms the −5 detection signal is at the noise floor.
 
+**>>> col9 ROOT-CAUSE (2026-05-21, measured on 5.0 run 26233502563): the
+col9 gap is NOT byte-drift — it is mostly PS DEFICIENCY. <<<** Of the ~35
+col9-containing strict rows: **27 are PS-empty / C-has-real-SHA (C is
+MORE correct)**, 7 are genuine different-SHA byte-drift, 1 is C-empty
+(transient). PS's Get-FileHashWithRetry leaves col9 empty when it didn't
+fetch the tarball into SOURCES_NEW (PS fetch is flakier / less complete
+than C's live download). IMPLICATION: the chosen tarball-cache (bundle
+PS bytes → C reuses) fixes ONLY the 7 byte-drift rows; it CANNOT fix the
+27 PS-empty rows (no PS bytes exist) and mirroring PS there would BLANK
+C's correct SHA — a dual-goal regression. Viable col9 paths now:
+  (a) PERSISTENT shared SOURCES_NEW on the runner (PS reuses prior
+      tarballs → fewer empties; C hashes the SAME files → parity). Cost:
+      disk (the very thing that gets cleaned for disk-fill). 7 byte-drift
+      + 27 PS-empty both improve IF the cache is warm before PS runs.
+  (b) soft-col9 in ADR-0009 verdict — pragmatic, accepts that C is often
+      MORE correct than PS; stops counting col9 as strict.
+  (c) re-run PS until SOURCES_NEW is complete (reduces empties) — fragile.
+OPERATOR INPUT NEEDED: tarball-cache (option a) only pays off with
+persistent disk; otherwise (b) soft-col9 is the realistic route to a
+green journal given C ≥ PS on col9.
+
 **>>> STRATEGIC INFLECTION (2026-05-21): detection adapters essentially
 DONE. <<<** M34-M39 closed the major upstream families (rubygems,
 sourceforge, CPAN, github-html, samba, GNU/funet). col5 (UpdateAvailable)
