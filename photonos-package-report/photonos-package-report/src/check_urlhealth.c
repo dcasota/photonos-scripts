@@ -189,6 +189,31 @@ static void apply_samba_tokens(const char *spec, char **names, size_t n)
     }
 }
 
+/* M47 / PS L 4210-4219: the linux kernel family pins to a per-branch
+ * stable series (PS hardcodes the series string by output branch). The
+ * v6.x listing carries the latest mainline (6.19.x); without this filter
+ * C reports that instead of the tracked 6.1 LTS the spec actually
+ * updates within. Returns the series substring ("6.1.", "4.19.", ...)
+ * for the branch encoded in clone_root (.../photon-<branch>/clones), or
+ * NULL for non-family specs / unknown branch. */
+static const char *linux_kernel_series(const char *spec, const char *clone_root)
+{
+    static const char *const fam[] = {
+        "linux.spec", "linux-aws.spec", "linux-esx.spec", "linux-rt.spec",
+        "linux-secure.spec", "linux-api-headers.spec", NULL,
+    };
+    int is_fam = 0;
+    for (int i = 0; fam[i]; i++) if (spec_eq(spec, fam[i])) { is_fam = 1; break; }
+    if (!is_fam || clone_root == NULL) return NULL;
+    const char *p = strstr(clone_root, "photon-");
+    if (p == NULL) return NULL;
+    p += 7;  /* past "photon-" */
+    if (strncmp(p, "3.0", 3) == 0)    return "4.19.";
+    if (strncmp(p, "4.0", 3) == 0)    return "5.10.";
+    if (strncmp(p, "common", 6) == 0) return "6.12.";
+    return "6.1.";  /* 5.0 / 6.0 / master / dev */
+}
+
 /* M42 / PS L 3335-3350: generic-scrape specs whose upstream tarball
  * basename drops the spec-name suffix (freetype2 ships "freetype-X",
  * grub2 ships "grub-X", ...), so the generic Name-token strip
@@ -1460,6 +1485,16 @@ char *check_urlhealth(pr_task_t                       *task,
              * after-[pP]\d+-strip. Drops scraper noise like
              * `LATEST-IS-X`, `?C=S;O=A`, `..`. */
             apply_name_post_filters(names, n);
+            /* M47 / PS L 4210-4219: linux kernel family per-branch series
+             * pin — keep only candidates in the tracked LTS series. */
+            const char *kseries = linux_kernel_series(task->Spec, clone_root);
+            if (kseries) {
+                for (size_t ki = 0; ki < n; ki++) {
+                    if (names[ki] && strstr(names[ki], kseries) == NULL) {
+                        free(names[ki]); names[ki] = NULL;
+                    }
+                }
+            }
             char *latest = pr_get_latest_name(names, n);
             if (latest && latest[0]) {
                 /* Strip common file extensions if present — listing
