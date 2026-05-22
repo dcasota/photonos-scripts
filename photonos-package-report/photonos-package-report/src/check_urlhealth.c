@@ -1232,7 +1232,15 @@ char *check_urlhealth(pr_task_t                       *task,
                       && (row == NULL || row->gitSource == NULL
                           || row->gitSource[0] == '\0')
                       && pr_github_is_html_tags_spec(task->Spec);
-    if (allow_network && (health == 200 || sf_eligible || cpan_eligible || gh_eligible)
+    /* M41: "all other types" specs (PS L 4260-4305) with a per-spec
+     * project-download-page override. Admitted regardless of health (PS
+     * lists them explicitly in the gate). Tarball <a href> links are
+     * full URLs → path-split to basename after extraction. */
+    const char *ao_url = pr_all_other_source_tag_url(task->Spec);
+    int ao_eligible = (ao_url != NULL)
+                      && (row == NULL || row->gitSource == NULL
+                          || row->gitSource[0] == '\0');
+    if (allow_network && (health == 200 || sf_eligible || cpan_eligible || gh_eligible || ao_eligible)
         && (state.UpdateAvailable == NULL || state.UpdateAvailable[0] == '\0')
         && (atom_url != NULL
             || row == NULL
@@ -1257,7 +1265,21 @@ char *check_urlhealth(pr_task_t                       *task,
         int used_sf   = 0;
         int used_gh   = 0;
         int scrape_ok = 0;
-        if (gh_eligible) {
+        if (ao_eligible) {
+            /* M41: scrape the project download page; its <a href> tarball
+             * links are full URLs, so reduce each to its basename
+             * (PS L 4400 path-split) before the version pipeline. The
+             * basenamed names then run the standard scraper pipeline
+             * (M23 pre-filter + Name-strip + Clean-VersionNames + …). */
+            scrape_ok = (pr_scrape_listing(ao_url, &names, &n) == 0);
+            if (scrape_ok) {
+                for (size_t i = 0; i < n; i++) {
+                    if (names[i] == NULL) continue;
+                    char *base = pr_basename_from_url(names[i]);
+                    if (base) { free(names[i]); names[i] = base; }
+                }
+            }
+        } else if (gh_eligible) {
             /* M38: github special-case HTML tags page. */
             char *gh_url = pr_github_tags_html_url(state.Source0);
             if (gh_url) {
