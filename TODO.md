@@ -91,6 +91,30 @@ Branch naming: `sdd/phase-<N>-task<NNN>-<slug>` for numeric phases,
 ---
 
 
+
+## CLEAN PER-SPEC WINS EXHAUSTED (2026-05-22, 5.0 ~137-141 strict)
+
+Resolved this session (all CI-confirmed, via local binary repro):
+detection program (rubygems/funet/sourceforge/CPAN/github/samba/GNU/
+intltool/itstool/openvswitch/ipset/grub2/xorg-fonts/mozilla/json-c) +
+real-bugs lsscsi (M45) + apparmor (M46, launchpad series-dir col6).
+
+REMAINING (attended-only / operator-gated — NOT clean autonomous units):
+- linux-esx/rt/secure/aws/linux/linux-6.1 (kernel family): C picks
+  6.19.x (latest mainline) vs PS 6.1.173 (LTS). PS L4027-4036 scrapes
+  v6.x with customRegex ^linux-[\d.]+$ but emits the 6.1 series — the
+  series-pinning constraint is NOT visible in that block; needs deep PS
+  study + careful multi-spec port (6 specs, cross-spec regression risk).
+- amdvlk: version comparator must order ".Q2." quarter versions
+  (2025.Q2.1) — shared-comparator change, HIGH blast radius -> attended.
+- col9 auto-archive SHA + col3-stale: C is more correct than PS ->
+  OPERATOR decision (col9 tarball-cache activation / col3-soft).
+- transient noise (mirror/Anubis/clone-EOF): not fixable in code.
+
+The high-value autonomous work is DONE. Further gains need an attended
+session (kernel family / amdvlk comparator) or the operator col9/col3
+decisions. Easing the autonomous grind.
+
 ## DETECTION COMPLETE — remaining tail is fiddly real-bugs + operator levers (2026-05-22)
 
 All per-host detection adapters SHIPPED + CI-validated: rubygems, funet,
