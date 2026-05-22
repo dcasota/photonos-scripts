@@ -297,6 +297,17 @@ REMAINING-GAP MAP off the fresh 147 (this is the path to green):
     series-versioned specs) need series-from-version URL construction.
     No regressions (5.0 147→145). NEXT L4260+ units: apparmor series-URL,
     then json-c S3-XML / ipset install.html / mozilla two-stage.]
+    [M41b DONE #153: ipset→install.html, RESOLVED (7.24). M42 DONE #154:
+    per-spec generic-scrape tokens — grub2(grub-) + xorg-fonts(encodings-)
+    RESOLVED; freetype2 still empty (its row diffs col3+col4 → C health
+    probe non-200 gates the scraper out BEFORE the token; needs Source0/
+    health investigation, not a token) and proto still empty (x.org scrape
+    fails). compat-gdbm/xorg-applications both-empty (match). NOTE: per-PR
+    gains (1-2 specs) are now at/below the ±2-5 fresh-cycle noise floor —
+    verify fixes by spec-level diff, not the journal count. Remaining is
+    judgment-heavy per-spec: freetype2/proto health-gate, mozilla/python
+    two-stage, json-c S3-XML, apparmor series-URL, + col3-stale (C-better,
+    likely accept/soft not fix).]
   - ~44 col3 / col3-4: Source0 rewrites; several PS-stale / C-more-
     correct (mirroring DEGRADES C — candidate for soft or accept, not
     fix).
