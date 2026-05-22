@@ -433,21 +433,27 @@ const char *pr_all_other_source_tag_url(const char *spec_name)
     return NULL;
 }
 
-/* M43 / PS L 3252-3272: nspr detects the latest version by scraping the
- * releases INDEX (not the spec's current-version dir, which is all the
- * generic scraper sees). The "vX.Y" dir names strip their leading "v"
- * via apply_clean_version_names; col6 is the existing re-substitution of
- * the "/v%{version}/src/nspr-%{version}.tar.gz" Source0 (a valid URL).
- *
- * mozjs/nss are NOT here yet: they are "update available" but their
- * Source0 hardcodes a stale version dir (%{version}esr / NSS_3_78_RTM),
- * so plain re-substitution yields a 404 and a spurious col11 warning PS
- * doesn't emit. They need their versioned-source-dir construction
- * (PS L 3230/3249) as a follow-on. */
+/* M43 / PS L 3206-3272: the mozilla family detects the latest version by
+ * scraping a releases INDEX (not the spec's current-version dir, which
+ * is all the generic scraper sees):
+ *   nspr  -> vX.Y dirs; leading "v" stripped by apply_clean_version_names;
+ *            col6 = re-substitution of /v%{version}/ Source0 (valid URL).
+ *   nss   -> NSS_X_Y_RTM dirs; apply_mozilla_transform strips NSS_/_RTM
+ *            and the pipeline _->. yields the dotted version.
+ *   mozjs -> firefox version dirs verbatim.
+ * mozjs/nss are "update available" but their Source0 hardcodes a stale
+ * version dir (%{version}esr / NSS_3_78_RTM); re-substitution 404s, so C
+ * clears col6/7 and emits the "Manufacturer may changed..." warning —
+ * which is EXACTLY what PS emits (verified row-identical), so no special
+ * handling is needed. */
 const char *pr_mozilla_releases_url(const char *spec_name)
 {
     if (spec_name == NULL) return NULL;
     if (strcasecmp(spec_name, "nspr.spec") == 0)
         return "https://ftp.mozilla.org/pub/nspr/releases/";
+    if (strcasecmp(spec_name, "nss.spec") == 0)
+        return "https://ftp.mozilla.org/pub/security/nss/releases/";
+    if (strcasecmp(spec_name, "mozjs.spec") == 0)
+        return "https://ftp.mozilla.org/pub/firefox/releases/";
     return NULL;
 }
