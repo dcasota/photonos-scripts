@@ -163,6 +163,28 @@ static void apply_samba_tokens(const char *spec, char **names, size_t n)
     }
 }
 
+/* M42 / PS L 3335-3350: generic-scrape specs whose upstream tarball
+ * basename drops the spec-name suffix (freetype2 ships "freetype-X",
+ * grub2 ships "grub-X", ...), so the generic Name-token strip
+ * ("freetype2-") misses and the no-alpha filter drops every candidate.
+ * Strip the per-spec prefix token so the version is isolated. The two-
+ * stage mozilla/python tokens (NameLatest-dependent) are NOT here. */
+static void apply_generic_scrape_tokens(const char *spec, char **names, size_t n)
+{
+    const char *tok = NULL;
+    if      (spec_eq(spec, "compat-gdbm.spec"))       tok = "gdbm-";
+    else if (spec_eq(spec, "grub2.spec"))             tok = "grub-";
+    else if (spec_eq(spec, "freetype2.spec"))         tok = "freetype-";
+    else if (spec_eq(spec, "proto.spec"))             tok = "xproto-";
+    else if (spec_eq(spec, "xorg-applications.spec")) tok = "bdftopcf-";
+    else if (spec_eq(spec, "xorg-fonts.spec"))        tok = "encodings-";
+    if (tok == NULL) return;
+    for (size_t i = 0; i < n; i++) {
+        if (names[i] == NULL) continue;
+        names[i] = istr_replace_all(names[i], tok, "");
+    }
+}
+
 /* M37: a spec's Source0 points at a CPAN author directory. PS L 3933
  * gates the CPAN branch on the host alone, independent of Source0
  * health. The three forms PS recognises (L 3933). */
@@ -1336,6 +1358,9 @@ char *check_urlhealth(pr_task_t                       *task,
             }
             apply_name_replace_augmentations(names, n,
                                              task->Name ? task->Name : "");
+            /* M42 / PS L 3335-3350: per-spec generic-scrape prefix tokens
+             * (freetype-, grub-, xproto-, ...). No-op for other specs. */
+            apply_generic_scrape_tokens(task->Spec, names, n);
             /* M22 (PS L 441-451 Clean-VersionNames): leading rel//v/r
              * strips, _→. replace, drop pre-release candidates. */
             apply_clean_version_names(names, n);
