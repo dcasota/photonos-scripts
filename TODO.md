@@ -308,6 +308,20 @@ REMAINING-GAP MAP off the fresh 147 (this is the path to green):
     judgment-heavy per-spec: freetype2/proto health-gate, mozilla/python
     two-stage, json-c S3-XML, apparmor series-URL, + col3-stale (C-better,
     likely accept/soft not fix).]
+    [INVESTIGATION 2026-05-22: freetype2's empty = TRANSIENT mirror
+    flakiness, NOT a bug — savannah 302-redirects to a rotating mirror
+    pool; C's HEAD-L hit a 500 mirror that run, PS hit 200. The M42
+    freetype- token is correct; it resolves on a lucky 200 probe. So
+    freetype2 is noise-class. CONCLUSION: the clean tractable detection
+    wins (override-table + simple tokens, M41/M41b/M42 = ~6 specs) are
+    now EXHAUSTED. Remaining detection tail splits into: (a) TRANSIENT/
+    mirror/Anubis/SHA noise (freetype2, freedesktop atoms, col9) — no
+    fix; (b) BIG per-spec units (mozilla 3× two-stage, json-c S3-XML,
+    apparmor series-URL) — focused work, not tick-sized; (c) col3-stale
+    where C is more correct (accept/soft, not fix); (d) ~5 real bugs
+    (amdvlk Q-version, lsscsi, linux-esx/rt). The 90-day-green goal is
+    now gated more on the RUNTIME clock (soft-col9 already green-capable)
+    + the col3 accept/soft decision than on more detection ports.]
   - ~44 col3 / col3-4: Source0 rewrites; several PS-stale / C-more-
     correct (mirroring DEGRADES C — candidate for soft or accept, not
     fix).
