@@ -255,8 +255,8 @@ OPERATOR INPUT NEEDED: tarball-cache (option a) only pays off with
 persistent disk; otherwise (b) soft-col9 is the realistic route to a
 green journal given C ≥ PS on col9.
 
-**FRESH-CYCLE BASELINE (5.0, run 26244061890, 2026-05-21 18:26): 147
-strict / 95 soft.** Achieved via: fresh same-hour PS→C cycle (PS
+**FRESH-CYCLE BASELINE (5.0, run 26262711412, 2026-05-22 01:46): 145
+strict / 98 soft.** (was 147 pre-M41.) Achieved via: fresh same-hour PS→C cycle (PS
 26243226678 → live C auto-trigger; ~20-min gap, kills the temporal col5
 inflation) + M40 (unzip/zip) + soft-col9. Journal == local diff (147)
 verified. This is the trustworthy current floor for 5.0.
@@ -289,6 +289,14 @@ REMAINING-GAP MAP off the fresh 147 (this is the path to green):
     docbook two-stage, mozilla two-stage) individually. Each touches the
     shared scraper path, so validate each against a fresh cycle for
     regressions before merge. NOT to be rushed at marathon-depth.
+    [M41 DONE #152, validated fresh cycle 26262711412: intltool/itstool/
+    openvswitch fully RESOLVED; apparmor col5 fixed (4.1.0) but col6+
+    remain — its Source0 hardcodes the series dir (/apparmor/3.1/), C
+    re-substitutes to /3.1/4.1.0/ (404→warning) while PS derives the
+    series 4.1 from the version → FOLLOW-ON: apparmor (+ other launchpad
+    series-versioned specs) need series-from-version URL construction.
+    No regressions (5.0 147→145). NEXT L4260+ units: apparmor series-URL,
+    then json-c S3-XML / ipset install.html / mozilla two-stage.]
   - ~44 col3 / col3-4: Source0 rewrites; several PS-stale / C-more-
     correct (mirroring DEGRADES C — candidate for soft or accept, not
     fix).
