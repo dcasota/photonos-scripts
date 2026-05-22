@@ -1043,8 +1043,14 @@ char *check_urlhealth(pr_task_t                       *task,
                          * candidates (alpha/beta/rc/preview/dev/pre). */
                         apply_clean_version_names(names, n);
                         /* M21 (PS L 2522-2524): post-strip filters —
-                         * v-strip + has-digit + no-alpha-after-pN-strip. */
-                        apply_name_post_filters(names, n);
+                         * v-strip + has-digit + no-alpha-after-pN-strip.
+                         * M48 / PS L 2569: SKIP for amdvlk — its tags are
+                         * quarterly "YYYY.Q#.#" (the comparator handles
+                         * them, Case 2b), but the no-alpha filter would
+                         * drop them on the "Q", leaving older non-Q tags
+                         * as the wrong latest. */
+                        if (!spec_eq(task->Spec, "amdvlk.spec"))
+                            apply_name_post_filters(names, n);
                         char *latest = pr_get_latest_name(names, n);
                         if (latest && latest[0]) {
                             /* PS L 2538-2553: compare first; only the
