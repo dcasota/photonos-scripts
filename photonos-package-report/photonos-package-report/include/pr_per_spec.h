@@ -63,4 +63,9 @@ const char *pr_per_spec_source_tag_url(const char *spec_name);
  * each to its basename before the version pipeline. */
 const char *pr_all_other_source_tag_url(const char *spec_name);
 
+/* M43 / PS L 3206-3272 — mozilla-family releases-index URL (mozjs / nss
+ * / nspr). The caller scrapes dir-name "versions" from this index (not
+ * the spec's current-version dir). Returns NULL for non-mozilla specs. */
+const char *pr_mozilla_releases_url(const char *spec_name);
+
 #endif /* PR_PER_SPEC_H */
