@@ -308,6 +308,19 @@ REMAINING-GAP MAP off the fresh 147 (this is the path to green):
     judgment-heavy per-spec: freetype2/proto health-gate, mozilla/python
     two-stage, json-c S3-XML, apparmor series-URL, + col3-stale (C-better,
     likely accept/soft not fix).]
+    [M43 DONE #155/#156/#157, VALIDATED in CI: nspr RESOLVED (col5=4.39,
+    col6=.../v4.39/src/nspr-4.39.tar.gz = PS). Took 2 bug fixes found via
+    LOCAL binary repro (minimal workingDir w/ just nspr): (1) #156 basename
+    full-path hrefs (/pub/nspr/releases/v4.39/ -> v4.39); (2) #157 exclude
+    moz from the M23 pre-filter (it keeps only .tar./.tgz, dropped the bare
+    version dirs). LESSON: debug detection bugs via local binary repro, not
+    noisy CI cycles. mozilla releases-index mechanism (pr_mozilla_releases_url
+    + apply_mozilla_transform + moz_eligible + used_moz) now proven.
+    mozjs/nss FOLLOW-ON is harder: they detect a version (update-avail) but
+    PS emits EMPTY col6 (its NSS_<ver>_RTM/src probe yields nothing); plain
+    re-substitution of their stale-dir Source0 404s -> C would set a col11
+    "Manufacturer may changed..." warning PS doesn't have. Needs per-spec
+    col6/col11 suppression (emit col5 only, leave col6/col11 empty).]
     [INVESTIGATION 2026-05-22: freetype2's empty = TRANSIENT mirror
     flakiness, NOT a bug — savannah 302-redirects to a rotating mirror
     pool; C's HEAD-L hit a 500 mirror that run, PS hit 200. The M42
