@@ -242,6 +242,10 @@ static void apply_generic_scrape_tokens(const char *spec, char **names, size_t n
     else if (spec_eq(spec, "linux-api-headers.spec")) tok = "linux-";
     else if (spec_eq(spec, "linux-secure.spec"))      tok = "linux-";
     else if (spec_eq(spec, "linux-aws.spec"))         tok = "linux-";
+    /* M50 / PS L 4405: ltrace tarball is "ltrace_<ver>.orig.tar.bz2";
+     * after the Name-strip the candidate is "<ver>.orig" and the no-alpha
+     * filter would drop it on "orig". Strip ".orig". */
+    else if (spec_eq(spec, "ltrace.spec"))            tok = ".orig";
     if (tok == NULL) return;
     for (size_t i = 0; i < n; i++) {
         if (names[i] == NULL) continue;
