@@ -92,6 +92,27 @@ Branch naming: `sdd/phase-<N>-task<NNN>-<slug>` for numeric phases,
 
 
 
+
+## PER-SPEC CONVERGENCE ESSENTIALLY DONE (2026-05-22, 5.0 ~134-136 strict)
+
+Resolved + CI-confirmed this session: full detection program + lsscsi
+(M45) + apparmor (M46) + linux kernel family (M47/M47b: linux-esx,
+linux-rt, linux-api-headers all -> 6.1.173, row-identical incl SHA).
+
+REMAINING (NOT clean autonomous units):
+- amdvlk: shared version comparator must order ".Q2." quarter versions
+  (2025.Q2.1) -> HIGH blast radius across all comparisons -> ATTENDED.
+- linux.spec: malformed version "6.1.164-acvp}" (conditional Release
+  macro %{?acvp_build:.acvp}); PS mis-compares it as > 6.1.173 and warns
+  (PS quirk; 6.1.164 < 6.1.173). Its Source0 also 404s -> C gated out.
+  Matching PS = replicating a PS bug on a malformed version -> SKIP.
+- col9 auto-archive SHA + col3-stale: C >= PS -> OPERATOR decision
+  (col9 tarball-cache activation / col3-soft).
+- transient noise (mirror/Anubis/clone-EOF): not code-fixable.
+
+The cleanly-tractable per-spec convergence is DONE. Further gains need an
+attended session (amdvlk comparator) or the operator col9/col3 decisions.
+
 ## CLEAN PER-SPEC WINS EXHAUSTED (2026-05-22, 5.0 ~137-141 strict)
 
 Resolved this session (all CI-confirmed, via local binary repro):
