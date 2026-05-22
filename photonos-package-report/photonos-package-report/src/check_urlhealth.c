@@ -1316,13 +1316,15 @@ char *check_urlhealth(pr_task_t                       *task,
         int used_atom = 0;
         int used_sf   = 0;
         int used_gh   = 0;
+        int used_moz  = 0;
         int scrape_ok = 0;
         if (moz_eligible) {
             /* M43: scrape the mozilla releases index for dir-name
-             * versions; transform (strip trailing /, nss NSS_/_RTM)
-             * then the standard pipeline finds the latest. */
+             * versions; transform (basename, strip trailing /, nss
+             * NSS_/_RTM) then the standard pipeline finds the latest. */
             scrape_ok = (pr_scrape_listing(moz_url, &names, &n) == 0);
             if (scrape_ok) apply_mozilla_transform(task->Spec, names, n);
+            used_moz = 1;
         } else if (ao_eligible) {
             /* M41: scrape the project download page; its <a href> tarball
              * links are full URLs, so reduce each to its basename
@@ -1361,7 +1363,7 @@ char *check_urlhealth(pr_task_t                       *task,
             scrape_ok = (pr_scrape_listing(parent, &names, &n) == 0);
         }
         if (scrape_ok && n > 0) {
-            if (!used_atom && !used_sf && !used_gh) {
+            if (!used_atom && !used_sf && !used_gh && !used_moz) {
                 /* M23 (PS L 4321-4341) — HTML href path only. */
                 apply_scraper_pre_filters(names, n);
             }
