@@ -90,6 +90,37 @@ Branch naming: `sdd/phase-<N>-task<NNN>-<slug>` for numeric phases,
 
 ---
 
+
+## DETECTION COMPLETE — remaining tail is fiddly real-bugs + operator levers (2026-05-22)
+
+All per-host detection adapters SHIPPED + CI-validated: rubygems, funet,
+sourceforge, CPAN, github-html, samba, GNU tokens, intltool/itstool/
+openvswitch/ipset (launchpad/all-other), grub2/xorg-fonts, mozilla family
+(mozjs/nss/nspr), json-c (S3). 5.0 strict ~139 (from 392 session-start),
+soft-col9 makes it green-capable.
+
+REMAINING (each 1-spec, fiddly, shared-path regression risk — low ROI):
+- apparmor: col5 resolves; col6 needs the LAUNCHPAD HREF (not Source0
+  re-substitution — its Source0 hardcodes a stale /3.1/ series; PS uses
+  the actual download href .../apparmor/4.1/4.1.0/...). Fix = make the ao
+  path capture the matched-version full href for col6 (affects all ao
+  specs -> verify intltool/itstool/openvswitch don't regress).
+- amdvlk: C picks 2018.4.2 vs PS 2025.Q2.1 — version comparator doesn't
+  order ".Q2." (quarter) versions. Comparator change (high blast radius).
+- lsscsi: C emits 030; PS drops the bogus "lsscsi-030" entry — needs a
+  drop token applied BEFORE the Name-strip (token-ordering).
+- linux-esx/rt: C picks 6.19.x vs PS 6.1.x — wrong kernel series; needs
+  per-spec series pinning.
+- + transient noise (mirrors/Anubis/SHA) and col3-stale / col9 (C-better)
+  -> these are the col9-cache-activation + col3-soft OPERATOR decisions,
+  higher-leverage than the fiddly 1-spec bugs.
+
+RECOMMENDATION: the high-value autonomous detection work is DONE. Further
+gains need either (a) the operator col9-cache / col3-soft decisions, or
+(b) careful attended per-spec bug fixes (comparator/token-order/series
+pinning) where shared-path regression risk warrants review. Easing the
+autonomous grind here.
+
 ## REBOOT STANDBY (2026-05-22 ~09:03Z)
 
 System reboot requested. State at standby:
