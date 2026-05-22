@@ -350,5 +350,15 @@ jobs:
             echo "No journal changes to commit"
           else
             git commit -m "parity: PS=${{ steps.ps_run.outputs.id }} C=${{ github.run_id }} overall=${{ steps.diff.outputs.overall }}"
-            git push
+            # Retry push with rebase: concurrent master pushes (doc commits,
+            # PS scans-commit) can advance the branch between fetch and push.
+            for attempt in 1 2 3 4 5; do
+              if git push; then
+                echo "journal push ok (attempt $attempt)"
+                break
+              fi
+              echo "journal push rejected, rebasing (attempt $attempt)"
+              git pull --rebase --autostash origin "$(git rev-parse --abbrev-ref HEAD)" || true
+              sleep $(( attempt * 3 ))
+            done
           fi
