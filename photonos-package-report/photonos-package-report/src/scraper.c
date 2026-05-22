@@ -180,3 +180,77 @@ int pr_scrape_listing(const char *url, char ***out_names, size_t *out_n)
     *out_n = n;
     return 0;
 }
+
+/* M44 / PS L 4363-4367: extract <Key>...</Key> values from an S3-bucket
+ * XML listing (json-c is hosted on s3.amazonaws.com). The caller filters
+ * by prefix and drops the unwanted variants. Mirrors pr_scrape_listing's
+ * fetch but matches the XML <Key> element instead of <a href>. */
+int pr_scrape_keys(const char *url, char ***out_names, size_t *out_n)
+{
+    if (out_names == NULL || out_n == NULL) return -1;
+    *out_names = NULL;
+    *out_n = 0;
+    if (url == NULL || *url == '\0') return -1;
+
+    struct body_buf body = {0};
+    CURL *c = curl_easy_init();
+    if (!c) return -1;
+    curl_easy_setopt(c, CURLOPT_URL,             url);
+    curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION,  1L);
+    curl_easy_setopt(c, CURLOPT_TIMEOUT_MS,      20000L);
+    curl_easy_setopt(c, CURLOPT_USERAGENT,       "PowerShell");
+    curl_easy_setopt(c, CURLOPT_WRITEFUNCTION,   body_write_cb);
+    curl_easy_setopt(c, CURLOPT_WRITEDATA,       &body);
+    curl_easy_setopt(c, CURLOPT_ACCEPT_ENCODING, "");
+    CURLcode rc = curl_easy_perform(c);
+    long http_status = 0;
+    if (rc == CURLE_OK) curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &http_status);
+    curl_easy_cleanup(c);
+
+    if (rc != CURLE_OK || http_status < 200 || http_status >= 400
+        || body.overflow || body.len == 0) {
+        free(body.data);
+        return (rc == CURLE_OK && body.len == 0) ? 0 : -1;
+    }
+
+    int err = 0; PCRE2_SIZE eoff = 0;
+    pcre2_code *re = pcre2_compile((PCRE2_SPTR)"<Key>([^<]*)</Key>",
+                                   PCRE2_ZERO_TERMINATED, 0, &err, &eoff, NULL);
+    if (!re) { free(body.data); return -1; }
+    pcre2_match_data *md = pcre2_match_data_create_from_pattern(re, NULL);
+    if (!md) { pcre2_code_free(re); free(body.data); return -1; }
+
+    size_t cap = 32, n = 0;
+    char **names = (char **)malloc(cap * sizeof *names);
+    if (!names) { pcre2_match_data_free(md); pcre2_code_free(re); free(body.data); return -1; }
+
+    PCRE2_SIZE offset = 0;
+    while (offset < body.len) {
+        int hits = pcre2_match(re, (PCRE2_SPTR)body.data, body.len, offset, 0, md, NULL);
+        if (hits < 0) break;
+        PCRE2_SIZE *ov = pcre2_get_ovector_pointer(md);
+        PCRE2_SIZE s = ov[2], e = ov[3];
+        if (s != PCRE2_UNSET && e > s) {
+            size_t vlen = (size_t)(e - s);
+            char *v = (char *)malloc(vlen + 1);
+            if (v) {
+                memcpy(v, body.data + s, vlen); v[vlen] = '\0';
+                if (n == cap) {
+                    char **p = (char **)realloc(names, cap * 2 * sizeof *names);
+                    if (!p) { free(v); break; }
+                    names = p; cap *= 2;
+                }
+                names[n++] = v;
+            }
+        }
+        offset = ov[1];
+        if (offset <= ov[0]) offset++;
+    }
+
+    pcre2_match_data_free(md);
+    pcre2_code_free(re);
+    free(body.data);
+    *out_names = names;
+    *out_n = n;
+    return 0;
+}
