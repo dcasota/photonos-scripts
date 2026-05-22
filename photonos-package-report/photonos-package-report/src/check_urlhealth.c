@@ -195,8 +195,13 @@ static void apply_mozilla_transform(const char *spec, char **names, size_t n)
     int is_nss = spec_eq(spec, "nss.spec");
     for (size_t i = 0; i < n; i++) {
         if (names[i] == NULL) continue;
+        /* pr_scrape_listing returns full-path hrefs like
+         * "/pub/nspr/releases/v4.39/" — strip trailing slash(es) then
+         * reduce to the last path segment so the pipeline sees "v4.39". */
         size_t l = strlen(names[i]);
-        if (l > 0 && names[i][l - 1] == '/') names[i][l - 1] = '\0';
+        while (l > 0 && names[i][l - 1] == '/') names[i][--l] = '\0';
+        char *slash = strrchr(names[i], '/');
+        if (slash) memmove(names[i], slash + 1, strlen(slash + 1) + 1);
         if (is_nss) {
             names[i] = istr_replace_all(names[i], "NSS_", "");
             names[i] = istr_replace_all(names[i], "_RTM", "");
