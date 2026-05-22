@@ -432,3 +432,22 @@ const char *pr_all_other_source_tag_url(const char *spec_name)
     }
     return NULL;
 }
+
+/* M43 / PS L 3252-3272: nspr detects the latest version by scraping the
+ * releases INDEX (not the spec's current-version dir, which is all the
+ * generic scraper sees). The "vX.Y" dir names strip their leading "v"
+ * via apply_clean_version_names; col6 is the existing re-substitution of
+ * the "/v%{version}/src/nspr-%{version}.tar.gz" Source0 (a valid URL).
+ *
+ * mozjs/nss are NOT here yet: they are "update available" but their
+ * Source0 hardcodes a stale version dir (%{version}esr / NSS_3_78_RTM),
+ * so plain re-substitution yields a 404 and a spurious col11 warning PS
+ * doesn't emit. They need their versioned-source-dir construction
+ * (PS L 3230/3249) as a follow-on. */
+const char *pr_mozilla_releases_url(const char *spec_name)
+{
+    if (spec_name == NULL) return NULL;
+    if (strcasecmp(spec_name, "nspr.spec") == 0)
+        return "https://ftp.mozilla.org/pub/nspr/releases/";
+    return NULL;
+}

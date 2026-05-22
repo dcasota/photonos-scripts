@@ -185,6 +185,25 @@ static void apply_generic_scrape_tokens(const char *spec, char **names, size_t n
     }
 }
 
+/* M43 / PS L 3206-3272: clean mozilla releases-index dir names. The
+ * scrape returns hrefs like "v4.39/", "NSS_3_124_RTM/", "151.0.1/".
+ * Strip the trailing slash; for nss strip the NSS_ prefix + _RTM suffix
+ * (apply_clean_version_names' _->. then yields "3.124"). The leading-v
+ * strip (nspr) is handled by apply_clean_version_names. */
+static void apply_mozilla_transform(const char *spec, char **names, size_t n)
+{
+    int is_nss = spec_eq(spec, "nss.spec");
+    for (size_t i = 0; i < n; i++) {
+        if (names[i] == NULL) continue;
+        size_t l = strlen(names[i]);
+        if (l > 0 && names[i][l - 1] == '/') names[i][l - 1] = '\0';
+        if (is_nss) {
+            names[i] = istr_replace_all(names[i], "NSS_", "");
+            names[i] = istr_replace_all(names[i], "_RTM", "");
+        }
+    }
+}
+
 /* M37: a spec's Source0 points at a CPAN author directory. PS L 3933
  * gates the CPAN branch on the host alone, independent of Source0
  * health. The three forms PS recognises (L 3933). */
@@ -1262,7 +1281,13 @@ char *check_urlhealth(pr_task_t                       *task,
     int ao_eligible = (ao_url != NULL)
                       && (row == NULL || row->gitSource == NULL
                           || row->gitSource[0] == '\0');
-    if (allow_network && (health == 200 || sf_eligible || cpan_eligible || gh_eligible || ao_eligible)
+    /* M43: mozilla family scrapes a releases INDEX regardless of health
+     * (PS L 3206-3272). Dir-name versions, nss/nspr transforms. */
+    const char *moz_url = pr_mozilla_releases_url(task->Spec);
+    int moz_eligible = (moz_url != NULL)
+                       && (row == NULL || row->gitSource == NULL
+                           || row->gitSource[0] == '\0');
+    if (allow_network && (health == 200 || sf_eligible || cpan_eligible || gh_eligible || ao_eligible || moz_eligible)
         && (state.UpdateAvailable == NULL || state.UpdateAvailable[0] == '\0')
         && (atom_url != NULL
             || row == NULL
@@ -1287,7 +1312,13 @@ char *check_urlhealth(pr_task_t                       *task,
         int used_sf   = 0;
         int used_gh   = 0;
         int scrape_ok = 0;
-        if (ao_eligible) {
+        if (moz_eligible) {
+            /* M43: scrape the mozilla releases index for dir-name
+             * versions; transform (strip trailing /, nss NSS_/_RTM)
+             * then the standard pipeline finds the latest. */
+            scrape_ok = (pr_scrape_listing(moz_url, &names, &n) == 0);
+            if (scrape_ok) apply_mozilla_transform(task->Spec, names, n);
+        } else if (ao_eligible) {
             /* M41: scrape the project download page; its <a href> tarball
              * links are full URLs, so reduce each to its basename
              * (PS L 4400 path-split) before the version pipeline. The
