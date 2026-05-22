@@ -81,6 +81,32 @@ static char *funet_mirror(char *url)
                             "ftp.funet.fi/pub/gnu/ftp.gnu.org");
 }
 
+/* M46 / PS L 525: apparmor's launchpad URL embeds a release-series dir
+ * (.../apparmor/<major.minor>/<version>/...). Its Source0 hardcodes the
+ * OLD series (3.1), so re-substituting a newer version 404s; PS instead
+ * uses the listing href, which carries the NEW series. Rewrite the
+ * series segment to major.minor of `latest`. Robust to the literal
+ * series value (replaces whatever segment follows "/apparmor/"). */
+static char *apparmor_series_fixup(char *url, const char *latest)
+{
+    if (url == NULL || latest == NULL) return url;
+    const char *d1 = strchr(latest, '.');
+    if (!d1) return url;
+    const char *d2 = strchr(d1 + 1, '.');
+    size_t mmlen = d2 ? (size_t)(d2 - latest) : strlen(latest);  /* "4.1" */
+    char *p = strstr(url, "/apparmor/");
+    if (!p) return url;
+    p += strlen("/apparmor/");
+    char *slash = strchr(p, '/');
+    if (!slash) return url;
+    char *out = NULL;
+    if (asprintf(&out, "%.*s%.*s%s",
+                 (int)(p - url), url, (int)mmlen, latest, slash) < 0)
+        return url;
+    free(url);
+    return out;
+}
+
 static int spec_eq(const char *spec, const char *name)
 {
     return spec != NULL && strcasecmp(spec, name) == 0;
@@ -1468,6 +1494,9 @@ char *check_urlhealth(pr_task_t                       *task,
                         /* PS rewrites $Source0 (L2395) before deriving the
                          * UpdateURL, so the mirror propagates here too. */
                         update_url = funet_mirror(update_url);
+                        /* M46: apparmor launchpad series-dir fixup. */
+                        if (spec_eq(task->Spec, "apparmor.spec"))
+                            update_url = apparmor_series_fixup(update_url, latest);
                         free(state.UpdateURL);
                         state.UpdateURL = update_url;
                     }
