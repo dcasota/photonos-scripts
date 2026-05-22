@@ -178,6 +178,11 @@ static void apply_generic_scrape_tokens(const char *spec, char **names, size_t n
     else if (spec_eq(spec, "proto.spec"))             tok = "xproto-";
     else if (spec_eq(spec, "xorg-applications.spec")) tok = "bdftopcf-";
     else if (spec_eq(spec, "xorg-fonts.spec"))        tok = "encodings-";
+    /* M45 / PS L 4404: lsscsi's listing has a bogus dot-less "lsscsi-030"
+     * entry that parses as 30 (> the real 0.32) and wins the sort. PS
+     * strips it; here (post Name-strip) the entry is "030", so stripping
+     * "030" drops it and leaves the real 0.3x versions. */
+    else if (spec_eq(spec, "lsscsi.spec"))            tok = "030";
     if (tok == NULL) return;
     for (size_t i = 0; i < n; i++) {
         if (names[i] == NULL) continue;
