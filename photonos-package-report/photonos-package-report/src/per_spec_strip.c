@@ -416,6 +416,7 @@ static const struct {
     {"intltool.spec",   "https://launchpad.net/intltool/+download"},
     {"itstool.spec",    "https://itstool.org/download.html"},
     {"openvswitch.spec","https://www.openvswitch.org/download/"},
+    {"ipset.spec",      "https://ipset.netfilter.org/install.html"},
 };
 
 static const size_t g_all_other_url_table_count =
