@@ -234,6 +234,14 @@ static void apply_generic_scrape_tokens(const char *spec, char **names, size_t n
      * strips it; here (post Name-strip) the entry is "030", so stripping
      * "030" drops it and leaves the real 0.3x versions. */
     else if (spec_eq(spec, "lsscsi.spec"))            tok = "030";
+    /* M47b / PS L 4031 ($replace += "linux-"): kernel-family specs in
+     * their OWN dir (Name != "linux") don't get "linux-" stripped by the
+     * Name-token step, so "linux-6.1.173" keeps the prefix and the
+     * no-alpha filter drops it. (linux/linux-esx/linux-rt share
+     * SPECS/linux/ -> Name="linux" -> already stripped.) */
+    else if (spec_eq(spec, "linux-api-headers.spec")) tok = "linux-";
+    else if (spec_eq(spec, "linux-secure.spec"))      tok = "linux-";
+    else if (spec_eq(spec, "linux-aws.spec"))         tok = "linux-";
     if (tok == NULL) return;
     for (size_t i = 0; i < n; i++) {
         if (names[i] == NULL) continue;
