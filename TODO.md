@@ -94,6 +94,30 @@ Branch naming: `sdd/phase-<N>-task<NNN>-<slug>` for numeric phases,
 
 
 
+
+## MORE WINS via local repro (2026-05-22 late, 5.0 -> 126 strict)
+
+After "per-spec done" was declared, local-repro found MORE clean wins:
+M48 amdvlk (quarterly-version filter-skip), M49 nicstat/tclac
+(sourceforge /files/ parent fallback), M50 ltrace (.orig token).
+5.0: 135 -> 126 (CI-confirmed for M48/M49; M50 verified locally).
+
+REMAINING col5-missed stragglers (FIDDLY, deferred):
+- libev: Source0 redirects to .../libev/Attic/ (old-versions archive);
+  C computes the scraper dir from the redirect-resolved URL -> scrapes
+  Attic/ (old) while PS uses the template dir (root, where 4.33 lives).
+  Fix = compute scraper parent from the ORIGINAL template Source0, not
+  the redirect-resolved one -> touches shared scraper-parent logic ->
+  regression risk to all scraper specs for 1 spec. DEFER.
+- proto: x.org archived; %{xproto_ver}=7.7 vs detected xproto 7.0.31
+  (different packages); PS warns, C empty. Confusing per-spec edge. DEFER.
+- 4 C-better col5 rows (lasso/libbsd/libevent/lzo: C emits (same version),
+  PS empty) -> C >= PS, don't mirror.
+
+col3 lever: still operator-gated (criteria change weakening ADR-0006).
+The truly-clean per-spec wins are now exhausted; libev/proto need
+attended care (shared-path / confusing edges).
+
 ## RESIDUAL ANALYSIS (2026-05-22, 5.0 = 135 strict, all per-spec real-bugs done)
 
 Categorized the residual after M45-M48 + detection program:
