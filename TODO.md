@@ -90,6 +90,33 @@ Branch naming: `sdd/phase-<N>-task<NNN>-<slug>` for numeric phases,
 
 ---
 
+## REBOOT STANDBY (2026-05-22 ~09:03Z)
+
+System reboot requested. State at standby:
+- All work COMMITTED + PUSHED; master HEAD == origin (eaefbc9). Nothing lost.
+- In-flight PS validation run 26278553867 (M43b mozilla family) was
+  CANCELLED cleanly (would have been killed mid-write by reboot). The
+  full mozilla family (mozjs 151.0.1 / nss 3.124 / nspr 4.39) is already
+  verified ROW-IDENTICAL to PS via LOCAL binary repro, so the CI cycle
+  was only confirmation.
+- Self-hosted GitHub Actions runner stops with the system; it should
+  re-register on boot if its service is enabled.
+- The autonomous loop (ScheduleWakeup) + 4h "retry to continue" cron are
+  session-only and END at reboot.
+
+RESUME AFTER REBOOT:
+  1. Re-dispatch the M43b confirmation cycle:
+     gh workflow run "Photon OS Package Report" -f report_type=urlhealth \
+       -f branches=5.0 -f upstreams_exclusion_list=firmware,chromium --ref master
+     (live C auto-triggers; ~45min) then read parity-journal.tsv 5.0 row +
+     confirm mozjs/nss/nspr resolved.
+  2. To resume autonomous grind, re-invoke /loop (or just say "continue").
+  3. NEXT UNITS (per the L4260+/L3200-3400 map below): json-c S3-XML,
+     apparmor series-URL, then the ~5 real bugs (amdvlk Q-version, lsscsi,
+     linux-esx/rt). Detection clean-wins are otherwise exhausted; the
+     dominant residual is transient noise + col3-stale (C-better) — see
+     the col9/col3 soft decisions and the methodology notes.
+
 ## Now: disk-recovery aftermath
 
 - [x] Kill zombie C-binary processes (user ran `pkill` via `!`)
