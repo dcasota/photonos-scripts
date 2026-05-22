@@ -33,4 +33,9 @@
  */
 int pr_scrape_listing(const char *url, char ***out_names, size_t *out_n);
 
+/* M44: extract <Key>...</Key> values from an S3-bucket XML listing
+ * (e.g. json-c on s3.amazonaws.com). On success returns 0 and sets
+ * *out_names / *out_n (caller frees); -1 on transport/alloc failure. */
+int pr_scrape_keys(const char *url, char ***out_names, size_t *out_n);
+
 #endif /* PR_SCRAPER_H */

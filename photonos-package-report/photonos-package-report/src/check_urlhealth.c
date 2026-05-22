@@ -1292,7 +1292,12 @@ char *check_urlhealth(pr_task_t                       *task,
     int moz_eligible = (moz_url != NULL)
                        && (row == NULL || row->gitSource == NULL
                            || row->gitSource[0] == '\0');
-    if (allow_network && (health == 200 || sf_eligible || cpan_eligible || gh_eligible || ao_eligible || moz_eligible)
+    /* M44 / PS L 4300-4367: json-c is hosted on an S3 bucket whose XML
+     * listing exposes versions as <Key> elements (not <a href>). */
+    int jsonc_eligible = spec_eq(task->Spec, "json-c.spec")
+                         && (row == NULL || row->gitSource == NULL
+                             || row->gitSource[0] == '\0');
+    if (allow_network && (health == 200 || sf_eligible || cpan_eligible || gh_eligible || ao_eligible || moz_eligible || jsonc_eligible)
         && (state.UpdateAvailable == NULL || state.UpdateAvailable[0] == '\0')
         && (atom_url != NULL
             || row == NULL
@@ -1318,7 +1323,25 @@ char *check_urlhealth(pr_task_t                       *task,
         int used_gh   = 0;
         int used_moz  = 0;
         int scrape_ok = 0;
-        if (moz_eligible) {
+        if (jsonc_eligible) {
+            /* M44: S3-bucket XML listing -> <Key> values. Drop the
+             * -nodoc variant (PS L 4367) and strip the "releases/json-c-"
+             * prefix (PS L 4366); the pipeline ext-strip then yields the
+             * version. */
+            scrape_ok = (pr_scrape_keys("https://s3.amazonaws.com/json-c_releases/", &names, &n) == 0);
+            if (scrape_ok) {
+                for (size_t i = 0; i < n; i++) {
+                    if (names[i] == NULL) continue;
+                    if (strstr(names[i], "-nodoc") != NULL) {
+                        free(names[i]); names[i] = NULL; continue;
+                    }
+                    names[i] = istr_replace_all(names[i], "releases/json-c-", "");
+                }
+            }
+            /* Do NOT skip M23 here: the names are "<ver>.tar.gz" — M23
+             * keeps .tar. entries and strips the extension early, before
+             * the no-alpha post-filter would otherwise drop them. */
+        } else if (moz_eligible) {
             /* M43: scrape the mozilla releases index for dir-name
              * versions; transform (basename, strip trailing /, nss
              * NSS_/_RTM) then the standard pipeline finds the latest. */
