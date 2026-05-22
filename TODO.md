@@ -93,6 +93,26 @@ Branch naming: `sdd/phase-<N>-task<NNN>-<slug>` for numeric phases,
 
 
 
+
+## RESIDUAL ANALYSIS (2026-05-22, 5.0 = 135 strict, all per-spec real-bugs done)
+
+Categorized the residual after M45-M48 + detection program:
+- col9-involved: 83 rows — BUT col9 is already SOFT, so these are strict
+  on OTHER cols (col5/6/3). => col9 tarball-cache activation barely moves
+  the count; most col9 rows stay strict regardless. LOWER lever than thought.
+- col3-only / col3-4: ~28 rows strict ONLY on col3 (col4 already soft).
+  These are the PS-stale cases (PS=homepage/wiki/readme, C=real tarball
+  URL — C MORE correct). => col3-soft (or accept) is the BIGGEST single
+  lever (~28 rows). Operator decision; not uniformly C-better so needs a
+  targeted rule, not blanket-soft (some col3 diffs are real substitution).
+- col5-involved: ~37 rows — residual detection differences (smaller
+  families / per-spec quirks / minor temporal). Long tail; diminishing.
+- transient (mirror/Anubis/SHA/clone-EOF): irreducible per-run noise.
+
+REVISED operator priority: col3-soft (~28 rows, C>=PS) > col9-cache
+(marginal, most col9 rows strict elsewhere). The per-spec autonomous
+work is DONE; further count reduction is gated on the col3 decision.
+
 ## PER-SPEC CONVERGENCE ESSENTIALLY DONE (2026-05-22, 5.0 ~134-136 strict)
 
 Resolved + CI-confirmed this session: full detection program + lsscsi
