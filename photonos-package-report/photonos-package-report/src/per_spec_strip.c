@@ -399,3 +399,35 @@ const char *pr_per_spec_source_tag_url(const char *spec_name)
     }
     return NULL;
 }
+
+/* M41 / PS L 4294-4305: "all other types" per-spec SourceTagURL
+ * overrides. These specs' Source0 dir is not a usable listing, so PS
+ * points at a project download page whose <a href> tarball links are
+ * full URLs (path-split to the basename happens in the caller). Only
+ * the launchpad/standard-listing subset is ported here; the bot-walled
+ * / bespoke-parse ones (json-c S3, js, ipset install.html, chrpath,
+ * docbook two-stage, …) are deferred. */
+static const struct {
+    const char *spec_name;
+    const char *url;
+} g_all_other_url_table[] = {
+    {"apparmor.spec",   "https://launchpad.net/apparmor/+download"},
+    {"bzr.spec",        "https://launchpad.net/bzr/+download"},
+    {"intltool.spec",   "https://launchpad.net/intltool/+download"},
+    {"itstool.spec",    "https://itstool.org/download.html"},
+    {"openvswitch.spec","https://www.openvswitch.org/download/"},
+};
+
+static const size_t g_all_other_url_table_count =
+    sizeof g_all_other_url_table / sizeof g_all_other_url_table[0];
+
+const char *pr_all_other_source_tag_url(const char *spec_name)
+{
+    if (spec_name == NULL) return NULL;
+    for (size_t e = 0; e < g_all_other_url_table_count; e++) {
+        if (strcasecmp(g_all_other_url_table[e].spec_name, spec_name) == 0) {
+            return g_all_other_url_table[e].url;
+        }
+    }
+    return NULL;
+}

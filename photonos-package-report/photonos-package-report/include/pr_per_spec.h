@@ -56,4 +56,11 @@ void pr_apply_per_spec_global_replace(const char *spec_name,
  */
 const char *pr_per_spec_source_tag_url(const char *spec_name);
 
+/* M41 / PS L 4294-4305 — "all other types" per-spec SourceTagURL
+ * override (project download page). Returns a static URL when the spec
+ * is in the ported subset (launchpad / standard listings), else NULL.
+ * Caller scrapes <a href> tarball links from the page and path-splits
+ * each to its basename before the version pipeline. */
+const char *pr_all_other_source_tag_url(const char *spec_name);
+
 #endif /* PR_PER_SPEC_H */
