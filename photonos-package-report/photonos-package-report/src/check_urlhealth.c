@@ -1446,6 +1446,18 @@ char *check_urlhealth(pr_task_t                       *task,
             char *sf_url = pr_sourceforge_tag_url(task->Spec, state.Source0);
             if (sf_url) {
                 scrape_ok = (pr_sourceforge_fetch_names(sf_url, &names, &n) == 0);
+                /* M49: the derived URL is .../files/<project>, but some
+                 * projects host releases directly under .../files/ (e.g.
+                 * nicstat, tclap). If the <project> sub-dir 404s / yields
+                 * nothing, retry the parent .../files/. Only fires when
+                 * the primary fails, so working specs are untouched. */
+                if (!scrape_ok || n == 0) {
+                    char *slash = strrchr(sf_url, '/');
+                    if (slash && slash != sf_url) {
+                        slash[1] = '\0';  /* keep trailing slash */
+                        scrape_ok = (pr_sourceforge_fetch_names(sf_url, &names, &n) == 0);
+                    }
+                }
                 used_sf = 1;
                 free(sf_url);
             }
