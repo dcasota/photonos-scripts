@@ -282,8 +282,9 @@ OPERATOR INPUT NEEDED: tarball-cache (option a) only pays off with
 persistent disk; otherwise (b) soft-col9 is the realistic route to a
 green journal given C ≥ PS on col9.
 
-**FRESH-CYCLE BASELINE (5.0, run 26262711412, 2026-05-22 01:46): 145
-strict / 98 soft.** (was 147 pre-M41.) Achieved via: fresh same-hour PS→C cycle (PS
+**FRESH-CYCLE BASELINE (5.0, run 26280707019, 2026-05-22): 139 strict /
+94 soft.** mozilla family (mozjs 151.0.1 / nss 3.124 / nspr 4.39) all
+RESOLVED in CI (M43/M43b).
 26243226678 → live C auto-trigger; ~20-min gap, kills the temporal col5
 inflation) + M40 (unzip/zip) + soft-col9. Journal == local diff (147)
 verified. This is the trustworthy current floor for 5.0.
