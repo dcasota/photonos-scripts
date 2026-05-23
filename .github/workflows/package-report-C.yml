@@ -366,6 +366,35 @@ jobs:
             echo "| $branch | $verdict | $strict | $soft |" >> "$GITHUB_STEP_SUMMARY"
           done
 
+          # M61: package version-matrix report parity. Deterministic (spec
+          # versions from pinned-SHA reconstructs, no network), so it should
+          # be byte-identical to PS — gated. Compare sorted bodies (the
+          # filename timestamp differs between the PS and C runs).
+          PS_PKG=$(ls "$PS_DIR"/photonos-package-report_*.prn 2>/dev/null | head -1)
+          C_PKG=$(ls -t "$C_DIR"/photonos-package-report_*.prn 2>/dev/null | head -1)
+          if [ -n "$PS_PKG" ] && [ -n "$C_PKG" ]; then
+            pkg_diff=$(diff <(tail -n +2 "$PS_PKG" | sort) <(tail -n +2 "$C_PKG" | sort) 2>/dev/null | grep -c '^[<>]' || true)
+            if [ "${pkg_diff:-1}" -eq 0 ]; then
+              echo "| package-report | green | 0 | - |" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "| package-report | **strict** | $pkg_diff | - |" >> "$GITHUB_STEP_SUMMARY"
+              overall="strict"
+            fi
+          fi
+
+          # M61: cross-branch diff reports — INFORMATIONAL only (not gated).
+          # PS omits e.g. stalld in common-master even though its own matrix +
+          # VersionCompare say common>master (PS internal inconsistency); C is
+          # the more consistent output, so we report the delta but don't gate.
+          for ps_d in "$PS_DIR"/photonos-diff-report-*.prn; do
+            [ -f "$ps_d" ] || continue
+            pair=$(basename "$ps_d" | sed -E 's|photonos-diff-report-(.+)_[0-9]+\.prn|\1|')
+            c_d=$(ls -t "$C_DIR"/photonos-diff-report-"$pair"_*.prn 2>/dev/null | head -1)
+            [ -n "$c_d" ] || continue
+            d_diff=$(diff <(tail -n +2 "$ps_d" | sort) <(tail -n +2 "$c_d" | sort) 2>/dev/null | grep -c '^[<>]' || true)
+            echo "| diff-$pair _(info)_ | - | ${d_diff:-?} | - |" >> "$GITHUB_STEP_SUMMARY"
+          done
+
           {
             echo
             echo "**Overall: \`$overall\`**"
