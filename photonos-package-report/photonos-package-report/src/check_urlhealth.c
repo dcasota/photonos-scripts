@@ -21,6 +21,7 @@
 #include "pr_github_tags.h"
 #include "pr_hook.h"
 #include "pr_latest.h"
+#include "pr_netcat.h"
 #include "pr_per_spec.h"
 #include "pr_rubygems.h"
 #include "pr_state.h"
@@ -1751,6 +1752,33 @@ char *check_urlhealth(pr_task_t                       *task,
             pr_git_tags_free(names, n);
         }
         free(parent);
+    }
+
+    /* M62 / PS L 2540-2556 + L 4705-4711: netcat bespoke detection. The
+     * vendored Source0 (packages.broadcom.com/.../nc-<commit_id>.tar.xz) has
+     * no upstream release listing, so derive col5 from the CVS revision in
+     * openbsd's netcat.c and the download-name commit_id from the GitHub
+     * Commits API. col6/col7/col10 follow PS's self-built convention. */
+    if (allow_network && spec_eq(task->Spec, "netcat.spec")) {
+        char *nc_ver = NULL, *nc_cid = NULL;
+        if (pr_netcat_detect(getenv("GITHUB_TOKEN"), &nc_ver, &nc_cid) == 0
+            && nc_ver && nc_ver[0]) {
+            free(state.UpdateAvailable);
+            state.UpdateAvailable = nc_ver;   /* takes ownership */
+            if (nc_cid && nc_cid[0]) {
+                free(state.UpdateURL);
+                state.UpdateURL = dup_or_empty(
+                    "self-built from https://github.com/openbsd/src (usr.bin/nc)");
+                free(state.HealthUpdateURL);
+                state.HealthUpdateURL = dup_or_empty("200");
+                free(state.UpdateDownloadName);
+                if (asprintf(&state.UpdateDownloadName, "nc-%s.tar.xz", nc_cid) < 0)
+                    state.UpdateDownloadName = dup_or_empty("");
+            }
+        } else {
+            free(nc_ver);
+        }
+        free(nc_cid);
     }
 
     /* M57 / PS L 2264-2363: hardcoded UpdateURL/UpdateAvailable overrides.

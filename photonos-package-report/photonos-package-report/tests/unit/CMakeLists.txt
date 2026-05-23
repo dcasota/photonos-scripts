@@ -101,6 +101,7 @@ add_executable(test_phase6
     ${CMAKE_SOURCE_DIR}/src/prn_writer.c
     ${CMAKE_SOURCE_DIR}/src/check_urlhealth.c
     ${CMAKE_SOURCE_DIR}/src/scraper.c
+    ${CMAKE_SOURCE_DIR}/src/netcat.c
     ${CMAKE_SOURCE_DIR}/src/spec_warnings.c
     ${CMAKE_SOURCE_DIR}/src/per_spec_strip.c
     ${CMAKE_SOURCE_DIR}/src/stable_source.c
