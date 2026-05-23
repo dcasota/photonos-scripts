@@ -279,3 +279,23 @@ controls unchanged; 13 ctests green.
 **Remaining stragglers (each its own unit):** byacc (verify `/current/`
 scrape + L4354-4374 filter), libsodium (col3 substitution empty + 404 gate +
 `-stable` strip), netcat (commit-id vendored tarball), libusb/runit/vsftpd.
+
+---
+
+## Session (2026-05-23, cont.): M56 — byacc/dialog .tgz keep-marker fix
+
+Second straggler. byacc col4=200 and the `/current/` scrape returned all the
+`byacc-2.0.<date>.tgz` files, yet col5 was empty. Traced via a temporary
+debug print: the listing also contains a versionless `byacc.tar.gz` "latest"
+symlink, which flipped `apply_scraper_pre_filters` Step 3's `has_tar` flag →
+keep-marker became `.tar.` → every versioned `.tgz` was dropped, leaving only
+`byacc.tar.gz` → reduced to "" → empty.
+
+PS forces `.tgz` for byacc and dialog at L4374 regardless of `.tar.` presence.
+Ported as a `force_tgz` flag (spec_eq byacc/dialog) in apply_scraper_pre_filters.
+Fixes BOTH byacc (2.0.20260126) and dialog (1.3-20260107); validated no
+regression on tzdata/curl/openssl + controls; 13 ctests green.
+
+Remaining stragglers: libsodium (col3 substitution empty + 404 gate +
+`-stable`), netcat (commit-id vendored), libusb, runit, vsftpd. (gtest's
+`v1.17.0` vs `1.17.0` is a separate known v-prefix normalization, C-cleaner.)

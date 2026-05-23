@@ -561,7 +561,7 @@ static void apply_clean_version_names(char **names, size_t n)
  *
  * Mutates names[] in place. Dropped entries are freed and set to
  * NULL. Surviving entries are reallocated by str_replace_all. */
-static void apply_scraper_pre_filters(char **names, size_t n)
+static void apply_scraper_pre_filters(char **names, size_t n, const char *spec)
 {
     if (names == NULL || n == 0) return;
 
@@ -574,12 +574,18 @@ static void apply_scraper_pre_filters(char **names, size_t n)
         }
     }
 
-    /* Step 3: keep .tar. if present in any survivor; else keep .tgz. */
+    /* Step 3: keep .tar. if present in any survivor; else keep .tgz.
+     * M56 / PS L 4374: byacc and dialog ALWAYS keep .tgz, even when a
+     * versionless `<name>.tar.gz` "latest" symlink is also listed —
+     * otherwise that lone .tar.gz flips the marker and drops every
+     * versioned byacc-X.tgz / dialog-X.tgz, reducing to empty. */
+    int force_tgz = spec != NULL
+                    && (spec_eq(spec, "byacc.spec") || spec_eq(spec, "dialog.spec"));
     int has_tar = 0;
     for (size_t i = 0; i < n; i++) {
         if (names[i] && strstr(names[i], ".tar.") != NULL) { has_tar = 1; break; }
     }
-    const char *keep_marker = has_tar ? ".tar." : ".tgz";
+    const char *keep_marker = (has_tar && !force_tgz) ? ".tar." : ".tgz";
     for (size_t i = 0; i < n; i++) {
         if (names[i] == NULL) continue;
         if (strstr(names[i], keep_marker) == NULL) {
@@ -1551,7 +1557,7 @@ char *check_urlhealth(pr_task_t                       *task,
         if (scrape_ok && n > 0) {
             if (!used_atom && !used_sf && !used_gh && !used_moz) {
                 /* M23 (PS L 4321-4341) — HTML href path only. */
-                apply_scraper_pre_filters(names, n);
+                apply_scraper_pre_filters(names, n, task->Spec);
             }
             /* M35 / PS L 3525-3529: tboot year-stamped dir drops. */
             if (used_sf && spec_eq(task->Spec, "tboot.spec")) {
