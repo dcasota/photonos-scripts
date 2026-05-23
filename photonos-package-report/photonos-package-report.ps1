@@ -2194,6 +2194,15 @@ function CheckURLHealth {
     if ([int]$index -ne -1)
     {
         $Source0 = $data[$index].'Source0Lookup'
+        # When the Source0Lookup field is empty (the entry only pins
+        # gitSource/customRegex, e.g. the gitlab-atom specs gstreamer/cairo/
+        # dbus/fontconfig/pixman/...), fall back to the spec's own Source0
+        # template. Otherwise the empty value flows into the L2224-2229
+        # homepage prepend and collapses col3/col6/col10 to the bare project
+        # homepage instead of the real versioned tarball URL. This mirrors the
+        # C port (check_urlhealth.c: empty Source0Lookup -> task->Source0) so
+        # both sides emit the same tarball+SHA. (ADR-0009 col3 decision (c).)
+        if ([string]::IsNullOrEmpty($Source0)) { $Source0 = $currentTask.Source0 }
         $GitSource = $data[$index].'gitSource'
         $gitBranch = $data[$index].'gitBranch'
         $customRegex = $data[$index].'customRegex'
