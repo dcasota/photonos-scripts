@@ -391,3 +391,16 @@ PS snapshot (both are in the snapshot tarball's prn-snapshot/):
   - diff reports: INFORMATIONAL (reported, not gated). PS omits stalld in
     common-master despite its own matrix + VersionCompare saying common>master
     (PS internal inconsistency); C is more correct, so not gated.
+
+---
+
+## Session (2026-05-23, cont.): M62 — netcat bespoke detection
+
+First URL-health straggler. netcat is a self-built vendored tarball with no
+upstream listing; PS derives the version from the CVS revision in openbsd's
+netcat.c and the download-name commit_id from the GitHub Commits API. Ported
+as src/netcat.c (two libcurl GETs + version regex + sha extract), wired into
+check_urlhealth gated by allow_network + spec_eq(netcat). Validated locally:
+byte-identical to PS — col5=1.238, col6=self-built literal, col10=nc-c2d3847
+(commit_id matched). Remaining stragglers: libusb (sourceforge two-stage),
+libsodium (404 temporal, PS-blank correct).

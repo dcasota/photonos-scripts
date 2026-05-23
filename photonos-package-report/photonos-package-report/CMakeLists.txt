@@ -126,6 +126,7 @@ add_executable(photonos-package-report
     src/sha.c
     src/diff_report.c
     src/package_report.c
+    src/netcat.c
     src/pool.c
     ${PR_GEN_HOOK_DISPATCH}
     ${PR_HOOK_SOURCES}
