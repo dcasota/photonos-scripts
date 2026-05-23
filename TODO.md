@@ -96,6 +96,32 @@ Branch naming: `sdd/phase-<N>-task<NNN>-<slug>` for numeric phases,
 
 
 
+
+## col3/col6 ROOT CAUSE = C-SUPERIORITY on atom specs (2026-05-23, definitive)
+
+Traced gstreamer (representative of the freedesktop atom-spec col3 bucket):
+  col5 MATCHES (1.29.1). But:
+  PS col3/col6/col10 = bare homepage "gstreamer.freedesktop.org" (useless)
+  C  col3/col6/col10 = REAL tarball "gstreamer-1.29.1.tar.xz" + SHA (col9)
+PS's atom-detection path doesn't build a download URL -> falls back to the
+homepage; C re-substitutes the spec Source0 template into the real tarball.
+=> C is DRAMATICALLY more correct. Mirroring PS would replace real
+tarballs+SHAs with homepages — absurd. This is SYSTEMATIC across the
+freedesktop atom specs (cairo/dbus/fontconfig/pixman/...), and is the bulk
+of the col3/col6/col10 strict rows.
+
+CONCLUSION: the remaining parity gap is largely C-SUPERIORITY (the metric
+penalizing C for being better than PS), NOT C bugs. No clean autonomous
+code fix exists (mirroring degrades C; dual-goal forbids it). The honest
+resolutions are OPERATOR/ADR decisions:
+  (a) accept "C >= PS" cells in the ADR-0009 verdict (don't count them), or
+  (b) soft col3/col6/col10 for atom-detected specs (like soft-col9), or
+  (c) fix PS's atom-path URL building (PS LOGIC change -> both emit the
+      tarball) — biggest win but modifies PS source-of-truth behavior.
+This + the col9 soft + the C-better col5 rows means the journal's residual
+strict count UNDERSTATES C quality. Per-spec autonomous convergence is
+genuinely COMPLETE; the rest is the operator's parity-criteria call.
+
 ## COL5 DETECTION COMPLETE (2026-05-23, 5.0 = 126 strict)
 
 proto RESOLVED in CI (M51 — generic-scrape tokens reordered before Name
