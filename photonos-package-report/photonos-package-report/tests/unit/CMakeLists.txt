@@ -127,8 +127,9 @@ target_include_directories(test_phase6 PRIVATE
     ${PCRE2_INCLUDE_DIRS}
     ${CURL_INCLUDE_DIRS}
     ${OPENSSL_INCLUDE_DIRS}
+    ${ICU_INCLUDE_DIRS}
 )
-target_link_libraries(test_phase6 PRIVATE pthread ${PCRE2_LIBRARIES} ${CURL_LIBRARIES} ${OPENSSL_LIBRARIES})
+target_link_libraries(test_phase6 PRIVATE pthread ${PCRE2_LIBRARIES} ${CURL_LIBRARIES} ${OPENSSL_LIBRARIES} ${ICU_LIBRARIES})
 target_compile_options(test_phase6 PRIVATE -Wall -Wextra -O0 -g -D_GNU_SOURCE ${PCRE2_CFLAGS_OTHER} ${CURL_CFLAGS_OTHER})
 
 add_test(NAME test_phase6 COMMAND test_phase6)

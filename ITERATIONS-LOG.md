@@ -168,3 +168,34 @@ bytes) or running PS+C back-to-back with no GitHub-regeneration window.
 - `tools/parity-journal.tsv` — append-only verdict log; clock for ADR-0009.
 - `c-side-prn-<run_id>` workflow artifact — 30-day retained C-side .prn
   output, downloadable via `gh run download <id> -n c-side-prn-<id>`.
+
+---
+
+## Session (2026-05-23): M52 — ICU row-sort collation (ADR-0016)
+
+Root-caused the residual 5.0 col5 "differences" with the actual artifacts
+(PS scan `…230701` vs C run `26324413477`, cross-checked against the prior
+warm C run `26312789233`):
+
+- **45 of 64** col5 diffs were **transient cold-run failures** (this run was
+  the slow ~1h32m post-reboot cold-clone pass); the previous warm run
+  detected every one identically to PS.
+- **~10** were **sort-collation misalignment** — identical detections shifted
+  to neighbouring rows because C sorted with ordinal `strcasecmp` while PS
+  uses ICU culture collation.
+- The genuine deterministic remainder is ~8 normalization/presentation rows
+  (C cleaner) + 1 consistent C-better row — **zero missing detections**.
+
+### Shipped: M52 / ADR-0016
+
+`prn_writer.c` `cmp_str_asc` → ICU `en-US` collator, strength `SECONDARY`
+(case-insensitive), opened once via `pthread_once`, `strcasecmp` fallback.
+New build dep `icu-devel` (CMake `pkg_check_modules(ICU REQUIRED icu-i18n
+icu-uc)` + CI `tdnf install`). Regression test `test_icu_row_sort`
+(test_phase6) guards the four punctuation clusters.
+
+**Validation (pre-merge, local):** ICU sort reproduces PS's `.prn` row order
+with **0 mismatches across all five branches** (3.0: 919, 4.0: 1034, 5.0:
+1113, 6.0: 1093, common: 6), and matches live `pwsh Sort-Object` on ICU 72
+and 76. All 13 ctest targets green. This retired the "global-realignment
+regression risk" that had gated the sort change.

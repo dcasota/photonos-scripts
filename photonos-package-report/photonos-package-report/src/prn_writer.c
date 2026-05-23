@@ -18,7 +18,13 @@
 #include <string.h>
 #include <strings.h>
 #include <unistd.h>
+#include <pthread.h>
 #include <sys/file.h>
+
+/* M52 / ADR-0016: ICU collation so the row sort matches PowerShell's
+ * Sort-Object byte-for-byte (see cmp_str_asc below). */
+#include <unicode/ucol.h>
+#include <unicode/utypes.h>
 
 /* PS L 5068: header literal, verbatim. ADR-0014 (Accepted Option B):
  * when PR_EMIT_MULTI_SHA env var is set, append `,SHA256Name,SHA512Name`
@@ -100,27 +106,64 @@ const char *pr_prn_strip(const char *row)
     return out;
 }
 
-/* qsort comparator: case-insensitive ascending.
+/* qsort comparator: culture-aware ascending, matching PowerShell.
  *
  * PS L 5476 sorts the result with `Sort-Object Spec, SubRelease -Unique`.
- * PowerShell's `Sort-Object` is case-insensitive by default. Our rows
- * begin with the Spec basename followed by ',' (Spec is col 1), so
- * sorting the full row string with strcasecmp gives the same primary
- * ordering as PS. Strict-byte equality on ties (case-only differences
- * in identical strings) would require strcasecmp+strcmp tiebreaking,
- * but PS's behaviour on a true case-only tie is undefined too — using
- * strcasecmp alone is the simplest faithful port.
+ * `Sort-Object` uses .NET CompareInfo (CurrentCulture, case-insensitive),
+ * which on Linux delegates to ICU. Our rows begin with the Spec basename
+ * followed by ',' (Spec is col 1), so collating the full row string with
+ * the same ICU collator gives PS's exact ordering.
  *
- * Pre-M14 used strcmp, which is case-sensitive ASCII (capitals sort
- * before lowercase). That made `GConf.spec` come before `abseil-cpp.spec`
- * in the C output while PS put them in case-insensitive order. The
- * resulting line-by-line position mismatch made parity-diff.sh see
- * almost every row as strict-different even when content was identical. */
+ * History:
+ *   Pre-M14 used strcmp (case-sensitive ASCII) — capitals sorted before
+ *   lowercase, so `GConf.spec` preceded `abseil-cpp.spec` while PS put
+ *   them case-insensitively. That mis-positioned almost every row.
+ *   M14 switched to strcasecmp, fixing the case axis. But strcasecmp is
+ *   still *ordinal*: it compares punctuation by byte value (`-`=0x2D,
+ *   `.`=0x2E, `_`=0x5F), whereas ICU treats `-`/`.` as ignorable
+ *   punctuation and weights `_` differently. That mis-ordered the
+ *   punctuation families — e.g. PS put `rubygem-http_parser.rb` *before*
+ *   `rubygem-http-accept`, C (strcasecmp) put it after; likewise
+ *   `python-setuptools_scm` vs `-rust`, `python-backports_abc` vs
+ *   `.ssl_match_hostname`, `rubygem-unf_ext` vs `unf`. Each mis-ordered
+ *   row shifted relative to PS, so parity-diff.sh (row-index compare)
+ *   reported phantom diffs on neighbouring rows.
+ *   M52 (ADR-0016): collate via ICU `en-US`, strength SECONDARY
+ *   (case-insensitive). Validated to reproduce PS's row order with zero
+ *   mismatches across all branches (3.0/4.0/5.0/6.0/common).
+ *
+ * The collator is opened once (pthread_once); ICU collators are safe for
+ * concurrent compare-only use across threads. If ICU init ever fails we
+ * fall back to strcasecmp so the report still sorts (degraded ordering
+ * rather than a crash). */
+static UCollator    *g_collator = NULL;
+static pthread_once_t g_collator_once = PTHREAD_ONCE_INIT;
+
+static void init_collator(void)
+{
+    UErrorCode status = U_ZERO_ERROR;
+    UCollator *c = ucol_open("en-US", &status);
+    if (U_FAILURE(status) || c == NULL) {
+        if (c) ucol_close(c);
+        g_collator = NULL;   /* signals strcasecmp fallback */
+        return;
+    }
+    /* SECONDARY = case-insensitive (case is a tertiary difference),
+     * matching Sort-Object's default case-insensitivity. */
+    ucol_setStrength(c, UCOL_SECONDARY);
+    g_collator = c;
+}
+
 static int cmp_str_asc(const void *a, const void *b)
 {
-    const char *const *sa = (const char *const *)a;
-    const char *const *sb = (const char *const *)b;
-    return strcasecmp(*sa, *sb);
+    const char *sa = *(const char *const *)a;
+    const char *sb = *(const char *const *)b;
+    pthread_once(&g_collator_once, init_collator);
+    if (g_collator == NULL) return strcasecmp(sa, sb);
+    UErrorCode status = U_ZERO_ERROR;
+    UCollationResult r = ucol_strcollUTF8(g_collator, sa, -1, sb, -1, &status);
+    if (U_FAILURE(status)) return strcasecmp(sa, sb);
+    return (r == UCOL_LESS) ? -1 : (r == UCOL_GREATER) ? 1 : 0;
 }
 
 int pr_prn_append_rows(pr_prn_t *ctx, char **rows, size_t n_rows)

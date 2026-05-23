@@ -287,7 +287,7 @@ The repo ships ready-to-use VS Code config under `.vscode/`:
 ### One-time setup
 
 ```sh
-sudo tdnf install -y cmake gcc gdb libcurl-devel pcre2-devel pkg-config make
+sudo tdnf install -y cmake gcc gdb libcurl-devel pcre2-devel icu-devel pkg-config make
 cmake -B build -S . -DCMAKE_BUILD_TYPE=Debug
 cmake --build build
 ```
@@ -392,6 +392,7 @@ into `build/generated/source0_lookup_data.h`.
 |------------------------------------------|-----------------------------------------------|
 | `parse_directory: SPECS path not a directory` | `<workingDir>/<branch>/SPECS` actually exists |
 | Build fails: `pcre2.h: No such file`     | `tdnf install -y pcre2-devel` then re-cmake   |
+| Build fails: `unicode/ucol.h: No such file` | `tdnf install -y icu-devel` then re-cmake (ADR-0016 row collation) |
 | `test_phase3` row count drift            | Re-pull master; PS upstream gained/lost rows  |
 | `--dump-tasks` emits 0 records           | Wrong `-workingDir`/branch combination        |
 | `.prn` diff after parity run             | Run **both** PS and C with `-ThrottleLimit 1` |

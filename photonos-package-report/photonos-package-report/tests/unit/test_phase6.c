@@ -144,6 +144,77 @@ static void test_writer_roundtrip(void)
     unlink(tmpl);
 }
 
+/* --- M52 / ADR-0016: ICU row-sort collation -------------------------
+ * Regression guard for the punctuation families that ordinal strcasecmp
+ * mis-ordered relative to PowerShell's Sort-Object. The expected order is
+ * exactly what `pwsh Sort-Object` (and the ICU en-US collator) produce;
+ * a regression to strcasecmp would flip these. */
+static void test_icu_row_sort(void)
+{
+    fprintf(stderr, "[test_icu_row_sort]\n");
+    char tmpl[] = "/tmp/test_phase6_icu_XXXXXX";
+    int fd = mkstemp(tmpl);
+    if (fd < 0) { failures++; return; }
+    close(fd);
+
+    pr_prn_t *p = pr_prn_open(tmpl);
+    if (!p) { failures++; unlink(tmpl); return; }
+
+    /* Deliberately shuffled input across all four affected clusters. */
+    char *rows[] = {
+        (char *)"rubygem-http-accept.spec,,,200,,,,,x,,,,",
+        (char *)"rubygem-http.spec,,,200,,,,,x,,,,",
+        (char *)"rubygem-http_parser.rb.spec,,,200,,,,,x,,,,",
+        (char *)"rubygem-httpclient.spec,,,200,,,,,x,,,,",
+        (char *)"python-setuptools-rust.spec,,,200,,,,,x,,,,",
+        (char *)"python-setuptools_scm.spec,,,200,,,,,x,,,,",
+        (char *)"python-backports.ssl_match_hostname.spec,,,200,,,,,x,,,,",
+        (char *)"python-backports_abc.spec,,,200,,,,,x,,,,",
+        (char *)"rubygem-unf.spec,,,200,,,,,x,,,,",
+        (char *)"rubygem-unf_ext.spec,,,200,,,,,x,,,,",
+    };
+    if (pr_prn_append_rows(p, rows, 10) != 0) failures++;
+    pr_prn_close(p);
+
+    /* Expected = PowerShell Sort-Object / ICU en-US order. Note: `_`
+     * sorts before `-` before `.`; `httpclient` (a letter) comes last. */
+    const char *expected[] = {
+        "Spec,Source0 original,Modified Source0 for url health check,UrlHealth,UpdateAvailable,UpdateURL,HealthUpdateURL,Name,SHAName,UpdateDownloadName,warning,ArchivationDate",
+        "python-backports_abc.spec,,,200,,,,,x,,,,",
+        "python-backports.ssl_match_hostname.spec,,,200,,,,,x,,,,",
+        "python-setuptools_scm.spec,,,200,,,,,x,,,,",
+        "python-setuptools-rust.spec,,,200,,,,,x,,,,",
+        "rubygem-http_parser.rb.spec,,,200,,,,,x,,,,",
+        "rubygem-http-accept.spec,,,200,,,,,x,,,,",
+        "rubygem-http.spec,,,200,,,,,x,,,,",
+        "rubygem-httpclient.spec,,,200,,,,,x,,,,",
+        "rubygem-unf_ext.spec,,,200,,,,,x,,,,",
+        "rubygem-unf.spec,,,200,,,,,x,,,,",
+    };
+    size_t n_expected = sizeof(expected) / sizeof(expected[0]);
+
+    FILE *r = fopen(tmpl, "rb");
+    if (!r) { failures++; unlink(tmpl); return; }
+    char line[1024];
+    size_t lineno = 0;
+    while (fgets(line, sizeof line, r)) {
+        size_t n = strlen(line);
+        while (n > 0 && (line[n - 1] == '\n' || line[n - 1] == '\r')) line[--n] = '\0';
+        if (lineno >= n_expected) { fprintf(stderr, "  FAIL: extra line: %s\n", line); failures++; break; }
+        if (strcmp(line, expected[lineno]) != 0) {
+            fprintf(stderr, "  FAIL line %zu: expected '%s' got '%s'\n", lineno, expected[lineno], line);
+            failures++;
+        }
+        lineno++;
+    }
+    if (lineno != n_expected) {
+        fprintf(stderr, "  FAIL: got %zu lines, expected %zu\n", lineno, n_expected);
+        failures++;
+    }
+    fclose(r);
+    unlink(tmpl);
+}
+
 /* --- check_urlhealth row shape -------------------------------------- */
 static int count_commas(const char *s)
 {
@@ -181,6 +252,7 @@ int main(void)
     test_header_literal();
     test_strip();
     test_writer_roundtrip();
+    test_icu_row_sort();
     test_check_urlhealth_shape();
 
     if (failures == 0) {
