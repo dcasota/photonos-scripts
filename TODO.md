@@ -1,5 +1,24 @@
 # TODO — C-port parity convergence + vendor-info quality
 
+**>>> 2026-05-24 SESSION CHECKPOINT (M62 — netcat; report parity + gating) <<<**
+Shipped M52-M62 (12 feature PRs, all merged). 5.0 urlhealth strict 126→~87
+(±5 transient). C matches PS on urlhealth + diff + package reports (M59/M60),
+package report GATED byte-identical (M61). M62: netcat bespoke detection
+(raw netcat.c CVS rev + Commits-API commit_id) — byte-identical to PS.
+REMAINING:
+  - libusb (M63, scoped): sourceforge TWO-STAGE (PS L3513-3530). Stage 1 scrapes
+    projects/libusb/files/ net.sf.files → strip libusb-compat-/libusb- → filter
+    digit+no-alpha → version-sort → SERIES (e.g. "1.0"). Stage 2 re-scrapes
+    projects/libusb/files/libusb-<series> net.sf.files → real release names →
+    generic pipeline → 1.0.30. Needs a libusb two-stage in the C sf branch
+    (check_urlhealth.c ~L1527) reusing pr_sourceforge_fetch_names twice +
+    pr_version_compare for the series max. Validate against snapshot (1.0.30).
+  - libsodium: upstream 404 (1.0.18-stable gone; only 1.0.19+ remain). PS's
+    blank-on-dead-URL is CORRECT; not a bug — do not "fix".
+  - col9 SHA: PR_SHA_CACHE (operator-gated, disk policy) or inline compute.
+  - stalld diff-report row: PS internal inconsistency (C more correct); diff
+    report is informational-only in the gate (M61), so not failing.
+
 **>>> 2026-05-23 SESSION CHECKPOINT (M60 — FULL REPORT PARITY) <<<**
 Shipped M52-M60 (9 PRs, all merged). 5.0 urlhealth strict: **126 → 87**.
 C now matches PS on ALL report types:
