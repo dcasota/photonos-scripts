@@ -157,5 +157,12 @@ docs/prn-analysis`.
   jobs stuck queued. Recovery: `systemctl restart
   actions.runner.dcasota-photonos-scripts.photon5-local.service`
   after connectivity returns. Seen 2026-05-17 and 2026-05-18.
-- Disk-fill from on-demand clones on a non-`/tmp` non-cleaning path.
-  Recovery: kill in-flight C binary, `rm -rf <upstreams-dir>`.
+- Disk-fill from on-demand clones. As of M53 (ADR-0009 amendment
+  2026-05-23) the C workflow keeps a **persistent** clone cache at
+  `${PARITY_CACHE_ROOT:-$HOME/.cache/photonos-parity}/parity-c-wd` (was
+  ephemeral `${RUNNER_TEMP}` — wiping it every job caused cold-clone
+  transient col5 empties). The clones are partial (`blob:none`), so the
+  cache is small; the real disk risk is the deferred Phase-2 `SOURCES_NEW`
+  tarball cache (`PR_SHA_CACHE=1`, blobs). Recovery if disk fills: kill
+  the in-flight C binary, `rm -rf "$HOME/.cache/photonos-parity"` (it
+  re-clones cold on the next run).

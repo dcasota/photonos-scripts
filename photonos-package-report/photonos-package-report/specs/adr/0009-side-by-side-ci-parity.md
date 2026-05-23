@@ -63,3 +63,37 @@ resume the 90-day strict-green clock for col9.
 
 The 90-day-green timeline above applies to the strict columns; col9 runs
 its own clock starting when `PR_STRICT_COL9=1` is set.
+
+## Amendment 2026-05-23 — persistent clone cache (M53, bucket-1 transients)
+
+Root-cause analysis of the 5.0 col5 (UpdateAvailable) gap (run
+26324413477 vs the prior warm run 26312789233) showed **45 of 64 col5
+diffs were transient cold-run failures** — the prior warm run detected
+every one identically to PS. Cause: the C workflow placed the clone
+cache under `${RUNNER_TEMP}/parity-c-wd`, which the self-hosted runner
+**wipes every job**, so every run cold-cloned ~4000 upstreams and
+intermittent git/network failures left col5 empty on otherwise-detectable
+specs.
+
+Decision (Phase 1, this change): move the cache root to a **persistent
+path on the runner** (`${PARITY_CACHE_ROOT:-$HOME/.cache/photonos-parity}`).
+Correctness is preserved because:
+
+- `parity-reconstruct.sh` reuses the branch SPECS clone but re-runs
+  `git fetch` + checks out the **snapshot's exact recorded SHA** each run
+  — the SPECS tree is bit-for-bit the snapshot regardless of cache state.
+- `pr_clone_ensure` reuses each upstream clone and `git fetch
+  --prune --prune-tags --tags --force`es it — the tag list a warm run
+  sees is identical to what a *successful* cold clone would have seen.
+
+So persistence changes only **reliability**, not detection results: it
+turns flaky cold clones into fast, reliable fetches. Clones are partial
+(`--no-checkout --filter=blob:none`), so the cache footprint is small.
+A workflow-level `concurrency` group serialises C runs that share the
+cache. The per-run `scans/` dir is wiped each run so the diff always
+reads fresh output.
+
+**Phase 2 (deferred, operator-gated on disk impact):** activate
+`PR_SHA_CACHE=1` for a persistent `SOURCES_NEW` *tarball* cache (the
+dual-goal SHA fix above). Tarballs are real blobs (GBs), so this needs a
+size cap / prune policy before enabling — held until that policy is set.

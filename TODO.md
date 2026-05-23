@@ -584,6 +584,26 @@ single-spec adapters are sub-noise. Next code unit = col3 Source0
 rewrites (deterministic). Parallel gating decision (operator) = col9
 tarball-cache vs soft-col9 in the ADR-0009 verdict.
 
+**>>> UPDATE 2026-05-23 — two deterministic units shipped <<<**
+  - [DONE #169 / M52 / ADR-0016] **sort-collation** — `prn_writer.c` now
+    sorts via ICU `en-US` collator (matches PS `Sort-Object`), not ordinal
+    `strcasecmp`. Validated 0-mismatch row order on ALL branches. CI-measured
+    on the SAME PS snapshot: 5.0 strict **126→114 (−12)**. No longer
+    operator-gated — full-branch local validation retired the realignment risk.
+  - [DONE M53 / ADR-0009 amendment] **persistent clone cache** — the
+    bucket-1 fix. CI cloned under `${RUNNER_TEMP}` (wiped every job) → cold
+    runs → transient col5 empties (45 of 64 5.0 col5 diffs were transient,
+    confirmed by warm-vs-cold cross-check; see
+    [[feedback_transient_vs_persistent_diffs]]). Cache root → persistent
+    `${PARITY_CACHE_ROOT:-$HOME/.cache/photonos-parity}`. Reconstruct still
+    checks out the snapshot SHA + `pr_clone_ensure` fetches on hit → warm =
+    same detection as a successful cold clone, just reliable. Partial clones
+    (blob:none) keep disk small; `concurrency` group serialises runs.
+  - [PHASE 2, operator-gated on disk policy] `PR_SHA_CACHE=1` persistent
+    SOURCES_NEW tarball cache (col9) — see col9 strategy below. Held until a
+    SOURCES_NEW size-cap/prune policy is set (tarballs are GBs vs the tiny
+    blob:none clone cache).
+
 **col9 STRATEGY — operator chose "both: cache now, soft fallback" (2026-05-21):**
   - [DONE #149] soft-col9 in parity-diff.sh — LIVE. col9 joins cols 4/7 as
     soft; reversible via `PR_STRICT_COL9=1`. 5.0 effect: strict 198→163.
