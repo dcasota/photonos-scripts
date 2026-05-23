@@ -1,6 +1,24 @@
 # TODO — C-port parity convergence + vendor-info quality
 
-**>>> 2026-05-23 SESSION CHECKPOINT — clean autonomous lane exhausted <<<**
+**>>> 2026-05-23 SESSION CHECKPOINT (updated) <<<**
+Shipped M52-M59 (all merged). 5.0 strict: **126 → ~87**.
+M58 (col3 fix c, PS source-of-truth): gitlab-atom family now emits the real
+tarball byte-identically on BOTH PS and C — 103→87 (dual-goal win: healthy/
+correct URLs on both implementations). M59: wired the cross-branch diff
+reports into the C CLI (common-master/5.0-6.0/4.0-5.0/3.0-4.0), deduped to
+match PS's matrix; matches PS except 1 stalld row (PS internally inconsistent;
+diff report not yet parity-gated).
+Earlier this session: M52 ICU sort (−12); M53 persistent clone cache; M54
+curl/openssl basename; M55 tzdata; M56 byacc/dialog; M57 14 hardcoded overrides.
+REMAINING (next units):
+  - M60: diff-report parity-gate integration (validate diff reports in CI;
+    needs PS snapshot to carry all 4 + resolve/accept the stalld case).
+  - Package-matrix report generator (C still lacks it; PS has it).
+  - URL-health/schema stragglers (fragile): netcat (bespoke raw-file+CVS-regex+
+    Commits-API), libusb (sourceforge two-stage), libsodium (404 temporal).
+  - col9 SHA: Phase-2 PR_SHA_CACHE (operator-gated on disk policy) or compute
+    inline for the hardcoded/atom specs (soft; info-quality dual-goal).
+PRIOR checkpoint (superseded):
 Shipped M52-M57 (all merged). 5.0 strict on snapshot 26324090866:
 **126 → 103 (−23)**. M52 ICU sort (−12); M54 curl/openssl; M55 tzdata; M56
 byacc/dialog; M57 the 14 hardcoded overrides (→ soft col9 only). M53 made the
