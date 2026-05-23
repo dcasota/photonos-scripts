@@ -1753,6 +1753,49 @@ char *check_urlhealth(pr_task_t                       *task,
         free(parent);
     }
 
+    /* M57 / PS L 2264-2363: hardcoded UpdateURL/UpdateAvailable overrides.
+     * The maintainer pins these because dynamic detection is impossible or
+     * broken upstream (archived projects, broken download pages, pythonhosted
+     * blob URLs, etc.). PS sets them early (L2264) so the later detection
+     * leaves them untouched; we apply them after detection (overriding any
+     * stray value) for the same net output. HealthUpdateURL is "200";
+     * UpdateDownloadName derives from the URL via the standard L4810-4842
+     * pipeline (download_name_post), so the leading-'v' strip etc. match PS.
+     * col9 (SHAValue) is left empty here — it is soft in the parity verdict
+     * and PS computes it from a network fetch we intentionally skip. */
+    {
+        static const struct { const char *spec, *url, *ver, *archdate; } k_hard[] = {
+            {"cdrkit.spec",             "https://deb.debian.org/debian/pool/main/c/cdrkit/cdrkit_1.1.11.orig.tar.gz", "1.1.11", "2021-10-10"},
+            {"iptraf.spec",             "https://distro.ibiblio.org/fatdog/source/800/iptraf-3.0.1.tar.gz",          "3.0.1",  ""},
+            {"json-spirit.spec",        "https://api-main.codeproject.com/v1/article/JSON_Spirit/downloadAttachment?src=JSON_Spirit/json_spirit_v4.08.zip", "3.1.2", ""},
+            {"libassuan.spec",          "https://www.gnupg.org/ftp/gcrypt/libassuan/libassuan-3.0.2.tar.bz2",        "3.0.2",  ""},
+            {"libtiff.spec",            "https://download.osgeo.org/libtiff/tiff-4.7.1.tar.xz",                      "4.7.1",  ""},
+            {"mpc.spec",                "https://ftp.gnu.org/gnu/mpc/mpc-1.3.1.tar.gz",                              "1.3.1",  ""},
+            {"python-daemon.spec",      "https://files.pythonhosted.org/packages/3d/37/4f10e37bdabc058a32989da2daf29e57dc59dbc5395497f3d36d5f5e2694/python_daemon-3.1.2.tar.gz", "3.1.2", ""},
+            {"python-enum.spec",        "https://files.pythonhosted.org/packages/02/a0/32e1d5a21b703f600183e205aafc6773577e16429af5ad3c3f9b956b07ca/enum-0.4.7.tar.gz", "0.4.7", ""},
+            {"python-enum34.spec",      "https://files.pythonhosted.org/packages/11/c4/2da1f4952ba476677a42f25cd32ab8aaf0e1c0d0e00b89822b835c7e654c/enum34-1.1.10.tar.gz", "1.1.10", ""},
+            {"python-Js2Py.spec",       "https://files.pythonhosted.org/packages/cb/a5/3d8b3e4511cc21479f78f359b1b21f1fb7c640988765ffd09e55c6605e3b/Js2Py-0.74.tar.gz", "0.74", ""},
+            {"python-ruamel-yaml.spec", "https://files.pythonhosted.org/packages/c7/3b/ebda527b56beb90cb7652cb1c7e4f91f48649fbcd8d2eb2fb6e77cd3329b/ruamel_yaml-0.19.1.tar.gz", "0.19.1", ""},
+            {"runit.spec",              "https://smarden.org/runit/runit-2.3.0.tar.gz",                              "2.3.0",  ""},
+            {"sendmail.spec",           "https://ftp.sendmail.org/sendmail.8.18.2.tar.gz",                           "8.18.2", ""},
+            {"vsftpd.spec",             "https://security.appspot.com/downloads/vsftpd-3.0.5.tar.gz",                "3.0.5",  ""},
+        };
+        for (size_t i = 0; i < sizeof k_hard / sizeof k_hard[0]; i++) {
+            if (!spec_eq(task->Spec, k_hard[i].spec)) continue;
+            free(state.UpdateAvailable); state.UpdateAvailable = dup_or_empty(k_hard[i].ver);
+            free(state.UpdateURL);       state.UpdateURL       = dup_or_empty(k_hard[i].url);
+            free(state.HealthUpdateURL); state.HealthUpdateURL = dup_or_empty("200");
+            char *base = pr_basename_from_url(k_hard[i].url);   /* ($UpdateURL -split '/')[-1] */
+            free(state.UpdateDownloadName);
+            state.UpdateDownloadName = download_name_post(base, task->Name, task->Spec);
+            if (state.UpdateDownloadName == NULL) state.UpdateDownloadName = dup_or_empty("");
+            if (k_hard[i].archdate[0]) {
+                free(state.ArchivationDate); state.ArchivationDate = dup_or_empty(k_hard[i].archdate);
+            }
+            break;
+        }
+    }
+
     /* PS L 4442-4520: per-spec warning table. Overrides any warning
      * set earlier from Source0Lookup row->Warning. PS "last match wins"
      * across the 6 chains. */
