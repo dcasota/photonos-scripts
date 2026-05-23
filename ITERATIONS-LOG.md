@@ -231,3 +231,30 @@ size-cap/prune policy first).
 Expectation: the first run after merge re-clones (cold, slow); subsequent
 runs are warm and the transient col5 empties should largely disappear,
 narrowing the soft/strict counts toward the warm-run baseline.
+
+---
+
+## Session (2026-05-23, cont.): M54 — generic-scraper href basename + diagnosis correction
+
+**Correction to the M53 hypothesis.** The warm run (26336994311) did NOT
+collapse the col5 empties — it scored an identical 116/98 with the same
+105 empties. The cache WAS hit (runtime 90min→8min), but these specs use
+the HTTP-scrape path, not git clones, so M53 couldn't touch them. My
+"45-of-64 transient" characterization was substantially wrong: local repro
+showed the empties are deterministic, not cold-run noise.
+
+**Root-caused via local repro:**
+- curl: `curl.haxx.se/download/` now 301s to `curl.se`, serving root-relative
+  hrefs (`download/curl-8.20.0.tar.xz`). C's generic scraper kept the raw
+  href; after Name-strip the `download/` prefix is dropped by M21's no-alpha
+  filter → empty. PS detects it (regex extraction tolerates the prefix).
+  Fixed by M54 `apply_href_basename` (last-path-segment reduction in the
+  generic path). curl 8.20.0 + openssl 4.0.0 restored; 11 controls unchanged.
+- The remaining empties are NOT one bug — per-spec quirks (tzdata double-slash
+  URL + no name/ver separator; byacc `%{byaccdate}` macro; netcat commit-id
+  vendored tarball; libsodium `-stable` suffix; libusb/runit/vsftpd hosts).
+  These are the deferred "fiddly stragglers" bucket; each needs its own unit.
+
+Net: the col5 gap is a MIX — the curl/openssl relative-href bug (fixed),
+per-spec quirks (deferred), and some genuine transients — not predominantly
+transient as previously stated.

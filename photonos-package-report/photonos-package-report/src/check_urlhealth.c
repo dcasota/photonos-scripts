@@ -277,6 +277,29 @@ static void apply_mozilla_transform(const char *spec, char **names, size_t n)
     }
 }
 
+/* M54 / PS L 4331-4341: the generic HTML scraper keeps each `<a href>`
+ * verbatim. PowerShell Core's `.Links.href` is likewise the raw attribute,
+ * but PS's downstream version extraction is regex-based and tolerates a
+ * path prefix, so PS detects the version inside e.g. "download/curl-8.20.0
+ * .tar.xz". C's name pipeline strips the Name then drops anything with
+ * residual alpha (M21), so a root-relative or absolute href
+ * ("download/curl-8.20.0.tar.xz", "https://host/x/curl-8.20.0.tar.xz")
+ * leaves a "download/"/"host/x/" prefix that gets dropped → empty col5.
+ * Reduce every href to its last path segment (matching the nspr/ao paths)
+ * so the pipeline always sees a basename. No-op on bare basenames, so it
+ * only fixes the relative/absolute-href listings (e.g. curl.se, which now
+ * 301s from curl.haxx.se and serves root-relative hrefs). */
+static void apply_href_basename(char **names, size_t n)
+{
+    for (size_t i = 0; i < n; i++) {
+        if (names[i] == NULL) continue;
+        size_t l = strlen(names[i]);
+        while (l > 0 && names[i][l - 1] == '/') names[i][--l] = '\0';
+        char *slash = strrchr(names[i], '/');
+        if (slash) memmove(names[i], slash + 1, strlen(slash + 1) + 1);
+    }
+}
+
 /* M37: a spec's Source0 points at a CPAN author directory. PS L 3933
  * gates the CPAN branch on the host alone, independent of Source0
  * health. The three forms PS recognises (L 3933). */
@@ -1470,6 +1493,10 @@ char *check_urlhealth(pr_task_t                       *task,
             used_atom = 1;
         } else {
             scrape_ok = (pr_scrape_listing(parent, &names, &n) == 0);
+            /* M54: reduce raw hrefs to their last path segment so
+             * root-relative / absolute listing links (e.g. curl.se's
+             * "download/curl-8.20.0.tar.xz") parse like bare basenames. */
+            if (scrape_ok) apply_href_basename(names, n);
         }
         if (scrape_ok && n > 0) {
             if (!used_atom && !used_sf && !used_gh && !used_moz) {
