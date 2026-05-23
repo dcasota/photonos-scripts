@@ -199,3 +199,35 @@ with **0 mismatches across all five branches** (3.0: 919, 4.0: 1034, 5.0:
 1113, 6.0: 1093, common: 6), and matches live `pwsh Sort-Object` on ICU 72
 and 76. All 13 ctest targets green. This retired the "global-realignment
 regression risk" that had gated the sort change.
+
+---
+
+## Session (2026-05-23, cont.): M53 — persistent clone cache (ADR-0009 amendment)
+
+Bucket-1 fix following the M52 root-cause analysis. The C workflow cloned
+~4000 upstreams under `${RUNNER_TEMP}/parity-c-wd`, which the self-hosted
+runner wipes every job — so every run was cold and intermittent clone
+failures produced transient col5 (UpdateAvailable) empties (45 of 64 5.0
+col5 diffs on the cold run were transient; the prior warm run detected all
+identically to PS).
+
+### Shipped (CI-infra; no C-code change)
+
+- Cache root → persistent `${PARITY_CACHE_ROOT:-$HOME/.cache/photonos-parity}/parity-c-wd`
+  (runner home survives across jobs; only `_work/_temp` is wiped). The
+  branch SPECS clones (`parity-reconstruct.sh`) and upstream tag clones
+  (`pr_clone_ensure`) both already reuse + `git fetch` on a cache hit, and
+  reconstruct re-checks-out the snapshot's exact SHA each run — so
+  persistence preserves determinism and removes only cold-clone flakiness.
+- Workflow `concurrency` group (serialise cache-sharing runs), per-run
+  `scans/` wipe, cache-size + free-disk report step.
+- Clones are partial (`--no-checkout --filter=blob:none`) → cache footprint
+  is small; disk on the runner is 602G free.
+
+**Phase 2 deferred** (operator-gated on disk policy): `PR_SHA_CACHE=1`
+persistent `SOURCES_NEW` tarball cache for col9 (real blobs, GBs — needs a
+size-cap/prune policy first).
+
+Expectation: the first run after merge re-clones (cold, slow); subsequent
+runs are warm and the transient col5 empties should largely disappear,
+narrowing the soft/strict counts toward the warm-run baseline.

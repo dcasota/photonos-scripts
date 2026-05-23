@@ -31,6 +31,14 @@ permissions:
   contents: write   # commit the journal back to master
   actions:  read    # download artifact from the triggering workflow
 
+# Serialise C-side runs: they share a persistent clone cache on the
+# self-hosted runner (see "Reconstruct" step). Two concurrent runs would
+# race the same clone dirs / branch checkouts. Queue rather than cancel so
+# an in-flight parity run always finishes and commits its journal row.
+concurrency:
+  group: c-side-parity
+  cancel-in-progress: false
+
 jobs:
   parity:
     # Only run on success of upstream PS workflow (or on manual dispatch).
@@ -159,8 +167,21 @@ jobs:
       - name: Reconstruct working tree from manifests
         id: reconstruct
         run: |
-          WDIR="${RUNNER_TEMP:-/tmp}/parity-c-wd"
+          # PERSISTENT cache root (ADR-0009 amendment 2026-05-23). Was
+          # ${RUNNER_TEMP}/parity-c-wd, which the runner wipes every job —
+          # so every run cold-cloned ~4000 upstreams and intermittent clone
+          # failures produced transient col5 (UpdateAvailable) empties. The
+          # branch SPECS clones (parity-reconstruct.sh) and the upstream tag
+          # clones (pr_clone_ensure) both reuse + `git fetch` on a cache hit,
+          # and reconstruct re-checks-out the snapshot's exact SHA each run,
+          # so a persistent cache stays correct AND deterministic while
+          # eliminating cold-clone flakiness. Clones are partial
+          # (--no-checkout --filter=blob:none), so the cache is small.
+          # Override the location with PARITY_CACHE_ROOT on the runner.
+          CACHE_ROOT="${PARITY_CACHE_ROOT:-$HOME/.cache/photonos-parity}"
+          WDIR="$CACHE_ROOT/parity-c-wd"
           UPSTREAMS="$WDIR/photon-upstreams"
+          mkdir -p "$CACHE_ROOT"
           SCRIPT="repo/.github/scripts/parity-reconstruct.sh"
           chmod +x "$SCRIPT" || true
           "$SCRIPT" "${{ steps.extract.outputs.dir }}" "$WDIR" "$UPSTREAMS"
@@ -215,8 +236,18 @@ jobs:
           cd repo/photonos-package-report/photonos-package-report
           WDIR="${{ steps.reconstruct.outputs.wdir }}"
           UPSTREAMS="${{ steps.reconstruct.outputs.upstreams }}"
+          # WDIR persists across runs (clone cache); the scans dir does NOT
+          # — wipe it so the parity-diff step's `ls -t | head -1` always
+          # picks this run's fresh .prn, never a stale cached one.
           SCANS="$WDIR/scans"
+          rm -rf "$SCANS"
           mkdir -p "$SCANS"
+
+          # Persistent-cache visibility: size + free disk. Partial clones
+          # (blob:none) keep this small, but surface it so disk creep on
+          # the self-hosted runner is noticed early.
+          echo "Clone cache: $(du -sh "$UPSTREAMS" 2>/dev/null | cut -f1 || echo n/a) at $UPSTREAMS"
+          df -h "$WDIR" | tail -1
 
           # Mirror the PS workflow's exclusion list so both sides skip
           # the same clones (firmware ~55 GB, chromium ~67 GB per branch).
