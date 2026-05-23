@@ -1503,11 +1503,16 @@ char *check_urlhealth(pr_task_t                       *task,
             if (cpan_eligible) {
                 apply_cpan_perl_tokens(names, n, task->Name ? task->Name : "");
             }
+            /* M42 / PS L 3335-3350: per-spec generic-scrape prefix tokens
+             * (freetype-, grub-, xproto-, ...). No-op for other specs.
+             * M51: applied BEFORE the Name tokens (matching PS $replace
+             * array order, where these are added earlier) — critical for
+             * proto, where Name="proto" would otherwise strip the "proto"
+             * inside "xproto-7.0.31" → "x-7.0.31" (dropped on the "x")
+             * before the "xproto-" token could fire. */
+            apply_generic_scrape_tokens(task->Spec, names, n);
             apply_name_replace_augmentations(names, n,
                                              task->Name ? task->Name : "");
-            /* M42 / PS L 3335-3350: per-spec generic-scrape prefix tokens
-             * (freetype-, grub-, xproto-, ...). No-op for other specs. */
-            apply_generic_scrape_tokens(task->Spec, names, n);
             /* M22 (PS L 441-451 Clean-VersionNames): leading rel//v/r
              * strips, _→. replace, drop pre-release candidates. */
             apply_clean_version_names(names, n);
