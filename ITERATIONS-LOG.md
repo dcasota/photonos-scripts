@@ -340,3 +340,24 @@ Fix: one-line fallback at PS L2196 — empty Source0Lookup → `$currentTask.Sou
 Validated in isolation (gstreamer → real tarball; non-empty-lookup specs
 unchanged) + pwsh parse OK. No C change needed (C already does this).
 Requires PS-snapshot regeneration before the journal reflects the alignment.
+
+---
+
+## Session (2026-05-23, cont.): M58 merged + M59 — diff-report wiring
+
+M58 (col3 fix c) validated: PS regen + auto-triggered C run → 5.0 strict
+**103 → 87 (−16)**; gstreamer & the gitlab-atom family now emit the real
+tarball byte-identically on BOTH PS and C (dual-goal win). Merged.
+
+M59: wired the dormant `pr_write_diff_report` generator into the CLI. A
+dispatch block emits the 4 PS diff reports (common-master, 5.0-6.0, 4.0-5.0,
+3.0-4.0) when their flags are set. Local validation matched PS on clean rows
+(linux-esx/linux-rt 6.1.83-4,6.1.83-3); residual local diffs were cache drift
+(the shared parity-c-wd cache had advanced past the M58 snapshot — even
+showed linux-esx twice). CI (pinned-SHA reconstruct) is the authoritative
+validation. Diff-report parity-gate integration to follow once a clean CI
+run confirms.
+
+Dual-goal note (per operator): M58 directly advanced healthy/correct URLs on
+both implementations; M59 is feature-completeness. Next: resume URL-health/
+schema work (the remaining stragglers + proactive detection hardening).
