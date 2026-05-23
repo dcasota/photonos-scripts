@@ -361,3 +361,20 @@ run confirms.
 Dual-goal note (per operator): M58 directly advanced healthy/correct URLs on
 both implementations; M59 is feature-completeness. Next: resume URL-health/
 schema work (the remaining stragglers + proactive detection hardening).
+
+---
+
+## Session (2026-05-23, cont.): M60 — package version-matrix report
+
+Second report-completeness unit. C previously emitted only urlhealth + (M59)
+diff reports; PS also produces the package matrix. Implemented
+pr_write_package_report (PS L5556-5585): 7-branch main rows (first
+non-subrelease version, deduped) + appended subrelease rows, ICU-collated
+Spec,SubRelease sort. Wired into main.c (GeneratePhPackageReport); C workflow
+now generates + uploads it.
+
+Validated locally against the M58 PS snapshot matrix: **byte-identical —
+1245 rows, 0 body diffs**, including subrelease rows (stalld 91). This also
+confirmed M59's dedup fix (the linux-esx "drift" was a duplicate spec in the
+tree; dedup picks PS's first occurrence). C now matches PS on urlhealth +
+diff + package reports; only the issues-.md remains unported.

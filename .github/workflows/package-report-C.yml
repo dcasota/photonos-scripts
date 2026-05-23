@@ -290,7 +290,7 @@ jobs:
             -GeneratePhCommonURLHealthReport "${{ steps.branches.outputs.common }}" \
             -GeneratePhDevURLHealthReport    "${{ steps.branches.outputs.dev }}" \
             -GeneratePhMasterURLHealthReport "${{ steps.branches.outputs.master }}" \
-            -GeneratePhPackageReport         "false"
+            -GeneratePhPackageReport         "true"
 
           echo "scans=$SCANS" >> "$GITHUB_OUTPUT"
           ls -l "$SCANS"
@@ -311,6 +311,7 @@ jobs:
           path: |
             ${{ steps.c_run.outputs.scans }}/photonos-urlhealth-*.prn
             ${{ steps.c_run.outputs.scans }}/photonos-diff-report-*.prn
+            ${{ steps.c_run.outputs.scans }}/photonos-package-report_*.prn
           if-no-files-found: warn
           retention-days: 30
 
