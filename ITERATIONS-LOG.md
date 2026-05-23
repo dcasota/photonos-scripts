@@ -258,3 +258,24 @@ showed the empties are deterministic, not cold-run noise.
 Net: the col5 gap is a MIX — the curl/openssl relative-href bug (fixed),
 per-spec quirks (deferred), and some genuine transients — not predominantly
 transient as previously stated.
+
+---
+
+## Session (2026-05-23, cont.): M55 — tzdata per-spec detection handler
+
+First of the per-spec "fiddly straggler" empties. Diagnosed all 7 locally
+(tzdata/byacc/netcat/libsodium/libusb/runit/vsftpd): each a distinct cause,
+NOT a shared bug. tzdata + byacc use Source0Lookup rewrites that C already
+applies correctly (col3 matches PS); the empties are in the post-scrape
+pipeline where PS has per-spec handlers C hadn't ported.
+
+**Shipped M55 (tzdata):** ported PS L4406-4460's three tzdata special-cases —
+keep-`tzdata`/drop-`.asc/.sign/.tar.Z` filter + `beta` strip; skip the M21
+no-alpha filter (tzdata versions end in a letter, `2026b`); bespoke
+max-by-(year, trailing-letter) sort. All `spec_eq`-gated → zero blast radius.
+Validated: tzdata `2026b` + URL match PS byte-for-byte; curl/openssl + 9
+controls unchanged; 13 ctests green.
+
+**Remaining stragglers (each its own unit):** byacc (verify `/current/`
+scrape + L4354-4374 filter), libsodium (col3 substitution empty + 404 gate +
+`-stable` strip), netcat (commit-id vendored tarball), libusb/runit/vsftpd.

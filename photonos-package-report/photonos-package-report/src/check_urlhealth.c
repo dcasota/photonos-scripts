@@ -300,6 +300,56 @@ static void apply_href_basename(char **names, size_t n)
     }
 }
 
+/* M55 / PS L 4406-4413: tzdata listing filter. After basename + ext-strip
+ * the data.iana.org listing yields "tzdata2026b", "tzcode2026b",
+ * "tzdb-2026b", "tzdata2026b.asc", … . PS keeps only the tzdata files and
+ * drops signatures / .tar.Z, and adds "beta" to the strip set. Run before
+ * the Name-strip. */
+static void apply_tzdata_filter(char **names, size_t n)
+{
+    for (size_t i = 0; i < n; i++) {
+        if (names[i] == NULL) continue;
+        if (strstr(names[i], "tzdata") == NULL
+            || strcasestr(names[i], ".tar.z") != NULL
+            || strstr(names[i], ".asc")  != NULL
+            || strstr(names[i], ".sign") != NULL) {
+            free(names[i]); names[i] = NULL;
+        } else {
+            names[i] = str_replace_all(names[i], "beta", "");
+        }
+    }
+}
+
+/* M55 / PS L 4449-4460: tzdata's NameLatest is the maximum by (year, letter)
+ * — year = the digit run (2-digit normalised to 19xx), letter = a trailing
+ * [a-z]. So "2026b" > "2026a" > "2025z". The generic Get-LatestName /
+ * version-compare can't order the YYYY<letter> scheme, hence this dedicated
+ * sort (PS special-cases tzdata exactly here). Returns a malloc'd copy to
+ * match pr_get_latest_name's contract. */
+static char *tzdata_latest(char **names, size_t n)
+{
+    const char *best = NULL;
+    long best_year = -1;
+    char best_letter = 0;
+    for (size_t i = 0; i < n; i++) {
+        if (names[i] == NULL || names[i][0] == '\0') continue;
+        char yb[32]; size_t y = 0;
+        for (const char *p = names[i]; *p && y < sizeof yb - 1; p++)
+            if (*p >= '0' && *p <= '9') yb[y++] = *p;
+        yb[y] = '\0';
+        if (y == 0) continue;
+        long year = atol(yb);
+        if (y == 2) year = 1900 + year;   /* PS: 2-digit → 19xx */
+        size_t L = strlen(names[i]);
+        char last = names[i][L - 1];
+        char letter = (last >= 'a' && last <= 'z') ? last : 0;
+        if (year > best_year || (year == best_year && letter > best_letter)) {
+            best_year = year; best_letter = letter; best = names[i];
+        }
+    }
+    return dup_or_empty(best);   /* "" when no candidate → caller treats as none */
+}
+
 /* M37: a spec's Source0 points at a CPAN author directory. PS L 3933
  * gates the CPAN branch on the host alone, independent of Source0
  * health. The three forms PS recognises (L 3933). */
@@ -1520,6 +1570,11 @@ char *check_urlhealth(pr_task_t                       *task,
             if (used_atom) {
                 apply_samba_tokens(task->Spec, names, n);
             }
+            /* M55 / PS L 4406-4413: tzdata listing filter (keep tzdata-*,
+             * drop sigs/.tar.Z, strip "beta") — before the Name-strip. */
+            if (spec_eq(task->Spec, "tzdata.spec")) {
+                apply_tzdata_filter(names, n);
+            }
             apply_replace_strings(names, n, row ? row->replaceStrings : NULL);
             /* M26 (PS L 2152 + L 4376): drop candidates matching
              * Source0Lookup.ignoreStrings glob list (only when a row
@@ -1545,8 +1600,11 @@ char *check_urlhealth(pr_task_t                       *task,
             apply_clean_version_names(names, n);
             /* M21 (PS L 2522-2524): v-strip + has-digit + no-alpha-
              * after-[pP]\d+-strip. Drops scraper noise like
-             * `LATEST-IS-X`, `?C=S;O=A`, `..`. */
-            apply_name_post_filters(names, n);
+             * `LATEST-IS-X`, `?C=S;O=A`, `..`. M55 / PS L 4439: skipped for
+             * tzdata — its versions end in a letter ("2026b"), which the
+             * no-alpha filter would otherwise drop entirely. */
+            if (!spec_eq(task->Spec, "tzdata.spec"))
+                apply_name_post_filters(names, n);
             /* M47 / PS L 4210-4219: linux kernel family per-branch series
              * pin — keep only candidates in the tracked LTS series. */
             const char *kseries = linux_kernel_series(task->Spec, clone_root);
@@ -1557,7 +1615,11 @@ char *check_urlhealth(pr_task_t                       *task,
                     }
                 }
             }
-            char *latest = pr_get_latest_name(names, n);
+            /* M55 / PS L 4445-4460: tzdata uses the bespoke year+letter sort
+             * instead of the generic Get-LatestName. */
+            char *latest = spec_eq(task->Spec, "tzdata.spec")
+                           ? tzdata_latest(names, n)
+                           : pr_get_latest_name(names, n);
             if (latest && latest[0]) {
                 /* Strip common file extensions if present — listing
                  * hrefs are often like "GConf-3.2.6.tar.xz". */
