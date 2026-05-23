@@ -62,7 +62,7 @@ jobs:
       - name: Install build deps
         run: |
           # Idempotent: tdnf install reports "already installed" cleanly.
-          tdnf install -y cmake gcc libcurl-devel pcre2-devel pkg-config make tar gzip git || true
+          tdnf install -y cmake gcc libcurl-devel pcre2-devel icu-devel pkg-config make tar gzip git || true
           cmake --version
           gcc --version | head -1
 

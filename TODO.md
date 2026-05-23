@@ -670,17 +670,22 @@ SHA. Extracted `funet_mirror()`, applied at both UpdateURL build sites.
 `cols[6 7 9]` bucket went 40→0; bash/grep/coreutils match PS byte-for-
 byte. Journal == local diff (227/60) confirmed.
 
-**NEW FINDING — sort-collation divergence (CHECKPOINT, touches the
-"do-not-break" sort invariant):** 12 rows in 5.0 are misaligned (col[1]
-Spec mismatch cascades) because C sorts with `strcasecmp` (ordinal:
-`-`<`.`<`_`) while PS's .NET `Sort-Object` is culture word-sort
-(`_`<`-`<`.`, hyphen treated as ignorable). Affected: python-backports_abc,
-python-backports.ssl_match_hostname, python-setuptools_scm,
+**RESOLVED 2026-05-23 — sort-collation divergence (M52 / ADR-0016):**
+Rows were misaligned (col[1] Spec mismatch cascades) because C sorted with
+`strcasecmp` (ordinal: `-`<`.`<`_`) while PS's .NET `Sort-Object` delegates
+to ICU culture collation (hyphen/period ignorable, `_` weighted
+differently). Affected clusters: python-backports_abc /
+python-backports.ssl_match_hostname, python-setuptools_scm /
 python-setuptools-rust, rubygem-http_parser.rb + http-* cluster,
-rubygem-unf_ext/unf. Fixing requires emulating .NET word-sort
-(ignorable-char rules) or linking ICU — both carry global-realignment
-regression risk. **Decision needed before touching `prn_writer.c`
-cmp_str_asc.** Est. ~12 rows/branch (~70 total).
+rubygem-unf_ext / unf. **Fix shipped:** `prn_writer.c` `cmp_str_asc` now
+uses an ICU `en-US` collator (strength SECONDARY, `pthread_once`,
+strcasecmp fallback). New build dep `icu-devel`. **Validated: ICU sort
+reproduces PS row order with 0 mismatches across ALL branches**
+(3.0/4.0/5.0/6.0/common), and agrees with live `pwsh Sort-Object` on ICU
+72 and 76. Regression test `test_icu_row_sort` added to test_phase6.
+Eliminates ~8 misaligned 5.0 row-positions (~10 phantom strict diffs);
+proportional on the other branches. The earlier "global-realignment
+regression risk" was retired by full-branch local validation before merge.
 
 NOTE: journal rows before run 26160062078 were measured against a
 **frozen May 17 PS baseline** (snapshot-selection bug, fixed in PRs

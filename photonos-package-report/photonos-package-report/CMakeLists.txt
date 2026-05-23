@@ -7,13 +7,20 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Photon ships these as RPMs. The maintainer-side install command is:
-#   tdnf install -y cmake gcc libcurl-devel pcre2-devel json-c-devel libarchive-devel pkg-config
+#   tdnf install -y cmake gcc libcurl-devel pcre2-devel icu-devel json-c-devel libarchive-devel pkg-config
 # Phase 1 used libc + pthread; Phase 2 added PCRE2; Phase 3 adds the
 # bash+awk Source0LookupData generator (no extra runtime deps).
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(PCRE2   REQUIRED libpcre2-8)
 pkg_check_modules(CURL    REQUIRED libcurl)
 pkg_check_modules(OPENSSL REQUIRED openssl)
+# M52 / ADR-0016: ICU collation for the .prn row sort. PowerShell's
+# Sort-Object uses .NET CompareInfo, which on Linux delegates to ICU.
+# We link the same library so C reproduces PS's exact culture-aware
+# row ordering (was strcasecmp, which mis-ordered punctuation families
+# like rubygem-http_parser.rb vs rubygem-http-accept). Photon ships
+# this as icu-devel:  tdnf install -y icu-devel
+pkg_check_modules(ICU     REQUIRED icu-i18n icu-uc)
 
 # ----- Phase 3 generator: embedded Source0LookupData CSV -------------
 # Runs at build time. Output lives under ${CMAKE_BINARY_DIR}/generated
@@ -131,9 +138,10 @@ target_include_directories(photonos-package-report PRIVATE
     ${PCRE2_INCLUDE_DIRS}
     ${CURL_INCLUDE_DIRS}
     ${OPENSSL_INCLUDE_DIRS}
+    ${ICU_INCLUDE_DIRS}
 )
-target_link_libraries(photonos-package-report PRIVATE pthread ${PCRE2_LIBRARIES} ${CURL_LIBRARIES} ${OPENSSL_LIBRARIES})
-target_compile_options(photonos-package-report PRIVATE -Wall -Wextra -O2 -D_GNU_SOURCE ${PCRE2_CFLAGS_OTHER} ${CURL_CFLAGS_OTHER} ${OPENSSL_CFLAGS_OTHER})
+target_link_libraries(photonos-package-report PRIVATE pthread ${PCRE2_LIBRARIES} ${CURL_LIBRARIES} ${OPENSSL_LIBRARIES} ${ICU_LIBRARIES})
+target_compile_options(photonos-package-report PRIVATE -Wall -Wextra -O2 -D_GNU_SOURCE ${PCRE2_CFLAGS_OTHER} ${CURL_CFLAGS_OTHER} ${OPENSSL_CFLAGS_OTHER} ${ICU_CFLAGS_OTHER})
 
 # ----- Tests --------------------------------------------------------
 enable_testing()

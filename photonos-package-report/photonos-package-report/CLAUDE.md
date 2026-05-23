@@ -121,10 +121,14 @@ and ADR-0015 (live).
 
 - `parity-diff.sh` compares `.prn` files **line-by-line at the same
   row index** — not joining on Spec. C's `.prn` row sort MUST match
-  PS's `Sort-Object Spec, SubRelease` (case-INsensitive). Fixed in
-  M14; before that, almost every row mismatched purely from sort
-  order. If you ever change the row-output ordering, this is the
-  one thing not to break.
+  PS's `Sort-Object Spec, SubRelease` (case-INsensitive). M14 fixed
+  the case axis (strcmp→strcasecmp); **M52 / ADR-0016** fixed the
+  punctuation axis by switching `prn_writer.c` to an ICU `en-US`
+  collator (strength SECONDARY) — the same engine PowerShell's
+  `Sort-Object` uses on Linux. `strcasecmp` was ordinal and mis-ordered
+  punctuation families (`_` vs `-` vs `.`). If you ever change the
+  row-output ordering, this is the one thing not to break — re-validate
+  the ICU sort reproduces PS's row order on all branches (0 mismatches).
 - Source0Lookup matching is **case-SENSITIVE** (PS `.IndexOf`).
   Warnings/hooks are **case-INsensitive** (PS `-ilike`). Preserve
   this asymmetry — see `feedback_source0lookup_case_sensitivity.md`.
