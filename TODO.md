@@ -1,5 +1,26 @@
 # TODO — C-port parity convergence + vendor-info quality
 
+**>>> 2026-05-23 SESSION CHECKPOINT (M60 — FULL REPORT PARITY) <<<**
+Shipped M52-M60 (9 PRs, all merged). 5.0 urlhealth strict: **126 → 87**.
+C now matches PS on ALL report types:
+  - urlhealth: parity-gated, 87 strict (M52/54/55/56/57/58 detection+schema work).
+  - diff reports (M59): generated+uploaded in CI; byte-matches PS except 1
+    stalld row (PS internally inconsistent — its own matrix+VersionCompare say
+    common>master but its diff omits it; C is more correct, do NOT mirror).
+  - package matrix (M60): generated+uploaded; **byte-identical to PS** (1245
+    rows, 0 diffs, pinned-CI validated, incl. subrelease rows).
+  - issues-.md: shared Python post-processor on the urlhealth .prn — no C port
+    needed (works on C's output).
+M58 was the dual-goal headline: PS source-of-truth fix so BOTH PS+C emit the
+real gitlab-atom tarball+SHA (not the homepage).
+NEXT UNITS:
+  - M61: parity-GATE the diff + package reports in CI (PS package report is in
+    the snapshot's package-reports/ dir; needs parity-diff plumbing + the
+    stalld decision — accept C-superiority or fix the PS diff bug like M58).
+  - URL-health stragglers (dual-goal, fragile): netcat (bespoke raw-file+CVS-
+    regex+Commits-API), libusb (sourceforge two-stage), libsodium (404 temporal).
+  - col9 SHA: PR_SHA_CACHE (operator-gated on disk policy) or inline compute.
+
 **>>> 2026-05-23 SESSION CHECKPOINT (updated) <<<**
 Shipped M52-M59 (all merged). 5.0 strict: **126 → ~87**.
 M58 (col3 fix c, PS source-of-truth): gitlab-atom family now emits the real
