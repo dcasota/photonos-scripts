@@ -30,6 +30,7 @@
 #include "pr_check_urlhealth.h"
 #include "pr_pool.h"
 #include "pr_prn.h"
+#include "pr_diff_report.h"
 #include "source0_lookup.h"
 #include <time.h>
 
@@ -276,6 +277,55 @@ int main(int argc, char **argv)
 
     if (generate_urlhealth_branch != NULL && generate_urlhealth_branch[0] != '\0') {
         return generate_urlhealth_main(&params, generate_urlhealth_branch);
+    }
+
+    /* Phase M task M59: cross-branch diff reports (PS L 5585-5660).
+     * For each enabled pair, parse the two branch SPECS trees and emit
+     * `photonos-diff-report-<a>-<b>_<ts>.prn` listing specs where branch
+     * <a> has a HIGHER version than <b>. The generator (pr_write_diff_report)
+     * is the PS L5440-5500 port; this wires the 4 PS-side report blocks. */
+    {
+        static const struct { size_t flag_off; const char *a, *b; } diffs[] = {
+            { offsetof(pr_params_t, GeneratePhCommontoPhMasterDiffHigherPackageVersionReport), "common", "master" },
+            { offsetof(pr_params_t, GeneratePh5toPh6DiffHigherPackageVersionReport),           "5.0",    "6.0"    },
+            { offsetof(pr_params_t, GeneratePh4toPh5DiffHigherPackageVersionReport),           "4.0",    "5.0"    },
+            { offsetof(pr_params_t, GeneratePh3toPh4DiffHigherPackageVersionReport),           "3.0",    "4.0"    },
+        };
+        int any_diff = 0, diff_rc = 0;
+        char ts[16];
+        time_t now = time(NULL); struct tm tm; localtime_r(&now, &tm);
+        strftime(ts, sizeof ts, "%Y%m%d%H%M", &tm);
+        const char *scans_dir = (params.scansDir && params.scansDir[0])
+                                ? params.scansDir : params.workingDir;
+        for (size_t i = 0; i < sizeof diffs / sizeof diffs[0]; i++) {
+            if (!*(int *)((char *)&params + diffs[i].flag_off)) continue;
+            any_diff = 1;
+            char pd_a[64], pd_b[64], lbl_a[80], lbl_b[80], out_path[PR_MAX_PATH];
+            snprintf(pd_a, sizeof pd_a, "photon-%s", diffs[i].a);
+            snprintf(pd_b, sizeof pd_b, "photon-%s", diffs[i].b);
+            snprintf(lbl_a, sizeof lbl_a, "photon-%s", diffs[i].a);
+            snprintf(lbl_b, sizeof lbl_b, "photon-%s", diffs[i].b);
+            snprintf(out_path, sizeof out_path,
+                     "%s/photonos-diff-report-%s-%s_%s.prn",
+                     scans_dir, diffs[i].a, diffs[i].b, ts);
+            pr_task_list_t la, lb;
+            pr_task_list_init(&la); pr_task_list_init(&lb);
+            if (parse_directory(params.workingDir, pd_a, &la) != 0 ||
+                parse_directory(params.workingDir, pd_b, &lb) != 0) {
+                fprintf(stderr, "::warning::diff %s-%s: parse_directory failed\n",
+                        diffs[i].a, diffs[i].b);
+                diff_rc = 1;
+            } else if (pr_write_diff_report(&la, &lb, lbl_a, lbl_b, out_path) != 0) {
+                fprintf(stderr, "::warning::diff %s-%s: write failed\n",
+                        diffs[i].a, diffs[i].b);
+                diff_rc = 1;
+            } else {
+                fprintf(stderr, "Wrote %s\n", out_path);
+            }
+            pr_task_list_free(&la); pr_task_list_free(&lb);
+        }
+        (void)any_diff;  /* diff reports run alongside urlhealth, not exclusively */
+        if (diff_rc != 0) { /* fall through; urlhealth dispatch still runs */ }
     }
 
     /* Phase M task M02: multi-branch dispatcher.
