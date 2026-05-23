@@ -404,3 +404,18 @@ check_urlhealth gated by allow_network + spec_eq(netcat). Validated locally:
 byte-identical to PS — col5=1.238, col6=self-built literal, col10=nc-c2d3847
 (commit_id matched). Remaining stragglers: libusb (sourceforge two-stage),
 libsodium (404 temporal, PS-blank correct).
+
+---
+
+## Session (2026-05-24, cont.): M63 — libusb sourceforge two-stage
+
+Un-defers the M40-deferred libusb. The libusb files page lists series dirs
+(libusb-1.0), not releases. Added libusb_latest_series() (strip
+libusb-compat-/libusb-, keep digit+no-alpha, version-sort → "1.0"); the sf
+branch then re-scrapes files/libusb-<series> for the real release names which
+the generic pipeline reduces to 1.0.30. sourceforge_deferred() now returns 0.
+Root cause of the initial empty: libusb was still in sourceforge_deferred (so
+sf_eligible was false) — un-deferring + the two-stage fixed it. Validated
+byte-identical to PS (1.0.30 + real tarball URL); nicstat unchanged.
+Remaining: col9 SHA (operator-gated), stalld diff row (informational), and
+libsodium (404 — correct PS behavior, not a bug).
