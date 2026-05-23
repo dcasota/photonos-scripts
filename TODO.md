@@ -103,12 +103,10 @@ M48 amdvlk (quarterly-version filter-skip), M49 nicstat/tclac
 5.0: 135 -> 126 (CI-confirmed for M48/M49; M50 verified locally).
 
 REMAINING col5-missed stragglers (FIDDLY, deferred):
-- libev: Source0 redirects to .../libev/Attic/ (old-versions archive);
-  C computes the scraper dir from the redirect-resolved URL -> scrapes
-  Attic/ (old) while PS uses the template dir (root, where 4.33 lives).
-  Fix = compute scraper parent from the ORIGINAL template Source0, not
-  the redirect-resolved one -> touches shared scraper-parent logic ->
-  regression risk to all scraper specs for 1 spec. DEFER.
+- libev: TRANSIENT (not a bug). Attic/ DOES contain libev-4.33, but
+  dist.schmorp.de intermittently 302s/blocks the scraper request (200 on
+  retry/HEAD) — same class as freetype2/Anubis flakiness. C's empty
+  resolves on a lucky run. NO code fix.
 - proto: x.org archived; %{xproto_ver}=7.7 vs detected xproto 7.0.31
   (different packages); PS warns, C empty. Confusing per-spec edge. DEFER.
 - 4 C-better col5 rows (lasso/libbsd/libevent/lzo: C emits (same version),
