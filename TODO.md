@@ -1,5 +1,22 @@
 # TODO — C-port parity convergence + vendor-info quality
 
+**>>> 2026-05-23 SESSION CHECKPOINT — clean autonomous lane exhausted <<<**
+Shipped M52-M57 (all merged). 5.0 strict on snapshot 26324090866:
+**126 → 103 (−23)**. M52 ICU sort (−12); M54 curl/openssl; M55 tzdata; M56
+byacc/dialog; M57 the 14 hardcoded overrides (→ soft col9 only). M53 made the
+clone cache persistent (90min→8min, fixes cold-clone transients).
+Remaining strict diffs are dominated by **operator-gated** levers, not
+missing detection:
+  - **col3 atom-path C-superiority (~28 rows)** — LARGEST strict bucket
+    (PS stale homepage vs C real tarball). Needs the a/b/c decision below.
+  - **col9 SHA (now soft, larger after M57)** — Phase-2 `PR_SHA_CACHE`
+    persistent SOURCES_NEW cache (gated on disk policy) or `PR_STRICT_COL9`.
+  - Fragile/attended stragglers (NOT clean units): libsodium (upstream 404,
+    PS blank-on-dead-URL is correct), netcat (bespoke: raw netcat.c + CVS
+    regex + Commits API + tarball synthesis), libusb (deferred sourceforge
+    two-stage). gtest v-prefix (C-cleaner, cosmetic).
+Next high-leverage step is the **col3 operator decision**, not more adapters.
+
 Living plan for **two parallel goals** toward 90 days green:
 
 1. **Shrink the C↔PS `.prn` parity gap** — close cell-level diffs so
