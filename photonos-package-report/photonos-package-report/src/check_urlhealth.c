@@ -140,7 +140,11 @@ static char *col9_cache_path(const char *clone_root, const char *download_name)
  * are handled via munge_sf_version (M40). */
 static int sourceforge_deferred(const char *spec)
 {
-    return spec_eq(spec, "libusb.spec");
+    /* M40 deferred libusb (its files page needs a two-stage series→release
+     * scrape); M63 implements that, so nothing is deferred now. Kept as the
+     * hook for any future SourceForge spec that needs deferral. */
+    (void)spec;
+    return 0;
 }
 
 /* M40 / PS L 3487,3493: the infozip unzip/zip SourceForge listings name
@@ -349,6 +353,34 @@ static char *tzdata_latest(char **names, size_t n)
         }
     }
     return dup_or_empty(best);   /* "" when no candidate → caller treats as none */
+}
+
+/* M63 / PS L 3513-3527: libusb sourceforge stage-1 series pick. The
+ * project files page lists series dirs ("libusb-1.0", "libusb-compat-0.1"),
+ * not releases. Strip the "libusb-compat-"/"libusb-" prefix, keep names that
+ * have a digit and no alphabetic remainder, and return the highest by
+ * version compare (e.g. "1.0"). Caller frees. NULL if none qualify. */
+static char *libusb_latest_series(char **names, size_t n)
+{
+    char *best = NULL;
+    for (size_t i = 0; i < n; i++) {
+        if (names[i] == NULL) continue;
+        const char *p = names[i];
+        if (strncmp(p, "libusb-compat-", 14) == 0) p += 14;
+        else if (strncmp(p, "libusb-", 7) == 0)    p += 7;
+        if (*p == '\0') continue;
+        int has_digit = 0, has_alpha = 0;
+        for (const char *q = p; *q; q++) {
+            if (*q >= '0' && *q <= '9') has_digit = 1;
+            else if ((*q >= 'a' && *q <= 'z') || (*q >= 'A' && *q <= 'Z')) has_alpha = 1;
+        }
+        if (!has_digit || has_alpha) continue;
+        if (best == NULL || pr_version_compare(p, best) == 1) {
+            free(best);
+            best = strdup(p);
+        }
+    }
+    return best;
 }
 
 /* M37: a spec's Source0 points at a CPAN author directory. PS L 3933
@@ -1540,6 +1572,29 @@ char *check_urlhealth(pr_task_t                       *task,
                     if (slash && slash != sf_url) {
                         slash[1] = '\0';  /* keep trailing slash */
                         scrape_ok = (pr_sourceforge_fetch_names(sf_url, &names, &n) == 0);
+                    }
+                }
+                /* M63 / PS L 3513-3530: libusb two-stage. Stage-1 names are
+                 * series dirs (libusb-1.0). Pick the latest series, then
+                 * re-scrape files/libusb-<series> for the real release names
+                 * — the generic pipeline below then yields e.g. 1.0.30. */
+                if (scrape_ok && n > 0 && spec_eq(task->Spec, "libusb.spec")) {
+                    char *series = libusb_latest_series(names, n);
+                    if (series) {
+                        char *s2_url = NULL;
+                        if (asprintf(&s2_url,
+                                "https://sourceforge.net/projects/libusb/files/libusb-%s",
+                                series) >= 0 && s2_url) {
+                            char **n2 = NULL; size_t c2 = 0;
+                            if (pr_sourceforge_fetch_names(s2_url, &n2, &c2) == 0 && c2 > 0) {
+                                pr_git_tags_free(names, n);  /* drop stage-1 */
+                                names = n2; n = c2;
+                            } else {
+                                pr_git_tags_free(n2, c2);
+                            }
+                            free(s2_url);
+                        }
+                        free(series);
                     }
                 }
                 used_sf = 1;
