@@ -8,14 +8,19 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Look up a task by Spec in `list`. Returns NULL if absent. */
+/* Look up a task by Spec in `list`, considering only NON-subrelease
+ * entries and returning the FIRST match. This mirrors PS's package-matrix
+ * construction: `$PackagesXMain = $PackagesX | Where-Object { -not
+ * $_.SubRelease }` then `$PackagesXMain[$PackagesXMain.Spec.IndexOf($spec)]`
+ * — i.e. the first non-subrelease occurrence wins, and `-Unique` collapses
+ * the matrix to one row per Spec. Returns NULL if absent. */
 static const pr_task_t *find_by_spec(const pr_task_list_t *list, const char *spec)
 {
     if (list == NULL || spec == NULL) return NULL;
     for (size_t i = 0; i < list->count; i++) {
-        if (list->items[i].Spec && strcmp(list->items[i].Spec, spec) == 0) {
-            return &list->items[i];
-        }
+        const pr_task_t *t = &list->items[i];
+        if (t->SubRelease && t->SubRelease[0] != '\0') continue;
+        if (t->Spec && strcmp(t->Spec, spec) == 0) return t;
     }
     return NULL;
 }
@@ -44,9 +49,14 @@ int pr_write_diff_report(const pr_task_list_t *tasks_a,
         /* PS L 5446: skip vendor-pinned subreleases. */
         if (a->SubRelease && a->SubRelease[0] != '\0') continue;
 
+        /* Dedup: emit one row per Spec (PS `-Unique` on the matrix). Only
+         * the FIRST non-subrelease occurrence is processed; a later
+         * duplicate (e.g. a second linux-esx.spec in the tree) is skipped
+         * because find_by_spec returns the first. */
+        if (find_by_spec(tasks_a, a->Spec) != a) continue;
+
         const pr_task_t *b = find_by_spec(tasks_b, a->Spec);
         if (b == NULL) continue;
-        if (b->SubRelease && b->SubRelease[0] != '\0') continue;
 
         /* PS L 5447: both versions non-empty. */
         const char *va = a->Version ? a->Version : "";
