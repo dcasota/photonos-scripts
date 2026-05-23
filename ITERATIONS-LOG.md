@@ -378,3 +378,16 @@ Validated locally against the M58 PS snapshot matrix: **byte-identical —
 confirmed M59's dedup fix (the linux-esx "drift" was a duplicate spec in the
 tree; dedup picks PS's first occurrence). C now matches PS on urlhealth +
 diff + package reports; only the issues-.md remains unported.
+
+---
+
+## Session (2026-05-23, cont.): M61 — parity-gate the package + diff reports
+
+Extended the C-side parity step to validate the M59/M60 reports against the
+PS snapshot (both are in the snapshot tarball's prn-snapshot/):
+  - package-report: GATED. Deterministic (pinned-SHA spec versions, no
+    network) → byte-identical to PS (validated 0 diffs / 1245 rows). Folds
+    into the overall verdict.
+  - diff reports: INFORMATIONAL (reported, not gated). PS omits stalld in
+    common-master despite its own matrix + VersionCompare saying common>master
+    (PS internal inconsistency); C is more correct, so not gated.
