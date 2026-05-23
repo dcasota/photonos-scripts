@@ -306,7 +306,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: c-side-prn-${{ github.run_id }}
-          path: ${{ steps.c_run.outputs.scans }}/photonos-urlhealth-*.prn
+          # urlhealth-*.prn (parity-gated) + diff-report-*.prn (M59, generated
+          # alongside; parity-gate integration pending clean-CI validation).
+          path: |
+            ${{ steps.c_run.outputs.scans }}/photonos-urlhealth-*.prn
+            ${{ steps.c_run.outputs.scans }}/photonos-diff-report-*.prn
           if-no-files-found: warn
           retention-days: 30
 
