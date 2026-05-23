@@ -97,3 +97,24 @@ reads fresh output.
 `PR_SHA_CACHE=1` for a persistent `SOURCES_NEW` *tarball* cache (the
 dual-goal SHA fix above). Tarballs are real blobs (GBs), so this needs a
 size cap / prune policy before enabling — held until that policy is set.
+
+## Amendment 2026-05-23 — col3 decision (c): fix PS's empty-Source0Lookup fallback
+
+The largest remaining strict bucket on 5.0 (~28 rows) was the gitlab-atom
+family (gstreamer, cairo, dbus, fontconfig, pixman, …) where col3/col6/col10
+differed because **PS emitted the bare project homepage while C emitted the
+real versioned tarball URL+SHA** (both 200). Root cause: these specs have a
+Source0Lookup entry whose Source0Lookup *field* is empty (it only pins
+`gitSource`). PS L2196 set `$Source0 = ""`, which then flowed into the
+L2224-2229 homepage-prepend and collapsed col3 to the homepage. The C port
+already falls back to the spec's own `Source0` template on an empty lookup
+(`check_urlhealth.c` L1027-1033), so C was strictly more correct.
+
+Decision (operator, 2026-05-23): **option (c)** — fix the source-of-truth.
+Add a one-line fallback at PS L2196: when the Source0Lookup field is empty,
+use `$currentTask.Source0`. Both sides then build the real tarball URL from
+the spec template, so col3/col6/col10 (and col9 SHA) genuinely agree AND
+PS's report quality improves (dual-goal-positive). Validated in isolation:
+gstreamer → `…/src/gstreamer/gstreamer-<ver>.tar.xz`; specs with a non-empty
+lookup are unchanged. Requires regenerating the PS snapshot (the cached
+snapshot predates the fix); the C side needs no change.

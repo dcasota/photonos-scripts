@@ -324,3 +324,19 @@ mpc, runit, sendmail, vsftpd, python-daemon, python-Js2Py, python-ruamel-yaml
 libsodium (404 temporal + col3-blank-on-dead-URL is correct PS behavior),
 netcat (commit-id vendored — needs gitSource override), libusb (deferred
 sourceforge two-stage).
+
+---
+
+## Session (2026-05-23, cont.): M58 — col3 (c): fix PS empty-Source0Lookup fallback
+
+Operator chose col3 decision (c) — fix the source-of-truth. The ~28-row
+gitlab-atom col3/col6/col10 bucket was C-superiority: PS emitted the bare
+homepage, C the real tarball. Root cause: PS L2196 set `$Source0` to the
+empty Source0Lookup field for these gitSource-only entries, which the
+L2224-2229 homepage-prepend then collapsed to the homepage. C already falls
+back to the spec Source0 template (check_urlhealth.c L1027-1033).
+
+Fix: one-line fallback at PS L2196 — empty Source0Lookup → `$currentTask.Source0`.
+Validated in isolation (gstreamer → real tarball; non-empty-lookup specs
+unchanged) + pwsh parse OK. No C change needed (C already does this).
+Requires PS-snapshot regeneration before the journal reflects the alignment.
