@@ -299,3 +299,28 @@ regression on tzdata/curl/openssl + controls; 13 ctests green.
 Remaining stragglers: libsodium (col3 substitution empty + 404 gate +
 `-stable`), netcat (commit-id vendored), libusb, runit, vsftpd. (gtest's
 `v1.17.0` vs `1.17.0` is a separate known v-prefix normalization, C-cleaner.)
+
+---
+
+## Session (2026-05-23, cont.): M57 — hardcoded UpdateURL/UpdateAvailable overrides
+
+Biggest single batch. While diagnosing the remaining stragglers (runit/
+sendmail/vsftpd), found PS L2264-2363: a block of 14 maintainer-pinned
+hardcoded overrides for specs where dynamic detection is impossible (archived
+projects, broken download pages, pythonhosted blob URLs). None were ported.
+
+Ported all 14 (cdrkit, iptraf, json-spirit, libassuan, libtiff, mpc,
+python-daemon, python-enum, python-enum34, python-Js2Py, python-ruamel-yaml,
+runit, sendmail, vsftpd) as a function-local static table setting col5/6/7,
+col10 (via download_name_post — reproduces the leading-`v` strip, e.g.
+vsftpd→sftpd), and cdrkit's col12 ArchivationDate; the spec-warning table
+supplies cdrkit's col11. All spec_eq-gated → zero blast radius. col9 (SHA)
+left empty (soft per ADR-0009). Validated: all 14 match PS on every strict
+column; 13 ctests green. ~8 of these were on my straggler list.
+
+Straggler tally after M54-M57: curl, openssl, tzdata, byacc, dialog, cdrkit,
+mpc, runit, sendmail, vsftpd, python-daemon, python-Js2Py, python-ruamel-yaml
+(+ iptraf/json-spirit/libassuan/libtiff/python-enum/enum34) fixed. Remaining:
+libsodium (404 temporal + col3-blank-on-dead-URL is correct PS behavior),
+netcat (commit-id vendored — needs gitSource override), libusb (deferred
+sourceforge two-stage).
