@@ -95,6 +95,28 @@ Branch naming: `sdd/phase-<N>-task<NNN>-<slug>` for numeric phases,
 
 
 
+
+## COL5 DETECTION COMPLETE (2026-05-23, 5.0 = 126 strict)
+
+proto RESOLVED in CI (M51 — generic-scrape tokens reordered before Name
+tokens, so "xproto-" strips before Name="proto" mangles it). Every
+non-transient, non-C-better col5 straggler is now resolved. This
+resumption's wins (all CI-confirmed): amdvlk M48, nicstat/tclap M49,
+ltrace M50, proto M51 + the C-side journal-push-retry CI fix.
+
+GENUINELY REMAINING (operator-gated / not autonomous):
+- col3: criteria decision (softening weakens ADR-0006 bit-identical).
+  ~28 col3-only rows are PS-stale-homepage vs C-real-tarball (C >= PS).
+- col9: tarball-cache activation (architecture) — but marginal (col9
+  already soft; most col9 rows strict on other cols).
+- libev (transient host flakiness), lasso/libbsd/libevent/lzo (C-better):
+  not fixable / don't-mirror.
+- irreducible transient noise (mirror/Anubis/clone-EOF).
+
+Per-spec convergence is COMPLETE. 5.0: 392 (start) -> 126, all detection
+adapters + every tractable real bug shipped & CI-validated; green-capable
+via soft-col9. Further reduction needs the operator col3/col9 decisions.
+
 ## MORE WINS via local repro (2026-05-22 late, 5.0 -> 126 strict)
 
 After "per-spec done" was declared, local-repro found MORE clean wins:
