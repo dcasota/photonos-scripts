@@ -31,6 +31,7 @@
 #include "pr_pool.h"
 #include "pr_prn.h"
 #include "pr_diff_report.h"
+#include "pr_package_report.h"
 #include "source0_lookup.h"
 #include <time.h>
 
@@ -277,6 +278,46 @@ int main(int argc, char **argv)
 
     if (generate_urlhealth_branch != NULL && generate_urlhealth_branch[0] != '\0') {
         return generate_urlhealth_main(&params, generate_urlhealth_branch);
+    }
+
+    /* Phase M task M60: package version-matrix report (PS L 5556-5585).
+     * One row per package with its version in each of the 7 branches, plus
+     * appended subrelease rows. Parses all 7 branch SPECS trees (no network)
+     * and writes photonos-package-report_<ts>.prn. */
+    if (params.GeneratePhPackageReport) {
+        static const char *const br[7] =
+            { "3.0", "4.0", "5.0", "6.0", "common", "dev", "master" };
+        static const char *const labels[7] =
+            { "photon-3.0", "photon-4.0", "photon-5.0", "photon-6.0",
+              "photon-common", "photon-dev", "photon-master" };
+        pr_task_list_t lists[7];
+        const pr_task_list_t *lp[7];
+        int parsed_ok = 1;
+        for (int k = 0; k < 7; k++) {
+            pr_task_list_init(&lists[k]);
+            char pd[64];
+            snprintf(pd, sizeof pd, "photon-%s", br[k]);
+            if (parse_directory(params.workingDir, pd, &lists[k]) != 0) {
+                fprintf(stderr, "::warning::package-report: parse_directory(%s) failed\n", pd);
+                parsed_ok = 0;
+            }
+            lp[k] = &lists[k];
+        }
+        if (parsed_ok) {
+            char ts[16];
+            time_t now = time(NULL); struct tm tm; localtime_r(&now, &tm);
+            strftime(ts, sizeof ts, "%Y%m%d%H%M", &tm);
+            const char *scans_dir = (params.scansDir && params.scansDir[0])
+                                    ? params.scansDir : params.workingDir;
+            char out_path[PR_MAX_PATH];
+            snprintf(out_path, sizeof out_path,
+                     "%s/photonos-package-report_%s.prn", scans_dir, ts);
+            if (pr_write_package_report(lp, labels, out_path) == 0)
+                fprintf(stderr, "Wrote %s\n", out_path);
+            else
+                fprintf(stderr, "::warning::package-report: write failed\n");
+        }
+        for (int k = 0; k < 7; k++) pr_task_list_free(&lists[k]);
     }
 
     /* Phase M task M59: cross-branch diff reports (PS L 5585-5660).
