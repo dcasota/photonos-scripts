@@ -482,3 +482,25 @@ exactly as before (col9 soft, no spurious diffs). TODO-1 "full col9 parity" is
 re-scoped as a follow-on (the col9-path + name-alignment work). col9 is soft, so
 none of this affects the strict gate or 90-day clock. TODO-2 done; TODO-3 switch
 ready (gated on TODO-1 completion).
+
+---
+
+## Session (2026-05-24, cont.): M65 abandoned + green-criterion decision (ADR-0009)
+
+M65 (git-tag --merged pin) FAILED validation: `git tag --merged <sha>` lists
+only HEAD-reachable tags vs PS's `git tag -l` (all tags); many upstreams tag
+on unmerged branches → strict 85→349. PR #188 closed, not merged.
+
+Data finding: per-branch strict is a STABLE STRUCTURAL FLOOR (5.0≈85,6.0≈86,
+3.0≈89,4.0≈89,common=5,dev≈77,master≈85), not trending down with per-spec work
+nor up across snapshot ages in the auto-trigger flow → temporal drift is small
+in production (±~7). Residual = C-superiority + per-spec long-tail + small
+temporal noise + soft col9.
+
+Decision (ADR-0009 amendment): green per branch = `strict ≤ THRESHOLD`
+(ratified structural floor), held 90 days — tracks "no regression beyond the
+known residual" rather than unachievable literal 0 (C is often more correct
+than PS). Option D (hermetic record-replay) evaluated and DEFERRED as
+gold-plating: the production gate is already stable; the correct tag-freeze
+(record tag lists) is high-effort/low-payoff. Adopt A+E (tight scheduling +
+strict band). Convergence program is effectively complete.
