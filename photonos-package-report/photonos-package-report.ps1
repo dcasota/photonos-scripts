@@ -750,7 +750,7 @@ iperf.spec,https://github.com/esnet/iperf/archive/refs/tags/%{version}.tar.gz,ht
 ipmitool.spec,https://github.com/ipmitool/ipmitool/archive/refs/tags/IPMITOOL_%{version}.tar.gz,https://github.com/ipmitool/ipmitool.git
 iproute2.spec,https://www.kernel.org/pub/linux/utils/net/iproute2/iproute2-%{version}.tar.xz,https://git.kernel.org/pub/scm/network/iproute2/iproute2.git,,,
 ipset.spec,https://ipset.netfilter.org/ipset-%{version}.tar.bz2
-iptables.spec,https://www.netfilter.org/projects/iptables/files/iptables-%{version}.tar.xz
+iptables.spec,https://www.netfilter.org/projects/iptables/files/iptables-%{version}.tar.xz,https://git.netfilter.org/iptables.git
 iptraf-ng.spec,https://github.com/iptraf-ng/iptraf-ng/archive/refs/tags/v%{version}.tar.gz,https://github.com/iptraf-ng/iptraf-ng.git
 iputils.spec,https://github.com/iputils/iputils/archive/refs/tags/s%{version}.tar.gz,https://github.com/iputils/iputils.git
 ipvsadm.spec,,https://git.kernel.org/pub/scm/utils/kernel/ipvsadm/ipvsadm.git
@@ -819,14 +819,14 @@ libjpeg-turbo.spec,https://github.com/libjpeg-turbo/libjpeg-turbo/archive/refs/t
 libmbim.spec,https://gitlab.freedesktop.org/mobile-broadband/libmbim/-/archive/%{version}/libmbim-%{version}.tar.gz,https://gitlab.freedesktop.org/mobile-broadband/libmbim.git
 libmd.spec,https://archive.hadrons.org/software/libmd/libmd-%{version}.tar.xz,https://github.com/guillemj/libmd.git
 libmetalink.spec,https://github.com/metalink-dev/libmetalink/releases/download/release-%{version}/libmetalink-%{version}.tar.bz2,https://github.com/metalink-dev/libmetalink.git
-libmnl.spec,https://www.netfilter.org/projects/libmnl/files/libmnl-%{version}.tar.bz2
+libmnl.spec,https://www.netfilter.org/projects/libmnl/files/libmnl-%{version}.tar.bz2,https://git.netfilter.org/libmnl.git,,,"libmnl-"
 libmspack.spec,https://github.com/kyz/libmspack/archive/refs/tags/v%{version}.tar.gz,https://github.com/kyz/libmspack.git,,,".1alpha"
 libndp.spec,https://github.com/jpirko/libndp/archive/refs/tags/v%{version}.tar.gz,https://github.com/jpirko/libndp.git
 libnetconf2.spec,https://github.com/CESNET/libnetconf2/archive/refs/tags/v%{version}.tar.gz,https://github.com/CESNET/libnetconf2.git
 libnetfilter_conntrack.spec,https://www.netfilter.org/projects/libnetfilter_conntrack/files/libnetfilter_conntrack-%{version}.tar.xz,https://git.netfilter.org/libnetfilter_conntrack.git,,,"libnetfilter_conntrack-",,"Info: Packaging format .bz2 has changed to .tar.xz."
-libnetfilter_cthelper.spec,https://www.netfilter.org/projects/libnetfilter_cthelper/files/libnetfilter_cthelper-%{version}.tar.bz2
-libnetfilter_cttimeout.spec,https://www.netfilter.org/projects/libnetfilter_cttimeout/files/libnetfilter_cttimeout-%{version}.tar.bz2
-libnetfilter_queue.spec,https://www.netfilter.org/projects/libnetfilter_queue/files/libnetfilter_queue-%{version}.tar.bz2
+libnetfilter_cthelper.spec,https://www.netfilter.org/projects/libnetfilter_cthelper/files/libnetfilter_cthelper-%{version}.tar.bz2,https://git.netfilter.org/libnetfilter_cthelper.git,,,"libnetfilter_cthelper-"
+libnetfilter_cttimeout.spec,https://www.netfilter.org/projects/libnetfilter_cttimeout/files/libnetfilter_cttimeout-%{version}.tar.bz2,https://git.netfilter.org/libnetfilter_cttimeout.git,,,"libnetfilter_cttimeout-"
+libnetfilter_queue.spec,https://www.netfilter.org/projects/libnetfilter_queue/files/libnetfilter_queue-%{version}.tar.bz2,https://git.netfilter.org/libnetfilter_queue.git,,,"libnetfilter_queue-"
 libnfnetlink.spec,https://www.netfilter.org/projects/libnfnetlink/files/libnfnetlink-%{version}.tar.bz2,https://git.netfilter.org/libnfnetlink.git
 libnftnl.spec,https://www.netfilter.org/projects/libnftnl/files/libnftnl-%{version}.tar.xz,https://git.netfilter.org/libnftnl.git,,,"libnftnl-",,"Info: Packaging format .bz2 has changed to .tar.xz."
 libnl.spec,https://github.com/thom311/libnl/archive/refs/tags/libnl%{version}.tar.gz,https://github.com/thom311/libnl.git
@@ -924,7 +924,7 @@ netmgmt.spec,https://github.com/vmware/photonos-netmgr/archive/refs/tags/v%{vers
 network-config-manager.spec,https://github.com/vmware/network-config-manager/archive/refs/tags/v%{version}.tar.gz,https://github.com/vmware/network-config-manager.git
 network-event-broker.spec,https://github.com/vmware/network-event-broker/archive/refs/tags/v%{version}.tar.gz,https://github.com/vmware/network-event-broker.git
 newt.spec,https://github.com/mlichvar/newt/archive/refs/tags/r%{version}.tar.gz,https://github.com/mlichvar/newt.git
-nftables.spec,https://www.netfilter.org/projects/nftables/files/nftables-%{version}.tar.xz
+nftables.spec,https://www.netfilter.org/projects/nftables/files/nftables-%{version}.tar.xz,https://git.netfilter.org/nftables.git
 nghttp2.spec,https://github.com/nghttp2/nghttp2/releases/download/v%{version}/nghttp2-%{version}.tar.xz,https://github.com/nghttp2/nghttp2.git
 nginx.spec,https://github.com/nginx/nginx/archive/refs/tags/release-%{version}.tar.gz,https://github.com/nginx/nginx.git
 nginx-ingress.spec,https://github.com/nginxinc/kubernetes-ingress/archive/refs/tags/v%{version}.tar.gz,https://github.com/nginxinc/kubernetes-ingress.git
