@@ -26,6 +26,9 @@ on:
       throttle_limit:
         description: 'Concurrency for CheckURLHealth (sequential clones on-demand at -ThrottleLimit 1 take many hours for full multi-branch snapshots). Drop to 1 when chasing a strict-diff that needs byte-stable stderr ordering.'
         default: '8'
+      sha_cache:
+        description: 'M64 TODO-1: activate the shared col9 SHA cache (PR_SHA_CACHE). Default false: validation (run 26357010174) showed 122 residual col9 mismatches because col9 has several computation paths + download-name vs preserved-filename gaps the simple cache does not yet close. Keep off until the col9-path completion follow-on lands; the preserve/mechanism is dormant infra meanwhile.'
+        default: 'false'
       strict_col9:
         description: 'M64 TODO-3: count col9 (SHA) toward the strict verdict (PR_STRICT_COL9). Leave false until the shared col9 cache (TODO-1) has been confirmed to hold col9 byte-stable across a PS→C cycle — enabling early spikes strict and resets the 90-day clock.'
         default: 'false'
@@ -235,13 +238,14 @@ jobs:
           # the network paths to run — without it, cols 4/5/6/7/10 are
           # all empty on the C side and every row diffs strict.
           PR_TEST_NETWORK: "1"
-          # M64 / ADR-0009 TODO-1: shared col9 tarball cache. PR_SHA_CACHE=1
-          # makes C hash from the cache; PR_SHA_CACHE_BASE points at the
-          # SOURCES_NEW the PS job just preserved, so C reuses PS's exact
-          # bytes → col9 stops drifting on regenerated auto-archives. Must
-          # match the PS workflow's "Preserve SOURCES_NEW" target.
-          PR_SHA_CACHE: "1"
-          PR_SHA_CACHE_BASE: "/root/.cache/photonos-shared/photon-upstreams"
+          # M64 / ADR-0009 TODO-1: shared col9 tarball cache. Gated by the
+          # sha_cache dispatch input (default OFF) — see its description for
+          # the residual-col9-mismatch finding. When on, PR_SHA_CACHE makes C
+          # hash from the cache and PR_SHA_CACHE_BASE points at the SOURCES_NEW
+          # the PS job preserved, so C reuses PS's exact bytes. Off on auto
+          # (workflow_run) runs → col9 behaves exactly as before this change.
+          PR_SHA_CACHE: ${{ github.event.inputs.sha_cache == 'true' && '1' || '' }}
+          PR_SHA_CACHE_BASE: ${{ github.event.inputs.sha_cache == 'true' && '/root/.cache/photonos-shared/photon-upstreams' || '' }}
         run: |
           cd repo/photonos-package-report/photonos-package-report
           WDIR="${{ steps.reconstruct.outputs.wdir }}"

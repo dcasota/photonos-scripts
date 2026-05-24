@@ -461,3 +461,24 @@ the workflow_run auto-trigger + warm cache (no code change). TODO-3: strict_col9
 dispatch input → PR_STRICT_COL9, OFF by default — flip only after a PS→C cycle
 confirms col9 byte-stable (else strict spikes + resets the 90-day clock).
 Validation: needs a fresh PS run → auto-triggered C run; col9 soft should drop.
+
+---
+
+## M64 col9-cache validation finding (2026-05-24)
+
+Activated the shared cache and measured col9 directly (C run 26357010174 vs PS
+snapshot 26356115730): **122 col9 mismatches remained** — 41 C-has-SHA/PS-empty,
+53 PS-has/C-empty (download-name vs preserved-filename gap → cache miss), 28
+both-differ. So col9 parity needs more than the shared cache: (a) all col9
+computation paths must honour cache-only mode (the stable-source/multi-SHA/
+legacy paths still compute on miss), (b) C's UpdateDownloadName must align with
+PS's preserved tarball filename, (c) PS-empty mirroring. The cache-only fix
+(sha.c) handles the simple path correctly but not these.
+
+DECISION: keep all M64 infra (PS preserve step, col9_cache_path PR_SHA_CACHE_BASE,
+sha.c cache-only, strict_col9 switch) but GATE activation behind dispatch inputs
+`sha_cache` + `strict_col9`, both DEFAULT OFF. Auto (workflow_run) runs behave
+exactly as before (col9 soft, no spurious diffs). TODO-1 "full col9 parity" is
+re-scoped as a follow-on (the col9-path + name-alignment work). col9 is soft, so
+none of this affects the strict gate or 90-day clock. TODO-2 done; TODO-3 switch
+ready (gated on TODO-1 completion).
