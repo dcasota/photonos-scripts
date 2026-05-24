@@ -206,7 +206,7 @@ jobs:
           printf '  %s\n' $BRANCHES
 
           PH3=false; PH4=false; PH5=false; PH6=false
-          COMMON=false; DEV=false; MASTER=false
+          COMMON=false; DEV=false; MASTER=false; MAIN=false
           for b in $BRANCHES; do
             case "$b" in
               3.0)    PH3=true ;;
@@ -216,6 +216,7 @@ jobs:
               common) COMMON=true ;;
               dev)    DEV=true ;;
               master) MASTER=true ;;
+              main)   MAIN=true ;;
             esac
           done
           {
@@ -226,6 +227,7 @@ jobs:
             echo "common=$COMMON"
             echo "dev=$DEV"
             echo "master=$MASTER"
+            echo "main=$MAIN"
           } >> "$GITHUB_OUTPUT"
 
       - name: Run C binary
@@ -304,6 +306,7 @@ jobs:
             -GeneratePhCommonURLHealthReport "${{ steps.branches.outputs.common }}" \
             -GeneratePhDevURLHealthReport    "${{ steps.branches.outputs.dev }}" \
             -GeneratePhMasterURLHealthReport "${{ steps.branches.outputs.master }}" \
+            -GeneratePhMainURLHealthReport   "${{ steps.branches.outputs.main }}" \
             -GeneratePhPackageReport         "true"
 
           echo "scans=$SCANS" >> "$GITHUB_OUTPUT"

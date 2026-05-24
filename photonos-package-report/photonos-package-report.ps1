@@ -102,8 +102,10 @@ param (
     [Parameter(Mandatory = $false)][ValidateNotNull()]$GeneratePhCommonURLHealthReport=$true,
     [Parameter(Mandatory = $false)][ValidateNotNull()]$GeneratePhDevURLHealthReport=$true,
     [Parameter(Mandatory = $false)][ValidateNotNull()]$GeneratePhMasterURLHealthReport=$true,
+    [Parameter(Mandatory = $false)][ValidateNotNull()]$GeneratePhMainURLHealthReport=$true,
     [Parameter(Mandatory = $false)][ValidateNotNull()]$GeneratePhPackageReport=$true,
     [Parameter(Mandatory = $false)][ValidateNotNull()]$GeneratePhCommontoPhMasterDiffHigherPackageVersionReport=$true,
+    [Parameter(Mandatory = $false)][ValidateNotNull()]$GeneratePhMaintoPhMasterDiffHigherPackageVersionReport=$true,
     [Parameter(Mandatory = $false)][ValidateNotNull()]$GeneratePh5toPh6DiffHigherPackageVersionReport=$true,
     [Parameter(Mandatory = $false)][ValidateNotNull()]$GeneratePh4toPh5DiffHigherPackageVersionReport=$true,
     [Parameter(Mandatory = $false)][ValidateNotNull()]$GeneratePh3toPh4DiffHigherPackageVersionReport=$true
@@ -126,8 +128,10 @@ $GeneratePh6URLHealthReport = Convert-ToBoolean $GeneratePh6URLHealthReport
 $GeneratePhCommonURLHealthReport = Convert-ToBoolean $GeneratePhCommonURLHealthReport
 $GeneratePhDevURLHealthReport = Convert-ToBoolean $GeneratePhDevURLHealthReport
 $GeneratePhMasterURLHealthReport = Convert-ToBoolean $GeneratePhMasterURLHealthReport
+$GeneratePhMainURLHealthReport = Convert-ToBoolean $GeneratePhMainURLHealthReport
 $GeneratePhPackageReport = Convert-ToBoolean $GeneratePhPackageReport
 $GeneratePhCommontoPhMasterDiffHigherPackageVersionReport = Convert-ToBoolean $GeneratePhCommontoPhMasterDiffHigherPackageVersionReport
+$GeneratePhMaintoPhMasterDiffHigherPackageVersionReport = Convert-ToBoolean $GeneratePhMaintoPhMasterDiffHigherPackageVersionReport
 $GeneratePh5toPh6DiffHigherPackageVersionReport = Convert-ToBoolean $GeneratePh5toPh6DiffHigherPackageVersionReport
 $GeneratePh4toPh5DiffHigherPackageVersionReport = Convert-ToBoolean $GeneratePh4toPh5DiffHigherPackageVersionReport
 $GeneratePh3toPh4DiffHigherPackageVersionReport = Convert-ToBoolean $GeneratePh3toPh4DiffHigherPackageVersionReport
@@ -5090,7 +5094,8 @@ function GenerateUrlHealthReports {
         [bool]$GeneratePh6URLHealthReport,
         [bool]$GeneratePhCommonURLHealthReport,
         [bool]$GeneratePhDevURLHealthReport,
-        [bool]$GeneratePhMasterURLHealthReport
+        [bool]$GeneratePhMasterURLHealthReport,
+        [bool]$GeneratePhMainURLHealthReport
     )
 
     $Packages3 = $null
@@ -5100,6 +5105,7 @@ function GenerateUrlHealthReports {
     $PackagesCommon = $null
     $PackagesDev = $null
     $PackagesMaster = $null
+    $PackagesMain = $null
 
     if ($GeneratePh3URLHealthReport) {
         Write-Host "Preparing data for Photon OS 3.0 ..."
@@ -5136,6 +5142,11 @@ function GenerateUrlHealthReports {
         GitPhoton -release "master" -WorkingDir $WorkingDir
         $PackagesMaster = ParseDirectory -WorkingDir $WorkingDir -PhotonDir "photon-master"
     }
+    if ($GeneratePhMainURLHealthReport) {
+        Write-Host "Preparing data for Photon OS Main ..."
+        GitPhoton -release "main" -WorkingDir $WorkingDir
+        $PackagesMain = ParseDirectory -WorkingDir $WorkingDir -PhotonDir "photon-main"
+    }
 
     # Initialize and populate the list of tasks for URL health checks
     $checkUrlHealthTasks = @()
@@ -5146,6 +5157,7 @@ function GenerateUrlHealthReports {
     if ($GeneratePhCommonURLHealthReport -and $null -ne $PackagesCommon) { $checkUrlHealthTasks += @{ Name = "Photon OS Common"; Release = "common"; Packages = $PackagesCommon; PhotonDir = "photon-common" } }
     if ($GeneratePhDevURLHealthReport -and $null -ne $PackagesDev) { $checkUrlHealthTasks += @{ Name = "Photon OS Development"; Release = "dev"; Packages = $PackagesDev; PhotonDir = "photon-dev" } }
     if ($GeneratePhMasterURLHealthReport -and $null -ne $PackagesMaster) { $checkUrlHealthTasks += @{ Name = "Photon OS Master"; Release = "master"; Packages = $PackagesMaster; PhotonDir = "photon-master" } }
+    if ($GeneratePhMainURLHealthReport -and $null -ne $PackagesMain) { $checkUrlHealthTasks += @{ Name = "Photon OS Main"; Release = "main"; Packages = $PackagesMain; PhotonDir = "photon-main" } }
 
     if ($checkUrlHealthTasks.Count -gt 0) {
         if ($Script:UseParallel) {
@@ -5400,7 +5412,7 @@ $branchMap = @{
     "3.0" = $GeneratePh3URLHealthReport; "4.0" = $GeneratePh4URLHealthReport
     "5.0" = $GeneratePh5URLHealthReport; "6.0" = $GeneratePh6URLHealthReport
     "common" = $GeneratePhCommonURLHealthReport; "dev" = $GeneratePhDevURLHealthReport
-    "master" = $GeneratePhMasterURLHealthReport
+    "master" = $GeneratePhMasterURLHealthReport; "main" = $GeneratePhMainURLHealthReport
 }
 $branchCount = ($branchMap.Values | Where-Object { $_ } | Measure-Object).Count
 $requiredMB += $branchCount * 500  # URL health scan overhead per branch
@@ -5511,7 +5523,8 @@ $urlHealthPackageData = GenerateUrlHealthReports -WorkingDir $global:workingDir 
     -GeneratePh6URLHealthReport ([bool]$GeneratePh6URLHealthReport) `
     -GeneratePhCommonURLHealthReport ([bool]$GeneratePhCommonURLHealthReport) `
     -GeneratePhDevURLHealthReport ([bool]$GeneratePhDevURLHealthReport) `
-    -GeneratePhMasterURLHealthReport ([bool]$GeneratePhMasterURLHealthReport)
+    -GeneratePhMasterURLHealthReport ([bool]$GeneratePhMasterURLHealthReport) `
+    -GeneratePhMainURLHealthReport ([bool]$GeneratePhMainURLHealthReport)
 Write-Host "DEBUG: GenerateUrlHealthReports returned"
 
 # Assign returned package data to existing variables if they were generated
@@ -5523,6 +5536,7 @@ if ($null -ne $urlHealthPackageData) {
     if ($GeneratePhCommonURLHealthReport) { $PackagesCommon = $urlHealthPackageData.PackagesCommon }
     if ($GeneratePhDevURLHealthReport) { $PackagesDev = $urlHealthPackageData.PackagesDev }
     if ($GeneratePhMasterURLHealthReport) { $PackagesMaster = $urlHealthPackageData.PackagesMaster }
+    if ($GeneratePhMainURLHealthReport) { $PackagesMain = $urlHealthPackageData.PackagesMain }
 }
 
 if ($GeneratePhPackageReport)
@@ -5536,6 +5550,7 @@ if ($GeneratePhPackageReport)
     GitPhoton -release master -WorkingDir $global:workingDir
     GitPhoton -release dev -WorkingDir $global:workingDir
     GitPhoton -release common -WorkingDir $global:workingDir
+    GitPhoton -release main -WorkingDir $global:workingDir
     Set-location $global:workingDir
     # read all files from branch
     $Packages3=ParseDirectory -WorkingDir $global:workingDir -PhotonDir photon-3.0
@@ -5545,6 +5560,7 @@ if ($GeneratePhPackageReport)
     $PackagesCommon=ParseDirectory -WorkingDir $global:workingDir -PhotonDir photon-common
     $PackagesDev=ParseDirectory -WorkingDir $global:workingDir -PhotonDir photon-dev
     $PackagesMaster=ParseDirectory -WorkingDir $global:workingDir -PhotonDir photon-master
+    $PackagesMain=ParseDirectory -WorkingDir $global:workingDir -PhotonDir photon-main
     # Filter out subrelease packages for cross-release comparison (they are vendor-pinned)
     $Packages3Main = @($Packages3 | Where-Object { -not $_.SubRelease })
     $Packages4Main = @($Packages4 | Where-Object { -not $_.SubRelease })
@@ -5553,7 +5569,8 @@ if ($GeneratePhPackageReport)
     $PackagesCommonMain = @($PackagesCommon | Where-Object { -not $_.SubRelease })
     $PackagesDevMain = @($PackagesDev | Where-Object { -not $_.SubRelease })
     $PackagesMasterMain = @($PackagesMaster | Where-Object { -not $_.SubRelease })
-    $result = @($Packages3Main,$Packages4Main,$Packages5Main,$Packages6Main,$PackagesCommonMain,$PackagesDevMain,$PackagesMasterMain| foreach-object{$_}|Select-Object Spec,`
+    $PackagesMainMain = @($PackagesMain | Where-Object { -not $_.SubRelease })
+    $result = @($Packages3Main,$Packages4Main,$Packages5Main,$Packages6Main,$PackagesCommonMain,$PackagesDevMain,$PackagesMasterMain,$PackagesMainMain| foreach-object{$_}|Select-Object Spec,`
     @{l='SubRelease';e={""}},`
     @{l='photon-3.0';e={if($_.Spec -in $Packages3Main.Spec) {$Packages3Main[$Packages3Main.Spec.IndexOf($_.Spec)].version}}},`
     @{l='photon-4.0';e={if($_.Spec -in $Packages4Main.Spec) {$Packages4Main[$Packages4Main.Spec.IndexOf($_.Spec)].version}}},`
@@ -5561,9 +5578,10 @@ if ($GeneratePhPackageReport)
     @{l='photon-6.0';e={if($_.Spec -in $Packages6Main.Spec) {$Packages6Main[$Packages6Main.Spec.IndexOf($_.Spec)].version}}},`
     @{l='photon-common';e={if($_.Spec -in $PackagesCommonMain.Spec) {$PackagesCommonMain[$PackagesCommonMain.Spec.IndexOf($_.Spec)].version}}},`
     @{l='photon-dev';e={if($_.Spec -in $PackagesDevMain.Spec) {$PackagesDevMain[$PackagesDevMain.Spec.IndexOf($_.Spec)].version}}},`
-    @{l='photon-master';e={if($_.Spec -in $PackagesMasterMain.Spec) {$PackagesMasterMain[$PackagesMasterMain.Spec.IndexOf($_.Spec)].version}}} -Unique | Sort-object Spec)
+    @{l='photon-master';e={if($_.Spec -in $PackagesMasterMain.Spec) {$PackagesMasterMain[$PackagesMasterMain.Spec.IndexOf($_.Spec)].version}}},`
+    @{l='photon-main';e={if($_.Spec -in $PackagesMainMain.Spec) {$PackagesMainMain[$PackagesMainMain.Spec.IndexOf($_.Spec)].version}}} -Unique | Sort-object Spec)
     # Append subrelease packages as separate rows
-    $subReleasePackages = @($Packages3,$Packages4,$Packages5,$Packages6,$PackagesCommon,$PackagesDev,$PackagesMaster | ForEach-Object{$_} | Where-Object { $_.SubRelease })
+    $subReleasePackages = @($Packages3,$Packages4,$Packages5,$Packages6,$PackagesCommon,$PackagesDev,$PackagesMaster,$PackagesMain | ForEach-Object{$_} | Where-Object { $_.SubRelease })
     foreach ($srPkg in $subReleasePackages) {
         $srRow = [PSCustomObject]@{
             Spec = $srPkg.Spec
@@ -5575,13 +5593,14 @@ if ($GeneratePhPackageReport)
             'photon-common' = ""
             'photon-dev' = ""
             'photon-master' = ""
+            'photon-main' = ""
         }
         $result += $srRow
     }
     $result = $result | Sort-Object Spec, SubRelease -Unique
     $outputfile=Join-Path -Path $global:scansDir -ChildPath "photonos-package-report_$((get-date).tostring("yyyMMddHHmm")).prn"
-    "Spec"+","+"SubRelease"+","+"photon-3.0"+","+"photon-4.0"+","+"photon-5.0"+","+"photon-6.0"+","+"photon-common"+","+"photon-dev"+","+"photon-master"| out-file $outputfile
-    $result | foreach-object { $_.Spec+","+$_.SubRelease+","+$_."photon-3.0"+","+$_."photon-4.0"+","+$_."photon-5.0"+","+$_."photon-6.0"+","+$_."photon-common"+","+$_."photon-dev"+","+$_."photon-master"} |  out-file $outputfile -append
+    "Spec"+","+"SubRelease"+","+"photon-3.0"+","+"photon-4.0"+","+"photon-5.0"+","+"photon-6.0"+","+"photon-common"+","+"photon-dev"+","+"photon-master"+","+"photon-main"| out-file $outputfile
+    $result | foreach-object { $_.Spec+","+$_.SubRelease+","+$_."photon-3.0"+","+$_."photon-4.0"+","+$_."photon-5.0"+","+$_."photon-6.0"+","+$_."photon-common"+","+$_."photon-dev"+","+$_."photon-master"+","+$_."photon-main"} |  out-file $outputfile -append
 }
 
 if ($GeneratePhCommontoPhMasterDiffHigherPackageVersionReport)
@@ -5597,6 +5616,25 @@ if ($GeneratePhCommontoPhMasterDiffHigherPackageVersionReport)
             if ($versionCompare1 -eq 1)
             {
                 $diffspec1=[System.String]::Concat($_.spec, ',',$_.'photon-common',',',$_.'photon-master')
+                $diffspec1 | out-file $outputfile1 -append
+            }
+        }
+    }
+}
+
+if ($GeneratePhMaintoPhMasterDiffHigherPackageVersionReport)
+{
+    Write-Host "Generating difference report of main packages with a higher version than same master package ..."
+    $outputfile1=Join-Path -Path $global:scansDir -ChildPath "photonos-diff-report-main-master_$((get-date).tostring("yyyMMddHHmm")).prn"
+    "Spec"+","+"photon-main"+","+"photon-master"| out-file $outputfile1
+    $result | foreach-object {
+        if ($_.SubRelease) { return }
+        if ((!([string]::IsNullOrEmpty($_.'photon-main'))) -and (!([string]::IsNullOrEmpty($_.'photon-master'))))
+        {
+            $versionCompare1 = VersionCompare $_.'photon-main' $_.'photon-master'
+            if ($versionCompare1 -eq 1)
+            {
+                $diffspec1=[System.String]::Concat($_.spec, ',',$_.'photon-main',',',$_.'photon-master')
                 $diffspec1 | out-file $outputfile1 -append
             }
         }

@@ -68,32 +68,32 @@ static const char *sr_version(const pr_task_list_t *l,
     return "";
 }
 
-int pr_write_package_report(const pr_task_list_t *const lists[7],
-                            const char *const labels[7],
+int pr_write_package_report(const pr_task_list_t *const lists[8],
+                            const char *const labels[8],
                             const char *output_path)
 {
     if (lists == NULL || labels == NULL || output_path == NULL) return -1;
-    for (int k = 0; k < 7; k++) if (lists[k] == NULL) return -1;
+    for (int k = 0; k < 8; k++) if (lists[k] == NULL) return -1;
 
-    /* Worst-case row count = sum of all task counts across the 7 branches. */
+    /* Worst-case row count = sum of all task counts across the 8 branches. */
     size_t cap = 0;
-    for (int k = 0; k < 7; k++) cap += lists[k]->count;
+    for (int k = 0; k < 8; k++) cap += lists[k]->count;
     if (cap == 0) cap = 1;
     char **rows = (char **)malloc(cap * sizeof *rows);
     if (!rows) return -1;
     size_t n = 0;
 
     /* Main rows (SubRelease empty): one per non-subrelease task occurrence;
-     * each is byte-identical for a given Spec (main_version queries all 7
+     * each is byte-identical for a given Spec (main_version queries all 8
      * branches), so the sort+dedup below collapses duplicates to one row
      * per Spec — matching PS's `-Unique`. */
-    for (int k = 0; k < 7; k++) {
+    for (int k = 0; k < 8; k++) {
         for (size_t i = 0; i < lists[k]->count; i++) {
             const pr_task_t *t = &lists[k]->items[i];
             if (t->SubRelease && t->SubRelease[0] != '\0') continue;
             if (t->Spec == NULL) continue;
             char *row = NULL;
-            if (asprintf(&row, "%s,,%s,%s,%s,%s,%s,%s,%s",
+            if (asprintf(&row, "%s,,%s,%s,%s,%s,%s,%s,%s,%s",
                          t->Spec,
                          main_version(lists[0], t->Spec),
                          main_version(lists[1], t->Spec),
@@ -101,7 +101,8 @@ int pr_write_package_report(const pr_task_list_t *const lists[7],
                          main_version(lists[3], t->Spec),
                          main_version(lists[4], t->Spec),
                          main_version(lists[5], t->Spec),
-                         main_version(lists[6], t->Spec)) >= 0 && row) {
+                         main_version(lists[6], t->Spec),
+                         main_version(lists[7], t->Spec)) >= 0 && row) {
                 rows[n++] = row;
             }
         }
@@ -109,15 +110,15 @@ int pr_write_package_report(const pr_task_list_t *const lists[7],
 
     /* Subrelease rows: one per distinct (Spec, SubRelease). Version columns
      * only for the numeric branches 3.0/4.0/5.0/6.0 (lists[0..3]);
-     * common/dev/master are always empty (PS hardcodes them ""). Generated
+     * common/dev/master/main are always empty (PS hardcodes them ""). Generated
      * per subrelease task occurrence; duplicates collapse in the sort. */
-    for (int k = 0; k < 7; k++) {
+    for (int k = 0; k < 8; k++) {
         for (size_t i = 0; i < lists[k]->count; i++) {
             const pr_task_t *t = &lists[k]->items[i];
             if (!(t->SubRelease && t->SubRelease[0] != '\0')) continue;
             if (t->Spec == NULL) continue;
             char *row = NULL;
-            if (asprintf(&row, "%s,%s,%s,%s,%s,%s,,,",
+            if (asprintf(&row, "%s,%s,%s,%s,%s,%s,,,,",
                          t->Spec, t->SubRelease,
                          sr_version(lists[0], t->Spec, t->SubRelease),
                          sr_version(lists[1], t->Spec, t->SubRelease),
@@ -139,7 +140,7 @@ int pr_write_package_report(const pr_task_list_t *const lists[7],
     }
     (void)labels;  /* fixed PS column order; header is literal below. */
     fputs("Spec,SubRelease,photon-3.0,photon-4.0,photon-5.0,photon-6.0,"
-          "photon-common,photon-dev,photon-master\n", f);
+          "photon-common,photon-dev,photon-master,photon-main\n", f);
     const char *prev = NULL;
     for (size_t i = 0; i < n; i++) {
         if (prev && strcmp(prev, rows[i]) == 0) continue;  /* -Unique */

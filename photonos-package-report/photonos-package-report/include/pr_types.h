@@ -33,8 +33,10 @@ typedef struct {
     int GeneratePhCommonURLHealthReport;                                       /* L 100 */
     int GeneratePhDevURLHealthReport;                                          /* L 101 */
     int GeneratePhMasterURLHealthReport;                                       /* L 102 */
+    int GeneratePhMainURLHealthReport;                                         /* M66: photon 'main' branch (distinct from master/dev) */
     int GeneratePhPackageReport;                                               /* L 103 */
     int GeneratePhCommontoPhMasterDiffHigherPackageVersionReport;              /* L 104 */
+    int GeneratePhMaintoPhMasterDiffHigherPackageVersionReport;                /* M66: main vs master diff */
     int GeneratePh5toPh6DiffHigherPackageVersionReport;                        /* L 105 */
     int GeneratePh4toPh5DiffHigherPackageVersionReport;                        /* L 106 */
     int GeneratePh3toPh4DiffHigherPackageVersionReport;                        /* L 107 */
