@@ -482,3 +482,19 @@ exactly as before (col9 soft, no spurious diffs). TODO-1 "full col9 parity" is
 re-scoped as a follow-on (the col9-path + name-alignment work). col9 is soft, so
 none of this affects the strict gate or 90-day clock. TODO-2 done; TODO-3 switch
 ready (gated on TODO-1 completion).
+
+---
+
+## Session (2026-05-24, cont.): M65 — Option-D step 1: git-tag recorded-SHA pin
+
+First record-replay increment toward a deterministic parity gate. Temporal
+drift's largest source is git-tag detection: C clones live, so `git tag -l`
+includes tags pushed after the PS snapshot → C picks a newer version than PS.
+Fix: the snapshot already records each upstream's HEAD SHA
+(upstream-clones-manifest.tsv); C now lists `git tag --merged <recorded_sha>`
+(tags reachable from the recorded HEAD = PS's view) when PR_UPSTREAM_SHA_MANIFEST
+is set. New SHA-manifest loader in clone.c, keyed by (photon-<branch>, repo)
+from clone_path; safe fallback to live `git tag -l` on miss/force-push.
+ctest green; env-gated (off without the manifest). Validation: dispatch C
+against an OLD snapshot (drift accumulated) — strict should drop vs the
+no-pin baseline. Next D steps: freeze HTTP listing/atom bodies; finish col9.

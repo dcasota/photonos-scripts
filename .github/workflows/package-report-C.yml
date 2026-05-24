@@ -246,6 +246,12 @@ jobs:
           # (workflow_run) runs → col9 behaves exactly as before this change.
           PR_SHA_CACHE: ${{ github.event.inputs.sha_cache == 'true' && '1' || '' }}
           PR_SHA_CACHE_BASE: ${{ github.event.inputs.sha_cache == 'true' && '/root/.cache/photonos-shared/photon-upstreams' || '' }}
+          # M65 / Option-D step 1: pin git-tag detection to the upstream SHAs
+          # the PS snapshot recorded, so `git tag --merged <sha>` lists the tag
+          # set PS saw — eliminating temporal drift on git-tag specs. The
+          # manifest ships in the snapshot tarball; falls back to live tags
+          # per-repo when a SHA isn't recorded/reachable.
+          PR_UPSTREAM_SHA_MANIFEST: ${{ steps.extract.outputs.dir }}/upstream-clones-manifest.tsv
         run: |
           cd repo/photonos-package-report/photonos-package-report
           WDIR="${{ steps.reconstruct.outputs.wdir }}"

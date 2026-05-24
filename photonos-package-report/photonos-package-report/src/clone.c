@@ -18,6 +18,7 @@
 #include <sys/file.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <pthread.h>
 
 /* --- helpers -------------------------------------------------------- */
 
@@ -247,6 +248,87 @@ int pr_clone_ensure(const char *clone_root,
     return rc;
 }
 
+/* --- M65 / Option-D step 1: recorded-SHA tag pin -------------------
+ *
+ * Temporal drift: C clones upstreams LIVE, so `git tag -l` includes tags
+ * pushed AFTER the PS snapshot, making C pick a newer version than PS did.
+ * Fix (record-replay): the snapshot's upstream-clones-manifest.tsv records
+ * each upstream's HEAD SHA at PS-time. When PR_UPSTREAM_SHA_MANIFEST points
+ * at it, list tags AS OF that SHA via `git tag --merged <sha>` — tags whose
+ * commit is reachable from the recorded HEAD, i.e. the set PS saw. Tags on
+ * later commits are excluded → deterministic, no temporal drift. Falls back
+ * to `git tag -l` when no SHA is recorded or --merged fails. */
+struct sha_ent { char *branch; char *repo; char *sha; };
+static struct sha_ent *g_sha_man = NULL;
+static size_t           g_sha_n   = 0;
+static pthread_once_t   g_sha_once = PTHREAD_ONCE_INIT;
+
+static void load_sha_manifest(void)
+{
+    const char *path = getenv("PR_UPSTREAM_SHA_MANIFEST");
+    if (path == NULL || path[0] == '\0') return;
+    FILE *f = fopen(path, "r");
+    if (!f) return;
+    size_t cap = 1024;
+    g_sha_man = (struct sha_ent *)malloc(cap * sizeof *g_sha_man);
+    if (!g_sha_man) { fclose(f); return; }
+    char line[4096];
+    while (fgets(line, sizeof line, f)) {
+        char *nl = strchr(line, '\n'); if (nl) *nl = '\0';
+        /* branch \t repo \t url \t sha */
+        char *b = line;
+        char *t1 = strchr(b, '\t'); if (!t1) continue; *t1 = '\0';
+        char *r = t1 + 1;
+        char *t2 = strchr(r, '\t'); if (!t2) continue; *t2 = '\0';
+        char *u = t2 + 1;
+        char *t3 = strchr(u, '\t'); if (!t3) continue; *t3 = '\0';
+        char *s = t3 + 1;
+        if (s[0] == '\0' || strcmp(s, "unknown") == 0) continue;
+        if (g_sha_n == cap) {
+            cap *= 2;
+            struct sha_ent *p = (struct sha_ent *)realloc(g_sha_man, cap * sizeof *g_sha_man);
+            if (!p) break;
+            g_sha_man = p;
+        }
+        g_sha_man[g_sha_n].branch = strdup(b);
+        g_sha_man[g_sha_n].repo   = strdup(r);
+        g_sha_man[g_sha_n].sha    = strdup(s);
+        if (g_sha_man[g_sha_n].branch && g_sha_man[g_sha_n].repo && g_sha_man[g_sha_n].sha)
+            g_sha_n++;
+    }
+    fclose(f);
+}
+
+/* clone_path is ".../photon-<branch>/clones/<repo>"; look up the recorded
+ * SHA for (branch, repo). Returns a borrowed pointer or NULL. */
+static const char *recorded_sha_for(const char *clone_path)
+{
+    pthread_once(&g_sha_once, load_sha_manifest);
+    if (g_sha_man == NULL || clone_path == NULL) return NULL;
+    size_t n = strlen(clone_path);
+    /* repo = last path segment */
+    const char *repo = clone_path + n;
+    while (repo > clone_path && *(repo - 1) != '/') repo--;
+    /* branch = the "photon-<branch>" two levels up (.../photon-<b>/clones/<repo>) */
+    const char *clones_end = repo;            /* points just past the last '/' */
+    if (clones_end > clone_path) clones_end--; /* the '/' before repo */
+    const char *clones = clones_end;
+    while (clones > clone_path && *(clones - 1) != '/') clones--;   /* "clones" seg start */
+    const char *brdir_end = (clones > clone_path) ? clones - 1 : clones;
+    const char *brdir = brdir_end;
+    while (brdir > clone_path && *(brdir - 1) != '/') brdir--;       /* "photon-<branch>" start */
+    /* brdir .. brdir_end is the full "photon-<branch>" dir name — the manifest
+     * records the branch column as basename(branch_dir), i.e. "photon-5.0". */
+    size_t brlen = (size_t)(brdir_end - brdir);
+    for (size_t i = 0; i < g_sha_n; i++) {
+        if (strcmp(g_sha_man[i].repo, repo) == 0
+            && strncmp(g_sha_man[i].branch, brdir, brlen) == 0
+            && g_sha_man[i].branch[brlen] == '\0')
+            return g_sha_man[i].sha;
+    }
+    return NULL;
+}
+
 /* --- pr_clone_list_tags -------------------------------------------- */
 
 int pr_clone_list_tags(const char *clone_path,
@@ -260,7 +342,22 @@ int pr_clone_list_tags(const char *clone_path,
     if (clone_path == NULL) return -1;
 
     char *stdout_buf = NULL;
-    int rc = invoke_git_with_timeout("tag -l", clone_path, 120, &stdout_buf);
+    int rc = -1;
+    /* M65: pin to the recorded SHA when replaying a snapshot. */
+    const char *sha = recorded_sha_for(clone_path);
+    if (sha) {
+        char *args = NULL;
+        if (asprintf(&args, "tag --merged %s", sha) >= 0 && args) {
+            rc = invoke_git_with_timeout(args, clone_path, 120, &stdout_buf);
+            free(args);
+        }
+    }
+    /* Fall back to the live tag list when not pinned, or if --merged failed
+     * (e.g. the recorded SHA isn't present after a force-push). */
+    if (rc != 0) {
+        free(stdout_buf); stdout_buf = NULL;
+        rc = invoke_git_with_timeout("tag -l", clone_path, 120, &stdout_buf);
+    }
     if (rc != 0) {
         free(stdout_buf);
         return -1;
