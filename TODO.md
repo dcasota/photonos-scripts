@@ -1,5 +1,21 @@
 # TODO — C-port parity convergence + vendor-info quality
 
+**>>> 2026-05-24 SESSION CHECKPOINT (M63 — fixable stragglers EXHAUSTED) <<<**
+Shipped M52-M63 (13 feature PRs, all merged). 5.0 urlhealth strict 126→~85.
+netcat (M62) + libusb sourceforge two-stage (M63) both byte-identical to PS.
+The clean autonomous per-spec/detection lane is now COMPLETE. What remains is
+NOT per-spec detection work:
+  - TEMPORAL drift (dominant residual): PS snapshot vs later C run → col5/col6
+    version+SHA differ for specs that released between the two runs. Fix =
+    run PS and C BACK-TO-BACK (architecture/operator), not detection code.
+  - col9 SHA: PR_SHA_CACHE persistent SOURCES_NEW (operator-gated on a disk-cap
+    policy) OR inline download+hash (network-heavy, soft-only). NEEDS OPERATOR.
+  - libsodium: upstream 404 (1.0.18-stable gone) — PS blank is CORRECT, not a bug.
+  - stalld diff-report row: PS internal inconsistency (C more correct);
+    informational-only in the gate (M61).
+NEXT (operator decisions): (a) col9 SHA cache disk policy; (b) back-to-back
+PS+C scheduling to kill temporal drift; (c) PR_STRICT_COL9 re-enable timing.
+
 **>>> 2026-05-24 SESSION CHECKPOINT (M62 — netcat; report parity + gating) <<<**
 Shipped M52-M62 (12 feature PRs, all merged). 5.0 urlhealth strict 126→~87
 (±5 transient). C matches PS on urlhealth + diff + package reports (M59/M60),
