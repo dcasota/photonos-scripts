@@ -42,7 +42,18 @@ def classify_row(uh, ua, uurl, huurl, udn, warn):
     Single source of the issue taxonomy: both the per-branch report
     (analyse_prn) and the cross-branch aggregate (aggregate_matrix) call
     this, so the two views can never drift apart.
+
+    Non-issue buckets (intentional states) are intercepted first, before the
+    cat1-8 issue ladder, so they are never counted as problems:
+      - pinned_subrelease: SPECS/NN vendor pins (UrlHealth sentinel "pinned").
+      - vmware_internal:   Source0 is a VMware-internal URL (not publicly
+        resolvable by design; can surface as UrlHealth 0 or 200).
     """
+    wl = warn.lower() if warn else ""
+    if uh == "pinned" or "vendor-pinned" in wl:
+        return "pinned_subrelease"
+    if "vmware internal" in wl:
+        return "vmware_internal"
     if uh == "":
         return "cat1_url_blank"
     if uh == "substitution_unfinished":
@@ -128,6 +139,13 @@ _SEV_RANK = {"High": 3, "Medium": 2, "Low-Medium": 1}
 _HEALTHY_MARK = "\U0001F7E2"   # green circle
 _NA_MARK = "⚪"            # white circle
 
+# Non-issue buckets: intentional states surfaced informationally, NOT counted
+# as issues and NOT severity-coloured. key -> (label, cell marker).
+NONISSUE_META = {
+    "pinned_subrelease": ("Vendor-pinned subrelease (frozen for a Photon sub-release)", "\U0001F4CC"),  # 📌
+    "vmware_internal":   ("VMware-internal Source0 URL (not publicly resolvable)",      "\U0001F535"),  # 🔵
+}
+
 
 def _sev_marker(nums):
     """Colour marker for a cell = highest severity among its categories."""
@@ -144,13 +162,15 @@ _SUBRELEASE_RE = re.compile(r"subrelease\s+(\d+)", re.IGNORECASE)
 def aggregate_matrix(latest):
     """Build the cross-branch view from the latest .prn per branch.
 
-    Returns (issue, present):
-      issue[spec][col]  -> set of category numbers (1..8)
-      present[col]      -> set of specs present in that column (any health)
+    Returns (issue, nonissue, present):
+      issue[spec][col]    -> set of category numbers (1..8)
+      nonissue[spec][col] -> non-issue key (pinned_subrelease / vmware_internal)
+      present[col]        -> set of specs present in that column (any health)
     A 5.0 row whose warning says "(subrelease NN)" is routed to the
     synthetic column "5.0/SPECS/NN" instead of "5.0".
     """
     issue = defaultdict(lambda: defaultdict(set))
+    nonissue = defaultdict(dict)
     present = defaultdict(set)
     for branch in latest:
         with open(latest[branch], newline="", encoding="utf-8") as f:
@@ -169,9 +189,11 @@ def aggregate_matrix(latest):
                     col = f"{branch}/SPECS/{m.group(1)}"
                 present[col].add(spec)
                 key = classify_row(uh, ua, uurl, huurl, udn, warn)
-                if key:
+                if key in NONISSUE_META:
+                    nonissue[spec][col] = key
+                elif key:
                     issue[spec][col].add(CAT_NUM[key])
-    return issue, present
+    return issue, nonissue, present
 
 
 def order_columns(present):
@@ -189,8 +211,15 @@ def order_columns(present):
     return cols
 
 
-def write_matrix_and_categories(out, issue, present):
-    """Write the spec-matrix and the category->affected-packages tables."""
+def write_matrix_and_categories(out, issue, nonissue, present):
+    """Write the spec-matrix and the category->affected-packages tables.
+
+    Only specs with at least one real (cat1-8) issue are rows in the matrix;
+    a spec that is *only* a non-issue (e.g. a vendor-pinned subrelease, or a
+    VMware-internal Source0) is excluded from the issue matrix and surfaced in
+    the separate informational table below. Non-issue cells of a spec that DOES
+    have a real issue elsewhere still render with their own marker.
+    """
     cols = order_columns(present)
     specs = sorted(issue.keys())
 
@@ -198,6 +227,8 @@ def write_matrix_and_categories(out, issue, present):
         if c in issue.get(s, {}):
             nums = sorted(issue[s][c])
             return _sev_marker(nums) + ",".join(str(n) for n in nums)
+        if c in nonissue.get(s, {}):
+            return NONISSUE_META[nonissue[s][c]][1]
         return _HEALTHY_MARK if s in present[c] else _NA_MARK
 
     out.write("## Spec-matrix — issue applicability per branch\n\n")
@@ -206,8 +237,10 @@ def write_matrix_and_categories(out, issue, present):
     out.write("Cell legend: severity colour + issue category number(s) — "
               f"{SEV_EMOJI['High']} High (1,2,3) · {SEV_EMOJI['Medium']} Medium "
               f"(4,5,6,7) · {SEV_EMOJI['Low-Medium']} Low-Medium (8) · "
-              f"{_HEALTHY_MARK} present & URL health OK · {_NA_MARK} not carried "
-              "in that branch/subrelease.\n\n")
+              f"{_HEALTHY_MARK} present & URL health OK · {_NA_MARK} not carried · "
+              f"{NONISSUE_META['pinned_subrelease'][1]} vendor-pinned subrelease "
+              f"(non-issue) · {NONISSUE_META['vmware_internal'][1]} VMware-internal "
+              "Source0 (non-issue).\n\n")
     out.write("| Spec | " + " | ".join(cols) + " |\n")
     out.write("|---|" + "|".join(["---"] * len(cols)) + "|\n")
     for s in specs:
@@ -231,6 +264,23 @@ def write_matrix_and_categories(out, issue, present):
         out.write(f"| {n} | {label} | {SEV_EMOJI.get(sev, '')} {sev} | {len(cat_specs[n])} | {pkgs} |\n")
     out.write("\n")
 
+    # Non-issue buckets — intentional states, reported informationally and NOT
+    # counted as issues above.
+    nonissue_specs = defaultdict(set)
+    for s, bycol in nonissue.items():
+        for key in bycol.values():
+            nonissue_specs[key].add(s)
+    if nonissue_specs:
+        out.write("## Non-issue categories (informational — not counted as issues)\n\n")
+        out.write("| Category | Marker | Packages | Specs |\n")
+        out.write("|---|---|---|---|\n")
+        for key, (label, mark) in NONISSUE_META.items():
+            sset = nonissue_specs.get(key)
+            if not sset:
+                continue
+            out.write(f"| {label} | {mark} | {len(sset)} | {', '.join(sorted(sset))} |\n")
+        out.write("\n")
+
 
 def _fix_for_warning(w):
     if "VMware internal url" in w:
@@ -252,7 +302,9 @@ def _fix_for_warning(w):
 
 def write_report(out, branch, prn_path, total, cats):
     issue_specs = set()
-    for entries in cats.values():
+    for key, entries in cats.items():
+        if key in NONISSUE_META:
+            continue
         for e in entries:
             issue_specs.add(e["spec"])
 
@@ -261,6 +313,11 @@ def write_report(out, branch, prn_path, total, cats):
     out.write(f"**Source file:** {prn_name}\n\n")
     out.write(f"**Total packages analyzed:** {total}\n\n")
     out.write(f"**Total packages with issues:** {len(issue_specs)}\n\n")
+    # Non-issue buckets reported informationally (excluded from the count above).
+    for key, (label, _mark) in NONISSUE_META.items():
+        n = len({e["spec"] for e in cats.get(key, [])})
+        if n:
+            out.write(f"**{label} — informational, not an issue:** {n}\n\n")
 
     # Summary table
     out.write("## Summary\n\n")
@@ -407,7 +464,8 @@ def main():
 
         total, cats = analyse_prn(prn_path)
 
-        issue_count = len({e["spec"] for entries in cats.values() for e in entries})
+        issue_count = len({e["spec"] for key, entries in cats.items()
+                           if key not in NONISSUE_META for e in entries})
         if issue_count == 0:
             print(f"  {branch}: {total} packages, 0 issues -- skipping .md")
             continue
@@ -433,7 +491,7 @@ def main():
     # Reads every branch's latest .prn (not just the per-branch .md inputs),
     # so the matrix sees healthy/N-A cells too. Written as an artifact .md and
     # appended to the GitHub Actions job summary (the dynamic report).
-    issue, present = aggregate_matrix(latest)
+    issue, nonissue, present = aggregate_matrix(latest)
     if issue:
         ts_all = [m.group(1) for p in latest.values()
                   for m in [re.search(r"_(\d{12})\.prn$", os.path.basename(p))] if m]
@@ -445,7 +503,7 @@ def main():
             raise ValueError(f"Refusing to write outside scans_dir: {matrix_path}")
         with open(matrix_path, "w", encoding="utf-8") as out:
             out.write("# Photon OS URL Health - cross-branch matrix\n\n")
-            write_matrix_and_categories(out, issue, present)
+            write_matrix_and_categories(out, issue, nonissue, present)
         generated.append(matrix_name)
         print(f"  matrix: {len(issue)} specs with issues -> {matrix_name}")
 
@@ -453,7 +511,7 @@ def main():
         if gh:
             with open(gh, "a", encoding="utf-8") as out:
                 out.write("\n# URL health - spec-matrix & issue categories\n\n")
-                write_matrix_and_categories(out, issue, present)
+                write_matrix_and_categories(out, issue, nonissue, present)
 
     print(f"\nGenerated {len(generated)} issue summary file(s).")
 
