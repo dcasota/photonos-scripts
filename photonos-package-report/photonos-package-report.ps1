@@ -657,7 +657,7 @@ elasticsearch.spec,https://github.com/elastic/elasticsearch/archive/refs/tags/v%
 elixir.spec,https://github.com/elixir-lang/elixir/archive/v%{version}/elixir-%{version}.tar.gz,https://github.com/elixir-lang/elixir.git
 emacs.spec,https://ftp.gnu.org/gnu/emacs/emacs-%{version}.tar.xz
 enchant.spec,https://github.com/rrthomas/enchant/releases/download/v%{version}/enchant-%{version}.tar.gz,https://github.com/rrthomas/enchant.git,,,"enchant-"
-erlang.spec,https://github.com/erlang/otp/archive/refs/tags/OTP-%{version}.tar.gz,https://github.com/erlang/otp.git,,erlang,"R16B,OTP-,erl_1211-bp"
+erlang.spec,https://github.com/erlang/otp/archive/refs/tags/OTP-%{version}.tar.gz,https://github.com/erlang/otp.git,,OTP-[0-9],"R16B,OTP-,erl_1211-bp"
 erlang-sd_notify.spec,https://github.com/systemd/erlang-sd_notify/archive/refs/tags/v%{version}.tar.gz,https://github.com/systemd/erlang-sd_notify.git
 etcd.spec,https://github.com/etcd-io/etcd/archive/refs/tags/v%{version}.tar.gz,https://github.com/etcd-io/etcd.git
 ethtool.spec,https://git.kernel.org/pub/scm/network/ethtool/ethtool.git/snapshot/ethtool-%{version}.tar.gz,https://git.kernel.org/pub/scm/network/ethtool/ethtool.git
@@ -794,7 +794,7 @@ libcap.spec,,https://git.kernel.org/pub/scm/libs/libcap/libcap.git
 libcap-ng.spec,https://github.com/stevegrubb/libcap-ng/archive/refs/tags/v%{version}.tar.gz,https://github.com/stevegrubb/libcap-ng.git
 libcbor.spec,https://github.com/PJK/libcbor/archive/refs/tags/v%{version}.tar.gz,https://github.com/PJK/libcbor.git
 libcgroup.spec,https://github.com/libcgroup/libcgroup/archive/refs/tags/v%{version}.tar.gz,https://github.com/libcgroup/libcgroup.git
-libclc.spec,https://github.com/llvm/llvm-project/releases/download/llvmorg-%{version}/libclc-%{version}.src.tar.xz,https://github.com/llvm/llvm-project.git
+libclc.spec,https://github.com/llvm/llvm-project/releases/download/llvmorg-%{version}/libclc-%{version}.src.tar.xz,https://github.com/llvm/llvm-project.git,,,"llvmorg-"
 libconfig.spec,https://github.com/hyperrealm/libconfig/archive/refs/tags/v%{version}.tar.gz,https://github.com/hyperrealm/libconfig.git
 libdaemon.spec,https://0pointer.de/lennart/projects/libdaemon/libdaemon-%{version}.tar.gz
 libdb.spec,https://github.com/berkeleydb/libdb/archive/refs/tags/v%{version}.tar.gz,https://github.com/berkeleydb/libdb.git
@@ -930,7 +930,7 @@ nghttp2.spec,https://github.com/nghttp2/nghttp2/releases/download/v%{version}/ng
 nginx.spec,https://github.com/nginx/nginx/archive/refs/tags/release-%{version}.tar.gz,https://github.com/nginx/nginx.git
 nginx-ingress.spec,https://github.com/nginxinc/kubernetes-ingress/archive/refs/tags/v%{version}.tar.gz,https://github.com/nginxinc/kubernetes-ingress.git
 ninja-build.spec,https://github.com/ninja-build/ninja/archive/refs/tags/v%{version}.tar.gz,https://github.com/ninja-build/ninja.git
-nmap.spec,https://nmap.org/dist/nmap-%{version}.tar.bz2,https://github.com/nmap/nmap.git
+nmap.spec,https://nmap.org/dist/nmap-%{version}.tar.bz2
 nodejs-8.17.0.spec,https://nodejs.org/download/release/v8.17.0/node-v8.17.0.tar.xz
 nodejs-9.11.2.spec,https://nodejs.org/download/release/v9.11.2/node-v9.11.2.tar.xz
 nodejs-10.24.0.spec,https://nodejs.org/download/release/v10.24.0/node-v10.24.0.tar.xz
