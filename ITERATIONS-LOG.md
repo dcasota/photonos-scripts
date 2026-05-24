@@ -446,3 +446,18 @@ SOURCES_NEW cache (PR_SHA_CACHE), not detection code. Remaining strict is a mix
 of temporal drift (snapshot vs run gap) + per-spec long-tail; further reduction
 needs the operator decisions (col9 cache disk policy; tighter PS→C scheduling;
 PR_STRICT_COL9 timing), all scoped in TODO.md.
+
+---
+
+## Session (2026-05-24, cont.): M64 — col9 shared cache + the three operator TODOs
+
+Operator approved implementing all three. TODO-1 (col9 shared cache): the PS
+workflow now preserves its SOURCES_NEW tarballs to a 50GB-capped shared path;
+col9_cache_path() reads PS's bytes via PR_SHA_CACHE_BASE; C activates
+PR_SHA_CACHE=1. So PS+C hash identical bytes → col9 matches on regenerated
+auto-archives (the soft driver, biggest on 3.0=421/4.0=287). Only tarballs are
+persisted (not PS's full clones) so disk stays bounded. TODO-2: already met by
+the workflow_run auto-trigger + warm cache (no code change). TODO-3: strict_col9
+dispatch input → PR_STRICT_COL9, OFF by default — flip only after a PS→C cycle
+confirms col9 byte-stable (else strict spikes + resets the 90-day clock).
+Validation: needs a fresh PS run → auto-triggered C run; col9 soft should drop.
