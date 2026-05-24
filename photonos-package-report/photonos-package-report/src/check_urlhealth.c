@@ -27,6 +27,7 @@
 #include "pr_state.h"
 #include "pr_sha.h"
 #include "pr_scraper.h"
+#include "pr_gnome_cache.h"
 #include "pr_sourceforge.h"
 #include "pr_spec_warnings.h"
 #include "pr_stable_source.h"
@@ -1502,7 +1503,21 @@ char *check_urlhealth(pr_task_t                       *task,
     int jsonc_eligible = spec_eq(task->Spec, "json-c.spec")
                          && (row == NULL || row->gitSource == NULL
                              || row->gitSource[0] == '\0');
-    if (allow_network && (health == 200 || sf_eligible || cpan_eligible || gh_eligible || ao_eligible || moz_eligible || jsonc_eligible)
+    /* cat-6 cluster B: the classic gnome FTP layout
+     * (gnome.org/.../sources/<module>/<M.N>/<module>-<ver>) defeats the
+     * generic listing scraper — dirname(Source0) is one minor dir and the
+     * version-bearing parent lists bare "M.N/" dirs, so enumeration returns
+     * nothing (empty cols 5/6 = cat 6). Enumerate versions from the gnome
+     * download server's cache.json instead. SCOPED to the two cat-6 gnome
+     * specs (GConf, gnome-common) — other gnome /sources/ specs either carry a
+     * gitlab.gnome.org gitSource (git path) or already detect via the generic
+     * scraper (e.g. libsigc++), so a host-wide rule would risk changing a
+     * working spec. Add specs here if they later regress to cat 6. */
+    int gnome_eligible = (spec_eq(task->Spec, "GConf.spec")
+                          || spec_eq(task->Spec, "gnome-common.spec"))
+                         && (row == NULL || row->gitSource == NULL
+                             || row->gitSource[0] == '\0');
+    if (allow_network && (health == 200 || sf_eligible || cpan_eligible || gh_eligible || ao_eligible || moz_eligible || jsonc_eligible || gnome_eligible)
         && (state.UpdateAvailable == NULL || state.UpdateAvailable[0] == '\0')
         && (atom_url != NULL
             || row == NULL
@@ -1523,11 +1538,12 @@ char *check_urlhealth(pr_task_t                       *task,
          * Otherwise fall through to the HTML listing scraper.
          * The M23 pre-filter is skipped on the atom path — atom titles
          * are tag names, not file basenames. */
-        int used_atom = 0;
-        int used_sf   = 0;
-        int used_gh   = 0;
-        int used_moz  = 0;
-        int scrape_ok = 0;
+        int used_atom  = 0;
+        int used_sf    = 0;
+        int used_gh    = 0;
+        int used_moz   = 0;
+        int used_gnome = 0;
+        int scrape_ok  = 0;
         if (jsonc_eligible) {
             /* M44: S3-bucket XML listing -> <Key> values. Drop the
              * -nodoc variant (PS L 4367) and strip the "releases/json-c-"
@@ -1619,6 +1635,17 @@ char *check_urlhealth(pr_task_t                       *task,
                 used_sf = 1;
                 free(sf_url);
             }
+        } else if (gnome_eligible) {
+            /* cluster B: gnome cache.json. Module name = the gnome module,
+             * i.e. task->Name (Source0 is .../sources/%{name}/...). The
+             * returned strings are bare versions ("3.2.6"), so the standard
+             * pipeline below (no Name-strip needed, but harmless) finds the
+             * latest. Skip the M23 href pre-filter — these aren't basenames. */
+            const char *module = (task->Name && task->Name[0]) ? task->Name : NULL;
+            if (module) {
+                scrape_ok = (pr_gnome_cache_versions(module, &names, &n) == 0);
+                used_gnome = 1;
+            }
         } else if (atom_url != NULL) {
             scrape_ok = (pr_scrape_atom_feed(atom_url, &names, &n) == 0);
             used_atom = 1;
@@ -1630,7 +1657,7 @@ char *check_urlhealth(pr_task_t                       *task,
             if (scrape_ok) apply_href_basename(names, n);
         }
         if (scrape_ok && n > 0) {
-            if (!used_atom && !used_sf && !used_gh && !used_moz) {
+            if (!used_atom && !used_sf && !used_gh && !used_moz && !used_gnome) {
                 /* M23 (PS L 4321-4341) — HTML href path only. */
                 apply_scraper_pre_filters(names, n, task->Spec);
             }
