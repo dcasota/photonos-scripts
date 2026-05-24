@@ -608,7 +608,7 @@ cri-tools.spec,https://github.com/kubernetes-sigs/cri-tools/archive/refs/tags/v%
 cronie.spec,https://github.com/cronie-crond/cronie/archive/refs/tags/cronie-%{version}.tar.gz,https://github.com/cronie-crond/cronie.git,,,"cronie-"
 crun.spec,https://github.com/containers/crun/releases/download/%{version}/crun-%{version}.tar.gz,https://github.com/containers/crun.git
 cryptsetup.spec,https://github.com/mbroz/cryptsetup/archive/refs/tags/v%{version}.tar.gz,https://github.com/mbroz/cryptsetup.git
-cscope.spec,https://unlimited.dl.sourceforge.net/project/cscope/cscope/v%{version}/cscope-%{version}.tar.gz
+cscope.spec,https://downloads.sourceforge.net/project/cscope/cscope/v%{version}/cscope-%{version}.tar.gz
 ctags.spec,https://github.com/universal-ctags/ctags/releases/download/v%{version}/universal-ctags-%{version}.tar.gz,https://github.com/universal-ctags/ctags.git,,,"universal-ctags-"
 cups.spec,https://github.com/OpenPrinting/cups/archive/refs/tags/v%{version}.tar.gz,https://github.com/OpenPrinting/cups.git
 cve-check-tool.spec,https://github.com/clearlinux/cve-check-tool/archive/refs/tags/v%{version}.tar.gz,https://github.com/clearlinux/cve-check-tool.git
@@ -717,7 +717,7 @@ grpc.spec,https://github.com/grpc/grpc/archive/refs/tags/v%{version}.tar.gz,http
 gssntlmssp.spec,https://github.com/gssapi/gss-ntlmssp/releases/download/v%{version}/gssntlmssp-%{version}.tar.gz,https://github.com/gssapi/gss-ntlmssp.git
 gst-plugins-bad.spec,https://gitlab.freedesktop.org/gstreamer/gst-plugins-bad/-/archive/%{version}/gst-plugins-bad-%{version}.tar.gz,https://gitlab.freedesktop.org/gstreamer/gst-plugins-bad.git,,,"gst-plugins-bad-",,"Info: Packaging format .tar.xz has changed to e.g. .tar.gz"
 gstreamer.spec,,https://gitlab.freedesktop.org/gstreamer/gstreamer.git
-gstreamer-plugins-base.spec,https://gstreamer.freedesktop.org/src/gst-plugins-base/gst-plugins-base-%{version}.tar.xz,https://gitlab.freedesktop.org/gstreamer/gstreamer.git,,gst-plugins-base-
+gstreamer-plugins-base.spec,https://gstreamer.freedesktop.org/src/gst-plugins-base/gst-plugins-base-%{version}.tar.xz,https://gitlab.freedesktop.org/gstreamer/gstreamer.git,,^[0-9]
 gtest.spec,https://github.com/google/googletest/archive/refs/tags/release-%{version}.tar.gz,https://github.com/google/googletest.git
 gtk3.spec,https://github.com/GNOME/gtk/archive/refs/tags/%{version}.tar.gz,https://github.com/GNOME/gtk.git
 gtk-doc.spec,https://github.com/GNOME/gtk-doc/archive/refs/tags/%{version}.tar.gz,https://github.com/GNOME/gtk-doc.git
