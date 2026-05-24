@@ -28,6 +28,7 @@
 #include "pr_sha.h"
 #include "pr_scraper.h"
 #include "pr_gnome_cache.h"
+#include "pr_pypi.h"
 #include "pr_sourceforge.h"
 #include "pr_spec_warnings.h"
 #include "pr_stable_source.h"
@@ -1357,6 +1358,61 @@ char *check_urlhealth(pr_task_t                       *task,
                 }
             }
             free(repo_name);
+        }
+    }
+
+    /* M77: PyPI JSON-API fallback — the "second path" for python packages.
+     * Workflow: a spec whose gitSource is a github repo that is NOT declared
+     * deprecated (no ArchivationDate) yet exposes no tags/releases leaves the
+     * git path above with UpdateAvailable empty. For a python-* spec, fall
+     * through to the authoritative PyPI metadata (the JSON API backing
+     * pypi.org/project/<pkg>/#files): info.version + the latest sdist file.
+     * The PyPI package name is the github repo leaf (== PyPI name for these);
+     * a non-PyPI name simply 404s -> no-op. Mirrors PS L4602: the pyjsparser-
+     * class "Cannot detect correlating tags" warning is gated on
+     * UpdateAvailable being empty, so populating it here suppresses that
+     * warning at the downstream pr_spec_warning() step. */
+    if (allow_network
+        && (state.UpdateAvailable == NULL || state.UpdateAvailable[0] == '\0')
+        && row && row->gitSource && strstr(row->gitSource, "github.com") != NULL
+        && (row->ArchivationDate == NULL || row->ArchivationDate[0] == '\0')
+        && task->Spec && strncmp(task->Spec, "python-", 7) == 0) {
+
+        char *pkg = pr_extract_repo_name(row->gitSource);
+        if (pkg) {
+            char *surl = NULL, *sname = NULL;
+            char *latest = pr_pypi_latest_version(pkg, &surl, &sname);
+            if (latest && latest[0]) {
+                int rc = pr_version_compare(latest, state.version ? state.version : "");
+                free(state.UpdateAvailable);
+                if (rc == 1) {
+                    state.UpdateAvailable = dup_or_empty(latest);
+                    if (surl && surl[0]) {
+                        free(state.UpdateURL);
+                        state.UpdateURL = surl; surl = NULL;
+                        int h = urlhealth(state.UpdateURL);
+                        char b[16]; snprintf(b, sizeof b, "%d", h);
+                        free(state.HealthUpdateURL); state.HealthUpdateURL = strdup(b);
+                    }
+                    if (sname && sname[0]) {
+                        /* Raw PyPI sdist filename (e.g. "pyjsparser-2.7.1.tar.gz");
+                         * the PS mirror uses $sdist.filename verbatim too, so
+                         * col 10 stays byte-identical. */
+                        free(state.UpdateDownloadName);
+                        state.UpdateDownloadName = sname; sname = NULL;
+                    }
+                } else if (rc == -1) {
+                    char *warn = NULL;
+                    if (asprintf(&warn,
+                            "Warning: %s Source0 version %s is higher than detected latest version %s .",
+                            task->Spec, state.version ? state.version : "", latest) < 0) warn = NULL;
+                    state.UpdateAvailable = warn ? warn : dup_or_empty("");
+                } else {
+                    state.UpdateAvailable = dup_or_empty("(same version)");
+                }
+            }
+            free(latest); free(surl); free(sname);
+            free(pkg);
         }
     }
 

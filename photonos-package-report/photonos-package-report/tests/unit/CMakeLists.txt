@@ -108,6 +108,7 @@ add_executable(test_phase6
     ${CMAKE_SOURCE_DIR}/src/atom_feed.c
     ${CMAKE_SOURCE_DIR}/src/rubygems.c
     ${CMAKE_SOURCE_DIR}/src/gnome_cache.c
+    ${CMAKE_SOURCE_DIR}/src/pypi.c
     ${CMAKE_SOURCE_DIR}/src/sourceforge.c
     ${CMAKE_SOURCE_DIR}/src/github_tags.c
     ${CMAKE_SOURCE_DIR}/src/hook_dispatch.c
