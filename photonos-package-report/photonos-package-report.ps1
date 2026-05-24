@@ -529,7 +529,7 @@ ansible.spec,https://github.com/ansible/ansible/archive/refs/tags/v%{version}.ta
 ansible-community-general.spec,https://github.com/ansible-collections/community.general/archive/refs/tags/%{version}.tar.gz,https://github.com/ansible-collections/community.general.git
 ansible-posix.spec,https://github.com/ansible-collections/ansible.posix/archive/refs/tags/%{version}.tar.gz,https://github.com/ansible-collections/ansible.posix.git
 apache-ant.spec,https://github.com/apache/ant/archive/refs/tags/rel/%{version}.tar.gz,https://github.com/apache/ant.git,,,"rel/"
-apache-maven.spec,https://github.com/apache/maven/archive/refs/tags/maven-%{version}.tar.gz,https://github.com/apache/maven.git,,apache-maven,"workspace-v0,maven-"
+apache-maven.spec,https://github.com/apache/maven/archive/refs/tags/maven-%{version}.tar.gz,https://github.com/apache/maven.git,,maven-[0-9],"workspace-v0,maven-"
 apache-tomcat.spec,https://github.com/apache/tomcat/archive/refs/tags/%{version}.tar.gz,https://github.com/apache/tomcat.git
 apache-tomcat-native.spec,https://github.com/apache/tomcat-native/archive/refs/tags/%{version}.tar.gz,https://github.com/apache/tomcat-native.git
 apparmor.spec,https://launchpad.net/apparmor/3.1/%{version}/+download/apparmor-%{version}.tar.gz
@@ -663,7 +663,7 @@ etcd.spec,https://github.com/etcd-io/etcd/archive/refs/tags/v%{version}.tar.gz,h
 ethtool.spec,https://git.kernel.org/pub/scm/network/ethtool/ethtool.git/snapshot/ethtool-%{version}.tar.gz,https://git.kernel.org/pub/scm/network/ethtool/ethtool.git
 expat.spec,https://github.com/libexpat/libexpat/releases/download/R_%{version}/expat-%{version}.tar.xz,https://github.com/libexpat/libexpat.git
 fail2ban.spec,https://github.com/fail2ban/fail2ban/archive/refs/tags/%{version}.tar.gz,https://github.com/fail2ban/fail2ban.git
-fakeroot.spec,https://salsa.debian.org/clint/fakeroot/-/archive/debian/%{version}/fakeroot-debian-%{version}.tar.gz,https://salsa.debian.org/clint/fakeroot.git
+fakeroot.spec,https://salsa.debian.org/clint/fakeroot/-/archive/debian/%{version}/fakeroot-debian-%{version}.tar.gz,https://salsa.debian.org/clint/fakeroot.git,,upstream/,"upstream/"
 fakeroot-ng.spec,https://master.dl.sourceforge.net/project/fakerootng/fakeroot-ng/fakeroot-ng-%{version}.tar.gz,https://git.code.sf.net/p/fakerootng/source.git
 falco.spec,https://github.com/falcosecurity/falco/archive/refs/tags/%{version}.tar.gz,https://github.com/falcosecurity/falco.git
 fatrace.spec,https://github.com/martinpitt/fatrace/archive/refs/tags/%{version}.tar.gz,https://github.com/martinpitt/fatrace.git
@@ -711,7 +711,7 @@ google-guest-configs.spec,https://github.com/GoogleCloudPlatform/guest-configs/a
 google-guest-oslogin.spec,https://github.com/GoogleCloudPlatform/guest-oslogin/archive/refs/tags/%{version}.tar.gz,https://github.com/GoogleCloudPlatform/guest-oslogin.git
 govmomi.spec,https://github.com/vmware/govmomi/archive/refs/tags/v%{version}.0.tar.gz,https://github.com/vmware/govmomi.git
 gperftools.spec,https://github.com/gperftools/gperftools/releases/download/gperftools-%{version}/gperftools-%{version}.tar.gz,https://github.com/gperftools/gperftools.git
-gptfdisk.spec,https://netix.dl.sourceforge.net/project/gptfdisk/gptfdisk/%{version}/gptfdisk-%{version}.tar.gz,https://git.code.sf.net/p/gptfdisk/code.git
+gptfdisk.spec,https://downloads.sourceforge.net/project/gptfdisk/gptfdisk/%{version}/gptfdisk-%{version}.tar.gz
 graphene.spec,https://github.com/ebassi/graphene/archive/refs/tags/%{version}.tar.gz,https://github.com/ebassi/graphene.git
 grpc.spec,https://github.com/grpc/grpc/archive/refs/tags/v%{version}.tar.gz,https://github.com/grpc/grpc.git
 gssntlmssp.spec,https://github.com/gssapi/gss-ntlmssp/releases/download/v%{version}/gssntlmssp-%{version}.tar.gz,https://github.com/gssapi/gss-ntlmssp.git
