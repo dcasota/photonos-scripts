@@ -120,6 +120,21 @@ CAT_META = [
 # numbered "## N." sections. cat4 keeps its slot even when unused.
 CAT_NUM = {key: i for i, (key, _label, _sev) in enumerate(CAT_META, 1)}
 
+# Severity colour marker. GitHub markdown (job summaries + .md) strips inline
+# CSS/HTML, so a coloured-circle emoji is the only way to colour a table cell.
+SEV_EMOJI = {"High": "\U0001F534", "Medium": "\U0001F7E0", "Low-Medium": "\U0001F7E1"}
+_NUM_SEV = {i: sev for i, (_k, _l, sev) in enumerate(CAT_META, 1)}
+_SEV_RANK = {"High": 3, "Medium": 2, "Low-Medium": 1}
+_HEALTHY_MARK = "\U0001F7E2"   # green circle
+_NA_MARK = "⚪"            # white circle
+
+
+def _sev_marker(nums):
+    """Colour marker for a cell = highest severity among its categories."""
+    sev = max((_NUM_SEV.get(n, "Medium") for n in nums),
+              key=lambda s: _SEV_RANK.get(s, 0))
+    return SEV_EMOJI.get(sev, "")
+
 # Branch column order for the cross-branch matrix. Subrelease columns
 # (e.g. 5.0/SPECS/91) are inserted right after their parent branch.
 _BRANCH_ORDER = ["3.0", "4.0", "5.0", "6.0", "common", "dev", "master", "main"]
@@ -181,15 +196,18 @@ def write_matrix_and_categories(out, issue, present):
 
     def cell(s, c):
         if c in issue.get(s, {}):
-            return ",".join(str(n) for n in sorted(issue[s][c]))
-        return "healthy" if s in present[c] else "N/A"
+            nums = sorted(issue[s][c])
+            return _sev_marker(nums) + ",".join(str(n) for n in nums)
+        return _HEALTHY_MARK if s in present[c] else _NA_MARK
 
     out.write("## Spec-matrix — issue applicability per branch\n\n")
     out.write(f"**{len(specs)}** packages with at least one issue across "
               f"{len([c for c in cols if '/' not in c])} branches.\n\n")
-    out.write("Cell legend: number(s) = issue category (see table below) · "
-              "`healthy` = present & URL health OK · `N/A` = not carried in "
-              "that branch/subrelease.\n\n")
+    out.write("Cell legend: severity colour + issue category number(s) — "
+              f"{SEV_EMOJI['High']} High (1,2,3) · {SEV_EMOJI['Medium']} Medium "
+              f"(4,5,6,7) · {SEV_EMOJI['Low-Medium']} Low-Medium (8) · "
+              f"{_HEALTHY_MARK} present & URL health OK · {_NA_MARK} not carried "
+              "in that branch/subrelease.\n\n")
     out.write("| Spec | " + " | ".join(cols) + " |\n")
     out.write("|---|" + "|".join(["---"] * len(cols)) + "|\n")
     for s in specs:
@@ -210,7 +228,7 @@ def write_matrix_and_categories(out, issue, present):
     for n in sorted(cat_specs):
         label, sev = num2meta.get(n, ("?", "?"))
         pkgs = ", ".join(sorted(cat_specs[n]))
-        out.write(f"| {n} | {label} | {sev} | {len(cat_specs[n])} | {pkgs} |\n")
+        out.write(f"| {n} | {label} | {SEV_EMOJI.get(sev, '')} {sev} | {len(cat_specs[n])} | {pkgs} |\n")
     out.write("\n")
 
 
