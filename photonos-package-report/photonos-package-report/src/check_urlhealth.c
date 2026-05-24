@@ -1361,59 +1361,66 @@ char *check_urlhealth(pr_task_t                       *task,
         }
     }
 
-    /* M77: PyPI JSON-API fallback — the "second path" for python packages.
-     * Workflow: a spec whose gitSource is a github repo that is NOT declared
-     * deprecated (no ArchivationDate) yet exposes no tags/releases leaves the
-     * git path above with UpdateAvailable empty. For a python-* spec, fall
-     * through to the authoritative PyPI metadata (the JSON API backing
-     * pypi.org/project/<pkg>/#files): info.version + the latest sdist file.
-     * The PyPI package name is the github repo leaf (== PyPI name for these);
-     * a non-PyPI name simply 404s -> no-op. Mirrors PS L4602: the pyjsparser-
-     * class "Cannot detect correlating tags" warning is gated on
-     * UpdateAvailable being empty, so populating it here suppresses that
-     * warning at the downstream pr_spec_warning() step. */
+    /* M78: dual-source detection for python packages. A developer may publish
+     * a release to github, to PyPI, or to both, so for a python-* spec with a
+     * github gitSource that is NOT declared deprecated (no ArchivationDate)
+     * consult BOTH sources and report the HIGHER version. The git-tag path
+     * above already produced github's view in state.UpdateAvailable (a version
+     * / "(same version)" / empty / a regression Warning); we reconstruct
+     * github's latest from it, query PyPI (the JSON API backing
+     * pypi.org/project/<pkg>/#files), and adopt PyPI only when it is strictly
+     * newer than both the current version AND github's latest. This subsumes
+     * the one-way fallback: github-tagless (pyjsparser) -> PyPI; github newer
+     * -> github kept; PyPI newer than a stale github tag -> PyPI. The
+     * pyjsparser-class "Cannot detect correlating tags" warning is gated on
+     * UpdateAvailable being empty, so populating it here suppresses it at the
+     * downstream pr_spec_warning() step. PS mirrors this block verbatim. */
     if (allow_network
-        && (state.UpdateAvailable == NULL || state.UpdateAvailable[0] == '\0')
         && row && row->gitSource && strstr(row->gitSource, "github.com") != NULL
         && (row->ArchivationDate == NULL || row->ArchivationDate[0] == '\0')
         && task->Spec && strncmp(task->Spec, "python-", 7) == 0) {
 
-        char *pkg = pr_extract_repo_name(row->gitSource);
-        if (pkg) {
-            char *surl = NULL, *sname = NULL;
-            char *latest = pr_pypi_latest_version(pkg, &surl, &sname);
-            if (latest && latest[0]) {
-                int rc = pr_version_compare(latest, state.version ? state.version : "");
-                free(state.UpdateAvailable);
-                if (rc == 1) {
-                    state.UpdateAvailable = dup_or_empty(latest);
-                    if (surl && surl[0]) {
-                        free(state.UpdateURL);
-                        state.UpdateURL = surl; surl = NULL;
-                        int h = urlhealth(state.UpdateURL);
-                        char b[16]; snprintf(b, sizeof b, "%d", h);
-                        free(state.HealthUpdateURL); state.HealthUpdateURL = strdup(b);
-                    }
-                    if (sname && sname[0]) {
-                        /* Raw PyPI sdist filename (e.g. "pyjsparser-2.7.1.tar.gz");
-                         * the PS mirror uses $sdist.filename verbatim too, so
-                         * col 10 stays byte-identical. */
-                        free(state.UpdateDownloadName);
-                        state.UpdateDownloadName = sname; sname = NULL;
-                    }
-                } else if (rc == -1) {
-                    char *warn = NULL;
-                    if (asprintf(&warn,
-                            "Warning: %s Source0 version %s is higher than detected latest version %s .",
-                            task->Spec, state.version ? state.version : "", latest) < 0) warn = NULL;
-                    state.UpdateAvailable = warn ? warn : dup_or_empty("");
-                } else {
-                    state.UpdateAvailable = dup_or_empty("(same version)");
-                }
-            }
-            free(latest); free(surl); free(sname);
-            free(pkg);
+        const char *cur = state.version ? state.version : "";
+        /* github's latest, reconstructed from the git-path result. */
+        char *gh_latest = NULL;
+        if (state.UpdateAvailable && state.UpdateAvailable[0]
+            && strcmp(state.UpdateAvailable, "(same version)") != 0
+            && strncmp(state.UpdateAvailable, "Warning:", 8) != 0) {
+            gh_latest = strdup(state.UpdateAvailable);   /* github found a newer ver */
+        } else if (state.UpdateAvailable
+                   && strcmp(state.UpdateAvailable, "(same version)") == 0) {
+            gh_latest = strdup(cur);                     /* github latest == current */
         }
+
+        char *pkg = pr_extract_repo_name(row->gitSource);
+        char *surl = NULL, *sname = NULL;
+        char *pp = pkg ? pr_pypi_latest_version(pkg, &surl, &sname) : NULL;
+
+        if (pp && pp[0]) {
+            int pp_gt_cur = (pr_version_compare(pp, cur) == 1);
+            int pp_gt_gh  = (gh_latest == NULL)
+                            || (pr_version_compare(pp, gh_latest) == 1);
+            if (pp_gt_cur && pp_gt_gh) {
+                /* PyPI is the newest of the three -> developer released to PyPI. */
+                free(state.UpdateAvailable); state.UpdateAvailable = strdup(pp);
+                if (surl && surl[0]) {
+                    free(state.UpdateURL); state.UpdateURL = surl; surl = NULL;
+                    int h = urlhealth(state.UpdateURL);
+                    char b[16]; snprintf(b, sizeof b, "%d", h);
+                    free(state.HealthUpdateURL); state.HealthUpdateURL = strdup(b);
+                }
+                if (sname && sname[0]) {
+                    /* Raw PyPI sdist filename; PS uses $sdist.filename verbatim
+                     * too, so col 10 stays byte-identical. */
+                    free(state.UpdateDownloadName); state.UpdateDownloadName = sname; sname = NULL;
+                }
+            } else if (gh_latest == NULL && pr_version_compare(pp, cur) == 0) {
+                /* github found nothing and PyPI == current -> (same version). */
+                free(state.UpdateAvailable); state.UpdateAvailable = dup_or_empty("(same version)");
+            }
+            /* else: github's version >= PyPI -> keep the git-path result. */
+        }
+        free(gh_latest); free(pp); free(surl); free(sname); free(pkg);
     }
 
     /* M34 / FRD-020: rubygems.org JSON-API update detection.
