@@ -81,8 +81,10 @@ static void usage(const char *progname)
         "  -GeneratePhCommonURLHealthReport <true|false>  (default: true)\n"
         "  -GeneratePhDevURLHealthReport <true|false>     (default: true)\n"
         "  -GeneratePhMasterURLHealthReport <true|false>  (default: true)\n"
+        "  -GeneratePhMainURLHealthReport <true|false>    (default: true)\n"
         "  -GeneratePhPackageReport <true|false>          (default: true)\n"
         "  -GeneratePhCommontoPhMasterDiffHigherPackageVersionReport <true|false> (default: true)\n"
+        "  -GeneratePhMaintoPhMasterDiffHigherPackageVersionReport <true|false> (default: true)\n"
         "  -GeneratePh5toPh6DiffHigherPackageVersionReport <true|false> (default: true)\n"
         "  -GeneratePh4toPh5DiffHigherPackageVersionReport <true|false> (default: true)\n"
         "  -GeneratePh3toPh4DiffHigherPackageVersionReport <true|false> (default: true)\n"
@@ -117,8 +119,10 @@ int main(int argc, char **argv)
     params.GeneratePhCommonURLHealthReport                                     = 1;  /* L 100 */
     params.GeneratePhDevURLHealthReport                                        = 1;  /* L 101 */
     params.GeneratePhMasterURLHealthReport                                     = 1;  /* L 102 */
+    params.GeneratePhMainURLHealthReport                                       = 1;  /* M66 */
     params.GeneratePhPackageReport                                             = 1;  /* L 103 */
     params.GeneratePhCommontoPhMasterDiffHigherPackageVersionReport            = 1;  /* L 104 */
+    params.GeneratePhMaintoPhMasterDiffHigherPackageVersionReport              = 1;  /* M66 */
     params.GeneratePh5toPh6DiffHigherPackageVersionReport                      = 1;  /* L 105 */
     params.GeneratePh4toPh5DiffHigherPackageVersionReport                      = 1;  /* L 106 */
     params.GeneratePh3toPh4DiffHigherPackageVersionReport                      = 1;  /* L 107 */
@@ -140,8 +144,10 @@ int main(int argc, char **argv)
         OPT_GeneratePhCommonURLHealthReport,
         OPT_GeneratePhDevURLHealthReport,
         OPT_GeneratePhMasterURLHealthReport,
+        OPT_GeneratePhMainURLHealthReport,
         OPT_GeneratePhPackageReport,
         OPT_GeneratePhCommontoPhMasterDiffHigherPackageVersionReport,
+        OPT_GeneratePhMaintoPhMasterDiffHigherPackageVersionReport,
         OPT_GeneratePh5toPh6DiffHigherPackageVersionReport,
         OPT_GeneratePh4toPh5DiffHigherPackageVersionReport,
         OPT_GeneratePh3toPh4DiffHigherPackageVersionReport,
@@ -166,8 +172,10 @@ int main(int argc, char **argv)
         { "GeneratePhCommonURLHealthReport",                                    required_argument, 0, OPT_GeneratePhCommonURLHealthReport },
         { "GeneratePhDevURLHealthReport",                                       required_argument, 0, OPT_GeneratePhDevURLHealthReport },
         { "GeneratePhMasterURLHealthReport",                                    required_argument, 0, OPT_GeneratePhMasterURLHealthReport },
+        { "GeneratePhMainURLHealthReport",                                      required_argument, 0, OPT_GeneratePhMainURLHealthReport },
         { "GeneratePhPackageReport",                                            required_argument, 0, OPT_GeneratePhPackageReport },
         { "GeneratePhCommontoPhMasterDiffHigherPackageVersionReport",           required_argument, 0, OPT_GeneratePhCommontoPhMasterDiffHigherPackageVersionReport },
+        { "GeneratePhMaintoPhMasterDiffHigherPackageVersionReport",             required_argument, 0, OPT_GeneratePhMaintoPhMasterDiffHigherPackageVersionReport },
         { "GeneratePh5toPh6DiffHigherPackageVersionReport",                     required_argument, 0, OPT_GeneratePh5toPh6DiffHigherPackageVersionReport },
         { "GeneratePh4toPh5DiffHigherPackageVersionReport",                     required_argument, 0, OPT_GeneratePh4toPh5DiffHigherPackageVersionReport },
         { "GeneratePh3toPh4DiffHigherPackageVersionReport",                     required_argument, 0, OPT_GeneratePh3toPh4DiffHigherPackageVersionReport },
@@ -196,9 +204,12 @@ int main(int argc, char **argv)
         case OPT_GeneratePhCommonURLHealthReport:       params.GeneratePhCommonURLHealthReport       = convert_to_boolean(optarg); break;
         case OPT_GeneratePhDevURLHealthReport:          params.GeneratePhDevURLHealthReport          = convert_to_boolean(optarg); break;
         case OPT_GeneratePhMasterURLHealthReport:       params.GeneratePhMasterURLHealthReport       = convert_to_boolean(optarg); break;
+        case OPT_GeneratePhMainURLHealthReport:         params.GeneratePhMainURLHealthReport         = convert_to_boolean(optarg); break;
         case OPT_GeneratePhPackageReport:               params.GeneratePhPackageReport               = convert_to_boolean(optarg); break;
         case OPT_GeneratePhCommontoPhMasterDiffHigherPackageVersionReport:
             params.GeneratePhCommontoPhMasterDiffHigherPackageVersionReport = convert_to_boolean(optarg); break;
+        case OPT_GeneratePhMaintoPhMasterDiffHigherPackageVersionReport:
+            params.GeneratePhMaintoPhMasterDiffHigherPackageVersionReport = convert_to_boolean(optarg); break;
         case OPT_GeneratePh5toPh6DiffHigherPackageVersionReport:
             params.GeneratePh5toPh6DiffHigherPackageVersionReport = convert_to_boolean(optarg); break;
         case OPT_GeneratePh4toPh5DiffHigherPackageVersionReport:
@@ -281,19 +292,19 @@ int main(int argc, char **argv)
     }
 
     /* Phase M task M60: package version-matrix report (PS L 5556-5585).
-     * One row per package with its version in each of the 7 branches, plus
-     * appended subrelease rows. Parses all 7 branch SPECS trees (no network)
+     * One row per package with its version in each of the 8 branches, plus
+     * appended subrelease rows. Parses all 8 branch SPECS trees (no network)
      * and writes photonos-package-report_<ts>.prn. */
     if (params.GeneratePhPackageReport) {
-        static const char *const br[7] =
-            { "3.0", "4.0", "5.0", "6.0", "common", "dev", "master" };
-        static const char *const labels[7] =
+        static const char *const br[8] =
+            { "3.0", "4.0", "5.0", "6.0", "common", "dev", "master", "main" };
+        static const char *const labels[8] =
             { "photon-3.0", "photon-4.0", "photon-5.0", "photon-6.0",
-              "photon-common", "photon-dev", "photon-master" };
-        pr_task_list_t lists[7];
-        const pr_task_list_t *lp[7];
+              "photon-common", "photon-dev", "photon-master", "photon-main" };
+        pr_task_list_t lists[8];
+        const pr_task_list_t *lp[8];
         int parsed_ok = 1;
-        for (int k = 0; k < 7; k++) {
+        for (int k = 0; k < 8; k++) {
             pr_task_list_init(&lists[k]);
             char pd[64];
             snprintf(pd, sizeof pd, "photon-%s", br[k]);
@@ -317,7 +328,7 @@ int main(int argc, char **argv)
             else
                 fprintf(stderr, "::warning::package-report: write failed\n");
         }
-        for (int k = 0; k < 7; k++) pr_task_list_free(&lists[k]);
+        for (int k = 0; k < 8; k++) pr_task_list_free(&lists[k]);
     }
 
     /* Phase M task M59: cross-branch diff reports (PS L 5585-5660).
@@ -328,6 +339,7 @@ int main(int argc, char **argv)
     {
         static const struct { size_t flag_off; const char *a, *b; } diffs[] = {
             { offsetof(pr_params_t, GeneratePhCommontoPhMasterDiffHigherPackageVersionReport), "common", "master" },
+            { offsetof(pr_params_t, GeneratePhMaintoPhMasterDiffHigherPackageVersionReport),   "main",   "master" },
             { offsetof(pr_params_t, GeneratePh5toPh6DiffHigherPackageVersionReport),           "5.0",    "6.0"    },
             { offsetof(pr_params_t, GeneratePh4toPh5DiffHigherPackageVersionReport),           "4.0",    "5.0"    },
             { offsetof(pr_params_t, GeneratePh3toPh4DiffHigherPackageVersionReport),           "3.0",    "4.0"    },
@@ -372,7 +384,7 @@ int main(int argc, char **argv)
     /* Phase M task M02: multi-branch dispatcher.
      *
      * When the hidden --generate-urlhealth-report flag is NOT given,
-     * fall through to PS-style behaviour: iterate the 7 GeneratePh*
+     * fall through to PS-style behaviour: iterate the 8 GeneratePh*
      * URL-health flags and call generate_urlhealth_main() for each
      * enabled branch. Mirrors PS photonos-package-report.ps1 L 5040-5215
      * (the cluster orchestrator loop).
@@ -390,6 +402,7 @@ int main(int argc, char **argv)
                 { offsetof(pr_params_t, GeneratePhCommonURLHealthReport), "common" },
                 { offsetof(pr_params_t, GeneratePhDevURLHealthReport),    "dev"    },
                 { offsetof(pr_params_t, GeneratePhMasterURLHealthReport), "master" },
+                { offsetof(pr_params_t, GeneratePhMainURLHealthReport),   "main"   },
             };
         int any_enabled = 0;
         int rc          = 0;

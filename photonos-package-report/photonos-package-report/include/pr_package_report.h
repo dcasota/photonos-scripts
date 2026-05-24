@@ -23,11 +23,11 @@
 
 #include "pr_types.h"
 
-/* `lists` and `labels` are parallel arrays of length 7, in the fixed PS
- * column order: 3.0, 4.0, 5.0, 6.0, common, dev, master. Returns 0 on
+/* `lists` and `labels` are parallel arrays of length 8, in the fixed PS
+ * column order: 3.0, 4.0, 5.0, 6.0, common, dev, master, main. Returns 0 on
  * success, -1 on error (NULL args / open failure). */
-int pr_write_package_report(const pr_task_list_t *const lists[7],
-                            const char *const labels[7],
+int pr_write_package_report(const pr_task_list_t *const lists[8],
+                            const char *const labels[8],
                             const char *output_path);
 
 #endif /* PR_PACKAGE_REPORT_H */
