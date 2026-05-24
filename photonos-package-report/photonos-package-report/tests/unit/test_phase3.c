@@ -126,8 +126,8 @@ static void run_assertions(void)
     int rc = source0_lookup(&t);
     EXPECT_INT_EQ(rc, 0);
 
-    /* The PS embed currently has 855 data rows + 1 header. */
-    EXPECT_INT_EQ((long)t.count, 855);
+    /* The PS embed currently has 856 data rows + 1 header (M72 added dwarves). */
+    EXPECT_INT_EQ((long)t.count, 856);
 
     /* First row */
     if (t.count > 0) {
@@ -163,11 +163,12 @@ static void run_assertions(void)
     }
 
     /* apache-maven row: 6 cells, with embedded comma inside a quoted
-     * field landing in replaceStrings. */
+     * field landing in replaceStrings. customRegex was "apache-maven" but the
+     * repo's tags are "maven-X" (M73 fix), so it now filters on "maven-[0-9]". */
     pr_source0_lookup_t *maven = find_row(&t, "apache-maven.spec");
     if (maven) {
         EXPECT_STREQ(maven->gitBranch,       "");
-        EXPECT_STREQ(maven->customRegex,     "apache-maven");
+        EXPECT_STREQ(maven->customRegex,     "maven-[0-9]");
         EXPECT_STREQ(maven->replaceStrings,  "workspace-v0,maven-");
         EXPECT_STREQ(maven->ignoreStrings,   "");
     } else {
