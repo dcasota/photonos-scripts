@@ -146,7 +146,14 @@ char *pr_sha_of_url_cached(pr_sha_alg_t alg, const char *url,
      * and C produce byte-identical col9. */
     if (access(cache_file, R_OK) == 0)
         return pr_sha_file(alg, cache_file);
-    /* Not cached: download into the cache path, persist, hash. */
+    /* M64: in SHARED-cache mode (PR_SHA_CACHE_BASE set, reading the PS run's
+     * SOURCES_NEW), a miss means PS did NOT preserve this tarball — i.e. PS
+     * itself produced an empty col9. Mirror that (return NULL → empty) instead
+     * of downloading C's own bytes, which would create a spurious col9 diff
+     * (C-has-SHA vs PS-empty, or auto-archive byte drift). */
+    if (getenv("PR_SHA_CACHE_BASE") != NULL)
+        return NULL;
+    /* Legacy (C-local cache): download into the cache path, persist, hash. */
     if (download_url_to_file(url, cache_file) != 0)
         return NULL;
     return pr_sha_file(alg, cache_file);
@@ -161,9 +168,11 @@ int pr_sha_of_url_multi_cached(const char *url,
         return pr_sha_of_url_multi(url, sha256_hex, sha512_hex);
     if (sha256_hex) *sha256_hex = NULL;
     if (sha512_hex) *sha512_hex = NULL;
-    if (access(cache_file, R_OK) != 0
-        && download_url_to_file(url, cache_file) != 0)
-        return -1;
+    if (access(cache_file, R_OK) != 0) {
+        /* M64 shared-cache mode: miss → mirror PS's empty col9, don't fetch. */
+        if (getenv("PR_SHA_CACHE_BASE") != NULL) return -1;
+        if (download_url_to_file(url, cache_file) != 0) return -1;
+    }
     if (sha256_hex) {
         *sha256_hex = pr_sha_file(PR_SHA256, cache_file);
         if (!*sha256_hex) goto fail;
