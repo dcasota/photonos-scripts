@@ -489,9 +489,15 @@ function GitPhoton {
     {
         Set-Location $photonPath
         try {
-            Invoke-GitWithTimeout "fetch --prune --prune-tags --tags" -WorkingDirectory $photonPath
-            # unnecessary to reset hard to origin since we only read spec files and don't care about local changes, and it can cause issues if the repo is in a bad state (e.g. due to interrupted fetch/clone)
-            # Invoke-GitWithTimeout "reset --hard origin/$release" -WorkingDirectory $photonPath
+            Invoke-GitWithTimeout "fetch --prune --prune-tags --tags origin $release" -WorkingDirectory $photonPath
+            # Update the working tree to the fetched branch tip. `fetch` only
+            # moves the remote-tracking ref; without this reset the checkout
+            # stays frozen at the first-clone commit, so specs and subrelease
+            # dirs added upstream after that commit (e.g. SPECS/90) never
+            # appear in ParseDirectory. The catch below deletes + re-clones if
+            # the reset fails (corrupt/interrupted repo), so a bad local state
+            # still self-heals.
+            Invoke-GitWithTimeout "reset --hard origin/$release" -WorkingDirectory $photonPath
         }
         catch {
             # If fetch/reset fails, delete and re-clone
@@ -5590,10 +5596,10 @@ if ($GeneratePhPackageReport)
             'photon-4.0' = if($srPkg.Spec -in $Packages4.Spec -and ($Packages4 | Where-Object { $_.Spec -eq $srPkg.Spec -and $_.SubRelease -eq $srPkg.SubRelease })) {($Packages4 | Where-Object { $_.Spec -eq $srPkg.Spec -and $_.SubRelease -eq $srPkg.SubRelease } | Select-Object -First 1).Version} else {""}
             'photon-5.0' = if($srPkg.Spec -in $Packages5.Spec -and ($Packages5 | Where-Object { $_.Spec -eq $srPkg.Spec -and $_.SubRelease -eq $srPkg.SubRelease })) {($Packages5 | Where-Object { $_.Spec -eq $srPkg.Spec -and $_.SubRelease -eq $srPkg.SubRelease } | Select-Object -First 1).Version} else {""}
             'photon-6.0' = if($srPkg.Spec -in $Packages6.Spec -and ($Packages6 | Where-Object { $_.Spec -eq $srPkg.Spec -and $_.SubRelease -eq $srPkg.SubRelease })) {($Packages6 | Where-Object { $_.Spec -eq $srPkg.Spec -and $_.SubRelease -eq $srPkg.SubRelease } | Select-Object -First 1).Version} else {""}
-            'photon-common' = ""
-            'photon-dev' = ""
-            'photon-master' = ""
-            'photon-main' = ""
+            'photon-common' = if($srPkg.Spec -in $PackagesCommon.Spec -and ($PackagesCommon | Where-Object { $_.Spec -eq $srPkg.Spec -and $_.SubRelease -eq $srPkg.SubRelease })) {($PackagesCommon | Where-Object { $_.Spec -eq $srPkg.Spec -and $_.SubRelease -eq $srPkg.SubRelease } | Select-Object -First 1).Version} else {""}
+            'photon-dev' = if($srPkg.Spec -in $PackagesDev.Spec -and ($PackagesDev | Where-Object { $_.Spec -eq $srPkg.Spec -and $_.SubRelease -eq $srPkg.SubRelease })) {($PackagesDev | Where-Object { $_.Spec -eq $srPkg.Spec -and $_.SubRelease -eq $srPkg.SubRelease } | Select-Object -First 1).Version} else {""}
+            'photon-master' = if($srPkg.Spec -in $PackagesMaster.Spec -and ($PackagesMaster | Where-Object { $_.Spec -eq $srPkg.Spec -and $_.SubRelease -eq $srPkg.SubRelease })) {($PackagesMaster | Where-Object { $_.Spec -eq $srPkg.Spec -and $_.SubRelease -eq $srPkg.SubRelease } | Select-Object -First 1).Version} else {""}
+            'photon-main' = if($srPkg.Spec -in $PackagesMain.Spec -and ($PackagesMain | Where-Object { $_.Spec -eq $srPkg.Spec -and $_.SubRelease -eq $srPkg.SubRelease })) {($PackagesMain | Where-Object { $_.Spec -eq $srPkg.Spec -and $_.SubRelease -eq $srPkg.SubRelease } | Select-Object -First 1).Version} else {""}
         }
         $result += $srRow
     }

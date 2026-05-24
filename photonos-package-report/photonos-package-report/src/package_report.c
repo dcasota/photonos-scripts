@@ -109,21 +109,27 @@ int pr_write_package_report(const pr_task_list_t *const lists[8],
     }
 
     /* Subrelease rows: one per distinct (Spec, SubRelease). Version columns
-     * only for the numeric branches 3.0/4.0/5.0/6.0 (lists[0..3]);
-     * common/dev/master/main are always empty (PS hardcodes them ""). Generated
-     * per subrelease task occurrence; duplicates collapse in the sort. */
+     * for every branch via the (Spec, SubRelease) lookup — symmetric with the
+     * main rows. Branches with no matching subrelease occurrence resolve to ""
+     * (so 3.0/4.0/6.0/common/dev/master stay empty for a 5.0-only pin, and
+     * photon-main carries main/SPECS/NN versions). Generated per subrelease
+     * task occurrence; duplicates collapse in the sort. */
     for (int k = 0; k < 8; k++) {
         for (size_t i = 0; i < lists[k]->count; i++) {
             const pr_task_t *t = &lists[k]->items[i];
             if (!(t->SubRelease && t->SubRelease[0] != '\0')) continue;
             if (t->Spec == NULL) continue;
             char *row = NULL;
-            if (asprintf(&row, "%s,%s,%s,%s,%s,%s,,,,",
+            if (asprintf(&row, "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s",
                          t->Spec, t->SubRelease,
                          sr_version(lists[0], t->Spec, t->SubRelease),
                          sr_version(lists[1], t->Spec, t->SubRelease),
                          sr_version(lists[2], t->Spec, t->SubRelease),
-                         sr_version(lists[3], t->Spec, t->SubRelease)) >= 0 && row) {
+                         sr_version(lists[3], t->Spec, t->SubRelease),
+                         sr_version(lists[4], t->Spec, t->SubRelease),
+                         sr_version(lists[5], t->Spec, t->SubRelease),
+                         sr_version(lists[6], t->Spec, t->SubRelease),
+                         sr_version(lists[7], t->Spec, t->SubRelease)) >= 0 && row) {
                 rows[n++] = row;
             }
         }
