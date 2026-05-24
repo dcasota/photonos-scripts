@@ -4557,24 +4557,34 @@ function CheckURLHealth {
     }
     }
     # -------------------------------------------------------------------------------------------------------------------
-    # Second-path detection: PyPI JSON API for python packages whose github
-    # source has no tags/releases and is not declared deprecated. The PyPI JSON
-    # API is the metadata backing pypi.org/project/<pkg>/#files: info.version +
-    # the latest sdist file. Runs BEFORE the "Cannot detect correlating tags"
-    # warning below, so a successful lookup suppresses that warning (it is gated
-    # on $UpdateAvailable -eq ""). Mirrors the C-side pr_pypi fallback.
+    # Dual-source detection for python packages (M78). A developer may publish a
+    # release to github, to PyPI, or to both, so for a python-* spec with a
+    # github source that is not declared deprecated (no ArchivationDate) consult
+    # BOTH sources and report the HIGHER version. The git path above produced
+    # github's view in $UpdateAvailable (a version / "(same version)" / "" / a
+    # regression Warning); reconstruct github's latest from it, query the PyPI
+    # JSON API (the metadata backing pypi.org/project/<pkg>/#files), and adopt
+    # PyPI only when it is strictly newer than both $version AND github's latest.
+    # Subsumes the one-way fallback (github-tagless -> PyPI). Runs before the
+    # "Cannot detect correlating tags" warning, which is gated on
+    # $UpdateAvailable -eq "", so a hit suppresses it. Mirrors the C M78 block.
     # -------------------------------------------------------------------------------------------------------------------
-    if (($UpdateAvailable -eq "") -and ($GitSource -ilike "*github.com*") -and ([string]::IsNullOrEmpty($ArchivationDate)) -and ($currentTask.Spec -ilike "python-*")) {
+    if (($GitSource -ilike "*github.com*") -and ([string]::IsNullOrEmpty($ArchivationDate)) -and ($currentTask.Spec -ilike "python-*")) {
         if ($GitSource -match "/([^/]+)\.git$") {
             $pypiName = $matches[1]
+            if ($version -is [PSCustomObject]) { [string]$version = [string]$version.version }
+            # github's latest, reconstructed from the git-path $UpdateAvailable.
+            $ghLatest = $null
+            if (($UpdateAvailable -ne "") -and ($UpdateAvailable -ne "(same version)") -and (-not $UpdateAvailable.StartsWith("Warning:"))) { $ghLatest = $UpdateAvailable }
+            elseif ($UpdateAvailable -eq "(same version)") { $ghLatest = $version }
             try {
                 $pypi = Invoke-RestMethod -Uri "https://pypi.org/pypi/$pypiName/json" -TimeoutSec 10 -ErrorAction Stop
-                $NameLatest = $pypi.info.version
-                if (-not [string]::IsNullOrEmpty($NameLatest)) {
-                    if ($version -is [PSCustomObject]) { [string]$version = [string]$version.version }
-                    $result = Compare-VersionStrings -Namelatest $NameLatest -Version $version
-                    if ($result -gt 0) {
-                        $UpdateAvailable = $NameLatest
+                $pp = $pypi.info.version
+                if (-not [string]::IsNullOrEmpty($pp)) {
+                    $ppGtCur = ((Compare-VersionStrings -Namelatest $pp -Version $version) -gt 0)
+                    $ppGtGh  = ($null -eq $ghLatest) -or ((Compare-VersionStrings -Namelatest $pp -Version $ghLatest) -gt 0)
+                    if ($ppGtCur -and $ppGtGh) {
+                        $UpdateAvailable = $pp
                         $sdist = $pypi.urls | Where-Object { $_.packagetype -eq 'sdist' } | Select-Object -First 1
                         if ($sdist) {
                             $UpdateURL = $sdist.url
@@ -4582,16 +4592,14 @@ function CheckURLHealth {
                             $UpdateDownloadName = $sdist.filename
                         }
                     }
-                    elseif ($result -lt 0) {
-                        $UpdateAvailable = "Warning: " + $currentTask.spec + " Source0 version " + $version + " is higher than detected latest version " + $NameLatest + " ."
-                    }
-                    else {
+                    elseif (($null -eq $ghLatest) -and ((Compare-VersionStrings -Namelatest $pp -Version $version) -eq 0)) {
                         $UpdateAvailable = "(same version)"
                     }
+                    # else: github's version >= PyPI -> keep the git-path result.
                 }
             }
             catch {
-                # PyPI lookup failed (name not on PyPI -> 404, network, etc.); leave empty.
+                # PyPI lookup failed (name not on PyPI -> 404, network, etc.); keep github's result.
             }
         }
     }
