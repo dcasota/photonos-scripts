@@ -3475,6 +3475,57 @@ function CheckURLHealth {
         }
     }
 
+    # Check UpdateAvailable via the gnome download-server cache.json (cat-6
+    # cluster B). The classic gnome FTP layout (sources/<module>/<M.N>/
+    # <module>-<ver>) defeats HTML listing scraping -- dirname(Source0) is one
+    # minor dir and the parent index lists bare "M.N/" dirs. The gnome server
+    # publishes a JSON index whose element [2] maps each module to its full
+    # version array. SCOPED to the two cat-6 gnome specs: other gnome
+    # /sources/ specs either carry a gitlab.gnome.org gitSource (git-tag path
+    # above) or already detect via the generic scraper (e.g. libsigc++), so a
+    # host-wide rule would risk changing a working spec. Add specs here if
+    # they later regress to cat 6.
+    elseif (($currentTask.spec -ilike 'GConf.spec') -or ($currentTask.spec -ilike 'gnome-common.spec'))
+    {
+        $gnomeModule = $currentTask.Name
+        $cacheUrl = "https://download.gnome.org/sources/$gnomeModule/cache.json"
+        try {
+            $cache = Invoke-RestMethod -Uri $cacheUrl -TimeoutSec 10 -ErrorAction Stop
+            $Names = @($cache[2].$gnomeModule)
+            if ($Names -and $Names.Count -gt 0) {
+                $Names = Clean-VersionNames $Names
+                $Names = $Names -replace "v",""
+                $Names = @($Names | foreach-object { if ($_ -match '\d') {$_}})
+                $Names = @($Names | foreach-object { if (!(($_ -replace '[pP]\d+', '') -match '[a-zA-Z]')) {$_}})
+                if (!([string]::IsNullOrEmpty($Names -join ''))) {$NameLatest = Get-LatestName -Names $Names}
+            }
+        }
+        catch {
+            $NameLatest = ""
+            Write-Warning "gnome cache.json call failed for $gnomeModule : $_"
+        }
+
+        if ($NameLatest -ne "")
+        {
+            if ($version -is [PSCustomObject]) { [string]$version = [string]$version.version }
+
+            $result = Compare-VersionStrings -Namelatest $NameLatest -Version $version
+
+            if ($null -eq $result) {
+                Write-Host "Comparison for $($currentTask.spec) between $NameLatest and $version failed due to invalid input."
+            }
+            elseif ($result -gt 0) {
+                $UpdateAvailable = $NameLatest
+            }
+            elseif ($result -lt 0) {
+                $UpdateAvailable = "Warning: " + $currentTask.spec + " Source0 version " + $version + " is higher than detected latest version " + $NameLatest + " ."
+            }
+            else {
+                $UpdateAvailable = "(same version)"
+            }
+        }
+    }
+
     # Check UpdateAvailable by sourceforge tags detection
     elseif ($Source0 -ilike '*sourceforge.net*')
     {
