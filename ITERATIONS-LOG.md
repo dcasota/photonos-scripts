@@ -419,3 +419,30 @@ sf_eligible was false) — un-deferring + the two-stage fixed it. Validated
 byte-identical to PS (1.0.30 + real tarball URL); nicstat unchanged.
 Remaining: col9 SHA (operator-gated), stalld diff row (informational), and
 libsodium (404 — correct PS behavior, not a bug).
+
+---
+
+## All-branch convergence baseline (2026-05-24, post-M63, fresh snapshot)
+
+First full 7-branch run after all M52-M63 fixes (PS run 26350387627 → C run
+26351276028, same-day → low temporal drift). Also fully warmed the persistent
+clone cache for all 7 branches (future full runs are fast).
+
+| branch | strict | soft |
+|--------|-------:|-----:|
+| 3.0    | 89     | 421  |
+| 4.0    | 89     | 287  |
+| 5.0    | 85     | 108  |
+| 6.0    | 86     | 110  |
+| common | 5      | 0    |
+| dev    | 77     | 126  |
+| master | 85     | 122  |
+
+Reading: strict ~77-89/branch is the structural residual after the detection/
+schema program (5.0 went 392→126→85 across the project). The LARGE soft on the
+old branches (3.0=421, 4.0=287) is dominated by col9 SHA diffs (auto-archive
+SHA drift + PS-empty col9) — addressable ONLY by the operator-gated shared
+SOURCES_NEW cache (PR_SHA_CACHE), not detection code. Remaining strict is a mix
+of temporal drift (snapshot vs run gap) + per-spec long-tail; further reduction
+needs the operator decisions (col9 cache disk policy; tighter PS→C scheduling;
+PR_STRICT_COL9 timing), all scoped in TODO.md.
