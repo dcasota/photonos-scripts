@@ -367,6 +367,34 @@ jobs:
           "$SCRIPT" "$WDIR" "$UPSTREAMS" "$STAGING" "$OUT"
           echo "tar=$OUT" >> "$GITHUB_OUTPUT"
 
+      - name: Preserve SOURCES_NEW to shared col9 cache (M64 / ADR-0009)
+        if: always()
+        run: |
+          # TODO-1: persist ONLY the downloaded tarballs (not PS's full
+          # clones) to a stable path the C workflow reads, so PS and C hash
+          # byte-identical bytes and col9 stops drifting on regenerated
+          # github/gitlab auto-archives. Overwrite (latest PS bytes win);
+          # the auto-triggered C run reads these immediately after.
+          WDIR="${{ github.event.inputs.workingDir }}"; [ -z "$WDIR" ] && WDIR="$REPORT_DIR"
+          UPSTREAMS="${{ github.event.inputs.upstreamsDir }}"; [ -z "$UPSTREAMS" ] && UPSTREAMS="$WDIR/photon-upstreams"
+          SHARED="${PR_SHA_CACHE_BASE:-$HOME/.cache/photonos-shared/photon-upstreams}"
+          mkdir -p "$SHARED"
+          n=0
+          for d in "$UPSTREAMS"/photon-*/SOURCES_NEW; do
+            [ -d "$d" ] || continue
+            br=$(basename "$(dirname "$d")")
+            mkdir -p "$SHARED/$br/SOURCES_NEW"
+            cp -a "$d/." "$SHARED/$br/SOURCES_NEW/" 2>/dev/null && n=$((n+1)) || true
+          done
+          # Disk cap (LRU by mtime): keep the shared tarball cache bounded.
+          CAP_MB=50000
+          cur=$(du -sm "$SHARED" 2>/dev/null | cut -f1)
+          if [ "${cur:-0}" -gt "$CAP_MB" ]; then
+            echo "shared col9 cache ${cur}MB > ${CAP_MB}MB — pruning tarballs older than 21d"
+            find "$SHARED" -type f -name '*.tar.*' -mtime +21 -delete 2>/dev/null || true
+          fi
+          echo "preserved $n branch SOURCES_NEW dirs; shared cache now $(du -sh "$SHARED" 2>/dev/null | cut -f1)"
+
       - name: Upload parity snapshot artifact
         if: always() && steps.parity_snapshot.outputs.tar != ''
         uses: actions/upload-artifact@v7

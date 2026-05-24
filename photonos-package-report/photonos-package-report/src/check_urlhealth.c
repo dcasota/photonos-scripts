@@ -113,13 +113,22 @@ static int spec_eq(const char *spec, const char *name)
     return spec != NULL && strcasecmp(spec, name) == 0;
 }
 
-/* Tarball-cache path for col9 (ADR-0009 amendment, 2026-05-21). When
- * PR_SHA_CACHE=1 is set, returns a malloc'd path
- * <upstreams>/<branch>/SOURCES_NEW/<download_name> — the SAME file the
- * PS run writes — derived from clone_root (= <upstreams>/<branch>/clones).
- * So PS and C hash byte-identical tarballs and col9 stops drifting.
- * Returns NULL (→ legacy /tmp download) when caching is off or inputs
- * are missing. */
+/* Tarball-cache path for col9 (ADR-0009 amendment 2026-05-21; M64 shared
+ * cache). When PR_SHA_CACHE=1, returns a malloc'd cache path so PS and C
+ * hash byte-identical tarballs (col9 stops drifting on regenerated github/
+ * gitlab auto-archives).
+ *
+ * Path resolution:
+ *   - PR_SHA_CACHE_BASE set  → <BASE>/photon-<branch>/SOURCES_NEW/<name>,
+ *     where photon-<branch> is the leaf of clone_root minus "/clones".
+ *     This points C at the PS run's *own* SOURCES_NEW (a persistent dir on
+ *     the shared self-hosted runner, written by the PS job that produced
+ *     the snapshot). C reuses PS's bytes when the file already exists →
+ *     identical SHA. Clones stay in C's own cache (no full-vs-partial
+ *     clone conflict). This is the TODO-1 shared cache.
+ *   - otherwise              → legacy <upstreams>/<branch>/SOURCES_NEW/<name>
+ *     derived from clone_root (C-local cache; stable across C runs only).
+ * Returns NULL (→ legacy /tmp download) when caching is off or inputs missing. */
 static char *col9_cache_path(const char *clone_root, const char *download_name)
 {
     if (getenv("PR_SHA_CACHE") == NULL) return NULL;
@@ -129,9 +138,19 @@ static char *col9_cache_path(const char *clone_root, const char *download_name)
     size_t cl = strlen(clone_root), sl = strlen(suffix);
     if (cl < sl || strcmp(clone_root + cl - sl, suffix) != 0) return NULL;
     char *cache = NULL;
-    if (asprintf(&cache, "%.*s/SOURCES_NEW/%s",
-                 (int)(cl - sl), clone_root, download_name) < 0)
-        return NULL;
+    const char *base = getenv("PR_SHA_CACHE_BASE");
+    if (base && base[0]) {
+        /* leaf of ".../photon-<branch>" (clone_root with "/clones" removed) */
+        const char *parent_end = clone_root + (cl - sl);
+        const char *leaf = parent_end;
+        while (leaf > clone_root && *(leaf - 1) != '/') leaf--;
+        if (asprintf(&cache, "%s/%.*s/SOURCES_NEW/%s",
+                     base, (int)(parent_end - leaf), leaf, download_name) < 0)
+            cache = NULL;
+    } else if (asprintf(&cache, "%.*s/SOURCES_NEW/%s",
+                        (int)(cl - sl), clone_root, download_name) < 0) {
+        cache = NULL;
+    }
     return cache;
 }
 

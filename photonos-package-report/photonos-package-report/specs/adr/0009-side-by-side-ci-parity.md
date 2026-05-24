@@ -118,3 +118,31 @@ PS's report quality improves (dual-goal-positive). Validated in isolation:
 gstreamer → `…/src/gstreamer/gstreamer-<ver>.tar.xz`; specs with a non-empty
 lookup are unchanged. Requires regenerating the PS snapshot (the cached
 snapshot predates the fix); the C side needs no change.
+
+## Amendment 2026-05-24 — col9 shared cache activation (M64; the three TODOs)
+
+Operator-approved activation of the col9 strategy + the two companion levers.
+
+**TODO-1 (shared SOURCES_NEW cache).** The PS workflow now PRESERVES its
+downloaded tarballs (only `SOURCES_NEW`, not the full clones — disk-bounded)
+to a stable shared path `$HOME/.cache/photonos-shared/photon-upstreams`, with
+a 50 GB LRU cap. The C workflow sets `PR_SHA_CACHE=1` +
+`PR_SHA_CACHE_BASE=<that path>`; `col9_cache_path()` gained a
+`PR_SHA_CACHE_BASE` branch that reads `<base>/photon-<branch>/SOURCES_NEW/
+<download_name>`. Since the C workflow auto-triggers right after PS, C reuses
+PS's exact bytes → col9 matches on regenerated github/gitlab auto-archives
+(the dominant soft driver, biggest on 3.0/4.0). C's clones stay in its own
+cache (no full-vs-partial conflict). Value: collapses the col9 portion of soft.
+Drawback: shared disk (capped); the PS-empty col9 rows stay C-superiority.
+
+**TODO-2 (tighter PS→C scheduling).** Already satisfied: the C workflow's
+`workflow_run` auto-trigger runs C immediately after PS, and the M53 cache
+(now warmed for all 7 branches) shrinks C's runtime, minimising the
+snapshot-vs-run gap that drives col5/col6 temporal strict diffs. No code
+change beyond the warm cache.
+
+**TODO-3 (PR_STRICT_COL9).** Added a `strict_col9` workflow_dispatch input
+(default false) wired to `PR_STRICT_COL9`. Folds col9 into the strict verdict
+ONLY when explicitly enabled — to be flipped after a PS→C cycle confirms the
+TODO-1 cache holds col9 byte-stable (enabling early would spike strict and
+reset the 90-day clock). Ordering: TODO-1 proven → then TODO-3.
