@@ -36,6 +36,34 @@ def find_latest_urlhealth_prns(scans_dir):
     return {b: v[1] for b, v in latest.items()}
 
 
+def classify_row(uh, ua, uurl, huurl, udn, warn):
+    """Return the category key for one .prn row, or None if healthy.
+
+    Single source of the issue taxonomy: both the per-branch report
+    (analyse_prn) and the cross-branch aggregate (aggregate_matrix) call
+    this, so the two views can never drift apart.
+    """
+    if uh == "":
+        return "cat1_url_blank"
+    if uh == "substitution_unfinished":
+        return "cat2_substitution"
+    if uh == "0":
+        return "cat3_unreachable"
+    if (uh == "200" and ua and not ua.startswith("Warning:")
+            and ua != "(same version)" and huurl == "200" and not udn):
+        return "cat4_update_200_nodownload"
+    if uh == "200" and ua and ua.startswith("Warning:"):
+        return "cat5_version_warning"
+    if uh == "200" and not ua and not warn:
+        return "cat6_no_update_info"
+    if (uh == "200" and ua and not ua.startswith("Warning:")
+            and ua != "(same version)" and not huurl):
+        return "cat7_update_nohealth"
+    if warn:
+        return "cat8_warnings"
+    return None
+
+
 def analyse_prn(filepath):
     """Parse a .prn CSV and return (total, categories_dict)."""
     categories = defaultdict(list)
@@ -62,34 +90,9 @@ def analyse_prn(filepath):
                 warning=warn, source0=src0, modified_source0=mod_src0,
             )
 
-            classified = False
-
-            if uh == "":
-                categories["cat1_url_blank"].append(entry)
-                classified = True
-            elif uh == "substitution_unfinished":
-                categories["cat2_substitution"].append(entry)
-                classified = True
-            elif uh == "0":
-                categories["cat3_unreachable"].append(entry)
-                classified = True
-            elif (uh == "200" and ua and not ua.startswith("Warning:")
-                  and ua != "(same version)" and huurl == "200" and not udn):
-                categories["cat4_update_200_nodownload"].append(entry)
-                classified = True
-            elif uh == "200" and ua and ua.startswith("Warning:"):
-                categories["cat5_version_warning"].append(entry)
-                classified = True
-            elif uh == "200" and not ua and not warn:
-                categories["cat6_no_update_info"].append(entry)
-                classified = True
-            elif (uh == "200" and ua and not ua.startswith("Warning:")
-                  and ua != "(same version)" and not huurl):
-                categories["cat7_update_nohealth"].append(entry)
-                classified = True
-
-            if not classified and warn:
-                categories["cat8_warnings"].append(entry)
+            key = classify_row(uh, ua, uurl, huurl, udn, warn)
+            if key:
+                categories[key].append(entry)
 
     return total, categories
 
@@ -112,6 +115,103 @@ CAT_META = [
     ("cat8_warnings",
      "Other warnings (VMware internal URL, unmaintained repo, etc.)", "Low-Medium"),
 ]
+
+# Display number (1..8) per category key, matching the per-branch report's
+# numbered "## N." sections. cat4 keeps its slot even when unused.
+CAT_NUM = {key: i for i, (key, _label, _sev) in enumerate(CAT_META, 1)}
+
+# Branch column order for the cross-branch matrix. Subrelease columns
+# (e.g. 5.0/SPECS/91) are inserted right after their parent branch.
+_BRANCH_ORDER = ["3.0", "4.0", "5.0", "6.0", "common", "dev", "master", "main"]
+_SUBRELEASE_RE = re.compile(r"subrelease\s+(\d+)", re.IGNORECASE)
+
+
+def aggregate_matrix(latest):
+    """Build the cross-branch view from the latest .prn per branch.
+
+    Returns (issue, present):
+      issue[spec][col]  -> set of category numbers (1..8)
+      present[col]      -> set of specs present in that column (any health)
+    A 5.0 row whose warning says "(subrelease NN)" is routed to the
+    synthetic column "5.0/SPECS/NN" instead of "5.0".
+    """
+    issue = defaultdict(lambda: defaultdict(set))
+    present = defaultdict(set)
+    for branch in latest:
+        with open(latest[branch], newline="", encoding="utf-8") as f:
+            reader = csv.reader(f)
+            next(reader, None)  # header
+            for row in reader:
+                while len(row) < 12:
+                    row.append("")
+                (spec, _src0, _mod, uh, ua, uurl,
+                 huurl, _name, _sha, udn, warn, _adate) = (c.strip() for c in row[:12])
+                if not spec.endswith(".spec"):
+                    continue
+                col = branch
+                m = _SUBRELEASE_RE.search(warn or "")
+                if m:
+                    col = f"{branch}/SPECS/{m.group(1)}"
+                present[col].add(spec)
+                key = classify_row(uh, ua, uurl, huurl, udn, warn)
+                if key:
+                    issue[spec][col].add(CAT_NUM[key])
+    return issue, present
+
+
+def order_columns(present):
+    """Order columns by _BRANCH_ORDER, each parent branch immediately
+    followed by its SPECS/NN subrelease columns; unknown branches last."""
+    allcols = set(present)
+    cols = []
+    for b in _BRANCH_ORDER:
+        if b in allcols:
+            cols.append(b)
+        cols.extend(sorted(c for c in allcols if c.startswith(b + "/SPECS/")))
+    for c in sorted(allcols):
+        if c not in cols:
+            cols.append(c)
+    return cols
+
+
+def write_matrix_and_categories(out, issue, present):
+    """Write the spec-matrix and the category->affected-packages tables."""
+    cols = order_columns(present)
+    specs = sorted(issue.keys())
+
+    def cell(s, c):
+        if c in issue.get(s, {}):
+            return ",".join(str(n) for n in sorted(issue[s][c]))
+        return "healthy" if s in present[c] else "N/A"
+
+    out.write("## Spec-matrix — issue applicability per branch\n\n")
+    out.write(f"**{len(specs)}** packages with at least one issue across "
+              f"{len([c for c in cols if '/' not in c])} branches.\n\n")
+    out.write("Cell legend: number(s) = issue category (see table below) · "
+              "`healthy` = present & URL health OK · `N/A` = not carried in "
+              "that branch/subrelease.\n\n")
+    out.write("| Spec | " + " | ".join(cols) + " |\n")
+    out.write("|---|" + "|".join(["---"] * len(cols)) + "|\n")
+    for s in specs:
+        out.write("| " + s + " | " + " | ".join(cell(s, c) for c in cols) + " |\n")
+    out.write("\n")
+
+    # category number -> set of affected specs (across all columns)
+    cat_specs = defaultdict(set)
+    for s, bycol in issue.items():
+        for nums in bycol.values():
+            for n in nums:
+                cat_specs[n].add(s)
+    num2meta = {i: (label, sev) for i, (_k, label, sev) in enumerate(CAT_META, 1)}
+
+    out.write("## Issue categories — affected packages\n\n")
+    out.write("| # | Issue Category | Severity | Packages | Affected specs |\n")
+    out.write("|---|---|---|---|---|\n")
+    for n in sorted(cat_specs):
+        label, sev = num2meta.get(n, ("?", "?"))
+        pkgs = ", ".join(sorted(cat_specs[n]))
+        out.write(f"| {n} | {label} | {sev} | {len(cat_specs[n])} | {pkgs} |\n")
+    out.write("\n")
 
 
 def _fix_for_warning(w):
@@ -310,6 +410,32 @@ def main():
 
         print(f"  {branch}: {total} packages, {issue_count} issues -> {md_name}")
         generated.append(md_name)
+
+    # --- Cross-branch aggregate: spec-matrix + category-affected tables ---
+    # Reads every branch's latest .prn (not just the per-branch .md inputs),
+    # so the matrix sees healthy/N-A cells too. Written as an artifact .md and
+    # appended to the GitHub Actions job summary (the dynamic report).
+    issue, present = aggregate_matrix(latest)
+    if issue:
+        ts_all = [m.group(1) for p in latest.values()
+                  for m in [re.search(r"_(\d{12})\.prn$", os.path.basename(p))] if m]
+        ts = max(ts_all) if ts_all else "unknown"
+        matrix_name = f"photonos-urlhealth-issues-matrix_{ts}.md"
+        matrix_path = os.path.join(scans_dir, matrix_name)
+        scans_real = os.path.realpath(scans_dir)
+        if os.path.commonpath([scans_real, os.path.realpath(matrix_path)]) != scans_real:
+            raise ValueError(f"Refusing to write outside scans_dir: {matrix_path}")
+        with open(matrix_path, "w", encoding="utf-8") as out:
+            out.write("# Photon OS URL Health - cross-branch matrix\n\n")
+            write_matrix_and_categories(out, issue, present)
+        generated.append(matrix_name)
+        print(f"  matrix: {len(issue)} specs with issues -> {matrix_name}")
+
+        gh = os.environ.get("GITHUB_STEP_SUMMARY")
+        if gh:
+            with open(gh, "a", encoding="utf-8") as out:
+                out.write("\n# URL health - spec-matrix & issue categories\n\n")
+                write_matrix_and_categories(out, issue, present)
 
     print(f"\nGenerated {len(generated)} issue summary file(s).")
 
