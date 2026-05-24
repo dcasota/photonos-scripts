@@ -312,6 +312,21 @@ jobs:
           echo "scans=$SCANS" >> "$GITHUB_OUTPUT"
           ls -l "$SCANS"
 
+      # M67: the same cross-branch issue report the PS workflow emits, but
+      # over the C implementation's own .prn output — gives the C run a
+      # spec-matrix (issue category per branch) + an issue-category table
+      # listing affected packages, in its dynamic job summary. Runs before the
+      # upload so the generated issue .md files ship in the artifact too.
+      - name: Generate URL health issue summaries (C-side)
+        if: always() && steps.c_run.outputs.scans != ''
+        run: |
+          SCRIPT="repo/.github/scripts/generate-urlhealth-summary.py"
+          if [ -f "$SCRIPT" ]; then
+            python3 "$SCRIPT" "${{ steps.c_run.outputs.scans }}"
+          else
+            echo "::warning::URL health summary script not found at $SCRIPT"
+          fi
+
       # M05 (FRD-017): preserve C-side .prn for post-hoc strict-diff
       # investigation. The runner cleans _temp/ at job end, so without
       # this upload the .prn that parity-diff judged is lost. `always()`
@@ -327,6 +342,7 @@ jobs:
           # alongside; parity-gate integration pending clean-CI validation).
           path: |
             ${{ steps.c_run.outputs.scans }}/photonos-urlhealth-*.prn
+            ${{ steps.c_run.outputs.scans }}/photonos-urlhealth-issues-*.md
             ${{ steps.c_run.outputs.scans }}/photonos-diff-report-*.prn
             ${{ steps.c_run.outputs.scans }}/photonos-package-report_*.prn
           if-no-files-found: warn
