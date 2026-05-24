@@ -4557,6 +4557,45 @@ function CheckURLHealth {
     }
     }
     # -------------------------------------------------------------------------------------------------------------------
+    # Second-path detection: PyPI JSON API for python packages whose github
+    # source has no tags/releases and is not declared deprecated. The PyPI JSON
+    # API is the metadata backing pypi.org/project/<pkg>/#files: info.version +
+    # the latest sdist file. Runs BEFORE the "Cannot detect correlating tags"
+    # warning below, so a successful lookup suppresses that warning (it is gated
+    # on $UpdateAvailable -eq ""). Mirrors the C-side pr_pypi fallback.
+    # -------------------------------------------------------------------------------------------------------------------
+    if (($UpdateAvailable -eq "") -and ($GitSource -ilike "*github.com*") -and ([string]::IsNullOrEmpty($ArchivationDate)) -and ($currentTask.Spec -ilike "python-*")) {
+        if ($GitSource -match "/([^/]+)\.git$") {
+            $pypiName = $matches[1]
+            try {
+                $pypi = Invoke-RestMethod -Uri "https://pypi.org/pypi/$pypiName/json" -TimeoutSec 10 -ErrorAction Stop
+                $NameLatest = $pypi.info.version
+                if (-not [string]::IsNullOrEmpty($NameLatest)) {
+                    if ($version -is [PSCustomObject]) { [string]$version = [string]$version.version }
+                    $result = Compare-VersionStrings -Namelatest $NameLatest -Version $version
+                    if ($result -gt 0) {
+                        $UpdateAvailable = $NameLatest
+                        $sdist = $pypi.urls | Where-Object { $_.packagetype -eq 'sdist' } | Select-Object -First 1
+                        if ($sdist) {
+                            $UpdateURL = $sdist.url
+                            $HealthUpdateURL = urlhealth($UpdateURL)
+                            $UpdateDownloadName = $sdist.filename
+                        }
+                    }
+                    elseif ($result -lt 0) {
+                        $UpdateAvailable = "Warning: " + $currentTask.spec + " Source0 version " + $version + " is higher than detected latest version " + $NameLatest + " ."
+                    }
+                    else {
+                        $UpdateAvailable = "(same version)"
+                    }
+                }
+            }
+            catch {
+                # PyPI lookup failed (name not on PyPI -> 404, network, etc.); leave empty.
+            }
+        }
+    }
+    # -------------------------------------------------------------------------------------------------------------------
     # Signalization of not accessible or archived repositories
     # -------------------------------------------------------------------------------------------------------------------
     $warningText="Warning: repo isn't maintained anymore."
