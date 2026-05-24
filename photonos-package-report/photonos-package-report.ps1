@@ -638,6 +638,7 @@ dool.spec,https://github.com/scottchiefbaker/dool/archive/refs/tags/v%{version}.
 dos2unix.spec,https://waterlan.home.xs4all.nl/dos2unix/dos2unix-%{version}.tar.gz,https://git.code.sf.net/p/dos2unix/dos2unix.git
 dosfstools.spec,https://github.com/dosfstools/dosfstools/releases/download/v%{version}/dosfstools-%{version}.tar.gz,https://github.com/dosfstools/dosfstools.git
 dotnet-runtime.spec,https://github.com/dotnet/runtime/archive/refs/tags/v%{version}.tar.gz,https://github.com/dotnet/runtime.git
+dwarves.spec,http://fedorapeople.org/~acme/dwarves/dwarves-%{version}.tar.xz,https://git.kernel.org/pub/scm/devel/pahole/pahole.git
 dotnet-sdk.spec,https://github.com/dotnet/sdk/archive/refs/tags/v%{version}.tar.gz,https://github.com/dotnet/sdk.git
 double-conversion.spec,https://github.com/google/double-conversion/archive/refs/tags/v%{version}.tar.gz,https://github.com/google/double-conversion.git
 doxygen.spec,https://github.com/doxygen/doxygen/archive/refs/tags/Release_%{version}.tar.gz,https://github.com/doxygen/doxygen.git
