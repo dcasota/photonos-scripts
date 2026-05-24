@@ -1392,7 +1392,18 @@ char *check_urlhealth(pr_task_t                       *task,
             gh_latest = strdup(cur);                     /* github latest == current */
         }
 
-        char *pkg = pr_extract_repo_name(row->gitSource);
+        /* PyPI package name = spec minus "python-" prefix and ".spec" suffix.
+         * Photon's naming convention matches the PyPI project name (PyPI lookup
+         * is case-insensitive); the github repo leaf can differ, e.g.
+         * python-filelock -> repo "py-filelock" but PyPI "filelock". */
+        char *pkg = NULL;
+        {
+            const char *s = task->Spec + 7;            /* gate guarantees "python-" */
+            size_t sl = strlen(s);
+            if (sl > 5 && strcmp(s + sl - 5, ".spec") == 0) sl -= 5;
+            pkg = (char *)malloc(sl + 1);
+            if (pkg) { memcpy(pkg, s, sl); pkg[sl] = '\0'; }
+        }
         char *surl = NULL, *sname = NULL;
         char *pp = pkg ? pr_pypi_latest_version(pkg, &surl, &sname) : NULL;
 
@@ -1414,11 +1425,34 @@ char *check_urlhealth(pr_task_t                       *task,
                      * too, so col 10 stays byte-identical. */
                     free(state.UpdateDownloadName); state.UpdateDownloadName = sname; sname = NULL;
                 }
+            } else if (gh_latest != NULL
+                       && pr_version_compare(pp, gh_latest) == 0
+                       && pp_gt_cur
+                       && (state.UpdateURL == NULL || state.UpdateURL[0] == '\0')) {
+                /* github detected this SAME update version but could not build a
+                 * working download URL (cat 7 "packaging format changed" — the
+                 * git path cleared UpdateURL + set the warning above). PyPI has
+                 * a valid sdist for the same version: complete the record from
+                 * PyPI and clear the now-obsolete packaging-format warning.
+                 * UpdateAvailable (== pp == github's version) is unchanged. */
+                if (surl && surl[0]) {
+                    free(state.UpdateURL); state.UpdateURL = surl; surl = NULL;
+                    int h = urlhealth(state.UpdateURL);
+                    char b[16]; snprintf(b, sizeof b, "%d", h);
+                    free(state.HealthUpdateURL); state.HealthUpdateURL = strdup(b);
+                }
+                if (sname && sname[0]) {
+                    free(state.UpdateDownloadName); state.UpdateDownloadName = sname; sname = NULL;
+                }
+                if (state.Warning && strstr(state.Warning, "packaging format") != NULL) {
+                    free(state.Warning); state.Warning = dup_or_empty("");
+                }
             } else if (gh_latest == NULL && pr_version_compare(pp, cur) == 0) {
                 /* github found nothing and PyPI == current -> (same version). */
                 free(state.UpdateAvailable); state.UpdateAvailable = dup_or_empty("(same version)");
             }
-            /* else: github's version >= PyPI -> keep the git-path result. */
+            /* else: github's version >= PyPI (and URL ok, or PyPI not newer)
+             * -> keep the git-path result. */
         }
         free(gh_latest); free(pp); free(surl); free(sname); free(pkg);
     }

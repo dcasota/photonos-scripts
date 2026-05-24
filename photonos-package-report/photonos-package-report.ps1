@@ -4570,8 +4570,12 @@ function CheckURLHealth {
     # $UpdateAvailable -eq "", so a hit suppresses it. Mirrors the C M78 block.
     # -------------------------------------------------------------------------------------------------------------------
     if (($GitSource -ilike "*github.com*") -and ([string]::IsNullOrEmpty($ArchivationDate)) -and ($currentTask.Spec -ilike "python-*")) {
-        if ($GitSource -match "/([^/]+)\.git$") {
-            $pypiName = $matches[1]
+        # PyPI package name = spec minus "python-" prefix and ".spec" suffix.
+        # Photon's naming matches the PyPI project name (PyPI lookup is
+        # case-insensitive); the github repo leaf can differ (e.g.
+        # python-filelock -> repo "py-filelock" but PyPI "filelock").
+        $pypiName = $currentTask.spec -replace '^python-','' -replace '\.spec$',''
+        if ($pypiName -ne "") {
             if ($version -is [PSCustomObject]) { [string]$version = [string]$version.version }
             # github's latest, reconstructed from the git-path $UpdateAvailable.
             $ghLatest = $null
@@ -4592,10 +4596,24 @@ function CheckURLHealth {
                             $UpdateDownloadName = $sdist.filename
                         }
                     }
+                    elseif (($null -ne $ghLatest) -and ((Compare-VersionStrings -Namelatest $pp -Version $ghLatest) -eq 0) -and $ppGtCur -and ($UpdateURL -eq "")) {
+                        # github detected this same update version but defers URL
+                        # construction to the later stage, which fails for it
+                        # (cat 7). Fill the URL from PyPI's sdist now; that stage
+                        # is gated on $UpdateURL -eq "" so it then skips and the
+                        # packaging-format warning is never emitted. ($UpdateAvailable
+                        # already == $pp == github's version.)
+                        $sdist = $pypi.urls | Where-Object { $_.packagetype -eq 'sdist' } | Select-Object -First 1
+                        if ($sdist) {
+                            $UpdateURL = $sdist.url
+                            $HealthUpdateURL = urlhealth($UpdateURL)
+                            $UpdateDownloadName = $sdist.filename
+                        }
+                    }
                     elseif (($null -eq $ghLatest) -and ((Compare-VersionStrings -Namelatest $pp -Version $version) -eq 0)) {
                         $UpdateAvailable = "(same version)"
                     }
-                    # else: github's version >= PyPI -> keep the git-path result.
+                    # else: github's version >= PyPI (and URL ok, or PyPI not newer) -> keep the git-path result.
                 }
             }
             catch {
