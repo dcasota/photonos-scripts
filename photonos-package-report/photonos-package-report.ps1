@@ -4966,7 +4966,11 @@ function CheckURLHealth {
 
         # exceptions
         # common exception
-        if (($UpdateDownloadName[0] -ieq 'v') -and ($UpdateDownloadName[1] -ne '-')) {$UpdateDownloadName = $UpdateDownloadName.substring(1)}
+        # M85: strip a leading 'v' ONLY when it is a version prefix (followed
+        # by a digit, e.g. "v1.2.3.tar.gz"). A 'v' followed by a letter is a
+        # real word (versioningit, virtualenv, valgrind) — the PyPI sdist path
+        # surfaces such filenames, which the old `-ne '-'` guard mangled.
+        if (($UpdateDownloadName[0] -ieq 'v') -and ($UpdateDownloadName[1] -match '[0-9]')) {$UpdateDownloadName = $UpdateDownloadName.substring(1)}
         # individual exceptions
         if ($currentTask.spec -ilike 'inih.spec') { $UpdateDownloadName = $UpdateDownloadName -ireplace "^r","libinih-"}
         if ($currentTask.spec -ilike 'open-vm-tools.spec') {$UpdateDownloadName = [System.String]::Concat("open-vm-tools-",$UpdateDownloadName)}

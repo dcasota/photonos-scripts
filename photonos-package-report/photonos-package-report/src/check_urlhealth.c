@@ -886,8 +886,14 @@ static char *download_name_post(char *raw, const char *task_name,
     if (raw == NULL) return NULL;
 
 
-    /* L 4770: optional 'v' strip. */
-    if ((raw[0] == 'v' || raw[0] == 'V') && raw[1] && raw[1] != '-') {
+    /* L 4770: optional 'v' strip — strip a leading 'v' ONLY when it is a
+     * version prefix (followed by a digit, e.g. "v1.2.3.tar.gz"). A 'v'
+     * followed by a letter is part of a real word (versioningit,
+     * virtualenv, valgrind) and must be preserved; a 'v' followed by '-'
+     * is left for the L 4792 "v-" rule below. (M85: was `raw[1] != '-'`,
+     * which mangled word-initial 'v' names — the PyPI sdist path now
+     * surfaces such names so PS L 4969 must match this guard.) */
+    if ((raw[0] == 'v' || raw[0] == 'V') && raw[1] >= '0' && raw[1] <= '9') {
         memmove(raw, raw + 1, strlen(raw));
     }
 
