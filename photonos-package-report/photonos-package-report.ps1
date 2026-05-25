@@ -842,8 +842,8 @@ librsync.spec,https://github.com/librsync/librsync/archive/refs/tags/v%{version}
 libpcap.spec,https://github.com/the-tcpdump-group/libpcap/archive/refs/tags/libpcap-%{version}.tar.gz,https://github.com/the-tcpdump-group/libpcap.git
 libqmi.spec,,https://gitlab.freedesktop.org/mobile-broadband/libqmi.git
 libseccomp.spec,https://github.com/seccomp/libseccomp/releases/download/v%{version}/libseccomp-%{version}.tar.gz,https://github.com/seccomp/libseccomp.git
-libselinux.spec,https://github.com/SELinuxProject/selinux/archive/refs/tags/libselinux-%{version}.tar.gz,https://github.com/SELinuxProject/selinux.git
-libsemanage.spec,https://github.com/SELinuxProject/selinux/releases/download/%{version}/libsemanage-%{version}.tar.gz,https://github.com/SELinuxProject/selinux.git
+libselinux.spec,https://github.com/SELinuxProject/selinux/archive/refs/tags/libselinux-%{version}.tar.gz,https://github.com/SELinuxProject/selinux.git,,^libselinux-[0-9],"libselinux-"
+libsemanage.spec,https://github.com/SELinuxProject/selinux/releases/download/%{version}/libsemanage-%{version}.tar.gz,https://github.com/SELinuxProject/selinux.git,,^libsemanage-[0-9],"libsemanage-"
 libsigc++.spec,https://github.com/libsigcplusplus/libsigcplusplus/archive/refs/tags/%{version}.tar.gz,https://github.com/libsigcplusplus/libsigcplusplus.git
 libslirp.spec,https://gitlab.freedesktop.org/slirp/libslirp/-/archive/v%{version}/libslirp-v%{version}.tar.gz,https://gitlab.freedesktop.org/slirp/libslirp.git
 libsolv.spec,https://github.com/openSUSE/libsolv/archive/refs/tags/%{version}.tar.gz,https://github.com/openSUSE/libsolv.git
@@ -915,7 +915,7 @@ mysql.spec,https://github.com/mysql/mysql-server/archive/refs/tags/mysql-%{versi
 nano.spec,https://ftpmirror.gnu.org/nano/nano-%{version}.tar.xz,https://git.savannah.gnu.org/git/nano.git
 nasm.spec,https://github.com/netwide-assembler/nasm/archive/refs/tags/nasm-%{version}.tar.gz,https://github.com/netwide-assembler/nasm.git
 ncurses.spec,https://github.com/ThomasDickey/ncurses-snapshots/archive/refs/tags/v%{version}.tar.gz,https://github.com/ThomasDickey/ncurses-snapshots.git
-ndctl.spec,https://github.com/pmem/ndctl/archive/refs/tags/v%{version}.tar.gz,https://github.com/pmem/ndctl.git
+ndctl.spec,https://github.com/pmem/ndctl/archive/refs/tags/v%{version}.tar.gz,https://github.com/pmem/ndctl.git,,^v[0-9]
 nerdctl.spec,https://github.com/containerd/nerdctl/archive/refs/tags/v%{version}.tar.gz,https://github.com/containerd/nerdctl.git
 net-snmp.spec,https://github.com/net-snmp/net-snmp/archive/refs/tags/v%{version}.tar.gz,https://github.com/net-snmp/net-snmp.git
 net-tools.spec,https://github.com/ecki/net-tools/archive/refs/tags/v%{version}.tar.gz,https://github.com/ecki/net-tools.git
@@ -929,7 +929,7 @@ nftables.spec,https://www.netfilter.org/projects/nftables/files/nftables-%{versi
 nghttp2.spec,https://github.com/nghttp2/nghttp2/releases/download/v%{version}/nghttp2-%{version}.tar.xz,https://github.com/nghttp2/nghttp2.git
 nginx.spec,https://github.com/nginx/nginx/archive/refs/tags/release-%{version}.tar.gz,https://github.com/nginx/nginx.git
 nginx-ingress.spec,https://github.com/nginxinc/kubernetes-ingress/archive/refs/tags/v%{version}.tar.gz,https://github.com/nginxinc/kubernetes-ingress.git
-ninja-build.spec,https://github.com/ninja-build/ninja/archive/refs/tags/v%{version}.tar.gz,https://github.com/ninja-build/ninja.git
+ninja-build.spec,https://github.com/ninja-build/ninja/archive/refs/tags/v%{version}.tar.gz,https://github.com/ninja-build/ninja.git,,^v[0-9]
 nmap.spec,https://nmap.org/dist/nmap-%{version}.tar.bz2
 nodejs-8.17.0.spec,https://nodejs.org/download/release/v8.17.0/node-v8.17.0.tar.xz
 nodejs-9.11.2.spec,https://nodejs.org/download/release/v9.11.2/node-v9.11.2.tar.xz
@@ -1015,7 +1015,7 @@ pmd.spec,https://github.com/vmware/pmd/archive/refs/tags/v%{version}.tar.gz,http
 pmd-ng.spec,https://github.com/vmware/pmd-next-gen/archive/refs/tags/v%{version}.tar.gz,https://github.com/vmware/pmd-next-gen.git
 pmd-nextgen.spec,https://github.com/vmware/pmd/archive/refs/tags/v%{version}.tar.gz,https://github.com/vmware/pmd.git
 podman.spec,https://github.com/containers/podman/archive/refs/tags/v%{version}.tar.gz,https://github.com/containers/podman.git
-policycoreutils.spec,https://github.com/SELinuxProject/selinux/releases/download/%{version}/policycoreutils-%{version}.tar.gz,https://github.com/SELinuxProject/selinux.git
+policycoreutils.spec,https://github.com/SELinuxProject/selinux/releases/download/%{version}/policycoreutils-%{version}.tar.gz,https://github.com/SELinuxProject/selinux.git,,^policycoreutils-[0-9],"policycoreutils-"
 polkit.spec,,https://gitlab.freedesktop.org/polkit/polkit.git
 popt.spec,https://github.com/rpm-software-management/popt/archive/refs/tags/popt-%{version}-release.tar.gz,https://github.com/rpm-software-management/popt.git,,^popt-[\d.]+-release$
 powershell.spec,https://github.com/PowerShell/PowerShell/archive/refs/tags/v%{version}.tar.gz,https://github.com/PowerShell/PowerShell.git
@@ -1275,8 +1275,8 @@ salt3.spec,https://github.com/saltstack/salt/releases/download/v%{version}/salt-
 samba-client.spec,https://gitlab.com/samba-team/devel/samba/-/archive/samba-%{version}/samba-samba-%{version}.tar.gz
 sbsigntools.spec,https://git.kernel.org/pub/scm/linux/kernel/git/jejb/sbsigntools.git/snapshot/sbsigntools-%{version}.tar.gz,https://git.kernel.org/pub/scm/linux/kernel/git/jejb/sbsigntools.git,,,
 selinux-policy.spec,https://github.com/fedora-selinux/selinux-policy/archive/refs/tags/v%{version}.tar.gz,https://github.com/fedora-selinux/selinux-policy.git,,,
-selinux-python.spec,https://github.com/SELinuxProject/selinux/releases/download/%{version}/selinux-python-%{version}.tar.gz,https://github.com/SELinuxProject/selinux.git
-semodule-utils.spec,https://github.com/SELinuxProject/selinux/releases/download/%{version}/semodule-utils-%{version}.tar.gz,https://github.com/SELinuxProject/selinux.git
+selinux-python.spec,https://github.com/SELinuxProject/selinux/releases/download/%{version}/selinux-python-%{version}.tar.gz,https://github.com/SELinuxProject/selinux.git,,^selinux-python-[0-9],"selinux-python-"
+semodule-utils.spec,https://github.com/SELinuxProject/selinux/releases/download/%{version}/semodule-utils-%{version}.tar.gz,https://github.com/SELinuxProject/selinux.git,,^semodule-utils-[0-9],"semodule-utils-"
 serf.spec,https://github.com/apache/serf/archive/refs/tags/%{version}.tar.gz,https://github.com/apache/serf.git
 setools.spec,https://github.com/SELinuxProject/setools/releases/download/%{version}/setools-%{version}.tar.bz2,https://github.com/SELinuxProject/setools.git
 sg3_utils.spec,https://github.com/hreinecke/sg3_utils/archive/refs/tags/v%{version}.tar.gz,https://github.com/hreinecke/sg3_utils.git
