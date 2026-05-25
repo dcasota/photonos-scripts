@@ -1474,27 +1474,29 @@ char *check_urlhealth(pr_task_t                       *task,
                     int h = urlhealth(state.UpdateURL);
                     char b[16]; snprintf(b, sizeof b, "%d", h);
                     free(state.HealthUpdateURL); state.HealthUpdateURL = strdup(b);
+                    if (state.Warning && strstr(state.Warning, "packaging format") != NULL) {
+                        free(state.Warning); state.Warning = dup_or_empty("");
+                    }
                 } else {
-                    /* M86: PyPI is newest but ships NO sdist (wheels-only, e.g.
-                     * pyvmomi) and github has no tag for this version (pp >
-                     * gh_latest). PS reports the version but leaves UpdateURL
-                     * empty — it builds URLs from github tags AFTER the dual-
-                     * source version bump and finds none. The git-tag path here
-                     * already built a github URL for the OLDER version; clear it
-                     * so col6/col7 match PS's empty cells. */
+                    /* M86/M87: PyPI is newest but ships NO sdist (wheels-only,
+                     * e.g. pyvmomi 9.1.0.0) and github has no tag for this
+                     * version (pp > gh_latest). PS bumps UpdateAvailable, then
+                     * rebuilds the download URL by substituting the new version
+                     * into Source0 (PS L4895-4910); with no github tag it 404s,
+                     * the M81 ext-fallback fails, and PS L4927-4930 emits the
+                     * packaging-format warning with empty url. The git-tag path
+                     * here already built a github URL for the OLDER version;
+                     * clear it and emit the same warning to match PS exactly. */
                     free(state.UpdateURL); state.UpdateURL = dup_or_empty("");
                     free(state.HealthUpdateURL); state.HealthUpdateURL = dup_or_empty("");
+                    free(state.UpdateDownloadName); state.UpdateDownloadName = dup_or_empty("");
+                    free(state.Warning);
+                    state.Warning = strdup("Warning: Manufacturer may changed version packaging format.");
                 }
-                if (sname && sname[0]) {
+                if (surl && surl[0] && sname && sname[0]) {
                     /* Raw PyPI sdist filename; PS uses $sdist.filename verbatim
                      * too, so col 10 stays byte-identical. */
                     free(state.UpdateDownloadName); state.UpdateDownloadName = sname; sname = NULL;
-                } else {
-                    /* No sdist -> PS leaves UpdateDownloadName empty too. */
-                    free(state.UpdateDownloadName); state.UpdateDownloadName = dup_or_empty("");
-                }
-                if (state.Warning && strstr(state.Warning, "packaging format") != NULL) {
-                    free(state.Warning); state.Warning = dup_or_empty("");
                 }
             } else if (gh_latest != NULL
                        && pr_version_compare(pp, gh_latest) == 0
