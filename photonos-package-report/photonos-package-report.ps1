@@ -4569,7 +4569,7 @@ function CheckURLHealth {
     # "Cannot detect correlating tags" warning, which is gated on
     # $UpdateAvailable -eq "", so a hit suppresses it. Mirrors the C M78 block.
     # -------------------------------------------------------------------------------------------------------------------
-    if (($GitSource -ilike "*github.com*") -and ([string]::IsNullOrEmpty($ArchivationDate)) -and ($currentTask.Spec -ilike "python-*")) {
+    if (($currentTask.Spec -ilike "python-*") -and ([string]::IsNullOrEmpty($ArchivationDate))) {
         # PyPI package name = spec minus "python-" prefix and ".spec" suffix.
         # Photon's naming matches the PyPI project name (PyPI lookup is
         # case-insensitive); the github repo leaf can differ (e.g.

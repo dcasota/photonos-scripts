@@ -1374,11 +1374,19 @@ char *check_urlhealth(pr_task_t                       *task,
      * -> github kept; PyPI newer than a stale github tag -> PyPI. The
      * pyjsparser-class "Cannot detect correlating tags" warning is gated on
      * UpdateAvailable being empty, so populating it here suppresses it at the
-     * downstream pr_spec_warning() step. PS mirrors this block verbatim. */
+     * downstream pr_spec_warning() step. PS mirrors this block verbatim.
+     *
+     * M80: consult PyPI for EVERY python-* spec that is not deprecated, not
+     * just github-sourced ones. A python package is on PyPI regardless of what
+     * its Source0/Source0Lookup points at (pythonhosted-direct, a sourceforge
+     * mirror, github, …), and the generic scraper can't enumerate most of
+     * those, leaving them in cat 6. The dual-source max keeps the higher of the
+     * already-detected version and PyPI, so correctly-detecting specs are
+     * unaffected; PyPI-only/scrape-failed ones get filled. (The ~552 pinned
+     * python subreleases short-circuit earlier and never reach here.) */
     if (allow_network
-        && row && row->gitSource && strstr(row->gitSource, "github.com") != NULL
-        && (row->ArchivationDate == NULL || row->ArchivationDate[0] == '\0')
-        && task->Spec && strncmp(task->Spec, "python-", 7) == 0) {
+        && task->Spec && strncmp(task->Spec, "python-", 7) == 0
+        && (row == NULL || row->ArchivationDate == NULL || row->ArchivationDate[0] == '\0')) {
 
         const char *cur = state.version ? state.version : "";
         /* github's latest, reconstructed from the git-path result. */
