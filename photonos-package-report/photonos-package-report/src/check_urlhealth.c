@@ -1474,6 +1474,14 @@ char *check_urlhealth(pr_task_t                       *task,
                     int h = urlhealth(state.UpdateURL);
                     char b[16]; snprintf(b, sizeof b, "%d", h);
                     free(state.HealthUpdateURL); state.HealthUpdateURL = strdup(b);
+                    if (sname && sname[0]) {
+                        /* Raw PyPI sdist filename; PS uses $sdist.filename
+                         * verbatim too, so col 10 stays byte-identical. (M88:
+                         * set here, inside the surl block — `surl` is nulled
+                         * above, so a later `if (surl ...)` guard would never
+                         * fire and the udn would wrongly stay empty.) */
+                        free(state.UpdateDownloadName); state.UpdateDownloadName = sname; sname = NULL;
+                    }
                     if (state.Warning && strstr(state.Warning, "packaging format") != NULL) {
                         free(state.Warning); state.Warning = dup_or_empty("");
                     }
@@ -1492,11 +1500,6 @@ char *check_urlhealth(pr_task_t                       *task,
                     free(state.UpdateDownloadName); state.UpdateDownloadName = dup_or_empty("");
                     free(state.Warning);
                     state.Warning = strdup("Warning: Manufacturer may changed version packaging format.");
-                }
-                if (surl && surl[0] && sname && sname[0]) {
-                    /* Raw PyPI sdist filename; PS uses $sdist.filename verbatim
-                     * too, so col 10 stays byte-identical. */
-                    free(state.UpdateDownloadName); state.UpdateDownloadName = sname; sname = NULL;
                 }
             } else if (gh_latest != NULL
                        && pr_version_compare(pp, gh_latest) == 0
