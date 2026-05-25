@@ -1121,14 +1121,21 @@ char *check_urlhealth(pr_task_t                       *task,
         free(state.Source0);
         state.Source0 = dup_or_empty(task->Source0);
     }
-    /* PS L 2151-2152: pick up Warning + ArchivationDate from the
-     * lookup row when present. (Strings "" otherwise.) */
-    if (row) {
-        free(state.Warning);
-        state.Warning = dup_or_empty(row->Warning);
-        free(state.ArchivationDate);
-        state.ArchivationDate = dup_or_empty(row->ArchivationDate);
-    }
+    /* PS L 2152-2153: $Warning and $ArchivationDate are (re)initialised to ""
+     * per CheckURLHealth task; PS NEVER reads the lookup row's Warning /
+     * ArchivationDate columns back into the emitted values (verified: no
+     * $currentTask.Warning / .ArchivationDate reads anywhere in PS). Those
+     * columns hold only a legacy "1" Warning flag + a paired ArchivationDate
+     * for 8 archived specs (dbxtool, dstat, kube-controllers, libcalico,
+     * liota, openjdk10, photon-checksum-generator, python-m2r) — PS emits
+     * neither. Emitted warnings + archivation dates come exclusively from the
+     * per-spec override blocks / warning handlers below (e.g. cdrkit via M57).
+     * Seeding them from the lookup (M89: an earlier misread of PS) leaked the
+     * "1" flag into col11 (strict) and stale dates into col12. The lookup
+     * ArchivationDate is still consulted as a deprecation flag via
+     * row->ArchivationDate where genuinely needed. */
+    free(state.Warning);         state.Warning = dup_or_empty("");
+    free(state.ArchivationDate); state.ArchivationDate = dup_or_empty("");
 
     /* PS L 2111-2119: cut the trailing "-release" off task->Version
      * (with dot-suffix preservation for Photon-style dist tags like
@@ -1433,7 +1440,16 @@ char *check_urlhealth(pr_task_t                       *task,
      * python subreleases short-circuit earlier and never reach here.) */
     if (allow_network
         && task->Spec && strncmp(task->Spec, "python-", 7) == 0
-        && (row == NULL || row->ArchivationDate == NULL || row->ArchivationDate[0] == '\0')) {
+        && (state.ArchivationDate == NULL || state.ArchivationDate[0] == '\0')) {
+        /* M89: gate on state.ArchivationDate, NOT row->ArchivationDate. PS
+         * L4572 gates on its local $ArchivationDate, which is "" for every
+         * python-* spec at this point (PS never seeds it from the lookup), so
+         * PS queries PyPI for ALL python specs. Gating on the lookup column
+         * (row->ArchivationDate) wrongly suppressed the query for the one
+         * python spec carrying a lookup ArchivationDate (python-m2r), leaving
+         * its col6/col10 on the github URL instead of PyPI's pythonhosted
+         * sdist. state.ArchivationDate is "" here (M57 overrides run later),
+         * mirroring PS exactly. */
 
         const char *cur = state.version ? state.version : "";
         /* github's latest, reconstructed from the git-path result. */
