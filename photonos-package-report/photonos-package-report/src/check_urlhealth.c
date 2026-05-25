@@ -227,6 +227,23 @@ static void drop_year_names(char **names, size_t n)
     }
 }
 
+/* M90 / PS L 3368: the ftp.gnu.org/gnu/wget/ listing also hosts the separate
+ * wget2 project (wget2-2.2.1.tar.gz, ...). Its "2.x" versions outrank wget's
+ * 1.25.0 and win the version sort, so C reported "2-2.2.1" (wget2-2.2.1 with
+ * "wget" stripped) instead of 1.25.0. PS drops any name containing "wget2-"
+ * for wget.spec; mirror that. Once dropped, C detects 1.25.0 and funet_mirror
+ * rewrites the gnu.org URL to the same FUNET path PS emits. */
+static void drop_wget2_names(const char *spec, char **names, size_t n)
+{
+    if (!spec_eq(spec, "wget.spec")) return;
+    for (size_t i = 0; i < n; i++) {
+        if (names[i] == NULL) continue;
+        if (strstr(names[i], "wget2-") != NULL) {
+            free(names[i]); names[i] = NULL;
+        }
+    }
+}
+
 /* M39 / PS L 3691-3695: the samba-family atom feeds return tags named
  * "<lib>-<ver>" (ldb-2.9.2, talloc-2.4.2, ...); strip the per-spec
  * prefix token so the version pipeline isolates the number. */
@@ -1892,6 +1909,9 @@ char *check_urlhealth(pr_task_t                       *task,
              * proto, where Name="proto" would otherwise strip the "proto"
              * inside "xproto-7.0.31" → "x-7.0.31" (dropped on the "x")
              * before the "xproto-" token could fire. */
+            /* M90 / PS L 3368: drop wget2-* before token processing so the
+             * wget version sort ignores the co-hosted wget2 project. */
+            drop_wget2_names(task->Spec, names, n);
             apply_generic_scrape_tokens(task->Spec, names, n);
             apply_name_replace_augmentations(names, n,
                                              task->Name ? task->Name : "");
