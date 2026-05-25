@@ -1476,14 +1476,17 @@ char *check_urlhealth(pr_task_t                       *task,
                 }
             } else if (gh_latest != NULL
                        && pr_version_compare(pp, gh_latest) == 0
-                       && pp_gt_cur
-                       && (state.UpdateURL == NULL || state.UpdateURL[0] == '\0')) {
-                /* github detected this SAME update version but could not build a
-                 * working download URL (cat 7 "packaging format changed" — the
-                 * git path cleared UpdateURL + set the warning above). PyPI has
-                 * a valid sdist for the same version: complete the record from
-                 * PyPI and clear the now-obsolete packaging-format warning.
-                 * UpdateAvailable (== pp == github's version) is unchanged. */
+                       && pp_gt_cur) {
+                /* PyPI lists this SAME update version. Adopt PyPI's sdist URL +
+                 * filename (canonical, hash-stable) regardless of whether the
+                 * git path already built a github URL. This is REQUIRED for
+                 * PS parity: PS's dual-source block runs before its URL-build,
+                 * so $UpdateURL is empty there and its repair branch always
+                 * fires -> PS emits the PyPI sdist for python updates. C builds
+                 * the github URL first, so gating on "UpdateURL empty" made C
+                 * keep the github URL -> ~104 col6/col10 strict diffs/branch.
+                 * Dropping that gate aligns C with PS (and clears any obsolete
+                 * packaging-format warning). */
                 if (surl && surl[0]) {
                     free(state.UpdateURL); state.UpdateURL = surl; surl = NULL;
                     int h = urlhealth(state.UpdateURL);
