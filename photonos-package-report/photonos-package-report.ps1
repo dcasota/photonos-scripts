@@ -894,7 +894,7 @@ lttng-tools.spec,https://github.com/lttng/lttng-tools/archive/refs/tags/v%{versi
 lttng-ust.spec,https://lttng.org/files/lttng-ust/lttng-ust-%{version}.tar.bz2
 lvm2.spec,https://github.com/lvmteam/lvm2/archive/refs/tags/v%{version}.tar.gz,https://github.com/lvmteam/lvm2.git
 lxcfs.spec,https://github.com/lxc/lxcfs/archive/refs/tags/lxcfs-%{version}.tar.gz,https://github.com/lxc/lxcfs.git
-lz4.spec,https://github.com/lz4/lz4/releases/download/v%{version}/lz4-%{version}.tar.gz,https://github.com/lz4/lz4.git
+lz4.spec,https://github.com/lz4/lz4/releases/download/v%{version}/lz4-%{version}.tar.gz,https://github.com/lz4/lz4.git,,^v[0-9]
 lzo.spec,https://www.oberhumer.com/opensource/lzo/download/lzo-%{version}.tar.gz
 man-db.spec,https://gitlab.com/man-db/man-db/-/archive/%{version}/man-db-%{version}.tar.gz,https://gitlab.com/man-db/man-db.git
 man-pages.spec,https://git.kernel.org/pub/scm/docs/man-pages/man-pages.git/snapshot/man-pages-%{version}.tar.gz,https://git.kernel.org/pub/scm/docs/man-pages/man-pages.git
@@ -1365,7 +1365,7 @@ XML-Parser.spec,https://github.com/toddr/XML-Parser/archive/refs/tags/%{version}
 xml-security-c.spec,https://archive.apache.org/dist/santuario/c-library/xml-security-c-%{version}.tar.gz
 xmlsec1.spec,https://github.com/lsh123/xmlsec/releases/download/%{version}/xmlsec1-%{version}.tar.gz,https://github.com/lsh123/xmlsec.git
 xorg-applications.spec,https://www.x.org/archive/individual/util/bdftopcf-%{version}.tar.xz,,,,,"bdftopcf-","Info: Packaging format .tar.gz has changed to tar.xz."
-xxhash.spec,https://github.com/Cyan4973/xxHash/archive/refs/tags/v%{version}.tar.gz,https://github.com/Cyan4973/xxHash.git
+xxhash.spec,https://github.com/Cyan4973/xxHash/archive/refs/tags/v%{version}.tar.gz,https://github.com/Cyan4973/xxHash.git,,^v[0-9]
 xz.spec,https://github.com/tukaani-project/xz/archive/refs/tags/v%{version}.tar.gz,https://github.com/tukaani-project/xz.git
 yajl.spec,https://github.com/lloyd/yajl/archive/refs/tags/%{version}.tar.gz,https://github.com/lloyd/yajl.git
 yaml-cpp.spec,https://github.com/jbeder/yaml-cpp/archive/refs/tags/yaml-cpp-%{version}.tar.gz,https://github.com/jbeder/yaml-cpp.git
