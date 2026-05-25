@@ -4911,10 +4911,24 @@ function CheckURLHealth {
                                         $HealthUpdateURL = urlhealth($UpdateURL)
                                         if ($HealthUpdateURL -ne "200")
                                         {
-                                            $warningText="Warning: Manufacturer may changed version packaging format."
-                                            $warning=$warningText
-                                            $UpdateURL=""
-                                            $HealthUpdateURL =""
+                                            # M81: archive-extension fallback. Upstreams migrate
+                                            # formats (notably ftp.x.org: .tar.bz2 -> .tar.xz/.tar.gz);
+                                            # the version-substituted URL keeps the spec's stale
+                                            # extension and 404s. Try the alternates before declaring a
+                                            # packaging-format change. Mirrors the C try_url_ext_fallback.
+                                            foreach ($ext in @('.tar.xz','.tar.gz','.tar.bz2','.tgz','.zip')) {
+                                                $cand = $UpdateURL -replace '(\.tar\.(xz|gz|bz2)|\.tgz|\.zip)$', $ext
+                                                if ($cand -ne $UpdateURL) {
+                                                    if ((urlhealth($cand)) -eq "200") { $UpdateURL=$cand; $HealthUpdateURL="200"; break }
+                                                }
+                                            }
+                                            if ($HealthUpdateURL -ne "200")
+                                            {
+                                                $warningText="Warning: Manufacturer may changed version packaging format."
+                                                $warning=$warningText
+                                                $UpdateURL=""
+                                                $HealthUpdateURL =""
+                                            }
                                         }
                                     }
                                 }

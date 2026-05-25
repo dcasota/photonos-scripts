@@ -90,6 +90,36 @@ static char *funet_mirror(char *url)
  * uses the listing href, which carries the NEW series. Rewrite the
  * series segment to major.minor of `latest`. Robust to the literal
  * series value (replaces whatever segment follows "/apparmor/"). */
+/* M81: archive-extension fallback. Upstreams migrate archive formats over time
+ * (notably ftp.x.org: .tar.bz2 -> .tar.xz/.tar.gz), so a version-substituted
+ * UpdateURL that keeps the spec's stale extension 404s even though the release
+ * exists under a different extension. When the built URL HEAD-fails, retry the
+ * same URL with each alternate archive extension; on a 200 rewrite *url in
+ * place and return 200. Additive — only invoked on an already-failing URL, so
+ * it can only turn a cat-7 empty into a working download. PS mirrors this in
+ * its URL-build retry (the extension-swap loop before the packaging warning). */
+static int try_url_ext_fallback(char **url)
+{
+    static const char *const exts[] = {".tar.xz", ".tar.gz", ".tar.bz2", ".tgz", ".zip", NULL};
+    if (url == NULL || *url == NULL) return 0;
+    const char *cur = NULL;
+    size_t ul = strlen(*url);
+    for (int i = 0; exts[i]; i++) {
+        size_t el = strlen(exts[i]);
+        if (ul >= el && strcmp(*url + ul - el, exts[i]) == 0) { cur = exts[i]; break; }
+    }
+    if (cur == NULL) return 0;                 /* not a recognised archive URL */
+    size_t base = ul - strlen(cur);
+    for (int i = 0; exts[i]; i++) {
+        if (strcmp(exts[i], cur) == 0) continue;
+        char *cand = NULL;
+        if (asprintf(&cand, "%.*s%s", (int)base, *url, exts[i]) < 0) continue;
+        if (urlhealth(cand) == 200) { free(*url); *url = cand; return 200; }
+        free(cand);
+    }
+    return 0;
+}
+
 static char *apparmor_series_fixup(char *url, const char *latest)
 {
     if (url == NULL || latest == NULL) return url;
@@ -1243,13 +1273,24 @@ char *check_urlhealth(pr_task_t                       *task,
                                  * HEAD. Multi-fallback URL
                                  * construction is a separate task. */
                                 if (h != 0 && h != 200) {
-                                    free(state.Warning);
-                                    state.Warning = dup_or_empty(
-                                        "Warning: Manufacturer may changed version packaging format.");
-                                    free(state.UpdateURL);
-                                    state.UpdateURL = dup_or_empty("");
-                                    free(state.HealthUpdateURL);
-                                    state.HealthUpdateURL = dup_or_empty("");
+                                    /* M81: try alternate archive extensions
+                                     * (e.g. ftp.x.org .tar.bz2 -> .tar.xz)
+                                     * before declaring a packaging-format
+                                     * change. On success the col-10 block below
+                                     * re-derives UpdateDownloadName from the
+                                     * rewritten URL. */
+                                    if (try_url_ext_fallback(&state.UpdateURL) == 200) {
+                                        free(state.HealthUpdateURL);
+                                        state.HealthUpdateURL = dup_or_empty("200");
+                                    } else {
+                                        free(state.Warning);
+                                        state.Warning = dup_or_empty(
+                                            "Warning: Manufacturer may changed version packaging format.");
+                                        free(state.UpdateURL);
+                                        state.UpdateURL = dup_or_empty("");
+                                        free(state.HealthUpdateURL);
+                                        state.HealthUpdateURL = dup_or_empty("");
+                                    }
                                 }
 
                                 /* UpdateDownloadName (col 10) — PS L 4755-4793.
@@ -1874,6 +1915,14 @@ char *check_urlhealth(pr_task_t                       *task,
                     }
                     if (state.UpdateURL && state.UpdateURL[0]) {
                         int h = urlhealth(state.UpdateURL);
+                        /* M81: archive-extension fallback (e.g. ftp.x.org
+                         * .tar.bz2 -> .tar.xz) before declaring a
+                         * packaging-format change. On success h becomes 200 and
+                         * the else branch below derives col 10 / SHA from the
+                         * rewritten URL. */
+                        if (h != 0 && h != 200
+                            && try_url_ext_fallback(&state.UpdateURL) == 200)
+                            h = 200;
                         char buf[16];
                         snprintf(buf, sizeof buf, "%d", h);
                         free(state.HealthUpdateURL);
