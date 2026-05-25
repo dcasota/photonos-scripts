@@ -145,6 +145,203 @@ static int spec_eq(const char *spec, const char *name)
     return spec != NULL && strcasecmp(spec, name) == 0;
 }
 
+/* PS L4868: major.minor of a version — Split('.')[0] + "." + [1]. PowerShell
+ * concat of a $null [1] (no second dot-segment, e.g. "39") yields a trailing
+ * dot: "39." Replicate that edge case exactly. */
+static char *vmm(const char *v)
+{
+    if (v == NULL) return dup_or_empty("");
+    const char *d1 = strchr(v, '.');
+    if (d1 == NULL) {
+        size_t l = strlen(v);
+        char *o = (char *)malloc(l + 2);
+        if (!o) return dup_or_empty("");
+        memcpy(o, v, l); o[l] = '.'; o[l + 1] = '\0';
+        return o;
+    }
+    const char *d2 = strchr(d1 + 1, '.');
+    size_t end = d2 ? (size_t)(d2 - v) : strlen(v);
+    char *o = (char *)malloc(end + 1);
+    if (!o) return dup_or_empty("");
+    memcpy(o, v, end); o[end] = '\0';
+    return o;
+}
+
+/* PS `-ireplace <pat>,<repl>`: case-insensitive, global, REGEX replace. The
+ * version strings PS passes as the pattern contain '.', which as a regex
+ * matches ANY char — this is load-bearing: e.g. openldap's resolved tag holds
+ * "OPENLDAP_REL_ENG_2_6_12", and the pattern "2.6.12" matches "2_6_12" because
+ * '.' matches '_'. Literal replace would miss it. Replacement is literal
+ * (version strings carry no '$' backrefs). Heap result; on compile failure or
+ * no match returns a copy of `s`. (Does NOT free `s`.) */
+static char *ireplace_re(const char *s, const char *pat, const char *repl)
+{
+    if (s == NULL) return NULL;
+    if (pat == NULL || pat[0] == '\0') return strdup(s);
+    int ec = 0; PCRE2_SIZE eo = 0;
+    pcre2_code *re = pcre2_compile((PCRE2_SPTR)pat, PCRE2_ZERO_TERMINATED,
+                                   PCRE2_CASELESS, &ec, &eo, NULL);
+    if (re == NULL) return strdup(s);
+    PCRE2_SIZE olen = strlen(s) * 2 + 64;
+    PCRE2_UCHAR *out = (PCRE2_UCHAR *)malloc(olen);
+    if (out == NULL) { pcre2_code_free(re); return strdup(s); }
+    uint32_t opt = PCRE2_SUBSTITUTE_GLOBAL | PCRE2_SUBSTITUTE_LITERAL
+                 | PCRE2_SUBSTITUTE_OVERFLOW_LENGTH;
+    int rc = pcre2_substitute(re, (PCRE2_SPTR)s, PCRE2_ZERO_TERMINATED, 0, opt,
+                              NULL, NULL, (PCRE2_SPTR)(repl ? repl : ""),
+                              PCRE2_ZERO_TERMINATED, out, &olen);
+    if (rc == PCRE2_ERROR_NOMEMORY) {
+        PCRE2_UCHAR *bg = (PCRE2_UCHAR *)realloc(out, olen);
+        if (bg != NULL) {
+            out = bg;
+            rc = pcre2_substitute(re, (PCRE2_SPTR)s, PCRE2_ZERO_TERMINATED, 0,
+                                  PCRE2_SUBSTITUTE_GLOBAL | PCRE2_SUBSTITUTE_LITERAL,
+                                  NULL, NULL, (PCRE2_SPTR)(repl ? repl : ""),
+                                  PCRE2_ZERO_TERMINATED, out, &olen);
+        }
+    }
+    pcre2_code_free(re);
+    char *result = (rc < 0) ? strdup(s) : strdup((char *)out);
+    free(out);
+    return result;
+}
+
+/* PS L4848-4931: construct the update URL when an update is available but no
+ * URL was set during detection. Mirrors PS exactly — operates on the resolved
+ * Source0 (== PS $Source0Save / $Source0, funet-mirrored), applies the per-spec
+ * rebuilds (libqmi/gtest/icu/libtirpc) and extension preservation, then tries
+ * the version + versionshort cascade in dot / underscore / dash spellings and
+ * a raw-template re-substitution, then the M81 archive-extension fallback.
+ * Returns the urlhealth of the chosen URL: 200 -> *out_url set (heap); else the
+ * last non-200 code with *out_url = NULL (caller emits the packaging warning).
+ * Probes the network via urlhealth() — call only when allow_network. */
+static int pr_build_update_url(pr_task_t *task, const char *source0_save,
+                               const char *version, const char *update_avail,
+                               char **out_url)
+{
+    *out_url = NULL;
+    const char *spec = task && task->Spec ? task->Spec : "";
+    char *ver = dup_or_empty(version);
+    char *ua  = dup_or_empty(update_avail);
+    char *s0  = dup_or_empty(source0_save);
+
+    /* per-spec rebuilds (PS L4848-4861), in source order */
+    if (spec_eq(spec, "libqmi.spec")) {
+        char *n = NULL;
+        if (asprintf(&n, "https://gitlab.freedesktop.org/mobile-broadband/"
+                     "libqmi/-/archive/%s/libqmi-%s.tar.gz", ver, ver) >= 0) {
+            free(s0); s0 = n;
+        }
+    }
+    if (spec_eq(spec, "gtest.spec")) {
+        char *nv = NULL, *nu = NULL;
+        if (asprintf(&nv, "release-%s", ver) >= 0) { free(ver); ver = nv; }
+        if (asprintf(&nu, "v%s", ua) >= 0)         { free(ua);  ua  = nu; }
+    }
+    if (spec_eq(spec, "icu.spec")) {
+        char *uh = istr_replace_all(strdup(ua), ".", "-");
+        char *uu = istr_replace_all(strdup(ua), ".", "_");
+        char *n = NULL;
+        if (asprintf(&n, "https://github.com/unicode-org/icu/releases/download/"
+                     "release-%s/icu4c-%s-src.tgz", uh, uu) >= 0) {
+            free(s0); s0 = n;
+        }
+        free(uh); free(uu);
+    }
+    if (spec_eq(spec, "libtirpc.spec")) {
+        char *n = NULL;
+        if (asprintf(&n, "https://downloads.sourceforge.net/project/libtirpc/"
+                     "libtirpc/%s/libtirpc-%s.tar.bz2", ver, ver) >= 0) {
+            free(s0); s0 = n;
+        }
+    }
+
+    /* extension preservation (PS L4863-4866): if the ORIGINAL Source0 carried
+     * a non-.tar.gz archive ext and the current s0 is .tar.gz, restore it.
+     * Four independent guard-chained ifs (at most one fires). */
+    if (strstr(source0_save, ".tar.bz2") && strstr(s0, ".tar.gz"))
+        s0 = istr_replace_all(s0, ".tar.gz", ".tar.bz2");
+    if (strstr(source0_save, ".tar.xz")  && strstr(s0, ".tar.gz"))
+        s0 = istr_replace_all(s0, ".tar.gz", ".tar.xz");
+    if (strstr(source0_save, ".tgz")     && strstr(s0, ".tar.gz"))
+        s0 = istr_replace_all(s0, ".tar.gz", ".tgz");
+    if (strstr(source0_save, ".zip")     && strstr(s0, ".tar.gz"))
+        s0 = istr_replace_all(s0, ".tar.gz", ".zip");
+
+    char *vshort = vmm(ver);                                /* PS L4868 */
+    char *uashort = (strchr(ua, '.') != NULL) ? vmm(ua)    /* PS L4870-4874 */
+                                              : dup_or_empty(ua);
+    char *ua_us      = istr_replace_all(strdup(ua), ".", "_");
+    char *ua_dash    = istr_replace_all(strdup(ua), ".", "-");
+    char *uashort_us = istr_replace_all(strdup(uashort), ".", "_");
+
+    char *url = NULL; int h = 0;
+
+    /* A (L4876): s0, ver -> ua */
+    url = ireplace_re(s0, ver, ua);
+    h = urlhealth(url);
+    /* Remember attempt A's url+health: on overall failure the caller needs
+     * them to tell a transient network error (h==0, keep url, no warning)
+     * apart from a real packaging change (clean 404, clear url + warn). */
+    char *url_A = strdup(url); int h_A = h;
+    /* B (L4880): chain versionshort -> uashort on A's url */
+    if (h != 200) {
+        char *t = ireplace_re(url, vshort, uashort); free(url); url = t;
+        h = urlhealth(url);
+    }
+    /* C (L4884-4885): underscore ua, then versionshort */
+    if (h != 200) {
+        free(url); url = ireplace_re(s0, ver, ua_us);
+        char *t = ireplace_re(url, vshort, uashort); free(url); url = t;
+        h = urlhealth(url);
+    }
+    /* D (L4889-4890): underscore ua, underscore versionshort */
+    if (h != 200) {
+        free(url); url = ireplace_re(s0, ver, ua_us);
+        char *t = ireplace_re(url, vshort, uashort_us); free(url); url = t;
+        h = urlhealth(url);
+    }
+    /* E (L4894-4895): dash ua, then versionshort */
+    if (h != 200) {
+        free(url); url = ireplace_re(s0, ver, ua_dash);
+        char *t = ireplace_re(url, vshort, uashort); free(url); url = t;
+        h = urlhealth(url);
+    }
+    /* F (L4899-4902): raw template, dot ua */
+    if (h != 200) {
+        free(url);
+        char *raw = dup_or_empty(task->Source0 ? task->Source0 : "");
+        raw = istr_replace_all(raw, "%{name}", task->Name ? task->Name : "");
+        raw = istr_replace_all(raw, "%{version}", ver);
+        char *t1 = ireplace_re(raw, ver, ua);     free(raw);
+        char *t2 = ireplace_re(t1, vshort, uashort); free(t1);
+        url = t2; h = urlhealth(url);
+    }
+    /* G (L4906-4910): raw template, underscore then dot ua */
+    if (h != 200) {
+        free(url);
+        char *raw = dup_or_empty(task->Source0 ? task->Source0 : "");
+        raw = istr_replace_all(raw, "%{name}", task->Name ? task->Name : "");
+        raw = istr_replace_all(raw, "%{version}", ver);
+        char *t1 = ireplace_re(raw, ver, ua_us);  free(raw);
+        char *t2 = ireplace_re(t1, ver, ua);       free(t1);
+        char *t3 = ireplace_re(t2, vshort, uashort); free(t2);
+        url = t3; h = urlhealth(url);
+    }
+    /* M81 archive-extension fallback (L4914-4924) */
+    if (h != 200 && try_url_ext_fallback(&url) == 200) h = 200;
+
+    free(ver); free(ua); free(s0);
+    free(vshort); free(uashort); free(ua_us); free(ua_dash); free(uashort_us);
+
+    if (h == 200) { free(url_A); *out_url = url; return 200; }
+    /* All attempts failed. Return attempt-A's url + health so the caller can
+     * preserve the transient (h==0) vs packaging-change (clean 404) split. */
+    free(url);
+    *out_url = url_A;
+    return h_A;
+}
+
 /* Tarball-cache path for col9 (ADR-0009 amendment 2026-05-21; M64 shared
  * cache). When PR_SHA_CACHE=1, returns a malloc'd cache path so PS and C
  * hash byte-identical tarballs (col9 stops drifting on regenerated github/
@@ -1267,60 +1464,38 @@ char *check_urlhealth(pr_task_t                       *task,
                             if (rc == 1) {
                                 state.UpdateAvailable = dup_or_empty(latest);
 
-                                /* Phase 6e: construct UpdateURL via
-                                 * re-substitution with version=NameLatest. */
-                                const char *template = (row->Source0Lookup
-                                                        && row->Source0Lookup[0])
-                                                       ? row->Source0Lookup
-                                                       : (task->Source0 ? task->Source0 : "");
-                                char *update_url = dup_or_empty(template);
-                                if (update_url) {
-                                    pr_source0_substitute(task, &update_url, latest);
-                                    update_url = funet_mirror(update_url);
-                                    free(state.UpdateURL);
-                                    state.UpdateURL = update_url;
-                                }
-
-                                /* HealthUpdateURL (col 7). */
-                                int h = 0;
-                                if (state.UpdateURL && state.UpdateURL[0]) {
-                                    h = urlhealth(state.UpdateURL);
-                                    char buf[16];
-                                    snprintf(buf, sizeof buf, "%d", h);
-                                    free(state.HealthUpdateURL);
-                                    state.HealthUpdateURL = strdup(buf);
-                                }
-
-                                /* M18 (PS L 4727-4733): HEAD-fail
-                                 * detection. PS retries up to 3 URL
-                                 * constructions; on the final failure
-                                 * it emits the "Manufacturer may
-                                 * changed version packaging format"
-                                 * warning AND clears UpdateURL +
-                                 * HealthUpdateURL. C does the simple
-                                 * single-attempt variant — emit the
-                                 * warning + clear after one failed
-                                 * HEAD. Multi-fallback URL
-                                 * construction is a separate task. */
-                                if (h != 0 && h != 200) {
-                                    /* M81: try alternate archive extensions
-                                     * (e.g. ftp.x.org .tar.bz2 -> .tar.xz)
-                                     * before declaring a packaging-format
-                                     * change. On success the col-10 block below
-                                     * re-derives UpdateDownloadName from the
-                                     * rewritten URL. */
-                                    if (try_url_ext_fallback(&state.UpdateURL) == 200) {
-                                        free(state.HealthUpdateURL);
-                                        state.HealthUpdateURL = dup_or_empty("200");
-                                    } else {
-                                        free(state.Warning);
-                                        state.Warning = dup_or_empty(
-                                            "Warning: Manufacturer may changed version packaging format.");
-                                        free(state.UpdateURL);
-                                        state.UpdateURL = dup_or_empty("");
-                                        free(state.HealthUpdateURL);
-                                        state.HealthUpdateURL = dup_or_empty("");
-                                    }
+                                /* M91 (PS L4848-4931): multi-attempt UpdateURL
+                                 * construction — version/versionshort cascade in
+                                 * dot/underscore/dash spellings + raw-template
+                                 * rebuild + M81 ext-fallback, operating on the
+                                 * resolved state.Source0. Replaces the former
+                                 * single-attempt build (deferred-M18). */
+                                char *built = NULL;
+                                int h = pr_build_update_url(
+                                            task, state.Source0 ? state.Source0 : "",
+                                            state.version ? state.version : "",
+                                            latest, &built);
+                                free(state.UpdateURL);
+                                free(state.HealthUpdateURL);
+                                if (h == 200) {
+                                    state.UpdateURL = built;
+                                    state.HealthUpdateURL = dup_or_empty("200");
+                                } else if (h == 0) {
+                                    /* Transient network error (not a 404): keep
+                                     * the built URL, report health 0, no warning
+                                     * — preserves prior cold-cache resilience. */
+                                    state.UpdateURL = built;
+                                    state.HealthUpdateURL = dup_or_empty("0");
+                                } else {
+                                    /* Clean failure: emit packaging warning,
+                                     * clear UpdateURL + HealthUpdateURL (PS
+                                     * L4925-4930). */
+                                    free(built);
+                                    state.UpdateURL = dup_or_empty("");
+                                    state.HealthUpdateURL = dup_or_empty("");
+                                    free(state.Warning);
+                                    state.Warning = dup_or_empty(
+                                        "Warning: Manufacturer may changed version packaging format.");
                                 }
 
                                 /* UpdateDownloadName (col 10) — PS L 4755-4793.
@@ -1963,45 +2138,38 @@ char *check_urlhealth(pr_task_t                       *task,
                 free(state.UpdateAvailable);
                 if (rc == 1) {
                     state.UpdateAvailable = dup_or_empty(latest);
-                    /* Build UpdateURL via re-substitution. */
-                    const char *template = (row && row->Source0Lookup && row->Source0Lookup[0])
-                                           ? row->Source0Lookup
-                                           : (task->Source0 ? task->Source0 : "");
-                    char *update_url = dup_or_empty(template);
-                    if (update_url) {
-                        pr_source0_substitute(task, &update_url, latest);
-                        /* PS rewrites $Source0 (L2395) before deriving the
-                         * UpdateURL, so the mirror propagates here too. */
-                        update_url = funet_mirror(update_url);
-                        /* M46: apparmor launchpad series-dir fixup. */
-                        if (spec_eq(task->Spec, "apparmor.spec"))
-                            update_url = apparmor_series_fixup(update_url, latest);
+                    /* M91 (PS L4848-4931): multi-attempt UpdateURL cascade on
+                     * the resolved (funet-mirrored) state.Source0 — version/
+                     * versionshort in dot/underscore/dash spellings + raw-
+                     * template rebuild + M81 ext-fallback. Replaces the former
+                     * single substitute (deferred-M18). */
+                    char *built = NULL;
+                    int h = pr_build_update_url(
+                                task, state.Source0 ? state.Source0 : "",
+                                state.version ? state.version : "",
+                                latest, &built);
+                    if (built == NULL) built = dup_or_empty("");
+                    /* M46: apparmor launchpad series-dir fixup (idempotent once
+                     * the versionshort cascade has set the series dir). */
+                    if (h == 200 && built[0] && spec_eq(task->Spec, "apparmor.spec"))
+                        built = apparmor_series_fixup(built, latest);
+                    free(state.UpdateURL);
+                    state.UpdateURL = built;
+                    free(state.HealthUpdateURL);
+                    if (h != 0 && h != 200) {
+                        /* Clean failure (PS L4925-4930): packaging warning. */
+                        free(state.Warning);
+                        state.Warning = dup_or_empty(
+                            "Warning: Manufacturer may changed version packaging format.");
                         free(state.UpdateURL);
-                        state.UpdateURL = update_url;
-                    }
-                    if (state.UpdateURL && state.UpdateURL[0]) {
-                        int h = urlhealth(state.UpdateURL);
-                        /* M81: archive-extension fallback (e.g. ftp.x.org
-                         * .tar.bz2 -> .tar.xz) before declaring a
-                         * packaging-format change. On success h becomes 200 and
-                         * the else branch below derives col 10 / SHA from the
-                         * rewritten URL. */
-                        if (h != 0 && h != 200
-                            && try_url_ext_fallback(&state.UpdateURL) == 200)
-                            h = 200;
+                        state.UpdateURL = dup_or_empty("");
+                        state.HealthUpdateURL = dup_or_empty("");
+                    } else {
+                        /* h==200, or h==0 transient (keep url, no warning). */
                         char buf[16];
                         snprintf(buf, sizeof buf, "%d", h);
-                        free(state.HealthUpdateURL);
                         state.HealthUpdateURL = strdup(buf);
-                        if (h != 0 && h != 200) {
-                            free(state.Warning);
-                            state.Warning = dup_or_empty(
-                                "Warning: Manufacturer may changed version packaging format.");
-                            free(state.UpdateURL);
-                            state.UpdateURL = dup_or_empty("");
-                            free(state.HealthUpdateURL);
-                            state.HealthUpdateURL = dup_or_empty("");
-                        } else {
+                        if (state.UpdateURL && state.UpdateURL[0]) {
                             char *dl_name = pr_basename_from_url(state.UpdateURL);
                             if (dl_name) {
                                 dl_name = download_name_post(dl_name,
