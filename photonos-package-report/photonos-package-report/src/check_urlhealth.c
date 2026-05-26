@@ -207,6 +207,25 @@ static char *ireplace_re(const char *s, const char *pat, const char *repl)
     return result;
 }
 
+/* M96/M97 allow-list for the github bare-tag Source0 normalization below.
+ * Deliberately an explicit per-spec allow-list, NOT a global github rule: the
+ * broad form was validated (isolation: C-master vs C-branch, same snapshot) to
+ * regress redirect-resolving / detection-path-shifting repos by landing on a
+ * PS-divergent variant — kubernetes-dashboard (kubernetes/ vs PS's
+ * kubernetes-retired/) and falco (older 0.43.1). Only specs proven by that
+ * same isolation to CHANGE *and* CONVERGE to PS are admitted here. */
+static int gh_tag_normalize_allowed(const char *spec)
+{
+    static const char *const list[] = {
+        "valkey.spec", "liblognorm.spec", "rpm-sequoia.spec", "tinydir.spec",
+        "timescaledb15.spec", "timescaledb16.spec",
+        "timescaledb17.spec", "timescaledb18.spec", NULL,
+    };
+    for (int i = 0; list[i]; i++)
+        if (spec_eq(spec, list[i])) return 1;
+    return 0;
+}
+
 /* PS L2630-2701: when a github /archive/refs/tags/ Source0 is NOT 200,
  * normalize it to the real tag form by trying variants against the CURRENT
  * version (PS source order): <name>-v<ver> -> v<ver>; <name>-<ver> -> v<ver>;
@@ -214,10 +233,7 @@ static char *ireplace_re(const char *s, const char *pat, const char *repl)
  * <ver> -> v<ver>. Adopts the first that HEADs 200 so the M91 update cascade
  * then builds the real-tag latest URL. Returns the normalized URL (heap; a
  * copy of `save` if none work); *out_health = 200 iff a variant resolved.
- * Caller (M96) gates this to specific specs (valkey) — NOT applied broadly,
- * because for redirect-resolving / detection-path-shifting repos the variant
- * probing can land on a form that diverges from PS (kubernetes-dashboard,
- * falco), so a global gate would regress working specs. */
+ * Caller gates via gh_tag_normalize_allowed() (proven-safe allow-list). */
 static char *gh_archive_tag_normalize(const char *save, const char *name,
                                       const char *version, int *out_health)
 {
@@ -1432,17 +1448,17 @@ char *check_urlhealth(pr_task_t                       *task,
         health = urlhealth(state.Source0);
     }
 
-    /* M96 / PS L2630-2701: valkey's spec Source0 template is
-     * .../archive/refs/tags/%{name}-%{version} ("valkey-X") but its real
-     * github tags are bare ("9.1.0"), so the templated Source0 404s and the
-     * M91 cascade builds the wrong tag URL -> empty col6/col10 + packaging
-     * warning. Normalize the Source0 to the healthy bare-tag form so the
-     * cascade then builds .../tags/9.1.0.tar.gz, matching PS. SCOPED to
-     * valkey via spec_eq (NOT a global github rule): the broad form regresses
-     * redirect/detection-path specs (kubernetes-dashboard, falco) by landing
-     * on a PS-divergent variant, so the gate is kept to the one spec proven
-     * to converge cleanly. Only fires on health!=200. */
-    if (allow_network && health != 200 && spec_eq(task->Spec, "valkey.spec")
+    /* M96/M97 / PS L2630-2701: specs whose spec Source0 template is
+     * .../archive/refs/tags/%{name}-%{version} but whose real github tags use
+     * a different shape (valkey bare "9.1.0"; liblognorm "v2.1.0"; timescaledb
+     * "<srcname>-X"; ...) — the templated Source0 404s, so the M91 cascade
+     * builds the wrong tag URL -> empty col6/col10 + packaging warning.
+     * Normalize the Source0 to the healthy real-tag form so the cascade then
+     * builds the right latest-tag URL, matching PS. Gated to the proven-safe
+     * allow-list (gh_tag_normalize_allowed) — NOT global — so it cannot touch
+     * the redirect/detection-path specs the broad form regressed. Only fires
+     * on health!=200, so specs whose Source0 already resolves are untouched. */
+    if (allow_network && health != 200 && gh_tag_normalize_allowed(task->Spec)
         && state.Source0
         && strstr(state.Source0, "github.com") != NULL
         && strstr(state.Source0, "/archive/refs/tags/") != NULL) {
