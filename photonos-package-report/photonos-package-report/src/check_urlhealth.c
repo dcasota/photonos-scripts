@@ -19,6 +19,7 @@
 #include "pr_clone.h"
 #include "pr_git_tags.h"
 #include "pr_github_tags.h"
+#include "pr_github_api.h"
 #include "pr_hook.h"
 #include "pr_latest.h"
 #include "pr_netcat.h"
@@ -1868,6 +1869,17 @@ char *check_urlhealth(pr_task_t                       *task,
                       && (row == NULL || row->gitSource == NULL
                           || row->gitSource[0] == '\0')
                       && pr_github_is_html_tags_spec(task->Spec);
+    /* M92 / PS L 2786-2849: ANY other github.com Source0 with no lookup
+     * gitSource (and not one of the curated HTML tags-page specs above) is
+     * detected via the github JSON API — /repos/<o>/<r>/tags for an /archive/
+     * URL, /releases for a /releases/download/ URL. Closes the ~26-spec/branch
+     * "no-gitSource github" gap (dhcpcd, libpng, hwdata, valkey, squid, the
+     * timescaledb/python3 families, ...) that C previously left empty. */
+    int gh_api_eligible = state.Source0
+                          && pr_github_api_eligible_source0(state.Source0)
+                          && (row == NULL || row->gitSource == NULL
+                              || row->gitSource[0] == '\0')
+                          && !pr_github_is_html_tags_spec(task->Spec);
     /* M41: "all other types" specs (PS L 4260-4305) with a per-spec
      * project-download-page override. Admitted regardless of health (PS
      * lists them explicitly in the gate). Tarball <a href> links are
@@ -1901,7 +1913,7 @@ char *check_urlhealth(pr_task_t                       *task,
                           || spec_eq(task->Spec, "gnome-common.spec"))
                          && (row == NULL || row->gitSource == NULL
                              || row->gitSource[0] == '\0');
-    if (allow_network && (health == 200 || sf_eligible || cpan_eligible || gh_eligible || ao_eligible || moz_eligible || jsonc_eligible || gnome_eligible)
+    if (allow_network && (health == 200 || sf_eligible || cpan_eligible || gh_eligible || gh_api_eligible || ao_eligible || moz_eligible || jsonc_eligible || gnome_eligible)
         && (state.UpdateAvailable == NULL || state.UpdateAvailable[0] == '\0')
         && (atom_url != NULL
             || row == NULL
@@ -1974,6 +1986,17 @@ char *check_urlhealth(pr_task_t                       *task,
                 scrape_ok = (pr_github_scrape_tags_html(gh_url, &names, &n) == 0);
                 used_gh = 1;
                 free(gh_url);
+            }
+        } else if (gh_api_eligible) {
+            /* M92 / PS L2786-2849: github JSON API. Names are clean tag/
+             * release names, so (like the HTML tags page) they bypass the M23
+             * HTML-href pre-filter via used_gh. */
+            char **gnames = NULL; size_t gn = 0;
+            if (pr_github_api_names(state.Source0, getenv("GITHUB_TOKEN"),
+                                    &gnames, &gn) == 0 && gn > 0) {
+                names = gnames; n = gn; scrape_ok = 1; used_gh = 1;
+            } else {
+                free(gnames);
             }
         } else if (sf_eligible) {
             /* M35: SourceForge — derive the project files URL and parse

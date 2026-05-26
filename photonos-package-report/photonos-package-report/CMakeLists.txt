@@ -122,6 +122,7 @@ add_executable(photonos-package-report
     src/pypi.c
     src/sourceforge.c
     src/github_tags.c
+    src/github_api.c
     src/heapsort.c
     src/jdk.c
     src/url_util.c
