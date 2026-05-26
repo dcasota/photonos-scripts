@@ -803,7 +803,7 @@ libedit.spec,https://www.thrysoee.dk/editline/libedit-20251016-3.1.tar.gz
 libepoxy.spec,https://github.com/anholt/libepoxy/archive/refs/tags/%{version}.tar.gz,https://github.com/anholt/libepoxy.git
 libestr.spec,https://github.com/rsyslog/libestr/archive/refs/tags/v%{version}.tar.gz,https://github.com/rsyslog/libestr.git
 libev.spec,https://dist.schmorp.de/libev/Attic/libev-%{version}.tar.gz
-libevent.spec,https://github.com/libevent/libevent/releases/download/release-%{version}-stable/libevent-%{version}-stable.tar.gz,https://github.com/libevent/libevent.git,,^release-[\d.]+-stable$
+libevent.spec,https://github.com/libevent/libevent/releases/download/release-%{version}-stable/libevent-%{version}-stable.tar.gz,https://github.com/libevent/libevent.git,,^release-[\d.]+-stable$,"release-,-stable"
 libfastjson.spec,https://github.com/rsyslog/libfastjson/archive/refs/tags/v%{version}.0.tar.gz,https://github.com/rsyslog/libfastjson.git
 libffi.spec,https://github.com/libffi/libffi/archive/refs/tags/v%{version}.tar.gz,https://github.com/libffi/libffi.git
 libfido2.spec,https://github.com/Yubico/libfido2/archive/refs/tags/%{version}.tar.gz,https://github.com/Yubico/libfido2.git
