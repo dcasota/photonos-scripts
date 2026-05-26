@@ -1913,7 +1913,30 @@ char *check_urlhealth(pr_task_t                       *task,
                           || spec_eq(task->Spec, "gnome-common.spec"))
                          && (row == NULL || row->gitSource == NULL
                              || row->gitSource[0] == '\0');
-    if (allow_network && (health == 200 || sf_eligible || cpan_eligible || gh_eligible || gh_api_eligible || ao_eligible || moz_eligible || jsonc_eligible || gnome_eligible)
+    /* M93 / PS L4332: generic listing fallback. PS's final detection branch
+     * fires when the PARENT directory of Source0 is reachable
+     * (urlhealth(dirname)==200), not the exact file — so specs whose file
+     * 404'd because the old version was pruned upstream (libsodium, ebtables,
+     * lasso, libmnl, ...) still get their release directory scraped. C
+     * previously required the exact file to be 200, leaving them empty. Probe
+     * the parent dir only when no other path is eligible, to avoid an extra
+     * HEAD per spec. */
+    int parentdir_eligible = 0;
+    if (allow_network && health != 200 && state.Source0 && state.Source0[0]
+        && !sf_eligible && !cpan_eligible && !gh_eligible && !gh_api_eligible
+        && !ao_eligible && !moz_eligible && !jsonc_eligible && !gnome_eligible
+        && atom_url == NULL
+        && (row == NULL || row->gitSource == NULL || row->gitSource[0] == '\0')
+        && (state.UpdateAvailable == NULL || state.UpdateAvailable[0] == '\0')) {
+        char *pd = dup_or_empty(state.Source0);
+        char *ls = strrchr(pd, '/');
+        if (ls && ls != pd) {
+            ls[1] = '\0';   /* keep trailing slash (dir-listing semantics) */
+            if (urlhealth(pd) == 200) parentdir_eligible = 1;
+        }
+        free(pd);
+    }
+    if (allow_network && (health == 200 || sf_eligible || cpan_eligible || gh_eligible || gh_api_eligible || ao_eligible || moz_eligible || jsonc_eligible || gnome_eligible || parentdir_eligible)
         && (state.UpdateAvailable == NULL || state.UpdateAvailable[0] == '\0')
         && (atom_url != NULL
             || row == NULL
