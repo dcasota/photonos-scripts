@@ -1476,6 +1476,17 @@ char *check_urlhealth(pr_task_t                       *task,
                                             task, state.Source0 ? state.Source0 : "",
                                             state.version ? state.version : "",
                                             latest, &built);
+                                /* M94 / PS L4853: gtest reports col5 with the
+                                 * leading 'v' (PS mutates $UpdateAvailable in
+                                 * place). col6/col10 already carry the 'v' via
+                                 * the cascade; mirror it into col5. gtest-only. */
+                                if (spec_eq(task->Spec, "gtest.spec")) {
+                                    char *t = NULL;
+                                    if (asprintf(&t, "v%s", latest) >= 0) {
+                                        free(state.UpdateAvailable);
+                                        state.UpdateAvailable = t;
+                                    }
+                                }
                                 free(state.UpdateURL);
                                 free(state.HealthUpdateURL);
                                 if (h == 200) {
@@ -2195,6 +2206,18 @@ char *check_urlhealth(pr_task_t                       *task,
                                 state.version ? state.version : "",
                                 latest, &built);
                     if (built == NULL) built = dup_or_empty("");
+                    /* M94 / PS L4853: gtest reports col5 with the leading 'v'
+                     * (PS mutates $UpdateAvailable in place). col6/col10 carry
+                     * the 'v' via the cascade; mirror it into col5. gtest-only.
+                     * gtest reaches detection via the HTML tags-page scrape, so
+                     * the mutation belongs here (the git-tag site mirrors it). */
+                    if (spec_eq(task->Spec, "gtest.spec")) {
+                        char *t = NULL;
+                        if (asprintf(&t, "v%s", latest) >= 0) {
+                            free(state.UpdateAvailable);
+                            state.UpdateAvailable = t;
+                        }
+                    }
                     /* M46: apparmor launchpad series-dir fixup (idempotent once
                      * the versionshort cascade has set the series dir). */
                     if (h == 200 && built[0] && spec_eq(task->Spec, "apparmor.spec"))
