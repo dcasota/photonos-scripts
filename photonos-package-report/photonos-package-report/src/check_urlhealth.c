@@ -207,6 +207,62 @@ static char *ireplace_re(const char *s, const char *pat, const char *repl)
     return result;
 }
 
+/* PS L2630-2701: when a github /archive/refs/tags/ Source0 is NOT 200,
+ * normalize it to the real tag form by trying variants against the CURRENT
+ * version (PS source order): <name>-v<ver> -> v<ver>; <name>-<ver> -> v<ver>;
+ * <name>-<ver> -> <ver> (bare); version _->. ; .->- ; .->_ ; <name-last-seg>-
+ * <ver> -> v<ver>. Adopts the first that HEADs 200 so the M91 update cascade
+ * then builds the real-tag latest URL. Returns the normalized URL (heap; a
+ * copy of `save` if none work); *out_health = 200 iff a variant resolved.
+ * Caller (M96) gates this to specific specs (valkey) — NOT applied broadly,
+ * because for redirect-resolving / detection-path-shifting repos the variant
+ * probing can land on a form that diverges from PS (kubernetes-dashboard,
+ * falco), so a global gate would regress working specs. */
+static char *gh_archive_tag_normalize(const char *save, const char *name,
+                                      const char *version, int *out_health)
+{
+    const char *nm = name ? name : "";
+    const char *ver = version ? version : "";
+    char *best = strdup(save);
+    int h = 0;
+    char p[768], r[768];
+
+#define GH_TRY(PAT, REP) do {                                     \
+        char *cand = ireplace_re(save, (PAT), (REP));             \
+        if (cand && urlhealth(cand) == 200) {                     \
+            free(best); best = cand; h = 200;                     \
+        } else { free(cand); }                                    \
+    } while (0)
+
+    snprintf(p, sizeof p, "/archive/refs/tags/%s-v%s", nm, ver);
+    snprintf(r, sizeof r, "/archive/refs/tags/v%s", ver);
+    GH_TRY(p, r);                                                  /* L2640 */
+    if (h != 200) {
+        snprintf(p, sizeof p, "/archive/refs/tags/%s-%s", nm, ver);
+        snprintf(r, sizeof r, "/archive/refs/tags/v%s", ver);
+        GH_TRY(p, r);                                              /* L2647 */
+    }
+    if (h != 200) {
+        snprintf(p, sizeof p, "/archive/refs/tags/%s-%s", nm, ver);
+        snprintf(r, sizeof r, "/archive/refs/tags/%s", ver);
+        GH_TRY(p, r);                                              /* L2654 (bare) */
+    }
+    if (h != 200) { char *vn = istr_replace_all(strdup(ver), "_", "."); GH_TRY(ver, vn); free(vn); }  /* L2662 */
+    if (h != 200) { char *vn = istr_replace_all(strdup(ver), ".", "-"); GH_TRY(ver, vn); free(vn); }  /* L2669 */
+    if (h != 200) { char *vn = istr_replace_all(strdup(ver), ".", "_"); GH_TRY(ver, vn); free(vn); }  /* L2676 */
+    if (h != 200) {
+        const char *d = strrchr(nm, '-');
+        const char *nl = (d && d[1]) ? d + 1 : nm;
+        snprintf(p, sizeof p, "/archive/refs/tags/%s-%s", nl, ver);
+        snprintf(r, sizeof r, "/archive/refs/tags/v%s", ver);
+        GH_TRY(p, r);                                             /* L2686 */
+    }
+#undef GH_TRY
+
+    *out_health = h;
+    return best;
+}
+
 /* PS L4848-4931: construct the update URL when an update is available but no
  * URL was set during detection. Mirrors PS exactly — operates on the resolved
  * Source0 (== PS $Source0Save / $Source0, funet-mirrored), applies the per-spec
@@ -1374,6 +1430,32 @@ char *check_urlhealth(pr_task_t                       *task,
     int allow_network = (netenv && strcmp(netenv, "1") == 0);
     if (allow_network) {
         health = urlhealth(state.Source0);
+    }
+
+    /* M96 / PS L2630-2701: valkey's spec Source0 template is
+     * .../archive/refs/tags/%{name}-%{version} ("valkey-X") but its real
+     * github tags are bare ("9.1.0"), so the templated Source0 404s and the
+     * M91 cascade builds the wrong tag URL -> empty col6/col10 + packaging
+     * warning. Normalize the Source0 to the healthy bare-tag form so the
+     * cascade then builds .../tags/9.1.0.tar.gz, matching PS. SCOPED to
+     * valkey via spec_eq (NOT a global github rule): the broad form regresses
+     * redirect/detection-path specs (kubernetes-dashboard, falco) by landing
+     * on a PS-divergent variant, so the gate is kept to the one spec proven
+     * to converge cleanly. Only fires on health!=200. */
+    if (allow_network && health != 200 && spec_eq(task->Spec, "valkey.spec")
+        && state.Source0
+        && strstr(state.Source0, "github.com") != NULL
+        && strstr(state.Source0, "/archive/refs/tags/") != NULL) {
+        int nh = 0;
+        char *norm = gh_archive_tag_normalize(
+            state.Source0, task->Name, state.version ? state.version : "", &nh);
+        if (nh == 200) {
+            free(state.Source0);
+            state.Source0 = norm;
+            health = 200;
+        } else {
+            free(norm);
+        }
     }
 
     /* Phase 6d: when the Source0Lookup row has a gitSource AND a
