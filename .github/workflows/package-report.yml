@@ -28,8 +28,8 @@ on:
         description: 'Directory for .prn report output files (default: workingDir/scans)'
         default: ''
       upstreams_exclusion_list:
-        description: 'Comma-separated substrings (case-insensitive). Matched against TWO keys: (1) leaf of $UpdateDownloadFile (skips tarball fetch into SOURCES_NEW); (2) $repoName from *.git URL (skips clone creation under clones/). Substitution + urlhealth still run; tag detection falls back to non-git path. Default skips firmware (~55 GB/branch) and chromium (~67 GB/branch).'
-        default: 'firmware,chromium'
+        description: 'Comma-separated substrings (case-insensitive). Matched against TWO keys: (1) leaf of $UpdateDownloadFile (skips tarball fetch into SOURCES_NEW); (2) $repoName from *.git URL (skips clone creation under clones/). Substitution + urlhealth still run; tag detection falls back to non-git path. Default skips firmware (~55 GB/branch) and chromium (~67 GB/branch), and aufs-linux (github.com/sfjro/aufs-linux.git hangs on clone, burning the 4h per-clone timeout).'
+        default: 'firmware,chromium,aufs-linux'
   schedule:
     # Weekly scan on Sunday at 02:00 UTC
     - cron: '0 2 * * 0'
@@ -218,7 +218,7 @@ jobs:
           # inputs context, so apply the same baseline default here.
           UPSTREAMS_EXCL="${{ github.event.inputs.upstreams_exclusion_list }}"
           if [ -z "$UPSTREAMS_EXCL" ] && [ "${{ github.event_name }}" = "schedule" ]; then
-            UPSTREAMS_EXCL="firmware,chromium"
+            UPSTREAMS_EXCL="firmware,chromium,aufs-linux"
           fi
           if [ -n "$UPSTREAMS_EXCL" ]; then
             EXTRA_ARGS="$EXTRA_ARGS -UpstreamsExclusionList \"$UPSTREAMS_EXCL\""

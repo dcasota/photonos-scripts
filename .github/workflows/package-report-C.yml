@@ -22,7 +22,7 @@ on:
         required: true
       upstreams_exclusion_list:
         description: 'Comma-separated substrings (case-insensitive). Must mirror the PS workflow value so both sides skip the same clones. See package-report.yml for semantics.'
-        default: 'firmware,chromium'
+        default: 'firmware,chromium,aufs-linux'
       throttle_limit:
         description: 'Concurrency for CheckURLHealth (sequential clones on-demand at -ThrottleLimit 1 take many hours for full multi-branch snapshots). Drop to 1 when chasing a strict-diff that needs byte-stable stderr ordering.'
         default: '8'
@@ -271,7 +271,7 @@ jobs:
           # to the same baseline default as PS.
           UPSTREAMS_EXCL="${{ github.event.inputs.upstreams_exclusion_list }}"
           if [ -z "$UPSTREAMS_EXCL" ]; then
-            UPSTREAMS_EXCL="firmware,chromium"
+            UPSTREAMS_EXCL="firmware,chromium,aufs-linux"
           fi
 
           # ADR-0009 originally pinned -ThrottleLimit 1 for byte-stable
