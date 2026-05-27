@@ -1561,11 +1561,26 @@ char *check_urlhealth(pr_task_t                       *task,
      * substitution / pre-urlhealth. See funet_mirror(). */
     state.Source0 = funet_mirror(state.Source0);
 
+    /* M102 / PS L 2627: if the modified Source0 STILL contains an unresolved
+     * macro brace (a shell-style `${version}` the %{...} pass can't reach, or
+     * an unmatched %{...}), PS reports the col4 sentinel
+     * "substitution_unfinished". This is a col4 LABEL only — the detection
+     * paths still run exactly as before (PS keeps e.g. nss's mozilla-detected
+     * 3.124 alongside the sentinel). So `subst_unfinished` only (a) skips the
+     * pointless urlhealth probe of a malformed URL and (b) overrides the col4
+     * string; it must NOT gate the detection block, or it would drop a
+     * legitimately-detected version (regression caught in run 26538995132).
+     * Specs that genuinely detect nothing (dhcp, python3-msal,
+     * openjdk8_aarch64) already emit empty col5 because health!=200 and no
+     * eligible path fires — independent of this flag. A fully-resolved
+     * Source0 has no brace, so working specs are byte-identical. */
+    int subst_unfinished = (state.Source0 && strchr(state.Source0, '{') != NULL);
+
     /* Phase 5 urlhealth probe. Skipped offline so ctest stays hermetic. */
     int health = 0;
     const char *netenv = getenv("PR_TEST_NETWORK");
     int allow_network = (netenv && strcmp(netenv, "1") == 0);
-    if (allow_network) {
+    if (allow_network && !subst_unfinished) {
         health = urlhealth(state.Source0);
     }
 
@@ -1579,7 +1594,7 @@ char *check_urlhealth(pr_task_t                       *task,
      * allow-list (gh_tag_normalize_allowed) — NOT global — so it cannot touch
      * the redirect/detection-path specs the broad form regressed. Only fires
      * on health!=200, so specs whose Source0 already resolves are untouched. */
-    if (allow_network && health != 200 && gh_tag_normalize_allowed(task->Spec)
+    if (allow_network && !subst_unfinished && health != 200 && gh_tag_normalize_allowed(task->Spec)
         && state.Source0
         && strstr(state.Source0, "github.com") != NULL
         && strstr(state.Source0, "/archive/refs/tags/") != NULL) {
@@ -2656,13 +2671,24 @@ char *check_urlhealth(pr_task_t                       *task,
     const int emit_multi_sha = getenv("PR_EMIT_MULTI_SHA") != NULL;
     char *out = NULL;
     int rc;
+    /* col4 UrlHealth: numeric HTTP status, or the "substitution_unfinished"
+     * string sentinel (M102 / PS L2627) when the modified Source0 still
+     * carries an unresolved macro brace. */
+    char health_num[16];
+    const char *health_field;
+    if (subst_unfinished) {
+        health_field = "substitution_unfinished";
+    } else {
+        snprintf(health_num, sizeof health_num, "%d", health);
+        health_field = health_num;
+    }
     if (emit_multi_sha) {
         rc = asprintf(&out,
-                     "%s,%s,%s,%d,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s",
+                     "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s",
                      task->Spec,
                      task->Source0 ? task->Source0 : "",
                      state.Source0,
-                     health,
+                     health_field,
                      state.UpdateAvailable,
                      state.UpdateURL,
                      state.HealthUpdateURL,
@@ -2676,11 +2702,11 @@ char *check_urlhealth(pr_task_t                       *task,
                      );
     } else {
         rc = asprintf(&out,
-                     "%s,%s,%s,%d,%s,%s,%s,%s,%s,%s,%s,%s",
+                     "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s",
                      task->Spec,                                      /*  1 Spec */
                      task->Source0 ? task->Source0 : "",              /*  2 Source0 original */
                      state.Source0,                                   /*  3 Source0 (rewritten) */
-                     health,                                          /*  4 UrlHealth (0 offline) */
+                     health_field,                                    /*  4 UrlHealth (0 offline) */
                      state.UpdateAvailable,                           /*  5 — Phase 6b */
                      state.UpdateURL,                                 /*  6 — Phase 6c */
                      state.HealthUpdateURL,                           /*  7 — Phase 6c */
