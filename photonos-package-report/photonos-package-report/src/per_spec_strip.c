@@ -462,5 +462,9 @@ const char *pr_mozilla_releases_url(const char *spec_name)
         return "https://ftp.mozilla.org/pub/security/nss/releases/";
     if (strcasecmp(spec_name, "mozjs.spec") == 0)
         return "https://ftp.mozilla.org/pub/firefox/releases/";
+    /* M103 / PS L3226,3228: mozjs60 scrapes the same firefox releases index;
+     * apply_mozilla_transform then pins the 60.x ESR series. */
+    if (strcasecmp(spec_name, "mozjs60.spec") == 0)
+        return "https://ftp.mozilla.org/pub/firefox/releases/";
     return NULL;
 }
