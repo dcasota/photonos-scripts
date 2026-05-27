@@ -593,6 +593,10 @@ static void apply_generic_scrape_tokens(const char *spec, char **names, size_t n
      * are "Python-<ver>.tar.*"; strip the prefix so the version sorts. */
     else if (spec_eq(spec, "python2.spec"))           tok = "Python-";
     else if (spec_eq(spec, "python3.spec"))           tok = "Python-";
+    /* M101 / PS L 4493 ($replace += "/wireguard-tools/snapshot/wireguard-
+     * tools-"): the cgit tags page's snapshot hrefs basename to
+     * "wireguard-tools-<ver>.tar.xz"; strip the prefix → version. */
+    else if (spec_eq(spec, "wireguard-tools.spec"))   tok = "wireguard-tools-";
     if (tok == NULL) return;
     for (size_t i = 0; i < n; i++) {
         if (names[i] == NULL) continue;

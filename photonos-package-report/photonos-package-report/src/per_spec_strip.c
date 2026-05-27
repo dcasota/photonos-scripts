@@ -417,6 +417,13 @@ static const struct {
     {"itstool.spec",    "https://itstool.org/download.html"},
     {"openvswitch.spec","https://www.openvswitch.org/download/"},
     {"ipset.spec",      "https://ipset.netfilter.org/install.html"},
+    /* M101 / PS L 4376: cgit tags page. dirname(Source0) is the cgit
+     * /snapshot/ DOWNLOAD endpoint (not a listing), so the generic path
+     * sees nothing; the /refs/tags page lists the snapshot tarball hrefs
+     * (.../snapshot/wireguard-tools-<ver>.tar.xz) which the ao path
+     * basenames + the "wireguard-tools-" token (apply_generic_scrape_tokens)
+     * reduces to the version. */
+    {"wireguard-tools.spec", "https://git.zx2c4.com/wireguard-tools/refs/tags"},
 };
 
 static const size_t g_all_other_url_table_count =
