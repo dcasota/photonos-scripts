@@ -589,6 +589,10 @@ static void apply_generic_scrape_tokens(const char *spec, char **names, size_t n
      * after the Name-strip the candidate is "<ver>.orig" and the no-alpha
      * filter would drop it on "orig". Strip ".orig". */
     else if (spec_eq(spec, "ltrace.spec"))            tok = ".orig";
+    /* M100 / PS L 3296,3329 ($replace=@("Python-")): python2/python3 tarballs
+     * are "Python-<ver>.tar.*"; strip the prefix so the version sorts. */
+    else if (spec_eq(spec, "python2.spec"))           tok = "Python-";
+    else if (spec_eq(spec, "python3.spec"))           tok = "Python-";
     if (tok == NULL) return;
     for (size_t i = 0; i < n; i++) {
         if (names[i] == NULL) continue;
@@ -903,6 +907,119 @@ static void apply_clean_version_names(char **names, size_t n)
             free(names[i]); names[i] = NULL; continue;
         }
     }
+}
+
+/* M100 / PS L 3294-3336: python2/python3 two-level python.org listing.
+ * dirname(Source0) is the CURRENT release's dir (.../ftp/python/3.7.5/),
+ * which holds only that release — the newest release lives in a sibling
+ * version directory. Scrape the parent index .../ftp/python/, pick the
+ * highest <major>. version DIRECTORY (`2.` for python2, `3.` for python3),
+ * then scrape that dir for the `Python-<ver>.tar.*` names. PS's do-until
+ * retries the next-highest dir when the chosen one has no final tarball yet
+ * (e.g. an empty pre-release dir); mirror that with a bounded drop-and-retry.
+ * The returned tarball names run the standard pipeline — the `Python-` token
+ * added in apply_generic_scrape_tokens strips the prefix. Returns the version
+ * dir's tarball hrefs in *out_names (caller frees via pr_git_tags_free). */
+/* PS L 3321-3332 retry condition: does this version dir's listing yield at
+ * least one FINAL (non-pre-release) release after the standard reduction
+ * (strip Python-/ext, keep has-digit, drop alpha-after-[pP]N)? A dir like
+ * 3.15.0/ that holds only Python-3.15.0a1.tar.xz must be rejected so the
+ * loop retries the next-highest dir (PS's `$replace += $NameLatest`). */
+static int python_dir_yields_release(char **names, size_t n)
+{
+    char **probe = (char **)malloc((n ? n : 1) * sizeof *probe);
+    if (probe == NULL) return 1;   /* OOM: accept rather than loop forever */
+    size_t pc = 0;
+    static const char *exts[] = {
+        ".tar.gz", ".tar.xz", ".tar.bz2", ".tar.lz", ".tgz", NULL,
+    };
+    for (size_t i = 0; i < n; i++) {
+        if (names[i] == NULL || strstr(names[i], ".tar.") == NULL) continue;
+        char *t = istr_replace_all(dup_or_empty(names[i]), "Python-", "");
+        if (t == NULL) continue;
+        size_t ll = strlen(t);
+        for (int e = 0; exts[e]; e++) {
+            size_t el = strlen(exts[e]);
+            if (ll >= el && strncasecmp(t + ll - el, exts[e], el) == 0) {
+                t[ll - el] = '\0';
+                break;
+            }
+        }
+        probe[pc++] = t;
+    }
+    apply_name_post_filters(probe, pc);
+    int ok = 0;
+    for (size_t i = 0; i < pc; i++) {
+        if (probe[i]) ok = 1;
+        free(probe[i]);
+    }
+    free(probe);
+    return ok;
+}
+
+static int python_dir_scrape(const char *spec, char ***out_names, size_t *out_n)
+{
+    *out_names = NULL;
+    *out_n     = 0;
+    const char *prefix    = spec_eq(spec, "python2.spec") ? "2." : "3.";
+    const char *index_url = "https://www.python.org/ftp/python/";
+
+    char **dirs = NULL;
+    size_t nd   = 0;
+    if (pr_scrape_listing(index_url, &dirs, &nd) != 0 || nd == 0) {
+        pr_git_tags_free(dirs, nd);
+        return -1;
+    }
+    /* basename + trailing-slash strip; keep only <prefix>* version dirs. */
+    apply_href_basename(dirs, nd);
+    for (size_t i = 0; i < nd; i++) {
+        if (dirs[i] == NULL) continue;
+        size_t L = strlen(dirs[i]);
+        while (L && dirs[i][L - 1] == '/') dirs[i][--L] = '\0';
+        if (strncmp(dirs[i], prefix, strlen(prefix)) != 0) {
+            free(dirs[i]); dirs[i] = NULL;
+        }
+    }
+    /* PS L 3315-3316: keep has-digit, drop alpha-after-[pP]N (pre-release
+     * dirs like 3.15.0a1 fall out here). */
+    apply_name_post_filters(dirs, nd);
+
+    /* PS L 3297-3335 do-until: pick the highest dir, scrape it; if it has no
+     * final tarball, drop it and retry the next-highest. Bounded to avoid an
+     * unbounded loop when the host is misbehaving. */
+    for (int attempt = 0; attempt < 8; attempt++) {
+        char *latest = pr_get_latest_name(dirs, nd);
+        if (latest == NULL || latest[0] == '\0') { free(latest); break; }
+
+        char *dir_url = NULL;
+        if (asprintf(&dir_url, "%s%s/", index_url, latest) < 0 || dir_url == NULL) {
+            free(latest);
+            break;
+        }
+        char **names = NULL;
+        size_t n     = 0;
+        int    ok    = (pr_scrape_listing(dir_url, &names, &n) == 0 && n > 0);
+        free(dir_url);
+
+        if (ok) {
+            apply_href_basename(names, n);
+            if (python_dir_yields_release(names, n)) {
+                free(latest);
+                *out_names = names;
+                *out_n     = n;
+                pr_git_tags_free(dirs, nd);
+                return 0;
+            }
+        }
+        pr_git_tags_free(names, n);
+        /* drop the just-tried version and retry the next-highest. */
+        for (size_t i = 0; i < nd; i++) {
+            if (dirs[i] && strcmp(dirs[i], latest) == 0) { free(dirs[i]); dirs[i] = NULL; }
+        }
+        free(latest);
+    }
+    pr_git_tags_free(dirs, nd);
+    return -1;
 }
 
 /* M23 — PS L 4321-4341 scraper pre-filter pipeline.
@@ -2022,6 +2139,14 @@ char *check_urlhealth(pr_task_t                       *task,
                           || spec_eq(task->Spec, "gnome-common.spec"))
                          && (row == NULL || row->gitSource == NULL
                              || row->gitSource[0] == '\0');
+    /* M100 / PS L 3294-3336: python2/python3 scrape the python.org parent
+     * index for the highest version DIRECTORY, then that dir for the tarball
+     * — dirname(Source0) is only the current release's dir. Admitted like the
+     * moz/ao index scrapers (independent of file health). */
+    int python_eligible = (spec_eq(task->Spec, "python2.spec")
+                           || spec_eq(task->Spec, "python3.spec"))
+                          && (row == NULL || row->gitSource == NULL
+                              || row->gitSource[0] == '\0');
     /* M93 / PS L4332: generic listing fallback. PS's final detection branch
      * fires when the PARENT directory of Source0 is reachable
      * (urlhealth(dirname)==200), not the exact file — so specs whose file
@@ -2034,6 +2159,7 @@ char *check_urlhealth(pr_task_t                       *task,
     if (allow_network && health != 200 && state.Source0 && state.Source0[0]
         && !sf_eligible && !cpan_eligible && !gh_eligible && !gh_api_eligible
         && !ao_eligible && !moz_eligible && !jsonc_eligible && !gnome_eligible
+        && !python_eligible
         && atom_url == NULL
         && (row == NULL || row->gitSource == NULL || row->gitSource[0] == '\0')
         && (state.UpdateAvailable == NULL || state.UpdateAvailable[0] == '\0')) {
@@ -2045,7 +2171,7 @@ char *check_urlhealth(pr_task_t                       *task,
         }
         free(pd);
     }
-    if (allow_network && (health == 200 || sf_eligible || cpan_eligible || gh_eligible || gh_api_eligible || ao_eligible || moz_eligible || jsonc_eligible || gnome_eligible || parentdir_eligible)
+    if (allow_network && (health == 200 || sf_eligible || cpan_eligible || gh_eligible || gh_api_eligible || ao_eligible || moz_eligible || jsonc_eligible || gnome_eligible || python_eligible || parentdir_eligible)
         && (state.UpdateAvailable == NULL || state.UpdateAvailable[0] == '\0')
         && (atom_url != NULL
             || row == NULL
@@ -2185,6 +2311,12 @@ char *check_urlhealth(pr_task_t                       *task,
                 scrape_ok = (pr_gnome_cache_versions(module, &names, &n) == 0);
                 used_gnome = 1;
             }
+        } else if (python_eligible) {
+            /* M100 / PS L 3294-3336: two-level python.org dir scrape. Returns
+             * Python-<ver>.tar.* hrefs from the highest version dir; the names
+             * run the standard pipeline (M23 keep-.tar. + the "Python-" token
+             * in apply_generic_scrape_tokens strip the prefix/extension). */
+            scrape_ok = (python_dir_scrape(task->Spec, &names, &n) == 0);
         } else if (atom_url != NULL) {
             scrape_ok = (pr_scrape_atom_feed(atom_url, &names, &n) == 0);
             used_atom = 1;
