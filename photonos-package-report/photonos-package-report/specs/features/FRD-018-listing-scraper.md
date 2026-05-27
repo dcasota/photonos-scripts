@@ -110,3 +110,17 @@ PCRE2 is already a build dep (used by `parse_directory`); reuse.
 - **Header set.** PS sends Chrome-style headers (L 4263-4283) to dodge
   bot detection on some hosts. Mirror these initially; reduce only if
   shown to cause issues.
+- **Two-stage fetch (M99).** PS L 4378-4404 actually does the listing
+  GET in *two* stages: a primary bare `Invoke-RestMethod` (default agent,
+  no headers, L 4378), then a Chrome-UA `Invoke-WebRequest` retry on the
+  catch (L 4385-4400). `urlhealth.c` already mirrors this (simple
+  `photonos-package-report/C` UA → Chrome fallback); the scraper did not.
+  `pr_scrape_listing` now keeps the Chrome attempt as the PRIMARY (so every
+  spec that already detects is byte-identical — it returns on the first
+  attempt and never reaches the fallback) and adds a simple-UA fallback
+  (`photonos-package-report/C`, no extra headers) only when the Chrome
+  attempt fails or yields zero hrefs. Some autoindex hosts (e.g.
+  `dist.schmorp.de/libev/Attic/`) serve the listing to the simple agent
+  but not to Chrome — the same UA `urlhealth` used to get 200 on the file.
+  An env-gated `PR_SCRAPE_DEBUG` stderr trace (URL, UA stage, http status,
+  body len, href count) aids diagnosis; it never touches the `.prn`.

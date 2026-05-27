@@ -76,38 +76,41 @@ static pcre2_code *compile_href_re(void)
     return re;
 }
 
-int pr_scrape_listing(const char *url, char ***out_names, size_t *out_n)
+/* GET `url` into *body. `chrome` selects the Chrome UA + browser header set
+ * (PS L4385-4400 fallback path); otherwise a minimal request with the simple
+ * "photonos-package-report/C" UA and no extra headers, mirroring PS's PRIMARY
+ * attempt (L4378, bare Invoke-RestMethod with the default agent). Returns 0
+ * on a usable 2xx/3xx non-overflow body; -1 otherwise. Caller frees body.data. */
+static int fetch_listing_body(const char *url, int chrome, struct body_buf *body)
 {
-    if (out_names == NULL || out_n == NULL) return -1;
-    *out_names = NULL;
-    *out_n = 0;
-    if (url == NULL || *url == '\0') return -1;
-
-    struct body_buf body = {0};
     CURL *c = curl_easy_init();
     if (!c) return -1;
 
-    curl_easy_setopt(c, CURLOPT_URL,           url);
+    curl_easy_setopt(c, CURLOPT_URL,            url);
     curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(c, CURLOPT_TIMEOUT_MS,     20000L);
-    curl_easy_setopt(c, CURLOPT_USERAGENT,
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/113.0.0.0 Safari/537.36");
-    curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, body_write_cb);
-    curl_easy_setopt(c, CURLOPT_WRITEDATA,     &body);
+    curl_easy_setopt(c, CURLOPT_WRITEFUNCTION,  body_write_cb);
+    curl_easy_setopt(c, CURLOPT_WRITEDATA,      body);
     curl_easy_setopt(c, CURLOPT_ACCEPT_ENCODING, "");  /* allow gzip/deflate */
 
-    /* Mirror PS L 4267-4282 Chrome-style headers to dodge bot
-     * detection on some upstreams. */
     struct curl_slist *hdrs = NULL;
-    hdrs = curl_slist_append(hdrs,
-        "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,"
-        "image/avif,image/webp,image/apng,*/*;q=0.8,"
-        "application/signed-exchange;v=b3;q=0.7");
-    hdrs = curl_slist_append(hdrs, "Accept-Language: en-US,en;q=0.9");
-    hdrs = curl_slist_append(hdrs, "Cache-Control: max-age=0");
-    hdrs = curl_slist_append(hdrs, "Upgrade-Insecure-Requests: 1");
-    curl_easy_setopt(c, CURLOPT_HTTPHEADER, hdrs);
+    if (chrome) {
+        curl_easy_setopt(c, CURLOPT_USERAGENT,
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/113.0.0.0 Safari/537.36");
+        /* Mirror PS L 4267-4282 Chrome-style headers to dodge bot
+         * detection on some upstreams. */
+        hdrs = curl_slist_append(hdrs,
+            "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,"
+            "image/avif,image/webp,image/apng,*/*;q=0.8,"
+            "application/signed-exchange;v=b3;q=0.7");
+        hdrs = curl_slist_append(hdrs, "Accept-Language: en-US,en;q=0.9");
+        hdrs = curl_slist_append(hdrs, "Cache-Control: max-age=0");
+        hdrs = curl_slist_append(hdrs, "Upgrade-Insecure-Requests: 1");
+        curl_easy_setopt(c, CURLOPT_HTTPHEADER, hdrs);
+    } else {
+        curl_easy_setopt(c, CURLOPT_USERAGENT, "photonos-package-report/C");
+    }
 
     CURLcode rc = curl_easy_perform(c);
     long http_status = 0;
@@ -115,37 +118,40 @@ int pr_scrape_listing(const char *url, char ***out_names, size_t *out_n)
         curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &http_status);
     }
     curl_easy_cleanup(c);
-    curl_slist_free_all(hdrs);
+    if (hdrs) curl_slist_free_all(hdrs);
 
-    if (rc != CURLE_OK || http_status < 200 || http_status >= 400) {
-        free(body.data);
-        return -1;
+    if (getenv("PR_SCRAPE_DEBUG")) {
+        fprintf(stderr, "pr_scrape: url=%s chrome=%d rc=%d http=%ld body_len=%zu overflow=%d\n",
+                url, chrome, (int)rc, http_status, body->len, body->overflow);
     }
-    if (body.overflow) {
+
+    if (rc != CURLE_OK || http_status < 200 || http_status >= 400) return -1;
+    if (body->overflow) {
         fprintf(stderr, "pr_scraper: body too large for %s (cap %d MiB)\n",
                 url, BODY_CAP_BYTES / (1024 * 1024));
-        free(body.data);
         return -1;
     }
-    if (body.len == 0) {
-        free(body.data);
-        return 0;
-    }
+    return 0;
+}
+
+/* Extract every <a href="..."> value from `body` into a fresh names array. */
+static int extract_hrefs(const struct body_buf *body, char ***out_names, size_t *out_n)
+{
+    *out_names = NULL;
+    *out_n = 0;
 
     pcre2_code *re = compile_href_re();
-    if (re == NULL) { free(body.data); return -1; }
-
-    /* Walk the body, extracting hrefs. */
+    if (re == NULL) return -1;
     pcre2_match_data *md = pcre2_match_data_create_from_pattern(re, NULL);
-    if (md == NULL) { free(body.data); return -1; }
+    if (md == NULL) return -1;
 
     size_t cap = 32, n = 0;
     char **names = (char **)malloc(cap * sizeof(char *));
-    if (!names) { pcre2_match_data_free(md); free(body.data); return -1; }
+    if (!names) { pcre2_match_data_free(md); return -1; }
 
     PCRE2_SIZE offset = 0;
-    while (offset < body.len) {
-        int hits = pcre2_match(re, (PCRE2_SPTR)body.data, body.len,
+    while (offset < body->len) {
+        int hits = pcre2_match(re, (PCRE2_SPTR)body->data, body->len,
                                 offset, 0, md, NULL);
         if (hits < 0) break;
         PCRE2_SIZE *ovec = pcre2_get_ovector_pointer(md);
@@ -158,7 +164,7 @@ int pr_scrape_listing(const char *url, char ***out_names, size_t *out_n)
             size_t vlen = (size_t)(end - start);
             char *v = (char *)malloc(vlen + 1);
             if (v) {
-                memcpy(v, body.data + start, vlen);
+                memcpy(v, body->data + start, vlen);
                 v[vlen] = '\0';
                 if (n == cap) {
                     size_t newcap = cap * 2;
@@ -174,11 +180,54 @@ int pr_scrape_listing(const char *url, char ***out_names, size_t *out_n)
     }
 
     pcre2_match_data_free(md);
-    free(body.data);
-
     *out_names = names;
     *out_n = n;
     return 0;
+}
+
+int pr_scrape_listing(const char *url, char ***out_names, size_t *out_n)
+{
+    if (out_names == NULL || out_n == NULL) return -1;
+    *out_names = NULL;
+    *out_n = 0;
+    if (url == NULL || *url == '\0') return -1;
+
+    /* PS L4378-4404 does the listing fetch in two stages: a primary
+     * bare request (default agent), then a Chrome-UA retry on failure.
+     * urlhealth.c already mirrors this two-stage pattern; the scraper did
+     * not. Keep the Chrome attempt as the PRIMARY here so every spec that
+     * already detects stays byte-identical (it returns on chrome=1 and
+     * never reaches the fallback); only add the simple-UA fallback for
+     * specs the Chrome attempt fails to scrape (e.g. dist.schmorp.de/libev,
+     * which serves its autoindex to the "photonos-package-report/C" agent
+     * — the same UA urlhealth used to get 200 on the file — but not Chrome). */
+    for (int chrome = 1; chrome >= 0; chrome--) {
+        struct body_buf body = {0};
+        int frc = fetch_listing_body(url, chrome, &body);
+        if (frc == 0 && body.len > 0) {
+            char **names = NULL;
+            size_t  n     = 0;
+            int erc = extract_hrefs(&body, &names, &n);
+            free(body.data);
+            if (getenv("PR_SCRAPE_DEBUG")) {
+                fprintf(stderr, "pr_scrape: url=%s chrome=%d hrefs=%zu\n",
+                        url, chrome, n);
+            }
+            if (erc == 0 && n > 0) {
+                *out_names = names;
+                *out_n     = n;
+                return 0;
+            }
+            /* Body fetched but no hrefs — free and try the next stage. */
+            if (names) {
+                for (size_t i = 0; i < n; i++) free(names[i]);
+                free(names);
+            }
+        } else {
+            free(body.data);
+        }
+    }
+    return -1;
 }
 
 /* M44 / PS L 4363-4367: extract <Key>...</Key> values from an S3-bucket
