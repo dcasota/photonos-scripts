@@ -14,6 +14,7 @@ Legend:
 
 | Task | Subject | FRD | ADR | PS-L | Parity |
 |---|---|---|---|---|---|
+| M101 | **wireguard-tools cgit tags-page scrape** (PS L 4376,4493). dirname(Source0) is the cgit `/snapshot/` DOWNLOAD endpoint (not a listing) so the generic path saw nothing (cat6, 5 branches). Added the `/refs/tags` page URL to `pr_all_other_source_tag_url` (ao path) — its snapshot hrefs `.../snapshot/wireguard-tools-<ver>.tar.xz` basename to `wireguard-tools-<ver>.tar.xz`, and a new `wireguard-tools-` token in `apply_generic_scrape_tokens` (PS $replace L4493) strips the prefix → version. spec_eq-gated. ctest 13/13. | FRD-018 | 0001,0002,0006 | 4376,4493 | strict |
 | 000 | Create directory tree (`.claude/agents/`, `specs/{adr,features,tasks}`, `include/`, `src/`, `tools/`, `data/`, `tests/`) | — | — | — | n/a |
 | 001 | Write `CLAUDE.md` | — | — | — | n/a |
 | 002 | Write `specs/prd.md` (Status: Reviewed) | — | — | — | n/a |
