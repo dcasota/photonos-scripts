@@ -16,7 +16,15 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define BODY_CAP_BYTES (1 * 1024 * 1024)   /* 1 MiB defensive cap */
+/* M104: 16 MiB cap (was 1 MiB). PS's Invoke-WebRequest has no body cap, so it
+ * scrapes large Apache autoindex listings in full. The 1 MiB cap overflowed
+ * on kernel.org/pub/linux/kernel/vN.x/ (whole linux family: linux + linux-
+ * aws/rt/secure/esx/api-headers) and the packages.vmware.com/photon_sources/
+ * + packages.broadcom.com/photon_sources/ indexes — confirmed in run
+ * 26542403918's log. 16 MiB matches sourceforge.c's existing cap. Safe in
+ * conjunction with M105 (vmware-internal detection-skip), which prevents
+ * the over-detection that a standalone cap-raise would expose. */
+#define BODY_CAP_BYTES (16 * 1024 * 1024)
 
 struct body_buf {
     char  *data;
