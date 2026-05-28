@@ -8,6 +8,7 @@
 #include "pr_spec_warnings.h"
 
 #include <stddef.h>
+#include <string.h>   /* strncmp */
 #include <strings.h>  /* strcasecmp */
 
 struct warning_entry {
@@ -118,4 +119,24 @@ const char *pr_spec_warning(const char *spec, const char *update_available)
         match = e->text;
     }
     return match;
+}
+
+/* M105 / PS L 4490-4508: specs whose Source0 is a VMware-internal URL get an
+ * "Info: …" warning AND PS skips update-detection for them (col5/6 stay
+ * empty by design). C previously only added the warning; it still ran
+ * detection, so once the body cap is large enough to scrape the listing
+ * (M104), it over-detects (e.g. ant-contrib → "2018.08.24") where PS is
+ * empty. Returns 1 if `spec` is in the vmware-internal subset of the table
+ * above (identified by the "Info: Source0 contains a VMware internal"
+ * warning text). Used by check_urlhealth.c to gate the detection block. */
+int pr_spec_is_vmware_internal(const char *spec)
+{
+    if (spec == NULL || *spec == '\0') return 0;
+    static const char prefix[] = "Info: Source0 contains a VMware internal";
+    const size_t plen = sizeof prefix - 1;
+    for (size_t i = 0; i < N_ENTRIES; i++) {
+        if (strcasecmp(table[i].spec, spec) != 0) continue;
+        if (strncmp(table[i].text, prefix, plen) == 0) return 1;
+    }
+    return 0;
 }
