@@ -612,6 +612,7 @@ static void apply_generic_scrape_tokens(const char *spec, char **names, size_t n
 static void apply_mozilla_transform(const char *spec, char **names, size_t n)
 {
     int is_nss = spec_eq(spec, "nss.spec");
+    int is_mozjs60 = spec_eq(spec, "mozjs60.spec");
     for (size_t i = 0; i < n; i++) {
         if (names[i] == NULL) continue;
         /* pr_scrape_listing returns full-path hrefs like
@@ -624,6 +625,14 @@ static void apply_mozilla_transform(const char *spec, char **names, size_t n)
         if (is_nss) {
             names[i] = istr_replace_all(names[i], "NSS_", "");
             names[i] = istr_replace_all(names[i], "_RTM", "");
+        }
+        /* M103 / PS L3236-3237: mozjs60 pins the firefox-60 ESR series — keep
+         * only "60."-bearing release dirs (60.0esr … 60.9.0esr) and strip the
+         * "esr" suffix; the pipeline then picks 60.9.0 (the last 60 ESR) →
+         * "(same version)". Other firefox versions are dropped here. */
+        if (is_mozjs60) {
+            if (strstr(names[i], "60.") == NULL) { free(names[i]); names[i] = NULL; continue; }
+            names[i] = istr_replace_all(names[i], "esr", "");
         }
     }
 }
