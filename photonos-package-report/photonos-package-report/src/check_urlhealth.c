@@ -608,6 +608,11 @@ static void apply_generic_scrape_tokens(const char *spec, char **names, size_t n
      * tools-"): the cgit tags page's snapshot hrefs basename to
      * "wireguard-tools-<ver>.tar.xz"; strip the prefix → version. */
     else if (spec_eq(spec, "wireguard-tools.spec"))   tok = "wireguard-tools-";
+    /* M108 / PS L 4485 ($replace += "qemu-"): qemu-img scrapes
+     * download.qemu.org and gets "qemu-<ver>.tar.xz" hrefs (apply_href_basename
+     * has already removed any leading "/"). Strip the "qemu-" prefix so the
+     * version passes the no-alpha post-filter. Mirrors the Q1 PS fix. */
+    else if (spec_eq(spec, "qemu-img.spec"))          tok = "qemu-";
     if (tok == NULL) return;
     for (size_t i = 0; i < n; i++) {
         if (names[i] == NULL) continue;
