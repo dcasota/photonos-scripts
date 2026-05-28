@@ -136,54 +136,106 @@ int pr_github_api_names(const char *source0, const char *token,
     /* PS L2803-2807: /archive/ -> /tags ; /releases/download/ -> /releases. */
     int is_releases = (strstr(source0, "/releases/download/") != NULL)
                       && (strstr(source0, "/archive/") == NULL);
-    char *api = NULL;
-    if (asprintf(&api, "https://api.github.com/repos/%s/%s/%s",
-                 owner, repo, is_releases ? "releases" : "tags") < 0) {
-        free(owner); free(repo); return -1;
-    }
-    free(owner); free(repo);
-
-    struct body_buf body = {0};
-    CURL *c = curl_easy_init();
-    if (!c) { free(api); return -1; }
-    struct curl_slist *hdr = NULL;
-    hdr = curl_slist_append(hdr, "Accept: application/vnd.github.v3+json");
-    char *auth = NULL;
-    if (token && token[0]) {
-        if (asprintf(&auth, "Authorization: Bearer %s", token) >= 0)
-            hdr = curl_slist_append(hdr, auth);
-    }
-    curl_easy_setopt(c, CURLOPT_URL,            api);
-    curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);
-    curl_easy_setopt(c, CURLOPT_TIMEOUT_MS,     20000L);
-    curl_easy_setopt(c, CURLOPT_USERAGENT,      "photonos-package-report/C");
-    curl_easy_setopt(c, CURLOPT_HTTPHEADER,     hdr);
-    curl_easy_setopt(c, CURLOPT_WRITEFUNCTION,  body_write_cb);
-    curl_easy_setopt(c, CURLOPT_WRITEDATA,      &body);
-    curl_easy_setopt(c, CURLOPT_ACCEPT_ENCODING, "");
-    CURLcode rc = curl_easy_perform(c);
-    long status = 0;
-    if (rc == CURLE_OK) curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &status);
-    curl_easy_cleanup(c);
-    curl_slist_free_all(hdr);
-    free(auth);
-    free(api);
-    if (rc != CURLE_OK || status < 200 || status >= 300 || body.overflow || body.len == 0) {
-        free(body.data); return -1;
-    }
 
     pthread_once(&g_once, init_re);
 
-    char **names = NULL; size_t n = 0, cap = 0;
-    if (is_releases) {
-        /* PS L2846: releases -> .tag_name; L2847-2849 fallback to .name. */
-        collect_all(RE_TAGNAME, body.data, body.len, &names, &n, &cap);
-        if (n == 0)
-            collect_all(RE_NAME, body.data, body.len, &names, &n, &cap);
-    } else {
-        collect_all(RE_NAME, body.data, body.len, &names, &n, &cap);
+    /* M110: paginate ONLY for repos where the single-page (default ~30
+     * entries) fetch misses the proper semver tags. Full-validation run
+     * 26600507754 found 2 strict regressions when paginating globally
+     * (libsepol 3.10→20200710, python3-hatchling empty→Warning) because
+     * pagination uncovers buried date-form tags that win the version compare
+     * over a semver currently in the first page — yet PS keeps the semver
+     * (PS doesn't paginate by default). Restrict pagination to an explicit
+     * allowlist of (owner, repo) pairs proven to need it; everyone else
+     * uses the original single-page behaviour (max_pages=1). Add to the
+     * allowlist when a future investigation shows a repo's semver tag is
+     * beyond page 1 AND PS sees it. */
+    static const struct { const char *owner; const char *repo; } paginate_allow[] = {
+        {"fedora-sysv", "chkconfig"},   /* alternatives.spec — 1.33 at idx 161 */
+    };
+    int max_pages = 1;
+    for (size_t i = 0; i < sizeof paginate_allow / sizeof paginate_allow[0]; i++) {
+        if (strcasecmp(paginate_allow[i].owner, owner) == 0
+            && strcasecmp(paginate_allow[i].repo,  repo)  == 0) {
+            max_pages = 20;    /* 20 pages × 100 = 2 000 tags safety bound */
+            break;
+        }
     }
-    free(body.data);
+
+    char **names = NULL; size_t n = 0, cap = 0;
+    int   ok    = 0;
+
+    int paginate = (max_pages > 1);
+    for (int page = 1; page <= max_pages; page++) {
+        char *api = NULL;
+        /* Non-allowlisted repos use the original URL (no query) for
+         * byte-identical pre-M110 behaviour. Allowlisted repos use
+         * ?per_page=100&page=N. */
+        int rc_a;
+        if (paginate) {
+            rc_a = asprintf(&api,
+                            "https://api.github.com/repos/%s/%s/%s?per_page=100&page=%d",
+                            owner, repo, is_releases ? "releases" : "tags", page);
+        } else {
+            rc_a = asprintf(&api,
+                            "https://api.github.com/repos/%s/%s/%s",
+                            owner, repo, is_releases ? "releases" : "tags");
+        }
+        if (rc_a < 0) {
+            break;
+        }
+        struct body_buf body = {0};
+        CURL *c = curl_easy_init();
+        if (!c) { free(api); break; }
+        struct curl_slist *hdr = NULL;
+        hdr = curl_slist_append(hdr, "Accept: application/vnd.github.v3+json");
+        char *auth = NULL;
+        if (token && token[0]) {
+            if (asprintf(&auth, "Authorization: Bearer %s", token) >= 0)
+                hdr = curl_slist_append(hdr, auth);
+        }
+        curl_easy_setopt(c, CURLOPT_URL,            api);
+        curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);
+        curl_easy_setopt(c, CURLOPT_TIMEOUT_MS,     20000L);
+        curl_easy_setopt(c, CURLOPT_USERAGENT,      "photonos-package-report/C");
+        curl_easy_setopt(c, CURLOPT_HTTPHEADER,     hdr);
+        curl_easy_setopt(c, CURLOPT_WRITEFUNCTION,  body_write_cb);
+        curl_easy_setopt(c, CURLOPT_WRITEDATA,      &body);
+        curl_easy_setopt(c, CURLOPT_ACCEPT_ENCODING, "");
+        CURLcode rc = curl_easy_perform(c);
+        long status = 0;
+        if (rc == CURLE_OK) curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &status);
+        curl_easy_cleanup(c);
+        curl_slist_free_all(hdr);
+        free(auth);
+        free(api);
+
+        if (rc != CURLE_OK || status < 200 || status >= 300 || body.overflow || body.len == 0) {
+            free(body.data);
+            if (page == 1) goto done;   /* preserve the prior failure return */
+            break;
+        }
+
+        size_t before = n;
+        if (is_releases) {
+            /* PS L2846: releases -> .tag_name; L2847-2849 fallback to .name. */
+            collect_all(RE_TAGNAME, body.data, body.len, &names, &n, &cap);
+            if (n == before)
+                collect_all(RE_NAME, body.data, body.len, &names, &n, &cap);
+        } else {
+            collect_all(RE_NAME, body.data, body.len, &names, &n, &cap);
+        }
+        free(body.data);
+
+        size_t added = n - before;
+        ok = 1;
+        /* A partial page means no more pages follow. An empty array on a
+         * non-first page is also the end. */
+        if (added < 100) break;
+    }
+
+done:
+    free(owner); free(repo);
     *names_out = names; *n_out = n;
-    return 0;
+    return ok ? 0 : -1;
 }
