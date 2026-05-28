@@ -32,6 +32,9 @@ on:
       strict_col9:
         description: 'M64 TODO-3: count col9 (SHA) toward the strict verdict (PR_STRICT_COL9). Leave false until the shared col9 cache (TODO-1) has been confirmed to hold col9 byte-stable across a PS→C cycle — enabling early spikes strict and resets the 90-day clock.'
         default: 'false'
+      spec:
+        description: 'T1: single-spec investigation mode. Set to a spec basename (e.g. "libev.spec") to compact the C binary''s task list to that one spec across the snapshot''s branches. Diagnostic-only: the resulting .prn has one row per branch and is never a parity verdict.'
+        default: ''
 
 permissions:
   contents: write   # commit the journal back to master
@@ -248,6 +251,13 @@ jobs:
           # (workflow_run) runs → col9 behaves exactly as before this change.
           PR_SHA_CACHE: ${{ github.event.inputs.sha_cache == 'true' && '1' || '' }}
           PR_SHA_CACHE_BASE: ${{ github.event.inputs.sha_cache == 'true' && '/root/.cache/photonos-shared/photon-upstreams' || '' }}
+          # T1: single-spec investigation mode. When set, the C binary
+          # compacts its task list to only that one spec basename (e.g.
+          # "libev.spec"). Diagnostic-only — the resulting .prn has one
+          # row and is never used as a parity verdict. Equivalent to the
+          # `-spec` command-line flag (which `main.c` reads first); the
+          # env makes the workflow input wiring cleaner.
+          PR_SINGLE_SPEC: ${{ github.event.inputs.spec }}
         run: |
           cd repo/photonos-package-report/photonos-package-report
           WDIR="${{ steps.reconstruct.outputs.wdir }}"

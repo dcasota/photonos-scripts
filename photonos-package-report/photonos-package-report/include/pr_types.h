@@ -26,6 +26,11 @@ typedef struct {
     const char *upstreamsDir;                                                  /* L 88  */
     const char *scansDir;                                                      /* L 89  */
     const char *UpstreamsExclusionList;                                        /* L 95  */
+    /* T1: single-spec investigation mode. Spec basename (e.g. "libev.spec");
+     * when non-empty, the urlhealth task list is compacted to just that
+     * one spec. Also readable via PR_SINGLE_SPEC env. Diagnostic-only;
+     * parity verdict still requires a full run. */
+    const char *Spec;
     int GeneratePh3URLHealthReport;                                            /* L 96  */
     int GeneratePh4URLHealthReport;                                            /* L 97  */
     int GeneratePh5URLHealthReport;                                            /* L 98  */

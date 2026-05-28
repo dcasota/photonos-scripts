@@ -74,6 +74,7 @@ static void usage(const char *progname)
         "  -upstreamsDir <path>                           (default: workingDir/photon-upstreams)\n"
         "  -scansDir <path>                               (default: workingDir/scans)\n"
         "  -UpstreamsExclusionList <csv>                  (e.g. firmware,chromium)\n"
+        "  -spec <name>                                   T1: single-spec mode (e.g. libev.spec); env PR_SINGLE_SPEC also honoured\n"
         "  -GeneratePh3URLHealthReport <true|false>       (default: true)\n"
         "  -GeneratePh4URLHealthReport <true|false>       (default: true)\n"
         "  -GeneratePh5URLHealthReport <true|false>       (default: true)\n"
@@ -109,6 +110,7 @@ int main(int argc, char **argv)
     params.upstreamsDir                          = "";                                                        /* L 88 */
     params.scansDir                              = "";                                                        /* L 89 */
     params.UpstreamsExclusionList                = "";                                                        /* L 95 */
+    params.Spec                                  = env_or("PR_SINGLE_SPEC");                                  /* T1   */
     /* L 96-107: all boolean flags default to $true; values arrive as
      * strings via argv and pass through convert_to_boolean below. We
      * pre-initialise to 1 (true). */
@@ -154,6 +156,7 @@ int main(int argc, char **argv)
         OPT_dump_tasks,                /* Phase 2 parity helper, not in PS. */
         OPT_generate_urlhealth_report, /* Phase 6a end-to-end pipeline.    */
         OPT_throttle_limit,            /* Phase 7 worker count override.   */
+        OPT_spec,                      /* T1: single-spec investigation.   */
     };
     const char *dump_tasks_branch          = NULL;
     const char *generate_urlhealth_branch  = NULL;
@@ -182,6 +185,7 @@ int main(int argc, char **argv)
         { "dump-tasks",                                                         required_argument, 0, OPT_dump_tasks },
         { "generate-urlhealth-report",                                          required_argument, 0, OPT_generate_urlhealth_report },
         { "ThrottleLimit",                                                      required_argument, 0, OPT_throttle_limit },
+        { "spec",                                                               required_argument, 0, OPT_spec },
         { "help",                                                               no_argument,       0, 'h' },
         { 0, 0, 0, 0 },
     };
@@ -224,6 +228,9 @@ int main(int argc, char **argv)
             params.ThrottleLimit = (int)strtol(optarg, NULL, 10);
             if (params.ThrottleLimit < 1)   params.ThrottleLimit = 1;
             if (params.ThrottleLimit > 256) params.ThrottleLimit = 256;
+            break;
+        case OPT_spec:
+            params.Spec = optarg;
             break;
         case 'h':
             usage(argv[0]);
@@ -558,6 +565,34 @@ static int generate_urlhealth_main(const pr_params_t *params, const char *branch
     if (parse_directory(params->workingDir, photon_dir, &list) != 0) {
         pr_task_list_free(&list);
         return 1;
+    }
+
+    /* T1: single-spec investigation mode — compact the task list to only the
+     * one matching spec basename. Case-insensitive. Source: --spec flag or
+     * PR_SINGLE_SPEC env (params->Spec already merges both at init). The
+     * downstream parallel pool / row-emission loops are slot-indexed against
+     * list.count, so we compact in place rather than mid-loop skipping. */
+    if (params->Spec && params->Spec[0]) {
+        size_t kept = 0;
+        for (size_t r = 0; r < list.count; r++) {
+            const char *s = list.items[r].Spec ? list.items[r].Spec : "";
+            if (strcasecmp(s, params->Spec) == 0) {
+                if (kept != r) {
+                    pr_task_free(&list.items[kept]);
+                    list.items[kept] = list.items[r];
+                    memset(&list.items[r], 0, sizeof list.items[r]);
+                }
+                kept++;
+            } else {
+                pr_task_free(&list.items[r]);
+                memset(&list.items[r], 0, sizeof list.items[r]);
+            }
+        }
+        list.count = kept;
+        if (kept == 0) {
+            fprintf(stderr, "single-spec mode: '%s' not found in branch %s\n",
+                    params->Spec, branch);
+        }
     }
 
     /* Source0LookupData (Phase 3a). Loaded once and shared across tasks. */
