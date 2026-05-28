@@ -4482,7 +4482,7 @@ function CheckURLHealth {
                     $Names = @($Names | foreach-object { if (!($_ | select-string -pattern '.sign' -simplematch)) {$_}})
                     $replace += "beta"
                 }
-                elseif ($currentTask.spec -ilike "qemu-img.spec") { $replace += "qemu-" }
+                elseif ($currentTask.spec -ilike "qemu-img.spec") { $replace += "/qemu-";$replace += "qemu-" }
                 elseif ($currentTask.spec -ilike "python-pbr.spec")
                 {
                     $Names = ($Names -split "/openstack/pbr/archive/") -split ' rel=nofollow'
