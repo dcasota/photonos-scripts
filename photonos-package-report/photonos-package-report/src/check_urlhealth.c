@@ -548,13 +548,24 @@ static const char *linux_kernel_series(const char *spec, const char *clone_root)
     int is_fam = 0;
     for (int i = 0; fam[i]; i++) if (spec_eq(spec, fam[i])) { is_fam = 1; break; }
     if (!is_fam || clone_root == NULL) return NULL;
-    const char *p = strstr(clone_root, "photon-");
+    /* M107: clone_root can contain MULTIPLE "photon-" segments — the
+     * persistent cache layout (post ADR-0009 amendment) puts everything
+     * under .../photon-upstreams/photon-<branch>/clones, so a leftmost
+     * strstr matches the "photon-upstreams" parent and the substring after
+     * it ("upstreams/...") never matches any branch prefix below → all
+     * kernel-family specs fall through to the "6.1." default, which on
+     * 3.0/4.0/common drops every candidate (kept=0 in PR_SCRAPE_DEBUG run
+     * 26583592871). Find the LAST "photon-" instead. */
+    const char *p = NULL;
+    for (const char *q = strstr(clone_root, "photon-"); q; q = strstr(q + 1, "photon-")) {
+        p = q;
+    }
     if (p == NULL) return NULL;
     p += 7;  /* past "photon-" */
     if (strncmp(p, "3.0", 3) == 0)    return "4.19.";
     if (strncmp(p, "4.0", 3) == 0)    return "5.10.";
     if (strncmp(p, "common", 6) == 0) return "6.12.";
-    return "6.1.";  /* 5.0 / 6.0 / master / dev */
+    return "6.1.";  /* 5.0 / 6.0 / master / dev / main */
 }
 
 /* M42 / PS L 3335-3350: generic-scrape specs whose upstream tarball
