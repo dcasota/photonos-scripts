@@ -235,6 +235,17 @@ void pr_apply_per_spec_strip_tokens(const char *spec_name,
  *
  * Drop any candidate name containing any of the blacklisted substrings.
  * `select-string -simplematch` is case-INsensitive by default. */
+/* M109: fedora-sysv/chkconfig carries both proper semver tags ("1.33",
+ * "1.32", paginated beyond the first github API page) AND CVS-style
+ * "r1-3-37-1" tags. Clean-VersionNames strips the leading "r"; C's
+ * version-compare then reads "1-3-37-1" as numeric 1.3.37.1 → wins
+ * over 1.33, producing the bogus "Source0 version 1.32 higher than
+ * detected latest 1-3-37-1" warning. PS's [version]::TryParse fails on
+ * dashes → string-sort puts 1.33 last. Drop the CVS-form tags here
+ * (runs BEFORE Clean-VersionNames, so candidates still carry their "r"
+ * prefix → substring "r1-" matches the CVS form cleanly; "1.33" has no
+ * "r1-" → kept). */
+static const char *const k_drop_alternatives[] = {"r1-", NULL};
 static const char *const k_drop_docker_20_10[] = {"xdocs-v", NULL};
 static const char *const k_drop_falco[]        = {"agent/", NULL};
 static const char *const k_drop_glib[]         = {"GTK_", "gobject_", NULL};
@@ -243,8 +254,9 @@ static const char *const k_drop_go[]           = {"weekly", "release", NULL};
 static const char *const k_drop_httpd[]        = {"apache", "mpm-", "djg", "dg_", "wrowe", "striker", "PCRE_", "MOD_SSL_", "HTTPD_LDAP_", NULL};
 
 static const struct per_spec_entry g_per_spec_drop_table[] = {
-    {"docker-20.10.spec", k_drop_docker_20_10},
-    {"falco.spec",        k_drop_falco},
+    {"alternatives.spec",  k_drop_alternatives},
+    {"docker-20.10.spec",  k_drop_docker_20_10},
+    {"falco.spec",         k_drop_falco},
     {"glib.spec",         k_drop_glib},
     {"glslang.spec",      k_drop_glslang},
     {"go.spec",           k_drop_go},

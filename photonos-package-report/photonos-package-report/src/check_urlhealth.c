@@ -2445,6 +2445,13 @@ char *check_urlhealth(pr_task_t                       *task,
              * Source0Lookup.ignoreStrings glob list (only when a row
              * exists — scraper-only fallback specs have no row). */
             apply_ignore_strings(names, n, row ? row->ignoreStrings : NULL);
+            /* M109: apply the M28 per-spec drop-substring table to scrape-path
+             * candidates too. Originally wired only on the clone path (Phase
+             * 6d, L1722), but specs without a Source0Lookup row reach detection
+             * via the gh_api / scrape branches and so missed the filter —
+             * e.g. alternatives.spec, whose `r1-` chkconfig CVS tags need
+             * dropping so version-compare picks the proper `1.33`. */
+            pr_apply_per_spec_drop_substrings(task->Spec, names, n);
             /* M37 / PS L 3955-3958: CPAN prefix-stripped tokens, added
              * before the generic Name tokens (PS $replace array order). */
             if (cpan_eligible) {
