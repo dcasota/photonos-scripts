@@ -26,4 +26,10 @@
  */
 const char *pr_spec_warning(const char *spec, const char *update_available);
 
+/* M105: returns 1 if `spec`'s entry in the warning table is a
+ * VMware-internal Source0 entry (PS L 4490-4508). Used by
+ * check_urlhealth.c to skip the update-detection block for these specs
+ * (mirroring PS, which emits the "Info" warning and leaves col5/6 empty). */
+int pr_spec_is_vmware_internal(const char *spec);
+
 #endif /* PR_SPEC_WARNINGS_H */

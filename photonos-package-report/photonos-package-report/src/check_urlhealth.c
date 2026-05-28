@@ -2199,7 +2199,14 @@ char *check_urlhealth(pr_task_t                       *task,
         }
         free(pd);
     }
-    if (allow_network && (health == 200 || sf_eligible || cpan_eligible || gh_eligible || gh_api_eligible || ao_eligible || moz_eligible || jsonc_eligible || gnome_eligible || python_eligible || parentdir_eligible)
+    /* M105 / PS L 4490-4508: skip update-detection for VMware-internal
+     * Source0 specs. PS emits the "Info: Source0 contains a VMware internal
+     * url address." warning and leaves col5/6 empty by design. C previously
+     * still ran detection here, which was masked only because the listing
+     * (packages.vmware.com/photon_sources/) overflowed the 1MiB scrape body
+     * cap. Gate explicitly so the cap value can be raised safely (M104). */
+    if (allow_network && !pr_spec_is_vmware_internal(task->Spec)
+        && (health == 200 || sf_eligible || cpan_eligible || gh_eligible || gh_api_eligible || ao_eligible || moz_eligible || jsonc_eligible || gnome_eligible || python_eligible || parentdir_eligible)
         && (state.UpdateAvailable == NULL || state.UpdateAvailable[0] == '\0')
         && (atom_url != NULL
             || row == NULL
