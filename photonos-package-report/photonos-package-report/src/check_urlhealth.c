@@ -1526,6 +1526,41 @@ char *check_urlhealth(pr_task_t                       *task,
         return out;
     }
 
+    /* M106 / PS L 2376-2392, 3665-3679, 4020-4034: -UpstreamsExclusionList
+     * short-circuit, SCOPED to the specs PS actually emits a minimal row
+     * for. Empirically (vs PS snapshot 26500380639, m106 run 26559228021):
+     *   raspberrypi-firmware → minimal row (col2 raw, col3..12 empty)
+     *   chromium             → minimal row
+     *   aufs-util / aufs-linux → PS still detects (col5 = 7.0 etc.)
+     * So PS's exclusion-skip is NOT a blanket "exclusion = minimal". This
+     * gate fires only for the two specs PS treats as minimal AND only when
+     * the exclusion-list actually matches them (so flipping the user-supplied
+     * `-UpstreamsExclusionList` to omit "firmware,chromium" reverts behaviour).
+     * aufs-util/aufs-linux fall through unchanged. */
+    if (exclusion_list && exclusion_list[0]
+        && (spec_eq(task->Spec, "raspberrypi-firmware.spec")
+            || spec_eq(task->Spec, "chromium.spec"))) {
+        const pr_source0_lookup_t *r0 = lookup_row(lookup_table, task->Spec);
+        if (r0 && r0->gitSource && r0->gitSource[0]) {
+            char *repo_name = pr_extract_repo_name(r0->gitSource);
+            if (repo_name) {
+                int skip = pr_should_skip_clone(repo_name, exclusion_list);
+                free(repo_name);
+                if (skip) {
+                    char *out = NULL;
+                    if (asprintf(&out, "%s,%s,,,,,,%s,,,,",
+                                 task->Spec,
+                                 task->Source0 ? task->Source0 : "",
+                                 task->Name    ? task->Name    : "") < 0) {
+                        return NULL;
+                    }
+                    (void)clone_root;
+                    return out;
+                }
+            }
+        }
+    }
+
     pr_state_t state;
     pr_state_init(&state);
 
