@@ -30,6 +30,9 @@ on:
       upstreams_exclusion_list:
         description: 'Comma-separated substrings (case-insensitive). Matched against TWO keys: (1) leaf of $UpdateDownloadFile (skips tarball fetch into SOURCES_NEW); (2) $repoName from *.git URL (skips clone creation under clones/). Substitution + urlhealth still run; tag detection falls back to non-git path. Default skips firmware (~55 GB/branch) and chromium (~67 GB/branch), and aufs-linux (github.com/sfjro/aufs-linux.git hangs on clone, burning the 4h per-clone timeout).'
         default: 'firmware,chromium,aufs-linux'
+      spec:
+        description: 'T1: single-spec investigation mode. Set to a spec basename (e.g. "libev.spec") to process only that one file across the selected branches — seconds instead of ~40 min. Diagnostic-only: the resulting .prn has one row and is never used as a parity verdict.'
+        default: ''
   schedule:
     # Weekly scan on Sunday at 02:00 UTC
     - cron: '0 2 * * 0'
@@ -222,6 +225,13 @@ jobs:
           fi
           if [ -n "$UPSTREAMS_EXCL" ]; then
             EXTRA_ARGS="$EXTRA_ARGS -UpstreamsExclusionList \"$UPSTREAMS_EXCL\""
+          fi
+          # T1: single-spec investigation mode. When set, ParseDirectory
+          # yields only that one spec basename (e.g. "libev.spec") across
+          # the selected branches. Diagnostic-only — the resulting .prn has
+          # a single row and never feeds the parity verdict.
+          if [ -n "${{ github.event.inputs.spec }}" ]; then
+            EXTRA_ARGS="$EXTRA_ARGS -Spec \"${{ github.event.inputs.spec }}\""
           fi
 
           # Propagate pwsh's exit code. Previously a trailing `echo "exit_code=$?"`

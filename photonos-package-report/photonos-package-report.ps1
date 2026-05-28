@@ -95,6 +95,13 @@ param (
     # Use case: avoid expensive re-downloads + 50–70 GB clones of huge sources
     # (e.g. "firmware,chromium") on every package-report run.
     [string]$UpstreamsExclusionList = "",
+    # T1: single-spec investigation mode. When set to a spec basename
+    # (e.g. "libev.spec"), ParseDirectory yields only that file across the
+    # selected branches. Used to iterate spec-by-spec parity work in
+    # seconds instead of dispatching a full single-branch run per attempt.
+    # Diagnostic-only — the resulting .prn has one row and is not a
+    # parity-gate source.
+    [string]$Spec = "",
     [Parameter(Mandatory = $false)][ValidateNotNull()]$GeneratePh3URLHealthReport=$true,
     [Parameter(Mandatory = $false)][ValidateNotNull()]$GeneratePh4URLHealthReport=$true,
     [Parameter(Mandatory = $false)][ValidateNotNull()]$GeneratePh5URLHealthReport=$true,
@@ -261,6 +268,9 @@ function ParseDirectory {
     $specsPath = Join-Path -Path $WorkingDir -ChildPath $photonDir | Join-Path -ChildPath "SPECS"
     Get-ChildItem -Path $specsPath -Recurse -File -Filter "*.spec" | ForEach-Object {
         $currentFile = $_
+        # T1: single-spec investigation mode — skip every other spec file.
+        # Case-insensitive match on the basename (e.g. "libev.spec").
+        if ($Spec -and ($currentFile.Name -ine $Spec)) { return }
         try
         {
             $Name = Split-Path -Path $currentFile.DirectoryName -Leaf

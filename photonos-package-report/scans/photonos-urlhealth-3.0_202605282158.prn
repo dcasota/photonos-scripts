@@ -1,0 +1,2 @@
+Spec,Source0 original,Modified Source0 for url health check,UrlHealth,UpdateAvailable,UpdateURL,HealthUpdateURL,Name,SHAName,UpdateDownloadName,warning,ArchivationDate
+libev.spec,http://dist.schmorp.de/libev/%{name}-%{version}.tar.gz,https://dist.schmorp.de/libev/Attic/libev-4.24.tar.gz,200,4.33,https://dist.schmorp.de/libev/Attic/libev-4.33.tar.gz,200,libev,C662A65360115E0B2598E3E8824CF7B33360C43A96AC9233F6B6EA2873A10102551773CAD0E89E738541E75AF9FD4F3E3C11CD2F251C5703AA24F193128B896B,libev-4.33.tar.gz,,
