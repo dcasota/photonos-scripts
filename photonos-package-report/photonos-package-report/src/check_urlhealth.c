@@ -103,19 +103,25 @@ static int try_url_ext_fallback(char **url)
 {
     static const char *const exts[] = {".tar.xz", ".tar.gz", ".tar.bz2", ".tgz", ".zip", NULL};
     if (url == NULL || *url == NULL) return 0;
+    const int dbg = (getenv("PR_M91_DEBUG") != NULL);
     const char *cur = NULL;
     size_t ul = strlen(*url);
     for (int i = 0; exts[i]; i++) {
         size_t el = strlen(exts[i]);
         if (ul >= el && strcmp(*url + ul - el, exts[i]) == 0) { cur = exts[i]; break; }
     }
-    if (cur == NULL) return 0;                 /* not a recognised archive URL */
+    if (cur == NULL) {
+        if (dbg) fprintf(stderr, "  M81: no recognised archive ext on %s\n", *url);
+        return 0;
+    }
     size_t base = ul - strlen(cur);
     for (int i = 0; exts[i]; i++) {
         if (strcmp(exts[i], cur) == 0) continue;
         char *cand = NULL;
         if (asprintf(&cand, "%.*s%s", (int)base, *url, exts[i]) < 0) continue;
-        if (urlhealth(cand) == 200) { free(*url); *url = cand; return 200; }
+        int ch = urlhealth(cand);
+        if (dbg) fprintf(stderr, "  M81: try %s -> %d\n", cand, ch);
+        if (ch == 200) { free(*url); *url = cand; return 200; }
         free(cand);
     }
     return 0;
