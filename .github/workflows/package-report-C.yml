@@ -263,6 +263,20 @@ jobs:
           # remove before merging to master. Helps debug kbd col6=empty.
           PR_M91_DEBUG: "1"
         run: |
+          # M112 probe: directly hit altlinux/kbd-2_10_0.tar.bz2 with different
+          # UAs to find which the server accepts.
+          U="http://ftp.altlinux.org/pub/people/legion/kbd/kbd-2_10_0.tar.bz2"
+          echo "--- probe altlinux kbd .tar.bz2 ---"
+          for ua in "" "photonos-package-report/C" "curl/7.88.0" \
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+                    "Mozilla/4.0 (compatible; MSIE 6.0)" \
+                    "Wget/1.21"; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" -I -A "$ua" --max-time 10 "$U" || echo 0)
+            echo "HEAD ua='$ua' -> $code"
+            code=$(curl -s -o /dev/null -w "%{http_code}" -A "$ua" --max-time 10 "$U" -L --range 0-0 || echo 0)
+            echo "GET-range ua='$ua' -> $code"
+          done
+          echo "--- end probe ---"
           cd repo/photonos-package-report/photonos-package-report
           WDIR="${{ steps.reconstruct.outputs.wdir }}"
           UPSTREAMS="${{ steps.reconstruct.outputs.upstreams }}"
