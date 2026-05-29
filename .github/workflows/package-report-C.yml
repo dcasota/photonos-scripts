@@ -258,6 +258,10 @@ jobs:
           # `-spec` command-line flag (which `main.c` reads first); the
           # env makes the workflow input wiring cleaner.
           PR_SINGLE_SPEC: ${{ github.event.inputs.spec }}
+          # M112: diagnostic stderr trace of every pr_build_update_url cascade
+          # attempt (A-G) and the M81 ext-fallback. Set on this branch only;
+          # remove before merging to master. Helps debug kbd col6=empty.
+          PR_M91_DEBUG: "1"
         run: |
           cd repo/photonos-package-report/photonos-package-report
           WDIR="${{ steps.reconstruct.outputs.wdir }}"
