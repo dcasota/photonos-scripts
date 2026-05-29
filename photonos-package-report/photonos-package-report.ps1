@@ -795,7 +795,7 @@ lapack.spec,https://github.com/Reference-LAPACK/lapack/archive/refs/tags/v%{vers
 lasso.spec,https://dev.entrouvert.org/lasso/lasso-%{version}.tar.gz
 less.spec,https://github.com/gwsw/less/archive/refs/tags/v%{version}.tar.gz,https://github.com/gwsw/less.git
 leveldb.spec,https://github.com/google/leveldb/archive/refs/tags/v%{version}.tar.gz,https://github.com/google/leveldb.git
-libaio.spec,https://pagure.io/libaio/archive/libaio-{version}/libaio-libaio-{version}.tar.gz,https://pagure.io/libaio.git
+libaio.spec,https://pagure.io/libaio/archive/libaio-%{version}/libaio-libaio-%{version}.tar.gz,https://pagure.io/libaio.git
 libarchive.spec,https://github.com/libarchive/libarchive/archive/refs/tags/v%{version}.tar.gz,https://github.com/libarchive/libarchive.git
 libatomic_ops.spec,https://github.com/ivmai/libatomic_ops/archive/refs/tags/v%{version}.tar.gz,https://github.com/ivmai/libatomic_ops.git
 libbpf.spec,https://github.com/libbpf/libbpf/archive/refs/tags/v%{version}.tar.gz,https://github.com/libbpf/libbpf.git
