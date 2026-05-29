@@ -349,10 +349,15 @@ static int pr_build_update_url(pr_task_t *task, const char *source0_save,
     char *uashort_us = istr_replace_all(strdup(uashort), ".", "_");
 
     char *url = NULL; int h = 0;
+    const int dbg = (getenv("PR_M91_DEBUG") != NULL);
+    if (dbg) fprintf(stderr,
+        "M91[%s] s0=%s ver=%s vshort=%s ua=%s uashort=%s ua_us=%s ua_dash=%s\n",
+        spec, s0, ver, vshort, ua, uashort, ua_us, ua_dash);
 
     /* A (L4876): s0, ver -> ua */
     url = ireplace_re(s0, ver, ua);
     h = urlhealth(url);
+    if (dbg) fprintf(stderr, "M91[%s] A h=%d url=%s\n", spec, h, url);
     /* Remember attempt A's url+health: on overall failure the caller needs
      * them to tell a transient network error (h==0, keep url, no warning)
      * apart from a real packaging change (clean 404, clear url + warn). */
@@ -361,24 +366,28 @@ static int pr_build_update_url(pr_task_t *task, const char *source0_save,
     if (h != 200) {
         char *t = ireplace_re(url, vshort, uashort); free(url); url = t;
         h = urlhealth(url);
+        if (dbg) fprintf(stderr, "M91[%s] B h=%d url=%s\n", spec, h, url);
     }
     /* C (L4884-4885): underscore ua, then versionshort */
     if (h != 200) {
         free(url); url = ireplace_re(s0, ver, ua_us);
         char *t = ireplace_re(url, vshort, uashort); free(url); url = t;
         h = urlhealth(url);
+        if (dbg) fprintf(stderr, "M91[%s] C h=%d url=%s\n", spec, h, url);
     }
     /* D (L4889-4890): underscore ua, underscore versionshort */
     if (h != 200) {
         free(url); url = ireplace_re(s0, ver, ua_us);
         char *t = ireplace_re(url, vshort, uashort_us); free(url); url = t;
         h = urlhealth(url);
+        if (dbg) fprintf(stderr, "M91[%s] D h=%d url=%s\n", spec, h, url);
     }
     /* E (L4894-4895): dash ua, then versionshort */
     if (h != 200) {
         free(url); url = ireplace_re(s0, ver, ua_dash);
         char *t = ireplace_re(url, vshort, uashort); free(url); url = t;
         h = urlhealth(url);
+        if (dbg) fprintf(stderr, "M91[%s] E h=%d url=%s\n", spec, h, url);
     }
     /* F (L4899-4902): raw template, dot ua */
     if (h != 200) {
@@ -389,6 +398,7 @@ static int pr_build_update_url(pr_task_t *task, const char *source0_save,
         char *t1 = ireplace_re(raw, ver, ua);     free(raw);
         char *t2 = ireplace_re(t1, vshort, uashort); free(t1);
         url = t2; h = urlhealth(url);
+        if (dbg) fprintf(stderr, "M91[%s] F h=%d url=%s\n", spec, h, url);
     }
     /* G (L4906-4910): raw template, underscore then dot ua */
     if (h != 200) {
@@ -400,9 +410,20 @@ static int pr_build_update_url(pr_task_t *task, const char *source0_save,
         char *t2 = ireplace_re(t1, ver, ua);       free(t1);
         char *t3 = ireplace_re(t2, vshort, uashort); free(t2);
         url = t3; h = urlhealth(url);
+        if (dbg) fprintf(stderr, "M91[%s] G h=%d url=%s\n", spec, h, url);
     }
     /* M81 archive-extension fallback (L4914-4924) */
-    if (h != 200 && try_url_ext_fallback(&url) == 200) h = 200;
+    if (h != 200) {
+        char *url_before = dbg ? strdup(url ? url : "") : NULL;
+        int m81 = try_url_ext_fallback(&url);
+        if (dbg) {
+            fprintf(stderr, "M91[%s] M81 m81=%d url_before=%s url_after=%s\n",
+                    spec, m81, url_before ? url_before : "", url ? url : "");
+            free(url_before);
+        }
+        if (m81 == 200) h = 200;
+    }
+    if (dbg) fprintf(stderr, "M91[%s] FINAL h=%d url=%s\n", spec, h, url ? url : "");
 
     free(ver); free(ua); free(s0);
     free(vshort); free(uashort); free(ua_us); free(ua_dash); free(uashort_us);
