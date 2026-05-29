@@ -1636,6 +1636,21 @@ char *check_urlhealth(pr_task_t                       *task,
      * Source0 has no brace, so working specs are byte-identical. */
     int subst_unfinished = (state.Source0 && strchr(state.Source0, '{') != NULL);
 
+    /* M111: PS sets `$urlhealth = "200"` at multiple success-path set points
+     * (L2531 / L3869 after a clone `git tag -l` succeeds, L4408 after a
+     * generic scrape returns non-empty `$Names`). Those set points bypass
+     * the L2627 substitution_unfinished else-branch, so PS emits col4=200
+     * for libaio + apache-tomcat9/10/11/-9 despite their modified Source0
+     * carrying a literal `{version}`/`%{_origname}` brace. C's M102
+     * unconditionally emitted the sentinel, flagging cat2 on all 11 spec×
+     * branch combinations (C-only parity gap). Mirror PS by tracking
+     * whether the clone-tag or generic-scrape path produced tags; if so,
+     * col4 emits the numeric "200" instead of the sentinel. moz_eligible /
+     * gh_api / sf / etc. paths intentionally do NOT set the flag because
+     * PS does not set `$urlhealth = "200"` there either (nss is the
+     * counter-example — PS+C both emit substitution_unfinished, matched). */
+    int health_overridden_200 = 0;
+
     /* Phase 5 urlhealth probe. Skipped offline so ctest stays hermetic. */
     int health = 0;
     const char *netenv = getenv("PR_TEST_NETWORK");
@@ -1703,6 +1718,10 @@ char *check_urlhealth(pr_task_t                       *task,
                     size_t  n     = 0;
                     if (pr_clone_list_tags(clone_path, row->customRegex,
                                            &names, &n) == 0 && n > 0) {
+                        /* M111: mirror PS L2531/L3869 — successful `git
+                         * tag -l` sets `$urlhealth = "200"` before any
+                         * version compare. */
+                        health_overridden_200 = 1;
                         /* Apply replaceStrings from Source0Lookup row
                          * (PS L 2151). For clang/llvm specs this
                          * strips the `llvmorg-` prefix off tag names
@@ -2412,6 +2431,12 @@ char *check_urlhealth(pr_task_t                       *task,
              * root-relative / absolute listing links (e.g. curl.se's
              * "download/curl-8.20.0.tar.xz") parse like bare basenames. */
             if (scrape_ok) apply_href_basename(names, n);
+            /* M111: mirror PS L4408 — once the generic-else scrape
+             * returns non-empty hrefs, PS sets `$urlhealth = "200"`
+             * (bypassing L2627 substitution_unfinished). Applies only to
+             * this generic branch; the _eligible branches above (moz,
+             * gh, sf, ao, …) have their own per-path PS behaviour. */
+            if (scrape_ok && n > 0) health_overridden_200 = 1;
         }
         if (scrape_ok && n > 0) {
             if (!used_atom && !used_sf && !used_gh && !used_moz && !used_gnome) {
@@ -2750,11 +2775,18 @@ char *check_urlhealth(pr_task_t                       *task,
      * carries an unresolved macro brace. */
     char health_num[16];
     const char *health_field;
-    if (subst_unfinished) {
+    if (subst_unfinished && !health_overridden_200) {
         health_field = "substitution_unfinished";
     } else {
-        snprintf(health_num, sizeof health_num, "%d", health);
-        health_field = health_num;
+        /* M111: when subst_unfinished AND a detection path set the
+         * "PS L2531/L4408 override" flag, mirror PS by emitting the
+         * literal "200". Otherwise emit the numeric urlhealth result. */
+        if (subst_unfinished && health_overridden_200) {
+            health_field = "200";
+        } else {
+            snprintf(health_num, sizeof health_num, "%d", health);
+            health_field = health_num;
+        }
     }
     if (emit_multi_sha) {
         rc = asprintf(&out,
