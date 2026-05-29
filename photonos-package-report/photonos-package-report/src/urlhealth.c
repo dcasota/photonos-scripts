@@ -86,8 +86,11 @@ static int needs_browser_fallback(const char *url)
     return 0;
 }
 
-static int curl_head(const char *url, long timeout_ms,
-                     struct curl_slist *headers, long *out_status)
+/* Pass user_agent = NULL to suppress the User-Agent header (mirrors .NET
+ * HttpWebRequest's default behaviour, which PS's urlhealth relies on). */
+static int curl_head_ua(const char *url, long timeout_ms,
+                        struct curl_slist *headers, const char *user_agent,
+                        long *out_status)
 {
     CURL *c = curl_easy_init();
     if (!c) return -1;
@@ -95,7 +98,7 @@ static int curl_head(const char *url, long timeout_ms,
     curl_easy_setopt(c, CURLOPT_NOBODY,        1L);          /* HEAD */
     curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION,1L);
     curl_easy_setopt(c, CURLOPT_TIMEOUT_MS,    timeout_ms);
-    curl_easy_setopt(c, CURLOPT_USERAGENT,     "photonos-package-report/C");
+    if (user_agent) curl_easy_setopt(c, CURLOPT_USERAGENT, user_agent);
     curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, discard_cb);
     if (headers) curl_easy_setopt(c, CURLOPT_HTTPHEADER, headers);
 
@@ -114,9 +117,27 @@ int urlhealth(const char *checkurl)
     if (checkurl == NULL || checkurl[0] == '\0') return 0;
 
     long status = 0;
-    int  rc     = curl_head(checkurl, 120000, NULL, &status);
+    int  rc     = curl_head_ua(checkurl, 120000, NULL,
+                               "photonos-package-report/C", &status);
     if (rc == 0 && status >= 200 && status < 400) {
         return (int)status;
+    }
+
+    /* M112: some upstream HTTP servers (e.g. ftp.altlinux.org) gate by
+     * User-Agent and 404 our default "photonos-package-report/C" while
+     * happily serving the file to a request with no UA header at all.
+     * PS's HttpWebRequest sends no UA by default, so PS sees 200 where
+     * C sees 404 (kbd .tar.bz2 + a few siblings). Retry once with no UA
+     * before declaring the URL dead — matches PS's primary path. Only
+     * fires when the default HEAD returned 4xx/5xx, so URLs that work
+     * with the default UA are unaffected (one extra HEAD on a true 404,
+     * but additive; no false 200 can sneak through). */
+    if (rc == 0 && status >= 400 && status < 600) {
+        long status2 = 0;
+        int rc2 = curl_head_ua(checkurl, 120000, NULL, NULL, &status2);
+        if (rc2 == 0 && status2 >= 200 && status2 < 400) {
+            return (int)status2;
+        }
     }
 
     /* PS L 1480: fallback for netfilter/ftp URLs. */
