@@ -127,6 +127,7 @@ add_executable(photonos-package-report
     src/jdk.c
     src/url_util.c
     src/sha.c
+    src/modify_spec.c
     src/diff_report.c
     src/package_report.c
     src/netcat.c
