@@ -1798,8 +1798,12 @@ char *check_urlhealth(pr_task_t                       *task,
                                            &names, &n) == 0 && n > 0) {
                         /* M111: mirror PS L2531/L3869 — successful `git
                          * tag -l` sets `$urlhealth = "200"` before any
-                         * version compare. */
+                         * version compare.
+                         * M116: also mirror that into the in-memory
+                         * `health` so downstream consumers (L2828 clear
+                         * logic, gate checks) see the PS-equivalent state. */
                         health_overridden_200 = 1;
+                        health = 200;
                         /* Apply replaceStrings from Source0Lookup row
                          * (PS L 2151). For clang/llvm specs this
                          * strips the `llvmorg-` prefix off tag names
@@ -2513,8 +2517,9 @@ char *check_urlhealth(pr_task_t                       *task,
              * returns non-empty hrefs, PS sets `$urlhealth = "200"`
              * (bypassing L2627 substitution_unfinished). Applies only to
              * this generic branch; the _eligible branches above (moz,
-             * gh, sf, ao, …) have their own per-path PS behaviour. */
-            if (scrape_ok && n > 0) health_overridden_200 = 1;
+             * gh, sf, ao, …) have their own per-path PS behaviour.
+             * M116: also mirror into `health` (see clone-tag site). */
+            if (scrape_ok && n > 0) { health_overridden_200 = 1; health = 200; }
         }
         if (scrape_ok && n > 0) {
             if (!used_atom && !used_sf && !used_gh && !used_moz && !used_gnome) {
