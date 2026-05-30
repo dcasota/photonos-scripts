@@ -35,6 +35,9 @@ on:
       spec:
         description: 'T1: single-spec investigation mode. Set to a spec basename (e.g. "libev.spec") to compact the C binary''s task list to that one spec across the snapshot''s branches. Diagnostic-only: the resulting .prn has one row per branch and is never a parity verdict.'
         default: ''
+      modify_spec:
+        description: 'M122: enable the C-side ModifySpecFile port. When true, the binary writes the bumped .spec under SPECS_NEW_C/<Name>/<basename>-<Update>.spec (parallel to PS''s SPECS_NEW/, never overwriting it). Default false until the SPECS_NEW_C vs SPECS_NEW diff is operator-confirmed byte-identical.'
+        default: 'false'
 
 permissions:
   contents: write   # commit the journal back to master
@@ -258,6 +261,12 @@ jobs:
           # `-spec` command-line flag (which `main.c` reads first); the
           # env makes the workflow input wiring cleaner.
           PR_SINGLE_SPEC: ${{ github.event.inputs.spec }}
+          # M122 / M123: when true, the C binary calls pr_modify_spec_file
+          # for every spec whose detection produced HealthUpdateURL=200,
+          # writing the bumped spec to SPECS_NEW_C/<Name>/<base>-<Update>.spec.
+          # PS's SPECS_NEW/ is untouched. Operator-validates via the upload
+          # step + diff before flipping the default ON in a future PR.
+          PR_MODIFY_SPEC: ${{ github.event.inputs.modify_spec == 'true' && '1' || '' }}
         run: |
           cd repo/photonos-package-report/photonos-package-report
           WDIR="${{ steps.reconstruct.outputs.wdir }}"
@@ -355,6 +364,19 @@ jobs:
             ${{ steps.c_run.outputs.scans }}/photonos-urlhealth-issues-*.md
             ${{ steps.c_run.outputs.scans }}/photonos-diff-report-*.prn
             ${{ steps.c_run.outputs.scans }}/photonos-package-report_*.prn
+          if-no-files-found: warn
+          retention-days: 30
+
+      # M123: SPECS_NEW_C/ (M122 output) upload — only when modify_spec=true
+      # was dispatched. Lets the operator (or follow-up PR's verification
+      # step) diff against PS's SPECS_NEW/ for byte-identical confirmation.
+      - name: Upload C-side SPECS_NEW_C (M122 validation)
+        if: always() && github.event.inputs.modify_spec == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: c-side-specs-new-${{ github.run_id }}
+          path: |
+            ${{ steps.reconstruct.outputs.wdir }}/photon-*/SPECS_NEW_C/**/*.spec
           if-no-files-found: warn
           retention-days: 30
 
