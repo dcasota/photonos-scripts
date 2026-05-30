@@ -122,6 +122,7 @@ add_executable(test_phase6
     ${CMAKE_SOURCE_DIR}/src/url_util.c
     ${CMAKE_SOURCE_DIR}/src/sha.c
     ${CMAKE_SOURCE_DIR}/src/jdk.c
+    ${CMAKE_SOURCE_DIR}/src/modify_spec.c
     ${PR_GEN_HOOK_DISPATCH}
     ${PR_HOOK_SOURCES}
 )
@@ -215,6 +216,16 @@ target_link_libraries(test_phase6f PRIVATE pthread ${PCRE2_LIBRARIES} ${CURL_LIB
 target_compile_options(test_phase6f PRIVATE -Wall -Wextra -O0 -g -D_GNU_SOURCE ${PCRE2_CFLAGS_OTHER} ${CURL_CFLAGS_OTHER} ${OPENSSL_CFLAGS_OTHER})
 
 add_test(NAME test_phase6f COMMAND test_phase6f)
+
+# ----- Phase 6g unit tests (M122 ModifySpecFile port) -----------------
+add_executable(test_phase6g
+    test_phase6g.c
+    ${CMAKE_SOURCE_DIR}/src/modify_spec.c
+)
+target_include_directories(test_phase6g PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_compile_options(test_phase6g PRIVATE -Wall -Wextra -O0 -g -D_GNU_SOURCE)
+
+add_test(NAME test_phase6g COMMAND test_phase6g)
 
 # ----- Phase 7 unit tests (pthread worker pool) -----------------------
 add_executable(test_phase7
