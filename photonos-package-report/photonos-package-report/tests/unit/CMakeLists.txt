@@ -121,6 +121,7 @@ add_executable(test_phase6
     ${CMAKE_SOURCE_DIR}/src/version.c
     ${CMAKE_SOURCE_DIR}/src/url_util.c
     ${CMAKE_SOURCE_DIR}/src/sha.c
+    ${CMAKE_SOURCE_DIR}/src/jdk.c
     ${PR_GEN_HOOK_DISPATCH}
     ${PR_HOOK_SOURCES}
 )
