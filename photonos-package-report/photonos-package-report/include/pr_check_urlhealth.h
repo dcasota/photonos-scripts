@@ -43,9 +43,16 @@
  * created — mirrors PS PR #84 (PS L 2376-2392, 3665-3679, 4020-4034).
  * Pass NULL/"" to disable. Tag detection falls through cleanly to
  * the no-`.git` path. */
+/* M124: `working_dir` is the operator's --workingDir (root of the
+ * photon-<branch>/SPECS trees). Used ONLY by the M122 ModifySpecFile
+ * port to locate the source spec file and place SPECS_NEW_C/ alongside.
+ * The other paths (clone_root, exclusion_list) already point at the
+ * upstream-clones tree which can sit under a different root. Pass NULL
+ * to disable the modify-spec side-effect (mirrors PR_MODIFY_SPEC unset). */
 char *check_urlhealth(pr_task_t                       *task,
                       const pr_source0_lookup_table_t *lookup_table,
                       const char                      *clone_root,
-                      const char                      *exclusion_list);
+                      const char                      *exclusion_list,
+                      const char                      *working_dir);
 
 #endif /* PR_CHECK_URLHEALTH_H */
