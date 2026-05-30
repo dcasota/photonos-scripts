@@ -115,7 +115,14 @@ param (
     [Parameter(Mandatory = $false)][ValidateNotNull()]$GeneratePhMaintoPhMasterDiffHigherPackageVersionReport=$true,
     [Parameter(Mandatory = $false)][ValidateNotNull()]$GeneratePh5toPh6DiffHigherPackageVersionReport=$true,
     [Parameter(Mandatory = $false)][ValidateNotNull()]$GeneratePh4toPh5DiffHigherPackageVersionReport=$true,
-    [Parameter(Mandatory = $false)][ValidateNotNull()]$GeneratePh3toPh4DiffHigherPackageVersionReport=$true
+    [Parameter(Mandatory = $false)][ValidateNotNull()]$GeneratePh3toPh4DiffHigherPackageVersionReport=$true,
+    # M125: optional changelog-author parameters used by ModifySpecFile when
+    # an update is detected. Current hardcoded strings ("First", "Last",
+    # "firstname.lastname@broadcom.com") are kept as defaults so legacy
+    # invocations remain byte-identical.
+    [string]$FirstName="First",
+    [string]$LastName="Last",
+    [string]$EmailAddress="firstname.lastname@broadcom.com"
 )
 
 # Convert string parameters to boolean (needed when using -File with $true/$false)
@@ -1422,7 +1429,13 @@ function ModifySpecFile {
     $object=get-content $SpecFile
 
     $DateEntry = use-culture -Culture en-US {(get-date -UFormat "%a") + " " + (get-date).ToString("MMM") + " " + (get-date -UFormat "%d %Y") }
-    $line1=[system.string]::concat("* ",$DateEntry," ","First Last <firstname.lastname@broadcom.com> ",$Update,"-1")
+    # M125: changelog author/email pulled from script-globals set by the
+    # top-level param block; defaults preserve the legacy "First Last
+    # <firstname.lastname@broadcom.com>" string when callers don't override.
+    $authorFirst = if ($null -ne $global:firstName    -and $global:firstName    -ne "") { $global:firstName }    else { "First" }
+    $authorLast  = if ($null -ne $global:lastName     -and $global:lastName     -ne "") { $global:lastName }     else { "Last" }
+    $authorMail  = if ($null -ne $global:emailAddress -and $global:emailAddress -ne "") { $global:emailAddress } else { "firstname.lastname@broadcom.com" }
+    $line1=[system.string]::concat("* ",$DateEntry," ",$authorFirst," ",$authorLast," <",$authorMail,"> ",$Update,"-1")
 
     $skip=$false
     $FileModified = @()
@@ -5528,6 +5541,13 @@ $throttleLimit = 20 # Set a hard cap to prevent overloading the system
 
 # Set global variables from script parameters
 $global:workingDir = $workingDir
+
+# M125: propagate changelog-author params to a script-global scope so
+# ModifySpecFile can pick them up without changing its signature (and
+# without threading them through CheckURLHealth / GenerateUrlHealthReports).
+$global:firstName    = $FirstName
+$global:lastName     = $LastName
+$global:emailAddress = $EmailAddress
 
 # Validate workingDir exists
 if (-not (Test-Path -Path $global:workingDir -PathType Container)) {

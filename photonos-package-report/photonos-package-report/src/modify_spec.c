@@ -149,13 +149,25 @@ int pr_modify_spec_file(const pr_task_t *task,
     }
     if (task->content == NULL || task->content_lines == 0) return -1;
 
-    /* PS L 1425: $line1 = "* <DateEntry> First Last <fl@broadcom.com>
-     *                       <Update>-1". */
+    /* PS L 1425: $line1 = "* <DateEntry> <First> <Last> <<email>> <Update>-1".
+     *
+     * M125: changelog author + email are pulled from env vars
+     * PR_FIRST_NAME / PR_LAST_NAME / PR_EMAIL_ADDRESS (set by the
+     * workflow input or the operator's shell). Defaults preserve the
+     * legacy hardcoded "First Last <firstname.lastname@broadcom.com>"
+     * string when env is unset — byte-identical to the pre-M125 line. */
+    const char *first_name = getenv("PR_FIRST_NAME");
+    const char *last_name  = getenv("PR_LAST_NAME");
+    const char *email_addr = getenv("PR_EMAIL_ADDRESS");
+    if (first_name == NULL || first_name[0] == '\0') first_name = "First";
+    if (last_name  == NULL || last_name[0]  == '\0') last_name  = "Last";
+    if (email_addr == NULL || email_addr[0] == '\0') email_addr = "firstname.lastname@broadcom.com";
+
     char date_entry[64];
     format_date_entry(date_entry, sizeof date_entry);
     char *line1 = NULL;
-    if (asprintf(&line1, "* %s First Last <firstname.lastname@broadcom.com> %s-1",
-                 date_entry, update_avail) < 0) return -1;
+    if (asprintf(&line1, "* %s %s %s <%s> %s-1",
+                 date_entry, first_name, last_name, email_addr, update_avail) < 0) return -1;
 
     /* Build the Version: replacement string. PS L 1432 splits on
      * openjdk8: openjdk8 → "1.8.0.<Update>"; default → "<Update>". */

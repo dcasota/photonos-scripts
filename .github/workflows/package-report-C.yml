@@ -38,6 +38,15 @@ on:
       modify_spec:
         description: 'M122: enable the C-side ModifySpecFile port. When true, the binary writes the bumped .spec under SPECS_NEW_C/<Name>/<basename>-<Update>.spec (parallel to PS''s SPECS_NEW/, never overwriting it). Default false until the SPECS_NEW_C vs SPECS_NEW diff is operator-confirmed byte-identical.'
         default: 'false'
+      first_name:
+        description: 'M125: First name of the changelog-entry author injected by ModifySpecFile. Leave empty for the legacy "First" default.'
+        default: ''
+      last_name:
+        description: 'M125: Last name of the changelog-entry author. Leave empty for the legacy "Last" default.'
+        default: ''
+      email_address:
+        description: 'M125: Email address of the changelog-entry author. Leave empty for the legacy "firstname.lastname@broadcom.com" default.'
+        default: ''
 
 permissions:
   contents: write   # commit the journal back to master
@@ -267,6 +276,12 @@ jobs:
           # PS's SPECS_NEW/ is untouched. Operator-validates via the upload
           # step + diff before flipping the default ON in a future PR.
           PR_MODIFY_SPEC: ${{ github.event.inputs.modify_spec == 'true' && '1' || '' }}
+          # M125: changelog-author overrides — empty values keep the
+          # legacy "First Last <firstname.lastname@broadcom.com>" string,
+          # so unset inputs leave PS+C byte-stable for the parity gate.
+          PR_FIRST_NAME: ${{ github.event.inputs.first_name }}
+          PR_LAST_NAME: ${{ github.event.inputs.last_name }}
+          PR_EMAIL_ADDRESS: ${{ github.event.inputs.email_address }}
         run: |
           cd repo/photonos-package-report/photonos-package-report
           WDIR="${{ steps.reconstruct.outputs.wdir }}"
