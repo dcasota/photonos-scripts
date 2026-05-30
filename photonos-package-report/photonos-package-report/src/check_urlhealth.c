@@ -218,7 +218,7 @@ static int gh_tag_normalize_allowed(const char *spec)
 {
     static const char *const list[] = {
         "valkey.spec", "liblognorm.spec", "rpm-sequoia.spec", "tinydir.spec",
-        "timescaledb15.spec", "timescaledb16.spec",
+        "timescaledb14.spec", "timescaledb15.spec", "timescaledb16.spec",
         "timescaledb17.spec", "timescaledb18.spec", NULL,
     };
     for (int i = 0; list[i]; i++)
