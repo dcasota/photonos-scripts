@@ -227,6 +227,29 @@ static int gh_tag_normalize_allowed(const char *spec)
     return 0;
 }
 
+/* M120: per-spec allow-list for the github "no-/archive/" Source0
+ * normalization (PS L2766-2790 else branch). PS rewrites <name>-<ver>
+ * (anywhere in the URL) to /archive/refs/tags/v<ver>, then
+ * /archive/refs/tags/<ver> as a fallback. Same conservative pattern as
+ * M96/M97 + M114 — allow-listed to specs proven safe. cbindgen is the
+ * first admit: its raw Source0 "%{name}-%{version}.tar.gz" gets
+ * URL-prefixed by source0_substitute to
+ * "https://github.com/mozilla/cbindgencbindgen-0.29.2.tar.gz" (no
+ * slash because the spec's URL has no trailing slash), then PS's L2766
+ * else branch ireplaces "cbindgen-0.29.2" with "/archive/refs/tags/
+ * v0.29.2", producing the correct
+ * "https://github.com/mozilla/cbindgen/archive/refs/tags/v0.29.2.tar.gz".
+ * The slash reappears as a side effect of the rewrite. */
+static int gh_no_archive_normalize_allowed(const char *spec)
+{
+    static const char *const list[] = {
+        "cbindgen.spec", NULL,
+    };
+    for (int i = 0; list[i]; i++)
+        if (spec_eq(spec, list[i])) return 1;
+    return 0;
+}
+
 /* M114: per-spec allow-list for the github /archive/<name>- (NO /refs/tags/)
  * Source0 normalization. PS L2710-2720 unconditionally rewrites such URLs
  * to /archive/refs/tags/<ver> when the original 404s, then to
@@ -324,6 +347,46 @@ static char *gh_archive_no_refs_normalize(const char *save, const char *name,
     /* PS L2723: /archive/<name>- -> /archive/refs/tags/v */
     if (h != 200) {
         cand = ireplace_re(save, pat, "/archive/refs/tags/v");
+        if (cand && urlhealth(cand) == 200) { free(best); best = cand; h = 200; }
+        else free(cand);
+    }
+
+    *out_health = h;
+    return best;
+}
+
+/* M120 / PS L2766-2790 (else branch of the github URL detection chain):
+ * when a github Source0 has NEITHER /archive/refs/tags/ NOR /archive/<name>-
+ * NOR /releases/download/ but DOES contain the literal "<name>-<ver>"
+ * (typical when the spec's Source0 is just "%{name}-%{version}.tar.gz" and
+ * the URL-prefix injection at source0_substitute concatenates a URL with
+ * no trailing slash), PS rewrites "<name>-<ver>" anywhere in the URL to
+ * "/archive/refs/tags/v<ver>", then to "/archive/refs/tags/<ver>" as a
+ * fallback. The slash reappears in the rewritten URL as a side effect
+ * (the URL prefix "github.com/<owner>/<repo>" was concatenated without
+ * its trailing slash, and the rewrite happens to put the slash back).
+ * Allow-listed via gh_no_archive_normalize_allowed. */
+static char *gh_no_archive_normalize(const char *save, const char *name,
+                                     const char *version, int *out_health)
+{
+    const char *nm  = name    ? name    : "";
+    const char *ver = version ? version : "";
+    char *best = strdup(save);
+    int h = 0;
+    char pat[768];
+
+    /* PS L2773-2774: <name>-<ver> -> /archive/refs/tags/v<ver> */
+    snprintf(pat, sizeof pat, "%s-%s", nm, ver);
+    char rep[768];
+    snprintf(rep, sizeof rep, "/archive/refs/tags/v%s", ver);
+    char *cand = ireplace_re(save, pat, rep);
+    if (cand && urlhealth(cand) == 200) { free(best); best = cand; h = 200; }
+    else free(cand);
+
+    /* PS L2781-2782: <name>-<ver> -> /archive/refs/tags/<ver> */
+    if (h != 200) {
+        snprintf(rep, sizeof rep, "/archive/refs/tags/%s", ver);
+        cand = ireplace_re(save, pat, rep);
         if (cand && urlhealth(cand) == 200) { free(best); best = cand; h = 200; }
         else free(cand);
     }
@@ -1806,6 +1869,32 @@ char *check_urlhealth(pr_task_t                       *task,
         && strstr(state.Source0, "/refs/tags/") == NULL) {
         int nh = 0;
         char *norm = gh_archive_no_refs_normalize(
+            state.Source0, task->Name, state.version ? state.version : "", &nh);
+        if (nh == 200) {
+            free(state.Source0);
+            state.Source0 = norm;
+            health = 200;
+        } else {
+            free(norm);
+        }
+    }
+
+    /* M120 / PS L2766-2790: when a github Source0 has NEITHER /archive/
+     * NOR /releases/ — i.e. the URL is the bare URL-prefix-injected form
+     * "<host>/<owner>/<repo><name>-<ver>.tar.gz" (cbindgen + similar
+     * specs whose spec Source0 is just "%{name}-%{version}.tar.gz" and
+     * whose URL field has no trailing slash) — PS rewrites "<name>-<ver>"
+     * anywhere in the URL to "/archive/refs/tags/v<ver>" then to
+     * "/archive/refs/tags/<ver>". Allow-listed via
+     * gh_no_archive_normalize_allowed (currently cbindgen only). */
+    if (allow_network && !subst_unfinished && health != 200
+        && gh_no_archive_normalize_allowed(task->Spec)
+        && state.Source0
+        && strstr(state.Source0, "github.com") != NULL
+        && strstr(state.Source0, "/archive/") == NULL
+        && strstr(state.Source0, "/releases/") == NULL) {
+        int nh = 0;
+        char *norm = gh_no_archive_normalize(
             state.Source0, task->Name, state.version ? state.version : "", &nh);
         if (nh == 200) {
             free(state.Source0);
