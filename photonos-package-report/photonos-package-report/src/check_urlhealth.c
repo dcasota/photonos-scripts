@@ -2855,16 +2855,20 @@ char *check_urlhealth(pr_task_t                       *task,
     const char *health_field;
     if (subst_unfinished && !health_overridden_200) {
         health_field = "substitution_unfinished";
+    } else if (health_overridden_200) {
+        /* M111 + M115: PS L2531 (clone-tag success) and L4408 (generic-
+         * scrape success) set `$urlhealth="200"` UNCONDITIONALLY — not
+         * just when the modified Source0 had an unresolved macro brace.
+         * M111 initially only honoured the override on the subst_unfinished
+         * path; M115 extends it to the always-case so col4 mirrors PS for
+         * every spec whose clone-tag/scrape detection succeeded even when
+         * the templated Source0 URL itself 404s (containers-common,
+         * gst-plugins-bad, libnss-ato, pcstat, re2, dtb-raspberrypi,
+         * libmspack, etc.). */
+        health_field = "200";
     } else {
-        /* M111: when subst_unfinished AND a detection path set the
-         * "PS L2531/L4408 override" flag, mirror PS by emitting the
-         * literal "200". Otherwise emit the numeric urlhealth result. */
-        if (subst_unfinished && health_overridden_200) {
-            health_field = "200";
-        } else {
-            snprintf(health_num, sizeof health_num, "%d", health);
-            health_field = health_num;
-        }
+        snprintf(health_num, sizeof health_num, "%d", health);
+        health_field = health_num;
     }
     if (emit_multi_sha) {
         rc = asprintf(&out,
