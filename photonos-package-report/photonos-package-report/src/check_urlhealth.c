@@ -226,6 +226,25 @@ static int gh_tag_normalize_allowed(const char *spec)
     return 0;
 }
 
+/* M114: per-spec allow-list for the github /archive/<name>- (NO /refs/tags/)
+ * Source0 normalization. PS L2710-2720 unconditionally rewrites such URLs
+ * to /archive/refs/tags/<ver> when the original 404s, then to
+ * /archive/refs/tags/v<ver> as a fallback. C mirrors that behaviour but
+ * gated to the proven-safe allow-list — the same conservative pattern as
+ * gh_tag_normalize_allowed (the broad form there regressed kubernetes-
+ * dashboard / falco). Specs admitted here must (1) lack a Source0Lookup
+ * row with a gitSource so the clone path doesn't already cover them, and
+ * (2) have a github archive Source0 of the /<name>-<ver>.tar.gz shape. */
+static int gh_archive_no_refs_normalize_allowed(const char *spec)
+{
+    static const char *const list[] = {
+        "logrotate.spec", NULL,
+    };
+    for (int i = 0; list[i]; i++)
+        if (spec_eq(spec, list[i])) return 1;
+    return 0;
+}
+
 /* PS L2630-2701: when a github /archive/refs/tags/ Source0 is NOT 200,
  * normalize it to the real tag form by trying variants against the CURRENT
  * version (PS source order): <name>-v<ver> -> v<ver>; <name>-<ver> -> v<ver>;
@@ -274,6 +293,39 @@ static char *gh_archive_tag_normalize(const char *save, const char *name,
         GH_TRY(p, r);                                             /* L2686 */
     }
 #undef GH_TRY
+
+    *out_health = h;
+    return best;
+}
+
+/* M114 / PS L2710-2720: when a github Source0 has /archive/<name>- (NO
+ * /refs/tags/) and 404s, PS rewrites the /<name>- segment to /refs/tags/
+ * (then /refs/tags/v<ver> as a fallback) and adopts the variant that HEADs
+ * 200. C mirrors that. Like gh_archive_tag_normalize, callers gate via
+ * the per-spec allow-list so the broad form can't regress kubernetes/falco-
+ * style detection-path shifts. Returns a heap-allocated string: the
+ * rewritten URL when *out_health == 200, otherwise a copy of `save`. */
+static char *gh_archive_no_refs_normalize(const char *save, const char *name,
+                                          const char *version, int *out_health)
+{
+    const char *nm  = name    ? name    : "";
+    const char *ver = version ? version : "";
+    char *best = strdup(save);
+    int h = 0;
+    char pat[768];
+
+    /* PS L2715: /archive/<name>- -> /archive/refs/tags/ */
+    snprintf(pat, sizeof pat, "/archive/%s-", nm);
+    char *cand = ireplace_re(save, pat, "/archive/refs/tags/");
+    if (cand && urlhealth(cand) == 200) { free(best); best = cand; h = 200; }
+    else free(cand);
+
+    /* PS L2723: /archive/<name>- -> /archive/refs/tags/v */
+    if (h != 200) {
+        cand = ireplace_re(save, pat, "/archive/refs/tags/v");
+        if (cand && urlhealth(cand) == 200) { free(best); best = cand; h = 200; }
+        else free(cand);
+    }
 
     *out_health = h;
     return best;
@@ -1675,6 +1727,32 @@ char *check_urlhealth(pr_task_t                       *task,
         && strstr(state.Source0, "/archive/refs/tags/") != NULL) {
         int nh = 0;
         char *norm = gh_archive_tag_normalize(
+            state.Source0, task->Name, state.version ? state.version : "", &nh);
+        if (nh == 200) {
+            free(state.Source0);
+            state.Source0 = norm;
+            health = 200;
+        } else {
+            free(norm);
+        }
+    }
+
+    /* M114 / PS L2710-2720: sibling of the M96/M97 normalize above, for
+     * github Source0 of the /archive/<name>-<ver>.tar.gz shape (NO
+     * /refs/tags/). PS rewrites those to /archive/refs/tags/<ver> when
+     * the original 404s, then to /v<ver>. Without this, specs like
+     * logrotate (no Source0Lookup row, no gitSource → no clone path)
+     * keep the broken templated URL and the M91 cascade emits empty
+     * col6/col10 + packaging warning. Allow-listed via
+     * gh_archive_no_refs_normalize_allowed; only fires on health!=200. */
+    if (allow_network && !subst_unfinished && health != 200
+        && gh_archive_no_refs_normalize_allowed(task->Spec)
+        && state.Source0
+        && strstr(state.Source0, "github.com") != NULL
+        && strstr(state.Source0, "/archive/") != NULL
+        && strstr(state.Source0, "/refs/tags/") == NULL) {
+        int nh = 0;
+        char *norm = gh_archive_no_refs_normalize(
             state.Source0, task->Name, state.version ? state.version : "", &nh);
         if (nh == 200) {
             free(state.Source0);
