@@ -204,6 +204,75 @@ static void test_subversion_and_commit_id(const char *tmp)
     free_task(t);
 }
 
+/* M125: changelog-author env-var overrides. The defaults must produce
+ * the legacy "First Last <firstname.lastname@broadcom.com>" string;
+ * setting any subset of PR_FIRST_NAME / PR_LAST_NAME / PR_EMAIL_ADDRESS
+ * must show through, and remaining unset slots keep their defaults. */
+static void test_changelog_author_default(const char *tmp)
+{
+    fprintf(stderr, "[test_changelog_author_default]\n");
+    /* Ensure env is unset so defaults apply. */
+    unsetenv("PR_FIRST_NAME"); unsetenv("PR_LAST_NAME"); unsetenv("PR_EMAIL_ADDRESS");
+    const char *lines[] = {
+        "Name:           foo",
+        "Version:        1.0",
+        "Release:        1%{?dist}",
+        "Source0:        https://example.com/foo-%{version}.tar.gz",
+        "%define sha512 foo=OLD",
+        "%changelog",
+    };
+    pr_task_t *t = make_task("foo", "foo.spec", tmp, "photon-master",
+                             lines, sizeof lines / sizeof lines[0]);
+    int rc = pr_modify_spec_file(t, tmp, tmp, "photon-master",
+                                 "2.0", "%define sha512 foo=NEW",
+                                 0, NULL, "SPECS_NEW_C");
+    EXPECT(rc == 0);
+    char out_path[1024];
+    snprintf(out_path, sizeof out_path,
+             "%s/photon-master/SPECS_NEW_C/foo/foo-2.0.spec", tmp);
+    char *body = slurp(out_path);
+    EXPECT(body != NULL);
+    if (body) {
+        EXPECT(strstr(body, "First Last <firstname.lastname@broadcom.com> 2.0-1") != NULL);
+        free(body);
+    }
+    free_task(t);
+}
+
+static void test_changelog_author_override(const char *tmp)
+{
+    fprintf(stderr, "[test_changelog_author_override]\n");
+    setenv("PR_FIRST_NAME",    "Ada",                  1);
+    setenv("PR_LAST_NAME",     "Lovelace",             1);
+    setenv("PR_EMAIL_ADDRESS", "ada@example.com",      1);
+    const char *lines[] = {
+        "Name:           bar",
+        "Version:        0.1",
+        "Release:        1%{?dist}",
+        "Source0:        https://example.com/bar-%{version}.tar.gz",
+        "%define sha512 bar=OLD",
+        "%changelog",
+    };
+    pr_task_t *t = make_task("bar", "bar.spec", tmp, "photon-6.0",
+                             lines, sizeof lines / sizeof lines[0]);
+    int rc = pr_modify_spec_file(t, tmp, tmp, "photon-6.0",
+                                 "0.2", "%define sha512 bar=NEW",
+                                 0, NULL, "SPECS_NEW_C");
+    EXPECT(rc == 0);
+    char out_path[1024];
+    snprintf(out_path, sizeof out_path,
+             "%s/photon-6.0/SPECS_NEW_C/bar/bar-0.2.spec", tmp);
+    char *body = slurp(out_path);
+    EXPECT(body != NULL);
+    if (body) {
+        EXPECT(strstr(body, "Ada Lovelace <ada@example.com> 0.2-1") != NULL);
+        EXPECT(strstr(body, "First Last <firstname.lastname@broadcom.com>") == NULL);
+        free(body);
+    }
+    free_task(t);
+    unsetenv("PR_FIRST_NAME"); unsetenv("PR_LAST_NAME"); unsetenv("PR_EMAIL_ADDRESS");
+}
+
 static void test_asc_suffix_strip(const char *tmp)
 {
     fprintf(stderr, "[test_asc_suffix_strip]\n");
@@ -240,6 +309,8 @@ int main(void)
     test_default_spec(tmpdir);
     test_openjdk8_version(tmpdir);
     test_subversion_and_commit_id(tmpdir);
+    test_changelog_author_default(tmpdir);
+    test_changelog_author_override(tmpdir);
     test_asc_suffix_strip(tmpdir);
 
     /* Cleanup. */

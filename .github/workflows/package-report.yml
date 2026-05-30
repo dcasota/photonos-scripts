@@ -33,6 +33,15 @@ on:
       spec:
         description: 'T1: single-spec investigation mode. Set to a spec basename (e.g. "libev.spec") to process only that one file across the selected branches — seconds instead of ~40 min. Diagnostic-only: the resulting .prn has one row and is never used as a parity verdict.'
         default: ''
+      first_name:
+        description: 'M125: First name of the changelog-entry author injected by ModifySpecFile when an update is detected. Leave empty for the legacy "First" default.'
+        default: ''
+      last_name:
+        description: 'M125: Last name of the changelog-entry author. Leave empty for the legacy "Last" default.'
+        default: ''
+      email_address:
+        description: 'M125: Email address of the changelog-entry author. Leave empty for the legacy "firstname.lastname@broadcom.com" default.'
+        default: ''
   schedule:
     # Weekly scan on Sunday at 02:00 UTC
     - cron: '0 2 * * 0'
@@ -232,6 +241,19 @@ jobs:
           # a single row and never feeds the parity verdict.
           if [ -n "${{ github.event.inputs.spec }}" ]; then
             EXTRA_ARGS="$EXTRA_ARGS -Spec \"${{ github.event.inputs.spec }}\""
+          fi
+
+          # M125: optional changelog-author overrides. Each only added to
+          # EXTRA_ARGS when the operator supplied a non-empty value so the
+          # PS-side default strings stay byte-stable for legacy invocations.
+          if [ -n "${{ github.event.inputs.first_name }}" ]; then
+            EXTRA_ARGS="$EXTRA_ARGS -FirstName \"${{ github.event.inputs.first_name }}\""
+          fi
+          if [ -n "${{ github.event.inputs.last_name }}" ]; then
+            EXTRA_ARGS="$EXTRA_ARGS -LastName \"${{ github.event.inputs.last_name }}\""
+          fi
+          if [ -n "${{ github.event.inputs.email_address }}" ]; then
+            EXTRA_ARGS="$EXTRA_ARGS -EmailAddress \"${{ github.event.inputs.email_address }}\""
           fi
 
           # Propagate pwsh's exit code. Previously a trailing `echo "exit_code=$?"`
