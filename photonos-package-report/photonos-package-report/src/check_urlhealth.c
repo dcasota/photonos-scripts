@@ -1624,7 +1624,8 @@ static char *version_cut(const char *task_version)
 char *check_urlhealth(pr_task_t                       *task,
                       const pr_source0_lookup_table_t *lookup_table,
                       const char                      *clone_root,
-                      const char                      *exclusion_list)
+                      const char                      *exclusion_list,
+                      const char                      *working_dir)
 {
     if (task == NULL || task->Spec == NULL) return NULL;
 
@@ -3029,69 +3030,72 @@ char *check_urlhealth(pr_task_t                       *task,
      */
     const int emit_multi_sha = getenv("PR_EMIT_MULTI_SHA") != NULL;
 
-    /* M122 / PS L 5219-5222: when an update was detected AND the
+    /* M122 / M124 / PS L 5219-5222: when an update was detected AND the
      * candidate URL HEAD'd 200, PS calls ModifySpecFile to rewrite the
      * spec file under SPECS_NEW/<Name>/. C mirrors that under
      * SPECS_NEW_C (parallel dir so PS's authoritative output stays
      * byte-stable for the 90-day-green journal). Gated by env var
      * PR_MODIFY_SPEC — default OFF for parity-safe rollout.
      *
-     * Source/upstream dirs derived from clone_root: clone_root is
-     * "<wd>/<photonDir>/clones"; strip "/clones" to get the photonDir
-     * prefix root (== upstreams_dir for the writes here). The PS
-     * WorkingDir vs UpstreamsDir distinction maps to the same root in
-     * the C workflow's filesystem layout (parity-reconstruct.sh
-     * collapses them under PARITY_CACHE_ROOT). */
+     * M124: `working_dir` carries the operator's --workingDir (root of
+     * the photon-<branch>/SPECS trees) directly. Earlier M122 tried to
+     * derive it from clone_root but parity-reconstruct.sh puts the
+     * SPECS trees under <WDIR>/photon-<branch>/ while the upstream
+     * clones live under <WDIR>/photon-upstreams/photon-<branch>/clones
+     * — those roots differ, so the derivation produced the wrong path
+     * and modify_spec couldn't find the source spec file. The photonDir
+     * still comes from clone_root because that's where the per-branch
+     * leaf is unambiguous. */
     if (getenv("PR_MODIFY_SPEC") != NULL
         && state.HealthUpdateURL && strcmp(state.HealthUpdateURL, "200") == 0
         && state.UpdateAvailable && state.UpdateAvailable[0]
         && strstr(state.UpdateAvailable, "Warning:") == NULL
         && strstr(state.UpdateAvailable, "(same version)") == NULL
         && strstr(state.UpdateAvailable, "Info:") == NULL
+        && working_dir && working_dir[0]
         && clone_root && clone_root[0]) {
         const char *suffix = "/clones";
         size_t crl = strlen(clone_root);
         size_t sl  = strlen(suffix);
         if (crl > sl && strcmp(clone_root + crl - sl, suffix) == 0) {
-            char base_dir[1024];
-            size_t base_len = crl - sl;
-            if (base_len < sizeof base_dir) {
-                memcpy(base_dir, clone_root, base_len);
-                base_dir[base_len] = '\0';
-                /* base_dir is "<root>/<photonDir>". Split off photonDir. */
-                char *last = strrchr(base_dir, '/');
-                if (last) {
-                    *last = '\0';
-                    const char *photon_dir = last + 1;
-                    /* Build a sha_line for the spec's preferred algorithm
-                     * — PS L 5198-5202. C's state.SHAValue holds the
-                     * computed hash already. */
-                    const char *alg_name = "sha512";
-                    for (size_t li = 0; li < task->content_lines; li++) {
-                        const char *cl = task->content[li];
-                        if (cl == NULL) continue;
-                        if (strstr(cl, "%define sha1")   != NULL) { alg_name = "sha1";   break; }
-                        if (strstr(cl, "%define sha256") != NULL) { alg_name = "sha256"; break; }
-                        if (strstr(cl, "%define sha512") != NULL) { alg_name = "sha512"; break; }
-                    }
-                    char *sha_line = NULL;
-                    if (state.SHAValue && state.SHAValue[0]) {
-                        if (asprintf(&sha_line, "%%define %s %s=%s",
-                                     alg_name, task->Name ? task->Name : "",
-                                     state.SHAValue) < 0) sha_line = NULL;
-                    } else {
-                        /* PS L 5218: " " sentinel when SHA computation failed. */
-                        sha_line = strdup(" ");
-                    }
-                    int is_openjdk8 = spec_eq(task->Spec, "openjdk8.spec");
-                    /* netcat CommitId not yet plumbed through state; pass NULL
-                     * for now. PS netcat-specific behaviour stays unchanged
-                     * because the call site below uses the same NULL default. */
-                    pr_modify_spec_file(task, base_dir, base_dir, photon_dir,
-                                        state.UpdateAvailable, sha_line,
-                                        is_openjdk8, NULL, "SPECS_NEW_C");
-                    free(sha_line);
+            /* Extract photonDir from clone_root: "<...>/<photonDir>/clones". */
+            const char *end = clone_root + crl - sl;
+            const char *start = end - 1;
+            while (start > clone_root && start[-1] != '/') start--;
+            size_t pdlen = (size_t)(end - start);
+            if (pdlen > 0 && pdlen < 64) {
+                char photon_dir[64];
+                memcpy(photon_dir, start, pdlen);
+                photon_dir[pdlen] = '\0';
+                /* Build sha_line — PS L 5198-5202. C's state.SHAValue
+                 * holds the computed hash already. */
+                const char *alg_name = "sha512";
+                for (size_t li = 0; li < task->content_lines; li++) {
+                    const char *cl = task->content[li];
+                    if (cl == NULL) continue;
+                    if (strstr(cl, "%define sha1")   != NULL) { alg_name = "sha1";   break; }
+                    if (strstr(cl, "%define sha256") != NULL) { alg_name = "sha256"; break; }
+                    if (strstr(cl, "%define sha512") != NULL) { alg_name = "sha512"; break; }
                 }
+                char *sha_line = NULL;
+                if (state.SHAValue && state.SHAValue[0]) {
+                    if (asprintf(&sha_line, "%%define %s %s=%s",
+                                 alg_name, task->Name ? task->Name : "",
+                                 state.SHAValue) < 0) sha_line = NULL;
+                } else {
+                    /* PS L 5218: " " sentinel when SHA computation failed. */
+                    sha_line = strdup(" ");
+                }
+                int is_openjdk8 = spec_eq(task->Spec, "openjdk8.spec");
+                /* netcat CommitId not yet plumbed through state; pass NULL
+                 * for now. PS netcat-specific behaviour stays unchanged. */
+                pr_modify_spec_file(task,
+                                    working_dir,   /* source: SPECS tree */
+                                    working_dir,   /* output: SPECS_NEW_C alongside SPECS */
+                                    photon_dir,
+                                    state.UpdateAvailable, sha_line,
+                                    is_openjdk8, NULL, "SPECS_NEW_C");
+                free(sha_line);
             }
         }
     }

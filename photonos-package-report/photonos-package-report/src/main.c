@@ -647,16 +647,17 @@ static int generate_urlhealth_main(const pr_params_t *params, const char *branch
     if (params->ThrottleLimit <= 1) {
         for (size_t i = 0; i < list.count; i++) {
             rows[i] = check_urlhealth(&list.items[i], &lut, clone_root,
-                                      exclusion_list);
+                                      exclusion_list, params->workingDir);
         }
     } else {
-        /* Per-task closure capturing (task, lut, clone_root, exclusion_list)
-         * so the worker function only takes one `void *`. */
+        /* Per-task closure capturing (task, lut, clone_root, exclusion_list,
+         * working_dir) so the worker function only takes one `void *`. */
         typedef struct {
             pr_task_t                       *task;
             const pr_source0_lookup_table_t *lut;
             const char                      *clone_root;
             const char                      *exclusion_list;
+            const char                      *working_dir;
         } closure_t;
         closure_t *closures = (closure_t *)calloc(list.count, sizeof *closures);
         if (!closures) {
@@ -670,7 +671,7 @@ static int generate_urlhealth_main(const pr_params_t *params, const char *branch
                      pr_task_list_free(&list); return 1; }
         for (size_t i = 0; i < list.count; i++) {
             closures[i] = (closure_t){ &list.items[i], &lut, clone_root,
-                                       exclusion_list };
+                                       exclusion_list, params->workingDir };
         }
         /* Worker thunk — declared inline via a static helper. */
         extern void *pr_check_urlhealth_worker(void *arg);  /* below */
@@ -700,18 +701,19 @@ static int generate_urlhealth_main(const pr_params_t *params, const char *branch
 }
 
 /* Phase 7 worker thunk. Closure: { pr_task_t *, source0 lookup,
- * clone_root, exclusion_list }. Returns a malloc'd row string the
- * parent collects. */
+ * clone_root, exclusion_list, working_dir }. Returns a malloc'd row
+ * string the parent collects. */
 typedef struct {
     pr_task_t                       *task;
     const pr_source0_lookup_table_t *lut;
     const char                      *clone_root;
     const char                      *exclusion_list;
+    const char                      *working_dir;
 } pr_check_urlhealth_closure_t;
 
 void *pr_check_urlhealth_worker(void *arg)
 {
     pr_check_urlhealth_closure_t *c = (pr_check_urlhealth_closure_t *)arg;
     return (void *)check_urlhealth(c->task, c->lut, c->clone_root,
-                                   c->exclusion_list);
+                                   c->exclusion_list, c->working_dir);
 }
