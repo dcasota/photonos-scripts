@@ -453,11 +453,22 @@ int pr_version_compare(const char *a, const char *b)
     }
     /* Rule 8: String fallback — compare .Value as strings. PS uses
      *   $v1.Value -gt $v2.Value
-     * which on mixed types coerces both via the left-hand operand. We
-     * use the raw `str_value` we always kept. */
+     * where .Value is set ONLY for the String type (the other-type
+     * hashtables hold .Components / .Date / .Value-as-int-or-double).
+     * For non-STRING types, $v.Value is $null and PS coerces it to "".
+     *
+     * M121: previously we read `str_value` for every type (we always
+     * keep it as a raw input copy), which made Rule 8 do a lexicographic
+     * strcmp on the original inputs. For STANDARD vs STRING (e.g.
+     * "21.0.6" STANDARD vs "21.0.12+4" STRING for openjdk21), that
+     * compared "21.0.6" vs "21.0.12+4" at byte 5 and returned -1 (latest
+     * < Source0), triggering a bogus packaging-format warning. PS
+     * compares "21.0.12+4" vs "" → +1 (latest > Source0, newer detected).
+     * Mirror that exactly: only consult str_value for PR_VER_STRING. */
     {
-        int c = strcmp(v1.str_value ? v1.str_value : "",
-                       v2.str_value ? v2.str_value : "");
+        const char *s1 = (v1.type == PR_VER_STRING && v1.str_value) ? v1.str_value : "";
+        const char *s2 = (v2.type == PR_VER_STRING && v2.str_value) ? v2.str_value : "";
+        int c = strcmp(s1, s2);
         if      (c > 0) result = 1;
         else if (c < 0) result = -1;
         else            result = 0;
