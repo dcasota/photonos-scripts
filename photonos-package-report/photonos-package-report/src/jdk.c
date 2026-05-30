@@ -80,21 +80,35 @@ static void parse_one(const char *version, int default_major, const char *filter
     char *build_part   = NULL;
     if (plus) { *plus = '\0'; build_part = plus + 1; }
 
-    /* PS L 1675-1690: parse dotted version or bare major. */
+    /* PS L 1675-1690: parse dotted version or bare major.
+     *
+     * M119: PS uses [string].Split(".") which preserves empty tokens
+     * (".0.32" → ["", "0", "32"]). strtok_r collapses consecutive
+     * delimiters and skips leading ones (".0.32" → ["0", "32"]),
+     * shifting the slot mapping so the version-leading-dot case (which
+     * is the common one because the filter prefix ate "jdk-11" off
+     * "jdk-11.0.32+2") silently wrote major=0 then minor=32. The
+     * comparator then ranked "jdk-11+28" (parses as 11.0.0+28) ABOVE
+     * "jdk-11.0.32+2" (parses as 0.32.0+2). Replace strtok_r with a
+     * manual split that mirrors .Split(".") exactly. */
     if (strchr(version_part, '.') != NULL) {
-        /* Dotted: 11.0.28 etc. */
-        char *save = NULL;
-        char *tok = strtok_r(version_part, ".", &save);
-        int   idx = 0;
-        while (tok) {
-            size_t tlen = strlen(tok);
-            if (all_digit(tok, tlen)) {
-                int v = parse_int(tok);
+        const char *cur = version_part;
+        int idx = 0;
+        while (1) {
+            const char *dot = strchr(cur, '.');
+            size_t tlen = dot ? (size_t)(dot - cur) : strlen(cur);
+            if (tlen > 0 && all_digit(cur, tlen)) {
+                char buf[32];
+                size_t cl = tlen < sizeof buf - 1 ? tlen : sizeof buf - 1;
+                memcpy(buf, cur, cl);
+                buf[cl] = '\0';
+                int v = parse_int(buf);
                 if      (idx == 0) out->major = v;
                 else if (idx == 1) out->minor = v;
                 else if (idx == 2) out->patch = v;
             }
-            tok = strtok_r(NULL, ".", &save);
+            if (!dot) break;
+            cur = dot + 1;
             idx++;
         }
     } else if (all_digit(version_part, strlen(version_part))) {
