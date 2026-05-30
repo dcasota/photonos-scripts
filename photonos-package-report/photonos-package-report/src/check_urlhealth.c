@@ -1635,6 +1635,58 @@ char *check_urlhealth(pr_task_t                       *task,
 
     /* PS L 2140-2153: Source0Lookup CSV lookup. */
     const pr_source0_lookup_t *row = lookup_row(lookup_table, task->Spec);
+
+    /* M118 / PS L 2396-2418: dtb-raspberrypi.spec is a special per-spec
+     * override that PS sets up INLINE (no Source0Lookup row). The repo is
+     * raspberrypi/linux.git with branch-specific gitBranch / replace
+     * tokens (rpi-4.19.y → rpi-6.12.y). C had no equivalent, leaving
+     * `row` NULL so the Phase 6d clone path never fired, col3/col5 stay
+     * empty and the spec showed PS-only flagged on 6 branches. Synthesize
+     * an in-memory lookup row keyed off the photonDir parsed out of
+     * clone_root (".../<photonDir>/clones"). */
+    static pr_source0_lookup_t dtb_rpi_row;
+    static char dtb_branch_buf[32];
+    static char dtb_replace_buf[32];
+    if (row == NULL && spec_eq(task->Spec, "dtb-raspberrypi.spec")
+        && clone_root && clone_root[0]) {
+        const char *suffix = "/clones";
+        size_t crl = strlen(clone_root);
+        size_t sl  = strlen(suffix);
+        if (crl > sl && strcmp(clone_root + crl - sl, suffix) == 0) {
+            const char *end = clone_root + crl - sl;
+            const char *start = end;
+            while (start > clone_root && start[-1] != '/') start--;
+            size_t plen = (size_t)(end - start);
+            if (plen > 0 && plen < 32) {
+                char photon_dir[32];
+                memcpy(photon_dir, start, plen);
+                photon_dir[plen] = '\0';
+
+                const char *gbr = "rpi-6.12.y";
+                const char *rep = "stable_";
+                if      (strcmp(photon_dir, "photon-3.0") == 0) { gbr = "rpi-4.19.y"; rep = ""; }
+                else if (strcmp(photon_dir, "photon-4.0") == 0) { gbr = "rpi-5.10.y"; rep = ""; }
+                else if (strcmp(photon_dir, "photon-5.0") == 0) { gbr = "rpi-6.1.y";  rep = ""; }
+                else if (strcmp(photon_dir, "photon-6.0") == 0) { gbr = "rpi-6.12.y"; rep = "rpi-6.12.y_"; }
+
+                snprintf(dtb_branch_buf,  sizeof dtb_branch_buf,  "%s", gbr);
+                snprintf(dtb_replace_buf, sizeof dtb_replace_buf, "%s", rep);
+
+                memset(&dtb_rpi_row, 0, sizeof dtb_rpi_row);
+                dtb_rpi_row.specfile       = (char *)"dtb-raspberrypi.spec";
+                dtb_rpi_row.Source0Lookup  = (char *)"";
+                dtb_rpi_row.gitSource      = (char *)"https://github.com/raspberrypi/linux.git";
+                dtb_rpi_row.gitBranch      = dtb_branch_buf;
+                dtb_rpi_row.customRegex    = (char *)"";
+                dtb_rpi_row.replaceStrings = dtb_replace_buf;
+                dtb_rpi_row.ignoreStrings  = (char *)"";
+                dtb_rpi_row.Warning        = (char *)"";
+                dtb_rpi_row.ArchivationDate= (char *)"";
+                row = &dtb_rpi_row;
+            }
+        }
+    }
+
     if (row && row->Source0Lookup && row->Source0Lookup[0] != '\0') {
         free(state.Source0);
         state.Source0 = dup_or_empty(row->Source0Lookup);
