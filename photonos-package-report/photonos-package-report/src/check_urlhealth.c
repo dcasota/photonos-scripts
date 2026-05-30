@@ -21,6 +21,7 @@
 #include "pr_github_tags.h"
 #include "pr_github_api.h"
 #include "pr_hook.h"
+#include "pr_jdk.h"
 #include "pr_latest.h"
 #include "pr_netcat.h"
 #include "pr_per_spec.h"
@@ -1804,44 +1805,78 @@ char *check_urlhealth(pr_task_t                       *task,
                          * logic, gate checks) see the PS-equivalent state. */
                         health_overridden_200 = 1;
                         health = 200;
+                        /* M117 / PS L 2546-2555: openjdk11/17/21 use the
+                         * dedicated Get-HighestJdkVersion routine on the
+                         * RAW tag list (before the M16/M19/M21/M22
+                         * pipeline), because the Source0Lookup row's
+                         * replaceStrings = "jdk-11" / "jdk-17" / "jdk-21"
+                         * would otherwise strip the major-version prefix
+                         * from "jdk-11.0.32+2" → ".0.32+2" with a leading
+                         * dot, and pr_get_latest_name would pick the wrong
+                         * tag. PS sets $Names=$null after the call to
+                         * bypass the generic pipeline; C does the same via
+                         * `skip_generic_pipeline`. */
+                        char *latest_jdk = NULL;
+                        int   skip_generic_pipeline = 0;
+                        if (spec_eq(task->Spec, "openjdk11.spec")) {
+                            latest_jdk = pr_get_highest_jdk_version(names, n, 11, "jdk-11");
+                            skip_generic_pipeline = 1;
+                        } else if (spec_eq(task->Spec, "openjdk17.spec")) {
+                            latest_jdk = pr_get_highest_jdk_version(names, n, 17, "jdk-17");
+                            skip_generic_pipeline = 1;
+                        } else if (spec_eq(task->Spec, "openjdk21.spec")) {
+                            latest_jdk = pr_get_highest_jdk_version(names, n, 21, "jdk-21");
+                            skip_generic_pipeline = 1;
+                        }
                         /* Apply replaceStrings from Source0Lookup row
                          * (PS L 2151). For clang/llvm specs this
                          * strips the `llvmorg-` prefix off tag names
                          * so version compare sees "22.1.5" not
-                         * "llvmorg-22.1.5". */
-                        apply_replace_strings(names, n, row->replaceStrings);
-                        /* M26 (PS L 2152 + 2505): drop candidates matching
-                         * Source0Lookup.ignoreStrings glob list. */
-                        apply_ignore_strings(names, n, row->ignoreStrings);
-                        /* M27 (PS L 2839 switch): per-spec strip tokens for
-                         * ~76 specs that need custom prefix/substring strips
-                         * beyond the generic M19 augmentations. */
-                        pr_apply_per_spec_strip_tokens(task->Spec, names, n);
-                        /* M28 (PS L 2839 switch): per-spec drop-substring
-                         * blacklists for specs whose tag stream includes
-                         * unwanted branch/test/feature tags. */
-                        pr_apply_per_spec_drop_substrings(task->Spec, names, n);
-                        /* M29 (PS L 2849, 2929, 2965): per-spec global
-                         * character replacement ("-" → "."). */
-                        pr_apply_per_spec_global_replace(task->Spec, names, n);
-                        /* M19 (PS L 2507-2516): augment with Name-based
-                         * tokens + common release/ver/-final patterns. */
-                        apply_name_replace_augmentations(names, n,
-                                                         task->Name ? task->Name : "");
-                        /* M22 (PS L 441-451 Clean-VersionNames): leading
-                         * rel//v/r strips, _→. replace, drop pre-release
-                         * candidates (alpha/beta/rc/preview/dev/pre). */
-                        apply_clean_version_names(names, n);
-                        /* M21 (PS L 2522-2524): post-strip filters —
-                         * v-strip + has-digit + no-alpha-after-pN-strip.
-                         * M48 / PS L 2569: SKIP for amdvlk — its tags are
-                         * quarterly "YYYY.Q#.#" (the comparator handles
-                         * them, Case 2b), but the no-alpha filter would
-                         * drop them on the "Q", leaving older non-Q tags
-                         * as the wrong latest. */
-                        if (!spec_eq(task->Spec, "amdvlk.spec"))
-                            apply_name_post_filters(names, n);
-                        char *latest = pr_get_latest_name(names, n);
+                         * "llvmorg-22.1.5". Skipped for openjdk11/17/21
+                         * via M117. */
+                        if (!skip_generic_pipeline)
+                            apply_replace_strings(names, n, row->replaceStrings);
+                        char *latest = NULL;
+                        if (skip_generic_pipeline) {
+                            /* M117: openjdk pipeline already produced
+                             * latest_jdk against the raw tag list. */
+                            latest = latest_jdk;
+                            latest_jdk = NULL;
+                        } else {
+                            /* M26 (PS L 2152 + 2505): drop candidates matching
+                             * Source0Lookup.ignoreStrings glob list. */
+                            apply_ignore_strings(names, n, row->ignoreStrings);
+                            /* M27 (PS L 2839 switch): per-spec strip tokens for
+                             * ~76 specs that need custom prefix/substring strips
+                             * beyond the generic M19 augmentations. */
+                            pr_apply_per_spec_strip_tokens(task->Spec, names, n);
+                            /* M28 (PS L 2839 switch): per-spec drop-substring
+                             * blacklists for specs whose tag stream includes
+                             * unwanted branch/test/feature tags. */
+                            pr_apply_per_spec_drop_substrings(task->Spec, names, n);
+                            /* M29 (PS L 2849, 2929, 2965): per-spec global
+                             * character replacement ("-" → "."). */
+                            pr_apply_per_spec_global_replace(task->Spec, names, n);
+                            /* M19 (PS L 2507-2516): augment with Name-based
+                             * tokens + common release/ver/-final patterns. */
+                            apply_name_replace_augmentations(names, n,
+                                                             task->Name ? task->Name : "");
+                            /* M22 (PS L 441-451 Clean-VersionNames): leading
+                             * rel//v/r strips, _→. replace, drop pre-release
+                             * candidates (alpha/beta/rc/preview/dev/pre). */
+                            apply_clean_version_names(names, n);
+                            /* M21 (PS L 2522-2524): post-strip filters —
+                             * v-strip + has-digit + no-alpha-after-pN-strip.
+                             * M48 / PS L 2569: SKIP for amdvlk — its tags are
+                             * quarterly "YYYY.Q#.#" (the comparator handles
+                             * them, Case 2b), but the no-alpha filter would
+                             * drop them on the "Q", leaving older non-Q tags
+                             * as the wrong latest. */
+                            if (!spec_eq(task->Spec, "amdvlk.spec"))
+                                apply_name_post_filters(names, n);
+                            latest = pr_get_latest_name(names, n);
+                        }
+                        free(latest_jdk);                /* in case set but not used */
                         if (latest && latest[0]) {
                             /* PS L 2538-2553: compare first; only the
                              * rc == 1 (newer) branch goes on to build
