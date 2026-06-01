@@ -19,6 +19,7 @@ matplotlib.use("Agg")
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mtick
+import numpy as np
 
 SQL = """
 SELECT sf.branch, sf.scan_datetime, COUNT(*) AS n
@@ -88,7 +89,11 @@ def main() -> int:
         "figure.dpi": 160,
     })
 
-    fig, ax = plt.subplots(figsize=(11, 5))
+    # Wider figure + legend pushed OUTSIDE the plot area on the right
+    # so the .docx-embedded 6-inch-wide rendering stays uncluttered and
+    # x-axis date labels never collide with the legend or source caption.
+    fig, ax = plt.subplots(figsize=(12.5, 5.4))
+
     for b in BRANCH_ORDER:
         if b not in data:
             continue
@@ -97,25 +102,54 @@ def main() -> int:
         ax.plot(xs, ys, "-o", lw=2, ms=4, label=f"photon-{b}",
                 color=BRANCH_COLORS[b], alpha=0.95)
 
+    # Dashed trend line: linear regression on the AGGREGATE — average
+    # update count across all branches at each scan_datetime, fitted
+    # as a single straight line. One trend instead of eight keeps the
+    # chart readable; the slope tells the maintainer at a glance
+    # whether the population of updates-per-scan is trending up or
+    # down across the whole timeline.
+    all_pts = [(d, n) for v in data.values() for d, n in v]
+    if len(all_pts) >= 2:
+        # Group by exact timestamp -> mean
+        grouped = defaultdict(list)
+        for d, n in all_pts:
+            grouped[d].append(n)
+        ts_sorted = sorted(grouped.keys())
+        means = [sum(grouped[t]) / len(grouped[t]) for t in ts_sorted]
+        x_num = mdates.date2num(ts_sorted)
+        m, c = np.polyfit(x_num, means, 1)
+        ax.plot(ts_sorted, m * x_num + c,
+                "--", color="#222", lw=2.0, alpha=0.55,
+                label="Aggregate trend (linear)")
+
     ax.set_title("Photon OS package-report — Updates available per branch over time", pad=12)
     ax.set_xlabel("Scan date (UTC)")
     ax.set_ylabel("Packages with a real upstream update")
-    ax.legend(loc="upper left", frameon=False, ncols=4, fontsize=9,
-              bbox_to_anchor=(0, -0.13))
+
+    # Legend OUTSIDE the right margin (vertical column). reserve_right
+    # gives the legend its own canvas region so labels never overlap data.
+    ax.legend(loc="upper left", bbox_to_anchor=(1.02, 1.0),
+              frameon=False, fontsize=9, borderaxespad=0)
+
     ax.xaxis.set_major_locator(mdates.AutoDateLocator(minticks=6, maxticks=12))
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
     ax.yaxis.set_major_formatter(mtick.FuncFormatter(lambda v, _: f"{int(v):,}"))
     fig.autofmt_xdate(rotation=30, ha="right")
 
+    # Source/metadata caption — placed INSIDE the axes (top-right interior)
+    # so it never collides with x-tick labels or the right-side legend.
     all_dt = [d for v in data.values() for d, _ in v]
     if all_dt:
         rng = f"{min(all_dt):%Y-%m-%d}  →  {max(all_dt):%Y-%m-%d}"
-        ax.text(0.99, -0.32,
-                f"Source: photon-scans.db  ({sum(len(v) for v in data.values())} scans, span: {rng})",
-                transform=ax.transAxes, ha="right",
-                fontsize=8.5, color="#555", style="italic")
+        ax.text(0.99, 0.97,
+                f"{sum(len(v) for v in data.values())} scans  ·  {rng}",
+                transform=ax.transAxes, ha="right", va="top",
+                fontsize=8.5, color="#555", style="italic",
+                bbox=dict(boxstyle="round,pad=0.25",
+                          fc="white", ec="#DDD", lw=0.5, alpha=0.85))
 
-    plt.tight_layout()
+    # subplots_adjust to give the legend column room without colliding.
+    fig.subplots_adjust(right=0.80)
     plt.savefig(args.out, bbox_inches="tight")
     plt.close()
 
