@@ -52,6 +52,19 @@ permissions:
   contents: write   # commit the journal back to master
   actions:  read    # download artifact from the triggering workflow
 
+# M131: opt into Node.js 24 for all JavaScript actions in this workflow,
+# silencing the deprecation warning surfaced on run 26703036870:
+#   "Node.js 20 actions are deprecated. The following actions are
+#    running on Node.js 20 and may not work as expected:
+#    actions/download-artifact@v5, actions/upload-artifact@v4."
+# This sets the documented opt-in BEFORE the 2026-06-16 hard switch.
+# When validated as working with the existing @v5/@v4 pins, the workflow
+# stays on the same action major versions (no behavioural change), just
+# on the newer JS runtime. To temporarily roll back, swap to
+# ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 # Serialise C-side runs: they share a persistent clone cache on the
 # self-hosted runner (see "Reconstruct" step). Two concurrent runs would
 # race the same clone dirs / branch checkouts. Queue rather than cancel so
