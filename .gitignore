@@ -1,2 +1,6 @@
 .factory/config.json
 __pycache__/
+
+# M126: photon-scans.db lives in git as photon-scans.db.xz (xz -9
+# compression, ~96 % size reduction). The raw .db is workflow-only.
+photonos-package-report/scans/photon-scans.db
