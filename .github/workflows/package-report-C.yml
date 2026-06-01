@@ -52,18 +52,28 @@ permissions:
   contents: write   # commit the journal back to master
   actions:  read    # download artifact from the triggering workflow
 
-# M131: opt into Node.js 24 for all JavaScript actions in this workflow,
-# silencing the deprecation warning surfaced on run 26703036870:
-#   "Node.js 20 actions are deprecated. The following actions are
-#    running on Node.js 20 and may not work as expected:
-#    actions/download-artifact@v5, actions/upload-artifact@v4."
-# This sets the documented opt-in BEFORE the 2026-06-16 hard switch.
-# When validated as working with the existing @v5/@v4 pins, the workflow
-# stays on the same action major versions (no behavioural change), just
-# on the newer JS runtime. To temporarily roll back, swap to
-# ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true.
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+# M132: actions are now pinned at versions that already default to
+# Node.js 24, so the M131 FORCE_JAVASCRIPT_ACTIONS_TO_NODE24 env var
+# is redundant and was removed. Versions chosen:
+#
+#   actions/download-artifact@v8.0.1
+#     - v7 (2025-12-12) made Node.js 24 the default runtime
+#     - v8 (2026-02-26) migrated to ESM (transparent to callers) AND
+#       changed the hash-mismatch default from WARN → ERROR; we accept
+#       the stricter default so transport-corrupted snapshots fail the
+#       C cycle fast rather than silently producing a divergent journal
+#       row. A `digest-mismatch: warn` knob is available if needed.
+#     - v8.0.1 (2026-03-11) is the latest patch (CJK name support +
+#       regression test for direct-upload Content-Type handling).
+#
+#   actions/upload-artifact@v7.0.1
+#     - v6 (2025-12-12) made Node.js 24 default
+#     - v7 (2026-02-26) migrated to ESM, added `archive: false` direct-
+#       upload for single non-zip files (we don't use it; default OFF).
+#     - v7.0.1 (2026-04-10) is the latest patch (typespec runtime bump).
+#
+# Self-hosted runner is on 2.334.0 — well above the 2.327.1 minimum
+# both action lines require for Node.js 24.
 
 # Serialise C-side runs: they share a persistent clone cache on the
 # self-hosted runner (see "Reconstruct" step). Two concurrent runs would
@@ -126,7 +136,7 @@ jobs:
 
       - name: Download parity snapshot
         id: dl
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8.0.1
         with:
           name: parity-snapshot-${{ steps.ps_run.outputs.id }}
           path: snapshot-raw
@@ -382,7 +392,7 @@ jobs:
       # 30-day soft window.
       - name: Upload C-side .prn
         if: always() && steps.c_run.outputs.scans != ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: c-side-prn-${{ github.run_id }}
           # urlhealth-*.prn (parity-gated) + diff-report-*.prn (M59, generated
@@ -400,7 +410,7 @@ jobs:
       # step) diff against PS's SPECS_NEW/ for byte-identical confirmation.
       - name: Upload C-side SPECS_NEW_C (M122 validation)
         if: always() && github.event.inputs.modify_spec == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: c-side-specs-new-${{ github.run_id }}
           path: |
