@@ -9,12 +9,16 @@
 
 static void print_usage(const char *prog)
 {
-    fprintf(stderr, "Usage: %s --db <path.db> [--import <scans-dir>] [--report <output.docx>]\n\n", prog);
+    fprintf(stderr, "Usage: %s --db <path.db> [--import <scans-dir>] [--report <output.docx>] [--chart-png <path>]\n\n", prog);
     fprintf(stderr, "Options:\n");
-    fprintf(stderr, "  --db <path>       SQLite database file (created if absent)\n");
-    fprintf(stderr, "  --import <dir>    Import photonos-urlhealth-*.prn files from directory\n");
-    fprintf(stderr, "  --report <path>   Generate .docx report\n");
-    fprintf(stderr, "  --help            Show this help message\n");
+    fprintf(stderr, "  --db <path>         SQLite database file (created if absent)\n");
+    fprintf(stderr, "  --import <dir>      Import photonos-urlhealth-*.prn files from directory\n");
+    fprintf(stderr, "  --report <path>     Generate .docx report\n");
+    fprintf(stderr, "  --chart-png <path>  M127: embed this PNG as Section 1's timeline\n");
+    fprintf(stderr, "                      (typically pre-rendered by the workflow's\n");
+    fprintf(stderr, "                      gen-timeline-chart.py step). When unset or\n");
+    fprintf(stderr, "                      unreadable, falls back to the OOXML c:chart.\n");
+    fprintf(stderr, "  --help              Show this help message\n");
 }
 
 int main(int argc, char **argv)
@@ -22,6 +26,7 @@ int main(int argc, char **argv)
     const char *db_path = NULL;
     const char *import_dir = NULL;
     const char *report_path = NULL;
+    const char *chart_png = NULL;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--db") == 0 && i + 1 < argc) {
@@ -30,6 +35,8 @@ int main(int argc, char **argv)
             import_dir = argv[++i];
         } else if (strcmp(argv[i], "--report") == 0 && i + 1 < argc) {
             report_path = argv[++i];
+        } else if (strcmp(argv[i], "--chart-png") == 0 && i + 1 < argc) {
+            chart_png = argv[++i];
         } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
             print_usage(argv[0]);
             return 0;
@@ -148,7 +155,8 @@ int main(int argc, char **argv)
         }
 
         if (docx_write_report(final_report, &timeline, &top_changed,
-                              &least_changed, &categories, &drift) != 0) {
+                              &least_changed, &categories, &drift,
+                              chart_png) != 0) {
             fprintf(stderr, "Failed to write report\n");
             exit_code = 1;
         } else {

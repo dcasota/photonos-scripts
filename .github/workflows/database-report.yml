@@ -169,6 +169,22 @@ jobs:
             echo '```' >> "$GITHUB_STEP_SUMMARY"
           fi
 
+      - name: Generate timeline chart (M127)
+        # Render the per-branch UpdateAvailable timeline as a high-quality PNG
+        # from the just-imported DB. The C report writer embeds this image
+        # in Section 1 of the .docx via the `--chart-png` flag below; if this
+        # step is skipped or fails, the writer silently falls back to the
+        # legacy hand-built OOXML c:chart so the report still renders.
+        id: chart
+        continue-on-error: true
+        run: |
+          DB="${{ steps.paths.outputs.db }}"
+          REPORT_DIR="${{ steps.paths.outputs.report }}"
+          mkdir -p "$REPORT_DIR"
+          PNG="$REPORT_DIR/timeline-chart.png"
+          python3 repo/.github/scripts/gen-timeline-chart.py --db "$DB" --out "$PNG"
+          echo "png=$PNG" >> "$GITHUB_OUTPUT"
+
       - name: Generate report
         working-directory: repo/${{ env.TOOL_DIR }}
         run: |
@@ -181,7 +197,18 @@ jobs:
             exit 1
           fi
 
-          ./photon-report-db --db "$DB" --report "$REPORT" 2>&1 | tee /tmp/report.log
+          # M127: pass --chart-png when the prior step produced one; the
+          # writer treats it as optional and falls back on its own otherwise.
+          CHART_ARGS=()
+          PNG="${{ steps.chart.outputs.png }}"
+          if [ -n "$PNG" ] && [ -f "$PNG" ]; then
+            CHART_ARGS=(--chart-png "$PNG")
+            echo "Embedding dynamic timeline PNG: $PNG" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Using legacy OOXML c:chart for timeline (no PNG)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          ./photon-report-db --db "$DB" --report "$REPORT" "${CHART_ARGS[@]}" 2>&1 | tee /tmp/report.log
 
           # The tool auto-generates report-<datetime>.docx inside the directory
           DOCX_FILE=$(find "$REPORT" -maxdepth 1 -name 'report-*.docx' -type f -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)

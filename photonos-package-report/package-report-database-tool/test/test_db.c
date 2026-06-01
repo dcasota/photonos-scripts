@@ -203,7 +203,7 @@ static void test_docx_generation(void)
     category_drift_data_t drift;
     memset(&drift, 0, sizeof(drift));
 
-    int rc = docx_write_report(docxpath, &tl, &tc, &lc, &cat, &drift);
+    int rc = docx_write_report(docxpath, &tl, &tc, &lc, &cat, &drift, NULL);
     if (rc != 0) {
         FAIL("docx_write_report failed");
     } else {
