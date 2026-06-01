@@ -118,6 +118,24 @@ jobs:
           echo "Database:  $DB"
           echo "Report:    $REPORT"
 
+      - name: Seed workspace DB from committed photon-scans.db.xz
+        # M126: photon-scans.db lives in git as photon-scans.db.xz to stay
+        # under the 100 MB push limit (xz -9 → ~3 % of raw). Decompress
+        # into the workspace path used by the importer. Self-hosted-runner
+        # state is intentionally overwritten on every run so the source
+        # of truth is the committed compressed file.
+        run: |
+          DB="${{ steps.paths.outputs.db }}"
+          XZ_FILE="$GITHUB_WORKSPACE/repo/photonos-package-report/scans/photon-scans.db.xz"
+          if [ -f "$XZ_FILE" ]; then
+            xz -d -k -c "$XZ_FILE" > "$DB"
+            echo "Seeded workspace DB from $(basename "$XZ_FILE") ($(du -h "$XZ_FILE" | cut -f1) → $(du -h "$DB" | cut -f1))"
+          else
+            # First-run-on-clean-runner: no committed DB yet, start empty.
+            echo "No committed photon-scans.db.xz found — starting from empty DB"
+            rm -f "$DB"
+          fi
+
       - name: Count available scan files
         id: scan_count
         run: |
@@ -215,7 +233,19 @@ jobs:
 
           mkdir -p "$SCANS_DIR"
           cp "$REPORTS_DIR"/report-*.docx "$SCANS_DIR/" 2>/dev/null || true
-          cp "$DB" "$SCANS_DIR/" 2>/dev/null || true
+
+          # M126: commit the COMPRESSED .db so the push stays well under the
+          # 100 MB GitHub file-size limit (xz -9 takes 75 MB → ~3 MB). The
+          # raw .db is gitignored (.gitignore L4). xz writes the result
+          # atomically; on failure leave the prior .xz in place rather than
+          # commit a partial file.
+          if [ -f "$DB" ]; then
+            xz -9 -c "$DB" > "$SCANS_DIR/photon-scans.db.xz.new"
+            mv -f "$SCANS_DIR/photon-scans.db.xz.new" "$SCANS_DIR/photon-scans.db.xz"
+            echo "Compressed DB: $(du -h "$DB" | cut -f1) → $(du -h "$SCANS_DIR/photon-scans.db.xz" | cut -f1)"
+          else
+            echo "::warning::no $DB to compress — skipping DB commit"
+          fi
 
           cd repo
           git config user.name "github-actions[bot]"
