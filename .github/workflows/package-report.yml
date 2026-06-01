@@ -437,11 +437,14 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           # Name embeds the PS run id so the C workflow can find it via
-          # the workflow_run.id payload field. Retention matches the
-          # ADR-0009 90-day clock plus 5 days slack.
+          # the workflow_run.id payload field. Retention is set to the
+          # repository's hard ceiling (90 days) — the ADR-0009 30/60/90
+          # ladder reaches verdict by day 90, so a longer retention has
+          # no operational value, and asking for more (e.g. 95) just
+          # emits a "Using 90 instead" warning on every run.
           name: parity-snapshot-${{ github.run_id }}
           path: ${{ steps.parity_snapshot.outputs.tar }}
-          retention-days: 95
+          retention-days: 90
           if-no-files-found: warn
 
       - name: Upload report artifacts
