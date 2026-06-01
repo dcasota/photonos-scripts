@@ -1,4 +1,0 @@
-Spec,SubRelease,photon-3.0,photon-4.0,photon-5.0,photon-6.0,photon-common,photon-dev,photon-master,photon-main
-fontconfig.spec,,2.13.1-1,2.13.1-7,2.14.1-7,2.14.1-5,,2.14.1-4,2.14.1-4,2.14.1-6
-fontconfig.spec,90,,,2.14.1-5.1.1,,,,,
-fontconfig.spec,91,,,,,,,,2.14.1-5.1
