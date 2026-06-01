@@ -179,28 +179,35 @@ jobs:
         continue-on-error: true
         run: |
           DB="${{ steps.paths.outputs.db }}"
-          REPORT_DIR="${{ steps.paths.outputs.report }}"
-          mkdir -p "$REPORT_DIR"
-          PNG="$REPORT_DIR/timeline-chart.png"
+          # M130: write the PNG straight into the scans/ tree so the
+          # existing "Commit report to repository" step picks it up. A
+          # stable filename (no timestamp) means each weekly run
+          # OVERWRITES the previous PNG — git stores one delta per week,
+          # not a new file per week. Cheap (~150 KB) compared to the
+          # .docx already committed each weekly run.
+          SCANS_DIR="$GITHUB_WORKSPACE/repo/photonos-package-report/scans"
+          mkdir -p "$SCANS_DIR"
+          PNG="$SCANS_DIR/timeline-chart.png"
           python3 repo/.github/scripts/gen-timeline-chart.py --db "$DB" --out "$PNG"
           echo "png=$PNG" >> "$GITHUB_OUTPUT"
 
-          # M128: render the PNG INLINE in the job summary via a base64
-          # data: URI. The Step Summary markdown renderer cannot read
-          # arbitrary runner-local files, so a plain path produces text
-          # only. Inlining as data: makes the image actually show up on
-          # the workflow run page right where the operator is reading.
-          # Typical PNG (~150 KB) → ~200 KB base64; well under the 1 MB
-          # per-step summary cap. Guarded so a render failure doesn't
-          # break the summary.
+          # M130: GitHub's $GITHUB_STEP_SUMMARY markdown sanitiser STRIPS
+          # data: URIs from <img> tags as CSP hardening, so the M128
+          # base64 inlining showed a broken-icon glyph in run
+          # 26739028580. Only http(s) URLs are allowed. Reference the
+          # PNG via raw.githubusercontent.com pointing at master — the
+          # "Commit report to repository" step pushes the new PNG to
+          # master at the SAME path, so by the time the operator views
+          # the run summary the URL serves the just-rendered chart.
+          # A run-id query string defeats CDN caches between runs.
           if [ -f "$PNG" ]; then
-            B64=$(base64 -w0 "$PNG")
+            URL="https://raw.githubusercontent.com/${{ github.repository }}/master/photonos-package-report/scans/timeline-chart.png?run=${{ github.run_id }}"
             {
               echo "## Timeline chart"
               echo ""
-              echo "<img alt=\"Updates available per branch over time\" src=\"data:image/png;base64,${B64}\" />"
+              echo "![Updates available per branch over time]($URL)"
               echo ""
-              echo "_Rendered from photon-scans.db ($(stat -c%s "$PNG") bytes). Also embedded in Section 1 of the generated .docx._"
+              echo "_Rendered from photon-scans.db ($(stat -c%s "$PNG") bytes). Also embedded in Section 1 of the generated .docx and committed alongside it for raw-URL preview above._"
             } >> "$GITHUB_STEP_SUMMARY"
           fi
 
