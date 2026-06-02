@@ -4,3 +4,8 @@ __pycache__/
 # M126: photon-scans.db lives in git as photon-scans.db.xz (xz -9
 # compression, ~96 % size reduction). The raw .db is workflow-only.
 photonos-package-report/scans/photon-scans.db
+
+# M134: snyk_issues.db follows the same pattern -- the raw .db hit
+# GitHub's 100 MB hard blob limit at run 26740765097 (129 MB).
+# Only the xz-compressed copy is tracked.
+SnykAnalysis/snyk_issues.db

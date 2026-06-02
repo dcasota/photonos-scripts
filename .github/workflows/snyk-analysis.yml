@@ -79,6 +79,22 @@ jobs:
             SnykAnalysis
           path: ci
 
+      - name: Decompress snyk_issues.db (M134)
+        # The committed copy is snyk_issues.db.xz -- raw .db hit GitHub's
+        # 100 MB hard limit at run 26740765097 (129 MB at that point). Mirror
+        # the M126 photon-scans.db pattern: keep .db.xz in git, expand it at
+        # job start so the parser appends incrementally as before.
+        run: |
+          DB_XZ="ci/SnykAnalysis/snyk_issues.db.xz"
+          DB="ci/SnykAnalysis/snyk_issues.db"
+          if [ -f "$DB_XZ" ]; then
+            echo "Decompressing $DB_XZ -> $DB (keeping .xz)"
+            xz -dkf "$DB_XZ"
+            ls -la "$DB"*
+          else
+            echo "No $DB_XZ found - parser will start from scratch"
+          fi
+
       - name: Verify prerequisites
         run: |
           for cmd in pwsh sqlite3 curl tar; do
@@ -463,11 +479,22 @@ jobs:
           cp ci/SnykAnalysis/scans/SnykReport_*.txt  "$DEST/" 2>/dev/null || true
           cp ci/SnykAnalysis/scans/SnykReport_*.md   "$DEST/" 2>/dev/null || true
           cp ci/SnykAnalysis/scans/SnykReport_*.json "$DEST/" 2>/dev/null || true
-          cp ci/SnykAnalysis/snyk_issues.db          "repo/SnykAnalysis/" 2>/dev/null || true
+
+          # M134: compress the DB before committing -- raw .db hit GitHub's
+          # 100 MB blob ceiling at run 26740765097. Track only .db.xz; the
+          # decompress step at job start expands it on next run. Mirrors
+          # the photon-scans.db.xz handling.
+          if [ -f ci/SnykAnalysis/snyk_issues.db ]; then
+            xz -fk -T0 -9 ci/SnykAnalysis/snyk_issues.db
+            cp ci/SnykAnalysis/snyk_issues.db.xz repo/SnykAnalysis/
+            ls -la ci/SnykAnalysis/snyk_issues.db* || true
+          fi
+
           cd repo
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add SnykAnalysis/scans/ SnykAnalysis/snyk_issues.db
+          # Stage the xz copy; the raw .db is .gitignored.
+          git add SnykAnalysis/scans/ SnykAnalysis/snyk_issues.db.xz
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else
