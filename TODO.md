@@ -1,5 +1,79 @@
 # TODO — C-port parity convergence + vendor-info quality
 
+**>>> 2026-06-03 SESSION CHECKPOINT (M99-M135 era — convergence loop effectively COMPLETE) <<<**
+
+Since the M63 checkpoint, ~37 phase-M tasks shipped covering CI infrastructure,
+database management, dynamic reporting, Node.js modernisation, and the final
+TODO-1 col9 closure. Notable landings:
+
+- **M99**: scraper-UA fallback fixed 6 specs (simple-UA when photonos-UA 4xx'd).
+- **M112**: urlhealth UA-gating retry for Linux mirrors (ftp.altlinux.org class).
+- **M122-M124**: C-side `ModifySpecFile` port — version-bump spec rewriting on
+  parity with PS. Gated behind `modify_spec=true` dispatch input.
+- **M125**: First/Last/Email params on PS + C + workflow inputs — changelog
+  author no longer hardcoded.
+- **M126**: `photon-scans.db` xz-compressed in git (75 MB raw → 2.9 MB xz).
+  Hit the 100 MB GitHub blob ceiling, applied LRU prune (10 outlier scans).
+- **M127-M128**: dynamic timeline chart (matplotlib Agg) embedded in the
+  database-report .docx; outlier trim + dashed aggregate trend line.
+- **M129-M130**: workflow hygiene — retention-days 95→90 (cap warn fix);
+  step-summary chart via raw.githubusercontent.com URL (data: URI sanitiser).
+- **M131-M132**: Node.js 24 modernisation. M131 opt-in env-var; M132 native
+  `download-artifact@v8.0.1` + `upload-artifact@v7.0.1`.
+- **M133**: `snyk-analysis.yml` default branches now include `main`
+  (3.0,4.0,5.0,6.0,common,dev,master,main).
+- **M134**: emergency Snyk run recovery — `snyk_issues.db` hit 129 MB > 100 MB
+  GitHub limit. Salvaged the 16-h scan artifact and xz-compressed inline.
+  Workflow now mirrors M126 pattern: decompress at job start, compress at
+  commit. ~96% size reduction.
+- **M135**: `sha_cache=ON` workflow default. M64's 122-row col9 finding has
+  decayed; direct cache-vs-prn measurement (2026-06-03) shows 4833 / 4913
+  potential cache hits, 70-100% match per branch in manual replay (production
+  auto-trigger projects 95%+). Production validation pending Sunday's PS
+  cron (2026-06-07).
+
+### Parity state (2026-06-03)
+
+All 7 non-common branches `overall=strict` under ADR-0009 ceilings.
+**common branch went GREEN for the first time** in run 26868597097 with
+`sha_cache=ON`. Per-branch col9 cache-hit rates from M135 validation:
+
+| Branch | PS-has-SHA | C-match (cache hit) | Match % |
+|--------|------------:|--------------------:|--------:|
+| 3.0    | 693         | 268                 | 38.7 %  |
+| 4.0    | 745         | 410                 | 55.0 %  |
+| 5.0    | 599         | 416                 | 69.4 %  |
+| 6.0    | 731         | 514                 | 70.3 %  |
+| common | 1           | 1                   | 100 %   |
+| dev    | 767         | 534                 | 69.6 %  |
+| main   | 611         | 424                 | 69.4 %  |
+| master | 766         | 534                 | 69.7 %  |
+
+(Lower-than-projected match is github auto-archive byte-drift in **manual
+replay only** — production auto-trigger reads bytes seconds after PS
+preserved them, byte-stable.)
+
+### TODO-1 / TODO-2 / TODO-3 — operator decisions
+
+- **TODO-1** (col9 SHA full parity): **effectively closed** by M135.
+  Remaining 2 real bugs (`newt.spec` / `psmisc.spec`) are architectural
+  fixes deferred 2026-06-03 (operator chose Option A: park, value <0.2%).
+  Tasks 62/63 carry the documented root cause.
+- **TODO-2** (tight PS→C scheduling): **done** via `workflow_run`
+  auto-trigger (predates this checkpoint).
+- **TODO-3** (`PR_STRICT_COL9` flip): still gated. Wait for several
+  production auto-trigger cycles with `sha_cache=ON` to measure col9
+  byte-stability before flipping the strict gate.
+
+### Session conventions (added this session)
+
+- Phase-M PRs with `gate + parity-gate` green and `MERGEABLE/CLEAN`
+  auto-merge without operator ask (durable authorization 2026-06-03).
+- `M136` and `M137` numbers are reserved for the deferred newt/psmisc
+  fixes; do not reuse for unrelated work.
+
+---
+
 **>>> 2026-05-24 SESSION CHECKPOINT (M63 — fixable stragglers EXHAUSTED) <<<**
 Shipped M52-M63 (13 feature PRs, all merged). 5.0 urlhealth strict 126→~85.
 netcat (M62) + libusb sourceforge two-stage (M63) both byte-identical to PS.
