@@ -278,14 +278,21 @@ jobs:
           # the network paths to run — without it, cols 4/5/6/7/10 are
           # all empty on the C side and every row diffs strict.
           PR_TEST_NETWORK: "1"
-          # M64 / ADR-0009 TODO-1: shared col9 tarball cache. Gated by the
-          # sha_cache dispatch input (default OFF) — see its description for
-          # the residual-col9-mismatch finding. When on, PR_SHA_CACHE makes C
-          # hash from the cache and PR_SHA_CACHE_BASE points at the SOURCES_NEW
-          # the PS job preserved, so C reuses PS's exact bytes. Off on auto
-          # (workflow_run) runs → col9 behaves exactly as before this change.
-          PR_SHA_CACHE: ${{ github.event.inputs.sha_cache == 'true' && '1' || '' }}
-          PR_SHA_CACHE_BASE: ${{ github.event.inputs.sha_cache == 'true' && '/root/.cache/photonos-shared/photon-upstreams' || '' }}
+          # M64 / M135 / M139: shared col9 tarball cache (PR_SHA_CACHE).
+          # M135 flipped the workflow_dispatch input default to 'true', but
+          # `github.event.inputs.*` is empty on `workflow_run` events
+          # (GitHub Actions does not propagate dispatch-input defaults into
+          # workflow_run-triggered runs). The fixed expression below treats
+          # "input is anything other than the literal string 'false'" as ON
+          # so that:
+          #   - workflow_dispatch with sha_cache=true (the M135 default) → ON
+          #   - workflow_dispatch with explicit sha_cache=false           → OFF
+          #   - workflow_run auto-trigger (empty inputs)                  → ON
+          # PR_SHA_CACHE makes C hash from the cache; PR_SHA_CACHE_BASE
+          # points at the SOURCES_NEW the PS job preserved, so C reuses
+          # PS's exact bytes and col9 matches PS row-for-row.
+          PR_SHA_CACHE: ${{ github.event.inputs.sha_cache != 'false' && '1' || '' }}
+          PR_SHA_CACHE_BASE: ${{ github.event.inputs.sha_cache != 'false' && '/root/.cache/photonos-shared/photon-upstreams' || '' }}
           # T1: single-spec investigation mode. When set, the C binary
           # compacts its task list to only that one spec basename (e.g.
           # "libev.spec"). Diagnostic-only — the resulting .prn has one
