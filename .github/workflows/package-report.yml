@@ -421,9 +421,23 @@ jobs:
             [ -d "$d" ] || continue
             br=$(basename "$(dirname "$d")")
             mkdir -p "$SHARED/$br/SOURCES_NEW"
-            cp -a "$d/." "$SHARED/$br/SOURCES_NEW/" 2>/dev/null && n=$((n+1)) || true
+            # M140: NO `-a` here. `cp -a` would preserve the workspace's
+            # mtime on the cached copy, but PS only re-downloads a tarball
+            # when its detected version changes. Most tarballs in workspace
+            # carry mtimes from the run that first downloaded them (weeks
+            # or months ago). With `cp -a`, those ancient mtimes propagate
+            # to the cache, and the 21-day LRU prune below then deletes
+            # tarballs we just re-preserved -- the cache visibly halved
+            # between PS runs 26874878793 (65 GB, ~1100 files/branch) and
+            # 26883987022 (34 GB, ~500 files/branch). Plain `cp -rfL`
+            # stamps cached copies with the current preserve-time, so the
+            # 21-day prune only kills tarballs PS hasn't re-touched in 21d.
+            cp -rfL "$d/." "$SHARED/$br/SOURCES_NEW/" 2>/dev/null && n=$((n+1)) || true
           done
           # Disk cap (LRU by mtime): keep the shared tarball cache bounded.
+          # Now safe to be aggressive -- the only mtime "old" files are ones
+          # PS legitimately stopped downloading (spec dropped from photon,
+          # spec no longer targeted, etc).
           CAP_MB=50000
           cur=$(du -sm "$SHARED" 2>/dev/null | cut -f1)
           if [ "${cur:-0}" -gt "$CAP_MB" ]; then
