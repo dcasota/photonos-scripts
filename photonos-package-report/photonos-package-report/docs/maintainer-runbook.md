@@ -536,6 +536,60 @@ only when:
 In both cases open a separate PR that resets the journal explicitly
 with a justification linked to the ADR or PRD change.
 
+### col9 SHA cache (`sha_cache` workflow input, default ON since M135)
+
+The C workflow reads PS's preserved `SOURCES_NEW/*.tar.{gz,xz,bz2}`
+from a shared cache so PS and C hash byte-identical bytes. Net effect:
+~70-100 % of `SHAName` (col 9) emits match PS row-for-row, depending
+on how close in time the two runs are.
+
+Where the cache lives on the self-hosted runner:
+
+```
+${PR_SHA_CACHE_BASE:-$HOME/.cache/photonos-shared/photon-upstreams}
+└── photon-<branch>/SOURCES_NEW/<UpdateDownloadName>
+```
+
+The PS workflow's "Preserve SOURCES_NEW to shared col9 cache" step
+writes here on every PS run; the C workflow reads through
+`col9_cache_path()` when `PR_SHA_CACHE=1`. A 50 GB LRU prune kicks in
+when the cache exceeds the cap (tarballs older than 21 days dropped).
+
+#### When you'd flip `sha_cache=false`
+
+* Reproducing a pre-cache C result for a regression bisection.
+* Investigating col9 byte-drift suspected to come from the cache
+  itself (rare — the cache is just a filesystem copy of what PS
+  downloaded, so unless the cache file is *corrupted* you'd see
+  identical bytes).
+
+#### Why a manual replay shows lower col9 match-rate than production
+
+In a `workflow_run` auto-trigger run, PS preserves the tarballs and
+the C run starts within seconds — the cache state on disk and PS's
+own `.prn`-frozen SHAs are guaranteed to be the same bytes.
+
+In a `workflow_dispatch -f snapshot_run_id=<old-id>` manual replay,
+PS preserved its tarballs into the cache *at the time the snapshot
+was taken*; later PS runs have since OVERWRITTEN those entries with
+newer bytes. Github (and GitLab) auto-regenerate archive tarballs
+non-deterministically — different compression timing → different
+hash. So in manual replays the cache hashes drift from the snapshot's
+frozen col9 values, and a fraction of rows show `both-differ`.
+
+If you want a manual replay that matches the snapshot's col9 hashes
+exactly, you'd have to snapshot the cache itself alongside
+`parity-snapshot-<id>.tar.gz` (deferred — production auto-trigger
+makes this unnecessary).
+
+#### Strict / soft
+
+col9 mismatches are **soft** by default — they do not fail the
+strict gate. `strict_col9` (workflow input → `PR_STRICT_COL9`) is the
+companion switch to promote col9 to strict; keep it OFF until the
+auto-trigger flow has been measured to hold col9 byte-stable across
+several cycles.
+
 ---
 
 ## 10. On-demand VPN for blocked upstream hosts (Stage 6)
