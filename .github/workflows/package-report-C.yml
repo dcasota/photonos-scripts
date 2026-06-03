@@ -27,8 +27,8 @@ on:
         description: 'Concurrency for CheckURLHealth (sequential clones on-demand at -ThrottleLimit 1 take many hours for full multi-branch snapshots). Drop to 1 when chasing a strict-diff that needs byte-stable stderr ordering.'
         default: '8'
       sha_cache:
-        description: 'M64 TODO-1: activate the shared col9 SHA cache (PR_SHA_CACHE). Default false: validation (run 26357010174) showed 122 residual col9 mismatches because col9 has several computation paths + download-name vs preserved-filename gaps the simple cache does not yet close. Keep off until the col9-path completion follow-on lands; the preserve/mechanism is dormant infra meanwhile.'
-        default: 'false'
+        description: 'M64/M135 TODO-1: read PS-preserved tarballs from the shared col9 SHA cache (PR_SHA_CACHE). Default true. Direct cache vs .prn analysis on the 2026-06-01 PS+C pair (M135) measured 4833/4913 cache HITs across all 8 branches (98.4% of PS-has-SHA rows) -- the original M64 122-row finding has collapsed as sha.c hardened the cache-only path. Set false only to reproduce a pre-cache C result for debugging.'
+        default: 'true'
       strict_col9:
         description: 'M64 TODO-3: count col9 (SHA) toward the strict verdict (PR_STRICT_COL9). Leave false until the shared col9 cache (TODO-1) has been confirmed to hold col9 byte-stable across a PS→C cycle — enabling early spikes strict and resets the 90-day clock.'
         default: 'false'
