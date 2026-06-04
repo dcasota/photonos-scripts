@@ -88,6 +88,8 @@ typedef struct {
     char input_iso[512];
     char output_iso[512];
     char efuse_usb_device[128];
+    char efuse_img_path[512];
+    int  efuse_img_size_mb;
     char diagnose_iso_path[512];
     char drivers_dir[512];
     int mok_days;
@@ -172,6 +174,13 @@ int generate_gpg_keys(void);
  * ============================================================================ */
 int setup_efuse_simulation(void);
 int create_efuse_usb(const char *device);
+/* create_efuse_img: write a virtual eFuse USB to a regular file at `out_path`.
+ * Byte-equivalent to what create_efuse_usb writes to a real stick of the same
+ * size. size_mb defaults to 64 when set to <=0; minimum 16, maximum 32768.
+ * Implementation uses losetup -fP to attach the file as a loop device, then
+ * reuses the same sfdisk/mkfs.vfat/mount/cp chain. Requires loop kernel
+ * module + root privilege. Returns 0 on success, non-zero on failure. */
+int create_efuse_img(const char *out_path, int size_mb);
 
 /* ============================================================================
  * Shim/Ventoy Download Functions (habv4_shim.c)
