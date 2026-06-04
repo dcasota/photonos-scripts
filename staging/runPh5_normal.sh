@@ -17,17 +17,21 @@ COMMON_BRANCH="${2:-common}"
 RELEASE_BRANCH="${3:-5.0}"
 OUTPUT_DIR="${4:-/mnt/c/Users/dcaso/Downloads/Ph-Builds}"
 
+# Directory containing this script, used to locate the bundled downstream
+# patch set (staging/photonos-patches/). Resolved before any cd.
+SCRIPT_DIR=$(cd "$(dirname "$0")" 2>/dev/null && pwd)
+
 sleep 3
 if ping -c 4 www.google.ch > /dev/null 2>&1; then
   if [ ! -d "$BASE_DIR/$COMMON_BRANCH" ]; then
-    git clone https://github.com/dcasota/photonos-scripts.git -b "$COMMON_BRANCH" "$BASE_DIR/$COMMON_BRANCH"
+    git clone https://github.com/dcasota/photon.git -b "$COMMON_BRANCH" "$BASE_DIR/$COMMON_BRANCH"
   fi
   cd "$BASE_DIR/$COMMON_BRANCH"
   git fetch 2>/dev/null || true
   git merge 2>/dev/null || true
   cd "$BASE_DIR"
   if [ ! -d "$BASE_DIR/$RELEASE_BRANCH" ]; then
-    git clone https://github.com/dcasota/photonos-scripts.git -b "$RELEASE_BRANCH" "$BASE_DIR/$RELEASE_BRANCH"
+    git clone https://github.com/dcasota/photon.git -b "$RELEASE_BRANCH" "$BASE_DIR/$RELEASE_BRANCH"
   fi
   cd "$BASE_DIR/$RELEASE_BRANCH"
   git fetch
@@ -48,6 +52,30 @@ if ping -c 4 www.google.ch > /dev/null 2>&1; then
     done
   fi
 
+  # ── Apply downstream fixes / PRs (installer + packages) ───────────
+  # Re-applied here so they survive the restore above. Covers:
+  #   photon-os-installer 2.8-5 : interactive (no-kickstart) UI install fix,
+  #       btrfs-progs on btrfs partitions, and tdnf output capture so package
+  #       install no longer overlays the curses UI (e.g. /etc/os-release).
+  #   stig-hardening 2.1-8      : SELinux first-boot relabel + fips PAM (PR #9)
+  #   linux 6.12.87-3           : strip canister Kconfig when fips=0  (PR #14)
+  # (nginx PR #17 is intentionally NOT included: 5.0 already ships nginx
+  #  1.30.2, newer than the PR's 1.30.1, so it would be a downgrade.)
+  DOWNSTREAM_PATCH=""
+  for cand in "$SCRIPT_DIR/photonos-patches/downstream-fixes.patch" \
+              "$BASE_DIR/photonos-patches/downstream-fixes.patch"; do
+    [ -f "$cand" ] && DOWNSTREAM_PATCH="$cand" && break
+  done
+  if [ -n "$DOWNSTREAM_PATCH" ]; then
+    if git apply --check "$DOWNSTREAM_PATCH" 2>/dev/null; then
+      git apply "$DOWNSTREAM_PATCH" && echo "[runPh5_normal] Applied downstream-fixes.patch"
+    else
+      echo "[runPh5_normal] WARNING: downstream-fixes.patch does not apply cleanly (5.0 may have moved on); skipping"
+    fi
+  else
+    echo "[runPh5_normal] NOTE: photonos-patches/downstream-fixes.patch not found; building without downstream fixes"
+  fi
+
   UPSTREAM_SUB=$(python3 -c "
 import json
 cfg = json.load(open('build-config.json'))
@@ -60,10 +88,27 @@ print(cfg['photon-build-param'].get('photon-mainline', cfg['photon-build-param']
 " 2>/dev/null)
   echo "[runPh5_normal] Using upstream photon-subrelease: ${UPSTREAM_SUB} (mainline: ${UPSTREAM_MAIN})"
 
-  # ── Fix POI image: use local photon/installer if remote is unavailable ─
-  # The hardcoded Broadcom POI image (projects.packages.broadcom.com/…) may
-  # not be accessible. If a local photon/installer image exists, configure
-  # the build to use it instead.
+  # ── Ensure the photon/installer (POI) image exists ────────────────
+  # `make image` (poi.py) needs a photon/installer docker image, which is not
+  # on any public registry. Build it locally if missing, using the legacy
+  # builder (DOCKER_BUILDKIT=0, since buildx may be absent) and the multi-file
+  # COPY trailing-slash fix the legacy builder requires (fix/dockerfile-copy-
+  # syntax). The image is only the ISO build tool; the installer that ships
+  # inside the ISO comes from the patched photon-os-installer RPM built above.
+  if ! docker image inspect photon/installer:latest >/dev/null 2>&1; then
+    POI_SRC="$BASE_DIR/photon-os-installer"
+    [ -d "$POI_SRC/.git" ] || git clone https://github.com/dcasota/photon-os-installer.git "$POI_SRC" 2>/dev/null
+    if [ -d "$POI_SRC/docker" ]; then
+      ( cd "$POI_SRC"
+        # multi-file 'COPY ... /usr/bin' needs a trailing slash for legacy build
+        sed -i 's#^\([[:space:]]*\)/usr/bin$#\1/usr/bin/#' docker/Dockerfile
+        DOCKER_BUILDKIT=0 docker build -t photon/installer:latest -f docker/Dockerfile docker/ ) \
+        && echo "[runPh5_normal] Built photon/installer:latest" \
+        || echo "[runPh5_normal] WARNING: failed to build photon/installer image"
+    fi
+  fi
+
+  # ── Point the build at the local POI image ────────────────────────
   COMMON_CFG="$BASE_DIR/$COMMON_BRANCH/build-config.json"
   if [ -f "$COMMON_CFG" ]; then
     POI_SET=$(python3 -c "
@@ -177,10 +222,32 @@ with open('$COMMON_CFG', 'w') as f:
     elif [ -f "$target" ]; then
       return 0  # cached, no checksum to validate against
     fi
-    [ -z "$url" ] && return 1
-    echo "[runPh5_normal] Fetching source: $archive"
-    wget -q "$url" -O "$target" 2>/dev/null && return 0
-    echo "[runPh5_normal] WARNING: Failed to fetch $archive from $url"
+    # Build the list of candidate URLs. The spec's url often points at
+    # invisible-island.net/.../current/, which 404s once a dated snapshot
+    # is superseded (e.g. ncurses-6.5-20250816.tgz). The Broadcom
+    # photon_sources mirror keeps every historical archive, so try it too.
+    BCOM_MIRROR="https://packages.broadcom.com/photon/photon_sources/1.0/$archive"
+    for src_url in "$url" "$BCOM_MIRROR"; do
+      [ -z "$src_url" ] && continue
+      echo "[runPh5_normal] Fetching source: $archive <- $src_url"
+      # Download to a temp file: wget -O truncates the target to 0 bytes
+      # before the request, so a 404/network failure would otherwise leave
+      # an empty file that poisons the SOURCES cache.
+      if wget -q "$src_url" -O "$target.tmp" 2>/dev/null && [ -s "$target.tmp" ]; then
+        if [ -n "$expected_sha" ]; then
+          dl_sha=$(sha512sum "$target.tmp" 2>/dev/null | awk '{print $1}')
+          if [ "$dl_sha" != "$expected_sha" ]; then
+            echo "[runPh5_normal] WARNING: checksum mismatch for fetched $archive (got ${dl_sha:0:12}…), discarding"
+            rm -f "$target.tmp"
+            continue
+          fi
+        fi
+        mv -f "$target.tmp" "$target"
+        return 0
+      fi
+      rm -f "$target.tmp"
+    done
+    echo "[runPh5_normal] WARNING: Failed to fetch $archive from any source"
     return 1
   }
 

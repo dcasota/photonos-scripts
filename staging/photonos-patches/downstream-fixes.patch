@@ -1,0 +1,441 @@
+diff --git a/SPECS/linux/linux.spec b/SPECS/linux/linux.spec
+index 9364a1278..c9e6d74ac 100644
+--- a/SPECS/linux/linux.spec
++++ b/SPECS/linux/linux.spec
+@@ -77,7 +77,7 @@
+ Summary:        Kernel
+ Name:           linux
+ Version:        6.12.87
+-Release:        2%{?acvp_build:.acvp}%{?kat_build:.kat}%{?dist}
++Release:        3%{?acvp_build:.acvp}%{?kat_build:.kat}%{?dist}
+ URL:            http://www.kernel.org/
+ Group:          System Environment/Kernel
+ Vendor:         VMware, Inc.
+@@ -692,6 +692,16 @@ sed -i "/# CONFIG_GCC_PLUGIN_MATCH_CANISTER_STRUCTS is not set/d" .config
+ sed -i "s/# CONFIG_GCC_PLUGIN_MATCH_CANISTER_STRUCTS is not set/CONFIG_GCC_PLUGIN_MATCH_CANISTER_STRUCTS=y/" .config
+ %endif
+ 
++# When fips=0 (e.g. aarch64 default, or x86_64 fips override), neither the
++# canister_build nor canister_usage branch above runs, so the patch that adds
++# the GCC_PLUGIN_{MATCH,PAD}_CANISTER_STRUCTS Kconfig symbols is never applied.
++# The shipped .config still has their "is not set" comments; `make olddefconfig`
++# silently drops them and the check_for_config_applicability.inc diff guard then
++# fails %prep. Strip them up-front so the diff stays clean. (PR #14)
++%if 0%{?fips} == 0
++sed -i '/CONFIG_GCC_PLUGIN_MATCH_CANISTER_STRUCTS/d;/CONFIG_GCC_PLUGIN_PAD_CANISTER_STRUCTS/d' .config
++%endif
++
+ %ifarch x86_64
+ sed -e "s,@@NAME@@,%{name},g" \
+     -e "s,@@VERSION_RELEASE@@,%{version}-%{release},g" \
+@@ -973,6 +983,10 @@ ln -sf linux-%{uname_r}.cfg /boot/photon.cfg
+ %endif
+ 
+ %changelog
++* Thu Jun 04 2026 Daniel Casota <dcasota@gmail.com> 6.12.87-3
++- %prep: when fips=0, strip CONFIG_GCC_PLUGIN_{MATCH,PAD}_CANISTER_STRUCTS
++  comments from .config before olddefconfig so the
++  check_for_config_applicability.inc diff guard does not fail (PR #14)
+ * Tue May 19 2026 Brennan Lamoreaux <brennan.lamoreaux@broadcom.com> 6.12.87-2
+ - Fix CVE-2026-43083
+ * Mon May 11 2026 Brennan Lamoreaux <brennan.lamoreaux@broadcom.com> 6.12.87-1
+diff --git a/SPECS/photon-os-installer/0003-isoInstaller-fix-interactive-NoneType-crash.patch b/SPECS/photon-os-installer/0003-isoInstaller-fix-interactive-NoneType-crash.patch
+new file mode 100644
+index 000000000..35b60ca21
+--- /dev/null
++++ b/SPECS/photon-os-installer/0003-isoInstaller-fix-interactive-NoneType-crash.patch
+@@ -0,0 +1,74 @@
++From ad38512caefb9525a4d9cde74f7e736887930346 Mon Sep 17 00:00:00 2001
++From: Daniel Casota <dcasota@gmail.com>
++Date: Thu, 4 Jun 2026 15:24:46 +0200
++Subject: [PATCH] isoInstaller: fix interactive (no-kickstart) ISO install
++
++Booting the ISO interactively (no ks= boot param, no -c config, no VMware
++guestinfo.kickstart.*) was broken by two coupled regressions:
++
++1) _load_ks_config_platform()/_load_ks_config_vmware() returned None when
++   no platform kickstart exists; __init__ then crashed at
++   'if "live" not in install_config' with:
++       TypeError: argument of type 'NoneType' is not a container or iterable
++   Fix: return an empty {} config instead of None.
++
++2) The 'live' block unconditionally stamped install_config['live']=True,
++   making the empty interactive config truthy. installer.configure() only
++   runs the UI configurator when 'not install_config', so the UI was
++   skipped and _check_install_config() raised 'No disk configured'.
++   Fix: only stamp 'live' on a non-empty (kickstart) config; leave the
++   interactive config empty so the UI runs (live then defaults via
++   _add_defaults()).
++
++Regression introduced by 9fc8733 on top of 0a72c3a.
++
++Co-Authored-By: Daniel Casota <dcasota@gmail.com>
++---
++ photon_installer/isoInstaller.py | 17 ++++++++++++++---
++ 1 file changed, 14 insertions(+), 3 deletions(-)
++
++diff --git a/photon_installer/isoInstaller.py b/photon_installer/isoInstaller.py
++index dd0bed7..f2b3e67 100644
++--- a/photon_installer/isoInstaller.py
+++++ b/photon_installer/isoInstaller.py
++@@ -79,8 +79,12 @@ class IsoInstaller(object):
++         else:
++             install_config = self._load_ks_config_platform(verify=not insecure_installation)
++ 
++-        # 'live' should be True for iso installs
++-        if 'live' not in install_config:
+++        # 'live' should be True for iso installs. Only stamp it on an actual
+++        # (non-empty) kickstart config. For an interactive install the config
+++        # is empty here and must stay falsy, otherwise installer.configure()
+++        # ('if not install_config and ui_config') skips the UI configurator
+++        # and _check_install_config() fails with "No disk configured".
+++        if install_config and 'live' not in install_config:
++             install_config['live'] = True
++ 
++         if insecure_installation and install_config is not None:
++@@ -164,7 +168,10 @@ class IsoInstaller(object):
++         if CommandUtils.is_vmware_virtualization():
++             return self._load_ks_config_vmware(verify=verify)
++         else:
++-            return None
+++            # No platform-provided kickstart: fall back to an interactive
+++            # install with an empty config. Returning None here makes the
+++            # caller crash at "if 'live' not in install_config".
+++            return {}
++ 
++     def _load_ks_config_vmware(self, verify=True):
++         try:
++@@ -191,6 +198,10 @@ class IsoInstaller(object):
++             print(
++                 f"Failed to run vmtoolsd, do you have open-vm-tools installed? Error: {e}"
++             )
+++        # No guestinfo kickstart (data/url both absent) or vmtoolsd missing:
+++        # fall back to an interactive install with an empty config instead of
+++        # returning None, which would crash at "if 'live' not in install_config".
+++        return {}
++ 
++     def mount_media(self, photon_media, mount_path=Defaults.MOUNT_PATH):
++         """Mount the external media"""
++-- 
++2.43.7
++
+diff --git a/SPECS/photon-os-installer/0004-installer-add-btrfs-progs.patch b/SPECS/photon-os-installer/0004-installer-add-btrfs-progs.patch
+new file mode 100644
+index 000000000..fb3b8c3dd
+--- /dev/null
++++ b/SPECS/photon-os-installer/0004-installer-add-btrfs-progs.patch
+@@ -0,0 +1,15 @@
++diff --git a/photon_installer/installer.py b/photon_installer/installer.py
++index 7c50b29..7b9ab39 100644
++--- a/photon_installer/installer.py
+++++ b/photon_installer/installer.py
++@@ -2343,6 +2343,10 @@ password_pbkdf2 {grub_user} {grub_password_hash}
++             # add lvm2 package to install list
++             self._add_packages_to_install('lvm2')
++ 
+++        # add btrfs-progs if any partition uses btrfs
+++        if any(p.get('filesystem') == 'btrfs' for p in partitions):
+++            self._add_packages_to_install('btrfs-progs')
+++
++         # Create partitions_data (needed for mk-setup-grub.sh)
++         for partition in partitions:
++             if 'mountpoint' in partition and not partition.get('shadow', False):
+diff --git a/SPECS/photon-os-installer/0005-tdnf-capture-install-output.patch b/SPECS/photon-os-installer/0005-tdnf-capture-install-output.patch
+new file mode 100644
+index 000000000..e921dffa4
+--- /dev/null
++++ b/SPECS/photon-os-installer/0005-tdnf-capture-install-output.patch
+@@ -0,0 +1,44 @@
++From 43ea3a467cfc4c4abb2690e17fe3ab5e619f19cf Mon Sep 17 00:00:00 2001
++From: Daniel Casota <dcasota@gmail.com>
++Date: Thu, 4 Jun 2026 22:05:37 +0200
++Subject: [PATCH] tdnf: capture install output so it doesn't overlay the curses
++ UI
++
++execute(do_json=False) used subprocess.check_call(), inheriting the
++installer's stdout/stderr. During a UI install that overlays the curses
++progress bar with tdnf/rpm messages (e.g. file paths like /etc/os-release).
++Capture the output and send it to the log instead.
++
++Co-Authored-By: Daniel Casota <dcasota@gmail.com>
++---
++ photon_installer/tdnf.py | 14 +++++++++++++-
++ 1 file changed, 13 insertions(+), 1 deletion(-)
++
++diff --git a/photon_installer/tdnf.py b/photon_installer/tdnf.py
++index 8d98b8e..567dd61 100644
++--- a/photon_installer/tdnf.py
+++++ b/photon_installer/tdnf.py
++@@ -177,7 +177,19 @@ class Tdnf:
++ 
++             return retval, out_json
++         else:
++-            return subprocess.check_call(args)
+++            # Capture output and route it to the log instead of inheriting the
+++            # parent's stdout/stderr. During a UI (curses) install the latter
+++            # overlays the progress bar with tdnf/rpm messages such as file
+++            # paths (e.g. /etc/os-release).
+++            process = subprocess.Popen(
+++                args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+++            )
+++            for line in process.stdout:
+++                self.logger.info(line.decode('utf-8', errors='replace').rstrip())
+++            retval = process.wait()
+++            if retval != 0:
+++                raise subprocess.CalledProcessError(retval, args)
+++            return retval
++ 
++     def run(self, args=None, do_json=True):
++         # Fix mutable default arguments issue
++-- 
++2.43.7
++
+diff --git a/SPECS/photon-os-installer/photon-os-installer.spec b/SPECS/photon-os-installer/photon-os-installer.spec
+index 8113a9e17..5ed4820ce 100644
+--- a/SPECS/photon-os-installer/photon-os-installer.spec
++++ b/SPECS/photon-os-installer/photon-os-installer.spec
+@@ -5,7 +5,7 @@
+ Summary:       Photon OS Installer
+ Name:          photon-os-installer
+ Version:       2.8
+-Release:       2%{?dist}
++Release:       5%{?dist}
+ Group:         System Environment/Base
+ Vendor:        VMware, Inc.
+ Distribution:  Photon
+@@ -17,6 +17,9 @@ Source1: license.txt
+ 
+ Patch0: 0001-Use-mkpasswd-to-generate-password-hash.patch
+ Patch1: 0002-fix-up-old-public_key-syntax-for-backward-compatibil.patch
++Patch2: 0003-isoInstaller-fix-interactive-NoneType-crash.patch
++Patch3: 0004-installer-add-btrfs-progs.patch
++Patch4: 0005-tdnf-capture-install-output.patch
+ 
+ BuildRequires: python3-devel
+ BuildRequires: python3-pyinstaller
+@@ -71,6 +74,16 @@ rm -rf %{buildroot}
+ %{_bindir}/photon-iso-builder
+ 
+ %changelog
++* Thu Jun 04 2026 Daniel Casota <dcasota@gmail.com> 2.8-5
++- installer: add btrfs-progs when a btrfs partition is selected (dcasota patch-1)
++- tdnf: capture install output so it no longer overlays the curses UI
++  with file paths like /etc/os-release
++* Thu Jun 04 2026 Daniel Casota <dcasota@gmail.com> 2.8-4
++- isoInstaller: also fix interactive UI being skipped ("No disk configured")
++  by only stamping 'live' on a non-empty kickstart config (regression 9fc8733)
++* Thu Jun 04 2026 Daniel Casota <dcasota@gmail.com> 2.8-3
++- isoInstaller: fix TypeError crash on interactive (no-kickstart) install
++  when install_config is None (regression from upstream 9fc8733/0a72c3a)
+ * Fri May 15 2026 Vamsi Krishna Brahmajosyula <vamsi-krishna.brahmajosyula@broadcom.com> 2.8-2
+ - Extended to build for subrelease 91 and above
+ * Tue Apr 28 2026 Oliver Kurth <oliver.kurth@broadcom.com> 2.8-1
+diff --git a/SPECS/stig-hardening/fix-selinux-relabel-first-boot.patch b/SPECS/stig-hardening/fix-selinux-relabel-first-boot.patch
+new file mode 100644
+index 000000000..51d37fe16
+--- /dev/null
++++ b/SPECS/stig-hardening/fix-selinux-relabel-first-boot.patch
+@@ -0,0 +1,84 @@
++From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
++From: Factory AI Bot <factory-droid[bot]@users.noreply.github.com>
++Date: Thu, 09 Apr 2026 15:00:00 +0200
++Subject: [PATCH] Add first-boot SELinux filesystem relabel service
++
++Install a oneshot systemd service (selinux-relabel.service) that
++runs 'restorecon -R /' on first boot when /.selinux-relabel exists.
++
++The installer kernel has SELinux compiled in but boots with no
++policy loaded, so lsetxattr for security.selinux returns EINVAL --
++install-time labeling is not possible. Files created or modified by
++the STIG Ansible playbook during installation therefore have no
++SELinux labels (unlabeled_t). When the installed system boots with
++SELINUX=enforcing, confined processes are denied access to these
++files, breaking login, networking, and audit.
++
++The service runs After=local-fs.target Before=getty-pre.target so
++the filesystem is relabeled before the login prompt appears. It
++removes its trigger file on completion and is a no-op on subsequent
++boots.
++
++Known limitation: on systemd v257 (Photon 5.0 subrelease >= 92),
++early services (auditd, systemd-sysctl, systemd-networkd) may race
++with the relabel and fail on first boot. Login itself works. A
++reboot resolves all failures. See PR description for fix options.
++
++Signed-off-by: Factory AI Bot <factory-droid[bot]@users.noreply.github.com>
++---
++diff -ruN a/files/selinux-relabel.service b/files/selinux-relabel.service
++--- a/files/selinux-relabel.service	1970-01-01 01:00:00.000000000 +0100
+++++ b/files/selinux-relabel.service	2026-04-09 14:10:05.308254403 +0200
++@@ -0,0 +1,15 @@
+++[Unit]
+++Description=SELinux Relabel Filesystem (first boot)
+++DefaultDependencies=no
+++After=local-fs.target
+++Before=getty-pre.target sysinit.target
+++ConditionPathExists=/.selinux-relabel
+++
+++[Service]
+++Type=oneshot
+++ExecStart=/usr/sbin/restorecon -R -e /proc -e /sys -e /dev /
+++ExecStartPost=/usr/bin/rm -f /.selinux-relabel
+++TimeoutSec=0
+++
+++[Install]
+++WantedBy=sysinit.target
++diff -ruN a/tasks/photon.yml b/tasks/photon.yml
++--- a/tasks/photon.yml	2026-04-09 14:10:05.298254183 +0200
+++++ b/tasks/photon.yml	2026-04-09 14:10:05.308254403 +0200
++@@ -2405,3 +2405,31 @@
++         - aidecheckoutput.rc is defined
++         - aidecheckoutput.rc != 0
++         - aideinstalled.stdout != ""
+++
+++###################################################################################################################################
+++# SELinux relabel - must be the very last task so all file changes are included
+++- name: Relabel filesystem for SELinux on first boot
+++  tags: [selinux_relabel]
+++  block:
+++    - name: Check if SELinux enforcing is configured
+++      ansible.builtin.command: grep -q '^SELINUX=enforcing' /etc/selinux/config
+++      register: selinux_enforcing
+++      failed_when: false
+++      changed_when: false
+++
+++    - name: Install SELinux relabel service
+++      ansible.builtin.copy:
+++        src: selinux-relabel.service
+++        dest: /usr/lib/systemd/system/selinux-relabel.service
+++        owner: root
+++        group: root
+++        mode: "0644"
+++      when: selinux_enforcing.rc == 0
+++
+++    - name: Enable SELinux relabel service
+++      ansible.builtin.command: systemctl enable selinux-relabel.service
+++      when: selinux_enforcing.rc == 0
+++
+++    - name: Create SELinux relabel trigger file
+++      ansible.builtin.command: touch /.selinux-relabel
+++      when: selinux_enforcing.rc == 0
++-- 
++2.43.7
+diff --git a/SPECS/stig-hardening/fix-stig-playbook-fips-pam.patch b/SPECS/stig-hardening/fix-stig-playbook-fips-pam.patch
+new file mode 100644
+index 000000000..c0fde335c
+--- /dev/null
++++ b/SPECS/stig-hardening/fix-stig-playbook-fips-pam.patch
+@@ -0,0 +1,79 @@
++From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
++From: Factory AI Bot <factory-droid[bot]@users.noreply.github.com>
++Date: Thu, 02 Apr 2026 15:00:00 +0200
++Subject: [PATCH] Fix STIG playbook: PAM stack, FIPS module config, IMA hash
++
++1) Fix PHTN-50-000192 pam_faillock.so setup: regex_search() in
++   set_fact returns None when no match. The comparison
++   'preauthsearch == ""' evaluates to False when preauthsearch is
++   None, causing the cleanup step to be skipped while add steps
++   still run, corrupting the PAM auth stack with duplicate entries.
++   Use '| default("")' so None is treated as empty string.
++   (Backward-compatible: no-op when value is already a string on
++   older Ansible.)
++
++2) Add ima_hash=sha256 kernel parameter when fips=1 is active.
++   FIPS mode disables sha1 but IMA defaults to sha1, causing
++   allocation failures during boot.
++
++3) Generate /etc/ssl/fipsmodule.cnf via 'openssl fipsinstall' when
++   the FIPS provider module is present but fipsmodule.cnf is missing.
++   Without it, booting with fips=1 causes OpenSSL to fail to
++   initialize FIPS mode and pam_unix.so cannot verify passwords.
++
++Signed-off-by: Factory AI Bot <factory-droid[bot]@users.noreply.github.com>
++---
++diff -ruN a/tasks/photon.yml b/tasks/photon.yml
++--- a/tasks/photon.yml	2026-04-02 14:09:20.577266299 +0200
+++++ b/tasks/photon.yml	2026-04-02 14:10:05.298254183 +0200
++@@ -305,6 +305,17 @@
++         - run_openssl_fips_install | bool
++         - opensslfipsinstalled.stdout == ""
++ 
+++    - name: PHTN-50-000013 - Check if FIPS module is present
+++      ansible.builtin.stat:
+++        path: /usr/lib/ossl-modules/fips.so
+++      register: fips_module_file
+++
+++    - name: PHTN-50-000013 - Generate FIPS module config if missing
+++      ansible.builtin.command: openssl fipsinstall -out /etc/ssl/fipsmodule.cnf -module /usr/lib/ossl-modules/fips.so
+++      args:
+++        creates: /etc/ssl/fipsmodule.cnf
+++      when: fips_module_file.stat.exists
+++
++ ###################################################################################################################################
++ - name: PHTN-50-000014 - Configure auditd.conf write_logs
++   tags: [PHTN-50-000014, auditd]
++@@ -1183,6 +1194,12 @@
++         regexp: '^(\s*linux(?!.* fips=).*)'
++         replace: '\1 fips=1'
++ 
+++    - name: PHTN-50-000182 - Add ima_hash=sha256 when fips=1 is active
+++      ansible.builtin.replace:
+++        path: '{{ var_grub_conf_file }}'
+++        regexp: '^(\s*linux(?!.* ima_hash=).*fips=1.*)'
+++        replace: '\1 ima_hash=sha256'
+++
++     - name: PHTN-50-000080 - Replace fips=1 in /boot/grub2/grub.cfg
++       ansible.builtin.replace:
++         path: '{{ var_grub_conf_file }}'
++@@ -1320,7 +1337,7 @@
++         state: absent
++         regexp: '^auth\s+(required|requisite|\[default=die\])\s+pam_faillock\.so.*$'
++       when:
++-        - preauthsearch == "" or authfailsearch == ""
+++        - preauthsearch | default('') == "" or authfailsearch | default('') == ""
++ 
++     - name: Ensure pam_unix.so auth control is 'sufficient' in system-auth if it is 'required'
++       ansible.builtin.replace:
++@@ -1375,7 +1392,7 @@
++         module_path: pam_faillock.so
++         state: absent
++       when:
++-        - sysaccountsearch == ""
+++        - sysaccountsearch | default('') == ""
++ 
++     - name: PHTN-50-000192 - Add pam_faillock.so to system-account if it doesn't exist
++       community.general.pamd:
++-- 
++2.43.7
+diff --git a/SPECS/stig-hardening/stig-hardening.spec b/SPECS/stig-hardening/stig-hardening.spec
+index b0ac56b00..0c0eb7181 100644
+--- a/SPECS/stig-hardening/stig-hardening.spec
++++ b/SPECS/stig-hardening/stig-hardening.spec
+@@ -4,7 +4,7 @@ Summary:        VMware Photon OS 5.0 STIG Readiness Guide Ansible Playbook
+ Name:           stig-hardening
+ #Version x.y.z corresponds v<x>r<y>-z tag in the repo. Eg 1.1.1 = v1r1-1
+ Version:        2.1
+-Release:        7%{?dist}
++Release:        8%{?dist}
+ URL:            https://github.com/vmware/dod-compliance-and-automation/tree/master/photon/5.0/ansible/vmware-photon-5.0-stig-ansible-hardening
+ Group:          Productivity/Security
+ Vendor:         VMware, Inc.
+@@ -23,6 +23,8 @@ Source1: license.txt
+ Patch0: fix-some-value-checks.patch
+ Patch1: system-auth-fix.patch
+ Patch2: fix-photon.yml-for-latest-audit-and-ansible.patch
++Patch3: fix-stig-playbook-fips-pam.patch
++Patch4: fix-selinux-relabel-first-boot.patch
+ 
+ Requires: ansible >= 2.20.1
+ Requires: ansible-community-general
+@@ -44,6 +46,11 @@ cp -a %{_builddir}/%{name}-ph5-%{version}/ %{buildroot}%{_datadir}/ansible/%{nam
+ %{_datadir}/ansible/
+ 
+ %changelog
++* Thu Jun 04 2026 Daniel Casota <dcasota@gmail.com> 2.1-8
++- Fix PHTN-50-000192 pam_faillock PAM stack corruption (| default guard)
++- Add ima_hash=sha256 kernel parameter when fips=1 is active
++- Generate fipsmodule.cnf when FIPS provider is present but config is missing
++- Add first-boot SELinux relabel service for unlabeled filesystems (PR #9)
+ * Fri May 15 2026 Vamsi Krishna Brahmajosyula <vamsi-krishna.brahmajosyula@broadcom.com> 2.1-7
+ - Extended to build for subrelease 91 and above
+ * Wed Apr 01 2026 Shreenidhi Shedi <shreenidhi.shedi@broadcom.com> 2.1-6
