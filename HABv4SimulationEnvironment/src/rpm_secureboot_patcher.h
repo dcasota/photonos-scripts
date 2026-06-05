@@ -35,11 +35,12 @@ typedef struct {
 /* Discovered packages structure */
 typedef struct {
     /* Original packages */
-    rpm_package_info_t *grub_efi;       /* grub2-efi-image */
-    rpm_package_info_t *linux_kernel;   /* linux */
-    rpm_package_info_t *shim_signed;    /* shim-signed */
-    rpm_package_info_t *shim;           /* shim (for MokManager source) */
-    
+    rpm_package_info_t *grub_efi;          /* grub2-efi-image */
+    rpm_package_info_t *linux_kernel;      /* linux */
+    rpm_package_info_t *linux_esx_kernel;  /* linux-esx (v1.9.39+; NULL if only one kernel flavor in repo) */
+    rpm_package_info_t *shim_signed;       /* shim-signed */
+    rpm_package_info_t *shim;              /* shim (for MokManager source) */
+
     /* Photon OS release info */
     char *release;                      /* e.g., "5.0" */
     char *dist_tag;                     /* e.g., ".ph5" */

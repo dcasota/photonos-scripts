@@ -386,7 +386,10 @@ discovered_packages_t* rpm_discover_packages(
                  pkgs->grub_efi->name, pkgs->grub_efi->version);
     }
     
-    /* Find linux kernel by the file it provides */
+    /* Find linux kernel by the file it provides.
+     * Note: find_rpm_providing_file_pattern returns the FIRST match. On Photon
+     * the linux-VERSION.rpm sorts before linux-esx-VERSION.rpm so this lands on
+     * the generic linux package, which is what we want for linux_kernel. */
     log_debug("Looking for package providing /boot/vmlinuz-*");
     char *linux_rpm = find_rpm_providing_file_pattern(rpm_dir, "/boot/vmlinuz-*");
     if (linux_rpm) {
@@ -395,8 +398,40 @@ discovered_packages_t* rpm_discover_packages(
             pkgs->linux_kernel->spec_path = find_spec_for_package(specs_dir, pkgs->linux_kernel->name);
         }
         free(linux_rpm);
-        log_info("Found linux kernel: %s-%s", 
+        log_info("Found linux kernel: %s-%s",
                  pkgs->linux_kernel->name, pkgs->linux_kernel->version);
+    }
+
+    /* v1.9.39+: also find the ESX kernel package (linux-esx) so we can build
+     * a separate linux-esx-mok RPM. Without this the UI offers "MOK Secure
+     * Boot (ESX)" but its RPM is missing → install crashes late at tdnf.
+     * Discovery is by direct glob on linux-esx-<VERSION>.<ARCH>.rpm (NOT the
+     * -devel/-docs/-drivers/-debuginfo subpackages, which share the same
+     * prefix). If no linux-esx RPM exists in the repo (e.g. a future
+     * generic-only build), linux_esx_kernel stays NULL and the spec
+     * generation skips it gracefully. */
+    log_debug("Looking for linux-esx kernel package in %s", rpm_dir);
+    {
+        glob_t gl;
+        char glob_pat[512];
+        snprintf(glob_pat, sizeof(glob_pat), "%s/x86_64/linux-esx-[0-9]*.x86_64.rpm", rpm_dir);
+        if (glob(glob_pat, 0, NULL, &gl) == 0 && gl.gl_pathc > 0) {
+            /* Pick the FIRST match — should normally be one entry. */
+            char *linux_esx_rpm = strdup(gl.gl_pathv[0]);
+            globfree(&gl);
+            pkgs->linux_esx_kernel = extract_rpm_info(linux_esx_rpm);
+            if (pkgs->linux_esx_kernel) {
+                pkgs->linux_esx_kernel->spec_path =
+                    find_spec_for_package(specs_dir, pkgs->linux_esx_kernel->name);
+                log_info("Found linux-esx kernel: %s-%s",
+                         pkgs->linux_esx_kernel->name, pkgs->linux_esx_kernel->version);
+            }
+            free(linux_esx_rpm);
+        } else {
+            if (gl.gl_pathc == 0) globfree(&gl);
+            log_info("No linux-esx RPM found in %s/x86_64/ — skipping linux-esx-mok spec",
+                     rpm_dir);
+        }
     }
     
     /* Find shim-signed by the file it provides */
@@ -702,6 +737,7 @@ static int generate_linux_mok_spec(rpm_build_config_t *config, rpm_package_info_
         "Provides:   linux-secure\n"
         "Conflicts:  linux\n"
         "Conflicts:  linux-esx\n"
+        "Conflicts:  linux-esx-mok\n"
         "\n"
         "BuildRequires:  sbsigntools\n"
         "\n"
@@ -945,9 +981,297 @@ static int generate_linux_mok_spec(rpm_build_config_t *config, rpm_package_info_
 }
 
 /**
+ * Generate linux-esx-mok.spec (v1.9.39+)
+ *
+ * Companion to generate_linux_mok_spec, but extracts the kernel files from
+ * the linux-esx source RPM instead of the generic linux RPM. This means the
+ * linux-esx-mok package carries ESX-flavored modules + cfg, distinguishing
+ * it from linux-mok at the package level even though both currently share
+ * the same custom-built signed vmlinuz binary (since habv4_drivers.c builds
+ * one kernel with config-esx_x86_64). A future commit could split the
+ * kernel build to produce a truly differentiated ESX binary; for now the
+ * differentiation is at the RPM identity layer (Name/Provides/Conflicts),
+ * which is what the installer's flavor-selection logic and tdnf resolution
+ * need.
+ *
+ * The spec body is intentionally a near-copy of generate_linux_mok_spec
+ * (~280 lines of fprintf). The two MUST stay in sync if either is updated;
+ * the only deltas are:
+ *   - Name:        linux-esx-mok          (was linux-mok)
+ *   - Conflicts:   linux, linux-esx, linux-mok   (cross-mutex)
+ *   - %changelog tag                       (mentions linux-esx-mok)
+ *
+ * Provides set is intentionally identical to linux-mok's: both packages
+ * advertise Provides: linux + linux-esx + linux-secure so either can
+ * satisfy generic linux-* deps. The Name + Conflicts make them mutually
+ * exclusive at install time.
+ */
+static int generate_linux_esx_mok_spec(rpm_build_config_t *config,
+                                        rpm_package_info_t *linux_esx_pkg) {
+    char spec_path[1024];
+    snprintf(spec_path, sizeof(spec_path), "%s/linux-esx-mok.spec", config->specs_dir);
+
+    char date_str[64];
+    time_t now = time(NULL);
+    struct tm *tm_info = localtime(&now);
+    strftime(date_str, sizeof(date_str), "%a %b %d %Y", tm_info);
+
+    FILE *f = fopen(spec_path, "w");
+    if (!f) {
+        log_error("Failed to create %s", spec_path);
+        return -1;
+    }
+
+    /* Construct the kernel filename for linux-esx: vmlinuz-VERSION-RELEASE-esx */
+    char kernel_filename[256];
+    const char *flavor = "";
+    if (strncmp(linux_esx_pkg->name, "linux-", 6) == 0 && strlen(linux_esx_pkg->name) > 6) {
+        flavor = linux_esx_pkg->name + 6;  /* "esx" */
+    }
+    if (flavor[0]) {
+        snprintf(kernel_filename, sizeof(kernel_filename), "vmlinuz-%s-%s-%s",
+                 linux_esx_pkg->version, linux_esx_pkg->release, flavor);
+    } else {
+        snprintf(kernel_filename, sizeof(kernel_filename), "vmlinuz-%s-%s",
+                 linux_esx_pkg->version, linux_esx_pkg->release);
+    }
+
+    fprintf(f,
+        "%%define debug_package %%{nil}\n"
+        "\n"
+        "%%define __strip /bin/true\n"
+        "%%define __brp_strip /bin/true\n"
+        "\n"
+        "# Derived from %s %s-%s (v1.9.39+ ESX-flavored MOK kernel)\n"
+        "%%define linux_name %s\n"
+        "%%define linux_version %s\n"
+        "%%define linux_release %s\n"
+        "%%define kernel_file %s\n"
+        "\n"
+        "Summary:    Linux ESX kernel signed with MOK key\n"
+        "Name:       linux-esx-mok\n"
+        "Version:    %%{linux_version}\n"
+        "Release:    %%{linux_release}\n"
+        "Group:      System Environment/Kernel\n"
+        "License:    GPLv2\n"
+        "Vendor:     VMware, Inc.\n"
+        "Distribution:   Photon\n"
+        "\n"
+        "# Provides linux/linux-esx so other packages depending on either name resolve.\n"
+        "# Conflicts with both unsigned originals AND linux-mok so only one MOK kernel\n"
+        "# can be in a given install transaction (symmetric with linux-mok.spec).\n"
+        "Provides:   %%{linux_name} = %%{linux_version}-%%{linux_release}\n"
+        "Provides:   linux = %%{linux_version}-%%{linux_release}\n"
+        "Provides:   linux-esx = %%{linux_version}-%%{linux_release}\n"
+        "Provides:   linux-secure\n"
+        "Conflicts:  linux\n"
+        "Conflicts:  linux-esx\n"
+        "Conflicts:  linux-mok\n"
+        "\n"
+        "BuildRequires:  sbsigntools\n"
+        "\n"
+        "%%description\n"
+        "Linux ESX kernel signed with Machine Owner Key (MOK) for Secure Boot.\n"
+        "This package provides the same kernel and module set as the standard\n"
+        "%%{linux_name} package but with the vmlinuz binary signed using a custom\n"
+        "MOK key. Distinct from linux-mok by carrying the ESX-flavored module tree\n"
+        "and the -esx kernel-filename suffix. Mutually exclusive with linux-mok\n"
+        "(Conflicts).\n"
+        "\n"
+        "%%prep\n"
+        "# Extract kernel boot files from the linux-esx source RPM\n"
+        "rpm2cpio %%{source_rpm_dir}/%%{linux_name}-%%{linux_version}-%%{linux_release}.%%{_arch}.rpm | cpio -idmv './boot/vmlinuz-*' './boot/System.map-*' './boot/config-*' './boot/*.cfg' './lib/modules/*'\n"
+        "\n"
+        "# --- CUSTOM KERNEL INJECTION START (shared binary with linux-mok) ---\n"
+        "# The habv4_drivers.c kernel build produces ONE signed vmlinuz at\n"
+        "# %%{keys_dir}/vmlinuz-mok (built with config-esx_x86_64). We use it for\n"
+        "# both linux-mok and linux-esx-mok today. A future habv4_drivers.c change\n"
+        "# could split the build to produce a generic + ESX binary pair.\n"
+        "CUSTOM_KERNEL_PATH=\"%%{keys_dir}/vmlinuz-mok\"\n"
+        "KERNEL_BUILD_DIR=\"/root/%%{photon_release_ver}/kernel-build\"\n"
+        "\n"
+        "if [ -f \"$CUSTOM_KERNEL_PATH\" ]; then\n"
+        "    echo \"[INFO] Found custom built kernel: $CUSTOM_KERNEL_PATH\"\n"
+        "    VMLINUZ_FILE=$(find ./boot -name \"vmlinuz-*\" -type f | head -1)\n"
+        "    if [ -n \"$VMLINUZ_FILE\" ]; then\n"
+        "        echo \"[INFO] Overwriting $VMLINUZ_FILE with custom kernel\"\n"
+        "        cp -f \"$CUSTOM_KERNEL_PATH\" \"$VMLINUZ_FILE\"\n"
+        "    else\n"
+        "        echo \"[ERROR] Could not find vmlinuz in extracted content\"\n"
+        "        exit 1\n"
+        "    fi\n"
+        "    \n"
+        "    FOUND_MODULES=0\n"
+        "    for mod_path in \"$KERNEL_BUILD_DIR\"/modules/lib/modules/*; do\n"
+        "        if [ -d \"$mod_path\" ]; then\n"
+        "            echo \"[INFO] Found custom modules at: $mod_path\"\n"
+        "            rm -rf ./lib/modules/*\n"
+        "            mkdir -p ./lib/modules\n"
+        "            cp -a \"$mod_path\" ./lib/modules/\n"
+        "            FOUND_MODULES=1\n"
+        "            break\n"
+        "        fi\n"
+        "    done\n"
+        "    \n"
+        "    if [ \"$FOUND_MODULES\" -eq 0 ]; then\n"
+        "        echo \"[WARNING] Custom kernel found but no corresponding modules found in $KERNEL_BUILD_DIR\"\n"
+        "        exit 1\n"
+        "    fi\n"
+        "    \n"
+        "    for kernel_src in \"$KERNEL_BUILD_DIR\"/linux-*/; do\n"
+        "        if [ -f \"${kernel_src}.config\" ]; then\n"
+        "            CONFIG_FILE=$(find ./boot -name \"config-*\" | head -1)\n"
+        "            if [ -n \"$CONFIG_FILE\" ]; then\n"
+        "                echo \"[INFO] Replacing $CONFIG_FILE with custom kernel config\"\n"
+        "                cp -f \"${kernel_src}.config\" \"$CONFIG_FILE\"\n"
+        "            fi\n"
+        "            break\n"
+        "        fi\n"
+        "    done\n"
+        "fi\n"
+        "# --- CUSTOM KERNEL INJECTION END ---\n"
+        "\n"
+        "%%build\n"
+        "sbsign --key %%{mok_key} --cert %%{mok_cert} \\\n"
+        "       --output ./boot/%%{kernel_file}.signed \\\n"
+        "       ./boot/%%{kernel_file}\n"
+        "mv ./boot/%%{kernel_file}.signed ./boot/%%{kernel_file}\n"
+        "\n"
+        "KVER=\"\"\n"
+        "for moddir in ./lib/modules/*; do\n"
+        "  if [ -d \"$moddir\" ]; then\n"
+        "    KVER=$(basename \"$moddir\")\n"
+        "    echo \"[INFO] Found modules directory: $KVER\"\n"
+        "    break\n"
+        "  fi\n"
+        "done\n"
+        "\n"
+        "if [ -n \"$KVER\" ]; then\n"
+        "  echo \"Generating generic initrd for kernel $KVER...\"\n"
+        "  /sbin/depmod -a -b . \"$KVER\"\n"
+        "  dracut --force --no-hostonly --kmoddir ./lib/modules/$KVER \\\n"
+        "    --omit \"nbd squash memstrack biosdevname\" \\\n"
+        "    --add \"bash systemd systemd-initrd kernel-modules kernel-modules-extra lvm dm rootfs-block terminfo udev-rules usrmount base fs-lib shutdown\" \\\n"
+        "    --add-drivers \"xhci_pci ehci_pci uhci_hcd usb_storage sd_mod\" \\\n"
+        "    ./boot/initrd.img-$KVER $KVER\n"
+        "else\n"
+        "  echo \"WARNING: Could not determine kernel version for initrd generation\"\n"
+        "fi\n"
+        "\n"
+        "for cfg in ./boot/linux-*.cfg; do\n"
+        "  if [ -f \"$cfg\" ]; then\n"
+        "    sed -i 's/ quiet / /' \"$cfg\"\n"
+        "    sed -i 's/ quiet$//' \"$cfg\"\n"
+        "    sed -i 's/systemd.show_status=0/systemd.show_status=1/' \"$cfg\"\n"
+        "    if ! grep -q 'rootwait' \"$cfg\"; then\n"
+        "      sed -i 's/cpu_init_udelay=0/cpu_init_udelay=0 rootwait/' \"$cfg\"\n"
+        "    fi\n"
+        "  fi\n"
+        "done\n"
+        "\n"
+        "%%install\n"
+        "install -d %%{buildroot}/boot\n"
+        "install -m 0644 ./boot/vmlinuz-* %%{buildroot}/boot/\n"
+        "install -m 0644 ./boot/System.map-* %%{buildroot}/boot/\n"
+        "install -m 0644 ./boot/config-* %%{buildroot}/boot/\n"
+        "install -m 0644 ./boot/*.cfg %%{buildroot}/boot/ 2>/dev/null || true\n"
+        "install -m 0600 ./boot/initrd.img-* %%{buildroot}/boot/ 2>/dev/null || true\n"
+        "cp -a ./lib %%{buildroot}/\n"
+        "\n"
+        "%%files\n"
+        "%%defattr(-,root,root,-)\n"
+        "/boot/vmlinuz-*\n"
+        "/boot/System.map-*\n"
+        "/boot/config-*\n"
+        "/boot/*.cfg\n"
+        "/boot/initrd.img-*\n"
+        "/lib/modules/*\n"
+        "\n"
+        "%%post\n"
+        "KVER_MODULES=\"\"\n"
+        "KVER_VMLINUZ=\"\"\n"
+        "\n"
+        "for moddir in /lib/modules/%%{linux_version}*; do\n"
+        "  if [ -d \"$moddir\" ]; then\n"
+        "    KVER_MODULES=$(basename \"$moddir\")\n"
+        "    break\n"
+        "  fi\n"
+        "done\n"
+        "\n"
+        "for vmlinuz in /boot/vmlinuz-%%{linux_version}-*; do\n"
+        "  if [ -f \"$vmlinuz\" ]; then\n"
+        "    KVER_VMLINUZ=$(basename \"$vmlinuz\" | sed 's/vmlinuz-//')\n"
+        "    break\n"
+        "  fi\n"
+        "done\n"
+        "\n"
+        "echo \"linux-esx-mok: Modules version: $KVER_MODULES\"\n"
+        "echo \"linux-esx-mok: Vmlinuz version: $KVER_VMLINUZ\"\n"
+        "\n"
+        "if [ -n \"$KVER_MODULES\" ]; then\n"
+        "  echo \"linux-esx-mok: Running depmod -a $KVER_MODULES\"\n"
+        "  /sbin/depmod -a \"$KVER_MODULES\"\n"
+        "fi\n"
+        "\n"
+        "if [ -n \"$KVER_VMLINUZ\" ] && [ -f \"/boot/linux-${KVER_VMLINUZ}.cfg\" ]; then\n"
+        "  ln -sf \"linux-${KVER_VMLINUZ}.cfg\" /boot/photon.cfg\n"
+        "  echo \"linux-esx-mok: Created /boot/photon.cfg -> linux-${KVER_VMLINUZ}.cfg\"\n"
+        "elif [ -n \"$KVER_MODULES\" ] && [ -f \"/boot/linux-${KVER_MODULES}.cfg\" ]; then\n"
+        "  ln -sf \"linux-${KVER_MODULES}.cfg\" /boot/photon.cfg\n"
+        "  echo \"linux-esx-mok: Created /boot/photon.cfg -> linux-${KVER_MODULES}.cfg\"\n"
+        "else\n"
+        "  for cfg in /boot/linux-%%{linux_version}*.cfg; do\n"
+        "    if [ -f \"$cfg\" ]; then\n"
+        "      ln -sf \"$(basename $cfg)\" /boot/photon.cfg\n"
+        "      echo \"linux-esx-mok: Created /boot/photon.cfg -> $(basename $cfg)\"\n"
+        "      break\n"
+        "    fi\n"
+        "  done\n"
+        "fi\n"
+        "\n"
+        "if [ -n \"$KVER_VMLINUZ\" ] && [ -n \"$KVER_MODULES\" ] && [ \"$KVER_VMLINUZ\" != \"$KVER_MODULES\" ]; then\n"
+        "  if [ -f \"/boot/initrd.img-${KVER_MODULES}\" ] && [ ! -e \"/boot/initrd.img-${KVER_VMLINUZ}\" ]; then\n"
+        "    ln -sf \"initrd.img-${KVER_MODULES}\" \"/boot/initrd.img-${KVER_VMLINUZ}\"\n"
+        "    echo \"linux-esx-mok: Created initrd symlink\"\n"
+        "  fi\n"
+        "fi\n"
+        "\n"
+        "if [ -z \"$KVER_MODULES\" ] && [ -z \"$KVER_VMLINUZ\" ]; then\n"
+        "  echo \"linux-esx-mok: ERROR: Could not determine kernel version!\"\n"
+        "fi\n"
+        "\n"
+        "%%postun\n"
+        "if [ ! -e /boot/photon.cfg ]; then\n"
+        "  list=\"$(basename \"$(ls -1 -tu /boot/linux-*.cfg 2>/dev/null | head -n1)\")\"\n"
+        "  test -n \"$list\" && ln -sf \"$list\" /boot/photon.cfg\n"
+        "fi\n"
+        "KVER_FILE=\"%%{kernel_file}\"\n"
+        "KVER_FILE=\"${KVER_FILE#vmlinuz-}\"\n"
+        "if [ ! -s \"/boot/linux-${KVER_FILE}.cfg\" ]; then\n"
+        "  rm -f \"/var/lib/rpm-state/initramfs/pending/${KVER_FILE}\" \\\n"
+        "        \"/boot/initrd.img-${KVER_FILE}\"\n"
+        "fi\n"
+        "\n"
+        "%%changelog\n"
+        "* %s HABv4 Project <habv4@local> %%{linux_version}-%%{linux_release}\n"
+        "- MOK-signed variant of %%{linux_name} kernel (v1.9.39+)\n",
+        linux_esx_pkg->name, linux_esx_pkg->version, linux_esx_pkg->release,
+        linux_esx_pkg->name,
+        linux_esx_pkg->version,
+        linux_esx_pkg->release,
+        kernel_filename,
+        date_str
+    );
+
+    fclose(f);
+    log_info("Generated %s", spec_path);
+    return 0;
+}
+
+/**
  * Generate shim-signed-mok.spec
  */
-static int generate_shim_mok_spec(rpm_build_config_t *config, 
+static int generate_shim_mok_spec(rpm_build_config_t *config,
                                    rpm_package_info_t *shim_signed_pkg,
                                    rpm_package_info_t *shim_pkg) {
     char spec_path[1024];
@@ -1051,7 +1375,16 @@ int rpm_generate_mok_specs(
             return RPM_PATCH_ERR_SPEC_GENERATION_FAILED;
         }
     }
-    
+
+    /* v1.9.39+: also generate linux-esx-mok.spec if a linux-esx source RPM
+     * was discovered. Without this the UI offers "MOK Secure Boot (ESX)" but
+     * tdnf fails late at install time. */
+    if (packages->linux_esx_kernel) {
+        if (generate_linux_esx_mok_spec(config, packages->linux_esx_kernel) != 0) {
+            return RPM_PATCH_ERR_SPEC_GENERATION_FAILED;
+        }
+    }
+
     if (packages->shim_signed) {
         if (generate_shim_mok_spec(config, packages->shim_signed, packages->shim) != 0) {
             return RPM_PATCH_ERR_SPEC_GENERATION_FAILED;
@@ -1135,21 +1468,37 @@ int rpm_build_mok_packages(
     snprintf(path, sizeof(path), "%s/SPECS", config->rpmbuild_dir);
     mkdir_p(path);
     
-    /* Build order: shim-signed-mok, grub2-efi-image-mok, linux-mok */
-    
+    /* Build order: shim-signed-mok, grub2-efi-image-mok, linux-mok, linux-esx-mok */
+
     /* 1. Build shim-signed-mok (includes MokManager) */
     if (build_single_rpm(config, "shim-signed-mok.spec", packages->dist_tag) != 0) {
         return RPM_PATCH_ERR_BUILD_FAILED;
     }
-    
+
     /* 2. Build grub2-efi-image-mok */
     if (build_single_rpm(config, "grub2-efi-image-mok.spec", packages->dist_tag) != 0) {
         return RPM_PATCH_ERR_BUILD_FAILED;
     }
-    
+
     /* 3. Build linux-mok */
     if (build_single_rpm(config, "linux-mok.spec", packages->dist_tag) != 0) {
         return RPM_PATCH_ERR_BUILD_FAILED;
+    }
+
+    /* 4. v1.9.39+: build linux-esx-mok if the spec was generated (only when
+     * discovery found a linux-esx source RPM). Treated as conditional so a
+     * generic-only-build environment still produces a working ISO. */
+    {
+        char esx_spec_path[1024];
+        snprintf(esx_spec_path, sizeof(esx_spec_path),
+                 "%s/linux-esx-mok.spec", config->specs_dir);
+        if (file_exists(esx_spec_path)) {
+            if (build_single_rpm(config, "linux-esx-mok.spec", packages->dist_tag) != 0) {
+                return RPM_PATCH_ERR_BUILD_FAILED;
+            }
+        } else {
+            log_info("Skipping linux-esx-mok.spec build (no linux-esx source RPM was discovered)");
+        }
     }
     
     /* Move built RPMs to output directory */
@@ -1614,6 +1963,7 @@ void rpm_free_discovered_packages(discovered_packages_t *packages) {
     if (!packages) return;
     rpm_free_package_info(packages->grub_efi);
     rpm_free_package_info(packages->linux_kernel);
+    rpm_free_package_info(packages->linux_esx_kernel);
     rpm_free_package_info(packages->shim_signed);
     rpm_free_package_info(packages->shim);
     free(packages->release);
