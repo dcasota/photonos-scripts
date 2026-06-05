@@ -5223,7 +5223,20 @@ function CheckURLHealth {
                 if ($currentTask.content -ilike '*%define sha256*') { $SHAValue = (Get-FileHashWithRetry $ShaSourceFile -Algorithm SHA256).Hash;$SHALine = [system.string]::concat('%define sha256 ',$currentTask.Name,'=',$SHAValue) }
                 if ($currentTask.content -ilike '*%define sha512*') { $SHAValue = (Get-FileHashWithRetry $ShaSourceFile -Algorithm SHA512).Hash;$SHALine = [system.string]::concat('%define sha512 ',$currentTask.Name,'=',$SHAValue) }
                     # if the spec file does not contain any sha value, add sha512
-                if ((!($currentTask.content -ilike '*%define sha512*')) -and (!($object -ilike '*%define sha256*')) -and (!($object -ilike '*%define sha1*'))) { $SHAValue = (Get-FileHashWithRetry $ShaSourceFile -Algorithm SHA512).Hash; $SHALine = [system.string]::concat('%define sha512 ',$currentTask.Name,'=',$SHAValue) }
+                # M142 (2026-06-05): the sha256/sha1 negation checks
+                # referenced $object instead of $currentTask.content -- a
+                # typo that left $object undefined in this scope, so the
+                # `!($object -ilike ...)` terms always evaluated true and
+                # the SHA-512 fallback fired for every spec missing
+                # %define sha512, OVERWRITING the algorithm correctly
+                # picked by the prior three checks above. Empirically
+                # this caused 554 algo-divergence rows on the
+                # 27017982736/27021237366 parity pair (PS emitted
+                # SHA-512 for specs the spec file declared as sha1 or
+                # sha256). All three negations now key off
+                # $currentTask.content so the fallback only fires when
+                # the spec genuinely declares no algorithm.
+                if ((!($currentTask.content -ilike '*%define sha512*')) -and (!($currentTask.content -ilike '*%define sha256*')) -and (!($currentTask.content -ilike '*%define sha1*'))) { $SHAValue = (Get-FileHashWithRetry $ShaSourceFile -Algorithm SHA512).Hash; $SHALine = [system.string]::concat('%define sha512 ',$currentTask.Name,'=',$SHAValue) }
                 # ADR-0014: always compute SHA-256 and SHA-512 alongside
                 # the spec's preferred algorithm. Get-FileHashWithRetry
                 # streams from local file so two extra calls are cheap.
