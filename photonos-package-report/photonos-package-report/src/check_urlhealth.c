@@ -2998,8 +2998,16 @@ char *check_urlhealth(pr_task_t                       *task,
      * stray value) for the same net output. HealthUpdateURL is "200";
      * UpdateDownloadName derives from the URL via the standard L4810-4842
      * pipeline (download_name_post), so the leading-'v' strip etc. match PS.
-     * col9 (SHAValue) is left empty here — it is soft in the parity verdict
-     * and PS computes it from a network fetch we intentionally skip. */
+     *
+     * M144 (2026-06-05): col9 was previously left empty here under the
+     * (incorrect) assumption that col9 was soft in the parity verdict.
+     * col9 IS strict (ADR-0006), and PS DOES compute it for these specs
+     * via Get-FileHashWithRetry against the pinned UpdateDownloadFile.
+     * That left ~46-98 PS-only col9 rows (cdrkit, mpc, sendmail, runit,
+     * vsftpd, python-daemon, python-Js2Py, python-ruamel-yaml, etc.) in
+     * the residual gap. Below we compute SHA via the standard
+     * cache-aware pipeline used by the github-tag / scraper / PyPI paths,
+     * so PS-preserved cache bytes flow into col9 here too. */
     {
         static const struct { const char *spec, *url, *ver, *archdate; } k_hard[] = {
             {"cdrkit.spec",             "https://deb.debian.org/debian/pool/main/c/cdrkit/cdrkit_1.1.11.orig.tar.gz", "1.1.11", "2021-10-10"},
@@ -3028,6 +3036,26 @@ char *check_urlhealth(pr_task_t                       *task,
             if (state.UpdateDownloadName == NULL) state.UpdateDownloadName = dup_or_empty("");
             if (k_hard[i].archdate[0]) {
                 free(state.ArchivationDate); state.ArchivationDate = dup_or_empty(k_hard[i].archdate);
+            }
+            /* M144: compute col9 via the standard cache-aware pipeline so
+             * PS-preserved cache bytes flow into the hardcoded-override
+             * row too. Uses the same %define-sha1/256/512 detection
+             * pattern as the github-tag / scraper / PyPI paths. */
+            if (state.UpdateURL && state.UpdateURL[0]
+                && state.UpdateDownloadName && state.UpdateDownloadName[0]) {
+                pr_sha_alg_t alg = PR_SHA512;
+                for (size_t li = 0; li < task->content_lines; li++) {
+                    const char *line = task->content[li];
+                    if (line == NULL) continue;
+                    if (strstr(line, "%define sha1")   != NULL) { alg = PR_SHA1;   break; }
+                    if (strstr(line, "%define sha256") != NULL) { alg = PR_SHA256; break; }
+                    if (strstr(line, "%define sha512") != NULL) { alg = PR_SHA512; break; }
+                }
+                char *cache_file_hc = col9_cache_path(
+                    clone_root, state.UpdateDownloadName);
+                char *hex_hc = pr_sha_of_url_cached(alg, state.UpdateURL, cache_file_hc);
+                if (hex_hc) { free(state.SHAValue); state.SHAValue = hex_hc; }
+                free(cache_file_hc);
             }
             break;
         }
