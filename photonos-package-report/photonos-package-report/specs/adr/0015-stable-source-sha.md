@@ -188,3 +188,80 @@ redundancy — both axes addressed.
 - FRD-007 (GitHub tag detection)
 - The col-9-only bucket (~75 specs/branch in the post-M21-wired
   journal) is the direct target.
+
+## Amendment (M141, 2026-06-05) — composition with M140
+
+**Status**: Accepted (dcasota, 2026-06-05). Supersedes the col-9
+override behaviour of Option A above; ADR-0015's resolver itself is
+retained.
+
+### Why the original col-9 override no longer fits
+
+Option A was decided 2026-05-18 against a parity baseline where PS
+and C each downloaded their own copy of the tarball — the byte-drift
+risk was real because PS-time and C-time were ~hours apart. M140
+(2026-06-03) eliminated that gap by having PS preserve `SOURCES_NEW`
+to a shared col-9 cache that C then reads. With M140 in place, PS and
+C see byte-identical tarballs regardless of GitHub's behaviour, so
+the parity-side justification for swapping col-9 to the stable URL
+no longer holds.
+
+The override also has a cost the original ADR didn't book: col-6
+(the URL the spec downloads from) and col-9 (the SHA emitted)
+become semantically inconsistent. A downstream consumer fetching
+col-6 and verifying against col-9 gets a mismatch — col-9 was
+computed against a different URL. With the M140 cache holding the
+auto-archive bytes, this manifests as 1242 both-differ col-9 rows
+between PS and C, all on the same root cause.
+
+### Revised composition
+
+- **col-9** always hashes `$UpdateDownloadFile` — i.e. the bytes
+  preserved to the M140 col-9 cache, which is also what col-6
+  points at. Col-6 and col-9 are now semantically consistent again
+  (operational-integrity anchor: "the bytes you fetched from the
+  URL you were told to fetch them from").
+
+- **ADR-0015's `Resolve-StableSourceURL`** still fires and still
+  downloads the stable-asset file, but its SHA now flows into
+  **ADR-0014 cols 13 / 14** (`SHA256Name` / `SHA512Name`,
+  gated by `PR_EMIT_MULTI_SHA`) as a canonical-attestation anchor:
+  "the SHA of the maintainer-uploaded release artefact for this
+  tag, stable across time and indexable by SBOM / supply-chain
+  tooling". The two anchors serve different verification questions
+  and degrade independently.
+
+### Why this is more robust than either Option A or "delete ADR-0015"
+
+- Multiple independent verification anchors per artefact (col-9 for
+  what-you-fetched; cols 13/14 for canonical-stable) — the
+  structural property SLSA / in-toto attestation pipelines expect.
+- Defence in depth across hash algorithms: col-9's SHA-512 + cols
+  13/14's SHA-256 + SHA-512 guards against single-algorithm break.
+- Graceful degradation: when `Resolve-StableSourceURL` returns
+  null (no release asset, host outside allowlist), cols 13/14 fall
+  back to hashing the same bytes col-9 hashed — non-empty rather
+  than half-broken.
+
+### Implementation (M141 = PS-side; M142+ = C-side)
+
+- **M141 (PS)**: `photonos-package-report.ps1` ~L 5192-5232:
+  introduce `$StableShaSourceFile` separate from `$ShaSourceFile`;
+  stop assigning `$ShaSourceFile = $stableFile`; cols 13/14
+  resolution prefers `$StableShaSourceFile` when set, falls back
+  to `$ShaSourceFile` otherwise; cleanup keys off
+  `$StableShaSourceFile`. **Effect**: col-9 immediately aligns
+  with cache bytes → 1242-row gap closes.
+- **M142 (C)**: port `Resolve-StableSourceURL` + multi-SHA
+  emission. Until then C continues to emit 12-col rows; cols
+  13/14 are PS-only (the parity-diff treats absent cols as
+  trivially-matched for now). Strict comparison on 13/14 enables
+  once both sides emit.
+- **M143 (gate + parity-diff)**: 14-col schema rolled into
+  parity-diff comparison + journal verdict logic.
+
+### Open questions deferred from original ADR
+
+- HEAD probe failure modes, asset-name variability, resolved-URL
+  caching — all still apply to the ADR-0015 resolver itself, just
+  no longer affect col-9 verdict stability.

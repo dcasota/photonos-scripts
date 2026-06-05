@@ -5182,25 +5182,36 @@ function CheckURLHealth {
         [system.string]$SHALine=""
         [system.string]$SHAValue=""
 
-        # ADR-0015 (Accepted Option A): for github auto-archive URLs,
-        # the SHA against the auto-archive drifts (GitHub regenerates
-        # the tarball on demand). Probe the corresponding
-        # releases/download/<tag>/<asset> URL and, if available, hash
-        # against the stable asset. The auto-archive remains
-        # downloaded for ModifySpecFile / UpdateDownloadFile uses;
-        # only the col-9 .prn value is sourced from the stable URL.
+        # M141 (composes ADR-0015 + M140, 2026-06-05): col9 always
+        # hashes $UpdateDownloadFile, i.e. the bytes preserved to the
+        # M140 col9 cache. The original ADR-0015 design (Option A)
+        # silently swapped col9 to the stable-asset SHA whenever a
+        # release-asset URL was found, which made col6 (download URL)
+        # and col9 (its SHA) semantically inconsistent and produced
+        # a 1242-row C↔PS col9 gap once M140 shipped (cache holds the
+        # auto-archive bytes; PS was hashing a different artefact).
+        #
+        # ADR-0015 stays: the stable-asset URL is still resolved and
+        # the file still downloaded, but its SHA now flows into the
+        # ADR-0014 cols 13/14 (gated by PR_EMIT_MULTI_SHA) where it
+        # serves as a canonical-attestation anchor independent of
+        # col9's operational-integrity role.
         [system.string]$ShaSourceFile = $UpdateDownloadFile
+        [system.string]$StableShaSourceFile = ""
         $stableSourceURL = Resolve-StableSourceURL -SpecName $currentTask.spec -LatestTag $UpdateAvailable -CurrentURL $UpdateURL
         if (-not [string]::IsNullOrEmpty($stableSourceURL)) {
             $stableFile = [system.string](Join-Path -Path (Split-Path $UpdateDownloadFile -Parent) -ChildPath ([System.Guid]::NewGuid().ToString() + ".stable")).Trim()
             try {
                 Invoke-WebRequest -Uri $stableSourceURL -UseBasicParsing -OutFile $stableFile -TimeoutSec 60 -ErrorAction Stop
-                if (Test-Path $stableFile) { $ShaSourceFile = $stableFile }
+                if (Test-Path $stableFile) { $StableShaSourceFile = $stableFile }
             } catch {}
         }
 
-        # ADR-0014 (Accepted Option B): cols 13 (SHA256Name) + 14
-        # (SHA512Name) computed against the same stable source URL.
+        # ADR-0014 (Accepted Option B) composed with M141: cols 13
+        # (SHA256Name) + 14 (SHA512Name) carry the stable-asset SHA
+        # when ADR-0015 found a release-asset URL; otherwise they fall
+        # back to hashing the same bytes col9 hashed. Either way these
+        # are vendor-info-quality hashes independent of col9.
         # Emission of the new cols gated by env var PR_EMIT_MULTI_SHA.
         [system.string]$SHA256Name = ""
         [system.string]$SHA512Name = ""
@@ -5216,16 +5227,21 @@ function CheckURLHealth {
                 # ADR-0014: always compute SHA-256 and SHA-512 alongside
                 # the spec's preferred algorithm. Get-FileHashWithRetry
                 # streams from local file so two extra calls are cheap.
+                # M141: prefer the stable-asset file when ADR-0015 found
+                # one; otherwise hash the same bytes col9 hashed.
                 if (-not [string]::IsNullOrEmpty($env:PR_EMIT_MULTI_SHA)) {
-                    $SHA256Name = (Get-FileHashWithRetry $ShaSourceFile -Algorithm SHA256).Hash
-                    $SHA512Name = (Get-FileHashWithRetry $ShaSourceFile -Algorithm SHA512).Hash
+                    $multiShaFile = if ((-not [string]::IsNullOrEmpty($StableShaSourceFile)) -and (Test-Path $StableShaSourceFile)) { $StableShaSourceFile } else { $ShaSourceFile }
+                    $SHA256Name = (Get-FileHashWithRetry $multiShaFile -Algorithm SHA256).Hash
+                    $SHA512Name = (Get-FileHashWithRetry $multiShaFile -Algorithm SHA512).Hash
                 }
             }
         }
 
         # Clean up the temporary stable-asset file if we created one.
-        if (-not [string]::IsNullOrEmpty($stableSourceURL) -and $ShaSourceFile -ne $UpdateDownloadFile) {
-            Remove-Item -Path $ShaSourceFile -Force -ErrorAction SilentlyContinue
+        # M141: now keyed off $StableShaSourceFile (separate variable
+        # from $ShaSourceFile, which now stays = $UpdateDownloadFile).
+        if ((-not [string]::IsNullOrEmpty($StableShaSourceFile)) -and (Test-Path $StableShaSourceFile)) {
+            Remove-Item -Path $StableShaSourceFile -Force -ErrorAction SilentlyContinue
         }
         # Add a space to signalitze that something went wrong when extracting SHAvalue but do not stop modifying the spec file.
         if ([string]::IsNullOrEmpty($SHALine)) { $SHALine=" " }
