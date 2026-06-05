@@ -37,7 +37,7 @@
 
 #include "rpm_secureboot_patcher.h"
 
-#define VERSION "1.9.41"
+#define VERSION "1.9.42"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */
@@ -2885,6 +2885,11 @@ static int create_secure_boot_iso(void) {
                 "        self.install_config['packages'] = stripped\n"
                 "        self.install_config['linux_flavor'] = flavor\n"
                 "        self.install_config['mok_quickstart'] = sentinel\n"
+                "        # v1.9.42 (audit Q2): clear any leftover ostree key from a\n"
+                "        # kickstart pre-seed; the quickstart Yes paths are NOT ostree\n"
+                "        # installs, and a stale ostree key triggers OSTreeServer/URL\n"
+                "        # prompts later in the screen chain.\n"
+                "        self.install_config.pop('ostree', None)\n"
                 "        try:\n"
                 "            from stigenable import KS_STIG_ANSIBLE, KS_STIG_PACKAGES\n"
                 "            self.install_config['ansible'] = KS_STIG_ANSIBLE\n"
@@ -2959,8 +2964,29 @@ static int create_secure_boot_iso(void) {
             log_warn("iso_config.py not at %s — screen will not appear in UI", iso_cfg_path);
         }
 
-        /* 3. Patch packageselector.py: early-return when mok_quickstart set,
-         *    BEFORE load_package_list overwrites our pre-seeded packages. */
+        /* 3. Patch packageselector.py: early-return when mok_quickstart set.
+         *
+         * v1.9.41 SHIPPED THIS WRONG and the operator hit it: the guard was
+         * in __init__, but iso_config.add_ui_pages() instantiates all
+         * screens UPFRONT before any user selection, so install_config
+         * ['mok_quickstart'] is None at __init__ time and the guard was
+         * dead code. The user saw "Select Installation" even after picking
+         * "Yes" on MokQuickstartSelector, and worse — display() called
+         * window.do_action() which fired the default-selected exit_function
+         * callback, silently OVERWRITING install_config['packages'] with
+         * the unmodified Minimal set (clobbering MOK kernel + grub2 + shim
+         * + STIG pre-seed).
+         *
+         * v1.9.42 fix (workflow wbm4o1r5r audit): move the guard to
+         * display() where it observes install_config AFTER MokQuickstart-
+         * Selector.display() has written the sentinel. Belt-and-suspenders:
+         * keep the __init__ guard too (no-op for the bug case, but useful
+         * for kickstart JSON pre-seed scenarios where install_config is
+         * populated before screen instantiation).
+         *
+         * Post-condition assertions A2 + A4 fail-fast at patch time if the
+         * guard accidentally leaks back into __init__ or never makes it
+         * into display() — would have caught the v1.9.41 regression. */
         char pkg_sel_path[640];
         snprintf(pkg_sel_path, sizeof(pkg_sel_path), "%s/packageselector.py", site_pkg_dir);
         if (file_exists(pkg_sel_path)) {
@@ -2975,34 +3001,77 @@ static int create_secure_boot_iso(void) {
                     "with open(sys.argv[1], 'r') as f:\n"
                     "    content = f.read()\n"
                     "\n"
-                    "# Insert early-return in __init__ before self.load_package_list.\n"
-                    "# Anchor on the blank line between menu_starty assignment and\n"
-                    "# load_package_list call.\n"
-                    "before = content\n"
+                    "# v1.9.42-mok-quickstart-display-guard marker for idempotent re-runs\n"
+                    "MARKER = '# v1.9.42-mok-quickstart-display-guard'\n"
+                    "if MARKER in content and 'install_config.get(\\'mok_quickstart\\') in (\\'generic\\', \\'esx\\')' in re.search(r'def display\\(self.*?\\):(.*)', content, re.DOTALL).group(1):\n"
+                    "    print('[patch_packageselector] v1.9.42 already applied')\n"
+                    "    sys.exit(0)\n"
+                    "\n"
+                    "# Patch 1 (kept from v1.9.41 — belt-and-suspenders for kickstart pre-seed):\n"
+                    "# early-return in __init__ when install_config arrives already pre-seeded.\n"
+                    "# Dead in the screen-instantiation-then-display flow, useful in the\n"
+                    "# kickstart-JSON-passes-config-at-startup flow.\n"
+                    "before_init = content\n"
                     "content = re.sub(\n"
                     "    r'(\\n        self\\.menu_starty = self\\.win_starty \\+ 3\\n)\\n(        self\\.load_package_list\\(options_file\\))',\n"
                     "    r'\\1\\n'\n"
-                    "    '        # v1.9.41: MOK quickstart pre-seeded packages — skip this screen\\n'\n"
+                    "    '        # v1.9.41+: belt-and-suspenders for kickstart-pre-set install_config\\n'\n"
                     "    \"        if install_config.get('mok_quickstart') in ('generic', 'esx'):\\n\"\n"
                     "    '            self.inactive_screen = True\\n'\n"
                     "    '            return\\n'\n"
                     "    '\\n'\n"
                     "    r'\\2',\n"
                     "    content, count=1)\n"
-                    "if content == before:\n"
-                    "    print('WARN: PackageSelector load_package_list anchor not found - guard skipped')\n"
+                    "if content == before_init:\n"
+                    "    print('WARN: __init__ load_package_list anchor not found')\n"
+                    "\n"
+                    "# Patch 2 (v1.9.42 — THE LOAD-BEARING FIX): guard in display().\n"
+                    "# Anchor: existing `if self.inactive_screen:` short-circuit. Insert\n"
+                    "# the new guard immediately BEFORE it, so the original inactive_screen\n"
+                    "# branch is preserved as the secondary path for single-entry\n"
+                    "# options_file scenarios.\n"
+                    "before_display = content\n"
+                    "content = re.sub(\n"
+                    "    r'(    def display\\(self\\):\\s*\\n)'\n"
+                    "    r'(        if self\\.inactive_screen:\\s*\\n'\n"
+                    "    r'            return ActionResult\\(None, \\{\"inactive_screen\": True\\}\\)\\n)',\n"
+                    "    '\\\\1'\n"
+                    "    '        ' + MARKER + '\\n'\n"
+                    "    \"        if self.install_config.get('mok_quickstart') in ('generic', 'esx'):\\n\"\n"
+                    "    \"            return ActionResult(None, {'inactive_screen': True})\\n\"\n"
+                    "    '\\\\2',\n"
+                    "    content, count=1)\n"
+                    "if content == before_display:\n"
+                    "    print('FATAL: display() inactive_screen anchor not found - guard NOT installed')\n"
                     "    sys.exit(2)\n"
                     "\n"
                     "with open(sys.argv[1], 'w') as f:\n"
                     "    f.write(content)\n"
-                    "print('packageselector.py patched: __init__ auto-skip on mok_quickstart')\n"
+                    "\n"
+                    "# === Post-condition assertions (fail-fast at build time) ===\n"
+                    "verify = open(sys.argv[1]).read()\n"
+                    "\n"
+                    "# A2: guard MUST be in display(), not __init__ as primary path\n"
+                    "dm = re.search(r'def display\\(self\\):(.*?)(?=\\n    def |\\Z)', verify, re.DOTALL)\n"
+                    "if not dm or 'mok_quickstart' not in dm.group(1):\n"
+                    "    print('FATAL A2: mok_quickstart guard not inside display()')\n"
+                    "    sys.exit(3)\n"
+                    "\n"
+                    "# A3: guard appears BEFORE window.do_action() in display()\n"
+                    "guard_pos = dm.group(1).find('mok_quickstart')\n"
+                    "doact_pos = dm.group(1).find('window.do_action()')\n"
+                    "if doact_pos != -1 and guard_pos > doact_pos:\n"
+                    "    print('FATAL A3: guard after do_action() — clobber path still live')\n"
+                    "    sys.exit(4)\n"
+                    "\n"
+                    "print('packageselector.py patched v1.9.42: display() guard + __init__ belt-and-suspenders, post-conditions OK')\n"
                 );
                 fclose(pf);
                 snprintf(cmd, sizeof(cmd), "python3 '%s' '%s' 2>&1", patch_pkg_sel, pkg_sel_path);
                 run_cmd(cmd);
                 snprintf(cmd, sizeof(cmd), "rm -f '%s'", patch_pkg_sel);
                 run_cmd(cmd);
-                log_info("Patched packageselector.py with mok_quickstart auto-skip");
+                log_info("Patched packageselector.py: v1.9.42 display() guard + belt-and-suspenders __init__ guard");
             }
         } else {
             log_warn("packageselector.py not at %s — auto-skip not installed", pkg_sel_path);
