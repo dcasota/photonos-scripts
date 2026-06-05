@@ -2229,6 +2229,13 @@ char *check_urlhealth(pr_task_t                       *task,
          * mirroring PS exactly. */
 
         const char *cur = state.version ? state.version : "";
+        /* M143: track whether the PyPI branch below adopts a new
+         * UpdateURL / UpdateDownloadName. When set, the col9 SHA
+         * computed at L2128 (against the github-tag-path URL and
+         * dlname) is now stale and must be recomputed against the
+         * new PyPI sdist after this block closes. PS computes col9
+         * against the final UpdateDownloadFile, so this matches. */
+        int pypi_adopted = 0;
         /* github's latest, reconstructed from the git-path result. */
         char *gh_latest = NULL;
         if (state.UpdateAvailable && state.UpdateAvailable[0]
@@ -2274,6 +2281,7 @@ char *check_urlhealth(pr_task_t                       *task,
                          * above, so a later `if (surl ...)` guard would never
                          * fire and the udn would wrongly stay empty.) */
                         free(state.UpdateDownloadName); state.UpdateDownloadName = sname; sname = NULL;
+                        pypi_adopted = 1;  /* M143: SHA needs recompute */
                     }
                     if (state.Warning && strstr(state.Warning, "packaging format") != NULL) {
                         free(state.Warning); state.Warning = dup_or_empty("");
@@ -2315,6 +2323,7 @@ char *check_urlhealth(pr_task_t                       *task,
                 }
                 if (sname && sname[0]) {
                     free(state.UpdateDownloadName); state.UpdateDownloadName = sname; sname = NULL;
+                    pypi_adopted = 1;  /* M143: SHA needs recompute */
                 }
                 if (state.Warning && strstr(state.Warning, "packaging format") != NULL) {
                     free(state.Warning); state.Warning = dup_or_empty("");
@@ -2327,6 +2336,39 @@ char *check_urlhealth(pr_task_t                       *task,
              * -> keep the git-path result. */
         }
         free(gh_latest); free(pp); free(surl); free(sname); free(pkg);
+
+        /* M143 (2026-06-05): when the PyPI block adopted a new
+         * UpdateURL + UpdateDownloadName (overriding the github tag
+         * path's URL/dlname), the col9 SHA computed at L2128 against
+         * the github path's URL is now stale -- it points at a
+         * different artefact than col6 and col10 advertise. PS
+         * computes col9 against the final UpdateDownloadFile, so the
+         * equivalent in C is to recompute SHA against the new
+         * UpdateURL with the new UpdateDownloadName as cache key.
+         *
+         * Empirically observed on PS 27026736948 / C 27029718601:
+         * 572 python-* both-differ rows where PS hashed the
+         * pythonhosted sdist bytes (cache-matching) and C still
+         * carried the github stable-asset SHA from the L2128 path.
+         * Closes that cluster. Non-python specs are unaffected --
+         * pypi_adopted is 0 by default and only the python PyPI
+         * branch sets it. */
+        if (pypi_adopted && state.UpdateURL && state.UpdateURL[0]
+            && state.UpdateDownloadName && state.UpdateDownloadName[0]) {
+            pr_sha_alg_t alg = PR_SHA512;
+            for (size_t li = 0; li < task->content_lines; li++) {
+                const char *line = task->content[li];
+                if (line == NULL) continue;
+                if (strstr(line, "%define sha1")   != NULL) { alg = PR_SHA1;   break; }
+                if (strstr(line, "%define sha256") != NULL) { alg = PR_SHA256; break; }
+                if (strstr(line, "%define sha512") != NULL) { alg = PR_SHA512; break; }
+            }
+            char *cache_file_py = col9_cache_path(
+                clone_root, state.UpdateDownloadName);
+            char *hex_py = pr_sha_of_url_cached(alg, state.UpdateURL, cache_file_py);
+            if (hex_py) { free(state.SHAValue); state.SHAValue = hex_py; }
+            free(cache_file_py);
+        }
     }
 
     /* M34 / FRD-020: rubygems.org JSON-API update detection.
