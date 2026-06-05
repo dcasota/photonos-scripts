@@ -37,7 +37,7 @@
 
 #include "rpm_secureboot_patcher.h"
 
-#define VERSION "1.9.45"
+#define VERSION "1.9.46"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */
@@ -2109,6 +2109,48 @@ static int build_linux_kernel(void) {
         "scripts/config --enable CONFIG_BLK_DEV_SD && "
         "scripts/config --enable CONFIG_SCSI && "
         "scripts/config --enable CONFIG_SCSI_MOD",
+        kernel_src);
+    run_cmd(cmd);
+
+    /* v1.9.46: enable storage controllers for VMware/SATA/NVMe/VirtIO.
+     *
+     * The shipping ESX kernel config (config-esx_x86_64) is heavily pruned
+     * and ONLY includes mpt3sas in the SCSI driver set — no vmw_pvscsi,
+     * mptspi, ahci, nvme, or virtio_*. Result: linux-(esx-)mok ISOs only
+     * boot on VMs configured with "LSI Logic SAS" (mpt3sas) controllers.
+     * VMs using VMware Paravirtual SCSI (vmw_pvscsi — high-perf default),
+     * LSI Logic Parallel (mptspi — legacy default), SATA (ahci), NVMe,
+     * or KVM/QEMU (virtio_*) drop to dracut emergency mode at boot.
+     *
+     * This block enables the missing drivers as modules. dracut then
+     * picks them up via --no-hostonly + the v1.9.45 pre-filter that
+     * we shipped in rpm_secureboot_patcher.c. End-to-end coverage:
+     * ESXi (any controller), Workstation, Fusion, Hyper-V SATA, KVM/QEMU,
+     * NVMe-backed Proxmox, bare-metal.
+     *
+     * NOTE: this config change INVALIDATES the kernel build cache. The
+     * next build will rebuild from scratch (~1-3 hours depending on host).
+     * Subsequent builds with the same config will hit the cache. */
+    log_info("Configuring storage controllers (VMware/SATA/NVMe/VirtIO) as modules...");
+    snprintf(cmd, sizeof(cmd),
+        "cd '%s' && "
+        "scripts/config --module CONFIG_VMWARE_PVSCSI && "                  /* vmw_pvscsi */
+        "scripts/config --module CONFIG_FUSION && "                         /* fusion core */
+        "scripts/config --module CONFIG_FUSION_SPI && "                     /* mptspi (LSI Parallel) */
+        "scripts/config --module CONFIG_FUSION_SAS && "                     /* mptsas (LSI SAS legacy) */
+        "scripts/config --module CONFIG_FUSION_FC && "                      /* mptfc (FC HBA) */
+        "scripts/config --enable CONFIG_ATA && "                            /* libata */
+        "scripts/config --enable CONFIG_SATA_AHCI && "                      /* ahci built-in for boot reliability */
+        "scripts/config --module CONFIG_ATA_PIIX && "                       /* ata_piix legacy */
+        "scripts/config --module CONFIG_SATA_AHCI_PLATFORM && "             /* AHCI-platform variant */
+        "scripts/config --module CONFIG_BLK_DEV_NVME && "                   /* nvme */
+        "scripts/config --module CONFIG_NVME_CORE && "                      /* nvme_core */
+        "scripts/config --module CONFIG_VIRTIO && "                         /* virtio core */
+        "scripts/config --module CONFIG_VIRTIO_PCI && "                     /* virtio_pci */
+        "scripts/config --module CONFIG_VIRTIO_BLK && "                     /* virtio_blk */
+        "scripts/config --module CONFIG_VIRTIO_NET && "                     /* virtio_net (network on KVM) */
+        "scripts/config --module CONFIG_SCSI_VIRTIO && "                    /* virtio_scsi */
+        "scripts/config --module CONFIG_HYPERV_STORAGE",                    /* hv_storvsc (Hyper-V SCSI) */
         kernel_src);
     run_cmd(cmd);
     
