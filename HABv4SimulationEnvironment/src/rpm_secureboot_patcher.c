@@ -412,25 +412,41 @@ discovered_packages_t* rpm_discover_packages(
      * generation skips it gracefully. */
     log_debug("Looking for linux-esx kernel package in %s", rpm_dir);
     {
+        /* Try both layouts: rpm_dir is sometimes the bare RPMS root (with
+         * x86_64/ subdir) and sometimes already the x86_64 dir itself.
+         * v1.9.39 initial release had a single hardcoded "%s/x86_64/" path
+         * which missed the case where rpm_dir already pointed at x86_64. */
         glob_t gl;
         char glob_pat[512];
-        snprintf(glob_pat, sizeof(glob_pat), "%s/x86_64/linux-esx-[0-9]*.x86_64.rpm", rpm_dir);
-        if (glob(glob_pat, 0, NULL, &gl) == 0 && gl.gl_pathc > 0) {
-            /* Pick the FIRST match — should normally be one entry. */
-            char *linux_esx_rpm = strdup(gl.gl_pathv[0]);
-            globfree(&gl);
-            pkgs->linux_esx_kernel = extract_rpm_info(linux_esx_rpm);
-            if (pkgs->linux_esx_kernel) {
-                pkgs->linux_esx_kernel->spec_path =
-                    find_spec_for_package(specs_dir, pkgs->linux_esx_kernel->name);
-                log_info("Found linux-esx kernel: %s-%s",
-                         pkgs->linux_esx_kernel->name, pkgs->linux_esx_kernel->version);
+        const char *patterns[2] = {
+            "%s/linux-esx-[0-9]*.x86_64.rpm",          /* rpm_dir = <stage>/RPMS/x86_64 */
+            "%s/x86_64/linux-esx-[0-9]*.x86_64.rpm",   /* rpm_dir = <stage>/RPMS         */
+        };
+        int found = 0;
+        for (int pi = 0; pi < 2 && !found; pi++) {
+            memset(&gl, 0, sizeof(gl));
+            snprintf(glob_pat, sizeof(glob_pat), patterns[pi], rpm_dir);
+            if (glob(glob_pat, 0, NULL, &gl) == 0 && gl.gl_pathc > 0) {
+                char *linux_esx_rpm = strdup(gl.gl_pathv[0]);
+                globfree(&gl);
+                pkgs->linux_esx_kernel = extract_rpm_info(linux_esx_rpm);
+                if (pkgs->linux_esx_kernel) {
+                    pkgs->linux_esx_kernel->spec_path =
+                        find_spec_for_package(specs_dir, pkgs->linux_esx_kernel->name);
+                    log_info("Found linux-esx kernel: %s-%s (via %s)",
+                             pkgs->linux_esx_kernel->name,
+                             pkgs->linux_esx_kernel->version,
+                             glob_pat);
+                    found = 1;
+                }
+                free(linux_esx_rpm);
+            } else {
+                globfree(&gl);
             }
-            free(linux_esx_rpm);
-        } else {
-            if (gl.gl_pathc == 0) globfree(&gl);
-            log_info("No linux-esx RPM found in %s/x86_64/ — skipping linux-esx-mok spec",
-                     rpm_dir);
+        }
+        if (!found) {
+            log_info("No linux-esx RPM found in %s (tried both %s and %s/x86_64) — skipping linux-esx-mok spec",
+                     rpm_dir, rpm_dir, rpm_dir);
         }
     }
     
