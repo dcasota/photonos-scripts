@@ -37,7 +37,7 @@
 
 #include "rpm_secureboot_patcher.h"
 
-#define VERSION "1.9.37"
+#define VERSION "1.9.38"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */
@@ -394,6 +394,36 @@ static char *run_cmd_capture(const char *cmd) {
     buf[len] = '\0';
     pclose(fp);
     return buf;
+}
+
+/* Resolve the path to a file inside the photon_installer Python package
+ * at any Python version. Photon 4.0 ships python3.10, 5.0 ships python3.14
+ * (older versions of this tool hardcoded python3.11 and silently skipped
+ * every initrd patch on mismatch, producing an ISO that boots but crashes
+ * the installer with ZeroDivisionError on MOK package selection — see
+ * v1.9.38 release notes). Globs usr/lib/python3.X/site-packages/photon_installer/
+ * inside the extracted initrd. Returns 1 on hit (out filled with full path)
+ * or 0 on miss. */
+static int find_photon_installer_file(const char *initrd_extract,
+                                       const char *filename,
+                                       char *out, size_t outsize) {
+    char cmd[1024];
+    snprintf(cmd, sizeof(cmd),
+        "ls %s/usr/lib/python3.*/site-packages/photon_installer/%s "
+        "2>/dev/null | head -1",
+        initrd_extract, filename);
+    FILE *fp = popen(cmd, "r");
+    if (!fp) return 0;
+    if (!fgets(out, outsize, fp)) {
+        pclose(fp);
+        return 0;
+    }
+    pclose(fp);
+    size_t len = strlen(out);
+    while (len > 0 && (out[len-1] == '\n' || out[len-1] == '\r')) {
+        out[--len] = '\0';
+    }
+    return len > 0;
 }
 
 static int file_exists(const char *path) {
@@ -2389,10 +2419,10 @@ static int create_secure_boot_iso(void) {
     /* Apply progress_bar fix to installer.py
      * This fixes the AttributeError when using kickstart with ui:true */
     char installer_py[512];
-    snprintf(installer_py, sizeof(installer_py), 
-        "%s/usr/lib/python3.11/site-packages/photon_installer/installer.py", initrd_extract);
-    
-    if (file_exists(installer_py)) {
+    int have_installer_py = find_photon_installer_file(
+        initrd_extract, "installer.py", installer_py, sizeof(installer_py));
+
+    if (have_installer_py) {
         log_info("Applying progress_bar fix to installer.py...");
         
         /* The fix needs to be surgical - only fix exit_gracefully(), not all ui checks.
@@ -2435,10 +2465,25 @@ static int create_secure_boot_iso(void) {
                 "                self.progress_bar.update_message('Setting up GRUB')'''\n"
                 "content = content.replace(old_exec, new_exec)\n"
                 "\n"
+                "# Fix 4: Add linux-mok + linux-esx-mok to all_linux_flavors so the\n"
+                "#        installer's flavor-validation paths recognise them.\n"
+                "#        Without this, checkLinuxFlavors() rejects the MOK kernels\n"
+                "#        as 'unknown flavor' even when packages_mok.json picks them.\n"
+                "#        Counterpart to the linuxselector.py patch — both are needed\n"
+                "#        because the two files have independent flavor lists.\n"
+                "import re\n"
+                "before4 = content\n"
+                "content = re.sub(\n"
+                "    r'(all_linux_flavors\\s*=\\s*\\[\\s*)(\"linux\")',\n"
+                "    r'\\1\"linux-mok\", \"linux-esx-mok\", \\2',\n"
+                "    content, count=1)\n"
+                "if content == before4:\n"
+                "    print('WARN: all_linux_flavors list not found in installer.py - patch was a no-op')\n"
+                "\n"
                 "with open(sys.argv[1], 'w') as f:\n"
                 "    f.write(content)\n"
                 "\n"
-                "print('Patch applied successfully')\n"
+                "print('Patch applied successfully (progress_bar fix + all_linux_flavors)')\n"
             );
             fclose(pf);
             
@@ -2449,9 +2494,9 @@ static int create_secure_boot_iso(void) {
             run_cmd(cmd);
         }
         
-        log_info("Patched installer.py with progress_bar fix");
+        log_info("Patched installer.py with progress_bar fix + all_linux_flavors");
     } else {
-        log_warn("installer.py not found at expected path");
+        log_warn("installer.py not found in any python3.X/site-packages/photon_installer/");
     }
     
     /* Patch linuxselector.py to recognize linux-mok kernel flavor
@@ -2459,10 +2504,10 @@ static int create_secure_boot_iso(void) {
      * Without this patch, selecting packages with linux-mok causes ZeroDivisionError
      * because no menu items are created (linux-mok not in the dict). */
     char linuxselector_py[512];
-    snprintf(linuxselector_py, sizeof(linuxselector_py),
-        "%s/usr/lib/python3.11/site-packages/photon_installer/linuxselector.py", initrd_extract);
-    
-    if (file_exists(linuxselector_py)) {
+    int have_linuxselector_py = find_photon_installer_file(
+        initrd_extract, "linuxselector.py", linuxselector_py, sizeof(linuxselector_py));
+
+    if (have_linuxselector_py) {
         log_info("Patching linuxselector.py to recognize linux-mok...");
         
         char patch_linux_script[512];
@@ -2472,32 +2517,43 @@ static int create_secure_boot_iso(void) {
         if (pf) {
             fprintf(pf,
                 "#!/usr/bin/env python3\n"
-                "import sys\n"
+                "import re, sys\n"
                 "\n"
                 "with open(sys.argv[1], 'r') as f:\n"
                 "    content = f.read()\n"
                 "\n"
-                "# Add linux-mok to the linux_flavors dictionary\n"
-                "old = 'linux_flavors = {\"linux\":\"Generic\"'\n"
-                "new = 'linux_flavors = {\"linux-mok\":\"MOK Secure Boot\", \"linux\":\"Generic\"'\n"
-                "content = content.replace(old, new, 1)\n"
+                "# Add linux-mok + linux-esx-mok to the linux_flavors dict.\n"
+                "# Use a regex so the patch tolerates whitespace differences\n"
+                "# (Photon 5.0 formats the dict over multiple lines with a\n"
+                "# space after the colon; the old plain-string match never\n"
+                "# fired against that formatting, leaving the patch a no-op\n"
+                "# and crashing the installer with ZeroDivisionError on MOK\n"
+                "# package selection — fixed in HABv4 ISOCreator v1.9.38).\n"
+                "before = content\n"
+                "content = re.sub(\n"
+                "    r'(linux_flavors\\s*=\\s*\\{\\s*)',\n"
+                "    r'\\1\"linux-mok\": \"MOK Secure Boot\",\\n        \"linux-esx-mok\": \"MOK Secure Boot (ESX)\",\\n        ',\n"
+                "    content, count=1)\n"
+                "if content == before:\n"
+                "    print('WARN: linux_flavors dict not found in linuxselector.py - patch was a no-op')\n"
+                "    sys.exit(2)\n"
                 "\n"
                 "with open(sys.argv[1], 'w') as f:\n"
                 "    f.write(content)\n"
                 "\n"
-                "print('linuxselector.py patched for linux-mok')\n"
+                "print('linuxselector.py patched for linux-mok + linux-esx-mok')\n"
             );
             fclose(pf);
-            
+
             snprintf(cmd, sizeof(cmd), "python3 '%s' '%s' 2>&1", patch_linux_script, linuxselector_py);
             run_cmd(cmd);
-            
+
             snprintf(cmd, sizeof(cmd), "rm -f '%s'", patch_linux_script);
             run_cmd(cmd);
         }
-        log_info("Patched linuxselector.py with linux-mok support");
+        log_info("Patched linuxselector.py with linux-mok + linux-esx-mok support");
     } else {
-        log_warn("linuxselector.py not found at expected path");
+        log_warn("linuxselector.py not found in any python3.X/site-packages/photon_installer/");
     }
     
     /* Option C: Add "Photon MOK Secure Boot" as new entry in build_install_options_all.json
@@ -2756,10 +2812,10 @@ static int create_secure_boot_iso(void) {
      * 3. We must patch the template itself to ensure proper boot parameters
      */
     char grub_setup_script[512];
-    snprintf(grub_setup_script, sizeof(grub_setup_script), 
-        "%s/usr/lib/python3.11/site-packages/photon_installer/mk-setup-grub.sh", initrd_extract);
-    
-    if (file_exists(grub_setup_script)) {
+    int have_grub_setup_script = find_photon_installer_file(
+        initrd_extract, "mk-setup-grub.sh", grub_setup_script, sizeof(grub_setup_script));
+
+    if (have_grub_setup_script) {
         log_info("Patching mk-setup-grub.sh for USB boot compatibility...");
         
         /* Keep graphical mode for splash screen - don't change gfxpayload or terminal_output
