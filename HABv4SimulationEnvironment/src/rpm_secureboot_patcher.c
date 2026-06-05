@@ -857,7 +857,22 @@ static int generate_linux_mok_spec(rpm_build_config_t *config, rpm_package_info_
         "  dracut --force --no-hostonly --kmoddir ./lib/modules/$KVER \\\n"
         "    --omit \"nbd squash memstrack biosdevname\" \\\n"
         "    --add \"bash systemd systemd-initrd kernel-modules kernel-modules-extra lvm dm rootfs-block terminfo udev-rules usrmount base fs-lib shutdown\" \\\n"
-        "    --add-drivers \"xhci_pci ehci_pci uhci_hcd usb_storage sd_mod\" \\\n"
+        /* v1.9.44: expanded driver list to cover VMware + KVM + bare-metal storage.
+         * The previous USB-only set caused dracut emergency mode (root not found)
+         * on VMware VMs because no storage controller driver was forced into the
+         * initrd. --no-hostonly was supposed to pull them in via auto-detection
+         * but the Ph5 WSL2 build host has no VMware hardware so detection skipped
+         * them even when the .ko files were present in --kmoddir.
+         *   vmw_pvscsi  — VMware Paravirtual SCSI (high-perf default)
+         *   mpt3sas     — LSI Logic SAS (modern VMware default)
+         *   mptspi      — LSI Logic Parallel (legacy VMware default)
+         *   ahci        — SATA AHCI (VMs with SATA controllers)
+         *   ata_piix    — SATA PIIX (legacy)
+         *   nvme/_core  — PCIe NVMe (modern SSD)
+         *   virtio_blk/scsi/pci — KVM/QEMU/Proxmox (cross-hypervisor) */
+        "    --add-drivers \"xhci_pci ehci_pci uhci_hcd usb_storage sd_mod \\\n"
+        "                   vmw_pvscsi mpt3sas mptspi ahci ata_piix \\\n"
+        "                   nvme nvme_core virtio_blk virtio_scsi virtio_pci\" \\\n"
         "    ./boot/initrd.img-$KVER $KVER\n"
         "else\n"
         "  echo \"WARNING: Could not determine kernel version for initrd generation\"\n"
@@ -1168,7 +1183,22 @@ static int generate_linux_esx_mok_spec(rpm_build_config_t *config,
         "  dracut --force --no-hostonly --kmoddir ./lib/modules/$KVER \\\n"
         "    --omit \"nbd squash memstrack biosdevname\" \\\n"
         "    --add \"bash systemd systemd-initrd kernel-modules kernel-modules-extra lvm dm rootfs-block terminfo udev-rules usrmount base fs-lib shutdown\" \\\n"
-        "    --add-drivers \"xhci_pci ehci_pci uhci_hcd usb_storage sd_mod\" \\\n"
+        /* v1.9.44: expanded driver list to cover VMware + KVM + bare-metal storage.
+         * The previous USB-only set caused dracut emergency mode (root not found)
+         * on VMware VMs because no storage controller driver was forced into the
+         * initrd. --no-hostonly was supposed to pull them in via auto-detection
+         * but the Ph5 WSL2 build host has no VMware hardware so detection skipped
+         * them even when the .ko files were present in --kmoddir.
+         *   vmw_pvscsi  — VMware Paravirtual SCSI (high-perf default)
+         *   mpt3sas     — LSI Logic SAS (modern VMware default)
+         *   mptspi      — LSI Logic Parallel (legacy VMware default)
+         *   ahci        — SATA AHCI (VMs with SATA controllers)
+         *   ata_piix    — SATA PIIX (legacy)
+         *   nvme/_core  — PCIe NVMe (modern SSD)
+         *   virtio_blk/scsi/pci — KVM/QEMU/Proxmox (cross-hypervisor) */
+        "    --add-drivers \"xhci_pci ehci_pci uhci_hcd usb_storage sd_mod \\\n"
+        "                   vmw_pvscsi mpt3sas mptspi ahci ata_piix \\\n"
+        "                   nvme nvme_core virtio_blk virtio_scsi virtio_pci\" \\\n"
         "    ./boot/initrd.img-$KVER $KVER\n"
         "else\n"
         "  echo \"WARNING: Could not determine kernel version for initrd generation\"\n"
