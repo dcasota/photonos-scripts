@@ -37,7 +37,7 @@
 
 #include "rpm_secureboot_patcher.h"
 
-#define VERSION "1.9.44"
+#define VERSION "1.9.45"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */
@@ -3977,9 +3977,27 @@ static int create_secure_boot_iso(void) {
         );
         
         if (rpm_ret != 0) {
-            log_warn("MOK RPM package build failed (code: %d)", rpm_ret);
-            log_warn("Installation with 'Install (Custom MOK)' may not work on target system");
-            log_warn("Live boot from ISO will still work");
+            /* v1.9.45 (cadastre Rec #1 — finally): fail-fast on MOK build failure.
+             *
+             * v1.9.37 → v1.9.44 treated this as a warning and continued to
+             * xorriso, shipping ISOs with rc=0 that were missing MOK RPMs.
+             * Operator wouldn't know until boot. v1.9.44 just demonstrated
+             * the exact failure mode (dracut --add-drivers fail-fast on
+             * missing ata_piix → linux-mok rpmbuild fail → 0 MOK RPMs on
+             * ISO → install proceeds → boot dropped to dracut emergency).
+             *
+             * If MOK RPMs failed to build, the resulting ISO can NEVER boot
+             * the MOK-signed kernel — the whole point of HABv4 secure-boot
+             * is gone. Abort the outer build so the operator sees the
+             * problem at build time, not in their VM. */
+            log_error("MOK RPM package build failed (code: %d)", rpm_ret);
+            log_error("This is FATAL — secure-boot ISO cannot ship without MOK RPMs.");
+            log_error("Common causes: missing kernel module in --add-drivers list,");
+            log_error("rpmbuild dependency missing (cpio/grub2/dracut), or kernel");
+            log_error("source tree not present at /root/<release>/SPECS/linux/.");
+            log_error("Inspect /root/layer2-build.log or the previous rpmbuild output");
+            log_error("for the underlying cause. Tool aborting without writing ISO.");
+            return 1;
         } else {
             log_info("MOK-signed RPM packages built and integrated");
             

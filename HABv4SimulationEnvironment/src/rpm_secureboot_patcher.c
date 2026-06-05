@@ -851,28 +851,29 @@ static int generate_linux_mok_spec(rpm_build_config_t *config, rpm_package_info_
         "  # This is required because we are running dracut on extracted modules\n"
         "  /sbin/depmod -a -b . \"$KVER\"\n"
         "  \n"
-        "  # Generate initrd using dracut with modules from the build directory\n"
-        "  # We use --no-hostonly to ensure it works on any hardware (generic)\n"
-        "  # We explicitly include critical modules and drivers\n"
+        "  # Generate initrd using dracut with modules from the build directory.\n"
+        "  # v1.9.45: dynamically build --add-drivers from the union of (USB +\n"
+        "  # VMware + KVM + bare-metal) targets, but ONLY include drivers whose\n"
+        "  # .ko files actually exist in this kernel build (config-esx_x86_64\n"
+        "  # omits some legacy drivers like ata_piix). dracut's --add-drivers\n"
+        "  # is fail-fast on missing modules — v1.9.44 hit that and shipped an\n"
+        "  # ISO with no MOK kernel RPMs because the tool didn't notice the\n"
+        "  # rpmbuild failure (cadastre Rec #1 latent).\n"
+        "  AVAILABLE_DRIVERS=\"\"\n"
+        "  for drv in xhci_pci ehci_pci uhci_hcd usb_storage sd_mod \\\n"
+        "             vmw_pvscsi mpt3sas mptspi ahci ata_piix \\\n"
+        "             nvme nvme_core virtio_blk virtio_scsi virtio_pci; do\n"
+        "    if find ./lib/modules/$KVER -name \"${drv}.ko*\" -print -quit 2>/dev/null | grep -q .; then\n"
+        "      AVAILABLE_DRIVERS=\"$AVAILABLE_DRIVERS $drv\"\n"
+        "    else\n"
+        "      echo \"[INFO] dracut --add-drivers: skipping ${drv} (not in this kernel build)\"\n"
+        "    fi\n"
+        "  done\n"
+        "  echo \"[INFO] dracut --add-drivers (filtered):$AVAILABLE_DRIVERS\"\n"
         "  dracut --force --no-hostonly --kmoddir ./lib/modules/$KVER \\\n"
         "    --omit \"nbd squash memstrack biosdevname\" \\\n"
         "    --add \"bash systemd systemd-initrd kernel-modules kernel-modules-extra lvm dm rootfs-block terminfo udev-rules usrmount base fs-lib shutdown\" \\\n"
-        /* v1.9.44: expanded driver list to cover VMware + KVM + bare-metal storage.
-         * The previous USB-only set caused dracut emergency mode (root not found)
-         * on VMware VMs because no storage controller driver was forced into the
-         * initrd. --no-hostonly was supposed to pull them in via auto-detection
-         * but the Ph5 WSL2 build host has no VMware hardware so detection skipped
-         * them even when the .ko files were present in --kmoddir.
-         *   vmw_pvscsi  — VMware Paravirtual SCSI (high-perf default)
-         *   mpt3sas     — LSI Logic SAS (modern VMware default)
-         *   mptspi      — LSI Logic Parallel (legacy VMware default)
-         *   ahci        — SATA AHCI (VMs with SATA controllers)
-         *   ata_piix    — SATA PIIX (legacy)
-         *   nvme/_core  — PCIe NVMe (modern SSD)
-         *   virtio_blk/scsi/pci — KVM/QEMU/Proxmox (cross-hypervisor) */
-        "    --add-drivers \"xhci_pci ehci_pci uhci_hcd usb_storage sd_mod \\\n"
-        "                   vmw_pvscsi mpt3sas mptspi ahci ata_piix \\\n"
-        "                   nvme nvme_core virtio_blk virtio_scsi virtio_pci\" \\\n"
+        "    --add-drivers \"$AVAILABLE_DRIVERS\" \\\n"
         "    ./boot/initrd.img-$KVER $KVER\n"
         "else\n"
         "  echo \"WARNING: Could not determine kernel version for initrd generation\"\n"
@@ -1180,25 +1181,23 @@ static int generate_linux_esx_mok_spec(rpm_build_config_t *config,
         "if [ -n \"$KVER\" ]; then\n"
         "  echo \"Generating generic initrd for kernel $KVER...\"\n"
         "  /sbin/depmod -a -b . \"$KVER\"\n"
+        /* v1.9.45: pre-filter — see generate_linux_mok_spec for full rationale.
+         * Must stay in sync with the linux-mok variant. */
+        "  AVAILABLE_DRIVERS=\"\"\n"
+        "  for drv in xhci_pci ehci_pci uhci_hcd usb_storage sd_mod \\\n"
+        "             vmw_pvscsi mpt3sas mptspi ahci ata_piix \\\n"
+        "             nvme nvme_core virtio_blk virtio_scsi virtio_pci; do\n"
+        "    if find ./lib/modules/$KVER -name \"${drv}.ko*\" -print -quit 2>/dev/null | grep -q .; then\n"
+        "      AVAILABLE_DRIVERS=\"$AVAILABLE_DRIVERS $drv\"\n"
+        "    else\n"
+        "      echo \"[INFO] dracut --add-drivers: skipping ${drv} (not in this kernel build)\"\n"
+        "    fi\n"
+        "  done\n"
+        "  echo \"[INFO] dracut --add-drivers (filtered):$AVAILABLE_DRIVERS\"\n"
         "  dracut --force --no-hostonly --kmoddir ./lib/modules/$KVER \\\n"
         "    --omit \"nbd squash memstrack biosdevname\" \\\n"
         "    --add \"bash systemd systemd-initrd kernel-modules kernel-modules-extra lvm dm rootfs-block terminfo udev-rules usrmount base fs-lib shutdown\" \\\n"
-        /* v1.9.44: expanded driver list to cover VMware + KVM + bare-metal storage.
-         * The previous USB-only set caused dracut emergency mode (root not found)
-         * on VMware VMs because no storage controller driver was forced into the
-         * initrd. --no-hostonly was supposed to pull them in via auto-detection
-         * but the Ph5 WSL2 build host has no VMware hardware so detection skipped
-         * them even when the .ko files were present in --kmoddir.
-         *   vmw_pvscsi  — VMware Paravirtual SCSI (high-perf default)
-         *   mpt3sas     — LSI Logic SAS (modern VMware default)
-         *   mptspi      — LSI Logic Parallel (legacy VMware default)
-         *   ahci        — SATA AHCI (VMs with SATA controllers)
-         *   ata_piix    — SATA PIIX (legacy)
-         *   nvme/_core  — PCIe NVMe (modern SSD)
-         *   virtio_blk/scsi/pci — KVM/QEMU/Proxmox (cross-hypervisor) */
-        "    --add-drivers \"xhci_pci ehci_pci uhci_hcd usb_storage sd_mod \\\n"
-        "                   vmw_pvscsi mpt3sas mptspi ahci ata_piix \\\n"
-        "                   nvme nvme_core virtio_blk virtio_scsi virtio_pci\" \\\n"
+        "    --add-drivers \"$AVAILABLE_DRIVERS\" \\\n"
         "    ./boot/initrd.img-$KVER $KVER\n"
         "else\n"
         "  echo \"WARNING: Could not determine kernel version for initrd generation\"\n"
