@@ -38,6 +38,10 @@ This document covers key generation, storage, and usage for Secure Boot.
 ├── HABv4 Simulation Keys
 │   ├── srk.pem / srk_pub.pem          # Super Root Key
 │   ├── srk_hash.bin                    # SRK hash for eFuse simulation
+│   │                                   #   (copied verbatim onto the
+│   │                                   #    EFUSE_SIM partition by
+│   │                                   #    --create-efuse-usb=DEV or
+│   │                                   #    --create-efuse-img=PATH)
 │   ├── csf.pem / csf_pub.pem          # Command Sequence File Key
 │   └── img.pem / img_pub.pem          # Image Signing Key
 │

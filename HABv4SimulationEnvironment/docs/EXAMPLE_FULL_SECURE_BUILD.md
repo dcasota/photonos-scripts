@@ -22,12 +22,37 @@ This document shows a complete example of building a Photon OS Secure Boot ISO w
 | `--release 5.0` | Target Photon OS 5.0 |
 | `--build-iso` | Build the Secure Boot ISO |
 | `--setup-efuse` | Create eFuse simulation directory |
-| `--create-efuse-usb=/dev/sdd` | Format USB drive as eFuse dongle |
+| `--create-efuse-usb=/dev/sdd` | Format physical USB drive as eFuse dongle |
+| `--create-efuse-img=PATH[:SIZE]` | Alternative: write the eFuse payload to a `.img` file (loop-backed). Use this when no physical stick is available — for QEMU smoke tests, CI runs, or developer laptops. Mutually exclusive with `--create-efuse-usb`. |
 | `--efuse-usb` | Enable eFuse USB verification in GRUB |
 | `--rpm-signing` | Enable GPG signing of MOK RPM packages |
 | `--yes` | Auto-confirm destructive operations |
 
 *(Note: Custom kernel build with Secure Boot options is now automatic)*
+
+### Alternative: virtual eFuse USB (no physical stick)
+
+```bash
+./PhotonOS-HABv4Emulation-ISOCreator \
+    --release 5.0 \
+    --build-iso \
+    --setup-efuse \
+    --create-efuse-img=/tmp/efuse.img:128 \
+    --efuse-usb \
+    --rpm-signing \
+    --yes
+```
+
+Same outcome, but the eFuse dongle lives in `/tmp/efuse.img` (128 MB,
+FAT32, label `EFUSE_SIM`) instead of on a block device. You can then:
+
+- Attach to QEMU directly:
+  `-drive if=none,id=efuse,format=raw,file=/tmp/efuse.img -device usb-storage,drive=efuse,bus=ehci.0`
+- Flash to a real stick later:
+  `sudo dd if=/tmp/efuse.img of=/dev/sdX bs=4M`
+
+The `.img` is byte-equivalent to what `--create-efuse-usb` writes to a
+stick of the same size, so the two paths are interchangeable.
 
 ## What Gets Created
 

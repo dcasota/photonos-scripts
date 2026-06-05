@@ -292,6 +292,7 @@ SUSE Shim → Custom GRUB (no shim_lock, MOK-signed) → Kernel (MOK-signed)
 | `-u`, `--create-efuse-usb=DEV` | Create eFuse USB dongle |
 | `-D`, `--diagnose=ISO` | Diagnose existing ISO |
 | `-d`, `--drivers[=DIR]` | Include driver RPMs from directory (default: drivers/RPM) |
+| `-I`, `--create-efuse-img=PATH[:SIZE]` | Create eFuse virtual USB image (.img file, default 64 MB). Byte-equivalent to `--create-efuse-usb` on a stick of the same size; can be `dd`-flashed later or attached to QEMU directly. Requires loop kernel module + root. Mutually exclusive with `-u`. |
 | `-c`, `--clean` | Clean all artifacts |
 | `-v`, `--verbose` | Verbose output |
 | `-y`, `--yes` | Auto-confirm destructive operations |
@@ -305,9 +306,41 @@ SUSE Shim → Custom GRUB (no shim_lock, MOK-signed) → Kernel (MOK-signed)
 # High-security build with hardware token
 ./PhotonOS-HABv4Emulation-ISOCreator --build-iso --rpm-signing --efuse-usb --create-efuse-usb=/dev/sdd -y
 
+# Virtual eFuse stick for QEMU / CI (no physical USB needed)
+./PhotonOS-HABv4Emulation-ISOCreator --build-iso --rpm-signing --efuse-usb \
+    --create-efuse-img=/tmp/efuse.img:128 -y
+
 # Diagnose boot issues
 ./PhotonOS-HABv4Emulation-ISOCreator -D /path/to/photon.iso
 ```
+
+### Virtual eFuse USB (no physical stick required)
+
+For CI runs, QEMU smoke tests, or developer machines without spare USB
+sticks, `--create-efuse-img=PATH[:SIZE]` writes the eFuse dongle to a
+regular file. The resulting `.img` is byte-equivalent to what
+`--create-efuse-usb` produces on a stick of the same size, so:
+
+```bash
+# Build the virtual eFuse stick
+./PhotonOS-HABv4Emulation-ISOCreator --create-efuse-img=/tmp/efuse.img:128 -y
+
+# Option A — flash to a real stick later
+sudo dd if=/tmp/efuse.img of=/dev/sdX bs=4M status=progress
+sync
+
+# Option B — attach to QEMU as a virtual USB device
+qemu-system-x86_64 \
+    -drive if=none,id=efuse,format=raw,file=/tmp/efuse.img \
+    -device usb-storage,drive=efuse,bus=ehci.0 \
+    ...
+```
+
+The image carries the same FAT32 label `EFUSE_SIM` and the same payload
+files (`srk_fuse.bin`, `sec_config.bin`, `efuse_map.txt`, ...), so
+GRUB's `search_label EFUSE_SIM` finds it whether it lives on a real
+stick or in a virtual USB. Requires the loop kernel module
+(`CONFIG_BLK_DEV_LOOP=y`) and root for `losetup`.
 
 ---
 
@@ -365,6 +398,29 @@ On first boot, the **blue MokManager screen** appears:
 ---
 
 ## Version History
+
+- **v1.9.37** - Virtual eFuse USB image (`-I, --create-efuse-img=PATH[:SIZE]`):
+  - **New CLI option**: `--create-efuse-img=PATH[:SIZE]` writes the eFuse
+    dongle payload to a regular file instead of a physical block device.
+    Default size 64 MB (16..32768 MB accepted). Mutually exclusive with
+    `--create-efuse-usb`.
+  - **Byte-equivalent output**: the `.img` and a `dd`-flashed real stick
+    are indistinguishable — same GPT type GUID, same FAT32 label
+    `EFUSE_SIM`, same payload files. `dd if=foo.img of=/dev/sdX bs=4M`
+    produces a stick that's interchangeable with the physical-USB path.
+  - **QEMU-attachable**: lets the full HABv4 boot chain be exercised
+    inside QEMU as a virtual USB device — no physical hardware in the
+    loop. Unblocks CI smoke tests and developer iteration without a
+    spare stick.
+  - **Implementation**: `losetup -fP --show` attaches the file as a loop
+    device, then reuses the same `sfdisk → mkfs.vfat → mount → cp` chain
+    as the physical-USB writer. Always detaches the loop on exit, including
+    every error path. Requires the loop kernel module
+    (`CONFIG_BLK_DEV_LOOP=y`) and root.
+  - **Existing flag unchanged**: `--create-efuse-usb=/dev/sdX` continues
+    to work exactly as before. No breaking changes.
+  - **Driver use case**: SPAGAT-Librarian appliance M21 phase 5 — bastion
+    secure-boot wrap without a USB stick attached to the bastion host.
 
 - **v1.9.36** - Fix MOK installation conflict (Error 1525):
   - **Remove original conflicting packages** (from v1.9.19): Remove grub2-efi-image, linux-6.*, linux-esx-6.*, shim-signed from ISO to prevent tdnf from selecting them instead of MOK packages.

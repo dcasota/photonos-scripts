@@ -72,7 +72,35 @@ This will:
 
 # Build with eFuse USB requirement
 ./PhotonOS-HABv4Emulation-ISOCreator --build-iso --efuse-usb
+
+# Build with virtual eFuse USB image (no physical stick required)
+./PhotonOS-HABv4Emulation-ISOCreator --build-iso --efuse-usb \
+    --create-efuse-img=/tmp/efuse.img:128 -y
 ```
+
+### Virtual eFuse USB (`--create-efuse-img`)
+
+When no physical USB stick is available (CI, QEMU smoke tests, developer
+laptops), `--create-efuse-img=PATH[:SIZE]` writes the dongle to a regular
+file. The image is byte-equivalent to what `--create-efuse-usb=/dev/sdX`
+would write to a real stick, so the two paths are interchangeable.
+
+```bash
+# Create a 128 MB virtual eFuse stick at /tmp/efuse.img
+./PhotonOS-HABv4Emulation-ISOCreator --create-efuse-img=/tmp/efuse.img:128 -y
+
+# Attach to QEMU
+qemu-system-x86_64 \
+    -drive if=none,id=efuse,format=raw,file=/tmp/efuse.img \
+    -device usb-storage,drive=efuse,bus=ehci.0 \
+    ...
+
+# Or flash to a real stick later
+sudo dd if=/tmp/efuse.img of=/dev/sdX bs=4M status=progress
+```
+
+Requires the loop kernel module (`CONFIG_BLK_DEV_LOOP=y`) and root for
+`losetup`. Mutually exclusive with `--create-efuse-usb`.
 
 ---
 
@@ -361,6 +389,11 @@ This adds:
 # Create the eFuse USB dongle
 ./PhotonOS-HABv4Emulation-ISOCreator \
     --create-efuse-usb=/dev/sdX \
+    --yes
+
+# Or, without a physical stick, create the virtual sibling:
+./PhotonOS-HABv4Emulation-ISOCreator \
+    --create-efuse-img=/tmp/efuse.img:128 \
     --yes
 ```
 

@@ -1,4 +1,20 @@
-# Version Table: v1.9.0 to v1.9.32
+# Version Table: v1.9.0 to v1.9.37
+
+> Latest summarised in detail: see Version History in `README.md`. The table
+> below is a snapshot of the v1.9.0 → v1.9.32 series; later entries
+> (v1.9.33–v1.9.37) are summarised inline here for continuity.
+
+| Version | MOK Option | Summary |
+|---------|------------|---------|
+| v1.9.37 | ✅ YES | `--create-efuse-img=PATH[:SIZE]` — eFuse USB as `.img` file (loop-backed); byte-equivalent to `--create-efuse-usb`; QEMU-attachable, CI-friendly |
+| v1.9.36 | ✅ YES | Remove conflicting packages from ISO to unblock MOK installation (Error 1525) |
+| v1.9.35 | ✅ YES | Chainloader path, repodata full rebuild, kernel-dependent package removal, RPM macro fix, GPG key path fix, header struct fix, dynamic meta-package expansion |
+| v1.9.34 | ✅ YES | Selective feature integration: eFuse USB hot-plug detection, common kernel spec for 6.0+, vmlinuz selection fix |
+| v1.9.33 | ✅ YES | Dynamic meta-package expansion (replaces conflicting deps with MOK versions) |
+
+---
+
+## v1.9.0 to v1.9.32 (original table)
 
 | Version | Commit | MOK Option | Summary |
 |---------|--------|------------|---------|
