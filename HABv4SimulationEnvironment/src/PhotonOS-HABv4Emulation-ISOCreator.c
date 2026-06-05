@@ -37,7 +37,7 @@
 
 #include "rpm_secureboot_patcher.h"
 
-#define VERSION "1.9.40"
+#define VERSION "1.9.41"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */
@@ -2647,6 +2647,25 @@ static int create_secure_boot_iso(void) {
                 "    print('WARN: linux_flavors dict not found in linuxselector.py - patch was a no-op')\n"
                 "    sys.exit(2)\n"
                 "\n"
+                "# FIX 4 (v1.9.41 — MokQuickstart auto-skip): when the new\n"
+                "#   MokQuickstartSelector pre-seeded install_config['mok_quickstart'],\n"
+                "#   LinuxSelector must skip the menu and let the install proceed.\n"
+                "#   Inserted as the FIRST statement of display() so it short-\n"
+                "#   circuits before the existing 'ostree' check.\n"
+                "before4 = content\n"
+                "content = re.sub(\n"
+                "    r'(\\n    def display\\(self\\):\\n)',\n"
+                "    '\\\\1        # v1.9.41 (MOK quickstart pre-seed)\\n'\n"
+                "    '        if self.install_config.get(\"mok_quickstart\") in (\"generic\", \"esx\"):\\n'\n"
+                "    '            if \"linux_flavor\" not in self.install_config:\\n'\n"
+                "    '                self.install_config[\"linux_flavor\"] = (\\n'\n"
+                "    '                    \"linux-mok\" if self.install_config[\"mok_quickstart\"] == \"generic\"\\n'\n"
+                "    '                    else \"linux-esx-mok\")\\n'\n"
+                "    '            return ActionResult(None, {\"inactive_screen\": True})\\n',\n"
+                "    content, count=1)\n"
+                "if content == before4:\n"
+                "    print('WARN: linuxselector display() not found - FIX 4 quickstart auto-skip skipped')\n"
+                "\n"
                 "# FIX 2 (v1.9.39 — cadastre Rec #4): widen the hypervisor gate to\n"
                 "# also exclude linux-esx-mok on non-VMware hosts. The original gate\n"
                 "# at the 'if flavor == \"linux-esx\"' line only filters the literal\n"
@@ -2750,11 +2769,295 @@ static int create_secure_boot_iso(void) {
             snprintf(cmd, sizeof(cmd), "rm -f '%s'", patch_linux_script);
             run_cmd(cmd);
         }
-        log_info("Patched linuxselector.py with linux-mok + linux-esx-mok support");
+        log_info("Patched linuxselector.py with linux-mok + linux-esx-mok support + quickstart auto-skip");
     } else {
         log_warn("linuxselector.py not found in any python3.X/site-packages/photon_installer/");
     }
-    
+
+    /* ====================================================================
+     * v1.9.41 — MOK Quickstart Pre-Question Screen
+     * ====================================================================
+     *
+     * Implements the operator's "Apply MOK Secure Boot" pre-question UI
+     * cascade per docs/plans/mok-quickstart-cascade.md + ADR-0027.
+     *
+     * Three things happen here:
+     *   1. Write mok_quickstart.py into the installer's site-packages dir
+     *      (the screen class that asks the question)
+     *   2. Patch iso_config.py to insert MokQuickstartSelector right
+     *      before PackageSelector in the screen chain
+     *   3. Patch packageselector.py to auto-skip when mok_quickstart set
+     *   4. Patch stigenable.py to auto-skip when ansible already set
+     *
+     * linuxselector.py FIX 4 above already handles the kernel-flavor
+     * auto-skip and pre-seed.
+     *
+     * If installer.py was not found earlier, this whole block is a no-op
+     * (we use installer_py as a probe for the site-packages dir). */
+    if (have_installer_py) {
+        log_info("Installing MOK Quickstart pre-question screen (v1.9.41)...");
+
+        /* Derive the photon_installer/ site-packages dir from
+         * installer_py = .../photon_installer/installer.py */
+        char site_pkg_dir[512];
+        strncpy(site_pkg_dir, installer_py, sizeof(site_pkg_dir) - 1);
+        site_pkg_dir[sizeof(site_pkg_dir) - 1] = '\0';
+        {
+            char *last_slash = strrchr(site_pkg_dir, '/');
+            if (last_slash) *last_slash = '\0';
+        }
+
+        /* 1. Write mok_quickstart.py. The Python source is embedded as
+         *    a single big string literal — kept in sync with the SDD
+         *    reference copy at src/installer-patches/mok_quickstart.py. */
+        char mok_qs_path[640];
+        snprintf(mok_qs_path, sizeof(mok_qs_path), "%s/mok_quickstart.py", site_pkg_dir);
+        FILE *mq = fopen(mok_qs_path, "w");
+        if (mq) {
+            fprintf(mq,
+                "# Copyright (c) 2026 dcasota. SPDX-License-Identifier: GPL-3.0+\n"
+                "# Auto-installed by HABv4 ISOCreator v1.9.41+. SDD source:\n"
+                "# https://github.com/dcasota/SpagatLibrarian-Appliance/tree/main/src/installer-patches/mok_quickstart.py\n"
+                "# ADR-0027 documents the design decisions.\n"
+                "\n"
+                "from actionresult import ActionResult\n"
+                "from commandutils import CommandUtils\n"
+                "from jsonwrapper import JsonWrapper\n"
+                "from menu import Menu\n"
+                "from window import Window\n"
+                "\n"
+                "PACKAGES_MINIMAL_PATH = '/installer/packages_minimal.json'\n"
+                "\n"
+                "class MokQuickstartSelector(object):\n"
+                "    def __init__(self, maxy, maxx, install_config):\n"
+                "        self.install_config = install_config\n"
+                "        self.maxx = maxx\n"
+                "        self.maxy = maxy\n"
+                "\n"
+                "        menu_items = [\n"
+                "            ('No', self.set_no, None),\n"
+                "            ('Yes to Minimal Edition (generic kernel, hardened)',\n"
+                "             self.set_yes_generic, None),\n"
+                "        ]\n"
+                "        try:\n"
+                "            on_vmware = CommandUtils.is_vmware_virtualization()\n"
+                "        except Exception:\n"
+                "            on_vmware = False\n"
+                "        if on_vmware:\n"
+                "            menu_items.append((\n"
+                "                'Yes to Minimal Edition '\n"
+                "                '(hypervisor-optimized kernel, hardened)',\n"
+                "                self.set_yes_esx, None))\n"
+                "        self.menu_items = menu_items\n"
+                "\n"
+                "        win_height = 14\n"
+                "        win_width = 70\n"
+                "        menu_starty = (maxy - win_height) // 2 + 3\n"
+                "\n"
+                "        self.host_menu = Menu(menu_starty, maxx, menu_items,\n"
+                "                              default_selected=0, tab_enable=False)\n"
+                "        self.window = Window(win_height, win_width, maxy, maxx,\n"
+                "                             'Apply MOK Secure Boot', True,\n"
+                "                             self.host_menu, can_go_next=True)\n"
+                "\n"
+                "    def set_no(self, _unused):\n"
+                "        return ActionResult(True, None)\n"
+                "\n"
+                "    def set_yes_generic(self, _unused):\n"
+                "        self._apply_yes('linux-mok', 'generic')\n"
+                "        return ActionResult(True, None)\n"
+                "\n"
+                "    def set_yes_esx(self, _unused):\n"
+                "        self._apply_yes('linux-esx-mok', 'esx')\n"
+                "        return ActionResult(True, None)\n"
+                "\n"
+                "    def _apply_yes(self, flavor, sentinel):\n"
+                "        try:\n"
+                "            base = list(JsonWrapper(PACKAGES_MINIMAL_PATH).read()\n"
+                "                        .get('packages', []))\n"
+                "        except Exception:\n"
+                "            base = ['minimal', 'initramfs', 'lvm2', 'less', 'sudo']\n"
+                "        stripped = [p for p in base\n"
+                "                    if p not in ('linux', 'linux-esx', 'linux-aws',\n"
+                "                                 'linux-secure', 'linux-rt')]\n"
+                "        stripped.extend([flavor, 'grub2-efi-image-mok',\n"
+                "                         'shim-signed-mok'])\n"
+                "        self.install_config['packages'] = stripped\n"
+                "        self.install_config['linux_flavor'] = flavor\n"
+                "        self.install_config['mok_quickstart'] = sentinel\n"
+                "        try:\n"
+                "            from stigenable import KS_STIG_ANSIBLE, KS_STIG_PACKAGES\n"
+                "            self.install_config['ansible'] = KS_STIG_ANSIBLE\n"
+                "            self.install_config['additional_packages'] = KS_STIG_PACKAGES\n"
+                "        except ImportError:\n"
+                "            pass\n"
+                "\n"
+                "    def display(self):\n"
+                "        # Q3 (ADR-0027): kickstart pre-set — skip the screen\n"
+                "        if self.install_config.get('mok_quickstart') in ('no', 'generic', 'esx'):\n"
+                "            return ActionResult(True, None)\n"
+                "        if len(self.menu_items) == 1:\n"
+                "            self.menu_items[0][1](None)\n"
+                "            return ActionResult(True, None)\n"
+                "        return self.window.do_action()\n"
+            );
+            fclose(mq);
+            log_info("Wrote MokQuickstartSelector to %s", mok_qs_path);
+        } else {
+            log_warn("Failed to write %s — quickstart screen not installed", mok_qs_path);
+        }
+
+        /* 2. Patch iso_config.py: add import + insert screen into items[]. */
+        char iso_cfg_path[640];
+        snprintf(iso_cfg_path, sizeof(iso_cfg_path), "%s/iso_config.py", site_pkg_dir);
+        if (file_exists(iso_cfg_path)) {
+            char patch_iso_cfg[512];
+            snprintf(patch_iso_cfg, sizeof(patch_iso_cfg), "%s/patch_iso_config.py", work_dir);
+            FILE *pf = fopen(patch_iso_cfg, "w");
+            if (pf) {
+                fprintf(pf,
+                    "#!/usr/bin/env python3\n"
+                    "import re, sys\n"
+                    "\n"
+                    "with open(sys.argv[1], 'r') as f:\n"
+                    "    content = f.read()\n"
+                    "\n"
+                    "# Edit 1: import the new selector\n"
+                    "before1 = content\n"
+                    "content = re.sub(\n"
+                    "    r'(from linuxselector import LinuxSelector\\n)',\n"
+                    "    r'\\1from mok_quickstart import MokQuickstartSelector\\n',\n"
+                    "    content, count=1)\n"
+                    "if content == before1:\n"
+                    "    print('WARN: from linuxselector import not found in iso_config.py')\n"
+                    "    sys.exit(2)\n"
+                    "\n"
+                    "# Edit 2: instantiate + append to items[] just BEFORE\n"
+                    "# the PackageSelector append. Anchor on the literal\n"
+                    "# 'items.append((package_selector.display, True))' line.\n"
+                    "before2 = content\n"
+                    "content = re.sub(\n"
+                    "    r'(\\n        )(items\\.append\\(\\(package_selector\\.display, True\\)\\))',\n"
+                    "    r'\\1mok_quickstart_selector = MokQuickstartSelector(maxy, maxx, install_config)\\1items.append((mok_quickstart_selector.display, False))\\1\\2',\n"
+                    "    content, count=1)\n"
+                    "if content == before2:\n"
+                    "    print('WARN: package_selector.display append not found - screen not inserted')\n"
+                    "    sys.exit(3)\n"
+                    "\n"
+                    "with open(sys.argv[1], 'w') as f:\n"
+                    "    f.write(content)\n"
+                    "print('iso_config.py patched: MokQuickstartSelector inserted before PackageSelector')\n"
+                );
+                fclose(pf);
+                snprintf(cmd, sizeof(cmd), "python3 '%s' '%s' 2>&1", patch_iso_cfg, iso_cfg_path);
+                run_cmd(cmd);
+                snprintf(cmd, sizeof(cmd), "rm -f '%s'", patch_iso_cfg);
+                run_cmd(cmd);
+                log_info("Patched iso_config.py with MokQuickstartSelector insertion");
+            }
+        } else {
+            log_warn("iso_config.py not at %s — screen will not appear in UI", iso_cfg_path);
+        }
+
+        /* 3. Patch packageselector.py: early-return when mok_quickstart set,
+         *    BEFORE load_package_list overwrites our pre-seeded packages. */
+        char pkg_sel_path[640];
+        snprintf(pkg_sel_path, sizeof(pkg_sel_path), "%s/packageselector.py", site_pkg_dir);
+        if (file_exists(pkg_sel_path)) {
+            char patch_pkg_sel[512];
+            snprintf(patch_pkg_sel, sizeof(patch_pkg_sel), "%s/patch_packageselector.py", work_dir);
+            FILE *pf = fopen(patch_pkg_sel, "w");
+            if (pf) {
+                fprintf(pf,
+                    "#!/usr/bin/env python3\n"
+                    "import re, sys\n"
+                    "\n"
+                    "with open(sys.argv[1], 'r') as f:\n"
+                    "    content = f.read()\n"
+                    "\n"
+                    "# Insert early-return in __init__ before self.load_package_list.\n"
+                    "# Anchor on the blank line between menu_starty assignment and\n"
+                    "# load_package_list call.\n"
+                    "before = content\n"
+                    "content = re.sub(\n"
+                    "    r'(\\n        self\\.menu_starty = self\\.win_starty \\+ 3\\n)\\n(        self\\.load_package_list\\(options_file\\))',\n"
+                    "    r'\\1\\n'\n"
+                    "    '        # v1.9.41: MOK quickstart pre-seeded packages — skip this screen\\n'\n"
+                    "    \"        if install_config.get('mok_quickstart') in ('generic', 'esx'):\\n\"\n"
+                    "    '            self.inactive_screen = True\\n'\n"
+                    "    '            return\\n'\n"
+                    "    '\\n'\n"
+                    "    r'\\2',\n"
+                    "    content, count=1)\n"
+                    "if content == before:\n"
+                    "    print('WARN: PackageSelector load_package_list anchor not found - guard skipped')\n"
+                    "    sys.exit(2)\n"
+                    "\n"
+                    "with open(sys.argv[1], 'w') as f:\n"
+                    "    f.write(content)\n"
+                    "print('packageselector.py patched: __init__ auto-skip on mok_quickstart')\n"
+                );
+                fclose(pf);
+                snprintf(cmd, sizeof(cmd), "python3 '%s' '%s' 2>&1", patch_pkg_sel, pkg_sel_path);
+                run_cmd(cmd);
+                snprintf(cmd, sizeof(cmd), "rm -f '%s'", patch_pkg_sel);
+                run_cmd(cmd);
+                log_info("Patched packageselector.py with mok_quickstart auto-skip");
+            }
+        } else {
+            log_warn("packageselector.py not at %s — auto-skip not installed", pkg_sel_path);
+        }
+
+        /* 4. Patch stigenable.py: auto-skip when 'ansible' already in
+         *    install_config (matches what stigenable's own Yes branch
+         *    writes, so the screen is invisible when MokQuickstart's Yes
+         *    branches already pre-seeded the STIG playbook + packages). */
+        char stig_path[640];
+        snprintf(stig_path, sizeof(stig_path), "%s/stigenable.py", site_pkg_dir);
+        if (file_exists(stig_path)) {
+            char patch_stig[512];
+            snprintf(patch_stig, sizeof(patch_stig), "%s/patch_stigenable.py", work_dir);
+            FILE *pf = fopen(patch_stig, "w");
+            if (pf) {
+                fprintf(pf,
+                    "#!/usr/bin/env python3\n"
+                    "import re, sys\n"
+                    "\n"
+                    "with open(sys.argv[1], 'r') as f:\n"
+                    "    content = f.read()\n"
+                    "\n"
+                    "# Add 'ansible not in install_config' to the existing\n"
+                    "# 'ostree not in install_config' guard in display().\n"
+                    "before = content\n"
+                    "content = re.sub(\n"
+                    "    r\"if 'ostree' not in self\\.install_config:\\n\"\n"
+                    "    r'(\\s*)return self\\.window\\.do_action\\(\\)',\n"
+                    "    \"if ('ostree' not in self.install_config\\n\"\n"
+                    "    \"                and 'ansible' not in self.install_config):\\n\"\n"
+                    "    r'\\1return self.window.do_action()',\n"
+                    "    content, count=1)\n"
+                    "if content == before:\n"
+                    "    print('WARN: StigEnable display() anchor not found - guard skipped')\n"
+                    "    sys.exit(2)\n"
+                    "\n"
+                    "with open(sys.argv[1], 'w') as f:\n"
+                    "    f.write(content)\n"
+                    "print('stigenable.py patched: display() auto-skip when ansible already set')\n"
+                );
+                fclose(pf);
+                snprintf(cmd, sizeof(cmd), "python3 '%s' '%s' 2>&1", patch_stig, stig_path);
+                run_cmd(cmd);
+                snprintf(cmd, sizeof(cmd), "rm -f '%s'", patch_stig);
+                run_cmd(cmd);
+                log_info("Patched stigenable.py with ansible-presence auto-skip");
+            }
+        } else {
+            log_warn("stigenable.py not at %s — STIG auto-skip not installed", stig_path);
+        }
+
+        log_info("MOK Quickstart pre-question screen installation complete");
+    }
+
     /* Option C: Add "Photon MOK Secure Boot" as new entry in build_install_options_all.json
      * This preserves original Minimal/Developer/etc options while adding explicit MOK choice.
      * See ADR-001 in DROID_SKILL_GUIDE.md for rationale. */
