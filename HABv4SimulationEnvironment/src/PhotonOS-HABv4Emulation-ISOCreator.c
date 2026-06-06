@@ -37,7 +37,7 @@
 
 #include "rpm_secureboot_patcher.h"
 
-#define VERSION "1.9.52"
+#define VERSION "1.9.53"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */
@@ -2168,33 +2168,32 @@ static int build_linux_kernel(void) {
         kernel_src);
     run_cmd(cmd);
 
-    /* v1.9.49 M27 — FIPS 140-3 (CONFIG_CRYPTO_FIPS=y + built-in fips=1 cmdline)
+    /* v1.9.53 M27 — FIPS 140-3 deferred to v1.10b
      *
-     * Per operator decision 2026-06-06:
-     *   "FIPS canister kernels = 140-3; CONFIG_CRYPTO_FIPS=y. FIPS_ENABLED is default."
+     * v1.9.49 enabled CONFIG_CRYPTO_FIPS=y + baked fips=1 into the kernel cmdline.
+     * This caused the installed system to drop to emergency mode at first boot
+     * because Photon's installer template ALSO hardcodes `fips=1 ima_hash=sha256`
+     * (per analysis of photon-5.0-POI-2.8-2.ph5 VMDK 2026-06-06) and the FIPS
+     * userland (openssl-fips + /etc/system-fips + fips dracut module) was
+     * never installed. Kernel entered FIPS mode → crypto self-test or early
+     * userspace ops failed → dracut emergency before journald could log
+     * anything. Boot never completed; .selinux-relabel still present at /.
      *
-     * Implementation:
-     *   - CONFIG_CRYPTO_FIPS=y       Compiles the FIPS-mode gate into the kernel
-     *                                (without this, fips=1 cmdline is silently ignored).
-     *   - CONFIG_CMDLINE_BOOL=y      Enables built-in kernel cmdline
-     *   - CONFIG_CMDLINE="fips=1"    The built-in cmdline content
-     *   - CONFIG_CMDLINE_OVERRIDE=n  APPEND mode (bootloader cmdline kept; our string appended).
-     *                                Operator can disable at boot with `nofips=1` last-token override.
+     * v1.9.53 rolls back the runtime activation while keeping the M27 capability
+     * marker in the code path. Operator opt-in to full FIPS is filed as v1.10b:
+     *   1. Build linux-mok-fips variant with CONFIG_CRYPTO_FIPS=y
+     *   2. Inject /etc/system-fips via linux-mok-fips.spec %post
+     *   3. Add 'fips' to dracut --add modules in spec %build
+     *   4. Stage openssl-fips RPM if Photon ships one (or sources sufficient
+     *      FIPS provider e.g. AWS-LC, BoringSSL FIPS, Bouncy Castle)
+     *   5. Document operator runbook for FIPS validation testing
      *
-     * Activation check (post-install): `cat /proc/sys/crypto/fips_enabled` returns 1.
-     * Tool versions: `openssl version` reports FIPS provider; `kernel-modules` cryptos
-     *   are signature-verified at load. */
-    log_info("M27: configuring FIPS 140-3 (CONFIG_CRYPTO_FIPS=y + built-in fips=1)...");
-    snprintf(cmd, sizeof(cmd),
-        "cd '%s' && "
-        "scripts/config --enable CONFIG_CRYPTO_FIPS && "                    /* gate FIPS mode */
-        "scripts/config --enable CONFIG_CRYPTO_FIPS_NAME && "               /* identification string */
-        "scripts/config --enable CONFIG_FIPS_SIGNATURE_CHECK && "           /* SHA-256 ELF integrity at module load (6.12+) */
-        "scripts/config --enable CONFIG_CMDLINE_BOOL && "                   /* permit built-in kernel cmdline */
-        "scripts/config --set-str CONFIG_CMDLINE 'fips=1' && "              /* the cmdline (append-mode default) */
-        "scripts/config --disable CONFIG_CMDLINE_OVERRIDE",                 /* APPEND (don't replace bootloader cmdline) */
-        kernel_src);
-    run_cmd(cmd);
+     * For now: kernel is NOT FIPS-capable. Photon's hardcoded fips=1 cmdline
+     * in the installed-system grub.cfg becomes a no-op (returns -ENODEV
+     * silently). VM boots successfully. M27 capability re-lands when the
+     * full stack is staged.
+     */
+    log_info("M27: FIPS 140-3 deferred (CONFIG_CRYPTO_FIPS=n until v1.10b stack lands)");
 
     /* Apply driver-specific kernel configs if --drivers specified */
     if (cfg.include_drivers && cfg.drivers_dir[0] != '\0') {
