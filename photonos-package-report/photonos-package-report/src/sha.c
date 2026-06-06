@@ -150,8 +150,16 @@ char *pr_sha_of_url_cached(pr_sha_alg_t alg, const char *url,
      * SOURCES_NEW), a miss means PS did NOT preserve this tarball — i.e. PS
      * itself produced an empty col9. Mirror that (return NULL → empty) instead
      * of downloading C's own bytes, which would create a spurious col9 diff
-     * (C-has-SHA vs PS-empty, or auto-archive byte drift). */
-    if (getenv("PR_SHA_CACHE_BASE") != NULL)
+     * (C-has-SHA vs PS-empty, or auto-archive byte drift).
+     *
+     * M145 (2026-06-06): empty-string env var counts as unset (POSIX
+     * convention). GHA YAML cannot conditionally omit an env: entry, so
+     * the C workflow sets PR_SHA_CACHE_BASE="" when sha_cache=false; the
+     * old `getenv(...) != NULL` check wrongly entered shared-cache mode
+     * and returned NULL, breaking the legacy live-download fallback
+     * below. */
+    const char *cb = getenv("PR_SHA_CACHE_BASE");
+    if (cb != NULL && cb[0] != '\0')
         return NULL;
     /* Legacy (C-local cache): download into the cache path, persist, hash. */
     if (download_url_to_file(url, cache_file) != 0)
@@ -169,8 +177,10 @@ int pr_sha_of_url_multi_cached(const char *url,
     if (sha256_hex) *sha256_hex = NULL;
     if (sha512_hex) *sha512_hex = NULL;
     if (access(cache_file, R_OK) != 0) {
-        /* M64 shared-cache mode: miss → mirror PS's empty col9, don't fetch. */
-        if (getenv("PR_SHA_CACHE_BASE") != NULL) return -1;
+        /* M64 shared-cache mode: miss → mirror PS's empty col9, don't fetch.
+         * M145: empty-string env var counts as unset (POSIX convention). */
+        const char *cb_m = getenv("PR_SHA_CACHE_BASE");
+        if (cb_m != NULL && cb_m[0] != '\0') return -1;
         if (download_url_to_file(url, cache_file) != 0) return -1;
     }
     if (sha256_hex) {
