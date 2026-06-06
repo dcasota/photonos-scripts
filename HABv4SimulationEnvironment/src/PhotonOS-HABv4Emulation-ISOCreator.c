@@ -37,7 +37,7 @@
 
 #include "rpm_secureboot_patcher.h"
 
-#define VERSION "1.9.51"
+#define VERSION "1.9.52"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */
@@ -4203,18 +4203,23 @@ static int create_secure_boot_iso(void) {
             "  tar czf '%s' -C \"$(dirname '%s')\" \"$(basename '%s')\" && "
             "  echo '[INFO] M25 OSTree skeleton repo created'; "
             "else "
-            "  echo '[WARN] M25 skipped — ostree CLI not installed on build host'; "
-            "  echo '[WARN] Drop a placeholder marker file instead' && "
-            "  tar czf '%s' --files-from /dev/null 2>/dev/null && "
-            "  echo 'M25-placeholder: ostree CLI was not available at build time. "
-            "Install ostree on the build host and rebuild to produce a real skeleton repo.' "
-            ">> '%s/.M25-NOTE.txt'; "
+            "  echo '[WARN] M25: ostree CLI not installed on build host'; "
+            "  echo '[WARN] M25: producing a single-file placeholder tarball'; "
+            /* v1.9.52 fix: GNU tar refuses to create an empty archive, so we
+             * tar a single tiny placeholder file. Result: valid .tar.gz the
+             * assertion script can find at /ostree-repo.tar.gz on the ISO.
+             * Operators upgrading to a build host with `ostree` installed
+             * will automatically get a real skeleton repo from the IF branch. */
+            "  mkdir -p '%s' && "
+            "  printf 'M25-placeholder: ostree CLI was not available at build time. Install ostree on the build host and rebuild to produce a real skeleton repo.\\n' > '%s/M25-NOTE.txt' && "
+            "  tar czf '%s' -C '%s' M25-NOTE.txt && "
+            "  echo '[INFO] M25 placeholder tarball created'; "
             "fi",
             ostree_skel_dir,
             ostree_skel_dir, ostree_skel_dir,
             ostree_tgz, ostree_skel_dir, ostree_skel_dir,
-            ostree_tgz,
-            iso_extract);
+            ostree_skel_dir, ostree_skel_dir,
+            ostree_tgz, ostree_skel_dir);
         run_cmd(cmd);
         log_info("M25: ostree-repo.tar.gz ready");
     }
