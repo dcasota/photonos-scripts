@@ -172,6 +172,12 @@ int pr_source0_substitute(pr_task_t *task, char **source0, const char *version)
             *source0 = istr_replace_all(*source0, "%{srcname}", task->srcname ? task->srcname : "");
             if (*source0 == NULL) return -1;
         }
+        /* M146: %{src_name} (underscore variant) — alternatives.spec
+         * on 5.0 and main. Same value source as %{srcname}. */
+        if (icontains(*source0, "%{src_name}")) {
+            *source0 = istr_replace_all(*source0, "%{src_name}", task->srcname ? task->srcname : "");
+            if (*source0 == NULL) return -1;
+        }
         /* PS L 2188: %{gem_name} */
         if (icontains(*source0, "%{gem_name}")) {
             *source0 = istr_replace_all(*source0, "%{gem_name}", task->gem_name ? task->gem_name : "");

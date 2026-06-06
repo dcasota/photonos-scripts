@@ -336,6 +336,18 @@ static int parse_one_spec(const char *specs_path,
         free(srcname);
         srcname = first_value(content, n_lines, "%global srcname", "%global srcname");
     }
+    /* M146 (2026-06-06): alternatives.spec (5.0 + main) uses
+     * `%define src_name` (with underscore) and `%{src_name}` in
+     * Source0. Mirror to the same srcname field -- no spec declares
+     * both srcname and src_name simultaneously, so no conflict. */
+    if (lines_ilike_contains(content, n_lines, "%define src_name")) {
+        free(srcname);
+        srcname = first_value(content, n_lines, "%define src_name", "%define src_name");
+    }
+    if (lines_ilike_contains(content, n_lines, "%global src_name")) {
+        free(srcname);
+        srcname = first_value(content, n_lines, "%global src_name", "%global src_name");
+    }
 
     /* PS L 295-297: gem_name (define, then global overrides) */
     char *gem_name = empty_dup();

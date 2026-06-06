@@ -314,6 +314,13 @@ function ParseDirectory {
             $srcname=""
             if ($content -ilike '*%define srcname*') { $srcname = (($content | Select-String -Pattern '%define srcname')[0].ToString() -ireplace '%define srcname', "").Trim() }
             if ($content -ilike '*%global srcname*') { $srcname = (($content | Select-String -Pattern '%global srcname')[0].ToString() -ireplace '%global srcname', "").Trim() }
+            # M146 (2026-06-06): some specs (e.g. alternatives.spec on
+            # 5.0 + main) use `%define src_name` (with underscore) and
+            # `%{src_name}` in Source0. Mirror to the same $srcname
+            # variable -- empirically no spec declares both srcname
+            # and src_name, so there is no conflict.
+            if ($content -ilike '*%define src_name*') { $srcname = (($content | Select-String -Pattern '%define src_name')[0].ToString() -ireplace '%define src_name', "").Trim() }
+            if ($content -ilike '*%global src_name*') { $srcname = (($content | Select-String -Pattern '%global src_name')[0].ToString() -ireplace '%global src_name', "").Trim() }
 
             $gem_name=""
             if ($content -ilike '*%define gem_name*') { $gem_name = (($content | Select-String -Pattern '%define gem_name')[0].ToString() -ireplace '%define gem_name', "").Trim() }
@@ -2278,6 +2285,8 @@ function CheckURLHealth {
     if ($Source0 -like '*{*')
     {
         if ($Source0 -ilike '*%{srcname}*') { $Source0 = $Source0 -ireplace '%{srcname}',$currentTask.srcname }
+        # M146: mirror srcname to also resolve %{src_name} (alternatives.spec).
+        if ($Source0 -ilike '*%{src_name}*') { $Source0 = $Source0 -ireplace '%{src_name}',$currentTask.srcname }
         if ($Source0 -ilike '*%{gem_name}*') { $Source0 = $Source0 -ireplace '%{gem_name}',$currentTask.gem_name }
         if ($Source0 -ilike '*%{extra_version}*') { $Source0 = $Source0 -ireplace '%{extra_version}',$currentTask.extra_version }
         if ($Source0 -ilike '*%{main_version}*') { $Source0 = $Source0 -ireplace '%{main_version}',$currentTask.main_version }
