@@ -385,6 +385,16 @@ function ParseDirectory {
             if ($content -ilike '*%define full_name*') { $full_name = (($content | Select-String -Pattern '%define full_name')[0].ToString() -ireplace '%define full_name', "").Trim() }
             if ($content -ilike '*%global full_name*') { $full_name = (($content | Select-String -Pattern '%global full_name')[0].ToString() -ireplace '%global full_name', "").Trim() }
 
+            # M150 (2026-06-06): squid.spec on 5.0+main uses
+            # `%define upstream_name SQUID` and `%define upstream_version 7_4`.
+            # upstream_version reuses $upstreamversion (no spec uses both forms);
+            # upstream_name gets its own field.
+            $upstream_name=""
+            if ($content -ilike '*%define upstream_name*') { $upstream_name = (($content | Select-String -Pattern '%define upstream_name')[0].ToString() -ireplace '%define upstream_name', "").Trim() }
+            if ($content -ilike '*%global upstream_name*') { $upstream_name = (($content | Select-String -Pattern '%global upstream_name')[0].ToString() -ireplace '%global upstream_name', "").Trim() }
+            if ($content -ilike '*%define upstream_version*') { $upstreamversion = (($content | Select-String -Pattern '%define upstream_version')[0].ToString() -ireplace '%define upstream_version', "").Trim() }
+            if ($content -ilike '*%global upstream_version*') { $upstreamversion = (($content | Select-String -Pattern '%global upstream_version')[0].ToString() -ireplace '%global upstream_version', "").Trim() }
+
             $null = $Packages.Add([PSCustomObject]@{
                 content = $content
                 Spec = $currentFile.Name
@@ -414,6 +424,7 @@ function ParseDirectory {
                 commit_id = $commit_id
                 rel_tag = $rel_tag
                 full_name = $full_name
+                upstream_name = $upstream_name
             })
         }
         catch {
@@ -2332,6 +2343,9 @@ function CheckURLHealth {
         if ($Source0 -ilike '*%{rel_tag}*') { $Source0 = $Source0 -ireplace '%{rel_tag}',$currentTask.rel_tag }
         # M149: %{full_name} — python3-msal.spec on 5.0+main.
         if ($Source0 -ilike '*%{full_name}*') { $Source0 = $Source0 -ireplace '%{full_name}',$currentTask.full_name }
+        # M150: %{upstream_name} + %{upstream_version} — squid.spec on 5.0+main.
+        if ($Source0 -ilike '*%{upstream_name}*')    { $Source0 = $Source0 -ireplace '%{upstream_name}',$currentTask.upstream_name }
+        if ($Source0 -ilike '*%{upstream_version}*') { $Source0 = $Source0 -ireplace '%{upstream_version}',$currentTask.upstreamversion }
     }
 
 

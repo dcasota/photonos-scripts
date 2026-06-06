@@ -387,6 +387,19 @@ static int parse_one_spec(const char *specs_path,
         free(upstreamversion);
         upstreamversion = first_value(content, n_lines, "%define upstreamversion", "%define upstreamversion");
     }
+    /* M150 (2026-06-06): squid.spec on 5.0 + main uses
+     * `%define upstream_version 7_4` (with underscore) and
+     * `%{upstream_version}` in Source0. Empirically no spec uses
+     * both upstreamversion and upstream_version simultaneously,
+     * so reusing the upstreamversion field is safe. */
+    if (lines_ilike_contains(content, n_lines, "%define upstream_version")) {
+        free(upstreamversion);
+        upstreamversion = first_value(content, n_lines, "%define upstream_version", "%define upstream_version");
+    }
+    if (lines_ilike_contains(content, n_lines, "%global upstream_version")) {
+        free(upstreamversion);
+        upstreamversion = first_value(content, n_lines, "%global upstream_version", "%global upstream_version");
+    }
 
     /* PS L 311-312: subversion */
     char *subversion = empty_dup();
@@ -495,6 +508,19 @@ static int parse_one_spec(const char *specs_path,
         full_name = first_value(content, n_lines, "%global full_name", "%global full_name");
     }
 
+    /* M150 (2026-06-06): upstream_name — squid.spec on 5.0 + main
+     * uses `%define upstream_name SQUID` and `%{upstream_name}` in
+     * Source0. New dedicated field. */
+    char *upstream_name = empty_dup();
+    if (lines_ilike_contains(content, n_lines, "%define upstream_name")) {
+        free(upstream_name);
+        upstream_name = first_value(content, n_lines, "%define upstream_name", "%define upstream_name");
+    }
+    if (lines_ilike_contains(content, n_lines, "%global upstream_name")) {
+        free(upstream_name);
+        upstream_name = first_value(content, n_lines, "%global upstream_name", "%global upstream_name");
+    }
+
     /* PS L 345-372: $Packages.Add([PSCustomObject]@{ ... }) */
     pr_task_t t;
     memset(&t, 0, sizeof t);
@@ -528,6 +554,7 @@ static int parse_one_spec(const char *specs_path,
     t.commit_id         = commit_id;
     t.rel_tag           = rel_tag;  /* M148 */
     t.full_name         = full_name;  /* M149 */
+    t.upstream_name     = upstream_name;  /* M150 */
 
     if (pr_task_list_add(out, &t) != 0) {
         pr_task_free(&t);

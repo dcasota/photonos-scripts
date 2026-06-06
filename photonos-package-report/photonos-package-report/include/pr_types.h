@@ -99,6 +99,7 @@ typedef struct {
     char  *commit_id;              /* PS L 371 */
     char  *rel_tag;                /* M148 (nss.spec dev+master): %define rel_tag */
     char  *full_name;              /* M149 (python3-msal.spec 5.0+main): %global full_name */
+    char  *upstream_name;          /* M150 (squid.spec 5.0+main): %define upstream_name */
 } pr_task_t;
 
 /* A growable list of pr_task_t. ParseDirectory returns one of these
