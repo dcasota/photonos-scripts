@@ -97,6 +97,7 @@ typedef struct {
     char  *_url_src;               /* PS L 369 */
     char  *_repo_ver;              /* PS L 370 */
     char  *commit_id;              /* PS L 371 */
+    char  *rel_tag;                /* M148 (nss.spec dev+master): %define rel_tag */
 } pr_task_t;
 
 /* A growable list of pr_task_t. ParseDirectory returns one of these
