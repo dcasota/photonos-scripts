@@ -37,7 +37,7 @@
 
 #include "rpm_secureboot_patcher.h"
 
-#define VERSION "1.9.47"
+#define VERSION "1.9.48"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */
@@ -3923,7 +3923,11 @@ static int create_secure_boot_iso(void) {
                 "    terminal_output gfxterm\n"
                 "\n"
                 "    menuentry \"Install\" {\n"
-                "        linux /isolinux/vmlinuz root=/dev/ram0 loglevel=3 usbcore.autosuspend=-1 photon.media=LABEL=PHOTON_SB_%s\n"
+                /* v1.9.48 M32: loglevel=7 for installer kernel-side diagnostics.
+                 * Matches FEB-2026 PHOTON_SB_6.0 build pattern. The cascade
+                 * v1.9.43-47 would have been faster to diagnose with verbose
+                 * boot logs. Screen noise is short-lived (installer boot only). */
+                "        linux /isolinux/vmlinuz root=/dev/ram0 loglevel=7 usbcore.autosuspend=-1 photon.media=LABEL=PHOTON_SB_%s\n"
                 "        initrd /isolinux/initrd.img\n"
                 "    }\n"
                 "\n"
@@ -3968,7 +3972,8 @@ static int create_secure_boot_iso(void) {
                 "terminal_output gfxterm\n"
                 "\n"
                 "menuentry \"Install\" {\n"
-                "    linux /isolinux/vmlinuz root=/dev/ram0 loglevel=3 usbcore.autosuspend=-1 photon.media=LABEL=PHOTON_SB_%s\n"
+                /* v1.9.48 M32: loglevel=7 same as eFuse-gated branch above. */
+                "    linux /isolinux/vmlinuz root=/dev/ram0 loglevel=7 usbcore.autosuspend=-1 photon.media=LABEL=PHOTON_SB_%s\n"
                 "    initrd /isolinux/initrd.img\n"
                 "}\n"
                 "\n"
