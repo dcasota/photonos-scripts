@@ -550,7 +550,15 @@ static int pr_build_update_url(pr_task_t *task, const char *source0_save,
  * Returns NULL (→ legacy /tmp download) when caching is off or inputs missing. */
 static char *col9_cache_path(const char *clone_root, const char *download_name)
 {
-    if (getenv("PR_SHA_CACHE") == NULL) return NULL;
+    /* M145 (2026-06-06): treat empty-string env var the same as unset.
+     * GitHub Actions workflow YAML cannot conditionally omit an env: entry,
+     * so when sha_cache=false the workflow sets PR_SHA_CACHE="" -- but
+     * getenv() returns "" (not NULL) for an empty-string-set env var, so
+     * the old `getenv(...) == NULL` check let cache_file get computed and
+     * later returned NULL inside pr_sha_of_url_cached, breaking the
+     * live-download fallback. POSIX-conventional: empty == unset. */
+    const char *e = getenv("PR_SHA_CACHE");
+    if (e == NULL || e[0] == '\0') return NULL;
     if (clone_root == NULL || clone_root[0] == '\0') return NULL;
     if (download_name == NULL || download_name[0] == '\0') return NULL;
     const char *suffix = "/clones";
