@@ -37,7 +37,7 @@
 
 #include "rpm_secureboot_patcher.h"
 
-#define VERSION "1.9.53"
+#define VERSION "1.9.54"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */
@@ -2194,6 +2194,24 @@ static int build_linux_kernel(void) {
      * full stack is staged.
      */
     log_info("M27: FIPS 140-3 deferred (CONFIG_CRYPTO_FIPS=n until v1.10b stack lands)");
+
+    /* v1.9.54 — explicitly DISABLE the configs that v1.9.49 enabled.
+     * Sibling trap to the v1.9.46/47 `--module vs --enable` discovery:
+     * removing a `scripts/config --enable` call doesn't UNDO a prior enable
+     * — the previously-cached .config retains =y. Must call --disable
+     * explicitly to flip the value back to n.
+     *
+     * Without these --disable calls, v1.9.53 was a no-op against the
+     * cached v1.9.49 .config — kernel still had CONFIG_CRYPTO_FIPS=y →
+     * Photon's hardcoded `fips=1` cmdline still engaged FIPS mode →
+     * VM still emergency-moded on first boot. */
+    snprintf(cmd, sizeof(cmd),
+        "cd '%s' && "
+        "scripts/config --disable CONFIG_CRYPTO_FIPS && "                   /* unset CRYPTO_FIPS=y from v1.9.49 cache */
+        "scripts/config --disable CONFIG_CRYPTO_FIPS_NAME && "              /* paired symbol */
+        "scripts/config --disable CONFIG_FIPS_SIGNATURE_CHECK",             /* paired symbol */
+        kernel_src);
+    run_cmd(cmd);
 
     /* Apply driver-specific kernel configs if --drivers specified */
     if (cfg.include_drivers && cfg.drivers_dir[0] != '\0') {
