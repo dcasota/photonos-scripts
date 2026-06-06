@@ -37,7 +37,7 @@
 
 #include "rpm_secureboot_patcher.h"
 
-#define VERSION "1.9.48"
+#define VERSION "1.9.49"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */
@@ -2167,7 +2167,35 @@ static int build_linux_kernel(void) {
         "scripts/config --module CONFIG_HYPERV_NET",                        /* hv_netvsc (Hyper-V NIC) */
         kernel_src);
     run_cmd(cmd);
-    
+
+    /* v1.9.49 M27 — FIPS 140-3 (CONFIG_CRYPTO_FIPS=y + built-in fips=1 cmdline)
+     *
+     * Per operator decision 2026-06-06:
+     *   "FIPS canister kernels = 140-3; CONFIG_CRYPTO_FIPS=y. FIPS_ENABLED is default."
+     *
+     * Implementation:
+     *   - CONFIG_CRYPTO_FIPS=y       Compiles the FIPS-mode gate into the kernel
+     *                                (without this, fips=1 cmdline is silently ignored).
+     *   - CONFIG_CMDLINE_BOOL=y      Enables built-in kernel cmdline
+     *   - CONFIG_CMDLINE="fips=1"    The built-in cmdline content
+     *   - CONFIG_CMDLINE_OVERRIDE=n  APPEND mode (bootloader cmdline kept; our string appended).
+     *                                Operator can disable at boot with `nofips=1` last-token override.
+     *
+     * Activation check (post-install): `cat /proc/sys/crypto/fips_enabled` returns 1.
+     * Tool versions: `openssl version` reports FIPS provider; `kernel-modules` cryptos
+     *   are signature-verified at load. */
+    log_info("M27: configuring FIPS 140-3 (CONFIG_CRYPTO_FIPS=y + built-in fips=1)...");
+    snprintf(cmd, sizeof(cmd),
+        "cd '%s' && "
+        "scripts/config --enable CONFIG_CRYPTO_FIPS && "                    /* gate FIPS mode */
+        "scripts/config --enable CONFIG_CRYPTO_FIPS_NAME && "               /* identification string */
+        "scripts/config --enable CONFIG_FIPS_SIGNATURE_CHECK && "           /* SHA-256 ELF integrity at module load (6.12+) */
+        "scripts/config --enable CONFIG_CMDLINE_BOOL && "                   /* permit built-in kernel cmdline */
+        "scripts/config --set-str CONFIG_CMDLINE 'fips=1' && "              /* the cmdline (append-mode default) */
+        "scripts/config --disable CONFIG_CMDLINE_OVERRIDE",                 /* APPEND (don't replace bootloader cmdline) */
+        kernel_src);
+    run_cmd(cmd);
+
     /* Apply driver-specific kernel configs if --drivers specified */
     if (cfg.include_drivers && cfg.drivers_dir[0] != '\0') {
         log_info("Applying kernel configs for driver packages...");
