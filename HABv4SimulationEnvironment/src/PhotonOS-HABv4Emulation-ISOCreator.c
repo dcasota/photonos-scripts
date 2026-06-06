@@ -37,7 +37,7 @@
 
 #include "rpm_secureboot_patcher.h"
 
-#define VERSION "1.9.58"
+#define VERSION "1.9.59"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */
@@ -3762,14 +3762,20 @@ static int create_secure_boot_iso(void) {
          * Using rd.driver.pre kernel parameter is cleaner than dracut config files
          * because it's visible in grub.cfg and doesn't require modifying initrd.
          */
-        snprintf(cmd, sizeof(cmd), 
-            "sed -i 's/EXTRA_PARAMS=\"\"/EXTRA_PARAMS=\"rootwait usbcore.autosuspend=-1 rd.driver.pre=xhci_pci,ehci_pci,usb_storage\"/' '%s'", 
+        /* v1.9.59: `quiet splash` added to suppress kernel dmesg flood on first boot.
+         * Without these, the installed-system framebuffer console renders kernel
+         * messages with the small VGA font (no Unicode glyphs) — operator sees a
+         * screen full of `?` characters instead of the Photon splash. `splash`
+         * lets Plymouth take over the framebuffer if installed; `quiet` reduces
+         * the flood even when Plymouth is absent. See cadastre v1.9.59 finding #2. */
+        snprintf(cmd, sizeof(cmd),
+            "sed -i 's/EXTRA_PARAMS=\"\"/EXTRA_PARAMS=\"rootwait usbcore.autosuspend=-1 rd.driver.pre=xhci_pci,ehci_pci,usb_storage quiet splash\"/' '%s'",
             grub_setup_script);
         run_cmd(cmd);
-        
+
         /* Also ensure EXTRA_PARAMS are added even when not empty (nvme case) */
-        snprintf(cmd, sizeof(cmd), 
-            "sed -i 's/EXTRA_PARAMS=rootwait$/EXTRA_PARAMS=\"rootwait usbcore.autosuspend=-1 rd.driver.pre=xhci_pci,ehci_pci,usb_storage\"/' '%s'", 
+        snprintf(cmd, sizeof(cmd),
+            "sed -i 's/EXTRA_PARAMS=rootwait$/EXTRA_PARAMS=\"rootwait usbcore.autosuspend=-1 rd.driver.pre=xhci_pci,ehci_pci,usb_storage quiet splash\"/' '%s'",
             grub_setup_script);
         run_cmd(cmd);
         
@@ -3800,33 +3806,63 @@ static int create_secure_boot_iso(void) {
                     "    content = f.read()\n"
                     "\n"
                     "# eFuse verification code to inject before menuentry\n"
+                    "# v1.9.59: auto-retry 3x with 3s sleep between attempts.\n"
+                    "# - No `read anykey` (was a UX dead-end on installed system).\n"
+                    "# - Stays in gfxterm throughout (no terminal_output switch -> no theme corruption).\n"
+                    "# - GRUB script has no $(()) arithmetic; loop is unrolled.\n"
+                    "# - `sleep --verbose --interruptible 3` shows a countdown in the themed terminal\n"
+                    "#   and lets the operator press any key to skip the wait without REQUIRING it.\n"
+                    "# - After 3 silent failures, chainloader reloads grubx64.efi for a hard rescan\n"
+                    "#   (no Enter required). The cycle repeats until the dongle is present.\n"
                     "efuse_code = '''\n"
-                    "# HABv4 eFuse USB Verification\n"
+                    "# HABv4 eFuse USB Verification (v1.9.59 auto-retry)\n"
                     "set efuse_verified=0\n"
+                    "\n"
+                    "# Attempt 1 (immediate)\n"
                     "search --no-floppy --label EFUSE_SIM --set=efuse_disk\n"
                     "if [ -n \"\\\\$efuse_disk\" ]; then\n"
                     "    if [ -f (\\\\$efuse_disk)/efuse_sim/srk_fuse.bin ]; then\n"
                     "        set efuse_verified=1\n"
                     "    fi\n"
                     "fi\n"
+                    "\n"
+                    "# Attempt 2 (after 3s)\n"
                     "if [ \"\\\\$efuse_verified\" = \"0\" ]; then\n"
-                    "    terminal_output console\n"
-                    "    echo \"\"\n"
-                    "    echo \"=========================================\"\n"
-                    "    echo \"  HABv4 SECURITY: eFuse USB Required\"\n"
-                    "    echo \"=========================================\"\n"
-                    "    echo \"\"\n"
-                    "    echo \"Insert eFuse USB dongle (label: EFUSE_SIM)\"\n"
-                    "    echo \"and press any key to rescan USB devices.\"\n"
-                    "    echo \"\"\n"
-                    "    echo \"NOTE: GRUB will reload to detect newly plugged USB devices.\"\n"
-                    "    read anykey\n"
-                    "    # Chainloader reloads GRUB EFI binary, forcing USB device rescan\n"
-                    "    # configfile only reloads config without rescanning devices\n"
-                    "    chainloader /EFI/BOOT/grubx64.efi\n"
+                    "    echo \"HABv4 SECURITY: eFuse USB not detected (1/3). Retrying in 3s...\"\n"
+                    "    sleep --verbose --interruptible 3\n"
+                    "    search --no-floppy --label EFUSE_SIM --set=efuse_disk\n"
+                    "    if [ -n \"\\\\$efuse_disk\" ]; then\n"
+                    "        if [ -f (\\\\$efuse_disk)/efuse_sim/srk_fuse.bin ]; then\n"
+                    "            set efuse_verified=1\n"
+                    "        fi\n"
+                    "    fi\n"
                     "fi\n"
-                    "# Restore graphical terminal for themed boot menu after eFuse verification\n"
-                    "terminal_output gfxterm\n"
+                    "\n"
+                    "# Attempt 3 (after another 3s)\n"
+                    "if [ \"\\\\$efuse_verified\" = \"0\" ]; then\n"
+                    "    echo \"HABv4 SECURITY: eFuse USB not detected (2/3). Retrying in 3s...\"\n"
+                    "    sleep --verbose --interruptible 3\n"
+                    "    search --no-floppy --label EFUSE_SIM --set=efuse_disk\n"
+                    "    if [ -n \"\\\\$efuse_disk\" ]; then\n"
+                    "        if [ -f (\\\\$efuse_disk)/efuse_sim/srk_fuse.bin ]; then\n"
+                    "            set efuse_verified=1\n"
+                    "        fi\n"
+                    "    fi\n"
+                    "fi\n"
+                    "\n"
+                    "# After 3 silent attempts, reload GRUB EFI to force a hard USB rescan.\n"
+                    "# This does NOT require keystroke; the cycle auto-repeats until the dongle\n"
+                    "# is plugged in. Note: configfile only reloads config without rescanning\n"
+                    "# devices, so chainloader is the correct primitive here.\n"
+                    "if [ \"\\\\$efuse_verified\" = \"0\" ]; then\n"
+                    "    echo \"HABv4 SECURITY: eFuse USB not detected (3/3). Reloading GRUB to rescan USB...\"\n"
+                    "    sleep --verbose --interruptible 3\n"
+                    "    chainloader /EFI/BOOT/grubx64.efi\n"
+                    "    boot\n"
+                    "fi\n"
+                    "\n"
+                    "# eFuse verified -- fall through to the menuentry below.\n"
+                    "# No terminal_output switch happened, so themed gfxterm state is intact.\n"
                     "\n"
                     "'''\n"
                     "\n"
