@@ -378,6 +378,13 @@ function ParseDirectory {
             if ($content -ilike '*%define rel_tag*') { $rel_tag = (($content | Select-String -Pattern '%define rel_tag')[0].ToString() -ireplace '%define rel_tag', "").Trim() }
             if ($content -ilike '*%global rel_tag*') { $rel_tag = (($content | Select-String -Pattern '%global rel_tag')[0].ToString() -ireplace '%global rel_tag', "").Trim() }
 
+            # M149 (2026-06-06): full_name — python3-msal.spec on 5.0+main
+            # uses `%global full_name microsoft-authentication-library-for-python`
+            # and `%{full_name}` in Source0.
+            $full_name=""
+            if ($content -ilike '*%define full_name*') { $full_name = (($content | Select-String -Pattern '%define full_name')[0].ToString() -ireplace '%define full_name', "").Trim() }
+            if ($content -ilike '*%global full_name*') { $full_name = (($content | Select-String -Pattern '%global full_name')[0].ToString() -ireplace '%global full_name', "").Trim() }
+
             $null = $Packages.Add([PSCustomObject]@{
                 content = $content
                 Spec = $currentFile.Name
@@ -406,6 +413,7 @@ function ParseDirectory {
                 _repo_ver = $_repo_ver
                 commit_id = $commit_id
                 rel_tag = $rel_tag
+                full_name = $full_name
             })
         }
         catch {
@@ -2322,6 +2330,8 @@ function CheckURLHealth {
         if ($Source0 -ilike '*%{commit_id}*') { $Source0 = $Source0 -ireplace '%{commit_id}',$currentTask.commit_id }
         # M148: %{rel_tag} — nss.spec on dev + master.
         if ($Source0 -ilike '*%{rel_tag}*') { $Source0 = $Source0 -ireplace '%{rel_tag}',$currentTask.rel_tag }
+        # M149: %{full_name} — python3-msal.spec on 5.0+main.
+        if ($Source0 -ilike '*%{full_name}*') { $Source0 = $Source0 -ireplace '%{full_name}',$currentTask.full_name }
     }
 
 

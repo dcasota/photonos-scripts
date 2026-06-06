@@ -276,6 +276,11 @@ int pr_source0_substitute(pr_task_t *task, char **source0, const char *version)
             *source0 = istr_replace_all(*source0, "%{rel_tag}", task->rel_tag ? task->rel_tag : "");
             if (*source0 == NULL) return -1;
         }
+        /* M149 (2026-06-06): %{full_name} — python3-msal.spec on 5.0 + main. */
+        if (icontains(*source0, "%{full_name}")) {
+            *source0 = istr_replace_all(*source0, "%{full_name}", task->full_name ? task->full_name : "");
+            if (*source0 == NULL) return -1;
+        }
     }
 
     return 0;

@@ -482,6 +482,19 @@ static int parse_one_spec(const char *specs_path,
         rel_tag = first_value(content, n_lines, "%global rel_tag", "%global rel_tag");
     }
 
+    /* M149 (2026-06-06): full_name — python3-msal.spec on 5.0 + main
+     * uses `%global full_name microsoft-authentication-library-for-python`
+     * and `%{full_name}` in Source0. */
+    char *full_name = empty_dup();
+    if (lines_ilike_contains(content, n_lines, "%define full_name")) {
+        free(full_name);
+        full_name = first_value(content, n_lines, "%define full_name", "%define full_name");
+    }
+    if (lines_ilike_contains(content, n_lines, "%global full_name")) {
+        free(full_name);
+        full_name = first_value(content, n_lines, "%global full_name", "%global full_name");
+    }
+
     /* PS L 345-372: $Packages.Add([PSCustomObject]@{ ... }) */
     pr_task_t t;
     memset(&t, 0, sizeof t);
@@ -514,6 +527,7 @@ static int parse_one_spec(const char *specs_path,
     t._repo_ver         = _repo_ver;
     t.commit_id         = commit_id;
     t.rel_tag           = rel_tag;  /* M148 */
+    t.full_name         = full_name;  /* M149 */
 
     if (pr_task_list_add(out, &t) != 0) {
         pr_task_free(&t);
