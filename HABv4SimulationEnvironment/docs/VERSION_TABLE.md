@@ -1,11 +1,29 @@
-# Version Table: v1.9.0 to v1.9.37
+# Version Table: v1.9.0 to v1.9.56
 
 > Latest summarised in detail: see Version History in `README.md`. The table
-> below is a snapshot of the v1.9.0 → v1.9.32 series; later entries
-> (v1.9.33–v1.9.37) are summarised inline here for continuity.
+> below is a quick reference; the README has the full narrative.
 
 | Version | MOK Option | Summary |
 |---------|------------|---------|
+| v1.9.56 | ✅ YES | **Bug A** mok_quickstart whitelist robust monkey-patch (replaces fragile `'manifest_file',` anchor that broke against installer 2.2); **Bug B** drop dead "Photon MOK Secure Boot" PackageSelector entry (made obsolete by v1.9.41 MokQuickstart); **Bug C** back-navigation deferred to v1.9.57 |
+| v1.9.55 | ✅ YES | Disable Linux floppy driver (`CONFIG_BLK_DEV_FD=n`) — 128MB efuse-img attached as virtual floppy caused 28s timeout + dracut emergency on first boot of installed system |
+| v1.9.54 | ✅ YES | Explicit `scripts/config --disable` for FIPS configs (v1.9.53 was no-op against kbuild cache — removing `--enable` doesn't undo prior enable; olddefconfig retains the cached =y) |
+| v1.9.53 | ✅ YES | M27 FIPS rolled back to deferred-v1.10b: Photon installer template hardcodes `fips=1 ima_hash=sha256` in installed grub.cfg cmdline; with v1.9.49's CRYPTO_FIPS=y, fips=1 engaged real FIPS mode without userland → first boot emergency |
+| v1.9.52 | ✅ YES | M25 placeholder fix: GNU tar refuses empty archives (`--files-from /dev/null`). Tar a tiny placeholder file instead |
+| v1.9.51 | ✅ YES | M25 `/ostree-repo.tar.gz` skeleton OSTree repo — FEB-2026 PHOTON_SB_6.0 audit marker. Graceful degradation if ostree CLI absent |
+| v1.9.50 | ✅ YES | M24 `/RPMS_MOK/` parallel audit tree — mirror MOK RPMs + mokutil into separate repo (chain-of-trust audit boundary) |
+| v1.9.49 | ❌ ROLLED BACK | M27 FIPS 140-3 (CONFIG_CRYPTO_FIPS=y + built-in `fips=1`) — broke first boot, rolled back in v1.9.53 |
+| v1.9.48 | ✅ YES | M32 verbose `loglevel=7` in MOK grub.cfg install entry (matches FEB-2026 PHOTON_SB_6.0 build) |
+| v1.9.47 | ✅ YES | Full hypervisor coverage: `--enable` (not `--module`) for FUSION_*/HYPERV/ATA_SFF parents; add CONFIG_HYPERV_NET; extend dracut pre-filter with hv_vmbus/hv_storvsc/hv_netvsc/virtio_net. Also: fixed shadow `#define VERSION` in PhotonOS-HABv4Emulation-ISOCreator.c:40 |
+| v1.9.46 | ✅ YES | Enable VMware/SATA/NVMe/VirtIO storage drivers in MOK kernel build (partial — see v1.9.47 for FUSION/HYPERV/ATA_PIIX fix) |
+| v1.9.45 | ✅ YES | Pre-filter dracut `--add-drivers` to only include drivers whose .ko exists; **cadastre Rec #1 LANDED** — fail-fast on MOK RPM build failure (was log_warn → log_error + return 1) |
+| v1.9.44 | ⚠️ BROKEN | Initial expanded dracut --add-drivers; squashed into v1.9.45 narrative (dracut bailed on missing ata_piix; tool reported rc=0 anyway) |
+| v1.9.43 | ✅ YES | Whitelist `mok_quickstart` in `Installer.known_keys` (anchor: `'manifest_file',` — see v1.9.56 for robust replacement) |
+| v1.9.42 | ✅ YES | PackageSelector display() guard + `_apply_yes` ostree pop (the v1.9.41 `__init__` guard was DEAD CODE — all screens instantiated upfront at startup) |
+| v1.9.41 | ✅ YES | "Apply MOK Secure Boot" pre-question UI cascade (`No / Yes-Generic / Yes-ESX`); embedded `mok_quickstart.py` + 4 installer patches per ADR-0027 |
+| v1.9.40 | ✅ YES | Complete linuxselector menu/window/set_action_panel guard; `exit_gracefully(cause=inst)` exception cause-chaining (`raise InstallerError(f"...{cause!r}") from cause`) |
+| v1.9.39 | ✅ YES | Real `linux-esx-mok.spec` generator + installer hardening |
+| v1.9.38 | ✅ YES | Fix python3.11 hardcoded paths (Photon 5.0 ships python3.14); regex-tolerant patches; plug 3 missing patch implementations (all_linux_flavors, linuxselector dict, exit_gracefully cause-chain) |
 | v1.9.37 | ✅ YES | `--create-efuse-img=PATH[:SIZE]` — eFuse USB as `.img` file (loop-backed); byte-equivalent to `--create-efuse-usb`; QEMU-attachable, CI-friendly |
 | v1.9.36 | ✅ YES | Remove conflicting packages from ISO to unblock MOK installation (Error 1525) |
 | v1.9.35 | ✅ YES | Chainloader path, repodata full rebuild, kernel-dependent package removal, RPM macro fix, GPG key path fix, header struct fix, dynamic meta-package expansion |

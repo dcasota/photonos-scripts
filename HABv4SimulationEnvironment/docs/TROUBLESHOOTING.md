@@ -11,7 +11,87 @@ This document covers common issues and their solutions.
 5. [Module Loading Issues](#module-loading-issues)
 6. [ISO Creation Issues](#iso-creation-issues)
 7. [USB Boot Issues](#usb-boot-issues)
-8. [Diagnostic Commands](#diagnostic-commands)
+8. [Build Host Issues (Photon WSL2)](#build-host-issues-photon-wsl2)
+9. [Installer Patch Failures](#installer-patch-failures)
+10. [Diagnostic Commands](#diagnostic-commands)
+
+---
+
+## Build Host Issues (Photon WSL2)
+
+### Build fails with `cp: No space left on device` mid-rpmbuild %install
+
+**Cause** (v1.9.49+ FIPS-build cycle): On a typical Photon WSL2 instance, `/tmp` is mounted as a 12 GB tmpfs (RAM-backed). rpmbuild's BUILDROOT for the two MOK kernel flavors (linux-mok + linux-esx-mok) plus the expanded FIPS-config `.ko` set together exceed 12 GB.
+
+**Symptom**: cp errors flood the log mid-rpmbuild `%install`:
+```
+cp: error copying './lib/modules/6.12.87-esx/.../foo.ko' to
+'/tmp/rpm_mok_build/rpmbuild/BUILD/linux-mok-...-build/BUILDROOT/...':
+No space left on device
+```
+v1.9.45 fail-fast triggers correctly with the cadastre-Rec-1 message.
+
+**Fix**: symlink `/tmp/rpm_mok_build` to a disk-backed path:
+```bash
+rm -rf /tmp/rpm_mok_build /root/rpm_mok_build_backing
+mkdir -p /root/rpm_mok_build_backing
+ln -snf /root/rpm_mok_build_backing /tmp/rpm_mok_build
+```
+
+After applying, rpmbuild writes to `/root/rpm_mok_build_backing/` via the symlink. Keep this symlink in place across all future builds.
+
+### Build "succeeds" but no ISO is at `/root/5.0/stage/`
+
+**Cause**: The Photon image-build pipeline (`staging/runPh5_*` scripts) regenerates `/root/5.0/stage/` periodically. Our build output gets wiped between sessions.
+
+**Fix**: archive the built ISO to a location the pipeline doesn't touch:
+```bash
+ISO=$(ls -t /root/5.0/stage/photon-5.0-*-secureboot.iso 2>/dev/null | head -1)
+[ -n "$ISO" ] && cp "$ISO" /root/iso-archive/$(basename "$ISO" .iso)-$(date -u +%Y%m%dT%H%M%S).iso
+```
+
+### Base ISO snapshot drifts between builds (e.g. `effac38a0` → `dde71ec57`)
+
+**Cause**: same as above — the parallel image-build pipeline can drop a different Photon snapshot in `/root/5.0/stage/`. Different snapshots ship different `photon-installer` versions (2.2 vs 2.8) with different `installer.py` shapes. Anchor-based patches that worked against one version may fail silently against another.
+
+**Detection**: a build log line like
+```
+FATAL: manifest_file anchor not found - mok_quickstart NOT whitelisted
+```
+means the v1.9.43 patcher anchor wasn't in this installer.py — the patch silently degrades and the install will crash later with `Unknown install_config keys: mok_quickstart`.
+
+**Fix**: v1.9.56 replaced the fragile anchor regex with a module-level monkey-patch — works across installer versions. Rebuild with v1.9.56+ to pick up the robust patch.
+
+---
+
+## Installer Patch Failures
+
+### Install crashes: `Unknown install_config keys: mok_quickstart`
+
+**Symptom** at end of installer flow when user clicks "Start Installation":
+```
+Traceback (most recent call last):
+  ...
+Exception: Failed with error: Unknown install_config keys: mok_quickstart
+```
+
+**Cause**: the v1.9.43 patch to whitelist `mok_quickstart` in `Installer.known_keys` used regex `'manifest_file',` as anchor. That token exists in photon-installer 2.8 but not in 2.2. Tool emitted `FATAL: manifest_file anchor not found - mok_quickstart NOT whitelisted` at build time but the build continued.
+
+**Fix**: rebuild with v1.9.56+ which uses a robust module-level monkey-patch instead of anchor regex.
+
+### "Photon MOK Secure Boot" entry appears in PackageSelector when user picked "No" in MokQuickstart
+
+**Cause** (pre-v1.9.56): v1.6.0 added a "1. Photon MOK Secure Boot" entry to `build_install_options_all.json` as the primary MOK install path. v1.9.41's MokQuickstart pre-question made this redundant — MOK is now exclusively via Yes paths. The dead entry confused users on the No path.
+
+**Fix**: v1.9.56 skipped the `add_mok_option` patch step via `#if 0`. PackageSelector now shows Photon's default Minimal / Developer / etc options on the No path.
+
+### Back-navigation from Network/Hostname/Password doesn't return to MokQuickstart screen on Yes path
+
+**Cause**: After MokQuickstart Yes, the display() guards on PackageSelector / LinuxSelector / StigEnable cause them to return `ActionResult(None, {"inactive_screen": True})` — Photon's `iso_config` likely doesn't propagate back-direction through inactive screens correctly.
+
+**Status**: deferred to v1.9.57+ — needs `iso_config.py` extraction to diagnose direction handling of the `inactive_screen` ActionResult.
+
+---
 
 ---
 
