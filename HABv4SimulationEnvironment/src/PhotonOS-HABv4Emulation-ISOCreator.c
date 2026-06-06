@@ -37,7 +37,7 @@
 
 #include "rpm_secureboot_patcher.h"
 
-#define VERSION "1.9.55"
+#define VERSION "1.9.56"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */
@@ -2704,27 +2704,34 @@ static int create_secure_boot_iso(void) {
                 "#   pre-seeding (ADR-0027 Q3). Option C (nested 'ui_state' dict) deferred to\n"
                 "#   v1.9.44+ when more quickstart screens land.\n"
                 "#\n"
-                "#   Anchor: insert the line `'mok_quickstart',` immediately after the\n"
-                "#   `'manifest_file',` line inside the known_keys set literal. Idempotent\n"
-                "#   guard: bail if 'mok_quickstart' already in the set literal.\n"
+                "#   v1.9.56 REWORK: the original v1.9.43 anchor 'manifest_file' is not\n"
+                "#   present in older Photon installer versions (e.g., 2.2 in the\n"
+                "#   dde71ec57 base ISO). Instead of relying on a specific anchor in the\n"
+                "#   known_keys set literal, we APPEND a module-level monkey-patch at the\n"
+                "#   end of installer.py: `Installer.known_keys.add('mok_quickstart')`.\n"
+                "#   Works regardless of where/how known_keys is defined (set, frozenset,\n"
+                "#   tuple-converted, etc). Survives Photon installer version changes.\n"
+                "#   Idempotent (the `.add()` is a no-op if already present).\n"
                 "before8 = content\n"
-                "# Idempotency check first\n"
-                "ks_match = re.search(r'(?ms)known_keys\\s*=\\s*\\{[^}]*\\}', content)\n"
-                "if ks_match and \"'mok_quickstart'\" in ks_match.group(0):\n"
-                "    pass  # already whitelisted\n"
+                "monkey_patch = (\n"
+                "    '\\n# Appended by HABv4 ISOCreator v1.9.56 — robust whitelist of mok_quickstart\\n'\n"
+                "    '# (replaces v1.9.43 anchor-based patch which failed on older installer versions)\\n'\n"
+                "    'try:\\n'\n"
+                "    '    if isinstance(Installer.known_keys, set):\\n'\n"
+                "    '        Installer.known_keys.add(\"mok_quickstart\")\\n'\n"
+                "    '    elif isinstance(Installer.known_keys, (list, tuple)):\\n'\n"
+                "    '        if \"mok_quickstart\" not in Installer.known_keys:\\n'\n"
+                "    '            Installer.known_keys = list(Installer.known_keys) + [\"mok_quickstart\"]\\n'\n"
+                "    '    elif isinstance(Installer.known_keys, frozenset):\\n'\n"
+                "    '        Installer.known_keys = Installer.known_keys | {\"mok_quickstart\"}\\n'\n"
+                "    'except (NameError, AttributeError):\\n'\n"
+                "    '    pass\\n'\n"
+                ")\n"
+                "if 'HABv4 ISOCreator v1.9.56' not in content:\n"
+                "    content = content + monkey_patch\n"
+                "    print('v1.9.56 mok_quickstart monkey-patch appended to installer.py')\n"
                 "else:\n"
-                "    content = re.sub(\n"
-                "        r\"(\\n\\s*'manifest_file',\\s*\\n)\",\n"
-                "        r\"\\1        'mok_quickstart',\\n\",\n"
-                "        content, count=1)\n"
-                "    if content == before8:\n"
-                "        print('FATAL: manifest_file anchor not found - mok_quickstart NOT whitelisted')\n"
-                "        sys.exit(8)\n"
-                "    # Post-condition: confirm the insertion landed inside known_keys\n"
-                "    verify_ks = re.search(r'(?ms)known_keys\\s*=\\s*\\{[^}]*\\}', content)\n"
-                "    if not verify_ks or \"'mok_quickstart'\" not in verify_ks.group(0):\n"
-                "        print('FATAL: mok_quickstart NOT inside known_keys set after patch')\n"
-                "        sys.exit(8)\n"
+                "    print('v1.9.56 mok_quickstart monkey-patch already present (idempotent)')\n"
                 "\n"
                 "# Fix 7 (v1.9.40 — un-mask installer exceptions, cadastre+plan §2.3):\n"
                 "#   The bare-except at installer.py:776 catches ALL exceptions and calls\n"
@@ -3295,6 +3302,25 @@ static int create_secure_boot_iso(void) {
         log_info("MOK Quickstart pre-question screen installation complete");
     }
 
+    /* v1.9.56 — DO NOT add "Photon MOK Secure Boot" to build_install_options_all.json
+     *
+     * History: v1.6.0 added this entry as the primary MOK install path; v1.9.41
+     * introduced the MokQuickstart pre-question screen which makes the MOK choice
+     * BEFORE PackageSelector ever displays. The Yes paths (Yes-Generic /
+     * Yes-ESX) skip PackageSelector entirely (display() guard from v1.9.42).
+     * The No path falls through to PackageSelector — and the "Photon MOK Secure
+     * Boot" entry there is dead code that only confuses the operator.
+     *
+     * v1.9.56: skip the patch step entirely. PackageSelector shows Photon's
+     * default Minimal / Developer / etc options. MOK install is exclusively
+     * through the MokQuickstart Yes paths.
+     *
+     * Operator-reported regression 2026-06-06: 'If the user selects "No" in
+     * the "Apply MOK Secure Boot", then the next UI step is "Select
+     * Installation" and there it contains "Photon MOK Secure Boot" which
+     * does not make sense.'
+     */
+#if 0  /* v1.9.56 disabled — see comment above */
     /* Option C: Add "Photon MOK Secure Boot" as new entry in build_install_options_all.json
      * This preserves original Minimal/Developer/etc options while adding explicit MOK choice.
      * See ADR-001 in DROID_SKILL_GUIDE.md for rationale. */
@@ -3543,7 +3569,10 @@ static int create_secure_boot_iso(void) {
     } else {
         log_warn("build_install_options_all.json not found in initrd");
     }
-    
+#endif  /* v1.9.56: end of disabled add_mok_option block */
+    log_info("v1.9.56: skipped adding 'Photon MOK Secure Boot' to PackageSelector "
+             "(MOK install is exclusively via MokQuickstart Yes paths now)");
+
     /* Patch mk-setup-grub.sh to fix boot parameters for USB/FIPS compatibility
      * This is necessary because:
      * 1. The installer creates grub.cfg from this template AFTER all RPM scriptlets run
