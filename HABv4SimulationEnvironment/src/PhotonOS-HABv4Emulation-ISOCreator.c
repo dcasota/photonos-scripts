@@ -37,7 +37,7 @@
 
 #include "rpm_secureboot_patcher.h"
 
-#define VERSION "1.9.59"
+#define VERSION "1.9.60"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */
@@ -3763,21 +3763,86 @@ static int create_secure_boot_iso(void) {
          * because it's visible in grub.cfg and doesn't require modifying initrd.
          */
         /* v1.9.59: `quiet splash` added to suppress kernel dmesg flood on first boot.
-         * Without these, the installed-system framebuffer console renders kernel
-         * messages with the small VGA font (no Unicode glyphs) — operator sees a
-         * screen full of `?` characters instead of the Photon splash. `splash`
-         * lets Plymouth take over the framebuffer if installed; `quiet` reduces
-         * the flood even when Plymouth is absent. See cadastre v1.9.59 finding #2. */
+         * v1.9.60: drop `splash` because Photon's `/boot/systemd.cfg` ships
+         * `plymouth.enable=0`, so `splash` is a dead promise — Plymouth never
+         * starts, no graphical splash, and the operator still sees raw dmesg.
+         * Keep `quiet` (suppresses verbose dmesg) so the screen stays clean
+         * even without a Plymouth take-over. */
         snprintf(cmd, sizeof(cmd),
-            "sed -i 's/EXTRA_PARAMS=\"\"/EXTRA_PARAMS=\"rootwait usbcore.autosuspend=-1 rd.driver.pre=xhci_pci,ehci_pci,usb_storage quiet splash\"/' '%s'",
+            "sed -i 's/EXTRA_PARAMS=\"\"/EXTRA_PARAMS=\"rootwait usbcore.autosuspend=-1 rd.driver.pre=xhci_pci,ehci_pci,usb_storage quiet\"/' '%s'",
             grub_setup_script);
         run_cmd(cmd);
 
         /* Also ensure EXTRA_PARAMS are added even when not empty (nvme case) */
         snprintf(cmd, sizeof(cmd),
-            "sed -i 's/EXTRA_PARAMS=rootwait$/EXTRA_PARAMS=\"rootwait usbcore.autosuspend=-1 rd.driver.pre=xhci_pci,ehci_pci,usb_storage quiet splash\"/' '%s'",
+            "sed -i 's/EXTRA_PARAMS=rootwait$/EXTRA_PARAMS=\"rootwait usbcore.autosuspend=-1 rd.driver.pre=xhci_pci,ehci_pci,usb_storage quiet\"/' '%s'",
             grub_setup_script);
         run_cmd(cmd);
+
+        /* v1.9.60 — DEFENSIVE: append a post-heredoc sed inside mk-setup-grub.sh
+         * to strip ` fips=1` from the freshly-written /boot/grub2/grub.cfg.
+         * Photon's installer (installer.py:1701) appends `fips=1` to the kernel
+         * cmdline when `install_config['security']['fips']=True`, and some path
+         * in the photon-installer + mok_quickstart `Yes-ESX` hardening flow
+         * also injects `audit=1 ima_hash=sha256` (exact source still under
+         * investigation as of v1.9.60). With `CRYPTO_FIPS=n` (rolled back in
+         * v1.9.54) and NO FIPS userland (`/etc/system-fips` absent), dracut's
+         * `90fips` module reads `fips=1`, checks for `/etc/system-fips`, fails,
+         * and drops to initramfs emergency — that is exactly the boot the
+         * operator hit with v1.9.59. Stripping `fips=1` post-write makes the
+         * dracut check a no-op. The proper fix (full FIPS stack with userland
+         * + dracut fips module configured) is filed for v1.10b in
+         * [[project-photon-installer-fips1-template-trap]].
+         *
+         * We inject the sed right after the heredoc `EOF` line (which mk-setup-
+         * grub.sh closes the `cat > grub.cfg << EOF ... EOF` block). The
+         * mk-setup-grub.sh ends with the `umask "${old_umask}"` restore — we
+         * insert the strip BEFORE that line so the file still finishes cleanly. */
+        log_info("v1.9.60: injecting defensive fips=1 strip into mk-setup-grub.sh");
+        char fips_strip_script[512];
+        snprintf(fips_strip_script, sizeof(fips_strip_script), "%s/patch_fips_strip.py", work_dir);
+        FILE *fpf = fopen(fips_strip_script, "w");
+        if (fpf) {
+            fprintf(fpf,
+                "#!/usr/bin/env python3\n"
+                "import sys\n"
+                "with open(sys.argv[1], 'r') as f:\n"
+                "    content = f.read()\n"
+                "\n"
+                "# Append the strip BEFORE the final `umask` restore.\n"
+                "# This runs AFTER the heredoc has written /boot/grub2/grub.cfg.\n"
+                "strip_block = '''\n"
+                "# v1.9.60 HABv4 defensive: strip fips=1 from the just-written grub.cfg.\n"
+                "# CRYPTO_FIPS=n kernel + no /etc/system-fips userland -> dracut 90fips\n"
+                "# would otherwise drop first boot to emergency. Re-enable in v1.10b when\n"
+                "# the full FIPS stack ships.\n"
+                "sed -i \\\\\n"
+                "  -e 's/ fips=1//g' \\\\\n"
+                "  -e 's/ audit=1//g' \\\\\n"
+                "  -e 's/ ima_hash=sha256//g' \\\\\n"
+                "  \"${BUILDROOT}\"/boot/grub2/grub.cfg\n"
+                "'''\n"
+                "\n"
+                "# Insert before the final `umask` line\n"
+                "marker = 'umask \"${old_umask}\"'\n"
+                "if marker in content:\n"
+                "    content = content.replace(marker, strip_block + '\\n' + marker)\n"
+                "    print('v1.9.60: fips=1/audit=1/ima_hash=sha256 strip injected before final umask')\n"
+                "else:\n"
+                "    # Marker missing -- append at end as a fallback\n"
+                "    content = content + '\\n' + strip_block + '\\n'\n"
+                "    print('v1.9.60: marker not found, appended strip at EOF')\n"
+                "\n"
+                "with open(sys.argv[1], 'w') as f:\n"
+                "    f.write(content)\n"
+            );
+            fclose(fpf);
+            snprintf(cmd, sizeof(cmd), "python3 '%s' '%s' 2>&1", fips_strip_script, grub_setup_script);
+            run_cmd(cmd);
+            snprintf(cmd, sizeof(cmd), "rm -f '%s'", fips_strip_script);
+            run_cmd(cmd);
+            log_info("v1.9.60: fips=1/audit=1/ima_hash=sha256 strip injected into mk-setup-grub.sh");
+        }
         
         log_info("Patched mk-setup-grub.sh: Added USB boot params with rd.driver.pre");
         
