@@ -163,6 +163,24 @@ int pr_source0_substitute(pr_task_t *task, char **source0, const char *version)
     *source0 = istr_replace_all(*source0, "%{version}", version ? version : "");
     if (*source0 == NULL) return -1;
 
+    /* M147 (2026-06-06): mirror PS L 2277-2284 -- also resolve the
+     * shell-style ${name} / ${version}. dhcp.spec on 3.0/4.0/6.0
+     * carries an upstream typo using `${version}` instead of
+     * `%{version}` in Source0; empirical scan across all 8 branches
+     * confirms dhcp.spec is the ONLY spec with ${...} in Source0,
+     * so the lenient substitution has zero regression risk on other
+     * specs. Case-insensitive via istr_replace_all (matches the PS
+     * .Replace() being applied to a single token whose case is
+     * uniform across the corpus). */
+    if (icontains(*source0, "${name}")) {
+        *source0 = istr_replace_all(*source0, "${name}", task->Name ? task->Name : "");
+        if (*source0 == NULL) return -1;
+    }
+    if (icontains(*source0, "${version}")) {
+        *source0 = istr_replace_all(*source0, "${version}", version ? version : "");
+        if (*source0 == NULL) return -1;
+    }
+
     /* PS L 2185-2202: gated by `*{*` (case-SENSITIVE -like, since `{` is
      * the only meta we care about and it has no case). */
     if (contains(*source0, "{")) {

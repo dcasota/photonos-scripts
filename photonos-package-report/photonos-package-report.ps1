@@ -2281,6 +2281,17 @@ function CheckURLHealth {
     # replace variables
     $Source0 = $Source0 -ireplace '%{name}',$currentTask.Name
     $Source0 = $Source0 -ireplace '%{version}',$version
+    # M147 (2026-06-06): also resolve shell-style ${name} / ${version}.
+    # dhcp.spec on 3.0/4.0/6.0 carries an upstream typo using
+    # `${version}` instead of `%{version}` in Source0, which leaves
+    # col3 unresolved and emits Category-2 (substitution_unfinished).
+    # Empirical scan confirms dhcp.spec is the only spec across all
+    # 8 branches with `${...}` in Source0, so this lenient substitution
+    # has zero regression risk on other specs. Case-sensitive .Replace
+    # (not -ireplace) avoids regex interpretation of `${...}` as a
+    # backreference.
+    if ($Source0.Contains('${name}'))    { $Source0 = $Source0.Replace('${name}',    $currentTask.Name) }
+    if ($Source0.Contains('${version}')) { $Source0 = $Source0.Replace('${version}', $version) }
 
     if ($Source0 -like '*{*')
     {
