@@ -191,7 +191,7 @@ index 000000000..e921dffa4
 +2.43.7
 +
 diff --git a/SPECS/photon-os-installer/photon-os-installer.spec b/SPECS/photon-os-installer/photon-os-installer.spec
-index 8113a9e17..5ed4820ce 100644
+index 8113a9e17..c07ff98fe 100644
 --- a/SPECS/photon-os-installer/photon-os-installer.spec
 +++ b/SPECS/photon-os-installer/photon-os-installer.spec
 @@ -5,7 +5,7 @@
@@ -199,7 +199,7 @@ index 8113a9e17..5ed4820ce 100644
  Name:          photon-os-installer
  Version:       2.8
 -Release:       2%{?dist}
-+Release:       5%{?dist}
++Release:       3%{?dist}
  Group:         System Environment/Base
  Vendor:        VMware, Inc.
  Distribution:  Photon
@@ -213,20 +213,17 @@ index 8113a9e17..5ed4820ce 100644
  
  BuildRequires: python3-devel
  BuildRequires: python3-pyinstaller
-@@ -71,6 +74,16 @@ rm -rf %{buildroot}
+@@ -71,6 +74,13 @@ rm -rf %{buildroot}
  %{_bindir}/photon-iso-builder
  
  %changelog
-+* Thu Jun 04 2026 Daniel Casota <dcasota@gmail.com> 2.8-5
-+- installer: add btrfs-progs when a btrfs partition is selected (dcasota patch-1)
++* Thu Jun 04 2026 Daniel Casota <dcasota@gmail.com> 2.8-3
++- isoInstaller: fix interactive (no-kickstart) install - no longer crashes
++  (TypeError on a None config) or skips the disk-selection UI ("No disk
++  configured"); regression from upstream 9fc8733/0a72c3a
++- installer: add btrfs-progs when a btrfs partition is selected
 +- tdnf: capture install output so it no longer overlays the curses UI
 +  with file paths like /etc/os-release
-+* Thu Jun 04 2026 Daniel Casota <dcasota@gmail.com> 2.8-4
-+- isoInstaller: also fix interactive UI being skipped ("No disk configured")
-+  by only stamping 'live' on a non-empty kickstart config (regression 9fc8733)
-+* Thu Jun 04 2026 Daniel Casota <dcasota@gmail.com> 2.8-3
-+- isoInstaller: fix TypeError crash on interactive (no-kickstart) install
-+  when install_config is None (regression from upstream 9fc8733/0a72c3a)
  * Fri May 15 2026 Vamsi Krishna Brahmajosyula <vamsi-krishna.brahmajosyula@broadcom.com> 2.8-2
  - Extended to build for subrelease 91 and above
  * Tue Apr 28 2026 Oliver Kurth <oliver.kurth@broadcom.com> 2.8-1
