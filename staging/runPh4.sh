@@ -14,14 +14,14 @@ OUTPUT_DIR="${4:-/mnt/c/Users/dcaso/Downloads/Ph-Builds}"
 sleep 3
 if ping -c 4 www.google.ch > /dev/null 2>&1; then
   if [ ! -d "$BASE_DIR/$COMMON_BRANCH" ]; then
-    git clone https://github.com/dcasota/photonos-scripts.git -b "$COMMON_BRANCH" "$BASE_DIR/$COMMON_BRANCH"
+    git clone https://github.com/dcasota/photon.git -b "$COMMON_BRANCH" "$BASE_DIR/$COMMON_BRANCH"
   fi
   cd "$BASE_DIR/$COMMON_BRANCH"
   git fetch
   git merge
   cd "$BASE_DIR"
   if [ ! -d "$BASE_DIR/$RELEASE_BRANCH" ]; then
-    git clone https://github.com/dcasota/photonos-scripts.git -b "$RELEASE_BRANCH" "$BASE_DIR/$RELEASE_BRANCH"
+    git clone https://github.com/dcasota/photon.git -b "$RELEASE_BRANCH" "$BASE_DIR/$RELEASE_BRANCH"
   fi
   cd "$BASE_DIR/$RELEASE_BRANCH"
   git fetch

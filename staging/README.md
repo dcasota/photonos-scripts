@@ -22,7 +22,8 @@ Automated ISO build scripts for Photon OS. Each script pulls the latest sources 
 | Script | Photon | Description |
 |--------|--------|-------------|
 | `runPh4.sh` | 4.0 | Builds from the `4.0` branch. |
-| `runPh5_normal.sh` | 5.0 | Builds from the `5.0` branch at the current upstream subrelease (`>= 92`). Includes self-healing fixes for spec formatting, OpenJDK WSL2 detection, missing source tarballs, and rpm 6.x bootstrap issues. |
+| `runPh5_normal.sh` | 5.0 | Builds from the `5.0` branch at the current upstream subrelease (`>= 92`). Applies the bundled `photonos-patches/downstream-fixes.patch` (installer + package fixes), builds the `photon/installer` POI image when missing, and includes self-healing fixes for spec formatting, OpenJDK WSL2 detection, missing source tarballs, and rpm 6.x bootstrap issues. |
+| `runPh5_pinned90.sh` | 5.0 | Builds from the `5.0` branch pinned to `photon-subrelease 90` (older GA ecosystem: python 3.11, libcap 2.x, rpm 4.x, nginx 1.26.x). Activates the large `SPECS/90/` gated set — useful to build/verify SPECS/90 packages (e.g. the `SPECS/90/nginx` CVE-2026-42945 backport). Pins via `base-commit` bypass and excludes `libcap-libs`; a fully-clean ISO may need additional subrelease-90 bootstrap fixes added iteratively (as in the 91 script). |
 | `runPh5_pinned91.sh` | 5.0 | Builds from the `5.0` branch pinned to `photon-subrelease 91` (6.1.x kernel, python 3.11). Bypasses the spec checker via `base-commit`, removes conflicting python 3.14 / rpm 6.x RPMs from prior `>= 92` builds, and bootstraps `python3-macros` and `rpm-build 4.18.0` from the Broadcom repo. |
 | `runPh6.sh` | 6.0 | Builds from the `6.0` branch. Includes OpenJDK WSL2 fix and missing-source prefetch. |
 
