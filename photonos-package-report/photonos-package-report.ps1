@@ -1571,6 +1571,15 @@ function urlhealth {
     catch
     {
         $urlhealthrc = [int]$_.Exception.Response.StatusCode.value__
+        # M153: pwsh 7's HttpWebRequest sets $_.Exception.Response = $null for many HTTP
+        # error responses (4xx/5xx and 308 alike), so the line above yields 0 even when
+        # the server returned a real status code. C/libcurl reports the actual numeric
+        # status, producing PS-col4=0 vs C-col4=4xx single-column strict diffs across
+        # ~16 specs per branch. Recover the status code from the exception message
+        # (".NET formats as '(NNN) <reason>'") when the Response object is null.
+        if (($urlhealthrc -eq 0) -and ($_.Exception.Message -match '\((\d{3})\)')) {
+            $urlhealthrc = [int]$matches[1]
+        }
         if (($checkurl -ilike '*netfilter.org*') -or ($checkurl -ilike 'https://ftp.*'))
         {
             $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
