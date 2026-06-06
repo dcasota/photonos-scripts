@@ -47,6 +47,7 @@ void pr_task_free(pr_task_t *t)
     free(t->commit_id);
     free(t->rel_tag);  /* M148 (nss.spec dev+master) */
     free(t->full_name);  /* M149 (python3-msal.spec 5.0+main) */
+    free(t->upstream_name);  /* M150 (squid.spec 5.0+main) */
     memset(t, 0, sizeof *t);
 }
 

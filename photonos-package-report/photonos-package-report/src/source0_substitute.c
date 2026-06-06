@@ -281,6 +281,18 @@ int pr_source0_substitute(pr_task_t *task, char **source0, const char *version)
             *source0 = istr_replace_all(*source0, "%{full_name}", task->full_name ? task->full_name : "");
             if (*source0 == NULL) return -1;
         }
+        /* M150 (2026-06-06): %{upstream_name} — squid.spec on 5.0 + main. */
+        if (icontains(*source0, "%{upstream_name}")) {
+            *source0 = istr_replace_all(*source0, "%{upstream_name}", task->upstream_name ? task->upstream_name : "");
+            if (*source0 == NULL) return -1;
+        }
+        /* M150: %{upstream_version} — squid.spec on 5.0 + main. Reuses the
+         * upstreamversion field (no spec uses both upstreamversion and
+         * upstream_version simultaneously). */
+        if (icontains(*source0, "%{upstream_version}")) {
+            *source0 = istr_replace_all(*source0, "%{upstream_version}", task->upstreamversion ? task->upstreamversion : "");
+            if (*source0 == NULL) return -1;
+        }
     }
 
     return 0;
