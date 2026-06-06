@@ -37,7 +37,7 @@
 
 #include "rpm_secureboot_patcher.h"
 
-#define VERSION "1.9.54"
+#define VERSION "1.9.55"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */
@@ -2194,6 +2194,35 @@ static int build_linux_kernel(void) {
      * full stack is staged.
      */
     log_info("M27: FIPS 140-3 deferred (CONFIG_CRYPTO_FIPS=n until v1.10b stack lands)");
+
+    /* v1.9.55 — disable CONFIG_BLK_DEV_FD (Linux floppy driver)
+     *
+     * Operator's VM (photon-5.0-POI-2.8-2.ph5) v1.9.54 install boots past the
+     * FIPS fix but hangs 28 seconds into initramfs:
+     *
+     *   floppy0: floppy timeout called
+     *   I/O error, dev fd0, sector 0 op 0x0:(READ) ... prio class 2
+     *   floppy: error 10 while reading block 0
+     *   Entering emergency mode.
+     *
+     * The 128 MB `efuse-secureboot.img` (created by `-I PATH:128`) is attached
+     * to the VM as a virtual floppy. GRUB finds it correctly via the EFUSE_SIM
+     * label (BIOS/UEFI reads, not kernel-driver reads). But once Linux kernel
+     * starts, `floppy.c` probes fd0 with standard floppy geometries (360KB /
+     * 720KB / 1.2MB / 1.44MB / 2.88MB). The 128 MB image doesn't match any,
+     * so the driver times out reading sector 0.
+     *
+     * Fix: disable the floppy driver entirely. Nobody uses real floppies in
+     * 2026; the virtual-floppy attachment is just a way to expose the image
+     * to GRUB. GRUB's BIOS/UEFI access path doesn't depend on the Linux
+     * floppy driver. Disabling the driver eliminates the auto-probe at boot
+     * and the resulting timeout. */
+    log_info("M-floppy: disabling CONFIG_BLK_DEV_FD (kernel floppy driver auto-probes fd0 and times out on 128MB efuse-img)");
+    snprintf(cmd, sizeof(cmd),
+        "cd '%s' && "
+        "scripts/config --disable CONFIG_BLK_DEV_FD",                       /* no Linux floppy driver */
+        kernel_src);
+    run_cmd(cmd);
 
     /* v1.9.54 — explicitly DISABLE the configs that v1.9.49 enabled.
      * Sibling trap to the v1.9.46/47 `--module vs --enable` discovery:
