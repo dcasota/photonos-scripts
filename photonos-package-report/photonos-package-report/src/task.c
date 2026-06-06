@@ -48,6 +48,8 @@ void pr_task_free(pr_task_t *t)
     free(t->rel_tag);  /* M148 (nss.spec dev+master) */
     free(t->full_name);  /* M149 (python3-msal.spec 5.0+main) */
     free(t->upstream_name);  /* M150 (squid.spec 5.0+main) */
+    free(t->_jdk_update);  /* M151 (openjdk8_aarch64.spec 3.0) */
+    free(t->_jdk_build);  /* M151 (openjdk8_aarch64.spec 3.0) */
     memset(t, 0, sizeof *t);
 }
 

@@ -266,6 +266,17 @@ int pr_source0_substitute(pr_task_t *task, char **source0, const char *version)
             *source0 = istr_replace_all(*source0, "%{_repo_ver}", task->_repo_ver ? task->_repo_ver : "");
             if (*source0 == NULL) return -1;
         }
+        /* M151 (2026-06-06): _jdk_update / _jdk_build — openjdk8_aarch64.spec
+         * 3.0. _repo_ver expands to a string still containing these two
+         * macros, so we substitute them in the same pass (AFTER _repo_ver). */
+        if (icontains(*source0, "%{_jdk_update}")) {
+            *source0 = istr_replace_all(*source0, "%{_jdk_update}", task->_jdk_update ? task->_jdk_update : "");
+            if (*source0 == NULL) return -1;
+        }
+        if (icontains(*source0, "%{_jdk_build}")) {
+            *source0 = istr_replace_all(*source0, "%{_jdk_build}", task->_jdk_build ? task->_jdk_build : "");
+            if (*source0 == NULL) return -1;
+        }
         /* PS L 2202: %{commit_id} */
         if (icontains(*source0, "%{commit_id}")) {
             *source0 = istr_replace_all(*source0, "%{commit_id}", task->commit_id ? task->commit_id : "");
