@@ -1535,16 +1535,31 @@ function ModifySpecFile {
     }
 }
 
+function Resolve-ProbeURL {
+    # M152: ftp.x.org issues a 308 Permanent Redirect to xorg.freedesktop.org/archive/,
+    # which neither HttpWebRequest::GetResponse nor Invoke-WebRequest/Invoke-RestMethod
+    # follow in pwsh 7. Probe the redirect target directly. Caller's URL stays unchanged;
+    # only the local probe URL is rewritten. C/libcurl already handles the 308 via
+    # CURLOPT_FOLLOWLOCATION, so col3/col6 byte-match between PS and C after this fix.
+    param([string]$url)
+    if ([string]::IsNullOrEmpty($url)) { return $url }
+    if ($url -match '^https?://ftp\.x\.org/(pub|archive)/+individual/') {
+        return ($url -replace '^https?://ftp\.x\.org/(pub|archive)/+individual/', 'https://xorg.freedesktop.org/archive/individual/')
+    }
+    return $url
+}
+
 function urlhealth {
     param (
         [parameter(Mandatory = $true)]
         $checkurl
     )
     $urlhealthrc=""
+    $probeurl = Resolve-ProbeURL $checkurl
     try
     {
         # Create a web request with HEAD method
-        $request = [System.Net.HttpWebRequest]::Create($checkurl)
+        $request = [System.Net.HttpWebRequest]::Create($probeurl)
         $request.Method = "HEAD"
         $request.Timeout = 120000
 
@@ -3434,7 +3449,8 @@ function CheckURLHealth {
 
 
         try{
-            $Names = ((((invoke-restmethod -uri $SourceTagURL -TimeoutSec 10 -usebasicparsing -ErrorAction Stop) -split "<tr><td") -split 'a href=') -split '>') -split "title="
+            # M152: rewrite ftp.x.org probe target — see Resolve-ProbeURL.
+            $Names = ((((invoke-restmethod -uri (Resolve-ProbeURL $SourceTagURL) -TimeoutSec 10 -usebasicparsing -ErrorAction Stop) -split "<tr><td") -split 'a href=') -split '>') -split "title="
             if ($Names) {
                 $Names = @($Names | foreach-object { if ($_ | select-string -pattern '.tar.' -simplematch) {$_}})
                 $Names = @(($Names | foreach-object { if (!($_ | select-string -pattern '</a' -simplematch)) {$_}})) -ireplace '"',""
@@ -5190,8 +5206,9 @@ function CheckURLHealth {
             else
             {
                 try {
+                    # M152: rewrite ftp.x.org probe target for SHA download — see Resolve-ProbeURL.
                     # Invoke-WebRequest -Uri $UpdateURL -UseBasicParsing -Verbose:$false -OutFile $UpdateDownloadFile -TimeoutSec 10
-                    Invoke-WebRequest -Uri $UpdateURL -UseBasicParsing -OutFile $UpdateDownloadFile -TimeoutSec 120 -ErrorAction Stop
+                    Invoke-WebRequest -Uri (Resolve-ProbeURL $UpdateURL) -UseBasicParsing -OutFile $UpdateDownloadFile -TimeoutSec 120 -ErrorAction Stop
                 }
                 catch
                 {
@@ -5442,6 +5459,9 @@ function GenerateUrlHealthReports {
                 # not recognized" and the SHA computation falls back to
                 # the auto-archive — defeating the ADR.
                 'Resolve-StableSourceURL' = (Get-Command 'Resolve-StableSourceURL' -ErrorAction SilentlyContinue).Definition
+                # M152: ftp.x.org probe-target rewriter; same parallel-runspace propagation
+                # requirement as Resolve-StableSourceURL.
+                'Resolve-ProbeURL' = (Get-Command 'Resolve-ProbeURL' -ErrorAction SilentlyContinue).Definition
                 HeapSortClass = $HeapSortClassDef
             }
             $initParts = @()
