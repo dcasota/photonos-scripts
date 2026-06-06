@@ -45,6 +45,7 @@ void pr_task_free(pr_task_t *t)
     free(t->_url_src);
     free(t->_repo_ver);
     free(t->commit_id);
+    free(t->rel_tag);  /* M148 (nss.spec dev+master) */
     memset(t, 0, sizeof *t);
 }
 

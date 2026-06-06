@@ -271,6 +271,11 @@ int pr_source0_substitute(pr_task_t *task, char **source0, const char *version)
             *source0 = istr_replace_all(*source0, "%{commit_id}", task->commit_id ? task->commit_id : "");
             if (*source0 == NULL) return -1;
         }
+        /* M148 (2026-06-06): %{rel_tag} — nss.spec on dev + master. */
+        if (icontains(*source0, "%{rel_tag}")) {
+            *source0 = istr_replace_all(*source0, "%{rel_tag}", task->rel_tag ? task->rel_tag : "");
+            if (*source0 == NULL) return -1;
+        }
     }
 
     return 0;

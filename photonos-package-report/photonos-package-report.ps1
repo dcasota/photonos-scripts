@@ -372,6 +372,12 @@ function ParseDirectory {
             if ($content -ilike '*%global commit_id*') { $commit_id = (($content | Select-String -Pattern '%global commit_id')[0].ToString() -ireplace '%global commit_id', "").Trim() }
             if ($content -ilike '*%define commit_id*') { $commit_id = (($content | Select-String -Pattern '%define commit_id')[0].ToString() -ireplace '%define commit_id', "").Trim() }
 
+            # M148 (2026-06-06): rel_tag — nss.spec on dev + master uses
+            # `%define rel_tag 3_98` and `%{rel_tag}` in Source0.
+            $rel_tag=""
+            if ($content -ilike '*%define rel_tag*') { $rel_tag = (($content | Select-String -Pattern '%define rel_tag')[0].ToString() -ireplace '%define rel_tag', "").Trim() }
+            if ($content -ilike '*%global rel_tag*') { $rel_tag = (($content | Select-String -Pattern '%global rel_tag')[0].ToString() -ireplace '%global rel_tag', "").Trim() }
+
             $null = $Packages.Add([PSCustomObject]@{
                 content = $content
                 Spec = $currentFile.Name
@@ -399,6 +405,7 @@ function ParseDirectory {
                 _url_src = $_url_src
                 _repo_ver = $_repo_ver
                 commit_id = $commit_id
+                rel_tag = $rel_tag
             })
         }
         catch {
@@ -2313,6 +2320,8 @@ function CheckURLHealth {
         if ($Source0 -ilike '*%{_url_src}*') { $Source0 = $Source0 -ireplace '%{_url_src}',$currentTask._url_src }
         if ($Source0 -ilike '*%{_repo_ver}*') { $Source0 = $Source0 -ireplace '%{_repo_ver}',$currentTask._repo_ver}
         if ($Source0 -ilike '*%{commit_id}*') { $Source0 = $Source0 -ireplace '%{commit_id}',$currentTask.commit_id }
+        # M148: %{rel_tag} — nss.spec on dev + master.
+        if ($Source0 -ilike '*%{rel_tag}*') { $Source0 = $Source0 -ireplace '%{rel_tag}',$currentTask.rel_tag }
     }
 
 

@@ -469,6 +469,19 @@ static int parse_one_spec(const char *specs_path,
         commit_id = first_value(content, n_lines, "%define commit_id", "%define commit_id");
     }
 
+    /* M148 (2026-06-06): rel_tag — nss.spec on dev + master uses
+     * `%define rel_tag 3_98` and `%{rel_tag}` in Source0. Define-
+     * then-global override semantics mirror srcname/gem_name. */
+    char *rel_tag = empty_dup();
+    if (lines_ilike_contains(content, n_lines, "%define rel_tag")) {
+        free(rel_tag);
+        rel_tag = first_value(content, n_lines, "%define rel_tag", "%define rel_tag");
+    }
+    if (lines_ilike_contains(content, n_lines, "%global rel_tag")) {
+        free(rel_tag);
+        rel_tag = first_value(content, n_lines, "%global rel_tag", "%global rel_tag");
+    }
+
     /* PS L 345-372: $Packages.Add([PSCustomObject]@{ ... }) */
     pr_task_t t;
     memset(&t, 0, sizeof t);
@@ -500,6 +513,7 @@ static int parse_one_spec(const char *specs_path,
     t._url_src          = _url_src;
     t._repo_ver         = _repo_ver;
     t.commit_id         = commit_id;
+    t.rel_tag           = rel_tag;  /* M148 */
 
     if (pr_task_list_add(out, &t) != 0) {
         pr_task_free(&t);
