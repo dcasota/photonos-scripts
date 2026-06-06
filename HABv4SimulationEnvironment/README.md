@@ -399,6 +399,176 @@ On first boot, the **blue MokManager screen** appears:
 
 ## Version History
 
+- **v1.9.56** - UI bug fixes from operator VM test feedback (2026-06-06):
+  - **Bug A fix**: install crash `Unknown install_config keys: mok_quickstart`.
+    The v1.9.43 anchor-based regex (`'manifest_file',`) for whitelisting
+    `mok_quickstart` in `Installer.known_keys` doesn't exist in older Photon
+    installer 2.2 (base ISO swapped from `effac38a0` 2.8 → `dde71ec57` 2.2
+    mid-session). **Fix**: replace surgical regex insert with a module-level
+    monkey-patch appended at end of installer.py that supports any known_keys
+    container type (set/list/tuple/frozenset). Version-resilient, idempotent.
+  - **Bug B fix**: "Photon MOK Secure Boot" dead entry in PackageSelector
+    after MokQuickstart "No" path. The v1.6.0 add_mok_option patch is now
+    obsolete (MOK is exclusively via MokQuickstart Yes paths). Skipped via
+    `#if 0` block in source.
+  - **Bug C deferred**: back-navigation broken on MokQuickstart Yes path —
+    needs `iso_config.py` extraction to diagnose `inactive_screen`
+    ActionResult direction handling.
+
+- **v1.9.55** - Disable Linux floppy driver (`CONFIG_BLK_DEV_FD=n`):
+  - After v1.9.54 fixed the FIPS rollback, operator VM made it past dracut
+    FIPS init but hung at ~28s into initramfs with
+    `floppy0: floppy timeout called` + `I/O error, dev fd0, sector 0`.
+  - **Root cause**: the 128 MB `efuse-secureboot.img` (from `-I PATH:128`)
+    attached as virtual floppy. Linux `floppy.c` auto-probes /dev/fd0 with
+    standard geometries (max 2.88 MB), times out on 128 MB, dracut emergency.
+    GRUB's EFUSE_SIM label check still works (BIOS/UEFI reads).
+  - **Fix**: `scripts/config --disable CONFIG_BLK_DEV_FD` in kernel build.
+  - **VM-side workaround**: attach the .img as virtual SATA disk instead
+    of floppy.
+
+- **v1.9.54** - Explicit `--disable` for FIPS configs (sibling kbuild trap):
+  - v1.9.53 attempted to roll back v1.9.49's `CONFIG_CRYPTO_FIPS=y` by
+    DELETING the `scripts/config --enable` calls. Insufficient —
+    removing `--enable` doesn't undo a prior enable. olddefconfig retains
+    the cached `=y`. Verified post-v1.9.53 rebuild: `CONFIG_CRYPTO_FIPS=y`
+    persisted.
+  - **Fix**: explicit `scripts/config --disable` for `CONFIG_CRYPTO_FIPS`,
+    `CONFIG_CRYPTO_FIPS_NAME`, `CONFIG_FIPS_SIGNATURE_CHECK`.
+  - **Sibling trap to v1.9.46/47** (`--module` vs `--enable` on FUSION).
+    Two canonical kbuild gotchas now documented:
+    - `--module` gets dropped by olddefconfig on tristate symbols whose
+      parent isn't `=m` → use `--enable` for parents.
+    - Removing `--enable` doesn't undo it — explicit `--disable` required
+      to flip back.
+
+- **v1.9.53** - M27 FIPS deferred to v1.10b:
+  - v1.9.49 enabled `CONFIG_CRYPTO_FIPS=y` + built-in `CONFIG_CMDLINE="fips=1"`
+    per operator request. Installed VM booted into emergency mode.
+  - **Root cause** (VMDK analysis 2026-06-06): Photon's installer template
+    hardcodes `audit=1 fips=1 ima_hash=sha256` in installed-system grub.cfg
+    cmdline. Was a silent no-op when kernel had CRYPTO_FIPS=n. With v1.9.49's
+    CRYPTO_FIPS=y, fips=1 engaged real FIPS mode — but the FIPS userland
+    (`/etc/system-fips` marker, openssl-fips, dracut fips module) was never
+    staged → first boot failed before journald could log anything.
+  - **Fingerprint of "first boot never completed"**: `/.selinux-relabel`
+    still at /, `/var/log/installer.log` absent, `/var/log/journal/` empty.
+  - **Fix (this release)**: roll back the kernel-side runtime activation
+    (incomplete — see v1.9.54). M27 deferred to v1.10b with full stack
+    recipe: separate `linux-mok-fips` flavor + `/etc/system-fips` via
+    spec `%post` + dracut `fips` module + openssl-fips package + operator
+    runbook.
+
+- **v1.9.52** - M25 `/ostree-repo.tar.gz` placeholder fix:
+  - GNU tar refuses to create archives from empty input
+    (`tar czf foo --files-from /dev/null` → `Cowardly refusing to create
+    an empty archive`). v1.9.51's M25 placeholder fallback hit this when
+    `ostree` CLI was absent on the build host.
+  - **Fix**: tar a single tiny `M25-NOTE.txt` placeholder instead.
+    Real-ostree-CLI branch unchanged.
+
+- **v1.9.51** - M25 OSTree skeleton `/ostree-repo.tar.gz`:
+  - FEB-2026 PHOTON_SB_6.0 build shipped `/ostree-repo.tar.gz` (261 MB)
+    with an atomic A/B-update OSTree repository. v1.9.51 ships a SKELETON
+    empty ostree-archive repo as the FEB-pattern marker. Full atomic-update
+    functionality (system snapshot + installer wiring) filed for v1.9.52
+    follow-up (M25b).
+
+- **v1.9.50** - M24 `/RPMS_MOK/` parallel audit tree:
+  - FEB-2026 PHOTON_SB_6.0 build shipped a separate `/RPMS_MOK/` directory
+    carrying the MOK-installable package set. Intent: chain-of-trust audit
+    boundary — `/RPMS/` is the original VMware-signed Photon repo;
+    `/RPMS_MOK/` is the HABv4-blessed subset for the MOK install path.
+  - **Minimum-viable**: mirror the 4 MOK-flavored RPMs + mokutil into
+    `/RPMS_MOK/x86_64/` + createrepo. Full 2,150-package dependency-closure
+    mirror filed as v1.9.51 follow-up (M24b).
+
+- **v1.9.49** - M27 FIPS 140-3 (CONFIG_CRYPTO_FIPS=y + built-in `fips=1`):
+  - **INITIAL ATTEMPT — broke first boot.** Rolled back in v1.9.53.
+  - Per operator: "FIPS canister kernels = 140-3; CONFIG_CRYPTO_FIPS=y.
+    FIPS_ENABLED is default."
+  - Configs landed: CRYPTO_FIPS=y, CRYPTO_FIPS_NAME=y, FIPS_SIGNATURE_CHECK=y,
+    CMDLINE_BOOL=y, CMDLINE="fips=1", CMDLINE_OVERRIDE=n.
+  - See v1.9.53 for the post-mortem on why this needed rollback.
+
+- **v1.9.48** - M32 verbose `loglevel=7` in MOK grub.cfg install entry:
+  - Matches FEB-2026 PHOTON_SB_6.0 build pattern. Effect is short-lived
+    (installer boot only) but buys full kernel-side diagnostics during
+    boot — would have shortened the v1.9.43→47 cascade significantly.
+
+- **v1.9.47** - Full hypervisor storage/network coverage:
+  - v1.9.46 enabled CONFIG_VMWARE_PVSCSI/NVME/VIRTIO* but FUSION_*/HYPERV_*/
+    ATA_PIIX were silently dropped by `make olddefconfig`.
+  - **Root cause**: `scripts/config --module CONFIG_FUSION` is dropped by
+    olddefconfig — only `--enable` (=y) survives for tristate symbols whose
+    parent isn't `=m`.
+  - **Fix**: `--enable` for parents (FUSION, FUSION_SPI, FUSION_SAS, ATA_SFF,
+    HYPERV). Added CONFIG_HYPERV_NET. Extended dracut pre-filter with
+    hv_vmbus/hv_storvsc/hv_netvsc/virtio_net. **Also**: fixed shadow
+    `#define VERSION` in `PhotonOS-HABv4Emulation-ISOCreator.c:40` that
+    masked the canonical one in `habv4_common.h:32` — every header-only
+    version bump was a runtime no-op.
+
+- **v1.9.46** - Enable VMware/SATA/NVMe/VirtIO storage drivers:
+  - Photon's `config-esx_x86_64` only ships `mpt3sas` in SCSI driver set;
+    no vmw_pvscsi/mptspi/ahci/nvme/virtio_*. linux-(esx-)mok ISOs only
+    boot VMs with LSI Logic SAS. v1.9.46 added `scripts/config` block.
+    **Partial fix** — FUSION/HYPERV/ATA_PIIX silently dropped (see v1.9.47).
+
+- **v1.9.45** - Pre-filter dracut drivers + fail-fast on MOK build failure:
+  - bash pre-filter loop in linux-(esx-)mok.spec %build that only includes
+    drivers whose .ko exists in `./lib/modules/$KVER`. Missing drivers
+    silently skipped, present ones force-included.
+  - **PLUS** cadastre Rec #1 finally landed: `ISOCreator.c:3979`
+    `log_warn` → `log_error` + `return 1` on MOK RPM build failure.
+    Tool now aborts instead of shipping rc=0 with broken contents.
+
+- **v1.9.44** - Initial expanded dracut --add-drivers (broken — squashed
+  into v1.9.45 narrative): dracut `--add-drivers` is fail-fast on missing
+  modules; `ata_piix` doesn't exist in ESX kernel build → dracut aborted
+  → linux-mok.spec %build failed → tool reported rc=0 anyway → ISO
+  shipped with NO MOK RPMs. v1.9.45 fixes both the pre-filter + the
+  fail-fast.
+
+- **v1.9.43** - Whitelist `mok_quickstart` in `Installer.known_keys`:
+  - `_check_install_config` at installer.py:558-560 raised
+    `InstallerConfigError: Unknown install_config keys: mok_quickstart`
+    on install path. Fix 8: regex insert `'mok_quickstart',` into known_keys
+    set after `'manifest_file',`. **NOTE**: this anchor-based regex broke
+    against older Photon installer 2.2 in v1.9.56 cycle — see v1.9.56
+    for the robust monkey-patch replacement.
+
+- **v1.9.42** - PackageSelector display() guard + ostree pop:
+  - The v1.9.41 `__init__`-time guard was DEAD CODE — `iso_config.add_ui_pages()`
+    instantiates ALL screens at app startup, BEFORE
+    `MokQuickstartSelector.display()` runs. Move guard to `display()`;
+    keep `__init__` belt-and-suspenders for kickstart pre-seed.
+    `_apply_yes()` now pops `install_config['ostree']` (audit Q2).
+
+- **v1.9.41** - "Apply MOK Secure Boot" pre-question UI cascade:
+  - New `MokQuickstartSelector` screen + `mok_quickstart.py` embedded in
+    tool + 4 new installer patches (iso_config / packageselector /
+    linuxselector FIX 4 / stigenable). Implements operator's
+    `No / Yes-Generic / Yes-ESX` flow per ADR-0027 autonomous Q1-Q5.
+
+- **v1.9.40** - Complete linuxselector guard + `exit_gracefully(cause=inst)`:
+  - v1.9.39 patch was incomplete (terminated collector at blank line
+    between Menu and Window). v1.9.40 completes the menu/window/
+    set_action_panel guard.
+  - **Exception cause-chaining**: `exit_gracefully(cause=inst)` +
+    `raise InstallerError(f"... {cause!r}") from cause` — un-masks the
+    real exception text on installer crashes.
+
+- **v1.9.39** - Real `linux-esx-mok.spec` generator + installer hardening.
+
+- **v1.9.38** - Fix python3.11 hardcoded paths + plug 3 missing patches:
+  - Photon 5.0 installer ships python3.14 (was 3.11 in earlier Photon
+    versions). All three hardcoded `usr/lib/python3.11/...` paths silently
+    skipped.
+  - **Fix**: `find_photon_installer_file()` globs `python3.*`. Regex-tolerant
+    patches. Plus 3 missing patch implementations (all_linux_flavors,
+    linuxselector dict, exit_gracefully cause-chain).
+
 - **v1.9.37** - Virtual eFuse USB image (`-I, --create-efuse-img=PATH[:SIZE]`):
   - **New CLI option**: `--create-efuse-img=PATH[:SIZE]` writes the eFuse
     dongle payload to a regular file instead of a physical block device.
