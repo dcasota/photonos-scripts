@@ -145,6 +145,47 @@ with open('$COMMON_CFG', 'w') as f:
     fi
   fi
 
+  # ── Fix OpenJDK WSL2 detection in chroot ───────────────────────────
+  # OpenJDK's configure detects "x86_64-pc-wsl" inside WSL2 chroots and
+  # fails with "Incorrect wsl1 installation". Adding --build= overrides
+  # the auto-detected triplet. Only applied if the flag is missing.
+  if grep -qiE 'microsoft|wsl' /proc/version 2>/dev/null; then
+    for jdk_spec in SPECS/openjdk/openjdk*.spec "$BASE_DIR/$COMMON_BRANCH"/SPECS/openjdk/openjdk*.spec; do
+      [ -f "$jdk_spec" ] || continue
+      if grep -q 'sh ./configure' "$jdk_spec" && ! grep -q 'build=x86_64-unknown-linux-gnu' "$jdk_spec"; then
+        sed -i 's|--disable-warnings-as-errors$|--disable-warnings-as-errors \\\n    --build=x86_64-unknown-linux-gnu|' "$jdk_spec"
+        echo "[runPh4] Fixed $(basename "$jdk_spec"): added --build for WSL2"
+      fi
+    done
+  fi
+
+  # ── Fix Python 3 PGO test flake in WSL2 ────────────────────────────
+  # Python's --enable-optimizations runs test_generators for PGO profiling.
+  # test_generators.SignalAndYieldFromTest is flaky under WSL2 (signal
+  # delivery timing differs from native Linux), causing the entire build
+  # to fail. Override PROFILE_TASK to exclude it. Only applied in WSL2.
+  if grep -qiE 'microsoft|wsl' /proc/version 2>/dev/null; then
+    PY3_SPEC="SPECS/python3/python3.spec"
+    if [ -f "$PY3_SPEC" ] && ! grep -q 'PROFILE_TASK' "$PY3_SPEC"; then
+      sed -i 's|^%make_build$|PROFILE_TASK="-m test --pgo -x test_generators" %make_build|' "$PY3_SPEC"
+      echo "[runPh4] Fixed python3 spec: excluded test_generators from PGO"
+    fi
+  fi
+
+  # ── Fix sssd %make_install parallel libtool race ───────────────
+  # sssd 2.8.2 uses %make_install %{?_smp_mflags} which runs `make
+  # install -jN`. With high j-count, libtool's relink phase races with
+  # the install phase: it tries to relink _py3hbac.la / libsss_*.la
+  # against libsss_child.la before libsss_child.la has been installed,
+  # producing `file format not recognized` and `ld returned 1`.
+  # Switch to serial install. Only patches if not already serialized.
+  SSSD_SPEC="SPECS/sssd/sssd.spec"
+  if [ -f "$SSSD_SPEC" ] && grep -q "%make_install %{?_smp_mflags}" "$SSSD_SPEC"; then
+    sed -i 's|%make_install %{?_smp_mflags}|%make_install|' "$SSSD_SPEC"
+    echo "[runPh4] Fixed sssd spec: serial %make_install"
+  fi
+
+
   for i in {1..10}; do
     # sudo make -j$(( $(nproc) - 1 )) image IMG_NAME=iso THREADS=$(( $(nproc) - 1 ));
     sudo make -j2 image IMG_NAME=iso THREADS=2;

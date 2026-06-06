@@ -508,6 +508,19 @@ with open('$COMMON_CFG', 'w') as f:
     fi
   fi
 
+  # ── Fix sssd %make_install parallel libtool race ───────────────
+  # sssd 2.8.2 uses %make_install %{?_smp_mflags} which runs `make
+  # install -jN`. With high j-count, libtool's relink phase races with
+  # the install phase: it tries to relink _py3hbac.la / libsss_*.la
+  # against libsss_child.la before libsss_child.la has been installed,
+  # producing `file format not recognized` and `ld returned 1`.
+  # Switch to serial install. Only patches if not already serialized.
+  SSSD_SPEC="SPECS/sssd/sssd.spec"
+  if [ -f "$SSSD_SPEC" ] && grep -q "%make_install %{?_smp_mflags}" "$SSSD_SPEC"; then
+    sed -i 's|%make_install %{?_smp_mflags}|%make_install|' "$SSSD_SPEC"
+    echo "[runPh5_pinned91] Fixed sssd spec: serial %make_install"
+  fi
+
   # ── Build loop ────────────────────────────────────────────────────
   for i in $(seq 1 10); do
     if [ "$i" -gt 1 ]; then

@@ -17,6 +17,7 @@ BASE_DIR="${1:-/root}"
 COMMON_BRANCH="${2:-common}"
 RELEASE_BRANCH="${3:-6.0}"
 OUTPUT_DIR="${4:-/mnt/c/Users/dcaso/Downloads/Ph-Builds}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # ── Signal handling: tear down full build tree on kill ─────────────
 # Without a trap, killing runPh6.sh leaves orphaned rpmbuild/gcc/java
@@ -396,6 +397,46 @@ with open('$COMMON_CFG', 'w') as f:
     fi
   fi
 
+  # ── Fix Python 3 PGO test flake in WSL2 ────────────────────────────
+  # Python's --enable-optimizations runs test_generators for PGO profiling.
+  # test_generators.SignalAndYieldFromTest is flaky under WSL2 (signal
+  # delivery timing differs from native Linux), causing the entire build
+  # to fail. Override PROFILE_TASK to exclude it. Only applied in WSL2.
+  if grep -qiE 'microsoft|wsl' /proc/version 2>/dev/null; then
+    PY3_SPEC="SPECS/python3/python3.spec"
+    if [ -f "$PY3_SPEC" ] && ! grep -q 'PROFILE_TASK' "$PY3_SPEC"; then
+      sed -i 's|^%make_build$|PROFILE_TASK="-m test --pgo -x test_generators" %make_build|' "$PY3_SPEC"
+      echo "[runPh6] Fixed python3 spec: excluded test_generators from PGO"
+    fi
+  fi
+
+  # ── Fix sssd %make_install parallel libtool race ───────────────
+  # sssd 2.8.2 uses %make_install %{?_smp_mflags} which runs `make
+  # install -jN`. With high j-count, libtool's relink phase races with
+  # the install phase: it tries to relink _py3hbac.la / libsss_*.la
+  # against libsss_child.la before libsss_child.la has been installed,
+  # producing `file format not recognized` and `ld returned 1`.
+  # Switch to serial install. Only patches if not already serialized.
+  SSSD_SPEC="SPECS/sssd/sssd.spec"
+  if [ -f "$SSSD_SPEC" ] && grep -q "%make_install %{?_smp_mflags}" "$SSSD_SPEC"; then
+    sed -i 's|%make_install %{?_smp_mflags}|%make_install|' "$SSSD_SPEC"
+    echo "[runPh6] Fixed sssd spec: serial %make_install"
+  fi
+
+
+  # --- Fix gcc 12.2.0 libsanitizer build under 6.x kernel headers ---
+  # 6.0 builds gcc 12.2.0-9 against linux-api-headers 6.1.x where struct termio
+  # was removed; old libsanitizer still references it (and breaks on glibc
+  # >=2.42). Port the same two patches 5.0's gcc already carries.
+  if [ -d SPECS/gcc ] && ! grep -q 'Remove-reference-to-obsolete-termio' SPECS/gcc/gcc.spec 2>/dev/null; then
+    for p in 0001-libsanitizer-Fix-build-with-glibc-2.42.patch \
+             0001-sanitizer_common-Remove-reference-to-obsolete-termio.patch; do
+      [ -f "$SCRIPT_DIR/photonos-patches/gcc/$p" ] && cp "$SCRIPT_DIR/photonos-patches/gcc/$p" SPECS/gcc/ 2>/dev/null
+    done
+    sed -i 's|^\(Patch1:.*plugin-callback.*\)$|\1\nPatch2:         0001-libsanitizer-Fix-build-with-glibc-2.42.patch\nPatch3:         0001-sanitizer_common-Remove-reference-to-obsolete-termio.patch|' SPECS/gcc/gcc.spec
+    sed -i 's|^Release:        9%{?dist}|Release:        9.1%{?dist}|' SPECS/gcc/gcc.spec
+    echo "[runPh6] Ported libsanitizer termio/glibc-2.42 patches into SPECS/gcc"
+  fi
   # ── Build loop ────────────────────────────────────────────────────
   # build.py's scheduler (PackageManager._buildPackages) already keeps
   # going across per-package failures: a failed rpmbuild only marks
