@@ -37,7 +37,7 @@
 
 #include "rpm_secureboot_patcher.h"
 
-#define VERSION "1.9.46"
+#define VERSION "1.9.47"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */
@@ -2131,17 +2131,29 @@ static int build_linux_kernel(void) {
      * NOTE: this config change INVALIDATES the kernel build cache. The
      * next build will rebuild from scratch (~1-3 hours depending on host).
      * Subsequent builds with the same config will hit the cache. */
-    log_info("Configuring storage controllers (VMware/SATA/NVMe/VirtIO) as modules...");
+    /* v1.9.47 — corrected per empirical probe (probe-olddefconfig.sh):
+     *   - FUSION subsystem REQUIRES --enable not --module on this kernel.
+     *     `--module CONFIG_FUSION` is silently dropped by olddefconfig
+     *     (resulting in "# CONFIG_FUSION is not set"). `--enable` survives.
+     *     Stock Photon SPEC had CONFIG_FUSION=y anyway, so this is alignment.
+     *   - CONFIG_FUSION_FC removed (not present in linux 6.12).
+     *   - HYPERV requires --enable CONFIG_HYPERV as parent BEFORE
+     *     --module CONFIG_HYPERV_STORAGE/NET; otherwise olddefconfig drops
+     *     the children. Stock ESX config had HYPERV disabled.
+     *   - ATA_PIIX requires --enable CONFIG_ATA_SFF as parent. Stock had
+     *     ATA_SFF disabled (ESX never sees PIIX); we re-enable for
+     *     Workstation/Fusion/Hyper-V legacy SATA coverage. */
+    log_info("Configuring storage controllers (VMware/SATA/NVMe/VirtIO/HyperV) for olddefconfig survival...");
     snprintf(cmd, sizeof(cmd),
         "cd '%s' && "
         "scripts/config --module CONFIG_VMWARE_PVSCSI && "                  /* vmw_pvscsi */
-        "scripts/config --module CONFIG_FUSION && "                         /* fusion core */
-        "scripts/config --module CONFIG_FUSION_SPI && "                     /* mptspi (LSI Parallel) */
-        "scripts/config --module CONFIG_FUSION_SAS && "                     /* mptsas (LSI SAS legacy) */
-        "scripts/config --module CONFIG_FUSION_FC && "                      /* mptfc (FC HBA) */
+        "scripts/config --enable CONFIG_FUSION && "                         /* fusion core (=y, --module gets dropped) */
+        "scripts/config --enable CONFIG_FUSION_SPI && "                     /* mptspi (LSI Parallel) */
+        "scripts/config --enable CONFIG_FUSION_SAS && "                     /* mptsas (LSI SAS legacy) */
         "scripts/config --enable CONFIG_ATA && "                            /* libata */
+        "scripts/config --enable CONFIG_ATA_SFF && "                        /* parent of ATA_PIIX */
         "scripts/config --enable CONFIG_SATA_AHCI && "                      /* ahci built-in for boot reliability */
-        "scripts/config --module CONFIG_ATA_PIIX && "                       /* ata_piix legacy */
+        "scripts/config --module CONFIG_ATA_PIIX && "                       /* ata_piix legacy (Hyper-V/Workstation) */
         "scripts/config --module CONFIG_SATA_AHCI_PLATFORM && "             /* AHCI-platform variant */
         "scripts/config --module CONFIG_BLK_DEV_NVME && "                   /* nvme */
         "scripts/config --module CONFIG_NVME_CORE && "                      /* nvme_core */
@@ -2150,7 +2162,9 @@ static int build_linux_kernel(void) {
         "scripts/config --module CONFIG_VIRTIO_BLK && "                     /* virtio_blk */
         "scripts/config --module CONFIG_VIRTIO_NET && "                     /* virtio_net (network on KVM) */
         "scripts/config --module CONFIG_SCSI_VIRTIO && "                    /* virtio_scsi */
-        "scripts/config --module CONFIG_HYPERV_STORAGE",                    /* hv_storvsc (Hyper-V SCSI) */
+        "scripts/config --enable CONFIG_HYPERV && "                         /* Hyper-V guest support (parent) */
+        "scripts/config --module CONFIG_HYPERV_STORAGE && "                 /* hv_storvsc (Hyper-V SCSI) */
+        "scripts/config --module CONFIG_HYPERV_NET",                        /* hv_netvsc (Hyper-V NIC) */
         kernel_src);
     run_cmd(cmd);
     
