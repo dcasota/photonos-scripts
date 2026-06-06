@@ -395,6 +395,15 @@ function ParseDirectory {
             if ($content -ilike '*%define upstream_version*') { $upstreamversion = (($content | Select-String -Pattern '%define upstream_version')[0].ToString() -ireplace '%define upstream_version', "").Trim() }
             if ($content -ilike '*%global upstream_version*') { $upstreamversion = (($content | Select-String -Pattern '%global upstream_version')[0].ToString() -ireplace '%global upstream_version', "").Trim() }
 
+            # M151 (2026-06-06): _jdk_update / _jdk_build — openjdk8_aarch64.spec
+            # on 3.0. _repo_ver expands to a string still containing these two
+            # macros; substitution order in Source0 resolves _repo_ver first,
+            # then these two cover the second pass.
+            $_jdk_update=""
+            if ($content -ilike '*%define _jdk_update*') { $_jdk_update = (($content | Select-String -Pattern '%define _jdk_update')[0].ToString() -ireplace '%define _jdk_update', "").Trim() }
+            $_jdk_build=""
+            if ($content -ilike '*%define _jdk_build*') { $_jdk_build = (($content | Select-String -Pattern '%define _jdk_build')[0].ToString() -ireplace '%define _jdk_build', "").Trim() }
+
             $null = $Packages.Add([PSCustomObject]@{
                 content = $content
                 Spec = $currentFile.Name
@@ -425,6 +434,8 @@ function ParseDirectory {
                 rel_tag = $rel_tag
                 full_name = $full_name
                 upstream_name = $upstream_name
+                _jdk_update = $_jdk_update
+                _jdk_build = $_jdk_build
             })
         }
         catch {
@@ -2346,6 +2357,11 @@ function CheckURLHealth {
         # M150: %{upstream_name} + %{upstream_version} — squid.spec on 5.0+main.
         if ($Source0 -ilike '*%{upstream_name}*')    { $Source0 = $Source0 -ireplace '%{upstream_name}',$currentTask.upstream_name }
         if ($Source0 -ilike '*%{upstream_version}*') { $Source0 = $Source0 -ireplace '%{upstream_version}',$currentTask.upstreamversion }
+        # M151: %{_jdk_update} + %{_jdk_build} — openjdk8_aarch64.spec on 3.0.
+        # Must come after %{_repo_ver} (handled by existing code earlier in
+        # this block at PS L 2304-2305) so the inner macros get a second pass.
+        if ($Source0 -ilike '*%{_jdk_update}*') { $Source0 = $Source0 -ireplace '%{_jdk_update}',$currentTask._jdk_update }
+        if ($Source0 -ilike '*%{_jdk_build}*')  { $Source0 = $Source0 -ireplace '%{_jdk_build}',$currentTask._jdk_build }
     }
 
 

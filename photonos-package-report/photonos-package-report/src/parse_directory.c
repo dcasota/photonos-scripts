@@ -521,6 +521,22 @@ static int parse_one_spec(const char *specs_path,
         upstream_name = first_value(content, n_lines, "%global upstream_name", "%global upstream_name");
     }
 
+    /* M151 (2026-06-06): _jdk_update / _jdk_build — openjdk8_aarch64.spec
+     * on 3.0 uses `%define _jdk_update 181`, `%define _jdk_build 13`, and
+     * `%{_repo_ver}` which itself expands to `aarch64-jdk8u%{_jdk_update}-b%{_jdk_build}`.
+     * The substitution order in source0_substitute.c expands _repo_ver
+     * first; these two cover the second pass. */
+    char *_jdk_update = empty_dup();
+    if (lines_ilike_contains(content, n_lines, "%define _jdk_update")) {
+        free(_jdk_update);
+        _jdk_update = first_value(content, n_lines, "%define _jdk_update", "%define _jdk_update");
+    }
+    char *_jdk_build = empty_dup();
+    if (lines_ilike_contains(content, n_lines, "%define _jdk_build")) {
+        free(_jdk_build);
+        _jdk_build = first_value(content, n_lines, "%define _jdk_build", "%define _jdk_build");
+    }
+
     /* PS L 345-372: $Packages.Add([PSCustomObject]@{ ... }) */
     pr_task_t t;
     memset(&t, 0, sizeof t);
@@ -555,6 +571,8 @@ static int parse_one_spec(const char *specs_path,
     t.rel_tag           = rel_tag;  /* M148 */
     t.full_name         = full_name;  /* M149 */
     t.upstream_name     = upstream_name;  /* M150 */
+    t._jdk_update       = _jdk_update;  /* M151 */
+    t._jdk_build        = _jdk_build;  /* M151 */
 
     if (pr_task_list_add(out, &t) != 0) {
         pr_task_free(&t);

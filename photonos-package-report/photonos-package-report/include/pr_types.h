@@ -100,6 +100,8 @@ typedef struct {
     char  *rel_tag;                /* M148 (nss.spec dev+master): %define rel_tag */
     char  *full_name;              /* M149 (python3-msal.spec 5.0+main): %global full_name */
     char  *upstream_name;          /* M150 (squid.spec 5.0+main): %define upstream_name */
+    char  *_jdk_update;            /* M151 (openjdk8_aarch64.spec 3.0): %define _jdk_update */
+    char  *_jdk_build;             /* M151 (openjdk8_aarch64.spec 3.0): %define _jdk_build */
 } pr_task_t;
 
 /* A growable list of pr_task_t. ParseDirectory returns one of these
