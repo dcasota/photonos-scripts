@@ -37,7 +37,7 @@
 
 #include "rpm_secureboot_patcher.h"
 
-#define VERSION "1.9.49"
+#define VERSION "1.9.50"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */
@@ -4128,11 +4128,44 @@ static int create_secure_boot_iso(void) {
                          * and doesn't remove deleted ones from the metadata. We need a full rebuild
                          * since we removed original packages (linux-6.*, grub2-efi-image-2.*, etc.) */
                         log_info("Regenerating repository metadata (full rebuild)...");
-                        snprintf(cmd, sizeof(cmd), 
+                        snprintf(cmd, sizeof(cmd),
                             "rm -rf '%s/RPMS/repodata' && "
                             "(createrepo_c '%s/RPMS' 2>/dev/null || createrepo '%s/RPMS' 2>/dev/null)",
                             iso_extract, iso_extract, iso_extract);
                         run_cmd(cmd);
+
+                        /* v1.9.50 M24 — /RPMS_MOK/ parallel audit tree
+                         *
+                         * FEB-2026 PHOTON_SB_6.0 build shipped a separate
+                         * /RPMS_MOK/ directory carrying the MOK-installable
+                         * package set. The intent: chain-of-trust audit
+                         * boundary — /RPMS/ is the original VMware-signed
+                         * Photon repo; /RPMS_MOK/ is the HABv4-blessed subset
+                         * that the MOK install path can pull from.
+                         *
+                         * Minimum-viable M24: mirror the 4 MOK-flavored RPMs
+                         * (linux-mok, linux-esx-mok, grub2-efi-image-mok,
+                         * shim-signed-mok) PLUS mokutil into /RPMS_MOK/x86_64/
+                         * + createrepo. This makes /RPMS_MOK/ a valid (though
+                         * minimal) parallel repo that operators can audit.
+                         *
+                         * Full FEB-equivalent (2,150 packages = dependency
+                         * closure of linux-mok et al.) is filed as v1.9.51
+                         * follow-up M24b. The marker /RPMS_MOK/ tree is the
+                         * load-bearing audit boundary for this release. */
+                        log_info("M24: building /RPMS_MOK/ parallel audit tree...");
+                        snprintf(cmd, sizeof(cmd),
+                            "mkdir -p '%s/RPMS_MOK/x86_64' '%s/RPMS_MOK/noarch' && "
+                            "cp '%s/RPMS/x86_64/'*-mok-*.rpm '%s/RPMS_MOK/x86_64/' 2>/dev/null; "
+                            "cp '%s/RPMS/x86_64/'mokutil-*.rpm '%s/RPMS_MOK/x86_64/' 2>/dev/null; "
+                            "(createrepo_c '%s/RPMS_MOK' 2>/dev/null || createrepo '%s/RPMS_MOK' 2>/dev/null) || "
+                            "echo '[WARN] M24 createrepo skipped (createrepo* not installed)'",
+                            iso_extract, iso_extract,
+                            iso_extract, iso_extract,
+                            iso_extract, iso_extract,
+                            iso_extract, iso_extract);
+                        run_cmd(cmd);
+                        log_info("M24: /RPMS_MOK/ audit tree populated");
                     }
                 }
             }
