@@ -376,6 +376,32 @@ for s in data.get('sources', []) or []:
     [ "$bad_rpms" -gt 0 ] && echo "[runPh5_pinned90] Removed $bad_rpms corrupted RPM(s)"
   fi
 
+  # ── SPECS/90 toolchain bootstrap (build old glibc 2.36 / gcc 12.2.0) ──
+  # 1. Port libsanitizer fixes (obsolete termio + glibc 2.42) into SPECS/90/gcc
+  #    so old gcc 12.2.0 builds under 6.x kernel headers.
+  # 2. Remove leftover >=92 toolchain RPMs (glibc 2.43, gcc/libstdc++ 12.2.0-14)
+  #    so the base sandbox bootstraps from the glibc-2.36 base instead of pulling
+  #    a libstdc++ needing __isoc23_strtoul@GLIBC_2.38.
+  if [ -d SPECS/90/gcc ] && [ -d SPECS/gcc ]; then
+    for p in 0001-libsanitizer-Fix-build-with-glibc-2.42.patch \
+             0001-sanitizer_common-Remove-reference-to-obsolete-termio.patch; do
+      [ -f "SPECS/gcc/$p" ] && cp -n "SPECS/gcc/$p" SPECS/90/gcc/ 2>/dev/null
+    done
+    if ! grep -q 'Remove-reference-to-obsolete-termio' SPECS/90/gcc/gcc.spec 2>/dev/null; then
+      sed -i 's|^\(Patch1:.*plugin-callback.*\)$|\1\nPatch2:         0001-libsanitizer-Fix-build-with-glibc-2.42.patch\nPatch3:         0001-sanitizer_common-Remove-reference-to-obsolete-termio.patch|' SPECS/90/gcc/gcc.spec
+      sed -i 's|^Release:        9.1.1%{?dist}|Release:        9.1.2%{?dist}|' SPECS/90/gcc/gcc.spec
+      echo "[runPh5_pinned90] Ported libsanitizer termio/glibc-2.42 patches into SPECS/90/gcc"
+    fi
+  fi
+  _R="$BASE_DIR/$RELEASE_BRANCH/stage/RPMS/x86_64"
+  rm -f "$_R"/glibc-2.43*.rpm "$_R"/glibc-*-2.43*.rpm \
+        "$_R"/gcc-12.2.0-14*.rpm "$_R"/gcc-*-12.2.0-14*.rpm "$_R"/gfortran-12.2.0-14*.rpm \
+        "$_R"/libstdc++-12.2.0-14*.rpm "$_R"/libstdc++-*-12.2.0-14*.rpm \
+        "$_R"/libgomp-12.2.0-14*.rpm "$_R"/libgomp-*-12.2.0-14*.rpm \
+        "$_R"/libgcc-12.2.0-14*.rpm "$_R"/libgcc-*-12.2.0-14*.rpm 2>/dev/null
+  rm -rf "$BASE_DIR/$RELEASE_BRANCH/stage/images/sandboxBase"
+  echo "[runPh5_pinned90] Cleared >=92 toolchain RPMs + sandboxBase for glibc-2.36 bootstrap"
+
   # ── Build loop ────────────────────────────────────────────────────
   for i in $(seq 1 10); do
     # Clean stale mounts/sandboxes before each retry so failures from
