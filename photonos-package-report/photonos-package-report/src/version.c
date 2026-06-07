@@ -366,8 +366,41 @@ static int is_date_type(pr_version_type_t t)
     return t == PR_VER_DATE_VERSION || t == PR_VER_VERSION_DATE;
 }
 
+/* M159: an 8-digit YYYYMMDD-style version vs a dotted decimal-semver
+ * version (e.g. libnss-ato 20240514 vs detected upstream 0.2.0) does not
+ * represent a real "Source0 is higher than detected upstream" relationship —
+ * the two sides aren't on the same number line. PS's Rule 2 would treat
+ * the date as higher and emit the misleading "Source0 version X is higher
+ * than detected latest version Y" warning. Catch the pair here and return
+ * -2 (parse-error sentinel — caller emits empty col5, no warning). */
+static int is_8digit_date_str(const char *s)
+{
+    if (s == NULL) return 0;
+    size_t n = strlen(s);
+    if (n != 8) return 0;
+    for (size_t i = 0; i < n; i++) {
+        if (s[i] < '0' || s[i] > '9') return 0;
+    }
+    return 1;
+}
+static int is_dotted_semver_str(const char *s)
+{
+    if (s == NULL || *s == '\0') return 0;
+    if (strchr(s, '.') == NULL) return 0;
+    if (s[0] < '0' || s[0] > '9') return 0;
+    for (const char *p = s; *p; p++) {
+        if ((*p < '0' || *p > '9') && *p != '.') return 0;
+    }
+    return 1;
+}
+
 int pr_version_compare(const char *a, const char *b)
 {
+    /* M159: clearly-incomparable pair (8-digit date vs dotted semver). */
+    if ((is_8digit_date_str(a) && is_dotted_semver_str(b)) ||
+        (is_8digit_date_str(b) && is_dotted_semver_str(a))) {
+        return -2;
+    }
     pr_version_t v1 = {0}, v2 = {0};
     if (pr_version_parse(a, &v1) != 0) return -2;
     if (pr_version_parse(b, &v2) != 0) { pr_version_free(&v1); return -2; }
