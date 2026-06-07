@@ -44,6 +44,13 @@ struct pr_state {
      * cached PS snapshot). */
     char *SHA256Name;
     char *SHA512Name;
+    /* M158: the new packaging-format extension chosen by the M81/M157
+     * ext-fallback (e.g. ".tar.gz"). NULL when no ext swap happened.
+     * pr_modify_spec_file uses it to rewrite the spec's Source0 line so
+     * SPECS_NEW outputs are buildable against the downloaded tarball.
+     * Borrowed pointer into try_url_ext_fallback's static exts[]; not
+     * freed by pr_state_free. */
+    const char *Source0NewExt;
 };
 
 typedef struct pr_state pr_state_t;

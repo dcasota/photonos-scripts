@@ -107,7 +107,7 @@ static void test_default_spec(const char *tmp)
 
     int rc = pr_modify_spec_file(t, tmp, tmp, "photon-5.0",
                                  "1.2.5", "%define sha512 foo=NEWHASH",
-                                 0, NULL, "SPECS_NEW_C");
+                                 0, NULL, NULL, "SPECS_NEW_C");
     EXPECT(rc == 0);
 
     char out_path[1024];
@@ -154,7 +154,7 @@ static void test_openjdk8_version(const char *tmp)
                              lines, sizeof lines / sizeof lines[0]);
     int rc = pr_modify_spec_file(t, tmp, tmp, "photon-3.0",
                                  "402b05", "%define sha512 openjdk=NEW",
-                                 1 /* openjdk8 */, NULL, "SPECS_NEW_C");
+                                 1 /* openjdk8 */, NULL, NULL, "SPECS_NEW_C");
     EXPECT(rc == 0);
 
     char out_path[1024];
@@ -187,7 +187,7 @@ static void test_subversion_and_commit_id(const char *tmp)
                              lines, sizeof lines / sizeof lines[0]);
     int rc = pr_modify_spec_file(t, tmp, tmp, "photon-6.0",
                                  "1.1", "%define sha512 netcat=NEW",
-                                 0, "deadbeef", "SPECS_NEW_C");
+                                 0, "deadbeef", NULL, "SPECS_NEW_C");
     EXPECT(rc == 0);
     char out_path[1024];
     snprintf(out_path, sizeof out_path,
@@ -225,7 +225,7 @@ static void test_changelog_author_default(const char *tmp)
                              lines, sizeof lines / sizeof lines[0]);
     int rc = pr_modify_spec_file(t, tmp, tmp, "photon-master",
                                  "2.0", "%define sha512 foo=NEW",
-                                 0, NULL, "SPECS_NEW_C");
+                                 0, NULL, NULL, "SPECS_NEW_C");
     EXPECT(rc == 0);
     char out_path[1024];
     snprintf(out_path, sizeof out_path,
@@ -257,7 +257,7 @@ static void test_changelog_author_override(const char *tmp)
                              lines, sizeof lines / sizeof lines[0]);
     int rc = pr_modify_spec_file(t, tmp, tmp, "photon-6.0",
                                  "0.2", "%define sha512 bar=NEW",
-                                 0, NULL, "SPECS_NEW_C");
+                                 0, NULL, NULL, "SPECS_NEW_C");
     EXPECT(rc == 0);
     char out_path[1024];
     snprintf(out_path, sizeof out_path,
@@ -288,7 +288,7 @@ static void test_asc_suffix_strip(const char *tmp)
                              lines, sizeof lines / sizeof lines[0]);
     int rc = pr_modify_spec_file(t, tmp, tmp, "photon-dev",
                                  "2.0.tar.asc", "%define sha512 foo=NEW",
-                                 0, NULL, "SPECS_NEW_C");
+                                 0, NULL, NULL, "SPECS_NEW_C");
     EXPECT(rc == 0);
     /* .asc stripped from the filename — PS L 1473. */
     char out_path[1024];
