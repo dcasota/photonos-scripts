@@ -101,9 +101,19 @@ static char *funet_mirror(char *url)
  * place and return 200. Additive — only invoked on an already-failing URL, so
  * it can only turn a cat-7 empty into a working download. PS mirrors this in
  * its URL-build retry (the extension-swap loop before the packaging warning). */
-static int try_url_ext_fallback(char **url)
+/* M155: when out_old_ext and out_new_ext are non-NULL, they receive the
+ * static extension strings on success — they point into the static `exts`
+ * table and are never freed by the caller. The caller uses them to emit
+ * an "Info: Packaging format <old> has changed to <new>" warning instead
+ * of the existing "Warning: Manufacturer may changed version packaging
+ * format." which only fires when no alternate is found. */
+static int try_url_ext_fallback(char **url,
+                                const char **out_old_ext,
+                                const char **out_new_ext)
 {
     static const char *const exts[] = {".tar.xz", ".tar.gz", ".tar.bz2", ".tgz", ".zip", NULL};
+    if (out_old_ext) *out_old_ext = NULL;
+    if (out_new_ext) *out_new_ext = NULL;
     if (url == NULL || *url == NULL) return 0;
     const char *cur = NULL;
     size_t ul = strlen(*url);
@@ -117,7 +127,12 @@ static int try_url_ext_fallback(char **url)
         if (strcmp(exts[i], cur) == 0) continue;
         char *cand = NULL;
         if (asprintf(&cand, "%.*s%s", (int)base, *url, exts[i]) < 0) continue;
-        if (urlhealth(cand) == 200) { free(*url); *url = cand; return 200; }
+        if (urlhealth(cand) == 200) {
+            free(*url); *url = cand;
+            if (out_old_ext) *out_old_ext = cur;
+            if (out_new_ext) *out_new_ext = exts[i];
+            return 200;
+        }
         free(cand);
     }
     return 0;
@@ -407,9 +422,13 @@ static char *gh_no_archive_normalize(const char *save, const char *name,
  * Probes the network via urlhealth() — call only when allow_network. */
 static int pr_build_update_url(pr_task_t *task, const char *source0_save,
                                const char *version, const char *update_avail,
-                               char **out_url)
+                               char **out_url,
+                               const char **out_old_ext,
+                               const char **out_new_ext)
 {
     *out_url = NULL;
+    if (out_old_ext) *out_old_ext = NULL;
+    if (out_new_ext) *out_new_ext = NULL;
     const char *spec = task && task->Spec ? task->Spec : "";
     char *ver = dup_or_empty(version);
     char *ua  = dup_or_empty(update_avail);
@@ -518,8 +537,9 @@ static int pr_build_update_url(pr_task_t *task, const char *source0_save,
         char *t3 = ireplace_re(t2, vshort, uashort); free(t2);
         url = t3; h = urlhealth(url);
     }
-    /* M81 archive-extension fallback (L4914-4924) */
-    if (h != 200 && try_url_ext_fallback(&url) == 200) h = 200;
+    /* M81 archive-extension fallback (L4914-4924); M155 surfaces the
+     * old+new ext for the caller's "Info: Packaging format ..." warning. */
+    if (h != 200 && try_url_ext_fallback(&url, out_old_ext, out_new_ext) == 200) h = 200;
 
     free(ver); free(ua); free(s0);
     free(vshort); free(uashort); free(ua_us); free(ua_dash); free(uashort_us);
@@ -2053,10 +2073,11 @@ char *check_urlhealth(pr_task_t                       *task,
                                  * resolved state.Source0. Replaces the former
                                  * single-attempt build (deferred-M18). */
                                 char *built = NULL;
+                                const char *fmt_old = NULL, *fmt_new = NULL;
                                 int h = pr_build_update_url(
                                             task, state.Source0 ? state.Source0 : "",
                                             state.version ? state.version : "",
-                                            latest, &built);
+                                            latest, &built, &fmt_old, &fmt_new);
                                 /* M94 / PS L4853: gtest reports col5 with the
                                  * leading 'v' (PS mutates $UpdateAvailable in
                                  * place). col6/col10 already carry the 'v' via
@@ -2073,6 +2094,19 @@ char *check_urlhealth(pr_task_t                       *task,
                                 if (h == 200) {
                                     state.UpdateURL = built;
                                     state.HealthUpdateURL = dup_or_empty("200");
+                                    /* M155: signal packaging-format adoption
+                                     * when the ext-fallback succeeded with a
+                                     * different ext. Caller-side parity with
+                                     * PS L 5036-5052. */
+                                    if (fmt_old && fmt_new) {
+                                        char *info = NULL;
+                                        if (asprintf(&info,
+                                                "Info: Packaging format %s has changed to %s",
+                                                fmt_old, fmt_new) >= 0) {
+                                            free(state.Warning);
+                                            state.Warning = info;
+                                        }
+                                    }
                                 } else if (h == 0) {
                                     /* Transient network error (not a 404): keep
                                      * the built URL, report health 0, no warning
@@ -2860,10 +2894,11 @@ char *check_urlhealth(pr_task_t                       *task,
                      * template rebuild + M81 ext-fallback. Replaces the former
                      * single substitute (deferred-M18). */
                     char *built = NULL;
+                    const char *fmt_old = NULL, *fmt_new = NULL;
                     int h = pr_build_update_url(
                                 task, state.Source0 ? state.Source0 : "",
                                 state.version ? state.version : "",
-                                latest, &built);
+                                latest, &built, &fmt_old, &fmt_new);
                     if (built == NULL) built = dup_or_empty("");
                     /* M94 / PS L4853: gtest reports col5 with the leading 'v'
                      * (PS mutates $UpdateAvailable in place). col6/col10 carry
@@ -2897,6 +2932,17 @@ char *check_urlhealth(pr_task_t                       *task,
                         char buf[16];
                         snprintf(buf, sizeof buf, "%d", h);
                         state.HealthUpdateURL = strdup(buf);
+                        /* M155: signal packaging-format adoption when the
+                         * ext-fallback succeeded with a different ext. */
+                        if (h == 200 && fmt_old && fmt_new) {
+                            char *info = NULL;
+                            if (asprintf(&info,
+                                    "Info: Packaging format %s has changed to %s",
+                                    fmt_old, fmt_new) >= 0) {
+                                free(state.Warning);
+                                state.Warning = info;
+                            }
+                        }
                         if (state.UpdateURL && state.UpdateURL[0]) {
                             char *dl_name = pr_basename_from_url(state.UpdateURL);
                             if (dl_name) {
