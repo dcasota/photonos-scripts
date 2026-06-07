@@ -37,7 +37,7 @@
 
 #include "rpm_secureboot_patcher.h"
 
-#define VERSION "1.9.62"
+#define VERSION "1.9.63"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */
@@ -3889,7 +3889,7 @@ static int create_secure_boot_iso(void) {
                     "# - No `read anykey` (was a UX dead-end on installed system).\n"
                     "# - Stays in gfxterm throughout (no terminal_output switch -> no theme corruption).\n"
                     "# - GRUB script has no $(()) arithmetic; loop is unrolled.\n"
-                    "# - `sleep --verbose --interruptible 3` shows a countdown in the themed terminal\n"
+                    "# - `sleep --interruptible 3` shows a countdown in the themed terminal\n"
                     "#   and lets the operator press any key to skip the wait without REQUIRING it.\n"
                     "# - After 3 silent failures, chainloader reloads grubx64.efi for a hard rescan\n"
                     "#   (no Enter required). The cycle repeats until the dongle is present.\n"
@@ -3908,7 +3908,7 @@ static int create_secure_boot_iso(void) {
                     "# Attempt 2 (after 3s)\n"
                     "if [ \"\\\\$efuse_verified\" = \"0\" ]; then\n"
                     "    echo \"HABv4 SECURITY: eFuse USB not detected (1/3). Retrying in 3s...\"\n"
-                    "    sleep --verbose --interruptible 3\n"
+                    "    sleep --interruptible 3\n"
                     "    search --label EFUSE_SIM --set=efuse_disk\n"
                     "    if [ -n \"\\\\$efuse_disk\" ]; then\n"
                     "        if [ -f (\\\\$efuse_disk)/efuse_sim/srk_fuse.bin ]; then\n"
@@ -3920,7 +3920,7 @@ static int create_secure_boot_iso(void) {
                     "# Attempt 3 (after another 3s)\n"
                     "if [ \"\\\\$efuse_verified\" = \"0\" ]; then\n"
                     "    echo \"HABv4 SECURITY: eFuse USB not detected (2/3). Retrying in 3s...\"\n"
-                    "    sleep --verbose --interruptible 3\n"
+                    "    sleep --interruptible 3\n"
                     "    search --label EFUSE_SIM --set=efuse_disk\n"
                     "    if [ -n \"\\\\$efuse_disk\" ]; then\n"
                     "        if [ -f (\\\\$efuse_disk)/efuse_sim/srk_fuse.bin ]; then\n"
@@ -3935,7 +3935,7 @@ static int create_secure_boot_iso(void) {
                     "# devices, so chainloader is the correct primitive here.\n"
                     "if [ \"\\\\$efuse_verified\" = \"0\" ]; then\n"
                     "    echo \"HABv4 SECURITY: eFuse USB not detected (3/3). Reloading GRUB to rescan USB...\"\n"
-                    "    sleep --verbose --interruptible 3\n"
+                    "    sleep --interruptible 3\n"
                     "    chainloader /EFI/BOOT/grubx64.efi\n"
                     "    boot\n"
                     "fi\n"
@@ -4016,6 +4016,98 @@ static int create_secure_boot_iso(void) {
     } else {
         log_warn("v1.9.61: STIG vars-chroot.yml not found at %s -- skipping (no STIG hardening on this build?)",
             vars_chroot_path);
+    }
+
+    /* v1.9.63 — DEFER STIG ENTIRELY until v1.10b.
+     *
+     * Operator v1.9.61 + v1.9.62 VM test STILL drops MBR install to dracut
+     * emergency despite v1.9.61's targeted vars-chroot overrides (fips/audit
+     * boot DID get suppressed; cmdline is clean). VMDK forensic analysis
+     * revealed STIG playbook has 130+ tasks, several of which break boot in
+     * non-FIPS ways:
+     *   - /etc/modprobe.d/modprobe.conf: blacklists usb_storage (which our
+     *     v1.9.46 cmdline rd.driver.pre=...,usb_storage tries to pre-load)
+     *   - /etc/selinux/config: SELINUX=enforcing despite our
+     *     var_selinux_enforcing: 0 override (STIG ignores it)
+     *   - 100+ other modifications across PAM, audit, sysctl, sshd, systemd
+     *
+     * Whack-a-mole on individual tasks is unwinnable. Right architectural
+     * answer per cadastre methodology: defer the entire playbook until
+     * v1.10b lands the proper FIPS+SELinux+audit stack.
+     *
+     * Surgical fix: rewrite stigenable.KS_STIG_ANSIBLE = [] in place. The
+     * "Yes" path in mok_quickstart imports this constant, so it inherits
+     * the empty value: `install_config['ansible'] = []` -- installer's
+     * ansible-run loop iterates over [] and is a no-op. The
+     * KS_STIG_PACKAGES list is untouched -- additional_packages (audit,
+     * openssl-fips-provider, rsyslog, etc.) still install; only the playbook
+     * is skipped. The operator who picks "Yes" gets a MOK install with the
+     * STIG packages present but unconfigured. */
+    char stigenable_path[512];
+    snprintf(stigenable_path, sizeof(stigenable_path),
+        "%s/usr/lib/python3.14/site-packages/photon_installer/stigenable.py", initrd_extract);
+    if (file_exists(stigenable_path)) {
+        log_info("v1.9.63: deferring STIG playbook -- patching stigenable.KS_STIG_ANSIBLE = []");
+        char stig_patch_script[512];
+        snprintf(stig_patch_script, sizeof(stig_patch_script),
+            "%s/patch_stig_defer.py", work_dir);
+        FILE *spf = fopen(stig_patch_script, "w");
+        if (spf) {
+            fprintf(spf,
+                "#!/usr/bin/env python3\n"
+                "import re, sys\n"
+                "with open(sys.argv[1], 'r') as f:\n"
+                "    content = f.read()\n"
+                "\n"
+                "# Replace the KS_STIG_ANSIBLE = [...] multi-line definition with [].\n"
+                "# Pattern: starts at 'KS_STIG_ANSIBLE = [' and matches through the\n"
+                "# matching closing ']' (non-greedy across newlines).\n"
+                "pattern = re.compile(r'^KS_STIG_ANSIBLE\\s*=\\s*\\[.*?^\\]', re.MULTILINE | re.DOTALL)\n"
+                "replacement = ('KS_STIG_ANSIBLE = []  '\n"
+                "    '# v1.9.63 HABv4 patch: STIG playbook deferred to v1.10b. '\n"
+                "    '# Empty list means installer iterates over nothing -- '\n"
+                "    '# additional_packages still install, but no playbook runs. '\n"
+                "    '# See docs/plans/cadastre-dependencies-stig-workflow-v1.9.63.md')\n"
+                "\n"
+                "if pattern.search(content):\n"
+                "    content = pattern.sub(replacement, content)\n"
+                "    print('v1.9.63: KS_STIG_ANSIBLE = [] applied')\n"
+                "else:\n"
+                "    print('WARNING: KS_STIG_ANSIBLE pattern not found in stigenable.py')\n"
+                "\n"
+                "with open(sys.argv[1], 'w') as f:\n"
+                "    f.write(content)\n"
+            );
+            fclose(spf);
+            snprintf(cmd, sizeof(cmd), "python3 '%s' '%s' 2>&1", stig_patch_script, stigenable_path);
+            run_cmd(cmd);
+            snprintf(cmd, sizeof(cmd), "rm -f '%s'", stig_patch_script);
+            run_cmd(cmd);
+            log_info("v1.9.63: STIG playbook deferred -- install_config['ansible'] will be []");
+        }
+    } else {
+        log_warn("v1.9.63: stigenable.py not found at %s -- skipping STIG-defer patch",
+            stigenable_path);
+    }
+
+    /* v1.9.63 — silence pkg_resources deprecation warning in photon_installer/__init__.py.
+     * Operator reported a UserWarning at install start:
+     *   UserWarning: pkg_resources is deprecated as an API
+     * Replace `pkg_resources.get_distribution(__name__).version` with the
+     * Python 3.8+ replacement `importlib.metadata.version(__name__)`. */
+    char installer_init_path[512];
+    snprintf(installer_init_path, sizeof(installer_init_path),
+        "%s/usr/lib/python3.14/site-packages/photon_installer/__init__.py", initrd_extract);
+    if (file_exists(installer_init_path)) {
+        log_info("v1.9.63: silencing pkg_resources deprecation in photon_installer/__init__.py");
+        snprintf(cmd, sizeof(cmd),
+            "sed -i "
+            "-e 's|^import pkg_resources$|from importlib.metadata import version  # v1.9.63 HABv4 patch|' "
+            "-e 's|pkg_resources\\.get_distribution(__name__)\\.version|version(__name__)|' "
+            "'%s'",
+            installer_init_path);
+        run_cmd(cmd);
+        log_info("v1.9.63: pkg_resources import replaced with importlib.metadata.version");
     }
 
     /* Integrate driver RPMs if --drivers specified
