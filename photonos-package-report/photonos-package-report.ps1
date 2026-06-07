@@ -5036,20 +5036,24 @@ function CheckURLHealth {
                                             #
                                             # M155: when an alternate succeeds, emit an INFORMATIONAL
                                             # warning ("Info: Packaging format <old> has changed to
-                                            # <new>") instead of leaving col11 empty. This signals
-                                            # downstream consumers (operator review, automated SPECS_NEW
-                                            # adoption pipelines) that the new tarball + SHA in col6/9/10
-                                            # require a Source0-extension edit in the spec file before
-                                            # they can be consumed. col6/col7/col9/col10 are populated
-                                            # by the existing code path (no behaviour change for the
-                                            # download/hash flow); only col11 changes from "" → "Info:…".
-                                            # Preserve the existing "Warning: Manufacturer may changed
-                                            # version packaging format." for the truly-not-found case.
+                                            # <new>") instead of leaving col11 empty.
+                                            #
+                                            # M157: build candidates from the CLEAN Source0 + UpdateAvailable
+                                            # form, not from $UpdateURL. The prior version-format retries
+                                            # at L5001-5028 mutate $UpdateURL through .Replace(".","_") /
+                                            # .Replace(".","-") variants that don't match real upstream
+                                            # tarballs (e.g. libXau-1_0_12.tar.xz doesn't exist; only
+                                            # libXau-1.0.12.tar.xz does). So $UpdateURL by the time we
+                                            # reach this block is a polluted form, and ext-swapping its
+                                            # tail produces unreachable candidates regardless of the
+                                            # extension chosen. Rebuild from Source0Save + the dotted
+                                            # UpdateAvailable so each ext-swap is on a clean URL.
+                                            $cleanUpdateURL = $Source0Save -ireplace $version, $UpdateAvailable
                                             $source0OldExt = ""
-                                            if ($UpdateURL -match '(\.tar\.(xz|gz|bz2)|\.tgz|\.zip)$') { $source0OldExt = $matches[1] }
+                                            if ($cleanUpdateURL -match '(\.tar\.(xz|gz|bz2)|\.tgz|\.zip)$') { $source0OldExt = $matches[1] }
                                             foreach ($ext in @('.tar.xz','.tar.gz','.tar.bz2','.tgz','.zip')) {
-                                                $cand = $UpdateURL -replace '(\.tar\.(xz|gz|bz2)|\.tgz|\.zip)$', $ext
-                                                if ($cand -ne $UpdateURL) {
+                                                $cand = $cleanUpdateURL -replace '(\.tar\.(xz|gz|bz2)|\.tgz|\.zip)$', $ext
+                                                if ($cand -ne $cleanUpdateURL) {
                                                     if ((urlhealth($cand)) -eq "200") {
                                                         $UpdateURL=$cand; $HealthUpdateURL="200"
                                                         if (-not [string]::IsNullOrEmpty($source0OldExt)) {

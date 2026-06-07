@@ -538,8 +538,24 @@ static int pr_build_update_url(pr_task_t *task, const char *source0_save,
         url = t3; h = urlhealth(url);
     }
     /* M81 archive-extension fallback (L4914-4924); M155 surfaces the
-     * old+new ext for the caller's "Info: Packaging format ..." warning. */
-    if (h != 200 && try_url_ext_fallback(&url, out_old_ext, out_new_ext) == 200) h = 200;
+     * old+new ext for the caller's "Info: Packaging format ..." warning.
+     *
+     * M157: ext-fallback operates on a CLEAN copy of attempt-A's url
+     * (s0 with dotted ua). The intermediate attempts B-G mutate url
+     * with .Replace(".","_") / .Replace(".","-") variants that don't
+     * match real upstream tarballs (e.g. libXau-1_0_12.tar.xz doesn't
+     * exist; only libXau-1.0.12.tar.xz does). Probing ext-swaps of
+     * those polluted forms returns 404 for every extension. By rebuilding
+     * the clean form before the swap loop, the ext-fallback finds the
+     * real upstream tarball (mirrors PS M157 at L 5051). */
+    if (h != 200) {
+        char *url_clean = strdup(url_A);
+        if (try_url_ext_fallback(&url_clean, out_old_ext, out_new_ext) == 200) {
+            free(url); url = url_clean; h = 200;
+        } else {
+            free(url_clean);
+        }
+    }
 
     free(ver); free(ua); free(s0);
     free(vshort); free(uashort); free(ua_us); free(ua_dash); free(uashort_us);
