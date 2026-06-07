@@ -37,7 +37,7 @@
 
 #include "rpm_secureboot_patcher.h"
 
-#define VERSION "1.9.65"
+#define VERSION "1.9.66"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */
@@ -1350,7 +1350,59 @@ static int download_ventoy_components_fallback(void) {
             snprintf(cmd, sizeof(cmd), "cp '%s/EFI/BOOT/MokManager.efi' '%s/MokManager-suse.efi'",
                 mount_point, cfg.keys_dir);
             run_cmd(cmd);
-            
+
+            /* v1.9.66 — RESTORE M31: extract IA32 binaries from the Ventoy disk
+             * image so /EFI/BOOT/BOOTIA32.EFI + grubia32.efi + grubia32_real.efi
+             * + mmia32.efi land on the build ISO.
+             *
+             * Why: a wave of mid-2010s devices (Intel Compute Stick, Intel
+             * Classmate PC, ASUS Transformer T-series, early Intel-based Macs)
+             * shipped with 64-bit CPUs but HARDLOCKED 32-bit UEFI firmware and
+             * NO CSM/Legacy BIOS fallback. They cannot run 16-bit MBR floppy
+             * code. They strictly require /EFI/BOOT/BOOTIA32.EFI on attached
+             * boot media (USB stick / ISO) to start any OS.
+             *
+             * The FEB-2026 Photon-SB ISO shipped these binaries; the JUN ISO
+             * regressed (tracked as M31 in TODO §5.X, previously deferred).
+             * v1.9.66 restores parity. The four `cp` calls below use
+             * `|| true` because Ventoy archive layout occasionally omits
+             * grubia32_real.efi -- losing only the GRUB-original chainload
+             * option, not the boot path itself.
+             *
+             * Downstream copy logic at create_secure_boot_iso() lines ~4502
+             * and ~4707 (existing since v1.2.0) checks file_exists(ia32_shim)
+             * and copies to /EFI/BOOT/ in both efiboot.img and the ISO root
+             * when present. */
+            snprintf(cmd, sizeof(cmd),
+                "cp '%s/EFI/BOOT/BOOTIA32.EFI' '%s/shim-ia32.efi' 2>/dev/null || true",
+                mount_point, cfg.keys_dir);
+            run_cmd(cmd);
+
+            snprintf(cmd, sizeof(cmd),
+                "cp '%s/EFI/BOOT/grubia32.efi' '%s/ventoy-preloader-ia32.efi' 2>/dev/null || true",
+                mount_point, cfg.keys_dir);
+            run_cmd(cmd);
+
+            snprintf(cmd, sizeof(cmd),
+                "cp '%s/EFI/BOOT/grubia32_real.efi' '%s/ventoy-grub-real-ia32.efi' 2>/dev/null || true",
+                mount_point, cfg.keys_dir);
+            run_cmd(cmd);
+
+            snprintf(cmd, sizeof(cmd),
+                "cp '%s/EFI/BOOT/mmia32.efi' '%s/MokManager-ia32.efi' 2>/dev/null || true",
+                mount_point, cfg.keys_dir);
+            run_cmd(cmd);
+
+            /* Report what was extracted (best-effort visibility) */
+            char ia32_check[512];
+            snprintf(ia32_check, sizeof(ia32_check), "%s/shim-ia32.efi", cfg.keys_dir);
+            if (file_exists(ia32_check)) {
+                log_info("v1.9.66: IA32 binaries extracted from Ventoy for 32-bit UEFI laptop support");
+            } else {
+                log_warn("v1.9.66: Ventoy archive did not contain IA32 binaries -- 32-bit UEFI laptop boot will NOT work");
+                log_warn("v1.9.66: Affected hardware: Intel Compute Stick, Classmate PC, ASUS Transformer, early Intel Macs with 32-bit UEFI");
+            }
+
             snprintf(cmd, sizeof(cmd), "umount '%s'", mount_point);
             run_cmd(cmd);
         }
@@ -3909,6 +3961,19 @@ static int create_secure_boot_iso(void) {
                     "# table at all but part_msdos doesn't hurt).\n"
                     "insmod fat\n"
                     "insmod part_msdos\n"
+                    "insmod biosdisk\n"
+                    "\n"
+                    "# v1.9.66 DIAGNOSTIC: print all enumerated block devices BEFORE\n"
+                    "# the first search. If EFUSE_SIM is on a device that GRUB sees,\n"
+                    "# it will be in this list. If the floppy/SATA-vmdk isn't visible\n"
+                    "# at all, we know it's a firmware/enumeration issue, not a search\n"
+                    "# bug. Sleep briefly so operator can read the list.\n"
+                    "echo \"\"\n"
+                    "echo \"v1.9.66 DIAG: block devices GRUB enumerates:\"\n"
+                    "ls\n"
+                    "echo \"\"\n"
+                    "echo \"v1.9.66 DIAG: searching for EFUSE_SIM label across all FAT/ext volumes...\"\n"
+                    "sleep --interruptible 2\n"
                     "\n"
                     "set efuse_verified=0\n"
                     "\n"
