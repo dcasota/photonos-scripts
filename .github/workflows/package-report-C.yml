@@ -272,6 +272,22 @@ jobs:
         id: c_run
         env:
           GITHUB_TOKEN:    ${{ secrets.GITHUB_TOKEN }}
+          # M154: GitLab freedesktop.org credentials — same cascade as PS
+          # (repo secret > runner host env > literal fallback "ci-runner"/"none").
+          # Passed under "_SECRET" names so an empty repo secret does not
+          # shadow a host-env value of the same name on the self-hosted
+          # runner. The C binary's main.c reads GITLAB_FREEDESKTOP_ORG_USERNAME
+          # /_TOKEN via env_or() (L 107-108); M154's
+          # configure_gitlab_freedesktop_credentials() then writes them into
+          # `git config --global credential.https://gitlab.freedesktop.org.*`
+          # so per-spec `git clone` calls (cairo, dbus, fontconfig, libdrm,
+          # libmbim, libqmi, libslirp, libX11/xcb/Xinerama, mesa, gstreamer,
+          # pixman, polkit, wayland, etc.) authenticate. When unset the
+          # cascade lands on ("ci-runner","none") and M154 skips the git
+          # config update so it doesn't overwrite whatever credentials the
+          # prior PS run wrote.
+          GITLAB_FREEDESKTOP_ORG_USERNAME_SECRET: ${{ secrets.GITLAB_FREEDESKTOP_ORG_USERNAME }}
+          GITLAB_FREEDESKTOP_ORG_TOKEN_SECRET: ${{ secrets.GITLAB_FREEDESKTOP_ORG_TOKEN }}
           # check_urlhealth() gates all network work (urlhealth HEAD
           # probes + pr_clone_ensure tag-detect chain) on this env var
           # so ctest stays offline-hermetic by default. CI parity NEEDS
@@ -313,6 +329,24 @@ jobs:
           PR_LAST_NAME: ${{ github.event.inputs.last_name }}
           PR_EMAIL_ADDRESS: ${{ github.event.inputs.email_address }}
         run: |
+          # M154: resolve GitLab credentials with the same cascade as PS
+          # (.github/workflows/package-report.yml L 199-210). Repo secret
+          # wins, then runner host env, then literal CI fallback. The C
+          # binary's main.c env_or() picks the resolved value up; M154's
+          # configure helper then `git config --global`s it.
+          if [ -n "${GITLAB_FREEDESKTOP_ORG_USERNAME_SECRET:-}" ]; then
+            export GITLAB_FREEDESKTOP_ORG_USERNAME="$GITLAB_FREEDESKTOP_ORG_USERNAME_SECRET"
+          fi
+          if [ -z "${GITLAB_FREEDESKTOP_ORG_USERNAME:-}" ]; then
+            export GITLAB_FREEDESKTOP_ORG_USERNAME="ci-runner"
+          fi
+          if [ -n "${GITLAB_FREEDESKTOP_ORG_TOKEN_SECRET:-}" ]; then
+            export GITLAB_FREEDESKTOP_ORG_TOKEN="$GITLAB_FREEDESKTOP_ORG_TOKEN_SECRET"
+          fi
+          if [ -z "${GITLAB_FREEDESKTOP_ORG_TOKEN:-}" ]; then
+            export GITLAB_FREEDESKTOP_ORG_TOKEN="none"
+          fi
+
           cd repo/photonos-package-report/photonos-package-report
           WDIR="${{ steps.reconstruct.outputs.wdir }}"
           UPSTREAMS="${{ steps.reconstruct.outputs.upstreams }}"

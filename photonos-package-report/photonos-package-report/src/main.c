@@ -25,6 +25,9 @@
 #include <getopt.h>
 #include <locale.h>
 #include <pwd.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <sys/wait.h>
 
 #include "pr_types.h"
 #include "pr_check_urlhealth.h"
@@ -38,6 +41,66 @@
 /* Forward declarations for helper subcommands. */
 static int dump_tasks_main(const char *working_dir, const char *branch);
 static int generate_urlhealth_main(const pr_params_t *params, const char *branch);
+
+/* M154: mirror PS L 5806-5808. Configure the global git credentials for the
+ * gitlab.freedesktop.org family so subsequent `git clone` calls from the
+ * C binary (per_spec/Source0Lookup-driven clones of cairo, dbus, fontconfig,
+ * libdrm, libmbim, libqmi, libslirp, libX11/xcb/Xinerama, mesa, gstreamer,
+ * pixman, polkit, wayland, etc.) can authenticate. Without this the C run
+ * silently inherits whatever the host's global git config happens to hold —
+ * normally the credentials a prior PS run wrote, a stealth dependency that
+ * fails on a fresh runner. Mirrors PS verbatim: same key path, same `git
+ * config --global` invocation, no shell. */
+static int set_git_credential_field(const char *url_prefix,
+                                    const char *field,
+                                    const char *value)
+{
+    char key[256];
+    int n = snprintf(key, sizeof key, "credential.%s.%s", url_prefix, field);
+    if (n <= 0 || (size_t)n >= sizeof key) return -1;
+    pid_t pid = fork();
+    if (pid < 0) {
+        fprintf(stderr, "WARNING: fork() for git config: %s\n", strerror(errno));
+        return -1;
+    }
+    if (pid == 0) {
+        /* Child: silence git's stdout/stderr — success is the common path
+         * and we don't want spurious noise in the workflow log. The token
+         * is passed as the final argv element; same exposure profile as
+         * the PS port at L 5808. */
+        int devnull = open("/dev/null", O_WRONLY);
+        if (devnull >= 0) {
+            dup2(devnull, STDOUT_FILENO);
+            dup2(devnull, STDERR_FILENO);
+            close(devnull);
+        }
+        execlp("git", "git", "config", "--global", key, value, (char *)NULL);
+        _exit(127);
+    }
+    int wstatus = 0;
+    if (waitpid(pid, &wstatus, 0) < 0) return -1;
+    return (WIFEXITED(wstatus) && WEXITSTATUS(wstatus) == 0) ? 0 : -1;
+}
+
+static void configure_gitlab_freedesktop_credentials(const pr_params_t *p)
+{
+    const char *u = p->gitlab_freedesktop_org_username;
+    const char *t = p->gitlab_freedesktop_org_token;
+    if (u == NULL || u[0] == '\0' || t == NULL || t[0] == '\0') return;
+    /* Workflow wrapper sets ("ci-runner", "none") when no real credentials
+     * are wired (see .github/workflows/package-report.yml). Writing those
+     * sentinel values into the global config would OVERRIDE a real
+     * credential that a prior PS run left behind — strictly worse than
+     * doing nothing. Skip them. */
+    if (strcmp(u, "ci-runner") == 0 && strcmp(t, "none") == 0) return;
+    const char *url = "https://gitlab.freedesktop.org";
+    if (set_git_credential_field(url, "username", u) != 0 ||
+        set_git_credential_field(url, "password", t) != 0) {
+        fprintf(stderr,
+                "WARNING: failed to set gitlab.freedesktop.org git credentials; "
+                "gitlab.freedesktop.org clones may fall back to anonymous access\n");
+    }
+}
 
 /* Helper: getenv() returning const char *""  rather than NULL,
  * matching the PS implicit-empty semantics for $env:FOO when unset. */
@@ -285,6 +348,11 @@ int main(int argc, char **argv)
     printf("GeneratePh3toPh4DiffHigherPackageVersionReport=%d\n",               params.GeneratePh3toPh4DiffHigherPackageVersionReport);
     }
 
+    /* M154: configure gitlab.freedesktop.org git credentials before any
+     * code path that may shell out to `git clone`. Mirrors PS L 5806-5808.
+     * --dump-tasks is a parity helper that doesn't clone, so the call sits
+     * AFTER the dump-tasks short-circuit guard. */
+
     /* ===== Phase 2 parity helper: --dump-tasks <branch> ============
      * Bypasses the rest of the PS workflow and emits the ParseDirectory
      * result as one JSON line per task, in PS source order. The parity
@@ -293,6 +361,8 @@ int main(int argc, char **argv)
     if (dump_tasks_branch != NULL && dump_tasks_branch[0] != '\0') {
         return dump_tasks_main(params.workingDir, dump_tasks_branch);
     }
+
+    configure_gitlab_freedesktop_credentials(&params);
 
     if (generate_urlhealth_branch != NULL && generate_urlhealth_branch[0] != '\0') {
         return generate_urlhealth_main(&params, generate_urlhealth_branch);

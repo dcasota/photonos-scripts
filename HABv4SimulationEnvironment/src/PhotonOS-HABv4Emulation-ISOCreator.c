@@ -37,7 +37,7 @@
 
 #include "rpm_secureboot_patcher.h"
 
-#define VERSION "1.9.58"
+#define VERSION "1.9.64"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */
@@ -3762,16 +3762,101 @@ static int create_secure_boot_iso(void) {
          * Using rd.driver.pre kernel parameter is cleaner than dracut config files
          * because it's visible in grub.cfg and doesn't require modifying initrd.
          */
-        snprintf(cmd, sizeof(cmd), 
-            "sed -i 's/EXTRA_PARAMS=\"\"/EXTRA_PARAMS=\"rootwait usbcore.autosuspend=-1 rd.driver.pre=xhci_pci,ehci_pci,usb_storage\"/' '%s'", 
+        /* v1.9.59: `quiet splash` added to suppress kernel dmesg flood on first boot.
+         * v1.9.60: drop `splash` because Photon's `/boot/systemd.cfg` ships
+         * `plymouth.enable=0`, so `splash` is a dead promise — Plymouth never
+         * starts, no graphical splash, and the operator still sees raw dmesg.
+         * Keep `quiet` (suppresses verbose dmesg) so the screen stays clean
+         * even without a Plymouth take-over. */
+        snprintf(cmd, sizeof(cmd),
+            "sed -i 's/EXTRA_PARAMS=\"\"/EXTRA_PARAMS=\"rootwait usbcore.autosuspend=-1 rd.driver.pre=xhci_pci,ehci_pci,usb_storage quiet\"/' '%s'",
             grub_setup_script);
         run_cmd(cmd);
-        
+
         /* Also ensure EXTRA_PARAMS are added even when not empty (nvme case) */
-        snprintf(cmd, sizeof(cmd), 
-            "sed -i 's/EXTRA_PARAMS=rootwait$/EXTRA_PARAMS=\"rootwait usbcore.autosuspend=-1 rd.driver.pre=xhci_pci,ehci_pci,usb_storage\"/' '%s'", 
+        snprintf(cmd, sizeof(cmd),
+            "sed -i 's/EXTRA_PARAMS=rootwait$/EXTRA_PARAMS=\"rootwait usbcore.autosuspend=-1 rd.driver.pre=xhci_pci,ehci_pci,usb_storage quiet\"/' '%s'",
             grub_setup_script);
         run_cmd(cmd);
+
+        /* v1.9.61: fix GRUB themed-menu `?` glyphs by ALSO loading the Unicode
+         * theme font. mk-setup-grub.sh hardcodes `loadfont ascii` which only
+         * loads ASCII glyphs; Photon's themed gfxterm uses Unicode box-drawing
+         * + extended chars that render as `?` without a proper font. Inject
+         * `loadfont ${BOOT_DIR}/grub2/themes/photon/dejavu_10.pf2` right after
+         * the existing `loadfont ascii` so both are loaded (gfxterm falls back
+         * gracefully when a glyph is missing in one and present in the other).
+         * The dejavu_10.pf2 is shipped by Photon's `grub2-theme-photon`. */
+        snprintf(cmd, sizeof(cmd),
+            "sed -i '/^loadfont ascii$/a loadfont ${BOOT_DIR}/grub2/themes/photon/dejavu_10.pf2' '%s'",
+            grub_setup_script);
+        run_cmd(cmd);
+        log_info("v1.9.61: injected `loadfont dejavu_10.pf2` after `loadfont ascii`");
+
+        /* v1.9.60 — DEFENSIVE: append a post-heredoc sed inside mk-setup-grub.sh
+         * to strip ` fips=1` from the freshly-written /boot/grub2/grub.cfg.
+         * Photon's installer (installer.py:1701) appends `fips=1` to the kernel
+         * cmdline when `install_config['security']['fips']=True`, and some path
+         * in the photon-installer + mok_quickstart `Yes-ESX` hardening flow
+         * also injects `audit=1 ima_hash=sha256` (exact source still under
+         * investigation as of v1.9.60). With `CRYPTO_FIPS=n` (rolled back in
+         * v1.9.54) and NO FIPS userland (`/etc/system-fips` absent), dracut's
+         * `90fips` module reads `fips=1`, checks for `/etc/system-fips`, fails,
+         * and drops to initramfs emergency — that is exactly the boot the
+         * operator hit with v1.9.59. Stripping `fips=1` post-write makes the
+         * dracut check a no-op. The proper fix (full FIPS stack with userland
+         * + dracut fips module configured) is filed for v1.10b in
+         * [[project-photon-installer-fips1-template-trap]].
+         *
+         * We inject the sed right after the heredoc `EOF` line (which mk-setup-
+         * grub.sh closes the `cat > grub.cfg << EOF ... EOF` block). The
+         * mk-setup-grub.sh ends with the `umask "${old_umask}"` restore — we
+         * insert the strip BEFORE that line so the file still finishes cleanly. */
+        log_info("v1.9.60: injecting defensive fips=1 strip into mk-setup-grub.sh");
+        char fips_strip_script[512];
+        snprintf(fips_strip_script, sizeof(fips_strip_script), "%s/patch_fips_strip.py", work_dir);
+        FILE *fpf = fopen(fips_strip_script, "w");
+        if (fpf) {
+            fprintf(fpf,
+                "#!/usr/bin/env python3\n"
+                "import sys\n"
+                "with open(sys.argv[1], 'r') as f:\n"
+                "    content = f.read()\n"
+                "\n"
+                "# Append the strip BEFORE the final `umask` restore.\n"
+                "# This runs AFTER the heredoc has written /boot/grub2/grub.cfg.\n"
+                "strip_block = '''\n"
+                "# v1.9.60 HABv4 defensive: strip fips=1 from the just-written grub.cfg.\n"
+                "# CRYPTO_FIPS=n kernel + no /etc/system-fips userland -> dracut 90fips\n"
+                "# would otherwise drop first boot to emergency. Re-enable in v1.10b when\n"
+                "# the full FIPS stack ships.\n"
+                "sed -i \\\\\n"
+                "  -e 's/ fips=1//g' \\\\\n"
+                "  -e 's/ audit=1//g' \\\\\n"
+                "  -e 's/ ima_hash=sha256//g' \\\\\n"
+                "  \"${BUILDROOT}\"/boot/grub2/grub.cfg\n"
+                "'''\n"
+                "\n"
+                "# Insert before the final `umask` line\n"
+                "marker = 'umask \"${old_umask}\"'\n"
+                "if marker in content:\n"
+                "    content = content.replace(marker, strip_block + '\\n' + marker)\n"
+                "    print('v1.9.60: fips=1/audit=1/ima_hash=sha256 strip injected before final umask')\n"
+                "else:\n"
+                "    # Marker missing -- append at end as a fallback\n"
+                "    content = content + '\\n' + strip_block + '\\n'\n"
+                "    print('v1.9.60: marker not found, appended strip at EOF')\n"
+                "\n"
+                "with open(sys.argv[1], 'w') as f:\n"
+                "    f.write(content)\n"
+            );
+            fclose(fpf);
+            snprintf(cmd, sizeof(cmd), "python3 '%s' '%s' 2>&1", fips_strip_script, grub_setup_script);
+            run_cmd(cmd);
+            snprintf(cmd, sizeof(cmd), "rm -f '%s'", fips_strip_script);
+            run_cmd(cmd);
+            log_info("v1.9.60: fips=1/audit=1/ima_hash=sha256 strip injected into mk-setup-grub.sh");
+        }
         
         log_info("Patched mk-setup-grub.sh: Added USB boot params with rd.driver.pre");
         
@@ -3800,33 +3885,63 @@ static int create_secure_boot_iso(void) {
                     "    content = f.read()\n"
                     "\n"
                     "# eFuse verification code to inject before menuentry\n"
+                    "# v1.9.59: auto-retry 3x with 3s sleep between attempts.\n"
+                    "# - No `read anykey` (was a UX dead-end on installed system).\n"
+                    "# - Stays in gfxterm throughout (no terminal_output switch -> no theme corruption).\n"
+                    "# - GRUB script has no $(()) arithmetic; loop is unrolled.\n"
+                    "# - `sleep --interruptible 3` shows a countdown in the themed terminal\n"
+                    "#   and lets the operator press any key to skip the wait without REQUIRING it.\n"
+                    "# - After 3 silent failures, chainloader reloads grubx64.efi for a hard rescan\n"
+                    "#   (no Enter required). The cycle repeats until the dongle is present.\n"
                     "efuse_code = '''\n"
-                    "# HABv4 eFuse USB Verification\n"
+                    "# HABv4 eFuse USB Verification (v1.9.59 auto-retry)\n"
                     "set efuse_verified=0\n"
-                    "search --no-floppy --label EFUSE_SIM --set=efuse_disk\n"
+                    "\n"
+                    "# Attempt 1 (immediate)\n"
+                    "search --label EFUSE_SIM --set=efuse_disk\n"
                     "if [ -n \"\\\\$efuse_disk\" ]; then\n"
                     "    if [ -f (\\\\$efuse_disk)/efuse_sim/srk_fuse.bin ]; then\n"
                     "        set efuse_verified=1\n"
                     "    fi\n"
                     "fi\n"
+                    "\n"
+                    "# Attempt 2 (after 3s)\n"
                     "if [ \"\\\\$efuse_verified\" = \"0\" ]; then\n"
-                    "    terminal_output console\n"
-                    "    echo \"\"\n"
-                    "    echo \"=========================================\"\n"
-                    "    echo \"  HABv4 SECURITY: eFuse USB Required\"\n"
-                    "    echo \"=========================================\"\n"
-                    "    echo \"\"\n"
-                    "    echo \"Insert eFuse USB dongle (label: EFUSE_SIM)\"\n"
-                    "    echo \"and press any key to rescan USB devices.\"\n"
-                    "    echo \"\"\n"
-                    "    echo \"NOTE: GRUB will reload to detect newly plugged USB devices.\"\n"
-                    "    read anykey\n"
-                    "    # Chainloader reloads GRUB EFI binary, forcing USB device rescan\n"
-                    "    # configfile only reloads config without rescanning devices\n"
-                    "    chainloader /EFI/BOOT/grubx64.efi\n"
+                    "    echo \"HABv4 SECURITY: eFuse USB not detected (1/3). Retrying in 3s...\"\n"
+                    "    sleep --interruptible 3\n"
+                    "    search --label EFUSE_SIM --set=efuse_disk\n"
+                    "    if [ -n \"\\\\$efuse_disk\" ]; then\n"
+                    "        if [ -f (\\\\$efuse_disk)/efuse_sim/srk_fuse.bin ]; then\n"
+                    "            set efuse_verified=1\n"
+                    "        fi\n"
+                    "    fi\n"
                     "fi\n"
-                    "# Restore graphical terminal for themed boot menu after eFuse verification\n"
-                    "terminal_output gfxterm\n"
+                    "\n"
+                    "# Attempt 3 (after another 3s)\n"
+                    "if [ \"\\\\$efuse_verified\" = \"0\" ]; then\n"
+                    "    echo \"HABv4 SECURITY: eFuse USB not detected (2/3). Retrying in 3s...\"\n"
+                    "    sleep --interruptible 3\n"
+                    "    search --label EFUSE_SIM --set=efuse_disk\n"
+                    "    if [ -n \"\\\\$efuse_disk\" ]; then\n"
+                    "        if [ -f (\\\\$efuse_disk)/efuse_sim/srk_fuse.bin ]; then\n"
+                    "            set efuse_verified=1\n"
+                    "        fi\n"
+                    "    fi\n"
+                    "fi\n"
+                    "\n"
+                    "# After 3 silent attempts, reload GRUB EFI to force a hard USB rescan.\n"
+                    "# This does NOT require keystroke; the cycle auto-repeats until the dongle\n"
+                    "# is plugged in. Note: configfile only reloads config without rescanning\n"
+                    "# devices, so chainloader is the correct primitive here.\n"
+                    "if [ \"\\\\$efuse_verified\" = \"0\" ]; then\n"
+                    "    echo \"HABv4 SECURITY: eFuse USB not detected (3/3). Reloading GRUB to rescan USB...\"\n"
+                    "    sleep --interruptible 3\n"
+                    "    chainloader /EFI/BOOT/grubx64.efi\n"
+                    "    boot\n"
+                    "fi\n"
+                    "\n"
+                    "# eFuse verified -- fall through to the menuentry below.\n"
+                    "# No terminal_output switch happened, so themed gfxterm state is intact.\n"
                     "\n"
                     "'''\n"
                     "\n"
@@ -3855,7 +3970,260 @@ static int create_secure_boot_iso(void) {
     } else {
         log_warn("mk-setup-grub.sh not found in initrd - grub.cfg may have suboptimal settings");
     }
-    
+
+    /* v1.9.61: ROOT-CAUSE FIX for dracut emergency on first boot.
+     *
+     * Forensic analysis of v1.9.60-installed VM revealed that `audit=1 fips=1
+     * ima_hash=sha256` are appended to /boot/grub2/grub.cfg by Photon's STIG
+     * Ansible playbook (`/usr/share/ansible/stig-hardening/playbook.yml`),
+     * NOT by mk-setup-grub.sh or installer.py. The STIG tasks responsible:
+     *   - photon.yml:876  PHTN-50-000080 Add audit=1   (gated by run_auditd_boot_enable)
+     *   - photon.yml:1191 PHTN-50-000182 Add fips=1    (gated by run_fips_boot_enable)
+     *   - photon.yml:1197 PHTN-50-000182 Add ima_hash=sha256 when fips=1 active
+     * STIG runs AFTER mk-setup-grub.sh (triggered by `install_config['ansible']`
+     * when the operator selects "Yes" on the StigEnable screen), so the v1.9.60
+     * defensive sed strip inside mk-setup-grub.sh is bypassed.
+     *
+     * Because Photon's full FIPS stack is NOT integrated in v1.9.x (no
+     * /etc/system-fips, no openssl-fips userland, CRYPTO_FIPS=n kernel after
+     * v1.9.54 rollback), `fips=1` in cmdline tells dracut's 90fips module to
+     * enter FIPS mode -> checks for /etc/system-fips -> fails -> initramfs
+     * emergency, blocking systemd-fsck-root and Ctrl-D continue. Full FIPS
+     * stack remains filed for v1.10b per project_photon_installer_fips1_template_trap.
+     *
+     * Surgical fix: append `run_fips_boot_enable: false` and `run_auditd_boot_enable:
+     * false` to STIG vars-chroot.yml. STIG loads this file as extra-vars
+     * (stigenable.py:19), so it overrides defaults/main.yml. The ima_hash=sha256
+     * task is gated on `fips=1` being present, so disabling fips_boot_enable
+     * auto-skips ima_hash too. */
+    char vars_chroot_path[512];
+    snprintf(vars_chroot_path, sizeof(vars_chroot_path),
+        "%s/usr/share/ansible/stig-hardening/vars-chroot.yml", initrd_extract);
+    if (file_exists(vars_chroot_path)) {
+        log_info("v1.9.61: patching STIG vars-chroot.yml to disable run_fips_boot_enable + run_auditd_boot_enable");
+        snprintf(cmd, sizeof(cmd),
+            "{ echo ''; "
+            "echo '# v1.9.61 HABv4 patch: disable STIG cmdline-modifying tasks until v1.10b.'; "
+            "echo '# Reason: Photon full FIPS stack is not integrated (no /etc/system-fips,'; "
+            "echo '# no openssl-fips userland, CRYPTO_FIPS=n in kernel). fips=1 in cmdline'; "
+            "echo '# triggers dracut 90fips emergency on first boot. See project_photon_installer_fips1_template_trap.'; "
+            "echo 'run_fips_boot_enable: false'; "
+            "echo 'run_auditd_boot_enable: false'; "
+            "} >> '%s'",
+            vars_chroot_path);
+        run_cmd(cmd);
+        log_info("v1.9.61: STIG vars-chroot.yml patched -- audit=1 / fips=1 / ima_hash=sha256 will NOT be added to grub.cfg");
+    } else {
+        log_warn("v1.9.61: STIG vars-chroot.yml not found at %s -- skipping (no STIG hardening on this build?)",
+            vars_chroot_path);
+    }
+
+    /* v1.9.63 — DEFER STIG ENTIRELY until v1.10b.
+     *
+     * Operator v1.9.61 + v1.9.62 VM test STILL drops MBR install to dracut
+     * emergency despite v1.9.61's targeted vars-chroot overrides (fips/audit
+     * boot DID get suppressed; cmdline is clean). VMDK forensic analysis
+     * revealed STIG playbook has 130+ tasks, several of which break boot in
+     * non-FIPS ways:
+     *   - /etc/modprobe.d/modprobe.conf: blacklists usb_storage (which our
+     *     v1.9.46 cmdline rd.driver.pre=...,usb_storage tries to pre-load)
+     *   - /etc/selinux/config: SELINUX=enforcing despite our
+     *     var_selinux_enforcing: 0 override (STIG ignores it)
+     *   - 100+ other modifications across PAM, audit, sysctl, sshd, systemd
+     *
+     * Whack-a-mole on individual tasks is unwinnable. Right architectural
+     * answer per cadastre methodology: defer the entire playbook until
+     * v1.10b lands the proper FIPS+SELinux+audit stack.
+     *
+     * Surgical fix: rewrite stigenable.KS_STIG_ANSIBLE = [] in place. The
+     * "Yes" path in mok_quickstart imports this constant, so it inherits
+     * the empty value: `install_config['ansible'] = []` -- installer's
+     * ansible-run loop iterates over [] and is a no-op. The
+     * KS_STIG_PACKAGES list is untouched -- additional_packages (audit,
+     * openssl-fips-provider, rsyslog, etc.) still install; only the playbook
+     * is skipped. The operator who picks "Yes" gets a MOK install with the
+     * STIG packages present but unconfigured. */
+    char stigenable_path[512];
+    snprintf(stigenable_path, sizeof(stigenable_path),
+        "%s/usr/lib/python3.14/site-packages/photon_installer/stigenable.py", initrd_extract);
+    if (file_exists(stigenable_path)) {
+        log_info("v1.9.63: deferring STIG playbook -- patching stigenable.KS_STIG_ANSIBLE = []");
+        char stig_patch_script[512];
+        snprintf(stig_patch_script, sizeof(stig_patch_script),
+            "%s/patch_stig_defer.py", work_dir);
+        FILE *spf = fopen(stig_patch_script, "w");
+        if (spf) {
+            fprintf(spf,
+                "#!/usr/bin/env python3\n"
+                "import re, sys\n"
+                "with open(sys.argv[1], 'r') as f:\n"
+                "    content = f.read()\n"
+                "\n"
+                "# Replace the KS_STIG_ANSIBLE = [...] multi-line definition with [].\n"
+                "# Pattern: starts at 'KS_STIG_ANSIBLE = [' and matches through the\n"
+                "# matching closing ']' (non-greedy across newlines).\n"
+                "pattern = re.compile(r'^KS_STIG_ANSIBLE\\s*=\\s*\\[.*?^\\]', re.MULTILINE | re.DOTALL)\n"
+                "replacement = ('KS_STIG_ANSIBLE = []  '\n"
+                "    '# v1.9.63 HABv4 patch: STIG playbook deferred to v1.10b. '\n"
+                "    '# Empty list means installer iterates over nothing -- '\n"
+                "    '# additional_packages still install, but no playbook runs. '\n"
+                "    '# See docs/plans/cadastre-dependencies-stig-workflow-v1.9.63.md')\n"
+                "\n"
+                "if pattern.search(content):\n"
+                "    content = pattern.sub(replacement, content)\n"
+                "    print('v1.9.63: KS_STIG_ANSIBLE = [] applied')\n"
+                "else:\n"
+                "    print('WARNING: KS_STIG_ANSIBLE pattern not found in stigenable.py')\n"
+                "\n"
+                "with open(sys.argv[1], 'w') as f:\n"
+                "    f.write(content)\n"
+            );
+            fclose(spf);
+            snprintf(cmd, sizeof(cmd), "python3 '%s' '%s' 2>&1", stig_patch_script, stigenable_path);
+            run_cmd(cmd);
+            snprintf(cmd, sizeof(cmd), "rm -f '%s'", stig_patch_script);
+            run_cmd(cmd);
+            log_info("v1.9.63: STIG playbook deferred -- install_config['ansible'] will be []");
+        }
+    } else {
+        log_warn("v1.9.63: stigenable.py not found at %s -- skipping STIG-defer patch",
+            stigenable_path);
+    }
+
+    /* v1.9.63 — silence pkg_resources deprecation warning in photon_installer/__init__.py.
+     * Operator reported a UserWarning at install start:
+     *   UserWarning: pkg_resources is deprecated as an API
+     * Replace `pkg_resources.get_distribution(__name__).version` with the
+     * Python 3.8+ replacement `importlib.metadata.version(__name__)`. */
+    char installer_init_path[512];
+    snprintf(installer_init_path, sizeof(installer_init_path),
+        "%s/usr/lib/python3.14/site-packages/photon_installer/__init__.py", initrd_extract);
+    if (file_exists(installer_init_path)) {
+        log_info("v1.9.63: silencing pkg_resources deprecation in photon_installer/__init__.py");
+        snprintf(cmd, sizeof(cmd),
+            "sed -i "
+            "-e 's|^import pkg_resources$|from importlib.metadata import version  # v1.9.63 HABv4 patch|' "
+            "-e 's|pkg_resources\\.get_distribution(__name__)\\.version|version(__name__)|' "
+            "'%s'",
+            installer_init_path);
+        run_cmd(cmd);
+        log_info("v1.9.63: pkg_resources import replaced with importlib.metadata.version");
+    }
+
+    /* v1.9.64 — RESTORE HISTORICAL FIXES f12bd0b + 7d04098 (Jan 2026).
+     *
+     * Operator v1.9.63 install: pkg_resources warning gone (v1.9.63 worked)
+     * but '?' glyph carpet on GRUB menu AND dracut emergency boot STILL
+     * happen.
+     *
+     * Git history search of dcasota/photonos-scripts master branch revealed
+     * both symptoms were ROOT-CAUSED + FIXED back in January 2026:
+     *
+     *   - f12bd0b (Jan 26): Add grub2-theme to packages_mok.json
+     *     "loadfont ascii requires /boot/grub2/fonts/ascii.pf2 from
+     *      grub2-theme package -- without it loadfont fails and gfxterm
+     *      shows garbled '?' characters"
+     *
+     *   - 7d04098 (Jan 28): Add dracut force_drivers config for USB boot
+     *     "USB drivers were present in the initrd but not configured to
+     *      load at boot time. Using --add-drivers only includes modules
+     *      in initrd, but force_drivers is required to actually load
+     *      them during early boot. Without USB drivers, kernel can't
+     *      access USB root device -- black screen / emergency mode."
+     *
+     * Both fixes regressed somewhere between Jan and the current branch
+     * line we forked from. v1.9.64 restores them verbatim. */
+
+    /* v1.9.64 FIX 1 (commit f12bd0b restore): add grub2-theme to
+     * packages_minimal.json so the Photon installer pulls in
+     * /boot/grub2/fonts/ascii.pf2 + theme files on the target. Without
+     * this, the installed system's /boot/grub2/fonts/ is empty and
+     * gfxterm renders everything as '?'. mok_quickstart.py's _apply_yes
+     * reads packages_minimal.json as the base list, so adding here
+     * propagates to all install paths (MokQuickstart Yes/No + StigEnable
+     * Yes/No). Insert grub2-theme alphabetically after 'initramfs',
+     * preserving JSON formatting. */
+    char packages_minimal_path[512];
+    snprintf(packages_minimal_path, sizeof(packages_minimal_path),
+        "%s/installer/packages_minimal.json", initrd_extract);
+    if (file_exists(packages_minimal_path)) {
+        log_info("v1.9.64: adding grub2-theme to packages_minimal.json (commit f12bd0b restore)");
+        /* Use Python so the JSON is parsed + re-serialised correctly even if
+         * the file structure varies between Photon installer versions. */
+        char pkgs_patch_script[512];
+        snprintf(pkgs_patch_script, sizeof(pkgs_patch_script),
+            "%s/patch_packages_minimal.py", work_dir);
+        FILE *ppf = fopen(pkgs_patch_script, "w");
+        if (ppf) {
+            fprintf(ppf,
+                "#!/usr/bin/env python3\n"
+                "# v1.9.64 HABv4 patch: insert grub2-theme so /boot/grub2/fonts/ascii.pf2\n"
+                "# ships with the install -- fixes '?' glyph carpet on GRUB menu.\n"
+                "# Historical commit: dcasota/photonos-scripts@f12bd0b (Jan 26, 2026).\n"
+                "import json, sys\n"
+                "with open(sys.argv[1], 'r') as f:\n"
+                "    data = json.load(f)\n"
+                "pkgs = data.get('packages', [])\n"
+                "if 'grub2-theme' not in pkgs:\n"
+                "    # Insert just after initramfs if present, else append.\n"
+                "    if 'initramfs' in pkgs:\n"
+                "        idx = pkgs.index('initramfs') + 1\n"
+                "        pkgs.insert(idx, 'grub2-theme')\n"
+                "    else:\n"
+                "        pkgs.append('grub2-theme')\n"
+                "    data['packages'] = pkgs\n"
+                "    with open(sys.argv[1], 'w') as f:\n"
+                "        json.dump(data, f, indent=4)\n"
+                "        f.write('\\n')\n"
+                "    print('v1.9.64: grub2-theme inserted into packages_minimal.json')\n"
+                "else:\n"
+                "    print('v1.9.64: grub2-theme already in packages_minimal.json (no-op)')\n"
+            );
+            fclose(ppf);
+            snprintf(cmd, sizeof(cmd), "python3 '%s' '%s' 2>&1", pkgs_patch_script, packages_minimal_path);
+            run_cmd(cmd);
+            snprintf(cmd, sizeof(cmd), "rm -f '%s'", pkgs_patch_script);
+            run_cmd(cmd);
+            log_info("v1.9.64: packages_minimal.json now includes grub2-theme");
+        }
+    } else {
+        log_warn("v1.9.64: packages_minimal.json not found at %s -- skipping grub2-theme insert",
+            packages_minimal_path);
+    }
+
+    /* v1.9.64 FIX 2 (commit 7d04098 restore): create
+     * /etc/dracut.conf.d/usb-boot.conf in the installer initrd so dracut
+     * force-loads USB drivers when it regenerates the installed system's
+     * initrd. Without force_drivers, USB drivers may be PRESENT in initrd
+     * but never LOADED during early boot -- kernel cannot access USB root
+     * device -- black screen / dracut emergency. The kernel cmdline's
+     * `rd.driver.pre=...,usb_storage` only triggers a pre-mount load
+     * attempt; force_drivers ensures the modules are unconditionally
+     * loaded as a dracut module. */
+    char dracut_conf_dir[512], usb_boot_conf[512];
+    snprintf(dracut_conf_dir, sizeof(dracut_conf_dir), "%s/etc/dracut.conf.d", initrd_extract);
+    snprintf(usb_boot_conf, sizeof(usb_boot_conf), "%s/usb-boot.conf", dracut_conf_dir);
+    mkdir_p(dracut_conf_dir);
+    FILE *dracut_f = fopen(usb_boot_conf, "w");
+    if (dracut_f) {
+        fprintf(dracut_f,
+            "# v1.9.64 HABv4 patch (commit 7d04098 restore, Jan 28, 2026):\n"
+            "# Force-load USB drivers for USB boot support. Without this,\n"
+            "# USB drivers may be PRESENT in initrd but never LOADED during\n"
+            "# early boot -- kernel cannot access USB root device --\n"
+            "# black screen / dracut emergency mode.\n"
+            "#\n"
+            "# Dracut reads this config when regenerating the installed\n"
+            "# system's initrd. force_drivers ensures these modules are\n"
+            "# unconditionally loaded as a dracut module.\n"
+            "force_drivers+=\" usbcore usb-common xhci_hcd xhci_pci ehci_hcd ehci_pci uhci_hcd usb_storage \"\n"
+        );
+        fclose(dracut_f);
+        log_info("v1.9.64: created %s with force_drivers config", usb_boot_conf);
+    } else {
+        log_warn("v1.9.64: failed to create %s", usb_boot_conf);
+    }
+
     /* Integrate driver RPMs if --drivers specified
      * This MUST happen BEFORE initrd is repacked so packages_mok.json can be updated */
     if (cfg.include_drivers && cfg.drivers_dir[0] != '\0') {
@@ -4148,7 +4516,7 @@ static int create_secure_boot_iso(void) {
                 "\n"
                 "# eFuse USB dongle verification\n"
                 "set efuse_verified=0\n"
-                "search --no-floppy --label EFUSE_SIM --set=efuse_disk\n"
+                "search --label EFUSE_SIM --set=efuse_disk\n"
                 "if [ -n \"$efuse_disk\" ]; then\n"
                 "    if [ -f ($efuse_disk)/efuse_sim/srk_fuse.bin ]; then\n"
                 "        set efuse_verified=1\n"
@@ -4158,15 +4526,22 @@ static int create_secure_boot_iso(void) {
                 "if [ \"$efuse_verified\" = \"0\" ]; then\n"
                 "    echo \"\"\n"
                 "    echo \"=========================================\"\n"
-                "    echo \"  HABv4 SECURITY: eFuse USB Required\"\n"
+                "    echo \"  HABv4 SECURITY: eFuse marker not found\"\n"
                 "    echo \"=========================================\"\n"
                 "    echo \"\"\n"
-                "    echo \"Insert eFuse USB dongle (label: EFUSE_SIM)\"\n"
-                "    echo \"and select 'Retry' to continue.\"\n"
+                "    echo \"GRUB could not find any block device labelled 'EFUSE_SIM'\"\n"
+                "    echo \"with /efuse_sim/srk_fuse.bin on it.\"\n"
                 "    echo \"\"\n"
-                "    echo \"NOTE: If USB was just plugged in, Retry will rescan devices.\"\n"
+                "    echo \"VMware Workstation/Fusion/ESXi UEFI VMs:\"\n"
+                "    echo \"  the .img MUST be attached as a SATA disk (not floppy).\"\n"
+                "    echo \"  UEFI firmware does not expose virtual floppy to GRUB.\"\n"
+                "    echo \"\"\n"
+                "    echo \"BIOS/legacy boot:\"\n"
+                "    echo \"  floppy or SATA attachment both work.\"\n"
+                "    echo \"\"\n"
+                "    echo \"Then select 'Retry' to rescan and re-verify.\"\n"
                 "    set timeout=-1\n"
-                "    menuentry \"Retry - Rescan USB devices and check for eFuse\" {\n"
+                "    menuentry \"Retry - Rescan devices and check for eFuse\" {\n"
                 "        # Chainloader reloads GRUB EFI binary, forcing USB rescan\n"
                 "        # configfile only reloads config without rescanning devices\n"
                 "        chainloader /EFI/BOOT/grubx64.efi\n"
