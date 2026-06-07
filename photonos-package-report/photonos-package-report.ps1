@@ -1969,6 +1969,21 @@ function CheckURLHealth {
             [string]$Version
         )
 
+        # M159: clearly-incomparable pair guard. An 8-digit YYYYMMDD-style
+        # version vs a dotted decimal-semver version (e.g. libnss-ato
+        # 20240514 vs detected upstream 0.2.0) does not represent a real
+        # "Source0 is higher than detected upstream" relationship — the
+        # two sides aren't on the same number line. Return $null so the
+        # caller treats the comparison as a parse-error (empty col5,
+        # no warning) instead of emitting the misleading
+        # "Source0 version X is higher than detected latest version Y"
+        # warning that Rule 2 would otherwise produce. Mirrors C
+        # pr_version_compare's early -2 return at version.c.
+        $is8DigitDate = { param($s) $s -and ($s -match '^\d{8}$') }
+        $isDottedSemver = { param($s) $s -and ($s -match '^\d+(\.\d+)+$') }
+        if ((& $is8DigitDate $Namelatest) -and (& $isDottedSemver $Version)) { return $null }
+        if ((& $is8DigitDate $Version)    -and (& $isDottedSemver $Namelatest)) { return $null }
+
         try {
             $v1 = Parse-Version -InputVersion $Namelatest
             $v2 = Parse-Version -InputVersion $Version
