@@ -37,7 +37,11 @@
 
 #include "rpm_secureboot_patcher.h"
 
-#define VERSION "1.9.67"
+/* v1.9.68: keep the local VERSION define (ISOCreator.c is a self-contained
+ * monolith with its own static versions of common types/functions; including
+ * habv4_common.h causes static-vs-extern conflicts on dozens of symbols).
+ * MUST be kept in sync with habv4_common.h:32 manually. */
+#define VERSION "1.9.68"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */
@@ -3994,19 +3998,30 @@ static int create_secure_boot_iso(void) {
             grub_setup_script);
         run_cmd(cmd);
 
-        /* v1.9.61: fix GRUB themed-menu `?` glyphs by ALSO loading the Unicode
-         * theme font. mk-setup-grub.sh hardcodes `loadfont ascii` which only
-         * loads ASCII glyphs; Photon's themed gfxterm uses Unicode box-drawing
-         * + extended chars that render as `?` without a proper font. Inject
-         * `loadfont ${BOOT_DIR}/grub2/themes/photon/dejavu_10.pf2` right after
-         * the existing `loadfont ascii` so both are loaded (gfxterm falls back
-         * gracefully when a glyph is missing in one and present in the other).
-         * The dejavu_10.pf2 is shipped by Photon's `grub2-theme-photon`. */
+        /* v1.9.61 + v1.9.68 D1: fix GRUB themed-menu `?` glyphs by ALSO loading
+         * the Unicode font. mk-setup-grub.sh hardcodes `loadfont ascii` which
+         * only loads ASCII glyphs; Photon's themed gfxterm uses Unicode box-
+         * drawing + extended chars that render as `?` without a proper font.
+         *
+         * v1.9.61 ORIGINAL (BROKEN): loaded
+         *   ${BOOT_DIR}/grub2/themes/photon/dejavu_10.pf2
+         * but that file does NOT exist in any Photon RPM. VMDK forensic
+         * analysis 2026-06-07 of v1.9.67 install confirmed grub2-theme-5.0-3.
+         * ph5.noarch.rpm ships only `ascii.pf2`, `unicode.pf2`, `unifont.pf2`
+         * (plus terminal_*.tga + photon.png + theme.txt). Phantom loadfont
+         * line produced a visible boot-time error:
+         *   error: ../../grub-core/fs/fshelp.c:find_file:257:file
+         *   '/boot/grub2/themes/photon/dejavu_10.pf2' not found.
+         *
+         * v1.9.68 D1: replace the loadfont target with `unicode.pf2`, which
+         * IS shipped by grub2-theme and covers Unicode glyphs gfxterm needs.
+         * gfxterm falls back to ascii.pf2 (loaded just before) for any glyph
+         * unicode.pf2 lacks. */
         snprintf(cmd, sizeof(cmd),
-            "sed -i '/^loadfont ascii$/a loadfont ${BOOT_DIR}/grub2/themes/photon/dejavu_10.pf2' '%s'",
+            "sed -i '/^loadfont ascii$/a loadfont ${BOOT_DIR}/grub2/fonts/unicode.pf2' '%s'",
             grub_setup_script);
         run_cmd(cmd);
-        log_info("v1.9.61: injected `loadfont dejavu_10.pf2` after `loadfont ascii`");
+        log_info("v1.9.68 D1: injected `loadfont unicode.pf2` after `loadfont ascii` (was phantom dejavu_10.pf2)");
 
         /* v1.9.60 — DEFENSIVE: append a post-heredoc sed inside mk-setup-grub.sh
          * to strip ` fips=1` from the freshly-written /boot/grub2/grub.cfg.
