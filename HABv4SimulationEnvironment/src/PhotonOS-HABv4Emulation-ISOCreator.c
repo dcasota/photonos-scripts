@@ -37,7 +37,7 @@
 
 #include "rpm_secureboot_patcher.h"
 
-#define VERSION "1.9.66"
+#define VERSION "1.9.67"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */
@@ -1211,6 +1211,7 @@ static int create_efuse_img(const char *out_path, int size_mb) {
 
 /* Forward declaration */
 static int download_ventoy_components_fallback(void);
+static int extract_ia32_components(void);  /* v1.9.67: unconditional IA32 path */
 
 /* Get the directory containing the executable */
 static void get_executable_dir(char *dir, size_t size) {
@@ -1437,6 +1438,148 @@ static int download_ventoy_components_fallback(void) {
     }
     
     return 0;
+}
+
+/* v1.9.67: IA32 components extraction — runs UNCONDITIONALLY after x64 shim
+ * is in place, regardless of which x64 path succeeded (embedded gunzip,
+ * pre-existing cache, or Ventoy fallback).
+ *
+ * Why a separate function: v1.9.66 placed IA32 extraction inside
+ * download_ventoy_components_fallback(), but that function is only called
+ * when extract_embedded_shim_components() failed. When the x64 shim was
+ * already in keys_dir from a prior build, neither the embedded gunzip path
+ * nor the Ventoy fallback ran -- so the IA32 binaries silently never landed.
+ * The v1.9.66 ISO confirmed this regression (no BOOTIA32.EFI / grubia32.efi
+ * / mmia32.efi in /EFI/BOOT/).
+ *
+ * Design:
+ *   - Returns 0 if shim-ia32.efi already in keys_dir (idempotent, fast path).
+ *   - Otherwise downloads Ventoy archive, mounts ventoy.disk.img, copies the
+ *     four IA32 EFI binaries from /EFI/BOOT/ on the disk image, unmounts.
+ *   - Failures are non-fatal: only 32-bit UEFI laptops are affected; 64-bit
+ *     firmware (most operator scenarios) is unimpaired.
+ *
+ * Target devices for IA32 EFI (operator-supplied context):
+ *   - Intel Compute Stick   (64-bit CPU, 32-bit UEFI, no CSM)
+ *   - Intel Classmate PC    (same)
+ *   - ASUS Transformer T-series tablets
+ *   - Some early Intel-based Apple Macs (~2014-2015)
+ * All require /EFI/BOOT/BOOTIA32.EFI on attached boot media (USB / install ISO)
+ * to start any OS; they cannot execute 16-bit MBR floppy code (no CSM/Legacy). */
+static int extract_ia32_components(void) {
+    char shim_ia32[512], pre_ia32[512], grub_ia32[512], mokm_ia32[512];
+    snprintf(shim_ia32, sizeof(shim_ia32), "%s/shim-ia32.efi", cfg.keys_dir);
+    snprintf(pre_ia32, sizeof(pre_ia32), "%s/ventoy-preloader-ia32.efi", cfg.keys_dir);
+    snprintf(grub_ia32, sizeof(grub_ia32), "%s/ventoy-grub-real-ia32.efi", cfg.keys_dir);
+    snprintf(mokm_ia32, sizeof(mokm_ia32), "%s/MokManager-ia32.efi", cfg.keys_dir);
+
+    if (file_exists(shim_ia32)) {
+        log_info("v1.9.67: IA32 components already present in keys_dir (idempotent)");
+        return 0;
+    }
+
+    log_step("v1.9.67: extracting IA32 components from Ventoy...");
+
+    char *work_dir = create_secure_tempdir("ia32");
+    if (!work_dir) {
+        log_warn("v1.9.67: could not create secure tempdir for IA32 extraction");
+        return -1;
+    }
+
+    char cmd[2048];
+    log_info("v1.9.67: downloading Ventoy %s for IA32 binaries...", VENTOY_VERSION);
+    snprintf(cmd, sizeof(cmd),
+        "wget -q -O '%s/ventoy.tar.gz' '%s'", work_dir, VENTOY_URL);
+    if (run_cmd(cmd) != 0) {
+        log_warn("v1.9.67: Ventoy download failed -- 32-bit UEFI laptop boot not supported in this ISO");
+        snprintf(cmd, sizeof(cmd), "rm -rf '%s'", work_dir);
+        run_cmd(cmd);
+        free(work_dir);
+        return -1;
+    }
+
+    char ventoy_archive[512];
+    snprintf(ventoy_archive, sizeof(ventoy_archive), "%s/ventoy.tar.gz", work_dir);
+    if (!verify_sha3_256(ventoy_archive, VENTOY_SHA3_256)) {
+        log_warn("v1.9.67: Ventoy archive SHA3 mismatch -- skipping IA32 extraction (security)");
+        snprintf(cmd, sizeof(cmd), "rm -rf '%s'", work_dir);
+        run_cmd(cmd);
+        free(work_dir);
+        return -1;
+    }
+
+    snprintf(cmd, sizeof(cmd), "cd '%s' && tar -xzf ventoy.tar.gz", work_dir);
+    run_cmd(cmd);
+
+    char disk_img[512], mount_point[512];
+    snprintf(disk_img, sizeof(disk_img),
+        "%s/ventoy-%s/ventoy/ventoy.disk.img", work_dir, VENTOY_VERSION);
+    snprintf(mount_point, sizeof(mount_point), "%s/mnt", work_dir);
+
+    char xz_img[520];
+    snprintf(xz_img, sizeof(xz_img), "%s.xz", disk_img);
+    if (file_exists(xz_img)) {
+        snprintf(cmd, sizeof(cmd), "xz -dk '%s'", xz_img);
+        run_cmd(cmd);
+    }
+
+    if (!file_exists(disk_img)) {
+        log_warn("v1.9.67: ventoy.disk.img not in archive -- skipping IA32 extraction");
+        snprintf(cmd, sizeof(cmd), "rm -rf '%s'", work_dir);
+        run_cmd(cmd);
+        free(work_dir);
+        return -1;
+    }
+
+    mkdir_p(mount_point);
+    snprintf(cmd, sizeof(cmd), "mount -o loop,ro '%s' '%s'", disk_img, mount_point);
+    if (run_cmd(cmd) != 0) {
+        log_warn("v1.9.67: failed to mount Ventoy disk image for IA32 extraction");
+        snprintf(cmd, sizeof(cmd), "rm -rf '%s'", work_dir);
+        run_cmd(cmd);
+        free(work_dir);
+        return -1;
+    }
+
+    /* Copy the four IA32 binaries. `|| true` because Ventoy archive layout
+     * occasionally omits grubia32_real.efi -- losing only the GRUB-original
+     * chainload option, not the boot path itself. */
+    snprintf(cmd, sizeof(cmd),
+        "cp '%s/EFI/BOOT/BOOTIA32.EFI' '%s' 2>/dev/null || true",
+        mount_point, shim_ia32);
+    run_cmd(cmd);
+
+    snprintf(cmd, sizeof(cmd),
+        "cp '%s/EFI/BOOT/grubia32.efi' '%s' 2>/dev/null || true",
+        mount_point, pre_ia32);
+    run_cmd(cmd);
+
+    snprintf(cmd, sizeof(cmd),
+        "cp '%s/EFI/BOOT/grubia32_real.efi' '%s' 2>/dev/null || true",
+        mount_point, grub_ia32);
+    run_cmd(cmd);
+
+    snprintf(cmd, sizeof(cmd),
+        "cp '%s/EFI/BOOT/mmia32.efi' '%s' 2>/dev/null || true",
+        mount_point, mokm_ia32);
+    run_cmd(cmd);
+
+    snprintf(cmd, sizeof(cmd), "umount '%s'", mount_point);
+    run_cmd(cmd);
+
+    snprintf(cmd, sizeof(cmd), "rm -rf '%s'", work_dir);
+    run_cmd(cmd);
+    free(work_dir);
+
+    if (file_exists(shim_ia32)) {
+        log_info("v1.9.67: IA32 binaries extracted -- 32-bit UEFI laptop boot supported");
+        log_info("v1.9.67: target devices: Intel Compute Stick, Classmate PC, ASUS Transformer, early Intel Macs");
+        return 0;
+    }
+
+    log_warn("v1.9.67: Ventoy %s archive did not contain BOOTIA32.EFI -- 32-bit UEFI laptop boot will NOT work",
+        VENTOY_VERSION);
+    return -1;
 }
 
 /* ============================================================================
@@ -2505,6 +2648,26 @@ static int create_secure_boot_iso(void) {
             log_error("Failed to extract SUSE shim components");
             return -1;
         }
+    }
+
+    /* v1.9.67: extract IA32 components UNCONDITIONALLY (separate from x64 path).
+     * v1.9.66 placed IA32 extraction inside download_ventoy_components_fallback(),
+     * but the fallback is only called when the embedded x64 path FAILS. When
+     * x64 shim is already cached in keys_dir (common case across rebuilds),
+     * extract_embedded_shim_components() returns 0 at its first check and the
+     * Ventoy fallback never runs. Result in v1.9.66 ISO: IA32 binaries silently
+     * absent from /EFI/BOOT/.
+     *
+     * v1.9.67 fix: a dedicated extract_ia32_components() that:
+     *   - returns 0 if shim-ia32.efi already in keys_dir (idempotent)
+     *   - otherwise downloads Ventoy archive + extracts the 4 IA32 binaries
+     *     (BOOTIA32.EFI -> shim-ia32.efi, grubia32.efi -> ventoy-preloader-ia32.efi,
+     *      grubia32_real.efi -> ventoy-grub-real-ia32.efi, mmia32.efi -> MokManager-ia32.efi)
+     * Failures here are non-fatal (log_warn only) -- 32-bit UEFI laptops won't
+     * boot but 64-bit firmware paths are unaffected. */
+    if (extract_ia32_components() != 0) {
+        log_warn("v1.9.67: IA32 components extraction failed -- 32-bit UEFI laptop boot will not work");
+        log_warn("v1.9.67: 64-bit firmware (most VMware Workstation VMs, modern desktops) is unaffected");
     }
     
     char work_dir[256], iso_extract[512], efi_mount[256];
