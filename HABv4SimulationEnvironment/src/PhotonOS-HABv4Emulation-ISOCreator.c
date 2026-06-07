@@ -37,7 +37,7 @@
 
 #include "rpm_secureboot_patcher.h"
 
-#define VERSION "1.9.60"
+#define VERSION "1.9.61"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */
@@ -3779,6 +3779,20 @@ static int create_secure_boot_iso(void) {
             grub_setup_script);
         run_cmd(cmd);
 
+        /* v1.9.61: fix GRUB themed-menu `?` glyphs by ALSO loading the Unicode
+         * theme font. mk-setup-grub.sh hardcodes `loadfont ascii` which only
+         * loads ASCII glyphs; Photon's themed gfxterm uses Unicode box-drawing
+         * + extended chars that render as `?` without a proper font. Inject
+         * `loadfont ${BOOT_DIR}/grub2/themes/photon/dejavu_10.pf2` right after
+         * the existing `loadfont ascii` so both are loaded (gfxterm falls back
+         * gracefully when a glyph is missing in one and present in the other).
+         * The dejavu_10.pf2 is shipped by Photon's `grub2-theme-photon`. */
+        snprintf(cmd, sizeof(cmd),
+            "sed -i '/^loadfont ascii$/a loadfont ${BOOT_DIR}/grub2/themes/photon/dejavu_10.pf2' '%s'",
+            grub_setup_script);
+        run_cmd(cmd);
+        log_info("v1.9.61: injected `loadfont dejavu_10.pf2` after `loadfont ascii`");
+
         /* v1.9.60 — DEFENSIVE: append a post-heredoc sed inside mk-setup-grub.sh
          * to strip ` fips=1` from the freshly-written /boot/grub2/grub.cfg.
          * Photon's installer (installer.py:1701) appends `fips=1` to the kernel
@@ -3956,7 +3970,54 @@ static int create_secure_boot_iso(void) {
     } else {
         log_warn("mk-setup-grub.sh not found in initrd - grub.cfg may have suboptimal settings");
     }
-    
+
+    /* v1.9.61: ROOT-CAUSE FIX for dracut emergency on first boot.
+     *
+     * Forensic analysis of v1.9.60-installed VM revealed that `audit=1 fips=1
+     * ima_hash=sha256` are appended to /boot/grub2/grub.cfg by Photon's STIG
+     * Ansible playbook (`/usr/share/ansible/stig-hardening/playbook.yml`),
+     * NOT by mk-setup-grub.sh or installer.py. The STIG tasks responsible:
+     *   - photon.yml:876  PHTN-50-000080 Add audit=1   (gated by run_auditd_boot_enable)
+     *   - photon.yml:1191 PHTN-50-000182 Add fips=1    (gated by run_fips_boot_enable)
+     *   - photon.yml:1197 PHTN-50-000182 Add ima_hash=sha256 when fips=1 active
+     * STIG runs AFTER mk-setup-grub.sh (triggered by `install_config['ansible']`
+     * when the operator selects "Yes" on the StigEnable screen), so the v1.9.60
+     * defensive sed strip inside mk-setup-grub.sh is bypassed.
+     *
+     * Because Photon's full FIPS stack is NOT integrated in v1.9.x (no
+     * /etc/system-fips, no openssl-fips userland, CRYPTO_FIPS=n kernel after
+     * v1.9.54 rollback), `fips=1` in cmdline tells dracut's 90fips module to
+     * enter FIPS mode -> checks for /etc/system-fips -> fails -> initramfs
+     * emergency, blocking systemd-fsck-root and Ctrl-D continue. Full FIPS
+     * stack remains filed for v1.10b per project_photon_installer_fips1_template_trap.
+     *
+     * Surgical fix: append `run_fips_boot_enable: false` and `run_auditd_boot_enable:
+     * false` to STIG vars-chroot.yml. STIG loads this file as extra-vars
+     * (stigenable.py:19), so it overrides defaults/main.yml. The ima_hash=sha256
+     * task is gated on `fips=1` being present, so disabling fips_boot_enable
+     * auto-skips ima_hash too. */
+    char vars_chroot_path[512];
+    snprintf(vars_chroot_path, sizeof(vars_chroot_path),
+        "%s/usr/share/ansible/stig-hardening/vars-chroot.yml", initrd_extract);
+    if (file_exists(vars_chroot_path)) {
+        log_info("v1.9.61: patching STIG vars-chroot.yml to disable run_fips_boot_enable + run_auditd_boot_enable");
+        snprintf(cmd, sizeof(cmd),
+            "{ echo ''; "
+            "echo '# v1.9.61 HABv4 patch: disable STIG cmdline-modifying tasks until v1.10b.'; "
+            "echo '# Reason: Photon full FIPS stack is not integrated (no /etc/system-fips,'; "
+            "echo '# no openssl-fips userland, CRYPTO_FIPS=n in kernel). fips=1 in cmdline'; "
+            "echo '# triggers dracut 90fips emergency on first boot. See project_photon_installer_fips1_template_trap.'; "
+            "echo 'run_fips_boot_enable: false'; "
+            "echo 'run_auditd_boot_enable: false'; "
+            "} >> '%s'",
+            vars_chroot_path);
+        run_cmd(cmd);
+        log_info("v1.9.61: STIG vars-chroot.yml patched -- audit=1 / fips=1 / ima_hash=sha256 will NOT be added to grub.cfg");
+    } else {
+        log_warn("v1.9.61: STIG vars-chroot.yml not found at %s -- skipping (no STIG hardening on this build?)",
+            vars_chroot_path);
+    }
+
     /* Integrate driver RPMs if --drivers specified
      * This MUST happen BEFORE initrd is repacked so packages_mok.json can be updated */
     if (cfg.include_drivers && cfg.drivers_dir[0] != '\0') {
