@@ -125,6 +125,7 @@ int pr_modify_spec_file(const pr_task_t *task,
                         const char      *sha_line,
                         int              openjdk8,
                         const char      *commit_id,
+                        const char      *source0_new_ext,
                         const char      *out_subdir)
 {
     if (task == NULL || task->Spec == NULL || task->Name == NULL) return -1;
@@ -210,7 +211,48 @@ int pr_modify_spec_file(const pr_task_t *task,
             char *r = replace_after_colon("Release:", "1%{?dist}");
             if (r) { EMIT(r); free(r); } else { EMIT(line); }
         } else if (ilike_contains(line, "Source0:")) {
-            EMIT(line);
+            /* M158: when the M81/M157 ext-fallback adopted a new packaging
+             * format, rewrite the Source0 line's literal extension so the
+             * spec written to SPECS_NEW points at the format the SHA was
+             * computed against. Mirrors PS L 1496-1505. The trailing
+             * captured group (`%3` in PS) preserves any post-ext suffix
+             * like "  # comment". */
+            const char *src0_line = line;
+            char *swapped = NULL;
+            if (source0_new_ext && source0_new_ext[0]) {
+                static const char *const exts[] = {
+                    ".tar.xz", ".tar.gz", ".tar.bz2", ".tgz", ".zip", NULL
+                };
+                /* Find the rightmost recognised ext in the line. */
+                const char *found = NULL; size_t found_pos = 0; size_t found_len = 0;
+                for (int e = 0; exts[e]; e++) {
+                    const char *p = strstr(src0_line, exts[e]);
+                    while (p) {
+                        const char *next = strstr(p + 1, exts[e]);
+                        if (next == NULL) break;
+                        p = next;
+                    }
+                    if (p && (found == NULL || (size_t)(p - src0_line) > found_pos)) {
+                        found = p;
+                        found_pos = (size_t)(p - src0_line);
+                        found_len = strlen(exts[e]);
+                    }
+                }
+                if (found && strcmp(found, source0_new_ext) != 0) {
+                    size_t new_len = strlen(source0_new_ext);
+                    size_t tail_len = strlen(found + found_len);
+                    swapped = (char *)malloc(found_pos + new_len + tail_len + 1);
+                    if (swapped) {
+                        memcpy(swapped, src0_line, found_pos);
+                        memcpy(swapped + found_pos, source0_new_ext, new_len);
+                        memcpy(swapped + found_pos + new_len,
+                               found + found_len, tail_len + 1);
+                        src0_line = swapped;
+                    }
+                }
+            }
+            EMIT(src0_line);
+            free(swapped);
             if (sha_line && sha_line[0]) EMIT(sha_line);
             skip_next = 1;
         } else if (ilike_prefix(line, "%changelog")) {

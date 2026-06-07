@@ -1463,7 +1463,9 @@ function ModifySpecFile {
         [parameter(Mandatory = $true)]
         [string]$SHALine,
         [parameter(Mandatory = $false)]
-        [string]$CommitId = ""
+        [string]$CommitId = "",
+        [parameter(Mandatory = $false)]
+        [string]$Source0NewExt = ""
     )
     $SpecFile = join-path -path (join-path -path (join-path -path (join-path -path "$WorkingDir" -childpath "$photonDir") -childpath "SPECS") -childpath "$Name") -childpath "$SpecFileName"
     if (!(Test-Path $SpecFile)) {
@@ -1495,6 +1497,14 @@ function ModifySpecFile {
             elseif ($line -ilike '*Release:*') {$line = $line -replace 'Release:.+$', 'Release:        1%{?dist}'; $FileModified += $line}
             elseif ($line -ilike '*Source0:*')
             {
+                # M158: when M155's ext-fallback adopted a new packaging format,
+                # rewrite the Source0 line's literal extension so the spec
+                # written to SPECS_NEW points at the format the SHA was computed
+                # against. Otherwise rpmbuild looks for the old extension in
+                # SOURCES while the downloaded tarball uses the new extension.
+                if (-not [string]::IsNullOrEmpty($Source0NewExt)) {
+                    $line = $line -replace '(\.tar\.(xz|gz|bz2)|\.tgz|\.zip)([^/]*)$', ($Source0NewExt + '$3')
+                }
                 $FileModified += $line
                 $FileModified += $SHALine
                 $skip=$true
@@ -5059,6 +5069,9 @@ function CheckURLHealth {
                                                         if (-not [string]::IsNullOrEmpty($source0OldExt)) {
                                                             $warningText = [System.String]::Concat('Info: Packaging format ', $source0OldExt, ' has changed to ', $ext)
                                                             $warning = $warningText
+                                                            # M158: record the new extension so ModifySpecFile
+                                                            # can rewrite the spec's Source0 line accordingly.
+                                                            $source0NewExt = $ext
                                                         }
                                                         break
                                                     }
@@ -5379,9 +5392,15 @@ function CheckURLHealth {
         # Add a space to signalitze that something went wrong when extracting SHAvalue but do not stop modifying the spec file.
         if ([string]::IsNullOrEmpty($SHALine)) { $SHALine=" " }
 
-        if ($currentTask.Spec -ilike 'openjdk8.spec') {ModifySpecFile -SpecFileName $currentTask.spec -WorkingDir $WorkingDir -PhotonDir $photonDir -UpstreamsDir $UpstreamsDir -Name $currentTask.name -Update $UpdateAvailable -UpdateDownloadFile $UpdateDownloadFile -OpenJDK8 $true -SHALine $SHALine}
-        elseif ($currentTask.Spec -ilike 'netcat.spec') {ModifySpecFile -SpecFileName $currentTask.spec -WorkingDir $WorkingDir -PhotonDir $photonDir -UpstreamsDir $UpstreamsDir -Name $currentTask.name -Update $UpdateAvailable -UpdateDownloadFile $UpdateDownloadFile -OpenJDK8 $false -SHALine $SHALine -CommitId $Script:netcatCommitId}
-        else {ModifySpecFile -SpecFileName $currentTask.spec -WorkingDir $WorkingDir -PhotonDir $photonDir -UpstreamsDir $UpstreamsDir -Name $currentTask.name -Update $UpdateAvailable -UpdateDownloadFile $UpdateDownloadFile -OpenJDK8 $false -SHALine $SHALine}
+        # M158: pass $source0NewExt (set by M155+M157 ext-fallback when a new
+        # packaging format was adopted) so ModifySpecFile rewrites the spec's
+        # Source0 line to use the new ext. Default to empty when the variable
+        # was never assigned in this scope (ext-fallback didn't fire). Same
+        # default-via-coalesce pattern as other optional parameters.
+        $s0NewExt = if ($null -ne $source0NewExt) { $source0NewExt } else { "" }
+        if ($currentTask.Spec -ilike 'openjdk8.spec') {ModifySpecFile -SpecFileName $currentTask.spec -WorkingDir $WorkingDir -PhotonDir $photonDir -UpstreamsDir $UpstreamsDir -Name $currentTask.name -Update $UpdateAvailable -UpdateDownloadFile $UpdateDownloadFile -OpenJDK8 $true -SHALine $SHALine -Source0NewExt $s0NewExt}
+        elseif ($currentTask.Spec -ilike 'netcat.spec') {ModifySpecFile -SpecFileName $currentTask.spec -WorkingDir $WorkingDir -PhotonDir $photonDir -UpstreamsDir $UpstreamsDir -Name $currentTask.name -Update $UpdateAvailable -UpdateDownloadFile $UpdateDownloadFile -OpenJDK8 $false -SHALine $SHALine -CommitId $Script:netcatCommitId -Source0NewExt $s0NewExt}
+        else {ModifySpecFile -SpecFileName $currentTask.spec -WorkingDir $WorkingDir -PhotonDir $photonDir -UpstreamsDir $UpstreamsDir -Name $currentTask.name -Update $UpdateAvailable -UpdateDownloadFile $UpdateDownloadFile -OpenJDK8 $false -SHALine $SHALine -Source0NewExt $s0NewExt}
     }
 
     # ADR-0014 (Option B) row assembly: when PR_EMIT_MULTI_SHA is set,

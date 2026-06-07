@@ -26,6 +26,10 @@
 
 #include "pr_types.h"
 
+/* M158: source0_new_ext (e.g. ".tar.gz", ".tar.xz") rewrites the Source0
+ * line's literal extension when the M81/M157 ext-fallback adopted a new
+ * packaging format. NULL or empty means "leave Source0 untouched"
+ * (default behaviour). Mirrors PS L1496-1505 + L5392-5394. */
 int pr_modify_spec_file(const pr_task_t *task,
                         const char      *working_dir,
                         const char      *upstreams_dir,
@@ -34,6 +38,7 @@ int pr_modify_spec_file(const pr_task_t *task,
                         const char      *sha_line,
                         int              openjdk8,
                         const char      *commit_id,
+                        const char      *source0_new_ext,
                         const char      *out_subdir);
 
 #endif /* PR_MODIFY_SPEC_H */

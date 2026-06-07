@@ -25,6 +25,7 @@ void pr_state_init(pr_state_t *s)
     s->ArchivationDate    = new_empty();
     s->SHA256Name         = new_empty();
     s->SHA512Name         = new_empty();
+    s->Source0NewExt      = NULL;          /* M158: borrowed pointer, NULL = no swap */
 }
 
 void pr_state_free(pr_state_t *s)

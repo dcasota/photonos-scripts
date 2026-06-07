@@ -2122,6 +2122,9 @@ char *check_urlhealth(pr_task_t                       *task,
                                             free(state.Warning);
                                             state.Warning = info;
                                         }
+                                        /* M158: pass the new ext to pr_modify_spec_file
+                                         * so SPECS_NEW writes the correct Source0 line. */
+                                        state.Source0NewExt = fmt_new;
                                     }
                                 } else if (h == 0) {
                                     /* Transient network error (not a 404): keep
@@ -2958,6 +2961,9 @@ char *check_urlhealth(pr_task_t                       *task,
                                 free(state.Warning);
                                 state.Warning = info;
                             }
+                            /* M158: pass the new ext to pr_modify_spec_file
+                             * so SPECS_NEW writes the correct Source0 line. */
+                            state.Source0NewExt = fmt_new;
                         }
                         if (state.UpdateURL && state.UpdateURL[0]) {
                             char *dl_name = pr_basename_from_url(state.UpdateURL);
@@ -3234,7 +3240,9 @@ char *check_urlhealth(pr_task_t                       *task,
                                     working_dir,   /* output: SPECS_NEW_C alongside SPECS */
                                     photon_dir,
                                     state.UpdateAvailable, sha_line,
-                                    is_openjdk8, NULL, "SPECS_NEW_C");
+                                    is_openjdk8, NULL,
+                                    state.Source0NewExt, /* M158 */
+                                    "SPECS_NEW_C");
                 free(sha_line);
             }
         }
