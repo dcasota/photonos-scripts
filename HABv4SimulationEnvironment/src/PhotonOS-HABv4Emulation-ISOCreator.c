@@ -37,7 +37,7 @@
 
 #include "rpm_secureboot_patcher.h"
 
-#define VERSION "1.9.63"
+#define VERSION "1.9.64"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */
@@ -4108,6 +4108,120 @@ static int create_secure_boot_iso(void) {
             installer_init_path);
         run_cmd(cmd);
         log_info("v1.9.63: pkg_resources import replaced with importlib.metadata.version");
+    }
+
+    /* v1.9.64 — RESTORE HISTORICAL FIXES f12bd0b + 7d04098 (Jan 2026).
+     *
+     * Operator v1.9.63 install: pkg_resources warning gone (v1.9.63 worked)
+     * but '?' glyph carpet on GRUB menu AND dracut emergency boot STILL
+     * happen.
+     *
+     * Git history search of dcasota/photonos-scripts master branch revealed
+     * both symptoms were ROOT-CAUSED + FIXED back in January 2026:
+     *
+     *   - f12bd0b (Jan 26): Add grub2-theme to packages_mok.json
+     *     "loadfont ascii requires /boot/grub2/fonts/ascii.pf2 from
+     *      grub2-theme package -- without it loadfont fails and gfxterm
+     *      shows garbled '?' characters"
+     *
+     *   - 7d04098 (Jan 28): Add dracut force_drivers config for USB boot
+     *     "USB drivers were present in the initrd but not configured to
+     *      load at boot time. Using --add-drivers only includes modules
+     *      in initrd, but force_drivers is required to actually load
+     *      them during early boot. Without USB drivers, kernel can't
+     *      access USB root device -- black screen / emergency mode."
+     *
+     * Both fixes regressed somewhere between Jan and the current branch
+     * line we forked from. v1.9.64 restores them verbatim. */
+
+    /* v1.9.64 FIX 1 (commit f12bd0b restore): add grub2-theme to
+     * packages_minimal.json so the Photon installer pulls in
+     * /boot/grub2/fonts/ascii.pf2 + theme files on the target. Without
+     * this, the installed system's /boot/grub2/fonts/ is empty and
+     * gfxterm renders everything as '?'. mok_quickstart.py's _apply_yes
+     * reads packages_minimal.json as the base list, so adding here
+     * propagates to all install paths (MokQuickstart Yes/No + StigEnable
+     * Yes/No). Insert grub2-theme alphabetically after 'initramfs',
+     * preserving JSON formatting. */
+    char packages_minimal_path[512];
+    snprintf(packages_minimal_path, sizeof(packages_minimal_path),
+        "%s/installer/packages_minimal.json", initrd_extract);
+    if (file_exists(packages_minimal_path)) {
+        log_info("v1.9.64: adding grub2-theme to packages_minimal.json (commit f12bd0b restore)");
+        /* Use Python so the JSON is parsed + re-serialised correctly even if
+         * the file structure varies between Photon installer versions. */
+        char pkgs_patch_script[512];
+        snprintf(pkgs_patch_script, sizeof(pkgs_patch_script),
+            "%s/patch_packages_minimal.py", work_dir);
+        FILE *ppf = fopen(pkgs_patch_script, "w");
+        if (ppf) {
+            fprintf(ppf,
+                "#!/usr/bin/env python3\n"
+                "# v1.9.64 HABv4 patch: insert grub2-theme so /boot/grub2/fonts/ascii.pf2\n"
+                "# ships with the install -- fixes '?' glyph carpet on GRUB menu.\n"
+                "# Historical commit: dcasota/photonos-scripts@f12bd0b (Jan 26, 2026).\n"
+                "import json, sys\n"
+                "with open(sys.argv[1], 'r') as f:\n"
+                "    data = json.load(f)\n"
+                "pkgs = data.get('packages', [])\n"
+                "if 'grub2-theme' not in pkgs:\n"
+                "    # Insert just after initramfs if present, else append.\n"
+                "    if 'initramfs' in pkgs:\n"
+                "        idx = pkgs.index('initramfs') + 1\n"
+                "        pkgs.insert(idx, 'grub2-theme')\n"
+                "    else:\n"
+                "        pkgs.append('grub2-theme')\n"
+                "    data['packages'] = pkgs\n"
+                "    with open(sys.argv[1], 'w') as f:\n"
+                "        json.dump(data, f, indent=4)\n"
+                "        f.write('\\n')\n"
+                "    print('v1.9.64: grub2-theme inserted into packages_minimal.json')\n"
+                "else:\n"
+                "    print('v1.9.64: grub2-theme already in packages_minimal.json (no-op)')\n"
+            );
+            fclose(ppf);
+            snprintf(cmd, sizeof(cmd), "python3 '%s' '%s' 2>&1", pkgs_patch_script, packages_minimal_path);
+            run_cmd(cmd);
+            snprintf(cmd, sizeof(cmd), "rm -f '%s'", pkgs_patch_script);
+            run_cmd(cmd);
+            log_info("v1.9.64: packages_minimal.json now includes grub2-theme");
+        }
+    } else {
+        log_warn("v1.9.64: packages_minimal.json not found at %s -- skipping grub2-theme insert",
+            packages_minimal_path);
+    }
+
+    /* v1.9.64 FIX 2 (commit 7d04098 restore): create
+     * /etc/dracut.conf.d/usb-boot.conf in the installer initrd so dracut
+     * force-loads USB drivers when it regenerates the installed system's
+     * initrd. Without force_drivers, USB drivers may be PRESENT in initrd
+     * but never LOADED during early boot -- kernel cannot access USB root
+     * device -- black screen / dracut emergency. The kernel cmdline's
+     * `rd.driver.pre=...,usb_storage` only triggers a pre-mount load
+     * attempt; force_drivers ensures the modules are unconditionally
+     * loaded as a dracut module. */
+    char dracut_conf_dir[512], usb_boot_conf[512];
+    snprintf(dracut_conf_dir, sizeof(dracut_conf_dir), "%s/etc/dracut.conf.d", initrd_extract);
+    snprintf(usb_boot_conf, sizeof(usb_boot_conf), "%s/usb-boot.conf", dracut_conf_dir);
+    mkdir_p(dracut_conf_dir);
+    FILE *dracut_f = fopen(usb_boot_conf, "w");
+    if (dracut_f) {
+        fprintf(dracut_f,
+            "# v1.9.64 HABv4 patch (commit 7d04098 restore, Jan 28, 2026):\n"
+            "# Force-load USB drivers for USB boot support. Without this,\n"
+            "# USB drivers may be PRESENT in initrd but never LOADED during\n"
+            "# early boot -- kernel cannot access USB root device --\n"
+            "# black screen / dracut emergency mode.\n"
+            "#\n"
+            "# Dracut reads this config when regenerating the installed\n"
+            "# system's initrd. force_drivers ensures these modules are\n"
+            "# unconditionally loaded as a dracut module.\n"
+            "force_drivers+=\" usbcore usb-common xhci_hcd xhci_pci ehci_hcd ehci_pci uhci_hcd usb_storage \"\n"
+        );
+        fclose(dracut_f);
+        log_info("v1.9.64: created %s with force_drivers config", usb_boot_conf);
+    } else {
+        log_warn("v1.9.64: failed to create %s", usb_boot_conf);
     }
 
     /* Integrate driver RPMs if --drivers specified
