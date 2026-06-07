@@ -41,7 +41,7 @@
  * monolith with its own static versions of common types/functions; including
  * habv4_common.h causes static-vs-extern conflicts on dozens of symbols).
  * MUST be kept in sync with habv4_common.h:32 manually. */
-#define VERSION "1.9.68"
+#define VERSION "1.9.69"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */
@@ -4398,6 +4398,59 @@ static int create_secure_boot_iso(void) {
             installer_init_path);
         run_cmd(cmd);
         log_info("v1.9.63: pkg_resources import replaced with importlib.metadata.version");
+    }
+
+    /* v1.9.69 D4 — strip ext4 `orphan_file` feature from installer's mke2fs.conf.
+     *
+     * Root cause of v1.9.59..v1.9.68 install boots to Emergency Mode (operator's
+     * "Same dependency error for initrd filesystem", confirmed 2026-06-08 via
+     * 2-iteration serial-console capture loop):
+     *
+     *   The Photon installer initrd ships e2fsprogs >=1.47 with
+     *   /etc/mke2fs.conf [fs_types] ext4 = { features = ...,orphan_file }.
+     *   Installer's mke2fs creates the rootfs with the `orphan_file` feature
+     *   (a journal-orphan-list optimisation added in Linux 5.15 + e2fsprogs 1.47).
+     *
+     *   The target system installs Photon 5.0's stock e2fsprogs 1.46.5
+     *   (via linux-mok / linux-esx-mok and the base Photon RPMs). The target's
+     *   e2fsck does NOT understand `orphan_file`. First boot:
+     *     systemd-fsck: /dev/sdX has unsupported feature(s): FEATURE_C12
+     *     e2fsck: Get a newer version of e2fsck!
+     *     ... fsck failed with exit status 12
+     *     systemd-fsck-root.service: FAILED
+     *     [DEPEND] Dependency failed for /sysroot
+     *     ... Reached target Emergency Mode.
+     *
+     * Affects BOTH MokQuickstart Yes-MOK and No-MOK paths because both use the
+     * same installer initrd. The cheap workaround is `fsck.mode=skip` on the
+     * kernel cmdline; the permanent fix is to never enable the feature when
+     * creating the rootfs.
+     *
+     * Three sed alternations cover orphan_file as a middle item (,orphan_file),
+     * leading item (orphan_file,), or sole item (just orphan_file on the line).
+     * See trap_ext4_orphan_file_installer_target_mismatch.md for full diagnosis. */
+    char mke2fs_conf_path[512];
+    snprintf(mke2fs_conf_path, sizeof(mke2fs_conf_path),
+        "%s/etc/mke2fs.conf", initrd_extract);
+    if (file_exists(mke2fs_conf_path)) {
+        log_info("v1.9.69 D4: stripping orphan_file from installer mke2fs.conf (target e2fsprogs 1.46.5 cannot validate it)");
+        snprintf(cmd, sizeof(cmd),
+            "sed -i "
+            "-e 's/,orphan_file//' "
+            "-e 's/orphan_file,//' "
+            "-e 's/^\\(\\s*features = \\)orphan_file$/\\1/' "
+            "'%s'",
+            mke2fs_conf_path);
+        run_cmd(cmd);
+        /* Verify: grep should return non-zero (no match) after the strip. */
+        snprintf(cmd, sizeof(cmd),
+            "grep -q orphan_file '%s' && "
+            "echo 'v1.9.69 D4 WARN: orphan_file STILL present in mke2fs.conf -- check sed' || "
+            "echo 'v1.9.69 D4: orphan_file removed from mke2fs.conf'",
+            mke2fs_conf_path);
+        run_cmd(cmd);
+    } else {
+        log_warn("v1.9.69 D4: %s not found in installer initrd -- skipping orphan_file strip", mke2fs_conf_path);
     }
 
     /* v1.9.64 — RESTORE HISTORICAL FIXES f12bd0b + 7d04098 (Jan 2026).
