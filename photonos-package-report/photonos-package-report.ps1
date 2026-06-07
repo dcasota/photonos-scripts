@@ -5033,10 +5033,31 @@ function CheckURLHealth {
                                             # the version-substituted URL keeps the spec's stale
                                             # extension and 404s. Try the alternates before declaring a
                                             # packaging-format change. Mirrors the C try_url_ext_fallback.
+                                            #
+                                            # M155: when an alternate succeeds, emit an INFORMATIONAL
+                                            # warning ("Info: Packaging format <old> has changed to
+                                            # <new>") instead of leaving col11 empty. This signals
+                                            # downstream consumers (operator review, automated SPECS_NEW
+                                            # adoption pipelines) that the new tarball + SHA in col6/9/10
+                                            # require a Source0-extension edit in the spec file before
+                                            # they can be consumed. col6/col7/col9/col10 are populated
+                                            # by the existing code path (no behaviour change for the
+                                            # download/hash flow); only col11 changes from "" → "Info:…".
+                                            # Preserve the existing "Warning: Manufacturer may changed
+                                            # version packaging format." for the truly-not-found case.
+                                            $source0OldExt = ""
+                                            if ($UpdateURL -match '(\.tar\.(xz|gz|bz2)|\.tgz|\.zip)$') { $source0OldExt = $matches[1] }
                                             foreach ($ext in @('.tar.xz','.tar.gz','.tar.bz2','.tgz','.zip')) {
                                                 $cand = $UpdateURL -replace '(\.tar\.(xz|gz|bz2)|\.tgz|\.zip)$', $ext
                                                 if ($cand -ne $UpdateURL) {
-                                                    if ((urlhealth($cand)) -eq "200") { $UpdateURL=$cand; $HealthUpdateURL="200"; break }
+                                                    if ((urlhealth($cand)) -eq "200") {
+                                                        $UpdateURL=$cand; $HealthUpdateURL="200"
+                                                        if (-not [string]::IsNullOrEmpty($source0OldExt)) {
+                                                            $warningText = [System.String]::Concat('Info: Packaging format ', $source0OldExt, ' has changed to ', $ext)
+                                                            $warning = $warningText
+                                                        }
+                                                        break
+                                                    }
                                                 }
                                             }
                                             if ($HealthUpdateURL -ne "200")
