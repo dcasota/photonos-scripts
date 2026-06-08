@@ -501,17 +501,58 @@ discovered_packages_t* rpm_discover_packages(
 static int generate_grub_mok_spec(rpm_build_config_t *config, rpm_package_info_t *grub_pkg) {
     char spec_path[1024];
     snprintf(spec_path, sizeof(spec_path), "%s/grub2-efi-image-mok.spec", config->specs_dir);
-    
+
     /* Generate date string for changelog */
     char date_str[64];
     time_t now = time(NULL);
     struct tm *tm_info = localtime(&now);
     strftime(date_str, sizeof(date_str), "%a %b %d %Y", tm_info);
-    
+
     FILE *f = fopen(spec_path, "w");
     if (!f) {
         log_error("Failed to create %s", spec_path);
         return -1;
+    }
+
+    /* v1.9.72 D3 — IA32 ESP propagation.
+     *
+     * v1.9.67's extract_ia32_components() places 4 Ventoy-extracted IA32
+     * binaries in config->keys_dir. The HABv4 ISO build includes them in
+     * /EFI/BOOT/ on the live ISO so the installer media is 32-bit-UEFI
+     * bootable. But Photon installer's grub-install equivalent only copies
+     * x64 binaries to the target ESP, so post-install /boot/efi/EFI/BOOT/
+     * is missing BOOTIA32.EFI / grubia32.efi / grubia32_real.efi / mmia32.efi
+     * — a 32-bit UEFI laptop can boot the installer but the installed
+     * system isn't 32-bit-UEFI bootable.
+     *
+     * Fix: bundle the IA32 binaries inside the grub2-efi-image-mok RPM
+     * payload. The RPM's install step lands them at /boot/efi/EFI/BOOT/
+     * on the target as a side effect of regular package install.
+     *
+     * All-or-nothing semantics: only embed IA32 if all four source files
+     * exist. RPM %files MUST match %install — partial inclusion would
+     * fail the build. */
+    const char *kd = config->keys_dir ? config->keys_dir : "/root/hab_keys";
+    char path_shim[1024], path_pre[1024], path_real[1024], path_mokm[1024];
+    snprintf(path_shim, sizeof(path_shim), "%s/shim-ia32.efi", kd);
+    snprintf(path_pre,  sizeof(path_pre),  "%s/ventoy-preloader-ia32.efi", kd);
+    snprintf(path_real, sizeof(path_real), "%s/ventoy-grub-real-ia32.efi", kd);
+    snprintf(path_mokm, sizeof(path_mokm), "%s/MokManager-ia32.efi", kd);
+    int ia32_ok = file_exists(path_shim) && file_exists(path_pre)
+               && file_exists(path_real) && file_exists(path_mokm);
+    char ia32_install_buf[2048] = "";
+    if (ia32_ok) {
+        log_info("v1.9.72 D3: 4 IA32 binaries present in %s — bundling into grub2-efi-image-mok RPM payload", kd);
+        snprintf(ia32_install_buf, sizeof(ia32_install_buf),
+            "# v1.9.72 D3: Ventoy-signed IA32 binaries (32-bit UEFI laptop boot)\n"
+            "# Source = config->keys_dir, populated by v1.9.67 extract_ia32_components()\n"
+            "install -m 0644 %s/shim-ia32.efi %%{buildroot}/boot/efi/EFI/BOOT/BOOTIA32.EFI\n"
+            "install -m 0644 %s/ventoy-preloader-ia32.efi %%{buildroot}/boot/efi/EFI/BOOT/grubia32.efi\n"
+            "install -m 0644 %s/ventoy-grub-real-ia32.efi %%{buildroot}/boot/efi/EFI/BOOT/grubia32_real.efi\n"
+            "install -m 0644 %s/MokManager-ia32.efi %%{buildroot}/boot/efi/EFI/BOOT/mmia32.efi\n",
+            kd, kd, kd, kd);
+    } else {
+        log_warn("v1.9.72 D3: not all 4 IA32 binaries present in %s — RPM will be x64-only (target ESP won't have BOOTIA32.EFI)", kd);
     }
     
     fprintf(f,
@@ -584,20 +625,31 @@ static int generate_grub_mok_spec(rpm_build_config_t *config, rpm_package_info_t
         "install -d %%{buildroot}/boot/efi/EFI/BOOT\n"
         "install -m 0644 ./boot/efi/EFI/BOOT/grubx64.efi %%{buildroot}/boot/efi/EFI/BOOT/\n"
         "install -m 0644 ./boot/efi/EFI/BOOT/grub.efi %%{buildroot}/boot/efi/EFI/BOOT/\n"
+        "%s"  /* v1.9.72 D3: optional IA32 install block */
         "\n"
         "%%files\n"
         "%%defattr(-,root,root,-)\n"
         "/boot/efi/EFI/BOOT/grubx64.efi\n"
         "/boot/efi/EFI/BOOT/grub.efi\n"
+        "%s"  /* v1.9.72 D3: optional IA32 file list */
         "\n"
         "%%changelog\n"
         "* %s HABv4 Project <habv4@local> %%{grub_version}-%%{grub_release}\n"
         "- Custom GRUB for installed system, signed with MOK key\n"
-        "- Built with grub-mkimage with proper search modules\n",
+        "- Built with grub-mkimage with proper search modules\n"
+        "%s"  /* v1.9.72 D3: changelog entry for IA32 bundling, if enabled */,
         grub_pkg->version, grub_pkg->release,
         grub_pkg->version,
         grub_pkg->release,
-        date_str
+        ia32_install_buf,  /* v1.9.72 D3: install commands or "" */
+        ia32_ok ?
+            "/boot/efi/EFI/BOOT/BOOTIA32.EFI\n"
+            "/boot/efi/EFI/BOOT/grubia32.efi\n"
+            "/boot/efi/EFI/BOOT/grubia32_real.efi\n"
+            "/boot/efi/EFI/BOOT/mmia32.efi\n" :
+            "",
+        date_str,
+        ia32_ok ? "- v1.9.72 D3: bundle Ventoy IA32 binaries for 32-bit UEFI laptop support\n" : ""
     );
     
     /* Use %posttrans to fix boot parameters AFTER all package operations complete
