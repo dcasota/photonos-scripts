@@ -41,7 +41,7 @@
  * monolith with its own static versions of common types/functions; including
  * habv4_common.h causes static-vs-extern conflicts on dozens of symbols).
  * MUST be kept in sync with habv4_common.h:32 manually. */
-#define VERSION "1.9.72"
+#define VERSION "1.9.73"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */
@@ -3986,15 +3986,33 @@ static int create_secure_boot_iso(void) {
          * `plymouth.enable=0`, so `splash` is a dead promise — Plymouth never
          * starts, no graphical splash, and the operator still sees raw dmesg.
          * Keep `quiet` (suppresses verbose dmesg) so the screen stays clean
-         * even without a Plymouth take-over. */
+         * even without a Plymouth take-over.
+         *
+         * v1.9.73: ALSO add `console=tty0 console=ttyS0,115200n8` and
+         * `systemd.journald.forward_to_console=1`. This makes the installed
+         * system write systemd status messages (Started X service, Reached
+         * target Y, Failed to start Z) to BOTH the graphical console AND
+         * the serial port. T.01's PowerShell harness configures
+         * `serial0.fileName` in the .vmx so the serial output lands in a
+         * host file we can grep. With this change the harness can verify
+         * service-level pass/fail (e.g. auditd started cleanly) instead
+         * of falling back to the IO-count heuristic.
+         *
+         * `quiet` still suppresses kernel printk noise to keep the tty0
+         * screen clean for human users. systemd's own status output is
+         * not affected by `quiet` and reaches both consoles via
+         * `systemd.journald.forward_to_console=1`. Two consoles order
+         * (tty0 first, ttyS0 second) makes tty0 the default for input
+         * (login prompts on graphical), while ttyS0 still receives all
+         * kernel + systemd writes. */
         snprintf(cmd, sizeof(cmd),
-            "sed -i 's/EXTRA_PARAMS=\"\"/EXTRA_PARAMS=\"rootwait usbcore.autosuspend=-1 rd.driver.pre=xhci_pci,ehci_pci,usb_storage quiet\"/' '%s'",
+            "sed -i 's/EXTRA_PARAMS=\"\"/EXTRA_PARAMS=\"rootwait usbcore.autosuspend=-1 rd.driver.pre=xhci_pci,ehci_pci,usb_storage quiet console=tty0 console=ttyS0,115200n8 systemd.journald.forward_to_console=1\"/' '%s'",
             grub_setup_script);
         run_cmd(cmd);
 
         /* Also ensure EXTRA_PARAMS are added even when not empty (nvme case) */
         snprintf(cmd, sizeof(cmd),
-            "sed -i 's/EXTRA_PARAMS=rootwait$/EXTRA_PARAMS=\"rootwait usbcore.autosuspend=-1 rd.driver.pre=xhci_pci,ehci_pci,usb_storage quiet\"/' '%s'",
+            "sed -i 's/EXTRA_PARAMS=rootwait$/EXTRA_PARAMS=\"rootwait usbcore.autosuspend=-1 rd.driver.pre=xhci_pci,ehci_pci,usb_storage quiet console=tty0 console=ttyS0,115200n8 systemd.journald.forward_to_console=1\"/' '%s'",
             grub_setup_script);
         run_cmd(cmd);
 
