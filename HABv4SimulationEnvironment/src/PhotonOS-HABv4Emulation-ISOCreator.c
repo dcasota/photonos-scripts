@@ -41,7 +41,7 @@
  * monolith with its own static versions of common types/functions; including
  * habv4_common.h causes static-vs-extern conflicts on dozens of symbols).
  * MUST be kept in sync with habv4_common.h:32 manually. */
-#define VERSION "1.9.74"
+#define VERSION "1.9.76"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */
@@ -95,6 +95,7 @@ typedef struct {
     char diagnose_iso_path[512];
     char drivers_dir[512];    /* Custom drivers directory (--drivers=DIR) */
     char kickstart_file[512]; /* v1.9.74 D7: --kickstart=FILE — Photon kickstart JSON for unattended T.02 install */
+    int  kickstart_default;   /* v1.9.75 D8: --kickstart-default — make kickstart menuentry the GRUB default with timeout=1 (skip SendKeys requirement) */
     int mok_days;
     int mok_key_bits;         /* RSA key size: 2048, 3072, or 4096 */
     int cert_warn_days;       /* Days before expiration to warn */
@@ -4899,6 +4900,13 @@ static int create_secure_boot_iso(void) {
                 "# Theme and graphics settings from original VMware config\n"
                 "\n"
                 "# eFuse USB dongle verification\n"
+                "# v1.9.76 D9: Photon 5.0 GRUB doesn't auto-load fat/part_msdos modules,\n"
+                "# so the initial `search --label EFUSE_SIM` can't see FAT32-labeled\n"
+                "# eFuse markers (sibling of v1.9.65's retry-block insmod). Without this,\n"
+                "# every boot lands in the eFuse-failed menu with timeout=-1.\n"
+                "insmod fat\n"
+                "insmod part_msdos\n"
+                "insmod part_gpt\n"
                 "set efuse_verified=0\n"
                 "search --label EFUSE_SIM --set=efuse_disk\n"
                 "if [ -n \"$efuse_disk\" ]; then\n"
@@ -4939,13 +4947,31 @@ static int create_secure_boot_iso(void) {
                 "else\n"
                 "    # eFuse verified - show full menu\n"
                 "    set default=0\n"
-                "    set timeout=5\n"
+                "    set timeout=%d\n"
                 "    loadfont ascii\n"
                 "    set gfxmode=\"1024x768\"\n"
                 "    gfxpayload=keep\n"
                 "    set theme=/boot/grub2/themes/photon/theme.txt\n"
                 "    terminal_output gfxterm\n"
-                "\n"
+                "\n",
+                /* v1.9.75 D8: kickstart-default trims timeout to 1s so the auto-boot
+                 * fires before any operator can intervene. Production builds keep 5s. */
+                (cfg.kickstart_default && cfg.kickstart_file[0]) ? 1 : 5
+            );
+            /* v1.9.75 D8: when --kickstart-default, emit the kickstart menuentry
+             * FIRST (slot 0 = GRUB default). No SendKeys needed — VM auto-boots
+             * into unattended install seconds after power-on. */
+            if (cfg.kickstart_default && cfg.kickstart_file[0]) {
+                fprintf(f,
+                "    menuentry \"Install Photon (Unattended Test, kickstart) [DEFAULT]\" {\n"
+                "        linux /isolinux/vmlinuz root=/dev/ram0 loglevel=7 usbcore.autosuspend=-1 photon.media=LABEL=PHOTON_SB_%s ks=cdrom:/installer/test-kickstart.json\n"
+                "        initrd /isolinux/initrd.img\n"
+                "    }\n"
+                "\n",
+                    cfg.release
+                );
+            }
+            fprintf(f,
                 "    menuentry \"Install\" {\n"
                 /* v1.9.48 M32: loglevel=7 for installer kernel-side diagnostics.
                  * Matches FEB-2026 PHOTON_SB_6.0 build pattern. The cascade
@@ -4960,14 +4986,10 @@ static int create_secure_boot_iso(void) {
                 "    }\n",
                 cfg.release
             );
-            /* v1.9.74 D7: kickstart menuentry injection (eFuse mode).
-             * Inserted between MokManager and the firmware/reboot entries so
-             * arrow-down from default (Install) lands on MokManager first;
-             * the unattended entry is one position further down. Operators
-             * never see this on production deploys unless they explicitly
-             * arrow-down past MokManager. The T.02 harness keystrokes its
-             * way to this entry, or builds a default-shifted variant. */
-            if (cfg.kickstart_file[0]) {
+            /* v1.9.74 D7: kickstart-only mode (NOT --kickstart-default) puts the
+             * unattended menuentry at slot 2 (after MokManager). T.02 harness
+             * keystrokes {DOWN}{DOWN}{ENTER} to reach it within GRUB's 5s timeout. */
+            if (cfg.kickstart_file[0] && !cfg.kickstart_default) {
                 fprintf(f,
                 "\n"
                 "    menuentry \"Install Photon (Unattended Test, kickstart)\" {\n"
@@ -5007,13 +5029,28 @@ static int create_secure_boot_iso(void) {
                 "# Theme and graphics settings from original VMware config\n"
                 "\n"
                 "set default=0\n"
-                "set timeout=5\n"
+                "set timeout=%d\n"
                 "loadfont ascii\n"
                 "set gfxmode=\"1024x768\"\n"
                 "gfxpayload=keep\n"
                 "set theme=/boot/grub2/themes/photon/theme.txt\n"
                 "terminal_output gfxterm\n"
-                "\n"
+                "\n",
+                (cfg.kickstart_default && cfg.kickstart_file[0]) ? 1 : 5
+            );
+            /* v1.9.75 D8 (standard mode): kickstart-default emits unattended menuentry
+             * as slot 0 with timeout=1. Mirrors the eFuse-else branch above. */
+            if (cfg.kickstart_default && cfg.kickstart_file[0]) {
+                fprintf(f,
+                "menuentry \"Install Photon (Unattended Test, kickstart) [DEFAULT]\" {\n"
+                "    linux /isolinux/vmlinuz root=/dev/ram0 loglevel=7 usbcore.autosuspend=-1 photon.media=LABEL=PHOTON_SB_%s ks=cdrom:/installer/test-kickstart.json\n"
+                "    initrd /isolinux/initrd.img\n"
+                "}\n"
+                "\n",
+                    cfg.release
+                );
+            }
+            fprintf(f,
                 "menuentry \"Install\" {\n"
                 /* v1.9.48 M32: loglevel=7 same as eFuse-gated branch above. */
                 "    linux /isolinux/vmlinuz root=/dev/ram0 loglevel=7 usbcore.autosuspend=-1 photon.media=LABEL=PHOTON_SB_%s\n"
@@ -5025,9 +5062,9 @@ static int create_secure_boot_iso(void) {
                 "}\n",
                 cfg.release
             );
-            /* v1.9.74 D7: kickstart menuentry injection (standard mode).
-             * See eFuse-mode block above for placement rationale. */
-            if (cfg.kickstart_file[0]) {
+            /* v1.9.74 D7 (standard mode): kickstart-only puts the unattended
+             * menuentry at slot 2 (after MokManager). */
+            if (cfg.kickstart_file[0] && !cfg.kickstart_default) {
                 fprintf(f,
                 "\n"
                 "menuentry \"Install Photon (Unattended Test, kickstart)\" {\n"
@@ -5656,6 +5693,10 @@ static void show_help(void) {
     printf("                             is added with ks=cdrom:/installer/test-kickstart.json.\n");
     printf("                             WARNING: do NOT deploy on production hardware -- the\n");
     printf("                             test kickstart's root password is intentionally known.\n");
+    printf("  -T, --kickstart-default    v1.9.75 D8: make kickstart menuentry the GRUB default with\n");
+    printf("                             timeout=1. Removes SendKeys requirement from the T.02 harness\n");
+    printf("                             (VM auto-boots into unattended install seconds after power-on).\n");
+    printf("                             Requires --kickstart=FILE. Production builds: omit this flag.\n");
     /* -F/--full-kernel-build removed in v1.9.0 - kernel build is now mandatory */
     printf("  -D, --diagnose=ISO         Diagnose an existing ISO for Secure Boot issues\n");
     printf("  -c, --clean                Clean up all artifacts\n");
@@ -5727,11 +5768,12 @@ int main(int argc, char *argv[]) {
         {"yes",               no_argument,       0, 'y'},
         {"help",              no_argument,       0, 'h'},
         {"kickstart",         required_argument, 0, 'S'},  /* v1.9.74 D7: --kickstart=FILE */
+        {"kickstart-default", no_argument,       0, 'T'},  /* v1.9.75 D8: --kickstart-default → auto-boot kickstart */
         {0, 0, 0, 0}
     };
 
     int opt;
-    while ((opt = getopt_long(argc, argv, "r:i:o:k:e:m:K:W:Cbgsd::ERFD:cu:I:vyhS:", long_options, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "r:i:o:k:e:m:K:W:Cbgsd::ERFD:cu:I:vyhS:T", long_options, NULL)) != -1) {
         switch (opt) {
             case 'r':
                 /* Security: Validate release against whitelist */
@@ -5841,6 +5883,15 @@ int main(int argc, char *argv[]) {
                 }
                 strncpy(cfg.kickstart_file, optarg, sizeof(cfg.kickstart_file) - 1);
                 log_warn("v1.9.74 D7: --kickstart=%s -- the resulting ISO is for T.02 testing ONLY. Root password from kickstart will be installed. Do NOT deploy on production hardware.", optarg);
+                break;
+            case 'T':
+                /* v1.9.75 D8: --kickstart-default — when kickstart is also supplied, emit
+                 * the unattended menuentry as GRUB's default selection (slot 0) with
+                 * timeout=1 instead of slot 2 with timeout=5. Removes the SendKeys
+                 * requirement from the T.02 harness — VM auto-boots into unattended
+                 * install seconds after power-on. */
+                cfg.kickstart_default = 1;
+                log_warn("v1.9.75 D8: --kickstart-default -- kickstart menuentry will be GRUB default with timeout=1. ISO auto-boots into unattended install. DO NOT DEPLOY ON PRODUCTION HARDWARE.");
                 break;
             case 'u':
                 /* Security: Validate device path */
