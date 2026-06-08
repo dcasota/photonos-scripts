@@ -41,7 +41,7 @@
  * monolith with its own static versions of common types/functions; including
  * habv4_common.h causes static-vs-extern conflicts on dozens of symbols).
  * MUST be kept in sync with habv4_common.h:32 manually. */
-#define VERSION "1.9.73"
+#define VERSION "1.9.74"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */
@@ -94,6 +94,7 @@ typedef struct {
     int  efuse_img_size_mb;   /* --create-efuse-img=PATH:SIZE (default 64) */
     char diagnose_iso_path[512];
     char drivers_dir[512];    /* Custom drivers directory (--drivers=DIR) */
+    char kickstart_file[512]; /* v1.9.74 D7: --kickstart=FILE — Photon kickstart JSON for unattended T.02 install */
     int mok_days;
     int mok_key_bits;         /* RSA key size: 2048, 3072, or 4096 */
     int cert_warn_days;       /* Days before expiration to warn */
@@ -4858,6 +4859,28 @@ static int create_secure_boot_iso(void) {
     snprintf(cmd, sizeof(cmd), "cp '%s' '%s/ENROLL_THIS_KEY_IN_MOKMANAGER.cer'", our_mok_der, iso_extract);
     run_cmd(cmd);
     
+    /* v1.9.74 D7: --kickstart=FILE — copy the operator-supplied Photon
+     * kickstart JSON to <iso_extract>/installer/test-kickstart.json so the
+     * Photon installer can load it via ks=cdrom:/installer/test-kickstart.json
+     * (see the conditional menuentry added below). The /installer directory
+     * is created from scratch — base ISOs do not ship one. */
+    if (cfg.kickstart_file[0]) {
+        char ks_dir[512], ks_dest[512];
+        snprintf(ks_dir, sizeof(ks_dir), "%s/installer", iso_extract);
+        if (mkdir_p(ks_dir) != 0) {
+            log_warn("Failed to create %s -- kickstart menuentry will not work", ks_dir);
+        } else {
+            snprintf(ks_dest, sizeof(ks_dest), "%s/installer/test-kickstart.json", iso_extract);
+            snprintf(cmd, sizeof(cmd), "cp '%s' '%s'", cfg.kickstart_file, ks_dest);
+            if (run_cmd(cmd) == 0) {
+                log_info("v1.9.74 D7: kickstart copied to ISO:/installer/test-kickstart.json");
+                log_warn("v1.9.74 D7: kickstart embedded with known-plaintext root password -- DO NOT DEPLOY");
+            } else {
+                log_warn("Failed to copy kickstart -- unattended menuentry will be inactive");
+            }
+        }
+    }
+
     /* Modify the original /boot/grub2/grub.cfg to add our menu options
      * while keeping the original theme and graphics settings intact.
      * This avoids graphics mode conflicts from chaining configs. */
@@ -4934,7 +4957,27 @@ static int create_secure_boot_iso(void) {
                 "\n"
                 "    menuentry \"MokManager - Enroll/Delete MOK Keys\" {\n"
                 "        chainloader /EFI/BOOT/MokManager.efi\n"
-                "    }\n"
+                "    }\n",
+                cfg.release
+            );
+            /* v1.9.74 D7: kickstart menuentry injection (eFuse mode).
+             * Inserted between MokManager and the firmware/reboot entries so
+             * arrow-down from default (Install) lands on MokManager first;
+             * the unattended entry is one position further down. Operators
+             * never see this on production deploys unless they explicitly
+             * arrow-down past MokManager. The T.02 harness keystrokes its
+             * way to this entry, or builds a default-shifted variant. */
+            if (cfg.kickstart_file[0]) {
+                fprintf(f,
+                "\n"
+                "    menuentry \"Install Photon (Unattended Test, kickstart)\" {\n"
+                "        linux /isolinux/vmlinuz root=/dev/ram0 loglevel=7 usbcore.autosuspend=-1 photon.media=LABEL=PHOTON_SB_%s ks=cdrom:/installer/test-kickstart.json\n"
+                "        initrd /isolinux/initrd.img\n"
+                "    }\n",
+                    cfg.release
+                );
+            }
+            fprintf(f,
                 "\n"
                 "    menuentry \"Reboot into UEFI Firmware Settings\" {\n"
                 "        fwsetup\n"
@@ -4947,8 +4990,7 @@ static int create_secure_boot_iso(void) {
                 "    menuentry \"Shutdown\" {\n"
                 "        halt\n"
                 "    }\n"
-                "fi\n",
-                cfg.release
+                "fi\n"
             );
             log_info("eFuse USB verification mode ENABLED in grub.cfg");
         } else {
@@ -4980,7 +5022,22 @@ static int create_secure_boot_iso(void) {
                 "\n"
                 "menuentry \"MokManager - Enroll/Delete MOK Keys\" {\n"
                 "    chainloader /EFI/BOOT/MokManager.efi\n"
-                "}\n"
+                "}\n",
+                cfg.release
+            );
+            /* v1.9.74 D7: kickstart menuentry injection (standard mode).
+             * See eFuse-mode block above for placement rationale. */
+            if (cfg.kickstart_file[0]) {
+                fprintf(f,
+                "\n"
+                "menuentry \"Install Photon (Unattended Test, kickstart)\" {\n"
+                "    linux /isolinux/vmlinuz root=/dev/ram0 loglevel=7 usbcore.autosuspend=-1 photon.media=LABEL=PHOTON_SB_%s ks=cdrom:/installer/test-kickstart.json\n"
+                "    initrd /isolinux/initrd.img\n"
+                "}\n",
+                    cfg.release
+                );
+            }
+            fprintf(f,
                 "\n"
                 "menuentry \"Reboot into UEFI Firmware Settings\" {\n"
                 "    fwsetup\n"
@@ -4992,8 +5049,7 @@ static int create_secure_boot_iso(void) {
                 "\n"
                 "menuentry \"Shutdown\" {\n"
                 "    halt\n"
-                "}\n",
-                cfg.release
+                "}\n"
             );
         }
         fclose(f);
@@ -5594,6 +5650,12 @@ static void show_help(void) {
     printf("                             Example: --create-efuse-img=/tmp/efuse.img:128\n");
     printf("  -E, --efuse-usb            Enable eFuse USB dongle verification in GRUB\n");
     printf("  -R, --rpm-signing          Enable GPG signing of MOK RPM packages\n");
+    printf("  -S, --kickstart=FILE       v1.9.74 D7: embed Photon kickstart JSON for T.02 unattended install.\n");
+    printf("                             File is copied to ISO:/installer/test-kickstart.json and\n");
+    printf("                             a second menuentry \"Install Photon (Unattended Test, kickstart)\"\n");
+    printf("                             is added with ks=cdrom:/installer/test-kickstart.json.\n");
+    printf("                             WARNING: do NOT deploy on production hardware -- the\n");
+    printf("                             test kickstart's root password is intentionally known.\n");
     /* -F/--full-kernel-build removed in v1.9.0 - kernel build is now mandatory */
     printf("  -D, --diagnose=ISO         Diagnose an existing ISO for Secure Boot issues\n");
     printf("  -c, --clean                Clean up all artifacts\n");
@@ -5664,11 +5726,12 @@ int main(int argc, char *argv[]) {
         {"verbose",           no_argument,       0, 'v'},
         {"yes",               no_argument,       0, 'y'},
         {"help",              no_argument,       0, 'h'},
+        {"kickstart",         required_argument, 0, 'S'},  /* v1.9.74 D7: --kickstart=FILE */
         {0, 0, 0, 0}
     };
-    
+
     int opt;
-    while ((opt = getopt_long(argc, argv, "r:i:o:k:e:m:K:W:Cbgsd::ERFD:cu:I:vyh", long_options, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "r:i:o:k:e:m:K:W:Cbgsd::ERFD:cu:I:vyhS:", long_options, NULL)) != -1) {
         switch (opt) {
             case 'r':
                 /* Security: Validate release against whitelist */
@@ -5760,6 +5823,24 @@ int main(int argc, char *argv[]) {
                     snprintf(project_root, sizeof(project_root), "%s/..", exe_dir);
                     snprintf(cfg.drivers_dir, sizeof(cfg.drivers_dir), "%s/%s", project_root, DEFAULT_DRIVERS_DIR);
                 }
+                break;
+            case 'S':
+                /* v1.9.74 D7: --kickstart=FILE — embed Photon kickstart JSON
+                 * at /installer/test-kickstart.json on the ISO and add a
+                 * second GRUB menuentry "Install (Unattended Test, kickstart)"
+                 * with ks=cdrom:/installer/test-kickstart.json. NEVER deploy
+                 * the resulting ISO on production hardware — the kickstart's
+                 * root password is intentionally known to the test harness. */
+                if (!validate_path_safe(optarg)) {
+                    log_error("Invalid kickstart file path (contains dangerous characters)");
+                    return 1;
+                }
+                if (!file_exists(optarg)) {
+                    log_error("--kickstart=%s -- file not found", optarg);
+                    return 1;
+                }
+                strncpy(cfg.kickstart_file, optarg, sizeof(cfg.kickstart_file) - 1);
+                log_warn("v1.9.74 D7: --kickstart=%s -- the resulting ISO is for T.02 testing ONLY. Root password from kickstart will be installed. Do NOT deploy on production hardware.", optarg);
                 break;
             case 'u':
                 /* Security: Validate device path */
