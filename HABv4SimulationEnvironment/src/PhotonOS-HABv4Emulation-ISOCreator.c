@@ -41,7 +41,7 @@
  * monolith with its own static versions of common types/functions; including
  * habv4_common.h causes static-vs-extern conflicts on dozens of symbols).
  * MUST be kept in sync with habv4_common.h:32 manually. */
-#define VERSION "1.9.83"
+#define VERSION "1.9.84"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */
@@ -2124,7 +2124,117 @@ static int integrate_driver_rpms(const char *drivers_dir, const char *iso_extrac
             unlink(update_script);
         }
     }
-    
+
+    return 0;
+}
+
+/**
+ * v1.9.84 D17 / TODO #207 / FEB-parity batch G1+G3+G4+G5+G6.
+ *
+ * Unconditionally add the FEB-parity userspace packages to packages_mok.json.
+ * These RPMs are either already staged into the ISO's /RPMS/ tree by the base
+ * Photon build (per `output.txt:10053, 10269, 10415` for tpm2-*) or fetched
+ * from the Photon yum repo at install time. Either way, the installer must be
+ * told to actually SELECT them — kernel-side modules without userspace tools
+ * are silently dropped (e.g. dracut warns
+ * `tpm2-tss will not be installed, because command 'tpm2' could not be found`
+ * at output.txt:8198, 9672).
+ *
+ * Gaps closed by this function:
+ *   G1 — bluez + bluez-libs        (Bluetooth userspace; silences dracut
+ *                                   62bluetooth warning at output.txt:8190)
+ *   G3 — tpm2-tools/-tss/-abrmd    (TPM 2.0 userspace; RPMs already in /RPMS/)
+ *   G4 — linux-firmware            (CPU microcode + non-Intel Wi-Fi firmware
+ *                                   umbrella; Photon 5.0 ships consolidated)
+ *   G5 — nvme-cli                  (NVMe namespace mgmt + SMART + PSID revert)
+ *   G6 — linux-firmware            (covered by G4 umbrella; Realtek/Broadcom/
+ *                                   Atheros/MediaTek firmware blobs ship in
+ *                                   the same upstream linux-firmware tree as
+ *                                   the iwlwifi + microcode blobs)
+ *
+ * NOTE on G6: the operator audit (docs/audits/feb-jun-driver-coverage-audit.md
+ * §3 G6) framed this as "linux-firmware-broadcom + linux-firmware-realtek +
+ * linux-firmware-mediatek + linux-firmware-atheros". Photon 5.0 ships the
+ * upstream linux-firmware tree as a single umbrella package; the flavored
+ * sub-packages (linux-firmware-iwlwifi, -rtw88, -brcm, -ath11k, -mediatek)
+ * referenced in DRIVER_KERNEL_MAP at line 144-186 are HABv4-side .spec
+ * splits sourced from `drivers/RPM/` via the --drivers flag, not standalone
+ * RPMs in the Photon yum repo. Using the umbrella here keeps the install set
+ * vendor-neutral and avoids a hard dependency on the flavored .spec files
+ * being present in drivers/RPM/. If a future Photon release splits the tree,
+ * swap to the flavored names. See report for the uncertainty flag.
+ *
+ * Returns 0 on success or when packages_mok.json is absent (caller logs the
+ * miss; we never fail-hard here because the installer can also resolve these
+ * via package dependencies if a higher-level meta-package pulls them in).
+ */
+static int add_feb_parity_packages_to_mok_json(const char *initrd_extract) {
+    char packages_json[512];
+    snprintf(packages_json, sizeof(packages_json),
+             "%s/installer/packages_mok.json", initrd_extract);
+
+    if (!file_exists(packages_json)) {
+        log_warn("v1.9.84 D17 FEB-parity: packages_mok.json not at %s — skipping",
+                 packages_json);
+        return 0;
+    }
+
+    log_info("v1.9.84 D17 FEB-parity G1+G3+G4+G5+G6: adding userspace packages to packages_mok.json...");
+
+    /* Inline Python idempotently appends the missing names. Skips any already
+     * present so we never duplicate when integrate_driver_rpms() (also runs
+     * later) re-touches the file. */
+    char patch_script[512];
+    snprintf(patch_script, sizeof(patch_script),
+             "%s/feb_parity_packages.py", initrd_extract);
+
+    FILE *pf = fopen(patch_script, "w");
+    if (!pf) {
+        log_warn("v1.9.84 D17 FEB-parity: could not write %s", patch_script);
+        return 0;
+    }
+
+    fprintf(pf,
+        "#!/usr/bin/env python3\n"
+        "import json, sys\n"
+        "FEB_PARITY = [\n"
+        "    'bluez',           # G1 Bluetooth userspace (bluetoothd)\n"
+        "    'bluez-libs',      # G1 Bluetooth userspace shared libs\n"
+        "    'tpm2-tools',      # G3 TPM 2.0 userspace (tpm2_pcrread, ...)\n"
+        "    'tpm2-tss',        # G3 TPM 2.0 stack (libtss2)\n"
+        "    'tpm2-abrmd',      # G3 TPM 2.0 access broker / resource manager\n"
+        "    'linux-firmware',  # G4 CPU microcode (intel-ucode + amd-microcode)\n"
+        "                       # G6 non-Intel Wi-Fi firmware (rtw88/rtw89/brcm/ath11k/mt76)\n"
+        "    'nvme-cli',        # G5 NVMe namespace mgmt + SMART + PSID revert\n"
+        "]\n"
+        "with open(sys.argv[1], 'r') as fp:\n"
+        "    data = json.load(fp)\n"
+        "added = []\n"
+        "for pkg in FEB_PARITY:\n"
+        "    if pkg not in data['packages']:\n"
+        "        data['packages'].append(pkg)\n"
+        "        added.append(pkg)\n"
+        "data['packages'].sort(key=str.lower)\n"
+        "with open(sys.argv[1], 'w') as fp:\n"
+        "    json.dump(data, fp, indent=4)\n"
+        "print('v1.9.84 FEB-parity added:', ', '.join(added) if added else '(none — all already present)')\n"
+    );
+    fclose(pf);
+
+    char cmd[1024];
+    snprintf(cmd, sizeof(cmd), "python3 '%s' '%s' 2>&1",
+             patch_script, packages_json);
+    char *output = run_cmd_capture(cmd);
+    if (output) {
+        char *line = strtok(output, "\n");
+        while (line) {
+            log_info("  %s", line);
+            line = strtok(NULL, "\n");
+        }
+        free(output);
+    }
+
+    unlink(patch_script);
     return 0;
 }
 
@@ -2309,7 +2419,14 @@ static int build_linux_kernel(void) {
         "scripts/config --enable CONFIG_USB_UAS && "
         "scripts/config --enable CONFIG_BLK_DEV_SD && "
         "scripts/config --enable CONFIG_SCSI && "
-        "scripts/config --enable CONFIG_SCSI_MOD",
+        "scripts/config --enable CONFIG_SCSI_MOD && "
+        /* v1.9.84 G8 — explicit r8152 USB 2.5GbE Ethernet adapter.
+         * In-tree since 3.x but stock Photon ESX config does not toggle it.
+         * Common in USB-C dongles. Without it, USB-attached 2.5GbE NICs are
+         * invisible at install time and dracut force_drivers below has no
+         * module to load. Pair this with the force_drivers entry in the
+         * dracut usb-boot.conf so the module is unconditionally loaded. */
+        "scripts/config --module CONFIG_USB_RTL8152",                       /* r8152 USB 2.5GbE */
         kernel_src);
     run_cmd(cmd);
 
@@ -4873,12 +4990,27 @@ static int create_secure_boot_iso(void) {
             "# system's initrd. force_drivers ensures these modules are\n"
             "# unconditionally loaded as a dracut module.\n"
             "force_drivers+=\" usbcore usb-common xhci_hcd xhci_pci ehci_hcd ehci_pci uhci_hcd usb_storage \"\n"
+            "# v1.9.84 G8: r8152 (Realtek USB 2.5GbE) — common in USB-C dongles.\n"
+            "# Kernel module is enabled via scripts/config --module CONFIG_USB_RTL8152\n"
+            "# in build_linux_kernel(); force-load so install-time network is up when\n"
+            "# the operator plugs a USB Ethernet adapter into a host with no on-board NIC.\n"
+            "add_drivers+=\" r8152 \"\n"
         );
         fclose(dracut_f);
         log_info("v1.9.64: created %s with force_drivers config", usb_boot_conf);
     } else {
         log_warn("v1.9.64: failed to create %s", usb_boot_conf);
     }
+
+    /* v1.9.84 D17 / FEB-parity batch G1+G3+G4+G5+G6.
+     * Unconditional — runs regardless of --drivers flag, before initrd is repacked.
+     * Adds bluez, bluez-libs, tpm2-tools, tpm2-tss, tpm2-abrmd, linux-firmware,
+     * nvme-cli to packages_mok.json so the installer actually selects the
+     * userspace counterparts of the kernel modules we already ship. See the
+     * audit doc docs/audits/feb-jun-driver-coverage-audit.md §3 G1/G3/G4/G5/G6
+     * for the rationale; G2 (r8125) and G7 (audio) and G9 (NM/iwd) are
+     * deferred to v1.9.85 / v1.10b. */
+    add_feb_parity_packages_to_mok_json(initrd_extract);
 
     /* Integrate driver RPMs if --drivers specified
      * This MUST happen BEFORE initrd is repacked so packages_mok.json can be updated */
