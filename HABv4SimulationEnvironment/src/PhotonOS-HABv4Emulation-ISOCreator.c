@@ -41,7 +41,7 @@
  * monolith with its own static versions of common types/functions; including
  * habv4_common.h causes static-vs-extern conflicts on dozens of symbols).
  * MUST be kept in sync with habv4_common.h:32 manually. */
-#define VERSION "1.9.76"
+#define VERSION "1.9.77"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */
@@ -4904,9 +4904,16 @@ static int create_secure_boot_iso(void) {
                 "# so the initial `search --label EFUSE_SIM` can't see FAT32-labeled\n"
                 "# eFuse markers (sibling of v1.9.65's retry-block insmod). Without this,\n"
                 "# every boot lands in the eFuse-failed menu with timeout=-1.\n"
+                "# v1.9.77 D10: ALSO race-condition fix — SATA disk enumeration on\n"
+                "# VMware Workstation isn't complete when the first `search` runs.\n"
+                "# `sleep 2` lets the AHCI controller finish device discovery before\n"
+                "# GRUB probes for the EFUSE_SIM label. v1.9.65's retry-block had\n"
+                "# implicit delay (user click), so the issue stayed hidden on retry.\n"
+                "# Closes task #190 — 'EFUSE_SIM label correct on .img but GRUB returns no such device'.\n"
                 "insmod fat\n"
                 "insmod part_msdos\n"
                 "insmod part_gpt\n"
+                "sleep 2\n"
                 "set efuse_verified=0\n"
                 "search --label EFUSE_SIM --set=efuse_disk\n"
                 "if [ -n \"$efuse_disk\" ]; then\n"
