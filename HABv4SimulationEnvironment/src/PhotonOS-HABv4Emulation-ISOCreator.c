@@ -41,7 +41,7 @@
  * monolith with its own static versions of common types/functions; including
  * habv4_common.h causes static-vs-extern conflicts on dozens of symbols).
  * MUST be kept in sync with habv4_common.h:32 manually. */
-#define VERSION "1.9.82"
+#define VERSION "1.9.83"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */
@@ -2983,6 +2983,84 @@ static int create_secure_boot_iso(void) {
                 "else:\n"
                 "    print('v1.9.58 _quickstart_committed monkey-patch already present (idempotent)')\n"
                 "\n"
+                "# v1.9.83 D16 (#205 — No-MOK install path runtime hookup):\n"
+                "#   The MokQuickstartSelector now writes 'repo_flavor' on every\n"
+                "#   commit, and installer.__init__ accepts new 'repo_paths_mok'\n"
+                "#   / 'repo_paths_nomok' parameters that downstream code threads\n"
+                "#   through. Until those keys are whitelisted in known_keys,\n"
+                "#   _check_install_config rejects the install_config with\n"
+                "#   'Unknown install_config keys: repo_flavor' (same failure\n"
+                "#   mode v1.9.43 hit for 'mok_quickstart'). Mirror v1.9.56/58\n"
+                "#   module-level monkey-patch idiom — anchor-free, version-\n"
+                "#   resilient, idempotent.\n"
+                "monkey_patch_v1983 = (\n"
+                "    '\\n# Appended by HABv4 ISOCreator v1.9.83 — whitelist No-MOK install path keys\\n'\n"
+                "    '# (D16 / #205: repo_flavor + repo_paths_mok + repo_paths_nomok)\\n'\n"
+                "    'try:\\n'\n"
+                "    '    _v1983_keys = {\"repo_flavor\", \"repo_paths_mok\", \"repo_paths_nomok\"}\\n'\n"
+                "    '    if isinstance(Installer.known_keys, set):\\n'\n"
+                "    '        Installer.known_keys |= _v1983_keys\\n'\n"
+                "    '    elif isinstance(Installer.known_keys, (list, tuple)):\\n'\n"
+                "    '        _new = list(Installer.known_keys)\\n'\n"
+                "    '        for _k in _v1983_keys:\\n'\n"
+                "    '            if _k not in _new:\\n'\n"
+                "    '                _new.append(_k)\\n'\n"
+                "    '        Installer.known_keys = _new\\n'\n"
+                "    '    elif isinstance(Installer.known_keys, frozenset):\\n'\n"
+                "    '        Installer.known_keys = Installer.known_keys | _v1983_keys\\n'\n"
+                "    'except (NameError, AttributeError):\\n'\n"
+                "    '    pass\\n'\n"
+                ")\n"
+                "if 'HABv4 ISOCreator v1.9.83' not in content:\n"
+                "    content = content + monkey_patch_v1983\n"
+                "    print('v1.9.83 No-MOK keys monkey-patch appended to installer.py')\n"
+                "else:\n"
+                "    print('v1.9.83 No-MOK keys monkey-patch already present (idempotent)')\n"
+                "\n"
+                "# v1.9.83 D16 (#205 — No-MOK install path runtime hookup, §2.3a):\n"
+                "#   Extend Installer.__init__ signature with two new optional\n"
+                "#   parameters (repo_paths_mok, repo_paths_nomok) that default\n"
+                "#   to None. Anchor on the existing repo_paths param. Then\n"
+                "#   assign them to self in the constructor body.\n"
+                "before_v1983_ctor = content\n"
+                "content = re.sub(\n"
+                "    r'(def __init__\\(self,[^)]*?repo_paths=Defaults\\.REPO_PATHS,)',\n"
+                "    r'\\1\\n                 repo_paths_mok=None, repo_paths_nomok=None,',\n"
+                "    content, count=1, flags=re.DOTALL)\n"
+                "if content == before_v1983_ctor:\n"
+                "    print('WARN v1.9.83 §2.3a: Installer.__init__ repo_paths anchor not found - signature unchanged')\n"
+                "else:\n"
+                "    # Body assignment: anchor on existing self.repo_paths assignment\n"
+                "    before_v1983_ctor_body = content\n"
+                "    content = re.sub(\n"
+                "        r'(self\\.repo_paths = repo_paths\\n)',\n"
+                "        r'\\1        self.repo_paths_mok = repo_paths_mok\\n'\n"
+                "        r'        self.repo_paths_nomok = repo_paths_nomok\\n',\n"
+                "        content, count=1)\n"
+                "    if content == before_v1983_ctor_body:\n"
+                "        print('WARN v1.9.83 §2.3a: self.repo_paths assignment anchor not found - body unchanged')\n"
+                "\n"
+                "# v1.9.83 D16 (#205 — No-MOK install path runtime hookup, §2.3b):\n"
+                "#   Inside _add_defaults, branch on install_config['repo_flavor']\n"
+                "#   to swap self.repo_paths to repo_paths_mok / repo_paths_nomok.\n"
+                "#   Default 'auto' (or missing) → existing single-repo behavior is\n"
+                "#   preserved bit-for-bit (Yes-MOK regression guard).\n"
+                "before_v1983_add = content\n"
+                "content = re.sub(\n"
+                "    r'(\\n    def _add_defaults\\(self, install_config\\):\\n)',\n"
+                "    r'\\1'\n"
+                "    r'        # v1.9.83 D16 (#205): map repo_flavor to repo_paths\\n'\n"
+                "    r'        _v1983_flavor = install_config.get(\"repo_flavor\", \"auto\")\\n'\n"
+                "    r'        if _v1983_flavor == \"mok\" and getattr(self, \"repo_paths_mok\", None):\\n'\n"
+                "    r'            self.repo_paths = self.repo_paths_mok\\n'\n"
+                "    r'        elif _v1983_flavor == \"nomok\" and getattr(self, \"repo_paths_nomok\", None):\\n'\n"
+                "    r'            self.repo_paths = self.repo_paths_nomok\\n'\n"
+                "    r'        # _v1983_flavor == \"auto\" or no override → fall through to\\n'\n"
+                "    r'        # single-/RPMS/ legacy. Preserves Yes-MOK byte-for-byte.\\n',\n"
+                "    content, count=1)\n"
+                "if content == before_v1983_add:\n"
+                "    print('WARN v1.9.83 §2.3b: _add_defaults anchor not found - repo_flavor branch not installed')\n"
+                "\n"
                 "# Fix 7 (v1.9.40 — un-mask installer exceptions, cadastre+plan §2.3):\n"
                 "#   The bare-except at installer.py:776 catches ALL exceptions and calls\n"
                 "#   self.exit_gracefully(), which raises InstallerError('Installer failed')\n"
@@ -3038,7 +3116,88 @@ static int create_secure_boot_iso(void) {
     } else {
         log_warn("installer.py not found in any python3.X/site-packages/photon_installer/");
     }
-    
+
+    /* v1.9.83 D16 (#205 — No-MOK install path runtime hookup, §2.4):
+     * Patch isoInstaller.py to parse repos_mok= / repos_nomok= kernel
+     * cmdline keys (siblings of the existing repos= parser) and forward
+     * them to the Installer(...) call. Default fall-through preserves the
+     * existing single-/RPMS/ repo behavior. See
+     * docs/plans/v1937-no-mok-install-path-design.md §2.4. */
+    char iso_installer_py[512];
+    int have_iso_installer_py = find_photon_installer_file(
+        initrd_extract, "isoInstaller.py", iso_installer_py, sizeof(iso_installer_py));
+    if (have_iso_installer_py) {
+        log_info("Patching isoInstaller.py for No-MOK repo cmdline keys...");
+        char patch_iso_installer[512];
+        snprintf(patch_iso_installer, sizeof(patch_iso_installer),
+                 "%s/patch_isoinstaller.py", work_dir);
+        FILE *pf = fopen(patch_iso_installer, "w");
+        if (pf) {
+            fprintf(pf,
+                "#!/usr/bin/env python3\n"
+                "import re, sys\n"
+                "\n"
+                "with open(sys.argv[1], 'r') as f:\n"
+                "    content = f.read()\n"
+                "\n"
+                "MARKER = '# v1.9.83-no-mok-repo-cmdline'\n"
+                "if MARKER in content:\n"
+                "    print('[patch_isoinstaller] v1.9.83 already applied (idempotent)')\n"
+                "    sys.exit(0)\n"
+                "\n"
+                "# Patch 1: extend cmdline parser to honor repos_mok= / repos_nomok=.\n"
+                "# Anchor: the existing `if param.startswith(\"repos=\"):` branch.\n"
+                "before1 = content\n"
+                "content = re.sub(\n"
+                "    r'(if param\\.startswith\\(\"repos=\"\\):\\s*\\n'\n"
+                "    r'\\s*repo_paths = param\\[len\\(\"repos=\"\\):\\]\\s*\\n)',\n"
+                "    r'\\1'\n"
+                "    '            ' + MARKER + '\\n'\n"
+                "    '            elif param.startswith(\"repos_mok=\"):\\n'\n"
+                "    '                repo_paths_mok = param[len(\"repos_mok=\"):]\\n'\n"
+                "    '            elif param.startswith(\"repos_nomok=\"):\\n'\n"
+                "    '                repo_paths_nomok = param[len(\"repos_nomok=\"):]\\n',\n"
+                "    content, count=1)\n"
+                "if content == before1:\n"
+                "    print('WARN v1.9.83 §2.4: repos= cmdline anchor not found - new keys not parsed')\n"
+                "\n"
+                "# Patch 2: seed repo_paths_mok / repo_paths_nomok defaults from\n"
+                "# media_mount_path (both point at /RPMS until M24b lands the\n"
+                "# audit-clean /RPMS_NOMOK/ mirror).\n"
+                "before2 = content\n"
+                "content = re.sub(\n"
+                "    r'(repo_paths\\s*=\\s*None\\s*\\n)',\n"
+                "    r'\\1        repo_paths_mok = None\\n        repo_paths_nomok = None\\n',\n"
+                "    content, count=1)\n"
+                "if content == before2:\n"
+                "    print('WARN v1.9.83 §2.4: repo_paths=None init anchor not found')\n"
+                "\n"
+                "# Patch 3: thread new params through the Installer(...) constructor.\n"
+                "before3 = content\n"
+                "content = re.sub(\n"
+                "    r'(Installer\\([^)]*?repo_paths=repo_paths)(,?)',\n"
+                "    r'\\1, repo_paths_mok=repo_paths_mok, repo_paths_nomok=repo_paths_nomok\\2',\n"
+                "    content, count=1, flags=re.DOTALL)\n"
+                "if content == before3:\n"
+                "    print('WARN v1.9.83 §2.4: Installer(...) call anchor not found')\n"
+                "\n"
+                "with open(sys.argv[1], 'w') as f:\n"
+                "    f.write(content)\n"
+                "print('isoInstaller.py patched v1.9.83: repos_mok= / repos_nomok= cmdline + Installer threading')\n"
+            );
+            fclose(pf);
+            snprintf(cmd, sizeof(cmd),
+                     "python3 '%s' '%s' 2>&1",
+                     patch_iso_installer, iso_installer_py);
+            run_cmd(cmd);
+            snprintf(cmd, sizeof(cmd), "rm -f '%s'", patch_iso_installer);
+            run_cmd(cmd);
+            log_info("Patched isoInstaller.py: No-MOK repo cmdline keys (#205)");
+        }
+    } else {
+        log_warn("isoInstaller.py not found — No-MOK repo cmdline keys not installed");
+    }
+
     /* Patch linuxselector.py to recognize linux-mok kernel flavor
      * The LinuxSelector class has a hardcoded dict of known kernel flavors.
      * Without this patch, selecting packages with linux-mok causes ZeroDivisionError
@@ -3306,6 +3465,28 @@ static int create_secure_boot_iso(void) {
                 "        for _k in ('ansible', 'additional_packages',\n"
                 "                   'packages', 'linux_flavor'):\n"
                 "            self.install_config.pop(_k, None)\n"
+                "        # v1.9.83 D16 (#205 — No-MOK install path runtime hookup):\n"
+                "        # explicitly pin the non-MOK repo flavor + non-MOK linux\n"
+                "        # kernel + the minimal packagelist so PackageSelector's\n"
+                "        # default cursor (which would otherwise land on the MOK\n"
+                "        # option) and isoInstaller.py's single-repo fall-through\n"
+                "        # cannot silently restore the MOK install path. See\n"
+                "        # docs/plans/v1937-no-mok-install-path-design.md §2.1.\n"
+                "        self.install_config['repo_flavor'] = 'nomok'\n"
+                "        self.install_config['packagelist_file'] = 'packages_minimal.json'\n"
+                "        self.install_config['linux_flavor'] = 'linux'\n"
+                "        # v1.9.83: seed 'packages' from packages_minimal.json *as-is*\n"
+                "        # (no MOK quartet) so PackageSelector's v1.9.83 'no' guard\n"
+                "        # can short-circuit safely without leaving install_config\n"
+                "        # missing the packages key the installer's package-resolve\n"
+                "        # path requires. Mirrors _apply_yes lines above minus the\n"
+                "        # mok-kernel/grub/shim additions.\n"
+                "        try:\n"
+                "            base = list(JsonWrapper(PACKAGES_MINIMAL_PATH).read()\n"
+                "                        .get('packages', []))\n"
+                "        except Exception:\n"
+                "            base = ['minimal', 'initramfs', 'lvm2', 'less', 'sudo']\n"
+                "        self.install_config['packages'] = base\n"
                 "        return ActionResult(True, None)\n"
                 "\n"
                 "    def set_yes_generic(self, _unused):\n"
@@ -3529,7 +3710,11 @@ static int create_secure_boot_iso(void) {
                     "    r'(\\n        self\\.menu_starty = self\\.win_starty \\+ 3\\n)\\n(        self\\.load_package_list\\(options_file\\))',\n"
                     "    r'\\1\\n'\n"
                     "    '        # v1.9.41+: belt-and-suspenders for kickstart-pre-set install_config\\n'\n"
-                    "    \"        if install_config.get('mok_quickstart') in ('generic', 'esx'):\\n\"\n"
+                    "    '        # v1.9.83 D16 (#205): also short-circuit when No-MOK is committed —\\n'\n"
+                    "    '        # set_no() pre-seeds packages from packages_minimal.json so the\\n'\n"
+                    "    '        # screen has nothing to ask. Default-cursor-lands-on-MOK regression\\n'\n"
+                    "    '        # mitigation (build_install_options_all.json line 2-6).\\n'\n"
+                    "    \"        if install_config.get('mok_quickstart') in ('generic', 'esx', 'no'):\\n\"\n"
                     "    '            self.inactive_screen = True\\n'\n"
                     "    '            return\\n'\n"
                     "    '\\n'\n"
@@ -3550,7 +3735,9 @@ static int create_secure_boot_iso(void) {
                     "    r'            return ActionResult\\(None, \\{\"inactive_screen\": True\\}\\)\\n)',\n"
                     "    '\\\\1'\n"
                     "    '        ' + MARKER + '\\n'\n"
-                    "    \"        if self.install_config.get('mok_quickstart') in ('generic', 'esx'):\\n\"\n"
+                    "    \"        # v1.9.83 D16 (#205): include 'no' so the No-MOK install path\\n\"\n"
+                    "    \"        # also short-circuits this screen. set_no() pre-seeds packages.\\n\"\n"
+                    "    \"        if self.install_config.get('mok_quickstart') in ('generic', 'esx', 'no'):\\n\"\n"
                     "    \"            return ActionResult(None, {'inactive_screen': True})\\n\"\n"
                     "    '\\\\2',\n"
                     "    content, count=1)\n"
