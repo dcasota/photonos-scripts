@@ -41,7 +41,7 @@
  * monolith with its own static versions of common types/functions; including
  * habv4_common.h causes static-vs-extern conflicts on dozens of symbols).
  * MUST be kept in sync with habv4_common.h:32 manually. */
-#define VERSION "1.9.77"
+#define VERSION "1.9.82"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */
@@ -4473,6 +4473,112 @@ static int create_secure_boot_iso(void) {
         log_warn("v1.9.69 D4: %s not found in installer initrd -- skipping orphan_file strip", mke2fs_conf_path);
     }
 
+    /* v1.9.80 D13: Photon installer initrd has NO auto-launcher.
+     *
+     * Operator-discovered 2026-06-09 via serial-log capture (v1.9.79 D12 made
+     * the installer's stdout reach the host serial): after boot the installer
+     * initrd reaches multi-user.target, agetty auto-logins root on tty1+ttyS0,
+     * and the user lands at a plain `root [ /installer ]# ` shell prompt.
+     * There is no photon-installer.service, no /root/.bash_profile, no
+     * /etc/profile.d/ hook — `/usr/bin/photon-installer` is expected to be
+     * invoked MANUALLY at the prompt. That breaks fully-unattended kickstart
+     * (`ks=cdrom:/installer/test-kickstart.json` is correctly parsed by the
+     * IsoInstaller class but only AFTER photon-installer is launched, which
+     * the stock installer never does on its own).
+     *
+     * Fix: when --kickstart=FILE is set, inject a systemd oneshot service
+     * into the installer initrd that fires after multi-user.target and runs
+     * `photon-installer -i iso -v <release>`. Symlinked into
+     * /etc/systemd/system/multi-user.target.wants/ so it starts on every boot.
+     *
+     * ConditionKernelCommandLine=ks gates the service to only fire when ks=
+     * is actually on the cmdline — production builds (no --kickstart) leave
+     * the unit dormant.
+     *
+     * The Conflicts= line stops the auto-login getty so photon-installer
+     * takes over both tty1 and ttyS0 without input competition. */
+    if (cfg.kickstart_file[0]) {
+        char autorun_unit[512], autorun_wants_link[512], autorun_wants_dir[512];
+        snprintf(autorun_unit, sizeof(autorun_unit),
+            "%s/etc/systemd/system/photon-kickstart-autorun.service", initrd_extract);
+        snprintf(autorun_wants_dir, sizeof(autorun_wants_dir),
+            "%s/etc/systemd/system/multi-user.target.wants", initrd_extract);
+        snprintf(autorun_wants_link, sizeof(autorun_wants_link),
+            "%s/photon-kickstart-autorun.service", autorun_wants_dir);
+
+        FILE *uf = fopen(autorun_unit, "w");
+        if (uf) {
+            fprintf(uf,
+                "# v1.9.80 D13: auto-launch photon-installer when ks= is on the kernel\n"
+                "# cmdline. The stock Photon installer initrd has no auto-launcher; the\n"
+                "# user is expected to type `photon-installer` at the root shell. This\n"
+                "# unit fills the gap for fully-unattended kickstart-driven installs.\n"
+                "# Symlinked into multi-user.target.wants/ by the same patch step.\n"
+                "[Unit]\n"
+                "Description=Photon kickstart auto-launch (v1.9.80 D13)\n"
+                "ConditionKernelCommandLine=ks\n"
+                "After=multi-user.target network-online.target\n"
+                "Wants=network-online.target\n"
+                "Conflicts=getty@tty1.service serial-getty@ttyS0.service\n"
+                "\n"
+                "[Service]\n"
+                "Type=oneshot\n"
+                "RemainAfterExit=yes\n"
+                "StandardInput=tty\n"
+                "StandardOutput=tty\n"
+                "StandardError=tty\n"
+                "TTYPath=/dev/tty1\n"
+                "TTYReset=yes\n"
+                "TTYVHangup=yes\n"
+                /* v1.9.81 D14: wrap ExecStart in bash so stdout+stderr from
+                 * photon-installer are appended to /dev/ttyS0 AND tee'd to
+                 * /var/log/installer-autolaunch.log. v1.9.80 D13's
+                 * TTYPath=/dev/tty1 sent the error trace ONLY to tty1 where
+                 * the host can't see it; v1.9.79 D12's kernel console=ttyS0
+                 * was only for kernel/systemd output, not application stdout.
+                 *
+                 * Found 2026-06-09: v1.9.80 ISO booted, service fired and
+                 * EXITED 1/FAILURE after 0.6s with no visible reason in
+                 * serial log. The wrapper makes the Python traceback land
+                 * on the host serial log file. */
+                /* -i iso triggers IsoInstaller class which parses /proc/cmdline
+                 * for ks=, repos=, photon.media=. -v sets photon_release_version.
+                 * release pulled from cfg.release (default 5.0).
+                 *
+                 * v1.9.82 D15: switched from `... | tee ... > /dev/ttyS0` to
+                 * `exec >>/dev/ttyS0 2>&1; photon-installer ...` so photon-installer's
+                 * exit code propagates faithfully (the previous pipeline always
+                 * exited 0 because tee's exit code masked the installer's). Required
+                 * for ExecStartPost=/usr/sbin/reboot to only fire on actual success. */
+                "ExecStart=/bin/bash -c 'exec >>/dev/ttyS0 2>&1; /usr/bin/photon-installer -i iso -v %s'\n"
+                /* v1.9.82 D15: reboot into the installed system after successful
+                 * install. ExecStartPost only runs when ExecStart returns 0 — so
+                 * failed installs leave the operator in the broken state for
+                 * debugging instead of looping. Operator sees the error on serial. */
+                "ExecStartPost=/usr/sbin/reboot\n"
+                "\n"
+                "[Install]\n"
+                "WantedBy=multi-user.target\n",
+                cfg.release
+            );
+            fclose(uf);
+
+            /* mkdir -p multi-user.target.wants then symlink */
+            snprintf(cmd, sizeof(cmd), "mkdir -p '%s'", autorun_wants_dir);
+            run_cmd(cmd);
+            snprintf(cmd, sizeof(cmd),
+                "ln -sf '../photon-kickstart-autorun.service' '%s'",
+                autorun_wants_link);
+            if (run_cmd(cmd) == 0) {
+                log_info("v1.9.80 D13: photon-kickstart-autorun.service injected into installer initrd (will fire when ks= on cmdline)");
+            } else {
+                log_warn("v1.9.80 D13: failed to symlink autorun service into multi-user.target.wants/");
+            }
+        } else {
+            log_warn("v1.9.80 D13: failed to create %s -- kickstart will not auto-launch", autorun_unit);
+        }
+    }
+
     /* v1.9.64 — RESTORE HISTORICAL FIXES f12bd0b + 7d04098 (Jan 2026).
      *
      * Operator v1.9.63 install: pkg_resources warning gone (v1.9.63 worked)
@@ -4878,6 +4984,67 @@ static int create_secure_boot_iso(void) {
                 log_warn("v1.9.74 D7: kickstart embedded with known-plaintext root password -- DO NOT DEPLOY");
             } else {
                 log_warn("Failed to copy kickstart -- unattended menuentry will be inactive");
+            }
+        }
+
+        /* v1.9.78 D11: patch /isolinux/menu.cfg for BIOS-boot kickstart support.
+         *
+         * Root cause found 2026-06-09 (operator-observed): v1.9.74-77 only patched
+         * /boot/grub2/grub.cfg, which is the UEFI boot path. BIOS-firmware VMs boot
+         * via /isolinux/isolinux.bin -> menu.cfg, which still showed the stock
+         * `Install` label with no ks= parameter -> Photon installer ignored the
+         * embedded JSON and ran in interactive UI mode.
+         *
+         * Two file edits:
+         * 1. menu.cfg `append` line gets ` ks=cdrom:/installer/test-kickstart.json` appended.
+         * 2. With --kickstart-default: isolinux.cfg `timeout 0` -> `timeout 1` (auto-boot
+         *    after 0.1s instead of waiting forever).
+         *
+         * The menu label "^Install" stays — adding a new `kickstart` label would
+         * require also handling the case where the operator's old muscle memory
+         * picks plain Install. Patching the existing install label means BIOS-boot
+         * is unambiguous: there is no non-kickstart install path on this ISO. */
+        char isolinux_menu[512], isolinux_cfg[512];
+        snprintf(isolinux_menu, sizeof(isolinux_menu), "%s/isolinux/menu.cfg", iso_extract);
+        snprintf(isolinux_cfg, sizeof(isolinux_cfg), "%s/isolinux/isolinux.cfg", iso_extract);
+        if (file_exists(isolinux_menu)) {
+            /* Append ks=cdrom:... + console=ttyS0 to the `append` line under the `install` label.
+             * The stock line is:
+             *   append initrd=initrd.img root=/dev/ram0 loglevel=3 photon.media=cdrom
+             * Sed replaces it with:
+             *   append initrd=initrd.img root=/dev/ram0 loglevel=3 photon.media=cdrom ks=cdrom:/installer/test-kickstart.json console=tty0 console=ttyS0,115200n8 systemd.journald.forward_to_console=1
+             *
+             * v1.9.78 D11: added kickstart
+             * v1.9.79 D12: also add console=ttyS0 so installer's Python output reaches
+             * the serial log (v1.9.73 only added it to INSTALLED system's grub.cfg, not
+             * the installer initrd kernel cmdline). Without this, when the installer hangs
+             * we have no log signal — the Python crash that took 6+ hours to find via
+             * screenshot was only visible because the operator saw the VM screen.
+             *
+             * Idempotent — if the marker is already present, sed match fails and the
+             * file is unchanged. */
+            snprintf(cmd, sizeof(cmd),
+                "sed -i '/photon.media=cdrom$/ s|$| ks=cdrom:/installer/test-kickstart.json console=tty0 console=ttyS0,115200n8 systemd.journald.forward_to_console=1|' '%s'",
+                isolinux_menu);
+            if (run_cmd(cmd) == 0) {
+                log_info("v1.9.79 D12: /isolinux/menu.cfg patched — Install label cmdline now contains ks=cdrom:/installer/test-kickstart.json + console=ttyS0 (installer output reaches serial)");
+            } else {
+                log_warn("v1.9.79 D12: failed to patch /isolinux/menu.cfg -- BIOS-boot kickstart will NOT work");
+            }
+        } else {
+            log_warn("v1.9.78 D11: %s not present -- skipping BIOS-boot kickstart patch (UEFI-only ISO?)", isolinux_menu);
+        }
+        if (cfg.kickstart_default && file_exists(isolinux_cfg)) {
+            /* Force auto-boot of the default `install` label on BIOS path.
+             * Stock isolinux.cfg has `timeout 0` (= wait forever). Change to
+             * `timeout 1` (= 0.1s pause then boot default). prompt stays 0. */
+            snprintf(cmd, sizeof(cmd),
+                "sed -i 's|^timeout 0$|timeout 1|' '%s'",
+                isolinux_cfg);
+            if (run_cmd(cmd) == 0) {
+                log_info("v1.9.78 D11: /isolinux/isolinux.cfg patched — timeout 0 -> 1 (BIOS auto-boots kickstart in 0.1s)");
+            } else {
+                log_warn("v1.9.78 D11: failed to patch /isolinux/isolinux.cfg -- BIOS path will wait forever at menu");
             }
         }
     }
