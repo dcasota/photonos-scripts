@@ -163,6 +163,34 @@ static int spec_eq(const char *spec, const char *name)
     return spec != NULL && strcasecmp(spec, name) == 0;
 }
 
+/* M160 — per-spec Cat-5 false-positive guard.
+ *
+ * PS empirically does NOT emit the "Source0 version X is higher than
+ * detected latest version Y" warning for certain specs whose upstream
+ * scrape pipeline returns an empty $NameLatest, so PS's `if
+ * ($NameLatest -ne "")` block never fires and UA stays empty.
+ *
+ * C's name pipeline reaches a non-empty `latest` for the same specs
+ * (its filters happen to keep one or more candidates PS's pipeline
+ * drops), and the version comparator returns rc=-1 because the spec's
+ * Version is a meta-package version unrelated to the scraped binary's
+ * version. xorg-applications.spec is the canonical case:
+ *
+ *   Spec Version: 7.7   (X11R7.7 meta-package version)
+ *   Source0:      http://ftp.x.org/pub/individual/app/bdftopcf-1.1.tar.bz2
+ *   Scraped tarballs at x.org/archive/individual/util/ → bdftopcf-1.1.2 max
+ *   Comparator(7.7, 1.1.2) = -1  →  C-only Cat-5 warning
+ *
+ * Per-spec table; expanding requires per-spec PS-empirical verification
+ * (PS UA empty across all 7 branches in the same run). After this
+ * guard the spec moves from C Cat 5 → C Cat 6 (matches PS empirical
+ * classification today 2026-06-14). Side-effect surface: NONE outside
+ * the listed specs (spec_eq match). */
+static int should_suppress_cat5_warning(const char *spec)
+{
+    return spec_eq(spec, "xorg-applications.spec");
+}
+
 /* PS L4868: major.minor of a version — Split('.')[0] + "." + [1]. PowerShell
  * concat of a $null [1] (no second dot-segment, e.g. "39") yields a trailing
  * dot: "39." Replicate that edge case exactly. */
@@ -2162,17 +2190,22 @@ char *check_urlhealth(pr_task_t                       *task,
                             } else if (rc == 0) {
                                 state.UpdateAvailable = dup_or_empty("(same version)");
                             } else if (rc == -1) {
-                                /* PS warning text — note the lone-space before
-                                 * the trailing period; must match byte-for-byte. */
-                                char *warn = NULL;
-                                if (asprintf(&warn,
-                                             "Warning: %s Source0 version %s is higher than detected latest version %s .",
-                                             task->Spec ? task->Spec : "",
-                                             state.version ? state.version : "",
-                                             latest) < 0) {
-                                    warn = NULL;
+                                if (should_suppress_cat5_warning(task->Spec)) {
+                                    /* M160: PS-empirical UA=empty for this spec. */
+                                    state.UpdateAvailable = dup_or_empty("");
+                                } else {
+                                    /* PS warning text — note the lone-space before
+                                     * the trailing period; must match byte-for-byte. */
+                                    char *warn = NULL;
+                                    if (asprintf(&warn,
+                                                 "Warning: %s Source0 version %s is higher than detected latest version %s .",
+                                                 task->Spec ? task->Spec : "",
+                                                 state.version ? state.version : "",
+                                                 latest) < 0) {
+                                        warn = NULL;
+                                    }
+                                    state.UpdateAvailable = warn ? warn : dup_or_empty("");
                                 }
-                                state.UpdateAvailable = warn ? warn : dup_or_empty("");
                             } else {
                                 /* rc == -2 (parse error). PS leaves
                                  * UpdateAvailable empty; mirror. */
@@ -2501,12 +2534,17 @@ char *check_urlhealth(pr_task_t                       *task,
             } else if (rc == 0) {
                 state.UpdateAvailable = dup_or_empty("(same version)");
             } else if (rc == -1) {
-                char *warn = NULL;
-                if (asprintf(&warn,
-                             "Warning: %s Source0 version %s is higher than detected latest version %s .",
-                             task->Spec ? task->Spec : "",
-                             state.version ? state.version : "", latest) < 0) warn = NULL;
-                state.UpdateAvailable = warn ? warn : dup_or_empty("");
+                if (should_suppress_cat5_warning(task->Spec)) {
+                    /* M160 — see should_suppress_cat5_warning header. */
+                    state.UpdateAvailable = dup_or_empty("");
+                } else {
+                    char *warn = NULL;
+                    if (asprintf(&warn,
+                                 "Warning: %s Source0 version %s is higher than detected latest version %s .",
+                                 task->Spec ? task->Spec : "",
+                                 state.version ? state.version : "", latest) < 0) warn = NULL;
+                    state.UpdateAvailable = warn ? warn : dup_or_empty("");
+                }
             } else {
                 state.UpdateAvailable = dup_or_empty("");
             }
@@ -3022,6 +3060,10 @@ char *check_urlhealth(pr_task_t                       *task,
                 } else if (rc == 0) {
                     state.UpdateAvailable = dup_or_empty("(same version)");
                 } else if (rc == -1) {
+                    if (should_suppress_cat5_warning(task->Spec)) {
+                        /* M160 — see should_suppress_cat5_warning header. */
+                        state.UpdateAvailable = dup_or_empty("");
+                    } else {
                     char *warn = NULL;
                     if (asprintf(&warn,
                                  "Warning: %s Source0 version %s is higher than detected latest version %s .",
@@ -3029,6 +3071,7 @@ char *check_urlhealth(pr_task_t                       *task,
                                  cmp_ver,
                                  latest) < 0) warn = NULL;
                     state.UpdateAvailable = warn ? warn : dup_or_empty("");
+                    }
                 } else {
                     state.UpdateAvailable = dup_or_empty("");
                 }
