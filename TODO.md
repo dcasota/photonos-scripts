@@ -1,5 +1,41 @@
 # TODO — C-port parity convergence + vendor-info quality
 
+**>>> 2026-06-14 CHECKPOINT (M152-M160 era — spec-by-spec audit closed) <<<**
+
+After M135, the X.org cluster (M152-M158), date-vs-semver guard (M159), and
+xorg-applications Cat-5 silencing (M160) shipped. A full per-spec audit of
+every PS↔C category divergence across all 7 branches was performed
+2026-06-14. Findings:
+
+- **M160 was the ONLY surgical, no-side-effects fix produced by the audit.**
+  Closes 5 strict rows (xorg-applications on 3.0/4.0/6.0/dev/master).
+- Every other apparent (PS-cat, C-cat) divergence falls into one of three
+  do-not-fix categories. See `feedback_per_spec_audit_dont_mirror.md`
+  memory entry for the full triage table — repeated here for the working
+  doc:
+  - **Infrastructure (stale clone, pre-clone cache)** — `aufs-util.spec`
+    PS reads a stale aufs-linux clone left from pre-exclusion-list days;
+    C's persistent cache has no equivalent. Mirroring requires a
+    pre-clone or a github-API tag-listing fallback path — separate ADR,
+    not a per-spec patch.
+  - **Transient (one-off scrape failure, mean-reverts)** —
+    `re2.spec` on dev only, `byacc.spec` on 3 of 7 branches with
+    identical Source0Modified. PS scrape happened to fail or return a
+    different result on a single branch; identical spec files across
+    the affected branches confirm transience.
+  - **PS-stale-mirror (dual-goal violation)** — PS=Cat5 / C=Cat0 (8 specs:
+    cmocka, etcd, glibmm, openjdk21, python3-setuptools, rdma-core,
+    rrdtool, vim) and PS=Cat3 / C=Cat6 (6 specs: dhcp, perl-Net-Curl,
+    python3-legacy-cgi, python3-roman-numerals, dcerpc, likewise-open).
+    PS emits a stale warning or fails a URL probe; C correctly detects
+    the newer version or successfully reaches the URL. Mirroring PS
+    would actively degrade C's vendor info.
+
+**Cat-gap (PS − C) projected post-M160:** Cat 5: 11 → 6 (below the
+"gap < 5 = do nothing" threshold once the next paired run lands).
+Cat 6 gap stays at ~63 (dominated by C-WIN cases where PS misses
+upstream updates C detects — same dual-goal reason: don't mirror).
+
 **>>> 2026-06-03 SESSION CHECKPOINT (M99-M135 era — convergence loop effectively COMPLETE) <<<**
 
 Since the M63 checkpoint, ~37 phase-M tasks shipped covering CI infrastructure,
