@@ -107,7 +107,8 @@ bool db_item_get(int64_t id, Item *item) {
     
     const char *sql = 
         "SELECT id, status, title, description, tag, history, priority, due_date, "
-        "project_id, parent_id, git_branch, time_spent, created_at, updated_at "
+        "project_id, parent_id, git_branch, time_spent, created_at, updated_at, "
+        "upstream_commit, backport_commit, cve_ids "
         "FROM items WHERE id = ?";
     sqlite3_stmt *stmt;
     
@@ -134,8 +135,20 @@ bool db_item_get(int64_t id, Item *item) {
     item->time_spent = sqlite3_column_int64(stmt, 11);
     item->created_at = sqlite3_column_int64(stmt, 12);
     item->updated_at = sqlite3_column_int64(stmt, 13);
+    /* M48-KanbanCVECard columns 14/15/16. Legacy rows migrated from
+     * v3 store empty strings by default, so the safe_copy below
+     * yields a zero-length target — no NULL deref risk. */
+    str_safe_copy(item->upstream_commit,
+                  (const char *)sqlite3_column_text(stmt, 14),
+                  sizeof(item->upstream_commit));
+    str_safe_copy(item->backport_commit,
+                  (const char *)sqlite3_column_text(stmt, 15),
+                  sizeof(item->backport_commit));
+    str_safe_copy(item->cve_ids,
+                  (const char *)sqlite3_column_text(stmt, 16),
+                  sizeof(item->cve_ids));
     item->selected = false;
-    
+
     sqlite3_finalize(stmt);
     return true;
 }
@@ -143,14 +156,15 @@ bool db_item_get(int64_t id, Item *item) {
 bool db_item_update(const Item *item) {
     if (!db || !item) return false;
     
-    const char *sql = 
+    const char *sql =
         "UPDATE items SET status = ?, title = ?, description = ?, tag = ?, history = ?, "
         "priority = ?, due_date = ?, project_id = ?, parent_id = ?, git_branch = ?, "
+        "upstream_commit = ?, backport_commit = ?, cve_ids = ?, "
         "updated_at = strftime('%s', 'now') WHERE id = ?";
     sqlite3_stmt *stmt;
-    
+
     if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) return false;
-    
+
     sqlite3_bind_text(stmt, 1, STATUS_NAMES[item->status], -1, SQLITE_STATIC);
     sqlite3_bind_text(stmt, 2, item->title, -1, SQLITE_STATIC);
     sqlite3_bind_text(stmt, 3, item->description, -1, SQLITE_STATIC);
@@ -161,7 +175,12 @@ bool db_item_update(const Item *item) {
     sqlite3_bind_int64(stmt, 8, item->project_id);
     sqlite3_bind_int64(stmt, 9, item->parent_id);
     sqlite3_bind_text(stmt, 10, item->git_branch, -1, SQLITE_STATIC);
-    sqlite3_bind_int64(stmt, 11, item->id);
+    /* M48-KanbanCVECard bindings 11/12/13 — commit SHAs + CVE list.
+     * All three are optional (empty string). */
+    sqlite3_bind_text(stmt, 11, item->upstream_commit, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 12, item->backport_commit, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 13, item->cve_ids, -1, SQLITE_STATIC);
+    sqlite3_bind_int64(stmt, 14, item->id);
     
     int rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
@@ -223,9 +242,10 @@ bool db_items_list(ItemList *list, ItemStatus *filter_statuses, int filter_count
     char sql[512];
     int offset = 0;
     if (filter_count > 0) {
-        offset = snprintf(sql, sizeof(sql), 
+        offset = snprintf(sql, sizeof(sql),
             "SELECT id, status, title, description, tag, history, priority, due_date, "
-            "project_id, parent_id, git_branch, time_spent, created_at, updated_at "
+            "project_id, parent_id, git_branch, time_spent, created_at, updated_at, "
+            "upstream_commit, backport_commit, cve_ids "
             "FROM items WHERE status IN (");
         for (int i = 0; i < filter_count && offset < (int)sizeof(sql) - 32; i++) {
             offset += snprintf(sql + offset, sizeof(sql) - offset, "%s'%s'",
@@ -233,9 +253,10 @@ bool db_items_list(ItemList *list, ItemStatus *filter_statuses, int filter_count
         }
         snprintf(sql + offset, sizeof(sql) - offset, ") ORDER BY id");
     } else {
-        snprintf(sql, sizeof(sql), 
+        snprintf(sql, sizeof(sql),
             "SELECT id, status, title, description, tag, history, priority, due_date, "
-            "project_id, parent_id, git_branch, time_spent, created_at, updated_at "
+            "project_id, parent_id, git_branch, time_spent, created_at, updated_at, "
+            "upstream_commit, backport_commit, cve_ids "
             "FROM items ORDER BY id");
     }
     
@@ -261,11 +282,21 @@ bool db_items_list(ItemList *list, ItemStatus *filter_statuses, int filter_count
         item->time_spent = sqlite3_column_int64(stmt, 11);
         item->created_at = sqlite3_column_int64(stmt, 12);
         item->updated_at = sqlite3_column_int64(stmt, 13);
+        /* M48-KanbanCVECard columns 14/15/16. */
+        str_safe_copy(item->upstream_commit,
+                      (const char *)sqlite3_column_text(stmt, 14),
+                      sizeof(item->upstream_commit));
+        str_safe_copy(item->backport_commit,
+                      (const char *)sqlite3_column_text(stmt, 15),
+                      sizeof(item->backport_commit));
+        str_safe_copy(item->cve_ids,
+                      (const char *)sqlite3_column_text(stmt, 16),
+                      sizeof(item->cve_ids));
         item->selected = false;
-        
+
         list->count++;
     }
-    
+
     sqlite3_finalize(stmt);
     return true;
 }

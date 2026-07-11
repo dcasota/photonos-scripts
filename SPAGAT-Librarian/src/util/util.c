@@ -1,5 +1,6 @@
 #include "util.h"
 #include "spagat.h"
+#include "spagat_board_mode.h"
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
@@ -16,17 +17,77 @@ const char *STATUS_NAMES[] = {
 };
 
 const char *STATUS_DISPLAY[] = {
-    "In Clarification",
-    "Won't Fix",
-    "In Backlog",
-    "In Progress",
-    "In Review",
-    "Ready"
+    "Backlog",
+    "Triage",
+    "Pending-HITL",
+    "In-Progress",
+    "Done",
+    "Failed"
 };
 
 const char STATUS_ABBREV[] = {
     'C', 'W', 'B', 'P', 'V', 'R'
 };
+
+/* M48-KanbanBranchView — column headers for the Branch board layout.
+ * Order MUST match BRANCH_COL_KEYS below and the SpagatM48BranchColor
+ * enum in include/spagat_m48.h so the column-header color paints from
+ * the same palette as the per-card branch badge. */
+const char *BRANCH_COL_DISPLAY[BRANCH_COL_COUNT] = {
+    "4.0",
+    "5.0",
+    "5.0/SPECS/90",
+    "5.0/SPECS/91",
+    "6.0",
+    "Other",
+};
+
+/* Canonical branch strings (case-preserved). NULL sentinel in the last
+ * slot is the "matches anything not above" marker used by
+ * branch_column_for(); it lets the fallback bucket stay a normal column
+ * without special-casing the loop. */
+const char *BRANCH_COL_KEYS[BRANCH_COL_COUNT] = {
+    "4.0",
+    "5.0",
+    "5.0/SPECS/90",
+    "5.0/SPECS/91",
+    "6.0",
+    NULL,
+};
+
+int branch_column_for(const char *git_branch) {
+    if (!git_branch || !git_branch[0]) return BRANCH_COL_OTHER_INDEX;
+    /* Iterate the canonical [0..BRANCH_COL_COUNT-2] slots; the trailing
+     * NULL sentinel is the Other-column marker, not a match target. */
+    for (int i = 0; i < BRANCH_COL_COUNT - 1; i++) {
+        if (BRANCH_COL_KEYS[i] &&
+            str_equals_ignore_case(git_branch, BRANCH_COL_KEYS[i])) {
+            return i;
+        }
+    }
+    return BRANCH_COL_OTHER_INDEX;
+}
+
+/* -------------------------------------------------------------------------
+ * M48-KanbanBranchView — pure BoardMode helpers.
+ *
+ * Kept here (rather than tui/) so the unit tests can link only util.c
+ * to drive them; no ncurses, no SQLite, no TUIState.
+ * ------------------------------------------------------------------------- */
+
+BoardMode board_mode_next(BoardMode current) {
+    return (current == BOARD_MODE_STATUS) ? BOARD_MODE_BRANCH
+                                          : BOARD_MODE_STATUS;
+}
+
+int board_col_count(BoardMode mode) {
+    return (mode == BOARD_MODE_BRANCH) ? BOARD_COL_COUNT_BRANCH
+                                       : BOARD_COL_COUNT_STATUS;
+}
+
+const char *board_mode_label(BoardMode mode) {
+    return (mode == BOARD_MODE_BRANCH) ? "Branch" : "Status";
+}
 
 const char *PRIORITY_NAMES[] = {
     "none",

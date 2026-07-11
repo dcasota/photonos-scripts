@@ -1,18 +1,66 @@
 #include "tui_common.h"
+#include "spagat_m48.h"
+
+/* M48-KanbanBranchView — item→column filter mirrors the one in
+ * tui_board.c::item_belongs_in_column so the input dispatcher and
+ * the renderer agree on what "current column" means under both
+ * board modes. */
+static bool input_item_belongs_in_column(const TUIState *state,
+                                         const Item *item, int col) {
+    if (state->board_mode == BOARD_MODE_BRANCH) {
+        return branch_column_for(item->git_branch) == col;
+    }
+    return (int)item->status == col;
+}
+
+/* M48-KanbanCVECard — compute how many cards fit above the fold when
+ * cards can render as either 1 or 2 lines. Walks the items list from
+ * the given scroll offset until the summed rows_used exceeds
+ * content_h. Returns the count of card slots that fit; the caller
+ * uses it to cap `current_row` so the cursor never lands off-screen.
+ *
+ * M48-KanbanBranchView: filter is now board_mode-aware so branch view
+ * scroll bounds are computed against branch-column membership, not
+ * status. */
+static int m48_visible_card_count(const TUIState *state, int col,
+                                  int scroll, int content_h) {
+    int skipped = 0;
+    int y_used = 0;
+    int visible = 0;
+    for (int i = 0; i < state->items.count; i++) {
+        const Item *item = &state->items.items[i];
+        if (!input_item_belongs_in_column(state, item, col)) continue;
+        if (skipped < scroll) { skipped++; continue; }
+        int rows_used = m48_should_render_two_lines(item) ? 2 : 1;
+        if (y_used + rows_used > content_h) break;
+        y_used += rows_used;
+        visible++;
+    }
+    if (visible < 1) visible = 1;  /* Always leave room for the cursor. */
+    return visible;
+}
 
 Item *tui_get_current_item(TUIState *state) {
     int target_row = state->current_row + state->scroll_offset[state->current_col];
     int row = 0;
     for (int i = 0; i < state->items.count; i++) {
         Item *item = &state->items.items[i];
-        if ((int)item->status != state->current_col) continue;
-        
+        if (!input_item_belongs_in_column(state, item, state->current_col)) {
+            continue;
+        }
+
         if (row == target_row) {
             return item;
         }
         row++;
     }
     return NULL;
+}
+
+/* Current mode's active column count — status view uses 6 status
+ * columns; branch view uses the 5 canonical + Other = 6 columns. */
+static int current_board_col_count(const TUIState *state) {
+    return board_col_count(state->board_mode);
 }
 
 void tui_move_cursor_left(TUIState *state) {
@@ -25,7 +73,7 @@ void tui_move_cursor_left(TUIState *state) {
 }
 
 void tui_move_cursor_right(TUIState *state) {
-    if (state->current_col < STATUS_COUNT - 1) {
+    if (state->current_col < current_board_col_count(state) - 1) {
         state->current_col++;
         state->current_row = 0;
         state->scroll_offset[state->current_col] = 0;
@@ -45,11 +93,19 @@ void tui_move_cursor_up(TUIState *state) {
 
 void tui_move_cursor_down(TUIState *state) {
     int max_row = state->item_counts[state->current_col] - 1;
-    int visible_rows = state->term_height - 6;
-    int current_abs = state->current_row + state->scroll_offset[state->current_col];
-    
+    /* M48-KanbanCVECard: content_h is the interior of the column
+     * box (box_h - 2), and box_h = term_height - 3. So content_h =
+     * term_height - 5. We ask m48_visible_card_count() how many
+     * cards actually fit under that budget at the current scroll. */
+    int content_h = state->term_height - 5;
+    if (content_h < 1) content_h = 1;
+    int scroll = state->scroll_offset[state->current_col];
+    int visible_cards = m48_visible_card_count(state, state->current_col,
+                                                scroll, content_h);
+    int current_abs = state->current_row + scroll;
+
     if (current_abs < max_row) {
-        if (state->current_row < visible_rows - 1) {
+        if (state->current_row < visible_cards - 1) {
             state->current_row++;
         } else {
             state->scroll_offset[state->current_col]++;
@@ -57,6 +113,10 @@ void tui_move_cursor_down(TUIState *state) {
         state->needs_refresh = true;
     }
 }
+
+/* tui_toggle_board_mode is defined in src/tui/tui_board_mode.c — the
+ * TU is deliberately ncurses-free so unit tests can link it without
+ * pulling the full tui_input.c web of DB + dialog dependencies. */
 
 void tui_toggle_select(TUIState *state) {
     Item *item = tui_get_current_item(state);
@@ -67,8 +127,13 @@ void tui_toggle_select(TUIState *state) {
 }
 
 void tui_select_all_in_column(TUIState *state) {
+    /* M48-KanbanBranchView — respect current board mode so `*` in
+     * Branch view selects every item in the current branch column,
+     * matching the visible highlight. */
     for (int i = 0; i < state->items.count; i++) {
-        if ((int)state->items.items[i].status == state->current_col) {
+        if (input_item_belongs_in_column(state,
+                                         &state->items.items[i],
+                                         state->current_col)) {
             state->items.items[i].selected = true;
         }
     }
@@ -220,9 +285,83 @@ void tui_format_history(const char *history, char *out, int out_size) {
 
 void tui_handle_input(TUIState *state) {
     int ch = getch();
-    
+
     if (ch == ERR) return;
-    
+
+    /* ADR-0055.f9 — Settings overlay is modal (like HITL). Handle it
+     * first so a stray kanban keypress doesn't leak underneath. */
+    if (state->settings && state->settings->active) {
+        int exit_now = spagat_settings_handle_key(state->settings, ch);
+        state->needs_refresh = true;
+        (void)exit_now; /* Toggle already flipped `active` if needed. */
+        return;
+    }
+
+    /* T7.16.f5 / #338 — HITL overlay takes precedence for A/R/D/j/k
+     * keys when active. `v` toggles in/out from either side; `q`
+     * still quits the whole TUI for operator escape consistency. */
+    if (state->hitl.active) {
+        switch (ch) {
+            case 'v':
+            case 'V':
+                hitl_toggle(&state->hitl);
+                state->needs_refresh = true;
+                return;
+            case 'A':
+                /* Refresh first to absorb any verdicts that landed
+                 * since the last poll tick, then decide. */
+                hitl_refresh(&state->hitl);
+                hitl_decide(&state->hitl, true);
+                state->needs_refresh = true;
+                return;
+            case 'R':
+                hitl_refresh(&state->hitl);
+                hitl_decide(&state->hitl, false);
+                state->needs_refresh = true;
+                return;
+            case 'D':
+                tui_hitl_show_details(&state->hitl, state->term_height,
+                                      state->term_width);
+                state->needs_refresh = true;
+                return;
+            case 'j':
+            case KEY_DOWN:
+                hitl_cursor_down(&state->hitl);
+                state->needs_refresh = true;
+                return;
+            case 'k':
+            case KEY_UP:
+                hitl_cursor_up(&state->hitl);
+                state->needs_refresh = true;
+                return;
+            case 'q':
+            case 'Q':
+                state->running = false;
+                return;
+            case KEY_RESIZE:
+                getmaxyx(stdscr, state->term_height, state->term_width);
+                state->col_width =
+                    state->term_width / current_board_col_count(state);
+                if (state->col_width < 12) state->col_width = 12;
+                state->needs_refresh = true;
+                return;
+            default:
+                /* Swallow all other keys while overlay is active so a
+                 * stray 'd' (kanban delete) doesn't fire underneath. */
+                return;
+        }
+    }
+
+    /* Toggle into the overlay from the kanban side. Uses lowercase
+     * 'v' to avoid colliding with existing kanban bindings (A/R/D
+     * are all already taken by add/refresh/delete). */
+    if (ch == 'v' || ch == 'V') {
+        hitl_toggle(&state->hitl);
+        if (state->hitl.active) hitl_refresh(&state->hitl);
+        state->needs_refresh = true;
+        return;
+    }
+
     switch (ch) {
         case 'q':
         case 'Q':
@@ -249,11 +388,15 @@ void tui_handle_input(TUIState *state) {
             tui_move_cursor_down(state);
             break;
             
-        case '1': case '2': case '3': case '4': case '5': case '6':
-            state->current_col = ch - '1';
+        case '1': case '2': case '3': case '4': case '5': case '6': {
+            int req = ch - '1';
+            int max_col = current_board_col_count(state) - 1;
+            if (req > max_col) req = max_col;
+            state->current_col = req;
             state->current_row = 0;
             state->needs_refresh = true;
             break;
+        }
             
         case ' ':
             tui_toggle_select(state);
@@ -270,9 +413,15 @@ void tui_handle_input(TUIState *state) {
             tui_dialog_move(state);
             break;
             
+        /* M48-KanbanCVECard: Enter opens the read-only details popup
+         * (full CVE list, full 40-hex commits, description). `e`/`E`
+         * still opens the full edit dialog for round-trip editing. */
         case KEY_ENTER:
         case '\n':
         case '\r':
+            tui_dialog_details(state);
+            break;
+
         case 'e':
         case 'E':
             tui_dialog_edit(state);
@@ -307,7 +456,11 @@ void tui_handle_input(TUIState *state) {
             
         case KEY_RESIZE:
             getmaxyx(stdscr, state->term_height, state->term_width);
-            state->col_width = state->term_width / STATUS_COUNT;
+            /* M48-KanbanBranchView: column width tracks the currently
+             * active board mode so a resize while in Branch view lays
+             * out to 6 branch columns, not 6 status columns. */
+            state->col_width =
+                state->term_width / current_board_col_count(state);
             if (state->col_width < 12) state->col_width = 12;
             state->needs_refresh = true;
             break;
@@ -332,18 +485,52 @@ void tui_handle_input(TUIState *state) {
             tui_dialog_select_template(state);
             break;
             
+        /* M48-KanbanBranchView — `b` now toggles the Kanban board
+         * between Status view (6 status columns, default) and Branch
+         * view (5 canonical Photon branches + Other). Session-only,
+         * not persisted to appliance-config.toml. Guarded so an
+         * accidental `b` during an active HITL / Settings overlay
+         * doesn't toggle a hidden board underneath — the overlay
+         * handlers above already returned before reaching here so
+         * this is a belt-and-braces check. The git-branch quick
+         * action moves to `g` (Git). */
         case 'b':
+            if (!state->hitl.active &&
+                !(state->settings && state->settings->active)) {
+                tui_toggle_board_mode(state);
+            }
+            break;
+
+        case 'g':
+        case 'G':
             tui_dialog_git_branch(state);
             break;
-            
+
         case 'x':
             tui_dialog_add_dependency(state);
             break;
-            
+
+        /* ADR-0055.f9 — `s` toggles read-only Settings mode. The old
+         * `s = set_parent` binding moves to `y` (yank-as-child) to
+         * free the top-bar menu key documented in ADR-0055 §5. Load
+         * lazily on first press to avoid touching the config file at
+         * TUI startup. */
         case 's':
+            if (!state->settings) {
+                state->settings = spagat_settings_load(
+                    spagat_settings_effective_path());
+            }
+            if (state->settings) {
+                spagat_settings_toggle(state->settings);
+                state->needs_refresh = true;
+            }
+            break;
+
+        case 'y':
+        case 'Y':
             tui_dialog_set_parent(state);
             break;
-            
+
         case 'S':
             tui_toggle_swimlane_mode(state);
             break;
