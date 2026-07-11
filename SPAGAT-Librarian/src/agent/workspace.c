@@ -98,7 +98,7 @@ bool workspace_init(WorkspacePaths *paths) {
     snprintf(paths->logs_dir, sizeof(paths->logs_dir),
              "%s/%s", base, SPAGAT_LOGS_DIR);
     snprintf(paths->credentials_dir, sizeof(paths->credentials_dir),
-             "%s/%s", base, SPAGAT_CREDENTIALS_DIR);
+             "%s/%s", base, SPAGAT_KEYSTORE_SUBDIR);
 
     /* Cache for later retrieval */
     memcpy(&cached_paths, paths, sizeof(WorkspacePaths));

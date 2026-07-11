@@ -7,20 +7,34 @@
 
 extern sqlite3 *db_get_handle(void);
 
+/* M48-KanbanCVECard CVE-tracking columns.
+ *
+ * The three columns upstream_commit / backport_commit / cve_ids are
+ * OPTIONAL; the C-side render treats empty as "not set" (single-line
+ * card, "(none)" in the details popup). Populating them is done via:
+ *
+ *   - the extended Add-Item dialog (`a` on the board)
+ *   - the Edit dialog / Git-Branch dialog (`e` / `b` on the board)
+ *   - direct sqlite3 UPDATE from an operator script
+ *
+ * Any external enrichment pipeline that wants to auto-populate these
+ * columns is out-of-scope for the console binary itself.
+ */
 bool db_item_add_full(const Item *item, int64_t *out_id) {
     sqlite3 *db = db_get_handle();
     if (!db || !item) return false;
     
-    const char *sql = 
+    const char *sql =
         "INSERT INTO items (status, title, description, tag, history, priority, "
-        "due_date, project_id, parent_id, git_branch, time_spent) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        "due_date, project_id, parent_id, git_branch, time_spent, "
+        "upstream_commit, backport_commit, cve_ids) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
     sqlite3_stmt *stmt;
-    
+
     if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) return false;
-    
+
     char history[4] = {STATUS_ABBREV[item->status], '\0'};
-    
+
     sqlite3_bind_text(stmt, 1, STATUS_NAMES[item->status], -1, SQLITE_STATIC);
     sqlite3_bind_text(stmt, 2, item->title, -1, SQLITE_STATIC);
     sqlite3_bind_text(stmt, 3, item->description, -1, SQLITE_STATIC);
@@ -32,6 +46,10 @@ bool db_item_add_full(const Item *item, int64_t *out_id) {
     sqlite3_bind_int64(stmt, 9, item->parent_id);
     sqlite3_bind_text(stmt, 10, item->git_branch, -1, SQLITE_STATIC);
     sqlite3_bind_int64(stmt, 11, item->time_spent);
+    /* M48-KanbanCVECard bindings 12/13/14. */
+    sqlite3_bind_text(stmt, 12, item->upstream_commit, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 13, item->backport_commit, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 14, item->cve_ids, -1, SQLITE_STATIC);
     
     int rc = sqlite3_step(stmt);
     if (rc == SQLITE_DONE && out_id) {
@@ -53,7 +71,8 @@ bool db_items_list_full(ItemList *list, int64_t project_id, ItemStatus *filter_s
     char sql[1024];
     int offset = snprintf(sql, sizeof(sql),
         "SELECT id, status, title, description, tag, history, priority, "
-        "due_date, project_id, parent_id, git_branch, time_spent, created_at, updated_at "
+        "due_date, project_id, parent_id, git_branch, time_spent, created_at, updated_at, "
+        "upstream_commit, backport_commit, cve_ids "
         "FROM items WHERE project_id = %lld", (long long)project_id);
     
     if (filter_count > 0) {
@@ -91,8 +110,18 @@ bool db_items_list_full(ItemList *list, int64_t project_id, ItemStatus *filter_s
         item->time_spent = sqlite3_column_int64(stmt, 11);
         item->created_at = sqlite3_column_int64(stmt, 12);
         item->updated_at = sqlite3_column_int64(stmt, 13);
+        /* M48-KanbanCVECard columns 14/15/16. */
+        str_safe_copy(item->upstream_commit,
+                      (const char *)sqlite3_column_text(stmt, 14),
+                      sizeof(item->upstream_commit));
+        str_safe_copy(item->backport_commit,
+                      (const char *)sqlite3_column_text(stmt, 15),
+                      sizeof(item->backport_commit));
+        str_safe_copy(item->cve_ids,
+                      (const char *)sqlite3_column_text(stmt, 16),
+                      sizeof(item->cve_ids));
         item->selected = false;
-        
+
         list->count++;
     }
     
@@ -110,7 +139,8 @@ bool db_items_by_parent(ItemList *list, int64_t parent_id) {
     
     const char *sql = 
         "SELECT id, status, title, description, tag, history, priority, "
-        "due_date, project_id, parent_id, git_branch, time_spent, created_at, updated_at "
+        "due_date, project_id, parent_id, git_branch, time_spent, created_at, updated_at, "
+        "upstream_commit, backport_commit, cve_ids "
         "FROM items WHERE parent_id = ? ORDER BY id";
     
     sqlite3_stmt *stmt;
@@ -139,8 +169,18 @@ bool db_items_by_parent(ItemList *list, int64_t parent_id) {
         item->time_spent = sqlite3_column_int64(stmt, 11);
         item->created_at = sqlite3_column_int64(stmt, 12);
         item->updated_at = sqlite3_column_int64(stmt, 13);
+        /* M48-KanbanCVECard columns 14/15/16. */
+        str_safe_copy(item->upstream_commit,
+                      (const char *)sqlite3_column_text(stmt, 14),
+                      sizeof(item->upstream_commit));
+        str_safe_copy(item->backport_commit,
+                      (const char *)sqlite3_column_text(stmt, 15),
+                      sizeof(item->backport_commit));
+        str_safe_copy(item->cve_ids,
+                      (const char *)sqlite3_column_text(stmt, 16),
+                      sizeof(item->cve_ids));
         item->selected = false;
-        
+
         list->count++;
     }
     
@@ -158,7 +198,8 @@ bool db_items_by_priority(ItemList *list, ItemPriority priority) {
     
     const char *sql = 
         "SELECT id, status, title, description, tag, history, priority, "
-        "due_date, project_id, parent_id, git_branch, time_spent, created_at, updated_at "
+        "due_date, project_id, parent_id, git_branch, time_spent, created_at, updated_at, "
+        "upstream_commit, backport_commit, cve_ids "
         "FROM items WHERE priority = ? ORDER BY due_date ASC, id";
     
     sqlite3_stmt *stmt;
@@ -187,8 +228,18 @@ bool db_items_by_priority(ItemList *list, ItemPriority priority) {
         item->time_spent = sqlite3_column_int64(stmt, 11);
         item->created_at = sqlite3_column_int64(stmt, 12);
         item->updated_at = sqlite3_column_int64(stmt, 13);
+        /* M48-KanbanCVECard columns 14/15/16. */
+        str_safe_copy(item->upstream_commit,
+                      (const char *)sqlite3_column_text(stmt, 14),
+                      sizeof(item->upstream_commit));
+        str_safe_copy(item->backport_commit,
+                      (const char *)sqlite3_column_text(stmt, 15),
+                      sizeof(item->backport_commit));
+        str_safe_copy(item->cve_ids,
+                      (const char *)sqlite3_column_text(stmt, 16),
+                      sizeof(item->cve_ids));
         item->selected = false;
-        
+
         list->count++;
     }
     
@@ -206,7 +257,8 @@ bool db_items_due_before(ItemList *list, time_t deadline) {
     
     const char *sql = 
         "SELECT id, status, title, description, tag, history, priority, "
-        "due_date, project_id, parent_id, git_branch, time_spent, created_at, updated_at "
+        "due_date, project_id, parent_id, git_branch, time_spent, created_at, updated_at, "
+        "upstream_commit, backport_commit, cve_ids "
         "FROM items WHERE due_date > 0 AND due_date <= ? "
         "AND status NOT IN ('ready', 'wontfix') ORDER BY due_date ASC";
     
@@ -236,8 +288,18 @@ bool db_items_due_before(ItemList *list, time_t deadline) {
         item->time_spent = sqlite3_column_int64(stmt, 11);
         item->created_at = sqlite3_column_int64(stmt, 12);
         item->updated_at = sqlite3_column_int64(stmt, 13);
+        /* M48-KanbanCVECard columns 14/15/16. */
+        str_safe_copy(item->upstream_commit,
+                      (const char *)sqlite3_column_text(stmt, 14),
+                      sizeof(item->upstream_commit));
+        str_safe_copy(item->backport_commit,
+                      (const char *)sqlite3_column_text(stmt, 15),
+                      sizeof(item->backport_commit));
+        str_safe_copy(item->cve_ids,
+                      (const char *)sqlite3_column_text(stmt, 16),
+                      sizeof(item->cve_ids));
         item->selected = false;
-        
+
         list->count++;
     }
     

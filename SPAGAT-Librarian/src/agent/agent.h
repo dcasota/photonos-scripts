@@ -8,7 +8,10 @@
 #define SPAGAT_MODELS_DIR "models"
 #define SPAGAT_CONFIG_FILE "config.json"
 #define SPAGAT_LOGS_DIR "logs"
-#define SPAGAT_CREDENTIALS_DIR "credentials"
+/* Per-user credentials subdirectory name under ~/.spagat. Kept as a
+ * plain generic token — this is NOT an appliance-managed credential
+ * path (that lives in the appliance-only integration layer). */
+#define SPAGAT_KEYSTORE_SUBDIR "credentials"
 
 #define SPAGAT_PATH_MAX 1024
 

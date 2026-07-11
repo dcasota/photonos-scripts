@@ -6,6 +6,7 @@
 
 static bool migrate_v1_to_v2(sqlite3 *db);
 static bool migrate_v2_to_v3(sqlite3 *db);
+static bool migrate_v3_to_v4(sqlite3 *db);
 static bool table_has_column(sqlite3 *db, const char *table, const char *column);
 static bool ensure_version_table(sqlite3 *db);
 
@@ -112,15 +113,23 @@ static int detect_schema_version(sqlite3 *db) {
     if (!table_exists(db, "items")) {
         return 0;
     }
-    
+
+    /* M48-KanbanCVECard: v4 layers on top of v3 by adding
+     * upstream_commit / backport_commit / cve_ids. Detection order
+     * flows newest-first so a legacy DB missing only the v4 columns
+     * still reports v3 and drives the ALTER-only migration below. */
+    if (table_has_column(db, "items", "cve_ids")) {
+        return 4;
+    }
+
     if (table_has_column(db, "items", "priority")) {
         return 3;
     }
-    
+
     if (table_has_column(db, "items", "title")) {
         return 2;
     }
-    
+
     return 1;
 }
 
@@ -227,6 +236,41 @@ static bool migrate_v2_to_v3(sqlite3 *db) {
     return true;
 }
 
+/* M48-KanbanCVECard: v3 → v4. Adds three optional columns to `items`:
+ *   upstream_commit  TEXT DEFAULT ''  — 40-hex upstream SHA
+ *   backport_commit  TEXT DEFAULT ''  — 40-hex spagat-side SHA
+ *   cve_ids          TEXT DEFAULT ''  — comma-separated CVE-IDs
+ * The migration is idempotent: a "duplicate column" error from ALTER
+ * TABLE is swallowed so re-running the check on an already-v4 DB
+ * (e.g. an operator downgraded then upgraded again) stays green. */
+static bool migrate_v3_to_v4(sqlite3 *db) {
+    printf("Migrating database from version 3 to version 4 (M48-KanbanCVECard)...\n");
+    char *err = NULL;
+
+    const char *migrations[] = {
+        "ALTER TABLE items ADD COLUMN upstream_commit TEXT DEFAULT ''",
+        "ALTER TABLE items ADD COLUMN backport_commit TEXT DEFAULT ''",
+        "ALTER TABLE items ADD COLUMN cve_ids TEXT DEFAULT ''",
+        NULL
+    };
+
+    for (int i = 0; migrations[i] != NULL; i++) {
+        if (sqlite3_exec(db, migrations[i], NULL, NULL, &err) != SQLITE_OK) {
+            if (err && strstr(err, "duplicate column") == NULL) {
+                fprintf(stderr, "Migration v3->v4 failed: %s\nSQL: %s\n",
+                        err, migrations[i]);
+                sqlite3_free(err);
+                return false;
+            }
+            if (err) sqlite3_free(err);
+            err = NULL;
+        }
+    }
+
+    printf("  Migration to version 4 complete.\n");
+    return true;
+}
+
 bool db_migrate_check_and_run(void) {
     sqlite3 *db = db_get_handle();
     if (!db) return false;
@@ -259,7 +303,14 @@ bool db_migrate_check_and_run(void) {
         }
         current_version = 3;
     }
-    
+
+    if (current_version < 4) {
+        if (!migrate_v3_to_v4(db)) {
+            return false;
+        }
+        current_version = 4;
+    }
+
     if (!db_set_version(SPAGAT_DB_VERSION)) {
         fprintf(stderr, "Failed to update schema version.\n");
         return false;

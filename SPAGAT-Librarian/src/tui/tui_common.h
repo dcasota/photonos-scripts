@@ -24,6 +24,15 @@
 #define COLOR_PRI_MED   13
 #define COLOR_COL_TITLE 14
 #define COLOR_COL_SEL   15
+/* M48-KanbanCVECard — branch-badge color pairs. Values 20-25 chosen
+ * to leave a gap after the existing palette in case future features
+ * need contiguous slots. Order must match SpagatM48BranchColor. */
+#define COLOR_PAIR_BRANCH_40        20
+#define COLOR_PAIR_BRANCH_50        21
+#define COLOR_PAIR_BRANCH_SPECS_90  22
+#define COLOR_PAIR_BRANCH_SPECS_91  23
+#define COLOR_PAIR_BRANCH_60        24
+#define COLOR_PAIR_BRANCH_OTHER     25
 
 void tui_draw_header(TUIState *state);
 void tui_draw_footer(TUIState *state);
@@ -42,7 +51,15 @@ void tui_toggle_select(TUIState *state);
 void tui_select_all_in_column(TUIState *state);
 void tui_clear_selection(TUIState *state);
 int tui_count_selected(TUIState *state);
+/* M48-KanbanBranchView — see tui.h for contract; declared here too
+ * so translation units that only pull tui_common.h can call it. */
+void tui_toggle_board_mode(TUIState *state);
 
+void tui_dialog_details(TUIState *state);
+/* M48-KanbanCVECard — pure-render form of the details popup. Extracted
+ * so the offscreen-ncurses unit test can drive draw without triggering
+ * the blocking getch() loop inside tui_dialog_details. */
+void tui_details_render_into(const Item *view, int term_w, int term_h);
 void tui_dialog_add(TUIState *state);
 void tui_dialog_move(TUIState *state);
 void tui_dialog_edit(TUIState *state);
