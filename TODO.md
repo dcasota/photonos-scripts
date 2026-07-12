@@ -1,5 +1,60 @@
 # TODO — C-port parity convergence + vendor-info quality
 
+**>>> 2026-07-13 CHECKPOINT (M161 — Compare-VersionStrings Rule-8 fix) <<<**
+
+Analysis of the 2026-07-12 3.0-excluded full run (PS 29188434604 / C
+29190441177) surfaced a systemic Rule-8 misfire in
+`Compare-VersionStrings` / `pr_version_compare`: when Namelatest is
+`StandardVersion` and Source0 is `String` (any pre-release suffix
+Case-3b's `[a-zA-Z]` single-letter regex doesn't catch — `rel<N>`,
+`rc<N>`, `pre<N>`, `beta<N>`, `.b<N>`, `B.` prefix, single trailing
+letter), Rule 8's `$v1.Value -gt/-lt $v2.Value` becomes
+`$null -lt <str>` = `$true` → returns -1 → spurious "Source0 higher
+than latest" warning and no `UpdateURL` proposal.
+
+**Fleet impact**: 22 warning rows across 6 branches (25% of the Cat-5
+warning stream), 13 unique triples spanning 7 specs — dnsmasq,
+libmspack, linux, lshw, socat, tmux, urw-fonts. PS and C emit
+identical wrong warnings today (broken-on-both parity).
+
+**M161** — merged as PR #315 (2026-07-12) — inserts a pre-Rule-8
+block for the (StandardVersion, String) direction only. Reverse
+direction (String latest vs StandardVersion Source0, e.g. openjdk21
+`21.0.12+7` vs `21.0.10`) is untouched: there Rule 8's
+`<str> -gt $null` = `$true` returns +1 correctly.
+
+Steps:
+1. Try three narrow strip patterns on the String Source0 —
+   A: `<digits><letters><digits>` (dnsmasq 2.92rel2, urw-fonts 1.0.7pre44),
+   B: `B.` prefix (lshw B.02.19),
+   C: trailing bare letter after StandardVersion (tmux 3.1b).
+2. **First-component guard**: only accept the strip if
+   `reparsed[0] == v1.Components[0]`. Blocks libmspack 0.11alpha vs
+   scraped 1.11 (different lineages) from becoming a proposed upgrade.
+3. On acceptance re-run Rule 3 (component-wise int compare).
+4. On rejection return `$null` (PS) / `-2` (C) — parity-neutral
+   silence matching M159.
+
+Expected per-spec outcomes:
+
+| Spec | Source0 | Latest | Pre-M161 | Post-M161 |
+|---|---|---|---|---|
+| dnsmasq | 2.92rel2 | 2.93 | wrong warning | propose 2.93 |
+| lshw | B.02.19 | 02.20 | wrong warning | propose 02.20 |
+| lshw | B.02.20 | 02.20 | wrong warning | same version |
+| tmux | 3.1b | 3.7 | wrong warning | propose 3.7 |
+| urw-fonts | 1.0.7pre44 | 1.0.1 | warning (right-for-wrong) | warning (right-for-right) |
+| libmspack | 0.11alpha | 1.11 | wrong warning | silent (defends pin) |
+| socat | 2.0.0.b9 | 1.8.1.3 | warning (right-for-wrong) | silent |
+| linux | 6.1.83-acvp} | 6.1.177 | warning (subst leak) | silent |
+
+**Validation**: 22-probe unit harness (7 target specs × up to 4
+branches + 8 regression controls + openjdk11/17/21 reverse direction
++ std-eq/gt/lt + date-guard + case3b-eq). PS-side 22/22 pass; C-side
+22/22 pass byte-identical. ctest 14/14 pass. Full PS+C cycle
+(29211355912 dispatched 2026-07-12) in flight — see parity journal
+for post-run row-count deltas.
+
 **>>> 2026-06-14 CHECKPOINT (M152-M160 era — spec-by-spec audit closed) <<<**
 
 After M135, the X.org cluster (M152-M158), date-vs-semver guard (M159), and
