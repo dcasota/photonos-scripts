@@ -30,6 +30,10 @@ static pcre2_code *RE_QUARTERLY;      /* ^(\d{4})\.Q(\d+)\.(\d+)$ */
 static pcre2_code *RE_STANDARD;       /* ^\d+(\.\d+)+$ */
 static pcre2_code *RE_LETTER_EMBED;   /* ^\d+(\.\d+)*\.\d+[a-zA-Z]\d+$ */
 static pcre2_code *RE_INT;            /* ^\d+$ */
+/* M161 strip patterns — see pr_version_compare Rule-8 pre-processing. */
+static pcre2_code *RE_M161_STRIP_A;   /* ^(.*\d)[a-zA-Z]+\d+$ */
+static pcre2_code *RE_M161_STRIP_B;   /* ^[Bb]\.(\d+(?:\.\d+)*)$ */
+static pcre2_code *RE_M161_STRIP_C;   /* ^(\d+(?:\.\d+)+)[a-zA-Z]$ */
 
 static pthread_once_t g_re_once = PTHREAD_ONCE_INIT;
 
@@ -57,6 +61,9 @@ static void init_patterns(void)
     RE_STANDARD     = compile_or_die("^\\d+(\\.\\d+)+$");
     RE_LETTER_EMBED = compile_or_die("^\\d+(\\.\\d+)*\\.\\d+[a-zA-Z]\\d+$");
     RE_INT          = compile_or_die("^\\d+$");
+    RE_M161_STRIP_A = compile_or_die("^(.*\\d)[a-zA-Z]+\\d+$");
+    RE_M161_STRIP_B = compile_or_die("^[Bb]\\.(\\d+(?:\\.\\d+)*)$");
+    RE_M161_STRIP_C = compile_or_die("^(\\d+(?:\\.\\d+)+)[a-zA-Z]$");
 }
 
 /* Helper: PCRE2 match-only convenience. Returns 1 on match. */
@@ -484,6 +491,70 @@ int pr_version_compare(const char *a, const char *b)
         else                       result = 0;
         goto done;
     }
+    /* M161: Rule 8 pre-processing — StandardVersion(latest) vs
+     * String(Source0) direction only. Mirrors the same block in
+     * photonos-package-report.ps1 Compare-VersionStrings.
+     *
+     * In this direction Rule 8's `<null> -lt <str>` → -1 spuriously
+     * flags "Source0 higher than latest" for any pre-release suffix
+     * Case-3b's `[a-zA-Z]` (single-letter) regex doesn't catch: rel<N>,
+     * rc<N>, pre<N>, "B." prefix, single trailing letter.
+     *
+     * The reverse direction (v1=String latest, v2=StandardVersion
+     * source0, e.g. openjdk21 latest 21.0.12+7 vs Source0 21.0.10) is
+     * NOT touched: there Rule 8's `<str> -gt $null = True` returns +1
+     * correctly (propose upgrade). Intercepting that would regress
+     * openjdk11/17/21 to silent.
+     *
+     * Strip a known-safe pattern from the String Source0 and re-run
+     * Rule 3 IF the reparsed StandardVersion shares its first component
+     * with v1 (guards against different-lineage cases such as libmspack
+     * 0.11alpha vs a scraped 1.11). Otherwise return -2 — parity-neutral
+     * silence matching M159's cross-type guard. */
+    if (v1.type == PR_VER_STANDARD && v2.type == PR_VER_STRING) {
+        char *stripped = NULL;
+        char *caps[1] = {0};
+        /* Pattern A: trailing "<digits><letters><digits>" (dnsmasq, urw-fonts). */
+        if (re_match_groups(RE_M161_STRIP_A, b, caps, 1) == 1) {
+            stripped = caps[0]; caps[0] = NULL;
+        } else if (re_match_groups(RE_M161_STRIP_B, b, caps, 1) == 1) {
+            /* Pattern B: leading "B." prefix (lshw). */
+            stripped = caps[0]; caps[0] = NULL;
+        } else if (re_match_groups(RE_M161_STRIP_C, b, caps, 1) == 1) {
+            /* Pattern C: trailing bare letter after StandardVersion (tmux). */
+            stripped = caps[0]; caps[0] = NULL;
+        }
+        free(caps[0]);
+
+        if (stripped != NULL) {
+            pr_version_t reparsed = {0};
+            int ok = (pr_version_parse(stripped, &reparsed) == 0);
+            free(stripped);
+            if (ok
+                && reparsed.type == PR_VER_STANDARD
+                && reparsed.n_components > 0
+                && v1.n_components > 0
+                && reparsed.components[0] == v1.components[0]) {
+                /* Rule 3 semantics: v1 (StandardVersion latest) vs reparsed Source0. */
+                size_t maxn = v1.n_components > reparsed.n_components
+                                ? v1.n_components : reparsed.n_components;
+                int r3 = 0;
+                for (size_t i = 0; i < maxn; i++) {
+                    int c1 = i < v1.n_components       ? v1.components[i]       : 0;
+                    int c2 = i < reparsed.n_components ? reparsed.components[i] : 0;
+                    if (c1 > c2) { r3 = 1;  break; }
+                    if (c1 < c2) { r3 = -1; break; }
+                }
+                pr_version_free(&reparsed);
+                result = r3;
+                goto done;
+            }
+            pr_version_free(&reparsed);
+        }
+        /* Strip didn't fire or first-component mismatch: silent fallback. */
+        result = -2;
+        goto done;
+    }
     /* Rule 8: String fallback — compare .Value as strings. PS uses
      *   $v1.Value -gt $v2.Value
      * where .Value is set ONLY for the String type (the other-type
@@ -497,7 +568,9 @@ int pr_version_compare(const char *a, const char *b)
      * compared "21.0.6" vs "21.0.12+4" at byte 5 and returned -1 (latest
      * < Source0), triggering a bogus packaging-format warning. PS
      * compares "21.0.12+4" vs "" → +1 (latest > Source0, newer detected).
-     * Mirror that exactly: only consult str_value for PR_VER_STRING. */
+     * Mirror that exactly: only consult str_value for PR_VER_STRING.
+     * M161 intercepts the String-vs-StandardVersion sub-case above; this
+     * block still runs for String-vs-String and String-vs-Integer/Decimal. */
     {
         const char *s1 = (v1.type == PR_VER_STRING && v1.str_value) ? v1.str_value : "";
         const char *s2 = (v2.type == PR_VER_STRING && v2.str_value) ? v2.str_value : "";

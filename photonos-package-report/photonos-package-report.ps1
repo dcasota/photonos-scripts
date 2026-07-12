@@ -2052,6 +2052,56 @@ function CheckURLHealth {
                 if ($c1 -lt $v2.Components[0]) { return -1 }
                 return 0
             }
+            # M161: Rule 8 pre-processing — StandardVersion(latest) vs
+            # String(Source0) direction only. Rule 8's original code does
+            # `$v1.Value -gt/-lt $v2.Value`. When v1 is StandardVersion (no
+            # .Value) and v2 is String (letter-suffixed Source0), the
+            # comparison becomes `$null -lt <str>` = True → returns -1 →
+            # spuriously flags "Source0 higher than latest" for any
+            # pre-release suffix Parse-Version's Case 3b regex (single
+            # letter only) doesn't catch: rel<N>, rc<N>, pre<N>, "B."
+            # prefix, single trailing letter.
+            #
+            # The reverse direction (v1=String latest, v2=StandardVersion
+            # source0, e.g. openjdk21 latest 21.0.12+7 vs Source0 21.0.10)
+            # is NOT touched: there Rule 8's `<str> -gt $null = True`
+            # correctly returns +1 (propose the upgrade). Intercepting
+            # that would regress openjdk11/17/21 to silent.
+            #
+            # Strip a known-safe pattern from the String side and re-run
+            # Rule 3 IF the reparsed StandardVersion shares its first
+            # component with the StandardVersion side (guards against
+            # different-lineage cases such as libmspack 0.11alpha vs a
+            # scraped 1.11). Otherwise return $null — parity-neutral
+            # silence matching M159's cross-type guard pattern.
+            if ($v1.Type -eq 'StandardVersion' -and $v2.Type -eq 'String') {
+                $stripped = $null
+                # Pattern A: trailing "<digits><letters><digits>" — e.g. "2.92rel2", "1.0.7pre44"
+                if     ($Version -match '^(.*\d)[a-zA-Z]+\d+$')      { $stripped = $Matches[1] }
+                # Pattern B: leading "B." prefix — e.g. "B.02.19" (lshw)
+                elseif ($Version -match '^[Bb]\.(\d+(?:\.\d+)*)$')   { $stripped = $Matches[1] }
+                # Pattern C: trailing bare letter after StandardVersion — e.g. "3.1b" (tmux)
+                elseif ($Version -match '^(\d+(?:\.\d+)+)[a-zA-Z]$') { $stripped = $Matches[1] }
+
+                if ($null -ne $stripped) {
+                    $reparsed = Parse-Version -InputVersion $stripped
+                    if ($reparsed.Type -eq 'StandardVersion' `
+                        -and $reparsed.Components.Length -gt 0 `
+                        -and $v1.Components.Length -gt 0 `
+                        -and $reparsed.Components[0] -eq $v1.Components[0]) {
+                        # Rule 3 semantics: v1 (StandardVersion latest) vs reparsed Source0.
+                        $maxLength = [math]::Max($v1.Components.Length, $reparsed.Components.Length)
+                        for ($i = 0; $i -lt $maxLength; $i++) {
+                            $c1 = if ($i -lt $v1.Components.Length)       { $v1.Components[$i] }       else { 0 }
+                            $c2 = if ($i -lt $reparsed.Components.Length) { $reparsed.Components[$i] } else { 0 }
+                            if ($c1 -gt $c2) { return 1 }
+                            if ($c1 -lt $c2) { return -1 }
+                        }
+                        return 0
+                    }
+                }
+                return $null
+            }
             # Rule 8: Fallback to string comparison
             if ($v1.Value -gt $v2.Value) { return 1 }
             if ($v1.Value -lt $v2.Value) { return -1 }
