@@ -52,8 +52,20 @@ Expected per-spec outcomes:
 branches + 8 regression controls + openjdk11/17/21 reverse direction
 + std-eq/gt/lt + date-guard + case3b-eq). PS-side 22/22 pass; C-side
 22/22 pass byte-identical. ctest 14/14 pass. Full PS+C cycle
-(29211355912 dispatched 2026-07-12) in flight — see parity journal
-for post-run row-count deltas.
+completed 2026-07-13 (PS 29211355912 / C 29214078064).
+
+**Post-run per-spec verification (all 6 non-common branches)**:
+- dnsmasq 2.92rel2 → col5=2.93 propose across all 6 branches ✓
+- lshw B.02.18/B.02.19 → col5=02.20 propose; B.02.20 → (same version) ✓
+- tmux 3.1b → col5=3.7 propose (4 branches; 4.0 + master transient PS scrape miss surfaces here — PS empty, C proposes 3.7. Pre-existing pattern, verified via yesterday's PS which had the wrong warning) ✓
+- urw-fonts 1.0.7pre44 → col5=warning "1.0.7pre44 higher than 1.0.1" (right-for-right reasons post-strip) ✓
+- libmspack 0.11alpha / 0.10.1alpha → col5=empty (first-component guard silences) ✓
+- socat 2.0.0.b9 → col5=empty (strip patterns don't match) ✓
+- linux 6.x.y-acvp} → col5=empty (}-block substitution leak silenced) ✓
+
+**Parity impact**: +78 strict rows vs 2026-07-12 baseline (32/50/47/34/38/28 → 46/70/52/44/55/40). NOT caused by M161 — all divergences audited: pre-existing "PS empty vs C detects newer" pattern (dominant), transient HTTP 502s on savannah.gnu.org (attr, dmidecode, acl), and 4.0/master execution-context differences (basic, ca-certificates). PS↔C on the 42 M161-affected rows: 39 byte-identical, 3 pre-existing PS-transient-scrape-miss (2 × tmux, 1 × linux/main). Independent re-run needed to establish a clean post-M161 baseline free of transient scrape flake.
+
+**Info-quality wins delivered**: 15 rows now propose real upgrades (dnsmasq × 6 + lshw × 5 + tmux × 4) that were previously mis-flagged as "Source0 higher than latest". No `UpdateURL` regressions on any other spec — every non-M161 divergence in the diff is a pre-existing pattern.
 
 **>>> 2026-06-14 CHECKPOINT (M152-M160 era — spec-by-spec audit closed) <<<**
 
