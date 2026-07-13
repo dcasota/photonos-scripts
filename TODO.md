@@ -67,6 +67,29 @@ completed 2026-07-13 (PS 29211355912 / C 29214078064).
 
 **Info-quality wins delivered**: 15 rows now propose real upgrades (dnsmasq × 6 + lshw × 5 + tmux × 4) that were previously mis-flagged as "Source0 higher than latest". No `UpdateURL` regressions on any other spec — every non-M161 divergence in the diff is a pre-existing pattern.
 
+**Confirmation re-run (PS 29216741255 / C 29219335953 landed 2026-07-13T03:09:55Z)**:
+Same config as the first re-run. Strict totals 229 → 307 → **263**.
+Per-branch vs 2026-07-12 baseline: 4.0 +3, 5.0 +2, 6.0 −1, common +0,
+dev +0, main +7, master +23. 6/7 branches back at ≤ ±7 of baseline
+(pure noise floor). Master's +23 is a NEW local flake — the specs
+diverging on master this run (ansible col5 flipped from 2.21.1 →
+2.19.11; apr-util (same version) → warning; docker 29.6.1 → empty;
+ddclient row-shift) were all CLEAN in the baseline AND the spike
+run, so they're fresh PS-scraper transients this run, not M161
+regressions or persistent divergences. All 7 M161 specs on master
+PS==C byte-identical.
+
+**PS scraper noise floor**: two consecutive independent full runs
+diverge by ~44 rows purely on transient PS-scraper flake. Any single
+run's strict count carries ~±15-25 rows/branch of noise; expect
+one branch to spike each run purely on scraper flake without any
+code cause. [[snapshot-consistency-race]] + [[transient-vs-persistent-diffs]]
+apply.
+
+**Verdict**: M161 confirmed stable, no divergences introduced, spike
+was noise. Sunday 2026-07-19 scheduled run will establish the
+long-run steady baseline.
+
 **>>> 2026-06-14 CHECKPOINT (M152-M160 era — spec-by-spec audit closed) <<<**
 
 After M135, the X.org cluster (M152-M158), date-vs-semver guard (M159), and
