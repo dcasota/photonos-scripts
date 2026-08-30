@@ -5,11 +5,41 @@
 # $2 - Common branch name (default: common)
 # $3 - Release branch name (default: 4.0)
 # $4 - Output directory (default: /mnt/c/Users/dcaso/Downloads/Ph-Builds)
+# $5 - Image type (default: minimal-iso; pass "iso" for the full ISO)
 
 BASE_DIR="${1:-/root}"
 COMMON_BRANCH="${2:-common}"
 RELEASE_BRANCH="${3:-4.0}"
 OUTPUT_DIR="${4:-/mnt/c/Users/dcaso/Downloads/Ph-Builds}"
+
+# ── Image type: minimal ISO by default ────────────────────────────────
+# $5 selects what `make image` builds. The two main types differ in far
+# more than size, and the difference has bitten us:
+#   iso          poi.py create_full_iso() passes --rpms-list-file, so
+#                isoBuilder takes the copyPkgs() path and copies EVERY
+#                built RPM onto the ISO (~4.6 GB). Anything the installer
+#                may ask for later -- notably the STIG hardening package
+#                set -- is therefore present.
+#   minimal-iso  poi.py create_custom_iso() omits --rpms-list-file, so
+#                isoBuilder falls through to downloadPkgs() and ships only
+#                the dependency closure of common/data/packages_minimal.json
+#                (~507 MB). Selecting "Apply STIG hardening" in the
+#                installer then fails with Error(1011) -- the ISO carries no
+#                selinux-policy, libselinux-utils, rsyslog, aide or
+#                openssl-fips-provider.
+# Note also that build.py relocates only the FULL iso from stage/iso/ to
+# stage/; a minimal ISO stays in stage/minimal-iso/ (the ISO search below
+# handles both).
+IMG_TYPE="${5:-minimal-iso}"
+case "$IMG_TYPE" in
+  iso|minimal-iso|basic-iso|rt-iso) ;;
+  *)
+    echo "[runPh4] ERROR: unsupported image type '$IMG_TYPE'" 1>&2
+    echo "[runPh4]        valid: iso (full), minimal-iso (default), basic-iso, rt-iso" 1>&2
+    exit 1
+    ;;
+esac
+echo "[runPh4] Image type: $IMG_TYPE"
 
 sleep 3
 if ping -c 4 www.google.ch > /dev/null 2>&1; then
@@ -109,19 +139,48 @@ for s in data.get('sources', []) or []:
   # `make image` (poi.py) needs a photon/installer docker image, which is not
   # on any public registry. Build it locally if missing, using the legacy
   # builder (DOCKER_BUILDKIT=0, since buildx may be absent) and the multi-file
-  # COPY trailing-slash fix the legacy builder requires (fix/dockerfile-copy-
-  # syntax). The image is only the ISO build tool; the installer that ships
-  # inside the ISO comes from the patched photon-os-installer RPM built above.
-  if ! docker image inspect photon/installer:latest >/dev/null 2>&1; then
+  # COPY trailing-slash fix the legacy builder requires (merged upstream as
+  # PR #38; the sed below is kept for older checkouts that predate it). The
+  # image is only the ISO build tool; the installer that ships inside the
+  # ISO comes from the patched photon-os-installer RPM built above.
+  # The image must also contain `file`. photon_installer/generate_initrd.py's
+  # strip_if_needed() runs subprocess.check_output(["file", path]) on every
+  # file it puts in the initrd, but the upstream Dockerfile never installs it,
+  # so ISO assembly dies with
+  #   FileNotFoundError: [Errno 2] No such file or directory: 'file'
+  # in generateInitrd() -- *after* all packages have been built, and the
+  # retry loop below then burns all 10 attempts on it. Check the image for
+  # `file` up front, add it to the Dockerfile package list, and rebuild any
+  # older image that predates the fix.
+  poi_image_ok() {
+    docker image inspect photon/installer:latest >/dev/null 2>&1 || return 1
+    docker run --rm --entrypoint /bin/sh photon/installer:latest \
+      -c 'command -v file >/dev/null' >/dev/null 2>&1
+  }
+  if ! poi_image_ok; then
     POI_SRC="$BASE_DIR/photon-os-installer"
     [ -d "$POI_SRC/.git" ] || git clone https://github.com/dcasota/photon-os-installer.git "$POI_SRC" 2>/dev/null
     if [ -d "$POI_SRC/docker" ]; then
       ( cd "$POI_SRC"
         # multi-file 'COPY ... /usr/bin' needs a trailing slash for legacy build
         sed -i 's#^\([[:space:]]*\)/usr/bin$#\1/usr/bin/#' docker/Dockerfile
+        # initrd generation shells out to `file`. Upstream added it to the
+        # package list (on the 'binutils file xorriso' line) after v2.9, so
+        # match a standalone 'file' token in ANY position rather than one
+        # exact line -- checking only for our own edit shape would add a
+        # duplicate on a fresh clone of master. '(^|space)file(space|eol)'
+        # deliberately does not match 'Dockerfile' or 'multi-file'.
+        grep -qE '(^|[[:space:]])file([[:space:]]|$)' docker/Dockerfile || \
+          sed -i 's|^    zlib tar \\$|    file zlib tar \\|' docker/Dockerfile
         DOCKER_BUILDKIT=0 docker build -t photon/installer:latest -f docker/Dockerfile docker/ ) \
         && echo "[runPh4] Built photon/installer:latest" \
         || echo "[runPh4] WARNING: failed to build photon/installer image"
+    fi
+    if ! poi_image_ok; then
+      echo "[runPh4] ERROR: photon/installer:latest is missing or has no 'file'" 1>&2
+      echo "[runPh4]        binary. ISO assembly would fail in generateInitrd()" 1>&2
+      echo "[runPh4]        after every package has been rebuilt -- aborting now." 1>&2
+      exit 1
     fi
   fi
 
@@ -164,10 +223,24 @@ with open('$COMMON_CFG', 'w') as f:
   # test_generators.SignalAndYieldFromTest is flaky under WSL2 (signal
   # delivery timing differs from native Linux), causing the entire build
   # to fail. Override PROFILE_TASK to exclude it. Only applied in WSL2.
+  #
+  # IMPORTANT: PROFILE_TASK must be passed as a make *command-line* variable,
+  # not as an environment variable. CPython's Makefile.pre.in contains a
+  # plain "PROFILE_TASK= @PROFILE_TASK@" assignment, and a Makefile
+  # assignment always beats the environment (only "make VAR=..." or
+  # "make -e" overrides it). A "PROFILE_TASK=... %make_build" prefix (i.e.
+  # PROFILE_TASK set before the command, as a shell/environment variable)
+  # is therefore silently ignored -- the build then trains on the stock
+  # 43-test PGO set and fails again with
+  #   make: *** [Makefile:1012: profile-run-stamp] Error 2
+  # regrtest handles "--pgo -x test_generators" correctly when passed on
+  # the make command line: find_tests() moves cmdline args into the
+  # exclude set *before* setup_pgo_tests() fills in the default list, so
+  # the run becomes PGO_TESTS minus test_generators (42 of 43).
   if grep -qiE 'microsoft|wsl' /proc/version 2>/dev/null; then
     PY3_SPEC="SPECS/python3/python3.spec"
     if [ -f "$PY3_SPEC" ] && ! grep -q 'PROFILE_TASK' "$PY3_SPEC"; then
-      sed -i 's|^%make_build$|PROFILE_TASK="-m test --pgo -x test_generators" %make_build|' "$PY3_SPEC"
+      sed -i 's|^%make_build$|%make_build PROFILE_TASK="-m test --pgo -x test_generators"|' "$PY3_SPEC"
       echo "[runPh4] Fixed python3 spec: excluded test_generators from PGO"
     fi
   fi
@@ -186,20 +259,122 @@ with open('$COMMON_CFG', 'w') as f:
   fi
 
 
-  for i in {1..10}; do
+  # ── Determine the real stage path ───────────────────────────────
+  # `make` runs in the release worktree ($BASE_DIR/$RELEASE_BRANCH, which is
+  # also the current directory here) and resolves "stage-path" from that
+  # worktree's own build-config.json (normally "./stage"), so RPMS, SRPMS,
+  # LOGS and the ISO output all land under $RELEASE_BRANCH/stage -- even
+  # though build.py itself lives in $COMMON_BRANCH. Deriving BUILD_STAGE
+  # explicitly (rather than assuming the literal "stage" glob used below is
+  # always correct) keeps ISO detection right even if stage-path is ever
+  # customized, and gives the ISO search a real directory to look in instead
+  # of a bare relative glob.
+  BUILD_STAGE=$(cd "$BASE_DIR/$RELEASE_BRANCH" 2>/dev/null && \
+    realpath "$(jq -r '.["stage-path"] // "./stage"' build-config.json 2>/dev/null)" 2>/dev/null)
+  [ -d "$BUILD_STAGE" ] || BUILD_STAGE="$BASE_DIR/$RELEASE_BRANCH/stage"
+  COMMON_STAGE="$BASE_DIR/$COMMON_BRANCH/stage"
+  echo "[runPh4] Build stage: $BUILD_STAGE"
+
+  # ── Build loop ────────────────────────────────────────────────────
+  # poi.py writes the ISO to $BUILD_STAGE/<IMG_NAME>/, NOT to stage/ or
+  # stage/iso/ directly. Globbing only stage/*.iso can miss the real output
+  # location and burn every retry rebuilding an ISO that had already been
+  # produced. An iso_marker file dropped before each `make`, plus a
+  # "-newer" search, ensures a stale ISO from an older run is never
+  # mistaken for this run's output. A sha256 duplicate check against
+  # $OUTPUT_DIR avoids clobbering (or needlessly re-delivering) an ISO
+  # that's already there; a timestamp-qualified name is used if the
+  # destination filename exists with different content; and two
+  # consecutive attempts that fail identically stop the loop early instead
+  # of burning all 10 retries reproducing the same deterministic error.
+  prev_make_rc=""
+  prev_progress=""
+  for i in $(seq 1 10); do
+    # Drop a marker first: an ISO left in the stage by an older run must not
+    # be mistaken for this run's output, which would exit 0 and hand back
+    # the wrong image. Only ISOs newer than the marker count.
+    iso_marker="$BUILD_STAGE/.runph4-iso-marker"
+    : > "$iso_marker"
     # sudo make -j$(( $(nproc) - 1 )) image IMG_NAME=iso THREADS=$(( $(nproc) - 1 ));
-    sudo make -j2 image IMG_NAME=iso THREADS=2;
+    sudo make -j2 image IMG_NAME="$IMG_TYPE" THREADS=2;
+    make_rc=$?
+    # ── Locate the finished ISO ───────────────────────────────────
+    # Search one level deep in both stages, and take the newest match so a
+    # stale ISO from an older run is never mistaken for this run's output.
+    iso_globs() {
+      find "$BUILD_STAGE" "$COMMON_STAGE" -maxdepth 2 -name '*.iso' \
+           -newer "$iso_marker" -print 2>/dev/null | xargs -r ls -t 2>/dev/null
+    }
     # Wait up to 30 seconds for ISO to appear
     timeout=30
     while [ $timeout -gt 0 ]; do
-      if ls stage/*.iso 1>/dev/null 2>&1; then
-        break
-      fi
+      [ -n "$(iso_globs | head -1)" ] && break
       sleep 1
       timeout=$((timeout - 1))
     done
-    if sudo mv stage/*.iso "$OUTPUT_DIR"; then
-      exit 0
+    iso_found=$(iso_globs | head -1)
+    if [ -n "$iso_found" ]; then
+      echo "[runPh4] Built ISO: $iso_found ($(du -h "$iso_found" | cut -f1))"
+      # ── Guard: don't move/overwrite if an identical ISO is already
+      # delivered. Compare by content (sha256), not by filename, so a
+      # rebuild that reproduces a previously-delivered image is recognized
+      # as "already done" instead of burning a retry or clobbering the
+      # destination.
+      iso_sha=$(sha256sum "$iso_found" | cut -d' ' -f1)
+      dup_found=""
+      for existing in "$OUTPUT_DIR"/*.iso; do
+        [ -f "$existing" ] || continue
+        if [ "$(sha256sum "$existing" | cut -d' ' -f1)" = "$iso_sha" ]; then
+          dup_found="$existing"
+          break
+        fi
+      done
+      if [ -n "$dup_found" ]; then
+        echo "[runPh4] Identical ISO already present at $dup_found (sha256 $iso_sha) -- not moving/overwriting; nothing left to do."
+        exit 0
+      fi
+      dest="$OUTPUT_DIR/$(basename "$iso_found")"
+      if [ -e "$dest" ]; then
+        # Same filename but different content (checked above): never
+        # silently destroy the existing file, deliver under a distinct
+        # name instead.
+        dest="$OUTPUT_DIR/$(date +%Y%m%d-%H%M%S)-$(basename "$iso_found")"
+        echo "[runPh4] $OUTPUT_DIR/$(basename "$iso_found") already exists with different content; delivering new ISO as $(basename "$dest") instead"
+      fi
+      if sudo mv "$iso_found" "$dest"; then
+        echo "[runPh4] Moved ISO to $dest"
+        exit 0
+      fi
+      echo "[runPh4] ERROR: could not move ISO to $dest" 1>&2
+      echo "[runPh4]        It is still at: $iso_found" 1>&2
+      exit 1
     fi
+    # ── No ISO this attempt: decide whether another retry can help ────
+    # "progress" = number of files touched anywhere in the stages since the
+    # marker was dropped. If two consecutive attempts both fail with the
+    # same make exit code and both touch nothing, the build is stuck in the
+    # same deterministic way -- retrying it won't change the outcome, it
+    # will just burn the remaining budget re-running for hours to
+    # reproduce the same error.
+    progress=$(find "$BUILD_STAGE" "$COMMON_STAGE" -newer "$iso_marker" 2>/dev/null | wc -l)
+    echo "[runPh4] Attempt $i: no ISO produced (make exit=$make_rc, $progress file(s) touched since marker)"
+    if [ "$i" -gt 1 ] && [ "$make_rc" = "$prev_make_rc" ] && [ "$progress" = "0" ] && [ "$prev_progress" = "0" ]; then
+      echo "[runPh4] ERROR: attempt $i failed identically to attempt $((i - 1)) (same make exit code, zero new output both times)." 1>&2
+      echo "[runPh4]        This looks like a deterministic failure, not a flaky one -- further retries would just reproduce it." 1>&2
+      echo "[runPh4]        Stopping after $i/10 attempts. Fix the underlying build error, then re-run." 1>&2
+      exit 1
+    fi
+    prev_make_rc=$make_rc
+    prev_progress=$progress
   done
+  echo "[runPh4] ERROR: exhausted all 10 attempts without producing an ISO" 1>&2
+  exit 1
+else
+  # The entire build is gated on this reachability check. Without an
+  # else branch the script fell off the end of the "if" and exited 0
+  # having built nothing -- indistinguishable from a successful
+  # delivery to any caller that checks $?. Never exit 0 without an ISO.
+  echo "[runPh4] ERROR: no network (ping www.google.ch failed); the build" 1>&2
+  echo "[runPh4]        needs to fetch sources and was not started." 1>&2
+  exit 1
 fi

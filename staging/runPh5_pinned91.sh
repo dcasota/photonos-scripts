@@ -16,11 +16,41 @@
 # $2 - Common branch name (default: common)
 # $3 - Release branch name (default: 5.0)
 # $4 - Output directory (default: /mnt/c/Users/dcaso/Downloads/Ph-Builds)
+# $5 - Image type (default: minimal-iso; pass "iso" for the full ISO)
 
 BASE_DIR="${1:-/root}"
 COMMON_BRANCH="${2:-common}"
 RELEASE_BRANCH="${3:-5.0}"
 OUTPUT_DIR="${4:-/mnt/c/Users/dcaso/Downloads/Ph-Builds}"
+
+# ── Image type: minimal ISO by default ────────────────────────────────
+# $5 selects what `make image` builds. The two main types differ in far
+# more than size, and the difference has bitten us:
+#   iso          poi.py create_full_iso() passes --rpms-list-file, so
+#                isoBuilder takes the copyPkgs() path and copies EVERY
+#                built RPM onto the ISO (~4.6 GB). Anything the installer
+#                may ask for later -- notably the STIG hardening package
+#                set -- is therefore present.
+#   minimal-iso  poi.py create_custom_iso() omits --rpms-list-file, so
+#                isoBuilder falls through to downloadPkgs() and ships only
+#                the dependency closure of common/data/packages_minimal.json
+#                (~507 MB). Selecting "Apply STIG hardening" in the
+#                installer then fails with Error(1011) -- the ISO carries no
+#                selinux-policy, libselinux-utils, rsyslog, aide or
+#                openssl-fips-provider.
+# Note also that build.py relocates only the FULL iso from stage/iso/ to
+# stage/; a minimal ISO stays in stage/minimal-iso/ (the ISO search below
+# handles both).
+IMG_TYPE="${5:-minimal-iso}"
+case "$IMG_TYPE" in
+  iso|minimal-iso|basic-iso|rt-iso) ;;
+  *)
+    echo "[runPh5_pinned91] ERROR: unsupported image type '$IMG_TYPE'" 1>&2
+    echo "[runPh5_pinned91]        valid: iso (full), minimal-iso (default), basic-iso, rt-iso" 1>&2
+    exit 1
+    ;;
+esac
+echo "[runPh5_pinned91] Image type: $IMG_TYPE"
 
 # Pinned91 has libcap 2.66 (no libcap-libs split). The >= 92 ecosystem
 # upgraded to libcap 2.77, splitting out libcap-libs which has
@@ -137,16 +167,49 @@ print('[runPh5] Set base-commit to common HEAD: ${COMMON_HEAD}')
     done
   fi
 
-  # ── Fix Python 3 PGO test flake in WSL2 ────────────────────────────
-  # test_generators.SignalAndYieldFromTest is flaky under WSL2 (signal
-  # delivery timing differs). Override PROFILE_TASK to exclude it.
-  if grep -qiE 'microsoft|wsl' /proc/version 2>/dev/null; then
-    for py_spec in SPECS/python3/python3.spec SPECS/91/python3/python3.spec; do
-      if [ -f "$py_spec" ] && ! grep -q 'PROFILE_TASK' "$py_spec"; then
-        sed -i 's|^%make_build$|PROFILE_TASK="-m test --pgo -x test_generators" %make_build|' "$py_spec"
-        echo "[runPh5] Fixed $(basename "$py_spec"): excluded test_generators from PGO"
-      fi
-    done
+  # ── Fix Python 3 PGO training failure ──────────────────────────────
+  # python3 is built with --enable-optimizations, so make runs the PGO
+  # training task (PROFILE_TASK). CPython 3.14 dropped the trailing
+  # "|| true" from Makefile.pre.in's run_profile_task, so one failing test
+  # now aborts %build outright:
+  #   FAIL: test_generators.SignalAndYieldFromTest.test_raise_and_yield_from
+  #   AssertionError: 'FAILED' != 'PASSED'
+  #   make: *** [Makefile:1012: profile-run-stamp] Error 2
+  # That test asserts a SIGINT arriving while a "yield from" chain is
+  # entered raises KeyboardInterrupt in the innermost generator. It fails
+  # reproducibly here and the root cause is NOT established -- the same C
+  # mechanism (_testcapi.raise_SIGINT_then_send_None) passes 300/300 on this
+  # kernel with the host python3.11, so a "WSL2 signal timing" explanation
+  # does not hold. Excluding it is therefore a workaround, but a cheap one:
+  # PROFILE_TASK only decides which tests generate *profile data*, so this
+  # costs one test's worth of PGO training, not shipped correctness (%check
+  # is separate and gated off by with_check). The exclusion is applied
+  # unconditionally rather than gated on WSL2, since the cause is not known
+  # to be WSL-specific.
+  #
+  # IMPORTANT: PROFILE_TASK must be passed as a make *command-line*
+  # variable, not as an environment variable. Makefile.pre.in contains a
+  # plain "PROFILE_TASK= @PROFILE_TASK@" assignment, and a Makefile
+  # assignment always beats the environment (only "make VAR=..." or
+  # "make -e" overrides it). A "PROFILE_TASK=... %make_build" prefix is
+  # silently ignored -- the build then trains on the stock 43-test PGO set
+  # and fails again.
+  #
+  # regrtest handles "--pgo -x test_generators" correctly: find_tests()
+  # moves cmdline args into the exclude set *before* setup_pgo_tests() fills
+  # in the default list, so the run is PGO_TESTS minus test_generators
+  # (42 of 43).
+  #
+  # Path note: at pinned subrelease 91 the active python3 spec is the
+  # TOP-LEVEL SPECS/python3/python3.spec (its header reads
+  # "%global build_if %{photon_subrelease} >= 91"). There is no
+  # SPECS/91/python3/ override -- SPECS/91/ only holds specs gated
+  # "<= 91"/"== 91" for packages that changed AT subrelease 91, and python3
+  # is not one of them (verified against the checked-out SPECS tree).
+  PY3_SPEC="SPECS/python3/python3.spec"
+  if [ -f "$PY3_SPEC" ] && ! grep -q 'PROFILE_TASK' "$PY3_SPEC"; then
+    sed -i 's|^%make_build$|%make_build PROFILE_TASK="-m test --pgo -x test_generators"|' "$PY3_SPEC"
+    echo "[runPh5] Fixed python3 spec: excluded test_generators from PGO training"
   fi
 
   # ── Fix rubygem sandbox DNS failure ──────────────────────────────
@@ -472,19 +535,49 @@ for s in data.get('sources', []) or []:
   # `make image` (poi.py) needs a photon/installer docker image, which is not
   # on any public registry. Build it locally if missing, using the legacy
   # builder (DOCKER_BUILDKIT=0, since buildx may be absent) and the multi-file
-  # COPY trailing-slash fix the legacy builder requires (fix/dockerfile-copy-
-  # syntax). The image is only the ISO build tool; the installer that ships
-  # inside the ISO comes from the patched photon-os-installer RPM built above.
-  if ! docker image inspect photon/installer:latest >/dev/null 2>&1; then
+  # COPY trailing-slash fix the legacy builder requires (merged upstream as
+  # PR #38; the sed below is kept for older checkouts that predate it). The
+  # image is only the ISO build tool; the installer that ships inside the
+  # ISO comes from the patched photon-os-installer RPM built above.
+  # The image must also contain `file`. photon_installer/generate_initrd.py's
+  # strip_if_needed() runs subprocess.check_output(["file", path]) on every
+  # file it puts in the initrd, but older POI Dockerfiles never install it,
+  # so ISO assembly dies with
+  #   FileNotFoundError: [Errno 2] No such file or directory: 'file'
+  # in generateInitrd() -- *after* every package has been built, and the
+  # retry loop below would then burn all 10 attempts on it. Check the image
+  # for `file` up front, add it to the Dockerfile package list, rebuild any
+  # older image that predates the fix, and abort loudly (before the build
+  # loop starts) if it still can't be made to work.
+  poi_image_ok() {
+    docker image inspect photon/installer:latest >/dev/null 2>&1 || return 1
+    docker run --rm --entrypoint /bin/sh photon/installer:latest \
+      -c 'command -v file >/dev/null' >/dev/null 2>&1
+  }
+  if ! poi_image_ok; then
     POI_SRC="$BASE_DIR/photon-os-installer"
     [ -d "$POI_SRC/.git" ] || git clone https://github.com/dcasota/photon-os-installer.git "$POI_SRC" 2>/dev/null
     if [ -d "$POI_SRC/docker" ]; then
       ( cd "$POI_SRC"
         # multi-file 'COPY ... /usr/bin' needs a trailing slash for legacy build
         sed -i 's#^\([[:space:]]*\)/usr/bin$#\1/usr/bin/#' docker/Dockerfile
+        # initrd generation shells out to `file`. Upstream added it to the
+        # package list (on the 'binutils file xorriso' line) after v2.9, so
+        # match a standalone 'file' token in ANY position rather than one
+        # exact line -- checking only for our own edit shape would add a
+        # duplicate on a fresh clone of master. '(^|space)file(space|eol)'
+        # deliberately does not match 'Dockerfile' or 'multi-file'.
+        grep -qE '(^|[[:space:]])file([[:space:]]|$)' docker/Dockerfile || \
+          sed -i 's|^    zlib tar \\$|    file zlib tar \\|' docker/Dockerfile
         DOCKER_BUILDKIT=0 docker build -t photon/installer:latest -f docker/Dockerfile docker/ ) \
         && echo "[runPh5_pinned91] Built photon/installer:latest" \
         || echo "[runPh5_pinned91] WARNING: failed to build photon/installer image"
+    fi
+    if ! poi_image_ok; then
+      echo "[runPh5_pinned91] ERROR: photon/installer:latest is missing or has no 'file'" 1>&2
+      echo "[runPh5_pinned91]        binary. ISO assembly would fail in generateInitrd()" 1>&2
+      echo "[runPh5_pinned91]        after every package has been rebuilt -- aborting now." 1>&2
+      exit 1
     fi
   fi
 
@@ -521,33 +614,145 @@ with open('$COMMON_CFG', 'w') as f:
     echo "[runPh5_pinned91] Fixed sssd spec: serial %make_install"
   fi
 
+  # ── Determine the real stage path ───────────────────────────────
+  # `make` runs in the release worktree ($RELEASE_BRANCH, where this script
+  # already sits via the earlier "cd") and resolves "stage-path" from that
+  # worktree's own build-config.json. Checked against both build-config.json
+  # files in this checkout: stage-path is "./stage" in each, which matches
+  # what this script already hardcodes everywhere above (RPMSDIR, SRCDIR,
+  # clean_stale_sandboxes, etc. all use "$BASE_DIR/$RELEASE_BRANCH/stage") --
+  # so unlike runPh5_normal.sh's original bug (which pointed cleanup at the
+  # empty $COMMON_BRANCH/stage), this script's cleanup helpers were already
+  # correct. Recomputed here via jq for robustness in case stage-path is
+  # ever overridden, with the known-correct path as fallback.
+  BUILD_STAGE=$(cd "$BASE_DIR/$RELEASE_BRANCH" 2>/dev/null && \
+    realpath "$(jq -r '.["stage-path"] // "./stage"' build-config.json 2>/dev/null)" 2>/dev/null)
+  [ -d "$BUILD_STAGE" ] || BUILD_STAGE="$BASE_DIR/$RELEASE_BRANCH/stage"
+  COMMON_STAGE="$BASE_DIR/$COMMON_BRANCH/stage"
+  echo "[runPh5_pinned91] Build stage: $BUILD_STAGE"
+
   # ── Build loop ────────────────────────────────────────────────────
+  # Incident note: a build burned ALL 10 retries rebuilding an ISO it had
+  # already produced, because the ISO-detection globs only checked
+  # stage/*.iso and stage/iso/*.iso relative to cwd -- poi.py actually
+  # writes to $BUILD_STAGE/<IMG_NAME>/, i.e. stage/iso/<name>.iso is not
+  # guaranteed to be where it lands. Fixed below via an iso_marker dropped
+  # before `make` plus a maxdepth-2 -newer search (so a stale ISO from an
+  # older run can never be reported as success). The guards below exist so
+  # that even with correct detection, retries still can't be wasted on work
+  # that is already done or that can never succeed:
+  #   1. success moves the ISO and exits immediately.
+  #   2. if an ISO with identical *content* (sha256, not just filename)
+  #      already sits in $OUTPUT_DIR, there is nothing left to deliver --
+  #      report it and exit 0 instead of moving/overwriting anything.
+  #   3. a different file already at the destination filename is never
+  #      silently clobbered; the new ISO is delivered under a
+  #      timestamp-qualified name instead.
+  #   4. two attempts in a row that both fail with the same make exit
+  #      code AND produce zero new output are almost certainly the same
+  #      deterministic failure (bad spec, missing dep, ...), not a flaky
+  #      one -- stop early with a clear error rather than silently
+  #      reproducing the same failure 10 times.
+  prev_make_rc=""
+  prev_progress=""
   for i in $(seq 1 10); do
     if [ "$i" -gt 1 ]; then
-      echo "[runPh5] Retry $i: cleaning stale sandboxes from previous attempt"
+      echo "[runPh5_pinned91] Retry $i: cleaning stale sandboxes from previous attempt"
       clean_stale_sandboxes
     fi
-    sudo PHOTON_TDNF_EXCLUDE_PKGS="$PHOTON_TDNF_EXCLUDE_PKGS" make -j2 image IMG_NAME=iso THREADS=2;
-    # ISO may land in stage/*.iso or stage/iso/*.iso
+    # Drop a marker first: an ISO left in the stage by an older run must not
+    # be mistaken for this run's output, which would exit 0 and hand back
+    # the wrong image. Only ISOs newer than the marker count.
+    iso_marker="$BUILD_STAGE/.runph5-pinned91-iso-marker"
+    : > "$iso_marker"
+    sudo PHOTON_TDNF_EXCLUDE_PKGS="$PHOTON_TDNF_EXCLUDE_PKGS" make -j2 image IMG_NAME="$IMG_TYPE" THREADS=2
+    make_rc=$?
+    # ── Locate the finished ISO ───────────────────────────────────
+    # poi.py writes the image into $BUILD_STAGE/<IMG_NAME>/ -- NOT
+    # necessarily stage/ or stage/iso/ directly. Search one level deep in
+    # both stages, and take the newest match so a stale ISO from an older
+    # run is never mistaken for this run's output.
+    iso_globs() {
+      find "$BUILD_STAGE" "$COMMON_STAGE" -maxdepth 2 -name '*.iso' \
+           -newer "$iso_marker" -print 2>/dev/null | xargs -r ls -t 2>/dev/null
+    }
     timeout=60
     while [ $timeout -gt 0 ]; do
-      if ls stage/*.iso stage/iso/*.iso 1>/dev/null 2>&1; then
-        break
-      fi
+      [ -n "$(iso_globs | head -1)" ] && break
       sleep 1
       timeout=$((timeout - 1))
     done
-    iso_found=""
-    for f in stage/*.iso stage/iso/*.iso; do
-      [ -f "$f" ] && iso_found="$f" && break
-    done
-    if [ -n "$iso_found" ] && mv "$iso_found" "$OUTPUT_DIR/"; then
-      # ── Restore upstream state ────────────────────────────────────
+    iso_found=$(iso_globs | head -1)
+    if [ -n "$iso_found" ]; then
+      echo "[runPh5_pinned91] Built ISO: $iso_found ($(du -h "$iso_found" | cut -f1))"
+      # ── Guard: don't move/overwrite if an identical ISO is already
+      # delivered. Compare by content (sha256), not by filename, so a
+      # rebuild that reproduces a previously-delivered image is recognized
+      # as "already done" instead of burning a retry or clobbering the
+      # destination.
+      iso_sha=$(sha256sum "$iso_found" | cut -d' ' -f1)
+      dup_found=""
+      for existing in "$OUTPUT_DIR"/*.iso; do
+        [ -f "$existing" ] || continue
+        if [ "$(sha256sum "$existing" | cut -d' ' -f1)" = "$iso_sha" ]; then
+          dup_found="$existing"
+          break
+        fi
+      done
+      if [ -n "$dup_found" ]; then
+        echo "[runPh5_pinned91] Identical ISO already present at $dup_found (sha256 $iso_sha) -- not moving/overwriting; nothing left to do."
+        git checkout -- . 2>/dev/null
+        exit 0
+      fi
+      dest="$OUTPUT_DIR/$(basename "$iso_found")"
+      if [ -e "$dest" ]; then
+        # Same filename but different content (checked above): never
+        # silently destroy the existing file, deliver under a distinct
+        # name instead.
+        dest="$OUTPUT_DIR/$(date +%Y%m%d-%H%M%S)-$(basename "$iso_found")"
+        echo "[runPh5_pinned91] $OUTPUT_DIR/$(basename "$iso_found") already exists with different content; delivering new ISO as $(basename "$dest") instead"
+      fi
+      if sudo mv "$iso_found" "$dest"; then
+        echo "[runPh5_pinned91] Moved ISO to $dest"
+        # ── Restore upstream state ────────────────────────────────────
+        git checkout -- . 2>/dev/null
+        exit 0
+      fi
+      echo "[runPh5_pinned91] ERROR: could not move ISO to $dest" 1>&2
+      echo "[runPh5_pinned91]        It is still at: $iso_found" 1>&2
       git checkout -- . 2>/dev/null
-      exit 0
+      exit 1
     fi
+    # ── No ISO this attempt: decide whether another retry can help ────
+    # "progress" = number of files touched anywhere in the stages since
+    # the marker was dropped. If two consecutive attempts both fail with
+    # the same make exit code and both touch nothing, the build is stuck
+    # in the same deterministic way -- retrying it won't change the
+    # outcome, it will just burn the remaining budget re-running for
+    # hours to reproduce the same error.
+    progress=$(find "$BUILD_STAGE" "$COMMON_STAGE" -newer "$iso_marker" 2>/dev/null | wc -l)
+    echo "[runPh5_pinned91] Attempt $i: no ISO produced (make exit=$make_rc, $progress file(s) touched since marker)"
+    if [ "$i" -gt 1 ] && [ "$make_rc" = "$prev_make_rc" ] && [ "$progress" = "0" ] && [ "$prev_progress" = "0" ]; then
+      echo "[runPh5_pinned91] ERROR: attempt $i failed identically to attempt $((i - 1)) (same make exit code, zero new output both times)." 1>&2
+      echo "[runPh5_pinned91]        This looks like a deterministic failure, not a flaky one -- further retries would just reproduce it." 1>&2
+      echo "[runPh5_pinned91]        Stopping after $i/10 attempts. Fix the underlying build error, then re-run." 1>&2
+      git checkout -- . 2>/dev/null
+      exit 1
+    fi
+    prev_make_rc=$make_rc
+    prev_progress=$progress
   done
+  echo "[runPh5_pinned91] ERROR: exhausted all 10 attempts without producing an ISO" 1>&2
 
   # ── Restore upstream state on failure ─────────────────────────────
   git checkout -- . 2>/dev/null
+  exit 1
+else
+  # The entire build is gated on this reachability check. Without an
+  # else branch the script fell off the end of the "if" and exited 0
+  # having built nothing -- indistinguishable from a successful
+  # delivery to any caller that checks $?. Never exit 0 without an ISO.
+  echo "[runPh5_pinned91] ERROR: no network (ping www.google.ch failed); the build" 1>&2
+  echo "[runPh5_pinned91]        needs to fetch sources and was not started." 1>&2
+  exit 1
 fi
