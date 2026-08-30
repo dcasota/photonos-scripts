@@ -90,6 +90,10 @@ Two candidates were examined:
 
 ## 2. Main matrix: 16 primary permutations
 
+> These 16 rows assume an **interactive (UI) install**. A kickstart install
+> shifts some verdicts -- notably minimal + POI 2.8, which fails if the
+> kickstart carries a `security:` section. See section 11.
+
 Verdict is for a **default interactive install** (auto-partition or custom
 partition with the named filesystem, no kickstart).
 
@@ -786,3 +790,103 @@ gh api repos/vmware/photon/branches --jq '.[].name'
 to package list"*). `photon-os-installer.spec` carries `Requires: mkpasswd`, so
 it reaches the initrd as a dependency anyway. Unrelated to the five packages;
 recorded for completeness.
+
+---
+
+## 11. Kickstart vs UI -- the fifth dimension
+
+Every verdict in sections 2-4 assumes an **interactive (UI) install**. The same
+media can behave differently under a kickstart, and in one case *worse*. This
+section records that axis.
+
+**Evidence class for this whole section: [C] code-reading.** No kickstart
+install was performed. Nothing here is measured.
+
+### 11.1 The two paths diverge before any package is chosen
+
+- **UI:** `isoInstaller` finds no kickstart, so `install_config` stays empty and
+  `installer.configure()` runs the curses configurator (`iso_config.py`), which
+  is what presents the *Apply STIG hardening* menu.
+- **Kickstart:** the config is loaded from the ks source (`cdrom:`, HTTP,
+  VMware guestinfo, or the `ks=` kernel parameter), the configurator is
+  skipped, and **the STIG menu is never displayed.**
+
+| Evidence | v2.8 | master |
+|---|---|---|
+| `StigEnable` instantiated only from the curses configurator | `iso_config.py:296` | `iso_config.py:181` |
+| `install_config['ui']` defaults to `False`; set true only on the UI path | `installer.py:507-508` | same |
+
+(`iso_config.py` survives in master -- it shrank by 118 lines between v2.8 and
+master, it was not removed.)
+
+The downstream patch `0003-isoInstaller-fix-interactive-NoneType-crash.patch`
+exists precisely because of this split: an empty config must stay *falsy* so
+that `configure()` dispatches to the UI configurator instead of proceeding with
+no disk configured.
+
+### 11.2 Consequence 1 -- STIG cannot be "answered yes" from a kickstart
+
+A kickstart has no menu to answer. To get the same result the author must spell
+it out: an `ansible:` block naming the playbook **and** an
+`additional_packages:` list reproducing `KS_STIG_PACKAGES` by hand. The
+minimal-ISO failure therefore still occurs in kickstart form, but only if the
+author lists those packages -- there is no automatic path into it.
+
+### 11.3 Consequence 2 -- a kickstart can break minimal on POI 2.8, which the UI cannot
+
+`installer.py:409-417` (v2.8):
+
+```python
+if 'security' in install_config:
+    security = install_config['security']
+    if 'selinux' in security and security['selinux'] is not None:
+        packages.append("selinux-policy")
+    if 'fips' in security and security['fips'] is not None:
+        packages.append("openssl-fips-provider")
+```
+
+The guard is *presence of the key*, not its value. So:
+
+- **UI install** -- no `security` key is ever synthesised on 2.8, nothing is
+  appended, and minimal-iso installs cleanly (row 1 of the main matrix).
+- **Kickstart install** -- an entirely ordinary `security: {selinux: permissive}`
+  appends `selinux-policy`, which is **not on the minimal media** -> the same
+  `Error(1011)` that POI master produces unconditionally.
+
+This matters for how row 1 should be read: **"minimal + POI 2.8 = WORKS" holds
+only for a UI install with no `security` section.** It is not a property of the
+media. Commit `a88cf02` did not invent this failure; it made an existing
+kickstart-only failure unconditional by synthesising the key for everyone.
+
+| minimal-iso + POI 2.8, kickstart content | verdict |
+|---|---|
+| no `security`, no `additional_packages` | WORKS |
+| `security: {selinux: <any non-null>}` | FAILS -- `selinux-policy` absent |
+| `security: {fips: <any non-null>}` | FAILS -- `openssl-fips-provider` absent |
+| `additional_packages:` = `KS_STIG_PACKAGES` | FAILS -- six packages absent |
+
+### 11.4 Consequence 3 -- the same failure is surfaced differently
+
+`installer.py` branches on `ui` at `:291`, `:745`, `:779`, `:838`. In UI mode
+the tdnf run is the progress-bar parser (`Popen` + line-by-line parsing); in
+kickstart mode it is `self.tdnf.run(...)`. Identical failure, different
+visibility -- the curses path is what reduces a missing package to a bare
+`InstallerError("Installer failed")` on screen, with the real cause only in
+`/var/log/installer`. See FIX-2, which is worth more in UI mode than in
+kickstart mode.
+
+### 11.5 Effect on the permutation count
+
+This is a fifth binary dimension, but it does **not** cleanly double the matrix:
+"kickstart + STIG menu" is not a reachable combination, because the menu is
+UI-only. The honest enumeration is:
+
+- the 16 rows of section 2 are the **UI** rows;
+- the kickstart rows use the same media, express STIG manually, and add one
+  failure mode (`security:` key present) that has no UI counterpart on 2.8.
+
+### 11.6 Fix implications -- none specific to kickstart
+
+Every failure above is media-side: the packages are absent from the minimal
+ISO. FIX-1 (or its alternatives) cures the kickstart rows and the UI rows
+together. No kickstart-specific change is required.
