@@ -443,6 +443,35 @@ for s in data.get('sources', []) or []:
   COMMON_STAGE="$BASE_DIR/$COMMON_BRANCH/stage"
   echo "[runPh5_normal] Build stage: $BUILD_STAGE"
 
+  # ── Drop stale RPMs that would shadow a freshly patched build ─────
+  # tdnf resolves by highest VERSION-RELEASE, not by build time. The
+  # downstream patch currently produces photon-os-installer 2.8-3, but an
+  # older revision of that same patch once produced 2.8-4 and 2.8-5 (built
+  # 2026-06-04). Those stale RPMs sat in the stage repo and silently won:
+  # the ISO shipped the June installer, not the freshly patched one. The
+  # payloads happened to match that time, so nothing broke -- but any future
+  # change to the patch set would have been invisible on the media.
+  # For each spec the downstream patch touches, drop RPMs with the same
+  # NAME-VERSION but a HIGHER release than the spec now declares.
+  for _pkg in photon-os-installer stig-hardening linux; do
+    _spec="SPECS/$_pkg/$_pkg.spec"
+    [ -f "$_spec" ] || continue
+    _ver=$(awk '/^Version:/{print $2; exit}' "$_spec")
+    _rel=$(awk '/^Release:/{print $2; exit}' "$_spec" | sed 's/%.*//')
+    # skip if either still contains an unexpanded rpm macro
+    case "$_ver$_rel" in *%*|"") continue ;; esac
+    case "$_rel" in *[!0-9]*) continue ;; esac
+    for _r in "$BUILD_STAGE"/RPMS/*/"$_pkg"-"$_ver"-*.rpm; do
+      [ -f "$_r" ] || continue
+      _rrel=$(rpm -qp --qf '%{RELEASE}' "$_r" 2>/dev/null | sed 's/\.ph[0-9]*$//')
+      case "$_rrel" in ''|*[!0-9]*) continue ;; esac
+      if [ "$_rrel" -gt "$_rel" ]; then
+        echo "[runPh5_normal] Removing stale $(basename "$_r") -- release $_rrel shadows patched $_rel"
+        rm -f "$_r"
+      fi
+    done
+  done
+
   # ── Helper: clean stale chroot mounts and sandbox directories ───
   # The build creates bind mounts inside chroot sandboxes. If a build
   # fails, those mounts may persist and block subsequent sandbox
