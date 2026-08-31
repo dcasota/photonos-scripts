@@ -1,0 +1,92 @@
+#!/usr/bin/vmware
+.encoding = "UTF-8"
+config.version = "8"
+virtualHW.version = "21"
+displayName = "@@VM_NAME@@"
+
+# Photon guest type - matches the hand-verified test VM on this host.
+guestOS = "vmware-photon-64"
+
+numvcpus = "@@GUEST_VCPUS@@"
+memSize = "@@GUEST_MEM_MB@@"
+
+# --- boot disk ------------------------------------------------------------
+# lsilogic to match what the Photon initrd expects.
+scsi0.present = "TRUE"
+scsi0.virtualDev = "lsilogic"
+scsi0.pciSlotNumber = "16"
+scsi0:0.present = "TRUE"
+scsi0:0.deviceType = "scsi-hardDisk"
+scsi0:0.fileName = "@@VM_NAME@@.vmdk"
+
+# --- install media --------------------------------------------------------
+# The CDROM MUST be on SATA, not IDE. On ide1:0 the installer boots but
+# userspace cannot find /dev/sr0, and the resulting "volume label not found"
+# failure reads exactly like a corrupt ISO. The verified-working test VM on
+# this host also carries the ISO on sata0:1.
+sata0.present = "TRUE"
+sata0.pciSlotNumber = "35"
+sata0:1.present = "TRUE"
+sata0:1.deviceType = "cdrom-image"
+sata0:1.fileName = "@@ISO_PATH_WIN@@"
+sata0:1.startConnected = "TRUE"
+
+# --- firmware -------------------------------------------------------------
+# EFI, matching the shipped ISO's grub2/EFI boot path.
+# NOTE: bios.bootOrder is IGNORED on EFI VMs. Boot source is controlled by
+# NVRAM, which is why teardown must move the .nvram aside - otherwise UEFI's
+# removable-media fallback finds the previous ESP and boots the OLD image.
+firmware = "efi"
+uefi.secureBoot.enabled = "@@SECUREBOOT@@"
+
+# --- network --------------------------------------------------------------
+# Static MAC in VMware's manual OUI (00:50:56:00:00:00 - 00:50:56:3F:FF:FF).
+# vm-lab pins addressType="generated" plus the BIOS UUID, because VMware
+# DERIVES a generated MAC from the UUID - which couples two values that then
+# must be changed in lockstep. addressType="static" decouples them, so each
+# permutation gets its own MAC without any UUID arithmetic.
+ethernet0.present = "TRUE"
+ethernet0.connectionType = "nat"
+ethernet0.virtualDev = "@@NIC_DEV@@"
+ethernet0.addressType = "static"
+ethernet0.address = "@@GUEST_MAC@@"
+ethernet0.pciSlotNumber = "160"
+
+# Still pinned, and still distinct per permutation: a shared UUID would make
+# VMware treat every clone as the same machine.
+uuid.action = "keep"
+uuid.bios = "@@UUID_BIOS@@"
+uuid.location = "@@UUID_BIOS@@"
+
+# --- serial console -------------------------------------------------------
+# The only unambiguous liveness instrument during an unattended install:
+# whether this file grows. Everything else (vmrun list, CPU%) gives false
+# readings. vmrun list in particular OMITS GUI-started VMs.
+serial0.present = "TRUE"
+serial0.fileType = "file"
+serial0.fileName = "@@SERIAL_LOG_WIN@@"
+serial0.startConnected = "TRUE"
+serial0.yieldOnMsrRead = "TRUE"
+
+# --- unattended-install hygiene ------------------------------------------
+# Without autoAnswer a modal dialog blocks power-on forever, with no output.
+msg.autoAnswer = "TRUE"
+# The guest clock must not be host-slaved; time-sync behaviour is under test.
+tools.syncTime = "FALSE"
+
+# --- kickstart injection --------------------------------------------------
+# POI's isoInstaller reads guestinfo.kickstart.data (base64) via vmtoolsd,
+# verified present in the installer initrd as /usr/bin/vmtoolsd with
+# open-vm-tools in packages_installer_initrd.json. This is why an autonomous
+# permutation needs NO ISO remaster and no boot-menu typing.
+# For mode=ui this line is removed entirely, so the installer finds no
+# kickstart and falls through to the curses configurator.
+@@GUESTINFO_KICKSTART@@
+
+# --- trimmed hardware -----------------------------------------------------
+usb.present = "FALSE"
+ehci.present = "FALSE"
+sound.present = "FALSE"
+floppy0.present = "FALSE"
+vmci0.present = "TRUE"
+svga.autodetect = "TRUE"
