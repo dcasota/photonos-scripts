@@ -89,8 +89,8 @@ The methodology is reconstructed from the maintainer's `vCenter-CVE-drift-analyz
 
 | Phase | Deliverable | Status |
 |---|---|---|
-| 0 | `ARCHITECTURE.md`, `specs/README.md`, `AGENTS.md` | In Progress |
-| 1 | `specs/prd.md` | Pending |
+| 0 | `ARCHITECTURE.md`, `specs/README.md`, `AGENTS.md` | Complete (#319) |
+| 1 | `specs/prd.md` | In Progress |
 | 2 | Dev Lead review on the PRD PR | Pending |
 | 3 | `specs/adr/0001`–`000n` | Pending |
 | 4 | `specs/features/*.md` | Pending |
