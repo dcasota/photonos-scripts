@@ -60,6 +60,7 @@ The audience is one maintainer testing pull requests against a hypervisor on the
 - **[REQ-12]** Persist every run, permutation, check, artifact and finding in a memory database, and generate `MEMORY.md` as a view over it rather than a parallel copy.
 - **[REQ-13]** Produce a final report table of permutations attempted, their recorded pre-change verdict, their result, and the PRs implicated.
 - **[REQ-14]** Assemble installer variants by cherry-picking named PR branches onto a pristine base in a throwaway clone, proving each variant applies before use, and merging nothing.
+- **[REQ-16]** Version every log and report artifact by UTC timestamp in the filename, keeping a `latest` pointer for convenience, so no run can destroy the evidence of the run before it.
 - **[REQ-15]** Apply defence in depth: no credential in a process argument, in the database, or in a log; external commands invoked as argument vectors; SQL parameterised; destructive operations path-validated and single-target.
 
 ## 5. User Stories
@@ -108,6 +109,7 @@ a log or the database, so that a test harness is not a disclosure path.
 | **AC-12** | Installer variants are produced without merging, and each is proven to apply to a pristine base before a build consumes it | Task 003 |
 | **AC-13** | No credential appears in any process argument, database column or log line; verified by a test that greps a full run's artifacts for the configured secret | Task 014 |
 | **AC-14** | Serial-log matching is NUL-safe and does not depend on any grep flag | Task 007 |
+| **AC-16** | Running the same permutation twice leaves two independently readable result sets and two reports; neither run overwrites the other, and `latest` resolves to the newer | Task 013 |
 | **AC-15** | The report distinguishes a result that reproduces the recorded pre-change verdict from one that does not, since the former is the regression signal | Task 009 |
 
 ## 7. Assumptions & Constraints

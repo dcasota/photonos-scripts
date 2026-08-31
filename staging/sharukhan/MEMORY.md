@@ -5,7 +5,7 @@ database; the database is the system of record. Editing here changes nothing and
 will be overwritten on the next render.
 
 - Source database: `/root/photon-mc/memory.db`
-- Rendered at: 2026-08-31T13:31:35Z
+- Rendered at: 2026-08-31T14:21:54Z
 - Regenerate with: `python3 tools/gen-memory-md.py /root/photon-mc/memory.db MEMORY.md`
 
 | Table | Rows |
@@ -14,9 +14,7 @@ will be overwritten on the next render.
 | `permutation` | 0 |
 | `check_result` | 0 |
 | `artifact` | 0 |
-| `finding` | 18 |
-
-> **1 unresolved blocker finding(s).** See the Blocker section.
+| `finding` | 27 |
 
 ## Permutation results
 
@@ -25,6 +23,16 @@ _No permutation has completed yet._
 ## Findings
 
 ### Blocker
+
+#### `installer-console-dispatch` — POI runs the installer only on the single active console
+
+*hypervisor · verified* · source: `generate_initrd.py create_installer_script`
+
+**Observed.** bootphotoninstaller reads /sys/devices/virtual/tty/console/active and runs the installer only if it equals tty0 (then on /dev/tty1) or if tty() equals /dev/$ACTIVE_CONSOLE. With console=tty0 console=ttyS0 the value is 'ttyS0 tty0', matching neither branch, so it falls through to exec /bin/bash.
+
+**Consequence.** The installer never starts and the VM sits at a root shell; with no serial console at all the same state is completely invisible.
+
+**Mitigation.** Remaster grub.cfg with console=ttyS0,115200n8 ONLY for autonomous runs. Verified: the installer then starts on serial. Interactive runs keep the stock ISO so the operator drives tty0.
 
 #### `iso-must-be-windows-visible` — VMware cannot read an ISO on a WSL-only path
 
@@ -38,13 +46,23 @@ _No permutation has completed yet._
 
 #### `no-serial-console-on-iso` — The Photon ISO does not route the kernel to serial
 
-*hypervisor · **UNRESOLVED*** · source: `mc-k01 first run`
+*hypervisor · verified* · source: `mc-k01 first run`
 
 **Observed.** The ISO's /boot/grub2/grub.cfg menuentry is 'linux /isolinux/vmlinuz root=/dev/ram0 loglevel=3 photon.media=UUID=$photondisk' with no console=ttyS0. Serial log stayed 0 bytes for 15+ minutes while the VM ran.
 
 **Consequence.** Install progress and completion are unobservable; the boot-source transition oracle can never fire.
 
-**Mitigation.** Open: remaster grub.cfg to add console=ttyS0,115200, or detect completion via getGuestIPAddress on the installed system.
+**Mitigation.** Remaster grub.cfg to console=ttyS0,115200n8 only. Verified: 61KB of kernel output and the installer now runs on serial.
+
+#### `vmrun-nogui-unsupported` — vmrun headless start fails on this host while gui start works
+
+*hypervisor · verified* · source: `mc-k01 bisect`
+
+**Observed.** 'vmrun -T ws start <vmx> nogui' returns 'Error: Unknown error' and creates no vmware.log at all. The identical VMX - including one VMware itself had rewritten after a successful power-on - starts immediately with 'gui', producing a 202 KB vmware.log and serial output.
+
+**Consequence.** Every autonomous permutation fails to launch, and the logless error invites misdiagnosis: the VMX was blamed first, then pinned PCI slot numbers, before bisecting against a known-good VMX proved the file was never the problem.
+
+**Mitigation.** Use gui for autonomous starts too. Headless needs VMware Workstation Server / shared-VM support, which is not enabled here.
 
 #### `vmxnet3-pci-slot` — vmxnet3 cannot reserve a PCI slot in this VMX layout
 
@@ -67,6 +85,16 @@ _No permutation has completed yet._
 **Mitigation.** Strip NULs before matching; never depend on a grep flag. Verified: mc_grep_count returns 1 on a NUL-prefixed log.
 
 ### High
+
+#### `packagelist-file-name` — packages_minimal.json is not on the installer media
+
+*build · verified* · source: `mc-k01 serial log`
+
+**Observed.** The kickstart named packages_minimal.json; the installer aborted with FileNotFoundError: '/installer/packages_minimal.json'. The initrd ships only /installer/packages.json, containing linux-esx, less, sudo, linux, initramfs, lvm2, minimal.
+
+**Consequence.** Every kickstart-driven install fails before partitioning.
+
+**Mitigation.** Use packagelist_file=packages.json, or omit it and pass an explicit packages list.
 
 #### `stale-poi-rpm-shadowing` — A stale installer RPM in the stage tree ships on the ISO
 
@@ -108,6 +136,26 @@ _No permutation has completed yet._
 
 **Mitigation.** printf '%s\n'. Verified all three ids now selected.
 
+#### `results-overwritten-per-run` — Re-running a permutation destroys the previous run's evidence
+
+*defect · verified* · source: `user request; confirmed in mc-verify.sh`
+
+**Observed.** mc-verify.sh truncates $MC_RESULTS_DIR/<perm>/checks.jsonl on every invocation, and harvested guest logs use fixed filenames. k01 was run five times; only the last run's checks survived.
+
+**Consequence.** Evidence for a regression is lost exactly when a comparison between runs is what would explain it.
+
+**Mitigation.** Every artifact is UTC-stamped: checks-<stamp>.jsonl, logs-<stamp>/, report-<stamp>.txt, each with a -latest pointer. One stamp per run, exported so all children share it. Verified: two consecutive report runs produced two files.
+
+#### `installed-system-serial-silent` — Remastering the ISO does not make the INSTALLED system serial-visible
+
+*hypervisor · verified* · source: `mc-k01 run 4`
+
+**Observed.** After the installer rebooted, the serial log froze at 119354 bytes and never grew. root=PARTUUID= never appeared, so the boot-source completion oracle could not fire, even though the install had succeeded (partitioning done, chroot populated, postinstall run, 'reboot: machine restart').
+
+**Consequence.** A successful install is scored as a timeout. The harness would report failure for working software - the worst possible error for a test oracle.
+
+**Mitigation.** Two changes: the kickstart postinstall now adds console=ttyS0,115200n8 to the target's grub, and the installer waits on EITHER the boot-source transition OR a guest IP from VMware Tools.
+
 #### `no-vmware-tools-during-install` — VMware Tools is not running during the install phase
 
 *hypervisor · verified* · source: `vmware.log mc-k01`
@@ -127,6 +175,16 @@ _No permutation has completed yet._
 **Consequence.** An install appears to silently do nothing while the old image boots.
 
 **Mitigation.** Stash .nvram before install and at teardown; stash the whole chain by glob, not a fixed list.
+
+#### `vmrun-needs-a-session` — vmrun start silently does nothing from a fully detached process
+
+*hypervisor · verified* · source: `k01 clean run`
+
+**Observed.** 'setsid vmrun -T ws start <vmx> gui' produces no output, no VM and no vmware.log. The same command from a shell with a controlling terminal starts the VM immediately. nohup alone is fine; setsid is what breaks it.
+
+**Consequence.** A background matrix run appears to be waiting on an install that was never started, and times out with nothing to show.
+
+**Mitigation.** Launch background work with nohup, never setsid.
 
 #### `gnu-only-sed-grep` — sed \U and grep -P are GNU extensions absent on this host
 
@@ -159,6 +217,16 @@ _No permutation has completed yet._
 **Mitigation.** Upgraded openssh-clients to 10.4p1. Prerequisite checks must report version and provenance, not a boolean.
 
 ### Medium
+
+#### `builds-serial-installs-parallel` — Only ISO builds must serialise; installs are independent
+
+*build · verified* · source: `PRD review after host measurement`
+
+**Observed.** ISO builds share and mutate $PHOTON_TREE/stage (65 GiB) via git checkout, patch apply and the stale-RPM purge, so two concurrent builds corrupt each other. VM installs share nothing: each permutation owns its VM directory, disk, MAC, UUID and results directory.
+
+**Consequence.** PRD section 7 claimed sequential execution was correctness rather than an unimplemented optimisation. That is true for builds and false for installs, and it would have prevented a legitimate 3x speedup.
+
+**Mitigation.** Amend PRD section 7: builds serialise, installs fan out under admission control. Recorded as specs/findings and corrected by PR.
 
 #### `canister-hardcoded-in-verify` — Cached ISO lookup hardcoded the prebuilt canister mode
 
@@ -200,6 +268,16 @@ _No permutation has completed yet._
 
 **Mitigation.** readlink -f the ISO and write the concrete filename into the VMX.
 
+#### `foreign-pci-slot-pins` — Pinned PCI slot numbers do not transfer between hosts
+
+*hypervisor · verified* · source: `VMX diff against the rewritten file`
+
+**Observed.** The template pinned sata0.pciSlotNumber=35 and ethernet0.pciSlotNumber=160, inherited from a template captured elsewhere. VMware rewrote them to 18 and 17 on the one power-on that succeeded, and had already refused vmxnet3 with 'failed to reserve slot for vmxnet3 PCIe device'.
+
+**Consequence.** A foreign slot layout can make power-on fail in ways that name nothing.
+
+**Mitigation.** Pin no pciSlotNumber at all and let VMware assign. Pin only uuid.bios; uuid.location is VMware's own.
+
 #### `vmrun-crlf` — vmrun output is CRLF and breaks naive line matching
 
 *portability · verified* · source: `mc-preflight.sh`
@@ -209,4 +287,14 @@ _No permutation has completed yet._
 **Consequence.** VM-running checks report false negatives, so a teardown could act on a live VM.
 
 **Mitigation.** tr -d '\r' on every vmrun parse.
+
+#### `per-vm-resource-cost` — A running VM costs memSize on disk plus its growing thin disk
+
+*tooling · verified* · source: `mc-k01 vm directory`
+
+**Observed.** Measured on mc-k01: the .vmem file is exactly 4294967296 bytes (= memSize 4096 MiB) and exists only while the VM runs; the thin .vmdk grew 4 MiB -> 914 MiB during install. Peak per concurrent VM is therefore about memSize + installed footprint.
+
+**Consequence.** A concurrency limit derived from CPU count alone over-commits RAM and disk on smaller hosts.
+
+**Mitigation.** Admission control takes min(cpu_slots, ram_slots, disk_slots), recomputed per dispatch, not a fixed startup value.
 
