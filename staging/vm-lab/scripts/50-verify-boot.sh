@@ -84,7 +84,7 @@ tail -c 6000 "$SER" | tr -d '\000' | sed -E 's/\x1b\[[0-9;]*m//g' | tail -n 15 |
 
 echo
 echo "=== failed units this boot ==="
-tail -c 400000 "$SER" | tr -d '\000' | sed -E 's/\x1b\[[0-9;]*g//g' \
+tail -c 400000 "$SER" | tr -d '\000' | sed -E 's/\x1b\[[0-9;]*m//g' \
   | grep -aE 'SPAGAT-DIAG: failed unit|Failed to start' | tail -n 12 | cut -c1-170 | sed 's/^/  /'
 echo "  (blank = none seen in the tail)"
 

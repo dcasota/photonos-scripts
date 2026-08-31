@@ -74,8 +74,8 @@ ethernet0.generatedAddressOffset = "0"
 # last bytes (…49 53 65 1c) are the MAC's (…53:65:1c). Drop the UUID and
 # VMware regenerates both, the 192.168.225.140 lease moves, and every
 # hardcoded address in the runbooks silently points at nothing.
-uuid.bios = "56 4d a0 3f 30 d3 c1 e8-72 40 ad 48 49 53 65 1c"
-uuid.location = "56 4d a0 3f 30 d3 c1 e8-72 40 ad 48 49 53 65 1c"
+uuid.bios = "@@UUID_BIOS@@"
+uuid.location = "@@UUID_BIOS@@"
 
 # --- serial console (the only diagnostic channel) --------------------------
 serial0.present = "TRUE"

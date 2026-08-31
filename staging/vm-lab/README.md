@@ -137,7 +137,11 @@ Two that catch people out:
   looks like a broken ISO.
 - **The BIOS UUID must stay next to the MAC.** With
   `ethernet0.addressType="generated"`, VMware *derives* the MAC from the UUID.
-  Drop the UUID and both regenerate, the `192.168.225.140` lease moves, and
+  Both now come from `vm-lab.env` (`GUEST_MAC`, `GUEST_UUID_BIOS`) rather than
+  being hardcoded in the template, so a second VM can be given its own pair
+  instead of silently reusing this one's; `10-create-vm.ps1` warns if their
+  last three bytes disagree. Drop the UUID and both regenerate, the
+  `192.168.225.140` lease moves, and
   every hardcoded address in the runbooks quietly points at nothing.
 
 ### 3. The operator medium on `scsi0:1` is the credential channel — and is never regenerated here

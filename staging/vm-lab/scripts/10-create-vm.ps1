@@ -42,12 +42,26 @@ $cfgPath = Join-Path $here '..\config\vm-lab.env'
 $cfg = @{}
 foreach ($line in Get-Content $cfgPath) {
     if ($line -match '^\s*#' -or $line -match '^\s*$') { continue }
-    if ($line -notmatch '^\s*([A-Za-z_][A-Za-z0-9_]*)=\s*(.*)$') { continue }
-    $k = $Matches[1]
-    $raw = $Matches[2]
-    if ($raw -match '^"([^"]*)"') { $v = $Matches[1] }
-    elseif ($raw -match "^'([^']*)'") { $v = $Matches[1] }
-    else { $v = (($raw -split '#', 2)[0]).Trim() }
+    # vm-lab.env uses the override-safe form  : "${KEY:=VALUE}"  so that an
+    # exported value wins. Accept the older KEY=VALUE form too, so a stale
+    # copy of the file still parses.
+    if ($line -match '^\s*:\s*"\$\{([A-Za-z_][A-Za-z0-9_]*):=(.*)\}"\s*$') {
+        $k = $Matches[1]
+        $v = $Matches[2]
+    }
+    elseif ($line -match '^\s*([A-Za-z_][A-Za-z0-9_]*)=\s*(.*)$') {
+        $k = $Matches[1]
+        $raw = $Matches[2]
+        if ($raw -match '^"([^"]*)"') { $v = $Matches[1] }
+        elseif ($raw -match "^'([^']*)'") { $v = $Matches[1] }
+        else { $v = (($raw -split '#', 2)[0]).Trim() }
+    }
+    else { continue }
+    # An environment value overrides the file, matching what the .sh scripts
+    # now do. Without this the README's documented per-run overrides work in
+    # bash but are silently ignored on the PowerShell side.
+    $envVal = [Environment]::GetEnvironmentVariable($k)
+    if ($envVal) { $cfg[$k] = $envVal; continue }
     $v = [regex]::Replace($v, '\$\{([A-Za-z_][A-Za-z0-9_]*)\}', { param($m) if ($cfg.ContainsKey($m.Groups[1].Value)) { $cfg[$m.Groups[1].Value] } else { '' } })
     $v = $v -replace '\\\\', '\'
     $cfg[$k] = $v
@@ -121,12 +135,27 @@ if ((Test-Path $vmxPath) -and -not $RefreshVmxOnly) {
         Replace('@@GUEST_VCPUS@@',              $cfg['GUEST_VCPUS']).
         Replace('@@GUEST_MEM_MB@@',             $cfg['GUEST_MEM_MB']).
         Replace('@@GUEST_MAC@@',                $cfg['GUEST_MAC']).
+$vmx = $vmx -replace '@@UUID_BIOS@@', $cfg['GUEST_UUID_BIOS']
         Replace('@@OPERATOR_MEDIUM_BASENAME@@', $cfg['OPERATOR_MEDIUM_BASENAME']).
         Replace('@@SERIAL_LOG_WIN@@',           $serialWin)
     # VMX files are CRLF + UTF-8 without BOM.
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllText($vmxPath, ($body -replace "`r?`n", "`r`n"), $utf8NoBom)
     Write-Output "  wrote $vmxPath"
+
+# VMware derives a generated MAC from the BIOS UUID. If the two disagree the
+# VM still boots, but the NAT lease moves and every hardcoded address in the
+# runbooks points at nothing - the exact failure the pinning exists to prevent.
+$macTail  = ($cfg['GUEST_MAC'] -replace ':','').ToLower()
+$uuidTail = ($cfg['GUEST_UUID_BIOS'] -replace '[ -]','').ToLower()
+if ($macTail.Length -ge 6 -and $uuidTail.Length -ge 6) {
+    if ($uuidTail.Substring($uuidTail.Length - 6) -ne $macTail.Substring($macTail.Length - 6)) {
+        Write-Warning ("GUEST_MAC and GUEST_UUID_BIOS disagree in their last 3 bytes " +
+                       "(mac=..." + $macTail.Substring($macTail.Length - 6) +
+                       " uuid=..." + $uuidTail.Substring($uuidTail.Length - 6) +
+                       "). VMware derives the MAC from the UUID; the DHCP lease will move.")
+    }
+}
 
     $left = Select-String -Path $vmxPath -Pattern '@@[A-Z_]+@@'
     if ($left) { throw "unsubstituted placeholders remain: $($left -join ', ')" }

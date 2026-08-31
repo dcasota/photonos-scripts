@@ -56,7 +56,13 @@ else
     echo "=== generating ed25519 keypair ==="
     # No passphrase: this is a disposable lab key for an unattended install.
     # It is NOT an operator credential and must never be reused elsewhere.
-    ssh-keygen -t ed25519 -N '' -C "spagat-vm-lab@$(hostname)" -f "$KEY"
+    # No 'set -e' in this script, so a failed keygen would otherwise fall
+    # through to 'cat "$KEY.pub"' and report a missing file instead of the
+    # real cause.
+    if ! ssh-keygen -t ed25519 -N '' -C "spagat-vm-lab@$(hostname)" -f "$KEY"; then
+        echo "FAIL: ssh-keygen could not create $KEY" >&2
+        exit 5
+    fi
 fi
 chmod 0600 "$KEY"
 chmod 0644 "$KEY.pub"

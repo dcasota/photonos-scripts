@@ -38,12 +38,26 @@ $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $cfg = @{}
 foreach ($line in Get-Content (Join-Path $here '..\config\vm-lab.env')) {
     if ($line -match '^\s*#' -or $line -match '^\s*$') { continue }
-    if ($line -notmatch '^\s*([A-Za-z_][A-Za-z0-9_]*)=\s*(.*)$') { continue }
-    $k = $Matches[1]
-    $raw = $Matches[2]
-    if ($raw -match '^"([^"]*)"') { $v = $Matches[1] }
-    elseif ($raw -match "^'([^']*)'") { $v = $Matches[1] }
-    else { $v = (($raw -split '#', 2)[0]).Trim() }
+    # vm-lab.env uses the override-safe form  : "${KEY:=VALUE}"  so that an
+    # exported value wins. Accept the older KEY=VALUE form too, so a stale
+    # copy of the file still parses.
+    if ($line -match '^\s*:\s*"\$\{([A-Za-z_][A-Za-z0-9_]*):=(.*)\}"\s*$') {
+        $k = $Matches[1]
+        $v = $Matches[2]
+    }
+    elseif ($line -match '^\s*([A-Za-z_][A-Za-z0-9_]*)=\s*(.*)$') {
+        $k = $Matches[1]
+        $raw = $Matches[2]
+        if ($raw -match '^"([^"]*)"') { $v = $Matches[1] }
+        elseif ($raw -match "^'([^']*)'") { $v = $Matches[1] }
+        else { $v = (($raw -split '#', 2)[0]).Trim() }
+    }
+    else { continue }
+    # An environment value overrides the file, matching what the .sh scripts
+    # now do. Without this the README's documented per-run overrides work in
+    # bash but are silently ignored on the PowerShell side.
+    $envVal = [Environment]::GetEnvironmentVariable($k)
+    if ($envVal) { $cfg[$k] = $envVal; continue }
     $v = [regex]::Replace($v, '\$\{([A-Za-z_][A-Za-z0-9_]*)\}', { param($m) if ($cfg.ContainsKey($m.Groups[1].Value)) { $cfg[$m.Groups[1].Value] } else { '' } })
     $v = $v -replace '\\\\', '\'
     $cfg[$k] = $v
@@ -74,14 +88,18 @@ if (Test-Path $vmrun) {
 }
 
 $ts = Get-Date -Format 'yyyyMMddTHHmmssZ'
-$targets = @(
-    "$vmName.vmdk",
-    "$vmName-000001.vmdk", "$vmName-000002.vmdk",
-    "$vmName.vmsd",
-    "$vmName-Snapshot1.vmsn", "$vmName-Snapshot2.vmsn",
-    "nvram",
-    "$vmName.vmx.lck"
-)
+# Enumerated by pattern, not by name. The previous fixed list covered exactly
+# two snapshot deltas and two .vmsn files, so a VM that had reached
+# -000003.vmdk left an orphan behind - which defeats the whole point stated
+# at the top of this file, because UEFI's removable-media fallback then finds
+# the surviving ESP and boots the PREVIOUS image.
+$targets = @("$vmName.vmdk", "$vmName.vmsd", "nvram", "$vmName.vmx.lck")
+$targets += (Get-ChildItem -LiteralPath $vmDir -Filter "$vmName-*.vmdk" -ErrorAction SilentlyContinue |
+             Where-Object { $_.Name -match "^$([regex]::Escape($vmName))-\d{6}\.vmdk$" } |
+             ForEach-Object { $_.Name })
+$targets += (Get-ChildItem -LiteralPath $vmDir -Filter '*.vmsn' -ErrorAction SilentlyContinue |
+             ForEach-Object { $_.Name })
+$targets = $targets | Select-Object -Unique
 if ($IncludeVmx) { $targets += "$vmName.vmx" }
 
 Write-Output ""
