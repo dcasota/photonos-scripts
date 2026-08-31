@@ -61,6 +61,7 @@ trap 'rm -f /tmp/photon-tdnf-exclude-pkgs.txt' EXIT INT TERM
 # Directory containing this script, used to locate the bundled downstream
 # patch set (staging/photonos-patches/). Resolved before any cd.
 SCRIPT_DIR=$(cd "$(dirname "$0")" 2>/dev/null && pwd)
+SCRIPT_TAG=$(basename "$0" .sh)
 
 sleep 3
 if ping -c 4 www.google.ch > /dev/null 2>&1; then
@@ -120,11 +121,48 @@ with open('build-config.json','w') as f: json.dump(cfg, f, indent=4); f.write('\
   #   linux 6.12.87-3           : strip canister Kconfig when fips=0  (PR #14)
   # (nginx PR #17 is intentionally NOT included: 5.0 already ships nginx
   #  1.30.2, newer than the PR's 1.30.1, so it would be a downgrade.)
-  DOWNSTREAM_PATCH=""
-  for cand in "$SCRIPT_DIR/photonos-patches/downstream-fixes.patch" \
-              "$BASE_DIR/photonos-patches/downstream-fixes.patch"; do
-    [ -f "$cand" ] && DOWNSTREAM_PATCH="$cand" && break
-  done
+  # -- Resolve the downstream patch --------------------------------------
+  # Precedence: an explicit DOWNSTREAM_PATCH from the caller, else the
+  # historical search. With the variable unset this behaves exactly as before,
+  # so the standalone "just run it" path is unchanged.
+  #
+  # Why explicit-first: this script resolves the patch RELATIVE TO ITSELF, so
+  # two checkouts of it see two different patches. When those diverge, the
+  # build silently uses whichever copy sits beside the script that was
+  # invoked, and the failure surfaces as "patch does not apply" against a spec
+  # -- which reads like a rebase problem rather than a path problem. An
+  # automated driver previously had no way to say which patch it meant.
+  if [ -n "${DOWNSTREAM_PATCH:-}" ]; then
+    [ -f "$DOWNSTREAM_PATCH" ] || {
+      echo "[$SCRIPT_TAG] ERROR: DOWNSTREAM_PATCH=$DOWNSTREAM_PATCH does not exist" 1>&2
+      exit 1
+    }
+    echo "[$SCRIPT_TAG] downstream patch: $DOWNSTREAM_PATCH (caller-specified)"
+  else
+    DOWNSTREAM_PATCH=""
+    _cands=""
+    for cand in "$SCRIPT_DIR/photonos-patches/downstream-fixes.patch" \
+                "$BASE_DIR/photonos-patches/downstream-fixes.patch"; do
+      [ -f "$cand" ] || continue
+      _cands="$_cands $cand"
+      [ -n "$DOWNSTREAM_PATCH" ] || DOWNSTREAM_PATCH="$cand"
+    done
+    # Ambiguity is refused, not silently resolved. Identical copies are fine;
+    # copies that differ mean the build would otherwise be a coin toss.
+    if [ "$(echo $_cands | wc -w)" -gt 1 ]; then
+      if [ "$(for c in $_cands; do sha256sum "$c" | cut -c1-16; done | sort -u | wc -l)" -gt 1 ]; then
+        echo "[$SCRIPT_TAG] ERROR: several downstream-fixes.patch copies exist and they DIFFER:" 1>&2
+        for c in $_cands; do
+          echo "[$SCRIPT_TAG]   $c ($(grep -c '^+++ ' "$c") files, sha $(sha256sum "$c" | cut -c1-16))" 1>&2
+        done
+        echo "[$SCRIPT_TAG]        Set DOWNSTREAM_PATCH=<path> to choose deliberately." 1>&2
+        exit 1
+      fi
+    fi
+  fi
+  if [ -n "$DOWNSTREAM_PATCH" ]; then
+    echo "[$SCRIPT_TAG] downstream patch: $DOWNSTREAM_PATCH ($(grep -c '^+++ ' "$DOWNSTREAM_PATCH") files, sha $(sha256sum "$DOWNSTREAM_PATCH" | cut -c1-16))"
+  fi
   if [ -n "$DOWNSTREAM_PATCH" ]; then
     if git apply --check "$DOWNSTREAM_PATCH" 2>/dev/null; then
       git apply "$DOWNSTREAM_PATCH" && echo "[runPh5_pinned90] Applied downstream-fixes.patch"
