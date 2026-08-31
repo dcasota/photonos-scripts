@@ -1,0 +1,117 @@
+.encoding = "UTF-8"
+displayName = "@@VM_NAME@@"
+
+# ---------------------------------------------------------------------------
+# spagat appliance smoke VM — VMX template.
+#
+# Captured verbatim from the live spagat-smoke.vmx and parameterised. Every
+# NON-DEFAULT key below is deliberate; half the BUG-N series came from one of
+# them drifting. Do not "tidy" this file.
+#
+#   firmware = efi                HABv4 secureboot chain; BIOS boot will not work
+#   uefi.secureBoot.enabled=FALSE MOK enrolment happens in-guest, not in firmware
+#   bios.bootOrder = hdd,cdrom    BUG-N3 / BUG-N66 — CDROM-first causes an
+#                                 install boot loop. install-from-iso flips this
+#                                 for the install window and restores it after.
+#   sata0.present = TRUE          BUG-N16 — the linux-mok kernel has no IDE
+#                                 CDROM driver, so the install ISO MUST attach
+#                                 on SATA or `mount /mnt/media` finds no /dev/sr0
+#   scsi0.virtualDev = lsilogic   what the installed initrd expects
+#   ethernet0.virtualDev = e1000  trap-vmxnet3-pci-slot-reservation-fails
+#   ethernet0.generatedAddress    pins the 192.168.225.140 lease — a fresh MAC
+#                                 changes the IP and breaks the runbooks
+#   serial0.*                     the ONLY diagnostic channel while root is
+#                                 locked; fileType=file + startConnected=TRUE
+#   tools.syncTime = FALSE        guest clock must not be host-slaved
+#   msg.autoAnswer = TRUE         trap-vmware-msg-autoanswer — otherwise a modal
+#                                 dialog silently blocks the unattended power-on
+#   memSize = 4096                /run tmpfs is sized from RAM (BUG-N119); the
+#                                 ISO also masks tmp.mount so /tmp is disk-backed
+# ---------------------------------------------------------------------------
+
+config.version = "8"
+virtualHW.version = "21"
+guestOS = "other6xlinux-64"
+firmware = "efi"
+uefi.secureBoot.enabled = "FALSE"
+numvcpus = "@@GUEST_VCPUS@@"
+memSize = "@@GUEST_MEM_MB@@"
+
+# --- boot disk (scsi0:0) ---------------------------------------------------
+scsi0.present = "TRUE"
+scsi0.virtualDev = "lsilogic"
+scsi0.pciSlotNumber = "16"
+scsi0:0.present = "TRUE"
+scsi0:0.fileName = "@@VM_NAME@@.vmdk"
+scsi0:0.deviceType = "disk"
+scsi0:0.redo = ""
+
+# --- operator medium (scsi0:1) — the credential channel --------------------
+# install-from-iso NEVER touches scsi0:1 (verified in install.rs), so this
+# disk survives a reinstall verbatim. Do NOT pass --efuse-vmdk for it.
+scsi0:1.present = "TRUE"
+scsi0:1.fileName = "@@OPERATOR_MEDIUM_BASENAME@@.vmdk"
+scsi0:1.deviceType = "disk"
+scsi0:1.redo = ""
+
+# --- install media bus -----------------------------------------------------
+# sata0:1 is added by install-from-iso for the install window and removed
+# afterwards. The BUS must exist up front.
+sata0.present = "TRUE"
+sata0.pciSlotNumber = "17"
+
+# --- network ---------------------------------------------------------------
+ethernet0.present = "TRUE"
+ethernet0.virtualDev = "e1000"
+ethernet0.connectionType = "nat"
+ethernet0.addressType = "generated"
+ethernet0.pciSlotNumber = "18"
+ethernet0.generatedAddress = "@@GUEST_MAC@@"
+ethernet0.generatedAddressOffset = "0"
+
+# The BIOS UUID is pinned ON PURPOSE and must stay next to the MAC above.
+# With addressType="generated", VMware DERIVES the MAC from this UUID — its
+# last bytes (…49 53 65 1c) are the MAC's (…53:65:1c). Drop the UUID and
+# VMware regenerates both, the 192.168.225.140 lease moves, and every
+# hardcoded address in the runbooks silently points at nothing.
+uuid.bios = "56 4d a0 3f 30 d3 c1 e8-72 40 ad 48 49 53 65 1c"
+uuid.location = "56 4d a0 3f 30 d3 c1 e8-72 40 ad 48 49 53 65 1c"
+
+# --- serial console (the only diagnostic channel) --------------------------
+serial0.present = "TRUE"
+serial0.fileType = "file"
+serial0.startConnected = "TRUE"
+serial0.fileName = "@@SERIAL_LOG_WIN@@"
+
+# --- boot order ------------------------------------------------------------
+bios.bootOrder = "hdd,cdrom"
+
+# --- trimmed hardware ------------------------------------------------------
+usb.present = "FALSE"
+sound.present = "FALSE"
+ehci.present = "FALSE"
+
+# --- misc ------------------------------------------------------------------
+powerType.powerOff = "soft"
+powerType.suspend = "soft"
+powerType.reset = "soft"
+extendedConfigFile = "@@VM_NAME@@.vmxf"
+virtualHW.productCompatibility = "hosted"
+vmxstats.filename = "@@VM_NAME@@.scoreboard"
+svga.vramSize = "268435456"
+svga.guestBackedPrimaryAware = "TRUE"
+numa.autosize.cookie = "40012"
+numa.autosize.vcpu.maxPerVirtualNode = "4"
+cpuid.coresPerSocket.cookie = "4"
+vmotion.checkpointFBSize = "4194304"
+vmotion.checkpointSVGAPrimarySize = "268435456"
+vmotion.svga.mobMaxSize = "268435456"
+vmotion.svga.graphicsMemoryKB = "262144"
+monitor.phys_bits_used = "45"
+softPowerOff = "FALSE"
+workingDir = "."
+tools.syncTime = "FALSE"
+checkpoint.vmState.readOnly = "FALSE"
+checkpoint.vmState = ""
+cleanShutdown = "TRUE"
+msg.autoAnswer = "TRUE"

@@ -1,0 +1,24 @@
+# Line endings are load-bearing here.
+#
+# The shell scripts run under WSL/Linux. If a Windows checkout with
+# core.autocrlf=true gives them CRLF, bash fails on the very first line with
+#     $'\r': command not found
+# which is a confusing way to learn about line endings. Pin them to LF so the
+# scripts work straight out of a checkout on either platform, without the
+# `tr -d '\r' < script > /tmp/x.sh` dance.
+*.sh            text eol=lf
+*.env           text eol=lf
+*.json          text eol=lf
+EXPECTED-SHA256 text eol=lf
+
+# The VMX template is read by PowerShell, which normalises to CRLF itself when
+# it writes the real .vmx (VMware wants CRLF). The template can stay LF.
+*.template      text eol=lf
+
+# PowerShell scripts are Windows-native; CRLF is what an editor there expects.
+# NOTE: these files are deliberately ASCII-only - Windows PowerShell 5.1 reads
+# .ps1 as ANSI unless the file has a UTF-8 BOM, so a non-ASCII character
+# corrupts a string literal and yields a cascade of misleading parse errors.
+*.ps1           text eol=crlf
+
+*.md            text

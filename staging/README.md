@@ -4,6 +4,22 @@ This subdirectory contains early scripts and prototypes kept for staging purpose
 
 ## Contents
 
+### vm-lab/
+End-to-end provisioning of a Photon OS VM on VMware Workstation: the VMX
+template (every non-default key annotated with the failure it prevents), the
+boot VMDK, the kickstart, an unattended install, SSH access, teardown, and the
+verification scripts that say whether each stage actually did what it claims.
+Defaults to **2 vCPU / 4 GB RAM / 50 GB thin disk in a single file**
+(`monolithicSparse` — the size is a ceiling, not an allocation: a fresh disk
+is ~6 MB and grows on use). Overridable per run.
+
+Two things it documents that are easy to lose a day to: SSH access is decided
+at **ISO build time** (the key variables default to empty, so a normal build
+ships an empty `authorized_keys` and a locked root), and the install CDROM must
+be on SATA because the `linux-mok` kernel has no IDE CDROM driver. See
+[vm-lab/README.md](vm-lab/README.md); provenance and the kickstart-drift check
+are in [vm-lab/PROVENANCE.md](vm-lab/PROVENANCE.md).
+
 ### install-sizes-calc/
 Package install size estimation for Photon OS, organized into two approaches:
 - **shell-based/** -- `DynamicSizeCalculation.sh`: A Bash script that uses `tdnf repoquery` and `tdnf info` to query installed package sizes without downloading, then calculates totals with a configurable buffer and compression ratio estimate.
