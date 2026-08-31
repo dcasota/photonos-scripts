@@ -46,23 +46,35 @@ if [ -d "$STAGE_RPMS" ]; then
     fi
 fi
 
-# --- installer version ----------------------------------------------------
-# poi=2.8 is the tree as-is. poi=latest needs the v2.9 bump (dcasota/photon#26)
-# already applied; the matrix notes POI master was never packaged as an RPM at
-# all, so "latest" here means the newest RELEASED tag, which is v2.9.
+# --- installer version, without merging anything -------------------------
+# The point of this harness is to test PRs BEFORE they merge, so requiring a
+# merge to reach the poi=latest rows would invert that. Instead each variant
+# gets its own patch: poi=2.8 uses the downstream set as-is, poi=latest uses
+# the same set with dcasota/photon#26 (installer v2.9) substituted for the
+# 2.8-only installer PR. Both are generated from the PR branches and both are
+# verified to apply to a pristine 5.0 before use.
+#
+# runPh5_normal.sh resolves its patch relative to its OWN directory, so the
+# variant is selected by staging a script directory rather than by editing the
+# build script. SCRIPT_DIR is used for nothing else (runPh5_normal.sh:75,163).
+VARIANT_PATCH="$MC_VARIANT_PATCH_DIR/poi-${POI}.patch"
+[ -f "$VARIANT_PATCH" ] || mc_die "no variant patch at $VARIANT_PATCH - run mc-make-variant-patches.sh" 3
+
+STAGE_DIR="$MC_WORK/scriptdir/$KEY"
+mkdir -p "$STAGE_DIR/photonos-patches"
+cp "$PHOTON_SCRIPTS/runPh5_normal.sh" "$STAGE_DIR/runPh5_normal.sh"
+cp "$VARIANT_PATCH" "$STAGE_DIR/photonos-patches/downstream-fixes.patch"
+mc_log "staged build dir $STAGE_DIR with poi-${POI}.patch ($(grep -c '^+++ ' "$VARIANT_PATCH") files)"
+
 SPEC="$PHOTON_TREE/SPECS/photon-os-installer/photon-os-installer.spec"
 have=$(awk '/^Version:/{print $2; exit}' "$SPEC" 2>/dev/null); [ -n "$have" ] || have='?'
-case "$POI" in
-    2.8)    [ "$have" = "2.8" ] || mc_log "WARNING: --poi 2.8 requested but the tree carries $have" ;;
-    latest) [ "$have" = "2.8" ] && mc_die "--poi latest needs the v2.9 bump applied (dcasota/photon#26); tree is at $have" 3 ;;
-esac
-mc_log "installer version in tree: $have"
+mc_log "installer version in the pristine tree: $have (the variant patch sets the one under test)"
 
 BUILD_LOG="$MC_BUILD_LOG_DIR/${KEY}-$(date -u +%Y%m%dT%H%M%SZ).log"
 mc_log "building $IMG (canister=$CANISTER) -> $BUILD_LOG"
 mc_log "this takes hours; the run script polls rather than blocking"
 
-sh "$PHOTON_SCRIPTS/runPh5_normal.sh" /root common 5.0 "$DEST" "$IMG" "$CANISTER" \
+sh "$STAGE_DIR/runPh5_normal.sh" /root common 5.0 "$DEST" "$IMG" "$CANISTER" \
     > "$BUILD_LOG" 2>&1
 rc=$?
 [ $rc -eq 0 ] || mc_die "build failed (rc=$rc), see $BUILD_LOG" "$rc"

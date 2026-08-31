@@ -53,6 +53,20 @@ if [ -f "$DOWNSTREAM_PATCH" ] && [ -d "$PHOTON_TREE" ]; then
     fi
 fi
 
+# runPh5_normal.sh resolves its patch relative to its own directory, so the
+# patch preflight validates must be the patch the build will actually use.
+# Two copies of each exist on this host and they had diverged.
+RESOLVED="$PHOTON_SCRIPTS/photonos-patches/downstream-fixes.patch"
+if [ -f "$RESOLVED" ]; then
+    if [ "$(realpath "$RESOLVED" 2>/dev/null)" = "$(realpath "$DOWNSTREAM_PATCH" 2>/dev/null)" ]; then
+        say "build resolves patch" "same file preflight checked"
+    else
+        bad "build resolves patch" "$RESOLVED ($(grep -c '^+++ ' "$RESOLVED") files) != $DOWNSTREAM_PATCH ($(grep -c '^+++ ' "$DOWNSTREAM_PATCH") files)"
+    fi
+else
+    bad "build resolves patch" "$PHOTON_SCRIPTS/runPh5_normal.sh would find no patch at $RESOLVED"
+fi
+
 echo "== guest tooling =="
 for t in xorriso python3 ssh sshpass; do
     command -v "$t" >/dev/null 2>&1 && say "$t" "$(command -v "$t")" || bad "$t" "not installed"

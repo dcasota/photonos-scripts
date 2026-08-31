@@ -13,12 +13,13 @@ _here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$_here/../lib/common.sh"
 . "$(mc_find_config "$_here")"
 
-PERM="" MODE=auto TIMEOUT=""
+PERM="" MODE=auto TIMEOUT="" NOWAIT=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --id) PERM="$2"; shift 2 ;;
         --mode) MODE="$2"; shift 2 ;;
         --timeout) TIMEOUT="$2"; shift 2 ;;
+        --no-wait) NOWAIT=1; shift ;;
         *) mc_die "unknown arg: $1" 64 ;;
     esac
 done
@@ -70,6 +71,14 @@ TXT
 else
     "$VMRUN" -T ws start "$(mc_win_path "$VMX")" nogui >/dev/null 2>&1 || mc_die "could not start $VM" 5
     mc_log "$VM started headless; kickstart supplied via guestinfo"
+fi
+
+# With --no-wait the VM is left running for a human to drive; the caller
+# decides when to verify. Used for the UI rows, where blocking here would hide
+# the operator instructions behind a poll loop.
+if [ "$NOWAIT" -eq 1 ]; then
+    mc_log "$VM is up and waiting for the operator"
+    exit 0
 fi
 
 # --- completion detection -------------------------------------------------
