@@ -197,10 +197,41 @@ Two rows exist for it:
 | c01 | `build` | compiles the canister locally and emits the `linux-fips-canister` subpackage. This is the code path PR #1673 (shared `canister_config.inc`) touches, and **no other row in this matrix executes it** |
 | c02 | `fips0-aarch64` | `fips=0` is the aarch64 default and is not reachable on x86_64, so this row is UNRUNNABLE on the current host and is marked as such rather than quietly dropped |
 
+#### What running c01 actually showed (2026-09-01)
+
+Two things, both of which invalidate the row as originally designed.
+
+**The flag could not run at all.** `canister_build=1` fails in `%prep` against
+6.12.103: the canister-creation series is maintained against the certified kernel
+6.12.60, and upstream has since dropped the `WARN_ON()` wrapper around
+`!digest_size` in `pkcs1pad_verify()`. rpm applies at `--fuzz=0`, so that one line
+is fatal. Because `%prep` halts at the first rejected hunk this reads like a diverged
+series; it is not. Applying the whole series and forcing through failures shows
+**16 of 18 apply untouched**, and both rejects are that same line — once as the line
+patch `1004` converts, once as context in `1010`. Fixed in dcasota/photon#29 →
+vmware/photon#1675.
+
+**And a build alone would not have tested anything on a guest.** Every row in this
+matrix installs **`linux-esx`**, and `linux-esx.spec` hardcodes
+`%global canister_build 0` in both arch branches with no `%package fips-canister`.
+A `%global` inside a spec overrides a command-line `-D`, so the flag is ignored
+there. `linux` would have built a canister that no row installs.
+
+The canister is **one binary**: `linux` produces it, both flavours consume it — which
+is exactly how the prebuilt path already works. What that needed was for
+`fips_canister_version` to stop being a bare `%define`, also in #1675. `sharukhan
+canister` now reports which of three states a kernel is in (`certified`,
+`equivalent`, `absent`) and `--rebase-check` proves whether a canister could be
+created at all, in seconds, without committing to a build.
+
+A locally built canister is functionally equivalent and carries **no CMVP
+certificate**. `meta.canister_origin` records that in every evidence file, so the
+caveat travels with the result rather than living only in a report that cites it.
+
 `acvp` and `kat` are deliberately not rows. They are certification builds —
 `kat_build` forces `acvp_build=1` and `canister_build=1`, `acvp_build` forces
 `fips=1` — so they prove something about certification tooling rather than about a
-PR under review. `mc-build-iso.sh --canister` still accepts them.
+PR under review. `sharukhan build-iso --canister` still accepts them.
 
 ### The measurement behind rows 1-16
 

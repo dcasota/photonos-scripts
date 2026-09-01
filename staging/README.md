@@ -29,24 +29,32 @@ Automated ISO build scripts for Photon OS. Each script pulls the latest sources 
 
 All scripts accept four optional positional parameters: `BASE_DIR`, `COMMON_BRANCH`, `RELEASE_BRANCH`, and `OUTPUT_DIR`.
 
-### mission-control/ (not in this repository)
-The bash harness that actually drives the permutation matrix: it builds one ISO per
+### mission-control/
+The matrix's configuration and evidence: `config/permutations.tsv` (the executable
+form of the matrix), the VMX template, and `results/`. The bash harness that used to
+live here has been absorbed into `sharukhan-cli` and is kept, unused, under
+`superseded-bash/` with a README naming what replaced each script — and six latent
+bugs found while porting.
+
+It is committed now. What kept it out of the repository was a literal throwaway
+password in its config; `MC_GUEST_PASSWORD` is required with no default, and a test
+guards against a default coming back.
+
+### sharukhan-cli/
+The harness. One Rust binary drives the whole matrix: it builds one ISO per
 build-time axis tuple, injects the install-time axes per VM via
 `guestinfo.kickstart.data`, verifies each installed guest over SSH, and harvests the
 evidence. Every verdict is gated on the media genuinely containing the packages under
 test, because a stale ISO otherwise produces passes that mean nothing.
 
-It is deliberately **not committed yet**: its config carries a literal throwaway
-password for the disposable test VMs, and that has to be parameterised before the
-harness is published. `sharukhan-cli` is the successor and is committed.
-
-### sharukhan-cli/
-Standalone Rust CLI for the same matrix — `doctor`, `plan`, `status`, `findings`,
-`report`. Its purpose is to make the state of the matrix legible and to refuse to
-report anything it has not established. Findings persist in SQLite so they outlive
+`doctor`, `plan`, `run`, `stop`, `watch`, `report`, `findings`, `status`, `card`,
+`canister`, `build-iso`, `variant-patches`. Findings persist in SQLite so they outlive
 the session that produced them. See [sharukhan-cli/README.md](sharukhan-cli/README.md).
-Driving installs (`run`, `stop`, `watch`) is not implemented yet and still lives in
-`mission-control/`.
+
+What remains a subprocess is either a Windows binary (`vmrun.exe`,
+`vmware-vdiskmanager.exe`), the system under test (`make`/`build.py`), or a deliberate
+instrument: `ssh` stays exec'd because a FIPS defect was once found through OpenSSH's
+own error text, and a different client would change what the harness observes.
 
 ### photonos-patches/
 `downstream-fixes.patch` — the accumulated downstream spec/installer fixes applied by
