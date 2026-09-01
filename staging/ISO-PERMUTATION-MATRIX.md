@@ -176,6 +176,32 @@ without STIG, and openssh's hardened `sshd_config` is only selected when built w
 Evidence for every row is under `results/<id>/checks-<UTC>.jsonl`, with the harvested
 guest logs beside it. Result files are timestamped and never overwritten.
 
+### 2b. The canister axis — what every row above actually used
+
+Every row in this document, measured or predicted, was built with **one** canister
+setting: the x86_64 default `fips=1, canister_usage=1`, linking against the
+*prebuilt* `linux-fips-canister` RPM pulled from the Broadcom repo. Nothing here
+has ever built a canister locally, and nothing has run with `fips=0`.
+
+That is easy to miss, because the canister is not a boolean — it is a tri-state
+documented in COMPILE-CONSTELLATIONS.md §12.3, and it is **not** the same thing as
+UEFI Secure Boot (§14 covers that conflation). `permutations.tsv` now carries a
+`canister` column so the assumption is stated rather than implied, and the ISO cache
+key includes it, so a row needing a different canister cannot silently reuse the
+prebuilt ISO.
+
+Two rows exist for it:
+
+| row | canister | why |
+|---|---|---|
+| c01 | `build` | compiles the canister locally and emits the `linux-fips-canister` subpackage. This is the code path PR #1673 (shared `canister_config.inc`) touches, and **no other row in this matrix executes it** |
+| c02 | `fips0-aarch64` | `fips=0` is the aarch64 default and is not reachable on x86_64, so this row is UNRUNNABLE on the current host and is marked as such rather than quietly dropped |
+
+`acvp` and `kat` are deliberately not rows. They are certification builds —
+`kat_build` forces `acvp_build=1` and `canister_build=1`, `acvp_build` forces
+`fips=1` — so they prove something about certification tooling rather than about a
+PR under review. `mc-build-iso.sh --canister` still accepts them.
+
 ### The measurement behind rows 1-16
 
 Repository under test for `minimal-iso`: `file:///mnt/isotest/RPMS` -- the

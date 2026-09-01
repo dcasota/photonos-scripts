@@ -3,10 +3,11 @@
 A single standalone CLI for verifying Photon OS ISOs and the PRs that go into
 them, across the permutation matrix in `ISO-PERMUTATION-MATRIX.md`.
 
-The matrix has 34 rows spanning five axes — minimal/full ISO, installer 2.8 or
-latest, with/without STIG, ext4/btrfs, kickstart or the interactive UI. Two of
-those axes are decided when the ISO is built; the rest are injected per VM. So
-34 permutations need only four ISOs.
+The matrix spans six axes — minimal/full ISO, installer 2.8 or latest, FIPS
+crypto canister, with/without STIG, ext4/btrfs, and kickstart or the interactive
+UI. Three of those are decided when the ISO is built (`iso_type`, `poi`,
+`canister`); the rest are injected per VM. That is why 36 permutations need only
+a handful of ISOs rather than one each.
 
 Every command reports what it actually observed. Where a fact cannot be
 established it says so rather than guessing — a harness that confidently
@@ -66,14 +67,17 @@ sharukhan doctor || exit 1
 ```
 $ sharukhan plan --only k01,k03,p01
 ISOs required (1):
-  minimal/2.8      cached
+  minimal/2.8/prebuilt       cached
 
 permutations: 3 (2 autonomous, 1 need an operator)
-  ID    ISO      POI     STIG  FS     MODE  VARIANT    DOC
-  k01   minimal  2.8     no    ext4   ks    none       works
-  k03   minimal  2.8     yes   ext4   ks    stigpkgs   fails
-  p01   minimal  2.8     no    ext4   ui    -          works
+  ID    ISO      POI     STIG  FS     MODE  VARIANT    CANISTER       DOC
+  k01   minimal  2.8     no    ext4   ks    none       prebuilt       works
+  k03   minimal  2.8     yes   ext4   ks    stigpkgs   prebuilt       fails
+  p01   minimal  2.8     no    ext4   ui    -          prebuilt       works
 ```
+
+The ISO key is `iso_type/poi/canister` — all three are build-time axes, so a row
+needing a different canister cannot silently reuse the prebuilt ISO.
 
 `cached` vs `must be built` is the difference between a two-minute run and an
 hour, so check it before starting a batch:
@@ -81,8 +85,8 @@ hour, so check it before starting a batch:
 ```
 $ sharukhan plan --only k09,k13
 ISOs required (2):
-  full/2.8         must be built
-  full/latest      must be built
+  full/2.8/prebuilt          cached
+  full/latest/prebuilt       cached
 ```
 
 The whole matrix at once:

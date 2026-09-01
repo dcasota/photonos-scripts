@@ -174,19 +174,26 @@ fn cmd_plan(cfg: &config::Config, only: Option<&str>) -> Result<(), String> {
 
     println!("ISOs required ({}):", isos.len());
     for k in &isos {
-        let (t, p) = k.split_once('/').unwrap_or((k, ""));
-        let dir = cfg.iso_cache.join(format!("{t}-poi{p}-prebuilt"));
+        let parts: Vec<&str> = k.split('/').collect();
+        let (t, p, c) = (parts[0], parts.get(1).copied().unwrap_or(""), parts.get(2).copied().unwrap_or("prebuilt"));
+        let dir = cfg.iso_cache.join(format!("{t}-poi{p}-{c}"));
         let have = dir.join("photon.iso").exists();
-        println!("  {:<16} {}", k, if have { "cached" } else { "must be built" });
+        println!("  {:<26} {}", k, if have { "cached" } else { "must be built" });
     }
 
     let (auto, oper): (Vec<_>, Vec<_>) = sel.iter().partition(|p| !p.needs_operator());
+    let blocked: Vec<_> = sel.iter().filter(|p| p.is_unrunnable_here()).collect();
     println!("\npermutations: {} ({} autonomous, {} need an operator)", sel.len(), auto.len(), oper.len());
-    println!("  {:<5} {:<8} {:<7} {:<5} {:<6} {:<5} {:<10} {}", "ID", "ISO", "POI", "STIG", "FS", "MODE", "VARIANT", "DOC");
+    if !blocked.is_empty() {
+        println!("  {} cannot run on this host ({}): {}",
+                 blocked.len(), std::env::consts::ARCH,
+                 blocked.iter().map(|p| p.id.as_str()).collect::<Vec<_>>().join(", "));
+    }
+    println!("  {:<5} {:<8} {:<7} {:<5} {:<6} {:<5} {:<10} {:<14} {}", "ID", "ISO", "POI", "STIG", "FS", "MODE", "VARIANT", "CANISTER", "DOC");
     for p in &sel {
         println!(
-            "  {:<5} {:<8} {:<7} {:<5} {:<6} {:<5} {:<10} {}",
-            p.id, p.iso_type, p.poi, p.stig, p.fs, p.mode, p.variant, p.doc
+            "  {:<5} {:<8} {:<7} {:<5} {:<6} {:<5} {:<10} {:<14} {}",
+            p.id, p.iso_type, p.poi, p.stig, p.fs, p.mode, p.variant, p.canister, p.doc
         );
     }
     Ok(())

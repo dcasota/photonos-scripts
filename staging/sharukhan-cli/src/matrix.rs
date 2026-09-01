@@ -16,6 +16,10 @@ pub struct Permutation {
     pub mode: String,
     pub variant: String,
     pub doc: String,
+    /// Build-time axis, like iso_type and poi: which FIPS crypto canister the ISO
+    /// carries. Rows written before this column existed default to "prebuilt",
+    /// which is the x86_64 default (fips=1, canister_usage=1).
+    pub canister: String,
 }
 
 impl Permutation {
@@ -23,9 +27,14 @@ impl Permutation {
     pub fn needs_operator(&self) -> bool {
         self.mode == "ui"
     }
-    /// Build-time axes decide which ISO serves the row.
+    /// Build-time axes decide which ISO serves the row. The canister is one of
+    /// them, so two rows differing only by canister need two different ISOs.
     pub fn iso_key(&self) -> String {
-        format!("{}/{}", self.iso_type, self.poi)
+        format!("{}/{}/{}", self.iso_type, self.poi, self.canister)
+    }
+    /// The row cannot run on this host's architecture.
+    pub fn is_unrunnable_here(&self) -> bool {
+        self.canister.contains("aarch64") && std::env::consts::ARCH != "aarch64"
     }
 }
 
@@ -50,6 +59,7 @@ pub fn load(path: &Path) -> Result<Vec<Permutation>, String> {
             mode: f[5].into(),
             variant: f[6].into(),
             doc: f[7].into(),
+            canister: f.get(9).copied().unwrap_or("prebuilt").into(),
         });
     }
     if out.is_empty() {
