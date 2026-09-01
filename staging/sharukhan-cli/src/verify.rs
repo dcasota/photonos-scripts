@@ -127,7 +127,7 @@ pub fn run(
     let probe = g.reachable();
     if probe.ok {
         oracle::guest(&g, &p.stig, &p.fs, &mut c);
-        oracle::harvest(&g, &harvest, &mut c);
+        oracle::harvest(&g, &harvest, cfg.guest_password().ok(), &mut c);
     } else {
         // ssh's own words are the finding, not a footnote to it: s02 is
         // unreachable because FIPS-constrained crypto refuses the algorithms

@@ -382,7 +382,7 @@ pub fn guest(g: &Guest, stig: &str, fs: &str, c: &mut Checks) {
 /// The matrix defines no dmesg/journalctl//var/log criteria at all, so this
 /// COLLECTS the evidence rather than asserting on it - except the two counts,
 /// which are cheap regression detectors.
-pub fn harvest(g: &Guest, dest: &Path, c: &mut Checks) {
+pub fn harvest(g: &Guest, dest: &Path, secret: Option<&str>, c: &mut Checks) {
     if let Err(e) = std::fs::create_dir_all(dest) {
         c.check(
             "logs.harvest_dir",
@@ -394,6 +394,17 @@ pub fn harvest(g: &Guest, dest: &Path, c: &mut Checks) {
         );
         return;
     }
+    // POI records the kickstart it was given into /var/log/poi/manifest.json.gz,
+    // password and all, so collecting guest logs verbatim copies the credential
+    // straight back into the evidence tree. Redact on capture: scrubbing the
+    // tree afterwards cannot hold, because the next run writes it back.
+    fn scrub(secret: Option<&str>, s: &str) -> String {
+        match secret {
+            Some(pw) if !pw.is_empty() => s.replace(pw, crate::phases::REDACTED),
+            _ => s.to_string(),
+        }
+    }
+
     const FILES: [(&str, &str); 9] = [
         ("dmesg", "dmesg.txt"),
         ("journalctl -b --no-pager", "journal-boot.txt"),
@@ -406,12 +417,12 @@ pub fn harvest(g: &Guest, dest: &Path, c: &mut Checks) {
         ("zcat /var/log/poi/manifest.json.gz 2>/dev/null", "poi-manifest.json"),
     ];
     for (cmd, name) in FILES {
-        let _ = std::fs::write(dest.join(name), g.run(cmd).stdout);
+        let _ = std::fs::write(dest.join(name), scrub(secret, &g.run(cmd).stdout));
     }
     for f in ["installer.log", "ansible-stig.log", "messages"] {
         let _ = std::fs::write(
             dest.join(format!("varlog-{f}")),
-            g.run(&format!("cat /var/log/{f} 2>/dev/null")).stdout,
+            scrub(secret, &g.run(&format!("cat /var/log/{f} 2>/dev/null")).stdout),
         );
     }
 

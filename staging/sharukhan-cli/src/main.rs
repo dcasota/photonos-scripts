@@ -5,6 +5,7 @@
 //! that reports a confident wrong answer is worse than one that reports none.
 
 mod b64;
+mod canister;
 mod card;
 mod build;
 mod config;
@@ -60,6 +61,7 @@ PHASES (the same code `run` calls, one step at a time)
     teardown            return one permutation's VM to a fresh-disk state
     build-iso           resolve a build-axis tuple to an ISO (see --allow-build)
     variant-patches     rebuild the installer variant patches from the PR branches
+    canister            which canister this kernel can have (--rebase-check to prove it)
 
 OPTIONS:
     --id <perm>         one permutation (card, kickstart, create-vm, install,
@@ -109,6 +111,7 @@ struct Args {
     canister: Option<String>,
     timeout: Option<u64>,
     allow_build: bool,
+    rebase_check: bool,
     recreate: bool,
     no_wait: bool,
     purge: bool,
@@ -148,6 +151,7 @@ fn parse() -> Result<Args, String> {
         canister: None,
         timeout: None,
         allow_build: false,
+        rebase_check: false,
         recreate: false,
         no_wait: false,
         purge: false,
@@ -180,6 +184,7 @@ fn parse() -> Result<Args, String> {
                 out.timeout = Some(v.parse().map_err(|_| format!("--timeout: not a number: {v}"))?);
             }
             "--allow-build" => out.allow_build = true,
+            "--rebase-check" => out.rebase_check = true,
             "--recreate" => out.recreate = true,
             "--no-wait" => out.no_wait = true,
             "--purge" => out.purge = true,
@@ -286,6 +291,7 @@ fn main() -> ExitCode {
             args.allow_build,
         ),
         "variant-patches" => phases::cmd_variant_patches(&cfg),
+        "canister" => cmd_canister(&cfg, args.rebase_check),
         "stop" => runner::cmd_stop(&cfg, args.job, args.all, args.dry_run),
         "watch" => runner::cmd_watch(&cfg, args.job, args.once, args.interval),
         "help" => {
@@ -658,6 +664,76 @@ fn cmd_report(cfg: &config::Config, only: Option<&str>) -> Result<(), String> {
             println!("\nwritten: {}", file.display());
         }
         Err(e) => eprintln!("sharukhan: could not write {}: {e}", file.display()),
+    }
+    Ok(())
+}
+
+/// `sharukhan canister [--rebase-check]`
+///
+/// Reports which of the three canister states this kernel is in, and with
+/// --rebase-check proves whether a canister could actually be created for it.
+///
+/// The proof matters because rpm cannot give it: %prep applies at --fuzz=0 and
+/// stops at the first rejected hunk, so a build reports "a patch broke" and
+/// nothing about how far the series has diverged. Running the whole series and
+/// forcing through failures is the difference between an afternoon and a
+/// project - and it costs seconds against a build's hours.
+fn cmd_canister(cfg: &config::Config, rebase_check: bool) -> Result<(), String> {
+    let arch = std::env::consts::ARCH;
+    let state = canister::detect(cfg, arch)?;
+    println!("state: {}", state.label());
+    match &state {
+        canister::State::Certified { version } => {
+            println!("  an official canister matches this kernel: {version}");
+            println!("  this is the only state that carries a CMVP certificate");
+        }
+        canister::State::Equivalent { kernel, certified } => {
+            println!("  kernel under test        {kernel}");
+            println!("  certified canister pin   {certified}");
+            println!("  no official canister exists at this kernel level, so same-version");
+            println!("  coverage needs one built locally: functionally equivalent, NOT validated");
+        }
+        canister::State::Absent { arch, reason } => {
+            println!("  arch {arch}: {reason}");
+            println!("  this is a correct outcome, not a failure");
+        }
+    }
+    if !state.is_validated() {
+        println!("\nany FIPS verdict taken in this state must be recorded as NOT CMVP validated");
+    }
+    if !rebase_check {
+        if matches!(state, canister::State::Equivalent { .. }) {
+            println!("\nrun with --rebase-check to prove the canister series still applies");
+        }
+        return Ok(());
+    }
+
+    // Work on a throwaway copy: the series must be applied cumulatively for
+    // later patches to see earlier ones, and that must never touch the tree a
+    // build is using.
+    let work = std::env::temp_dir().join(format!("sharukhan-rebase-{}", job::stamp()));
+    println!("\nrebase-check needs an unpacked kernel tree at {}", work.display());
+    println!("(not yet wired to unpack the source tarball - point PHOTON_KERNEL_TREE at one)");
+    let tree = match std::env::var("PHOTON_KERNEL_TREE") {
+        Ok(t) => std::path::PathBuf::from(t),
+        Err(_) => return Err("set PHOTON_KERNEL_TREE to a prepared kernel tree".into()),
+    };
+    let applied = canister::rebase_check(cfg, &tree)?;
+    let (mut ok, mut bad) = (0, 0);
+    for a in &applied {
+        if a.ok {
+            ok += 1;
+        } else {
+            bad += 1;
+            println!("  FAILED  {}", a.name);
+            for r in &a.rejects {
+                println!("            {r}");
+            }
+        }
+    }
+    println!("\n{ok} of {} applied clean at --fuzz=0, {bad} failed", applied.len());
+    if bad > 0 {
+        println!("rejects are listed above; %prep would have shown you only the first");
     }
     Ok(())
 }

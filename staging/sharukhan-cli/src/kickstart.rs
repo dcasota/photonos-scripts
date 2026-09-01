@@ -241,6 +241,29 @@ mod tests {
         }
     }
 
+    /// The evidence copy of a kickstart is the file a report cites. It must
+    /// carry the structure and not the secret - scrubbing the tree afterwards
+    /// does not hold, because the next run writes the password straight back.
+    #[test]
+    fn a_redacted_kickstart_keeps_its_shape_and_loses_its_secret() {
+        let mut sp = spec("none", "none", "ext4");
+        sp.password = "a-real-looking-password";
+        let real = render(&sp).unwrap();
+        sp.password = "***REDACTED***";
+        let safe = render(&sp).unwrap();
+        assert!(real.contains("a-real-looking-password"));
+        assert!(!safe.contains("a-real-looking-password"), "secret survived: {safe}");
+        assert!(safe.contains("***REDACTED***"), "{safe}");
+        // structure identical: same lines, same order, one value differs
+        let (a, b): (Vec<_>, Vec<_>) = (real.lines().collect(), safe.lines().collect());
+        assert_eq!(a.len(), b.len(), "redaction changed the shape");
+        assert_eq!(
+            a.iter().zip(&b).filter(|(x, y)| x != y).count(),
+            1,
+            "redaction touched more than the password"
+        );
+    }
+
     /// A static guest with an empty gateway boots and then fails every check
     /// that needs the network, which reads like a broken image rather than a
     /// broken kickstart. The bash emitted empty strings here.

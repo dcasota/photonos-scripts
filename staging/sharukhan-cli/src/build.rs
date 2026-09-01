@@ -240,11 +240,17 @@ fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
 
 /// One installer variant: a name and the PR branches that make it.
 ///
-///   poi-2.8     5.0 + #9 #19 #21 #22 #23 #24   (installer stays 2.8)
+///   poi-2.8     5.0 + #9 #19 #21 #22 #23 #24 #28  (installer stays 2.8)
 ///   poi-latest  5.0 + #9 #21 #22 #23 #24 #26   (#26 bumps it to v2.9)
 ///
 /// #19 and #26 are alternatives - #19 adds patches to 2.8, #26 moves to 2.9
 /// where three of them are already upstream - so exactly one appears in each.
+///
+/// The 2.8 installer branch is fix/poi-fips-sshd-algorithms (#28), which is a
+/// SUPERSET of fix/photon-os-installer-2.8-5-interactive-osrelease: it carries
+/// that branch's two commits plus the FIPS sshd fix, taking the installer to
+/// 2.8-7. It replaces rather than joins it - two installer branches in one
+/// variant would put two Release values in the same patch.
 pub struct Variant {
     pub name: &'static str,
     pub branches: &'static [&'static str],
@@ -254,7 +260,7 @@ pub const VARIANTS: [Variant; 2] = [
     Variant {
         name: "2.8",
         branches: &[
-            "fix/photon-os-installer-2.8-5-interactive-osrelease",
+            "fix/poi-fips-sshd-algorithms",
             "fix/aide-libgcrypt-versioned-requires",
             "fix-selinux-relabel",
             "fix/systemd-groups-and-stig-variant",
@@ -413,7 +419,7 @@ mod tests {
             let n = v
                 .branches
                 .iter()
-                .filter(|b| b.contains("photon-os-installer") || b.contains("poi-2.9-bump"))
+                .filter(|b| b.contains("photon-os-installer") || b.contains("poi-2.9-bump") || b.contains("poi-fips-sshd"))
                 .count();
             assert_eq!(n, 1, "variant {} has {n} installer branches", v.name);
         }

@@ -29,7 +29,30 @@ pub fn logger() -> impl FnMut(&str) {
 /// appears on a command line where /proc would expose it to every process on
 /// the host.
 pub fn kickstart_json(cfg: &Config, p: &Permutation) -> Result<String, String> {
-    let password = cfg.guest_password()?;
+    build_kickstart(cfg, p, Secrets::Real)
+}
+
+/// What the evidence copy of a kickstart is allowed to contain.
+///
+/// The kickstart carries the guest root password in cleartext, and the copy
+/// written beside the run's results is the file a report cites. Scrubbing the
+/// tree afterwards does not hold: the next run writes the secret straight back.
+/// So the redaction happens at the point of writing, and only for the copy the
+/// guest never sees.
+#[derive(Clone, Copy, PartialEq)]
+pub enum Secrets {
+    Real,
+    Redacted,
+}
+
+pub const REDACTED: &str = "***REDACTED***";
+
+fn build_kickstart(cfg: &Config, p: &Permutation, secrets: Secrets) -> Result<String, String> {
+    let real = cfg.guest_password()?;
+    let password = match secrets {
+        Secrets::Real => real,
+        Secrets::Redacted => REDACTED,
+    };
     let pubkey = fs::read_to_string(cfg.ssh_pubkey())
         .ok()
         .map(|k| k.trim().to_string())
@@ -61,7 +84,9 @@ pub fn kickstart_json(cfg: &Config, p: &Permutation) -> Result<String, String> {
 /// Write the kickstart where the evidence for this row lives, so what was
 /// installed can be read back beside what it produced.
 pub fn write_kickstart(cfg: &Config, p: &Permutation) -> Result<PathBuf, String> {
-    let json = kickstart_json(cfg, p)?;
+    // Evidence copy: same structure, no secret. What the guest is actually
+    // given is built separately at the point of injection.
+    let json = build_kickstart(cfg, p, Secrets::Redacted)?;
     let dir = cfg.results_dir.join(&p.id);
     fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let path = dir.join("kickstart.json");
