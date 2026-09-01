@@ -29,5 +29,37 @@ Automated ISO build scripts for Photon OS. Each script pulls the latest sources 
 
 All scripts accept four optional positional parameters: `BASE_DIR`, `COMMON_BRANCH`, `RELEASE_BRANCH`, and `OUTPUT_DIR`.
 
+### mission-control/ (not in this repository)
+The bash harness that actually drives the permutation matrix: it builds one ISO per
+build-time axis tuple, injects the install-time axes per VM via
+`guestinfo.kickstart.data`, verifies each installed guest over SSH, and harvests the
+evidence. Every verdict is gated on the media genuinely containing the packages under
+test, because a stale ISO otherwise produces passes that mean nothing.
+
+It is deliberately **not committed yet**: its config carries a literal throwaway
+password for the disposable test VMs, and that has to be parameterised before the
+harness is published. `sharukhan-cli` is the successor and is committed.
+
+### sharukhan-cli/
+Standalone Rust CLI for the same matrix — `doctor`, `plan`, `status`, `findings`,
+`report`. Its purpose is to make the state of the matrix legible and to refuse to
+report anything it has not established. Findings persist in SQLite so they outlive
+the session that produced them. See [sharukhan-cli/README.md](sharukhan-cli/README.md).
+Driving installs (`run`, `stop`, `watch`) is not implemented yet and still lives in
+`mission-control/`.
+
+### photonos-patches/
+`downstream-fixes.patch` — the accumulated downstream spec/installer fixes applied by
+the `runPh*.sh` scripts. mission-control generates per-variant copies of this from the
+open PR branches so a PR can be tested before it merges.
+
+### Reference documents
+- [ISO-PERMUTATION-MATRIX.md](ISO-PERMUTATION-MATRIX.md) — the five install axes
+  (ISO type, installer version, STIG, filesystem, UI vs kickstart), why they collapse
+  to 34 rows rather than 512, and the measured verdict for each.
+- [COMPILE-CONSTELLATIONS.md](COMPILE-CONSTELLATIONS.md) — the build-side axes:
+  release line, subrelease gating, architecture, image type and flavor, kernel flavor,
+  POI version, EFI/BIOS, Secure Boot, SELinux mode, output format.
+
 ### workstation-rest01.png
 Screenshot reference image.

@@ -700,21 +700,31 @@ Two independent controls.
 
 ### 15.1 Build-time: `/etc/selinux/config` shipped by `selinux-policy`
 
-**The seed fact about commit `249ac3ff4` is correct but does not describe the tree
-you are building.** `249ac3ff4 "91/92: selinux-policy: Mark disabled in 91 and
-permissive in 92"` (Vamsi Krishna Brahmajosyula, 2026-08-19) **is not an ancestor
-of local HEAD** — it is on `origin/5.0`, which is 56 commits ahead of `/root/5.0`.
+`249ac3ff4 "91/92: selinux-policy: Mark disabled in 91 and permissive in 92"`
+(Vamsi Krishna Brahmajosyula, 2026-08-19) is now in the 5.0 tree, giving a
+tri-state keyed to subrelease:
 
-| | local HEAD `b7e3bedb6` | `origin/5.0` `9a90093d2` |
-|---|---|---|
-| `SPECS/selinux-policy/config` | `SELINUX=enforcing`, gate `>= 91` | `SELINUX=permissive`, gate `>= 92` |
-| `SPECS/90/selinux-policy/config` | `SELINUX=enforcing`, gate `<= 90` | `SELINUX=enforcing`, gate `<= 90` |
-| `SPECS/91/selinux-policy/config` | **does not exist** | `SELINUX=disabled`, gate `== 91` |
+| | `SPECS/selinux-policy` | `SPECS/90/…` | `SPECS/91/…` |
+|---|---|---|---|
+| gate | `>= 92` | `<= 90` | `== 91` |
+| `config` | `SELINUX=permissive` | `SELINUX=enforcing` | `SELINUX=disabled` |
 
-So upstream now has a clean tri-state keyed to subrelease
-(90 → enforcing, 91 → disabled, 92 → permissive); the tree on this machine still
-ships `enforcing` for everything. Anything you build here inherits `enforcing`
-unless you fetch first.
+**Measured 2026-09-01.** A default subrelease-92 install boots **Permissive**, and
+that is the intended shipped behaviour, not a defect. Four full-ISO STIG installs
+(k11, k12, k15, k16) installed `selinux-policy-43.6-4` and booted Permissive with
+0 failed units; four minimal-ISO STIG installs (k03, k04, k07, k08) booted
+Enforcing — but only because those ISOs carried a stale `43.6-3` left in
+`stage/RPMS` from June. Same playbook, same package names, opposite outcome: the
+release number was the whole difference.
+
+Two consequences worth carrying forward:
+
+* **Do not assert Enforcing on >= 92.** A test oracle that expects it will report
+  four false failures, which is exactly what happened before the cause was found.
+* **`selinux-relabel.service` is inert by default.** The STIG relabel task is gated
+  on `grep -q '^SELINUX=enforcing' /etc/selinux/config`, so on a stock 92 install
+  the trigger file is never written and the service never runs. The fix is correct
+  but only applies to operators who opt into enforcing.
 
 Related on the kernel side: `8273a71ea "92: linux: Default selinux to off for 6.12 kernel"`
 *is* in local HEAD.

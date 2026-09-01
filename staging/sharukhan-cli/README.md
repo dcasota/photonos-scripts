@@ -17,8 +17,8 @@ reports a wrong answer is worse than one that reports nothing.
 Implemented and working: `doctor`, `plan`, `status`, `findings`, `report`.
 
 Not implemented yet: driving installs (`run`), background job control
-(`stop`, `watch`). Those still live in the bash harness under
-`staging/mission-control`. This README documents only what runs today; nothing
+(`stop`, `watch`). Those still live in a bash harness (`mission-control`) that is
+not committed to this repository yet. This README documents only what runs today; nothing
 below is aspirational.
 
 ## Build
@@ -44,13 +44,13 @@ environment
   [ok  ] matrix                 /root/photonos-scripts/staging/mission-control/config/permutations.tsv
   [ok  ] vmrun                  /mnt/c/Program Files/VMware/VMware Workstation/vmrun.exe
 capacity
-  [ok  ] / (build stage)        48G free (97% used), needs 25G
-  [ok  ] VM store               116G free (97% used), needs 20G
+  [ok  ] / (build stage)        167G free (88% used), needs 25G
+  [ok  ] VM store               112G free (98% used), needs 20G
 inputs
   [ok  ] variant patches        /root/photon-mc/variant-patches
-  [ok  ] iso cache              minimal-poi2.8-prebuilt, minimal-poilatest-prebuilt
+  [ok  ] iso cache              full-poi2.8-prebuilt, full-poilatest-prebuilt, minimal-poi2.8-prebuilt, minimal-poilatest-prebuilt
 memory
-  [ok  ] database               28 finding(s)
+  [ok  ] database               31 finding(s)
 
 all checks passed
 ```
@@ -141,7 +141,7 @@ Findings live in SQLite so they survive the session that produced them.
 
 ```
 $ sharukhan findings | head -4
-28 finding(s)
+31 finding(s)
 
   #1   blocker    -          toybox-grep-no-dash-a
   #2   high       -          gnu-only-sed-grep
@@ -162,11 +162,11 @@ instead of failing outright.
 ```
 $ sharukhan report --only k01,k02,k03,k04,s01,s02
   ID    ISO      POI     STIG  FS     DOC        RESULT   EVIDENCE                     FAILED CHECKS
-  k01   minimal  2.8     no    ext4   works      13 pass  checks-20260831T190338Z.jsonl
-  k02   minimal  2.8     no    btrfs  untested   13 pass  checks-20260831T190527Z.jsonl
-  k03   minimal  2.8     yes   ext4   fails      15 pass  checks-20260831T190822Z.jsonl
-  k04   minimal  2.8     yes   btrfs  fails      15 pass  checks-20260831T191422Z.jsonl
-  s01   minimal  2.8     no    ext4   fails      13 pass  checks-20260831T191846Z.jsonl
+  k01   minimal  2.8     no    ext4   works      13 pass  checks-20260831T190338Z.jsonl 
+  k02   minimal  2.8     no    btrfs  untested   13 pass  checks-20260831T190527Z.jsonl 
+  k03   minimal  2.8     yes   ext4   fails      15 pass  checks-20260831T190822Z.jsonl 
+  k04   minimal  2.8     yes   btrfs  fails      15 pass  checks-20260831T191422Z.jsonl 
+  s01   minimal  2.8     no    ext4   fails      13 pass  checks-20260831T191846Z.jsonl 
   s02   minimal  2.8     no    ext4   fails      1 FAIL   checks-20260831T192717Z.jsonl guest.ssh
 
 6 of 6 permutation(s) have results; 1 with failing checks
@@ -175,6 +175,15 @@ $ sharukhan report --only k01,k02,k03,k04,s01,s02
 Read that against `DOC`: k03 and k04 were recorded as `fails` and now pass —
 those are the STIG SELinux-relabel ordering fix. s02 fails `guest.ssh`, which is
 the FIPS defect where sshd offers algorithms the FIPS crypto then refuses.
+
+All 18 autonomous rows have now been run across the four ISOs. Six rows moved from
+a documented `fails` to a clean pass, seven previously `untested` predictions were
+confirmed, and one genuine defect remains (s02). Four rows first reported as
+failures turned out to be a wrong expectation in the oracle rather than a defect:
+on subrelease 92 `selinux-policy` ships permissive by design, so asserting
+`Enforcing` was incorrect. That is the failure mode this tool exists to avoid, and
+it still got through — the guard against it is that every verdict names the
+evidence file it came from, so the claim can be re-checked rather than believed.
 
 `EVIDENCE` names the exact result file each verdict came from. Result files are
 timestamped and never overwritten, so a re-run cannot quietly replace the

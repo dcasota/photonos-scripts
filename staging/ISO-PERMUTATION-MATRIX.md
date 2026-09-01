@@ -125,6 +125,57 @@ formatting for btrfs, grub install on btrfs, the STIG ansible playbook run) and,
 for rows 13-16, the fact that POI master has never been packaged as an RPM or
 placed on a Photon ISO at all.
 
+### 2a. Measured results — kickstart rows, 2026-09-01
+
+Everything above was written before the matrix was executed. It has now been run:
+**18 automated kickstart installs across all four ISOs**, each on media verified to
+carry the packages under test. These are the `k*`/`s*` rows (mode = kickstart); the
+16 rows above remain the **interactive** projection and are still unmeasured.
+
+| row | ISO | POI | STIG | FS | pre-PR verdict | measured | note |
+|---|---|---|---|---|---|---|---|
+| k01 | minimal | 2.8 | no | ext4 | works | **pass** | |
+| k02 | minimal | 2.8 | no | btrfs | untested | **pass** | prediction confirmed |
+| k03 | minimal | 2.8 | yes | ext4 | fails | **pass** | fixed |
+| k04 | minimal | 2.8 | yes | btrfs | fails | **pass** | fixed |
+| k05 | minimal | latest | no | ext4 | fails | **pass** | fixed |
+| k06 | minimal | latest | no | btrfs | fails | **pass** | fixed |
+| k07 | minimal | latest | yes | ext4 | fails | **pass** | fixed |
+| k08 | minimal | latest | yes | btrfs | fails | **pass** | fixed |
+| k09 | full | 2.8 | no | ext4 | untested | **pass** | prediction confirmed |
+| k10 | full | 2.8 | no | btrfs | untested | **pass** | prediction confirmed |
+| k11 | full | 2.8 | yes | ext4 | untested | pass* | SELinux Permissive — intended, see below |
+| k12 | full | 2.8 | yes | btrfs | untested | pass* | as k11 |
+| k13 | full | latest | no | ext4 | untested | **pass** | prediction confirmed |
+| k14 | full | latest | no | btrfs | untested | **pass** | prediction confirmed |
+| k15 | full | latest | yes | ext4 | untested | pass* | as k11 |
+| k16 | full | latest | yes | btrfs | untested | pass* | as k11 |
+| s01 | minimal | 2.8 | no | ext4 | fails | **pass** | kickstart `security.selinux=permissive` |
+| s02 | minimal | 2.8 | no | ext4 | fails | **FAIL** | FIPS breaks SSH — real defect |
+
+**Six rows moved from `fails` to `pass`** (k03–k08) and **seven `UNTESTED`
+predictions were confirmed**, so the section-2 reasoning held everywhere it was
+checked.
+
+`pass*` on k11/k12/k15/k16 marks a correction rather than a defect. Those rows were
+first reported as failures because the oracle asserted `SELINUX=Enforcing`. On
+subrelease 92 `selinux-policy-43.6-4` **ships permissive by design**; the minimal
+ISOs only reported Enforcing because they carried a stale `43.6-3` from June. The
+media, not the installer or the playbook, was the whole difference — see
+COMPILE-CONSTELLATIONS.md §15.1.
+
+**s02 is the one genuine failure.** With `security.fips: true` the installed system
+is unreachable over SSH: sshd advertises curve25519/chacha20-poly1305/ed25519, the
+peer selects one, and the FIPS-constrained crypto then refuses it
+(`ssh_dispatch_run_fatal: invalid argument [preauth]`). Nothing reports a fault —
+the system is `running`, zero failed units, sshd listening on 22. Two existing
+defences miss it: the STIG role sets `Ciphers`/`MACs` itself but FIPS can be enabled
+without STIG, and openssh's hardened `sshd_config` is only selected when built with
+`STIG_HARDEN`, which defaults to 0.
+
+Evidence for every row is under `results/<id>/checks-<UTC>.jsonl`, with the harvested
+guest logs beside it. Result files are timestamped and never overwritten.
+
 ### The measurement behind rows 1-16
 
 Repository under test for `minimal-iso`: `file:///mnt/isotest/RPMS` -- the
