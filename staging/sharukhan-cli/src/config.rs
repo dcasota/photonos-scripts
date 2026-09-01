@@ -34,6 +34,10 @@ pub struct Config {
 
     // ---- photon build tree -----------------------------------------------
     pub photon_tree: PathBuf,
+    /// The photon-os-installer checkout. Several SPECS/photon-os-installer
+    /// patches are copies of commits on that repository's PR branches, and a
+    /// copy is a thing that can go stale.
+    pub poi_tree: PathBuf,
     /// runPh5_normal.sh resolves downstream-fixes.patch RELATIVE TO ITSELF
     /// ($SCRIPT_DIR/photonos-patches/...). Two copies of both the script and
     /// the patch exist on this host and they had diverged: the scripts-repo
@@ -160,6 +164,7 @@ impl Config {
             ),
 
             photon_tree: var_or("PHOTON_TREE", "/root/5.0"),
+            poi_tree: var_or("POI_TREE", "/root/photon-os-installer"),
             photon_scripts: var_or("PHOTON_SCRIPTS", "/root"),
 
             build_root: var_or("MC_BUILD_ROOT", "/root"),

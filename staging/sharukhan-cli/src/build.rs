@@ -425,3 +425,157 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod mirror_tests {
+    use super::*;
+
+    /// A regenerated patch must compare equal to the stored copy even though
+    /// git stamps a fresh sha, date and version footer on every run. Without
+    /// this the check would cry stale on every invocation and be turned off.
+    #[test]
+    fn regeneration_noise_does_not_read_as_staleness() {
+        let stored = "From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001\n\
+                      From: A <a@b>\n\
+                      Date: Mon, 31 Aug 2026 00:00:00 +0000\n\
+                      Subject: [PATCH] thing\n\
+                      \n\
+                      body\n";
+        let fresh = "From 9a49a18dc221ef6ba448cb482e530c8fda4ba85c Mon Sep 17 00:00:00 2001\n\
+                     From: A <a@b>\n\
+                     Date: Tue, 1 Sep 2026 21:04:11 +0200\n\
+                     Subject: [PATCH] thing\n\
+                     \n\
+                     body\n-- \n2.43.0\n";
+        assert_eq!(stable_header(stored), stable_header(fresh));
+    }
+
+    /// ...but a real content change MUST read as stale. This is the case that
+    /// actually happened: the reviewed import form sat on the fork while the
+    /// spec still carried the pre-review one.
+    #[test]
+    fn a_real_content_change_reads_as_stale() {
+        let old = "From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001\n\
+                   Subject: [PATCH] thing\n\n+from stigenable import KS_STIG_PACKAGES\n";
+        let new = "From 1111111111111111111111111111111111111111 Mon Sep 17 00:00:00 2001\n\
+                   Subject: [PATCH] thing\n\n+import stigenable\n";
+        assert_ne!(stable_header(old), stable_header(new));
+    }
+
+    /// Every mirror must name a patch the spec directory actually uses.
+    #[test]
+    fn every_mirror_targets_a_real_spec_patch() {
+        for m in &MIRRORS {
+            assert!(m.spec_patch.ends_with(".patch"), "{}", m.spec_patch);
+            assert!(m.poi_remote_branch.starts_with("dcasota/"), "{}", m.poi_remote_branch);
+        }
+    }
+}
+
+// ------------------------------------------------------- published mirror ---
+
+/// A SPECS patch that is a COPY of a commit on a photon-os-installer PR branch.
+///
+/// The copy is the thing that goes stale. A reviewer's change lands on the POI
+/// branch, the spec patch keeps the old text, and the matrix then proves the
+/// old text - which looks exactly like proving the new one. That is not
+/// hypothetical: the isoBuilder review fix sat on the POI branch for a whole
+/// ISO build while all three photon branches still carried the pre-review form.
+pub struct Mirror {
+    pub spec_patch: &'static str,
+    pub poi_remote_branch: &'static str,
+}
+
+pub const MIRRORS: [Mirror; 3] = [
+    Mirror {
+        spec_patch: "0006-stig-drop-redundant-packages.patch",
+        poi_remote_branch: "dcasota/fix/stig-drop-redundant-packages",
+    },
+    Mirror {
+        spec_patch: "0007-installer-seed-locale.conf-before-package-install.patch",
+        poi_remote_branch: "dcasota/fix/seed-locale-conf-before-pkg-install",
+    },
+    Mirror {
+        spec_patch: "0008-isoBuilder-put-installer-requestable-packages-on-media.patch",
+        poi_remote_branch: "dcasota/fix/isobuilder-installer-pkgs-on-media",
+    },
+];
+
+/// Normalise a `git format-patch` header to the shape the spec patches use, so
+/// regenerating one does not churn the spec on every run.
+fn stable_header(patch: &str) -> String {
+    let mut out: Vec<String> = Vec::new();
+    for (i, line) in patch.lines().enumerate() {
+        if i == 0 && line.starts_with("From ") {
+            out.push("From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001".into());
+        } else if i < 6 && line.starts_with("Date: ") {
+            out.push("Date: Mon, 31 Aug 2026 00:00:00 +0000".into());
+        } else {
+            out.push(line.to_string());
+        }
+    }
+    let joined = out.join("\n");
+    let body = joined.split("\n-- \n").next().unwrap_or(&joined).trim_end();
+    format!("{body}\n")
+}
+
+pub struct MirrorState {
+    pub spec_patch: String,
+    pub branch: String,
+    pub current: bool,
+    pub detail: String,
+}
+
+/// Verify each spec patch still equals what the PUBLISHED POI branch produces.
+///
+/// Everything is taken from remote-tracking refs after a fetch: the whole point
+/// is to prove that what is on the fork is what gets built, not whatever a local
+/// working tree happens to hold.
+pub fn verify_mirrors(cfg: &Config, photon_branch: &str) -> Result<Vec<MirrorState>, String> {
+    let poi = &cfg.poi_tree;
+    git(poi, &["fetch", "-q", "dcasota"])?;
+    git(&cfg.photon_tree, &["fetch", "-q", "origin", photon_branch])?;
+
+    let mut out = Vec::new();
+    for m in &MIRRORS {
+        let spec_rel = format!("SPECS/photon-os-installer/{}", m.spec_patch);
+        let in_spec = git(
+            &cfg.photon_tree,
+            &["show", &format!("origin/{photon_branch}:{spec_rel}")],
+        );
+        let Ok(in_spec) = in_spec else {
+            out.push(MirrorState {
+                spec_patch: m.spec_patch.into(),
+                branch: m.poi_remote_branch.into(),
+                current: true,
+                detail: "not carried by this variant".into(),
+            });
+            continue;
+        };
+        let range = format!("{}~1..{}", m.poi_remote_branch, m.poi_remote_branch);
+        let generated = match git(poi, &["format-patch", "--stdout", &range]) {
+            Ok(g) => stable_header(&g),
+            Err(e) => {
+                out.push(MirrorState {
+                    spec_patch: m.spec_patch.into(),
+                    branch: m.poi_remote_branch.into(),
+                    current: false,
+                    detail: format!("cannot read the published branch: {e}"),
+                });
+                continue;
+            }
+        };
+        let same = stable_header(&in_spec) == generated;
+        out.push(MirrorState {
+            spec_patch: m.spec_patch.into(),
+            branch: m.poi_remote_branch.into(),
+            current: same,
+            detail: if same {
+                "matches the published branch".into()
+            } else {
+                "STALE - the spec carries an older copy than the fork".into()
+            },
+        });
+    }
+    Ok(out)
+}

@@ -62,6 +62,7 @@ PHASES (the same code `run` calls, one step at a time)
     build-iso           resolve a build-axis tuple to an ISO (see --allow-build)
     variant-patches     rebuild the installer variant patches from the PR branches
     canister            which canister this kernel can have (--rebase-check to prove it)
+    mirrors             are the SPECS copies of POI PR commits still current with the fork?
 
 OPTIONS:
     --id <perm>         one permutation (card, kickstart, create-vm, install,
@@ -292,6 +293,7 @@ fn main() -> ExitCode {
         ),
         "variant-patches" => phases::cmd_variant_patches(&cfg),
         "canister" => cmd_canister(&cfg, args.rebase_check),
+        "mirrors" => cmd_mirrors(&cfg),
         "stop" => runner::cmd_stop(&cfg, args.job, args.all, args.dry_run),
         "watch" => runner::cmd_watch(&cfg, args.job, args.once, args.interval),
         "help" => {
@@ -735,5 +737,42 @@ fn cmd_canister(cfg: &config::Config, rebase_check: bool) -> Result<(), String> 
     if bad > 0 {
         println!("rejects are listed above; %prep would have shown you only the first");
     }
+    Ok(())
+}
+
+/// `sharukhan mirrors`
+///
+/// Several SPECS/photon-os-installer patches are COPIES of commits on
+/// photon-os-installer PR branches. A copy goes stale silently: a reviewer's
+/// change lands on the POI branch, the spec keeps the old text, and the matrix
+/// then proves the old text - which is indistinguishable from proving the new
+/// one. This compares each copy against what the PUBLISHED branch produces.
+///
+/// Everything comes from remote-tracking refs after a fetch, deliberately: the
+/// point is to prove that what is on the fork is what gets built, not whatever
+/// a local working tree happens to hold.
+fn cmd_mirrors(cfg: &config::Config) -> Result<(), String> {
+    let mut stale = 0;
+    for variant in build::VARIANTS.iter() {
+        let branch = variant
+            .branches
+            .iter()
+            .find(|b| b.contains("photon-os-installer") || b.contains("poi-2.9-bump") || b.contains("poi-fips-sshd"))
+            .ok_or_else(|| format!("variant {} has no installer branch", variant.name))?;
+        println!("variant {} (installer branch {branch})", variant.name);
+        for m in build::verify_mirrors(cfg, branch)? {
+            let mark = if m.current { "ok  " } else { "STALE" };
+            if !m.current {
+                stale += 1;
+            }
+            println!("  [{mark}] {:<62} {}", m.spec_patch, m.detail);
+        }
+    }
+    if stale > 0 {
+        println!("\n{stale} spec patch copy(ies) are behind the fork.");
+        println!("Regenerate them before building: a row built from a stale copy proves the old change.");
+        return Err("stale mirrors".into());
+    }
+    println!("\nevery spec copy matches its published photon-os-installer branch");
     Ok(())
 }
