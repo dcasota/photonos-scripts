@@ -98,6 +98,10 @@ fn spec_nevr(spec: &str) -> Option<String> {
 
 pub struct Specs {
     pub linux: PathBuf,
+    /// Read by P4 (consume), which rebuilds this flavour against the canister
+    /// linux produced. Detection only needs linux.spec: linux-esx never builds
+    /// a canister, it only links one.
+    #[allow(dead_code)]
     pub linux_esx: PathBuf,
 }
 

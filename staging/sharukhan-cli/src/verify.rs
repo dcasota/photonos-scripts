@@ -58,6 +58,29 @@ pub fn run(
         &p.expect,
         "expected with all PRs applied",
     );
+    // Provenance for every FIPS verdict in this file. A canister built locally
+    // is functionally equivalent and carries NO CMVP certificate, so a result
+    // taken against one must never be read as a compliance claim. Recording it
+    // here means the evidence carries the caveat, not just the report that
+    // cites it.
+    let origin = crate::canister::detect(cfg, std::env::consts::ARCH)
+        .map(|st| {
+            let label = st.label();
+            if st.is_validated() {
+                label.to_string()
+            } else {
+                format!("{label} (NOT CMVP validated)")
+            }
+        })
+        .unwrap_or_else(|e| format!("unknown ({e})"));
+    c.check(
+        "meta.canister_origin",
+        "PR#24",
+        Status::Info,
+        "",
+        &origin,
+        "which canister this kernel carries; only 'certified' may be reported as compliant",
+    );
 
     // --- media -----------------------------------------------------------
     // Do not hardcode the canister mode: an ISO built with --canister

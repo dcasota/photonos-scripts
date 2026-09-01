@@ -352,6 +352,7 @@ pub fn guest(g: &Guest, stig: &str, fs: &str, c: &mut Checks) {
         .run("dmesg 2>/dev/null | grep -c \"canister verification passed\"")
         .value_or("0");
     c.check("guest.fips_canister", "PR#24", Status::Info, "", &v, "");
+    canister_identity(g, c);
 
     let v = g
         .run("systemctl --failed --no-legend --no-pager 2>/dev/null | wc -l")
@@ -382,6 +383,55 @@ pub fn guest(g: &Guest, stig: &str, fs: &str, c: &mut Checks) {
 /// The matrix defines no dmesg/journalctl//var/log criteria at all, so this
 /// COLLECTS the evidence rather than asserting on it - except the two counts,
 /// which are cheap regression detectors.
+/// Section E - WHICH canister the guest is actually running.
+///
+/// Three POSITIVE checks, not a hunt for absent errors, because the canister is
+/// unusually cooperative: `crypto/fips_integrity.c` announces itself at boot
+///
+///     FIPS(fips_canister_init): canister 6.12 found (based on 6.12.103-12.ph5)
+///
+/// and calls `panic()` when integrity fails. So a guest that reaches a login
+/// prompt has ALREADY passed canister integrity - that is check one, free.
+///
+/// The line's "based on" version is the only thing that distinguishes a locally
+/// built canister from the prebuilt one. Without it, a build that silently fell
+/// back to the certified canister looks exactly like a successful one; that is
+/// precisely how a twelve-hour run once re-tested the path already covered by
+/// every other row.
+pub fn canister_identity(g: &Guest, c: &mut Checks) {
+    let dmesg = g.run("dmesg 2>/dev/null | grep -i canister").value_or("");
+    match crate::canister::parse_boot_line(&dmesg) {
+        Some((canister, based_on)) => {
+            c.check(
+                "guest.canister_version",
+                "PR#24",
+                Status::Info,
+                "",
+                &canister,
+                "FIPS_CANISTER_VERSION reported by the running kernel",
+            );
+            c.check(
+                "guest.canister_based_on",
+                "PR#24",
+                Status::Info,
+                "",
+                &based_on,
+                "the kernel the canister was built from - this is what tells a \
+                 locally built canister apart from the prebuilt one",
+            );
+        }
+        None => c.check(
+            "guest.canister_version",
+            "PR#24",
+            Status::Info,
+            "",
+            "absent",
+            "no FIPS canister line in dmesg: either a non-FIPS kernel or a \
+             non-canister build",
+        ),
+    }
+}
+
 pub fn harvest(g: &Guest, dest: &Path, secret: Option<&str>, c: &mut Checks) {
     if let Err(e) = std::fs::create_dir_all(dest) {
         c.check(
