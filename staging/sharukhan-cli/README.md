@@ -15,16 +15,35 @@ reports a wrong answer is worse than one that reports nothing.
 
 ## Status
 
-Implemented and working: `doctor`, `plan`, `status`, `findings`, `report`,
-`run`, `stop`, `watch`.
+`sharukhan` is now the only script. The `mission-control` bash harness has been
+absorbed: `run` no longer shells out to `mc-run.sh` - it resolves the ISO,
+generates the kickstart, creates the VM, installs, verifies and tears down in
+this process, and every one of those steps is also a subcommand of its own
+(`kickstart`, `create-vm`, `install`, `verify`, `teardown`, `build-iso`,
+`variant-patches`, `card`, `doctor`).
 
-`run` orchestrates; it does not build. ISO builds, kickstart and VMX generation,
-the install itself and the guest oracle all remain in the `mission-control` bash
-harness, which `run` shells out to. The reasoning, and the full list of what was
-deliberately left out, is in [`specs/adr-0001-run-stop-watch.md`](specs/adr-0001-run-stop-watch.md).
+The bash is archived, not deleted, at
+[`../mission-control/superseded-bash/`](../mission-control/superseded-bash/README.md),
+whose README says what replaced each script, what is NOT replaced, and which
+behaviour deliberately changed (the SELinux oracle, `sshpass`, the WSL path
+handed to `vmrun` in `mc-verify.sh`).
 
-This README documents only what runs today. Every block below is captured
-output, not an illustration.
+Two things to know before reading further:
+
+* **`MC_GUEST_PASSWORD` is required and has no default.** It is the root
+  password of every VM the harness installs. Anything that installs or
+  configures a guest refuses without it.
+* **Building an ISO is a policy flag.** `run` and `build-iso` still refuse by
+  default - a build takes hours and shares `$PHOTON_TREE/stage` - but
+  `--allow-build` makes it the operator's decision rather than a missing
+  capability.
+
+Everything below this line is captured output from BEFORE the absorption. The
+gates, the job record and the evidence format are unchanged, but the command
+lines quoted in the `run` / `stop` / `watch` sections still name
+`mission-control/bin/*.sh` where today they name a `sharukhan` subcommand. It is
+left as captured rather than rewritten, because the alternative is output nobody
+ran.
 
 ## Build
 
@@ -33,7 +52,9 @@ cargo build --release
 ./target/release/sharukhan --help
 ```
 
-One dependency (`rusqlite`, bundled SQLite). No network access at runtime.
+Three dependencies (`rusqlite` with bundled SQLite, `serde`, `serde_json`).
+No network access at runtime. `cargo test` runs the unit tests, which include the
+check that `photon-matrix.vmx.template` and the VMX renderer have not diverged.
 
 ## Commands
 

@@ -1,0 +1,76 @@
+# Photon OS ISO permutation matrix - the executable form of ISO-PERMUTATION-MATRIX.md
+#
+# Columns
+#   id          stable identifier; also the VM name and the last IP octet offset
+#   iso_type    minimal | full          BUILD-TIME axis -> selects/creates an ISO
+#   poi         2.8 | latest            BUILD-TIME axis -> selects/creates an ISO
+#   stig        no | yes                INSTALL-TIME
+#   fs          ext4 | btrfs            INSTALL-TIME
+#   mode        ui | ks                 INSTALL-TIME (the fifth dimension)
+#   ks_variant  -                       ks only: none|selinux|fips|stigpkgs
+#   canister    prebuilt | build          BUILD-TIME axis -> selects/creates an ISO.
+#               x86_64 default is fips=1 + canister_usage=1, i.e. the kernel links
+#               against the PREBUILT linux-fips-canister RPM from the Broadcom repo.
+#               'build' compiles the canister locally and emits the subpackage.
+#               acvp/kat are certification builds that force other flags; they prove
+#               something about certification tooling, not about a PR, so they are
+#               deliberately not rows here. mc-build-iso.sh still accepts them.
+#   doc         the verdict ISO-PERMUTATION-MATRIX.md records (pre-PR)
+#   expect      what mission control expects WITH all PRs applied
+#
+# doc vs expect is the whole point: where they differ, the PRs are doing work,
+# and a run that matches doc instead of expect is a PR regression.
+#
+# On mode=ks + stig=yes: the STIG menu is UI-only (stigenable.py is reached
+# only from the curses configurator), so a kickstart cannot "answer yes". The
+# ks rows express STIG by listing KS_STIG_PACKAGES manually - which is what
+# ks_variant=stigpkgs does. This is a genuinely different code path, not a
+# duplicate of the UI row.
+#
+#id      iso_type  poi     stig  fs     mode  ks_variant  doc        expect  canister
+p01      minimal   2.8     no    ext4   ui    -           works      pass   prebuilt
+p02      minimal   2.8     no    btrfs  ui    -           untested   pass   prebuilt
+p03      minimal   2.8     yes   ext4   ui    -           fails      pass   prebuilt
+p04      minimal   2.8     yes   btrfs  ui    -           fails      pass   prebuilt
+p05      minimal   latest  no    ext4   ui    -           fails      pass   prebuilt
+p06      minimal   latest  no    btrfs  ui    -           fails      pass   prebuilt
+p07      minimal   latest  yes   ext4   ui    -           fails      pass   prebuilt
+p08      minimal   latest  yes   btrfs  ui    -           fails      pass   prebuilt
+p09      full      2.8     no    ext4   ui    -           works      pass   prebuilt
+p10      full      2.8     no    btrfs  ui    -           untested   pass   prebuilt
+p11      full      2.8     yes   ext4   ui    -           works      pass   prebuilt
+p12      full      2.8     yes   btrfs  ui    -           untested   pass   prebuilt
+p13      full      latest  no    ext4   ui    -           untested   pass   prebuilt
+p14      full      latest  no    btrfs  ui    -           untested   pass   prebuilt
+p15      full      latest  yes   ext4   ui    -           untested   pass   prebuilt
+p16      full      latest  yes   btrfs  ui    -           untested   pass   prebuilt
+k01      minimal   2.8     no    ext4   ks    none        works      pass   prebuilt
+k02      minimal   2.8     no    btrfs  ks    none        untested   pass   prebuilt
+k03      minimal   2.8     yes   ext4   ks    stigpkgs    fails      pass   prebuilt
+k04      minimal   2.8     yes   btrfs  ks    stigpkgs    fails      pass   prebuilt
+k05      minimal   latest  no    ext4   ks    none        fails      pass   prebuilt
+k06      minimal   latest  no    btrfs  ks    none        fails      pass   prebuilt
+k07      minimal   latest  yes   ext4   ks    stigpkgs    fails      pass   prebuilt
+k08      minimal   latest  yes   btrfs  ks    stigpkgs    fails      pass   prebuilt
+k09      full      2.8     no    ext4   ks    none        untested   pass   prebuilt
+k10      full      2.8     no    btrfs  ks    none        untested   pass   prebuilt
+k11      full      2.8     yes   ext4   ks    stigpkgs    untested   pass   prebuilt
+k12      full      2.8     yes   btrfs  ks    stigpkgs    untested   pass   prebuilt
+k13      full      latest  no    ext4   ks    none        untested   pass   prebuilt
+k14      full      latest  no    btrfs  ks    none        untested   pass   prebuilt
+k15      full      latest  yes   ext4   ks    stigpkgs    untested   pass   prebuilt
+k16      full      latest  yes   btrfs  ks    stigpkgs    untested   pass   prebuilt
+# Kickstart-only failure class (section 11.3). These have NO UI counterpart:
+# the security: key is synthesised for everyone on POI latest, but on 2.8 it
+# is only present if the kickstart author writes it. fips is never appended on
+# the UI path on either version, so s02 is reachable exclusively via kickstart.
+s01      minimal   2.8     no    ext4   ks    selinux     fails      pass   prebuilt
+s02      minimal   2.8     no    ext4   ks    fips        fails      pass   prebuilt
+
+# Canister axis. c01 is the only row that exercises a locally BUILT canister,
+# which is the code path PR #1673 (shared canister_config.inc) touches - nothing
+# else in this matrix executes it. c02 needs aarch64 hardware: fips=0 is the
+# aarch64 default and is not reachable on x86_64, so it stays UNRUNNABLE here
+# rather than being quietly dropped.
+c01      full      2.8     no    ext4   ks    none        untested   pass    build
+c02      full      2.8     no    ext4   ks    none        untested   pass    fips0-aarch64

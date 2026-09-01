@@ -51,6 +51,19 @@ pub fn now() -> String {
         .unwrap_or_else(|| "unknown".into())
 }
 
+/// The compact UTC stamp every artefact this harness writes is named with:
+/// result files, stashed disks, run logs. One spelling, so a stash and the
+/// checks file written beside it sort together.
+pub fn stamp() -> String {
+    std::process::Command::new("date")
+        .args(["-u", "+%Y%m%dT%H%M%SZ"])
+        .output()
+        .ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "unstamped".into())
+}
+
 pub fn start(
     conn: &Connection,
     kind: &str,

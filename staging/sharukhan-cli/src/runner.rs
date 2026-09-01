@@ -1,24 +1,24 @@
 //! `run`, `stop`, `watch` - the orchestration that eight bash drivers each
 //! reimplemented.
 //!
-//! `run` decides and serialises; it builds nothing and installs nothing itself.
-//! Every expensive step is still `mission-control`'s: mc-run.sh drives the ISO
-//! resolution, VM creation, install and verification. What lives here is the
-//! part the drivers got wrong often enough to be worth writing once - the
-//! gates in front of that call, and the record that makes the work findable
-//! afterwards.
+//! `run` decides, serialises, and then drives the phases itself: ISO
+//! resolution, kickstart, VM creation, install, verification, teardown are all
+//! in this process now (see `phases.rs`). What the eight bash drivers got
+//! wrong often enough to be worth writing once lives here - the gates in front
+//! of the work, and the record that makes it findable afterwards.
 
 use crate::config::Config;
 use crate::matrix::Permutation;
-use crate::{disk, job, matrix, media, proc, vmware};
+use crate::{build, disk, install, job, matrix, media, phases, proc, verify, vm, vmware};
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 
-/// What the bash drivers waited on: a build or an install already in flight.
-/// runPh5_normal.sh is included because an ISO build is reachable without
-/// mc-build-iso.sh in the argv when someone runs the build script directly.
+/// What to wait on: a build or an install already in flight. The two bash
+/// names stay in the list even though the scripts are superseded - a copy of
+/// either may still be running from before the port, and starting a second
+/// install on top of one would corrupt both. runPh5_normal.sh is here because
+/// an ISO build is reachable directly, without any harness in the argv.
 const FOREIGN: &[&str] = &["bin/mc-run.sh", "bin/mc-build-iso.sh", "runPh5_normal"];
 
 pub struct RunOpts {
@@ -29,6 +29,10 @@ pub struct RunOpts {
     pub settle: u64,
     pub wait_idle: u64,
     pub log: Option<String>,
+    /// Building an ISO is a policy decision, not a capability the harness
+    /// lacks. It takes hours and shares $PHOTON_TREE/stage with every other
+    /// build on the host, so it happens only when the operator says so.
+    pub allow_build: bool,
 }
 
 // ---------------------------------------------------------------- run ------
@@ -66,10 +70,10 @@ pub fn cmd_run(cfg: &Config, o: &RunOpts) -> Result<(), String> {
             );
         } else if p.needs_operator() {
             println!(
-                "  refused {:<5} mode=ui needs a human at the console: {}/mc-operator-card.sh --id {}",
-                p.id,
-                cfg.mc_bin.display(),
-                p.id
+                "  refused {:<5} mode=ui needs a human at the console: \
+                 `sharukhan card --id {}`, then `install --id {} --mode interactive`, \
+                 then `verify --id {}`",
+                p.id, p.id, p.id, p.id
             );
         } else {
             runnable.push(p.clone());
@@ -136,17 +140,22 @@ pub fn cmd_run(cfg: &Config, o: &RunOpts) -> Result<(), String> {
     println!("\nmedia");
     for g in &mut groups {
         if !g.iso.exists() {
-            g.refused = Some(format!(
-                "no ISO at {} - build it with `{}/mc-build-iso.sh --iso-type {} --poi {} --canister {}` \
-                 (hours, not minutes)",
-                g.iso.display(),
-                cfg.mc_bin.display(),
-                g.rows[0].iso_type,
-                g.rows[0].poi,
-                g.rows[0].canister
-            ));
-            println!("  REFUSED {:<24} {}", g.key, g.refused.as_ref().unwrap());
-            continue;
+            // With --allow-build this is where the hours go; without it, the
+            // refusal names the exact command that would do it.
+            let req = build::IsoRequest {
+                iso_type: g.rows[0].iso_type.clone(),
+                poi: g.rows[0].poi.clone(),
+                canister: g.rows[0].canister.clone(),
+            };
+            let mut say = |m: &str| println!("  build   {m}");
+            match build::resolve(cfg, &req, false, o.allow_build, &mut say) {
+                Ok(iso) => g.iso = iso,
+                Err(why) => {
+                    g.refused = Some(why);
+                    println!("  REFUSED {:<24} {}", g.key, g.refused.as_ref().unwrap());
+                    continue;
+                }
+            }
         }
         match media::settled(&g.iso, o.settle) {
             Ok(age) => g.age = age,
@@ -195,12 +204,10 @@ pub fn cmd_run(cfg: &Config, o: &RunOpts) -> Result<(), String> {
             }
             for p in &g.rows {
                 println!(
-                    "  {:<5} {:<24} {}/mc-run.sh --only {}{}",
+                    "  {:<5} {:<24} kickstart -> create-vm -> install -> verify{}",
                     p.id,
                     g.key,
-                    cfg.mc_bin.display(),
-                    p.id,
-                    if o.keep { " --keep" } else { "" }
+                    if o.keep { "" } else { " -> teardown --purge" }
                 );
             }
         }
@@ -209,7 +216,7 @@ pub fn cmd_run(cfg: &Config, o: &RunOpts) -> Result<(), String> {
     }
 
     // --- execute -----------------------------------------------------------
-    let stamp = stamp();
+    let stamp = job::stamp();
     let log_path = match &o.log {
         Some(p) => PathBuf::from(p),
         None => cfg.run_log_dir.join(format!("run-{stamp}.log")),
@@ -218,6 +225,11 @@ pub fn cmd_run(cfg: &Config, o: &RunOpts) -> Result<(), String> {
         std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     }
     File::create(&log_path).map_err(|e| format!("{}: {e}", log_path.display()))?;
+
+    // Every autonomous row authenticates with this key; a run that generates
+    // kickstarts without one installs guests nothing can log into.
+    phases::ensure_ssh_key(cfg, &mut |m| println!("  {m}"))?;
+    cfg.guest_password()?;
 
     let label = runnable.iter().map(|p| p.id.as_str()).collect::<Vec<_>>().join(",");
     let pid = std::process::id() as i32;
@@ -263,16 +275,9 @@ pub fn cmd_run(cfg: &Config, o: &RunOpts) -> Result<(), String> {
             attempted += 1;
             say(&mut logf, &format!("--- {} ---", p.id));
             println!("  running {} ({})", p.id, g.key);
-            let (rc, verdict) = run_one(cfg, &p.id, o.keep, &log_path, &mut logf);
-            let line = match verdict {
-                Some(v) => format!("{}: {v}", p.id),
-                // mc-run.sh ends with mc_report_to_file, so its exit code
-                // reflects the last tee, not the verdict. Report the rc as the
-                // only thing observed, and do not call it a result.
-                None => format!(
-                    "{}: no summary line in the log (mc-run.sh exited {rc}, which is not a verdict)",
-                    p.id
-                ),
+            let line = match run_row(cfg, p, &g.iso, o.keep, &mut logf) {
+                Ok(v) => format!("{}: {v}", p.id),
+                Err(e) => format!("{}: {e}", p.id),
             };
             say(&mut logf, &line);
             println!("  {line}");
@@ -342,66 +347,67 @@ fn wait_for_idle(max_secs: u64) -> Result<(), String> {
     }
 }
 
-/// Invoke mc-run.sh for one row, appending its output to the run log, and
-/// scrape the summary line it prints. Returns (exit code, verdict).
-fn run_one(
+/// One row, end to end: kickstart, VM, install, verify, teardown.
+///
+/// Sequential by design. Every ISO build shares $PHOTON_TREE/stage, and the VM
+/// store cannot hold many installed VMs at once.
+fn run_row(
     cfg: &Config,
-    id: &str,
+    p: &Permutation,
+    iso: &Path,
     keep: bool,
-    log_path: &Path,
     logf: &mut File,
-) -> (i32, Option<String>) {
-    let before = logf.metadata().map(|m| m.len()).unwrap_or(0);
-    let script = cfg.mc_bin.join("mc-run.sh");
-    let (out, err) = match (
-        OpenOptions::new().append(true).open(log_path),
-        OpenOptions::new().append(true).open(log_path),
-    ) {
-        (Ok(a), Ok(b)) => (a, b),
-        _ => return (-1, None),
+) -> Result<String, String> {
+    let mut log = |m: &str| {
+        say(logf, m);
+        println!("    {m}");
     };
-    let mut cmd = Command::new("bash");
-    cmd.arg(&script).args(["--only", id]);
-    if keep {
-        cmd.arg("--keep");
-    }
-    let rc = cmd
-        .stdout(Stdio::from(out))
-        .stderr(Stdio::from(err))
-        .status()
-        .map(|s| s.code().unwrap_or(-1))
-        .unwrap_or(-1);
-    (rc, scrape(log_path, before, id))
-}
 
-/// mc_result_summary prints "  <id>: N checks, N pass, N fail". That line is
-/// the evidence; the exit code is not.
-fn scrape(log_path: &Path, from: u64, id: &str) -> Option<String> {
-    let mut f = File::open(log_path).ok()?;
-    f.seek(SeekFrom::Start(from)).ok()?;
-    let mut text = String::new();
-    f.read_to_string(&mut text).ok()?;
-    let want = format!("{id}:");
-    text.lines()
-        .map(str::trim)
-        .filter(|l| l.starts_with(&want) && l.contains("checks,"))
-        .next_back()
-        .map(|l| l[want.len()..].trim().to_string())
+    let ks = if p.mode == "ks" {
+        let path = phases::write_kickstart(cfg, p)?;
+        log(&format!("kickstart {}", path.display()));
+        Some(std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?)
+    } else {
+        None
+    };
+
+    let vmrow = vm::create(cfg, p, iso, ks, true, &mut log)?;
+    let facts = install::run(
+        cfg,
+        &vmrow,
+        &install::Opts {
+            mode: install::Mode::Auto,
+            timeout_sec: cfg.install_timeout_sec,
+            no_wait: false,
+        },
+        &mut log,
+    )?;
+
+    // Verify regardless of the install result. An install that failed with
+    // Error(1011) still has a serial log, and that log is the evidence for
+    // WHY - discarding it because the install "did not work" throws away the
+    // finding the row exists to produce.
+    let stamp = job::stamp();
+    let v = verify::run(cfg, p, None, &stamp, &mut log)?;
+    let verdict = format!(
+        "{} checks, {} pass, {} fail (install {})",
+        v.checks.total(),
+        v.checks.pass,
+        v.checks.fail,
+        facts.install_result
+    );
+
+    if keep {
+        log("--keep: leaving the VM up");
+    } else {
+        vm::teardown(cfg, &p.id, true, &mut log)?;
+    }
+    Ok(verdict)
 }
 
 fn say(f: &mut File, msg: &str) {
     let _ = writeln!(f, "[sharukhan {}] {msg}", job::now());
     let _ = f.flush();
-}
-
-fn stamp() -> String {
-    Command::new("date")
-        .args(["-u", "+%Y%m%dT%H%M%SZ"])
-        .output()
-        .ok()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "unstamped".into())
 }
 
 fn first_words(s: &str, n: usize) -> String {
@@ -525,9 +531,8 @@ fn report_vms(cfg: &Config, when: &str) {
                 println!("\nno matrix VM is {when} ({others} other VM(s) on this host, untouched)");
             } else {
                 println!(
-                    "\nmatrix VMs {when}: {} - not powered off; use `{}/mc-teardown.sh --id <id>`",
-                    mine.join(", "),
-                    cfg.mc_bin.display()
+                    "\nmatrix VMs {when}: {} - not powered off; use `sharukhan teardown --id <id>`",
+                    mine.join(", ")
                 );
                 println!("{others} other VM(s) on this host, untouched");
             }

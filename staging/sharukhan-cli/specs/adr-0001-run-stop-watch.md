@@ -285,3 +285,27 @@ pub fn cmd_watch(cfg: &Config, job: Option<i64>, once: bool, interval: u64) -> R
 - Nothing here has been exercised against a full 16-row matrix run. It has been
   exercised against `--dry-run` on real media, and against a real background job
   for `watch` and `stop`. The README shows only that.
+
+
+---
+
+## Update, 2026-09-01: the delegation in this ADR is gone
+
+This ADR's central decision - `run` is a gate in front of `mc-run.sh`, and the
+expensive phases stay in bash - no longer holds. The bash harness was absorbed:
+kickstart generation, VMX rendering, VM creation, the install watcher, the
+oracle and teardown are all Rust now (`src/kickstart.rs`, `src/vmx.rs`,
+`src/vm.rs`, `src/install.rs`, `src/oracle.rs`, `src/verify.rs`), and `run`
+calls them directly through `src/phases.rs`.
+
+What did NOT change is the reasoning recorded above: the inventory is still the
+authority over vmrun's exit code, the job row is still the completion marker,
+`proc::matching` still refuses to match itself, and the media gate still derives
+the expected NEVR rather than hardcoding it.
+
+One thing this ADR got right for the wrong reason: it kept `mc-build-iso.sh`
+because "an ISO build is a build system". That is still true of
+`runPh5_normal.sh` and `build.py`, which are still exec'd - but the wrapper
+around them (cache key, stale-RPM purge, SPECS reset, variant staging) is now
+`src/build.rs`, gated behind `--allow-build`. The refusal became a policy flag
+rather than a missing capability.

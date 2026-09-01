@@ -16,6 +16,11 @@ pub struct Permutation {
     pub mode: String,
     pub variant: String,
     pub doc: String,
+    /// What mission control expects WITH all the PRs applied. `doc` vs
+    /// `expect` is the whole point of the matrix: where they differ, the PRs
+    /// are doing work, and a run that reproduces `doc` instead of `expect` is
+    /// a PR regression.
+    pub expect: String,
     /// Build-time axis, like iso_type and poi: which FIPS crypto canister the ISO
     /// carries. Rows written before this column existed default to "prebuilt",
     /// which is the x86_64 default (fips=1, canister_usage=1).
@@ -59,6 +64,7 @@ pub fn load(path: &Path) -> Result<Vec<Permutation>, String> {
             mode: f[5].into(),
             variant: f[6].into(),
             doc: f[7].into(),
+            expect: f.get(8).copied().unwrap_or("-").into(),
             canister: f.get(9).copied().unwrap_or("prebuilt").into(),
         });
     }
