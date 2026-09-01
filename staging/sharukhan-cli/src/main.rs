@@ -6,9 +6,13 @@
 
 mod config;
 mod disk;
+mod job;
 mod matrix;
+mod media;
 mod memory;
+mod proc;
 mod report;
+mod runner;
 mod vmware;
 
 use std::process::ExitCode;
@@ -25,11 +29,23 @@ COMMANDS:
     status              running VMs, disk headroom, and the parallelism that allows
     findings            findings recorded in the memory database
     report              per-permutation results from the last run of each
+    run                 drive permutations through mission-control, sequentially
+    stop                end a recorded job and its process tree
+    watch               follow a job, or show every job, VM and free space
 
 OPTIONS:
-    --only <ids>        comma-separated permutation ids (plan, report)
+    --only <ids>        comma-separated permutation ids (plan, report, run)
+    --all               every permutation in the matrix (run); every running job (stop)
     --severity <level>  filter findings by severity
     --jobs <n>          proposed parallel VM count (status); default is cpus/4
+    --job <id>          a job table row id (stop, watch) - NOT --jobs
+    --dry-run           run every gate, change nothing (run, stop)
+    --keep              do not tear the VM down after verifying (run)
+    --settle <sec>      minimum ISO age before the first VM (run); default 300
+    --wait-idle <sec>   wait this long for foreign builds/installs (run); default 0
+    --log <path>        run log path (run)
+    --interval <sec>    poll interval (watch); default 15
+    --once              one snapshot instead of following (watch)
     -h, --help          this text
 ";
 
@@ -38,12 +54,35 @@ struct Args {
     only: Option<String>,
     severity: Option<String>,
     jobs: Option<u64>,
+    all: bool,
+    job: Option<i64>,
+    dry_run: bool,
+    keep: bool,
+    once: bool,
+    settle: u64,
+    wait_idle: u64,
+    interval: u64,
+    log: Option<String>,
 }
 
 fn parse() -> Result<Args, String> {
     let mut a = std::env::args().skip(1);
     let cmd = a.next().unwrap_or_else(|| "help".into());
-    let mut out = Args { cmd, only: None, severity: None, jobs: None };
+    let mut out = Args {
+        cmd,
+        only: None,
+        severity: None,
+        jobs: None,
+        all: false,
+        job: None,
+        dry_run: false,
+        keep: false,
+        once: false,
+        settle: 300,
+        wait_idle: 0,
+        interval: 15,
+        log: None,
+    };
     while let Some(f) = a.next() {
         match f.as_str() {
             "--only" => out.only = Some(a.next().ok_or("--only needs a value")?),
@@ -51,6 +90,27 @@ fn parse() -> Result<Args, String> {
             "--jobs" => {
                 let v = a.next().ok_or("--jobs needs a value")?;
                 out.jobs = Some(v.parse().map_err(|_| format!("--jobs: not a number: {v}"))?);
+            }
+            "--job" => {
+                let v = a.next().ok_or("--job needs a value")?;
+                out.job = Some(v.parse().map_err(|_| format!("--job: not a number: {v}"))?);
+            }
+            "--all" => out.all = true,
+            "--dry-run" => out.dry_run = true,
+            "--keep" => out.keep = true,
+            "--once" => out.once = true,
+            "--log" => out.log = Some(a.next().ok_or("--log needs a value")?),
+            "--settle" => {
+                let v = a.next().ok_or("--settle needs a value")?;
+                out.settle = v.parse().map_err(|_| format!("--settle: not a number: {v}"))?;
+            }
+            "--wait-idle" => {
+                let v = a.next().ok_or("--wait-idle needs a value")?;
+                out.wait_idle = v.parse().map_err(|_| format!("--wait-idle: not a number: {v}"))?;
+            }
+            "--interval" => {
+                let v = a.next().ok_or("--interval needs a value")?;
+                out.interval = v.parse().map_err(|_| format!("--interval: not a number: {v}"))?;
             }
             "-h" | "--help" => out.cmd = "help".into(),
             other => return Err(format!("unknown option: {other}")),
@@ -89,6 +149,20 @@ fn main() -> ExitCode {
         "status" => cmd_status(&cfg, args.jobs),
         "findings" => cmd_findings(&cfg, args.severity.as_deref()),
         "report" => cmd_report(&cfg, args.only.as_deref()),
+        "run" => runner::cmd_run(
+            &cfg,
+            &runner::RunOpts {
+                only: args.only.clone(),
+                all: args.all,
+                dry_run: args.dry_run,
+                keep: args.keep,
+                settle: args.settle,
+                wait_idle: args.wait_idle,
+                log: args.log.clone(),
+            },
+        ),
+        "stop" => runner::cmd_stop(&cfg, args.job, args.all, args.dry_run),
+        "watch" => runner::cmd_watch(&cfg, args.job, args.once, args.interval),
         "help" => {
             print!("{USAGE}");
             Ok(())

@@ -16,6 +16,12 @@ pub struct Config {
     pub variant_patches: PathBuf,
     pub vm_root: PathBuf,
     pub vmrun: PathBuf,
+    /// Where the mission-control scripts live. `run` shells out to them; it
+    /// builds and installs nothing itself.
+    pub mc_bin: PathBuf,
+    /// Where `run` writes its own log. Separate from MC_RESULTS_DIR, which is
+    /// per-permutation evidence written by mc-verify.sh.
+    pub run_log_dir: PathBuf,
 }
 
 fn var_or(key: &str, default: &str) -> PathBuf {
@@ -41,6 +47,8 @@ impl Config {
                 "VMRUN",
                 "/mnt/c/Program Files/VMware/VMware Workstation/vmrun.exe",
             ),
+            mc_bin: var_or("MC_BIN", &format!("{here}/bin")),
+            run_log_dir: var_or("MC_RUN_LOG_DIR", "/root/photon-mc/run-logs"),
         }
     }
 }
