@@ -287,6 +287,27 @@ pub fn cmd_run(cfg: &Config, o: &RunOpts) -> Result<(), String> {
     let state = if halted.is_some() { job::FAILED } else { job::DONE };
     say(&mut logf, &format!("job {job_id} {state}: {attempted} row(s) attempted"));
     job::finish(&conn, job_id, state)?;
+
+    // Fold this run's evidence into the memory database before reporting, so
+    // the database is current the moment the run ends rather than whenever
+    // someone next remembers to index it. Ingest is idempotent, so doing it
+    // here costs nothing on a re-run - and a failure to index must not turn a
+    // completed run into a failed one, so it is reported and swallowed.
+    match crate::ingest::all(cfg) {
+        Ok(sum) => say(
+            &mut logf,
+            &format!(
+                "indexed: {} run(s), {} permutation result(s), {} check(s) in the memory database",
+                sum.runs, sum.permutations, sum.checks
+            ),
+        ),
+        Err(e) => {
+            let m = format!("WARNING: could not index results into the memory database: {e}");
+            say(&mut logf, &m);
+            eprintln!("sharukhan: {m}");
+        }
+    }
+
     println!("\njob {job_id} {state}: {attempted} of {admissible} admissible row(s) attempted");
     println!("evidence: {}", log_path.display());
     println!("results:  sharukhan report --only {label}");

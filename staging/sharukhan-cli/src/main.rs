@@ -11,6 +11,7 @@ mod build;
 mod config;
 mod evidence;
 mod guest;
+mod ingest;
 mod install;
 mod oracle;
 mod serial;
@@ -63,6 +64,7 @@ PHASES (the same code `run` calls, one step at a time)
     variant-patches     rebuild the installer variant patches from the PR branches
     canister            which canister this kernel can have (--rebase-check to prove it)
     mirrors             are the SPECS copies of POI PR commits still current with the fork?
+    ingest              fold the evidence files into the memory database (idempotent)
 
 OPTIONS:
     --id <perm>         one permutation (card, kickstart, create-vm, install,
@@ -294,6 +296,7 @@ fn main() -> ExitCode {
         "variant-patches" => phases::cmd_variant_patches(&cfg),
         "canister" => cmd_canister(&cfg, args.rebase_check),
         "mirrors" => cmd_mirrors(&cfg),
+        "ingest" => cmd_ingest(&cfg),
         "stop" => runner::cmd_stop(&cfg, args.job, args.all, args.dry_run),
         "watch" => runner::cmd_watch(&cfg, args.job, args.once, args.interval),
         "help" => {
@@ -774,5 +777,21 @@ fn cmd_mirrors(cfg: &config::Config) -> Result<(), String> {
         return Err("stale mirrors".into());
     }
     println!("\nevery spec copy matches its published photon-os-installer branch");
+    Ok(())
+}
+
+/// `sharukhan ingest`
+///
+/// The evidence files are the source of truth; the database is an index derived
+/// from them. It had never been derived from anything - 1,111 check records on
+/// disk against zero rows in `run`, `permutation` and `check_result`. Idempotent
+/// and re-runnable over the whole tree, so keeping the database current is a
+/// command rather than a discipline.
+fn cmd_ingest(cfg: &config::Config) -> Result<(), String> {
+    let s = ingest::all(cfg)?;
+    println!(
+        "ingested {} run(s), {} permutation result(s), {} check(s)",
+        s.runs, s.permutations, s.checks
+    );
     Ok(())
 }
