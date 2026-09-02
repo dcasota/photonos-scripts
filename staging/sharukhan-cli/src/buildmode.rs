@@ -157,6 +157,65 @@ impl CanisterMode {
     }
 }
 
+/// A modification sharukhan OWNS, compiled into the binary.
+///
+/// These are test-only: they have no destination in vmware/photon and are not
+/// waiting on anyone's review. `canister_equivalent` exists so a kernel with no
+/// published canister can be covered at all; upstream has no reason to carry a
+/// switch whose only consumer is this harness. Keeping them here rather than on
+/// a branch is what makes the tool monolithic - a fresh clone of
+/// photonos-scripts can build an equivalent-canister ISO with no other
+/// repository checked out at any particular revision.
+///
+/// They apply AFTER the variant patch, because they build on what the
+/// upstream-bound PRs change. The variant patches carry only work that is
+/// genuinely destined upstream; nothing test-only leaks into a PR.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Embedded {
+    /// linux/linux-esx: make the linked canister version selectable, so a
+    /// build can link one built from the kernel under test.
+    CanisterEquivalent,
+    /// package-builder: let a sans-snapshot BuildRequires resolve against the
+    /// local repo, without which phase B cannot find the canister phase A just
+    /// built.
+    SansSnapshotLocalCanister,
+}
+
+impl Embedded {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Embedded::CanisterEquivalent => "canister-equivalent",
+            Embedded::SansSnapshotLocalCanister => "sans-snapshot-local-canister",
+        }
+    }
+    pub fn tree(&self) -> Tree {
+        match self {
+            Embedded::CanisterEquivalent => Tree::Release,
+            Embedded::SansSnapshotLocalCanister => Tree::Common,
+        }
+    }
+    /// The patch text, compiled in. No file to go missing, no branch to be on
+    /// the wrong revision.
+    pub fn patch(&self) -> &'static str {
+        match self {
+            Embedded::CanisterEquivalent => include_str!("embedded/canister-equivalent.patch"),
+            Embedded::SansSnapshotLocalCanister => {
+                include_str!("embedded/sans-snapshot-local-canister.patch")
+            }
+        }
+    }
+    /// Which canister modes need it. `prebuilt` links the published canister
+    /// and needs neither, so a normal build is untouched by any of this.
+    pub fn needed_for(mode: CanisterMode) -> Vec<Embedded> {
+        match mode {
+            CanisterMode::EquivalentA | CanisterMode::EquivalentB => {
+                vec![Embedded::CanisterEquivalent, Embedded::SansSnapshotLocalCanister]
+            }
+            _ => vec![],
+        }
+    }
+}
+
 /// A tree modification applied before `make`, as data rather than as another
 /// branch in a shell script.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -164,6 +223,8 @@ pub enum Injection {
     /// Apply a patch to one of the two trees. `Tree::Common` is the case the
     /// old mechanism could not express at all.
     TreePatch { tree: Tree, patch: PathBuf },
+    /// A modification compiled into sharukhan itself.
+    Embed(Embedded),
     /// Pin `photon-subrelease` in the build config - the pinned90/91 behaviour,
     /// which was a whole separate script per value.
     PinSubrelease(u32),
@@ -311,6 +372,9 @@ impl Stage {
                     tree.as_str(),
                     patch.file_name().and_then(|s| s.to_str()).unwrap_or("?")
                 ),
+                Injection::Embed(e) => {
+                    format!("inject:embedded[{}]:{}", e.tree().as_str(), e.as_str())
+                }
                 Injection::PinSubrelease(n) => format!("inject:subrelease[{n}]"),
                 Injection::PkgBuildOptions { mode, .. } => {
                     format!("inject:pkg-build-options[{}]", mode.as_str())

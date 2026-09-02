@@ -771,10 +771,12 @@ fn cmd_build(args: &Args) -> Result<(), String> {
         tree: buildmode::Tree::Release,
         patch: std::path::PathBuf::from(&patches).join(format!("poi-{poi}.patch")),
     });
-    spec.injections.push(buildmode::Injection::TreePatch {
-        tree: buildmode::Tree::Common,
-        patch: std::path::PathBuf::from(&patches).join("common-fixes.patch"),
-    });
+    // Test-only modifications sharukhan owns, applied ON TOP of the variant
+    // patch. They are compiled in, so an equivalent-canister build needs no
+    // branch checked out anywhere and nothing waiting on review.
+    for e in buildmode::Embedded::needed_for(spec.canister) {
+        spec.injections.push(buildmode::Injection::Embed(e));
+    }
     spec.injections.push(buildmode::Injection::PkgBuildOptions {
         mode: spec.canister,
         nevr: spec.canister_nevr.clone(),
@@ -821,8 +823,12 @@ fn cmd_canister(cfg: &config::Config, rebase_check: bool) -> Result<(), String> 
             }
         }
     }
+    // The equivalent kernel, because that is what this command is about: the
+    // embedded canister patch bumps Release on top of the variant patch, so
+    // reading the variant patch alone answers for a kernel that never gets
+    // built in this mode.
     let effective = if patch.is_file() {
-        build::kernel_nevr(cfg, &patch)?
+        build::equivalent_kernel_nevr(cfg, &patch)?
     } else {
         println!("note: no variant patch yet, reading the pristine tree");
         canister::detect(cfg, arch)
@@ -894,9 +900,15 @@ fn cmd_canister(cfg: &config::Config, rebase_check: bool) -> Result<(), String> 
         }
     }
 
-    println!("\nplan: {}", match canister::plan(&state) {
+    // The same three-way question the build asks, or this command would report
+    // a decision the build does not take.
+    let local = canister::local_canister(&cfg.photon_tree.join("stage/RPMS"), &effective);
+    let local_ref = local.as_ref().map(|(n, p)| (n.as_str(), p.as_str()));
+    println!("\nplan: {}", match canister::plan_with_local(&state, local_ref) {
         canister::Plan::LinkPublished { version } =>
             format!("link the published canister {version} - no phase A, stays certified"),
+        canister::Plan::LinkLocalEquivalent { version, path } =>
+            format!("link the equivalent canister already built at {path} ({version}) - no phase A, NOT CMVP validated"),
         canister::Plan::BuildThenLink { version } =>
             format!("phase A: build a canister from {version}; \
 phase B: relink linux and linux-esx against it"),

@@ -180,13 +180,26 @@ pub fn resolve(
     // re-asks, against the kernel it is actually about to build (which the
     // variant patch sets, not the pristine tree).
     let (phases, nevr): (Vec<&str>, String) = if req.canister == "equivalent" {
-        let kernel = kernel_nevr(cfg, &patch)?;
+        let kernel = equivalent_kernel_nevr(cfg, &patch)?;
         let state = crate::canister::detect_for(cfg, std::env::consts::ARCH, Some(&kernel))?;
-        match crate::canister::plan(&state) {
+        // An equivalent canister already built at this exact kernel level is
+        // as good as a published one for linking purposes - and rebuilding it
+        // costs ~90 minutes to reproduce the same artifact from the same
+        // inputs. Ask before spending them.
+        let local = crate::canister::local_canister(&cfg.photon_tree.join("stage/RPMS"), &kernel);
+        let local_ref = local.as_ref().map(|(n, p)| (n.as_str(), p.as_str()));
+        match crate::canister::plan_with_local(&state, local_ref) {
             crate::canister::Plan::LinkPublished { version } => {
                 log(&format!(
                     "canister {version} is published at this kernel level: linking it, \
 no phase A. This build stays CMVP validated."
+                ));
+                (vec!["equivalent-b"], version)
+            }
+            crate::canister::Plan::LinkLocalEquivalent { version, path } => {
+                log(&format!(
+                    "an equivalent canister for {version} is already built at {path}: \
+linking it, no phase A. Still NOT CMVP validated - it is locally built, not published."
                 ));
                 (vec!["equivalent-b"], version)
             }
@@ -332,6 +345,32 @@ pub fn installer_branch(v: &Variant) -> Option<&'static str> {
         .copied()
 }
 
+/// Read Version/Release out of a patch's `SPECS/linux/linux.spec` hunks.
+///
+/// Context lines count: a patch that bumps Release but leaves Version alone
+/// still tells us the Version, on a ' ' line.
+fn scan_linux_spec_hunks(text: &str, version: &mut Option<String>, release: &mut Option<String>) {
+    let mut in_linux_spec = false;
+    for line in text.lines() {
+        if line.starts_with("+++ b/") {
+            in_linux_spec = line.ends_with("SPECS/linux/linux.spec");
+            continue;
+        }
+        if !in_linux_spec {
+            continue;
+        }
+        let body = match line.chars().next() {
+            Some('+') | Some(' ') => &line[1..],
+            _ => continue,
+        };
+        if let Some(v) = body.strip_prefix("Version:") {
+            version.get_or_insert(v.trim().to_string());
+        } else if let Some(r) = body.strip_prefix("Release:") {
+            release.get_or_insert(r.trim().to_string());
+        }
+    }
+}
+
 /// Does this RPM have to go before phase B runs?
 ///
 /// Anchored to the kernel NEVR, not to the "linux" prefix. A bare prefix also
@@ -365,31 +404,37 @@ fn purged_before_phase_b(name: &str, nevr: &str) -> bool {
 /// Prefer the patch, fall back to the tree when the patch does not touch
 /// linux.spec.
 pub fn kernel_nevr(cfg: &Config, patch: &Path) -> Result<String, String> {
+    kernel_nevr_layered(cfg, patch, false)
+}
+
+/// The kernel NEVR an `equivalent` build actually produces.
+///
+/// The embedded canister patch bumps Release on top of the variant patch, so
+/// reading the variant patch alone answers for a DIFFERENT kernel than the one
+/// that will be compiled. Getting this wrong is not cosmetic: the planner would
+/// compare the wrong version against the published list, and phase A would
+/// build a canister stamped for a kernel that never gets built - which the
+/// guest-side assertion would then correctly fail.
+pub fn equivalent_kernel_nevr(cfg: &Config, patch: &Path) -> Result<String, String> {
+    kernel_nevr_layered(cfg, patch, true)
+}
+
+fn kernel_nevr_layered(cfg: &Config, patch: &Path, with_embedded: bool) -> Result<String, String> {
     let mut version: Option<String> = None;
     let mut release: Option<String> = None;
 
+    // The embedded patch is read FIRST, because it is applied last and
+    // therefore wins: `get_or_insert` below keeps the first value seen.
+    if with_embedded {
+        scan_linux_spec_hunks(
+            crate::buildmode::Embedded::CanisterEquivalent.patch(),
+            &mut version,
+            &mut release,
+        );
+    }
+
     if let Ok(text) = fs::read_to_string(patch) {
-        let mut in_linux_spec = false;
-        for line in text.lines() {
-            if line.starts_with("+++ b/") {
-                in_linux_spec = line.ends_with("SPECS/linux/linux.spec");
-                continue;
-            }
-            if !in_linux_spec {
-                continue;
-            }
-            // Context lines count too: a patch that bumps Release but leaves
-            // Version alone still tells us the Version, on a ' ' line.
-            let body = match line.chars().next() {
-                Some('+') | Some(' ') => &line[1..],
-                _ => continue,
-            };
-            if let Some(v) = body.strip_prefix("Version:") {
-                version.get_or_insert(v.trim().to_string());
-            } else if let Some(r) = body.strip_prefix("Release:") {
-                release.get_or_insert(r.trim().to_string());
-            }
-        }
+        scan_linux_spec_hunks(&text, &mut version, &mut release);
     }
 
     if version.is_none() || release.is_none() {
@@ -501,8 +546,13 @@ pub const VARIANTS: [Variant; 2] = [
             "fix-selinux-relabel",
             "fix/systemd-groups-and-stig-variant",
             "fix/stig-harden-reachable",
-            // Carries fix/kernel-shared-canister-config as its parent, so it
-            // is listed INSTEAD of it, not after it: cherry-picking is by
+            // Upstream-bound only. fix/canister-equivalent-mode used to be
+            // listed here; it is a TEST-ONLY change with no destination in
+            // vmware/photon, so it moved to src/embedded/ and is applied by
+            // the cascade on top of this patch. This branch is its base and
+            // is genuinely upstream-bound (PR #1675), carrying
+            // fix/kernel-shared-canister-config (PR #1673) as its parent - so
+            // it is listed INSTEAD of that, not after it: cherry-picking is by
             // range (origin/5.0..branch), and naming both would replay the
             // shared commit twice and conflict.
             //
@@ -516,7 +566,7 @@ pub const VARIANTS: [Variant; 2] = [
             // itself stacked on fix/kernel-shared-canister-config. Only the
             // tip is listed: cherry-picking is by range, so naming any base
             // replays its commits twice and conflicts.
-            "fix/canister-equivalent-mode",
+            "fix/canister-build-against-current-kernel",
         ],
     },
     Variant {
@@ -537,8 +587,13 @@ pub const VARIANTS: [Variant; 2] = [
             "fix-selinux-relabel",
             "fix/systemd-groups-and-stig-variant",
             "fix/stig-harden-reachable",
-            // Carries fix/kernel-shared-canister-config as its parent, so it
-            // is listed INSTEAD of it, not after it: cherry-picking is by
+            // Upstream-bound only. fix/canister-equivalent-mode used to be
+            // listed here; it is a TEST-ONLY change with no destination in
+            // vmware/photon, so it moved to src/embedded/ and is applied by
+            // the cascade on top of this patch. This branch is its base and
+            // is genuinely upstream-bound (PR #1675), carrying
+            // fix/kernel-shared-canister-config (PR #1673) as its parent - so
+            // it is listed INSTEAD of that, not after it: cherry-picking is by
             // range (origin/5.0..branch), and naming both would replay the
             // shared commit twice and conflict.
             //
@@ -552,7 +607,7 @@ pub const VARIANTS: [Variant; 2] = [
             // itself stacked on fix/kernel-shared-canister-config. Only the
             // tip is listed: cherry-picking is by range, so naming any base
             // replays its commits twice and conflicts.
-            "fix/canister-equivalent-mode",
+            "fix/canister-build-against-current-kernel",
         ],
     },
 ];

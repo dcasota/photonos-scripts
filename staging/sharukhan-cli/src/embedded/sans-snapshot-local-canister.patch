@@ -1,0 +1,32 @@
+diff --git a/support/package-builder/ToolChainUtils.py b/support/package-builder/ToolChainUtils.py
+index f9f06523b..f47ea1bd0 100644
+--- a/support/package-builder/ToolChainUtils.py
++++ b/support/package-builder/ToolChainUtils.py
+@@ -175,6 +175,27 @@ class ToolChainUtils(object):
+             f"--enablerepo={repoName}",
+         ]
+ 
++        if sansSnapshot:
++            # A sans-snapshot BuildRequires names a package deliberately kept
++            # outside the dependency graph: linux-fips-canister is a subpackage
++            # of linux.spec (%package fips-canister), so a plain BuildRequires
++            # would be a self-cycle. Resolving it from the live published repo
++            # is what breaks that cycle, and for a kernel the published repo
++            # covers, that is the whole answer.
++            #
++            # It is not the whole answer for a kernel it does NOT cover. No
++            # canister is published at every kernel level -- as of 2026-09-02
++            # the repo carries linux-fips-canister-6.12.60-18.ph5 and nothing
++            # newer -- so a kernel built at 6.12.103-14 can only link a canister
++            # built locally in an earlier phase. That canister lands in
++            # stage/RPMS, which IS the "local" repo: a read-only bind mount at
++            # priority 10. It was reachable all along; only --disablerepo=*
++            # kept it out.
++            #
++            # Inert on a normal build: no locally built canister exists there,
++            # so tdnf falls through to the published repo and nothing changes.
++            repoArgs += [RepoUtil.REPO_LOCAL]
++
+         subCmd = ["install", "-y", "--nogpgcheck", "--setopt=tsflags=nodocs"]
+ 
+         if sansSnapshot:

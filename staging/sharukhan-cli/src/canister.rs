@@ -308,6 +308,10 @@ pub fn detect_for(cfg: &Config, arch: &str, kernel: Option<&str>) -> Result<Stat
 pub enum Plan {
     /// Link the published canister. One build, and it stays validated.
     LinkPublished { version: String },
+    /// A locally built equivalent already exists at this kernel level. Link it
+    /// and skip phase A: rebuilding it would spend ~90 minutes reproducing an
+    /// artifact that is already on disk, byte for byte the same inputs.
+    LinkLocalEquivalent { version: String, path: String },
     /// Build a canister from this kernel, then relink both flavours against it.
     BuildThenLink { version: String },
     /// Nothing to do - this architecture has no canister by design.
@@ -317,12 +321,51 @@ pub enum Plan {
 }
 
 pub fn plan(state: &State) -> Plan {
+    plan_with_local(state, None)
+}
+
+/// The decision, in the order the question is actually asked:
+///
+///   1. Does Broadcom publish a canister for the kernel being built? Link it.
+///      The build stays CMVP validated and nothing local is involved.
+///   2. Not published, but is there already a locally built equivalent at that
+///      exact NEVR? Link that. Phase A would spend ~90 minutes reproducing an
+///      artifact that is already on disk from the same inputs.
+///   3. Neither? Build one (phase A), then relink both flavours against it
+///      (phase B).
+///
+/// Only 3 costs the extra build, and only 2 and 3 are NOT CMVP validated.
+/// `local` is the canister found in the stage, if any.
+pub fn plan_with_local(state: &State, local: Option<(&str, &str)>) -> Plan {
     match state {
         State::Certified { version } => Plan::LinkPublished { version: version.clone() },
-        State::Equivalent { kernel, .. } => Plan::BuildThenLink { version: kernel.clone() },
+        State::Equivalent { kernel, .. } => match local {
+            Some((nevr, path)) if nevr == kernel => Plan::LinkLocalEquivalent {
+                version: kernel.clone(),
+                path: path.to_string(),
+            },
+            _ => Plan::BuildThenLink { version: kernel.clone() },
+        },
         State::Absent { reason, .. } => Plan::Nothing { reason: reason.clone() },
         State::Unknown { reason, .. } => Plan::Refuse { reason: reason.clone() },
     }
+}
+
+/// The newest locally built canister in the stage, as (NEVR, path).
+///
+/// Deliberately anchored: `linux-fips-canister-debuginfo-...` is a different
+/// package and must not be mistaken for the canister itself.
+pub fn local_canister(stage: &std::path::Path, kernel: &str) -> Option<(String, String)> {
+    let want = format!("linux-fips-canister-{kernel}.");
+    crate::build::find_files_rec(stage, "linux-fips-canister-", ".rpm")
+        .into_iter()
+        .find(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .map(|n| n.starts_with(&want))
+                .unwrap_or(false)
+        })
+        .map(|p| (kernel.to_string(), p.display().to_string()))
 }
 
 /// One patch in the canister-creation series and how it fared.
@@ -667,5 +710,80 @@ mod series_tests {
             "the reject was not captured: {:?}",
             got[1].rejects
         );
+    }
+}
+
+#[cfg(test)]
+mod plan_tests {
+    use super::*;
+
+    /// The question, in the order it is actually asked. Only the third case
+    /// costs a build, and getting case 2 wrong costs ~90 minutes reproducing
+    /// an artifact that is already on disk.
+    #[test]
+    fn a_published_canister_wins_over_anything_local() {
+        let st = State::Certified { version: "6.12.60-18.ph5".into() };
+        // Even with a local equivalent present, a published canister is linked:
+        // it is the one that keeps the build CMVP validated.
+        match plan_with_local(&st, Some(("6.12.60-18.ph5", "/stage/x.rpm"))) {
+            Plan::LinkPublished { version } => assert_eq!(version, "6.12.60-18.ph5"),
+            other => panic!("published must win: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_existing_local_equivalent_is_linked_instead_of_rebuilt() {
+        let st = State::Equivalent {
+            kernel: "6.12.103-14.ph5".into(),
+            certified: "6.12.60-18.ph5".into(),
+        };
+        match plan_with_local(&st, Some(("6.12.103-14.ph5", "/stage/RPMS/x86_64/c.rpm"))) {
+            Plan::LinkLocalEquivalent { version, path } => {
+                assert_eq!(version, "6.12.103-14.ph5");
+                assert!(path.ends_with("c.rpm"));
+            }
+            other => panic!("an existing local equivalent must be linked, not rebuilt: {other:?}"),
+        }
+    }
+
+    /// A canister built from a DIFFERENT kernel is not a substitute. The whole
+    /// claim of the equivalent mode is that the canister comes from the kernel
+    /// under test, so a near-miss must still build.
+    #[test]
+    fn a_local_canister_from_another_kernel_does_not_count() {
+        let st = State::Equivalent {
+            kernel: "6.12.103-14.ph5".into(),
+            certified: "6.12.60-18.ph5".into(),
+        };
+        for other in ["6.12.103-13.ph5", "6.12.60-18.ph5"] {
+            match plan_with_local(&st, Some((other, "/stage/x.rpm"))) {
+                Plan::BuildThenLink { version } => assert_eq!(version, "6.12.103-14.ph5"),
+                p => panic!("{other} must not satisfy 6.12.103-14: {p:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn nothing_published_and_nothing_local_means_build_it() {
+        let st = State::Equivalent {
+            kernel: "6.12.103-14.ph5".into(),
+            certified: "6.12.60-18.ph5".into(),
+        };
+        match plan_with_local(&st, None) {
+            Plan::BuildThenLink { version } => assert_eq!(version, "6.12.103-14.ph5"),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    /// An unreadable published list is refused, never guessed. "Could not look"
+    /// and "nothing is published" lead to opposite decisions, and one of them
+    /// costs twelve hours.
+    #[test]
+    fn an_unreadable_published_list_is_refused_even_with_a_local_canister() {
+        let st = State::Unknown { kernel: "6.12.103-14.ph5".into(), reason: "http 503".into() };
+        assert!(matches!(
+            plan_with_local(&st, Some(("6.12.103-14.ph5", "/stage/x.rpm"))),
+            Plan::Refuse { .. }
+        ));
     }
 }

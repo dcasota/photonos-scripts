@@ -9,7 +9,7 @@
 //! The Photon build system is the system under test, and a reimplementation
 //! would test a different builder than the one that ships.
 
-use crate::buildmode::{BuildSpec, CanisterMode, Fixup, Injection, Stage, Subrelease, Tree};
+use crate::buildmode::{BuildSpec, CanisterMode, Embedded, Fixup, Injection, Stage, Subrelease, Tree};
 use crate::sha256;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -170,6 +170,7 @@ pub fn reset(c: &mut Ctx) -> Result<(), String> {
 pub fn inject(c: &mut Ctx, i: &Injection) -> Result<(), String> {
     match i {
         Injection::TreePatch { tree, patch } => tree_patch(c, *tree, patch),
+        Injection::Embed(e) => embedded_patch(c, *e),
         Injection::PinSubrelease(n) => pin_subrelease(c, *n),
         Injection::PkgBuildOptions { mode, nevr } => pkg_build_options(c, *mode, nevr.as_deref()),
         Injection::SpecFixup(f) => spec_fixup(c, *f),
@@ -241,6 +242,63 @@ fn tree_patch(c: &mut Ctx, tree: Tree, patch: &Path) -> Result<(), String> {
             basename(patch),
             tree.as_str()
         ))
+    }
+}
+
+/// Apply a patch that is compiled into this binary.
+///
+/// Written to a temp file rather than piped to `git apply` on stdin, so a
+/// failure names a path the operator can inspect. The patch itself cannot go
+/// missing - that is the point of embedding it - but it CAN stop applying when
+/// the tree moves, and then the message has to be actionable.
+fn embedded_patch(c: &mut Ctx, e: Embedded) -> Result<(), String> {
+    let dir = c.spec.tree(e.tree());
+    if c.dry {
+        c.say(&format!("  would apply embedded {} to the {} tree", e.as_str(), e.tree().as_str()));
+        return Ok(());
+    }
+    let tmp = std::env::temp_dir().join(format!("sharukhan-{}-{}.patch", e.as_str(), std::process::id()));
+    fs::write(&tmp, e.patch()).map_err(|x| format!("{}: {x}", tmp.display()))?;
+    let p = tmp.to_string_lossy().to_string();
+
+    if let Ok(stat) = git(&dir, &["apply", "--numstat", &p]) {
+        for line in stat.lines() {
+            if let Some(f) = line.split_whitespace().nth(2) {
+                if git(&dir, &["ls-files", "--error-unmatch", f]).is_ok()
+                    && git(&dir, &["apply", "--reverse", "--check", &p]).is_ok()
+                {
+                    // Already applied and tracked: restoring would undo the
+                    // variant patch underneath it, so leave the tree alone.
+                    c.say(&format!("  embedded {} already present in {}", e.as_str(), e.tree().as_str()));
+                    let _ = fs::remove_file(&tmp);
+                    return Ok(());
+                }
+            }
+        }
+    }
+    let r = if git(&dir, &["apply", "--check", &p]).is_ok() {
+        git(&dir, &["apply", &p]).map(|_| ()).map_err(|x| x)
+    } else if git(&dir, &["apply", "--reverse", "--check", &p]).is_ok() {
+        c.say(&format!("  embedded {} already present in {}", e.as_str(), e.tree().as_str()));
+        let _ = fs::remove_file(&tmp);
+        return Ok(());
+    } else {
+        Err(format!(
+            "embedded patch {} no longer applies to the {} tree. It layers on top of \
+             the variant patch, so either that changed or the tree moved under both. \
+             The patch is at {} for inspection.",
+            e.as_str(),
+            e.tree().as_str(),
+            tmp.display()
+        ))
+    };
+    match r {
+        Ok(()) => {
+            c.say(&format!("  applied embedded {} to {}", e.as_str(), e.tree().as_str()));
+            let _ = fs::remove_file(&tmp);
+            Ok(())
+        }
+        Err(x) => Err(x),
     }
 }
 
