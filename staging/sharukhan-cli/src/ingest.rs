@@ -31,6 +31,10 @@ pub struct Summary {
 
 #[derive(Debug)]
 struct Record {
+    /// Read only by the parser test. The ingest path keys on the row id it was
+    /// given rather than on the one inside the file, so a mislabelled record
+    /// cannot silently retarget a different permutation.
+    #[allow(dead_code)]
     perm: String,
     check: String,
     pr: String,

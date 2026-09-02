@@ -60,6 +60,11 @@ impl State {
 ///
 /// Read with a regex-free scan rather than `rpmspec`, because rpmspec needs the
 /// SOURCES tree present and this has to work against a spec in any checkout.
+///
+/// Only the tests read it now - production reads the pin through the variant
+/// patch instead, which is the kernel a build actually produces. Kept because
+/// it is what the tests use to assert the pin in the shipped spec.
+#[cfg(test)]
 fn spec_define(spec: &str, name: &str) -> Option<String> {
     for line in spec.lines() {
         let t = line.trim();

@@ -105,11 +105,23 @@ pub fn guest_ip(vmrun: &Path, vmx_win: &str, wait: bool) -> Option<String> {
     }
     let out = cmd.output().ok()?;
     let text = String::from_utf8_lossy(&out.stdout);
-    text.lines()
-        .map(|l| l.trim_end_matches('\r').trim())
-        .filter(|l| looks_like_ipv4(l))
-        .next_back()
-        .map(str::to_string)
+    let lines: Vec<&str> = text.lines().map(|l| l.trim_end_matches('\r').trim()).collect();
+    let found = lines.iter().filter(|l| looks_like_ipv4(l)).next_back().map(|s| s.to_string());
+
+    // "no address" and "an address this harness cannot reach" are different
+    // facts, and the filter erases the difference. An IPv6-only guest gets an
+    // answer from vmrun and then reads as if it never booted, which sends the
+    // reader looking at the install instead of at the network. WSL2 here has no
+    // IPv6 route, so the address is genuinely unusable - but say which it is.
+    if found.is_none() {
+        if let Some(other) = lines.iter().find(|l| l.contains(':') && !l.starts_with("Error")) {
+            eprintln!(
+                "[mc] vmrun answered {other:?}, which is not IPv4; this harness reaches guests \
+                 over IPv4 only, so it is being ignored rather than used"
+            );
+        }
+    }
+    found
 }
 
 /// Four dot-separated decimal octets. vmrun prints its errors on stdout too

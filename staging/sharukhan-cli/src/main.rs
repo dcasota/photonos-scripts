@@ -713,7 +713,22 @@ fn cmd_canister(cfg: &config::Config, rebase_check: bool) -> Result<(), String> 
     // tree: the variant patch sets Release, so a decision taken from the
     // pristine spec is a decision about a different kernel. Fall back to the
     // tree only when no variant patch exists yet, and say so.
+    // Both variants are read, not just 2.8. They set the same linux Release
+    // today, so either answers - but this command's whole job is to say which
+    // canister a kernel can have, and silently answering for one variant when
+    // they disagree would be the wrong kind of confident.
     let patch = cfg.variant_patches.join("poi-2.8.patch");
+    let latest = cfg.variant_patches.join("poi-latest.patch");
+    if patch.is_file() && latest.is_file() {
+        if let (Ok(a), Ok(b)) = (build::kernel_nevr(cfg, &patch), build::kernel_nevr(cfg, &latest)) {
+            if a != b {
+                println!(
+                    "warning: the installer variants build DIFFERENT kernels \
+                     (2.8 -> {a}, latest -> {b}); this answers for 2.8"
+                );
+            }
+        }
+    }
     let effective = if patch.is_file() {
         build::kernel_nevr(cfg, &patch)?
     } else {
