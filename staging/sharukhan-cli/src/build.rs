@@ -130,6 +130,31 @@ pub fn resolve(
         patched_files(&patch)
     ));
 
+    // The common tree gets its own patch, staged beside the release one.
+    //
+    // Without this, a change to the package builder reaches a build only by
+    // being present in whatever /root/common happens to be checked out at -
+    // which is how `--canister equivalent` came to depend on an operator's
+    // working tree. A fresh clone (runPh5 clones `-b common`) does not carry
+    // it, and the build dies two hours in on a sans-snapshot BuildRequires
+    // that resolves against the published repo only.
+    //
+    // Absence is not fatal here: most builds need no tooling patch, and
+    // refusing to build for a missing one would be worse than the gap. runPh5
+    // says which case it is.
+    let common_patch = cfg.variant_patches.join("common-fixes.patch");
+    if common_patch.is_file() {
+        fs::copy(&common_patch, stage_dir.join("photonos-patches/common-fixes.patch"))
+            .map_err(|e| format!("{}: {e}", common_patch.display()))?;
+        log(&format!(
+            "staged common-fixes.patch ({} file(s)) for the {} tree",
+            patched_files(&common_patch),
+            cfg.build_common
+        ));
+    } else {
+        log("no common-fixes.patch staged: the common tree is used as checked out");
+    }
+
     // Each variant patch must land on a PRISTINE SPECS tree. runPh5 applies it
     // on top of whatever is already there, so one variant's files survive into
     // the next: after a poi-2.8 build, 0003/0004/0005 were still on disk while
@@ -587,10 +612,75 @@ pub fn make_variant_patches(cfg: &Config, log: &mut dyn FnMut(&str)) -> Result<(
             }
         }
     }
+    log("common tree");
+    if let Err(e) = build_common_patch(cfg, &clone, log) {
+        log(&format!("  common: {e}"));
+        failed.push("common");
+    }
     if failed.is_empty() {
         Ok(())
     } else {
         Err(format!("variant(s) {} could not be built", failed.join(", ")))
+    }
+}
+
+/// Branches whose changes live on the `common` branch line rather than a
+/// release one.
+///
+/// Photon keeps per-release SPECS on 5.0/4.0/6.0 and the shared build tooling
+/// on `common`, and those histories never meet: `common` has no `SPECS/`, `5.0`
+/// has no `support/package-builder/`. So the variant patches - which diff
+/// `origin/5.0..branch` and are applied to `SPECS` - can never carry a change
+/// to the package builder.
+///
+/// That gap is not theoretical. `--canister equivalent` cannot work without
+/// ToolChainUtils resolving a sans-snapshot BuildRequires against the local
+/// repo, and until this patch existed that fix reached a build only because the
+/// operator's /root/common happened to sit on the right branch and sync_repo's
+/// `merge --autostash` happened to preserve it. A fresh clone (`-b common`)
+/// does not contain it, and the build fails two hours in with
+/// `linux-fips-canister-<nevr> package not found or not installed`.
+pub const COMMON_BRANCHES: &[&str] = &["fix/sans-snapshot-resolves-locally-built-canister"];
+
+/// The same assembly as a variant patch, against the `common` branch line.
+///
+/// Deliberately NOT limited by pathspec the way the variant diff is limited to
+/// `SPECS/`: on this branch line every path is build tooling, and a filter here
+/// would silently drop a fix that lands outside `support/`.
+fn build_common_patch(cfg: &Config, clone: &Path, log: &mut dyn FnMut(&str)) -> Result<(), String> {
+    let out = cfg.variant_patches.join("common-fixes.patch");
+    git(clone, &["fetch", "-q", "origin", "common"]).map_err(|e| format!("fetching common: {e}"))?;
+    for b in COMMON_BRANCHES {
+        git(clone, &["fetch", "-q", "origin", b]).map_err(|e| format!("fetching {b}: {e}"))?;
+    }
+
+    let branch = "variant-common";
+    git(clone, &["checkout", "-q", "-B", branch, "origin/common"])?;
+    for b in COMMON_BRANCHES {
+        let range = format!("origin/common..origin/{b}");
+        if git(clone, &["cherry-pick", "-x", &range]).is_err() {
+            let _ = git(clone, &["cherry-pick", "--abort"]);
+            return Err(format!("CONFLICT applying {b}"));
+        }
+    }
+    let diff = git(clone, &["diff", "origin/common", branch])?;
+    if diff.trim().is_empty() {
+        return Err("produced an EMPTY patch - the branches add nothing to origin/common".into());
+    }
+    fs::write(&out, &diff).map_err(|e| format!("{}: {e}", out.display()))?;
+    log(&format!("  common: {} files, {} lines", patched_files(&out), diff.lines().count()));
+
+    let tmp = cfg.work.join("apply-check-common");
+    let _ = fs::remove_dir_all(&tmp);
+    let _ = git(clone, &["worktree", "prune"]);
+    git(clone, &["worktree", "add", "--detach", "-q", &tmp.to_string_lossy(), "origin/common"])?;
+    let applies = git(&tmp, &["apply", "--check", &out.to_string_lossy()]).is_ok();
+    let _ = git(clone, &["worktree", "remove", "--force", &tmp.to_string_lossy()]);
+    if applies {
+        log("  common: applies to pristine common");
+        Ok(())
+    } else {
+        Err("DOES NOT APPLY to pristine common".into())
     }
 }
 

@@ -8,6 +8,7 @@ mod b64;
 mod canister;
 mod card;
 mod build;
+mod buildmode;
 mod config;
 mod evidence;
 mod guest;

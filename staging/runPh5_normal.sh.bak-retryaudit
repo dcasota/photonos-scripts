@@ -12,7 +12,6 @@
 # $3 - Release branch name (default: 5.0)
 # $4 - Output directory (default: /mnt/c/Users/dcaso/Downloads/Ph-Builds)
 # $5 - Image type (default: minimal-iso; pass "iso" for the full ISO)
-# $6 - FIPS canister mode (default: prebuilt; build|acvp|kat)
 
 BASE_DIR="${1:-/root}"
 COMMON_BRANCH="${2:-common}"
@@ -47,59 +46,6 @@ case "$IMG_TYPE" in
     ;;
 esac
 echo "[runPh5_normal] Image type: $IMG_TYPE"
-
-# ── FIPS canister mode ────────────────────────────────────────────────
-# $6 selects how the FIPS crypto canister is handled by SPECS/linux.
-# On x86_64 linux.spec sets "%global fips 1" unguarded, so FIPS itself
-# cannot be turned off from outside; canister_usage is derived
-# (canister_usage = !canister_build when fips=1) and per linux.spec:40
-# cannot be set directly. The externally settable macros are therefore
-# canister_build, acvp_build and kat_build:
-#   prebuilt  (default) link the prebuilt canister object -> canister_usage=1
-#   build     canister_build=1, build the canister from source
-#   acvp      acvp_build=1, FIPS-certification build (forces fips=1)
-#   kat       kat_build=1, non-production KAT build (forces acvp+canister_build)
-#
-# Two further modes implement the equivalent-canister workflow. They are two
-# INVOCATIONS of this script, not one, because the produce and consume paths
-# are mutually exclusive inside a single build: canister_build=1 forces
-# canister_usage=0, so the build that creates a canister links none.
-#
-#   equivalent-a  canister_build=1 on linux only, target "linux" rather than an
-#                 image. Produces linux-fips-canister-$MC_CANISTER_NEVR.rpm.
-#   equivalent-b  canister_equivalent=1 + fips_canister_override on BOTH
-#                 flavours, target image. linux-esx is the kernel the ISO
-#                 boots and it never builds a canister - it only links one - so
-#                 leaving it out would ship a kernel still bound to the
-#                 published pin.
-#
-# Both need MC_CANISTER_NEVR (e.g. 6.12.103-14.ph5).
-CANISTER_MODE="${6:-prebuilt}"
-case "$CANISTER_MODE" in
-  prebuilt|build|acvp|kat) ;;
-  equivalent-a|equivalent-b)
-    if [ -z "${MC_CANISTER_NEVR:-}" ]; then
-      echo "[runPh5_normal] ERROR: $CANISTER_MODE needs MC_CANISTER_NEVR" 1>&2
-      echo "[runPh5_normal]        (the NEVR the locally built canister carries)" 1>&2
-      exit 1
-    fi
-    ;;
-  *)
-    echo "[runPh5_normal] ERROR: unsupported canister mode '$CANISTER_MODE'" 1>&2
-    echo "[runPh5_normal]        valid: prebuilt (default), build, acvp, kat," 1>&2
-    echo "[runPh5_normal]               equivalent-a, equivalent-b" 1>&2
-    exit 1
-    ;;
-esac
-echo "[runPh5_normal] Canister mode: $CANISTER_MODE"
-
-# Phase A builds one package, not an image; everything downstream that hunts
-# for an ISO is skipped for it.
-if [ "$CANISTER_MODE" = "equivalent-a" ]; then
-  MC_MAKE_TARGET="linux"
-else
-  MC_MAKE_TARGET="image"
-fi
 
 # Directory containing this script, used to locate the bundled downstream
 # patch set (staging/photonos-patches/). Resolved before any cd.
@@ -172,24 +118,13 @@ if ping -c 4 www.google.ch > /dev/null 2>&1; then
 
   # ── Apply downstream fixes / PRs (installer + packages) ───────────
   # Re-applied here so they survive the restore above. Covers:
-  #   photon-os-installer 2.8-5 : interactive (no-kickstart) UI install fix,
-  #       btrfs-progs on btrfs partitions, tdnf output capture so package
-  #       install no longer overlays the curses UI, KS_STIG_PACKAGES reduced to
-  #       the five that are actually needed, and /etc/locale.conf seeded before
-  #       package install so dracut stops reporting "i18n_vars not set".
-  #   aide 0.19-3               : versioned Requires: libgcrypt >= 1.10.4 (91+)
+  #   photon-os-installer 2.8-3 : interactive (no-kickstart) UI install fix,
+  #       btrfs-progs on btrfs partitions, and tdnf output capture so package
+  #       install no longer overlays the curses UI (e.g. /etc/os-release).
   #   stig-hardening 2.1-9      : SELinux first-boot relabel + fips PAM (PR #9)
-  #   linux 6.12.103-11 /
-  #   linux-esx 6.12.103-10     : canister/.config handling moved into the
-  #       shared canister_config.inc, fixing the fips=0 (aarch64) path (PR #24,
-  #       supersedes the standalone PR #14)
-  #   systemd 257.13-7          : drop the dangling accel/render udev rule,
-  #       restore the systemd-journal sysusers entry the initrd needs, pin
-  #       -Dsystemd-journal-gid=23, ship harden-tmpfs-mount-options.patch and
-  #       auto-number the patch list (PR #22)
-  #   8 STIG_HARDEN specs       : define-if-unset so the flag is settable (PR #23)
+  #   linux 6.12.96-10          : strip canister Kconfig when fips=0  (PR #14)
   # (nginx PR #17 is intentionally NOT included: 5.0 already ships nginx
-  #  1.30.4, newer than the PR's 1.30.1, so it would be a downgrade.)
+  #  1.30.2, newer than the PR's 1.30.1, so it would be a downgrade.)
   DOWNSTREAM_PATCH=""
   for cand in "$SCRIPT_DIR/photonos-patches/downstream-fixes.patch" \
               "$BASE_DIR/photonos-patches/downstream-fixes.patch"; do
@@ -218,50 +153,6 @@ if ping -c 4 www.google.ch > /dev/null 2>&1; then
     fi
   else
     echo "[runPh5_normal] NOTE: photonos-patches/downstream-fixes.patch not found; building without downstream fixes"
-  fi
-
-  # ---- the COMMON tree ------------------------------------------------------
-  # The release tree and the common tree are different branch lines of the same
-  # repository: common has no SPECS/, the release branches have no
-  # support/package-builder/. downstream-fixes.patch therefore CANNOT carry a
-  # change to the build tooling, and until common-fixes.patch existed such a
-  # change reached a build only by being present in whatever this checkout
-  # happened to be sitting on. That is how --canister equivalent came to depend
-  # on an operator's working tree: a fresh clone (-b common, above) does not
-  # contain the sans-snapshot fix, and the build dies two hours in with
-  #     linux-fips-canister-<nevr> package not found or not installed
-  # for an RPM that is present and indexed.
-  COMMON_PATCH=""
-  for cand in "$SCRIPT_DIR/photonos-patches/common-fixes.patch" \
-              "$BASE_DIR/photonos-patches/common-fixes.patch"; do
-    [ -f "$cand" ] && COMMON_PATCH="$cand" && break
-  done
-  if [ -n "$COMMON_PATCH" ]; then
-    (
-      cd "$BASE_DIR/$COMMON_BRANCH" || exit 1
-      # Reset ONLY the files this patch touches. A blanket "git checkout -- ."
-      # here would destroy build-config.json and run-in-chroot.sh, which are
-      # ambient host configuration rather than build artifacts -- unlike SPECS/,
-      # where everything is reproduced by the patch.
-      git apply --numstat "$COMMON_PATCH" 2>/dev/null | awk '{print $3}' | while read -r f; do
-        [ -n "$f" ] || continue
-        git ls-files --error-unmatch "$f" >/dev/null 2>&1 && git checkout -- "$f" 2>/dev/null
-      done
-      if git apply --check "$COMMON_PATCH" 2>/dev/null; then
-        git apply "$COMMON_PATCH" && \
-          echo "[runPh5_normal] Applied common-fixes.patch to $COMMON_BRANCH"
-      elif git apply --reverse --check "$COMMON_PATCH" 2>/dev/null; then
-        # Already applied - the merge in sync_repo may have brought it in.
-        echo "[runPh5_normal] common-fixes.patch already present in $COMMON_BRANCH"
-      else
-        echo "[runPh5_normal] ERROR: common-fixes.patch does not apply to the" 1>&2
-        echo "[runPh5_normal]        current $COMMON_BRANCH tree, and is not already" 1>&2
-        echo "[runPh5_normal]        applied. Regenerate it (sharukhan variant-patches)." 1>&2
-        exit 1
-      fi
-    ) || exit 1
-  else
-    echo "[runPh5_normal] NOTE: no common-fixes.patch; $COMMON_BRANCH used as checked out"
   fi
 
   UPSTREAM_SUB=$(python3 -c "
@@ -325,98 +216,7 @@ print(cfg['photon-build-param'].get('photon-mainline', cfg['photon-build-param']
   fi
 
   # ── Point the build at the local POI image ────────────────────────
-
-  # ── Per-package build options: FIPS canister macros ───────────────
-  # build.py loads this via Builder.get_packages_with_build_options(), which is
-  # guarded by os.path.exists() -- a path that does not resolve is SILENTLY
-  # ignored, and the build then links the prebuilt canister while reporting
-  # success. That is exactly how the first c01 attempt burned 3.5h.
-  #
-  # The value in build-config.json must be a BARE FILENAME, because
-  # set_default_value_of_config() (build.py:1720) rewrites it unconditionally:
-  #
-  #     ret = f"{curDir}/common/data/" + configdict[key]["pkg-build-options"]
-  #
-  # so an absolute path becomes /root/common/common/data//root/<file> and never
-  # exists. Write the generated file into $COMMON_BRANCH/common/data/ under a
-  # name of our own, so the tracked pkg_build_options.json is left alone. The
-  # name deliberately does not match the packages_*.json glob build.py uses at
-  # line 296. Cleaned up by the trap below.
-  PKG_BUILD_OPTIONS_NAME="mc_pkg_build_options.json"
-  PKG_BUILD_OPTIONS_DIR="$BASE_DIR/$COMMON_BRANCH/common/data"
-  PKG_BUILD_OPTIONS="$PKG_BUILD_OPTIONS_DIR/$PKG_BUILD_OPTIONS_NAME"
-  if [ ! -d "$PKG_BUILD_OPTIONS_DIR" ]; then
-    echo "[runPh5_normal] ERROR: $PKG_BUILD_OPTIONS_DIR does not exist;" 1>&2
-    echo "[runPh5_normal]        build.py resolves pkg-build-options there." 1>&2
-    exit 1
-  fi
-  python3 -c "
-import json, sys
-mode, out, nevr = sys.argv[1], sys.argv[2], sys.argv[3]
-both = ('linux', 'linux-esx')
-if mode == 'equivalent-a':
-    # Only linux can create a canister; linux-esx hardcodes canister_build 0.
-    # Giving linux-esx these macros would be a lie about what it does.
-    # canister_stamp_real makes the new canister record the kernel it was
-    # really built from rather than inherit 6.12.60's certification.
-    opts = {'linux': {'pullsources': [], 'macros': [
-        'canister_build 1', 'canister_stamp_real 1',
-        f'fips_certified_override {nevr}']}}
-elif mode == 'equivalent-b':
-    m = ['canister_equivalent 1', f'fips_canister_override {nevr}']
-    opts = {p: {'pullsources': [], 'macros': list(m)} for p in both}
-else:
-    macros = {'prebuilt': [], 'build': ['canister_build 1'],
-              'acvp': ['acvp_build 1'], 'kat': ['kat_build 1']}[mode]
-    opts = {p: {'pullsources': [], 'macros': list(macros)} for p in both}
-with open(out, 'w') as f:
-    json.dump(opts, f, indent=4)
-print('  ' + json.dumps(opts))
-" "$CANISTER_MODE" "$PKG_BUILD_OPTIONS" "${MC_CANISTER_NEVR:-}" && \
-    echo "[runPh5_normal] Canister macros ($CANISTER_MODE) -> $PKG_BUILD_OPTIONS"
-
   COMMON_CFG="$BASE_DIR/$COMMON_BRANCH/build-config.json"
-  # Point build.py at the generated options file, by bare name (see above).
-  if [ -f "$COMMON_CFG" ]; then
-    python3 -c "
-import json
-with open('$COMMON_CFG') as f:
-    cfg = json.load(f)
-cfg.setdefault('photon-build-param', {})['pkg-build-options'] = '$PKG_BUILD_OPTIONS_NAME'
-with open('$COMMON_CFG', 'w') as f:
-    json.dump(cfg, f, indent=4)
-" 2>/dev/null && echo "[runPh5_normal] pkg-build-options -> $PKG_BUILD_OPTIONS_NAME (resolved under common/data/)"
-    # Prove the path build.py will actually open, rather than trusting it.
-    python3 -c "
-import json, os, sys
-cfg = json.load(open('$COMMON_CFG'))
-name = cfg['photon-build-param']['pkg-build-options']
-resolved = os.path.join('$BASE_DIR/$COMMON_BRANCH', 'common', 'data', name)
-if not os.path.exists(resolved):
-    sys.exit('[runPh5_normal] ERROR: build.py would open %s, which does not exist' % resolved)
-opts = json.load(open(resolved))
-mode, nevr = '$CANISTER_MODE', '${MC_CANISTER_NEVR:-}'
-if mode == 'equivalent-a':
-    want = ['canister_build 1', 'canister_stamp_real 1',
-            'fips_certified_override ' + nevr]
-elif mode == 'equivalent-b':
-    want = ['canister_equivalent 1', 'fips_canister_override ' + nevr]
-else:
-    want = {'prebuilt': [], 'build': ['canister_build 1'],
-            'acvp': ['acvp_build 1'], 'kat': ['kat_build 1']}[mode]
-if opts.get('linux', {}).get('macros') != want:
-    sys.exit('[runPh5_normal] ERROR: %s carries %r, expected %r'
-             % (resolved, opts.get('linux', {}).get('macros'), want))
-# Phase B must reach linux-esx too: it is the kernel the ISO boots, and it
-# links the canister rather than building one. A phase B that overrode only
-# linux would ship a kernel still bound to the published pin while reporting
-# success - the exact shape of failure this whole mode exists to avoid.
-if mode == 'equivalent-b' and opts.get('linux-esx', {}).get('macros') != want:
-    sys.exit('[runPh5_normal] ERROR: %s does not override linux-esx: %r'
-             % (resolved, opts.get('linux-esx', {}).get('macros')))
-print('[runPh5_normal] verified: build.py will apply %r to linux' % (want,))
-" || exit 1
-  fi
   if [ -f "$COMMON_CFG" ]; then
     POI_SET=$(python3 -c "
 import json
@@ -643,35 +443,6 @@ for s in data.get('sources', []) or []:
   COMMON_STAGE="$BASE_DIR/$COMMON_BRANCH/stage"
   echo "[runPh5_normal] Build stage: $BUILD_STAGE"
 
-  # ── Drop stale RPMs that would shadow a freshly patched build ─────
-  # tdnf resolves by highest VERSION-RELEASE, not by build time. The
-  # downstream patch currently produces photon-os-installer 2.8-3, but an
-  # older revision of that same patch once produced 2.8-4 and 2.8-5 (built
-  # 2026-06-04). Those stale RPMs sat in the stage repo and silently won:
-  # the ISO shipped the June installer, not the freshly patched one. The
-  # payloads happened to match that time, so nothing broke -- but any future
-  # change to the patch set would have been invisible on the media.
-  # For each spec the downstream patch touches, drop RPMs with the same
-  # NAME-VERSION but a HIGHER release than the spec now declares.
-  for _pkg in photon-os-installer stig-hardening linux; do
-    _spec="SPECS/$_pkg/$_pkg.spec"
-    [ -f "$_spec" ] || continue
-    _ver=$(awk '/^Version:/{print $2; exit}' "$_spec")
-    _rel=$(awk '/^Release:/{print $2; exit}' "$_spec" | sed 's/%.*//')
-    # skip if either still contains an unexpanded rpm macro
-    case "$_ver$_rel" in *%*|"") continue ;; esac
-    case "$_rel" in *[!0-9]*) continue ;; esac
-    for _r in "$BUILD_STAGE"/RPMS/*/"$_pkg"-"$_ver"-*.rpm; do
-      [ -f "$_r" ] || continue
-      _rrel=$(rpm -qp --qf '%{RELEASE}' "$_r" 2>/dev/null | sed 's/\.ph[0-9]*$//')
-      case "$_rrel" in ''|*[!0-9]*) continue ;; esac
-      if [ "$_rrel" -gt "$_rel" ]; then
-        echo "[runPh5_normal] Removing stale $(basename "$_r") -- release $_rrel shadows patched $_rel"
-        rm -f "$_r"
-      fi
-    done
-  done
-
   # ── Helper: clean stale chroot mounts and sandbox directories ───
   # The build creates bind mounts inside chroot sandboxes. If a build
   # fails, those mounts may persist and block subsequent sandbox
@@ -693,26 +464,6 @@ for s in data.get('sources', []) or []:
       sync
       sleep 2
     fi
-    # Gradle daemons outlive their build. kafka builds with gradle, and a
-    # daemon left over from a failed attempt keeps holding
-    #   <sandbox>/root/.gradle/caches/*/zinc-*/zinc-*.lock
-    # so the next attempt dies with "Timeout waiting to lock zinc-... It is
-    # currently in use by another process" - which is how kafka broke the
-    # canister ISO on 2026-09-01 while nothing was wrong with kafka.
-    #
-    # Match by the process's actual root/cwd under the stage, never by a
-    # pattern on the command line: a pattern that names this script matches
-    # this script, and killing your own waiter is a lesson already learned.
-    local p exe
-    for p in /proc/[0-9]*; do
-      [ -r "$p/root" ] || continue
-      exe=$(readlink "$p/root" 2>/dev/null)
-      case "$exe" in
-        "$BUILD_STAGE"/*) kill -9 "${p#/proc/}" 2>/dev/null || true ;;
-      esac
-    done
-    find "$BUILD_STAGE" -name '*.lock' -path '*/.gradle/*' -delete 2>/dev/null
-
     if [ -d "$BUILD_STAGE/photonroot" ]; then
       rm -rf "$BUILD_STAGE/photonroot"/* 2>/dev/null
       echo "[runPh5_normal] Cleaned stale build sandboxes"
@@ -808,25 +559,6 @@ for s in data.get('sources', []) or []:
     # wrong image. Only ISOs newer than the marker count.
     iso_marker="$BUILD_STAGE/.runph5-iso-marker"
     : > "$iso_marker"
-    if [ "$MC_MAKE_TARGET" = "linux" ]; then
-      # Phase A: one package, no image. build.py treats an unrecognised target
-      # as a package name and falls through to RpmBuildTarget().package().
-      sudo make -j8 linux THREADS=8;
-      make_rc=$?
-      # Success here is the canister RPM existing at the NEVR we asked for -
-      # not make's exit code, and not the linux RPM, which phase A also
-      # produces but which is a canister-CREATION kernel (canister_usage=0)
-      # that must never reach an image.
-      can=$(find "$BUILD_STAGE/RPMS" -name "linux-fips-canister-$MC_CANISTER_NEVR.*.rpm" 2>/dev/null | head -1)
-      if [ -n "$can" ]; then
-        echo "[runPh5_normal] phase A produced: $can"
-        exit 0
-      fi
-      echo "[runPh5_normal] phase A did NOT produce linux-fips-canister-$MC_CANISTER_NEVR (make rc=$make_rc)" 1>&2
-      found=$(find "$BUILD_STAGE/RPMS" -name "linux-fips-canister-*.rpm" 2>/dev/null | head -3)
-      [ -n "$found" ] && echo "[runPh5_normal] found instead: $found" 1>&2
-      continue
-    fi
     sudo make -j8 image IMG_NAME="$IMG_TYPE" THREADS=8;
     make_rc=$?
     # ── Locate the finished ISO ───────────────────────────────────
@@ -903,13 +635,5 @@ for s in data.get('sources', []) or []:
     prev_progress=$progress
   done
   echo "[runPh5_normal] ERROR: exhausted all 10 attempts without producing an ISO" 1>&2
-  exit 1
-else
-  # The entire build is gated on this reachability check. Without an
-  # else branch the script fell off the end of the "if" and exited 0
-  # having built nothing -- indistinguishable from a successful
-  # delivery to any caller that checks $?. Never exit 0 without an ISO.
-  echo "[runPh5_normal] ERROR: no network (ping www.google.ch failed); the build" 1>&2
-  echo "[runPh5_normal]        needs to fetch sources and was not started." 1>&2
   exit 1
 fi
