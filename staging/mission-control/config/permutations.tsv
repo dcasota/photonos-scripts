@@ -219,3 +219,33 @@ n02      minimal   2.8     no    ext4   ks    none        untested   pass    pre
 n03      minimal   2.8     no    ext4   ks    none        untested   pass    prebuilt    v6-static-untag
 n04      minimal   2.8     no    ext4   ks    none        untested   pass    prebuilt    v4-static-vlan100
 n05      minimal   2.8     no    ext4   ks    none        untested   fails   prebuilt    v4-dhcp-vlan100
+
+# ===========================================================================
+# c03 - the row that ASSERTS the equivalent canister at runtime.
+#
+# Appended, not filed next to c01/c02: perm_index is the 1-based position
+# among data rows, and identity.rs derives MAC/UUID/IP from it, so inserting
+# here would renumber every n-row.
+#
+# Why it exists. c01 builds an equivalent canister and boots the relinked
+# linux-esx, but ks_variant=none means the guest boots without fips=1, and
+# crypto/fips_integrity.c prints the canister stamp only from the FIPS
+# self-test. c01 therefore reads guest.canister_based_on=absent and the
+# oracle can only record it as UNPROVEN. Demonstrated 2026-09-02, same
+# oracle, same host:
+#
+#     c01  ks_variant=none  fips_enabled=0  canister_based_on=absent
+#     s02  ks_variant=fips  fips_enabled=1  canister_based_on=6.12.60-18.ph5
+#
+# fips is what makes the stamp appear; equivalent is what makes it a claim
+# worth asserting. Only the two together turn the runtime canister identity
+# from recorded into proven, so this row must FAIL if an equivalent build
+# silently falls back to the certified 6.12.60 canister.
+#
+# Free of a build: iso_key is iso_type/poi/canister, so this reuses the
+# cached minimal/2.8/equivalent ISO. ks_variant is install-time.
+#
+# minimal, not full: s02 proves a minimal ISO installs a working FIPS guest,
+# and the canister lives in linux-esx, which both media carry.
+# ===========================================================================
+c03      minimal   2.8     no    ext4   ks    fips        untested   pass    equivalent
