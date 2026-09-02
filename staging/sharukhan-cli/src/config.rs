@@ -103,6 +103,20 @@ pub struct Config {
 
     // ---- ssh -------------------------------------------------------------
     pub ssh_key_dir: PathBuf,
+    /// RSA, not ed25519, and that is not a preference.
+    ///
+    /// A FIPS row boots with fips=1, and the installer then restricts sshd to
+    /// FIPS-approved algorithms (fix/poi-fips-sshd-algorithms), whose
+    /// PubkeyAcceptedAlgorithms is rsa-sha2-512, rsa-sha2-256, ecdsa-*. Ed25519
+    /// is not on that list and never can be. With an ed25519 key the guest
+    /// correctly refuses the harness:
+    ///
+    ///   Permission denied (publickey,password,keyboard-interactive).
+    ///
+    /// which reads exactly like a broken installer and is not one - s02 was
+    /// recorded as "guest unreachable under FIPS" on that evidence. RSA is
+    /// accepted by both a FIPS and a stock sshd, so one key serves every row
+    /// and there is no reason to keep two.
     pub ssh_key_name: String,
     /// Stock Photon has no 'operator' user; vm-lab's default is
     /// SPAGAT-specific.
@@ -216,7 +230,7 @@ impl Config {
                 "SSH_KEY_DIR",
                 &format!("{}/.ssh", env::var("HOME").unwrap_or_else(|_| "/root".into())),
             ),
-            ssh_key_name: s_or("SSH_KEY_NAME", "photon-mc-ed25519"),
+            ssh_key_name: s_or("SSH_KEY_NAME", "photon-mc-rsa"),
             ssh_user: s_or("SSH_USER", "root"),
             guest_password: env::var("MC_GUEST_PASSWORD").ok().filter(|v| !v.is_empty()),
 
@@ -299,6 +313,27 @@ mod tests {
             .iso_dir("minimal", "2.8", "prebuilt")
             .to_string_lossy()
             .ends_with("minimal-poi2.8-prebuilt"));
+    }
+
+    /// The default ssh key must be usable on a FIPS row.
+    ///
+    /// s02 spent three runs recorded as "guest unreachable under FIPS" because
+    /// the harness offered an ed25519 key to an sshd whose
+    /// PubkeyAcceptedAlgorithms is rsa-sha2-*/ecdsa-* . The guest was right to
+    /// refuse it, and the harness reported it as an installer defect. Ed25519
+    /// is not FIPS-approved and cannot be made so, hence this guard.
+    #[test]
+    fn the_default_ssh_key_is_fips_usable() {
+        let c = Config::load();
+        let name = c.ssh_key_name.to_ascii_lowercase();
+        assert!(
+            !name.contains("ed25519"),
+            "an ed25519 key cannot authenticate to a FIPS guest: {name}"
+        );
+        assert!(
+            name.contains("rsa") || name.contains("ecdsa"),
+            "the default key must be an algorithm a FIPS sshd accepts: {name}"
+        );
     }
 
     /// The password has no default. This test is the guard against someone
