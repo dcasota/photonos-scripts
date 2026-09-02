@@ -354,13 +354,14 @@ pub fn guest(
     c.check("guest.time_synced", "POI#9", Status::Info, "", &v, "systemd-timesyncd, not ntp");
 
     // Canister/FIPS, when the ISO was built with one.
-    let v = g.run("cat /proc/sys/crypto/fips_enabled").value_or("0");
-    c.check("guest.fips_enabled", "PR#24", Status::Info, "", &v, "");
+    let fips_on = g.run("cat /proc/sys/crypto/fips_enabled").value_or("0");
+    c.check("guest.fips_enabled", "PR#24", Status::Info, "", &fips_on, "");
+    let fips_on = fips_on.trim() == "1";
     let v = g
         .run("dmesg 2>/dev/null | grep -c \"canister verification passed\"")
         .value_or("0");
     c.check("guest.fips_canister", "PR#24", Status::Info, "", &v, "");
-    canister_identity(g, canister, c);
+    canister_identity(g, canister, fips_on, c);
 
     // One row in the matrix has a link that can NEVER reach `configured`, and
     // it is environmental rather than a defect: the legacy VLAN kickstart
@@ -745,7 +746,7 @@ pub fn canister_expectation(
 /// back to the certified canister looks exactly like a successful one; that is
 /// precisely how a twelve-hour run once re-tested the path already covered by
 /// every other row.
-pub fn canister_identity(g: &Guest, want: &CanisterExpect, c: &mut Checks) {
+pub fn canister_identity(g: &Guest, want: &CanisterExpect, fips_on: bool, c: &mut Checks) {
     let dmesg = g.run("dmesg 2>/dev/null | grep -i canister").value_or("");
     let parsed = crate::canister::parse_boot_line(&dmesg);
     match &parsed {
@@ -772,7 +773,7 @@ pub fn canister_identity(g: &Guest, want: &CanisterExpect, c: &mut Checks) {
     // missing canister is a FAILURE of the mode, and an empty actual against a
     // non-empty expected has to read as one rather than as a blank field.
     let based_on = parsed.as_ref().map(|(_, k)| k.as_str()).unwrap_or("absent");
-    let (status, expected, detail) = based_on_check(want, based_on);
+    let (status, expected, detail) = based_on_check(want, based_on, fips_on);
     c.check("guest.canister_based_on", "PR#24", status, &expected, based_on, &detail);
 }
 
@@ -783,7 +784,40 @@ pub fn canister_identity(g: &Guest, want: &CanisterExpect, c: &mut Checks) {
 /// Deliberately NOT `Checks::expect`: only the BuiltFrom arm may ever fail, and
 /// routing the other two arms through an equality test would make a prebuilt row
 /// fail for reading exactly what it is supposed to read.
-pub fn based_on_check(want: &CanisterExpect, based_on: &str) -> (Status, String, String) {
+/// `fips_on` is `/proc/sys/crypto/fips_enabled`. It decides whether a missing
+/// line is EVIDENCE OF ABSENCE or merely ABSENCE OF EVIDENCE, and those must
+/// not be scored the same way.
+///
+/// crypto/fips_integrity.c prints `found (based on %s)` from the FIPS self-test
+/// path, which only runs when the kernel booted with `fips=1`. On a row whose
+/// kickstart does not request FIPS the kernel emits no FIPS output at all, so
+/// the stamp cannot appear no matter which canister is linked. c01 proved this
+/// the expensive way on 2026-09-02: a correct equivalent build, the right
+/// linux-esx installed and booted, and a FAIL that meant nothing but "this row
+/// does not boot FIPS".
+///
+/// Only a row that CAN produce the stamp is allowed to fail for its absence.
+/// A wrong stamp is still a hard failure whatever the FIPS state, because that
+/// is a contradiction rather than a silence.
+pub fn based_on_check(
+    want: &CanisterExpect,
+    based_on: &str,
+    fips_on: bool,
+) -> (Status, String, String) {
+    if let CanisterExpect::BuiltFrom(nevr) = want {
+        if !fips_on && based_on == "absent" {
+            return (
+                Status::Info,
+                nevr.clone(),
+                "UNPROVEN: the running kernel prints the canister stamp only \
+                 during the FIPS self-test, and this row booted without fips=1 \
+                 (/proc/sys/crypto/fips_enabled=0), so the evidence cannot \
+                 exist here. The canister linkage is proved at build time only. \
+                 A ks_variant=fips row is what would settle it at runtime"
+                    .into(),
+            );
+        }
+    }
     match want {
         CanisterExpect::Record => (
             Status::Info,
@@ -1046,11 +1080,11 @@ mod tests {
         let want = canister_expectation("equivalent", Ok("6.12.103-14.ph5".into()));
         assert_eq!(want, CanisterExpect::BuiltFrom("6.12.103-14.ph5".into()));
 
-        let (st, exp, _) = based_on_check(&want, "6.12.60-18.ph5");
+        let (st, exp, _) = based_on_check(&want, "6.12.60-18.ph5", true);
         assert!(st == Status::Fail, "the fallback to the certified canister must fail");
         assert_eq!(exp, "6.12.103-14.ph5");
 
-        let (st, _, _) = based_on_check(&want, "6.12.103-14.ph5");
+        let (st, _, _) = based_on_check(&want, "6.12.103-14.ph5", true);
         assert!(st == Status::Pass, "a canister built from the kernel under test must pass");
     }
 
@@ -1064,23 +1098,43 @@ mod tests {
             let want = canister_expectation(axis, Ok("6.12.103-14.ph5".into()));
             assert_eq!(want, CanisterExpect::Record, "{axis} must not be asserted");
             for seen in ["6.12.60-18.ph5", "6.12.103-14.ph5", "absent"] {
-                let (st, exp, _) = based_on_check(&want, seen);
+                let (st, exp, _) = based_on_check(&want, seen, false);
                 assert!(st == Status::Info, "{axis}/{seen} must stay informational");
                 assert!(exp.is_empty(), "a recorded check states no expectation");
             }
         }
     }
 
-    /// No canister line at all on an equivalent row is a failure of the mode,
-    /// not a blank field. `parse_boot_line` returns None both for a non-FIPS
-    /// kernel and for a guest whose dmesg could not be read, and on this row
-    /// either one means the thing under test cannot be shown to work.
+    /// A missing canister line means different things depending on whether the
+    /// row could have produced one, and the oracle must not conflate them.
+    ///
+    /// The original version of this test asserted that absence always fails an
+    /// equivalent row, reasoning that a non-FIPS kernel and an unreadable dmesg
+    /// both mean "cannot be shown to work". c01 disproved that on 2026-09-02:
+    /// a correct equivalent build, linux-esx-6.12.103-14 installed and booted,
+    /// and a FAIL whose only content was that the row does not boot fips=1.
+    /// The kernel prints the stamp from the FIPS self-test, so on a row without
+    /// fips=1 no canister on earth would produce it.
     #[test]
-    fn a_missing_canister_line_fails_an_equivalent_row_but_not_a_prebuilt_one() {
+    fn absence_fails_only_where_the_stamp_could_have_appeared() {
         let eq = canister_expectation("equivalent", Ok("6.12.103-14.ph5".into()));
-        assert!(based_on_check(&eq, "absent").0 == Status::Fail);
+
+        // Booted fips=1 and still no stamp: the mode genuinely did not work.
+        assert!(based_on_check(&eq, "absent", true).0 == Status::Fail);
+
+        // Booted without fips=1: unobtainable, not contradicted. This is c01.
+        let (st, exp, why) = based_on_check(&eq, "absent", false);
+        assert!(st == Status::Info, "a row that cannot emit the stamp must not fail for it");
+        assert_eq!(exp, "6.12.103-14.ph5", "the expectation is still stated, just not asserted");
+        assert!(why.contains("UNPROVEN"), "the detail must say the claim is unproven, not fine");
+
+        // A WRONG stamp is a contradiction, and fails whatever the FIPS state:
+        // the kernel emitted an identity, and it was the certified canister.
+        assert!(based_on_check(&eq, "6.12.60-18.ph5", false).0 == Status::Fail);
+
         let pre = canister_expectation("prebuilt", Ok("6.12.103-14.ph5".into()));
-        assert!(based_on_check(&pre, "absent").0 == Status::Info);
+        assert!(based_on_check(&pre, "absent", true).0 == Status::Info);
+        assert!(based_on_check(&pre, "absent", false).0 == Status::Info);
     }
 
     /// An unreadable kernel NEVR must never become an expectation. Asserting
@@ -1097,7 +1151,7 @@ mod tests {
                 other => panic!("expected Unresolved, got {other:?}"),
             }
             // and it must not fail the row
-            assert!(based_on_check(&want, "6.12.60-18.ph5").0 == Status::Info);
+            assert!(based_on_check(&want, "6.12.60-18.ph5", false).0 == Status::Info);
         }
     }
 
@@ -1111,9 +1165,9 @@ mod tests {
         let kernel = "6.12.103-14.ph5";
         let want = canister_expectation("equivalent", Ok(kernel.into()));
         // Plan::BuildThenLink: phase A stamped the kernel it built from.
-        assert!(based_on_check(&want, kernel).0 == Status::Pass);
+        assert!(based_on_check(&want, kernel, true).0 == Status::Pass);
         // Plan::LinkPublished: the published canister IS at this NEVR.
-        assert!(based_on_check(&want, kernel).0 == Status::Pass);
+        assert!(based_on_check(&want, kernel, true).0 == Status::Pass);
     }
 
     /// The end-to-end shape, from a real boot line to a verdict: the string the
@@ -1131,8 +1185,8 @@ mod tests {
                 .map(|(_, k)| k)
                 .unwrap_or_else(|| "absent".into())
         };
-        assert!(based_on_check(&want, &read(certified)).0 == Status::Fail);
-        assert!(based_on_check(&want, &read(local)).0 == Status::Pass);
+        assert!(based_on_check(&want, &read(certified), true).0 == Status::Fail);
+        assert!(based_on_check(&want, &read(local), true).0 == Status::Pass);
     }
 
     /// Unreadable is recorded, never guessed: an oracle that invents an
