@@ -6,7 +6,7 @@ them, across the permutation matrix in `ISO-PERMUTATION-MATRIX.md`.
 The matrix spans six axes — minimal/full ISO, installer 2.8 or latest, FIPS
 crypto canister, with/without STIG, ext4/btrfs, and kickstart or the interactive
 UI. Three of those are decided when the ISO is built (`iso_type`, `poi`,
-`canister`); the rest are injected per VM. That is why 36 permutations need only
+`canister`); the rest are injected per VM. That is why 43 permutations need only
 a handful of ISOs rather than one each.
 
 Every command reports what it actually observed. Where a fact cannot be
@@ -627,7 +627,7 @@ arbitrary — `Legacy` is exactly the set the curses configurator can produce:
 
 | token | schema | what it exercises |
 | --- | --- | --- |
-| `v4-dhcp-untag` | legacy `type: dhcp` | the pre-axis default, 36 rows |
+| `v4-dhcp-untag` | legacy `type: dhcp` | the pre-axis default, all rows outside the n-block |
 | `v4-static-untag` | legacy `type: static` | n01 |
 | `v4-dhcp-vlanNNN` | legacy `type: vlan` | n05 |
 | `v4-static-vlanNNN` | v2 `vlans` | n04 |

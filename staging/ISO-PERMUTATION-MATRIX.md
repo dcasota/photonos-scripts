@@ -248,6 +248,59 @@ but is a canister-creation kernel (`canister_usage=0`, links nothing); `build.py
 would see it as already built, skip it, and ship it — silently, because nothing
 downstream inspects which mode a kernel was built in.
 
+It keys on the kernel **NEVR**, not on the `linux` prefix. A bare prefix also
+matches `linux-api-headers`, `linux-firmware` and `linuxptp` — separate packages
+at their own versions, deleted and rebuilt every phase B for nothing
+(`build::purged_before_phase_b`).
+
+#### Two things had to be fixed before phase B could work at all (2026-09-02)
+
+**`ExtraBuildRequiresSansSnapshot` never saw the local repo.**
+`ToolChainUtils._installExtraToolchainRPMS` resolves it with
+`--disablerepo=* --enablerepo=packages` — the published repo only. But `local`
+*is* `stage/RPMS`, bind-mounted read-only at priority 10, which is exactly where
+phase A's canister lands. The symptom is a two-hour build ending in
+`linux-fips-canister-<nevr> package not found or not installed` for an RPM that
+is present *and* indexed. Upstream resolves it that way because
+`linux-fips-canister` is a `%package` inside `linux.spec`, so a plain
+`BuildRequires` would be a self-cycle — reaching outside the graph is what breaks
+it, and a locally built canister was never anticipated.
+
+**Nothing is published at every kernel level.** The repo carries
+`linux-fips-canister-6.12.60-18.ph5` and nothing newer, so a kernel at
+`6.12.103-14` has no canister to link and phase A is mandatory rather than
+optional. `canister::detect_for` re-decides this per build against the live
+repo, so if one is ever published at that level the same command drops phase A
+by itself and stays **certified**.
+
+#### c03 — the row that turns "recorded" into "proven"
+
+Phase B leaves one claim untested: that the *running* kernel attests to the
+canister. `crypto/fips_integrity.c` prints the stamp from the FIPS self-test,
+which runs only under `fips=1`, so c01 (`ks_variant=none`) emits nothing at all
+and the oracle can only record it as UNPROVEN. Demonstrated by counter-example,
+same oracle and host:
+
+| row | ks_variant | canister | `fips_enabled` | `canister_based_on` | verdict |
+|---|---|---|---|---|---|
+| c01 | none | equivalent | 0 | `absent` | Info, UNPROVEN |
+| s02 | fips | prebuilt | 1 | `6.12.60-18.ph5` | Info, recorded |
+| c03 | fips | equivalent | 1 | `6.12.103-14.ph5` | **asserted** |
+
+`c03` costs no build — `iso_key` is `iso_type/poi/canister`, so it reuses the
+cached `minimal/2.8/equivalent` ISO while `ks_variant` is applied at install
+time. First run: 37 checks, 18 pass, 0 fail.
+
+```
+FIPS(fips_integrity_init): canister 6.12 found (based on 6.12.103-14.ph5)
+FIPS canister verification passed!
+```
+
+The kernel names the kernel under test rather than the certified 6.12.60, and
+its HMAC integrity check passes against it. A silent fallback to the certified
+canister fails the row. The canister remains functionally equivalent and **NOT
+CMVP validated**; `is_validated()` stays false.
+
 `canister_stamp_real` is what makes the row observable. `linux.spec` seds
 `%{fips_certified_kernel_version}` into `FIPS_KERNEL_VERSION` in
 `crypto/fips_integrity.c`, and that string is what the kernel prints at boot:

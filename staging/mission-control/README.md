@@ -36,12 +36,17 @@ HTTP server, no typing at a boot menu. That splits the matrix cleanly:
 | **Build time** | ISO type × installer version × canister | one ISO per tuple, cached and reused |
 | **Install time** | STIG × filesystem × kickstart-vs-UI × network | free |
 
-41 permutations, 6 ISO keys — of which 4 (`{minimal,full} × {2.8,latest}` on
-`prebuilt`) serve 34 rows. The canister is a **build-time** axis, so c01
+43 permutations, 7 ISO keys — of which 4 (`{minimal,full} × {2.8,latest}` on
+`prebuilt`) serve most rows. The canister is a **build-time** axis, so c01
 (`full/2.8/equivalent`) costs its own multi-hour build; c02
 (`full/2.8/fips0-aarch64`) needs aarch64 hardware and is never built here.
 That asymmetry is why the canister rows are kept to the minimum that can prove
 anything — see ISO-PERMUTATION-MATRIX.md §2b.
+
+`c03` is the exception that earns its place without a build: it reuses the
+cached `minimal/2.8/equivalent` ISO, because `iso_key` is
+`iso_type/poi/canister` and `ks_variant` is applied at install time. It is
+the only row that ASSERTS the canister at runtime — see "FIPS rows" below.
 
 The **network** axis (`net` column, rows n01–n05) is install-time for the same
 reason the others are: the config travels in `guestinfo.kickstart.data` and is
@@ -101,13 +106,27 @@ testable and is what n02/n03 do.
 A VLAN row therefore proves what the installer **configured**, never that
 tagged traffic flows.
 
-### n05 is environmental; s02 is a defect
+### n05 is environmental; s02 was neither
 
 `n05` (`v4-dhcp-vlan100`) carries `expect = fails`, and that failure is caused
 by blocker 4 — no change to Photon or to the installer would make it pass here.
-`s02` carries the same verdict for the opposite reason: it is a real defect and
-somebody should fix it. **A reader who cannot tell these apart will eventually
-fix the wrong one.**
+
+`s02` used to be described here as the opposite case, "a real defect somebody
+should fix". It was not. Its evidence said
+
+    guest.ssh  fail  Permission denied (publickey,password,keyboard-interactive).
+
+which is a guest that answered and refused a credential, not an unreachable
+one — the two had been conflated. `fix/poi-fips-sshd-algorithms` restricts a
+FIPS system's sshd to `rsa-sha2-*`/`ecdsa-*`, and the harness was offering an
+**ed25519** key, which is not FIPS-approved and cannot be. The guest was
+refusing a key it is required to refuse, and the harness scored its own
+limitation as a Photon defect for three runs. Fixed by making the default key
+RSA (`photon-mc-rsa`); s02 now passes 37/37.
+
+**A reader who cannot tell these apart will eventually fix the wrong one** —
+and here the wrong one was blamed for three runs, so read the ssh error before
+blaming the installer.
 
 Underneath n05 there is a genuine POI gap: `networkmanager.py` writes only
 `[Match]`, `[Network]`, `[NetDev]` and `[VLAN]` sections, so
@@ -115,6 +134,37 @@ Underneath n05 there is a genuine POI gap: `networkmanager.py` writes only
 knows a link cannot come up has no way to say so, and
 `systemd-networkd-wait-online` (enabled by preset) fails forever. Written up in
 `/root/photon-mc/poi-gap-requiredforonline.md` for filing upstream separately.
+
+## FIPS rows: the key must be RSA, and only they can prove the canister
+
+A `ks_variant=fips` guest boots with `fips=1` and its sshd accepts only
+FIPS-approved algorithms. **An ed25519 key can never authenticate to it**, so
+`SSH_KEY_NAME` defaults to `photon-mc-rsa`; RSA is accepted by a FIPS and a
+stock sshd alike, so one key serves every row. Reverting that reproduces a
+`Permission denied` that reads exactly like an installer defect and is not one
+(`config::tests::the_default_ssh_key_is_fips_usable` guards it).
+
+These rows are also the only place the FIPS canister can be observed at all.
+`crypto/fips_integrity.c` prints the canister stamp from the FIPS self-test,
+which runs only under `fips=1`, so a row without it emits nothing no matter
+which canister is linked:
+
+| row | ks_variant | canister | fips_enabled | canister_based_on | verdict |
+| --- | --- | --- | --- | --- | --- |
+| c01 | none | equivalent | 0 | `absent` | Info, UNPROVEN |
+| s02 | fips | prebuilt | 1 | `6.12.60-18.ph5` | Info, recorded |
+| c03 | fips | equivalent | 1 | `6.12.103-14.ph5` | **asserted** |
+
+Only `fips` + `equivalent` together make the claim testable: `fips` makes the
+stamp appear, `equivalent` makes it worth asserting. On c03 a fallback to the
+certified 6.12.60 canister is a hard failure. The canister so linked is
+functionally equivalent and **NOT CMVP validated** — `is_validated()` stays
+false regardless of the verdict.
+
+Both installer variants carry the sshd fix (`fix/poi-fips-sshd-algorithms` on
+2.8, `fix/poi-2.9-fips-sshd-algorithms` on latest), and `s03` is `s02` on the
+latter, because a photon-os-installer change proven on one variant and shipped
+on both is how an untested installer reaches a user.
 
 ## Why both kickstart and UI
 
