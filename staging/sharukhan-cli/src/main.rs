@@ -8,6 +8,7 @@ mod b64;
 mod canister;
 mod card;
 mod build;
+mod buildexec;
 mod buildmode;
 mod config;
 mod evidence;
@@ -63,6 +64,8 @@ PHASES (the same code `run` calls, one step at a time)
     verify              run the oracle against an installed guest, harvest logs
     teardown            return one permutation's VM to a fresh-disk state
     build-iso           resolve a build-axis tuple to an ISO (see --allow-build)
+    build               run the build cascade directly (replaces the run*.sh scripts);
+                        --dry-run prints every phase without touching anything
     variant-patches     rebuild the installer variant patches from the PR branches
     canister            which canister this kernel can have (--rebase-check to prove it)
     mirrors             are the SPECS copies of POI PR commits still current with the fork?
@@ -83,6 +86,10 @@ OPTIONS:
     --timeout <sec>     install timeout; default MC_INSTALL_TIMEOUT_SEC
     --ip <addr>         guest address (verify), when the facts file has none
     --purge             delete old stashes as well (teardown)
+    --release <r>       4.0 | 5.0 | 6.0 (build); default 5.0
+    --subrelease <s>    mainline | 90 | 91 (build); default mainline
+    --img <t>           iso | minimal-iso | basic-iso | rt-iso (build)
+    --out <dir>         where the finished ISO is delivered (build)
     --iso-type <t>      minimal | full (build-iso)
     --poi <v>           2.8 | latest (build-iso)
     --canister <c>      prebuilt | build | acvp | kat | equivalent (build-iso)
@@ -117,6 +124,10 @@ struct Args {
     mode: Option<String>,
     ip: Option<String>,
     iso_type: Option<String>,
+    release: Option<String>,
+    subrelease: Option<String>,
+    img: Option<String>,
+    out: Option<String>,
     poi: Option<String>,
     canister: Option<String>,
     timeout: Option<u64>,
@@ -157,6 +168,10 @@ fn parse() -> Result<Args, String> {
         mode: None,
         ip: None,
         iso_type: None,
+        release: None,
+        subrelease: None,
+        img: None,
+        out: None,
         poi: None,
         canister: None,
         timeout: None,
@@ -187,6 +202,10 @@ fn parse() -> Result<Args, String> {
             "--mode" => out.mode = Some(a.next().ok_or("--mode needs a value")?),
             "--ip" => out.ip = Some(a.next().ok_or("--ip needs a value")?),
             "--iso-type" => out.iso_type = Some(a.next().ok_or("--iso-type needs a value")?),
+            "--release" => out.release = Some(a.next().ok_or("--release needs a value")?),
+            "--subrelease" => out.subrelease = Some(a.next().ok_or("--subrelease needs a value")?),
+            "--img" => out.img = Some(a.next().ok_or("--img needs a value")?),
+            "--out" => out.out = Some(a.next().ok_or("--out needs a value")?),
             "--poi" => out.poi = Some(a.next().ok_or("--poi needs a value")?),
             "--canister" => out.canister = Some(a.next().ok_or("--canister needs a value")?),
             "--timeout" => {
@@ -300,6 +319,7 @@ fn main() -> ExitCode {
             args.force,
             args.allow_build,
         ),
+        "build" => cmd_build(&args),
         "variant-patches" => phases::cmd_variant_patches(&cfg),
         "canister" => cmd_canister(&cfg, args.rebase_check),
         "mirrors" => cmd_mirrors(&cfg),
@@ -707,6 +727,77 @@ fn cmd_report(cfg: &config::Config, only: Option<&str>) -> Result<(), String> {
 /// nothing about how far the series has diverged. Running the whole series and
 /// forcing through failures is the difference between an afternoon and a
 /// project - and it costs seconds against a build's hours.
+/// `sharukhan build` - the cascade that replaces runPh4/runPh5*/runPh6.
+///
+/// The five scripts are one build with different accretions; see buildmode.rs
+/// for the table of which fixup landed in which script and why that is a bug
+/// rather than a decision. Everything they varied is a flag here.
+fn cmd_build(args: &Args) -> Result<(), String> {
+    let release = args.release.clone().unwrap_or_else(|| "5.0".into());
+    let img = args
+        .img
+        .clone()
+        .unwrap_or_else(|| "minimal-iso".into());
+    let canister = args.canister.clone().unwrap_or_else(|| "prebuilt".into());
+    let out = args
+        .out
+        .clone()
+        .unwrap_or_else(|| "/mnt/c/Users/dcaso/Downloads/Ph-Builds".into());
+    let base = std::env::var("MC_BUILD_ROOT").unwrap_or_else(|_| "/root".into());
+    let common = std::env::var("MC_BUILD_COMMON").unwrap_or_else(|_| "common".into());
+    let nevr = std::env::var("MC_CANISTER_NEVR").ok();
+
+    let mut spec = buildmode::BuildSpec::from_args(
+        &base, &common, &release, &out, &img, &canister, nevr,
+    )?;
+
+    // The subrelease pin was two entire scripts differing in one integer.
+    if let Some(sr) = args.subrelease.as_deref() {
+        if sr != "mainline" {
+            let n: u32 = sr.parse().map_err(|_| {
+                format!("--subrelease takes mainline, 90 or 91 (got '{sr}')")
+            })?;
+            spec.subrelease = buildmode::Subrelease::Pinned(n);
+            spec.injections.push(buildmode::Injection::PinSubrelease(n));
+        }
+    }
+
+    // Injections, in the order they must land: release tree, then common tree,
+    // then the canister macros, then the host workarounds.
+    let patches = std::env::var("MC_VARIANT_PATCH_DIR")
+        .unwrap_or_else(|_| "/root/photon-mc/variant-patches".into());
+    let poi = args.poi.clone().unwrap_or_else(|| "2.8".into());
+    spec.injections.push(buildmode::Injection::TreePatch {
+        tree: buildmode::Tree::Release,
+        patch: std::path::PathBuf::from(&patches).join(format!("poi-{poi}.patch")),
+    });
+    spec.injections.push(buildmode::Injection::TreePatch {
+        tree: buildmode::Tree::Common,
+        patch: std::path::PathBuf::from(&patches).join("common-fixes.patch"),
+    });
+    spec.injections.push(buildmode::Injection::PkgBuildOptions {
+        mode: spec.canister,
+        nevr: spec.canister_nevr.clone(),
+    });
+    for f in [
+        buildmode::Fixup::Python3PgoTestGenerators,
+        buildmode::Fixup::SssdSerialMakeInstall,
+        buildmode::Fixup::RunInChrootFd255,
+    ] {
+        spec.injections.push(buildmode::Injection::SpecFixup(f));
+    }
+
+    print!("{}", buildmode::render(&spec));
+    if args.dry_run {
+        println!("\n(dry run: nothing was touched)");
+    }
+    let produced = buildexec::execute(&spec, args.dry_run, &mut |l| println!("{l}"))?;
+    if !args.dry_run {
+        println!("{}", produced.display());
+    }
+    Ok(())
+}
+
 fn cmd_canister(cfg: &config::Config, rebase_check: bool) -> Result<(), String> {
     let arch = std::env::consts::ARCH;
 

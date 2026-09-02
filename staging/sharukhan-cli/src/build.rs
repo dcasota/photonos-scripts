@@ -411,7 +411,7 @@ pub fn kernel_nevr(cfg: &Config, patch: &Path) -> Result<String, String> {
     Ok(format!("{v}-{r}.ph5"))
 }
 
-fn find_files_rec(dir: &Path, prefix: &str, suffix: &str) -> Vec<PathBuf> {
+pub fn find_files_rec(dir: &Path, prefix: &str, suffix: &str) -> Vec<PathBuf> {
     let mut out = Vec::new();
     let Ok(entries) = fs::read_dir(dir) else { return out };
     for e in entries.flatten() {
