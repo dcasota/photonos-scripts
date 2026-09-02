@@ -289,6 +289,24 @@ phase B would fail on an unresolvable BuildRequires",
     Ok(iso)
 }
 
+/// The one branch in a variant that sets the photon-os-installer version.
+///
+/// Matched by shape, and defined ONCE. There used to be two copies of an
+/// allowlist of literal branch names - one here in `mirrors`, one in the test
+/// that asserts exactly one installer branch per variant. Renaming the latest
+/// variant's branch to fix/poi-2.9-fips-sshd-algorithms broke both, and the
+/// mirrors copy would have failed at runtime with "variant latest has no
+/// installer branch" rather than in the test suite.
+///
+/// Every installer branch is `fix/poi-*` or `upstream/photon-os-installer-*`,
+/// and nothing else in either variant contains "poi".
+pub fn installer_branch(v: &Variant) -> Option<&'static str> {
+    v.branches
+        .iter()
+        .find(|b| b.contains("/poi-") || b.contains("photon-os-installer"))
+        .copied()
+}
+
 /// Does this RPM have to go before phase B runs?
 ///
 /// Anchored to the kernel NEVR, not to the "linux" prefix. A bare prefix also
@@ -781,6 +799,9 @@ mod tests {
                 v.name,
                 hits.len()
             );
+            // The shipped helper must agree with the test's own filter -
+            // `mirrors` fails at runtime, not here, when it does not.
+            assert_eq!(installer_branch(v).as_ref(), hits.first().map(|b| **b).as_ref());
         }
     }
 }

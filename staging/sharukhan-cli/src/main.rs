@@ -850,10 +850,7 @@ phase B: relink linux and linux-esx against it"),
 fn cmd_mirrors(cfg: &config::Config) -> Result<(), String> {
     let mut stale = 0;
     for variant in build::VARIANTS.iter() {
-        let branch = variant
-            .branches
-            .iter()
-            .find(|b| b.contains("photon-os-installer") || b.contains("poi-2.9-bump") || b.contains("poi-fips-sshd"))
+        let branch = build::installer_branch(variant)
             .ok_or_else(|| format!("variant {} has no installer branch", variant.name))?;
         println!("variant {} (installer branch {branch})", variant.name);
         for m in build::verify_mirrors(cfg, branch)? {
@@ -862,6 +859,9 @@ fn cmd_mirrors(cfg: &config::Config) -> Result<(), String> {
                 stale += 1;
             }
             println!("  [{mark}] {:<62} {}", m.spec_patch, m.detail);
+            if !m.current {
+                println!("           tracks {}", m.branch);
+            }
         }
     }
     if stale > 0 {
