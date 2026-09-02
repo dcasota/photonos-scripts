@@ -23,6 +23,9 @@ pub struct Vm {
     /// Ordinal in permutations.tsv - the whole of this VM's identity.
     pub index: usize,
     pub mac: String,
+    /// The management NIC's address. Computed for every row; written into the
+    /// VMX only where the network axis needs a second interface.
+    pub mac2: String,
     pub uuid: String,
     /// The address the matrix reserves for this row. Not necessarily the
     /// address the guest took: an interactive install may have taken a DHCP
@@ -42,6 +45,7 @@ pub fn plan(cfg: &Config, id: &str) -> Result<Vm, String> {
         vmdk: dir.join(format!("{name}.vmdk")),
         serial: cfg.serial_log(id),
         mac: identity::mac_for(index),
+        mac2: identity::mac2_for(index),
         uuid: identity::uuid_for(index),
         reserved_ip: identity::ip_for(&cfg.net_prefix, cfg.ip_base, index),
         index,
@@ -115,6 +119,7 @@ pub fn create(
         cfg,
         p,
         vm.mac.clone(),
+        vm.mac2.clone(),
         vm.uuid.clone(),
         iso_win,
         serial_win,

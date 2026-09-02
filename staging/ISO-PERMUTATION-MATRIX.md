@@ -183,9 +183,10 @@ setting: the x86_64 default `fips=1, canister_usage=1`, linking against the
 *prebuilt* `linux-fips-canister` RPM pulled from the Broadcom repo. Nothing here
 has ever built a canister locally, and nothing has run with `fips=0`.
 
-That is easy to miss, because the canister is not a boolean — it is a tri-state
-documented in COMPILE-CONSTELLATIONS.md §12.3, and it is **not** the same thing as
-UEFI Secure Boot (§14 covers that conflation). `permutations.tsv` now carries a
+That is easy to miss, because the canister is not a boolean — it is the tri-state
+documented in COMPILE-CONSTELLATIONS.md §12.3 (`fips=0` / `canister_usage=1` /
+`canister_build=1`), plus the two-build composition `equivalent` described below,
+and it is **not** the same thing as UEFI Secure Boot (§14 covers that conflation). `permutations.tsv` now carries a
 `canister` column so the assumption is stated rather than implied, and the ISO cache
 key includes it, so a row needing a different canister cannot silently reuse the
 prebuilt ISO.
@@ -194,12 +195,20 @@ Two rows exist for it:
 
 | row | canister | why |
 |---|---|---|
-| c01 | `build` | compiles the canister locally and emits the `linux-fips-canister` subpackage. This is the code path PR #1673 (shared `canister_config.inc`) touches, and **no other row in this matrix executes it** |
+| c01 | `equivalent` | links a canister **built from the kernel under test** into both flavours. The only row whose guest can show a canister other than the certified 6.12.60 one |
 | c02 | `fips0-aarch64` | `fips=0` is the aarch64 default and is not reachable on x86_64, so this row is UNRUNNABLE on the current host and is marked as such rather than quietly dropped |
 
-#### What running c01 actually showed (2026-09-01)
+`prebuilt`, `equivalent` and `fips0-aarch64` are the only values the matrix uses.
+`build`, `acvp` and `kat` remain valid arguments to `sharukhan build-iso
+--canister` but are deliberately **not** rows — see below for `build`, and for
+`acvp`/`kat` because they are certification builds (`kat_build` forces
+`acvp_build=1` and `canister_build=1`, `acvp_build` forces `fips=1`) that prove
+something about certification tooling rather than about a PR under review.
 
-Two things, both of which invalidate the row as originally designed.
+#### Why c01 was `build`, and why it is not any more (2026-09-01 → 2026-09-02)
+
+c01 was `canister=build` and **never produced a verdict**. Two independent
+reasons, both confirmed against the specs:
 
 **The flag could not run at all.** `canister_build=1` fails in `%prep` against
 6.12.103: the canister-creation series is maintained against the certified kernel
@@ -211,27 +220,114 @@ series; it is not. Applying the whole series and forcing through failures shows
 patch `1004` converts, once as context in `1010`. Fixed in dcasota/photon#29 →
 vmware/photon#1675.
 
-**And a build alone would not have tested anything on a guest.** Every row in this
-matrix installs **`linux-esx`**, and `linux-esx.spec` hardcodes
-`%global canister_build 0` in both arch branches with no `%package fips-canister`.
-A `%global` inside a spec overrides a command-line `-D`, so the flag is ignored
-there. `linux` would have built a canister that no row installs.
+**And a build alone proves nothing on a guest — by construction.** `canister_build=1`
+forces `canister_usage=0` (`linux.spec`, the `%if 0%{?canister_build}` block), so
+the kernel that *creates* a canister links none. And every row in this matrix boots
+**`linux-esx`**, whose spec hardcodes `canister_build 0` / `canister_usage 1` in both
+arch branches with no `%package fips-canister`; a `%global` inside a spec overrides a
+command-line `-D`, so the flag is ignored there. A `canister=build` ISO therefore
+boots a kernel linked against the same certified 6.12.60 canister as every
+`prebuilt` row. It is hours spent re-running k09.
 
-The canister is **one binary**: `linux` produces it, both flavours consume it — which
-is exactly how the prebuilt path already works. What that needed was for
-`fips_canister_version` to stop being a bare `%define`, also in #1675. `sharukhan
-canister` now reports which of three states a kernel is in (`certified`,
-`equivalent`, `absent`) and `--rebase-check` proves whether a canister could be
-created at all, in seconds, without committing to a build.
+That is not a defect in the flag — creating and linking a canister are *meant* to be
+two builds. It is a defect in the row.
+
+#### `canister=equivalent` — the two-phase row that does prove it
+
+The canister is **one binary**: `linux` produces it, both flavours consume it. So the
+row is two builds, driven by `sharukhan build-iso --canister equivalent`:
+
+| phase | what runs | macros |
+|---|---|---|
+| **A** (`equivalent-a`) | `make linux` only — one package, not an image | `canister_build 1`, `canister_stamp_real 1`, `fips_certified_override <kernel NEVR>` |
+| *purge* | delete every `linux-*` / `linux-esx-*` RPM from `stage/RPMS` **except** the canister | — |
+| **B** (`equivalent-b`) | the image build, on **both** flavours | `canister_equivalent 1`, `fips_canister_override <kernel NEVR>` |
+
+The purge is not tidiness. Phase A's `linux` RPM carries the *same NEVR* as phase B's
+but is a canister-creation kernel (`canister_usage=0`, links nothing); `build.py`
+would see it as already built, skip it, and ship it — silently, because nothing
+downstream inspects which mode a kernel was built in.
+
+`canister_stamp_real` is what makes the row observable. `linux.spec` seds
+`%{fips_certified_kernel_version}` into `FIPS_KERNEL_VERSION` in
+`crypto/fips_integrity.c`, and that string is what the kernel prints at boot:
+
+```
+FIPS(fips_canister_init): canister 6.12 found (based on 6.12.103-14.ph5)
+```
+
+Without `canister_stamp_real=1` a locally created canister would inherit the
+certified kernel's version and claim a certification it does not carry.
+
+**Phase A is conditional, and it is re-decided on every run.** It exists only to make
+a canister nobody has published. Before building, `sharukhan` reads the published
+listing at
+`https://packages.broadcom.com/artifactory/photon/<rel>/photon_updates_<rel>_x86_64/x86_64/`
+and compares the newest `linux-fips-canister-*.rpm` against the kernel NEVR the
+variant patch will actually build:
+
+| published vs kernel under test | state | plan | validated? |
+|---|---|---|---|
+| matches | `certified` | link it — **phase B only** | **yes**, CMVP |
+| differs, or none published | `equivalent` | phase A **and** phase B | no |
+| listing unreachable | `unknown` | **refuse** | n/a |
+
+The comparison is against the *repo*, not the spec's `%define`: the spec pin says what
+the spec wants to link, not whether such a canister exists, and on 2026-09-02 the two
+disagreed — the pin read `6.12.60-18.2.ph5` while the repo published only
+`6.12.60-18.ph5`. `unknown` is deliberately not folded into `equivalent`: "build one
+locally" and "we could not look" are different claims and only the first is worth
+hours.
+
+**As of 2026-09-02** the kernel under test is `6.12.103-14.ph5` and the newest
+published canister is `6.12.60-18.ph5`, so c01 runs **both** phases and its result is
+**NOT CMVP validated**. If Broadcom publishes a canister at the kernel level under
+test, the same row silently drops phase A and becomes certified — the mode does not
+change, the repo does.
+
+`sharukhan canister` reports which of these four states the kernel is in
+(`certified`, `equivalent`, `absent`, `unknown`) and `--rebase-check` proves whether a
+canister could be created at all, in seconds, without committing to a build.
+
+#### What c01 asserts, and against what control
+
+`guest.canister_based_on` is asserted, not merely recorded, on an `equivalent` row:
+it must equal the kernel NEVR under test. Without that assertion an equivalent row
+that silently fell back to the certified canister produces evidence identical to one
+that worked — i.e. the same invisible no-op `canister=build` turned out to be. On
+every other row it stays informational, because a canister older than the kernel is
+the **designed** state there (6.12.60 linked into 6.12.103 is correct, not a defect)
+and asserting would fail all 34 prebuilt rows for being right.
+
+**k09 is the paired control.** It is `full / 2.8 / no / ext4 / ks / none` on
+`prebuilt`; c01 is the same row on `equivalent`. They differ in exactly one axis, so a
+difference in `guest.canister_based_on` is attributable to that axis alone.
+
+**One row, not several.** Each distinct `(iso_type, poi, canister)` tuple is a
+separate multi-hour ISO build. The canister is a kernel link-time artefact:
+`iso_type` changes the package set on the media and `poi` changes the installer —
+neither changes the kernel, and both variant patches set the same `linux` Release
+(`6.12.103-14`). Every install-time axis (STIG, filesystem, ks vs UI) is orthogonal to
+it. `packages_minimal.json` lists both `linux` and `linux-esx`, and phase B rebuilds
+both flavours, so one ISO already covers both.
+
+Two things c01 does **not** cover, stated rather than implied:
+
+* **Runtime FIPS mode.** c01 is `ks_variant=none`, so `/proc/sys/crypto/fips_enabled`
+  reads 0 — the canister is linked and verified at boot, but the system is not running
+  in FIPS mode. The row that would turn it on (`ks_variant=fips`) is blocked by the
+  s02 defect: under `security.fips: true` the guest is unreachable over SSH, and SSH
+  is how the oracle reads dmesg. Adding it now would produce a row that fails for
+  s02's reason and proves nothing about the canister.
+* **The `linux` flavour as a booted kernel.** POI installs `linux-esx` on VMware
+  guests, and every VM here is a VMware guest, so no row boots plain `linux` even
+  though phase B relinks it. Closing that needs a non-VMware hypervisor, not another
+  matrix row.
 
 A locally built canister is functionally equivalent and carries **no CMVP
-certificate**. `meta.canister_origin` records that in every evidence file, so the
-caveat travels with the result rather than living only in a report that cites it.
-
-`acvp` and `kat` are deliberately not rows. They are certification builds —
-`kat_build` forces `acvp_build=1` and `canister_build=1`, `acvp_build` forces
-`fips=1` — so they prove something about certification tooling rather than about a
-PR under review. `sharukhan build-iso --canister` still accepts them.
+certificate**. `meta.canister_origin` records that in every evidence file — including
+the row's canister axis and the kernel NEVR it was decided against — so the caveat
+travels with the result rather than living only in a report that cites it.
 
 ### The measurement behind rows 1-16
 

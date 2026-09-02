@@ -50,6 +50,11 @@ pub struct VmSpec {
     pub vcpus: u32,
     pub mem_mb: u32,
     pub mac: String,
+    /// The management NIC's address, on the rows that need one. Its ABSENCE is
+    /// load-bearing in the same way the kickstart's is: a VM with a NIC nothing
+    /// configures would take a second lease and give `vmrun getGuestIPAddress`
+    /// two answers to choose between.
+    pub mac2: Option<String>,
     pub uuid_bios: String,
     /// Windows form. VMware cannot open a WSL path - see [`crate::winpath`].
     pub iso_win: String,
@@ -66,6 +71,7 @@ impl VmSpec {
         cfg: &Config,
         p: &Permutation,
         mac: String,
+        mac2: String,
         uuid_bios: String,
         iso_win: String,
         serial_win: String,
@@ -76,6 +82,13 @@ impl VmSpec {
             vcpus: cfg.guest_vcpus,
             mem_mb: cfg.guest_mem_mb,
             mac,
+            // The kickstart decides which interfaces exist; the VMX must agree
+            // with it, or the guest configures an eth1 that is not there.
+            // Always computed by vm::plan; written into the VMX only where the
+            // network axis needs it. Taken by value rather than as an Option so
+            // a caller cannot hand an axis that wants a NIC no address to put
+            // on it - that would render `ethernet1.address = ""`.
+            mac2: p.net.needs_second_nic().then_some(mac2),
             uuid_bios,
             iso_win,
             serial_win,
@@ -84,6 +97,31 @@ impl VmSpec {
             // turning it on would test the signing chain rather than the PRs.
             secure_boot: false,
             kickstart,
+        }
+    }
+
+    /// The second NIC, or the comment that explains why there is none.
+    ///
+    /// Same idiom as [`Self::guestinfo`]: presence is a type, and the absent
+    /// case emits prose rather than an empty line, so a rendered VMX always
+    /// says what it decided.
+    ///
+    /// Named MGMT_NIC, not ETHERNET1: [`placeholders`] scans for
+    /// `@@[A-Z_]+@@` and a digit silently ends the token, so `@@ETHERNET1@@`
+    /// would substitute correctly and then be invisible to the contract test
+    /// that keeps this renderer and the template in step.
+    fn mgmt_nic(&self) -> String {
+        match &self.mac2 {
+            Some(mac) => format!(
+                "ethernet1.present = \"TRUE\"\n\
+                 ethernet1.connectionType = \"nat\"\n\
+                 ethernet1.virtualDev = \"{}\"\n\
+                 ethernet1.addressType = \"static\"\n\
+                 ethernet1.address = \"{mac}\"",
+                self.nic_dev
+            ),
+            None => "# single NIC: this row's guest is reachable over IPv4 on ethernet0"
+                .to_string(),
         }
     }
 
@@ -113,6 +151,7 @@ impl VmSpec {
             ("ISO_PATH_WIN", self.iso_win.clone()),
             ("SERIAL_LOG_WIN", self.serial_win.clone()),
             ("NIC_DEV", self.nic_dev.clone()),
+            ("MGMT_NIC", self.mgmt_nic()),
             (
                 "SECUREBOOT",
                 if self.secure_boot { "TRUE" } else { "FALSE" }.to_string(),
@@ -182,6 +221,7 @@ mod tests {
             vcpus: 2,
             mem_mb: 4096,
             mac: "00:50:56:3a:00:11".into(),
+            mac2: None,
             uuid_bios: "56 4d 6d 63 00 00 00 00-00 00 00 00 00 00 00 11".into(),
             iso_win: "C:\\photon-mc\\iso-cache\\minimal-poi2.8-prebuilt\\photon.iso".into(),
             serial_win: "C:\\photon-mc\\vm\\mc-k01\\serial0-mc-k01.log".into(),
@@ -225,6 +265,72 @@ mod tests {
         let tpl = "displayName = \"@@VM_NAME@@\"\nfoo = \"@@NOT_A_KEY@@\"\n";
         let e = render_with(tpl, &spec(None)).unwrap_err();
         assert!(e.contains("NOT_A_KEY"), "{e}");
+    }
+
+    fn row(net: &str) -> crate::matrix::Permutation {
+        use std::str::FromStr;
+        crate::matrix::Permutation {
+            id: "n03".into(),
+            iso_type: "minimal".into(),
+            poi: "2.8".into(),
+            stig: "no".into(),
+            fs: "ext4".into(),
+            mode: "ks".into(),
+            variant: "none".into(),
+            doc: "untested".into(),
+            expect: "pass".into(),
+            canister: "prebuilt".into(),
+            net: crate::net::NetSpec::from_str(net).unwrap(),
+        }
+    }
+
+    /// The end of the wiring: the ROW decides whether the VMX gets a second
+    /// NIC, not the caller. The kickstart and the VMX have to agree - a guest
+    /// told to configure eth1 that has no eth1 would sit waiting for a link
+    /// that does not exist.
+    #[test]
+    fn the_net_axis_decides_the_second_nic_not_the_caller() {
+        let cfg = crate::config::Config::load();
+        let mk = |net: &str| {
+            VmSpec::for_permutation(
+                &cfg,
+                &row(net),
+                "00:50:56:3a:00:27".into(),
+                "00:50:56:3b:00:27".into(),
+                "56 4d 6d 63 00 00 00 00-00 00 00 00 00 00 00 27".into(),
+                "C:\\iso\\photon.iso".into(),
+                "C:\\vm\\serial.log".into(),
+                None,
+            )
+        };
+        assert_eq!(mk("v6-static-untag").mac2.as_deref(), Some("00:50:56:3b:00:27"));
+        // dual-stack keeps its IPv4 address, so ssh already has a path
+        assert_eq!(mk("dual-static-untag").mac2, None);
+        assert_eq!(mk("v4-dhcp-untag").mac2, None);
+    }
+
+    /// The management NIC exists only where a row cannot be reached without
+    /// one, and its absence is stated rather than left blank - a VMX that
+    /// silently omitted it would look identical to one where the axis was
+    /// forgotten.
+    #[test]
+    fn the_second_nic_appears_only_where_a_row_needs_a_management_path() {
+        let without = render_with(EMBEDDED, &spec(None)).unwrap();
+        assert!(!without
+            .lines()
+            .any(|l| l.trim_start().starts_with("ethernet1.present")));
+        assert!(without.contains("# single NIC:"));
+
+        let mut s = spec(None);
+        s.mac2 = Some("00:50:56:3b:00:11".into());
+        let with = render_with(EMBEDDED, &s).unwrap();
+        assert!(with.contains("ethernet1.present = \"TRUE\""));
+        assert!(with.contains("ethernet1.address = \"00:50:56:3b:00:11\""));
+        assert!(with.contains("ethernet1.connectionType = \"nat\""));
+        // both NICs use the same emulation: vmxnet3 fails to power on here
+        assert_eq!(with.matches("virtualDev = \"e1000\"").count(), 2);
+        // and the two NICs of one VM must never share an address
+        assert!(!with.contains("ethernet1.address = \"00:50:56:3a:00:11\""));
     }
 
     #[test]
@@ -272,5 +378,12 @@ mod tests {
             .any(|l| l.trim_start().starts_with("bios.bootOrder")));
         // The guest clock must not be host-slaved; time sync is under test.
         assert!(EMBEDDED.contains("tools.syncTime = \"FALSE\""));
+        // Workstation 17 has no VLAN/portgroup backing at all - ethernet0.vlanID
+        // is a vSphere property and does not exist here. An ASSIGNMENT of it
+        // must never appear: it would read as a tagging control that does
+        // nothing, exactly like bios.bootOrder on EFI.
+        assert!(!EMBEDDED
+            .lines()
+            .any(|l| !l.trim_start().starts_with('#') && l.contains("vlanID")));
     }
 }

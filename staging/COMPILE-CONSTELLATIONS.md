@@ -544,7 +544,7 @@ Not a boolean; a tri-state, and it is *not* the same thing as UEFI Secure Boot.
 | state | how | consequence |
 |---|---|---|
 | `fips=0` | aarch64 default, or `--define 'fips 0'` on x86_64 | no canister at all. `linux.spec:700-707` (PR #14 downstream patch) then strips `CONFIG_GCC_PLUGIN_{MATCH,PAD}_CANISTER_STRUCTS` from `.config`, because the Kconfig-adding patch is not applied and `make olddefconfig` would otherwise silently drop them and trip the `check_for_config_applicability.inc` diff guard. **Seed fact confirmed verbatim.** |
-| `fips=1, canister_build=0` ⇒ `canister_usage=1` | **x86_64 default** | links against a *prebuilt* canister: `linux.spec:133-135` `BuildRequires: linux-fips-canister = 6.12.60-18.1.ph5`. That RPM is **not** in `/root/5.0/stage` — it is pulled from the Broadcom repo at build time. I could not locate a local copy. |
+| `fips=1, canister_build=0` ⇒ `canister_usage=1` | **x86_64 default** | links against a *prebuilt* canister: `linux.spec:133-135` `BuildRequires: linux-fips-canister = 6.12.60-18.2.ph5`. That RPM is **not** in `/root/5.0/stage` — it is pulled from the Broadcom repo at build time. I could not locate a local copy. |
 | `fips=1, canister_build=1` | `CANISTER_BUILD=1` env or `"canister-build": true` in build-config | builds the canister and emits the `linux-fips-canister` subpackage (`linux.spec:559-563`, `%if 0%{?canister_build}`) |
 | `acvp_build=1` / `kat_build=1` | `ACVP_BUILD` / `KAT_BUILD` env | certification builds; `kat_build` forces `acvp_build=1` + `canister_build=1`; `acvp_build` forces `fips=1`. Release string gains `.acvp` / `.kat` (`linux.spec:79`) |
 
@@ -916,9 +916,15 @@ photon-upgrade --precheck-only                  # dry run
 
 * Whether upstream `vmware/6.0` also self-identifies as `.ph5` / release `5.0` /
   subrelease `100` — only `vmware/5.0` is fetched on this host.
-* Where `linux-fips-canister-6.12.60-18.1.ph5` comes from concretely; no copy exists
-  under `/root/5.0/stage` or `/root/common/stage`. It is presumably resolved from
-  `packages.broadcom.com` into the build sandbox.
+* ~~Where `linux-fips-canister-6.12.60-18.2.ph5` comes from concretely~~ —
+  **answered 2026-09-02: nowhere. It is not published.** The guess that it
+  resolves from `packages.broadcom.com` is wrong. The repo index at
+  `https://packages.broadcom.com/artifactory/photon/5.0/photon_updates_5.0_x86_64/x86_64/`
+  publishes `linux-fips-canister-6.12.60-18.ph5` — release `18`, not `18.2`. So the
+  pin above cannot be satisfied by any published RPM, and a build that recompiles
+  the kernel has no canister to link. This is the reason the `equivalent` canister
+  mode exists and why its phase A is currently mandatory rather than optional:
+  see the matrix docs, section 2b.
 * The exact former filename of the secure-boot ISO in `/root/5.0/stage/` — that
   directory now holds only `iso/`, `minimal-iso/` and no ISO named `*secureboot*`.
 * The numeric meaning of installer `Error(1011)`: no `tdnferror.h` is present on

@@ -53,6 +53,30 @@ ethernet0.virtualDev = "@@NIC_DEV@@"
 ethernet0.addressType = "static"
 ethernet0.address = "@@GUEST_MAC@@"
 
+# NO VLAN KEY, and there cannot be one. `ethernet0.vlanID` is a vSphere
+# PORTGROUP property, not a Workstation VMX key: `strings` over
+# x64/vmware-vmx.exe, vmnetBridge.dll and vnetlib.dll on this host finds no
+# VLAN/trunk symbol of any kind (the `vlance` hits are the AMD PCnet
+# emulation). Workstation 17's Virtual Network Editor has no VLAN concept
+# either. So 802.1Q tagging can only happen INSIDE the guest, which is exactly
+# what POI's `vlans` kickstart config does - and nothing on vmnet8 will answer
+# a tagged frame, because the NAT gateway and VMnetDHCP.exe are both bound to
+# the untagged segment. A VLAN row therefore proves what the installer
+# CONFIGURED, never that tagged traffic flows.
+
+# --- management NIC (network axis, IPv6-only rows only) -------------------
+# An IPv6-only guest is unreachable from this harness for three independent
+# reasons - vmnetnat.conf has natIp6Enable = 0, no DHCPv6 server exists on this
+# host in any configuration, and WSL2 in NAT networking mode has no IPv6 stack
+# at all (only link-local in /proc/net/if_inet6). So such a row gets a second
+# NIC on the same NAT segment, doing plain DHCPv4, purely so ssh has a path in.
+# Every other row renders a comment here instead.
+#
+# UNPROVEN ON THIS HOST: no VM here has ever had two NICs. If power-on fails
+# for a row that carries this block, the row degrades to unrunnable on the c02
+# precedent - it is not a POI defect.
+@@MGMT_NIC@@
+
 # Still pinned, and still distinct per permutation: a shared UUID would make
 # VMware treat every clone as the same machine.
 uuid.action = "keep"

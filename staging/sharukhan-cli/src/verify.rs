@@ -63,24 +63,44 @@ pub fn run(
     // taken against one must never be read as a compliance claim. Recording it
     // here means the evidence carries the caveat, not just the report that
     // cites it.
-    let origin = crate::canister::detect(cfg, std::env::consts::ARCH)
-        .map(|st| {
-            let label = st.label();
-            if st.is_validated() {
-                label.to_string()
-            } else {
-                format!("{label} (NOT CMVP validated)")
-            }
-        })
-        .unwrap_or_else(|e| format!("unknown ({e})"));
+    //
+    // The kernel NEVR is read from this row's VARIANT PATCH, not from the
+    // pristine spec: the patch is what sets Release, and `resolve` resets SPECS
+    // to pristine between builds, so a detection taken from the tree answers
+    // for a kernel nobody built. That is the same mistake `detect_for` exists
+    // to prevent, and it reached here too.
+    let kernel = crate::build::kernel_nevr(cfg, &cfg.variant_patches.join(format!("poi-{}.patch", p.poi)));
+    let origin = crate::canister::detect_for(
+        cfg,
+        std::env::consts::ARCH,
+        kernel.as_deref().ok(),
+    )
+    .map(|st| {
+        let label = st.label();
+        if st.is_validated() {
+            label.to_string()
+        } else {
+            format!("{label} (NOT CMVP validated)")
+        }
+    })
+    .unwrap_or_else(|e| format!("unknown ({e})"));
     c.check(
         "meta.canister_origin",
         "PR#24",
         Status::Info,
         "",
         &origin,
-        "which canister this kernel carries; only 'certified' may be reported as compliant",
+        &format!(
+            "which canister this kernel carries with canister={}; only 'certified' \
+             may be reported as compliant",
+            p.canister
+        ),
     );
+    // What guest.canister_based_on must read. Decided from the row's axis, not
+    // from what the guest happens to say: an equivalent build that fell back to
+    // the certified canister has to FAIL, and it can only do that against an
+    // expectation formed before the answer is seen.
+    let want = oracle::canister_expectation(&p.canister, kernel);
 
     // --- media -----------------------------------------------------------
     // Do not hardcode the canister mode: an ISO built with --canister
@@ -149,7 +169,7 @@ pub fn run(
     let g = Guest::new(&cfg.ssh_user, &ip, &cfg.ssh_key(), 10);
     let probe = g.reachable();
     if probe.ok {
-        oracle::guest(&g, &p.stig, &p.fs, &mut c);
+        oracle::guest(&g, &p.stig, &p.fs, &want, &p.net, &mut c);
         oracle::harvest(&g, &harvest, cfg.guest_password().ok(), &mut c);
     } else {
         // ssh's own words are the finding, not a footnote to it: s02 is

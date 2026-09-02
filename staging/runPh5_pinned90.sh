@@ -17,6 +17,7 @@
 # $3 - Release branch name (default: 5.0)
 # $4 - Output directory (default: /mnt/c/Users/dcaso/Downloads/Ph-Builds)
 # $5 - Image type (default: minimal-iso; pass "iso" for the full ISO)
+# $6 - FIPS canister mode (default: prebuilt; build|acvp|kat)
 
 BASE_DIR="${1:-/root}"
 COMMON_BRANCH="${2:-common}"
@@ -51,6 +52,28 @@ case "$IMG_TYPE" in
     ;;
 esac
 echo "[runPh5_pinned90] Image type: $IMG_TYPE"
+
+# ── FIPS canister mode ────────────────────────────────────────────────
+# $6 selects how the FIPS crypto canister is handled by SPECS/linux.
+# On x86_64 linux.spec sets "%global fips 1" unguarded, so FIPS itself
+# cannot be turned off from outside; canister_usage is derived
+# (canister_usage = !canister_build when fips=1) and per linux.spec:40
+# cannot be set directly. The externally settable macros are therefore
+# canister_build, acvp_build and kat_build:
+#   prebuilt  (default) link the prebuilt canister object -> canister_usage=1
+#   build     canister_build=1, build the canister from source
+#   acvp      acvp_build=1, FIPS-certification build (forces fips=1)
+#   kat       kat_build=1, non-production KAT build (forces acvp+canister_build)
+CANISTER_MODE="${6:-prebuilt}"
+case "$CANISTER_MODE" in
+  prebuilt|build|acvp|kat) ;;
+  *)
+    echo "[runPh5_pinned90] ERROR: unsupported canister mode '$CANISTER_MODE'" 1>&2
+    echo "[runPh5_pinned90]        valid: prebuilt (default), build, acvp, kat" 1>&2
+    exit 1
+    ;;
+esac
+echo "[runPh5_pinned90] Canister mode: $CANISTER_MODE"
 
 # SPECS/90 ships libcap 2.x (no libcap-libs split). Exclude libcap-libs so
 # transitive deps don't pull the >= 92 libcap-libs and conflict.
@@ -186,7 +209,41 @@ with open('build-config.json','w') as f: json.dump(cfg, f, indent=4); f.write('\
   fi
 
   # ── Point the build at the local POI image ────────────────────────
+
+  # ── Per-package build options: FIPS canister macros ───────────────
+  # build.py reads the path from build-config.json
+  # ["photon-build-param"]["pkg-build-options"] and loads it via
+  # Builder.get_packages_with_build_options(), which is guarded by
+  # os.path.exists() -- so a path that does not resolve is silently ignored.
+  # The shipped value is the bare name "pkg_build_options.json"; build.py runs
+  # with cwd=$COMMON_BRANCH (the Makefile pushd), where no such file exists,
+  # so the whole mechanism is currently inert. Write an absolute path to a
+  # generated file kept OUTSIDE both git trees, so nothing tracked is dirtied.
+  PKG_BUILD_OPTIONS="$BASE_DIR/photon-pkg-build-options.json"
+  python3 -c "
+import json, sys
+mode = sys.argv[1]
+macros = {'prebuilt': [], 'build': ['canister_build 1'],
+          'acvp': ['acvp_build 1'], 'kat': ['kat_build 1']}[mode]
+opts = {p: {'pullsources': [], 'macros': list(macros)} for p in ('linux', 'linux-esx')}
+with open(sys.argv[2], 'w') as f:
+    json.dump(opts, f, indent=4)
+" "$CANISTER_MODE" "$PKG_BUILD_OPTIONS" && \
+    echo "[runPh5_pinned90] Canister macros -> $PKG_BUILD_OPTIONS"
+
   COMMON_CFG="$BASE_DIR/$COMMON_BRANCH/build-config.json"
+  # Point build.py at the generated options file. Also repairs the shipped
+  # relative path, which never resolves from build.py's cwd.
+  if [ -f "$COMMON_CFG" ]; then
+    python3 -c "
+import json
+with open('$COMMON_CFG') as f:
+    cfg = json.load(f)
+cfg.setdefault('photon-build-param', {})['pkg-build-options'] = '$PKG_BUILD_OPTIONS'
+with open('$COMMON_CFG', 'w') as f:
+    json.dump(cfg, f, indent=4)
+" 2>/dev/null && echo "[runPh5_pinned90] pkg-build-options -> $PKG_BUILD_OPTIONS"
+  fi
   if [ -f "$COMMON_CFG" ]; then
     POI_SET=$(python3 -c "
 import json

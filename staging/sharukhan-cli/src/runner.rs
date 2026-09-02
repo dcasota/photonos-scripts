@@ -61,13 +61,10 @@ pub fn cmd_run(cfg: &Config, o: &RunOpts) -> Result<(), String> {
     let mut runnable: Vec<Permutation> = Vec::new();
     println!("selection: {} row(s)", sel.len());
     for p in &sel {
-        if p.is_unrunnable_here() {
-            println!(
-                "  refused {:<5} canister={} needs aarch64, this host is {}",
-                p.id,
-                p.canister,
-                std::env::consts::ARCH
-            );
+        if let Some(why) = p.unrunnable_reason() {
+            // The REASON, not just the refusal: a row absent from a run is
+            // only recoverable a year later if the run said why.
+            println!("  refused {:<5} {why}", p.id);
         } else if p.needs_operator() {
             println!(
                 "  refused {:<5} mode=ui needs a human at the console: \
@@ -400,6 +397,7 @@ fn run_row(
             mode: install::Mode::Auto,
             timeout_sec: cfg.install_timeout_sec,
             no_wait: false,
+            second_nic: p.net.needs_second_nic(),
         },
         &mut log,
     )?;

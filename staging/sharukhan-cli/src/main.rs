@@ -22,6 +22,7 @@ mod identity;
 mod kickstart;
 mod job;
 mod matrix;
+mod net;
 mod media;
 mod memory;
 mod phases;
@@ -83,7 +84,12 @@ OPTIONS:
     --purge             delete old stashes as well (teardown)
     --iso-type <t>      minimal | full (build-iso)
     --poi <v>           2.8 | latest (build-iso)
-    --canister <c>      prebuilt | build | acvp | kat (build-iso)
+    --canister <c>      prebuilt | build | acvp | kat | equivalent (build-iso)
+                        equivalent = build a canister from the kernel under
+                        test, then relink both flavours against it (two builds;
+                        phase A is skipped, and the result stays CMVP certified,
+                        when one is already published at that kernel NEVR).
+                        The matrix uses prebuilt and equivalent only.
     --force             rebuild even on a cache hit (build-iso)
     --severity <level>  filter findings by severity
     --jobs <n>          proposed parallel VM count (status); default is cpus/4
@@ -531,22 +537,39 @@ fn cmd_plan(cfg: &config::Config, only: Option<&str>) -> Result<(), String> {
         let (t, p, c) = (parts[0], parts.get(1).copied().unwrap_or(""), parts.get(2).copied().unwrap_or("prebuilt"));
         let dir = cfg.iso_cache.join(format!("{t}-poi{p}-{c}"));
         let have = dir.join("photon.iso").exists();
-        println!("  {:<26} {}", k, if have { "cached" } else { "must be built" });
+        // "must be built" is an invitation to spend hours, so it must not be
+        // printed for an ISO no row on this host can use: every row behind
+        // full/2.8/fips0-aarch64 is unrunnable on x86_64, and building it would
+        // produce media nothing here can boot.
+        let usable = sel
+            .iter()
+            .any(|r| &r.iso_key() == k && !r.is_unrunnable_here());
+        let state = match (have, usable) {
+            (true, _) => "cached",
+            (false, true) => "must be built",
+            (false, false) => "not needed here (every row using it is unrunnable on this host)",
+        };
+        println!("  {:<26} {}", k, state);
     }
 
     let (auto, oper): (Vec<_>, Vec<_>) = sel.iter().partition(|p| !p.needs_operator());
     let blocked: Vec<_> = sel.iter().filter(|p| p.is_unrunnable_here()).collect();
     println!("\npermutations: {} ({} autonomous, {} need an operator)", sel.len(), auto.len(), oper.len());
     if !blocked.is_empty() {
-        println!("  {} cannot run on this host ({}): {}",
-                 blocked.len(), std::env::consts::ARCH,
-                 blocked.iter().map(|p| p.id.as_str()).collect::<Vec<_>>().join(", "));
+        println!("  {} cannot run on this host:", blocked.len());
+        for p in &blocked {
+            println!("    {:<5} {}", p.id, p.unrunnable_reason().unwrap_or_default());
+        }
     }
-    println!("  {:<5} {:<8} {:<7} {:<5} {:<6} {:<5} {:<10} {:<14} {}", "ID", "ISO", "POI", "STIG", "FS", "MODE", "VARIANT", "CANISTER", "DOC");
+    println!("  {:<5} {:<8} {:<7} {:<5} {:<6} {:<5} {:<10} {:<12} {:<18} {}",
+             "ID", "ISO", "POI", "STIG", "FS", "MODE", "VARIANT", "CANISTER", "NET", "DOC");
     for p in &sel {
+        // The default token is what every row did before the axis existed, so
+        // printing it on 36 rows would bury the five that actually vary it.
+        let net = if p.net.is_default() { "-" } else { p.net.token.as_str() };
         println!(
-            "  {:<5} {:<8} {:<7} {:<5} {:<6} {:<5} {:<10} {:<14} {}",
-            p.id, p.iso_type, p.poi, p.stig, p.fs, p.mode, p.variant, p.canister, p.doc
+            "  {:<5} {:<8} {:<7} {:<5} {:<6} {:<5} {:<10} {:<12} {:<18} {}",
+            p.id, p.iso_type, p.poi, p.stig, p.fs, p.mode, p.variant, p.canister, net, p.doc
         );
     }
     Ok(())
@@ -685,7 +708,61 @@ fn cmd_report(cfg: &config::Config, only: Option<&str>) -> Result<(), String> {
 /// project - and it costs seconds against a build's hours.
 fn cmd_canister(cfg: &config::Config, rebase_check: bool) -> Result<(), String> {
     let arch = std::env::consts::ARCH;
-    let state = canister::detect(cfg, arch)?;
+
+    // The kernel that will actually be COMPILED, not the one sitting in the
+    // tree: the variant patch sets Release, so a decision taken from the
+    // pristine spec is a decision about a different kernel. Fall back to the
+    // tree only when no variant patch exists yet, and say so.
+    let patch = cfg.variant_patches.join("poi-2.8.patch");
+    let effective = if patch.is_file() {
+        build::kernel_nevr(cfg, &patch)?
+    } else {
+        println!("note: no variant patch yet, reading the pristine tree");
+        canister::detect(cfg, arch)
+            .ok()
+            .and_then(|s| match s {
+                canister::State::Certified { version } => Some(version),
+                canister::State::Equivalent { kernel, .. } => Some(kernel),
+                canister::State::Unknown { kernel, .. } => Some(kernel),
+                canister::State::Absent { .. } => None,
+            })
+            .unwrap_or_default()
+    };
+
+    let prov = canister::provenance(cfg, effective.clone());
+    println!("kernel to be used: {}", prov.effective);
+    println!(
+        "  fork      origin/{}   {}",
+        cfg.release,
+        prov.fork.clone().unwrap_or_else(|| "unreadable".into())
+    );
+    println!(
+        "  reference vmware/{}   {}",
+        cfg.release,
+        prov.upstream.clone().unwrap_or_else(|| "unreadable".into())
+    );
+    if prov.fork_differs() {
+        println!(
+            "  WARNING: the fork's kernel differs from the reference. Carrying patches\n  is what a fork is for, but a canister verdict taken here is about the\n  FORK's kernel and does not automatically hold for vmware/{}.",
+            cfg.release
+        );
+    }
+    if !prov.unread.is_empty() {
+        println!(
+            "  WARNING: could not read {} - fetch it before trusting this comparison",
+            prov.unread.join(", ")
+        );
+    }
+    if prov.fork.as_deref() != Some(prov.effective.as_str()) && prov.fork.is_some() {
+        println!(
+            "  note: the build applies a variant patch, so the kernel under test\n  ({}) is ahead of the fork branch ({}) - expected while a PR is open",
+            prov.effective,
+            prov.fork.clone().unwrap_or_default()
+        );
+    }
+    println!();
+
+    let state = canister::detect_for(cfg, arch, Some(&prov.effective))?;
     println!("state: {}", state.label());
     match &state {
         canister::State::Certified { version } => {
@@ -694,7 +771,7 @@ fn cmd_canister(cfg: &config::Config, rebase_check: bool) -> Result<(), String> 
         }
         canister::State::Equivalent { kernel, certified } => {
             println!("  kernel under test        {kernel}");
-            println!("  certified canister pin   {certified}");
+            println!("  newest published         {certified}");
             println!("  no official canister exists at this kernel level, so same-version");
             println!("  coverage needs one built locally: functionally equivalent, NOT validated");
         }
@@ -702,7 +779,23 @@ fn cmd_canister(cfg: &config::Config, rebase_check: bool) -> Result<(), String> 
             println!("  arch {arch}: {reason}");
             println!("  this is a correct outcome, not a failure");
         }
+        canister::State::Unknown { kernel, reason } => {
+            println!("  kernel under test        {kernel}");
+            println!("  the published canister list could not be read: {reason}");
+            println!("  no plan is offered - \"build one locally\" and \"we could not look\"");
+            println!("  are different claims, and only the first justifies the build");
+        }
     }
+
+    println!("\nplan: {}", match canister::plan(&state) {
+        canister::Plan::LinkPublished { version } =>
+            format!("link the published canister {version} - no phase A, stays certified"),
+        canister::Plan::BuildThenLink { version } =>
+            format!("phase A: build a canister from {version}; \
+phase B: relink linux and linux-esx against it"),
+        canister::Plan::Nothing { .. } => "nothing to do on this architecture".to_string(),
+        canister::Plan::Refuse { .. } => "REFUSED until the published list can be read".to_string(),
+    });
     if !state.is_validated() {
         println!("\nany FIPS verdict taken in this state must be recorded as NOT CMVP validated");
     }

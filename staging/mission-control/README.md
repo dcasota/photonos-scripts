@@ -33,10 +33,88 @@ HTTP server, no typing at a boot menu. That splits the matrix cleanly:
 
 | Layer | Axes | Cost |
 |---|---|---|
-| **Build time** | ISO type × installer version | 4 ISOs, cached and reused |
-| **Install time** | STIG × filesystem × kickstart-vs-UI | free |
+| **Build time** | ISO type × installer version × canister | one ISO per tuple, cached and reused |
+| **Install time** | STIG × filesystem × kickstart-vs-UI × network | free |
 
-34 permutations, 4 ISOs.
+41 permutations, 6 ISO keys — of which 4 (`{minimal,full} × {2.8,latest}` on
+`prebuilt`) serve 34 rows. The canister is a **build-time** axis, so c01
+(`full/2.8/equivalent`) costs its own multi-hour build; c02
+(`full/2.8/fips0-aarch64`) needs aarch64 hardware and is never built here.
+That asymmetry is why the canister rows are kept to the minimum that can prove
+anything — see ISO-PERMUTATION-MATRIX.md §2b.
+
+The **network** axis (`net` column, rows n01–n05) is install-time for the same
+reason the others are: the config travels in `guestinfo.kickstart.data` and is
+applied by `_setup_network()` against an already-installed root. All five rows
+share k01's ISO key, so the block costs five installs and **zero** builds.
+`Permutation::iso_key()` excludes it deliberately, and a test asserts that.
+
+It is also not crossed with `poi`, because there would be nothing to find:
+
+```
+$ git -C photon-os-installer diff v2.8 master -- photon_installer/networkmanager.py
+$
+```
+
+`networkmanager.py` is byte-identical across the poi axis, so a `poi=latest`
+network row would re-test the same file at the price of a second multi-hour
+ISO.
+
+## The network axis, and what this host cannot test
+
+`permutations.tsv` carries a `net` column: `<family>-<assignment>-<vlan>`, with
+an absent column meaning `v4-dhcp-untag` — exactly what every pre-existing row
+already did. The full grammar, the schema split, and the environment knobs are
+in `sharukhan-cli/README.md`.
+
+Seven of the twelve nominal cells are absent, for reasons that belong to **this
+host** rather than to POI. Recorded here because they are the hard part to
+reconstruct later:
+
+**IPv6 — three independent blockers, any one sufficient:**
+
+1. `vmnetnat.conf` has `natIp6Enable = 0`: the vmnet8 NAT device emits no
+   router advertisement and offers no IPv6 gateway.
+2. **No DHCPv6 server exists on this host in any configuration.**
+   `VMnetDHCP.exe` is a VMware port of ISC 2.0, IPv4-only, and
+   `vmnetdhcp.conf` declares only IPv4 subnets. Enabling `natIp6Enable` would
+   not create one.
+3. **WSL2 runs `networkingMode = Nat` and has no IPv6 stack** — only
+   link-local in `/proc/net/if_inet6`, and `ping -6` says "Network is
+   unreachable". The harness itself cannot reach a guest over IPv6 whatever
+   the hypervisor does.
+
+DHCPv6 and SLAAC rows are therefore recorded as unrunnable rather than run and
+failed. **Static** IPv6 needs no router, no server and no peer, so it is
+testable and is what n02/n03 do.
+
+**VLAN — one blocker:**
+
+4. **VMware Workstation 17 has no VLAN backing of any kind.**
+   `ethernet0.vlanID` is a vSphere portgroup property; `strings` over
+   `vmware-vmx.exe`, `vmnetBridge.dll` and `vnetlib.dll` finds no VLAN or
+   trunk symbol, and the Virtual Network Editor has no VLAN concept. Tagging
+   can only happen inside the guest, and nothing on vmnet8 answers a tagged
+   frame. Bridged mode is no escape — the only uplink is Wi-Fi, and 802.1Q
+   over a bridged wireless adapter does not work.
+
+A VLAN row therefore proves what the installer **configured**, never that
+tagged traffic flows.
+
+### n05 is environmental; s02 is a defect
+
+`n05` (`v4-dhcp-vlan100`) carries `expect = fails`, and that failure is caused
+by blocker 4 — no change to Photon or to the installer would make it pass here.
+`s02` carries the same verdict for the opposite reason: it is a real defect and
+somebody should fix it. **A reader who cannot tell these apart will eventually
+fix the wrong one.**
+
+Underneath n05 there is a genuine POI gap: `networkmanager.py` writes only
+`[Match]`, `[Network]`, `[NetDev]` and `[VLAN]` sections, so
+`RequiredForOnline=` is unreachable from the kickstart schema — an operator who
+knows a link cannot come up has no way to say so, and
+`systemd-networkd-wait-online` (enabled by preset) fails forever. Written up in
+`/root/photon-mc/poi-gap-requiredforonline.md` for filing upstream separately.
 
 ## Why both kickstart and UI
 
@@ -49,6 +127,12 @@ the other cannot reach.
 - The **`security:` key is kickstart-only** on POI 2.8. Rows `s01`/`s02` cover
   it, and `s02` (`security: {fips: …}`) is reachable *exclusively* from a
   kickstart on either installer version.
+- The **network axis is UI-unreachable.** `netconfig.py` offers only DHCP,
+  DHCP-with-hostname, manual static and VLAN, and its `validate_ipaddr` hard-
+  requires four dotted decimal octets — the installer UI cannot accept an IPv6
+  address at all. So `net` varies only on `mode=ks` rows, and the two legacy
+  tokens (`v4-static-untag`, `v4-dhcp-vlanNNN`) are precisely the shapes a UI
+  install would have written.
 - The **same failure looks different** on the two paths. In UI mode a missing
   package reduces to `InstallerError("Installer failed")` on screen with the
   real cause only in `/var/log/installer`; in kickstart mode the tdnf error

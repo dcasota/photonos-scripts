@@ -79,8 +79,21 @@ pub struct Config {
     /// empty gateway and nameserver, which yields a guest with no route.
     pub net_gateway: String,
     pub net_dns: String,
-    #[allow(dead_code)]
+    /// The IPv4 prefix length of the NAT segment. No longer dead: the network
+    /// axis turns it into the dotted netmask the legacy kickstart schema wants,
+    /// and into the /NN suffix the v2 schema wants.
     pub net_cidr: u32,
+    /// The IPv6 ULA prefix guests are addressed from. A ULA on purpose - this
+    /// host has no IPv6 router and no DHCPv6 server in any configuration, so a
+    /// global prefix would be claiming reachability that does not exist. It is
+    /// configured, not routed: the address is assigned, DAD completes, and
+    /// nothing off-segment can be reached with it. That is the whole of the
+    /// IPv6 coverage this host can support.
+    pub net_v6_prefix: String,
+    /// The segment a tagged sub-interface is addressed from. Deliberately NOT
+    /// the management segment: nothing on vmnet8 answers a tagged frame, so an
+    /// address here can never be confused with one that works.
+    pub net_vlan_prefix: String,
     pub ip_base: usize,
     /// e1000, not vmxnet3. VMware refuses to power this VM on with vmxnet3:
     ///   Vmxnet3 PCI: failed to reserve slot for vmxnet3 PCIe device
@@ -136,6 +149,18 @@ fn n_or<T: std::str::FromStr + Copy>(key: &str, default: T) -> T {
 }
 
 impl Config {
+    /// A Config whose only meaningful field is the photon tree.
+    ///
+    /// `load()` reads the real environment and would make a unit test depend on
+    /// this host; everything under test here reads `photon_tree` and nothing
+    /// else, so the rest is left at its default.
+    #[cfg(test)]
+    pub fn for_test(tree: &std::path::Path) -> Self {
+        let mut c = Config::load();
+        c.photon_tree = tree.to_path_buf();
+        c
+    }
+
     pub fn load() -> Self {
         let here = env::var("SHARUKHAN_ROOT")
             .unwrap_or_else(|_| "/root/photonos-scripts/staging/mission-control".to_string());
@@ -181,6 +206,8 @@ impl Config {
             net_gateway: s_or("MC_NET_GATEWAY", &format!("{net_prefix}.2")),
             net_dns: s_or("MC_NET_DNS", &format!("{net_prefix}.2")),
             net_cidr: n_or("MC_NET_CIDR", 24),
+            net_v6_prefix: s_or("MC_NET_V6_PREFIX", "fd00:225"),
+            net_vlan_prefix: s_or("MC_NET_VLAN_PREFIX", "192.168.100"),
             ip_base: n_or("MC_IP_BASE", 40),
             nic_dev: s_or("MC_NIC_DEV", "e1000"),
             net_prefix,

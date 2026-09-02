@@ -72,6 +72,12 @@ mod tests {
             doc: "fails".into(),
             expect: "pass".into(),
             canister: "prebuilt".into(),
+            // The card exists for mode=ui rows, and the network axis is not
+            // expressible there at all: netconfig.py offers only DHCP,
+            // DHCP+hostname, manual static and VLAN, and its validate_ipaddr
+            // hard-requires four dotted decimal octets. So every carded row is
+            // and stays the default token.
+            net: crate::net::NetSpec::default(),
         }
     }
 

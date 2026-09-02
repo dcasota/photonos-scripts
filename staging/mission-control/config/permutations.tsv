@@ -8,13 +8,36 @@
 #   fs          ext4 | btrfs            INSTALL-TIME
 #   mode        ui | ks                 INSTALL-TIME (the fifth dimension)
 #   ks_variant  -                       ks only: none|selinux|fips|stigpkgs
-#   canister    prebuilt | build          BUILD-TIME axis -> selects/creates an ISO.
+#   canister    prebuilt | equivalent   BUILD-TIME axis -> selects/creates an ISO.
 #               x86_64 default is fips=1 + canister_usage=1, i.e. the kernel links
 #               against the PREBUILT linux-fips-canister RPM from the Broadcom repo.
-#               'build' compiles the canister locally and emits the subpackage.
-#               acvp/kat are certification builds that force other flags; they prove
-#               something about certification tooling, not about a PR, so they are
-#               deliberately not rows here. mc-build-iso.sh still accepts them.
+#               'equivalent' links a canister built from the kernel under test.
+#               It is two builds: phase A (canister_build=1 on linux only) makes
+#               linux-fips-canister-<kernel NEVR>.rpm, then phase B
+#               (canister_equivalent=1 + fips_canister_override=<NEVR> on BOTH
+#               flavours) relinks and builds the image. Phase A is CONDITIONAL -
+#               it runs only when nothing at that NEVR is already published.
+#               'build', 'acvp' and 'kat' are accepted by `sharukhan build-iso`
+#               but are deliberately NOT rows: 'build' emits a canister that no
+#               row installs (linux-esx hardcodes canister_build 0 and is the
+#               kernel the ISO boots), and acvp/kat prove something about
+#               certification tooling rather than about a PR.
+#   net         INSTALL-TIME axis: <family>-<assignment>-<vlan>, all three network
+#               dimensions in one column.
+#                 family      v4 | v6 | dual
+#                 assignment  dhcp | static
+#                 vlan        untag | vlanNNN   (NNN in 1..4094)
+#               Absent or "-" means v4-dhcp-untag, which is exactly what every
+#               row above the n-block has always done - the column documents the
+#               status quo rather than changing it. NOT a build-time axis: the
+#               network config reaches the guest through guestinfo.kickstart.data
+#               and is applied by _setup_network() against an already-installed
+#               root, so the five n-rows cost five installs and ZERO ISO builds.
+#               An unknown token fails `matrix::load`, naming the row: POI
+#               validates only the TOP-LEVEL keys of a kickstart, so a misspelt
+#               key inside "network" is silently ignored and yields a guest with
+#               no address and no error anywhere. The harness is the only place
+#               that typo can ever be caught.
 #   doc         the verdict ISO-PERMUTATION-MATRIX.md records (pre-PR)
 #   expect      what mission control expects WITH all PRs applied
 #
@@ -27,7 +50,7 @@
 # ks_variant=stigpkgs does. This is a genuinely different code path, not a
 # duplicate of the UI row.
 #
-#id      iso_type  poi     stig  fs     mode  ks_variant  doc        expect  canister
+#id      iso_type  poi     stig  fs     mode  ks_variant  doc        expect  canister    net
 p01      minimal   2.8     no    ext4   ui    -           works      pass   prebuilt
 p02      minimal   2.8     no    btrfs  ui    -           untested   pass   prebuilt
 p03      minimal   2.8     yes   ext4   ui    -           fails      pass   prebuilt
@@ -67,10 +90,132 @@ k16      full      latest  yes   btrfs  ks    stigpkgs    untested   pass   preb
 s01      minimal   2.8     no    ext4   ks    selinux     fails      pass   prebuilt
 s02      minimal   2.8     no    ext4   ks    fips        fails      pass   prebuilt
 
-# Canister axis. c01 is the only row that exercises a locally BUILT canister,
-# which is the code path PR #1673 (shared canister_config.inc) touches - nothing
-# else in this matrix executes it. c02 needs aarch64 hardware: fips=0 is the
-# aarch64 default and is not reachable on x86_64, so it stays UNRUNNABLE here
-# rather than being quietly dropped.
-c01      full      2.8     no    ext4   ks    none        untested   pass    build
+# Canister axis. c01 was canister=build until 2026-09-02 and never produced a
+# verdict, because `build` cannot produce one: canister_build=1 forces
+# canister_usage=0, so the kernel that build creates links NO canister, and the
+# kernel the ISO actually boots is linux-esx, whose spec hardcodes
+# canister_build 0 / canister_usage 1 and therefore ignores the flag entirely.
+# A `build` ISO boots the same certified 6.12.60 canister every prebuilt row
+# boots - hours spent re-testing k09. It is re-scoped, not replaced, because it
+# has no results to invalidate.
+#
+# canister=equivalent is the row that proves the thing: phase A runs the same
+# canister_build=1 creation path `build` did (so no coverage is lost), and phase
+# B links the result into BOTH flavours, which is the only way a guest can
+# observe it. The proof is guest.canister_based_on, which must read the kernel
+# NEVR under test instead of the certified 6.12.60-18.ph5.
+#
+# One row, not several. The canister is a kernel link-time artefact: iso_type
+# and poi change the media and the installer, not the kernel (both variant
+# patches set the same linux Release), and every install-time axis is orthogonal
+# to it. k09 is the paired control - same full/2.8/ks/none row on prebuilt - so
+# any difference in guest.canister_based_on is attributable to this axis alone.
+#
+# c02 needs aarch64 hardware: fips=0 is the aarch64 default and is not reachable
+# on x86_64, so it stays UNRUNNABLE here rather than being quietly dropped.
+c01      full      2.8     no    ext4   ks    none        untested   pass    equivalent
 c02      full      2.8     no    ext4   ks    none        untested   pass    fips0-aarch64
+
+# ===========================================================================
+# Network axis. Five rows, appended - never inserted: identity.rs derives each
+# VM's MAC, UUID and IP from the row ORDINAL, so inserting a row anywhere above
+# would silently re-address every VM below it.
+#
+# Every n-row pins all five other axes to k01's values (minimal 2.8 no ext4 ks
+# none prebuilt), so the ONLY difference between an n-row and k01 is `net`, and
+# k01 is the paired control. All five share k01's iso_key, so the block costs
+# no ISO build at all.
+#
+# poi is deliberately NOT crossed with net:
+#   git diff v2.8 master -- photon_installer/networkmanager.py   ->   EMPTY
+# The network code is byte-identical across the poi axis, so a poi=latest
+# network row would re-test the same file at the price of a second multi-hour
+# ISO. mode=ui is not crossed either: netconfig.py offers only DHCP,
+# DHCP+hostname, manual static and VLAN, and its validate_ipaddr hard-requires
+# four dotted decimal octets - the axis is not expressible from the curses
+# configurator at all.
+#
+# ---------------------------------------------------------------------------
+# WHY 7 OF THE 12 NOMINAL CELLS ARE ABSENT. These are findings about THIS HOST,
+# not about POI, and they are the reason the block is five rows and not twelve.
+#
+#  IPv6 has three independent blockers here, any one of which is sufficient:
+#   1. /mnt/c/ProgramData/VMware/vmnetnat.conf has `natIp6Enable = 0`, so the
+#      vmnet8 NAT device emits no router advertisement and offers no IPv6
+#      gateway. (The prefix it WOULD use is recorded there as
+#      natIp6Prefix = fd15:4ba5:5a2b:1008::/64.)
+#   2. No DHCPv6 server exists on this host IN ANY CONFIGURATION. VMnetDHCP.exe
+#      is a VMware port of ISC 2.0 and is IPv4-only; vmnetdhcp.conf declares
+#      only `subnet 192.168.58.0` and `subnet 192.168.225.0`. Turning
+#      natIp6Enable on would not create one.
+#   3. WSL2 runs in NAT networking mode (.wslconfig: `networkingMode = Nat`)
+#      and has NO IPv6 stack: /proc/net/if_inet6 holds only link-local
+#      addresses and `ping -6` reports "Network is unreachable". The harness
+#      itself therefore cannot reach any guest over IPv6, whatever the
+#      hypervisor does. Changing that needs `networkingMode = mirrored` and a
+#      full WSL restart - a global host change.
+#   => DHCPv6 and SLAAC rows are unrunnable here and are recorded as such by
+#      NetSpec::unrunnable_reason rather than written out and failed. STATIC
+#      IPv6 needs no router, no server and no peer, so it IS testable: the
+#      address is assigned, DAD completes, and the guest can be asked what it
+#      has over an IPv4 path. That is n02 and n03.
+#
+#  VLAN has one blocker:
+#   4. VMware Workstation 17 has NO VLAN backing of any kind. `ethernet0.vlanID`
+#      is a vSphere PORTGROUP property; `strings` over x64/vmware-vmx.exe,
+#      vmnetBridge.dll and vnetlib.dll finds no VLAN/trunk symbol at all, and
+#      the Virtual Network Editor has no VLAN concept. Tagging can therefore
+#      only happen inside the guest - which is exactly what POI's `vlans`
+#      config does - and nothing on vmnet8 will answer a tagged frame, because
+#      the NAT gateway and VMnetDHCP.exe are both bound to the untagged
+#      segment. Bridged mode is no escape: the only uplink on this host is
+#      Wi-Fi (Intel AX211), and 802.1Q over a bridged wireless adapter does not
+#      work. There is no wired NIC.
+#   => A VLAN row proves what the installer CONFIGURED, never that tagged
+#      traffic flows. The oracle asserts accordingly and says so.
+# ---------------------------------------------------------------------------
+#
+# n01  The first row in this project's history to execute the static kickstart
+#      path at all: phases.rs pinned `ip: None`, so Network::Static and its
+#      gateway/nameserver were dead code. It is also the only row where every
+#      network assertion is provable end to end - address, default route, DNS
+#      resolution, and ssh on the CONFIGURED address rather than a lease.
+# n02  Dual-stack. Proves the v2 `addresses` list carries both families into
+#      ONE 50-*.network file and that adding IPv6 breaks nothing on the IPv4
+#      side. Fully verifiable: ssh still goes over v4. The cheapest honest
+#      IPv6 coverage this host can support.
+# n03  IPv6-only: no IPv4 on eth0 at all. A dual-stack guest that silently
+#      ignored its v6 address still looks healthy, so only this shape can
+#      expose that. Needs a SECOND NIC (eth1, DHCPv4) purely so the harness has
+#      a path in - see blocker 3. UNPROVEN: no VM on this host has ever had two
+#      NICs. If power-on fails, the row degrades to unrunnable on the c02
+#      precedent; install.rs says so in the failure text. It is not a POI
+#      defect.
+# n04  The v2 `vlans` path: netdev Kind=vlan/Id=100, VLAN=eth0.100 on the
+#      parent, exact-name link resolution (_get_vlan_iface_name refuses a
+#      wildcard parent). The tag carries a STATIC address on purpose, so the
+#      link reaches `configured` with no server present.
+# n05  The LEGACY `"type":"vlan"` path - a genuinely different branch
+#      (_convert_legacy_config), and the shape the curses UI emits. It forces
+#      dhcp4 on both parent and tag, so the tagged DHCP times out and
+#      systemd-networkd-wait-online fails.
+#
+#      expect=fails, and THAT FAILURE IS ENVIRONMENTAL, NOT A POI DEFECT.
+#      This is the one distinction a reader must not lose: s02 is a real defect
+#      and someone should fix it; n05 fails because blocker 4 above means no
+#      switch on this host will ever answer a tagged frame, and no change to
+#      Photon or to the installer could make it pass here. What n05 does prove
+#      is that the legacy conversion ran and produced the right files. Its
+#      wait-online failure is asserted POSITIVELY (net.wait_online) and excluded
+#      from guest.failed_units, so it is recorded rather than hidden - and so it
+#      does not regress an assertion that has nothing to do with it.
+#      There is no kickstart-level remedy: networkmanager.py writes only
+#      [Match], [Network], [NetDev] and [VLAN] sections, so RequiredForOnline=
+#      is unreachable from the ks schema. That gap is written up separately in
+#      /root/photon-mc/poi-gap-requiredforonline.md.
+# ===========================================================================
+n01      minimal   2.8     no    ext4   ks    none        untested   pass    prebuilt    v4-static-untag
+n02      minimal   2.8     no    ext4   ks    none        untested   pass    prebuilt    dual-static-untag
+n03      minimal   2.8     no    ext4   ks    none        untested   pass    prebuilt    v6-static-untag
+n04      minimal   2.8     no    ext4   ks    none        untested   pass    prebuilt    v4-static-vlan100
+n05      minimal   2.8     no    ext4   ks    none        untested   fails   prebuilt    v4-dhcp-vlan100

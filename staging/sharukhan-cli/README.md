@@ -292,6 +292,13 @@ media
 `run` refuses a missing ISO rather than building one. `mc-run.sh` would have
 built it silently, turning a two-minute invocation into an eleven-hour one.
 
+That capture predates 2026-09-02: c01 was `canister=build` then, so the refused
+key reads `full/2.8/build`. It is `full/2.8/equivalent` now — `build` creates a
+canister that no row installs, because `canister_build=1` forces
+`canister_usage=0` and the kernel every row boots is `linux-esx`, which hardcodes
+`canister_build 0`. See ISO-PERMUTATION-MATRIX.md §2b. The refusal behaviour
+shown is unchanged.
+
 **A refused gate refuses the whole group.** Pointing at a variant patch that
 asks for `2.8-7` while the media carries `2.8-6`:
 
@@ -577,10 +584,130 @@ machine.
 | `VMRUN` | `/mnt/c/Program Files/VMware/VMware Workstation/vmrun.exe` |
 | `MC_BIN` | `<mission-control>/bin` |
 | `MC_RUN_LOG_DIR` | `/root/photon-mc/run-logs` |
+| `MC_NET_PREFIX` | `192.168.225` |
+| `MC_NET_CIDR` | `24` |
+| `MC_NET_V6_PREFIX` | `fd00:225` (a ULA — see the network axis below) |
+| `MC_NET_VLAN_PREFIX` | `192.168.100` |
 
 ```
 SHARUKHAN_DB=/tmp/other.db sharukhan findings
 ```
+
+## The network axis
+
+`permutations.tsv` carries an eleventh column, `net`, holding all three network
+dimensions in one token:
+
+```
+net = <family>-<assignment>-<vlan>
+      family      v4 | v6 | dual
+      assignment  dhcp | static
+      vlan        untag | vlanNNN     (NNN in 1..4094)
+```
+
+An absent column, or `-`, means `v4-dhcp-untag` — which is exactly what every
+row did before the axis existed, so the column documents the status quo rather
+than changing it. `kickstart::tests::the_default_net_token_reproduces_the_legacy_dhcp_kickstart_byte_for_byte`
+is the guard for that.
+
+**It is an install-time axis and costs no ISO builds.** The network config
+reaches the guest through `guestinfo.kickstart.data` and is applied by POI's
+`_setup_network()` against an already-installed root; it never touches the
+media, the package set or the installer. `Permutation::iso_key()` deliberately
+excludes it, and a test asserts that.
+
+**An unknown token fails `matrix::load`, naming the row.** This is not
+fastidiousness: `installer.py` validates only the *top-level* keys of a
+kickstart, so a misspelt key inside `network` is silently ignored by POI and
+produces a guest with no address and no error message anywhere. The harness is
+the only place that typo can ever be caught.
+
+Which POI schema a row exercises follows from its token, and the split is not
+arbitrary — `Legacy` is exactly the set the curses configurator can produce:
+
+| token | schema | what it exercises |
+| --- | --- | --- |
+| `v4-dhcp-untag` | legacy `type: dhcp` | the pre-axis default, 36 rows |
+| `v4-static-untag` | legacy `type: static` | n01 |
+| `v4-dhcp-vlanNNN` | legacy `type: vlan` | n05 |
+| `v4-static-vlanNNN` | v2 `vlans` | n04 |
+| `dual-static-untag` | v2, two families in one `addresses` list | n02 |
+| `v6-static-untag` | v2, plus a second NIC | n03 |
+
+All five generated configs were verified by running them through POI's own
+`networkmanager.py` offline (`networkmanager.py -D <dir> -f <config>`) and
+reading the systemd-networkd files it produced.
+
+### What this host cannot test, and why
+
+These are findings about the host, not about POI, and they are why the block is
+five rows rather than twelve.
+
+**IPv6 has three independent blockers, any one sufficient:**
+
+1. `/mnt/c/ProgramData/VMware/vmnetnat.conf` has `natIp6Enable = 0`. The vmnet8
+   NAT device emits no router advertisement and offers no IPv6 gateway.
+2. **No DHCPv6 server exists on this host in any configuration.**
+   `VMnetDHCP.exe` is a VMware port of ISC 2.0 and is IPv4-only;
+   `vmnetdhcp.conf` declares only `subnet 192.168.58.0` and
+   `subnet 192.168.225.0`. Setting `natIp6Enable = 1` would not create one.
+3. **WSL2 runs in NAT networking mode and has no IPv6 stack at all.**
+   `.wslconfig` has `networkingMode = Nat`; `/proc/net/if_inet6` holds only
+   link-local addresses and `ping -6` answers "Network is unreachable". The
+   harness itself cannot reach any guest over IPv6, whatever the hypervisor
+   does. Changing this needs `networkingMode = mirrored` and a full WSL
+   restart — a global host change.
+
+So DHCPv6 and SLAAC rows are **unrunnable here** and are recorded as such by
+`NetSpec::unrunnable_reason` rather than written out and failed. Static IPv6
+needs no router, no server and no peer, so it *is* testable: the address is
+assigned, DAD completes, and the guest can be asked what it has over an IPv4
+path. That is what n02 and n03 do. They could be extended to real IPv6
+reachability on a host with an IPv6 router — an ESXi portgroup, or KVM with
+`radvd`/`dnsmasq --enable-ra`.
+
+**VLAN has one blocker:**
+
+4. **VMware Workstation 17 has no VLAN backing of any kind.**
+   `ethernet0.vlanID` is a vSphere *portgroup* property; `strings` over
+   `x64/vmware-vmx.exe`, `vmnetBridge.dll` and `vnetlib.dll` finds no
+   VLAN/trunk symbol at all, and the Virtual Network Editor has no VLAN
+   concept. Tagging can therefore only happen inside the guest — which is
+   exactly what POI's `vlans` config does — and nothing on vmnet8 will answer a
+   tagged frame, because the NAT gateway and `VMnetDHCP.exe` are both bound to
+   the untagged segment. Bridged mode is no escape: the only uplink is Wi-Fi
+   (Intel AX211), and 802.1Q over a bridged wireless adapter does not work.
+   There is no wired NIC on this host.
+
+So a VLAN row proves what the installer **configured**, never that tagged
+traffic flows, and the oracle asserts accordingly.
+
+### n05 fails for the environment's reason, not POI's
+
+`n05` carries `expect = fails`. That failure is **environmental** — blocker 4
+means no switch here will ever answer its tagged DHCP, and no change to Photon
+or to the installer would make it pass. This is the opposite of `s02`, which is
+a real defect somebody should fix. Do not conflate them.
+
+What n05 *does* prove is that the legacy `type: vlan` conversion ran and wrote
+the right files. Its `systemd-networkd-wait-online` failure is asserted
+**positively** (`net.wait_online`) and excluded from `guest.failed_units`, so it
+is recorded rather than hidden — and so it cannot regress an assertion that has
+nothing to do with it.
+
+There is a genuine POI gap underneath: `networkmanager.py` writes only
+`[Match]`, `[Network]`, `[NetDev]` and `[VLAN]` sections, so `RequiredForOnline=`
+is unreachable from the kickstart schema and an operator who *knows* a link
+cannot come up has no way to say so. Written up in
+`/root/photon-mc/poi-gap-requiredforonline.md` for filing upstream.
+
+### n03 needs a second NIC, and that is unproven here
+
+An IPv6-only guest is unreachable from this harness (blocker 3), so `n03`'s VMX
+carries a second NIC on the same NAT segment doing plain DHCPv4, purely so ssh
+has a path in. **No VM on this host has ever had two NICs.** If `n03` refuses to
+power on, treat it as unrunnable here on the `c02` precedent — `install.rs`
+says exactly that in the failure text — rather than as a POI defect.
 
 ## Things learned the hard way
 
@@ -591,6 +718,13 @@ cost real time:
   `\t` yields zero rows and looks like an empty matrix rather than an error.
 - **`vmrun` output is CRLF-terminated.** It is a Windows binary; not stripping
   `\r` makes every comparison fail while the output looks correct.
+- **`vmx::placeholders` scans for `@@[A-Z_]+@@`, so a digit ends the token.**
+  `@@ETHERNET1@@` substitutes correctly and is then invisible to the contract
+  test that keeps the template and the renderer in step. The management NIC's
+  placeholder is `@@MGMT_NIC@@` for that reason.
+- **New matrix rows must be APPENDED, never inserted.** `identity.rs` derives
+  each VM's MAC, UUID and IP from the row *ordinal*, so inserting a row silently
+  re-addresses every VM below it.
 - **`vmrun` exits 0 even when the VM did not start.** A stale modal dialog in
   the Workstation UI silently swallows the power-on request, so a start has to
   be confirmed against the inventory, not trusted from the exit code.

@@ -87,7 +87,7 @@ pub fn resolve(
     let stage = cfg.photon_tree.join("stage/RPMS");
     if stage.is_dir() {
         let mut n = 0;
-        for p in find_files(&stage, "photon-os-installer-", ".rpm") {
+        for p in find_files_rec(&stage, "photon-os-installer-", ".rpm") {
             if fs::remove_file(&p).is_ok() {
                 n += 1;
             }
@@ -145,26 +145,121 @@ pub fn resolve(
         .join(format!("{}-{}.log", req.key(), job::stamp()));
     log(&format!("building {img} (canister={}) -> {}", req.canister, build_log.display()));
     log("this takes hours");
-    let logf = fs::File::create(&build_log).map_err(|e| format!("{}: {e}", build_log.display()))?;
-    let err = logf.try_clone().map_err(|e| format!("{e}"))?;
-    let rc = Command::new("sh")
-        .arg(stage_dir.join("runPh5_normal.sh"))
-        .arg(&cfg.build_root)
-        .arg(&cfg.build_common)
-        .arg(&cfg.release)
-        .arg(&dest)
-        .arg(img)
-        .arg(&req.canister)
-        .stdout(Stdio::from(logf))
-        .stderr(Stdio::from(err))
-        .status()
-        .map_err(|e| format!("running runPh5_normal.sh: {e}"))?;
-    if !rc.success() {
-        return Err(format!(
-            "build failed (rc={}), see {}",
-            rc.code().unwrap_or(-1),
-            build_log.display()
-        ));
+    // One invocation per phase. `equivalent` is one or two, decided HERE and
+    // now - never assumed.
+    //
+    // Phase A exists only to make a canister that nobody has published. That is
+    // true today and is not a property of the mode: the moment a canister is
+    // published at the kernel level under test, building one locally would
+    // throw away a certificate and spend hours doing it. So every canister run
+    // re-asks, against the kernel it is actually about to build (which the
+    // variant patch sets, not the pristine tree).
+    let (phases, nevr): (Vec<&str>, String) = if req.canister == "equivalent" {
+        let kernel = kernel_nevr(cfg, &patch)?;
+        let state = crate::canister::detect_for(cfg, std::env::consts::ARCH, Some(&kernel))?;
+        match crate::canister::plan(&state) {
+            crate::canister::Plan::LinkPublished { version } => {
+                log(&format!(
+                    "canister {version} is published at this kernel level: linking it, \
+no phase A. This build stays CMVP validated."
+                ));
+                (vec!["equivalent-b"], version)
+            }
+            crate::canister::Plan::BuildThenLink { version } => {
+                log(&format!(
+                    "no canister published for {version}: phase A builds one, phase B \
+relinks both flavours against it. NOT CMVP validated."
+                ));
+                (vec!["equivalent-a", "equivalent-b"], version)
+            }
+            crate::canister::Plan::Nothing { reason } => {
+                return Err(format!("no canister applies here: {reason}"));
+            }
+            crate::canister::Plan::Refuse { reason } => {
+                return Err(format!(
+                    "refusing to choose a canister plan: {reason}. Building one locally \
+and failing to look are different things, and only the first is worth hours."
+                ));
+            }
+        }
+    } else {
+        (vec![req.canister.as_str()], String::new())
+    };
+
+    for phase in &phases {
+        if *phase == "equivalent-b" {
+            // Phase A's `linux` RPM has the SAME NEVR as phase B's but is a
+            // canister-CREATION kernel (canister_usage=0, links nothing).
+            // build.py would see it as already built, skip it, and the ISO
+            // would ship it - silently, because nothing downstream inspects
+            // which mode a kernel was built in. Keep only the canister.
+            // Anchored to the kernel NEVR, not to the "linux" prefix. A bare
+            // prefix also matches linux-api-headers, linux-firmware and
+            // linux-tools, which are separate packages at their own versions -
+            // deleting them forces a needless rebuild and, for linux-firmware,
+            // a large one. Matching "-<nevr>." keeps every flavour and
+            // subpackage of the kernel under test (linux, linux-esx,
+            // linux-devel, linux-esx-devel...) and nothing else, because only
+            // the kernel carries that NEVR.
+            let mut n = 0;
+            for p in find_files_rec(&stage, "linux", ".rpm") {
+                let name = p.file_name().and_then(|x| x.to_str()).unwrap_or("");
+                if !purged_before_phase_b(name, &nevr) {
+                    continue;
+                }
+                if fs::remove_file(&p).is_ok() {
+                    n += 1;
+                }
+            }
+            log(&format!(
+                "purged {n} kernel RPM(s) from stage/RPMS, keeping only the canister, \
+so phase B cannot ship the canister-creation kernel phase A built"
+            ));
+        }
+        let logf = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&build_log)
+            .map_err(|e| format!("{}: {e}", build_log.display()))?;
+        let err = logf.try_clone().map_err(|e| format!("{e}"))?;
+        if phases.len() > 1 {
+            log(&format!("--- {phase} ---"));
+        }
+        let rc = Command::new("sh")
+            .arg(stage_dir.join("runPh5_normal.sh"))
+            .arg(&cfg.build_root)
+            .arg(&cfg.build_common)
+            .arg(&cfg.release)
+            .arg(&dest)
+            .arg(img)
+            .arg(phase)
+            .env("MC_CANISTER_NEVR", &nevr)
+            .stdout(Stdio::from(logf))
+            .stderr(Stdio::from(err))
+            .status()
+            .map_err(|e| format!("running runPh5_normal.sh: {e}"))?;
+        if !rc.success() {
+            return Err(format!(
+                "build failed in {phase} (rc={}), see {}",
+                rc.code().unwrap_or(-1),
+                build_log.display()
+            ));
+        }
+        if *phase == "equivalent-a" {
+            // Do not take make's word for it: the canister must exist at the
+            // NEVR phase B is about to require, or phase B fails hours later
+            // on an unresolvable BuildRequires.
+            let want = format!("linux-fips-canister-{nevr}");
+            if !find_files_rec(&stage, &want, ".rpm").is_empty() {
+                log(&format!("phase A produced {want}"));
+            } else {
+                return Err(format!(
+                    "phase A reported success but {want}*.rpm is not in {}; \
+phase B would fail on an unresolvable BuildRequires",
+                    stage.display()
+                ));
+            }
+        }
     }
 
     // The NEWEST ISO, not `find -newer $BUILD_LOG`. The build log is still
@@ -192,6 +287,104 @@ pub fn resolve(
     }
     log(&format!("cached: {}", iso.display()));
     Ok(iso)
+}
+
+/// Does this RPM have to go before phase B runs?
+///
+/// Anchored to the kernel NEVR, not to the "linux" prefix. A bare prefix also
+/// matches linux-api-headers, linux-firmware and linux-tools, which are
+/// separate packages at their own versions - deleting them forces a needless
+/// rebuild and, for linux-firmware, a large one. Matching "-<nevr>." keeps
+/// every flavour and subpackage of the kernel under test (linux, linux-esx,
+/// linux-devel, linux-esx-devel...) and nothing else, because only the kernel
+/// carries that NEVR.
+///
+/// The canister is the one thing at that NEVR that must survive: it is what
+/// phase B links against.
+fn purged_before_phase_b(name: &str, nevr: &str) -> bool {
+    !name.starts_with("linux-fips-canister-") && name.contains(&format!("-{nevr}."))
+}
+
+/// Recursive variant, for `stage/RPMS`.
+///
+/// rpmbuild files its output under an arch subdirectory - `x86_64/`, `noarch/` -
+/// so a single `read_dir` of `stage/RPMS` matches nothing at all. The purge
+/// above was therefore a silent no-op for its whole life, and on 2026-09-01 it
+/// let a 2.9-3 installer land on an ISO built for the 2.8 variant: exactly the
+/// "verdict for code nobody is shipping" its own comment warns about. Walk the
+/// tree instead. `find_files` stays flat because its other caller looks for the
+/// ISO in one directory and must not reach into the build scratch dirs below it.
+/// The NEVR `linux` will build to once the variant patch is applied.
+///
+/// It has to be known BEFORE phase A runs, because phase A stamps it into the
+/// canister, and the variant patch is what sets Release - so reading the
+/// pristine tree would give the wrong answer whenever a PR bumps the kernel.
+/// Prefer the patch, fall back to the tree when the patch does not touch
+/// linux.spec.
+pub fn kernel_nevr(cfg: &Config, patch: &Path) -> Result<String, String> {
+    let mut version: Option<String> = None;
+    let mut release: Option<String> = None;
+
+    if let Ok(text) = fs::read_to_string(patch) {
+        let mut in_linux_spec = false;
+        for line in text.lines() {
+            if line.starts_with("+++ b/") {
+                in_linux_spec = line.ends_with("SPECS/linux/linux.spec");
+                continue;
+            }
+            if !in_linux_spec {
+                continue;
+            }
+            // Context lines count too: a patch that bumps Release but leaves
+            // Version alone still tells us the Version, on a ' ' line.
+            let body = match line.chars().next() {
+                Some('+') | Some(' ') => &line[1..],
+                _ => continue,
+            };
+            if let Some(v) = body.strip_prefix("Version:") {
+                version.get_or_insert(v.trim().to_string());
+            } else if let Some(r) = body.strip_prefix("Release:") {
+                release.get_or_insert(r.trim().to_string());
+            }
+        }
+    }
+
+    if version.is_none() || release.is_none() {
+        let spec = cfg.photon_tree.join("SPECS/linux/linux.spec");
+        let text = fs::read_to_string(&spec).map_err(|e| format!("{}: {e}", spec.display()))?;
+        for line in text.lines() {
+            if let Some(v) = line.strip_prefix("Version:") {
+                version.get_or_insert(v.trim().to_string());
+            } else if let Some(r) = line.strip_prefix("Release:") {
+                release.get_or_insert(r.trim().to_string());
+            }
+        }
+    }
+
+    let v = version.ok_or("no Version: for linux")?;
+    let r = release.ok_or("no Release: for linux")?;
+    // Release carries rpm conditionals and the dist tag: 13%{?acvp_build:.acvp}%{?dist}
+    let r = r.split('%').next().unwrap_or(&r).trim().to_string();
+    Ok(format!("{v}-{r}.ph5"))
+}
+
+fn find_files_rec(dir: &Path, prefix: &str, suffix: &str) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let Ok(entries) = fs::read_dir(dir) else { return out };
+    for e in entries.flatten() {
+        let p = e.path();
+        if p.is_dir() {
+            out.extend(find_files_rec(&p, prefix, suffix));
+        } else if p
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(|n| n.starts_with(prefix) && n.ends_with(suffix))
+            .unwrap_or(false)
+        {
+            out.push(p);
+        }
+    }
+    out
 }
 
 fn find_files(dir: &Path, prefix: &str, suffix: &str) -> Vec<PathBuf> {
@@ -265,7 +458,22 @@ pub const VARIANTS: [Variant; 2] = [
             "fix-selinux-relabel",
             "fix/systemd-groups-and-stig-variant",
             "fix/stig-harden-reachable",
-            "fix/kernel-shared-canister-config",
+            // Carries fix/kernel-shared-canister-config as its parent, so it
+            // is listed INSTEAD of it, not after it: cherry-picking is by
+            // range (origin/5.0..branch), and naming both would replay the
+            // shared commit twice and conflict.
+            //
+            // Needed because the include-refactor bumps linux to -12 but
+            // leaves the canister patch series unrebased: a canister=build row
+            // then applies 1004 against a 6.12.103 that no longer wraps
+            // !digest_size in WARN_ON(), and %prep dies at --fuzz=0 with
+            // "1 out of 2 hunks FAILED". Inert for the prebuilt rows - the
+            // patches it corrects are read only under %if 0%{?canister_build}.
+            // Stacked on fix/canister-build-against-current-kernel, which is
+            // itself stacked on fix/kernel-shared-canister-config. Only the
+            // tip is listed: cherry-picking is by range, so naming any base
+            // replays its commits twice and conflicts.
+            "fix/canister-equivalent-mode",
         ],
     },
     Variant {
@@ -276,7 +484,22 @@ pub const VARIANTS: [Variant; 2] = [
             "fix-selinux-relabel",
             "fix/systemd-groups-and-stig-variant",
             "fix/stig-harden-reachable",
-            "fix/kernel-shared-canister-config",
+            // Carries fix/kernel-shared-canister-config as its parent, so it
+            // is listed INSTEAD of it, not after it: cherry-picking is by
+            // range (origin/5.0..branch), and naming both would replay the
+            // shared commit twice and conflict.
+            //
+            // Needed because the include-refactor bumps linux to -12 but
+            // leaves the canister patch series unrebased: a canister=build row
+            // then applies 1004 against a 6.12.103 that no longer wraps
+            // !digest_size in WARN_ON(), and %prep dies at --fuzz=0 with
+            // "1 out of 2 hunks FAILED". Inert for the prebuilt rows - the
+            // patches it corrects are read only under %if 0%{?canister_build}.
+            // Stacked on fix/canister-build-against-current-kernel, which is
+            // itself stacked on fix/kernel-shared-canister-config. Only the
+            // tip is listed: cherry-picking is by range, so naming any base
+            // replays its commits twice and conflicts.
+            "fix/canister-equivalent-mode",
         ],
     },
 ];
@@ -306,8 +529,7 @@ pub fn make_variant_patches(cfg: &Config, log: &mut dyn FnMut(&str)) -> Result<(
         }
     }
 
-    let mut fetch: Vec<&str> = vec!["fetch", "-q", "origin", "5.0"];
-    let mut branches: Vec<&str> = Vec::new();
+    let mut branches: Vec<&str> = vec!["5.0"];
     for v in &VARIANTS {
         for b in v.branches {
             if !branches.contains(b) {
@@ -315,8 +537,16 @@ pub fn make_variant_patches(cfg: &Config, log: &mut dyn FnMut(&str)) -> Result<(
             }
         }
     }
-    fetch.extend(branches.iter().copied());
-    git(&clone, &fetch)?;
+    // One ref per fetch, not all of them in one request. A single fetch naming
+    // eight refs started failing against GitHub with
+    //     error: RPC failed; HTTP 400 ... fatal: expected flush after ref listing
+    // while the same refs fetched individually succeed. Fetching one at a time
+    // also localises the failure: the error names the ref that could not be
+    // fetched instead of the whole list.
+    for b in &branches {
+        git(&clone, &["fetch", "-q", "origin", b])
+            .map_err(|e| format!("fetching {b}: {e}"))?;
+    }
 
     let mut failed = Vec::new();
     for v in &VARIANTS {
@@ -398,6 +628,111 @@ mod tests {
         assert_eq!(r("minimal").img().unwrap(), "minimal-iso");
         assert_eq!(r("full").img().unwrap(), "iso");
         assert!(r("tiny").img().is_err());
+    }
+
+    /// The NEVR must come from the PATCH, not the tree: the patch is what sets
+    /// Release, and phase A stamps that value into the canister. Reading the
+    /// pristine tree would stamp the wrong kernel whenever a PR bumps it.
+    #[test]
+    fn the_kernel_nevr_is_read_from_the_variant_patch() {
+        let tmp = std::env::temp_dir().join(format!("shk-nevr-{}", std::process::id()));
+        fs::create_dir_all(&tmp).unwrap();
+        let patch = tmp.join("poi-2.8.patch");
+        // Built line by line on purpose: a Rust \-continuation swallows the
+        // leading whitespace of the next line, which would strip the single
+        // space that makes " Version:" a diff CONTEXT line - and context is
+        // exactly what this function has to read.
+        let lines = [
+            "diff --git a/SPECS/linux/linux.spec b/SPECS/linux/linux.spec",
+            "--- a/SPECS/linux/linux.spec",
+            "+++ b/SPECS/linux/linux.spec",
+            " Version:        6.12.103",
+            "-Release:        11%{?acvp_build:.acvp}%{?dist}",
+            "+Release:        14%{?acvp_build:.acvp}%{?dist}",
+        ];
+        fs::write(&patch, lines.join("\n") + "\n").unwrap();
+        let cfg = Config::for_test(&tmp);
+        assert_eq!(kernel_nevr(&cfg, &patch).unwrap(), "6.12.103-14.ph5");
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// A patch that does not touch linux.spec must not silently yield a wrong
+    /// answer - it falls back to the tree.
+    #[test]
+    fn a_patch_without_linux_spec_falls_back_to_the_tree() {
+        let tmp = std::env::temp_dir().join(format!("shk-nevr2-{}", std::process::id()));
+        fs::create_dir_all(tmp.join("SPECS/linux")).unwrap();
+        fs::write(
+            tmp.join("SPECS/linux/linux.spec"),
+            "Name:           linux\nVersion:        6.12.103\nRelease:        9%{?dist}\n",
+        )
+        .unwrap();
+        let patch = tmp.join("other.patch");
+        fs::write(&patch, "+++ b/SPECS/aide/aide.spec\n+Release:        3%{?dist}\n").unwrap();
+        let cfg = Config::for_test(&tmp);
+        assert_eq!(kernel_nevr(&cfg, &patch).unwrap(), "6.12.103-9.ph5");
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// The purge that keeps a stale installer off the ISO has to look where
+    /// rpmbuild actually files its output: `stage/RPMS/<arch>/`, not
+    /// `stage/RPMS/`. A flat read_dir there matched nothing and the purge did
+    /// nothing, which is how a 2.9-3 installer reached an ISO built for 2.8.
+    #[test]
+    fn the_installer_purge_reaches_into_the_arch_subdirectory() {
+        let tmp = std::env::temp_dir().join(format!("shk-purge-{}", std::process::id()));
+        let arch = tmp.join("x86_64");
+        fs::create_dir_all(&arch).unwrap();
+        fs::write(arch.join("photon-os-installer-2.8-7.ph5.x86_64.rpm"), "").unwrap();
+        fs::write(arch.join("photon-os-installer-2.9-3.ph5.x86_64.rpm"), "").unwrap();
+        fs::write(arch.join("linux-6.12.103-1.ph5.x86_64.rpm"), "").unwrap();
+        fs::write(tmp.join("photon-os-installer-1.0-1.ph5.noarch.rpm"), "").unwrap();
+
+        assert!(find_files(&tmp, "photon-os-installer-", ".rpm").len() == 1);
+        let mut hit = find_files_rec(&tmp, "photon-os-installer-", ".rpm");
+        hit.sort();
+        assert_eq!(hit.len(), 3, "arch subdirectory must be walked");
+        assert!(hit.iter().all(|p| p.to_string_lossy().contains("photon-os-installer-")));
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// The inter-phase purge deletes the canister-creation kernel so phase B
+    /// cannot ship it. It used to match on the "linux" prefix alone, which
+    /// also swept up linux-api-headers, linux-firmware and linux-tools -
+    /// unrelated packages at their own versions, rebuilt for nothing. Only the
+    /// kernel under test carries the NEVR, so that is what the purge keys on.
+    #[test]
+    fn the_phase_b_purge_takes_the_kernel_and_spares_its_namesakes() {
+        let nevr = "6.12.103-14.ph5";
+
+        // Every flavour and subpackage of the kernel under test must go.
+        for n in [
+            "linux-6.12.103-14.ph5.x86_64.rpm",
+            "linux-esx-6.12.103-14.ph5.x86_64.rpm",
+            "linux-devel-6.12.103-14.ph5.x86_64.rpm",
+            "linux-esx-devel-6.12.103-14.ph5.x86_64.rpm",
+        ] {
+            assert!(purged_before_phase_b(n, nevr), "{n} must be purged");
+        }
+
+        // The canister is what phase B links against: it stays even though it
+        // carries the very same NEVR.
+        assert!(
+            !purged_before_phase_b("linux-fips-canister-6.12.103-14.ph5.x86_64.rpm", nevr),
+            "the canister must survive the purge that precedes phase B"
+        );
+
+        // Separate packages that merely start with "linux". This is the
+        // regression: linux-api-headers was observed being rebuilt after the
+        // prefix-only purge deleted it.
+        for n in [
+            "linux-api-headers-6.1.79-6.ph5.noarch.rpm",
+            "linux-firmware-20250211-1.ph5.noarch.rpm",
+            "linux-tools-6.12.103-13.ph5.x86_64.rpm",
+        ] {
+            assert!(!purged_before_phase_b(n, nevr), "{n} must be spared");
+        }
     }
 
     /// The canister is a build-time axis, so it is part of the cache key.

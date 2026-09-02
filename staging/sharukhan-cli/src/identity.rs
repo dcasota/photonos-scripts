@@ -88,6 +88,27 @@ pub fn ip_for(net_prefix: &str, ip_base: usize, index: usize) -> String {
     format!("{net_prefix}.{}", ip_base + index)
 }
 
+/// The IPv6 counterpart, on the same ordinal so a guest's two addresses share
+/// one number and a human can read them as the same machine.
+///
+/// ALWAYS a ULA (fd00::/8), never a global prefix. This host has no IPv6
+/// router and no DHCPv6 server of any kind, so a global address here would be
+/// claiming reachability that does not exist - and would be routable off-host
+/// if the environment ever changed underneath it. A ULA cannot be.
+pub fn ip6_for(v6_prefix: &str, ip_base: usize, index: usize) -> String {
+    format!("{v6_prefix}::{:x}", ip_base + index)
+}
+
+/// The second NIC's MAC, for the rows that need a management interface.
+///
+/// A distinct fourth octet rather than a distinct ordinal, so the two NICs of
+/// one VM stay recognisably the same machine and neither can ever collide with
+/// the primary space. Still inside VMware's manual-assignment OUI,
+/// 00:50:56:00:00:00-00:50:56:3F:FF:FF.
+pub fn mac2_for(index: usize) -> String {
+    format!("00:50:56:3b:{:02x}:{:02x}", index / 256, index % 256)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -153,6 +174,28 @@ s02      minimal
     fn ip_is_base_plus_ordinal() {
         assert_eq!(ip_for("192.168.225", 40, 1), "192.168.225.41");
         assert_eq!(ip_for("192.168.225", 40, 80), "192.168.225.120");
+    }
+
+    /// The two families share one ordinal, and the v6 side is hex because that
+    /// is how an IPv6 address is written - .77 and ::4d are the same machine.
+    #[test]
+    fn the_v6_address_shares_the_ordinal_and_stays_a_ula() {
+        assert_eq!(ip6_for("fd00:225", 40, 1), "fd00:225::29");
+        assert_eq!(ip6_for("fd00:225", 40, 37), "fd00:225::4d");
+        // fd00::/8 is unique-local. A global prefix here would claim a route
+        // this host has no router for.
+        assert!(ip6_for("fd00:225", 40, 1).starts_with("fd"));
+    }
+
+    /// The management NIC can never collide with the primary one, on any row.
+    #[test]
+    fn the_second_nic_has_its_own_address_space() {
+        for i in 1..=MAX_INDEX {
+            assert_ne!(mac_for(i), mac2_for(i));
+        }
+        assert_eq!(mac2_for(1), "00:50:56:3b:00:01");
+        // still inside VMware's manual OUI: the fourth octet must stay <= 0x3f
+        assert!(u8::from_str_radix(&mac2_for(1)[9..11], 16).unwrap() <= 0x3f);
     }
 
     /// Every id in the shipped matrix must have a distinct address. This is the

@@ -7,7 +7,7 @@
 
 use crate::config::Config;
 use crate::matrix::Permutation;
-use crate::{build, card, install, kickstart, matrix, verify, vm};
+use crate::{build, card, identity, install, kickstart, matrix, verify, vm};
 use std::fs;
 use std::path::PathBuf;
 
@@ -65,9 +65,18 @@ fn build_kickstart(cfg: &Config, p: &Permutation, secrets: Secrets) -> Result<St
             cfg.ssh_key().display()
         );
     }
-    // The matrix never pins an address in the kickstart: rows take a DHCP
-    // lease and the reserved .4x address is used for identity (MAC/UUID)
-    // only. See the report note - this is bash behaviour, preserved.
+    // Which addresses this row is given is decided by its NET AXIS, not by
+    // this function. Before the axis existed every row took a DHCP lease and
+    // the reserved .4x address was used for identity (MAC/UUID) only; that is
+    // still exactly what happens for `net::DEFAULT`, which is every row that
+    // carries no net column. A static row instead pins the address the matrix
+    // already reserved for it - which is below VMnet8's DHCP floor by
+    // construction, so it can never collide with a lease.
+    let vmrow = vm::plan(cfg, &p.id)?;
+    let with_cidr = |a: &str| format!("{a}/{}", cfg.net_cidr);
+    let ip6 = identity::ip6_for(&cfg.net_v6_prefix, cfg.ip_base, vmrow.index);
+    let vlan_ip = identity::ip_for(&cfg.net_vlan_prefix, cfg.ip_base, vmrow.index);
+
     kickstart::render(&kickstart::Spec {
         id: &p.id,
         fs: &p.fs,
@@ -75,7 +84,14 @@ fn build_kickstart(cfg: &Config, p: &Permutation, secrets: Secrets) -> Result<St
         variant: &p.variant,
         password,
         public_key: pubkey,
-        ip: None,
+        net: &p.net,
+        // Supplied unconditionally; `build_network` uses only what the axis
+        // asks for, so a DHCP row cannot be turned static by a value it was
+        // handed.
+        ip: Some(with_cidr(&vmrow.reserved_ip)),
+        ip6: Some(format!("{ip6}/64")),
+        vlan_ip: Some(with_cidr(&vlan_ip)),
+        cidr: cfg.net_cidr,
         gateway: &cfg.net_gateway,
         nameserver: &cfg.net_dns,
     })
@@ -159,6 +175,7 @@ pub fn cmd_install(
             mode,
             timeout_sec: timeout.unwrap_or(cfg.install_timeout_sec),
             no_wait,
+            second_nic: p.net.needs_second_nic(),
         },
         &mut logger(),
     )?;

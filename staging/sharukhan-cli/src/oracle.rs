@@ -11,6 +11,7 @@
 
 use crate::evidence::{Checks, Status};
 use crate::guest::Guest;
+use crate::net::{Family, NetSpec};
 use crate::serial;
 use std::path::Path;
 use std::process::Command;
@@ -223,7 +224,14 @@ pub fn expected_selinux(shipped_config: Option<&str>, subrelease: Option<u32>) -
     }
 }
 
-pub fn guest(g: &Guest, stig: &str, fs: &str, c: &mut Checks) {
+pub fn guest(
+    g: &Guest,
+    stig: &str,
+    fs: &str,
+    canister: &CanisterExpect,
+    net: &NetSpec,
+    c: &mut Checks,
+) {
     let v = g.run("findmnt -no FSTYPE /").value_or("unknown");
     c.expect("guest.root_fstype", "-", fs, &v, "the filesystem axis actually took effect");
 
@@ -352,18 +360,33 @@ pub fn guest(g: &Guest, stig: &str, fs: &str, c: &mut Checks) {
         .run("dmesg 2>/dev/null | grep -c \"canister verification passed\"")
         .value_or("0");
     c.check("guest.fips_canister", "PR#24", Status::Info, "", &v, "");
-    canister_identity(g, c);
+    canister_identity(g, canister, c);
 
-    let v = g
-        .run("systemctl --failed --no-legend --no-pager 2>/dev/null | wc -l")
-        .value_or("?");
-    c.expect(
-        "guest.failed_units",
-        "PR#9",
-        "0",
-        &v,
-        "first boot may race the SELinux relabel; second boot must be clean",
-    );
+    // One row in the matrix has a link that can NEVER reach `configured`, and
+    // it is environmental rather than a defect: the legacy VLAN kickstart
+    // forces dhcp4 on the tagged interface, and VMware Workstation 17 has no
+    // VLAN-aware switch, so nothing answers a tagged frame.
+    // systemd-networkd-wait-online is enabled by preset (SPECS/systemd/
+    // 10-defaults.preset) and fails on timeout, which would otherwise regress
+    // this assertion for a reason that has nothing to do with any PR. It is
+    // EXCLUDED here and asserted POSITIVELY in `network` instead, so the
+    // expected failure is recorded rather than hidden.
+    let (cmd, why) = if net.expects_wait_online_failure() {
+        (
+            "systemctl --failed --no-legend --no-pager 2>/dev/null \
+             | grep -v systemd-networkd-wait-online | wc -l",
+            "first boot may race the SELinux relabel; second boot must be clean. \
+             systemd-networkd-wait-online is excluded on this row and asserted \
+             separately - see net.wait_online",
+        )
+    } else {
+        (
+            "systemctl --failed --no-legend --no-pager 2>/dev/null | wc -l",
+            "first boot may race the SELinux relabel; second boot must be clean",
+        )
+    };
+    let v = g.run(cmd).value_or("?");
+    c.expect("guest.failed_units", "PR#9", "0", &v, why);
 
     let v = g
         .run("journalctl -b --no-pager 2>/dev/null | grep -ci \"avc: *denied\"")
@@ -376,6 +399,278 @@ pub fn guest(g: &Guest, stig: &str, fs: &str, c: &mut Checks) {
         &v,
         "non-zero on first boot is the documented relabel race",
     );
+
+    network(g, net, c);
+}
+
+// ---- C2. the network axis ------------------------------------------------
+
+/// What the installer's `network` config actually produced in the guest.
+///
+/// Every assertion here is guest-local by design. On this host the network
+/// axis can prove what POI CONFIGURED but not, for most of it, that traffic
+/// flows - see the matrix notes for the three IPv6 blockers and the absence of
+/// any VLAN backing in Workstation 17. Asserting reachability we cannot have
+/// would fail rows for the environment's reasons rather than POI's, which is
+/// the one thing this harness exists not to do.
+pub fn network(g: &Guest, net: &NetSpec, c: &mut Checks) {
+    c.check("net.axis", "-", Status::Info, "", &net.to_string(), "the row's network token");
+
+    // `setup_network(do_clean=True)` DELETES everything in the target's
+    // /etc/systemd/network before writing its own files. The shipped
+    // 99-dhcp-en.network surviving is the unambiguous signal that
+    // _setup_network never ran at all - which otherwise looks exactly like a
+    // working DHCP guest, because the shipped file also does DHCP.
+    let files = g.run("ls -1 /etc/systemd/network/ 2>/dev/null | tr '\\n' ' '").value_or("none");
+    c.check(
+        "net.config_files",
+        "-",
+        Status::Info,
+        "",
+        &files,
+        "POI writes 50-<ks id>.{network,netdev} after clearing the directory",
+    );
+    let v = g
+        .run("ls /etc/systemd/network/99-dhcp-en.network >/dev/null 2>&1 && echo present || echo absent")
+        .value_or("?");
+    c.expect(
+        "net.shipped_default_cleared",
+        "-",
+        "absent",
+        &v,
+        "the OS-shipped 99-dhcp-en.network must be gone: its survival means \
+         _setup_network never ran, which looks identical to a working DHCP guest",
+    );
+
+    // RA is refused on every row this harness generates, and that is a claim
+    // about the HOST as much as the guest: vmnetnat.conf has natIp6Enable = 0,
+    // so there is no router advertisement on vmnet8 to accept. POI writes
+    // IPv6AcceptRA= unconditionally, so the value is always observable.
+    let v = g
+        .run("grep -h '^IPv6AcceptRA=' /etc/systemd/network/*.network 2>/dev/null | sort -u | tr '\\n' ' '")
+        .value_or("absent");
+    c.check(
+        "net.accept_ra",
+        "-",
+        Status::Info,
+        "",
+        &v,
+        "no RA exists on vmnet8 to accept (natIp6Enable = 0), so every row asks for 'no'",
+    );
+
+    // --- IPv4 ------------------------------------------------------------
+    let want_v4 = matches!(net.family, Family::V4 | Family::Dual);
+    // Every address, not just the first: a static row that ALSO kept a DHCP
+    // lease is the interesting failure, and `$3` alone would hide it.
+    let v4 = g
+        .run("ip -4 -brief addr show eth0 2>/dev/null | awk '{for(i=3;i<=NF;i++) printf \"%s \", $i}'")
+        .value_or("");
+    if want_v4 {
+        c.check(
+            "net.v4_addr",
+            "-",
+            if v4.trim().is_empty() { Status::Fail } else { Status::Pass },
+            "an IPv4 address on eth0",
+            v4.trim(),
+            "the family axis says this interface carries IPv4",
+        );
+        let gw = g.run("ip -4 route show default 2>/dev/null | awk '{print $3}'").value_or("none");
+        c.check(
+            "net.v4_default_route",
+            "-",
+            if gw == "none" { Status::Fail } else { Status::Pass },
+            "a default gateway",
+            &gw,
+            "VMnet8's NAT device at .2 is both router and DNS forwarder",
+        );
+        // DNS= in a .network file is inert unless resolved is running.
+        // systemd-resolved IS enabled by preset in Photon 5.0, so this is the
+        // check that proves the kickstart's nameserver actually took effect.
+        let v = g
+            .run("getent hosts photon.org >/dev/null 2>&1 && echo ok || echo fail")
+            .value_or("?");
+        c.expect(
+            "net.dns_resolves",
+            "-",
+            "ok",
+            &v,
+            "DNS= is inert without systemd-resolved, which Photon enables by preset",
+        );
+    } else {
+        // The point of an IPv6-only row: a dual-stack guest that silently
+        // ignored its v6 address would still look healthy, so only an
+        // interface with NO IPv4 at all can expose that.
+        c.expect(
+            "net.v4_absent_on_eth0",
+            "-",
+            "",
+            v4.trim(),
+            "the family axis says IPv6 only, so eth0 must carry no IPv4 address",
+        );
+        let mgmt = g
+            .run("ip -4 -brief addr show eth1 2>/dev/null | awk '{print $3}'")
+            .value_or("none");
+        c.check(
+            "net.management_nic",
+            "-",
+            if mgmt == "none" { Status::Fail } else { Status::Pass },
+            "an IPv4 lease on eth1",
+            &mgmt,
+            "the only path this harness has to an IPv6-only guest",
+        );
+    }
+
+    // --- IPv6 ------------------------------------------------------------
+    if matches!(net.family, Family::V6 | Family::Dual) {
+        let v6 = g
+            .run("ip -6 -brief addr show eth0 scope global 2>/dev/null | awk '{print $3}'")
+            .value_or("");
+        c.check(
+            "net.v6_addr",
+            "-",
+            if v6.trim().is_empty() { Status::Fail } else { Status::Pass },
+            "a global IPv6 address on eth0",
+            v6.trim(),
+            "a ULA: this host runs no IPv6 router, so the address is configured, not routed",
+        );
+        // `tentative` is the silent-failure signature - the address is listed,
+        // looks right, and is not usable because DAD never completed.
+        let v = g.run("ip -6 addr show eth0 2>/dev/null | grep -c tentative").value_or("?");
+        c.expect(
+            "net.v6_dad_complete",
+            "-",
+            "0",
+            &v,
+            "an address stuck at 'tentative' is listed but unusable",
+        );
+        // The strongest IPv6 dataplane proof available on this host: no
+        // router, no DHCPv6 server and no peer, so the furthest a packet can
+        // travel is the guest's own stack. It still distinguishes an address
+        // the kernel accepted from one merely written to a file.
+        let v = g
+            .run(
+                "a=$(ip -6 -brief addr show eth0 scope global 2>/dev/null | awk '{print $3}' \
+                 | cut -d/ -f1); [ -n \"$a\" ] && ping -6 -c1 -W2 \"$a\" >/dev/null 2>&1 \
+                 && echo ok || echo fail",
+            )
+            .value_or("?");
+        c.expect(
+            "net.v6_addr_live",
+            "-",
+            "ok",
+            &v,
+            "the address answers in the kernel, not just in a config file; \
+             off-segment IPv6 is untestable here (no router, no DHCPv6, and WSL2 \
+             in NAT mode has no IPv6 stack)",
+        );
+    }
+
+    // --- VLAN -------------------------------------------------------------
+    let Some(vif) = net.vlan_iface() else { return };
+    let id = net.vlan.unwrap_or(0);
+
+    // The direct, unambiguous "the tag is real" assertion: not that a file
+    // says 100, but that the kernel built an 802.1Q link with that id.
+    let v = g
+        .run(&format!(
+            "ip -d link show {vif} 2>/dev/null | grep -c 'vlan protocol 802.1Q id {id}'"
+        ))
+        .value_or("0");
+    c.expect(
+        "net.vlan_link",
+        "-",
+        "1",
+        &v,
+        "the tagged interface exists in the kernel with the id the matrix asked for",
+    );
+    let v = g.run("lsmod 2>/dev/null | grep -c '^8021q'").value_or("0");
+    c.expect(
+        "net.vlan_module",
+        "-",
+        "1",
+        &v,
+        "CONFIG_VLAN_8021Q=m in linux-esx; creating the netdev must auto-load it",
+    );
+    let v = g
+        .run(&format!(
+            "grep -lh '^Id={id}$' /etc/systemd/network/*.netdev 2>/dev/null | wc -l"
+        ))
+        .value_or("0");
+    c.expect(
+        "net.vlan_netdev",
+        "-",
+        "1",
+        &v,
+        "write_netdev_file emits [NetDev] Kind=vlan plus [VLAN] Id=<n>",
+    );
+    // The parent-side half of the pairing, from _find_vlan_configs ->
+    // _get_vlan_iface_name. Its absence means the link resolved to a name POI
+    // could not build the tag from.
+    let v = g
+        .run("grep -h '^VLAN=' /etc/systemd/network/*.network 2>/dev/null | tr '\\n' ' '")
+        .value_or("absent");
+    c.expect(
+        "net.vlan_parent_ref",
+        "-",
+        // No trailing space: `value_or` trims, so an expected value carrying
+        // the separator the `tr` left behind would never compare equal.
+        &format!("VLAN={vif}"),
+        &v,
+        "the parent interface must name the tag it carries",
+    );
+
+    // Whether the tag has an address depends on which schema the row uses, and
+    // that difference IS the row's finding.
+    let addr = g
+        .run(&format!("ip -4 -brief addr show {vif} 2>/dev/null | awk '{{print $3}}'"))
+        .value_or("");
+    if net.expects_wait_online_failure() {
+        // Legacy `type: vlan` forces dhcp4 on the tag and nothing on vmnet8
+        // answers a tagged frame - VMware Workstation 17 has no VLAN-aware
+        // switch. ENVIRONMENTAL, not a POI defect: unlike s02, no change to
+        // Photon or the installer would make this succeed here.
+        c.expect(
+            "net.vlan_addr_absent",
+            "-",
+            "",
+            addr.trim(),
+            "expected: the legacy schema forces DHCP on the tag and Workstation \
+             has no VLAN-aware switch to answer it. Environmental, not a defect",
+        );
+        let v = g
+            .run("systemctl is-failed systemd-networkd-wait-online.service 2>/dev/null")
+            .value_or("?");
+        c.expect(
+            "net.wait_online",
+            "-",
+            "failed",
+            &v,
+            "asserted positively so the expected failure is recorded, not hidden: \
+             the stranded link can never reach 'configured', and RequiredForOnline= \
+             is unreachable from the kickstart schema - see \
+             /root/photon-mc/poi-gap-requiredforonline.md",
+        );
+    } else {
+        c.check(
+            "net.vlan_addr",
+            "-",
+            if addr.trim().is_empty() { Status::Fail } else { Status::Pass },
+            "a static address on the tag",
+            addr.trim(),
+            "static on purpose: a DHCP tag could never reach 'configured' here, \
+             and would fail systemd-networkd-wait-online",
+        );
+        let v = g
+            .run("systemctl is-active systemd-networkd-wait-online.service 2>/dev/null")
+            .value_or("?");
+        c.expect(
+            "net.wait_online",
+            "-",
+            "active",
+            &v,
+            "every managed link must reach 'configured' when the tag is static",
+        );
+    }
 }
 
 // ---- D. log harvest ------------------------------------------------------
@@ -383,6 +678,58 @@ pub fn guest(g: &Guest, stig: &str, fs: &str, c: &mut Checks) {
 /// The matrix defines no dmesg/journalctl//var/log criteria at all, so this
 /// COLLECTS the evidence rather than asserting on it - except the two counts,
 /// which are cheap regression detectors.
+/// What `guest.canister_based_on` is allowed to read on this row.
+///
+/// The canister lagging the kernel is the DESIGNED state on a `prebuilt` row -
+/// 6.12.60 linked into 6.12.103 is correct, not a defect - so there is nothing
+/// to assert there. On an `equivalent` row it is the entire point: phase A
+/// stamps the canister with the kernel it was really built from
+/// (`canister_stamp_real=1` + `fips_certified_override=<NEVR>`, which
+/// linux.spec seds into `FIPS_KERNEL_VERSION` in crypto/fips_integrity.c, which
+/// is what the boot line prints as "based on"). Without asserting it, an
+/// equivalent build that silently fell back to the certified canister is
+/// indistinguishable from one that worked - i.e. a twelve-hour duplicate of
+/// k09, which is exactly what canister=build turned out to be.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CanisterExpect {
+    /// The row does not vary the canister axis: record which canister booted,
+    /// assert nothing.
+    Record,
+    /// An `equivalent` row: the canister MUST name this kernel NEVR.
+    BuiltFrom(String),
+    /// An `equivalent` row whose kernel NEVR could not be read. Recorded, never
+    /// guessed: asserting against a NEVR we had to invent would fail rows for
+    /// the harness's own reason rather than the build's.
+    Unresolved(String),
+}
+
+/// Decide the expectation from the row's canister axis and the kernel NEVR the
+/// build is about.
+///
+/// `kernel_nevr` is a Result because it is read from the variant patch, which
+/// can be missing; and an Ok("") is treated as unreadable too, because an empty
+/// expected value would silently pass against an empty actual.
+pub fn canister_expectation(
+    canister: &str,
+    kernel_nevr: Result<String, String>,
+) -> CanisterExpect {
+    if canister != "equivalent" {
+        return CanisterExpect::Record;
+    }
+    match kernel_nevr {
+        Ok(n) if !n.trim().is_empty() => CanisterExpect::BuiltFrom(n.trim().to_string()),
+        Ok(_) => CanisterExpect::Unresolved(
+            "canister=equivalent, but the kernel NEVR under test came back empty, \
+             so there is nothing to compare the boot line against"
+                .into(),
+        ),
+        Err(e) => CanisterExpect::Unresolved(format!(
+            "canister=equivalent, but the kernel NEVR under test could not be read \
+             ({e}), so the boot line is recorded rather than asserted"
+        )),
+    }
+}
+
 /// Section E - WHICH canister the guest is actually running.
 ///
 /// Three POSITIVE checks, not a hunt for absent errors, because the canister is
@@ -398,28 +745,18 @@ pub fn guest(g: &Guest, stig: &str, fs: &str, c: &mut Checks) {
 /// back to the certified canister looks exactly like a successful one; that is
 /// precisely how a twelve-hour run once re-tested the path already covered by
 /// every other row.
-pub fn canister_identity(g: &Guest, c: &mut Checks) {
+pub fn canister_identity(g: &Guest, want: &CanisterExpect, c: &mut Checks) {
     let dmesg = g.run("dmesg 2>/dev/null | grep -i canister").value_or("");
-    match crate::canister::parse_boot_line(&dmesg) {
-        Some((canister, based_on)) => {
-            c.check(
-                "guest.canister_version",
-                "PR#24",
-                Status::Info,
-                "",
-                &canister,
-                "FIPS_CANISTER_VERSION reported by the running kernel",
-            );
-            c.check(
-                "guest.canister_based_on",
-                "PR#24",
-                Status::Info,
-                "",
-                &based_on,
-                "the kernel the canister was built from - this is what tells a \
-                 locally built canister apart from the prebuilt one",
-            );
-        }
+    let parsed = crate::canister::parse_boot_line(&dmesg);
+    match &parsed {
+        Some((canister, _)) => c.check(
+            "guest.canister_version",
+            "PR#24",
+            Status::Info,
+            "",
+            canister,
+            "FIPS_CANISTER_VERSION reported by the running kernel",
+        ),
         None => c.check(
             "guest.canister_version",
             "PR#24",
@@ -429,6 +766,42 @@ pub fn canister_identity(g: &Guest, c: &mut Checks) {
             "no FIPS canister line in dmesg: either a non-FIPS kernel or a \
              non-canister build",
         ),
+    }
+
+    // "absent", not "", when there is no line at all: on an `equivalent` row a
+    // missing canister is a FAILURE of the mode, and an empty actual against a
+    // non-empty expected has to read as one rather than as a blank field.
+    let based_on = parsed.as_ref().map(|(_, k)| k.as_str()).unwrap_or("absent");
+    let (status, expected, detail) = based_on_check(want, based_on);
+    c.check("guest.canister_based_on", "PR#24", status, &expected, based_on, &detail);
+}
+
+/// The `guest.canister_based_on` verdict, decided without a guest so it can be
+/// tested. Returns (status, expected, detail); the actual is the caller's
+/// `based_on`.
+///
+/// Deliberately NOT `Checks::expect`: only the BuiltFrom arm may ever fail, and
+/// routing the other two arms through an equality test would make a prebuilt row
+/// fail for reading exactly what it is supposed to read.
+pub fn based_on_check(want: &CanisterExpect, based_on: &str) -> (Status, String, String) {
+    match want {
+        CanisterExpect::Record => (
+            Status::Info,
+            String::new(),
+            "the kernel the canister was built from - this is what tells a \
+             locally built canister apart from the prebuilt one"
+                .into(),
+        ),
+        CanisterExpect::BuiltFrom(nevr) => (
+            if based_on == nevr { Status::Pass } else { Status::Fail },
+            nevr.clone(),
+            "an equivalent canister is stamped with the kernel it was really \
+             built from (canister_stamp_real=1 -> FIPS_KERNEL_VERSION), so \
+             anything else here means the build fell back to the certified \
+             canister and the row is a slow duplicate of the prebuilt one"
+                .into(),
+        ),
+        CanisterExpect::Unresolved(why) => (Status::Info, String::new(), why.clone()),
     }
 }
 
@@ -455,7 +828,7 @@ pub fn harvest(g: &Guest, dest: &Path, secret: Option<&str>, c: &mut Checks) {
         }
     }
 
-    const FILES: [(&str, &str); 9] = [
+    const FILES: [(&str, &str); 12] = [
         ("dmesg", "dmesg.txt"),
         ("journalctl -b --no-pager", "journal-boot.txt"),
         ("journalctl -p err -b --no-pager", "journal-err.txt"),
@@ -465,6 +838,30 @@ pub fn harvest(g: &Guest, dest: &Path, secret: Option<&str>, c: &mut Checks) {
         ("findmnt -A", "mounts.txt"),
         ("cat /var/log/mkinitrd-*.log 2>/dev/null", "varlog-mkinitrd.txt"),
         ("zcat /var/log/poi/manifest.json.gz 2>/dev/null", "poi-manifest.json"),
+        // The network axis asserts on what POI wrote into
+        // /etc/systemd/network; the directory listing is what makes a failed
+        // assertion readable afterwards without another run.
+        (
+            "ls -la /etc/systemd/network/ 2>/dev/null; \
+             echo; for f in /etc/systemd/network/*; do echo \"== $f\"; cat \"$f\"; done 2>/dev/null",
+            "systemd-network.txt",
+        ),
+        (
+            "networkctl --no-pager 2>/dev/null; echo; ip -d addr 2>/dev/null; \
+             echo; ip -4 route 2>/dev/null; echo; ip -6 route 2>/dev/null; \
+             echo; resolvectl status 2>/dev/null",
+            "network-state.txt",
+        ),
+        // cloud-init is in the `minimal` meta-package (SPECS/minimal/
+        // minimal.spec). If it ever runs a datasource on first boot it can
+        // rewrite /etc/systemd/network underneath everything asserted above,
+        // and a static row would then show a mysteriously wrong address with
+        // nothing in the evidence to explain it. Collected, not asserted.
+        (
+            "cloud-init status --long 2>/dev/null; echo; \
+             ls -la /etc/cloud/cloud.cfg.d/ 2>/dev/null",
+            "cloud-init.txt",
+        ),
     ];
     for (cmd, name) in FILES {
         let _ = std::fs::write(dest.join(name), scrub(secret, &g.run(cmd).stdout));
@@ -636,6 +1033,106 @@ mod tests {
     fn commented_lines_are_not_the_setting() {
         let cfg = "# SELINUX=enforcing\n# SELINUX=disabled\nSELINUX=permissive\n";
         assert_eq!(expected_selinux(Some(cfg), None), Expected::Mode("Permissive"));
+    }
+
+    // ---- the canister axis ----------------------------------------------
+
+    /// The regression this exists to stop. Before it, `guest.canister_based_on`
+    /// was Info on every row, so an `equivalent` build that silently linked the
+    /// certified 6.12.60-18.ph5 produced the same evidence as one that worked -
+    /// a twelve-hour duplicate of k09 that nothing in the harness could name.
+    #[test]
+    fn an_equivalent_row_that_booted_the_certified_canister_fails() {
+        let want = canister_expectation("equivalent", Ok("6.12.103-14.ph5".into()));
+        assert_eq!(want, CanisterExpect::BuiltFrom("6.12.103-14.ph5".into()));
+
+        let (st, exp, _) = based_on_check(&want, "6.12.60-18.ph5");
+        assert!(st == Status::Fail, "the fallback to the certified canister must fail");
+        assert_eq!(exp, "6.12.103-14.ph5");
+
+        let (st, _, _) = based_on_check(&want, "6.12.103-14.ph5");
+        assert!(st == Status::Pass, "a canister built from the kernel under test must pass");
+    }
+
+    /// A `prebuilt` row legitimately boots a canister built from an OLDER
+    /// kernel - 6.12.60 linked into 6.12.103 is the DESIGNED state - so the
+    /// same value that fails above must not fail here. Asserting on every row
+    /// would fail all 34 prebuilt rows for being correct.
+    #[test]
+    fn a_prebuilt_row_records_its_canister_and_never_fails_on_it() {
+        for axis in ["prebuilt", "fips0-aarch64", "build", "acvp", "kat"] {
+            let want = canister_expectation(axis, Ok("6.12.103-14.ph5".into()));
+            assert_eq!(want, CanisterExpect::Record, "{axis} must not be asserted");
+            for seen in ["6.12.60-18.ph5", "6.12.103-14.ph5", "absent"] {
+                let (st, exp, _) = based_on_check(&want, seen);
+                assert!(st == Status::Info, "{axis}/{seen} must stay informational");
+                assert!(exp.is_empty(), "a recorded check states no expectation");
+            }
+        }
+    }
+
+    /// No canister line at all on an equivalent row is a failure of the mode,
+    /// not a blank field. `parse_boot_line` returns None both for a non-FIPS
+    /// kernel and for a guest whose dmesg could not be read, and on this row
+    /// either one means the thing under test cannot be shown to work.
+    #[test]
+    fn a_missing_canister_line_fails_an_equivalent_row_but_not_a_prebuilt_one() {
+        let eq = canister_expectation("equivalent", Ok("6.12.103-14.ph5".into()));
+        assert!(based_on_check(&eq, "absent").0 == Status::Fail);
+        let pre = canister_expectation("prebuilt", Ok("6.12.103-14.ph5".into()));
+        assert!(based_on_check(&pre, "absent").0 == Status::Info);
+    }
+
+    /// An unreadable kernel NEVR must never become an expectation. Asserting
+    /// against a NEVR the harness invented would fail the row for the harness's
+    /// own reason, which is exactly the failure mode the SELinux oracle taught.
+    #[test]
+    fn an_unreadable_kernel_nevr_is_recorded_rather_than_asserted() {
+        for got in [Err("no variant patch".to_string()), Ok(String::new()), Ok("   ".into())] {
+            let want = canister_expectation("equivalent", got);
+            match &want {
+                CanisterExpect::Unresolved(why) => {
+                    assert!(why.contains("equivalent"), "the detail must say why: {why}")
+                }
+                other => panic!("expected Unresolved, got {other:?}"),
+            }
+            // and it must not fail the row
+            assert!(based_on_check(&want, "6.12.60-18.ph5").0 == Status::Info);
+        }
+    }
+
+    /// Phase A is conditional, and the assertion has to hold in BOTH plans.
+    /// When a canister is published at the kernel level under test the build
+    /// links it and skips phase A - and that canister is stamped with the same
+    /// NEVR, so the expected value is unchanged. If it ever were not, the check
+    /// firing is the finding.
+    #[test]
+    fn the_expectation_is_the_same_whether_or_not_phase_a_ran() {
+        let kernel = "6.12.103-14.ph5";
+        let want = canister_expectation("equivalent", Ok(kernel.into()));
+        // Plan::BuildThenLink: phase A stamped the kernel it built from.
+        assert!(based_on_check(&want, kernel).0 == Status::Pass);
+        // Plan::LinkPublished: the published canister IS at this NEVR.
+        assert!(based_on_check(&want, kernel).0 == Status::Pass);
+    }
+
+    /// The end-to-end shape, from a real boot line to a verdict: the string the
+    /// kernel prints is what the assertion is made against, so a change to
+    /// either half has to break this test.
+    #[test]
+    fn the_verdict_is_taken_from_the_kernels_own_boot_line() {
+        let certified =
+            "[    1.2] FIPS(fips_canister_init): canister 6.12 found (based on 6.12.60-18.ph5)";
+        let local =
+            "[    1.2] FIPS(fips_canister_init): canister 6.12 found (based on 6.12.103-14.ph5)";
+        let want = canister_expectation("equivalent", Ok("6.12.103-14.ph5".into()));
+        let read = |d: &str| {
+            crate::canister::parse_boot_line(d)
+                .map(|(_, k)| k)
+                .unwrap_or_else(|| "absent".into())
+        };
+        assert!(based_on_check(&want, &read(certified)).0 == Status::Fail);
+        assert!(based_on_check(&want, &read(local)).0 == Status::Pass);
     }
 
     /// Unreadable is recorded, never guessed: an oracle that invents an

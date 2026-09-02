@@ -29,6 +29,11 @@ pub enum State {
     /// No official canister matches the kernel under test. One can be built
     /// locally: functionally equivalent, NOT validated.
     Equivalent { kernel: String, certified: String },
+    /// The published repo could not be reached, so which state applies is
+    /// unknown. Deliberately NOT folded into Equivalent: "build one locally"
+    /// and "we could not look" are different claims, and only the first is a
+    /// reason to spend hours building a canister.
+    Unknown { kernel: String, reason: String },
     /// This architecture has no canister at all, by design - both specs set
     /// `%global fips 0` on aarch64. Reported as a correct outcome, never as a
     /// failure, so the mode cannot invent work on a platform Photon excludes.
@@ -41,6 +46,7 @@ impl State {
             State::Certified { .. } => "certified",
             State::Equivalent { .. } => "equivalent",
             State::Absent { .. } => "absent",
+            State::Unknown { .. } => "unknown",
         }
     }
     /// Whether a FIPS verdict taken in this state may be reported as compliant.
@@ -96,6 +102,65 @@ fn spec_nevr(spec: &str) -> Option<String> {
     Some(format!("{v}-{r}.ph5"))
 }
 
+/// The newest `linux-fips-canister-*` published for this release, as a NEVR
+/// fragment like `6.12.60-18.ph5`.
+///
+/// This — not the spec's `%define` — is what decides whether a canister has to
+/// be built. The spec pin answers "what does this spec ask for", which is a
+/// different question and can be unsatisfiable: on 2026-09-02 both specs pinned
+/// `6.12.60-18.2.ph5` while the repo published only `6.12.60-18.ph5`, so a
+/// build that actually had to recompile the kernel could not resolve its
+/// BuildRequires at all.
+///
+/// Returns Ok(None) when the repo is reachable and simply has no canister.
+pub fn published(release: &str) -> Result<Option<String>, String> {
+    let url = format!(
+        "https://packages.broadcom.com/artifactory/photon/{release}/\
+photon_updates_{release}_x86_64/x86_64/"
+    );
+    let out = Command::new("curl")
+        .args(["-s", "-f", "--max-time", "60", &url])
+        .output()
+        .map_err(|e| format!("running curl: {e}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "{url}: curl exited {}",
+            out.status.code().unwrap_or(-1)
+        ));
+    }
+    let body = String::from_utf8_lossy(&out.stdout);
+    let mut found: Vec<String> = body
+        .split(|c| c == '"' || c == '<' || c == '>' || c == ' ')
+        .filter_map(parse_canister_rpm)
+        .collect();
+    found.sort();
+    found.dedup();
+    Ok(found.pop())
+}
+
+/// `linux-fips-canister-6.12.60-18.ph5.x86_64.rpm` -> `6.12.60-18.ph5`.
+///
+/// Anchored on the full package name so `linux-fips-canister-debuginfo-...`
+/// does not read as a canister; the arch and extension are stripped rather
+/// than assumed, so a noarch build would still parse.
+fn parse_canister_rpm(name: &str) -> Option<String> {
+    let rest = name.trim().strip_prefix("linux-fips-canister-")?;
+    if !rest.ends_with(".rpm") || !rest.starts_with(|c: char| c.is_ascii_digit()) {
+        return None;
+    }
+    let rest = rest.trim_end_matches(".rpm");
+    let rest = rest
+        .strip_suffix(".x86_64")
+        .or_else(|| rest.strip_suffix(".noarch"))
+        .or_else(|| rest.strip_suffix(".aarch64"))
+        .unwrap_or(rest);
+    if rest.is_empty() {
+        None
+    } else {
+        Some(rest.to_string())
+    }
+}
+
 pub struct Specs {
     pub linux: PathBuf,
     /// Read by P4 (consume), which rebuilds this flavour against the canister
@@ -114,6 +179,64 @@ impl Specs {
     }
 }
 
+/// Where a kernel version came from, so a mismatch can be named.
+pub struct Provenance {
+    /// What the build will actually compile: the tree with the variant patch
+    /// applied. This is the version every canister decision must be about.
+    pub effective: String,
+    /// linux.spec on the operator's fork branch (origin/<release>).
+    pub fork: Option<String>,
+    /// linux.spec on the reference branch (vmware/<release>).
+    pub upstream: Option<String>,
+    /// Refs that could not be read, so a missing value is never mistaken for
+    /// agreement.
+    pub unread: Vec<String>,
+}
+
+impl Provenance {
+    /// The fork has moved relative to the reference. Not an error - carrying
+    /// patches is the point of a fork - but it means "the kernel under test" is
+    /// downstream of upstream, and a canister decision taken here does not
+    /// necessarily hold there.
+    pub fn fork_differs(&self) -> bool {
+        matches!((&self.fork, &self.upstream), (Some(f), Some(u)) if f != u)
+    }
+}
+
+fn nevr_at(tree: &Path, git_ref: &str) -> Option<String> {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(tree)
+        .args(["show", &format!("{git_ref}:SPECS/linux/linux.spec")])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    spec_nevr(&String::from_utf8_lossy(&out.stdout))
+}
+
+/// Read the kernel version from the tree, the fork and the reference.
+///
+/// `effective` is passed in rather than read, because the version that matters
+/// is the one the variant patch produces - the pristine tree is a different
+/// kernel and answering for it would decide the canister question about
+/// something nobody is building.
+pub fn provenance(cfg: &Config, effective: String) -> Provenance {
+    let mut unread = Vec::new();
+    let fork_ref = format!("origin/{}", cfg.release);
+    let up_ref = format!("vmware/{}", cfg.release);
+    let fork = nevr_at(&cfg.photon_tree, &fork_ref);
+    if fork.is_none() {
+        unread.push(fork_ref);
+    }
+    let upstream = nevr_at(&cfg.photon_tree, &up_ref);
+    if upstream.is_none() {
+        unread.push(up_ref);
+    }
+    Provenance { effective, fork, upstream, unread }
+}
+
 /// P0 - decide the state from the tree, without building anything.
 ///
 /// The detection is deliberately NOT "the canister NEVR differs from the kernel
@@ -122,6 +245,16 @@ impl Specs {
 /// level under test*. When it does not, a build that wants same-version
 /// coverage has to make one.
 pub fn detect(cfg: &Config, arch: &str) -> Result<State, String> {
+    detect_for(cfg, arch, None)
+}
+
+/// As `detect`, for a kernel NEVR the caller already knows.
+///
+/// A build applies a variant patch before compiling, and that patch is what
+/// sets Release - so the pristine tree answers for a kernel that is not the one
+/// being built. Whoever knows the real NEVR must pass it, or the decision is
+/// made about the wrong kernel.
+pub fn detect_for(cfg: &Config, arch: &str, kernel: Option<&str>) -> Result<State, String> {
     let specs = Specs::under(&cfg.photon_tree);
     let linux = std::fs::read_to_string(&specs.linux)
         .map_err(|e| format!("{}: {e}", specs.linux.display()))?;
@@ -136,14 +269,54 @@ pub fn detect(cfg: &Config, arch: &str) -> Result<State, String> {
         });
     }
 
-    let kernel = spec_nevr(&linux).ok_or("linux.spec has no Version:/Release:")?;
-    let certified = spec_define(&linux, "fips_canister_version")
-        .ok_or("linux.spec defines no fips_canister_version")?;
+    let kernel = match kernel {
+        Some(k) => k.to_string(),
+        None => spec_nevr(&linux).ok_or("linux.spec has no Version:/Release:")?,
+    };
 
-    if certified == kernel {
-        Ok(State::Certified { version: certified })
-    } else {
-        Ok(State::Equivalent { kernel, certified })
+    // Ask the REPO, not the spec. The spec's %define says what this spec wants
+    // to link; it does not say whether such a canister exists, and the two have
+    // drifted - the pin was 6.12.60-18.2.ph5 while the repo published only
+    // 6.12.60-18.ph5. Phase A is needed exactly when nothing published matches
+    // the kernel under test, so that is the comparison to make.
+    match published(&cfg.release) {
+        Ok(Some(pubv)) if pubv == kernel => Ok(State::Certified { version: pubv }),
+        Ok(Some(pubv)) => Ok(State::Equivalent { kernel, certified: pubv }),
+        Ok(None) => Ok(State::Equivalent {
+            kernel,
+            certified: "none published".into(),
+        }),
+        // Never guess. Falling back to the spec pin here would let a network
+        // blip turn "certified" into "spend twelve hours building a canister",
+        // or the reverse, with nothing in the output to say which happened.
+        Err(e) => Ok(State::Unknown { kernel, reason: e }),
+    }
+}
+
+/// What a build has to do to reach a canister at the kernel level under test.
+///
+/// Phase A is CONDITIONAL: it exists only to make a canister that is not
+/// published. When one is published at the right level there is nothing to
+/// build, and linking it keeps the result certified rather than merely
+/// equivalent.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Plan {
+    /// Link the published canister. One build, and it stays validated.
+    LinkPublished { version: String },
+    /// Build a canister from this kernel, then relink both flavours against it.
+    BuildThenLink { version: String },
+    /// Nothing to do - this architecture has no canister by design.
+    Nothing { reason: String },
+    /// Refuse to plan. The state could not be determined.
+    Refuse { reason: String },
+}
+
+pub fn plan(state: &State) -> Plan {
+    match state {
+        State::Certified { version } => Plan::LinkPublished { version: version.clone() },
+        State::Equivalent { kernel, .. } => Plan::BuildThenLink { version: kernel.clone() },
+        State::Absent { reason, .. } => Plan::Nothing { reason: reason.clone() },
+        State::Unknown { reason, .. } => Plan::Refuse { reason: reason.clone() },
     }
 }
 
@@ -302,6 +475,137 @@ Release:        12%{?acvp_build:.acvp}%{?kat_build:.kat}%{?dist}
         let local = "FIPS(x): canister 6.12 found (based on 6.12.103-12.ph5)";
         assert_eq!(parse_boot_line(prebuilt).unwrap().1, "6.12.60-18.ph5");
         assert_eq!(parse_boot_line(local).unwrap().1, "6.12.103-12.ph5");
+    }
+
+    /// The repo listing is HTML, and it contains names that merely start the
+    /// same way. A canister is the exact package, at a version, for an arch.
+    #[test]
+    fn only_a_real_canister_rpm_parses_as_one() {
+        assert_eq!(
+            parse_canister_rpm("linux-fips-canister-6.12.60-18.ph5.x86_64.rpm").as_deref(),
+            Some("6.12.60-18.ph5")
+        );
+        assert_eq!(
+            parse_canister_rpm("linux-fips-canister-6.12.103-13.ph5.noarch.rpm").as_deref(),
+            Some("6.12.103-13.ph5")
+        );
+        // Not canisters.
+        assert!(parse_canister_rpm("linux-fips-canister-debuginfo-6.12.60-18.ph5.x86_64.rpm").is_none());
+        assert!(parse_canister_rpm("linux-6.12.103-13.ph5.x86_64.rpm").is_none());
+        assert!(parse_canister_rpm("linux-fips-canister-6.12.60-18.ph5.x86_64.srpm").is_none());
+        assert!(parse_canister_rpm("").is_none());
+    }
+
+    /// Phase A is conditional. This is the whole point: a canister published at
+    /// the kernel level under test must be LINKED, not rebuilt - rebuilding it
+    /// would throw away the certificate and spend hours doing it.
+    #[test]
+    fn a_published_canister_at_the_kernel_level_means_no_phase_a() {
+        let st = State::Certified { version: "6.12.103-13.ph5".into() };
+        assert_eq!(
+            plan(&st),
+            Plan::LinkPublished { version: "6.12.103-13.ph5".into() }
+        );
+        assert!(st.is_validated());
+    }
+
+    #[test]
+    fn a_mismatched_publication_means_build_then_link() {
+        let st = State::Equivalent {
+            kernel: "6.12.103-13.ph5".into(),
+            certified: "6.12.60-18.ph5".into(),
+        };
+        assert_eq!(
+            plan(&st),
+            Plan::BuildThenLink { version: "6.12.103-13.ph5".into() }
+        );
+        assert!(!st.is_validated());
+    }
+
+    /// The decision has to be about the kernel BEING BUILT. A variant patch
+    /// sets Release, so the pristine tree answers for a different kernel - and
+    /// the whole question is whether a canister exists at this one's level.
+    #[test]
+    fn the_comparison_uses_the_kernel_it_was_given() {
+        // Same published canister, two different kernels under test: the
+        // verdict must differ.
+        let published = "6.12.60-18.ph5";
+        let same = State::Certified { version: published.into() };
+        assert!(same.is_validated());
+
+        let differs = State::Equivalent {
+            kernel: "6.12.103-14.ph5".into(),
+            certified: published.into(),
+        };
+        assert!(!differs.is_validated());
+        assert_eq!(
+            plan(&differs),
+            Plan::BuildThenLink { version: "6.12.103-14.ph5".into() }
+        );
+    }
+
+    /// A fork that has moved relative to the reference must be reported. Not
+    /// as an error - carrying patches is what a fork is for - but a verdict
+    /// taken on the fork's kernel does not automatically hold upstream.
+    #[test]
+    fn a_fork_ahead_of_the_reference_is_flagged() {
+        let same = Provenance {
+            effective: "6.12.103-14.ph5".into(),
+            fork: Some("6.12.103-11.ph5".into()),
+            upstream: Some("6.12.103-11.ph5".into()),
+            unread: vec![],
+        };
+        assert!(!same.fork_differs());
+
+        let moved = Provenance {
+            effective: "6.12.103-14.ph5".into(),
+            fork: Some("6.12.103-12.ph5".into()),
+            upstream: Some("6.12.103-11.ph5".into()),
+            unread: vec![],
+        };
+        assert!(moved.fork_differs());
+    }
+
+    /// An unreadable ref must never read as agreement: "we could not compare"
+    /// and "they match" are different answers.
+    #[test]
+    fn an_unreadable_ref_is_not_agreement() {
+        let p = Provenance {
+            effective: "6.12.103-14.ph5".into(),
+            fork: Some("6.12.103-11.ph5".into()),
+            upstream: None,
+            unread: vec!["vmware/5.0".into()],
+        };
+        assert!(!p.fork_differs(), "unknown must not be reported as a difference");
+        assert!(!p.unread.is_empty(), "but it must be reported as unread");
+    }
+
+    /// If a canister is later published at the kernel level under test, the
+    /// SAME mode must stop building one. Phase A is a consequence of the repo,
+    /// not a property of asking for --canister equivalent.
+    #[test]
+    fn publishing_a_matching_canister_removes_phase_a() {
+        let before = State::Equivalent {
+            kernel: "6.12.103-14.ph5".into(),
+            certified: "6.12.60-18.ph5".into(),
+        };
+        let after = State::Certified { version: "6.12.103-14.ph5".into() };
+        assert!(matches!(plan(&before), Plan::BuildThenLink { .. }));
+        assert!(matches!(plan(&after), Plan::LinkPublished { .. }));
+        assert!(!before.is_validated() && after.is_validated());
+    }
+
+    /// A network failure must not be readable as "build one". They are
+    /// different claims and only one of them costs twelve hours.
+    #[test]
+    fn an_unreadable_repo_refuses_rather_than_guessing() {
+        let st = State::Unknown {
+            kernel: "6.12.103-13.ph5".into(),
+            reason: "curl exited 6".into(),
+        };
+        assert!(matches!(plan(&st), Plan::Refuse { .. }));
+        assert!(!st.is_validated());
+        assert_eq!(st.label(), "unknown");
     }
 
     #[test]

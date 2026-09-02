@@ -78,6 +78,15 @@ pub struct Opts {
     /// for the UI rows, where blocking would hide the operator instructions
     /// behind a poll loop.
     pub no_wait: bool,
+    /// Whether this row's VMX carries a second NIC (the network axis's
+    /// management interface for an IPv6-only guest).
+    ///
+    /// Carried only so a power-on failure can say so. No VM on this host has
+    /// ever had two NICs, so if such a row refuses to start, the two-NIC VMX is
+    /// by far the likeliest cause - and a run that reported it as a plain
+    /// power-on failure would send someone hunting through POI for a defect
+    /// that is not there.
+    pub second_nic: bool,
 }
 
 pub fn run(
@@ -110,7 +119,19 @@ pub fn run(
         &vmx_win,
         &vmrow.name,
         cfg.start_timeout_sec,
-    )?;
+    )
+    .map_err(|e| {
+        if o.second_nic {
+            format!(
+                "{e}\n       This row's VMX carries a SECOND NIC (network axis: an \n\
+                 IPv6-only guest has no other path this harness can reach it by), and no \n\
+                 VM on this host has ever had two. Treat the row as unrunnable here on the \n\
+                 c02 precedent rather than as a POI defect."
+            )
+        } else {
+            e
+        }
+    })?;
     log(&format!(
         "{} confirmed running after {waited}s (vmrun rc={rc}, which is not evidence either way)",
         vmrow.name
