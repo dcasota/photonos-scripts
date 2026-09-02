@@ -479,7 +479,17 @@ pub const VARIANTS: [Variant; 2] = [
     Variant {
         name: "latest",
         branches: &[
-            "fix/poi-2.9-bump",
+            // Stacked on fix/poi-2.9-bump, so it is listed INSTEAD of it - the
+            // same range rule as the canister branch below.
+            //
+            // The 2.8 variant carried fix/poi-fips-sshd-algorithms and this one
+            // carried nothing, so FIPS on the NEWER installer still made a
+            // system unreachable over ssh. Verified against upstream: neither
+            // master nor v2.8 sets PubkeyAcceptedAlgorithms/KexAlgorithms;
+            // _setup_security only appends openssl-fips-provider. A
+            // photon-os-installer change has to ride both variants, or the
+            // untested one is the one that reaches a user.
+            "fix/poi-2.9-fips-sshd-algorithms",
             "fix/aide-libgcrypt-versioned-requires",
             "fix-selinux-relabel",
             "fix/systemd-groups-and-stig-variant",
@@ -748,15 +758,29 @@ mod tests {
 
     /// #19 and #26 are alternatives: exactly one installer PR per variant, or
     /// the patch carries two installer versions at once.
+    ///
+    /// Matched by shape rather than by an allowlist of exact branch names. The
+    /// allowlist listed poi-2.9-bump and poi-fips-sshd literally, so when the
+    /// latest variant moved to fix/poi-2.9-fips-sshd-algorithms - a branch
+    /// stacked on the bump, listed instead of it - the count went to 0 and the
+    /// test failed for a rename rather than for a real fault. Every installer
+    /// branch is either fix/poi-* or upstream/photon-os-installer-*, and no
+    /// other branch in either variant contains "poi".
     #[test]
     fn each_variant_carries_exactly_one_installer_branch() {
         for v in &VARIANTS {
-            let n = v
+            let hits: Vec<_> = v
                 .branches
                 .iter()
-                .filter(|b| b.contains("photon-os-installer") || b.contains("poi-2.9-bump") || b.contains("poi-fips-sshd"))
-                .count();
-            assert_eq!(n, 1, "variant {} has {n} installer branches", v.name);
+                .filter(|b| b.contains("/poi-") || b.contains("photon-os-installer"))
+                .collect();
+            assert_eq!(
+                hits.len(),
+                1,
+                "variant {} carries {} installer branches: {hits:?}",
+                v.name,
+                hits.len()
+            );
         }
     }
 }

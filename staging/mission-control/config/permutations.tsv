@@ -249,3 +249,18 @@ n05      minimal   2.8     no    ext4   ks    none        untested   fails   pre
 # and the canister lives in linux-esx, which both media carry.
 # ===========================================================================
 c03      minimal   2.8     no    ext4   ks    fips        untested   pass    equivalent
+
+# ===========================================================================
+# s03 - s02's sibling on the OTHER installer variant.
+#
+# The coverage rule requires every photon-os-installer change to be proven on
+# both variants, and the FIPS sshd fix had no latest-variant row because it
+# had no latest-variant BRANCH: poi-2.8.patch carried 4 sshd hunks and
+# poi-latest.patch carried 0, so FIPS on the newer installer still produced a
+# system unreachable over ssh. Confirmed against upstream - neither master nor
+# v2.8 sets PubkeyAcceptedAlgorithms/KexAlgorithms.
+#
+# Identical to s02 except poi=latest, so a difference between them is a
+# difference between installers and nothing else.
+# ===========================================================================
+s03      minimal   latest  no    ext4   ks    fips        untested   pass    prebuilt
