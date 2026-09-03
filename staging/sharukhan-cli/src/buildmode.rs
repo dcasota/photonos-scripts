@@ -282,6 +282,11 @@ pub struct BuildSpec {
     pub img: ImgType,
     pub canister: CanisterMode,
     pub canister_nevr: Option<String>,
+    /// Compose an image from a stage whose phase-B kernels are already proven,
+    /// instead of purging and rebuilding them. Never set by default: it is
+    /// only safe when the kernels in the stage postdate the canister, which
+    /// `assert_phase_b_kernels` checks against the RPMs themselves.
+    pub compose_only: bool,
     pub injections: Vec<Injection>,
 }
 
@@ -315,6 +320,7 @@ impl BuildSpec {
             img: ImgType::parse(img)?,
             canister,
             canister_nevr: nevr,
+            compose_only: false,
             injections: Vec::new(),
         })
     }

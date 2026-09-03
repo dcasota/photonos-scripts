@@ -1061,7 +1061,12 @@ pub fn purge(c: &mut Ctx) -> Result<(), String> {
         return Ok(());
     }
     c.say(&format!("  stage: {}", stage.display()));
-    purge_phase_a_kernels(c, &stage);
+    if c.spec.compose_only {
+        // Do not purge the kernels - prove they are the ones we want to keep.
+        assert_phase_b_kernels(c, &stage)?;
+    } else {
+        purge_phase_a_kernels(c, &stage);
+    }
     purge_toolchain_blockers(c, &stage);
     purge_shadowing_rpms(c, &stage);
     let n = purge_corrupt_rpms(c, &stage);
@@ -1122,6 +1127,85 @@ fn purge_phase_a_kernels(c: &mut Ctx, stage: &Path) {
     c.say(&format!(
         "  phase-A kernel RPMs removed: {n}, keeping linux-fips-canister-{nevr}"
     ));
+}
+
+/// Prove every kernel in the stage POSTDATES the canister, or refuse.
+///
+/// `--compose-only` exists because rebuilding an image must not cost a kernel
+/// rebuild: the kernels are already linked against the canister and verified,
+/// and `purge` would delete them for the sake of a 25-minute recompose. But
+/// skipping the purge is exactly how an ISO ships a canister-CREATING kernel,
+/// so the skip has to be earned rather than asserted by a flag.
+///
+/// The discriminator is in the artifacts, not in bookkeeping. Phase A builds
+/// the canister as a SUBPACKAGE of the kernel, so a phase-A kernel and the
+/// canister come out of one rpmbuild and carry the same BUILDTIME. A phase-B
+/// kernel is a separate, later build - hours later - and links the canister
+/// that already existed. So:
+///
+///     kernel BUILDTIME > canister BUILDTIME   =>  it could only be phase B
+///     kernel BUILDTIME <= canister BUILDTIME  =>  it is phase A, or predates
+///                                                 the canister entirely
+///
+/// Measured on the real artifacts: canister 18:56, both kernels 21:18.
+///
+/// A failure here is an ERROR, never a silent fallback to purging. If the
+/// stage is not in the state the operator believes it is in, the honest answer
+/// is to stop and say so - falling back would turn a 25-minute recompose into
+/// a surprise three-hour one, and falling through would ship the wrong kernel.
+fn assert_phase_b_kernels(c: &mut Ctx, stage: &Path) -> Result<(), String> {
+    let Some(nevr) = c.spec.canister_nevr.as_deref() else {
+        return Err("--compose-only needs MC_CANISTER_NEVR to identify the canister".into());
+    };
+    let rpms = stage.join("RPMS");
+    let canister = crate::build::find_files_rec(&rpms, "linux-fips-canister-", ".rpm")
+        .into_iter()
+        .find(|p| basename(p).contains(&format!("-{nevr}.")))
+        .ok_or_else(|| {
+            format!("--compose-only found no linux-fips-canister-{nevr} to date the kernels against")
+        })?;
+    let ct = buildtime(&canister)
+        .ok_or_else(|| format!("cannot read BUILDTIME of {}", basename(&canister)))?;
+    c.say(&format!("  canister {nevr} built at {ct}"));
+
+    let flavours = kernel_flavour_nevrs(c);
+    if flavours.is_empty() {
+        return Err("--compose-only could not read either kernel spec".into());
+    }
+    for (prefix, frag) in flavours {
+        let found: Vec<_> = crate::build::find_files_rec(&rpms, "linux", ".rpm")
+            .into_iter()
+            .filter(|p| stale_flavour_rpm(&basename(p), &prefix, &frag))
+            .collect();
+        if found.is_empty() {
+            return Err(format!(
+                "--compose-only found no {prefix}* at {frag} in the stage. There is \
+nothing proven to compose from; run phase B first"
+            ));
+        }
+        for p in found {
+            let name = basename(&p);
+            let kt = buildtime(&p).ok_or_else(|| format!("cannot read BUILDTIME of {name}"))?;
+            if kt <= ct {
+                return Err(format!(
+                    "{name} was built at {kt}, not after the canister at {ct}. A kernel \
+that does not postdate the canister cannot have linked it - it is phase A output, and \
+composing it would ship a canister-CREATING kernel. Re-run without --compose-only"
+                ));
+            }
+        }
+        c.say(&format!("  {prefix}* at {frag} postdates the canister - phase B output, kept"));
+    }
+    Ok(())
+}
+
+/// An RPM's BUILDTIME as a unix timestamp.
+fn buildtime(p: &Path) -> Option<u64> {
+    run(Path::new("/"), "rpm", &["-qp", "--qf", "%{BUILDTIME}", &p.to_string_lossy()])
+        .ok()?
+        .trim()
+        .parse()
+        .ok()
 }
 
 /// The two kernel flavours do NOT share a Release, so one NEVR cannot purge
@@ -1492,7 +1576,7 @@ fn patched_specs(c: &mut Ctx) -> Vec<String> {
             out.push(p);
         }
     };
-    let mut scan = |text: &str, add: &mut dyn FnMut(&str)| {
+    let scan = |text: &str, add: &mut dyn FnMut(&str)| {
         for l in text.lines() {
             // "+++ b/SPECS/linux/linux-esx.spec" - the post-image side, so a
             // spec the patch CREATES is included and one it deletes is not.
@@ -2032,6 +2116,7 @@ mod tests {
             img: ImgType::MinimalIso,
             canister: CanisterMode::Prebuilt,
             canister_nevr: None,
+            compose_only: false,
             injections: vec![],
         }
     }
@@ -2209,6 +2294,78 @@ mod tests {
         // and never more cores than the machine has
         for cpus in 1..64 {
             assert!(threads_for(cpus) <= cpus, "{cpus} cpus oversubscribed");
+        }
+    }
+
+    /// compose-only must REFUSE rather than fall back, and must not delete.
+    ///
+    /// The whole risk of the mode is that skipping the purge ships a
+    /// canister-CREATING kernel. So every path where the claim cannot be
+    /// PROVEN has to be an error - not a quiet purge (which would turn a
+    /// 25-minute recompose into a surprise three-hour one) and above all not a
+    /// quiet pass.
+    #[test]
+    fn compose_only_refuses_when_it_cannot_prove_phase_b() {
+        let tmp = std::env::temp_dir().join(format!("shk-co-{}", std::process::id()));
+        let rpms = tmp.join("release/5.0/stage/RPMS/x86_64");
+        let specs = tmp.join("release/5.0/SPECS/linux");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&rpms).unwrap();
+        fs::create_dir_all(&specs).unwrap();
+        fs::write(specs.join("linux.spec"),
+            "Version:        6.12.107\nRelease:        4%{?dist}\n").unwrap();
+        fs::write(specs.join("linux-esx.spec"),
+            "Version:        6.12.107\nRelease:        3%{?dist}\n").unwrap();
+        let kernel = "linux-6.12.107-4.ph5.x86_64.rpm";
+        fs::write(rpms.join(kernel), b"x").unwrap();
+
+        let mk = |compose: bool| {
+            let mut sp = BuildSpec::from_args(
+                &tmp.join("release").to_string_lossy(), "common", "5.0", "/out",
+                "minimal-iso", "equivalent-b", Some("6.12.107-4.ph5".to_string()),
+            )
+            .unwrap();
+            sp.subrelease = Subrelease::Mainline;
+            sp.compose_only = compose;
+            sp
+        };
+
+        // no canister in the stage: nothing to date the kernels against
+        let sp = mk(true);
+        let e = {
+            let mut c = Ctx { spec: &sp, dry: false, log: &mut |_: &str| {} };
+            assert_phase_b_kernels(&mut c, &tmp.join("release/5.0/stage")).unwrap_err()
+        };
+        assert!(e.contains("no linux-fips-canister"), "{e}");
+        // and it must NOT have deleted anything on the way to refusing
+        assert!(rpms.join(kernel).exists(), "a refusal must not purge");
+
+        // without the flag the same stage is purged, as before
+        let sp = mk(false);
+        {
+            let mut c = Ctx { spec: &sp, dry: false, log: &mut |_: &str| {} };
+            purge_phase_a_kernels(&mut c, &tmp.join("release/5.0/stage"));
+        }
+        assert!(!rpms.join(kernel).exists(), "the default path still purges");
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// A kernel that does not POSTDATE the canister is phase-A output.
+    ///
+    /// Phase A builds the canister as a subpackage of the kernel, so the two
+    /// share a BUILDTIME; a phase-B kernel is a separate, later build. Equal
+    /// is therefore NOT good enough - it is the phase-A signature.
+    #[test]
+    fn only_a_kernel_built_after_the_canister_can_have_linked_it() {
+        // canister 18:56, kernels 21:18, measured on the real artifacts
+        let canister = 1788454565u64;
+        for (kernel, want_ok) in [
+            (1788463106u64, true),  // linux, 2h22m later
+            (1788463117u64, true),  // linux-esx
+            (canister, false),      // same rpmbuild = phase A
+            (canister - 1, false),  // predates the canister entirely
+        ] {
+            assert_eq!(kernel > canister, want_ok, "kernel {kernel} vs canister {canister}");
         }
     }
 

@@ -143,6 +143,7 @@ struct Args {
     job: Option<i64>,
     dry_run: bool,
     deliver_only: bool,
+    compose_only: bool,
     keep: bool,
     once: bool,
     settle: u64,
@@ -188,6 +189,7 @@ fn parse() -> Result<Args, String> {
         job: None,
         dry_run: false,
         deliver_only: false,
+        compose_only: false,
         keep: false,
         once: false,
         settle: 300,
@@ -201,6 +203,7 @@ fn parse() -> Result<Args, String> {
             "--only" => out.only = Some(a.next().ok_or("--only needs a value")?),
             "--iso" => out.iso = Some(a.next().ok_or("--iso needs a value")?),
             "--deliver-only" => out.deliver_only = true,
+            "--compose-only" => out.compose_only = true,
             "--kickstart" => out.kickstart = Some(a.next().ok_or("--kickstart needs a value")?),
             "--mode" => out.mode = Some(a.next().ok_or("--mode needs a value")?),
             "--ip" => out.ip = Some(a.next().ok_or("--ip needs a value")?),
@@ -753,6 +756,11 @@ fn cmd_build(args: &Args) -> Result<(), String> {
     let mut spec = buildmode::BuildSpec::from_args(
         &base, &common, &release, &out, &img, &canister, nevr,
     )?;
+
+    // Rebuild the image from a stage whose phase-B kernels are already proven,
+    // rather than purging and rebuilding them. The purge phase verifies that
+    // claim against the RPMs and refuses if it does not hold.
+    spec.compose_only = args.compose_only;
 
     // The subrelease pin was two entire scripts differing in one integer.
     if let Some(sr) = args.subrelease.as_deref() {
