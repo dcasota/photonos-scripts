@@ -1553,10 +1553,9 @@ const MAKE_ATTEMPTS: u32 = 10;
 /// Build parallelism, from the host rather than from a literal.
 ///
 /// `-j8`/`THREADS=8` were hardcoded here and in `runPh5_normal.sh` before it,
-/// so a 14-core host built at 8 and a 4-core host oversubscribed at 8. Derive
-/// it, and let `MC_BUILD_THREADS` override for a host that must be throttled
-/// (this one runs other people's jobs, and a kernel compile at full width
-/// starves them).
+/// so a 14-core host built at 8 and a 4-core host oversubscribed at 8.
+///
+/// `MC_BUILD_THREADS` overrides outright, for a host that must be pinned.
 fn build_threads() -> usize {
     if let Ok(v) = std::env::var("MC_BUILD_THREADS") {
         if let Ok(n) = v.trim().parse::<usize>() {
@@ -1565,7 +1564,26 @@ fn build_threads() -> usize {
             }
         }
     }
-    std::thread::available_parallelism().map(|n| n.get()).unwrap_or(8)
+    threads_for(std::thread::available_parallelism().map(|n| n.get()).unwrap_or(8))
+}
+
+/// `roundup((cpus - 4) * 4/5)`, floored at 1.
+///
+/// Reserve four cores outright, then take four fifths of what is left. The
+/// reservation is what keeps this host usable: it is shared, and a kernel
+/// compile that takes every core starves the jobs running beside it. The four
+/// fifths leaves the scheduler somewhere to put I/O while the compile runs.
+///
+/// On the 14-core host this yields exactly 8 - the value the scripts
+/// hardcoded - so the derivation reproduces the number that was already known
+/// to work here, rather than changing behaviour under the mission.
+///
+/// Floored at 1 because the formula goes to zero at four cores and negative
+/// below, and `make -j0` is not a build.
+fn threads_for(cpus: usize) -> usize {
+    let usable = cpus.saturating_sub(4);
+    // ceiling division without div_ceil, which is newer than this crate's floor
+    (((usable * 4) + 4) / 5).max(1)
 }
 
 pub fn make_and_deliver(c: &mut Ctx) -> Result<PathBuf, String> {
@@ -2014,6 +2032,31 @@ mod tests {
             "libcap-ng-0.8.3-1.ph5.x86_64.rpm",
         ] {
             assert!(!is_stale_version(keep, &fams), "{keep} must be kept");
+        }
+    }
+
+    /// roundup((cpus - 4) * 4/5), floored at 1.
+    #[test]
+    fn build_threads_reserve_four_cores_then_take_four_fifths() {
+        for (cpus, want) in [
+            (1, 1), (2, 1), (4, 1),   // the formula is <= 0 here; a build still needs 1
+            (5, 1),                   // ceil(0.8)
+            (6, 2),                   // ceil(1.6)
+            (8, 4),                   // ceil(3.2)
+            (14, 8),                  // this host - the value the scripts hardcoded
+            (16, 10),                 // ceil(9.6)
+            (32, 23),                 // ceil(22.4)
+            (64, 48),
+        ] {
+            assert_eq!(threads_for(cpus), want, "{cpus} cpus");
+        }
+        // never zero, whatever the host reports
+        for cpus in 0..64 {
+            assert!(threads_for(cpus) >= 1, "make -j0 is not a build ({cpus} cpus)");
+        }
+        // and never more cores than the machine has
+        for cpus in 1..64 {
+            assert!(threads_for(cpus) <= cpus, "{cpus} cpus oversubscribed");
         }
     }
 
