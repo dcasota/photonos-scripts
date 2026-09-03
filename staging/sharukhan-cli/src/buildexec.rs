@@ -963,10 +963,31 @@ pub fn preflight(c: &mut Ctx) -> Result<(), String> {
 pub fn purge(c: &mut Ctx) -> Result<(), String> {
     let stage = c.spec.tree(Tree::Release).join("stage");
     if c.dry {
+        // Name the phase-A kernels explicitly. A dry run that says only
+        // "would purge stale RPMs" hides the single most destructive thing
+        // this phase does, and the operator cannot check it before it runs.
+        if let (CanisterMode::EquivalentB, Some(nevr)) =
+            (c.spec.canister, c.spec.canister_nevr.as_deref())
+        {
+            let doomed: Vec<String> =
+                crate::build::find_files_rec(&stage.join("RPMS"), "linux", ".rpm")
+                    .iter()
+                    .map(|p| basename(p))
+                    .filter(|n| crate::build::purged_before_phase_b(n, nevr))
+                    .collect();
+            c.say(&format!(
+                "  would remove {} phase-A kernel RPM(s), keeping linux-fips-canister-{nevr}",
+                doomed.len()
+            ));
+            for n in &doomed {
+                c.say(&format!("    - {n}"));
+            }
+        }
         c.say("  would purge stale sandboxes, SRPMs, logs and shadowing RPMs");
         return Ok(());
     }
     c.say(&format!("  stage: {}", stage.display()));
+    purge_phase_a_kernels(c, &stage);
     purge_toolchain_blockers(c, &stage);
     purge_shadowing_rpms(c, &stage);
     let n = purge_corrupt_rpms(c, &stage);
@@ -991,6 +1012,38 @@ pub fn purge(c: &mut Ctx) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// The kernel RPMs phase A left behind, which phase B must never ship.
+///
+/// Phase A builds `linux` with `canister_build 1`: that kernel PRODUCES the
+/// canister object, it does not link against it. Phase B builds the same NEVR
+/// with `canister_usage 1`, and the two are indistinguishable by name. So if
+/// phase A's output is still in `stage/RPMS`, build.py sees the NEVR already
+/// built, skips it, and the ISO ships a kernel that never consumed the
+/// canister at all - passing every build check and failing only at runtime
+/// attestation, if anyone thinks to look.
+///
+/// The canister RPM itself is the one thing that MUST survive: it is phase A's
+/// deliverable and phase B's input.
+///
+/// The legacy script path carried this rule (`build::purged_before_phase_b`);
+/// the cascade did not, and a dry run on 2026-09-03 found phase A's eight
+/// kernel RPMs sitting in the stage with nothing scheduled to remove them.
+fn purge_phase_a_kernels(c: &mut Ctx, stage: &Path) {
+    let CanisterMode::EquivalentB = c.spec.canister else { return };
+    let Some(nevr) = c.spec.canister_nevr.as_deref() else { return };
+    let mut n = 0;
+    for p in crate::build::find_files_rec(&stage.join("RPMS"), "linux", ".rpm") {
+        let name = basename(&p);
+        if crate::build::purged_before_phase_b(&name, nevr) && fs::remove_file(&p).is_ok() {
+            c.say(&format!("  removed phase-A kernel {name}"));
+            n += 1;
+        }
+    }
+    c.say(&format!(
+        "  phase-A kernel RPMs removed: {n}, keeping linux-fips-canister-{nevr}"
+    ));
 }
 
 /// Two package families that block the toolchain bootstrap if left behind.
@@ -1684,6 +1737,83 @@ mod pkgopts_tests {
         assert!(got.contains("\"linux\""), "{got}");
         assert!(got.contains("\"linux-esx\""), "{got}");
         assert!(!got.contains("canister_equivalent"), "prebuilt must carry no macros: {got}");
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// The predicate was tested; the CALL was not, and the cascade never made it.
+    ///
+    /// `build::purged_before_phase_b` has had unit tests since it was written,
+    /// and they all passed while the cascade's purge phase - the only caller
+    /// that matters now that `build` replaces the scripts - did not invoke it.
+    /// A phase B run would have found phase A's `linux-6.12.107-4.ph5` already
+    /// in the stage, skipped the rebuild, and shipped the canister-CREATING
+    /// kernel on the ISO. So this test exercises the phase, not the predicate.
+    #[test]
+    fn cascade_purge_removes_phase_a_kernels_but_keeps_the_canister() {
+        let tmp = std::env::temp_dir().join(format!("shk-purgeb-{}", std::process::id()));
+        let rpms = tmp.join("release/stage/RPMS/x86_64");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&rpms).unwrap();
+        let nevr = "6.12.107-4.ph5";
+        let doomed = [
+            "linux-6.12.107-4.ph5.x86_64.rpm",
+            "linux-devel-6.12.107-4.ph5.x86_64.rpm",
+            "linux-esx-6.12.107-4.ph5.x86_64.rpm",
+            "linux-debuginfo-6.12.107-4.ph5.x86_64.rpm",
+        ];
+        let spared = [
+            // phase A's deliverable and phase B's input
+            "linux-fips-canister-6.12.107-4.ph5.x86_64.rpm",
+            // a different NEVR is not phase A's output
+            "linux-6.12.103-14.ph5.x86_64.rpm",
+            // packages whose names merely start with "linux"
+            "linux-api-headers-6.12.107-1.ph5.noarch.rpm",
+            "linux-firmware-20250101-1.ph5.noarch.rpm",
+        ];
+        for f in doomed.iter().chain(spared.iter()) {
+            fs::write(rpms.join(f), b"x").unwrap();
+        }
+
+        let mut s = BuildSpec::from_args(
+            &tmp.join("release").to_string_lossy(), "common", "5.0", "/out",
+            "minimal-iso", "equivalent-b", Some(nevr.to_string()),
+        )
+        .unwrap();
+        s.subrelease = Subrelease::Mainline;
+        {
+            let mut c = Ctx { spec: &s, dry: false, log: &mut |_: &str| {} };
+            purge_phase_a_kernels(&mut c, &tmp.join("release/stage"));
+        }
+        for f in doomed {
+            assert!(!rpms.join(f).exists(), "{f} is phase-A output and must be purged");
+        }
+        for f in spared {
+            assert!(rpms.join(f).exists(), "{f} must survive the phase-B purge");
+        }
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// Phase A must not purge its own inputs, and prebuilt has no phase at all.
+    #[test]
+    fn only_phase_b_purges_kernels() {
+        let tmp = std::env::temp_dir().join(format!("shk-purgea-{}", std::process::id()));
+        let rpms = tmp.join("release/stage/RPMS/x86_64");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&rpms).unwrap();
+        let f = "linux-6.12.107-4.ph5.x86_64.rpm";
+        for mode in ["equivalent-a", "prebuilt"] {
+            fs::write(rpms.join(f), b"x").unwrap();
+            let nevr = if mode == "prebuilt" { None } else { Some("6.12.107-4.ph5".to_string()) };
+            let mut s = BuildSpec::from_args(
+                &tmp.join("release").to_string_lossy(), "common", "5.0", "/out",
+                "minimal-iso", mode, nevr,
+            )
+            .unwrap();
+            s.subrelease = Subrelease::Mainline;
+            let mut c = Ctx { spec: &s, dry: false, log: &mut |_: &str| {} };
+            purge_phase_a_kernels(&mut c, &tmp.join("release/stage"));
+            assert!(rpms.join(f).exists(), "{mode} must not purge kernels");
+        }
         let _ = fs::remove_dir_all(&tmp);
     }
 

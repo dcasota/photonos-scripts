@@ -159,6 +159,22 @@ removes the other's kernel, because their spec Releases differ by the embedded
 patch. Building prebuilt after equivalent costs a kernel rebuild that cannot
 succeed.
 
+### Phase A, verified (2026-09-03)
+
+Phase A completed in 140m09s and produced
+`linux-fips-canister-6.12.107-4.ph5.x86_64.rpm`. Not trusted on the build's
+say-so - unpacked and checked:
+
+    payload   /usr/lib/fips-canister/fips-canister-6.12.107-4.ph5.tar.bz2
+    contents  crypto/fips_canister.o, crypto/fips_canister-kallsyms
+    .o        ELF 64-bit LSB relocatable, x86-64, 3786368 bytes, not stripped
+    symbols   2254, of which 10 name fips
+    kallsyms  __canister_stext/_etext/_sinittext/_einittext/_sexittext
+
+The artifact is copied to `photon-mc/canister-vault/` before phase B runs,
+because phase B's first act is a purge of its siblings and 140 minutes is too
+long to re-earn on a bad glob.
+
 ### Bugs the verification found that review did not
 
 - `sync` tested `.git` with `is_dir()`. A linked worktree has `.git` as a
@@ -171,6 +187,15 @@ succeed.
   saw none. It also skipped entirely on `prebuilt`, where the script writes an
   EMPTY macro list - so a prebuilt build following an equivalent one would
   silently inherit `canister_equivalent 1`.
+- The cascade's purge never removed phase A's kernels. `purged_before_phase_b`
+  had unit tests and passed them all - while the only caller that matters,
+  the cascade, did not call it. Phase A builds `linux` with `canister_build 1`
+  (a kernel that CREATES the canister); phase B builds the same NEVR with
+  `canister_usage 1`. Same name, same version, opposite meaning. Phase B would
+  have found phase A's eight RPMs in the stage, skipped the rebuild, and
+  shipped a kernel that never linked against the canister - passing every
+  build-time check and failing only at runtime attestation. The test now
+  exercises the phase rather than the predicate.
 - The config.yaml parser was wrong three ways (wrong keys, values continued on
   the next line, nested lists splitting an entry). None was visible from
   counts: 1968 entries both sides while the contents differed. It is now

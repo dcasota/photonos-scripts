@@ -383,7 +383,7 @@ fn scan_linux_spec_hunks(text: &str, version: &mut Option<String>, release: &mut
 ///
 /// The canister is the one thing at that NEVR that must survive: it is what
 /// phase B links against.
-fn purged_before_phase_b(name: &str, nevr: &str) -> bool {
+pub fn purged_before_phase_b(name: &str, nevr: &str) -> bool {
     !name.starts_with("linux-fips-canister-") && name.contains(&format!("-{nevr}."))
 }
 
