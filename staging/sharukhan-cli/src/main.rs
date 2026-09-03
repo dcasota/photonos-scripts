@@ -142,6 +142,7 @@ struct Args {
     all: bool,
     job: Option<i64>,
     dry_run: bool,
+    deliver_only: bool,
     keep: bool,
     once: bool,
     settle: u64,
@@ -186,6 +187,7 @@ fn parse() -> Result<Args, String> {
         all: false,
         job: None,
         dry_run: false,
+        deliver_only: false,
         keep: false,
         once: false,
         settle: 300,
@@ -198,6 +200,7 @@ fn parse() -> Result<Args, String> {
             "--id" => out.id = Some(a.next().ok_or("--id needs a value")?),
             "--only" => out.only = Some(a.next().ok_or("--only needs a value")?),
             "--iso" => out.iso = Some(a.next().ok_or("--iso needs a value")?),
+            "--deliver-only" => out.deliver_only = true,
             "--kickstart" => out.kickstart = Some(a.next().ok_or("--kickstart needs a value")?),
             "--mode" => out.mode = Some(a.next().ok_or("--mode needs a value")?),
             "--ip" => out.ip = Some(a.next().ok_or("--ip needs a value")?),
@@ -799,7 +802,19 @@ fn cmd_build(args: &Args) -> Result<(), String> {
     if args.dry_run {
         println!("\n(dry run: nothing was touched)");
     }
-    let produced = buildexec::execute(&spec, args.dry_run, &mut |l| println!("{l}"))?;
+    // --deliver-only installs an ISO that already exists into --out, writing
+    // the cache side-cars, without running a single build phase. Re-running
+    // the cascade to move a file would cost a kernel rebuild, because purge
+    // removes both flavours before make by design.
+    let produced = if args.deliver_only {
+        buildexec::deliver_existing(
+            &spec,
+            args.iso.as_deref().map(std::path::Path::new),
+            &mut |l| println!("{l}"),
+        )?
+    } else {
+        buildexec::execute(&spec, args.dry_run, &mut |l| println!("{l}"))?
+    };
     if !args.dry_run {
         println!("{}", produced.display());
     }

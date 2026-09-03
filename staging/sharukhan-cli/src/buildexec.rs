@@ -1382,22 +1382,99 @@ fn purge_shadowing_rpms(c: &mut Ctx, stage: &Path) {
         for p in crate::build::find_files_rec(&stage.join("RPMS"), &fams.name, ".rpm") {
             let name = basename(&p);
             let Some((pkg, ver, got_rel)) = parse_rpm_name(&name) else { continue };
-            if ver != fams.version || !fams.families.iter().any(|x| *x == pkg) {
+            if !fams.families.iter().any(|x| *x == pkg) {
                 continue;
             }
-            let got = got_rel.split(".ph").next().unwrap_or("");
-            if got.is_empty() || !got.chars().all(|x| x.is_ascii_digit()) {
-                continue;
-            }
-            if let Ok(g) = got.parse::<u32>() {
-                if g > want && fs::remove_file(&p).is_ok() {
-                    c.say(&format!(
-                        "  removed stale {name}: release {g} shadows the patched {want}"
-                    ));
+            // A HIGHER VERSION shadows just as surely as a higher release, and
+            // is the case that actually shipped: with the spec at 2.8-7, a
+            // leftover photon-os-installer-2.9-4 wins outright. Comparing only
+            // within an equal version - which is what this did - made the
+            // higher-version case invisible.
+            let newer = match vercmp(&ver, &fams.version) {
+                std::cmp::Ordering::Greater => true,
+                std::cmp::Ordering::Less => false,
+                std::cmp::Ordering::Equal => {
+                    let got = got_rel.split(".ph").next().unwrap_or("");
+                    if got.is_empty() || !got.chars().all(|x| x.is_ascii_digit()) {
+                        continue;
+                    }
+                    got.parse::<u32>().map(|g| g > want).unwrap_or(false)
                 }
+            };
+            if newer && fs::remove_file(&p).is_ok() {
+                c.say(&format!(
+                    "  removed stale {name}: {ver}-{got_rel} shadows the patched \
+{}-{want}",
+                    fams.version
+                ));
             }
         }
     }
+}
+
+/// Compare two RPM version strings the way rpm does.
+///
+/// String comparison is wrong in the way that matters: "2.10" < "2.9"
+/// lexically, and >  numerically. Segments are runs of digits or runs of
+/// letters; digits compare numerically and outrank letters, and separators are
+/// insignificant.
+///
+/// This is `rpmvercmp` minus the tilde and caret handling, which Photon's
+/// package versions do not use. If one ever does, the segments before it still
+/// decide, and the comparison degrades to equal rather than to a wrong answer.
+fn vercmp(a: &str, b: &str) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    let seg = |s: &str| -> Vec<String> {
+        let mut out = Vec::new();
+        let mut it = s.chars().peekable();
+        while let Some(&ch) = it.peek() {
+            if !ch.is_ascii_alphanumeric() {
+                it.next();
+                continue;
+            }
+            let digit = ch.is_ascii_digit();
+            let mut buf = String::new();
+            while let Some(&c2) = it.peek() {
+                if c2.is_ascii_digit() == digit && c2.is_ascii_alphanumeric() {
+                    buf.push(c2);
+                    it.next();
+                } else {
+                    break;
+                }
+            }
+            out.push(buf);
+        }
+        out
+    };
+    let (x, y) = (seg(a), seg(b));
+    for i in 0..x.len().max(y.len()) {
+        match (x.get(i), y.get(i)) {
+            // a longer version is newer: 6.12.107 > 6.12
+            (Some(_), None) => return Ordering::Greater,
+            (None, Some(_)) => return Ordering::Less,
+            (Some(p), Some(q)) => {
+                let (pd, qd) = (
+                    p.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false),
+                    q.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false),
+                );
+                let ord = match (pd, qd) {
+                    // numeric outranks alphabetic: 1.2 > 1.beta
+                    (true, false) => Ordering::Greater,
+                    (false, true) => Ordering::Less,
+                    (true, true) => {
+                        let (pt, qt) = (p.trim_start_matches('0'), q.trim_start_matches('0'));
+                        pt.len().cmp(&qt.len()).then_with(|| pt.cmp(qt))
+                    }
+                    (false, false) => p.cmp(q),
+                };
+                if ord != Ordering::Equal {
+                    return ord;
+                }
+            }
+            (None, None) => break,
+        }
+    }
+    Ordering::Equal
 }
 
 /// Which release-tree specs this build's injections modify.
@@ -1657,7 +1734,7 @@ pub fn make_and_deliver(c: &mut Ctx) -> Result<PathBuf, String> {
 
         if let Some(iso) = find_iso(&stage, &common_stage) {
             c.say(&format!("  built ISO: {}", iso.display()));
-            return deliver(c, &iso);
+            return deliver(c, &iso, true);
         }
 
         let progress = count_newer(&[&stage, &common_stage], &marker);
@@ -1710,7 +1787,7 @@ fn count_newer(roots: &[&Path], marker: &Path) -> u64 {
 
 /// Move the ISO out, refusing to overwrite a different image that is already
 /// there. An identical one is not an error - it is the same build again.
-fn deliver(c: &mut Ctx, iso: &Path) -> Result<PathBuf, String> {
+fn deliver(c: &mut Ctx, iso: &Path, move_source: bool) -> Result<PathBuf, String> {
     let out = &c.spec.output_dir;
     fs::create_dir_all(out).map_err(|e| format!("{}: {e}", out.display()))?;
     let sum = sha256::file(iso)?;
@@ -1731,9 +1808,17 @@ fn deliver(c: &mut Ctx, iso: &Path) -> Result<PathBuf, String> {
         dest = out.join(format!("{stem}-{}.iso", &sum[..12]));
         c.say(&format!("  destination existed with different content; delivering as {}", basename(&dest)));
     }
-    fs::rename(iso, &dest)
-        .or_else(|_| fs::copy(iso, &dest).map(|_| ()).and_then(|_| fs::remove_file(iso)))
-        .map_err(|e| format!("moving ISO to {}: {e}", dest.display()))?;
+    // Moving is right for stage -> output: it frees the stage, and the stage
+    // copy has no further use. It is WRONG for installing an ISO that has
+    // already been delivered somewhere into a second location, which would
+    // silently remove it from the first.
+    if move_source {
+        fs::rename(iso, &dest)
+            .or_else(|_| fs::copy(iso, &dest).map(|_| ()).and_then(|_| fs::remove_file(iso)))
+            .map_err(|e| format!("moving ISO to {}: {e}", dest.display()))?;
+    } else {
+        fs::copy(iso, &dest).map_err(|e| format!("copying ISO to {}: {e}", dest.display()))?;
+    }
     let size = fs::metadata(&dest).map(|m| m.len()).unwrap_or(0);
     c.say(&format!(
         "  delivered {} ({:.2} GB, sha256 {})",
@@ -1741,6 +1826,7 @@ fn deliver(c: &mut Ctx, iso: &Path) -> Result<PathBuf, String> {
         size as f64 / 1_073_741_824.0,
         &sum[..16]
     ));
+    write_sidecars(c, &dest, &sum);
     Ok(dest)
 }
 
@@ -1828,6 +1914,72 @@ carry no canister-consuming {}",
         _ => {}
     }
     Ok(())
+}
+
+/// The three files that make a directory an ISO CACHE ENTRY, not just a
+/// directory with an ISO in it.
+///
+/// `build-iso` writes them; the cascade did not, so an ISO the cascade
+/// produced was invisible to the matrix - `create-vm` attaches `photon.iso`,
+/// and `plan` reads `poi-nevr.txt` to say what installer is on the media.
+/// Pointing `--out` at a cache directory is now enough to make the cascade a
+/// drop-in for the legacy path, which is the last thing P5 needed.
+///
+/// Failures here are logged, not fatal: the ISO itself is delivered and
+/// nothing is lost by a missing convenience symlink on a filesystem that
+/// cannot make one (drvfs).
+fn write_sidecars(c: &mut Ctx, dest: &Path, sum: &str) {
+    let Some(dir) = dest.parent() else { return };
+    let name = basename(dest);
+
+    let link = dir.join("photon.iso");
+    let _ = fs::remove_file(&link);
+    match std::os::unix::fs::symlink(&name, &link) {
+        Ok(()) => c.say(&format!("  photon.iso -> {name}")),
+        Err(e) => c.say(&format!("  [warn] photon.iso symlink: {e}")),
+    }
+
+    if let Err(e) = fs::write(dir.join("photon.iso.sha256"), format!("{sum}\n")) {
+        c.say(&format!("  [warn] photon.iso.sha256: {e}"));
+    }
+
+    // What installer actually shipped, read off the media rather than assumed
+    // from the variant - that assumption is how a 2.9-3 installer once reached
+    // an ISO built for 2.8.
+    match crate::media::installer_on_media(dest) {
+        Ok(nevr) => {
+            c.say(&format!("  installer on the produced media: {nevr}"));
+            let _ = fs::write(dir.join("poi-nevr.txt"), format!("{nevr}\n"));
+        }
+        Err(e) => c.say(&format!("  [warn] could not read the installer off the media: {e}")),
+    }
+}
+
+/// Deliver an ISO that already exists, without building anything.
+///
+/// The cascade delivers to `--out`, and the matrix reads a different
+/// directory, so an ISO built for one has to be installable into the other.
+/// Rebuilding to move a file would cost a kernel rebuild here - `purge`
+/// removes both flavours before make, by design - so re-running the cascade is
+/// the one thing that must NOT be the answer.
+pub fn deliver_existing(spec: &BuildSpec, iso: Option<&Path>, log: &mut dyn FnMut(&str)) -> Result<PathBuf, String> {
+    let mut c = Ctx { spec, dry: false, log };
+    let src = match iso {
+        Some(p) => p.to_path_buf(),
+        None => {
+            let stage = spec.tree(Tree::Release).join("stage");
+            crate::build::find_files_rec(&stage, "photon", ".iso")
+                .into_iter()
+                .filter(|p| basename(p) != "photon.iso")
+                .max_by_key(|p| fs::metadata(p).and_then(|m| m.modified()).ok())
+                .ok_or_else(|| format!("no ISO found under {}", stage.display()))?
+        }
+    };
+    if !src.is_file() {
+        return Err(format!("{}: not a file", src.display()));
+    }
+    c.say(&format!("[deliver-only] {}", src.display()));
+    deliver(&mut c, &src, false)
 }
 
 // ---------------------------------------------------------------------------
@@ -2058,6 +2210,80 @@ mod tests {
         for cpus in 1..64 {
             assert!(threads_for(cpus) <= cpus, "{cpus} cpus oversubscribed");
         }
+    }
+
+    /// "2.10" < "2.9" as a string, and > as a version. That is the whole point.
+    #[test]
+    fn vercmp_follows_rpm_not_ascii() {
+        use std::cmp::Ordering::*;
+        for (a, b, want) in [
+            ("2.9", "2.8", Greater),      // the case that shipped a wrong installer
+            ("2.8", "2.9", Less),
+            ("2.8", "2.8", Equal),
+            ("2.10", "2.9", Greater),     // ascii would say Less
+            ("6.12.107", "6.12.103", Greater),
+            ("6.12.107", "6.12", Greater),// longer is newer
+            ("1.2", "1.beta", Greater),   // numeric outranks alpha
+            ("1.0.8", "1.0.8", Equal),
+            ("2.30.18", "2.25.7", Greater),
+            ("013", "13", Equal),         // leading zeros are insignificant
+        ] {
+            assert_eq!(vercmp(a, b), want, "{a} vs {b}");
+        }
+    }
+
+    /// A leftover 2.9-4 beside a patched 2.8-7 is what actually reached an ISO.
+    ///
+    /// The purge compared releases only WITHIN an equal version, so a higher
+    /// version was invisible to it - and tdnf picks the highest version it can
+    /// see. This is the scar the file has warned about twice ("a 2.9-3
+    /// installer reached an ISO built for 2.8") recurring as 2.9-4, because
+    /// the guard only ever covered half the comparison.
+    #[test]
+    fn a_higher_version_shadows_and_must_be_purged() {
+        let tmp = std::env::temp_dir().join(format!("shk-poi-{}", std::process::id()));
+        let rpms = tmp.join("release/5.0/stage/RPMS/x86_64");
+        let specs = tmp.join("release/5.0/SPECS/photon-os-installer");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&rpms).unwrap();
+        fs::create_dir_all(&specs).unwrap();
+        fs::write(
+            specs.join("photon-os-installer.spec"),
+            "Name:           photon-os-installer\nVersion:       2.8\nRelease:       7%{?dist}\n",
+        )
+        .unwrap();
+
+        let doomed = [
+            "photon-os-installer-2.9-4.ph5.x86_64.rpm",  // higher VERSION
+            "photon-os-installer-2.8-9.ph5.x86_64.rpm",  // higher release
+            "photon-os-installer-2.10-1.ph5.x86_64.rpm", // higher, and ascii-lower
+        ];
+        let spared = [
+            "photon-os-installer-2.8-7.ph5.x86_64.rpm",  // the one being built
+            "photon-os-installer-2.8-6.ph5.x86_64.rpm",  // older loses to it anyway
+            "photon-os-installer-2.7-9.ph5.x86_64.rpm",  // older version
+        ];
+        for f in doomed.iter().chain(spared.iter()) {
+            fs::write(rpms.join(f), b"x").unwrap();
+        }
+
+        let mut sp = BuildSpec::from_args(
+            &tmp.join("release").to_string_lossy(), "common", "5.0", "/out",
+            "minimal-iso", "prebuilt", None,
+        )
+        .unwrap();
+        sp.subrelease = Subrelease::Mainline;
+        {
+            let mut c = Ctx { spec: &sp, dry: false, log: &mut |_: &str| {} };
+            purge_shadowing_rpms(&mut c, &tmp.join("release/5.0/stage"));
+        }
+        for f in doomed {
+            assert!(!rpms.join(f).exists(), "{f} shadows the patched 2.8-7 and must go");
+        }
+        for f in spared {
+            assert!(rpms.join(f).exists(), "{f} must survive");
+        }
+        let _ = fs::remove_dir_all(&tmp);
     }
 
     /// The shadowing list was three literal names; linux-esx was not among them.
