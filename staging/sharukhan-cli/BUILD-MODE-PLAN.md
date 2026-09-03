@@ -133,6 +133,32 @@ Run for real against throwaway worktrees of pristine `origin/5.0` and
 **Still not proven: the cascade has never produced an ISO.** `build-iso`
 therefore still calls the script. That is the remaining gate.
 
+### The first real build, and what it proved
+
+`sharukhan build --canister prebuilt` ran the full cascade against the live
+trees and FAILED in make:
+
+    error: Failed build dependencies:
+      linux-fips-canister = 6.12.60-18.2.ph5 is needed by linux-6.12.103-13.ph5
+
+Not a port defect. The shadowing purge removed `linux-6.12.103-14` - built
+earlier by the equivalent path, and at Release 14 it genuinely shadows a
+prebuilt spec at 13 - which forced a kernel rebuild at -13, which needs a
+canister pin published NOWHERE (only `6.12.60-18` exists). The bash applies
+the same rule to the same inputs and fails identically.
+
+What it establishes, and it is worth stating plainly:
+
+**On this host a `prebuilt` build succeeds only while the kernel stays cached.
+Anything that forces a kernel rebuild hits the unpublished pin.** That is what
+the equivalent mode is for, and why `plan_with_local` matters: with the local
+canister present the same stage builds through phase B alone.
+
+It also means a stage cannot serve both modes at once - each mode's purge
+removes the other's kernel, because their spec Releases differ by the embedded
+patch. Building prebuilt after equivalent costs a kernel rebuild that cannot
+succeed.
+
 ### Bugs the verification found that review did not
 
 - `sync` tested `.git` with `is_dir()`. A linked worktree has `.git` as a
@@ -140,6 +166,11 @@ therefore still calls the script. That is the remaining gate.
   directory.
 - The rpm-6.x purge matched `-6.` anywhere, which also hits
   `rpm-4.18.0-6.ph5` - deleting the rpm 4.x the bootstrap requires.
+- `pkg_build_options` computed the macros, logged them, and NEVER WROTE THE
+  FILE. Every canister mode would have reported correct macros while build.py
+  saw none. It also skipped entirely on `prebuilt`, where the script writes an
+  EMPTY macro list - so a prebuilt build following an equivalent one would
+  silently inherit `canister_equivalent 1`.
 - The config.yaml parser was wrong three ways (wrong keys, values continued on
   the next line, nested lists splitting an entry). None was visible from
   counts: 1968 entries both sides while the contents differed. It is now
