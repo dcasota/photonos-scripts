@@ -315,6 +315,38 @@ Two follow-ons, both because the first version of the fix was not good enough:
   that decides what to delete and the rule that decides what proves a rebuild
   cannot drift apart.
 
+#### Phase B proved at build time, both flavours (2026-09-03)
+
+Phase A produced `linux-fips-canister-6.12.107-4.ph5` in 140m09s. Verified by
+unpacking it rather than trusting make's exit code: the payload is
+`crypto/fips_canister.o`, an ELF 64-bit relocatable of 3786368 bytes carrying
+2254 symbols, plus a `fips_canister-kallsyms` listing the
+`__canister_stext/_etext/_sinittext/_einittext/_sexittext` boundaries.
+
+Phase B then rebuilt BOTH kernel flavours against it. From their own build
+logs, not inferred:
+
+    linux-6.12.107-4      + tar -xvf /usr/lib/fips-canister/fips-canister-6.12.107-4.ph5.tar.bz2
+    linux-esx-6.12.107-3  + tar -xvf /usr/lib/fips-canister/fips-canister-6.12.107-4.ph5.tar.bz2
+
+and both then link it in:
+
+    ar cDPrST crypto/built-in.a ... fips_canister_wrapper.o fips_canister.o \
+                                    fips_canister_wrapper_internal.o
+
+That is the whole three-way decision closed end to end: nothing published at
+this kernel level, so phase A built an equivalent, and phase B linked it into
+both flavours. `linux-esx` is the one that matters at runtime - it is what the
+ISO boots, and therefore what c03 attests.
+
+It is also the proof that the purge fix above was load-bearing rather than
+theoretical. build.py rebuilt both kernels instead of counting them as already
+built, and that rebuild is the only reason the linkage happened at all.
+
+Note the two Releases: `linux` at 4 and `linux-esx` at 3, from the same patch.
+Any rule that assumes one NEVR covers both kernels is wrong, which is what the
+per-flavour purge exists for.
+
 #### The prebuilt ISOs are now irreplaceable (2026-09-03)
 
 A consequence of the unpublished pin that is easy to get backwards. All four
