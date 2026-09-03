@@ -553,6 +553,77 @@ matrix VMs still powered on: k11 - not powered off; use `/root/photonos-scripts/
 descendant of the dead pid, so it is not `stop`'s to find. That is a real limit,
 stated rather than papered over — the orphan above was cleared by hand.
 
+## Build mode: sharukhan builds the ISO itself
+
+`sharukhan build` runs the whole build cascade natively. It replaces five shell
+scripts that were the same build with different accretions:
+
+| was | now |
+|---|---|
+| `runPh4.sh` | `sharukhan build --release 4.0` |
+| `runPh5_normal.sh` | `sharukhan build` |
+| `runPh5_pinned90.sh` | `sharukhan build --subrelease 90` |
+| `runPh5_pinned91.sh` | `sharukhan build --subrelease 91` |
+| `runPh6.sh` | `sharukhan build --release 6.0` |
+
+Their fixups had drifted - `run-in-chroot`'s fd-255 fix was in two of the five,
+`createrepo_c` repair in two, `rpm 6.x` removal in three - and none of that was
+a decision about the release: fd 255 breaks a 4.0 build exactly as it breaks a
+5.0 one. So a phase here never asks *which release is this*, it asks *is the
+thing I fix present in this tree*, and says so when it is not:
+
+```
+$ sharukhan build --dry-run
+   1. resolve          9. inject:fixup[release]:openjdk-wsl2-build-flag
+   2. sync            10. inject:fixup[release]:python3-pgo-test-generators
+   3. reset-specs     11. inject:fixup[release]:sssd-serial-make-install
+   4. inject:patch[release]:poi-2.8.patch
+   5. inject:embedded[release]:canister-equivalent
+   6. inject:embedded[common]:sans-snapshot-local-canister
+   7. inject:pkg-build-options[equivalent-b]      13. sources
+   8. inject:fixup[release]:spec-blank-lines      14. preflight
+  12. inject:fixup[common]:run-in-chroot-fd-255   15. purge / 16. make / 17. post
+
+  [skip] sssd-serial-make-install: already correct in this tree
+```
+
+`--dry-run` touches nothing. The scripts had no equivalent: the only way to
+learn their order was to run one for hours.
+
+### Two trees, and why that matters
+
+Photon keeps per-release SPECS on `5.0`/`4.0`/`6.0` and shared build tooling on
+`common`, and those branch lines never meet - `common` has no `SPECS/`, the
+release branches have no `support/package-builder/`. The variant-patch
+mechanism diffs `origin/<release>..branch` and applies to `SPECS`, so it can
+**never** carry a change to the package builder. That is why the cascade
+distinguishes `Tree::Release` from `Tree::Common` and can patch both.
+
+### Test-only changes are compiled in
+
+`canister_equivalent` and the sans-snapshot package-builder fix have no
+destination in vmware/photon - upstream has no reason to carry a switch whose
+only consumer is this harness - so they live in `src/embedded/`, are compiled
+into the binary with `include_str!`, and are applied **on top of** the variant
+patch. `VARIANTS` therefore carries only work genuinely bound upstream, and
+nothing test-only can leak into a PR.
+
+The practical effect: a fresh clone of this repository can build an
+equivalent-canister ISO with no other repository checked out at any particular
+revision.
+
+### The canister question, in the order it is asked
+
+| state | plan | validated? |
+|---|---|---|
+| Broadcom publishes one at this kernel level | link it | **yes**, CMVP |
+| not published, but already built locally | link that, no phase A | no |
+| neither | build it (phase A), then relink both flavours (phase B) | no |
+
+Only the third costs the extra ~90 minutes. `sharukhan canister` reports the
+same decision the build will take - it asks the same question, so the two
+cannot disagree.
+
 ## Typical session
 
 ```

@@ -86,7 +86,12 @@ pub fn sync(c: &mut Ctx) -> Result<(), String> {
             Tree::Common => c.spec.common_branch.clone(),
             Tree::Release => c.spec.release.clone(),
         };
-        if !dir.join(".git").is_dir() {
+        // `.git` is a FILE in a linked worktree, not a directory, so testing
+        // is_dir() there reports "not a repository" and the clone below then
+        // fails on a non-empty destination. Ask git instead of guessing from
+        // the layout.
+        let is_repo = dir.is_dir() && ok(&dir, "git", &["rev-parse", "--is-inside-work-tree"]);
+        if !is_repo {
             if c.dry {
                 c.say(&format!("  would clone {} -> {}", branch, dir.display()));
                 continue;
@@ -746,6 +751,43 @@ fn sha512(p: &Path) -> Option<String> {
         .and_then(|o| o.split_whitespace().next().map(|s| s.to_string()))
 }
 
+/// Report the subrelease the tree will actually build at.
+///
+/// Not decorative: `photon-subrelease` selects which SPECS/<n>/ overlay wins,
+/// and `photon-mainline` decides whether snapshots are used at all. A build
+/// that silently runs at a different subrelease than the operator believes
+/// produces packages from a different overlay - which is how a SELinux
+/// expectation was once written against the wrong one.
+fn report_subrelease(c: &mut Ctx) -> Result<(), String> {
+    let cfg = c.spec.tree(Tree::Release).join("build-config.json");
+    let Ok(text) = fs::read_to_string(&cfg) else {
+        c.skip("subrelease", "no build-config.json yet");
+        return Ok(());
+    };
+    let field = |k: &str| -> Option<String> {
+        let pat = format!("\"{k}\"");
+        text.lines().find(|l| l.contains(&pat)).and_then(|l| {
+            l.split(':').nth(1).map(|v| {
+                v.trim().trim_end_matches(',').trim().trim_matches('"').to_string()
+            })
+        })
+    };
+    let sub = field("photon-subrelease").unwrap_or_else(|| "?".into());
+    let main = field("photon-mainline").unwrap_or_else(|| sub.clone());
+    c.say(&format!("  upstream photon-subrelease: {sub} (mainline: {main})"));
+    // In a dry run the pin was deliberately not written, so reading the
+    // unpinned value is the correct observation rather than a fault.
+    if let Subrelease::Pinned(n) = c.spec.subrelease {
+        if !c.dry && sub != n.to_string() {
+            return Err(format!(
+                "asked for subrelease {n} but build-config.json says {sub} - the pin \
+                 did not take, and the build would use the wrong SPECS overlay"
+            ));
+        }
+    }
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // 4. preflight
 // ---------------------------------------------------------------------------
@@ -1204,7 +1246,10 @@ pub fn execute(spec: &BuildSpec, dry: bool, log: &mut dyn FnMut(&str)) -> Result
             Stage::Sync => sync(&mut c)?,
             Stage::Reset => reset(&mut c)?,
             Stage::Inject(i) => inject(&mut c, i)?,
-            Stage::Sources => sources(&mut c)?,
+            Stage::Sources => {
+                report_subrelease(&mut c)?;
+                sources(&mut c)?
+            }
             Stage::Preflight => preflight(&mut c)?,
             Stage::Purge => purge(&mut c)?,
             Stage::Make => produced = make_and_deliver(&mut c)?,
@@ -1457,5 +1502,30 @@ mod parity_exact {
             }
         }
         let _ = fs::write("/tmp/rust-sources.txt", lines.join("\n") + "\n");
+    }
+}
+
+#[cfg(test)]
+mod worktree_tests {
+    use super::*;
+
+    /// A linked git worktree has `.git` as a FILE. Testing `.git/` with
+    /// is_dir() calls it "not a repository", and the cascade then tries to
+    /// clone over a populated directory:
+    ///   fatal: destination path '...' already exists and is not an empty directory
+    /// Found by running the cascade for real against worktrees, not by review.
+    #[test]
+    fn a_linked_worktree_is_recognised_as_a_repository() {
+        let base = Path::new("/root/photon-mc/work/parity/5.0");
+        if !base.is_dir() {
+            eprintln!("no parity worktree here; skipping");
+            return;
+        }
+        assert!(base.join(".git").exists(), "a worktree has a .git entry");
+        assert!(!base.join(".git").is_dir(), "and in a worktree it is a FILE, not a directory");
+        assert!(
+            ok(base, "git", &["rev-parse", "--is-inside-work-tree"]),
+            "git must still recognise it as a work tree"
+        );
     }
 }

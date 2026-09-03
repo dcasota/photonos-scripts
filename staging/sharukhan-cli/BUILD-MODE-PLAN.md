@@ -88,6 +88,63 @@ here". That is what stops the table above from reappearing.
 so adding the next tooling fix is a line in a manifest, not an edit to a shell
 script that has four siblings.
 
+## Status (2026-09-03)
+
+P1, P2 and P4 are done; the cascade runs natively and every phase of
+`runPh5_normal.sh` is ported. P3 (parity) is partially done - see below.
+
+    runPh4.sh            sharukhan build --release 4.0
+    runPh5_normal.sh     sharukhan build
+    runPh5_pinned90.sh   sharukhan build --subrelease 90
+    runPh5_pinned91.sh   sharukhan build --subrelease 91
+    runPh6.sh            sharukhan build --release 6.0
+
+`--dry-run` prints all 17 stages and touches nothing.
+
+**Test-only changes are compiled in.** `canister_equivalent` and the
+sans-snapshot package-builder fix have no destination in vmware/photon -
+upstream has no reason to carry a switch whose only consumer is this harness -
+so they live in `src/embedded/` and are applied by the cascade on top of the
+variant patch. `VARIANTS` carries only upstream-bound PR branches. A fresh
+clone of photonos-scripts can build an equivalent-canister ISO with no other
+repository on any particular branch.
+
+**The canister decision is three-way**, asked in this order:
+
+| published at this kernel level | link it, stays CMVP validated |
+| not published, already built locally | link that, no phase A |
+| neither | build it (phase A), then relink (phase B) |
+
+Only the third costs the extra build; the middle case was missing and cost
+~90 minutes rebuilding an artifact already on disk.
+
+### What the parity run established
+
+Run for real against throwaway worktrees of pristine `origin/5.0` and
+`origin/common`, stopping in `sources`:
+
+- SPECS reset, variant patch applied, both embedded patches applied
+- pkg-build-options written for `equivalent-b`
+- 4 openjdk specs fixed, python3 fixed, run-in-chroot fixed
+- sssd and python3-setuptools correctly SKIPPED with reasons
+- resulting tree: 3 `canister_equivalent` hits per spec, `Release: 14`,
+  `REPO_LOCAL` present - identical to what the old VARIANTS path produced
+
+**Still not proven: the cascade has never produced an ISO.** `build-iso`
+therefore still calls the script. That is the remaining gate.
+
+### Bugs the verification found that review did not
+
+- `sync` tested `.git` with `is_dir()`. A linked worktree has `.git` as a
+  FILE, so it reported "not a repository" and tried to clone over a populated
+  directory.
+- The rpm-6.x purge matched `-6.` anywhere, which also hits
+  `rpm-4.18.0-6.ph5` - deleting the rpm 4.x the bootstrap requires.
+- The config.yaml parser was wrong three ways (wrong keys, values continued on
+  the next line, nested lists splitting an entry). None was visible from
+  counts: 1968 entries both sides while the contents differed. It is now
+  byte-identical to python+pyyaml over 1968 entries in 1745 files.
+
 ## Plan
 
 **P1 - skeleton.** `buildmode.rs`: `BuildSpec`, `Tree`, `Injection`, `Phase`,
