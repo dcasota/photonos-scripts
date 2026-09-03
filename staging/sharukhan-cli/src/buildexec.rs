@@ -1400,6 +1400,73 @@ fn deliver(c: &mut Ctx, iso: &Path) -> Result<PathBuf, String> {
     Ok(dest)
 }
 
+/// Prove the canister phase did what it claims, before anyone boots the ISO.
+///
+/// Until now `post` printed a filename and asserted nothing, while the oracle's
+/// own comment said "the canister linkage is proved at build time only". Both
+/// cannot be true: nothing was checking at build time.
+///
+/// What is checkable here, cheaply and without booting:
+///
+/// - phase A must have produced the canister RPM. It is the entire deliverable
+///   of a 140-minute build; if it is absent the build should not be reported as
+///   a success.
+/// - phase B must have REBUILT the kernel. `purge` deletes every kernel RPM at
+///   this NEVR precisely so build.py cannot skip it, so their presence again at
+///   post is proof the rebuild ran - the same-name/same-version trap that
+///   shipped a canister-creating kernel is exactly what this catches if the
+///   purge ever regresses.
+///
+/// The stronger claim - that the kernel binary really links the canister object
+/// - is settled at runtime by a fips=1 row reading the canister stamp, because
+/// only the FIPS self-test prints it. See `oracle::based_on_check`.
+fn post_assert(c: &mut Ctx) -> Result<(), String> {
+    if c.dry {
+        return Ok(());
+    }
+    let Some(nevr) = c.spec.canister_nevr.as_deref() else { return Ok(()) };
+    let rpms = c.spec.tree(Tree::Release).join("stage/RPMS");
+    // The canister is itself a "linux-" RPM at this NEVR, so a naive prefix
+    // test would let the canister alone satisfy phase B - the exact skip this
+    // assertion exists to catch. `purged_before_phase_b` already draws that
+    // line; reuse it rather than restate it.
+    let kernel_rebuilt = || -> bool {
+        crate::build::find_files_rec(&rpms, "linux", ".rpm")
+            .iter()
+            .any(|p| crate::build::purged_before_phase_b(&basename(p), nevr))
+    };
+    let canister_present = || -> bool {
+        crate::build::find_files_rec(&rpms, "linux-fips-canister-", ".rpm")
+            .iter()
+            .any(|p| basename(p).contains(&format!("-{nevr}.")))
+    };
+    match c.spec.canister {
+        CanisterMode::EquivalentA => {
+            if !canister_present() {
+                return Err(format!(
+                    "phase A reported success but produced no \
+linux-fips-canister-{nevr}: the canister is the whole point of the phase"
+                ));
+            }
+            c.say(&format!("  asserted: linux-fips-canister-{nevr} exists"));
+        }
+        CanisterMode::EquivalentB => {
+            if !kernel_rebuilt() {
+                return Err(format!(
+                    "phase B produced no kernel RPM at {nevr}. purge removed them \
+so build.py could not skip the rebuild; their absence now means the rebuild \
+never ran and the ISO cannot contain a canister-consuming kernel"
+                ));
+            }
+            c.say(&format!(
+                "  asserted: kernel RPMs at {nevr} were rebuilt after the phase-A purge"
+            ));
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // driver
 // ---------------------------------------------------------------------------
@@ -1426,7 +1493,10 @@ pub fn execute(spec: &BuildSpec, dry: bool, log: &mut dyn FnMut(&str)) -> Result
             Stage::Preflight => preflight(&mut c)?,
             Stage::Purge => purge(&mut c)?,
             Stage::Make => produced = make_and_deliver(&mut c)?,
-            Stage::Post => c.say(&format!("  produced {}", produced.display())),
+            Stage::Post => {
+                c.say(&format!("  produced {}", produced.display()));
+                post_assert(&mut c)?;
+            }
         }
     }
     Ok(produced)
@@ -1737,6 +1807,64 @@ mod pkgopts_tests {
         assert!(got.contains("\"linux\""), "{got}");
         assert!(got.contains("\"linux-esx\""), "{got}");
         assert!(!got.contains("canister_equivalent"), "prebuilt must carry no macros: {got}");
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// post used to print a filename and assert nothing.
+    ///
+    /// The oracle says the canister linkage "is proved at build time only".
+    /// Nothing was proving it. These pin the two claims post can actually
+    /// settle without booting anything.
+    #[test]
+    fn post_rejects_a_phase_a_that_produced_no_canister() {
+        let tmp = std::env::temp_dir().join(format!("shk-posta-{}", std::process::id()));
+        // tree(Release) is base_dir.join(release), so the stage lives one
+        // level deeper than the base_dir handed to from_args.
+        let rpms = tmp.join("release/5.0/stage/RPMS/x86_64");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&rpms).unwrap();
+        let nevr = "6.12.107-4.ph5";
+        let mk = |mode: &str| {
+            let mut s = BuildSpec::from_args(
+                &tmp.join("release").to_string_lossy(), "common", "5.0", "/out",
+                "minimal-iso", mode, Some(nevr.to_string()),
+            )
+            .unwrap();
+            s.subrelease = Subrelease::Mainline;
+            s
+        };
+
+        // phase A with an empty stage: the deliverable is missing
+        let s = mk("equivalent-a");
+        let e = {
+            let mut c = Ctx { spec: &s, dry: false, log: &mut |_: &str| {} };
+            post_assert(&mut c).unwrap_err()
+        };
+        assert!(e.contains("no linux-fips-canister"), "{e}");
+
+        // with the canister present it passes
+        fs::write(rpms.join(format!("linux-fips-canister-{nevr}.x86_64.rpm")), b"x").unwrap();
+        {
+            let mut c = Ctx { spec: &s, dry: false, log: &mut |_: &str| {} };
+            post_assert(&mut c).unwrap();
+        }
+
+        // phase B, with ONLY the canister in the stage. The canister is itself
+        // a "linux-" RPM at this NEVR, so a prefix test would pass here - and
+        // that is precisely the skipped-rebuild case post exists to catch.
+        let s = mk("equivalent-b");
+        let e = {
+            let mut c = Ctx { spec: &s, dry: false, log: &mut |_: &str| {} };
+            post_assert(&mut c).unwrap_err()
+        };
+        assert!(e.contains("no kernel RPM"), "the canister must not satisfy phase B: {e}");
+
+        // a real rebuilt kernel does satisfy it
+        fs::write(rpms.join(format!("linux-{nevr}.x86_64.rpm")), b"x").unwrap();
+        {
+            let mut c = Ctx { spec: &s, dry: false, log: &mut |_: &str| {} };
+            post_assert(&mut c).unwrap();
+        }
         let _ = fs::remove_dir_all(&tmp);
     }
 
