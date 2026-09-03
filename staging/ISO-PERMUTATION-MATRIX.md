@@ -273,6 +273,63 @@ optional. `canister::detect_for` re-decides this per build against the live
 repo, so if one is ever published at that level the same command drops phase A
 by itself and stays **certified**.
 
+#### A third thing, found 2026-09-03: the cascade never purged phase A's kernels
+
+`build::purged_before_phase_b` had unit tests from the day it was written and
+passed every one of them. **Nothing called it.** The legacy script path did;
+the cascade that replaced the scripts did not, and a dry run of phase B found
+phase A's eight kernel RPMs sitting in `stage/RPMS` with nothing scheduled to
+remove them.
+
+It matters because both phases build the *same NEVR*:
+
+    phase A   linux-6.12.107-4.ph5   canister_build 1    creates the canister
+    phase B   linux-6.12.107-4.ph5   canister_usage 1    links against it
+
+Same name, same version, opposite meaning. And
+`PackageManager._readAlreadyAvailablePackages` marks a package built only if
+**every** subpackage RPM is present — phase A leaves exactly the complete set,
+which is precisely the condition that triggers the skip. So phase B would have
+skipped the kernel rebuild and the ISO would have shipped the
+canister-*creating* kernel: passing every build-time check, and detectable only
+by a `fips=1` row reading the canister stamp at runtime. That is c03, and it is
+the only thing in the matrix that would have caught it.
+
+The same rule explains why the surviving `bpftool-6.12.107-4` is harmless:
+"all", not "any", so one absent sibling forces the rebuild.
+
+Two follow-ons, both because the first version of the fix was not good enough:
+
+- `--dry-run` now *enumerates* the RPMs it would delete. "would purge stale
+  sandboxes, SRPMs, logs and shadowing RPMs" concealed the most destructive
+  thing the phase does, so an operator could not check it before it ran.
+- `post` now asserts, instead of printing a filename. `oracle::based_on_check`
+  tells a non-fips row that "the canister linkage is proved at build time
+  only" — and nothing was proving it. Phase A must have produced the canister;
+  phase B must have *rebuilt* the kernel, which the purge makes provable, since
+  the RPMs are deleted before make and can only exist again if make remade
+  them. Writing that test exposed a hole in the first cut: the canister is
+  itself a `linux-` RPM at the same NEVR, so a prefix test would have been
+  satisfied by the canister alone — passing in exactly the skipped-rebuild case
+  the assertion exists to catch. It reuses `purged_before_phase_b`, so the rule
+  that decides what to delete and the rule that decides what proves a rebuild
+  cannot drift apart.
+
+#### The prebuilt ISOs are now irreplaceable (2026-09-03)
+
+A consequence of the unpublished pin that is easy to get backwards. All four
+prebuilt ISO keys are **cached**, so their ~34 rows are runnable today — they
+are blocked from being *rebuilt*, not from being *installed and verified*. The
+evidence they yield describes kernel 6.12.103, not the 6.12.107 tree, so say
+which when reporting it.
+
+But a prebuilt rebuild must recompile the kernel at `canister_usage=1`, which
+cannot resolve `6.12.60-18.2.ph5`. **Deleting those ISOs destroys the only
+prebuilt media that exists**, and no amount of build time brings it back. Any
+disk-reclaim pass on `/mnt/c` must skip `iso-cache/*prebuilt*`; within them,
+only exact duplicates (same build hash, differing by a `2026*-` timestamp
+prefix) are safe, and only after a sha256 comparison.
+
 #### c03 — the row that turns "recorded" into "proven"
 
 Phase B leaves one claim untested: that the *running* kernel attests to the
