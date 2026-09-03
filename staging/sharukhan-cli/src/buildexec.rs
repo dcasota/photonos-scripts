@@ -1036,7 +1036,11 @@ fn purge_phase_a_kernels(c: &mut Ctx, stage: &Path) {
     let mut n = 0;
     for p in crate::build::find_files_rec(&stage.join("RPMS"), "linux", ".rpm") {
         let name = basename(&p);
-        if crate::build::purged_before_phase_b(&name, nevr) && fs::remove_file(&p).is_ok() {
+        let doomed = crate::build::purged_before_phase_b(&name, nevr)
+            || kernel_flavour_nevrs(c)
+                .iter()
+                .any(|(prefix, frag)| stale_flavour_rpm(&name, prefix, frag));
+        if doomed && fs::remove_file(&p).is_ok() {
             c.say(&format!("  removed phase-A kernel {name}"));
             n += 1;
         }
@@ -1044,6 +1048,62 @@ fn purge_phase_a_kernels(c: &mut Ctx, stage: &Path) {
     c.say(&format!(
         "  phase-A kernel RPMs removed: {n}, keeping linux-fips-canister-{nevr}"
     ));
+}
+
+/// The two kernel flavours do NOT share a Release, so one NEVR cannot purge
+/// both.
+///
+/// The canister-equivalent patch bumps `linux` 3 -> 4 and `linux-esx` 2 -> 3.
+/// The purge above is anchored to the canister's NEVR, which is `linux`'s, so
+/// it can never match `linux-esx-6.12.107-3`. That is the same defect it was
+/// written to fix, one flavour over - and on the flavour that matters more,
+/// because `linux-esx` is the kernel the ISO actually boots. A stale
+/// `linux-esx` at its own Release, built before the canister macros existed,
+/// would survive the purge, be counted as already built, and ship a boot
+/// kernel with no canister linkage at all.
+///
+/// So read each flavour's Release from its own spec rather than assuming the
+/// canister's applies to both.
+fn kernel_flavour_nevrs(c: &mut Ctx) -> Vec<(String, String)> {
+    let specs = c.spec.tree(Tree::Release).join("SPECS/linux");
+    let mut out = Vec::new();
+    for flavour in ["linux", "linux-esx"] {
+        let Ok(text) = fs::read_to_string(specs.join(format!("{flavour}.spec"))) else {
+            continue;
+        };
+        let field = |k: &str| -> Option<String> {
+            text.lines()
+                .find(|l| l.starts_with(k))
+                .and_then(|l| l.split_whitespace().nth(1))
+                // "4%{?acvp_build:.acvp}%{?kat_build:.kat}%{?dist}" -> "4"
+                .map(|v| v.split('%').next().unwrap_or("").to_string())
+        };
+        let (Some(ver), Some(rel)) = (field("Version:"), field("Release:")) else { continue };
+        // An unexpanded macro means the spec cannot be read without rpm. Do not
+        // guess, and above all do not delete on a guess.
+        if ver.is_empty() || rel.is_empty() || !rel.chars().all(|x| x.is_ascii_digit()) {
+            continue;
+        }
+        out.push((format!("{flavour}-"), format!("-{ver}-{rel}.")));
+    }
+    out
+}
+
+/// Does this RPM belong to `prefix` at exactly `frag`, and is it not the
+/// canister?
+///
+/// `linux-` is a prefix of `linux-esx-`, so the flavour test alone would let
+/// `linux` purge the esx tree. The NEVR fragment separates them in practice -
+/// the two flavours are at different Releases - but relying on that would make
+/// the rule correct only by coincidence, so exclude esx from linux explicitly.
+fn stale_flavour_rpm(name: &str, prefix: &str, frag: &str) -> bool {
+    if name.starts_with("linux-fips-canister-") {
+        return false;
+    }
+    if prefix == "linux-" && name.starts_with("linux-esx-") {
+        return false;
+    }
+    name.starts_with(prefix) && name.contains(frag)
 }
 
 /// Two package families that block the toolchain bootstrap if left behind.
@@ -1461,6 +1521,25 @@ never ran and the ISO cannot contain a canister-consuming kernel"
             c.say(&format!(
                 "  asserted: kernel RPMs at {nevr} were rebuilt after the phase-A purge"
             ));
+            // linux-esx is the kernel the ISO boots, it is in packages_minimal
+            // alongside linux, and equivalent-b writes canister macros for it
+            // too - so "the kernel was rebuilt" is not settled by `linux` alone.
+            // It sits at its OWN Release (the patch bumps linux 3->4 and
+            // linux-esx 2->3), which is why this cannot reuse the canister NEVR.
+            for (prefix, frag) in kernel_flavour_nevrs(c) {
+                let seen = crate::build::find_files_rec(&rpms, "linux", ".rpm")
+                    .iter()
+                    .any(|p| stale_flavour_rpm(&basename(p), &prefix, &frag));
+                if !seen {
+                    return Err(format!(
+                        "phase B rebuilt no {prefix}* RPM at {frag} - purge removed \
+that flavour, so its absence means build.py never rebuilt it and the ISO would \
+carry no canister-consuming {}",
+                        prefix.trim_end_matches('-')
+                    ));
+                }
+                c.say(&format!("  asserted: {prefix}* rebuilt at {frag}"));
+            }
         }
         _ => {}
     }
@@ -1808,6 +1887,126 @@ mod pkgopts_tests {
         assert!(got.contains("\"linux-esx\""), "{got}");
         assert!(!got.contains("canister_equivalent"), "prebuilt must carry no macros: {got}");
         let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// A rebuilt `linux` does not prove a rebuilt `linux-esx`.
+    ///
+    /// packages_minimal ships both, equivalent-b writes canister macros for
+    /// both, and linux-esx is the one that boots - so post must fail when only
+    /// the non-booting flavour came back.
+    #[test]
+    fn post_is_not_satisfied_by_linux_when_linux_esx_is_missing() {
+        let tmp = std::env::temp_dir().join(format!("shk-postesx-{}", std::process::id()));
+        let rpms = tmp.join("release/5.0/stage/RPMS/x86_64");
+        let specs = tmp.join("release/5.0/SPECS/linux");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&rpms).unwrap();
+        fs::create_dir_all(&specs).unwrap();
+        fs::write(specs.join("linux.spec"),
+            "Version:        6.12.107\nRelease:        4%{?dist}\n").unwrap();
+        fs::write(specs.join("linux-esx.spec"),
+            "Version:        6.12.107\nRelease:        3%{?dist}\n").unwrap();
+
+        let mut sp = BuildSpec::from_args(
+            &tmp.join("release").to_string_lossy(), "common", "5.0", "/out",
+            "minimal-iso", "equivalent-b", Some("6.12.107-4.ph5".to_string()),
+        )
+        .unwrap();
+        sp.subrelease = Subrelease::Mainline;
+
+        // only the non-booting flavour came back
+        fs::write(rpms.join("linux-6.12.107-4.ph5.x86_64.rpm"), b"x").unwrap();
+        let e = {
+            let mut c = Ctx { spec: &sp, dry: false, log: &mut |_: &str| {} };
+            post_assert(&mut c).unwrap_err()
+        };
+        assert!(e.contains("linux-esx-"), "post must name the missing flavour: {e}");
+
+        // with the boot kernel present it passes
+        fs::write(rpms.join("linux-esx-6.12.107-3.ph5.x86_64.rpm"), b"x").unwrap();
+        {
+            let mut c = Ctx { spec: &sp, dry: false, log: &mut |_: &str| {} };
+            post_assert(&mut c).unwrap();
+        }
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// linux is at Release 4 and linux-esx at Release 3, by the same patch.
+    ///
+    /// So the canister's NEVR purges one flavour and silently misses the
+    /// other - the one the ISO boots. A stale linux-esx built before the
+    /// canister macros existed would be counted as already built and shipped
+    /// with no canister linkage.
+    #[test]
+    fn the_purge_covers_both_flavours_at_their_own_releases() {
+        let tmp = std::env::temp_dir().join(format!("shk-esx-{}", std::process::id()));
+        let rpms = tmp.join("release/5.0/stage/RPMS/x86_64");
+        let specs = tmp.join("release/5.0/SPECS/linux");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&rpms).unwrap();
+        fs::create_dir_all(&specs).unwrap();
+        fs::write(
+            specs.join("linux.spec"),
+            "Version:        6.12.107\nRelease:        4%{?dist}\n",
+        )
+        .unwrap();
+        fs::write(
+            specs.join("linux-esx.spec"),
+            "Version:        6.12.107\nRelease:        3%{?dist}\n",
+        )
+        .unwrap();
+
+        let doomed = [
+            "linux-6.12.107-4.ph5.x86_64.rpm",
+            "linux-devel-6.12.107-4.ph5.x86_64.rpm",
+            // the boot kernel, at ITS release - missed by the canister NEVR
+            "linux-esx-6.12.107-3.ph5.x86_64.rpm",
+            "linux-esx-devel-6.12.107-3.ph5.x86_64.rpm",
+        ];
+        let spared = [
+            "linux-fips-canister-6.12.107-4.ph5.x86_64.rpm",
+            // driver packages encode the kernel in their Release, not as a
+            // kernel NEVR, so they must not be swept up
+            "linux-esx-drivers-intel-i40e-2.30.18-2.0612107003.ph5.x86_64.rpm",
+            "linux-api-headers-6.12.107-1.ph5.noarch.rpm",
+            "linux-firmware-20250101-1.ph5.noarch.rpm",
+        ];
+        for f in doomed.iter().chain(spared.iter()) {
+            fs::write(rpms.join(f), b"x").unwrap();
+        }
+
+        let mut sp = BuildSpec::from_args(
+            &tmp.join("release").to_string_lossy(), "common", "5.0", "/out",
+            "minimal-iso", "equivalent-b", Some("6.12.107-4.ph5".to_string()),
+        )
+        .unwrap();
+        sp.subrelease = Subrelease::Mainline;
+        {
+            let mut c = Ctx { spec: &sp, dry: false, log: &mut |_: &str| {} };
+            purge_phase_a_kernels(&mut c, &tmp.join("release/5.0/stage"));
+        }
+        for f in doomed {
+            assert!(!rpms.join(f).exists(), "{f} must be purged");
+        }
+        for f in spared {
+            assert!(rpms.join(f).exists(), "{f} must survive");
+        }
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// linux- is a prefix of linux-esx-, so the flavour scoping must be
+    /// explicit rather than rely on the two Releases happening to differ.
+    #[test]
+    fn linux_does_not_purge_the_esx_tree() {
+        assert!(!stale_flavour_rpm(
+            "linux-esx-6.12.107-4.ph5.x86_64.rpm", "linux-", "-6.12.107-4."
+        ));
+        assert!(stale_flavour_rpm(
+            "linux-esx-6.12.107-4.ph5.x86_64.rpm", "linux-esx-", "-6.12.107-4."
+        ));
+        assert!(!stale_flavour_rpm(
+            "linux-fips-canister-6.12.107-4.ph5.x86_64.rpm", "linux-", "-6.12.107-4."
+        ));
     }
 
     /// post used to print a filename and assert nothing.
