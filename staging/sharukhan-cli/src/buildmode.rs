@@ -332,9 +332,11 @@ impl BuildSpec {
     /// difference between one implementation and five that drift.
     pub fn cascade(&self) -> Vec<Stage> {
         let mut v = vec![Stage::Resolve, Stage::Sync, Stage::Reset];
+        let _ = &v;
         for inj in &self.injections {
             v.push(Stage::Inject(inj.clone()));
         }
+        v.push(Stage::Sources);
         v.push(Stage::Preflight);
         v.push(Stage::Purge);
         v.push(Stage::Make);
@@ -350,6 +352,9 @@ pub enum Stage {
     Sync,
     Reset,
     Inject(Injection),
+    /// Verify every declared source archive, fetching what is missing. After
+    /// the injections, because a patch can add a source.
+    Sources,
     Preflight,
     Purge,
     Make,
@@ -362,6 +367,7 @@ impl Stage {
             Stage::Resolve => "resolve".into(),
             Stage::Sync => "sync".into(),
             Stage::Reset => "reset-specs".into(),
+            Stage::Sources => "sources".into(),
             Stage::Preflight => "preflight".into(),
             Stage::Purge => "purge".into(),
             Stage::Make => "make".into(),

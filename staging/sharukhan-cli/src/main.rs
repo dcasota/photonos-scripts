@@ -781,7 +781,13 @@ fn cmd_build(args: &Args) -> Result<(), String> {
         mode: spec.canister,
         nevr: spec.canister_nevr.clone(),
     });
+    // All of them, unconditionally. Each evaluates its own precondition
+    // against this host and tree and skips with a reason - which is the whole
+    // point: the five scripts each carried a different subset, and that subset
+    // was never a decision about the release.
     for f in [
+        buildmode::Fixup::SpecBlankLines,
+        buildmode::Fixup::OpenJdkWsl2,
         buildmode::Fixup::Python3PgoTestGenerators,
         buildmode::Fixup::SssdSerialMakeInstall,
         buildmode::Fixup::RunInChrootFd255,

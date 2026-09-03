@@ -404,13 +404,8 @@ fn spec_fixup(c: &mut Ctx, f: Fixup) -> Result<(), String> {
             "[ $fd -gt 2 ] && [ $fd -ne 255 ] && exec",
             "run-in-chroot closes fd 255, which is bash's own terminal fd",
         ),
-        Fixup::OpenJdkWsl2 | Fixup::SpecBlankLines => {
-            // Both walk a set of files rather than editing one, so they are
-            // handled by their own passes; listing them here would imply a
-            // single-file edit that does not exist.
-            c.skip(f.as_str(), "multi-file pass, applied separately");
-            return Ok(());
-        }
+        Fixup::OpenJdkWsl2 => return openjdk_wsl2(c),
+        Fixup::SpecBlankLines => return spec_blank_lines(c),
     };
     if !path.is_file() {
         c.skip(f.as_str(), &format!("{} not in this tree", basename(&path)));
@@ -436,6 +431,319 @@ fn spec_fixup(c: &mut Ctx, f: Fixup) -> Result<(), String> {
     fs::write(&path, text.replacen(from, to, 1)).map_err(|e| format!("{}: {e}", path.display()))?;
     c.say(&format!("  fixed {}: {note}", basename(&path)));
     Ok(())
+}
+
+/// OpenJDK's configure detects "x86_64-pc-wsl" inside a WSL2 chroot and fails
+/// with "Incorrect wsl1 installation"; `--build=` overrides the auto-detected
+/// triplet.
+///
+/// Gated on the host actually being WSL2. On any other host the flag would be
+/// a gratuitous spec edit, and the five scripts all carried this guard.
+fn openjdk_wsl2(c: &mut Ctx) -> Result<(), String> {
+    let wsl = fs::read_to_string("/proc/version")
+        .map(|v| {
+            let v = v.to_ascii_lowercase();
+            v.contains("microsoft") || v.contains("wsl")
+        })
+        .unwrap_or(false);
+    if !wsl {
+        c.skip("openjdk-wsl2-build-flag", "not a WSL host; the triplet is detected correctly");
+        return Ok(());
+    }
+    let mut done = 0;
+    for root in [c.spec.tree(Tree::Release), c.spec.tree(Tree::Common)] {
+        let dir = root.join("SPECS/openjdk");
+        let Ok(rd) = fs::read_dir(&dir) else { continue };
+        for e in rd.flatten() {
+            let path = e.path();
+            let name = path.file_name().and_then(|x| x.to_str()).unwrap_or("");
+            if !(name.starts_with("openjdk") && name.ends_with(".spec")) {
+                continue;
+            }
+            let Ok(text) = fs::read_to_string(&path) else { continue };
+            if !text.contains("sh ./configure")
+                || text.contains("build=x86_64-unknown-linux-gnu")
+            {
+                continue;
+            }
+            if c.dry {
+                c.say(&format!("  would add --build to {name}"));
+                done += 1;
+                continue;
+            }
+            let out = text.replace(
+                "--disable-warnings-as-errors\n",
+                "--disable-warnings-as-errors \\\n    --build=x86_64-unknown-linux-gnu\n",
+            );
+            if out != text {
+                fs::write(&path, out).map_err(|x| format!("{}: {x}", path.display()))?;
+                c.say(&format!("  fixed {name}: added --build for WSL2"));
+                done += 1;
+            }
+        }
+    }
+    if done == 0 {
+        c.skip("openjdk-wsl2-build-flag", "already correct in every openjdk spec");
+    }
+    Ok(())
+}
+
+/// Photon's spec checker rejects consecutive blank lines as a formatting error,
+/// and a formatting error fails the whole build long before anything compiles.
+fn spec_blank_lines(c: &mut Ctx) -> Result<(), String> {
+    let path = c
+        .spec
+        .tree(Tree::Release)
+        .join("SPECS/91/python3-setuptools/python3-setuptools.spec");
+    if !path.is_file() {
+        c.skip("spec-consecutive-blank-lines", "python3-setuptools spec not in this tree");
+        return Ok(());
+    }
+    let text = fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let has_double = text.lines().collect::<Vec<_>>().windows(2).any(|w| {
+        w[0].trim().is_empty() && w[1].trim().is_empty()
+    });
+    if !has_double {
+        c.skip("spec-consecutive-blank-lines", "no consecutive blank lines");
+        return Ok(());
+    }
+    if c.dry {
+        c.say("  would collapse consecutive blank lines in python3-setuptools.spec");
+        return Ok(());
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut prev_blank = false;
+    for line in text.lines() {
+        let blank = line.trim().is_empty();
+        if !(blank && prev_blank) {
+            out.push_str(line);
+            out.push('\n');
+        }
+        prev_blank = blank;
+    }
+    fs::write(&path, out).map_err(|e| format!("{}: {e}", path.display()))?;
+    c.say("  collapsed consecutive blank lines in python3-setuptools.spec");
+    Ok(())
+}
+
+/// Make sure every declared source archive is present and matches its checksum.
+///
+/// Three failure modes, all seen:
+///
+///  - a spec's url points at `invisible-island.net/.../current/`, which 404s
+///    the moment a dated snapshot is superseded (ncurses-6.5-20250816.tgz).
+///    The Broadcom photon_sources mirror keeps every historical archive, so it
+///    is always tried as a second candidate.
+///  - `wget -O target` TRUNCATES the target before the request, so a 404 leaves
+///    a zero-byte file that poisons the SOURCES cache for every later build.
+///    Downloads go to a temp file and are moved only once validated.
+///  - a cached archive whose checksum no longer matches is often still correct
+///    in the common tree's cache, so that is checked before re-downloading.
+pub fn sources(c: &mut Ctx) -> Result<(), String> {
+    let dest = c.spec.tree(Tree::Release).join("stage/SOURCES");
+    let backup = c.spec.tree(Tree::Common).join("stage/SOURCES");
+    let specs = c.spec.tree(Tree::Release).join("SPECS");
+    if !specs.is_dir() {
+        c.skip("sources", "no SPECS tree yet");
+        return Ok(());
+    }
+    if c.dry {
+        c.say("  would verify every declared source archive and fetch what is missing");
+        return Ok(());
+    }
+    fs::create_dir_all(&dest).map_err(|e| format!("{}: {e}", dest.display()))?;
+
+    let (mut checked, mut restored, mut fetched, mut failed) = (0u32, 0u32, 0u32, 0u32);
+    for cfg in crate::build::find_files_rec(&specs, "config", ".yaml") {
+        for (archive, url, sha) in declared_sources(&cfg) {
+            checked += 1;
+            let target = dest.join(&archive);
+            if target.is_file() {
+                if sha.is_empty() {
+                    continue; // cached, nothing to validate against
+                }
+                if sha512(&target).as_deref() == Some(sha.as_str()) {
+                    continue;
+                }
+                c.say(&format!("  sha512 mismatch for {archive}"));
+                let b = backup.join(&archive);
+                if b.is_file() && sha512(&b).as_deref() == Some(sha.as_str()) {
+                    if fs::copy(&b, &target).is_ok() {
+                        c.say(&format!("  restored {archive} from the common cache"));
+                        restored += 1;
+                        continue;
+                    }
+                }
+                let _ = fs::remove_file(&target);
+            }
+            let mirror =
+                format!("https://packages.broadcom.com/photon/photon_sources/1.0/{archive}");
+            let mut got = false;
+            for src in [url.as_str(), mirror.as_str()] {
+                if src.is_empty() {
+                    continue;
+                }
+                let tmp = dest.join(format!("{archive}.tmp"));
+                let _ = fs::remove_file(&tmp);
+                if !ok(&dest, "wget", &["-q", src, "-O", &tmp.to_string_lossy()]) {
+                    let _ = fs::remove_file(&tmp);
+                    continue;
+                }
+                if tmp.metadata().map(|m| m.len() == 0).unwrap_or(true) {
+                    let _ = fs::remove_file(&tmp);
+                    continue;
+                }
+                if !sha.is_empty() && sha512(&tmp).as_deref() != Some(sha.as_str()) {
+                    c.say(&format!("  checksum mismatch for fetched {archive}, discarding"));
+                    let _ = fs::remove_file(&tmp);
+                    continue;
+                }
+                if fs::rename(&tmp, &target).is_ok() {
+                    c.say(&format!("  fetched {archive}"));
+                    fetched += 1;
+                    got = true;
+                    break;
+                }
+            }
+            if !got {
+                c.say(&format!("  WARNING: could not obtain {archive} from any source"));
+                failed += 1;
+            }
+        }
+    }
+    c.say(&format!(
+        "  sources: {checked} declared, {restored} restored, {fetched} fetched, {failed} unresolved"
+    ));
+    Ok(())
+}
+
+/// `(archive, url, sha512)` for every source declared in a `config.yaml`.
+///
+/// The keys are `archive`, `url` and `archive_sha512sum` - verified against the
+/// real files, not assumed. An earlier version of this parser looked for
+/// `file:`/`sha512:` and returned NOTHING from every config.yaml in the tree,
+/// which would have made the whole sources phase a silent no-op whose only
+/// symptom is a 404 hours later.
+///
+/// Parsed directly rather than through python+pyyaml: the shape is a flat list
+/// under `sources:` and three string fields, and the entries are `- archive:`
+/// with the rest indented beneath.
+fn declared_sources(cfg: &Path) -> Vec<(String, String, String)> {
+    let Ok(text) = fs::read_to_string(cfg) else { return Vec::new() };
+    let mut out: Vec<(String, String, String)> = Vec::new();
+    let mut cur: Option<(String, String, String)> = None;
+    let mut in_sources = false;
+    // Which field is waiting for its value on the following line, if any.
+    let mut pending: Option<u8> = None;
+    // Indentation of a real source item. Nested lists inside an entry -
+    // license_manual_review carries one - also begin with "- ", and treating
+    // those as new sources splits an entry in two: the archive lands on the
+    // first half and the url on a second that has no archive and is dropped.
+    // A real item sits at exactly one indent level, and its fields two deeper.
+    let mut item_indent: Option<usize> = None;
+
+    for line in text.lines() {
+        let t = line.trim();
+        if t.is_empty() || t.starts_with('#') {
+            continue;
+        }
+        let indented = line.starts_with(' ') || line.starts_with('-');
+        if !indented {
+            // A new top-level key ends the sources block.
+            if let Some(c) = cur.take() {
+                out.push(c);
+            }
+            in_sources = t.starts_with("sources:");
+            item_indent = None;
+            pending = None;
+            continue;
+        }
+        if !in_sources {
+            continue;
+        }
+        // `- archive: x` starts a new entry; the rest of its fields follow
+        // indented beneath it.
+        let indent = line.len() - line.trim_start().len();
+        let is_item = t.starts_with("- ") && item_indent.map(|i| indent == i).unwrap_or(true);
+        if is_item {
+            item_indent.get_or_insert(indent);
+        }
+        // Fields belong to the item directly, not to anything nested deeper.
+        let field_indent = item_indent.map(|i| i + 2);
+        let at_field_level = is_item || field_indent.map(|f| indent == f).unwrap_or(false);
+        let kv = t.trim_start_matches("- ").trim();
+        if is_item {
+            if let Some(c) = cur.take() {
+                out.push(c);
+            }
+            cur = Some((String::new(), String::new(), String::new()));
+            pending = None;
+        }
+        // A continuation value sits DEEPER than field level - the key is at
+        // field level and its scalar on the next, more-indented line. So this
+        // is checked before the field-level gate, or glibc's sha512 and
+        // cri-tools' url are both discarded as "nested".
+        if let (Some(field), Some(fi)) = (pending, field_indent) {
+            if indent > fi && cur.is_some() && (!kv.contains(':') || kv.starts_with("http")) {
+                let e = cur.as_mut().unwrap();
+                let v = kv.trim().trim_matches('"').trim_matches('\'').to_string();
+                match field {
+                    0 => e.0 = v,
+                    1 => e.1 = v,
+                    _ => e.2 = v,
+                }
+                pending = None;
+                continue;
+            }
+        }
+        if !at_field_level {
+            pending = None;
+            continue;
+        }
+        let Some(e) = cur.as_mut() else {
+            pending = None;
+            continue;
+        };
+        let val = |v: &str| v.trim().trim_matches('"').trim_matches('\'').to_string();
+
+        // A key whose value is empty carries it on the NEXT, more-indented
+        // line - plain YAML, and used in this tree: glibc puts its
+        // archive_sha512sum there, cri-tools its url. Reading only the key line
+        // silently loses both, and a lost sha512 means an archive that is never
+        // validated.
+        // archive_sha512sum before archive: the longer key is a prefix match of
+        // the shorter one otherwise.
+        let (field, v) = if let Some(v) = kv.strip_prefix("archive_sha512sum:") {
+            (2u8, v)
+        } else if let Some(v) = kv.strip_prefix("archive:") {
+            (0u8, v)
+        } else if let Some(v) = kv.strip_prefix("url:") {
+            (1u8, v)
+        } else {
+            continue;
+        };
+        if v.trim().is_empty() {
+            pending = Some(field);
+        } else {
+            match field {
+                0 => e.0 = val(v),
+                1 => e.1 = val(v),
+                _ => e.2 = val(v),
+            }
+        }
+    }
+    if let Some(c) = cur.take() {
+        out.push(c);
+    }
+    // An entry with no archive name is not a source.
+    out.retain(|(a, _, _)| !a.is_empty());
+    out
+}
+
+fn sha512(p: &Path) -> Option<String> {
+    run(Path::new("/"), "sha512sum", &[&p.to_string_lossy()])
+        .ok()
+        .and_then(|o| o.split_whitespace().next().map(|s| s.to_string()))
 }
 
 // ---------------------------------------------------------------------------
@@ -506,6 +814,9 @@ pub fn purge(c: &mut Ctx) -> Result<(), String> {
         c.say("  would purge stale sandboxes, SRPMs, logs and shadowing RPMs");
         return Ok(());
     }
+    purge_toolchain_blockers(c, &stage);
+    purge_shadowing_rpms(c, &stage);
+    purge_corrupt_rpms(c, &stage);
     clean_sandboxes(c, &stage);
     for sub in ["SRPMS", "LOGS"] {
         let d = stage.join(sub);
@@ -526,6 +837,133 @@ pub fn purge(c: &mut Ctx) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// Two package families that block the toolchain bootstrap if left behind.
+///
+/// rpm 6.x: the bootstrap requires rpm 4.x, and a 6.x build left in the stage
+/// wins on version and breaks it. libcap 2.66: the tree has moved to 2.77 and
+/// the old one shadows the rebuild. Both also invalidate sandboxBase, which is
+/// why it goes with them - a sandbox built against the removed RPM is a
+/// sandbox that reintroduces it.
+fn purge_toolchain_blockers(c: &mut Ctx, stage: &Path) {
+    let rpms = stage.join("RPMS/x86_64");
+    let Ok(rd) = fs::read_dir(&rpms) else { return };
+    let names: Vec<String> = rd
+        .flatten()
+        .filter_map(|e| e.file_name().to_str().map(|s| s.to_string()))
+        .collect();
+    let rpm6: Vec<&String> = names.iter().filter(|n| is_rpm6(n)).collect();
+    let libcap: Vec<&String> =
+        names.iter().filter(|n| n.starts_with("libcap-2.66") || n.starts_with("libcap-debuginfo-2.66")).collect();
+
+    for (label, set, why) in [
+        ("rpm 6.x", &rpm6, "the toolchain bootstrap requires rpm 4.x"),
+        ("libcap 2.66", &libcap, "it shadows the rebuild to 2.77"),
+    ] {
+        if set.is_empty() {
+            continue;
+        }
+        let mut n = 0;
+        for f in set {
+            if fs::remove_file(rpms.join(f)).is_ok() {
+                n += 1;
+            }
+        }
+        if n > 0 {
+            c.say(&format!("  removed {n} {label} RPM(s): {why}"));
+            let _ = fs::remove_dir_all(stage.join("images/sandboxBase"));
+        }
+    }
+}
+
+/// Is this filename one of the rpm 6.x packages the bootstrap cannot tolerate?
+///
+/// Matched against an explicit name list with the version glued on, NOT by
+/// looking for "-6." anywhere: `rpm-4.18.0-6.ph5.x86_64.rpm` contains "-6." in
+/// its RELEASE field, and deleting that removes the very rpm 4.x the toolchain
+/// bootstrap requires. The bash used explicit `rpm-6.*` globs for this reason.
+fn is_rpm6(name: &str) -> bool {
+    if !name.ends_with(".rpm") {
+        return false;
+    }
+    if name.starts_with("rpm-sequoia-") {
+        return true;
+    }
+    const FAMILIES: [&str; 9] = [
+        "rpm", "rpm-build", "rpm-build-libs", "rpm-libs", "rpm-devel", "rpm-lang",
+        "rpm-sign-libs", "rpm-debuginfo", "rpm-plugin-systemd-inhibit",
+    ];
+    FAMILIES.iter().any(|f| name.starts_with(&format!("{f}-6.")))
+}
+
+/// A previously built RPM whose Release is HIGHER than the patched spec's.
+///
+/// tdnf picks the highest release it can see, so such a package silently wins
+/// over the one this build is about to produce and lands on the ISO. The run
+/// then reports a verdict for code nobody is shipping - which is exactly how a
+/// 2.9-3 installer reached an ISO built for 2.8.
+fn purge_shadowing_rpms(c: &mut Ctx, stage: &Path) {
+    let release_tree = c.spec.tree(Tree::Release);
+    for pkg in ["photon-os-installer", "stig-hardening", "linux"] {
+        let spec = release_tree.join(format!("SPECS/{pkg}/{pkg}.spec"));
+        let Ok(text) = fs::read_to_string(&spec) else { continue };
+        let field = |k: &str| -> Option<String> {
+            text.lines()
+                .find(|l| l.starts_with(k))
+                .and_then(|l| l.split_whitespace().nth(1))
+                .map(|v| v.split('%').next().unwrap_or("").to_string())
+        };
+        let (Some(ver), Some(rel)) = (field("Version:"), field("Release:")) else { continue };
+        // An unexpanded macro means the spec cannot be read without rpm; do not
+        // guess, and above all do not delete on a guess.
+        if ver.is_empty() || rel.is_empty() || !rel.chars().all(|x| x.is_ascii_digit()) {
+            continue;
+        }
+        let Ok(want) = rel.parse::<u32>() else { continue };
+        for p in crate::build::find_files_rec(&stage.join("RPMS"), &format!("{pkg}-{ver}-"), ".rpm")
+        {
+            let Ok(out) = run(Path::new("/"), "rpm", &["-qp", "--qf", "%{RELEASE}", &p.to_string_lossy()])
+            else {
+                continue;
+            };
+            let got = out.trim().split(".ph").next().unwrap_or("").to_string();
+            if !got.is_empty() && got.chars().all(|x| x.is_ascii_digit()) {
+                if let Ok(g) = got.parse::<u32>() {
+                    if g > want && fs::remove_file(&p).is_ok() {
+                        c.say(&format!(
+                            "  removed stale {}: release {g} shadows the patched {want}",
+                            basename(&p)
+                        ));
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// An RPM that fails its own signature/digest check.
+///
+/// A truncated package from an interrupted build is not detected by anything
+/// downstream; it simply fails at install time, deep inside the ISO build,
+/// with an error that names the package but not the reason.
+fn purge_corrupt_rpms(c: &mut Ctx, stage: &Path) {
+    let dir = stage.join("RPMS/x86_64");
+    if !dir.is_dir() {
+        return;
+    }
+    let mut n = 0;
+    for p in crate::build::find_files_rec(&dir, "", ".rpm") {
+        if !ok(Path::new("/"), "rpm", &["-K", &p.to_string_lossy()]) {
+            if fs::remove_file(&p).is_ok() {
+                c.say(&format!("  removed corrupted RPM: {}", basename(&p)));
+                n += 1;
+            }
+        }
+    }
+    if n > 0 {
+        c.say(&format!("  {n} corrupted RPM(s) removed"));
+    }
 }
 
 /// Unmount the sandbox tree and kill what is still living in it.
@@ -766,6 +1204,7 @@ pub fn execute(spec: &BuildSpec, dry: bool, log: &mut dyn FnMut(&str)) -> Result
             Stage::Sync => sync(&mut c)?,
             Stage::Reset => reset(&mut c)?,
             Stage::Inject(i) => inject(&mut c, i)?,
+            Stage::Sources => sources(&mut c)?,
             Stage::Preflight => preflight(&mut c)?,
             Stage::Purge => purge(&mut c)?,
             Stage::Make => produced = make_and_deliver(&mut c)?,
@@ -817,6 +1256,58 @@ mod tests {
     /// A missing patch is skipped with a reason, not silently ignored: the
     /// difference between "no tooling patch was needed" and "the tooling patch
     /// went missing" is the whole failure this module exists to prevent.
+    /// The regression this exists to stop. A "-6." substring match also hits
+    /// `rpm-4.18.0-6.ph5`, whose RELEASE is 6 - and deleting that removes the
+    /// rpm 4.x the toolchain bootstrap requires, turning a cleanup into a
+    /// broken build.
+    /// Parsed against the real shape Photon uses. A parser that silently
+    /// returns nothing would make the whole sources phase a no-op, and the
+    /// failure would only appear as a 404 hours later.
+    #[test]
+    fn declared_sources_reads_the_shape_photon_actually_uses() {
+        // Verbatim shape from /root/5.0/SPECS/*/config.yaml.
+        let tmp = std::env::temp_dir().join(format!("shk-yaml-{}.yaml", std::process::id()));
+        fs::write(
+            &tmp,
+            "sources:\n- archive: fuse-overlayfs-snapshotter-2.1.7.tar.gz\n  \
+             archive_sha512sum: c6027cdf\n  archive_type: upstream\n  \
+             skip_validation: false\n- archive: second.tar.xz\n  url: https://x/second.tar.xz\n  \
+             archive_sha512sum: def456\nspdx:\n  package:\n    home_page: http://x.org/\n",
+        )
+        .unwrap();
+        let got = declared_sources(&tmp);
+        assert_eq!(got.len(), 2, "both sources must be seen: {got:?}");
+        assert_eq!(got[0].0, "fuse-overlayfs-snapshotter-2.1.7.tar.gz");
+        assert_eq!(got[0].2, "c6027cdf", "archive_sha512sum, not sha512");
+        assert_eq!(got[0].1, "", "no url declared for this one");
+        assert_eq!(got[1].0, "second.tar.xz");
+        assert_eq!(got[1].1, "https://x/second.tar.xz");
+        assert_eq!(got[1].2, "def456");
+        let _ = fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn the_rpm6_purge_matches_the_version_not_the_release() {
+        for keep in [
+            "rpm-4.18.0-6.ph5.x86_64.rpm",
+            "rpm-libs-4.18.0-6.ph5.x86_64.rpm",
+            "rpm-build-4.18.0-16.ph5.x86_64.rpm",
+            "librpm-6.0.0-1.ph5.x86_64.rpm",
+            "rpm-6.1.0-1.ph5.x86_64.notrpm",
+        ] {
+            assert!(!is_rpm6(keep), "{keep} must be KEPT");
+        }
+        for drop in [
+            "rpm-6.1.0-1.ph5.x86_64.rpm",
+            "rpm-build-6.1.0-1.ph5.x86_64.rpm",
+            "rpm-libs-6.1.0-1.ph5.x86_64.rpm",
+            "rpm-plugin-systemd-inhibit-6.1.0-1.ph5.x86_64.rpm",
+            "rpm-sequoia-1.10.0-1.ph5.x86_64.rpm",
+        ] {
+            assert!(is_rpm6(drop), "{drop} must be REMOVED");
+        }
+    }
+
     #[test]
     fn a_missing_patch_is_reported_as_skipped() {
         let tmp = std::env::temp_dir().join(format!("shk-miss-{}", std::process::id()));
@@ -888,5 +1379,83 @@ mod tests {
         assert!(got.contains("\"photon-subrelease\": \"91\""), "{got}");
         assert!(got.contains("\"keep\": \"me\""), "the rest of the config must survive: {got}");
         let _ = fs::remove_dir_all(&tmp);
+    }
+}
+
+#[cfg(test)]
+mod parity_tests {
+    use super::*;
+
+    /// Parity against the real tree, not a fixture.
+    ///
+    /// The fixture test passes even when the KEYS are wrong, because the
+    /// fixture is written to match whatever the parser expects. This one reads
+    /// the actual SPECS tree, so a parser looking for the wrong key names
+    /// returns zero and fails here. That is exactly the bug this replaced:
+    /// `file:`/`sha512:` instead of `archive:`/`archive_sha512sum:`.
+    ///
+    /// Skipped, not failed, where no tree is checked out - a unit test suite
+    /// must not depend on this host.
+    #[test]
+    fn the_parser_agrees_with_the_real_specs_tree() {
+        let specs = Path::new("/root/5.0/SPECS");
+        if !specs.is_dir() {
+            eprintln!("no SPECS tree here; skipping the parity check");
+            return;
+        }
+        let mut files = 0;
+        let mut archives = 0;
+        let mut with_sha = 0;
+        for cfg in crate::build::find_files_rec(specs, "config", ".yaml") {
+            files += 1;
+            for (a, _u, h) in declared_sources(&cfg) {
+                assert!(!a.contains(' '), "archive name must be a single token: {a:?}");
+                archives += 1;
+                if !h.is_empty() {
+                    with_sha += 1;
+                }
+            }
+            if files >= 200 {
+                break;
+            }
+        }
+        assert!(files > 0, "found no config.yaml at all");
+        assert!(
+            archives > 0,
+            "parsed {files} config.yaml files and found NO archives - the key names are wrong"
+        );
+        assert!(
+            with_sha * 2 > archives,
+            "most archives should carry archive_sha512sum; got {with_sha}/{archives}"
+        );
+        eprintln!("parity: {archives} archives ({with_sha} with sha512) across {files} files");
+    }
+}
+
+#[cfg(test)]
+mod parity_exact {
+    use super::*;
+    /// Exact per-file agreement with pyyaml, written to a file the reference
+    /// implementation can be diffed against. Counts that merely look similar
+    /// are not agreement.
+    #[test]
+    fn dump_for_reference_diff() {
+        // Regenerate with:
+        //   cargo test --release dump_for_reference
+        //   diff <(sort /tmp/py-sources.txt) <(sort /tmp/rust-sources.txt)
+        // Last run: 0 differences over 1968 entries in 1745 files.
+        let specs = Path::new("/root/5.0/SPECS");
+        if !specs.is_dir() {
+            return;
+        }
+        let mut lines: Vec<String> = Vec::new();
+        let mut files: Vec<PathBuf> = crate::build::find_files_rec(specs, "config", ".yaml");
+        files.sort();
+        for cfg in files.iter() {
+            for (a, u, h) in declared_sources(cfg) {
+                lines.push(format!("{}|{a}|{u}|{h}", cfg.display()));
+            }
+        }
+        let _ = fs::write("/tmp/rust-sources.txt", lines.join("\n") + "\n");
     }
 }
