@@ -195,7 +195,12 @@ long to re-earn on a bad glob.
   have found phase A's eight RPMs in the stage, skipped the rebuild, and
   shipped a kernel that never linked against the canister - passing every
   build-time check and failing only at runtime attestation. The test now
-  exercises the phase rather than the predicate.
+  exercises the phase rather than the predicate. Confirmed against the build
+  system rather than argued: `PackageManager._readAlreadyAvailablePackages`
+  marks a package built only if EVERY subpackage RPM is present, so phase A's
+  complete set of eight was exactly the condition that triggers the skip.
+  (It also explains why the leftover `bpftool-6.12.107-4` is harmless - "all",
+  not "any", so one absent sibling is enough to force the rebuild.)
 - The config.yaml parser was wrong three ways (wrong keys, values continued on
   the next line, nested lists splitting an entry). None was visible from
   counts: 1968 entries both sides while the contents differed. It is now
