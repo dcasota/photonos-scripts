@@ -942,13 +942,79 @@ pub fn preflight(c: &mut Ctx) -> Result<(), String> {
         );
     }
     c.say("  createrepo_c ok");
-    if let Ok(o) = run(Path::new("/"), "df", &["-h", "--output=avail", "/"]) {
-        if let Some(v) = o.lines().nth(1) {
-            c.say(&format!("  disk available: {}", v.trim()));
+    check_headroom(c, &stage)
+}
+
+/// Free space on the two filesystems this build actually writes to.
+///
+/// This used to run `df -h /` and PRINT the answer. It was described as a
+/// check in the dry run and in BUILD-MODE-PLAN, and it never compared the
+/// number to anything, so it could not fail - and it looked at the wrong
+/// filesystem anyway. The stage is on `/`; the ISO is delivered to
+/// `output_dir`, which on this host is `/mnt/c/photon-mc/iso-cache` - a
+/// different mount, and the one that is nearly full. Running out there
+/// happens at the END of the compose, wasting the whole build, which is
+/// precisely what a preflight exists to prevent.
+///
+/// The numbers, so the next person can argue with them rather than guess:
+///
+///   stage    a full build's stage measured 67 GB, and an incremental one
+///            still writes the kernel and its 582 MB debuginfo, so 20 GB is
+///            the floor at which a compose is likely to survive
+///   output   a full ISO is 3.9 GB and a minimal one 0.6 GB; require 3x, so
+///            the existing copy, the new one and the temp all fit
+fn check_headroom(c: &mut Ctx, stage: &Path) -> Result<(), String> {
+    for (label, path, need) in [
+        ("stage", stage.to_path_buf(), STAGE_MIN_GB),
+        ("output", c.spec.output_dir.clone(), output_need_gb(c.spec.img)),
+    ] {
+        let Some(avail) = avail_gb(&path) else {
+            c.say(&format!("  [skip] {label} headroom: cannot stat {}", path.display()));
+            continue;
+        };
+        if avail < need {
+            return Err(format!(
+                "{label} filesystem ({}) has {avail} GB free, below the {need} GB this \
+build needs. A compose that runs out here fails at the END, after hours. Free \
+space first - and note that {} holds the only prebuilt ISOs that exist, which \
+cannot be rebuilt while the canister pin is unpublished",
+                path.display(),
+                c.spec.output_dir.display()
+            ));
         }
+        c.say(&format!("  {label} headroom: {avail} GB free on {} (need {need})", path.display()));
     }
-    let _ = stage;
     Ok(())
+}
+
+/// A full build's stage measured 67 GB; an incremental one still writes the
+/// kernel and its 582 MB debuginfo. 20 GB is the floor at which a compose is
+/// likely to survive.
+const STAGE_MIN_GB: u64 = 20;
+
+/// A full ISO is 3.9 GB and a minimal one 0.6 GB. Require 3x, so the existing
+/// copy, the new one and the temp all fit.
+fn output_need_gb(img: crate::buildmode::ImgType) -> u64 {
+    use crate::buildmode::ImgType;
+    match img {
+        ImgType::MinimalIso | ImgType::BasicIso => 3,
+        _ => 12,
+    }
+}
+
+/// Free gibibytes on the filesystem holding `path`, or None if df cannot say.
+///
+/// `--output=avail` with `-BG` gives whole gibibytes and one number to parse,
+/// rather than a human-readable string that needs a unit-suffix parser.
+fn avail_gb(path: &Path) -> Option<u64> {
+    let p = path.to_string_lossy().to_string();
+    let out = run(Path::new("/"), "df", &["-BG", "--output=avail", &p]).ok()?;
+    out.lines()
+        .nth(1)?
+        .trim()
+        .trim_end_matches('G')
+        .parse::<u64>()
+        .ok()
 }
 
 // ---------------------------------------------------------------------------
@@ -969,11 +1035,19 @@ pub fn purge(c: &mut Ctx) -> Result<(), String> {
         if let (CanisterMode::EquivalentB, Some(nevr)) =
             (c.spec.canister, c.spec.canister_nevr.as_deref())
         {
+            // Must apply the SAME rule the real purge applies, including the
+            // per-flavour NEVRs - listing only the canister-NEVR matches would
+            // hide every linux-esx RPM the purge is about to delete, which is
+            // how this message came to under-report in the first place.
+            let flavours = kernel_flavour_nevrs(c);
             let doomed: Vec<String> =
                 crate::build::find_files_rec(&stage.join("RPMS"), "linux", ".rpm")
                     .iter()
                     .map(|p| basename(p))
-                    .filter(|n| crate::build::purged_before_phase_b(n, nevr))
+                    .filter(|n| {
+                        crate::build::purged_before_phase_b(n, nevr)
+                            || flavours.iter().any(|(pre, frag)| stale_flavour_rpm(n, pre, frag))
+                    })
                     .collect();
             c.say(&format!(
                 "  would remove {} phase-A kernel RPM(s), keeping linux-fips-canister-{nevr}",
@@ -1887,6 +1961,41 @@ mod pkgopts_tests {
         assert!(got.contains("\"linux-esx\""), "{got}");
         assert!(!got.contains("canister_equivalent"), "prebuilt must carry no macros: {got}");
         let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// preflight printed df and called it a check.
+    ///
+    /// It compared the number to nothing, so it could not fail, and it looked
+    /// at `/` while the ISO is delivered to output_dir - a different mount,
+    /// and the one at 98%. Running out there fails at the END of a compose.
+    ///
+    /// These stay off the real filesystem deliberately: a test that asserts on
+    /// this host's free space passes or fails for reasons that have nothing to
+    /// do with the code. The first draft did exactly that and broke on a /tmp
+    /// with 2 GB free.
+    #[test]
+    fn a_full_image_needs_more_output_headroom_than_a_minimal_one() {
+        use crate::buildmode::ImgType;
+        assert_eq!(output_need_gb(ImgType::MinimalIso), 3);
+        assert_eq!(output_need_gb(ImgType::BasicIso), 3);
+        assert_eq!(output_need_gb(ImgType::Iso), 12);
+        assert_eq!(output_need_gb(ImgType::RtIso), 12);
+        assert!(
+            output_need_gb(ImgType::Iso) > output_need_gb(ImgType::MinimalIso),
+            "a 3.9 GB ISO cannot need the same headroom as a 0.6 GB one"
+        );
+        assert!(STAGE_MIN_GB >= 20, "a kernel plus its debuginfo does not fit below this");
+    }
+
+    /// df on a path that does not exist must yield None, not 0.
+    ///
+    /// 0 would read as "no space" and refuse every build on a host where the
+    /// output directory has not been created yet.
+    #[test]
+    fn an_unstattable_path_is_unknown_not_empty() {
+        assert_eq!(avail_gb(Path::new("/definitely/not/here/xyzzy")), None);
+        // and a path that does exist parses to a number
+        assert!(avail_gb(Path::new("/")).is_some(), "df must be readable for /");
     }
 
     /// A rebuilt `linux` does not prove a rebuilt `linux-esx`.
