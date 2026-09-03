@@ -131,6 +131,7 @@ pub fn sync(c: &mut Ctx) -> Result<(), String> {
         if behind != "0" && !behind.is_empty() {
             c.say(&format!("  {branch}: {behind} commit(s) behind, merging"));
         }
+        let head_before = git(&dir, &["rev-parse", "--short", "HEAD"]).unwrap_or_default();
         if git(&dir, &["merge", "--autostash", &format!("origin/{branch}")]).is_err() {
             let _ = git(&dir, &["merge", "--abort"]);
             return Err(format!(
@@ -138,6 +139,14 @@ pub fn sync(c: &mut Ctx) -> Result<(), String> {
                  common/release version skew breaks the spec generator"
             ));
         }
+        let head = git(&dir, &["rev-parse", "--short", "HEAD"]).unwrap_or_default();
+        let dirty = git(&dir, &["status", "--porcelain"]).unwrap_or_default().lines().count();
+        c.say(&format!(
+            "  {branch}: {} -> {} ({dirty} uncommitted path(s)) at {}",
+            head_before.trim(),
+            head.trim(),
+            dir.display()
+        ));
     }
     Ok(())
 }
@@ -161,10 +170,21 @@ pub fn reset(c: &mut Ctx) -> Result<(), String> {
         c.say("  would reset SPECS and build-config.json to HEAD");
         return Ok(());
     }
+    let before = git(&dir, &["status", "--porcelain", "SPECS", "build-config.json"])
+        .unwrap_or_default()
+        .lines()
+        .count();
     let _ = git(&dir, &["checkout", "--", "SPECS"]);
     let _ = git(&dir, &["clean", "-fdq", "SPECS"]);
     let _ = git(&dir, &["checkout", "--", "build-config.json"]);
-    c.say("  SPECS and build-config.json reset to HEAD");
+    let after = git(&dir, &["status", "--porcelain", "SPECS", "build-config.json"])
+        .unwrap_or_default()
+        .lines()
+        .count();
+    c.say(&format!(
+        "  {} restored {before} dirty path(s) under SPECS + build-config.json; {after} remain",
+        dir.display()
+    ));
     Ok(())
 }
 
@@ -232,9 +252,16 @@ fn tree_patch(c: &mut Ctx, tree: Tree, patch: &Path) -> Result<(), String> {
         }
     }
 
+    let files = git(&dir, &["apply", "--numstat", &p]).unwrap_or_default().lines().count();
+    let bytes = fs::metadata(patch).map(|m| m.len()).unwrap_or(0);
     if git(&dir, &["apply", "--check", &p]).is_ok() {
         git(&dir, &["apply", &p])?;
-        c.say(&format!("  applied {} to {}", basename(patch), tree.as_str()));
+        c.say(&format!(
+            "  applied {} to {} ({files} file(s), {bytes} bytes) in {}",
+            basename(patch),
+            tree.as_str(),
+            dir.display()
+        ));
         Ok(())
     } else if git(&dir, &["apply", "--reverse", "--check", &p]).is_ok() {
         c.say(&format!("  {} already present in {}", basename(patch), tree.as_str()));
@@ -346,9 +373,27 @@ fn pin_subrelease(c: &mut Ctx, n: u32) -> Result<(), String> {
 /// Canister macros into `pkg-build-options`.
 ///
 /// The path is RELATIVE and resolved by build.py against the common tree;
-/// absolute paths are silently dropped and the macros never apply, which is a
+/// an absolute path is silently dropped and the macros never apply, which is a
 /// failure that looks exactly like the macros not working.
+///
+/// ALWAYS written, including for `prebuilt`, where it writes an EMPTY macro
+/// list. Skipping the write there would leave whatever the previous run put in
+/// the file, so a prebuilt build following an equivalent one would silently
+/// inherit `canister_equivalent 1` and link a canister it was never asked to.
+///
+/// `equivalent-a` writes `linux` ONLY. linux-esx hardcodes `canister_build 0`
+/// and cannot create a canister, so giving it these macros would be a lie
+/// about what that package does.
 fn pkg_build_options(c: &mut Ctx, mode: CanisterMode, nevr: Option<&str>) -> Result<(), String> {
+    let dir = c.spec.tree(Tree::Common).join("common/data");
+    let out = dir.join("mc_pkg_build_options.json");
+    if !dir.is_dir() {
+        return Err(format!(
+            "{} does not exist; build.py resolves pkg-build-options there",
+            dir.display()
+        ));
+    }
+
     let macros: Vec<String> = match mode {
         CanisterMode::Prebuilt => vec![],
         CanisterMode::Build => vec!["canister_build 1".into()],
@@ -367,15 +412,44 @@ fn pkg_build_options(c: &mut Ctx, mode: CanisterMode, nevr: Option<&str>) -> Res
             vec!["canister_equivalent 1".into(), format!("fips_canister_override {n}")]
         }
     };
-    if macros.is_empty() {
-        c.skip("pkg-build-options", "prebuilt links the published canister; no macros needed");
-        return Ok(());
+    let pkgs: &[&str] =
+        if mode == CanisterMode::EquivalentA { &["linux"] } else { &["linux", "linux-esx"] };
+
+    let body = pkgs
+        .iter()
+        .map(|p| {
+            let m = macros
+                .iter()
+                .map(|x| format!("                \"{x}\""))
+                .collect::<Vec<_>>()
+                .join(",\n");
+            let m = if m.is_empty() { String::new() } else { format!("\n{m}\n            ") };
+            format!(
+                "        \"{p}\": {{\n            \"pullsources\": [],\n            \"macros\": [{m}]\n        }}"
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",\n");
+    let json = format!("{{\n{body}\n}}\n");
+
+    c.say(&format!("  target: {}", out.display()));
+    c.say(&format!("  mode {}: {} package(s), {} macro(s)", mode.as_str(), pkgs.len(), macros.len()));
+    for p in pkgs {
+        c.say(&format!("    {p}: [{}]", macros.join(", ")));
     }
     if c.dry {
-        c.say(&format!("  would write pkg-build-options: {}", macros.join(", ")));
+        c.say("  (dry run: not written)");
         return Ok(());
     }
-    c.say(&format!("  canister macros ({}): {}", mode.as_str(), macros.join(", ")));
+    fs::write(&out, &json).map_err(|e| format!("{}: {e}", out.display()))?;
+    // Read it back. A macro file that silently failed to land is the failure
+    // mode this phase exists to prevent, and it is invisible until the build
+    // links the wrong canister hours later.
+    let back = fs::read_to_string(&out).map_err(|e| format!("{}: {e}", out.display()))?;
+    if back != json {
+        return Err(format!("{} did not read back as written", out.display()));
+    }
+    c.say(&format!("  wrote and verified {} bytes", json.len()));
     Ok(())
 }
 
@@ -803,6 +877,7 @@ pub fn preflight(c: &mut Ctx) -> Result<(), String> {
         c.say("  would check the POI image, createrepo_c and disk headroom");
         return Ok(());
     }
+    c.say("  checking photon/installer:latest carries a `file` binary");
     if !ok(Path::new("/"), "docker", &["image", "inspect", "photon/installer:latest"])
         || !ok(
             Path::new("/"),
@@ -825,6 +900,8 @@ pub fn preflight(c: &mut Ctx) -> Result<(), String> {
                 .into(),
         );
     }
+    c.say("  POI image ok");
+    c.say("  checking createrepo_c");
     if !ok(Path::new("/"), "createrepo_c", &["--version"]) {
         return Err(
             "createrepo_c is broken on this host, so the build cannot create \
@@ -832,6 +909,7 @@ pub fn preflight(c: &mut Ctx) -> Result<(), String> {
                 .into(),
         );
     }
+    c.say("  createrepo_c ok");
     if let Ok(o) = run(Path::new("/"), "df", &["-h", "--output=avail", "/"]) {
         if let Some(v) = o.lines().nth(1) {
             c.say(&format!("  disk available: {}", v.trim()));
@@ -856,9 +934,11 @@ pub fn purge(c: &mut Ctx) -> Result<(), String> {
         c.say("  would purge stale sandboxes, SRPMs, logs and shadowing RPMs");
         return Ok(());
     }
+    c.say(&format!("  stage: {}", stage.display()));
     purge_toolchain_blockers(c, &stage);
     purge_shadowing_rpms(c, &stage);
-    purge_corrupt_rpms(c, &stage);
+    let n = purge_corrupt_rpms(c, &stage);
+    c.say(&format!("  corrupted RPMs removed: {n}"));
     clean_sandboxes(c, &stage);
     for sub in ["SRPMS", "LOGS"] {
         let d = stage.join(sub);
@@ -989,10 +1069,10 @@ fn purge_shadowing_rpms(c: &mut Ctx, stage: &Path) {
 /// A truncated package from an interrupted build is not detected by anything
 /// downstream; it simply fails at install time, deep inside the ISO build,
 /// with an error that names the package but not the reason.
-fn purge_corrupt_rpms(c: &mut Ctx, stage: &Path) {
+fn purge_corrupt_rpms(c: &mut Ctx, stage: &Path) -> u32 {
     let dir = stage.join("RPMS/x86_64");
     if !dir.is_dir() {
-        return;
+        return 0;
     }
     let mut n = 0;
     for p in crate::build::find_files_rec(&dir, "", ".rpm") {
@@ -1003,9 +1083,7 @@ fn purge_corrupt_rpms(c: &mut Ctx, stage: &Path) {
             }
         }
     }
-    if n > 0 {
-        c.say(&format!("  {n} corrupted RPM(s) removed"));
-    }
+    n
 }
 
 /// Unmount the sandbox tree and kill what is still living in it.
@@ -1119,6 +1197,8 @@ pub fn make_and_deliver(c: &mut Ctx) -> Result<PathBuf, String> {
             args.push(&img);
         }
         args.push("THREADS=8");
+        c.say(&format!("  attempt {attempt}/10: sudo {} (cwd {})", args.join(" "), release.display()));
+        let t0 = std::time::SystemTime::now();
         let rc = Command::new("sudo")
             .args(&args)
             .current_dir(&release)
@@ -1126,6 +1206,8 @@ pub fn make_and_deliver(c: &mut Ctx) -> Result<PathBuf, String> {
             .map_err(|e| format!("running make: {e}"))?
             .code()
             .unwrap_or(-1);
+        let secs = t0.elapsed().map(|d| d.as_secs()).unwrap_or(0);
+        c.say(&format!("  attempt {attempt}: make exited {rc} after {}m{:02}s", secs / 60, secs % 60));
 
         // Phase A is not judged by make's exit code but by whether the artifact
         // it exists to produce is on disk.
@@ -1223,7 +1305,13 @@ fn deliver(c: &mut Ctx, iso: &Path) -> Result<PathBuf, String> {
     fs::rename(iso, &dest)
         .or_else(|_| fs::copy(iso, &dest).map(|_| ()).and_then(|_| fs::remove_file(iso)))
         .map_err(|e| format!("moving ISO to {}: {e}", dest.display()))?;
-    c.say(&format!("  moved ISO to {}", dest.display()));
+    let size = fs::metadata(&dest).map(|m| m.len()).unwrap_or(0);
+    c.say(&format!(
+        "  delivered {} ({:.2} GB, sha256 {})",
+        dest.display(),
+        size as f64 / 1_073_741_824.0,
+        &sum[..16]
+    ));
     Ok(dest)
 }
 
@@ -1527,5 +1615,79 @@ mod worktree_tests {
             ok(base, "git", &["rev-parse", "--is-inside-work-tree"]),
             "git must still recognise it as a work tree"
         );
+    }
+}
+
+#[cfg(test)]
+mod pkgopts_tests {
+    use super::*;
+
+    /// The file is written for EVERY mode, including prebuilt.
+    ///
+    /// Skipping the write on prebuilt leaves whatever the previous run put
+    /// there, so a prebuilt build following an equivalent one silently
+    /// inherits `canister_equivalent 1` and links a canister nobody asked for.
+    /// An empty macro list is the instruction "no canister macros", and it has
+    /// to be written to mean anything.
+    #[test]
+    fn prebuilt_writes_an_empty_macro_list_rather_than_skipping() {
+        let tmp = std::env::temp_dir().join(format!("shk-opts-{}", std::process::id()));
+        let dir = tmp.join("common/common/data");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&dir).unwrap();
+        let out = dir.join("mc_pkg_build_options.json");
+        fs::write(&out, "{\"stale\": \"canister_equivalent 1\"}").unwrap();
+
+        let mut s = BuildSpec::from_args(
+            &tmp.to_string_lossy(), "common", "5.0", "/out", "minimal-iso", "prebuilt", None,
+        )
+        .unwrap();
+        s.subrelease = Subrelease::Mainline;
+        {
+            let mut c = Ctx { spec: &s, dry: false, log: &mut |_: &str| {} };
+            pkg_build_options(&mut c, CanisterMode::Prebuilt, None).unwrap();
+        }
+        let got = fs::read_to_string(&out).unwrap();
+        assert!(!got.contains("stale"), "the stale file must be overwritten: {got}");
+        assert!(got.contains("\"linux\""), "{got}");
+        assert!(got.contains("\"linux-esx\""), "{got}");
+        assert!(!got.contains("canister_equivalent"), "prebuilt must carry no macros: {got}");
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// linux-esx hardcodes `canister_build 0` and cannot create a canister, so
+    /// handing it phase A's macros would be a lie about what it does.
+    #[test]
+    fn phase_a_targets_linux_only_and_phase_b_targets_both() {
+        let tmp = std::env::temp_dir().join(format!("shk-opts2-{}", std::process::id()));
+        let dir = tmp.join("common/common/data");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&dir).unwrap();
+        let out = dir.join("mc_pkg_build_options.json");
+        let s = BuildSpec::from_args(
+            &tmp.to_string_lossy(), "common", "5.0", "/out", "minimal-iso", "prebuilt", None,
+        )
+        .unwrap();
+
+        {
+            let mut c = Ctx { spec: &s, dry: false, log: &mut |_: &str| {} };
+            pkg_build_options(&mut c, CanisterMode::EquivalentA, Some("6.12.103-14.ph5")).unwrap();
+        }
+        let a = fs::read_to_string(&out).unwrap();
+        assert!(a.contains("\"linux\""), "{a}");
+        assert!(!a.contains("linux-esx"), "phase A must NOT name linux-esx: {a}");
+        assert!(a.contains("canister_build 1") && a.contains("canister_stamp_real 1"), "{a}");
+        assert!(a.contains("fips_certified_override 6.12.103-14.ph5"), "{a}");
+
+        {
+            let mut c = Ctx { spec: &s, dry: false, log: &mut |_: &str| {} };
+            pkg_build_options(&mut c, CanisterMode::EquivalentB, Some("6.12.103-14.ph5")).unwrap();
+        }
+        let b = fs::read_to_string(&out).unwrap();
+        assert!(b.contains("\"linux-esx\""), "phase B relinks BOTH flavours: {b}");
+        assert!(b.contains("canister_equivalent 1"), "{b}");
+        assert!(b.contains("fips_canister_override 6.12.103-14.ph5"), "{b}");
+        assert!(!b.contains("canister_build 1"), "phase B must not create a canister: {b}");
+        let _ = fs::remove_dir_all(&tmp);
     }
 }
