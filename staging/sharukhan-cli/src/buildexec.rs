@@ -1183,10 +1183,16 @@ fn stale_flavour_rpm(name: &str, prefix: &str, frag: &str) -> bool {
 /// Two package families that block the toolchain bootstrap if left behind.
 ///
 /// rpm 6.x: the bootstrap requires rpm 4.x, and a 6.x build left in the stage
-/// wins on version and breaks it. libcap 2.66: the tree has moved to 2.77 and
-/// the old one shadows the rebuild. Both also invalidate sandboxBase, which is
-/// why it goes with them - a sandbox built against the removed RPM is a
-/// sandbox that reintroduces it.
+/// wins on version and breaks it. libcap: the tree has moved on and an older
+/// one shadows the rebuild. Both also invalidate sandboxBase, which is why it
+/// goes with them - a sandbox built against the removed RPM is a sandbox that
+/// reintroduces it.
+///
+/// Both family lists used to be literals, and both were already WRONG: the rpm
+/// list omitted `rpm-plugin-selinux`, and the libcap rule matched only
+/// `libcap-` and `libcap-debuginfo-`, missing `libcap-libs`, `-devel`,
+/// `-minimal` and `-doc`. A hand-maintained list of a spec's subpackages drifts
+/// from the spec the moment anyone adds one, so read the spec.
 fn purge_toolchain_blockers(c: &mut Ctx, stage: &Path) {
     let rpms = stage.join("RPMS/x86_64");
     let Ok(rd) = fs::read_dir(&rpms) else { return };
@@ -1194,13 +1200,26 @@ fn purge_toolchain_blockers(c: &mut Ctx, stage: &Path) {
         .flatten()
         .filter_map(|e| e.file_name().to_str().map(|s| s.to_string()))
         .collect();
-    let rpm6: Vec<&String> = names.iter().filter(|n| is_rpm6(n)).collect();
-    let libcap: Vec<&String> =
-        names.iter().filter(|n| n.starts_with("libcap-2.66") || n.starts_with("libcap-debuginfo-2.66")).collect();
+    let specs = c.spec.tree(Tree::Release).join("SPECS");
+
+    let rpm_fams = spec_families(&specs.join("rpm/rpm.spec"));
+    let rpm6: Vec<&String> = names.iter().filter(|n| is_rpm6(n, rpm_fams.as_ref())).collect();
+
+    // libcap is keyed on "not the version the spec declares" rather than on a
+    // named old version, so it keeps working when the tree moves past 2.77.
+    let libcap = spec_families(&specs.join("libcap/libcap.spec"));
+    let stale_libcap: Vec<&String> = match &libcap {
+        Some(f) => names.iter().filter(|n| is_stale_version(n, f)).collect(),
+        None => Vec::new(),
+    };
+    let libcap_why = match &libcap {
+        Some(f) => format!("they shadow the rebuild to {}", f.version),
+        None => String::new(),
+    };
 
     for (label, set, why) in [
         ("rpm 6.x", &rpm6, "the toolchain bootstrap requires rpm 4.x"),
-        ("libcap 2.66", &libcap, "it shadows the rebuild to 2.77"),
+        ("stale libcap", &stale_libcap, libcap_why.as_str()),
     ] {
         if set.is_empty() {
             continue;
@@ -1218,24 +1237,108 @@ fn purge_toolchain_blockers(c: &mut Ctx, stage: &Path) {
     }
 }
 
-/// Is this filename one of the rpm 6.x packages the bootstrap cannot tolerate?
+/// A spec's package name, its Version, and every binary package it declares.
+#[derive(Debug, Clone)]
+pub struct SpecFamilies {
+    pub name: String,
+    pub version: String,
+    pub families: Vec<String>,
+}
+
+/// Read `Name:`, `Version:` and every `%package` from a spec.
 ///
-/// Matched against an explicit name list with the version glued on, NOT by
-/// looking for "-6." anywhere: `rpm-4.18.0-6.ph5.x86_64.rpm` contains "-6." in
-/// its RELEASE field, and deleting that removes the very rpm 4.x the toolchain
-/// bootstrap requires. The bash used explicit `rpm-6.*` globs for this reason.
-fn is_rpm6(name: &str) -> bool {
+/// Covers both `%package devel` (which yields `<name>-devel`) and
+/// `%package -n python3-%{name}` (which yields a literal, with `%{name}`
+/// expanded). `-debuginfo` is added because rpmbuild generates it without the
+/// spec ever mentioning it, and it was the one subpackage the old libcap
+/// literal did remember.
+fn spec_families(spec: &Path) -> Option<SpecFamilies> {
+    let text = fs::read_to_string(spec).ok()?;
+    let field = |k: &str| -> Option<String> {
+        text.lines()
+            .find(|l| l.starts_with(k))
+            .and_then(|l| l.split_whitespace().nth(1))
+            .map(|v| v.split('%').next().unwrap_or("").to_string())
+    };
+    let name = field("Name:")?;
+    let version = field("Version:")?;
+    if name.is_empty() || version.is_empty() {
+        return None;
+    }
+    let mut families = vec![name.clone(), format!("{name}-debuginfo")];
+    for l in text.lines() {
+        let Some(rest) = l.strip_prefix("%package") else { continue };
+        let rest = rest.trim();
+        let sub = match rest.strip_prefix("-n") {
+            // "%package -n python3-%{name}" names the package outright
+            Some(lit) => lit.trim().replace("%{name}", &name),
+            None => {
+                let first = rest.split_whitespace().next().unwrap_or("");
+                if first.is_empty() {
+                    continue;
+                }
+                format!("{name}-{first}")
+            }
+        };
+        if !sub.is_empty() && !families.contains(&sub) {
+            families.push(sub);
+        }
+    }
+    Some(SpecFamilies { name, version, families })
+}
+
+/// Split `libcap-2.66-1.ph5.x86_64.rpm` into ("libcap", "2.66", "1.ph5").
+///
+/// Prefix matching cannot do this job: `libcap-` is a prefix of `libcap-libs-`,
+/// so a prefix test either misses subpackages or over-matches neighbours. The
+/// name is everything before the last two `-`-separated fields.
+fn parse_rpm_name(file: &str) -> Option<(String, String, String)> {
+    let stem = file.strip_suffix(".rpm")?;
+    // drop the arch
+    let stem = stem.rsplit_once('.').map(|(l, _)| l)?;
+    let (rest, release) = stem.rsplit_once('-')?;
+    let (name, version) = rest.rsplit_once('-')?;
+    if name.is_empty() || version.is_empty() {
+        return None;
+    }
+    Some((name.to_string(), version.to_string(), release.to_string()))
+}
+
+/// Is this an rpm 6.x package the bootstrap cannot tolerate?
+///
+/// Families come from the spec when it can be read. The literal list survives
+/// only as the fallback: silently purging NOTHING because a spec moved would
+/// be worse than an out-of-date list, and this runs before the tree is
+/// guaranteed readable.
+///
+/// Matched on the parsed VERSION field, not by looking for "-6." anywhere:
+/// `rpm-4.18.0-6.ph5.x86_64.rpm` has "-6." in its RELEASE, and deleting that
+/// removes the very rpm 4.x the toolchain bootstrap requires.
+fn is_rpm6(name: &str, fams: Option<&SpecFamilies>) -> bool {
     if !name.ends_with(".rpm") {
         return false;
     }
+    // rpm-sequoia is a separate spec, versioned independently, but it exists
+    // only to back rpm 6.x and must go with it.
     if name.starts_with("rpm-sequoia-") {
         return true;
     }
-    const FAMILIES: [&str; 9] = [
+    const FALLBACK: [&str; 9] = [
         "rpm", "rpm-build", "rpm-build-libs", "rpm-libs", "rpm-devel", "rpm-lang",
         "rpm-sign-libs", "rpm-debuginfo", "rpm-plugin-systemd-inhibit",
     ];
-    FAMILIES.iter().any(|f| name.starts_with(&format!("{f}-6.")))
+    let Some((pkg, version, _)) = parse_rpm_name(name) else { return false };
+    let known = match fams {
+        Some(f) => f.families.iter().any(|x| *x == pkg),
+        None => FALLBACK.iter().any(|x| *x == pkg),
+    };
+    known && (version == "6" || version.starts_with("6."))
+}
+
+/// Does this RPM belong to `fams` at a version the spec no longer declares?
+fn is_stale_version(name: &str, fams: &SpecFamilies) -> bool {
+    let Some((pkg, version, _)) = parse_rpm_name(name) else { return false };
+    fams.families.iter().any(|x| *x == pkg) && version != fams.version
 }
 
 /// A previously built RPM whose Release is HIGHER than the patched spec's.
@@ -1244,43 +1347,100 @@ fn is_rpm6(name: &str) -> bool {
 /// over the one this build is about to produce and lands on the ISO. The run
 /// then reports a verdict for code nobody is shipping - which is exactly how a
 /// 2.9-3 installer reached an ISO built for 2.8.
+///
+/// The package list used to be the literal
+/// `["photon-os-installer", "stig-hardening", "linux"]`, which had two holes.
+/// It omitted `linux-esx` - bumped 2 -> 3 by the very same embedded patch that
+/// bumps `linux` 3 -> 4, and the kernel the ISO boots. And by matching the
+/// prefix `{pkg}-{ver}-` it never covered a single SUBPACKAGE, so a shadowing
+/// `linux-devel` or `photon-os-installer-debuginfo` went untouched.
+///
+/// Derive it instead from the specs THIS build patches. That set is exactly
+/// the set at risk: a stale RPM can only shadow a package whose Release the
+/// build changes, and every such package is, by definition, one the injections
+/// touch.
 fn purge_shadowing_rpms(c: &mut Ctx, stage: &Path) {
     let release_tree = c.spec.tree(Tree::Release);
-    for pkg in ["photon-os-installer", "stig-hardening", "linux"] {
-        let spec = release_tree.join(format!("SPECS/{pkg}/{pkg}.spec"));
-        let Ok(text) = fs::read_to_string(&spec) else { continue };
-        let field = |k: &str| -> Option<String> {
-            text.lines()
-                .find(|l| l.starts_with(k))
-                .and_then(|l| l.split_whitespace().nth(1))
-                .map(|v| v.split('%').next().unwrap_or("").to_string())
+    for spec in patched_specs(c) {
+        let Some(fams) = spec_families(&release_tree.join(&spec)) else { continue };
+        let text = match fs::read_to_string(release_tree.join(&spec)) {
+            Ok(t) => t,
+            Err(_) => continue,
         };
-        let (Some(ver), Some(rel)) = (field("Version:"), field("Release:")) else { continue };
+        let rel = text
+            .lines()
+            .find(|l| l.starts_with("Release:"))
+            .and_then(|l| l.split_whitespace().nth(1))
+            .map(|v| v.split('%').next().unwrap_or("").to_string())
+            .unwrap_or_default();
         // An unexpanded macro means the spec cannot be read without rpm; do not
         // guess, and above all do not delete on a guess.
-        if ver.is_empty() || rel.is_empty() || !rel.chars().all(|x| x.is_ascii_digit()) {
+        if rel.is_empty() || !rel.chars().all(|x| x.is_ascii_digit()) {
             continue;
         }
         let Ok(want) = rel.parse::<u32>() else { continue };
-        for p in crate::build::find_files_rec(&stage.join("RPMS"), &format!("{pkg}-{ver}-"), ".rpm")
-        {
-            let Ok(out) = run(Path::new("/"), "rpm", &["-qp", "--qf", "%{RELEASE}", &p.to_string_lossy()])
-            else {
+        for p in crate::build::find_files_rec(&stage.join("RPMS"), &fams.name, ".rpm") {
+            let name = basename(&p);
+            let Some((pkg, ver, got_rel)) = parse_rpm_name(&name) else { continue };
+            if ver != fams.version || !fams.families.iter().any(|x| *x == pkg) {
                 continue;
-            };
-            let got = out.trim().split(".ph").next().unwrap_or("").to_string();
-            if !got.is_empty() && got.chars().all(|x| x.is_ascii_digit()) {
-                if let Ok(g) = got.parse::<u32>() {
-                    if g > want && fs::remove_file(&p).is_ok() {
-                        c.say(&format!(
-                            "  removed stale {}: release {g} shadows the patched {want}",
-                            basename(&p)
-                        ));
-                    }
+            }
+            let got = got_rel.split(".ph").next().unwrap_or("");
+            if got.is_empty() || !got.chars().all(|x| x.is_ascii_digit()) {
+                continue;
+            }
+            if let Ok(g) = got.parse::<u32>() {
+                if g > want && fs::remove_file(&p).is_ok() {
+                    c.say(&format!(
+                        "  removed stale {name}: release {g} shadows the patched {want}"
+                    ));
                 }
             }
         }
     }
+}
+
+/// Which release-tree specs this build's injections modify.
+///
+/// Read out of the patch texts themselves rather than listed by hand, so a
+/// patch that starts touching a new spec is covered the day it does. The three
+/// historical names stay as a floor: if no patch parses - a renamed variant
+/// patch, a diff in an unexpected format - purging NOTHING would be a silent
+/// regression of the check that caught the 2.9-3 installer.
+fn patched_specs(c: &mut Ctx) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut add = |p: &str| {
+        let p = p.to_string();
+        if !out.contains(&p) {
+            out.push(p);
+        }
+    };
+    let mut scan = |text: &str, add: &mut dyn FnMut(&str)| {
+        for l in text.lines() {
+            // "+++ b/SPECS/linux/linux-esx.spec" - the post-image side, so a
+            // spec the patch CREATES is included and one it deletes is not.
+            let Some(rest) = l.strip_prefix("+++ b/") else { continue };
+            let path = rest.split_whitespace().next().unwrap_or("");
+            if path.starts_with("SPECS/") && path.ends_with(".spec") {
+                add(path);
+            }
+        }
+    };
+    for inj in &c.spec.injections {
+        match inj {
+            Injection::TreePatch { tree: Tree::Release, patch } => {
+                if let Ok(t) = fs::read_to_string(patch) {
+                    scan(&t, &mut add);
+                }
+            }
+            Injection::Embed(e) if e.tree() == Tree::Release => scan(e.patch(), &mut add),
+            _ => {}
+        }
+    }
+    for pkg in ["photon-os-installer", "stig-hardening", "linux"] {
+        add(&format!("SPECS/{pkg}/{pkg}.spec"));
+    }
+    out
 }
 
 /// An RPM that fails its own signature/digest check.
@@ -1383,14 +1543,42 @@ fn clean_sandboxes(c: &mut Ctx, stage: &Path) {
 /// way; retrying burns the remaining budget re-running for hours to reproduce
 /// one error. Ten attempts of a flaky failure is worth having. Ten attempts of
 /// a deterministic one is not.
+/// How many times a failing make is worth retrying.
+///
+/// Named once. It appeared as a literal in the dry-run text, the loop bound
+/// and the per-attempt message, which is three places to change and two to
+/// forget.
+const MAKE_ATTEMPTS: u32 = 10;
+
+/// Build parallelism, from the host rather than from a literal.
+///
+/// `-j8`/`THREADS=8` were hardcoded here and in `runPh5_normal.sh` before it,
+/// so a 14-core host built at 8 and a 4-core host oversubscribed at 8. Derive
+/// it, and let `MC_BUILD_THREADS` override for a host that must be throttled
+/// (this one runs other people's jobs, and a kernel compile at full width
+/// starves them).
+fn build_threads() -> usize {
+    if let Ok(v) = std::env::var("MC_BUILD_THREADS") {
+        if let Ok(n) = v.trim().parse::<usize>() {
+            if n > 0 {
+                return n;
+            }
+        }
+    }
+    std::thread::available_parallelism().map(|n| n.get()).unwrap_or(8)
+}
+
 pub fn make_and_deliver(c: &mut Ctx) -> Result<PathBuf, String> {
     let release = c.spec.tree(Tree::Release);
     let stage = release.join("stage");
     let common_stage = c.spec.tree(Tree::Common).join("stage");
     let target = c.spec.canister.make_target();
+    let j = build_threads();
+    let jflag = format!("-j{j}");
+    let threads = format!("THREADS={j}");
     if c.dry {
         c.say(&format!(
-            "  would run: make -j8 {} {} THREADS=8, up to 10 attempts",
+            "  would run: make {jflag} {} {} {threads}, up to {MAKE_ATTEMPTS} attempts",
             target,
             if target == "image" {
                 format!("IMG_NAME={}", c.spec.img.as_str())
@@ -1405,18 +1593,22 @@ pub fn make_and_deliver(c: &mut Ctx) -> Result<PathBuf, String> {
     let _ = fs::write(&marker, "");
     let (mut prev_rc, mut prev_progress) = (i32::MIN, u64::MAX);
 
-    for attempt in 1..=10 {
+    for attempt in 1..=MAKE_ATTEMPTS {
         if attempt > 1 {
             c.say(&format!("  attempt {attempt}: cleaning sandboxes from the previous attempt"));
             clean_sandboxes(c, &stage);
         }
         let img = format!("IMG_NAME={}", c.spec.img.as_str());
-        let mut args: Vec<&str> = vec!["make", "-j8", target];
+        let mut args: Vec<&str> = vec!["make", &jflag, target];
         if target == "image" {
             args.push(&img);
         }
-        args.push("THREADS=8");
-        c.say(&format!("  attempt {attempt}/10: sudo {} (cwd {})", args.join(" "), release.display()));
+        args.push(&threads);
+        c.say(&format!(
+            "  attempt {attempt}/{MAKE_ATTEMPTS}: sudo {} (cwd {})",
+            args.join(" "),
+            release.display()
+        ));
         let t0 = std::time::SystemTime::now();
         let rc = Command::new("sudo")
             .args(&args)
@@ -1727,26 +1919,235 @@ mod tests {
         let _ = fs::remove_file(&tmp);
     }
 
+    /// The same cases, run BOTH ways: against the literal fallback and against
+    /// families read from a spec. Neither path may delete rpm 4.x.
     #[test]
     fn the_rpm6_purge_matches_the_version_not_the_release() {
+        let spec = SpecFamilies {
+            name: "rpm".into(),
+            version: "6.1.0".into(),
+            families: [
+                "rpm", "rpm-debuginfo", "rpm-devel", "rpm-libs", "rpm-build-libs",
+                "rpm-sign-libs", "rpm-build", "rpm-lang", "python3-rpm",
+                "rpm-plugin-systemd-inhibit", "rpm-plugin-selinux",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
+        };
+        for fams in [None, Some(&spec)] {
+            for keep in [
+                // "-6." appears in the RELEASE here; deleting these removes the
+                // rpm 4.x the bootstrap requires
+                "rpm-4.18.0-6.ph5.x86_64.rpm",
+                "rpm-libs-4.18.0-6.ph5.x86_64.rpm",
+                "rpm-build-4.18.0-16.ph5.x86_64.rpm",
+                "librpm-6.0.0-1.ph5.x86_64.rpm",
+                "rpm-6.1.0-1.ph5.x86_64.notrpm",
+            ] {
+                assert!(!is_rpm6(keep, fams), "{keep} must be KEPT");
+            }
+            for drop in [
+                "rpm-6.1.0-1.ph5.x86_64.rpm",
+                "rpm-build-6.1.0-1.ph5.x86_64.rpm",
+                "rpm-libs-6.1.0-1.ph5.x86_64.rpm",
+                "rpm-plugin-systemd-inhibit-6.1.0-1.ph5.x86_64.rpm",
+                "rpm-sequoia-1.10.0-1.ph5.x86_64.rpm",
+            ] {
+                assert!(is_rpm6(drop, fams), "{drop} must be REMOVED");
+            }
+        }
+        // the subpackage the hand-written list forgot: covered only via the spec
+        let missed = "rpm-plugin-selinux-6.1.0-1.ph5.x86_64.rpm";
+        assert!(is_rpm6(missed, Some(&spec)), "{missed} must be REMOVED via the spec");
+        assert!(!is_rpm6(missed, None), "the literal fallback is known to miss it");
+    }
+
+    /// Filenames split on the last two dashes, not on a prefix.
+    #[test]
+    fn an_rpm_filename_splits_into_name_version_release() {
+        assert_eq!(
+            parse_rpm_name("libcap-2.66-1.ph5.x86_64.rpm"),
+            Some(("libcap".into(), "2.66".into(), "1.ph5".into()))
+        );
+        // a subpackage must not be mistaken for the base package
+        assert_eq!(
+            parse_rpm_name("libcap-libs-2.66-1.ph5.x86_64.rpm").unwrap().0,
+            "libcap-libs"
+        );
+        assert_eq!(
+            parse_rpm_name("linux-fips-canister-6.12.107-4.ph5.x86_64.rpm").unwrap(),
+            ("linux-fips-canister".into(), "6.12.107".into(), "4.ph5".into())
+        );
+        assert_eq!(parse_rpm_name("notanrpm.txt"), None);
+    }
+
+    /// libcap was keyed on the literal 2.66, and only on two of its six
+    /// subpackages. Key it on "not the version the spec declares" instead, so
+    /// it keeps working when the tree moves past 2.77.
+    #[test]
+    fn stale_libcap_is_any_version_the_spec_no_longer_declares() {
+        let fams = SpecFamilies {
+            name: "libcap".into(),
+            version: "2.77".into(),
+            families: ["libcap", "libcap-debuginfo", "libcap-libs", "libcap-minimal",
+                       "libcap-devel", "libcap-doc"]
+                .iter().map(|s| s.to_string()).collect(),
+        };
+        for stale in [
+            "libcap-2.66-1.ph5.x86_64.rpm",
+            "libcap-debuginfo-2.66-1.ph5.x86_64.rpm",
+            // the four the old literal missed entirely
+            "libcap-libs-2.66-1.ph5.x86_64.rpm",
+            "libcap-devel-2.66-1.ph5.x86_64.rpm",
+            "libcap-minimal-2.66-1.ph5.x86_64.rpm",
+            "libcap-doc-2.66-1.ph5.noarch.rpm",
+            // and a FUTURE stale version, which a 2.66 literal could never catch
+            "libcap-2.70-1.ph5.x86_64.rpm",
+        ] {
+            assert!(is_stale_version(stale, &fams), "{stale} must be removed");
+        }
         for keep in [
-            "rpm-4.18.0-6.ph5.x86_64.rpm",
-            "rpm-libs-4.18.0-6.ph5.x86_64.rpm",
-            "rpm-build-4.18.0-16.ph5.x86_64.rpm",
-            "librpm-6.0.0-1.ph5.x86_64.rpm",
-            "rpm-6.1.0-1.ph5.x86_64.notrpm",
+            "libcap-2.77-1.ph5.x86_64.rpm",
+            "libcap-libs-2.77-1.ph5.x86_64.rpm",
+            // a different package that merely starts with the same letters
+            "libcap-ng-0.8.3-1.ph5.x86_64.rpm",
         ] {
-            assert!(!is_rpm6(keep), "{keep} must be KEPT");
+            assert!(!is_stale_version(keep, &fams), "{keep} must be kept");
         }
-        for drop in [
-            "rpm-6.1.0-1.ph5.x86_64.rpm",
-            "rpm-build-6.1.0-1.ph5.x86_64.rpm",
-            "rpm-libs-6.1.0-1.ph5.x86_64.rpm",
-            "rpm-plugin-systemd-inhibit-6.1.0-1.ph5.x86_64.rpm",
-            "rpm-sequoia-1.10.0-1.ph5.x86_64.rpm",
-        ] {
-            assert!(is_rpm6(drop), "{drop} must be REMOVED");
+    }
+
+    /// The shadowing list was three literal names; linux-esx was not among them.
+    ///
+    /// It is bumped 2 -> 3 by the same embedded patch that bumps linux 3 -> 4,
+    /// and it is the kernel the ISO boots. Asserted against the REAL compiled-in
+    /// patch, so the day that patch stops touching linux-esx this test says so.
+    #[test]
+    fn patched_specs_finds_linux_esx_in_the_real_embedded_patch() {
+        let mut sp = BuildSpec::from_args(
+            "/root", "common", "5.0", "/out", "minimal-iso", "equivalent-b",
+            Some("6.12.107-4.ph5".to_string()),
+        )
+        .unwrap();
+        sp.subrelease = Subrelease::Mainline;
+        sp.injections = vec![Injection::Embed(Embedded::CanisterEquivalent)];
+        let got = {
+            let mut c = Ctx { spec: &sp, dry: true, log: &mut |_: &str| {} };
+            patched_specs(&mut c)
+        };
+        assert!(
+            got.iter().any(|p| p == "SPECS/linux/linux-esx.spec"),
+            "the embedded patch bumps linux-esx and the purge must know: {got:?}"
+        );
+        assert!(got.iter().any(|p| p == "SPECS/linux/linux.spec"), "{got:?}");
+        // the historical three survive as a floor
+        for p in ["SPECS/photon-os-installer/photon-os-installer.spec",
+                  "SPECS/stig-hardening/stig-hardening.spec"] {
+            assert!(got.iter().any(|x| x == p), "{p} must remain a floor: {got:?}");
         }
+    }
+
+    /// A common-tree patch is not a release-tree spec.
+    #[test]
+    fn patched_specs_ignores_the_common_tree_and_non_specs() {
+        let tmp = std::env::temp_dir().join(format!("shk-ps-{}.patch", std::process::id()));
+        fs::write(
+            &tmp,
+            "--- a/support/package-builder/ToolChainUtils.py\n\
++++ b/support/package-builder/ToolChainUtils.py\n\
+--- a/SPECS/foo/foo.spec\n+++ b/SPECS/foo/foo.spec\n\
+--- a/README.md\n+++ b/README.md\n",
+        )
+        .unwrap();
+        let mut sp = BuildSpec::from_args(
+            "/root", "common", "5.0", "/out", "minimal-iso", "prebuilt", None,
+        )
+        .unwrap();
+        sp.subrelease = Subrelease::Mainline;
+        sp.injections = vec![
+            Injection::TreePatch { tree: Tree::Release, patch: tmp.clone() },
+            // a common-tree patch must contribute nothing to a release purge
+            Injection::TreePatch { tree: Tree::Common, patch: tmp.clone() },
+        ];
+        let got = {
+            let mut c = Ctx { spec: &sp, dry: true, log: &mut |_: &str| {} };
+            patched_specs(&mut c)
+        };
+        assert!(got.iter().any(|p| p == "SPECS/foo/foo.spec"), "{got:?}");
+        assert!(!got.iter().any(|p| p.contains("ToolChainUtils")), "{got:?}");
+        assert!(!got.iter().any(|p| p.contains("README")), "{got:?}");
+        let _ = fs::remove_file(&tmp);
+    }
+
+    /// The old prefix match `{pkg}-{ver}-` never covered a subpackage.
+    #[test]
+    fn the_shadowing_purge_covers_subpackages() {
+        let tmp = std::env::temp_dir().join(format!("shk-shadow-{}", std::process::id()));
+        let rpms = tmp.join("release/5.0/stage/RPMS/x86_64");
+        let specs = tmp.join("release/5.0/SPECS/linux");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&rpms).unwrap();
+        fs::create_dir_all(&specs).unwrap();
+        fs::write(
+            specs.join("linux.spec"),
+            "Name:           linux\nVersion:        6.12.107\nRelease:        4%{?dist}\n\
+%package devel\n%package docs\n",
+        )
+        .unwrap();
+
+        let doomed = [
+            "linux-6.12.107-9.ph5.x86_64.rpm",
+            // the subpackage the prefix match could never reach
+            "linux-devel-6.12.107-9.ph5.x86_64.rpm",
+            "linux-debuginfo-6.12.107-14.ph5.x86_64.rpm",
+        ];
+        let spared = [
+            "linux-6.12.107-4.ph5.x86_64.rpm",   // equal, not higher
+            "linux-6.12.107-3.ph5.x86_64.rpm",   // lower
+            "linux-6.12.103-9.ph5.x86_64.rpm",   // different Version entirely
+            "linux-firmware-20250101-99.ph5.noarch.rpm", // not a declared family
+        ];
+        for f in doomed.iter().chain(spared.iter()) {
+            fs::write(rpms.join(f), b"x").unwrap();
+        }
+
+        let mut sp = BuildSpec::from_args(
+            &tmp.join("release").to_string_lossy(), "common", "5.0", "/out",
+            "minimal-iso", "prebuilt", None,
+        )
+        .unwrap();
+        sp.subrelease = Subrelease::Mainline;
+        {
+            let mut c = Ctx { spec: &sp, dry: false, log: &mut |_: &str| {} };
+            purge_shadowing_rpms(&mut c, &tmp.join("release/5.0/stage"));
+        }
+        for f in doomed {
+            assert!(!rpms.join(f).exists(), "{f} shadows the patched release and must go");
+        }
+        for f in spared {
+            assert!(rpms.join(f).exists(), "{f} must survive");
+        }
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// The families come from the spec text, including the `-n` form.
+    #[test]
+    fn spec_families_reads_every_declared_subpackage() {
+        let tmp = std::env::temp_dir().join(format!("shk-fam-{}.spec", std::process::id()));
+        fs::write(
+            &tmp,
+            "Name:       rpm\nVersion:    6.1.0\n%package devel\n%package libs\n\
+%package -n python3-%{name}\n%package plugin-selinux\n",
+        )
+        .unwrap();
+        let f = spec_families(&tmp).unwrap();
+        assert_eq!(f.name, "rpm");
+        assert_eq!(f.version, "6.1.0");
+        for want in ["rpm", "rpm-debuginfo", "rpm-devel", "rpm-libs", "python3-rpm",
+                     "rpm-plugin-selinux"] {
+            assert!(f.families.iter().any(|x| x == want), "missing {want}: {:?}", f.families);
+        }
+        let _ = fs::remove_file(&tmp);
     }
 
     #[test]
