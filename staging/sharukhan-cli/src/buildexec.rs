@@ -139,6 +139,24 @@ pub fn sync(c: &mut Ctx) -> Result<(), String> {
                  common/release version skew breaks the spec generator"
             ));
         }
+        // `merge --autostash` exits 0 when the MERGE succeeded even if popping
+        // the stash afterwards conflicted, so the exit code alone says nothing.
+        // That happened on the 6.12.103 -> 6.12.107 sync: HEAD advanced, the
+        // stashed SPECS edits collided with the rewritten kernel specs, and the
+        // tree was left with UU paths. `git checkout -- SPECS` cannot restore an
+        // unmerged path, so reset silently left them and the variant patch then
+        // "did not apply" - a message that points at the patch when the fault is
+        // a half-finished merge.
+        let unmerged = git(&dir, &["ls-files", "-u"]).unwrap_or_default().lines().count();
+        if unmerged > 0 {
+            return Err(format!(
+                "{branch}: the merge left {unmerged} unmerged path entr(ies) in {} - \
+                 autostash could not be reapplied. Resolve or discard them \
+                 (git reset HEAD -- SPECS && git checkout -- SPECS) before building; \
+                 a stash entry is probably still listed.",
+                dir.display()
+            ));
+        }
         let head = git(&dir, &["rev-parse", "--short", "HEAD"]).unwrap_or_default();
         let dirty = git(&dir, &["status", "--porcelain"]).unwrap_or_default().lines().count();
         c.say(&format!(
@@ -174,6 +192,10 @@ pub fn reset(c: &mut Ctx) -> Result<(), String> {
         .unwrap_or_default()
         .lines()
         .count();
+    // Unstage first. A path left in the index - staged, or unmerged after a
+    // failed autostash pop - cannot be restored by `checkout --`, and the reset
+    // then reports success while leaving the tree modified.
+    let _ = git(&dir, &["reset", "-q", "HEAD", "--", "SPECS", "build-config.json"]);
     let _ = git(&dir, &["checkout", "--", "SPECS"]);
     let _ = git(&dir, &["clean", "-fdq", "SPECS"]);
     let _ = git(&dir, &["checkout", "--", "build-config.json"]);
@@ -185,6 +207,16 @@ pub fn reset(c: &mut Ctx) -> Result<(), String> {
         "  {} restored {before} dirty path(s) under SPECS + build-config.json; {after} remain",
         dir.display()
     ));
+    // Anything left means the next phase applies a patch to a tree that is not
+    // pristine, and the failure surfaces as "patch does not apply" - blaming
+    // the patch for the tree's state.
+    if after > 0 {
+        return Err(format!(
+            "{after} path(s) under SPECS are still modified after the reset; a variant \
+             patch must land on a pristine tree. Inspect with `git -C {} status --porcelain SPECS`",
+            dir.display()
+        ));
+    }
     Ok(())
 }
 
