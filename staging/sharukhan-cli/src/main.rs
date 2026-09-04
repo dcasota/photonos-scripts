@@ -754,58 +754,28 @@ fn cmd_build(args: &Args) -> Result<(), String> {
     let common = std::env::var("MC_BUILD_COMMON").unwrap_or_else(|_| "common".into());
     let nevr = std::env::var("MC_CANISTER_NEVR").ok();
 
-    let mut spec = buildmode::BuildSpec::from_args(
-        &base, &common, &release, &out, &img, &canister, nevr,
+    let patches = std::env::var("MC_VARIANT_PATCH_DIR")
+        .unwrap_or_else(|_| "/root/photon-mc/variant-patches".into());
+    let poi = args.poi.clone().unwrap_or_else(|| "2.8".into());
+    // The subrelease pin was two entire scripts differing in one integer.
+    let subrelease = match args.subrelease.as_deref() {
+        None | Some("mainline") => None,
+        Some(sr) => Some(sr.parse::<u32>().map_err(|_| {
+            format!("--subrelease takes mainline, 90 or 91 (got '{sr}')")
+        })?),
+    };
+
+    // Assembled by `buildmode::spec_for`, which `build::resolve` also calls.
+    // Two copies of this list is how the cascade and the legacy path became
+    // different builds under one name.
+    let mut spec = buildmode::spec_for(
+        &base, &common, &release, &out, &img, &canister, nevr, &poi, &patches, subrelease,
     )?;
 
     // Rebuild the image from a stage whose phase-B kernels are already proven,
     // rather than purging and rebuilding them. The purge phase verifies that
     // claim against the RPMs and refuses if it does not hold.
     spec.compose_only = args.compose_only;
-
-    // The subrelease pin was two entire scripts differing in one integer.
-    if let Some(sr) = args.subrelease.as_deref() {
-        if sr != "mainline" {
-            let n: u32 = sr.parse().map_err(|_| {
-                format!("--subrelease takes mainline, 90 or 91 (got '{sr}')")
-            })?;
-            spec.subrelease = buildmode::Subrelease::Pinned(n);
-            spec.injections.push(buildmode::Injection::PinSubrelease(n));
-        }
-    }
-
-    // Injections, in the order they must land: release tree, then common tree,
-    // then the canister macros, then the host workarounds.
-    let patches = std::env::var("MC_VARIANT_PATCH_DIR")
-        .unwrap_or_else(|_| "/root/photon-mc/variant-patches".into());
-    let poi = args.poi.clone().unwrap_or_else(|| "2.8".into());
-    spec.injections.push(buildmode::Injection::TreePatch {
-        tree: buildmode::Tree::Release,
-        patch: std::path::PathBuf::from(&patches).join(format!("poi-{poi}.patch")),
-    });
-    // Test-only modifications sharukhan owns, applied ON TOP of the variant
-    // patch. They are compiled in, so an equivalent-canister build needs no
-    // branch checked out anywhere and nothing waiting on review.
-    for e in buildmode::Embedded::needed_for(spec.canister) {
-        spec.injections.push(buildmode::Injection::Embed(e));
-    }
-    spec.injections.push(buildmode::Injection::PkgBuildOptions {
-        mode: spec.canister,
-        nevr: spec.canister_nevr.clone(),
-    });
-    // All of them, unconditionally. Each evaluates its own precondition
-    // against this host and tree and skips with a reason - which is the whole
-    // point: the five scripts each carried a different subset, and that subset
-    // was never a decision about the release.
-    for f in [
-        buildmode::Fixup::SpecBlankLines,
-        buildmode::Fixup::OpenJdkWsl2,
-        buildmode::Fixup::Python3PgoTestGenerators,
-        buildmode::Fixup::SssdSerialMakeInstall,
-        buildmode::Fixup::RunInChrootFd255,
-    ] {
-        spec.injections.push(buildmode::Injection::SpecFixup(f));
-    }
 
     print!("{}", buildmode::render(&spec));
     if args.dry_run {

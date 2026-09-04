@@ -225,44 +225,46 @@ and failing to look are different things, and only the first is worth hours."
     };
 
     for phase in &phases {
-        if *phase == "equivalent-b" {
-            // Phase A's `linux` RPM has the SAME NEVR as phase B's but is a
-            // canister-CREATION kernel (canister_usage=0, links nothing).
-            // build.py would see it as already built, skip it, and the ISO
-            // would ship it - silently, because nothing downstream inspects
-            // which mode a kernel was built in. Keep only the canister.
-            // Anchored to the kernel NEVR, not to the "linux" prefix. A bare
-            // prefix also matches linux-api-headers, linux-firmware and
-            // linux-tools, which are separate packages at their own versions -
-            // deleting them forces a needless rebuild and, for linux-firmware,
-            // a large one. Matching "-<nevr>." keeps every flavour and
-            // subpackage of the kernel under test (linux, linux-esx,
-            // linux-devel, linux-esx-devel...) and nothing else, because only
-            // the kernel carries that NEVR.
-            let mut n = 0;
-            for p in find_files_rec(&stage, "linux", ".rpm") {
-                let name = p.file_name().and_then(|x| x.to_str()).unwrap_or("");
-                if !purged_before_phase_b(name, &nevr) {
-                    continue;
-                }
-                if fs::remove_file(&p).is_ok() {
-                    n += 1;
-                }
-            }
-            log(&format!(
-                "purged {n} kernel RPM(s) from stage/RPMS, keeping only the canister, \
-so phase B cannot ship the canister-creation kernel phase A built"
-            ));
+        if phases.len() > 1 {
+            log(&format!("--- {phase} ---"));
         }
+
+        // --- equivalent runs the cascade, not the script ------------------
+        // Not a preference: the legacy driver CANNOT build these correctly.
+        // The canister-equivalent patch is test-only, compiled into
+        // src/embedded/ and applied as an injection, so only the cascade
+        // applies it - while `equivalent_kernel_nevr` above READS it to decide
+        // the NEVR. This path therefore expected linux at Release 4 and would
+        // have built Release 3, then purged on a NEVR its own build could not
+        // produce.
+        //
+        // The purge is the same code for the same reason. It has to run AFTER
+        // the injections, against patched specs: at this point in the script
+        // path the tree is still pristine, where both flavours read Release 1,
+        // so a per-flavour purge here would match nothing at all.
+        if req.canister == "equivalent" {
+            let spec = crate::buildmode::spec_for(
+                &cfg.build_root.to_string_lossy(),
+                &cfg.build_common,
+                &cfg.release,
+                &dest.to_string_lossy(),
+                img,
+                phase,
+                Some(nevr.clone()),
+                &req.poi,
+                &cfg.variant_patches.to_string_lossy(),
+                None,
+            )?;
+            crate::buildexec::execute(&spec, false, &mut |l| log(l))?;
+            continue;
+        }
+
         let logf = fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(&build_log)
             .map_err(|e| format!("{}: {e}", build_log.display()))?;
         let err = logf.try_clone().map_err(|e| format!("{e}"))?;
-        if phases.len() > 1 {
-            log(&format!("--- {phase} ---"));
-        }
         let rc = Command::new("sh")
             .arg(stage_dir.join("runPh5_normal.sh"))
             .arg(&cfg.build_root)
@@ -282,21 +284,6 @@ so phase B cannot ship the canister-creation kernel phase A built"
                 rc.code().unwrap_or(-1),
                 build_log.display()
             ));
-        }
-        if *phase == "equivalent-a" {
-            // Do not take make's word for it: the canister must exist at the
-            // NEVR phase B is about to require, or phase B fails hours later
-            // on an unresolvable BuildRequires.
-            let want = format!("linux-fips-canister-{nevr}");
-            if !find_files_rec(&stage, &want, ".rpm").is_empty() {
-                log(&format!("phase A produced {want}"));
-            } else {
-                return Err(format!(
-                    "phase A reported success but {want}*.rpm is not in {}; \
-phase B would fail on an unresolvable BuildRequires",
-                    stage.display()
-                ));
-            }
         }
     }
 
@@ -385,6 +372,73 @@ fn scan_linux_spec_hunks(text: &str, version: &mut Option<String>, release: &mut
 /// phase B links against.
 pub fn purged_before_phase_b(name: &str, nevr: &str) -> bool {
     !name.starts_with("linux-fips-canister-") && name.contains(&format!("-{nevr}."))
+}
+
+/// The per-flavour NEVRs the kernel specs declare, as `(prefix, "-ver-rel.")`.
+///
+/// `purged_before_phase_b` is anchored to the CANISTER's NEVR, and the two
+/// kernel flavours do not share it: the embedded canister-equivalent patch
+/// bumps `linux` 3 -> 4 and `linux-esx` 2 -> 3, so a stage holding
+/// linux-esx-6.12.107-3 survives a purge keyed on 6.12.107-4 untouched.
+/// build.py then sees that NEVR already built, skips it, and the ISO boots an
+/// esx kernel that never linked the canister - on the flavour the matrix
+/// actually boots.
+///
+/// Read from the specs rather than assumed, because the Releases move with
+/// every rebase and a hardcoded pair is wrong the moment one does.
+pub fn kernel_flavour_nevrs(specs_linux: &Path) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for flavour in ["linux", "linux-esx"] {
+        let Ok(text) = fs::read_to_string(specs_linux.join(format!("{flavour}.spec"))) else {
+            continue;
+        };
+        let field = |k: &str| -> Option<String> {
+            text.lines()
+                .find(|l| l.starts_with(k))
+                .and_then(|l| l.split_whitespace().nth(1))
+                // "4%{?acvp_build:.acvp}%{?kat_build:.kat}%{?dist}" -> "4"
+                .map(|v| v.split('%').next().unwrap_or("").to_string())
+        };
+        let (Some(ver), Some(rel)) = (field("Version:"), field("Release:")) else { continue };
+        // An unexpanded macro means the spec cannot be read without rpm. Do not
+        // guess, and above all do not delete on a guess.
+        if ver.is_empty() || rel.is_empty() || !rel.chars().all(|x| x.is_ascii_digit()) {
+            continue;
+        }
+        out.push((format!("{flavour}-"), format!("-{ver}-{rel}.")));
+    }
+    out
+}
+
+/// Does this RPM belong to `prefix` at exactly `frag`, and is it not the
+/// canister?
+///
+/// `linux-` is a prefix of `linux-esx-`, so the flavour test alone would let
+/// `linux` purge the esx tree. The NEVR fragment separates them in practice -
+/// the two flavours are at different Releases - but relying on that would make
+/// the rule correct only by coincidence, so exclude esx from linux explicitly.
+pub fn stale_flavour_rpm(name: &str, prefix: &str, frag: &str) -> bool {
+    if name.starts_with("linux-fips-canister-") {
+        return false;
+    }
+    if prefix == "linux-" && name.starts_with("linux-esx-") {
+        return false;
+    }
+    name.starts_with(prefix) && name.contains(frag)
+}
+
+/// The ONE rule for what phase B must not inherit from phase A.
+///
+/// Both build paths call this. They used to carry the rule separately and
+/// immediately drifted: the cascade grew the per-flavour half on 2026-09-03
+/// (364a6f4) after a dry run found phase A's kernels with nothing scheduled to
+/// remove them, and the legacy path kept the canister-NEVR-only version - so
+/// `build-iso`, and every `run --allow-build`, could still ship an unrelinked
+/// linux-esx. A rule that decides what to DELETE is the last place to keep two
+/// copies of.
+pub fn doomed_before_phase_b(name: &str, nevr: &str, flavours: &[(String, String)]) -> bool {
+    purged_before_phase_b(name, nevr)
+        || flavours.iter().any(|(prefix, frag)| stale_flavour_rpm(name, prefix, frag))
 }
 
 /// Recursive variant, for `stage/RPMS`.
@@ -867,6 +921,85 @@ mod tests {
         assert_eq!(hit.len(), 3, "arch subdirectory must be walked");
         assert!(hit.iter().all(|p| p.to_string_lossy().contains("photon-os-installer-")));
 
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// The half of the rule the legacy path was missing.
+    ///
+    /// `purged_before_phase_b` keys on the CANISTER's NEVR. The two kernel
+    /// flavours are not at the same Release - the embedded canister-equivalent
+    /// patch bumps linux 3 -> 4 and linux-esx 2 -> 3 - so a stage holding
+    /// linux-esx-6.12.107-3 walks straight past a purge keyed on 6.12.107-4.
+    /// build.py then treats that NEVR as built, skips it, and the ISO boots an
+    /// esx kernel that never linked the canister: the flavour these rows
+    /// actually boot, failing only at runtime attestation.
+    ///
+    /// The cascade grew this in 364a6f4; `build-iso` and every
+    /// `run --allow-build` kept the old rule until both were pointed at
+    /// `doomed_before_phase_b`.
+    #[test]
+    fn the_shared_rule_catches_the_other_flavour_at_its_own_release() {
+        let nevr = "6.12.107-4.ph5";
+        let flavours = vec![
+            ("linux-".to_string(), "-6.12.107-4.".to_string()),
+            ("linux-esx-".to_string(), "-6.12.107-3.".to_string()),
+        ];
+
+        // What the canister-NEVR rule alone already caught.
+        assert!(doomed_before_phase_b("linux-6.12.107-4.ph5.x86_64.rpm", nevr, &flavours));
+
+        // What it MISSED, and what this rule exists for.
+        for n in [
+            "linux-esx-6.12.107-3.ph5.x86_64.rpm",
+            "linux-esx-devel-6.12.107-3.ph5.x86_64.rpm",
+            "linux-esx-debuginfo-6.12.107-3.ph5.x86_64.rpm",
+        ] {
+            assert!(
+                !purged_before_phase_b(n, nevr),
+                "{n} is precisely what the canister-NEVR rule does not see"
+            );
+            assert!(doomed_before_phase_b(n, nevr, &flavours), "{n} must be purged");
+        }
+
+        // The canister still survives - it is phase B's input.
+        assert!(!doomed_before_phase_b(
+            "linux-fips-canister-6.12.107-4.ph5.x86_64.rpm",
+            nevr,
+            &flavours
+        ));
+
+        // Namesakes at their own versions are still spared.
+        for n in [
+            "linux-firmware-20250401-1.ph5.noarch.rpm",
+            "linux-api-headers-6.12.1-1.ph5.noarch.rpm",
+        ] {
+            assert!(!doomed_before_phase_b(n, nevr, &flavours), "{n} must be spared");
+        }
+    }
+
+    /// With no readable specs the rule must fall back to the canister NEVR,
+    /// never to a guess. Deleting on an unparsed Release is worse than not
+    /// deleting: the build is recoverable, a wrongly deleted kernel costs a
+    /// rebuild and can silently change what ships.
+    #[test]
+    fn no_flavour_nevrs_degrades_to_the_canister_rule_and_deletes_nothing_extra() {
+        let nevr = "6.12.107-4.ph5";
+        assert!(doomed_before_phase_b("linux-6.12.107-4.ph5.x86_64.rpm", nevr, &[]));
+        assert!(!doomed_before_phase_b("linux-esx-6.12.107-3.ph5.x86_64.rpm", nevr, &[]));
+    }
+
+    /// A spec whose Release is still a macro cannot be read without rpm, and
+    /// the parser must decline rather than invent a NEVR to delete on.
+    #[test]
+    fn an_unexpanded_release_yields_no_flavour_nevr() {
+        let tmp = std::env::temp_dir().join(format!("shk-flav-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+        fs::write(tmp.join("linux.spec"), "Version:        6.12.107\nRelease:        4%{?dist}\n").unwrap();
+        fs::write(tmp.join("linux-esx.spec"), "Version:        6.12.107\nRelease:        %{kver_rel}\n").unwrap();
+        let got = kernel_flavour_nevrs(&tmp);
+        assert_eq!(got.len(), 1, "only the readable spec may contribute: {got:?}");
+        assert_eq!(got[0], ("linux-".to_string(), "-6.12.107-4.".to_string()));
         let _ = fs::remove_dir_all(&tmp);
     }
 

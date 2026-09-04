@@ -1062,8 +1062,7 @@ pub fn purge(c: &mut Ctx) -> Result<(), String> {
                     .iter()
                     .map(|p| basename(p))
                     .filter(|n| {
-                        crate::build::purged_before_phase_b(n, nevr)
-                            || flavours.iter().any(|(pre, frag)| stale_flavour_rpm(n, pre, frag))
+                        crate::build::doomed_before_phase_b(n, nevr, &flavours)
                     })
                     .collect();
             c.say(&format!(
@@ -1128,14 +1127,12 @@ pub fn purge(c: &mut Ctx) -> Result<(), String> {
 /// kernel RPMs sitting in the stage with nothing scheduled to remove them.
 fn purge_phase_a_kernels(c: &mut Ctx, stage: &Path) {
     let CanisterMode::EquivalentB = c.spec.canister else { return };
+    let flavours = kernel_flavour_nevrs(c);
     let Some(nevr) = c.spec.canister_nevr.as_deref() else { return };
     let mut n = 0;
     for p in crate::build::find_files_rec(&stage.join("RPMS"), "linux", ".rpm") {
         let name = basename(&p);
-        let doomed = crate::build::purged_before_phase_b(&name, nevr)
-            || kernel_flavour_nevrs(c)
-                .iter()
-                .any(|(prefix, frag)| stale_flavour_rpm(&name, prefix, frag));
+        let doomed = crate::build::doomed_before_phase_b(&name, nevr, &flavours);
         if doomed && fs::remove_file(&p).is_ok() {
             c.say(&format!("  removed phase-A kernel {name}"));
             n += 1;
@@ -1240,46 +1237,10 @@ fn buildtime(p: &Path) -> Option<u64> {
 /// So read each flavour's Release from its own spec rather than assuming the
 /// canister's applies to both.
 fn kernel_flavour_nevrs(c: &mut Ctx) -> Vec<(String, String)> {
-    let specs = c.spec.tree(Tree::Release).join("SPECS/linux");
-    let mut out = Vec::new();
-    for flavour in ["linux", "linux-esx"] {
-        let Ok(text) = fs::read_to_string(specs.join(format!("{flavour}.spec"))) else {
-            continue;
-        };
-        let field = |k: &str| -> Option<String> {
-            text.lines()
-                .find(|l| l.starts_with(k))
-                .and_then(|l| l.split_whitespace().nth(1))
-                // "4%{?acvp_build:.acvp}%{?kat_build:.kat}%{?dist}" -> "4"
-                .map(|v| v.split('%').next().unwrap_or("").to_string())
-        };
-        let (Some(ver), Some(rel)) = (field("Version:"), field("Release:")) else { continue };
-        // An unexpanded macro means the spec cannot be read without rpm. Do not
-        // guess, and above all do not delete on a guess.
-        if ver.is_empty() || rel.is_empty() || !rel.chars().all(|x| x.is_ascii_digit()) {
-            continue;
-        }
-        out.push((format!("{flavour}-"), format!("-{ver}-{rel}.")));
-    }
-    out
+    crate::build::kernel_flavour_nevrs(&c.spec.tree(Tree::Release).join("SPECS/linux"))
 }
 
-/// Does this RPM belong to `prefix` at exactly `frag`, and is it not the
-/// canister?
-///
-/// `linux-` is a prefix of `linux-esx-`, so the flavour test alone would let
-/// `linux` purge the esx tree. The NEVR fragment separates them in practice -
-/// the two flavours are at different Releases - but relying on that would make
-/// the rule correct only by coincidence, so exclude esx from linux explicitly.
-fn stale_flavour_rpm(name: &str, prefix: &str, frag: &str) -> bool {
-    if name.starts_with("linux-fips-canister-") {
-        return false;
-    }
-    if prefix == "linux-" && name.starts_with("linux-esx-") {
-        return false;
-    }
-    name.starts_with(prefix) && name.contains(frag)
-}
+use crate::build::stale_flavour_rpm;
 
 /// Two package families that block the toolchain bootstrap if left behind.
 ///

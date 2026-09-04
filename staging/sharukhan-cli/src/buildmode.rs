@@ -404,6 +404,71 @@ impl Stage {
 /// A build takes hours and mutates two shared trees, so being able to read what
 /// it WOULD do is not a convenience. The scripts had no equivalent: the only
 /// way to learn the order was to run one.
+/// The spec a build of this tuple implies, injections and all.
+///
+/// Both entry points build from this. They used to assemble it separately -
+/// `cmd_build` here and `build::resolve` by staging a script directory for
+/// runPh5 - and the two drifted until they were different builds under one
+/// name. The visible half was the phase-B purge: the cascade learned the
+/// per-flavour NEVRs in 364a6f4 and the legacy path did not.
+///
+/// The half that could not be fixed by sharing a predicate is the embedded
+/// canister-equivalent patch. It is compiled in and applied as an injection,
+/// so only the cascade applies it - yet `resolve` computed the kernel NEVR
+/// with `equivalent_kernel_nevr`, which READS it. The legacy path therefore
+/// expected linux at Release 4 while runPh5 would build Release 3, and purged
+/// on a NEVR that its own build could never produce.
+pub fn spec_for(
+    base_dir: &str,
+    common_branch: &str,
+    release: &str,
+    output_dir: &str,
+    img: &str,
+    canister: &str,
+    nevr: Option<String>,
+    poi: &str,
+    patch_dir: &str,
+    subrelease: Option<u32>,
+) -> Result<BuildSpec, String> {
+    let mut spec = BuildSpec::from_args(base_dir, common_branch, release, output_dir, img, canister, nevr)?;
+
+    if let Some(n) = subrelease {
+        spec.subrelease = Subrelease::Pinned(n);
+        spec.injections.push(Injection::PinSubrelease(n));
+    }
+
+    // In the order they must land: release tree, then common tree, then the
+    // canister macros, then the host workarounds.
+    spec.injections.push(Injection::TreePatch {
+        tree: Tree::Release,
+        patch: PathBuf::from(patch_dir).join(format!("poi-{poi}.patch")),
+    });
+    // Test-only modifications sharukhan owns, applied ON TOP of the variant
+    // patch. They are compiled in, so an equivalent-canister build needs no
+    // branch checked out anywhere and nothing waiting on review.
+    for e in Embedded::needed_for(spec.canister) {
+        spec.injections.push(Injection::Embed(e));
+    }
+    spec.injections.push(Injection::PkgBuildOptions {
+        mode: spec.canister,
+        nevr: spec.canister_nevr.clone(),
+    });
+    // All of them, unconditionally. Each evaluates its own precondition
+    // against this host and tree and skips with a reason - which is the whole
+    // point: the five scripts each carried a different subset, and that subset
+    // was never a decision about the release.
+    for f in [
+        Fixup::SpecBlankLines,
+        Fixup::OpenJdkWsl2,
+        Fixup::Python3PgoTestGenerators,
+        Fixup::SssdSerialMakeInstall,
+        Fixup::RunInChrootFd255,
+    ] {
+        spec.injections.push(Injection::SpecFixup(f));
+    }
+    Ok(spec)
+}
+
 pub fn render(spec: &BuildSpec) -> String {
     let mut out = String::new();
     out.push_str(&format!(
@@ -501,6 +566,53 @@ mod tests {
             Fixup::SpecBlankLines,
         ] {
             assert_eq!(f.tree(), Tree::Release, "{} edits SPECS", f.as_str());
+        }
+    }
+
+    /// What `build-iso` was missing, expressed as the injection list.
+    ///
+    /// The embedded canister-equivalent patch is what bumps linux 3 -> 4 and
+    /// linux-esx 2 -> 3. It is compiled in and applied as an injection, so a
+    /// build that does not carry it produces different kernels than the ones
+    /// `equivalent_kernel_nevr` predicts - which is exactly what the legacy
+    /// script path did, while purging on the predicted NEVR. Both entry points
+    /// now assemble the spec here, so the list cannot differ between them.
+    #[test]
+    fn an_equivalent_spec_carries_the_embedded_patch_and_a_prebuilt_one_does_not() {
+        let mk = |canister: &str, nevr: Option<String>| {
+            spec_for(
+                "/root", "common", "5.0", "/out", "iso", canister, nevr, "2.8",
+                "/root/photon-mc/variant-patches", None,
+            )
+            .unwrap()
+        };
+
+        let eq = mk("equivalent-b", Some("6.12.107-4.ph5".into()));
+        assert!(
+            eq.injections.contains(&Injection::Embed(Embedded::CanisterEquivalent)),
+            "an equivalent build without the embedded patch builds the wrong Release"
+        );
+        assert!(
+            eq.injections.contains(&Injection::Embed(Embedded::SansSnapshotLocalCanister)),
+            "phase B cannot resolve the canister phase A built without this"
+        );
+        assert!(eq.injections.iter().any(|i| matches!(
+            i,
+            Injection::PkgBuildOptions { nevr: Some(n), .. } if n == "6.12.107-4.ph5"
+        )));
+
+        let pre = mk("prebuilt", None);
+        assert!(
+            !pre.injections.iter().any(|i| matches!(i, Injection::Embed(_))),
+            "a prebuilt build links the published canister and must not be patched"
+        );
+
+        // Both variants still get the POI patch, and the same one.
+        for s in [&eq, &pre] {
+            assert!(s.injections.iter().any(|i| matches!(
+                i,
+                Injection::TreePatch { tree: Tree::Release, patch } if patch.ends_with("poi-2.8.patch")
+            )));
         }
     }
 
