@@ -175,6 +175,65 @@ The artifact is copied to `photon-mc/canister-vault/` before phase B runs,
 because phase B's first act is a purge of its siblings and 140 minutes is too
 long to re-earn on a bad glob.
 
+### `--compose-only`, and why the flag does not grant the skip
+
+Rebuilding an image must not cost a kernel rebuild. After phase B the kernels
+are linked against the canister and verified; `purge` would delete them for the
+sake of a 25-minute recompose. Fixing one stale RPM cost 2h45m of kernel time
+it did not need.
+
+But skipping the purge is exactly how an ISO ships a canister-CREATING kernel,
+so the flag asks for the skip and the ARTIFACTS grant it:
+
+    phase A   canister is a %package of the kernel  -> one rpmbuild, one BUILDTIME
+    phase B   a separate, later build that links a canister already on disk
+
+    kernel BUILDTIME >  canister BUILDTIME   =>  can only be phase B
+    kernel BUILDTIME <= canister BUILDTIME   =>  phase A, or older still
+
+Equal is not good enough - equal IS the phase-A signature. Measured on the real
+artifacts: canister 18:56, both kernels 21:18.
+
+Every unprovable path is an error, never a fallback. Falling back to purging
+would turn a 25-minute recompose into a surprise three-hour one; falling
+through would ship the wrong kernel. A test asserts a refusal deletes nothing
+on its way out.
+
+### P5 is closed: the cascade now writes a cache ENTRY
+
+`build-iso` wrote three files the cascade did not - the `photon.iso` symlink,
+`photon.iso.sha256`, and `poi-nevr.txt`. Without them an ISO the cascade
+produced was invisible to the matrix: `create-vm` attaches `photon.iso` and
+`plan` reads `poi-nevr.txt`. Pointing `--out` at a cache directory is now
+enough to make the cascade a drop-in, and `--deliver-only` installs an
+already-built ISO into a second location without running a build phase.
+
+`poi-nevr.txt` is not bookkeeping - it is read OFF THE MEDIA, and writing it is
+what caught the defect below.
+
+### The defect that had shipped, twice
+
+The first minimal/2.8/equivalent ISO carried **photon-os-installer-2.9-4**
+while its spec, its patch and its cache key all said 2.8-7. The stage held
+both, the correct 2.8-7 built that day and a 2.9-4 left by a `poi=latest` build
+two days earlier, and tdnf picks the highest VERSION it can see.
+
+`purge_shadowing_rpms` searched the prefix `{pkg}-{ver}-` and compared RELEASE
+within an EQUAL version, so a higher version was invisible to it. This is the
+scar the matrix document already warns about twice - "a 2.9-3 installer reached
+an ISO built for 2.8" - recurring as 2.9-4, because the guard only ever covered
+half the comparison. The generalisation done earlier the same evening preserved
+the hole verbatim while rewriting everything around it.
+
+Comparison is now `rpmvercmp`, because ASCII is wrong in the direction that
+matters: `"2.10" < "2.9"` lexically, `>` as a version.
+
+**The lesson worth keeping:** four of the six defects found this session put a
+wrong artifact on media without any build failing. None was detectable from an
+exit code. Each was caught by reading the artifact - unpacking the canister,
+grepping the kernel build log, reading the installer off the ISO - which is
+what "do not trust, verify" has to mean in a pipeline this long.
+
 ### Bugs the verification found that review did not
 
 - `sync` tested `.git` with `is_dir()`. A linked worktree has `.git` as a
