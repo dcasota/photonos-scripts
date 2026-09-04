@@ -105,6 +105,42 @@ pub fn needs_console(mode: Mode) -> bool {
     matches!(mode, Mode::Interactive)
 }
 
+/// Does an SSH server answer at `ip`?
+///
+/// The fourth completion signal, and the only one that works for a row with a
+/// STATIC address. Such a guest takes no DHCP lease once installed, so the
+/// lease signal cannot fire for it: on n01-n04 the last lease stays
+/// `photon-installer` for the whole run. n01 was rescued by the tools probe
+/// after ~20 minutes and n02 was not rescued at all, timing out on an install
+/// that had in fact finished - the same false timeout the lease signal was
+/// added to end, on the rows it could not reach.
+///
+/// The row's reserved address is the discriminator. It sits BELOW the DHCP
+/// floor, so the pool never hands it out, and the installer live environment
+/// takes a pool lease rather than the static address - so nothing answers here
+/// until the installed system has configured its own network. A DHCP row never
+/// configures it at all, so this simply never fires there.
+///
+/// The banner is checked, not just the connection: a listener on port 22 that
+/// is not SSH is not a booted guest, and accepting a bare TCP handshake as
+/// proof of boot is how a detector starts lying again.
+fn ssh_answers(ip: &str, timeout: std::time::Duration) -> bool {
+    use std::io::Read;
+    let Ok(addr) = format!("{ip}:22").parse::<std::net::SocketAddr>() else { return false };
+    let Ok(mut sock) = std::net::TcpStream::connect_timeout(&addr, timeout) else { return false };
+    let _ = sock.set_read_timeout(Some(timeout));
+    let mut buf = [0u8; 64];
+    match sock.read(&mut buf) {
+        Ok(n) => is_ssh_banner(&buf[..n]),
+        Err(_) => false,
+    }
+}
+
+/// An SSH server announces itself before anything else, per RFC 4253.
+fn is_ssh_banner(b: &[u8]) -> bool {
+    b.starts_with(b"SSH-")
+}
+
 pub fn run(
     cfg: &Config,
     vmrow: &Vm,
@@ -220,6 +256,19 @@ pub fn run(
                 break;
             }
         }
+        //  (d) the row's reserved address answers SSH. Static rows take no
+        //      lease, so (c) cannot reach them; this is the signal that can.
+        if !vmrow.reserved_ip.is_empty()
+            && ssh_answers(&vmrow.reserved_ip, std::time::Duration::from_secs(2))
+        {
+            log(&format!(
+                "{} answers SSH at its reserved address {}: the installed system is up",
+                vmrow.name, vmrow.reserved_ip
+            ));
+            facts.guest_ip = vmrow.reserved_ip.clone();
+            facts.install_result = INSTALLED.into();
+            break;
+        }
         if serial::count(&text, "root=PARTUUID=") > 0 {
             facts.install_result = INSTALLED.into();
             break;
@@ -252,8 +301,14 @@ pub fn run(
                 })
                 .unwrap_or_else(|e| format!("lease file unreadable: {e}"));
             log(&format!(
-                "still waiting: serial size={size}, tools ip={}, last lease {leased}",
-                vmware::guest_ip(&cfg.vmrun, &vmx_win, false).unwrap_or_else(|| "none".into())
+                "still waiting: serial size={size}, tools ip={}, ssh at {} {}, last lease {leased}",
+                vmware::guest_ip(&cfg.vmrun, &vmx_win, false).unwrap_or_else(|| "none".into()),
+                vmrow.reserved_ip,
+                if ssh_answers(&vmrow.reserved_ip, std::time::Duration::from_secs(2)) {
+                    "answers"
+                } else {
+                    "silent"
+                },
             ));
         }
     }
@@ -278,6 +333,38 @@ pub fn run(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    /// A bare TCP handshake is not proof of a booted guest. Accepting one
+    /// would let any listener on port 22 - a forwarder, a scanner, a stale
+    /// tunnel - end the wait and report an install that never finished.
+    #[test]
+    fn only_a_real_ssh_banner_counts() {
+        assert!(is_ssh_banner(b"SSH-2.0-OpenSSH_9.6\r\n"));
+        assert!(is_ssh_banner(b"SSH-1.99-Something"));
+        assert!(!is_ssh_banner(b""));
+        assert!(!is_ssh_banner(b"HTTP/1.1 200 OK"));
+        assert!(!is_ssh_banner(b"220 ftp ready"));
+        // truncated to less than the prefix
+        assert!(!is_ssh_banner(b"SS"));
+    }
+
+    /// An unreachable address must answer false quickly rather than block the
+    /// wait loop. 192.0.2.0/24 is TEST-NET-1 and is guaranteed unroutable.
+    #[test]
+    fn an_unreachable_address_does_not_answer() {
+        let t = std::time::Instant::now();
+        assert!(!ssh_answers("192.0.2.1", std::time::Duration::from_millis(300)));
+        assert!(t.elapsed() < std::time::Duration::from_secs(5), "must not hang the loop");
+    }
+
+    /// A DHCP row still has a reserved address recorded, and nothing is
+    /// listening on it. The probe must be inert there, not a false positive.
+    #[test]
+    fn an_empty_address_is_never_probed() {
+        assert!(!ssh_answers("", std::time::Duration::from_millis(100)));
+    }
+
     use super::*;
 
     #[test]
