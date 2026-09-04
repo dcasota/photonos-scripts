@@ -1032,6 +1032,23 @@ pub fn purge(c: &mut Ctx) -> Result<(), String> {
         // Name the phase-A kernels explicitly. A dry run that says only
         // "would purge stale RPMs" hides the single most destructive thing
         // this phase does, and the operator cannot check it before it runs.
+        // --compose-only does not purge the kernels at all: it PROVES the
+        // ones in the stage are phase B's and keeps them. Saying otherwise
+        // here described the most destructive thing this phase can do to a
+        // run that will not do it, and a reader checking the plan before
+        // spending two hours would have concluded the flag was broken.
+        if c.spec.compose_only {
+            c.say(
+                "  would keep the kernels already in the stage and PROVE they are phase B's, rather than purging and rebuilding them",
+            );
+            if let Some(nevr) = c.spec.canister_nevr.as_deref() {
+                c.say(&format!(
+                    "  would require every linux* RPM to postdate linux-fips-canister-{nevr}, and refuse the build if any does not"
+                ));
+            }
+            c.say("  would purge stale sandboxes, SRPMs, logs and shadowing RPMs");
+            return Ok(());
+        }
         if let (CanisterMode::EquivalentB, Some(nevr)) =
             (c.spec.canister, c.spec.canister_nevr.as_deref())
         {
@@ -2138,6 +2155,46 @@ mod tests {
         for want in ["[sync]", "[reset-specs]", "[preflight]", "[purge]", "[make]"] {
             assert!(joined.contains(want), "missing {want} in:\n{joined}");
         }
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// A dry run must describe the run that would actually happen.
+    ///
+    /// With --compose-only the purge keeps the kernels and proves them; the
+    /// dry run described the opposite, listing twelve phase-A deletions that
+    /// the real path would never make. Someone checking the plan before
+    /// spending two hours would have read it as the flag not working - the
+    /// exact failure a dry run exists to prevent.
+    #[test]
+    fn a_compose_only_dry_run_promises_no_kernel_deletions() {
+        let tmp = std::env::temp_dir().join(format!("shk-dryco-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+        let mut s = spec_at(&tmp);
+        s.canister = CanisterMode::EquivalentB;
+        s.canister_nevr = Some("6.12.107-4.ph5".into());
+
+        s.compose_only = false;
+        let mut purging = Vec::new();
+        execute(&s, true, &mut |l| purging.push(l.to_string())).unwrap();
+        let purging = purging.join("\n");
+        assert!(
+            purging.contains("phase-A kernel RPM(s)"),
+            "without the flag the dry run must still name the purge:\n{purging}"
+        );
+
+        s.compose_only = true;
+        let mut composing = Vec::new();
+        execute(&s, true, &mut |l| composing.push(l.to_string())).unwrap();
+        let composing = composing.join("\n");
+        assert!(
+            !composing.contains("would remove"),
+            "compose-only removes no kernels, so the dry run must not say it does:\n{composing}"
+        );
+        assert!(
+            composing.contains("PROVE they are phase B's"),
+            "it must say what it does instead:\n{composing}"
+        );
         let _ = fs::remove_dir_all(&tmp);
     }
 
