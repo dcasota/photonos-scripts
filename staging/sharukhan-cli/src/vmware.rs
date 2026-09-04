@@ -49,9 +49,26 @@ pub fn is_running(vmrun: &Path, vm: &str) -> bool {
 /// "Error: Unknown error" and does not even create a vmware.log, while the
 /// identical VMX starts fine with "gui". Headless start needs VMware
 /// Workstation Server / shared-VM support, which is not enabled here.
-pub fn start(vmrun: &Path, vmx_win: &str) -> i32 {
+pub fn start_how(gui: bool) -> &'static str {
+    if gui { "gui" } else { "nogui" }
+}
+
+pub fn start(vmrun: &Path, vmx_win: &str, gui: bool) -> i32 {
+    // `gui` needs an interactive Windows desktop session to attach to. Without
+    // one - a detached WSL shell, a disconnected RDP session, the machine
+    // locked - vmrun exits 255 and the VM never enters the inventory, which
+    // the caller can only report as "never appeared ... check for a modal
+    // dialog". There is no dialog; there is no session.
+    //
+    // A mode=ks row is driven entirely by a kickstart delivered over
+    // guestinfo and says so itself: "no console interaction is needed". It has
+    // nothing to show anyone, so it starts headless and runs on a host with
+    // nobody logged in. A mode=ui row genuinely needs the console - the STIG
+    // menu is reachable only from the curses configurator - so it keeps the
+    // GUI and fails loudly when there is no session to give it.
+    let how = start_how(gui);
     Command::new(vmrun)
-        .args(["-T", "ws", "start", vmx_win, "gui"])
+        .args(["-T", "ws", "start", vmx_win, how])
         .output()
         .map(|o| o.status.code().unwrap_or(-1))
         .unwrap_or(-1)
@@ -66,8 +83,9 @@ pub fn start_verified(
     vmx_win: &str,
     vm: &str,
     timeout_secs: u64,
+    gui: bool,
 ) -> Result<(u64, i32), String> {
-    let rc = start(vmrun, vmx_win);
+    let rc = start(vmrun, vmx_win, gui);
     let mut waited = 0;
     while waited < timeout_secs {
         if is_running(vmrun, vm) {

@@ -89,6 +89,22 @@ pub struct Opts {
     pub second_nic: bool,
 }
 
+/// Does this row need a console, or can it run on a host with nobody logged in?
+///
+/// Only the operator-driven rows do. The STIG menu is reachable only from the
+/// curses configurator, so a mode=ui row must have a visible console; a
+/// mode=ks row is driven entirely by a kickstart over guestinfo and says of
+/// itself that no console interaction is needed.
+///
+/// This is a policy, not a detail: 27 of the 43 rows are mode=ks, and starting
+/// them with `gui` makes every one of them depend on somebody being logged
+/// into Windows. On a host without a session vmrun exits 255 and the row fails
+/// as "never appeared in the inventory - check for a modal dialog", naming a
+/// dialog that does not exist.
+pub fn needs_console(mode: Mode) -> bool {
+    matches!(mode, Mode::Interactive)
+}
+
 pub fn run(
     cfg: &Config,
     vmrow: &Vm,
@@ -114,11 +130,14 @@ pub fn run(
     // Truncate: the growth of this file from here is the liveness instrument.
     let _ = fs::write(&vmrow.serial, b"");
 
+    // Only an Interactive row needs a console; an Auto row starts headless so
+    // it does not depend on somebody being logged into Windows.
     let (waited, rc) = vmware::start_verified(
         &cfg.vmrun,
         &vmx_win,
         &vmrow.name,
         cfg.start_timeout_sec,
+        needs_console(o.mode),
     )
     .map_err(|e| {
         if o.second_nic {
@@ -254,5 +273,19 @@ mod tests {
         assert!(f.guest_ip.is_empty());
         assert!(read_facts(Path::new("/no/such/vm")).is_none());
         fs::remove_dir_all(&d).ok();
+    }
+}
+
+#[cfg(test)]
+mod start_mode_tests {
+    use super::*;
+
+    /// 27 unattended rows must not require a Windows desktop session.
+    #[test]
+    fn only_the_operator_driven_rows_need_a_console() {
+        assert!(needs_console(Mode::Interactive), "mode=ui drives the curses configurator");
+        assert!(!needs_console(Mode::Auto), "mode=ks is kickstart over guestinfo");
+        assert_eq!(crate::vmware::start_how(needs_console(Mode::Auto)), "nogui");
+        assert_eq!(crate::vmware::start_how(needs_console(Mode::Interactive)), "gui");
     }
 }
