@@ -1075,6 +1075,30 @@ mod tests {
     /// was Info on every row, so an `equivalent` build that silently linked the
     /// certified 6.12.60-18.ph5 produced the same evidence as one that worked -
     /// a twelve-hour duplicate of k09 that nothing in the harness could name.
+    /// An equivalent row must expect the nevr the EMBEDDED patch produces.
+    ///
+    /// c03 failed as expected=6.12.107-3.ph5 against actual=6.12.107-4.ph5:
+    /// verify read the variant patch alone, while the ISO was built with the
+    /// embedded canister patch on top, which bumps linux 3 -> 4. The canister
+    /// was correctly linked; only the expectation was wrong. This pins the
+    /// distinction the two helpers exist to draw.
+    #[test]
+    fn the_equivalent_expectation_is_the_embedded_nevr_not_the_variant_one() {
+        // what the build produced, and what the guest therefore reports
+        let built = "6.12.107-4.ph5";
+        // what reading the variant patch alone would have said
+        let variant_only = "6.12.107-3.ph5";
+        assert_ne!(built, variant_only, "the embedded patch is what bumps Release");
+
+        let want = canister_expectation("equivalent", Ok(built.into()));
+        assert_eq!(want, CanisterExpect::BuiltFrom(built.into()));
+
+        // and the wrong one would reject the correct guest answer
+        let wrong = canister_expectation("equivalent", Ok(variant_only.into()));
+        assert_eq!(wrong, CanisterExpect::BuiltFrom(variant_only.into()));
+        assert_ne!(wrong, want, "these must not be interchangeable");
+    }
+
     #[test]
     fn an_equivalent_row_that_booted_the_certified_canister_fails() {
         let want = canister_expectation("equivalent", Ok("6.12.103-14.ph5".into()));

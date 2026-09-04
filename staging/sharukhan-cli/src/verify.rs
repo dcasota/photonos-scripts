@@ -69,7 +69,22 @@ pub fn run(
     // to pristine between builds, so a detection taken from the tree answers
     // for a kernel nobody built. That is the same mistake `detect_for` exists
     // to prevent, and it reached here too.
-    let kernel = crate::build::kernel_nevr(cfg, &cfg.variant_patches.join(format!("poi-{}.patch", p.poi)));
+    //
+    // An `equivalent` row must ask for the nevr the EMBEDDED patch produces.
+    // That patch is applied on top of the variant patch and bumps Release
+    // again (linux 3 -> 4), so `kernel_nevr` - which deliberately does not
+    // read it - answers for a kernel this row never booted. The build path
+    // already uses `equivalent_kernel_nevr` for exactly this reason, and its
+    // own doc comment predicts the consequence of getting it wrong here:
+    // "the guest-side assertion would then correctly fail". It did: c03 read
+    // expected=6.12.107-3.ph5 against an actual of 6.12.107-4.ph5, marking a
+    // correctly linked canister as a failure.
+    let patch = cfg.variant_patches.join(format!("poi-{}.patch", p.poi));
+    let kernel = if p.canister == "equivalent" {
+        crate::build::equivalent_kernel_nevr(cfg, &patch)
+    } else {
+        crate::build::kernel_nevr(cfg, &patch)
+    };
     let origin = crate::canister::detect_for(
         cfg,
         std::env::consts::ARCH,
