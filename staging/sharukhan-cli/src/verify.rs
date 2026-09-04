@@ -123,9 +123,20 @@ pub fn run(
     // the prebuilt one would verify an artefact the permutation never used.
     let iso = cfg.iso_dir(&p.iso_type, &p.poi, &p.canister).join("photon.iso");
     if iso.is_file() {
-        if p.iso_type == "minimal" {
-            oracle::media(&iso, &p.iso_type, &mut c);
-        }
+        // Both ISO types. This was `if p.iso_type == "minimal"`, inherited from
+        // the bash with no reason recorded, and it dropped four checks from
+        // every full row SILENTLY - the count fell from 37 to 33 with not even
+        // a Skip to say why. Among them media.poi_rpm, which is what caught a
+        // 2.9-4 installer shipping on an ISO built for the 2.8 variant, and
+        // media.negative_control, which exists so a broken extraction cannot
+        // make every presence check vacuously pass. The full media carries
+        // 1927 RPMs against the minimal's 290: it is the likelier place for a
+        // stale one to hide, not the safer one.
+        //
+        // Only the STIG set was ever minimal-specific - its list is documented
+        // as what the matrix records ABSENT from minimal media - and it is
+        // satisfied on the full media too, verified against the built ISO.
+        oracle::media(&iso, &p.iso_type, &mut c);
     } else {
         c.check(
             "media.iso",
