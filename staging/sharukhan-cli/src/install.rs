@@ -8,7 +8,7 @@
 
 use crate::config::Config;
 use crate::vm::Vm;
-use crate::{serial, vm, vmware, winpath};
+use crate::{leases, serial, vm, vmware, winpath};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -177,6 +177,10 @@ pub fn run(
         o.timeout_sec
     ));
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(o.timeout_sec);
+    // Bound for the lease signal. Taken BEFORE the guest can lease anything,
+    // so a lease left in the file by a previous run of this row - same MAC,
+    // same hostname - can never be read as this install finishing.
+    let started_at = leases::now_utc();
     let mut last_size = 0u64;
     let mut stalled = 0u32;
     let mut facts = Facts { install_result: TIMEOUT.into(), guest_ip: String::new() };
@@ -198,6 +202,24 @@ pub fn run(
         //  (b) the guest answers as a booted machine. open-vm-tools is in the
         //      minimal package set, so a reachable IP means the install
         //      finished and the target came up on its own.
+        //  (c) the host's DHCP server hands this row's MAC a lease under the
+        //      VM's own hostname. The live installer leases under
+        //      `photon-installer`, so the two boot sources are distinguishable,
+        //      and the installed system leases within seconds of the kernel
+        //      coming up. Checked FIRST because it is a local file read, and
+        //      because (a) cannot fire on a serial-silent target while (b) has
+        //      taken anywhere from 11 minutes to longer than this timeout.
+        if let Ok(text) = fs::read_to_string(&cfg.dhcp_leases) {
+            if let Some(ip) = leases::installed_ip(&text, &vmrow.mac, &vmrow.name, &started_at) {
+                log(&format!(
+                    "{} leased {ip} under its own hostname: the installed system is up",
+                    vmrow.name
+                ));
+                facts.guest_ip = ip;
+                facts.install_result = INSTALLED.into();
+                break;
+            }
+        }
         if serial::count(&text, "root=PARTUUID=") > 0 {
             facts.install_result = INSTALLED.into();
             break;
@@ -215,7 +237,24 @@ pub fn run(
         // A long quiet stretch is not proof of a stall - no growth is not by
         // itself a hang - so this only reports, never aborts.
         if stalled % 20 == 19 {
-            log(&format!("serial log quiet for ~5min (size={size}); still waiting"));
+            // Say what each signal reports, not just that nothing happened.
+            // The 09:13Z c03 timeout printed six identical quiet lines over 40
+            // minutes while the guest was up and leased the whole time, and
+            // the log gave a reader nothing to tell those two cases apart.
+            let leased = fs::read_to_string(&cfg.dhcp_leases)
+                .map(|t| {
+                    leases::parse(&t)
+                        .into_iter()
+                        .filter(|l| l.mac.eq_ignore_ascii_case(&vmrow.mac))
+                        .map(|l| format!("{}@{} {}", l.hostname, l.starts, l.ip))
+                        .next_back()
+                        .unwrap_or_else(|| "no lease for this MAC".into())
+                })
+                .unwrap_or_else(|e| format!("lease file unreadable: {e}"));
+            log(&format!(
+                "still waiting: serial size={size}, tools ip={}, last lease {leased}",
+                vmware::guest_ip(&cfg.vmrun, &vmx_win, false).unwrap_or_else(|| "none".into())
+            ));
         }
     }
 

@@ -23,6 +23,9 @@ pub struct Config {
     /// all: an ISO at /root/... becomes the nonsense VMX value "\root\..." and
     /// vmrun fails with only "Error: The operation was canceled".
     pub vm_root: PathBuf,
+    /// The host DHCP server's lease file. Read-only, and the only signal that
+    /// sees an install finish as it happens - see `leases`.
+    pub dhcp_leases: PathBuf,
     pub iso_cache: PathBuf,
     pub results_dir: PathBuf,
     pub build_log_dir: PathBuf,
@@ -190,6 +193,10 @@ impl Config {
             ),
 
             vm_root: var_or("MC_VM_ROOT_WSL", "/mnt/c/photon-mc/vm"),
+            dhcp_leases: var_or(
+                "MC_DHCP_LEASES",
+                "/mnt/c/ProgramData/VMware/vmnetdhcp.leases",
+            ),
             iso_cache: var_or("MC_ISO_CACHE", "/mnt/c/photon-mc/iso-cache"),
             results_dir: var_or("MC_RESULTS_DIR", "/root/photon-mc/results"),
             build_log_dir: var_or("MC_BUILD_LOG_DIR", "/root/photon-mc/build-logs"),

@@ -23,6 +23,7 @@ mod disk;
 mod identity;
 mod kickstart;
 mod job;
+mod leases;
 mod matrix;
 mod net;
 mod media;
