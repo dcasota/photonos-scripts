@@ -290,6 +290,25 @@ are 871 lines and is the most valuable thing in them.
 reachable for one release cycle. Retire the five scripts once matrix rows have
 passed on the cascade for each release.
 
+> **Done 2026-09-04, and not as planned.** `build-iso` routes `equivalent`
+> through the cascade; `prebuilt` still runs `runPh5_normal.sh`. No
+> `--legacy-script` flag was added - the split is by canister mode, because
+> that is where the difference actually lives, and a flag would have implied
+> the two paths were interchangeable.
+>
+> They were not. The switch was forced rather than chosen: `resolve` computed
+> the kernel NEVR with `equivalent_kernel_nevr`, which reads the embedded
+> canister-equivalent patch, while only the cascade APPLIES that patch. The
+> legacy path expected `linux` at Release 4, would have built Release 3, and
+> purged on a NEVR its own build could not produce - with no gate catching it
+> in the `LinkLocalEquivalent` branch. Parity (P3) could not have been reached
+> for `equivalent` at all; the two paths were different builds under one name.
+>
+> `prebuilt` has nothing to drift on: it applies no embedded patch and needs no
+> inter-phase purge. Retiring `runPh5_normal.sh` still waits on the full
+> prebuilt rows, which are currently blocked on media that cannot be rebuilt
+> while the canister pin is unpublished.
+
 ## What this does not do
 
 It does not reimplement `build.py` or `make`. The Photon build system is the

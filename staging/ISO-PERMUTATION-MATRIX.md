@@ -125,6 +125,60 @@ formatting for btrfs, grub install on btrfs, the STIG ansible playbook run) and,
 for rows 13-16, the fact that POI master has never been packaged as an RPM or
 placed on a Photon ISO at all.
 
+### 2a-2. Full autonomous sweep, 2026-09-04
+
+The whole autonomous set re-run against the current tree (kernel 6.12.107,
+`photon-os-installer-2.8-7`), after the install detector was fixed. **18 of 26
+admissible rows ran; 17 clean, 1 failing exactly as documented.**
+
+| rows | result |
+|---|---|
+| k01–k08 | pass (17–19 checks each, 0 fail) |
+| s01, s02, s03 | pass |
+| n01, n02, n03, n04 | pass |
+| n05 | **1 FAIL — `guest.ssh unreachable`, the documented environmental failure** |
+| c01 (full/2.8/equivalent) | pass, 37 checks, 17 pass |
+| c03 (minimal/2.8/equivalent) | pass, 37 checks, 18 pass |
+
+n05 is `v4-dhcp-vlan100` and its matrix expectation is `fails`. The cause is in
+`net.rs:216`: `_convert_legacy_config` forces `dhcp4: True` on a legacy VLAN's
+tagged interface, and Workstation 17 has no VLAN-aware switch to answer a
+tagged frame, so `systemd-networkd-wait-online` never reaches `configured`.
+**Environmental, not a POI defect** — unlike s02, which is a real one. n04
+(`v4-static-vlan100`) passes because only the DHCP-on-tagged case is affected.
+
+**c03 is the mission row.** Under `fips=1` the running kernel attests
+`canister_based_on = 6.12.107-4.ph5` — the locally built equivalent, not the
+published `6.12.60-18.ph5`. c01 shows the full package set installs cleanly
+from the same tree.
+
+#### Not run, and why
+
+| rows | reason |
+|---|---|
+| k09–k16 (8) | **blocked.** Cached full-prebuilt media carry `2.8-6` and `2.9-3` against the expected `2.8-7`/`2.9-4`. Refreshing them needs a prebuilt rebuild at `canister_usage=1`, which cannot resolve the unpublished `6.12.60-18.2.ph5` pin. Not fixable by spending build time. Their entries in `report` are from 2026-09-01. |
+| c02 | `fips0-aarch64` needs aarch64 hardware; this host is x86_64. |
+| p01–p16 (16) | mode = ui. The STIG menu is reachable only from the curses configurator, so these cannot be automated at all. |
+
+#### Two detector defects found by this sweep
+
+Both produced FAILs on installs that had in fact succeeded, and neither was a
+POI defect:
+
+1. **`install.booted_from_disk` on c03.** The guest booted at 09:15:19 and
+   answered 20 SSH checks; the detector waited 38 more minutes and declared it
+   never happened. Of the two signals then in place, one cannot fire on this
+   host at all (no `console=ttyS0` on the installed system) and the other,
+   `vmrun getGuestIPAddress`, took 11 minutes on one run of the same row and
+   longer than the timeout on the next.
+2. **The same, on n02.** The DHCP-lease signal added for (1) cannot see a
+   statically addressed guest, which takes no lease. n01 survived only because
+   the flaky probe happened to answer.
+
+Both are fixed, and the harness now reports what each signal says rather than
+that nothing has happened. See the README section *When an install is
+finished*.
+
 ### 2a. Measured results — kickstart rows, 2026-09-01
 
 Everything above was written before the matrix was executed. It has now been run:

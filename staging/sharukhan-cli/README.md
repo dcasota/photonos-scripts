@@ -624,6 +624,47 @@ Only the third costs the extra ~90 minutes. `sharukhan canister` reports the
 same decision the build will take - it asks the same question, so the two
 cannot disagree.
 
+### One build, not two
+
+`build-iso` resolves a matrix tuple to an ISO; `build` runs the cascade
+directly. They used to be two implementations of the same build, and they
+drifted - the visible half being the phase-B purge, which the cascade taught
+about per-flavour NEVRs while the legacy path kept a rule keyed only on the
+canister's. Anything through `build-iso`, or `run --allow-build`, could still
+ship a `linux-esx` that never linked the canister, on the flavour these rows
+boot.
+
+Sharing the predicate would not have fixed it:
+
+- **Ordering.** The cascade purges AFTER the injections, against patched specs.
+  At the equivalent point in the script path the tree is still pristine, where
+  both flavours read `Release: 1`, so a per-flavour purge there matches nothing.
+- **The embedded patch.** `fix/canister-equivalent-mode` is test-only, compiled
+  into `src/embedded/` and applied as an injection, so only the cascade applies
+  it - while `resolve` called `equivalent_kernel_nevr`, which *reads* it, to
+  pick the NEVR. The legacy path expected `linux` at Release 4, would have
+  built Release 3, and purged on a NEVR its own build could not produce.
+
+So `equivalent` runs the cascade. `prebuilt` still runs `runPh5_normal.sh`: it
+applies no embedded patch and needs no inter-phase purge, so it has nothing to
+drift on. The delete rule lives once in `build::doomed_before_phase_b`, and the
+spec assembly once in `buildmode::spec_for`.
+
+### `--compose-only`
+
+Rebuilding an image must not cost a kernel rebuild. The kernels in the stage
+are already linked against the canister and verified, and `purge` would delete
+them for the sake of a recompose. `--compose-only` keeps them - but the skip is
+earned, not asserted: every `linux*` RPM must be shown to POSTDATE the canister
+(phase A builds the canister as a subpackage of the kernel, so a phase-A kernel
+shares its BUILDTIME), and the build is refused on any path that cannot be
+proven.
+
+It is not a uniform saving. A minimal recompose took **9m38s** against ~2h45m;
+a full one took **154m**, because the full package set is 264 packages against
+the minimal's 141 and most of the difference had never been built. What is
+saved is the kernel rebuild, not the package set.
+
 ## Typical session
 
 ```
@@ -779,6 +820,55 @@ carries a second NIC on the same NAT segment doing plain DHCPv4, purely so ssh
 has a path in. **No VM on this host has ever had two NICs.** If `n03` refuses to
 power on, treat it as unrunnable here on the `c02` precedent — `install.rs`
 says exactly that in the failure text — rather than as a POI defect.
+
+### When an install is finished, and how that is known
+
+The hardest question this harness asks is *has the install completed*. There
+are four signals, and no single one of them is reliable on this host:
+
+| | signal | fires for | why it is not enough alone |
+|---|---|---|---|
+| a | `root=PARTUUID=` in the serial log | rows whose installed system has a serial console | the installed cmdline carries no `console=ttyS0`, so the log stays 0 bytes and this **never fires here** |
+| b | `vmrun getGuestIPAddress` | any row with open-vm-tools | latency is wild: 11 minutes on one c03 run, longer than the whole 2400s timeout on the next |
+| c | the host's DHCP lease file | DHCP rows | a statically addressed guest takes no lease |
+| d | SSH on the row's reserved address | static rows | a DHCP row never configures that address |
+
+Together (c) and (d) cover every runnable row; (b) remains the only signal for
+`v6-static-untag`, whose static address is IPv6 while the reserved address is
+IPv4.
+
+**(c) distinguishes the boot source by hostname.** The installer live
+environment and the installed system share a MAC, so a lease alone proves
+nothing:
+
+```
+09:13:54  192.168.225.186  host=photon-installer   <- live installer
+09:15:26  192.168.225.192  host=mc-c03             <- installed system
+```
+
+Every lookup is bounded below by a timestamp taken before the guest can lease
+anything. Leases from PREVIOUS runs of the same row persist under the same MAC
+and hostname, so matching on those alone would report an install finished
+before the guest powered on - a false pass, and far worse than the false
+timeout it replaces.
+
+**(d) checks the SSH banner, not the connection.** The reserved address sits
+below the DHCP floor so the pool never hands it out, and the installer live
+environment takes a pool lease instead - so nothing answers there until the
+installed system has configured its own network. Accepting a bare TCP
+handshake as proof of boot is how a detector starts lying again.
+
+The quiet-log line reports all four, because six identical `serial log quiet`
+lines over 40 minutes tell a reader nothing about which signal is failing:
+
+```
+still waiting: serial size=0, tools ip=none, ssh at 192.168.225.79 silent,
+               last lease photon-installer@2026/09/04 16:17:48 192.168.225.155
+```
+
+That line is what found (d): every quiet report on the static rows named
+`photon-installer` as the last lease, which is the signal saying it cannot see
+this row.
 
 ## Things learned the hard way
 
