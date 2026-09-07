@@ -41,7 +41,7 @@
  * monolith with its own static versions of common types/functions; including
  * habv4_common.h causes static-vs-extern conflicts on dozens of symbols).
  * MUST be kept in sync with habv4_common.h:32 manually. */
-#define VERSION "1.9.84"
+#define VERSION "1.9.85"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */
@@ -3134,6 +3134,41 @@ static int create_secure_boot_iso(void) {
                 "else:\n"
                 "    print('v1.9.83 No-MOK keys monkey-patch already present (idempotent)')\n"
                 "\n"
+                "# SPAGAT BUG-N36 (v1.9.85 - whitelist 'ansible' + 'disks' in\n"
+                "# Installer.known_keys). The installer.py bundled in the Photon 5.0\n"
+                "# initrd is an old 2.2 snapshot whose known_keys set predates the\n"
+                "# ansible[] postinstall plugin (added upstream in 2.5) and the\n"
+                "# multi-disk 'disks' schema (added upstream in 2.7). Both keys are\n"
+                "# already used by SpagatLibrarian-Appliance/tests/iso-test/\n"
+                "# kickstart/test-kickstart.json. Without this monkey-patch, the\n"
+                "# validator raises 'Unknown install_config keys: ansible, disks'\n"
+                "# at installer.py:162 and the install aborts to a bash shell.\n"
+                "# Same anchor-free, version-resilient, idempotent idiom as v1.9.83.\n"
+                "monkey_patch_bug_n36 = (\n"
+                "    '\\n# Appended by HABv4 ISOCreator v1.9.85 - SPAGAT BUG-N36 whitelist ansible + disks\\n'\n"
+                "    '# (photon-installer 2.2 predates these upstream schema additions;\\n'\n"
+                "    '#  SpagatLibrarian-Appliance kickstart uses both.)\\n'\n"
+                "    'try:\\n'\n"
+                "    '    _bug_n36_keys = {\"ansible\", \"disks\"}\\n'\n"
+                "    '    if isinstance(Installer.known_keys, set):\\n'\n"
+                "    '        Installer.known_keys |= _bug_n36_keys\\n'\n"
+                "    '    elif isinstance(Installer.known_keys, (list, tuple)):\\n'\n"
+                "    '        _new = list(Installer.known_keys)\\n'\n"
+                "    '        for _k in _bug_n36_keys:\\n'\n"
+                "    '            if _k not in _new:\\n'\n"
+                "    '                _new.append(_k)\\n'\n"
+                "    '        Installer.known_keys = _new\\n'\n"
+                "    '    elif isinstance(Installer.known_keys, frozenset):\\n'\n"
+                "    '        Installer.known_keys = Installer.known_keys | _bug_n36_keys\\n'\n"
+                "    'except (NameError, AttributeError):\\n'\n"
+                "    '    pass\\n'\n"
+                ")\n"
+                "if 'HABv4 ISOCreator v1.9.85' not in content:\n"
+                "    content = content + monkey_patch_bug_n36\n"
+                "    print('v1.9.85 BUG-N36 ansible+disks monkey-patch appended to installer.py')\n"
+                "else:\n"
+                "    print('v1.9.85 BUG-N36 ansible+disks monkey-patch already present (idempotent)')\n"
+                "\n"
                 "# v1.9.83 D16 (#205 — No-MOK install path runtime hookup, §2.3a):\n"
                 "#   Extend Installer.__init__ signature with two new optional\n"
                 "#   parameters (repo_paths_mok, repo_paths_nomok) that default\n"
@@ -3278,16 +3313,34 @@ static int create_secure_boot_iso(void) {
                 "if content == before1:\n"
                 "    print('WARN v1.9.83 §2.4: repos= cmdline anchor not found - new keys not parsed')\n"
                 "\n"
-                "# Patch 2: seed repo_paths_mok / repo_paths_nomok defaults from\n"
-                "# media_mount_path (both point at /RPMS until M24b lands the\n"
-                "# audit-clean /RPMS_NOMOK/ mirror).\n"
+                "# Patch 2: seed repo_paths_mok / repo_paths_nomok defaults to\n"
+                "# None so Patch 3's Installer() call has these locals bound.\n"
+                "# Anchor: the existing `        repo_paths = options.repo_paths`\n"
+                "# initializer at the top of IsoInstaller.__init__ (verified\n"
+                "# unique across upstream photon-os-installer v2.2 + master\n"
+                "# 2026-07-06; same anchor phase6 uses at M21.6.f1.f16). The\n"
+                "# earlier r'(repo_paths\\\\s*=\\\\s*None\\\\s*\\\\n)' regex silently\n"
+                "# no-opped because upstream never bare-initializes to None,\n"
+                "# causing Patch 3 to ship a NameError-guaranteed ISO (BUG in\n"
+                "# iter35-ks.iso: repo_paths_mok referenced but never assigned).\n"
                 "before2 = content\n"
                 "content = re.sub(\n"
-                "    r'(repo_paths\\s*=\\s*None\\s*\\n)',\n"
-                "    r'\\1        repo_paths_mok = None\\n        repo_paths_nomok = None\\n',\n"
+                "    r'(        repo_paths = options\\.repo_paths\\n)',\n"
+                "    r'\\1'\n"
+                "    '        # SPAGAT v1.9.83 §2.4 / M21.6.f1.f16: initialize\\n'\n"
+                "    '        # repo_paths_mok / repo_paths_nomok to None so the\\n'\n"
+                "    '        # Installer(...) call at the bottom of __init__ does\\n'\n"
+                "    '        # not fire a NameError (Installer.__init__ accepts\\n'\n"
+                "    '        # both as None-default kwargs already).\\n'\n"
+                "    '        repo_paths_mok = None\\n'\n"
+                "    '        repo_paths_nomok = None\\n',\n"
                 "    content, count=1)\n"
                 "if content == before2:\n"
-                "    print('WARN v1.9.83 §2.4: repo_paths=None init anchor not found')\n"
+                "    # Hard-fail: if Patch 3 injects the repo_paths_mok kwargs\n"
+                "    # but we could NOT seed the locals here, the resulting ISO\n"
+                "    # NameErrors at first boot. Refuse to ship a known-broken ISO.\n"
+                "    sys.stderr.write('FATAL v1.9.83 §2.4 Patch 2: anchor `        repo_paths = options.repo_paths` not found in ' + sys.argv[1] + '. Without this seed the Installer(...) call in Patch 3 fires NameError on repo_paths_mok. Refusing to ship a broken ISO.\\n')\n"
+                "    sys.exit(4)\n"
                 "\n"
                 "# Patch 3: thread new params through the Installer(...) constructor.\n"
                 "before3 = content\n"
@@ -3300,7 +3353,7 @@ static int create_secure_boot_iso(void) {
                 "\n"
                 "with open(sys.argv[1], 'w') as f:\n"
                 "    f.write(content)\n"
-                "print('isoInstaller.py patched v1.9.83: repos_mok= / repos_nomok= cmdline + Installer threading')\n"
+                "print('isoInstaller.py patched v1.9.83: repos_mok= / repos_nomok= cmdline + Installer threading + repo_paths_mok/nomok=None seed (Patch 2 fixed for upstream layout)')\n"
             );
             fclose(pf);
             snprintf(cmd, sizeof(cmd),
@@ -4341,11 +4394,77 @@ static int create_secure_boot_iso(void) {
          * IS shipped by grub2-theme and covers Unicode glyphs gfxterm needs.
          * gfxterm falls back to ascii.pf2 (loaded just before) for any glyph
          * unicode.pf2 lacks. */
-        snprintf(cmd, sizeof(cmd),
-            "sed -i '/^loadfont ascii$/a loadfont ${BOOT_DIR}/grub2/fonts/unicode.pf2' '%s'",
-            grub_setup_script);
-        run_cmd(cmd);
-        log_info("v1.9.68 D1: injected `loadfont unicode.pf2` after `loadfont ascii` (was phantom dejavu_10.pf2)");
+        /* v1.9.84 BUG-N10-hardening (SPAGAT task #619, 2026-07-15):
+         *   Two divergent mk-setup-grub.sh variants exist across Photon 5
+         *   subrels and image-builder configs:
+         *
+         *     installer variant (photon_installer/mk-setup-grub.sh):
+         *       BOOT_DIR="$(echo "$4" | sed 's/\/$//')"   # trailing / stripped
+         *       set theme=${BOOT_DIR}/grub2/themes/photon/theme.txt
+         *
+         *     rpi image-builder variant (poi/configs/rpi/mk-setup-grub.sh):
+         *       BOOT_DIRECTORY=$4                          # trailing / preserved
+         *       set theme=${BOOT_DIRECTORY}grub2/themes/photon/theme.txt
+         *
+         *   mk-setup-grub.sh runs under `set -o nounset`, so referencing
+         *   the WRONG variable name in an injected line CRASHES first-boot
+         *   with "line NN: BOOT_DIRECTORY: unbound variable" — the
+         *   original BUG-N10 symptom (SPAGAT task #618). The previous fix
+         *   hardcoded ${BOOT_DIRECTORY} which matches only the rpi
+         *   variant; every future Photon 5 subrel bump that ships the
+         *   BOOT_DIR-based installer script would silently re-break
+         *   first-boot.
+         *
+         *   Fix: grep the actual target mk-setup-grub.sh for the variable
+         *   it defines and pick the matching sed replacement (accounting
+         *   for the leading-slash convention that differs between
+         *   variants). If neither variable is detected the injection is
+         *   SKIPPED with a WARN — better `?` glyphs in the themed menu
+         *   than a boot-time crash. */
+        {
+            char detect_cmd[1024];
+            int have_boot_dir = 0;
+            int have_boot_directory = 0;
+
+            snprintf(detect_cmd, sizeof(detect_cmd),
+                     "grep -qE '^BOOT_DIR=' '%s'", grub_setup_script);
+            have_boot_dir = (run_cmd(detect_cmd) == 0);
+
+            snprintf(detect_cmd, sizeof(detect_cmd),
+                     "grep -qE '^BOOT_DIRECTORY=' '%s'", grub_setup_script);
+            have_boot_directory = (run_cmd(detect_cmd) == 0);
+
+            const char *loadfont_line = NULL;
+            const char *detected_variant = NULL;
+            if (have_boot_dir && !have_boot_directory) {
+                /* installer variant: BOOT_DIR strips trailing /
+                 * -> path needs leading / between var and rest */
+                loadfont_line = "loadfont ${BOOT_DIR}/grub2/fonts/unicode.pf2";
+                detected_variant = "BOOT_DIR";
+            } else if (have_boot_directory && !have_boot_dir) {
+                /* rpi variant: BOOT_DIRECTORY preserves trailing /
+                 * -> path must NOT insert a leading / (would double-slash) */
+                loadfont_line = "loadfont ${BOOT_DIRECTORY}grub2/fonts/unicode.pf2";
+                detected_variant = "BOOT_DIRECTORY";
+            } else if (have_boot_dir && have_boot_directory) {
+                /* Both defined (hypothetical merged variant) -- prefer
+                 * BOOT_DIR because its trailing-/-strip is explicit. */
+                loadfont_line = "loadfont ${BOOT_DIR}/grub2/fonts/unicode.pf2";
+                detected_variant = "BOOT_DIR (both defined; using trailing-slash-strip variant)";
+                log_warn("v1.9.84 BUG-N10-hardening: mk-setup-grub.sh defines BOTH BOOT_DIR and BOOT_DIRECTORY -- using BOOT_DIR");
+            } else {
+                log_warn("v1.9.84 BUG-N10-hardening: mk-setup-grub.sh defines NEITHER BOOT_DIR nor BOOT_DIRECTORY -- SKIPPING loadfont injection (upstream drift; expect '?' glyphs in themed menu)");
+            }
+
+            if (loadfont_line != NULL) {
+                snprintf(cmd, sizeof(cmd),
+                    "sed -i '/^loadfont ascii$/a %s' '%s'",
+                    loadfont_line, grub_setup_script);
+                run_cmd(cmd);
+                log_info("v1.9.84 BUG-N10-hardening (D1): injected `%s` after `loadfont ascii` (variant detected: %s)",
+                         loadfont_line, detected_variant);
+            }
+        }
 
         /* v1.9.60 — DEFENSIVE: append a post-heredoc sed inside mk-setup-grub.sh
          * to strip ` fips=1` from the freshly-written /boot/grub2/grub.cfg.
