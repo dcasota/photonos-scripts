@@ -1,55 +1,3 @@
-diff --git a/SPECS/linux/linux-esx.spec b/SPECS/linux/linux-esx.spec
-index 10a34b13c..239b34ad9 100644
---- a/SPECS/linux/linux-esx.spec
-+++ b/SPECS/linux/linux-esx.spec
-@@ -40,7 +40,7 @@
- Summary:        Kernel
- Name:           linux-esx
- Version:        6.12.107
--Release:        2%{?dist}
-+Release:        3%{?dist}
- URL:            http://www.kernel.org
- Group:          System Environment/Kernel
- Vendor:         VMware, Inc.
-@@ -83,7 +83,25 @@ Source10001: jitterentropy_canister_wrapper.c
- Source10002: jitterentropy_canister_wrapper.h
- Source10003: jitterentropy_canister_wrapper_asm.S
- 
-+# Which canister this build links.
-+#
-+# Default: the published, certified one. A build that has just created an
-+# equivalent canister from the kernel under test overrides it with
-+# canister_equivalent=1 plus fips_canister_override=<NEVR>.
-+#
-+# Two macros rather than one, and an %%if rather than a bang-question guard,
-+# Photon's own SpecParser is stricter than rpm:
-+#   - _isDefinition() matches only a line STARTING with %%define/%%global, so
-+#     a guard of the bang-question form never reaches self.defs and
-+#     ExtraBuildRequiresSansSnapshot keeps the macro literal;
-+#   - _isConditionTrue() eval()s the expanded text after lstrip("0"), which is
-+#     fine for a 0/1 flag and a NameError for a version string.
-+# So the flag is what %%if tests, and the version rides in a second macro.
-+%if 0%{?canister_equivalent}
-+%define fips_canister_version %{fips_canister_override}
-+%else
- %define fips_canister_version 6.12.60-18.2.ph5
-+%endif
- %define ExtraBuildRequiresSansSnapshot linux-fips-canister = %{fips_canister_version}
- BuildRequires:       linux-fips-canister = %{fips_canister_version}
- 
-@@ -561,6 +579,10 @@ ln -sf linux-%{uname_r}.cfg /boot/photon.cfg
- %{_usrsrc}/linux-headers-%{uname_r}
- 
- %changelog
-+* Thu Sep 03 2026 Daniel Casota <dcasota@gmail.com> 6.12.107-3
-+- Accept the same canister_equivalent / fips_canister_override pair as
-+  linux.spec, so this flavour - the one the ISO actually boots - can link a
-+  locally built canister too. It never builds one; it only links.
- * Thu Sep 03 2026 Daniel Casota <dcasota@gmail.com> 6.12.107-2
- - Move canister/.config handling into shared canister_config.inc (Source5),
-   included by both linux.spec and linux-esx.spec so the two flavours cannot
-diff --git a/SPECS/linux/linux.spec b/SPECS/linux/linux.spec
-index 05f565865..f39245eb6 100644
 --- a/SPECS/linux/linux.spec
 +++ b/SPECS/linux/linux.spec
 @@ -66,9 +66,16 @@
@@ -75,12 +23,12 @@ index 05f565865..f39245eb6 100644
  Summary:        Kernel
  Name:           linux
  Version:        6.12.107
--Release:        3%{?acvp_build:.acvp}%{?kat_build:.kat}%{?dist}
-+Release:        4%{?acvp_build:.acvp}%{?kat_build:.kat}%{?dist}
+-Release:        10%{?acvp_build:.acvp}%{?kat_build:.kat}%{?dist}
++Release:        11%{?acvp_build:.acvp}%{?kat_build:.kat}%{?dist}
  URL:            http://www.kernel.org/
  Group:          System Environment/Kernel
  Vendor:         VMware, Inc.
-@@ -132,7 +139,25 @@ Source10002: jitterentropy_canister_wrapper.h
+@@ -132,7 +139,25 @@
  Source10003: jitterentropy_canister_wrapper_asm.S
  
  %if 0%{?canister_usage}
@@ -106,11 +54,11 @@ index 05f565865..f39245eb6 100644
  %define ExtraBuildRequiresSansSnapshot linux-fips-canister = %{fips_canister_version}
  BuildRequires:       linux-fips-canister = %{fips_canister_version}
  %endif
-@@ -973,6 +998,24 @@ ln -sf linux-%{uname_r}.cfg /boot/photon.cfg
+@@ -978,6 +1003,24 @@
  %endif
  
  %changelog
-+* Thu Sep 03 2026 Daniel Casota <dcasota@gmail.com> 6.12.107-4
++* Wed Sep 09 2026 Daniel Casota <dcasota@gmail.com> 6.12.107-11
 +- Let a build link a canister other than the published one, so a kernel with no
 +  official canister at its own level can be covered by an equivalent one built
 +  locally. canister_equivalent=1 plus fips_canister_override=<NEVR> selects it;
@@ -128,14 +76,54 @@ index 05f565865..f39245eb6 100644
 +  version cannot be tested by the conditional either: _isConditionTrue() runs
 +  eval() on the expanded text after lstrip("0"), which is a NameError for a
 +  version string. Hence a 0/1 flag plus a separate value macro.
- * Thu Sep 03 2026 Daniel Casota <dcasota@gmail.com> 6.12.107-3
+ * Wed Sep 09 2026 Daniel Casota <dcasota@gmail.com> 6.12.107-10
  - Rebase canister-creation patches 1004 and 1010 onto 6.12.107. Upstream
    dropped the WARN_ON() wrapper around !digest_size in pkcs1pad_verify(), and
-@@ -982,7 +1025,6 @@ ln -sf linux-%{uname_r}.cfg /boot/photon.cfg
-   cosmetic: WARN_ON emits a __bug_table entry and that patch exists to keep
-   __bug_table out of the canister.
- * Thu Sep 03 2026 Daniel Casota <dcasota@gmail.com> 6.12.107-2
--* Thu Sep 03 2026 Daniel Casota <dcasota@gmail.com> 6.12.107-2
+--- a/SPECS/linux/linux-esx.spec
++++ b/SPECS/linux/linux-esx.spec
+@@ -40,7 +40,7 @@
+ Summary:        Kernel
+ Name:           linux-esx
+ Version:        6.12.107
+-Release:        9%{?dist}
++Release:        10%{?dist}
+ URL:            http://www.kernel.org
+ Group:          System Environment/Kernel
+ Vendor:         VMware, Inc.
+@@ -83,7 +83,25 @@
+ Source10002: jitterentropy_canister_wrapper.h
+ Source10003: jitterentropy_canister_wrapper_asm.S
+ 
++# Which canister this build links.
++#
++# Default: the published, certified one. A build that has just created an
++# equivalent canister from the kernel under test overrides it with
++# canister_equivalent=1 plus fips_canister_override=<NEVR>.
++#
++# Two macros rather than one, and an %%if rather than a bang-question guard,
++# Photon's own SpecParser is stricter than rpm:
++#   - _isDefinition() matches only a line STARTING with %%define/%%global, so
++#     a guard of the bang-question form never reaches self.defs and
++#     ExtraBuildRequiresSansSnapshot keeps the macro literal;
++#   - _isConditionTrue() eval()s the expanded text after lstrip("0"), which is
++#     fine for a 0/1 flag and a NameError for a version string.
++# So the flag is what %%if tests, and the version rides in a second macro.
++%if 0%{?canister_equivalent}
++%define fips_canister_version %{fips_canister_override}
++%else
+ %define fips_canister_version 6.12.60-18.2.ph5
++%endif
+ %define ExtraBuildRequiresSansSnapshot linux-fips-canister = %{fips_canister_version}
+ BuildRequires:       linux-fips-canister = %{fips_canister_version}
+ 
+@@ -567,6 +585,10 @@
+ %{_usrsrc}/linux-headers-%{uname_r}
+ 
+ %changelog
++* Wed Sep 09 2026 Daniel Casota <dcasota@gmail.com> 6.12.107-10
++- Accept the same canister_equivalent / fips_canister_override pair as
++  linux.spec, so this flavour - the one the ISO actually boots - can link a
++  locally built canister too. It never builds one; it only links.
+ * Wed Sep 09 2026 Daniel Casota <dcasota@gmail.com> 6.12.107-9
  - Move canister/.config handling into shared canister_config.inc (Source5),
    included by both linux.spec and linux-esx.spec so the two flavours cannot
-   diverge again. This also fixes the fips=0 path here: linux.spec had two
