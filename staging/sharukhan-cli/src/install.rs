@@ -246,7 +246,8 @@ pub fn run(
         //      because (a) cannot fire on a serial-silent target while (b) has
         //      taken anywhere from 11 minutes to longer than this timeout.
         if let Ok(text) = fs::read_to_string(&cfg.dhcp_leases) {
-            if let Some(ip) = leases::installed_ip(&text, &vmrow.mac, &vmrow.name, &started_at) {
+            let macs = [vmrow.mac.clone(), vmrow.mac2.clone()];
+            if let Some(ip) = leases::installed_ip(&text, &macs, &vmrow.name, &started_at) {
                 log(&format!(
                     "{} leased {ip} under its own hostname: the installed system is up",
                     vmrow.name
@@ -294,7 +295,8 @@ pub fn run(
                 .map(|t| {
                     leases::parse(&t)
                         .into_iter()
-                        .filter(|l| l.mac.eq_ignore_ascii_case(&vmrow.mac))
+                        .filter(|l| l.mac.eq_ignore_ascii_case(&vmrow.mac)
+                            || l.mac.eq_ignore_ascii_case(&vmrow.mac2))
                         .map(|l| format!("{}@{} {}", l.hostname, l.starts, l.ip))
                         .next_back()
                         .unwrap_or_else(|| "no lease for this MAC".into())

@@ -101,8 +101,20 @@ pub fn parse(text: &str) -> Vec<Lease> {
 /// start time strictly after `after`. A row whose guest sets some other
 /// hostname simply gets no answer here and falls through to the other signals
 /// - silence is correct, a guess is not.
-pub fn installed_ip(text: &str, mac: &str, vm_name: &str, after: &str) -> Option<String> {
-    let mac = mac.to_ascii_lowercase();
+/// `macs` is EVERY NIC the row owns, not just the first.
+///
+/// n03 timed out on an install that had finished 44 seconds in. Its lease was
+/// in the file, under its own hostname, at the right time - but carried
+/// `00:50:56:3b:00:27` while this was matching `00:50:56:3a:00:27`. The row
+/// has a second NIC and leased on the MANAGEMENT interface, so a filter on the
+/// primary MAC alone could never match it. Blind by construction, not by
+/// timing: no amount of waiting would have helped.
+pub fn installed_ip(text: &str, macs: &[String], vm_name: &str, after: &str) -> Option<String> {
+    let macs: Vec<String> = macs
+        .iter()
+        .filter(|m| !m.is_empty())
+        .map(|m| m.to_ascii_lowercase())
+        .collect();
     parse(text)
         .into_iter()
         // The installer hostname is excluded explicitly rather than relying on
@@ -110,7 +122,7 @@ pub fn installed_ip(text: &str, mac: &str, vm_name: &str, after: &str) -> Option
         // hostname, or a VM named after the installer, would otherwise let the
         // live environment answer for the installed system.
         .filter(|l| l.hostname != INSTALLER_HOSTNAME)
-        .filter(|l| l.mac == mac && l.hostname == vm_name && l.starts.as_str() > after)
+        .filter(|l| macs.contains(&l.mac) && l.hostname == vm_name && l.starts.as_str() > after)
         .max_by(|a, b| a.starts.cmp(&b.starts))
         .map(|l| l.ip)
 }
@@ -162,7 +174,7 @@ lease 192.168.225.150 {
     #[test]
     fn finds_the_installed_system_and_not_the_installer() {
         // the 09:13Z install began at 09:13:34
-        let ip = installed_ip(SAMPLE, "00:50:56:3a:00:2a", "mc-c03", "2026/09/04 09:13:34");
+        let ip = installed_ip(SAMPLE, &["00:50:56:3a:00:2a".to_string()], "mc-c03", "2026/09/04 09:13:34");
         assert_eq!(ip.as_deref(), Some("192.168.225.192"));
     }
 
@@ -177,7 +189,7 @@ lease 192.168.225.150 {
             .next()
             .unwrap();
         assert!(only_stale.contains("192.168.225.191"));
-        let ip = installed_ip(only_stale, "00:50:56:3a:00:2a", "mc-c03", "2026/09/04 09:13:34");
+        let ip = installed_ip(only_stale, &["00:50:56:3a:00:2a".to_string()], "mc-c03", "2026/09/04 09:13:34");
         assert_eq!(ip, None, "a lease that predates the install proves nothing");
     }
 
@@ -185,7 +197,7 @@ lease 192.168.225.150 {
     fn the_live_installer_is_never_mistaken_for_the_installed_system() {
         // only the installer has leased since the install began
         let upto_installer = SAMPLE.split("lease 192.168.225.192").next().unwrap();
-        let ip = installed_ip(upto_installer, "00:50:56:3a:00:2a", "mc-c03", "2026/09/04 09:13:34");
+        let ip = installed_ip(upto_installer, &["00:50:56:3a:00:2a".to_string()], "mc-c03", "2026/09/04 09:13:34");
         assert_eq!(ip, None);
         // and it is the hostname that separates them, not the timing
         let l = parse(upto_installer);
@@ -198,16 +210,60 @@ lease 192.168.225.150 {
     fn a_vm_named_like_the_installer_still_gets_no_answer_from_the_live_env() {
         let ip = installed_ip(
             SAMPLE,
-            "00:50:56:3a:00:2a",
+            &["00:50:56:3a:00:2a".to_string()],
             INSTALLER_HOSTNAME,
             "2026/09/04 09:13:34",
         );
         assert_eq!(ip, None);
     }
 
+    /// The n03 regression, verbatim from the host's own lease file.
+    ///
+    /// A second-NIC row leases on the MANAGEMENT interface, so the primary MAC
+    /// never appears in the file. Matching only `mac` reported the install
+    /// unfinished for the full 2400s timeout while the guest had been up since
+    /// 44 seconds in, and the row failed install.booted_from_disk on an
+    /// install that had plainly succeeded.
+    #[test]
+    fn a_row_that_leases_on_its_second_nic_is_still_found() {
+        let sample = r#"
+lease 192.168.225.151 {
+	starts 3 2026/09/09 18:49:39;
+	hardware ethernet 00:50:56:3b:00:27;
+	client-hostname "mc-n03";
+}
+"#;
+        let primary = "00:50:56:3a:00:27".to_string();
+        let mgmt = "00:50:56:3b:00:27".to_string();
+
+        // what the old signature did - and why n03 timed out
+        assert_eq!(
+            installed_ip(sample, &[primary.clone()], "mc-n03", "2026/09/09 18:48:00"),
+            None,
+            "the primary MAC alone cannot see a lease taken on the second NIC"
+        );
+
+        // both NICs, which is what the row actually owns
+        assert_eq!(
+            installed_ip(sample, &[primary, mgmt], "mc-n03", "2026/09/09 18:48:00").as_deref(),
+            Some("192.168.225.151")
+        );
+    }
+
+    /// An empty mac2 (every single-NIC row) must not match a lease whose mac
+    /// field failed to parse and came out empty.
+    #[test]
+    fn an_empty_mac_never_matches() {
+        let sample = "lease 192.168.225.9 {\n\tstarts 3 2026/09/09 18:49:39;\n\tclient-hostname \"mc-x\";\n}\n";
+        assert_eq!(
+            installed_ip(sample, &["".to_string()], "mc-x", "2026/09/09 18:00:00"),
+            None
+        );
+    }
+
     #[test]
     fn another_vms_lease_is_ignored_even_at_the_same_instant() {
-        let ip = installed_ip(SAMPLE, "00:50:56:ab:cd:ef", "mc-c03", "2026/09/04 09:13:34");
+        let ip = installed_ip(SAMPLE, &["00:50:56:ab:cd:ef".to_string()], "mc-c03", "2026/09/04 09:13:34");
         assert_eq!(ip, None);
     }
 
@@ -216,7 +272,7 @@ lease 192.168.225.150 {
         let renewed = format!(
             "{SAMPLE}\nlease 192.168.225.192 {{\n\tstarts 5 2026/09/04 09:45:26;\n\thardware ethernet 00:50:56:3a:00:2a;\n\tclient-hostname \"mc-c03\";\n}}\n"
         );
-        let ip = installed_ip(&renewed, "00:50:56:3a:00:2a", "mc-c03", "2026/09/04 09:13:34");
+        let ip = installed_ip(&renewed, &["00:50:56:3a:00:2a".to_string()], "mc-c03", "2026/09/04 09:13:34");
         assert_eq!(ip.as_deref(), Some("192.168.225.192"));
     }
 
@@ -224,14 +280,14 @@ lease 192.168.225.150 {
     /// accept everything.
     #[test]
     fn the_fallback_bound_accepts_nothing() {
-        let ip = installed_ip(SAMPLE, "00:50:56:3a:00:2a", "mc-c03", "9999/99/99 99:99:99");
+        let ip = installed_ip(SAMPLE, &["00:50:56:3a:00:2a".to_string()], "mc-c03", "9999/99/99 99:99:99");
         assert_eq!(ip, None);
     }
 
     #[test]
     fn crlf_from_a_windows_written_file_parses() {
         let dos = SAMPLE.replace('\n', "\r\n");
-        let ip = installed_ip(&dos, "00:50:56:3a:00:2a", "mc-c03", "2026/09/04 09:13:34");
+        let ip = installed_ip(&dos, &["00:50:56:3a:00:2a".to_string()], "mc-c03", "2026/09/04 09:13:34");
         assert_eq!(ip.as_deref(), Some("192.168.225.192"));
     }
 }
@@ -251,11 +307,11 @@ mod live_check {
         }
         eprintln!(
             "installed_ip after 09:13:34 = {:?}",
-            super::installed_ip(&t, "00:50:56:3a:00:2a", "mc-c03", "2026/09/04 09:13:34")
+            super::installed_ip(&t, &["00:50:56:3a:00:2a".to_string()], "mc-c03", "2026/09/04 09:13:34")
         );
         eprintln!(
             "installed_ip after 10:00:00 = {:?}",
-            super::installed_ip(&t, "00:50:56:3a:00:2a", "mc-c03", "2026/09/04 10:00:00")
+            super::installed_ip(&t, &["00:50:56:3a:00:2a".to_string()], "mc-c03", "2026/09/04 10:00:00")
         );
     }
 }
