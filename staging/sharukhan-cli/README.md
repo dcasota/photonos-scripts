@@ -650,6 +650,27 @@ applies no embedded patch and needs no inter-phase purge, so it has nothing to
 drift on. The delete rule lives once in `build::doomed_before_phase_b`, and the
 spec assembly once in `buildmode::spec_for`.
 
+### The embedded patch pins Release numbers, and 5.0 moves
+
+`src/embedded/canister-equivalent.patch` bumps the kernel Release on top of the
+variant patch, so it carries the pre-bump number as diff context. Every time
+5.0 bumps a kernel Release, that context stops matching and the patch fails to
+apply — the build dies at the inject stage.
+
+This is not rare. In five days 5.0 took `linux` from Release 1 to 4 to 8, and
+the patch needed retargeting three times. The chain is:
+
+```
+pristine 5.0  ->  variant patch (PR#24 +1, PR#29 +1)  ->  embedded (+1)
+     8                        10                            11
+```
+
+**Retarget by regenerating, not by hand-editing.** Apply the variant patch to a
+clean worktree, apply the embedded patch letting the Release and changelog
+hunks reject, fix those two by hand, then re-diff. Editing hunk offsets
+directly is how a previous attempt produced an orphan changelog entry and a
+descending-order violation that `rpmspec` rejected.
+
 ### `--compose-only`
 
 Rebuilding an image must not cost a kernel rebuild. The kernels in the stage
@@ -813,13 +834,19 @@ is unreachable from the kickstart schema and an operator who *knows* a link
 cannot come up has no way to say so. Written up in
 `/root/photon-mc/poi-gap-requiredforonline.md` for filing upstream.
 
-### n03 needs a second NIC, and that is unproven here
+### n03 needs a second NIC, and that now works
 
 An IPv6-only guest is unreachable from this harness (blocker 3), so `n03`'s VMX
 carries a second NIC on the same NAT segment doing plain DHCPv4, purely so ssh
-has a path in. **No VM on this host has ever had two NICs.** If `n03` refuses to
-power on, treat it as unrunnable here on the `c02` precedent — `install.rs`
-says exactly that in the failure text — rather than as a POI defect.
+has a path in. This was recorded as unproven for a long time — no VM on this
+host had ever had two NICs.
+
+**It is proven now.** n03 powers on, installs, and passes 39 checks with 0
+failures, with `net.v6_addr fd00:225::4f/64` and DAD complete. The second NIC
+also turned out to matter to the install detector, not just to ssh: the guest
+takes its DHCPv4 lease on that MANAGEMENT interface, so the lease signal has to
+match every MAC the row owns. See *When an install is finished* below — getting
+that wrong cost n03 a false `install.booted_from_disk` failure on 2026-09-09.
 
 ### When an install is finished, and how that is known
 
@@ -830,12 +857,24 @@ are four signals, and no single one of them is reliable on this host:
 |---|---|---|---|
 | a | `root=PARTUUID=` in the serial log | rows whose installed system has a serial console | the installed cmdline carries no `console=ttyS0`, so the log stays 0 bytes and this **never fires here** |
 | b | `vmrun getGuestIPAddress` | any row with open-vm-tools | latency is wild: 11 minutes on one c03 run, longer than the whole 2400s timeout on the next |
-| c | the host's DHCP lease file | DHCP rows | a statically addressed guest takes no lease |
+| c | the host's DHCP lease file, matched on **every NIC the row owns** | any row where some interface takes a lease | a row whose every interface is statically addressed takes none |
 | d | SSH on the row's reserved address | static rows | a DHCP row never configures that address |
 
-Together (c) and (d) cover every runnable row; (b) remains the only signal for
-`v6-static-untag`, whose static address is IPv6 while the reserved address is
-IPv4.
+Together (c) and (d) cover every runnable row.
+
+**(c) must match on every NIC, not just the first.** n03 (`v6-static-untag`)
+failed `install.booted_from_disk` on an install that had plainly succeeded: the
+guest held `fd00:225::4f/64` with DAD complete and answered 18 checks, and it
+had been up since 44 seconds in. Its lease was in the file the whole time,
+under the row's own hostname - but carried `00:50:56:3b:00:27` while the lookup
+matched `00:50:56:3a:00:27`. That is `mac2` against `mac`: n03 carries a second
+NIC and leases on the MANAGEMENT interface, so a filter on the primary MAC
+could never match it. Blind by construction, not by timing - waiting longer
+would never have helped.
+
+That row is also why (d) cannot cover it: its static address is IPv6 while the
+reserved address this harness probes is IPv4, so the SSH probe stays silent.
+With (c) matching both NICs, n03 is covered.
 
 **(c) distinguishes the boot source by hostname.** The installer live
 environment and the installed system share a MAC, so a lease alone proves

@@ -125,6 +125,52 @@ formatting for btrfs, grub install on btrfs, the STIG ansible playbook run) and,
 for rows 13-16, the fact that POI master has never been packaged as an RPM or
 placed on a Photon ISO at all.
 
+### 2a-3. Full autonomous sweep, 2026-09-09
+
+Re-run against 5.0 `294c3ce28` after all four canister/STIG PRs were rebased
+onto it and both equivalent ISOs rebuilt. **18 of 26 admissible rows ran; every
+row matched its documented expectation.**
+
+| rows | result |
+|---|---|
+| k01–k08, s01–s03, n01, n02, n04 | pass, 0 fail |
+| n03 | pass after the detector fix — 39 checks, 19 pass, 0 fail |
+| n05 | 1 FAIL, `guest.ssh unreachable` — the documented environmental VLAN limit |
+| c01 (full/2.8/equivalent) | pass, 37 checks |
+| c03 (minimal/2.8/equivalent) | pass, 37 checks |
+
+**c03 attests the mission claim at the new NEVR.** Under `fips=1` the running
+kernel reports `fips_enabled=1`, `fips_canister=1`, and
+`canister_based_on=6.12.107-11.ph5` — the locally built equivalent, not the
+published `6.12.60-18.ph5`.
+
+Media verified independently rather than taken from the build's own assertions:
+both ISOs carry `linux-6.12.107-11.ph5`, `linux-esx-6.12.107-10.ph5` and
+`photon-os-installer-2.8-7.ph5`; 290 RPMs on the minimal, 1926 on the full.
+
+#### Three environment faults preceded this run, none of them POI defects
+
+The host had been restarted, and each fault produced failures that looked like
+product defects until traced:
+
+1. **`docker.service` failed**, so `build.py`'s unconditional
+   `systemctl start docker` aborted every build. Its socket had been orphaned;
+   a manual daemon made it worse before `systemctl restart docker` fixed it.
+2. **WSL interop was unregistered** — `vmrun.exe` returned
+   `Exec format error`, which would have failed every row.
+   `systemctl restart systemd-binfmt` restored it.
+3. **A host routing conflict** put a second on-link route for
+   `192.168.225.0/24` on a non-VMware adapter at a lower metric, so WSL could
+   not reach any guest. All 18 rows failed identically at `guest.ssh` with
+   every install having succeeded. Resolved by raising that adapter's metric.
+
+#### And one real harness defect
+
+`install.booted_from_disk` failed on n03 while the guest was up and answering.
+The lease signal matched only the row's primary MAC, and n03 leases on its
+second NIC. Fixed in `leases::installed_ip`, which now matches every MAC the
+row owns.
+
 ### 2a-2. Full autonomous sweep, 2026-09-04
 
 The whole autonomous set re-run against the current tree (kernel 6.12.107,
