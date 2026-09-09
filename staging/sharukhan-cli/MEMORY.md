@@ -5,7 +5,7 @@ database; the database is the system of record. Editing here changes nothing and
 will be overwritten on the next render.
 
 - Source database: `/root/photon-mc/memory.db`
-- Rendered at: 2026-09-09T22:27:18Z
+- Rendered at: 2026-09-09T22:53:10Z
 - Regenerate with: `python3 tools/gen-memory-md.py /root/photon-mc/memory.db MEMORY.md`
 
 | Table | Rows |
@@ -14,7 +14,7 @@ will be overwritten on the next render.
 | `permutation` | 121 |
 | `check_result` | 3374 |
 | `artifact` | 0 |
-| `finding` | 52 |
+| `finding` | 57 |
 
 ## Permutation results
 
@@ -269,6 +269,46 @@ A result that reproduces the *Matrix said* value of `fails` is a PR regression.
 **Consequence.** Every kickstart-driven install fails before partitioning.
 
 **Mitigation.** Use packagelist_file=packages.json, or omit it and pass an explicit packages list.
+
+#### `photon-preset-enables-unmatched-units` — Photon presets are an allow-list with no catch-all, so a new unit is ENABLED
+
+*build · verified* · source: `migrated from assistant memory note photon_systemd_preset_default`
+
+**Observed.** Photon OS 5.0 preset files in /usr/lib/systemd/system-preset/ contain no "enable *" or "disable *" rule. systemd enables a unit matching no rule. Verified empirically 2026-08-31 on systemd 257.13-1.ph5.
+
+**Consequence.** Adding a unit to a Photon spec without a preset silently enables it on every install and upgrade - e.g. three DHCP servers for kea.
+
+**Mitigation.** Ship a disable-by-default preset alongside any new daemon, following containerd.spec: Source: disable-<name>-by-default.preset installed to %{_presetdir}/50-%{name}.preset.
+
+#### `pkg-build-options-must-be-bare-filename` — pkg-build-options must be a bare filename; absolute paths are silently rewritten
+
+*build · verified* · source: `migrated from assistant memory note photon_pkg_build_options_path`
+
+**Observed.** build.py set_default_value_of_config() rewrites ["photon-build-param"]["pkg-build-options"] unconditionally to f"{curDir}/common/data/" + value, so an absolute path becomes a nonexistent doubled path and the macros never apply.
+
+**Consequence.** The build proceeds with none of the intended per-package macros, silently producing an artifact built with default flags.
+
+**Mitigation.** Give a bare filename that exists in <common-branch>/common/data/.
+
+#### `reproducible-is-not-certified` — Reproducibility and CMVP certification are orthogonal for the canister
+
+*build · verified* · source: `corrects assistant memory note prebuilt_isos_irreplaceable, which recorded the wrong reason`
+
+**Observed.** A canister_usage build resolves BuildRequires: linux-fips-canister = %{fips_canister_version} against an RPM at a version. It cannot tell whether that RPM was published by Broadcom or produced locally by a canister_build (phase A). Finding 43 states the flow: "Build once with linux, consume in both via an overridable fips_canister_version - mirrors the certified flow exactly." Separately, the spec pins 6.12.60-18.2.ph5 while photon-updates publishes 6.12.60-18.ph5.
+
+**Consequence.** Cached prebuilt media was treated as IRREPLACEABLE for weeks, and 17GB protected on that basis. The correct statement is that every cache key is reproducible from its commit level; what a missing published canister costs is CERTIFICATION, not reproducibility.
+
+**Mitigation.** Say which of the two is meant. If a published canister matches the kernel NEVR, the build is reproducible AND certified. If not, build phase A locally and consume it - still reproducible, no longer CMVP validated, which is exactly what canister=equivalent reports.
+
+#### `specparser-macro-guard-invisible` — %{!?x: %define x} is invisible to Photon SpecParser
+
+*build · verified* · source: `migrated from assistant memory note photon_specparser_macro_guard`
+
+**Observed.** common/support/package-builder/SpecParser.py _isDefinition() matches only a line STARTING with a definition directive, so %{!?name: %global name value} never reaches self.defs. rpm expands it correctly; build.py does not see it.
+
+**Consequence.** ExtraBuildRequiresSansSnapshot keeps the macro unexpanded and the build asks tdnf for a package whose name still contains a macro reference. Fatal only in a dependency line.
+
+**Mitigation.** Use a 0/1 flag plus a separate value macro, wrapping a plain definition in a conditional - not the bang-question guard form. See linux.spec canister_equivalent / fips_canister_override.
 
 #### `stale-poi-rpm-shadowing` — A stale installer RPM in the stage tree ships on the ISO
 
@@ -561,6 +601,16 @@ A result that reproduces the *Matrix said* value of `fails` is a PR regression.
 **Consequence.** The run summary always reported zero attempted.
 
 **Mitigation.** Feed the loop with a here-string. Verified: now reports '1 permutation(s) attempted, 1 with failing checks'.
+
+#### `fips-row-needs-an-rsa-key` — A FIPS guest refuses ed25519, and the symptom reads as unreachable
+
+*harness · verified* · source: `migrated from assistant memory note fips_row_needs_rsa_key`
+
+**Observed.** A ks_variant=fips row fails with "guest.ssh Permission denied (publickey,password,keyboard-interactive)". Key exchange succeeded and sshd then refused the credential, so the guest has an address and is running - it is not unreachable.
+
+**Consequence.** The failure is read as an installer or network defect and investigated in the wrong place. It is a harness key problem.
+
+**Mitigation.** Use an RSA key for FIPS rows; ed25519 is not a FIPS-approved algorithm and the guest sshd rejects it.
 
 #### `positional-tsv-parsers-are-fragile` — Adding a matrix column silently corrupts every positional parser
 
