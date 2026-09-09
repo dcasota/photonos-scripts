@@ -1,0 +1,63 @@
+{
+  "hostname":     "{{ HOSTNAME }}",
+  "password":     { "crypted": true, "text": "{{ ROOT_PASSWORD_HASH }}" },
+  "disk":         "{{ INSTALL_DISK }}",
+  "linux_flavor": "{{ LINUX_FLAVOR }}",
+  "packages":     ["minimal", "coreutils", "kbd", "linux-mok", "initramfs", "shim-signed-mok", "openssh", "logrotate"],
+
+  "partitions": [
+    { "mountpoint": "/boot/efi", "size": 512,  "filesystem": "vfat" },
+    { "mountpoint": "/boot",     "size": 1024, "filesystem": "ext4" },
+    { "mountpoint": "/",         "size": 0,    "filesystem": "ext4" }
+  ],
+
+  "postinstall": [
+    "#!/bin/sh",
+    "if [ ! -x /usr/bin/install ]; then",
+    "  CU=$(ls /mnt/media/RPMS/x86_64/coreutils-[0-9]*.ph5.x86_64.rpm 2>/dev/null | grep -Ev 'minimal|lang|selinux' | head -1)",
+    "  if [ -n \"$CU\" ]; then",
+    "    rpm -e --nodeps coreutils-minimal 2>/dev/null || true",
+    "    rpm -Uvh --replacefiles --replacepkgs --nodeps \"$CU\" 2>/dev/null || true",
+    "  fi",
+    "fi",
+    "echo 'spagat-librarian first-boot stub (M21.6.f1)' > /etc/issue.spagat",
+    "# BUG-N135 (task #948): mask tmp.mount so /tmp stays on the root disk instead",
+    "# of a RAM tmpfs (~2GB on a 4GB VM). Backstop to the spagat-console DB + scratch",
+    "# moving to /var; prevents any /tmp writer from exhausting RAM (No space left).",
+    "ln -sf /dev/null /etc/systemd/system/tmp.mount",
+    "systemctl enable sshd.service 2>/dev/null || true",
+    "# BUG-N147.f1 (task #978): enable logrotate.timer so the spagat-bridges rule",
+    "# (shipped via the overlay at /etc/logrotate.d/spagat-bridges) actually runs.",
+    "# Photon's logrotate RPM ships the timer but %systemd_post does NOT enable it,",
+    "# and the appliance has no cronie, so bridge-aa.log on /var/spagat/bridges would",
+    "# never rotate without this. Enabled explicitly rather than relying on a preset.",
+    "systemctl enable logrotate.timer 2>/dev/null || true",
+    "install -d -m 0755 /etc/systemd/network",
+    "printf '[Match]\nName=eth0 en*\n\n[Network]\nAddress={{ INSTALL_STATIC_IP }}\nGateway=192.168.225.2\nDNS=192.168.225.2\n' > /etc/systemd/network/10-eth0-static.network",
+    "systemctl enable systemd-networkd.service 2>/dev/null || true",
+    "systemctl enable systemd-resolved.service 2>/dev/null || true",
+    "systemctl disable systemd-networkd-wait-online.service 2>/dev/null || true",
+    "getent group operator >/dev/null 2>&1 || groupadd operator",
+    "id -u operator >/dev/null 2>&1 || useradd -m -s /bin/bash -g operator operator",
+    "install -d -m 0700 -o operator -g operator /home/operator/.ssh",
+    "_SPAGAT_OPERATOR_AUTHORIZED_KEY='{{ SPAGAT_OPERATOR_AUTHORIZED_KEY }}'; if [ -n \"$_SPAGAT_OPERATOR_AUTHORIZED_KEY\" ]; then printf '%s\n' \"$_SPAGAT_OPERATOR_AUTHORIZED_KEY\" > /home/operator/.ssh/authorized_keys; else : > /home/operator/.ssh/authorized_keys; fi",
+    "_TEST_SSH_PUBKEY='{{ TEST_SSH_PUBKEY }}'; if [ -n \"$_TEST_SSH_PUBKEY\" ]; then printf '%s\n' \"$_TEST_SSH_PUBKEY\" >> /home/operator/.ssh/authorized_keys; fi",
+    "chmod 0600 /home/operator/.ssh/authorized_keys",
+    "chown operator:operator /home/operator/.ssh/authorized_keys",
+    "install -d -m 0755 -o root -g root /etc/spagat",
+    "getent group spagat >/dev/null 2>&1 || groupadd --system spagat",
+    "_WIZARD_PRESEED_TOML_B64='{{ WIZARD_PRESEED_TOML_B64 }}'; if [ -n \"$_WIZARD_PRESEED_TOML_B64\" ]; then printf '%s' \"$_WIZARD_PRESEED_TOML_B64\" | base64 -d > /etc/spagat/appliance-config.toml && chmod 0640 /etc/spagat/appliance-config.toml && chown root:spagat /etc/spagat/appliance-config.toml; fi",
+    "install -d -m 0755 -o root -g root /var/spagat /var/spagat/state",
+    "_WIZARD_COMPLETE_MARKER='{{ WIZARD_COMPLETE_MARKER }}'; if [ \"$_WIZARD_COMPLETE_MARKER\" = \"1\" ]; then : > /var/spagat/state/wizard-complete && chmod 0644 /var/spagat/state/wizard-complete && chown root:root /var/spagat/state/wizard-complete; fi",
+    "true"
+  ],
+
+  "spagat_overlay": {
+    "payload_path":   "/mnt/media/spagat/overlay.tar.zst",
+    "payload_sha256": "{{ PAYLOAD_SHA256 }}",
+    "install_root":   "/mnt/photon-root/photon-chroot"
+  },
+
+  "spagat_services_enable":  {{ SERVICES_ENABLE_JSON }},
+  "spagat_services_targets": {{ SERVICES_TARGETS_JSON }}
+}
