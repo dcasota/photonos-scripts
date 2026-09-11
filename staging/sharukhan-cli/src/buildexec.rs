@@ -1155,33 +1155,28 @@ fn purge_mismatched_canister(c: &mut Ctx, stage: &Path) {
                 .and_then(|l| l.split_whitespace().nth(2))
                 .map(str::to_string)
         });
+    // Phase B of an equivalent build overrides the pin with -D
+    // fips_canister_override, so canister_nevr is the truth when it is set.
     let want = match c.spec.canister_nevr.clone().or(spec_pin) {
         Some(w) => w,
         // No pin readable means no rule to apply. Never guess, and above all
         // never move a canister on a guess.
         None => return,
     };
-    let aside = stage.join("canister-aside");
-    for p in crate::build::find_files_rec(&stage.join("RPMS"), "linux-fips-canister", ".rpm") {
-        let name = basename(&p);
-        // linux-fips-canister-<nevr>.<arch>.rpm - keep the one we want, and
-        // leave debuginfo/devel siblings of that same NEVR alone too.
-        if name.contains(&want) {
-            continue;
+    if c.dry {
+        for p in crate::build::find_files_rec(&stage.join("RPMS"), "linux-fips-canister", ".rpm") {
+            let name = basename(&p);
+            if !name.contains(&want) {
+                c.say(&format!("  would move aside {name}: not the pinned canister {want}"));
+            }
         }
-        if c.dry {
-            c.say(&format!("  would move aside {name}: not the pinned canister {want}"));
-            continue;
-        }
-        if fs::create_dir_all(&aside).is_err() {
-            continue;
-        }
-        if fs::rename(&p, aside.join(&name)).is_ok() {
-            c.say(&format!(
-                "  moved aside {name}: the build consumes linux-fips-canister-{want}, and a \
+        return;
+    }
+    for m in crate::build::vault_mismatched_canisters(stage, &want) {
+        c.say(&format!(
+            "  moved aside {m}: the build consumes linux-fips-canister-{want}, and a \
 mismatched canister in the stage outranks the pinned one for an unversioned tdnf install"
-            ));
-        }
+        ));
     }
 }
 

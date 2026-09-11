@@ -242,6 +242,20 @@ and failing to look are different things, and only the first is worth hours."
         // the injections, against patched specs: at this point in the script
         // path the tree is still pristine, where both flavours read Release 1,
         // so a per-flavour purge here would match nothing at all.
+        // Every non-equivalent phase runs the legacy script, which has no
+        // purge stage, so the stage's local repo must be made safe HERE or not
+        // at all. Inert when the stage holds the pinned canister or none.
+        if req.canister != "equivalent" {
+            if let Some(pin) = spec_canister_pin(cfg) {
+                for m in vault_mismatched_canisters(&cfg.photon_tree.join("stage"), &pin) {
+                    log(&format!(
+                        "moved aside {m}: this build consumes linux-fips-canister-{pin}, and a \
+mismatched canister in the stage outranks the pinned one for an unversioned tdnf install"
+                    ));
+                }
+            }
+        }
+
         if req.canister == "equivalent" {
             let spec = crate::buildmode::spec_for(
                 &cfg.build_root.to_string_lossy(),
@@ -1306,4 +1320,54 @@ pub fn embedded_applies_over(cfg: &Config, variant: &Path) -> (bool, String) {
             ),
         )
     }
+}
+
+/// Move every `linux-fips-canister` RPM that is not `want` out of the stage's
+/// local repo, into `stage/canister-aside`. Returns what it moved.
+///
+/// Shared by both build paths, which is the whole point. The cascade's purge
+/// stage calls this through `buildexec::purge_mismatched_canister`; `resolve`
+/// calls it directly before dispatching, because everything except
+/// `--canister equivalent` runs the legacy `runPh5_normal.sh` and never enters
+/// the cascade at all. On 2026-09-11 the rule existed only in the cascade, so
+/// the first prebuilt build after an equivalent run died exactly as it had
+/// that morning:
+///
+///     error: Failed build dependencies:
+///         linux-fips-canister = 6.12.60-18.2.ph5 is needed by linux-6.12.109-3.ph5.x86_64
+///
+/// because the equivalent run's own 6.12.107-14 canister was still sitting in
+/// stage/RPMS, and the toolchain step installs BuildRequires by NAME, so tdnf
+/// takes the newest across the local and published repos - and 6.12.107 beats
+/// 6.12.60 on the first segment.
+///
+/// Moved, not deleted: a canister costs ~90 minutes to reproduce.
+pub fn vault_mismatched_canisters(stage: &Path, want: &str) -> Vec<String> {
+    let aside = stage.join("canister-aside");
+    let mut moved = Vec::new();
+    for p in find_files_rec(&stage.join("RPMS"), "linux-fips-canister", ".rpm") {
+        let name = p.file_name().unwrap_or_default().to_string_lossy().to_string();
+        if name.contains(want) {
+            continue;
+        }
+        if fs::create_dir_all(&aside).is_err() {
+            continue;
+        }
+        if fs::rename(&p, aside.join(&name)).is_ok() {
+            moved.push(name);
+        }
+    }
+    moved
+}
+
+/// The canister NEVR a build will actually consume: the spec's
+/// `fips_canister_version` pin, read from the tree rather than written down.
+pub fn spec_canister_pin(cfg: &Config) -> Option<String> {
+    fs::read_to_string(cfg.photon_tree.join("SPECS/linux/linux.spec")).ok().and_then(|t| {
+        t.lines()
+            .map(str::trim)
+            .find(|l| l.starts_with("%define fips_canister_version"))
+            .and_then(|l| l.split_whitespace().nth(2))
+            .map(str::to_string)
+    })
 }
