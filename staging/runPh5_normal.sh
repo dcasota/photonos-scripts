@@ -676,15 +676,49 @@ for s in data.get('sources', []) or []:
   # The build creates bind mounts inside chroot sandboxes. If a build
   # fails, those mounts may persist and block subsequent sandbox
   # creation (rm -rf fails on mounted directories). This helper kills
-  # processes holding mount points, unmounts everything, waits for
+  # processes rooted inside the stage, unmounts everything, waits for
   # lazy unmounts to complete, then removes stale chroot dirs.
+  # Kill only what actually lives INSIDE the stage, matched by the process's
+  # own root, never by mount point.
+  #
+  # This used to start with `fuser -km <mountpoint>` over every
+  # stage/photonroot mount. Those are overlay and bind mounts whose backing
+  # filesystem is the ROOT filesystem, and `fuser -m` reports every process
+  # using that filesystem - i.e. every process on the box. On 2026-09-11 the
+  # kernel BuildRequires failure sent this function down the retry path twice,
+  # and each time the sweep SIGKILLed PID 1 along with everything else: the
+  # WSL2 instance went down mid-build and came back looking like a
+  # spontaneous reboot, with the build log ending at "cleaning stale
+  # sandboxes" and a bare list of PIDs - 1 and 2 among them - as the only
+  # trace. Never signal by mount point, and never signal PID 1.
+  #
+  # Gradle daemons are the reason any of this exists: kafka builds with
+  # gradle, and a daemon left over from a failed attempt keeps holding
+  #   <sandbox>/root/.gradle/caches/*/zinc-*/zinc-*.lock
+  # so the next attempt dies with "Timeout waiting to lock zinc-... It is
+  # currently in use by another process" - which is how kafka broke the
+  # canister ISO on 2026-09-01 while nothing was wrong with kafka. Those
+  # daemons run inside the sandbox, so a root-based match reaches them.
+  kill_stage_processes() {
+    local p pid root
+    for p in /proc/[0-9]*; do
+      pid=${p#/proc/}
+      # PID 1 is init. Killing it ends the instance, not a sandbox.
+      [ "$pid" = "1" ] && continue
+      [ "$pid" = "$$" ] && continue
+      [ -r "$p/root" ] || continue
+      root=$(readlink "$p/root" 2>/dev/null)
+      case "$root" in
+        "$BUILD_STAGE"/*) kill -9 "$pid" 2>/dev/null || true ;;
+      esac
+    done
+  }
+
   clean_stale_sandboxes() {
     local mounts
     mounts=$(mount 2>/dev/null | grep "stage/photonroot" | awk '{print $3}' | sort -r)
     if [ -n "$mounts" ]; then
-      echo "$mounts" | while read -r mp; do
-        fuser -km "$mp" 2>/dev/null || true
-      done
+      kill_stage_processes
       sleep 1
       mounts=$(mount 2>/dev/null | grep "stage/photonroot" | awk '{print $3}' | sort -r)
       echo "$mounts" | while read -r mp; do
@@ -693,24 +727,7 @@ for s in data.get('sources', []) or []:
       sync
       sleep 2
     fi
-    # Gradle daemons outlive their build. kafka builds with gradle, and a
-    # daemon left over from a failed attempt keeps holding
-    #   <sandbox>/root/.gradle/caches/*/zinc-*/zinc-*.lock
-    # so the next attempt dies with "Timeout waiting to lock zinc-... It is
-    # currently in use by another process" - which is how kafka broke the
-    # canister ISO on 2026-09-01 while nothing was wrong with kafka.
-    #
-    # Match by the process's actual root/cwd under the stage, never by a
-    # pattern on the command line: a pattern that names this script matches
-    # this script, and killing your own waiter is a lesson already learned.
-    local p exe
-    for p in /proc/[0-9]*; do
-      [ -r "$p/root" ] || continue
-      exe=$(readlink "$p/root" 2>/dev/null)
-      case "$exe" in
-        "$BUILD_STAGE"/*) kill -9 "${p#/proc/}" 2>/dev/null || true ;;
-      esac
-    done
+    kill_stage_processes
     find "$BUILD_STAGE" -name '*.lock' -path '*/.gradle/*' -delete 2>/dev/null
 
     if [ -d "$BUILD_STAGE/photonroot" ]; then

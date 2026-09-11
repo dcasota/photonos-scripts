@@ -474,14 +474,27 @@ for s in data.get('sources', []) or []:
   # The build creates bind mounts inside chroot sandboxes. If a build
   # fails, those mounts may persist and block subsequent sandbox
   # creation (rm -rf fails on mounted directories). This helper kills
-  # processes holding mount points, unmounts everything, waits for
+  # processes rooted inside the stage, unmounts everything, waits for
   # lazy unmounts to complete, then removes stale chroot dirs.
   clean_stale_sandboxes() {
     local mounts
     mounts=$(mount 2>/dev/null | grep "stage/photonroot" | awk '{print $3}' | sort -r)
     if [ -n "$mounts" ]; then
-      echo "$mounts" | while read -r mp; do
-        fuser -km "$mp" 2>/dev/null || true
+      # NOT `fuser -km "$mp"`: every stage/photonroot mount is an overlay or
+      # bind mount backed by the ROOT filesystem, so `fuser -m` matches every
+      # process on the machine. On 2026-09-11 that sweep SIGKILLed PID 1 twice
+      # while retrying a failed kernel build and took the WSL2 instance down
+      # mid-build. Kill the actual holders by their own root instead.
+      local p pid root
+      for p in /proc/[0-9]*; do
+        pid=${p#/proc/}
+        [ "$pid" = "1" ] && continue
+        [ "$pid" = "$$" ] && continue
+        [ -r "$p/root" ] || continue
+        root=$(readlink "$p/root" 2>/dev/null)
+        case "$root" in
+          "$BUILD_STAGE"/*) kill -9 "$pid" 2>/dev/null || true ;;
+        esac
       done
       sleep 1
       mounts=$(mount 2>/dev/null | grep "stage/photonroot" | awk '{print $3}' | sort -r)

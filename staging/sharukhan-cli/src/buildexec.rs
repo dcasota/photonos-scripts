@@ -1084,6 +1084,7 @@ pub fn purge(c: &mut Ctx) -> Result<(), String> {
         purge_phase_a_kernels(c, &stage);
     }
     purge_toolchain_blockers(c, &stage);
+    purge_mismatched_canister(c, &stage);
     purge_shadowing_rpms(c, &stage);
     let n = purge_corrupt_rpms(c, &stage);
     c.say(&format!("  corrupted RPMs removed: {n}"));
@@ -1107,6 +1108,81 @@ pub fn purge(c: &mut Ctx) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// Move aside any `linux-fips-canister` RPM in the stage that is not the one
+/// this build is supposed to consume.
+///
+/// `purge_shadowing_rpms` cannot catch this. It compares a stage RPM against
+/// the Version-Release of the spec that produces it, and the canister's spec is
+/// `linux.spec` - so with linux.spec at 6.12.107-13, a canister RPM at
+/// 6.12.107-11 is *older* and looks perfectly fine. The version that matters
+/// for the canister is not linux.spec's: it is the `fips_canister_version`
+/// pin, which is a different version line entirely (6.12.60-*).
+///
+/// Why a mismatch is fatal rather than merely untidy: the toolchain step
+/// installs BuildRequires by NAME, not by NEVR
+/// (`ToolChainUtils._installExtraToolchainRPMS` -> `packages.append(package)`),
+/// and `stage/RPMS` is a repo at higher precedence than the published one. So
+/// tdnf resolves `linux-fips-canister` to whatever is newest across both, and
+/// `6.12.107-11` beats the pinned `6.12.60-18.2` on the first version segment.
+/// rpmbuild then evaluates the real `BuildRequires: linux-fips-canister =
+/// 6.12.60-18.2.ph5`, finds 6.12.107-11 installed, and fails:
+///
+///     error: Failed build dependencies:
+///         linux-fips-canister = 6.12.60-18.2.ph5 is needed by linux-6.12.107-13.ph5.x86_64
+///
+/// That is how the 2026-09-11 prebuilt rebuild died. It had been invisible for
+/// as long as the stage happened to hold a kernel at the release the specs
+/// asked for, because then no kernel was rebuilt and no BuildRequires was ever
+/// resolved; upstream moving 6.12.107-8 -> -11 forced the rebuild and exposed
+/// it. The canister left in the stage was a locally built equivalent from an
+/// earlier `--canister equivalent` run at a kernel level that no longer exists.
+///
+/// Moved, not deleted: a canister costs ~90 minutes to reproduce, and phase B
+/// of an equivalent build legitimately consumes a local one. The NEVR this
+/// build wants is `c.spec.canister_nevr` when set (equivalent phase B overrides
+/// the pin with `-D fips_canister_version`), otherwise the pin as written in
+/// the spec.
+fn purge_mismatched_canister(c: &mut Ctx, stage: &Path) {
+    let release_tree = c.spec.tree(Tree::Release);
+    let spec_pin = fs::read_to_string(release_tree.join("SPECS/linux/linux.spec"))
+        .ok()
+        .and_then(|t| {
+            t.lines()
+                .map(str::trim)
+                .find(|l| l.starts_with("%define fips_canister_version"))
+                .and_then(|l| l.split_whitespace().nth(2))
+                .map(str::to_string)
+        });
+    let want = match c.spec.canister_nevr.clone().or(spec_pin) {
+        Some(w) => w,
+        // No pin readable means no rule to apply. Never guess, and above all
+        // never move a canister on a guess.
+        None => return,
+    };
+    let aside = stage.join("canister-aside");
+    for p in crate::build::find_files_rec(&stage.join("RPMS"), "linux-fips-canister", ".rpm") {
+        let name = basename(&p);
+        // linux-fips-canister-<nevr>.<arch>.rpm - keep the one we want, and
+        // leave debuginfo/devel siblings of that same NEVR alone too.
+        if name.contains(&want) {
+            continue;
+        }
+        if c.dry {
+            c.say(&format!("  would move aside {name}: not the pinned canister {want}"));
+            continue;
+        }
+        if fs::create_dir_all(&aside).is_err() {
+            continue;
+        }
+        if fs::rename(&p, aside.join(&name)).is_ok() {
+            c.say(&format!(
+                "  moved aside {name}: the build consumes linux-fips-canister-{want}, and a \
+mismatched canister in the stage outranks the pinned one for an unversioned tdnf install"
+            ));
+        }
+    }
 }
 
 /// The kernel RPMs phase A left behind, which phase B must never ship.
@@ -1607,8 +1683,18 @@ fn purge_corrupt_rpms(c: &mut Ctx, stage: &Path) -> u32 {
 /// Unmount the sandbox tree and kill what is still living in it.
 ///
 /// Match a process by its ROOT under the stage, never by a pattern on its
-/// command line: a pattern naming this build matches this build, and killing
-/// your own waiter is a lesson already learned.
+/// command line and never by mount point: a pattern naming this build matches
+/// this build, and killing your own waiter is a lesson already learned.
+///
+/// This function used to run `fuser -km <mountpoint>` over each sandbox mount
+/// first. Every stage/photonroot mount is an overlay or bind mount whose
+/// backing filesystem is the ROOT filesystem, and `fuser -m` reports every
+/// process using that filesystem - every process on the machine. On
+/// 2026-09-11 a kernel BuildRequires failure drove the retry path here twice
+/// and each sweep SIGKILLed PID 1 with everything else, taking the WSL2
+/// instance down mid-build; the only trace was a build log ending at
+/// "cleaning stale sandboxes" followed by a bare PID list with 1 and 2 in it.
+/// The /proc root scan below is the whole of the kill step now.
 ///
 /// Gradle daemons outlive their build. kafka builds with gradle, and a daemon
 /// left from a failed attempt keeps holding
@@ -1625,9 +1711,7 @@ fn clean_sandboxes(c: &mut Ctx, stage: &Path) {
         .collect();
     mps.sort_unstable();
     mps.reverse();
-    for mp in &mps {
-        let _ = ok(Path::new("/"), "fuser", &["-km", mp]);
-    }
+    // Holders are killed by the /proc root scan below, not by mount point.
     for mp in &mps {
         if !ok(Path::new("/"), "umount", &[mp]) {
             let _ = ok(Path::new("/"), "umount", &["-l", mp]);
@@ -1644,6 +1728,10 @@ fn clean_sandboxes(c: &mut Ctx, stage: &Path) {
             let Some(pid) = name.to_str().filter(|s| s.chars().all(|c| c.is_ascii_digit())) else {
                 continue;
             };
+            // PID 1 is init: killing it ends the instance, not a sandbox.
+            if pid == "1" {
+                continue;
+            }
             let Ok(target) = fs::read_link(format!("/proc/{pid}/root")) else { continue };
             if target.starts_with(stage) {
                 if ok(Path::new("/"), "kill", &["-9", pid]) {
@@ -2097,6 +2185,54 @@ mod tests {
             compose_only: false,
             injections: vec![],
         }
+    }
+
+    /// The canister the build consumes is pinned on its OWN version line
+    /// (`fips_canister_version`, 6.12.60-*), not linux.spec's (6.12.107-*), so
+    /// `purge_shadowing_rpms` reads a mismatched canister as merely older and
+    /// keeps it. It must not be kept: the toolchain step installs BuildRequires
+    /// by name and the stage repo outranks the published one, so 6.12.107-11
+    /// wins over the pinned 6.12.60-18.2 and rpmbuild then fails the exact
+    /// `BuildRequires: linux-fips-canister = 6.12.60-18.2.ph5`. That is the
+    /// 2026-09-11 prebuilt-rebuild failure.
+    #[test]
+    fn a_canister_that_is_not_the_pinned_one_is_moved_out_of_the_stage() {
+        let tmp = std::env::temp_dir().join(format!("shk-can-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let specs = tmp.join("5.0/SPECS/linux");
+        let rpms = tmp.join("5.0/stage/RPMS/x86_64");
+        fs::create_dir_all(&specs).unwrap();
+        fs::create_dir_all(&rpms).unwrap();
+        fs::write(
+            specs.join("linux.spec"),
+            "Version:        6.12.107\nRelease:        13%{?dist}\n\
+%define fips_canister_version 6.12.60-18.2.ph5\n",
+        )
+        .unwrap();
+        let pinned = "linux-fips-canister-6.12.60-18.2.ph5.x86_64.rpm";
+        let stale = "linux-fips-canister-6.12.107-11.ph5.x86_64.rpm";
+        for n in [pinned, stale] {
+            fs::write(rpms.join(n), "x").unwrap();
+        }
+
+        let mut seen = Vec::new();
+        let sp = spec_at(&tmp);
+        let mut c = Ctx {
+            spec: &sp,
+            dry: false,
+            log: &mut |l: &str| seen.push(l.to_string()),
+        };
+        let stage = tmp.join("5.0/stage");
+        purge_mismatched_canister(&mut c, &stage);
+
+        assert!(rpms.join(pinned).exists(), "the pinned canister must stay");
+        assert!(!rpms.join(stale).exists(), "the mismatched canister must leave stage/RPMS");
+        // Moved, not deleted: ~90 minutes to reproduce one.
+        assert!(
+            stage.join("canister-aside").join(stale).exists(),
+            "it must be moved aside, not destroyed"
+        );
+        let _ = fs::remove_dir_all(&tmp);
     }
 
     /// A dry run must touch nothing. It exists so an operator can read what a
