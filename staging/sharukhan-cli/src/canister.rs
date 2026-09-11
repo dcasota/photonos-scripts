@@ -107,6 +107,43 @@ fn spec_nevr(spec: &str) -> Option<String> {
     Some(format!("{v}-{r}.ph5"))
 }
 
+/// The URL of the updates repo's package index, taken from Photon's own
+/// `photon-updates.repo` rather than written down a second time here.
+///
+/// The two have already diverged once. This function used to hardcode
+/// `packages.broadcom.com/artifactory/photon/5.0/photon_updates_5.0_x86_64/`;
+/// on 2026-09-11 that path started returning 404 while the baseurl the build
+/// actually fetches from - `packages.broadcom.com/photon/5.0/...`, no
+/// `artifactory` segment - kept serving the same directory. Reading the repo
+/// file means a move like that is picked up with the tree, and it is the same
+/// URL the kernel's BuildRequires resolves against, so "published" here cannot
+/// mean something different from "resolvable" during the build.
+///
+/// Falls back to the historical literal when the repo file is missing or
+/// carries no baseurl, so a tree without SPECS/photon-repos still gets an
+/// answer rather than an error that reads like an outage.
+fn updates_index_url(cfg: &Config) -> String {
+    let repo = cfg.photon_tree.join("SPECS/photon-repos/photon-updates.repo");
+    let base = std::fs::read_to_string(&repo)
+        .ok()
+        .and_then(|t| {
+            t.lines()
+                .map(str::trim)
+                .find_map(|l| l.strip_prefix("baseurl=").map(|v| v.trim().to_string()))
+        })
+        // `$releasever_$basearch` has no braces, so substitute the longest
+        // names first: replacing `$basearch` before `$releasever` is fine, but
+        // a naive pass that matched a shorter prefix would corrupt the other.
+        .map(|b| b.replace("$releasever", &cfg.release).replace("$basearch", "x86_64"))
+        .unwrap_or_else(|| {
+            format!(
+                "https://packages.broadcom.com/photon/{}/photon_updates_{}_x86_64",
+                cfg.release, cfg.release
+            )
+        });
+    format!("{}/x86_64/", base.trim_end_matches('/'))
+}
+
 /// The newest `linux-fips-canister-*` published for this release, as a NEVR
 /// fragment like `6.12.60-18.ph5`.
 ///
@@ -118,11 +155,8 @@ fn spec_nevr(spec: &str) -> Option<String> {
 /// BuildRequires at all.
 ///
 /// Returns Ok(None) when the repo is reachable and simply has no canister.
-pub fn published(release: &str) -> Result<Option<String>, String> {
-    let url = format!(
-        "https://packages.broadcom.com/artifactory/photon/{release}/\
-photon_updates_{release}_x86_64/x86_64/"
-    );
+pub fn published(cfg: &Config) -> Result<Option<String>, String> {
+    let url = updates_index_url(cfg);
     let out = Command::new("curl")
         .args(["-s", "-f", "--max-time", "60", &url])
         .output()
@@ -284,7 +318,7 @@ pub fn detect_for(cfg: &Config, arch: &str, kernel: Option<&str>) -> Result<Stat
     // drifted - the pin was 6.12.60-18.2.ph5 while the repo published only
     // 6.12.60-18.ph5. Phase A is needed exactly when nothing published matches
     // the kernel under test, so that is the comparison to make.
-    match published(&cfg.release) {
+    match published(cfg) {
         Ok(Some(pubv)) if pubv == kernel => Ok(State::Certified { version: pubv }),
         Ok(Some(pubv)) => Ok(State::Equivalent { kernel, certified: pubv }),
         Ok(None) => Ok(State::Equivalent {
