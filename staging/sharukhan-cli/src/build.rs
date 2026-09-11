@@ -621,6 +621,11 @@ pub const VARIANTS: [Variant; 2] = [
             // tip is listed: cherry-picking is by range, so naming any base
             // replays its commits twice and conflicts.
             "fix/canister-build-against-current-kernel",
+            // cloud-init 26.2 renders its systemd generator with a variant
+            // that is not in the libexecdir list, so the generator looks for
+            // ds-identify at /usr/lib and exits 3. Every 26.2 guest reports
+            // "status: not started" while 25.1.3 guests report "done".
+            "fix/cloud-init-generator-libexecdir",
         ],
     },
     Variant {
@@ -662,6 +667,11 @@ pub const VARIANTS: [Variant; 2] = [
             // tip is listed: cherry-picking is by range, so naming any base
             // replays its commits twice and conflicts.
             "fix/canister-build-against-current-kernel",
+            // cloud-init 26.2 renders its systemd generator with a variant
+            // that is not in the libexecdir list, so the generator looks for
+            // ds-identify at /usr/lib and exits 3. Every 26.2 guest reports
+            // "status: not started" while 25.1.3 guests report "done".
+            "fix/cloud-init-generator-libexecdir",
         ],
     },
 ];
