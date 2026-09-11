@@ -39,7 +39,7 @@
  %{_usrsrc}/linux-headers-%{uname_r}
  
  %changelog
-+* Fri Sep 11 2026 Daniel Casota <dcasota@gmail.com> 6.12.107-3
++* Fri Sep 11 2026 Daniel Casota <dcasota@gmail.com> 6.12.109-3
 +- Accept the same canister_equivalent / fips_canister_override pair as
 +  linux.spec, so this flavour - the one the ISO actually boots - can link a
 +  locally built canister too. It never builds one; it only links.
@@ -106,7 +106,7 @@
  %endif
  
  %changelog
-+* Fri Sep 11 2026 Daniel Casota <dcasota@gmail.com> 6.12.107-4
++* Fri Sep 11 2026 Daniel Casota <dcasota@gmail.com> 6.12.109-4
 +- Let a build link a canister other than the published one, so a kernel with no
 +  official canister at its own level can be covered by an equivalent one built
 +  locally. canister_equivalent=1 plus fips_canister_override=<NEVR> selects it;

@@ -56,6 +56,27 @@ def sh(cwd, *args, check=True):
     return r.stdout
 
 
+def version_of(path):
+    """The Version: from a spec.
+
+    Read, never hardcoded. The first version of this script wrote a literal
+    6.12.107 into the changelog entries while taking Release from the tree, so
+    the moment upstream moved to 6.12.109 it emitted
+
+        ERROR in linux.spec: Changelog & Release version mismatch
+                             6.12.107-4 != 6.12.109-4
+
+    and build.py refused the spec before compiling anything - the same
+    derive-never-hardcode rule this script exists to enforce, broken by the
+    script itself.
+    """
+    with open(path) as f:
+        for line in f:
+            if line.startswith("Version:"):
+                return line.split(None, 1)[1].strip()
+    sys.exit(f"{path}: no Version:")
+
+
 def release_of(path):
     """The numeric Release: from a spec, without rpm conditionals or dist tag."""
     with open(path) as f:
@@ -65,7 +86,7 @@ def release_of(path):
     sys.exit(f"{path}: no Release:")
 
 
-def edit_linux_spec(path, old_rel, new_rel, date):
+def edit_linux_spec(path, ver, old_rel, new_rel, date):
     s = open(path).read()
 
     # 1. fips_certified_kernel_version, overridable.
@@ -120,7 +141,7 @@ def edit_linux_spec(path, old_rel, new_rel, date):
     # 3. Release bump + changelog. A spec change gets both, and the changelog
     #    must stay in descending order or check_spec rejects it.
     s = s.replace(f"Release:        {old_rel}%", f"Release:        {new_rel}%", 1)
-    entry = f"""* {date} Daniel Casota <dcasota@gmail.com> 6.12.107-{new_rel}
+    entry = f"""* {date} Daniel Casota <dcasota@gmail.com> {ver}-{new_rel}
 - Let a build link a canister other than the published one, so a kernel with no
   official canister at its own level can be covered by an equivalent one built
   locally. canister_equivalent=1 plus fips_canister_override=<NEVR> selects it;
@@ -143,7 +164,7 @@ def edit_linux_spec(path, old_rel, new_rel, date):
     open(path, "w").write(s)
 
 
-def edit_esx_spec(path, old_rel, new_rel, date):
+def edit_esx_spec(path, ver, old_rel, new_rel, date):
     s = open(path).read()
 
     # The same override pair as linux.spec. linux-esx never CREATES a canister
@@ -179,7 +200,7 @@ def edit_esx_spec(path, old_rel, new_rel, date):
     s = s.replace(old_can, new_can, 1)
 
     s = s.replace(f"Release:        {old_rel}%", f"Release:        {new_rel}%", 1)
-    entry = f"""* {date} Daniel Casota <dcasota@gmail.com> 6.12.107-{new_rel}
+    entry = f"""* {date} Daniel Casota <dcasota@gmail.com> {ver}-{new_rel}
 - Accept the same canister_equivalent / fips_canister_override pair as
   linux.spec, so this flavour - the one the ISO actually boots - can link a
   locally built canister too. It never builds one; it only links.
@@ -218,10 +239,12 @@ def main():
         linux = os.path.join(tree, "SPECS/linux/linux.spec")
         esx = os.path.join(tree, "SPECS/linux/linux-esx.spec")
         lrel, erel = release_of(linux), release_of(esx)
-        print(f"  variant patch leaves linux at -{lrel}, linux-esx at -{erel}")
+        print(f"  variant patch leaves linux at {version_of(linux)}-{lrel}, "
+              f"linux-esx at {version_of(esx)}-{erel}")
 
-        edit_linux_spec(linux, lrel, lrel + 1, date)
-        edit_esx_spec(esx, erel, erel + 1, date)
+        lver, ever = version_of(linux), version_of(esx)
+        edit_linux_spec(linux, lver, lrel, lrel + 1, date)
+        edit_esx_spec(esx, ever, erel, erel + 1, date)
         print(f"  embedded patch takes linux to -{lrel+1}, linux-esx to -{erel+1}")
 
         diff = sh(tree, "git", "diff", "--", "SPECS/linux/linux.spec",
@@ -238,6 +261,15 @@ def main():
                 return 0
             print("  STALE: the committed patch does not match a regeneration")
             return 1
+
+        checker = "/root/common/support/spec-checker/check_spec.py"
+        if os.path.exists(checker):
+            r = subprocess.run([sys.executable, checker, linux, esx],
+                               capture_output=True, text=True)
+            if r.returncode != 0:
+                sys.exit("the regenerated specs do not pass check_spec:\n"
+                         + (r.stdout or "") + (r.stderr or ""))
+            print("  check_spec: exit 0")
 
         open(PATCH_OUT, "w").write(diff)
         print(f"  wrote {PATCH_OUT} ({len(diff.splitlines())} lines)")
