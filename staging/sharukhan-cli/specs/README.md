@@ -16,6 +16,7 @@ This directory holds the Spec-Driven Development artifacts for `sharukhan`. Layo
 | `features/<slug>.md` | Feature-level reference docs — schemas, algorithms, contracts, file-format specifications. Linked from PRD and ADRs. |
 | `tasks/NNN-task-<slug>.md` | Implementation task breakdown with acceptance tests. Numbered within an initiative; one task per pull request where practical. |
 | `findings/YYYY-MM-DD-<slug>.md` | Empirical records written when implementation disproves a spec assumption. Each carries a `Resolution` naming the PR that amended the spec. |
+| `research/YYYY-MM-DD-<slug>.md` | Pre-PRD engineering research. Read-only investigation of a proposed initiative: measured ground truth, options weighed, a costed plan, risks, and the open questions a PRD would have to close. Carries no authority - nothing here is approved, and an initiative still enters at Phase 1. Superseded once its PRD merges; the PRD should cite it. |
 
 ## SDD Workflow
 
