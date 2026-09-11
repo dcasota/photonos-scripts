@@ -1247,3 +1247,63 @@ pub fn verify_mirrors(cfg: &Config, photon_branch: &str) -> Result<Vec<MirrorSta
     }
     Ok(out)
 }
+
+/// Does the embedded canister-equivalent patch still apply on top of `variant`?
+///
+/// It has to be tested in a throwaway worktree with the variant patch applied
+/// first: the embedded patch's context lines carry the kernel Release the
+/// variant patch produces, so checking it against the pristine tree would
+/// always fail and checking it against a dirty tree would prove nothing.
+///
+/// Returns the measured reason either way - never a bare boolean - because the
+/// failure an operator needs to act on ("the kernel moved, regenerate it") and
+/// the one they do not ("no worktree could be created") read identically
+/// otherwise.
+pub fn embedded_applies_over(cfg: &Config, variant: &Path) -> (bool, String) {
+    let tmp = std::env::temp_dir().join(format!("shk-embcheck-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    let tree = tmp.join("t");
+    let rel = cfg.photon_tree.clone();
+
+    let made = git(
+        &rel,
+        &["worktree", "add", "-f", "-q", "--detach", &tree.to_string_lossy(), &format!("origin/{}", cfg.release)],
+    )
+    .is_ok();
+    let cleanup = |tree: &Path| {
+        let _ = git(&rel, &["worktree", "remove", "--force", &tree.to_string_lossy()]);
+        let _ = fs::remove_dir_all(&tmp);
+    };
+    if !made {
+        cleanup(&tree);
+        return (false, "could not create a worktree to test against".into());
+    }
+    if git(&tree, &["apply", &variant.to_string_lossy()]).is_err() {
+        cleanup(&tree);
+        return (false, "the variant patch itself did not apply".into());
+    }
+
+    let emb = tmp.join("canister-equivalent.patch");
+    if fs::write(&emb, crate::buildmode::Embedded::CanisterEquivalent.patch()).is_err() {
+        cleanup(&tree);
+        return (false, "could not stage the embedded patch".into());
+    }
+    let ok = git(&tree, &["apply", "--check", &emb.to_string_lossy()]).is_ok();
+    let nevr = equivalent_kernel_nevr(cfg, variant).unwrap_or_else(|_| "unknown".into());
+    cleanup(&tree);
+
+    if ok {
+        (true, format!(
+            "layers on {}, kernel {nevr}",
+            variant.file_name().unwrap_or_default().to_string_lossy()
+        ))
+    } else {
+        (
+            false,
+            format!(
+                "no - the kernel moved under it; regenerate with \
+                 `tools/regen-canister-equivalent.py`"
+            ),
+        )
+    }
+}

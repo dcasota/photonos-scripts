@@ -501,6 +501,35 @@ fn cmd_doctor(cfg: &config::Config) -> Result<(), String> {
         }
     }
 
+    // The embedded canister-equivalent patch LAYERS on a variant patch, so its
+    // context carries whatever kernel Release that patch produces. Every time
+    // the kernel moves it stops applying, and until this check existed the only
+    // way to find out was to start an equivalent build and watch it die four
+    // seconds in at [inject:embedded[release]:canister-equivalent] - which on
+    // 2026-09-11 happened twice, after the four prebuilt ISOs had already been
+    // rebuilt and with `run --all` queued behind it. Check it here, where it
+    // costs one `git apply --check` against a throwaway worktree.
+    //
+    // It can only be checked ON TOP of a variant patch, never against the
+    // pristine tree, which is why this is not simply another loop iteration
+    // above.
+    {
+        let vp = variants.iter().find(|p| {
+            p.file_name().is_some_and(|n| n.to_string_lossy().starts_with("poi-2.8"))
+        });
+        match vp {
+            None => check(
+                "canister-equivalent applies",
+                false,
+                "no poi-2.8 variant patch to layer it on".into(),
+            ),
+            Some(vp) => {
+                let (ok, detail) = build::embedded_applies_over(cfg, vp);
+                check("canister-equivalent applies", ok, detail);
+            }
+        }
+    }
+
     println!("external tools");
     // python3, base64, jq and sshpass are deliberately absent from this list:
     // they were absorbed. ssh is here because it is the instrument, not an
