@@ -160,6 +160,17 @@ pub fn cmd_run(cfg: &Config, o: &RunOpts) -> Result<(), String> {
         // that row's result from an earlier run. The wait states the measured
         // age and the seconds left, and is bounded by --settle itself.
         let settled = match media::settled(&g.iso, o.settle) {
+            // A dry run changes nothing and must not block either: it reports
+            // the wait a real run would make, then carries on as if settled.
+            Err(media::Unsettled::Young { age, remaining, .. }) if o.dry_run => {
+                println!(
+                    "  would wait {:<21} {} was written {age}s ago; --settle {} needs {remaining}s more (finding #29)",
+                    g.key,
+                    g.iso.display(),
+                    o.settle
+                );
+                Ok(age)
+            }
             Err(media::Unsettled::Young { age, remaining, .. }) => {
                 println!(
                     "  waiting {:<24} {} was written {age}s ago; --settle {} needs {remaining}s more (finding #29)",
