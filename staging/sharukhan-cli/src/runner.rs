@@ -154,10 +154,28 @@ pub fn cmd_run(cfg: &Config, o: &RunOpts) -> Result<(), String> {
                 }
             }
         }
-        match media::settled(&g.iso, o.settle) {
+        // Finding #29 asks for a settle delay. Refusing instead skipped a whole
+        // group when a campaign's last build flowed straight into its run
+        // (c01, 2026-09-13: "written 48s ago"), and the report went on showing
+        // that row's result from an earlier run. The wait states the measured
+        // age and the seconds left, and is bounded by --settle itself.
+        let settled = match media::settled(&g.iso, o.settle) {
+            Err(media::Unsettled::Young { age, remaining, .. }) => {
+                println!(
+                    "  waiting {:<24} {} was written {age}s ago; --settle {} needs {remaining}s more (finding #29)",
+                    g.key,
+                    g.iso.display(),
+                    o.settle
+                );
+                std::thread::sleep(std::time::Duration::from_secs(remaining + 2));
+                media::settled(&g.iso, o.settle)
+            }
+            other => other,
+        };
+        match settled {
             Ok(age) => g.age = age,
             Err(why) => {
-                g.refused = Some(why);
+                g.refused = Some(why.to_string());
                 println!("  REFUSED {:<24} {}", g.key, g.refused.as_ref().unwrap());
                 continue;
             }
@@ -389,6 +407,15 @@ fn run_row(
         None
     };
 
+    // Every row starts from a fresh disk. A VM left behind by an earlier
+    // create-vm/install - still powered on, its disk held open by VMware -
+    // made recreate's stash fail silently, and create then booted the OLD
+    // installation: c03 was "installed" in 18 seconds on 2026-09-13 and passed
+    // on a disk that predated the ISO under test. Teardown stops our own VM and
+    // stashes its disk chain first; create refuses if a disk still survives.
+    if cfg.vm_dir(&p.id).is_dir() {
+        vm::teardown(cfg, &p.id, false, &mut log)?;
+    }
     let vmrow = vm::create(cfg, p, iso, ks, true, &mut log)?;
     let facts = install::run(
         cfg,

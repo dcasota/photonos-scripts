@@ -84,15 +84,42 @@ pub fn create(
         .map_err(|e| format!("{e}\n       (MC_VM_ROOT_WSL must be under /mnt/<drive>/)"))?;
 
     if vm.dir.is_dir() && recreate {
-        let n = stash_contents(&vm.dir)?;
+        let stash = stash_contents(&vm.dir)?;
         log(&format!(
-            "recreate: stashed {n} file(s), path kept stable for VMware"
+            "recreate: stashed {} file(s), path kept stable for VMware",
+            stash.moved
         ));
+        for (name, why) in &stash.failed {
+            log(&format!("recreate: could not stash {name}: {why}"));
+        }
     }
     fs::create_dir_all(&vm.dir).map_err(|e| format!("{}: {e}", vm.dir.display()))?;
 
     if vm.vmdk.exists() {
-        log("disk already present, keeping it");
+        if recreate {
+            // Reusing it is how c03 passed on 2026-09-13 on an installation that
+            // predated the ISO under test: the stash could not move a disk
+            // VMware still held open, and this branch used to keep it.
+            let lock = vm.dir.join(format!("{}.vmdk.lck", vm.name)).exists();
+            return Err(format!(
+                "{} survived recreate (VMware lock present: {}); refusing to reuse a disk \
+                 from an earlier install. Run `sharukhan teardown --id {}` and retry.",
+                vm.vmdk.display(),
+                if lock { "yes" } else { "no" },
+                p.id
+            ));
+        }
+        let age = fs::metadata(&vm.vmdk)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| std::time::SystemTime::now().duration_since(t).ok())
+            .map(|d| d.as_secs());
+        match age {
+            Some(a) => log(&format!(
+                "disk already present, written {a}s ago; keeping it (no --recreate)"
+            )),
+            None => log("disk already present, age unreadable; keeping it (no --recreate)"),
+        }
     } else {
         create_disk(cfg, &dir_win, &vm.name)?;
         let size = fs::metadata(&vm.vmdk).map(|m| m.len()).unwrap_or(0);
@@ -178,20 +205,29 @@ fn create_disk(cfg: &Config, dir_win: &str, name: &str) -> Result<(), String> {
 /// questions, not inventory-level file errors.
 ///
 /// Keeping the path stable means VMware's open reference stays valid.
-fn stash_contents(dir: &Path) -> Result<usize, String> {
+struct Stash {
+    moved: usize,
+    /// Entries that could not be moved, with the reason. A disk VMware holds
+    /// open is the case that matters; it used to vanish from the count silently.
+    failed: Vec<(String, String)>,
+}
+
+fn stash_contents(dir: &Path) -> Result<Stash, String> {
     let stash = dir.join(format!("stash-{}", job::stamp()));
     fs::create_dir_all(&stash).map_err(|e| format!("{}: {e}", stash.display()))?;
     let mut moved = 0;
+    let mut failed = Vec::new();
     for e in fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))?.flatten() {
         let name = e.file_name().to_string_lossy().to_string();
         if name.starts_with("stash-") {
             continue;
         }
-        if fs::rename(e.path(), stash.join(&name)).is_ok() {
-            moved += 1;
+        match fs::rename(e.path(), stash.join(&name)) {
+            Ok(()) => moved += 1,
+            Err(err) => failed.push((name, err.to_string())),
         }
     }
-    Ok(moved)
+    Ok(Stash { moved, failed })
 }
 
 /// UEFI ignores bios.bootOrder, so the only way to stop the firmware booting
@@ -276,8 +312,11 @@ pub fn teardown(
         let ext = path.extension().map(|x| x.to_string_lossy().to_string()).unwrap_or_default();
         if path.is_file() && CHAIN.contains(&ext.as_str()) {
             let to = dir.join(format!("{name}.stashed-{ts}"));
-            if fs::rename(&path, &to).is_ok() {
-                r.stashed += 1;
+            match fs::rename(&path, &to) {
+                Ok(()) => r.stashed += 1,
+                Err(e) => log(&format!(
+                    "could not stash {name}: {e} (a VM still holding it open keeps its disk)"
+                )),
             }
         }
         if ext == "lck" || path.is_dir() && name.ends_with(".lck") {

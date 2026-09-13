@@ -8,11 +8,18 @@
 
 use crate::config::Config;
 use crate::evidence::{Checks, Status};
-use crate::guest::Guest;
+use crate::guest::{self, Guest};
 use crate::matrix::Permutation;
 use crate::{install, oracle, vmware, winpath};
 use std::fs;
 use std::path::PathBuf;
+
+/// How long verification waits for sshd once the install declared the guest
+/// up. That signal is a DHCP lease under the guest's own hostname, which comes
+/// before sshd listens. On 2026-09-13 every other STIG row answered 15-20s
+/// after its lease; k16 was probed once at 12s and scored a false FAIL.
+const SSH_READY_BUDGET_SECS: u64 = 120;
+const SSH_RETRY_INTERVAL_SECS: u64 = 5;
 
 pub struct Verified {
     pub checks: Checks,
@@ -193,7 +200,22 @@ pub fn run(
 
     c.check("guest.ip", "-", Status::Info, "", &ip, "");
     let g = Guest::new(&cfg.ssh_user, &ip, &cfg.ssh_key(), 10);
-    let probe = g.reachable();
+    let started = std::time::Instant::now();
+    let mut attempts = 1;
+    let mut probe = g.reachable();
+    while !probe.ok
+        && guest::transport_not_ready(&probe.stderr)
+        && started.elapsed().as_secs() + SSH_RETRY_INTERVAL_SECS < SSH_READY_BUDGET_SECS
+    {
+        log(&format!(
+            "ssh to {ip} not ready {}s in (attempt {attempts}): {}; retrying in {SSH_RETRY_INTERVAL_SECS}s",
+            started.elapsed().as_secs(),
+            probe.stderr.trim()
+        ));
+        std::thread::sleep(std::time::Duration::from_secs(SSH_RETRY_INTERVAL_SECS));
+        attempts += 1;
+        probe = g.reachable();
+    }
     if probe.ok {
         oracle::guest(&g, &p.stig, &p.fs, &want, &p.net, &mut c);
         oracle::harvest(&g, &harvest, cfg.guest_password().ok(), &mut c);
@@ -209,7 +231,11 @@ pub fn run(
             Status::Fail,
             "reachable",
             "unreachable",
-            &format!("no ssh to {ip} as {}: {why}", cfg.ssh_user),
+            &format!(
+                "no ssh to {ip} as {} after {attempts} attempt(s) over {}s: {why}",
+                cfg.ssh_user,
+                started.elapsed().as_secs()
+            ),
         );
     }
 

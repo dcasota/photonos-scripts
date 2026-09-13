@@ -157,34 +157,130 @@ pub fn gate(iso: &Path, variant_patch: &Path, photon_tree: &Path) -> Result<Gate
 /// zero seconds. NTFS over drvfs is still settling; VMware cannot open the file
 /// and reports it as a start failure.
 ///
-/// This refuses rather than sleeping, so the operator sees the reason instead
-/// of an unexplained pause.
-pub fn settled(iso: &Path, min_age_secs: u64) -> Result<u64, String> {
-    let meta = std::fs::metadata(iso).map_err(|e| format!("{}: {e}", iso.display()))?;
+/// The finding's own mitigation is a settle delay, so a caller may wait out
+/// `Unsettled::Young` - announcing the measured age and the remaining seconds,
+/// never pausing silently. `Growing` and `Unreadable` are not waited on:
+/// something is writing the file, or it cannot be read at all.
+pub fn settled(iso: &Path, min_age_secs: u64) -> Result<u64, Unsettled> {
+    let meta = std::fs::metadata(iso)
+        .map_err(|e| Unsettled::Unreadable(format!("{}: {e}", iso.display())))?;
     let mtime = meta
         .modified()
-        .map_err(|e| format!("{}: no mtime: {e}", iso.display()))?;
+        .map_err(|e| Unsettled::Unreadable(format!("{}: no mtime: {e}", iso.display())))?;
     let age = std::time::SystemTime::now()
         .duration_since(mtime)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    if age < min_age_secs {
-        return Err(format!(
-            "{} was written {age}s ago; VMware cannot reliably open an ISO that is still \
-             settling (finding #29). Wait {}s or pass --settle 0 if you know the file is quiet.",
-            iso.display(),
-            min_age_secs - age
-        ));
+    if let Some(remaining) = remaining_settle(age, min_age_secs) {
+        return Err(Unsettled::Young {
+            path: iso.display().to_string(),
+            age,
+            remaining,
+        });
     }
     let first = meta.len();
     std::thread::sleep(std::time::Duration::from_secs(1));
     let second = std::fs::metadata(iso).map(|m| m.len()).unwrap_or(first);
     if first != second {
-        return Err(format!(
-            "{} is still growing ({first} -> {second} bytes in one second) - something is \
-             writing it now",
-            iso.display()
-        ));
+        return Err(Unsettled::Growing {
+            path: iso.display().to_string(),
+            from: first,
+            to: second,
+        });
     }
     Ok(age)
+}
+
+/// Why an ISO is not yet safe to hand to VMware (finding #29).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Unsettled {
+    /// Written less than the minimum age ago; `remaining` seconds to go.
+    Young {
+        path: String,
+        age: u64,
+        remaining: u64,
+    },
+    /// Its size changed across a one-second sample: something is writing it.
+    Growing { path: String, from: u64, to: u64 },
+    /// Its metadata could not be read.
+    Unreadable(String),
+}
+
+impl std::fmt::Display for Unsettled {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Unsettled::Young { path, age, remaining } => write!(
+                f,
+                "{path} was written {age}s ago; VMware cannot reliably open an ISO that is still \
+                 settling (finding #29). Wait {remaining}s or pass --settle 0 if you know the file is quiet."
+            ),
+            Unsettled::Growing { path, from, to } => write!(
+                f,
+                "{path} is still growing ({from} -> {to} bytes in one second) - something is \
+                 writing it now"
+            ),
+            Unsettled::Unreadable(why) => write!(f, "{why}"),
+        }
+    }
+}
+
+/// Seconds still to wait before an ISO of `age` reaches `min_age`, or `None`
+/// once it has.
+pub fn remaining_settle(age: u64, min_age: u64) -> Option<u64> {
+    (age < min_age).then(|| min_age - age)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_young_iso_reports_exactly_the_seconds_left() {
+        assert_eq!(remaining_settle(10, 300), Some(290));
+        assert_eq!(remaining_settle(0, 320), Some(320));
+    }
+
+    #[test]
+    fn an_iso_at_or_past_the_minimum_age_needs_no_wait() {
+        // negative control: without it a gate that always waits passes the test above
+        assert_eq!(remaining_settle(300, 300), None);
+        assert_eq!(remaining_settle(4000, 300), None);
+        assert_eq!(remaining_settle(5, 0), None);
+    }
+
+    #[test]
+    fn a_freshly_written_file_is_young_and_says_why() {
+        let d = std::env::temp_dir().join(format!("sk-media-young-{}", std::process::id()));
+        std::fs::write(&d, b"iso").unwrap();
+        let got = settled(&d, 300);
+        let _ = std::fs::remove_file(&d);
+        match got {
+            Err(Unsettled::Young { age, remaining, .. }) => {
+                assert!(age < 60, "age {age}");
+                assert_eq!(age + remaining, 300);
+            }
+            other => panic!("expected Young, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn the_young_message_keeps_its_wording() {
+        let m = Unsettled::Young {
+            path: "/x/photon.iso".into(),
+            age: 48,
+            remaining: 272,
+        }
+        .to_string();
+        assert_eq!(
+            m,
+            "/x/photon.iso was written 48s ago; VMware cannot reliably open an ISO that is still \
+             settling (finding #29). Wait 272s or pass --settle 0 if you know the file is quiet."
+        );
+    }
+
+    #[test]
+    fn a_missing_iso_is_unreadable_not_young() {
+        let got = settled(Path::new("/nonexistent/sharukhan/photon.iso"), 300);
+        assert!(matches!(got, Err(Unsettled::Unreadable(_))), "{got:?}");
+    }
 }

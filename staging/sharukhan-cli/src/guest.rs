@@ -110,3 +110,70 @@ impl Guest {
         self.run("true")
     }
 }
+
+/// Whether ssh failed because the guest is not accepting connections YET -
+/// nothing answered on port 22 - as opposed to an sshd that answered and
+/// refused.
+///
+/// Only the first is worth waiting out. k16 leased its address on 2026-09-13
+/// and was probed 12 seconds later, before sshd listened: "Connection timed
+/// out". s02 reaches sshd and is turned away - "Permission denied", or under
+/// FIPS-constrained crypto "Unable to negotiate" - and that refusal IS its
+/// finding, so retrying it would only delay the evidence.
+pub fn transport_not_ready(stderr: &str) -> bool {
+    const ANSWERED: [&str; 4] = [
+        "Permission denied",
+        "Unable to negotiate",
+        "Host key verification failed",
+        "no matching",
+    ];
+    const NOT_READY: [&str; 6] = [
+        "Connection timed out",
+        "Connection refused",
+        "No route to host",
+        "Network is unreachable",
+        "Connection reset by peer",
+        "kex_exchange_identification",
+    ];
+    if ANSWERED.iter().any(|a| stderr.contains(a)) {
+        return false;
+    }
+    NOT_READY.iter().any(|n| stderr.contains(n))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::transport_not_ready;
+
+    #[test]
+    fn k16s_timeout_is_waited_out() {
+        assert!(transport_not_ready(
+            "ssh: connect to host 192.168.225.171 port 22: Connection timed out"
+        ));
+        assert!(transport_not_ready(
+            "ssh: connect to host 10.0.0.9 port 22: Connection refused"
+        ));
+        assert!(transport_not_ready(
+            "kex_exchange_identification: read: Connection reset by peer"
+        ));
+    }
+
+    #[test]
+    fn s02s_refusals_are_evidence_not_retried() {
+        assert!(!transport_not_ready(
+            "root@192.168.225.152: Permission denied (publickey,password,keyboard-interactive)."
+        ));
+        assert!(!transport_not_ready(
+            "Unable to negotiate with 192.168.225.136 port 22: no matching key exchange method found."
+        ));
+    }
+
+    #[test]
+    fn an_unrecognised_failure_is_not_retried() {
+        // negative control: a classifier that retries everything passes k16's test
+        assert!(!transport_not_ready(""));
+        assert!(!transport_not_ready(
+            "could not execute ssh: No such file or directory"
+        ));
+    }
+}
