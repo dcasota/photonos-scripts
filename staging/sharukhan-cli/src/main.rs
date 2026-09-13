@@ -480,24 +480,19 @@ fn cmd_doctor(cfg: &config::Config) -> Result<(), String> {
     } else {
         for vp in &variants {
             let name = vp.file_stem().unwrap_or_default().to_string_lossy().to_string();
-            let applies = t
-                && std::process::Command::new("git")
-                    .arg("-C")
-                    .arg(&cfg.photon_tree)
-                    .args(["apply", "--check"])
-                    .arg(vp)
-                    .output()
-                    .map(|o| o.status.success())
-                    .unwrap_or(false);
-            check(
-                &format!("{name} applies"),
-                applies,
-                if applies {
-                    format!("{} files", build::patched_files(vp))
-                } else {
-                    "no - regenerate with `sharukhan variant-patches`".into()
-                },
-            );
+            // Against the pristine release ref, not the tree: a build leaves
+            // SPECS patched, and checking there reported both variants as not
+            // applying after every build (2026-09-13).
+            let base = format!("origin/{}", cfg.release);
+            let (applies, detail) = if t {
+                build::applies_to_pristine(&cfg.photon_tree, &base, vp)
+            } else {
+                (
+                    false,
+                    format!("{} does not exist", cfg.photon_tree.display()),
+                )
+            };
+            check(&format!("{name} applies"), applies, detail);
         }
     }
 

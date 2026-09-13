@@ -1371,3 +1371,151 @@ pub fn spec_canister_pin(cfg: &Config) -> Option<String> {
             .map(str::to_string)
     })
 }
+
+/// Whether `patch` applies to `base_ref` as committed, whatever state the
+/// working tree is in.
+///
+/// doctor used to run `git apply --check` in the tree itself. A build leaves
+/// SPECS patched, so straight after every build it reported both variant
+/// patches as not applying - on 2026-09-13, minutes after they had built six
+/// ISOs. A build resets SPECS to the release before applying, so the question
+/// doctor has to answer is about the pristine ref, not the tree. A temporary
+/// index answers it without checking out a second worktree.
+pub fn applies_to_pristine(tree: &Path, base_ref: &str, patch: &Path) -> (bool, String) {
+    // Unique per call, not per process: every thread of one process shares a
+    // pid, and parallel tests collided on a single index ("a.txt: does not
+    // exist in index").
+    static CALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let call = CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let index =
+        std::env::temp_dir().join(format!("shk-pristine-{}-{call}.index", std::process::id()));
+    let run = |args: &[&str]| {
+        Command::new("git")
+            .arg("-C")
+            .arg(tree)
+            .args(args)
+            .env("GIT_INDEX_FILE", &index)
+            .output()
+    };
+    let patch_arg = patch.to_string_lossy().to_string();
+    let verdict = match run(&["read-tree", base_ref]) {
+        Err(e) => (false, format!("could not run git: {e}")),
+        Ok(o) if !o.status.success() => (
+            false,
+            format!(
+                "could not read {base_ref}: {}",
+                String::from_utf8_lossy(&o.stderr).trim()
+            ),
+        ),
+        Ok(_) => match run(&["apply", "--cached", "--check", &patch_arg]) {
+            Err(e) => (false, format!("could not run git: {e}")),
+            Ok(o) if o.status.success() => (
+                true,
+                format!(
+                    "{} files, against pristine {base_ref}",
+                    patched_files(patch)
+                ),
+            ),
+            Ok(o) => (
+                false,
+                format!(
+                    "no - does not apply to pristine {base_ref} ({}); regenerate with \
+                     `sharukhan variant-patches`",
+                    String::from_utf8_lossy(&o.stderr)
+                        .lines()
+                        .next()
+                        .unwrap_or("")
+                        .trim()
+                ),
+            ),
+        },
+    };
+    let _ = fs::remove_file(&index);
+    verdict
+}
+
+#[cfg(test)]
+mod pristine_tests {
+    use super::applies_to_pristine;
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
+
+    fn git(dir: &Path, args: &[&str]) -> bool {
+        Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args([
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "-c",
+                "commit.gpgsign=false",
+            ])
+            .args(args)
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    }
+
+    /// A repo whose committed `origin/5.0` holds "x", with the working tree
+    /// changed to "q" - the state a build leaves SPECS in.
+    fn dirty_repo(tag: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("sk-pristine-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        assert!(git(&d, &["init", "-q"]));
+        std::fs::write(d.join("a.txt"), "x\n").unwrap();
+        assert!(git(&d, &["add", "a.txt"]));
+        assert!(git(&d, &["commit", "-q", "-m", "base"]));
+        assert!(git(&d, &["update-ref", "refs/remotes/origin/5.0", "HEAD"]));
+        std::fs::write(d.join("a.txt"), "q\n").unwrap();
+        d
+    }
+
+    fn write_patch(d: &Path, from: &str) -> PathBuf {
+        let p = d.join("change.patch");
+        std::fs::write(
+            &p,
+            format!("--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-{from}\n+y\n"),
+        )
+        .unwrap();
+        p
+    }
+
+    #[test]
+    fn a_patch_for_the_pristine_ref_applies_even_when_the_tree_is_dirty() {
+        let d = dirty_repo("ok");
+        let p = write_patch(&d, "x");
+        // the old check, run in the tree, is the false alarm this replaces
+        assert!(!git(&d, &["apply", "--check", &p.to_string_lossy()]));
+        let (ok, why) = applies_to_pristine(&d, "origin/5.0", &p);
+        let _ = std::fs::remove_dir_all(&d);
+        assert!(ok, "{why}");
+        assert_eq!(why, "1 files, against pristine origin/5.0");
+    }
+
+    #[test]
+    fn a_patch_for_content_that_never_existed_does_not_apply() {
+        // negative control: a check that always says "applies" passes the test above
+        let d = dirty_repo("stale");
+        let p = write_patch(&d, "z");
+        let (ok, why) = applies_to_pristine(&d, "origin/5.0", &p);
+        let _ = std::fs::remove_dir_all(&d);
+        assert!(!ok);
+        assert!(
+            why.starts_with("no - does not apply to pristine origin/5.0"),
+            "{why}"
+        );
+    }
+
+    #[test]
+    fn a_missing_base_ref_is_reported_not_passed() {
+        let d = dirty_repo("noref");
+        let p = write_patch(&d, "x");
+        let (ok, why) = applies_to_pristine(&d, "origin/9.9", &p);
+        let _ = std::fs::remove_dir_all(&d);
+        assert!(!ok);
+        assert!(why.starts_with("could not read origin/9.9"), "{why}");
+    }
+}
