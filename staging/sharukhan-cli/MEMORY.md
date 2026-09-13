@@ -5,16 +5,16 @@ database; the database is the system of record. Editing here changes nothing and
 will be overwritten on the next render.
 
 - Source database: `/root/photon-mc/memory.db`
-- Rendered at: 2026-09-09T22:53:10Z
+- Rendered at: 2026-09-13T20:15:52Z
 - Regenerate with: `python3 tools/gen-memory-md.py /root/photon-mc/memory.db MEMORY.md`
 
 | Table | Rows |
 |---|---|
-| `run` | 121 |
-| `permutation` | 121 |
-| `check_result` | 3374 |
+| `run` | 203 |
+| `permutation` | 203 |
+| `check_result` | 6349 |
 | `artifact` | 0 |
-| `finding` | 57 |
+| `finding` | 64 |
 
 ## Permutation results
 
@@ -27,6 +27,9 @@ will be overwritten on the next render.
 | c01 | full | 2.8 | no | ext4 | ks | untested | 17 pass | 0 |  |
 | c01 | full | 2.8 | no | ext4 | ks | untested | 1 fail | 1 | - |
 | c01 | full | 2.8 | no | ext4 | ks | untested | 17 pass | 0 |  |
+| c01 | full | 2.8 | no | ext4 | ks | untested | 17 pass | 0 |  |
+| c01 | full | 2.8 | no | ext4 | ks | untested | 17 pass | 0 |  |
+| c01 | full | 2.8 | no | ext4 | ks | untested | 17 pass | 0 |  |
 | c03 | minimal | 2.8 | no | ext4 | ks | untested | 18 pass | 0 |  |
 | c03 | minimal | 2.8 | no | ext4 | ks | untested | 1 fail | 1 | PR#24 |
 | c03 | minimal | 2.8 | no | ext4 | ks | untested | 1 fail | 1 | - |
@@ -34,6 +37,14 @@ will be overwritten on the next render.
 | c03 | minimal | 2.8 | no | ext4 | ks | untested | 18 pass | 0 |  |
 | c03 | minimal | 2.8 | no | ext4 | ks | untested | 18 pass | 0 |  |
 | c03 | minimal | 2.8 | no | ext4 | ks | untested | 1 fail | 1 | - |
+| c03 | minimal | 2.8 | no | ext4 | ks | untested | 18 pass | 0 |  |
+| c03 | minimal | 2.8 | no | ext4 | ks | untested | 18 pass | 0 |  |
+| c03 | minimal | 2.8 | no | ext4 | ks | untested | 18 pass | 0 |  |
+| c03 | minimal | 2.8 | no | ext4 | ks | untested | 2 fail | 2 | - |
+| c03 | minimal | 2.8 | no | ext4 | ks | untested | 2 fail | 2 | - |
+| c03 | minimal | 2.8 | no | ext4 | ks | untested | 1 fail | 1 | - |
+| c03 | minimal | 2.8 | no | ext4 | ks | untested | 18 pass | 0 |  |
+| c03 | minimal | 2.8 | no | ext4 | ks | untested | 18 pass | 0 |  |
 | c03 | minimal | 2.8 | no | ext4 | ks | untested | 18 pass | 0 |  |
 | k01 | minimal | 2.8 | no | ext4 | ks | works | 2 fail | 2 | - |
 | k01 | minimal | 2.8 | no | ext4 | ks | works | 13 pass | 0 |  |
@@ -46,12 +57,18 @@ will be overwritten on the next render.
 | k01 | minimal | 2.8 | no | ext4 | ks | works | 1 fail | 1 | - |
 | k01 | minimal | 2.8 | no | ext4 | ks | works | 17 pass | 0 |  |
 | k01 | minimal | 2.8 | no | ext4 | ks | works | 17 pass | 0 |  |
+| k01 | minimal | 2.8 | no | ext4 | ks | works | 17 pass | 0 |  |
+| k01 | minimal | 2.8 | no | ext4 | ks | works | 17 pass | 0 |  |
+| k01 | minimal | 2.8 | no | ext4 | ks | works | 17 pass | 0 |  |
 | k02 | minimal | 2.8 | no | btrfs | ks | untested | 13 pass | 0 |  |
 | k02 | minimal | 2.8 | no | btrfs | ks | untested | 13 pass | 0 |  |
 | k02 | minimal | 2.8 | no | btrfs | ks | untested | 13 pass | 0 |  |
 | k02 | minimal | 2.8 | no | btrfs | ks | untested | 13 pass | 0 |  |
 | k02 | minimal | 2.8 | no | btrfs | ks | untested | 17 pass | 0 |  |
 | k02 | minimal | 2.8 | no | btrfs | ks | untested | 1 fail | 1 | - |
+| k02 | minimal | 2.8 | no | btrfs | ks | untested | 17 pass | 0 |  |
+| k02 | minimal | 2.8 | no | btrfs | ks | untested | 17 pass | 0 |  |
+| k02 | minimal | 2.8 | no | btrfs | ks | untested | 17 pass | 0 |  |
 | k02 | minimal | 2.8 | no | btrfs | ks | untested | 17 pass | 0 |  |
 | k03 | minimal | 2.8 | yes | ext4 | ks | fails | 1 fail | 1 | PR#9 |
 | k03 | minimal | 2.8 | yes | ext4 | ks | fails | 15 pass | 0 |  |
@@ -60,6 +77,9 @@ will be overwritten on the next render.
 | k03 | minimal | 2.8 | yes | ext4 | ks | fails | 19 pass | 0 |  |
 | k03 | minimal | 2.8 | yes | ext4 | ks | fails | 1 fail | 1 | - |
 | k03 | minimal | 2.8 | yes | ext4 | ks | fails | 19 pass | 0 |  |
+| k03 | minimal | 2.8 | yes | ext4 | ks | fails | 19 pass | 0 |  |
+| k03 | minimal | 2.8 | yes | ext4 | ks | fails | 19 pass | 0 |  |
+| k03 | minimal | 2.8 | yes | ext4 | ks | fails | 19 pass | 0 |  |
 | k04 | minimal | 2.8 | yes | btrfs | ks | fails | 1 fail | 1 | PR#9 |
 | k04 | minimal | 2.8 | yes | btrfs | ks | fails | 15 pass | 0 |  |
 | k04 | minimal | 2.8 | yes | btrfs | ks | fails | 15 pass | 0 |  |
@@ -67,11 +87,17 @@ will be overwritten on the next render.
 | k04 | minimal | 2.8 | yes | btrfs | ks | fails | 19 pass | 0 |  |
 | k04 | minimal | 2.8 | yes | btrfs | ks | fails | 1 fail | 1 | - |
 | k04 | minimal | 2.8 | yes | btrfs | ks | fails | 19 pass | 0 |  |
+| k04 | minimal | 2.8 | yes | btrfs | ks | fails | 19 pass | 0 |  |
+| k04 | minimal | 2.8 | yes | btrfs | ks | fails | 19 pass | 0 |  |
+| k04 | minimal | 2.8 | yes | btrfs | ks | fails | 19 pass | 0 |  |
 | k05 | minimal | latest | no | ext4 | ks | fails | 13 pass | 0 |  |
 | k05 | minimal | latest | no | ext4 | ks | fails | 13 pass | 0 |  |
 | k05 | minimal | latest | no | ext4 | ks | fails | 13 pass | 0 |  |
 | k05 | minimal | latest | no | ext4 | ks | fails | 17 pass | 0 |  |
 | k05 | minimal | latest | no | ext4 | ks | fails | 1 fail | 1 | - |
+| k05 | minimal | latest | no | ext4 | ks | fails | 17 pass | 0 |  |
+| k05 | minimal | latest | no | ext4 | ks | fails | 17 pass | 0 |  |
+| k05 | minimal | latest | no | ext4 | ks | fails | 17 pass | 0 |  |
 | k05 | minimal | latest | no | ext4 | ks | fails | 17 pass | 0 |  |
 | k06 | minimal | latest | no | btrfs | ks | fails | 13 pass | 0 |  |
 | k06 | minimal | latest | no | btrfs | ks | fails | 13 pass | 0 |  |
@@ -79,11 +105,17 @@ will be overwritten on the next render.
 | k06 | minimal | latest | no | btrfs | ks | fails | 17 pass | 0 |  |
 | k06 | minimal | latest | no | btrfs | ks | fails | 1 fail | 1 | - |
 | k06 | minimal | latest | no | btrfs | ks | fails | 17 pass | 0 |  |
+| k06 | minimal | latest | no | btrfs | ks | fails | 17 pass | 0 |  |
+| k06 | minimal | latest | no | btrfs | ks | fails | 17 pass | 0 |  |
+| k06 | minimal | latest | no | btrfs | ks | fails | 17 pass | 0 |  |
 | k07 | minimal | latest | yes | ext4 | ks | fails | 15 pass | 0 |  |
 | k07 | minimal | latest | yes | ext4 | ks | fails | 15 pass | 0 |  |
 | k07 | minimal | latest | yes | ext4 | ks | fails | 15 pass | 0 |  |
 | k07 | minimal | latest | yes | ext4 | ks | fails | 19 pass | 0 |  |
 | k07 | minimal | latest | yes | ext4 | ks | fails | 1 fail | 1 | - |
+| k07 | minimal | latest | yes | ext4 | ks | fails | 19 pass | 0 |  |
+| k07 | minimal | latest | yes | ext4 | ks | fails | 19 pass | 0 |  |
+| k07 | minimal | latest | yes | ext4 | ks | fails | 19 pass | 0 |  |
 | k07 | minimal | latest | yes | ext4 | ks | fails | 19 pass | 0 |  |
 | k08 | minimal | latest | yes | btrfs | ks | fails | 15 pass | 0 |  |
 | k08 | minimal | latest | yes | btrfs | ks | fails | 15 pass | 0 |  |
@@ -91,32 +123,73 @@ will be overwritten on the next render.
 | k08 | minimal | latest | yes | btrfs | ks | fails | 19 pass | 0 |  |
 | k08 | minimal | latest | yes | btrfs | ks | fails | 1 fail | 1 | - |
 | k08 | minimal | latest | yes | btrfs | ks | fails | 19 pass | 0 |  |
+| k08 | minimal | latest | yes | btrfs | ks | fails | 19 pass | 0 |  |
+| k08 | minimal | latest | yes | btrfs | ks | fails | 19 pass | 0 |  |
+| k08 | minimal | latest | yes | btrfs | ks | fails | 19 pass | 0 |  |
 | k09 | full | 2.8 | no | ext4 | ks | untested | 2 fail | 2 | - |
 | k09 | full | 2.8 | no | ext4 | ks | untested | 11 pass | 0 |  |
+| k09 | full | 2.8 | no | ext4 | ks | untested | 17 pass | 0 |  |
+| k09 | full | 2.8 | no | ext4 | ks | untested | 17 pass | 0 |  |
+| k09 | full | 2.8 | no | ext4 | ks | untested | 17 pass | 0 |  |
 | k10 | full | 2.8 | no | btrfs | ks | untested | 2 fail | 2 | - |
 | k10 | full | 2.8 | no | btrfs | ks | untested | 11 pass | 0 |  |
+| k10 | full | 2.8 | no | btrfs | ks | untested | 17 pass | 0 |  |
+| k10 | full | 2.8 | no | btrfs | ks | untested | 17 pass | 0 |  |
+| k10 | full | 2.8 | no | btrfs | ks | untested | 17 pass | 0 |  |
 | k11 | full | 2.8 | yes | ext4 | ks | untested | 1 fail | 1 | PR#9 |
 | k11 | full | 2.8 | yes | ext4 | ks | untested | 1 fail | 1 | PR#9 |
+| k11 | full | 2.8 | yes | ext4 | ks | untested | 19 pass | 0 |  |
+| k11 | full | 2.8 | yes | ext4 | ks | untested | 19 pass | 0 |  |
+| k11 | full | 2.8 | yes | ext4 | ks | untested | 19 pass | 0 |  |
 | k12 | full | 2.8 | yes | btrfs | ks | untested | 1 fail | 1 | PR#9 |
+| k12 | full | 2.8 | yes | btrfs | ks | untested | 19 pass | 0 |  |
+| k12 | full | 2.8 | yes | btrfs | ks | untested | 19 pass | 0 |  |
+| k12 | full | 2.8 | yes | btrfs | ks | untested | 19 pass | 0 |  |
 | k13 | full | latest | no | ext4 | ks | untested | 11 pass | 0 |  |
+| k13 | full | latest | no | ext4 | ks | untested | 17 pass | 0 |  |
+| k13 | full | latest | no | ext4 | ks | untested | 17 pass | 0 |  |
+| k13 | full | latest | no | ext4 | ks | untested | 17 pass | 0 |  |
 | k14 | full | latest | no | btrfs | ks | untested | 11 pass | 0 |  |
+| k14 | full | latest | no | btrfs | ks | untested | 16 pass | 0 |  |
+| k14 | full | latest | no | btrfs | ks | untested | 17 pass | 0 |  |
+| k14 | full | latest | no | btrfs | ks | untested | 17 pass | 0 |  |
 | k15 | full | latest | yes | ext4 | ks | untested | 1 fail | 1 | PR#9 |
+| k15 | full | latest | yes | ext4 | ks | untested | 19 pass | 0 |  |
+| k15 | full | latest | yes | ext4 | ks | untested | 19 pass | 0 |  |
 | k16 | full | latest | yes | btrfs | ks | untested | 1 fail | 1 | PR#9 |
+| k16 | full | latest | yes | btrfs | ks | untested | 19 pass | 0 |  |
+| k16 | full | latest | yes | btrfs | ks | untested | 1 fail | 1 | - |
+| k16 | full | latest | yes | btrfs | ks | untested | 19 pass | 0 |  |
 | media-check | ? | ? | ? | ? | ? |  | 2 pass | 0 |  |
 | n01 | minimal | 2.8 | no | ext4 | ks | untested | 17 pass | 0 |  |
 | n01 | minimal | 2.8 | no | ext4 | ks | untested | 2 fail | 2 | - |
+| n01 | minimal | 2.8 | no | ext4 | ks | untested | 17 pass | 0 |  |
+| n01 | minimal | 2.8 | no | ext4 | ks | untested | 17 pass | 0 |  |
+| n01 | minimal | 2.8 | no | ext4 | ks | untested | 17 pass | 0 |  |
 | n01 | minimal | 2.8 | no | ext4 | ks | untested | 17 pass | 0 |  |
 | n02 | minimal | 2.8 | no | ext4 | ks | untested | 1 fail | 1 | - |
 | n02 | minimal | 2.8 | no | ext4 | ks | untested | 20 pass | 0 |  |
 | n02 | minimal | 2.8 | no | ext4 | ks | untested | 2 fail | 2 | - |
 | n02 | minimal | 2.8 | no | ext4 | ks | untested | 20 pass | 0 |  |
+| n02 | minimal | 2.8 | no | ext4 | ks | untested | 20 pass | 0 |  |
+| n02 | minimal | 2.8 | no | ext4 | ks | untested | 20 pass | 0 |  |
+| n02 | minimal | 2.8 | no | ext4 | ks | untested | 20 pass | 0 |  |
 | n03 | minimal | 2.8 | no | ext4 | ks | untested | 19 pass | 0 |  |
 | n03 | minimal | 2.8 | no | ext4 | ks | untested | 2 fail | 2 | - |
 | n03 | minimal | 2.8 | no | ext4 | ks | untested | 1 fail | 1 | - |
 | n03 | minimal | 2.8 | no | ext4 | ks | untested | 19 pass | 0 |  |
+| n03 | minimal | 2.8 | no | ext4 | ks | untested | 19 pass | 0 |  |
+| n03 | minimal | 2.8 | no | ext4 | ks | untested | 19 pass | 0 |  |
+| n03 | minimal | 2.8 | no | ext4 | ks | untested | 19 pass | 0 |  |
 | n04 | minimal | 2.8 | no | ext4 | ks | untested | 23 pass | 0 |  |
 | n04 | minimal | 2.8 | no | ext4 | ks | untested | 2 fail | 2 | - |
 | n04 | minimal | 2.8 | no | ext4 | ks | untested | 23 pass | 0 |  |
+| n04 | minimal | 2.8 | no | ext4 | ks | untested | 23 pass | 0 |  |
+| n04 | minimal | 2.8 | no | ext4 | ks | untested | 23 pass | 0 |  |
+| n04 | minimal | 2.8 | no | ext4 | ks | untested | 23 pass | 0 |  |
+| n05 | minimal | 2.8 | no | ext4 | ks | untested | 1 fail | 1 | - |
+| n05 | minimal | 2.8 | no | ext4 | ks | untested | 1 fail | 1 | - |
+| n05 | minimal | 2.8 | no | ext4 | ks | untested | 1 fail | 1 | - |
 | n05 | minimal | 2.8 | no | ext4 | ks | untested | 1 fail | 1 | - |
 | n05 | minimal | 2.8 | no | ext4 | ks | untested | 1 fail | 1 | - |
 | n05 | minimal | 2.8 | no | ext4 | ks | untested | 1 fail | 1 | - |
@@ -129,6 +202,9 @@ will be overwritten on the next render.
 | s01 | minimal | 2.8 | no | ext4 | ks | fails | 17 pass | 0 |  |
 | s01 | minimal | 2.8 | no | ext4 | ks | fails | 1 fail | 1 | - |
 | s01 | minimal | 2.8 | no | ext4 | ks | fails | 17 pass | 0 |  |
+| s01 | minimal | 2.8 | no | ext4 | ks | fails | 17 pass | 0 |  |
+| s01 | minimal | 2.8 | no | ext4 | ks | fails | 17 pass | 0 |  |
+| s01 | minimal | 2.8 | no | ext4 | ks | fails | 17 pass | 0 |  |
 | s02 | minimal | 2.8 | no | ext4 | ks | fails | 1 fail | 1 | - |
 | s02 | minimal | 2.8 | no | ext4 | ks | fails | 1 fail | 1 | - |
 | s02 | minimal | 2.8 | no | ext4 | ks | fails | 1 fail | 1 | - |
@@ -136,10 +212,16 @@ will be overwritten on the next render.
 | s02 | minimal | 2.8 | no | ext4 | ks | fails | 17 pass | 0 |  |
 | s02 | minimal | 2.8 | no | ext4 | ks | fails | 17 pass | 0 |  |
 | s02 | minimal | 2.8 | no | ext4 | ks | fails | 1 fail | 1 | - |
+| s02 | minimal | 2.8 | no | ext4 | ks | fails | 17 pass | 0 |  |
+| s02 | minimal | 2.8 | no | ext4 | ks | fails | 17 pass | 0 |  |
+| s02 | minimal | 2.8 | no | ext4 | ks | fails | 17 pass | 0 |  |
 | s02 | minimal | 2.8 | no | ext4 | ks | fails | 17 pass | 0 |  |
 | s03 | minimal | latest | no | ext4 | ks | untested | 17 pass | 0 |  |
 | s03 | minimal | latest | no | ext4 | ks | untested | 17 pass | 0 |  |
 | s03 | minimal | latest | no | ext4 | ks | untested | 1 fail | 1 | - |
+| s03 | minimal | latest | no | ext4 | ks | untested | 17 pass | 0 |  |
+| s03 | minimal | latest | no | ext4 | ks | untested | 17 pass | 0 |  |
+| s03 | minimal | latest | no | ext4 | ks | untested | 17 pass | 0 |  |
 | s03 | minimal | latest | no | ext4 | ks | untested | 17 pass | 0 |  |
 
 A result that reproduces the *Matrix said* value of `fails` is a PR regression.
@@ -157,6 +239,26 @@ A result that reproduces the *Matrix said* value of `fails` is a PR regression.
 **Consequence.** Any canister/acvp/kat run is a silent no-op that reports success. c01 would have re-tested the prebuilt path all 18 prior rows already covered, and PR #1673 would have shipped with zero coverage of the code it changes.
 
 **Mitigation.** The config value must be a BARE FILENAME under $COMMON_BRANCH/common/data/. runPh5_normal.sh now writes common/data/mc_pkg_build_options.json (untracked, so git checkout -- leaves it alone, and it does not match the packages_*.json glob at build.py:296) and verifies the resolved path plus its macro list before starting the build, exiting non-zero if either is wrong.
+
+#### `stage-canister-outranks-the-pin` — A locally built canister left in stage/RPMS outranks the pinned one and breaks any kernel rebuild
+
+*build · verified* · source: `2026-09-11 prebuilt ISO rebuild after the 5.0 kernel moved 6.12.107-8 -> -11`
+
+**Observed.** linux.spec pins %define fips_canister_version 6.12.60-18.2.ph5 and carries BuildRequires: linux-fips-canister = %{fips_canister_version}. ToolChainUtils._installExtraToolchainRPMS appends the package NAME only (packages.append(package)), and stage/RPMS is a repo at higher precedence than the published one, so tdnf resolves linux-fips-canister to the newest across both. A leftover linux-fips-canister-6.12.107-11.ph5 from an earlier --canister equivalent run beats 6.12.60-18.2 on the first version segment: the retained sandbox at stage/photonroot/linux-6.12.107-13.ph5/upper/usr/lib/fips-canister/ contained fips-canister-6.12.107-11.ph5.tar.bz2, and rpmbuild then failed "error: Failed build dependencies: linux-fips-canister = 6.12.60-18.2.ph5 is needed by linux-6.12.107-13.ph5.x86_64" for both flavours. purge_shadowing_rpms cannot see it: it compares against linux.spec Version-Release (6.12.107-13), against which 6.12.107-11 is merely older.
+
+**Consequence.** Every ISO build that has to REBUILD the kernel fails in %prep-time dependency resolution, make exits 2, and the retry path then triggered the fuser sweep that took the instance down. Invisible while the stage happens to hold a kernel at the release the specs ask for, because then no kernel is rebuilt and no BuildRequires is ever resolved - upstream moving 6.12.107-8 -> -11 forced the rebuild and exposed it.
+
+**Mitigation.** purge_mismatched_canister moves any canister that is not the one this build consumes from stage/RPMS to stage/canister-aside - moved, not deleted, because one costs ~90 minutes to reproduce and phase B of an equivalent build legitimately consumes a local one. The NEVR compared against is canister_nevr when set (phase B overrides the pin with -D fips_canister_version) and the spec pin otherwise. Regression test: a_canister_that_is_not_the_pinned_one_is_moved_out_of_the_stage. [DONE 2026-09-11: photonos-scripts 6216e9d]
+
+#### `fuser-km-kills-pid-1` — The sandbox cleanup ran fuser -km over mounts backed by the root filesystem and SIGKILLed init
+
+*harness · verified* · source: `2026-09-11 prebuilt ISO rebuild after the 5.0 kernel moved 6.12.107-8 -> -11`
+
+**Observed.** clean_stale_sandboxes() in runPh5_normal.sh:686 and runPh5_pinned90.sh:484, and clean_sandboxes() in sharukhan-cli/src/buildexec.rs:1629, each began with `fuser -km <mountpoint>` for every mount matching stage/photonroot. Those are overlay/bind mounts whose backing filesystem is /, and fuser -m reports every process using that filesystem, i.e. every process on the box. On 2026-09-11 a kernel BuildRequires failure drove the retry path through this twice; each build log ends at "[runPh5_normal] Retry 2: cleaning stale sandboxes from previous attempt" followed by a bare PID list beginning "1 2 6 41 56". ps -o lstart -p 1 showed systemd restarted at 13:08:45 local, 2 minutes after the sweep. uptime -s still reported 2026-09-05 and is unreliable under WSL2.
+
+**Consequence.** Any retry of a failed package build takes the whole WSL2 instance down mid-build. It presents as a spontaneous reboot with no crash artefact, so the real build failure underneath it goes uninvestigated and the driving chain disappears with no completion record. Two multi-hour ISO rebuild attempts were lost this way before the cause was found.
+
+**Mitigation.** Never signal by mount point. The kill step is now only the /proc scan that already existed below the sweep, which matches a process by readlink(/proc/PID/root) under the stage and so reaches the gradle daemons the cleanup exists for; PID 1 and the caller are skipped explicitly. runPh5_pinned90.sh had no /proc scan at all and gained one. [DONE 2026-09-11: photonos-scripts 6216e9d]
 
 #### `vmrun-exit-code-is-not-evidence` — vmrun's exit code is unreliable in BOTH directions
 
@@ -390,6 +492,26 @@ A result that reproduces the *Matrix said* value of `fails` is a PR regression.
 
 **Mitigation.** Do not start a VM in the same breath as an ISO build completing. Verify the ISO is openable (size stable / checksum) before the first row, or insert a settle delay after the build.
 
+#### `recreate-kept-locked-disk-from-earlier-install` — create --recreate silently kept a disk VMware held open, so c03 passed on an earlier installation
+
+*harness · verified* · source: `full matrix re-run against the restacked kernel PRs, 2026-09-13 (job 29, rerun job 30)`
+
+**Observed.** c03 in job 29 logged 'recreate: stashed 8 file(s)' then 'disk already present, keeping it', and was reachable 18s after power-on. Its harvested poi-manifest.json shows install_time 2026-09-13 01:02:07, 13h before the ISO under test was built. mc-c03 had been left powered on; fs::rename of its .vmdk failed and stash_contents discarded the error.
+
+**Consequence.** A row can pass on an installation that predates the media under test; version checks cannot catch it when kernel and canister NEVRs match.
+
+**Mitigation.** run_row tears the row's VM down (stop our own VM, stash its disk chain) before create; stash failures are logged by name in create and teardown; create refuses a disk that survives recreate.
+
+#### `run-refused-young-iso-instead-of-waiting` — run refused a group whose ISO was still settling instead of waiting, leaving a stale result in the report
+
+*harness · verified* · source: `full matrix re-run against the restacked kernel PRs, 2026-09-13 (job 29, rerun job 30)`
+
+**Observed.** Job 29 began 6s after the last ISO build finished. Group full/2.8/equivalent was REFUSED: photon.iso 'was written 48s ago'. c01 was not attempted, and report --all still listed its 2026-09-12 result (checks-20260912T055321Z.jsonl) as 17 pass.
+
+**Consequence.** A row never run against the media under test reads as passing.
+
+**Mitigation.** media::settled returns a typed Unsettled; the runner waits out Young (logged with measured age and remaining seconds, bounded by --settle) and re-checks. Growing and Unreadable are still refused. See specs/findings/2026-09-13-harness-races-false-results.md.
+
 #### `stig-selinux-permissive-on-full-iso` — NOT a defect: Permissive is the intended default; the minimal ISOs carry a stale selinux-policy
 
 *harness · verified* · source: `k11 vs k03, 2026-09-01`
@@ -602,6 +724,16 @@ A result that reproduces the *Matrix said* value of `fails` is a PR regression.
 
 **Mitigation.** Feed the loop with a here-string. Verified: now reports '1 permutation(s) attempted, 1 with failing checks'.
 
+#### `doctor-checked-variant-patches-against-dirty-tree` — doctor checked the variant patches against the build tree, so it reported them as not applying after every build
+
+*harness · verified* · source: `doctor output after the 2026-09-13 equivalent builds; fixed in 'sharukhan: check variant patches against the pristine release, not the tree'`
+
+**Observed.** After the 2026-09-13 equivalent builds, /root/5.0/SPECS had 40 dirty paths carrying the variant and embedded canister patches. doctor ran `git apply --check` in that tree and reported 'poi-2.8 applies: no - regenerate with sharukhan variant-patches' (same for poi-latest). Both patches apply cleanly to origin/5.0, checked through a temporary index without touching the tree.
+
+**Consequence.** An operator is told to regenerate correct patches after every build, and a genuinely stale patch is indistinguishable from that false alarm.
+
+**Mitigation.** doctor calls build::applies_to_pristine: read origin/<release> into a temporary index (unique per call) and run `git apply --cached --check` against it, reporting the file count, git's first error line, or an unreadable base ref.
+
 #### `fips-row-needs-an-rsa-key` — A FIPS guest refuses ed25519, and the symptom reads as unreachable
 
 *harness · verified* · source: `migrated from assistant memory note fips_row_needs_rsa_key`
@@ -621,6 +753,16 @@ A result that reproduces the *Matrix said* value of `fails` is a PR regression.
 **Consequence.** A schema change to the matrix can corrupt verdict fields without failing, which is the worst possible failure shape for a test harness - wrong answers that look like right ones.
 
 **Mitigation.** All five read sites updated together with the column. sharukhan's parser was already tolerant (it checks f.len() and now uses f.get(9) with a 'prebuilt' default), so old and new files both parse. Any future column must update all five sites in the same change.
+
+#### `verify-single-ssh-probe-races-sshd` — verify probed ssh once, 12s after the DHCP lease, and scored a false FAIL on k16
+
+*harness · verified* · source: `full matrix re-run against the restacked kernel PRs, 2026-09-13 (job 29, rerun job 30)`
+
+**Observed.** k16 in job 29 leased 192.168.225.171 at 14:33:15Z; the single probe failed 'Connection timed out' and the row scored FAIL at 14:33:27Z. Seven other STIG rows answered 15-20s after their lease. The k16 rerun on a fresh disk passed 39 checks, 0 fail, 30s after its lease.
+
+**Consequence.** False FAILs on the heaviest rows (full, poi-latest, STIG, btrfs) depending on boot timing.
+
+**Mitigation.** verify retries every 5s up to 120s while guest::transport_not_ready holds (timed out, refused, no route, reset); never retries 'Permission denied' or 'Unable to negotiate', which are s02's evidence.
 
 #### `drvfs-symlink-not-followable` — A WSL symlink on drvfs is not reliably followable from Windows
 
@@ -651,6 +793,16 @@ A result that reproduces the *Matrix said* value of `fails` is a PR regression.
 **Consequence.** VM-running checks report false negatives, so a teardown could act on a live VM.
 
 **Mitigation.** tr -d '\r' on every vmrun parse.
+
+#### `artifactory-canister-url-outage` — The published-canister lookup broke during a transient Broadcom outage, not a URL retirement
+
+*tooling · verified* · source: `2026-09-11 canister plan refusal during the post-5.0-update rebuild; corrected the same day by re-probing`
+
+**Observed.** canister::published() hardcoded https://packages.broadcom.com/artifactory/photon/5.0/photon_updates_5.0_x86_64/x86_64/. Between 09:48Z and 09:52Z on 2026-09-11 that path returned 404 five consecutive times ("Item photon:5.0/photon_updates_5.0_x86_64/x86_64 does not exist") and photon_updates_5.0_x86_64 was absent from the /artifactory/photon/5.0/ directory index, while the aarch64 sibling still resolved and the short form https://packages.broadcom.com/photon/5.0/photon_updates_5.0_x86_64/x86_64/ kept serving the same directory. CORRECTION recorded 12:29Z the same day: the /artifactory/ long form returns 200 again on three consecutive probes and the repo is back in the 5.0 index. The original diagnosis of a retired path form was wrong; it was an outage of one repo behind one alias. packages.vmware.com 301-redirects to the short form.
+
+**Consequence.** While the outage lasted, every canister decision refused with "the published canister list could not be read ... plan: REFUSED", blocking both equivalent rows (c01, c03). The refusal itself is correct and deliberate - "build one locally" and "we could not look" are different claims - but a single URL behind a single alias was a single point of failure, and the harness could not tell an outage from a genuine absence of any published canister.
+
+**Mitigation.** Deriving the URL from SPECS/photon-repos/photon-updates.repo remains right and is retained: it is then by construction the same URL the kernel BuildRequires resolves against, so "published" cannot mean something different from "resolvable during the build", and it is the short form, which stayed up throughout. It does NOT make the lookup outage-proof - a retry across both URL forms would, and is not implemented. [PARTIAL 2026-09-11: photonos-scripts 767d7dd]
 
 #### `build-iso-newer-than-own-log` — mc-build-iso.sh find -newer $BUILD_LOG can never match
 

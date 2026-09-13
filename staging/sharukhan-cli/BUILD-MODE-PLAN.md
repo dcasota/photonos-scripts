@@ -88,6 +88,43 @@ here". That is what stops the table above from reappearing.
 so adding the next tooling fix is a line in a manifest, not an edit to a shell
 script that has four siblings.
 
+## Status (2026-09-13)
+
+**The precondition for retiring `runPh5_normal.sh` is met; the retirement is
+not done.** P5 below left it waiting on the full prebuilt rows. On 2026-09-13
+all six ISOs were rebuilt from the current kernel PRs - the four `prebuilt`
+ISOs through `runPh5_normal.sh`, the two `equivalent` ISOs through the cascade -
+and every automated row ran: 25 of 26 pass, and `n05` fails for its documented
+environmental reason (no switch here answers a tagged frame). That includes
+`k09`-`k16` on full media, and `c03` booting with `fips=1` and
+`FIPS canister verification passed!` on a canister built in phase A of that
+same run. Whether to switch `prebuilt` onto the cascade is now a decision, not a
+blocker.
+
+What changed in build mode since the 2026-09-03 status:
+
+- **A locally built canister no longer outranks the pinned one.** A stale
+  `linux-fips-canister` in `stage/RPMS` was installed by name ahead of the
+  pin. Mismatched canisters are moved to `stage/canister-aside/` before a build,
+  on the cascade and on the legacy path alike (`6216e9d`, `b736289`). The
+  `photon-mc/canister-vault/` described under *Phase A, verified* is no longer
+  used by the harness.
+- **The sandbox cleanup no longer kills the machine.** `fuser -km` on the stage
+  mounts matched every process on a filesystem backed by `/`, including PID 1;
+  processes are now matched by their `/proc/<pid>/root` (`6216e9d`).
+- **The embedded patch is regenerated, not hand-edited.**
+  `tools/regen-canister-equivalent.py` rebuilds it on a pristine worktree with
+  the variant patch applied, derives the kernel version, and runs the spec
+  checker on its output; `--check` reports whether the committed patch is
+  current, and `doctor` reports whether it applies (`93f5726`, `4332585`).
+  It was retargeted onto 6.12.109 (`6bc6fb3`) and onto the restacked kernel PRs,
+  which now take `linux` to Release 3 and `linux-esx` to 2 before the embedded
+  bump (`7a48bcb`).
+- **The published-canister lookup reads its URL from `photon-updates.repo`**
+  instead of a hardcoded host (`767d7dd`).
+- **`doctor` checks the variant patches against pristine `origin/<release>`**,
+  not the working tree a build leaves patched (`cede88d`).
+
 ## Status (2026-09-03)
 
 P1, P2 and P4 are done; the cascade runs natively and every phase of

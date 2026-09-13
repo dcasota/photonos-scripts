@@ -68,18 +68,39 @@ $ sharukhan doctor
 environment
   [ok  ] photon tree            /root/5.0
   [ok  ] matrix                 /root/photonos-scripts/staging/mission-control/config/permutations.tsv
-  [ok  ] vmrun                  /mnt/c/Program Files/VMware/VMware Workstation/vmrun.exe
+  [ok  ] MC_GUEST_PASSWORD      set in the environment
+vmware tooling
+  [ok  ] vmrun.exe              executable
+  [ok  ] vmware-vdiskmanager.exe executable
+  [ok  ] VMs already running    2 (this harness only ever touches its own)
 capacity
-  [ok  ] / (build stage)        167G free (88% used), needs 25G
-  [ok  ] VM store               112G free (98% used), needs 20G
+  [ok  ] / (build stage)        84G free (94% used), needs 25G
+  [ok  ] VM store               122G free (97% used), needs 20G
+  [ok  ] iso-cache              /mnt/c/photon-mc/iso-cache
+  [ok  ] results                /root/photon-mc/results
+iso build tree
+  [ok  ] photon tree HEAD       /root/5.0 (eb1cabdd4)
+  [ok  ] poi-2.8 applies        35 files, against pristine origin/5.0
+  [ok  ] poi-latest applies     35 files, against pristine origin/5.0
+  [ok  ] canister-equivalent applies layers on poi-2.8.patch, kernel 6.12.109-4.ph5
+external tools
+  [ok  ] xorriso                /usr/bin/xorriso
+  [ok  ] ssh                    /usr/bin/ssh
+  [ok  ] ssh-keygen             /usr/bin/ssh-keygen
+  [ok  ] git                    /usr/bin/git
 inputs
   [ok  ] variant patches        /root/photon-mc/variant-patches
-  [ok  ] iso cache              full-poi2.8-prebuilt, full-poilatest-prebuilt, minimal-poi2.8-prebuilt, minimal-poilatest-prebuilt
+  [ok  ] iso cache              full-poi2.8-equivalent, full-poi2.8-prebuilt, full-poilatest-prebuilt, minimal-poi2.8-equivalent, minimal-poi2.8-prebuilt, minimal-poilatest-prebuilt
+  [ok  ] lab keypair            /root/.ssh/photon-mc-rsa
 memory
-  [ok  ] database               31 finding(s)
+  [ok  ] database               64 finding(s)
 
 all checks passed
 ```
+
+The `iso build tree` checks test each variant patch against pristine
+`origin/<release>` through a temporary index, so a tree that a build has left
+patched does not read as a stale patch (finding #64).
 
 Exit code is non-zero when any check fails, so it drops straight into a script:
 
@@ -95,10 +116,10 @@ ISOs required (1):
   minimal/2.8/prebuilt       cached
 
 permutations: 3 (2 autonomous, 1 need an operator)
-  ID    ISO      POI     STIG  FS     MODE  VARIANT    CANISTER       DOC
-  k01   minimal  2.8     no    ext4   ks    none       prebuilt       works
-  k03   minimal  2.8     yes   ext4   ks    stigpkgs   prebuilt       fails
-  p01   minimal  2.8     no    ext4   ui    -          prebuilt       works
+  ID    ISO      POI     STIG  FS     MODE  VARIANT    CANISTER     NET                DOC
+  k01   minimal  2.8     no    ext4   ks    none       prebuilt     -                  works
+  k03   minimal  2.8     yes   ext4   ks    stigpkgs   prebuilt     -                  fails
+  p01   minimal  2.8     no    ext4   ui    -          prebuilt     -                  works
 ```
 
 The ISO key is `iso_type/poi/canister` — all three are build-time axes, so a row
@@ -170,7 +191,7 @@ Findings live in SQLite so they survive the session that produced them.
 
 ```
 $ sharukhan findings | head -4
-31 finding(s)
+64 finding(s)
 
   #1   blocker    -          toybox-grep-no-dash-a
   #2   high       -          gnu-only-sed-grep
@@ -186,33 +207,43 @@ The column names are discovered from the schema rather than assumed, so a
 database written by an older or newer version still reports something useful
 instead of failing outright.
 
+`MEMORY.md` is a generated view of the same database and must never be edited
+by hand. Until the planned `sharukhan db render` (Task 013) lands, regenerate it
+with
+
+```
+python3 tools/gen-memory-md.py /root/photon-mc/memory.db MEMORY.md
+```
+
 ### `report` — results of the last run of each permutation
 
 ```
-$ sharukhan report --only k01,k02,k03,k04,s01,s02
+$ sharukhan report --only k03,k04,s02,n05
   ID    ISO      POI     STIG  FS     DOC        RESULT   EVIDENCE                     FAILED CHECKS
-  k01   minimal  2.8     no    ext4   works      13 pass  checks-20260831T190338Z.jsonl 
-  k02   minimal  2.8     no    btrfs  untested   13 pass  checks-20260831T190527Z.jsonl 
-  k03   minimal  2.8     yes   ext4   fails      15 pass  checks-20260831T190822Z.jsonl 
-  k04   minimal  2.8     yes   btrfs  fails      15 pass  checks-20260831T191422Z.jsonl 
-  s01   minimal  2.8     no    ext4   fails      13 pass  checks-20260831T191846Z.jsonl 
-  s02   minimal  2.8     no    ext4   fails      1 FAIL   checks-20260831T192717Z.jsonl guest.ssh
+  k03   minimal  2.8     yes   ext4   fails      19 pass  checks-20260913T134716Z.jsonl 
+  k04   minimal  2.8     yes   btrfs  fails      19 pass  checks-20260913T135001Z.jsonl 
+  s02   minimal  2.8     no    ext4   fails      17 pass  checks-20260913T135326Z.jsonl 
+  n05   minimal  2.8     no    ext4   untested   1 FAIL   checks-20260913T140244Z.jsonl guest.ssh
 
-6 of 6 permutation(s) have results; 1 with failing checks
+4 of 4 permutation(s) have results; 1 with failing checks
+
+written: /root/photon-mc/results/reports/report-20260913T201940Z.txt
 ```
 
-Read that against `DOC`: k03 and k04 were recorded as `fails` and now pass —
-those are the STIG SELinux-relabel ordering fix. s02 fails `guest.ssh`, which is
-the FIPS defect where sshd offers algorithms the FIPS crypto then refuses.
+Read that against `DOC`. k03, k04 and s02 were recorded as `fails` and now pass:
+the STIG SELinux-relabel ordering fix, and photon-os-installer 2.8-7, which
+restricts sshd to FIPS-approved algorithms so s02 is reachable under FIPS
+crypto. n05 fails `guest.ssh` for an environmental reason, not a defect - see
+*n05 fails for the environment's reason* below.
 
-All 18 autonomous rows have now been run across the four ISOs. Six rows moved from
-a documented `fails` to a clean pass, seven previously `untested` predictions were
-confirmed, and one genuine defect remains (s02). Four rows first reported as
-failures turned out to be a wrong expectation in the oracle rather than a defect:
-on subrelease 92 `selinux-policy` ships permissive by design, so asserting
-`Enforcing` was incorrect. That is the failure mode this tool exists to avoid, and
-it still got through — the guard against it is that every verdict names the
-evidence file it came from, so the claim can be re-checked rather than believed.
+On 2026-09-13 every automated row ran against six ISOs built from the current
+PRs: 25 of 26 pass, and n05 fails as documented. Earlier, four rows first
+reported as failures turned out to be a wrong expectation in the oracle rather
+than a defect: on subrelease 92 `selinux-policy` ships permissive by design, so
+asserting `Enforcing` was incorrect. That is the failure mode this tool exists
+to avoid, and it still got through - the guard against it is that every verdict
+names the evidence file it came from, so the claim can be re-checked rather
+than believed.
 
 `EVIDENCE` names the exact result file each verdict came from. Result files are
 timestamped and never overwritten, so a re-run cannot quietly replace the
@@ -226,13 +257,15 @@ $ sharukhan report --only k09,k10
   k10   full     2.8     no    btrfs  untested   not run  -                            -
 ```
 
-### `run` — drive permutations through mission-control, sequentially
+### `run` — drive permutations end to end, sequentially
 
-`run` is the gate in front of `mc-run.sh`, not a replacement for it. It decides
-what may proceed, serialises against anything already in flight, proves the
-media, and records a job so the work is findable after the shell that started it
-is gone. Rows run one at a time, because ISO builds share `$PHOTON_TREE/stage`
-and the VM store cannot hold two installs.
+`run` decides what may proceed, serialises against anything already in flight,
+proves the media, and records a job so the work is findable after the shell that
+started it is gone. Then it drives each row in this process: it tears down
+whatever an earlier run left of that row's VM, and runs
+`kickstart -> create-vm -> install -> verify -> teardown --purge`. Rows run one
+at a time, because ISO builds share `$PHOTON_TREE/stage` and the VM store cannot
+hold two installs.
 
 `--dry-run` runs every gate for real — real `df`, real `xorriso`, real process
 scan — and executes nothing:
@@ -247,15 +280,15 @@ serialisation
   ok      no mc-run / mc-build-iso / runPh5 in flight
 
 disk
-  ok      / 186G free, VM store 108G free
+  ok      / 84G free, VM store 122G free
 
 media
-  ok      minimal/2.8/prebuilt     media has photon-os-installer-2.8-6.ph5.x86_64.rpm (expected photon-os-installer-2.8-6*), written 59748s ago
+  ok      minimal/2.8/prebuilt     media has photon-os-installer-2.8-7.ph5.x86_64.rpm (expected photon-os-installer-2.8-7*), written 38135s ago
 
 would run 3 row(s), sequentially:
-  k03   minimal/2.8/prebuilt     /root/photonos-scripts/staging/mission-control/bin/mc-run.sh --only k03
-  k04   minimal/2.8/prebuilt     /root/photonos-scripts/staging/mission-control/bin/mc-run.sh --only k04
-  s02   minimal/2.8/prebuilt     /root/photonos-scripts/staging/mission-control/bin/mc-run.sh --only s02
+  k03   minimal/2.8/prebuilt     kickstart -> create-vm -> install -> verify -> teardown --purge
+  k04   minimal/2.8/prebuilt     kickstart -> create-vm -> install -> verify -> teardown --purge
+  s02   minimal/2.8/prebuilt     kickstart -> create-vm -> install -> verify -> teardown --purge
 
 dry run: no job recorded, nothing executed
 ```
@@ -319,10 +352,18 @@ media
 sharukhan: every ISO group was refused; nothing would be run
 ```
 
-**An ISO that is still settling is refused too**, because VMware cannot open one
-that is (finding #29: the same 3.9G image was unopenable the second it landed and
-instant eight minutes later). Forcing the check with an absurd `--settle` shows
-the refusal:
+**An ISO that is still settling is waited for, not refused.** VMware cannot open
+an ISO written moments ago (finding #29: the same 3.9G image was unopenable the
+second it landed and instant eight minutes later), so `run` waits until the ISO
+is `--settle` seconds old (default 300). The wait is announced with the ISO's
+measured age and the seconds left, so it is never a silent pause. It used to
+refuse instead, and on 2026-09-13 that skipped a whole group when a campaign's
+last build flowed straight into its run, while the report went on showing that
+row's result from the day before (finding #61). An ISO that is still *growing*,
+or cannot be read, is still refused.
+
+A dry run changes nothing and does not block: it reports the wait a real run
+would make and carries on. Forcing the check with an absurd `--settle`:
 
 ```
 $ sharukhan run --dry-run --only k13 --settle 99999
@@ -334,14 +375,17 @@ serialisation
   ok      no mc-run / mc-build-iso / runPh5 in flight
 
 disk
-  ok      / 186G free, VM store 108G free
+  ok      / 84G free, VM store 122G free
 
 media
-  REFUSED full/latest/prebuilt     /mnt/c/photon-mc/iso-cache/full-poilatest-prebuilt/photon.iso was written 7788s ago; VMware cannot reliably open an ISO that is still settling (finding #29). Wait 92211s or pass --settle 0 if you know the file is quiet.
-```
+  would wait full/latest/prebuilt  /mnt/c/photon-mc/iso-cache/full-poilatest-prebuilt/photon.iso was written 36225s ago; --settle 99999 needs 63774s more (finding #29)
+  ok      full/latest/prebuilt     media has photon-os-installer-2.9-4.ph5.x86_64.rpm (expected photon-os-installer-2.9-4*), written 36225s ago
 
-It refuses rather than sleeping, so the reason is visible instead of being an
-unexplained pause.
+would run 1 row(s), sequentially:
+  k13   full/latest/prebuilt     kickstart -> create-vm -> install -> verify -> teardown --purge
+
+dry run: no job recorded, nothing executed
+```
 
 Foreign work already in flight is refused too. `--wait-idle <sec>` bounds how
 long it will wait first; the default is 0, because a CLI that blocks forever is
@@ -370,6 +414,13 @@ backgrounded. It prints the job id and the two commands that act on it.
 > verdict scraping, process-tree teardown and log following are all real. What
 > is stubbed is the install underneath: a real 16-row pass takes hours and a
 > VMware host, and has **not** been run through this code. The ADR says the same.
+>
+> **These captures also predate `run` absorbing `mc-run.sh` (2026-09-01).** A row
+> no longer runs as a child `mc-run.sh`: it runs in this process as
+> `kickstart -> create-vm -> install -> verify -> teardown --purge`, and the hint
+> for a powered-on matrix VM now reads ``use `sharukhan teardown --id <id>` ``.
+> They are kept for what they show about gating and job handling, not as a
+> current transcript.
 
 ```
 $ nohup sharukhan run --only k03,k04 &
@@ -454,7 +505,7 @@ one.
 
 **`stop` never powers off a VM.** A VM outlives the driver that started it, and
 this host also runs `runner-2` and `spagat-smoke`, which are not ours. `stop`
-reports what is up and leaves `mc-teardown.sh` to the operator.
+reports what is up and leaves `sharukhan teardown --id <id>` to the operator.
 
 ### `watch` — what is running, and follow it
 
@@ -553,6 +604,30 @@ matrix VMs still powered on: k11 - not powered off; use `/root/photonos-scripts/
 descendant of the dead pid, so it is not `stop`'s to find. That is a real limit,
 stated rather than papered over — the orphan above was cleared by hand.
 
+### One phase at a time
+
+Every step `run` takes is also a command of its own, for one row:
+
+| command | what it does |
+| --- | --- |
+| `kickstart --id <perm>` | prints the kickstart JSON the row would get |
+| `create-vm --id <perm> [--iso <path>] [--kickstart <file>] [--recreate]` | thin boot disk, VMX and kickstart injection. `--recreate` stashes the VM directory's *contents* - never the directory, which VMware holds open - and refuses if a disk survives the stash (finding #62) |
+| `install --id <perm> [--mode auto\|interactive] [--no-wait] [--timeout <sec>]` | powers on and waits for the guest to boot off disk; see *When an install is finished* |
+| `verify --id <perm> [--ip <addr>]` | runs the oracle and harvests logs. Waits up to 120 s for sshd while nothing answers, and never retries an sshd that answered and refused (finding #63) |
+| `teardown --id <perm> [--purge]` | stops only this row's VM, stashes its disk chain and removes VMware locks; `--purge` also deletes older stashes |
+| `card --id <perm>` | what an operator must enter for an interactive (`ui`) row |
+
+And the commands that produce what the rows consume:
+
+| command | what it does |
+| --- | --- |
+| `build-iso --iso-type minimal\|full --poi 2.8\|latest --canister <c> [--allow-build] [--force]` | resolves a build-axis tuple to a cached ISO, building it only with `--allow-build`; see *Build mode* below |
+| `build [--release] [--subrelease] [--img] [--out] [--dry-run]` | runs the build cascade directly |
+| `variant-patches` | rebuilds the installer variant patches from the PR branches and proves each applies to a pristine release |
+| `canister [--rebase-check]` | which canister this kernel can have - the same decision a build takes |
+| `mirrors` | whether the SPECS copies of photon-os-installer PR commits still match what the published PR branches produce |
+| `ingest` | folds the evidence files under `results/` into the memory database; idempotent, so safe to re-run over the whole tree |
+
 ## Build mode: sharukhan builds the ISO itself
 
 `sharukhan build` runs the whole build cascade natively. It replaces five shell
@@ -624,6 +699,12 @@ Only the third costs the extra ~90 minutes. `sharukhan canister` reports the
 same decision the build will take - it asks the same question, so the two
 cannot disagree.
 
+Two further answers are possible. If the published repository cannot be reached
+the answer is `unknown`, not `equivalent`: "build one locally" and "we could not
+look" are different claims. On aarch64 it is `absent` by design, because both
+kernel specs set `fips 0` there. The published lookup reads the repository URL
+from `SPECS/photon-repos/photon-updates.repo`.
+
 ### One build, not two
 
 `build-iso` resolves a matrix tuple to an ISO; `build` runs the cascade
@@ -657,19 +738,26 @@ variant patch, so it carries the pre-bump number as diff context. Every time
 5.0 bumps a kernel Release, that context stops matching and the patch fails to
 apply — the build dies at the inject stage.
 
-This is not rare. In five days 5.0 took `linux` from Release 1 to 4 to 8, and
-the patch needed retargeting three times. The chain is:
+This is not rare: in five days in September 5.0 took `linux` from Release 1 to
+4 to 8, and the patch needed retargeting three times. As of 2026-09-13
+(6.12.109) the chain is:
 
 ```
-pristine 5.0  ->  variant patch (PR#24 +1, PR#29 +1)  ->  embedded (+1)
-     8                        10                            11
+                  linux   linux-esx
+pristine 5.0        1         1
+variant patch       3         2      PR#24 bumps both, PR#29 bumps linux
+embedded patch      4         3      +1 each
 ```
 
-**Retarget by regenerating, not by hand-editing.** Apply the variant patch to a
-clean worktree, apply the embedded patch letting the Release and changelog
-hunks reject, fix those two by hand, then re-diff. Editing hunk offsets
-directly is how a previous attempt produced an orphan changelog entry and a
-descending-order violation that `rpmspec` rejected.
+**Regenerate it, never hand-edit it.** `tools/regen-canister-equivalent.py`
+applies the variant patch to a pristine worktree, makes the embedded edits,
+derives the kernel version, runs the spec checker over the result and writes the
+patch; `--check` only reports whether the committed patch is current. The patch
+is compiled in, so rebuild the binary afterwards. `sharukhan doctor` reports
+`canister-equivalent applies` on every run, so a moved kernel is caught before a
+build rather than seconds into one. Hand-editing hunk offsets is how an earlier
+attempt produced an orphan changelog entry and a descending-order violation that
+`rpmspec` rejected.
 
 ### `--compose-only`
 
@@ -759,19 +847,48 @@ machine.
 | Variable | Default |
 | --- | --- |
 | `PHOTON_TREE` | `/root/5.0` |
-| `SHARUKHAN_MATRIX` | `<mission-control>/config/permutations.tsv` |
-| `MC_RESULTS_DIR` | `/root/photon-mc/results` |
+| `POI_TREE` | `/root/photon-os-installer` |
+| `PHOTON_SCRIPTS` | `/root` |
+| `SHARUKHAN_ROOT` | `/root/photonos-scripts/staging/mission-control` |
+| `SHARUKHAN_MATRIX` | `$SHARUKHAN_ROOT/config/permutations.tsv` |
 | `SHARUKHAN_DB` | `/root/photon-mc/memory.db` |
-| `MC_ISO_CACHE` | `/mnt/c/photon-mc/iso-cache` |
-| `MC_VARIANT_PATCH_DIR` | `/root/photon-mc/variant-patches` |
-| `MC_VM_ROOT_WSL` | `/mnt/c/photon-mc/vm` |
-| `VMRUN` | `/mnt/c/Program Files/VMware/VMware Workstation/vmrun.exe` |
-| `MC_BIN` | `<mission-control>/bin` |
+| `MC_RESULTS_DIR` | `/root/photon-mc/results` |
+| `MC_BUILD_LOG_DIR` | `/root/photon-mc/build-logs` |
 | `MC_RUN_LOG_DIR` | `/root/photon-mc/run-logs` |
+| `MC_WORK` | `/root/photon-mc/work` |
+| `MC_VARIANT_PATCH_DIR` | `/root/photon-mc/variant-patches` |
+| `MC_ISO_CACHE` | `/mnt/c/photon-mc/iso-cache` |
+| `MC_VM_ROOT_WSL` | `/mnt/c/photon-mc/vm` |
+| `MC_DHCP_LEASES` | `/mnt/c/ProgramData/VMware/vmnetdhcp.leases` |
+| `VMRUN` | `/mnt/c/Program Files/VMware/VMware Workstation/vmrun.exe` |
+| `VDISKMANAGER` | `/mnt/c/Program Files/VMware/VMware Workstation/vmware-vdiskmanager.exe` |
+| `MC_BUILD_ROOT` | `/root` |
+| `MC_BUILD_COMMON` | `common` |
+| `MC_RELEASE` | `5.0` |
+| `MC_PHOTON_REMOTE` | `https://github.com/dcasota/photon.git` |
+| `GUEST_VCPUS` | `2` |
+| `GUEST_MEM_MB` | `4096` |
+| `BOOT_DISK_SIZE` | `32GB` |
+| `BOOT_DISK_ADAPTER` | `lsilogic` |
+| `BOOT_DISK_TYPE` | `0` |
 | `MC_NET_PREFIX` | `192.168.225` |
+| `MC_NET_GATEWAY` | `<MC_NET_PREFIX>.2` |
+| `MC_NET_DNS` | `<MC_NET_PREFIX>.2` |
 | `MC_NET_CIDR` | `24` |
 | `MC_NET_V6_PREFIX` | `fd00:225` (a ULA — see the network axis below) |
 | `MC_NET_VLAN_PREFIX` | `192.168.100` |
+| `MC_IP_BASE` | `40` |
+| `MC_NIC_DEV` | `e1000` |
+| `SSH_KEY_DIR` | `$HOME/.ssh` |
+| `SSH_KEY_NAME` | `photon-mc-rsa` |
+| `SSH_USER` | `root` |
+| `MC_GUEST_PASSWORD` | **required, no default** — the root password of every VM the harness installs |
+| `SERIAL_LOG_PREFIX` | `serial0` |
+| `MC_INSTALL_TIMEOUT_SEC` | `2400` |
+| `MC_BOOT_TIMEOUT_SEC` | `600` |
+| `MC_SSH_TIMEOUT_SEC` | `300` |
+| `MC_SAMPLE_SEC` | `25` |
+| `MC_START_TIMEOUT` | `240` |
 
 ```
 SHARUKHAN_DB=/tmp/other.db sharukhan findings
@@ -1005,11 +1122,29 @@ cost real time:
   running script mid-execution.
 - **An ISO that has just been written cannot be opened.** Finding #29: the same
   3.9G image failed every power-on the second it landed on NTFS and opened in
-  zero seconds eight minutes later. `run` refuses a too-fresh ISO rather than
-  starting a VM that will fail for a reason nobody will connect to the build.
+  zero seconds eight minutes later. `run` waits out a too-fresh ISO, announcing
+  the wait, rather than starting a VM that will fail for a reason nobody will
+  connect to the build. It refused at first, which skipped a whole group of
+  rows (finding #61).
 - **Serialise on a record, not on an idle poll.** Two drivers polling the same
   idle condition both wake when it clears and both start work. `run` chains on a
   `job` row it owns, and only then checks for foreign processes.
 - **A background job outlives the shell that started it.** The `job` table is
   what makes it findable afterwards, and what makes a crashed driver
   distinguishable from a running one.
+- **A failed rename is a finding, not a skipped line.** Stashing moved files with
+  `rename(...).is_ok()`. When VMware still held a disk open the rename failed
+  silently, the disk stayed, and a row "installed" in 18 seconds and passed on an
+  installation from the day before (finding #62). Stash failures are logged by
+  name, every row tears its VM down first, and `create --recreate` refuses a disk
+  that survives.
+- **A DHCP lease is not sshd.** The install signal is a lease under the guest's
+  own hostname, which comes before sshd listens. One SSH attempt 12 seconds later
+  scored a false FAIL on the heaviest row (finding #63). `verify` now retries
+  while nothing answers, and never retries an sshd that answered and refused.
+- **Check a patch against what a build applies it to.** A build leaves `SPECS`
+  patched, so checking a variant patch in the tree reported it stale after every
+  build (finding #64). `doctor` reads `origin/<release>` into a temporary index.
+- **A temporary name must be unique per call, not per process.** Every thread of
+  one process shares a pid, and parallel tests collided on one index file until
+  the name carried a counter.

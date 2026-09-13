@@ -18,8 +18,14 @@ A compiled binary with typed errors, explicit inputs and real exit codes removes
 
 ```
                  +-------------------------------------------+
-   cli           |  clap surface: doctor / build / run /      |
-                 |  status / stop / report / db               |
+   cli           |  inspect: doctor plan status findings     |
+                 |           report                          |
+                 |  drive:   run stop watch                  |
+                 |  phases:  kickstart create-vm install     |
+                 |           verify teardown card            |
+                 |  build:   build-iso build variant-patches |
+                 |           canister mirrors ingest         |
+                 |  planned: db render (Task 013)            |
                  +---------------------+---------------------+
                                        |
    orchestration  +--------------------v---------------------+
@@ -47,17 +53,35 @@ A compiled binary with typed errors, explicit inputs and real exit codes removes
 
 Every layer depends only downward. The domain layer never shells out directly; it goes through the process-runner adapter, which takes an argument vector and never a shell string. That single choke point is what makes the security posture testable.
 
+## Modules
+
+| Layer | Modules | Responsibility |
+|---|---|---|
+| orchestration | `runner` | `run`, `stop`, `watch`: gates, serialisation, one row end to end |
+| orchestration | `job` | the `job` table: background work that outlives its shell |
+| orchestration | `matrix`, `identity` | the permutation matrix; deterministic per-row MAC, UUID and IP |
+| domain: preflight | `disk`, `proc`, `canister` | disk admission; process lookup that cannot match itself; which canister a kernel can have |
+| domain: iso | `build`, `buildmode`, `buildexec`, `media` | resolving a tuple to an ISO and the variant patches; the build cascade and its execution; proving an ISO carries the packages under test |
+| domain: vm | `vm`, `vmx`, `kickstart`, `net` | the VM on disk and taking it back; the VMX template; the POI kickstart; the network axis |
+| domain: install | `install`, `leases`, `serial`, `card` | one install; the DHCP lease file and serial log as boot signals; the operator card |
+| domain: verify | `verify`, `oracle`, `evidence`, `report` | running the oracle and harvesting logs; the assertions; structured results; per-row report |
+| adapters | `guest`, `vmware`, `winpath`, `sha256`, `b64` | ssh into the guest; vmrun; WSL to Windows paths; hashing and encoding without shelling out |
+| persistence | `memory`, `ingest` | the memory database; deriving it from the evidence files |
+| cli | `main`, `phases`, `config` | the command surface; one entry point per phase; typed paths and defaults |
+
 ## The axis model
 
-The matrix separates cleanly, and the separation is what makes 34 permutations cost 4 builds:
+The matrix separates cleanly, and the separation is what makes 43 permutations cost 7 ISOs (6 buildable on an x86_64 host; `fips0-aarch64` needs aarch64 hardware):
 
 | Axis | Values | Decided at | Consequence |
 |---|---|---|---|
 | ISO type | `minimal`, `full` | **build** | separate ISO |
 | Installer version | `2.8`, `latest` | **build** | separate ISO |
+| FIPS canister | `prebuilt`, `equivalent`, `fips0-aarch64` | **build** | separate ISO |
 | STIG hardening | `no`, `yes` | install | free |
 | Root filesystem | `ext4`, `btrfs` | install | free |
 | Delivery | `kickstart`, `ui` | install | free |
+| Network | `<family>-<assignment>-<vlan>`, e.g. `v4-dhcp-untag` | install | free |
 
 Install-time axes are free because Photon's `isoInstaller` reads `guestinfo.kickstart.data` through `vmtoolsd`, and `vmtoolsd` is present in the installer initrd. A per-permutation kickstart is one VMX line — no ISO remaster, no HTTP server, no boot-menu interaction.
 
@@ -67,7 +91,7 @@ The `ui` value cannot be automated: the STIG menu exists only in the curses conf
 
 Results are not files that happen to be greppable; they are rows. The database is the system of record and `MEMORY.md` is a generated view over it that always refers to it rather than duplicating it — so the two cannot disagree.
 
-Entities: `run`, `permutation`, `check`, `artifact`, `finding`, `job`. A `check` carries the PR it proves, which is what turns a failure into `PR#22 regressed` rather than `something broke`.
+Tables: `run`, `permutation`, `check_result`, `artifact`, `finding`, `job`, `next_step`. A `check_result` carries the PR it proves, which is what turns a failure into `PR#22 regressed` rather than `something broke`. `run`, `permutation` and `check_result` are derived from the evidence files under `results/` by `sharukhan ingest`, which is idempotent; `finding` and `next_step` are written by hand; `artifact` is declared but not yet written. `MEMORY.md` is rendered from the database by `tools/gen-memory-md.py`, a stand-in until the planned `sharukhan db render` subcommand lands; the PRD assigns that to Task 013, together with AC-16's versioned reports.
 
 ## Security posture
 
@@ -90,9 +114,9 @@ The methodology is reconstructed from the maintainer's `vCenter-CVE-drift-analyz
 | Phase | Deliverable | Status |
 |---|---|---|
 | 0 | `ARCHITECTURE.md`, `specs/README.md`, `AGENTS.md` | Complete (#319) |
-| 1 | `specs/prd.md` | In Progress |
-| 2 | Dev Lead review on the PRD PR | Pending |
-| 3 | `specs/adr/0001`–`000n` | Pending |
+| 1 | `specs/prd.md` | Complete — landed with the SDD layout on 2026-09-10 |
+| 2 | Dev Lead review on the PRD PR | Not recorded |
+| 3 | `specs/adr/0001`–`000n` | Partial — `0001-run-stop-watch` only |
 | 4 | `specs/features/*.md` | Pending |
-| 5 | `specs/tasks/NNN-task-*.md` + index | Pending |
-| 6 | `src/`, `tests/` — one PR per task | Pending |
+| 5 | `specs/tasks/NNN-task-*.md` + index | Pending — the PRD already cites Task 013 (AC-11, AC-16, the planned `db` command), but no task file exists |
+| 6 | `src/`, `tests/` — one PR per task | Ahead of phases 2–5: the CLI predates the SDD layout. 195 unit tests; where the implementation disproved an assumption it is recorded under `specs/findings/` |
