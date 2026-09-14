@@ -402,8 +402,10 @@ pub fn purged_before_phase_b(name: &str, nevr: &str) -> bool {
 /// every rebase and a hardcoded pair is wrong the moment one does.
 pub fn kernel_flavour_nevrs(specs_linux: &Path) -> Vec<(String, String)> {
     let mut out = Vec::new();
+    let sub = specs_linux.parent().and_then(Path::parent).and_then(crate::specresolve::tree_subrelease);
+    let read = crate::specresolve::dir_reader(specs_linux);
     for flavour in ["linux", "linux-esx"] {
-        let Ok(text) = fs::read_to_string(specs_linux.join(format!("{flavour}.spec"))) else {
+        let Some(text) = crate::specresolve::resolve(&read, &format!("{flavour}.spec"), sub) else {
             continue;
         };
         let field = |k: &str| -> Option<String> {
@@ -488,6 +490,15 @@ pub fn equivalent_kernel_nevr(cfg: &Config, patch: &Path) -> Result<String, Stri
 }
 
 fn kernel_nevr_layered(cfg: &Config, patch: &Path, with_embedded: bool) -> Result<String, String> {
+    // Under git, apply the patches to a temporary index and read the spec as
+    // the build's subrelease sees it. That follows the kernel into included
+    // files - SPECS/linux/linux.spec keeps Release in linux-6.12.inc - and takes
+    // the right side of photon_subrelease conditionals, neither of which a scan
+    // of diff hunks can do: the hunks carry both kernels' Version lines.
+    if cfg.photon_tree.join(".git").exists() {
+        return kernel_nevr_from_index(cfg, patch, with_embedded);
+    }
+
     let mut version: Option<String> = None;
     let mut release: Option<String> = None;
 
@@ -506,8 +517,13 @@ fn kernel_nevr_layered(cfg: &Config, patch: &Path, with_embedded: bool) -> Resul
     }
 
     if version.is_none() || release.is_none() {
-        let spec = cfg.photon_tree.join("SPECS/linux/linux.spec");
-        let text = fs::read_to_string(&spec).map_err(|e| format!("{}: {e}", spec.display()))?;
+        let dir = cfg.photon_tree.join("SPECS/linux");
+        let text = crate::specresolve::resolve(
+            &crate::specresolve::dir_reader(&dir),
+            "linux.spec",
+            crate::specresolve::tree_subrelease(&cfg.photon_tree),
+        )
+        .ok_or_else(|| format!("{}: cannot read", dir.join("linux.spec").display()))?;
         for line in text.lines() {
             if let Some(v) = line.strip_prefix("Version:") {
                 version.get_or_insert(v.trim().to_string());
@@ -522,6 +538,50 @@ fn kernel_nevr_layered(cfg: &Config, patch: &Path, with_embedded: bool) -> Resul
     // Release carries rpm conditionals and the dist tag: 13%{?acvp_build:.acvp}%{?dist}
     let r = r.split('%').next().unwrap_or(&r).trim().to_string();
     Ok(format!("{v}-{r}.ph5"))
+}
+
+/// The kernel NEVR from `origin/<release>` with `patch` (and, for an
+/// equivalent build, the embedded canister patch) applied to a throwaway index.
+fn kernel_nevr_from_index(cfg: &Config, patch: &Path, with_embedded: bool) -> Result<String, String> {
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let index = std::env::temp_dir().join(format!("shk-nevr-index-{}-{n}", std::process::id()));
+    let embedded = index.with_extension("embedded.patch");
+    let run = |args: &[&str]| -> Result<(), String> {
+        let out = Command::new("git")
+            .arg("-C")
+            .arg(&cfg.photon_tree)
+            .env("GIT_INDEX_FILE", &index)
+            .args(args)
+            .output()
+            .map_err(|e| format!("git: {e}"))?;
+        if out.status.success() {
+            Ok(())
+        } else {
+            Err(format!("git {} failed: {}", args.join(" "), String::from_utf8_lossy(&out.stderr).trim()))
+        }
+    };
+    let result = (|| {
+        run(&["read-tree", &format!("origin/{}", cfg.release)])?;
+        if patch.is_file() {
+            run(&["apply", "--cached", &patch.to_string_lossy()])?;
+        }
+        if with_embedded {
+            fs::write(&embedded, crate::buildmode::Embedded::CanisterEquivalent.patch())
+                .map_err(|e| format!("{}: {e}", embedded.display()))?;
+            run(&["apply", "--cached", &embedded.to_string_lossy()])?;
+        }
+        let read = crate::specresolve::git_reader(&cfg.photon_tree, "", "SPECS/linux", Some(&index));
+        let text = crate::specresolve::resolve(&read, "linux.spec", crate::specresolve::tree_subrelease(&cfg.photon_tree))
+            .ok_or("no SPECS/linux/linux.spec in the patched tree")?;
+        let v = crate::specresolve::field(&text, "Version:").ok_or("no Version: for linux")?;
+        let r = crate::specresolve::field(&text, "Release:").ok_or("no Release: for linux")?;
+        let r = r.split('%').next().unwrap_or(&r).trim().to_string();
+        Ok(format!("{v}-{r}.ph5"))
+    })();
+    let _ = fs::remove_file(&index);
+    let _ = fs::remove_file(&embedded);
+    result
 }
 
 pub fn find_files_rec(dir: &Path, prefix: &str, suffix: &str) -> Vec<PathBuf> {
@@ -634,7 +694,11 @@ pub const VARIANTS: [Variant; 2] = [
             // itself stacked on fix/kernel-shared-canister-config. Only the
             // tip is listed: cherry-picking is by range, so naming any base
             // replays its commits twice and conflicts.
-            "fix/canister-build-against-current-kernel",
+            // fix/kernel-single-source is stacked on it and listed instead:
+            // one SPECS/linux/linux.spec and linux-esx.spec for every 5.0
+            // subrelease (kernel 6.1 up to 90, 6.12 from 91), carrying both
+            // canister PRs. Fork-only until these rows pass.
+            "fix/kernel-single-source",
             // cloud-init 26.2 renders its systemd generator with a variant
             // that is not in the libexecdir list, so the generator looks for
             // ds-identify at /usr/lib and exits 3. Every 26.2 guest reports
@@ -680,7 +744,11 @@ pub const VARIANTS: [Variant; 2] = [
             // itself stacked on fix/kernel-shared-canister-config. Only the
             // tip is listed: cherry-picking is by range, so naming any base
             // replays its commits twice and conflicts.
-            "fix/canister-build-against-current-kernel",
+            // fix/kernel-single-source is stacked on it and listed instead:
+            // one SPECS/linux/linux.spec and linux-esx.spec for every 5.0
+            // subrelease (kernel 6.1 up to 90, 6.12 from 91), carrying both
+            // canister PRs. Fork-only until these rows pass.
+            "fix/kernel-single-source",
             // cloud-init 26.2 renders its systemd generator with a variant
             // that is not in the libexecdir list, so the generator looks for
             // ds-identify at /usr/lib and exits 3. Every 26.2 guest reports
@@ -773,7 +841,13 @@ pub fn make_variant_patches(cfg: &Config, log: &mut dyn FnMut(&str)) -> Result<(
 /// `merge --autostash` happened to preserve it. A fresh clone (`-b common`)
 /// does not contain it, and the build fails two hours in with
 /// `linux-fips-canister-<nevr> package not found or not installed`.
-pub const COMMON_BRANCHES: &[&str] = &["fix/sans-snapshot-resolves-locally-built-canister"];
+pub const COMMON_BRANCHES: &[&str] = &[
+    "fix/sans-snapshot-resolves-locally-built-canister",
+    // check_spec reads a spec as the subrelease being built sees it. Without
+    // it the build refuses the single-source kernel spec before compiling
+    // anything: it compares the last Version tag with the first changelog.
+    "fix/check-spec-subrelease-aware",
+];
 
 /// The same assembly as a variant patch, against the `common` branch line.
 ///
@@ -922,6 +996,61 @@ mod tests {
         fs::write(&patch, "+++ b/SPECS/aide/aide.spec\n+Release:        3%{?dist}\n").unwrap();
         let cfg = Config::for_test(&tmp);
         assert_eq!(kernel_nevr(&cfg, &patch).unwrap(), "6.12.103-9.ph5");
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// The single-source kernel spec keeps Version behind a subrelease
+    /// conditional and Release in an included file. Read through a patched
+    /// index at the tree's subrelease, the NEVR is that kernel's with the
+    /// patch's Release - not the first Version line of the raw spec.
+    #[test]
+    fn the_kernel_nevr_follows_the_single_source_spec() {
+        let tmp = std::env::temp_dir().join(format!("shk-nevr-ss-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(tmp.join("SPECS/linux")).unwrap();
+        let git = |args: &[&str]| {
+            let o = Command::new("git").arg("-C").arg(&tmp).args(args).output().unwrap();
+            assert!(o.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&o.stderr));
+        };
+        let spec = [
+            "Name:           linux",
+            "%if 0%{?photon_subrelease} <= 90",
+            "Version:        6.1.183",
+            "%else",
+            "Version:        6.12.109",
+            "%endif",
+            "Source990:      linux-6.1.inc",
+            "Source991:      linux-6.12.inc",
+            "%if 0%{?photon_subrelease} <= 90",
+            "%include %{SOURCE990}",
+            "%else",
+            "%include %{SOURCE991}",
+            "%endif",
+        ];
+        fs::write(tmp.join("SPECS/linux/linux.spec"), spec.join("\n") + "\n").unwrap();
+        fs::write(tmp.join("SPECS/linux/linux-6.1.inc"), "Release:        3%{?dist}\n").unwrap();
+        fs::write(tmp.join("SPECS/linux/linux-6.12.inc"), "Release:        4%{?acvp_build:.acvp}%{?dist}\n").unwrap();
+        git(&["init", "-q"]);
+        git(&["add", "-A"]);
+        git(&["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "base"]);
+        git(&["update-ref", "refs/remotes/origin/5.0", "HEAD"]);
+        let patch = tmp.join("poi-2.8.patch");
+        let lines = [
+            "--- a/SPECS/linux/linux-6.12.inc",
+            "+++ b/SPECS/linux/linux-6.12.inc",
+            "@@ -1 +1 @@",
+            "-Release:        4%{?acvp_build:.acvp}%{?dist}",
+            "+Release:        5%{?acvp_build:.acvp}%{?dist}",
+        ];
+        fs::write(&patch, lines.join("\n") + "\n").unwrap();
+        let build_config = |n: u32| {
+            format!("{{\n  \"photon-build-param\": {{\n    \"photon-subrelease\": \"{n}\"\n  }}\n}}\n")
+        };
+        let cfg = Config::for_test(&tmp);
+        fs::write(tmp.join("build-config.json"), build_config(92)).unwrap();
+        assert_eq!(kernel_nevr(&cfg, &patch).unwrap(), "6.12.109-5.ph5");
+        fs::write(tmp.join("build-config.json"), build_config(90)).unwrap();
+        assert_eq!(kernel_nevr(&cfg, &patch).unwrap(), "6.1.183-3.ph5");
         let _ = fs::remove_dir_all(&tmp);
     }
 
@@ -1363,7 +1492,13 @@ pub fn vault_mismatched_canisters(stage: &Path, want: &str) -> Vec<String> {
 /// The canister NEVR a build will actually consume: the spec's
 /// `fips_canister_version` pin, read from the tree rather than written down.
 pub fn spec_canister_pin(cfg: &Config) -> Option<String> {
-    fs::read_to_string(cfg.photon_tree.join("SPECS/linux/linux.spec")).ok().and_then(|t| {
+    let dir = cfg.photon_tree.join("SPECS/linux");
+    let text = crate::specresolve::resolve(
+        &crate::specresolve::dir_reader(&dir),
+        "linux.spec",
+        crate::specresolve::tree_subrelease(&cfg.photon_tree),
+    );
+    text.and_then(|t| {
         t.lines()
             .map(str::trim)
             .find(|l| l.starts_with("%define fips_canister_version"))

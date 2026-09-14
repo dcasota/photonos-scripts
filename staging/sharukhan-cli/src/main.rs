@@ -18,6 +18,7 @@ mod install;
 mod oracle;
 mod serial;
 mod sha256;
+mod specresolve;
 mod verify;
 mod disk;
 mod identity;

@@ -1146,8 +1146,7 @@ pub fn purge(c: &mut Ctx) -> Result<(), String> {
 /// the spec.
 fn purge_mismatched_canister(c: &mut Ctx, stage: &Path) {
     let release_tree = c.spec.tree(Tree::Release);
-    let spec_pin = fs::read_to_string(release_tree.join("SPECS/linux/linux.spec"))
-        .ok()
+    let spec_pin = resolved_spec(c, &release_tree, Path::new("SPECS/linux/linux.spec"))
         .and_then(|t| {
             t.lines()
                 .map(str::trim)
@@ -1386,7 +1385,28 @@ pub struct SpecFamilies {
 /// spec ever mentioning it, and it was the one subpackage the old libcap
 /// literal did remember.
 fn spec_families(spec: &Path) -> Option<SpecFamilies> {
-    let text = fs::read_to_string(spec).ok()?;
+    spec_families_text(&fs::read_to_string(spec).ok()?)
+}
+
+/// The subrelease this build runs at: the pin when there is one, otherwise
+/// what the release tree's build-config.json says.
+fn build_subrelease(c: &Ctx, release_tree: &Path) -> Option<u32> {
+    match c.spec.subrelease {
+        Subrelease::Pinned(n) => Some(n),
+        Subrelease::Mainline => crate::specresolve::tree_subrelease(release_tree),
+    }
+}
+
+/// A spec of the release tree as this build's subrelease sees it: its
+/// photon_subrelease conditionals decided and its includes inlined.
+fn resolved_spec(c: &Ctx, release_tree: &Path, spec: &Path) -> Option<String> {
+    let dir = release_tree.join(spec.parent()?);
+    let name = spec.file_name()?.to_string_lossy().into_owned();
+    let text = crate::specresolve::resolve(&crate::specresolve::dir_reader(&dir), &name, build_subrelease(c, release_tree));
+    text
+}
+
+fn spec_families_text(text: &str) -> Option<SpecFamilies> {
     let field = |k: &str| -> Option<String> {
         text.lines()
             .find(|l| l.starts_with(k))
@@ -1495,11 +1515,10 @@ fn is_stale_version(name: &str, fams: &SpecFamilies) -> bool {
 fn purge_shadowing_rpms(c: &mut Ctx, stage: &Path) {
     let release_tree = c.spec.tree(Tree::Release);
     for spec in patched_specs(c) {
-        let Some(fams) = spec_families(&release_tree.join(&spec)) else { continue };
-        let text = match fs::read_to_string(release_tree.join(&spec)) {
-            Ok(t) => t,
-            Err(_) => continue,
-        };
+        // Resolved, not read: a kernel spec that serves several subreleases
+        // keeps Release in an included file behind a subrelease conditional.
+        let Some(text) = resolved_spec(c, &release_tree, Path::new(&spec)) else { continue };
+        let Some(fams) = spec_families_text(&text) else { continue };
         let rel = text
             .lines()
             .find(|l| l.starts_with("Release:"))
@@ -1625,14 +1644,26 @@ fn patched_specs(c: &mut Ctx) -> Vec<String> {
             out.push(p);
         }
     };
-    let scan = |text: &str, add: &mut dyn FnMut(&str)| {
+    // Files other than specs the patches change, by directory. An included
+    // file is part of every spec beside it: the single-source kernel spec keeps
+    // Release in linux-6.12.inc, so a patch that bumps the kernel may not touch
+    // a single .spec file.
+    let mut other_dirs: Vec<String> = Vec::new();
+    let scan = |text: &str, add: &mut dyn FnMut(&str), dirs: &mut Vec<String>| {
         for l in text.lines() {
             // "+++ b/SPECS/linux/linux-esx.spec" - the post-image side, so a
             // spec the patch CREATES is included and one it deletes is not.
             let Some(rest) = l.strip_prefix("+++ b/") else { continue };
             let path = rest.split_whitespace().next().unwrap_or("");
-            if path.starts_with("SPECS/") && path.ends_with(".spec") {
+            if !path.starts_with("SPECS/") {
+                continue;
+            }
+            if path.ends_with(".spec") {
                 add(path);
+            } else if let Some((dir, _)) = path.rsplit_once('/') {
+                if !dirs.iter().any(|d| d == dir) {
+                    dirs.push(dir.to_string());
+                }
             }
         }
     };
@@ -1640,11 +1671,38 @@ fn patched_specs(c: &mut Ctx) -> Vec<String> {
         match inj {
             Injection::TreePatch { tree: Tree::Release, patch } => {
                 if let Ok(t) = fs::read_to_string(patch) {
-                    scan(&t, &mut add);
+                    scan(&t, &mut add, &mut other_dirs);
                 }
             }
-            Injection::Embed(e) if e.tree() == Tree::Release => scan(e.patch(), &mut add),
+            Injection::Embed(e) if e.tree() == Tree::Release => scan(e.patch(), &mut add, &mut other_dirs),
             _ => {}
+        }
+    }
+    // A patch in a subdirectory (SPECS/linux/6.1/CVE/x.patch) belongs to the
+    // specs of the nearest directory up that has any.
+    let release_tree = c.spec.tree(Tree::Release);
+    for dir in &other_dirs {
+        let mut d = dir.as_str();
+        loop {
+            let mut specs: Vec<String> = fs::read_dir(release_tree.join(d))
+                .map(|it| {
+                    it.flatten()
+                        .map(|e| e.file_name().to_string_lossy().into_owned())
+                        .filter(|n| n.ends_with(".spec"))
+                        .collect()
+                })
+                .unwrap_or_default();
+            if !specs.is_empty() {
+                specs.sort();
+                for s in specs {
+                    add(&format!("{d}/{s}"));
+                }
+                break;
+            }
+            match d.rsplit_once('/') {
+                Some((parent, _)) if parent != "SPECS" => d = parent,
+                _ => break,
+            }
         }
     }
     for pkg in ["photon-os-installer", "stig-hardening", "linux"] {
@@ -2589,6 +2647,39 @@ mod tests {
         for f in spared {
             assert!(rpms.join(f).exists(), "{f} must survive");
         }
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// An included file is part of every spec in its directory, and a patch in
+    /// a subdirectory belongs to the specs above it.
+    #[test]
+    fn patched_specs_counts_an_included_file_for_its_specs() {
+        let tmp = std::env::temp_dir().join(format!("shk-incspec-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let specs = tmp.join("release/5.0/SPECS/linux");
+        fs::create_dir_all(specs.join("6.1/CVE")).unwrap();
+        for f in ["linux.spec", "linux-esx.spec", "linux-6.12.inc", "6.1/CVE/fix.patch"] {
+            fs::write(specs.join(f), "x\n").unwrap();
+        }
+        let patch = tmp.join("v.patch");
+        fs::write(
+            &patch,
+            "--- a/SPECS/linux/linux-6.12.inc\n+++ b/SPECS/linux/linux-6.12.inc\n@@ -1 +1 @@\n-x\n+y\n\
+--- a/SPECS/linux/6.1/CVE/fix.patch\n+++ b/SPECS/linux/6.1/CVE/fix.patch\n@@ -1 +1 @@\n-x\n+y\n",
+        )
+        .unwrap();
+        let mut sp = BuildSpec::from_args(
+            &tmp.join("release").to_string_lossy(), "common", "5.0", "/out",
+            "minimal-iso", "equivalent-b", Some("6.12.107-4.ph5".to_string()),
+        )
+        .unwrap();
+        sp.injections = vec![Injection::TreePatch { tree: Tree::Release, patch: patch.clone() }];
+        let got = {
+            let mut c = Ctx { spec: &sp, dry: false, log: &mut |_: &str| {} };
+            patched_specs(&mut c)
+        };
+        assert!(got.iter().any(|p| p == "SPECS/linux/linux-esx.spec"), "{got:?}");
+        assert_eq!(got.iter().filter(|p| p.as_str() == "SPECS/linux/linux-esx.spec").count(), 1, "{got:?}");
         let _ = fs::remove_dir_all(&tmp);
     }
 

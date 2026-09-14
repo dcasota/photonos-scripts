@@ -56,7 +56,81 @@ def sh(cwd, *args, check=True):
     return r.stdout
 
 
-def version_of(path):
+def subrelease_of(tree):
+    """photon-subrelease from the tree's build-config.json."""
+    with open(os.path.join(tree, "build-config.json")) as f:
+        for line in f:
+            if '"photon-subrelease"' in line:
+                return int(line.split(":", 1)[1].strip().rstrip(",").strip().strip('"'))
+    sys.exit(f"{tree}/build-config.json: no photon-subrelease")
+
+
+SUBREL_IF = re.compile(r"^%if\s+0?%\{\??photon_subrelease\}\s*(==|!=|>=|<=|>|<)\s*(\d+)\s*$")
+
+
+def resolved_lines(path, sub):
+    """The top-level lines of a spec as subrelease `sub` sees them.
+
+    Only plain photon_subrelease comparisons are decided, the same rule
+    check_spec applies; every other conditional line is kept.
+    """
+    ops = {"==": int.__eq__, "!=": int.__ne__, ">=": int.__ge__,
+           "<=": int.__le__, ">": int.__gt__, "<": int.__lt__}
+    stack, out = [], []
+    for line in open(path).read().split("\n"):
+        s = line.strip()
+        m = SUBREL_IF.match(s)
+        if m:
+            stack.append([ops[m.group(1)](sub, int(m.group(2)))])
+            continue
+        if s.startswith("%if"):
+            if all(f is None or f[0] for f in stack):
+                out.append(line)
+            stack.append(None)
+            continue
+        if s.startswith("%else") and stack:
+            if stack[-1] is not None:
+                stack[-1][0] = not stack[-1][0]
+            elif all(f is None or f[0] for f in stack):
+                out.append(line)
+            continue
+        if s.startswith("%endif") and stack:
+            if stack.pop() is None and all(f is None or f[0] for f in stack):
+                out.append(line)
+            continue
+        if all(f is None or f[0] for f in stack):
+            out.append(line)
+    return out
+
+
+def kernel_files(tree, flavour, sub):
+    """(spec, preamble file, changelog file) for one kernel flavour.
+
+    The single-source spec keeps Release, the canister pins and the changelog
+    of each kernel in included files; the spec picks them by subrelease. For a
+    spec without includes all three are the spec itself.
+    """
+    spec = os.path.join(tree, f"SPECS/linux/{flavour}.spec")
+    lines = resolved_lines(spec, sub)
+    sources = {}
+    preamble = changelog = spec
+    for l in lines:
+        m = re.match(r"^Source(\d+):\s*(\S+)", l)
+        if m:
+            sources[m.group(1)] = m.group(2)
+            continue
+        m = re.match(r"^%include\s+%\{SOURCE(\d+)\}\s*$", l)
+        if not m or m.group(1) not in sources:
+            continue
+        name = sources[m.group(1)]
+        if name == f"{flavour}-changelog.inc" or re.fullmatch(rf"{re.escape(flavour)}-[\d.]+-changelog\.inc", name):
+            changelog = os.path.join(tree, "SPECS/linux", name)
+        elif re.fullmatch(rf"{re.escape(flavour)}-[\d.]+\.inc", name):
+            preamble = os.path.join(tree, "SPECS/linux", name)
+    return spec, preamble, changelog
+
+
+def version_of(path, sub=None):
     """The Version: from a spec.
 
     Read, never hardcoded. The first version of this script wrote a literal
@@ -70,10 +144,10 @@ def version_of(path):
     derive-never-hardcode rule this script exists to enforce, broken by the
     script itself.
     """
-    with open(path) as f:
-        for line in f:
-            if line.startswith("Version:"):
-                return line.split(None, 1)[1].strip()
+    lines = resolved_lines(path, sub) if sub is not None else open(path).read().split("\n")
+    for line in lines:
+        if line.startswith("Version:"):
+            return line.split(None, 1)[1].strip()
     sys.exit(f"{path}: no Version:")
 
 
@@ -86,7 +160,19 @@ def release_of(path):
     sys.exit(f"{path}: no Release:")
 
 
-def edit_linux_spec(path, ver, old_rel, new_rel, date):
+def insert_changelog(preamble_text, changelog_path, preamble_path, entry):
+    """Add `entry` at the top of the changelog, wherever the changelog lives."""
+    if changelog_path == preamble_path:
+        return preamble_text.replace("%changelog\n", "%changelog\n" + entry, 1)
+    c = open(changelog_path).read()
+    if "%changelog\n" not in c:
+        sys.exit(f"{changelog_path}: no %changelog")
+    open(changelog_path, "w").write(c.replace("%changelog\n", "%changelog\n" + entry, 1))
+    return preamble_text
+
+
+def edit_linux_spec(path, ver, old_rel, new_rel, date, changelog=None):
+    changelog = changelog or path
     s = open(path).read()
 
     # 1. fips_certified_kernel_version, overridable.
@@ -160,11 +246,12 @@ def edit_linux_spec(path, ver, old_rel, new_rel, date):
   eval() on the expanded text after lstrip("0"), which is a NameError for a
   version string. Hence a 0/1 flag plus a separate value macro.
 """
-    s = s.replace("%changelog\n", "%changelog\n" + entry, 1)
+    s = insert_changelog(s, changelog, path, entry)
     open(path, "w").write(s)
 
 
-def edit_esx_spec(path, ver, old_rel, new_rel, date):
+def edit_esx_spec(path, ver, old_rel, new_rel, date, changelog=None):
+    changelog = changelog or path
     s = open(path).read()
 
     # The same override pair as linux.spec. linux-esx never CREATES a canister
@@ -205,7 +292,7 @@ def edit_esx_spec(path, ver, old_rel, new_rel, date):
   linux.spec, so this flavour - the one the ISO actually boots - can link a
   locally built canister too. It never builds one; it only links.
 """
-    s = s.replace("%changelog\n", "%changelog\n" + entry, 1)
+    s = insert_changelog(s, changelog, path, entry)
     open(path, "w").write(s)
 
 
@@ -214,6 +301,8 @@ def main():
     ap.add_argument("--variant", default=DEFAULT_VARIANT)
     ap.add_argument("--check", action="store_true")
     ap.add_argument("--date", default=None, help="changelog date, e.g. 'Thu Sep 11 2026'")
+    ap.add_argument("--checker", default="/root/common/support/spec-checker/check_spec.py",
+                    help="check_spec.py to validate with; it must understand the spec layout")
     a = ap.parse_args()
 
     if not os.path.exists(a.variant):
@@ -236,19 +325,21 @@ def main():
         sh(tree, "git", "-c", "user.email=x@y", "-c", "user.name=x",
            "commit", "-q", "-m", "variant baseline")
 
-        linux = os.path.join(tree, "SPECS/linux/linux.spec")
-        esx = os.path.join(tree, "SPECS/linux/linux-esx.spec")
-        lrel, erel = release_of(linux), release_of(esx)
-        print(f"  variant patch leaves linux at {version_of(linux)}-{lrel}, "
-              f"linux-esx at {version_of(esx)}-{erel}")
+        sub = subrelease_of(tree)
+        linux, lpre, lclog = kernel_files(tree, "linux", sub)
+        esx, epre, eclog = kernel_files(tree, "linux-esx", sub)
+        lrel, erel = release_of(lpre), release_of(epre)
+        lver, ever = version_of(linux, sub), version_of(esx, sub)
+        print(f"  subrelease {sub}: variant patch leaves linux at {lver}-{lrel}, "
+              f"linux-esx at {ever}-{erel}")
 
-        lver, ever = version_of(linux), version_of(esx)
-        edit_linux_spec(linux, lver, lrel, lrel + 1, date)
-        edit_esx_spec(esx, ever, erel, erel + 1, date)
+        edit_linux_spec(lpre, lver, lrel, lrel + 1, date, lclog)
+        edit_esx_spec(epre, ever, erel, erel + 1, date, eclog)
         print(f"  embedded patch takes linux to -{lrel+1}, linux-esx to -{erel+1}")
 
-        diff = sh(tree, "git", "diff", "--", "SPECS/linux/linux.spec",
-                  "SPECS/linux/linux-esx.spec", check=False)
+        # the whole directory: in the single-source layout the edits land in
+        # included files, not in the specs
+        diff = sh(tree, "git", "diff", "--", "SPECS/linux/", check=False)
         # Strip the index lines: they carry blob hashes that churn on every
         # base move and would make the patch look changed when it is not.
         diff = "\n".join(l for l in diff.splitlines()
@@ -262,10 +353,10 @@ def main():
             print("  STALE: the committed patch does not match a regeneration")
             return 1
 
-        checker = "/root/common/support/spec-checker/check_spec.py"
+        checker = a.checker
         if os.path.exists(checker):
-            r = subprocess.run([sys.executable, checker, linux, esx],
-                               capture_output=True, text=True)
+            r = subprocess.run([sys.executable, checker, "--subrelease", str(sub), linux, esx],
+                               capture_output=True, text=True, cwd=tree)
             if r.returncode != 0:
                 sys.exit("the regenerated specs do not pass check_spec:\n"
                          + (r.stdout or "") + (r.stderr or ""))

@@ -243,16 +243,12 @@ impl Provenance {
 }
 
 fn nevr_at(tree: &Path, git_ref: &str) -> Option<String> {
-    let out = Command::new("git")
-        .arg("-C")
-        .arg(tree)
-        .args(["show", &format!("{git_ref}:SPECS/linux/linux.spec")])
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    spec_nevr(&String::from_utf8_lossy(&out.stdout))
+    // Resolved at the ref, includes and all: the single-source kernel spec
+    // keeps Release in an included file, which `git show` of linux.spec alone
+    // never reaches.
+    let read = crate::specresolve::git_reader(tree, git_ref, "SPECS/linux", None);
+    let text = crate::specresolve::resolve(&read, "linux.spec", crate::specresolve::tree_subrelease(tree))?;
+    spec_nevr(&text)
 }
 
 /// Read the kernel version from the tree, the fork and the reference.
@@ -295,8 +291,13 @@ pub fn detect(cfg: &Config, arch: &str) -> Result<State, String> {
 /// made about the wrong kernel.
 pub fn detect_for(cfg: &Config, arch: &str, kernel: Option<&str>) -> Result<State, String> {
     let specs = Specs::under(&cfg.photon_tree);
-    let linux = std::fs::read_to_string(&specs.linux)
-        .map_err(|e| format!("{}: {e}", specs.linux.display()))?;
+    let spec_dir = specs.linux.parent().map(Path::to_path_buf).unwrap_or_default();
+    let linux = crate::specresolve::resolve(
+        &crate::specresolve::dir_reader(&spec_dir),
+        "linux.spec",
+        crate::specresolve::tree_subrelease(&cfg.photon_tree),
+    )
+    .ok_or_else(|| format!("{}: cannot read", specs.linux.display()))?;
 
     if arch != "x86_64" {
         return Ok(State::Absent {
