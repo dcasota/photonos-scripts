@@ -39,7 +39,7 @@
  %{_usrsrc}/linux-headers-%{uname_r}
  
  %changelog
-+* Sun Sep 13 2026 Daniel Casota <dcasota@gmail.com> 6.12.109-3
++* Mon Sep 14 2026 Daniel Casota <dcasota@gmail.com> 6.12.109-3
 +- Accept the same canister_equivalent / fips_canister_override pair as
 +  linux.spec, so this flavour - the one the ISO actually boots - can link a
 +  locally built canister too. It never builds one; it only links.
@@ -48,7 +48,7 @@
  * Fri Sep 11 2026 Ajay Kaher <ajay.kaher@broadcom.com> 6.12.109-1
 --- a/SPECS/linux/linux.spec
 +++ b/SPECS/linux/linux.spec
-@@ -68,9 +68,16 @@
+@@ -77,9 +77,16 @@
  %global fips_plugins 1
  %if 0%{?canister_build}
  %global canister_usage 0
@@ -67,7 +67,7 @@
  %else
  %global canister_usage 1
  %endif
-@@ -82,7 +89,7 @@
+@@ -91,7 +98,7 @@
  Summary:        Kernel
  Name:           linux
  Version:        6.12.109
@@ -76,7 +76,7 @@
  URL:            http://www.kernel.org/
  Group:          System Environment/Kernel
  Vendor:         VMware, Inc.
-@@ -134,7 +141,25 @@ Source10002: jitterentropy_canister_wrapper.h
+@@ -143,7 +150,25 @@ Source10002: jitterentropy_canister_wrapper.h
  Source10003: jitterentropy_canister_wrapper_asm.S
  
  %if 0%{?canister_usage}
@@ -102,11 +102,11 @@
  %define ExtraBuildRequiresSansSnapshot linux-fips-canister = %{fips_canister_version}
  BuildRequires:       linux-fips-canister = %{fips_canister_version}
  %endif
-@@ -989,6 +1014,24 @@ ln -sf linux-%{uname_r}.cfg /boot/photon.cfg
+@@ -998,6 +1023,24 @@ ln -sf linux-%{uname_r}.cfg /boot/photon.cfg
  %endif
  
  %changelog
-+* Sun Sep 13 2026 Daniel Casota <dcasota@gmail.com> 6.12.109-4
++* Mon Sep 14 2026 Daniel Casota <dcasota@gmail.com> 6.12.109-4
 +- Let a build link a canister other than the published one, so a kernel with no
 +  official canister at its own level can be covered by an equivalent one built
 +  locally. canister_equivalent=1 plus fips_canister_override=<NEVR> selects it;
