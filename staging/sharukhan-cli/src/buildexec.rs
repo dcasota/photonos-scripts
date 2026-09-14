@@ -284,6 +284,36 @@ fn tree_patch(c: &mut Ctx, tree: Tree, patch: &Path) -> Result<(), String> {
         }
     }
 
+    // A common patch is generated against origin/<common branch>. A common
+    // checkout on a branch that already carries part of it - the sans-snapshot
+    // fix committed, check_spec not - neither takes the whole patch nor holds
+    // all of it. Restore the files the patch touches to its base and apply it
+    // whole. Written from `git show`, so the checkout's index is left alone.
+    if tree == Tree::Common
+        && git(&dir, &["apply", "--check", &p]).is_err()
+        && git(&dir, &["apply", "--reverse", "--check", &p]).is_err()
+    {
+        let base = format!("origin/{}", c.spec.common_branch);
+        if git(&dir, &["rev-parse", "--verify", "-q", &base]).is_ok() {
+            if let Ok(stat) = git(&dir, &["apply", "--numstat", &p]) {
+                for line in stat.lines() {
+                    let Some(f) = line.split_whitespace().nth(2) else { continue };
+                    let out = Command::new("git")
+                        .arg("-C")
+                        .arg(&dir)
+                        .args(["show", &format!("{base}:{f}")])
+                        .output();
+                    if let Ok(o) = out {
+                        if o.status.success() {
+                            let _ = fs::write(dir.join(f), &o.stdout);
+                        }
+                    }
+                }
+            }
+            c.say(&format!("  restored the files {} touches to {base}", basename(patch)));
+        }
+    }
+
     let files = git(&dir, &["apply", "--numstat", &p]).unwrap_or_default().lines().count();
     let bytes = fs::metadata(patch).map(|m| m.len()).unwrap_or(0);
     if git(&dir, &["apply", "--check", &p]).is_ok() {
@@ -2647,6 +2677,49 @@ mod tests {
         for f in spared {
             assert!(rpms.join(f).exists(), "{f} must survive");
         }
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// The common checkout sits on a branch that already carries one of the two
+    /// changes in the common patch. The patch must still land whole, and the
+    /// checkout's index must not change.
+    #[test]
+    fn a_common_patch_partly_on_the_branch_applies_from_its_base() {
+        let tmp = std::env::temp_dir().join(format!("shk-commonbase-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let repo = tmp.join("common");
+        fs::create_dir_all(&repo).unwrap();
+        let g = |args: &[&str]| {
+            let o = Command::new("git").arg("-C").arg(&repo).args(args).output().unwrap();
+            assert!(o.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&o.stderr));
+            String::from_utf8_lossy(&o.stdout).into_owned()
+        };
+        g(&["init", "-q"]);
+        fs::write(repo.join("a.txt"), "1\n").unwrap();
+        fs::write(repo.join("b.txt"), "1\n").unwrap();
+        g(&["add", "-A"]);
+        g(&["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "base"]);
+        g(&["update-ref", "refs/remotes/origin/common", "HEAD"]);
+        fs::write(repo.join("a.txt"), "2\n").unwrap();
+        g(&["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-am", "part of the patch"]);
+        let patch = tmp.join("common-fixes.patch");
+        fs::write(
+            &patch,
+            "--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-1\n+2\n--- a/b.txt\n+++ b/b.txt\n@@ -1 +1 @@\n-1\n+2\n",
+        )
+        .unwrap();
+        let sp = BuildSpec::from_args(
+            &tmp.to_string_lossy(), "common", "5.0", "/out",
+            "minimal-iso", "equivalent-b", Some("6.12.109-4.ph5".to_string()),
+        )
+        .unwrap();
+        {
+            let mut c = Ctx { spec: &sp, dry: false, log: &mut |_: &str| {} };
+            tree_patch(&mut c, Tree::Common, &patch).unwrap();
+        }
+        assert_eq!(fs::read_to_string(repo.join("a.txt")).unwrap(), "2\n");
+        assert_eq!(fs::read_to_string(repo.join("b.txt")).unwrap(), "2\n");
+        assert!(g(&["diff", "--cached", "--name-only"]).trim().is_empty(), "index must be untouched");
         let _ = fs::remove_dir_all(&tmp);
     }
 

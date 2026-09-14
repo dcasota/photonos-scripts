@@ -247,6 +247,20 @@ if ping -c 4 www.google.ch > /dev/null 2>&1; then
         [ -n "$f" ] || continue
         git ls-files --error-unmatch "$f" >/dev/null 2>&1 && git checkout -- "$f" 2>/dev/null
       done
+      # The patch is generated against origin/$COMMON_BRANCH. A checkout on a
+      # branch that already carries part of it neither takes the whole patch
+      # nor holds all of it, so restore the touched files to the patch's base
+      # and apply it whole. Written with git show, not git checkout <ref> --,
+      # so the checkout's index is left alone.
+      if ! git apply --check "$COMMON_PATCH" 2>/dev/null && \
+         ! git apply --reverse --check "$COMMON_PATCH" 2>/dev/null && \
+         git rev-parse --verify -q "origin/$COMMON_BRANCH" >/dev/null; then
+        git apply --numstat "$COMMON_PATCH" 2>/dev/null | awk '{print $3}' | while read -r f; do
+          [ -n "$f" ] || continue
+          git cat-file -e "origin/$COMMON_BRANCH:$f" 2>/dev/null && \
+            git show "origin/$COMMON_BRANCH:$f" > "$f"
+        done
+      fi
       if git apply --check "$COMMON_PATCH" 2>/dev/null; then
         git apply "$COMMON_PATCH" && \
           echo "[runPh5_normal] Applied common-fixes.patch to $COMMON_BRANCH"
