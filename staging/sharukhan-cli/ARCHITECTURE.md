@@ -61,7 +61,7 @@ Every layer depends only downward. The domain layer never shells out directly; i
 | orchestration | `job` | the `job` table: background work that outlives its shell |
 | orchestration | `matrix`, `identity` | the permutation matrix; deterministic per-row MAC, UUID and IP |
 | domain: preflight | `disk`, `proc`, `canister` | disk admission; process lookup that cannot match itself; which canister a kernel can have |
-| domain: iso | `build`, `buildmode`, `buildexec`, `media` | resolving a tuple to an ISO and the variant patches; the build cascade and its execution; proving an ISO carries the packages under test |
+| domain: iso | `build`, `buildmode`, `buildexec`, `media`, `specresolve` | resolving a tuple to an ISO and the variant patches; the build cascade and its execution; proving an ISO carries the packages under test; reading a spec as one subrelease sees it (subrelease conditionals decided, includes inlined) |
 | domain: vm | `vm`, `vmx`, `kickstart`, `net` | the VM on disk and taking it back; the VMX template; the POI kickstart; the network axis |
 | domain: install | `install`, `leases`, `serial`, `card` | one install; the DHCP lease file and serial log as boot signals; the operator card |
 | domain: verify | `verify`, `oracle`, `evidence`, `report` | running the oracle and harvesting logs; the assertions; structured results; per-row report |
