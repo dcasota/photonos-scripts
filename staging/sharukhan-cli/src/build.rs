@@ -847,6 +847,10 @@ pub const COMMON_BRANCHES: &[&str] = &[
     // it the build refuses the single-source kernel spec before compiling
     // anything: it compares the last Version tag with the first changelog.
     "fix/check-spec-subrelease-aware",
+    // The kernel-deps spec generator took the first Version: and Release:
+    // lines of the raw kernel spec; in the single-source spec those belong to
+    // the wrong kernel or live in an included file, and `make image` stops.
+    "fix/spec-generator-subrelease-aware",
 ];
 
 /// The same assembly as a variant patch, against the `common` branch line.
