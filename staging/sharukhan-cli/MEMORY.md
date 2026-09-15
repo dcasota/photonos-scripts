@@ -5,14 +5,14 @@ database; the database is the system of record. Editing here changes nothing and
 will be overwritten on the next render.
 
 - Source database: `/root/photon-mc/memory.db`
-- Rendered at: 2026-09-13T20:15:52Z
+- Rendered at: 2026-09-15T12:54:08Z
 - Regenerate with: `python3 tools/gen-memory-md.py /root/photon-mc/memory.db MEMORY.md`
 
 | Table | Rows |
 |---|---|
-| `run` | 203 |
-| `permutation` | 203 |
-| `check_result` | 6349 |
+| `run` | 229 |
+| `permutation` | 229 |
+| `check_result` | 7344 |
 | `artifact` | 0 |
 | `finding` | 64 |
 
@@ -26,6 +26,7 @@ will be overwritten on the next render.
 | c01 | full | 2.8 | no | ext4 | ks | untested | 17 pass | 0 |  |
 | c01 | full | 2.8 | no | ext4 | ks | untested | 17 pass | 0 |  |
 | c01 | full | 2.8 | no | ext4 | ks | untested | 1 fail | 1 | - |
+| c01 | full | 2.8 | no | ext4 | ks | untested | 17 pass | 0 |  |
 | c01 | full | 2.8 | no | ext4 | ks | untested | 17 pass | 0 |  |
 | c01 | full | 2.8 | no | ext4 | ks | untested | 17 pass | 0 |  |
 | c01 | full | 2.8 | no | ext4 | ks | untested | 17 pass | 0 |  |
@@ -46,6 +47,7 @@ will be overwritten on the next render.
 | c03 | minimal | 2.8 | no | ext4 | ks | untested | 18 pass | 0 |  |
 | c03 | minimal | 2.8 | no | ext4 | ks | untested | 18 pass | 0 |  |
 | c03 | minimal | 2.8 | no | ext4 | ks | untested | 18 pass | 0 |  |
+| c03 | minimal | 2.8 | no | ext4 | ks | untested | 18 pass | 0 |  |
 | k01 | minimal | 2.8 | no | ext4 | ks | works | 2 fail | 2 | - |
 | k01 | minimal | 2.8 | no | ext4 | ks | works | 13 pass | 0 |  |
 | k01 | minimal | 2.8 | no | ext4 | ks | works | 13 pass | 0 |  |
@@ -55,6 +57,7 @@ will be overwritten on the next render.
 | k01 | minimal | 2.8 | no | ext4 | ks | works | 13 pass | 0 |  |
 | k01 | minimal | 2.8 | no | ext4 | ks | works | 17 pass | 0 |  |
 | k01 | minimal | 2.8 | no | ext4 | ks | works | 1 fail | 1 | - |
+| k01 | minimal | 2.8 | no | ext4 | ks | works | 17 pass | 0 |  |
 | k01 | minimal | 2.8 | no | ext4 | ks | works | 17 pass | 0 |  |
 | k01 | minimal | 2.8 | no | ext4 | ks | works | 17 pass | 0 |  |
 | k01 | minimal | 2.8 | no | ext4 | ks | works | 17 pass | 0 |  |
@@ -70,12 +73,14 @@ will be overwritten on the next render.
 | k02 | minimal | 2.8 | no | btrfs | ks | untested | 17 pass | 0 |  |
 | k02 | minimal | 2.8 | no | btrfs | ks | untested | 17 pass | 0 |  |
 | k02 | minimal | 2.8 | no | btrfs | ks | untested | 17 pass | 0 |  |
+| k02 | minimal | 2.8 | no | btrfs | ks | untested | 17 pass | 0 |  |
 | k03 | minimal | 2.8 | yes | ext4 | ks | fails | 1 fail | 1 | PR#9 |
 | k03 | minimal | 2.8 | yes | ext4 | ks | fails | 15 pass | 0 |  |
 | k03 | minimal | 2.8 | yes | ext4 | ks | fails | 15 pass | 0 |  |
 | k03 | minimal | 2.8 | yes | ext4 | ks | fails | 15 pass | 0 |  |
 | k03 | minimal | 2.8 | yes | ext4 | ks | fails | 19 pass | 0 |  |
 | k03 | minimal | 2.8 | yes | ext4 | ks | fails | 1 fail | 1 | - |
+| k03 | minimal | 2.8 | yes | ext4 | ks | fails | 19 pass | 0 |  |
 | k03 | minimal | 2.8 | yes | ext4 | ks | fails | 19 pass | 0 |  |
 | k03 | minimal | 2.8 | yes | ext4 | ks | fails | 19 pass | 0 |  |
 | k03 | minimal | 2.8 | yes | ext4 | ks | fails | 19 pass | 0 |  |
@@ -90,11 +95,13 @@ will be overwritten on the next render.
 | k04 | minimal | 2.8 | yes | btrfs | ks | fails | 19 pass | 0 |  |
 | k04 | minimal | 2.8 | yes | btrfs | ks | fails | 19 pass | 0 |  |
 | k04 | minimal | 2.8 | yes | btrfs | ks | fails | 19 pass | 0 |  |
+| k04 | minimal | 2.8 | yes | btrfs | ks | fails | 19 pass | 0 |  |
 | k05 | minimal | latest | no | ext4 | ks | fails | 13 pass | 0 |  |
 | k05 | minimal | latest | no | ext4 | ks | fails | 13 pass | 0 |  |
 | k05 | minimal | latest | no | ext4 | ks | fails | 13 pass | 0 |  |
 | k05 | minimal | latest | no | ext4 | ks | fails | 17 pass | 0 |  |
 | k05 | minimal | latest | no | ext4 | ks | fails | 1 fail | 1 | - |
+| k05 | minimal | latest | no | ext4 | ks | fails | 17 pass | 0 |  |
 | k05 | minimal | latest | no | ext4 | ks | fails | 17 pass | 0 |  |
 | k05 | minimal | latest | no | ext4 | ks | fails | 17 pass | 0 |  |
 | k05 | minimal | latest | no | ext4 | ks | fails | 17 pass | 0 |  |
@@ -108,11 +115,13 @@ will be overwritten on the next render.
 | k06 | minimal | latest | no | btrfs | ks | fails | 17 pass | 0 |  |
 | k06 | minimal | latest | no | btrfs | ks | fails | 17 pass | 0 |  |
 | k06 | minimal | latest | no | btrfs | ks | fails | 17 pass | 0 |  |
+| k06 | minimal | latest | no | btrfs | ks | fails | 17 pass | 0 |  |
 | k07 | minimal | latest | yes | ext4 | ks | fails | 15 pass | 0 |  |
 | k07 | minimal | latest | yes | ext4 | ks | fails | 15 pass | 0 |  |
 | k07 | minimal | latest | yes | ext4 | ks | fails | 15 pass | 0 |  |
 | k07 | minimal | latest | yes | ext4 | ks | fails | 19 pass | 0 |  |
 | k07 | minimal | latest | yes | ext4 | ks | fails | 1 fail | 1 | - |
+| k07 | minimal | latest | yes | ext4 | ks | fails | 19 pass | 0 |  |
 | k07 | minimal | latest | yes | ext4 | ks | fails | 19 pass | 0 |  |
 | k07 | minimal | latest | yes | ext4 | ks | fails | 19 pass | 0 |  |
 | k07 | minimal | latest | yes | ext4 | ks | fails | 19 pass | 0 |  |
@@ -126,8 +135,10 @@ will be overwritten on the next render.
 | k08 | minimal | latest | yes | btrfs | ks | fails | 19 pass | 0 |  |
 | k08 | minimal | latest | yes | btrfs | ks | fails | 19 pass | 0 |  |
 | k08 | minimal | latest | yes | btrfs | ks | fails | 19 pass | 0 |  |
+| k08 | minimal | latest | yes | btrfs | ks | fails | 19 pass | 0 |  |
 | k09 | full | 2.8 | no | ext4 | ks | untested | 2 fail | 2 | - |
 | k09 | full | 2.8 | no | ext4 | ks | untested | 11 pass | 0 |  |
+| k09 | full | 2.8 | no | ext4 | ks | untested | 17 pass | 0 |  |
 | k09 | full | 2.8 | no | ext4 | ks | untested | 17 pass | 0 |  |
 | k09 | full | 2.8 | no | ext4 | ks | untested | 17 pass | 0 |  |
 | k09 | full | 2.8 | no | ext4 | ks | untested | 17 pass | 0 |  |
@@ -136,8 +147,10 @@ will be overwritten on the next render.
 | k10 | full | 2.8 | no | btrfs | ks | untested | 17 pass | 0 |  |
 | k10 | full | 2.8 | no | btrfs | ks | untested | 17 pass | 0 |  |
 | k10 | full | 2.8 | no | btrfs | ks | untested | 17 pass | 0 |  |
+| k10 | full | 2.8 | no | btrfs | ks | untested | 17 pass | 0 |  |
 | k11 | full | 2.8 | yes | ext4 | ks | untested | 1 fail | 1 | PR#9 |
 | k11 | full | 2.8 | yes | ext4 | ks | untested | 1 fail | 1 | PR#9 |
+| k11 | full | 2.8 | yes | ext4 | ks | untested | 19 pass | 0 |  |
 | k11 | full | 2.8 | yes | ext4 | ks | untested | 19 pass | 0 |  |
 | k11 | full | 2.8 | yes | ext4 | ks | untested | 19 pass | 0 |  |
 | k11 | full | 2.8 | yes | ext4 | ks | untested | 19 pass | 0 |  |
@@ -145,7 +158,9 @@ will be overwritten on the next render.
 | k12 | full | 2.8 | yes | btrfs | ks | untested | 19 pass | 0 |  |
 | k12 | full | 2.8 | yes | btrfs | ks | untested | 19 pass | 0 |  |
 | k12 | full | 2.8 | yes | btrfs | ks | untested | 19 pass | 0 |  |
+| k12 | full | 2.8 | yes | btrfs | ks | untested | 19 pass | 0 |  |
 | k13 | full | latest | no | ext4 | ks | untested | 11 pass | 0 |  |
+| k13 | full | latest | no | ext4 | ks | untested | 17 pass | 0 |  |
 | k13 | full | latest | no | ext4 | ks | untested | 17 pass | 0 |  |
 | k13 | full | latest | no | ext4 | ks | untested | 17 pass | 0 |  |
 | k13 | full | latest | no | ext4 | ks | untested | 17 pass | 0 |  |
@@ -153,16 +168,20 @@ will be overwritten on the next render.
 | k14 | full | latest | no | btrfs | ks | untested | 16 pass | 0 |  |
 | k14 | full | latest | no | btrfs | ks | untested | 17 pass | 0 |  |
 | k14 | full | latest | no | btrfs | ks | untested | 17 pass | 0 |  |
+| k14 | full | latest | no | btrfs | ks | untested | 17 pass | 0 |  |
 | k15 | full | latest | yes | ext4 | ks | untested | 1 fail | 1 | PR#9 |
+| k15 | full | latest | yes | ext4 | ks | untested | 19 pass | 0 |  |
 | k15 | full | latest | yes | ext4 | ks | untested | 19 pass | 0 |  |
 | k15 | full | latest | yes | ext4 | ks | untested | 19 pass | 0 |  |
 | k16 | full | latest | yes | btrfs | ks | untested | 1 fail | 1 | PR#9 |
 | k16 | full | latest | yes | btrfs | ks | untested | 19 pass | 0 |  |
 | k16 | full | latest | yes | btrfs | ks | untested | 1 fail | 1 | - |
 | k16 | full | latest | yes | btrfs | ks | untested | 19 pass | 0 |  |
+| k16 | full | latest | yes | btrfs | ks | untested | 19 pass | 0 |  |
 | media-check | ? | ? | ? | ? | ? |  | 2 pass | 0 |  |
 | n01 | minimal | 2.8 | no | ext4 | ks | untested | 17 pass | 0 |  |
 | n01 | minimal | 2.8 | no | ext4 | ks | untested | 2 fail | 2 | - |
+| n01 | minimal | 2.8 | no | ext4 | ks | untested | 17 pass | 0 |  |
 | n01 | minimal | 2.8 | no | ext4 | ks | untested | 17 pass | 0 |  |
 | n01 | minimal | 2.8 | no | ext4 | ks | untested | 17 pass | 0 |  |
 | n01 | minimal | 2.8 | no | ext4 | ks | untested | 17 pass | 0 |  |
@@ -174,9 +193,11 @@ will be overwritten on the next render.
 | n02 | minimal | 2.8 | no | ext4 | ks | untested | 20 pass | 0 |  |
 | n02 | minimal | 2.8 | no | ext4 | ks | untested | 20 pass | 0 |  |
 | n02 | minimal | 2.8 | no | ext4 | ks | untested | 20 pass | 0 |  |
+| n02 | minimal | 2.8 | no | ext4 | ks | untested | 20 pass | 0 |  |
 | n03 | minimal | 2.8 | no | ext4 | ks | untested | 19 pass | 0 |  |
 | n03 | minimal | 2.8 | no | ext4 | ks | untested | 2 fail | 2 | - |
 | n03 | minimal | 2.8 | no | ext4 | ks | untested | 1 fail | 1 | - |
+| n03 | minimal | 2.8 | no | ext4 | ks | untested | 19 pass | 0 |  |
 | n03 | minimal | 2.8 | no | ext4 | ks | untested | 19 pass | 0 |  |
 | n03 | minimal | 2.8 | no | ext4 | ks | untested | 19 pass | 0 |  |
 | n03 | minimal | 2.8 | no | ext4 | ks | untested | 19 pass | 0 |  |
@@ -187,6 +208,7 @@ will be overwritten on the next render.
 | n04 | minimal | 2.8 | no | ext4 | ks | untested | 23 pass | 0 |  |
 | n04 | minimal | 2.8 | no | ext4 | ks | untested | 23 pass | 0 |  |
 | n04 | minimal | 2.8 | no | ext4 | ks | untested | 23 pass | 0 |  |
+| n04 | minimal | 2.8 | no | ext4 | ks | untested | 23 pass | 0 |  |
 | n05 | minimal | 2.8 | no | ext4 | ks | untested | 1 fail | 1 | - |
 | n05 | minimal | 2.8 | no | ext4 | ks | untested | 1 fail | 1 | - |
 | n05 | minimal | 2.8 | no | ext4 | ks | untested | 1 fail | 1 | - |
@@ -194,6 +216,7 @@ will be overwritten on the next render.
 | n05 | minimal | 2.8 | no | ext4 | ks | untested | 1 fail | 1 | - |
 | n05 | minimal | 2.8 | no | ext4 | ks | untested | 1 fail | 1 | - |
 | n05 | minimal | 2.8 | no | ext4 | ks | untested | 1 fail | 1 | - |
+| n05 | minimal | 2.8 | no | ext4 | ks | untested | 23 pass | 0 |  |
 | p01 | minimal | 2.8 | no | ext4 | ui | works | 2 fail | 2 | - |
 | s01 | minimal | 2.8 | no | ext4 | ks | fails | 13 pass | 0 |  |
 | s01 | minimal | 2.8 | no | ext4 | ks | fails | 13 pass | 0 |  |
@@ -205,6 +228,7 @@ will be overwritten on the next render.
 | s01 | minimal | 2.8 | no | ext4 | ks | fails | 17 pass | 0 |  |
 | s01 | minimal | 2.8 | no | ext4 | ks | fails | 17 pass | 0 |  |
 | s01 | minimal | 2.8 | no | ext4 | ks | fails | 17 pass | 0 |  |
+| s01 | minimal | 2.8 | no | ext4 | ks | fails | 17 pass | 0 |  |
 | s02 | minimal | 2.8 | no | ext4 | ks | fails | 1 fail | 1 | - |
 | s02 | minimal | 2.8 | no | ext4 | ks | fails | 1 fail | 1 | - |
 | s02 | minimal | 2.8 | no | ext4 | ks | fails | 1 fail | 1 | - |
@@ -212,6 +236,7 @@ will be overwritten on the next render.
 | s02 | minimal | 2.8 | no | ext4 | ks | fails | 17 pass | 0 |  |
 | s02 | minimal | 2.8 | no | ext4 | ks | fails | 17 pass | 0 |  |
 | s02 | minimal | 2.8 | no | ext4 | ks | fails | 1 fail | 1 | - |
+| s02 | minimal | 2.8 | no | ext4 | ks | fails | 17 pass | 0 |  |
 | s02 | minimal | 2.8 | no | ext4 | ks | fails | 17 pass | 0 |  |
 | s02 | minimal | 2.8 | no | ext4 | ks | fails | 17 pass | 0 |  |
 | s02 | minimal | 2.8 | no | ext4 | ks | fails | 17 pass | 0 |  |
@@ -219,6 +244,7 @@ will be overwritten on the next render.
 | s03 | minimal | latest | no | ext4 | ks | untested | 17 pass | 0 |  |
 | s03 | minimal | latest | no | ext4 | ks | untested | 17 pass | 0 |  |
 | s03 | minimal | latest | no | ext4 | ks | untested | 1 fail | 1 | - |
+| s03 | minimal | latest | no | ext4 | ks | untested | 17 pass | 0 |  |
 | s03 | minimal | latest | no | ext4 | ks | untested | 17 pass | 0 |  |
 | s03 | minimal | latest | no | ext4 | ks | untested | 17 pass | 0 |  |
 | s03 | minimal | latest | no | ext4 | ks | untested | 17 pass | 0 |  |
