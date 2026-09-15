@@ -698,7 +698,7 @@ pub const VARIANTS: [Variant; 2] = [
             // one SPECS/linux/linux.spec and linux-esx.spec for every 5.0
             // subrelease (kernel 6.1 up to 90, 6.12 from 91), carrying both
             // canister PRs. Fork-only until these rows pass.
-            "fix/kernel-single-source",
+            "test/kernel-single-source-rebase-20260915",
             // cloud-init 26.2 renders its systemd generator with a variant
             // that is not in the libexecdir list, so the generator looks for
             // ds-identify at /usr/lib and exits 3. Every 26.2 guest reports
@@ -748,7 +748,7 @@ pub const VARIANTS: [Variant; 2] = [
             // one SPECS/linux/linux.spec and linux-esx.spec for every 5.0
             // subrelease (kernel 6.1 up to 90, 6.12 from 91), carrying both
             // canister PRs. Fork-only until these rows pass.
-            "fix/kernel-single-source",
+            "test/kernel-single-source-rebase-20260915",
             // cloud-init 26.2 renders its systemd generator with a variant
             // that is not in the libexecdir list, so the generator looks for
             // ds-identify at /usr/lib and exits 3. Every 26.2 guest reports
