@@ -576,7 +576,34 @@ fn verify_phase(c: &mut Ctx, p: &Produced) -> Result<(), String> {
         c.say("  would read the finished ISO back and assert the symbols");
         return Ok(());
     }
-    let want = crate::kconfig::expected_y(crate::kconfig::HYPERV_FRAGMENT, &p.forced);
+    // The symbol list. In a full run it is the closure THIS process computed.
+    // In a stage-limited run (`--stage verify`) that closure never ran, so fall
+    // back to the fragment gen_config recorded, which carries the fragment plus
+    // its computed closure. Falling back to the bare fragment would silently
+    // assert seven symbols instead of ten and call that a pass.
+    let want = if p.forced.is_empty() {
+        let f = c.spec.workdir.join(format!("hyperv-{}.fragment", c.spec.flavours[0]));
+        match std::fs::read_to_string(&f) {
+            Ok(text) => {
+                let syms: Vec<String> = crate::kconfig::fragment_symbols(&text)
+                    .into_iter()
+                    .map(|(s, _)| s)
+                    .collect();
+                c.say(&format!("  symbol list from {} ({} symbols)", f.display(), syms.len()));
+                syms
+            }
+            Err(e) => {
+                c.say(&format!(
+                    "  [warn] no recorded fragment at {} ({e}); asserting only the \
+                     fragment's own symbols, NOT the computed closure",
+                    f.display()
+                ));
+                crate::kconfig::expected_y(crate::kconfig::HYPERV_FRAGMENT, &[])
+            }
+        }
+    } else {
+        crate::kconfig::expected_y(crate::kconfig::HYPERV_FRAGMENT, &p.forced)
+    };
     let r = crate::oracle::media_hyperv(
         &c.spec.output,
         c.spec.arch.rpm(),

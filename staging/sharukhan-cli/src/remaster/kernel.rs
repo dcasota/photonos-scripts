@@ -78,18 +78,24 @@ pub fn spec_version(c: &Ctx, flavour: &str) -> Result<String, String> {
 /// `%_sourcedir`, while the tree keeps them in subdirectories (CVE/, aarch64/,
 /// generic/, crypto/, ...). Copying the tree shape would leave every patch
 /// unfindable.
+///
+/// The spec and the source FILES are re-copied on every call; only the
+/// tarballs are guarded by a marker. That asymmetry is the fix for a silent
+/// and expensive failure: `rpmbuild` reads `Source1: config_%{_arch}` out of
+/// this staged directory, NOT out of the tree, so a run that staged the
+/// pristine config and then rewrote the tree's copy would build the kernel
+/// from the config it was supposed to replace - producing a "successful"
+/// kernel with no Hyper-V support at all. The same applies to the Release
+/// bump in linux.spec. The files are small; the tarballs are hundreds of
+/// megabytes and never change, so only those are skipped.
 pub fn stage(c: &mut Ctx) -> Result<(), String> {
     let top = rpmtop_host(c);
-    let marker = c.spec.marker("stage");
+    let marker = c.spec.marker("tarballs");
     for d in ["SOURCES", "SPECS", "RPMS", "SRPMS"] {
         fs::create_dir_all(top.join(d)).map_err(|e| format!("{}: {e}", top.display()))?;
     }
     fs::create_dir_all(builddir_host(c)).map_err(|e| format!("{e}"))?;
     fs::create_dir_all(build_base(c).join("BUILDROOT")).map_err(|e| format!("{e}"))?;
-    if marker.is_file() {
-        c.skip("stage", "sources already staged");
-        return Ok(());
-    }
     if c.spec.dry {
         c.say("  would stage the spec and a flat SOURCES tree");
         return Ok(());
@@ -105,8 +111,13 @@ pub fn stage(c: &mut Ctx) -> Result<(), String> {
     }
     c.say(&format!("  staged {files} source files, {} spec(s)", c.spec.flavours.len()));
 
-    // The declared tarballs. Missing ones are named: a build that gets three
-    // hours in and then cannot find ena_linux is a wasted evening.
+    // The declared tarballs, guarded by the marker because they are hundreds of
+    // megabytes and never change. The spec and the config above are NOT
+    // guarded: see the function comment.
+    if marker.is_file() {
+        c.skip("stage:tarballs", "already staged");
+        return Ok(());
+    }
     let mut staged = Vec::new();
     for entry in fs::read_dir(&c.spec.sources)
         .map_err(|e| format!("{}: {e}", c.spec.sources.display()))?
@@ -598,6 +609,11 @@ pub fn build(c: &mut Ctx, flavour: &str) -> Result<Vec<PathBuf>, String> {
     }
     mount_pseudo(c, &build_base(c))?;
 
+    // Re-stage first: release_bump has just edited the tree's spec and
+    // gen_config has rewritten the tree's config, and rpmbuild reads BOTH out
+    // of the staged directory rather than out of the tree.
+    stage(c)?;
+
     // The real gate, always, for the pass that decides what ships. If the
     // generated config were not a fixed point this %prep fails - which is
     // exactly what it is for.
@@ -891,6 +907,54 @@ pub fn assert_installable(rpm: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// rpmbuild reads Source1 out of the STAGED SOURCES directory, not out of
+    /// the tree. A marker that skipped re-staging left the build consuming the
+    /// pristine config after gen_config had rewritten the tree's copy - a
+    /// "successful" build with no Hyper-V support in it. Only the tarballs may
+    /// be skipped.
+    #[test]
+    fn staging_refreshes_the_spec_and_config_even_when_the_tarball_marker_exists() {
+        let tmp = std::env::temp_dir().join(format!("shk-restage-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let specs = tmp.join("photon/SPECS/linux");
+        fs::create_dir_all(&specs).unwrap();
+        fs::write(specs.join("linux.spec"), "Release:        4.azure%{?dist}\n").unwrap();
+        fs::write(specs.join("config_aarch64"), "CONFIG_HYPERV=y\n").unwrap();
+        fs::create_dir_all(tmp.join("sources")).unwrap();
+
+        let mut sp = crate::remaster::tests_support::spec();
+        sp.photon_tree = tmp.join("photon");
+        sp.sources = tmp.join("sources");
+        sp.workdir = tmp.join("work");
+        fs::create_dir_all(&sp.workdir).unwrap();
+        // The tarball marker is already present, as on any resumed run.
+        fs::write(sp.marker("tarballs"), "").unwrap();
+
+        let mut seen = Vec::new();
+        let mut c = Ctx {
+            spec: &sp,
+            log: &mut |l: &str| seen.push(l.to_string()),
+            old_uname: String::new(),
+            new_uname: String::new(),
+        };
+        stage(&mut c).unwrap();
+
+        let staged_cfg = tmp.join("work/build/rpmbuild/SOURCES/config_aarch64");
+        let staged_spec = tmp.join("work/build/rpmbuild/SPECS/linux.spec");
+        assert_eq!(
+            fs::read_to_string(&staged_cfg).unwrap(),
+            "CONFIG_HYPERV=y\n",
+            "the config the build reads must be the one gen_config wrote"
+        );
+        assert!(
+            fs::read_to_string(&staged_spec).unwrap().contains("4.azure"),
+            "the Release bump must reach the staged spec"
+        );
+        // and the tarball step really was skipped
+        assert!(seen.iter().any(|l| l.contains("stage:tarballs")), "{seen:?}");
+        let _ = fs::remove_dir_all(&tmp);
+    }
 
     /// The tolerant check must still DO the work - olddefconfig and the line-3
     /// removal - and differ from upstream only in not aborting on the diff.
