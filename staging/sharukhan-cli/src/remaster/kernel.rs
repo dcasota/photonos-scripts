@@ -721,6 +721,9 @@ pub fn build(c: &mut Ctx, flavour: &str) -> Result<Vec<PathBuf>, String> {
         fs::write(&compile, "").map_err(|e| format!("{e}"))?;
     }
 
+    // %build is about to run a SECOND time, and Photon's is not idempotent.
+    clear_non_idempotent_artifacts(c)?;
+
     // Release packaging. NOT `-bb --short-circuit`: that stamps
     // `Requires: rpmlib(ShortCircuited)`, which no rpm provides, so tdnf and
     // the installer refuse every package. `-bb --noprep` re-runs %build
@@ -819,6 +822,53 @@ fn accelerate(c: &mut Ctx, flavour: &str, tree_host: &Path) -> Result<bool, Stri
     }
     super::cc1::swap(c, &r)?;
     Ok(true)
+}
+
+/// Remove the artifacts that make Photon's `%build` non-idempotent.
+///
+/// `-bb --noprep` re-runs `%build` on purpose: that is how the packages avoid
+/// the `rpmlib(ShortCircuited)` marker that makes a package uninstallable. But
+/// `%build` creates the EFA module's cmake directory with a bare `mkdir`, not
+/// `mkdir -p`, so a second pass over the same tree dies with:
+///
+/// ```text
+/// /usr/bin/mkdir: cannot create directory 'build': File exists
+/// error: Bad exit status from /var/tmp/rpm-tmp.UcQnf8 (%build)
+/// ```
+///
+/// Upstream never sees this because `%build` normally runs once, immediately
+/// after a `%prep` that re-extracted the tarball. Removing the directory is
+/// preferable to patching Photon's spec: it is a build artifact, `%build`
+/// recreates it, and the spec under test stays the spec that ships.
+fn clear_non_idempotent_artifacts(c: &mut Ctx) -> Result<(), String> {
+    let base = builddir_host(c);
+    let mut roots = vec![base.clone()];
+    // rpm 6 nests everything one level down in <name>-<ver>-build/.
+    if let Ok(rd) = fs::read_dir(&base) {
+        for e in rd.flatten() {
+            if e.path().is_dir() {
+                roots.push(e.path());
+            }
+        }
+    }
+    for root in roots {
+        let Ok(rd) = fs::read_dir(&root) else { continue };
+        for e in rd.flatten() {
+            let name = e.file_name().to_string_lossy().to_string();
+            if !name.starts_with("amzn-drivers-efa_linux_") {
+                continue;
+            }
+            let d = e.path().join("kernel/linux/efa/build");
+            if d.is_dir() {
+                fs::remove_dir_all(&d).map_err(|x| format!("{}: {x}", d.display()))?;
+                c.say(&format!(
+                    "  removed {} so %build can re-run (Photon uses a bare mkdir there)",
+                    d.display()
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Run a phase in its OWN PROCESS GROUP, watched by the disk guard.
@@ -973,6 +1023,56 @@ pub fn assert_installable(rpm: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `-bb --noprep` re-runs %build deliberately, and Photon's %build uses a
+    /// bare `mkdir` for the EFA module, so the second pass fails on an
+    /// existing directory. The cleanup must find it under BOTH build layouts
+    /// and must be a no-op when there is nothing to remove.
+    #[test]
+    fn the_non_idempotent_efa_build_directory_is_cleared_before_repackaging() {
+        let tmp = std::env::temp_dir().join(format!("shk-efa-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let mut sp = crate::remaster::tests_support::spec();
+        sp.workdir = tmp.clone();
+        // rpm 6 layout: BUILD/<name>-<ver>-build/amzn-drivers-efa_linux_*/...
+        let efa = tmp
+            .join("build/BUILD/linux-6.12.109-build/amzn-drivers-efa_linux_3.1.0/kernel/linux/efa/build");
+        fs::create_dir_all(efa.join("CMakeFiles")).unwrap();
+        fs::write(efa.join("CMakeCache.txt"), "stale").unwrap();
+
+        // Each Ctx borrows `seen` mutably for as long as it lives, so the
+        // logs are read only after the Ctx that writes them has been dropped.
+        let mut seen = Vec::new();
+        {
+            let mut c = Ctx {
+                spec: &sp,
+                log: &mut |l: &str| seen.push(l.to_string()),
+                old_uname: String::new(),
+                new_uname: String::new(),
+            };
+            clear_non_idempotent_artifacts(&mut c).unwrap();
+        }
+        assert!(!efa.exists(), "the stale cmake directory must be gone");
+        assert!(seen.iter().any(|l| l.contains("bare mkdir")), "{seen:?}");
+        // The module's source tree beside it must NOT be touched.
+        let keep = tmp
+            .join("build/BUILD/linux-6.12.109-build/amzn-drivers-efa_linux_3.1.0/kernel/linux/efa");
+        assert!(keep.is_dir(), "only the build/ directory is removed");
+
+        // Idempotent: running again with nothing to remove is a clean no-op.
+        let mut again = Vec::new();
+        {
+            let mut c2 = Ctx {
+                spec: &sp,
+                log: &mut |l: &str| again.push(l.to_string()),
+                old_uname: String::new(),
+                new_uname: String::new(),
+            };
+            clear_non_idempotent_artifacts(&mut c2).unwrap();
+        }
+        assert!(!again.iter().any(|l| l.contains("removed")), "{again:?}");
+        let _ = fs::remove_dir_all(&tmp);
+    }
 
     /// A stage-limited run has to be able to READ the kernel's NEVR without
     /// bumping it. release_bump answers the same question but writes, and a
