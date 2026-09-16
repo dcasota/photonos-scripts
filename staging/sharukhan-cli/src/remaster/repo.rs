@@ -379,6 +379,56 @@ mod tests {
         let _ = fs::remove_dir_all(&d);
     }
 
+    /// The replacement set against REAL media, which is where a name-based
+    /// rule actually bites: `bpftool` shares the kernel SRPM and is not called
+    /// `linux-` anything, and it carries `Requires: linux-tools = V-R`, so
+    /// leaving it behind puts an unresolvable dependency on the ISO.
+    ///
+    /// Skipped unless `MC_TEST_ISO_MOUNT` names a mounted Photon ISO, so the
+    /// default suite needs no media.
+    #[test]
+    fn the_replacement_set_on_real_media_includes_bpftool_and_excludes_the_esx_flavour() {
+        let Ok(mnt) = std::env::var("MC_TEST_ISO_MOUNT") else { return };
+        let mnt = std::path::PathBuf::from(mnt);
+        if !mnt.join("RPMS/repodata").is_dir() {
+            return;
+        }
+        let xml = primary_xml(&mnt).expect("the media must have readable repodata");
+        let all = parse_primary(&xml);
+        assert!(all.len() > 1000, "only {} packages parsed from real media", all.len());
+
+        // Derive the kernel SRPM from the media rather than naming it.
+        let linux = all
+            .iter()
+            .find(|p| p.name == "linux")
+            .expect("the media must carry a linux package");
+        let srpm = linux.sourcerpm.clone();
+
+        let set = replacement_set(&mnt, &srpm).unwrap();
+        let mut names: Vec<&str> = set.iter().map(|p| p.name.as_str()).collect();
+        names.sort_unstable();
+
+        assert!(
+            names.contains(&"bpftool"),
+            "bpftool shares the kernel SRPM; a name-based rule misses it: {names:?}"
+        );
+        assert!(
+            !names.contains(&"linux-esx"),
+            "linux-esx is built from its OWN SRPM and must not be replaced: {names:?}"
+        );
+        // Every member really does share the SRPM - the filter is the whole point.
+        assert!(set.iter().all(|p| p.sourcerpm == srpm), "{names:?}");
+        // and each names a real file on the media
+        for p in &set {
+            assert!(
+                mnt.join("RPMS").join(&p.href).is_file(),
+                "{} is listed in the metadata but absent from the media",
+                p.href
+            );
+        }
+        eprintln!("replacement set from {srpm}: {names:?}");
+    }
+
     /// A package whose fields cannot all be read is skipped rather than
     /// half-parsed into a wrong replacement decision.
     #[test]
