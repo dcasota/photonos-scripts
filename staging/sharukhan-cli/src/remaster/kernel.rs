@@ -257,13 +257,46 @@ fn find_kernel_tree(builddir: &Path, version: &str) -> Option<PathBuf> {
     None
 }
 
+/// A fingerprint of everything `%prep` consumes: the STAGED spec and the
+/// STAGED config, which are the two files that actually reach rpmbuild.
+///
+/// Recorded in the prep marker so a restart can distinguish "already prepared
+/// from exactly these inputs" from "prepared from something else". Without it
+/// the only safe answer is to re-prep, and `rpmbuild -bp` does `rm -rf` on the
+/// tree - so an unconditional re-prep discards every compiled object and makes
+/// the resumable phases resumable in name only.
+fn prep_fingerprint(c: &Ctx, flavour: &str) -> Result<String, String> {
+    let sr = photon_subrelease(&c.spec.photon_tree)?;
+    let cfgp = kernel_config_path(&c.spec.photon_tree, c.spec.arch, flavour, sr)?;
+    let name = cfgp
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| format!("{} has no file name", cfgp.display()))?;
+    let top = rpmtop_host(c);
+    let spec_path = top.join("SPECS").join(format!("{flavour}.spec"));
+    let cfg_path = top.join("SOURCES").join(name);
+    let spec = fs::read(&spec_path).map_err(|e| format!("{}: {e}", spec_path.display()))?;
+    let cfg = fs::read(&cfg_path).map_err(|e| format!("{}: {e}", cfg_path.display()))?;
+    let mut h = crate::sha256::Sha256::default();
+    h.update(&spec);
+    h.update(&cfg);
+    Ok(h.hex())
+}
+
 /// `%prep` only: a patched tree for the config step to run `olddefconfig` in.
 pub fn prep(c: &mut Ctx, flavour: &str) -> Result<PathBuf, String> {
     let marker = c.spec.marker(&format!("prep-{flavour}"));
     let version = spec_version(c, flavour)?;
-    if marker.is_file() {
+    // Skip only when the tree was prepared from EXACTLY the staged spec and
+    // config that are there now. Anything else re-preps, because %prep is the
+    // step that applies them.
+    let fp = if c.spec.dry { String::new() } else { prep_fingerprint(c, flavour)? };
+    if !c.spec.dry && fs::read_to_string(&marker).map(|p| p.trim() == fp).unwrap_or(false) {
         if let Some(t) = find_kernel_tree(&builddir_host(c), &version) {
-            c.skip(&format!("prep[{flavour}]"), "the patched tree is already present");
+            c.skip(
+                &format!("prep[{flavour}]"),
+                "the tree is already prepared from these exact spec and config",
+            );
             return Ok(t);
         }
     }
@@ -287,7 +320,7 @@ pub fn prep(c: &mut Ctx, flavour: &str) -> Result<PathBuf, String> {
         )
     })?;
     c.say(&format!("  prepared tree: {}", tree_host.display()));
-    fs::write(&marker, "").map_err(|e| format!("{}: {e}", marker.display()))?;
+    fs::write(&marker, &fp).map_err(|e| format!("{}: {e}", marker.display()))?;
     Ok(tree_host)
 }
 
@@ -619,10 +652,10 @@ pub fn build(c: &mut Ctx, flavour: &str) -> Result<Vec<PathBuf>, String> {
     // exactly what it is for.
     set_applicability_check(c, false)?;
 
-    // %prep again: the spec's Release changed and the config was rewritten, so
-    // the tree prepared for the config step is not the tree to build.
-    let prep_marker = c.spec.marker(&format!("prep-{flavour}"));
-    let _ = fs::remove_file(&prep_marker);
+    // %prep, but only if the tree is not already prepared from exactly this
+    // spec and config - prep() decides by fingerprint. Deleting the marker
+    // unconditionally re-prepped every time, and `rpmbuild -bp` does `rm -rf`
+    // on the tree, so a restart threw away every object compiled so far.
     let tree_host = prep(c, flavour)?;
 
     // The accelerator, if one was built AND it can be proven equivalent.
@@ -907,6 +940,57 @@ pub fn assert_installable(rpm: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// %prep is destructive - rpmbuild -bp does `rm -rf` on the tree - so the
+    /// decision to re-run it must be keyed on the inputs it consumes. A
+    /// fingerprint that ignored the config would skip a needed prep; one that
+    /// changed spuriously would discard every compiled object.
+    #[test]
+    fn the_prep_fingerprint_tracks_the_staged_spec_and_config_and_nothing_else() {
+        let tmp = std::env::temp_dir().join(format!("shk-fp-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let specs = tmp.join("photon/SPECS/linux");
+        fs::create_dir_all(&specs).unwrap();
+        fs::write(specs.join("config_aarch64"), "CONFIG_A=y\n").unwrap();
+        fs::write(
+            tmp.join("photon/build-config.json"),
+            "{\"photon-build-param\": {\"photon-subrelease\": \"92\"}}",
+        )
+        .unwrap();
+
+        let mut sp = crate::remaster::tests_support::spec();
+        sp.photon_tree = tmp.join("photon");
+        sp.workdir = tmp.join("work");
+        let staged = tmp.join("work/build/rpmbuild");
+        fs::create_dir_all(staged.join("SPECS")).unwrap();
+        fs::create_dir_all(staged.join("SOURCES")).unwrap();
+        fs::write(staged.join("SPECS/linux.spec"), "Release: 4.azure\n").unwrap();
+        fs::write(staged.join("SOURCES/config_aarch64"), "CONFIG_A=y\n").unwrap();
+
+        let mut seen = Vec::new();
+        let c = Ctx {
+            spec: &sp,
+            log: &mut |l: &str| seen.push(l.to_string()),
+            old_uname: String::new(),
+            new_uname: String::new(),
+        };
+
+        let a = prep_fingerprint(&c, "linux").unwrap();
+        assert_eq!(a.len(), 64, "a sha256 hex digest");
+        // Stable across calls: a spurious change discards a compiled tree.
+        assert_eq!(a, prep_fingerprint(&c, "linux").unwrap());
+
+        // A changed CONFIG must change it - that is the case that must re-prep.
+        fs::write(staged.join("SOURCES/config_aarch64"), "CONFIG_A=y\nCONFIG_HYPERV=y\n").unwrap();
+        let b = prep_fingerprint(&c, "linux").unwrap();
+        assert_ne!(a, b, "a changed config must force a re-prep");
+
+        // So must a changed Release.
+        fs::write(staged.join("SPECS/linux.spec"), "Release: 5.azure\n").unwrap();
+        assert_ne!(b, prep_fingerprint(&c, "linux").unwrap());
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
 
     /// rpmbuild reads Source1 out of the STAGED SOURCES directory, not out of
     /// the tree. A marker that skipped re-staging left the build consuming the
