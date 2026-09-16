@@ -179,6 +179,46 @@ fn rpmbuild_argv<'a>(
     v
 }
 
+/// Photon's applicability check, made non-fatal FOR THE CONFIG-GENERATION PASS
+/// ONLY.
+///
+/// The upstream check ends in `diff -u .config.old .config`, and `%prep` runs
+/// under `set -e`, so any difference aborts the build. That is the correct gate
+/// for a real build. It is circular for the pass that exists to COMPUTE what
+/// the gate demands: there is no prepared tree to run `olddefconfig` in until
+/// `%prep` succeeds, and `%prep` cannot succeed until the config is already a
+/// fixed point.
+///
+/// It bites here because the media's config is not a fixed point under the
+/// media's OWN toolchain: binutils 2.46.1 supports RELR relocations, so
+/// `olddefconfig` adds CONFIG_TOOLS_SUPPORT_RELR and CONFIG_RELR, which the
+/// shipped config - written against binutils 2.39 - does not carry.
+///
+/// The build pass restores the upstream file, so the gate that decides whether
+/// a kernel ships is never weakened. It passes there because `gen_config` wrote
+/// a config it has already PROVEN to be a fixed point.
+const TOLERANT_APPLICABILITY: &str = "\
+echo \"Check for .config applicability (sharukhan config-generation pass)\"
+make LC_ALL= olddefconfig
+sed -i '3d' .config
+if [[ -f .config.old ]]; then diff -u .config.old .config || true; fi
+";
+
+/// Swap the applicability check between the tolerant and the upstream form.
+fn set_applicability_check(c: &mut Ctx, tolerant: bool) -> Result<(), String> {
+    let name = "check_for_config_applicability.inc";
+    let dst = rpmtop_host(c).join("SOURCES").join(name);
+    if tolerant {
+        fs::write(&dst, TOLERANT_APPLICABILITY).map_err(|e| format!("{}: {e}", dst.display()))?;
+        c.say("  applicability check made non-fatal for the config-generation pass only");
+    } else {
+        let src = c.spec.photon_tree.join("SPECS/linux").join(name);
+        fs::copy(&src, &dst).map_err(|e| format!("{}: {e}", src.display()))?;
+        c.say("  upstream applicability check restored: the build pass uses the real gate");
+    }
+    Ok(())
+}
+
 /// Where `%prep` actually left the kernel tree.
 ///
 /// rpm 4.18 extracts into `_builddir/linux-<ver>`. rpm 6 wraps every build in
@@ -330,7 +370,13 @@ pub fn gen_config(c: &mut Ctx, flavour: &str) -> Result<Vec<kconfig::Forced>, St
     // a prepared tree - the closure is computed from the config FILE. Running
     // it earlier made a dry run do real work, which is the one thing a dry run
     // must never do.
-    let tree_host = prep(c, flavour)?;
+    //
+    // The check is restored whether or not %prep succeeded: leaving a weakened
+    // gate behind for the build pass is the one outcome that must not happen.
+    set_applicability_check(c, true)?;
+    let prepped = prep(c, flavour);
+    set_applicability_check(c, false)?;
+    let tree_host = prepped?;
 
     let rel = tree_host
         .strip_prefix(build_base(c))
@@ -551,6 +597,11 @@ pub fn build(c: &mut Ctx, flavour: &str) -> Result<Vec<PathBuf>, String> {
         return Ok(vec![]);
     }
     mount_pseudo(c, &build_base(c))?;
+
+    // The real gate, always, for the pass that decides what ships. If the
+    // generated config were not a fixed point this %prep fails - which is
+    // exactly what it is for.
+    set_applicability_check(c, false)?;
 
     // %prep again: the spec's Release changed and the config was rewritten, so
     // the tree prepared for the config step is not the tree to build.
@@ -840,6 +891,24 @@ pub fn assert_installable(rpm: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The tolerant check must still DO the work - olddefconfig and the line-3
+    /// removal - and differ from upstream only in not aborting on the diff.
+    /// A version that skipped olddefconfig would leave the tree unprepared and
+    /// the computed fixed point meaningless.
+    #[test]
+    fn the_tolerant_applicability_check_still_runs_olddefconfig_and_only_softens_the_diff() {
+        let t = TOLERANT_APPLICABILITY;
+        assert!(t.contains("make LC_ALL= olddefconfig"), "{t}");
+        assert!(t.contains("sed -i '3d' .config"), "{t}");
+        // the diff still runs (it is the useful output) but cannot abort %prep
+        assert!(t.contains("diff -u .config.old .config || true"), "{t}");
+        // and it must not carry a bare failing diff anywhere
+        assert!(
+            !t.lines().any(|l| l.trim().starts_with("diff ") && !l.contains("|| true")),
+            "a bare diff would abort %prep under set -e: {t}"
+        );
+    }
 
     /// rpm 4.18 and rpm 6 lay the build directory out differently, and the two
     /// media this has run against use one each. Hardcoding either makes a
