@@ -96,6 +96,249 @@ pub fn media(iso: &Path, iso_type: &str, c: &mut Checks) {
     c.check("media.poi_rpm", "-", Status::Info, "", &poi, "installer actually on the media");
 }
 
+// ---- A2. the Hyper-V media assertions -----------------------------------
+
+/// Read the Hyper-V symbols back out of a FINISHED ISO.
+///
+/// Five independent assertions, because each can pass while another fails and
+/// each failure means something different:
+///
+/// 1. the kernel RPM on the media carries the symbols in `/boot/config-<uname>`
+/// 2. `isolinux/vmlinuz` is byte-identical to that RPM's `/boot/vmlinuz-<uname>`
+///    - the installer must boot the kernel the media ships, not a leftover
+/// 3. the installer kernel's OWN embedded ikconfig carries them, which is the
+///    only evidence about the binary rather than about a file beside it
+/// 4. the initrd carries exactly one module tree, at the new uname, with no
+///    `hv_*` modules left - they are built in now
+/// 5. the repo metadata lists the new NEVR and not the old one
+///
+/// Returns a human-readable report. Every value is MEASURED and printed; a
+/// bare pass would not distinguish "checked and correct" from "never looked".
+pub fn media_hyperv(
+    iso: &Path,
+    arch: &str,
+    flavour: &str,
+    want: &[String],
+    old_vr: &str,
+) -> Result<String, String> {
+    use crate::kconfig::{self, Kconfig};
+    use std::fs;
+    use std::process::Stdio;
+
+    let tmp = std::env::temp_dir().join(format!("sharukhan-verify-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    fs::create_dir_all(&tmp).map_err(|e| format!("{}: {e}", tmp.display()))?;
+    let mut out = Vec::new();
+    let mut fail = Vec::new();
+
+    // Which kernel package is on the media now - read, not assumed.
+    let listed = media_rpms(iso);
+    let kernel_rpms: Vec<&String> = listed
+        .iter()
+        .filter(|n| rpm_is(n, flavour) && n.ends_with(&format!(".{arch}.rpm")))
+        .collect();
+    if kernel_rpms.len() != 1 {
+        return Err(format!(
+            "expected exactly one {flavour} package on the media, found {}: {:?}",
+            kernel_rpms.len(),
+            kernel_rpms
+        ));
+    }
+    let kname = kernel_rpms[0].clone();
+    out.push(format!("media kernel package: {kname}"));
+
+    // Extract what is needed, in one xorriso pass.
+    let rpm_dst = tmp.join("linux.rpm");
+    let vmlinuz_dst = tmp.join("vmlinuz");
+    let initrd_dst = tmp.join("initrd.img");
+    let repodata_dst = tmp.join("repodata");
+    let st = Command::new("xorriso")
+        .args(["-osirrox", "on", "-indev"])
+        .arg(iso)
+        .args(["-extract", &format!("/RPMS/{arch}/{kname}")])
+        .arg(&rpm_dst)
+        .args(["-extract", "/isolinux/vmlinuz"])
+        .arg(&vmlinuz_dst)
+        .args(["-extract", "/isolinux/initrd.img"])
+        .arg(&initrd_dst)
+        .args(["-extract", "/RPMS/repodata"])
+        .arg(&repodata_dst)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map_err(|e| format!("xorriso -extract: {e}"))?;
+    if !st.success() || !rpm_dst.is_file() {
+        return Err(format!("could not extract the kernel package from {}", iso.display()));
+    }
+
+    let uname = Command::new("rpm")
+        .args(["-qp", "--qf", "%{VERSION}-%{RELEASE}"])
+        .arg(&rpm_dst)
+        .output()
+        .map_err(|e| format!("rpm -qp: {e}"))
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())?;
+    out.push(format!("uname from the media's kernel RPM: {uname}"));
+    if uname == old_vr {
+        fail.push(format!("the media still carries the ORIGINAL kernel {old_vr}"));
+    }
+
+    // 1. /boot/config-<uname> inside the RPM on the media.
+    let unpack = tmp.join("rpm");
+    fs::create_dir_all(&unpack).map_err(|e| format!("{e}"))?;
+    let f = fs::File::open(&rpm_dst).map_err(|e| format!("{e}"))?;
+    let mut r2c = Command::new("rpm2cpio")
+        .stdin(Stdio::from(f))
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("rpm2cpio: {e}"))?;
+    let pipe = r2c.stdout.take().ok_or("rpm2cpio produced no output")?;
+    let cst = Command::new("cpio")
+        .args(["-idm", "--quiet"])
+        .current_dir(&unpack)
+        .stdin(Stdio::from(pipe))
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map_err(|e| format!("cpio: {e}"))?;
+    let _ = r2c.wait();
+    if !cst.success() {
+        return Err("could not unpack the kernel RPM from the media".to_string());
+    }
+    let cfg_path = unpack.join(format!("boot/config-{uname}"));
+    let cfg_text = fs::read_to_string(&cfg_path)
+        .map_err(|e| format!("{}: {e}", cfg_path.display()))?;
+    let cfg = Kconfig::parse(&cfg_text);
+    match kconfig::assert_all_y(&cfg, want) {
+        Ok(()) => out.push(format!(
+            "rpm /boot/config-{uname}: all {} symbols =y ({})",
+            want.len(),
+            want.iter().map(|s| format!("CONFIG_{s}")).collect::<Vec<_>>().join(" ")
+        )),
+        Err(e) => fail.push(format!("rpm config: {e}")),
+    }
+
+    // 2. the installer kernel is the packaged kernel.
+    let packaged = unpack.join(format!("boot/vmlinuz-{uname}"));
+    match (fs::read(&vmlinuz_dst), fs::read(&packaged)) {
+        (Ok(a), Ok(b)) if a == b => out.push(format!(
+            "isolinux/vmlinuz is byte-identical to /boot/vmlinuz-{uname} ({} bytes)",
+            a.len()
+        )),
+        (Ok(a), Ok(b)) => fail.push(format!(
+            "isolinux/vmlinuz ({} bytes) differs from the packaged kernel ({} bytes): \
+             the installer would boot a different kernel than the media installs",
+            a.len(),
+            b.len()
+        )),
+        _ => fail.push("could not read both kernel images".to_string()),
+    }
+
+    // 3. the installer kernel's own embedded config.
+    match fs::read(&vmlinuz_dst).map_err(|e| e.to_string()).and_then(|img| {
+        kconfig::extract_ikconfig(&img)
+    }) {
+        Ok(text) => {
+            let ik = Kconfig::parse(&text);
+            match kconfig::assert_all_y(&ik, want) {
+                Ok(()) => out.push(format!(
+                    "installer kernel ikconfig: all {} symbols =y ({} symbols read from the binary)",
+                    want.len(),
+                    ik.len()
+                )),
+                Err(e) => fail.push(format!("installer ikconfig: {e}")),
+            }
+        }
+        Err(e) => out.push(format!("installer ikconfig: not read ({e})")),
+    }
+
+    // 4. the initrd's module tree.
+    match initrd_module_dirs(&initrd_dst) {
+        Ok((dirs, hv)) => {
+            if dirs.len() == 1 && dirs[0] == uname {
+                out.push(format!("initrd module tree: exactly usr/lib/modules/{uname}"));
+            } else {
+                fail.push(format!(
+                    "initrd carries module trees {dirs:?}, expected exactly [{uname}]"
+                ));
+            }
+            if hv == 0 {
+                out.push("initrd carries no hv_* modules: they are built in".to_string());
+            } else {
+                fail.push(format!("initrd still carries {hv} hv_* module(s)"));
+            }
+        }
+        Err(e) => fail.push(format!("initrd: {e}")),
+    }
+
+    // 5. repo metadata.
+    match crate::remaster::repo::assert_metadata_dir(&repodata_dst, &uname, old_vr) {
+        Ok(names) => out.push(format!(
+            "repodata lists {} package(s) at {uname} and none at {old_vr}",
+            names.len()
+        )),
+        Err(e) => fail.push(format!("repodata: {e}")),
+    }
+
+    // El Torito.
+    match crate::remaster::iso::el_torito(iso) {
+        Ok(t) => out.push(format!("El Torito intact: {}", t.replace('\n', " | "))),
+        Err(e) => fail.push(format!("El Torito: {e}")),
+    }
+
+    let _ = fs::remove_dir_all(&tmp);
+    if !fail.is_empty() {
+        return Err(format!(
+            "the finished ISO failed {} assertion(s):\n  {}\npassed:\n  {}",
+            fail.len(),
+            fail.join("\n  "),
+            out.join("\n  ")
+        ));
+    }
+    Ok(out.join("\n"))
+}
+
+/// Module directories and `hv_*` module count inside a gzip'd cpio initrd.
+fn initrd_module_dirs(initrd: &Path) -> Result<(Vec<String>, usize), String> {
+    use std::fs;
+    use std::process::Stdio;
+    let f = fs::File::open(initrd).map_err(|e| format!("{}: {e}", initrd.display()))?;
+    let mut gz = Command::new("gzip")
+        .args(["-dc"])
+        .stdin(Stdio::from(f))
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("gzip: {e}"))?;
+    let pipe = gz.stdout.take().ok_or("gzip produced no output")?;
+    let out = Command::new("cpio")
+        .args(["-t", "--quiet"])
+        .stdin(Stdio::from(pipe))
+        .stderr(Stdio::null())
+        .output()
+        .map_err(|e| format!("cpio -t: {e}"))?;
+    let _ = gz.wait();
+    let text = String::from_utf8_lossy(&out.stdout);
+    let mut dirs = Vec::new();
+    let mut hv = 0usize;
+    for line in text.lines() {
+        let l = line.trim();
+        if let Some(rest) = l.strip_prefix("usr/lib/modules/") {
+            if !rest.is_empty() && !rest.contains('/') {
+                dirs.push(rest.to_string());
+            }
+        }
+        if l.contains("/hv_") && l.contains(".ko") {
+            hv += 1;
+        }
+    }
+    if dirs.is_empty() {
+        return Err("no usr/lib/modules/<uname> directory in the initrd".to_string());
+    }
+    dirs.sort();
+    Ok((dirs, hv))
+}
+
 // ---- B. install phase, from the serial log ------------------------------
 
 /// `install_result` is what the install phase OBSERVED, not a re-derivation.

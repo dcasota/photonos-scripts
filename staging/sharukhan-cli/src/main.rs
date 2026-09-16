@@ -22,6 +22,7 @@ mod specresolve;
 mod verify;
 mod disk;
 mod identity;
+mod kconfig;
 mod kickstart;
 mod job;
 mod leases;
@@ -31,6 +32,7 @@ mod media;
 mod memory;
 mod phases;
 mod proc;
+mod remaster;
 mod report;
 mod runner;
 mod vm;
@@ -68,6 +70,8 @@ PHASES (the same code `run` calls, one step at a time)
     build-iso           resolve a build-axis tuple to an ISO (see --allow-build)
     build               run the build cascade directly (replaces the run*.sh scripts);
                         --dry-run prints every phase without touching anything
+    remaster            make an Azure variant of an ISO that already exists, by
+                        rebuilding only the kernel spec (--in, --out, --hyperv)
     variant-patches     rebuild the installer variant patches from the PR branches
     canister            which canister this kernel can have (--rebase-check to prove it)
     mirrors             are the SPECS copies of POI PR commits still current with the fork?
@@ -101,6 +105,24 @@ OPTIONS:
                         when one is already published at that kernel NEVR).
                         The matrix uses prebuilt and equivalent only.
     --force             rebuild even on a cache hit (build-iso)
+    --hyperv            build Hyper-V guest support IN (=y) rather than as
+                        modules, so an Azure guest's installer kernel finds
+                        VMBus storage and network without initrd modules
+                        (build, build-iso, remaster). Refused for acvp/kat.
+    --hyperv-flavours <f>  linux[,linux-esx]; default linux only, because
+                        linux-esx would need PTP_1588_CLOCK raised on a
+                        VMware-tuned kernel for no gain on Azure
+    --in <iso>          input ISO (remaster); never modified
+    --arch <a>          x86_64 | aarch64 (remaster, build); default host arch
+    --photon-tree <dir> SPECS checkout AT THE COMMIT THAT BUILT --in (remaster)
+    --sources <dir>     declared kernel source tarballs (remaster)
+    --builddir <dir>    scratch; tens of gigabytes (remaster)
+    --builder-image <i> container image used to bootstrap the build root
+    --stage <s>         run only these remaster stages, comma separated:
+                        bootstrap, gen-config, build-kernel, initrd, repo,
+                        iso, verify
+    --no-accel          do not use a native cross cc1 even if one is built
+                        and passes the byte-identity gate (remaster)
     --severity <level>  filter findings by severity
     --jobs <n>          proposed parallel VM count (status); default is cpus/4
     --job <id>          a job table row id (stop, watch) - NOT --jobs
@@ -152,6 +174,17 @@ struct Args {
     wait_idle: u64,
     interval: u64,
     log: Option<String>,
+    // ---- remaster / --hyperv ----
+    input: Option<String>,
+    arch: Option<String>,
+    hyperv: bool,
+    hyperv_flavours: Option<String>,
+    builder_image: Option<String>,
+    builddir: Option<String>,
+    photon_tree: Option<String>,
+    sources: Option<String>,
+    stage: Option<String>,
+    no_accel: bool,
 }
 
 fn parse() -> Result<Args, String> {
@@ -197,6 +230,16 @@ fn parse() -> Result<Args, String> {
         settle: 300,
         wait_idle: 0,
         interval: 15,
+        input: None,
+        arch: None,
+        hyperv: false,
+        hyperv_flavours: None,
+        builder_image: None,
+        builddir: None,
+        photon_tree: None,
+        sources: None,
+        stage: None,
+        no_accel: false,
         log: None,
     };
     while let Some(f) = a.next() {
@@ -240,6 +283,22 @@ fn parse() -> Result<Args, String> {
             "--keep" => out.keep = true,
             "--once" => out.once = true,
             "--log" => out.log = Some(a.next().ok_or("--log needs a value")?),
+            "--in" => out.input = Some(a.next().ok_or("--in needs a value")?),
+            "--arch" => out.arch = Some(a.next().ok_or("--arch needs a value")?),
+            "--hyperv" => out.hyperv = true,
+            "--hyperv-flavours" => {
+                out.hyperv_flavours = Some(a.next().ok_or("--hyperv-flavours needs a value")?)
+            }
+            "--builder-image" => {
+                out.builder_image = Some(a.next().ok_or("--builder-image needs a value")?)
+            }
+            "--builddir" => out.builddir = Some(a.next().ok_or("--builddir needs a value")?),
+            "--photon-tree" => {
+                out.photon_tree = Some(a.next().ok_or("--photon-tree needs a value")?)
+            }
+            "--sources" => out.sources = Some(a.next().ok_or("--sources needs a value")?),
+            "--stage" => out.stage = Some(a.next().ok_or("--stage needs a value")?),
+            "--no-accel" => out.no_accel = true,
             "--settle" => {
                 let v = a.next().ok_or("--settle needs a value")?;
                 out.settle = v.parse().map_err(|_| format!("--settle: not a number: {v}"))?;
@@ -328,6 +387,7 @@ fn main() -> ExitCode {
             args.allow_build,
         ),
         "build" => cmd_build(&args),
+        "remaster" => cmd_remaster(&args),
         "variant-patches" => phases::cmd_variant_patches(&cfg),
         "canister" => cmd_canister(&cfg, args.rebase_check),
         "mirrors" => cmd_mirrors(&cfg),
@@ -802,6 +862,18 @@ fn cmd_build(args: &Args) -> Result<(), String> {
     // claim against the RPMs and refuses if it does not hold.
     spec.compose_only = args.compose_only;
 
+    // Opt-in Hyper-V support. Inserted into the injection list rather than
+    // bolted on afterwards, so `--dry-run` shows it in the cascade and the
+    // acvp/kat refusal happens at resolve time instead of hours in.
+    if args.hyperv {
+        let arch = args.arch.clone().unwrap_or_else(|| std::env::consts::ARCH.to_string());
+        let flavours = match args.hyperv_flavours.as_deref() {
+            Some(s) => remaster::parse_flavours(s)?,
+            None => remaster::flavours_default(),
+        };
+        buildmode::add_hyperv(&mut spec, &arch, &flavours)?;
+    }
+
     print!("{}", buildmode::render(&spec));
     if args.dry_run {
         println!("\n(dry run: nothing was touched)");
@@ -821,6 +893,112 @@ fn cmd_build(args: &Args) -> Result<(), String> {
     };
     if !args.dry_run {
         println!("{}", produced.display());
+    }
+    Ok(())
+}
+
+/// Make an Azure variant of an ISO that already exists.
+///
+/// A full aarch64 Photon build on an x86_64 host is hundreds of packages under
+/// emulation - days. An Azure variant changes exactly one thing, the kernel
+/// config, so this rebuilds the kernel spec alone in a build root bootstrapped
+/// from the input ISO's own RPMs and swaps the results into the medium.
+fn cmd_remaster(args: &Args) -> Result<(), String> {
+    let input = args.input.as_deref().ok_or("remaster needs --in <iso>")?;
+    let output = args.out.as_deref().ok_or("remaster needs --out <iso>")?;
+    if !args.hyperv {
+        return Err(
+            "remaster needs --hyperv: it is the only variant implemented, and an \
+             unqualified remaster would rewrite an ISO to no effect"
+                .to_string(),
+        );
+    }
+    if input == output {
+        return Err("--in and --out are the same file; the input must stay intact".to_string());
+    }
+    let arch = remaster::Arch::parse(args.arch.as_deref().unwrap_or(std::env::consts::ARCH))?;
+    let flavours = match args.hyperv_flavours.as_deref() {
+        Some(s) => remaster::parse_flavours(s)?,
+        None => remaster::flavours_default(),
+    };
+    // The SPECS checkout has to be the one that BUILT THE INPUT. The live tree
+    // has moved on - 5.0 took this kernel through three Releases in a week - and
+    // building from it would produce a different kernel under the same name.
+    let tree = args
+        .photon_tree
+        .clone()
+        .or_else(|| std::env::var("MC_REMASTER_PHOTON_TREE").ok())
+        .ok_or(
+            "remaster needs --photon-tree <dir>: a Photon checkout at the commit that built \
+             the input ISO. The live tree has moved on, so building from it would produce a \
+             different kernel carrying the same name.",
+        )?;
+    let sources = args
+        .sources
+        .clone()
+        .or_else(|| std::env::var("MC_REMASTER_SOURCES").ok())
+        .ok_or("remaster needs --sources <dir>: the declared kernel source tarballs")?;
+    let workdir = args
+        .builddir
+        .clone()
+        .or_else(|| std::env::var("MC_REMASTER_WORKDIR").ok())
+        .ok_or("remaster needs --builddir <dir>: tens of gigabytes of scratch space")?;
+    let only = match args.stage.as_deref() {
+        None => vec![],
+        Some(s) => s
+            .split(',')
+            .map(str::trim)
+            .filter(|x| !x.is_empty())
+            .map(remaster::Stage::parse)
+            .collect::<Result<Vec<_>, String>>()?,
+    };
+    let builder_image = args.builder_image.clone().unwrap_or_else(|| match arch {
+        remaster::Arch::Aarch64 => "photon:5.0-arm64".to_string(),
+        remaster::Arch::X86_64 => "photon:5.0".to_string(),
+    });
+    let jobs = args.jobs.unwrap_or_else(|| {
+        std::thread::available_parallelism().map(|n| n.get() as u64).unwrap_or(4)
+    }) as usize;
+
+    let spec = remaster::RemasterSpec {
+        input: input.into(),
+        output: output.into(),
+        arch,
+        flavours,
+        photon_tree: tree.into(),
+        sources: sources.into(),
+        workdir: workdir.into(),
+        builder_image,
+        jobs,
+        dry: args.dry_run,
+        only,
+        accel: !args.no_accel,
+    };
+    println!("remaster {} -> {}", spec.input.display(), spec.output.display());
+    println!(
+        "  arch {} / flavours {} / jobs {} / tree {}",
+        spec.arch.rpm(),
+        spec.flavours.join(","),
+        spec.jobs,
+        spec.photon_tree.display()
+    );
+    if spec.arch.emulated_here() {
+        println!(
+            "  {} on a {} host: the kernel compiles under qemu-user emulation, which is \
+             hours rather than minutes",
+            spec.arch.rpm(),
+            std::env::consts::ARCH
+        );
+    }
+    if args.dry_run {
+        println!("  (dry run: nothing is touched)");
+    }
+    let produced = remaster::execute(&spec, &mut |l| println!("{l}"))?;
+    if !args.dry_run {
+        println!("{}", spec.output.display());
+        if !produced.sha256.is_empty() {
+            println!("sha256 {}", produced.sha256);
+        }
     }
     Ok(())
 }

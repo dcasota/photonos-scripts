@@ -231,7 +231,96 @@ pub fn inject(c: &mut Ctx, i: &Injection) -> Result<(), String> {
         Injection::PinSubrelease(n) => pin_subrelease(c, *n),
         Injection::PkgBuildOptions { mode, nevr } => pkg_build_options(c, *mode, nevr.as_deref()),
         Injection::SpecFixup(f) => spec_fixup(c, *f),
+        Injection::KernelConfig { arch, flavour } => kernel_config(c, arch, flavour),
+        Injection::ReleaseBump { flavour } => release_bump(c, flavour),
     }
+}
+
+/// Build Hyper-V guest support into one flavour's kernel config.
+///
+/// The closure is computed from the config IN THIS TREE, so the symbols that
+/// get raised are a property of what is actually there rather than of a table
+/// someone wrote once. Every forced symbol is reported.
+///
+/// The merge here is textual, because the cascade has no prepared kernel tree
+/// to run `olddefconfig` in. That is safe rather than hopeful: Photon's own
+/// `check_for_config_applicability.inc` runs `olddefconfig` during `%prep` and
+/// FAILS THE BUILD if the result is not a fixed point, so an inconsistent merge
+/// cannot reach an ISO. (`sharukhan remaster` does the round trip up front, and
+/// asserts it, because there the build is the expensive part.)
+fn kernel_config(c: &mut Ctx, arch: &str, flavour: &str) -> Result<(), String> {
+    use crate::kconfig;
+    let tree = c.spec.tree(Tree::Release);
+    let sr = match c.spec.subrelease {
+        Subrelease::Pinned(n) => n,
+        Subrelease::Mainline => crate::specresolve::tree_subrelease(&tree).unwrap_or(u32::MAX),
+    };
+    let a = crate::remaster::Arch::parse(arch)?;
+    let path = crate::remaster::kernel::kernel_config_path(&tree, a, flavour, sr)?;
+    c.say(&format!("  config: {}", path.display()));
+    if c.dry {
+        c.say(&format!("  would build Hyper-V support into {flavour} for {arch}"));
+        return Ok(());
+    }
+    let text = fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let cfg = kconfig::Kconfig::parse(&text);
+    let forced =
+        kconfig::dependency_closure(&cfg, kconfig::HYPERV_FRAGMENT, kconfig::HYPERV_EDGES)?;
+    for f in &forced {
+        c.say(&format!("    {}", f.line()));
+    }
+    let want = kconfig::expected_y(kconfig::HYPERV_FRAGMENT, &forced);
+    let merged = kconfig::apply_to_config(&text, &want);
+    fs::write(&path, &merged).map_err(|e| format!("{}: {e}", path.display()))?;
+    // Read it back: a config that silently failed to land is invisible until
+    // the kernel cannot find VMBus devices.
+    let back = kconfig::Kconfig::parse(
+        &fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?,
+    );
+    kconfig::assert_all_y(&back, &want)?;
+    c.say(&format!(
+        "  {} symbols =y in {} ({} raised by the closure)",
+        want.len(),
+        basename(&path),
+        forced.len()
+    ));
+    Ok(())
+}
+
+/// Bump the flavour's Release so the Hyper-V kernel has its own NEVR.
+fn release_bump(c: &mut Ctx, flavour: &str) -> Result<(), String> {
+    let spec = c.spec.tree(Tree::Release).join("SPECS/linux").join(format!("{flavour}.spec"));
+    if !spec.is_file() {
+        return Err(format!("{} does not exist", spec.display()));
+    }
+    let text = fs::read_to_string(&spec).map_err(|e| format!("{}: {e}", spec.display()))?;
+    let Some((idx, line)) = text.lines().enumerate().find(|(_, l)| l.starts_with("Release:")) else {
+        return Err(format!("no Release: line in {}", spec.display()));
+    };
+    let value = line["Release:".len()..].trim().to_string();
+    // Idempotent: a resumed or repeated run must not bump it again, or the
+    // Release climbs by one every time the cascade is re-entered.
+    if value.contains(".azure") {
+        c.say(&format!("  {flavour}: Release already {value}"));
+        return Ok(());
+    }
+    let bumped = crate::remaster::kernel::bump_release(&value)?;
+    if c.dry {
+        c.say(&format!("  would bump {flavour} Release {value} -> {bumped}"));
+        return Ok(());
+    }
+    let mut out = String::with_capacity(text.len() + 256);
+    for (i, l) in text.lines().enumerate() {
+        if i == idx {
+            out.push_str(&format!("Release:        {bumped}\n"));
+            continue;
+        }
+        out.push_str(l);
+        out.push('\n');
+    }
+    fs::write(&spec, out).map_err(|e| format!("{}: {e}", spec.display()))?;
+    c.say(&format!("  {flavour}: Release {value} -> {bumped}"));
+    Ok(())
 }
 
 /// Apply a patch to one of the two trees.
@@ -2254,6 +2343,67 @@ pub fn execute(spec: &BuildSpec, dry: bool, log: &mut dyn FnMut(&str)) -> Result
 mod tests {
     use super::*;
     use crate::buildmode::ImgType;
+
+    /// The bump is RELATIVE to what is in the tree. After the variant patch and
+    /// the embedded canister patch the kernel is not at Release 1, so a bump
+    /// computed from the pristine spec would name a kernel nobody builds - the
+    /// same class of mistake that made the legacy path purge on a NEVR its own
+    /// build could not produce.
+    #[test]
+    fn release_bump_is_relative_to_an_already_bumped_release() {
+        let tmp = std::env::temp_dir().join(format!("shk-relbump-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let specs = tmp.join("5.0/SPECS/linux");
+        fs::create_dir_all(&specs).unwrap();
+        // 4 is what the embedded canister-equivalent patch leaves behind.
+        fs::write(
+            specs.join("linux.spec"),
+            "Name:           linux\nVersion:        6.12.109\nRelease:        4%{?dist}\n%changelog\n",
+        )
+        .unwrap();
+
+        let sp = spec_at(&tmp);
+        let mut seen = Vec::new();
+        let mut c = Ctx { spec: &sp, dry: false, log: &mut |l: &str| seen.push(l.to_string()) };
+        release_bump(&mut c, "linux").unwrap();
+
+        let text = fs::read_to_string(specs.join("linux.spec")).unwrap();
+        assert!(text.contains("Release:        5.azure%{?dist}"), "{text}");
+        // NOT 2.azure: the bump must not restart from the pristine Release.
+        assert!(!text.contains("2.azure"), "{text}");
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// A cascade can be re-entered. If the bump were not idempotent the
+    /// Release would climb by one every time, and the predicted RPM names
+    /// would drift away from what the build produces.
+    #[test]
+    fn release_bump_is_idempotent_on_rerun() {
+        let tmp = std::env::temp_dir().join(format!("shk-relidem-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let specs = tmp.join("5.0/SPECS/linux");
+        fs::create_dir_all(&specs).unwrap();
+        fs::write(
+            specs.join("linux.spec"),
+            "Name:           linux\nVersion:        6.12.109\nRelease:        3%{?dist}\n%changelog\n",
+        )
+        .unwrap();
+
+        let sp = spec_at(&tmp);
+        let mut seen = Vec::new();
+        let mut c = Ctx { spec: &sp, dry: false, log: &mut |l: &str| seen.push(l.to_string()) };
+        release_bump(&mut c, "linux").unwrap();
+        let once = fs::read_to_string(specs.join("linux.spec")).unwrap();
+        assert!(once.contains("Release:        4.azure%{?dist}"), "{once}");
+
+        // Twice, three times: the file must not change again.
+        release_bump(&mut c, "linux").unwrap();
+        release_bump(&mut c, "linux").unwrap();
+        let twice = fs::read_to_string(specs.join("linux.spec")).unwrap();
+        assert_eq!(once, twice, "re-running the bump must change nothing");
+        assert!(!twice.contains("5.azure") && !twice.contains("azure.azure"), "{twice}");
+        let _ = fs::remove_dir_all(&tmp);
+    }
 
     fn spec_at(base: &Path) -> BuildSpec {
         BuildSpec {

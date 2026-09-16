@@ -62,6 +62,8 @@ Every layer depends only downward. The domain layer never shells out directly; i
 | orchestration | `matrix`, `identity` | the permutation matrix; deterministic per-row MAC, UUID and IP |
 | domain: preflight | `disk`, `proc`, `canister` | disk admission; process lookup that cannot match itself; which canister a kernel can have |
 | domain: iso | `build`, `buildmode`, `buildexec`, `media`, `specresolve` | resolving a tuple to an ISO and the variant patches; the build cascade and its execution; proving an ISO carries the packages under test; reading a spec as one subrelease sees it (subrelease conditionals decided, includes inlined) |
+| domain: iso | `kconfig` | Kconfig as data: the Hyper-V fragment, the tristate parser, the dependency closure a fragment implies, and the IKCONFIG blob inside a built kernel (with its own gzip/DEFLATE decoder) |
+| domain: iso | `remaster` (`buildroot`, `kernel`, `cc1`, `initrd`, `repo`, `iso`, `guard`) | making an Azure variant of an ISO that already exists: a build root bootstrapped from the input's own RPMs, the kernel rebuilt in it, the installer initrd and repo metadata reworked, and the medium rewritten by replaying its boot image |
 | domain: vm | `vm`, `vmx`, `kickstart`, `net` | the VM on disk and taking it back; the VMX template; the POI kickstart; the network axis |
 | domain: install | `install`, `leases`, `serial`, `card` | one install; the DHCP lease file and serial log as boot signals; the operator card |
 | domain: verify | `verify`, `oracle`, `evidence`, `report` | running the oracle and harvesting logs; the assertions; structured results; per-row report |

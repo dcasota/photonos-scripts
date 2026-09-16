@@ -64,6 +64,42 @@ impl Permutation {
     pub fn iso_key(&self) -> String {
         format!("{}/{}/{}", self.iso_type, self.poi, self.canister)
     }
+
+    /// The canister column carries the canister mode and any BUILD VARIANTS
+    /// joined with `+`: `prebuilt+hyperv`, `fips0-aarch64+hyperv`.
+    ///
+    /// A `+`-joined list rather than a new column, so the TSV keeps its shape
+    /// and every row written before variants existed still parses. `iso_key`
+    /// deliberately keeps the WHOLE string, so a `+hyperv` row caches as a
+    /// separate ISO - it is a different artefact, and reusing the plain one
+    /// would report a verdict about media that was never built.
+    pub fn build_variants(&self) -> Vec<&str> {
+        self.canister.split('+').skip(1).filter(|s| !s.is_empty()).collect()
+    }
+
+    /// The canister part alone, which is what `CanisterMode::parse` accepts.
+    pub fn canister_mode(&self) -> &str {
+        // `fips0-aarch64` names an ARCH as well as a mode; the arch half is
+        // consumed by `arch()` and the remainder is a plain prebuilt build.
+        let head = self.canister.split('+').next().unwrap_or("prebuilt");
+        match head {
+            "fips0-aarch64" => "prebuilt",
+            other => other,
+        }
+    }
+
+    /// The architecture this row's ISO is for.
+    pub fn arch(&self) -> &str {
+        if self.canister.split('+').next().unwrap_or("").contains("aarch64") {
+            "aarch64"
+        } else {
+            "x86_64"
+        }
+    }
+
+    pub fn wants_hyperv(&self) -> bool {
+        self.build_variants().contains(&"hyperv")
+    }
     /// The row cannot run on this host.
     ///
     /// Two independent reasons, both environmental rather than defects: the
@@ -75,12 +111,33 @@ impl Permutation {
         self.unrunnable_reason().is_some()
     }
 
+    /// Whether this host can build an aarch64 image at all: a registered
+    /// qemu-aarch64 binfmt handler. Without one, an aarch64 row needs aarch64
+    /// hardware; with one, it is merely slow.
+    pub fn arm64_builder_available() -> bool {
+        std::fs::read_to_string("/proc/sys/fs/binfmt_misc/qemu-aarch64")
+            .map(|s| s.contains("enabled"))
+            .unwrap_or(false)
+    }
+
     /// Why, in words. `plan` prints it: a year from now the reason is the only
     /// part that is hard to reconstruct.
     pub fn unrunnable_reason(&self) -> Option<String> {
-        if self.canister.contains("aarch64") && std::env::consts::ARCH != "aarch64" {
+        self.unrunnable_reason_with(Permutation::arm64_builder_available())
+    }
+
+    /// The same decision with the emulation probe INJECTED, so the aarch64
+    /// branch can be tested on either kind of host.
+    ///
+    /// An aarch64 row no longer needs aarch64 hardware unconditionally: with a
+    /// registered qemu-aarch64 binfmt handler and an arm64 builder image the
+    /// row is buildable here, just slowly. Reporting it as impossible when it
+    /// is merely slow silently drops a row from the matrix.
+    pub fn unrunnable_reason_with(&self, arm64_builder: bool) -> Option<String> {
+        if self.arch() == "aarch64" && std::env::consts::ARCH != "aarch64" && !arm64_builder {
             return Some(format!(
-                "canister={} needs aarch64 hardware; this host is {}",
+                "canister={} needs aarch64 hardware or a registered qemu-aarch64 binfmt \
+                 handler plus an arm64 builder image; this host is {} and has neither",
                 self.canister,
                 std::env::consts::ARCH
             ));
@@ -260,8 +317,70 @@ mod tests {
         // fips0-aarch64 is the only value that gates on the host arch.
         assert!(!row("equivalent").is_unrunnable_here());
         assert_eq!(
-            row("fips0-aarch64").is_unrunnable_here(),
+            row("fips0-aarch64").unrunnable_reason_with(false).is_some(),
             std::env::consts::ARCH != "aarch64"
         );
+    }
+
+    /// The canister column carries the mode and any build variants joined with
+    /// `+`, so the TSV keeps its shape and every pre-existing row still parses.
+    /// `fips0-aarch64` was previously unparseable as a canister mode at all.
+    #[test]
+    fn a_plus_joined_canister_column_splits_into_canister_and_variants() {
+        let hv = row_with("prebuilt+hyperv", crate::net::DEFAULT);
+        assert_eq!(hv.canister_mode(), "prebuilt");
+        assert_eq!(hv.build_variants(), vec!["hyperv"]);
+        assert!(hv.wants_hyperv());
+
+        let plain = row_with("prebuilt", crate::net::DEFAULT);
+        assert!(plain.build_variants().is_empty(), "a bare column has no variants");
+        assert!(!plain.wants_hyperv());
+        assert_eq!(plain.arch(), "x86_64");
+
+        // fips0-aarch64 names an ARCH as well as a mode; the remainder is a
+        // plain prebuilt build, which is what makes it parseable at last.
+        let a = row_with("fips0-aarch64+hyperv", crate::net::DEFAULT);
+        assert_eq!(a.canister_mode(), "prebuilt");
+        assert_eq!(a.arch(), "aarch64");
+        assert!(a.wants_hyperv());
+
+        // Whatever comes out of canister_mode must be something the build
+        // layer actually accepts, or the split is decorative.
+        for r in [&hv, &plain, &a] {
+            assert!(
+                crate::buildmode::CanisterMode::parse(r.canister_mode()).is_ok(),
+                "canister_mode() gave {:?}, which CanisterMode::parse rejects",
+                r.canister_mode()
+            );
+        }
+    }
+
+    /// A `+hyperv` ISO is a DIFFERENT artefact. If it shared an iso_key with
+    /// the plain row it would reuse the cached non-Hyper-V media and report a
+    /// verdict about an ISO that was never built.
+    #[test]
+    fn iso_key_distinguishes_hyperv_isos() {
+        let plain = row_with("prebuilt", crate::net::DEFAULT);
+        let hv = row_with("prebuilt+hyperv", crate::net::DEFAULT);
+        assert_ne!(plain.iso_key(), hv.iso_key());
+        assert_eq!(hv.iso_key(), "full/2.8/prebuilt+hyperv");
+        assert_eq!(plain.iso_key(), "full/2.8/prebuilt");
+    }
+
+    /// An aarch64 row is buildable on an x86_64 host that has qemu-aarch64
+    /// binfmt registered - slowly, but buildable. Calling it impossible drops
+    /// the row from the matrix for a reason that no longer holds.
+    #[test]
+    fn fips0_aarch64_is_runnable_on_x86_64_when_an_arm64_builder_is_registered() {
+        let r = row_with("fips0-aarch64+hyperv", crate::net::DEFAULT);
+        assert!(
+            r.unrunnable_reason_with(true).is_none(),
+            "with an arm64 builder the row is merely slow, not impossible"
+        );
+        let why = r.unrunnable_reason_with(false).unwrap_or_default();
+        if std::env::consts::ARCH != "aarch64" {
+            assert!(why.contains("binfmt"), "the reason must say what is missing: {why}");
+            assert!(why.contains("aarch64 hardware"), "{why}");
+        }
     }
 }

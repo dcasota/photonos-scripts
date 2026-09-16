@@ -232,6 +232,17 @@ pub enum Injection {
     PkgBuildOptions { mode: CanisterMode, nevr: Option<String> },
     /// One of the host workarounds. Each carries its own precondition.
     SpecFixup(Fixup),
+    /// Build Hyper-V guest support into a kernel flavour's config.
+    ///
+    /// `arch` is a plain string rather than a typed arch so this layer does not
+    /// depend on the remaster module: the injection describes WHAT to change,
+    /// and the executor decides how.
+    KernelConfig { arch: String, flavour: String },
+    /// Make the resulting kernel distinguishable by NEVR. A config change with
+    /// no Release change produces an RPM that rpm considers identical to the
+    /// stock one, which breaks the repo metadata, the predicted names and the
+    /// verify oracle all at once.
+    ReleaseBump { flavour: String },
 }
 
 /// The workarounds the five scripts accumulated. Named after what they fix, so
@@ -394,6 +405,12 @@ impl Stage {
                 Injection::SpecFixup(f) => {
                     format!("inject:fixup[{}]:{}", f.tree().as_str(), f.as_str())
                 }
+                Injection::KernelConfig { arch, flavour } => {
+                    format!("inject:kernel-config[{arch}]:{flavour}:hyperv")
+                }
+                Injection::ReleaseBump { flavour } => {
+                    format!("inject:release-bump[{flavour}]:azure")
+                }
             },
         }
     }
@@ -467,6 +484,56 @@ pub fn spec_for(
         spec.injections.push(Injection::SpecFixup(f));
     }
     Ok(spec)
+}
+
+/// Add the Hyper-V config injection and its Release bump to a resolved spec.
+///
+/// Inserted after the patch/embed/pkg-build-options group and before the host
+/// fixups, so it lands on a tree that already carries the variant patch and any
+/// embedded patch - the config it edits must be the one those produced.
+///
+/// **ACVP and KAT builds are refused.** Those configs are FIPS certification
+/// artefacts: changing one does not produce a Hyper-V kernel, it invalidates a
+/// certification submission. Refusing here means the operator learns at resolve
+/// time rather than after a multi-hour build.
+pub fn add_hyperv(
+    spec: &mut BuildSpec,
+    arch: &str,
+    flavours: &[String],
+) -> Result<(), String> {
+    if matches!(spec.canister, CanisterMode::Acvp | CanisterMode::Kat) {
+        return Err(format!(
+            "--hyperv cannot be combined with canister mode '{}': ACVP and KAT builds are \
+             FIPS certification artefacts and their configs must not be modified",
+            spec.canister.as_str()
+        ));
+    }
+    if flavours.is_empty() {
+        return Err("--hyperv needs at least one kernel flavour".to_string());
+    }
+    // After the last of the patch/embed/macro injections, before the fixups.
+    let at = spec
+        .injections
+        .iter()
+        .rposition(|i| {
+            matches!(
+                i,
+                Injection::TreePatch { .. }
+                    | Injection::Embed(_)
+                    | Injection::PkgBuildOptions { .. }
+            )
+        })
+        .map(|i| i + 1)
+        .unwrap_or(spec.injections.len());
+    let mut add = Vec::new();
+    for f in flavours {
+        add.push(Injection::KernelConfig { arch: arch.to_string(), flavour: f.clone() });
+        add.push(Injection::ReleaseBump { flavour: f.clone() });
+    }
+    for (k, inj) in add.into_iter().enumerate() {
+        spec.injections.insert(at + k, inj);
+    }
+    Ok(())
 }
 
 pub fn render(spec: &BuildSpec) -> String {
@@ -690,5 +757,95 @@ mod tests {
         assert_eq!(na.len(), nb.len());
         let diff: Vec<_> = na.iter().zip(&nb).filter(|(x, y)| x != y).collect();
         assert_eq!(diff.len(), 1, "exactly one stage may differ: {diff:?}");
+    }
+
+    fn hyperv_spec(canister: &str, nevr: Option<String>) -> BuildSpec {
+        spec_for(
+            "/root", "common", "5.0", "/out", "iso", canister, nevr, "2.8",
+            "/root/photon-mc/variant-patches", None,
+        )
+        .unwrap()
+    }
+
+    /// The pair lands AFTER the variant patch, the embedded patch and the
+    /// canister macros - the config it edits is the one THOSE produced - and
+    /// before the host fixups.
+    #[test]
+    fn a_hyperv_build_spec_carries_kernel_config_and_release_bump_after_embed() {
+        let mut s = hyperv_spec("equivalent-b", Some("6.12.109-4.ph5".into()));
+        add_hyperv(&mut s, "aarch64", &["linux".to_string()]).unwrap();
+        let names: Vec<String> = s.cascade().iter().map(|x| x.name()).collect();
+        let pos = |needle: &str| {
+            names
+                .iter()
+                .position(|n| n.contains(needle))
+                .unwrap_or_else(|| panic!("no stage matching {needle} in {names:?}"))
+        };
+        assert!(
+            pos("kernel-config") > pos("embedded[release]:canister-equivalent"),
+            "{names:?}"
+        );
+        assert!(pos("kernel-config") > pos("pkg-build-options"), "{names:?}");
+        assert!(pos("kernel-config") < pos("fixup"), "{names:?}");
+        assert!(pos("release-bump") > pos("kernel-config"), "{names:?}");
+        // The stage names the arch and the flavour: a cascade that says only
+        // "kernel-config" cannot be reviewed.
+        assert!(
+            names.iter().any(|n| n.contains("kernel-config[aarch64]:linux:hyperv")),
+            "{names:?}"
+        );
+    }
+
+    #[test]
+    fn a_non_hyperv_spec_does_not() {
+        let s = hyperv_spec("prebuilt", None);
+        assert!(
+            !s.injections.iter().any(|i| matches!(
+                i,
+                Injection::KernelConfig { .. } | Injection::ReleaseBump { .. }
+            )),
+            "a build nobody asked to change must not change the kernel config"
+        );
+    }
+
+    /// ACVP and KAT configs are FIPS certification artefacts. Refusing at
+    /// resolve time is the difference between a clear error and discovering it
+    /// after a multi-hour build.
+    #[test]
+    fn acvp_and_kat_reject_hyperv() {
+        for m in ["acvp", "kat"] {
+            let mut s = hyperv_spec(m, None);
+            let e = add_hyperv(&mut s, "x86_64", &["linux".to_string()]).unwrap_err();
+            assert!(e.contains(m), "the error must name the mode: {e}");
+            assert!(e.contains("FIPS"), "and why it is refused: {e}");
+            assert!(
+                !s.injections.iter().any(|i| matches!(i, Injection::KernelConfig { .. })),
+                "a refused add_hyperv must leave the spec untouched"
+            );
+        }
+        // The modes that ARE allowed still work, or the guard is too broad.
+        for m in ["prebuilt", "build"] {
+            let mut s = hyperv_spec(m, None);
+            assert!(add_hyperv(&mut s, "x86_64", &["linux".to_string()]).is_ok(), "{m}");
+        }
+    }
+
+    /// Both flavours produce both injections, because the ISO repo carries
+    /// `Requires: linux = V-R` on the subpackages of each.
+    #[test]
+    fn selecting_both_flavours_bumps_both_specs() {
+        let mut s = hyperv_spec("prebuilt", None);
+        add_hyperv(&mut s, "x86_64", &["linux".to_string(), "linux-esx".to_string()]).unwrap();
+        let names: Vec<String> = s.cascade().iter().map(|x| x.name()).collect();
+        for f in ["linux", "linux-esx"] {
+            assert!(
+                names.iter().any(|n| n.contains(&format!("kernel-config[x86_64]:{f}:hyperv"))),
+                "{f} config missing: {names:?}"
+            );
+            assert!(
+                names.iter().any(|n| n.contains(&format!("release-bump[{f}]"))),
+                "{f} release bump missing: {names:?}"
+            );
+        }
     }
 }
