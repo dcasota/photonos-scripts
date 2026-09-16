@@ -580,7 +580,8 @@ fn iso_phase(c: &mut Ctx, p: &Produced) -> Result<String, String> {
         ..Default::default()
     };
     for s in &set {
-        plan.rm.push(format!("/{}", s.href.trim_start_matches('/')));
+        // Anchored at the repo root: href is relative to /RPMS on the medium.
+        plan.rm.push(iso::media_rpm_path(&s.href));
         let newname = format!("{}-{}.{arch}.rpm", s.name, p.new_vr);
         let src = p
             .rpms

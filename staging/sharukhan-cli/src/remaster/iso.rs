@@ -35,6 +35,25 @@ pub struct IsoPlan {
 /// Read from the medium rather than hardcoded: the installer's own
 /// `photon-local.repo` and the GRUB search stanza find the media by label, so a
 /// changed volid produces an ISO that boots to a shell.
+/// The absolute path of a media RPM, from the repo-relative href in
+/// `primary.xml`.
+///
+/// `href` is relative to the REPO ROOT, which on the medium is `/RPMS` - so it
+/// reads `aarch64/linux-6.12.109-3.ph5.aarch64.rpm`, not
+/// `RPMS/aarch64/...`. Prefixing only `/` yields `/aarch64/...`, a path that
+/// does not exist on the ISO: the removals then silently do nothing while the
+/// replacements are added, and the finished medium carries BOTH the old and the
+/// new kernel.
+pub fn media_rpm_path(href: &str) -> String {
+    let h = href.trim_start_matches('/');
+    // Tolerate an href that already carries the repo root, so this cannot
+    // double-prefix if the metadata convention ever changes.
+    match h.strip_prefix("RPMS/") {
+        Some(rest) => format!("/RPMS/{rest}"),
+        None => format!("/RPMS/{h}"),
+    }
+}
+
 /// Read from the MEDIUM, at a fixed offset, rather than parsed out of a tool's
 /// output.
 ///
@@ -202,6 +221,29 @@ mod tests {
         p.map.push((PathBuf::from("/new/vmlinuz"), "/isolinux/vmlinuz".into()));
         p.map.push((PathBuf::from("/new/initrd.img"), "/isolinux/initrd.img".into()));
         p
+    }
+
+    /// The href in primary.xml is relative to the REPO ROOT (/RPMS), so a bare
+    /// `/` prefix names a path that is not on the medium. xorriso then removes
+    /// nothing while the replacements are still added, and the ISO ships both
+    /// the old and the new kernel - which verify catches only because it
+    /// insists on exactly one kernel package.
+    #[test]
+    fn a_media_rpm_path_is_anchored_at_the_repo_root_not_the_iso_root() {
+        assert_eq!(
+            media_rpm_path("aarch64/linux-6.12.109-3.ph5.aarch64.rpm"),
+            "/RPMS/aarch64/linux-6.12.109-3.ph5.aarch64.rpm"
+        );
+        // The bug this pins: NOT /aarch64/...
+        assert_ne!(
+            media_rpm_path("aarch64/linux-6.12.109-3.ph5.aarch64.rpm"),
+            "/aarch64/linux-6.12.109-3.ph5.aarch64.rpm"
+        );
+        // A leading slash must not produce a doubled one.
+        assert_eq!(media_rpm_path("/aarch64/x.rpm"), "/RPMS/aarch64/x.rpm");
+        // Nor may an href that already names the repo root double-prefix.
+        assert_eq!(media_rpm_path("RPMS/aarch64/x.rpm"), "/RPMS/aarch64/x.rpm");
+        assert_eq!(media_rpm_path("noarch/y.rpm"), "/RPMS/noarch/y.rpm");
     }
 
     /// The installer finds the media by label - `photon-local.repo` and the
