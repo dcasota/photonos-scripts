@@ -412,13 +412,60 @@ pub fn execute(spec: &RemasterSpec, log: &mut dyn FnMut(&str)) -> Result<Produce
                     ));
                 }
             }
-            Stage::Initrd => initrd_phase(&mut c, &p)?,
-            Stage::Repo => repo_phase(&mut c, &p)?,
-            Stage::Iso => p.sha256 = iso_phase(&mut c, &p)?,
-            Stage::Verify => verify_phase(&mut c, &p)?,
+            Stage::Initrd => {
+                hydrate(&mut c, &mut p, &flavour)?;
+                initrd_phase(&mut c, &p)?
+            }
+            Stage::Repo => {
+                hydrate(&mut c, &mut p, &flavour)?;
+                repo_phase(&mut c, &p)?
+            }
+            Stage::Iso => {
+                hydrate(&mut c, &mut p, &flavour)?;
+                p.sha256 = iso_phase(&mut c, &p)?
+            }
+            Stage::Verify => {
+                hydrate(&mut c, &mut p, &flavour)?;
+                verify_phase(&mut c, &p)?
+            }
         }
     }
     Ok(p)
+}
+
+/// Recover the facts earlier stages would have established, when those stages
+/// were not run.
+///
+/// `--stage initrd,repo,iso,verify` skips Bootstrap and BuildKernel, so the
+/// kernel NEVRs and the package list are empty and every later stage fails with
+/// "no linux RPM among the built packages". The stages are individually
+/// runnable by design - that is what `--stage` is for - so they have to be able
+/// to read back what they need instead of depending on having been run in one
+/// process.
+///
+/// Everything here is READ-ONLY and re-derived from the same sources the
+/// original stages used: the media for the old NEVR, the tree's spec for the
+/// new one, the output directory for the packages.
+fn hydrate(c: &mut Ctx, p: &mut Produced, flavour: &str) -> Result<(), String> {
+    if c.spec.dry {
+        return Ok(());
+    }
+    if p.old_vr.is_empty() {
+        buildroot::ensure_iso_mounted(c)?;
+        p.old_vr = buildroot::media_kernel_vr(c, flavour)?;
+        c.say(&format!("  recovered: the media carries {flavour} {}", p.old_vr));
+    }
+    if p.new_vr.is_empty() {
+        p.new_vr = kernel::current_vr(c, flavour)?;
+        c.say(&format!("  recovered: the rebuilt {flavour} is {}", p.new_vr));
+    }
+    if p.rpms.is_empty() {
+        p.rpms = kernel::built_rpms(c)?;
+        c.say(&format!("  recovered: {} built package(s)", p.rpms.len()));
+    }
+    c.old_uname = p.old_vr.clone();
+    c.new_uname = p.new_vr.clone();
+    Ok(())
 }
 
 /// Which built RPM is the kernel package itself.

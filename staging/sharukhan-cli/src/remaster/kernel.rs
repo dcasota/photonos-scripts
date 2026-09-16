@@ -626,6 +626,39 @@ fn changelog_date() -> String {
         .unwrap_or_else(|_| "Thu Jan 01 1970".to_string())
 }
 
+/// The NEVR the tree's spec currently describes, read-only.
+///
+/// `release_bump` answers the same question but is allowed to WRITE. A stage
+/// that only needs to know the name of the kernel it is handling must not be
+/// able to change it as a side effect of asking.
+pub fn current_vr(c: &Ctx, flavour: &str) -> Result<String, String> {
+    let spec = c.spec.photon_tree.join("SPECS/linux").join(format!("{flavour}.spec"));
+    let text = fs::read_to_string(&spec).map_err(|e| format!("{}: {e}", spec.display()))?;
+    let version = spec_version(c, flavour)?;
+    let line = text
+        .lines()
+        .find(|l| l.starts_with("Release:"))
+        .ok_or_else(|| format!("no Release: line in {}", spec.display()))?;
+    let value = line["Release:".len()..].trim();
+    Ok(format!("{version}-{}", azure_release(value)?))
+}
+
+/// The packages the build produced, from the output directory.
+pub fn built_rpms(c: &Ctx) -> Result<Vec<PathBuf>, String> {
+    let out = rpmtop_host(c).join("RPMS").join(c.spec.arch.rpm());
+    let mut v: Vec<PathBuf> = fs::read_dir(&out)
+        .map_err(|e| format!("{}: {e}", out.display()))?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().map(|x| x == "rpm").unwrap_or(false))
+        .collect();
+    v.sort();
+    if v.is_empty() {
+        return Err(format!("no RPMs in {}", out.display()));
+    }
+    Ok(v)
+}
+
 /// Compile and package the kernel, resumably, under the disk guard.
 ///
 /// `-bp`, then `-bc --short-circuit` (make is incremental, so a restart
@@ -940,6 +973,45 @@ pub fn assert_installable(rpm: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A stage-limited run has to be able to READ the kernel's NEVR without
+    /// bumping it. release_bump answers the same question but writes, and a
+    /// stage that merely needs the name must not change it by asking.
+    #[test]
+    fn the_current_nevr_is_readable_without_bumping_the_release() {
+        let tmp = std::env::temp_dir().join(format!("shk-curvr-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let specs = tmp.join("photon/SPECS/linux");
+        fs::create_dir_all(&specs).unwrap();
+        fs::write(
+            specs.join("linux.spec"),
+            "Name:           linux\nVersion:        6.12.109\n\
+             Release:        4.azure%{?acvp_build:.acvp}%{?dist}\n%changelog\n",
+        )
+        .unwrap();
+        fs::write(
+            tmp.join("photon/build-config.json"),
+            "{\"photon-build-param\": {\"photon-subrelease\": \"92\"}}",
+        )
+        .unwrap();
+
+        let mut sp = crate::remaster::tests_support::spec();
+        sp.photon_tree = tmp.join("photon");
+        let mut seen = Vec::new();
+        let c = Ctx {
+            spec: &sp,
+            log: &mut |l: &str| seen.push(l.to_string()),
+            old_uname: String::new(),
+            new_uname: String::new(),
+        };
+
+        assert_eq!(current_vr(&c, "linux").unwrap(), "6.12.109-4.azure.ph5");
+        // and the spec is untouched by having been read
+        let after = fs::read_to_string(specs.join("linux.spec")).unwrap();
+        assert!(after.contains("Release:        4.azure%{?acvp_build:.acvp}%{?dist}"), "{after}");
+        assert!(!after.contains("5.azure"), "reading must not bump: {after}");
+        let _ = fs::remove_dir_all(&tmp);
+    }
 
     /// %prep is destructive - rpmbuild -bp does `rm -rf` on the tree - so the
     /// decision to re-run it must be keyed on the inputs it consumes. A
