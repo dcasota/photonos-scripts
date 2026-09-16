@@ -179,18 +179,46 @@ fn rpmbuild_argv<'a>(
     v
 }
 
+/// Where `%prep` actually left the kernel tree.
+///
+/// rpm 4.18 extracts into `_builddir/linux-<ver>`. rpm 6 wraps every build in
+/// `_builddir/<name>-<ver>-build/` and extracts inside THAT. The media here
+/// carries rpm 6.1.0 and the previous media carried 4.18, so hardcoding either
+/// layout makes a perfectly good `-bp` look like it produced nothing.
+///
+/// Identified by the Makefile rather than by name: that is what makes it a
+/// kernel tree, and it is the file every later step needs.
+fn find_kernel_tree(builddir: &Path, version: &str) -> Option<PathBuf> {
+    let want = format!("linux-{version}");
+    let direct = builddir.join(&want);
+    if direct.join("Makefile").is_file() {
+        return Some(direct);
+    }
+    for e in fs::read_dir(builddir).ok()?.flatten() {
+        if !e.path().is_dir() {
+            continue;
+        }
+        let nested = e.path().join(&want);
+        if nested.join("Makefile").is_file() {
+            return Some(nested);
+        }
+    }
+    None
+}
+
 /// `%prep` only: a patched tree for the config step to run `olddefconfig` in.
 pub fn prep(c: &mut Ctx, flavour: &str) -> Result<PathBuf, String> {
     let marker = c.spec.marker(&format!("prep-{flavour}"));
     let version = spec_version(c, flavour)?;
-    let tree_host = builddir_host(c).join(format!("linux-{version}"));
-    if marker.is_file() && tree_host.is_dir() {
-        c.skip(&format!("prep[{flavour}]"), "the patched tree is already present");
-        return Ok(tree_host);
+    if marker.is_file() {
+        if let Some(t) = find_kernel_tree(&builddir_host(c), &version) {
+            c.skip(&format!("prep[{flavour}]"), "the patched tree is already present");
+            return Ok(t);
+        }
     }
     if c.spec.dry {
         c.say(&format!("  would run rpmbuild -bp for {flavour}"));
-        return Ok(tree_host);
+        return Ok(builddir_host(c).join(format!("linux-{version}")));
     }
     mount_pseudo(c, &build_base(c))?;
     let sr = format!("photon_subrelease {}", photon_subrelease(&c.spec.photon_tree)?);
@@ -200,12 +228,14 @@ pub fn prep(c: &mut Ctx, flavour: &str) -> Result<PathBuf, String> {
     let argv = rpmbuild_argv("-bp", &[], &spec, &sr, &jobs);
     c.say(&format!("  rpmbuild -bp {flavour} (emulated; several minutes)"));
     chroot_logged(c, &argv, &log)?;
-    if !tree_host.is_dir() {
-        return Err(format!(
-            "rpmbuild -bp reported success but {} does not exist",
-            tree_host.display()
-        ));
-    }
+    let tree_host = find_kernel_tree(&builddir_host(c), &version).ok_or_else(|| {
+        format!(
+            "rpmbuild -bp reported success but no linux-{version} tree with a Makefile \
+             exists under {} (checked both the rpm 4 and rpm 6 layouts)",
+            builddir_host(c).display()
+        )
+    })?;
+    c.say(&format!("  prepared tree: {}", tree_host.display()));
     fs::write(&marker, "").map_err(|e| format!("{}: {e}", marker.display()))?;
     Ok(tree_host)
 }
@@ -810,6 +840,41 @@ pub fn assert_installable(rpm: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// rpm 4.18 and rpm 6 lay the build directory out differently, and the two
+    /// media this has run against use one each. Hardcoding either makes a
+    /// successful `-bp` look like it produced nothing.
+    #[test]
+    fn the_prepared_tree_is_found_under_both_the_rpm_4_and_rpm_6_layouts() {
+        let d = std::env::temp_dir().join(format!("shk-treefind-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&d);
+
+        // rpm 4.18: _builddir/linux-<ver>
+        let flat = d.join("a");
+        fs::create_dir_all(flat.join("linux-6.12.109")).unwrap();
+        fs::write(flat.join("linux-6.12.109/Makefile"), "x").unwrap();
+        assert_eq!(
+            find_kernel_tree(&flat, "6.12.109").unwrap(),
+            flat.join("linux-6.12.109")
+        );
+
+        // rpm 6: _builddir/linux-<ver>-build/linux-<ver>
+        let nested = d.join("b");
+        let inner = nested.join("linux-6.12.109-build/linux-6.12.109");
+        fs::create_dir_all(&inner).unwrap();
+        fs::write(inner.join("Makefile"), "x").unwrap();
+        assert_eq!(find_kernel_tree(&nested, "6.12.109").unwrap(), inner);
+
+        // A directory of the right NAME but with no Makefile is not a kernel
+        // tree - that is the wrapper directory itself.
+        let bare = d.join("c");
+        fs::create_dir_all(bare.join("linux-6.12.109-build")).unwrap();
+        assert!(find_kernel_tree(&bare, "6.12.109").is_none());
+        // and the wrong version is not silently accepted
+        assert!(find_kernel_tree(&flat, "6.1.128").is_none());
+
+        let _ = fs::remove_dir_all(&d);
+    }
 
     /// N -> N+1.azure, with the spec's conditional macros preserved verbatim.
     /// Losing the `%{?acvp_build:.acvp}` tail would silently change what an
