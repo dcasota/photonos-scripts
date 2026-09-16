@@ -13,6 +13,7 @@
 
 use super::{run, Ctx};
 use crate::sha256;
+use std::fs;
 use std::path::{Path, PathBuf};
 
 /// What the new ISO differs from the old one by.
@@ -34,18 +35,48 @@ pub struct IsoPlan {
 /// Read from the medium rather than hardcoded: the installer's own
 /// `photon-local.repo` and the GRUB search stanza find the media by label, so a
 /// changed volid produces an ISO that boots to a shell.
+/// Read from the MEDIUM, at a fixed offset, rather than parsed out of a tool's
+/// output.
+///
+/// ISO 9660 puts the Primary Volume Descriptor at sector 16 (2048-byte
+/// sectors): byte 0 is the descriptor type (1 = primary), bytes 1..6 are the
+/// signature `CD001`, and bytes 40..72 are the volume identifier, space-padded.
+///
+/// The first implementation ran `xorriso -toc` and scanned its output, which
+/// found nothing and reported a perfectly good ISO as having no volume id:
+/// xorriso prints that line on a channel the stdout-only argv runner does not
+/// capture. Reading the descriptor removes the tool, the channel and the
+/// output-format dependency in one go, and it can be tested against a synthetic
+/// descriptor with no ISO to hand.
 pub fn volid(iso: &Path) -> Result<String, String> {
-    let out = run("xorriso", &["-indev", &iso.to_string_lossy(), "-toc"])?;
-    for line in out.lines() {
-        if let Some(rest) = line.split_once("Volume id") {
-            let v = rest.1.trim_start_matches([':', ' ']).trim();
-            let v = v.trim_matches('\'').to_string();
-            if !v.is_empty() {
-                return Ok(v);
-            }
-        }
+    use std::io::{Read, Seek, SeekFrom};
+    let mut f = fs::File::open(iso).map_err(|e| format!("{}: {e}", iso.display()))?;
+    f.seek(SeekFrom::Start(16 * 2048))
+        .map_err(|e| format!("{}: seeking to the primary volume descriptor: {e}", iso.display()))?;
+    let mut pvd = [0u8; 2048];
+    f.read_exact(&mut pvd)
+        .map_err(|e| format!("{}: reading the primary volume descriptor: {e}", iso.display()))?;
+    volid_from_pvd(&pvd).map_err(|e| format!("{}: {e}", iso.display()))
+}
+
+/// The volume id out of a primary volume descriptor. Split out so the parsing
+/// is testable without an ISO.
+fn volid_from_pvd(pvd: &[u8]) -> Result<String, String> {
+    if pvd.len() < 72 {
+        return Err("the volume descriptor is truncated".to_string());
     }
-    Err(format!("no volume id in the table of contents of {}", iso.display()))
+    if pvd[0] != 1 || &pvd[1..6] != b"CD001" {
+        return Err(format!(
+            "no ISO 9660 primary volume descriptor at sector 16 (type {}, signature {:?})",
+            pvd[0],
+            String::from_utf8_lossy(&pvd[1..6])
+        ));
+    }
+    let v = String::from_utf8_lossy(&pvd[40..72]).trim_end().to_string();
+    if v.is_empty() {
+        return Err("the primary volume descriptor carries an empty volume id".to_string());
+    }
+    Ok(v)
 }
 
 /// The xorriso argument vector.
@@ -171,6 +202,41 @@ mod tests {
         p.map.push((PathBuf::from("/new/vmlinuz"), "/isolinux/vmlinuz".into()));
         p.map.push((PathBuf::from("/new/initrd.img"), "/isolinux/initrd.img".into()));
         p
+    }
+
+    /// The installer finds the media by label - `photon-local.repo` and the
+    /// GRUB search stanza both key on it - so a lost volume id yields an ISO
+    /// that boots to a shell. Reading it from the descriptor also removes the
+    /// dependency on which channel a tool prints it to, which is what broke
+    /// the first implementation.
+    #[test]
+    fn the_volume_id_is_read_from_the_primary_volume_descriptor() {
+        let mut pvd = vec![0u8; 2048];
+        pvd[0] = 1;
+        pvd[1..6].copy_from_slice(b"CD001");
+        // 32 bytes, space padded, exactly as mkisofs writes it.
+        let label = b"PHOTON_20250221                 ";
+        pvd[40..72].copy_from_slice(label);
+        assert_eq!(volid_from_pvd(&pvd).unwrap(), "PHOTON_20250221");
+
+        // A descriptor that is not a PVD must be refused, not read as garbage:
+        // it means the offset assumption is wrong for this medium.
+        let mut bad = pvd.clone();
+        bad[0] = 2; // supplementary volume descriptor
+        let e = volid_from_pvd(&bad).unwrap_err();
+        assert!(e.contains("primary volume descriptor"), "{e}");
+
+        let mut nosig = pvd.clone();
+        nosig[1..6].copy_from_slice(b"XXXXX");
+        assert!(volid_from_pvd(&nosig).is_err());
+
+        // An all-blank label is an error rather than an empty string silently
+        // becoming the new volume id.
+        let mut blank = pvd.clone();
+        blank[40..72].copy_from_slice(&[b' '; 32]);
+        assert!(volid_from_pvd(&blank).unwrap_err().contains("empty"));
+
+        assert!(volid_from_pvd(&pvd[..20]).is_err(), "a truncated descriptor is an error");
     }
 
     #[test]
