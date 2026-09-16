@@ -162,6 +162,83 @@ pub fn rewrite_output(cmd: &str, new_out: &str) -> Result<String, String> {
     Ok(rewritten)
 }
 
+/// Split a recorded compile command into an argv the way a POSIX shell would.
+///
+/// Kernel compile lines carry shell-quoted tokens:
+///
+/// ```text
+/// -DKBUILD_MODNAME='"string"'   -DARM64_ASM_ARCH='"armv8.5-a"'
+/// ```
+///
+/// Splitting on whitespace and handing the pieces straight to `exec` passes the
+/// quote characters through LITERALLY, because there is no shell to remove
+/// them: gcc then sees a macro whose value is `'"string"'` and refuses the
+/// file. That made 8 of 9 gate compiles fail with `different=0` - nothing
+/// miscompiled, the harness simply never produced a valid compile - and a gate
+/// that always fails is a gate that can never certify anything, so the
+/// accelerator was silently unusable.
+pub fn shell_split(cmd: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    let mut started = false;
+    let mut quote: Option<char> = None;
+    let mut it = cmd.chars().peekable();
+    while let Some(ch) = it.next() {
+        match quote {
+            // Inside single quotes everything is literal, including backslash.
+            Some('\'') => {
+                if ch == '\'' {
+                    quote = None;
+                } else {
+                    cur.push(ch);
+                }
+            }
+            Some('"') => {
+                if ch == '"' {
+                    quote = None;
+                } else if ch == '\\' {
+                    match it.peek() {
+                        Some(&n) if n == '"' || n == '\\' || n == '$' || n == '`' => {
+                            it.next();
+                            cur.push(n);
+                        }
+                        _ => cur.push(ch),
+                    }
+                } else {
+                    cur.push(ch);
+                }
+            }
+            Some(_) => unreachable!(),
+            None => match ch {
+                '\'' | '"' => {
+                    quote = Some(ch);
+                    started = true;
+                }
+                '\\' => {
+                    if let Some(n) = it.next() {
+                        cur.push(n);
+                        started = true;
+                    }
+                }
+                c if c.is_whitespace() => {
+                    if started || !cur.is_empty() {
+                        out.push(std::mem::take(&mut cur));
+                        started = false;
+                    }
+                }
+                c => {
+                    cur.push(c);
+                    started = true;
+                }
+            },
+        }
+    }
+    if started || !cur.is_empty() {
+        out.push(cur);
+    }
+    out
+}
+
 /// Objects to test: the preferred list, filtered to what exists, topped up
 /// with the largest `-nostdinc` C objects, at most one per top-level directory.
 pub fn pick_objects(kdir: &Path, want: usize) -> Vec<String> {
@@ -306,7 +383,9 @@ pub fn gate(c: &mut Ctx, kdir_host: &Path, kdir_in_root: &str) -> Result<GateRes
         };
         let _ = fs::remove_file(br.join("tmp/eq-nat.o"));
         // argv, not a shell string: the command is data from the build tree.
-        let argv: Vec<String> = cmd.split_whitespace().map(str::to_string).collect();
+        // Split the way a shell would, or the quoted -D tokens reach gcc with
+        // their quotes still attached and every compile fails.
+        let argv: Vec<String> = shell_split(&cmd);
         let mut full_argv: Vec<&str> = vec!["/usr/bin/env", "-C", kdir_in_root];
         full_argv.extend(argv.iter().map(|s| s.as_str()));
         if chroot_capture(&br, &full_argv).is_err() {
@@ -331,6 +410,12 @@ pub fn gate(c: &mut Ctx, kdir_host: &Path, kdir_in_root: &str) -> Result<GateRes
             }
             _ => r.failed.push(format!("{obj}: could not read both objects")),
         }
+    }
+    // Say WHY each one failed. A gate that reports only a count cannot be
+    // acted on: "failed=8" is indistinguishable between a compiler that could
+    // not run and a harness that could not build the command.
+    for f in &r.failed {
+        c.say(&format!("    FAILED    {f}"));
     }
     c.say(&format!("  gate: {}", r.summary()));
     Ok(r)
@@ -435,6 +520,40 @@ mod tests {
     fn the_dependency_file_option_is_dropped_from_a_test_compile() {
         let out = rewrite_output(KVM, "/tmp/eq-nat.o").unwrap();
         assert!(!out.contains("-Wp,-MMD"), "{out}");
+    }
+
+    /// The exact tokens that made 8 of 9 gate compiles fail. There is no shell
+    /// between the harness and gcc, so the quotes must be removed here or the
+    /// macro value arrives as `'"string"'` and the file is rejected.
+    #[test]
+    fn the_command_is_split_the_way_a_shell_would_not_on_bare_whitespace() {
+        let cmd = "gcc -DKBUILD_MODNAME='\"string\"' -DARM64_ASM_ARCH='\"armv8.5-a\"' \
+                   -DKASAN_SHADOW_SCALE_SHIFT= -c -o lib/string.o lib/string.c";
+        let v = shell_split(cmd);
+        assert_eq!(v[0], "gcc");
+        assert!(v.contains(&"-DKBUILD_MODNAME=\"string\"".to_string()), "{v:?}");
+        assert!(v.contains(&"-DARM64_ASM_ARCH=\"armv8.5-a\"".to_string()), "{v:?}");
+        // An empty macro value is a real token, not a dropped one.
+        assert!(v.contains(&"-DKASAN_SHADOW_SCALE_SHIFT=".to_string()), "{v:?}");
+        // The literal single quotes must be GONE.
+        assert!(!v.iter().any(|t| t.contains('\'')), "{v:?}");
+        // The negative control: the naive split this replaces kept them, which
+        // is precisely why every compile failed.
+        assert!(cmd.split_whitespace().any(|t| t.contains('\'')));
+        assert_eq!(v.last().unwrap(), "lib/string.c");
+    }
+
+    /// A quoted token containing whitespace is ONE argument. Splitting it would
+    /// hand gcc two broken flags instead of one good one.
+    #[test]
+    fn a_quoted_token_containing_whitespace_stays_a_single_argument() {
+        assert_eq!(shell_split("a 'one two' b"), vec!["a", "one two", "b"]);
+        let v = shell_split("gcc -D\"KBUILD_STR(s)=#s\" -c a.c");
+        assert!(v.contains(&"-DKBUILD_STR(s)=#s".to_string()), "{v:?}");
+        // Backslash escapes outside quotes, and an empty quoted string is a
+        // real (empty) argument rather than nothing at all.
+        assert_eq!(shell_split(r"a b\ c"), vec!["a", "b c"]);
+        assert_eq!(shell_split("x '' y"), vec!["x", "", "y"]);
     }
 
     #[test]
