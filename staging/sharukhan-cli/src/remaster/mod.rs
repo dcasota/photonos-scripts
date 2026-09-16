@@ -545,9 +545,13 @@ fn repo_phase(c: &mut Ctx, p: &Produced) -> Result<(), String> {
         .cloned()
         .collect();
     let rd = repo::build_repo(c, &set, &keep)?;
-    repo::assert_metadata(&rd, &p.new_vr, &p.old_vr, keep.len())?;
-    c.say(&format!("  metadata lists {} rebuilt package(s) and no stale kernel", keep.len()));
+    let names: Vec<String> = set.iter().map(|x| x.name.clone()).collect();
+    let asserted = repo::assert_metadata(&rd, &p.new_vr, &p.old_vr, &names, keep.len());
+    // Unmount whether or not the assertion held: a leaked overlay outlives this
+    // process and blocks the next run.
     repo::unmount_overlay(c);
+    asserted?;
+    c.say(&format!("  metadata lists {} rebuilt package(s) and no stale kernel", keep.len()));
     Ok(())
 }
 
@@ -651,12 +655,21 @@ fn verify_phase(c: &mut Ctx, p: &Produced) -> Result<(), String> {
     } else {
         crate::kconfig::expected_y(crate::kconfig::HYPERV_FRAGMENT, &p.forced)
     };
+    // The replacement set, so staleness is judged against the packages this
+    // remaster actually rebuilt rather than a name prefix - linux-esx is a
+    // different SRPM and stays at the old version on good media.
+    let srpm = format!("{}-{}.src.rpm", c.spec.flavours[0], p.old_vr);
+    let replaced: Vec<String> = repo::replacement_set(&c.spec.isomnt(), &srpm)?
+        .iter()
+        .map(|x| x.name.clone())
+        .collect();
     let r = crate::oracle::media_hyperv(
         &c.spec.output,
         c.spec.arch.rpm(),
         &c.spec.flavours[0],
         &want,
         &p.old_vr,
+        &replaced,
     )?;
     for line in r.lines() {
         c.say(&format!("  {line}"));

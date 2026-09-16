@@ -120,6 +120,7 @@ pub fn media_hyperv(
     flavour: &str,
     want: &[String],
     old_vr: &str,
+    replaced: &[String],
 ) -> Result<String, String> {
     use crate::kconfig::{self, Kconfig};
     use std::fs;
@@ -272,9 +273,9 @@ pub fn media_hyperv(
     }
 
     // 5. repo metadata.
-    match crate::remaster::repo::assert_metadata_dir(&repodata_dst, &uname, old_vr) {
+    match crate::remaster::repo::assert_metadata_dir(&repodata_dst, &uname, old_vr, replaced) {
         Ok(names) => out.push(format!(
-            "repodata lists {} package(s) at {uname} and none at {old_vr}",
+            "repodata lists all {} replaced package(s) at {uname} and none of them at {old_vr}",
             names.len()
         )),
         Err(e) => fail.push(format!("repodata: {e}")),

@@ -195,10 +195,17 @@ pub fn unmount_overlay(c: &mut Ctx) {
 }
 
 /// Assert the regenerated metadata describes the new kernel and not the old.
+/// `replaced` is the REPLACEMENT SET - the packages this remaster rebuilt.
+///
+/// Staleness is keyed on that set, never on a name prefix. `linux-esx` and its
+/// subpackages are built from their OWN SRPM, are deliberately not replaced,
+/// and legitimately remain at the old version on the finished media. A
+/// `starts_with("linux")` rule flags them and fails a perfectly good ISO.
 pub fn assert_metadata(
     rd: &Path,
     new_vr: &str,
     old_vr: &str,
+    replaced: &[String],
     expect: usize,
 ) -> Result<Vec<String>, String> {
     let f = fs::read_dir(rd)
@@ -221,12 +228,17 @@ pub fn assert_metadata(
         .collect();
     let stale: Vec<String> = pkgs
         .iter()
-        .filter(|p| format!("{}-{}", p.version, p.release) == old_vr && p.name.starts_with("linux"))
+        .filter(|p| {
+            format!("{}-{}", p.version, p.release) == old_vr
+                && replaced.iter().any(|n| n == &p.name)
+        })
         .map(|p| p.basename())
         .collect();
     if !stale.is_empty() {
         return Err(format!(
-            "the regenerated metadata still lists the old kernel at {old_vr}: {}",
+            "the regenerated metadata still lists {} replaced package(s) at the old \
+             version {old_vr}: {}",
+            stale.len(),
             stale.join(", ")
         ));
     }
@@ -243,7 +255,12 @@ pub fn assert_metadata(
 /// The same assertion as `assert_metadata`, against a repodata directory
 /// extracted from a finished ISO, where the package count is not known ahead of
 /// time. Returns the packages found at the new version.
-pub fn assert_metadata_dir(rd: &Path, new_vr: &str, old_vr: &str) -> Result<Vec<String>, String> {
+pub fn assert_metadata_dir(
+    rd: &Path,
+    new_vr: &str,
+    old_vr: &str,
+    replaced: &[String],
+) -> Result<Vec<String>, String> {
     let f = fs::read_dir(rd)
         .map_err(|e| format!("{}: {e}", rd.display()))?
         .flatten()
@@ -257,13 +274,22 @@ pub fn assert_metadata_dir(rd: &Path, new_vr: &str, old_vr: &str) -> Result<Vec<
     let xml = String::from_utf8(kconfig::gunzip(&fs::read(&f).map_err(|e| format!("{e}"))?)?)
         .map_err(|e| format!("{e}"))?;
     let pkgs = parse_primary(&xml);
+    // Keyed on the replacement set: linux-esx is a different SRPM, is not
+    // replaced, and stays at the old version on good media.
     let stale: Vec<String> = pkgs
         .iter()
-        .filter(|p| format!("{}-{}", p.version, p.release) == old_vr && p.name.starts_with("linux"))
+        .filter(|p| {
+            format!("{}-{}", p.version, p.release) == old_vr
+                && replaced.iter().any(|n| n == &p.name)
+        })
         .map(|p| p.basename())
         .collect();
     if !stale.is_empty() {
-        return Err(format!("still lists the old kernel at {old_vr}: {}", stale.join(", ")));
+        return Err(format!(
+            "still lists {} replaced package(s) at the old version {old_vr}: {}",
+            stale.len(),
+            stale.join(", ")
+        ));
     }
     let hits: Vec<String> = pkgs
         .iter()
@@ -272,6 +298,19 @@ pub fn assert_metadata_dir(rd: &Path, new_vr: &str, old_vr: &str) -> Result<Vec<
         .collect();
     if hits.is_empty() {
         return Err(format!("lists no package at all at {new_vr}"));
+    }
+    // Every package that was supposed to be replaced must be present at the
+    // new version, or the media carries an unresolvable Requires.
+    let missing: Vec<&String> = replaced
+        .iter()
+        .filter(|n| !pkgs.iter().any(|p| &p.name == *n && format!("{}-{}", p.version, p.release) == new_vr))
+        .collect();
+    if !missing.is_empty() {
+        return Err(format!(
+            "{} replaced package(s) are absent at {new_vr}: {}",
+            missing.len(),
+            missing.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
+        ));
     }
     Ok(hits)
 }
@@ -363,19 +402,40 @@ mod tests {
         };
         fs::write(d.join("a-primary.xml.gz"), gz(XML.as_bytes())).unwrap();
 
+        let replaced: Vec<String> = vec!["linux".into(), "bpftool".into()];
+
         // XML still carries the old 6.12.109-3.ph5 kernel: the assertion must
         // refuse it and name what it found.
-        let e = assert_metadata(&d, "6.12.109-4.azure.ph5", "6.12.109-3.ph5", 2).unwrap_err();
-        assert!(e.contains("still lists the old kernel"), "{e}");
+        let e = assert_metadata(&d, "6.12.109-4.azure.ph5", "6.12.109-3.ph5", &replaced, 2)
+            .unwrap_err();
+        assert!(e.contains("at the old version"), "{e}");
         assert!(e.contains("linux-6.12.109-3.ph5.aarch64.rpm"), "{e}");
 
-        // Negative control: with the old kernel absent, the same call passes,
-        // so the check is not vacuous.
-        let fixed = XML.replace("rel=\"3.ph5\"", "rel=\"4.azure.ph5\"")
-            .replace("-6.12.109-3.ph5.aarch64.rpm", "-6.12.109-4.azure.ph5.aarch64.rpm");
+        // Negative control: with the replaced packages moved to the new
+        // version, the same call passes, so the check is not vacuous.
+        let fixed = XML
+            .replace(
+                "<name>linux</name>\n  <version epoch=\"0\" ver=\"6.12.109\" rel=\"3.ph5\"/>\n  <location href=\"aarch64/linux-6.12.109-3.ph5.aarch64.rpm\"/>",
+                "<name>linux</name>\n  <version epoch=\"0\" ver=\"6.12.109\" rel=\"4.azure.ph5\"/>\n  <location href=\"aarch64/linux-6.12.109-4.azure.ph5.aarch64.rpm\"/>",
+            )
+            .replace(
+                "<name>bpftool</name>\n  <version epoch=\"0\" ver=\"6.12.109\" rel=\"3.ph5\"/>\n  <location href=\"aarch64/bpftool-6.12.109-3.ph5.aarch64.rpm\"/>",
+                "<name>bpftool</name>\n  <version epoch=\"0\" ver=\"6.12.109\" rel=\"4.azure.ph5\"/>\n  <location href=\"aarch64/bpftool-6.12.109-4.azure.ph5.aarch64.rpm\"/>",
+            );
         fs::write(d.join("a-primary.xml.gz"), gz(fixed.as_bytes())).unwrap();
-        let ok = assert_metadata(&d, "6.12.109-4.azure.ph5", "6.12.109-3.ph5", 3).unwrap();
-        assert_eq!(ok.len(), 3);
+        let ok = assert_metadata(&d, "6.12.109-4.azure.ph5", "6.12.109-3.ph5", &replaced, 2).unwrap();
+        assert_eq!(ok.len(), 2);
+
+        // THE REGRESSION: linux-esx is still at 6.12.109-3.ph5 in that same
+        // XML, legitimately - it is built from its own SRPM and is not ours to
+        // replace. A name-prefix rule flagged it and failed a good ISO.
+        assert!(
+            !ok.iter().any(|n| n.contains("esx")),
+            "linux-esx is not in the replacement set: {ok:?}"
+        );
+        let dir_ok = assert_metadata_dir(&d, "6.12.109-4.azure.ph5", "6.12.109-3.ph5", &replaced)
+            .expect("linux-esx at the old version must not be reported stale");
+        assert_eq!(dir_ok.len(), 2, "{dir_ok:?}");
         let _ = fs::remove_dir_all(&d);
     }
 
