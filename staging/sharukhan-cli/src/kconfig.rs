@@ -970,6 +970,33 @@ CONFIG_LOCALVERSION=\"\"
         assert!(e2.contains("IKCFG_ED"), "{e2}");
     }
 
+    /// The decoder against a REAL kernel: a ~50 KB dynamic-Huffman blob inside
+    /// a 33 MB arm64 Image, which is the case the remaster actually depends on.
+    /// Skipped unless `MC_TEST_KERNEL_IMAGE` names one, so the default suite
+    /// needs no ISO mounted.
+    ///
+    /// It doubles as the NEGATIVE CONTROL for the whole verify step: a stock
+    /// Photon kernel must FAIL the Hyper-V assertion. If it passed, the check
+    /// that certifies the finished ISO would be vacuous.
+    #[test]
+    fn a_real_arm64_kernel_image_yields_its_config_and_a_stock_one_fails_the_hyperv_assertion() {
+        let Ok(p) = std::env::var("MC_TEST_KERNEL_IMAGE") else { return };
+        let Ok(img) = std::fs::read(&p) else { return };
+        let text = extract_ikconfig(&img).expect("a kernel built with CONFIG_IKCONFIG=y");
+        let k = Kconfig::parse(&text);
+        assert!(k.len() > 5000, "only {} symbols read from {p}", k.len());
+        assert!(k.is_y("IKCONFIG"), "a kernel carrying an ikconfig says so in it");
+
+        // The symbol exists as a line, so the reader is looking in the right
+        // place - it is simply off on a stock kernel.
+        assert!(k.get("HYPERV").is_some(), "CONFIG_HYPERV has no line at all");
+
+        let want = expected_y(HYPERV_FRAGMENT, &[]);
+        let e = assert_all_y(&k, &want)
+            .expect_err("a STOCK kernel must fail the Hyper-V assertion, or it proves nothing");
+        assert!(e.contains("CONFIG_HYPERV"), "{e}");
+    }
+
     /// The decoder has to handle the block types a real kernel's ikconfig
     /// uses. A dynamic-Huffman round trip is the one that matters; `gzip` is
     /// used only to PRODUCE the fixture, so a missing gzip skips rather than
