@@ -2,7 +2,7 @@
 +++ b/SPECS/linux/linux-6.12-changelog.inc
 @@ -1,4 +1,22 @@
  %changelog
-+* Wed Sep 16 2026 Daniel Casota <dcasota@gmail.com> 6.12.109-7
++* Sat Sep 19 2026 Daniel Casota <dcasota@gmail.com> 6.12.109-8
 +- Let a build link a canister other than the published one, so a kernel with no
 +  official canister at its own level can be covered by an equivalent one built
 +  locally. canister_equivalent=1 plus fips_canister_override=<NEVR> selects it;
@@ -20,9 +20,9 @@
 +  version cannot be tested by the conditional either: _isConditionTrue() runs
 +  eval() on the expanded text after lstrip("0"), which is a NameError for a
 +  version string. Hence a 0/1 flag plus a separate value macro.
- * Wed Sep 16 2026 Daniel Casota <dcasota@gmail.com> 6.12.109-6
- - Make canister_build work against the current kernel
- * Wed Sep 16 2026 Daniel Casota <dcasota@gmail.com> 6.12.109-5
+ * Sat Sep 19 2026 Daniel Casota <dcasota@gmail.com> 6.12.109-7
+ - Share canister/.config handling via canister_config.inc (fixes the fips=0 path) and make canister_build work against the current kernel
+ * Fri Sep 18 2026 Guruswamy Basavaiah <guruswamy.basavaiah@broadcom.com> 6.12.109-6
 --- a/SPECS/linux/linux-6.12.inc
 +++ b/SPECS/linux/linux-6.12.inc
 @@ -69,9 +69,16 @@
@@ -48,8 +48,8 @@
  %global canister_build 0
  %endif
  
--Release:        6%{?acvp_build:.acvp}%{?kat_build:.kat}%{?dist}
-+Release:        7%{?acvp_build:.acvp}%{?kat_build:.kat}%{?dist}
+-Release:        7%{?acvp_build:.acvp}%{?kat_build:.kat}%{?dist}
++Release:        8%{?acvp_build:.acvp}%{?kat_build:.kat}%{?dist}
  
  %define uname_r %{version}-%{release}
  %define _modulesdir /lib/modules/%{uname_r}
@@ -83,21 +83,21 @@
 +++ b/SPECS/linux/linux-esx-6.12-changelog.inc
 @@ -1,4 +1,8 @@
  %changelog
-+* Wed Sep 16 2026 Daniel Casota <dcasota@gmail.com> 6.12.109-6
++* Sat Sep 19 2026 Daniel Casota <dcasota@gmail.com> 6.12.109-8
 +- Accept the same canister_equivalent / fips_canister_override pair as
 +  linux.spec, so this flavour - the one the ISO actually boots - can link a
 +  locally built canister too. It never builds one; it only links.
- * Wed Sep 16 2026 Daniel Casota <dcasota@gmail.com> 6.12.109-5
+ * Sat Sep 19 2026 Daniel Casota <dcasota@gmail.com> 6.12.109-7
  - Share canister/.config handling via canister_config.inc
- * Wed Sep 16 2026 Shreenidhi Shedi <shreenidhi.shedi@broadcom.com> 6.12.109-4
+ * Fri Sep 18 2026 Guruswamy Basavaiah <guruswamy.basavaiah@broadcom.com> 6.12.109-6
 --- a/SPECS/linux/linux-esx-6.12.inc
 +++ b/SPECS/linux/linux-esx-6.12.inc
 @@ -38,7 +38,7 @@
  %global canister_usage 0
  %endif
  
--Release:        5%{?dist}
-+Release:        6%{?dist}
+-Release:        7%{?dist}
++Release:        8%{?dist}
  
  %define uname_r %{version}-%{release}-esx
  %define _modulesdir /lib/modules/%{uname_r}
