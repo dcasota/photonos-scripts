@@ -29,7 +29,11 @@ pub struct MediaPkg {
 
 impl MediaPkg {
     pub fn basename(&self) -> String {
-        self.href.rsplit('/').next().unwrap_or(&self.href).to_string()
+        self.href
+            .rsplit('/')
+            .next()
+            .unwrap_or(&self.href)
+            .to_string()
     }
 }
 
@@ -139,8 +143,22 @@ pub fn build_repo(
             upper.display(),
             work.display()
         );
-        run("mount", &["-t", "overlay", "overlay", "-o", &opts, &merged.to_string_lossy()])?;
-        c.say(&format!("  overlay of {} at {}", lower.display(), merged.display()));
+        run(
+            "mount",
+            &[
+                "-t",
+                "overlay",
+                "overlay",
+                "-o",
+                &opts,
+                &merged.to_string_lossy(),
+            ],
+        )?;
+        c.say(&format!(
+            "  overlay of {} at {}",
+            lower.display(),
+            merged.display()
+        ));
     }
 
     let archdir = merged.join(c.spec.arch.rpm());
@@ -152,11 +170,19 @@ pub fn build_repo(
     }
     let mut copied = 0;
     for r in new_rpms {
-        let name = r.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-        fs::copy(r, archdir.join(&name)).map_err(|e| format!("{name}: {e}")).map(|_| ())?;
+        let name = r
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        fs::copy(r, archdir.join(&name))
+            .map_err(|e| format!("{name}: {e}"))
+            .map(|_| ())?;
         copied += 1;
     }
-    c.say(&format!("  replaced {} package(s) with {copied} rebuilt one(s)", replace.len()));
+    c.say(&format!(
+        "  replaced {} package(s) with {copied} rebuilt one(s)",
+        replace.len()
+    ));
 
     let outdir = c.spec.workdir.join("repodata-out");
     let _ = fs::remove_dir_all(&outdir);
@@ -177,7 +203,10 @@ pub fn build_repo(
     )?;
     let rd = outdir.join("repodata");
     if !rd.join("repomd.xml").is_file() {
-        return Err(format!("createrepo_c produced no repomd.xml in {}", rd.display()));
+        return Err(format!(
+            "createrepo_c produced no repomd.xml in {}",
+            rd.display()
+        ));
     }
     c.say(&format!("  regenerated metadata in {}", rd.display()));
     Ok(rd)
@@ -303,13 +332,21 @@ pub fn assert_metadata_dir(
     // new version, or the media carries an unresolvable Requires.
     let missing: Vec<&String> = replaced
         .iter()
-        .filter(|n| !pkgs.iter().any(|p| &p.name == *n && format!("{}-{}", p.version, p.release) == new_vr))
+        .filter(|n| {
+            !pkgs
+                .iter()
+                .any(|p| &p.name == *n && format!("{}-{}", p.version, p.release) == new_vr)
+        })
         .collect();
     if !missing.is_empty() {
         return Err(format!(
             "{} replaced package(s) are absent at {new_vr}: {}",
             missing.len(),
-            missing.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
+            missing
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
         ));
     }
     Ok(hits)
@@ -364,7 +401,10 @@ mod tests {
             .filter(|p| p.sourcerpm == "linux-6.12.109-3.ph5.src.rpm")
             .collect();
         let names: Vec<&str> = ours.iter().map(|p| p.name.as_str()).collect();
-        assert!(names.contains(&"bpftool"), "a name-based rule would miss it: {names:?}");
+        assert!(
+            names.contains(&"bpftool"),
+            "a name-based rule would miss it: {names:?}"
+        );
         assert!(names.contains(&"linux"));
         assert!(
             !names.contains(&"linux-esx"),
@@ -423,7 +463,8 @@ mod tests {
                 "<name>bpftool</name>\n  <version epoch=\"0\" ver=\"6.12.109\" rel=\"4.azure.ph5\"/>\n  <location href=\"aarch64/bpftool-6.12.109-4.azure.ph5.aarch64.rpm\"/>",
             );
         fs::write(d.join("a-primary.xml.gz"), gz(fixed.as_bytes())).unwrap();
-        let ok = assert_metadata(&d, "6.12.109-4.azure.ph5", "6.12.109-3.ph5", &replaced, 2).unwrap();
+        let ok =
+            assert_metadata(&d, "6.12.109-4.azure.ph5", "6.12.109-3.ph5", &replaced, 2).unwrap();
         assert_eq!(ok.len(), 2);
 
         // THE REGRESSION: linux-esx is still at 6.12.109-3.ph5 in that same
@@ -448,14 +489,20 @@ mod tests {
     /// default suite needs no media.
     #[test]
     fn the_replacement_set_on_real_media_includes_bpftool_and_excludes_the_esx_flavour() {
-        let Ok(mnt) = std::env::var("MC_TEST_ISO_MOUNT") else { return };
+        let Ok(mnt) = std::env::var("MC_TEST_ISO_MOUNT") else {
+            return;
+        };
         let mnt = std::path::PathBuf::from(mnt);
         if !mnt.join("RPMS/repodata").is_dir() {
             return;
         }
         let xml = primary_xml(&mnt).expect("the media must have readable repodata");
         let all = parse_primary(&xml);
-        assert!(all.len() > 1000, "only {} packages parsed from real media", all.len());
+        assert!(
+            all.len() > 1000,
+            "only {} packages parsed from real media",
+            all.len()
+        );
 
         // Derive the kernel SRPM from the media rather than naming it.
         let linux = all

@@ -126,8 +126,12 @@ pub fn needs_console(mode: Mode) -> bool {
 /// proof of boot is how a detector starts lying again.
 fn ssh_answers(ip: &str, timeout: std::time::Duration) -> bool {
     use std::io::Read;
-    let Ok(addr) = format!("{ip}:22").parse::<std::net::SocketAddr>() else { return false };
-    let Ok(mut sock) = std::net::TcpStream::connect_timeout(&addr, timeout) else { return false };
+    let Ok(addr) = format!("{ip}:22").parse::<std::net::SocketAddr>() else {
+        return false;
+    };
+    let Ok(mut sock) = std::net::TcpStream::connect_timeout(&addr, timeout) else {
+        return false;
+    };
     let _ = sock.set_read_timeout(Some(timeout));
     let mut buf = [0u8; 64];
     match sock.read(&mut buf) {
@@ -141,20 +145,15 @@ fn is_ssh_banner(b: &[u8]) -> bool {
     b.starts_with(b"SSH-")
 }
 
-pub fn run(
-    cfg: &Config,
-    vmrow: &Vm,
-    o: &Opts,
-    log: &mut dyn FnMut(&str),
-) -> Result<Facts, String> {
+pub fn run(cfg: &Config, vmrow: &Vm, o: &Opts, log: &mut dyn FnMut(&str)) -> Result<Facts, String> {
     if !vmrow.vmx.is_file() {
         return Err(format!(
             "no VMX at {} - create the VM first",
             vmrow.vmx.display()
         ));
     }
-    let vmx_win = winpath::win_path_checked(&vmrow.vmx.to_string_lossy())
-        .map_err(|e| e.to_string())?;
+    let vmx_win =
+        winpath::win_path_checked(&vmrow.vmx.to_string_lossy()).map_err(|e| e.to_string())?;
 
     if let Some(to) = vm::stash_nvram(vmrow) {
         log(&format!(
@@ -201,7 +200,10 @@ pub fn run(
 
     if o.no_wait {
         log("--no-wait: leaving the VM up for the operator, recording no facts yet");
-        return Ok(Facts { install_result: "waiting".into(), guest_ip: String::new() });
+        return Ok(Facts {
+            install_result: "waiting".into(),
+            guest_ip: String::new(),
+        });
     }
 
     // --- completion detection -------------------------------------------
@@ -219,7 +221,10 @@ pub fn run(
     let started_at = leases::now_utc();
     let mut last_size = 0u64;
     let mut stalled = 0u32;
-    let mut facts = Facts { install_result: TIMEOUT.into(), guest_ip: String::new() };
+    let mut facts = Facts {
+        install_result: TIMEOUT.into(),
+        guest_ip: String::new(),
+    };
     while std::time::Instant::now() < deadline {
         std::thread::sleep(std::time::Duration::from_secs(15));
         let size = fs::metadata(&vmrow.serial).map(|m| m.len()).unwrap_or(0);
@@ -295,8 +300,10 @@ pub fn run(
                 .map(|t| {
                     leases::parse(&t)
                         .into_iter()
-                        .filter(|l| l.mac.eq_ignore_ascii_case(&vmrow.mac)
-                            || l.mac.eq_ignore_ascii_case(&vmrow.mac2))
+                        .filter(|l| {
+                            l.mac.eq_ignore_ascii_case(&vmrow.mac)
+                                || l.mac.eq_ignore_ascii_case(&vmrow.mac2)
+                        })
                         .map(|l| format!("{}@{} {}", l.hostname, l.starts, l.ip))
                         .next_back()
                         .unwrap_or_else(|| "no lease for this MAC".into())
@@ -356,8 +363,14 @@ mod tests {
     #[test]
     fn an_unreachable_address_does_not_answer() {
         let t = std::time::Instant::now();
-        assert!(!ssh_answers("192.0.2.1", std::time::Duration::from_millis(300)));
-        assert!(t.elapsed() < std::time::Duration::from_secs(5), "must not hang the loop");
+        assert!(!ssh_answers(
+            "192.0.2.1",
+            std::time::Duration::from_millis(300)
+        ));
+        assert!(
+            t.elapsed() < std::time::Duration::from_secs(5),
+            "must not hang the loop"
+        );
     }
 
     /// A DHCP row still has a reserved address recorded, and nothing is
@@ -376,11 +389,17 @@ mod tests {
         fs::create_dir_all(&d).unwrap();
         write_facts(
             &d,
-            &Facts { install_result: INSTALLED.into(), guest_ip: "192.168.225.43".into() },
+            &Facts {
+                install_result: INSTALLED.into(),
+                guest_ip: "192.168.225.43".into(),
+            },
         )
         .unwrap();
         let text = fs::read_to_string(facts_path(&d)).unwrap();
-        assert_eq!(text, "MC_INSTALL_RESULT=installed\nMC_GUEST_IP=192.168.225.43\n");
+        assert_eq!(
+            text,
+            "MC_INSTALL_RESULT=installed\nMC_GUEST_IP=192.168.225.43\n"
+        );
         let f = read_facts(&d).unwrap();
         assert_eq!(f.install_result, "installed");
         assert_eq!(f.guest_ip, "192.168.225.43");
@@ -395,7 +414,14 @@ mod tests {
         let d = std::env::temp_dir().join(format!("sharukhan-facts2-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(&d).unwrap();
-        write_facts(&d, &Facts { install_result: TIMEOUT.into(), guest_ip: String::new() }).unwrap();
+        write_facts(
+            &d,
+            &Facts {
+                install_result: TIMEOUT.into(),
+                guest_ip: String::new(),
+            },
+        )
+        .unwrap();
         let f = read_facts(&d).unwrap();
         assert_eq!(f.install_result, "timeout");
         assert!(f.guest_ip.is_empty());
@@ -411,9 +437,18 @@ mod start_mode_tests {
     /// 27 unattended rows must not require a Windows desktop session.
     #[test]
     fn only_the_operator_driven_rows_need_a_console() {
-        assert!(needs_console(Mode::Interactive), "mode=ui drives the curses configurator");
-        assert!(!needs_console(Mode::Auto), "mode=ks is kickstart over guestinfo");
+        assert!(
+            needs_console(Mode::Interactive),
+            "mode=ui drives the curses configurator"
+        );
+        assert!(
+            !needs_console(Mode::Auto),
+            "mode=ks is kickstart over guestinfo"
+        );
         assert_eq!(crate::vmware::start_how(needs_console(Mode::Auto)), "nogui");
-        assert_eq!(crate::vmware::start_how(needs_console(Mode::Interactive)), "gui");
+        assert_eq!(
+            crate::vmware::start_how(needs_console(Mode::Interactive)),
+            "gui"
+        );
     }
 }

@@ -30,7 +30,11 @@ pub fn resolve(
     subrelease: Option<u32>,
 ) -> Option<String> {
     let text = read(spec)?;
-    let mut st = State { stack: Vec::new(), sources: Vec::new(), out: String::new() };
+    let mut st = State {
+        stack: Vec::new(),
+        sources: Vec::new(),
+        out: String::new(),
+    };
     process(read, &text, subrelease, &mut st, 0);
     Some(st.out)
 }
@@ -92,7 +96,9 @@ fn process(
         }
         if let Some(target) = t.strip_prefix("%include") {
             if depth < MAX_INCLUDE_DEPTH {
-                if let Some(inner) = include_target(target.trim(), &st.sources).and_then(|n| read(&n)) {
+                if let Some(inner) =
+                    include_target(target.trim(), &st.sources).and_then(|n| read(&n))
+                {
                     process(read, &inner, subrelease, st, depth + 1);
                     continue;
                 }
@@ -159,7 +165,10 @@ fn source_tag(line: &str) -> Option<(String, String)> {
 /// far, otherwise the literal name. rpm stages sources by bare name, so only
 /// the last path component counts.
 fn include_target(arg: &str, sources: &[(String, String)]) -> Option<String> {
-    let name = match arg.strip_prefix("%{SOURCE").and_then(|r| r.strip_suffix('}')) {
+    let name = match arg
+        .strip_prefix("%{SOURCE")
+        .and_then(|r| r.strip_suffix('}'))
+    {
         Some(n) => sources.iter().rev().find(|(num, _)| num == n)?.1.clone(),
         None => arg.to_string(),
     };
@@ -188,7 +197,10 @@ pub fn git_reader<'a>(
         if let Some(i) = index {
             cmd.env("GIT_INDEX_FILE", i);
         }
-        let out = cmd.args(["show", &format!("{rev}:{dir}/{name}")]).output().ok()?;
+        let out = cmd
+            .args(["show", &format!("{rev}:{dir}/{name}")])
+            .output()
+            .ok()?;
         if !out.status.success() {
             return None;
         }
@@ -295,7 +307,10 @@ BuildRequires:  gcc >= 12.5
         assert!(at91.contains("%ifarch x86_64\n%endif\n"), "{at91}");
         assert!(!at91.contains("gcc >= 12.5"), "{at91}");
         let at92 = resolve(&read, "linux.spec", Some(92)).unwrap();
-        assert!(at92.contains("%ifarch x86_64\nBuildRequires:  gcc >= 12.5\n%endif\n"), "{at92}");
+        assert!(
+            at92.contains("%ifarch x86_64\nBuildRequires:  gcc >= 12.5\n%endif\n"),
+            "{at92}"
+        );
         let _ = fs::remove_dir_all(&d);
     }
 
@@ -308,7 +323,10 @@ BuildRequires:  gcc >= 12.5
         fs::create_dir_all(&d).unwrap();
         let text = "Name:           aide\nVersion:        0.18\nRelease:        3%{?dist}\n%ifarch x86_64\nPatch0: a.patch\n%else\nPatch1: b.patch\n%endif\n";
         fs::write(d.join("aide.spec"), text).unwrap();
-        assert_eq!(resolve(&dir_reader(&d), "aide.spec", Some(92)).unwrap(), text);
+        assert_eq!(
+            resolve(&dir_reader(&d), "aide.spec", Some(92)).unwrap(),
+            text
+        );
         let _ = fs::remove_dir_all(&d);
     }
 
@@ -348,14 +366,36 @@ BuildRequires:  gcc >= 12.5
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(d.join("SPECS/linux")).unwrap();
         let git = |args: &[&str]| {
-            let ok = Command::new("git").arg("-C").arg(&d).args(args).output().unwrap();
-            assert!(ok.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&ok.stderr));
+            let ok = Command::new("git")
+                .arg("-C")
+                .arg(&d)
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(
+                ok.status.success(),
+                "git {args:?}: {}",
+                String::from_utf8_lossy(&ok.stderr)
+            );
         };
         git(&["init", "-q"]);
-        fs::write(d.join("SPECS/linux/linux.spec"), "Name: linux\nVersion: 6.12.109\nSource1: a.inc\n%include %{SOURCE1}\n").unwrap();
+        fs::write(
+            d.join("SPECS/linux/linux.spec"),
+            "Name: linux\nVersion: 6.12.109\nSource1: a.inc\n%include %{SOURCE1}\n",
+        )
+        .unwrap();
         fs::write(d.join("SPECS/linux/a.inc"), "Release: 3%{?dist}\n").unwrap();
         git(&["add", "-A"]);
-        git(&["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "base"]);
+        git(&[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "commit",
+            "-q",
+            "-m",
+            "base",
+        ]);
         let patch = d.join("bump.patch");
         fs::write(
             &patch,
@@ -364,8 +404,18 @@ BuildRequires:  gcc >= 12.5
         .unwrap();
         let index = d.join("tmp-index");
         let with_index = |args: &[&str]| {
-            let ok = Command::new("git").arg("-C").arg(&d).env("GIT_INDEX_FILE", &index).args(args).output().unwrap();
-            assert!(ok.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&ok.stderr));
+            let ok = Command::new("git")
+                .arg("-C")
+                .arg(&d)
+                .env("GIT_INDEX_FILE", &index)
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(
+                ok.status.success(),
+                "git {args:?}: {}",
+                String::from_utf8_lossy(&ok.stderr)
+            );
         };
         with_index(&["read-tree", "HEAD"]);
         with_index(&["apply", "--cached", &patch.to_string_lossy()]);
@@ -373,7 +423,10 @@ BuildRequires:  gcc >= 12.5
         let got = resolve(&read, "linux.spec", Some(92)).unwrap();
         assert_eq!(field(&got, "Release:").unwrap(), "4%{?dist}");
         let head = git_reader(&d, "HEAD", "SPECS/linux", None);
-        assert_eq!(field(&resolve(&head, "linux.spec", Some(92)).unwrap(), "Release:").unwrap(), "3%{?dist}");
+        assert_eq!(
+            field(&resolve(&head, "linux.spec", Some(92)).unwrap(), "Release:").unwrap(),
+            "3%{?dist}"
+        );
         let _ = fs::remove_dir_all(&d);
     }
 }

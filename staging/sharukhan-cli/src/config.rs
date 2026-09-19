@@ -235,7 +235,10 @@ impl Config {
 
             ssh_key_dir: var_or(
                 "SSH_KEY_DIR",
-                &format!("{}/.ssh", env::var("HOME").unwrap_or_else(|_| "/root".into())),
+                &format!(
+                    "{}/.ssh",
+                    env::var("HOME").unwrap_or_else(|_| "/root".into())
+                ),
             ),
             ssh_key_name: s_or("SSH_KEY_NAME", "photon-mc-rsa"),
             ssh_user: s_or("SSH_USER", "root"),
@@ -292,14 +295,16 @@ impl Config {
     }
     pub fn serial_log(&self, id: &str) -> PathBuf {
         let vm = self.vm_name(id);
-        self.vm_dir(id).join(format!("{}-{vm}.log", self.serial_log_prefix))
+        self.vm_dir(id)
+            .join(format!("{}-{vm}.log", self.serial_log_prefix))
     }
     /// The ISO cache key is the set of BUILD-time axes and nothing else: iso
     /// type, installer version, canister. Rows that need a locally built
     /// canister must not silently reuse the prebuilt ISO - that is how an axis
     /// ends up never exercised.
     pub fn iso_dir(&self, iso_type: &str, poi: &str, canister: &str) -> PathBuf {
-        self.iso_cache.join(format!("{iso_type}-poi{poi}-{canister}"))
+        self.iso_cache
+            .join(format!("{iso_type}-poi{poi}-{canister}"))
     }
 }
 

@@ -43,12 +43,16 @@ pub fn findings(conn: &Connection, severity: Option<&str>) -> Result<Vec<Finding
         return Err("the database has no 'finding' table".into());
     }
     let pick = |cands: &[&str]| -> Option<String> {
-        cands.iter().find(|c| cols.iter().any(|k| k == *c)).map(|c| c.to_string())
+        cands
+            .iter()
+            .find(|c| cols.iter().any(|k| k == *c))
+            .map(|c| c.to_string())
     };
     let slug = pick(&["slug", "name", "key", "title"]).unwrap_or_else(|| "rowid".into());
     let sev = pick(&["severity", "level"]).unwrap_or_else(|| "''".into());
     let status = pick(&["status", "state"]).unwrap_or_else(|| "''".into());
-    let summary = pick(&["summary", "description", "detail", "body"]).unwrap_or_else(|| "''".into());
+    let summary =
+        pick(&["summary", "description", "detail", "body"]).unwrap_or_else(|| "''".into());
 
     let sql = format!(
         "SELECT rowid, {slug}, {sev}, {status}, {summary} FROM finding \

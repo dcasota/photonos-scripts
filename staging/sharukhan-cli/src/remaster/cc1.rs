@@ -63,7 +63,10 @@ pub fn native_cc1(workdir: &Path) -> Option<PathBuf> {
 pub fn cc1_dir(br: &Path) -> Result<PathBuf, String> {
     let root = br.join("usr/libexec/gcc");
     let mut hits = Vec::new();
-    for target in fs::read_dir(&root).map_err(|e| format!("{}: {e}", root.display()))?.flatten() {
+    for target in fs::read_dir(&root)
+        .map_err(|e| format!("{}: {e}", root.display()))?
+        .flatten()
+    {
         for ver in fs::read_dir(target.path()).into_iter().flatten().flatten() {
             if ver.path().join("cc1").is_file() {
                 hits.push(ver.path());
@@ -108,7 +111,10 @@ pub fn recorded_command(kdir: &Path, obj: &str) -> Option<String> {
 /// source file (objtool, sign-file), and running those against a scratch
 /// object would touch the real build.
 pub fn gcc_invocation(cmd: &str) -> Option<String> {
-    let end = cmd.find(" ; ").or_else(|| cmd.find(" && ")).unwrap_or(cmd.len());
+    let end = cmd
+        .find(" ; ")
+        .or_else(|| cmd.find(" && "))
+        .unwrap_or(cmd.len());
     let head = &cmd[..end];
     if !head.starts_with("gcc ") || !head.contains(" -c ") {
         return None;
@@ -266,7 +272,9 @@ pub fn pick_objects(kdir: &Path, want: usize) -> Vec<String> {
         if seen_top.contains(&top) {
             continue;
         }
-        let Some(cmd) = recorded_command(kdir, &rel) else { continue };
+        let Some(cmd) = recorded_command(kdir, &rel) else {
+            continue;
+        };
         if !cmd.contains("-nostdinc") || !cmd.contains(".c") {
             continue;
         }
@@ -287,7 +295,10 @@ fn collect_objects(root: &Path, dir: &Path, out: &mut Vec<(u64, String)>, depth:
         if p.is_dir() {
             // scripts/ and tools/ are HOST programs: they are not compiled for
             // the target at all, so they prove nothing about the cross cc1.
-            if matches!(name.as_str(), "scripts" | "tools" | "Documentation" | ".git") {
+            if matches!(
+                name.as_str(),
+                "scripts" | "tools" | "Documentation" | ".git"
+            ) {
                 continue;
             }
             collect_objects(root, &p, out, depth + 1);
@@ -300,7 +311,9 @@ fn collect_objects(root: &Path, dir: &Path, out: &mut Vec<(u64, String)>, depth:
         if md.len() < 40_000 {
             continue;
         }
-        let Ok(rel) = p.strip_prefix(root) else { continue };
+        let Ok(rel) = p.strip_prefix(root) else {
+            continue;
+        };
         out.push((md.len(), rel.to_string_lossy().to_string()));
     }
 }
@@ -317,9 +330,7 @@ impl GateResult {
     /// The swap is allowed only on a clean sweep: no differences, no failures,
     /// and enough samples to mean something.
     pub fn passed(&self) -> bool {
-        self.different.is_empty()
-            && self.failed.is_empty()
-            && self.identical.len() >= MIN_IDENTICAL
+        self.different.is_empty() && self.failed.is_empty() && self.identical.len() >= MIN_IDENTICAL
     }
     pub fn summary(&self) -> String {
         format!(
@@ -338,13 +349,19 @@ impl GateResult {
 /// what actually went into the kernel.
 pub fn gate(c: &mut Ctx, kdir_host: &Path, kdir_in_root: &str) -> Result<GateResult, String> {
     let br = c.spec.buildroot();
-    let native = native_cc1(&c.spec.workdir)
-        .ok_or("no native cross cc1 has been built; nothing to gate")?;
+    let native =
+        native_cc1(&c.spec.workdir).ok_or("no native cross cc1 has been built; nothing to gate")?;
 
     fs::create_dir_all(br.join("usr/local/bin")).map_err(|e| format!("{e}"))?;
     fs::copy(&native, br.join("usr/local/bin/cc1-native-x86_64"))
         .map_err(|e| format!("installing the native cc1: {e}"))?;
-    run("chmod", &["755", &br.join("usr/local/bin/cc1-native-x86_64").to_string_lossy()])?;
+    run(
+        "chmod",
+        &[
+            "755",
+            &br.join("usr/local/bin/cc1-native-x86_64").to_string_lossy(),
+        ],
+    )?;
     // The driver searches -B before its own libexec, so this is how the native
     // cc1 gets selected without touching the installed compiler.
     let bdir = br.join("tmp/nativecc1");
@@ -361,16 +378,25 @@ pub fn gate(c: &mut Ctx, kdir_host: &Path, kdir_in_root: &str) -> Result<GateRes
             objs.len()
         ));
     }
-    c.say(&format!("  byte-identity gate over {} translation units", objs.len()));
+    c.say(&format!(
+        "  byte-identity gate over {} translation units",
+        objs.len()
+    ));
 
-    let mut r = GateResult { identical: vec![], different: vec![], failed: vec![] };
+    let mut r = GateResult {
+        identical: vec![],
+        different: vec![],
+        failed: vec![],
+    };
     for obj in objs {
         let Some(full) = recorded_command(kdir_host, &obj) else {
             r.failed.push(format!("{obj}: no recorded command"));
             continue;
         };
         let Some(gcc) = gcc_invocation(&full) else {
-            r.failed.push(format!("{obj}: the recorded command is not a plain gcc compile"));
+            r.failed.push(format!(
+                "{obj}: the recorded command is not a plain gcc compile"
+            ));
             continue;
         };
         let nat = "/tmp/eq-nat.o";
@@ -395,7 +421,8 @@ pub fn gate(c: &mut Ctx, kdir_host: &Path, kdir_in_root: &str) -> Result<GateRes
         let reference = kdir_host.join(&obj);
         let produced = br.join("tmp/eq-nat.o");
         if !produced.is_file() {
-            r.failed.push(format!("{obj}: the native compile produced no object"));
+            r.failed
+                .push(format!("{obj}: the native compile produced no object"));
             continue;
         }
         let (a, b) = (fs::read(&reference), fs::read(&produced));
@@ -405,7 +432,11 @@ pub fn gate(c: &mut Ctx, kdir_host: &Path, kdir_in_root: &str) -> Result<GateRes
                 r.identical.push((obj, a.len() as u64));
             }
             (Ok(a), Ok(b)) => {
-                c.say(&format!("    DIFFERENT {obj} ({} vs {} bytes)", a.len(), b.len()));
+                c.say(&format!(
+                    "    DIFFERENT {obj} ({} vs {} bytes)",
+                    a.len(),
+                    b.len()
+                ));
                 r.different.push(obj);
             }
             _ => r.failed.push(format!("{obj}: could not read both objects")),
@@ -462,7 +493,14 @@ pub fn swap(c: &mut Ctx, r: &GateResult) -> Result<(), String> {
     let native = native_cc1(&c.spec.workdir).ok_or("the native cc1 disappeared")?;
     fs::copy(&native, dir.join("cc1.native")).map_err(|e| format!("{e}"))?;
     fs::write(dir.join("cc1"), wrapper_script(&in_root)).map_err(|e| format!("{e}"))?;
-    run("chmod", &["755", &dir.join("cc1").to_string_lossy(), &dir.join("cc1.native").to_string_lossy()])?;
+    run(
+        "chmod",
+        &[
+            "755",
+            &dir.join("cc1").to_string_lossy(),
+            &dir.join("cc1.native").to_string_lossy(),
+        ],
+    )?;
     c.say(&format!(
         "  native cc1 wrapper installed in {} ({} identical TUs)",
         dir.display(),
@@ -487,7 +525,9 @@ pub fn unswap(c: &mut Ctx) -> Result<(), String> {
 
 /// Whether a native cc1 is available at all, for reporting before the build.
 pub fn available(workdir: &Path) -> bool {
-    native_cc1(workdir).map(|p| ok("file", &[&p.to_string_lossy()])).unwrap_or(false)
+    native_cc1(workdir)
+        .map(|p| ok("file", &[&p.to_string_lossy()]))
+        .unwrap_or(false)
 }
 
 #[cfg(test)]
@@ -531,10 +571,19 @@ mod tests {
                    -DKASAN_SHADOW_SCALE_SHIFT= -c -o lib/string.o lib/string.c";
         let v = shell_split(cmd);
         assert_eq!(v[0], "gcc");
-        assert!(v.contains(&"-DKBUILD_MODNAME=\"string\"".to_string()), "{v:?}");
-        assert!(v.contains(&"-DARM64_ASM_ARCH=\"armv8.5-a\"".to_string()), "{v:?}");
+        assert!(
+            v.contains(&"-DKBUILD_MODNAME=\"string\"".to_string()),
+            "{v:?}"
+        );
+        assert!(
+            v.contains(&"-DARM64_ASM_ARCH=\"armv8.5-a\"".to_string()),
+            "{v:?}"
+        );
         // An empty macro value is a real token, not a dropped one.
-        assert!(v.contains(&"-DKASAN_SHADOW_SCALE_SHIFT=".to_string()), "{v:?}");
+        assert!(
+            v.contains(&"-DKASAN_SHADOW_SCALE_SHIFT=".to_string()),
+            "{v:?}"
+        );
         // The literal single quotes must be GONE.
         assert!(!v.iter().any(|t| t.contains('\'')), "{v:?}");
         // The negative control: the naive split this replaces kept them, which
@@ -581,7 +630,11 @@ mod tests {
         let ident = |n: usize| -> Vec<(String, u64)> {
             (0..n).map(|i| (format!("o{i}.o"), 100_000)).collect()
         };
-        let pass = GateResult { identical: ident(10), different: vec![], failed: vec![] };
+        let pass = GateResult {
+            identical: ident(10),
+            different: vec![],
+            failed: vec![],
+        };
         assert!(pass.passed());
 
         // one differing object refuses the whole swap
@@ -593,11 +646,19 @@ mod tests {
         assert!(!diff.passed(), "a single difference must refuse the swap");
 
         // a compile that did not run is not evidence of agreement
-        let failed = GateResult { identical: ident(9), different: vec![], failed: vec!["x".into()] };
+        let failed = GateResult {
+            identical: ident(9),
+            different: vec![],
+            failed: vec!["x".into()],
+        };
         assert!(!failed.passed());
 
         // too few samples, even all identical, is not evidence
-        let thin = GateResult { identical: ident(MIN_IDENTICAL - 1), different: vec![], failed: vec![] };
+        let thin = GateResult {
+            identical: ident(MIN_IDENTICAL - 1),
+            different: vec![],
+            failed: vec![],
+        };
         assert!(!thin.passed());
         assert!(thin.summary().contains("identical=4"), "{}", thin.summary());
     }
@@ -641,9 +702,14 @@ mod tests {
             fs::write(d.join(f), "savedcmd_x := gcc -c -o big.o big.c\n").unwrap();
         }
         let picked = pick_objects(&d, 10);
-        assert!(picked.contains(&"kernel/sched/core.o".to_string()), "{picked:?}");
         assert!(
-            !picked.iter().any(|p| p.starts_with("scripts/") || p.starts_with("tools/")),
+            picked.contains(&"kernel/sched/core.o".to_string()),
+            "{picked:?}"
+        );
+        assert!(
+            !picked
+                .iter()
+                .any(|p| p.starts_with("scripts/") || p.starts_with("tools/")),
             "host objects must never be evidence: {picked:?}"
         );
         let _ = fs::remove_dir_all(&d);

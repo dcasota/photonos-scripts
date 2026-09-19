@@ -162,7 +162,9 @@ pub fn alive(pid: i32) -> bool {
 /// recorded pid without this check can signal an unrelated program. It is a
 /// strong guard, not a proof - see ADR-0001 "Limits".
 pub fn looks_like_sharukhan(pid: i32) -> bool {
-    let Some(cmd) = cmdline(pid) else { return false };
+    let Some(cmd) = cmdline(pid) else {
+        return false;
+    };
     cmd.split_whitespace()
         .next()
         .and_then(|a| a.rsplit('/').next())

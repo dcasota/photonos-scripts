@@ -92,20 +92,16 @@ pub fn run(
     } else {
         crate::build::kernel_nevr(cfg, &patch)
     };
-    let origin = crate::canister::detect_for(
-        cfg,
-        std::env::consts::ARCH,
-        kernel.as_deref().ok(),
-    )
-    .map(|st| {
-        let label = st.label();
-        if st.is_validated() {
-            label.to_string()
-        } else {
-            format!("{label} (NOT CMVP validated)")
-        }
-    })
-    .unwrap_or_else(|e| format!("unknown ({e})"));
+    let origin = crate::canister::detect_for(cfg, std::env::consts::ARCH, kernel.as_deref().ok())
+        .map(|st| {
+            let label = st.label();
+            if st.is_validated() {
+                label.to_string()
+            } else {
+                format!("{label} (NOT CMVP validated)")
+            }
+        })
+        .unwrap_or_else(|e| format!("unknown ({e})"));
     c.check(
         "meta.canister_origin",
         "PR#24",
@@ -128,7 +124,9 @@ pub fn run(
     // Do not hardcode the canister mode: an ISO built with --canister
     // build|acvp|kat lives under a different cache key, and silently reading
     // the prebuilt one would verify an artefact the permutation never used.
-    let iso = cfg.iso_dir(&p.iso_type, &p.poi, &p.canister).join("photon.iso");
+    let iso = cfg
+        .iso_dir(&p.iso_type, &p.poi, &p.canister)
+        .join("photon.iso");
     if iso.is_file() {
         // Both ISO types. This was `if p.iso_type == "minimal"`, inherited from
         // the bash with no reason recorded, and it dropped four checks from

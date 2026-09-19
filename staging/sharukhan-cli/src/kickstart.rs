@@ -252,7 +252,11 @@ pub struct Spec<'a> {
 /// way and does it by splitting on '.', which is also why the legacy schema
 /// cannot express an IPv6 address at all.
 fn cidr_to_netmask(cidr: u32) -> String {
-    let bits: u32 = if cidr >= 32 { u32::MAX } else { !(u32::MAX >> cidr) };
+    let bits: u32 = if cidr >= 32 {
+        u32::MAX
+    } else {
+        !(u32::MAX >> cidr)
+    };
     format!(
         "{}.{}.{}.{}",
         bits >> 24,
@@ -289,7 +293,10 @@ fn build_network(s: &Spec) -> Result<Network, String> {
         Schema::Legacy => Ok(match (s.net.vlan, is_static) {
             // _convert_legacy_config forces dhcp4 on BOTH the eth0 parent and
             // the tag; the id is the only thing this shape can carry.
-            (Some(id), _) => Network::Vlan { kind: "vlan", vlan_id: id.to_string() },
+            (Some(id), _) => Network::Vlan {
+                kind: "vlan",
+                vlan_id: id.to_string(),
+            },
             (None, true) => {
                 let ip = need("IPv4", &s.ip)?;
                 Network::Static {
@@ -320,7 +327,9 @@ fn build_network(s: &Spec) -> Result<Network, String> {
             ethernets.insert(
                 "id0".to_string(),
                 Iface {
-                    match_: Match { name: "eth0".into() },
+                    match_: Match {
+                        name: "eth0".into(),
+                    },
                     dhcp4: Some(want_v4 && !is_static),
                     dhcp6: Some(want_v6 && !is_static),
                     // No RA exists on vmnet8 to accept - natIp6Enable = 0 - so
@@ -345,7 +354,9 @@ fn build_network(s: &Spec) -> Result<Network, String> {
                 ethernets.insert(
                     "id1".to_string(),
                     Iface {
-                        match_: Match { name: "eth1".into() },
+                        match_: Match {
+                            name: "eth1".into(),
+                        },
                         dhcp4: Some(true),
                         dhcp6: Some(false),
                         accept_ra: Some(false),
@@ -376,17 +387,33 @@ fn build_network(s: &Spec) -> Result<Network, String> {
                 }
             };
 
-            Ok(Network::V2 { version: "2", ethernets, vlans })
+            Ok(Network::V2 {
+                version: "2",
+                ethernets,
+                vlans,
+            })
         }
     }
 }
 
 pub fn build(s: &Spec) -> Result<Kickstart, String> {
     let partitions = vec![
-        Partition { mountpoint: "/boot/efi".into(), size: 512, filesystem: "vfat".into() },
-        Partition { mountpoint: "/boot".into(), size: 1024, filesystem: "ext4".into() },
+        Partition {
+            mountpoint: "/boot/efi".into(),
+            size: 512,
+            filesystem: "vfat".into(),
+        },
+        Partition {
+            mountpoint: "/boot".into(),
+            size: 1024,
+            filesystem: "ext4".into(),
+        },
         // size 0 = the rest of the disk. This is the filesystem axis.
-        Partition { mountpoint: "/".into(), size: 0, filesystem: s.fs.into() },
+        Partition {
+            mountpoint: "/".into(),
+            size: 0,
+            filesystem: s.fs.into(),
+        },
     ];
 
     let postinstall = vec![
@@ -422,8 +449,14 @@ pub fn build(s: &Spec) -> Result<Kickstart, String> {
     };
 
     let security = match s.variant {
-        "selinux" => Some(Security { selinux: Some("permissive".into()), ..Default::default() }),
-        "fips" => Some(Security { fips: Some(true), ..Default::default() }),
+        "selinux" => Some(Security {
+            selinux: Some("permissive".into()),
+            ..Default::default()
+        }),
+        "fips" => Some(Security {
+            fips: Some(true),
+            ..Default::default()
+        }),
         _ => None,
     };
 
@@ -431,7 +464,10 @@ pub fn build(s: &Spec) -> Result<Kickstart, String> {
 
     Ok(Kickstart {
         hostname: format!("mc-{}", s.id),
-        password: Password { crypted: false, text: s.password.to_string() },
+        password: Password {
+            crypted: false,
+            text: s.password.to_string(),
+        },
         disk: "/dev/sda".into(),
         partitions,
         packagelist_file: "packages.json".into(),
@@ -452,7 +488,8 @@ pub fn to_json(ks: &Kickstart) -> Result<String, String> {
     let mut buf = Vec::new();
     let fmt = serde_json::ser::PrettyFormatter::with_indent(b"    ");
     let mut ser = serde_json::Serializer::with_formatter(&mut buf, fmt);
-    ks.serialize(&mut ser).map_err(|e| format!("serialising kickstart: {e}"))?;
+    ks.serialize(&mut ser)
+        .map_err(|e| format!("serialising kickstart: {e}"))?;
     String::from_utf8(buf).map_err(|e| format!("kickstart is not UTF-8: {e}"))
 }
 
@@ -514,9 +551,22 @@ mod tests {
             "the default row's network block changed:\n{out}"
         );
         // Not one byte of the v2 schema may appear on a default row.
-        for forbidden in ["version", "ethernets", "vlans", "accept-ra", "dhcp4", "dhcp6",
-                          "addresses", "match", "static", "vlan_id"] {
-            assert!(!out.contains(forbidden), "v2 key '{forbidden}' leaked into a default row:\n{out}");
+        for forbidden in [
+            "version",
+            "ethernets",
+            "vlans",
+            "accept-ra",
+            "dhcp4",
+            "dhcp6",
+            "addresses",
+            "match",
+            "static",
+            "vlan_id",
+        ] {
+            assert!(
+                !out.contains(forbidden),
+                "v2 key '{forbidden}' leaked into a default row:\n{out}"
+            );
         }
         // And the top-level key order is the stored order.
         let keys: Vec<&str> = out
@@ -527,8 +577,16 @@ mod tests {
         assert_eq!(
             keys,
             vec![
-                "hostname", "password", "disk", "partitions", "packagelist_file",
-                "linux_flavor", "bootmode", "postinstall", "public_key", "network",
+                "hostname",
+                "password",
+                "disk",
+                "partitions",
+                "packagelist_file",
+                "linux_flavor",
+                "bootmode",
+                "postinstall",
+                "public_key",
+                "network",
             ],
             "field order is the stored format and must not move"
         );
@@ -555,8 +613,12 @@ mod tests {
     /// image rather than a broken kickstart.
     #[test]
     fn a_static_row_with_no_address_is_refused_rather_than_installed() {
-        for token in ["v4-static-untag", "v6-static-untag", "dual-static-untag",
-                      "v4-static-vlan100"] {
+        for token in [
+            "v4-static-untag",
+            "v6-static-untag",
+            "dual-static-untag",
+            "v4-static-vlan100",
+        ] {
             let n = net(token);
             let e = render(&spec("none", "no", "ext4", &n)).unwrap_err();
             assert!(e.contains(token), "error must name the axis: {e}");
@@ -575,7 +637,10 @@ mod tests {
         sp.password = "***REDACTED***";
         let safe = render(&sp).unwrap();
         assert!(real.contains("a-real-looking-password"));
-        assert!(!safe.contains("a-real-looking-password"), "secret survived: {safe}");
+        assert!(
+            !safe.contains("a-real-looking-password"),
+            "secret survived: {safe}"
+        );
         assert!(safe.contains("***REDACTED***"), "{safe}");
         // structure identical: same lines, same order, one value differs
         let (a, b): (Vec<_>, Vec<_>) = (real.lines().collect(), safe.lines().collect());
@@ -600,7 +665,10 @@ mod tests {
         assert!(out.contains("\"ip_addr\": \"192.168.225.52\""), "{out}");
         assert!(out.contains("\"gateway\": \"192.168.225.2\""), "{out}");
         assert!(out.contains("\"nameserver\": \"192.168.225.2\""), "{out}");
-        assert!(!out.contains("\"gateway\": \"\""), "empty gateway regressed: {out}");
+        assert!(
+            !out.contains("\"gateway\": \"\""),
+            "empty gateway regressed: {out}"
+        );
     }
 
     /// The bug this type exists to prevent: `1` is an int, POI's
@@ -633,10 +701,19 @@ mod tests {
         let a = &ks.ansible.as_ref().unwrap()[0];
         assert_eq!(a.skip_tags, vec!["PHTN-50-000245".to_string()]);
         // stig=yes reaches the same place from the other direction.
-        assert!(build(&spec("none", "yes", "ext4", &d)).unwrap().additional_packages.is_some());
+        assert!(build(&spec("none", "yes", "ext4", &d))
+            .unwrap()
+            .additional_packages
+            .is_some());
         // and a row that asks for neither must not silently get them.
-        assert!(build(&spec("none", "no", "ext4", &d)).unwrap().additional_packages.is_none());
-        assert!(build(&spec("none", "no", "ext4", &d)).unwrap().ansible.is_none());
+        assert!(build(&spec("none", "no", "ext4", &d))
+            .unwrap()
+            .additional_packages
+            .is_none());
+        assert!(build(&spec("none", "no", "ext4", &d))
+            .unwrap()
+            .ansible
+            .is_none());
     }
 
     #[test]
@@ -683,10 +760,14 @@ mod tests {
         assert!(j.contains("\"type\": \"static\""));
         // and the prefix length is the only place that netmask comes from
         sp.cidr = 16;
-        assert!(render(&sp).unwrap().contains("\"netmask\": \"255.255.0.0\""));
+        assert!(render(&sp)
+            .unwrap()
+            .contains("\"netmask\": \"255.255.0.0\""));
 
         let d = dflt();
-        assert!(render(&spec("none", "no", "ext4", &d)).unwrap().contains("\"type\": \"dhcp\""));
+        assert!(render(&spec("none", "no", "ext4", &d))
+            .unwrap()
+            .contains("\"type\": \"dhcp\""));
     }
 
     #[test]
@@ -700,7 +781,10 @@ mod tests {
             .any(|l| l.contains("echo mc-k03 > /etc/mission-control-permutation")));
         // The installed system must keep a serial console, or the
         // boot-source oracle can never observe root=PARTUUID=.
-        assert!(ks.postinstall.iter().any(|l| l.contains("console=ttyS0,115200n8")));
+        assert!(ks
+            .postinstall
+            .iter()
+            .any(|l| l.contains("console=ttyS0,115200n8")));
     }
 
     // ---- the network axis ------------------------------------------------
@@ -744,14 +828,20 @@ mod tests {
         let n = net("v6-static-untag");
         let j = ks_for(&n);
         assert!(j.contains("fd00:225::78/64"), "{j}");
-        assert!(!j.contains("192.168.225.78"), "an IPv4 address leaked in:\n{j}");
+        assert!(
+            !j.contains("192.168.225.78"),
+            "an IPv4 address leaked in:\n{j}"
+        );
         // no gateway and no resolver on the v6 side: the host runs no IPv6
         // router, and writing one would be inventing a route.
         assert!(!j.contains("\"gateway\""), "{j}");
         // two interfaces: eth0 under test, eth1 so ssh has a path.
         assert!(j.contains("\"eth0\"") && j.contains("\"eth1\""), "{j}");
         assert_eq!(j.matches("\"match\"").count(), 2, "{j}");
-        assert!(j.contains("\"dhcp4\": true"), "the management NIC must lease:\n{j}");
+        assert!(
+            j.contains("\"dhcp4\": true"),
+            "the management NIC must lease:\n{j}"
+        );
     }
 
     /// n04. `_get_vlan_iface_name` builds the tagged name from the PARENT's
@@ -762,9 +852,15 @@ mod tests {
         let n = net("v4-static-vlan100");
         let j = ks_for(&n);
         assert!(j.contains("\"vlans\""), "{j}");
-        assert!(j.contains("\"id\": 100"), "the id is an int, not a string:\n{j}");
+        assert!(
+            j.contains("\"id\": 100"),
+            "the id is an int, not a string:\n{j}"
+        );
         assert!(j.contains("\"link\": \"id0\""), "{j}");
-        assert!(j.contains("\"name\": \"eth0\""), "a wildcard parent would raise in POI:\n{j}");
+        assert!(
+            j.contains("\"name\": \"eth0\""),
+            "a wildcard parent would raise in POI:\n{j}"
+        );
         assert!(!j.contains("\"e*\""), "{j}");
         // Static on the tag, deliberately: nothing on vmnet8 answers a tagged
         // frame, so a DHCP tag would never reach `configured` and
@@ -782,7 +878,10 @@ mod tests {
         let n = net("v4-dhcp-vlan100");
         let j = ks_for(&n);
         assert!(j.contains("\"type\": \"vlan\""), "{j}");
-        assert!(j.contains("\"vlan_id\": \"100\""), "the id is a string here:\n{j}");
+        assert!(
+            j.contains("\"vlan_id\": \"100\""),
+            "the id is a string here:\n{j}"
+        );
         // nothing else fits in this shape - no address, no schema version
         assert!(!j.contains("\"version\""), "{j}");
         assert!(!j.contains("\"addresses\""), "{j}");
@@ -807,6 +906,11 @@ mod tests {
     #[test]
     fn the_only_package_list_on_the_media_is_named() {
         let d = dflt();
-        assert_eq!(build(&spec("none", "no", "ext4", &d)).unwrap().packagelist_file, "packages.json");
+        assert_eq!(
+            build(&spec("none", "no", "ext4", &d))
+                .unwrap()
+                .packagelist_file,
+            "packages.json"
+        );
     }
 }

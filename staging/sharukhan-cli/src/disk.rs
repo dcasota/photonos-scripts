@@ -22,7 +22,10 @@ pub fn space(path: &str) -> Option<Space> {
     }
     let avail = f[3].trim_end_matches('G').parse().ok()?;
     let pct = f[4].trim_end_matches('%').parse().ok()?;
-    Some(Space { avail_gb: avail, use_pct: pct })
+    Some(Space {
+        avail_gb: avail,
+        use_pct: pct,
+    })
 }
 
 /// What a unit of work needs, in GB, on each filesystem.
@@ -32,8 +35,16 @@ pub struct Need {
     pub what: &'static str,
 }
 
-pub const VM_RUN: Need = Need { root_gb: 5, vmstore_gb: 20, what: "install one VM" };
-pub const ISO_BUILD: Need = Need { root_gb: 25, vmstore_gb: 5, what: "build an ISO" };
+pub const VM_RUN: Need = Need {
+    root_gb: 5,
+    vmstore_gb: 20,
+    what: "install one VM",
+};
+pub const ISO_BUILD: Need = Need {
+    root_gb: 25,
+    vmstore_gb: 5,
+    what: "build an ISO",
+};
 
 pub enum Verdict {
     Admit,
@@ -65,7 +76,9 @@ pub fn admit(need: &Need, root: &str, vmstore: &str) -> Verdict {
 /// then capped by how many VMs the VM store can actually hold - parallelism
 /// that fills the disk is worse than none.
 pub fn max_parallel(vmstore: &str, requested: Option<u64>) -> (u64, String) {
-    let cpus = std::thread::available_parallelism().map(|n| n.get() as u64).unwrap_or(4);
+    let cpus = std::thread::available_parallelism()
+        .map(|n| n.get() as u64)
+        .unwrap_or(4);
     let by_cpu = std::cmp::max(1, cpus / 4);
     let want = requested.unwrap_or(by_cpu);
     let by_disk = space(vmstore)
@@ -75,7 +88,14 @@ pub fn max_parallel(vmstore: &str, requested: Option<u64>) -> (u64, String) {
     let why = if n < want {
         format!("{n} (requested {want}, but {vmstore} only has room for {by_disk})")
     } else {
-        format!("{n} (cpus={cpus} -> {by_cpu}{})", if requested.is_some() { ", requested" } else { "" })
+        format!(
+            "{n} (cpus={cpus} -> {by_cpu}{})",
+            if requested.is_some() {
+                ", requested"
+            } else {
+                ""
+            }
+        )
     };
     (n, why)
 }

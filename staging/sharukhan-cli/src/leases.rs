@@ -69,7 +69,12 @@ pub fn parse(text: &str) -> Vec<Lease> {
         let line = raw.trim_end_matches('\r').trim();
         if let Some(rest) = line.strip_prefix("lease ") {
             let ip = rest.split_whitespace().next().unwrap_or("").to_string();
-            cur = Some(Lease { ip, mac: String::new(), hostname: String::new(), starts: String::new() });
+            cur = Some(Lease {
+                ip,
+                mac: String::new(),
+                hostname: String::new(),
+                starts: String::new(),
+            });
             continue;
         }
         let Some(l) = cur.as_mut() else { continue };
@@ -174,7 +179,12 @@ lease 192.168.225.150 {
     #[test]
     fn finds_the_installed_system_and_not_the_installer() {
         // the 09:13Z install began at 09:13:34
-        let ip = installed_ip(SAMPLE, &["00:50:56:3a:00:2a".to_string()], "mc-c03", "2026/09/04 09:13:34");
+        let ip = installed_ip(
+            SAMPLE,
+            &["00:50:56:3a:00:2a".to_string()],
+            "mc-c03",
+            "2026/09/04 09:13:34",
+        );
         assert_eq!(ip.as_deref(), Some("192.168.225.192"));
     }
 
@@ -184,12 +194,14 @@ lease 192.168.225.150 {
     /// install finished that has not started.
     #[test]
     fn a_stale_lease_from_the_previous_run_is_not_an_answer() {
-        let only_stale = SAMPLE
-            .split("lease 192.168.225.186")
-            .next()
-            .unwrap();
+        let only_stale = SAMPLE.split("lease 192.168.225.186").next().unwrap();
         assert!(only_stale.contains("192.168.225.191"));
-        let ip = installed_ip(only_stale, &["00:50:56:3a:00:2a".to_string()], "mc-c03", "2026/09/04 09:13:34");
+        let ip = installed_ip(
+            only_stale,
+            &["00:50:56:3a:00:2a".to_string()],
+            "mc-c03",
+            "2026/09/04 09:13:34",
+        );
         assert_eq!(ip, None, "a lease that predates the install proves nothing");
     }
 
@@ -197,7 +209,12 @@ lease 192.168.225.150 {
     fn the_live_installer_is_never_mistaken_for_the_installed_system() {
         // only the installer has leased since the install began
         let upto_installer = SAMPLE.split("lease 192.168.225.192").next().unwrap();
-        let ip = installed_ip(upto_installer, &["00:50:56:3a:00:2a".to_string()], "mc-c03", "2026/09/04 09:13:34");
+        let ip = installed_ip(
+            upto_installer,
+            &["00:50:56:3a:00:2a".to_string()],
+            "mc-c03",
+            "2026/09/04 09:13:34",
+        );
         assert_eq!(ip, None);
         // and it is the hostname that separates them, not the timing
         let l = parse(upto_installer);
@@ -263,7 +280,12 @@ lease 192.168.225.151 {
 
     #[test]
     fn another_vms_lease_is_ignored_even_at_the_same_instant() {
-        let ip = installed_ip(SAMPLE, &["00:50:56:ab:cd:ef".to_string()], "mc-c03", "2026/09/04 09:13:34");
+        let ip = installed_ip(
+            SAMPLE,
+            &["00:50:56:ab:cd:ef".to_string()],
+            "mc-c03",
+            "2026/09/04 09:13:34",
+        );
         assert_eq!(ip, None);
     }
 
@@ -272,7 +294,12 @@ lease 192.168.225.151 {
         let renewed = format!(
             "{SAMPLE}\nlease 192.168.225.192 {{\n\tstarts 5 2026/09/04 09:45:26;\n\thardware ethernet 00:50:56:3a:00:2a;\n\tclient-hostname \"mc-c03\";\n}}\n"
         );
-        let ip = installed_ip(&renewed, &["00:50:56:3a:00:2a".to_string()], "mc-c03", "2026/09/04 09:13:34");
+        let ip = installed_ip(
+            &renewed,
+            &["00:50:56:3a:00:2a".to_string()],
+            "mc-c03",
+            "2026/09/04 09:13:34",
+        );
         assert_eq!(ip.as_deref(), Some("192.168.225.192"));
     }
 
@@ -280,14 +307,24 @@ lease 192.168.225.151 {
     /// accept everything.
     #[test]
     fn the_fallback_bound_accepts_nothing() {
-        let ip = installed_ip(SAMPLE, &["00:50:56:3a:00:2a".to_string()], "mc-c03", "9999/99/99 99:99:99");
+        let ip = installed_ip(
+            SAMPLE,
+            &["00:50:56:3a:00:2a".to_string()],
+            "mc-c03",
+            "9999/99/99 99:99:99",
+        );
         assert_eq!(ip, None);
     }
 
     #[test]
     fn crlf_from_a_windows_written_file_parses() {
         let dos = SAMPLE.replace('\n', "\r\n");
-        let ip = installed_ip(&dos, &["00:50:56:3a:00:2a".to_string()], "mc-c03", "2026/09/04 09:13:34");
+        let ip = installed_ip(
+            &dos,
+            &["00:50:56:3a:00:2a".to_string()],
+            "mc-c03",
+            "2026/09/04 09:13:34",
+        );
         assert_eq!(ip.as_deref(), Some("192.168.225.192"));
     }
 }
@@ -299,7 +336,9 @@ mod live_check {
     #[ignore]
     fn dump_real_file() {
         let p = "/mnt/c/ProgramData/VMware/vmnetdhcp.leases";
-        let Ok(t) = std::fs::read_to_string(p) else { return };
+        let Ok(t) = std::fs::read_to_string(p) else {
+            return;
+        };
         let all = super::parse(&t);
         eprintln!("parsed {} lease block(s)", all.len());
         for l in all.iter().filter(|l| l.mac == "00:50:56:3a:00:2a") {
@@ -307,11 +346,21 @@ mod live_check {
         }
         eprintln!(
             "installed_ip after 09:13:34 = {:?}",
-            super::installed_ip(&t, &["00:50:56:3a:00:2a".to_string()], "mc-c03", "2026/09/04 09:13:34")
+            super::installed_ip(
+                &t,
+                &["00:50:56:3a:00:2a".to_string()],
+                "mc-c03",
+                "2026/09/04 09:13:34"
+            )
         );
         eprintln!(
             "installed_ip after 10:00:00 = {:?}",
-            super::installed_ip(&t, &["00:50:56:3a:00:2a".to_string()], "mc-c03", "2026/09/04 10:00:00")
+            super::installed_ip(
+                &t,
+                &["00:50:56:3a:00:2a".to_string()],
+                "mc-c03",
+                "2026/09/04 10:00:00"
+            )
         );
     }
 }

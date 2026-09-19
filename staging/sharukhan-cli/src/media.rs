@@ -145,7 +145,11 @@ pub fn gate(iso: &Path, variant_patch: &Path, photon_tree: &Path) -> Result<Gate
     let expected = expected_installer(variant_patch, photon_tree)?;
     let actual = installer_on_media(iso)?;
     let ok = actual.starts_with(&expected);
-    Ok(Gate { expected, actual, ok })
+    Ok(Gate {
+        expected,
+        actual,
+        ok,
+    })
 }
 
 /// Age of the ISO in seconds, refusing while it is younger than `min_age` or

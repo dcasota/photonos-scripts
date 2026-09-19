@@ -108,12 +108,21 @@ pub fn ensure_iso_mounted(c: &mut Ctx) -> Result<(), String> {
         return Ok(());
     }
     if c.spec.dry {
-        c.say(&format!("  would mount {} at {}", input.display(), mnt.display()));
+        c.say(&format!(
+            "  would mount {} at {}",
+            input.display(),
+            mnt.display()
+        ));
         return Ok(());
     }
     run(
         "mount",
-        &["-o", "loop,ro", &input.to_string_lossy(), &mnt.to_string_lossy()],
+        &[
+            "-o",
+            "loop,ro",
+            &input.to_string_lossy(),
+            &mnt.to_string_lossy(),
+        ],
     )?;
     // Prove it is the media that was asked for, not a stale mount.
     let rpms = mnt.join("RPMS").join(c.spec.arch.rpm());
@@ -126,7 +135,11 @@ pub fn ensure_iso_mounted(c: &mut Ctx) -> Result<(), String> {
         ));
     }
     let n = fs::read_dir(&rpms).map(|d| d.count()).unwrap_or(0);
-    c.say(&format!("  mounted {} at {} ({n} RPMs)", input.display(), mnt.display()));
+    c.say(&format!(
+        "  mounted {} at {} ({n} RPMs)",
+        input.display(),
+        mnt.display()
+    ));
     Ok(())
 }
 
@@ -236,8 +249,11 @@ pub fn bootstrap(c: &mut Ctx) -> Result<(), String> {
     // which is where the kernel is actually built.
     let macros_dir = br.join("etc/rpm");
     fs::create_dir_all(&macros_dir).map_err(|e| format!("{}: {e}", macros_dir.display()))?;
-    fs::write(macros_dir.join("macros.nounshare"), "%__transaction_unshare %{nil}\n")
-        .map_err(|e| format!("writing macros.nounshare: {e}"))?;
+    fs::write(
+        macros_dir.join("macros.nounshare"),
+        "%__transaction_unshare %{nil}\n",
+    )
+    .map_err(|e| format!("writing macros.nounshare: {e}"))?;
 
     report_toolchain(c)?;
     fs::write(&marker, "").map_err(|e| format!("{}: {e}", marker.display()))?;
@@ -278,7 +294,10 @@ pub fn report_toolchain(c: &mut Ctx) -> Result<(), String> {
             m.trim()
         ));
     }
-    c.say(&format!("  build root executes as {} (qemu-user binfmt)", m.trim()));
+    c.say(&format!(
+        "  build root executes as {} (qemu-user binfmt)",
+        m.trim()
+    ));
     Ok(())
 }
 
@@ -351,7 +370,11 @@ pub fn mount_pseudo(c: &mut Ctx, work: &Path) -> Result<(), String> {
             "mount",
             &["--bind", &work.to_string_lossy(), &target.to_string_lossy()],
         )?;
-        c.say(&format!("  mounted {} at {}", work.display(), target.display()));
+        c.say(&format!(
+            "  mounted {} at {}",
+            work.display(),
+            target.display()
+        ));
     }
     Ok(())
 }
@@ -402,11 +425,23 @@ mod tests {
                 && n.ends_with(".rpm")
         };
         assert!(name_matches("linux-6.12.109-3.ph5.aarch64.rpm", "linux-"));
-        assert!(!name_matches("linux-devel-6.12.109-3.ph5.aarch64.rpm", "linux-"));
-        assert!(!name_matches("linux-esx-6.12.109-3.ph5.aarch64.rpm", "linux-"));
-        assert!(name_matches("linux-esx-6.12.109-3.ph5.aarch64.rpm", "linux-esx-"));
+        assert!(!name_matches(
+            "linux-devel-6.12.109-3.ph5.aarch64.rpm",
+            "linux-"
+        ));
+        assert!(!name_matches(
+            "linux-esx-6.12.109-3.ph5.aarch64.rpm",
+            "linux-"
+        ));
+        assert!(name_matches(
+            "linux-esx-6.12.109-3.ph5.aarch64.rpm",
+            "linux-esx-"
+        ));
         // and a non-rpm file with the right prefix is not a package
-        assert!(!name_matches("linux-6.12.109-3.ph5.aarch64.rpm.sha256", "linux-"));
+        assert!(!name_matches(
+            "linux-6.12.109-3.ph5.aarch64.rpm.sha256",
+            "linux-"
+        ));
     }
 
     /// Every chroot command runs under `env -i` with LC_ALL=C. A leaked locale

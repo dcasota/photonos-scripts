@@ -209,7 +209,10 @@ impl Embedded {
     pub fn needed_for(mode: CanisterMode) -> Vec<Embedded> {
         match mode {
             CanisterMode::EquivalentA | CanisterMode::EquivalentB => {
-                vec![Embedded::CanisterEquivalent, Embedded::SansSnapshotLocalCanister]
+                vec![
+                    Embedded::CanisterEquivalent,
+                    Embedded::SansSnapshotLocalCanister,
+                ]
             }
             _ => vec![],
         }
@@ -229,7 +232,10 @@ pub enum Injection {
     /// which was a whole separate script per value.
     PinSubrelease(u32),
     /// Canister macros into `pkg-build-options`.
-    PkgBuildOptions { mode: CanisterMode, nevr: Option<String> },
+    PkgBuildOptions {
+        mode: CanisterMode,
+        nevr: Option<String>,
+    },
     /// One of the host workarounds. Each carries its own precondition.
     SpecFixup(Fixup),
     /// Build Hyper-V guest support into a kernel flavour's config.
@@ -447,7 +453,15 @@ pub fn spec_for(
     patch_dir: &str,
     subrelease: Option<u32>,
 ) -> Result<BuildSpec, String> {
-    let mut spec = BuildSpec::from_args(base_dir, common_branch, release, output_dir, img, canister, nevr)?;
+    let mut spec = BuildSpec::from_args(
+        base_dir,
+        common_branch,
+        release,
+        output_dir,
+        img,
+        canister,
+        nevr,
+    )?;
 
     if let Some(n) = subrelease {
         spec.subrelease = Subrelease::Pinned(n);
@@ -496,11 +510,7 @@ pub fn spec_for(
 /// artefacts: changing one does not produce a Hyper-V kernel, it invalidates a
 /// certification submission. Refusing here means the operator learns at resolve
 /// time rather than after a multi-hour build.
-pub fn add_hyperv(
-    spec: &mut BuildSpec,
-    arch: &str,
-    flavours: &[String],
-) -> Result<(), String> {
+pub fn add_hyperv(spec: &mut BuildSpec, arch: &str, flavours: &[String]) -> Result<(), String> {
     if matches!(spec.canister, CanisterMode::Acvp | CanisterMode::Kat) {
         return Err(format!(
             "--hyperv cannot be combined with canister mode '{}': ACVP and KAT builds are \
@@ -527,7 +537,10 @@ pub fn add_hyperv(
         .unwrap_or(spec.injections.len());
     let mut add = Vec::new();
     for f in flavours {
-        add.push(Injection::KernelConfig { arch: arch.to_string(), flavour: f.clone() });
+        add.push(Injection::KernelConfig {
+            arch: arch.to_string(),
+            flavour: f.clone(),
+        });
         add.push(Injection::ReleaseBump { flavour: f.clone() });
     }
     for (k, inj) in add.into_iter().enumerate() {
@@ -548,9 +561,18 @@ pub fn render(spec: &BuildSpec) -> String {
     if let Some(n) = &spec.canister_nevr {
         out.push_str(&format!("  canister NEVR {n}\n"));
     }
-    out.push_str(&format!("  release tree {}\n", spec.tree(Tree::Release).display()));
-    out.push_str(&format!("  common tree  {}\n", spec.tree(Tree::Common).display()));
-    out.push_str(&format!("  make target  {}\n\n", spec.canister.make_target()));
+    out.push_str(&format!(
+        "  release tree {}\n",
+        spec.tree(Tree::Release).display()
+    ));
+    out.push_str(&format!(
+        "  common tree  {}\n",
+        spec.tree(Tree::Common).display()
+    ));
+    out.push_str(&format!(
+        "  make target  {}\n\n",
+        spec.canister.make_target()
+    ));
     for (i, st) in spec.cascade().iter().enumerate() {
         out.push_str(&format!("  {:>2}. {}\n", i + 1, st.name()));
     }
@@ -562,15 +584,26 @@ mod tests {
     use super::*;
 
     fn spec() -> BuildSpec {
-        BuildSpec::from_args("/root", "common", "5.0", "/out", "minimal-iso", "prebuilt", None)
-            .unwrap()
+        BuildSpec::from_args(
+            "/root",
+            "common",
+            "5.0",
+            "/out",
+            "minimal-iso",
+            "prebuilt",
+            None,
+        )
+        .unwrap()
     }
 
     #[test]
     fn an_unknown_image_type_is_refused_by_name() {
         let e = BuildSpec::from_args("/root", "common", "5.0", "/out", "dvd", "prebuilt", None)
             .unwrap_err();
-        assert!(e.contains("dvd"), "the error must name what was rejected: {e}");
+        assert!(
+            e.contains("dvd"),
+            "the error must name what was rejected: {e}"
+        );
         assert!(e.contains("minimal-iso"), "and list the valid ones: {e}");
     }
 
@@ -587,19 +620,33 @@ mod tests {
     #[test]
     fn an_equivalent_phase_without_a_nevr_fails_at_resolve() {
         for m in ["equivalent-a", "equivalent-b"] {
-            let e = BuildSpec::from_args("/root", "common", "5.0", "/out", "iso", m, None)
-                .unwrap_err();
+            let e =
+                BuildSpec::from_args("/root", "common", "5.0", "/out", "iso", m, None).unwrap_err();
             assert!(e.contains("MC_CANISTER_NEVR"), "{m}: {e}");
             assert!(
-                BuildSpec::from_args("/root", "common", "5.0", "/out", "iso", m, Some("6.12.103-14.ph5".into()))
-                    .is_ok(),
+                BuildSpec::from_args(
+                    "/root",
+                    "common",
+                    "5.0",
+                    "/out",
+                    "iso",
+                    m,
+                    Some("6.12.103-14.ph5".into())
+                )
+                .is_ok(),
                 "{m} must resolve once the NEVR is supplied"
             );
         }
         // An empty string is not a NEVR. It arrives that way from an unset
         // environment variable, which is exactly the case being guarded.
         assert!(BuildSpec::from_args(
-            "/root", "common", "5.0", "/out", "iso", "equivalent-a", Some(String::new())
+            "/root",
+            "common",
+            "5.0",
+            "/out",
+            "iso",
+            "equivalent-a",
+            Some(String::new())
         )
         .is_err());
     }
@@ -616,7 +663,12 @@ mod tests {
             CanisterMode::Kat,
             CanisterMode::EquivalentB,
         ] {
-            assert_eq!(m.make_target(), "image", "{} must build an image", m.as_str());
+            assert_eq!(
+                m.make_target(),
+                "image",
+                "{} must build an image",
+                m.as_str()
+            );
         }
     }
 
@@ -648,19 +700,29 @@ mod tests {
     fn an_equivalent_spec_carries_the_embedded_patch_and_a_prebuilt_one_does_not() {
         let mk = |canister: &str, nevr: Option<String>| {
             spec_for(
-                "/root", "common", "5.0", "/out", "iso", canister, nevr, "2.8",
-                "/root/photon-mc/variant-patches", None,
+                "/root",
+                "common",
+                "5.0",
+                "/out",
+                "iso",
+                canister,
+                nevr,
+                "2.8",
+                "/root/photon-mc/variant-patches",
+                None,
             )
             .unwrap()
         };
 
         let eq = mk("equivalent-b", Some("6.12.107-4.ph5".into()));
         assert!(
-            eq.injections.contains(&Injection::Embed(Embedded::CanisterEquivalent)),
+            eq.injections
+                .contains(&Injection::Embed(Embedded::CanisterEquivalent)),
             "an equivalent build without the embedded patch builds the wrong Release"
         );
         assert!(
-            eq.injections.contains(&Injection::Embed(Embedded::SansSnapshotLocalCanister)),
+            eq.injections
+                .contains(&Injection::Embed(Embedded::SansSnapshotLocalCanister)),
             "phase B cannot resolve the canister phase A built without this"
         );
         assert!(eq.injections.iter().any(|i| matches!(
@@ -670,7 +732,9 @@ mod tests {
 
         let pre = mk("prebuilt", None);
         assert!(
-            !pre.injections.iter().any(|i| matches!(i, Injection::Embed(_))),
+            !pre.injections
+                .iter()
+                .any(|i| matches!(i, Injection::Embed(_))),
             "a prebuilt build links the published canister and must not be patched"
         );
 
@@ -698,8 +762,14 @@ mod tests {
     fn injections_land_between_reset_and_make() {
         let mut s = spec();
         s.injections = vec![
-            Injection::TreePatch { tree: Tree::Release, patch: "poi-2.8.patch".into() },
-            Injection::TreePatch { tree: Tree::Common, patch: "common-fixes.patch".into() },
+            Injection::TreePatch {
+                tree: Tree::Release,
+                patch: "poi-2.8.patch".into(),
+            },
+            Injection::TreePatch {
+                tree: Tree::Common,
+                patch: "common-fixes.patch".into(),
+            },
         ];
         let c = s.cascade();
         let pos = |st: &Stage| c.iter().position(|x| x == st).unwrap();
@@ -712,7 +782,10 @@ mod tests {
             .map(|(i, _)| i)
             .collect();
         assert_eq!(injects.len(), 2);
-        assert!(injects.iter().all(|&i| i > reset && i < make), "cascade: {c:?}");
+        assert!(
+            injects.iter().all(|&i| i > reset && i < make),
+            "cascade: {c:?}"
+        );
     }
 
     /// The common-tree patch is the case the old mechanism could not express.
@@ -761,8 +834,16 @@ mod tests {
 
     fn hyperv_spec(canister: &str, nevr: Option<String>) -> BuildSpec {
         spec_for(
-            "/root", "common", "5.0", "/out", "iso", canister, nevr, "2.8",
-            "/root/photon-mc/variant-patches", None,
+            "/root",
+            "common",
+            "5.0",
+            "/out",
+            "iso",
+            canister,
+            nevr,
+            "2.8",
+            "/root/photon-mc/variant-patches",
+            None,
         )
         .unwrap()
     }
@@ -791,7 +872,9 @@ mod tests {
         // The stage names the arch and the flavour: a cascade that says only
         // "kernel-config" cannot be reviewed.
         assert!(
-            names.iter().any(|n| n.contains("kernel-config[aarch64]:linux:hyperv")),
+            names
+                .iter()
+                .any(|n| n.contains("kernel-config[aarch64]:linux:hyperv")),
             "{names:?}"
         );
     }
@@ -819,14 +902,19 @@ mod tests {
             assert!(e.contains(m), "the error must name the mode: {e}");
             assert!(e.contains("FIPS"), "and why it is refused: {e}");
             assert!(
-                !s.injections.iter().any(|i| matches!(i, Injection::KernelConfig { .. })),
+                !s.injections
+                    .iter()
+                    .any(|i| matches!(i, Injection::KernelConfig { .. })),
                 "a refused add_hyperv must leave the spec untouched"
             );
         }
         // The modes that ARE allowed still work, or the guard is too broad.
         for m in ["prebuilt", "build"] {
             let mut s = hyperv_spec(m, None);
-            assert!(add_hyperv(&mut s, "x86_64", &["linux".to_string()]).is_ok(), "{m}");
+            assert!(
+                add_hyperv(&mut s, "x86_64", &["linux".to_string()]).is_ok(),
+                "{m}"
+            );
         }
     }
 
@@ -835,15 +923,24 @@ mod tests {
     #[test]
     fn selecting_both_flavours_bumps_both_specs() {
         let mut s = hyperv_spec("prebuilt", None);
-        add_hyperv(&mut s, "x86_64", &["linux".to_string(), "linux-esx".to_string()]).unwrap();
+        add_hyperv(
+            &mut s,
+            "x86_64",
+            &["linux".to_string(), "linux-esx".to_string()],
+        )
+        .unwrap();
         let names: Vec<String> = s.cascade().iter().map(|x| x.name()).collect();
         for f in ["linux", "linux-esx"] {
             assert!(
-                names.iter().any(|n| n.contains(&format!("kernel-config[x86_64]:{f}:hyperv"))),
+                names
+                    .iter()
+                    .any(|n| n.contains(&format!("kernel-config[x86_64]:{f}:hyperv"))),
                 "{f} config missing: {names:?}"
             );
             assert!(
-                names.iter().any(|n| n.contains(&format!("release-bump[{f}]"))),
+                names
+                    .iter()
+                    .any(|n| n.contains(&format!("release-bump[{f}]"))),
                 "{f} release bump missing: {names:?}"
             );
         }

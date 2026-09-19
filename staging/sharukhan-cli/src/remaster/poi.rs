@@ -38,7 +38,8 @@ use std::path::{Path, PathBuf};
 
 /// `isoInstaller.py`: stamp `live` only on a real kickstart, so an interactive
 /// install keeps a falsy config and still reaches the UI configurator.
-const LIVE_ANCHOR: &str = "        # 'live' should be True for iso installs\n        if 'live' not in install_config:";
+const LIVE_ANCHOR: &str =
+    "        # 'live' should be True for iso installs\n        if 'live' not in install_config:";
 const LIVE_FIXED: &str = "        # 'live' should be True for iso installs. Only stamp it on an actual\n        # (non-empty) kickstart config. For an interactive install the config\n        # is empty here and must stay falsy, otherwise installer.configure()\n        # ('if not install_config and ui_config') skips the UI configurator\n        # and _check_install_config() fails with \"No disk configured\".\n        if install_config and 'live' not in install_config:";
 
 /// `isoInstaller.py`: a non-VMware platform has no kickstart, which is an
@@ -114,7 +115,9 @@ pub fn site_packages(root: &Path) -> Result<PathBuf, String> {
     let mut found: Vec<PathBuf> = Vec::new();
     for lib in ["usr/lib", "usr/lib64", "lib", "lib64"] {
         let base = root.join(lib);
-        let Ok(rd) = fs::read_dir(&base) else { continue };
+        let Ok(rd) = fs::read_dir(&base) else {
+            continue;
+        };
         for e in rd.flatten() {
             let name = e.file_name().to_string_lossy().to_string();
             if !name.starts_with("python3") {
@@ -138,7 +141,11 @@ pub fn site_packages(root: &Path) -> Result<PathBuf, String> {
             "photon_installer appears in {} python trees ({}); patching one of \
              them would leave the other live",
             found.len(),
-            found.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join(", ")
+            found
+                .iter()
+                .map(|p| p.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
         )),
     }
 }
@@ -174,8 +181,14 @@ pub fn patch(c: &mut Ctx, root: &Path, arch: Arch) -> Result<usize, String> {
     let sp = site_packages(root)?;
     let pkg = sp.join("photon_installer");
     match version(&sp) {
-        Some(v) => c.say(&format!("  installer: photon-installer {v} at {}", pkg.display())),
-        None => c.say(&format!("  installer: photon-installer (version unreadable) at {}", pkg.display())),
+        Some(v) => c.say(&format!(
+            "  installer: photon-installer {v} at {}",
+            pkg.display()
+        )),
+        None => c.say(&format!(
+            "  installer: photon-installer (version unreadable) at {}",
+            pkg.display()
+        )),
     }
 
     let mut changed = 0;
@@ -187,9 +200,21 @@ pub fn patch(c: &mut Ctx, root: &Path, arch: Arch) -> Result<usize, String> {
     let mut out = text.clone();
     let mut applied = 0;
     for (what, anchor, fixed) in [
-        ("the interactive-install guard on the 'live' stamp", LIVE_ANCHOR, LIVE_FIXED),
-        ("the non-VMware platform fallback", PLATFORM_ANCHOR, PLATFORM_FIXED),
-        ("the vmtoolsd/guestinfo fallback", VMWARE_ANCHOR, VMWARE_FIXED),
+        (
+            "the interactive-install guard on the 'live' stamp",
+            LIVE_ANCHOR,
+            LIVE_FIXED,
+        ),
+        (
+            "the non-VMware platform fallback",
+            PLATFORM_ANCHOR,
+            PLATFORM_FIXED,
+        ),
+        (
+            "the vmtoolsd/guestinfo fallback",
+            VMWARE_ANCHOR,
+            VMWARE_FIXED,
+        ),
     ] {
         let (next, edit) = apply(&out, anchor, fixed)
             .map_err(|e| format!("{}: {what}: {e}", iso_installer.display()))?;
@@ -201,16 +226,23 @@ pub fn patch(c: &mut Ctx, root: &Path, arch: Arch) -> Result<usize, String> {
     if out != text {
         fs::write(&iso_installer, &out).map_err(|e| format!("{}: {e}", iso_installer.display()))?;
         changed += 1;
-        c.say(&format!("  installer: applied {applied} kickstart-loading fix(es) to isoInstaller.py"));
+        c.say(&format!(
+            "  installer: applied {applied} kickstart-loading fix(es) to isoInstaller.py"
+        ));
     } else {
         c.say("  installer: isoInstaller.py already handles a missing kickstart");
     }
 
     // The console: not a bug fix, a property of the target.
     let installer = pkg.join("installer.py");
-    let text = fs::read_to_string(&installer).map_err(|e| format!("{}: {e}", installer.display()))?;
-    let (out, edit) = apply(&text, CMDLINE_ANCHOR, &cmdline_fixed(arch))
-        .map_err(|e| format!("{}: the installed system's kernel command line: {e}", installer.display()))?;
+    let text =
+        fs::read_to_string(&installer).map_err(|e| format!("{}: {e}", installer.display()))?;
+    let (out, edit) = apply(&text, CMDLINE_ANCHOR, &cmdline_fixed(arch)).map_err(|e| {
+        format!(
+            "{}: the installed system's kernel command line: {e}",
+            installer.display()
+        )
+    })?;
     if edit == Edit::Applied {
         fs::write(&installer, &out).map_err(|e| format!("{}: {e}", installer.display()))?;
         changed += 1;
@@ -253,7 +285,12 @@ mod tests {
         spec: &'a crate::remaster::RemasterSpec,
         log: &'a mut dyn FnMut(&str),
     ) -> Ctx<'a> {
-        Ctx { spec, log, old_uname: String::new(), new_uname: String::new() }
+        Ctx {
+            spec,
+            log,
+            old_uname: String::new(),
+            new_uname: String::new(),
+        }
     }
 
     /// The whole point of the guard: an interactive install must keep a FALSY
@@ -314,9 +351,15 @@ mod tests {
         let mut log2 = |l: &str| seen2.push(l.to_string());
         let n2 = patch(&mut ctx_for(&spec, &mut log2), &d, Arch::Aarch64).unwrap();
         assert_eq!(n2, 0, "the second run is a no-op");
-        assert_eq!(after_first, fs::read_to_string(sp.join("isoInstaller.py")).unwrap());
+        assert_eq!(
+            after_first,
+            fs::read_to_string(sp.join("isoInstaller.py")).unwrap()
+        );
         // exactly one guard, not two stacked ones
-        assert_eq!(after_first.matches("if install_config and 'live'").count(), 1);
+        assert_eq!(
+            after_first.matches("if install_config and 'live'").count(),
+            1
+        );
         assert_eq!(after_first.matches("return {}").count(), 2);
         let _ = fs::remove_dir_all(&d);
     }
@@ -332,12 +375,19 @@ mod tests {
         let d = std::env::temp_dir().join(format!("shk-poi-neg-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         let sp = fake_poi(&d, "python3.14", "2.2");
-        fs::write(sp.join("photon_installer/isoInstaller.py"), "# rewritten upstream\n").unwrap();
+        fs::write(
+            sp.join("photon_installer/isoInstaller.py"),
+            "# rewritten upstream\n",
+        )
+        .unwrap();
         let spec = crate::remaster::tests_support::spec();
         let mut seen: Vec<String> = Vec::new();
         let mut log = |l: &str| seen.push(l.to_string());
         let e = patch(&mut ctx_for(&spec, &mut log), &d, Arch::Aarch64).unwrap_err();
-        assert!(e.contains("isoInstaller.py"), "the error names the file: {e}");
+        assert!(
+            e.contains("isoInstaller.py"),
+            "the error names the file: {e}"
+        );
         let _ = fs::remove_dir_all(&d);
     }
 
@@ -369,7 +419,9 @@ mod tests {
         // No installer at all is also an error, with a reason.
         let empty = d.join("empty");
         fs::create_dir_all(&empty).unwrap();
-        assert!(site_packages(&empty).unwrap_err().contains("not the installer initrd"));
+        assert!(site_packages(&empty)
+            .unwrap_err()
+            .contains("not the installer initrd"));
         let _ = fs::remove_dir_all(&d);
     }
 
@@ -392,7 +444,10 @@ mod tests {
         let spec = crate::remaster::tests_support::spec();
         let mut seen: Vec<String> = Vec::new();
         let mut log = |l: &str| seen.push(l.to_string());
-        assert_eq!(patch(&mut ctx_for(&spec, &mut log), &d2, Arch::Aarch64).unwrap(), 2);
+        assert_eq!(
+            patch(&mut ctx_for(&spec, &mut log), &d2, Arch::Aarch64).unwrap(),
+            2
+        );
         let _ = fs::remove_dir_all(&d);
         let _ = fs::remove_dir_all(&d2);
     }

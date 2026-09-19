@@ -106,8 +106,12 @@ impl Kconfig {
             if t.starts_with('#') {
                 continue;
             }
-            let Some(rest) = t.strip_prefix("CONFIG_") else { continue };
-            let Some((sym, val)) = rest.split_once('=') else { continue };
+            let Some(rest) = t.strip_prefix("CONFIG_") else {
+                continue;
+            };
+            let Some((sym, val)) = rest.split_once('=') else {
+                continue;
+            };
             let v = match val {
                 "y" => Value::Tri(Tristate::Y),
                 "m" => Value::Tri(Tristate::M),
@@ -127,7 +131,9 @@ impl Kconfig {
     /// The tristate value, treating an absent line as `n`: an invisible symbol
     /// is off in the built kernel, whatever the reason.
     pub fn tri(&self, sym: &str) -> Tristate {
-        self.get(sym).and_then(|v| v.tristate()).unwrap_or(Tristate::N)
+        self.get(sym)
+            .and_then(|v| v.tristate())
+            .unwrap_or(Tristate::N)
     }
 
     pub fn is_y(&self, sym: &str) -> bool {
@@ -164,8 +170,12 @@ pub fn fragment_symbols(fragment: &str) -> Vec<(String, Tristate)> {
         if t.is_empty() || t.starts_with('#') {
             continue;
         }
-        let Some(rest) = t.strip_prefix("CONFIG_") else { continue };
-        let Some((sym, val)) = rest.split_once('=') else { continue };
+        let Some(rest) = t.strip_prefix("CONFIG_") else {
+            continue;
+        };
+        let Some((sym, val)) = rest.split_once('=') else {
+            continue;
+        };
         let tri = match val {
             "y" => Tristate::Y,
             "m" => Tristate::M,
@@ -209,21 +219,41 @@ pub struct Edge {
 /// which 6.1 listed under PCI_HYPERV, no longer exists in 6.12 - which is why
 /// this table is per-edge and re-checked rather than copied from the 6.1 note.
 pub const HYPERV_EDGES: &[Edge] = &[
-    Edge { dependent: "HYPERV", dependency: "ACPI", rule: Rule::MustBeY },
-    Edge { dependent: "HYPERV_UTILS", dependency: "CONNECTOR", rule: Rule::MustBeY },
-    Edge { dependent: "HYPERV_UTILS", dependency: "NLS", rule: Rule::MustBeY },
+    Edge {
+        dependent: "HYPERV",
+        dependency: "ACPI",
+        rule: Rule::MustBeY,
+    },
+    Edge {
+        dependent: "HYPERV_UTILS",
+        dependency: "CONNECTOR",
+        rule: Rule::MustBeY,
+    },
+    Edge {
+        dependent: "HYPERV_UTILS",
+        dependency: "NLS",
+        rule: Rule::MustBeY,
+    },
     Edge {
         dependent: "HYPERV_UTILS",
         dependency: "PTP_1588_CLOCK_OPTIONAL",
         rule: Rule::MustBeY,
     },
-    Edge { dependent: "HYPERV_STORAGE", dependency: "SCSI", rule: Rule::MustBeY },
+    Edge {
+        dependent: "HYPERV_STORAGE",
+        dependency: "SCSI",
+        rule: Rule::MustBeY,
+    },
     Edge {
         dependent: "HYPERV_STORAGE",
         dependency: "SCSI_FC_ATTRS",
         rule: Rule::MustNotBeM,
     },
-    Edge { dependent: "HYPERV_VSOCKETS", dependency: "VSOCKETS", rule: Rule::MustBeY },
+    Edge {
+        dependent: "HYPERV_VSOCKETS",
+        dependency: "VSOCKETS",
+        rule: Rule::MustBeY,
+    },
 ];
 
 /// A symbol the closure had to raise, and why. Printed, recorded and asserted -
@@ -387,7 +417,8 @@ pub fn apply_to_config(text: &str, syms: &[String]) -> String {
         let name = if let Some(rest) = t.strip_prefix("# CONFIG_") {
             rest.strip_suffix(" is not set")
         } else {
-            t.strip_prefix("CONFIG_").and_then(|r| r.split_once('=').map(|(s, _)| s))
+            t.strip_prefix("CONFIG_")
+                .and_then(|r| r.split_once('=').map(|(s, _)| s))
         };
         match name.and_then(|n| syms.iter().find(|s| s.as_str() == n)) {
             Some(s) => {
@@ -400,7 +431,10 @@ pub fn apply_to_config(text: &str, syms: &[String]) -> String {
             }
         }
     }
-    let missing: Vec<&String> = syms.iter().filter(|s| !placed.contains(&s.as_str())).collect();
+    let missing: Vec<&String> = syms
+        .iter()
+        .filter(|s| !placed.contains(&s.as_str()))
+        .collect();
     if !missing.is_empty() {
         out.push_str("\n# Added by sharukhan --hyperv (no line existed for these):\n");
         for s in missing {
@@ -534,7 +568,12 @@ struct Bits<'a> {
 
 impl<'a> Bits<'a> {
     fn new(data: &'a [u8]) -> Self {
-        Bits { data, pos: 0, bit: 0, acc: 0 }
+        Bits {
+            data,
+            pos: 0,
+            bit: 0,
+            acc: 0,
+        }
     }
     fn get(&mut self, n: u32) -> Result<u32, String> {
         while self.bit < n {
@@ -787,8 +826,15 @@ CONFIG_LOCALVERSION=\"\"
     fn a_fragment_symbol_capped_by_a_module_dependency_is_reported_with_the_gating_symbol() {
         let cfg = Kconfig::parse(STOCK_AARCH64);
         let forced = dependency_closure(&cfg, HYPERV_FRAGMENT, HYPERV_EDGES).unwrap();
-        let utils: Vec<&Forced> = forced.iter().filter(|f| f.because == "HYPERV_UTILS").collect();
-        assert_eq!(utils.len(), 1, "exactly CONNECTOR gates HYPERV_UTILS here: {forced:?}");
+        let utils: Vec<&Forced> = forced
+            .iter()
+            .filter(|f| f.because == "HYPERV_UTILS")
+            .collect();
+        assert_eq!(
+            utils.len(),
+            1,
+            "exactly CONNECTOR gates HYPERV_UTILS here: {forced:?}"
+        );
         assert_eq!(utils[0].symbol, "CONNECTOR");
         assert_eq!(utils[0].from, Value::Tri(Tristate::M));
         // The message has to name both ends, or it cannot be acted on.
@@ -822,8 +868,18 @@ CONFIG_LOCALVERSION=\"\"
         // three raised: ten, which is what the ISO is later read back for.
         let want = expected_y(HYPERV_FRAGMENT, &forced);
         assert_eq!(want.len(), 10, "{want:?}");
-        for s in ["HYPERV", "HYPERV_STORAGE", "HYPERV_NET", "HYPERV_UTILS", "HYPERV_BALLOON",
-                  "HYPERV_VSOCKETS", "PCI_HYPERV", "CONNECTOR", "VSOCKETS", "SCSI_FC_ATTRS"] {
+        for s in [
+            "HYPERV",
+            "HYPERV_STORAGE",
+            "HYPERV_NET",
+            "HYPERV_UTILS",
+            "HYPERV_BALLOON",
+            "HYPERV_VSOCKETS",
+            "PCI_HYPERV",
+            "CONNECTOR",
+            "VSOCKETS",
+            "SCSI_FC_ATTRS",
+        ] {
             assert!(want.iter().any(|w| w == s), "{s} missing from {want:?}");
         }
     }
@@ -845,7 +901,9 @@ CONFIG_LOCALVERSION=\"\"
             "CONFIG_ACPI=y\nCONFIG_SCSI=y\nCONFIG_NLS=y\nCONFIG_PTP_1588_CLOCK_OPTIONAL=y\n\
              CONFIG_VSOCKETS=y\nCONFIG_CONNECTOR=y\n# CONFIG_SCSI_FC_ATTRS is not set\n",
         );
-        assert!(dependency_closure(&cfg_n, HYPERV_FRAGMENT, HYPERV_EDGES).unwrap().is_empty());
+        assert!(dependency_closure(&cfg_n, HYPERV_FRAGMENT, HYPERV_EDGES)
+            .unwrap()
+            .is_empty());
     }
 
     /// A dependency with no line at all cannot be raised by a fragment, and
@@ -872,7 +930,10 @@ CONFIG_LOCALVERSION=\"\"
         let e = assert_all_y(&cfg, &syms).unwrap_err();
         assert!(e.contains("CONFIG_HYPERV_UTILS=m"), "{e}");
         assert!(e.contains("CONFIG_PCI_HYPERV MISSING"), "{e}");
-        assert!(!e.contains("CONFIG_HYPERV=y"), "the one that passed must not be listed: {e}");
+        assert!(
+            !e.contains("CONFIG_HYPERV=y"),
+            "the one that passed must not be listed: {e}"
+        );
         // Negative control: the same assertion has to be able to PASS, or it
         // proves nothing when it does.
         let good = Kconfig::parse("CONFIG_HYPERV=y\nCONFIG_HYPERV_UTILS=y\nCONFIG_PCI_HYPERV=y\n");
@@ -886,11 +947,16 @@ CONFIG_LOCALVERSION=\"\"
         let merged = merged_fragment(HYPERV_FRAGMENT, &forced);
         let conn = merged.find("CONFIG_CONNECTOR=y").unwrap();
         let utils = merged.find("CONFIG_HYPERV_UTILS=y").unwrap();
-        assert!(conn < utils, "the enabling symbol must precede what needs it");
+        assert!(
+            conn < utils,
+            "the enabling symbol must precede what needs it"
+        );
         assert!(merged.contains("# CONFIG_CONNECTOR: m -> y"), "{merged}");
         // Re-parsing the merged fragment must yield every symbol as y.
-        let syms: Vec<String> =
-            fragment_symbols(&merged).into_iter().map(|(s, _)| s).collect();
+        let syms: Vec<String> = fragment_symbols(&merged)
+            .into_iter()
+            .map(|(s, _)| s)
+            .collect();
         assert_eq!(syms.len(), 10);
     }
 
@@ -959,7 +1025,10 @@ CONFIG_LOCALVERSION=\"\"
         let image = vec![0u8; 8192];
         let e = extract_ikconfig(&image).unwrap_err();
         assert!(e.contains("IKCFG_ST"), "{e}");
-        assert!(e.contains("8192"), "the message must say what was searched: {e}");
+        assert!(
+            e.contains("8192"),
+            "the message must say what was searched: {e}"
+        );
 
         // A truncated image - marker present, terminator absent - is also an
         // error, not a silently short config.
@@ -980,16 +1049,24 @@ CONFIG_LOCALVERSION=\"\"
     /// that certifies the finished ISO would be vacuous.
     #[test]
     fn a_real_arm64_kernel_image_yields_its_config_and_a_stock_one_fails_the_hyperv_assertion() {
-        let Ok(p) = std::env::var("MC_TEST_KERNEL_IMAGE") else { return };
+        let Ok(p) = std::env::var("MC_TEST_KERNEL_IMAGE") else {
+            return;
+        };
         let Ok(img) = std::fs::read(&p) else { return };
         let text = extract_ikconfig(&img).expect("a kernel built with CONFIG_IKCONFIG=y");
         let k = Kconfig::parse(&text);
         assert!(k.len() > 5000, "only {} symbols read from {p}", k.len());
-        assert!(k.is_y("IKCONFIG"), "a kernel carrying an ikconfig says so in it");
+        assert!(
+            k.is_y("IKCONFIG"),
+            "a kernel carrying an ikconfig says so in it"
+        );
 
         // The symbol exists as a line, so the reader is looking in the right
         // place - it is simply off on a stock kernel.
-        assert!(k.get("HYPERV").is_some(), "CONFIG_HYPERV has no line at all");
+        assert!(
+            k.get("HYPERV").is_some(),
+            "CONFIG_HYPERV has no line at all"
+        );
 
         let want = expected_y(HYPERV_FRAGMENT, &[]);
         let e = assert_all_y(&k, &want)
@@ -1024,7 +1101,13 @@ CONFIG_LOCALVERSION=\"\"
         assert!(out.status.success());
         // Highly repetitive input: gzip -9 emits dynamic Huffman with
         // back-references, which exercises every path but `stored`.
-        assert!(out.stdout.len() < body.len() / 4, "the fixture must be compressed");
-        assert_eq!(String::from_utf8(gunzip(&out.stdout).unwrap()).unwrap(), body);
+        assert!(
+            out.stdout.len() < body.len() / 4,
+            "the fixture must be compressed"
+        );
+        assert_eq!(
+            String::from_utf8(gunzip(&out.stdout).unwrap()).unwrap(),
+            body
+        );
     }
 }

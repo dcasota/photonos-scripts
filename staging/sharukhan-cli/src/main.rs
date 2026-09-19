@@ -5,36 +5,36 @@
 //! that reports a confident wrong answer is worse than one that reports none.
 
 mod b64;
-mod canister;
-mod card;
 mod build;
 mod buildexec;
 mod buildmode;
+mod canister;
+mod card;
 mod config;
+mod disk;
 mod evidence;
 mod guest;
+mod identity;
 mod ingest;
 mod install;
-mod oracle;
-mod serial;
-mod sha256;
-mod specresolve;
-mod verify;
-mod disk;
-mod identity;
+mod job;
 mod kconfig;
 mod kickstart;
-mod job;
 mod leases;
 mod matrix;
-mod net;
 mod media;
 mod memory;
+mod net;
+mod oracle;
 mod phases;
 mod proc;
 mod remaster;
 mod report;
 mod runner;
+mod serial;
+mod sha256;
+mod specresolve;
+mod verify;
 mod vm;
 mod vmware;
 mod vmx;
@@ -261,7 +261,10 @@ fn parse() -> Result<Args, String> {
             "--canister" => out.canister = Some(a.next().ok_or("--canister needs a value")?),
             "--timeout" => {
                 let v = a.next().ok_or("--timeout needs a value")?;
-                out.timeout = Some(v.parse().map_err(|_| format!("--timeout: not a number: {v}"))?);
+                out.timeout = Some(
+                    v.parse()
+                        .map_err(|_| format!("--timeout: not a number: {v}"))?,
+                );
             }
             "--allow-build" => out.allow_build = true,
             "--rebase-check" => out.rebase_check = true,
@@ -272,7 +275,10 @@ fn parse() -> Result<Args, String> {
             "--severity" => out.severity = Some(a.next().ok_or("--severity needs a value")?),
             "--jobs" => {
                 let v = a.next().ok_or("--jobs needs a value")?;
-                out.jobs = Some(v.parse().map_err(|_| format!("--jobs: not a number: {v}"))?);
+                out.jobs = Some(
+                    v.parse()
+                        .map_err(|_| format!("--jobs: not a number: {v}"))?,
+                );
             }
             "--job" => {
                 let v = a.next().ok_or("--job needs a value")?;
@@ -301,15 +307,21 @@ fn parse() -> Result<Args, String> {
             "--no-accel" => out.no_accel = true,
             "--settle" => {
                 let v = a.next().ok_or("--settle needs a value")?;
-                out.settle = v.parse().map_err(|_| format!("--settle: not a number: {v}"))?;
+                out.settle = v
+                    .parse()
+                    .map_err(|_| format!("--settle: not a number: {v}"))?;
             }
             "--wait-idle" => {
                 let v = a.next().ok_or("--wait-idle needs a value")?;
-                out.wait_idle = v.parse().map_err(|_| format!("--wait-idle: not a number: {v}"))?;
+                out.wait_idle = v
+                    .parse()
+                    .map_err(|_| format!("--wait-idle: not a number: {v}"))?;
             }
             "--interval" => {
                 let v = a.next().ok_or("--interval needs a value")?;
-                out.interval = v.parse().map_err(|_| format!("--interval: not a number: {v}"))?;
+                out.interval = v
+                    .parse()
+                    .map_err(|_| format!("--interval: not a number: {v}"))?;
             }
             "-h" | "--help" => out.cmd = "help".into(),
             other => return Err(format!("unknown option: {other}")),
@@ -411,13 +423,16 @@ fn main() -> ExitCode {
 
 /// A phase command without --id must say so rather than picking a row.
 fn need_id(a: &Args) -> Result<&str, String> {
-    a.id
-        .as_deref()
+    a.id.as_deref()
         .ok_or_else(|| format!("{} needs --id <permutation>", a.cmd))
 }
 
 fn mark(ok: bool) -> &'static str {
-    if ok { "ok  " } else { "FAIL" }
+    if ok {
+        "ok  "
+    } else {
+        "FAIL"
+    }
 }
 
 /// doctor answers mc-preflight.sh's question: can this host run the matrix?
@@ -457,7 +472,10 @@ fn cmd_doctor(cfg: &config::Config) -> Result<(), String> {
             Ok(md) if md.permissions().mode() & 0o111 == 0 => check(
                 &name,
                 false,
-                format!("present but not executable by this user: {}", tool.display()),
+                format!(
+                    "present but not executable by this user: {}",
+                    tool.display()
+                ),
             ),
             Ok(_) => check(&name, true, "executable".into()),
         }
@@ -476,13 +494,20 @@ fn cmd_doctor(cfg: &config::Config) -> Result<(), String> {
     println!("capacity");
     for (label, path, need) in [
         ("/ (build stage)", "/", disk::ISO_BUILD.root_gb),
-        ("VM store", cfg.vm_root.to_str().unwrap_or("/"), disk::VM_RUN.vmstore_gb),
+        (
+            "VM store",
+            cfg.vm_root.to_str().unwrap_or("/"),
+            disk::VM_RUN.vmstore_gb,
+        ),
     ] {
         match disk::space(path) {
             Some(s) => check(
                 label,
                 s.avail_gb >= need,
-                format!("{}G free ({}% used), needs {}G", s.avail_gb, s.use_pct, need),
+                format!(
+                    "{}G free ({}% used), needs {}G",
+                    s.avail_gb, s.use_pct, need
+                ),
             ),
             None => check(label, false, format!("cannot read free space on {path}")),
         }
@@ -490,7 +515,12 @@ fn cmd_doctor(cfg: &config::Config) -> Result<(), String> {
     for d in [&cfg.iso_cache, &cfg.results_dir] {
         let ok = std::fs::create_dir_all(d).is_ok();
         check(
-            &format!("{}", d.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()),
+            &format!(
+                "{}",
+                d.file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default()
+            ),
             ok,
             d.display().to_string(),
         );
@@ -506,7 +536,11 @@ fn cmd_doctor(cfg: &config::Config) -> Result<(), String> {
         .filter(|o| o.status.success())
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .unwrap_or_else(|| "not a repo".into());
-    check("photon tree HEAD", t, format!("{} ({head})", cfg.photon_tree.display()));
+    check(
+        "photon tree HEAD",
+        t,
+        format!("{} ({head})", cfg.photon_tree.display()),
+    );
     // What a build actually applies is a PER-VARIANT patch: build_iso stages
     // variant-patches/poi-<variant>.patch into its own scriptdir as
     // photonos-patches/downstream-fixes.patch, because runPh5_normal.sh
@@ -526,7 +560,8 @@ fn cmd_doctor(cfg: &config::Config) -> Result<(), String> {
                 .map(|e| e.path())
                 .filter(|p| {
                     p.extension().is_some_and(|x| x == "patch")
-                        && p.file_name().is_some_and(|n| n.to_string_lossy().starts_with("poi-"))
+                        && p.file_name()
+                            .is_some_and(|n| n.to_string_lossy().starts_with("poi-"))
                 })
                 .collect()
         })
@@ -540,7 +575,11 @@ fn cmd_doctor(cfg: &config::Config) -> Result<(), String> {
         );
     } else {
         for vp in &variants {
-            let name = vp.file_stem().unwrap_or_default().to_string_lossy().to_string();
+            let name = vp
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
             // Against the pristine release ref, not the tree: a build leaves
             // SPECS patched, and checking there reported both variants as not
             // applying after every build (2026-09-13).
@@ -571,7 +610,8 @@ fn cmd_doctor(cfg: &config::Config) -> Result<(), String> {
     // above.
     {
         let vp = variants.iter().find(|p| {
-            p.file_name().is_some_and(|n| n.to_string_lossy().starts_with("poi-2.8"))
+            p.file_name()
+                .is_some_and(|n| n.to_string_lossy().starts_with("poi-2.8"))
         });
         match vp {
             None => check(
@@ -604,14 +644,26 @@ fn cmd_doctor(cfg: &config::Config) -> Result<(), String> {
 
     println!("inputs");
     let vp = cfg.variant_patches.join("poi-2.8.patch").exists();
-    check("variant patches", vp, cfg.variant_patches.display().to_string());
+    check(
+        "variant patches",
+        vp,
+        cfg.variant_patches.display().to_string(),
+    );
     let isos: Vec<String> = std::fs::read_dir(&cfg.iso_cache)
-        .map(|d| d.flatten().filter_map(|e| e.file_name().into_string().ok()).collect())
+        .map(|d| {
+            d.flatten()
+                .filter_map(|e| e.file_name().into_string().ok())
+                .collect()
+        })
         .unwrap_or_default();
     check(
         "iso cache",
         !isos.is_empty(),
-        if isos.is_empty() { "empty - an ISO must be built first".into() } else { isos.join(", ") },
+        if isos.is_empty() {
+            "empty - an ISO must be built first".into()
+        } else {
+            isos.join(", ")
+        },
     );
     let key = cfg.ssh_key();
     check(
@@ -626,7 +678,11 @@ fn cmd_doctor(cfg: &config::Config) -> Result<(), String> {
 
     println!("memory");
     match memory::open(&cfg.memory_db) {
-        Ok(c) => check("database", true, format!("{} finding(s)", memory::count(&c, "finding"))),
+        Ok(c) => check(
+            "database",
+            true,
+            format!("{} finding(s)", memory::count(&c, "finding")),
+        ),
         Err(e) => check("database", false, e),
     }
 
@@ -647,7 +703,11 @@ fn cmd_plan(cfg: &config::Config, only: Option<&str>) -> Result<(), String> {
     println!("ISOs required ({}):", isos.len());
     for k in &isos {
         let parts: Vec<&str> = k.split('/').collect();
-        let (t, p, c) = (parts[0], parts.get(1).copied().unwrap_or(""), parts.get(2).copied().unwrap_or("prebuilt"));
+        let (t, p, c) = (
+            parts[0],
+            parts.get(1).copied().unwrap_or(""),
+            parts.get(2).copied().unwrap_or("prebuilt"),
+        );
         let dir = cfg.iso_cache.join(format!("{t}-poi{p}-{c}"));
         let have = dir.join("photon.iso").exists();
         // "must be built" is an invitation to spend hours, so it must not be
@@ -667,19 +727,34 @@ fn cmd_plan(cfg: &config::Config, only: Option<&str>) -> Result<(), String> {
 
     let (auto, oper): (Vec<_>, Vec<_>) = sel.iter().partition(|p| !p.needs_operator());
     let blocked: Vec<_> = sel.iter().filter(|p| p.is_unrunnable_here()).collect();
-    println!("\npermutations: {} ({} autonomous, {} need an operator)", sel.len(), auto.len(), oper.len());
+    println!(
+        "\npermutations: {} ({} autonomous, {} need an operator)",
+        sel.len(),
+        auto.len(),
+        oper.len()
+    );
     if !blocked.is_empty() {
         println!("  {} cannot run on this host:", blocked.len());
         for p in &blocked {
-            println!("    {:<5} {}", p.id, p.unrunnable_reason().unwrap_or_default());
+            println!(
+                "    {:<5} {}",
+                p.id,
+                p.unrunnable_reason().unwrap_or_default()
+            );
         }
     }
-    println!("  {:<5} {:<8} {:<7} {:<5} {:<6} {:<5} {:<10} {:<12} {:<18} {}",
-             "ID", "ISO", "POI", "STIG", "FS", "MODE", "VARIANT", "CANISTER", "NET", "DOC");
+    println!(
+        "  {:<5} {:<8} {:<7} {:<5} {:<6} {:<5} {:<10} {:<12} {:<18} {}",
+        "ID", "ISO", "POI", "STIG", "FS", "MODE", "VARIANT", "CANISTER", "NET", "DOC"
+    );
     for p in &sel {
         // The default token is what every row did before the axis existed, so
         // printing it on 36 rows would bury the five that actually vary it.
-        let net = if p.net.is_default() { "-" } else { p.net.token.as_str() };
+        let net = if p.net.is_default() {
+            "-"
+        } else {
+            p.net.token.as_str()
+        };
         println!(
             "  {:<5} {:<8} {:<7} {:<5} {:<6} {:<5} {:<10} {:<12} {:<18} {}",
             p.id, p.iso_type, p.poi, p.stig, p.fs, p.mode, p.variant, p.canister, net, p.doc
@@ -697,7 +772,10 @@ fn cmd_status(cfg: &config::Config, jobs: Option<u64>) -> Result<(), String> {
     }
 
     println!("\ndisk");
-    for (label, path) in [("/", "/"), ("VM store", cfg.vm_root.to_str().unwrap_or("/"))] {
+    for (label, path) in [
+        ("/", "/"),
+        ("VM store", cfg.vm_root.to_str().unwrap_or("/")),
+    ] {
         match disk::space(path) {
             Some(s) => println!("  {:<10} {}G free ({}% used)", label, s.avail_gb, s.use_pct),
             None => println!("  {:<10} unreadable", label),
@@ -730,13 +808,26 @@ fn cmd_findings(cfg: &config::Config, severity: Option<&str>) -> Result<(), Stri
     let conn = memory::open(&cfg.memory_db)?;
     let f = memory::findings(&conn, severity)?;
     if f.is_empty() {
-        println!("no findings{}", severity.map(|s| format!(" with severity {s}")).unwrap_or_default());
+        println!(
+            "no findings{}",
+            severity
+                .map(|s| format!(" with severity {s}"))
+                .unwrap_or_default()
+        );
         return Ok(());
     }
     println!("{} finding(s)\n", f.len());
     for x in &f {
-        let sev = if x.severity.is_empty() { "-".into() } else { x.severity.clone() };
-        let st = if x.status.is_empty() { "-".into() } else { x.status.clone() };
+        let sev = if x.severity.is_empty() {
+            "-".into()
+        } else {
+            x.severity.clone()
+        };
+        let st = if x.status.is_empty() {
+            "-".into()
+        } else {
+            x.status.clone()
+        };
         println!("  #{:<3} {:<10} {:<10} {}", x.id, sev, st, x.slug);
         if !x.summary.is_empty() {
             let s: String = x.summary.chars().take(100).collect();
@@ -759,7 +850,18 @@ fn cmd_report(cfg: &config::Config, only: Option<&str>) -> Result<(), String> {
     macro_rules! line {
         ($($a:tt)*) => {{ let l = format!($($a)*); println!("{l}"); out.push_str(&l); out.push('\n'); }};
     }
-    line!("  {:<5} {:<8} {:<7} {:<5} {:<6} {:<10} {:<8} {:<28} {}", "ID", "ISO", "POI", "STIG", "FS", "DOC", "RESULT", "EVIDENCE", "FAILED CHECKS");
+    line!(
+        "  {:<5} {:<8} {:<7} {:<5} {:<6} {:<10} {:<8} {:<28} {}",
+        "ID",
+        "ISO",
+        "POI",
+        "STIG",
+        "FS",
+        "DOC",
+        "RESULT",
+        "EVIDENCE",
+        "FAILED CHECKS"
+    );
     let (mut run, mut failing) = (0, 0);
     for p in &sel {
         match report::read(&cfg.results_dir, &p.id) {
@@ -775,18 +877,38 @@ fn cmd_report(cfg: &config::Config, only: Option<&str>) -> Result<(), String> {
                 };
                 line!(
                     "  {:<5} {:<8} {:<7} {:<5} {:<6} {:<10} {:<8} {:<28} {}",
-                    p.id, p.iso_type, p.poi, p.stig, p.fs, p.doc, verdict,
-                    if o.stamp.is_empty() { "-" } else { o.stamp.as_str() },
+                    p.id,
+                    p.iso_type,
+                    p.poi,
+                    p.stig,
+                    p.fs,
+                    p.doc,
+                    verdict,
+                    if o.stamp.is_empty() {
+                        "-"
+                    } else {
+                        o.stamp.as_str()
+                    },
                     o.failed_checks.join(", ")
                 );
             }
             None => line!(
                 "  {:<5} {:<8} {:<7} {:<5} {:<6} {:<10} {:<8} {:<28} -",
-                p.id, p.iso_type, p.poi, p.stig, p.fs, p.doc, "not run", "-"
+                p.id,
+                p.iso_type,
+                p.poi,
+                p.stig,
+                p.fs,
+                p.doc,
+                "not run",
+                "-"
             ),
         }
     }
-    line!("\n{run} of {} permutation(s) have results; {failing} with failing checks", sel.len());
+    line!(
+        "\n{run} of {} permutation(s) have results; {failing} with failing checks",
+        sel.len()
+    );
 
     // Timestamped, so a report never overwrites the one it should be compared
     // against; report-latest.txt is the moving pointer.
@@ -826,10 +948,7 @@ fn cmd_report(cfg: &config::Config, only: Option<&str>) -> Result<(), String> {
 /// rather than a decision. Everything they varied is a flag here.
 fn cmd_build(args: &Args) -> Result<(), String> {
     let release = args.release.clone().unwrap_or_else(|| "5.0".into());
-    let img = args
-        .img
-        .clone()
-        .unwrap_or_else(|| "minimal-iso".into());
+    let img = args.img.clone().unwrap_or_else(|| "minimal-iso".into());
     let canister = args.canister.clone().unwrap_or_else(|| "prebuilt".into());
     let out = args
         .out
@@ -845,9 +964,10 @@ fn cmd_build(args: &Args) -> Result<(), String> {
     // The subrelease pin was two entire scripts differing in one integer.
     let subrelease = match args.subrelease.as_deref() {
         None | Some("mainline") => None,
-        Some(sr) => Some(sr.parse::<u32>().map_err(|_| {
-            format!("--subrelease takes mainline, 90 or 91 (got '{sr}')")
-        })?),
+        Some(sr) => Some(
+            sr.parse::<u32>()
+                .map_err(|_| format!("--subrelease takes mainline, 90 or 91 (got '{sr}')"))?,
+        ),
     };
 
     // Assembled by `buildmode::spec_for`, which `build::resolve` also calls.
@@ -866,7 +986,10 @@ fn cmd_build(args: &Args) -> Result<(), String> {
     // bolted on afterwards, so `--dry-run` shows it in the cascade and the
     // acvp/kat refusal happens at resolve time instead of hours in.
     if args.hyperv {
-        let arch = args.arch.clone().unwrap_or_else(|| std::env::consts::ARCH.to_string());
+        let arch = args
+            .arch
+            .clone()
+            .unwrap_or_else(|| std::env::consts::ARCH.to_string());
         let flavours = match args.hyperv_flavours.as_deref() {
             Some(s) => remaster::parse_flavours(s)?,
             None => remaster::flavours_default(),
@@ -957,7 +1080,9 @@ fn cmd_remaster(args: &Args) -> Result<(), String> {
         remaster::Arch::X86_64 => "photon:5.0".to_string(),
     });
     let jobs = args.jobs.unwrap_or_else(|| {
-        std::thread::available_parallelism().map(|n| n.get() as u64).unwrap_or(4)
+        std::thread::available_parallelism()
+            .map(|n| n.get() as u64)
+            .unwrap_or(4)
     }) as usize;
 
     let spec = remaster::RemasterSpec {
@@ -974,7 +1099,11 @@ fn cmd_remaster(args: &Args) -> Result<(), String> {
         only,
         accel: !args.no_accel,
     };
-    println!("remaster {} -> {}", spec.input.display(), spec.output.display());
+    println!(
+        "remaster {} -> {}",
+        spec.input.display(),
+        spec.output.display()
+    );
     println!(
         "  arch {} / flavours {} / jobs {} / tree {}",
         spec.arch.rpm(),
@@ -1017,7 +1146,10 @@ fn cmd_canister(cfg: &config::Config, rebase_check: bool) -> Result<(), String> 
     let patch = cfg.variant_patches.join("poi-2.8.patch");
     let latest = cfg.variant_patches.join("poi-latest.patch");
     if patch.is_file() && latest.is_file() {
-        if let (Ok(a), Ok(b)) = (build::kernel_nevr(cfg, &patch), build::kernel_nevr(cfg, &latest)) {
+        if let (Ok(a), Ok(b)) = (
+            build::kernel_nevr(cfg, &patch),
+            build::kernel_nevr(cfg, &latest),
+        ) {
             if a != b {
                 println!(
                     "warning: the installer variants build DIFFERENT kernels \
@@ -1132,7 +1264,10 @@ phase B: relink linux and linux-esx against it"),
     // later patches to see earlier ones, and that must never touch the tree a
     // build is using.
     let work = std::env::temp_dir().join(format!("sharukhan-rebase-{}", job::stamp()));
-    println!("\nrebase-check needs an unpacked kernel tree at {}", work.display());
+    println!(
+        "\nrebase-check needs an unpacked kernel tree at {}",
+        work.display()
+    );
     println!("(not yet wired to unpack the source tarball - point PHOTON_KERNEL_TREE at one)");
     let tree = match std::env::var("PHOTON_KERNEL_TREE") {
         Ok(t) => std::path::PathBuf::from(t),
@@ -1151,7 +1286,10 @@ phase B: relink linux and linux-esx against it"),
             }
         }
     }
-    println!("\n{ok} of {} applied clean at --fuzz=0, {bad} failed", applied.len());
+    println!(
+        "\n{ok} of {} applied clean at --fuzz=0, {bad} failed",
+        applied.len()
+    );
     if bad > 0 {
         println!("rejects are listed above; %prep would have shown you only the first");
     }
@@ -1188,7 +1326,9 @@ fn cmd_mirrors(cfg: &config::Config) -> Result<(), String> {
     }
     if stale > 0 {
         println!("\n{stale} spec patch copy(ies) are behind the fork.");
-        println!("Regenerate them before building: a row built from a stale copy proves the old change.");
+        println!(
+            "Regenerate them before building: a row built from a stale copy proves the old change."
+        );
         return Err("stale mirrors".into());
     }
     println!("\nevery spec copy matches its published photon-os-installer branch");

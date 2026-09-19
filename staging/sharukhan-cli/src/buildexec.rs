@@ -9,7 +9,9 @@
 //! The Photon build system is the system under test, and a reimplementation
 //! would test a different builder than the one that ships.
 
-use crate::buildmode::{BuildSpec, CanisterMode, Embedded, Fixup, Injection, Stage, Subrelease, Tree};
+use crate::buildmode::{
+    BuildSpec, CanisterMode, Embedded, Fixup, Injection, Stage, Subrelease, Tree,
+};
 use crate::sha256;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -75,7 +77,11 @@ fn ok(dir: &Path, prog: &str, args: &[&str]) -> bool {
 /// build against local state when it fails, because a build that is otherwise
 /// ready should not be stopped by a flaky uplink.
 pub fn sync(c: &mut Ctx) -> Result<(), String> {
-    let online = ok(Path::new("/"), "ping", &["-c", "2", "-W", "2", "www.google.ch"]);
+    let online = ok(
+        Path::new("/"),
+        "ping",
+        &["-c", "2", "-W", "2", "www.google.ch"],
+    );
     if !online {
         c.skip("sync", "no network; building against the trees as they are");
         return Ok(());
@@ -115,19 +121,27 @@ pub fn sync(c: &mut Ctx) -> Result<(), String> {
             c.say(&format!("  would sync {} ({branch})", dir.display()));
             continue;
         }
-        if git(&dir, &["rev-parse", "--is-shallow-repository"]).unwrap_or_default().trim() == "true"
+        if git(&dir, &["rev-parse", "--is-shallow-repository"])
+            .unwrap_or_default()
+            .trim()
+            == "true"
         {
             c.say(&format!("  {branch}: unshallowing"));
             let _ = git(&dir, &["fetch", "--unshallow", "origin"]);
         }
         if git(&dir, &["fetch", "origin"]).is_err() {
-            c.say(&format!("  WARNING {branch}: fetch failed, building against local state"));
+            c.say(&format!(
+                "  WARNING {branch}: fetch failed, building against local state"
+            ));
             continue;
         }
-        let behind = git(&dir, &["rev-list", "--count", &format!("HEAD..origin/{branch}")])
-            .unwrap_or_default()
-            .trim()
-            .to_string();
+        let behind = git(
+            &dir,
+            &["rev-list", "--count", &format!("HEAD..origin/{branch}")],
+        )
+        .unwrap_or_default()
+        .trim()
+        .to_string();
         if behind != "0" && !behind.is_empty() {
             c.say(&format!("  {branch}: {behind} commit(s) behind, merging"));
         }
@@ -147,7 +161,10 @@ pub fn sync(c: &mut Ctx) -> Result<(), String> {
         // unmerged path, so reset silently left them and the variant patch then
         // "did not apply" - a message that points at the patch when the fault is
         // a half-finished merge.
-        let unmerged = git(&dir, &["ls-files", "-u"]).unwrap_or_default().lines().count();
+        let unmerged = git(&dir, &["ls-files", "-u"])
+            .unwrap_or_default()
+            .lines()
+            .count();
         if unmerged > 0 {
             return Err(format!(
                 "{branch}: the merge left {unmerged} unmerged path entr(ies) in {} - \
@@ -158,7 +175,10 @@ pub fn sync(c: &mut Ctx) -> Result<(), String> {
             ));
         }
         let head = git(&dir, &["rev-parse", "--short", "HEAD"]).unwrap_or_default();
-        let dirty = git(&dir, &["status", "--porcelain"]).unwrap_or_default().lines().count();
+        let dirty = git(&dir, &["status", "--porcelain"])
+            .unwrap_or_default()
+            .lines()
+            .count();
         c.say(&format!(
             "  {branch}: {} -> {} ({dirty} uncommitted path(s)) at {}",
             head_before.trim(),
@@ -188,21 +208,30 @@ pub fn reset(c: &mut Ctx) -> Result<(), String> {
         c.say("  would reset SPECS and build-config.json to HEAD");
         return Ok(());
     }
-    let before = git(&dir, &["status", "--porcelain", "SPECS", "build-config.json"])
-        .unwrap_or_default()
-        .lines()
-        .count();
+    let before = git(
+        &dir,
+        &["status", "--porcelain", "SPECS", "build-config.json"],
+    )
+    .unwrap_or_default()
+    .lines()
+    .count();
     // Unstage first. A path left in the index - staged, or unmerged after a
     // failed autostash pop - cannot be restored by `checkout --`, and the reset
     // then reports success while leaving the tree modified.
-    let _ = git(&dir, &["reset", "-q", "HEAD", "--", "SPECS", "build-config.json"]);
+    let _ = git(
+        &dir,
+        &["reset", "-q", "HEAD", "--", "SPECS", "build-config.json"],
+    );
     let _ = git(&dir, &["checkout", "--", "SPECS"]);
     let _ = git(&dir, &["clean", "-fdq", "SPECS"]);
     let _ = git(&dir, &["checkout", "--", "build-config.json"]);
-    let after = git(&dir, &["status", "--porcelain", "SPECS", "build-config.json"])
-        .unwrap_or_default()
-        .lines()
-        .count();
+    let after = git(
+        &dir,
+        &["status", "--porcelain", "SPECS", "build-config.json"],
+    )
+    .unwrap_or_default()
+    .lines()
+    .count();
     c.say(&format!(
         "  {} restored {before} dirty path(s) under SPECS + build-config.json; {after} remain",
         dir.display()
@@ -259,7 +288,9 @@ fn kernel_config(c: &mut Ctx, arch: &str, flavour: &str) -> Result<(), String> {
     let path = crate::remaster::kernel::kernel_config_path(&tree, a, flavour, sr)?;
     c.say(&format!("  config: {}", path.display()));
     if c.dry {
-        c.say(&format!("  would build Hyper-V support into {flavour} for {arch}"));
+        c.say(&format!(
+            "  would build Hyper-V support into {flavour} for {arch}"
+        ));
         return Ok(());
     }
     let text = fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -289,12 +320,20 @@ fn kernel_config(c: &mut Ctx, arch: &str, flavour: &str) -> Result<(), String> {
 
 /// Bump the flavour's Release so the Hyper-V kernel has its own NEVR.
 fn release_bump(c: &mut Ctx, flavour: &str) -> Result<(), String> {
-    let spec = c.spec.tree(Tree::Release).join("SPECS/linux").join(format!("{flavour}.spec"));
+    let spec = c
+        .spec
+        .tree(Tree::Release)
+        .join("SPECS/linux")
+        .join(format!("{flavour}.spec"));
     if !spec.is_file() {
         return Err(format!("{} does not exist", spec.display()));
     }
     let text = fs::read_to_string(&spec).map_err(|e| format!("{}: {e}", spec.display()))?;
-    let Some((idx, line)) = text.lines().enumerate().find(|(_, l)| l.starts_with("Release:")) else {
+    let Some((idx, line)) = text
+        .lines()
+        .enumerate()
+        .find(|(_, l)| l.starts_with("Release:"))
+    else {
         return Err(format!("no Release: line in {}", spec.display()));
     };
     let value = line["Release:".len()..].trim().to_string();
@@ -306,7 +345,9 @@ fn release_bump(c: &mut Ctx, flavour: &str) -> Result<(), String> {
     }
     let bumped = crate::remaster::kernel::bump_release(&value)?;
     if c.dry {
-        c.say(&format!("  would bump {flavour} Release {value} -> {bumped}"));
+        c.say(&format!(
+            "  would bump {flavour} Release {value} -> {bumped}"
+        ));
         return Ok(());
     }
     let mut out = String::with_capacity(text.len() + 256);
@@ -338,7 +379,11 @@ fn tree_patch(c: &mut Ctx, tree: Tree, patch: &Path) -> Result<(), String> {
         return Ok(());
     }
     if c.dry {
-        c.say(&format!("  would apply {} to the {} tree", patch.display(), tree.as_str()));
+        c.say(&format!(
+            "  would apply {} to the {} tree",
+            patch.display(),
+            tree.as_str()
+        ));
         return Ok(());
     }
     let p = patch.to_string_lossy().to_string();
@@ -386,7 +431,9 @@ fn tree_patch(c: &mut Ctx, tree: Tree, patch: &Path) -> Result<(), String> {
         if git(&dir, &["rev-parse", "--verify", "-q", &base]).is_ok() {
             if let Ok(stat) = git(&dir, &["apply", "--numstat", &p]) {
                 for line in stat.lines() {
-                    let Some(f) = line.split_whitespace().nth(2) else { continue };
+                    let Some(f) = line.split_whitespace().nth(2) else {
+                        continue;
+                    };
                     let out = Command::new("git")
                         .arg("-C")
                         .arg(&dir)
@@ -399,11 +446,17 @@ fn tree_patch(c: &mut Ctx, tree: Tree, patch: &Path) -> Result<(), String> {
                     }
                 }
             }
-            c.say(&format!("  restored the files {} touches to {base}", basename(patch)));
+            c.say(&format!(
+                "  restored the files {} touches to {base}",
+                basename(patch)
+            ));
         }
     }
 
-    let files = git(&dir, &["apply", "--numstat", &p]).unwrap_or_default().lines().count();
+    let files = git(&dir, &["apply", "--numstat", &p])
+        .unwrap_or_default()
+        .lines()
+        .count();
     let bytes = fs::metadata(patch).map(|m| m.len()).unwrap_or(0);
     if git(&dir, &["apply", "--check", &p]).is_ok() {
         git(&dir, &["apply", &p])?;
@@ -415,7 +468,11 @@ fn tree_patch(c: &mut Ctx, tree: Tree, patch: &Path) -> Result<(), String> {
         ));
         Ok(())
     } else if git(&dir, &["apply", "--reverse", "--check", &p]).is_ok() {
-        c.say(&format!("  {} already present in {}", basename(patch), tree.as_str()));
+        c.say(&format!(
+            "  {} already present in {}",
+            basename(patch),
+            tree.as_str()
+        ));
         Ok(())
     } else {
         Err(format!(
@@ -437,10 +494,18 @@ fn tree_patch(c: &mut Ctx, tree: Tree, patch: &Path) -> Result<(), String> {
 fn embedded_patch(c: &mut Ctx, e: Embedded) -> Result<(), String> {
     let dir = c.spec.tree(e.tree());
     if c.dry {
-        c.say(&format!("  would apply embedded {} to the {} tree", e.as_str(), e.tree().as_str()));
+        c.say(&format!(
+            "  would apply embedded {} to the {} tree",
+            e.as_str(),
+            e.tree().as_str()
+        ));
         return Ok(());
     }
-    let tmp = std::env::temp_dir().join(format!("sharukhan-{}-{}.patch", e.as_str(), std::process::id()));
+    let tmp = std::env::temp_dir().join(format!(
+        "sharukhan-{}-{}.patch",
+        e.as_str(),
+        std::process::id()
+    ));
     fs::write(&tmp, e.patch()).map_err(|x| format!("{}: {x}", tmp.display()))?;
     let p = tmp.to_string_lossy().to_string();
 
@@ -452,7 +517,11 @@ fn embedded_patch(c: &mut Ctx, e: Embedded) -> Result<(), String> {
                 {
                     // Already applied and tracked: restoring would undo the
                     // variant patch underneath it, so leave the tree alone.
-                    c.say(&format!("  embedded {} already present in {}", e.as_str(), e.tree().as_str()));
+                    c.say(&format!(
+                        "  embedded {} already present in {}",
+                        e.as_str(),
+                        e.tree().as_str()
+                    ));
                     let _ = fs::remove_file(&tmp);
                     return Ok(());
                 }
@@ -462,7 +531,11 @@ fn embedded_patch(c: &mut Ctx, e: Embedded) -> Result<(), String> {
     let r = if git(&dir, &["apply", "--check", &p]).is_ok() {
         git(&dir, &["apply", &p]).map(|_| ()).map_err(|x| x)
     } else if git(&dir, &["apply", "--reverse", "--check", &p]).is_ok() {
-        c.say(&format!("  embedded {} already present in {}", e.as_str(), e.tree().as_str()));
+        c.say(&format!(
+            "  embedded {} already present in {}",
+            e.as_str(),
+            e.tree().as_str()
+        ));
         let _ = fs::remove_file(&tmp);
         return Ok(());
     } else {
@@ -477,7 +550,11 @@ fn embedded_patch(c: &mut Ctx, e: Embedded) -> Result<(), String> {
     };
     match r {
         Ok(()) => {
-            c.say(&format!("  applied embedded {} to {}", e.as_str(), e.tree().as_str()));
+            c.say(&format!(
+                "  applied embedded {} to {}",
+                e.as_str(),
+                e.tree().as_str()
+            ));
             let _ = fs::remove_file(&tmp);
             Ok(())
         }
@@ -486,7 +563,10 @@ fn embedded_patch(c: &mut Ctx, e: Embedded) -> Result<(), String> {
 }
 
 fn basename(p: &Path) -> String {
-    p.file_name().and_then(|s| s.to_str()).unwrap_or("?").to_string()
+    p.file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("?")
+        .to_string()
 }
 
 /// Pin `photon-subrelease` in build-config.json.
@@ -505,7 +585,11 @@ fn pin_subrelease(c: &mut Ctx, n: u32) -> Result<(), String> {
     for line in text.lines() {
         if line.contains("\"photon-subrelease\"") {
             let indent: String = line.chars().take_while(|ch| ch.is_whitespace()).collect();
-            let comma = if line.trim_end().ends_with(',') { "," } else { "" };
+            let comma = if line.trim_end().ends_with(',') {
+                ","
+            } else {
+                ""
+            };
             out.push_str(&format!("{indent}\"photon-subrelease\": \"{n}\"{comma}\n"));
             hit = true;
         } else {
@@ -560,11 +644,17 @@ fn pkg_build_options(c: &mut Ctx, mode: CanisterMode, nevr: Option<&str>) -> Res
         }
         CanisterMode::EquivalentB => {
             let n = nevr.ok_or("equivalent-b without a NEVR")?;
-            vec!["canister_equivalent 1".into(), format!("fips_canister_override {n}")]
+            vec![
+                "canister_equivalent 1".into(),
+                format!("fips_canister_override {n}"),
+            ]
         }
     };
-    let pkgs: &[&str] =
-        if mode == CanisterMode::EquivalentA { &["linux"] } else { &["linux", "linux-esx"] };
+    let pkgs: &[&str] = if mode == CanisterMode::EquivalentA {
+        &["linux"]
+    } else {
+        &["linux", "linux-esx"]
+    };
 
     let body = pkgs
         .iter()
@@ -584,7 +674,12 @@ fn pkg_build_options(c: &mut Ctx, mode: CanisterMode, nevr: Option<&str>) -> Res
     let json = format!("{{\n{body}\n}}\n");
 
     c.say(&format!("  target: {}", out.display()));
-    c.say(&format!("  mode {}: {} package(s), {} macro(s)", mode.as_str(), pkgs.len(), macros.len()));
+    c.say(&format!(
+        "  mode {}: {} package(s), {} macro(s)",
+        mode.as_str(),
+        pkgs.len(),
+        macros.len()
+    ));
     for p in pkgs {
         c.say(&format!("    {p}: [{}]", macros.join(", ")));
     }
@@ -677,7 +772,10 @@ fn openjdk_wsl2(c: &mut Ctx) -> Result<(), String> {
         })
         .unwrap_or(false);
     if !wsl {
-        c.skip("openjdk-wsl2-build-flag", "not a WSL host; the triplet is detected correctly");
+        c.skip(
+            "openjdk-wsl2-build-flag",
+            "not a WSL host; the triplet is detected correctly",
+        );
         return Ok(());
     }
     let mut done = 0;
@@ -690,10 +788,10 @@ fn openjdk_wsl2(c: &mut Ctx) -> Result<(), String> {
             if !(name.starts_with("openjdk") && name.ends_with(".spec")) {
                 continue;
             }
-            let Ok(text) = fs::read_to_string(&path) else { continue };
-            if !text.contains("sh ./configure")
-                || text.contains("build=x86_64-unknown-linux-gnu")
-            {
+            let Ok(text) = fs::read_to_string(&path) else {
+                continue;
+            };
+            if !text.contains("sh ./configure") || text.contains("build=x86_64-unknown-linux-gnu") {
                 continue;
             }
             if c.dry {
@@ -713,7 +811,10 @@ fn openjdk_wsl2(c: &mut Ctx) -> Result<(), String> {
         }
     }
     if done == 0 {
-        c.skip("openjdk-wsl2-build-flag", "already correct in every openjdk spec");
+        c.skip(
+            "openjdk-wsl2-build-flag",
+            "already correct in every openjdk spec",
+        );
     }
     Ok(())
 }
@@ -726,13 +827,18 @@ fn spec_blank_lines(c: &mut Ctx) -> Result<(), String> {
         .tree(Tree::Release)
         .join("SPECS/91/python3-setuptools/python3-setuptools.spec");
     if !path.is_file() {
-        c.skip("spec-consecutive-blank-lines", "python3-setuptools spec not in this tree");
+        c.skip(
+            "spec-consecutive-blank-lines",
+            "python3-setuptools spec not in this tree",
+        );
         return Ok(());
     }
     let text = fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-    let has_double = text.lines().collect::<Vec<_>>().windows(2).any(|w| {
-        w[0].trim().is_empty() && w[1].trim().is_empty()
-    });
+    let has_double = text
+        .lines()
+        .collect::<Vec<_>>()
+        .windows(2)
+        .any(|w| w[0].trim().is_empty() && w[1].trim().is_empty());
     if !has_double {
         c.skip("spec-consecutive-blank-lines", "no consecutive blank lines");
         return Ok(());
@@ -824,7 +930,9 @@ pub fn sources(c: &mut Ctx) -> Result<(), String> {
                     continue;
                 }
                 if !sha.is_empty() && sha512(&tmp).as_deref() != Some(sha.as_str()) {
-                    c.say(&format!("  checksum mismatch for fetched {archive}, discarding"));
+                    c.say(&format!(
+                        "  checksum mismatch for fetched {archive}, discarding"
+                    ));
                     let _ = fs::remove_file(&tmp);
                     continue;
                 }
@@ -836,7 +944,9 @@ pub fn sources(c: &mut Ctx) -> Result<(), String> {
                 }
             }
             if !got {
-                c.say(&format!("  WARNING: could not obtain {archive} from any source"));
+                c.say(&format!(
+                    "  WARNING: could not obtain {archive} from any source"
+                ));
                 failed += 1;
             }
         }
@@ -859,7 +969,9 @@ pub fn sources(c: &mut Ctx) -> Result<(), String> {
 /// under `sources:` and three string fields, and the entries are `- archive:`
 /// with the rest indented beneath.
 fn declared_sources(cfg: &Path) -> Vec<(String, String, String)> {
-    let Ok(text) = fs::read_to_string(cfg) else { return Vec::new() };
+    let Ok(text) = fs::read_to_string(cfg) else {
+        return Vec::new();
+    };
     let mut out: Vec<(String, String, String)> = Vec::new();
     let mut cur: Option<(String, String, String)> = None;
     let mut in_sources = false;
@@ -993,13 +1105,19 @@ fn report_subrelease(c: &mut Ctx) -> Result<(), String> {
         let pat = format!("\"{k}\"");
         text.lines().find(|l| l.contains(&pat)).and_then(|l| {
             l.split(':').nth(1).map(|v| {
-                v.trim().trim_end_matches(',').trim().trim_matches('"').to_string()
+                v.trim()
+                    .trim_end_matches(',')
+                    .trim()
+                    .trim_matches('"')
+                    .to_string()
             })
         })
     };
     let sub = field("photon-subrelease").unwrap_or_else(|| "?".into());
     let main = field("photon-mainline").unwrap_or_else(|| sub.clone());
-    c.say(&format!("  upstream photon-subrelease: {sub} (mainline: {main})"));
+    c.say(&format!(
+        "  upstream photon-subrelease: {sub} (mainline: {main})"
+    ));
     // In a dry run the pin was deliberately not written, so reading the
     // unpinned value is the correct observation rather than a fault.
     if let Subrelease::Pinned(n) = c.spec.subrelease {
@@ -1029,21 +1147,23 @@ pub fn preflight(c: &mut Ctx) -> Result<(), String> {
         return Ok(());
     }
     c.say("  checking photon/installer:latest carries a `file` binary");
-    if !ok(Path::new("/"), "docker", &["image", "inspect", "photon/installer:latest"])
-        || !ok(
-            Path::new("/"),
-            "docker",
-            &[
-                "run",
-                "--rm",
-                "--entrypoint",
-                "/bin/sh",
-                "photon/installer:latest",
-                "-c",
-                "command -v file",
-            ],
-        )
-    {
+    if !ok(
+        Path::new("/"),
+        "docker",
+        &["image", "inspect", "photon/installer:latest"],
+    ) || !ok(
+        Path::new("/"),
+        "docker",
+        &[
+            "run",
+            "--rm",
+            "--entrypoint",
+            "/bin/sh",
+            "photon/installer:latest",
+            "-c",
+            "command -v file",
+        ],
+    ) {
         return Err(
             "photon/installer:latest is missing or has no 'file' binary. ISO \
              assembly would fail in generateInitrd() AFTER every package has \
@@ -1085,10 +1205,17 @@ pub fn preflight(c: &mut Ctx) -> Result<(), String> {
 fn check_headroom(c: &mut Ctx, stage: &Path) -> Result<(), String> {
     for (label, path, need) in [
         ("stage", stage.to_path_buf(), STAGE_MIN_GB),
-        ("output", c.spec.output_dir.clone(), output_need_gb(c.spec.img)),
+        (
+            "output",
+            c.spec.output_dir.clone(),
+            output_need_gb(c.spec.img),
+        ),
     ] {
         let Some(avail) = avail_gb(&path) else {
-            c.say(&format!("  [skip] {label} headroom: cannot stat {}", path.display()));
+            c.say(&format!(
+                "  [skip] {label} headroom: cannot stat {}",
+                path.display()
+            ));
             continue;
         };
         if avail < need {
@@ -1101,7 +1228,10 @@ cannot be rebuilt while the canister pin is unpublished",
                 c.spec.output_dir.display()
             ));
         }
-        c.say(&format!("  {label} headroom: {avail} GB free on {} (need {need})", path.display()));
+        c.say(&format!(
+            "  {label} headroom: {avail} GB free on {} (need {need})",
+            path.display()
+        ));
     }
     Ok(())
 }
@@ -1180,9 +1310,7 @@ pub fn purge(c: &mut Ctx) -> Result<(), String> {
                 crate::build::find_files_rec(&stage.join("RPMS"), "linux", ".rpm")
                     .iter()
                     .map(|p| basename(p))
-                    .filter(|n| {
-                        crate::build::doomed_before_phase_b(n, nevr, &flavours)
-                    })
+                    .filter(|n| crate::build::doomed_before_phase_b(n, nevr, &flavours))
                     .collect();
             c.say(&format!(
                 "  would remove {} phase-A kernel RPM(s), keeping linux-fips-canister-{nevr}",
@@ -1215,7 +1343,11 @@ pub fn purge(c: &mut Ctx) -> Result<(), String> {
             if let Ok(rd) = fs::read_dir(&d) {
                 for e in rd.flatten() {
                     let p = e.path();
-                    let r = if p.is_dir() { fs::remove_dir_all(&p) } else { fs::remove_file(&p) };
+                    let r = if p.is_dir() {
+                        fs::remove_dir_all(&p)
+                    } else {
+                        fs::remove_file(&p)
+                    };
                     if r.is_ok() {
                         n += 1;
                     }
@@ -1265,8 +1397,8 @@ pub fn purge(c: &mut Ctx) -> Result<(), String> {
 /// the spec.
 fn purge_mismatched_canister(c: &mut Ctx, stage: &Path) {
     let release_tree = c.spec.tree(Tree::Release);
-    let spec_pin = resolved_spec(c, &release_tree, Path::new("SPECS/linux/linux.spec"))
-        .and_then(|t| {
+    let spec_pin =
+        resolved_spec(c, &release_tree, Path::new("SPECS/linux/linux.spec")).and_then(|t| {
             t.lines()
                 .map(str::trim)
                 .find(|l| l.starts_with("%define fips_canister_version"))
@@ -1285,7 +1417,9 @@ fn purge_mismatched_canister(c: &mut Ctx, stage: &Path) {
         for p in crate::build::find_files_rec(&stage.join("RPMS"), "linux-fips-canister", ".rpm") {
             let name = basename(&p);
             if !name.contains(&want) {
-                c.say(&format!("  would move aside {name}: not the pinned canister {want}"));
+                c.say(&format!(
+                    "  would move aside {name}: not the pinned canister {want}"
+                ));
             }
         }
         return;
@@ -1315,9 +1449,13 @@ mismatched canister in the stage outranks the pinned one for an unversioned tdnf
 /// the cascade did not, and a dry run on 2026-09-03 found phase A's eight
 /// kernel RPMs sitting in the stage with nothing scheduled to remove them.
 fn purge_phase_a_kernels(c: &mut Ctx, stage: &Path) {
-    let CanisterMode::EquivalentB = c.spec.canister else { return };
+    let CanisterMode::EquivalentB = c.spec.canister else {
+        return;
+    };
     let flavours = kernel_flavour_nevrs(c);
-    let Some(nevr) = c.spec.canister_nevr.as_deref() else { return };
+    let Some(nevr) = c.spec.canister_nevr.as_deref() else {
+        return;
+    };
     let mut n = 0;
     for p in crate::build::find_files_rec(&stage.join("RPMS"), "linux", ".rpm") {
         let name = basename(&p);
@@ -1365,7 +1503,9 @@ fn assert_phase_b_kernels(c: &mut Ctx, stage: &Path) -> Result<(), String> {
         .into_iter()
         .find(|p| basename(p).contains(&format!("-{nevr}.")))
         .ok_or_else(|| {
-            format!("--compose-only found no linux-fips-canister-{nevr} to date the kernels against")
+            format!(
+                "--compose-only found no linux-fips-canister-{nevr} to date the kernels against"
+            )
         })?;
     let ct = buildtime(&canister)
         .ok_or_else(|| format!("cannot read BUILDTIME of {}", basename(&canister)))?;
@@ -1397,18 +1537,24 @@ composing it would ship a canister-CREATING kernel. Re-run without --compose-onl
                 ));
             }
         }
-        c.say(&format!("  {prefix}* at {frag} postdates the canister - phase B output, kept"));
+        c.say(&format!(
+            "  {prefix}* at {frag} postdates the canister - phase B output, kept"
+        ));
     }
     Ok(())
 }
 
 /// An RPM's BUILDTIME as a unix timestamp.
 fn buildtime(p: &Path) -> Option<u64> {
-    run(Path::new("/"), "rpm", &["-qp", "--qf", "%{BUILDTIME}", &p.to_string_lossy()])
-        .ok()?
-        .trim()
-        .parse()
-        .ok()
+    run(
+        Path::new("/"),
+        "rpm",
+        &["-qp", "--qf", "%{BUILDTIME}", &p.to_string_lossy()],
+    )
+    .ok()?
+    .trim()
+    .parse()
+    .ok()
 }
 
 /// The two kernel flavours do NOT share a Release, so one NEVR cannot purge
@@ -1454,7 +1600,10 @@ fn purge_toolchain_blockers(c: &mut Ctx, stage: &Path) {
     let specs = c.spec.tree(Tree::Release).join("SPECS");
 
     let rpm_fams = spec_families(&specs.join("rpm/rpm.spec"));
-    let rpm6: Vec<&String> = names.iter().filter(|n| is_rpm6(n, rpm_fams.as_ref())).collect();
+    let rpm6: Vec<&String> = names
+        .iter()
+        .filter(|n| is_rpm6(n, rpm_fams.as_ref()))
+        .collect();
 
     // libcap is keyed on "not the version the spec declares" rather than on a
     // named old version, so it keeps working when the tree moves past 2.77.
@@ -1521,7 +1670,11 @@ fn build_subrelease(c: &Ctx, release_tree: &Path) -> Option<u32> {
 fn resolved_spec(c: &Ctx, release_tree: &Path, spec: &Path) -> Option<String> {
     let dir = release_tree.join(spec.parent()?);
     let name = spec.file_name()?.to_string_lossy().into_owned();
-    let text = crate::specresolve::resolve(&crate::specresolve::dir_reader(&dir), &name, build_subrelease(c, release_tree));
+    let text = crate::specresolve::resolve(
+        &crate::specresolve::dir_reader(&dir),
+        &name,
+        build_subrelease(c, release_tree),
+    );
     text
 }
 
@@ -1539,7 +1692,9 @@ fn spec_families_text(text: &str) -> Option<SpecFamilies> {
     }
     let mut families = vec![name.clone(), format!("{name}-debuginfo")];
     for l in text.lines() {
-        let Some(rest) = l.strip_prefix("%package") else { continue };
+        let Some(rest) = l.strip_prefix("%package") else {
+            continue;
+        };
         let rest = rest.trim();
         let sub = match rest.strip_prefix("-n") {
             // "%package -n python3-%{name}" names the package outright
@@ -1556,7 +1711,11 @@ fn spec_families_text(text: &str) -> Option<SpecFamilies> {
             families.push(sub);
         }
     }
-    Some(SpecFamilies { name, version, families })
+    Some(SpecFamilies {
+        name,
+        version,
+        families,
+    })
 }
 
 /// Split `libcap-2.66-1.ph5.x86_64.rpm` into ("libcap", "2.66", "1.ph5").
@@ -1596,10 +1755,19 @@ fn is_rpm6(name: &str, fams: Option<&SpecFamilies>) -> bool {
         return true;
     }
     const FALLBACK: [&str; 9] = [
-        "rpm", "rpm-build", "rpm-build-libs", "rpm-libs", "rpm-devel", "rpm-lang",
-        "rpm-sign-libs", "rpm-debuginfo", "rpm-plugin-systemd-inhibit",
+        "rpm",
+        "rpm-build",
+        "rpm-build-libs",
+        "rpm-libs",
+        "rpm-devel",
+        "rpm-lang",
+        "rpm-sign-libs",
+        "rpm-debuginfo",
+        "rpm-plugin-systemd-inhibit",
     ];
-    let Some((pkg, version, _)) = parse_rpm_name(name) else { return false };
+    let Some((pkg, version, _)) = parse_rpm_name(name) else {
+        return false;
+    };
     let known = match fams {
         Some(f) => f.families.iter().any(|x| *x == pkg),
         None => FALLBACK.iter().any(|x| *x == pkg),
@@ -1609,7 +1777,9 @@ fn is_rpm6(name: &str, fams: Option<&SpecFamilies>) -> bool {
 
 /// Does this RPM belong to `fams` at a version the spec no longer declares?
 fn is_stale_version(name: &str, fams: &SpecFamilies) -> bool {
-    let Some((pkg, version, _)) = parse_rpm_name(name) else { return false };
+    let Some((pkg, version, _)) = parse_rpm_name(name) else {
+        return false;
+    };
     fams.families.iter().any(|x| *x == pkg) && version != fams.version
 }
 
@@ -1636,8 +1806,12 @@ fn purge_shadowing_rpms(c: &mut Ctx, stage: &Path) {
     for spec in patched_specs(c) {
         // Resolved, not read: a kernel spec that serves several subreleases
         // keeps Release in an included file behind a subrelease conditional.
-        let Some(text) = resolved_spec(c, &release_tree, Path::new(&spec)) else { continue };
-        let Some(fams) = spec_families_text(&text) else { continue };
+        let Some(text) = resolved_spec(c, &release_tree, Path::new(&spec)) else {
+            continue;
+        };
+        let Some(fams) = spec_families_text(&text) else {
+            continue;
+        };
         let rel = text
             .lines()
             .find(|l| l.starts_with("Release:"))
@@ -1649,10 +1823,14 @@ fn purge_shadowing_rpms(c: &mut Ctx, stage: &Path) {
         if rel.is_empty() || !rel.chars().all(|x| x.is_ascii_digit()) {
             continue;
         }
-        let Ok(want) = rel.parse::<u32>() else { continue };
+        let Ok(want) = rel.parse::<u32>() else {
+            continue;
+        };
         for p in crate::build::find_files_rec(&stage.join("RPMS"), &fams.name, ".rpm") {
             let name = basename(&p);
-            let Some((pkg, ver, got_rel)) = parse_rpm_name(&name) else { continue };
+            let Some((pkg, ver, got_rel)) = parse_rpm_name(&name) else {
+                continue;
+            };
             if !fams.families.iter().any(|x| *x == pkg) {
                 continue;
             }
@@ -1725,8 +1903,14 @@ fn vercmp(a: &str, b: &str) -> std::cmp::Ordering {
             (None, Some(_)) => return Ordering::Less,
             (Some(p), Some(q)) => {
                 let (pd, qd) = (
-                    p.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false),
-                    q.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false),
+                    p.chars()
+                        .next()
+                        .map(|c| c.is_ascii_digit())
+                        .unwrap_or(false),
+                    q.chars()
+                        .next()
+                        .map(|c| c.is_ascii_digit())
+                        .unwrap_or(false),
                 );
                 let ord = match (pd, qd) {
                     // numeric outranks alphabetic: 1.2 > 1.beta
@@ -1772,7 +1956,9 @@ fn patched_specs(c: &mut Ctx) -> Vec<String> {
         for l in text.lines() {
             // "+++ b/SPECS/linux/linux-esx.spec" - the post-image side, so a
             // spec the patch CREATES is included and one it deletes is not.
-            let Some(rest) = l.strip_prefix("+++ b/") else { continue };
+            let Some(rest) = l.strip_prefix("+++ b/") else {
+                continue;
+            };
             let path = rest.split_whitespace().next().unwrap_or("");
             if !path.starts_with("SPECS/") {
                 continue;
@@ -1788,12 +1974,17 @@ fn patched_specs(c: &mut Ctx) -> Vec<String> {
     };
     for inj in &c.spec.injections {
         match inj {
-            Injection::TreePatch { tree: Tree::Release, patch } => {
+            Injection::TreePatch {
+                tree: Tree::Release,
+                patch,
+            } => {
                 if let Ok(t) = fs::read_to_string(patch) {
                     scan(&t, &mut add, &mut other_dirs);
                 }
             }
-            Injection::Embed(e) if e.tree() == Tree::Release => scan(e.patch(), &mut add, &mut other_dirs),
+            Injection::Embed(e) if e.tree() == Tree::Release => {
+                scan(e.patch(), &mut add, &mut other_dirs)
+            }
             _ => {}
         }
     }
@@ -1897,14 +2088,19 @@ fn clean_sandboxes(c: &mut Ctx, stage: &Path) {
     if let Ok(rd) = fs::read_dir("/proc") {
         for e in rd.flatten() {
             let name = e.file_name();
-            let Some(pid) = name.to_str().filter(|s| s.chars().all(|c| c.is_ascii_digit())) else {
+            let Some(pid) = name
+                .to_str()
+                .filter(|s| s.chars().all(|c| c.is_ascii_digit()))
+            else {
                 continue;
             };
             // PID 1 is init: killing it ends the instance, not a sandbox.
             if pid == "1" {
                 continue;
             }
-            let Ok(target) = fs::read_link(format!("/proc/{pid}/root")) else { continue };
+            let Ok(target) = fs::read_link(format!("/proc/{pid}/root")) else {
+                continue;
+            };
             if target.starts_with(stage) {
                 if ok(Path::new("/"), "kill", &["-9", pid]) {
                     killed += 1;
@@ -1913,7 +2109,9 @@ fn clean_sandboxes(c: &mut Ctx, stage: &Path) {
         }
     }
     if killed > 0 {
-        c.say(&format!("  killed {killed} process(es) rooted under the stage"));
+        c.say(&format!(
+            "  killed {killed} process(es) rooted under the stage"
+        ));
     }
     for p in crate::build::find_files_rec(stage, "", ".lock") {
         if p.to_string_lossy().contains("/.gradle/") {
@@ -1924,7 +2122,11 @@ fn clean_sandboxes(c: &mut Ctx, stage: &Path) {
         if let Ok(rd) = fs::read_dir(&root) {
             for e in rd.flatten() {
                 let p = e.path();
-                let _ = if p.is_dir() { fs::remove_dir_all(&p) } else { fs::remove_file(&p) };
+                let _ = if p.is_dir() {
+                    fs::remove_dir_all(&p)
+                } else {
+                    fs::remove_file(&p)
+                };
             }
         }
     }
@@ -1963,7 +2165,11 @@ fn build_threads() -> usize {
             }
         }
     }
-    threads_for(std::thread::available_parallelism().map(|n| n.get()).unwrap_or(8))
+    threads_for(
+        std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(8),
+    )
 }
 
 /// `roundup((cpus - 4) * 4/5)`, floored at 1.
@@ -2012,7 +2218,9 @@ pub fn make_and_deliver(c: &mut Ctx) -> Result<PathBuf, String> {
 
     for attempt in 1..=MAKE_ATTEMPTS {
         if attempt > 1 {
-            c.say(&format!("  attempt {attempt}: cleaning sandboxes from the previous attempt"));
+            c.say(&format!(
+                "  attempt {attempt}: cleaning sandboxes from the previous attempt"
+            ));
             clean_sandboxes(c, &stage);
         }
         let img = format!("IMG_NAME={}", c.spec.img.as_str());
@@ -2035,16 +2243,21 @@ pub fn make_and_deliver(c: &mut Ctx) -> Result<PathBuf, String> {
             .code()
             .unwrap_or(-1);
         let secs = t0.elapsed().map(|d| d.as_secs()).unwrap_or(0);
-        c.say(&format!("  attempt {attempt}: make exited {rc} after {}m{:02}s", secs / 60, secs % 60));
+        c.say(&format!(
+            "  attempt {attempt}: make exited {rc} after {}m{:02}s",
+            secs / 60,
+            secs % 60
+        ));
 
         // Phase A is not judged by make's exit code but by whether the artifact
         // it exists to produce is on disk.
         if c.spec.canister == CanisterMode::EquivalentA {
             let nevr = c.spec.canister_nevr.clone().unwrap_or_default();
             let want = format!("linux-fips-canister-{nevr}.");
-            if let Some(p) = crate::build::find_files_rec(&stage.join("RPMS"), "linux-fips-canister-", ".rpm")
-                .into_iter()
-                .find(|p| p.to_string_lossy().contains(&want))
+            if let Some(p) =
+                crate::build::find_files_rec(&stage.join("RPMS"), "linux-fips-canister-", ".rpm")
+                    .into_iter()
+                    .find(|p| p.to_string_lossy().contains(&want))
             {
                 c.say(&format!("  phase A produced: {}", p.display()));
                 return Ok(p);
@@ -2093,7 +2306,9 @@ fn find_iso(stage: &Path, common_stage: &Path) -> Option<PathBuf> {
 }
 
 fn count_newer(roots: &[&Path], marker: &Path) -> u64 {
-    let Ok(m) = marker.metadata().and_then(|x| x.modified()) else { return 0 };
+    let Ok(m) = marker.metadata().and_then(|x| x.modified()) else {
+        return 0;
+    };
     let mut n = 0;
     for r in roots {
         for p in crate::build::find_files_rec(r, "", "") {
@@ -2118,7 +2333,10 @@ fn deliver(c: &mut Ctx, iso: &Path, move_source: bool) -> Result<PathBuf, String
             let p = e.path();
             if p.extension().and_then(|s| s.to_str()) == Some("iso") {
                 if sha256::file(&p).map(|s| s == sum).unwrap_or(false) {
-                    c.say(&format!("  identical ISO already at {} - nothing to do", p.display()));
+                    c.say(&format!(
+                        "  identical ISO already at {} - nothing to do",
+                        p.display()
+                    ));
                     return Ok(p);
                 }
             }
@@ -2126,9 +2344,16 @@ fn deliver(c: &mut Ctx, iso: &Path, move_source: bool) -> Result<PathBuf, String
     }
     let mut dest = out.join(basename(iso));
     if dest.exists() {
-        let stem = dest.file_stem().and_then(|s| s.to_str()).unwrap_or("photon").to_string();
+        let stem = dest
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("photon")
+            .to_string();
         dest = out.join(format!("{stem}-{}.iso", &sum[..12]));
-        c.say(&format!("  destination existed with different content; delivering as {}", basename(&dest)));
+        c.say(&format!(
+            "  destination existed with different content; delivering as {}",
+            basename(&dest)
+        ));
     }
     // Moving is right for stage -> output: it frees the stage, and the stage
     // copy has no further use. It is WRONG for installing an ISO that has
@@ -2136,7 +2361,11 @@ fn deliver(c: &mut Ctx, iso: &Path, move_source: bool) -> Result<PathBuf, String
     // silently remove it from the first.
     if move_source {
         fs::rename(iso, &dest)
-            .or_else(|_| fs::copy(iso, &dest).map(|_| ()).and_then(|_| fs::remove_file(iso)))
+            .or_else(|_| {
+                fs::copy(iso, &dest)
+                    .map(|_| ())
+                    .and_then(|_| fs::remove_file(iso))
+            })
             .map_err(|e| format!("moving ISO to {}: {e}", dest.display()))?;
     } else {
         fs::copy(iso, &dest).map_err(|e| format!("copying ISO to {}: {e}", dest.display()))?;
@@ -2176,7 +2405,9 @@ fn post_assert(c: &mut Ctx) -> Result<(), String> {
     if c.dry {
         return Ok(());
     }
-    let Some(nevr) = c.spec.canister_nevr.as_deref() else { return Ok(()) };
+    let Some(nevr) = c.spec.canister_nevr.as_deref() else {
+        return Ok(());
+    };
     let rpms = c.spec.tree(Tree::Release).join("stage/RPMS");
     // The canister is itself a "linux-" RPM at this NEVR, so a naive prefix
     // test would let the canister alone satisfy phase B - the exact skip this
@@ -2273,7 +2504,9 @@ fn write_sidecars(c: &mut Ctx, dest: &Path, sum: &str) {
             c.say(&format!("  installer on the produced media: {nevr}"));
             let _ = fs::write(dir.join("poi-nevr.txt"), format!("{nevr}\n"));
         }
-        Err(e) => c.say(&format!("  [warn] could not read the installer off the media: {e}")),
+        Err(e) => c.say(&format!(
+            "  [warn] could not read the installer off the media: {e}"
+        )),
     }
 }
 
@@ -2284,8 +2517,16 @@ fn write_sidecars(c: &mut Ctx, dest: &Path, sum: &str) {
 /// Rebuilding to move a file would cost a kernel rebuild here - `purge`
 /// removes both flavours before make, by design - so re-running the cascade is
 /// the one thing that must NOT be the answer.
-pub fn deliver_existing(spec: &BuildSpec, iso: Option<&Path>, log: &mut dyn FnMut(&str)) -> Result<PathBuf, String> {
-    let mut c = Ctx { spec, dry: false, log };
+pub fn deliver_existing(
+    spec: &BuildSpec,
+    iso: Option<&Path>,
+    log: &mut dyn FnMut(&str),
+) -> Result<PathBuf, String> {
+    let mut c = Ctx {
+        spec,
+        dry: false,
+        log,
+    };
     let src = match iso {
         Some(p) => p.to_path_buf(),
         None => {
@@ -2364,7 +2605,11 @@ mod tests {
 
         let sp = spec_at(&tmp);
         let mut seen = Vec::new();
-        let mut c = Ctx { spec: &sp, dry: false, log: &mut |l: &str| seen.push(l.to_string()) };
+        let mut c = Ctx {
+            spec: &sp,
+            dry: false,
+            log: &mut |l: &str| seen.push(l.to_string()),
+        };
         release_bump(&mut c, "linux").unwrap();
 
         let text = fs::read_to_string(specs.join("linux.spec")).unwrap();
@@ -2391,7 +2636,11 @@ mod tests {
 
         let sp = spec_at(&tmp);
         let mut seen = Vec::new();
-        let mut c = Ctx { spec: &sp, dry: false, log: &mut |l: &str| seen.push(l.to_string()) };
+        let mut c = Ctx {
+            spec: &sp,
+            dry: false,
+            log: &mut |l: &str| seen.push(l.to_string()),
+        };
         release_bump(&mut c, "linux").unwrap();
         let once = fs::read_to_string(specs.join("linux.spec")).unwrap();
         assert!(once.contains("Release:        4.azure%{?dist}"), "{once}");
@@ -2401,7 +2650,10 @@ mod tests {
         release_bump(&mut c, "linux").unwrap();
         let twice = fs::read_to_string(specs.join("linux.spec")).unwrap();
         assert_eq!(once, twice, "re-running the bump must change nothing");
-        assert!(!twice.contains("5.azure") && !twice.contains("azure.azure"), "{twice}");
+        assert!(
+            !twice.contains("5.azure") && !twice.contains("azure.azure"),
+            "{twice}"
+        );
         let _ = fs::remove_dir_all(&tmp);
     }
 
@@ -2459,7 +2711,10 @@ mod tests {
         purge_mismatched_canister(&mut c, &stage);
 
         assert!(rpms.join(pinned).exists(), "the pinned canister must stay");
-        assert!(!rpms.join(stale).exists(), "the mismatched canister must leave stage/RPMS");
+        assert!(
+            !rpms.join(stale).exists(),
+            "the mismatched canister must leave stage/RPMS"
+        );
         // Moved, not deleted: ~90 minutes to reproduce one.
         assert!(
             stage.join("canister-aside").join(stale).exists(),
@@ -2480,9 +2735,18 @@ mod tests {
         let mut seen = Vec::new();
         let r = execute(&s, true, &mut |l| seen.push(l.to_string()));
         assert!(r.is_ok(), "{r:?}");
-        assert!(!tmp.join("out").exists(), "a dry run must not create the output dir");
+        assert!(
+            !tmp.join("out").exists(),
+            "a dry run must not create the output dir"
+        );
         let joined = seen.join("\n");
-        for want in ["[sync]", "[reset-specs]", "[preflight]", "[purge]", "[make]"] {
+        for want in [
+            "[sync]",
+            "[reset-specs]",
+            "[preflight]",
+            "[purge]",
+            "[make]",
+        ] {
             assert!(joined.contains(want), "missing {want} in:\n{joined}");
         }
         let _ = fs::remove_dir_all(&tmp);
@@ -2569,9 +2833,17 @@ mod tests {
             name: "rpm".into(),
             version: "6.1.0".into(),
             families: [
-                "rpm", "rpm-debuginfo", "rpm-devel", "rpm-libs", "rpm-build-libs",
-                "rpm-sign-libs", "rpm-build", "rpm-lang", "python3-rpm",
-                "rpm-plugin-systemd-inhibit", "rpm-plugin-selinux",
+                "rpm",
+                "rpm-debuginfo",
+                "rpm-devel",
+                "rpm-libs",
+                "rpm-build-libs",
+                "rpm-sign-libs",
+                "rpm-build",
+                "rpm-lang",
+                "python3-rpm",
+                "rpm-plugin-systemd-inhibit",
+                "rpm-plugin-selinux",
             ]
             .iter()
             .map(|s| s.to_string())
@@ -2601,8 +2873,14 @@ mod tests {
         }
         // the subpackage the hand-written list forgot: covered only via the spec
         let missed = "rpm-plugin-selinux-6.1.0-1.ph5.x86_64.rpm";
-        assert!(is_rpm6(missed, Some(&spec)), "{missed} must be REMOVED via the spec");
-        assert!(!is_rpm6(missed, None), "the literal fallback is known to miss it");
+        assert!(
+            is_rpm6(missed, Some(&spec)),
+            "{missed} must be REMOVED via the spec"
+        );
+        assert!(
+            !is_rpm6(missed, None),
+            "the literal fallback is known to miss it"
+        );
     }
 
     /// Filenames split on the last two dashes, not on a prefix.
@@ -2614,12 +2892,18 @@ mod tests {
         );
         // a subpackage must not be mistaken for the base package
         assert_eq!(
-            parse_rpm_name("libcap-libs-2.66-1.ph5.x86_64.rpm").unwrap().0,
+            parse_rpm_name("libcap-libs-2.66-1.ph5.x86_64.rpm")
+                .unwrap()
+                .0,
             "libcap-libs"
         );
         assert_eq!(
             parse_rpm_name("linux-fips-canister-6.12.107-4.ph5.x86_64.rpm").unwrap(),
-            ("linux-fips-canister".into(), "6.12.107".into(), "4.ph5".into())
+            (
+                "linux-fips-canister".into(),
+                "6.12.107".into(),
+                "4.ph5".into()
+            )
         );
         assert_eq!(parse_rpm_name("notanrpm.txt"), None);
     }
@@ -2632,9 +2916,17 @@ mod tests {
         let fams = SpecFamilies {
             name: "libcap".into(),
             version: "2.77".into(),
-            families: ["libcap", "libcap-debuginfo", "libcap-libs", "libcap-minimal",
-                       "libcap-devel", "libcap-doc"]
-                .iter().map(|s| s.to_string()).collect(),
+            families: [
+                "libcap",
+                "libcap-debuginfo",
+                "libcap-libs",
+                "libcap-minimal",
+                "libcap-devel",
+                "libcap-doc",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
         };
         for stale in [
             "libcap-2.66-1.ph5.x86_64.rpm",
@@ -2663,20 +2955,25 @@ mod tests {
     #[test]
     fn build_threads_reserve_four_cores_then_take_four_fifths() {
         for (cpus, want) in [
-            (1, 1), (2, 1), (4, 1),   // the formula is <= 0 here; a build still needs 1
-            (5, 1),                   // ceil(0.8)
-            (6, 2),                   // ceil(1.6)
-            (8, 4),                   // ceil(3.2)
-            (14, 8),                  // this host - the value the scripts hardcoded
-            (16, 10),                 // ceil(9.6)
-            (32, 23),                 // ceil(22.4)
+            (1, 1),
+            (2, 1),
+            (4, 1),   // the formula is <= 0 here; a build still needs 1
+            (5, 1),   // ceil(0.8)
+            (6, 2),   // ceil(1.6)
+            (8, 4),   // ceil(3.2)
+            (14, 8),  // this host - the value the scripts hardcoded
+            (16, 10), // ceil(9.6)
+            (32, 23), // ceil(22.4)
             (64, 48),
         ] {
             assert_eq!(threads_for(cpus), want, "{cpus} cpus");
         }
         // never zero, whatever the host reports
         for cpus in 0..64 {
-            assert!(threads_for(cpus) >= 1, "make -j0 is not a build ({cpus} cpus)");
+            assert!(
+                threads_for(cpus) >= 1,
+                "make -j0 is not a build ({cpus} cpus)"
+            );
         }
         // and never more cores than the machine has
         for cpus in 1..64 {
@@ -2699,17 +2996,28 @@ mod tests {
         let _ = fs::remove_dir_all(&tmp);
         fs::create_dir_all(&rpms).unwrap();
         fs::create_dir_all(&specs).unwrap();
-        fs::write(specs.join("linux.spec"),
-            "Version:        6.12.107\nRelease:        4%{?dist}\n").unwrap();
-        fs::write(specs.join("linux-esx.spec"),
-            "Version:        6.12.107\nRelease:        3%{?dist}\n").unwrap();
+        fs::write(
+            specs.join("linux.spec"),
+            "Version:        6.12.107\nRelease:        4%{?dist}\n",
+        )
+        .unwrap();
+        fs::write(
+            specs.join("linux-esx.spec"),
+            "Version:        6.12.107\nRelease:        3%{?dist}\n",
+        )
+        .unwrap();
         let kernel = "linux-6.12.107-4.ph5.x86_64.rpm";
         fs::write(rpms.join(kernel), b"x").unwrap();
 
         let mk = |compose: bool| {
             let mut sp = BuildSpec::from_args(
-                &tmp.join("release").to_string_lossy(), "common", "5.0", "/out",
-                "minimal-iso", "equivalent-b", Some("6.12.107-4.ph5".to_string()),
+                &tmp.join("release").to_string_lossy(),
+                "common",
+                "5.0",
+                "/out",
+                "minimal-iso",
+                "equivalent-b",
+                Some("6.12.107-4.ph5".to_string()),
             )
             .unwrap();
             sp.subrelease = Subrelease::Mainline;
@@ -2720,7 +3028,11 @@ mod tests {
         // no canister in the stage: nothing to date the kernels against
         let sp = mk(true);
         let e = {
-            let mut c = Ctx { spec: &sp, dry: false, log: &mut |_: &str| {} };
+            let mut c = Ctx {
+                spec: &sp,
+                dry: false,
+                log: &mut |_: &str| {},
+            };
             assert_phase_b_kernels(&mut c, &tmp.join("release/5.0/stage")).unwrap_err()
         };
         assert!(e.contains("no linux-fips-canister"), "{e}");
@@ -2730,7 +3042,11 @@ mod tests {
         // without the flag the same stage is purged, as before
         let sp = mk(false);
         {
-            let mut c = Ctx { spec: &sp, dry: false, log: &mut |_: &str| {} };
+            let mut c = Ctx {
+                spec: &sp,
+                dry: false,
+                log: &mut |_: &str| {},
+            };
             purge_phase_a_kernels(&mut c, &tmp.join("release/5.0/stage"));
         }
         assert!(!rpms.join(kernel).exists(), "the default path still purges");
@@ -2747,12 +3063,16 @@ mod tests {
         // canister 18:56, kernels 21:18, measured on the real artifacts
         let canister = 1788454565u64;
         for (kernel, want_ok) in [
-            (1788463106u64, true),  // linux, 2h22m later
-            (1788463117u64, true),  // linux-esx
-            (canister, false),      // same rpmbuild = phase A
-            (canister - 1, false),  // predates the canister entirely
+            (1788463106u64, true), // linux, 2h22m later
+            (1788463117u64, true), // linux-esx
+            (canister, false),     // same rpmbuild = phase A
+            (canister - 1, false), // predates the canister entirely
         ] {
-            assert_eq!(kernel > canister, want_ok, "kernel {kernel} vs canister {canister}");
+            assert_eq!(
+                kernel > canister,
+                want_ok,
+                "kernel {kernel} vs canister {canister}"
+            );
         }
     }
 
@@ -2761,16 +3081,16 @@ mod tests {
     fn vercmp_follows_rpm_not_ascii() {
         use std::cmp::Ordering::*;
         for (a, b, want) in [
-            ("2.9", "2.8", Greater),      // the case that shipped a wrong installer
+            ("2.9", "2.8", Greater), // the case that shipped a wrong installer
             ("2.8", "2.9", Less),
             ("2.8", "2.8", Equal),
-            ("2.10", "2.9", Greater),     // ascii would say Less
+            ("2.10", "2.9", Greater), // ascii would say Less
             ("6.12.107", "6.12.103", Greater),
-            ("6.12.107", "6.12", Greater),// longer is newer
-            ("1.2", "1.beta", Greater),   // numeric outranks alpha
+            ("6.12.107", "6.12", Greater), // longer is newer
+            ("1.2", "1.beta", Greater),    // numeric outranks alpha
             ("1.0.8", "1.0.8", Equal),
             ("2.30.18", "2.25.7", Greater),
-            ("013", "13", Equal),         // leading zeros are insignificant
+            ("013", "13", Equal), // leading zeros are insignificant
         ] {
             assert_eq!(vercmp(a, b), want, "{a} vs {b}");
         }
@@ -2798,31 +3118,43 @@ mod tests {
         .unwrap();
 
         let doomed = [
-            "photon-os-installer-2.9-4.ph5.x86_64.rpm",  // higher VERSION
-            "photon-os-installer-2.8-9.ph5.x86_64.rpm",  // higher release
+            "photon-os-installer-2.9-4.ph5.x86_64.rpm", // higher VERSION
+            "photon-os-installer-2.8-9.ph5.x86_64.rpm", // higher release
             "photon-os-installer-2.10-1.ph5.x86_64.rpm", // higher, and ascii-lower
         ];
         let spared = [
-            "photon-os-installer-2.8-7.ph5.x86_64.rpm",  // the one being built
-            "photon-os-installer-2.8-6.ph5.x86_64.rpm",  // older loses to it anyway
-            "photon-os-installer-2.7-9.ph5.x86_64.rpm",  // older version
+            "photon-os-installer-2.8-7.ph5.x86_64.rpm", // the one being built
+            "photon-os-installer-2.8-6.ph5.x86_64.rpm", // older loses to it anyway
+            "photon-os-installer-2.7-9.ph5.x86_64.rpm", // older version
         ];
         for f in doomed.iter().chain(spared.iter()) {
             fs::write(rpms.join(f), b"x").unwrap();
         }
 
         let mut sp = BuildSpec::from_args(
-            &tmp.join("release").to_string_lossy(), "common", "5.0", "/out",
-            "minimal-iso", "prebuilt", None,
+            &tmp.join("release").to_string_lossy(),
+            "common",
+            "5.0",
+            "/out",
+            "minimal-iso",
+            "prebuilt",
+            None,
         )
         .unwrap();
         sp.subrelease = Subrelease::Mainline;
         {
-            let mut c = Ctx { spec: &sp, dry: false, log: &mut |_: &str| {} };
+            let mut c = Ctx {
+                spec: &sp,
+                dry: false,
+                log: &mut |_: &str| {},
+            };
             purge_shadowing_rpms(&mut c, &tmp.join("release/5.0/stage"));
         }
         for f in doomed {
-            assert!(!rpms.join(f).exists(), "{f} shadows the patched 2.8-7 and must go");
+            assert!(
+                !rpms.join(f).exists(),
+                "{f} shadows the patched 2.8-7 and must go"
+            );
         }
         for f in spared {
             assert!(rpms.join(f).exists(), "{f} must survive");
@@ -2840,18 +3172,45 @@ mod tests {
         let repo = tmp.join("common");
         fs::create_dir_all(&repo).unwrap();
         let g = |args: &[&str]| {
-            let o = Command::new("git").arg("-C").arg(&repo).args(args).output().unwrap();
-            assert!(o.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&o.stderr));
+            let o = Command::new("git")
+                .arg("-C")
+                .arg(&repo)
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(
+                o.status.success(),
+                "git {args:?}: {}",
+                String::from_utf8_lossy(&o.stderr)
+            );
             String::from_utf8_lossy(&o.stdout).into_owned()
         };
         g(&["init", "-q"]);
         fs::write(repo.join("a.txt"), "1\n").unwrap();
         fs::write(repo.join("b.txt"), "1\n").unwrap();
         g(&["add", "-A"]);
-        g(&["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "base"]);
+        g(&[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "commit",
+            "-q",
+            "-m",
+            "base",
+        ]);
         g(&["update-ref", "refs/remotes/origin/common", "HEAD"]);
         fs::write(repo.join("a.txt"), "2\n").unwrap();
-        g(&["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-am", "part of the patch"]);
+        g(&[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "commit",
+            "-q",
+            "-am",
+            "part of the patch",
+        ]);
         let patch = tmp.join("common-fixes.patch");
         fs::write(
             &patch,
@@ -2859,17 +3218,29 @@ mod tests {
         )
         .unwrap();
         let sp = BuildSpec::from_args(
-            &tmp.to_string_lossy(), "common", "5.0", "/out",
-            "minimal-iso", "equivalent-b", Some("6.12.109-4.ph5".to_string()),
+            &tmp.to_string_lossy(),
+            "common",
+            "5.0",
+            "/out",
+            "minimal-iso",
+            "equivalent-b",
+            Some("6.12.109-4.ph5".to_string()),
         )
         .unwrap();
         {
-            let mut c = Ctx { spec: &sp, dry: false, log: &mut |_: &str| {} };
+            let mut c = Ctx {
+                spec: &sp,
+                dry: false,
+                log: &mut |_: &str| {},
+            };
             tree_patch(&mut c, Tree::Common, &patch).unwrap();
         }
         assert_eq!(fs::read_to_string(repo.join("a.txt")).unwrap(), "2\n");
         assert_eq!(fs::read_to_string(repo.join("b.txt")).unwrap(), "2\n");
-        assert!(g(&["diff", "--cached", "--name-only"]).trim().is_empty(), "index must be untouched");
+        assert!(
+            g(&["diff", "--cached", "--name-only"]).trim().is_empty(),
+            "index must be untouched"
+        );
         let _ = fs::remove_dir_all(&tmp);
     }
 
@@ -2881,7 +3252,12 @@ mod tests {
         let _ = fs::remove_dir_all(&tmp);
         let specs = tmp.join("release/5.0/SPECS/linux");
         fs::create_dir_all(specs.join("6.1/CVE")).unwrap();
-        for f in ["linux.spec", "linux-esx.spec", "linux-6.12.inc", "6.1/CVE/fix.patch"] {
+        for f in [
+            "linux.spec",
+            "linux-esx.spec",
+            "linux-6.12.inc",
+            "6.1/CVE/fix.patch",
+        ] {
             fs::write(specs.join(f), "x\n").unwrap();
         }
         let patch = tmp.join("v.patch");
@@ -2892,17 +3268,38 @@ mod tests {
         )
         .unwrap();
         let mut sp = BuildSpec::from_args(
-            &tmp.join("release").to_string_lossy(), "common", "5.0", "/out",
-            "minimal-iso", "equivalent-b", Some("6.12.107-4.ph5".to_string()),
+            &tmp.join("release").to_string_lossy(),
+            "common",
+            "5.0",
+            "/out",
+            "minimal-iso",
+            "equivalent-b",
+            Some("6.12.107-4.ph5".to_string()),
         )
         .unwrap();
-        sp.injections = vec![Injection::TreePatch { tree: Tree::Release, patch: patch.clone() }];
+        sp.injections = vec![Injection::TreePatch {
+            tree: Tree::Release,
+            patch: patch.clone(),
+        }];
         let got = {
-            let mut c = Ctx { spec: &sp, dry: false, log: &mut |_: &str| {} };
+            let mut c = Ctx {
+                spec: &sp,
+                dry: false,
+                log: &mut |_: &str| {},
+            };
             patched_specs(&mut c)
         };
-        assert!(got.iter().any(|p| p == "SPECS/linux/linux-esx.spec"), "{got:?}");
-        assert_eq!(got.iter().filter(|p| p.as_str() == "SPECS/linux/linux-esx.spec").count(), 1, "{got:?}");
+        assert!(
+            got.iter().any(|p| p == "SPECS/linux/linux-esx.spec"),
+            "{got:?}"
+        );
+        assert_eq!(
+            got.iter()
+                .filter(|p| p.as_str() == "SPECS/linux/linux-esx.spec")
+                .count(),
+            1,
+            "{got:?}"
+        );
         let _ = fs::remove_dir_all(&tmp);
     }
 
@@ -2914,14 +3311,23 @@ mod tests {
     #[test]
     fn patched_specs_finds_linux_esx_in_the_real_embedded_patch() {
         let mut sp = BuildSpec::from_args(
-            "/root", "common", "5.0", "/out", "minimal-iso", "equivalent-b",
+            "/root",
+            "common",
+            "5.0",
+            "/out",
+            "minimal-iso",
+            "equivalent-b",
             Some("6.12.107-4.ph5".to_string()),
         )
         .unwrap();
         sp.subrelease = Subrelease::Mainline;
         sp.injections = vec![Injection::Embed(Embedded::CanisterEquivalent)];
         let got = {
-            let mut c = Ctx { spec: &sp, dry: true, log: &mut |_: &str| {} };
+            let mut c = Ctx {
+                spec: &sp,
+                dry: true,
+                log: &mut |_: &str| {},
+            };
             patched_specs(&mut c)
         };
         assert!(
@@ -2930,9 +3336,14 @@ mod tests {
         );
         assert!(got.iter().any(|p| p == "SPECS/linux/linux.spec"), "{got:?}");
         // the historical three survive as a floor
-        for p in ["SPECS/photon-os-installer/photon-os-installer.spec",
-                  "SPECS/stig-hardening/stig-hardening.spec"] {
-            assert!(got.iter().any(|x| x == p), "{p} must remain a floor: {got:?}");
+        for p in [
+            "SPECS/photon-os-installer/photon-os-installer.spec",
+            "SPECS/stig-hardening/stig-hardening.spec",
+        ] {
+            assert!(
+                got.iter().any(|x| x == p),
+                "{p} must remain a floor: {got:?}"
+            );
         }
     }
 
@@ -2949,17 +3360,33 @@ mod tests {
         )
         .unwrap();
         let mut sp = BuildSpec::from_args(
-            "/root", "common", "5.0", "/out", "minimal-iso", "prebuilt", None,
+            "/root",
+            "common",
+            "5.0",
+            "/out",
+            "minimal-iso",
+            "prebuilt",
+            None,
         )
         .unwrap();
         sp.subrelease = Subrelease::Mainline;
         sp.injections = vec![
-            Injection::TreePatch { tree: Tree::Release, patch: tmp.clone() },
+            Injection::TreePatch {
+                tree: Tree::Release,
+                patch: tmp.clone(),
+            },
             // a common-tree patch must contribute nothing to a release purge
-            Injection::TreePatch { tree: Tree::Common, patch: tmp.clone() },
+            Injection::TreePatch {
+                tree: Tree::Common,
+                patch: tmp.clone(),
+            },
         ];
         let got = {
-            let mut c = Ctx { spec: &sp, dry: true, log: &mut |_: &str| {} };
+            let mut c = Ctx {
+                spec: &sp,
+                dry: true,
+                log: &mut |_: &str| {},
+            };
             patched_specs(&mut c)
         };
         assert!(got.iter().any(|p| p == "SPECS/foo/foo.spec"), "{got:?}");
@@ -2991,9 +3418,9 @@ mod tests {
             "linux-debuginfo-6.12.107-14.ph5.x86_64.rpm",
         ];
         let spared = [
-            "linux-6.12.107-4.ph5.x86_64.rpm",   // equal, not higher
-            "linux-6.12.107-3.ph5.x86_64.rpm",   // lower
-            "linux-6.12.103-9.ph5.x86_64.rpm",   // different Version entirely
+            "linux-6.12.107-4.ph5.x86_64.rpm",           // equal, not higher
+            "linux-6.12.107-3.ph5.x86_64.rpm",           // lower
+            "linux-6.12.103-9.ph5.x86_64.rpm",           // different Version entirely
             "linux-firmware-20250101-99.ph5.noarch.rpm", // not a declared family
         ];
         for f in doomed.iter().chain(spared.iter()) {
@@ -3001,17 +3428,29 @@ mod tests {
         }
 
         let mut sp = BuildSpec::from_args(
-            &tmp.join("release").to_string_lossy(), "common", "5.0", "/out",
-            "minimal-iso", "prebuilt", None,
+            &tmp.join("release").to_string_lossy(),
+            "common",
+            "5.0",
+            "/out",
+            "minimal-iso",
+            "prebuilt",
+            None,
         )
         .unwrap();
         sp.subrelease = Subrelease::Mainline;
         {
-            let mut c = Ctx { spec: &sp, dry: false, log: &mut |_: &str| {} };
+            let mut c = Ctx {
+                spec: &sp,
+                dry: false,
+                log: &mut |_: &str| {},
+            };
             purge_shadowing_rpms(&mut c, &tmp.join("release/5.0/stage"));
         }
         for f in doomed {
-            assert!(!rpms.join(f).exists(), "{f} shadows the patched release and must go");
+            assert!(
+                !rpms.join(f).exists(),
+                "{f} shadows the patched release and must go"
+            );
         }
         for f in spared {
             assert!(rpms.join(f).exists(), "{f} must survive");
@@ -3032,9 +3471,19 @@ mod tests {
         let f = spec_families(&tmp).unwrap();
         assert_eq!(f.name, "rpm");
         assert_eq!(f.version, "6.1.0");
-        for want in ["rpm", "rpm-debuginfo", "rpm-devel", "rpm-libs", "python3-rpm",
-                     "rpm-plugin-selinux"] {
-            assert!(f.families.iter().any(|x| x == want), "missing {want}: {:?}", f.families);
+        for want in [
+            "rpm",
+            "rpm-debuginfo",
+            "rpm-devel",
+            "rpm-libs",
+            "python3-rpm",
+            "rpm-plugin-selinux",
+        ] {
+            assert!(
+                f.families.iter().any(|x| x == want),
+                "missing {want}: {:?}",
+                f.families
+            );
         }
         let _ = fs::remove_file(&tmp);
     }
@@ -3047,7 +3496,11 @@ mod tests {
         let s = spec_at(&tmp);
         let mut seen = Vec::new();
         {
-            let mut c = Ctx { spec: &s, dry: false, log: &mut |l: &str| seen.push(l.to_string()) };
+            let mut c = Ctx {
+                spec: &s,
+                dry: false,
+                log: &mut |l: &str| seen.push(l.to_string()),
+            };
             tree_patch(&mut c, Tree::Common, &tmp.join("nope.patch")).unwrap();
         }
         let j = seen.join("\n");
@@ -3064,11 +3517,19 @@ mod tests {
         let _ = fs::remove_dir_all(&tmp);
         let spec_dir = tmp.join("5.0/SPECS/python3");
         fs::create_dir_all(&spec_dir).unwrap();
-        fs::write(spec_dir.join("python3.spec"), "%make_build PROFILE_TASK=\"already\"\n").unwrap();
+        fs::write(
+            spec_dir.join("python3.spec"),
+            "%make_build PROFILE_TASK=\"already\"\n",
+        )
+        .unwrap();
         let s = spec_at(&tmp);
         let mut seen = Vec::new();
         {
-            let mut c = Ctx { spec: &s, dry: false, log: &mut |l: &str| seen.push(l.to_string()) };
+            let mut c = Ctx {
+                spec: &s,
+                dry: false,
+                log: &mut |l: &str| seen.push(l.to_string()),
+            };
             spec_fixup(&mut c, Fixup::Python3PgoTestGenerators).unwrap();
         }
         assert!(seen.join("").contains("already correct"), "{seen:?}");
@@ -3083,7 +3544,11 @@ mod tests {
         let s = spec_at(&tmp);
         let mut seen = Vec::new();
         {
-            let mut c = Ctx { spec: &s, dry: false, log: &mut |l: &str| seen.push(l.to_string()) };
+            let mut c = Ctx {
+                spec: &s,
+                dry: false,
+                log: &mut |l: &str| seen.push(l.to_string()),
+            };
             spec_fixup(&mut c, Fixup::SssdSerialMakeInstall).unwrap();
         }
         assert!(seen.join("").contains("not in this tree"), "{seen:?}");
@@ -3103,12 +3568,19 @@ mod tests {
         .unwrap();
         let s = spec_at(&tmp);
         {
-            let mut c = Ctx { spec: &s, dry: false, log: &mut |_: &str| {} };
+            let mut c = Ctx {
+                spec: &s,
+                dry: false,
+                log: &mut |_: &str| {},
+            };
             pin_subrelease(&mut c, 91).unwrap();
         }
         let got = fs::read_to_string(tmp.join("5.0/build-config.json")).unwrap();
         assert!(got.contains("\"photon-subrelease\": \"91\""), "{got}");
-        assert!(got.contains("\"keep\": \"me\""), "the rest of the config must survive: {got}");
+        assert!(
+            got.contains("\"keep\": \"me\""),
+            "the rest of the config must survive: {got}"
+        );
         let _ = fs::remove_dir_all(&tmp);
     }
 }
@@ -3140,7 +3612,10 @@ mod parity_tests {
         for cfg in crate::build::find_files_rec(specs, "config", ".yaml") {
             files += 1;
             for (a, _u, h) in declared_sources(&cfg) {
-                assert!(!a.contains(' '), "archive name must be a single token: {a:?}");
+                assert!(
+                    !a.contains(' '),
+                    "archive name must be a single token: {a:?}"
+                );
                 archives += 1;
                 if !h.is_empty() {
                     with_sha += 1;
@@ -3208,7 +3683,10 @@ mod worktree_tests {
             return;
         }
         assert!(base.join(".git").exists(), "a worktree has a .git entry");
-        assert!(!base.join(".git").is_dir(), "and in a worktree it is a FILE, not a directory");
+        assert!(
+            !base.join(".git").is_dir(),
+            "and in a worktree it is a FILE, not a directory"
+        );
         assert!(
             ok(base, "git", &["rev-parse", "--is-inside-work-tree"]),
             "git must still recognise it as a work tree"
@@ -3237,19 +3715,35 @@ mod pkgopts_tests {
         fs::write(&out, "{\"stale\": \"canister_equivalent 1\"}").unwrap();
 
         let mut s = BuildSpec::from_args(
-            &tmp.to_string_lossy(), "common", "5.0", "/out", "minimal-iso", "prebuilt", None,
+            &tmp.to_string_lossy(),
+            "common",
+            "5.0",
+            "/out",
+            "minimal-iso",
+            "prebuilt",
+            None,
         )
         .unwrap();
         s.subrelease = Subrelease::Mainline;
         {
-            let mut c = Ctx { spec: &s, dry: false, log: &mut |_: &str| {} };
+            let mut c = Ctx {
+                spec: &s,
+                dry: false,
+                log: &mut |_: &str| {},
+            };
             pkg_build_options(&mut c, CanisterMode::Prebuilt, None).unwrap();
         }
         let got = fs::read_to_string(&out).unwrap();
-        assert!(!got.contains("stale"), "the stale file must be overwritten: {got}");
+        assert!(
+            !got.contains("stale"),
+            "the stale file must be overwritten: {got}"
+        );
         assert!(got.contains("\"linux\""), "{got}");
         assert!(got.contains("\"linux-esx\""), "{got}");
-        assert!(!got.contains("canister_equivalent"), "prebuilt must carry no macros: {got}");
+        assert!(
+            !got.contains("canister_equivalent"),
+            "prebuilt must carry no macros: {got}"
+        );
         let _ = fs::remove_dir_all(&tmp);
     }
 
@@ -3274,7 +3768,10 @@ mod pkgopts_tests {
             output_need_gb(ImgType::Iso) > output_need_gb(ImgType::MinimalIso),
             "a 3.9 GB ISO cannot need the same headroom as a 0.6 GB one"
         );
-        assert!(STAGE_MIN_GB >= 20, "a kernel plus its debuginfo does not fit below this");
+        assert!(
+            STAGE_MIN_GB >= 20,
+            "a kernel plus its debuginfo does not fit below this"
+        );
     }
 
     /// df on a path that does not exist must yield None, not 0.
@@ -3285,7 +3782,10 @@ mod pkgopts_tests {
     fn an_unstattable_path_is_unknown_not_empty() {
         assert_eq!(avail_gb(Path::new("/definitely/not/here/xyzzy")), None);
         // and a path that does exist parses to a number
-        assert!(avail_gb(Path::new("/")).is_some(), "df must be readable for /");
+        assert!(
+            avail_gb(Path::new("/")).is_some(),
+            "df must be readable for /"
+        );
     }
 
     /// A rebuilt `linux` does not prove a rebuilt `linux-esx`.
@@ -3301,14 +3801,25 @@ mod pkgopts_tests {
         let _ = fs::remove_dir_all(&tmp);
         fs::create_dir_all(&rpms).unwrap();
         fs::create_dir_all(&specs).unwrap();
-        fs::write(specs.join("linux.spec"),
-            "Version:        6.12.107\nRelease:        4%{?dist}\n").unwrap();
-        fs::write(specs.join("linux-esx.spec"),
-            "Version:        6.12.107\nRelease:        3%{?dist}\n").unwrap();
+        fs::write(
+            specs.join("linux.spec"),
+            "Version:        6.12.107\nRelease:        4%{?dist}\n",
+        )
+        .unwrap();
+        fs::write(
+            specs.join("linux-esx.spec"),
+            "Version:        6.12.107\nRelease:        3%{?dist}\n",
+        )
+        .unwrap();
 
         let mut sp = BuildSpec::from_args(
-            &tmp.join("release").to_string_lossy(), "common", "5.0", "/out",
-            "minimal-iso", "equivalent-b", Some("6.12.107-4.ph5".to_string()),
+            &tmp.join("release").to_string_lossy(),
+            "common",
+            "5.0",
+            "/out",
+            "minimal-iso",
+            "equivalent-b",
+            Some("6.12.107-4.ph5".to_string()),
         )
         .unwrap();
         sp.subrelease = Subrelease::Mainline;
@@ -3316,15 +3827,26 @@ mod pkgopts_tests {
         // only the non-booting flavour came back
         fs::write(rpms.join("linux-6.12.107-4.ph5.x86_64.rpm"), b"x").unwrap();
         let e = {
-            let mut c = Ctx { spec: &sp, dry: false, log: &mut |_: &str| {} };
+            let mut c = Ctx {
+                spec: &sp,
+                dry: false,
+                log: &mut |_: &str| {},
+            };
             post_assert(&mut c).unwrap_err()
         };
-        assert!(e.contains("linux-esx-"), "post must name the missing flavour: {e}");
+        assert!(
+            e.contains("linux-esx-"),
+            "post must name the missing flavour: {e}"
+        );
 
         // with the boot kernel present it passes
         fs::write(rpms.join("linux-esx-6.12.107-3.ph5.x86_64.rpm"), b"x").unwrap();
         {
-            let mut c = Ctx { spec: &sp, dry: false, log: &mut |_: &str| {} };
+            let mut c = Ctx {
+                spec: &sp,
+                dry: false,
+                log: &mut |_: &str| {},
+            };
             post_assert(&mut c).unwrap();
         }
         let _ = fs::remove_dir_all(&tmp);
@@ -3375,13 +3897,22 @@ mod pkgopts_tests {
         }
 
         let mut sp = BuildSpec::from_args(
-            &tmp.join("release").to_string_lossy(), "common", "5.0", "/out",
-            "minimal-iso", "equivalent-b", Some("6.12.107-4.ph5".to_string()),
+            &tmp.join("release").to_string_lossy(),
+            "common",
+            "5.0",
+            "/out",
+            "minimal-iso",
+            "equivalent-b",
+            Some("6.12.107-4.ph5".to_string()),
         )
         .unwrap();
         sp.subrelease = Subrelease::Mainline;
         {
-            let mut c = Ctx { spec: &sp, dry: false, log: &mut |_: &str| {} };
+            let mut c = Ctx {
+                spec: &sp,
+                dry: false,
+                log: &mut |_: &str| {},
+            };
             purge_phase_a_kernels(&mut c, &tmp.join("release/5.0/stage"));
         }
         for f in doomed {
@@ -3398,13 +3929,19 @@ mod pkgopts_tests {
     #[test]
     fn linux_does_not_purge_the_esx_tree() {
         assert!(!stale_flavour_rpm(
-            "linux-esx-6.12.107-4.ph5.x86_64.rpm", "linux-", "-6.12.107-4."
+            "linux-esx-6.12.107-4.ph5.x86_64.rpm",
+            "linux-",
+            "-6.12.107-4."
         ));
         assert!(stale_flavour_rpm(
-            "linux-esx-6.12.107-4.ph5.x86_64.rpm", "linux-esx-", "-6.12.107-4."
+            "linux-esx-6.12.107-4.ph5.x86_64.rpm",
+            "linux-esx-",
+            "-6.12.107-4."
         ));
         assert!(!stale_flavour_rpm(
-            "linux-fips-canister-6.12.107-4.ph5.x86_64.rpm", "linux-", "-6.12.107-4."
+            "linux-fips-canister-6.12.107-4.ph5.x86_64.rpm",
+            "linux-",
+            "-6.12.107-4."
         ));
     }
 
@@ -3424,8 +3961,13 @@ mod pkgopts_tests {
         let nevr = "6.12.107-4.ph5";
         let mk = |mode: &str| {
             let mut s = BuildSpec::from_args(
-                &tmp.join("release").to_string_lossy(), "common", "5.0", "/out",
-                "minimal-iso", mode, Some(nevr.to_string()),
+                &tmp.join("release").to_string_lossy(),
+                "common",
+                "5.0",
+                "/out",
+                "minimal-iso",
+                mode,
+                Some(nevr.to_string()),
             )
             .unwrap();
             s.subrelease = Subrelease::Mainline;
@@ -3435,15 +3977,27 @@ mod pkgopts_tests {
         // phase A with an empty stage: the deliverable is missing
         let s = mk("equivalent-a");
         let e = {
-            let mut c = Ctx { spec: &s, dry: false, log: &mut |_: &str| {} };
+            let mut c = Ctx {
+                spec: &s,
+                dry: false,
+                log: &mut |_: &str| {},
+            };
             post_assert(&mut c).unwrap_err()
         };
         assert!(e.contains("no linux-fips-canister"), "{e}");
 
         // with the canister present it passes
-        fs::write(rpms.join(format!("linux-fips-canister-{nevr}.x86_64.rpm")), b"x").unwrap();
+        fs::write(
+            rpms.join(format!("linux-fips-canister-{nevr}.x86_64.rpm")),
+            b"x",
+        )
+        .unwrap();
         {
-            let mut c = Ctx { spec: &s, dry: false, log: &mut |_: &str| {} };
+            let mut c = Ctx {
+                spec: &s,
+                dry: false,
+                log: &mut |_: &str| {},
+            };
             post_assert(&mut c).unwrap();
         }
 
@@ -3452,15 +4006,26 @@ mod pkgopts_tests {
         // that is precisely the skipped-rebuild case post exists to catch.
         let s = mk("equivalent-b");
         let e = {
-            let mut c = Ctx { spec: &s, dry: false, log: &mut |_: &str| {} };
+            let mut c = Ctx {
+                spec: &s,
+                dry: false,
+                log: &mut |_: &str| {},
+            };
             post_assert(&mut c).unwrap_err()
         };
-        assert!(e.contains("no kernel RPM"), "the canister must not satisfy phase B: {e}");
+        assert!(
+            e.contains("no kernel RPM"),
+            "the canister must not satisfy phase B: {e}"
+        );
 
         // a real rebuilt kernel does satisfy it
         fs::write(rpms.join(format!("linux-{nevr}.x86_64.rpm")), b"x").unwrap();
         {
-            let mut c = Ctx { spec: &s, dry: false, log: &mut |_: &str| {} };
+            let mut c = Ctx {
+                spec: &s,
+                dry: false,
+                log: &mut |_: &str| {},
+            };
             post_assert(&mut c).unwrap();
         }
         let _ = fs::remove_dir_all(&tmp);
@@ -3501,17 +4066,29 @@ mod pkgopts_tests {
         }
 
         let mut s = BuildSpec::from_args(
-            &tmp.join("release").to_string_lossy(), "common", "5.0", "/out",
-            "minimal-iso", "equivalent-b", Some(nevr.to_string()),
+            &tmp.join("release").to_string_lossy(),
+            "common",
+            "5.0",
+            "/out",
+            "minimal-iso",
+            "equivalent-b",
+            Some(nevr.to_string()),
         )
         .unwrap();
         s.subrelease = Subrelease::Mainline;
         {
-            let mut c = Ctx { spec: &s, dry: false, log: &mut |_: &str| {} };
+            let mut c = Ctx {
+                spec: &s,
+                dry: false,
+                log: &mut |_: &str| {},
+            };
             purge_phase_a_kernels(&mut c, &tmp.join("release/stage"));
         }
         for f in doomed {
-            assert!(!rpms.join(f).exists(), "{f} is phase-A output and must be purged");
+            assert!(
+                !rpms.join(f).exists(),
+                "{f} is phase-A output and must be purged"
+            );
         }
         for f in spared {
             assert!(rpms.join(f).exists(), "{f} must survive the phase-B purge");
@@ -3529,14 +4106,27 @@ mod pkgopts_tests {
         let f = "linux-6.12.107-4.ph5.x86_64.rpm";
         for mode in ["equivalent-a", "prebuilt"] {
             fs::write(rpms.join(f), b"x").unwrap();
-            let nevr = if mode == "prebuilt" { None } else { Some("6.12.107-4.ph5".to_string()) };
+            let nevr = if mode == "prebuilt" {
+                None
+            } else {
+                Some("6.12.107-4.ph5".to_string())
+            };
             let mut s = BuildSpec::from_args(
-                &tmp.join("release").to_string_lossy(), "common", "5.0", "/out",
-                "minimal-iso", mode, nevr,
+                &tmp.join("release").to_string_lossy(),
+                "common",
+                "5.0",
+                "/out",
+                "minimal-iso",
+                mode,
+                nevr,
             )
             .unwrap();
             s.subrelease = Subrelease::Mainline;
-            let mut c = Ctx { spec: &s, dry: false, log: &mut |_: &str| {} };
+            let mut c = Ctx {
+                spec: &s,
+                dry: false,
+                log: &mut |_: &str| {},
+            };
             purge_phase_a_kernels(&mut c, &tmp.join("release/stage"));
             assert!(rpms.join(f).exists(), "{mode} must not purge kernels");
         }
@@ -3553,29 +4143,55 @@ mod pkgopts_tests {
         fs::create_dir_all(&dir).unwrap();
         let out = dir.join("mc_pkg_build_options.json");
         let s = BuildSpec::from_args(
-            &tmp.to_string_lossy(), "common", "5.0", "/out", "minimal-iso", "prebuilt", None,
+            &tmp.to_string_lossy(),
+            "common",
+            "5.0",
+            "/out",
+            "minimal-iso",
+            "prebuilt",
+            None,
         )
         .unwrap();
 
         {
-            let mut c = Ctx { spec: &s, dry: false, log: &mut |_: &str| {} };
+            let mut c = Ctx {
+                spec: &s,
+                dry: false,
+                log: &mut |_: &str| {},
+            };
             pkg_build_options(&mut c, CanisterMode::EquivalentA, Some("6.12.103-14.ph5")).unwrap();
         }
         let a = fs::read_to_string(&out).unwrap();
         assert!(a.contains("\"linux\""), "{a}");
-        assert!(!a.contains("linux-esx"), "phase A must NOT name linux-esx: {a}");
-        assert!(a.contains("canister_build 1") && a.contains("canister_stamp_real 1"), "{a}");
+        assert!(
+            !a.contains("linux-esx"),
+            "phase A must NOT name linux-esx: {a}"
+        );
+        assert!(
+            a.contains("canister_build 1") && a.contains("canister_stamp_real 1"),
+            "{a}"
+        );
         assert!(a.contains("fips_certified_override 6.12.103-14.ph5"), "{a}");
 
         {
-            let mut c = Ctx { spec: &s, dry: false, log: &mut |_: &str| {} };
+            let mut c = Ctx {
+                spec: &s,
+                dry: false,
+                log: &mut |_: &str| {},
+            };
             pkg_build_options(&mut c, CanisterMode::EquivalentB, Some("6.12.103-14.ph5")).unwrap();
         }
         let b = fs::read_to_string(&out).unwrap();
-        assert!(b.contains("\"linux-esx\""), "phase B relinks BOTH flavours: {b}");
+        assert!(
+            b.contains("\"linux-esx\""),
+            "phase B relinks BOTH flavours: {b}"
+        );
         assert!(b.contains("canister_equivalent 1"), "{b}");
         assert!(b.contains("fips_canister_override 6.12.103-14.ph5"), "{b}");
-        assert!(!b.contains("canister_build 1"), "phase B must not create a canister: {b}");
+        assert!(
+            !b.contains("canister_build 1"),
+            "phase B must not create a canister: {b}"
+        );
         let _ = fs::remove_dir_all(&tmp);
     }
 }

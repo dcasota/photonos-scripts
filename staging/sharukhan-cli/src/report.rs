@@ -65,8 +65,12 @@ pub fn read(results_dir: &Path, id: &str) -> Option<Outcome> {
         if line.trim().is_empty() {
             continue;
         }
-        let status = field(line, "status").or_else(|| field(line, "result")).unwrap_or_default();
-        let name = field(line, "check").or_else(|| field(line, "name")).unwrap_or_default();
+        let status = field(line, "status")
+            .or_else(|| field(line, "result"))
+            .unwrap_or_default();
+        let name = field(line, "check")
+            .or_else(|| field(line, "name"))
+            .unwrap_or_default();
         match status.as_str() {
             "pass" => o.pass += 1,
             "fail" => {

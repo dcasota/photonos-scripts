@@ -45,7 +45,9 @@ pub fn photon_subrelease(tree: &Path) -> Result<u32, String> {
     let p = tree.join("build-config.json");
     let text = fs::read_to_string(&p).map_err(|e| format!("{}: {e}", p.display()))?;
     for line in text.lines() {
-        let Some(rest) = line.split_once("\"photon-subrelease\"") else { continue };
+        let Some(rest) = line.split_once("\"photon-subrelease\"") else {
+            continue;
+        };
         let v: String = rest.1.chars().filter(|ch| ch.is_ascii_digit()).collect();
         if let Ok(n) = v.parse::<u32>() {
             return Ok(n);
@@ -60,7 +62,11 @@ pub fn photon_subrelease(tree: &Path) -> Result<u32, String> {
 
 /// The spec's `Version:` as this subrelease sees it.
 pub fn spec_version(c: &Ctx, flavour: &str) -> Result<String, String> {
-    let spec = c.spec.photon_tree.join("SPECS/linux").join(format!("{flavour}.spec"));
+    let spec = c
+        .spec
+        .photon_tree
+        .join("SPECS/linux")
+        .join(format!("{flavour}.spec"));
     let sr = photon_subrelease(&c.spec.photon_tree)?;
     let dir = c.spec.photon_tree.join("SPECS/linux");
     let read = crate::specresolve::dir_reader(&dir);
@@ -109,7 +115,10 @@ pub fn stage(c: &mut Ctx) -> Result<(), String> {
         fs::copy(&s, top.join("SPECS").join(format!("{f}.spec")))
             .map_err(|e| format!("{}: {e}", s.display()))?;
     }
-    c.say(&format!("  staged {files} source files, {} spec(s)", c.spec.flavours.len()));
+    c.say(&format!(
+        "  staged {files} source files, {} spec(s)",
+        c.spec.flavours.len()
+    ));
 
     // The declared tarballs, guarded by the marker because they are hundreds of
     // megabytes and never change. The spec and the config above are NOT
@@ -137,7 +146,10 @@ pub fn stage(c: &mut Ctx) -> Result<(), String> {
 
 /// Copy every non-spec file under `from`, recursively, into one flat directory.
 fn copy_flat(from: &Path, to: &Path, n: &mut usize) -> Result<(), String> {
-    for e in fs::read_dir(from).map_err(|e| format!("{}: {e}", from.display()))?.flatten() {
+    for e in fs::read_dir(from)
+        .map_err(|e| format!("{}: {e}", from.display()))?
+        .flatten()
+    {
         let p = e.path();
         if p.is_dir() {
             copy_flat(&p, to, n)?;
@@ -290,8 +302,16 @@ pub fn prep(c: &mut Ctx, flavour: &str) -> Result<PathBuf, String> {
     // Skip only when the tree was prepared from EXACTLY the staged spec and
     // config that are there now. Anything else re-preps, because %prep is the
     // step that applies them.
-    let fp = if c.spec.dry { String::new() } else { prep_fingerprint(c, flavour)? };
-    if !c.spec.dry && fs::read_to_string(&marker).map(|p| p.trim() == fp).unwrap_or(false) {
+    let fp = if c.spec.dry {
+        String::new()
+    } else {
+        prep_fingerprint(c, flavour)?
+    };
+    if !c.spec.dry
+        && fs::read_to_string(&marker)
+            .map(|p| p.trim() == fp)
+            .unwrap_or(false)
+    {
         if let Some(t) = find_kernel_tree(&builddir_host(c), &version) {
             c.skip(
                 &format!("prep[{flavour}]"),
@@ -305,12 +325,17 @@ pub fn prep(c: &mut Ctx, flavour: &str) -> Result<PathBuf, String> {
         return Ok(builddir_host(c).join(format!("linux-{version}")));
     }
     mount_pseudo(c, &build_base(c))?;
-    let sr = format!("photon_subrelease {}", photon_subrelease(&c.spec.photon_tree)?);
+    let sr = format!(
+        "photon_subrelease {}",
+        photon_subrelease(&c.spec.photon_tree)?
+    );
     let jobs = format!("_smp_mflags -j{}", c.spec.jobs);
     let spec = format!("/work/rpmbuild/SPECS/{flavour}.spec");
     let log = c.spec.workdir.join(format!("prep-{flavour}.log"));
     let argv = rpmbuild_argv("-bp", &[], &spec, &sr, &jobs);
-    c.say(&format!("  rpmbuild -bp {flavour} (emulated; several minutes)"));
+    c.say(&format!(
+        "  rpmbuild -bp {flavour} (emulated; several minutes)"
+    ));
     chroot_logged(c, &argv, &log)?;
     let tree_host = find_kernel_tree(&builddir_host(c), &version).ok_or_else(|| {
         format!(
@@ -362,7 +387,11 @@ pub fn kernel_config_path(
     Err(format!(
         "no kernel config for arch={} flavour={flavour} subrelease={subrelease}; looked for {}",
         arch.rpm(),
-        candidates.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join(", ")
+        candidates
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
     ))
 }
 
@@ -379,16 +408,24 @@ pub fn gen_config(c: &mut Ctx, flavour: &str) -> Result<Vec<kconfig::Forced>, St
     let cfg_path = kernel_config_path(&c.spec.photon_tree, c.spec.arch, flavour, sr)?;
     c.say(&format!("  config file: {}", cfg_path.display()));
 
-    let pristine = fs::read_to_string(&cfg_path).map_err(|e| format!("{}: {e}", cfg_path.display()))?;
+    let pristine =
+        fs::read_to_string(&cfg_path).map_err(|e| format!("{}: {e}", cfg_path.display()))?;
     let before = Kconfig::parse(&pristine);
-    c.say(&format!("  {} symbols in the pristine config", before.len()));
+    c.say(&format!(
+        "  {} symbols in the pristine config",
+        before.len()
+    ));
 
     // What has to be raised, computed from THIS config.
-    let forced = kconfig::dependency_closure(&before, kconfig::HYPERV_FRAGMENT, kconfig::HYPERV_EDGES)?;
+    let forced =
+        kconfig::dependency_closure(&before, kconfig::HYPERV_FRAGMENT, kconfig::HYPERV_EDGES)?;
     if forced.is_empty() {
         c.say("  dependency closure: nothing to raise (every enabling symbol is already y)");
     } else {
-        c.say(&format!("  dependency closure raised {} symbol(s):", forced.len()));
+        c.say(&format!(
+            "  dependency closure raised {} symbol(s):",
+            forced.len()
+        ));
         for f in &forced {
             c.say(&format!("    {}", f.line()));
         }
@@ -398,9 +435,14 @@ pub fn gen_config(c: &mut Ctx, flavour: &str) -> Result<Vec<kconfig::Forced>, St
     // The fragment plus its computed closure, kept as the reviewable artefact:
     // it says what was asked for and what had to be raised to get it.
     let fragfile = c.spec.workdir.join(format!("hyperv-{flavour}.fragment"));
-    if let Err(e) = fs::write(&fragfile, kconfig::merged_fragment(kconfig::HYPERV_FRAGMENT, &forced))
-    {
-        c.say(&format!("  [warn] could not write {}: {e}", fragfile.display()));
+    if let Err(e) = fs::write(
+        &fragfile,
+        kconfig::merged_fragment(kconfig::HYPERV_FRAGMENT, &forced),
+    ) {
+        c.say(&format!(
+            "  [warn] could not write {}: {e}",
+            fragfile.display()
+        ));
     } else {
         c.say(&format!("  fragment + closure: {}", fragfile.display()));
     }
@@ -428,8 +470,7 @@ pub fn gen_config(c: &mut Ctx, flavour: &str) -> Result<Vec<kconfig::Forced>, St
     let in_root = format!("/work/{}", rel.display());
 
     // Start from the pristine config.
-    fs::copy(&cfg_path, tree_host.join(".config"))
-        .map_err(|e| format!("seeding .config: {e}"))?;
+    fs::copy(&cfg_path, tree_host.join(".config")).map_err(|e| format!("seeding .config: {e}"))?;
 
     // scripts/config, one symbol per call: an argv per symbol rather than a
     // composed shell loop, so a symbol name can never become shell syntax.
@@ -442,33 +483,38 @@ pub fn gen_config(c: &mut Ctx, flavour: &str) -> Result<Vec<kconfig::Forced>, St
         )
         .map_err(|e| format!("scripts/config --set-val {sym} y: {e}"))?;
     }
-    c.say(&format!("  applied {} symbols with scripts/config", want.len()));
+    c.say(&format!(
+        "  applied {} symbols with scripts/config",
+        want.len()
+    ));
 
     olddefconfig(c, &in_root, flavour, "1")?;
 
     // The authority on what the config MEANS. If an edge in the table is wrong
     // or the kernel moved, a target comes back below y and this names it.
     let after = Kconfig::parse(
-        &fs::read_to_string(tree_host.join(".config")).map_err(|e| format!("re-reading .config: {e}"))?,
+        &fs::read_to_string(tree_host.join(".config"))
+            .map_err(|e| format!("re-reading .config: {e}"))?,
     );
     kconfig::assert_all_y(&after, &want)?;
-    c.say(&format!("  all {} symbols survived olddefconfig as =y", want.len()));
+    c.say(&format!(
+        "  all {} symbols survived olddefconfig as =y",
+        want.len()
+    ));
 
     // Photon stores the file without the "Linux/arm64 x.y.z Kernel
     // Configuration" line, which carries the kernel version and would make the
     // file differ from itself on the next release.
-    let generated = drop_line_3(
-        &fs::read_to_string(tree_host.join(".config")).map_err(|e| format!("{e}"))?,
-    );
+    let generated =
+        drop_line_3(&fs::read_to_string(tree_host.join(".config")).map_err(|e| format!("{e}"))?);
 
     // Fixed point: feeding the result back through olddefconfig must change
     // nothing. This is exactly check_for_config_applicability.inc, run now
     // rather than discovered three hours into %build.
     fs::write(tree_host.join(".config"), &generated).map_err(|e| format!("{e}"))?;
     olddefconfig(c, &in_root, flavour, "2")?;
-    let again = drop_line_3(
-        &fs::read_to_string(tree_host.join(".config")).map_err(|e| format!("{e}"))?,
-    );
+    let again =
+        drop_line_3(&fs::read_to_string(tree_host.join(".config")).map_err(|e| format!("{e}"))?);
     if again != generated {
         let d = first_difference(&generated, &again);
         return Err(format!(
@@ -486,13 +532,19 @@ pub fn gen_config(c: &mut Ctx, flavour: &str) -> Result<Vec<kconfig::Forced>, St
         cfg_path.display()
     ));
     // Keep a copy beside the logs: the diff is the reviewable artefact.
-    let copy = c.spec.workdir.join(format!("config_{}-hyperv-{flavour}", c.spec.arch.rpm()));
+    let copy = c
+        .spec
+        .workdir
+        .join(format!("config_{}-hyperv-{flavour}", c.spec.arch.rpm()));
     let _ = fs::write(&copy, &generated);
     Ok(forced)
 }
 
 fn olddefconfig(c: &mut Ctx, in_root: &str, flavour: &str, pass: &str) -> Result<(), String> {
-    let log = c.spec.workdir.join(format!("olddefconfig-{flavour}-{pass}.log"));
+    let log = c
+        .spec
+        .workdir
+        .join(format!("olddefconfig-{flavour}-{pass}.log"));
     let arch = format!("ARCH={}", c.spec.arch.kbuild());
     let dir = format!("-C{in_root}");
     // `LC_ALL=` as a make variable is what Photon's own include does; the
@@ -523,7 +575,11 @@ fn first_difference(a: &str, b: &str) -> String {
             return format!("line {}: {:?} vs {:?}", i + 1, x, y);
         }
     }
-    format!("lengths {} vs {} lines", a.lines().count(), b.lines().count())
+    format!(
+        "lengths {} vs {} lines",
+        a.lines().count(),
+        b.lines().count()
+    )
 }
 
 /// Bump Release and prepend a changelog entry.
@@ -541,7 +597,11 @@ fn first_difference(a: &str, b: &str) -> String {
 /// Idempotent: a Release that already carries `.azure` is left alone, or a
 /// resumed run would bump it again every time.
 pub fn release_bump(c: &mut Ctx, flavour: &str) -> Result<String, String> {
-    let spec = c.spec.photon_tree.join("SPECS/linux").join(format!("{flavour}.spec"));
+    let spec = c
+        .spec
+        .photon_tree
+        .join("SPECS/linux")
+        .join(format!("{flavour}.spec"));
     let text = fs::read_to_string(&spec).map_err(|e| format!("{}: {e}", spec.display()))?;
     let version = spec_version(c, flavour)?;
 
@@ -561,7 +621,9 @@ pub fn release_bump(c: &mut Ctx, flavour: &str) -> Result<String, String> {
     let bumped = bump_release(value)?;
     let new_rel = azure_release(&bumped)?;
     if c.spec.dry {
-        c.say(&format!("  would bump {flavour} Release {value} -> {bumped}"));
+        c.say(&format!(
+            "  would bump {flavour} Release {value} -> {bumped}"
+        ));
         return Ok(format!("{version}-{new_rel}"));
     }
 
@@ -591,7 +653,9 @@ pub fn release_bump(c: &mut Ctx, flavour: &str) -> Result<String, String> {
         return Err(format!("{} has no %changelog section", spec.display()));
     }
     fs::write(&spec, out).map_err(|e| format!("{}: {e}", spec.display()))?;
-    c.say(&format!("  {flavour}: Release {value} -> {bumped}, changelog entry added"));
+    c.say(&format!(
+        "  {flavour}: Release {value} -> {bumped}, changelog entry added"
+    ));
     Ok(format!("{version}-{new_rel}"))
 }
 
@@ -601,7 +665,9 @@ pub fn bump_release(value: &str) -> Result<String, String> {
     if digits.is_empty() {
         return Err(format!("Release '{value}' does not start with a number"));
     }
-    let n: u32 = digits.parse().map_err(|_| format!("Release '{value}' is not a number"))?;
+    let n: u32 = digits
+        .parse()
+        .map_err(|_| format!("Release '{value}' is not a number"))?;
     Ok(format!("{}.azure{}", n + 1, &value[digits.len()..]))
 }
 
@@ -632,7 +698,11 @@ fn changelog_date() -> String {
 /// that only needs to know the name of the kernel it is handling must not be
 /// able to change it as a side effect of asking.
 pub fn current_vr(c: &Ctx, flavour: &str) -> Result<String, String> {
-    let spec = c.spec.photon_tree.join("SPECS/linux").join(format!("{flavour}.spec"));
+    let spec = c
+        .spec
+        .photon_tree
+        .join("SPECS/linux")
+        .join(format!("{flavour}.spec"));
     let text = fs::read_to_string(&spec).map_err(|e| format!("{}: {e}", spec.display()))?;
     let version = spec_version(c, flavour)?;
     let line = text
@@ -665,12 +735,17 @@ pub fn built_rpms(c: &Ctx) -> Result<Vec<PathBuf>, String> {
 /// continues rather than restarting), then `-bb --noprep` for the packages that
 /// reach the media.
 pub fn build(c: &mut Ctx, flavour: &str) -> Result<Vec<PathBuf>, String> {
-    let sr = format!("photon_subrelease {}", photon_subrelease(&c.spec.photon_tree)?);
+    let sr = format!(
+        "photon_subrelease {}",
+        photon_subrelease(&c.spec.photon_tree)?
+    );
     let jobs = format!("_smp_mflags -j{}", c.spec.jobs);
     let spec = format!("/work/rpmbuild/SPECS/{flavour}.spec");
 
     if c.spec.dry {
-        c.say(&format!("  would build {flavour} (-bp, -bc --short-circuit, -bb --noprep)"));
+        c.say(&format!(
+            "  would build {flavour} (-bp, -bc --short-circuit, -bb --noprep)"
+        ));
         return Ok(vec![]);
     }
     mount_pseudo(c, &build_base(c))?;
@@ -716,7 +791,9 @@ pub fn build(c: &mut Ctx, flavour: &str) -> Result<Vec<PathBuf>, String> {
     } else {
         let log = c.spec.workdir.join(format!("build-{flavour}.log"));
         let argv = rpmbuild_argv("-bc", &["--short-circuit"], &spec, &sr, &jobs);
-        c.say(&format!("  rpmbuild -bc {flavour}: the long phase, hours under emulation"));
+        c.say(&format!(
+            "  rpmbuild -bc {flavour}: the long phase, hours under emulation"
+        ));
         run_guarded(c, &argv, &log)?;
         fs::write(&compile, "").map_err(|e| format!("{e}"))?;
     }
@@ -744,7 +821,9 @@ pub fn build(c: &mut Ctx, flavour: &str) -> Result<Vec<PathBuf>, String> {
         &sr,
         &jobs,
     );
-    c.say(&format!("  rpmbuild -bb --noprep {flavour}: %install and packaging"));
+    c.say(&format!(
+        "  rpmbuild -bb --noprep {flavour}: %install and packaging"
+    ));
     run_guarded(c, &argv, &log)?;
 
     let out = rpmtop_host(c).join("RPMS").join(c.spec.arch.rpm());
@@ -756,7 +835,10 @@ pub fn build(c: &mut Ctx, flavour: &str) -> Result<Vec<PathBuf>, String> {
         .collect();
     rpms.sort();
     if rpms.is_empty() {
-        return Err(format!("rpmbuild reported success but {} is empty", out.display()));
+        return Err(format!(
+            "rpmbuild reported success but {} is empty",
+            out.display()
+        ));
     }
     c.say(&format!("  {} RPM(s) in {}", rpms.len(), out.display()));
     Ok(rpms)
@@ -809,7 +891,10 @@ fn accelerate(c: &mut Ctx, flavour: &str, tree_host: &Path) -> Result<bool, Stri
         seed_objects(c, flavour, &in_root)?;
         fs::write(&seeded, "").map_err(|e| format!("{e}"))?;
     } else {
-        c.skip(&format!("seed[{flavour}]"), "reference objects already built");
+        c.skip(
+            &format!("seed[{flavour}]"),
+            "reference objects already built",
+        );
     }
 
     let r = super::cc1::gate(c, tree_host, &in_root)?;
@@ -852,7 +937,9 @@ fn clear_non_idempotent_artifacts(c: &mut Ctx) -> Result<(), String> {
         }
     }
     for root in roots {
-        let Ok(rd) = fs::read_dir(&root) else { continue };
+        let Ok(rd) = fs::read_dir(&root) else {
+            continue;
+        };
         for e in rd.flatten() {
             let name = e.file_name().to_string_lossy().to_string();
             if !name.starts_with("amzn-drivers-efa_linux_") {
@@ -906,7 +993,9 @@ fn run_guarded(c: &mut Ctx, argv: &[&str], log: &Path) -> Result<(), String> {
     c.say(&format!("    log: {}", log.display()));
 
     let mut cmd = Command::new("chroot");
-    cmd.args(&full[..]).stdout(Stdio::from(f)).stderr(Stdio::from(f2));
+    cmd.args(&full[..])
+        .stdout(Stdio::from(f))
+        .stderr(Stdio::from(f2));
     // Its own process group, so the guard can signal the whole tree.
     unsafe {
         cmd.pre_exec(|| {
@@ -937,7 +1026,11 @@ fn run_guarded(c: &mut Ctx, argv: &[&str], log: &Path) -> Result<(), String> {
         let t = guard::Thresholds::default();
         let mut paused = false;
         let note = |s: String| {
-            if let Ok(mut fh) = fs::OpenOptions::new().create(true).append(true).open(&guard_log) {
+            if let Ok(mut fh) = fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&guard_log)
+            {
                 use std::io::Write;
                 let _ = writeln!(fh, "{s}");
             }
@@ -978,7 +1071,9 @@ fn run_guarded(c: &mut Ctx, argv: &[&str], log: &Path) -> Result<(), String> {
         }
     });
 
-    let status = child.wait().map_err(|e| format!("waiting for the build: {e}"));
+    let status = child
+        .wait()
+        .map_err(|e| format!("waiting for the build: {e}"));
     stop.store(true, Ordering::Relaxed);
     let _ = watcher.join();
     let status = status?;
@@ -987,7 +1082,10 @@ fn run_guarded(c: &mut Ctx, argv: &[&str], log: &Path) -> Result<(), String> {
     }
     Err(format!(
         "the build phase failed ({}). Last lines of {}:\n{}",
-        status.code().map(|c| c.to_string()).unwrap_or_else(|| "signal".into()),
+        status
+            .code()
+            .map(|c| c.to_string())
+            .unwrap_or_else(|| "signal".into()),
         log.display(),
         super::tail_of(log, 40)
     ))
@@ -1035,8 +1133,9 @@ mod tests {
         let mut sp = crate::remaster::tests_support::spec();
         sp.workdir = tmp.clone();
         // rpm 6 layout: BUILD/<name>-<ver>-build/amzn-drivers-efa_linux_*/...
-        let efa = tmp
-            .join("build/BUILD/linux-6.12.109-build/amzn-drivers-efa_linux_3.1.0/kernel/linux/efa/build");
+        let efa = tmp.join(
+            "build/BUILD/linux-6.12.109-build/amzn-drivers-efa_linux_3.1.0/kernel/linux/efa/build",
+        );
         fs::create_dir_all(efa.join("CMakeFiles")).unwrap();
         fs::write(efa.join("CMakeCache.txt"), "stale").unwrap();
 
@@ -1108,7 +1207,10 @@ mod tests {
         assert_eq!(current_vr(&c, "linux").unwrap(), "6.12.109-4.azure.ph5");
         // and the spec is untouched by having been read
         let after = fs::read_to_string(specs.join("linux.spec")).unwrap();
-        assert!(after.contains("Release:        4.azure%{?acvp_build:.acvp}%{?dist}"), "{after}");
+        assert!(
+            after.contains("Release:        4.azure%{?acvp_build:.acvp}%{?dist}"),
+            "{after}"
+        );
         assert!(!after.contains("5.azure"), "reading must not bump: {after}");
         let _ = fs::remove_dir_all(&tmp);
     }
@@ -1153,7 +1255,11 @@ mod tests {
         assert_eq!(a, prep_fingerprint(&c, "linux").unwrap());
 
         // A changed CONFIG must change it - that is the case that must re-prep.
-        fs::write(staged.join("SOURCES/config_aarch64"), "CONFIG_A=y\nCONFIG_HYPERV=y\n").unwrap();
+        fs::write(
+            staged.join("SOURCES/config_aarch64"),
+            "CONFIG_A=y\nCONFIG_HYPERV=y\n",
+        )
+        .unwrap();
         let b = prep_fingerprint(&c, "linux").unwrap();
         assert_ne!(a, b, "a changed config must force a re-prep");
 
@@ -1175,7 +1281,11 @@ mod tests {
         let _ = fs::remove_dir_all(&tmp);
         let specs = tmp.join("photon/SPECS/linux");
         fs::create_dir_all(&specs).unwrap();
-        fs::write(specs.join("linux.spec"), "Release:        4.azure%{?dist}\n").unwrap();
+        fs::write(
+            specs.join("linux.spec"),
+            "Release:        4.azure%{?dist}\n",
+        )
+        .unwrap();
         fs::write(specs.join("config_aarch64"), "CONFIG_HYPERV=y\n").unwrap();
         fs::create_dir_all(tmp.join("sources")).unwrap();
 
@@ -1204,11 +1314,16 @@ mod tests {
             "the config the build reads must be the one gen_config wrote"
         );
         assert!(
-            fs::read_to_string(&staged_spec).unwrap().contains("4.azure"),
+            fs::read_to_string(&staged_spec)
+                .unwrap()
+                .contains("4.azure"),
             "the Release bump must reach the staged spec"
         );
         // and the tarball step really was skipped
-        assert!(seen.iter().any(|l| l.contains("stage:tarballs")), "{seen:?}");
+        assert!(
+            seen.iter().any(|l| l.contains("stage:tarballs")),
+            "{seen:?}"
+        );
         let _ = fs::remove_dir_all(&tmp);
     }
 
@@ -1225,7 +1340,8 @@ mod tests {
         assert!(t.contains("diff -u .config.old .config || true"), "{t}");
         // and it must not carry a bare failing diff anywhere
         assert!(
-            !t.lines().any(|l| l.trim().starts_with("diff ") && !l.contains("|| true")),
+            !t.lines()
+                .any(|l| l.trim().starts_with("diff ") && !l.contains("|| true")),
             "a bare diff would abort %prep under set -e: {t}"
         );
     }
@@ -1296,7 +1412,10 @@ mod tests {
     #[test]
     fn release_bump_is_idempotent_on_rerun() {
         let already = "4.azure%{?dist}";
-        assert!(already.contains(".azure"), "the idempotence test is the substring");
+        assert!(
+            already.contains(".azure"),
+            "the idempotence test is the substring"
+        );
         assert_eq!(azure_release(already).unwrap(), "4.azure.ph5");
         // Bumping an already-bumped value would give 5.azure.azure, which is
         // exactly what the guard prevents.
@@ -1330,7 +1449,12 @@ mod tests {
         let d = std::env::temp_dir().join(format!("shk-cfgpath-{}", std::process::id()));
         let base = d.join("SPECS/linux");
         fs::create_dir_all(base.join("6.1")).unwrap();
-        for f in ["config_aarch64", "config-esx_aarch64", "config_x86_64", "config_x86_64_acvp"] {
+        for f in [
+            "config_aarch64",
+            "config-esx_aarch64",
+            "config_x86_64",
+            "config_x86_64_acvp",
+        ] {
             fs::write(base.join(f), "CONFIG_A=y\n").unwrap();
         }
         for f in ["config_x86_64-6.1", "config_aarch64-6.1"] {

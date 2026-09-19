@@ -100,7 +100,11 @@ pub fn swap_module_tree(
     // -a: the tree carries symlinks and permissions that matter.
     run(
         "cp",
-        &["-a", &new_tree.to_string_lossy(), &modules.join(new_uname).to_string_lossy()],
+        &[
+            "-a",
+            &new_tree.to_string_lossy(),
+            &modules.join(new_uname).to_string_lossy(),
+        ],
     )?;
     let placed = count_modules(&modules.join(new_uname));
     let source = count_modules(new_tree);
@@ -109,7 +113,9 @@ pub fn swap_module_tree(
             "copied {placed} modules but the RPM tree has {source}: the copy was incomplete"
         ));
     }
-    c.say(&format!("  swapped usr/lib/modules/{old_uname} -> {new_uname} ({placed} modules)"));
+    c.say(&format!(
+        "  swapped usr/lib/modules/{old_uname} -> {new_uname} ({placed} modules)"
+    ));
     Ok(placed)
 }
 
@@ -137,7 +143,10 @@ pub fn depmod(c: &mut Ctx, root: &Path, uname: &str) -> Result<(), String> {
     fs::create_dir_all(&at).map_err(|e| format!("{}: {e}", at.display()))?;
     let mounted = !ok("mountpoint", &["-q", &at.to_string_lossy()]);
     if mounted {
-        run("mount", &["--bind", &root.to_string_lossy(), &at.to_string_lossy()])?;
+        run(
+            "mount",
+            &["--bind", &root.to_string_lossy(), &at.to_string_lossy()],
+        )?;
     }
     let r = chroot_capture(&br, &["/usr/sbin/depmod", "-b", "/initrdroot", uname]);
     // Always unmount, including on failure: a leaked bind mount on a shared
@@ -149,7 +158,9 @@ pub fn depmod(c: &mut Ctx, root: &Path, uname: &str) -> Result<(), String> {
     if size == 0 {
         return Err(format!("{} is empty after depmod", dep.display()));
     }
-    c.say(&format!("  depmod wrote modules.dep ({size} bytes) with the media's own kmod"));
+    c.say(&format!(
+        "  depmod wrote modules.dep ({size} bytes) with the media's own kmod"
+    ));
     Ok(())
 }
 
@@ -201,15 +212,24 @@ pub fn repack(c: &mut Ctx, root: &Path, out: &Path) -> Result<u64, String> {
     if size == 0 {
         return Err(format!("{} is empty", out.display()));
     }
-    c.say(&format!("  repacked {} entries into {} ({size} bytes)", names.len(), out.display()));
+    c.say(&format!(
+        "  repacked {} entries into {} ({size} bytes)",
+        names.len(),
+        out.display()
+    ));
     Ok(size)
 }
 
 fn collect(root: &Path, dir: &Path, out: &mut Vec<Vec<u8>>) -> Result<(), String> {
     use std::os::unix::ffi::OsStrExt;
-    for e in fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))?.flatten() {
+    for e in fs::read_dir(dir)
+        .map_err(|e| format!("{}: {e}", dir.display()))?
+        .flatten()
+    {
         let p = e.path();
-        let Ok(rel) = p.strip_prefix(root) else { continue };
+        let Ok(rel) = p.strip_prefix(root) else {
+            continue;
+        };
         out.push(rel.as_os_str().as_bytes().to_vec());
         // symlink_metadata: a symlink to a directory must be archived as a
         // symlink, not descended into.
@@ -253,7 +273,10 @@ mod tests {
     use super::*;
 
     fn fake_initrd(root: &Path, uname: &str, n: usize) {
-        let m = root.join("usr/lib/modules").join(uname).join("kernel/drivers");
+        let m = root
+            .join("usr/lib/modules")
+            .join(uname)
+            .join("kernel/drivers");
         fs::create_dir_all(&m).unwrap();
         for i in 0..n {
             fs::write(m.join(format!("mod{i}.ko.xz")), "x").unwrap();
@@ -284,14 +307,29 @@ mod tests {
             new_uname: String::new(),
         };
 
-        let e = swap_module_tree(&mut c, &root, "6.1.128-1.ph5", &newt, "6.12.109-4.azure.ph5")
-            .unwrap_err();
+        let e = swap_module_tree(
+            &mut c,
+            &root,
+            "6.1.128-1.ph5",
+            &newt,
+            "6.12.109-4.azure.ph5",
+        )
+        .unwrap_err();
         assert!(e.contains("6.1.128-1.ph5"), "{e}");
-        assert!(e.contains("6.12.109-3.ph5"), "the error must say what IS there: {e}");
+        assert!(
+            e.contains("6.12.109-3.ph5"),
+            "the error must say what IS there: {e}"
+        );
 
         // The real uname works, and leaves exactly one module directory.
-        let n = swap_module_tree(&mut c, &root, "6.12.109-3.ph5", &newt, "6.12.109-4.azure.ph5")
-            .unwrap();
+        let n = swap_module_tree(
+            &mut c,
+            &root,
+            "6.12.109-3.ph5",
+            &newt,
+            "6.12.109-4.azure.ph5",
+        )
+        .unwrap();
         assert_eq!(n, 1);
         assert_eq!(module_dirs(&root), vec!["6.12.109-4.azure.ph5".to_string()]);
         let _ = fs::remove_dir_all(&d);
@@ -313,15 +351,20 @@ mod tests {
         let mut names = Vec::new();
         collect(&d, &d, &mut names).unwrap();
         names.sort();
-        let as_str: Vec<String> =
-            names.iter().map(|n| String::from_utf8_lossy(n).to_string()).collect();
+        let as_str: Vec<String> = names
+            .iter()
+            .map(|n| String::from_utf8_lossy(n).to_string())
+            .collect();
         // relative, never absolute - an absolute entry unpacks over the host
         assert!(as_str.iter().all(|n| !n.starts_with('/')), "{as_str:?}");
         // byte order puts uppercase before lowercase; a locale-aware sort does not
         let zi = as_str.iter().position(|n| n == "etc/Zfile").unwrap();
         let ai = as_str.iter().position(|n| n == "etc/afile").unwrap();
         assert!(zi < ai, "byte order, not locale order: {as_str:?}");
-        assert!(as_str.contains(&"usr/lib".to_string()), "directories are entries too");
+        assert!(
+            as_str.contains(&"usr/lib".to_string()),
+            "directories are entries too"
+        );
         let _ = fs::remove_dir_all(&d);
     }
 }

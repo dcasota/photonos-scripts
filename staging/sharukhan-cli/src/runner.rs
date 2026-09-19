@@ -191,7 +191,9 @@ pub fn cmd_run(cfg: &Config, o: &RunOpts) -> Result<(), String> {
                 continue;
             }
         }
-        let patch = cfg.variant_patches.join(format!("poi-{}.patch", g.rows[0].poi));
+        let patch = cfg
+            .variant_patches
+            .join(format!("poi-{}.patch", g.rows[0].poi));
         match media::gate(&g.iso, &patch, &cfg.photon_tree) {
             Ok(gate) => {
                 println!(
@@ -217,7 +219,11 @@ pub fn cmd_run(cfg: &Config, o: &RunOpts) -> Result<(), String> {
         }
     }
 
-    let admissible: usize = groups.iter().filter(|g| g.refused.is_none()).map(|g| g.rows.len()).sum();
+    let admissible: usize = groups
+        .iter()
+        .filter(|g| g.refused.is_none())
+        .map(|g| g.rows.len())
+        .sum();
     if admissible == 0 {
         return Err("every ISO group was refused; nothing would be run".into());
     }
@@ -257,7 +263,11 @@ pub fn cmd_run(cfg: &Config, o: &RunOpts) -> Result<(), String> {
     phases::ensure_ssh_key(cfg, &mut |m| println!("  {m}"))?;
     cfg.guest_password()?;
 
-    let label = runnable.iter().map(|p| p.id.as_str()).collect::<Vec<_>>().join(",");
+    let label = runnable
+        .iter()
+        .map(|p| p.id.as_str())
+        .collect::<Vec<_>>()
+        .join(",");
     let pid = std::process::id() as i32;
     let job_id = job::start(&conn, "run", &label, pid, &log_path.to_string_lossy())?;
     println!("\njob {job_id} (pid {pid}) -> {}", log_path.display());
@@ -268,7 +278,10 @@ pub fn cmd_run(cfg: &Config, o: &RunOpts) -> Result<(), String> {
         .append(true)
         .open(&log_path)
         .map_err(|e| format!("{}: {e}", log_path.display()))?;
-    say(&mut logf, &format!("job {job_id} pid {pid} selection {label}"));
+    say(
+        &mut logf,
+        &format!("job {job_id} pid {pid} selection {label}"),
+    );
     for g in &groups {
         match (&g.refused, &g.gate) {
             (Some(why), _) => say(&mut logf, &format!("group {} REFUSED: {why}", g.key)),
@@ -310,8 +323,15 @@ pub fn cmd_run(cfg: &Config, o: &RunOpts) -> Result<(), String> {
         }
     }
 
-    let state = if halted.is_some() { job::FAILED } else { job::DONE };
-    say(&mut logf, &format!("job {job_id} {state}: {attempted} row(s) attempted"));
+    let state = if halted.is_some() {
+        job::FAILED
+    } else {
+        job::DONE
+    };
+    say(
+        &mut logf,
+        &format!("job {job_id} {state}: {attempted} row(s) attempted"),
+    );
     job::finish(&conn, job_id, state)?;
 
     // Fold this run's evidence into the memory database before reporting, so
@@ -388,7 +408,10 @@ fn wait_for_idle(max_secs: u64) -> Result<(), String> {
                 who.join("; ")
             ));
         }
-        println!("  wait    {} process(es) in flight, waited {waited}s of {max_secs}s", busy.len());
+        println!(
+            "  wait    {} process(es) in flight, waited {waited}s of {max_secs}s",
+            busy.len()
+        );
         std::thread::sleep(std::time::Duration::from_secs(15));
         waited += 15;
     }
@@ -486,9 +509,19 @@ pub fn cmd_stop(cfg: &Config, target: Option<i64>, all: bool, dry: bool) -> Resu
     }
 
     for j in &jobs {
-        println!("job {} {} {} (state {}, {})", j.id, j.kind, j.label, j.state, j.liveness());
+        println!(
+            "job {} {} {} (state {}, {})",
+            j.id,
+            j.kind,
+            j.label,
+            j.state,
+            j.liveness()
+        );
         if j.state != job::RUNNING {
-            println!("  already {} at {}; nothing to signal", j.state, j.finished_at);
+            println!(
+                "  already {} at {}; nothing to signal",
+                j.state, j.finished_at
+            );
             continue;
         }
         if !j.is_live() {
@@ -527,7 +560,10 @@ pub fn cmd_stop(cfg: &Config, target: Option<i64>, all: bool, dry: bool) -> Resu
             left = survivors(pid, &kids);
         }
         if !left.is_empty() {
-            println!("  {} process(es) ignored SIGTERM after {waited}s; sending SIGKILL", left.len());
+            println!(
+                "  {} process(es) ignored SIGTERM after {waited}s; sending SIGKILL",
+                left.len()
+            );
             for p in &left {
                 proc::signal(*p, proc::SIGKILL);
             }
@@ -543,7 +579,10 @@ pub fn cmd_stop(cfg: &Config, target: Option<i64>, all: bool, dry: bool) -> Resu
                 "  job {} closed, but {} process(es) are STILL ALIVE: {}",
                 j.id,
                 left.len(),
-                left.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(", ")
+                left.iter()
+                    .map(|p| p.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
             );
         }
     }
@@ -572,7 +611,9 @@ fn survivors(root: i32, kids: &[proc::Proc]) -> Vec<i32> {
 /// Which VMs are up, split into ours and everything else. The inventory is the
 /// authority; no exit code is consulted.
 fn report_vms(cfg: &Config, when: &str) {
-    let Ok(all) = matrix::load(&cfg.matrix_tsv) else { return };
+    let Ok(all) = matrix::load(&cfg.matrix_tsv) else {
+        return;
+    };
     match vmware::running(&cfg.vmrun) {
         Ok(list) => {
             let mine: Vec<&str> = all
@@ -600,7 +641,12 @@ fn report_vms(cfg: &Config, when: &str) {
 
 // -------------------------------------------------------------- watch ------
 
-pub fn cmd_watch(cfg: &Config, target: Option<i64>, once: bool, interval: u64) -> Result<(), String> {
+pub fn cmd_watch(
+    cfg: &Config,
+    target: Option<i64>,
+    once: bool,
+    interval: u64,
+) -> Result<(), String> {
     let conn = job::open_rw(&cfg.memory_db)?;
     match target {
         None => {
@@ -616,7 +662,10 @@ fn snapshot(cfg: &Config, conn: &rusqlite::Connection) -> Result<(), String> {
     if jobs.is_empty() {
         println!("no jobs recorded");
     } else {
-        println!("  {:<4} {:<8} {:<9} {:<26} {:<20} {}", "JOB", "KIND", "STATE", "LIVENESS", "STARTED", "LABEL");
+        println!(
+            "  {:<4} {:<8} {:<9} {:<26} {:<20} {}",
+            "JOB", "KIND", "STATE", "LIVENESS", "STARTED", "LABEL"
+        );
         for j in &jobs {
             let liveness = if j.state == job::RUNNING {
                 j.liveness().to_string()
@@ -637,7 +686,11 @@ fn snapshot(cfg: &Config, conn: &rusqlite::Connection) -> Result<(), String> {
             println!(
                 "\njob(s) {} claim 'running' but their process is gone - they did not finish \
                  cleanly. `sharukhan stop --job <id>` closes the row.",
-                confused.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(", ")
+                confused
+                    .iter()
+                    .map(|i| i.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
             );
         }
     }
@@ -662,7 +715,12 @@ fn follow(
     let j = job::get(conn, id)?.ok_or_else(|| format!("no job {id}"))?;
     println!(
         "job {} {} {} - state {}, {}, started {}",
-        j.id, j.kind, j.label, j.state, j.liveness(), j.started_at
+        j.id,
+        j.kind,
+        j.label,
+        j.state,
+        j.liveness(),
+        j.started_at
     );
     println!("log {}", j.log_path);
     let log = PathBuf::from(&j.log_path);
@@ -723,7 +781,9 @@ fn tail(log: &Path, lines: usize) {
 fn drain(log: &Path, from: u64) -> u64 {
     let len = std::fs::metadata(log).map(|m| m.len()).unwrap_or(0);
     let start = if len < from { 0 } else { from };
-    let Ok(mut f) = File::open(log) else { return start };
+    let Ok(mut f) = File::open(log) else {
+        return start;
+    };
     if f.seek(SeekFrom::Start(start)).is_err() {
         return start;
     }

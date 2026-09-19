@@ -120,8 +120,9 @@ impl VmSpec {
                  ethernet1.address = \"{mac}\"",
                 self.nic_dev
             ),
-            None => "# single NIC: this row's guest is reachable over IPv4 on ethernet0"
-                .to_string(),
+            None => {
+                "# single NIC: this row's guest is reachable over IPv4 on ethernet0".to_string()
+            }
         }
     }
 
@@ -303,7 +304,10 @@ mod tests {
                 None,
             )
         };
-        assert_eq!(mk("v6-static-untag").mac2.as_deref(), Some("00:50:56:3b:00:27"));
+        assert_eq!(
+            mk("v6-static-untag").mac2.as_deref(),
+            Some("00:50:56:3b:00:27")
+        );
         // dual-stack keeps its IPv4 address, so ssh already has a path
         assert_eq!(mk("dual-static-untag").mac2, None);
         assert_eq!(mk("v4-dhcp-untag").mac2, None);
@@ -335,7 +339,13 @@ mod tests {
 
     #[test]
     fn kickstart_presence_selects_the_guestinfo_line() {
-        let with = render_with(EMBEDDED, &spec(Some(Kickstart { json: "{\"a\":1}".into() }))).unwrap();
+        let with = render_with(
+            EMBEDDED,
+            &spec(Some(Kickstart {
+                json: "{\"a\":1}".into(),
+            })),
+        )
+        .unwrap();
         assert!(with.contains("guestinfo.kickstart.data = \"eyJhIjoxfQ==\""));
 
         // The template's own comment names guestinfo.kickstart.data, so the

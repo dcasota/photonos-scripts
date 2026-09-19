@@ -32,7 +32,12 @@ pub fn running(vmrun: &Path) -> Result<Vec<String>, String> {
 /// against the inventory rather than trusted from the exit code.
 pub fn is_running(vmrun: &Path, vm: &str) -> bool {
     running(vmrun)
-        .map(|v| v.iter().any(|l| l.to_lowercase().contains(&format!("{}.vmx", vm.to_lowercase()))))
+        .map(|v| {
+            v.iter().any(|l| {
+                l.to_lowercase()
+                    .contains(&format!("{}.vmx", vm.to_lowercase()))
+            })
+        })
         .unwrap_or(false)
 }
 
@@ -50,7 +55,11 @@ pub fn is_running(vmrun: &Path, vm: &str) -> bool {
 /// identical VMX starts fine with "gui". Headless start needs VMware
 /// Workstation Server / shared-VM support, which is not enabled here.
 pub fn start_how(gui: bool) -> &'static str {
-    if gui { "gui" } else { "nogui" }
+    if gui {
+        "gui"
+    } else {
+        "nogui"
+    }
 }
 
 pub fn start(vmrun: &Path, vmx_win: &str, gui: bool) -> i32 {
@@ -123,8 +132,15 @@ pub fn guest_ip(vmrun: &Path, vmx_win: &str, wait: bool) -> Option<String> {
     }
     let out = cmd.output().ok()?;
     let text = String::from_utf8_lossy(&out.stdout);
-    let lines: Vec<&str> = text.lines().map(|l| l.trim_end_matches('\r').trim()).collect();
-    let found = lines.iter().filter(|l| looks_like_ipv4(l)).next_back().map(|s| s.to_string());
+    let lines: Vec<&str> = text
+        .lines()
+        .map(|l| l.trim_end_matches('\r').trim())
+        .collect();
+    let found = lines
+        .iter()
+        .filter(|l| looks_like_ipv4(l))
+        .next_back()
+        .map(|s| s.to_string());
 
     // "no address" and "an address this harness cannot reach" are different
     // facts, and the filter erases the difference. An IPv6-only guest gets an
@@ -132,7 +148,10 @@ pub fn guest_ip(vmrun: &Path, vmx_win: &str, wait: bool) -> Option<String> {
     // reader looking at the install instead of at the network. WSL2 here has no
     // IPv6 route, so the address is genuinely unusable - but say which it is.
     if found.is_none() {
-        if let Some(other) = lines.iter().find(|l| l.contains(':') && !l.starts_with("Error")) {
+        if let Some(other) = lines
+            .iter()
+            .find(|l| l.contains(':') && !l.starts_with("Error"))
+        {
             eprintln!(
                 "[mc] vmrun answered {other:?}, which is not IPv4; this harness reaches guests \
                  over IPv4 only, so it is being ignored rather than used"
@@ -148,9 +167,9 @@ pub fn guest_ip(vmrun: &Path, vmx_win: &str, wait: bool) -> Option<String> {
 pub fn looks_like_ipv4(s: &str) -> bool {
     let parts: Vec<&str> = s.split('.').collect();
     parts.len() == 4
-        && parts.iter().all(|p| {
-            !p.is_empty() && p.len() <= 3 && p.chars().all(|c| c.is_ascii_digit())
-        })
+        && parts
+            .iter()
+            .all(|p| !p.is_empty() && p.len() <= 3 && p.chars().all(|c| c.is_ascii_digit()))
 }
 
 #[cfg(test)]

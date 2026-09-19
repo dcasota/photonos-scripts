@@ -276,8 +276,15 @@ pub fn run(prog: &str, args: &[&str]) -> Result<String, String> {
         Err(format!(
             "{prog} {} failed ({}): {}",
             args.join(" "),
-            out.status.code().map(|c| c.to_string()).unwrap_or_else(|| "signal".into()),
-            if se.is_empty() { so.trim().to_string() } else { se }
+            out.status
+                .code()
+                .map(|c| c.to_string())
+                .unwrap_or_else(|| "signal".into()),
+            if se.is_empty() {
+                so.trim().to_string()
+            } else {
+                se
+            }
         ))
     }
 }
@@ -298,19 +305,16 @@ pub fn ok(prog: &str, args: &[&str]) -> bool {
 /// closure's tail. Returns the exit status as an error with the last lines of
 /// output - a multi-hour build that fails must say WHY at the point of
 /// failure, not "exit 1".
-pub fn run_logged(
-    c: &mut Ctx,
-    prog: &str,
-    args: &[&str],
-    logfile: &Path,
-) -> Result<(), String> {
+pub fn run_logged(c: &mut Ctx, prog: &str, args: &[&str], logfile: &Path) -> Result<(), String> {
     use std::fs::OpenOptions;
     let f = OpenOptions::new()
         .create(true)
         .append(true)
         .open(logfile)
         .map_err(|e| format!("{}: {e}", logfile.display()))?;
-    let f2 = f.try_clone().map_err(|e| format!("{}: {e}", logfile.display()))?;
+    let f2 = f
+        .try_clone()
+        .map_err(|e| format!("{}: {e}", logfile.display()))?;
     c.say(&format!("  $ {prog} {}", args.join(" ")));
     c.say(&format!("    log: {}", logfile.display()));
     let st = Command::new(prog)
@@ -325,7 +329,9 @@ pub fn run_logged(
     let tail = tail_of(logfile, 40);
     Err(format!(
         "{prog} failed ({}). Last lines of {}:\n{tail}",
-        st.code().map(|c| c.to_string()).unwrap_or_else(|| "signal".into()),
+        st.code()
+            .map(|c| c.to_string())
+            .unwrap_or_else(|| "signal".into()),
         logfile.display()
     ))
 }
@@ -343,7 +349,12 @@ pub fn tail_of(p: &Path, n: usize) -> String {
 pub fn rpm_vr(rpm: &Path) -> Result<String, String> {
     let out = run(
         "rpm",
-        &["-qp", "--qf", "%{VERSION}-%{RELEASE}", &rpm.to_string_lossy()],
+        &[
+            "-qp",
+            "--qf",
+            "%{VERSION}-%{RELEASE}",
+            &rpm.to_string_lossy(),
+        ],
     )?;
     let vr = out.trim().to_string();
     if vr.is_empty() || vr.contains("(none)") {
@@ -356,7 +367,12 @@ pub fn rpm_vr(rpm: &Path) -> Result<String, String> {
 pub fn rpm_tag(rpm: &Path, tag: &str) -> Result<String, String> {
     Ok(run(
         "rpm",
-        &["-qp", "--qf", &format!("%{{{tag}}}"), &rpm.to_string_lossy()],
+        &[
+            "-qp",
+            "--qf",
+            &format!("%{{{tag}}}"),
+            &rpm.to_string_lossy(),
+        ],
     )?
     .trim()
     .to_string())
@@ -381,14 +397,20 @@ pub struct Produced {
 /// says why. `Verify` is not optional in a normal run: an ISO nobody read back
 /// is an ISO nobody knows the contents of.
 pub fn execute(spec: &RemasterSpec, log: &mut dyn FnMut(&str)) -> Result<Produced, String> {
-    let mut c = Ctx { spec, log, old_uname: String::new(), new_uname: String::new() };
+    let mut c = Ctx {
+        spec,
+        log,
+        old_uname: String::new(),
+        new_uname: String::new(),
+    };
     let mut p = Produced::default();
     let flavour = spec
         .flavours
         .first()
         .cloned()
         .ok_or("no kernel flavour selected")?;
-    std::fs::create_dir_all(&spec.workdir).map_err(|e| format!("{}: {e}", spec.workdir.display()))?;
+    std::fs::create_dir_all(&spec.workdir)
+        .map_err(|e| format!("{}: {e}", spec.workdir.display()))?;
 
     for stage in Stage::all() {
         if !spec.runs(stage) {
@@ -466,11 +488,17 @@ fn hydrate(c: &mut Ctx, p: &mut Produced, flavour: &str) -> Result<(), String> {
     if p.old_vr.is_empty() {
         buildroot::ensure_iso_mounted(c)?;
         p.old_vr = buildroot::media_kernel_vr(c, flavour)?;
-        c.say(&format!("  recovered: the media carries {flavour} {}", p.old_vr));
+        c.say(&format!(
+            "  recovered: the media carries {flavour} {}",
+            p.old_vr
+        ));
     }
     if p.new_vr.is_empty() {
         p.new_vr = kernel::current_vr(c, flavour)?;
-        c.say(&format!("  recovered: the rebuilt {flavour} is {}", p.new_vr));
+        c.say(&format!(
+            "  recovered: the rebuilt {flavour} is {}",
+            p.new_vr
+        ));
     }
     if p.rpms.is_empty() {
         p.rpms = kernel::built_rpms(c)?;
@@ -506,7 +534,9 @@ fn initrd_phase(c: &mut Ctx, p: &Produced) -> Result<(), String> {
     let root = work.join("root");
     let rpmdir = work.join("rpm");
     let n = initrd::unpack(c, &c.spec.isomnt().join("isolinux/initrd.img"), &root)?;
-    c.say(&format!("  unpacked the installer initrd ({n} top-level entries)"));
+    c.say(&format!(
+        "  unpacked the installer initrd ({n} top-level entries)"
+    ));
     initrd::unpack_rpm(c, &rpm, &rpmdir)?;
     let tree = rpmdir.join("lib/modules").join(&p.new_vr);
     initrd::swap_module_tree(c, &root, &p.old_vr, &tree, &p.new_vr)?;
@@ -528,7 +558,10 @@ fn repo_phase(c: &mut Ctx, p: &Produced) -> Result<(), String> {
     let set = repo::replacement_set(&c.spec.isomnt(), &srpm)?;
     c.say(&format!(
         "  replacement set from the media's own metadata: {}",
-        set.iter().map(|x| x.name.clone()).collect::<Vec<_>>().join(", ")
+        set.iter()
+            .map(|x| x.name.clone())
+            .collect::<Vec<_>>()
+            .join(", ")
     ));
     // Every package the media built from this SRPM must have been rebuilt, or
     // the repo ends up with a package requiring a version that is gone.
@@ -540,7 +573,11 @@ fn repo_phase(c: &mut Ctx, p: &Produced) -> Result<(), String> {
     let missing: Vec<&str> = set
         .iter()
         .map(|x| x.name.as_str())
-        .filter(|n| !built.iter().any(|b| b.starts_with(&format!("{n}-{}.", p.new_vr))))
+        .filter(|n| {
+            !built
+                .iter()
+                .any(|b| b.starts_with(&format!("{n}-{}.", p.new_vr)))
+        })
         .collect();
     if !missing.is_empty() {
         return Err(format!(
@@ -554,8 +591,12 @@ fn repo_phase(c: &mut Ctx, p: &Produced) -> Result<(), String> {
         .rpms
         .iter()
         .filter(|r| {
-            let n = r.file_name().map(|x| x.to_string_lossy().to_string()).unwrap_or_default();
-            set.iter().any(|s| n.starts_with(&format!("{}-{}.", s.name, p.new_vr)))
+            let n = r
+                .file_name()
+                .map(|x| x.to_string_lossy().to_string())
+                .unwrap_or_default();
+            set.iter()
+                .any(|s| n.starts_with(&format!("{}-{}.", s.name, p.new_vr)))
         })
         .cloned()
         .collect();
@@ -566,7 +607,10 @@ fn repo_phase(c: &mut Ctx, p: &Produced) -> Result<(), String> {
     // process and blocks the next run.
     repo::unmount_overlay(c);
     asserted?;
-    c.say(&format!("  metadata lists {} rebuilt package(s) and no stale kernel", keep.len()));
+    c.say(&format!(
+        "  metadata lists {} rebuilt package(s) and no stale kernel",
+        keep.len()
+    ));
     Ok(())
 }
 
@@ -602,13 +646,19 @@ fn iso_phase(c: &mut Ctx, p: &Produced) -> Result<String, String> {
             .rpms
             .iter()
             .find(|r| {
-                r.file_name().map(|n| n.to_string_lossy() == newname).unwrap_or(false)
+                r.file_name()
+                    .map(|n| n.to_string_lossy() == newname)
+                    .unwrap_or(false)
             })
             .ok_or_else(|| format!("{newname} was not built"))?;
-        plan.map.push((src.clone(), format!("/RPMS/{arch}/{newname}")));
+        plan.map
+            .push((src.clone(), format!("/RPMS/{arch}/{newname}")));
     }
     plan.rm_r.push("/RPMS/repodata".into());
-    plan.map.push((c.spec.workdir.join("repodata-out/repodata"), "/RPMS/repodata".into()));
+    plan.map.push((
+        c.spec.workdir.join("repodata-out/repodata"),
+        "/RPMS/repodata".into(),
+    ));
 
     for f in ["config", "System.map"] {
         plan.rm.push(format!("/boot/{f}-{}", p.old_vr));
@@ -628,11 +678,17 @@ fn iso_phase(c: &mut Ctx, p: &Produced) -> Result<String, String> {
         bootsrc.join(format!("boot/vmlinuz-{}", p.new_vr)),
         "/isolinux/vmlinuz".into(),
     ));
-    plan.map.push((out.join("isolinux/initrd.img"), "/isolinux/initrd.img".into()));
+    plan.map.push((
+        out.join("isolinux/initrd.img"),
+        "/isolinux/initrd.img".into(),
+    ));
 
     for (src, _) in &plan.map {
         if !src.exists() {
-            return Err(format!("{} does not exist; refusing to write a partial ISO", src.display()));
+            return Err(format!(
+                "{} does not exist; refusing to write a partial ISO",
+                src.display()
+            ));
         }
     }
     iso::write(c, &plan)
@@ -649,14 +705,21 @@ fn verify_phase(c: &mut Ctx, p: &Produced) -> Result<(), String> {
     // its computed closure. Falling back to the bare fragment would silently
     // assert seven symbols instead of ten and call that a pass.
     let want = if p.forced.is_empty() {
-        let f = c.spec.workdir.join(format!("hyperv-{}.fragment", c.spec.flavours[0]));
+        let f = c
+            .spec
+            .workdir
+            .join(format!("hyperv-{}.fragment", c.spec.flavours[0]));
         match std::fs::read_to_string(&f) {
             Ok(text) => {
                 let syms: Vec<String> = crate::kconfig::fragment_symbols(&text)
                     .into_iter()
                     .map(|(s, _)| s)
                     .collect();
-                c.say(&format!("  symbol list from {} ({} symbols)", f.display(), syms.len()));
+                c.say(&format!(
+                    "  symbol list from {} ({} symbols)",
+                    f.display(),
+                    syms.len()
+                ));
                 syms
             }
             Err(e) => {
@@ -754,7 +817,10 @@ mod tests {
         assert_eq!(parse_flavours("linux,linux").unwrap().len(), 1);
         let e = parse_flavours("linux-rt").unwrap_err();
         assert!(e.contains("linux-rt"), "{e}");
-        assert!(parse_flavours("").is_err(), "an empty list is not a default");
+        assert!(
+            parse_flavours("").is_err(),
+            "an empty list is not a default"
+        );
     }
 
     #[test]
@@ -804,6 +870,9 @@ mod tests {
         assert!(!ok("false", &[]));
         // A missing binary is a different failure from a failing one.
         let missing = run("sharukhan-no-such-binary-xyz", &[]).unwrap_err();
-        assert!(missing.contains("sharukhan-no-such-binary-xyz"), "{missing}");
+        assert!(
+            missing.contains("sharukhan-no-such-binary-xyz"),
+            "{missing}"
+        );
     }
 }

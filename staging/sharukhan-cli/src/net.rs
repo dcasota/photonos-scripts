@@ -102,7 +102,11 @@ impl FromStr for NetSpec {
     fn from_str(s: &str) -> Result<Self, String> {
         // '-' is the matrix's "this column does not apply" filler, and an
         // absent column arrives here as the default token already.
-        let t = if s.trim().is_empty() || s.trim() == "-" { DEFAULT } else { s.trim() };
+        let t = if s.trim().is_empty() || s.trim() == "-" {
+            DEFAULT
+        } else {
+            s.trim()
+        };
 
         let parts: Vec<&str> = t.split('-').collect();
         if parts.len() != 3 {
@@ -136,22 +140,25 @@ impl FromStr for NetSpec {
                 let digits = v.strip_prefix("vlan").ok_or_else(|| {
                     format!("net token '{t}': unknown vlan field '{v}' (want untag or vlanNNN)")
                 })?;
-                let id: u16 = digits.parse().map_err(|_| {
-                    format!("net token '{t}': '{digits}' is not a VLAN id")
-                })?;
+                let id: u16 = digits
+                    .parse()
+                    .map_err(|_| format!("net token '{t}': '{digits}' is not a VLAN id"))?;
                 // The same range write_netdev_file enforces. Catching it here
                 // means the run fails in milliseconds rather than hours later
                 // inside the installer.
                 if !(1..=4094).contains(&id) {
-                    return Err(format!(
-                        "net token '{t}': VLAN id {id} is outside 1..=4094"
-                    ));
+                    return Err(format!("net token '{t}': VLAN id {id} is outside 1..=4094"));
                 }
                 Some(id)
             }
         };
 
-        Ok(NetSpec { family, assign, vlan, token: t.to_string() })
+        Ok(NetSpec {
+            family,
+            assign,
+            vlan,
+            token: t.to_string(),
+        })
     }
 }
 
@@ -265,7 +272,10 @@ mod tests {
         }
         // and the boundaries themselves are legal
         assert_eq!(NetSpec::from_str("v4-static-vlan1").unwrap().vlan, Some(1));
-        assert_eq!(NetSpec::from_str("v4-static-vlan4094").unwrap().vlan, Some(4094));
+        assert_eq!(
+            NetSpec::from_str("v4-static-vlan4094").unwrap().vlan,
+            Some(4094)
+        );
     }
 
     /// Legacy is exactly what the curses configurator can produce. The single

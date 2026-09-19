@@ -62,7 +62,10 @@ pub fn plan(cfg: &Config, id: &str) -> Result<Vm, String> {
 /// would report only "Error: The operation was canceled", which names nothing.
 pub fn iso_for_vmx(iso: &Path) -> Result<String, String> {
     if !iso.is_file() {
-        return Err(format!("--iso must name an existing file: {}", iso.display()));
+        return Err(format!(
+            "--iso must name an existing file: {}",
+            iso.display()
+        ));
     }
     let real = fs::canonicalize(iso).map_err(|e| format!("{}: {e}", iso.display()))?;
     winpath::win_path_checked(&real.to_string_lossy())
@@ -132,7 +135,10 @@ pub fn create(
 
     let ks = match kickstart_json {
         Some(json) => {
-            log(&format!("kickstart injected via guestinfo ({} bytes)", json.len()));
+            log(&format!(
+                "kickstart injected via guestinfo ({} bytes)",
+                json.len()
+            ));
             Some(vmx::Kickstart { json })
         }
         None => {
@@ -140,8 +146,8 @@ pub fn create(
             None
         }
     };
-    let serial_win = winpath::win_path_checked(&vm.serial.to_string_lossy())
-        .map_err(|e| e.to_string())?;
+    let serial_win =
+        winpath::win_path_checked(&vm.serial.to_string_lossy()).map_err(|e| e.to_string())?;
     let spec = vmx::VmSpec::for_permutation(
         cfg,
         p,
@@ -178,7 +184,15 @@ fn create_disk(cfg: &Config, dir_win: &str, name: &str) -> Result<(), String> {
     }
     let target = format!("{dir_win}\\{name}.vmdk");
     let out = Command::new(&cfg.vdiskmanager)
-        .args(["-c", "-s", &cfg.boot_disk_size, "-a", &cfg.boot_disk_adapter, "-t", &cfg.boot_disk_type])
+        .args([
+            "-c",
+            "-s",
+            &cfg.boot_disk_size,
+            "-a",
+            &cfg.boot_disk_adapter,
+            "-t",
+            &cfg.boot_disk_type,
+        ])
         .arg(&target)
         .output()
         .map_err(|e| format!("running vmware-vdiskmanager: {e}"))?;
@@ -186,7 +200,9 @@ fn create_disk(cfg: &Config, dir_win: &str, name: &str) -> Result<(), String> {
         return Err(format!(
             "vmware-vdiskmanager failed for {name} (rc={}): {}",
             out.status.code().unwrap_or(-1),
-            String::from_utf8_lossy(&out.stdout).trim_end_matches(['\r', '\n']).trim()
+            String::from_utf8_lossy(&out.stdout)
+                .trim_end_matches(['\r', '\n'])
+                .trim()
         ));
     }
     Ok(())
@@ -217,7 +233,10 @@ fn stash_contents(dir: &Path) -> Result<Stash, String> {
     fs::create_dir_all(&stash).map_err(|e| format!("{}: {e}", stash.display()))?;
     let mut moved = 0;
     let mut failed = Vec::new();
-    for e in fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))?.flatten() {
+    for e in fs::read_dir(dir)
+        .map_err(|e| format!("{}: {e}", dir.display()))?
+        .flatten()
+    {
         let name = e.file_name().to_string_lossy().to_string();
         if name.starts_with("stash-") {
             continue;
@@ -238,7 +257,9 @@ pub fn stash_nvram(vm: &Vm) -> Option<PathBuf> {
     if !nvram.exists() {
         return None;
     }
-    let to = vm.dir.join(format!("{}.nvram.stashed-{}", vm.name, job::stamp()));
+    let to = vm
+        .dir
+        .join(format!("{}.nvram.stashed-{}", vm.name, job::stamp()));
     fs::rename(&nvram, &to).ok().map(|_| to)
 }
 
@@ -286,7 +307,10 @@ pub fn teardown(
         was_running: false,
     };
     if !dir.is_dir() {
-        log(&format!("{} does not exist, nothing to tear down", dir.display()));
+        log(&format!(
+            "{} does not exist, nothing to tear down",
+            dir.display()
+        ));
         return Ok(r);
     }
 
@@ -303,13 +327,19 @@ pub fn teardown(
     // Globbed by extension, not enumerated: a fixed list of two snapshot
     // deltas silently leaves an orphan on a VM that reached -000003.vmdk.
     const CHAIN: [&str; 5] = ["vmdk", "vmsn", "vmsd", "nvram", "vmss"];
-    for e in fs::read_dir(&dir).map_err(|e| format!("{}: {e}", dir.display()))?.flatten() {
+    for e in fs::read_dir(&dir)
+        .map_err(|e| format!("{}: {e}", dir.display()))?
+        .flatten()
+    {
         let path = e.path();
         let name = e.file_name().to_string_lossy().to_string();
         if name.contains(".stashed-") {
             continue;
         }
-        let ext = path.extension().map(|x| x.to_string_lossy().to_string()).unwrap_or_default();
+        let ext = path
+            .extension()
+            .map(|x| x.to_string_lossy().to_string())
+            .unwrap_or_default();
         if path.is_file() && CHAIN.contains(&ext.as_str()) {
             let to = dir.join(format!("{name}.stashed-{ts}"));
             match fs::rename(&path, &to) {
@@ -324,7 +354,10 @@ pub fn teardown(
             let _ = fs::remove_file(&path);
         }
     }
-    log(&format!("stashed {} file(s) with suffix .stashed-{ts}", r.stashed));
+    log(&format!(
+        "stashed {} file(s) with suffix .stashed-{ts}",
+        r.stashed
+    ));
 
     r.serial_logs_kept = fs::read_dir(&dir)
         .map(|d| {
@@ -342,7 +375,10 @@ pub fn teardown(
     ));
 
     if purge {
-        for e in fs::read_dir(&dir).map_err(|e| format!("{}: {e}", dir.display()))?.flatten() {
+        for e in fs::read_dir(&dir)
+            .map_err(|e| format!("{}: {e}", dir.display()))?
+            .flatten()
+        {
             let name = e.file_name().to_string_lossy().to_string();
             let path = e.path();
             if name.contains(".stashed-") && path.is_file() {

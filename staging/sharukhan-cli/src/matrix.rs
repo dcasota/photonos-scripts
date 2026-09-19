@@ -74,7 +74,11 @@ impl Permutation {
     /// separate ISO - it is a different artefact, and reusing the plain one
     /// would report a verdict about media that was never built.
     pub fn build_variants(&self) -> Vec<&str> {
-        self.canister.split('+').skip(1).filter(|s| !s.is_empty()).collect()
+        self.canister
+            .split('+')
+            .skip(1)
+            .filter(|s| !s.is_empty())
+            .collect()
     }
 
     /// The canister part alone, which is what `CanisterMode::parse` accepts.
@@ -90,7 +94,13 @@ impl Permutation {
 
     /// The architecture this row's ISO is for.
     pub fn arch(&self) -> &str {
-        if self.canister.split('+').next().unwrap_or("").contains("aarch64") {
+        if self
+            .canister
+            .split('+')
+            .next()
+            .unwrap_or("")
+            .contains("aarch64")
+        {
             "aarch64"
         } else {
             "x86_64"
@@ -142,7 +152,9 @@ impl Permutation {
                 std::env::consts::ARCH
             ));
         }
-        self.net.unrunnable_reason().map(|r| format!("net={}: {r}", self.net))
+        self.net
+            .unrunnable_reason()
+            .map(|r| format!("net={}: {r}", self.net))
     }
 }
 
@@ -189,7 +201,11 @@ pub fn select(all: &[Permutation], only: Option<&str>) -> Result<Vec<Permutation
     let Some(spec) = only else {
         return Ok(all.to_vec());
     };
-    let want: Vec<&str> = spec.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+    let want: Vec<&str> = spec
+        .split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
     let mut out = Vec::new();
     let mut missing = Vec::new();
     for id in &want {
@@ -281,8 +297,13 @@ mod tests {
     #[test]
     fn the_network_axis_never_reaches_the_iso_cache() {
         let base = row_with("prebuilt", "v4-dhcp-untag");
-        for token in ["v4-static-untag", "dual-static-untag", "v6-static-untag",
-                      "v4-static-vlan100", "v4-dhcp-vlan100"] {
+        for token in [
+            "v4-static-untag",
+            "dual-static-untag",
+            "v6-static-untag",
+            "v4-static-vlan100",
+            "v4-dhcp-vlan100",
+        ] {
             assert_eq!(
                 row_with("prebuilt", token).iso_key(),
                 base.iso_key(),
@@ -333,7 +354,10 @@ mod tests {
         assert!(hv.wants_hyperv());
 
         let plain = row_with("prebuilt", crate::net::DEFAULT);
-        assert!(plain.build_variants().is_empty(), "a bare column has no variants");
+        assert!(
+            plain.build_variants().is_empty(),
+            "a bare column has no variants"
+        );
         assert!(!plain.wants_hyperv());
         assert_eq!(plain.arch(), "x86_64");
 
@@ -379,7 +403,10 @@ mod tests {
         );
         let why = r.unrunnable_reason_with(false).unwrap_or_default();
         if std::env::consts::ARCH != "aarch64" {
-            assert!(why.contains("binfmt"), "the reason must say what is missing: {why}");
+            assert!(
+                why.contains("binfmt"),
+                "the reason must say what is missing: {why}"
+            );
             assert!(why.contains("aarch64 hardware"), "{why}");
         }
     }

@@ -46,7 +46,9 @@ pub fn win_path(p: &str) -> String {
 pub fn win_path_checked(p: &str) -> Result<String, NotWindowsVisible> {
     match drive_of(p) {
         Some((drive, rest)) => Ok(format!("{}:{}", drive, rest.replace('/', "\\"))),
-        None => Err(NotWindowsVisible { path: p.to_string() }),
+        None => Err(NotWindowsVisible {
+            path: p.to_string(),
+        }),
     }
 }
 
@@ -74,8 +76,10 @@ mod tests {
     #[test]
     fn mnt_drive_becomes_a_windows_path() {
         assert_eq!(win_path("/mnt/c/foo/bar"), "C:\\foo\\bar");
-        assert_eq!(win_path("/mnt/c/photon-mc/vm/mc-k01/mc-k01.vmx"),
-                   "C:\\photon-mc\\vm\\mc-k01\\mc-k01.vmx");
+        assert_eq!(
+            win_path("/mnt/c/photon-mc/vm/mc-k01/mc-k01.vmx"),
+            "C:\\photon-mc\\vm\\mc-k01\\mc-k01.vmx"
+        );
         assert_eq!(win_path("/mnt/d/x"), "D:\\x");
     }
 

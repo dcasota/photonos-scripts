@@ -97,7 +97,13 @@ mod tests {
 
     #[test]
     fn the_operator_is_told_the_password_that_was_actually_configured() {
-        let t = render(&row("no", "ext4"), "mc-p04", 4, "192.168.225.44", "from-the-env");
+        let t = render(
+            &row("no", "ext4"),
+            "mc-p04",
+            4,
+            "192.168.225.44",
+            "from-the-env",
+        );
         assert!(t.contains("Root password           from-the-env"));
     }
 

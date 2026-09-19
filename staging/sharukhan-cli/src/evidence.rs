@@ -74,10 +74,7 @@ impl Checks {
         let file = File::create(&path).map_err(|e| format!("{}: {e}", path.display()))?;
         let link = dir.join("checks-latest.jsonl");
         let _ = fs::remove_file(&link);
-        let _ = std::os::unix::fs::symlink(
-            path.file_name().unwrap_or_default(),
-            &link,
-        );
+        let _ = std::os::unix::fs::symlink(path.file_name().unwrap_or_default(), &link);
         Ok(Checks {
             perm: perm.to_string(),
             path,
@@ -154,7 +151,11 @@ impl Checks {
 
     /// Pass when measured equals expected, fail otherwise.
     pub fn expect(&mut self, id: &str, pr: &str, expected: &str, actual: &str, detail: &str) {
-        let st = if expected == actual { Status::Pass } else { Status::Fail };
+        let st = if expected == actual {
+            Status::Pass
+        } else {
+            Status::Fail
+        };
         self.check(id, pr, st, expected, actual, detail);
     }
 

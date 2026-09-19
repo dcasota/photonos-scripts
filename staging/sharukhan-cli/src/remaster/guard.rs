@@ -148,7 +148,11 @@ pub fn avail_kb(p: &Path) -> Option<u64> {
     if rc != 0 {
         return None;
     }
-    let unit = if s.f_frsize > 0 { s.f_frsize } else { s.f_bsize };
+    let unit = if s.f_frsize > 0 {
+        s.f_frsize
+    } else {
+        s.f_bsize
+    };
     Some(s.f_bavail.saturating_mul(unit) / 1024)
 }
 
@@ -160,7 +164,9 @@ pub fn mem_avail_kb() -> Option<u64> {
     let mut swap = 0u64;
     for line in text.lines() {
         let mut it = line.split_whitespace();
-        let (Some(k), Some(v)) = (it.next(), it.next()) else { continue };
+        let (Some(k), Some(v)) = (it.next(), it.next()) else {
+            continue;
+        };
         let Ok(n) = v.parse::<u64>() else { continue };
         match k {
             "MemAvailable:" => avail = n,
@@ -214,7 +220,12 @@ mod tests {
     use super::*;
 
     fn plenty() -> Free {
-        Free { root: 100_000_000, work: 100_000_000, out: 100_000_000, mem: 20_000_000 }
+        Free {
+            root: 100_000_000,
+            work: 100_000_000,
+            out: 100_000_000,
+            mem: 20_000_000,
+        }
     }
 
     #[test]

@@ -133,7 +133,9 @@ impl Job {
         match self.pid {
             None => "no pid recorded",
             Some(p) if !crate::proc::alive(p as i32) => "pid not alive",
-            Some(p) if !crate::proc::looks_like_sharukhan(p as i32) => "pid reused by another program",
+            Some(p) if !crate::proc::looks_like_sharukhan(p as i32) => {
+                "pid reused by another program"
+            }
             Some(_) => "alive",
         }
     }

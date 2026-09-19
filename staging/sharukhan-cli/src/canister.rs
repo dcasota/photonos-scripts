@@ -123,7 +123,9 @@ fn spec_nevr(spec: &str) -> Option<String> {
 /// carries no baseurl, so a tree without SPECS/photon-repos still gets an
 /// answer rather than an error that reads like an outage.
 fn updates_index_url(cfg: &Config) -> String {
-    let repo = cfg.photon_tree.join("SPECS/photon-repos/photon-updates.repo");
+    let repo = cfg
+        .photon_tree
+        .join("SPECS/photon-repos/photon-updates.repo");
     let base = std::fs::read_to_string(&repo)
         .ok()
         .and_then(|t| {
@@ -134,7 +136,10 @@ fn updates_index_url(cfg: &Config) -> String {
         // `$releasever_$basearch` has no braces, so substitute the longest
         // names first: replacing `$basearch` before `$releasever` is fine, but
         // a naive pass that matched a shorter prefix would corrupt the other.
-        .map(|b| b.replace("$releasever", &cfg.release).replace("$basearch", "x86_64"))
+        .map(|b| {
+            b.replace("$releasever", &cfg.release)
+                .replace("$basearch", "x86_64")
+        })
         .unwrap_or_else(|| {
             format!(
                 "https://packages.broadcom.com/photon/{}/photon_updates_{}_x86_64",
@@ -247,7 +252,11 @@ fn nevr_at(tree: &Path, git_ref: &str) -> Option<String> {
     // keeps Release in an included file, which `git show` of linux.spec alone
     // never reaches.
     let read = crate::specresolve::git_reader(tree, git_ref, "SPECS/linux", None);
-    let text = crate::specresolve::resolve(&read, "linux.spec", crate::specresolve::tree_subrelease(tree))?;
+    let text = crate::specresolve::resolve(
+        &read,
+        "linux.spec",
+        crate::specresolve::tree_subrelease(tree),
+    )?;
     spec_nevr(&text)
 }
 
@@ -269,7 +278,12 @@ pub fn provenance(cfg: &Config, effective: String) -> Provenance {
     if upstream.is_none() {
         unread.push(up_ref);
     }
-    Provenance { effective, fork, upstream, unread }
+    Provenance {
+        effective,
+        fork,
+        upstream,
+        unread,
+    }
 }
 
 /// P0 - decide the state from the tree, without building anything.
@@ -291,7 +305,11 @@ pub fn detect(cfg: &Config, arch: &str) -> Result<State, String> {
 /// made about the wrong kernel.
 pub fn detect_for(cfg: &Config, arch: &str, kernel: Option<&str>) -> Result<State, String> {
     let specs = Specs::under(&cfg.photon_tree);
-    let spec_dir = specs.linux.parent().map(Path::to_path_buf).unwrap_or_default();
+    let spec_dir = specs
+        .linux
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_default();
     let linux = crate::specresolve::resolve(
         &crate::specresolve::dir_reader(&spec_dir),
         "linux.spec",
@@ -321,7 +339,10 @@ pub fn detect_for(cfg: &Config, arch: &str, kernel: Option<&str>) -> Result<Stat
     // the kernel under test, so that is the comparison to make.
     match published(cfg) {
         Ok(Some(pubv)) if pubv == kernel => Ok(State::Certified { version: pubv }),
-        Ok(Some(pubv)) => Ok(State::Equivalent { kernel, certified: pubv }),
+        Ok(Some(pubv)) => Ok(State::Equivalent {
+            kernel,
+            certified: pubv,
+        }),
         Ok(None) => Ok(State::Equivalent {
             kernel,
             certified: "none published".into(),
@@ -373,16 +394,24 @@ pub fn plan(state: &State) -> Plan {
 /// `local` is the canister found in the stage, if any.
 pub fn plan_with_local(state: &State, local: Option<(&str, &str)>) -> Plan {
     match state {
-        State::Certified { version } => Plan::LinkPublished { version: version.clone() },
+        State::Certified { version } => Plan::LinkPublished {
+            version: version.clone(),
+        },
         State::Equivalent { kernel, .. } => match local {
             Some((nevr, path)) if nevr == kernel => Plan::LinkLocalEquivalent {
                 version: kernel.clone(),
                 path: path.to_string(),
             },
-            _ => Plan::BuildThenLink { version: kernel.clone() },
+            _ => Plan::BuildThenLink {
+                version: kernel.clone(),
+            },
         },
-        State::Absent { reason, .. } => Plan::Nothing { reason: reason.clone() },
-        State::Unknown { reason, .. } => Plan::Refuse { reason: reason.clone() },
+        State::Absent { reason, .. } => Plan::Nothing {
+            reason: reason.clone(),
+        },
+        State::Unknown { reason, .. } => Plan::Refuse {
+            reason: reason.clone(),
+        },
     }
 }
 
@@ -457,7 +486,14 @@ pub fn rebase_check_in(dir: &Path, tree: &Path) -> Result<Vec<Applied>, String> 
             .to_string();
         let status = Command::new("patch")
             .current_dir(tree)
-            .args(["-p1", "-s", "--fuzz=0", "--no-backup-if-mismatch", "-f", "-i"])
+            .args([
+                "-p1",
+                "-s",
+                "--fuzz=0",
+                "--no-backup-if-mismatch",
+                "-f",
+                "-i",
+            ])
             .arg(&patch)
             .output()
             .map_err(|e| format!("running patch: {e}"))?;
@@ -467,7 +503,14 @@ pub fn rebase_check_in(dir: &Path, tree: &Path) -> Result<Vec<Applied>, String> 
         } else {
             String::from_utf8_lossy(&status.stdout)
                 .lines()
-                .chain(String::from_utf8_lossy(&status.stderr).lines().map(|s| s.to_owned()).collect::<Vec<_>>().iter().map(|s| s.as_str()))
+                .chain(
+                    String::from_utf8_lossy(&status.stderr)
+                        .lines()
+                        .map(|s| s.to_owned())
+                        .collect::<Vec<_>>()
+                        .iter()
+                        .map(|s| s.as_str()),
+                )
                 .filter(|l| l.contains("FAILED") || l.contains("saving rejects"))
                 .map(|l| l.trim().to_string())
                 .collect()
@@ -528,7 +571,10 @@ Release:        12%{?acvp_build:.acvp}%{?kat_build:.kat}%{?dist}
             "6.12.60-18.2.ph5"
         );
         let bare = "%define fips_canister_version 6.12.60-18.2.ph5\n";
-        assert_eq!(spec_define(bare, "fips_canister_version").unwrap(), "6.12.60-18.2.ph5");
+        assert_eq!(
+            spec_define(bare, "fips_canister_version").unwrap(),
+            "6.12.60-18.2.ph5"
+        );
     }
 
     /// The canister lagging the kernel is the DESIGNED state, so a plain
@@ -542,7 +588,8 @@ Release:        12%{?acvp_build:.acvp}%{?kat_build:.kat}%{?dist}
 
     #[test]
     fn the_boot_line_yields_both_versions() {
-        let d = "[    1.2] FIPS(fips_canister_init): canister 6.12 found (based on 6.12.103-12.ph5)";
+        let d =
+            "[    1.2] FIPS(fips_canister_init): canister 6.12 found (based on 6.12.103-12.ph5)";
         assert_eq!(
             parse_boot_line(d),
             Some(("6.12".into(), "6.12.103-12.ph5".into()))
@@ -573,7 +620,9 @@ Release:        12%{?acvp_build:.acvp}%{?kat_build:.kat}%{?dist}
             Some("6.12.103-13.ph5")
         );
         // Not canisters.
-        assert!(parse_canister_rpm("linux-fips-canister-debuginfo-6.12.60-18.ph5.x86_64.rpm").is_none());
+        assert!(
+            parse_canister_rpm("linux-fips-canister-debuginfo-6.12.60-18.ph5.x86_64.rpm").is_none()
+        );
         assert!(parse_canister_rpm("linux-6.12.103-13.ph5.x86_64.rpm").is_none());
         assert!(parse_canister_rpm("linux-fips-canister-6.12.60-18.ph5.x86_64.srpm").is_none());
         assert!(parse_canister_rpm("").is_none());
@@ -584,10 +633,14 @@ Release:        12%{?acvp_build:.acvp}%{?kat_build:.kat}%{?dist}
     /// would throw away the certificate and spend hours doing it.
     #[test]
     fn a_published_canister_at_the_kernel_level_means_no_phase_a() {
-        let st = State::Certified { version: "6.12.103-13.ph5".into() };
+        let st = State::Certified {
+            version: "6.12.103-13.ph5".into(),
+        };
         assert_eq!(
             plan(&st),
-            Plan::LinkPublished { version: "6.12.103-13.ph5".into() }
+            Plan::LinkPublished {
+                version: "6.12.103-13.ph5".into()
+            }
         );
         assert!(st.is_validated());
     }
@@ -600,7 +653,9 @@ Release:        12%{?acvp_build:.acvp}%{?kat_build:.kat}%{?dist}
         };
         assert_eq!(
             plan(&st),
-            Plan::BuildThenLink { version: "6.12.103-13.ph5".into() }
+            Plan::BuildThenLink {
+                version: "6.12.103-13.ph5".into()
+            }
         );
         assert!(!st.is_validated());
     }
@@ -613,7 +668,9 @@ Release:        12%{?acvp_build:.acvp}%{?kat_build:.kat}%{?dist}
         // Same published canister, two different kernels under test: the
         // verdict must differ.
         let published = "6.12.60-18.ph5";
-        let same = State::Certified { version: published.into() };
+        let same = State::Certified {
+            version: published.into(),
+        };
         assert!(same.is_validated());
 
         let differs = State::Equivalent {
@@ -623,7 +680,9 @@ Release:        12%{?acvp_build:.acvp}%{?kat_build:.kat}%{?dist}
         assert!(!differs.is_validated());
         assert_eq!(
             plan(&differs),
-            Plan::BuildThenLink { version: "6.12.103-14.ph5".into() }
+            Plan::BuildThenLink {
+                version: "6.12.103-14.ph5".into()
+            }
         );
     }
 
@@ -659,7 +718,10 @@ Release:        12%{?acvp_build:.acvp}%{?kat_build:.kat}%{?dist}
             upstream: None,
             unread: vec!["vmware/5.0".into()],
         };
-        assert!(!p.fork_differs(), "unknown must not be reported as a difference");
+        assert!(
+            !p.fork_differs(),
+            "unknown must not be reported as a difference"
+        );
         assert!(!p.unread.is_empty(), "but it must be reported as unread");
     }
 
@@ -672,7 +734,9 @@ Release:        12%{?acvp_build:.acvp}%{?kat_build:.kat}%{?dist}
             kernel: "6.12.103-14.ph5".into(),
             certified: "6.12.60-18.ph5".into(),
         };
-        let after = State::Certified { version: "6.12.103-14.ph5".into() };
+        let after = State::Certified {
+            version: "6.12.103-14.ph5".into(),
+        };
         assert!(matches!(plan(&before), Plan::BuildThenLink { .. }));
         assert!(matches!(plan(&after), Plan::LinkPublished { .. }));
         assert!(!before.is_validated() && after.is_validated());
@@ -693,9 +757,20 @@ Release:        12%{?acvp_build:.acvp}%{?kat_build:.kat}%{?dist}
 
     #[test]
     fn only_a_certified_canister_may_be_reported_as_validated() {
-        assert!(State::Certified { version: "x".into() }.is_validated());
-        assert!(!State::Equivalent { kernel: "a".into(), certified: "b".into() }.is_validated());
-        assert!(!State::Absent { arch: "aarch64".into(), reason: "x".into() }.is_validated());
+        assert!(State::Certified {
+            version: "x".into()
+        }
+        .is_validated());
+        assert!(!State::Equivalent {
+            kernel: "a".into(),
+            certified: "b".into()
+        }
+        .is_validated());
+        assert!(!State::Absent {
+            arch: "aarch64".into(),
+            reason: "x".into()
+        }
+        .is_validated());
     }
 }
 
@@ -757,7 +832,9 @@ mod plan_tests {
     /// an artifact that is already on disk.
     #[test]
     fn a_published_canister_wins_over_anything_local() {
-        let st = State::Certified { version: "6.12.60-18.ph5".into() };
+        let st = State::Certified {
+            version: "6.12.60-18.ph5".into(),
+        };
         // Even with a local equivalent present, a published canister is linked:
         // it is the one that keeps the build CMVP validated.
         match plan_with_local(&st, Some(("6.12.60-18.ph5", "/stage/x.rpm"))) {
@@ -815,7 +892,10 @@ mod plan_tests {
     /// costs twelve hours.
     #[test]
     fn an_unreadable_published_list_is_refused_even_with_a_local_canister() {
-        let st = State::Unknown { kernel: "6.12.103-14.ph5".into(), reason: "http 503".into() };
+        let st = State::Unknown {
+            kernel: "6.12.103-14.ph5".into(),
+            reason: "http 503".into(),
+        };
         assert!(matches!(
             plan_with_local(&st, Some(("6.12.103-14.ph5", "/stage/x.rpm"))),
             Plan::Refuse { .. }

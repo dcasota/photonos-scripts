@@ -43,7 +43,12 @@ pub fn media_rpms(iso: &Path) -> Vec<String> {
     let Ok(out) = out else { return Vec::new() };
     String::from_utf8_lossy(&out.stdout)
         .lines()
-        .filter_map(|l| l.trim().rsplit('/').next().map(|n| n.trim_matches('\'').to_string()))
+        .filter_map(|l| {
+            l.trim()
+                .rsplit('/')
+                .next()
+                .map(|n| n.trim_matches('\'').to_string())
+        })
         .filter(|n| n.ends_with(".rpm"))
         .collect()
 }
@@ -61,12 +66,28 @@ pub fn rpm_is(file: &str, name: &str) -> bool {
 
 pub fn media(iso: &Path, iso_type: &str, c: &mut Checks) {
     let list = media_rpms(iso);
-    c.check("media.rpm_count", "-", Status::Info, "", &list.len().to_string(), "RPMs on media");
+    c.check(
+        "media.rpm_count",
+        "-",
+        Status::Info,
+        "",
+        &list.len().to_string(),
+        "RPMs on media",
+    );
 
     // Negative control: a name that must never resolve. Without it a broken
     // extraction would make every presence check vacuously pass.
-    let ctl = list.iter().filter(|f| rpm_is(f, "zzz-not-a-real-package")).count();
-    c.expect("media.negative_control", "-", "0", &ctl.to_string(), "control must find nothing");
+    let ctl = list
+        .iter()
+        .filter(|f| rpm_is(f, "zzz-not-a-real-package"))
+        .count();
+    c.expect(
+        "media.negative_control",
+        "-",
+        "0",
+        &ctl.to_string(),
+        "control must find nothing",
+    );
 
     let mut missing: Vec<&str> = STIG_MEDIA_PKGS
         .iter()
@@ -93,7 +114,14 @@ pub fn media(iso: &Path, iso_type: &str, c: &mut Checks) {
         .find(|f| rpm_is(f, "photon-os-installer"))
         .cloned()
         .unwrap_or_else(|| "ABSENT".to_string());
-    c.check("media.poi_rpm", "-", Status::Info, "", &poi, "installer actually on the media");
+    c.check(
+        "media.poi_rpm",
+        "-",
+        Status::Info,
+        "",
+        &poi,
+        "installer actually on the media",
+    );
 }
 
 // ---- A2. the Hyper-V media assertions -----------------------------------
@@ -169,7 +197,10 @@ pub fn media_hyperv(
         .status()
         .map_err(|e| format!("xorriso -extract: {e}"))?;
     if !st.success() || !rpm_dst.is_file() {
-        return Err(format!("could not extract the kernel package from {}", iso.display()));
+        return Err(format!(
+            "could not extract the kernel package from {}",
+            iso.display()
+        ));
     }
 
     let uname = Command::new("rpm")
@@ -180,7 +211,9 @@ pub fn media_hyperv(
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())?;
     out.push(format!("uname from the media's kernel RPM: {uname}"));
     if uname == old_vr {
-        fail.push(format!("the media still carries the ORIGINAL kernel {old_vr}"));
+        fail.push(format!(
+            "the media still carries the ORIGINAL kernel {old_vr}"
+        ));
     }
 
     // 1. /boot/config-<uname> inside the RPM on the media.
@@ -207,14 +240,17 @@ pub fn media_hyperv(
         return Err("could not unpack the kernel RPM from the media".to_string());
     }
     let cfg_path = unpack.join(format!("boot/config-{uname}"));
-    let cfg_text = fs::read_to_string(&cfg_path)
-        .map_err(|e| format!("{}: {e}", cfg_path.display()))?;
+    let cfg_text =
+        fs::read_to_string(&cfg_path).map_err(|e| format!("{}: {e}", cfg_path.display()))?;
     let cfg = Kconfig::parse(&cfg_text);
     match kconfig::assert_all_y(&cfg, want) {
         Ok(()) => out.push(format!(
             "rpm /boot/config-{uname}: all {} symbols =y ({})",
             want.len(),
-            want.iter().map(|s| format!("CONFIG_{s}")).collect::<Vec<_>>().join(" ")
+            want.iter()
+                .map(|s| format!("CONFIG_{s}"))
+                .collect::<Vec<_>>()
+                .join(" ")
         )),
         Err(e) => fail.push(format!("rpm config: {e}")),
     }
@@ -236,9 +272,10 @@ pub fn media_hyperv(
     }
 
     // 3. the installer kernel's own embedded config.
-    match fs::read(&vmlinuz_dst).map_err(|e| e.to_string()).and_then(|img| {
-        kconfig::extract_ikconfig(&img)
-    }) {
+    match fs::read(&vmlinuz_dst)
+        .map_err(|e| e.to_string())
+        .and_then(|img| kconfig::extract_ikconfig(&img))
+    {
         Ok(text) => {
             let ik = Kconfig::parse(&text);
             match kconfig::assert_all_y(&ik, want) {
@@ -257,7 +294,9 @@ pub fn media_hyperv(
     match initrd_module_dirs(&initrd_dst) {
         Ok((dirs, hv)) => {
             if dirs.len() == 1 && dirs[0] == uname {
-                out.push(format!("initrd module tree: exactly usr/lib/modules/{uname}"));
+                out.push(format!(
+                    "initrd module tree: exactly usr/lib/modules/{uname}"
+                ));
             } else {
                 fail.push(format!(
                     "initrd carries module trees {dirs:?}, expected exactly [{uname}]"
@@ -365,10 +404,22 @@ pub fn install(serial_path: &Path, install_result: Option<&str>, c: &mut Checks)
     // signal. Never match a specific package name: list(set(packages)) makes
     // which of the six tdnf reports first non-deterministic.
     let e1011 = serial::count(&text, "Error(1011)");
-    c.expect("install.no_error_1011", "POI#11", "0", &e1011.to_string(), "No matching packages");
+    c.expect(
+        "install.no_error_1011",
+        "POI#11",
+        "0",
+        &e1011.to_string(),
+        "No matching packages",
+    );
 
     let efail = serial::count(&text, "Failed to install some packages");
-    c.expect("install.packages_installed", "POI#11", "0", &efail.to_string(), "");
+    c.expect(
+        "install.packages_installed",
+        "POI#11",
+        "0",
+        &efail.to_string(),
+        "",
+    );
 
     // The i18n error proves the locale.conf ordering fix did NOT apply.
     let i18n = serial::count(&text, "i18n_vars not set");
@@ -384,14 +435,25 @@ pub fn install(serial_path: &Path, install_result: Option<&str>, c: &mut Checks)
     // the installer live env to the installed disk.
     let ram = serial::count(&text, "root=/dev/ram0");
     let parts = serial::count(&text, "root=PARTUUID=");
-    c.check("install.boot_ram0", "-", Status::Info, "", &ram.to_string(), "installer live-env boots");
+    c.check(
+        "install.boot_ram0",
+        "-",
+        Status::Info,
+        "",
+        &ram.to_string(),
+        "installer live-env boots",
+    );
 
     // Two independent proofs, either sufficient. The serial marker only
     // appears if the INSTALLED system has a serial console; a target whose
     // grub edit did not take is silent here even though it booted perfectly
     // well. In that case the guest answering on the network is the stronger
     // evidence, so accept it.
-    let booted = if parts > 0 || install_result == Some("installed") { "yes" } else { "no" };
+    let booted = if parts > 0 || install_result == Some("installed") {
+        "yes"
+    } else {
+        "no"
+    };
     c.expect(
         "install.booted_from_disk",
         "-",
@@ -477,7 +539,13 @@ pub fn guest(
     c: &mut Checks,
 ) {
     let v = g.run("findmnt -no FSTYPE /").value_or("unknown");
-    c.expect("guest.root_fstype", "-", fs, &v, "the filesystem axis actually took effect");
+    c.expect(
+        "guest.root_fstype",
+        "-",
+        fs,
+        &v,
+        "the filesystem axis actually took effect",
+    );
 
     // --- SELinux ---------------------------------------------------------
     let policy = g.run("rpm -q selinux-policy").value_or("absent");
@@ -494,7 +562,11 @@ pub fn guest(
     let sub = subrelease.trimmed().parse::<u32>().ok();
     let running = g.run("getenforce").value_or("unknown");
     let expected = expected_selinux(
-        if config.ok { Some(config.stdout.as_str()) } else { None },
+        if config.ok {
+            Some(config.stdout.as_str())
+        } else {
+            None
+        },
         sub,
     );
     match (&expected, stig) {
@@ -544,7 +616,9 @@ pub fn guest(
     // is package-owned and not %config; the installer deliberately skips the
     // equivalent ansible control PHTN-50-000245.
     if stig == "yes" {
-        let v = g.run("findmnt -no OPTIONS /tmp | grep -c noexec").value_or("0");
+        let v = g
+            .run("findmnt -no OPTIONS /tmp | grep -c noexec")
+            .value_or("0");
         c.check(
             "guest.tmp_noexec",
             "PR#22",
@@ -594,12 +668,28 @@ pub fn guest(
     );
 
     // POI#9 counterpart: time sync works without ntp being installed.
-    let v = g.run("timedatectl show -p NTPSynchronized --value").value_or("?");
-    c.check("guest.time_synced", "POI#9", Status::Info, "", &v, "systemd-timesyncd, not ntp");
+    let v = g
+        .run("timedatectl show -p NTPSynchronized --value")
+        .value_or("?");
+    c.check(
+        "guest.time_synced",
+        "POI#9",
+        Status::Info,
+        "",
+        &v,
+        "systemd-timesyncd, not ntp",
+    );
 
     // Canister/FIPS, when the ISO was built with one.
     let fips_on = g.run("cat /proc/sys/crypto/fips_enabled").value_or("0");
-    c.check("guest.fips_enabled", "PR#24", Status::Info, "", &fips_on, "");
+    c.check(
+        "guest.fips_enabled",
+        "PR#24",
+        Status::Info,
+        "",
+        &fips_on,
+        "",
+    );
     let fips_on = fips_on.trim() == "1";
     let v = g
         .run("dmesg 2>/dev/null | grep -c \"canister verification passed\"")
@@ -659,14 +749,23 @@ pub fn guest(
 /// would fail rows for the environment's reasons rather than POI's, which is
 /// the one thing this harness exists not to do.
 pub fn network(g: &Guest, net: &NetSpec, c: &mut Checks) {
-    c.check("net.axis", "-", Status::Info, "", &net.to_string(), "the row's network token");
+    c.check(
+        "net.axis",
+        "-",
+        Status::Info,
+        "",
+        &net.to_string(),
+        "the row's network token",
+    );
 
     // `setup_network(do_clean=True)` DELETES everything in the target's
     // /etc/systemd/network before writing its own files. The shipped
     // 99-dhcp-en.network surviving is the unambiguous signal that
     // _setup_network never ran at all - which otherwise looks exactly like a
     // working DHCP guest, because the shipped file also does DHCP.
-    let files = g.run("ls -1 /etc/systemd/network/ 2>/dev/null | tr '\\n' ' '").value_or("none");
+    let files = g
+        .run("ls -1 /etc/systemd/network/ 2>/dev/null | tr '\\n' ' '")
+        .value_or("none");
     c.check(
         "net.config_files",
         "-",
@@ -714,16 +813,26 @@ pub fn network(g: &Guest, net: &NetSpec, c: &mut Checks) {
         c.check(
             "net.v4_addr",
             "-",
-            if v4.trim().is_empty() { Status::Fail } else { Status::Pass },
+            if v4.trim().is_empty() {
+                Status::Fail
+            } else {
+                Status::Pass
+            },
             "an IPv4 address on eth0",
             v4.trim(),
             "the family axis says this interface carries IPv4",
         );
-        let gw = g.run("ip -4 route show default 2>/dev/null | awk '{print $3}'").value_or("none");
+        let gw = g
+            .run("ip -4 route show default 2>/dev/null | awk '{print $3}'")
+            .value_or("none");
         c.check(
             "net.v4_default_route",
             "-",
-            if gw == "none" { Status::Fail } else { Status::Pass },
+            if gw == "none" {
+                Status::Fail
+            } else {
+                Status::Pass
+            },
             "a default gateway",
             &gw,
             "VMnet8's NAT device at .2 is both router and DNS forwarder",
@@ -758,7 +867,11 @@ pub fn network(g: &Guest, net: &NetSpec, c: &mut Checks) {
         c.check(
             "net.management_nic",
             "-",
-            if mgmt == "none" { Status::Fail } else { Status::Pass },
+            if mgmt == "none" {
+                Status::Fail
+            } else {
+                Status::Pass
+            },
             "an IPv4 lease on eth1",
             &mgmt,
             "the only path this harness has to an IPv6-only guest",
@@ -773,14 +886,20 @@ pub fn network(g: &Guest, net: &NetSpec, c: &mut Checks) {
         c.check(
             "net.v6_addr",
             "-",
-            if v6.trim().is_empty() { Status::Fail } else { Status::Pass },
+            if v6.trim().is_empty() {
+                Status::Fail
+            } else {
+                Status::Pass
+            },
             "a global IPv6 address on eth0",
             v6.trim(),
             "a ULA: this host runs no IPv6 router, so the address is configured, not routed",
         );
         // `tentative` is the silent-failure signature - the address is listed,
         // looks right, and is not usable because DAD never completed.
-        let v = g.run("ip -6 addr show eth0 2>/dev/null | grep -c tentative").value_or("?");
+        let v = g
+            .run("ip -6 addr show eth0 2>/dev/null | grep -c tentative")
+            .value_or("?");
         c.expect(
             "net.v6_dad_complete",
             "-",
@@ -867,7 +986,9 @@ pub fn network(g: &Guest, net: &NetSpec, c: &mut Checks) {
     // Whether the tag has an address depends on which schema the row uses, and
     // that difference IS the row's finding.
     let addr = g
-        .run(&format!("ip -4 -brief addr show {vif} 2>/dev/null | awk '{{print $3}}'"))
+        .run(&format!(
+            "ip -4 -brief addr show {vif} 2>/dev/null | awk '{{print $3}}'"
+        ))
         .value_or("");
     if net.expects_wait_online_failure() {
         // Legacy `type: vlan` forces dhcp4 on the tag and nothing on vmnet8
@@ -899,7 +1020,11 @@ pub fn network(g: &Guest, net: &NetSpec, c: &mut Checks) {
         c.check(
             "net.vlan_addr",
             "-",
-            if addr.trim().is_empty() { Status::Fail } else { Status::Pass },
+            if addr.trim().is_empty() {
+                Status::Fail
+            } else {
+                Status::Pass
+            },
             "a static address on the tag",
             addr.trim(),
             "static on purpose: a DHCP tag could never reach 'configured' here, \
@@ -954,10 +1079,7 @@ pub enum CanisterExpect {
 /// `kernel_nevr` is a Result because it is read from the variant patch, which
 /// can be missing; and an Ok("") is treated as unreadable too, because an empty
 /// expected value would silently pass against an empty actual.
-pub fn canister_expectation(
-    canister: &str,
-    kernel_nevr: Result<String, String>,
-) -> CanisterExpect {
+pub fn canister_expectation(canister: &str, kernel_nevr: Result<String, String>) -> CanisterExpect {
     if canister != "equivalent" {
         return CanisterExpect::Record;
     }
@@ -1018,7 +1140,14 @@ pub fn canister_identity(g: &Guest, want: &CanisterExpect, fips_on: bool, c: &mu
     // non-empty expected has to read as one rather than as a blank field.
     let based_on = parsed.as_ref().map(|(_, k)| k.as_str()).unwrap_or("absent");
     let (status, expected, detail) = based_on_check(want, based_on, fips_on);
-    c.check("guest.canister_based_on", "PR#24", status, &expected, based_on, &detail);
+    c.check(
+        "guest.canister_based_on",
+        "PR#24",
+        status,
+        &expected,
+        based_on,
+        &detail,
+    );
 }
 
 /// The `guest.canister_based_on` verdict, decided without a guest so it can be
@@ -1071,7 +1200,11 @@ pub fn based_on_check(
                 .into(),
         ),
         CanisterExpect::BuiltFrom(nevr) => (
-            if based_on == nevr { Status::Pass } else { Status::Fail },
+            if based_on == nevr {
+                Status::Pass
+            } else {
+                Status::Fail
+            },
             nevr.clone(),
             "an equivalent canister is stamped with the kernel it was really \
              built from (canister_stamp_real=1 -> FIPS_KERNEL_VERSION), so \
@@ -1147,7 +1280,10 @@ pub fn harvest(g: &Guest, dest: &Path, secret: Option<&str>, c: &mut Checks) {
     for f in ["installer.log", "ansible-stig.log", "messages"] {
         let _ = std::fs::write(
             dest.join(format!("varlog-{f}")),
-            scrub(secret, &g.run(&format!("cat /var/log/{f} 2>/dev/null")).stdout),
+            scrub(
+                secret,
+                &g.run(&format!("cat /var/log/{f} 2>/dev/null")).stdout,
+            ),
         );
     }
 
@@ -1160,7 +1296,13 @@ pub fn harvest(g: &Guest, dest: &Path, secret: Option<&str>, c: &mut Checks) {
                 .any(|p| l.contains(p))
         })
         .count();
-    c.expect("logs.dmesg_no_bug", "-", "0", &bug.to_string(), "kernel BUG/WARNING/Oops in dmesg");
+    c.expect(
+        "logs.dmesg_no_bug",
+        "-",
+        "0",
+        &bug.to_string(),
+        "kernel BUG/WARNING/Oops in dmesg",
+    );
     let errs = std::fs::read_to_string(dest.join("journal-err.txt"))
         .map(|t| t.lines().count())
         .unwrap_or(0);
@@ -1250,7 +1392,11 @@ mod tests {
     fn a_nul_bearing_serial_log_still_reports_its_errors() {
         let d = scratch("nul");
         let serial = d.join("serial0.log");
-        std::fs::write(&serial, b"\x00\x00Error(1011)\x00 No matching packages\n\x00").unwrap();
+        std::fs::write(
+            &serial,
+            b"\x00\x00Error(1011)\x00 No matching packages\n\x00",
+        )
+        .unwrap();
         let mut c = checks(&d);
         install(&serial, None, &mut c);
         assert_eq!(status_of(&c, "install.no_error_1011"), "fail");
@@ -1269,23 +1415,53 @@ mod tests {
 
     #[test]
     fn an_rpm_belongs_to_a_package_only_at_a_version_boundary() {
-        assert!(rpm_is("selinux-policy-43.6-4.ph5.noarch.rpm", "selinux-policy"));
-        assert!(!rpm_is("selinux-policy-devel-43.6-4.ph5.noarch.rpm", "selinux-policy"));
-        assert!(rpm_is("libselinux-utils-3.10-4.ph5.x86_64.rpm", "libselinux-utils"));
-        assert!(!rpm_is("libselinux-3.10-4.ph5.x86_64.rpm", "libselinux-utils"));
-        assert!(!rpm_is("libselinux-utils-3.10-4.ph5.x86_64.rpm", "libselinux"));
-        assert!(rpm_is("photon-os-installer-2.9-3.ph5.noarch.rpm", "photon-os-installer"));
+        assert!(rpm_is(
+            "selinux-policy-43.6-4.ph5.noarch.rpm",
+            "selinux-policy"
+        ));
+        assert!(!rpm_is(
+            "selinux-policy-devel-43.6-4.ph5.noarch.rpm",
+            "selinux-policy"
+        ));
+        assert!(rpm_is(
+            "libselinux-utils-3.10-4.ph5.x86_64.rpm",
+            "libselinux-utils"
+        ));
+        assert!(!rpm_is(
+            "libselinux-3.10-4.ph5.x86_64.rpm",
+            "libselinux-utils"
+        ));
+        assert!(!rpm_is(
+            "libselinux-utils-3.10-4.ph5.x86_64.rpm",
+            "libselinux"
+        ));
+        assert!(rpm_is(
+            "photon-os-installer-2.9-3.ph5.noarch.rpm",
+            "photon-os-installer"
+        ));
     }
 
     /// The correction. Enforcing on >= 92 is the wrong expectation and cost
     /// four false failures.
     #[test]
     fn subrelease_92_expects_permissive_not_enforcing() {
-        assert_eq!(expected_selinux(None, Some(92)), Expected::Mode("Permissive"));
-        assert_eq!(expected_selinux(None, Some(100)), Expected::Mode("Permissive"));
+        assert_eq!(
+            expected_selinux(None, Some(92)),
+            Expected::Mode("Permissive")
+        );
+        assert_eq!(
+            expected_selinux(None, Some(100)),
+            Expected::Mode("Permissive")
+        );
         assert_eq!(expected_selinux(None, Some(91)), Expected::Mode("Disabled"));
-        assert_eq!(expected_selinux(None, Some(90)), Expected::Mode("Enforcing"));
-        assert_eq!(expected_selinux(None, Some(89)), Expected::Mode("Enforcing"));
+        assert_eq!(
+            expected_selinux(None, Some(90)),
+            Expected::Mode("Enforcing")
+        );
+        assert_eq!(
+            expected_selinux(None, Some(89)),
+            Expected::Mode("Enforcing")
+        );
     }
 
     /// The stale-RPM case: a subrelease-92 build that carried the June
@@ -1294,7 +1470,10 @@ mod tests {
     #[test]
     fn the_shipped_config_outranks_the_subrelease() {
         let cfg = "# comment\nSELINUX=enforcing\nSELINUXTYPE=default\n";
-        assert_eq!(expected_selinux(Some(cfg), Some(92)), Expected::Mode("Enforcing"));
+        assert_eq!(
+            expected_selinux(Some(cfg), Some(92)),
+            Expected::Mode("Enforcing")
+        );
         assert_eq!(
             expected_selinux(Some("SELINUX=permissive\n"), Some(90)),
             Expected::Mode("Permissive")
@@ -1310,7 +1489,10 @@ mod tests {
     #[test]
     fn commented_lines_are_not_the_setting() {
         let cfg = "# SELINUX=enforcing\n# SELINUX=disabled\nSELINUX=permissive\n";
-        assert_eq!(expected_selinux(Some(cfg), None), Expected::Mode("Permissive"));
+        assert_eq!(
+            expected_selinux(Some(cfg), None),
+            Expected::Mode("Permissive")
+        );
     }
 
     // ---- the canister axis ----------------------------------------------
@@ -1332,7 +1514,10 @@ mod tests {
         let built = "6.12.107-4.ph5";
         // what reading the variant patch alone would have said
         let variant_only = "6.12.107-3.ph5";
-        assert_ne!(built, variant_only, "the embedded patch is what bumps Release");
+        assert_ne!(
+            built, variant_only,
+            "the embedded patch is what bumps Release"
+        );
 
         let want = canister_expectation("equivalent", Ok(built.into()));
         assert_eq!(want, CanisterExpect::BuiltFrom(built.into()));
@@ -1349,11 +1534,17 @@ mod tests {
         assert_eq!(want, CanisterExpect::BuiltFrom("6.12.103-14.ph5".into()));
 
         let (st, exp, _) = based_on_check(&want, "6.12.60-18.ph5", true);
-        assert!(st == Status::Fail, "the fallback to the certified canister must fail");
+        assert!(
+            st == Status::Fail,
+            "the fallback to the certified canister must fail"
+        );
         assert_eq!(exp, "6.12.103-14.ph5");
 
         let (st, _, _) = based_on_check(&want, "6.12.103-14.ph5", true);
-        assert!(st == Status::Pass, "a canister built from the kernel under test must pass");
+        assert!(
+            st == Status::Pass,
+            "a canister built from the kernel under test must pass"
+        );
     }
 
     /// A `prebuilt` row legitimately boots a canister built from an OLDER
@@ -1392,9 +1583,18 @@ mod tests {
 
         // Booted without fips=1: unobtainable, not contradicted. This is c01.
         let (st, exp, why) = based_on_check(&eq, "absent", false);
-        assert!(st == Status::Info, "a row that cannot emit the stamp must not fail for it");
-        assert_eq!(exp, "6.12.103-14.ph5", "the expectation is still stated, just not asserted");
-        assert!(why.contains("UNPROVEN"), "the detail must say the claim is unproven, not fine");
+        assert!(
+            st == Status::Info,
+            "a row that cannot emit the stamp must not fail for it"
+        );
+        assert_eq!(
+            exp, "6.12.103-14.ph5",
+            "the expectation is still stated, just not asserted"
+        );
+        assert!(
+            why.contains("UNPROVEN"),
+            "the detail must say the claim is unproven, not fine"
+        );
 
         // A WRONG stamp is a contradiction, and fails whatever the FIPS state:
         // the kernel emitted an identity, and it was the certified canister.
@@ -1410,7 +1610,11 @@ mod tests {
     /// own reason, which is exactly the failure mode the SELinux oracle taught.
     #[test]
     fn an_unreadable_kernel_nevr_is_recorded_rather_than_asserted() {
-        for got in [Err("no variant patch".to_string()), Ok(String::new()), Ok("   ".into())] {
+        for got in [
+            Err("no variant patch".to_string()),
+            Ok(String::new()),
+            Ok("   ".into()),
+        ] {
             let want = canister_expectation("equivalent", got);
             match &want {
                 CanisterExpect::Unresolved(why) => {

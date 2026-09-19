@@ -90,13 +90,17 @@ pub fn all(cfg: &Config) -> Result<Summary, String> {
             continue;
         }
         let perm = d.file_name().to_string_lossy().to_string();
-        let Ok(files) = std::fs::read_dir(d.path()) else { continue };
+        let Ok(files) = std::fs::read_dir(d.path()) else {
+            continue;
+        };
         for f in files.flatten() {
             let p = f.path();
             if p.is_symlink() {
                 continue;
             }
-            let Some(name) = p.file_name().and_then(|n| n.to_str()) else { continue };
+            let Some(name) = p.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
             let Some(stamp) = name
                 .strip_prefix("checks-")
                 .and_then(|s| s.strip_suffix(".jsonl"))
@@ -106,7 +110,10 @@ pub fn all(cfg: &Config) -> Result<Summary, String> {
             if stamp == "latest" {
                 continue;
             }
-            byrun.entry(stamp.to_string()).or_default().insert(perm.clone(), p);
+            byrun
+                .entry(stamp.to_string())
+                .or_default()
+                .insert(perm.clone(), p);
         }
         // The retired fixed-name file, from before results became timestamped.
         // Skipping it is only safe where a stamped run has superseded it - and
@@ -116,14 +123,21 @@ pub fn all(cfg: &Config) -> Result<Summary, String> {
         let retired = d.path().join("checks.jsonl");
         if retired.is_file() && !retired.is_symlink() {
             let stamp = mtime_stamp(&retired);
-            byrun.entry(stamp).or_default().insert(perm.clone(), retired);
+            byrun
+                .entry(stamp)
+                .or_default()
+                .insert(perm.clone(), retired);
         }
     }
 
     let conn = open_rw(&cfg.memory_db)?;
     let host = hostname();
     let ver = env!("CARGO_PKG_VERSION");
-    let mut sum = Summary { runs: 0, permutations: 0, checks: 0 };
+    let mut sum = Summary {
+        runs: 0,
+        permutations: 0,
+        checks: 0,
+    };
 
     for (stamp, perms) in &byrun {
         // One run per stamp, keyed by the stamp itself so re-ingest updates
@@ -221,8 +235,11 @@ pub fn all(cfg: &Config) -> Result<Summary, String> {
 
             // Replace, never append: a re-ingest of the same evidence must not
             // double the checks.
-            conn.execute("DELETE FROM check_result WHERE permutation_id = ?1", params![pid])
-                .map_err(|e| format!("{e}"))?;
+            conn.execute(
+                "DELETE FROM check_result WHERE permutation_id = ?1",
+                params![pid],
+            )
+            .map_err(|e| format!("{e}"))?;
             for r in &recs {
                 conn.execute(
                     "INSERT INTO check_result
@@ -262,7 +279,20 @@ fn mtime_stamp(p: &Path) -> String {
         y += 1;
     }
     let leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
-    let ml = [31, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let ml = [
+        31,
+        if leap { 29 } else { 28 },
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
+    ];
     let mut m = 0usize;
     while m < 12 && d >= ml[m] {
         d -= ml[m];

@@ -160,7 +160,11 @@ pub fn cmd_install(
 ) -> Result<(), String> {
     let p = row(cfg, id)?;
     let v = vm::plan(cfg, id)?;
-    let mode = match mode.unwrap_or(if p.mode == "ui" { "interactive" } else { "auto" }) {
+    let mode = match mode.unwrap_or(if p.mode == "ui" {
+        "interactive"
+    } else {
+        "auto"
+    }) {
         "auto" => install::Mode::Auto,
         "interactive" => install::Mode::Interactive,
         other => return Err(format!("unknown --mode '{other}' (auto or interactive)")),
@@ -258,14 +262,23 @@ pub fn ensure_ssh_key(cfg: &Config, log: &mut dyn FnMut(&str)) -> Result<(), Str
     if key.exists() {
         return Ok(());
     }
-    fs::create_dir_all(&cfg.ssh_key_dir).map_err(|e| format!("{}: {e}", cfg.ssh_key_dir.display()))?;
+    fs::create_dir_all(&cfg.ssh_key_dir)
+        .map_err(|e| format!("{}: {e}", cfg.ssh_key_dir.display()))?;
     let host = std::process::Command::new("hostname")
         .output()
         .ok()
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .unwrap_or_default();
     let ok = std::process::Command::new("ssh-keygen")
-        .args(["-t", "ed25519", "-N", "", "-C", &format!("photon-mc@{host}"), "-f"])
+        .args([
+            "-t",
+            "ed25519",
+            "-N",
+            "",
+            "-C",
+            &format!("photon-mc@{host}"),
+            "-f",
+        ])
         .arg(&key)
         .output()
         .map_err(|e| format!("running ssh-keygen: {e}"))?;

@@ -29,7 +29,9 @@ impl IsoRequest {
         match self.iso_type.as_str() {
             "minimal" => Ok("minimal-iso"),
             "full" => Ok("iso"),
-            other => Err(format!("unknown iso type '{other}' (expected minimal or full)")),
+            other => Err(format!(
+                "unknown iso type '{other}' (expected minimal or full)"
+            )),
         }
     }
     pub fn key(&self) -> String {
@@ -121,8 +123,11 @@ pub fn resolve(
     let driver = cfg.photon_scripts.join("runPh5_normal.sh");
     fs::copy(&driver, stage_dir.join("runPh5_normal.sh"))
         .map_err(|e| format!("{}: {e}", driver.display()))?;
-    fs::copy(&patch, stage_dir.join("photonos-patches/downstream-fixes.patch"))
-        .map_err(|e| format!("{}: {e}", patch.display()))?;
+    fs::copy(
+        &patch,
+        stage_dir.join("photonos-patches/downstream-fixes.patch"),
+    )
+    .map_err(|e| format!("{}: {e}", patch.display()))?;
     log(&format!(
         "staged build dir {} with poi-{}.patch ({} files)",
         stage_dir.display(),
@@ -144,8 +149,11 @@ pub fn resolve(
     // says which case it is.
     let common_patch = cfg.variant_patches.join("common-fixes.patch");
     if common_patch.is_file() {
-        fs::copy(&common_patch, stage_dir.join("photonos-patches/common-fixes.patch"))
-            .map_err(|e| format!("{}: {e}", common_patch.display()))?;
+        fs::copy(
+            &common_patch,
+            stage_dir.join("photonos-patches/common-fixes.patch"),
+        )
+        .map_err(|e| format!("{}: {e}", common_patch.display()))?;
         log(&format!(
             "staged common-fixes.patch ({} file(s)) for the {} tree",
             patched_files(&common_patch),
@@ -163,12 +171,19 @@ pub fn resolve(
     // here is reproduced by the variant patch, so the reset is idempotent.
     let _ = git(&cfg.photon_tree, &["checkout", "--", "SPECS"]);
     let _ = git(&cfg.photon_tree, &["clean", "-fdq", "SPECS"]);
-    log(&format!("SPECS reset to pristine {} before applying poi-{}.patch", cfg.release, req.poi));
+    log(&format!(
+        "SPECS reset to pristine {} before applying poi-{}.patch",
+        cfg.release, req.poi
+    ));
 
     let build_log = cfg
         .build_log_dir
         .join(format!("{}-{}.log", req.key(), job::stamp()));
-    log(&format!("building {img} (canister={}) -> {}", req.canister, build_log.display()));
+    log(&format!(
+        "building {img} (canister={}) -> {}",
+        req.canister,
+        build_log.display()
+    ));
     log("this takes hours");
     // One invocation per phase. `equivalent` is one or two, decided HERE and
     // now - never assumed.
@@ -310,7 +325,12 @@ mismatched canister in the stage outranks the pinned one for an unversioned tdnf
         .into_iter()
         .filter(|p| p.file_name().map(|n| n != "photon.iso").unwrap_or(false))
         .max_by_key(|p| fs::metadata(p).and_then(|m| m.modified()).ok())
-        .ok_or_else(|| format!("build reported success but produced no ISO in {}", dest.display()))?;
+        .ok_or_else(|| {
+            format!(
+                "build reported success but produced no ISO in {}",
+                dest.display()
+            )
+        })?;
     if produced != iso {
         let _ = fs::remove_file(&iso);
         let name = produced.file_name().unwrap_or_default();
@@ -402,7 +422,10 @@ pub fn purged_before_phase_b(name: &str, nevr: &str) -> bool {
 /// every rebase and a hardcoded pair is wrong the moment one does.
 pub fn kernel_flavour_nevrs(specs_linux: &Path) -> Vec<(String, String)> {
     let mut out = Vec::new();
-    let sub = specs_linux.parent().and_then(Path::parent).and_then(crate::specresolve::tree_subrelease);
+    let sub = specs_linux
+        .parent()
+        .and_then(Path::parent)
+        .and_then(crate::specresolve::tree_subrelease);
     let read = crate::specresolve::dir_reader(specs_linux);
     for flavour in ["linux", "linux-esx"] {
         let Some(text) = crate::specresolve::resolve(&read, &format!("{flavour}.spec"), sub) else {
@@ -415,7 +438,9 @@ pub fn kernel_flavour_nevrs(specs_linux: &Path) -> Vec<(String, String)> {
                 // "4%{?acvp_build:.acvp}%{?kat_build:.kat}%{?dist}" -> "4"
                 .map(|v| v.split('%').next().unwrap_or("").to_string())
         };
-        let (Some(ver), Some(rel)) = (field("Version:"), field("Release:")) else { continue };
+        let (Some(ver), Some(rel)) = (field("Version:"), field("Release:")) else {
+            continue;
+        };
         // An unexpanded macro means the spec cannot be read without rpm. Do not
         // guess, and above all do not delete on a guess.
         if ver.is_empty() || rel.is_empty() || !rel.chars().all(|x| x.is_ascii_digit()) {
@@ -454,7 +479,9 @@ pub fn stale_flavour_rpm(name: &str, prefix: &str, frag: &str) -> bool {
 /// copies of.
 pub fn doomed_before_phase_b(name: &str, nevr: &str, flavours: &[(String, String)]) -> bool {
     purged_before_phase_b(name, nevr)
-        || flavours.iter().any(|(prefix, frag)| stale_flavour_rpm(name, prefix, frag))
+        || flavours
+            .iter()
+            .any(|(prefix, frag)| stale_flavour_rpm(name, prefix, frag))
 }
 
 /// Recursive variant, for `stage/RPMS`.
@@ -542,7 +569,11 @@ fn kernel_nevr_layered(cfg: &Config, patch: &Path, with_embedded: bool) -> Resul
 
 /// The kernel NEVR from `origin/<release>` with `patch` (and, for an
 /// equivalent build, the embedded canister patch) applied to a throwaway index.
-fn kernel_nevr_from_index(cfg: &Config, patch: &Path, with_embedded: bool) -> Result<String, String> {
+fn kernel_nevr_from_index(
+    cfg: &Config,
+    patch: &Path,
+    with_embedded: bool,
+) -> Result<String, String> {
     static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let n = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let index = std::env::temp_dir().join(format!("shk-nevr-index-{}-{n}", std::process::id()));
@@ -558,7 +589,11 @@ fn kernel_nevr_from_index(cfg: &Config, patch: &Path, with_embedded: bool) -> Re
         if out.status.success() {
             Ok(())
         } else {
-            Err(format!("git {} failed: {}", args.join(" "), String::from_utf8_lossy(&out.stderr).trim()))
+            Err(format!(
+                "git {} failed: {}",
+                args.join(" "),
+                String::from_utf8_lossy(&out.stderr).trim()
+            ))
         }
     };
     let result = (|| {
@@ -567,13 +602,21 @@ fn kernel_nevr_from_index(cfg: &Config, patch: &Path, with_embedded: bool) -> Re
             run(&["apply", "--cached", &patch.to_string_lossy()])?;
         }
         if with_embedded {
-            fs::write(&embedded, crate::buildmode::Embedded::CanisterEquivalent.patch())
-                .map_err(|e| format!("{}: {e}", embedded.display()))?;
+            fs::write(
+                &embedded,
+                crate::buildmode::Embedded::CanisterEquivalent.patch(),
+            )
+            .map_err(|e| format!("{}: {e}", embedded.display()))?;
             run(&["apply", "--cached", &embedded.to_string_lossy()])?;
         }
-        let read = crate::specresolve::git_reader(&cfg.photon_tree, "", "SPECS/linux", Some(&index));
-        let text = crate::specresolve::resolve(&read, "linux.spec", crate::specresolve::tree_subrelease(&cfg.photon_tree))
-            .ok_or("no SPECS/linux/linux.spec in the patched tree")?;
+        let read =
+            crate::specresolve::git_reader(&cfg.photon_tree, "", "SPECS/linux", Some(&index));
+        let text = crate::specresolve::resolve(
+            &read,
+            "linux.spec",
+            crate::specresolve::tree_subrelease(&cfg.photon_tree),
+        )
+        .ok_or("no SPECS/linux/linux.spec in the patched tree")?;
         let v = crate::specresolve::field(&text, "Version:").ok_or("no Version: for linux")?;
         let r = crate::specresolve::field(&text, "Release:").ok_or("no Release: for linux")?;
         let r = r.split('%').next().unwrap_or(&r).trim().to_string();
@@ -586,7 +629,9 @@ fn kernel_nevr_from_index(cfg: &Config, patch: &Path, with_embedded: bool) -> Re
 
 pub fn find_files_rec(dir: &Path, prefix: &str, suffix: &str) -> Vec<PathBuf> {
     let mut out = Vec::new();
-    let Ok(entries) = fs::read_dir(dir) else { return out };
+    let Ok(entries) = fs::read_dir(dir) else {
+        return out;
+    };
     for e in entries.flatten() {
         let p = e.path();
         if p.is_dir() {
@@ -771,7 +816,11 @@ pub fn make_variant_patches(cfg: &Config, log: &mut dyn FnMut(&str)) -> Result<(
     fs::create_dir_all(&cfg.variant_patches)
         .map_err(|e| format!("{}: {e}", cfg.variant_patches.display()))?;
     if !clone.join(".git").is_dir() {
-        log(&format!("cloning {} (blobless) -> {}", cfg.photon_remote, clone.display()));
+        log(&format!(
+            "cloning {} (blobless) -> {}",
+            cfg.photon_remote,
+            clone.display()
+        ));
         let ok = Command::new("git")
             .args(["clone", "--quiet", "--filter=blob:none", "--no-checkout"])
             .arg(&cfg.photon_remote)
@@ -798,8 +847,7 @@ pub fn make_variant_patches(cfg: &Config, log: &mut dyn FnMut(&str)) -> Result<(
     // also localises the failure: the error names the ref that could not be
     // fetched instead of the whole list.
     for b in &branches {
-        git(&clone, &["fetch", "-q", "origin", b])
-            .map_err(|e| format!("fetching {b}: {e}"))?;
+        git(&clone, &["fetch", "-q", "origin", b]).map_err(|e| format!("fetching {b}: {e}"))?;
     }
 
     let mut failed = Vec::new();
@@ -821,7 +869,10 @@ pub fn make_variant_patches(cfg: &Config, log: &mut dyn FnMut(&str)) -> Result<(
     if failed.is_empty() {
         Ok(())
     } else {
-        Err(format!("variant(s) {} could not be built", failed.join(", ")))
+        Err(format!(
+            "variant(s) {} could not be built",
+            failed.join(", ")
+        ))
     }
 }
 
@@ -860,7 +911,8 @@ pub const COMMON_BRANCHES: &[&str] = &[
 /// would silently drop a fix that lands outside `support/`.
 fn build_common_patch(cfg: &Config, clone: &Path, log: &mut dyn FnMut(&str)) -> Result<(), String> {
     let out = cfg.variant_patches.join("common-fixes.patch");
-    git(clone, &["fetch", "-q", "origin", "common"]).map_err(|e| format!("fetching common: {e}"))?;
+    git(clone, &["fetch", "-q", "origin", "common"])
+        .map_err(|e| format!("fetching common: {e}"))?;
     for b in COMMON_BRANCHES {
         git(clone, &["fetch", "-q", "origin", b]).map_err(|e| format!("fetching {b}: {e}"))?;
     }
@@ -879,14 +931,31 @@ fn build_common_patch(cfg: &Config, clone: &Path, log: &mut dyn FnMut(&str)) -> 
         return Err("produced an EMPTY patch - the branches add nothing to origin/common".into());
     }
     fs::write(&out, &diff).map_err(|e| format!("{}: {e}", out.display()))?;
-    log(&format!("  common: {} files, {} lines", patched_files(&out), diff.lines().count()));
+    log(&format!(
+        "  common: {} files, {} lines",
+        patched_files(&out),
+        diff.lines().count()
+    ));
 
     let tmp = cfg.work.join("apply-check-common");
     let _ = fs::remove_dir_all(&tmp);
     let _ = git(clone, &["worktree", "prune"]);
-    git(clone, &["worktree", "add", "--detach", "-q", &tmp.to_string_lossy(), "origin/common"])?;
+    git(
+        clone,
+        &[
+            "worktree",
+            "add",
+            "--detach",
+            "-q",
+            &tmp.to_string_lossy(),
+            "origin/common",
+        ],
+    )?;
     let applies = git(&tmp, &["apply", "--check", &out.to_string_lossy()]).is_ok();
-    let _ = git(clone, &["worktree", "remove", "--force", &tmp.to_string_lossy()]);
+    let _ = git(
+        clone,
+        &["worktree", "remove", "--force", &tmp.to_string_lossy()],
+    );
     if applies {
         log("  common: applies to pristine common");
         Ok(())
@@ -932,11 +1001,27 @@ fn build_variant(
     let tmp = cfg.work.join(format!("apply-check-{}", v.name));
     let _ = fs::remove_dir_all(&tmp);
     let _ = git(clone, &["worktree", "prune"]);
-    git(clone, &["worktree", "add", "--detach", "-q", &tmp.to_string_lossy(), "origin/5.0"])?;
+    git(
+        clone,
+        &[
+            "worktree",
+            "add",
+            "--detach",
+            "-q",
+            &tmp.to_string_lossy(),
+            "origin/5.0",
+        ],
+    )?;
     let applies = git(&tmp, &["apply", "--check", &out.to_string_lossy()]).is_ok();
-    let _ = git(clone, &["worktree", "remove", "--force", &tmp.to_string_lossy()]);
+    let _ = git(
+        clone,
+        &["worktree", "remove", "--force", &tmp.to_string_lossy()],
+    );
     if applies {
-        log(&format!("  poi-{}: applies to pristine {}", v.name, cfg.release));
+        log(&format!(
+            "  poi-{}: applies to pristine {}",
+            v.name, cfg.release
+        ));
         Ok(())
     } else {
         Err(format!("DOES NOT APPLY to pristine {}", cfg.release))
@@ -997,7 +1082,11 @@ mod tests {
         )
         .unwrap();
         let patch = tmp.join("other.patch");
-        fs::write(&patch, "+++ b/SPECS/aide/aide.spec\n+Release:        3%{?dist}\n").unwrap();
+        fs::write(
+            &patch,
+            "+++ b/SPECS/aide/aide.spec\n+Release:        3%{?dist}\n",
+        )
+        .unwrap();
         let cfg = Config::for_test(&tmp);
         assert_eq!(kernel_nevr(&cfg, &patch).unwrap(), "6.12.103-9.ph5");
         let _ = fs::remove_dir_all(&tmp);
@@ -1013,8 +1102,17 @@ mod tests {
         let _ = fs::remove_dir_all(&tmp);
         fs::create_dir_all(tmp.join("SPECS/linux")).unwrap();
         let git = |args: &[&str]| {
-            let o = Command::new("git").arg("-C").arg(&tmp).args(args).output().unwrap();
-            assert!(o.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&o.stderr));
+            let o = Command::new("git")
+                .arg("-C")
+                .arg(&tmp)
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(
+                o.status.success(),
+                "git {args:?}: {}",
+                String::from_utf8_lossy(&o.stderr)
+            );
         };
         let spec = [
             "Name:           linux",
@@ -1032,11 +1130,28 @@ mod tests {
             "%endif",
         ];
         fs::write(tmp.join("SPECS/linux/linux.spec"), spec.join("\n") + "\n").unwrap();
-        fs::write(tmp.join("SPECS/linux/linux-6.1.inc"), "Release:        3%{?dist}\n").unwrap();
-        fs::write(tmp.join("SPECS/linux/linux-6.12.inc"), "Release:        4%{?acvp_build:.acvp}%{?dist}\n").unwrap();
+        fs::write(
+            tmp.join("SPECS/linux/linux-6.1.inc"),
+            "Release:        3%{?dist}\n",
+        )
+        .unwrap();
+        fs::write(
+            tmp.join("SPECS/linux/linux-6.12.inc"),
+            "Release:        4%{?acvp_build:.acvp}%{?dist}\n",
+        )
+        .unwrap();
         git(&["init", "-q"]);
         git(&["add", "-A"]);
-        git(&["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "base"]);
+        git(&[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "commit",
+            "-q",
+            "-m",
+            "base",
+        ]);
         git(&["update-ref", "refs/remotes/origin/5.0", "HEAD"]);
         let patch = tmp.join("poi-2.8.patch");
         let lines = [
@@ -1048,7 +1163,9 @@ mod tests {
         ];
         fs::write(&patch, lines.join("\n") + "\n").unwrap();
         let build_config = |n: u32| {
-            format!("{{\n  \"photon-build-param\": {{\n    \"photon-subrelease\": \"{n}\"\n  }}\n}}\n")
+            format!(
+                "{{\n  \"photon-build-param\": {{\n    \"photon-subrelease\": \"{n}\"\n  }}\n}}\n"
+            )
         };
         let cfg = Config::for_test(&tmp);
         fs::write(tmp.join("build-config.json"), build_config(92)).unwrap();
@@ -1076,7 +1193,9 @@ mod tests {
         let mut hit = find_files_rec(&tmp, "photon-os-installer-", ".rpm");
         hit.sort();
         assert_eq!(hit.len(), 3, "arch subdirectory must be walked");
-        assert!(hit.iter().all(|p| p.to_string_lossy().contains("photon-os-installer-")));
+        assert!(hit
+            .iter()
+            .all(|p| p.to_string_lossy().contains("photon-os-installer-")));
 
         let _ = fs::remove_dir_all(&tmp);
     }
@@ -1103,7 +1222,11 @@ mod tests {
         ];
 
         // What the canister-NEVR rule alone already caught.
-        assert!(doomed_before_phase_b("linux-6.12.107-4.ph5.x86_64.rpm", nevr, &flavours));
+        assert!(doomed_before_phase_b(
+            "linux-6.12.107-4.ph5.x86_64.rpm",
+            nevr,
+            &flavours
+        ));
 
         // What it MISSED, and what this rule exists for.
         for n in [
@@ -1115,7 +1238,10 @@ mod tests {
                 !purged_before_phase_b(n, nevr),
                 "{n} is precisely what the canister-NEVR rule does not see"
             );
-            assert!(doomed_before_phase_b(n, nevr, &flavours), "{n} must be purged");
+            assert!(
+                doomed_before_phase_b(n, nevr, &flavours),
+                "{n} must be purged"
+            );
         }
 
         // The canister still survives - it is phase B's input.
@@ -1130,7 +1256,10 @@ mod tests {
             "linux-firmware-20250401-1.ph5.noarch.rpm",
             "linux-api-headers-6.12.1-1.ph5.noarch.rpm",
         ] {
-            assert!(!doomed_before_phase_b(n, nevr, &flavours), "{n} must be spared");
+            assert!(
+                !doomed_before_phase_b(n, nevr, &flavours),
+                "{n} must be spared"
+            );
         }
     }
 
@@ -1141,8 +1270,16 @@ mod tests {
     #[test]
     fn no_flavour_nevrs_degrades_to_the_canister_rule_and_deletes_nothing_extra() {
         let nevr = "6.12.107-4.ph5";
-        assert!(doomed_before_phase_b("linux-6.12.107-4.ph5.x86_64.rpm", nevr, &[]));
-        assert!(!doomed_before_phase_b("linux-esx-6.12.107-3.ph5.x86_64.rpm", nevr, &[]));
+        assert!(doomed_before_phase_b(
+            "linux-6.12.107-4.ph5.x86_64.rpm",
+            nevr,
+            &[]
+        ));
+        assert!(!doomed_before_phase_b(
+            "linux-esx-6.12.107-3.ph5.x86_64.rpm",
+            nevr,
+            &[]
+        ));
     }
 
     /// A spec whose Release is still a macro cannot be read without rpm, and
@@ -1152,10 +1289,22 @@ mod tests {
         let tmp = std::env::temp_dir().join(format!("shk-flav-{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
         fs::create_dir_all(&tmp).unwrap();
-        fs::write(tmp.join("linux.spec"), "Version:        6.12.107\nRelease:        4%{?dist}\n").unwrap();
-        fs::write(tmp.join("linux-esx.spec"), "Version:        6.12.107\nRelease:        %{kver_rel}\n").unwrap();
+        fs::write(
+            tmp.join("linux.spec"),
+            "Version:        6.12.107\nRelease:        4%{?dist}\n",
+        )
+        .unwrap();
+        fs::write(
+            tmp.join("linux-esx.spec"),
+            "Version:        6.12.107\nRelease:        %{kver_rel}\n",
+        )
+        .unwrap();
         let got = kernel_flavour_nevrs(&tmp);
-        assert_eq!(got.len(), 1, "only the readable spec may contribute: {got:?}");
+        assert_eq!(
+            got.len(),
+            1,
+            "only the readable spec may contribute: {got:?}"
+        );
         assert_eq!(got[0], ("linux-".to_string(), "-6.12.107-4.".to_string()));
         let _ = fs::remove_dir_all(&tmp);
     }
@@ -1203,8 +1352,16 @@ mod tests {
     /// prebuilt ISO - that is how an axis ends up never exercised.
     #[test]
     fn the_cache_key_carries_every_build_axis() {
-        let a = IsoRequest { iso_type: "full".into(), poi: "2.8".into(), canister: "prebuilt".into() };
-        let b = IsoRequest { iso_type: "full".into(), poi: "2.8".into(), canister: "build".into() };
+        let a = IsoRequest {
+            iso_type: "full".into(),
+            poi: "2.8".into(),
+            canister: "prebuilt".into(),
+        };
+        let b = IsoRequest {
+            iso_type: "full".into(),
+            poi: "2.8".into(),
+            canister: "build".into(),
+        };
         assert_eq!(a.key(), "full-poi2.8-prebuilt");
         assert_ne!(a.key(), b.key());
     }
@@ -1236,7 +1393,10 @@ mod tests {
             );
             // The shipped helper must agree with the test's own filter -
             // `mirrors` fails at runtime, not here, when it does not.
-            assert_eq!(installer_branch(v).as_ref(), hits.first().map(|b| **b).as_ref());
+            assert_eq!(
+                installer_branch(v).as_ref(),
+                hits.first().map(|b| **b).as_ref()
+            );
         }
     }
 }
@@ -1282,7 +1442,11 @@ mod mirror_tests {
     fn every_mirror_targets_a_real_spec_patch() {
         for m in &MIRRORS {
             assert!(m.spec_patch.ends_with(".patch"), "{}", m.spec_patch);
-            assert!(m.poi_remote_branch.starts_with("dcasota/"), "{}", m.poi_remote_branch);
+            assert!(
+                m.poi_remote_branch.starts_with("dcasota/"),
+                "{}",
+                m.poi_remote_branch
+            );
         }
     }
 }
@@ -1322,7 +1486,9 @@ fn stable_header(patch: &str) -> String {
     let mut out: Vec<String> = Vec::new();
     for (i, line) in patch.lines().enumerate() {
         if i == 0 && line.starts_with("From ") {
-            out.push("From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001".into());
+            out.push(
+                "From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001".into(),
+            );
         } else if i < 6 && line.starts_with("Date: ") {
             out.push("Date: Mon, 31 Aug 2026 00:00:00 +0000".into());
         } else {
@@ -1414,11 +1580,22 @@ pub fn embedded_applies_over(cfg: &Config, variant: &Path) -> (bool, String) {
 
     let made = git(
         &rel,
-        &["worktree", "add", "-f", "-q", "--detach", &tree.to_string_lossy(), &format!("origin/{}", cfg.release)],
+        &[
+            "worktree",
+            "add",
+            "-f",
+            "-q",
+            "--detach",
+            &tree.to_string_lossy(),
+            &format!("origin/{}", cfg.release),
+        ],
     )
     .is_ok();
     let cleanup = |tree: &Path| {
-        let _ = git(&rel, &["worktree", "remove", "--force", &tree.to_string_lossy()]);
+        let _ = git(
+            &rel,
+            &["worktree", "remove", "--force", &tree.to_string_lossy()],
+        );
         let _ = fs::remove_dir_all(&tmp);
     };
     if !made {
@@ -1440,10 +1617,13 @@ pub fn embedded_applies_over(cfg: &Config, variant: &Path) -> (bool, String) {
     cleanup(&tree);
 
     if ok {
-        (true, format!(
-            "layers on {}, kernel {nevr}",
-            variant.file_name().unwrap_or_default().to_string_lossy()
-        ))
+        (
+            true,
+            format!(
+                "layers on {}, kernel {nevr}",
+                variant.file_name().unwrap_or_default().to_string_lossy()
+            ),
+        )
     } else {
         (
             false,
@@ -1479,7 +1659,11 @@ pub fn vault_mismatched_canisters(stage: &Path, want: &str) -> Vec<String> {
     let aside = stage.join("canister-aside");
     let mut moved = Vec::new();
     for p in find_files_rec(&stage.join("RPMS"), "linux-fips-canister", ".rpm") {
-        let name = p.file_name().unwrap_or_default().to_string_lossy().to_string();
+        let name = p
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
         if name.contains(want) {
             continue;
         }

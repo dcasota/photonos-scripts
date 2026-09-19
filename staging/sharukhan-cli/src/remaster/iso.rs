@@ -70,11 +70,19 @@ pub fn media_rpm_path(href: &str) -> String {
 pub fn volid(iso: &Path) -> Result<String, String> {
     use std::io::{Read, Seek, SeekFrom};
     let mut f = fs::File::open(iso).map_err(|e| format!("{}: {e}", iso.display()))?;
-    f.seek(SeekFrom::Start(16 * 2048))
-        .map_err(|e| format!("{}: seeking to the primary volume descriptor: {e}", iso.display()))?;
+    f.seek(SeekFrom::Start(16 * 2048)).map_err(|e| {
+        format!(
+            "{}: seeking to the primary volume descriptor: {e}",
+            iso.display()
+        )
+    })?;
     let mut pvd = [0u8; 2048];
-    f.read_exact(&mut pvd)
-        .map_err(|e| format!("{}: reading the primary volume descriptor: {e}", iso.display()))?;
+    f.read_exact(&mut pvd).map_err(|e| {
+        format!(
+            "{}: reading the primary volume descriptor: {e}",
+            iso.display()
+        )
+    })?;
     volid_from_pvd(&pvd).map_err(|e| format!("{}: {e}", iso.display()))
 }
 
@@ -152,7 +160,11 @@ pub fn write(c: &mut Ctx, plan: &IsoPlan) -> Result<String, String> {
     let a = argv(plan);
     let refs: Vec<&str> = a.iter().map(|s| s.as_str()).collect();
     let log = c.spec.workdir.join("xorriso.log");
-    c.say(&format!("  writing {} ({} operations)", plan.output.display(), plan.map.len()));
+    c.say(&format!(
+        "  writing {} ({} operations)",
+        plan.output.display(),
+        plan.map.len()
+    ));
     super::run_logged(c, "xorriso", &refs, &log)?;
 
     let size = std::fs::metadata(&plan.output)
@@ -179,7 +191,12 @@ pub fn write(c: &mut Ctx, plan: &IsoPlan) -> Result<String, String> {
 pub fn el_torito(iso: &Path) -> Result<String, String> {
     let out = run(
         "xorriso",
-        &["-indev", &iso.to_string_lossy(), "-report_el_torito", "plain"],
+        &[
+            "-indev",
+            &iso.to_string_lossy(),
+            "-report_el_torito",
+            "plain",
+        ],
     )?;
     let lines: Vec<&str> = out
         .lines()
@@ -200,8 +217,14 @@ mod tests {
 
     fn plan() -> IsoPlan {
         let subpkgs = [
-            "linux", "linux-devel", "linux-docs", "linux-drivers-gpu", "linux-drivers-sound",
-            "linux-tools", "linux-python3-perf", "bpftool",
+            "linux",
+            "linux-devel",
+            "linux-docs",
+            "linux-drivers-gpu",
+            "linux-drivers-sound",
+            "linux-tools",
+            "linux-python3-perf",
+            "bpftool",
         ];
         let mut p = IsoPlan {
             input: "/in.iso".into(),
@@ -217,9 +240,14 @@ mod tests {
             ));
         }
         p.rm_r.push("/RPMS/repodata".into());
-        p.map.push((PathBuf::from("/new/repodata"), "/RPMS/repodata".into()));
-        p.map.push((PathBuf::from("/new/vmlinuz"), "/isolinux/vmlinuz".into()));
-        p.map.push((PathBuf::from("/new/initrd.img"), "/isolinux/initrd.img".into()));
+        p.map
+            .push((PathBuf::from("/new/repodata"), "/RPMS/repodata".into()));
+        p.map
+            .push((PathBuf::from("/new/vmlinuz"), "/isolinux/vmlinuz".into()));
+        p.map.push((
+            PathBuf::from("/new/initrd.img"),
+            "/isolinux/initrd.img".into(),
+        ));
         p
     }
 
@@ -278,7 +306,10 @@ mod tests {
         blank[40..72].copy_from_slice(&[b' '; 32]);
         assert!(volid_from_pvd(&blank).unwrap_err().contains("empty"));
 
-        assert!(volid_from_pvd(&pvd[..20]).is_err(), "a truncated descriptor is an error");
+        assert!(
+            volid_from_pvd(&pvd[..20]).is_err(),
+            "a truncated descriptor is an error"
+        );
     }
 
     #[test]
@@ -293,13 +324,21 @@ mod tests {
 
         // Every one of the eight packages is both removed and replaced,
         // including bpftool, whose name does not start with linux.
-        for s in ["linux", "linux-devel", "linux-tools", "bpftool", "linux-python3-perf"] {
+        for s in [
+            "linux",
+            "linux-devel",
+            "linux-tools",
+            "bpftool",
+            "linux-python3-perf",
+        ] {
             assert!(
                 joined.contains(&format!("/RPMS/aarch64/{s}-6.12.109-3.ph5.aarch64.rpm")),
                 "{s} is not removed"
             );
             assert!(
-                joined.contains(&format!("/RPMS/aarch64/{s}-6.12.109-4.azure.ph5.aarch64.rpm")),
+                joined.contains(&format!(
+                    "/RPMS/aarch64/{s}-6.12.109-4.azure.ph5.aarch64.rpm"
+                )),
                 "{s} is not replaced"
             );
         }
@@ -329,11 +368,18 @@ mod tests {
                     }
                     j += 1;
                 }
-                assert!(terminated, "the {tok} list at {i} is not terminated by --: {a:?}");
+                assert!(
+                    terminated,
+                    "the {tok} list at {i} is not terminated by --: {a:?}"
+                );
             }
         }
         // and a plan with nothing to remove emits no dangling -rm at all
-        let empty = IsoPlan { input: "/a".into(), output: "/b".into(), ..Default::default() };
+        let empty = IsoPlan {
+            input: "/a".into(),
+            output: "/b".into(),
+            ..Default::default()
+        };
         let e = argv(&empty);
         assert!(!e.contains(&"-rm".to_string()), "{e:?}");
         assert!(!e.contains(&"--".to_string()), "{e:?}");
@@ -349,8 +395,16 @@ mod tests {
         for (i, tok) in a.iter().enumerate() {
             if tok == "-map" {
                 assert!(i + 2 < a.len(), "truncated -map");
-                assert!(!a[i + 1].starts_with('-'), "source looks like a flag: {}", a[i + 1]);
-                assert!(a[i + 2].starts_with('/'), "destination must be absolute: {}", a[i + 2]);
+                assert!(
+                    !a[i + 1].starts_with('-'),
+                    "source looks like a flag: {}",
+                    a[i + 1]
+                );
+                assert!(
+                    a[i + 2].starts_with('/'),
+                    "destination must be absolute: {}",
+                    a[i + 2]
+                );
             }
         }
     }

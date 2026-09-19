@@ -117,7 +117,9 @@ pub fn file(path: &std::path::Path) -> Result<String, String> {
     let mut h = Sha256::default();
     let mut buf = vec![0u8; 1 << 20];
     loop {
-        let n = f.read(&mut buf).map_err(|e| format!("{}: {e}", path.display()))?;
+        let n = f
+            .read(&mut buf)
+            .map_err(|e| format!("{}: {e}", path.display()))?;
         if n == 0 {
             break;
         }
