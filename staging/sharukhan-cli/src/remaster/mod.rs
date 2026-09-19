@@ -22,6 +22,7 @@ pub mod guard;
 pub mod initrd;
 pub mod iso;
 pub mod kernel;
+pub mod poi;
 pub mod repo;
 
 use std::path::{Path, PathBuf};
@@ -73,6 +74,18 @@ impl Arch {
     /// Whether producing this needs qemu-user emulation on this host.
     pub fn emulated_here(&self) -> bool {
         self.rpm() != std::env::consts::ARCH
+    }
+    /// The device the platform's serial console appears as.
+    ///
+    /// Azure exposes the VM console as ttyAMA0 on Arm64 and ttyS0 on x86, and
+    /// systemd starts a getty on whatever the kernel console is. Naming it per
+    /// arch here rather than at the call site is what keeps the installed
+    /// system reachable on both.
+    pub fn console(&self) -> &'static str {
+        match self {
+            Arch::X86_64 => "ttyS0",
+            Arch::Aarch64 => "ttyAMA0",
+        }
     }
     /// Where the built kernel image lands in the tree, relative to the build
     /// directory. x86 produces a compressed bzImage, arm64 a flat Image - which
@@ -498,6 +511,8 @@ fn initrd_phase(c: &mut Ctx, p: &Produced) -> Result<(), String> {
     let tree = rpmdir.join("lib/modules").join(&p.new_vr);
     initrd::swap_module_tree(c, &root, &p.old_vr, &tree, &p.new_vr)?;
     initrd::depmod(c, &root, &p.new_vr)?;
+    let arch = c.spec.arch;
+    poi::patch(c, &root, arch)?;
     let out = c.spec.workdir.join("out/isolinux/initrd.img");
     initrd::repack(c, &root, &out)?;
     Ok(())
