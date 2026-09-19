@@ -5,6 +5,7 @@
 //! that reports a confident wrong answer is worse than one that reports none.
 
 mod b64;
+mod branchguard;
 mod build;
 mod buildexec;
 mod buildmode;
@@ -74,6 +75,10 @@ PHASES (the same code `run` calls, one step at a time)
                         rebuilding only the kernel spec (--in, --out, --hyperv)
     variant-patches     rebuild the installer variant patches from the PR branches
     canister            which canister this kernel can have (--rebase-check to prove it)
+    branch-check        guard a PR branch against a base that has moved: the
+                        %changelog version it adds must not be one the target
+                        already publishes, dates must descend, and a replay of
+                        its commits must not silently drop renamed files
     mirrors             are the SPECS copies of POI PR commits still current with the fork?
     ingest              fold the evidence files into the memory database (idempotent)
 
@@ -123,6 +128,8 @@ OPTIONS:
                         iso, verify
     --no-accel          do not use a native cross cc1 even if one is built
                         and passes the byte-identity gate (remaster)
+    --target <ref>      branch the PR merges INTO, e.g. vmware/5.0 (branch-check)
+    --branch <ref>      the PR branch under test (branch-check)
     --severity <level>  filter findings by severity
     --jobs <n>          proposed parallel VM count (status); default is cpus/4
     --job <id>          a job table row id (stop, watch) - NOT --jobs
@@ -183,6 +190,9 @@ struct Args {
     builddir: Option<String>,
     photon_tree: Option<String>,
     sources: Option<String>,
+    // ---- branch-check ----
+    target: Option<String>,
+    branch: Option<String>,
     stage: Option<String>,
     no_accel: bool,
 }
@@ -238,6 +248,8 @@ fn parse() -> Result<Args, String> {
         builddir: None,
         photon_tree: None,
         sources: None,
+        target: None,
+        branch: None,
         stage: None,
         no_accel: false,
         log: None,
@@ -303,6 +315,8 @@ fn parse() -> Result<Args, String> {
                 out.photon_tree = Some(a.next().ok_or("--photon-tree needs a value")?)
             }
             "--sources" => out.sources = Some(a.next().ok_or("--sources needs a value")?),
+            "--target" => out.target = Some(a.next().ok_or("--target needs a value")?),
+            "--branch" => out.branch = Some(a.next().ok_or("--branch needs a value")?),
             "--stage" => out.stage = Some(a.next().ok_or("--stage needs a value")?),
             "--no-accel" => out.no_accel = true,
             "--settle" => {
@@ -402,6 +416,7 @@ fn main() -> ExitCode {
         "remaster" => cmd_remaster(&args),
         "variant-patches" => phases::cmd_variant_patches(&cfg),
         "canister" => cmd_canister(&cfg, args.rebase_check),
+        "branch-check" => cmd_branch_check(&args),
         "mirrors" => cmd_mirrors(&cfg),
         "ingest" => cmd_ingest(&cfg),
         "stop" => runner::cmd_stop(&cfg, args.job, args.all, args.dry_run),
@@ -1307,6 +1322,98 @@ phase B: relink linux and linux-esx against it"),
 /// Everything comes from remote-tracking refs after a fetch, deliberately: the
 /// point is to prove that what is on the fork is what gets built, not whatever
 /// a local working tree happens to hold.
+/// `sharukhan branch-check --photon-tree <dir> --target <ref> --branch <ref>`
+///
+/// Runs the two guards in `branchguard` against a real repository. They exist
+/// because both failures were shipped: a changelog entry duplicating one the
+/// target had since published, and a replay that kept 136 files a commit had
+/// renamed away. Both survived the checks of the day because those checks
+/// measured the wrong thing - so this prints WHAT IT MEASURED, never a bare OK.
+fn cmd_branch_check(args: &Args) -> Result<(), String> {
+    let dir = args
+        .photon_tree
+        .as_deref()
+        .ok_or("branch-check needs --photon-tree <dir>")?;
+    let target = args
+        .target
+        .as_deref()
+        .ok_or("branch-check needs --target <ref>, the branch the PR merges into")?;
+    let branch = args
+        .branch
+        .as_deref()
+        .ok_or("branch-check needs --branch <ref>, the PR branch under test")?;
+    let dir = std::path::Path::new(dir);
+
+    println!(
+        "branch-check: target={target} branch={branch} repo={}",
+        dir.display()
+    );
+    let mut bad = 0;
+
+    // The merge-base says what the branch ADDED; the target says whether that
+    // version is free. Selecting files by `diff target branch` instead reported
+    // every spec the target had moved ahead on as this branch's duplicate.
+    let base = branchguard::merge_base(dir, target, branch)?;
+    for f in branchguard::changed_spec_files(dir, &base, branch)? {
+        let (bt, tt, b) = branchguard::three_texts(dir, &base, target, branch, &f);
+        match branchguard::changelog_version_is_new(&bt, &tt, &b) {
+            branchguard::Changelog::New { version } => {
+                println!("  [ok   ] {f}: adds {version}, not present on {target}")
+            }
+            branchguard::Changelog::NoneAdded => {
+                println!("  [ok   ] {f}: adds no entry (a stacked child extends its parent)")
+            }
+            branchguard::Changelog::Duplicate {
+                version,
+                target_date,
+            } => {
+                bad += 1;
+                let when = target_date
+                    .map(|d| d.to_string())
+                    .unwrap_or_else(|| "an unparseable date".to_string());
+                println!(
+                    "  [FAIL ] {f}: adds {version}, which {target} already publishes (dated {when}). Renumber."
+                );
+            }
+        }
+        if let Err(e) = branchguard::top_entry_is_not_older(&b) {
+            bad += 1;
+            println!("  [FAIL ] {f}: {e}");
+        }
+    }
+
+    for rev in branchguard::commits_between(dir, target, branch)? {
+        let missed = branchguard::renames_would_be_missed(dir, &rev)?;
+        if missed.is_empty() {
+            println!(
+                "  [ok   ] {}: no renames a replay could drop",
+                &rev[..9.min(rev.len())]
+            );
+        } else {
+            println!(
+                "  [warn ] {}: {} path(s) a rename-collapsing replay would silently keep, e.g. {}",
+                &rev[..9.min(rev.len())],
+                missed.len(),
+                missed.first().map(String::as_str).unwrap_or("-")
+            );
+        }
+    }
+
+    let te = branchguard::executable_paths(dir, target)?;
+    let be = branchguard::executable_paths(dir, branch)?;
+    println!(
+        "  [info ] executable files: {} on {target}, {} on {branch}",
+        te.len(),
+        be.len()
+    );
+
+    if bad > 0 {
+        return Err(format!("{bad} changelog problem(s); see above"));
+    }
+    println!("\nthe branch numbers cleanly against {target}");
+    Ok(())
+}
+
 fn cmd_mirrors(cfg: &config::Config) -> Result<(), String> {
     let mut stale = 0;
     for variant in build::VARIANTS.iter() {
