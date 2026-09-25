@@ -131,9 +131,15 @@ Status (branch commit `6c918e10a`, `photon-minimal-5.0-6c918e10a.x86_64.iso`, 50
   `7.3.0-0.rc4.1.ph5-esx`. `systemctl is-system-running` reports `running`, the root filesystem is
   on `/dev/sda3` (ext4), and a vmxnet3 NIC gets a DHCP address. `linux-esx` has no virtio drivers,
   so test it with VMware-style virtual hardware.
-- The generic `linux` kernel from that ISO has the Hyper-V issue described above, so an installed
-  system panics at boot. The kernel is being rebuilt with the v10 config fix; that result is not
-  verified yet.
+- The generic `linux` kernel in that ISO still had the Hyper-V issue described above, so an installed
+  system panicked at boot.
+- Rebuilt with the v10 config fix (`CONFIG_HYPERV=y`), the generic kernel works: the rebuilt ISO
+  (about 508 MB) was installed interactively onto a virtio disk under QEMU/KVM (BIOS, no STIG
+  hardening). The installed system boots to login with kernel `7.3.0-0.rc4.1.ph5`, `initrd.img` is
+  present, `systemctl is-system-running` reports `running`, root is on `/dev/vda3` (ext4), and
+  `eth0` gets a DHCP address and reaches the gateway.
+- If an ISO name already exists in the output directory, the wrapper prefixes the new ISO with a
+  timestamp (for example `20260925-163049-photon-minimal-5.0-6c918e10a.x86_64.iso`).
 
 ### mission-control/
 The matrix's configuration and evidence: `config/permutations.tsv` (the executable
