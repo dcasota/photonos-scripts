@@ -27,7 +27,7 @@ Automated ISO build scripts for Photon OS. Each script pulls the latest sources 
 | `runPh5_pinned91.sh` | 5.0 | Builds from the `5.0` branch pinned to `photon-subrelease 91` (6.1.x kernel, python 3.11). Bypasses the spec checker via `base-commit`, removes conflicting python 3.14 / rpm 6.x RPMs from prior `>= 92` builds, and bootstraps `python3-macros` and `rpm-build 4.18.0` from the Broadcom repo. |
 | `runPh6.sh` | 6.0 | Builds from the `6.0` branch. Includes OpenJDK WSL2 fix and missing-source prefetch. |
 | `runPh7-2-7.sh` | 5.0 | **Experimental.** Photon 5.0 userland with Linux 7.2.7 instead of 6.12, from the `experimental/linux-7.2.7` branch. Wraps `runPh5_normal.sh`; see [runPh7-2-7.sh (experimental Linux 7.2.7)](#runph7-2-7sh-experimental-linux-727) below. |
-| `runPh7-3-RC4.sh` | 5.0 | **Experimental.** Same approach with the Linux 7.3-rc4 mainline release candidate, from the `experimental/linux-7.3-rc4` branch (wrapper v3); see [runPh7-3-RC4.sh (experimental Linux 7.3-rc4)](#runph7-3-rc4sh-experimental-linux-73-rc4) below. |
+| `runPh7-3-RC4.sh` | 5.0 | **Experimental.** Same approach with the Linux 7.3-rc4 mainline release candidate, from the `experimental/linux-7.3-rc4` branch (wrapper v4); see [runPh7-3-RC4.sh (experimental Linux 7.3-rc4)](#runph7-3-rc4sh-experimental-linux-73-rc4) below. |
 
 All scripts accept four optional positional parameters: `BASE_DIR`, `COMMON_BRANCH`, `RELEASE_BRANCH`, and `OUTPUT_DIR`.
 
@@ -80,6 +80,11 @@ How it works:
   and re-applies Photon's values for them. This applies to both `linux` and `linux-esx`. Photon 5.0
   itself uses the nft backend (`/usr/sbin/iptables` is `xtables-nft-multi`), so only software that
   loads the legacy modules needs this.
+- **BTF only where Photon has it (v12).** The merge used to force `CONFIG_DEBUG_INFO_BTF=y` on every
+  kernel. Photon's esx config has BTF off, and `linux-esx.spec` (unlike `linux.spec`) does not keep the
+  `.BTF` section when it strips modules, so esx modules loaded without BTF. `nf_conntrack` then logged
+  `missing module BTF, cannot register kfunc` twice at every boot. The merge now enables BTF only when
+  Photon's original config has it: `linux` keeps BTF, `linux-esx` goes back to BTF off.
 - **perf files only with a tools subpackage (v10).** The perf-core install hook now goes only into
   specs with `%files tools`. In `linux-esx` it left `/etc/bash_completion.d/perf` unpackaged, which
   failed any fresh `linux-esx` build.
@@ -144,6 +149,16 @@ What differs from 7.2.7:
   `Patch61` and `Patch63` (PAX tasklet fix). `Patch62` (`objtool: Return error in case of failures`)
   stays off: it no longer applies, and RAP builds emit objtool `no-cfi indirect call!` notes that it
   would make fatal. `linux-esx` has no RAP.
+- **rdrand-rng (v4).** systemd ships `/etc/modules-load.d/10-rdrand-rng.conf`, and both kernel configs set
+  `CONFIG_HW_RANDOM_RDRAND=m`, but the driver comes from Photon's `Patch6`, which the pin skipped: every
+  boot logged `Failed to find module 'rdrand-rng'`. The branch carries a rebased
+  `SPECS/linux/vmw/0001-hwrng-rdrand-Add-RNG-driver-based-on-x86-rdrand-inst-7.3.patch`. Its Makefile
+  line follows the AMD entry, because 7.3 added AIROHA where the old context expected ATMEL, and
+  `static_cpu_has()`, removed in 7.x, becomes `cpu_feature_enabled()`. The pin (`enable_rdrand_73rc4`)
+  re-adds `Patch6` for both flavors and applies it with `%autopatch -p1 -m6 -M6`.
+- **cloud-init 26.2-3.** The `experimental/linux-7.3-rc4` branch carries the cloud-init fix from
+  vmware/photon#1676 (cherry-picked, commit `5a54342ac`). The systemd generator now finds `ds-identify`
+  in `/usr/libexec`; before, it exited with status 3 at every boot and cloud-init did not run.
 
 Status (branch commit `6c918e10a`, `photon-minimal-5.0-6c918e10a.x86_64.iso`, 507 MB):
 
@@ -179,6 +194,8 @@ Status (branch commit `6c918e10a`, `photon-minimal-5.0-6c918e10a.x86_64.iso`, 50
   (BIOS, no STIG hardening) boots to login. `sysctl -a` reads all 1,088 sysctls without error, `dmesg`
   has 0 PAX/Oops/BUG lines, the kernel is not tainted, the legacy netfilter modules and `hv_vmbus`
   load, `systemctl is-system-running` = `running`, and `eth0` gets a DHCP address.
+- v4 (branch commit `616dc4d8f`, with esx BTF off, rdrand-rng and cloud-init 26.2-3): the build is
+  running; the install test that checks the journal for the three fixed messages is pending.
 - If an ISO name already exists in the output directory, the wrapper prefixes the new ISO with a
   timestamp (for example `20260925-163049-photon-minimal-5.0-6c918e10a.x86_64.iso`).
 

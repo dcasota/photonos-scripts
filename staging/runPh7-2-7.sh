@@ -28,7 +28,7 @@ export GIT_TERMINAL_PROMPT=0
 export EDITOR=true
 export VISUAL=true
 
-echo "[runPh7-2-7] wrapper v11 + Hyper-V and legacy iptables config restore + perf hook only with tools subpackage"
+echo "[runPh7-2-7] wrapper v12 + Hyper-V and legacy iptables config restore + BTF only where Photon has it + perf hook only with tools subpackage"
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" 2>/dev/null && pwd)
 
@@ -360,7 +360,9 @@ spec, needle = Path(sys.argv[1]), sys.argv[2]
 lines = spec.read_text().splitlines(keepends=True)
 block = [
     "# 7.2.7 config merge: Photon policy kept, obsolete 6.12 symbols dropped.\n",
-    "# bpftool BUILD_BPF_SKEL dumps BTF from vmlinux -- keep DEBUG_INFO_BTF.\n",
+    "# bpftool BUILD_BPF_SKEL dumps BTF from vmlinux -- keep DEBUG_INFO_BTF where Photon\n",
+    "# has it (linux). linux-esx has BTF off and strips module .BTF, so forcing it there\n",
+    "# only produced \"missing module BTF, cannot register kfunc\" at nf_conntrack load.\n",
     "# IO_URING_ZCRX stays. IO_URING_BPF_OPS may follow BTF; accepted here.\n",
     "# HYPERV is a bool since 7.x; the 6.12 config has HYPERV=m, which\n",
     "# olddefconfig drops together with every Hyper-V driver. dracut then\n",
@@ -369,7 +371,7 @@ block = [
     "make %{?_smp_mflags} ARCH=%{arch} LC_ALL= olddefconfig\n",
     "if [ -x scripts/config ]; then\n",
     "  scripts/config --enable DEBUG_INFO || :\n",
-    "  scripts/config --enable DEBUG_INFO_BTF || :\n",
+    "  grep -q '^CONFIG_DEBUG_INFO_BTF=y' .config.photon && scripts/config --enable DEBUG_INFO_BTF || :\n",
     "  scripts/config --disable IO_URING_BPF_OPS || :\n",
     "  if grep -qE '^CONFIG_HYPERV=[ym]$' .config.photon; then\n",
     "    scripts/config --enable HYPERV\n",

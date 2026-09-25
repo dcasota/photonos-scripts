@@ -1,7 +1,7 @@
 #!/bin/sh
 #
 # Photon OS 5.0 userland + experimental Linux 7.3-rc4 (mainline RC)
-# wrapper v3
+# wrapper v4
 #
 # $1 BASE_DIR        default /root
 # $2 COMMON_BRANCH   default common
@@ -28,7 +28,7 @@ export GIT_TERMINAL_PROMPT=0
 export EDITOR=true
 export VISUAL=true
 
-echo "[runPh7-3-RC4] wrapper v3 (Linux 7.3-rc4, RAP/KCFI on, noreplace-smp dropped)"
+echo "[runPh7-3-RC4] wrapper v4 (Linux 7.3-rc4, RAP/KCFI on, rdrand-rng, noreplace-smp dropped, esx BTF off)"
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" 2>/dev/null && pwd)
 
@@ -411,6 +411,36 @@ else:
 PY
 }
 enable_rap_73rc4 SPECS/linux/linux.spec || exit 1
+# rdrand hwrng driver (Patch6) for both flavors: systemd's 10-rdrand-rng.conf loads
+# rdrand-rng and both configs set HW_RANDOM_RDRAND=m. disable_unrebased_ranges deletes
+# Patch2-Patch49, so re-add Patch6 pointing at the 7.3-rc4 rebase in vmw/ and apply it.
+enable_rdrand_73rc4() {
+  spec="$1"
+  [ -f "$spec" ] || return 0
+  python3 - "$spec" << 'PY'
+import re, sys
+from pathlib import Path
+p = Path(sys.argv[1])
+t = p.read_text()
+orig = t
+new6 = "Patch6: 0001-hwrng-rdrand-Add-RNG-driver-based-on-x86-rdrand-inst-7.3.patch"
+t = re.sub(r"(?m)^Patch6:.*$\n", "", t)
+t, n = re.subn(r"(?m)^(Patch1:.*\n)", r"\g<1>" + new6 + "\n", t, count=1)
+if n != 1:
+    sys.exit(f"[runPh7-3-RC4] ERROR: {p}: no Patch1 line to anchor Patch6")
+if "\n%autopatch -p1 -m6 -M6\n" not in t:
+    t, n = re.subn(r"(?m)^(%autopatch -p1 -m0 -M1\n)", r"\g<1>%autopatch -p1 -m6 -M6\n", t, count=1)
+    if n != 1:
+        sys.exit(f"[runPh7-3-RC4] ERROR: {p}: no live %autopatch -p1 -m0 -M1 line")
+if t != orig:
+    p.write_text(t)
+    print(f"[runPh7-3-RC4] {p}: rdrand hwrng driver (Patch6, 7.3-rc4 rebase) enabled")
+else:
+    print(f"[runPh7-3-RC4] {p}: rdrand hwrng driver already enabled")
+PY
+}
+enable_rdrand_73rc4 SPECS/linux/linux.spec || exit 1
+enable_rdrand_73rc4 SPECS/linux/linux-esx.spec || exit 1
 # Replace the 6.12 config-applicability include with a 7.3-rc4 merge:
 # olddefconfig keeps Photon =y/=m that still exist, drops gone symbols,
 # fills new Kconfig with upstream defaults, then turns off io_uring BPF.
@@ -426,7 +456,9 @@ spec, needle = Path(sys.argv[1]), sys.argv[2]
 lines = spec.read_text().splitlines(keepends=True)
 block = [
     "# 7.3-rc4 config merge: Photon policy kept, obsolete 6.12 symbols dropped.\n",
-    "# bpftool BUILD_BPF_SKEL dumps BTF from vmlinux -- keep DEBUG_INFO_BTF.\n",
+    "# bpftool BUILD_BPF_SKEL dumps BTF from vmlinux -- keep DEBUG_INFO_BTF where Photon\n",
+    "# has it (linux). linux-esx has BTF off and strips module .BTF, so forcing it there\n",
+    "# only produced \"missing module BTF, cannot register kfunc\" at nf_conntrack load.\n",
     "# IO_URING_ZCRX stays. IO_URING_BPF_OPS may follow BTF; accepted here.\n",
     "# HYPERV is a bool since 7.x; the 6.12 config has HYPERV=m, which\n",
     "# olddefconfig drops together with every Hyper-V driver. dracut then\n",
@@ -435,7 +467,7 @@ block = [
     "make %{?_smp_mflags} ARCH=%{arch} LC_ALL= olddefconfig\n",
     "if [ -x scripts/config ]; then\n",
     "  scripts/config --enable DEBUG_INFO || :\n",
-    "  scripts/config --enable DEBUG_INFO_BTF || :\n",
+    "  grep -q '^CONFIG_DEBUG_INFO_BTF=y' .config.photon && scripts/config --enable DEBUG_INFO_BTF || :\n",
     "  scripts/config --disable IO_URING_BPF_OPS || :\n",
     "  if grep -qE '^CONFIG_HYPERV=[ym]$' .config.photon; then\n",
     "    scripts/config --enable HYPERV\n",
