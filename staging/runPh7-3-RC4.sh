@@ -1,7 +1,7 @@
 #!/bin/sh
 #
 # Photon OS 5.0 userland + experimental Linux 7.3-rc4 (mainline RC)
-# wrapper v2
+# wrapper v3
 #
 # $1 BASE_DIR        default /root
 # $2 COMMON_BRANCH   default common
@@ -28,7 +28,7 @@ export GIT_TERMINAL_PROMPT=0
 export EDITOR=true
 export VISUAL=true
 
-echo "[runPh7-3-RC4] wrapper v2 (Linux 7.3-rc4, noreplace-smp dropped)"
+echo "[runPh7-3-RC4] wrapper v3 (Linux 7.3-rc4, RAP/KCFI on, noreplace-smp dropped)"
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" 2>/dev/null && pwd)
 
@@ -380,6 +380,37 @@ drop_skipped_patches SPECS/linux/linux-esx.spec
 drop_skipped_patches SPECS/linux/kernel_cve_patches.inc
 disable_unrebased_ranges SPECS/linux/linux.spec
 disable_unrebased_ranges SPECS/linux/linux-esx.spec
+# RAP/KCFI ("Secure" range) for the generic linux flavor: Patch61 points at the
+# 7.3-rc4 rebase in secure/ on the experimental/linux-7.3-rc4 branch, Patch63 (PAX
+# tasklet fix) applies as is. Patch62 (objtool: return error) stays off: it no longer
+# applies, and RAP builds emit objtool "no-cfi indirect call!" notes it would make fatal.
+# Runs after disable_unrebased_ranges, which comments out every %autopatch each pass.
+enable_rap_73rc4() {
+  spec="$1"
+  [ -f "$spec" ] || return 0
+  python3 - "$spec" << 'PY'
+import re, sys
+from pathlib import Path
+p = Path(sys.argv[1])
+t = p.read_text()
+orig = t
+t = re.sub(r"(?m)^Patch61:(\s*)0001-gcc-rap-plugin-with-kcfi\.patch$",
+           r"Patch61:\g<1>0001-gcc-rap-plugin-with-kcfi-7.3.patch", t)
+if not re.search(r"(?m)^Patch61:\s*0001-gcc-rap-plugin-with-kcfi-7\.3\.patch$", t):
+    sys.exit(f"[runPh7-3-RC4] ERROR: {p}: Patch61 is not the 7.3-rc4 RAP patch")
+if "\n%autopatch -p1 -m61 -M61\n" not in t:
+    t, n = re.subn(r"(?m)^(%autopatch -p1 -m0 -M1\n)",
+                   r"\g<1>%autopatch -p1 -m61 -M61\n%autopatch -p1 -m63 -M63\n", t, count=1)
+    if n != 1:
+        sys.exit(f"[runPh7-3-RC4] ERROR: {p}: no live %autopatch -p1 -m0 -M1 line")
+if t != orig:
+    p.write_text(t)
+    print(f"[runPh7-3-RC4] {p}: RAP/KCFI Patch61 (7.3-rc4 rebase) and Patch63 enabled")
+else:
+    print(f"[runPh7-3-RC4] {p}: RAP/KCFI patches already enabled")
+PY
+}
+enable_rap_73rc4 SPECS/linux/linux.spec || exit 1
 # Replace the 6.12 config-applicability include with a 7.3-rc4 merge:
 # olddefconfig keeps Photon =y/=m that still exist, drops gone symbols,
 # fills new Kconfig with upstream defaults, then turns off io_uring BPF.

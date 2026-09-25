@@ -27,7 +27,7 @@ Automated ISO build scripts for Photon OS. Each script pulls the latest sources 
 | `runPh5_pinned91.sh` | 5.0 | Builds from the `5.0` branch pinned to `photon-subrelease 91` (6.1.x kernel, python 3.11). Bypasses the spec checker via `base-commit`, removes conflicting python 3.14 / rpm 6.x RPMs from prior `>= 92` builds, and bootstraps `python3-macros` and `rpm-build 4.18.0` from the Broadcom repo. |
 | `runPh6.sh` | 6.0 | Builds from the `6.0` branch. Includes OpenJDK WSL2 fix and missing-source prefetch. |
 | `runPh7-2-7.sh` | 5.0 | **Experimental.** Photon 5.0 userland with Linux 7.2.7 instead of 6.12, from the `experimental/linux-7.2.7` branch. Wraps `runPh5_normal.sh`; see [runPh7-2-7.sh (experimental Linux 7.2.7)](#runph7-2-7sh-experimental-linux-727) below. |
-| `runPh7-3-RC4.sh` | 5.0 | **Experimental.** Same approach with the Linux 7.3-rc4 mainline release candidate, from the `experimental/linux-7.3-rc4` branch (wrapper v2); see [runPh7-3-RC4.sh (experimental Linux 7.3-rc4)](#runph7-3-rc4sh-experimental-linux-73-rc4) below. |
+| `runPh7-3-RC4.sh` | 5.0 | **Experimental.** Same approach with the Linux 7.3-rc4 mainline release candidate, from the `experimental/linux-7.3-rc4` branch (wrapper v3); see [runPh7-3-RC4.sh (experimental Linux 7.3-rc4)](#runph7-3-rc4sh-experimental-linux-73-rc4) below. |
 
 All scripts accept four optional positional parameters: `BASE_DIR`, `COMMON_BRANCH`, `RELEASE_BRANCH`, and `OUTPUT_DIR`.
 
@@ -132,6 +132,18 @@ What differs from 7.2.7:
   has it). 7.3-rc4 logs `Unknown kernel command line parameters "noreplace-smp", will be passed to
   user space` on every boot. The kernel pin now strips it from the kernel specs. Behaviour does not
   change: the kernel always keeps the lock prefixes now. `runPh7-2-7.sh` keeps the option.
+- **RAP/KCFI on (v3).** The generic `linux` flavor builds with Photon's RAP/KCFI gcc plugin
+  (`CONFIG_PAX_RAP=y`), as the 5.0 kernel does. The 6.12 plugin patch (`Patch61`) no longer applies to
+  7.3-rc4. Its `vermagic.h` context still names `CONFIG_M486` / `M486SX`, which Linux 7.1 removed, and
+  `CFI_CLANG` became `CFI`. The branch carries a rebased
+  `SPECS/linux/secure/0001-gcc-rap-plugin-with-kcfi-7.3.patch` (sha256 `267919b1…`), documented in
+  `SPECS/linux/EXPERIMENTAL-7.3-rc4.md`. Beyond the rebase, 7.x needs `__nocfi` without the kCFI
+  attribute under RAP, and RAP must hash `gimple_call_fntype()` and build with `-fno-tree-tail-merge`.
+  Otherwise the union-based sysctl converter calls fail their RAP check, and the first sysctl read
+  panics init. The pin (`enable_rap_73rc4`) points `Patch61` at the rebased file and enables
+  `Patch61` and `Patch63` (PAX tasklet fix). `Patch62` (`objtool: Return error in case of failures`)
+  stays off: it no longer applies, and RAP builds emit objtool `no-cfi indirect call!` notes that it
+  would make fatal. `linux-esx` has no RAP.
 
 Status (branch commit `6c918e10a`, `photon-minimal-5.0-6c918e10a.x86_64.iso`, 507 MB):
 
@@ -160,6 +172,13 @@ Status (branch commit `6c918e10a`, `photon-minimal-5.0-6c918e10a.x86_64.iso`, 50
   a fresh kickstart install on PVSCSI + vmxnet3 boots with a `/proc/cmdline` without `noreplace-smp`,
   0 unknown-parameter warnings in `dmesg`, the legacy netfilter modules loading, and `systemctl
   is-system-running` = `running`.
+- Generic `linux` rebuilt with RAP (v3, branch commit `1ed5b5003`, ISO
+  `photon-minimal-5.0-1ed5b5003.x86_64.iso`). The build log shows `rap_plugin.so` in use, the config
+  has `CONFIG_PAX_RAP=y`, `CONFIG_CFI=y`, `CONFIG_DEBUG_INFO_BTF=y`, and module vermagic ends in `RAP`.
+  The installer runs on the RAP kernel, and an interactive install onto a virtio disk under QEMU/KVM
+  (BIOS, no STIG hardening) boots to login. `sysctl -a` reads all 1,088 sysctls without error, `dmesg`
+  has 0 PAX/Oops/BUG lines, the kernel is not tainted, the legacy netfilter modules and `hv_vmbus`
+  load, `systemctl is-system-running` = `running`, and `eth0` gets a DHCP address.
 - If an ISO name already exists in the output directory, the wrapper prefixes the new ISO with a
   timestamp (for example `20260925-163049-photon-minimal-5.0-6c918e10a.x86_64.iso`).
 
