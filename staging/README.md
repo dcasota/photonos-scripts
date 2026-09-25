@@ -27,7 +27,7 @@ Automated ISO build scripts for Photon OS. Each script pulls the latest sources 
 | `runPh5_pinned91.sh` | 5.0 | Builds from the `5.0` branch pinned to `photon-subrelease 91` (6.1.x kernel, python 3.11). Bypasses the spec checker via `base-commit`, removes conflicting python 3.14 / rpm 6.x RPMs from prior `>= 92` builds, and bootstraps `python3-macros` and `rpm-build 4.18.0` from the Broadcom repo. |
 | `runPh6.sh` | 6.0 | Builds from the `6.0` branch. Includes OpenJDK WSL2 fix and missing-source prefetch. |
 | `runPh7-2-7.sh` | 5.0 | **Experimental.** Photon 5.0 userland with Linux 7.2.7 instead of 6.12, from the `experimental/linux-7.2.7` branch. Wraps `runPh5_normal.sh`; see [runPh7-2-7.sh (experimental Linux 7.2.7)](#runph7-2-7sh-experimental-linux-727) below. |
-| `runPh7-3-RC4.sh` | 5.0 | **Experimental.** Same approach with the Linux 7.3-rc4 mainline release candidate, from the `experimental/linux-7.3-rc4` branch; see [runPh7-3-RC4.sh (experimental Linux 7.3-rc4)](#runph7-3-rc4sh-experimental-linux-73-rc4) below. |
+| `runPh7-3-RC4.sh` | 5.0 | **Experimental.** Same approach with the Linux 7.3-rc4 mainline release candidate, from the `experimental/linux-7.3-rc4` branch (wrapper v2); see [runPh7-3-RC4.sh (experimental Linux 7.3-rc4)](#runph7-3-rc4sh-experimental-linux-73-rc4) below. |
 
 All scripts accept four optional positional parameters: `BASE_DIR`, `COMMON_BRANCH`, `RELEASE_BRANCH`, and `OUTPUT_DIR`.
 
@@ -127,6 +127,11 @@ What differs from 7.2.7:
   `%define kernel_src 7.3-rc4`, and `%prep` blanks the Makefile's `EXTRAVERSION = -rc4`. The kernel
   then names itself `7.3.0` plus `CONFIG_LOCALVERSION`, which equals `uname_r`: `uname -r` is
   `7.3.0-0.rc4.1.ph5` for `linux` and `7.3.0-0.rc4.1.ph5-esx` for `linux-esx`.
+- **No `noreplace-smp` (v2).** `linux-esx` puts `noreplace-smp` on its kernel command line. That option
+  controlled the uniprocessor lock-prefix patching, which was removed in the 7.3 cycle (7.2.7 still
+  has it). 7.3-rc4 logs `Unknown kernel command line parameters "noreplace-smp", will be passed to
+  user space` on every boot. The kernel pin now strips it from the kernel specs. Behaviour does not
+  change: the kernel always keeps the lock prefixes now. `runPh7-2-7.sh` keeps the option.
 
 Status (branch commit `6c918e10a`, `photon-minimal-5.0-6c918e10a.x86_64.iso`, 507 MB):
 
@@ -144,13 +149,17 @@ Status (branch commit `6c918e10a`, `photon-minimal-5.0-6c918e10a.x86_64.iso`, 50
   present, `systemctl is-system-running` reports `running`, root is on `/dev/vda3` (ext4), and
   `eth0` gets a DHCP address and reaches the gateway.
 - Those kernels still lacked the legacy netfilter modules: on the installed generic system,
-  `modprobe ip_tables` fails with "Module ip_tables not found". Both kernels are being rebuilt with
+  `modprobe ip_tables` fails with "Module ip_tables not found". Both kernels were rebuilt with
   v11 (ISO `20260925-191421-photon-minimal-5.0-6c918e10a.x86_64.iso`, 508 MB). Fresh installs of
   both kernels under QEMU/KVM (BIOS, no STIG hardening) boot to login with `systemctl
   is-system-running` = `running`. The generic `linux` was installed interactively on virtio and
   `linux-esx` by kickstart on PVSCSI + vmxnet3. On both, `ip_tables`, `iptable_filter`,
   `iptable_nat`, `ip6_tables`, `ip6table_filter`, `ebtables`, `ebtable_filter`, `arp_tables` and
   `arptable_filter` load with `modprobe`, and `eth0` gets a DHCP address.
+- `linux-esx` rebuilt with the v2 pin (ISO `20260925-204806-photon-minimal-5.0-6c918e10a.x86_64.iso`):
+  a fresh kickstart install on PVSCSI + vmxnet3 boots with a `/proc/cmdline` without `noreplace-smp`,
+  0 unknown-parameter warnings in `dmesg`, the legacy netfilter modules loading, and `systemctl
+  is-system-running` = `running`.
 - If an ISO name already exists in the output directory, the wrapper prefixes the new ISO with a
   timestamp (for example `20260925-163049-photon-minimal-5.0-6c918e10a.x86_64.iso`).
 

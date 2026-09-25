@@ -1,7 +1,7 @@
 #!/bin/sh
 #
 # Photon OS 5.0 userland + experimental Linux 7.3-rc4 (mainline RC)
-# wrapper v1
+# wrapper v2
 #
 # $1 BASE_DIR        default /root
 # $2 COMMON_BRANCH   default common
@@ -28,7 +28,7 @@ export GIT_TERMINAL_PROMPT=0
 export EDITOR=true
 export VISUAL=true
 
-echo "[runPh7-3-RC4] wrapper v1 (Linux 7.3-rc4)"
+echo "[runPh7-3-RC4] wrapper v2 (Linux 7.3-rc4, noreplace-smp dropped)"
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" 2>/dev/null && pwd)
 
@@ -216,6 +216,9 @@ else:
     t = re.sub(r"(?m)^(Version:.*\n)", r"\g<1>%define kernel_src " + KSRC + "\n", t, count=1)
 t = re.sub(r"(?m)^Source0:(\s*)\S+", r"Source0:\g<1>https://git.kernel.org/torvalds/t/linux-%{kernel_src}.tar.gz", t, count=1)
 t = t.replace("-n linux-%{version}", "-n linux-%{kernel_src}")
+# noreplace-smp (UP lock-prefix patching) was removed in the 7.3 cycle; 7.3 would log it as an
+# unknown parameter and hand it to init. Lock prefixes are always kept now.
+t = re.sub(r" noreplace-smp(?=[ \n])", "", t)
 mark = "# 7.3-rc4: blank EXTRAVERSION so uname -r equals uname_r\n"
 if mark not in t:
     t, n = re.subn(r"(?m)^(%setup -q -n linux-%\{kernel_src\}\n)",
