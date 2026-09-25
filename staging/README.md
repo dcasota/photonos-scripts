@@ -145,9 +145,12 @@ Status (branch commit `6c918e10a`, `photon-minimal-5.0-6c918e10a.x86_64.iso`, 50
   `eth0` gets a DHCP address and reaches the gateway.
 - Those kernels still lacked the legacy netfilter modules: on the installed generic system,
   `modprobe ip_tables` fails with "Module ip_tables not found". Both kernels are being rebuilt with
-  v11. The new `linux-esx` package has `CONFIG_NETFILTER_XTABLES_LEGACY=y` and ships `ip_tables`,
-  `iptable_filter`, `iptable_nat`, `ip6_tables`, `ebtables` and `arp_tables`. The rebuilt generic
-  kernel and a fresh install with both kernels are not verified yet.
+  v11 (ISO `20260925-191421-photon-minimal-5.0-6c918e10a.x86_64.iso`, 508 MB). Fresh installs of
+  both kernels under QEMU/KVM (BIOS, no STIG hardening) boot to login with `systemctl
+  is-system-running` = `running`. The generic `linux` was installed interactively on virtio and
+  `linux-esx` by kickstart on PVSCSI + vmxnet3. On both, `ip_tables`, `iptable_filter`,
+  `iptable_nat`, `ip6_tables`, `ip6table_filter`, `ebtables`, `ebtable_filter`, `arp_tables` and
+  `arptable_filter` load with `modprobe`, and `eth0` gets a DHCP address.
 - If an ISO name already exists in the output directory, the wrapper prefixes the new ISO with a
   timestamp (for example `20260925-163049-photon-minimal-5.0-6c918e10a.x86_64.iso`).
 
