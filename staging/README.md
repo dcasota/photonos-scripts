@@ -27,6 +27,7 @@ Automated ISO build scripts for Photon OS. Each script pulls the latest sources 
 | `runPh5_pinned91.sh` | 5.0 | Builds from the `5.0` branch pinned to `photon-subrelease 91` (6.1.x kernel, python 3.11). Bypasses the spec checker via `base-commit`, removes conflicting python 3.14 / rpm 6.x RPMs from prior `>= 92` builds, and bootstraps `python3-macros` and `rpm-build 4.18.0` from the Broadcom repo. |
 | `runPh6.sh` | 6.0 | Builds from the `6.0` branch. Includes OpenJDK WSL2 fix and missing-source prefetch. |
 | `runPh7-2-7.sh` | 5.0 | **Experimental.** Photon 5.0 userland with Linux 7.2.7 instead of 6.12, from the `experimental/linux-7.2.7` branch. Wraps `runPh5_normal.sh`; see [runPh7-2-7.sh (experimental Linux 7.2.7)](#runph7-2-7sh-experimental-linux-727) below. |
+| `runPh7-3-RC4.sh` | 5.0 | **Experimental.** Same approach with the Linux 7.3-rc4 mainline release candidate, from the `experimental/linux-7.3-rc4` branch; see [runPh7-3-RC4.sh (experimental Linux 7.3-rc4)](#runph7-3-rc4sh-experimental-linux-73-rc4) below. |
 
 All scripts accept four optional positional parameters: `BASE_DIR`, `COMMON_BRANCH`, `RELEASE_BRANCH`, and `OUTPUT_DIR`.
 
@@ -64,6 +65,16 @@ How it works:
   patch include (Patch3000-3999) empty, and replaces the 6.12 config-applicability check with an
   `olddefconfig` merge. That merge keeps Photon's `=y`/`=m` symbols that still exist, takes upstream defaults for new
   Kconfig symbols, and turns off io_uring BPF. It skips the Amazon ENA/EFA and viomem out-of-tree modules.
+- **Hyper-V restore (v10).** `HYPERV` became a `bool` in 7.x, while Photon's 6.12 `config_x86_64` has
+  `CONFIG_HYPERV=m`. `olddefconfig` therefore turned Hyper-V off along with every Hyper-V driver. The
+  `linux` package's dracut config requires `hv_utils`, so dracut failed and an installed system panicked
+  with `VFS: Unable to mount root fs on unknown-block(0,0)` (no initrd). The merge now sets `HYPERV=y`
+  and re-applies Photon's Hyper-V driver values when the original config had Hyper-V on. `linux-esx`
+  keeps Hyper-V off, as its config intends. The merge also prints `config-merge: CONFIG_X off` lines
+  in the kernel build log for every symbol Photon enabled that ended up off.
+- **perf files only with a tools subpackage (v10).** The perf-core install hook now goes only into
+  specs with `%files tools`. In `linux-esx` it left `/etc/bash_completion.d/perf` unpackaged, which
+  failed any fresh `linux-esx` build.
 - **Userland fixes needed to finish the ISO.** Rust built with `LANG=C` and docs off, a
   PostgreSQL 18 configure cache fix, subversion without `/usr/lib/debug`, docker and
   apparmor build fixes, and repair of a broken host or sandbox `/dev/null` before the ISO step.
@@ -82,9 +93,47 @@ Known limitation: `build.py` runs the spec checker only when stdout is **not** a
 patches that are not applied, so the checker rejects it. Run the wrapper from an interactive
 terminal.
 
-Verified result (wrapper v9): `photon-minimal-5.0-<commit>.x86_64.iso` (about 523 MB) with kernel
-`7.2.7-1.ph5`. A full build takes about an hour. The ISO boots to the Photon installer under
-QEMU/KVM in both BIOS and UEFI (OVMF) mode; installing from it has not been verified yet.
+Known limitation: the merge also turns off the legacy iptables, ip6tables and ebtables modules
+(`IP_NF_*`, `IP6_NF_*`, `BRIDGE_EBT_*`), which sit behind a new Kconfig gate in 7.x. Anything that
+relies on legacy iptables will miss them; this is not restored yet.
+
+Status (wrapper v9 build, `photon-minimal-5.0-<commit>.x86_64.iso`, about 523 MB, kernel `7.2.7-1.ph5`):
+the ISO boots to the installer under QEMU/KVM (BIOS and UEFI). Installing the VMware hypervisor-optimized
+kernel (`linux-esx`, normal hard disk, no STIG hardening) works. Installing the generic `linux` kernel
+from that build panics at boot because of the Hyper-V issue above. v10 fixes the config, but the
+generic 7.2.7 kernel must be rebuilt: remove the `linux-*7.2.7-1.ph5*` and `bpftool-7.2.7-1.ph5*` RPMs
+(not `linux-esx-*`) from `stage/RPMS/x86_64` of the release tree and run the wrapper again. A full
+build takes about an hour.
+
+#### runPh7-3-RC4.sh (experimental Linux 7.3-rc4)
+
+Same wrapper as `runPh7-2-7.sh`, pointed at the Linux 7.3-rc4 mainline release candidate
+(2026-09-20). The release tree is the `experimental/linux-7.3-rc4` branch of
+[dcasota/photon](https://github.com/dcasota/photon); its `SPECS/linux/EXPERIMENTAL-7.3-rc4.md` records
+the tarball, sha512 and tag commit. Parameters and defaults are the same as above, except that
+`RELEASE_BRANCH` defaults to `experimental/linux-7.3-rc4`.
+
+What differs from 7.2.7:
+
+- **Source.** Release candidates are published only as git.kernel.org snapshots:
+  `https://git.kernel.org/torvalds/t/linux-7.3-rc4.tar.gz`. Patch0 and Patch1 still apply cleanly.
+- **Version scheme.** RPM versions cannot contain `-`, so the kernel is packaged as `Version: 7.3.0`,
+  `Release: 0.rc4.1%{?dist}`, which sorts below a later 7.3.0 final. The tarball directory lives in
+  `%define kernel_src 7.3-rc4`, and `%prep` blanks the Makefile's `EXTRAVERSION = -rc4`. The kernel
+  then names itself `7.3.0` plus `CONFIG_LOCALVERSION`, which equals `uname_r`: `uname -r` is
+  `7.3.0-0.rc4.1.ph5` for `linux` and `7.3.0-0.rc4.1.ph5-esx` for `linux-esx`.
+
+Status (branch commit `6c918e10a`, `photon-minimal-5.0-6c918e10a.x86_64.iso`, 507 MB):
+
+- The ISO boots to the installer under QEMU/KVM (BIOS).
+- `linux-esx` (VMware hypervisor optimized) was installed by kickstart onto a PVSCSI disk (BIOS,
+  no STIG hardening). The installed system boots to a login prompt with kernel
+  `7.3.0-0.rc4.1.ph5-esx`. `systemctl is-system-running` reports `running`, the root filesystem is
+  on `/dev/sda3` (ext4), and a vmxnet3 NIC gets a DHCP address. `linux-esx` has no virtio drivers,
+  so test it with VMware-style virtual hardware.
+- The generic `linux` kernel from that ISO has the Hyper-V issue described above, so an installed
+  system panics at boot. The kernel is being rebuilt with the v10 config fix; that result is not
+  verified yet.
 
 ### mission-control/
 The matrix's configuration and evidence: `config/permutations.tsv` (the executable
