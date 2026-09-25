@@ -72,6 +72,14 @@ How it works:
   and re-applies Photon's Hyper-V driver values when the original config had Hyper-V on. `linux-esx`
   keeps Hyper-V off, as its config intends. The merge also prints `config-merge: CONFIG_X off` lines
   in the kernel build log for every symbol Photon enabled that ended up off.
+- **Legacy netfilter restore (v11).** Since 7.x the legacy iptables, ip6tables, arptables and
+  ebtables modules (`IP_NF_*`, `IP6_NF_*`, `BRIDGE_EBT_*`) depend on the new bool
+  `NETFILTER_XTABLES_LEGACY`, which defaults to `n`, so the merge dropped all 64 of them
+  (`ip_tables`, `iptable_filter`, `iptable_nat`, `ip6_tables`, `ebtables`, `arp_tables`, ...). When
+  Photon's original config has legacy tables on, the merge now enables `NETFILTER_XTABLES_LEGACY`
+  and re-applies Photon's values for them. This applies to both `linux` and `linux-esx`. Photon 5.0
+  itself uses the nft backend (`/usr/sbin/iptables` is `xtables-nft-multi`), so only software that
+  loads the legacy modules needs this.
 - **perf files only with a tools subpackage (v10).** The perf-core install hook now goes only into
   specs with `%files tools`. In `linux-esx` it left `/etc/bash_completion.d/perf` unpackaged, which
   failed any fresh `linux-esx` build.
@@ -93,17 +101,14 @@ Known limitation: `build.py` runs the spec checker only when stdout is **not** a
 patches that are not applied, so the checker rejects it. Run the wrapper from an interactive
 terminal.
 
-Known limitation: the merge also turns off the legacy iptables, ip6tables and ebtables modules
-(`IP_NF_*`, `IP6_NF_*`, `BRIDGE_EBT_*`), which sit behind a new Kconfig gate in 7.x. Anything that
-relies on legacy iptables will miss them; this is not restored yet.
-
 Status (wrapper v9 build, `photon-minimal-5.0-<commit>.x86_64.iso`, about 523 MB, kernel `7.2.7-1.ph5`):
 the ISO boots to the installer under QEMU/KVM (BIOS and UEFI). Installing the VMware hypervisor-optimized
 kernel (`linux-esx`, normal hard disk, no STIG hardening) works. Installing the generic `linux` kernel
-from that build panics at boot because of the Hyper-V issue above. v10 fixes the config, but the
-generic 7.2.7 kernel must be rebuilt: remove the `linux-*7.2.7-1.ph5*` and `bpftool-7.2.7-1.ph5*` RPMs
-(not `linux-esx-*`) from `stage/RPMS/x86_64` of the release tree and run the wrapper again. A full
-build takes about an hour.
+from that build panics at boot because of the Hyper-V issue above. Kernels built before v11 also lack
+the legacy netfilter modules. The wrapper skips packages whose RPM already exists, so to pick up the
+v10/v11 config fixes remove the `linux-*7.2.7-1.ph5*`, `linux-esx-*7.2.7-1.ph5*` and
+`bpftool-7.2.7-1.ph5*` RPMs from `stage/RPMS/x86_64` of the release tree and run the wrapper again.
+Both kernels then rebuild in parallel, in about 90 minutes.
 
 #### runPh7-3-RC4.sh (experimental Linux 7.3-rc4)
 
@@ -138,6 +143,11 @@ Status (branch commit `6c918e10a`, `photon-minimal-5.0-6c918e10a.x86_64.iso`, 50
   hardening). The installed system boots to login with kernel `7.3.0-0.rc4.1.ph5`, `initrd.img` is
   present, `systemctl is-system-running` reports `running`, root is on `/dev/vda3` (ext4), and
   `eth0` gets a DHCP address and reaches the gateway.
+- Those kernels still lacked the legacy netfilter modules: on the installed generic system,
+  `modprobe ip_tables` fails with "Module ip_tables not found". Both kernels are being rebuilt with
+  v11. The new `linux-esx` package has `CONFIG_NETFILTER_XTABLES_LEGACY=y` and ships `ip_tables`,
+  `iptable_filter`, `iptable_nat`, `ip6_tables`, `ebtables` and `arp_tables`. The rebuilt generic
+  kernel and a fresh install with both kernels are not verified yet.
 - If an ISO name already exists in the output directory, the wrapper prefixes the new ISO with a
   timestamp (for example `20260925-163049-photon-minimal-5.0-6c918e10a.x86_64.iso`).
 

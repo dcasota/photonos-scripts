@@ -28,7 +28,7 @@ export GIT_TERMINAL_PROMPT=0
 export EDITOR=true
 export VISUAL=true
 
-echo "[runPh7-2-7] wrapper v10 + Hyper-V config restore + perf hook only with tools subpackage"
+echo "[runPh7-2-7] wrapper v11 + Hyper-V and legacy iptables config restore + perf hook only with tools subpackage"
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" 2>/dev/null && pwd)
 
@@ -374,6 +374,13 @@ block = [
     "  if grep -qE '^CONFIG_HYPERV=[ym]$' .config.photon; then\n",
     "    scripts/config --enable HYPERV\n",
     "    grep -E '^CONFIG_[A-Z0-9_]*(HYPERV|HV_)[A-Z0-9_]*=[ym]$' .config.photon | grep -v '^CONFIG_HYPERV=' |\n",
+    "      while IFS='=' read -r k v; do scripts/config --set-val \"${k#CONFIG_}\" \"$v\"; done\n",
+    "  fi\n",
+    "  # Legacy iptables/ip6tables/arptables/ebtables sit behind the new bool\n",
+    "  # NETFILTER_XTABLES_LEGACY (default n) since 7.x; restore Photon's set.\n",
+    "  if grep -qE '^CONFIG_(IP_NF_IPTABLES|IP6_NF_IPTABLES|BRIDGE_NF_EBTABLES)(_LEGACY)?=[ym]$' .config.photon; then\n",
+    "    scripts/config --enable NETFILTER_XTABLES_LEGACY\n",
+    "    grep -E '^CONFIG_(IP_NF_|IP6_NF_|BRIDGE_NF_EBTABLES|BRIDGE_EBT_)[A-Z0-9_]*=[ym]$' .config.photon |\n",
     "      while IFS='=' read -r k v; do scripts/config --set-val \"${k#CONFIG_}\" \"$v\"; done\n",
     "  fi\n",
     "  make %{?_smp_mflags} ARCH=%{arch} LC_ALL= olddefconfig\n",
