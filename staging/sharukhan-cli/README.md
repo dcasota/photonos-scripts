@@ -301,6 +301,26 @@ the variant does not set it. A driver that hardcoded `2.9-2` rejected a good ISO
 once the spec moved to `2.9-3`, and could not be edited in place because bash
 re-reads a running script.
 
+`--dry-run --allow-build` reports the builds a real run would start and starts
+none of them: a missing ISO is listed as `would build <key> <path>`, and its
+rows as `[build ISO] -> kickstart -> ...`. Until 2026-09-26 it asked
+`build::resolve` instead of `build::plan`, and `resolve` knows nothing of dry
+runs - it created the cache directory, purged the cached photon-os-installer
+RPMs from `stage/RPMS` and started `runPh5_normal.sh`. `resolve` now takes its
+decision through `plan` as well, and refuses a missing variant patch before the
+purge rather than after it.
+
+The serialisation gate recognises a build by what contends for the shared
+common tree, stage and fixed-name sandbox containers - `python3 build.py`,
+whatever wrapper runs it - plus the `runPh*` wrapper family, not by a list of
+wrapper names. It used to know only `runPh5_normal`, and a build started beside
+`runPh7-3-RC4`. `build` and `build-iso` check it too, and `run` checks again
+before each ISO it builds, because a run can take many hours:
+
+```
+sharukhan: foreign work is in flight: pid 3618556 /bin/sh /tmp/runPh7-3-RC4.5vU5M2.sh /root common experimental/linux-7.3-rc4 ...; pid 3641864 python3 build.py -c build-config.json -t image. ...
+```
+
 `--all` selects the matrix and then refuses, individually and out loud, every row
 this host cannot drive:
 

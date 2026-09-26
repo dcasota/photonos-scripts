@@ -17,9 +17,23 @@ use std::path::{Path, PathBuf};
 /// What to wait on: a build or an install already in flight. The two bash
 /// names stay in the list even though the scripts are superseded - a copy of
 /// either may still be running from before the port, and starting a second
-/// install on top of one would corrupt both. runPh5_normal.sh is here because
-/// an ISO build is reachable directly, without any harness in the argv.
-const FOREIGN: &[&str] = &["bin/mc-run.sh", "bin/mc-build-iso.sh", "runPh5_normal"];
+/// install on top of one would corrupt both.
+///
+/// The builds are keyed on what they contend for, not on what launched them.
+/// This list used to name only runPh5_normal, and on 2026-09-26 a sharukhan
+/// build started beside `/tmp/runPh7-3-RC4.<rand>.sh`: another wrapper, the
+/// same `python3 build.py` underneath, the same common tree, stage and
+/// fixed-name tdnf sandbox containers. Every Photon build runs build.py
+/// whatever wraps it - [`is_foreign`] catches that - and `runPh` covers the
+/// wrapper family (runPh4, the runPh5 variants, runPh6, runPh7-*) in the
+/// window before build.py starts.
+const FOREIGN: &[&str] = &["bin/mc-run.sh", "bin/mc-build-iso.sh", "runPh"];
+
+/// A process that contends with a build: a wrapper named in [`FOREIGN`], or
+/// Photon's package builder itself, run by any wrapper.
+fn is_foreign(cmd: &str) -> bool {
+    proc::head_matches(cmd, FOREIGN) || proc::runs_python_script(cmd, "build.py")
+}
 
 pub struct RunOpts {
     pub only: Option<String>,
@@ -48,6 +62,8 @@ struct Group {
     /// it: evidence observed in one phase is authoritative.
     gate: Option<media::Gate>,
     age: u64,
+    /// Dry run only: the ISO does not exist yet and a real run would build it.
+    would_build: bool,
 }
 
 pub fn cmd_run(cfg: &Config, o: &RunOpts) -> Result<(), String> {
@@ -144,13 +160,43 @@ pub fn cmd_run(cfg: &Config, o: &RunOpts) -> Result<(), String> {
                 poi: g.rows[0].poi.clone(),
                 canister: g.rows[0].canister.clone(),
             };
-            let mut say = |m: &str| println!("  build   {m}");
-            match build::resolve(cfg, &req, false, o.allow_build, &mut say) {
-                Ok(iso) => g.iso = iso,
-                Err(why) => {
-                    g.refused = Some(why);
-                    println!("  REFUSED {:<24} {}", g.key, g.refused.as_ref().unwrap());
-                    continue;
+            // A dry run only asks what resolve WOULD do. Calling resolve here
+            // with --allow-build is how a dry run once purged stage/RPMS and
+            // started an ISO build (2026-09-26).
+            if o.dry_run {
+                match build::plan(cfg, &req, false, o.allow_build) {
+                    Ok(build::Plan::Build(iso)) => {
+                        println!(
+                            "  would build {:<20} {} - hours; its media is checked once it exists",
+                            g.key,
+                            iso.display()
+                        );
+                        g.iso = iso;
+                        g.would_build = true;
+                        continue;
+                    }
+                    Ok(build::Plan::Cached(iso)) => g.iso = iso,
+                    Err(why) => {
+                        g.refused = Some(why);
+                        println!("  REFUSED {:<24} {}", g.key, g.refused.as_ref().unwrap());
+                        continue;
+                    }
+                }
+            } else {
+                // Checked again before EVERY build: a run can build several
+                // ISOs over many hours, and the check at the start says
+                // nothing about a build started since.
+                if matches!(build::plan(cfg, &req, false, o.allow_build), Ok(build::Plan::Build(_))) {
+                    wait_for_idle(o.wait_idle)?;
+                }
+                let mut say = |m: &str| println!("  build   {m}");
+                match build::resolve(cfg, &req, false, o.allow_build, &mut say) {
+                    Ok(iso) => g.iso = iso,
+                    Err(why) => {
+                        g.refused = Some(why);
+                        println!("  REFUSED {:<24} {}", g.key, g.refused.as_ref().unwrap());
+                        continue;
+                    }
                 }
             }
         }
@@ -236,9 +282,10 @@ pub fn cmd_run(cfg: &Config, o: &RunOpts) -> Result<(), String> {
             }
             for p in &g.rows {
                 println!(
-                    "  {:<5} {:<24} kickstart -> create-vm -> install -> verify{}",
+                    "  {:<5} {:<24} {}kickstart -> create-vm -> install -> verify{}",
                     p.id,
                     g.key,
+                    if g.would_build { "[build ISO] -> " } else { "" },
                     if o.keep { "" } else { " -> teardown --purge" }
                 );
             }
@@ -381,6 +428,7 @@ fn group_rows(cfg: &Config, rows: &[Permutation]) -> Vec<Group> {
             refused: None,
             gate: None,
             age: 0,
+            would_build: false,
         });
     }
     out
@@ -388,12 +436,15 @@ fn group_rows(cfg: &Config, rows: &[Permutation]) -> Vec<Group> {
 
 /// Wait for foreign build/install work, bounded. The bash form waited forever,
 /// which is only safe when a human is watching.
-fn wait_for_idle(max_secs: u64) -> Result<(), String> {
+///
+/// Called before every build, not only by `run`: `build` and `build-iso` start
+/// the same build.py and used to check nothing at all.
+pub fn wait_for_idle(max_secs: u64) -> Result<(), String> {
     let mut waited = 0;
     loop {
-        let busy = proc::matching(FOREIGN);
+        let busy = proc::matching_by(is_foreign);
         if busy.is_empty() {
-            println!("  ok      no mc-run / mc-build-iso / runPh5 in flight");
+            println!("  ok      no mc-run / mc-build-iso / runPh* / build.py in flight");
             return Ok(());
         }
         if waited >= max_secs {

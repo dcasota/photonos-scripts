@@ -235,18 +235,18 @@ pub fn cmd_build_iso(
     canister: &str,
     force: bool,
     allow_build: bool,
+    wait_idle: u64,
 ) -> Result<(), String> {
-    let iso = build::resolve(
-        cfg,
-        &build::IsoRequest {
-            iso_type: iso_type.to_string(),
-            poi: poi.to_string(),
-            canister: canister.to_string(),
-        },
-        force,
-        allow_build,
-        &mut logger(),
-    )?;
+    let req = build::IsoRequest {
+        iso_type: iso_type.to_string(),
+        poi: poi.to_string(),
+        canister: canister.to_string(),
+    };
+    // A cache hit starts nothing, so only an actual build waits for others.
+    if let build::Plan::Build(_) = build::plan(cfg, &req, force, allow_build)? {
+        crate::runner::wait_for_idle(wait_idle)?;
+    }
+    let iso = build::resolve(cfg, &req, force, allow_build, &mut logger())?;
     println!("{}", iso.display());
     Ok(())
 }

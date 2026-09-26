@@ -98,6 +98,12 @@ fn pids() -> Vec<i32> {
 /// observed here: a shell that had just written a file of that name was
 /// counted as a build in flight.
 pub fn matching(needles: &[&str]) -> Vec<Proc> {
+    matching_by(|cmd| head_matches(cmd, needles))
+}
+
+/// [`matching`] with an arbitrary test on the command line; this process and
+/// its ancestors are still never reported.
+pub fn matching_by(pred: impl Fn(&str) -> bool) -> Vec<Proc> {
     let skip = self_and_ancestors();
     let mine = own_argv0();
     let mut out = Vec::new();
@@ -106,21 +112,38 @@ pub fn matching(needles: &[&str]) -> Vec<Proc> {
             continue;
         }
         let Some(cmd) = cmdline(pid) else { continue };
-        let argv: Vec<&str> = cmd.split_whitespace().collect();
-        let argv0 = argv
-            .first()
+        let argv0 = cmd
+            .split_whitespace()
+            .next()
             .and_then(|a| a.rsplit('/').next())
             .unwrap_or("");
         if !mine.is_empty() && argv0 == mine {
             continue;
         }
-        let head = &argv[..argv.len().min(2)];
-        if needles.iter().any(|n| head.iter().any(|a| a.contains(n))) {
+        if pred(&cmd) {
             out.push(Proc { pid, cmdline: cmd });
         }
     }
     out.sort_by_key(|p| p.pid);
     out
+}
+
+/// Whether a needle occurs in the first two words of `cmd` - the program, or
+/// the script an interpreter runs. Deeper arguments are not looked at, so a
+/// process that merely mentions a path (an editor, a grep) is not work.
+pub fn head_matches(cmd: &str, needles: &[&str]) -> bool {
+    cmd.split_whitespace()
+        .take(2)
+        .any(|a| needles.iter().any(|n| a.contains(n)))
+}
+
+/// Whether `cmd` is a Python interpreter running a script named `script`
+/// (`python3 build.py ...`, also behind `sudo` or `env`). A bare name would
+/// match `vim build.py` or `grep ... build.py`, which run nothing.
+pub fn runs_python_script(cmd: &str, script: &str) -> bool {
+    let words: Vec<&str> = cmd.split_whitespace().take(4).collect();
+    let base = |w: &str| w.rsplit('/').next().unwrap_or("").to_string();
+    words.windows(2).any(|w| base(w[0]).starts_with("python") && base(w[1]) == script)
 }
 
 /// Every descendant of `root`, deepest last. Used to end a job's whole tree:
@@ -186,4 +209,43 @@ pub fn signal(pid: i32, sig: i32) -> bool {
         return false;
     }
     unsafe { kill(pid, sig) == 0 }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn head_matches_looks_at_program_and_script_only() {
+        // The wrapper that ran beside a sharukhan build on 2026-09-26.
+        assert!(head_matches("/bin/sh /tmp/runPh7-3-RC4.5vU5M2.sh /root common", &["runPh"]));
+        assert!(head_matches("sh /root/photon-mc/work/scriptdir/x/runPh5_normal.sh /root", &["runPh"]));
+        // A deeper argument is not the process being run.
+        assert!(!head_matches("tail -f /root/runPh7-3-RC4.run10.log", &["runPh"]));
+    }
+
+    #[test]
+    fn photon_builder_is_recognised_behind_any_wrapper() {
+        for cmd in [
+            "python3 build.py -c build-config.json -t image",
+            "/usr/bin/python3 /root/common/build.py -c build-config.json",
+            "sudo python3 build.py -c build-config.json -t image",
+            "env python3.11 build.py -t packages",
+        ] {
+            assert!(runs_python_script(cmd, "build.py"), "{cmd}");
+        }
+    }
+
+    #[test]
+    fn mentioning_build_py_is_not_running_it() {
+        for cmd in [
+            "vim build.py",
+            "grep -n check_docker build.py",
+            "git diff -- build.py",
+            "python3 other.py build.py",
+            "python3 -c import build",
+        ] {
+            assert!(!runs_python_script(cmd, "build.py"), "{cmd}");
+        }
+    }
 }

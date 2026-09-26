@@ -46,22 +46,40 @@ impl IsoRequest {
 /// and shares $PHOTON_TREE/stage with anything else building, so starting one
 /// as a side effect of asking for a test run is never what the operator meant.
 /// `--allow-build` is the explicit consent.
-pub fn resolve(
+/// What [`resolve`] would do for `req`, decided without touching anything.
+#[derive(Debug, PartialEq)]
+pub enum Plan {
+    /// The ISO is already in the cache.
+    Cached(PathBuf),
+    /// The ISO would be built, and land here.
+    Build(PathBuf),
+}
+
+/// Decide what [`resolve`] would do, with no side effects.
+///
+/// `run --dry-run --allow-build` used to call `resolve` itself, and `resolve`
+/// knew nothing about dry runs: past the decision it creates the cache
+/// directory, deletes every cached photon-os-installer RPM from stage/RPMS and
+/// starts a build that takes hours - all under a flag documented as "touches
+/// nothing". A dry run asks this function instead, and `resolve` takes its
+/// decision through it too, so the two cannot drift into promising different
+/// things. Everything that can refuse a build is checked here, before any side
+/// effect: the variant patch check used to come after the RPM purge.
+pub fn plan(
     cfg: &Config,
     req: &IsoRequest,
     force: bool,
     allow_build: bool,
-    log: &mut dyn FnMut(&str),
-) -> Result<PathBuf, String> {
-    let img = req.img()?;
-    let dest = cfg.iso_dir(&req.iso_type, &req.poi, &req.canister);
-    let iso = dest.join("photon.iso");
+) -> Result<Plan, String> {
+    req.img()?;
+    let iso = cfg
+        .iso_dir(&req.iso_type, &req.poi, &req.canister)
+        .join("photon.iso");
 
     // Nothing is created before the decision to build: an empty cache
     // directory looks exactly like an ISO that failed to copy.
     if !force && iso.exists() {
-        log(&format!("cache hit: {} -> {}", req.key(), iso.display()));
-        return Ok(iso);
+        return Ok(Plan::Cached(iso));
     }
     if !allow_build {
         return Err(format!(
@@ -76,6 +94,32 @@ pub fn resolve(
             req.canister
         ));
     }
+    let patch = cfg.variant_patches.join(format!("poi-{}.patch", req.poi));
+    if !patch.is_file() {
+        return Err(format!(
+            "no variant patch at {} - run `sharukhan variant-patches`",
+            patch.display()
+        ));
+    }
+    Ok(Plan::Build(iso))
+}
+
+pub fn resolve(
+    cfg: &Config,
+    req: &IsoRequest,
+    force: bool,
+    allow_build: bool,
+    log: &mut dyn FnMut(&str),
+) -> Result<PathBuf, String> {
+    let img = req.img()?;
+    let dest = cfg.iso_dir(&req.iso_type, &req.poi, &req.canister);
+    let iso = match plan(cfg, req, force, allow_build)? {
+        Plan::Cached(iso) => {
+            log(&format!("cache hit: {} -> {}", req.key(), iso.display()));
+            return Ok(iso);
+        }
+        Plan::Build(iso) => iso,
+    };
 
     fs::create_dir_all(&dest).map_err(|e| format!("{}: {e}", dest.display()))?;
     fs::create_dir_all(&cfg.build_log_dir)
@@ -110,13 +154,8 @@ pub fn resolve(
     // runPh5_normal.sh resolves its patch relative to its OWN directory, so
     // the variant is selected by staging a script directory rather than by
     // editing the build script. SCRIPT_DIR is used for nothing else.
+    // `plan` has already refused a missing patch, before the purge above.
     let patch = cfg.variant_patches.join(format!("poi-{}.patch", req.poi));
-    if !patch.is_file() {
-        return Err(format!(
-            "no variant patch at {} - run `sharukhan variant-patches`",
-            patch.display()
-        ));
-    }
     let stage_dir = cfg.work.join("scriptdir").join(req.key());
     fs::create_dir_all(stage_dir.join("photonos-patches"))
         .map_err(|e| format!("{}: {e}", stage_dir.display()))?;
@@ -1031,6 +1070,61 @@ fn build_variant(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn plan_cfg(tag: &str) -> (Config, std::path::PathBuf) {
+        let root = std::env::temp_dir().join(format!("sharukhan-plan-{tag}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("patches")).unwrap();
+        let mut c = Config::load();
+        c.iso_cache = root.join("cache");
+        c.variant_patches = root.join("patches");
+        // resolve purges <photon_tree>/stage/RPMS; a test must never reach
+        // the real tree, even through a regression.
+        c.photon_tree = root.join("tree");
+        c.build_log_dir = root.join("logs");
+        c.work = root.join("work");
+        (c, root)
+    }
+
+    fn plan_req() -> IsoRequest {
+        IsoRequest { iso_type: "minimal".into(), poi: "2.8".into(), canister: "prebuilt".into() }
+    }
+
+    /// `run --dry-run --allow-build` once built an ISO: it called `resolve`,
+    /// which has side effects past its decision. `plan` is that decision alone.
+    #[test]
+    fn plan_decides_without_creating_anything() {
+        let (c, root) = plan_cfg("build");
+        fs::write(root.join("patches/poi-2.8.patch"), "x").unwrap();
+        let want = c.iso_dir("minimal", "2.8", "prebuilt").join("photon.iso");
+        assert_eq!(plan(&c, &plan_req(), false, true).unwrap(), Plan::Build(want));
+        assert!(!c.iso_cache.exists(), "plan must not create the cache directory");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn plan_refuses_without_allow_build_and_hits_the_cache() {
+        let (c, root) = plan_cfg("cache");
+        assert!(plan(&c, &plan_req(), false, false).unwrap_err().contains("building is off"));
+        let iso = c.iso_dir("minimal", "2.8", "prebuilt").join("photon.iso");
+        fs::create_dir_all(iso.parent().unwrap()).unwrap();
+        fs::write(&iso, "iso").unwrap();
+        assert_eq!(plan(&c, &plan_req(), false, false).unwrap(), Plan::Cached(iso.clone()));
+        // --force skips the cache, and then needs a variant patch.
+        assert!(plan(&c, &plan_req(), true, true).unwrap_err().contains("no variant patch"));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// A missing variant patch used to be noticed only AFTER resolve had
+    /// purged the cached photon-os-installer RPMs from stage/RPMS.
+    #[test]
+    fn a_missing_variant_patch_is_refused_before_any_side_effect() {
+        let (c, root) = plan_cfg("nopatch");
+        let err = resolve(&c, &plan_req(), false, true, &mut |_| {}).unwrap_err();
+        assert!(err.contains("no variant patch"), "{err}");
+        assert!(!c.iso_cache.exists());
+        let _ = fs::remove_dir_all(&root);
+    }
 
     #[test]
     fn the_matrix_word_and_the_build_target_are_not_the_same_word() {

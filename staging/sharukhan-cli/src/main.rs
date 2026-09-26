@@ -136,7 +136,7 @@ OPTIONS:
     --dry-run           run every gate, change nothing (run, stop)
     --keep              do not tear the VM down after verifying (run)
     --settle <sec>      minimum ISO age before the first VM (run); default 300
-    --wait-idle <sec>   wait this long for foreign builds/installs (run); default 0
+    --wait-idle <sec>   wait this long for foreign builds/installs (run, build, build-iso); default 0
     --log <path>        run log path (run)
     --interval <sec>    poll interval (watch); default 15
     --once              one snapshot instead of following (watch)
@@ -411,6 +411,7 @@ fn main() -> ExitCode {
             args.canister.as_deref().unwrap_or("prebuilt"),
             args.force,
             args.allow_build,
+            args.wait_idle,
         ),
         "build" => cmd_build(&args),
         "remaster" => cmd_remaster(&args),
@@ -1015,6 +1016,10 @@ fn cmd_build(args: &Args) -> Result<(), String> {
     print!("{}", buildmode::render(&spec));
     if args.dry_run {
         println!("\n(dry run: nothing was touched)");
+    } else if !args.deliver_only {
+        // The cascade runs build.py against the common tree, the stage and
+        // fixed-name sandbox containers that every other Photon build uses.
+        crate::runner::wait_for_idle(args.wait_idle)?;
     }
     // --deliver-only installs an ISO that already exists into --out, writing
     // the cache side-cars, without running a single build phase. Re-running
