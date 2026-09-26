@@ -56,6 +56,23 @@ pub fn expected_installer(variant_patch: &Path, photon_tree: &Path) -> Result<St
         }
     }
 
+    // Release may legitimately be absent from the diff: `latest` bumps Version
+    // to 2.9 and keeps Release 2, and once upstream's 2.8 also sat at Release 2
+    // the line was identical on both sides and dropped out of the patch
+    // (2026-09-26, both latest groups refused although the media carried
+    // 2.9-2). Taking it from pristine is sound only when this patch bumps
+    // Version: the NEVR is then distinct from upstream's own installer. A patch
+    // that sets neither would let upstream's installer pass the gate.
+    if rel.is_empty() && !ver.is_empty() {
+        rel = pristine_field(photon_tree, "Release:").ok_or_else(|| {
+            format!(
+                "{} bumps the installer Version: but keeps its Release:, and origin/5.0 could \
+                 not be read from {} to supply it - refusing to guess",
+                variant_patch.display(),
+                photon_tree.display()
+            )
+        })?;
+    }
     if ver.is_empty() {
         ver = pristine_version(photon_tree).ok_or_else(|| {
             format!(
@@ -90,6 +107,11 @@ fn field(line: &str, key: &str) -> Option<String> {
 }
 
 fn pristine_version(photon_tree: &Path) -> Option<String> {
+    pristine_field(photon_tree, "Version:")
+}
+
+/// A preamble field of the pristine installer spec, reduced as [`field`] does.
+fn pristine_field(photon_tree: &Path, key: &str) -> Option<String> {
     let out = Command::new("git")
         .args([
             "-C",
@@ -104,9 +126,7 @@ fn pristine_version(photon_tree: &Path) -> Option<String> {
     }
     String::from_utf8_lossy(&out.stdout)
         .lines()
-        .find_map(|l| l.strip_prefix("Version:"))
-        .map(|v| v.trim().to_string())
-        .filter(|v| !v.is_empty())
+        .find_map(|l| field(&format!("+{l}"), &format!("+{key}")))
 }
 
 /// What is actually on the media.
@@ -237,6 +257,73 @@ pub fn remaining_settle(age: u64, min_age: u64) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A git tree whose origin/5.0 carries an installer spec at `ver`-`rel`.
+    fn pristine_tree(tag: &str, ver: &str, rel: &str) -> std::path::PathBuf {
+        let t = std::env::temp_dir().join(format!("sharukhan-media-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&t);
+        let d = t.join("SPECS/photon-os-installer");
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::write(
+            d.join("photon-os-installer.spec"),
+            format!("Name: photon-os-installer\nVersion:       {ver}\nRelease:       {rel}%{{?dist}}\n"),
+        )
+        .unwrap();
+        let g = |a: &[&str]| {
+            assert!(Command::new("git").arg("-C").arg(&t).args(a).status().unwrap().success());
+        };
+        g(&["init", "-q"]);
+        g(&["add", "-A"]);
+        g(&["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "base"]);
+        g(&["update-ref", "refs/remotes/origin/5.0", "HEAD"]);
+        t
+    }
+
+    fn installer_patch(dir: &std::path::Path, body: &str) -> std::path::PathBuf {
+        let p = dir.join("variant.patch");
+        std::fs::write(
+            &p,
+            format!(
+                "diff --git a/SPECS/photon-os-installer/photon-os-installer.spec b/SPECS/photon-os-installer/photon-os-installer.spec\n\
+                 --- a/SPECS/photon-os-installer/photon-os-installer.spec\n\
+                 +++ b/SPECS/photon-os-installer/photon-os-installer.spec\n{body}\
+                 diff --git a/SPECS/other/other.spec b/SPECS/other/other.spec\n\
+                 +++ b/SPECS/other/other.spec\n+Release:       9%{{?dist}}\n"
+            ),
+        )
+        .unwrap();
+        p
+    }
+
+    /// 2026-09-26: latest bumped Version to 2.9 and kept Release 2, upstream
+    /// 2.8 sat at Release 2 too, the Release line dropped out of the diff and
+    /// both latest groups were refused while their media carried 2.9-2.
+    #[test]
+    fn a_version_bump_takes_an_unchanged_release_from_pristine() {
+        let t = pristine_tree("verbump", "2.8", "2");
+        let p = installer_patch(&t, "-Version:       2.8\n+Version:       2.9\n");
+        assert_eq!(expected_installer(&p, &t).unwrap(), "photon-os-installer-2.9-2");
+        let _ = std::fs::remove_dir_all(&t);
+    }
+
+    /// Negative control: a patch that sets neither field would let upstream's
+    /// own installer pass the gate, so it is still refused - and another
+    /// spec's +Release: further down is not mistaken for the installer's.
+    #[test]
+    fn a_patch_that_sets_neither_field_is_still_refused() {
+        let t = pristine_tree("neither", "2.8", "2");
+        let p = installer_patch(&t, " Summary: unchanged\n");
+        assert!(expected_installer(&p, &t).unwrap_err().contains("does not set Release"));
+        let _ = std::fs::remove_dir_all(&t);
+    }
+
+    #[test]
+    fn a_release_bump_takes_version_from_pristine_as_before() {
+        let t = pristine_tree("relbump", "2.8", "2");
+        let p = installer_patch(&t, "-Release:       2%{?dist}\n+Release:       4%{?dist}\n");
+        assert_eq!(expected_installer(&p, &t).unwrap(), "photon-os-installer-2.8-4");
+        let _ = std::fs::remove_dir_all(&t);
+    }
 
     #[test]
     fn a_young_iso_reports_exactly_the_seconds_left() {
