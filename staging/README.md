@@ -27,7 +27,7 @@ Automated ISO build scripts for Photon OS. Each script pulls the latest sources 
 | `runPh5_pinned91.sh` | 5.0 | Builds from the `5.0` branch pinned to `photon-subrelease 91` (6.1.x kernel, python 3.11). Bypasses the spec checker via `base-commit`, removes conflicting python 3.14 / rpm 6.x RPMs from prior `>= 92` builds, and bootstraps `python3-macros` and `rpm-build 4.18.0` from the Broadcom repo. |
 | `runPh6.sh` | 6.0 | Builds from the `6.0` branch. Includes OpenJDK WSL2 fix and missing-source prefetch. |
 | `runPh7-2-7.sh` | 5.0 | **Experimental.** Photon 5.0 userland with Linux 7.2.7 instead of 6.12, from the `experimental/linux-7.2.7` branch. Wraps `runPh5_normal.sh`; see [runPh7-2-7.sh (experimental Linux 7.2.7)](#runph7-2-7sh-experimental-linux-727) below. |
-| `runPh7-3-RC4.sh` | 5.0 | **Experimental.** Same approach with the Linux 7.3-rc4 mainline release candidate, from the `experimental/linux-7.3-rc4` branch (wrapper v5); see [runPh7-3-RC4.sh (experimental Linux 7.3-rc4)](#runph7-3-rc4sh-experimental-linux-73-rc4) below. |
+| `runPh7-3-RC4.sh` | 5.0 | **Experimental.** Same approach with the Linux 7.3-rc4 mainline release candidate, from the `experimental/linux-7.3-rc4` branch (wrapper v6); see [runPh7-3-RC4.sh (experimental Linux 7.3-rc4)](#runph7-3-rc4sh-experimental-linux-73-rc4) below. |
 
 All scripts accept four optional positional parameters: `BASE_DIR`, `COMMON_BRANCH`, `RELEASE_BRANCH`, and `OUTPUT_DIR`.
 
@@ -162,6 +162,22 @@ What differs from 7.2.7:
   `minimal` requires cloud-init, and `make image` does not rebuild an install-only dependency, so the
   older 26.2-2 RPM kept being used. Wrapper v5 adds `cloud-init` to the pre-build list next to the
   STIG packages, so 26.2-3 is built before the image.
+- **Journal clean-up (v6).** Remaining boot-journal warnings from a VMware Workstation install, fixed on
+  the branch:
+  - vmwgfx: `Patch7300` (`vmw/0001-drm-vmwgfx-declare-premultiplied-blend-mode-7.3.patch`) creates the
+    blend mode property with `DRM_MODE_BLEND_PREMULTI` on all vmwgfx planes, so 7.3's DRM core no longer
+    warns 16 times about alpha formats without a blend mode. The pin applies it to both flavors.
+  - sudo 1.9.15p5-7 drops its sysusers file; `filesystem` already creates group `wheel` (GID 28).
+  - dbus 1.16.2-4 calls `setgroups()` only as root, so the daemon started with `User=dbus` no longer
+    logs `Failed to drop supplementary groups`.
+  - photon-os-installer: `0008-networkmanager-match-dhcp-links-by-type.patch` writes
+    `[Match] Type=ether` + `Kind=!*` (all physical Ethernet links) instead of `Name=e*`, which networkd
+    flags as unpredictable with `net.ifnames=0`. `downstream-fixes.patch` rewrites the installer spec,
+    so the pin (`pin_installer_73rc4`) appends the patch as the next `PatchN` with one release bump.
+  - The pre-build list now also covers sudo, dbus and photon-os-installer.
+  - Not fixed in Photon: the perf "CPUID marked event unavailable" lines need "Virtualize CPU
+    performance counters" (`vpmc.enable = "TRUE"`) in the VM, and systemd's `unmerged-bin` taint needs
+    a distribution-wide merge of `/usr/sbin` into `/usr/bin`.
 
 Status (branch commit `6c918e10a`, `photon-minimal-5.0-6c918e10a.x86_64.iso`, 507 MB):
 
@@ -202,6 +218,15 @@ Status (branch commit `6c918e10a`, `photon-minimal-5.0-6c918e10a.x86_64.iso`, 50
   cloud-init 26.2-3. A fresh kickstart install of `linux-esx` on PVSCSI + vmxnet3 has 0 journal lines for
   `missing module BTF`, `Failed to find module` and `cloud-init-generator failed`. `rdrand_rng` is
   loaded, `cloud-init status` reports `done`, and `systemctl is-system-running` = `running`.
+- v6 (branch commit `38da3f57f`, ISO `photon-minimal-5.0-38da3f57f.x86_64.iso`, 509 MB): a fresh
+  kickstart install of `linux-esx` on PVSCSI + vmxnet3 has installer 2.8-6, sudo 1.9.15p5-7, dbus 1.16.2-4
+  and cloud-init 26.2-3. The generated `50-dhcp-en.network` is `Type=ether` + `Kind=!*`, `eth0` still gets
+  its DHCP address, and the journal has 0 lines for the `wheel` conflict, `Failed to drop supplementary
+  groups`, `potentially unpredictable interface name`, `missing module BTF`, `Failed to find module` and
+  `cloud-init-generator failed`. The vmwgfx patch builds and passes modpost, but QEMU's VMware SVGA
+  emulation is rejected by vmwgfx (`unsupported hypervisor`), so its runtime effect needs a VMware VM.
+- A fresh run fails its first pre-build when `stage/images/sandboxBase` does not exist yet; the retry loop
+  regenerates it with `make image` and the next attempt builds the packages.
 - If an ISO name already exists in the output directory, the wrapper prefixes the new ISO with a
   timestamp (for example `20260925-163049-photon-minimal-5.0-6c918e10a.x86_64.iso`).
 

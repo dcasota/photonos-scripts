@@ -1,7 +1,7 @@
 #!/bin/sh
 #
 # Photon OS 5.0 userland + experimental Linux 7.3-rc4 (mainline RC)
-# wrapper v5
+# wrapper v6
 #
 # $1 BASE_DIR        default /root
 # $2 COMMON_BRANCH   default common
@@ -28,7 +28,7 @@ export GIT_TERMINAL_PROMPT=0
 export EDITOR=true
 export VISUAL=true
 
-echo "[runPh7-3-RC4] wrapper v5 (Linux 7.3-rc4, RAP/KCFI on, rdrand-rng, cloud-init pre-build, noreplace-smp dropped, esx BTF off)"
+echo "[runPh7-3-RC4] wrapper v6 (Linux 7.3-rc4, RAP/KCFI on, rdrand-rng, vmwgfx blend, installer/sudo/dbus/cloud-init pre-build, noreplace-smp dropped, esx BTF off)"
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" 2>/dev/null && pwd)
 
@@ -441,6 +441,70 @@ PY
 }
 enable_rdrand_73rc4 SPECS/linux/linux.spec || exit 1
 enable_rdrand_73rc4 SPECS/linux/linux-esx.spec || exit 1
+# vmwgfx blend mode (Patch7300) for both flavors: 7.3's DRM core warns for every plane
+# with alpha formats but no blend mode property; the patch declares PREMULTI.
+enable_vmwgfx_73rc4() {
+  spec="$1"
+  [ -f "$spec" ] || return 0
+  python3 - "$spec" << 'PY'
+import re, sys
+from pathlib import Path
+p = Path(sys.argv[1])
+t = p.read_text()
+orig = t
+line = "Patch7300: 0001-drm-vmwgfx-declare-premultiplied-blend-mode-7.3.patch"
+if line not in t:
+    t, n = re.subn(r"(?m)^(Patch1:.*\n)", r"\g<1>" + line + "\n", t, count=1)
+    if n != 1:
+        sys.exit(f"[runPh7-3-RC4] ERROR: {p}: no Patch1 line to anchor Patch7300")
+if "\n%autopatch -p1 -m7300 -M7300\n" not in t:
+    t, n = re.subn(r"(?m)^(%autopatch -p1 -m0 -M1\n)", r"\g<1>%autopatch -p1 -m7300 -M7300\n", t, count=1)
+    if n != 1:
+        sys.exit(f"[runPh7-3-RC4] ERROR: {p}: no live %autopatch -p1 -m0 -M1 line")
+if t != orig:
+    p.write_text(t)
+    print(f"[runPh7-3-RC4] {p}: vmwgfx blend mode (Patch7300) enabled")
+else:
+    print(f"[runPh7-3-RC4] {p}: vmwgfx blend mode already enabled")
+PY
+}
+enable_vmwgfx_73rc4 SPECS/linux/linux.spec || exit 1
+enable_vmwgfx_73rc4 SPECS/linux/linux-esx.spec || exit 1
+
+# photon-os-installer: networkd DHCP match by Type=ether/Kind=!* instead of Name=e*.
+# downstream-fixes.patch extends this spec (0003..0007), so the 0008 patch file is on
+# the branch and appended here as the next PatchN, with one release bump.
+pin_installer_73rc4() {
+  spec="SPECS/photon-os-installer/photon-os-installer.spec"
+  [ -f "$spec" ] || return 0
+  python3 - "$spec" << 'PY'
+import re, sys
+from pathlib import Path
+p = Path(sys.argv[1])
+t = p.read_text()
+fname = "0008-networkmanager-match-dhcp-links-by-type.patch"
+if fname in t:
+    print(f"[runPh7-3-RC4] {p}: {fname} already applied")
+    raise SystemExit(0)
+nums = [int(n) for n in re.findall(r"(?m)^Patch(\d+):", t)]
+if not nums:
+    sys.exit(f"[runPh7-3-RC4] ERROR: {p}: no Patch lines")
+last = max(nums)
+t, n = re.subn(rf"(?m)^(Patch{last}:.*\n)", rf"\g<1>Patch{last + 1}: {fname}\n", t, count=1)
+m = re.search(r"(?m)^(Release:\s*)(\d+)(%\{\?dist\})", t)
+if n != 1 or not m:
+    sys.exit(f"[runPh7-3-RC4] ERROR: {p}: cannot add {fname}")
+rel = int(m.group(2)) + 1
+t = t[:m.start()] + f"{m.group(1)}{rel}{m.group(3)}" + t[m.end():]
+ver = re.search(r"(?m)^Version:\s*(\S+)", t).group(1)
+t = t.replace("%changelog\n", "%changelog\n* Sat Sep 26 2026 Daniel Casota <dcasota@gmail.com> "
+              f"{ver}-{rel}\n- networkmanager: match DHCP links by Type=ether/Kind=!* instead of\n"
+              "  Name=e*, which networkd flags as an unpredictable name with net.ifnames=0\n", 1)
+p.write_text(t)
+print(f"[runPh7-3-RC4] {p}: Patch{last + 1} {fname}, release {ver}-{rel}")
+PY
+}
+pin_installer_73rc4 || exit 1
 # Replace the 6.12 config-applicability include with a 7.3-rc4 merge:
 # olddefconfig keeps Photon =y/=m that still exist, drops gone symbols,
 # fills new Kconfig with upstream defaults, then turns off io_uring BPF.
@@ -1042,9 +1106,9 @@ for line in text.splitlines(keepends=True):
     if 'sudo make' in line and 'image IMG_NAME' in line:
         ind = line[: len(line) - len(line.lstrip())]
         text2.append(
-            ind + '# 7.3-rc4: build the ISO KS_STIG_PACKAGES set and cloud-init before make image\n'
+            ind + '# 7.3-rc4: build the ISO KS_STIG_PACKAGES set and branch-updated packages before make image\n'
             + ind + 'sudo make -j8 pkgs="audit,rsyslog,openssl-fips-provider,selinux-policy,'
-            'libselinux-utils,ntpsec,aide,libgcrypt,cloud-init" THREADS=8 || '
+            'libselinux-utils,ntpsec,aide,libgcrypt,cloud-init,sudo,dbus,photon-os-installer" THREADS=8 || '
             'echo "[runPh7-3-RC4] WARNING: STIG package pre-build failed" 1>&2\n'
         )
     text2.append(line)
