@@ -1,7 +1,7 @@
 #!/bin/sh
 #
 # Photon OS 5.0 userland + experimental Linux 7.3-rc4 (mainline RC)
-# wrapper v4
+# wrapper v5
 #
 # $1 BASE_DIR        default /root
 # $2 COMMON_BRANCH   default common
@@ -28,7 +28,7 @@ export GIT_TERMINAL_PROMPT=0
 export EDITOR=true
 export VISUAL=true
 
-echo "[runPh7-3-RC4] wrapper v4 (Linux 7.3-rc4, RAP/KCFI on, rdrand-rng, noreplace-smp dropped, esx BTF off)"
+echo "[runPh7-3-RC4] wrapper v5 (Linux 7.3-rc4, RAP/KCFI on, rdrand-rng, cloud-init pre-build, noreplace-smp dropped, esx BTF off)"
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" 2>/dev/null && pwd)
 
@@ -1042,9 +1042,9 @@ for line in text.splitlines(keepends=True):
     if 'sudo make' in line and 'image IMG_NAME' in line:
         ind = line[: len(line) - len(line.lstrip())]
         text2.append(
-            ind + '# 7.3-rc4: build the ISO KS_STIG_PACKAGES set before make image\n'
+            ind + '# 7.3-rc4: build the ISO KS_STIG_PACKAGES set and cloud-init before make image\n'
             + ind + 'sudo make -j8 pkgs="audit,rsyslog,openssl-fips-provider,selinux-policy,'
-            'libselinux-utils,ntpsec,aide,libgcrypt" THREADS=8 || '
+            'libselinux-utils,ntpsec,aide,libgcrypt,cloud-init" THREADS=8 || '
             'echo "[runPh7-3-RC4] WARNING: STIG package pre-build failed" 1>&2\n'
         )
     text2.append(line)

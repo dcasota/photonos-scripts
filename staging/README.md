@@ -27,7 +27,7 @@ Automated ISO build scripts for Photon OS. Each script pulls the latest sources 
 | `runPh5_pinned91.sh` | 5.0 | Builds from the `5.0` branch pinned to `photon-subrelease 91` (6.1.x kernel, python 3.11). Bypasses the spec checker via `base-commit`, removes conflicting python 3.14 / rpm 6.x RPMs from prior `>= 92` builds, and bootstraps `python3-macros` and `rpm-build 4.18.0` from the Broadcom repo. |
 | `runPh6.sh` | 6.0 | Builds from the `6.0` branch. Includes OpenJDK WSL2 fix and missing-source prefetch. |
 | `runPh7-2-7.sh` | 5.0 | **Experimental.** Photon 5.0 userland with Linux 7.2.7 instead of 6.12, from the `experimental/linux-7.2.7` branch. Wraps `runPh5_normal.sh`; see [runPh7-2-7.sh (experimental Linux 7.2.7)](#runph7-2-7sh-experimental-linux-727) below. |
-| `runPh7-3-RC4.sh` | 5.0 | **Experimental.** Same approach with the Linux 7.3-rc4 mainline release candidate, from the `experimental/linux-7.3-rc4` branch (wrapper v4); see [runPh7-3-RC4.sh (experimental Linux 7.3-rc4)](#runph7-3-rc4sh-experimental-linux-73-rc4) below. |
+| `runPh7-3-RC4.sh` | 5.0 | **Experimental.** Same approach with the Linux 7.3-rc4 mainline release candidate, from the `experimental/linux-7.3-rc4` branch (wrapper v5); see [runPh7-3-RC4.sh (experimental Linux 7.3-rc4)](#runph7-3-rc4sh-experimental-linux-73-rc4) below. |
 
 All scripts accept four optional positional parameters: `BASE_DIR`, `COMMON_BRANCH`, `RELEASE_BRANCH`, and `OUTPUT_DIR`.
 
@@ -159,6 +159,9 @@ What differs from 7.2.7:
 - **cloud-init 26.2-3.** The `experimental/linux-7.3-rc4` branch carries the cloud-init fix from
   vmware/photon#1676 (cherry-picked, commit `5a54342ac`). The systemd generator now finds `ds-identify`
   in `/usr/libexec`; before, it exited with status 3 at every boot and cloud-init did not run.
+  `minimal` requires cloud-init, and `make image` does not rebuild an install-only dependency, so the
+  older 26.2-2 RPM kept being used. Wrapper v5 adds `cloud-init` to the pre-build list next to the
+  STIG packages, so 26.2-3 is built before the image.
 
 Status (branch commit `6c918e10a`, `photon-minimal-5.0-6c918e10a.x86_64.iso`, 507 MB):
 
@@ -194,8 +197,11 @@ Status (branch commit `6c918e10a`, `photon-minimal-5.0-6c918e10a.x86_64.iso`, 50
   (BIOS, no STIG hardening) boots to login. `sysctl -a` reads all 1,088 sysctls without error, `dmesg`
   has 0 PAX/Oops/BUG lines, the kernel is not tainted, the legacy netfilter modules and `hv_vmbus`
   load, `systemctl is-system-running` = `running`, and `eth0` gets a DHCP address.
-- v4 (branch commit `616dc4d8f`, with esx BTF off, rdrand-rng and cloud-init 26.2-3): the build is
-  running; the install test that checks the journal for the three fixed messages is pending.
+- v5 (branch commit `616dc4d8f`, ISO `20260926-031233-photon-minimal-5.0-616dc4d8f.x86_64.iso`,
+  509 MB): `linux-esx` has `DEBUG_INFO_BTF` off, both kernels ship `rdrand-rng.ko`, and the ISO carries
+  cloud-init 26.2-3. A fresh kickstart install of `linux-esx` on PVSCSI + vmxnet3 has 0 journal lines for
+  `missing module BTF`, `Failed to find module` and `cloud-init-generator failed`. `rdrand_rng` is
+  loaded, `cloud-init status` reports `done`, and `systemctl is-system-running` = `running`.
 - If an ISO name already exists in the output directory, the wrapper prefixes the new ISO with a
   timestamp (for example `20260925-163049-photon-minimal-5.0-6c918e10a.x86_64.iso`).
 
