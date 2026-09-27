@@ -865,6 +865,45 @@ for s in data.get('sources', []) or []:
   #      deterministic failure (bad spec, missing dep, ...), not a flaky
   #      one -- stop early with a clear error rather than silently
   #      reproducing the same failure 10 times.
+  # ── Build what the installer may request, before composing the image ──
+  # photon-os-installer puts the packages its STIG option installs
+  # (stigenable.KS_STIG_PACKAGES) on the media, but a minimal image only BUILDS
+  # packages_minimal.json and the installer-initrd list. So those packages went
+  # onto the media at whatever release an earlier build left in the stage: the
+  # 2026-09-26 gate's first minimal ISO shipped rsyslog 8.2602.0-5 while 5.0
+  # declared 8.2608.0-1, and two minimal ISOs before that a June
+  # selinux-policy. A full ISO builds every package, so only other images
+  # need this. The list is read from the installer RPM this build produces,
+  # never restated here: restating it is how the media and the installer
+  # drifted apart in the first place, and 2.8 and 2.9 differ.
+  build_installer_requestable() {
+    local ver rel rpmf list pkg
+    [ "$IMG_TYPE" = "iso" ] && return 0
+    [ "${MC_MAKE_TARGET:-}" = "linux" ] && return 0
+    sudo make -j8 photon-os-installer THREADS=8 || {
+      echo "[runPh5_normal] ERROR: could not build photon-os-installer" 1>&2; return 1; }
+    read -r ver rel < <(rpmspec -q --define "_sourcedir $BASE_DIR/$RELEASE_BRANCH/SPECS/photon-os-installer" \
+        --define "photon_subrelease ${UPSTREAM_SUB:-92}" --define "dist .ph5" \
+        --qf '%{VERSION} %{RELEASE}\n' "$BASE_DIR/$RELEASE_BRANCH/SPECS/photon-os-installer/photon-os-installer.spec" 2>/dev/null | head -1)
+    rpmf=$(ls "$BUILD_STAGE"/RPMS/*/photon-os-installer-"$ver"-"$rel".*.rpm 2>/dev/null | head -1)
+    [ -f "$rpmf" ] || { echo "[runPh5_normal] ERROR: photon-os-installer-$ver-$rel not in the stage after building it" 1>&2; return 1; }
+    list=$(rpm2cpio "$rpmf" | cpio -i --to-stdout --quiet '*/stigenable.py' 2>/dev/null | python3 -c '
+import ast, sys
+for node in ast.parse(sys.stdin.read()).body:
+    if isinstance(node, ast.Assign) and any(getattr(t, "id", "") == "KS_STIG_PACKAGES" for t in node.targets):
+        print(" ".join(ast.literal_eval(node.value)))')
+    if [ -z "$list" ]; then
+      echo "[runPh5_normal] photon-os-installer-$ver-$rel declares no KS_STIG_PACKAGES; nothing extra to build"
+      return 0
+    fi
+    echo "[runPh5_normal] installer-requestable packages ($(basename "$rpmf")): $list"
+    for pkg in $list; do
+      sudo make -j8 "$pkg" THREADS=8 || {
+        echo "[runPh5_normal] ERROR: could not build $pkg, which the installer may request from the media" 1>&2; return 1; }
+    done
+  }
+  build_installer_requestable || exit 1
+
   prev_make_rc=""
   prev_progress=""
   for i in $(seq 1 10); do

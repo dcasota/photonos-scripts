@@ -128,7 +128,6 @@ pub fn file(path: &std::path::Path) -> Result<String, String> {
     Ok(h.hex())
 }
 
-#[cfg(test)]
 pub fn bytes(data: &[u8]) -> String {
     let mut h = Sha256::default();
     h.update(data);

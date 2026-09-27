@@ -78,8 +78,22 @@ pub fn plan(
 
     // Nothing is created before the decision to build: an empty cache
     // directory looks exactly like an ISO that failed to copy.
+    let mut stale: Option<String> = None;
     if !force && iso.exists() {
-        return Ok(Plan::Cached(iso));
+        match cached_inputs_differ(cfg, req, iso.parent().unwrap_or(Path::new("/"))) {
+            None => return Ok(Plan::Cached(iso)),
+            Some(why) => stale = Some(why),
+        }
+    }
+    if let (Some(why), false) = (&stale, allow_build) {
+        return Err(format!(
+            "the cached ISO at {} is stale: {why}. Rebuild it with `sharukhan build-iso \
+             --iso-type {} --poi {} --canister {} --allow-build`.",
+            iso.display(),
+            req.iso_type,
+            req.poi,
+            req.canister
+        ));
     }
     if !allow_build {
         return Err(format!(
@@ -226,6 +240,80 @@ fn foreign_edits(porcelain: &str, owned: &[String], allowed: &[String]) -> Vec<S
     out
 }
 
+/// Sidecar recording what a cached ISO was built from.
+pub const INPUTS_FILE: &str = "inputs.txt";
+
+/// Everything that decides what lands on an ISO, as `key value` lines: the
+/// upstream commits of both trees, the variant patch, the common fixes, the
+/// driver for a prebuilt build, and the embedded canister patch for an
+/// equivalent one.
+///
+/// A cache hit used to mean only that `photon.iso` existed. After a 5.0 sync,
+/// or once a PR branch was rebased, `plan` went on reporting ISOs built from
+/// the old base as cached, and a gate run on them would have passed on media
+/// that predates the code under test.
+pub fn build_inputs(cfg: &Config, req: &IsoRequest) -> Result<String, String> {
+    let rev = |tree: &Path, r: &str| -> Result<String, String> {
+        git(tree, &["rev-parse", &format!("origin/{r}")]).map(|s| s.trim().to_string())
+    };
+    let hash = |p: &Path| -> Result<String, String> {
+        sha256::file(p).map_err(|e| format!("{}: {e}", p.display()))
+    };
+    let common = cfg.build_root.join(&cfg.build_common);
+    let mut out = format!(
+        "release-base {}\ncommon-base {}\nvariant {}\ncommon-fixes {}\n",
+        rev(&cfg.photon_tree, &cfg.release)?,
+        rev(&common, &cfg.build_common)?,
+        hash(&cfg.variant_patches.join(format!("poi-{}.patch", req.poi)))?,
+        hash(&cfg.variant_patches.join("common-fixes.patch"))?,
+    );
+    if req.canister == "equivalent" {
+        out.push_str(&format!(
+            "embedded-canister-equivalent {}\n",
+            sha256::bytes(crate::buildmode::Embedded::CanisterEquivalent.patch().as_bytes())
+        ));
+    } else {
+        out.push_str(&format!("driver {}\n", hash(&cfg.photon_scripts.join("runPh5_normal.sh"))?));
+    }
+    Ok(out)
+}
+
+/// None when the ISO in `dir` was built from exactly the inputs a build would
+/// use now; otherwise which inputs moved. Comment lines are ignored.
+fn cached_inputs_differ(cfg: &Config, req: &IsoRequest, dir: &Path) -> Option<String> {
+    let recorded = match fs::read_to_string(dir.join(INPUTS_FILE)) {
+        Ok(t) => t,
+        Err(_) => return Some(format!("it has no {INPUTS_FILE}, so what it was built from is unknown")),
+    };
+    let now = match build_inputs(cfg, req) {
+        Ok(t) => t,
+        Err(e) => return Some(format!("the current inputs cannot be determined ({e})")),
+    };
+    inputs_diff(&recorded, &now)
+}
+
+/// The keys whose values differ between two input records.
+fn inputs_diff(recorded: &str, now: &str) -> Option<String> {
+    let parse = |t: &str| -> Vec<(String, String)> {
+        t.lines()
+            .filter(|l| !l.trim().is_empty() && !l.starts_with('#'))
+            .filter_map(|l| l.split_once(' ').map(|(k, v)| (k.to_string(), v.trim().to_string())))
+            .collect()
+    };
+    let (r, n) = (parse(recorded), parse(now));
+    let mut moved: Vec<String> = n
+        .iter()
+        .filter(|(k, v)| r.iter().find(|(rk, _)| rk == k).map(|(_, rv)| rv != v).unwrap_or(true))
+        .map(|(k, _)| k.clone())
+        .collect();
+    moved.extend(r.iter().filter(|(k, _)| !n.iter().any(|(nk, _)| nk == k)).map(|(k, _)| k.clone()));
+    if moved.is_empty() {
+        None
+    } else {
+        Some(format!("built from other inputs ({} changed since)", moved.join(", ")))
+    }
+}
+
 pub fn resolve(
     cfg: &Config,
     req: &IsoRequest,
@@ -242,6 +330,9 @@ pub fn resolve(
         }
         Plan::Build(iso) => iso,
     };
+    // Recorded before the build starts: the inputs this ISO is built FROM,
+    // even if a patch is regenerated while it runs.
+    let inputs = build_inputs(cfg, req)?;
 
     fs::create_dir_all(&dest).map_err(|e| format!("{}: {e}", dest.display()))?;
     fs::create_dir_all(&cfg.build_log_dir)
@@ -505,6 +596,8 @@ mismatched canister in the stage outranks the pinned one for an unversioned tdnf
     if let Ok(h) = sha256::file(&produced) {
         let _ = fs::write(dest.join("photon.iso.sha256"), format!("{h}\n"));
     }
+    fs::write(dest.join(INPUTS_FILE), &inputs)
+        .map_err(|e| format!("{}: {e}", dest.join(INPUTS_FILE).display()))?;
     log(&format!("cached: {}", iso.display()));
     Ok(iso)
 }
@@ -1258,16 +1351,34 @@ mod tests {
     }
 
     #[test]
-    fn plan_refuses_without_allow_build_and_hits_the_cache() {
+    fn plan_refuses_without_allow_build_and_a_bare_iso_is_not_a_cache_hit() {
         let (c, root) = plan_cfg("cache");
         assert!(plan(&c, &plan_req(), false, false).unwrap_err().contains("building is off"));
+        // An ISO with no record of what it was built from is stale, not cached:
+        // refused without --allow-build, rebuilt with it.
         let iso = c.iso_dir("minimal", "2.8", "prebuilt").join("photon.iso");
         fs::create_dir_all(iso.parent().unwrap()).unwrap();
         fs::write(&iso, "iso").unwrap();
-        assert_eq!(plan(&c, &plan_req(), false, false).unwrap(), Plan::Cached(iso.clone()));
+        let err = plan(&c, &plan_req(), false, false).unwrap_err();
+        assert!(err.contains("stale") && err.contains("inputs.txt"), "{err}");
         // --force skips the cache, and then needs a variant patch.
         assert!(plan(&c, &plan_req(), true, true).unwrap_err().contains("no variant patch"));
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn identical_inputs_are_a_hit_and_any_moved_input_is_named() {
+        let rec = "release-base aaa\ncommon-base bbb\nvariant ccc\ncommon-fixes ddd\ndriver eee\n";
+        assert_eq!(inputs_diff(rec, rec), None);
+        // a comment (e.g. a retroactive note) does not count
+        assert_eq!(inputs_diff(&format!("# note\n{rec}"), rec), None);
+        let synced = rec.replace("release-base aaa", "release-base fff");
+        assert!(inputs_diff(rec, &synced).unwrap().contains("release-base"));
+        let rebased = rec.replace("variant ccc", "variant 999").replace("driver eee", "driver 000");
+        let why = inputs_diff(rec, &rebased).unwrap();
+        assert!(why.contains("variant") && why.contains("driver") && !why.contains("common-base"), "{why}");
+        // an input that only one side knows about is a change too
+        assert!(inputs_diff(rec, &format!("{rec}embedded-canister-equivalent fff\n")).is_some());
     }
 
     /// A missing variant patch used to be noticed only AFTER resolve had
