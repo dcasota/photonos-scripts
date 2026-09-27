@@ -1,7 +1,7 @@
 #!/bin/sh
 #
 # Photon OS 5.0 userland + experimental Linux 7.3-rc4 (mainline RC)
-# wrapper v6
+# wrapper v8
 #
 # $1 BASE_DIR        default /root
 # $2 COMMON_BRANCH   default common
@@ -28,7 +28,7 @@ export GIT_TERMINAL_PROMPT=0
 export EDITOR=true
 export VISUAL=true
 
-echo "[runPh7-3-RC4] wrapper v6 (Linux 7.3-rc4, RAP/KCFI on, rdrand-rng, vmwgfx blend, installer/sudo/dbus/cloud-init pre-build, noreplace-smp dropped, esx BTF off)"
+echo "[runPh7-3-RC4] wrapper v8 (Linux 7.3-rc4, RAP/KCFI on, rdrand-rng, vmwgfx blend, installer/sudo/dbus/cloud-init pre-build, noreplace-smp dropped, esx BTF off, STIG initrd restore, ansible log flush)"
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" 2>/dev/null && pwd)
 
@@ -179,9 +179,51 @@ PY
   done
 }
 
+# poi.py stages the common tree's common/data/packages_installer_initrd.json
+# for the ISO. A stale local edit there had dropped "stig-hardening", so the
+# initrd carried neither the STIG playbook nor ansible (its Requires), and
+# every install with "Apply STIG hardening" died at the ansible step with
+# FileNotFoundError: '/usr/bin/ansible-playbook'. Put back every package the
+# committed list has; local additions are kept. Idempotent.
+pin_restore_initrd_pkgs() {
+  for d in "$COMMON_DIR" "$BASE_DIR/$RELEASE_BRANCH"; do
+    f="$d/common/data/packages_installer_initrd.json"
+    [ -f "$f" ] || continue
+    git -C "$d" show HEAD:common/data/packages_installer_initrd.json 2>/dev/null |
+      python3 -c '
+import json, sys
+from pathlib import Path
+p = Path(sys.argv[1])
+try:
+    head = json.load(sys.stdin)
+except ValueError:
+    raise SystemExit(0)
+cur = json.loads(p.read_text())
+added = []
+for key, pkgs in head.items():
+    if not isinstance(pkgs, list):
+        continue
+    have = cur.setdefault(key, [])
+    for pkg in pkgs:
+        if pkg not in have:
+            have.append(pkg)
+            added.append(pkg)
+if added:
+    for key in cur:
+        if isinstance(cur[key], list):
+            cur[key] = sorted(cur[key])
+    p.write_text(json.dumps(cur, indent=4) + "\n")
+    print(f"[runPh7-3-RC4] {p}: restored {added}")
+else:
+    print(f"[runPh7-3-RC4] {p}: installer initrd list complete")
+' "$f"
+  done
+}
+
 worktree_now() {
   echo "[runPh7-3-RC4] worktree_now: start"
   pin_drop_specdata_compat
+  pin_restore_initrd_pkgs
   pin_regate_specs
   pin_spec_lint
   echo "[runPh7-3-RC4] worktree_now: done"
@@ -471,9 +513,11 @@ PY
 enable_vmwgfx_73rc4 SPECS/linux/linux.spec || exit 1
 enable_vmwgfx_73rc4 SPECS/linux/linux-esx.spec || exit 1
 
-# photon-os-installer: networkd DHCP match by Type=ether/Kind=!* instead of Name=e*.
-# downstream-fixes.patch extends this spec (0003..0007), so the 0008 patch file is on
-# the branch and appended here as the next PatchN, with one release bump.
+# photon-os-installer fixes whose patch files are on the branch. downstream-fixes.patch
+# extends this spec (0003..0007), so each is appended here as the next PatchN, with
+# its own release bump and changelog entry, in order. Idempotent per patch.
+#   0008  networkd DHCP match by Type=ether/Kind=!* instead of Name=e*
+#   0009  flush the ansible log before copying it (STIG log lost its PLAY RECAP)
 pin_installer_73rc4() {
   spec="SPECS/photon-os-installer/photon-os-installer.spec"
   [ -f "$spec" ] || return 0
@@ -482,26 +526,33 @@ import re, sys
 from pathlib import Path
 p = Path(sys.argv[1])
 t = p.read_text()
-fname = "0008-networkmanager-match-dhcp-links-by-type.patch"
-if fname in t:
-    print(f"[runPh7-3-RC4] {p}: {fname} already applied")
-    raise SystemExit(0)
-nums = [int(n) for n in re.findall(r"(?m)^Patch(\d+):", t)]
-if not nums:
-    sys.exit(f"[runPh7-3-RC4] ERROR: {p}: no Patch lines")
-last = max(nums)
-t, n = re.subn(rf"(?m)^(Patch{last}:.*\n)", rf"\g<1>Patch{last + 1}: {fname}\n", t, count=1)
-m = re.search(r"(?m)^(Release:\s*)(\d+)(%\{\?dist\})", t)
-if n != 1 or not m:
-    sys.exit(f"[runPh7-3-RC4] ERROR: {p}: cannot add {fname}")
-rel = int(m.group(2)) + 1
-t = t[:m.start()] + f"{m.group(1)}{rel}{m.group(3)}" + t[m.end():]
-ver = re.search(r"(?m)^Version:\s*(\S+)", t).group(1)
-t = t.replace("%changelog\n", "%changelog\n* Sat Sep 26 2026 Daniel Casota <dcasota@gmail.com> "
-              f"{ver}-{rel}\n- networkmanager: match DHCP links by Type=ether/Kind=!* instead of\n"
-              "  Name=e*, which networkd flags as an unpredictable name with net.ifnames=0\n", 1)
+fixes = [
+    ("0008-networkmanager-match-dhcp-links-by-type.patch", "Sat Sep 26 2026",
+     "- networkmanager: match DHCP links by Type=ether/Kind=!* instead of\n"
+     "  Name=e*, which networkd flags as an unpredictable name with net.ifnames=0\n"),
+    ("0009-installer-flush-ansible-log-before-copying.patch", "Sun Sep 27 2026",
+     "- installer: flush the ansible log before copying it, so the STIG log\n"
+     "  keeps its PLAY RECAP\n"),
+]
+for fname, date, entry in fixes:
+    if fname in t:
+        print(f"[runPh7-3-RC4] {p}: {fname} already applied")
+        continue
+    nums = [int(n) for n in re.findall(r"(?m)^Patch(\d+):", t)]
+    if not nums:
+        sys.exit(f"[runPh7-3-RC4] ERROR: {p}: no Patch lines")
+    last = max(nums)
+    t, n = re.subn(rf"(?m)^(Patch{last}:.*\n)", rf"\g<1>Patch{last + 1}: {fname}\n", t, count=1)
+    m = re.search(r"(?m)^(Release:\s*)(\d+)(%\{\?dist\})", t)
+    if n != 1 or not m:
+        sys.exit(f"[runPh7-3-RC4] ERROR: {p}: cannot add {fname}")
+    rel = int(m.group(2)) + 1
+    t = t[:m.start()] + f"{m.group(1)}{rel}{m.group(3)}" + t[m.end():]
+    ver = re.search(r"(?m)^Version:\s*(\S+)", t).group(1)
+    t = t.replace("%changelog\n", f"%changelog\n* {date} Daniel Casota <dcasota@gmail.com> "
+                  f"{ver}-{rel}\n" + entry, 1)
+    print(f"[runPh7-3-RC4] {p}: Patch{last + 1} {fname}, release {ver}-{rel}")
 p.write_text(t)
-print(f"[runPh7-3-RC4] {p}: Patch{last + 1} {fname}, release {ver}-{rel}")
 PY
 }
 pin_installer_73rc4 || exit 1

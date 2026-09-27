@@ -28,7 +28,7 @@ export GIT_TERMINAL_PROMPT=0
 export EDITOR=true
 export VISUAL=true
 
-echo "[runPh7-2-7] wrapper v12 + Hyper-V and legacy iptables config restore + BTF only where Photon has it + perf hook only with tools subpackage"
+echo "[runPh7-2-7] wrapper v13 + Hyper-V and legacy iptables config restore + BTF only where Photon has it + perf hook only with tools subpackage + installer initrd list restore (STIG)"
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" 2>/dev/null && pwd)
 
@@ -179,9 +179,51 @@ PY
   done
 }
 
+# poi.py stages the common tree's common/data/packages_installer_initrd.json
+# for the ISO. A stale local edit there had dropped "stig-hardening", so the
+# initrd carried neither the STIG playbook nor ansible (its Requires), and
+# every install with "Apply STIG hardening" died at the ansible step with
+# FileNotFoundError: '/usr/bin/ansible-playbook'. Put back every package the
+# committed list has; local additions are kept. Idempotent.
+pin_restore_initrd_pkgs() {
+  for d in "$COMMON_DIR" "$BASE_DIR/$RELEASE_BRANCH"; do
+    f="$d/common/data/packages_installer_initrd.json"
+    [ -f "$f" ] || continue
+    git -C "$d" show HEAD:common/data/packages_installer_initrd.json 2>/dev/null |
+      python3 -c '
+import json, sys
+from pathlib import Path
+p = Path(sys.argv[1])
+try:
+    head = json.load(sys.stdin)
+except ValueError:
+    raise SystemExit(0)
+cur = json.loads(p.read_text())
+added = []
+for key, pkgs in head.items():
+    if not isinstance(pkgs, list):
+        continue
+    have = cur.setdefault(key, [])
+    for pkg in pkgs:
+        if pkg not in have:
+            have.append(pkg)
+            added.append(pkg)
+if added:
+    for key in cur:
+        if isinstance(cur[key], list):
+            cur[key] = sorted(cur[key])
+    p.write_text(json.dumps(cur, indent=4) + "\n")
+    print(f"[runPh7-2-7] {p}: restored {added}")
+else:
+    print(f"[runPh7-2-7] {p}: installer initrd list complete")
+' "$f"
+  done
+}
+
 worktree_now() {
   echo "[runPh7-2-7] worktree_now: start"
   pin_drop_specdata_compat
+  pin_restore_initrd_pkgs
   pin_regate_specs
   pin_spec_lint
   echo "[runPh7-2-7] worktree_now: done"

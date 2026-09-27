@@ -27,7 +27,7 @@ Automated ISO build scripts for Photon OS. Each script pulls the latest sources 
 | `runPh5_pinned91.sh` | 5.0 | Builds from the `5.0` branch pinned to `photon-subrelease 91` (6.1.x kernel, python 3.11). Bypasses the spec checker via `base-commit`, removes conflicting python 3.14 / rpm 6.x RPMs from prior `>= 92` builds, and bootstraps `python3-macros` and `rpm-build 4.18.0` from the Broadcom repo. |
 | `runPh6.sh` | 6.0 | Builds from the `6.0` branch. Includes OpenJDK WSL2 fix and missing-source prefetch. |
 | `runPh7-2-7.sh` | 5.0 | **Experimental.** Photon 5.0 userland with Linux 7.2.7 instead of 6.12, from the `experimental/linux-7.2.7` branch. Wraps `runPh5_normal.sh`; see [runPh7-2-7.sh (experimental Linux 7.2.7)](#runph7-2-7sh-experimental-linux-727) below. |
-| `runPh7-3-RC4.sh` | 5.0 | **Experimental.** Same approach with the Linux 7.3-rc4 mainline release candidate, from the `experimental/linux-7.3-rc4` branch (wrapper v6); see [runPh7-3-RC4.sh (experimental Linux 7.3-rc4)](#runph7-3-rc4sh-experimental-linux-73-rc4) below. |
+| `runPh7-3-RC4.sh` | 5.0 | **Experimental.** Same approach with the Linux 7.3-rc4 mainline release candidate, from the `experimental/linux-7.3-rc4` branch (wrapper v8); see [runPh7-3-RC4.sh (experimental Linux 7.3-rc4)](#runph7-3-rc4sh-experimental-linux-73-rc4) below. |
 
 All scripts accept four optional positional parameters: `BASE_DIR`, `COMMON_BRANCH`, `RELEASE_BRANCH`, and `OUTPUT_DIR`.
 
@@ -97,6 +97,13 @@ How it works:
 - **Self-healing.** It removes leftovers of older wrapper versions in `common`: a
   "7.2.7 SpecData compatibility" wrap in `SpecData.py` that failed builds with
   `Invalid package: aide-0.19-3.ph5`, and commented-out `build_if` gates in specs.
+- **Installer initrd list restore (v13).** `poi.py` builds the ISO's installer initrd from the
+  `common` tree's `common/data/packages_installer_initrd.json`. A stale local edit there had dropped
+  `stig-hardening`, so the initrd had neither the STIG playbook nor `ansible` (its Requires), and every
+  install with "Apply STIG hardening" failed at the ansible step with
+  `FileNotFoundError: ... '/usr/bin/ansible-playbook'`. Before every build the wrapper now re-adds any
+  package that the committed list (git `HEAD`) has and the working copy lost, in `common` and in the
+  release tree. Local additions are kept.
 
 Environment knobs: `FORCE_WIPE_LINUX=1` rebuilds the kernel sandboxes from scratch
 (they are kept by default).
@@ -175,6 +182,13 @@ What differs from 7.2.7:
     flags as unpredictable with `net.ifnames=0`. `downstream-fixes.patch` rewrites the installer spec,
     so the pin (`pin_installer_73rc4`) appends the patch as the next `PatchN` with one release bump.
   - The pre-build list now also covers sudo, dbus and photon-os-installer.
+- **STIG hardening install (v7, v8).** Installs with "Apply STIG hardening" failed at the ansible step
+  with `FileNotFoundError: ... '/usr/bin/ansible-playbook'`: the installer initrd lacked
+  `stig-hardening` and `ansible` because of the stale `common` edit described under v13 above. v7 restores
+  the list before every build. v8 adds `0009-installer-flush-ansible-log-before-copying.patch`
+  (branch commit `45092aa6d`): the installer copied `ansible-stig.log` into the target without closing
+  it, so the installed log lost its last buffer, including the `PLAY RECAP`. `pin_installer_73rc4` now
+  appends 0008 and 0009 in order, each with its own release bump (installer 2.8-7).
   - Not fixed in Photon: the perf "CPUID marked event unavailable" lines need "Virtualize CPU
     performance counters" (`vpmc.enable = "TRUE"`) in the VM, and systemd's `unmerged-bin` taint needs
     a distribution-wide merge of `/usr/sbin` into `/usr/bin`.
@@ -225,6 +239,14 @@ Status (branch commit `6c918e10a`, `photon-minimal-5.0-6c918e10a.x86_64.iso`, 50
   groups`, `potentially unpredictable interface name`, `missing module BTF`, `Failed to find module` and
   `cloud-init-generator failed`. The vmwgfx patch builds and passes modpost, but QEMU's VMware SVGA
   emulation is rejected by vmwgfx (`unsupported hypervisor`), so its runtime effect needs a VMware VM.
+- v8 (branch commit `45092aa6d`, ISO `photon-minimal-5.0-45092aa6d.x86_64.iso`, 520 MB): the installer
+  initrd contains `ansible-playbook` and the STIG playbook. A kickstart install of `linux-esx` on PVSCSI +
+  vmxnet3 with the installer's STIG settings (`additional_packages` and `ansible` as set by "Apply STIG
+  hardening") completes. `/var/log/ansible-stig.log` ends with `PLAY RECAP ... ok=169 changed=67
+  unreachable=0 failed=0`. The installed system has the STIG `sshd` Ciphers/MACs, `audit.STIG.rules`,
+  `fips=1` and `audit=1` on the kernel command line, and boots to login with `7.3.0-0.rc4.1.ph5-esx`.
+  SELinux is `permissive`, as the role configures it. Files written after the installer's labeling step,
+  mainly `/etc/ld.so.cache`, are unlabeled and cause AVC denials in permissive mode only.
 - A fresh run fails its first pre-build when `stage/images/sandboxBase` does not exist yet; the retry loop
   regenerates it with `make image` and the next attempt builds the packages.
 - If an ISO name already exists in the output directory, the wrapper prefixes the new ISO with a
