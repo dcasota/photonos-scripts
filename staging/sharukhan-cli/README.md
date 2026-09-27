@@ -633,7 +633,7 @@ Every step `run` takes is also a command of its own, for one row:
 | `kickstart --id <perm>` | prints the kickstart JSON the row would get |
 | `create-vm --id <perm> [--iso <path>] [--kickstart <file>] [--recreate]` | thin boot disk, VMX and kickstart injection. `--recreate` stashes the VM directory's *contents* - never the directory, which VMware holds open - and refuses if a disk survives the stash (finding #62) |
 | `install --id <perm> [--mode auto\|interactive] [--no-wait] [--timeout <sec>]` | powers on and waits for the guest to boot off disk; see *When an install is finished* |
-| `verify --id <perm> [--ip <addr>]` | runs the oracle and harvests logs. Waits up to 120 s for sshd while nothing answers, and never retries an sshd that answered and refused (finding #63) |
+| `verify --id <perm> [--ip <addr>] [--package-lifecycle ...]` | runs the oracle and harvests logs. Waits up to 120 s for sshd while nothing answers, and never retries an sshd that answered and refused (finding #63). With `--package-lifecycle`, then installs, tests and removes every package of the row's media - see *Package lifecycle* |
 | `teardown --id <perm> [--purge]` | stops only this row's VM, stashes its disk chain and removes VMware locks; `--purge` also deletes older stashes |
 | `card --id <perm>` | what an operator must enter for an interactive (`ui`) row |
 
@@ -647,6 +647,92 @@ And the commands that produce what the rows consume:
 | `canister [--rebase-check]` | which canister this kernel can have - the same decision a build takes |
 | `mirrors` | whether the SPECS copies of photon-os-installer PR commits still match what the published PR branches produce |
 | `ingest` | folds the evidence files under `results/` into the memory database; idempotent, so safe to re-run over the whole tree |
+
+## Package lifecycle: install, test and remove every package of a row
+
+`--package-lifecycle` on `verify` or `run` goes past the vanilla install. After the read-only oracle
+and harvest, for every package the row's own ISO offers, it installs the package, tests it by what
+it ships, removes it, and proves the guest is back at its baseline. Design:
+[ADR-0008](specs/adr/0008-package-lifecycle.md), contract:
+[FRD-002](specs/features/package-lifecycle.md).
+
+```
+sharukhan verify --id k09 --package-lifecycle                      # every package on the media
+sharukhan verify --id k09 --package-lifecycle --packages chrony,nginx,jq
+sharukhan verify --id k09 --package-lifecycle --pkg-limit 50 --pkg-budget 3600
+sharukhan verify --id k09 --package-lifecycle --pkg-resume         # continue on the same guest
+sharukhan run --only k09 --package-lifecycle --keep
+```
+
+| option | meaning |
+|---|---|
+| `--packages a,b` | only these; each must exist on the media |
+| `--pkg-limit n` | the first n candidates by name |
+| `--pkg-budget sec` | wall-clock bound (default 14400); later packages are recorded as `not-reached` |
+| `--pkg-resume` | keep the final verdicts of the last lifecycle file for this row, if they came from the same guest (machine-id) and the same policy (sha256) |
+| `--pkg-policy file` | test a policy change; default is the embedded `schema/package-lifecycle-policy.json` |
+| `--pkg-force-unverified` | run although verify recorded failures (refused by default: verdicts on a guest that is not known-good are unattributable) |
+
+**Where packages come from.** The row's own ISO, reconnected with `vmrun connectNamedDevice
+sata0:1` and mounted read-only in the guest; tdnf reads it through `--repofrompath` with every
+other repository disabled, and the guest's repo files are never edited. Before anything installs,
+the VMX must name this row's ISO, the medium must carry its volume id, and tdnf's listing must equal
+the ISO's `/RPMS` file for file (`pkg.repo_is_media`). The media RPMs are unsigned, so
+`--nogpgcheck` is used and recorded (`pkg.gpgcheck`).
+
+**What is tested**, decided from the files a package installs:
+
+| class | test |
+|---|---|
+| every package | `rpm -V` right after install: a missing file or a size/digest/link change of a non-%config, non-%ghost file outside `/var /run /proc /sys /dev /tmp` fails |
+| daemon (unit files) | per unit: enable, bounded `systemctl start`, must stay up 5 s (same MainPID, no restart), stop, disable; the unit's journal between a cursor taken before enable and the end must hold no `err` or worse. Condition-skipped units are "skipped (condition)" with systemd's sentence. Templates, aliases and mount/target/swap-like units are not started, with the reason |
+| cli (`/usr/bin` `/usr/sbin` `/bin` `/sbin`) | `--version`, `-V`, `-v`, `version`, `-version` until one exits 0 printing a version with a clean stderr - never a bare invocation, always inside a systemd sandbox (unprivileged `nobody`, no network, no devices, read-only root, no capabilities, runtime limit) |
+| library (`lib*.so.*`) | every soname in `ldconfig -p` |
+| after removal | package set equals the baseline, packaged files gone (%config may stay, recorded), unit files unloaded, no process runs a removed file, no new failed unit, every enabled baseline unit active again |
+
+A transaction that would remove or replace an installed package is never run (skip, with the
+list). Boot-affecting packages (files under `/boot/`, `/lib/modules/`) are skipped with the reason.
+Preinstalled packages are tested in place and **never removed**; their units are observed, never
+started or stopped.
+
+**Guest safety.** The unit owning the port-22 listener is derived and protected, with a reviewed list
+(journald, dbus, networkd, vmtoolsd...); a unit whose `Conflicts=` names one is not started. Firewalls
+and network providers (ordered `Before=` a network target, or listed) start only under a dead-man
+switch: a transient timer that stops the unit is armed first, and only a NEW ssh connection
+succeeding afterwards disarms it. If the package set cannot be returned to the baseline, the run
+stops and records the rest as not reached. A later run on the same guest removes what an
+interrupted one left behind.
+
+**Controls first.** An err line logged on purpose must be found by the journal query; a transient
+unit that exits 3 must be judged failed with its line found; the sandbox must be unprivileged,
+offline and read-only, `rpm --version` must pass and GNU `false --version` (exit 1) must fail. A
+failed control disables what it protects (`pkg.control.*`, `is_control=1` in the database).
+
+**Evidence.** `pkg.*` rows (one `pkg.life.<name>` per package) in the run's `checks-<stamp>.jsonl`;
+the full per-package record - every step with measured detail, every probe attempt, the journal
+lines - in `results/<perm>/pkglife-<stamp>.jsonl`; `ingest` loads it into `package_lifecycle` and
+`v_package_lifecycle`:
+
+```
+$ sqlite3 memory.db "SELECT package, classes, verdict, reason FROM v_package_lifecycle WHERE stamp='20260927T222143Z'"
+7zip|cli|pass|
+chrony|daemon,cli|pass|
+cronie|daemon,cli|fail|cli /usr/bin/run-parts
+jq|cli,library|fail|cli /usr/bin/jq
+linux-drivers-sound|data|skip|boot-affecting: installs 25 under /boot/ /lib/modules/ /usr/lib/modules/ - ...
+nftables|daemon,cli|pass|
+...
+```
+
+`jq` there is a real defect the check found: `jq --version` prints `jq-` with no version. The other
+CLI failures are tools that have no version query at all (`run-parts`, `rpm2cpio`,
+`memcached-tool`); they stay failures until a reviewer adds a `cli.version_query` (an alternative
+query that must still print a version - 7-Zip's `i`, verified in the sandbox) or a
+`cli.no_version_query` entry with its reason.
+
+**Cost.** Measured on k09 (full ISO): 0.3-20 s per package (chrony 19 s: two units, each with its 5 s
+stability window; nftables 12 s under the dead-man switch; a CLI-only package 2-3 s). The full media is ~1930 packages - hours, which is what `--pkg-budget` and
+`--pkg-resume` are for.
 
 ## Build mode: sharukhan builds the ISO itself
 

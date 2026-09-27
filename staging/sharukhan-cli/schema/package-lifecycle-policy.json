@@ -1,0 +1,122 @@
+{
+  "schema": 1,
+  "reviewed": "2026-09-27",
+  "about": "Safety and override policy for `sharukhan verify|run --package-lifecycle` (ADR-0008, FRD-002). Every entry carries the reason it exists. Criteria that can be derived from the guest (unit ordering, conflicts, the unit that owns the ssh listener, files under /boot) are derived in code; this file holds only what cannot be derived, and is embedded into the binary so a result names the exact policy that produced it (its sha256 is recorded with every run).",
+  "limits": {
+    "query_secs": 120,
+    "install_secs": 900,
+    "remove_secs": 600,
+    "unit_start_secs": 90,
+    "unit_stop_secs": 90,
+    "stability_secs": 5,
+    "deadman_secs": 45,
+    "probe_secs": 10,
+    "max_probes_per_package": 400,
+    "reconnect_secs": 180
+  },
+  "boot_paths": ["/boot/", "/lib/modules/", "/usr/lib/modules/"],
+  "packages": {
+    "never_install": []
+  },
+  "cli": {
+    "probes": [["--version"], ["-V"], ["-v"], ["version"], ["-version"]],
+    "stderr_error_markers": [
+      "error",
+      "fatal",
+      "unknown option",
+      "unrecognized option",
+      "unrecognised option",
+      "invalid option",
+      "illegal option",
+      "not found",
+      "no such file",
+      "permission denied",
+      "segmentation fault",
+      "core dumped",
+      "traceback",
+      "exception",
+      "cannot ",
+      "can't ",
+      "failed",
+      "usage:"
+    ],
+    "never_execute": [
+      { "pattern": "shutdown", "reason": "power-state tool: an argument it misreads could halt the guest the run depends on" },
+      { "pattern": "reboot", "reason": "power-state tool: reboots the guest" },
+      { "pattern": "halt", "reason": "power-state tool: halts the guest" },
+      { "pattern": "poweroff", "reason": "power-state tool: powers the guest off" },
+      { "pattern": "init", "reason": "PID-1 control; `init <arg>` is a runlevel change request" },
+      { "pattern": "telinit", "reason": "runlevel change request to PID 1" },
+      { "pattern": "kexec", "reason": "loads or executes a new kernel" },
+      { "pattern": "mkfs", "reason": "creates filesystems; a positional argument names the target" },
+      { "pattern": "mkfs.*", "reason": "creates filesystems; a positional argument names the target" },
+      { "pattern": "mke2fs", "reason": "creates ext2/3/4 filesystems on its target" },
+      { "pattern": "mkswap", "reason": "writes a swap signature over its target" },
+      { "pattern": "mkdosfs", "reason": "creates FAT filesystems on its target" },
+      { "pattern": "fdisk", "reason": "partition editor; operands name disks" },
+      { "pattern": "sfdisk", "reason": "partition editor driven by its arguments and stdin" },
+      { "pattern": "cfdisk", "reason": "interactive partition editor" },
+      { "pattern": "gdisk", "reason": "GPT partition editor; operands name disks" },
+      { "pattern": "sgdisk", "reason": "partition editor driven by its arguments" },
+      { "pattern": "cgdisk", "reason": "interactive partition editor" },
+      { "pattern": "fixparts", "reason": "partition table rewriter" },
+      { "pattern": "parted", "reason": "partition editor; accepts commands as arguments" },
+      { "pattern": "partprobe", "reason": "asks the kernel to re-read partition tables" },
+      { "pattern": "wipefs", "reason": "erases filesystem signatures" },
+      { "pattern": "blkdiscard", "reason": "discards every block of its target" },
+      { "pattern": "dd", "reason": "copies raw blocks; operands are positional `key=value` words" },
+      { "pattern": "shred", "reason": "overwrites its operands" },
+      { "pattern": "badblocks", "reason": "can run destructive write tests" },
+      { "pattern": "kill", "reason": "signals processes named by its operands" },
+      { "pattern": "killall", "reason": "signals processes by name" },
+      { "pattern": "killall5", "reason": "signals every process" },
+      { "pattern": "pkill", "reason": "signals processes by pattern" }
+    ],
+    "version_query": [
+      { "pattern": "7z*", "args": ["i"], "reason": "7-Zip has no version switch (--version, -V, -v, version, -version all exit 7 with 'Command Line Error', measured on k09); its information command `i` prints the version banner and exits 0 (measured in the probe sandbox, 2026-09-28)" }
+    ],
+    "no_version_query": []
+  },
+  "units": {
+    "network_ordering": ["network-pre.target", "network.target", "network-online.target"],
+    "protected": [
+      { "pattern": "sshd.service", "reason": "carries the harness's only session to the guest (the listener's own unit is also derived at run time)" },
+      { "pattern": "sshd.socket", "reason": "socket activation of the harness's only session" },
+      { "pattern": "systemd-journald.service", "reason": "the evidence every journal check reads" },
+      { "pattern": "systemd-journald.socket", "reason": "the evidence every journal check reads" },
+      { "pattern": "dbus.service", "reason": "systemctl itself talks to PID 1 through it" },
+      { "pattern": "dbus.socket", "reason": "systemctl itself talks to PID 1 through it" },
+      { "pattern": "dbus-broker.service", "reason": "alternative D-Bus implementation; same role as dbus.service" },
+      { "pattern": "systemd-networkd.service", "reason": "configures the interface the harness reaches the guest on" },
+      { "pattern": "systemd-networkd.socket", "reason": "netlink socket of the network manager" },
+      { "pattern": "systemd-resolved.service", "reason": "name resolution for every package that uses it" },
+      { "pattern": "systemd-logind.service", "reason": "owns the ssh login session scope" },
+      { "pattern": "systemd-udevd.service", "reason": "device management" },
+      { "pattern": "vmtoolsd.service", "reason": "the harness discovers the guest address through open-vm-tools" }
+    ],
+    "never_start": [
+      { "pattern": "readonly-root.service", "reason": "remounts the root filesystem read-only; on a live guest every later step would fail" },
+      { "pattern": "abupdate.service", "reason": "`abupdate finish` commits an A/B partition update: rewrites boot configuration" },
+      { "pattern": "kpatch.service", "reason": "loads live patches into the running kernel; the change outlives the package" },
+      { "pattern": "watchdog.service", "reason": "arms a hardware/software watchdog that reboots the guest when not fed" },
+      { "pattern": "waagent.service", "reason": "Azure provisioning agent: rewrites sshd configuration, users and network from a wire server that does not exist here" },
+      { "pattern": "google-*.service", "reason": "GCE guest agent: manages accounts, ssh keys and scripts from a metadata server that does not exist here" },
+      { "pattern": "gce-*.service", "reason": "GCE guest agent helper" },
+      { "pattern": "gce-*.timer", "reason": "GCE guest agent helper" },
+      { "pattern": "tdnf-automatic*.service", "reason": "installs or reports updates from the network repositories: changes the package set the run compares against" },
+      { "pattern": "tdnf-automatic*.timer", "reason": "triggers tdnf-automatic" },
+      { "pattern": "cloud-network.service", "reason": "configures networking from cloud metadata; can rewrite the interface the harness uses" },
+      { "pattern": "network-config-manager-generator.service", "reason": "generates /etc/systemd/network files; the change outlives the package and applies at the next networkd restart" },
+      { "pattern": "network-config-manager-yaml-generator.service", "reason": "generates /etc/systemd/network files from YAML; outlives the package" },
+      { "pattern": "network-broker.service", "reason": "acts on network events and can run configured scripts against links" }
+    ],
+    "network_affecting": [
+      { "pattern": "ebtables.service", "reason": "bridge firewall: not ordered before network-pre.target, but loads filtering rules" },
+      { "pattern": "iptables.service", "reason": "IPv4 firewall: loads rules that can refuse new ssh connections" },
+      { "pattern": "ip6tables.service", "reason": "IPv6 firewall: loads filtering rules" },
+      { "pattern": "nftables.service", "reason": "firewall (also derived: Before=network-pre.target)" },
+      { "pattern": "firewalld.service", "reason": "zone firewall: loads rules that can refuse new ssh connections" }
+    ],
+    "requires_config": []
+  }
+}

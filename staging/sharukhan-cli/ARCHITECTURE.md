@@ -67,6 +67,7 @@ Every layer depends only downward. The domain layer never shells out directly; i
 | domain: vm | `vm`, `vmx`, `kickstart`, `net` | the VM on disk and taking it back; the VMX template; the POI kickstart; the network axis |
 | domain: install | `install`, `leases`, `serial`, `card` | one install; the DHCP lease file and serial log as boot signals; the operator card |
 | domain: verify | `verify`, `oracle`, `evidence`, `report` | running the oracle and harvesting logs; the assertions; structured results; per-row report |
+| domain: verify | `pkglife` (`remote`, `parse`, `classify`, `policy`, `units`, `probe`, `record`, `media`) | opt-in package lifecycle after verify: the row's ISO as the repository, per-package install / test by content / remove / residue, controls, the reviewed safety policy (ADR-0008) |
 | adapters | `guest`, `vmware`, `winpath`, `sha256`, `b64` | ssh into the guest; vmrun; WSL to Windows paths; hashing and encoding without shelling out |
 | domain: specs | `branchguard` | guarding a PR branch against a base that has moved: the %changelog version it adds must not be one the target already publishes, the top entry must not predate the one beneath it, and enumerating a commit's paths must not collapse a rename to its destination and leave the source behind |
 | persistence | `memory`, `ingest` | the memory database; deriving it from the evidence files |

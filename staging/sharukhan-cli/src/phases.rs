@@ -191,9 +191,14 @@ pub fn cmd_install(
     }
 }
 
-pub fn cmd_verify(cfg: &Config, id: &str, ip: Option<&str>) -> Result<(), String> {
+pub fn cmd_verify(
+    cfg: &Config,
+    id: &str,
+    ip: Option<&str>,
+    lifecycle: Option<&crate::pkglife::Opts>,
+) -> Result<(), String> {
     let p = row(cfg, id)?;
-    let v = verify::run(cfg, &p, ip, &crate::job::stamp(), &mut logger())?;
+    let v = verify::run(cfg, &p, ip, &crate::job::stamp(), lifecycle, &mut logger())?;
     println!("evidence: {}", v.checks.path.display());
     println!("logs:     {}", v.harvest.display());
     if v.checks.fail == 0 {

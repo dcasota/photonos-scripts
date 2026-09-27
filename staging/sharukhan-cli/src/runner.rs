@@ -47,6 +47,9 @@ pub struct RunOpts {
     /// lacks. It takes hours and shares $PHOTON_TREE/stage with every other
     /// build on the host, so it happens only when the operator says so.
     pub allow_build: bool,
+    /// `--package-lifecycle`: after verify, install/test/remove every package
+    /// the row's media offers (ADR-0008). None = off.
+    pub lifecycle: Option<crate::pkglife::Opts>,
 }
 
 // ---------------------------------------------------------------- run ------
@@ -211,10 +214,15 @@ pub fn cmd_run(cfg: &Config, o: &RunOpts) -> Result<(), String> {
             }
             for p in &g.rows {
                 println!(
-                    "  {:<5} {:<24} {}kickstart -> create-vm -> install -> verify{}",
+                    "  {:<5} {:<24} {}kickstart -> create-vm -> install -> verify{}{}",
                     p.id,
                     g.key,
                     if g.would_build { "[build ISO] -> " } else { "" },
+                    if o.lifecycle.is_some() {
+                        " -> package-lifecycle"
+                    } else {
+                        ""
+                    },
                     if o.keep { "" } else { " -> teardown --purge" }
                 );
             }
@@ -266,7 +274,7 @@ pub fn cmd_run(cfg: &Config, o: &RunOpts) -> Result<(), String> {
             attempted += 1;
             say(&mut logf, &format!("--- {} ---", p.id));
             println!("  running {} ({})", p.id, g.key);
-            let line = match run_row(cfg, p, &g.iso, o.keep, &mut logf) {
+            let line = match run_row(cfg, p, &g.iso, o.keep, o.lifecycle.as_ref(), &mut logf) {
                 Ok(v) => format!("{}: {v}", p.id),
                 Err(e) => format!("{}: {e}", p.id),
             };
@@ -295,8 +303,9 @@ pub fn cmd_run(cfg: &Config, o: &RunOpts) -> Result<(), String> {
         Ok(sum) => say(
             &mut logf,
             &format!(
-                "indexed: {} run(s), {} permutation result(s), {} check(s) in the memory database",
-                sum.runs, sum.permutations, sum.checks
+                "indexed: {} run(s), {} permutation result(s), {} check(s), {} package \
+                 lifecycle record(s) in the memory database",
+                sum.runs, sum.permutations, sum.checks, sum.packages
             ),
         ),
         Err(e) => {
@@ -382,6 +391,7 @@ fn run_row(
     p: &Permutation,
     iso: &Path,
     keep: bool,
+    lifecycle: Option<&crate::pkglife::Opts>,
     logf: &mut File,
 ) -> Result<String, String> {
     let mut log = |m: &str| {
@@ -424,7 +434,10 @@ fn run_row(
     // WHY - discarding it because the install "did not work" throws away the
     // finding the row exists to produce.
     let stamp = job::stamp();
-    let v = verify::run(cfg, p, None, &stamp, &mut log)?;
+    // The lifecycle needs an installed guest; on a failed install there is
+    // nothing to put packages on, and verify records why.
+    let lc = lifecycle.filter(|_| facts.install_result == install::INSTALLED);
+    let v = verify::run(cfg, p, None, &stamp, lc, &mut log)?;
     let verdict = format!(
         "{} checks, {} pass, {} fail (install {})",
         v.checks.total(),

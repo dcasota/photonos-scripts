@@ -28,6 +28,7 @@ mod memory;
 mod net;
 mod oracle;
 mod phases;
+mod pkglife;
 mod proc;
 mod remaster;
 mod report;
@@ -68,7 +69,9 @@ PHASES (the same code `run` calls, one step at a time)
     kickstart           print the kickstart JSON for one permutation
     create-vm           disk, VMX and kickstart injection for one permutation
     install             power on and wait for the guest to boot off disk
-    verify              run the oracle against an installed guest, harvest logs
+    verify              run the oracle against an installed guest, harvest logs;
+                        --package-lifecycle then installs, tests and removes
+                        every package on the row's own media (see below)
     teardown            return one permutation's VM to a fresh-disk state
     build-iso           resolve a build-axis tuple to an ISO (see --allow-build)
     build               run the build cascade directly (replaces the run*.sh scripts);
@@ -100,6 +103,25 @@ OPTIONS:
     --no-wait           leave the VM up for an operator and return (install)
     --timeout <sec>     install timeout; default MC_INSTALL_TIMEOUT_SEC
     --ip <addr>         guest address (verify), when the facts file has none
+    --package-lifecycle after verify, for every package the row's ISO offers:
+                        install it from that ISO (reconnected to the guest),
+                        test it by what it ships - daemons are enabled,
+                        started, must stay up, stopped, disabled, with no
+                        err-level journal entry in that window; CLIs must
+                        print a version in a sandbox; libraries must be in the
+                        linker cache; rpm -V must be clean - then remove it and
+                        prove files, units and processes are gone and the
+                        package set is back at baseline. Preinstalled packages
+                        are tested in place and never removed. (verify, run)
+    --packages <a,b>    only these packages (package lifecycle)
+    --pkg-limit <n>     only the first n candidates, by name (package lifecycle)
+    --pkg-budget <sec>  wall-clock bound; later packages are recorded as not
+                        reached; default 14400 (package lifecycle)
+    --pkg-resume        keep the final verdicts of the last lifecycle run on
+                        the same guest (machine-id) and policy (package lifecycle)
+    --pkg-policy <file> safety policy to use instead of the embedded
+                        schema/package-lifecycle-policy.json (package lifecycle)
+    --pkg-force-unverified  run the lifecycle although verify failed checks
     --purge             delete old stashes as well (teardown)
     --release <r>       4.0 | 5.0 | 6.0 (build); default 5.0
     --subrelease <s>    mainline | 90 | 91 (build); default mainline
@@ -200,6 +222,51 @@ struct Args {
     branch: Option<String>,
     stage: Option<String>,
     no_accel: bool,
+    // ---- package lifecycle ----
+    package_lifecycle: bool,
+    packages: Option<String>,
+    pkg_limit: Option<usize>,
+    pkg_budget: Option<u64>,
+    pkg_resume: bool,
+    pkg_policy: Option<String>,
+    pkg_force_unverified: bool,
+}
+
+impl Args {
+    /// The lifecycle options, validated; None when --package-lifecycle is
+    /// off. A --pkg-* option without it is an error, not silently ignored.
+    fn lifecycle(&self) -> Result<Option<pkglife::Opts>, String> {
+        let any_sub = self.packages.is_some()
+            || self.pkg_limit.is_some()
+            || self.pkg_budget.is_some()
+            || self.pkg_resume
+            || self.pkg_policy.is_some()
+            || self.pkg_force_unverified;
+        if !self.package_lifecycle {
+            if any_sub {
+                return Err("--packages/--pkg-* options need --package-lifecycle".into());
+            }
+            return Ok(None);
+        }
+        let packages = match &self.packages {
+            Some(l) => Some(pkglife::Opts::parse_packages(l)?),
+            None => None,
+        };
+        if self.pkg_limit == Some(0) {
+            return Err("--pkg-limit 0 would test nothing".into());
+        }
+        if self.pkg_budget == Some(0) {
+            return Err("--pkg-budget 0 would test nothing".into());
+        }
+        Ok(Some(pkglife::Opts {
+            packages,
+            limit: self.pkg_limit,
+            budget_secs: self.pkg_budget.unwrap_or(pkglife::DEFAULT_BUDGET_SECS),
+            resume: self.pkg_resume,
+            policy: self.pkg_policy.as_ref().map(std::path::PathBuf::from),
+            force_unverified: self.pkg_force_unverified,
+        }))
+    }
 }
 
 fn parse() -> Result<Args, String> {
@@ -258,6 +325,13 @@ fn parse() -> Result<Args, String> {
         stage: None,
         no_accel: false,
         log: None,
+        package_lifecycle: false,
+        packages: None,
+        pkg_limit: None,
+        pkg_budget: None,
+        pkg_resume: false,
+        pkg_policy: None,
+        pkg_force_unverified: false,
     };
     while let Some(f) = a.next() {
         match f.as_str() {
@@ -324,6 +398,25 @@ fn parse() -> Result<Args, String> {
             "--branch" => out.branch = Some(a.next().ok_or("--branch needs a value")?),
             "--stage" => out.stage = Some(a.next().ok_or("--stage needs a value")?),
             "--no-accel" => out.no_accel = true,
+            "--package-lifecycle" => out.package_lifecycle = true,
+            "--packages" => out.packages = Some(a.next().ok_or("--packages needs a value")?),
+            "--pkg-limit" => {
+                let v = a.next().ok_or("--pkg-limit needs a value")?;
+                out.pkg_limit = Some(
+                    v.parse()
+                        .map_err(|_| format!("--pkg-limit: not a number: {v}"))?,
+                );
+            }
+            "--pkg-budget" => {
+                let v = a.next().ok_or("--pkg-budget needs a value")?;
+                out.pkg_budget = Some(
+                    v.parse()
+                        .map_err(|_| format!("--pkg-budget: not a number: {v}"))?,
+                );
+            }
+            "--pkg-resume" => out.pkg_resume = true,
+            "--pkg-policy" => out.pkg_policy = Some(a.next().ok_or("--pkg-policy needs a value")?),
+            "--pkg-force-unverified" => out.pkg_force_unverified = true,
             "--settle" => {
                 let v = a.next().ok_or("--settle needs a value")?;
                 out.settle = v
@@ -379,6 +472,17 @@ fn main() -> ExitCode {
         }
     };
     let cfg = config::Config::load();
+    let lifecycle = match args.lifecycle() {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("sharukhan: {e}");
+            return ExitCode::from(64);
+        }
+    };
+    if lifecycle.is_some() && !matches!(args.cmd.as_str(), "verify" | "run") {
+        eprintln!("sharukhan: --package-lifecycle applies to verify and run only");
+        return ExitCode::from(64);
+    }
     let r = match args.cmd.as_str() {
         "doctor" => cmd_doctor(&cfg),
         "plan" => cmd_plan(&cfg, args.only.as_deref()),
@@ -396,6 +500,7 @@ fn main() -> ExitCode {
                 wait_idle: args.wait_idle,
                 log: args.log.clone(),
                 allow_build: args.allow_build,
+                lifecycle: lifecycle.clone(),
             },
         ),
         "card" => need_id(&args).and_then(|id| phases::cmd_card(&cfg, id)),
@@ -413,7 +518,8 @@ fn main() -> ExitCode {
         "install" => need_id(&args).and_then(|id| {
             phases::cmd_install(&cfg, id, args.mode.as_deref(), args.timeout, args.no_wait)
         }),
-        "verify" => need_id(&args).and_then(|id| phases::cmd_verify(&cfg, id, args.ip.as_deref())),
+        "verify" => need_id(&args)
+            .and_then(|id| phases::cmd_verify(&cfg, id, args.ip.as_deref(), lifecycle.as_ref())),
         "teardown" => need_id(&args).and_then(|id| phases::cmd_teardown(&cfg, id, args.purge)),
         "build-iso" => phases::cmd_build_iso(
             &cfg,
@@ -1489,8 +1595,8 @@ fn cmd_mirrors(cfg: &config::Config) -> Result<(), String> {
 fn cmd_ingest(cfg: &config::Config) -> Result<(), String> {
     let s = ingest::all(cfg)?;
     println!(
-        "ingested {} run(s), {} permutation result(s), {} check(s)",
-        s.runs, s.permutations, s.checks
+        "ingested {} run(s), {} permutation result(s), {} check(s), {} package lifecycle record(s)",
+        s.runs, s.permutations, s.checks, s.packages
     );
     Ok(())
 }

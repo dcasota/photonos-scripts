@@ -111,3 +111,30 @@ CREATE TABLE IF NOT EXISTS next_step (
   state TEXT DEFAULT 'open',
   recorded_at TEXT
 );
+-- Package lifecycle (FRD-002, ADR-0008). Written by `sharukhan ingest` from
+-- results/<perm>/pkglife-<stamp>.jsonl; ingest also creates it if absent
+-- (src/ingest.rs PACKAGE_LIFECYCLE_DDL, which this block mirrors).
+CREATE TABLE IF NOT EXISTS package_lifecycle (
+    id             INTEGER PRIMARY KEY,
+    permutation_id INTEGER NOT NULL REFERENCES permutation(id),
+    package        TEXT NOT NULL,
+    evr            TEXT,
+    arch           TEXT,
+    origin         TEXT,           -- fresh | preinstalled
+    classes        TEXT,           -- daemon,cli,library,data
+    verdict        TEXT NOT NULL,  -- pass | fail | skip | not-reached
+    reason         TEXT,
+    duration_ms    INTEGER,
+    failed_parts   INTEGER NOT NULL DEFAULT 0,
+    machine_id     TEXT,
+    policy_sha256  TEXT,
+    record         TEXT NOT NULL,  -- the full JSON evidence record
+    recorded_at    TEXT NOT NULL,
+    UNIQUE (permutation_id, package)
+);
+CREATE INDEX IF NOT EXISTS idx_pkglife_perm    ON package_lifecycle(permutation_id);
+CREATE INDEX IF NOT EXISTS idx_pkglife_verdict ON package_lifecycle(verdict);
+CREATE VIEW IF NOT EXISTS v_package_lifecycle AS
+SELECT p.perm_id, l.package, l.evr, l.origin, l.classes, l.verdict, l.reason, l.duration_ms,
+       p.finished_at AS stamp
+FROM package_lifecycle l JOIN permutation p ON p.id = l.permutation_id;

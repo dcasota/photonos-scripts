@@ -27,6 +27,148 @@ pub struct Summary {
     pub runs: usize,
     pub permutations: usize,
     pub checks: usize,
+    pub packages: usize,
+}
+
+/// The per-package lifecycle records (FRD-002). Created here rather than only
+/// in schema/memory.sql because ingest is the table's only writer and must
+/// not depend on someone having re-applied the schema first.
+pub const PACKAGE_LIFECYCLE_DDL: &str = "
+CREATE TABLE IF NOT EXISTS package_lifecycle (
+    id             INTEGER PRIMARY KEY,
+    permutation_id INTEGER NOT NULL REFERENCES permutation(id),
+    package        TEXT NOT NULL,
+    evr            TEXT,
+    arch           TEXT,
+    origin         TEXT,           -- fresh | preinstalled
+    classes        TEXT,           -- daemon,cli,library,data
+    verdict        TEXT NOT NULL,  -- pass | fail | skip | not-reached
+    reason         TEXT,
+    duration_ms    INTEGER,
+    failed_parts   INTEGER NOT NULL DEFAULT 0,
+    machine_id     TEXT,
+    policy_sha256  TEXT,
+    record         TEXT NOT NULL,  -- the full JSON evidence record
+    recorded_at    TEXT NOT NULL,
+    UNIQUE (permutation_id, package)
+);
+CREATE INDEX IF NOT EXISTS idx_pkglife_perm    ON package_lifecycle(permutation_id);
+CREATE INDEX IF NOT EXISTS idx_pkglife_verdict ON package_lifecycle(verdict);
+CREATE VIEW IF NOT EXISTS v_package_lifecycle AS
+SELECT p.perm_id, l.package, l.evr, l.origin, l.classes, l.verdict, l.reason, l.duration_ms,
+       p.finished_at AS stamp
+FROM package_lifecycle l JOIN permutation p ON p.id = l.permutation_id;
+";
+
+/// Check ids that are negative controls by namespace. Derived at ingest so
+/// the frozen evidence line format does not have to change.
+pub fn is_control(check_id: &str) -> bool {
+    check_id.starts_with("pkg.control.")
+}
+
+/// One lifecycle record, reduced to the indexed columns plus the full JSON.
+struct LifeRow {
+    package: String,
+    evr: String,
+    arch: String,
+    origin: String,
+    classes: String,
+    verdict: String,
+    reason: String,
+    duration_ms: i64,
+    failed_parts: i64,
+    machine_id: String,
+    policy: String,
+    record: String,
+}
+
+fn parse_life(line: &str) -> Option<LifeRow> {
+    let v: serde_json::Value = serde_json::from_str(line).ok()?;
+    let s = |k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
+    let package = s("package");
+    let verdict = s("verdict");
+    if package.is_empty() || verdict.is_empty() {
+        return None;
+    }
+    let count_failed = |k: &str| {
+        v.get(k)
+            .and_then(|x| x.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter(|e| e.get("status").and_then(|s| s.as_str()) == Some("fail"))
+                    .count()
+            })
+            .unwrap_or(0)
+    };
+    Some(LifeRow {
+        package,
+        evr: s("evr"),
+        arch: s("arch"),
+        origin: s("origin"),
+        classes: v
+            .get("classes")
+            .and_then(|x| x.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|c| c.as_str())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            })
+            .unwrap_or_default(),
+        verdict,
+        reason: s("reason"),
+        duration_ms: v.get("duration_ms").and_then(|x| x.as_i64()).unwrap_or(0),
+        failed_parts: (count_failed("steps") + count_failed("units") + count_failed("clis")) as i64,
+        machine_id: s("machine_id"),
+        policy: s("policy_sha256"),
+        record: line.to_string(),
+    })
+}
+
+/// Replace, never append: a permutation's lifecycle rows are exactly the
+/// records of its pkglife file.
+fn ingest_lifecycle(
+    conn: &Connection,
+    pid: i64,
+    file: &Path,
+    stamp: &str,
+) -> Result<usize, String> {
+    let text = std::fs::read_to_string(file).map_err(|e| format!("{}: {e}", file.display()))?;
+    conn.execute(
+        "DELETE FROM package_lifecycle WHERE permutation_id = ?1",
+        params![pid],
+    )
+    .map_err(|e| format!("{e}"))?;
+    let mut n = 0;
+    for r in text.lines().filter_map(parse_life) {
+        // A record can appear twice when a resumed run carried it and then
+        // re-tested nothing; the later line wins.
+        conn.execute(
+            "INSERT OR REPLACE INTO package_lifecycle
+               (permutation_id, package, evr, arch, origin, classes, verdict, reason,
+                duration_ms, failed_parts, machine_id, policy_sha256, record, recorded_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
+            params![
+                pid,
+                r.package,
+                r.evr,
+                r.arch,
+                r.origin,
+                r.classes,
+                r.verdict,
+                r.reason,
+                r.duration_ms,
+                r.failed_parts,
+                r.machine_id,
+                r.policy,
+                r.record,
+                stamp
+            ],
+        )
+        .map_err(|e| format!("{e}"))?;
+        n += 1;
+    }
+    Ok(n)
 }
 
 #[derive(Debug)]
@@ -131,12 +273,15 @@ pub fn all(cfg: &Config) -> Result<Summary, String> {
     }
 
     let conn = open_rw(&cfg.memory_db)?;
+    conn.execute_batch(PACKAGE_LIFECYCLE_DDL)
+        .map_err(|e| format!("package_lifecycle schema: {e}"))?;
     let host = hostname();
     let ver = env!("CARGO_PKG_VERSION");
     let mut sum = Summary {
         runs: 0,
         permutations: 0,
         checks: 0,
+        packages: 0,
     };
 
     for (stamp, perms) in &byrun {
@@ -243,12 +388,28 @@ pub fn all(cfg: &Config) -> Result<Summary, String> {
             for r in &recs {
                 conn.execute(
                     "INSERT INTO check_result
-                       (permutation_id, check_id, pr, status, expected, actual, detail, recorded_at)
-                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
-                    params![pid, r.check, r.pr, r.status, r.expected, r.actual, r.detail, stamp],
+                       (permutation_id, check_id, pr, status, expected, actual, detail, is_control, recorded_at)
+                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+                    params![
+                        pid,
+                        r.check,
+                        r.pr,
+                        r.status,
+                        r.expected,
+                        r.actual,
+                        r.detail,
+                        is_control(&r.check) as i64,
+                        stamp
+                    ],
                 )
                 .map_err(|e| format!("{e}"))?;
                 sum.checks += 1;
+            }
+            // The lifecycle records of the same run sit beside its checks
+            // file under the same stamp.
+            let life = file.with_file_name(format!("pkglife-{stamp}.jsonl"));
+            if life.is_file() && !life.is_symlink() {
+                sum.packages += ingest_lifecycle(&conn, pid, &life, stamp)?;
             }
         }
     }
@@ -327,6 +488,78 @@ mod tests {
         assert!(parse(r#"{"check":"a","status":"pass"}"#).is_none());
         assert!(parse(r#"{"perm":"k01","status":"pass"}"#).is_none());
         assert!(parse("not json").is_none());
+    }
+
+    fn schema(conn: &Connection) {
+        conn.execute_batch(
+            "CREATE TABLE permutation (id INTEGER PRIMARY KEY, finished_at TEXT, perm_id TEXT);
+             INSERT INTO permutation (id, perm_id, finished_at) VALUES (1, 'k09', 's1');",
+        )
+        .unwrap();
+        conn.execute_batch(PACKAGE_LIFECYCLE_DDL).unwrap();
+    }
+
+    #[test]
+    fn lifecycle_records_are_replaced_not_appended() {
+        let conn = Connection::open_in_memory().unwrap();
+        schema(&conn);
+        let d = std::env::temp_dir().join(format!("sharukhan-ing-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        let f = d.join("pkglife-s1.jsonl");
+        std::fs::write(
+            &f,
+            concat!(
+                r#"{"package":"chrony","evr":"4.3-3.ph5","arch":"x86_64","origin":"fresh","classes":["daemon","cli"],"verdict":"pass","reason":"","duration_ms":9000,"steps":[{"status":"pass"}],"units":[],"clis":[]}"#,
+                "\n",
+                r#"{"package":"nginx","verdict":"fail","steps":[{"status":"fail"}],"units":[{"status":"fail"}],"clis":[{"status":"pass"}]}"#,
+                "\n",
+                "not json\n",
+                r#"{"package":"","verdict":"pass"}"#,
+                "\n"
+            ),
+        )
+        .unwrap();
+        assert_eq!(ingest_lifecycle(&conn, 1, &f, "s1").unwrap(), 2);
+        assert_eq!(ingest_lifecycle(&conn, 1, &f, "s1").unwrap(), 2);
+        let n: i64 = conn
+            .query_row("SELECT COUNT(*) FROM package_lifecycle", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 2, "a re-ingest must not double the rows");
+        let (classes, failed): (String, i64) = conn
+            .query_row(
+                "SELECT classes, (SELECT failed_parts FROM package_lifecycle WHERE package='nginx')
+                 FROM package_lifecycle WHERE package='chrony'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(classes, "daemon,cli");
+        assert_eq!(failed, 2);
+        let v: String = conn
+            .query_row(
+                "SELECT verdict FROM v_package_lifecycle WHERE package='nginx'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(v, "fail");
+        std::fs::remove_dir_all(&d).ok();
+    }
+
+    /// schema/memory.sql is how a lost database is recreated; it must carry
+    /// the same table ingest creates.
+    #[test]
+    fn the_schema_file_mirrors_the_lifecycle_ddl() {
+        let sql = include_str!("../schema/memory.sql");
+        let norm = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(norm(sql).contains(&norm(PACKAGE_LIFECYCLE_DDL)));
+    }
+
+    #[test]
+    fn only_the_lifecycle_controls_are_flagged_as_controls() {
+        assert!(is_control("pkg.control.journal"));
+        assert!(!is_control("pkg.life.chrony"));
+        assert!(!is_control("media.negative_control"));
     }
 
     #[test]

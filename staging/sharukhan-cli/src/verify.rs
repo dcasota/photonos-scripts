@@ -31,6 +31,7 @@ pub fn run(
     p: &Permutation,
     ip_override: Option<&str>,
     stamp: &str,
+    lifecycle: Option<&crate::pkglife::Opts>,
     log: &mut dyn FnMut(&str),
 ) -> Result<Verified, String> {
     let dir = cfg.vm_dir(&p.id);
@@ -230,6 +231,58 @@ pub fn run(
     if probe.ok {
         oracle::guest(&g, &p.stig, &p.fs, &want, &p.net, &mut c);
         oracle::harvest(&g, &harvest, cfg.guest_password().ok(), &mut c);
+        // Opt-in, and deliberately AFTER the read-only oracle: this phase
+        // mutates the guest (ADR-0008), so everything verify asserts about the
+        // installed system is recorded before the first package touches it.
+        if let Some(o) = lifecycle {
+            if !iso.is_file() {
+                c.check(
+                    "pkg.media_attached",
+                    "-",
+                    Status::Fail,
+                    "the row's ISO",
+                    "absent",
+                    &format!(
+                        "no cached ISO at {}: the package source is the row's own media",
+                        iso.display()
+                    ),
+                );
+            } else {
+                let before = c.fail;
+                let t = crate::pkglife::Target {
+                    cfg,
+                    perm: p,
+                    iso: &iso,
+                    ip: &ip,
+                    stamp,
+                };
+                match crate::pkglife::run(&t, &mut c, before, o, log) {
+                    Ok(s) => log(&format!(
+                        "package lifecycle: {} pass, {} fail, {} skip, {} not reached{}",
+                        s.pass,
+                        s.fail,
+                        s.skip,
+                        s.not_reached,
+                        s.aborted
+                            .map(|a| format!(" (stopped: {a})"))
+                            .unwrap_or_default()
+                    )),
+                    Err(e) => {
+                        if c.fail == before {
+                            c.check(
+                                "pkg.lifecycle",
+                                "-",
+                                Status::Fail,
+                                "completed",
+                                "aborted",
+                                &e,
+                            );
+                        }
+                        log(&format!("package lifecycle aborted: {e}"));
+                    }
+                }
+            }
+        }
     } else {
         // ssh's own words are the finding, not a footnote to it: s02 is
         // unreachable because FIPS-constrained crypto refuses the algorithms
