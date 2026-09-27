@@ -735,8 +735,25 @@ fn cmd_plan(cfg: &config::Config, only: Option<&str>) -> Result<(), String> {
             parts.get(1).copied().unwrap_or(""),
             parts.get(2).copied().unwrap_or("prebuilt"),
         );
-        let dir = cfg.iso_cache.join(format!("{t}-poi{p}-{c}"));
-        let have = dir.join("photon.iso").exists();
+        let req = build::IsoRequest {
+            iso_type: t.to_string(),
+            poi: p.to_string(),
+            canister: c.to_string(),
+        };
+        // The same decision `run` takes: present AND built from today's inputs.
+        let stale = match build::plan(cfg, &req, false, true) {
+            Ok(build::Plan::Cached(_)) => None,
+            Ok(build::Plan::Build(iso)) if iso.exists() => {
+                Some("stale (built from other inputs), rebuilt by `run --allow-build`".to_string())
+            }
+            Ok(build::Plan::Build(_)) => None,
+            Err(why) => Some(format!("cannot be built here: {why}")),
+        };
+        let have = cfg
+            .iso_cache
+            .join(format!("{t}-poi{p}-{c}"))
+            .join("photon.iso")
+            .exists();
         // "must be built" is an invitation to spend hours, so it must not be
         // printed for an ISO no row on this host can use: every row behind
         // full/2.8/fips0-aarch64 is unrunnable on x86_64, and building it would
@@ -744,10 +761,13 @@ fn cmd_plan(cfg: &config::Config, only: Option<&str>) -> Result<(), String> {
         let usable = sel
             .iter()
             .any(|r| &r.iso_key() == k && !r.is_unrunnable_here());
-        let state = match (have, usable) {
-            (true, _) => "cached",
-            (false, true) => "must be built",
-            (false, false) => "not needed here (every row using it is unrunnable on this host)",
+        let state = match (have, usable, &stale) {
+            (_, false, _) if !have => {
+                "not needed here (every row using it is unrunnable on this host)".to_string()
+            }
+            (true, _, None) => "cached".to_string(),
+            (_, _, Some(why)) => why.clone(),
+            (false, _, None) => "must be built".to_string(),
         };
         println!("  {:<26} {}", k, state);
     }

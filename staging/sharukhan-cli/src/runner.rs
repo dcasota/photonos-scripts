@@ -466,7 +466,11 @@ fn prepare_media(
     let mut groups = group_rows(cfg, &runnable);
     println!("\nmedia");
     for g in &mut groups {
-        if !g.iso.exists() {
+        // Asked for EVERY group, cached or not. Asking only when photon.iso was
+        // missing let a cached ISO built from other inputs (another driver,
+        // another variant patch, no inputs.txt at all) pass as current: the
+        // run then tested media nobody would ship (2026-09-27).
+        {
             // With --allow-build this is where the hours go; without it, the
             // refusal names the exact command that would do it.
             let req = build::IsoRequest {
