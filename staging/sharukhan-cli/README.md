@@ -694,6 +694,23 @@ mechanism diffs `origin/<release>..branch` and applies to `SPECS`, so it can
 **never** carry a change to the package builder. That is why the cascade
 distinguishes `Tree::Release` from `Tree::Common` and can patch both.
 
+### The common tree must hold only the build's own edits
+
+Every Photon build on the host shares the common tree, and the driver restores
+only the files it patches there. So `build`, `build-iso` and a `run` that would
+build all refuse while that tree carries an edit the harness did not make, and
+name each file with its modification time:
+
+```
+sharukhan: /root/common carries edits the build did not make, and every ISO built now would carry them too:
+   M common/data/packages_appliance.json  (modified 2026-09-24 14:03:45)
+```
+
+On 2026-09-26 such an edit - an installer initrd list without stig-hardening -
+went into every gate ISO, and every STIG row stalled in the installer. Stash
+the edits in that checkout, or name them in `MC_COMMON_EDITS_ALLOWED` if they
+are meant to ship.
+
 ### Test-only changes are compiled in
 
 `canister_equivalent` and the sans-snapshot package-builder fix have no

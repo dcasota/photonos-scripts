@@ -1020,6 +1020,7 @@ fn cmd_build(args: &Args) -> Result<(), String> {
         // The cascade runs build.py against the common tree, the stage and
         // fixed-name sandbox containers that every other Photon build uses.
         crate::runner::wait_for_idle(args.wait_idle)?;
+        build::refuse_foreign_common_edits(&config::Config::load())?;
     }
     // --deliver-only installs an ISO that already exists into --out, writing
     // the cache side-cars, without running a single build phase. Re-running

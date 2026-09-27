@@ -101,7 +101,129 @@ pub fn plan(
             patch.display()
         ));
     }
+    refuse_foreign_common_edits(cfg)?;
     Ok(Plan::Build(iso))
+}
+
+/// Common-tree paths the build writes itself. Everything else that differs
+/// from the checkout's HEAD was put there by someone else.
+const HARNESS_COMMON_PATHS: &[&str] = &[
+    "build-config.json",                         // rewired by the driver every run
+    "common/data/mc_pkg_build_options.json",     // generated canister macros
+    "support/package-builder/run-in-chroot.sh",  // fixup: run-in-chroot-fd-255
+    "support/package-builder/ToolChainUtils.py", // embedded: sans-snapshot-local-canister
+];
+
+/// Refuse to build while the common tree carries edits the harness did not
+/// make.
+///
+/// The driver restores every dirty file in the RELEASE tree, but in the
+/// common tree only the files it patches: anything else is built as found.
+/// On 2026-09-26 another session's uncommitted
+/// common/data/packages_installer_initrd.json - without stig-hardening -
+/// went into all six gate ISOs, and every STIG row stalled in the installer
+/// after writing /etc/fstab. The common tree is shared by every Photon build
+/// on the host, so this is strict: guessing which foreign edit cannot matter
+/// is exactly how that one got in. An operator who has decided otherwise names
+/// the paths in MC_COMMON_EDITS_ALLOWED (comma-separated).
+pub fn refuse_foreign_common_edits(cfg: &Config) -> Result<(), String> {
+    let tree = cfg.build_root.join(&cfg.build_common);
+    if !tree.join(".git").exists() {
+        return Ok(()); // not cloned yet: the driver clones it clean
+    }
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(&tree)
+        .args(["status", "--porcelain", "--untracked-files=all"])
+        .output()
+        .map_err(|e| format!("git status in {}: {e}", tree.display()))?;
+    if !out.status.success() {
+        return Err(format!(
+            "git status in {} failed: {}",
+            tree.display(),
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    let allowed: Vec<String> = std::env::var("MC_COMMON_EDITS_ALLOWED")
+        .unwrap_or_default()
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    let owned = harness_common_paths(cfg);
+    let foreign = foreign_edits(&String::from_utf8_lossy(&out.stdout), &owned, &allowed);
+    if foreign.is_empty() {
+        return Ok(());
+    }
+    // The modification time is what ties an edit to whoever made it: git
+    // status says what differs, not when or by which of the builds sharing
+    // this tree.
+    let foreign: Vec<String> = foreign
+        .into_iter()
+        .map(|line| {
+            let when = line
+                .get(3..)
+                .and_then(|p| fs::metadata(tree.join(p)).ok())
+                .and_then(|m| m.modified().ok())
+                .map(|t| {
+                    let secs = t
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0);
+                    Command::new("date")
+                        .args(["-d", &format!("@{secs}"), "+%F %T"])
+                        .output()
+                        .ok()
+                        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                        .unwrap_or_default()
+                })
+                .unwrap_or_default();
+            if when.is_empty() { line } else { format!("{line}  (modified {when})") }
+        })
+        .collect();
+    Err(format!(
+        "{} carries edits the build did not make, and every ISO built now would \
+         carry them too:\n  {}\nCommit or stash them in that checkout (git stash push -u \
+         -m <tag>), or, if they are meant to ship, name them in MC_COMMON_EDITS_ALLOWED.",
+        tree.display(),
+        foreign.join("\n  ")
+    ))
+}
+
+/// [`HARNESS_COMMON_PATHS`] plus whatever common-fixes.patch touches.
+fn harness_common_paths(cfg: &Config) -> Vec<String> {
+    let mut owned: Vec<String> = HARNESS_COMMON_PATHS.iter().map(|s| s.to_string()).collect();
+    let fixes = cfg.variant_patches.join("common-fixes.patch");
+    if let Ok(text) = fs::read_to_string(&fixes) {
+        for line in text.lines() {
+            if let Some(rest) = line.strip_prefix("diff --git a/") {
+                if let Some(path) = rest.split(" b/").next() {
+                    owned.push(path.to_string());
+                }
+            }
+        }
+    }
+    owned
+}
+
+/// The paths in `git status --porcelain` output that are neither owned nor
+/// explicitly allowed. A rename counts under both names.
+fn foreign_edits(porcelain: &str, owned: &[String], allowed: &[String]) -> Vec<String> {
+    let mut out = Vec::new();
+    for line in porcelain.lines() {
+        if line.len() < 4 {
+            continue;
+        }
+        let (code, paths) = line.split_at(3);
+        for p in paths.split(" -> ") {
+            let p = p.trim().trim_matches('"');
+            if owned.iter().any(|o| o == p) || allowed.iter().any(|a| a == p) {
+                continue;
+            }
+            out.push(format!("{}{p}", code));
+        }
+    }
+    out
 }
 
 pub fn resolve(
@@ -1071,6 +1193,36 @@ fn build_variant(
 mod tests {
     use super::*;
 
+    /// The 2026-09-26 contamination, as `git status --porcelain` showed it.
+    #[test]
+    fn a_foreign_edit_in_the_common_tree_is_named() {
+        let status = " M build-config.json\n \
+                      M common/data/packages_installer_initrd.json\n \
+                      M support/package-builder/run-in-chroot.sh\n \
+                      M support/spec-checker/check_spec.py\n\
+                      ?? common/data/mc_pkg_build_options.json\n";
+        let mut owned: Vec<String> = HARNESS_COMMON_PATHS.iter().map(|s| s.to_string()).collect();
+        owned.push("support/spec-checker/check_spec.py".into()); // from common-fixes.patch
+        assert_eq!(
+            foreign_edits(status, &owned, &[]),
+            vec![" M common/data/packages_installer_initrd.json".to_string()]
+        );
+    }
+
+    #[test]
+    fn an_explicitly_allowed_edit_passes_and_nothing_else_does() {
+        let status = " M common/data/packages_gce.json\n?? support/poi/new.yaml\n";
+        let allowed = vec!["common/data/packages_gce.json".to_string()];
+        assert_eq!(foreign_edits(status, &[], &allowed), vec!["?? support/poi/new.yaml".to_string()]);
+        assert!(foreign_edits("", &[], &[]).is_empty());
+    }
+
+    #[test]
+    fn a_rename_is_checked_under_both_names() {
+        let status = "R  common/data/a.json -> common/data/b.json\n";
+        assert_eq!(foreign_edits(status, &[], &[]).len(), 2);
+    }
+
     fn plan_cfg(tag: &str) -> (Config, std::path::PathBuf) {
         let root = std::env::temp_dir().join(format!("sharukhan-plan-{tag}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
@@ -1081,6 +1233,9 @@ mod tests {
         // resolve purges <photon_tree>/stage/RPMS; a test must never reach
         // the real tree, even through a regression.
         c.photon_tree = root.join("tree");
+        // plan checks <build_root>/<build_common> for foreign edits; a test
+        // must not depend on whatever the host's shared common tree holds.
+        c.build_root = root.clone();
         c.build_log_dir = root.join("logs");
         c.work = root.join("work");
         (c, root)
