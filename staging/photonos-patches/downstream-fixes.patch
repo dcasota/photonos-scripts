@@ -1,44 +1,667 @@
-diff --git a/SPECS/linux/linux.spec b/SPECS/linux/linux.spec
-index 9364a1278..c9e6d74ac 100644
---- a/SPECS/linux/linux.spec
-+++ b/SPECS/linux/linux.spec
-@@ -77,7 +77,7 @@
- Summary:        Kernel
- Name:           linux
- Version:        6.12.87
--Release:        2%{?acvp_build:.acvp}%{?kat_build:.kat}%{?dist}
-+Release:        3%{?acvp_build:.acvp}%{?kat_build:.kat}%{?dist}
- URL:            http://www.kernel.org/
- Group:          System Environment/Kernel
- Vendor:         VMware, Inc.
-@@ -692,6 +692,16 @@ sed -i "/# CONFIG_GCC_PLUGIN_MATCH_CANISTER_STRUCTS is not set/d" .config
- sed -i "s/# CONFIG_GCC_PLUGIN_MATCH_CANISTER_STRUCTS is not set/CONFIG_GCC_PLUGIN_MATCH_CANISTER_STRUCTS=y/" .config
- %endif
+diff --git a/SPECS/90/Linux-PAM/Linux-PAM.spec b/SPECS/90/Linux-PAM/Linux-PAM.spec
+index dac1dc4c3..ec499cb41 100644
+--- a/SPECS/90/Linux-PAM/Linux-PAM.spec
++++ b/SPECS/90/Linux-PAM/Linux-PAM.spec
+@@ -1,11 +1,14 @@
+ %global build_if %{photon_subrelease} <= 90
  
-+# When fips=0 (e.g. aarch64 default, or x86_64 fips override), neither the
-+# canister_build nor canister_usage branch above runs, so the patch that adds
-+# the GCC_PLUGIN_{MATCH,PAD}_CANISTER_STRUCTS Kconfig symbols is never applied.
-+# The shipped .config still has their "is not set" comments; `make olddefconfig`
-+# silently drops them and the check_for_config_applicability.inc diff guard then
-+# fails %prep. Strip them up-front so the diff stays clean. (PR #14)
-+%if 0%{?fips} == 0
-+sed -i '/CONFIG_GCC_PLUGIN_MATCH_CANISTER_STRUCTS/d;/CONFIG_GCC_PLUGIN_PAD_CANISTER_STRUCTS/d' .config
+-%define STIG_HARDEN 0
++# Default off, but overridable from pkg_build_options.json / rpmbuild -D.
++# A plain define of STIG_HARDEN here would win over -D and make every
++# STIG conditional in this spec permanently unreachable, and untested.
++%{!?STIG_HARDEN: %global STIG_HARDEN 0}
+ 
+ Summary:        Linux Pluggable Authentication Modules
+ Name:           Linux-PAM
+ Version:        1.5.3
+-Release:        11.1.1%{?dist}
++Release:        11.1.2%{?dist}
+ URL:            https://github.com/linux-pam/linux-pam
+ Group:          System Environment/Security
+ Vendor:         VMware, Inc.
+@@ -170,6 +173,13 @@ rm -rf %{buildroot}/*
+ %{_libdir}/pkgconfig/*.pc
+ 
+ %changelog
++* Mon Aug 31 2026 Daniel Casota <dcasota@gmail.com> 1.5.3-11.1.2
++- Replace the plain define of STIG_HARDEN with a define-if-unset so the flag
++  can be set from pkg_build_options.json or rpmbuild -D. A plain define in the
++  spec body beats -D, so every STIG conditional in this spec was unreachable
++  and had never been parsed or built in any constellation.
++- No change to the default build: with STIG_HARDEN unset the value is still 0
++  and the expanded spec is identical.
+ * Thu May 14 2026 Shreenidhi Shedi <shreenidhi.shedi@broadcom.com> 1.5.3-11.1.1
+ - Bump after moving to SPECS/90
+ * Thu Feb 19 2026 Shreenidhi Shedi <shreenidhi.shedi@broadcom.com> 1.5.3-11.1
+diff --git a/SPECS/90/libpwquality/libpwquality.spec b/SPECS/90/libpwquality/libpwquality.spec
+index 6be802d4b..89edf1cb3 100644
+--- a/SPECS/90/libpwquality/libpwquality.spec
++++ b/SPECS/90/libpwquality/libpwquality.spec
+@@ -1,11 +1,14 @@
+ %global build_if %{photon_subrelease} <= 90
+ 
+-%define STIG_HARDEN 0
++# Default off, but overridable from pkg_build_options.json / rpmbuild -D.
++# A plain define of STIG_HARDEN here would win over -D and make every
++# STIG conditional in this spec permanently unreachable, and untested.
++%{!?STIG_HARDEN: %global STIG_HARDEN 0}
+ 
+ Summary:        It provides common functions for password quality checking
+ Name:           libpwquality
+ Version:        1.4.4
+-Release:        7.1.1%{?dist}
++Release:        7.1.2%{?dist}
+ URL:            https://github.com/libpwquality/libpwquality
+ Group:          System Environment/Libraries
+ Vendor:         VMware, Inc.
+@@ -101,6 +104,13 @@ find %{buildroot}%{python3_sitelib}/ -name '*.pyc' -delete -o \
+ %{python3_sitearch}/pwquality-*.egg/*
+ 
+ %changelog
++* Mon Aug 31 2026 Daniel Casota <dcasota@gmail.com> 1.4.4-7.1.2
++- Replace the plain define of STIG_HARDEN with a define-if-unset so the flag
++  can be set from pkg_build_options.json or rpmbuild -D. A plain define in the
++  spec body beats -D, so every STIG conditional in this spec was unreachable
++  and had never been parsed or built in any constellation.
++- No change to the default build: with STIG_HARDEN unset the value is still 0
++  and the expanded spec is identical.
+ * Fri May 15 2026 Vamsi Krishna Brahmajosyula <vamsi-krishna.brahmajosyula@broadcom.com> 1.4.4-7.1.1
+ - Adjusted to build for subrelease 90
+ * Wed Mar 18 2026 Prashant S Chauhan <prashant.singh-chauhan@broadcom.com> 1.4.4-7.1
+diff --git a/SPECS/90/openssh/openssh.spec b/SPECS/90/openssh/openssh.spec
+index 742f68974..d686d4b9b 100644
+--- a/SPECS/90/openssh/openssh.spec
++++ b/SPECS/90/openssh/openssh.spec
+@@ -1,5 +1,8 @@
+ %global build_if %{photon_subrelease} <= 90
+-%define STIG_HARDEN 0
++# Default off, but overridable from pkg_build_options.json / rpmbuild -D.
++# A plain define of STIG_HARDEN here would win over -D and make every
++# STIG conditional in this spec permanently unreachable, and untested.
++%{!?STIG_HARDEN: %global STIG_HARDEN 0}
+ 
+ %define privsep_path %{_datadir}/empty.sshd
+ %global sshd_services sshd.service sshd-keygen.service
+@@ -7,7 +10,7 @@
+ Summary:        Free version of the SSH connectivity tools
+ Name:           openssh
+ Version:        9.3p2
+-Release:        21.2%{?dist}
++Release:        21.3%{?dist}
+ URL:            https://www.openssh.com
+ Group:          System Environment/Security
+ Vendor:         VMware, Inc.
+@@ -252,6 +255,13 @@ rm -rf %{buildroot}/*
+ %{_unitdir}/sshd@.service
+ 
+ %changelog
++* Mon Aug 31 2026 Daniel Casota <dcasota@gmail.com> 9.3p2-21.3
++- Replace the plain define of STIG_HARDEN with a define-if-unset so the flag
++  can be set from pkg_build_options.json or rpmbuild -D. A plain define in the
++  spec body beats -D, so every STIG conditional in this spec was unreachable
++  and had never been parsed or built in any constellation.
++- No change to the default build: with STIG_HARDEN unset the value is still 0
++  and the expanded spec is identical.
+ * Wed Jul 29 2026 Shreenidhi Shedi <shreenidhi.shedi@broadcom.com> 9.3p2-21.2
+ - CVE fixes, CVE-2026-59995 through CVE-2026-60002
+ * Fri May 15 2026 Vamsi Krishna Brahmajosyula <vamsi-krishna.brahmajosyula@broadcom.com> 9.3p2-21.1
+diff --git a/SPECS/90/stig-hardening/fix-selinux-relabel-first-boot.patch b/SPECS/90/stig-hardening/fix-selinux-relabel-first-boot.patch
+new file mode 100644
+index 000000000..51d37fe16
+--- /dev/null
++++ b/SPECS/90/stig-hardening/fix-selinux-relabel-first-boot.patch
+@@ -0,0 +1,84 @@
++From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
++From: Factory AI Bot <factory-droid[bot]@users.noreply.github.com>
++Date: Thu, 09 Apr 2026 15:00:00 +0200
++Subject: [PATCH] Add first-boot SELinux filesystem relabel service
++
++Install a oneshot systemd service (selinux-relabel.service) that
++runs 'restorecon -R /' on first boot when /.selinux-relabel exists.
++
++The installer kernel has SELinux compiled in but boots with no
++policy loaded, so lsetxattr for security.selinux returns EINVAL --
++install-time labeling is not possible. Files created or modified by
++the STIG Ansible playbook during installation therefore have no
++SELinux labels (unlabeled_t). When the installed system boots with
++SELINUX=enforcing, confined processes are denied access to these
++files, breaking login, networking, and audit.
++
++The service runs After=local-fs.target Before=getty-pre.target so
++the filesystem is relabeled before the login prompt appears. It
++removes its trigger file on completion and is a no-op on subsequent
++boots.
++
++Known limitation: on systemd v257 (Photon 5.0 subrelease >= 92),
++early services (auditd, systemd-sysctl, systemd-networkd) may race
++with the relabel and fail on first boot. Login itself works. A
++reboot resolves all failures. See PR description for fix options.
++
++Signed-off-by: Factory AI Bot <factory-droid[bot]@users.noreply.github.com>
++---
++diff -ruN a/files/selinux-relabel.service b/files/selinux-relabel.service
++--- a/files/selinux-relabel.service	1970-01-01 01:00:00.000000000 +0100
+++++ b/files/selinux-relabel.service	2026-04-09 14:10:05.308254403 +0200
++@@ -0,0 +1,15 @@
+++[Unit]
+++Description=SELinux Relabel Filesystem (first boot)
+++DefaultDependencies=no
+++After=local-fs.target
+++Before=getty-pre.target sysinit.target
+++ConditionPathExists=/.selinux-relabel
+++
+++[Service]
+++Type=oneshot
+++ExecStart=/usr/sbin/restorecon -R -e /proc -e /sys -e /dev /
+++ExecStartPost=/usr/bin/rm -f /.selinux-relabel
+++TimeoutSec=0
+++
+++[Install]
+++WantedBy=sysinit.target
++diff -ruN a/tasks/photon.yml b/tasks/photon.yml
++--- a/tasks/photon.yml	2026-04-09 14:10:05.298254183 +0200
+++++ b/tasks/photon.yml	2026-04-09 14:10:05.308254403 +0200
++@@ -2405,3 +2405,31 @@
++         - aidecheckoutput.rc is defined
++         - aidecheckoutput.rc != 0
++         - aideinstalled.stdout != ""
+++
+++###################################################################################################################################
+++# SELinux relabel - must be the very last task so all file changes are included
+++- name: Relabel filesystem for SELinux on first boot
+++  tags: [selinux_relabel]
+++  block:
+++    - name: Check if SELinux enforcing is configured
+++      ansible.builtin.command: grep -q '^SELINUX=enforcing' /etc/selinux/config
+++      register: selinux_enforcing
+++      failed_when: false
+++      changed_when: false
+++
+++    - name: Install SELinux relabel service
+++      ansible.builtin.copy:
+++        src: selinux-relabel.service
+++        dest: /usr/lib/systemd/system/selinux-relabel.service
+++        owner: root
+++        group: root
+++        mode: "0644"
+++      when: selinux_enforcing.rc == 0
+++
+++    - name: Enable SELinux relabel service
+++      ansible.builtin.command: systemctl enable selinux-relabel.service
+++      when: selinux_enforcing.rc == 0
+++
+++    - name: Create SELinux relabel trigger file
+++      ansible.builtin.command: touch /.selinux-relabel
+++      when: selinux_enforcing.rc == 0
++-- 
++2.43.7
+diff --git a/SPECS/90/stig-hardening/fix-stig-playbook-fips-pam.patch b/SPECS/90/stig-hardening/fix-stig-playbook-fips-pam.patch
+new file mode 100644
+index 000000000..c0fde335c
+--- /dev/null
++++ b/SPECS/90/stig-hardening/fix-stig-playbook-fips-pam.patch
+@@ -0,0 +1,79 @@
++From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
++From: Factory AI Bot <factory-droid[bot]@users.noreply.github.com>
++Date: Thu, 02 Apr 2026 15:00:00 +0200
++Subject: [PATCH] Fix STIG playbook: PAM stack, FIPS module config, IMA hash
++
++1) Fix PHTN-50-000192 pam_faillock.so setup: regex_search() in
++   set_fact returns None when no match. The comparison
++   'preauthsearch == ""' evaluates to False when preauthsearch is
++   None, causing the cleanup step to be skipped while add steps
++   still run, corrupting the PAM auth stack with duplicate entries.
++   Use '| default("")' so None is treated as empty string.
++   (Backward-compatible: no-op when value is already a string on
++   older Ansible.)
++
++2) Add ima_hash=sha256 kernel parameter when fips=1 is active.
++   FIPS mode disables sha1 but IMA defaults to sha1, causing
++   allocation failures during boot.
++
++3) Generate /etc/ssl/fipsmodule.cnf via 'openssl fipsinstall' when
++   the FIPS provider module is present but fipsmodule.cnf is missing.
++   Without it, booting with fips=1 causes OpenSSL to fail to
++   initialize FIPS mode and pam_unix.so cannot verify passwords.
++
++Signed-off-by: Factory AI Bot <factory-droid[bot]@users.noreply.github.com>
++---
++diff -ruN a/tasks/photon.yml b/tasks/photon.yml
++--- a/tasks/photon.yml	2026-04-02 14:09:20.577266299 +0200
+++++ b/tasks/photon.yml	2026-04-02 14:10:05.298254183 +0200
++@@ -305,6 +305,17 @@
++         - run_openssl_fips_install | bool
++         - opensslfipsinstalled.stdout == ""
++ 
+++    - name: PHTN-50-000013 - Check if FIPS module is present
+++      ansible.builtin.stat:
+++        path: /usr/lib/ossl-modules/fips.so
+++      register: fips_module_file
+++
+++    - name: PHTN-50-000013 - Generate FIPS module config if missing
+++      ansible.builtin.command: openssl fipsinstall -out /etc/ssl/fipsmodule.cnf -module /usr/lib/ossl-modules/fips.so
+++      args:
+++        creates: /etc/ssl/fipsmodule.cnf
+++      when: fips_module_file.stat.exists
+++
++ ###################################################################################################################################
++ - name: PHTN-50-000014 - Configure auditd.conf write_logs
++   tags: [PHTN-50-000014, auditd]
++@@ -1183,6 +1194,12 @@
++         regexp: '^(\s*linux(?!.* fips=).*)'
++         replace: '\1 fips=1'
++ 
+++    - name: PHTN-50-000182 - Add ima_hash=sha256 when fips=1 is active
+++      ansible.builtin.replace:
+++        path: '{{ var_grub_conf_file }}'
+++        regexp: '^(\s*linux(?!.* ima_hash=).*fips=1.*)'
+++        replace: '\1 ima_hash=sha256'
+++
++     - name: PHTN-50-000080 - Replace fips=1 in /boot/grub2/grub.cfg
++       ansible.builtin.replace:
++         path: '{{ var_grub_conf_file }}'
++@@ -1320,7 +1337,7 @@
++         state: absent
++         regexp: '^auth\s+(required|requisite|\[default=die\])\s+pam_faillock\.so.*$'
++       when:
++-        - preauthsearch == "" or authfailsearch == ""
+++        - preauthsearch | default('') == "" or authfailsearch | default('') == ""
++ 
++     - name: Ensure pam_unix.so auth control is 'sufficient' in system-auth if it is 'required'
++       ansible.builtin.replace:
++@@ -1375,7 +1392,7 @@
++         module_path: pam_faillock.so
++         state: absent
++       when:
++-        - sysaccountsearch == ""
+++        - sysaccountsearch | default('') == ""
++ 
++     - name: PHTN-50-000192 - Add pam_faillock.so to system-account if it doesn't exist
++       community.general.pamd:
++-- 
++2.43.7
+diff --git a/SPECS/90/stig-hardening/stig-hardening.spec b/SPECS/90/stig-hardening/stig-hardening.spec
+index 981cf86ed..d23a734ea 100644
+--- a/SPECS/90/stig-hardening/stig-hardening.spec
++++ b/SPECS/90/stig-hardening/stig-hardening.spec
+@@ -4,7 +4,7 @@ Summary:        VMware Photon OS 5.0 STIG Readiness Guide Ansible Playbook
+ Name:           stig-hardening
+ #Version x.y.z corresponds v<x>r<y>-z tag in the repo. Eg 1.1.1 = v1r1-1
+ Version:        2.1
+-Release:        5.1.1%{?dist}
++Release:        5.1.2%{?dist}
+ URL:            https://github.com/vmware/dod-compliance-and-automation/tree/master/photon/5.0/ansible/vmware-photon-5.0-stig-ansible-hardening
+ Group:          Productivity/Security
+ Vendor:         VMware, Inc.
+@@ -22,6 +22,8 @@ Source1: license.txt
+ 
+ Patch0: fix-some-value-checks.patch
+ Patch1: system-auth-fix.patch
++Patch2: fix-stig-playbook-fips-pam.patch
++Patch3: fix-selinux-relabel-first-boot.patch
+ 
+ Requires: ansible >= 2.14.2
+ Requires: ansible-community-general
+@@ -43,6 +45,8 @@ cp -a %{_builddir}/%{name}-ph5-%{version}/ %{buildroot}%{_datadir}/ansible/%{nam
+ %{_datadir}/ansible/
+ 
+ %changelog
++* Fri Jun 05 2026 Daniel Casota <dcasota@gmail.com> 2.1-5.1.2
++- Backport first-boot SELinux relabel service + FIPS PAM fixes to subrelease 90
+ * Fri May 15 2026 Vamsi Krishna Brahmajosyula <vamsi-krishna.brahmajosyula@broadcom.com> 2.1-5.1.1
+ - Adjusted to build for subrelease 90
+ * Wed Apr 01 2026 Shreenidhi Shedi <shreenidhi.shedi@broadcom.com> 2.1-5.1
+diff --git a/SPECS/90/systemd/systemd.spec b/SPECS/90/systemd/systemd.spec
+index 3e1fc2f45..e10050ec2 100644
+--- a/SPECS/90/systemd/systemd.spec
++++ b/SPECS/90/systemd/systemd.spec
+@@ -1,13 +1,16 @@
+ %global build_if %{photon_subrelease} <= 90
+ 
+-%define STIG_HARDEN 0
++# Default off, but overridable from pkg_build_options.json / rpmbuild -D.
++# A plain define of STIG_HARDEN here would win over -D and make every
++# STIG conditional in this spec permanently unreachable, and untested.
++%{!?STIG_HARDEN: %global STIG_HARDEN 0}
+ 
+ %global udev_services %{name}-udevd.service %{name}-udev-settle.service %{name}-udev-trigger.service %{name}-udevd-control.socket %{name}-udevd-kernel.socket %{name}-timesyncd.service
+ 
+ Name:           systemd
+ URL:            http://www.freedesktop.org/wiki/Software/systemd
+ Version:        253.19
+-Release:        17.2.2%{?dist}
++Release:        17.2.3%{?dist}
+ Summary:        System and Service Manager
+ Group:          System Environment/Security
+ Vendor:         VMware, Inc.
+@@ -704,6 +707,13 @@ udevadm hwdb --update &>/dev/null || :
+ %files lang -f ../%{name}.lang
+ 
+ %changelog
++* Mon Aug 31 2026 Daniel Casota <dcasota@gmail.com> 253.19-17.2.3
++- Replace the plain define of STIG_HARDEN with a define-if-unset so the flag
++  can be set from pkg_build_options.json or rpmbuild -D. A plain define in the
++  spec body beats -D, so every STIG conditional in this spec was unreachable
++  and had never been parsed or built in any constellation.
++- No change to the default build: with STIG_HARDEN unset the value is still 0
++  and the expanded spec is identical.
+ * Thu May 21 2026 Shreenidhi Shedi <shreenidhi.shedi@broadcom.com> 253.19-17.2.2
+ - Fix CVE-2026-40225, CVE-2026-40226
+ * Thu May 14 2026 Shreenidhi Shedi <shreenidhi.shedi@broadcom.com> 253.19-17.2.1
+diff --git a/SPECS/Linux-PAM/Linux-PAM.spec b/SPECS/Linux-PAM/Linux-PAM.spec
+index 2c79023df..6d34e4f06 100644
+--- a/SPECS/Linux-PAM/Linux-PAM.spec
++++ b/SPECS/Linux-PAM/Linux-PAM.spec
+@@ -1,11 +1,14 @@
+ %global build_if %{photon_subrelease} >= 91
+ 
+-%define STIG_HARDEN 0
++# Default off, but overridable from pkg_build_options.json / rpmbuild -D.
++# A plain define of STIG_HARDEN here would win over -D and make every
++# STIG conditional in this spec permanently unreachable, and untested.
++%{!?STIG_HARDEN: %global STIG_HARDEN 0}
+ 
+ Summary:        Linux Pluggable Authentication Modules
+ Name:           Linux-PAM
+ Version:        1.7.2
+-Release:        3%{?dist}
++Release:        4%{?dist}
+ URL:            https://github.com/linux-pam/linux-pam
+ Group:          System Environment/Security
+ Vendor:         VMware, Inc.
+@@ -150,6 +153,13 @@ rm -rf %{buildroot}/*
+ %{_libdir}/pkgconfig/*.pc
+ 
+ %changelog
++* Mon Aug 31 2026 Daniel Casota <dcasota@gmail.com> 1.7.2-4
++- Replace the plain define of STIG_HARDEN with a define-if-unset so the flag
++  can be set from pkg_build_options.json or rpmbuild -D. A plain define in the
++  spec body beats -D, so every STIG conditional in this spec was unreachable
++  and had never been parsed or built in any constellation.
++- No change to the default build: with STIG_HARDEN unset the value is still 0
++  and the expanded spec is identical.
+ * Thu May 21 2026 Shivani Agarwal <shivani.agarwal@broadcom.com> 1.7.2-3
+ - Remove libnsl depndency
+ * Thu May 14 2026 Shreenidhi Shedi <shreenidhi.shedi@broadcom.com> 1.7.2-2
+diff --git a/SPECS/aide/aide.spec b/SPECS/aide/aide.spec
+index 204408a7b..dae1c32ee 100644
+--- a/SPECS/aide/aide.spec
++++ b/SPECS/aide/aide.spec
+@@ -1,7 +1,7 @@
+ Summary:        Intrusion detection environment
+ Name:           aide
+ Version:        0.19
+-Release:        2%{?dist}
++Release:        3%{?dist}
+ URL:            https://github.com/aide/aide
+ Group:          System Environment/Base
+ Vendor:         VMware, Inc.
+@@ -37,7 +37,20 @@ BuildRequires: check-devel
+ Requires: pcre2
+ Requires: libgpg-error
+ Requires: openssl
++# libgcrypt must be at least the version aide is built against. The
++# auto-generated soname dependency (libgcrypt.so.20(GCRYPT_1.6)) is satisfied by
++# 1.10.1 as well, so an unversioned Requires lets an already-installed 1.10.1
++# satisfy the install and libgcrypt is never upgraded. The stig-hardening role
++# works around that by running "tdnf -y install aide libgcrypt" by hand
++# (tasks/photon.yml, "Currently a bug in the aide package that does not upgrade
++# libgcrypt to the needed version"). Expressing it here removes the need for the
++# workaround. Guarded because libgcrypt is 1.10.4 only for subrelease >= 91;
++# subrelease <= 90 ships SPECS/90/libgcrypt at 1.10.1.
++%if 0%{photon_subrelease} >= 91
++Requires: libgcrypt >= 1.10.4
++%else
+ Requires: libgcrypt
++%endif
+ Requires: audit
+ Requires: libacl
+ Requires: attr
+@@ -99,6 +112,8 @@ rm -rf %{buildroot}/*
+ %{_var}/log/%{name}
+ 
+ %changelog
++* Mon Aug 31 2026 Daniel Casota <dcasota@gmail.com> 0.19-3
++- Require libgcrypt >= 1.10.4 so it is upgraded rather than left at 1.10.1
+ * Wed Mar 11 2026 Brennan Lamoreaux <brennan.lamoreaux@broadcom.com> 0.19-2
+ - Migrate from pcre to pcre2
+ * Tue Oct 07 2025 Harinadh Dommaraju <harinadh.dommaraju@broadcom.com> 0.19-1
+diff --git a/SPECS/libpwquality/libpwquality.spec b/SPECS/libpwquality/libpwquality.spec
+index 08930565e..3495caf19 100644
+--- a/SPECS/libpwquality/libpwquality.spec
++++ b/SPECS/libpwquality/libpwquality.spec
+@@ -1,11 +1,14 @@
+ %global build_if %{photon_subrelease} >= 91
+ 
+-%define STIG_HARDEN 0
++# Default off, but overridable from pkg_build_options.json / rpmbuild -D.
++# A plain define of STIG_HARDEN here would win over -D and make every
++# STIG conditional in this spec permanently unreachable, and untested.
++%{!?STIG_HARDEN: %global STIG_HARDEN 0}
+ 
+ Summary:        It provides common functions for password quality checking
+ Name:           libpwquality
+ Version:        1.4.4
+-Release:        9%{?dist}
++Release:        10%{?dist}
+ URL:            https://github.com/libpwquality/libpwquality
+ Group:          System Environment/Libraries
+ Vendor:         VMware, Inc.
+@@ -102,6 +105,13 @@ find %{buildroot}%{python3_sitelib}/ -name '*.pyc' -delete -o \
+ %{python3_sitearch}/*.so
+ 
+ %changelog
++* Mon Aug 31 2026 Daniel Casota <dcasota@gmail.com> 1.4.4-10
++- Replace the plain define of STIG_HARDEN with a define-if-unset so the flag
++  can be set from pkg_build_options.json or rpmbuild -D. A plain define in the
++  spec body beats -D, so every STIG conditional in this spec was unreachable
++  and had never been parsed or built in any constellation.
++- No change to the default build: with STIG_HARDEN unset the value is still 0
++  and the expanded spec is identical.
+ * Fri May 15 2026 Vamsi Krishna Brahmajosyula <vamsi-krishna.brahmajosyula@broadcom.com> 1.4.4-9
+ - Extended to build for subrelease 91 and above
+ * Tue Dec 09 2025 Prashant S Chauhan <prashant.singh-chauhan@broadcom.com> 1.4.4-8
+diff --git a/SPECS/linux/canister_config.inc b/SPECS/linux/canister_config.inc
+new file mode 100644
+index 000000000..6ba748b12
+--- /dev/null
++++ b/SPECS/linux/canister_config.inc
+@@ -0,0 +1,34 @@
++%dnl Shared canister/.config manipulation for the Photon kernel flavours.
++%dnl
++%dnl Included by both SPECS/linux/linux.spec and SPECS/linux/linux-esx.spec so
++%dnl that the FIPS canister Kconfig handling cannot diverge between the two
++%dnl flavours again. Historically linux.spec had no fips=0 branch at all, so on
++%dnl aarch64 (fips=0) the canister "is not set" comments were left in .config;
++%dnl "make olddefconfig" silently drops symbols that do not exist in the tree
++%dnl and the check_for_config_applicability.inc diff guard then failed.
++%dnl
++%dnl Expects, from the including spec:
++%dnl   fips           1 => build a FIPS kernel carrying the crypto canister
++%dnl   canister_build 1 => the canister is built from source in this build
++%dnl   canister_usage 1 => link against a prebuilt canister object file
++%dnl                       (derived: !canister_build when fips=1, else 0)
++%dnl
++%dnl Expects .config to be in place already (cp of the flavour config Source).
++%dnl
++%dnl The GCC_PLUGIN_MATCH_CANISTER_STRUCTS / GCC_PLUGIN_PAD_CANISTER_STRUCTS
++%dnl Kconfig symbols only exist once the fips canister plugin patches have been
++%dnl applied, i.e. only when fips=1.
++%if 0%{?canister_build}
++sed -i "s/# CONFIG_GCC_PLUGIN_PAD_CANISTER_STRUCTS is not set/CONFIG_GCC_PLUGIN_PAD_CANISTER_STRUCTS=y/" .config
++sed -i "/# CONFIG_GCC_PLUGIN_MATCH_CANISTER_STRUCTS is not set/d" .config
 +%endif
 +
++%if 0%{?canister_usage}
++sed -i "s/# CONFIG_GCC_PLUGIN_MATCH_CANISTER_STRUCTS is not set/CONFIG_GCC_PLUGIN_MATCH_CANISTER_STRUCTS=y/" .config
++%endif
++
++%if 0%{?fips} == 0
++# Clean up .config of FIPS related configs
++sed -i "/# CONFIG_GCC_PLUGIN_MATCH_CANISTER_STRUCTS is not set/d" .config
++sed -i "/# CONFIG_GCC_PLUGIN_PAD_CANISTER_STRUCTS is not set/d" .config
++%endif
+diff --git a/SPECS/linux/linux-esx.spec b/SPECS/linux/linux-esx.spec
+index a54c3e684..b5c0edf49 100644
+--- a/SPECS/linux/linux-esx.spec
++++ b/SPECS/linux/linux-esx.spec
+@@ -26,10 +26,21 @@
+ %global fips 0
+ %endif
+ 
++# The esx flavour never builds the canister itself, it always links against the
++# prebuilt canister object file. Mirror linux.spec's derived flag model so the
++# shared canister_config.inc behaves identically for both flavours.
++%if 0%{?fips}
++%global canister_build 0
++%global canister_usage 1
++%else
++%global canister_build 0
++%global canister_usage 0
++%endif
++
+ Summary:        Kernel
+ Name:           linux-esx
+ Version:        6.12.103
+-Release:        11%{?dist}
++Release:        12%{?dist}
+ URL:            http://www.kernel.org
+ Group:          System Environment/Kernel
+ Vendor:         VMware, Inc.
+@@ -44,6 +55,8 @@ Source2:        initramfs.trigger
+ # contains pre, postun, filetriggerun tasks
+ Source3:        scriptlets.inc
+ Source4:        check_for_config_applicability.inc
++# shared canister/.config handling, also included by linux.spec
++Source5:        canister_config.inc
+ 
+ Source19:       spec_install_post.inc
+ 
+@@ -421,20 +434,15 @@ tar -xvf /usr/lib/fips-canister/fips-canister-%{fips_canister_version}.tar.bz2
+ # corresponding .cmd file. Empty content is ok, since we are not going
+ # to rebuild it.
+ touch crypto/.fips_canister.o.cmd
+-
+-sed -i "s/# CONFIG_GCC_PLUGIN_MATCH_CANISTER_STRUCTS is not set/CONFIG_GCC_PLUGIN_MATCH_CANISTER_STRUCTS=y/" .config
+ %else
+-# Clean up .config of FIPS related configs
+-sed -i "/# CONFIG_GCC_PLUGIN_MATCH_CANISTER_STRUCTS is not set/d" .config
+-sed -i "/# CONFIG_GCC_PLUGIN_PAD_CANISTER_STRUCTS is not set/d" .config
+-
+ sed -i "s/# CONFIG_CRYPTO_JITTERENTROPY_MEMSIZE_2 is not set/CONFIG_CRYPTO_JITTERENTROPY_MEMSIZE_2=y/" .config
+ sed -i "s/CONFIG_CRYPTO_JITTERENTROPY_MEMSIZE_32=y/# CONFIG_CRYPTO_JITTERENTROPY_MEMSIZE_32 is not set/" .config
+ 
+ sed -i "s/CONFIG_CRYPTO_JITTERENTROPY_MEMORY_BLOCKS=128/CONFIG_CRYPTO_JITTERENTROPY_MEMORY_BLOCKS=64/" .config
+ sed -i "s/CONFIG_CRYPTO_JITTERENTROPY_MEMORY_BLOCKSIZE=256/CONFIG_CRYPTO_JITTERENTROPY_MEMORY_BLOCKSIZE=32/" .config
+ %endif
+-
++%dnl canister/.config handling, shared with linux.spec
++%include %{SOURCE5}
  %ifarch x86_64
  sed -e "s,@@NAME@@,%{name},g" \
      -e "s,@@VERSION_RELEASE@@,%{version}-%{release},g" \
-@@ -973,6 +983,10 @@ ln -sf linux-%{uname_r}.cfg /boot/photon.cfg
+@@ -553,6 +561,11 @@ ln -sf linux-%{uname_r}.cfg /boot/photon.cfg
+ %{_usrsrc}/linux-headers-%{uname_r}
+ 
+ %changelog
++* Mon Aug 31 2026 Daniel Casota <dcasota@gmail.com> 6.12.103-12
++- Move canister/.config handling into shared canister_config.inc (Source5),
++  included by both linux.spec and linux-esx.spec so the two flavours cannot
++  diverge again. Behaviour-preserving here: this spec already handled fips=0
++  correctly in its else branch, and that logic is what the include adopts.
+ * Mon Aug 31 2026 Keerthana K <keerthana.kalyanasundaram@broadcom.com> 6.12.103-11
+ - Fix CVE-2026-68082
+ * Wed Aug 26 2026 Alexey Makhalov <alexey.makhalov@broadcom.com> 6.12.103-10
+diff --git a/SPECS/linux/linux.spec b/SPECS/linux/linux.spec
+index c07558be8..07e421f59 100644
+--- a/SPECS/linux/linux.spec
++++ b/SPECS/linux/linux.spec
+@@ -80,7 +80,7 @@
+ Summary:        Kernel
+ Name:           linux
+ Version:        6.12.103
+-Release:        10%{?acvp_build:.acvp}%{?kat_build:.kat}%{?dist}
++Release:        11%{?acvp_build:.acvp}%{?kat_build:.kat}%{?dist}
+ URL:            http://www.kernel.org/
+ Group:          System Environment/Kernel
+ Vendor:         VMware, Inc.
+@@ -99,6 +99,8 @@ Source3:        https://github.com/amzn/amzn-drivers/archive/refs/tags/ena_linux
+ %define efa_version 3.1.0
+ Source4:        https://github.com/amzn/amzn-drivers/archive/refs/tags/efa_linux_%{efa_version}.tar.gz
+ 
++# shared canister/.config handling, also included by linux-esx.spec
++Source5:        canister_config.inc
+ # contains pre, postun, filetriggerun tasks
+ Source6:        scriptlets.inc
+ Source7:        check_for_config_applicability.inc
+@@ -688,14 +690,7 @@ cat %{SOURCE20} %{SOURCE21} > photon-cert-bundle.pem
+ 
+ sed -i 's/CONFIG_LOCALVERSION=""/CONFIG_LOCALVERSION="-%{release}"/' .config
+ 
+-%if 0%{?canister_build}
+-sed -i "s/# CONFIG_GCC_PLUGIN_PAD_CANISTER_STRUCTS is not set/CONFIG_GCC_PLUGIN_PAD_CANISTER_STRUCTS=y/" .config
+-sed -i "/# CONFIG_GCC_PLUGIN_MATCH_CANISTER_STRUCTS is not set/d" .config
+-%endif
+-
+-%if 0%{?canister_usage}
+-sed -i "s/# CONFIG_GCC_PLUGIN_MATCH_CANISTER_STRUCTS is not set/CONFIG_GCC_PLUGIN_MATCH_CANISTER_STRUCTS=y/" .config
+-%endif
++%include %{SOURCE5}
+ 
+ %ifarch x86_64
+ sed -e "s,@@NAME@@,%{name},g" \
+@@ -978,6 +973,14 @@ ln -sf linux-%{uname_r}.cfg /boot/photon.cfg
  %endif
  
  %changelog
-+* Thu Jun 04 2026 Daniel Casota <dcasota@gmail.com> 6.12.87-3
-+- %prep: when fips=0, strip CONFIG_GCC_PLUGIN_{MATCH,PAD}_CANISTER_STRUCTS
-+  comments from .config before olddefconfig so the
-+  check_for_config_applicability.inc diff guard does not fail (PR #14)
- * Tue May 19 2026 Brennan Lamoreaux <brennan.lamoreaux@broadcom.com> 6.12.87-2
- - Fix CVE-2026-43083
- * Mon May 11 2026 Brennan Lamoreaux <brennan.lamoreaux@broadcom.com> 6.12.87-1
++* Mon Aug 31 2026 Daniel Casota <dcasota@gmail.com> 6.12.103-11
++- Move canister/.config handling into shared canister_config.inc (Source5),
++  included by both linux.spec and linux-esx.spec so the two flavours cannot
++  diverge again. This also fixes the fips=0 path here: linux.spec had two
++  independent canister_build/canister_usage blocks and no else branch, so on
++  aarch64 nothing stripped the GCC_PLUGIN_{MATCH,PAD}_CANISTER_STRUCTS
++  comments before olddefconfig and the check_for_config_applicability.inc
++  diff guard failed prep. linux-esx.spec had always handled this correctly.
+ * Mon Aug 31 2026 Keerthana K <keerthana.kalyanasundaram@broadcom.com> 6.12.103-10
+ - Fix CVE-2026-68082
+ * Tue Aug 25 2026 Ajay Kaher <ajay.kaher@broadcom.com> 6.12.103-9
+diff --git a/SPECS/openssh/openssh.spec b/SPECS/openssh/openssh.spec
+index 12a9a8278..e9a00c6d9 100644
+--- a/SPECS/openssh/openssh.spec
++++ b/SPECS/openssh/openssh.spec
+@@ -1,5 +1,8 @@
+ %global build_if %{photon_subrelease} >= 91
+-%define STIG_HARDEN 0
++# Default off, but overridable from pkg_build_options.json / rpmbuild -D.
++# A plain define of STIG_HARDEN here would win over -D and make every
++# STIG conditional in this spec permanently unreachable, and untested.
++%{!?STIG_HARDEN: %global STIG_HARDEN 0}
+ 
+ %define privsep_path %{_datadir}/empty.sshd
+ %global sshd_services sshd.service sshd-keygen.service
+@@ -7,7 +10,7 @@
+ Summary:        Free version of the SSH connectivity tools
+ Name:           openssh
+ Version:        10.4p1
+-Release:        3%{?dist}
++Release:        4%{?dist}
+ URL:            https://www.openssh.com
+ Group:          System Environment/Security
+ Vendor:         VMware, Inc.
+@@ -245,6 +248,13 @@ rm -rf %{buildroot}/*
+ %{_unitdir}/sshd@.service
+ 
+ %changelog
++* Mon Aug 31 2026 Daniel Casota <dcasota@gmail.com> 10.4p1-4
++- Replace the plain define of STIG_HARDEN with a define-if-unset so the flag
++  can be set from pkg_build_options.json or rpmbuild -D. A plain define in the
++  spec body beats -D, so every STIG conditional in this spec was unreachable
++  and had never been parsed or built in any constellation.
++- No change to the default build: with STIG_HARDEN unset the value is still 0
++  and the expanded spec is identical.
+ * Sat Aug 15 2026 Vamsi Krishna Brahmajosyula <vamsi-krishna.brahmajosyula@broadcom.com> 10.4p1-3
+ - Extend to build for 91 and above
+ * Fri Jul 24 2026 Shreenidhi Shedi <shreenidhi.shedi@broadcom.com> 10.4p1-2
 diff --git a/SPECS/photon-os-installer/0003-isoInstaller-fix-interactive-NoneType-crash.patch b/SPECS/photon-os-installer/0003-isoInstaller-fix-interactive-NoneType-crash.patch
 new file mode 100644
 index 000000000..35b60ca21
@@ -190,8 +813,133 @@ index 000000000..e921dffa4
 +-- 
 +2.43.7
 +
+diff --git a/SPECS/photon-os-installer/0006-stig-drop-redundant-packages.patch b/SPECS/photon-os-installer/0006-stig-drop-redundant-packages.patch
+new file mode 100644
+index 000000000..58eff7fed
+--- /dev/null
++++ b/SPECS/photon-os-installer/0006-stig-drop-redundant-packages.patch
+@@ -0,0 +1,56 @@
++From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
++From: Daniel Casota <dcasota@gmail.com>
++Date: Mon, 31 Aug 2026 03:10:00 +0200
++Subject: [PATCH] stigenable: drop three packages the hardening does not need
++
++Each added package is attack surface on a system whose purpose is to be
++hardened, so KS_STIG_PACKAGES should name only what the role actually uses.
++Three entries do not:
++
++libselinux-utils - the role never invokes any of its binaries (getenforce,
++setenforce, sestatus, restorecon, fixfiles); a grep over every *.yml in
++stig-hardening finds no reference. It is also already a Requires of
++selinux-policy, so it is installed either way and listing it changes nothing.
++The relabel service calls /usr/sbin/restorecon, which comes from
++policycoreutils, not from this package.
++
++ntp - installed and then never configured. handlers/main.yml defines
++"restart ntpd", "restart chrony" and "restart timesyncd", but no task
++notifies any of them, and outside handlers/main.yml the string "ntp" does not
++occur anywhere in the role: no ntp.conf/chrony.conf/timesyncd.conf task, no
++server or pool setting, and no PHTN control for time synchronisation among
++the 117 in the role. (README.md documents a var_ntp_servers extra-var that
++nothing consumes.) Photon 5.0 also has no package named ntp; it resolves to
++ntpsec via Provides. Removing it leaves a daemon uninstalled rather than
++installed-and-ignored.
++
++libgcrypt - present only to work around a packaging bug, as the role itself
++records at tasks/photon.yml: "Currently a bug in the aide package that does
++not upgrade libgcrypt to the needed version". The fix belongs in aide.spec,
++which now carries a versioned Requires, so the workaround is unnecessary.
++
++Time synchronisation being unimplemented is a separate finding and is not
++addressed here; this change only stops installing a package for it.
++
++Co-Authored-By: Daniel Casota <dcasota@gmail.com>
++---
++ photon_installer/stigenable.py | 3 ---
++ 1 file changed, 3 deletions(-)
++
++diff --git a/photon_installer/stigenable.py b/photon_installer/stigenable.py
++--- a/photon_installer/stigenable.py
+++++ b/photon_installer/stigenable.py
++@@ -23,10 +23,7 @@
++     "rsyslog",
++     "openssl-fips-provider",
++     "selinux-policy",
++-    "libselinux-utils",
++-    "ntp",
++-    "aide",
++-    "libgcrypt"
+++    "aide"
++ ]
++ 
++ 
++-- 
++2.51.0
+diff --git a/SPECS/photon-os-installer/0007-installer-seed-locale.conf-before-package-install.patch b/SPECS/photon-os-installer/0007-installer-seed-locale.conf-before-package-install.patch
+new file mode 100644
+index 000000000..a27e179ec
+--- /dev/null
++++ b/SPECS/photon-os-installer/0007-installer-seed-locale.conf-before-package-install.patch
+@@ -0,0 +1,57 @@
++From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
++From: Daniel Casota <dcasota@gmail.com>
++Date: Mon, 31 Aug 2026 00:00:00 +0000
++Subject: [PATCH] installer: seed /etc/locale.conf before package install
++
++The initramfs rpm ships a %transfiletriggerin that runs
++"mkinitrd -q /boot/initrd.img-$kver $kver" at the end of the package
++transaction performed by _install_packages(). dracut's 20i18n module
++checks for $I18N_CONF (/etc/locale.conf) and, when it is missing and
++i18n_vars is unset, reports
++
++  dracut[E]: i18n_vars not set!  Please set up i18n_vars in  configuration file.
++
++on the installer console right before the ansible run, and then falls
++back to install_all_kbd() - embedding every keymap in the initrd instead
++of the target's own.
++
++/etc/locale.conf is only created by m_locale, which runs in the
++POST_INSTALL phase, twelve steps after _install_packages(). The file is
++therefore guaranteed to be absent while the initrd is generated.
++
++Seed it in _initialize_system(), directly after the filesystem rpm that
++provides /etc is installed and before any package transaction can fire
++the trigger. m_locale is left untouched: it rewrites the same content
++and runs localedef, and it still covers the ostree install path where
++_initialize_system() is not called.
++
++Signed-off-by: Daniel Casota <dcasota@gmail.com>
++---
++ photon_installer/installer.py | 14 ++++++++++++++
++ 1 file changed, 14 insertions(+)
++
++--- a/photon_installer/installer.py
+++++ b/photon_installer/installer.py
++@@ -1300,6 +1300,20 @@
++             self.logger.error("Failed to install filesystem rpm")
++             self.exit_gracefully()
++ 
+++        # dracut's 20i18n module reads /etc/locale.conf when it builds an
+++        # initrd. The initramfs rpm installs a file trigger that runs mkinitrd
+++        # at the end of the package transaction started by _install_packages()
+++        # below - long before m_locale (POST_INSTALL) creates the file. Without
+++        # it dracut aborts i18n setup with
+++        #   "i18n_vars not set!  Please set up i18n_vars in  configuration file."
+++        # and falls back to embedding every keymap. Seed the file here so the
+++        # initrd is built with the target's locale; m_locale writes the same
+++        # content again later and additionally runs localedef.
+++        locale_conf_path = os.path.join(self.photon_root, "etc/locale.conf")
+++        os.makedirs(os.path.dirname(locale_conf_path), exist_ok=True)
+++        with open(locale_conf_path, "w") as locale_conf:
+++            locale_conf.write("LANG=en_US.UTF-8\n")
+++
++     def _mount_special_folders(self):
++         for d in ["/proc", "/dev", "/dev/pts", "/sys"]:
++             self._mount(d, d, bind=True, create=True)
++-- 
++2.43.7
 diff --git a/SPECS/photon-os-installer/photon-os-installer.spec b/SPECS/photon-os-installer/photon-os-installer.spec
-index 8113a9e17..c07ff98fe 100644
+index 8113a9e17..9ca964acb 100644
 --- a/SPECS/photon-os-installer/photon-os-installer.spec
 +++ b/SPECS/photon-os-installer/photon-os-installer.spec
 @@ -5,7 +5,7 @@
@@ -199,24 +947,36 @@ index 8113a9e17..c07ff98fe 100644
  Name:          photon-os-installer
  Version:       2.8
 -Release:       2%{?dist}
-+Release:       3%{?dist}
++Release:       5%{?dist}
  Group:         System Environment/Base
  Vendor:        VMware, Inc.
  Distribution:  Photon
-@@ -17,6 +17,9 @@ Source1: license.txt
+@@ -17,6 +17,11 @@ Source1: license.txt
  
  Patch0: 0001-Use-mkpasswd-to-generate-password-hash.patch
  Patch1: 0002-fix-up-old-public_key-syntax-for-backward-compatibil.patch
 +Patch2: 0003-isoInstaller-fix-interactive-NoneType-crash.patch
 +Patch3: 0004-installer-add-btrfs-progs.patch
 +Patch4: 0005-tdnf-capture-install-output.patch
++Patch5: 0006-stig-drop-redundant-packages.patch
++Patch6: 0007-installer-seed-locale.conf-before-package-install.patch
  
  BuildRequires: python3-devel
  BuildRequires: python3-pyinstaller
-@@ -71,6 +74,13 @@ rm -rf %{buildroot}
+@@ -71,6 +76,23 @@ rm -rf %{buildroot}
  %{_bindir}/photon-iso-builder
  
  %changelog
++* Mon Aug 31 2026 Daniel Casota <dcasota@gmail.com> 2.8-5
++- installer: seed /etc/locale.conf in _initialize_system() so the initrd built
++  by the initramfs file trigger during _install_packages() finds it; fixes
++  "dracut[E]: i18n_vars not set!" on the installer console and stops dracut
++  from falling back to embedding every keymap
++* Mon Aug 31 2026 Daniel Casota <dcasota@gmail.com> 2.8-4
++- stigenable: drop libselinux-utils (already a selinux-policy dep, never used
++  by the role), ntp (installed but never configured - no task notifies the
++  time-sync handlers) and libgcrypt (workaround for an aide packaging bug now
++  fixed by a versioned Requires in aide.spec)
 +* Thu Jun 04 2026 Daniel Casota <dcasota@gmail.com> 2.8-3
 +- isoInstaller: fix interactive (no-kickstart) install - no longer crashes
 +  (TypeError on a None config) or skips the disk-selection UI ("No disk
@@ -227,6 +987,39 @@ index 8113a9e17..c07ff98fe 100644
  * Fri May 15 2026 Vamsi Krishna Brahmajosyula <vamsi-krishna.brahmajosyula@broadcom.com> 2.8-2
  - Extended to build for subrelease 91 and above
  * Tue Apr 28 2026 Oliver Kurth <oliver.kurth@broadcom.com> 2.8-1
+diff --git a/SPECS/shadow/shadow.spec b/SPECS/shadow/shadow.spec
+index 91e2cccf2..9744a780c 100644
+--- a/SPECS/shadow/shadow.spec
++++ b/SPECS/shadow/shadow.spec
+@@ -1,9 +1,12 @@
+-%define STIG_HARDEN 0
++# Default off, but overridable from pkg_build_options.json / rpmbuild -D.
++# A plain define of STIG_HARDEN here would win over -D and make every
++# STIG conditional in this spec permanently unreachable, and untested.
++%{!?STIG_HARDEN: %global STIG_HARDEN 0}
+ 
+ Summary:        Programs for handling passwords in a secure way
+ Name:           shadow
+ Version:        4.13
+-Release:        14%{?dist}
++Release:        15%{?dist}
+ URL:            https://github.com/shadow-maint/shadow
+ Group:          Applications/System
+ Vendor:         VMware, Inc.
+@@ -221,6 +224,13 @@ rm -rf %{buildroot}/*
+ %defattr(-,root,root)
+ 
+ %changelog
++* Mon Aug 31 2026 Daniel Casota <dcasota@gmail.com> 4.13-15
++- Replace the plain define of STIG_HARDEN with a define-if-unset so the flag
++  can be set from pkg_build_options.json or rpmbuild -D. A plain define in the
++  spec body beats -D, so every STIG conditional in this spec was unreachable
++  and had never been parsed or built in any constellation.
++- No change to the default build: with STIG_HARDEN unset the value is still 0
++  and the expanded spec is identical.
+ * Tue Dec 09 2025 Shreenidhi Shedi <shreenidhi.shedi@broadcom.com> 4.13-14
+ - Add provides entries
+ * Mon Nov 17 2025 Shreenidhi Shedi <shreenidhi.shedi@broadcom.com> 4.13-13
 diff --git a/SPECS/stig-hardening/fix-selinux-relabel-first-boot.patch b/SPECS/stig-hardening/fix-selinux-relabel-first-boot.patch
 new file mode 100644
 index 000000000..51d37fe16
@@ -403,15 +1196,15 @@ index 000000000..c0fde335c
 +-- 
 +2.43.7
 diff --git a/SPECS/stig-hardening/stig-hardening.spec b/SPECS/stig-hardening/stig-hardening.spec
-index b0ac56b00..0c0eb7181 100644
+index 8d83d9507..fca225705 100644
 --- a/SPECS/stig-hardening/stig-hardening.spec
 +++ b/SPECS/stig-hardening/stig-hardening.spec
 @@ -4,7 +4,7 @@ Summary:        VMware Photon OS 5.0 STIG Readiness Guide Ansible Playbook
  Name:           stig-hardening
  #Version x.y.z corresponds v<x>r<y>-z tag in the repo. Eg 1.1.1 = v1r1-1
  Version:        2.1
--Release:        7%{?dist}
-+Release:        8%{?dist}
+-Release:        8%{?dist}
++Release:        9%{?dist}
  URL:            https://github.com/vmware/dod-compliance-and-automation/tree/master/photon/5.0/ansible/vmware-photon-5.0-stig-ansible-hardening
  Group:          Productivity/Security
  Vendor:         VMware, Inc.
@@ -428,11 +1221,205 @@ index b0ac56b00..0c0eb7181 100644
  %{_datadir}/ansible/
  
  %changelog
-+* Thu Jun 04 2026 Daniel Casota <dcasota@gmail.com> 2.1-8
++* Sun Aug 30 2026 Daniel Casota <dcasota@gmail.com> 2.1-9
 +- Fix PHTN-50-000192 pam_faillock PAM stack corruption (| default guard)
 +- Add ima_hash=sha256 kernel parameter when fips=1 is active
 +- Generate fipsmodule.cnf when FIPS provider is present but config is missing
 +- Add first-boot SELinux relabel service for unlabeled filesystems (PR #9)
+ * Wed Jun 17 2026 Shreenidhi Shedi <shreenidhi.shedi@broadcom.com> 2.1-8
+ - Revisit system-auth fix, the previous fix was incomplete
  * Fri May 15 2026 Vamsi Krishna Brahmajosyula <vamsi-krishna.brahmajosyula@broadcom.com> 2.1-7
- - Extended to build for subrelease 91 and above
- * Wed Apr 01 2026 Shreenidhi Shedi <shreenidhi.shedi@broadcom.com> 2.1-6
+diff --git a/SPECS/systemd/0004-Remove-unused-default-groups-rules-and-tmpfiles.patch b/SPECS/systemd/0004-Remove-unused-default-groups-rules-and-tmpfiles.patch
+index 2912b778d..7ad2e4063 100644
+--- a/SPECS/systemd/0004-Remove-unused-default-groups-rules-and-tmpfiles.patch
++++ b/SPECS/systemd/0004-Remove-unused-default-groups-rules-and-tmpfiles.patch
+@@ -5,27 +5,26 @@ Subject: [PATCH 4/4] Remove unused default groups, rules and tmpfiles
+ 
+ Some of these groups and users are also created by filesystem
+ ---
+- rules.d/50-udev-default.rules.in            | 11 ---------
++ rules.d/50-udev-default.rules.in            | 12 ----------
+  sysusers.d/basic.conf.in                    | 26 ---------------------
+- sysusers.d/systemd-journal.conf.in          |  2 --
+  sysusers.d/systemd-network.conf.in          |  2 --
+  sysusers.d/systemd-remote.conf              |  2 --
+  sysusers.d/systemd-resolve.conf.in          |  2 --
+  sysusers.d/systemd-timesync.conf.in         |  2 --
+  tmpfiles.d/static-nodes-permissions.conf.in |  3 ---
+- 8 files changed, 50 deletions(-)
++ 7 files changed, 49 deletions(-)
+ 
+ diff --git a/rules.d/50-udev-default.rules.in b/rules.d/50-udev-default.rules.in
+ index 8fa518cd8f..23f43d0409 100644
+ --- a/rules.d/50-udev-default.rules.in
+ +++ b/rules.d/50-udev-default.rules.in
+-@@ -53,13 +53,8 @@ SUBSYSTEM=="dvb", GROUP="video"
++@@ -53,13 +53,7 @@ SUBSYSTEM=="dvb", GROUP="video"
+  SUBSYSTEM=="media", GROUP="video"
+  SUBSYSTEM=="cec", GROUP="video"
+  
+ -SUBSYSTEM=="drm", KERNEL=="renderD*", GROUP="render", MODE="{{GROUP_RENDER_MODE}}"
+ -SUBSYSTEM=="kfd", GROUP="render", MODE="{{GROUP_RENDER_MODE}}"
+- SUBSYSTEM=="accel", GROUP="render", MODE="{{GROUP_RENDER_MODE}}"
++-SUBSYSTEM=="accel", GROUP="render", MODE="{{GROUP_RENDER_MODE}}"
+  
+ -SUBSYSTEM=="misc", KERNEL=="sgx_enclave", GROUP="sgx", MODE="0660"
+ -SUBSYSTEM=="misc", KERNEL=="sgx_vepc", GROUP="sgx", MODE="0660"
+@@ -91,16 +90,6 @@ index 992af346ca..c66181be00 100644
+ -
+ -# Default group for normal users
+ -g users   {{USERS_GID  }}     -            -
+-diff --git a/sysusers.d/systemd-journal.conf.in b/sysusers.d/systemd-journal.conf.in
+-index 61768b234e..5873bfab30 100644
+---- a/sysusers.d/systemd-journal.conf.in
+-+++ b/sysusers.d/systemd-journal.conf.in
+-@@ -4,5 +4,3 @@
+- #  under the terms of the GNU Lesser General Public License as published by
+- #  the Free Software Foundation; either version 2.1 of the License, or
+- #  (at your option) any later version.
+--
+--g systemd-journal {{SYSTEMD_JOURNAL_GID}} -
+ diff --git a/sysusers.d/systemd-network.conf.in b/sysusers.d/systemd-network.conf.in
+ index fc04827efd..5873bfab30 100644
+ --- a/sysusers.d/systemd-network.conf.in
+diff --git a/SPECS/systemd/harden-tmpfs-mount-options.patch b/SPECS/systemd/harden-tmpfs-mount-options.patch
+new file mode 100644
+index 000000000..9be3fe759
+--- /dev/null
++++ b/SPECS/systemd/harden-tmpfs-mount-options.patch
+@@ -0,0 +1,25 @@
++From c1f34abfcfc19124001babd51826aad864d95140 Mon Sep 17 00:00:00 2001
++From: Shreenidhi Shedi <shreenidhi.shedi@broadcom.com>
++Date: Fri, 26 Sep 2025 11:58:31 +0530
++Subject: [PATCH] Harden tmpfs mount options
++
++Ensure nosuid,noexec,nodev are enforced on tmpfs
++
++Signed-off-by: Shreenidhi Shedi <shreenidhi.shedi@broadcom.com>
++---
++ units/tmp.mount | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/units/tmp.mount b/units/tmp.mount
++index 734acea..7b8fd9d 100644
++--- a/units/tmp.mount
+++++ b/units/tmp.mount
++@@ -22,4 +22,4 @@ After=swap.target
++ What=tmpfs
++ Where=/tmp
++ Type=tmpfs
++-Options=mode=1777,strictatime,nosuid,nodev,size=50%%,nr_inodes=1m
+++Options=mode=1777,strictatime,nosuid,noexec,nodev,size=50%%,nr_inodes=1m
++-- 
++2.51.0
++
+diff --git a/SPECS/systemd/systemd.spec b/SPECS/systemd/systemd.spec
+index be4862068..1f79773c9 100644
+--- a/SPECS/systemd/systemd.spec
++++ b/SPECS/systemd/systemd.spec
+@@ -1,13 +1,16 @@
+ %global build_if %{photon_subrelease} >= 91
+ 
+-%define STIG_HARDEN 0
++# Default off, but overridable from pkg_build_options.json / rpmbuild -D.
++# A plain define of STIG_HARDEN here would win over -D and make every
++# conditional below permanently unreachable, and therefore untested.
++%{!?STIG_HARDEN: %global STIG_HARDEN 0}
+ 
+ %global udev_services %{name}-udevd.service %{name}-udev-settle.service %{name}-udev-trigger.service %{name}-udevd-control.socket %{name}-udevd-kernel.socket %{name}-timesyncd.service
+ 
+ Name:           systemd
+ URL:            http://www.freedesktop.org/wiki/Software/systemd
+ Version:        257.13
+-Release:        5%{?dist}
++Release:        7%{?dist}
+ Summary:        System and Service Manager
+ Group:          System Environment/Security
+ Vendor:         VMware, Inc.
+@@ -40,14 +43,25 @@ Source14:       sysusers.generate-pre.sh
+ Source15: license.txt
+ %include %{SOURCE15}
+ 
+-Patch0: 0001-enoX-uses-instance-number-for-vmware-hv.patch
+-Patch1: 0002-Fetch-dns-servers-from-environment.patch
+-Patch2: 0003-systemd-do-not-use-ftrivial-auto-var-init-zero.patch
+-Patch3: 0004-Remove-unused-default-groups-rules-and-tmpfiles.patch
+-Patch4: 0005-default-conf-modifications.patch
+-
++# Unnumbered "Patch:" lets rpm assign indices in order, so a conditional
++# patch can never collide with an unconditional one. Two independent edits
++# both picking "Patch4:" is exactly how the STIG variant came to fail with
++# "error: patch 4 defined multiple times".
++Patch: 0001-enoX-uses-instance-number-for-vmware-hv.patch
++Patch: 0002-Fetch-dns-servers-from-environment.patch
++Patch: 0003-systemd-do-not-use-ftrivial-auto-var-init-zero.patch
++Patch: 0004-Remove-unused-default-groups-rules-and-tmpfiles.patch
++Patch: 0005-default-conf-modifications.patch
++
++# /lib/systemd/system/tmp.mount is owned by this package and is not marked as
++# a config file, so it must be hardened here, at build time. The installer
++# deliberately skips
++# the equivalent ansible control PHTN-50-000245 (stigenable.py) because editing
++# a package-owned unit at install time shows up as permanent rpm -V drift and
++# is reverted by the next systemd upgrade. Do not "fix" that skip; this is the
++# owning side of that split.
+ %if 0%{?STIG_HARDEN}
+-Patch4: harden-tmpfs-mount-options.patch
++Patch: harden-tmpfs-mount-options.patch
+ %endif
+ 
+ Conflicts: dracut < 109
+@@ -274,6 +288,7 @@ CONFIGURE_OPTS=(
+        -Doomd=false
+        -Dhomed=disabled
+        -Dversion-tag=v%{version}-%{release}
++       -Dsystemd-journal-gid=23
+        -Dsystemd-network-uid=76
+        -Dsystemd-resolve-uid=77
+        -Dsystemd-timesync-uid=78
+@@ -681,6 +696,45 @@ udevadm hwdb --update &>/dev/null || :
+ %files lang -f ../%{name}.lang
+ 
+ %changelog
++* Mon Aug 31 2026 Daniel Casota <dcasota@gmail.com> 257.13-7
++- Ship harden-tmpfs-mount-options.patch. It was referenced by the STIG
++  conditional but present only under SPECS/90/systemd, so a STIG build could
++  never have found it. Applies cleanly to 257.13.
++- Replace the plain define of STIG_HARDEN with a define-if-unset, so the flag
++  can be set from pkg_build_options.json or rpmbuild -D. A plain define in the
++  spec body beats -D, which made every STIG conditional here unreachable and
++  therefore never parsed, built or tested.
++- Switch the patch list to unnumbered "Patch:" so rpm assigns indices. The
++  conditional STIG patch and 0005-default-conf-modifications.patch had both
++  been given index 4; with STIG_HARDEN reachable that is a hard
++  "error: patch 4 defined multiple times" and no prep section is emitted.
++  Auto-numbering removes the collision class rather than this one instance.
++- Constellation: the three defects above are invisible in every build Photon
++  currently performs (STIG_HARDEN pinned to 0) and all fire together the
++  moment the STIG variant is selected, on any arch and any subrelease >= 91.
++  Non-STIG builds are byte-identical before and after: same sources, same
++  five patches, same order.
++* Mon Aug 31 2026 Daniel Casota <dcasota@gmail.com> 257.13-6
++- 0004: also drop the SUBSYSTEM=="accel" rule from 50-udev-default.rules.in.
++  The same patch removes the "render" group from sysusers.d/basic.conf.in, but
++  the accel rule kept referencing it, so systemd-udevd logged
++  "50-udev-default.rules:56 Unknown group 'render', ignoring." on every boot.
++  systemd 253 had no accel rule; the regression arrived with the 253->257
++  rebase. The dev branch (255.10) already deletes this line.
++- 0004: stop emptying sysusers.d/systemd-journal.conf.in. dracut 109 builds the
++  initrd's /etc/group by running systemd-sysusers against the shipped
++  sysusers.d snippets (11systemd-journald inst_sysusers systemd-journal.conf,
++  78systemd-sysusers systemd-sysusers --root=$initdir); with the entry removed
++  the snippet was a no-op, so the initrd had no systemd-journal group while
++  11systemd-tmpfiles still installed tmpfiles.d/systemd.conf, which references
++  it on 5 lines. Every boot logged 5x "Failed to resolve group
++  'systemd-journal'" from inside the initrd. Harmless under dracut 059, which
++  copied the group in explicitly; a real gap since the 109 bump.
++- Pin -Dsystemd-journal-gid=23 to match filesystem's static group file. The
++  meson default is 0, which meson.build maps to "-" (dynamic allocation), so
++  restoring the sysusers entry without this would let systemd-sysusers pick an
++  arbitrary GID inside the initrd and mis-own /run/log/journal across
++  switch-root.
+ * Mon Jun 08 2026 Bo Gan <bo.gan@broadcom.com> 257.13-5
+ - Migrate from pcre to pcre2
+ * Wed Jun 03 2026 Harinadh Dommaraju <Harinadh.Dommaraju@broadcom.com> 257.13-4
