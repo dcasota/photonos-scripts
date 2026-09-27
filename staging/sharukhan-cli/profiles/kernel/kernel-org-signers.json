@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "source": "https://www.kernel.org/signature.html",
+  "reviewed": "2026-09-27",
+  "keys_from": "https://git.kernel.org/pub/scm/docs/kernel/pgpkeys.git/plain/keys/",
+  "signers": [
+    {"name": "Linus Torvalds", "fingerprint": "ABAF11C65A2970B130ABE3C479BE3E4300411886"},
+    {"name": "Greg Kroah-Hartman", "fingerprint": "647F28654894E3BD457199BE38DBBDC86092693E"},
+    {"name": "Sasha Levin", "fingerprint": "E27E5D8A3403A2EF66873BBCDEA66FF797772CDC"},
+    {"name": "Ben Hutchings", "fingerprint": "AC2B29BD34A6AFDDB3F68F35E7BFC8EC95861109"}
+  ]
+}

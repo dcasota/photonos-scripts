@@ -1,7 +1,10 @@
 #!/bin/sh
+# @sharukhan-wrapper kernel=7.2.7 userland=5.0 native-series=6.12
 #
+# @sharukhan-slot header begin
 # Photon OS 5.0 userland + experimental Linux 7.2.7
-# wrapper v4 — always rewires common-branch-path before make
+# wrapper v13
+# @sharukhan-slot header end
 #
 # $1 BASE_DIR        default /root
 # $2 COMMON_BRANCH   default common
@@ -28,7 +31,9 @@ export GIT_TERMINAL_PROMPT=0
 export EDITOR=true
 export VISUAL=true
 
+# @sharukhan-slot banner begin
 echo "[runPh7-2-7] wrapper v13 + Hyper-V and legacy iptables config restore + BTF only where Photon has it + perf hook only with tools subpackage + installer initrd list restore (STIG)"
+# @sharukhan-slot banner end
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" 2>/dev/null && pwd)
 
@@ -144,12 +149,12 @@ print("[runPh7-2-7] re-gated build_if in", n, "spec(s)")
 PY
 }
 
-# Older standalone pin-linux-7.2.7.sh runs appended a "7.2.7 SpecData
+# Older standalone pin-linux-<kernel>.sh runs appended a "<kernel> SpecData
 # compatibility" wrap to common SpecData.py and rewrote three raises into
 # `return self.getHighestVersion(...)`. The wrap's getBasePkg cannot split
 # name-version-release ("aide-0.19-3.ph5" -> Invalid package), and the
 # rewrites return a str where callers expect a list. SpecData needs no
-# 7.2.7 help; strip both so a stale common tree heals itself.
+# kernel-specific help; strip both so a stale common tree heals itself.
 pin_drop_specdata_compat() {
   for f in \
       "$COMMON_DIR/support/package-builder/SpecData.py" \
@@ -157,14 +162,14 @@ pin_drop_specdata_compat() {
   do
     [ -f "$f" ] || continue
     python3 - "$f" << 'PY'
-import sys
+import re, sys
 from pathlib import Path
 p = Path(sys.argv[1])
 t = p.read_text()
 nt = t
-marker = "# --- 7.2.7 SpecData compatibility ---"
-if marker in nt:
-    nt = nt[: nt.index(marker)].rstrip() + "\n"
+m = re.search(r"# --- [0-9][0-9A-Za-z.-]* SpecData compatibility ---", nt)
+if m:
+    nt = nt[: m.start()].rstrip() + "\n"
 nt = nt.replace(
     'return self.getHighestVersion(str(getattr(pkg, "package", pkg)).split("=")[0].strip().strip("()").split()[0])',
     'raise Exception(f"Could not find proper version for {pkg}")',
@@ -174,7 +179,7 @@ if nt == t:
     raise SystemExit(0)
 compile(nt, str(p), "exec")
 p.write_text(nt)
-print(f"[runPh7-2-7] {p}: removed stale 7.2.7 SpecData compat wrap")
+print(f"[runPh7-2-7] {p}: removed stale SpecData compat wrap")
 PY
   done
 }
@@ -229,6 +234,7 @@ worktree_now() {
   echo "[runPh7-2-7] worktree_now: done"
 }
 
+# @sharukhan-slot kernel-pin begin
 pin_727() {
   spec="$1"
   patch="$2"
@@ -245,6 +251,7 @@ pin_727() {
       "$spec" > "$spec.pin" && mv "$spec.pin" "$spec"
   fi
 }
+# @sharukhan-slot kernel-pin end
 
 write_empty_cve_inc() {
   cat > "$1" << 'CVEINC'
@@ -341,10 +348,12 @@ wipe_kernel_sandboxes() {
   echo "[runPh7-2-7] wiping rust sandbox for clean upstream bootstrap"
   find "$stage" -maxdepth 4 -type d \( -name 'rust-1.93*' -o -name 'build-rust-1.93*' \) -print -exec rm -rf {} + 2>/dev/null || true
   if [ "${FORCE_WIPE_LINUX:-0}" = "1" ]; then
+    # @sharukhan-slot kernel-sandbox-names begin
     find "$stage" -maxdepth 4 -type d \( \
         -name 'linux-7.2.7*' -o -name 'linux-esx-7.2.7*' -o \
         -name 'build-linux-7.2.7*' -o -name 'build-linux-esx-7.2.7*' \
       \) -print -exec rm -rf {} + 2>/dev/null || true
+    # @sharukhan-slot kernel-sandbox-names end
     echo "[runPh7-2-7] FORCE_WIPE_LINUX=1: wiped linux sandboxes (kept sandboxBase)"
   else
     echo "[runPh7-2-7] kept linux sandboxes (set FORCE_WIPE_LINUX=1 to rebuild kernel from scratch)"
@@ -355,8 +364,9 @@ wipe_kernel_sandboxes() {
       "$stage/images/sandboxBase" \
       "$stage/images/sandboxBase/usr" \
       /usr; do
-    [ -x "$root/bin/c++.real727" ] && mv -f "$root/bin/c++.real727" "$root/bin/c++"
-    [ -x "$root/bin/g++.real727" ] && mv -f "$root/bin/g++.real727" "$root/bin/g++"
+    for f in "$root"/bin/c++.real[0-9]* "$root"/bin/g++.real[0-9]*; do
+      [ -x "$f" ] && mv -f "$f" "${f%.real*}"
+    done
   done
   return 0
 }
@@ -379,14 +389,18 @@ print('[runPh7-2-7] common-branch-path =', c['common-branch-path'])
 "
 fi
 
+# @sharukhan-slot kernel-pin-calls begin
 pin_727 SPECS/linux/linux.spec SPECS/linux/linux.spec.7.2.7.patch
 pin_727 SPECS/linux/linux-esx.spec SPECS/linux/linux-esx.spec.7.2.7.patch
+# @sharukhan-slot kernel-pin-calls end
 sync_cve_include
 drop_skipped_patches SPECS/linux/linux.spec
 drop_skipped_patches SPECS/linux/linux-esx.spec
 drop_skipped_patches SPECS/linux/kernel_cve_patches.inc
 disable_unrebased_ranges SPECS/linux/linux.spec
 disable_unrebased_ranges SPECS/linux/linux-esx.spec
+# @sharukhan-slot kernel-patches begin
+# @sharukhan-slot kernel-patches end
 # Replace the 6.12 config-applicability include with a 7.2.7 merge:
 # olddefconfig keeps Photon =y/=m that still exist, drops gone symbols,
 # fills new Kconfig with upstream defaults, then turns off io_uring BPF.
@@ -469,7 +483,7 @@ PY
 inject_config_merge SPECS/linux/linux.spec '%{SOURCE7}'
 inject_config_merge SPECS/linux/linux-esx.spec '%{SOURCE4}'
 
-# ENA 2.17.0 fails on 7.2.7: page_pool_get_stats() is void.
+# ENA 2.17.0 fails on 7.x kernels: page_pool_get_stats() is void.
 # Skip Amazon ENA/EFA and viomem OOT modules (in-tree ena may still build).
 skip_oot_modules() {
   spec="$1"
@@ -877,6 +891,7 @@ pin_rust_skip_docs
 
 wipe_kernel_sandboxes
 
+# @sharukhan-slot kernel-source begin
 K727_SHA="9a7ee3e35e1e4eea44fd2fadce7b51deb9cae8b1e19ed4d8dc1e59d2e310ffa6dae508a9b0919d2d3cd29d00ca79fd473e7540a3cfb1124e56c4de091915a9d9"
 if command -v fetch_or_validate_source >/dev/null 2>&1; then
   fetch_or_validate_source \
@@ -884,12 +899,15 @@ if command -v fetch_or_validate_source >/dev/null 2>&1; then
     "https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.2.7.tar.xz" \
     "$K727_SHA" || true
 fi
+# @sharukhan-slot kernel-source end
 
 if [ -f SPECS/linux/linux.spec ]; then
   kver=$(awk '/^Version:/{print $2; exit}' SPECS/linux/linux.spec 2>/dev/null)
   echo "[runPh7-2-7] linux.spec Version=$kver"
+  # @sharukhan-slot version-assert begin
   if [ "${PIN_REQUIRE_KVER:-1}" = 1 ] && [ "$kver" != "7.2.7" ]; then
     echo "[runPh7-2-7] ERROR: linux.spec Version is '$kver', expected 7.2.7" 1>&2
+  # @sharukhan-slot version-assert end
     exit 1
   fi
 else
@@ -988,10 +1006,12 @@ for line in text.splitlines(keepends=True):
     if 'sudo make' in line and 'image IMG_NAME' in line:
         ind = line[: len(line) - len(line.lstrip())]
         text2.append(
+            # @sharukhan-slot prebuild begin
             ind + '# 7.2.7: build the ISO KS_STIG_PACKAGES set before make image\n'
             + ind + 'sudo make -j8 pkgs="audit,rsyslog,openssl-fips-provider,selinux-policy,'
             'libselinux-utils,ntpsec,aide,libgcrypt" THREADS=8 || '
             'echo "[runPh7-2-7] WARNING: STIG package pre-build failed" 1>&2\n'
+            # @sharukhan-slot prebuild end
         )
     text2.append(line)
 text = ''.join(text2)

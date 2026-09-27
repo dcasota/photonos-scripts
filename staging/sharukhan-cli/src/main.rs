@@ -33,6 +33,7 @@ mod remaster;
 mod report;
 mod runner;
 mod serial;
+mod sha512;
 mod sha256;
 mod specresolve;
 mod verify;
@@ -40,6 +41,7 @@ mod vm;
 mod vmware;
 mod vmx;
 mod winpath;
+mod wrapper;
 
 use std::process::ExitCode;
 
@@ -80,6 +82,8 @@ PHASES (the same code `run` calls, one step at a time)
                         already publishes, dates must descend, and a replay of
                         its commits must not silently drop renamed files
     mirrors             are the SPECS copies of POI PR commits still current with the fork?
+    wrapper             derive, check and verify build wrappers for any kernel.org
+                        release (sharukhan wrapper --help)
     ingest              fold the evidence files into the memory database (idempotent)
 
 OPTIONS:
@@ -361,6 +365,12 @@ fn restore_sigpipe() {
 
 fn main() -> ExitCode {
     restore_sigpipe();
+    // `sharukhan wrapper ...` has its own option set; dispatch before the
+    // permutation-matrix parser, which would reject its options.
+    let argv: Vec<String> = std::env::args().skip(1).collect();
+    if argv.first().map(String::as_str) == Some("wrapper") {
+        return ExitCode::from(wrapper::cli::main(&argv[1..]));
+    }
     let args = match parse() {
         Ok(a) => a,
         Err(e) => {

@@ -252,6 +252,22 @@ Status (branch commit `6c918e10a`, `photon-minimal-5.0-6c918e10a.x86_64.iso`, 50
 - If an ISO name already exists in the output directory, the wrapper prefixes the new ISO with a
   timestamp (for example `20260925-163049-photon-minimal-5.0-6c918e10a.x86_64.iso`).
 
+#### Wrappers for other kernel.org releases
+
+`runPh7-3-RC4.sh` is **derived**, not edited: `runPh7-2-7.sh` marks its kernel-specific regions
+(`# @sharukhan-slot ...`), and `sharukhan wrapper derive` renders them for the release in a
+reviewed profile (`sharukhan-cli/profiles/kernel/<release>.json`), renames the rest, validates the
+result (`sh -n`, every Python heredoc) and writes it atomically. To change `runPh7-3-RC4.sh`, change
+the base or the profile and derive again; `sharukhan wrapper check` fails on any drift. A new
+release starts with `sharukhan wrapper profile-new --kernel <release> --from 7.3-rc4`, which first
+verifies the tarball against kernel.org's signatures. See
+[sharukhan-cli/README.md](sharukhan-cli/README.md#kernel-wrappers-sharukhan-wrapper) and
+`sharukhan-cli/specs/features/kernel-wrapper.md`.
+
+The base's own clean-up of older pins is version-neutral: it removes a `SpecData.py` compatibility
+wrap left by any release's standalone pin script, and restores any `c++.real*` / `g++.real*`
+rename in the sandboxes.
+
 ### mission-control/
 The matrix's configuration and evidence: `config/permutations.tsv` (the executable
 form of the matrix), the VMX template, and `results/`. The bash harness that used to

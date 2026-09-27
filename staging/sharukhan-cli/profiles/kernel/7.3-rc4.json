@@ -1,0 +1,102 @@
+{
+  "schema": 1,
+  "kernel": "7.3-rc4",
+  "base": {"script": "runPh7-2-7.sh", "kernel": "7.2.7", "wrapper_version": 13},
+  "wrapper_version": 8,
+  "summary": "RAP/KCFI on, rdrand-rng, vmwgfx blend, installer/sudo/dbus/cloud-init pre-build, noreplace-smp dropped, esx BTF off, STIG initrd restore, ansible log flush",
+  "rpm_release_iteration": 1,
+  "source": {
+    "sha512": "7a4b9599c2c593131e150ae22030f643813b0fb3de2b479281ebb9a413e7928903adc748eb522e03fd39e9ca4991c12e4d0331718fff59a53fc6676b390c7945",
+    "verified": {"method": "signed-tag", "signer": "ABAF11C65A2970B130ABE3C479BE3E4300411886", "commit": "93f51579e7df248780214094418f205253383cc5", "on": "2026-09-27"}
+  },
+  "changelog": {"date": "Fri Sep 25 2026", "author": "Daniel Casota <dcasota@gmail.com>"},
+  "drop_kernel_params": [
+    {
+      "param": "noreplace-smp",
+      "reason": [
+        "noreplace-smp (UP lock-prefix patching) was removed in the 7.3 cycle; 7.3 would log it as an",
+        "unknown parameter and hand it to init. Lock prefixes are always kept now."
+      ]
+    }
+  ],
+  "kernel_patches": [
+    {
+      "name": "rap",
+      "mode": "replace",
+      "patch": 61,
+      "replaces": "0001-gcc-rap-plugin-with-kcfi.patch",
+      "file": "0001-gcc-rap-plugin-with-kcfi-7.3.patch",
+      "autopatch": [61, 63],
+      "flavours": ["linux"],
+      "label": "RAP",
+      "comment": [
+        "RAP/KCFI (\"Secure\" range) for the generic linux flavor: Patch61 points at the",
+        "7.3-rc4 rebase in secure/ on the experimental/linux-7.3-rc4 branch, Patch63 (PAX",
+        "tasklet fix) applies as is. Patch62 (objtool: return error) stays off: it no longer",
+        "applies, and RAP builds emit objtool \"no-cfi indirect call!\" notes it would make fatal.",
+        "Runs after disable_unrebased_ranges, which comments out every %autopatch each pass."
+      ],
+      "applied": "RAP/KCFI Patch61 (7.3-rc4 rebase) and Patch63 enabled",
+      "already": "RAP/KCFI patches already enabled"
+    },
+    {
+      "name": "rdrand",
+      "mode": "readd",
+      "patch": 6,
+      "file": "0001-hwrng-rdrand-Add-RNG-driver-based-on-x86-rdrand-inst-7.3.patch",
+      "autopatch": [6],
+      "flavours": ["linux", "linux-esx"],
+      "label": "rdrand hwrng driver",
+      "comment": [
+        "rdrand hwrng driver (Patch6) for both flavors: systemd's 10-rdrand-rng.conf loads",
+        "rdrand-rng and both configs set HW_RANDOM_RDRAND=m. disable_unrebased_ranges deletes",
+        "Patch2-Patch49, so re-add Patch6 pointing at the 7.3-rc4 rebase in vmw/ and apply it."
+      ],
+      "applied": "rdrand hwrng driver (Patch6, 7.3-rc4 rebase) enabled",
+      "already": "rdrand hwrng driver already enabled"
+    },
+    {
+      "name": "vmwgfx",
+      "mode": "add",
+      "patch": 7300,
+      "file": "0001-drm-vmwgfx-declare-premultiplied-blend-mode-7.3.patch",
+      "autopatch": [7300],
+      "flavours": ["linux", "linux-esx"],
+      "label": "vmwgfx blend mode",
+      "comment": [
+        "vmwgfx blend mode (Patch7300) for both flavors: 7.3's DRM core warns for every plane",
+        "with alpha formats but no blend mode property; the patch declares PREMULTI."
+      ],
+      "applied": "vmwgfx blend mode (Patch7300) enabled",
+      "already": "vmwgfx blend mode already enabled"
+    }
+  ],
+  "installer_patches": {
+    "comment": [
+      "photon-os-installer fixes whose patch files are on the branch. downstream-fixes.patch",
+      "extends this spec (0003..0007), so each is appended here as the next PatchN, with",
+      "its own release bump and changelog entry, in order. Idempotent per patch.",
+      "  0008  networkd DHCP match by Type=ether/Kind=!* instead of Name=e*",
+      "  0009  flush the ansible log before copying it (STIG log lost its PLAY RECAP)"
+    ],
+    "patches": [
+      {
+        "file": "0008-networkmanager-match-dhcp-links-by-type.patch",
+        "date": "Sat Sep 26 2026",
+        "changelog": [
+          "- networkmanager: match DHCP links by Type=ether/Kind=!* instead of",
+          "  Name=e*, which networkd flags as an unpredictable name with net.ifnames=0"
+        ]
+      },
+      {
+        "file": "0009-installer-flush-ansible-log-before-copying.patch",
+        "date": "Sun Sep 27 2026",
+        "changelog": [
+          "- installer: flush the ansible log before copying it, so the STIG log",
+          "  keeps its PLAY RECAP"
+        ]
+      }
+    ]
+  },
+  "prebuild_extra": ["cloud-init", "sudo", "dbus", "photon-os-installer"]
+}
