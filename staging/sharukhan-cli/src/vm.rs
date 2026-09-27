@@ -291,6 +291,20 @@ pub struct TeardownReport {
 ///
 /// The serial log and the results directory are always preserved: they are the
 /// evidence the run produced.
+/// Power one of OUR VMs off and leave every file where it is.
+///
+/// Teardown stashes the disk chain; this does not, so a kept VM's disk stays
+/// at its VMX path, ready to be read. Only ever touches `mc-<id>`.
+pub fn power_off_keep(cfg: &Config, id: &str) -> bool {
+    let name = cfg.vm_name(id);
+    if !vmware::is_running(&cfg.vmrun, &name) {
+        return false;
+    }
+    let vmx_win = winpath::win_path(&cfg.vm_dir(id).join(format!("{name}.vmx")).to_string_lossy());
+    vmware::stop_hard(&cfg.vmrun, &vmx_win);
+    true
+}
+
 pub fn teardown(
     cfg: &Config,
     id: &str,

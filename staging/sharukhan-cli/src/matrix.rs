@@ -136,18 +136,29 @@ impl Permutation {
         self.unrunnable_reason_with(Permutation::arm64_builder_available())
     }
 
-    /// The same decision with the emulation probe INJECTED, so the aarch64
-    /// branch can be tested on either kind of host.
+    /// The same decision with the emulation probe INJECTED, so both wordings
+    /// can be tested on either kind of host.
     ///
-    /// An aarch64 row no longer needs aarch64 hardware unconditionally: with a
-    /// registered qemu-aarch64 binfmt handler and an arm64 builder image the
-    /// row is buildable here, just slowly. Reporting it as impossible when it
-    /// is merely slow silently drops a row from the matrix.
+    /// A row is not a build: it installs and boots its ISO in VMware, and
+    /// VMware Workstation on x86_64 cannot run an aarch64 guest. So an aarch64
+    /// row needs an aarch64 host, full stop. On 2026-09-16 a registered
+    /// qemu-aarch64 binfmt handler was allowed to make the row runnable - true
+    /// for BUILDING its media (slowly), which is what the Hyper-V/Azure path
+    /// needs, but not for running it - and on 2026-09-26 `run --all` offered
+    /// c02 on this x86_64 host, which would have spent hours building an ISO
+    /// that nothing here can boot. The probe now only decides what the reason
+    /// says about building.
     pub fn unrunnable_reason_with(&self, arm64_builder: bool) -> Option<String> {
-        if self.arch() == "aarch64" && std::env::consts::ARCH != "aarch64" && !arm64_builder {
+        if self.arch() == "aarch64" && std::env::consts::ARCH != "aarch64" {
+            let build = if arm64_builder {
+                "its ISO could be built here through the registered qemu-aarch64 binfmt \
+                 handler, slowly, but not installed or booted"
+            } else {
+                "and this host has no qemu-aarch64 binfmt handler to build its ISO either"
+            };
             return Some(format!(
-                "canister={} needs aarch64 hardware or a registered qemu-aarch64 binfmt \
-                 handler plus an arm64 builder image; this host is {} and has neither",
+                "canister={} is an aarch64 row; VMware on this {} host cannot run an \
+                 aarch64 guest - {build}. It needs aarch64 hardware",
                 self.canister,
                 std::env::consts::ARCH
             ));
@@ -391,23 +402,23 @@ mod tests {
         assert_eq!(plain.iso_key(), "full/2.8/prebuilt");
     }
 
-    /// An aarch64 row is buildable on an x86_64 host that has qemu-aarch64
-    /// binfmt registered - slowly, but buildable. Calling it impossible drops
-    /// the row from the matrix for a reason that no longer holds.
+    /// Building is not running. With or without a qemu-aarch64 builder, an
+    /// aarch64 row cannot be installed and booted by VMware on x86_64; the
+    /// builder only changes what the reason says about building its ISO.
     #[test]
-    fn fips0_aarch64_is_runnable_on_x86_64_when_an_arm64_builder_is_registered() {
+    fn an_aarch64_row_is_unrunnable_on_x86_64_even_with_an_arm64_builder() {
         let r = row_with("fips0-aarch64+hyperv", crate::net::DEFAULT);
-        assert!(
-            r.unrunnable_reason_with(true).is_none(),
-            "with an arm64 builder the row is merely slow, not impossible"
-        );
-        let why = r.unrunnable_reason_with(false).unwrap_or_default();
-        if std::env::consts::ARCH != "aarch64" {
-            assert!(
-                why.contains("binfmt"),
-                "the reason must say what is missing: {why}"
-            );
-            assert!(why.contains("aarch64 hardware"), "{why}");
+        if std::env::consts::ARCH == "aarch64" {
+            assert!(r.unrunnable_reason_with(true).is_none());
+            assert!(r.unrunnable_reason_with(false).is_none());
+            return;
         }
+        let with = r.unrunnable_reason_with(true).expect("unrunnable even with a builder");
+        let without = r.unrunnable_reason_with(false).expect("unrunnable without a builder");
+        for why in [&with, &without] {
+            assert!(why.contains("cannot run an aarch64 guest") && why.contains("aarch64 hardware"), "{why}");
+        }
+        assert!(with.contains("could be built here"), "{with}");
+        assert!(without.contains("no qemu-aarch64 binfmt handler"), "{without}");
     }
 }

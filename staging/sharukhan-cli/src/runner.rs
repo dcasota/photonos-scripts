@@ -148,131 +148,60 @@ pub fn cmd_run(cfg: &Config, o: &RunOpts) -> Result<(), String> {
         disk::Verdict::Refuse(why) => return Err(why),
     }
 
-    // --- media, once per ISO -----------------------------------------------
-    let mut groups = group_rows(cfg, &runnable);
-    println!("\nmedia");
-    for g in &mut groups {
-        if !g.iso.exists() {
-            // With --allow-build this is where the hours go; without it, the
-            // refusal names the exact command that would do it.
-            let req = build::IsoRequest {
-                iso_type: g.rows[0].iso_type.clone(),
-                poi: g.rows[0].poi.clone(),
-                canister: g.rows[0].canister.clone(),
-            };
-            // A dry run only asks what resolve WOULD do. Calling resolve here
-            // with --allow-build is how a dry run once purged stage/RPMS and
-            // started an ISO build (2026-09-26).
-            if o.dry_run {
-                match build::plan(cfg, &req, false, o.allow_build) {
-                    Ok(build::Plan::Build(iso)) => {
-                        println!(
-                            "  would build {:<20} {} - hours; its media is checked once it exists",
-                            g.key,
-                            iso.display()
-                        );
-                        g.iso = iso;
-                        g.would_build = true;
-                        continue;
-                    }
-                    Ok(build::Plan::Cached(iso)) => g.iso = iso,
-                    Err(why) => {
-                        g.refused = Some(why);
-                        println!("  REFUSED {:<24} {}", g.key, g.refused.as_ref().unwrap());
-                        continue;
-                    }
-                }
-            } else {
-                // Checked again before EVERY build: a run can build several
-                // ISOs over many hours, and the check at the start says
-                // nothing about a build started since.
-                if matches!(build::plan(cfg, &req, false, o.allow_build), Ok(build::Plan::Build(_))) {
-                    wait_for_idle(o.wait_idle)?;
-                }
-                let mut say = |m: &str| println!("  build   {m}");
-                match build::resolve(cfg, &req, false, o.allow_build, &mut say) {
-                    Ok(iso) => g.iso = iso,
-                    Err(why) => {
-                        g.refused = Some(why);
-                        println!("  REFUSED {:<24} {}", g.key, g.refused.as_ref().unwrap());
-                        continue;
-                    }
-                }
-            }
-        }
-        // Finding #29 asks for a settle delay. Refusing instead skipped a whole
-        // group when a campaign's last build flowed straight into its run
-        // (c01, 2026-09-13: "written 48s ago"), and the report went on showing
-        // that row's result from an earlier run. The wait states the measured
-        // age and the seconds left, and is bounded by --settle itself.
-        let settled = match media::settled(&g.iso, o.settle) {
-            // A dry run changes nothing and must not block either: it reports
-            // the wait a real run would make, then carries on as if settled.
-            Err(media::Unsettled::Young { age, remaining, .. }) if o.dry_run => {
-                println!(
-                    "  would wait {:<21} {} was written {age}s ago; --settle {} needs {remaining}s more (finding #29)",
-                    g.key,
-                    g.iso.display(),
-                    o.settle
-                );
-                Ok(age)
-            }
-            Err(media::Unsettled::Young { age, remaining, .. }) => {
-                println!(
-                    "  waiting {:<24} {} was written {age}s ago; --settle {} needs {remaining}s more (finding #29)",
-                    g.key,
-                    g.iso.display(),
-                    o.settle
-                );
-                std::thread::sleep(std::time::Duration::from_secs(remaining + 2));
-                media::settled(&g.iso, o.settle)
-            }
-            other => other,
+    let job = if o.dry_run {
+        None
+    } else {
+        // --- the job, before anything slow -------------------------------------
+        // Opened BEFORE the media phase: with --allow-build that phase is where the
+        // hours go, and a job recorded only after it left every ISO build of a run
+        // invisible to `watch` and unreachable by `stop`. A dry run records none.
+        let stamp = job::stamp();
+        let log_path = match &o.log {
+            Some(p) => PathBuf::from(p),
+            None => cfg.run_log_dir.join(format!("run-{stamp}.log")),
         };
-        match settled {
-            Ok(age) => g.age = age,
-            Err(why) => {
-                g.refused = Some(why.to_string());
-                println!("  REFUSED {:<24} {}", g.key, g.refused.as_ref().unwrap());
-                continue;
-            }
+        if let Some(dir) = log_path.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
         }
-        let patch = cfg
-            .variant_patches
-            .join(format!("poi-{}.patch", g.rows[0].poi));
-        match media::gate(&g.iso, &patch, &cfg.photon_tree) {
-            Ok(gate) => {
-                println!(
-                    "  {} {:<24} media has {} (expected {}*), written {}s ago",
-                    if gate.ok { "ok     " } else { "REFUSED" },
-                    g.key,
-                    gate.actual,
-                    gate.expected,
-                    g.age
-                );
-                if !gate.ok {
-                    g.refused = Some(format!(
-                        "media carries {} but this variant asks for {}* - verdicts would be meaningless",
-                        gate.actual, gate.expected
-                    ));
-                }
-                g.gate = Some(gate);
-            }
-            Err(why) => {
-                g.refused = Some(why);
-                println!("  REFUSED {:<24} {}", g.key, g.refused.as_ref().unwrap());
-            }
-        }
-    }
+        File::create(&log_path).map_err(|e| format!("{}: {e}", log_path.display()))?;
 
-    let admissible: usize = groups
-        .iter()
-        .filter(|g| g.refused.is_none())
-        .map(|g| g.rows.len())
-        .sum();
-    if admissible == 0 {
-        return Err("every ISO group was refused; nothing would be run".into());
-    }
+        // Every autonomous row authenticates with this key; a run that generates
+        // kickstarts without one installs guests nothing can log into.
+        phases::ensure_ssh_key(cfg, &mut |m| println!("  {m}"))?;
+        cfg.guest_password()?;
+
+        let label = runnable
+            .iter()
+            .map(|p| p.id.as_str())
+            .collect::<Vec<_>>()
+            .join(",");
+        let pid = std::process::id() as i32;
+        let job_id = job::start(&conn, "run", &label, pid, &log_path.to_string_lossy())?;
+        println!("\njob {job_id} (pid {pid}) -> {}", log_path.display());
+        println!("  sharukhan watch --job {job_id}");
+        println!("  sharukhan stop  --job {job_id}");
+        Some((job_id, pid, label, log_path))
+    };
+
+    let mut jlog = match &job {
+        Some((_, _, _, log_path)) => Some(
+            OpenOptions::new()
+                .append(true)
+                .open(log_path)
+                .map_err(|e| format!("{}: {e}", log_path.display()))?,
+        ),
+        None => None,
+    };
+    let (groups, admissible) = match prepare_media(cfg, o, &runnable, jlog.as_mut()) {
+        Ok(v) => v,
+        Err(e) => {
+            if let (Some((job_id, _, _, _)), Some(f)) = (&job, jlog.as_mut()) {
+                say(f, &format!("job {job_id} failed before any row ran: {e}"));
+                job::finish(&conn, *job_id, job::FAILED)?;
+            }
+            return Err(e);
+        }
+    };
 
     if o.dry_run {
         println!("\nwould run {admissible} row(s), sequentially:");
@@ -295,31 +224,7 @@ pub fn cmd_run(cfg: &Config, o: &RunOpts) -> Result<(), String> {
     }
 
     // --- execute -----------------------------------------------------------
-    let stamp = job::stamp();
-    let log_path = match &o.log {
-        Some(p) => PathBuf::from(p),
-        None => cfg.run_log_dir.join(format!("run-{stamp}.log")),
-    };
-    if let Some(dir) = log_path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-    }
-    File::create(&log_path).map_err(|e| format!("{}: {e}", log_path.display()))?;
-
-    // Every autonomous row authenticates with this key; a run that generates
-    // kickstarts without one installs guests nothing can log into.
-    phases::ensure_ssh_key(cfg, &mut |m| println!("  {m}"))?;
-    cfg.guest_password()?;
-
-    let label = runnable
-        .iter()
-        .map(|p| p.id.as_str())
-        .collect::<Vec<_>>()
-        .join(",");
-    let pid = std::process::id() as i32;
-    let job_id = job::start(&conn, "run", &label, pid, &log_path.to_string_lossy())?;
-    println!("\njob {job_id} (pid {pid}) -> {}", log_path.display());
-    println!("  sharukhan watch --job {job_id}");
-    println!("  sharukhan stop  --job {job_id}");
+    let (job_id, pid, label, log_path) = job.expect("a real run opened its job before the media phase");
 
     let mut logf = OpenOptions::new()
         .append(true)
@@ -528,12 +433,164 @@ fn run_row(
         facts.install_result
     );
 
-    if keep {
+    if keep && facts.install_result == install::INSTALLED {
         log("--keep: leaving the VM up");
+    } else if keep {
+        // A VM whose install did not finish holds a hung installer: nothing
+        // will ever inspect it live, and left running it holds RAM while every
+        // later row installs beside it. Its DISK is the evidence - the
+        // 2026-09-27 k03 diagnosis read it offline - so power off, keep files.
+        let stopped = vm::power_off_keep(cfg, &p.id);
+        log(&format!(
+            "--keep: install {}; VM {}, disk kept at {}",
+            facts.install_result,
+            if stopped { "powered off" } else { "was not running" },
+            cfg.vm_dir(&p.id).display()
+        ));
     } else {
         vm::teardown(cfg, &p.id, true, &mut log)?;
     }
     Ok(verdict)
+}
+
+/// The media phase: one ISO per group, resolved - and with --allow-build,
+/// built - before any row runs. Its own function so a failure here can
+/// close the job it runs under instead of leaving it claiming 'running'.
+fn prepare_media(
+    cfg: &Config,
+    o: &RunOpts,
+    runnable: &[Permutation],
+    mut jlog: Option<&mut File>,
+) -> Result<(Vec<Group>, usize), String> {
+    // --- media, once per ISO -----------------------------------------------
+    let mut groups = group_rows(cfg, &runnable);
+    println!("\nmedia");
+    for g in &mut groups {
+        if !g.iso.exists() {
+            // With --allow-build this is where the hours go; without it, the
+            // refusal names the exact command that would do it.
+            let req = build::IsoRequest {
+                iso_type: g.rows[0].iso_type.clone(),
+                poi: g.rows[0].poi.clone(),
+                canister: g.rows[0].canister.clone(),
+            };
+            // A dry run only asks what resolve WOULD do. Calling resolve here
+            // with --allow-build is how a dry run once purged stage/RPMS and
+            // started an ISO build (2026-09-26).
+            if o.dry_run {
+                match build::plan(cfg, &req, false, o.allow_build) {
+                    Ok(build::Plan::Build(iso)) => {
+                        println!(
+                            "  would build {:<20} {} - hours; its media is checked once it exists",
+                            g.key,
+                            iso.display()
+                        );
+                        g.iso = iso;
+                        g.would_build = true;
+                        continue;
+                    }
+                    Ok(build::Plan::Cached(iso)) => g.iso = iso,
+                    Err(why) => {
+                        g.refused = Some(why);
+                        println!("  REFUSED {:<24} {}", g.key, g.refused.as_ref().unwrap());
+                        continue;
+                    }
+                }
+            } else {
+                // Checked again before EVERY build: a run can build several
+                // ISOs over many hours, and the check at the start says
+                // nothing about a build started since.
+                if matches!(build::plan(cfg, &req, false, o.allow_build), Ok(build::Plan::Build(_))) {
+                    wait_for_idle(o.wait_idle)?;
+                }
+                if let Some(f) = jlog.as_deref_mut() {
+                    say(f, &format!("building {} for {} row(s); the build log is named below and in the build-logs directory", g.key, g.rows.len()));
+                }
+                let mut say = |m: &str| println!("  build   {m}");
+                match build::resolve(cfg, &req, false, o.allow_build, &mut say) {
+                    Ok(iso) => g.iso = iso,
+                    Err(why) => {
+                        g.refused = Some(why);
+                        println!("  REFUSED {:<24} {}", g.key, g.refused.as_ref().unwrap());
+                        continue;
+                    }
+                }
+            }
+        }
+        // Finding #29 asks for a settle delay. Refusing instead skipped a whole
+        // group when a campaign's last build flowed straight into its run
+        // (c01, 2026-09-13: "written 48s ago"), and the report went on showing
+        // that row's result from an earlier run. The wait states the measured
+        // age and the seconds left, and is bounded by --settle itself.
+        let settled = match media::settled(&g.iso, o.settle) {
+            // A dry run changes nothing and must not block either: it reports
+            // the wait a real run would make, then carries on as if settled.
+            Err(media::Unsettled::Young { age, remaining, .. }) if o.dry_run => {
+                println!(
+                    "  would wait {:<21} {} was written {age}s ago; --settle {} needs {remaining}s more (finding #29)",
+                    g.key,
+                    g.iso.display(),
+                    o.settle
+                );
+                Ok(age)
+            }
+            Err(media::Unsettled::Young { age, remaining, .. }) => {
+                println!(
+                    "  waiting {:<24} {} was written {age}s ago; --settle {} needs {remaining}s more (finding #29)",
+                    g.key,
+                    g.iso.display(),
+                    o.settle
+                );
+                std::thread::sleep(std::time::Duration::from_secs(remaining + 2));
+                media::settled(&g.iso, o.settle)
+            }
+            other => other,
+        };
+        match settled {
+            Ok(age) => g.age = age,
+            Err(why) => {
+                g.refused = Some(why.to_string());
+                println!("  REFUSED {:<24} {}", g.key, g.refused.as_ref().unwrap());
+                continue;
+            }
+        }
+        let patch = cfg
+            .variant_patches
+            .join(format!("poi-{}.patch", g.rows[0].poi));
+        match media::gate(&g.iso, &patch, &cfg.photon_tree) {
+            Ok(gate) => {
+                println!(
+                    "  {} {:<24} media has {} (expected {}*), written {}s ago",
+                    if gate.ok { "ok     " } else { "REFUSED" },
+                    g.key,
+                    gate.actual,
+                    gate.expected,
+                    g.age
+                );
+                if !gate.ok {
+                    g.refused = Some(format!(
+                        "media carries {} but this variant asks for {}* - verdicts would be meaningless",
+                        gate.actual, gate.expected
+                    ));
+                }
+                g.gate = Some(gate);
+            }
+            Err(why) => {
+                g.refused = Some(why);
+                println!("  REFUSED {:<24} {}", g.key, g.refused.as_ref().unwrap());
+            }
+        }
+    }
+
+    let admissible: usize = groups
+        .iter()
+        .filter(|g| g.refused.is_none())
+        .map(|g| g.rows.len())
+        .sum();
+    if admissible == 0 {
+        return Err("every ISO group was refused; nothing would be run".into());
+    }
+    Ok((groups, admissible))
 }
 
 fn say(f: &mut File, msg: &str) {

@@ -92,7 +92,19 @@ pub fn run(
     } else {
         crate::build::kernel_nevr(cfg, &patch)
     };
-    let origin = crate::canister::detect_for(cfg, std::env::consts::ARCH, kernel.as_deref().ok())
+    // A prebuilt row links the PINNED published canister, exactly as 5.0
+    // ships - it never asks for one matched to its kernel level. detect_for
+    // asks precisely that, so with a locally built 6.12.111 canister in the
+    // stage it labelled k03 (prebuilt, canister 6.12.60-18) "equivalent (NOT
+    // CMVP validated)" on 2026-09-27: a false caveat on a certified row, and
+    // the same wording that must stay trustworthy on the rows it is true for.
+    let origin = if p.canister == "prebuilt" {
+        match crate::build::spec_canister_pin(cfg) {
+            Some(pin) => format!("certified (the published linux-fips-canister-{pin}, linked as 5.0 ships it)"),
+            None => "unknown (no fips_canister_version pin in the kernel spec)".to_string(),
+        }
+    } else {
+        crate::canister::detect_for(cfg, std::env::consts::ARCH, kernel.as_deref().ok())
         .map(|st| {
             let label = st.label();
             if st.is_validated() {
@@ -101,7 +113,8 @@ pub fn run(
                 format!("{label} (NOT CMVP validated)")
             }
         })
-        .unwrap_or_else(|e| format!("unknown ({e})"));
+        .unwrap_or_else(|e| format!("unknown ({e})"))
+    };
     c.check(
         "meta.canister_origin",
         "PR#24",

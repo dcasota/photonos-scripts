@@ -217,17 +217,15 @@ pub fn field(text: &str, key: &str) -> Option<String> {
 
 /// `photon-subrelease` from a tree's build-config.json.
 pub fn tree_subrelease(tree: &Path) -> Option<u32> {
+    // Parsed as JSON, not scanned line by line: the scan needed the key on a
+    // line of its own, so the same file written compactly read as "unknown".
     let text = std::fs::read_to_string(tree.join("build-config.json")).ok()?;
-    text.lines()
-        .find(|l| l.contains("\"photon-subrelease\""))?
-        .split(':')
-        .nth(1)?
-        .trim()
-        .trim_end_matches(',')
-        .trim()
-        .trim_matches('"')
-        .parse()
-        .ok()
+    let v: serde_json::Value = serde_json::from_str(&text).ok()?;
+    match &v["photon-build-param"]["photon-subrelease"] {
+        serde_json::Value::String(s) => s.trim().parse().ok(),
+        serde_json::Value::Number(n) => n.as_u64().and_then(|n| u32::try_from(n).ok()),
+        _ => None,
+    }
 }
 
 #[cfg(test)]

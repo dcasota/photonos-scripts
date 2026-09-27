@@ -201,6 +201,10 @@ pub struct Kickstart {
     pub packagelist_file: String,
     pub linux_flavor: String,
     pub bootmode: String,
+    /// Runs in the installer before installation starts. Streams the
+    /// installer's own logs to the serial port the harness captures: that is
+    /// the only place a hung install can leave evidence (see [`preinstall`]).
+    pub preinstall: Vec<String>,
     pub postinstall: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub public_key: Option<String>,
@@ -211,6 +215,32 @@ pub struct Kickstart {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub security: Option<Security>,
     pub network: Network,
+}
+
+/// postinstall line giving the installed system a serial console (VGA stays).
+pub const GRUB_SERIAL_CONSOLE: &str = "sed -i '/^[[:space:]]*linux /{/console=ttyS0/!s|$| console=tty0 console=ttyS0,115200n8|}' /boot/grub2/grub.cfg";
+
+/// preinstall script: stream the installer's logs to the serial port.
+///
+/// The installer boots from the ISO with no `console=ttyS0`, so nothing it
+/// does reaches the serial log the harness keeps as evidence - and changing
+/// the ISO's boot line would change the media under test. The 8250 driver is
+/// built in, so /dev/ttyS0 is writable without a console argument; a detached
+/// `tail -F` copies /var/log/installer.log and the STIG ansible log (relative
+/// to the installer's working directory, as the ansible block names it) to it
+/// for the whole install. On 2026-09-27 a STIG install hung after writing
+/// /etc/fstab and the only way to see that was to take the VM's disk apart.
+///
+/// Detached for a reason: the installer runs this script and reads the
+/// variables it exports, so it waits for the script's output to close. A tail
+/// left on that pipe would stall every install.
+pub fn preinstall() -> Vec<String> {
+    vec![
+        "#!/bin/sh".to_string(),
+        "setsid sh -c 'exec tail -n +1 -F /var/log/installer.log \"$PWD/ansible-stig.log\" 2>/dev/null' \
+         > /dev/ttyS0 2>&1 < /dev/null &"
+            .to_string(),
+    ]
 }
 
 pub struct Spec<'a> {
@@ -420,12 +450,16 @@ pub fn build(s: &Spec) -> Result<Kickstart, String> {
         "#!/bin/sh".to_string(),
         format!("echo mc-{} > /etc/mission-control-permutation", s.id),
         "systemctl enable sshd.service".to_string(),
-        // Make the INSTALLED system serial-visible too. Remastering the ISO
-        // only fixes the installer; after the reboot the target has its own
-        // grub, so the serial log goes silent exactly when verification needs
-        // it and the boot-source oracle can never observe root=PARTUUID=.
-        "sed -i 's|^\\(GRUB_CMDLINE_LINUX=.*\\)\"$|\\1 console=ttyS0,115200n8\"|' /etc/default/grub 2>/dev/null || true".to_string(),
-        "grep -q console=ttyS0 /boot/grub2/grub.cfg || sed -i 's|\\(^\\s*linux .*root=PARTUUID=[^ ]*\\)|\\1 console=ttyS0,115200n8|' /boot/grub2/grub.cfg 2>/dev/null || true".to_string(),
+        // Make the INSTALLED system serial-visible too; after the reboot the
+        // target boots its own grub, so without this the serial log goes
+        // silent exactly when verification needs it. The earlier form edited
+        // /etc/default/grub, which the installer never reads, and matched
+        // `root=PARTUUID=` in grub.cfg - but the installer writes
+        // `root=$rootpartition`, so neither ever fired and every serial log of
+        // every row was empty. This matches the installer's own `linux` lines
+        // (the normal and the fsck entry) and adds the console once. The
+        // installer writes grub.cfg before it runs postinstall.
+        GRUB_SERIAL_CONSOLE.to_string(),
         // Root ssh is how verification gets in. This is a disposable lab VM on
         // a host-only NAT segment, torn down after the run.
         "sed -i 's/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config".to_string(),
@@ -473,6 +507,7 @@ pub fn build(s: &Spec) -> Result<Kickstart, String> {
         packagelist_file: "packages.json".into(),
         linux_flavor: "linux-esx".into(),
         bootmode: "efi".into(),
+        preinstall: preinstall(),
         postinstall,
         public_key: s.public_key.clone().filter(|k| !k.trim().is_empty()),
         additional_packages,
@@ -584,6 +619,7 @@ mod tests {
                 "packagelist_file",
                 "linux_flavor",
                 "bootmode",
+                "preinstall",
                 "postinstall",
                 "public_key",
                 "network",
@@ -768,6 +804,57 @@ mod tests {
         assert!(render(&spec("none", "no", "ext4", &d))
             .unwrap()
             .contains("\"type\": \"dhcp\""));
+    }
+
+    /// The grub.cfg the installer writes (photon_installer/mk-setup-grub.sh):
+    /// both `linux` lines get the console, exactly once, and nothing else moves.
+    #[test]
+    fn the_serial_console_lands_on_the_installers_own_linux_lines() {
+        let dir = std::env::temp_dir().join(format!("sharukhan-grub-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("boot/grub2")).unwrap();
+        let cfg = dir.join("boot/grub2/grub.cfg");
+        let before = "menuentry \"Photon\" {\n  linux /boot/$photon_linux root=$rootpartition $photon_cmdline $systemd_cmdline  $user_cmdline \n  initrd /boot/$photon_initrd\n}\nmenuentry \"Photon fsck\" {\n  linux /boot/$photon_linux root=$rootpartition $photon_cmdline fsck.mode=force fsck.repair=yes\n}\n";
+        std::fs::write(&cfg, before).unwrap();
+        let line = GRUB_SERIAL_CONSOLE.replace("/boot/grub2/grub.cfg", &cfg.to_string_lossy());
+        for _ in 0..2 {
+            assert!(std::process::Command::new("sh").args(["-c", &line]).status().unwrap().success());
+        }
+        let after = std::fs::read_to_string(&cfg).unwrap();
+        let linux: Vec<&str> = after.lines().filter(|l| l.trim_start().starts_with("linux ")).collect();
+        assert_eq!(linux.len(), 2);
+        for l in &linux {
+            assert_eq!(l.matches("console=ttyS0,115200n8").count(), 1, "{l}");
+            assert!(l.contains("console=tty0"), "{l}");
+        }
+        assert_eq!(after.lines().filter(|l| !l.trim_start().starts_with("linux ")).collect::<Vec<_>>(),
+                   before.lines().filter(|l| !l.trim_start().starts_with("linux ")).collect::<Vec<_>>());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The installer waits for the preinstall script's output to close before
+    /// it installs anything, so the script must return at once while the
+    /// detached tail keeps copying the log to the serial port.
+    #[test]
+    fn preinstall_returns_at_once_and_keeps_streaming_the_log() {
+        let dir = std::env::temp_dir().join(format!("sharukhan-pre-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (log, tty) = (dir.join("installer.log"), dir.join("ttyS0"));
+        std::fs::write(&log, "step 1\n").unwrap();
+        let script = preinstall()
+            .join("\n")
+            .replace("/var/log/installer.log", &log.to_string_lossy())
+            .replace("/dev/ttyS0", &tty.to_string_lossy());
+        let t0 = std::time::Instant::now();
+        let out = std::process::Command::new("sh").args(["-c", &script]).output().unwrap();
+        assert!(out.status.success());
+        assert!(t0.elapsed() < std::time::Duration::from_secs(2), "preinstall blocked for {:?}", t0.elapsed());
+        std::thread::sleep(std::time::Duration::from_millis(1500));
+        std::fs::write(&log, "step 1\nstep 2 after the script returned\n").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2500));
+        let seen = std::fs::read_to_string(&tty).unwrap_or_default();
+        let _ = std::process::Command::new("pkill").args(["-f", &log.to_string_lossy()]).status();
+        assert!(seen.contains("step 1") && seen.contains("step 2 after the script returned"), "serial got: {seen:?}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

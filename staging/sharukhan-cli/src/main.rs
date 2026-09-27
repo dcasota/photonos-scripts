@@ -134,7 +134,8 @@ OPTIONS:
     --jobs <n>          proposed parallel VM count (status); default is cpus/4
     --job <id>          a job table row id (stop, watch) - NOT --jobs
     --dry-run           run every gate, change nothing (run, stop)
-    --keep              do not tear the VM down after verifying (run)
+    --keep              keep each VM after verifying (run); an installed one stays up,
+                        one whose install did not finish is powered off with its disk kept
     --settle <sec>      minimum ISO age before the first VM (run); default 300
     --wait-idle <sec>   wait this long for foreign builds/installs (run, build, build-iso); default 0
     --log <path>        run log path (run)

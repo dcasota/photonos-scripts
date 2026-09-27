@@ -1286,6 +1286,35 @@ fn build_variant(
 mod tests {
     use super::*;
 
+    /// The single-source kernel spec (#36) keeps the canister pin in an
+    /// included file behind a subrelease conditional; the prebuilt row's
+    /// canister label depends on still finding it there.
+    #[test]
+    fn the_canister_pin_is_found_through_the_single_source_include() {
+        let (mut c, root) = plan_cfg("pin");
+        let tree = root.join("tree");
+        std::fs::create_dir_all(tree.join("SPECS/linux")).unwrap();
+        std::fs::write(tree.join("build-config.json"),
+            r#"{"photon-build-param": {"photon-subrelease": "92"}}"#).unwrap();
+        std::fs::write(tree.join("SPECS/linux/linux.spec"),
+            "Name: linux\nSource991: linux-6.12.inc\nSource990: linux-6.1.inc\n\
+             %if 0%{?photon_subrelease} <= 90\n%include %{SOURCE990}\n%else\n%include %{SOURCE991}\n%endif\n").unwrap();
+        std::fs::write(tree.join("SPECS/linux/linux-6.12.inc"),
+            "%define fips_canister_version 6.12.60-18.2.ph5\n").unwrap();
+        std::fs::write(tree.join("SPECS/linux/linux-6.1.inc"),
+            "%define fips_canister_version 5.0.0-6.1.75-2.ph5-secure\n").unwrap();
+        c.photon_tree = tree.clone();
+        assert_eq!(spec_canister_pin(&c).as_deref(), Some("6.12.60-18.2.ph5"));
+        // subrelease 90 selects the 6.1 kernel's include
+        std::fs::write(tree.join("build-config.json"),
+            r#"{"photon-build-param": {"photon-subrelease": 90}}"#).unwrap();
+        assert_eq!(spec_canister_pin(&c).as_deref(), Some("5.0.0-6.1.75-2.ph5-secure"));
+        // unknown subrelease: no guess
+        std::fs::remove_file(tree.join("build-config.json")).unwrap();
+        assert_eq!(spec_canister_pin(&c), None);
+        let _ = fs::remove_dir_all(&root);
+    }
+
     /// The 2026-09-26 contamination, as `git status --porcelain` showed it.
     #[test]
     fn a_foreign_edit_in_the_common_tree_is_named() {
@@ -2041,10 +2070,14 @@ pub fn vault_mismatched_canisters(stage: &Path, want: &str) -> Vec<String> {
 /// `fips_canister_version` pin, read from the tree rather than written down.
 pub fn spec_canister_pin(cfg: &Config) -> Option<String> {
     let dir = cfg.photon_tree.join("SPECS/linux");
+    // Without a subrelease the single-source spec keeps both kernels' includes
+    // and the first pin - the 6.1 kernel's - would win. No answer beats the
+    // wrong kernel's canister.
+    let subrelease = crate::specresolve::tree_subrelease(&cfg.photon_tree)?;
     let text = crate::specresolve::resolve(
         &crate::specresolve::dir_reader(&dir),
         "linux.spec",
-        crate::specresolve::tree_subrelease(&cfg.photon_tree),
+        Some(subrelease),
     );
     text.and_then(|t| {
         t.lines()
