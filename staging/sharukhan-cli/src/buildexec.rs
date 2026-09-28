@@ -912,6 +912,43 @@ fn pkg_build_options(c: &mut Ctx, mode: CanisterMode, nevr: Option<&str>) -> Res
         return Err(format!("{} did not read back as written", out.display()));
     }
     c.say(&format!("  wrote and verified {} bytes", json.len()));
+
+    // Point build.py at it. It reads photon-build-param.pkg-build-options
+    // from the common tree's build-config.json, by bare name under
+    // common/data. This used to be left to whatever the tree held: the
+    // host's /root/common still carried the name from earlier driver runs,
+    // so the macros were honoured there - and silently ignored in a fresh
+    // clone, where phase A then built linux as a canister CONSUMER.
+    let cfg_path = c.spec.tree(Tree::Common).join("build-config.json");
+    let text = fs::read_to_string(&cfg_path).map_err(|e| format!("{}: {e}", cfg_path.display()))?;
+    let mut v: serde_json::Value =
+        serde_json::from_str(&text).map_err(|e| format!("{}: {e}", cfg_path.display()))?;
+    let name = "mc_pkg_build_options.json";
+    let param = v
+        .as_object_mut()
+        .ok_or_else(|| format!("{} is not a JSON object", cfg_path.display()))?
+        .entry("photon-build-param")
+        .or_insert_with(|| serde_json::json!({}));
+    let param = param
+        .as_object_mut()
+        .ok_or_else(|| format!("{}: photon-build-param is not an object", cfg_path.display()))?;
+    let before = param.get("pkg-build-options").and_then(|x| x.as_str()).map(str::to_string);
+    param.insert("pkg-build-options".into(), serde_json::Value::String(name.into()));
+    let new = serde_json::to_string_pretty(&v).map_err(|e| e.to_string())? + "\n";
+    fs::write(&cfg_path, &new).map_err(|e| format!("{}: {e}", cfg_path.display()))?;
+    // Prove what build.py will open, rather than trusting the write.
+    let check: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(&cfg_path).map_err(|e| format!("{}: {e}", cfg_path.display()))?,
+    )
+    .map_err(|e| format!("{}: {e}", cfg_path.display()))?;
+    if check["photon-build-param"]["pkg-build-options"].as_str() != Some(name) {
+        return Err(format!("{} does not name {name} after the write", cfg_path.display()));
+    }
+    c.say(&format!(
+        "  {}: photon-build-param.pkg-build-options {} -> {name}",
+        cfg_path.display(),
+        before.as_deref().unwrap_or("(unset)")
+    ));
     Ok(())
 }
 
@@ -3960,6 +3997,9 @@ mod pkgopts_tests {
         fs::create_dir_all(&dir).unwrap();
         let out = dir.join("mc_pkg_build_options.json");
         fs::write(&out, "{\"stale\": \"canister_equivalent 1\"}").unwrap();
+        // A fresh common clone names Photon's own options file.
+        let bc = tmp.join("common/build-config.json");
+        fs::write(&bc, "{\"photon-build-param\": {\"pkg-build-options\": \"pkg_build_options.json\", \"photon-subrelease\": \"92\"}}").unwrap();
 
         let mut s = BuildSpec::from_args(
             &tmp.to_string_lossy(),
@@ -3991,6 +4031,10 @@ mod pkgopts_tests {
             !got.contains("canister_equivalent"),
             "prebuilt must carry no macros: {got}"
         );
+        // ...and build.py is pointed at it, other settings kept.
+        let bcv: serde_json::Value = serde_json::from_str(&fs::read_to_string(&bc).unwrap()).unwrap();
+        assert_eq!(bcv["photon-build-param"]["pkg-build-options"], "mc_pkg_build_options.json");
+        assert_eq!(bcv["photon-build-param"]["photon-subrelease"], "92");
         let _ = fs::remove_dir_all(&tmp);
     }
 
@@ -4388,6 +4432,7 @@ mod pkgopts_tests {
         let dir = tmp.join("common/common/data");
         let _ = fs::remove_dir_all(&tmp);
         fs::create_dir_all(&dir).unwrap();
+        fs::write(tmp.join("common/build-config.json"), "{}").unwrap();
         let out = dir.join("mc_pkg_build_options.json");
         let s = BuildSpec::from_args(
             &tmp.to_string_lossy(),
