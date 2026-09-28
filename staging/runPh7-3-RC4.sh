@@ -539,10 +539,20 @@ for fname, date, entry in fixes:
         print(f"[runPh7-3-RC4] {p}: {fname} already applied")
         continue
     nums = [int(n) for n in re.findall(r"(?m)^Patch(\d+):", t)]
-    if not nums:
+    plain = re.findall(r"(?m)^Patch:.*\n", t)
+    if nums and plain:
+        sys.exit(f"[runPh7-3-RC4] ERROR: {p}: mixes numbered and unnumbered Patch lines")
+    if nums:
+        last = max(nums)
+        label = f"Patch{last + 1}"
+        t, n = re.subn(rf"(?m)^(Patch{last}:.*\n)", rf"\g<1>{label}: {fname}\n", t, count=1)
+    elif plain:
+        # unnumbered: rpm numbers them in order; append after the last one
+        label = "Patch"
+        i = t.rindex(plain[-1]) + len(plain[-1])
+        t, n = t[:i] + f"Patch: {fname}\n" + t[i:], 1
+    else:
         sys.exit(f"[runPh7-3-RC4] ERROR: {p}: no Patch lines")
-    last = max(nums)
-    t, n = re.subn(rf"(?m)^(Patch{last}:.*\n)", rf"\g<1>Patch{last + 1}: {fname}\n", t, count=1)
     m = re.search(r"(?m)^(Release:\s*)(\d+)(%\{\?dist\})", t)
     if n != 1 or not m:
         sys.exit(f"[runPh7-3-RC4] ERROR: {p}: cannot add {fname}")
@@ -551,7 +561,7 @@ for fname, date, entry in fixes:
     ver = re.search(r"(?m)^Version:\s*(\S+)", t).group(1)
     t = t.replace("%changelog\n", f"%changelog\n* {date} Daniel Casota <dcasota@gmail.com> "
                   f"{ver}-{rel}\n" + entry, 1)
-    print(f"[runPh7-3-RC4] {p}: Patch{last + 1} {fname}, release {ver}-{rel}")
+    print(f"[runPh7-3-RC4] {p}: {label} {fname}, release {ver}-{rel}")
 p.write_text(t)
 PY
 }
