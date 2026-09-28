@@ -313,7 +313,172 @@ fn kernel_pins(c: &mut Ctx, kernel: &str, script: &str) -> Result<(), String> {
             out.status.code().unwrap_or(-1)
         ));
     }
-    Ok(())
+    prune_kernel_specs(c, kernel)
+}
+
+/// Run Photon's spec checker on `specs` (file names under SPECS/linux) in one
+/// process. The checker caches its per-directory unused-file verdict, so a
+/// spec checked after another one in the same run reports less: the pruning
+/// runs it once per spec, and once over both as build.py does.
+fn kernel_spec_check(c: &Ctx, tree: &Path, which: &[&str]) -> Result<(bool, Vec<PathBuf>, String), String> {
+    let common = c.spec.tree(Tree::Common);
+    let sub = crate::specresolve::tree_subrelease(tree).unwrap_or(92);
+    let specs = tree.join("SPECS/linux");
+    let out = Command::new("python3")
+        .arg(common.join("support/spec-checker/check_spec.py"))
+        .args(["--subrelease", &sub.to_string()])
+        .args(which.iter().map(|w| specs.join(w)))
+        .current_dir(&common)
+        .output()
+        .map_err(|e| format!("running the spec checker: {e}"))?;
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let prefix = format!("{}/", specs.display());
+    let mut listed: Vec<PathBuf> = text
+        .lines()
+        .filter(|l| l.starts_with(&prefix))
+        .map(PathBuf::from)
+        .collect();
+    listed.sort();
+    listed.dedup();
+    Ok((out.status.success(), listed, text))
+}
+
+/// Make the kernel spec directory pass Photon's spec checker after the pins.
+///
+/// A profile's pins apply its kernel's patch set and leave the release's own
+/// kernel patches behind: their PatchN/SourceN lines stay in the specs and
+/// their files on disk, which build.py's checker rejects ("List of unused
+/// files", "mentioned but unused") whenever make runs without a TTY. The
+/// wrapper's own runs never reached the check; the cascade does. Nothing is
+/// skipped here: exactly what the checker lists is pruned from this working
+/// tree (the reset stage restores it), and the checker must then pass.
+///
+/// * a PatchN line naming a listed file is removed - the checker found it is
+///   not applied;
+/// * a SourceN line naming a listed file is removed only when nothing in the
+///   spec refers to that Source; otherwise the build stops;
+/// * a listed file that no spec line names any more is deleted.
+fn prune_kernel_specs(c: &mut Ctx, kernel: &str) -> Result<(), String> {
+    let tree = c.spec.tree(Tree::Release);
+    let (mut lines_removed, mut files_removed) = (0usize, 0usize);
+    for round in 1..=4 {
+        // Per spec: what that spec's own run lists (its lines may go); the
+        // combined run as build.py does it (only its verdict and files).
+        let mut per_spec: Vec<(&str, Vec<PathBuf>)> = Vec::new();
+        let mut listed: Vec<PathBuf> = Vec::new();
+        let mut all_ok = true;
+        for spec in ["linux.spec", "linux-esx.spec"] {
+            let (ok, l, _) = kernel_spec_check(c, &tree, &[spec])?;
+            all_ok &= ok;
+            listed.extend(l.iter().cloned());
+            per_spec.push((spec, l));
+        }
+        let (ok, l, _) = kernel_spec_check(c, &tree, &["linux.spec", "linux-esx.spec"])?;
+        all_ok &= ok;
+        listed.extend(l);
+        listed.sort();
+        listed.dedup();
+        if all_ok {
+            if round == 1 {
+                c.say("  kernel specs pass the spec checker as pinned");
+            } else {
+                c.say(&format!(
+                    "  pruned what the spec checker lists after the {kernel} pins: \
+                     {lines_removed} spec line(s), {files_removed} file(s) from this working tree"
+                ));
+                c.say("  kernel specs pass the spec checker (each spec, and both together)");
+            }
+            return Ok(());
+        }
+        if listed.is_empty() {
+            let (_, _, text) = kernel_spec_check(c, &tree, &["linux.spec", "linux-esx.spec"])?;
+            for l in text.lines().filter(|l| !l.trim().is_empty()).take(40) {
+                c.say(&format!("    {l}"));
+            }
+            return Err("the kernel specs fail the spec checker for a reason pruning cannot address".into());
+        }
+        let (l, f) = prune_listed(&tree, &per_spec, &listed)?;
+        lines_removed += l;
+        files_removed += f;
+        if l == 0 && f == 0 {
+            return Err(format!(
+                "the spec checker still lists {} path(s) that pruning cannot remove",
+                listed.len()
+            ));
+        }
+    }
+    Err("the kernel specs still fail the spec checker after 4 pruning rounds".into())
+}
+
+/// Remove what `listed` names: unapplied PatchN lines, unreferenced SourceN
+/// lines, and files no spec line names any more. Returns (lines, files).
+fn prune_listed(
+    tree: &Path,
+    per_spec: &[(&str, Vec<PathBuf>)],
+    listed: &[PathBuf],
+) -> Result<(usize, usize), String> {
+    let specs = tree.join("SPECS/linux");
+    let (mut lines_removed, mut files_removed) = (0usize, 0usize);
+    let mut texts: Vec<(PathBuf, String)> = Vec::new();
+    for (f, own) in per_spec {
+        // Only what THIS spec's run listed: a file both specs name but only
+        // one applies stays in the other.
+        let names: std::collections::BTreeSet<String> = own
+            .iter()
+            .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+            .collect();
+        let p = specs.join(f);
+        let t = fs::read_to_string(&p).map_err(|e| format!("{}: {e}", p.display()))?;
+        let mut keep = String::with_capacity(t.len());
+        for line in t.split_inclusive('\n') {
+            let l = line.trim_end();
+            let tag = l.split(':').next().unwrap_or("");
+            let is_patch = tag.starts_with("Patch") && tag[5..].chars().all(|x| x.is_ascii_digit());
+            let is_source = tag.starts_with("Source") && tag[6..].chars().all(|x| x.is_ascii_digit()) && tag.len() > 6;
+            let file = l.split_once(':').map(|(_, v)| v.trim()).unwrap_or("");
+            let base = file.rsplit('/').next().unwrap_or("");
+            if (is_patch || is_source) && names.contains(base) {
+                if is_source {
+                    let n = &tag[6..];
+                    let used = t.contains(&format!("%{{SOURCE{n}}}")) || t.contains(&format!("%{{S:{n}}}"));
+                    if used {
+                        return Err(format!(
+                            "{f}: {tag} ({base}) is reported unused by the spec checker but the spec \
+                             refers to %{{SOURCE{n}}}; refusing to prune a contradiction"
+                        ));
+                    }
+                }
+                lines_removed += 1;
+                continue;
+            }
+            keep.push_str(line);
+        }
+        texts.push((p, keep));
+    }
+    for (p, t) in &texts {
+        fs::write(p, t).map_err(|e| format!("{}: {e}", p.display()))?;
+    }
+    let still_named = |base: &str| {
+        texts.iter().any(|(_, t)| {
+            t.lines().any(|l| {
+                let tag = l.split(':').next().unwrap_or("");
+                (tag.starts_with("Patch") || tag.starts_with("Source"))
+                    && l.split_once(':').map(|(_, v)| v.trim().rsplit('/').next() == Some(base)).unwrap_or(false)
+            })
+        })
+    };
+    for p in listed {
+        let base = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+        if !still_named(&base) && p.is_file() {
+            fs::remove_file(p).map_err(|e| format!("{}: {e}", p.display()))?;
+            files_removed += 1;
+        }
+    }
+    Ok((lines_removed, files_removed))
 }
 
 /// Build Hyper-V guest support into one flavour's kernel config.
