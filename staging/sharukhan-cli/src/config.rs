@@ -13,6 +13,7 @@
 use std::env;
 use std::path::PathBuf;
 
+#[derive(Clone)]
 pub struct Config {
     // ---- host tooling ----------------------------------------------------
     pub vmrun: PathBuf,

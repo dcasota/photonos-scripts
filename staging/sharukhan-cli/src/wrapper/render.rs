@@ -425,6 +425,53 @@ pub fn kernel_patches(c: &Ctx) -> String {
     }
 }
 
+/// The FIPS canister series editor, run by the rendered wrapper. It is
+/// manifest-driven and knows no kernel version (see the file's header).
+pub const FIPS_SPEC_EDIT: &str = include_str!("assets/fips_spec_edit.py");
+/// Heredoc delimiter for the editor; must not occur in it (asserted).
+const FIPS_EOF: &str = "FIPSPY";
+
+/// The FIPS canister enabler: runs after the config merge (it anchors to the
+/// merge block) and only for a canister build. Empty without a `fips` section.
+pub fn kernel_fips(c: &Ctx) -> String {
+    let Some(f) = &c.profile.fips else {
+        return String::new();
+    };
+    assert!(
+        !FIPS_SPEC_EDIT.lines().any(|l| l.trim() == FIPS_EOF),
+        "the FIPS editor contains its own heredoc delimiter"
+    );
+    let tag = c.tag();
+    let func = format!("enable_fips_{}", c.token());
+    let mut v: Vec<String> = f.comment.iter().map(|l| format!("# {l}")).collect();
+    v.extend([
+        format!("{func}() {{"),
+        "  spec=\"$1\"".into(),
+        "  [ -f \"$spec\" ] || return 0".into(),
+        format!("  [ -f \"{}\" ] || {{ echo \"[{tag}] ERROR: {} missing\" 1>&2; return 1; }}", f.manifest, f.manifest),
+        format!("  python3 - \"$spec\" \"{}\" \"{}\" << '{FIPS_EOF}'", f.manifest, f.lkcm_version),
+    ]);
+    v.extend(FIPS_SPEC_EDIT.lines().map(str::to_string));
+    v.extend([
+        FIPS_EOF.into(),
+        "}".into(),
+        "case \"${CANISTER_MODE:-none}\" in".into(),
+        "  build|equivalent-a|equivalent-b)".into(),
+        format!("    {func} SPECS/linux/linux.spec || exit 1"),
+        format!("    {func} SPECS/linux/linux-esx.spec || exit 1"),
+        "    ;;".into(),
+        "  none)".into(),
+        format!("    echo \"[{tag}] FIPS canister off (CANISTER_MODE=none)\""),
+        "    ;;".into(),
+        "  *)".into(),
+        format!("    echo \"[{tag}] ERROR: no {} canister for CANISTER_MODE=$CANISTER_MODE\" 1>&2", f.lkcm_version),
+        "    exit 1".into(),
+        "    ;;".into(),
+        "esac".into(),
+    ]);
+    lines(&v)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -432,5 +479,10 @@ mod tests {
     #[test]
     fn autopatch_lines_are_formed_from_the_number() {
         assert_eq!(autopatch(7300), "%autopatch -p1 -m7300 -M7300");
+    }
+    #[test]
+    fn the_fips_editor_never_contains_its_heredoc_delimiter() {
+        assert!(!FIPS_SPEC_EDIT.lines().any(|l| l.trim() == FIPS_EOF));
+        assert!(FIPS_SPEC_EDIT.starts_with("#!/usr/bin/env python3"));
     }
 }

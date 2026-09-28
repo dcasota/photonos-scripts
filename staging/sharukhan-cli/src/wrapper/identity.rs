@@ -118,6 +118,12 @@ impl KernelRelease {
     }
 
     /// The release as kernel.org names it, and as the tarball directory does.
+    /// The kernel series, `<major>.<minor>` (the LKCM version of a canister
+    /// built from it).
+    pub fn series(&self) -> String {
+        format!("{}.{}", self.major, self.minor)
+    }
+
     pub fn ksrc(&self) -> String {
         match (self.patch, self.kind) {
             (Some(p), _) => format!("{}.{}.{}", self.major, self.minor, p),

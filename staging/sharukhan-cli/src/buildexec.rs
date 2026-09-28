@@ -262,7 +262,58 @@ pub fn inject(c: &mut Ctx, i: &Injection) -> Result<(), String> {
         Injection::SpecFixup(f) => spec_fixup(c, *f),
         Injection::KernelConfig { arch, flavour } => kernel_config(c, arch, flavour),
         Injection::ReleaseBump { flavour } => release_bump(c, flavour),
+        Injection::KernelPins { kernel, script } => kernel_pins(c, kernel, script),
     }
+}
+
+/// Source a derived kernel wrapper's pin script in the release tree, the way
+/// the wrapper does it (`set -eu`, the same variables, the canister mode that
+/// decides whether the FIPS series is enabled). Every line it prints is
+/// logged; a non-zero exit stops the build.
+fn kernel_pins(c: &mut Ctx, kernel: &str, script: &str) -> Result<(), String> {
+    let tree = c.spec.tree(Tree::Release);
+    let mode = c.spec.canister.as_str();
+    if c.dry {
+        c.say(&format!(
+            "  would source the {kernel} wrapper pin script in {} (CANISTER_MODE={mode})",
+            tree.display()
+        ));
+        return Ok(());
+    }
+    let file = c.spec.base_dir.join(format!(".sharukhan-pins-{kernel}.sh"));
+    fs::write(&file, script).map_err(|e| format!("{}: {e}", file.display()))?;
+    c.say(&format!(
+        "  sourcing {} in {} (CANISTER_MODE={mode})",
+        file.display(),
+        tree.display()
+    ));
+    let out = Command::new("sh")
+        .arg("-c")
+        .arg("set -eu; . \"$1\"")
+        .arg("sh")
+        .arg(&file)
+        .current_dir(&tree)
+        .env("BASE_DIR", &c.spec.base_dir)
+        .env("COMMON_BRANCH", &c.spec.common_branch)
+        .env("RELEASE_BRANCH", &c.spec.release)
+        .env("COMMON_DIR", c.spec.tree(Tree::Common))
+        .env("CANISTER_MODE", mode)
+        .env("PIN_REQUIRE_KVER", "1")
+        .output()
+        .map_err(|e| format!("running the {kernel} pin script: {e}"))?;
+    for l in String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .chain(String::from_utf8_lossy(&out.stderr).lines())
+    {
+        c.say(&format!("    {l}"));
+    }
+    if !out.status.success() {
+        return Err(format!(
+            "the {kernel} wrapper pin script failed (exit {}); see the lines above",
+            out.status.code().unwrap_or(-1)
+        ));
+    }
+    Ok(())
 }
 
 /// Build Hyper-V guest support into one flavour's kernel config.
@@ -2223,6 +2274,36 @@ pub fn make_and_deliver(c: &mut Ctx) -> Result<PathBuf, String> {
             ));
             clean_sandboxes(c, &stage);
         }
+        // A kernel profile's pre-build: its own make run, part of the attempt,
+        // so a failure is retried and judged like any other - never skipped.
+        if target == "image" && !c.spec.prebuild.is_empty() {
+            let pk = format!("pkgs={}", c.spec.prebuild.join(","));
+            c.say(&format!(
+                "  attempt {attempt}/{MAKE_ATTEMPTS}: pre-build: sudo make {jflag} {pk} {threads}"
+            ));
+            let prc = Command::new("sudo")
+                .args(["make", &jflag, &pk, &threads])
+                .current_dir(&release)
+                .status()
+                .map_err(|e| format!("running the pre-build: {e}"))?
+                .code()
+                .unwrap_or(-1);
+            if prc != 0 {
+                let progress = count_newer(&[&stage, &common_stage], &marker);
+                c.say(&format!(
+                    "  attempt {attempt}: pre-build exited {prc} ({progress} file(s) touched since marker)"
+                ));
+                if attempt > 1 && prc == prev_rc && progress == 0 && prev_progress == 0 {
+                    return Err(format!(
+                        "the pre-build failed identically twice (exit {prc}, no new output): \
+                         deterministic, not flaky. Fix it and re-run."
+                    ));
+                }
+                prev_rc = prc;
+                prev_progress = progress;
+                continue;
+            }
+        }
         let img = format!("IMG_NAME={}", c.spec.img.as_str());
         let mut args: Vec<&str> = vec!["make", &jflag, target];
         if target == "image" {
@@ -2669,6 +2750,7 @@ mod tests {
             canister_nevr: None,
             compose_only: false,
             injections: vec![],
+            prebuild: vec![],
         }
     }
 

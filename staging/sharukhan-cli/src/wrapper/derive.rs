@@ -151,6 +151,51 @@ fn apply_renames(
     t
 }
 
+/// Join Python string pieces: drop every `'<whitespace>'` boundary.
+fn join_py_pieces(region: &str) -> std::result::Result<String, String> {
+    let mut joined = String::new();
+    let mut chars = region.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\'' {
+            while chars.peek().is_some_and(|x| x.is_whitespace()) {
+                chars.next();
+            }
+            if chars.peek() == Some(&'\'') {
+                chars.next();
+                continue;
+            }
+            return Err("a quote inside the pkgs list does not join two pieces".into());
+        }
+        joined.push(ch);
+    }
+    Ok(joined)
+}
+
+/// The packages of the one `pkgs="..."` list in a (derived) wrapper, pieces
+/// joined and every name validated. Empty when there is no list.
+pub fn pkgs_list(text: &str) -> std::result::Result<Vec<String>, String> {
+    let starts: Vec<usize> = text.match_indices("pkgs=\"").map(|(i, _)| i).collect();
+    let start = match starts.as_slice() {
+        [] => return Ok(vec![]),
+        [s] => *s,
+        _ => return Err("more than one pkgs=\"...\" list".into()),
+    };
+    let from = start + "pkgs=\"".len();
+    let close = text[from..]
+        .find('"')
+        .map(|i| from + i)
+        .ok_or("the pkgs list is never closed")?;
+    let joined = join_py_pieces(&text[from..close])?;
+    joined
+        .split(',')
+        .map(|p| {
+            escape::package_name("pkgs list", p)
+                .map(|_| p.to_string())
+                .map_err(|e| e.to_string())
+        })
+        .collect()
+}
+
 /// The pre-build slot extends the base's own package list; it never restates
 /// it. The list is found structurally (`pkgs="..."`, possibly split over
 /// several Python string pieces), the target's extras are appended, and the
@@ -173,25 +218,7 @@ fn prebuild(c: &Ctx, renamed: &str) -> Result<String> {
         .find('"')
         .map(|i| list_from + i)
         .ok_or_else(|| slot_err("the pkgs list is never closed".into()))?;
-    // Join Python string pieces: drop every `'<whitespace>'` boundary.
-    let region = &renamed[list_from..close];
-    let mut joined = String::new();
-    let mut chars = region.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if ch == '\'' {
-            while chars.peek().is_some_and(|x| x.is_whitespace()) {
-                chars.next();
-            }
-            if chars.peek() == Some(&'\'') {
-                chars.next();
-                continue;
-            }
-            return Err(slot_err(
-                "a quote inside the pkgs list does not join two pieces".into(),
-            ));
-        }
-        joined.push(ch);
-    }
+    let joined = join_py_pieces(&renamed[list_from..close]).map_err(slot_err)?;
     let have: Vec<&str> = joined.split(',').collect();
     for p in &have {
         escape::package_name("base prebuild list", p).map_err(|e| slot_err(e.to_string()))?;
@@ -307,6 +334,7 @@ pub fn derive_text(base_text: &str, profile: &Profile) -> Result<Derived> {
                     "kernel-sandbox-names" => render::kernel_sandbox_names(&ctx),
                     "kernel-pin-calls" => render::kernel_pin_calls(&ctx),
                     "kernel-patches" => render::kernel_patches(&ctx),
+                    "kernel-fips" => render::kernel_fips(&ctx),
                     "kernel-source" => render::kernel_source(&ctx),
                     "version-assert" => render::version_assert(&ctx),
                     "prebuild" => {
@@ -586,12 +614,12 @@ mod controls {
 
     #[test]
     fn a_base_bumped_since_review_names_the_review_to_do() {
-        let b = base().replace("wrapper v13", "wrapper v14");
+        let b = base().replace("wrapper v14", "wrapper v15");
         let e = fails(&b, &profile());
         assert!(
-            e.contains("is wrapper v14")
-                && e.contains("reviewed against v13")
-                && e.contains("base.wrapper_version = 14"),
+            e.contains("is wrapper v15")
+                && e.contains("reviewed against v14")
+                && e.contains("base.wrapper_version = 15"),
             "{e}"
         );
         let mut p = profile();

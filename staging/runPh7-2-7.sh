@@ -3,7 +3,7 @@
 #
 # @sharukhan-slot header begin
 # Photon OS 5.0 userland + experimental Linux 7.2.7
-# wrapper v13
+# wrapper v14
 # @sharukhan-slot header end
 #
 # $1 BASE_DIR        default /root
@@ -32,7 +32,7 @@ export EDITOR=true
 export VISUAL=true
 
 # @sharukhan-slot banner begin
-echo "[runPh7-2-7] wrapper v13 + Hyper-V and legacy iptables config restore + BTF only where Photon has it + perf hook only with tools subpackage + installer initrd list restore (STIG)"
+echo "[runPh7-2-7] wrapper v14 + Hyper-V and legacy iptables config restore + BTF only where Photon has it + perf hook only with tools subpackage + installer initrd list restore (STIG)"
 # @sharukhan-slot banner end
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" 2>/dev/null && pwd)
@@ -890,6 +890,9 @@ pin_rust_skip_docs
 
 
 wipe_kernel_sandboxes
+
+# @sharukhan-slot kernel-fips begin
+# @sharukhan-slot kernel-fips end
 
 # @sharukhan-slot kernel-source begin
 K727_SHA="9a7ee3e35e1e4eea44fd2fadce7b51deb9cae8b1e19ed4d8dc1e59d2e310ffa6dae508a9b0919d2d3cd29d00ca79fd473e7540a3cfb1124e56c4de091915a9d9"

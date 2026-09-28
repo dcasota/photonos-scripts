@@ -28,13 +28,14 @@ pub const SLOT: &str = "# @sharukhan-slot ";
 const MARK: &str = "@sharukhan-";
 
 /// Every slot a base must declare, in the order they appear in it.
-pub const SLOTS: [&str; 9] = [
+pub const SLOTS: [&str; 10] = [
     "header",
     "banner",
     "kernel-pin",
     "kernel-sandbox-names",
     "kernel-pin-calls",
     "kernel-patches",
+    "kernel-fips",
     "kernel-source",
     "version-assert",
     "prebuild",

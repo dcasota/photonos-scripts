@@ -181,6 +181,121 @@ pub fn check_manifest(
     Ok(checked)
 }
 
+/// Check a FIPS series manifest (JSON, from the branch) against the branch
+/// file list: the shape the wrapper's editor relies on, and every file it
+/// names present exactly once under SPECS/linux/ (rpm sees the directory
+/// flattened, so a basename must be unique there).
+pub fn check_fips_manifest(json: &str, files: &[&str]) -> Result<Vec<String>> {
+    let bad = |what: &str, why: String| verify_err(format!("FIPS manifest {what}"), "valid", why);
+    let m: serde_json::Value =
+        serde_json::from_str(json).map_err(|e| bad("JSON", e.to_string()))?;
+    let obj = |v: &serde_json::Value, k: &str| -> Result<serde_json::Map<String, serde_json::Value>> {
+        v.get(k)
+            .and_then(|x| x.as_object())
+            .cloned()
+            .ok_or_else(|| bad(k, "missing or not an object".into()))
+    };
+    let num = |k: &str, what: &str| -> Result<u32> {
+        k.parse::<u32>()
+            .ok()
+            .filter(|n| k == n.to_string())
+            .ok_or_else(|| bad(what, format!("key '{k}' is not a number")))
+    };
+    let ranges_of = |v: Option<&serde_json::Value>, what: &str| -> Result<Vec<(u32, u32)>> {
+        let Some(v) = v else { return Ok(vec![]) };
+        let arr = v.as_array().ok_or_else(|| bad(what, "not a list".into()))?;
+        arr.iter()
+            .map(|r| {
+                let a = r.as_array().filter(|a| a.len() == 2);
+                let (lo, hi) = match a {
+                    Some(a) => (a[0].as_u64(), a[1].as_u64()),
+                    None => (None, None),
+                };
+                match (lo, hi) {
+                    (Some(lo), Some(hi)) if lo <= hi && hi < u32::MAX as u64 => Ok((lo as u32, hi as u32)),
+                    _ => Err(bad(what, format!("{r} is not [from, to]"))),
+                }
+            })
+            .collect()
+    };
+    let mut named: Vec<String> = Vec::new();
+    let mut take_files = |map: &serde_json::Map<String, serde_json::Value>, what: &str, installs: bool| -> Result<Vec<u32>> {
+        let mut nums = Vec::new();
+        for (k, v) in map {
+            let n = num(k, what)?;
+            match v.get("file") {
+                Some(serde_json::Value::String(f)) => {
+                    named.push(f.clone());
+                    nums.push(n);
+                }
+                Some(serde_json::Value::Null) if !installs => {}
+                _ => return Err(bad(what, format!("{k} has no file"))),
+            }
+            if installs {
+                let i = v.get("installs").and_then(|x| x.as_str()).unwrap_or("");
+                if i.is_empty() || i.contains('/') {
+                    return Err(bad(what, format!("Source{k} has no plain 'installs' name")));
+                }
+            }
+        }
+        Ok(nums)
+    };
+    let patches = take_files(&obj(&m, "patches")?, "patches", false)?;
+    take_files(&obj(&m, "sources")?, "sources", true)?;
+    let mut ranges = ranges_of(m.get("autopatch"), "autopatch")?;
+    if ranges.is_empty() {
+        return Err(bad("autopatch", "no ranges".into()));
+    }
+    let dropped: Vec<u32> = obj(&m, "dropped")?
+        .keys()
+        .map(|k| num(k, "dropped"))
+        .collect::<Result<_>>()?;
+    let mut all_patches = patches.clone();
+    if let Some(fl) = m.get("flavours") {
+        let fl = fl.as_object().ok_or_else(|| bad("flavours", "not an object".into()))?;
+        for (name, f) in fl {
+            if name != "linux" && name != "linux-esx" {
+                return Err(bad("flavours", format!("unknown flavour '{name}'")));
+            }
+            if let Some(p) = f.get("patches") {
+                let p = p.as_object().ok_or_else(|| bad("flavours", format!("{name}.patches")))?;
+                all_patches.extend(take_files(p, "flavours patches", false)?);
+            }
+            ranges.extend(ranges_of(f.get("autopatch"), "flavours autopatch")?);
+        }
+    }
+    let in_range = |n: u32| ranges.iter().any(|(a, b)| *a <= n && n <= *b);
+    if let Some(n) = all_patches.iter().find(|n| !in_range(**n)) {
+        return Err(bad("patches", format!("Patch{n} is in no autopatch range")));
+    }
+    if let Some(n) = dropped.iter().find(|n| patches.contains(n) || !in_range(**n)) {
+        return Err(bad("dropped", format!("Patch{n} is listed as a patch or is in no range")));
+    }
+    named.sort();
+    named.dedup();
+    let mut checked = Vec::new();
+    for f in &named {
+        let hits = files
+            .iter()
+            .filter(|p| p.starts_with("SPECS/linux/") && p.rsplit('/').next() == Some(f.as_str()))
+            .count();
+        if hits != 1 {
+            return Err(verify_err(
+                format!("FIPS file {f} under SPECS/linux/"),
+                "exactly one",
+                hits.to_string(),
+            ));
+        }
+    }
+    checked.push(format!(
+        "FIPS manifest: {} files present once, {} patches in range, {} dropped",
+        named.len(),
+        all_patches.len(),
+        dropped.len()
+    ));
+    Ok(checked)
+}
+
 /// Verify the branch in `repo` (a photon clone) at `origin/<branch>`.
 pub fn verify(repo: &Path, profile: &Profile) -> Result<BranchReport> {
     let target = profile.release()?;
@@ -218,7 +333,11 @@ pub fn verify(repo: &Path, profile: &Profile) -> Result<BranchReport> {
         ],
     )?;
     let files: Vec<&str> = listing.lines().collect();
-    let checked = check_manifest(profile, &target, &md, &files)?;
+    let mut checked = check_manifest(profile, &target, &md, &files)?;
+    if let Some(f) = &profile.fips {
+        let json = git(repo, &["show", &format!("{commit}:{}", f.manifest)])?;
+        checked.extend(check_fips_manifest(&json, &files)?);
+    }
     Ok(BranchReport {
         git_ref,
         commit,
@@ -360,5 +479,46 @@ mod tests {
         assert_eq!(r.commit.len(), 40);
         assert!(verify(&dir.join("missing"), &p).is_err());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+    const FIPS_JSON: &str = r#"{
+      "patches": {"10001": {"file": "a-7.3.patch"}, "10119": {"file": "b-7.3.patch"}, "11018": {"file": null}},
+      "sources": {"10101": {"file": "w-7.3.c", "installs": "w.c"}},
+      "dropped": {"10003": "superseded"},
+      "autopatch": [[10001, 10004], [10101, 10119], [11000, 11020]],
+      "flavours": {"linux-esx": {"patches": {"10050": {"file": "j.patch"}}, "autopatch": [[10050, 10050]]}}
+    }"#;
+    const FIPS_FILES: [&str; 5] = [
+        "SPECS/linux/fips-7.3/a-7.3.patch",
+        "SPECS/linux/fips-7.3/b-7.3.patch",
+        "SPECS/linux/fips-7.3/w-7.3.c",
+        "SPECS/linux/jitterentropy_builder/j.patch",
+        "SPECS/linux/linux.spec",
+    ];
+
+    #[test]
+    fn a_fips_manifest_whose_files_are_on_the_branch_passes() {
+        let c = check_fips_manifest(FIPS_JSON, &FIPS_FILES).unwrap();
+        assert!(c[0].contains("4 files present once"), "{c:?}");
+    }
+
+    #[test]
+    fn a_fips_manifest_is_refused_when_a_file_is_missing_or_ambiguous() {
+        let missing: Vec<&str> = FIPS_FILES.iter().copied().filter(|f| !f.ends_with("w-7.3.c")).collect();
+        let e = check_fips_manifest(FIPS_JSON, &missing).unwrap_err().to_string();
+        assert!(e.contains("w-7.3.c"), "{e}");
+        let mut dup = FIPS_FILES.to_vec();
+        dup.push("SPECS/linux/other/a-7.3.patch");
+        let e = check_fips_manifest(FIPS_JSON, &dup).unwrap_err().to_string();
+        assert!(e.contains("a-7.3.patch") && e.contains('2'), "{e}");
+    }
+
+    #[test]
+    fn a_fips_manifest_with_a_patch_outside_every_range_is_refused() {
+        let j = FIPS_JSON.replace("\"10119\"", "\"10150\"");
+        let e = check_fips_manifest(&j, &FIPS_FILES).unwrap_err().to_string();
+        assert!(e.contains("Patch10150"), "{e}");
+        let j = FIPS_JSON.replace("\"10003\": \"superseded\"", "\"10001\": \"superseded\"");
+        let e = check_fips_manifest(&j, &FIPS_FILES).unwrap_err().to_string();
+        assert!(e.contains("Patch10001"), "{e}");
     }
 }

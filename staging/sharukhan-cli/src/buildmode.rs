@@ -244,6 +244,11 @@ pub enum Injection {
     /// depend on the remaster module: the injection describes WHAT to change,
     /// and the executor decides how.
     KernelConfig { arch: String, flavour: String },
+    /// Run a derived kernel wrapper's pin script (`sharukhan wrapper derive`)
+    /// in the release tree: it turns the 5.0 kernel specs into the profile's
+    /// kernel and, for a canister build, enables the profile's FIPS series.
+    /// The same text the wrapper itself sources, so the two cannot drift.
+    KernelPins { kernel: String, script: String },
     /// Make the resulting kernel distinguishable by NEVR. A config change with
     /// no Release change produces an RPM that rpm considers identical to the
     /// stock one, which breaks the repo metadata, the predicted names and the
@@ -305,6 +310,9 @@ pub struct BuildSpec {
     /// `assert_phase_b_kernels` checks against the RPMs themselves.
     pub compose_only: bool,
     pub injections: Vec<Injection>,
+    /// Packages built before `make image`, in their own make run (a kernel
+    /// profile's wrapper pre-build). Empty for a plain 5.0 build.
+    pub prebuild: Vec<String>,
 }
 
 impl BuildSpec {
@@ -339,6 +347,7 @@ impl BuildSpec {
             canister_nevr: nevr,
             compose_only: false,
             injections: Vec::new(),
+            prebuild: Vec::new(),
         })
     }
 
@@ -417,6 +426,7 @@ impl Stage {
                 Injection::ReleaseBump { flavour } => {
                     format!("inject:release-bump[{flavour}]:azure")
                 }
+                Injection::KernelPins { kernel, .. } => format!("inject:kernel-pins[{kernel}]"),
             },
         }
     }
@@ -452,6 +462,7 @@ pub fn spec_for(
     poi: &str,
     patch_dir: &str,
     subrelease: Option<u32>,
+    kernel: Option<&crate::kbuild::KernelBuild>,
 ) -> Result<BuildSpec, String> {
     let mut spec = BuildSpec::from_args(
         base_dir,
@@ -478,7 +489,20 @@ pub fn spec_for(
     // patch. They are compiled in, so an equivalent-canister build needs no
     // branch checked out anywhere and nothing waiting on review.
     for e in Embedded::needed_for(spec.canister) {
+        // A kernel profile brings its own canister series and the override
+        // macros with it (the wrapper's FIPS editor); the 6.12 patch would
+        // edit files the profile's kernel specs do not have.
+        if kernel.is_some() && e == Embedded::CanisterEquivalent {
+            continue;
+        }
         spec.injections.push(Injection::Embed(e));
+    }
+    if let Some(kb) = kernel {
+        spec.injections.push(Injection::KernelPins {
+            kernel: kb.name.clone(),
+            script: kb.pins.clone(),
+        });
+        spec.prebuild = kb.prebuild.clone();
     }
     spec.injections.push(Injection::PkgBuildOptions {
         mode: spec.canister,
@@ -710,6 +734,7 @@ mod tests {
                 "2.8",
                 "/root/photon-mc/variant-patches",
                 None,
+                None,
             )
             .unwrap()
         };
@@ -843,6 +868,7 @@ mod tests {
             nevr,
             "2.8",
             "/root/photon-mc/variant-patches",
+            None,
             None,
         )
         .unwrap()

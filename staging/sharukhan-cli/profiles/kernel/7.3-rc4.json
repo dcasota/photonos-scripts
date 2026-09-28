@@ -1,9 +1,9 @@
 {
   "schema": 1,
   "kernel": "7.3-rc4",
-  "base": {"script": "runPh7-2-7.sh", "kernel": "7.2.7", "wrapper_version": 13},
-  "wrapper_version": 8,
-  "summary": "RAP/KCFI on, rdrand-rng, vmwgfx blend, installer/sudo/dbus/cloud-init pre-build, noreplace-smp dropped, esx BTF off, STIG initrd restore, ansible log flush",
+  "base": {"script": "runPh7-2-7.sh", "kernel": "7.2.7", "wrapper_version": 14},
+  "wrapper_version": 9,
+  "summary": "RAP/KCFI on, rdrand-rng, vmwgfx blend, installer/sudo/dbus/cloud-init pre-build, noreplace-smp dropped, esx BTF off, STIG initrd restore, ansible log flush, FIPS canister for canister builds",
   "rpm_release_iteration": 1,
   "source": {
     "sha512": "7a4b9599c2c593131e150ae22030f643813b0fb3de2b479281ebb9a413e7928903adc748eb522e03fd39e9ca4991c12e4d0331718fff59a53fc6676b390c7945",
@@ -98,5 +98,18 @@
       }
     ]
   },
-  "prebuild_extra": ["cloud-init", "sudo", "dbus", "photon-os-installer"]
+  "prebuild_extra": ["cloud-init", "sudo", "dbus", "photon-os-installer"],
+  "fips": {
+    "manifest": "SPECS/linux/fips-7.3/manifest.json",
+    "lkcm_version": "7.3",
+    "comment": [
+      "FIPS canister series ported to Linux 7.3-rc4 (SPECS/linux/fips-7.3 on the release branch;",
+      "manifest.json says which file each PatchN/SourceN names, which patches 7.x does not need,",
+      "and the %autopatch ranges; the port's %prep replay and rpmbuild -bp verified it).",
+      "Only for a canister build: CANISTER_MODE build builds the canister with linux and links",
+      "it into linux-esx; equivalent-a/equivalent-b are sharukhan's two phases. CANISTER_MODE",
+      "none leaves the kernel FIPS-off. No canister of this series is published, so nothing",
+      "built this way is CMVP validated."
+    ]
+  }
 }

@@ -19,6 +19,7 @@ mod identity;
 mod ingest;
 mod install;
 mod job;
+mod kbuild;
 mod kconfig;
 mod kickstart;
 mod leases;
@@ -130,6 +131,10 @@ OPTIONS:
     --iso-type <t>      minimal | full (build-iso)
     --poi <v>           2.8 | latest (build-iso)
     --canister <c>      prebuilt | build | acvp | kat | equivalent (build-iso)
+    --kernel <release>  build-iso, variant-patches: a kernel wrapper profile
+                        (profiles/kernel/<release>.json, e.g. 7.3-rc4). The build
+                        runs in its own root under $MC_WORK/kbuild/<release>;
+                        canister equivalent or build only
                         equivalent = build a canister from the kernel under
                         test, then relink both flavours against it (two builds;
                         phase A is skipped, and the result stays CMVP certified,
@@ -188,6 +193,7 @@ struct Args {
     out: Option<String>,
     poi: Option<String>,
     canister: Option<String>,
+    kernel: Option<String>,
     timeout: Option<u64>,
     allow_build: bool,
     rebase_check: bool,
@@ -293,6 +299,7 @@ fn parse() -> Result<Args, String> {
         out: None,
         poi: None,
         canister: None,
+        kernel: None,
         timeout: None,
         allow_build: false,
         rebase_check: false,
@@ -350,6 +357,7 @@ fn parse() -> Result<Args, String> {
             "--out" => out.out = Some(a.next().ok_or("--out needs a value")?),
             "--poi" => out.poi = Some(a.next().ok_or("--poi needs a value")?),
             "--canister" => out.canister = Some(a.next().ok_or("--canister needs a value")?),
+            "--kernel" => out.kernel = Some(a.next().ok_or("--kernel needs a value")?),
             "--timeout" => {
                 let v = a.next().ok_or("--timeout needs a value")?;
                 out.timeout = Some(
@@ -526,13 +534,14 @@ fn main() -> ExitCode {
             args.iso_type.as_deref().unwrap_or("minimal"),
             args.poi.as_deref().unwrap_or("2.8"),
             args.canister.as_deref().unwrap_or("prebuilt"),
+            args.kernel.as_deref(),
             args.force,
             args.allow_build,
             args.wait_idle,
         ),
         "build" => cmd_build(&args),
         "remaster" => cmd_remaster(&args),
-        "variant-patches" => phases::cmd_variant_patches(&cfg),
+        "variant-patches" => phases::cmd_variant_patches(&cfg, args.kernel.as_deref()),
         "canister" => cmd_canister(&cfg, args.rebase_check),
         "branch-check" => cmd_branch_check(&args),
         "mirrors" => cmd_mirrors(&cfg),
@@ -845,6 +854,7 @@ fn cmd_plan(cfg: &config::Config, only: Option<&str>) -> Result<(), String> {
             iso_type: t.to_string(),
             poi: p.to_string(),
             canister: c.to_string(),
+            kernel: None,
         };
         // The same decision `run` takes: present AND built from today's inputs.
         let stale = match build::plan(cfg, &req, false, true) {
@@ -1127,7 +1137,7 @@ fn cmd_build(args: &Args) -> Result<(), String> {
     // Two copies of this list is how the cascade and the legacy path became
     // different builds under one name.
     let mut spec = buildmode::spec_for(
-        &base, &common, &release, &out, &img, &canister, nevr, &poi, &patches, subrelease,
+        &base, &common, &release, &out, &img, &canister, nevr, &poi, &patches, subrelease, None,
     )?;
 
     // Rebuild the image from a stage whose phase-B kernels are already proven,

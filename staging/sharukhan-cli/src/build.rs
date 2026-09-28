@@ -20,6 +20,9 @@ pub struct IsoRequest {
     pub iso_type: String,
     pub poi: String,
     pub canister: String,
+    /// A kernel profile (`sharukhan wrapper`), e.g. `7.3-rc4`; None builds
+    /// the release's own kernel.
+    pub kernel: Option<String>,
 }
 
 impl IsoRequest {
@@ -35,8 +38,47 @@ impl IsoRequest {
         }
     }
     pub fn key(&self) -> String {
-        format!("{}-poi{}-{}", self.iso_type, self.poi, self.canister)
+        let base = format!("{}-poi{}-{}", self.iso_type, self.poi, self.canister);
+        match &self.kernel {
+            Some(k) => format!("{base}-k{k}"),
+            None => base,
+        }
     }
+
+    /// The flags that name this request on the command line.
+    fn flags(&self) -> String {
+        let k = self
+            .kernel
+            .as_deref()
+            .map(|k| format!(" --kernel {k}"))
+            .unwrap_or_default();
+        format!(
+            "--iso-type {} --poi {} --canister {}{k}",
+            self.iso_type, self.poi, self.canister
+        )
+    }
+}
+
+/// A kernel profile's build, and the configuration it runs under. Only the
+/// canister modes such a build can honour are accepted: no canister of a
+/// profile's series is published, so `prebuilt` (and the certification-only
+/// `acvp`/`kat`) have nothing to link.
+fn kernel_context(cfg: &Config, req: &IsoRequest) -> Result<Option<(Config, crate::kbuild::KernelBuild)>, String> {
+    let Some(k) = &req.kernel else { return Ok(None) };
+    let kb = crate::kbuild::load(k)?;
+    if !matches!(req.canister.as_str(), "equivalent" | "build") {
+        return Err(format!(
+            "--kernel {k} builds with canister 'equivalent' or 'build' only: no {} canister \
+             is published, so '{}' has nothing to link",
+            kb.profile.fips.as_ref().map(|f| f.lkcm_version.as_str()).unwrap_or(k),
+            req.canister
+        ));
+    }
+    if kb.profile.fips.is_none() {
+        return Err(format!("the {k} profile carries no FIPS series; a canister build cannot use it"));
+    }
+    let kc = crate::kbuild::effective_cfg(cfg, &kb);
+    Ok(Some((kc, kb)))
 }
 
 /// Return the ISO for this tuple, building it only when the caller has said it
@@ -71,6 +113,19 @@ pub fn plan(
     force: bool,
     allow_build: bool,
 ) -> Result<Plan, String> {
+    match kernel_context(cfg, req)? {
+        Some((kc, kb)) => plan_in(&kc, req, force, allow_build, Some(&kb)),
+        None => plan_in(cfg, req, force, allow_build, None),
+    }
+}
+
+fn plan_in(
+    cfg: &Config,
+    req: &IsoRequest,
+    force: bool,
+    allow_build: bool,
+    kb: Option<&crate::kbuild::KernelBuild>,
+) -> Result<Plan, String> {
     req.img()?;
     let iso = cfg
         .iso_dir(&req.iso_type, &req.poi, &req.canister)
@@ -80,7 +135,7 @@ pub fn plan(
     // directory looks exactly like an ISO that failed to copy.
     let mut stale: Option<String> = None;
     if !force && iso.exists() {
-        match cached_inputs_differ(cfg, req, iso.parent().unwrap_or(Path::new("/"))) {
+        match cached_inputs_differ(cfg, req, kb, iso.parent().unwrap_or(Path::new("/"))) {
             None => return Ok(Plan::Cached(iso)),
             Some(why) => stale = Some(why),
         }
@@ -88,30 +143,26 @@ pub fn plan(
     if let (Some(why), false) = (&stale, allow_build) {
         return Err(format!(
             "the cached ISO at {} is stale: {why}. Rebuild it with `sharukhan build-iso \
-             --iso-type {} --poi {} --canister {} --allow-build`.",
+             {} --allow-build`.",
             iso.display(),
-            req.iso_type,
-            req.poi,
-            req.canister
+            req.flags()
         ));
     }
     if !allow_build {
         return Err(format!(
             "no ISO at {} and building is off by default. An ISO build takes hours and shares \
              {}/stage with every other build on this host, so it is never started implicitly. \
-             Run `sharukhan build-iso --iso-type {} --poi {} --canister {} --allow-build` when \
-             you mean it.",
+             Run `sharukhan build-iso {} --allow-build` when you mean it.",
             iso.display(),
             cfg.photon_tree.display(),
-            req.iso_type,
-            req.poi,
-            req.canister
+            req.flags()
         ));
     }
     let patch = cfg.variant_patches.join(format!("poi-{}.patch", req.poi));
     if !patch.is_file() {
+        let k = kb.map(|k| format!(" --kernel {}", k.name)).unwrap_or_default();
         return Err(format!(
-            "no variant patch at {} - run `sharukhan variant-patches`",
+            "no variant patch at {} - run `sharukhan variant-patches{k}`",
             patch.display()
         ));
     }
@@ -252,7 +303,11 @@ pub const INPUTS_FILE: &str = "inputs.txt";
 /// or once a PR branch was rebased, `plan` went on reporting ISOs built from
 /// the old base as cached, and a gate run on them would have passed on media
 /// that predates the code under test.
-pub fn build_inputs(cfg: &Config, req: &IsoRequest) -> Result<String, String> {
+pub fn build_inputs(
+    cfg: &Config,
+    req: &IsoRequest,
+    kb: Option<&crate::kbuild::KernelBuild>,
+) -> Result<String, String> {
     let rev = |tree: &Path, r: &str| -> Result<String, String> {
         git(tree, &["rev-parse", &format!("origin/{r}")]).map(|s| s.trim().to_string())
     };
@@ -267,7 +322,17 @@ pub fn build_inputs(cfg: &Config, req: &IsoRequest) -> Result<String, String> {
         hash(&cfg.variant_patches.join(format!("poi-{}.patch", req.poi)))?,
         hash(&cfg.variant_patches.join("common-fixes.patch"))?,
     );
-    if req.canister == "equivalent" {
+    if let Some(kb) = kb {
+        // The profile (and through it the rendered pin script, FIPS editor
+        // included) and the release branch decide the kernel; the branch
+        // commit is already the release-base line.
+        out.push_str(&format!(
+            "kernel-profile {} {}\nkernel-pins {}\n",
+            kb.name,
+            hash(&kb.profile_path)?,
+            sha256::bytes(kb.pins.as_bytes())
+        ));
+    } else if req.canister == "equivalent" {
         out.push_str(&format!(
             "embedded-canister-equivalent {}\n",
             sha256::bytes(crate::buildmode::Embedded::CanisterEquivalent.patch().as_bytes())
@@ -280,12 +345,17 @@ pub fn build_inputs(cfg: &Config, req: &IsoRequest) -> Result<String, String> {
 
 /// None when the ISO in `dir` was built from exactly the inputs a build would
 /// use now; otherwise which inputs moved. Comment lines are ignored.
-fn cached_inputs_differ(cfg: &Config, req: &IsoRequest, dir: &Path) -> Option<String> {
+fn cached_inputs_differ(
+    cfg: &Config,
+    req: &IsoRequest,
+    kb: Option<&crate::kbuild::KernelBuild>,
+    dir: &Path,
+) -> Option<String> {
     let recorded = match fs::read_to_string(dir.join(INPUTS_FILE)) {
         Ok(t) => t,
         Err(_) => return Some(format!("it has no {INPUTS_FILE}, so what it was built from is unknown")),
     };
-    let now = match build_inputs(cfg, req) {
+    let now = match build_inputs(cfg, req, kb) {
         Ok(t) => t,
         Err(e) => return Some(format!("the current inputs cannot be determined ({e})")),
     };
@@ -321,9 +391,23 @@ pub fn resolve(
     allow_build: bool,
     log: &mut dyn FnMut(&str),
 ) -> Result<PathBuf, String> {
+    match kernel_context(cfg, req)? {
+        Some((kc, kb)) => resolve_in(&kc, req, force, allow_build, Some(&kb), log),
+        None => resolve_in(cfg, req, force, allow_build, None, log),
+    }
+}
+
+fn resolve_in(
+    cfg: &Config,
+    req: &IsoRequest,
+    force: bool,
+    allow_build: bool,
+    kb: Option<&crate::kbuild::KernelBuild>,
+    log: &mut dyn FnMut(&str),
+) -> Result<PathBuf, String> {
     let img = req.img()?;
     let dest = cfg.iso_dir(&req.iso_type, &req.poi, &req.canister);
-    let iso = match plan(cfg, req, force, allow_build)? {
+    let iso = match plan_in(cfg, req, force, allow_build, kb)? {
         Plan::Cached(iso) => {
             log(&format!("cache hit: {} -> {}", req.key(), iso.display()));
             return Ok(iso);
@@ -332,7 +416,13 @@ pub fn resolve(
     };
     // Recorded before the build starts: the inputs this ISO is built FROM,
     // even if a patch is regenerated while it runs.
-    let inputs = build_inputs(cfg, req)?;
+    if let Some(kb) = kb {
+        // Before anything is purged: the branch must carry what the profile
+        // names (tarball manifest, patch files, the FIPS series manifest and
+        // every file in it).
+        crate::kbuild::prepare_release_tree(cfg, kb, log)?;
+    }
+    let inputs = build_inputs(cfg, req, kb)?;
 
     fs::create_dir_all(&dest).map_err(|e| format!("{}: {e}", dest.display()))?;
     fs::create_dir_all(&cfg.build_log_dir)
@@ -447,7 +537,12 @@ pub fn resolve(
     // re-asks, against the kernel it is actually about to build (which the
     // variant patch sets, not the pristine tree).
     let (phases, nevr): (Vec<&str>, String) = if req.canister == "equivalent" {
-        let kernel = equivalent_kernel_nevr(cfg, &patch)?;
+        // A kernel profile names its NEVR itself (the wrapper pins Version
+        // and Release); the 5.0 tree and its embedded patch say nothing about it.
+        let kernel = match kb {
+            Some(kb) => kb.nevr.clone(),
+            None => equivalent_kernel_nevr(cfg, &patch)?,
+        };
         let state = crate::canister::detect_for(cfg, std::env::consts::ARCH, Some(&kernel))?;
         // An equivalent canister already built at this exact kernel level is
         // as good as a published one for linking purposes - and rebuilding it
@@ -523,7 +618,9 @@ mismatched canister in the stage outranks the pinned one for an unversioned tdnf
             }
         }
 
-        if req.canister == "equivalent" {
+        // A kernel profile builds through the cascade in every mode: only the
+        // cascade runs its pin script.
+        if req.canister == "equivalent" || kb.is_some() {
             let spec = crate::buildmode::spec_for(
                 &cfg.build_root.to_string_lossy(),
                 &cfg.build_common,
@@ -535,6 +632,7 @@ mismatched canister in the stage outranks the pinned one for an unversioned tdnf
                 &req.poi,
                 &cfg.variant_patches.to_string_lossy(),
                 None,
+                kb,
             )?;
             crate::buildexec::execute(&spec, false, &mut |l| log(l))?;
             continue;
@@ -1218,6 +1316,157 @@ fn build_common_patch(cfg: &Config, clone: &Path, log: &mut dyn FnMut(&str)) -> 
     }
 }
 
+/// Variant patches for a kernel profile's release branch.
+///
+/// Same variants, same PR branches, but assembled on the profile's branch
+/// (`experimental/linux-<release>`) instead of 5.0, into the kernel build's own
+/// patch directory. Two differences, both logged:
+///
+/// * a PR branch that touches `SPECS/linux` is left out - the profile owns
+///   the kernel, and a 5.0 kernel-spec change cannot apply to it;
+/// * a commit that conflicts is skipped only when the kernel branch already
+///   carries it: a commit with the same subject whose non-spec files are
+///   identical (the experimental branches take PR fixes early, at other
+///   Release numbers). Any other conflict fails the variant.
+pub fn make_kernel_variant_patches(
+    cfg: &Config,
+    kernel: &str,
+    log: &mut dyn FnMut(&str),
+) -> Result<(), String> {
+    let kb = crate::kbuild::load(kernel)?;
+    let kc = crate::kbuild::effective_cfg(cfg, &kb);
+    let clone = cfg.work.join("photon-variants");
+    fs::create_dir_all(&kc.variant_patches)
+        .map_err(|e| format!("{}: {e}", kc.variant_patches.display()))?;
+    if !clone.join(".git").is_dir() {
+        return Err(format!(
+            "{} is missing - run `sharukhan variant-patches` once first",
+            clone.display()
+        ));
+    }
+    let mut branches: Vec<&str> = vec!["5.0", "common", kb.branch.as_str()];
+    for v in &VARIANTS {
+        for b in v.branches {
+            if !branches.contains(b) {
+                branches.push(b);
+            }
+        }
+    }
+    for b in &branches {
+        git(&clone, &["fetch", "-q", "origin", &format!("+{b}:refs/remotes/origin/{b}")])
+            .map_err(|e| format!("fetching {b}: {e}"))?;
+    }
+    let mut failed = Vec::new();
+    for v in &VARIANTS {
+        log(&format!("variant poi-{} on {}", v.name, kb.branch));
+        if let Err(e) = build_kernel_variant(&kc, &clone, v, &kb.branch, log) {
+            log(&format!("  poi-{}: {e}", v.name));
+            failed.push(v.name);
+        }
+    }
+    log("common tree");
+    if let Err(e) = build_common_patch(&kc, &clone, log) {
+        log(&format!("  common: {e}"));
+        failed.push("common");
+    }
+    if failed.is_empty() {
+        Ok(())
+    } else {
+        Err(format!("variant(s) {} could not be built", failed.join(", ")))
+    }
+}
+
+/// Does `kbranch` already carry commit `h`? Same subject, and every file `h`
+/// changes other than a spec is identical on the kernel branch.
+fn already_on_kernel_branch(clone: &Path, h: &str, kbranch: &str) -> Result<Option<String>, String> {
+    let subject = git(clone, &["log", "-1", "--format=%s", h])?.trim().to_string();
+    let base = git(clone, &["merge-base", "origin/5.0", &format!("origin/{kbranch}")])?;
+    let own = git(
+        clone,
+        &["log", "--format=%H %s", &format!("{}..origin/{kbranch}", base.trim())],
+    )?;
+    let Some(k) = own
+        .lines()
+        .find(|l| l.split_once(' ').map(|(_, s)| s == subject).unwrap_or(false))
+        .map(|l| l[..40.min(l.len())].to_string())
+    else {
+        return Ok(None);
+    };
+    for f in git(clone, &["diff-tree", "--no-commit-id", "--name-only", "-r", h])?.lines() {
+        if f.ends_with(".spec") {
+            continue;
+        }
+        let theirs = git(clone, &["rev-parse", &format!("{h}:{f}")]).ok();
+        let ours = git(clone, &["rev-parse", &format!("origin/{kbranch}:{f}")]).ok();
+        if theirs != ours {
+            return Ok(None);
+        }
+    }
+    Ok(Some(format!("{} ({subject})", &k[..12.min(k.len())])))
+}
+
+fn build_kernel_variant(
+    kc: &Config,
+    clone: &Path,
+    v: &Variant,
+    kbranch: &str,
+    log: &mut dyn FnMut(&str),
+) -> Result<(), String> {
+    let branch = format!("variant-{}-{}", v.name, kbranch.replace('/', "-"));
+    git(clone, &["checkout", "-q", "-f", "-B", &branch, &format!("origin/{kbranch}")])?;
+    for b in v.branches {
+        let touched = git(
+            clone,
+            &["diff", "--name-only", &format!("origin/5.0...origin/{b}")],
+        )?;
+        let kernel_files = touched.lines().filter(|f| f.starts_with("SPECS/linux/")).count();
+        if kernel_files > 0 {
+            log(&format!(
+                "  {b}: left out - it changes {kernel_files} file(s) under SPECS/linux, which the profile owns"
+            ));
+            continue;
+        }
+        let commits = git(clone, &["rev-list", "--reverse", &format!("origin/5.0..origin/{b}")])?;
+        for h in commits.lines() {
+            if git(clone, &["cherry-pick", "-x", "--empty=drop", h]).is_ok() {
+                continue;
+            }
+            let _ = git(clone, &["cherry-pick", "--abort"]);
+            match already_on_kernel_branch(clone, h, kbranch)? {
+                Some(k) => log(&format!(
+                    "  {b}: {} already on {kbranch} as {k}; skipped",
+                    &h[..12.min(h.len())]
+                )),
+                None => return Err(format!("CONFLICT applying {b} ({h}) on {kbranch}")),
+            }
+        }
+    }
+    let out = kc.variant_patches.join(format!("poi-{}.patch", v.name));
+    let diff = git(clone, &["diff", &format!("origin/{kbranch}"), &branch, "--", "SPECS/"])?;
+    fs::write(&out, &diff).map_err(|e| format!("{}: {e}", out.display()))?;
+    log(&format!(
+        "  poi-{}: {} files, {} lines",
+        v.name,
+        patched_files(&out),
+        diff.lines().count()
+    ));
+    let tmp = kc.work.join(format!("apply-check-{}-k", v.name));
+    let _ = fs::remove_dir_all(&tmp);
+    let _ = git(clone, &["worktree", "prune"]);
+    git(
+        clone,
+        &["worktree", "add", "--detach", "-q", &tmp.to_string_lossy(), &format!("origin/{kbranch}")],
+    )?;
+    let applies = git(&tmp, &["apply", "--check", &out.to_string_lossy()]).is_ok();
+    let _ = git(clone, &["worktree", "remove", "--force", &tmp.to_string_lossy()]);
+    if applies {
+        log(&format!("  poi-{}: applies to pristine {kbranch}", v.name));
+        Ok(())
+    } else {
+        Err(format!("DOES NOT APPLY to pristine {kbranch}"))
+    }
+}
+
 fn build_variant(
     cfg: &Config,
     clone: &Path,
@@ -1364,7 +1613,7 @@ mod tests {
     }
 
     fn plan_req() -> IsoRequest {
-        IsoRequest { iso_type: "minimal".into(), poi: "2.8".into(), canister: "prebuilt".into() }
+        IsoRequest { iso_type: "minimal".into(), poi: "2.8".into(), canister: "prebuilt".into(), kernel: None }
     }
 
     /// `run --dry-run --allow-build` once built an ISO: it called `resolve`,
@@ -1427,6 +1676,7 @@ mod tests {
             iso_type: t.into(),
             poi: "2.8".into(),
             canister: "prebuilt".into(),
+            kernel: None,
         };
         assert_eq!(r("minimal").img().unwrap(), "minimal-iso");
         assert_eq!(r("full").img().unwrap(), "iso");
@@ -1745,11 +1995,13 @@ mod tests {
             iso_type: "full".into(),
             poi: "2.8".into(),
             canister: "prebuilt".into(),
+            kernel: None,
         };
         let b = IsoRequest {
             iso_type: "full".into(),
             poi: "2.8".into(),
             canister: "build".into(),
+            kernel: None,
         };
         assert_eq!(a.key(), "full-poi2.8-prebuilt");
         assert_ne!(a.key(), b.key());

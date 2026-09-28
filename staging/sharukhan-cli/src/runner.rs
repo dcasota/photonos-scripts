@@ -490,6 +490,7 @@ fn prepare_media(
                 iso_type: g.rows[0].iso_type.clone(),
                 poi: g.rows[0].poi.clone(),
                 canister: g.rows[0].canister.clone(),
+                kernel: None,
             };
             // A dry run only asks what resolve WOULD do. Calling resolve here
             // with --allow-build is how a dry run once purged stage/RPMS and

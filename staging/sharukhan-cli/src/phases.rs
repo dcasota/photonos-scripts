@@ -133,6 +133,7 @@ pub fn cmd_create_vm(
                 iso_type: p.iso_type.clone(),
                 poi: p.poi.clone(),
                 canister: p.canister.clone(),
+                kernel: None,
             },
             false,
             allow_build,
@@ -238,6 +239,7 @@ pub fn cmd_build_iso(
     iso_type: &str,
     poi: &str,
     canister: &str,
+    kernel: Option<&str>,
     force: bool,
     allow_build: bool,
     wait_idle: u64,
@@ -246,6 +248,7 @@ pub fn cmd_build_iso(
         iso_type: iso_type.to_string(),
         poi: poi.to_string(),
         canister: canister.to_string(),
+        kernel: kernel.map(str::to_string),
     };
     // A cache hit starts nothing, so only an actual build waits for others.
     if let build::Plan::Build(_) = build::plan(cfg, &req, force, allow_build)? {
@@ -256,8 +259,11 @@ pub fn cmd_build_iso(
     Ok(())
 }
 
-pub fn cmd_variant_patches(cfg: &Config) -> Result<(), String> {
-    build::make_variant_patches(cfg, &mut logger())
+pub fn cmd_variant_patches(cfg: &Config, kernel: Option<&str>) -> Result<(), String> {
+    match kernel {
+        Some(k) => build::make_kernel_variant_patches(cfg, k, &mut logger()),
+        None => build::make_variant_patches(cfg, &mut logger()),
+    }
 }
 
 /// Create the lab keypair if it is missing. `ssh-keygen` is part of the same

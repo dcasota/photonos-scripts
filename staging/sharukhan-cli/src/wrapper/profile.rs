@@ -46,6 +46,27 @@ pub struct Profile {
     /// Packages built before `make image` in addition to the base's set.
     #[serde(default)]
     pub prebuild_extra: Vec<String>,
+    /// The FIPS canister series ported to this kernel, if any.
+    #[serde(default)]
+    pub fips: Option<Fips>,
+}
+
+/// A FIPS canister series ported to the target kernel and carried on its
+/// release branch. What each spec number becomes lives in the branch's own
+/// manifest (written by the port's export and verified by a %prep replay);
+/// the profile only says where it is and which LKCM series it is.
+///
+/// The wrapper enables it only for a canister build: CANISTER_MODE build,
+/// equivalent-a or equivalent-b. `none` keeps the kernel FIPS-off.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Fips {
+    /// Release-tree path of the manifest, under `SPECS/linux/`.
+    pub manifest: String,
+    /// The LKCM series stamped into the canister (`FIPS_CANISTER_VERSION`):
+    /// the target's `<major>.<minor>`.
+    pub lkcm_version: String,
+    pub comment: Vec<String>,
 }
 
 /// The base wrapper this profile was reviewed against.
@@ -251,6 +272,7 @@ impl Profile {
         }
         self.validate_kernel_patches()?;
         self.validate_installer_patches()?;
+        self.validate_fips(&target)?;
         let mut seen = BTreeSet::new();
         for (i, p) in self.prebuild_extra.iter().enumerate() {
             escape::package_name(&format!("prebuild_extra[{i}]"), p)?;
@@ -262,6 +284,42 @@ impl Profile {
             }
         }
         self.validate_release_mentions(&target, &base)?;
+        Ok(())
+    }
+
+    fn validate_fips(&self, target: &KernelRelease) -> Result<()> {
+        let Some(f) = &self.fips else { return Ok(()) };
+        let comps: Vec<&str> = f.manifest.split('/').collect();
+        let plain = |c: &str| {
+            !c.is_empty()
+                && !c.starts_with('.')
+                && !c.starts_with('-')
+                && c.chars().all(|x| x.is_ascii_alphanumeric() || matches!(x, '.' | '_' | '-'))
+        };
+        if comps.len() < 4
+            || comps[0] != "SPECS"
+            || comps[1] != "linux"
+            || !comps.iter().all(|c| plain(c))
+            || !f.manifest.ends_with(".json")
+        {
+            return Err(perr(
+                "fips.manifest",
+                "must be a plain relative path SPECS/linux/<dir>/<name>.json",
+            ));
+        }
+        let series = target.series();
+        if f.lkcm_version != series {
+            return Err(perr(
+                "fips.lkcm_version",
+                format!("is '{}', the target's series is '{series}'", f.lkcm_version),
+            ));
+        }
+        if f.comment.is_empty() {
+            return Err(perr("fips.comment", "is empty"));
+        }
+        for (j, l) in f.comment.iter().enumerate() {
+            escape::comment_line(&format!("fips.comment[{j}]"), l)?;
+        }
         Ok(())
     }
 
@@ -463,6 +521,11 @@ impl Profile {
         if let Some(ip) = &self.installer_patches {
             for (j, l) in ip.comment.iter().enumerate() {
                 v.push((format!("installer_patches.comment[{j}]"), l));
+            }
+        }
+        if let Some(f) = &self.fips {
+            for (j, l) in f.comment.iter().enumerate() {
+                v.push((format!("fips.comment[{j}]"), l));
             }
         }
         v
@@ -701,5 +764,30 @@ pub mod tests {
         );
         assert!(release_mentions("6.12-era, 7.3's DRM, Patch2-Patch49, v13").is_empty());
         assert!(release_mentions("sha 1a7.2.7b").is_empty());
+    }
+    fn with_fips(fips: &str) -> std::result::Result<Profile, String> {
+        let t = sample();
+        let t = format!("{},\n  \"fips\": {fips}\n}}", t.trim_end().trim_end_matches('}').trim_end());
+        let p: Profile = serde_json::from_str(&t).map_err(|e| e.to_string())?;
+        p.validate().map_err(|e| e.to_string())?;
+        Ok(p)
+    }
+
+    #[test]
+    fn a_fips_section_is_validated() {
+        let ok = r#"{"manifest": "SPECS/linux/fips-7.3/manifest.json", "lkcm_version": "7.3", "comment": ["x"]}"#;
+        assert!(with_fips(ok).is_ok(), "{:?}", with_fips(ok).err());
+        for (bad, why) in [
+            (r#"{"manifest": "SPECS/linux/../x.json", "lkcm_version": "7.3", "comment": ["x"]}"#, "fips.manifest"),
+            (r#"{"manifest": "SPECS/foo/fips/m.json", "lkcm_version": "7.3", "comment": ["x"]}"#, "fips.manifest"),
+            (r#"{"manifest": "/SPECS/linux/fips/m.json", "lkcm_version": "7.3", "comment": ["x"]}"#, "fips.manifest"),
+            (r#"{"manifest": "SPECS/linux/fips/m.json", "lkcm_version": "7.2", "comment": ["x"]}"#, "fips.lkcm_version"),
+            (r#"{"manifest": "SPECS/linux/fips/m.json", "lkcm_version": "7.3", "comment": []}"#, "fips.comment"),
+            (r#"{"manifest": "SPECS/linux/fips/m.json", "lkcm_version": "7.3", "comment": ["the 7.2.7 base"]}"#, "fips.comment[0]"),
+            (r#"{"manifest": "SPECS/linux/fips/m.json", "lkcm_version": "7.3", "comment": ["x"], "extra": 1}"#, "unknown field"),
+        ] {
+            let e = with_fips(bad).expect_err(bad);
+            assert!(e.contains(why), "{bad}: {e}");
+        }
     }
 }
