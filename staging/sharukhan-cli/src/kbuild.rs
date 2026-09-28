@@ -37,6 +37,9 @@ pub struct KernelBuild {
     pub pins: String,
     /// Packages the derived wrapper builds before `make image`.
     pub prebuild: Vec<String>,
+    /// The Photon release whose userland the build keeps (e.g. `5.0`): where
+    /// a published canister would be.
+    pub userland: String,
 }
 
 /// sharukhan-cli's own directory: profiles and the base wrapper live beside it.
@@ -108,6 +111,7 @@ pub fn load(name: &str) -> Result<KernelBuild, String> {
         nevr,
         pins,
         prebuild,
+        userland: base.userland.full(),
     })
 }
 
@@ -149,6 +153,23 @@ pub fn prepare_release_tree(
     kb: &KernelBuild,
     log: &mut dyn FnMut(&str),
 ) -> Result<(), String> {
+    // The isolated common tree too: the build's input record names its
+    // commit before the cascade runs.
+    let common = kc.build_root.join(&kc.build_common);
+    if !common.join(".git").exists() {
+        fs::create_dir_all(&kc.build_root).map_err(|e| format!("{}: {e}", kc.build_root.display()))?;
+        log(&format!("cloning {} ({}) -> {}", kc.photon_remote, kc.build_common, common.display()));
+        let ok = Command::new("git")
+            .args(["clone", "--quiet", "-b", &kc.build_common, &kc.photon_remote])
+            .arg(&common)
+            .status()
+            .map_err(|e| format!("git clone: {e}"))?;
+        if !ok.success() {
+            return Err(format!("cloning {} failed", kc.build_common));
+        }
+    } else {
+        git(&common, &["fetch", "-q", "origin", &kc.build_common])?;
+    }
     let tree = &kc.photon_tree;
     let parent = tree.parent().ok_or("release tree has no parent")?;
     fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;

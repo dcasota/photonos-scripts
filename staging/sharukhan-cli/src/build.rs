@@ -543,7 +543,17 @@ fn resolve_in(
             Some(kb) => kb.nevr.clone(),
             None => equivalent_kernel_nevr(cfg, &patch)?,
         };
-        let state = crate::canister::detect_for(cfg, std::env::consts::ARCH, Some(&kernel))?;
+        // Published canisters live in the userland release's repo; a kernel
+        // profile's release branch has none of its own.
+        let lookup = match kb {
+            Some(kb) => {
+                let mut q = cfg.clone();
+                q.release = kb.userland.clone();
+                q
+            }
+            None => cfg.clone(),
+        };
+        let state = crate::canister::detect_for(&lookup, std::env::consts::ARCH, Some(&kernel))?;
         // An equivalent canister already built at this exact kernel level is
         // as good as a published one for linking purposes - and rebuilding it
         // costs ~90 minutes to reproduce the same artifact from the same
