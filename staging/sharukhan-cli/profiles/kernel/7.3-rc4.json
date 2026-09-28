@@ -2,7 +2,7 @@
   "schema": 1,
   "kernel": "7.3-rc4",
   "base": {"script": "runPh7-2-7.sh", "kernel": "7.2.7", "wrapper_version": 14},
-  "wrapper_version": 9,
+  "wrapper_version": 10,
   "summary": "RAP/KCFI on, rdrand-rng, vmwgfx blend, installer/sudo/dbus/cloud-init pre-build, noreplace-smp dropped, esx BTF off, STIG initrd restore, ansible log flush, FIPS canister for canister builds",
   "rpm_release_iteration": 1,
   "source": {

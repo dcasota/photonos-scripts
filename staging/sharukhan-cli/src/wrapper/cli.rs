@@ -750,7 +750,7 @@ mod tests {
         // drift in the committed wrapper
         let out = t.dir.join("runPh7-3-RC4.sh");
         let text = std::fs::read_to_string(&out).unwrap();
-        std::fs::write(&out, text.replacen("wrapper v9", "wrapper v10", 1)).unwrap();
+        std::fs::write(&out, text.replacen("wrapper v10", "wrapper v11", 1)).unwrap();
         let e = cmd_derive(&o).unwrap_err().to_string();
         assert!(
             e.contains("differs from a fresh derivation at line 4"),

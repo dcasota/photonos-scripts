@@ -1,7 +1,7 @@
 #!/bin/sh
 #
 # Photon OS 5.0 userland + experimental Linux 7.3-rc4 (mainline RC)
-# wrapper v9
+# wrapper v10
 #
 # $1 BASE_DIR        default /root
 # $2 COMMON_BRANCH   default common
@@ -28,7 +28,7 @@ export GIT_TERMINAL_PROMPT=0
 export EDITOR=true
 export VISUAL=true
 
-echo "[runPh7-3-RC4] wrapper v9 (Linux 7.3-rc4, RAP/KCFI on, rdrand-rng, vmwgfx blend, installer/sudo/dbus/cloud-init pre-build, noreplace-smp dropped, esx BTF off, STIG initrd restore, ansible log flush, FIPS canister for canister builds)"
+echo "[runPh7-3-RC4] wrapper v10 (Linux 7.3-rc4, RAP/KCFI on, rdrand-rng, vmwgfx blend, installer/sudo/dbus/cloud-init pre-build, noreplace-smp dropped, esx BTF off, STIG initrd restore, ansible log flush, FIPS canister for canister builds)"
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" 2>/dev/null && pwd)
 
@@ -1144,6 +1144,26 @@ t = x86 + "%ifarch aarch64" + rest
 t = re.sub(r"(?m)^(%global lkcm_version )\S+$", r"\g<1>" + lkcm, t, count=1)
 if flavour == "linux" and not re.search(r"(?m)^%global lkcm_version " + re.escape(lkcm) + "$", t):
     fail("%global lkcm_version not found")
+
+# --- Name before the canister flags -----------------------------------------------
+# Photon's dependency parser (SpecParser) resolves per-package build macros
+# (pkg-build-options: canister_build, canister_equivalent ...) by the spec's
+# Name. A "%if 0%{?canister_build}" read before the Name: line sees none of
+# them, so the parser always takes canister_usage and demands a
+# linux-fips-canister even in the phase that builds it (rpmbuild itself gets
+# the macros and is right; only the dependency graph is wrong). rpm takes Name
+# anywhere in the preamble: put it before the first canister conditional.
+cond = re.search(r"(?m)^%if 0%\{\?(canister_build|canister_equivalent|canister_usage)\}", t)
+name = re.search(r"(?m)^Name:[^\n]*\n", t)
+if not name:
+    fail("no Name: line")
+if cond and name.start() > cond.start():
+    line = name.group(0)
+    t = t[:name.start()] + t[name.end():]
+    first_arch = re.search(r"(?m)^%ifarch x86_64\n", t)
+    if not first_arch or first_arch.start() > cond.start():
+        fail("no %ifarch x86_64 block before the canister flags to anchor Name: to")
+    t = t[:first_arch.start()] + line + "\n" + t[first_arch.start():]
 
 # --- PatchN lines ------------------------------------------------------------
 def patch_line_re(n):
