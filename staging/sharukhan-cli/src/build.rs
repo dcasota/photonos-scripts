@@ -990,21 +990,50 @@ fn kernel_nevr_from_index(
 }
 
 pub fn find_files_rec(dir: &Path, prefix: &str, suffix: &str) -> Vec<PathBuf> {
+    find_files_rec_skipping(dir, prefix, suffix, &[])
+}
+
+/// The walk behind [`find_files_rec`]: it never follows a symlinked
+/// directory and never leaves the filesystem it started on, and it does not
+/// enter the directories named in `skip` (relative to `dir`).
+///
+/// A failed package's sandbox is kept for debugging with /proc still mounted
+/// inside it; a walk that followed that mount (or a /proc/<pid>/cwd link)
+/// went through the whole host, /mnt/c included, and a build sat for hours in
+/// uninterruptible 9p reads between two make attempts.
+pub fn find_files_rec_skipping(dir: &Path, prefix: &str, suffix: &str, skip: &[&str]) -> Vec<PathBuf> {
+    use std::os::unix::fs::MetadataExt;
     let mut out = Vec::new();
-    let Ok(entries) = fs::read_dir(dir) else {
+    let Ok(root) = fs::symlink_metadata(dir) else {
         return out;
     };
-    for e in entries.flatten() {
-        let p = e.path();
-        if p.is_dir() {
-            out.extend(find_files_rec(&p, prefix, suffix));
-        } else if p
-            .file_name()
-            .and_then(|n| n.to_str())
-            .map(|n| n.starts_with(prefix) && n.ends_with(suffix))
-            .unwrap_or(false)
-        {
-            out.push(p);
+    let dev = root.dev();
+    let skip: Vec<PathBuf> = skip.iter().map(|s| dir.join(s)).collect();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let Ok(entries) = fs::read_dir(&d) else { continue };
+        for e in entries.flatten() {
+            let p = e.path();
+            let Ok(ft) = e.file_type() else { continue };
+            if ft.is_dir() {
+                let same_fs = fs::symlink_metadata(&p).map(|m| m.dev() == dev).unwrap_or(false);
+                if same_fs && !skip.iter().any(|s| s == &p) {
+                    stack.push(p);
+                }
+                continue;
+            }
+            // Regular files, and symlinks to regular files; never a
+            // symlinked directory.
+            if !(ft.is_file() || (ft.is_symlink() && p.is_file())) {
+                continue;
+            }
+            if p.file_name()
+                .and_then(|n| n.to_str())
+                .map(|n| n.starts_with(prefix) && n.ends_with(suffix))
+                .unwrap_or(false)
+            {
+                out.push(p);
+            }
         }
     }
     out
@@ -1544,6 +1573,26 @@ fn build_variant(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_file_walk_stays_out_of_symlinked_dirs_and_skipped_ones() {
+        let t = std::env::temp_dir().join(format!("shk-walk-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&t);
+        fs::create_dir_all(t.join("RPMS/x86_64")).unwrap();
+        fs::create_dir_all(t.join("photonroot/sb/proc")).unwrap();
+        fs::write(t.join("RPMS/x86_64/a-1.rpm"), "").unwrap();
+        fs::write(t.join("photonroot/sb/proc/b-1.rpm"), "").unwrap();
+        // a loop back to the top and an escape to /: neither may be walked
+        std::os::unix::fs::symlink(&t, t.join("RPMS/loop")).unwrap();
+        std::os::unix::fs::symlink("/", t.join("RPMS/escape")).unwrap();
+        std::os::unix::fs::symlink(t.join("RPMS/x86_64/a-1.rpm"), t.join("RPMS/link.rpm")).unwrap();
+        let mut all = find_files_rec(&t, "", ".rpm");
+        all.sort();
+        assert_eq!(all, vec![t.join("RPMS/link.rpm"), t.join("RPMS/x86_64/a-1.rpm"), t.join("photonroot/sb/proc/b-1.rpm")]);
+        let some = find_files_rec_skipping(&t, "", ".rpm", &["photonroot"]);
+        assert!(!some.iter().any(|p| p.starts_with(t.join("photonroot"))), "{some:?}");
+        let _ = fs::remove_dir_all(&t);
+    }
 
     /// The single-source kernel spec (#36) keeps the canister pin in an
     /// included file behind a subrelease conditional; the prebuilt row's

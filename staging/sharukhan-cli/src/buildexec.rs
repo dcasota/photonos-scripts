@@ -2465,6 +2465,12 @@ pub fn make_and_deliver(c: &mut Ctx) -> Result<PathBuf, String> {
         return Ok(PathBuf::from("(dry-run: no ISO)"));
     }
 
+    // Sandboxes a previous run left behind (a failed package's is kept for
+    // debugging, mounts and all) are cleaned before the first attempt too,
+    // not only between attempts.
+    c.say("  cleaning sandboxes left by an earlier run");
+    clean_sandboxes(c, &stage);
+
     let marker = stage.join(".sharukhan-iso-marker");
     let _ = fs::write(&marker, "");
     let (mut prev_rc, mut prev_progress) = (i32::MIN, u64::MAX);
@@ -2608,7 +2614,8 @@ fn count_newer(roots: &[&Path], marker: &Path) -> u64 {
     };
     let mut n = 0;
     for r in roots {
-        for p in crate::build::find_files_rec(r, "", "") {
+        // Sandboxes are not progress, and a failed one keeps /proc mounted.
+        for p in crate::build::find_files_rec_skipping(r, "", "", &["photonroot"]) {
             if let Ok(t) = p.metadata().and_then(|x| x.modified()) {
                 if t > m {
                     n += 1;
