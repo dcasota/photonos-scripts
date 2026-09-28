@@ -2478,18 +2478,32 @@ pub fn make_and_deliver(c: &mut Ctx) -> Result<PathBuf, String> {
         }
         // A kernel profile's pre-build: its own make run, part of the attempt,
         // so a failure is retried and judged like any other - never skipped.
+        //
+        // One package per make, by its own target (build.py -t <pkg>), not
+        // `make pkgs=a,b,c`: that path (buildGivenPackages) never creates the
+        // base sandbox, so after the phase-B purge invalidates sandboxBase
+        // every package fails with "special device overlay does not exist".
+        // The per-package target goes through buildPackages, which creates it.
         if target == "image" && !c.spec.prebuild.is_empty() {
-            let pk = format!("pkgs={}", c.spec.prebuild.join(","));
             c.say(&format!(
-                "  attempt {attempt}/{MAKE_ATTEMPTS}: pre-build: sudo make {jflag} {pk} {threads}"
+                "  attempt {attempt}/{MAKE_ATTEMPTS}: pre-build {} package(s): {}",
+                c.spec.prebuild.len(),
+                c.spec.prebuild.join(", ")
             ));
-            let prc = Command::new("sudo")
-                .args(["make", &jflag, &pk, &threads])
-                .current_dir(&release)
-                .status()
-                .map_err(|e| format!("running the pre-build: {e}"))?
-                .code()
-                .unwrap_or(-1);
+            let mut prc = 0;
+            for p in &c.spec.prebuild {
+                prc = Command::new("sudo")
+                    .args(["make", &jflag, p.as_str(), &threads])
+                    .current_dir(&release)
+                    .status()
+                    .map_err(|e| format!("running the pre-build of {p}: {e}"))?
+                    .code()
+                    .unwrap_or(-1);
+                if prc != 0 {
+                    c.say(&format!("  attempt {attempt}: pre-build of {p} exited {prc}"));
+                    break;
+                }
+            }
             if prc != 0 {
                 let progress = count_newer(&[&stage, &common_stage], &marker);
                 c.say(&format!(
