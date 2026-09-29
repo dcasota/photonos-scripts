@@ -270,8 +270,42 @@ pub fn three_texts(
     branch: &str,
     path: &str,
 ) -> (String, String, String) {
-    let at = |r: &str| git(dir, &["show", &format!("{r}:{path}")]).unwrap_or_default();
+    let at = |r: &str| match git(dir, &["show", &format!("{r}:{path}")]) {
+        Ok(t) => t,
+        // The file does not exist there: a changelog that moved into a new
+        // file (an include, or another subrelease's directory) still belongs
+        // to the same package, so compare against all of its changelogs.
+        Err(_) => package_changelogs(dir, r, path),
+    };
     (at(base), at(target), at(branch))
+}
+
+/// Every changelog of the package `path` belongs to, at `rev`: the .spec and
+/// *changelog*.inc files in any SPECS/<pkg>/ or SPECS/<subrelease>/<pkg>/
+/// directory with the same package directory name (Photon's layout).
+pub fn package_changelogs(dir: &Path, rev: &str, path: &str) -> String {
+    let Some(pkg) = Path::new(path).parent().and_then(|p| p.file_name()).and_then(|n| n.to_str()) else {
+        return String::new();
+    };
+    let Ok(list) = git(dir, &["ls-tree", "-r", "--name-only", rev, "--", "SPECS"]) else {
+        return String::new();
+    };
+    let mut out = String::new();
+    for f in list.lines() {
+        let p = Path::new(f);
+        let in_pkg = p.parent().and_then(|d| d.file_name()).and_then(|n| n.to_str()) == Some(pkg);
+        let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        let depth = f.matches('/').count();
+        if in_pkg && (2..=3).contains(&depth) && (name.ends_with(".spec") || (name.contains("changelog") && name.ends_with(".inc"))) {
+            if let Ok(t) = git(dir, &["show", &format!("{rev}:{f}")]) {
+                if let Some(i) = t.find("%changelog") {
+                    out.push_str(&t[i..]);
+                    out.push('\n');
+                }
+            }
+        }
+    }
+    out
 }
 
 /// The merge-base of two refs.
@@ -443,5 +477,43 @@ mod tests {
     fn a_zero_padded_day_parses_as_decimal() {
         let e = entries("%changelog\n* Mon Sep 08 2026 Someone <s@e.com> 1.0-1\n- x\n");
         assert_eq!(e[0].date, Some(20260908));
+    }
+    /// A changelog moved into a file the target does not have (an include)
+    /// still collides with the package's own versions on the target.
+    #[test]
+    fn a_changelog_moved_into_an_include_is_checked_against_the_package() {
+        use std::process::Command;
+        let d = std::env::temp_dir().join(format!("shk-bg-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(d.join("SPECS/linux")).unwrap();
+        let g = |a: &[&str]| {
+            let o = Command::new("git").arg("-C").arg(&d).args(a).output().unwrap();
+            assert!(o.status.success(), "{:?}", String::from_utf8_lossy(&o.stderr));
+        };
+        g(&["init", "-q", "-b", "5.0"]);
+        g(&["config", "user.email", "t@t"]);
+        g(&["config", "user.name", "t"]);
+        let spec = |top: &str| format!("Name: linux\n%changelog\n{top}* Wed Sep 23 2026 A <a@a> 6.12.111-1\n- base\n");
+        std::fs::write(d.join("SPECS/linux/linux.spec"), spec("")).unwrap();
+        g(&["add", "."]);
+        g(&["commit", "-qm", "base"]);
+        g(&["checkout", "-qb", "pr"]);
+        std::fs::write(d.join("SPECS/linux/linux.spec"), "Name: linux\n%include %{SOURCE1}\n").unwrap();
+        std::fs::write(
+            d.join("SPECS/linux/linux-changelog.inc"),
+            "%changelog\n* Thu Sep 24 2026 B <b@b> 6.12.111-2\n- pr\n* Wed Sep 23 2026 A <a@a> 6.12.111-1\n- base\n",
+        )
+        .unwrap();
+        g(&["add", "."]);
+        g(&["commit", "-qm", "pr"]);
+        g(&["checkout", "-q", "5.0"]);
+        std::fs::write(d.join("SPECS/linux/linux.spec"), spec("* Mon Sep 28 2026 C <c@c> 6.12.111-2\n- up\n")).unwrap();
+        g(&["commit", "-qam", "upstream"]);
+        let (b, t, br) = three_texts(&d, "5.0~1", "5.0", "pr", "SPECS/linux/linux-changelog.inc");
+        match changelog_version_is_new(&b, &t, &br) {
+            Changelog::Duplicate { version, .. } => assert_eq!(version, "6.12.111-2"),
+            other => panic!("expected a duplicate, got {other:?}"),
+        }
+        let _ = std::fs::remove_dir_all(&d);
     }
 }
