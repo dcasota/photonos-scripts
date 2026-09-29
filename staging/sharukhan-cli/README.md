@@ -795,7 +795,9 @@ sharukhan: /root/common carries edits the build did not make, and every ISO buil
 On 2026-09-26 such an edit - an installer initrd list without stig-hardening -
 went into every gate ISO, and every STIG row stalled in the installer. Stash
 the edits in that checkout, or name them in `MC_COMMON_EDITS_ALLOWED` if they
-are meant to ship.
+are meant to ship - or give the build its own trees: with `MC_BUILD_ROOT` and
+`PHOTON_TREE` pointing at an empty directory, `resolve` clones `common` and the
+release branch from `MC_PHOTON_REMOTE` before it records the build inputs.
 
 ### Test-only changes are compiled in
 
@@ -862,17 +864,20 @@ variant patch, so it carries the pre-bump number as diff context. Every time
 apply — the build dies at the inject stage.
 
 This is not rare: in five days in September 5.0 took `linux` from Release 1 to
-4 to 8, and the patch needed retargeting three times. As of 2026-09-13
-(6.12.109) the chain is:
+4 to 8, and the patch needed retargeting three times. As of 2026-09-29
+(6.12.111, after 5.0 took both kernels to Release 2 for the aarch64 RELR
+config) the chain is:
 
 ```
                   linux   linux-esx
-pristine 5.0        1         1
-variant patch       3         2      PR#24 bumps both, PR#29 bumps linux
-embedded patch      4         3      +1 each
+pristine 5.0        2         2
+variant patch       3         3      PR#24/#29 share one entry, #36 keeps it in its includes
+embedded patch      4         4      +1 each
 ```
 
 **Regenerate it, never hand-edit it.** `tools/regen-canister-equivalent.py`
+(`--repo <photon clone>`, default `$PHOTON_TREE`, so it need not touch a tree
+another build is using)
 applies the variant patch to a pristine worktree, makes the embedded edits,
 derives the kernel version, runs the spec checker over the result and writes the
 patch; `--check` only reports whether the committed patch is current. The patch
@@ -1023,7 +1028,7 @@ Run from `staging/sharukhan-cli` (profiles default to `./profiles/kernel`), or s
 How it is built, in short (the full contract is [FRD-001](specs/features/kernel-wrapper.md)):
 
 - **The base marks its own kernel-specific regions.** `runPh7-2-7.sh` declares
-  `# @sharukhan-wrapper kernel=7.2.7 userland=5.0 native-series=6.12` and nine
+  `# @sharukhan-wrapper kernel=7.2.7 userland=5.0 native-series=6.12` and ten
   `# @sharukhan-slot <name> begin|end` pairs. Each slot is re-rendered for the target; the rest is
   carried over and renamed by identity. The markers are comments, so the base still runs as is.
 - **Everything else is computed from the release string**: tag, ISO marker, script and branch
@@ -1045,7 +1050,77 @@ How it is built, in short (the full contract is [FRD-001](specs/features/kernel-
   (`base.wrapper_version`), because a fix in the base flows into every derived wrapper.
 
 `runPh7-3-RC4.sh` is the first derived wrapper; the golden test keeps it byte-identical to what the
-committed base and `profiles/kernel/7.3-rc4.json` derive.
+committed base and `profiles/kernel/7.3-rc4.json` derive (wrapper v10, base v14).
+
+### A FIPS canister series for a profile kernel
+
+A profile may carry a `fips` section: where the release branch keeps a ported
+canister series (`SPECS/linux/fips-<series>/manifest.json`) and its LKCM series.
+The manifest - written by the port's export and proven by a `%prep` replay -
+says which file every `PatchN`/`SourceN` line names, which 6.12 patches the
+kernel does not need, the `%autopatch` ranges and the per-flavour additions.
+
+The derived wrapper renders a manifest-driven spec editor
+(`src/wrapper/assets/fips_spec_edit.py`, compiled in) into the `kernel-fips`
+slot and runs it **only for a canister build** (`CANISTER_MODE` `build`,
+`equivalent-a`, `equivalent-b`); `none` leaves the kernel FIPS-off. The editor:
+
+- rewrites the Patch/Source lines, drops what the kernel does not need and
+  restores the commented-out `%autopatch` ranges in place;
+- makes both canister pins overridable in the two-macro shape Photon's
+  SpecParser can read (`canister_equivalent` + `fips_canister_override`,
+  `canister_stamp_real` + `fips_certified_override`), defaulting to the tree's
+  own `linux` NEVR - there is no certified canister of the series to claim;
+- moves `Name:` before the first canister conditional (see below);
+- after the config merge, enables `CRYPTO_SELFTESTS`, re-applies Photon's
+  `CRYPTO_FIPS*`/`CRYPTO_JITTERENTROPY*` settings and fails `%prep` if any does
+  not hold.
+
+`derive`'s branch check also reads the manifest and requires every file it
+names on the branch exactly once under `SPECS/linux` (rpm sees it flattened).
+
+## Kernel-profile builds and runs: `--kernel`
+
+```sh
+sharukhan variant-patches --kernel 7.3-rc4        # variants on experimental/linux-7.3-rc4
+sharukhan build-iso --kernel 7.3-rc4 --iso-type full --poi latest --canister equivalent --allow-build
+sharukhan run --kernel 7.3-rc4 --only k13,k14,k15,k16
+sharukhan verify --kernel 7.3-rc4 --id k15
+```
+
+- **Own trees.** A kernel build runs in `$MC_WORK/kbuild/<release>` with its
+  own ISO cache (`$MC_ISO_CACHE/k<release>`) and variant patches, and never
+  touches `/root/5.0`, `/root/common` or `/root/experimental/*`. The release
+  branch is verified before anything is purged (tarball manifest, patch files,
+  FIPS manifest).
+- **The cascade, in every mode.** The derived wrapper's pin script is one
+  injection (`inject:kernel-pins[<release>]`), sourced exactly as the wrapper
+  sources it; the 6.12 canister-equivalent patch is left out (the profile brings
+  its own series); the canister NEVR comes from the profile.
+- **Photon's spec checker is honoured, not skipped.** The pins leave the 5.0
+  kernel's own patches unreferenced; `build.py` checks modified specs whenever
+  `make` has no TTY, which the wrapper's own runs never met. After the pins the
+  checker runs per kernel spec and over both, exactly what it lists is pruned
+  from the working tree (a `PatchN` only from the spec whose own run lists it,
+  a `SourceN` only when unreferenced), and it must then pass.
+- **Kernel variants.** PR branches that touch `SPECS/linux` are left out (the
+  profile owns the kernel); a conflicting commit is skipped only when the
+  kernel branch already carries it (same subject, identical non-spec files).
+- **Runs.** Under `--kernel` every row takes the canister axis `equivalent`,
+  `verify` expects the profile's NEVR, records `meta.kernel`, and
+  `guest.kernel_release` requires `uname -r` to be that kernel; the media gate
+  adds the installer Release bumps the profile's pins make.
+
+### Linux 7.3-rc4 (2026-09-29)
+
+`photon-5.0-899f55a42.x86_64.iso` - full, photon-os-installer 2.9-4, canister
+equivalent, `linux`/`linux-esx` 7.3.0-0.rc4.1 relinked in phase B against
+`linux-fips-canister-7.3.0-0.rc4.1`. `run --kernel 7.3-rc4` over k13-k16: 0
+failing checks; every guest runs `7.3.0-0.rc4.1.ph5-esx`; the STIG rows k15/k16
+boot with `fips=1`, "FIPS canister verification passed", canister version 7.3
+based on 7.3.0-0.rc4.1.ph5. **Not CMVP validated** - no canister of the 7.3
+series is published; the port's per-patch decisions are in
+`SPECS/linux/fips-7.3/README.md` on the release branch.
 
 ## `helper-scripts/` — the run wrappers
 
@@ -1421,3 +1496,34 @@ cost real time:
 - **A temporary name must be unique per call, not per process.** Every thread of
   one process shares a pid, and parallel tests collided on one index file until
   the name carried a counter.
+- **"Clean" is not clean at fuzz 0.** `patch` defaults to fuzz 2, rpm's
+  `%autopatch` uses `--fuzz=0`. Five 6.12 FIPS patches applied "clean" to
+  7.3-rc4 by default and failed at fuzz 0; every patch is judged on its exact
+  parent at `--fuzz=0`, and a series is proven by replaying `%prep`.
+- **A renamed Kconfig switch drops dependents silently.** 7.x replaced
+  `CRYPTO_MANAGER_DISABLE_TESTS` (tests on unless set) with `CRYPTO_SELFTESTS`
+  (off unless set), and `CRYPTO_FIPS` depends on it: `olddefconfig` dropped FIPS
+  and its jitterentropy settings from Photon's config without an error.
+- **Photon's SpecParser reads per-package macros by `Name:`.** A
+  `%if 0%{?canister_build}` read before the `Name:` line sees no
+  pkg-build-options macros, so the dependency graph demanded the canister in
+  the very phase that builds it, while `rpmbuild` itself was right.
+- **A harness must not lean on ambient state.** The cascade wrote the canister
+  macros but never pointed `build-config.json` at them; `/root/common` still
+  named the file from earlier runs, a fresh clone did not, and phase A built a
+  canister consumer after seven hours.
+- **`make pkgs=a,b` never creates the base sandbox.** After a purge removes
+  `sandboxBase` every package fails with "special device overlay does not
+  exist". The pre-build now builds each package by its own target.
+- **A file walk must not follow a sandbox's mounts.** A failed package's sandbox
+  keeps `/proc` mounted; a walk that followed it went through the whole host,
+  `/mnt/c` included, and a build sat for half an hour in 9p reads between two
+  attempts. Walks stay on their filesystem and skip `stage/photonroot`.
+- **A changelog can move to a file the target lacks.** `branch-check` compared
+  a spec with the same path only, so a collision in a changelog include passed
+  (vmware/photon#1680). A path absent on a side is now compared with every
+  changelog of the same package directory there.
+- **A cache that fails open is worse than none.** The canister struct-layout
+  plugin returned success with an empty database whenever its cache file was
+  locked, so under `make -j` layouts could go unchecked. Found while porting the
+  canister to 7.3; the 6.12 series carries the same code.

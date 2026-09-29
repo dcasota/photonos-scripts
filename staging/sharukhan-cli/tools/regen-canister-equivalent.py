@@ -43,7 +43,8 @@ stale BEFORE spending an hour discovering it mid-build.
 """
 import argparse, os, re, subprocess, sys, tempfile, shutil
 
-REPO = "/root/5.0"
+# The photon clone to take origin/5.0 from (--repo, else $PHOTON_TREE).
+REPO = os.environ.get("PHOTON_TREE", "/root/5.0")
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PATCH_OUT = os.path.join(HERE, "src/embedded/canister-equivalent.patch")
 DEFAULT_VARIANT = "/root/photon-mc/variant-patches/poi-2.8.patch"
@@ -299,11 +300,15 @@ def edit_esx_spec(path, ver, old_rel, new_rel, date, changelog=None):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--variant", default=DEFAULT_VARIANT)
+    ap.add_argument("--repo", default=None, help="photon clone whose origin/5.0 is the base (default: $PHOTON_TREE or /root/5.0)")
     ap.add_argument("--check", action="store_true")
     ap.add_argument("--date", default=None, help="changelog date, e.g. 'Thu Sep 11 2026'")
     ap.add_argument("--checker", default="/root/common/support/spec-checker/check_spec.py",
                     help="check_spec.py to validate with; it must understand the spec layout")
     a = ap.parse_args()
+    global REPO
+    if a.repo:
+        REPO = a.repo
 
     if not os.path.exists(a.variant):
         sys.exit(f"{a.variant}: not found - run `sharukhan variant-patches` first")
