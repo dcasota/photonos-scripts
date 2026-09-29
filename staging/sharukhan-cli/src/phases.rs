@@ -12,7 +12,7 @@ use std::fs;
 use std::path::PathBuf;
 
 pub fn row(cfg: &Config, id: &str) -> Result<Permutation, String> {
-    let all = matrix::load(&cfg.matrix_tsv)?;
+    let all = matrix::rows(cfg)?;
     all.into_iter()
         .find(|p| p.id == id)
         .ok_or_else(|| format!("permutation '{id}' is not in {}", cfg.matrix_tsv.display()))
@@ -133,7 +133,7 @@ pub fn cmd_create_vm(
                 iso_type: p.iso_type.clone(),
                 poi: p.poi.clone(),
                 canister: p.canister.clone(),
-                kernel: None,
+                kernel: cfg.kernel.as_ref().map(|k| k.name.clone()),
             },
             false,
             allow_build,

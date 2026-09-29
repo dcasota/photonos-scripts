@@ -73,7 +73,7 @@ pub fn cmd_run(cfg: &Config, o: &RunOpts) -> Result<(), String> {
     if !o.all && o.only.is_none() {
         return Err("run needs --only <ids> or --all; it will not guess a selection".into());
     }
-    let all_rows = matrix::load(&cfg.matrix_tsv)?;
+    let all_rows = matrix::rows(cfg)?;
     let sel = matrix::select(&all_rows, o.only.as_deref())?;
 
     // --- what this host and this harness can actually drive ----------------
@@ -490,7 +490,7 @@ fn prepare_media(
                 iso_type: g.rows[0].iso_type.clone(),
                 poi: g.rows[0].poi.clone(),
                 canister: g.rows[0].canister.clone(),
-                kernel: None,
+                kernel: cfg.kernel.as_ref().map(|k| k.name.clone()),
             };
             // A dry run only asks what resolve WOULD do. Calling resolve here
             // with --allow-build is how a dry run once purged stage/RPMS and
@@ -737,7 +737,7 @@ fn survivors(root: i32, kids: &[proc::Proc]) -> Vec<i32> {
 /// Which VMs are up, split into ours and everything else. The inventory is the
 /// authority; no exit code is consulted.
 fn report_vms(cfg: &Config, when: &str) {
-    let Ok(all) = matrix::load(&cfg.matrix_tsv) else {
+    let Ok(all) = matrix::rows(cfg) else {
         return;
     };
     match vmware::running(&cfg.vmrun) {

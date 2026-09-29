@@ -13,6 +13,16 @@
 use std::env;
 use std::path::PathBuf;
 
+/// The kernel profile a test run is about.
+#[derive(Clone, Debug, PartialEq)]
+pub struct KernelAxis {
+    pub name: String,
+    /// What linux(-esx) must report: Version-Release.dist.
+    pub nevr: String,
+    /// The Photon release whose repo would publish a canister.
+    pub userland: String,
+}
+
 #[derive(Clone)]
 pub struct Config {
     // ---- host tooling ----------------------------------------------------
@@ -58,6 +68,9 @@ pub struct Config {
     pub build_common: String,
     pub release: String,
     pub photon_remote: String,
+    /// Set by `--kernel <release>` on the test commands: the kernel profile
+    /// whose media the rows are run against (see kbuild::apply).
+    pub kernel: Option<KernelAxis>,
 
     // ---- guest defaults --------------------------------------------------
     pub guest_vcpus: u32,
@@ -218,6 +231,7 @@ impl Config {
             build_common: s_or("MC_BUILD_COMMON", "common"),
             release: s_or("MC_RELEASE", "5.0"),
             photon_remote: s_or("MC_PHOTON_REMOTE", "https://github.com/dcasota/photon.git"),
+            kernel: None,
 
             guest_vcpus: n_or("GUEST_VCPUS", 2),
             guest_mem_mb: n_or("GUEST_MEM_MB", 4096),

@@ -88,11 +88,23 @@ pub fn run(
     // expected=6.12.107-3.ph5 against an actual of 6.12.107-4.ph5, marking a
     // correctly linked canister as a failure.
     let patch = cfg.variant_patches.join(format!("poi-{}.patch", p.poi));
-    let kernel = if p.canister == "equivalent" {
-        crate::build::equivalent_kernel_nevr(cfg, &patch)
-    } else {
-        crate::build::kernel_nevr(cfg, &patch)
+    // A kernel profile names its NEVR itself; the 5.0 tree says nothing
+    // about it.
+    let kernel = match &cfg.kernel {
+        Some(k) => Ok(k.nevr.clone()),
+        None if p.canister == "equivalent" => crate::build::equivalent_kernel_nevr(cfg, &patch),
+        None => crate::build::kernel_nevr(cfg, &patch),
     };
+    if let Some(k) = &cfg.kernel {
+        c.check(
+            "meta.kernel",
+            "-",
+            Status::Info,
+            "",
+            &format!("{} ({})", k.name, k.nevr),
+            "kernel profile these media were built with (sharukhan --kernel)",
+        );
+    }
     // A prebuilt row links the PINNED published canister, exactly as 5.0
     // ships - it never asks for one matched to its kernel level. detect_for
     // asks precisely that, so with a locally built 6.12.111 canister in the
@@ -105,7 +117,16 @@ pub fn run(
             None => "unknown (no fips_canister_version pin in the kernel spec)".to_string(),
         }
     } else {
-        crate::canister::detect_for(cfg, std::env::consts::ARCH, kernel.as_deref().ok())
+        let lookup = match &cfg.kernel {
+            // published canisters live in the userland release's repo
+            Some(k) => {
+                let mut q = cfg.clone();
+                q.release = k.userland.clone();
+                q
+            }
+            None => cfg.clone(),
+        };
+        crate::canister::detect_for(&lookup, std::env::consts::ARCH, kernel.as_deref().ok())
         .map(|st| {
             let label = st.label();
             if st.is_validated() {

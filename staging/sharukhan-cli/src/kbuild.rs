@@ -118,7 +118,17 @@ pub fn load(name: &str) -> Result<KernelBuild, String> {
 /// The configuration a kernel build runs under: its own build root, release
 /// tree, ISO cache and variant patches. Nothing else changes.
 pub fn effective_cfg(cfg: &Config, kb: &KernelBuild) -> Config {
+    // Already this kernel's configuration (a test command applied it): the
+    // paths are derived once, never nested.
+    if cfg.kernel.as_ref().map(|k| k.name == kb.name).unwrap_or(false) {
+        return cfg.clone();
+    }
     let mut k = cfg.clone();
+    k.kernel = Some(crate::config::KernelAxis {
+        name: kb.name.clone(),
+        nevr: kb.nevr.clone(),
+        userland: kb.userland.clone(),
+    });
     let root = cfg.work.join("kbuild").join(&kb.name);
     k.build_root = root.clone();
     k.release = kb.branch.clone();
@@ -126,6 +136,14 @@ pub fn effective_cfg(cfg: &Config, kb: &KernelBuild) -> Config {
     k.variant_patches = cfg.variant_patches.join(format!("k{}", kb.name));
     k.iso_cache = cfg.iso_cache.join(format!("k{}", kb.name));
     k
+}
+
+/// `--kernel <release>` on a test command (plan, run, install, verify ...):
+/// the rows are run against that kernel profile's media, in its own ISO
+/// cache and variant patches, and verified against its kernel.
+pub fn apply(cfg: &Config, name: &str) -> Result<Config, String> {
+    let kb = load(name)?;
+    Ok(effective_cfg(cfg, &kb))
 }
 
 fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
@@ -231,6 +249,21 @@ mod tests {
         assert_eq!(prebuild_packages(split).unwrap(), vec!["audit", "rsyslog", "aide", "sudo"]);
         assert!(prebuild_packages("x sudo make -j8 pkgs=\"a;rm\" y").is_err());
         assert!(prebuild_packages("nothing").unwrap().is_empty());
+    }
+
+    #[test]
+    fn rows_under_a_kernel_take_the_equivalent_canister_and_paths_are_not_nested() {
+        let cfg = Config::load();
+        let k = apply(&cfg, "7.3-rc4").unwrap();
+        assert_eq!(k.kernel.as_ref().unwrap().nevr, "7.3.0-0.rc4.1.ph5");
+        // applying again (build-iso under a test command) must not nest paths
+        let kb = load("7.3-rc4").unwrap();
+        let again = effective_cfg(&k, &kb);
+        assert_eq!(again.iso_cache, k.iso_cache);
+        assert_eq!(again.build_root, k.build_root);
+        if let Ok(rows) = crate::matrix::rows(&k) {
+            assert!(rows.iter().all(|p| p.canister == "equivalent"));
+        }
     }
 
     #[test]

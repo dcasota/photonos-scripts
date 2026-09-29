@@ -480,6 +480,24 @@ fn main() -> ExitCode {
         }
     };
     let cfg = config::Config::load();
+    // build-iso and variant-patches take --kernel themselves (a build request);
+    // every other command that accepts it runs rows against that kernel.
+    let cfg = match (&args.kernel, args.cmd.as_str()) {
+        (Some(_), "build-iso" | "variant-patches") | (None, _) => cfg,
+        (Some(k), "plan" | "run" | "install" | "verify" | "create-vm" | "kickstart" | "teardown" | "report") => {
+            match kbuild::apply(&cfg, k) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("sharukhan: --kernel {k}: {e}");
+                    return ExitCode::from(64);
+                }
+            }
+        }
+        (Some(_), other) => {
+            eprintln!("sharukhan: --kernel does not apply to {other}");
+            return ExitCode::from(64);
+        }
+    };
     let lifecycle = match args.lifecycle() {
         Ok(l) => l,
         Err(e) => {
@@ -836,7 +854,7 @@ fn cmd_doctor(cfg: &config::Config) -> Result<(), String> {
 }
 
 fn cmd_plan(cfg: &config::Config, only: Option<&str>) -> Result<(), String> {
-    let all = matrix::load(&cfg.matrix_tsv)?;
+    let all = matrix::rows(cfg)?;
     let sel = matrix::select(&all, only)?;
     let mut isos: Vec<String> = sel.iter().map(|p| p.iso_key()).collect();
     isos.sort();
@@ -854,7 +872,7 @@ fn cmd_plan(cfg: &config::Config, only: Option<&str>) -> Result<(), String> {
             iso_type: t.to_string(),
             poi: p.to_string(),
             canister: c.to_string(),
-            kernel: None,
+            kernel: cfg.kernel.as_ref().map(|k| k.name.clone()),
         };
         // The same decision `run` takes: present AND built from today's inputs.
         let stale = match build::plan(cfg, &req, false, true) {
@@ -945,7 +963,7 @@ fn cmd_status(cfg: &config::Config, jobs: Option<u64>) -> Result<(), String> {
         }
     }
 
-    if let Ok(all) = matrix::load(&cfg.matrix_tsv) {
+    if let Ok(all) = matrix::rows(cfg) {
         let up: Vec<&str> = all
             .iter()
             .filter(|p| vmware::is_running(&cfg.vmrun, &format!("mc-{}", p.id)))
@@ -1007,7 +1025,7 @@ fn cmd_findings(cfg: &config::Config, severity: Option<&str>) -> Result<(), Stri
 /// stdout and kept nothing, which makes a regression between runs invisible -
 /// the whole point of a matrix is comparing today against yesterday.
 fn cmd_report(cfg: &config::Config, only: Option<&str>) -> Result<(), String> {
-    let all = matrix::load(&cfg.matrix_tsv)?;
+    let all = matrix::rows(cfg)?;
     let sel = matrix::select(&all, only)?;
     let mut out = String::new();
     macro_rules! line {

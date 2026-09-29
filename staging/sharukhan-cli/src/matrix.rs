@@ -169,6 +169,19 @@ impl Permutation {
     }
 }
 
+/// The rows as a command sees them. Under a kernel profile (`--kernel`) every
+/// row takes the canister axis `equivalent`: no canister of that kernel is
+/// published, so the media can only carry one built from its own tree.
+pub fn rows(cfg: &crate::config::Config) -> Result<Vec<Permutation>, String> {
+    let mut all = load(&cfg.matrix_tsv)?;
+    if cfg.kernel.is_some() {
+        for p in &mut all {
+            p.canister = "equivalent".into();
+        }
+    }
+    Ok(all)
+}
+
 pub fn load(path: &Path) -> Result<Vec<Permutation>, String> {
     let text = fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let mut out = Vec::new();
