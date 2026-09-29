@@ -291,6 +291,33 @@ fn foreign_edits(porcelain: &str, owned: &[String], allowed: &[String]) -> Vec<S
     out
 }
 
+/// Clone the common and release trees into `cfg.build_root` when missing,
+/// from `cfg.photon_remote`, each on its own branch.
+pub fn ensure_build_trees(cfg: &Config, log: &mut dyn FnMut(&str)) -> Result<(), String> {
+    fs::create_dir_all(&cfg.build_root).map_err(|e| format!("{}: {e}", cfg.build_root.display()))?;
+    for (branch, dir) in [
+        (cfg.build_common.as_str(), cfg.build_root.join(&cfg.build_common)),
+        (cfg.release.as_str(), cfg.build_root.join(&cfg.release)),
+    ] {
+        if dir.join(".git").exists() {
+            continue;
+        }
+        if let Some(parent) = dir.parent() {
+            fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+        }
+        log(&format!("cloning {} ({branch}) -> {}", cfg.photon_remote, dir.display()));
+        let ok = Command::new("git")
+            .args(["clone", "--quiet", "-b", branch, &cfg.photon_remote])
+            .arg(&dir)
+            .status()
+            .map_err(|e| format!("git clone: {e}"))?;
+        if !ok.success() {
+            return Err(format!("cloning {branch} from {} failed", cfg.photon_remote));
+        }
+    }
+    Ok(())
+}
+
 /// Sidecar recording what a cached ISO was built from.
 pub const INPUTS_FILE: &str = "inputs.txt";
 
@@ -421,6 +448,11 @@ fn resolve_in(
         // names (tarball manifest, patch files, the FIPS series manifest and
         // every file in it).
         crate::kbuild::prepare_release_tree(cfg, kb, log)?;
+    } else {
+        // The input record names both trees' commits before the cascade's
+        // sync stage runs, so a fresh build root (MC_BUILD_ROOT) must have
+        // them cloned first.
+        ensure_build_trees(cfg, log)?;
     }
     let inputs = build_inputs(cfg, req, kb)?;
 
