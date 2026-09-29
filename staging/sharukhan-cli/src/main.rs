@@ -30,6 +30,7 @@ mod net;
 mod oracle;
 mod phases;
 mod pkglife;
+mod poiimage;
 mod proc;
 mod remaster;
 mod report;
@@ -80,6 +81,8 @@ PHASES (the same code `run` calls, one step at a time)
     remaster            make an Azure variant of an ISO that already exists, by
                         rebuilding only the kernel spec (--in, --out, --hyperv)
     variant-patches     rebuild the installer variant patches from the PR branches
+    composer            build and prove the installer image that composes a
+                        variant's media (--poi); `build-iso` does this itself
     canister            which canister this kernel can have (--rebase-check to prove it)
     branch-check        guard a PR branch against a base that has moved: the
                         %changelog version it adds must not be one the target
@@ -560,6 +563,7 @@ fn main() -> ExitCode {
         "build" => cmd_build(&args),
         "remaster" => cmd_remaster(&args),
         "variant-patches" => phases::cmd_variant_patches(&cfg, args.kernel.as_deref()),
+        "composer" => cmd_composer(&cfg, args.poi.as_deref().unwrap_or("2.8")),
         "canister" => cmd_canister(&cfg, args.rebase_check),
         "branch-check" => cmd_branch_check(&args),
         "mirrors" => cmd_mirrors(&cfg),
@@ -579,6 +583,20 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// `sharukhan composer --poi <v>`: the image `build-iso` would compose that
+/// variant's media with, built if needed and proven either way.
+fn cmd_composer(cfg: &config::Config, poi: &str) -> Result<(), String> {
+    let patch = cfg.variant_patches.join(format!("poi-{poi}.patch"));
+    if !patch.is_file() {
+        return Err(format!("{} does not exist; run `sharukhan variant-patches`", patch.display()));
+    }
+    let c = poiimage::for_variant(cfg, &patch, &mut |l| println!("  {l}"))?;
+    println!("composer  {}", c.tag);
+    println!("installer {} ({} package file(s) proven identical)", c.version, c.files);
+    println!("base      {}", c.base_id);
+    Ok(())
 }
 
 /// A phase command without --id must say so rather than picking a row.

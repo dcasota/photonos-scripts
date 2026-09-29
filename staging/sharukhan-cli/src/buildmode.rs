@@ -313,6 +313,9 @@ pub struct BuildSpec {
     /// Packages built before `make image`, in their own make run (a kernel
     /// profile's wrapper pre-build). Empty for a plain 5.0 build.
     pub prebuild: Vec<String>,
+    /// The image that composes the media (`poiimage.rs`). None: preflight
+    /// builds it from the tree's own installer spec, after the injections.
+    pub poi_image: Option<String>,
 }
 
 impl BuildSpec {
@@ -348,6 +351,7 @@ impl BuildSpec {
             compose_only: false,
             injections: Vec::new(),
             prebuild: Vec::new(),
+            poi_image: None,
         })
     }
 

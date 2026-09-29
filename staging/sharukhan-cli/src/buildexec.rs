@@ -1128,6 +1128,10 @@ fn spec_blank_lines(c: &mut Ctx) -> Result<(), String> {
 ///    Downloads go to a temp file and are moved only once validated.
 ///  - a cached archive whose checksum no longer matches is often still correct
 ///    in the common tree's cache, so that is checked before re-downloading.
+/// Photon's source mirror: the second place an archive is fetched from when
+/// its declared upstream url fails.
+pub(crate) const SOURCES_MIRROR: &str = "https://packages.broadcom.com/photon/photon_sources/1.0";
+
 pub fn sources(c: &mut Ctx) -> Result<(), String> {
     let dest = c.spec.tree(Tree::Release).join("stage/SOURCES");
     let backup = c.spec.tree(Tree::Common).join("stage/SOURCES");
@@ -1165,8 +1169,7 @@ pub fn sources(c: &mut Ctx) -> Result<(), String> {
                 }
                 let _ = fs::remove_file(&target);
             }
-            let mirror =
-                format!("https://packages.broadcom.com/photon/photon_sources/1.0/{archive}");
+            let mirror = format!("{SOURCES_MIRROR}/{archive}");
             let mut got = false;
             for src in [url.as_str(), mirror.as_str()] {
                 if src.is_empty() {
@@ -1221,7 +1224,7 @@ pub fn sources(c: &mut Ctx) -> Result<(), String> {
 /// Parsed directly rather than through python+pyyaml: the shape is a flat list
 /// under `sources:` and three string fields, and the entries are `- archive:`
 /// with the rest indented beneath.
-fn declared_sources(cfg: &Path) -> Vec<(String, String, String)> {
+pub(crate) fn declared_sources(cfg: &Path) -> Vec<(String, String, String)> {
     let Ok(text) = fs::read_to_string(cfg) else {
         return Vec::new();
     };
@@ -1391,40 +1394,53 @@ fn report_subrelease(c: &mut Ctx) -> Result<(), String> {
 /// Checks that must happen BEFORE hours are spent, not after.
 ///
 /// The POI image check is the reason this phase exists: ISO assembly calls
-/// `file` inside `photon/installer:latest`, and an image without it fails in
-/// generateInitrd() - after every package has already been rebuilt.
+/// `file` inside the composer image, and an image without it fails in
+/// generateInitrd() - after every package has already been rebuilt. The
+/// composer is the variant's own installer (`poiimage.rs`), not whatever
+/// `photon/installer:latest` holds; it is built here from the tree's
+/// installer spec, which the injections have already patched, unless the
+/// caller built it first.
 pub fn preflight(c: &mut Ctx) -> Result<(), String> {
     let stage = c.spec.tree(Tree::Release).join("stage");
     if c.dry {
-        c.say("  would check the POI image, createrepo_c and disk headroom");
+        c.say("  would build/prove the composer image, check createrepo_c and disk headroom");
         return Ok(());
     }
-    c.say("  checking photon/installer:latest carries a `file` binary");
-    if !ok(
-        Path::new("/"),
-        "docker",
-        &["image", "inspect", "photon/installer:latest"],
-    ) || !ok(
-        Path::new("/"),
-        "docker",
-        &[
-            "run",
-            "--rm",
-            "--entrypoint",
-            "/bin/sh",
-            "photon/installer:latest",
-            "-c",
-            "command -v file",
-        ],
-    ) {
-        return Err(
-            "photon/installer:latest is missing or has no 'file' binary. ISO \
-             assembly would fail in generateInitrd() AFTER every package has \
-             been rebuilt - aborting now instead."
-                .into(),
-        );
+    let tag = match &c.spec.poi_image {
+        Some(t) => t.clone(),
+        None => {
+            let spec_dir = c.spec.tree(Tree::Release).join("SPECS/photon-os-installer");
+            let sources = [stage.join("SOURCES"), c.spec.tree(Tree::Common).join("stage/SOURCES")];
+            let work = c.spec.base_dir.join(".sharukhan-poi-image");
+            let base = crate::poiimage::base_ref();
+            let mut lines = Vec::new();
+            let r = crate::poiimage::ensure(&spec_dir, &sources, &work, &base, &mut |l| {
+                lines.push(l.to_string())
+            });
+            for l in lines {
+                c.say(&format!("  {l}"));
+            }
+            r?.tag
+        }
+    };
+    c.say(&format!("  checking the composer {tag} carries a `file` binary"));
+    if !ok(Path::new("/"), "docker", &["image", "inspect", &tag])
+        || !ok(
+            Path::new("/"),
+            "docker",
+            &["run", "--rm", "--entrypoint", "/bin/sh", &tag, "-c", "command -v file"],
+        )
+    {
+        return Err(format!(
+            "{tag} is missing or has no 'file' binary. ISO assembly would fail in \
+             generateInitrd() AFTER every package has been rebuilt - aborting now instead."
+        ));
     }
-    c.say("  POI image ok");
+    let before = crate::poiimage::point_build_config(&c.spec.tree(Tree::Common), &tag)?;
+    c.say(&format!(
+        "  POI image ok; photon-build-param.poi-image {} -> {tag}",
+        before.as_deref().unwrap_or("(unset)")
+    ));
     c.say("  checking createrepo_c");
     if !ok(Path::new("/"), "createrepo_c", &["--version"]) {
         return Err(
@@ -2974,6 +2990,7 @@ mod tests {
             compose_only: false,
             injections: vec![],
             prebuild: vec![],
+            poi_image: None,
         }
     }
 

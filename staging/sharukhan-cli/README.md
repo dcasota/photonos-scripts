@@ -902,6 +902,48 @@ a full one took **154m**, because the full package set is 264 packages against
 the minimal's 141 and most of the difference had never been built. What is
 saved is the kernel rebuild, not the package set.
 
+### The installer that composes the media is the variant's: `composer`
+
+`make image` does not compose an ISO with the photon-os-installer RPM the build
+just produced. `poi.py` runs a docker image (`photon-build-param.poi-image`),
+and the installer inside that image decides what goes on the media; the RPM
+under test only lands in the ISO's initrd. On this host `photon/installer:latest`
+held photon-os-installer **2.4** on a Python 3.14 base, so every ISO had been
+composed by 2.4. On 2026-09-29, in a fresh build root, both minimal gate groups
+failed all ten attempts on `Error(1011) : No matching packages` for `ntp`. 2.4's
+STIG set still names it; the variants' 0006 patch removes it. Earlier minimal
+runs had passed only because a shared stage still held an `ntp` RPM from a full
+build.
+
+Upstream's Dockerfile is no way out: it runs `tdnf update` against the live
+repos, and that day photon-updates had `librepo-1.14.5-7` requiring
+`libxml2.so.2` next to a `libxml2-2.15.4` that no longer provides it. So
+`build-iso` (and `sharukhan composer --poi <v>` on its own) builds the composer
+offline, with `--network=none`:
+
+1. the variant's installer spec directory, taken from `HEAD` with the variant
+   patch applied,
+2. every archive its `config.yaml` declares, each checked against its sha512,
+3. the spec's own `%prep` (`rpmbuild -bp`),
+4. the two commands `%py3_build`/`%py3_install` run, executed by the base
+   image's own Python, on top of the base image pinned by ID
+   (`MC_POI_BASE_IMAGE`, default `photon/installer:latest`), with the base's
+   installer RPM removed.
+
+Before the image is used, sharukhan proves it:
+
+- every file of `photon_installer` in the image is byte-identical to the
+  prepped tree, with nothing missing or left over;
+- the rpmdb no longer lists the replaced installer;
+- both console scripts resolve.
+
+The tag, `sharukhan/photon-os-installer:<version>-<hash>`, is a content hash
+over the base ID and the prepped tree, so an unchanged variant reuses its image.
+The shared `photon/installer:latest` is never retagged. The legacy driver
+receives the tag as `MC_POI_IMAGE` and writes and re-reads `poi-image` itself.
+The cascade does the same in `preflight`, building the composer from the
+already-injected tree when no tag was passed.
+
 ## Remaster mode: an Azure variant of an ISO that already exists
 
 An Azure guest needs Hyper-V support **built into** the kernel rather than as

@@ -550,6 +550,11 @@ fn resolve_in(
         cfg.release, req.poi
     ));
 
+    // The media are composed by the installer inside a docker image, not by
+    // the RPM this build produces - so that installer is the variant's too
+    // (see poiimage.rs for the minimal-ISO failure this closes).
+    let composer = crate::poiimage::for_variant(cfg, &patch, &mut |l| log(l))?;
+
     let build_log = cfg
         .build_log_dir
         .join(format!("{}-{}.log", req.key(), job::stamp()));
@@ -663,7 +668,7 @@ mismatched canister in the stage outranks the pinned one for an unversioned tdnf
         // A kernel profile builds through the cascade in every mode: only the
         // cascade runs its pin script.
         if req.canister == "equivalent" || kb.is_some() {
-            let spec = crate::buildmode::spec_for(
+            let mut spec = crate::buildmode::spec_for(
                 &cfg.build_root.to_string_lossy(),
                 &cfg.build_common,
                 &cfg.release,
@@ -676,6 +681,7 @@ mismatched canister in the stage outranks the pinned one for an unversioned tdnf
                 None,
                 kb,
             )?;
+            spec.poi_image = Some(composer.tag.clone());
             crate::buildexec::execute(&spec, false, &mut |l| log(l))?;
             continue;
         }
@@ -695,6 +701,7 @@ mismatched canister in the stage outranks the pinned one for an unversioned tdnf
             .arg(img)
             .arg(phase)
             .env("MC_CANISTER_NEVR", &nevr)
+            .env("MC_POI_IMAGE", &composer.tag)
             .stdout(Stdio::from(logf))
             .stderr(Stdio::from(err))
             .status()

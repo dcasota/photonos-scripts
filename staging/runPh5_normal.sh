@@ -306,11 +306,20 @@ print(cfg['photon-build-param'].get('photon-mainline', cfg['photon-build-param']
   # retry loop below then burns all 10 attempts on it. Check the image for
   # `file` up front, add it to the Dockerfile package list, and rebuild any
   # older image that predates the fix.
+  #
+  # MC_POI_IMAGE names a composer image built by the caller (sharukhan builds
+  # one from the variant's own installer spec, see poiimage.rs). It is used
+  # as given - never rebuilt or replaced here - and must pass the same check.
+  POI_IMAGE_REF="${MC_POI_IMAGE:-photon/installer:latest}"
   poi_image_ok() {
-    docker image inspect photon/installer:latest >/dev/null 2>&1 || return 1
-    docker run --rm --entrypoint /bin/sh photon/installer:latest \
+    docker image inspect "$POI_IMAGE_REF" >/dev/null 2>&1 || return 1
+    docker run --rm --entrypoint /bin/sh "$POI_IMAGE_REF" \
       -c 'command -v file >/dev/null' >/dev/null 2>&1
   }
+  if [ -n "${MC_POI_IMAGE:-}" ] && ! poi_image_ok; then
+    echo "[runPh5_normal] ERROR: MC_POI_IMAGE=$MC_POI_IMAGE is missing or has no 'file' binary" 1>&2
+    exit 1
+  fi
   if ! poi_image_ok; then
     POI_SRC="$BASE_DIR/photon-os-installer"
     [ -d "$POI_SRC/.git" ] || git clone https://github.com/dcasota/photon-os-installer.git "$POI_SRC" 2>/dev/null
@@ -431,7 +440,23 @@ if mode == 'equivalent-b' and opts.get('linux-esx', {}).get('macros') != want:
 print('[runPh5_normal] verified: build.py will apply %r to linux' % (want,))
 " || exit 1
   fi
-  if [ -f "$COMMON_CFG" ]; then
+  if [ -f "$COMMON_CFG" ] && [ -n "${MC_POI_IMAGE:-}" ]; then
+    # The caller's composer, unconditionally: a poi-image left in the tree by
+    # an earlier run must not win over the image built for THIS variant.
+    python3 -c "
+import json, sys
+path, tag = sys.argv[1], sys.argv[2]
+with open(path) as f:
+    cfg = json.load(f)
+cfg.setdefault('photon-build-param', {})['poi-image'] = tag
+with open(path, 'w') as f:
+    json.dump(cfg, f, indent=4)
+with open(path) as f:
+    if json.load(f)['photon-build-param'].get('poi-image') != tag:
+        sys.exit('[runPh5_normal] ERROR: poi-image did not read back as ' + tag)
+print('[runPh5_normal] poi-image -> ' + tag + ' (verified)')
+" "$COMMON_CFG" "$MC_POI_IMAGE" || exit 1
+  elif [ -f "$COMMON_CFG" ]; then
     POI_SET=$(python3 -c "
 import json
 cfg = json.load(open('$COMMON_CFG'))
