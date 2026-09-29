@@ -499,6 +499,19 @@ fn resolve_in(
     fs::create_dir_all(stage_dir.join("photonos-patches"))
         .map_err(|e| format!("{}: {e}", stage_dir.display()))?;
     let driver = cfg.photon_scripts.join("runPh5_normal.sh");
+    // A deployed copy that predates MC_POI_IMAGE ignores it silently and
+    // leaves poi-image at photon/installer:latest: job 42's first ISO was
+    // composed that way (PHOTON_SCRIPTS defaulted to /root). Refuse it here,
+    // hours before the post-build check below would.
+    let driver_text = fs::read_to_string(&driver).map_err(|e| format!("{}: {e}", driver.display()))?;
+    if !driver_text.contains("MC_POI_IMAGE") {
+        return Err(format!(
+            "{} does not honour MC_POI_IMAGE, so its media would be composed by whatever \
+             photon/installer:latest holds. Point PHOTON_SCRIPTS at a current copy \
+             (photonos-scripts/staging) or update it.",
+            driver.display()
+        ));
+    }
     fs::copy(&driver, stage_dir.join("runPh5_normal.sh"))
         .map_err(|e| format!("{}: {e}", driver.display()))?;
     fs::copy(
@@ -718,6 +731,22 @@ mismatched canister in the stage outranks the pinned one for an unversioned tdnf
             ));
         }
     }
+
+    // Prove which image build.py was pointed at, not what was asked for.
+    let common_cfg = cfg.build_root.join(&cfg.build_common).join("build-config.json");
+    let used = fs::read_to_string(&common_cfg)
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .and_then(|v| v["photon-build-param"]["poi-image"].as_str().map(str::to_string));
+    if used.as_deref() != Some(composer.tag.as_str()) {
+        return Err(format!(
+            "the build composed its media with poi-image {}, not the variant's composer {}: \
+             the ISO is not evidence for this variant",
+            used.as_deref().unwrap_or("(unset)"),
+            composer.tag
+        ));
+    }
+    log(&format!("media composed by {} (poi-image read back from {})", composer.tag, common_cfg.display()));
 
     // The NEWEST ISO, not `find -newer $BUILD_LOG`. The build log is still
     // being appended to when the ISO lands, so its mtime is later than the
