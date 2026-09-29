@@ -575,7 +575,12 @@ fn prepare_media(
         let patch = cfg
             .variant_patches
             .join(format!("poi-{}.patch", g.rows[0].poi));
-        match media::gate(&g.iso, &patch, &cfg.photon_tree) {
+        match media::gate(
+            &g.iso,
+            &patch,
+            &cfg.photon_tree,
+            cfg.kernel.as_ref().map(|k| k.installer_release_bump).unwrap_or(0),
+        ) {
             Ok(gate) => {
                 println!(
                     "  {} {:<24} media has {} (expected {}*), written {}s ago",

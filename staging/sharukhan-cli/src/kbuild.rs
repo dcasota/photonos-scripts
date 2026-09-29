@@ -128,6 +128,12 @@ pub fn effective_cfg(cfg: &Config, kb: &KernelBuild) -> Config {
         name: kb.name.clone(),
         nevr: kb.nevr.clone(),
         userland: kb.userland.clone(),
+        installer_release_bump: kb
+            .profile
+            .installer_patches
+            .as_ref()
+            .map(|ip| ip.patches.len() as u32)
+            .unwrap_or(0),
     });
     let root = cfg.work.join("kbuild").join(&kb.name);
     k.build_root = root.clone();

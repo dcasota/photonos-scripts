@@ -21,6 +21,9 @@ pub struct KernelAxis {
     pub nevr: String,
     /// The Photon release whose repo would publish a canister.
     pub userland: String,
+    /// Installer Release bumps the profile's pins add on top of the variant
+    /// (one per installer patch they append).
+    pub installer_release_bump: u32,
 }
 
 #[derive(Clone)]

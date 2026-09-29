@@ -161,8 +161,10 @@ pub fn installer_on_media(iso: &Path) -> Result<String, String> {
     ))
 }
 
-pub fn gate(iso: &Path, variant_patch: &Path, photon_tree: &Path) -> Result<Gate, String> {
-    let expected = expected_installer(variant_patch, photon_tree)?;
+/// `release_bump`: Release increments applied after the variant patch - a
+/// kernel profile's pins append installer patches, each bumping Release once.
+pub fn gate(iso: &Path, variant_patch: &Path, photon_tree: &Path, release_bump: u32) -> Result<Gate, String> {
+    let expected = bump_release(&expected_installer(variant_patch, photon_tree)?, release_bump)?;
     let actual = installer_on_media(iso)?;
     let ok = actual.starts_with(&expected);
     Ok(Gate {
@@ -170,6 +172,20 @@ pub fn gate(iso: &Path, variant_patch: &Path, photon_tree: &Path) -> Result<Gate
         actual,
         ok,
     })
+}
+
+/// `photon-os-installer-2.9-2` + 2 -> `photon-os-installer-2.9-4`.
+pub fn bump_release(nevr: &str, by: u32) -> Result<String, String> {
+    if by == 0 {
+        return Ok(nevr.to_string());
+    }
+    let (head, rel) = nevr
+        .rsplit_once('-')
+        .ok_or_else(|| format!("'{nevr}' has no Release to bump"))?;
+    let n: u32 = rel
+        .parse()
+        .map_err(|_| format!("'{nevr}': Release '{rel}' is not a number"))?;
+    Ok(format!("{head}-{}", n + by))
 }
 
 /// Age of the ISO in seconds, refusing while it is younger than `min_age` or
@@ -303,6 +319,9 @@ mod tests {
         let t = pristine_tree("verbump", "2.8", "2");
         let p = installer_patch(&t, "-Version:       2.8\n+Version:       2.9\n");
         assert_eq!(expected_installer(&p, &t).unwrap(), "photon-os-installer-2.9-2");
+        assert_eq!(bump_release("photon-os-installer-2.9-2", 2).unwrap(), "photon-os-installer-2.9-4");
+        assert_eq!(bump_release("photon-os-installer-2.9-2", 0).unwrap(), "photon-os-installer-2.9-2");
+        assert!(bump_release("photon-os-installer-2.9-x", 1).is_err());
         let _ = std::fs::remove_dir_all(&t);
     }
 
