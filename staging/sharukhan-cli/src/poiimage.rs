@@ -60,6 +60,21 @@ pub struct Composer {
     pub files: usize,
 }
 
+/// How the composer is made from its inputs. Part of every ISO's recorded
+/// inputs (`build::build_inputs`), next to the base image ID: the variant
+/// patch and the release base, already recorded there, fix the installer
+/// source, so these two fix the composer. Bump it whenever `ensure` changes
+/// what it puts into the image.
+pub const METHOD: &str = "poiimage-v1";
+
+/// The composer identity recorded with an ISO: `<method> <base image ID>`.
+pub fn identity() -> Result<String, String> {
+    let base = base_ref();
+    let id = image_id(&base)
+        .ok_or_else(|| format!("the composer base image {base} is not present"))?;
+    Ok(format!("{METHOD} {id}"))
+}
+
 pub fn base_ref() -> String {
     std::env::var("MC_POI_BASE_IMAGE")
         .ok()

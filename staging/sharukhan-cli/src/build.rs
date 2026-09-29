@@ -349,6 +349,10 @@ pub fn build_inputs(
         hash(&cfg.variant_patches.join(format!("poi-{}.patch", req.poi)))?,
         hash(&cfg.variant_patches.join("common-fixes.patch"))?,
     );
+    // Which installer COMPOSED the media (poiimage.rs). An ISO recorded
+    // without this line was composed by whatever photon/installer:latest held
+    // - POI 2.4 on this host - and is not evidence for the variant.
+    out.push_str(&format!("composer {}\n", crate::poiimage::identity()?));
     if let Some(kb) = kb {
         // The profile (and through it the rendered pin script, FIPS editor
         // included) and the release branch decide the kernel; the branch
@@ -1755,6 +1759,12 @@ mod tests {
         assert!(why.contains("variant") && why.contains("driver") && !why.contains("common-base"), "{why}");
         // an input that only one side knows about is a change too
         assert!(inputs_diff(rec, &format!("{rec}embedded-canister-equivalent fff\n")).is_some());
+        // an ISO recorded before the composer line existed was composed by an
+        // unknown installer image: it must not be a hit
+        let why = inputs_diff(rec, &format!("{rec}composer poiimage-v1 sha256:73ce\n")).unwrap();
+        assert!(why.contains("composer"), "{why}");
+        let with = format!("{rec}composer poiimage-v1 sha256:73ce\n");
+        assert!(inputs_diff(&with, &with.replace("73ce", "0bad")).unwrap().contains("composer"));
     }
 
     /// A missing variant patch used to be noticed only AFTER resolve had
