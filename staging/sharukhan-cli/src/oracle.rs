@@ -536,8 +536,29 @@ pub fn guest(
     fs: &str,
     canister: &CanisterExpect,
     net: &NetSpec,
+    kernel: Option<&str>,
     c: &mut Checks,
 ) {
+    // The running kernel. Under a kernel profile it is the point of the run:
+    // uname -r is <Version>-<Release>[-<flavour>], and the profile's pins give
+    // linux and linux-esx the same Version-Release. Recorded only otherwise:
+    // on 5.0 the two flavours carry different Releases.
+    let uname = g.run("uname -r").value_or("unknown");
+    match kernel {
+        Some(k) => {
+            let ok = uname == k || uname.strip_prefix(k).map(|r| r.starts_with('-')).unwrap_or(false);
+            c.check(
+                "guest.kernel_release",
+                "-",
+                if ok { Status::Pass } else { Status::Fail },
+                k,
+                &uname,
+                "the kernel the media were built with is the one running",
+            );
+        }
+        None => c.check("guest.kernel_release", "-", Status::Info, "", &uname, "running kernel"),
+    }
+
     let v = g.run("findmnt -no FSTYPE /").value_or("unknown");
     c.expect(
         "guest.root_fstype",

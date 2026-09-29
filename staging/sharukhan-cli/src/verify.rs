@@ -250,7 +250,15 @@ pub fn run(
         probe = g.reachable();
     }
     if probe.ok {
-        oracle::guest(&g, &p.stig, &p.fs, &want, &p.net, &mut c);
+        oracle::guest(
+            &g,
+            &p.stig,
+            &p.fs,
+            &want,
+            &p.net,
+            cfg.kernel.as_ref().map(|k| k.nevr.as_str()),
+            &mut c,
+        );
         oracle::harvest(&g, &harvest, cfg.guest_password().ok(), &mut c);
         // Opt-in, and deliberately AFTER the read-only oracle: this phase
         // mutates the guest (ADR-0008), so everything verify asserts about the
