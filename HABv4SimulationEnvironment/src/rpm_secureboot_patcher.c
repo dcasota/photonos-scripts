@@ -822,7 +822,7 @@ static int generate_linux_mok_spec(rpm_build_config_t *config, rpm_package_info_
         "# --- CUSTOM KERNEL INJECTION START ---\n"
         "# Check if a custom built kernel exists and use it instead of the one from RPM\n"
         "CUSTOM_KERNEL_PATH=\"%%{keys_dir}/vmlinuz-mok\"\n"
-        "KERNEL_BUILD_DIR=\"/root/%%{photon_release_ver}/kernel-build\"\n"
+        "KERNEL_BUILD_DIR=\"%%{kernel_build_dir}\"\n"
         "\n"
         "if [ -f \"$CUSTOM_KERNEL_PATH\" ]; then\n"
         "    echo \"[INFO] Found custom built kernel: $CUSTOM_KERNEL_PATH\"\n"
@@ -1195,7 +1195,7 @@ static int generate_linux_esx_mok_spec(rpm_build_config_t *config,
         "# both linux-mok and linux-esx-mok today. A future habv4_drivers.c change\n"
         "# could split the build to produce a generic + ESX binary pair.\n"
         "CUSTOM_KERNEL_PATH=\"%%{keys_dir}/vmlinuz-mok\"\n"
-        "KERNEL_BUILD_DIR=\"/root/%%{photon_release_ver}/kernel-build\"\n"
+        "KERNEL_BUILD_DIR=\"%%{kernel_build_dir}\"\n"
         "\n"
         "if [ -f \"$CUSTOM_KERNEL_PATH\" ]; then\n"
         "    echo \"[INFO] Found custom built kernel: $CUSTOM_KERNEL_PATH\"\n"
@@ -1568,6 +1568,7 @@ static int build_single_rpm(rpm_build_config_t *config, const char *spec_name,
         "--define 'source_rpm_dir %s' "
         "--define 'keys_dir %s' "
         "--define 'photon_release_ver %s' "
+        "--define 'kernel_build_dir %s' "
         "'%s' 2>&1",
         config->rpmbuild_dir,
         dist_tag,
@@ -1576,6 +1577,7 @@ static int build_single_rpm(rpm_build_config_t *config, const char *spec_name,
         config->source_rpm_dir,
         config->keys_dir ? config->keys_dir : "/root/hab_keys",
         config->release,
+        config->kernel_build_dir,
         spec_path);
     
     if (g_verbose) {
@@ -1973,7 +1975,8 @@ int rpm_patch_secureboot_packages(
     const char *mok_key,
     const char *mok_cert,
     int verbose,
-    int efuse_usb_mode
+    int efuse_usb_mode,
+    const char *mok_build_dir
 ) {
     g_verbose = verbose;
     
@@ -2000,10 +2003,20 @@ int rpm_patch_secureboot_packages(
     
     /* Step 2: Set up build configuration */
     rpm_build_config_t config = {0};
-    config.work_dir = strdup("/tmp/rpm_mok_build");
-    config.specs_dir = strdup("/tmp/rpm_mok_build/SPECS");
-    config.rpmbuild_dir = strdup("/tmp/rpm_mok_build/rpmbuild");
-    config.output_dir = strdup("/tmp/rpm_mok_build/output");
+    /* v1.9.86: the build directory is the caller's (--work-dir), defaulting
+     * to the documented /tmp/rpm_mok_build; the custom kernel's modules are
+     * read from the release dir actually in use, not from /root/<release>. */
+    const char *mb = (mok_build_dir && mok_build_dir[0]) ? mok_build_dir : "/tmp/rpm_mok_build";
+    char mbp[1024];
+    config.work_dir = strdup(mb);
+    snprintf(mbp, sizeof(mbp), "%s/SPECS", mb);
+    config.specs_dir = strdup(mbp);
+    snprintf(mbp, sizeof(mbp), "%s/rpmbuild", mb);
+    config.rpmbuild_dir = strdup(mbp);
+    snprintf(mbp, sizeof(mbp), "%s/output", mb);
+    config.output_dir = strdup(mbp);
+    snprintf(mbp, sizeof(mbp), "%s/kernel-build", photon_release_dir);
+    config.kernel_build_dir = strdup(mbp);
     config.source_rpm_dir = strdup(rpm_dir);
     config.source_specs_dir = strdup(specs_dir);
     config.mok_key = strdup(mok_key);
@@ -2122,6 +2135,7 @@ void rpm_free_validation_result(rpm_validation_result_t *result) {
 
 void rpm_free_build_config(rpm_build_config_t *config) {
     if (!config) return;
+    free(config->kernel_build_dir);
     free(config->work_dir);
     free(config->specs_dir);
     free(config->rpmbuild_dir);

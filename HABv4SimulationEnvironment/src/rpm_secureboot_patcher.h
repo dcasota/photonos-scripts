@@ -58,6 +58,7 @@ typedef struct {
     char *mok_cert;           /* MOK certificate path */
     char *release;            /* Photon OS release (e.g., "5.0") */
     char *keys_dir;           /* Keys directory (for pre-built EFI binaries) */
+    char *kernel_build_dir;   /* v1.9.86: <release dir>/kernel-build (custom kernel modules) */
     int verbose;
     int efuse_usb_mode;       /* Enable eFuse USB verification in installed system */
 } rpm_build_config_t;
@@ -201,6 +202,8 @@ int rpm_sign_mok_packages(
  * @param mok_cert             Path to MOK certificate
  * @param verbose              Enable verbose output
  * @param efuse_usb_mode       Enable eFuse USB verification in installed system
+ * @param mok_build_dir        v1.9.86: MOK RPM build directory, NULL for the
+ *                             documented default /tmp/rpm_mok_build
  * @return                     0 on success, negative error code on failure
  */
 int rpm_patch_secureboot_packages(
@@ -209,7 +212,8 @@ int rpm_patch_secureboot_packages(
     const char *mok_key,
     const char *mok_cert,
     int verbose,
-    int efuse_usb_mode
+    int efuse_usb_mode,
+    const char *mok_build_dir   /* v1.9.86: NULL -> /tmp/rpm_mok_build */
 );
 
 /* ============================================================================

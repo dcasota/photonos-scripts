@@ -41,7 +41,7 @@
  * monolith with its own static versions of common types/functions; including
  * habv4_common.h causes static-vs-extern conflicts on dozens of symbols).
  * MUST be kept in sync with habv4_common.h:32 manually. */
-#define VERSION "1.9.85"
+#define VERSION "1.9.86"
 #define PROGRAM_NAME "PhotonOS-HABv4Emulation-ISOCreator"
 
 /* Default configuration */
@@ -87,6 +87,7 @@ typedef struct {
     char keys_dir[512];
     char efuse_dir[512];
     char photon_dir[512];
+    char work_dir[512];       /* v1.9.86: --work-dir - isolated release dir, MOK build and scratch */
     char input_iso[512];
     char output_iso[512];
     char efuse_usb_device[128];
@@ -2719,9 +2720,162 @@ static int find_base_iso(char *iso_path, size_t path_size) {
     return 0;
 }
 
+/* v1.9.86: how the base ISO boots, read from its El Torito catalogue.
+ *
+ * photon-os-installer 2.9 (upstream b7c9039, 2026-06-04) replaced syslinux:
+ * BIOS boots a GRUB El Torito image, /isolinux/eltorito.img, built by
+ * `grub2-mkimage -O i386-pc-eltorito -p /boot/grub2`, and isolinux.bin,
+ * isolinux.cfg and menu.cfg are gone. POI 2.8 media still boot syslinux
+ * /isolinux/isolinux.bin. The installer that composed the base ISO decides,
+ * not the kernel or the date. Hardcoding isolinux.bin stopped every POI 2.9
+ * build at xorriso ("Cannot find in ISO image: -boot_image ...
+ * bin_path='/isolinux/isolinux.bin'") after the kernel build and MOK
+ * signing. The same method as `sharukhan iso-boot`: the catalogue names the
+ * images, and the BIOS loader is identified by the image's own bytes. */
+typedef enum { BIOS_NONE = 0, BIOS_SYSLINUX, BIOS_GRUB, BIOS_UNKNOWN } bios_loader_t;
+
+typedef struct {
+    char catalog[256];   /* relative to the ISO root, no leading '/' */
+    char bios[256];      /* "" when the medium has no BIOS entry */
+    char efi[256];
+    bios_loader_t loader;
+} boot_layout_t;
+
+static const char *bios_loader_name(bios_loader_t l) {
+    switch (l) {
+    case BIOS_SYSLINUX: return "syslinux";
+    case BIOS_GRUB:     return "grub-eltorito";
+    case BIOS_UNKNOWN:  return "unknown";
+    default:            return "none";
+    }
+}
+
+static int bytes_contain(const unsigned char *buf, size_t n, const char *needle) {
+    size_t m = strlen(needle);
+    if (m == 0 || n < m) return 0;
+    for (size_t i = 0; i + m <= n; i++) {
+        if (memcmp(buf + i, needle, m) == 0) return 1;
+    }
+    return 0;
+}
+
+/* syslinux isolinux.bin carries "ISOLINUX"; a GRUB i386-pc-eltorito image
+ * starts with cdboot.img, whose only plain strings are its two error messages
+ * (grub-core/boot/i386/pc/cdboot.S) - the core image behind it is compressed,
+ * so "GRUB" itself is not in it. */
+static bios_loader_t classify_bios_image(const char *path) {
+    FILE *f = fopen(path, "rb");
+    if (!f) return BIOS_UNKNOWN;
+    size_t cap = 4 * 1024 * 1024;
+    unsigned char *buf = malloc(cap);
+    if (!buf) { fclose(f); return BIOS_UNKNOWN; }
+    size_t n = fread(buf, 1, cap, f);
+    fclose(f);
+    bios_loader_t r = BIOS_UNKNOWN;
+    if (bytes_contain(buf, n, "ISOLINUX")) {
+        r = BIOS_SYSLINUX;
+    } else if (bytes_contain(buf, n, "no boot info") && bytes_contain(buf, n, "cdrom read fails")) {
+        r = BIOS_GRUB;
+    }
+    free(buf);
+    return r;
+}
+
+static void strip_slash_copy(char *dst, size_t size, const char *src) {
+    while (*src == '/') src++;
+    snprintf(dst, size, "%s", src);
+}
+
+/* Parse `xorriso -report_el_torito plain` of `iso`. With `tree` (the extracted
+ * ISO), also prove the images are there and classify the BIOS loader. */
+static int read_boot_layout(const char *iso, const char *tree, boot_layout_t *bl) {
+    memset(bl, 0, sizeof(*bl));
+    char cmd[1024];
+    snprintf(cmd, sizeof(cmd), "xorriso -indev '%s' -report_el_torito plain 2>/dev/null", iso);
+    FILE *p = popen(cmd, "r");
+    if (!p) {
+        log_error("Cannot run xorriso to read the El Torito catalogue of %s", iso);
+        return -1;
+    }
+    int ent_n[16], path_n[16], ne = 0, np = 0;
+    char ent_plat[16][8], path_v[16][256];
+    char line[1024];
+    while (fgets(line, sizeof(line), p)) {
+        char *colon = strchr(line, ':');
+        if (!colon) continue;
+        *colon = '\0';
+        char *key = line, *val = colon + 1;
+        size_t kl = strlen(key);
+        while (kl > 0 && key[kl - 1] == ' ') key[--kl] = '\0';
+        if (strcmp(key, "El Torito cat path") == 0) {
+            char v[256];
+            if (sscanf(val, " %255s", v) == 1) strip_slash_copy(bl->catalog, sizeof(bl->catalog), v);
+        } else if (strcmp(key, "El Torito boot img") == 0 && ne < 16) {
+            if (sscanf(val, " %d %7s", &ent_n[ne], ent_plat[ne]) == 2) ne++;
+        } else if (strcmp(key, "El Torito img path") == 0 && np < 16) {
+            if (sscanf(val, " %d %255s", &path_n[np], path_v[np]) == 2) np++;
+        }
+    }
+    pclose(p);
+    for (int i = 0; i < ne; i++) {
+        for (int j = 0; j < np; j++) {
+            if (path_n[j] != ent_n[i]) continue;
+            if (strcmp(ent_plat[i], "BIOS") == 0 && !bl->bios[0])
+                strip_slash_copy(bl->bios, sizeof(bl->bios), path_v[j]);
+            else if (strcmp(ent_plat[i], "UEFI") == 0 && !bl->efi[0])
+                strip_slash_copy(bl->efi, sizeof(bl->efi), path_v[j]);
+        }
+    }
+    if (!bl->catalog[0] || !bl->efi[0]) {
+        log_error("%s has no UEFI El Torito boot image (catalogue '%s', efi '%s'): "
+                  "a Secure Boot ISO cannot be built from it", iso, bl->catalog, bl->efi);
+        return -1;
+    }
+    bl->loader = bl->bios[0] ? BIOS_UNKNOWN : BIOS_NONE;
+    if (tree) {
+        char path[768];
+        snprintf(path, sizeof(path), "%s/%s", tree, bl->efi);
+        if (!file_exists(path)) {
+            log_error("El Torito names /%s, which is not in the extracted ISO", bl->efi);
+            return -1;
+        }
+        if (bl->bios[0]) {
+            snprintf(path, sizeof(path), "%s/%s", tree, bl->bios);
+            if (!file_exists(path)) {
+                log_error("El Torito names /%s, which is not in the extracted ISO", bl->bios);
+                return -1;
+            }
+            bl->loader = classify_bios_image(path);
+        }
+    }
+    return 0;
+}
+
 static int create_secure_boot_iso(void) {
     log_step("Creating Secure Boot ISO...");
-    
+
+    /* v1.9.86: read how the base ISO boots BEFORE the kernel build, so a
+     * medium this tool cannot rebuild fails in seconds, not after hours. */
+    {
+        char pre_iso[512];
+        int have = 0;
+        if (strlen(cfg.input_iso) > 0) {
+            snprintf(pre_iso, sizeof(pre_iso), "%s", cfg.input_iso);
+            have = file_exists(pre_iso);
+        } else {
+            have = (find_base_iso(pre_iso, sizeof(pre_iso)) == 0);
+        }
+        if (have) {
+            boot_layout_t pre;
+            if (read_boot_layout(pre_iso, NULL, &pre) != 0) {
+                log_error("Cannot determine how %s boots - not building", pre_iso);
+                return -1;
+            }
+            log_info("Base ISO boot layout: catalogue /%s, BIOS %s%s, UEFI /%s",
+                pre.catalog, pre.bios[0] ? "/" : "", pre.bios[0] ? pre.bios : "none", pre.efi);
+        }
+    }
+
     /* Step 0: Build custom kernel with USB drivers as built-in (mandatory in v1.9.0+) */
     log_info("Building custom kernel with built-in USB drivers...");
     if (build_linux_kernel() != 0) {
@@ -2793,8 +2947,11 @@ static int create_secure_boot_iso(void) {
         log_warn("v1.9.67: 64-bit firmware (most VMware Workstation VMs, modern desktops) is unaffected");
     }
     
-    char work_dir[256], iso_extract[512], efi_mount[256];
-    snprintf(work_dir, sizeof(work_dir), "/root/tmp_iso_%d", getpid());
+    char work_dir[640], iso_extract[704], efi_mount[704];
+    if (cfg.work_dir[0])
+        snprintf(work_dir, sizeof(work_dir), "%s/tmp_iso_%d", cfg.work_dir, getpid());
+    else
+        snprintf(work_dir, sizeof(work_dir), "/root/tmp_iso_%d", getpid());
     snprintf(iso_extract, sizeof(iso_extract), "%s/iso", work_dir);
     snprintf(efi_mount, sizeof(efi_mount), "%s/efi", work_dir);
     
@@ -2811,6 +2968,21 @@ static int create_secure_boot_iso(void) {
         snprintf(cmd, sizeof(cmd), "rm -rf '%s'", work_dir);
         run_cmd(cmd);
         return -1;
+    }
+
+    boot_layout_t boot;
+    if (read_boot_layout(base_iso, iso_extract, &boot) != 0) {
+        snprintf(cmd, sizeof(cmd), "rm -rf '%s'", work_dir);
+        run_cmd(cmd);
+        return -1;
+    }
+    log_info("Boot layout: catalogue /%s, BIOS %s%s (%s), UEFI /%s",
+        boot.catalog, boot.bios[0] ? "/" : "", boot.bios[0] ? boot.bios : "none",
+        bios_loader_name(boot.loader), boot.efi);
+    if (boot.loader == BIOS_UNKNOWN) {
+        log_warn("BIOS boot image /%s is neither syslinux nor GRUB El Torito: it is kept "
+                 "as the catalogue names it, without a hybrid MBR, and the BIOS menu is not "
+                 "modified", boot.bios);
     }
     
     /* Get VMware's original GRUB for "VMware Original" boot option
@@ -5226,7 +5398,9 @@ static int create_secure_boot_iso(void) {
             "terminal_output console\n"
             "# Reset graphics state before loading themed config\n"
             "set gfxmode=auto\n"
-            "search --no-floppy --file --set=root /isolinux/isolinux.cfg\n"
+            /* v1.9.86: /isolinux/vmlinuz is on both layouts; isolinux.cfg is not
+             * on POI 2.9 media (GRUB El Torito, no syslinux). */
+            "search --no-floppy --file --set=root /isolinux/vmlinuz\n"
             "set prefix=($root)/boot/grub2\n"
             "configfile ($root)/boot/grub2/grub.cfg\n"
         );
@@ -5469,8 +5643,14 @@ static int create_secure_boot_iso(void) {
             } else {
                 log_warn("v1.9.79 D12: failed to patch /isolinux/menu.cfg -- BIOS-boot kickstart will NOT work");
             }
+        } else if (boot.loader == BIOS_GRUB) {
+            /* v1.9.86: POI 2.9 media boot BIOS through GRUB El Torito with
+             * prefix /boot/grub2, i.e. the grub.cfg rewritten below: its
+             * kickstart entries serve BIOS and UEFI alike, and there is no
+             * syslinux menu to patch. */
+            log_info("v1.9.86: BIOS boots GRUB (/%s) and reads /boot/grub2/grub.cfg -- the kickstart entries written there apply to BIOS too", boot.bios);
         } else {
-            log_warn("v1.9.78 D11: %s not present -- skipping BIOS-boot kickstart patch (UEFI-only ISO?)", isolinux_menu);
+            log_warn("v1.9.78 D11: %s not present -- skipping BIOS-boot kickstart patch (BIOS loader: %s)", isolinux_menu, bios_loader_name(boot.loader));
         }
         if (cfg.kickstart_default && file_exists(isolinux_cfg)) {
             /* Force auto-boot of the default `install` label on BIOS path.
@@ -5548,7 +5728,13 @@ static int create_secure_boot_iso(void) {
                 "    menuentry \"Retry - Rescan devices and check for eFuse\" {\n"
                 "        # Chainloader reloads GRUB EFI binary, forcing USB rescan\n"
                 "        # configfile only reloads config without rescanning devices\n"
-                "        chainloader /EFI/BOOT/grubx64.efi\n"
+                "        # v1.9.86: BIOS GRUB (POI 2.9 El Torito) reads this file too and\n"
+                "        # cannot load an EFI binary; it re-reads the config instead.\n"
+                "        if [ \"${grub_platform}\" = \"efi\" ]; then\n"
+                "            chainloader /EFI/BOOT/grubx64.efi\n"
+                "        else\n"
+                "            configfile /boot/grub2/grub.cfg\n"
+                "        fi\n"
                 "    }\n"
                 "    menuentry \"Reboot\" {\n"
                 "        reboot\n"
@@ -5560,11 +5746,16 @@ static int create_secure_boot_iso(void) {
                 "    # eFuse verified - show full menu\n"
                 "    set default=0\n"
                 "    set timeout=%d\n"
-                "    loadfont ascii\n"
-                "    set gfxmode=\"1024x768\"\n"
-                "    gfxpayload=keep\n"
-                "    set theme=/boot/grub2/themes/photon/theme.txt\n"
-                "    terminal_output gfxterm\n"
+                "    # v1.9.86: themed graphics on UEFI only. The BIOS GRUB of POI 2.9\n"
+                "    # media (eltorito.img) carries no png/gfxterm modules and would stop\n"
+                "    # at 'photon.png is of unsupported format - Press any key'.\n"
+                "    if [ \"${grub_platform}\" = \"efi\" ]; then\n"
+                "        loadfont ascii\n"
+                "        set gfxmode=\"1024x768\"\n"
+                "        gfxpayload=keep\n"
+                "        set theme=/boot/grub2/themes/photon/theme.txt\n"
+                "        terminal_output gfxterm\n"
+                "    fi\n"
                 "\n",
                 /* v1.9.75 D8: kickstart-default trims timeout to 1s so the auto-boot
                  * fires before any operator can intervene. Production builds keep 5s. */
@@ -5594,7 +5785,12 @@ static int create_secure_boot_iso(void) {
                 "    }\n"
                 "\n"
                 "    menuentry \"MokManager - Enroll/Delete MOK Keys\" {\n"
-                "        chainloader /EFI/BOOT/MokManager.efi\n"
+                "        if [ \"${grub_platform}\" = \"efi\" ]; then\n"
+                "            chainloader /EFI/BOOT/MokManager.efi\n"
+                "        else\n"
+                "            echo \"MokManager needs UEFI firmware; this is a BIOS boot.\"\n"
+                "            sleep 5\n"
+                "        fi\n"
                 "    }\n",
                 cfg.release
             );
@@ -5614,7 +5810,12 @@ static int create_secure_boot_iso(void) {
             fprintf(f,
                 "\n"
                 "    menuentry \"Reboot into UEFI Firmware Settings\" {\n"
-                "        fwsetup\n"
+                "        if [ \"${grub_platform}\" = \"efi\" ]; then\n"
+                "            fwsetup\n"
+                "        else\n"
+                "            echo \"No UEFI firmware settings on a BIOS boot.\"\n"
+                "            sleep 5\n"
+                "        fi\n"
                 "    }\n"
                 "\n"
                 "    menuentry \"Reboot\" {\n"
@@ -5642,11 +5843,16 @@ static int create_secure_boot_iso(void) {
                 "\n"
                 "set default=0\n"
                 "set timeout=%d\n"
-                "loadfont ascii\n"
-                "set gfxmode=\"1024x768\"\n"
-                "gfxpayload=keep\n"
-                "set theme=/boot/grub2/themes/photon/theme.txt\n"
-                "terminal_output gfxterm\n"
+                "# v1.9.86: themed graphics on UEFI only. The BIOS GRUB of POI 2.9\n"
+                "# media (eltorito.img) carries no png/gfxterm modules and would stop\n"
+                "# at 'photon.png is of unsupported format - Press any key'.\n"
+                "if [ \"${grub_platform}\" = \"efi\" ]; then\n"
+                "    loadfont ascii\n"
+                "    set gfxmode=\"1024x768\"\n"
+                "    gfxpayload=keep\n"
+                "    set theme=/boot/grub2/themes/photon/theme.txt\n"
+                "    terminal_output gfxterm\n"
+                "fi\n"
                 "\n",
                 (cfg.kickstart_default && cfg.kickstart_file[0]) ? 1 : 5
             );
@@ -5670,7 +5876,12 @@ static int create_secure_boot_iso(void) {
                 "}\n"
                 "\n"
                 "menuentry \"MokManager - Enroll/Delete MOK Keys\" {\n"
-                "    chainloader /EFI/BOOT/MokManager.efi\n"
+                "    if [ \"${grub_platform}\" = \"efi\" ]; then\n"
+                "        chainloader /EFI/BOOT/MokManager.efi\n"
+                "    else\n"
+                "        echo \"MokManager needs UEFI firmware; this is a BIOS boot.\"\n"
+                "        sleep 5\n"
+                "    fi\n"
                 "}\n",
                 cfg.release
             );
@@ -5689,7 +5900,12 @@ static int create_secure_boot_iso(void) {
             fprintf(f,
                 "\n"
                 "menuentry \"Reboot into UEFI Firmware Settings\" {\n"
-                "    fwsetup\n"
+                "    if [ \"${grub_platform}\" = \"efi\" ]; then\n"
+                "        fwsetup\n"
+                "    else\n"
+                "        echo \"No UEFI firmware settings on a BIOS boot.\"\n"
+                "        sleep 5\n"
+                "    fi\n"
                 "}\n"
                 "\n"
                 "menuentry \"Reboot\" {\n"
@@ -5731,8 +5947,13 @@ static int create_secure_boot_iso(void) {
     /* Build MOK-signed RPM packages for installation */
     log_info("Building MOK-signed RPM packages for installation...");
     {
-        char photon_release_dir[512];
-        snprintf(photon_release_dir, sizeof(photon_release_dir), "/root/%s", cfg.release);
+        /* v1.9.86: the release dir in use (HOME or --work-dir), not a
+         * hardcoded /root/<release> that every other step already ignored. */
+        char photon_release_dir[512], mok_build_dir[600];
+        snprintf(photon_release_dir, sizeof(photon_release_dir), "%s", cfg.photon_dir);
+        mok_build_dir[0] = '\0';
+        if (cfg.work_dir[0])
+            snprintf(mok_build_dir, sizeof(mok_build_dir), "%s/rpm_mok_build", cfg.work_dir);
         
         int rpm_ret = rpm_patch_secureboot_packages(
             photon_release_dir,
@@ -5740,7 +5961,8 @@ static int create_secure_boot_iso(void) {
             mok_key,
             mok_crt,
             cfg.verbose,
-            cfg.efuse_usb_mode
+            cfg.efuse_usb_mode,
+            mok_build_dir
         );
         
         if (rpm_ret != 0) {
@@ -5779,7 +6001,10 @@ static int create_secure_boot_iso(void) {
                     /* MOK RPMs are built to /tmp/rpm_mok_build/output by rpm_secureboot_patcher */
                     rpm_build_config_t sign_cfg = {0};
                     char output_dir[512], gpg_home[512];
-                    snprintf(output_dir, sizeof(output_dir), "/tmp/rpm_mok_build/output");
+                    if (cfg.work_dir[0])
+                        snprintf(output_dir, sizeof(output_dir), "%s/rpm_mok_build/output", cfg.work_dir);
+                    else
+                        snprintf(output_dir, sizeof(output_dir), "/tmp/rpm_mok_build/output");
                     snprintf(gpg_home, sizeof(gpg_home), "%s/.gnupg", cfg.keys_dir);
                     sign_cfg.output_dir = output_dir;
                     
@@ -5869,7 +6094,10 @@ static int create_secure_boot_iso(void) {
      * marker that the FEB-equivalent install path exists. */
     {
         char ostree_skel_dir[512], ostree_tgz[512];
-        snprintf(ostree_skel_dir, sizeof(ostree_skel_dir), "/tmp/m25_ostree_skel");
+        if (cfg.work_dir[0])
+            snprintf(ostree_skel_dir, sizeof(ostree_skel_dir), "%s/m25_ostree_skel", cfg.work_dir);
+        else
+            snprintf(ostree_skel_dir, sizeof(ostree_skel_dir), "/tmp/m25_ostree_skel");
         snprintf(ostree_tgz, sizeof(ostree_tgz), "%s/ostree-repo.tar.gz", iso_extract);
 
         log_info("M25: building /ostree-repo.tar.gz skeleton...");
@@ -5903,21 +6131,57 @@ static int create_secure_boot_iso(void) {
     }
 
     log_info("Building ISO...");
+    /* v1.9.86: the El Torito entries are the base ISO's own (read_boot_layout),
+     * not a hardcoded syslinux layout. The syslinux hybrid MBR (isohdpfx.bin)
+     * can only chain to isolinux.bin, so it is added for syslinux media only;
+     * GRUB El Torito media are built without one, as the installer builds them.
+     * The EFI load size is left to xorriso: efiboot.img was replaced above. */
+    char bios_args[512] = "", hybrid_mbr[128] = "", hybrid_gpt[32] = "";
+    if (boot.bios[0]) {
+        snprintf(bios_args, sizeof(bios_args),
+            "-b '%s' -no-emul-boot -boot-load-size 4 -boot-info-table -eltorito-alt-boot ",
+            boot.bios);
+    }
+    if (boot.loader == BIOS_SYSLINUX) {
+        if (file_exists("/usr/share/syslinux/isohdpfx.bin")) {
+            snprintf(hybrid_mbr, sizeof(hybrid_mbr), "-isohybrid-mbr /usr/share/syslinux/isohdpfx.bin ");
+            snprintf(hybrid_gpt, sizeof(hybrid_gpt), "-isohybrid-gpt-basdat ");
+        } else {
+            log_warn("/usr/share/syslinux/isohdpfx.bin not found: building without a hybrid MBR");
+        }
+    } else {
+        log_info("BIOS loader %s: no hybrid MBR, as the installer builds this medium",
+            bios_loader_name(boot.loader));
+    }
     snprintf(cmd, sizeof(cmd),
         "cd '%s' && xorriso -as mkisofs "
         "-o '%s' "
-        "-isohybrid-mbr /usr/share/syslinux/isohdpfx.bin "
-        "-c isolinux/boot.cat "
-        "-b isolinux/isolinux.bin "
-        "-no-emul-boot -boot-load-size 4 -boot-info-table "
-        "-eltorito-alt-boot "
-        "-e boot/grub2/efiboot.img "
-        "-no-emul-boot -isohybrid-gpt-basdat "
+        "%s"
+        "-c '%s' "
+        "%s"
+        "-e '%s' "
+        "-no-emul-boot %s"
         "-V 'PHOTON_SB_%s' "
         ". 2>&1 | tail -5",
-        iso_extract, output_iso, cfg.release);
+        iso_extract, output_iso, hybrid_mbr, boot.catalog, bios_args, boot.efi,
+        hybrid_gpt, cfg.release);
     
     run_cmd(cmd);
+
+    /* The pipe into tail hides xorriso's exit status: prove the result from
+     * the new ISO's own catalogue instead of trusting the command. */
+    if (file_exists(output_iso)) {
+        boot_layout_t out;
+        if (read_boot_layout(output_iso, NULL, &out) != 0 ||
+            strcmp(out.efi, boot.efi) != 0 || strcmp(out.bios, boot.bios) != 0) {
+            log_error("%s does not carry the base ISO's boot layout (BIOS /%s, UEFI /%s) - removing it",
+                output_iso, boot.bios, boot.efi);
+            unlink(output_iso);
+        } else {
+            log_info("Output boot layout verified: BIOS %s%s, UEFI /%s",
+                out.bios[0] ? "/" : "", out.bios[0] ? out.bios : "none", out.efi);
+        }
+    }
     
     snprintf(cmd, sizeof(cmd), "rm -rf '%s'", work_dir);
     run_cmd(cmd);
@@ -6026,6 +6290,32 @@ static int diagnose_iso(const char *iso_path) {
         printf("  " GREEN "[OK]" RESET " El Torito boot records present\n");
     } else {
         printf("  " RED "[FAIL]" RESET " Missing El Torito boot records\n");
+        errors++;
+    }
+
+    /* v1.9.86: which images the catalogue names, and which BIOS loader it is
+     * (syslinux isolinux.bin up to POI 2.8, GRUB eltorito.img from 2.9). */
+    boot_layout_t bl;
+    if (read_boot_layout(iso_path, NULL, &bl) == 0) {
+        printf("  Catalogue: /%s\n", bl.catalog);
+        printf("  UEFI image: /%s\n", bl.efi);
+        if (bl.bios[0]) {
+            char bios_copy[768];
+            snprintf(bios_copy, sizeof(bios_copy), "%s/bios-boot.img", work_dir);
+            snprintf(cmd, sizeof(cmd), "xorriso -osirrox on -indev '%s' -extract '/%s' '%s' >/dev/null 2>&1",
+                iso_path, bl.bios, bios_copy);
+            system(cmd);
+            bl.loader = file_exists(bios_copy) ? classify_bios_image(bios_copy) : BIOS_UNKNOWN;
+            printf("  BIOS image: /%s (%s)\n", bl.bios, bios_loader_name(bl.loader));
+            if (bl.loader == BIOS_UNKNOWN) {
+                printf("  " YELLOW "[WARN]" RESET " BIOS image is neither syslinux nor GRUB El Torito\n");
+                warnings++;
+            }
+        } else {
+            printf("  BIOS image: none (UEFI-only medium)\n");
+        }
+    } else {
+        printf("  " RED "[FAIL]" RESET " El Torito catalogue names no UEFI boot image\n");
         errors++;
     }
     
@@ -6309,6 +6599,10 @@ static void show_help(void) {
     printf("                             timeout=1. Removes SendKeys requirement from the T.02 harness\n");
     printf("                             (VM auto-boots into unattended install seconds after power-on).\n");
     printf("                             Requires --kickstart=FILE. Production builds: omit this flag.\n");
+    printf("      --work-dir=DIR         v1.9.86: keep this run's release dir (DIR/<release>, with its\n");
+    printf("                             SPECS, stage/SOURCES, stage/RPMS and kernel-build), the MOK\n");
+    printf("                             RPM build (DIR/rpm_mok_build) and ISO scratch under DIR,\n");
+    printf("                             instead of ~/<release>, /tmp/rpm_mok_build and /root/tmp_iso_*.\n");
     /* -F/--full-kernel-build removed in v1.9.0 - kernel build is now mandatory */
     printf("  -D, --diagnose=ISO         Diagnose an existing ISO for Secure Boot issues\n");
     printf("  -c, --clean                Clean up all artifacts\n");
@@ -6381,6 +6675,7 @@ int main(int argc, char *argv[]) {
         {"help",              no_argument,       0, 'h'},
         {"kickstart",         required_argument, 0, 'S'},  /* v1.9.74 D7: --kickstart=FILE */
         {"kickstart-default", no_argument,       0, 'T'},  /* v1.9.75 D8: --kickstart-default → auto-boot kickstart */
+        {"work-dir",          required_argument, 0, 1001}, /* v1.9.86: isolated release dir, MOK build, scratch */
         {0, 0, 0, 0}
     };
 
@@ -6505,6 +6800,15 @@ int main(int argc, char *argv[]) {
                 cfg.kickstart_default = 1;
                 log_warn("v1.9.75 D8: --kickstart-default -- kickstart menuentry will be GRUB default with timeout=1. ISO auto-boots into unattended install. DO NOT DEPLOY ON PRODUCTION HARDWARE.");
                 break;
+            case 1001:
+                /* v1.9.86: --work-dir=DIR. Absolute and free of shell
+                 * metacharacters: it is interpolated into shell commands. */
+                if (optarg[0] != '/' || !validate_path_safe(optarg)) {
+                    log_error("--work-dir needs an absolute path without shell metacharacters: %s", optarg);
+                    return 1;
+                }
+                strncpy(cfg.work_dir, optarg, sizeof(cfg.work_dir) - 1);
+                break;
             case 'u':
                 /* Security: Validate device path */
                 if (!validate_path_safe(optarg)) {
@@ -6573,6 +6877,20 @@ int main(int argc, char *argv[]) {
                 show_help();
                 return 1;
         }
+    }
+
+    /* v1.9.86: --work-dir moves the release dir (kernel-build included), the
+     * MOK RPM build and the ISO scratch dir under DIR, so a run cannot touch
+     * another operator's /root/<release>/kernel-build or /tmp/rpm_mok_build.
+     * Applied after parsing so -r may come in any order. Without it every
+     * path is exactly as before. */
+    if (cfg.work_dir[0]) {
+        size_t wl = strlen(cfg.work_dir);
+        while (wl > 1 && cfg.work_dir[wl - 1] == '/') cfg.work_dir[--wl] = '\0';
+        mkdir_p(cfg.work_dir);
+        snprintf(cfg.photon_dir, sizeof(cfg.photon_dir), "%s/%s", cfg.work_dir, cfg.release);
+        log_info("Work dir: %s (release dir %s, MOK build %s/rpm_mok_build)",
+            cfg.work_dir, cfg.photon_dir, cfg.work_dir);
     }
     
     if (geteuid() != 0) {
