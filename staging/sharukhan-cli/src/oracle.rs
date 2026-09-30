@@ -267,6 +267,36 @@ pub fn media(iso: &Path, iso_type: &str, c: &mut Checks) {
         ),
     }
 
+    // How the medium boots, from its El Torito catalogue (isoboot.rs): the
+    // loader differs by the installer that composed it (syslinux isolinux.bin
+    // for POI 2.8, GRUB eltorito.img from 2.9 on), and a catalogue naming a
+    // file that is not on the medium is media that does not boot.
+    match crate::isoboot::read(iso) {
+        Ok(l) => {
+            c.check(
+                "media.boot_layout",
+                "-",
+                Status::Info,
+                "",
+                &format!(
+                    "bios={} ({}) efi={}",
+                    l.bios.as_ref().map(|b| b.path.as_str()).unwrap_or("none"),
+                    l.bios_loader.as_ref().map(|b| b.as_str()).unwrap_or("-"),
+                    l.efi.as_ref().map(|e| e.path.as_str()).unwrap_or("none"),
+                ),
+                "El Torito catalogue of the medium",
+            );
+            c.expect("media.boot_images", "-", "", "", "every boot image the catalogue names is on the medium");
+        }
+        Err(e) => c.expect(
+            "media.boot_images",
+            "-",
+            "",
+            &e,
+            "every boot image the catalogue names is on the medium",
+        ),
+    }
+
     // Stale-RPM shadowing: tdnf picks the highest release, so a months-old
     // photon-os-installer left in stage/RPMS silently wins and ends up on the
     // ISO. Record what actually shipped.

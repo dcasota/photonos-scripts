@@ -17,6 +17,7 @@ mod evidence;
 mod guest;
 mod identity;
 mod ingest;
+mod isoboot;
 mod install;
 mod job;
 mod kbuild;
@@ -81,6 +82,9 @@ PHASES (the same code `run` calls, one step at a time)
     remaster            make an Azure variant of an ISO that already exists, by
                         rebuilding only the kernel spec (--in, --out, --hyperv)
     variant-patches     rebuild the installer variant patches from the PR branches
+    iso-boot            how an ISO boots, read from its El Torito catalogue: BIOS
+                        image and loader (syslinux or GRUB), EFI image, and the
+                        mkisofs boot options that reproduce it (--iso, --json)
     composer            build and prove the installer image that composes a
                         variant's media (--poi); `build-iso` does this itself
     canister            which canister this kernel can have (--rebase-check to prove it)
@@ -213,6 +217,7 @@ struct Args {
     compose_only: bool,
     keep: bool,
     once: bool,
+    json: bool,
     settle: u64,
     wait_idle: u64,
     interval: u64,
@@ -319,6 +324,7 @@ fn parse() -> Result<Args, String> {
         compose_only: false,
         keep: false,
         once: false,
+        json: false,
         settle: 300,
         wait_idle: 0,
         interval: 15,
@@ -390,6 +396,7 @@ fn parse() -> Result<Args, String> {
             "--dry-run" => out.dry_run = true,
             "--keep" => out.keep = true,
             "--once" => out.once = true,
+            "--json" => out.json = true,
             "--log" => out.log = Some(a.next().ok_or("--log needs a value")?),
             "--in" => out.input = Some(a.next().ok_or("--in needs a value")?),
             "--arch" => out.arch = Some(a.next().ok_or("--arch needs a value")?),
@@ -563,6 +570,7 @@ fn main() -> ExitCode {
         "build" => cmd_build(&args),
         "remaster" => cmd_remaster(&args),
         "variant-patches" => phases::cmd_variant_patches(&cfg, args.kernel.as_deref()),
+        "iso-boot" => cmd_iso_boot(args.iso.as_deref(), args.json),
         "composer" => cmd_composer(&cfg, args.poi.as_deref().unwrap_or("2.8")),
         "canister" => cmd_canister(&cfg, args.rebase_check),
         "branch-check" => cmd_branch_check(&args),
@@ -583,6 +591,27 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// `sharukhan iso-boot --iso <path> [--json]`
+fn cmd_iso_boot(iso: Option<&str>, json: bool) -> Result<(), String> {
+    let iso = iso.ok_or("iso-boot needs --iso <path>")?;
+    let l = isoboot::read(std::path::Path::new(iso))?;
+    if json {
+        println!("{}", serde_json::to_string_pretty(&l.to_json()).map_err(|e| e.to_string())?);
+        return Ok(());
+    }
+    let img = |i: &Option<isoboot::BootImage>| {
+        i.as_ref().map(|i| format!("{} ({} sectors)", i.path, i.load_size.map(|n| n.to_string()).unwrap_or("?".into())))
+            .unwrap_or_else(|| "none".into())
+    };
+    println!("catalog   {}", l.catalog.as_deref().unwrap_or("none"));
+    println!("bios      {}", img(&l.bios));
+    println!("loader    {}", l.bios_loader.as_ref().map(|b| b.as_str()).unwrap_or("-"));
+    println!("efi       {}", img(&l.efi));
+    println!("hybrid    {}", if l.hybrid { "MBR/GPT system area present" } else { "none (plain El Torito)" });
+    println!("mkisofs   {}", l.mkisofs_boot_args().join(" "));
+    Ok(())
 }
 
 /// `sharukhan composer --poi <v>`: the image `build-iso` would compose that

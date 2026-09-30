@@ -944,6 +944,32 @@ receives the tag as `MC_POI_IMAGE` and writes and re-reads `poi-image` itself.
 The cascade does the same in `preflight`, building the composer from the
 already-injected tree when no tag was passed.
 
+### How a medium boots: `iso-boot`
+
+photon-os-installer 2.9 (upstream `b7c9039`) replaced syslinux. BIOS boots a
+GRUB El Torito image, `/isolinux/eltorito.img`, which reads `/boot/grub2/grub.cfg`,
+the same file UEFI GRUB reads. `isolinux.bin`, `isolinux.cfg` and `menu.cfg` are
+gone. POI 2.8 media still boot `/isolinux/isolinux.bin`. The installer that
+composes the medium decides which, so a tool that hardcodes one breaks on the
+other: the HABv4 ISO creator stopped a 7.3-rc4 run with `Cannot find in ISO
+image: -boot_image ... bin_path='/isolinux/isolinux.bin'`.
+
+`sharukhan iso-boot --iso <path> [--json]` reads the layout from the El Torito
+catalogue and reports:
+
+- the catalogue, the BIOS image and the EFI image, each checked to be on the
+  medium;
+- the BIOS loader, identified from the image's own bytes: `ISOLINUX` for
+  syslinux, and GRUB `cdboot.img`'s two messages for `grub-eltorito`;
+- whether a hybrid MBR/GPT system area is present;
+- the mkisofs boot options that reproduce the layout from an extracted tree,
+  with the EFI load size left to xorriso, because a re-signed `efiboot.img`
+  changes size.
+
+The media oracle records the same layout (`media.boot_layout`) and fails a
+catalogue that names a missing file (`media.boot_images`). `remaster` needs none
+of this: it replays the input's boot catalogue (`-boot_image any replay`).
+
 ## Remaster mode: an Azure variant of an ISO that already exists
 
 An Azure guest needs Hyper-V support **built into** the kernel rather than as
