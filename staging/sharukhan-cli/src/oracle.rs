@@ -18,16 +18,162 @@ use std::process::Command;
 
 // ---- A. media, before any VM exists -------------------------------------
 
-/// Six packages the matrix records as ABSENT from minimal media. Their
-/// presence is what POI#11 (the doc's FIX-1b) delivers, and their absence is
-/// the root cause of matrix rows 3,4,7,8 - and, via selinux-policy, 5,6.
-pub const STIG_MEDIA_PKGS: [&str; 5] = [
-    "rsyslog",
-    "openssl-fips-provider",
-    "selinux-policy",
-    "libselinux-utils",
-    "aide",
-];
+/// What the STIG set on the media is checked against is NOT a list kept here.
+/// It used to be: five names plus an `ntp` -> `ntpsec` special case, copied
+/// from POI 2.4's `KS_STIG_PACKAGES`. The variants' 0006 patch drops `ntp`,
+/// `libselinux-utils` and `libgcrypt` from that set, and as long as POI 2.4
+/// composed every ISO (poiimage.rs) nobody noticed the oracle still demanded
+/// `ntpsec`. Once the variant composed its own media, all sixteen minimal rows
+/// failed on it - correctly composed media judged by a stale list.
+///
+/// So the set is read from the installer ON THE MEDIA: its
+/// `photon_installer/stigenable.py` names what the installer may request, and
+/// POI#11 is exactly the promise that each of those is on the media - by
+/// package name, or by a package there that provides it (ntpsec provides ntp).
+pub fn installer_stig_set(iso: &Path) -> Result<Vec<String>, String> {
+    let tmp = std::env::temp_dir().join(format!("shk-stig-{}-{}", std::process::id(), unique()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).map_err(|e| format!("{}: {e}", tmp.display()))?;
+    let r = (|| {
+        let rpm = find_on_media(iso, "/RPMS", "photon-os-installer-*.rpm")?;
+        let local = tmp.join("installer.rpm");
+        extract(iso, &rpm, &local)?;
+        let script = "rpm2cpio \"$1\" | cpio -i --quiet --to-stdout '*/photon_installer/stigenable.py'";
+        let out = Command::new("sh")
+            .args(["-c", script, "sh"])
+            .arg(&local)
+            .output()
+            .map_err(|e| format!("rpm2cpio: {e}"))?;
+        let text = String::from_utf8_lossy(&out.stdout);
+        parse_ks_stig_packages(&text)
+            .ok_or_else(|| format!("{rpm} carries no stigenable.py with a KS_STIG_PACKAGES list"))
+    })();
+    let _ = std::fs::remove_dir_all(&tmp);
+    r
+}
+
+fn unique() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0)
+}
+
+/// The quoted names of `KS_STIG_PACKAGES = [ ... ]`, comments ignored.
+pub fn parse_ks_stig_packages(py: &str) -> Option<Vec<String>> {
+    let start = py.find("KS_STIG_PACKAGES")?;
+    let rest = &py[start..];
+    let open = rest.find('[')?;
+    let close = rest[open..].find(']')? + open;
+    let body: String = rest[open + 1..close]
+        .lines()
+        .map(|l| l.split('#').next().unwrap_or(""))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut out = Vec::new();
+    for part in body.split(',') {
+        let t = part.trim().trim_matches(|c| c == '"' || c == '\'');
+        if !t.is_empty() {
+            out.push(t.to_string());
+        }
+    }
+    (!out.is_empty()).then_some(out)
+}
+
+/// Every name the media's own repository metadata offers: package names and
+/// their `rpm:provides` entries, from the primary.xml.gz its repomd.xml names.
+pub fn media_provides(iso: &Path) -> Result<std::collections::BTreeSet<String>, String> {
+    let tmp = std::env::temp_dir().join(format!("shk-prov-{}-{}", std::process::id(), unique()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).map_err(|e| format!("{}: {e}", tmp.display()))?;
+    let r = (|| {
+        let repomd = tmp.join("repomd.xml");
+        extract(iso, "/RPMS/repodata/repomd.xml", &repomd)?;
+        let md = std::fs::read_to_string(&repomd).map_err(|e| format!("repomd.xml: {e}"))?;
+        let href = primary_href(&md).ok_or("repomd.xml names no primary data")?;
+        let gz = tmp.join("primary.xml.gz");
+        extract(iso, &format!("/RPMS/{href}"), &gz)?;
+        let out = Command::new("gzip")
+            .arg("-dc")
+            .arg(&gz)
+            .output()
+            .map_err(|e| format!("gzip: {e}"))?;
+        if !out.status.success() {
+            return Err(format!("{href} does not decompress"));
+        }
+        Ok(parse_primary_names(&String::from_utf8_lossy(&out.stdout)))
+    })();
+    let _ = std::fs::remove_dir_all(&tmp);
+    r
+}
+
+fn primary_href(repomd: &str) -> Option<String> {
+    let i = repomd.find("type=\"primary\"")?;
+    let rest = &repomd[i..];
+    let h = rest.find("href=\"")? + 6;
+    let end = rest[h..].find('"')? + h;
+    Some(rest[h..end].to_string())
+}
+
+/// `<name>` of each package plus every `<rpm:entry name=...>` inside
+/// `<rpm:provides>`. Requires are left out: a name only required is not on
+/// the media.
+pub fn parse_primary_names(xml: &str) -> std::collections::BTreeSet<String> {
+    let mut out = std::collections::BTreeSet::new();
+    let mut in_provides = false;
+    for raw in xml.split('<').skip(1) {
+        if raw.starts_with("rpm:provides") {
+            in_provides = true;
+        } else if raw.starts_with("/rpm:provides") {
+            in_provides = false;
+        } else if let Some(v) = raw.strip_prefix("name>") {
+            out.insert(v.trim().to_string());
+        } else if in_provides && raw.starts_with("rpm:entry ") {
+            if let Some(i) = raw.find("name=\"") {
+                let v = &raw[i + 6..];
+                if let Some(e) = v.find('"') {
+                    out.insert(v[..e].to_string());
+                }
+            }
+        }
+    }
+    out
+}
+
+fn find_on_media(iso: &Path, dir: &str, pattern: &str) -> Result<String, String> {
+    let out = Command::new("xorriso")
+        .args(["-osirrox", "on", "-indev"])
+        .arg(iso)
+        .args(["-find", dir, "-name", pattern])
+        .output()
+        .map_err(|e| format!("xorriso: {e}"))?;
+    let hits: Vec<String> = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(|l| l.trim().trim_matches('\'').to_string())
+        .filter(|l| l.starts_with('/'))
+        .collect();
+    match hits.len() {
+        1 => Ok(hits[0].clone()),
+        0 => Err(format!("no {pattern} under {dir} on {}", iso.display())),
+        n => Err(format!("{n} matches for {pattern} under {dir}: which is the installer?")),
+    }
+}
+
+fn extract(iso: &Path, inside: &str, to: &Path) -> Result<(), String> {
+    let st = Command::new("xorriso")
+        .args(["-osirrox", "on", "-indev"])
+        .arg(iso)
+        .args(["-extract", inside])
+        .arg(to)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map_err(|e| format!("xorriso: {e}"))?;
+    if !st.success() || !to.is_file() {
+        return Err(format!("could not extract {inside} from {}", iso.display()));
+    }
+    Ok(())
+}
 
 /// Every RPM basename under /RPMS on an ISO.
 ///
@@ -89,22 +235,37 @@ pub fn media(iso: &Path, iso_type: &str, c: &mut Checks) {
         "control must find nothing",
     );
 
-    let mut missing: Vec<&str> = STIG_MEDIA_PKGS
-        .iter()
-        .copied()
-        .filter(|p| !list.iter().any(|f| rpm_is(f, p)))
-        .collect();
-    // ntp is a capability satisfied by ntpsec; no package is literally named ntp.
-    if !list.iter().any(|f| rpm_is(f, "ntpsec")) {
-        missing.push("ntpsec");
+    match (installer_stig_set(iso), media_provides(iso)) {
+        (Ok(set), Ok(offered)) => {
+            c.check(
+                "media.stig_set",
+                "POI#11",
+                Status::Info,
+                "",
+                &set.join(" "),
+                "KS_STIG_PACKAGES of the installer on the media",
+            );
+            let missing: Vec<&str> = set
+                .iter()
+                .map(String::as_str)
+                .filter(|p| !list.iter().any(|f| rpm_is(f, p)) && !offered.contains(*p))
+                .collect();
+            c.expect(
+                "media.stig_packages",
+                "POI#11",
+                "",
+                &missing.join(" "),
+                &format!("every package the installer may request for STIG is on the {iso_type} media"),
+            );
+        }
+        (Err(e), _) | (_, Err(e)) => c.expect(
+            "media.stig_packages",
+            "POI#11",
+            "",
+            &format!("UNDETERMINED: {e}"),
+            "the STIG set or the media's metadata could not be read",
+        ),
     }
-    c.expect(
-        "media.stig_packages",
-        "POI#11",
-        "",
-        &missing.join(" "),
-        &format!("STIG set must be on the media for {iso_type}"),
-    );
 
     // Stale-RPM shadowing: tdnf picks the highest release, so a months-old
     // photon-os-installer left in stage/RPMS silently wins and ends up on the
@@ -1339,6 +1500,39 @@ pub fn harvest(g: &Guest, dest: &Path, secret: Option<&str>, c: &mut Checks) {
 
 #[cfg(test)]
 mod tests {
+    /// Against a real ISO: `SHK_ISO=<iso> cargo test -- --ignored stig_on_a_real_iso`.
+    #[test]
+    #[ignore]
+    fn stig_on_a_real_iso() {
+        let iso = std::path::PathBuf::from(std::env::var("SHK_ISO").expect("SHK_ISO"));
+        let set = installer_stig_set(&iso).unwrap();
+        let offered = media_provides(&iso).unwrap();
+        let list = media_rpms(&iso);
+        let missing: Vec<&String> = set
+            .iter()
+            .filter(|p| !list.iter().any(|f| rpm_is(f, p)) && !offered.contains(*p))
+            .collect();
+        println!("set={set:?} offered={} missing={missing:?}", offered.len());
+        assert!(missing.is_empty(), "{missing:?}");
+    }
+
+    #[test]
+    fn ks_stig_packages_are_read_from_stigenable() {
+        let py = "import x\nKS_STIG_PACKAGES = [\n    \"audit\",\n    \"rsyslog\",  # logs\n    'aide'\n]\n\nOTHER = [\"no\"]\n";
+        assert_eq!(parse_ks_stig_packages(py).unwrap(), vec!["audit", "rsyslog", "aide"]);
+        assert!(parse_ks_stig_packages("KS_STIG_PACKAGES = []").is_none());
+    }
+
+    #[test]
+    fn primary_offers_names_and_provides_but_not_requires() {
+        let xml = r#"<package><name>ntpsec</name><format><rpm:provides><rpm:entry name="ntp" flags="EQ"/></rpm:provides><rpm:requires><rpm:entry name="libcap"/></rpm:requires></format></package>"#;
+        let n = parse_primary_names(xml);
+        assert!(n.contains("ntpsec") && n.contains("ntp"));
+        assert!(!n.contains("libcap"), "a requirement is not an offer");
+        let md = r#"<data type="other"><location href="repodata/o.xml.gz"/></data><data type="primary"><location href="repodata/p-primary.xml.gz"/></data>"#;
+        assert_eq!(primary_href(md).as_deref(), Some("repodata/p-primary.xml.gz"));
+    }
+
     use super::*;
     use crate::evidence::Checks;
 
