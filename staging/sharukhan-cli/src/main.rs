@@ -82,6 +82,9 @@ PHASES (the same code `run` calls, one step at a time)
     remaster            make an Azure variant of an ISO that already exists, by
                         rebuilding only the kernel spec (--in, --out, --hyperv)
     variant-patches     rebuild the installer variant patches from the PR branches
+    pkg-compare         two package-lifecycle runs of one row, package by package:
+                        fails on a regression, a new failure, a missing or an
+                        unreached package (--base, --new: pkglife-*.jsonl; --json)
     iso-boot            how an ISO boots, read from its El Torito catalogue: BIOS
                         image and loader (syslinux or GRUB), EFI image, and the
                         mkisofs boot options that reproduce it (--iso, --json)
@@ -218,6 +221,8 @@ struct Args {
     keep: bool,
     once: bool,
     json: bool,
+    base: Option<String>,
+    new: Option<String>,
     settle: u64,
     wait_idle: u64,
     interval: u64,
@@ -325,6 +330,8 @@ fn parse() -> Result<Args, String> {
         keep: false,
         once: false,
         json: false,
+        base: None,
+        new: None,
         settle: 300,
         wait_idle: 0,
         interval: 15,
@@ -397,6 +404,8 @@ fn parse() -> Result<Args, String> {
             "--keep" => out.keep = true,
             "--once" => out.once = true,
             "--json" => out.json = true,
+            "--base" => out.base = Some(a.next().ok_or("--base needs a value")?),
+            "--new" => out.new = Some(a.next().ok_or("--new needs a value")?),
             "--log" => out.log = Some(a.next().ok_or("--log needs a value")?),
             "--in" => out.input = Some(a.next().ok_or("--in needs a value")?),
             "--arch" => out.arch = Some(a.next().ok_or("--arch needs a value")?),
@@ -570,6 +579,7 @@ fn main() -> ExitCode {
         "build" => cmd_build(&args),
         "remaster" => cmd_remaster(&args),
         "variant-patches" => phases::cmd_variant_patches(&cfg, args.kernel.as_deref()),
+        "pkg-compare" => cmd_pkg_compare(args.base.as_deref(), args.new.as_deref(), args.json),
         "iso-boot" => cmd_iso_boot(args.iso.as_deref(), args.json),
         "composer" => cmd_composer(&cfg, args.poi.as_deref().unwrap_or("2.8")),
         "canister" => cmd_canister(&cfg, args.rebase_check),
@@ -590,6 +600,69 @@ fn main() -> ExitCode {
             eprintln!("sharukhan: {e}");
             ExitCode::FAILURE
         }
+    }
+}
+
+/// `sharukhan pkg-compare --base <jsonl> --new <jsonl> [--json]`
+fn cmd_pkg_compare(base: Option<&str>, new: Option<&str>, json: bool) -> Result<(), String> {
+    use pkglife::compare;
+    let base = base.ok_or("pkg-compare needs --base <pkglife-*.jsonl>")?;
+    let new = new.ok_or("pkg-compare needs --new <pkglife-*.jsonl>")?;
+    let b = pkglife::record::read(std::path::Path::new(base))?;
+    let n = pkglife::record::read(std::path::Path::new(new))?;
+    if b.is_empty() || n.is_empty() {
+        return Err(format!(
+            "an empty lifecycle file proves nothing ({} base, {} new records)",
+            b.len(),
+            n.len()
+        ));
+    }
+    let rows = compare::compare(&b, &n);
+    let mut counts: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
+    for r in &rows {
+        *counts.entry(r.change.as_str()).or_default() += 1;
+    }
+    let blocking: Vec<&compare::Row> = rows.iter().filter(|r| r.change.blocks()).collect();
+    if json {
+        let v: Vec<serde_json::Value> = rows
+            .iter()
+            .map(|r| {
+                let side = |x: &Option<(String, String, String)>| {
+                    x.as_ref().map(|(v, e, why)| serde_json::json!({"verdict": v, "evr": e, "reason": why}))
+                };
+                serde_json::json!({"package": r.package, "change": r.change.as_str(),
+                                   "base": side(&r.base), "new": side(&r.new)})
+            })
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&v).map_err(|e| e.to_string())?);
+    } else {
+        println!("base {base}: {} packages", b.len());
+        println!("new  {new}: {} packages", n.len());
+        for (k, c) in &counts {
+            println!("  {c:>5}  {k}");
+        }
+        let show = |r: &compare::Row| {
+            let fmt = |x: &Option<(String, String, String)>| {
+                x.as_ref()
+                    .map(|(v, e, why)| format!("{v} {e}{}", if why.is_empty() { String::new() } else { format!(" ({why})") }))
+                    .unwrap_or_else(|| "absent".into())
+            };
+            println!("  [{}] {}\n      base: {}\n      new:  {}", r.change.as_str(), r.package, fmt(&r.base), fmt(&r.new));
+        };
+        for r in &blocking {
+            show(r);
+        }
+        for r in rows.iter().filter(|r| r.change == compare::Change::UnchangedFailure) {
+            if r.base.as_ref().map(|x| &x.2) != r.new.as_ref().map(|x| &x.2) {
+                show(r);
+            }
+        }
+    }
+    if blocking.is_empty() {
+        println!("no package is worse than in the baseline");
+        Ok(())
+    } else {
+        Err(format!("{} package(s) worse than in the baseline", blocking.len()))
     }
 }
 

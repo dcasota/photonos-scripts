@@ -673,6 +673,13 @@ sharukhan run --only k09 --package-lifecycle --keep
 | `--pkg-policy file` | test a policy change; default is the embedded `schema/package-lifecycle-policy.json` |
 | `--pkg-force-unverified` | run although verify recorded failures (refused by default: verdicts on a guest that is not known-good are unattributable) |
 
+**Judging a change.** `sharukhan pkg-compare --base <pkglife-*.jsonl> --new <pkglife-*.jsonl> [--json]`
+sets two runs of the same row side by side, package by package (name and arch). Media without
+any change already carry failures, so a gate is judged against a baseline, not against zero. The
+comparison fails on a regression (pass or skip turned fail), a new failure (a package only the new
+media carries, failing), a missing package, or an incomplete one (not reached on either side).
+Failures present in both runs are reported as unchanged; their reasons are shown when they differ.
+
 **Where packages come from.** The row's own ISO, reconnected with `vmrun connectNamedDevice
 sata0:1` and mounted read-only in the guest; tdnf reads it through `--repofrompath` with every
 other repository disabled, and the guest's repo files are never edited. Before anything installs,

@@ -31,6 +31,7 @@ pub mod parse;
 pub mod policy;
 pub mod probe;
 pub mod record;
+pub mod compare;
 pub mod remote;
 pub mod units;
 
