@@ -1227,7 +1227,12 @@ pub const VARIANTS: [Variant; 2] = [
             // _setup_security only appends openssl-fips-provider. A
             // photon-os-installer change has to ride both variants, or the
             // untested one is the one that reaches a user.
-            "fix/poi-2.9-fips-sshd-algorithms",
+            // fix/poi-2.9-eltorito-theme-modules is stacked on
+            // fix/poi-2.9-fips-sshd-algorithms and listed instead of it (range
+            // rule): it adds 0010, the png/tga loaders for the BIOS El Torito
+            // image, without which BIOS GRUB stops on an image-format error and
+            // falls back to the plain text menu.
+            "fix/poi-2.9-eltorito-theme-modules",
             "fix/aide-libgcrypt-versioned-requires",
             "fix-selinux-relabel",
             "fix/systemd-groups-and-stig-variant",
@@ -2243,7 +2248,7 @@ pub struct Mirror {
     pub poi_remote_branch: &'static str,
 }
 
-pub const MIRRORS: [Mirror; 3] = [
+pub const MIRRORS: [Mirror; 4] = [
     Mirror {
         spec_patch: "0006-stig-drop-redundant-packages.patch",
         poi_remote_branch: "dcasota/fix/stig-drop-redundant-packages",
@@ -2255,6 +2260,10 @@ pub const MIRRORS: [Mirror; 3] = [
     Mirror {
         spec_patch: "0008-isoBuilder-put-installer-requestable-packages-on-media.patch",
         poi_remote_branch: "dcasota/fix/isobuilder-installer-pkgs-on-media",
+    },
+    Mirror {
+        spec_patch: "0010-isoBuilder-build-the-BIOS-El-Torito-image-with-the-theme.patch",
+        poi_remote_branch: "dcasota/fix/eltorito-theme-image-loaders",
     },
 ];
 
