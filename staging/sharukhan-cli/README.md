@@ -692,6 +692,12 @@ records are appended to one `results/<row>/pkglife-segmented-<stamp>.jsonl`, whe
 of a package is its verdict. `--iso` defaults to the row's cached ISO; `verify --iso` accepts the
 same override, so a frozen baseline ISO can be tested on the row it belongs to.
 
+**What is broken at all.** `sharukhan pkg-report --runs <label>=<pkglife-*.jsonl>,... [--out f.md]`
+writes every failing package of one or more runs as Markdown: per ISO the packages failing per kind
+of check (cli, ldcache, journal-window, unit, files-gone ...), each failing step, unit and CLI with
+its detail, the packages a guest was lost with, and across the ISOs the packages that fail on one
+ISO but pass on another that carries them. A package an ISO does not carry is not counted against it.
+
 **Where packages come from.** The row's own ISO, reconnected with `vmrun connectNamedDevice
 sata0:1` and mounted read-only in the guest; tdnf reads it through `--repofrompath` with every
 other repository disabled, and the guest's repo files are never edited. Before anything installs,

@@ -88,6 +88,8 @@ PHASES (the same code `run` calls, one step at a time)
     pkg-compare         two package-lifecycle runs of one row, package by package:
                         fails on a regression, a new failure, a missing or an
                         unreached package (--base, --new: pkglife-*.jsonl; --json)
+    pkg-report          every failing package of one or more lifecycle runs, per ISO,
+                        as Markdown (--runs <label>=<pkglife-*.jsonl>,...; --out file)
     iso-boot            how an ISO boots, read from its El Torito catalogue: BIOS
                         image and loader (syslinux or GRUB), EFI image, and the
                         mkisofs boot options that reproduce it (--iso, --json)
@@ -228,6 +230,7 @@ struct Args {
     base: Option<String>,
     pkg_segments: Option<usize>,
     new: Option<String>,
+    runs: Option<String>,
     settle: u64,
     wait_idle: u64,
     interval: u64,
@@ -338,6 +341,7 @@ fn parse() -> Result<Args, String> {
         base: None,
         pkg_segments: None,
         new: None,
+        runs: None,
         settle: 300,
         wait_idle: 0,
         interval: 15,
@@ -412,6 +416,7 @@ fn parse() -> Result<Args, String> {
             "--json" => out.json = true,
             "--base" => out.base = Some(a.next().ok_or("--base needs a value")?),
             "--new" => out.new = Some(a.next().ok_or("--new needs a value")?),
+            "--runs" => out.runs = Some(a.next().ok_or("--runs needs a value")?),
             "--log" => out.log = Some(a.next().ok_or("--log needs a value")?),
             "--in" => out.input = Some(a.next().ok_or("--in needs a value")?),
             "--arch" => out.arch = Some(a.next().ok_or("--arch needs a value")?),
@@ -602,6 +607,7 @@ fn main() -> ExitCode {
             cmd_pkg_lifecycle(&cfg, id, args.iso.as_deref(), lifecycle.as_ref(), args.pkg_segments)
         }),
         "pkg-compare" => cmd_pkg_compare(args.base.as_deref(), args.new.as_deref(), args.json),
+        "pkg-report" => cmd_pkg_report(args.runs.as_deref(), args.out.as_deref()),
         "iso-boot" => cmd_iso_boot(args.iso.as_deref(), args.json),
         "composer" => cmd_composer(&cfg, args.poi.as_deref().unwrap_or("2.8")),
         "canister" => cmd_canister(&cfg, args.rebase_check),
@@ -655,6 +661,40 @@ fn cmd_pkg_lifecycle(
     } else {
         Err(format!("{} package(s) still not reached after {} segment(s)", out.unreached.len(), out.segments))
     }
+}
+
+/// `sharukhan pkg-report --runs <label>=<jsonl>,... [--out <file>]`
+fn cmd_pkg_report(runs: Option<&str>, out: Option<&str>) -> Result<(), String> {
+    use pkglife::report;
+    let runs = runs.ok_or("pkg-report needs --runs <label>=<pkglife-*.jsonl>,...")?;
+    let mut v = Vec::new();
+    let mut labels = std::collections::BTreeSet::new();
+    for item in runs.split(',').map(str::trim).filter(|x| !x.is_empty()) {
+        let (label, path) = item
+            .split_once('=')
+            .filter(|(l, p)| !l.is_empty() && !p.is_empty())
+            .ok_or_else(|| format!("--runs: {item:?} is not <label>=<file>"))?;
+        if !labels.insert(label.to_string()) {
+            return Err(format!("--runs: label {label:?} given twice"));
+        }
+        let recs = pkglife::record::read(std::path::Path::new(path))?;
+        if recs.is_empty() {
+            return Err(format!("{path}: an empty lifecycle file proves nothing"));
+        }
+        v.push((label.to_string(), path.to_string(), report::summarize(&recs)));
+    }
+    if v.is_empty() {
+        return Err("--runs names no run".into());
+    }
+    let md = report::markdown(&v);
+    match out {
+        Some(f) => {
+            std::fs::write(f, &md).map_err(|e| format!("{f}: {e}"))?;
+            println!("written: {f}");
+        }
+        None => print!("{md}"),
+    }
+    Ok(())
 }
 
 /// `sharukhan pkg-compare --base <jsonl> --new <jsonl> [--json]`

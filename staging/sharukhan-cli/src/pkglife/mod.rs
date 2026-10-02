@@ -32,6 +32,7 @@ pub mod policy;
 pub mod probe;
 pub mod record;
 pub mod compare;
+pub mod report;
 pub mod segments;
 pub mod remote;
 pub mod units;
