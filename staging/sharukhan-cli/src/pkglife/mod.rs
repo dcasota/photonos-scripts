@@ -32,6 +32,7 @@ pub mod policy;
 pub mod probe;
 pub mod record;
 pub mod compare;
+pub mod segments;
 pub mod remote;
 pub mod units;
 
@@ -2223,6 +2224,7 @@ fn run_attached(
     ));
 
     let names_installed: BTreeSet<String> = s.baseline.values().map(|p| p.name.clone()).collect();
+    let mut prev: Option<String> = None;
     for (i, pkg) in cands.iter().enumerate() {
         let mut rec = PkgRecord {
             perm: t.perm.id.clone(),
@@ -2264,6 +2266,16 @@ fn run_attached(
         rec.duration_ms = ms(t0);
         rec.settle();
         scrub_record(&mut rec, secret);
+        // A failed step can be the guest gone rather than the package: every
+        // later verdict would then be "ssh: connection timed out", so a fail
+        // must leave the guest reachable or the run stops here.
+        if matches!(flow, Flow::Continue) && rec.verdict == FAIL {
+            let up = wait_reachable(s.r, policy.limits.reconnect_secs);
+            if let Some(why) = unreachable_after(&mut rec, up, prev.as_deref()) {
+                sum.aborted = Some(why);
+            }
+        }
+        prev = Some(pkg.name.clone());
         if let Flow::Abort(why) = flow {
             rec.steps
                 .push(Step::new("guest-state", FAIL, why.clone(), 0));
@@ -2363,6 +2375,38 @@ fn tally(sum: &mut Summary, verdict: &str) {
         FAIL => sum.fail += 1,
         NOT_REACHED => sum.not_reached += 1,
         _ => sum.skip += 1,
+    }
+}
+
+/// Steps that only read the guest; a package whose every step is one of
+/// these, with no unit or CLI run, changed nothing there.
+const READ_ONLY_STEPS: [&str; 4] = ["header", "resolve", "rpm-verify", "files"];
+
+/// A failed package on a guest that no longer answers. If the package changed
+/// nothing - its reads failed because the guest was already gone - its
+/// verdict is not-reached and the loss belongs to the package before it;
+/// otherwise the package keeps its fail with a guest-state step. Either way
+/// the run stops: returns why, or None while the guest is reachable.
+pub fn unreachable_after(rec: &mut PkgRecord, reachable: bool, prev: Option<&str>) -> Option<String> {
+    if reachable || rec.verdict != FAIL {
+        return None;
+    }
+    let untouched = rec.units.is_empty()
+        && rec.clis.is_empty()
+        && rec.steps.iter().all(|st| READ_ONLY_STEPS.contains(&st.name.as_str()));
+    if untouched {
+        let why = match prev {
+            Some(p) => format!("guest unreachable after testing {p}"),
+            None => "guest unreachable before the first package".to_string(),
+        };
+        rec.verdict = NOT_REACHED.into();
+        rec.reason = format!("{why}; this package changed nothing");
+        Some(why)
+    } else {
+        let why = format!("guest unreachable after testing {}", rec.package);
+        rec.steps.push(Step::new("guest-state", FAIL, why.clone(), 0));
+        rec.settle();
+        Some(why)
     }
 }
 

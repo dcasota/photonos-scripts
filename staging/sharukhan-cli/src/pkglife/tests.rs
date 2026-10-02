@@ -1183,3 +1183,44 @@ fn a_failed_cli_control_disables_probes_but_not_the_run() {
         .any(|s| s.name == "cli" && s.status == SKIP));
     std::fs::remove_dir_all(&w.dir).ok();
 }
+
+fn failed(pkg: &str, steps: &[&str]) -> PkgRecord {
+    let mut r = PkgRecord { package: pkg.into(), ..Default::default() };
+    for st in steps {
+        r.steps.push(Step::new(st, FAIL, "ssh: connect to host port 22: Connection timed out", 0));
+    }
+    r.settle();
+    r
+}
+
+#[test]
+fn a_reachable_guest_keeps_the_fail_and_the_run_going() {
+    let mut r = failed("ivykis", &["header"]);
+    assert_eq!(unreachable_after(&mut r, true, Some("itstool")), None);
+    assert_eq!(r.verdict, FAIL);
+}
+
+#[test]
+fn reads_that_fail_on_a_lost_guest_are_not_reached_and_blame_the_previous_package() {
+    for steps in [&["header"][..], &["rpm-verify", "files"][..], &["resolve"][..]] {
+        let mut r = failed("ivykis", steps);
+        let why = unreachable_after(&mut r, false, Some("itstool")).expect("the run must stop");
+        assert_eq!(why, "guest unreachable after testing itstool");
+        assert_eq!(r.verdict, NOT_REACHED, "{steps:?}");
+    }
+}
+
+#[test]
+fn a_package_that_changed_the_guest_keeps_its_fail_when_the_guest_is_lost() {
+    let mut r = failed("itstool", &["files-gone", "failed-units"]);
+    let why = unreachable_after(&mut r, false, Some("isa-l-devel")).expect("the run must stop");
+    assert_eq!(why, "guest unreachable after testing itstool");
+    assert_eq!(r.verdict, FAIL);
+    assert!(r.steps.iter().any(|s| s.name == "guest-state"));
+}
+
+#[test]
+fn a_passing_package_never_stops_the_run() {
+    let mut r = PkgRecord { package: "a".into(), verdict: PASS.into(), ..Default::default() };
+    assert_eq!(unreachable_after(&mut r, false, None), None);
+}

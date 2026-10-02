@@ -197,9 +197,10 @@ pub fn cmd_verify(
     id: &str,
     ip: Option<&str>,
     lifecycle: Option<&crate::pkglife::Opts>,
+    iso: Option<&str>,
 ) -> Result<(), String> {
     let p = row(cfg, id)?;
-    let v = verify::run(cfg, &p, ip, &crate::job::stamp(), lifecycle, &mut logger())?;
+    let v = verify::run(cfg, &p, ip, &crate::job::stamp(), lifecycle, iso.map(std::path::Path::new), &mut logger())?;
     println!("evidence: {}", v.checks.path.display());
     println!("logs:     {}", v.harvest.display());
     if v.checks.fail == 0 {

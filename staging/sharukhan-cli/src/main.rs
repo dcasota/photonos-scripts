@@ -82,6 +82,9 @@ PHASES (the same code `run` calls, one step at a time)
     remaster            make an Azure variant of an ISO that already exists, by
                         rebuilding only the kernel spec (--in, --out, --hyperv)
     variant-patches     rebuild the installer variant patches from the PR branches
+    pkg-lifecycle       every package of one row's ISO (--id, --iso, --pkg-*): when a
+                        package takes the guest down, the rest continue on a freshly
+                        installed guest (--pkg-segments, default 10); one merged file
     pkg-compare         two package-lifecycle runs of one row, package by package:
                         fails on a regression, a new failure, a missing or an
                         unreached package (--base, --new: pkglife-*.jsonl; --json)
@@ -107,7 +110,8 @@ OPTIONS:
     --all               every permutation in the matrix (run); every running job (stop)
     --allow-build       permit an ISO build; OFF by default, because a build takes
                         hours and shares $PHOTON_TREE/stage with everything else
-    --iso <path>        ISO to attach (create-vm); default is the row's cached one
+    --iso <path>        ISO to attach (create-vm) or under test (verify: media checks
+                        and package lifecycle); default is the row's cached one
     --kickstart <file>  kickstart to inject (create-vm); default is generated
     --recreate          stash the VM directory's contents first (create-vm)
     --mode <m>          auto | interactive (install)
@@ -222,6 +226,7 @@ struct Args {
     once: bool,
     json: bool,
     base: Option<String>,
+    pkg_segments: Option<usize>,
     new: Option<String>,
     settle: u64,
     wait_idle: u64,
@@ -331,6 +336,7 @@ fn parse() -> Result<Args, String> {
         once: false,
         json: false,
         base: None,
+        pkg_segments: None,
         new: None,
         settle: 300,
         wait_idle: 0,
@@ -434,6 +440,13 @@ fn parse() -> Result<Args, String> {
                         .map_err(|_| format!("--pkg-limit: not a number: {v}"))?,
                 );
             }
+            "--pkg-segments" => {
+                let v = a.next().ok_or("--pkg-segments needs a value")?;
+                out.pkg_segments = Some(
+                    v.parse()
+                        .map_err(|_| format!("--pkg-segments: not a number: {v}"))?,
+                );
+            }
             "--pkg-budget" => {
                 let v = a.next().ok_or("--pkg-budget needs a value")?;
                 out.pkg_budget = Some(
@@ -465,6 +478,10 @@ fn parse() -> Result<Args, String> {
             "-h" | "--help" => out.cmd = "help".into(),
             other => return Err(format!("unknown option: {other}")),
         }
+    }
+    // pkg-lifecycle IS the package lifecycle: its --pkg-* options apply.
+    if out.cmd == "pkg-lifecycle" {
+        out.package_lifecycle = true;
     }
     Ok(out)
 }
@@ -524,8 +541,8 @@ fn main() -> ExitCode {
             return ExitCode::from(64);
         }
     };
-    if lifecycle.is_some() && !matches!(args.cmd.as_str(), "verify" | "run") {
-        eprintln!("sharukhan: --package-lifecycle applies to verify and run only");
+    if lifecycle.is_some() && !matches!(args.cmd.as_str(), "verify" | "run" | "pkg-lifecycle") {
+        eprintln!("sharukhan: --package-lifecycle applies to verify, run and pkg-lifecycle only");
         return ExitCode::from(64);
     }
     let r = match args.cmd.as_str() {
@@ -564,7 +581,9 @@ fn main() -> ExitCode {
             phases::cmd_install(&cfg, id, args.mode.as_deref(), args.timeout, args.no_wait)
         }),
         "verify" => need_id(&args)
-            .and_then(|id| phases::cmd_verify(&cfg, id, args.ip.as_deref(), lifecycle.as_ref())),
+            .and_then(|id| {
+                phases::cmd_verify(&cfg, id, args.ip.as_deref(), lifecycle.as_ref(), args.iso.as_deref())
+            }),
         "teardown" => need_id(&args).and_then(|id| phases::cmd_teardown(&cfg, id, args.purge)),
         "build-iso" => phases::cmd_build_iso(
             &cfg,
@@ -579,6 +598,9 @@ fn main() -> ExitCode {
         "build" => cmd_build(&args),
         "remaster" => cmd_remaster(&args),
         "variant-patches" => phases::cmd_variant_patches(&cfg, args.kernel.as_deref()),
+        "pkg-lifecycle" => need_id(&args).and_then(|id| {
+            cmd_pkg_lifecycle(&cfg, id, args.iso.as_deref(), lifecycle.as_ref(), args.pkg_segments)
+        }),
         "pkg-compare" => cmd_pkg_compare(args.base.as_deref(), args.new.as_deref(), args.json),
         "iso-boot" => cmd_iso_boot(args.iso.as_deref(), args.json),
         "composer" => cmd_composer(&cfg, args.poi.as_deref().unwrap_or("2.8")),
@@ -600,6 +622,38 @@ fn main() -> ExitCode {
             eprintln!("sharukhan: {e}");
             ExitCode::FAILURE
         }
+    }
+}
+
+/// `sharukhan pkg-lifecycle --id <row> [--iso <path>] [--pkg-* ...]`
+fn cmd_pkg_lifecycle(
+    cfg: &config::Config,
+    id: &str,
+    iso: Option<&str>,
+    lifecycle: Option<&pkglife::Opts>,
+    segments: Option<usize>,
+) -> Result<(), String> {
+    let o = lifecycle.ok_or("pkg-lifecycle: lifecycle options missing")?;
+    if segments == Some(0) {
+        return Err("--pkg-segments 0 would test nothing".into());
+    }
+    let p = matrix::rows(cfg)?
+        .into_iter()
+        .find(|p| p.id == id)
+        .ok_or_else(|| format!("no permutation {id}"))?;
+    let iso = match iso {
+        Some(i) => std::path::PathBuf::from(i),
+        None => cfg.iso_dir(&p.iso_type, &p.poi, &p.canister).join("photon.iso"),
+    };
+    let iso = std::fs::canonicalize(&iso).map_err(|e| format!("{}: {e}", iso.display()))?;
+    let out = pkglife::segments::run(cfg, id, &iso, o, segments.unwrap_or(10), &mut |l| {
+        println!("[mc] {l}")
+    })?;
+    println!("merged: {} ({} segment(s))", out.merged.display(), out.segments);
+    if out.unreached.is_empty() {
+        Ok(())
+    } else {
+        Err(format!("{} package(s) still not reached after {} segment(s)", out.unreached.len(), out.segments))
     }
 }
 

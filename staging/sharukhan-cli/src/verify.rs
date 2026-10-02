@@ -32,6 +32,7 @@ pub fn run(
     ip_override: Option<&str>,
     stamp: &str,
     lifecycle: Option<&crate::pkglife::Opts>,
+    iso_override: Option<&std::path::Path>,
     log: &mut dyn FnMut(&str),
 ) -> Result<Verified, String> {
     let dir = cfg.vm_dir(&p.id);
@@ -159,9 +160,18 @@ pub fn run(
     // Do not hardcode the canister mode: an ISO built with --canister
     // build|acvp|kat lives under a different cache key, and silently reading
     // the prebuilt one would verify an artefact the permutation never used.
-    let iso = cfg
-        .iso_dir(&p.iso_type, &p.poi, &p.canister)
-        .join("photon.iso");
+    // The ISO the VM was created with (`create-vm --iso`) when given: media
+    // checks and the package lifecycle must read the medium under test, and
+    // the lifecycle still proves the VMX holds exactly this file.
+    let iso = match iso_override {
+        Some(i) => {
+            if !i.is_file() {
+                return Err(format!("--iso {}: not a file", i.display()));
+            }
+            i.to_path_buf()
+        }
+        None => cfg.iso_dir(&p.iso_type, &p.poi, &p.canister).join("photon.iso"),
+    };
     if iso.is_file() {
         // Both ISO types. This was `if p.iso_type == "minimal"`, inherited from
         // the bash with no reason recorded, and it dropped four checks from

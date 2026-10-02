@@ -680,6 +680,18 @@ comparison fails on a regression (pass or skip turned fail), a new failure (a pa
 media carries, failing), a missing package, or an incomplete one (not reached on either side).
 Failures present in both runs are reported as unchanged; their reasons are shown when they differ.
 
+**Every package, even when one takes the guest down.** `sharukhan pkg-lifecycle --id <row>
+[--iso <path>] [--pkg-budget s] [--pkg-segments n]` runs the lifecycle on a freshly installed guest
+(create-vm --recreate, install, verify --package-lifecycle, teardown) and, when a package leaves the
+guest unreachable or away from its baseline, continues with the packages not reached on another
+fresh install - at most `n` segments (default 10), each of which must reach a package the last one
+did not. A package whose test failed is followed by a reachability probe: if the guest no longer
+answers, the run stops there; that package keeps its fail with a `guest-state` step, while a
+package that only read from an already lost guest is not reached and is retried. The segments'
+records are appended to one `results/<row>/pkglife-segmented-<stamp>.jsonl`, where the last record
+of a package is its verdict. `--iso` defaults to the row's cached ISO; `verify --iso` accepts the
+same override, so a frozen baseline ISO can be tested on the row it belongs to.
+
 **Where packages come from.** The row's own ISO, reconnected with `vmrun connectNamedDevice
 sata0:1` and mounted read-only in the guest; tdnf reads it through `--repofrompath` with every
 other repository disabled, and the guest's repo files are never edited. Before anything installs,

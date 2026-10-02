@@ -437,7 +437,7 @@ fn run_row(
     // The lifecycle needs an installed guest; on a failed install there is
     // nothing to put packages on, and verify records why.
     let lc = lifecycle.filter(|_| facts.install_result == install::INSTALLED);
-    let v = verify::run(cfg, p, None, &stamp, lc, &mut log)?;
+    let v = verify::run(cfg, p, None, &stamp, lc, None, &mut log)?;
     let verdict = format!(
         "{} checks, {} pass, {} fail (install {})",
         v.checks.total(),
