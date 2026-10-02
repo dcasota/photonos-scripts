@@ -77,6 +77,15 @@ pub struct ProbeAttempt {
     pub stdout: String,
     pub stderr: String,
     pub verdict: String,
+    /// systemd's verdict on the probe unit (`Finished with result:`):
+    /// success, exit-code, signal, core-dump, timeout, oom-kill... Empty in
+    /// records written before systemd-run's own lines were read.
+    #[serde(default)]
+    pub result: String,
+    /// How the main process ended (`Main processes terminated with:`), e.g.
+    /// `code=dumped, status=11/SEGV`.
+    #[serde(default)]
+    pub ended: String,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

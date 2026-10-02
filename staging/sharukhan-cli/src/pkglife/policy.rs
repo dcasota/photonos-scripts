@@ -34,6 +34,32 @@ pub struct PathRule {
 pub struct VersionQuery {
     pub pattern: String,
     pub args: Vec<String>,
+    /// The exit status that answers the query. 0 unless the tool is
+    /// documented to exit otherwise after printing its version (GNU `false`).
+    #[serde(default)]
+    pub exit: i32,
+    pub reason: String,
+}
+
+/// Output that only a broken installation produces: the dynamic loader, an
+/// interpreter or a language runtime saying that something the program needs
+/// is not there. Every string in `all` must appear on ONE line.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Signature {
+    pub name: String,
+    pub all: Vec<String>,
+    pub reason: String,
+}
+
+/// A reviewed tool that cannot answer a version query on the bench, and the
+/// exact words it says why. The probe still runs; only those words, with no
+/// defect signature anywhere, make it a skip.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Precondition {
+    pub pattern: String,
+    pub marker: String,
     pub reason: String,
 }
 
@@ -66,6 +92,15 @@ pub struct Cli {
     pub never_execute: Vec<Rule>,
     pub version_query: Vec<VersionQuery>,
     pub no_version_query: Vec<PathRule>,
+    /// Checked first, on every probe: a match fails the CLI whatever else
+    /// the probes showed.
+    pub defect_signatures: Vec<Signature>,
+    /// The tool's own option parser refusing a probe argument: the program
+    /// ran and has no such option.
+    pub option_rejection_markers: Vec<String>,
+    /// The tool refusing to run as an unprivileged user, in its own words.
+    pub privilege_refusal_markers: Vec<String>,
+    pub preconditions: Vec<Precondition>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -76,6 +111,9 @@ pub struct Units {
     pub never_start: Vec<Rule>,
     pub network_affecting: Vec<Rule>,
     pub requires_config: Vec<Rule>,
+    /// Reviewed err-priority lines that are not a defect of the package on
+    /// this bench: the unit or syslog identifier (glob) and the exact words.
+    pub expected_errors: Vec<Precondition>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -275,6 +313,66 @@ impl Policy {
                 ));
             }
         }
+        for (i, v) in self.cli.version_query.iter().enumerate() {
+            if !(0..=255).contains(&v.exit) {
+                return Err(format!(
+                    "cli.version_query[{i}]: exit {} is not an exit status",
+                    v.exit
+                ));
+            }
+        }
+        if self.cli.defect_signatures.is_empty() {
+            return Err(
+                "cli.defect_signatures is empty: a broken installation would read as a tool without a version query"
+                    .into(),
+            );
+        }
+        for (i, sig) in self.cli.defect_signatures.iter().enumerate() {
+            if sig.name.trim().is_empty()
+                || sig.all.is_empty()
+                || sig.all.iter().any(|m| m.trim().len() < 3)
+                || sig.reason.trim().len() < 10
+            {
+                return Err(format!(
+                    "cli.defect_signatures[{i}] ({:?}): needs a name, markers of at least 3 characters and a reason",
+                    sig.name
+                ));
+            }
+        }
+        for (name, list) in [
+            (
+                "cli.option_rejection_markers",
+                &self.cli.option_rejection_markers,
+            ),
+            (
+                "cli.privilege_refusal_markers",
+                &self.cli.privilege_refusal_markers,
+            ),
+        ] {
+            if list.iter().any(|m| m.trim().len() < 4) {
+                return Err(format!(
+                    "{name} contains a marker shorter than 4 characters, which would match almost anything"
+                ));
+            }
+        }
+        let as_rules: Vec<Rule> = self
+            .cli
+            .preconditions
+            .iter()
+            .map(|v| Rule {
+                pattern: v.pattern.clone(),
+                reason: v.reason.clone(),
+            })
+            .collect();
+        check_rules("cli.preconditions", &as_rules)?;
+        for (i, c) in self.cli.preconditions.iter().enumerate() {
+            if c.marker.trim().len() < 6 {
+                return Err(format!(
+                    "cli.preconditions[{i}] ({}): the marker must quote the tool, at least 6 characters",
+                    c.pattern
+                ));
+            }
+        }
         for (i, r) in self.cli.no_version_query.iter().enumerate() {
             if !r.path.starts_with('/') || r.reason.trim().len() < 10 {
                 return Err(format!(
@@ -286,6 +384,24 @@ impl Policy {
         check_rules("units.never_start", &self.units.never_start)?;
         check_rules("units.network_affecting", &self.units.network_affecting)?;
         check_rules("units.requires_config", &self.units.requires_config)?;
+        let as_rules: Vec<Rule> = self
+            .units
+            .expected_errors
+            .iter()
+            .map(|v| Rule {
+                pattern: v.pattern.clone(),
+                reason: v.reason.clone(),
+            })
+            .collect();
+        check_rules("units.expected_errors", &as_rules)?;
+        for (i, c) in self.units.expected_errors.iter().enumerate() {
+            if c.marker.trim().len() < 10 {
+                return Err(format!(
+                    "units.expected_errors[{i}] ({}): the marker must quote the line, at least 10 characters",
+                    c.pattern
+                ));
+            }
+        }
         if self.units.network_ordering.is_empty() {
             return Err(
                 "units.network_ordering is empty: firewalls would not be recognised".into(),
@@ -304,6 +420,30 @@ impl Policy {
             .version_query
             .iter()
             .find(|v| glob(&v.pattern, base))
+    }
+
+    /// The reviewed entry that explains an err-priority journal line, if any:
+    /// its unit or syslog identifier matches the pattern and its message
+    /// carries the marker.
+    pub fn expected_error(
+        &self,
+        unit: &str,
+        identifier: &str,
+        message: &str,
+    ) -> Option<&Precondition> {
+        self.units.expected_errors.iter().find(|c| {
+            (glob(&c.pattern, unit) || glob(&c.pattern, identifier))
+                && message.contains(c.marker.as_str())
+        })
+    }
+
+    /// The reviewed preconditions for an executable's base name.
+    pub fn preconditions(&self, base: &str) -> Vec<&Precondition> {
+        self.cli
+            .preconditions
+            .iter()
+            .filter(|c| glob(&c.pattern, base))
+            .collect()
     }
 
     pub fn no_version_query(&self, path: &str) -> Option<&PathRule> {

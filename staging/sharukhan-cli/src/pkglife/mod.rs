@@ -136,12 +136,34 @@ pub fn judge_verify(lines: &[Verify]) -> (Vec<String>, Vec<String>) {
 }
 
 /// Journal entries of the window that are errors and not the harness's own.
-pub fn window_errors(entries: &[JEntry]) -> Vec<String> {
+/// The err-or-worse entries of a window that are not the harness's own: its
+/// units and identifiers, a crash systemd-coredump reports for one of its
+/// probe units, and the kernel's OOM kill of a process in one of them
+/// (`harness_oom` - pids from the kernel's own oom-kill lines). A probe's
+/// crash or memory kill is the CLI's verdict, recorded there with its signal;
+/// it is not something the package logged.
+///
+/// Also left out: lines a reviewed `units.expected_errors` entry explains,
+/// and the lines of units whose failure a `units.requires_config` entry
+/// declared (`declared`) - that unit's own result carries them as evidence.
+pub fn window_errors(
+    entries: &[JEntry],
+    harness_oom: &BTreeSet<u32>,
+    policy: &Policy,
+    declared: &BTreeSet<String>,
+) -> Vec<String> {
     entries
         .iter()
         .filter(|e| e.priority <= 3)
+        .filter(|e| policy.expected_error(&e.unit, &e.identifier, &e.message).is_none())
+        .filter(|e| !declared.contains(&e.unit))
         .filter(|e| {
-            !e.unit.starts_with(HARNESS_PREFIX) && !e.identifier.starts_with(HARNESS_PREFIX)
+            !e.unit.starts_with(HARNESS_PREFIX)
+                && !e.identifier.starts_with(HARNESS_PREFIX)
+                && !e.coredump_unit.starts_with(HARNESS_PREFIX)
+                && !parse::oom_killed_pid(&e.message)
+                    .map(|p| harness_oom.contains(&p))
+                    .unwrap_or(false)
         })
         .map(|e| clip(&e.line()))
         .collect()
@@ -200,34 +222,82 @@ pub fn harvest_matches(harvest: &str, now: &BTreeMap<String, Pkg>) -> Result<(),
     ))
 }
 
-/// Which libraries of a package must be in the linker cache: every
-/// conventional soname; if the package has none, at least one of its shared
-/// objects. Returns (missing, found).
-pub fn judge_ldcache(
-    c: &classify::Classified,
-    cache: &BTreeSet<String>,
-) -> (Vec<String>, Vec<String>) {
-    let sonames = c.soname_paths();
-    let all: Vec<&str> = c.libraries.iter().map(|l| l.path.as_str()).collect();
-    let found: Vec<String> = all
-        .iter()
-        .filter(|p| cache.contains(**p))
-        .map(|p| p.to_string())
-        .collect();
-    let missing: Vec<String> = if sonames.is_empty() {
-        if found.is_empty() {
-            all.iter().map(|p| p.to_string()).collect()
-        } else {
-            Vec::new()
+/// One shared object a package ships, as the guest resolves it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LibObject {
+    /// The packaged path (a file or a symlink).
+    pub path: String,
+    /// Where it resolves (`readlink -f`): `/usr/lib64` is a symlink to `lib`
+    /// on Photon, and most sonames are symlinks to a versioned file.
+    pub real: String,
+    /// Whether the resolved file is an ELF object at all.
+    pub elf: bool,
+}
+
+/// The guest command for the linker-cache check: every cache entry resolved
+/// to the file it reaches, then every packaged library path resolved, with
+/// the first four bytes of what it reaches.
+pub fn ldcache_cmd(paths: &[&str]) -> Result<String, String> {
+    let quoted: Vec<String> = paths.iter().map(|p| sq(p)).collect::<Result<_, _>>()?;
+    Ok(format!(
+        "ldconfig -p >/dev/null || exit 3; \
+         ldconfig -p | sed -n 's/^.* => //p' | while IFS= read -r p; do printf 'cache\\t%s\\n' \"$(readlink -f -- \"$p\")\"; done; \
+         for f in {}; do r=$(readlink -f -- \"$f\"); m=$(head -c 4 -- \"$r\" 2>/dev/null | od -An -tx1 | tr -d ' \\n'); \
+         printf 'lib\\t%s\\t%s\\t%s\\n' \"$f\" \"$r\" \"$m\"; done",
+        quoted.join(" ")
+    ))
+}
+
+/// The cache's resolved files, and the package's library objects.
+pub fn parse_ldcache(out: &str) -> (BTreeSet<String>, Vec<LibObject>) {
+    let mut cache = BTreeSet::new();
+    let mut libs = Vec::new();
+    for l in out.lines() {
+        let f: Vec<&str> = l.split('\t').collect();
+        match f.as_slice() {
+            ["cache", real] if !real.is_empty() => {
+                cache.insert(real.to_string());
+            }
+            ["lib", path, real, magic] => libs.push(LibObject {
+                path: path.to_string(),
+                real: real.to_string(),
+                elf: *magic == "7f454c46",
+            }),
+            _ => {}
         }
-    } else {
-        sonames
-            .iter()
-            .filter(|p| !cache.contains(**p))
-            .map(|p| p.to_string())
-            .collect()
-    };
-    (missing, found)
+    }
+    (cache, libs)
+}
+
+/// Which of a package's shared objects the linker cache does not reach.
+/// ldconfig caches every ELF shared object in a trusted directory under its
+/// SONAME, so the rule needs no guess at soname spellings: every ELF file a
+/// packaged library path resolves to must be the target of some cache entry.
+/// Returns (missing, found, not ELF), each deduplicated by resolved file.
+pub fn judge_ldcache(
+    libs: &[LibObject],
+    cache: &BTreeSet<String>,
+) -> (Vec<String>, Vec<String>, Vec<String>) {
+    let mut seen = BTreeSet::new();
+    let (mut missing, mut found, mut other) = (Vec::new(), Vec::new(), Vec::new());
+    for l in libs {
+        if l.real.is_empty() || !seen.insert(l.real.clone()) {
+            continue;
+        }
+        let shown = if l.real == l.path {
+            l.path.clone()
+        } else {
+            format!("{} ({})", l.path, l.real)
+        };
+        if !l.elf {
+            other.push(shown);
+        } else if cache.contains(&l.real) {
+            found.push(shown);
+        } else {
+            missing.push(shown);
+        }
+    }
+    (missing, found, other)
 }
 
 /// The candidates of this run: every distinct package name on the media,
@@ -551,7 +621,7 @@ impl Session<'_> {
                 false,
                 self.policy.limits.query_secs,
             )?;
-            found = units::errors(&entries);
+            found = units::errors(&entries, self.policy);
             if found.iter().any(|l| l.contains(&self.nonce)) {
                 break;
             }
@@ -598,6 +668,7 @@ impl Session<'_> {
             "",
             &prefix,
             &mut self.seq,
+            true,
         );
         if good.status != PASS {
             return Err(format!(
@@ -605,6 +676,8 @@ impl Session<'_> {
                 good.reason
             ));
         }
+        // Generic: the reviewed entry that accepts GNU false's documented
+        // status 1 must not take the control's teeth out.
         let bad = probe::probe(
             self.r,
             self.policy,
@@ -612,6 +685,7 @@ impl Session<'_> {
             "",
             &prefix,
             &mut self.seq,
+            true,
         );
         if bad.status != FAIL {
             return Err(format!(
@@ -619,8 +693,69 @@ impl Session<'_> {
                 bad.status, bad.reason
             ));
         }
+        // A crash must be read as a crash: systemd-run's own lines carry the
+        // signal, and the judgement must name it as a defect.
+        self.seq += 1;
+        let unit = format!("{HARNESS_PREFIX}probe-{}-{}", self.nonce, self.seq);
+        let cmd = probe::sandboxed(
+            &unit,
+            self.policy.limits.probe_secs,
+            "/bin/sh",
+            // `kill 0` signals the unit's own process group. Not `$$`: systemd
+            // expands `$` in ExecStart= arguments, and `$$` reaches the shell
+            // as a lone `$` (the first live run caught exactly that).
+            &["-c", "kill -s SEGV 0"],
+        )?;
+        let e = self.r.exec(&cmd, None, self.policy.limits.probe_secs + 10);
+        let (_, ending) = probe::split_run(&unit, &e.stderr);
+        let crashed = record::ProbeAttempt {
+            args: vec!["-c".into()],
+            code: e.code,
+            result: ending.result.clone(),
+            ended: ending.ended.clone(),
+            ..Default::default()
+        };
+        let crash = probe::defect_in(self.policy, &crashed, None).ok_or_else(|| {
+            format!(
+                "a shell that killed itself with SIGSEGV was not judged a crash (result {:?}, ended {:?})",
+                ending.result, ending.ended
+            )
+        })?;
+        // A script whose interpreter is absent must fail before it is run.
+        let dir = format!("/run/{HARNESS_PREFIX}ctl-{}", self.nonce);
+        let script = format!("{dir}/no-interpreter");
+        let make = format!(
+            "mkdir -p {d} && printf '#!/nonexistent/sharukhan-interpreter\\n' > {f} && chmod 0755 {f}",
+            d = remote::sq(&dir)?,
+            f = remote::sq(&script)?
+        );
+        let made = self.r.exec(&make, None, self.policy.limits.query_secs);
+        let orphan = probe::probe(
+            self.r,
+            self.policy,
+            &script,
+            "",
+            &prefix,
+            &mut self.seq,
+            false,
+        );
+        let _ = self.r.exec(
+            &format!(
+                "rm -f -- {} && rmdir -- {}",
+                remote::sq(&script)?,
+                remote::sq(&dir)?
+            ),
+            None,
+            self.policy.limits.query_secs,
+        );
+        if !made.ok() || orphan.status != FAIL || !orphan.reason.contains("missing interpreter") {
+            return Err(format!(
+                "a script naming an absent interpreter was judged {}: {} (setup exit {:?})",
+                orphan.status, orphan.reason, made.code
+            ));
+        }
         Ok(format!(
-            "{sandbox}; rpm passes ({}), false fails",
+            "{sandbox}; rpm passes ({}), false fails, a SIGSEGV is a crash ({crash}), an absent interpreter fails",
             good.reason
         ))
     }
@@ -632,37 +767,61 @@ impl Session<'_> {
             return;
         }
         let t = Instant::now();
-        let e = self
-            .r
-            .exec("ldconfig -p", None, self.policy.limits.query_secs);
+        let paths: Vec<&str> = c.libraries.iter().map(|l| l.path.as_str()).collect();
+        let e = match ldcache_cmd(&paths) {
+            Ok(cmd) => self.r.exec(&cmd, None, self.policy.limits.query_secs),
+            Err(e) => {
+                rec.steps.push(Step::new("ldcache", FAIL, e, ms(t)));
+                return;
+            }
+        };
         if !e.ok() {
             rec.steps.push(Step::new(
                 "ldcache",
                 FAIL,
-                format!("ldconfig -p: exit {:?}", e.code),
+                format!("ldconfig -p: exit {:?} {}", e.code, clip(e.stderr.trim())),
                 ms(t),
             ));
             return;
         }
-        let cache = parse::ldconfig_paths(&e.stdout);
-        let (missing, found) = judge_ldcache(c, &cache);
-        if missing.is_empty() {
+        let (cache, libs) = parse_ldcache(&e.stdout);
+        let (missing, found, other) = judge_ldcache(&libs, &cache);
+        let not_elf = if other.is_empty() {
+            String::new()
+        } else {
+            format!("; not ELF, not judged: {}", other.join(" "))
+        };
+        if missing.is_empty() && !found.is_empty() {
             rec.steps.push(Step::new(
                 "ldcache",
                 PASS,
                 format!(
-                    "{} of {} shared object(s) in the linker cache: {}",
+                    "{} shared object(s) reachable through the linker cache: {}{not_elf}",
                     found.len(),
-                    c.libraries.len(),
                     found.join(" ")
                 ),
+                ms(t),
+            ));
+        } else if missing.is_empty() {
+            rec.steps.push(Step::new(
+                "ldcache",
+                INFO,
+                format!("no ELF shared object among the library files{not_elf}"),
                 ms(t),
             ));
         } else {
             rec.steps.push(Step::new(
                 "ldcache",
                 FAIL,
-                format!("not in the linker cache: {}", missing.join(" ")),
+                format!(
+                    "not reachable through the linker cache: {}{}{not_elf}",
+                    missing.join(" "),
+                    if found.is_empty() {
+                        String::new()
+                    } else {
+                        format!("; reachable: {}", found.join(" "))
+                    }
+                ),
                 ms(t),
             ));
         }
@@ -737,20 +896,17 @@ impl Session<'_> {
                 ));
                 break;
             }
-            // A symlink whose target does not exist is its own finding.
-            let exists = argv(&["test", "-x", exe])
-                .map(|cmd| self.r.exec(&cmd, None, self.policy.limits.query_secs).ok())
-                .unwrap_or(false);
-            if !exists {
-                rec.clis.push(record::CliResult {
-                    path: exe.clone(),
-                    status: FAIL.into(),
-                    reason: "shipped in a bin directory but not executable (dangling link?)".into(),
-                    attempts: Vec::new(),
-                });
-                continue;
-            }
-            let r = probe::probe(self.r, self.policy, exe, version, &prefix, &mut self.seq);
+            // The probe inspects the file first: a dangling link fails there,
+            // and nothing is run for it.
+            let r = probe::probe(
+                self.r,
+                self.policy,
+                exe,
+                version,
+                &prefix,
+                &mut self.seq,
+                false,
+            );
             rec.clis.push(r);
         }
     }
@@ -792,7 +948,28 @@ impl Session<'_> {
         let t = Instant::now();
         match units::journal_since(self.r, cursor, None, true, self.policy.limits.query_secs) {
             Ok(entries) => {
-                rec.journal_errors = window_errors(&entries);
+                // Only when the window holds an OOM kill: read the kernel's
+                // own oom-kill lines (info priority) to see whose cgroup it was.
+                let mut oom = BTreeSet::new();
+                if entries
+                    .iter()
+                    .any(|e| e.priority <= 3 && parse::oom_killed_pid(&e.message).is_some())
+                {
+                    let after = format!("--after-cursor={cursor}");
+                    if let Ok(cmd) = argv(&["journalctl", "--no-pager", "-k", "-o", "json", &after]) {
+                        let k = self.r.exec(&cmd, None, self.policy.limits.query_secs);
+                        if let Ok(kernel) = parse::journal_json(&k.stdout) {
+                            oom = parse::harness_oom_pids(&kernel, HARNESS_PREFIX);
+                        }
+                    }
+                }
+                let declared: BTreeSet<String> = rec
+                    .units
+                    .iter()
+                    .filter(|u| u.outcome == units::DECLARED_CONFIG)
+                    .map(|u| u.unit.clone())
+                    .collect();
+                rec.journal_errors = window_errors(&entries, &oom, self.policy, &declared);
                 if rec.journal_errors.is_empty() {
                     rec.steps.push(Step::new(
                         "journal-window",
@@ -881,6 +1058,13 @@ impl Session<'_> {
         let txn = match parse::tdnf_txn(&preview.stdout) {
             Ok(t) => t,
             Err(e) => {
+                let said = format!("{}\n{}", preview.stdout, preview.stderr);
+                if let Some(why) = self.held_by_baseline(&pkg.name, &said) {
+                    rec.steps.push(Step::new("resolve", INFO, clip(said.trim()), ms(t)));
+                    rec.verdict = SKIP.into();
+                    rec.reason = why;
+                    return Flow::Continue;
+                }
                 rec.steps.push(Step::new(
                     "resolve",
                     FAIL,
@@ -917,6 +1101,12 @@ impl Session<'_> {
             return Flow::Continue;
         }
         if !txn.get("Install").iter().any(|p| p.name == pkg.name) {
+            if let Some(why) = self.provided_instead(&pkg.name, txn.get("Install")) {
+                rec.steps.push(Step::new("resolve", INFO, why.clone(), ms(t)));
+                rec.verdict = SKIP.into();
+                rec.reason = why;
+                return Flow::Continue;
+            }
             rec.steps.push(Step::new(
                 "resolve",
                 FAIL,
@@ -1045,6 +1235,84 @@ impl Session<'_> {
             return Flow::Abort(why);
         }
         self.residue(&unit_names, &files, &config, rec)
+    }
+
+    /// Why a package cannot be installed next to the baseline by design, when
+    /// tdnf refused it: another installed package already provides its name
+    /// (and supersedes it), or it declares a conflict with an installed one.
+    /// Installing it would mean replacing or removing a baseline package,
+    /// which the run never does (PL-5). None when tdnf's refusal is anything
+    /// else - that stays a failure.
+    fn held_by_baseline(&mut self, name: &str, said: &str) -> Option<String> {
+        if said.contains(&format!("Package {name} is already installed")) {
+            let q = argv(&["rpm", "-q", "--whatprovides", "--", name]).ok()?;
+            let e = self.r.exec(&q, None, self.policy.limits.query_secs);
+            let providers: Vec<&str> = e
+                .stdout
+                .lines()
+                .map(str::trim)
+                .filter(|l| !l.is_empty() && self.baseline.contains_key(*l))
+                .collect();
+            let real_name = providers.iter().any(|k| {
+                self.baseline
+                    .get(*k)
+                    .map(|p| p.name == name)
+                    .unwrap_or(false)
+            });
+            if e.ok() && !providers.is_empty() && !real_name {
+                return Some(format!(
+                    "the installed {} provides {name}; tdnf treats {name} as installed, and \
+                     installing the media's {name} would replace a baseline package",
+                    providers.join(", ")
+                ));
+            }
+            return None;
+        }
+        for l in said.lines() {
+            // libsolv: "package A conflicts with B provided by C"
+            let Some((_, rest)) = l.split_once(" conflicts with ") else {
+                continue;
+            };
+            let Some((what, by)) = rest.rsplit_once(" provided by ") else {
+                continue;
+            };
+            let by = by.trim();
+            if self.baseline.contains_key(by) {
+                return Some(format!(
+                    "conflicts with {what}, provided by the installed {by}: installing it would \
+                     remove a baseline package (tdnf: {})",
+                    l.trim()
+                ));
+            }
+        }
+        None
+    }
+
+    /// When tdnf satisfies a request for `name` with another package of the
+    /// media that provides it (the variant that goes with an installed
+    /// package), name it - checked against that package's own Provides.
+    fn provided_instead(&mut self, name: &str, install: &[Pkg]) -> Option<String> {
+        for p in install {
+            let file = format!(
+                "{MOUNT_POINT}/RPMS/{}/{}",
+                p.arch,
+                media::rpm_file_name(&p.name, &p.evr, &p.arch)
+            );
+            let q = argv(&["rpm", "-qp", "--provides", "--", &file]).ok()?;
+            let e = self.r.exec(&q, None, self.policy.limits.query_secs);
+            let provides = e.stdout.lines().any(|l| {
+                let l = l.trim();
+                l == name || l.starts_with(&format!("{name} "))
+            });
+            if e.ok() && provides {
+                return Some(format!(
+                    "tdnf installs the media's {} for {name}: it provides {name} and goes with \
+                     the installed packages, so {name} itself is never installed next to this baseline",
+                    p.key()
+                ));
+            }
+        }
+        None
     }
 
     /// Test an installed package; returns the unit names it ships, for the
@@ -1394,10 +1662,36 @@ impl Session<'_> {
                         ms(t),
                     ));
                 } else {
+                    // A file another installed package also ships stays
+                    // behind by rpm's rules; the defect is the double
+                    // packaging, and the owner says where it is.
+                    let quoted: Vec<String> =
+                        other.iter().filter_map(|f| sq(f).ok()).collect();
+                    let cmd = format!(
+                        "for f in {}; do printf '%s\\t' \"$f\"; rpm -qf --qf '%{{NAME}}-%{{VERSION}}-%{{RELEASE}}.%{{ARCH}} ' -- \"$f\" 2>/dev/null; echo; done",
+                        quoted.join(" ")
+                    );
+                    let owners: BTreeMap<String, String> = self
+                        .r
+                        .exec(&cmd, None, q)
+                        .stdout
+                        .lines()
+                        .filter_map(|l| l.split_once('\t'))
+                        .map(|(f, o)| (f.to_string(), o.trim().to_string()))
+                        .collect();
+                    let shown: Vec<String> = other
+                        .iter()
+                        .map(|f| match owners.get(*f) {
+                            Some(o) if !o.is_empty() && !o.contains("not owned") => {
+                                format!("{f} (also packaged by the installed {o})")
+                            }
+                            _ => f.to_string(),
+                        })
+                        .collect();
                     rec.steps.push(Step::new(
                         "files-gone",
                         FAIL,
-                        format!("left behind: {}", other.join(" ")),
+                        format!("left behind: {}", shown.join(" ")),
                         ms(t),
                     ));
                 }

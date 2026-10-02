@@ -92,9 +92,14 @@ usage error (exit 64). `--pkg-limit 0` and `--pkg-budget 0` are refused.
 
 ### 4.3 CLI probe
 
-denylisted name → skip (never sent) · reviewed `no_version_query` → skip · otherwise probes in order
-inside the sandbox; pass on the first `exit 0 ∧ output ∧ version token ∧ no stderr error marker`;
-else FAIL with every attempt.
+denylisted name → skip (never sent) · reviewed `no_version_query` → skip · file inspected: dangling →
+FAIL, not executable by others → skip (mode), `#!` interpreter absent → FAIL (not run) · otherwise
+probes in order inside the sandbox; pass on the first `exit status as reviewed (0) ∧ output ∧ version
+token ∧ no stderr error marker`. No version: reviewed `cli.preconditions` words with no other defect →
+skip; `cli.defect_signatures`, a crash by signal or an exec failure → FAIL; a probe accepted but
+answered without a version → FAIL; option parser rejection, operand echo, privilege refusal or a
+silent exit 0 → skip ("no version query", the line quoted); else FAIL with every attempt. Controls: a
+SIGSEGV must be judged a crash and a script with an absent interpreter must fail.
 
 ## 5. Live verification
 

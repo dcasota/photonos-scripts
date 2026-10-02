@@ -69,7 +69,7 @@ fn healthy_tool() -> Fake {
         .on("'rpm' '-qa'", fake::ok(BASE_QA))
         .on("'rpm' '-q' '--qf'", fake::ok(TOOL_FILES))
         .on("'rpm' '-V'", fake::ok(""))
-        .on("'test' '-x'", fake::ok(""))
+        .on("stat -L", fake::ok("mode 755 root root\n"))
         .on("systemd-run", fake::ok("tool 1.2.3\n"))
         .on("journalctl", fake::ok(""))
         .on("'--assumeno' 'remove'", fake::ok(TOOL_REMOVE))
@@ -449,8 +449,11 @@ fn preinstalled_packages_are_tested_in_place_and_never_removed() {
             "'rpm' '-q' '--qf'",
             fake::ok("/usr/bin/rpm\t100755\t\t\n/usr/lib/systemd/system/rpmdb-migrate.service\t100644\t\t\n/usr/lib/librpm.so.10\t120777\t\tlibrpm.so.10.0.0\n"),
         )
-        .on("ldconfig -p", fake::ok("\tlibrpm.so.10 (libc6,x86-64) => /usr/lib/librpm.so.10\n"))
-        .on("'test' '-x'", fake::ok(""))
+        .on(
+            "ldconfig -p",
+            fake::ok("cache\t/usr/lib/librpm.so.10.0.0\nlib\t/usr/lib/librpm.so.10\t/usr/lib/librpm.so.10.0.0\t7f454c46\n"),
+        )
+        .on("stat -L", fake::ok("mode 755 root root\n"))
         .on("systemd-run", fake::ok("RPM version 6.1.0\n"))
         .on("'systemctl' 'show'", fake::ok("LoadState=loaded\nActiveState=inactive\nSubState=dead\nUnitFileState=disabled\n"))
         .on("journalctl", fake::ok(""));
@@ -491,13 +494,18 @@ fn cli_probes_are_skipped_with_the_reason_when_their_controls_failed() {
 fn a_dangling_executable_is_a_cli_failure() {
     let p = Policy::embedded().unwrap();
     let mut f = healthy_tool();
-    f.rules.retain(|r| r.needle != "'test' '-x'");
-    f.on("'test' '-x'", fake::rc(1, "", ""));
+    f.rules.retain(|r| r.needle != "stat -L");
+    f.on("stat -L", fake::ok("missing\n"));
     let mut s = session(&mut f, &p);
     let mut r = rec("tool");
     s.fresh(&pkg("tool"), &mut r);
     assert_eq!(r.clis[0].status, FAIL);
-    assert!(r.clis[0].reason.contains("not executable"));
+    assert!(
+        r.clis[0].reason.contains("dangling"),
+        "{}",
+        r.clis[0].reason
+    );
+    assert_eq!(f.ran("systemd-run"), 0, "nothing runs for a dangling link");
 }
 
 // ---- controls ------------------------------------------------------------
@@ -562,7 +570,23 @@ fn the_unit_control_must_be_judged_failed_with_its_line_found() {
 fn the_cli_control_proves_sandbox_good_and_bad() {
     let p = Policy::embedded().unwrap();
     let mut f = Fake::new();
-    f.on("'/bin/sh' '-c'", fake::ok("61234\nlo \nread-only\n"))
+    f.on(
+        "kill -s SEGV 0",
+        fake::rc(
+            1,
+            "",
+            "Finished with result: signal\nMain processes terminated with: code=killed, status=11/SEGV\n",
+        ),
+    )
+    .on("'/bin/sh' '-c'", fake::ok("61234\nlo \nread-only\ntmpfs\nhome-writable\n"))
+        .on("mkdir -p", fake::ok(""))
+        .on("rm -f", fake::ok(""))
+        .on(
+            "no-interpreter",
+            fake::ok("mode 755 root root\nshebang #!/nonexistent/sharukhan-interpreter\n"),
+        )
+        .on("test -x", fake::rc(1, "", ""))
+        .on("stat -L", fake::ok("mode 755 root root\n"))
         .on("'/usr/bin/rpm'", fake::ok("RPM version 6.1.0\n"))
         .on(
             "'/usr/bin/false'",
@@ -573,7 +597,23 @@ fn the_cli_control_proves_sandbox_good_and_bad() {
     assert!(m.contains("uid 61234"), "{m}");
     // a `false` that passes means the judgement is vacuous
     let mut g = Fake::new();
-    g.on("'/bin/sh' '-c'", fake::ok("61234\nlo \nread-only\n"))
+    g.on(
+        "kill -s SEGV 0",
+        fake::rc(
+            1,
+            "",
+            "Finished with result: signal\nMain processes terminated with: code=killed, status=11/SEGV\n",
+        ),
+    )
+    .on("'/bin/sh' '-c'", fake::ok("61234\nlo \nread-only\ntmpfs\nhome-writable\n"))
+        .on("mkdir -p", fake::ok(""))
+        .on("rm -f", fake::ok(""))
+        .on(
+            "no-interpreter",
+            fake::ok("mode 755 root root\nshebang #!/nonexistent/sharukhan-interpreter\n"),
+        )
+        .on("test -x", fake::rc(1, "", ""))
+        .on("stat -L", fake::ok("mode 755 root root\n"))
         .on("'/usr/bin/rpm'", fake::ok("RPM version 6.1.0\n"))
         .on("'/usr/bin/false'", fake::ok("false 9.1\n"));
     let mut s = session(&mut g, &p);
@@ -621,7 +661,33 @@ fn window_and_session_noise_rules() {
         "\n"
     ))
     .unwrap();
-    assert_eq!(window_errors(&e).len(), 1);
+    let pol = Policy::embedded().unwrap();
+    assert_eq!(window_errors(&e, &BTreeSet::new(), &pol, &BTreeSet::new()).len(), 1);
+    // a probe unit's crash and OOM kill belong to the CLI result, another
+    // unit's do not
+    let e = parse::journal_json(concat!(
+        r#"{"_SYSTEMD_UNIT":"systemd-coredump@3-1949-0.service","SYSLOG_IDENTIFIER":"systemd-coredump","COREDUMP_UNIT":"sharukhan-probe-abc-7.service","PRIORITY":"2","MESSAGE":"Process 1948 (dtagnames) of user 65534 terminated abnormally"}"#,
+        "\n",
+        r#"{"_SYSTEMD_UNIT":"systemd-coredump@4-1950-0.service","SYSLOG_IDENTIFIER":"systemd-coredump","COREDUMP_UNIT":"atftpd.service","PRIORITY":"2","MESSAGE":"Process 1951 (atftpd) of user 0 terminated abnormally"}"#,
+        "\n",
+        r#"{"_TRANSPORT":"kernel","SYSLOG_IDENTIFIER":"kernel","PRIORITY":"3","MESSAGE":"Memory cgroup out of memory: Killed process 88633 (fio-genzipf) total-vm:1052352kB"}"#,
+        "\n",
+        r#"{"_TRANSPORT":"kernel","SYSLOG_IDENTIFIER":"kernel","PRIORITY":"3","MESSAGE":"Memory cgroup out of memory: Killed process 900 (java) total-vm:1kB"}"#,
+        "\n"
+    ))
+    .unwrap();
+    let k = parse::journal_json(concat!(
+        r#"{"_TRANSPORT":"kernel","PRIORITY":"6","MESSAGE":"oom-kill:constraint=CONSTRAINT_MEMCG,nodemask=(null),cpuset=/,mems_allowed=0,oom_memcg=/system.slice/sharukhan-probe-abc-9.service,task_memcg=/system.slice/sharukhan-probe-abc-9.service,task=fio-genzipf,pid=88633,uid=65534"}"#,
+        "\n",
+        r#"{"_TRANSPORT":"kernel","PRIORITY":"6","MESSAGE":"oom-kill:constraint=CONSTRAINT_MEMCG,nodemask=(null),cpuset=/,mems_allowed=0,oom_memcg=/system.slice/cassandra.service,task_memcg=/system.slice/cassandra.service,task=java,pid=900,uid=0"}"#,
+        "\n"
+    ))
+    .unwrap();
+    let oom = parse::harness_oom_pids(&k, HARNESS_PREFIX);
+    assert_eq!(oom, [88633u32].into_iter().collect());
+    let left = window_errors(&e, &oom, &pol, &BTreeSet::new());
+    assert_eq!(left.len(), 2, "{left:?}");
+    assert!(left[0].contains("atftpd") && left[1].contains("(java)"), "{left:?}");
     assert!(session_noise("user@0.service"));
     assert!(session_noise("session-12.scope"));
     assert!(session_noise("sharukhan-probe-1.service"));
@@ -644,27 +710,45 @@ fn leftover_processes_match_exact_paths_only() {
 
 #[test]
 fn linker_cache_rule() {
-    let c = classify::classify(
-        &parse::rpm_files(
-            "/usr/lib/libz.so.1\t120777\t\tlibz.so.1.3\n/usr/lib/libz.so.1.3\t100755\t\t\n",
-        )
-        .unwrap(),
-        |_| false,
+    // the guest's answer for bzip2-libs on Photon: three names, one file,
+    // whose soname (libbz2.so.1.0) is not the shortest name it ships
+    let out = "cache\t/usr/lib/libbz2.so.1.0.8\ncache\t/usr/lib/libc.so.6\n\
+               lib\t/usr/lib/libbz2.so.1\t/usr/lib/libbz2.so.1.0.8\t7f454c46\n\
+               lib\t/usr/lib/libbz2.so.1.0\t/usr/lib/libbz2.so.1.0.8\t7f454c46\n\
+               lib\t/usr/lib/libbz2.so.1.0.8\t/usr/lib/libbz2.so.1.0.8\t7f454c46\n";
+    let (cache, libs) = parse_ldcache(out);
+    let (missing, found, other) = judge_ldcache(&libs, &cache);
+    assert!(missing.is_empty(), "{missing:?}");
+    assert_eq!(
+        found,
+        vec!["/usr/lib/libbz2.so.1 (/usr/lib/libbz2.so.1.0.8)"]
     );
-    let mut cache = BTreeSet::new();
-    let (missing, _) = judge_ldcache(&c, &cache);
-    assert_eq!(missing, vec!["/usr/lib/libz.so.1"]);
-    cache.insert("/usr/lib/libz.so.1".to_string());
-    assert!(judge_ldcache(&c, &cache).0.is_empty());
-    // no conventional soname: one cached object is enough, none is a failure
-    let py = classify::classify(
-        &parse::rpm_files("/usr/lib/libpython3.14.so.1.0\t100755\t\t\n").unwrap(),
-        |_| false,
+    assert!(other.is_empty());
+    // a library under /usr/lib64 (a symlink to lib) is judged where it resolves
+    let out = "cache\t/usr/lib/libgcc_s.so.1\n\
+               lib\t/usr/lib64/libgcc_s.so.1\t/usr/lib/libgcc_s.so.1\t7f454c46\n";
+    let (cache, libs) = parse_ldcache(out);
+    assert!(judge_ldcache(&libs, &cache).0.is_empty());
+    // a package installed without ldconfig: its object is not reachable
+    let out = "cache\t/usr/lib/libc.so.6\n\
+               lib\t/usr/lib/libX11.so.6\t/usr/lib/libX11.so.6.4.0\t7f454c46\n\
+               lib\t/usr/lib/libX11.so.6.4.0\t/usr/lib/libX11.so.6.4.0\t7f454c46\n";
+    let (cache, libs) = parse_ldcache(out);
+    let (missing, found, _) = judge_ldcache(&libs, &cache);
+    assert_eq!(
+        missing,
+        vec!["/usr/lib/libX11.so.6 (/usr/lib/libX11.so.6.4.0)"]
     );
-    assert_eq!(judge_ldcache(&py, &BTreeSet::new()).0.len(), 1);
-    let mut c2 = BTreeSet::new();
-    c2.insert("/usr/lib/libpython3.14.so.1.0".to_string());
-    assert!(judge_ldcache(&py, &c2).0.is_empty());
+    assert!(found.is_empty());
+    // a linker script named like a library is reported, not judged
+    let out = "lib\t/usr/lib/libfoo.so.1\t/usr/lib/libfoo.so.1\t2f2a2047\n";
+    let (cache, libs) = parse_ldcache(out);
+    let (missing, _, other) = judge_ldcache(&libs, &cache);
+    assert!(missing.is_empty());
+    assert_eq!(other, vec!["/usr/lib/libfoo.so.1"]);
+    // the command quotes every path
+    let c = ldcache_cmd(&["/usr/lib/lib'x.so.1"]).unwrap();
+    assert!(c.contains(r"'/usr/lib/lib'\''x.so.1'"), "{c}");
 }
 
 #[test]
@@ -850,7 +934,23 @@ fn whole_guest() -> Fake {
             fake::ok("LoadState=loaded\nActiveState=failed\nResult=exit-code\n"),
         )
         .on("reset-failed", fake::ok(""))
-        .on("'/bin/sh' '-c'", fake::ok("65534\nlo \nread-only\n"))
+        .on(
+            "kill -s SEGV 0",
+            fake::rc(
+                1,
+                "",
+                "Finished with result: signal\nMain processes terminated with: code=killed, status=11/SEGV\n",
+            ),
+        )
+        .on("'/bin/sh' '-c'", fake::ok("65534\nlo \nread-only\ntmpfs\nhome-writable\n"))
+        .on("mkdir -p", fake::ok(""))
+        .on("rm -f", fake::ok(""))
+        .on(
+            "no-interpreter",
+            fake::ok("mode 755 root root\nshebang #!/nonexistent/sharukhan-interpreter\n"),
+        )
+        .on("test -x", fake::rc(1, "", ""))
+        .on("stat -L", fake::ok("mode 755 root root\n"))
         .on(
             "'/usr/bin/false'",
             fake::rc(1, "false (GNU coreutils) 9.1\n", ""),
@@ -864,7 +964,7 @@ fn whole_guest() -> Fake {
         .on("'-y' 'install'", fake::ok(TOOL_INSTALL))
         .on("'rpm' '-q' '--qf'", fake::ok(TOOL_FILES))
         .on("'rpm' '-V'", fake::ok(""))
-        .on("'test' '-x'", fake::ok(""))
+        .on("stat -L", fake::ok("mode 755 root root\n"))
         .on("systemd-run", fake::ok("tool 1.2.3\n"))
         .on("'--assumeno' 'remove'", fake::ok(TOOL_REMOVE))
         .on("'-y' 'remove'", fake::ok(TOOL_REMOVE))
@@ -1223,4 +1323,168 @@ fn a_package_that_changed_the_guest_keeps_its_fail_when_the_guest_is_lost() {
 fn a_passing_package_never_stops_the_run() {
     let mut r = PkgRecord { package: "a".into(), verdict: PASS.into(), ..Default::default() };
     assert_eq!(unreachable_after(&mut r, false, None), None);
+}
+
+#[test]
+fn a_package_the_baseline_holds_off_by_design_is_skipped_not_failed() {
+    let p = Policy::embedded().unwrap();
+    // coreutils on a guest with coreutils-selinux: tdnf says it is installed
+    let mut f = healthy_tool();
+    f.rules.retain(|r| r.needle != "'--assumeno' 'install'");
+    f.on(
+        "'--assumeno' 'install'",
+        fake::rc(0, "", "Package tool is already installed.\n"),
+    )
+    .on("'--whatprovides'", fake::ok("bash-5.3-1.ph5.x86_64\n"));
+    let mut s = session(&mut f, &p);
+    let mut r = rec("tool");
+    s.fresh(&pkg("tool"), &mut r);
+    r.settle();
+    assert_eq!(r.verdict, SKIP, "{r:#?}");
+    assert!(r.reason.contains("the installed bash-5.3-1.ph5.x86_64 provides tool"), "{}", r.reason);
+    assert_eq!(f.ran("'-y' 'install'"), 0);
+    // negative control: "already installed" with no installed provider is a failure
+    let mut f = healthy_tool();
+    f.rules.retain(|r| r.needle != "'--assumeno' 'install'");
+    f.on(
+        "'--assumeno' 'install'",
+        fake::rc(0, "", "Package tool is already installed.\n"),
+    )
+    .on("'--whatprovides'", fake::rc(1, "no package provides tool\n", ""));
+    let mut s = session(&mut f, &p);
+    let mut r = rec("tool");
+    s.fresh(&pkg("tool"), &mut r);
+    r.settle();
+    assert_eq!(r.verdict, FAIL, "{r:#?}");
+
+    // net-tools: declares a conflict with the installed hostname
+    let mut f = healthy_tool();
+    f.rules.retain(|r| r.needle != "'--assumeno' 'install'");
+    f.on(
+        "'--assumeno' 'install'",
+        fake::rc(
+            21,
+            "1. package tool-1.2.3-1.ph5.x86_64 conflicts with sh provided by bash-5.3-1.ph5.x86_64\nFound 1 problem(s) while resolving\n{\"Error\":1301,\"ErrorMessage\":\"Solv general runtime error\"}",
+            "",
+        ),
+    );
+    let mut s = session(&mut f, &p);
+    let mut r = rec("tool");
+    s.fresh(&pkg("tool"), &mut r);
+    r.settle();
+    assert_eq!(r.verdict, SKIP, "{r:#?}");
+    assert!(r.reason.contains("provided by the installed bash"), "{}", r.reason);
+    // a conflict with something NOT installed is an unresolvable package
+    let mut f = healthy_tool();
+    f.rules.retain(|r| r.needle != "'--assumeno' 'install'");
+    f.on(
+        "'--assumeno' 'install'",
+        fake::rc(
+            21,
+            "1. package tool-1.2.3-1.ph5.x86_64 conflicts with x provided by other-1-1.ph5.x86_64\n{\"Error\":1301,\"ErrorMessage\":\"Solv general runtime error\"}",
+            "",
+        ),
+    );
+    let mut s = session(&mut f, &p);
+    let mut r = rec("tool");
+    s.fresh(&pkg("tool"), &mut r);
+    r.settle();
+    assert_eq!(r.verdict, FAIL, "{r:#?}");
+
+    // coreutils-lang: tdnf picks the variant that goes with the baseline
+    let mut f = healthy_tool();
+    f.rules.retain(|r| r.needle != "'--assumeno' 'install'");
+    f.on(
+        "'--assumeno' 'install'",
+        fake::ok(r#"{"Install":[{"Name":"tool-x","Arch":"x86_64","Evr":"1.2.3-1.ph5","Repo":"sharukhan-media"}]}"#),
+    );
+    f.rules.insert(
+        0,
+        fake::Rule {
+            needle: "'--provides'".into(),
+            out: fake::ok("tool = 1.2.3-1.ph5\ntool-x = 1.2.3-1.ph5\n"),
+            times: None,
+        },
+    );
+    let mut s = session(&mut f, &p);
+    let mut r = rec("tool");
+    s.fresh(&pkg("tool"), &mut r);
+    r.settle();
+    assert_eq!(r.verdict, SKIP, "{r:#?}");
+    assert!(r.reason.contains("tool-x-1.2.3-1.ph5.x86_64"), "{}", r.reason);
+    // ... and fails when what tdnf picked does not provide it
+    let mut f = healthy_tool();
+    f.rules.retain(|r| r.needle != "'--assumeno' 'install'");
+    f.on(
+        "'--assumeno' 'install'",
+        fake::ok(r#"{"Install":[{"Name":"tool-x","Arch":"x86_64","Evr":"1.2.3-1.ph5","Repo":"sharukhan-media"}]}"#),
+    );
+    f.rules.insert(
+        0,
+        fake::Rule {
+            needle: "'--provides'".into(),
+            out: fake::ok("tool-x = 1.2.3-1.ph5\ntoolkit = 1\n"),
+            times: None,
+        },
+    );
+    let mut s = session(&mut f, &p);
+    let mut r = rec("tool");
+    s.fresh(&pkg("tool"), &mut r);
+    r.settle();
+    assert_eq!(r.verdict, FAIL, "{r:#?}");
+}
+
+#[test]
+fn a_file_left_behind_names_the_installed_package_that_also_ships_it() {
+    let p = Policy::embedded().unwrap();
+    let mut f = healthy_tool();
+    f.rules.retain(|r| r.needle != "while IFS=");
+    f.on("while IFS=", fake::ok("/usr/bin/tool\n")).on(
+        "rpm -qf",
+        fake::ok("/usr/bin/tool\tsystemd-257.13-6.ph5.x86_64 \n"),
+    );
+    let mut s = session(&mut f, &p);
+    let mut r = rec("tool");
+    s.fresh(&pkg("tool"), &mut r);
+    r.settle();
+    assert_eq!(status_of(&r, "files-gone"), FAIL, "the double packaging is the defect");
+    let d = &r.steps.iter().find(|s| s.name == "files-gone").unwrap().detail;
+    assert_eq!(
+        d,
+        "left behind: /usr/bin/tool (also packaged by the installed systemd-257.13-6.ph5.x86_64)"
+    );
+}
+
+#[test]
+fn reviewed_expected_errors_and_declared_config_units_leave_the_window() {
+    let mut v: serde_json::Value = serde_json::from_str(policy::EMBEDDED).unwrap();
+    v["units"]["expected_errors"] = serde_json::json!([{
+        "pattern": "atftpd*",
+        "marker": "SIGTERM received, stopping threads and exiting",
+        "reason": "atftpd logs its ordinary SIGTERM shutdown at LOG_ERR"
+    }]);
+    let p = Policy::parse(&v.to_string()).unwrap();
+    let e = parse::journal_json(concat!(
+        r#"{"_SYSTEMD_UNIT":"atftpd.service","SYSLOG_IDENTIFIER":"atftpd","PRIORITY":"3","MESSAGE":"SIGTERM received, stopping threads and exiting."}"#,
+        "\n",
+        r#"{"_SYSTEMD_UNIT":"atftpd.service","SYSLOG_IDENTIFIER":"atftpd","PRIORITY":"3","MESSAGE":"tftpd.c: 468: select: Interrupted system call"}"#,
+        "\n",
+        r#"{"_SYSTEMD_UNIT":"postgresql15.service","PRIORITY":"3","MESSAGE":"database files are incompatible"}"#,
+        "\n",
+        r#"{"_SYSTEMD_UNIT":"other.service","SYSLOG_IDENTIFIER":"other","PRIORITY":"3","MESSAGE":"SIGTERM received, stopping threads and exiting."}"#,
+        "\n"
+    ))
+    .unwrap();
+    let declared: BTreeSet<String> = ["postgresql15.service".to_string()].into_iter().collect();
+    let left = window_errors(&e, &BTreeSet::new(), &p, &declared);
+    // the reviewed words of the reviewed unit go; its other line, and the
+    // same words from another unit, stay
+    assert_eq!(left.len(), 2, "{left:?}");
+    assert!(left[0].contains("Interrupted system call"));
+    assert!(left[1].contains("other"));
+    // a short marker is refused
+    let mut v: serde_json::Value = serde_json::from_str(policy::EMBEDDED).unwrap();
+    v["units"]["expected_errors"] =
+        serde_json::json!([{"pattern": "x", "marker": "error", "reason": "a long enough reason"}]);
+    assert!(Policy::parse(&v.to_string()).is_err());
 }

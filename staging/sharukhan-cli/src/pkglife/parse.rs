@@ -384,6 +384,8 @@ pub struct JEntry {
     pub unit: String,
     pub identifier: String,
     pub realtime_us: u64,
+    /// COREDUMP_UNIT: the unit whose process systemd-coredump reports.
+    pub coredump_unit: String,
 }
 
 impl JEntry {
@@ -447,9 +449,39 @@ pub fn journal_json(stdout: &str) -> Result<Vec<JEntry>, String> {
             unit,
             identifier: s("SYSLOG_IDENTIFIER"),
             realtime_us: s("__REALTIME_TIMESTAMP").parse().unwrap_or(0),
+            coredump_unit: s("COREDUMP_UNIT"),
         });
     }
     Ok(out)
+}
+
+/// The pids the kernel's OOM killer took out of a memory cgroup of the
+/// harness's own units, from its `oom-kill:` lines (`..,oom_memcg=<cgroup>,
+/// ..,pid=<n>,..`).
+pub fn harness_oom_pids(kernel: &[JEntry], prefix: &str) -> BTreeSet<u32> {
+    let memcg = format!("oom_memcg=/system.slice/{prefix}");
+    kernel
+        .iter()
+        .filter(|e| e.message.contains("oom-kill:") && e.message.contains(&memcg))
+        .filter_map(|e| {
+            e.message
+                .split(',')
+                .find_map(|kv| kv.trim().strip_prefix("pid="))
+                .and_then(|p| p.parse().ok())
+        })
+        .collect()
+}
+
+/// The pid in the kernel's "Memory cgroup out of memory: Killed process <pid>
+/// (<comm>) ..." line.
+pub fn oom_killed_pid(message: &str) -> Option<u32> {
+    message
+        .split_once("Killed process ")?
+        .1
+        .split_whitespace()
+        .next()?
+        .parse()
+        .ok()
 }
 
 /// `ss -Hltnp` lines: the pids listening on a TCP port.
@@ -494,14 +526,6 @@ pub fn exe_list(stdout: &str) -> Vec<(u32, String)> {
             let (pid, exe) = l.split_once(' ')?;
             Some((pid.parse().ok()?, exe.to_string()))
         })
-        .collect()
-}
-
-/// `ldconfig -p`: the library paths in the linker cache.
-pub fn ldconfig_paths(stdout: &str) -> BTreeSet<String> {
-    stdout
-        .lines()
-        .filter_map(|l| l.split_once(" => ").map(|(_, p)| p.trim().to_string()))
         .collect()
 }
 
@@ -747,15 +771,10 @@ LISTEN 0 128 0.0.0.0:2222 0.0.0.0:* users:((\"other\",pid=9,fd=3))";
     }
 
     #[test]
-    fn process_and_linker_cache_listings() {
+    fn process_listings() {
         let e = exe_list("1 /usr/lib/systemd/systemd\n2903 /usr/sbin/chronyd (deleted)\nbad\n");
         assert_eq!(e.len(), 2);
         assert_eq!(e[1], (2903, "/usr/sbin/chronyd (deleted)".into()));
-        let l = ldconfig_paths(
-            "123 libs found in cache `/etc/ld.so.cache'\n\tlibz.so.1 (libc6,x86-64) => /usr/lib/libz.so.1\n",
-        );
-        assert!(l.contains("/usr/lib/libz.so.1"));
-        assert_eq!(l.len(), 1);
     }
 
     #[test]

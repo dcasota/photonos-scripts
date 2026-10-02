@@ -711,8 +711,8 @@ the ISO's `/RPMS` file for file (`pkg.repo_is_media`). The media RPMs are unsign
 |---|---|
 | every package | `rpm -V` right after install: a missing file or a size/digest/link change of a non-%config, non-%ghost file outside `/var /run /proc /sys /dev /tmp` fails |
 | daemon (unit files) | per unit: enable, bounded `systemctl start`, must stay up 5 s (same MainPID, no restart), stop, disable; the unit's journal between a cursor taken before enable and the end must hold no `err` or worse. Condition-skipped units are "skipped (condition)" with systemd's sentence. Templates, aliases and mount/target/swap-like units are not started, with the reason |
-| cli (`/usr/bin` `/usr/sbin` `/bin` `/sbin`) | `--version`, `-V`, `-v`, `version`, `-version` until one exits 0 printing a version with a clean stderr - never a bare invocation, always inside a systemd sandbox (unprivileged `nobody`, no network, no devices, read-only root, no capabilities, runtime limit) |
-| library (`lib*.so.*`) | every soname in `ldconfig -p` |
+| cli (`/usr/bin` `/usr/sbin` `/bin` `/sbin`) | the file first: a dangling link fails, a file only owner or group may run is skipped (mode named), a script whose `#!` interpreter is not installed fails without running. Then `--version`, `-V`, `-v`, `version`, `-version` until one exits 0 printing a version with a clean stderr - never a bare invocation, always inside a systemd sandbox (unprivileged `nobody` with a private tmpfs `/tmp` as `$HOME`, no network, no devices, read-only root, no capabilities, refused syscalls fail with EPERM, runtime limit). No version: a defect signature (loader, missing interpreter/module/class/command, sanitizer build, crash by signal) **fails**; a probe the tool accepted but answered without a version **fails**; the tool's own option parser, an echo of the probe as an operand, a refusal to run unprivileged or a silent exit 0 make it a **skip** ("no version query") with the line that shows it; a reviewed `cli.preconditions` entry (tool + its exact words) skips what the bench cannot provide |
+| library (`lib*.so.*`) | every ELF object a packaged library path resolves to (`readlink -f`: `/usr/lib64` is a link to `lib`) is the target of an `ldconfig -p` entry - no guess at soname spellings |
 | after removal | package set equals the baseline, packaged files gone (%config may stay, recorded), unit files unloaded, no process runs a removed file, no new failed unit, every enabled baseline unit active again |
 
 A transaction that would remove or replace an installed package is never run (skip, with the
@@ -749,11 +749,16 @@ nftables|daemon,cli|pass|
 ...
 ```
 
-`jq` there is a real defect the check found: `jq --version` prints `jq-` with no version. The other
-CLI failures are tools that have no version query at all (`run-parts`, `rpm2cpio`,
-`memcached-tool`); they stay failures until a reviewer adds a `cli.version_query` (an alternative
-query that must still print a version - 7-Zip's `i`, verified in the sandbox) or a
-`cli.no_version_query` entry with its reason.
+`jq` there is a real defect the check found: `jq --version` prints `jq-` with no version - a
+probe the tool accepted but answered without a version stays a failure. A tool without any version
+query (`faillock`: `Unknown option: --version`) is a skip that quotes the tool's own words; a
+reviewed `cli.version_query` (an alternative query that must still print a version - 7-Zip's `i`,
+GNU `false --version` with its documented status 1) or `cli.preconditions` entry covers the rest.
+Units: a reviewed `units.expected_errors` entry (unit or identifier + exact words) explains an
+err line that is not the package's fault on this bench; the lines of a unit whose failure a
+`units.requires_config` entry declares are that skip's evidence, not a second failure. A probe's
+own crash or OOM kill is the CLI's verdict, so systemd-coredump and kernel OOM lines about the
+harness's units leave the journal window.
 
 **Cost.** Measured on k09 (full ISO): 0.3-20 s per package (chrony 19 s: two units, each with its 5 s
 stability window; nftables 12 s under the dead-man switch; a CLI-only package 2-3 s). The full media is ~1930 packages - hours, which is what `--pkg-budget` and

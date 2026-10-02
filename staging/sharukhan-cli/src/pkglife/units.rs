@@ -48,9 +48,14 @@ use std::time::Instant;
 
 pub const PROPS: &str = "Id,LoadState,ActiveState,SubState,Result,Type,UnitFileState,\
 UnitFilePreset,MainPID,ExecMainCode,ExecMainStatus,ConditionResult,AssertResult,\
-RefuseManualStart,RemainAfterExit,Before,Conflicts,NRestarts,NeedDaemonReload,Triggers";
+RefuseManualStart,RemainAfterExit,Before,Conflicts,NRestarts,NeedDaemonReload,Triggers,\
+TriggeredBy";
 
 pub type Props = BTreeMap<String, String>;
+
+/// The outcome of a unit whose failure to start a reviewed
+/// `units.requires_config` entry declares.
+pub const DECLARED_CONFIG: &str = "needs configuration (declared)";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Plan {
@@ -202,6 +207,14 @@ pub fn judge_start(kind: &str, start_code: Option<i32>, timed_out: bool, p: &Pro
         ("service", "inactive", _) if prop(p, "Type") == "oneshot" && result == "success" => {
             Start::Up("oneshot ran to completion".into())
         }
+        ("service", "inactive", _)
+            if result == "success" && !prop(p, "TriggeredBy").trim().is_empty() =>
+        {
+            Start::Up(format!(
+                "ran to completion, as a service triggered by {} does",
+                prop(p, "TriggeredBy")
+            ))
+        }
         ("service", "inactive", _) => Start::Failed(format!(
             "Type={} exited right after start (status {}): a daemon that does not stay up",
             prop(p, "Type"),
@@ -216,6 +229,18 @@ pub fn judge_start(kind: &str, start_code: Option<i32>, timed_out: bool, p: &Pro
 /// Did the unit stay the way the start left it?
 pub fn judge_stable(kind: &str, before: &Props, after: &Props) -> Result<(), String> {
     let changed = |k: &str| prop(before, k) != prop(after, k);
+    // A service a timer, socket or path unit triggers may run to its end:
+    // ntplogtemp.service (ntplogtemp.timer) logs once and exits,
+    // podman.service (podman.socket) exits when idle. Ending cleanly, with
+    // no restart, is what it is for; the trigger starts it again.
+    if kind == "service"
+        && !prop(after, "TriggeredBy").trim().is_empty()
+        && prop(after, "ActiveState") == "inactive"
+        && prop(after, "Result") == "success"
+        && !changed("NRestarts")
+    {
+        return Ok(());
+    }
     if changed("ActiveState") {
         return Err(format!(
             "ActiveState went {} -> {} (Result={})",
@@ -257,10 +282,15 @@ pub fn toggleable(unit_file_state: &str) -> bool {
 }
 
 /// Errors (priority <= 3) in a unit's journal, as lines.
-pub fn errors(entries: &[JEntry]) -> Vec<String> {
+pub fn errors(entries: &[JEntry], policy: &Policy) -> Vec<String> {
     entries
         .iter()
         .filter(|e| e.priority <= 3)
+        .filter(|e| {
+            policy
+                .expected_error(&e.unit, &e.identifier, &e.message)
+                .is_none()
+        })
         .map(|e| clip(&e.line()))
         .collect()
 }
@@ -631,7 +661,7 @@ pub fn cycle(ctx: &mut Ctx, unit: &str, deadman: bool) -> Cycled {
                         ),
                         start_ms,
                     ));
-                    res.outcome = "needs configuration (declared)".into();
+                    res.outcome = DECLARED_CONFIG.into();
                 }
                 None => {
                     res.steps.push(Step::new(
@@ -747,7 +777,7 @@ pub fn cycle(ctx: &mut Ctx, unit: &str, deadman: bool) -> Cycled {
     let t = Instant::now();
     match journal_since(ctx.r, &cursor, Some(unit), false, lim.query_secs) {
         Ok(all) => {
-            res.journal_errors = errors(&all);
+            res.journal_errors = errors(&all, ctx.policy);
             if res.journal_errors.is_empty() {
                 step(
                     &mut res,
@@ -762,7 +792,10 @@ pub fn cycle(ctx: &mut Ctx, unit: &str, deadman: bool) -> Cycled {
                     res.journal_errors.len(),
                     res.journal_errors.join(" | ")
                 );
-                step(&mut res, "journal", FAIL, d, t);
+                // A unit declared to need configuration logs why it failed;
+                // those lines are the evidence of that skip, not a new fault.
+                let status = if res.outcome == DECLARED_CONFIG { SKIP } else { FAIL };
+                step(&mut res, "journal", status, d, t);
             }
         }
         Err(e) => step(&mut res, "journal", FAIL, e, t),
@@ -814,43 +847,79 @@ pub fn observe(
         plan: "observe: preinstalled units are never started or stopped".into(),
         ..Default::default()
     };
-    let t = Instant::now();
-    match show(r, unit, policy.limits.query_secs) {
-        Ok(p) => {
-            let state = format!(
-                "{}/{} UnitFileState={}",
-                prop(&p, "ActiveState"),
-                prop(&p, "SubState"),
-                prop(&p, "UnitFileState")
-            );
-            if prop(&p, "LoadState") != "loaded" {
-                step(
-                    &mut res,
-                    "state",
-                    FAIL,
-                    format!("LoadState={} ({state})", prop(&p, "LoadState")),
-                    t,
-                );
-            } else if baseline_failed.contains(unit) || prop(&p, "ActiveState") == "failed" {
-                step(
-                    &mut res,
-                    "state",
-                    FAIL,
-                    format!("failed at baseline ({state})"),
-                    t,
-                );
-            } else {
-                step(&mut res, "state", PASS, state, t);
+    // A template (`getty@.service`) is not a unit systemd can show: only its
+    // instances exist. It is judged by them - none failed at baseline, none
+    // logged an error this boot.
+    let instance_of = |u: &str| -> bool {
+        match unit.split_once("@.") {
+            Some((stem, kind)) => {
+                let (pre, suf) = (format!("{stem}@"), format!(".{kind}"));
+                u.len() > pre.len() + suf.len() && u.starts_with(&pre) && u.ends_with(&suf)
             }
+            None => false,
         }
-        Err(e) => step(&mut res, "state", FAIL, e, t),
+    };
+    let template = unit.contains("@.");
+    let t = Instant::now();
+    if template {
+        res.plan = "observe: template unit, judged by its instances this boot".into();
+        let failed: Vec<&String> = baseline_failed.iter().filter(|u| instance_of(u)).collect();
+        if failed.is_empty() {
+            step(&mut res, "state", PASS, "no failed instance at baseline", t);
+        } else {
+            step(
+                &mut res,
+                "state",
+                FAIL,
+                format!(
+                    "failed instance(s) at baseline: {}",
+                    failed
+                        .iter()
+                        .map(|s| s.as_str())
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                ),
+                t,
+            );
+        }
+    } else {
+        match show(r, unit, policy.limits.query_secs) {
+            Ok(p) => {
+                let state = format!(
+                    "{}/{} UnitFileState={}",
+                    prop(&p, "ActiveState"),
+                    prop(&p, "SubState"),
+                    prop(&p, "UnitFileState")
+                );
+                if prop(&p, "LoadState") != "loaded" {
+                    step(
+                        &mut res,
+                        "state",
+                        FAIL,
+                        format!("LoadState={} ({state})", prop(&p, "LoadState")),
+                        t,
+                    );
+                } else if baseline_failed.contains(unit) || prop(&p, "ActiveState") == "failed" {
+                    step(
+                        &mut res,
+                        "state",
+                        FAIL,
+                        format!("failed at baseline ({state})"),
+                        t,
+                    );
+                } else {
+                    step(&mut res, "state", PASS, state, t);
+                }
+            }
+            Err(e) => step(&mut res, "state", FAIL, e, t),
+        }
     }
     let mine: Vec<JEntry> = boot_errors
         .iter()
-        .filter(|e| e.unit == unit)
+        .filter(|e| e.unit == unit || (template && instance_of(&e.unit)))
         .cloned()
         .collect();
-    res.journal_errors = errors(&mine);
+    res.journal_errors = errors(&mine, policy);
     let t = Instant::now();
     if res.journal_errors.is_empty() {
         step(
@@ -1115,6 +1184,16 @@ mod tests {
         .is_err());
         let oneshot = props("ActiveState=active\nMainPID=0\nNRestarts=0\n");
         assert!(judge_stable("service", &oneshot, &oneshot).is_ok());
+        // a triggered service that ends cleanly is not "failing to stay up";
+        // the same ending without a trigger, or a failed one, still fails
+        let up = props("ActiveState=active\nMainPID=7\nNRestarts=0\nTriggeredBy=ntplogtemp.timer\n");
+        let done = props("ActiveState=inactive\nMainPID=0\nNRestarts=0\nResult=success\nTriggeredBy=ntplogtemp.timer\n");
+        assert!(judge_stable("service", &up, &done).is_ok());
+        let up_plain = props("ActiveState=active\nMainPID=7\nNRestarts=0\n");
+        let done_plain = props("ActiveState=inactive\nMainPID=0\nNRestarts=0\nResult=success\n");
+        assert!(judge_stable("service", &up_plain, &done_plain).is_err());
+        let failed = props("ActiveState=failed\nMainPID=0\nNRestarts=0\nResult=exit-code\nTriggeredBy=x.socket\n");
+        assert!(judge_stable("service", &up, &failed).is_err());
     }
 
     #[test]
@@ -1133,6 +1212,7 @@ mod tests {
             unit: unit.into(),
             identifier: String::new(),
             realtime_us: 0,
+            coredump_unit: String::new(),
         }
     }
 
@@ -1152,13 +1232,13 @@ mod tests {
                 "A was skipped because of an unmet condition check (ConditionPathExists=/etc/a)",
             ),
         ];
-        assert_eq!(errors(&e).len(), 1);
+        assert_eq!(errors(&e, &Policy::embedded().unwrap()).len(), 1);
         assert!(condition_evidence(&e)
             .unwrap()
             .contains("ConditionPathExists"));
         assert!(config_hint(&e).unwrap().contains("a.conf"));
         // negative controls
-        assert!(errors(&e[..2]).is_empty());
+        assert!(errors(&e[..2], &Policy::embedded().unwrap()).is_empty());
         assert!(condition_evidence(&e[..2]).is_none());
         assert!(config_hint(&e[..1]).is_none());
     }

@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "reviewed": "2026-09-27",
+  "reviewed": "2026-10-02",
   "about": "Safety and override policy for `sharukhan verify|run --package-lifecycle` (ADR-0008, FRD-002). Every entry carries the reason it exists. Criteria that can be derived from the guest (unit ordering, conflicts, the unit that owns the ssh listener, files under /boot) are derived in code; this file holds only what cannot be derived, and is embedded into the binary so a result names the exact policy that produced it (its sha256 is recorded with every run).",
   "limits": {
     "query_secs": 120,
@@ -73,9 +73,37 @@
       { "pattern": "pkill", "reason": "signals processes by pattern" }
     ],
     "version_query": [
-      { "pattern": "7z*", "args": ["i"], "reason": "7-Zip has no version switch (--version, -V, -v, version, -version all exit 7 with 'Command Line Error', measured on k09); its information command `i` prints the version banner and exits 0 (measured in the probe sandbox, 2026-09-28)" }
+      { "pattern": "7z*", "args": ["i"], "reason": "7-Zip has no version switch (--version, -V, -v, version, -version all exit 7 with 'Command Line Error', measured on k09); its information command `i` prints the version banner and exits 0 (measured in the probe sandbox, 2026-09-28)" },
+      { "pattern": "false", "args": ["--version"], "exit": 1, "reason": "GNU false exits 1 for every invocation, --version included, after printing its version (coreutils: it exits unsuccessfully regardless of options); measured on k13 2026-10-02: 'false (GNU coreutils) 9.1', status 1. The probe controls judge false generically and still require it to FAIL." }
     ],
-    "no_version_query": []
+    "no_version_query": [],
+    "defect_signatures": [
+      { "name": "unresolved shared library", "all": ["error while loading shared libraries"], "reason": "ld.so cannot find a DT_NEEDED library: the package lacks a runtime dependency" },
+      { "name": "unresolved symbol", "all": ["symbol lookup error"], "reason": "ld.so resolved a library that lacks a symbol the program needs: a dependency is too old or the wrong build" },
+      { "name": "missing symbol version", "all": ["version `", "' not found (required by"], "reason": "ld.so found a library without the symbol version the program was linked against" },
+      { "name": "bad interpreter", "all": ["bad interpreter"], "reason": "the kernel could not start the script's #! interpreter" },
+      { "name": "interpreter not found by env", "all": ["/usr/bin/env: ", "No such file or directory"], "reason": "#!/usr/bin/env names a program that is not installed" },
+      { "name": "command not found", "all": [": command not found"], "reason": "a script calls a program that is not installed (bash's own message)" },
+      { "name": "exec target not found", "all": ["exec: ", ": not found"], "reason": "a script execs a program that is not installed (the shell's own message)" },
+      { "name": "python module missing", "all": ["ModuleNotFoundError"], "reason": "the Python program imports a module no installed package provides" },
+      { "name": "python module missing", "all": ["No module named"], "reason": "the Python program imports a module no installed package provides" },
+      { "name": "python import failure", "all": ["ImportError: "], "reason": "a Python import failed: a module, or a name inside it, is missing" },
+      { "name": "python syntax error", "all": ["SyntaxError: "], "reason": "the installed Python code does not compile with the installed interpreter (Python 2 code, for instance)" },
+      { "name": "perl module missing", "all": ["Can't locate ", ".pm in @INC"], "reason": "the Perl program uses a module no installed package provides" },
+      { "name": "tcl package missing", "all": ["can't find package "], "reason": "the Tcl program requires a package that is not installed" },
+      { "name": "java class missing", "all": ["Could not find or load main class"], "reason": "the JVM cannot find the program's main class: its classpath points at files that are not installed" },
+      { "name": "java class missing", "all": ["NoClassDefFoundError"], "reason": "a class the Java program needs is not on its classpath" },
+      { "name": "java class missing", "all": ["ClassNotFoundException"], "reason": "a class the Java program needs is not on its classpath" },
+      { "name": "node module missing", "all": ["Cannot find module '"], "reason": "the Node.js program requires a module that is not installed" },
+      { "name": "ruby library missing", "all": ["cannot load such file"], "reason": "the Ruby program requires a library that is not installed" },
+      { "name": "sanitizer build", "all": ["AddressSanitizer"], "reason": "the shipped binary is built with AddressSanitizer, a debugging instrumentation" },
+      { "name": "sanitizer build", "all": ["ASan runtime does not come first"], "reason": "the shipped binary is built with AddressSanitizer, a debugging instrumentation, and refuses to start" },
+      { "name": "uncaught C++ exception", "all": ["terminate called"], "reason": "the program aborted on an uncaught C++ exception" },
+      { "name": "go panic", "all": ["goroutine ", "[running]:"], "reason": "the Go program panicked" }
+    ],
+    "option_rejection_markers": ["usage:", "usage of ", "unknown option", "invalid option", "unrecognized option", "unrecognised option", "illegal option", "unknown argument", "invalid argument", "unrecognized argument", "unrecognised argument", "unknown command", "not a valid option", "is not a valid", "no such option", "unknown flag", "unsupported flag", "bad flag", "unknown switch", "not recognized", "wrong argument", "requires an argument", "missing operand", "missing argument", "too many arguments", "syntax:", "correct syntax", "flag provided but not defined", "--help"],
+    "privilege_refusal_markers": ["must be root", "must be run as root", "need to be root", "needs to be run as root", "run as root", "root privileges", "as the system administrator", "only works as root", "requires root", "be executed with root", "effective root", "setuid root", "superuser"],
+    "preconditions": []
   },
   "units": {
     "network_ordering": ["network-pre.target", "network.target", "network-online.target"],
@@ -117,6 +145,7 @@
       { "pattern": "nftables.service", "reason": "firewall (also derived: Before=network-pre.target)" },
       { "pattern": "firewalld.service", "reason": "zone firewall: loads rules that can refuse new ssh connections" }
     ],
-    "requires_config": []
+    "requires_config": [],
+    "expected_errors": []
   }
 }

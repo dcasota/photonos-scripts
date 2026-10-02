@@ -66,29 +66,6 @@ impl Classified {
         }
         c
     }
-
-    /// The library entries whose name is a conventional soname
-    /// (`lib<x>.so.<N>`, one numeric component). Those are exactly the names
-    /// ldconfig puts into the cache.
-    pub fn soname_paths(&self) -> Vec<&str> {
-        self.libraries
-            .iter()
-            .filter(|l| is_soname(l.name()))
-            .map(|l| l.path.as_str())
-            .collect()
-    }
-}
-
-pub fn is_soname(name: &str) -> bool {
-    match name.rsplit_once(".so.") {
-        Some((stem, n)) => {
-            stem.starts_with("lib")
-                && stem.len() > 3
-                && !n.is_empty()
-                && n.chars().all(|c| c.is_ascii_digit())
-        }
-        None => false,
-    }
 }
 
 fn is_shared_library(name: &str) -> bool {
@@ -158,7 +135,7 @@ mod tests {
     }
 
     #[test]
-    fn a_library_package_is_found_by_its_sonames() {
+    fn a_library_package_is_found_by_its_library_files() {
         let f = files(
             "/usr/lib/libfoo.so.1\t120777\t\tlibfoo.so.1.2.3
 /usr/lib/libfoo.so.1.2.3\t100755\t\t
@@ -170,17 +147,6 @@ mod tests {
         let c = classify(&f, |_| false);
         assert_eq!(c.classes(), vec!["library"]);
         assert_eq!(c.libraries.len(), 3);
-        assert_eq!(c.soname_paths(), vec!["/usr/lib/libfoo.so.1"]);
-    }
-
-    #[test]
-    fn soname_shapes() {
-        assert!(is_soname("libz.so.1"));
-        assert!(is_soname("libstdc++.so.6"));
-        assert!(!is_soname("libz.so.1.3"));
-        assert!(!is_soname("libz.so"));
-        assert!(!is_soname("lib.so.1"));
-        assert!(!is_soname("foo.so.1"));
     }
 
     #[test]
