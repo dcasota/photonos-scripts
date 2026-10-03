@@ -342,11 +342,19 @@
       {"pattern": "apol", "marker": "No module named 'PyQt6'", "reason": "SETools' graphical policy analyzer: needs PyQt6, which Photon OS does not ship; the command line tools of setools do not"},
       {"pattern": "gitk", "marker": "exec: wish: not found", "reason": "Tk repository browser: needs wish (Tk), which Photon OS does not ship"},
       {"pattern": "snmpcheck", "marker": "Can't locate Tk.pm in @INC", "reason": "net-snmp's Perl/Tk SNMP checker: needs Perl Tk, which Photon OS does not ship"},
-      {"pattern": "tkmib", "marker": "You don't have the SNMP perl module installed", "reason": "net-snmp's Perl/Tk MIB browser: needs Perl Tk, which Photon OS does not ship"},
       {"pattern": "aa-notify", "marker": "No module named 'notify2'", "reason": "AppArmor desktop notifier: imports notify2 (D-Bus desktop notifications), which Photon OS does not ship"},
       {"pattern": "guile-snarf", "marker": "x86_64-unknown-linux-gnu-gcc: command not found", "reason": "build tool that runs the C preprocessor over C sources defining Guile primitives; only meaningful with a C toolchain"},
       {"pattern": "guile-snarf3.0", "marker": "x86_64-unknown-linux-gnu-gcc: command not found", "reason": "build tool that runs the C preprocessor over C sources defining Guile primitives; only meaningful with a C toolchain"},
-      {"pattern": "runant.py", "marker": "Could not find or load main class org.apache.tools.ant.launch.Launcher", "reason": "legacy Python launcher of Ant: it builds the classpath from $ANT_HOME, which the caller must set; without it the JVM finds no Launcher class"}
+      {"pattern": "runant.py", "marker": "Could not find or load main class org.apache.tools.ant.launch.Launcher", "reason": "legacy Python launcher of Ant: it builds the classpath from $ANT_HOME, which the caller must set; without it the JVM finds no Launcher class"},
+      {"pattern": "tkmib", "marker": "Can't locate Tk.pm in @INC", "reason": "net-snmp's Perl/Tk MIB browser: needs Perl Tk, which Photon OS does not ship"},
+      {"pattern": "checkbandwidth", "marker": "Can't locate Mail/Sender.pm in @INC", "reason": "net-snmp's bandwidth check reports by mail through Mail::Sender, which Photon OS does not ship"},
+      {"pattern": "audit2allow", "marker": "audit2allow .1", "reason": "its --version prints the literal string upstream's script carries (VERSION = \"%prog .1\" in selinux-python)"},
+      {"pattern": "audit2why", "marker": "audit2why .1", "reason": "audit2allow under the name audit2why; its --version prints upstream's literal \"%prog .1\""},
+      {"pattern": "sepolgen-ifgen", "marker": "sepolgen-ifgen .1", "reason": "its --version prints the literal string upstream's script carries (\"%prog .1\")"},
+      {"pattern": "sepolgen-ifgen-attr-helper", "marker": "libsepol.policydb_index_others:", "reason": "helper of sepolgen-ifgen: loads the policy file named as operand and prints libsepol's index statistics"},
+      {"pattern": "pyi-grab_version", "marker": "No module named 'pefile'", "reason": "PyInstaller's tool to read version resources from Windows executables: needs pefile, which Photon OS does not ship; building Linux executables does not"},
+      {"pattern": "fullcircle", "marker": "readelf: command not found", "reason": "pahole developer test script: recompiles a C file from pahole's output with gcc and compares it with readelf; only meaningful with a toolchain"},
+      {"pattern": "nss-config", "marker": "pkg-config: command not found", "reason": "NSS build configuration helper: asks pkg-config for the nss build flags, which only a build environment has"}
     ]
   },
   "units": {

@@ -128,7 +128,10 @@ pub fn sandboxed(unit: &str, secs: u64, exe: &str, args: &[&str]) -> Result<Stri
     v.push("--");
     v.push(exe);
     v.extend_from_slice(args);
-    Ok(format!("{} </dev/null", argv(&v)?))
+    // stdin at end-of-file through an empty pipe, as in a pipeline - not
+    // /dev/null, which epoll refuses (EPERM): OpenIPMI's ipmish asserts on
+    // that, while a closed pipe is the ordinary non-interactive stdin.
+    Ok(format!(": | {}", argv(&v)?))
 }
 
 /// How systemd says the probe unit ended.
@@ -1033,7 +1036,7 @@ mod tests {
     #[test]
     fn the_sandbox_line_is_an_argument_vector_with_every_measure() {
         let c = sandboxed("sharukhan-probe-1", 10, "/usr/bin/x", &["--version"]).unwrap();
-        assert!(c.starts_with("'systemd-run' '--wait' '--pipe' '--collect'"));
+        assert!(c.starts_with(": | 'systemd-run' '--wait' '--pipe' '--collect'"));
         assert!(
             !c.contains("--quiet"),
             "systemd-run's own lines carry the ending"
@@ -1044,7 +1047,8 @@ mod tests {
             assert!(c.contains(&format!("'-p' '{p}'")), "{p} missing");
         }
         assert!(!c.contains("LimitFSIZE"), "RLIMIT_FSIZE kills JIT runtimes");
-        assert!(c.ends_with("'--' '/usr/bin/x' '--version' </dev/null"));
+        assert!(c.starts_with(": | 'systemd-run'"), "{c}");
+        assert!(c.ends_with("'--' '/usr/bin/x' '--version'"));
         // a hostile path stays one argument
         let c = sandboxed("u", 1, "/usr/bin/a'; reboot; '", &["-V"]).unwrap();
         assert!(c.contains(r"'/usr/bin/a'\''; reboot; '\'''"));
