@@ -1636,14 +1636,36 @@ fn build_variant(
         clone,
         &["worktree", "remove", "--force", &tmp.to_string_lossy()],
     );
-    if applies {
-        log(&format!(
-            "  poi-{}: applies to pristine {}",
-            v.name, cfg.release
-        ));
-        Ok(())
-    } else {
-        Err(format!("DOES NOT APPLY to pristine {}", cfg.release))
+    if !applies {
+        return Err(format!("DOES NOT APPLY to pristine {}", cfg.release));
+    }
+    log(&format!(
+        "  poi-{}: applies to pristine {}",
+        v.name, cfg.release
+    ));
+
+    // The package builder must be able to parse the variant's tree: gate 49
+    // lost every ISO to a branch adding `Requires: /usr/bin/tar`, which rpm
+    // accepts and the builder's SpecData cannot resolve. The clone's working
+    // tree is the variant now; parse it with the builder's own code.
+    let inputs = crate::specdata::Inputs::from_build_root(
+        &cfg.build_root,
+        &cfg.build_common,
+        &cfg.release,
+    );
+    match crate::specdata::check(
+        &inputs,
+        &clone.join("SPECS"),
+        &cfg.work.join(format!("specdata-{}", v.name)),
+    ) {
+        Ok(n) => {
+            log(&format!(
+                "  poi-{}: the package builder parses all {n} specs and resolves every requirement",
+                v.name
+            ));
+            Ok(())
+        }
+        Err(e) => Err(format!("the package builder refuses the variant's specs: {e}")),
     }
 }
 

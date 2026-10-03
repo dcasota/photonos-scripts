@@ -39,6 +39,7 @@ mod runner;
 mod serial;
 mod sha512;
 mod sha256;
+mod specdata;
 mod specresolve;
 mod verify;
 mod vm;
@@ -1846,6 +1847,56 @@ fn cmd_branch_check(args: &Args) -> Result<(), String> {
         }
     }
 
+    // The package builder must parse the branch's tree. Gate 49 lost every
+    // ISO to `Requires: /usr/bin/tar`, which the builder's SpecData cannot
+    // resolve (no spec declares that path in Provides:). The branch is
+    // checked out into a temporary worktree and parsed with the builder's
+    // own code from the configured build root.
+    {
+        let cfg = config::Config::load();
+        let inputs =
+            specdata::Inputs::from_build_root(&cfg.build_root, &cfg.build_common, &cfg.release);
+        if let Some(m) = inputs.missing() {
+            bad += 1;
+            println!("  [FAIL ] package builder parse: cannot run it ({m})");
+        } else {
+            let wt = std::env::temp_dir().join(format!(
+                "shk-branch-check-{}",
+                std::process::id()
+            ));
+            let _ = std::fs::remove_dir_all(&wt);
+            let added = std::process::Command::new("git")
+                .arg("-C")
+                .arg(dir)
+                .args(["worktree", "add", "--detach", "-q"])
+                .arg(&wt)
+                .arg(branch)
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+            if !added {
+                bad += 1;
+                println!("  [FAIL ] package builder parse: could not check out {branch}");
+            } else {
+                match specdata::check(&inputs, &wt.join("SPECS"), &wt.join(".specdata-logs")) {
+                    Ok(n) => println!(
+                        "  [ok   ] the package builder parses all {n} specs of {branch} and resolves every requirement"
+                    ),
+                    Err(e) => {
+                        bad += 1;
+                        println!("  [FAIL ] the package builder refuses {branch}: {e}");
+                    }
+                }
+                let _ = std::process::Command::new("git")
+                    .arg("-C")
+                    .arg(dir)
+                    .args(["worktree", "remove", "--force"])
+                    .arg(&wt)
+                    .status();
+            }
+        }
+    }
+
     let te = branchguard::executable_paths(dir, target)?;
     let be = branchguard::executable_paths(dir, branch)?;
     println!(
@@ -1855,7 +1906,7 @@ fn cmd_branch_check(args: &Args) -> Result<(), String> {
     );
 
     if bad > 0 {
-        return Err(format!("{bad} changelog problem(s); see above"));
+        return Err(format!("{bad} problem(s); see above"));
     }
     println!("\nthe branch numbers cleanly against {target}");
     Ok(())
