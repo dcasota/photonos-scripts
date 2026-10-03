@@ -197,15 +197,34 @@ fn create_disk(cfg: &Config, dir_win: &str, name: &str) -> Result<(), String> {
         .output()
         .map_err(|e| format!("running vmware-vdiskmanager: {e}"))?;
     if !out.status.success() {
+        // stdout carries vdiskmanager's own messages; stderr carries what
+        // happened before it ran - a WSL interop failure ("UtilAcceptVsock:
+        // accept4 failed 110") leaves stdout empty and is only visible there.
         return Err(format!(
             "vmware-vdiskmanager failed for {name} (rc={}): {}",
             out.status.code().unwrap_or(-1),
-            String::from_utf8_lossy(&out.stdout)
-                .trim_end_matches(['\r', '\n'])
-                .trim()
+            tool_output(&out.stdout, &out.stderr)
         ));
     }
     Ok(())
+}
+
+/// What a Windows tool said, stdout first, then stderr, each trimmed; the
+/// two joined with " | " when both have text.
+pub fn tool_output(stdout: &[u8], stderr: &[u8]) -> String {
+    let clean = |b: &[u8]| {
+        String::from_utf8_lossy(b)
+            .replace('\r', "")
+            .trim()
+            .to_string()
+    };
+    let (o, e) = (clean(stdout), clean(stderr));
+    match (o.is_empty(), e.is_empty()) {
+        (false, false) => format!("{o} | {e}"),
+        (false, true) => o,
+        (true, false) => e,
+        (true, true) => "(no output on stdout or stderr)".into(),
+    }
 }
 
 /// Stash the CONTENTS, never the directory itself.
@@ -431,6 +450,19 @@ pub fn teardown(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_windows_tools_stderr_is_reported_when_stdout_is_empty() {
+        let e = b"<3>WSL (27640 - ) ERROR: UtilAcceptVsock:273: accept4 failed 110\r\n";
+        assert_eq!(
+            tool_output(b"", e),
+            "<3>WSL (27640 - ) ERROR: UtilAcceptVsock:273: accept4 failed 110"
+        );
+        assert_eq!(tool_output(b"Virtual disk creation failed.\r\n", b""), "Virtual disk creation failed.");
+        assert_eq!(tool_output(b"a\r\n", b"b\n"), "a | b");
+        assert_eq!(tool_output(b"", b""), "(no output on stdout or stderr)");
+    }
+
     use super::*;
 
     #[test]
