@@ -1878,9 +1878,23 @@ fn cmd_branch_check(args: &Args) -> Result<(), String> {
                 bad += 1;
                 println!("  [FAIL ] package builder parse: could not check out {branch}");
             } else {
-                match specdata::check(&inputs, &wt.join("SPECS"), &wt.join(".specdata-logs")) {
+                let changed: Vec<std::path::PathBuf> =
+                    branchguard::changed_spec_files(dir, &base, branch)?
+                        .iter()
+                        .map(|f| wt.join(f))
+                        .collect();
+                match specdata::check(
+                    &inputs,
+                    &wt.join("SPECS"),
+                    &changed,
+                    &std::env::temp_dir().join(format!(
+                        "shk-branch-check-logs-{}",
+                        std::process::id()
+                    )),
+                ) {
                     Ok(n) => println!(
-                        "  [ok   ] the package builder parses all {n} specs of {branch} and resolves every requirement"
+                        "  [ok   ] the package builder parses all {n} specs of {branch} and resolves every requirement; the spec checker accepts its {} changed spec(s)",
+                        changed.len()
                     ),
                     Err(e) => {
                         bad += 1;

@@ -1653,15 +1653,28 @@ fn build_variant(
         &cfg.build_common,
         &cfg.release,
     );
+    // ... and the spec checker must accept every spec the variant changes,
+    // as build.py's check_spec_files demands before each build (gate 50 lost
+    // its ISOs to a license key the checker does not know).
+    let changed: Vec<PathBuf> = git(
+        clone,
+        &["diff", "--name-only", "origin/5.0", &branch, "--", "SPECS/"],
+    )?
+    .lines()
+    .filter(|l| l.ends_with(".spec"))
+    .map(|l| clone.join(l))
+    .collect();
     match crate::specdata::check(
         &inputs,
         &clone.join("SPECS"),
+        &changed,
         &cfg.work.join(format!("specdata-{}", v.name)),
     ) {
         Ok(n) => {
             log(&format!(
-                "  poi-{}: the package builder parses all {n} specs and resolves every requirement",
-                v.name
+                "  poi-{}: the package builder parses all {n} specs and resolves every requirement; the spec checker accepts the {} changed spec(s)",
+                v.name,
+                changed.len()
             ));
             Ok(())
         }

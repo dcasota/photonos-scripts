@@ -21,7 +21,7 @@ use std::process::Command;
 /// The driver, run with the package builder's directory on `sys.path`.
 const DRIVER: &str = r#"
 import json, os, sys
-pb, common_specs, release_specs, cfg, logdir = sys.argv[1:6]
+pb, common_specs, release_specs, cfg, logdir, changed = sys.argv[1:7]
 sys.path.insert(0, pb)
 from constants import constants
 c = json.load(open(cfg))
@@ -39,6 +39,15 @@ constants.initialize()
 from SpecData import SPECS
 d = SPECS.getData()
 print("SPECDATA-OK %d" % len(d.mapSpecFileNameToSpecObj))
+# build.py's CheckTools.check_spec_files: check_specs over the changed specs
+files = [l.strip() for l in open(changed) if l.strip()]
+if files:
+    sys.path.insert(0, os.path.join(os.path.dirname(pb), "spec-checker"))
+    from check_spec import check_specs
+    if check_specs(files, p["photon-subrelease"], p.get("photon-mainline")):
+        print("SPECCHECK-FAILED")
+        sys.exit(3)
+print("SPECCHECK-OK %d" % len(files))
 "#;
 
 /// Where the pieces of a build root are.
@@ -76,15 +85,29 @@ impl Inputs {
     }
 }
 
-/// Parse `release_specs` with the package builder's SpecData. Ok with the
-/// number of specs parsed; Err with the builder's own error line.
-pub fn check(inputs: &Inputs, release_specs: &Path, log_dir: &Path) -> Result<usize, String> {
+/// Parse `release_specs` with the package builder's SpecData, then run the
+/// spec checker over `changed` (absolute spec paths) exactly as build.py's
+/// check_spec_files does before every build. Ok with the number of specs
+/// parsed; Err with the builder's or the checker's own words.
+pub fn check(
+    inputs: &Inputs,
+    release_specs: &Path,
+    changed: &[PathBuf],
+    log_dir: &Path,
+) -> Result<usize, String> {
     if let Some(m) = inputs.missing() {
         return Err(format!("cannot run the package builder's spec parser: {m}"));
     }
     if !release_specs.is_dir() {
         return Err(format!("{} is not a directory", release_specs.display()));
     }
+    std::fs::create_dir_all(log_dir).map_err(|e| format!("{}: {e}", log_dir.display()))?;
+    let list = log_dir.join("changed-specs.txt");
+    let text: String = changed
+        .iter()
+        .map(|p| format!("{}\n", p.display()))
+        .collect();
+    std::fs::write(&list, text).map_err(|e| format!("{}: {e}", list.display()))?;
     let out = Command::new("python3")
         .arg("-c")
         .arg(DRIVER)
@@ -93,13 +116,17 @@ pub fn check(inputs: &Inputs, release_specs: &Path, log_dir: &Path) -> Result<us
         .arg(release_specs)
         .arg(&inputs.build_config)
         .arg(log_dir)
+        .arg(&list)
         // SpecData resolves some paths relative to its own directory
         .current_dir(&inputs.package_builder)
         .output()
         .map_err(|e| format!("running python3: {e}"))?;
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
-    if out.status.success() {
+    if stdout.contains("SPECCHECK-FAILED") {
+        return Err(checker_errors(&format!("{stdout}\n{stderr}")));
+    }
+    if out.status.success() && stdout.contains("SPECCHECK-OK") {
         if let Some(n) = stdout
             .lines()
             .find_map(|l| l.strip_prefix("SPECDATA-OK "))
@@ -109,6 +136,20 @@ pub fn check(inputs: &Inputs, release_specs: &Path, log_dir: &Path) -> Result<us
         }
     }
     Err(builder_error(&stdout, &stderr))
+}
+
+/// The spec checker's own error lines ("ERROR in <spec>: ...").
+pub fn checker_errors(stdout: &str) -> String {
+    let errs: Vec<&str> = stdout
+        .lines()
+        .map(str::trim)
+        .filter(|l| l.starts_with("ERROR in ") || l.starts_with("--- List of errors"))
+        .collect();
+    if errs.is_empty() {
+        "the spec checker failed (build.py's check_spec_files would stop the build)".into()
+    } else {
+        format!("the spec checker refuses it: {}", errs.join(" | "))
+    }
 }
 
 /// The line that says what went wrong: the exception message at the end of
@@ -147,7 +188,7 @@ mod tests {
         let t = std::env::temp_dir().join(format!("shk-specdata-{}", std::process::id()));
         let _ = std::fs::create_dir_all(t.join("SPECS"));
         let i = Inputs::from_build_root(&t, "common", "5.0");
-        let r = check(&i, &t.join("SPECS"), &t.join("logs"));
+        let r = check(&i, &t.join("SPECS"), &[], &t.join("logs"));
         assert!(r.unwrap_err().contains("cannot run the package builder's spec parser"));
         let _ = std::fs::remove_dir_all(&t);
     }
@@ -187,18 +228,37 @@ mod tests {
         };
         let logs = t.join("logs");
         std::fs::write(specs.join("zz-probe.spec"), spec("Requires: (tar or toybox)")).unwrap();
-        let ok = check(&i, &t.join("SPECS"), &logs);
+        let ok = check(&i, &t.join("SPECS"), &[], &logs);
         assert!(ok.is_ok(), "{ok:?}");
         std::fs::write(
             specs.join("zz-probe.spec"),
             spec("Requires: /usr/bin/zz-no-such-file"),
         )
         .unwrap();
-        let bad = check(&i, &t.join("SPECS"), &logs).unwrap_err();
+        let bad = check(&i, &t.join("SPECS"), &[], &logs).unwrap_err();
         assert!(
             bad.contains("What package provides /usr/bin/zz-no-such-file"),
             "{bad}"
         );
+        // the checker: a real 5.0 spec passes it; one whose license the
+        // checker cannot validate stops the build exactly as build.py would
+        std::fs::write(specs.join("zz-probe.spec"), spec("Requires: bash")).unwrap();
+        let bash = t.join("SPECS/bash/bash.spec");
+        let ok = check(&i, &t.join("SPECS"), &[bash], &logs);
+        assert!(ok.is_ok(), "{ok:?}");
+        let lic = t.join("SPECS/bash/license.txt");
+        let text = std::fs::read_to_string(&lic).unwrap_or_default();
+        let bad_lic = if text.contains("License:") {
+            std::fs::write(&lic, "License: ZZ-Not-A-License-Key\n").unwrap();
+            true
+        } else {
+            false
+        };
+        if bad_lic {
+            let bad = check(&i, &t.join("SPECS"), &[t.join("SPECS/bash/bash.spec")], &logs)
+                .unwrap_err();
+            assert!(bad.contains("ZZ-Not-A-License-Key"), "{bad}");
+        }
         let _ = std::fs::remove_dir_all(&t);
     }
 }
