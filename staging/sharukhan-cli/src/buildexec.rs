@@ -1602,6 +1602,7 @@ pub fn purge(c: &mut Ctx) -> Result<(), String> {
     purge_toolchain_blockers(c, &stage);
     purge_mismatched_canister(c, &stage);
     purge_shadowing_rpms(c, &stage);
+    purge_rebuilt_content(c, &stage);
     let n = purge_corrupt_rpms(c, &stage);
     c.say(&format!("  corrupted RPMs removed: {n}"));
     clean_sandboxes(c, &stage);
@@ -2127,6 +2128,118 @@ fn purge_shadowing_rpms(c: &mut Ctx, stage: &Path) {
                 ));
             }
         }
+    }
+}
+
+/// The stage file that records, per patched NEVR, the content it was built
+/// from (see [`purge_rebuilt_content`]).
+pub const BUILT_FROM_LEDGER: &str = ".sharukhan-built-from.tsv";
+
+/// sha256 over every file below a spec directory (relative path and content),
+/// in a stable order: the spec, its included files, its patches and sources.
+pub fn spec_dir_hash(dir: &Path) -> Option<String> {
+    let mut files = crate::build::find_files_rec(dir, "", "");
+    if files.is_empty() {
+        return None;
+    }
+    files.sort();
+    let mut acc = String::new();
+    for f in &files {
+        let rel = f.strip_prefix(dir).ok()?.to_string_lossy().into_owned();
+        let h = crate::sha256::file(f).ok()?;
+        acc.push_str(&format!("{rel}\t{h}\n"));
+    }
+    Some(crate::sha256::bytes(acc.as_bytes()))
+}
+
+/// What the ledger text records: NEVR -> content hash.
+pub fn parse_ledger(text: &str) -> std::collections::BTreeMap<String, String> {
+    text.lines()
+        .filter_map(|l| l.split_once('\t'))
+        .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
+        .filter(|(k, v)| !k.is_empty() && !v.is_empty())
+        .collect()
+}
+
+/// The decision for one patched NEVR: remove its stage RPMs when the ledger
+/// says they were built from other content than the spec directory holds now.
+pub fn rebuilt_content_is_stale(recorded: Option<&str>, now: &str, rpms_exist: bool) -> bool {
+    rpms_exist && matches!(recorded, Some(r) if r != now)
+}
+
+/// Previously built RPMs whose NEVR is unchanged but whose spec content is not.
+///
+/// The package builder treats an RPM at the spec's NEVR as done. A fix
+/// branch amended after a gate built it (mariadb 11.8.8-2, gate 48, amended
+/// before gate 51) keeps its NEVR, so the old build would silently reach the
+/// ISO and the lifecycle run would judge code nobody changed. Neither
+/// `purge_shadowing_rpms` (higher versions only) nor a NEVR comparison can
+/// see it.
+///
+/// So the stage keeps a ledger: for every NEVR a patched spec declares, the
+/// hash of its spec directory after patching. When the hash differs from the
+/// recorded one and RPMs of that NEVR exist, they are removed and the build
+/// makes them again. A NEVR seen for the first time with RPMs present is
+/// recorded as built from the current content - the one assumption, made
+/// once, and said.
+fn purge_rebuilt_content(c: &mut Ctx, stage: &Path) {
+    let release_tree = c.spec.tree(Tree::Release);
+    let ledger_path = stage.join(BUILT_FROM_LEDGER);
+    let mut ledger = parse_ledger(&fs::read_to_string(&ledger_path).unwrap_or_default());
+    for spec in patched_specs(c) {
+        let Some(text) = resolved_spec(c, &release_tree, Path::new(&spec)) else {
+            continue;
+        };
+        let Some(fams) = spec_families_text(&text) else {
+            continue;
+        };
+        let rel = text
+            .lines()
+            .find(|l| l.starts_with("Release:"))
+            .and_then(|l| l.split_whitespace().nth(1))
+            .map(|v| v.split('%').next().unwrap_or("").to_string())
+            .unwrap_or_default();
+        if rel.is_empty() || !rel.chars().all(|x| x.is_ascii_digit()) {
+            continue;
+        }
+        let Some(dir) = Path::new(&spec).parent().map(|d| release_tree.join(d)) else {
+            continue;
+        };
+        let Some(now) = spec_dir_hash(&dir) else {
+            continue;
+        };
+        let key = format!("{}-{}-{}", fams.name, fams.version, rel);
+        let rpms: Vec<PathBuf> = crate::build::find_files_rec(&stage.join("RPMS"), &fams.name, ".rpm")
+            .into_iter()
+            .filter(|p| {
+                parse_rpm_name(&basename(p)).is_some_and(|(pkg, ver, got)| {
+                    fams.families.iter().any(|x| *x == pkg)
+                        && ver == fams.version
+                        && got.split(".ph").next() == Some(rel.as_str())
+                })
+            })
+            .collect();
+        let recorded = ledger.get(&key).cloned();
+        if rebuilt_content_is_stale(recorded.as_deref(), &now, !rpms.is_empty()) {
+            for p in &rpms {
+                if fs::remove_file(p).is_ok() {
+                    c.say(&format!(
+                        "  removed {}: built from other content of {} at the same NEVR",
+                        basename(p),
+                        spec
+                    ));
+                }
+            }
+        } else if recorded.is_none() && !rpms.is_empty() {
+            c.say(&format!(
+                "  {key}: RPMs present and no record of their content; recorded as built from the current {spec}"
+            ));
+        }
+        ledger.insert(key, now);
+    }
+    let text: String = ledger.iter().map(|(k, v)| format!("{k}\t{v}\n")).collect();
+    if let Err(e) = fs::write(&ledger_path, text) {
+        c.say(&format!("  could not write {}: {e}", ledger_path.display()));
     }
 }
 
@@ -2902,6 +3015,38 @@ pub fn execute(spec: &BuildSpec, dry: bool, log: &mut dyn FnMut(&str)) -> Result
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_same_nevr_rebuild_is_stale_only_when_the_recorded_content_differs() {
+        // recorded other content and RPMs present: rebuild
+        assert!(rebuilt_content_is_stale(Some("aaa"), "bbb", true));
+        // negative controls: same content, nothing built, or no record yet
+        assert!(!rebuilt_content_is_stale(Some("aaa"), "aaa", true));
+        assert!(!rebuilt_content_is_stale(Some("aaa"), "bbb", false));
+        assert!(!rebuilt_content_is_stale(None, "bbb", true));
+        let l = parse_ledger("mariadb-11.8.8-2\tabc\nbroken line\n\tx\nglibc-2.43-8\tdef\n");
+        assert_eq!(l.len(), 2);
+        assert_eq!(l.get("mariadb-11.8.8-2").map(String::as_str), Some("abc"));
+    }
+
+    #[test]
+    fn the_spec_dir_hash_follows_every_file_of_the_directory() {
+        let t = std::env::temp_dir().join(format!("shk-sdh-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&t);
+        fs::create_dir_all(t.join("sub")).unwrap();
+        fs::write(t.join("x.spec"), "Name: x\n").unwrap();
+        fs::write(t.join("sub/0001.patch"), "a\n").unwrap();
+        let h1 = spec_dir_hash(&t).unwrap();
+        assert_eq!(spec_dir_hash(&t).unwrap(), h1, "stable");
+        fs::write(t.join("sub/0001.patch"), "b\n").unwrap();
+        let h2 = spec_dir_hash(&t).unwrap();
+        assert_ne!(h1, h2, "a patch change is a content change");
+        fs::write(t.join("license.txt"), "License: MIT\n").unwrap();
+        assert_ne!(spec_dir_hash(&t).unwrap(), h2, "a new file is a content change");
+        let _ = fs::remove_dir_all(&t);
+        assert!(spec_dir_hash(&t).is_none());
+    }
+
     use super::*;
     use crate::buildmode::ImgType;
 
