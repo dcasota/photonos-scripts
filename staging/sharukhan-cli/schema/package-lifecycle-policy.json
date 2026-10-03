@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "reviewed": "2026-10-02",
+  "reviewed": "2026-10-03",
   "about": "Safety and override policy for `sharukhan verify|run --package-lifecycle` (ADR-0008, FRD-002). Every entry carries the reason it exists. Criteria that can be derived from the guest (unit ordering, conflicts, the unit that owns the ssh listener, files under /boot) are derived in code; this file holds only what cannot be derived, and is embedded into the binary so a result names the exact policy that produced it (its sha256 is recorded with every run).",
   "limits": {
     "query_secs": 120,
@@ -46,6 +46,7 @@
       { "pattern": "shutdown", "reason": "power-state tool: an argument it misreads could halt the guest the run depends on" },
       { "pattern": "reboot", "reason": "power-state tool: reboots the guest" },
       { "pattern": "halt", "reason": "power-state tool: halts the guest" },
+      { "pattern": "mkpasswd", "reason": "expect's mkpasswd generates a password and sets it with passwd for the named or the calling user: any probe would try to change an account's password (measured: `mkpasswd -v` printed a generated password and ran /bin/passwd)" },
       { "pattern": "poweroff", "reason": "power-state tool: powers the guest off" },
       { "pattern": "init", "reason": "PID-1 control; `init <arg>` is a runlevel change request" },
       { "pattern": "telinit", "reason": "runlevel change request to PID 1" },
@@ -115,7 +116,7 @@
       {"pattern": "aseqdump", "marker": "Cannot open sequencer", "reason": "needs the ALSA sequencer /dev/snd/seq: the bench guest has no sound card and the probe sandbox no devices"},
       {"pattern": "alsa-info.sh", "marker": "tree: command not found", "reason": "a diagnostics collector: it calls optional tools such as tree when present and reads /proc/asound, which a guest without a sound card does not have; it reports what it can"},
       {"pattern": "runant.pl", "marker": "ANT_HOME *MUST* be set!", "reason": "legacy Perl launcher of Ant that requires ANT_HOME in the environment (the ant launcher of apache-ant sets it itself)"},
-      {"pattern": "runant.py", "marker": "Could not find or load main class org.apache.tools.ant.launch.Launcher", "reason": "legacy Python launcher of Ant: it builds the classpath from $ANT_HOME, which the caller must set; without it the JVM finds no Launcher class"},
+      {"pattern": "runant.py", "marker": "org.apache.tools.ant.launch.Launcher", "reason": "legacy Python launcher of Ant: it builds the classpath from $ANT_HOME, which the caller must set; without it the JVM finds no Launcher class"},
       {"pattern": "antRun", "marker": "exec: : not found", "reason": "Ant's internal helper, run by Ant as `antRun <dir> <command> <args>`; the probe's argument is taken as the directory and no command is left to exec"},
       {"pattern": "mvnDebug", "marker": "Listening for transport dt_socket", "reason": "starts Maven under a JDWP debug agent and waits for a debugger to attach before doing anything"},
       {"pattern": "mvnyjp", "marker": "Unable to autodetect the YJP library location", "reason": "starts Maven under the YourKit profiler, a proprietary agent Photon OS does not ship (YJPLIB)"},
@@ -328,7 +329,7 @@
       {"pattern": "xxd", "marker": "xxd 2026-06-16 by Juergen Weigert", "reason": "xxd versions itself by date: --version prints 2026-06-16"},
       {"pattern": "curve_keygen", "marker": "This tool generates a CurveZMQ keypair", "reason": "generates a CurveZMQ key pair for any argument"},
       {"pattern": "zstdless", "marker": "less 654", "reason": "zstd's less wrapper: passes options to less, so --version prints less's version"},
-      {"pattern": "jemalloc.sh", "marker": "exec: --: invalid option", "reason": "runs the command given as operands with jemalloc preloaded; the probe arguments are taken as the command"},
+      {"pattern": "jemalloc.sh", "marker": "/usr/bin/jemalloc.sh: line 9: exec: ", "reason": "runs the command given as operands with jemalloc preloaded; the probe arguments are taken as the command"},
       {"pattern": "env_parallel.*", "marker": "is not installed (`#!/usr/bin/env", "reason": "GNU parallel's env_parallel for one particular shell: sourced from that shell (ash, csh, dash, fish, ksh, mksh, pdksh, tcsh, zsh), so it is only usable where that shell is installed; GNU parallel ships one per shell"},
       {"pattern": "ib_*", "marker": "Version: 6.10", "reason": "perftest prints its version and exits 1 when no RDMA device is present (measured: 'Version: 6.10', status 1); the bench has no RDMA hardware"},
       {"pattern": "raw_ethernet_*", "marker": "Version: 6.10", "reason": "perftest prints its version and exits 1 when no RDMA device is present (measured: 'Version: 6.10', status 1); the bench has no RDMA hardware"},
@@ -345,7 +346,6 @@
       {"pattern": "aa-notify", "marker": "No module named 'notify2'", "reason": "AppArmor desktop notifier: imports notify2 (D-Bus desktop notifications), which Photon OS does not ship"},
       {"pattern": "guile-snarf", "marker": "x86_64-unknown-linux-gnu-gcc: command not found", "reason": "build tool that runs the C preprocessor over C sources defining Guile primitives; only meaningful with a C toolchain"},
       {"pattern": "guile-snarf3.0", "marker": "x86_64-unknown-linux-gnu-gcc: command not found", "reason": "build tool that runs the C preprocessor over C sources defining Guile primitives; only meaningful with a C toolchain"},
-      {"pattern": "runant.py", "marker": "Could not find or load main class org.apache.tools.ant.launch.Launcher", "reason": "legacy Python launcher of Ant: it builds the classpath from $ANT_HOME, which the caller must set; without it the JVM finds no Launcher class"},
       {"pattern": "tkmib", "marker": "Can't locate Tk.pm in @INC", "reason": "net-snmp's Perl/Tk MIB browser: needs Perl Tk, which Photon OS does not ship"},
       {"pattern": "checkbandwidth", "marker": "Can't locate Mail/Sender.pm in @INC", "reason": "net-snmp's bandwidth check reports by mail through Mail::Sender, which Photon OS does not ship"},
       {"pattern": "audit2allow", "marker": "audit2allow .1", "reason": "its --version prints the literal string upstream's script carries (VERSION = \"%prog .1\" in selinux-python)"},
@@ -354,7 +354,8 @@
       {"pattern": "sepolgen-ifgen-attr-helper", "marker": "libsepol.policydb_index_others:", "reason": "helper of sepolgen-ifgen: loads the policy file named as operand and prints libsepol's index statistics"},
       {"pattern": "pyi-grab_version", "marker": "No module named 'pefile'", "reason": "PyInstaller's tool to read version resources from Windows executables: needs pefile, which Photon OS does not ship; building Linux executables does not"},
       {"pattern": "fullcircle", "marker": "readelf: command not found", "reason": "pahole developer test script: recompiles a C file from pahole's output with gcc and compares it with readelf; only meaningful with a toolchain"},
-      {"pattern": "nss-config", "marker": "pkg-config: command not found", "reason": "NSS build configuration helper: asks pkg-config for the nss build flags, which only a build environment has"}
+      {"pattern": "nss-config", "marker": "pkg-config: command not found", "reason": "NSS build configuration helper: asks pkg-config for the nss build flags, which only a build environment has"},
+      {"pattern": "qemu-edid", "marker": "This is a test tool for the qemu edid generator", "reason": "test tool of the qemu EDID generator: it ignores operands and writes a binary EDID blob to stdout; its usage text on a rejected option names it, and it has no version option"}
     ]
   },
   "units": {
@@ -397,7 +398,48 @@
       { "pattern": "nftables.service", "reason": "firewall (also derived: Before=network-pre.target)" },
       { "pattern": "firewalld.service", "reason": "zone firewall: loads rules that can refuse new ssh connections" }
     ],
-    "requires_config": [],
-    "expected_errors": []
+    "requires_config": [
+      { "pattern": "keepalived.service", "reason": "needs /etc/keepalived/keepalived.conf, which the operator writes; without it keepalived exits 6 (NOTCONFIGURED): \"Config files missing '/etc/keepalived/keepalived.conf'\"" },
+      { "pattern": "mdmonitor.service", "reason": "mdadm --monitor needs MAILADDR or PROGRAM in /etc/mdadm.conf (the packaged file is upstream's example): \"No mail address or alert command - not monitoring.\"" },
+      { "pattern": "mdmonitor-oneshot.service", "reason": "mdadm --monitor --oneshot needs MAILADDR or PROGRAM in /etc/mdadm.conf: \"No mail address or alert command - not monitoring.\"" },
+      { "pattern": "netconsole.service", "reason": "needs the log server in /etc/sysconfig/netconsole; exits 6 (NOTCONFIGURED): \"Server address not specified in /etc/sysconfig/netconsole\"" },
+      { "pattern": "postgresql1?.service", "reason": "the operator creates the cluster (initdb) before the first start: \"could not access the server configuration file /var/lib/pgsql/postgresqlNN/postgresql.conf\"" },
+      { "pattern": "flanneld.service", "reason": "needs its network configuration in etcd (/vmware/network); without an etcd it waits until the start times out" },
+      { "pattern": "sssd.service", "reason": "the packaged sssd.conf is a template for the AD domain ad.example.com: sssd needs a real domain and /etc/krb5.keytab (\"Key table file '/etc/krb5.keytab' not found\")" },
+      { "pattern": "kubelet.service", "reason": "needs /var/lib/kubelet/config.yaml, written by kubeadm when the node joins a cluster: \"failed to load kubelet config file\"" },
+      { "pattern": "kube-apiserver.service", "reason": "needs an etcd and the cluster's certificates and flags; without them it exits and is restarted" },
+      { "pattern": "kube-controller-manager.service", "reason": "needs the kubeconfig of a cluster: \"invalid configuration: no configuration has been provided\"" },
+      { "pattern": "kube-scheduler.service", "reason": "needs the kubeconfig of a cluster: \"invalid configuration: no configuration has been provided\"" },
+      { "pattern": "kube-proxy.service", "reason": "needs the kubeconfig of a cluster: \"unable to load in-cluster configuration, KUBERNETES_SERVICE_HOST and KUBERNETES_SERVICE_PORT must be defined\"" },
+      { "pattern": "systemd-journal-remote.service", "reason": "serves HTTPS with a key and certificate the operator provides: \"Failed to read key from file '/etc/ssl/private/journal-remote.pem'\"" },
+      { "pattern": "systemd-journal-upload.service", "reason": "needs the URL of a journal-remote server in journal-upload.conf: \"Required --url=/-u option missing.\"" },
+      { "pattern": "telegraf.service", "reason": "the packaged telegraf.conf defines inputs only; telegraf refuses to run until the operator configures an output: \"no outputs found, probably invalid config file provided\"" },
+      { "pattern": "wavefront-proxy.service", "reason": "the packaged wavefront.conf carries the placeholder server=SERVER_URL_HERE and no token; the proxy exits 1 until the operator sets both" },
+      { "pattern": "ts2phc.service", "reason": "needs the PPS sink interface of the machine in /etc/ts2phc.conf (the packaged file names eth6): \"unknown clock eth6: No such device\"" }
+    ],
+    "expected_errors": [
+      { "pattern": "atftpd*", "marker": "SIGTERM received, stopping threads and exiting", "reason": "atftpd logs its ordinary SIGTERM shutdown at LOG_ERR" },
+      { "pattern": "atftpd*", "marker": "select: Interrupted system call", "reason": "atftpd logs the select() its SIGTERM shutdown interrupts at LOG_ERR" },
+      { "pattern": "sendmail*", "marker": "unable to qualify my own domain name", "reason": "the bench guests have a bare host name and no DNS domain; sendmail needs a fully qualified name" },
+      { "pattern": "sendmail*", "marker": "My unqualified host name (", "reason": "the bench guests have a bare host name and no DNS domain; sendmail needs a fully qualified name" },
+      { "pattern": "gce-nic-naming*", "marker": "No network devices found", "reason": "Google's NIC naming helper finds no GCE network device on a VMware guest" },
+      { "pattern": "oslogin_cache_refresh*", "marker": "Failure getting users, quitting", "reason": "OS Login needs the GCE metadata server, which a VMware guest has not" },
+      { "pattern": "oslogin_cache_refresh*", "marker": "Failure getting groups, quitting", "reason": "OS Login needs the GCE metadata server, which a VMware guest has not" },
+      { "pattern": "oslogin_cache_refresh*", "marker": "Failed to get users, not updating passwd cache file", "reason": "OS Login needs the GCE metadata server, which a VMware guest has not" },
+      { "pattern": "oslogin_cache_refresh*", "marker": "Failed to get groups, not updating group cache file", "reason": "OS Login needs the GCE metadata server, which a VMware guest has not" },
+      { "pattern": "rpm", "marker": "Kernel FIPS must be enabled in order to use Jitterentropy", "reason": "the FIPS provider's jitterentropy source needs a kernel booted with fips=1; the bench rows boot without it" },
+      { "pattern": "rpm", "marker": "JENTROPY-ERROR: OSSL_provider_init()", "reason": "the FIPS provider's jitterentropy source needs a kernel booted with fips=1; the bench rows boot without it" },
+      { "pattern": "dev-tpm0.device", "marker": "Timed out waiting for device /dev/tpm0", "reason": "the bench guests have no TPM; tpm2-abrmd.service requires dev-tpm0.device" }
+    ],
+    "preconditions": [
+      { "pattern": "multipathd.service", "kernel_unset": "CONFIG_DM_MULTIPATH", "reason": "linux-esx is built without the device-mapper multipath target; multipathd exits (\"DM multipath kernel driver not loaded\")" },
+      { "pattern": "ipmi.service", "kernel_unset": "CONFIG_IPMI_HANDLER", "reason": "linux-esx is built without IPMI; openipmi-helper cannot load ipmi_msghandler and only says \"Startup failed.\"" },
+      { "pattern": "synce4l.service", "kernel_unset": "CONFIG_DPLL", "reason": "SyncE needs the kernel's DPLL netlink API, which Photon's kernels do not enable (\"could not join MONITOR group\")" },
+      { "pattern": "ptp4l.service", "marker": "does not support requested timestamping mode", "reason": "ptp4l needs hardware time stamping, which the bench's vmxnet3 NIC does not offer" },
+      { "pattern": "ndctl-monitor.service", "marker": "no dimms to monitor, exiting", "reason": "the bench guests have no NVDIMM" },
+      { "pattern": "tpm2-abrmd.service", "marker": "Dependency failed for TPM2 Access Broker and Resource Management Daemon", "reason": "the bench guests have no TPM; the unit requires dev-tpm0.device, which times out" },
+      { "pattern": "dnsmasq.service", "marker": "failed to create listening socket for port 53: Address already in use", "reason": "the bench guests run systemd-resolved's stub listener on port 53; dnsmasq's default configuration listens there too" },
+      { "pattern": "ibacm.service", "path_absent": "/sys/class/infiniband", "reason": "ibacm serves RDMA devices and the bench guests have none (/var/log/ibacm.log: \"acm_open_devices: ERROR - no devices\")" }
+    ]
   }
 }

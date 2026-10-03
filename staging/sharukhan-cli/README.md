@@ -713,7 +713,7 @@ the ISO's `/RPMS` file for file (`pkg.repo_is_media`). The media RPMs are unsign
 | daemon (unit files) | per unit: enable, bounded `systemctl start`, must stay up 5 s (same MainPID, no restart), stop, disable; the unit's journal between a cursor taken before enable and the end must hold no `err` or worse. Condition-skipped units are "skipped (condition)" with systemd's sentence. Templates, aliases and mount/target/swap-like units are not started, with the reason |
 | cli (`/usr/bin` `/usr/sbin` `/bin` `/sbin`) | the file first: a dangling link fails, a file only owner or group may run is skipped (mode named), a script whose `#!` interpreter is not installed fails without running. Then `--version`, `-V`, `-v`, `version`, `-version` until one exits 0 printing a version with a clean stderr - never a bare invocation, always inside a systemd sandbox (unprivileged `nobody` with a private tmpfs `/tmp` as `$HOME`, no network, no devices, read-only root, no capabilities, refused syscalls fail with EPERM, runtime limit). No version: a defect signature (loader, missing interpreter/module/class/command, sanitizer build, crash by signal) **fails**; a probe the tool accepted but answered without a version **fails**; the tool's own option parser, an echo of the probe as an operand, a refusal to run unprivileged or a silent exit 0 make it a **skip** ("no version query") with the line that shows it; a reviewed `cli.preconditions` entry (tool + its exact words) skips what the bench cannot provide |
 | library (`lib*.so.*`) | every ELF object a packaged library path resolves to (`readlink -f`: `/usr/lib64` is a link to `lib`) is the target of an `ldconfig -p` entry - no guess at soname spellings |
-| after removal | package set equals the baseline, packaged files gone (%config may stay, recorded), unit files unloaded, no process runs a removed file, no new failed unit, every enabled baseline unit active again |
+| after removal | package set equals the baseline, packaged files gone (%config may stay, recorded), unit files unloaded, no process runs a removed file, no new failed unit (one a `units.requires_config` entry declares is said with its reason, not failed), every enabled baseline unit active again. New entries below `/var/lib`, `/var/cache` and `/var/spool` that no installed package owns (a database the removal kept on purpose) are moved to `/var/tmp/sharukhan-residue/<package>/` and listed, so the next package starts from the baseline state: MySQL refuses MariaDB's leftover `/var/lib/mysql` |
 
 A transaction that would remove or replace an installed package is never run (skip, with the
 list). Boot-affecting packages (files under `/boot/`, `/lib/modules/`) are skipped with the reason.
@@ -756,7 +756,11 @@ reviewed `cli.version_query` (an alternative query that must still print a versi
 GNU `false --version` with its documented status 1) or `cli.preconditions` entry covers the rest.
 Units: a reviewed `units.expected_errors` entry (unit or identifier + exact words) explains an
 err line that is not the package's fault on this bench; the lines of a unit whose failure a
-`units.requires_config` entry declares are that skip's evidence, not a second failure. A probe's
+`units.requires_config` entry declares are that skip's evidence, not a second failure. A unit whose
+start failed is a skip only with a reviewed `units.preconditions` entry and its evidence: the exact
+words of its own journal, a kernel option the running kernel's own `/boot/config-$(uname -r)` leaves
+unset (`CONFIG_IPMI_HANDLER` on linux-esx), or a device path that does not exist
+(`/sys/class/infiniband`) - each with a negative control, and never for a unit that started. A probe's
 own crash or OOM kill is the CLI's verdict, so systemd-coredump and kernel OOM lines about the
 harness's units leave the journal window.
 

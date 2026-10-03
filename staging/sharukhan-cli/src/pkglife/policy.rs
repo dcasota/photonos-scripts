@@ -136,6 +136,57 @@ pub struct Units {
     /// Reviewed err-priority lines that are not a defect of the package on
     /// this bench: the unit or syslog identifier (glob) and the exact words.
     pub expected_errors: Vec<Precondition>,
+    /// Reviewed conditions of the bench a unit cannot start without (a
+    /// kernel built without the driver it drives). Applied only to a unit
+    /// whose start failed, and only with the evidence quoted.
+    #[serde(default)]
+    pub preconditions: Vec<UnitPrecondition>,
+}
+
+/// A bench condition a unit cannot start without, proven one of three ways:
+/// the exact words of the unit's own journal in the cycle's window, a kernel
+/// option the running kernel's own config (`/boot/config-$(uname -r)`) leaves
+/// unset, or a device path (`/sys/class/infiniband`) that does not exist.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UnitPrecondition {
+    pub pattern: String,
+    #[serde(default)]
+    pub marker: Option<String>,
+    #[serde(default)]
+    pub kernel_unset: Option<String>,
+    #[serde(default)]
+    pub path_absent: Option<String>,
+    pub reason: String,
+}
+
+/// A path a policy may name for a test on the guest: absolute, and plain
+/// characters only, so it is never more than a path to the shell.
+pub fn plain_path(p: &str) -> bool {
+    p.len() > 1
+        && p.starts_with('/')
+        && !p.contains("..")
+        && p.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '_' | '-' | '.'))
+}
+
+/// Whether a kernel config text leaves `sym` unset: "# SYM is not set", or
+/// no line for it at all. None when the text is no kernel config.
+pub fn kernel_unset(config: &str, sym: &str) -> Option<String> {
+    if !config.lines().any(|l| l.starts_with("CONFIG_")) {
+        return None;
+    }
+    let set = format!("{sym}=");
+    let unset = format!("# {sym} is not set");
+    for l in config.lines() {
+        if l.starts_with(&set) {
+            return None;
+        }
+        if l.trim() == unset {
+            return Some(unset);
+        }
+    }
+    Some(format!("{sym} is absent from the kernel config"))
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -442,6 +493,34 @@ impl Policy {
                 ));
             }
         }
+        let as_rules: Vec<Rule> = self
+            .units
+            .preconditions
+            .iter()
+            .map(|v| Rule {
+                pattern: v.pattern.clone(),
+                reason: v.reason.clone(),
+            })
+            .collect();
+        check_rules("units.preconditions", &as_rules)?;
+        for (i, c) in self.units.preconditions.iter().enumerate() {
+            match (&c.marker, &c.kernel_unset, &c.path_absent) {
+                (Some(m), None, None) if m.trim().len() >= 10 => {}
+                (None, None, Some(pa)) if plain_path(pa) => {}
+                (None, Some(k), None)
+                    if k.len() > 7
+                        && k.starts_with("CONFIG_")
+                        && k[7..]
+                            .chars()
+                            .all(|ch| ch.is_ascii_uppercase() || ch.is_ascii_digit() || ch == '_') => {}
+                _ => {
+                    return Err(format!(
+                        "units.preconditions[{i}] ({}): needs exactly one of marker (the quoted line, at least 10 characters), kernel_unset (a CONFIG_ symbol) or path_absent (an absolute plain path)",
+                        c.pattern
+                    ))
+                }
+            }
+        }
         if self.units.network_ordering.is_empty() {
             return Err(
                 "units.network_ordering is empty: firewalls would not be recognised".into(),
@@ -475,6 +554,15 @@ impl Policy {
             (glob(&c.pattern, unit) || glob(&c.pattern, identifier))
                 && message.contains(c.marker.as_str())
         })
+    }
+
+    /// The reviewed bench preconditions of a unit.
+    pub fn unit_preconditions(&self, unit: &str) -> Vec<&UnitPrecondition> {
+        self.units
+            .preconditions
+            .iter()
+            .filter(|c| glob(&c.pattern, unit))
+            .collect()
     }
 
     /// The reviewed preconditions for an executable's base name.

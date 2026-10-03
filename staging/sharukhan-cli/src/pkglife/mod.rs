@@ -448,6 +448,36 @@ const PROC_EXES: &str = "for p in /proc/[0-9]*; do e=$(readlink \"$p/exe\" 2>/de
 const EXISTING: &str = "while IFS= read -r f; do if [ -e \"$f\" ] || [ -L \"$f\" ]; then \
                         printf '%s\\n' \"$f\"; fi; done";
 
+/// Where daemons keep state that outlives their package on purpose (a
+/// database, a spool): the entries directly below these directories.
+pub const STATE_DIRS: [&str; 3] = ["/var/lib", "/var/cache", "/var/spool"];
+const STATE_ENTRIES: &str = "for d in /var/lib /var/cache /var/spool; do \
+                             for e in \"$d\"/* \"$d\"/.[!.]*; do \
+                             if [ -e \"$e\" ] || [ -L \"$e\" ]; then printf '%s\\n' \"$e\"; fi; \
+                             done; done; true";
+/// Of the paths on stdin, those no installed package owns.
+const UNOWNED: &str = "while IFS= read -r f; do rpm -qf -- \"$f\" >/dev/null 2>&1 || \
+                       printf '%s\\n' \"$f\"; done";
+/// Where state a removed package left is moved, per package.
+pub const RESIDUE_DIR: &str = "/var/tmp/sharukhan-residue";
+
+/// State entries that appeared while a package was tested: new below
+/// [`STATE_DIRS`], and not the harness's own.
+pub fn new_state(before: &BTreeSet<String>, after: &BTreeSet<String>) -> Vec<String> {
+    after
+        .iter()
+        .filter(|p| !before.contains(*p))
+        .filter(|p| STATE_DIRS.iter().any(|d| p.starts_with(&format!("{d}/"))))
+        .filter(|p| {
+            !p.rsplit('/')
+                .next()
+                .unwrap_or("")
+                .starts_with(HARNESS_PREFIX)
+        })
+        .cloned()
+        .collect()
+}
+
 pub enum Flow {
     Continue,
     /// The guest can no longer be proven to be at its baseline, or cannot be
@@ -966,7 +996,10 @@ impl Session<'_> {
                 let declared: BTreeSet<String> = rec
                     .units
                     .iter()
-                    .filter(|u| u.outcome == units::DECLARED_CONFIG)
+                    .filter(|u| {
+                        u.outcome == units::DECLARED_CONFIG
+                            || u.outcome == units::UNMET_PRECONDITION
+                    })
                     .map(|u| u.unit.clone())
                     .collect();
                 rec.journal_errors = window_errors(&entries, &oom, self.policy, &declared);
@@ -1131,6 +1164,14 @@ impl Session<'_> {
             Ok(c) => c,
             Err(e) => return Flow::Abort(format!("journal cursor unavailable: {e}")),
         };
+        // without the listing, nothing is moved afterwards
+        let state_before = match self.state_entries() {
+            Ok(b) => Some(b),
+            Err(e) => {
+                rec.steps.push(Step::new("state-isolation", INFO, e, 0));
+                None
+            }
+        };
         let t = Instant::now();
         let inst = self
             .tdnf(&["-y", "install", "--", &pkg.name])
@@ -1234,7 +1275,106 @@ impl Session<'_> {
         if let Flow::Abort(why) = self.remove(&names, &added, rec) {
             return Flow::Abort(why);
         }
-        self.residue(&unit_names, &files, &config, rec)
+        let flow = self.residue(&unit_names, &files, &config, rec);
+        if let Some(before) = &state_before {
+            self.isolate_state(before, &pkg.name, rec);
+        }
+        flow
+    }
+
+    /// The entries below [`STATE_DIRS`] right now.
+    fn state_entries(&mut self) -> Result<BTreeSet<String>, String> {
+        let e = self
+            .r
+            .exec(STATE_ENTRIES, None, self.policy.limits.query_secs);
+        if !e.ok() {
+            return Err(format!(
+                "listing {}: exit {:?}: {}",
+                STATE_DIRS.join(" "),
+                e.code,
+                clip(e.stderr.trim())
+            ));
+        }
+        Ok(e.stdout.lines().map(str::to_string).collect())
+    }
+
+    /// State the tested package's daemons created and the removal kept (a
+    /// database directory, by design) is moved aside, so the next package
+    /// starts from the baseline's state: MySQL started on the data directory
+    /// MariaDB had left in /var/lib/mysql refuses to run. Information, not a
+    /// verdict - keeping data across an erase is what a database must do.
+    fn isolate_state(&mut self, before: &BTreeSet<String>, pkg: &str, rec: &mut PkgRecord) {
+        let t = Instant::now();
+        let q = self.policy.limits.query_secs;
+        let after = match self.state_entries() {
+            Ok(a) => a,
+            Err(e) => {
+                rec.steps.push(Step::new("state-isolation", FAIL, e, ms(t)));
+                return;
+            }
+        };
+        let new = new_state(before, &after);
+        if new.is_empty() {
+            return;
+        }
+        let input = format!("{}\n", new.join("\n"));
+        let e = self.r.exec(UNOWNED, Some(input.as_bytes()), q);
+        let unowned: Vec<String> = e.stdout.lines().map(str::to_string).collect();
+        if unowned.is_empty() {
+            return;
+        }
+        if !remote::valid_package_name(pkg) {
+            rec.steps.push(Step::new(
+                "state-isolation",
+                FAIL,
+                format!("refusing to build a residue path from {pkg:?}"),
+                ms(t),
+            ));
+            return;
+        }
+        let dest = format!("{RESIDUE_DIR}/{pkg}");
+        let script = match sq(&dest) {
+            Ok(d) => format!(
+                "D={d}; while IFS= read -r f; do rel=${{f#/}}; dst=\"$D/${{rel%/*}}\"; \
+                 if mkdir -p -- \"$dst\" && mv -- \"$f\" \"$dst/\"; then printf 'moved %s\\n' \"$f\"; \
+                 else printf 'kept %s\\n' \"$f\"; fi; done"
+            ),
+            Err(e) => {
+                rec.steps.push(Step::new("state-isolation", FAIL, e, ms(t)));
+                return;
+            }
+        };
+        let input = format!("{}\n", unowned.join("\n"));
+        let m = self.r.exec(&script, Some(input.as_bytes()), q);
+        let moved: Vec<&str> = m.stdout.lines().filter_map(|l| l.strip_prefix("moved ")).collect();
+        let kept: Vec<&str> = m.stdout.lines().filter_map(|l| l.strip_prefix("kept ")).collect();
+        let status = if kept.is_empty() && moved.len() == unowned.len() {
+            INFO
+        } else {
+            FAIL
+        };
+        rec.steps.push(Step::new(
+            "state-isolation",
+            status,
+            clip(&format!(
+                "left after removal and owned by no package, moved to {dest} so the next package starts from the baseline state: {}{}",
+                moved.join(" "),
+                if status == FAIL {
+                    format!(
+                        "; NOT moved: {}",
+                        unowned
+                            .iter()
+                            .filter(|u| !moved.contains(&u.as_str()))
+                            .cloned()
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    )
+                } else {
+                    String::new()
+                }
+            )),
+            ms(t),
+        ));
     }
 
     /// Why a package cannot be installed next to the baseline by design, when
@@ -1726,10 +1866,40 @@ impl Session<'_> {
                         ms(t),
                     ));
                 } else {
+                    // A unit the policy declares to need the operator's
+                    // configuration fails wherever another package pulls it
+                    // in (sssd.service through sssd-dbus): said, not failed.
+                    // Every other unit stays a failure.
+                    let (declared, other): (Vec<&String>, Vec<&String>) = new
+                        .iter()
+                        .partition(|u| policy::first_match(&self.policy.units.requires_config, u).is_some());
+                    let said: Vec<String> = declared
+                        .iter()
+                        .map(|u| {
+                            let r = policy::first_match(&self.policy.units.requires_config, u)
+                                .map(|r| r.reason.clone())
+                                .unwrap_or_default();
+                            format!("{u} (requires configuration: {r})")
+                        })
+                        .collect();
+                    let detail = if other.is_empty() {
+                        format!("newly failed as declared: {}", said.join("; "))
+                    } else if said.is_empty() {
+                        format!(
+                            "newly failed: {}",
+                            other.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(" ")
+                        )
+                    } else {
+                        format!(
+                            "newly failed: {}; and as declared: {}",
+                            other.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(" "),
+                            said.join("; ")
+                        )
+                    };
                     rec.steps.push(Step::new(
                         "failed-units",
-                        FAIL,
-                        format!("newly failed: {}", new.join(" ")),
+                        if other.is_empty() { INFO } else { FAIL },
+                        clip(&detail),
                         ms(t),
                     ));
                     for u in &new {

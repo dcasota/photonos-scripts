@@ -40,7 +40,7 @@
 //! of priority err or worse.
 
 use crate::pkglife::parse::{self, JEntry};
-use crate::pkglife::policy::{first_match, Policy};
+use crate::pkglife::policy::{self, first_match, Policy};
 use crate::pkglife::record::{clip, Step, UnitResult, FAIL, INFO, PASS, SKIP};
 use crate::pkglife::remote::{argv, transport_lost, Remote};
 use std::collections::{BTreeMap, BTreeSet};
@@ -56,6 +56,13 @@ pub type Props = BTreeMap<String, String>;
 /// The outcome of a unit whose failure to start a reviewed
 /// `units.requires_config` entry declares.
 pub const DECLARED_CONFIG: &str = "needs configuration (declared)";
+
+/// The outcome of a unit that failed and whose own journal shows a reviewed
+/// `units.preconditions` entry unmet on this bench.
+pub const UNMET_PRECONDITION: &str = "bench precondition unmet (declared, quoted)";
+
+/// The running kernel's release, then its own config.
+const KERNEL_CONFIG: &str = "r=$(uname -r) && printf '%s\\n' \"$r\" && cat -- \"/boot/config-$r\"";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Plan {
@@ -775,8 +782,10 @@ pub fn cycle(ctx: &mut Ctx, unit: &str, deadman: bool) -> Cycled {
 
     // --- the journal of exactly this window ------------------------------
     let t = Instant::now();
+    let mut own: Vec<JEntry> = Vec::new();
     match journal_since(ctx.r, &cursor, Some(unit), false, lim.query_secs) {
         Ok(all) => {
+            own = all.clone();
             res.journal_errors = errors(&all, ctx.policy);
             if res.journal_errors.is_empty() {
                 step(
@@ -804,9 +813,96 @@ pub fn cycle(ctx: &mut Ctx, unit: &str, deadman: bool) -> Cycled {
         step(&mut res, "journal-at-start", INFO, e, Instant::now());
     }
 
+    // A reviewed bench precondition (a kernel without the driver the daemon
+    // drives) explains a unit whose start failed - only with its evidence:
+    // the reviewed words in the unit's own journal of this window, or the
+    // running kernel's own config leaving the reviewed option unset. A unit
+    // that started is judged as usual, whatever the bench lacks.
+    let start_failed = res
+        .steps
+        .iter()
+        .any(|s| s.name == "start" && s.status == FAIL);
+    if start_failed && res.outcome != DECLARED_CONFIG {
+        let cands = ctx.policy.unit_preconditions(unit);
+        let mut met: Option<(String, String)> = None;
+        for c in &cands {
+            if let Some(m) = &c.marker {
+                if let Some(e) = own.iter().find(|e| e.message.contains(m.as_str())) {
+                    met = Some((c.reason.clone(), format!("journal: \"{}\"", e.message.trim())));
+                    break;
+                }
+            }
+        }
+        if met.is_none() && cands.iter().any(|c| c.kernel_unset.is_some()) {
+            let k = ctx.r.exec(KERNEL_CONFIG, None, lim.query_secs);
+            if k.ok() {
+                let release = k.stdout.lines().next().unwrap_or("").to_string();
+                for c in &cands {
+                    if let Some(sym) = &c.kernel_unset {
+                        if let Some(ev) = policy::kernel_unset(&k.stdout, sym) {
+                            met = Some((c.reason.clone(), format!("running kernel {release}: {ev}")));
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        if met.is_none() {
+            for c in &cands {
+                let Some(pa) = &c.path_absent else { continue };
+                if !policy::plain_path(pa) {
+                    continue;
+                }
+                let e = ctx.r.exec(
+                    &format!("if [ -e {pa} ]; then echo present; else echo absent; fi"),
+                    None,
+                    lim.query_secs,
+                );
+                if e.ok() && e.stdout.trim() == "absent" {
+                    met = Some((c.reason.clone(), format!("{pa} does not exist")));
+                    break;
+                }
+            }
+        }
+        if let Some((reason, evidence)) = met {
+            for st in res.steps.iter_mut().filter(|s| s.status == FAIL) {
+                st.status = SKIP.into();
+                st.detail = clip(&format!(
+                    "failed on an unmet bench precondition ({reason}; {evidence}): {}",
+                    st.detail
+                ));
+            }
+            res.outcome = UNMET_PRECONDITION.into();
+        }
+    }
+
+    // A unit a reviewed requires_config entry declares may start and then
+    // fail without its configuration (phc2sys polls a PTP clock that is not
+    // there, a daemon exits non-zero when stopped half-configured): every
+    // failure of its cycle is the evidence of that declared skip. The
+    // failure is kept, word for word, in the step.
+    if let Some(r) = first_match(&ctx.policy.units.requires_config, unit) {
+        let mut any = false;
+        for st in res.steps.iter_mut().filter(|s| s.status == FAIL) {
+            st.status = SKIP.into();
+            st.detail = clip(&format!(
+                "failed as declared (requires configuration: {}): {}",
+                r.reason, st.detail
+            ));
+            any = true;
+        }
+        if any || res.outcome == DECLARED_CONFIG {
+            res.outcome = DECLARED_CONFIG.into();
+        }
+    }
+
+    // A skipped failure is not a pass: a unit whose failures were declared
+    // or shown unmet is a skip, whichever steps did pass.
+    let excused = res.outcome == DECLARED_CONFIG || res.outcome == UNMET_PRECONDITION;
     res.status = if res.steps.iter().any(|s| s.status == FAIL) {
         FAIL.into()
-    } else if res.steps.iter().any(|s| s.status == PASS)
+    } else if !excused
+        && res.steps.iter().any(|s| s.status == PASS)
         && !res
             .steps
             .iter()
@@ -1377,6 +1473,173 @@ mod tests {
         assert!(start.detail.contains("declared"));
         assert_eq!(c.res.status, SKIP);
         assert_eq!(c.res.outcome, "needs configuration (declared)");
+    }
+
+    #[test]
+    fn an_unmet_bench_precondition_skips_only_with_the_quoted_line() {
+        let mut p = pol();
+        p.limits.stability_secs = 0;
+        p.units.preconditions.push(crate::pkglife::policy::UnitPrecondition {
+            pattern: "mpd.service".into(),
+            marker: Some("DM multipath kernel driver not loaded".into()),
+            kernel_unset: None,
+            path_absent: None,
+            reason: "this kernel is built without the multipath target".into(),
+        });
+        let failed = || {
+            scripted(
+                "ActiveState=failed\nResult=exit-code\nExecMainCode=1\nExecMainStatus=1\n",
+                "ActiveState=failed\nMainPID=0\n",
+                false,
+            )
+        };
+        let run = |f: &mut Fake, journal: &str, unit: &str| {
+            f.rules.retain(|r| r.needle != "journalctl");
+            f.on("journalctl", fake::ok(journal));
+            let mut ctx = Ctx {
+                r: f,
+                policy: &p,
+                nonce: "n6",
+            };
+            cycle(&mut ctx, unit, false).res
+        };
+        let quoted = concat!(
+            r#"{"_SYSTEMD_UNIT":"mpd.service","PRIORITY":"2","MESSAGE":"DM multipath kernel driver not loaded"}"#,
+            "\n",
+            r#"{"UNIT":"mpd.service","PRIORITY":"3","MESSAGE":"Failed to start Multipath."}"#,
+            "\n"
+        );
+        // the reviewed words in the unit's own journal: a skip, quoting them
+        let mut f = failed();
+        let r = run(&mut f, quoted, "mpd.service");
+        assert_eq!(r.status, SKIP, "{:?}", r.steps);
+        assert_eq!(r.outcome, UNMET_PRECONDITION);
+        let start = r.steps.iter().find(|s| s.name == "start").unwrap();
+        assert!(
+            start.detail.contains("journal: \"DM multipath kernel driver not loaded\""),
+            "{}",
+            start.detail
+        );
+        assert!(!r.steps.iter().any(|s| s.status == FAIL));
+        // negative control: the same failure without the line stays a failure
+        let mut f = failed();
+        let r = run(
+            &mut f,
+            r#"{"UNIT":"mpd.service","PRIORITY":"3","MESSAGE":"Failed to start Multipath."}"#,
+            "mpd.service",
+        );
+        assert_eq!(r.status, FAIL);
+        assert_ne!(r.outcome, UNMET_PRECONDITION);
+        // ... and so does another unit logging the same words
+        let mut f = failed();
+        let r = run(&mut f, quoted, "other.service");
+        assert_eq!(r.status, FAIL);
+        // a short marker, two kinds at once, a non-CONFIG symbol or a path
+        // that is more than a path is refused
+        for bad in [
+            serde_json::json!([{"pattern": "x", "path_absent": "/sys/x; reboot", "reason": "a long enough reason"}]),
+            serde_json::json!([{"pattern": "x", "path_absent": "/sys/../etc", "reason": "a long enough reason"}]),
+            serde_json::json!([{"pattern": "x", "marker": "no driver", "reason": "a long enough reason"}]),
+            serde_json::json!([{"pattern": "x", "marker": "a long enough marker", "kernel_unset": "CONFIG_X", "reason": "a long enough reason"}]),
+            serde_json::json!([{"pattern": "x", "kernel_unset": "IPMI; rm -rf /", "reason": "a long enough reason"}]),
+        ] {
+            let mut v: serde_json::Value =
+                serde_json::from_str(crate::pkglife::policy::EMBEDDED).unwrap();
+            v["units"]["preconditions"] = bad;
+            assert!(Policy::parse(&v.to_string()).is_err());
+        }
+    }
+
+    #[test]
+    fn a_missing_device_path_excuses_a_failed_start_only_when_absent() {
+        let mut p = pol();
+        p.limits.stability_secs = 0;
+        p.units.preconditions.push(crate::pkglife::policy::UnitPrecondition {
+            pattern: "ibacm.service".into(),
+            marker: None,
+            kernel_unset: None,
+            path_absent: Some("/sys/class/infiniband".into()),
+            reason: "no RDMA device".into(),
+        });
+        let run = |answer: &str| {
+            let mut f = scripted(
+                "ActiveState=failed\nResult=exit-code\nExecMainCode=1\nExecMainStatus=255\n",
+                "ActiveState=failed\nMainPID=0\n",
+                false,
+            );
+            f.on("if [ -e /sys/class/infiniband ]", fake::ok(answer));
+            let mut ctx = Ctx {
+                r: &mut f,
+                policy: &p,
+                nonce: "n8",
+            };
+            cycle(&mut ctx, "ibacm.service", false).res
+        };
+        let r = run("absent\n");
+        assert_eq!(r.status, SKIP, "{:?}", r.steps);
+        assert!(r
+            .steps
+            .iter()
+            .any(|s| s.detail.contains("/sys/class/infiniband does not exist")));
+        // negative control: the device is there, so the failure is the unit's
+        let r = run("present\n");
+        assert_eq!(r.status, FAIL);
+    }
+
+    #[test]
+    fn a_kernel_without_the_driver_excuses_only_a_failed_start() {
+        let mut p = pol();
+        p.limits.stability_secs = 0;
+        p.units.preconditions.push(crate::pkglife::policy::UnitPrecondition {
+            pattern: "ipmi.service".into(),
+            marker: None,
+            kernel_unset: Some("CONFIG_IPMI_HANDLER".into()),
+            path_absent: None,
+            reason: "the kernel is built without IPMI".into(),
+        });
+        let unset = "6.12.1-esx\n# CONFIG_IPMI_HANDLER is not set\nCONFIG_X=y\n";
+        let set = "6.12.1\nCONFIG_IPMI_HANDLER=m\nCONFIG_X=y\n";
+        let run = |config: &str, start: &str, up: bool| {
+            let mut f = scripted(start, "ActiveState=failed\nMainPID=0\n", up);
+            f.rules.retain(|r| r.needle != "journalctl");
+            f.on("/boot/config-", fake::ok(config));
+            f.on(
+                "journalctl",
+                fake::ok(r#"{"UNIT":"ipmi.service","PRIORITY":"3","MESSAGE":"Failed to start IPMI Driver."}"#),
+            );
+            let mut ctx = Ctx {
+                r: &mut f,
+                policy: &p,
+                nonce: "n7",
+            };
+            cycle(&mut ctx, "ipmi.service", false).res
+        };
+        let failed = "ActiveState=failed\nResult=exit-code\nExecMainCode=1\nExecMainStatus=1\n";
+        let r = run(unset, failed, false);
+        assert_eq!(r.status, SKIP, "{:?}", r.steps);
+        assert_eq!(r.outcome, UNMET_PRECONDITION);
+        let start = r.steps.iter().find(|s| s.name == "start").unwrap();
+        assert!(
+            start.detail.contains("running kernel 6.12.1-esx: # CONFIG_IPMI_HANDLER is not set"),
+            "{}",
+            start.detail
+        );
+        // negative control: a kernel that has it leaves the failure a failure
+        let r = run(set, failed, false);
+        assert_eq!(r.status, FAIL);
+        // a unit that started is not excused by what the kernel lacks
+        let r = run(
+            unset,
+            "ActiveState=active\nSubState=running\nResult=success\nMainPID=5\nNRestarts=0\n",
+            true,
+        );
+        assert_ne!(r.outcome, UNMET_PRECONDITION);
+        // the parser: "is not set" and "absent" are unset, "=m" is set,
+        // and text that is no kernel config proves nothing
+        assert!(crate::pkglife::policy::kernel_unset(unset, "CONFIG_IPMI_HANDLER").is_some());
+        assert!(crate::pkglife::policy::kernel_unset(set, "CONFIG_IPMI_HANDLER").is_none());
+        assert!(crate::pkglife::policy::kernel_unset(set, "CONFIG_DPLL").is_some());
+        assert!(crate::pkglife::policy::kernel_unset("cat: no such file", "CONFIG_DPLL").is_none());
     }
 
     #[test]

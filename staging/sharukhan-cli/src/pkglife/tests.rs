@@ -75,6 +75,7 @@ fn healthy_tool() -> Fake {
         .on("'--assumeno' 'remove'", fake::ok(TOOL_REMOVE))
         .on("'-y' 'remove'", fake::ok(TOOL_REMOVE))
         .on("while IFS=", fake::ok(""))
+        .on("/var/spool", fake::ok("/var/lib/rpm\n"))
         .on("readlink", fake::ok("1 /usr/lib/systemd/systemd\n"))
         .on("'--failed'", fake::ok("[]"))
         .on("'--state=active'", fake::ok(ACTIVE));
@@ -969,6 +970,7 @@ fn whole_guest() -> Fake {
         .on("'--assumeno' 'remove'", fake::ok(TOOL_REMOVE))
         .on("'-y' 'remove'", fake::ok(TOOL_REMOVE))
         .on("while IFS=", fake::ok(""))
+        .on("/var/spool", fake::ok("/var/lib/rpm\n"))
         .on("readlink", fake::ok("1 /usr/lib/systemd/systemd\n"));
     f
 }
@@ -1487,4 +1489,113 @@ fn reviewed_expected_errors_and_declared_config_units_leave_the_window() {
     v["units"]["expected_errors"] =
         serde_json::json!([{"pattern": "x", "marker": "error", "reason": "a long enough reason"}]);
     assert!(Policy::parse(&v.to_string()).is_err());
+}
+
+#[test]
+fn state_a_removed_package_left_is_moved_aside_and_reported() {
+    let p = Policy::embedded().unwrap();
+    let mut f = Fake::new();
+    f.once("/var/spool", fake::ok("/var/lib/rpm\n/var/cache/tdnf\n"))
+        .once(
+            "/var/spool",
+            fake::ok("/var/lib/rpm\n/var/cache/tdnf\n/var/lib/tooldb\n/var/lib/sharukhan-x\n/var/lib/tool-owned\n"),
+        )
+        // rpm owns /var/lib/tool-owned (some installed package): it stays
+        .on(">/dev/null 2>&1 ||", fake::ok("/var/lib/tooldb\n"))
+        .on("sharukhan-residue", fake::ok("moved /var/lib/tooldb\n"));
+    f.rules.extend(healthy_tool().rules);
+    let mut s = session(&mut f, &p);
+    let mut r = rec("tool");
+    assert!(matches!(s.fresh(&pkg("tool"), &mut r), Flow::Continue));
+    let st = r.steps.iter().find(|s| s.name == "state-isolation").unwrap();
+    assert_eq!(st.status, INFO, "{}", st.detail);
+    assert!(st.detail.contains("/var/lib/tooldb"), "{}", st.detail);
+    assert!(st.detail.contains("/var/tmp/sharukhan-residue/tool"), "{}", st.detail);
+    assert!(!st.detail.contains("sharukhan-x"), "{}", st.detail);
+    assert_eq!(f.ran("sharukhan-residue"), 1);
+    r.settle();
+    assert_eq!(r.verdict, PASS, "{:?}", r.steps);
+}
+
+#[test]
+fn nothing_new_in_the_state_directories_moves_nothing() {
+    let p = Policy::embedded().unwrap();
+    let mut f = Fake::new();
+    f.on("/var/spool", fake::ok("/var/lib/rpm\n"));
+    f.rules.extend(healthy_tool().rules);
+    let mut s = session(&mut f, &p);
+    let mut r = rec("tool");
+    assert!(matches!(s.fresh(&pkg("tool"), &mut r), Flow::Continue));
+    assert!(!r.steps.iter().any(|s| s.name == "state-isolation"));
+    assert_eq!(f.ran(">/dev/null 2>&1 ||"), 0);
+    assert_eq!(f.ran("sharukhan-residue"), 0);
+}
+
+#[test]
+fn state_that_cannot_be_moved_aside_fails_the_isolation() {
+    let p = Policy::embedded().unwrap();
+    let mut f = Fake::new();
+    f.once("/var/spool", fake::ok("/var/lib/rpm\n"))
+        .once("/var/spool", fake::ok("/var/lib/rpm\n/var/lib/fusemnt\n"))
+        .on(">/dev/null 2>&1 ||", fake::ok("/var/lib/fusemnt\n"))
+        .on("sharukhan-residue", fake::ok("kept /var/lib/fusemnt\n"));
+    f.rules.extend(healthy_tool().rules);
+    let mut s = session(&mut f, &p);
+    let mut r = rec("tool");
+    s.fresh(&pkg("tool"), &mut r);
+    let st = r.steps.iter().find(|s| s.name == "state-isolation").unwrap();
+    assert_eq!(st.status, FAIL);
+    assert!(st.detail.contains("NOT moved: /var/lib/fusemnt"), "{}", st.detail);
+}
+
+#[test]
+fn new_state_keeps_only_new_non_harness_entries_of_the_state_dirs() {
+    let before: BTreeSet<String> = ["/var/lib/rpm".to_string()].into_iter().collect();
+    let after: BTreeSet<String> = [
+        "/var/lib/rpm",
+        "/var/lib/mysql",
+        "/var/spool/postfix",
+        "/var/lib/sharukhan-probe",
+        "/var/log/new",
+        "/var/library",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
+    assert_eq!(
+        new_state(&before, &after),
+        vec!["/var/lib/mysql".to_string(), "/var/spool/postfix".to_string()]
+    );
+}
+
+#[test]
+fn a_newly_failed_unit_is_said_only_when_the_policy_declares_its_config() {
+    let mut v: serde_json::Value = serde_json::from_str(policy::EMBEDDED).unwrap();
+    v["units"]["requires_config"] = serde_json::json!([
+        {"pattern": "needs-conf.service", "reason": "needs /etc/needs-conf.conf from the operator"}
+    ]);
+    let p = Policy::parse(&v.to_string()).unwrap();
+    let run = |failed: &str| {
+        let mut f = Fake::new();
+        f.on("'--failed'", fake::ok(failed))
+            .on("'reset-failed'", fake::ok(""));
+        f.rules.extend(healthy_tool().rules);
+        let mut s = session(&mut f, &p);
+        let mut r = rec("tool");
+        s.fresh(&pkg("tool"), &mut r);
+        r.steps
+            .iter()
+            .find(|s| s.name == "failed-units")
+            .cloned()
+            .unwrap()
+    };
+    let st = run(r#"[{"unit":"needs-conf.service"}]"#);
+    assert_eq!(st.status, INFO, "{}", st.detail);
+    assert!(st.detail.contains("needs /etc/needs-conf.conf"), "{}", st.detail);
+    // negative control: an undeclared unit fails, also next to a declared one
+    let st = run(r#"[{"unit":"other.service"}]"#);
+    assert_eq!(st.status, FAIL);
+    let st = run(r#"[{"unit":"needs-conf.service"},{"unit":"other.service"}]"#);
+    assert_eq!(st.status, FAIL);
+    assert!(st.detail.contains("other.service") && st.detail.contains("as declared"), "{}", st.detail);
 }
