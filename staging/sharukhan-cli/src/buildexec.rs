@@ -1603,6 +1603,7 @@ pub fn purge(c: &mut Ctx) -> Result<(), String> {
     purge_mismatched_canister(c, &stage);
     purge_shadowing_rpms(c, &stage);
     purge_rebuilt_content(c, &stage);
+    purge_leftover_isos(c, &stage);
     let n = purge_corrupt_rpms(c, &stage);
     c.say(&format!("  corrupted RPMs removed: {n}"));
     clean_sandboxes(c, &stage);
@@ -2131,6 +2132,36 @@ fn purge_shadowing_rpms(c: &mut Ctx, stage: &Path) {
     }
 }
 
+/// ISOs at the top of the stage. A build moves its ISO out when it delivers
+/// it, so one still there is the output of a build that was interrupted
+/// during delivery - and Photon's build.py refuses to build at all while it
+/// exists ("photon-5.0-<head>.x86_64.iso already exists ..."), which ended
+/// both full builds of gate 51 after three empty attempts.
+pub fn leftover_isos(stage: &Path) -> Vec<PathBuf> {
+    let Ok(rd) = fs::read_dir(stage) else {
+        return Vec::new();
+    };
+    let mut v: Vec<PathBuf> = rd
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.is_file() && p.extension().and_then(|x| x.to_str()) == Some("iso"))
+        .collect();
+    v.sort();
+    v
+}
+
+fn purge_leftover_isos(c: &mut Ctx, stage: &Path) {
+    for p in leftover_isos(stage) {
+        match fs::remove_file(&p) {
+            Ok(()) => c.say(&format!(
+                "  removed leftover {}: an interrupted delivery; build.py would refuse to build over it",
+                basename(&p)
+            )),
+            Err(e) => c.say(&format!("  could not remove leftover {}: {e}", p.display())),
+        }
+    }
+}
+
 /// The stage file that records, per patched NEVR, the content it was built
 /// from (see [`purge_rebuilt_content`]).
 pub const BUILT_FROM_LEDGER: &str = ".sharukhan-built-from.tsv";
@@ -2184,10 +2215,38 @@ pub fn rebuilt_content_is_stale(recorded: Option<&str>, now: &str, rpms_exist: b
 /// once, and said.
 fn purge_rebuilt_content(c: &mut Ctx, stage: &Path) {
     let release_tree = c.spec.tree(Tree::Release);
+    let specs = patched_specs(c);
+    let sub = build_subrelease(c, &release_tree);
+    let mut lines = Vec::new();
+    purge_rebuilt_content_at(&release_tree, stage, &specs, sub, &mut |l| lines.push(l.to_string()));
+    for l in lines {
+        c.say(&l);
+    }
+}
+
+/// [`purge_rebuilt_content`] for any caller: `specs` are release-tree
+/// relative spec paths the build patches, `subrelease` the one it builds.
+/// The prebuilt path, which drives runPh5_normal.sh, calls this directly.
+pub fn purge_rebuilt_content_at(
+    release_tree: &Path,
+    stage: &Path,
+    specs: &[String],
+    subrelease: Option<u32>,
+    say: &mut dyn FnMut(&str),
+) {
     let ledger_path = stage.join(BUILT_FROM_LEDGER);
     let mut ledger = parse_ledger(&fs::read_to_string(&ledger_path).unwrap_or_default());
-    for spec in patched_specs(c) {
-        let Some(text) = resolved_spec(c, &release_tree, Path::new(&spec)) else {
+    for spec in specs {
+        let sp = Path::new(spec);
+        let (Some(parent), Some(fname)) = (sp.parent(), sp.file_name()) else {
+            continue;
+        };
+        let dir = release_tree.join(parent);
+        let Some(text) = crate::specresolve::resolve(
+            &crate::specresolve::dir_reader(&dir),
+            &fname.to_string_lossy(),
+            subrelease,
+        ) else {
             continue;
         };
         let Some(fams) = spec_families_text(&text) else {
@@ -2202,9 +2261,6 @@ fn purge_rebuilt_content(c: &mut Ctx, stage: &Path) {
         if rel.is_empty() || !rel.chars().all(|x| x.is_ascii_digit()) {
             continue;
         }
-        let Some(dir) = Path::new(&spec).parent().map(|d| release_tree.join(d)) else {
-            continue;
-        };
         let Some(now) = spec_dir_hash(&dir) else {
             continue;
         };
@@ -2223,7 +2279,7 @@ fn purge_rebuilt_content(c: &mut Ctx, stage: &Path) {
         if rebuilt_content_is_stale(recorded.as_deref(), &now, !rpms.is_empty()) {
             for p in &rpms {
                 if fs::remove_file(p).is_ok() {
-                    c.say(&format!(
+                    say(&format!(
                         "  removed {}: built from other content of {} at the same NEVR",
                         basename(p),
                         spec
@@ -2231,7 +2287,7 @@ fn purge_rebuilt_content(c: &mut Ctx, stage: &Path) {
                 }
             }
         } else if recorded.is_none() && !rpms.is_empty() {
-            c.say(&format!(
+            say(&format!(
                 "  {key}: RPMs present and no record of their content; recorded as built from the current {spec}"
             ));
         }
@@ -2239,7 +2295,7 @@ fn purge_rebuilt_content(c: &mut Ctx, stage: &Path) {
     }
     let text: String = ledger.iter().map(|(k, v)| format!("{k}\t{v}\n")).collect();
     if let Err(e) = fs::write(&ledger_path, text) {
-        c.say(&format!("  could not write {}: {e}", ledger_path.display()));
+        say(&format!("  could not write {}: {e}", ledger_path.display()));
     }
 }
 
@@ -2699,7 +2755,7 @@ pub fn make_and_deliver(c: &mut Ctx) -> Result<PathBuf, String> {
             ));
         }
 
-        if let Some(iso) = find_iso(&stage, &common_stage) {
+        if let Some(iso) = find_iso(&stage, &common_stage, &marker) {
             c.say(&format!("  built ISO: {}", iso.display()));
             return deliver(c, &iso, true);
         }
@@ -2723,12 +2779,18 @@ pub fn make_and_deliver(c: &mut Ctx) -> Result<PathBuf, String> {
     Err("exhausted all 10 attempts without producing an ISO".into())
 }
 
-fn find_iso(stage: &Path, common_stage: &Path) -> Option<PathBuf> {
+/// The newest ISO the build wrote: only one modified after `marker`, which is
+/// touched before make starts. An older one is not this build's output.
+fn find_iso(stage: &Path, common_stage: &Path, marker: &Path) -> Option<PathBuf> {
+    let since = marker.metadata().and_then(|m| m.modified()).ok();
     let mut best: Option<(std::time::SystemTime, PathBuf)> = None;
     for root in [stage, common_stage] {
         for p in crate::build::find_files_rec(root, "", ".iso") {
             let Ok(md) = p.metadata() else { continue };
             let Ok(t) = md.modified() else { continue };
+            if since.is_some_and(|m| t <= m) {
+                continue;
+            }
             if best.as_ref().map(|(bt, _)| t > *bt).unwrap_or(true) {
                 best = Some((t, p));
             }
@@ -3015,6 +3077,37 @@ pub fn execute(spec: &BuildSpec, dry: bool, log: &mut dyn FnMut(&str)) -> Result
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn only_top_level_isos_of_the_stage_are_leftovers() {
+        let t = std::env::temp_dir().join(format!("shk-leftover-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&t);
+        fs::create_dir_all(t.join("iso")).unwrap();
+        fs::write(t.join("photon-5.0-a43a312c3.x86_64.iso"), "x").unwrap();
+        fs::write(t.join("iso/inner.iso"), "x").unwrap();
+        fs::write(t.join("photon-5.0.txt"), "x").unwrap();
+        let v = leftover_isos(&t);
+        assert_eq!(v, vec![t.join("photon-5.0-a43a312c3.x86_64.iso")]);
+        let _ = fs::remove_dir_all(&t);
+        assert!(leftover_isos(&t).is_empty());
+    }
+
+    #[test]
+    fn an_iso_older_than_the_marker_is_not_this_builds_output() {
+        let t = std::env::temp_dir().join(format!("shk-findiso-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&t);
+        fs::create_dir_all(t.join("common")).unwrap();
+        fs::write(t.join("old.iso"), "x").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        let marker = t.join(".marker");
+        fs::write(&marker, "").unwrap();
+        assert!(find_iso(&t, &t.join("common"), &marker).is_none(), "the leftover is not picked");
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        fs::write(t.join("new.iso"), "x").unwrap();
+        assert_eq!(find_iso(&t, &t.join("common"), &marker), Some(t.join("new.iso")));
+        let _ = fs::remove_dir_all(&t);
+    }
+
 
     #[test]
     fn a_same_nevr_rebuild_is_stale_only_when_the_recorded_content_differs() {

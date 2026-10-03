@@ -703,6 +703,49 @@ mismatched canister in the stage outranks the pinned one for an unversioned tdnf
             continue;
         }
 
+        // RPMs at a patched NEVR that were built from other content (a branch
+        // amended after a gate built it) are removed so they are rebuilt.
+        // The tree is pristine here (runPh5_normal.sh applies the patch
+        // itself), so the variant's content is applied for the purge and the
+        // tree reset again afterwards.
+        {
+            git(&cfg.photon_tree, &["apply", &patch.to_string_lossy()])
+                .map_err(|e| format!("applying {} for the content check: {e}", patch.display()))?;
+            let specs: Vec<String> = fs::read_to_string(&patch)
+                .unwrap_or_default()
+                .lines()
+                .filter_map(|l| l.strip_prefix("+++ b/"))
+                .filter(|p| p.ends_with(".spec"))
+                .map(str::to_string)
+                .collect();
+            let sub = crate::specresolve::tree_subrelease(&cfg.photon_tree);
+            crate::buildexec::purge_rebuilt_content_at(
+                &cfg.photon_tree,
+                &cfg.photon_tree.join("stage"),
+                &specs,
+                sub,
+                &mut |l| log(l.trim()),
+            );
+            let _ = git(&cfg.photon_tree, &["checkout", "--", "SPECS"]);
+            let _ = git(&cfg.photon_tree, &["clean", "-fdq", "SPECS"]);
+        }
+        // An ISO left at the top of the stage by an interrupted delivery makes
+        // build.py refuse to build ("... .iso already exists ..."); gate 51
+        // lost both full ISOs to the one gate 48 left when it was stopped.
+        for iso in crate::buildexec::leftover_isos(&cfg.photon_tree.join("stage")) {
+            match fs::remove_file(&iso) {
+                Ok(()) => log(&format!(
+                    "removed leftover {}: an interrupted delivery; build.py would refuse to build over it",
+                    iso.display()
+                )),
+                Err(e) => {
+                    return Err(format!(
+                        "leftover {} blocks the build and cannot be removed: {e}",
+                        iso.display()
+                    ))
+                }
+            }
+        }
         let logf = fs::OpenOptions::new()
             .create(true)
             .append(true)
