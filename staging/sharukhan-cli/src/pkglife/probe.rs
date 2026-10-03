@@ -43,7 +43,7 @@ use crate::pkglife::remote::{argv, sq, Remote};
 
 /// The transient unit's sandbox. Each property is one hardening measure; see
 /// systemd.exec(5).
-pub const SANDBOX: [&str; 35] = [
+pub const SANDBOX: [&str; 36] = [
     // A fixed unprivileged account, not DynamicUser: Photon resolves users
     // from files only (no nss-systemd), and a dynamic uid absent from
     // /etc/passwd made cronie's crontab refuse "your UID isn't in the passwd
@@ -53,6 +53,9 @@ pub const SANDBOX: [&str; 35] = [
     // creating ~/.config or ~/.ansible under it before parsing an option
     // (measured on k13, 2026-10-02). An ordinary user has a writable home.
     "Environment=HOME=/tmp",
+    // ...and a login shell: expect's autoexpect and multixterm spawn
+    // $env(SHELL), which systemd leaves unset for this account.
+    "Environment=SHELL=/bin/sh",
     "PrivateNetwork=yes",
     "PrivateDevices=yes",
     // /tmp and /var/tmp as private tmpfs mounts with a size bound, instead of
@@ -140,6 +143,16 @@ pub struct Ending {
 }
 
 impl Ending {
+    /// The signal that ended the main process, when it did not exit and the
+    /// signal is one a program raises by its own fault. KILL and TERM only
+    /// ever come from outside - here the memory limit or the runtime limit -
+    /// and are not a crash.
+    pub fn crash_signal(&self) -> Option<&str> {
+        self.signal().filter(|s| {
+            ["SEGV", "ABRT", "BUS", "ILL", "FPE", "SYS", "TRAP"].contains(s)
+        })
+    }
+
     /// The signal that ended the main process, when it did not exit.
     pub fn signal(&self) -> Option<&str> {
         if !(self.ended.starts_with("code=killed") || self.ended.starts_with("code=dumped")) {
@@ -208,6 +221,15 @@ pub fn version_token(text: &str, pkg_version: &str) -> Option<String> {
     if !pkg_version.is_empty() && text.contains(pkg_version) {
         return Some(pkg_version.to_string());
     }
+    // A tool whose whole answer is the package's major version, as systemd's
+    // `udevadm --version` prints `257` for systemd 257.13.
+    if let Some(major) = pkg_version.split('.').next().filter(|m| {
+        !m.is_empty() && m.len() < pkg_version.len() && m.chars().all(|c| c.is_ascii_digit())
+    }) {
+        if text.trim() == major {
+            return Some(major.to_string());
+        }
+    }
     let b = text.as_bytes();
     let mut i = 0;
     while i < b.len() {
@@ -230,8 +252,21 @@ pub fn version_token(text: &str, pkg_version: &str) -> Option<String> {
 }
 
 /// The first policy error marker in `stderr`, case-insensitively.
+/// A line that labels itself a warning is not an error, whatever words it
+/// carries: mariadbd prints its version and `[Warning] failed to retrieve the
+/// MAC address` in the offline sandbox.
+fn is_warning_line(line: &str) -> bool {
+    let low = line.trim_start().to_lowercase();
+    low.starts_with("warning:") || low.contains("[warning]") || low.contains(" warning: ")
+}
+
 pub fn error_marker<'a>(stderr: &str, markers: &'a [String]) -> Option<&'a str> {
-    let low = stderr.to_lowercase();
+    let low: String = stderr
+        .lines()
+        .filter(|l| !is_warning_line(l))
+        .collect::<Vec<_>>()
+        .join("\n")
+        .to_lowercase();
     markers
         .iter()
         .find(|m| low.contains(&m.to_lowercase()))
@@ -291,7 +326,7 @@ pub fn defect_in(policy: &Policy, a: &ProbeAttempt, except: Option<&str>) -> Opt
     };
     // A probe ended at the runtime limit is killed by systemd, not crashed.
     if a.result != "timeout" && a.result != "oom-kill" {
-        if let Some(sig) = ending.signal() {
+        if let Some(sig) = ending.crash_signal() {
             return Some(format!("ended by signal {sig} ({})", a.ended));
         }
     }
@@ -360,12 +395,21 @@ pub fn ran_without_version(policy: &Policy, a: &ProbeAttempt) -> Option<String> 
 
 /// A probe the tool accepted - exit status as expected, not ended by the
 /// runtime limit, no policy error marker on stderr - that printed output.
+/// A probe that names its own rejection ("Unknown option: --version",
+/// "Usage: ...") is no answer, whatever its status; it is judged as a tool
+/// without a version query.
+///
+/// Only option-shaped probes count: a tool that rejects `--version` and `-V`
+/// but accepts the bare word `version` took it as an operand (tsig-keygen
+/// writes a key named "version"), not as a version query.
 pub fn answered_without_version(policy: &Policy, a: &ProbeAttempt, expect: i32) -> bool {
-    a.code == Some(expect)
+    a.args.first().map(|x| x.starts_with('-')).unwrap_or(false)
+        && a.code == Some(expect)
         && !a.timed_out
         && (a.result.is_empty() || a.result == "success")
         && !(a.stdout.trim().is_empty() && a.stderr.trim().is_empty())
         && error_marker(&a.stderr, &policy.cli.stderr_error_markers).is_none()
+        && ran_without_version(policy, a).is_none()
 }
 
 /// What a file in a bin directory is, read in the guest before anything runs.
@@ -459,24 +503,49 @@ fn reviewed_precondition(
     attempts: &[ProbeAttempt],
 ) -> Option<(String, String)> {
     for c in policy.preconditions(base) {
-        let in_text = texts.iter().find(|t| t.contains(c.marker.as_str()));
-        let in_attempt = attempts
-            .iter()
-            .flat_map(|a| lines_of(a))
-            .find(|l| l.contains(c.marker.as_str()))
-            .map(|l| l.to_string());
-        let Some(line) = in_text.cloned().or(in_attempt) else {
+        let found: Option<(String, Option<&str>)> = if let Some(m) = c.marker.as_deref() {
+            let in_text = texts.iter().find(|t| t.contains(m)).cloned();
+            let in_attempt = attempts
+                .iter()
+                .flat_map(|a| lines_of(a))
+                .find(|l| l.contains(m))
+                .map(|l| l.to_string());
+            in_text.or(in_attempt).map(|l| (quote_line(&l), Some(m)))
+        } else if let Some(x) = &c.exit {
+            let all = !attempts.is_empty()
+                && attempts.iter().all(|a| {
+                    a.code.map(|c| x.contains(&c)).unwrap_or(false)
+                        && !a.timed_out
+                        && a.stdout.trim().is_empty()
+                        && a.stderr.trim().is_empty()
+                });
+            all.then(|| {
+                (
+                    format!("every probe ended with status {x:?} and printed nothing"),
+                    None,
+                )
+            })
+        } else if let Some(o) = c.output.as_deref() {
+            let all = !attempts.is_empty()
+                && attempts.iter().all(|a| {
+                    !a.timed_out && format!("{}{}", a.stdout, a.stderr).trim() == o.trim()
+                });
+            all.then(|| (format!("every probe printed exactly {o:?}"), None))
+        } else if c.hangs {
+            let all = !attempts.is_empty() && attempts.iter().all(|a| a.timed_out);
+            all.then(|| ("every probe ran until the runtime limit".to_string(), None))
+        } else {
+            None
+        };
+        let Some((line, except)) = found else {
             continue;
         };
-        // The reviewed words explain the failure; anything else that looks
+        // The reviewed outcome explains the failure; anything else that looks
         // like a broken installation still fails it.
-        if attempts
-            .iter()
-            .any(|a| defect_in(policy, a, Some(c.marker.as_str())).is_some())
-        {
+        if attempts.iter().any(|a| defect_in(policy, a, except).is_some()) {
             continue;
         }
-        return Some((c.reason.clone(), quote_line(&line)));
+        return Some((c.reason.clone(), line));
     }
     None
 }
@@ -589,11 +658,14 @@ pub fn probe(
         };
         let e = r.exec(&cmd, None, secs + 10);
         let (stderr, ending) = split_run(&unit, &e.stderr);
+        // The tool's own name is not an error marker: ibqueryerrors prints its
+        // version on stderr as "/usr/sbin/ibqueryerrors BUILD VERSION: 60.1".
+        let judged_stderr = stderr.replace(exe, "<this tool>").replace(base, "<this tool>");
         let verdict = judge(
             e.code,
             e.timed_out,
             &e.stdout,
-            &stderr,
+            &judged_stderr,
             pkg_version,
             &policy.cli.stderr_error_markers,
             expect,
@@ -631,31 +703,44 @@ pub fn probe(
         }
     }
 
+    let (status, reason) = judge_attempts(policy, base, expect, &res.attempts, generic);
+    res.status = status.into();
+    res.reason = reason;
+    res
+}
+
+/// The verdict on a tool whose probes printed no version, from the recorded
+/// attempts alone - what `probe` concludes after the last probe, and what
+/// `pkg-rejudge` replays from a lifecycle file under a changed policy.
+pub fn judge_attempts(
+    policy: &Policy,
+    base: &str,
+    expect: i32,
+    attempts: &[ProbeAttempt],
+    generic: bool,
+) -> (&'static str, String) {
     let tried = format!(
         "{} tried: {}",
-        res.attempts.len(),
-        res.attempts
+        attempts.len(),
+        attempts
             .iter()
             .map(|a| format!("{} -> {}", a.args.join(" "), a.verdict))
             .collect::<Vec<_>>()
             .join("; ")
     );
     if !generic {
-        if let Some((why, line)) = reviewed_precondition(policy, base, &[], &res.attempts) {
-            res.status = SKIP.into();
-            res.reason =
-                format!("precondition not met on this bench (reviewed): {why}; measured: {line}");
-            return res;
+        if let Some((why, line)) = reviewed_precondition(policy, base, &[], attempts) {
+            return (
+                SKIP,
+                format!("precondition not met on this bench (reviewed): {why}; measured: {line}"),
+            );
         }
     }
-    if let Some((a, d)) = res
-        .attempts
+    if let Some((a, d)) = attempts
         .iter()
         .find_map(|a| defect_in(policy, a, None).map(|d| (a, d)))
     {
-        res.status = FAIL.into();
-        res.reason = format!("`{} {}`: {d}", base, a.args.join(" "));
-        return res;
+        return (FAIL, format!("`{} {}`: {d}", base, a.args.join(" ")));
     }
     if !generic {
         // A probe the tool accepted - the reviewed status, a clean stderr -
@@ -663,34 +748,70 @@ pub fn probe(
         // wrongly ("ps from procps-ng UNKNOWN", "jq-"), or a tool that does
         // something else for any argument. Neither is evidence of a tool
         // without a version query; it stays a failure until reviewed.
-        if let Some(a) = res
-            .attempts
+        if let Some(a) = attempts
             .iter()
             .find(|a| answered_without_version(policy, a, expect))
         {
             let first = lines_of(a).find(|l| !l.trim().is_empty()).unwrap_or("");
-            res.status = FAIL.into();
-            res.reason = format!(
-                "`{} {}` was accepted (status {expect}) but printed no version: {}",
-                base,
-                a.args.join(" "),
-                quote_line(first)
+            return (
+                FAIL,
+                format!(
+                    "`{} {}` was accepted (status {expect}) but printed no version: {}",
+                    base,
+                    a.args.join(" "),
+                    quote_line(first)
+                ),
             );
-            return res;
         }
-        if let Some(why) = res
-            .attempts
-            .iter()
-            .find_map(|a| ran_without_version(policy, a))
-        {
-            res.status = SKIP.into();
-            res.reason = format!("no version query: {why}");
-            return res;
+        if let Some(why) = attempts.iter().find_map(|a| ran_without_version(policy, a)) {
+            return (SKIP, format!("no version query: {why}"));
         }
     }
-    res.status = FAIL.into();
-    res.reason = format!("no version probe succeeded ({tried})");
-    res
+    (FAIL, format!("no version probe succeeded ({tried})"))
+}
+
+/// Re-judge one recorded CLI result under `policy`: the attempts are kept,
+/// each probe's verdict is recomputed (a policy can change the expected
+/// status or the error markers) and so is the conclusion. Results decided
+/// before any probe ran (denylist, file inspection) carry no attempts and are
+/// returned unchanged.
+pub fn rejudge(policy: &Policy, c: &CliResult, pkg_version: &str) -> CliResult {
+    if c.attempts.is_empty() {
+        return c.clone();
+    }
+    let base = c.path.rsplit('/').next().unwrap_or(&c.path);
+    let vq = policy.version_query(base);
+    // A reviewed status applies to the reviewed arguments only.
+    let expect_for = |args: &[String]| match vq {
+        Some(v) if v.args.as_slice() == args => v.exit,
+        _ => 0,
+    };
+    let expect = vq
+        .filter(|v| c.attempts.iter().any(|a| a.args == v.args))
+        .map(|v| v.exit)
+        .unwrap_or(0);
+    let mut out = c.clone();
+    for a in out.attempts.iter_mut() {
+        let judged_stderr = a.stderr.replace(&c.path, "<this tool>").replace(base, "<this tool>");
+        let v = judge(
+            a.code,
+            a.timed_out,
+            &a.stdout,
+            &judged_stderr,
+            pkg_version,
+            &policy.cli.stderr_error_markers,
+            expect_for(&a.args),
+        );
+        if let Ok(ver) = v {
+            out.status = PASS.into();
+            out.reason = format!("`{} {}` -> version {ver}", base, a.args.join(" "));
+            return out;
+        }
+    }
+    let (status, reason) = judge_attempts(policy, base, expect, &out.attempts, false);
+    out.status = status.into();
+    out.reason = reason;
+    out
 }
 
 /// Proof that the sandbox is in force on this guest: the unit's user is not
@@ -782,6 +903,9 @@ mod tests {
         assert_eq!(version_token("no digits here", "1.0"), None);
         assert_eq!(version_token("1..2", ""), None);
         assert_eq!(version_token("build 20260927", ""), None);
+        // the bare major version of the package, and nothing else
+        assert_eq!(version_token("257\n", "257.13"), Some("257".into()));
+        assert_eq!(version_token("257 errors\n", "257.13"), None);
     }
 
     #[test]
@@ -829,6 +953,18 @@ mod tests {
             0
         )
         .is_err());
+        // a self-declared warning is not an error; the same words unlabelled are
+        assert!(judge(
+            Some(0),
+            false,
+            "/usr/sbin/mariadbd  Ver 11.8.8-MariaDB",
+            "2026-10-02 22:57:57 0 [Warning] failed to retrieve the MAC address",
+            "11.8.8",
+            &m,
+            0
+        )
+        .is_ok());
+        assert!(judge(Some(0), false, "x 1.2", "failed to retrieve the MAC address", "", &m, 0).is_err());
         assert!(judge(None, true, "", "", "", &m, 0)
             .unwrap_err()
             .contains("deadline"));
@@ -859,6 +995,13 @@ mod tests {
         );
         assert!(end.exec_failed());
         assert_eq!(end.signal(), None);
+        // SIGKILL is sent from outside (the memory limit), never a crash
+        let (_, end) = split_run(
+            "u",
+            "Finished with result: signal\nMain processes terminated with: code=killed, status=9/KILL\n",
+        );
+        assert_eq!(end.signal(), Some("KILL"));
+        assert_eq!(end.crash_signal(), None);
         // another unit's header is the tool's text, and a "trailer" without
         // its Finished line is no ending at all
         let (tool, end) = split_run("u", "Running as unit: other.service\nService runtime: 1s\n");
@@ -955,6 +1098,27 @@ mod tests {
     }
 
     #[test]
+    fn the_tools_own_name_is_no_error_marker() {
+        let p = Policy::embedded().unwrap();
+        let mut f = Fake::new();
+        f.on("stat -L", elf()).on(
+            "systemd-run",
+            fake::ok_err("", "/usr/sbin/ibqueryerrors BUILD VERSION: 60.1\n"),
+        );
+        let mut seq = 0;
+        let r = probe(&mut f, &p, "/usr/sbin/ibqueryerrors", "60.1", "u", &mut seq, false);
+        assert_eq!(r.status, PASS, "{r:?}");
+        // ...but a real error word next to it still counts
+        let mut f = Fake::new();
+        f.on("stat -L", elf()).on(
+            "systemd-run",
+            fake::ok_err("", "/usr/sbin/ibqueryerrors BUILD VERSION: 60.1\nfatal: no device\n"),
+        );
+        let r = probe(&mut f, &p, "/usr/sbin/ibqueryerrors", "60.1", "u", &mut seq, false);
+        assert_ne!(r.status, PASS, "{r:?}");
+    }
+
+    #[test]
     fn a_tool_whose_parser_rejects_every_probe_has_no_version_query() {
         let p = Policy::embedded().unwrap();
         let mut f = Fake::new();
@@ -1041,7 +1205,7 @@ mod tests {
             unit_out("", "timeout", "code=killed, status=15/TERM", 1),
         );
         let mut seq = 0;
-        let r = probe(&mut g, &p, "/usr/bin/sendmail", "1", "u", &mut seq, false);
+        let r = probe(&mut g, &p, "/usr/bin/hanging-tool", "1", "u", &mut seq, false);
         assert_eq!(r.status, FAIL, "{r:?}");
         assert!(
             r.reason.starts_with("no version probe succeeded"),
@@ -1128,8 +1292,14 @@ mod tests {
         // a tool that does its job for any argument is not excused either
         let mut f = Fake::new();
         f.on("stat -L", elf()).on("systemd-run", fake::ok("Disabled\n"));
-        let r = probe(&mut f, &p, "/usr/sbin/getenforce", "3.5", "u", &mut seq, false);
+        let r = probe(&mut f, &p, "/usr/sbin/status-tool", "3.5", "u", &mut seq, false);
         assert_eq!(r.status, FAIL, "{r:?}");
+        // status 0 with the tool's own rejection is no answer: no version query
+        let mut f = Fake::new();
+        f.on("stat -L", elf())
+            .on("systemd-run", fake::ok("/usr/sbin/e4crypt: Unknown command: --version\n"));
+        let r = probe(&mut f, &p, "/usr/sbin/e4crypt", "1.47", "u", &mut seq, false);
+        assert_eq!(r.status, SKIP, "{r:?}");
     }
 
     #[test]
@@ -1160,7 +1330,7 @@ mod tests {
         let r = probe(
             &mut f,
             &p,
-            "/usr/bin/make-cert.pl",
+            "/usr/bin/needs-perl.pl",
             "1",
             "u",
             &mut seq,
@@ -1222,6 +1392,55 @@ mod tests {
             .on("systemd-run", fake::rc(1, "", "Cannot open sequencer"));
         let r = probe(&mut f, &p, "/usr/bin/aseqdump", "1", "u", &mut seq, false);
         assert_eq!(r.status, FAIL, "{r:?}");
+    }
+
+    #[test]
+    fn a_silent_status_or_a_hang_needs_its_own_reviewed_entry() {
+        let mut v: serde_json::Value =
+            serde_json::from_str(crate::pkglife::policy::EMBEDDED).unwrap();
+        v["cli"]["preconditions"] = serde_json::json!([
+            {"pattern": "audisp-syslog", "exit": [1], "reason": "an auditd plugin started by auditd with its own arguments"},
+            {"pattern": "sendmail", "hangs": true, "reason": "waits for its mail queue lock and the network"}
+        ]);
+        let p = Policy::parse(&v.to_string()).unwrap();
+        let mut seq = 0;
+        let mut f = Fake::new();
+        f.on("stat -L", elf()).on("systemd-run", fake::rc(1, "", ""));
+        let r = probe(&mut f, &p, "/usr/sbin/audisp-syslog", "4.1", "u", &mut seq, false);
+        assert_eq!(r.status, SKIP, "{r:?}");
+        // another status, or output, is not what was reviewed
+        let mut f = Fake::new();
+        f.on("stat -L", elf()).on("systemd-run", fake::rc(2, "", ""));
+        let r = probe(&mut f, &p, "/usr/sbin/audisp-syslog", "4.1", "u", &mut seq, false);
+        assert_eq!(r.status, FAIL, "{r:?}");
+        let mut f = Fake::new();
+        f.on("stat -L", elf())
+            .on("systemd-run", unit_out("", "timeout", "code=killed, status=15/TERM", 1));
+        let r = probe(&mut f, &p, "/usr/sbin/sendmail", "8.18", "u", &mut seq, false);
+        assert_eq!(r.status, SKIP, "{r:?}");
+        // the exact-output form: the whole answer, nothing more
+        let mut v2: serde_json::Value =
+            serde_json::from_str(crate::pkglife::policy::EMBEDDED).unwrap();
+        v2["cli"]["preconditions"] = serde_json::json!([
+            {"pattern": "counter", "output": "0", "reason": "prints a counter that is 0 here"}
+        ]);
+        let p2 = Policy::parse(&v2.to_string()).unwrap();
+        let mut g = Fake::new();
+        g.on("stat -L", elf()).on("systemd-run", fake::ok("0\n"));
+        assert_eq!(probe(&mut g, &p2, "/usr/bin/counter", "1", "u", &mut seq, false).status, SKIP);
+        let mut g = Fake::new();
+        g.on("stat -L", elf()).on("systemd-run", fake::ok("0 errors\n"));
+        assert_eq!(probe(&mut g, &p2, "/usr/bin/counter", "1", "u", &mut seq, false).status, FAIL);
+        // a hang of an unreviewed tool stays a failure
+        let r = probe(&mut f, &p, "/usr/sbin/other", "1", "u", &mut seq, false);
+        assert_eq!(r.status, FAIL, "{r:?}");
+        // an entry must say exactly one thing
+        let mut v: serde_json::Value =
+            serde_json::from_str(crate::pkglife::policy::EMBEDDED).unwrap();
+        v["cli"]["preconditions"] = serde_json::json!([
+            {"pattern": "x", "exit": [1], "hangs": true, "reason": "a long enough reason"}
+        ]);
+        assert!(Policy::parse(&v.to_string()).is_err());
     }
 
     #[test]

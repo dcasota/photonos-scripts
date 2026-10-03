@@ -180,6 +180,10 @@ pub mod fake {
         }
     }
 
+    pub fn ok_err(stdout: &str, stderr: &str) -> Exec {
+        rc(0, stdout, stderr)
+    }
+
     pub fn rc(code: i32, stdout: &str, stderr: &str) -> Exec {
         Exec {
             stdout: stdout.to_string(),

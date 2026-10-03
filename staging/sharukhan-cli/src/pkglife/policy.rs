@@ -86,6 +86,28 @@ pub struct Packages {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct CliPrecondition {
+    pub pattern: String,
+    /// The tool's own words, quoted from a measured probe.
+    #[serde(default)]
+    pub marker: Option<String>,
+    /// A tool that answers every probe with one of these statuses and no
+    /// output.
+    #[serde(default)]
+    pub exit: Option<Vec<i32>>,
+    /// A tool that waits for something the sandbox does not provide and is
+    /// ended by the runtime limit on every probe.
+    #[serde(default)]
+    pub hangs: bool,
+    /// A tool whose whole answer to every probe is exactly this text (a
+    /// number, a prompt): too short to be a marker, exact enough as output.
+    #[serde(default)]
+    pub output: Option<String>,
+    pub reason: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Cli {
     pub probes: Vec<Vec<String>>,
     pub stderr_error_markers: Vec<String>,
@@ -100,7 +122,7 @@ pub struct Cli {
     pub option_rejection_markers: Vec<String>,
     /// The tool refusing to run as an unprivileged user, in its own words.
     pub privilege_refusal_markers: Vec<String>,
-    pub preconditions: Vec<Precondition>,
+    pub preconditions: Vec<CliPrecondition>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -366,11 +388,29 @@ impl Policy {
             .collect();
         check_rules("cli.preconditions", &as_rules)?;
         for (i, c) in self.cli.preconditions.iter().enumerate() {
-            if c.marker.trim().len() < 6 {
+            let kinds = c.marker.is_some() as u8
+                + c.exit.is_some() as u8
+                + c.hangs as u8
+                + c.output.is_some() as u8;
+            if kinds != 1 {
+                return Err(format!(
+                    "cli.preconditions[{i}] ({}): exactly one of marker, exit, hangs, output",
+                    c.pattern
+                ));
+            }
+            if c.marker.as_deref().map(|m| m.trim().len() < 6).unwrap_or(false) {
                 return Err(format!(
                     "cli.preconditions[{i}] ({}): the marker must quote the tool, at least 6 characters",
                     c.pattern
                 ));
+            }
+            if let Some(e) = &c.exit {
+                if e.is_empty() || e.iter().any(|x| !(1..=255).contains(x)) {
+                    return Err(format!(
+                        "cli.preconditions[{i}] ({}): exit must list failing statuses 1..=255",
+                        c.pattern
+                    ));
+                }
             }
         }
         for (i, r) in self.cli.no_version_query.iter().enumerate() {
@@ -438,7 +478,7 @@ impl Policy {
     }
 
     /// The reviewed preconditions for an executable's base name.
-    pub fn preconditions(&self, base: &str) -> Vec<&Precondition> {
+    pub fn preconditions(&self, base: &str) -> Vec<&CliPrecondition> {
         self.cli
             .preconditions
             .iter()

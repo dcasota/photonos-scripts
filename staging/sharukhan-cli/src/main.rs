@@ -90,6 +90,9 @@ PHASES (the same code `run` calls, one step at a time)
                         unreached package (--base, --new: pkglife-*.jsonl; --json)
     pkg-report          every failing package of one or more lifecycle runs, per ISO,
                         as Markdown (--runs <label>=<pkglife-*.jsonl>,...; --out file)
+    pkg-rejudge         replay the recorded CLI probes of a lifecycle file under the
+                        current (or --pkg-policy) policy, without a guest; prints what
+                        changes, --out writes the re-judged file (--new <pkglife-*.jsonl>)
     iso-boot            how an ISO boots, read from its El Torito catalogue: BIOS
                         image and loader (syslinux or GRUB), EFI image, and the
                         mkisofs boot options that reproduce it (--iso, --json)
@@ -608,6 +611,7 @@ fn main() -> ExitCode {
         }),
         "pkg-compare" => cmd_pkg_compare(args.base.as_deref(), args.new.as_deref(), args.json),
         "pkg-report" => cmd_pkg_report(args.runs.as_deref(), args.out.as_deref()),
+        "pkg-rejudge" => cmd_pkg_rejudge(args.new.as_deref(), args.pkg_policy.as_deref(), args.out.as_deref()),
         "iso-boot" => cmd_iso_boot(args.iso.as_deref(), args.json),
         "composer" => cmd_composer(&cfg, args.poi.as_deref().unwrap_or("2.8")),
         "canister" => cmd_canister(&cfg, args.rebase_check),
@@ -693,6 +697,64 @@ fn cmd_pkg_report(runs: Option<&str>, out: Option<&str>) -> Result<(), String> {
             println!("written: {f}");
         }
         None => print!("{md}"),
+    }
+    Ok(())
+}
+
+/// `sharukhan pkg-rejudge --new <jsonl> [--pkg-policy <file>] [--out <jsonl>]`
+///
+/// The probes a run recorded are evidence that does not change with the
+/// policy; the conclusion drawn from them does. Replaying them answers "what
+/// would this policy change make of the last run" before spending hours of
+/// guest time - and the live run still decides.
+fn cmd_pkg_rejudge(file: Option<&str>, policy: Option<&str>, out: Option<&str>) -> Result<(), String> {
+    use pkglife::record::{FAIL, PASS};
+    let file = file.ok_or("pkg-rejudge needs --new <pkglife-*.jsonl>")?;
+    let pol = pkglife::policy::Policy::load(policy.map(std::path::Path::new))?;
+    let recs = pkglife::record::read(std::path::Path::new(file))?;
+    if recs.is_empty() {
+        return Err(format!("{file}: an empty lifecycle file proves nothing"));
+    }
+    let (mut changed, mut verdicts) = (0usize, std::collections::BTreeMap::<String, usize>::new());
+    let mut rewritten = Vec::new();
+    for mut r in recs {
+        let version = r.evr.split('-').next().unwrap_or("").to_string();
+        let before = r.verdict.clone();
+        let mut any = false;
+        for c in r.clis.iter_mut() {
+            let n = pkglife::probe::rejudge(&pol, c, &version);
+            if n.status != c.status || n.reason != c.reason {
+                println!(
+                    "{} {}: {} -> {}: {}",
+                    r.package,
+                    c.path,
+                    c.status,
+                    n.status,
+                    pkglife::record::clip(&n.reason)
+                );
+                any = true;
+                *c = n;
+            }
+        }
+        if any && [PASS, FAIL].contains(&before.as_str()) {
+            r.verdict.clear();
+            r.reason.clear();
+            r.settle();
+            r.policy_sha256 = pol.sha256.clone();
+            changed += 1;
+        }
+        *verdicts.entry(r.verdict.clone()).or_default() += 1;
+        rewritten.push(r);
+    }
+    println!("{changed} package verdict(s) re-settled; now {verdicts:?}");
+    if let Some(o) = out {
+        let text: String = rewritten
+            .iter()
+            .map(|r| serde_json::to_string(r).map(|l| l + "\n"))
+            .collect::<Result<_, _>>()
+            .map_err(|e| e.to_string())?;
+        std::fs::write(o, text).map_err(|e| format!("{o}: {e}"))?;
+        println!("written: {o}");
     }
     Ok(())
 }
