@@ -2,7 +2,7 @@
 +++ b/SPECS/linux/linux-6.12-changelog.inc
 @@ -1,4 +1,22 @@
  %changelog
-+* Tue Sep 29 2026 Daniel Casota <dcasota@gmail.com> 6.12.111-4
++* Sat Oct 03 2026 Daniel Casota <dcasota@gmail.com> 6.12.111-4
 +- Let a build link a canister other than the published one, so a kernel with no
 +  official canister at its own level can be covered by an equivalent one built
 +  locally. canister_equivalent=1 plus fips_canister_override=<NEVR> selects it;
@@ -83,21 +83,21 @@
 +++ b/SPECS/linux/linux-esx-6.12-changelog.inc
 @@ -1,4 +1,8 @@
  %changelog
-+* Tue Sep 29 2026 Daniel Casota <dcasota@gmail.com> 6.12.111-4
++* Sat Oct 03 2026 Daniel Casota <dcasota@gmail.com> 6.12.111-5
 +- Accept the same canister_equivalent / fips_canister_override pair as
 +  linux.spec, so this flavour - the one the ISO actually boots - can link a
 +  locally built canister too. It never builds one; it only links.
- * Tue Sep 29 2026 Daniel Casota <dcasota@gmail.com> 6.12.111-3
- - Share canister/.config handling via canister_config.inc
- * Mon Sep 28 2026 Shreenidhi Shedi <shreenidhi.shedi@broadcom.com> 6.12.111-2
+ * Sat Oct 03 2026 Daniel Casota <dcasota@gmail.com> 6.12.111-4
+ - Package the files depmod generates as %%ghost: the shipped copies listed
+ - the modules before their xz compression
 --- a/SPECS/linux/linux-esx-6.12.inc
 +++ b/SPECS/linux/linux-esx-6.12.inc
 @@ -38,7 +38,7 @@
  %global canister_usage 0
  %endif
  
--Release:        3%{?dist}
-+Release:        4%{?dist}
+-Release:        4%{?dist}
++Release:        5%{?dist}
  
  %define uname_r %{version}-%{release}-esx
  %define _modulesdir /lib/modules/%{uname_r}
