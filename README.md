@@ -58,22 +58,24 @@ See some personal scramblings:
 The Photon OS package report tool is a powershellcore-compatible script https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report/photonos-package-report.ps1 which analyzes each open-source vendor package and checks if there is a newer version available. For each package it locally clones the source, downloads the latest release, creates a newer spec file. It also creates various raw reports stored in https://github.com/dcasota/photonos-scripts/tree/master/photonos-package-report/scans.
   
   
-Latest run: March 2, 2026
+Latest run: August 9, 2026 (all runs: [scans folder](https://github.com/dcasota/photonos-scripts/tree/master/photonos-package-report/scans))
 url health
-- [Photon OS 4.0](https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report/scans/photonos-urlhealth-4.0_202603021624.prn)
-- [Photon OS 5.0](https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report/scans/photonos-urlhealth-5.0_202603021904.prn)
-- [Photon OS 6.0](https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report/scans/photonos-urlhealth-6.0_202603022032.prn)
-- [Photon OS common](https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report/scans/photonos-urlhealth-common_202603022130.prn)
-- [Photon OS dev](https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report/scans/photonos-urlhealth-dev_202603022130.prn)
-- [Photon OS master](https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report/scans/photonos-urlhealth-master_202603022232.prn)
+- [Photon OS 3.0](https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report/scans/photonos-urlhealth-3.0_202608090447.prn)
+- [Photon OS 4.0](https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report/scans/photonos-urlhealth-4.0_202608090630.prn)
+- [Photon OS 5.0](https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report/scans/photonos-urlhealth-5.0_202608090641.prn)
+- [Photon OS 6.0](https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report/scans/photonos-urlhealth-6.0_202608090650.prn)
+- [Photon OS common](https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report/scans/photonos-urlhealth-common_202608090650.prn)
+- [Photon OS dev](https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report/scans/photonos-urlhealth-dev_202608090650.prn)
+- [Photon OS master](https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report/scans/photonos-urlhealth-master_202608090650.prn)
+- [Photon OS main](https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report/scans/photonos-urlhealth-main_202608090650.prn)
 
 difference report
-- [4.0 <> 5.0](https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report/scans/photonos-diff-report-4.0-5.0_202603030204.prn)
-- [5.0 <> 6.0](https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report/scans/photonos-diff-report-5.0-6.0_202603030204.prn)
-- [common <>master](https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report/scans/photonos-diff-report-common-master_202603030204.prn)
+- [common <> master](https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report/scans/photonos-diff-report-common-master_202608090705.prn)
+- [main <> master](https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report/scans/photonos-diff-report-main-master_202608090705.prn)
+- Historical only (no longer produced by the current runs): [4.0 <> 5.0](https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report/scans/photonos-diff-report-4.0-5.0_202502131616.prn.xlsx), [5.0 <> 6.0](https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report/scans/photonos-diff-report-5.0-6.0_202502131616.prn.xlsx) — February 13, 2025
 
 package report with all packages per Photon OS release version
-[Download](https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report/scans/photonos-package-report_202603030204.prn)
+[Download](https://github.com/dcasota/photonos-scripts/blob/master/photonos-package-report/scans/photonos-package-report_202608090705.prn)
   
   
 The powershellcore script contains a base of download urls for each package. In examines the original download url Source0 inside the spec file. The comma delimited .prn report files contains spec file name, the Source0 original value, the corrected Source0 url after research, the url health check value (200=ok), an "UpdateAvailable" signalisation and much more. For analysis purposes, the reports can be stored e.g. inside a database.
