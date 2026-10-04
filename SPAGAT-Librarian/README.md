@@ -21,8 +21,8 @@ process:
 ## No appliance required
 
 This CLI is the standalone form of the same v0.3 console that also ships
-inside the SpagatLibrarian Appliance. Everything documented under `docs/public/`
-runs on a plain Linux host — Photon OS 5.0, Fedora, and Debian are the
+inside the SpagatLibrarian Appliance. Everything documented in this folder
+(the guides linked in the table below) runs on a plain Linux host — Photon OS 5.0, Fedora, and Debian are the
 verified platforms — with nothing more than `ncurses`, `sqlite3`, and
 (optionally) `llama.cpp` on the box. State lives under `$XDG_STATE_HOME`,
 configuration lives under `$XDG_CONFIG_HOME`, and frontier LLM keys come

@@ -45,23 +45,25 @@ sudo apt-get install -y cmake git
 
 ## Native build
 
-From the top of the source tree:
+From the repository root (the sources live in `SPAGAT-Librarian/`):
 
 ```bash
-make -C src/containers/spagat-console build
-# binary produced at: src/containers/spagat-console/spagat-librarian
+make -C SPAGAT-Librarian            # default target: release
+# binary produced at: SPAGAT-Librarian/spagat-librarian
 ```
 
-Install into `/usr/local/bin` (or the RPM path when packaged):
+`make -C SPAGAT-Librarian debug` builds with debug flags instead.
+
+Install into `/usr/bin` (`DESTDIR` is honoured for staged installs):
 
 ```bash
-sudo make -C src/containers/spagat-console install
+sudo make -C SPAGAT-Librarian install
 ```
 
 ## CMake build
 
 ```bash
-cmake -B build -S src/containers/spagat-console -DCMAKE_BUILD_TYPE=Release
+cmake -B build -S SPAGAT-Librarian -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
 sudo cmake --install build
 ```
@@ -71,8 +73,11 @@ sudo cmake --install build
 The source ships an `spagat.spec` for Photon OS, Fedora, or any RPM-based
 distro:
 
+`spagat.spec` expects `Source0` (`spagat-librarian-<version>.tar.gz`) in
+`~/rpmbuild/SOURCES/`; create the tarball from `SPAGAT-Librarian/` first.
+
 ```bash
-rpmbuild -ba src/containers/spagat-console/spagat.spec
+rpmbuild -ba SPAGAT-Librarian/spagat.spec
 sudo rpm -Uvh ~/rpmbuild/RPMS/x86_64/spagat-librarian-*.rpm
 ```
 
