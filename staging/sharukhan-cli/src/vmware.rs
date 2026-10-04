@@ -1,7 +1,32 @@
 //! Talking to VMware Workstation.
 
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Output};
+
+/// Run a Windows program and collect its output, retrying while WSL interop
+/// to Windows does not answer (only WSL's own "UtilAcceptVsock ... accept4
+/// failed" on stderr counts; the program never ran then). Anything the
+/// program itself returns, success or failure, is returned at once.
+pub fn win_output(program: &Path, args: &[&str]) -> std::io::Result<Output> {
+    let mut attempt = 0;
+    loop {
+        attempt += 1;
+        let out = Command::new(program).args(args).output()?;
+        if out.status.success()
+            || !crate::vm::interop_unavailable(&out.stderr)
+            || attempt >= crate::vm::INTEROP_ATTEMPTS
+        {
+            return Ok(out);
+        }
+        eprintln!(
+            "[mc] {}: WSL interop to Windows did not answer (attempt {attempt}/{}); retrying in {}s",
+            program.file_name().unwrap_or_default().to_string_lossy(),
+            crate::vm::INTEROP_ATTEMPTS,
+            crate::vm::INTEROP_PAUSE.as_secs()
+        );
+        std::thread::sleep(crate::vm::INTEROP_PAUSE);
+    }
+}
 
 /// Names of the VMs vmrun reports as running.
 ///
@@ -11,9 +36,7 @@ pub fn running(vmrun: &Path) -> Result<Vec<String>, String> {
     if !vmrun.exists() {
         return Err(format!("vmrun not found at {}", vmrun.display()));
     }
-    let out = Command::new(vmrun)
-        .args(["-T", "ws", "list"])
-        .output()
+    let out = win_output(vmrun, &["-T", "ws", "list"])
         .map_err(|e| format!("running vmrun: {e}"))?;
     if !out.status.success() {
         return Err(format!("vmrun exited {}", out.status));
@@ -76,9 +99,7 @@ pub fn start(vmrun: &Path, vmx_win: &str, gui: bool) -> i32 {
     // menu is reachable only from the curses configurator - so it keeps the
     // GUI and fails loudly when there is no session to give it.
     let how = start_how(gui);
-    Command::new(vmrun)
-        .args(["-T", "ws", "start", vmx_win, how])
-        .output()
+    win_output(vmrun, &["-T", "ws", "start", vmx_win, how])
         .map(|o| o.status.code().unwrap_or(-1))
         .unwrap_or(-1)
 }
@@ -112,9 +133,7 @@ pub fn start_verified(
 /// Power off one VM, hard. Only ever called with our own VM's path: other VMs
 /// on this host may be live CI runners.
 pub fn stop_hard(vmrun: &Path, vmx_win: &str) -> i32 {
-    Command::new(vmrun)
-        .args(["-T", "ws", "stop", vmx_win, "hard"])
-        .output()
+    win_output(vmrun, &["-T", "ws", "stop", vmx_win, "hard"])
         .map(|o| o.status.code().unwrap_or(-1))
         .unwrap_or(-1)
 }
@@ -125,12 +144,11 @@ pub fn stop_hard(vmrun: &Path, vmx_win: &str) -> i32 {
 /// /mnt/c/... argument names a file it cannot open, so it answers nothing -
 /// which is indistinguishable from a guest that has not booted yet.
 pub fn guest_ip(vmrun: &Path, vmx_win: &str, wait: bool) -> Option<String> {
-    let mut cmd = Command::new(vmrun);
-    cmd.args(["-T", "ws", "getGuestIPAddress", vmx_win]);
+    let mut args = vec!["-T", "ws", "getGuestIPAddress", vmx_win];
     if wait {
-        cmd.arg("-wait");
+        args.push("-wait");
     }
-    let out = cmd.output().ok()?;
+    let out = win_output(vmrun, &args).ok()?;
     let text = String::from_utf8_lossy(&out.stdout);
     let lines: Vec<&str> = text
         .lines()

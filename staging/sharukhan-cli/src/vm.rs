@@ -183,19 +183,37 @@ fn create_disk(cfg: &Config, dir_win: &str, name: &str) -> Result<(), String> {
         ));
     }
     let target = format!("{dir_win}\\{name}.vmdk");
-    let out = Command::new(&cfg.vdiskmanager)
-        .args([
-            "-c",
-            "-s",
-            &cfg.boot_disk_size,
-            "-a",
-            &cfg.boot_disk_adapter,
-            "-t",
-            &cfg.boot_disk_type,
-        ])
-        .arg(&target)
-        .output()
-        .map_err(|e| format!("running vmware-vdiskmanager: {e}"))?;
+    // WSL interop to Windows drops for seconds to minutes on this host; the
+    // tool then never starts and only WSL's own line reaches stderr. That and
+    // nothing else is retried, with a pause; any other failure is immediate.
+    let mut attempt = 0;
+    let out = loop {
+        attempt += 1;
+        let out = Command::new(&cfg.vdiskmanager)
+            .args([
+                "-c",
+                "-s",
+                &cfg.boot_disk_size,
+                "-a",
+                &cfg.boot_disk_adapter,
+                "-t",
+                &cfg.boot_disk_type,
+            ])
+            .arg(&target)
+            .output()
+            .map_err(|e| format!("running vmware-vdiskmanager: {e}"))?;
+        if out.status.success()
+            || !interop_unavailable(&out.stderr)
+            || attempt >= INTEROP_ATTEMPTS
+        {
+            break out;
+        }
+        eprintln!(
+            "[mc] {name}: WSL interop to Windows did not answer (attempt {attempt}/{INTEROP_ATTEMPTS}); retrying in {}s",
+            INTEROP_PAUSE.as_secs()
+        );
+        std::thread::sleep(INTEROP_PAUSE);
+    };
     if !out.status.success() {
         // stdout carries vdiskmanager's own messages; stderr carries what
         // happened before it ran - a WSL interop failure ("UtilAcceptVsock:
@@ -207,6 +225,18 @@ fn create_disk(cfg: &Config, dir_win: &str, name: &str) -> Result<(), String> {
         ));
     }
     Ok(())
+}
+
+/// How often, and how far apart, a Windows tool is retried while WSL interop
+/// does not answer: up to 10 minutes in all.
+pub const INTEROP_ATTEMPTS: u32 = 11;
+pub const INTEROP_PAUSE: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Whether a Windows tool never ran because WSL interop did not answer:
+/// WSL's own error line, not anything the tool printed.
+pub fn interop_unavailable(stderr: &[u8]) -> bool {
+    let e = String::from_utf8_lossy(stderr);
+    e.contains("UtilAcceptVsock") && e.contains("accept4 failed")
 }
 
 /// What a Windows tool said, stdout first, then stderr, each trimmed; the
@@ -450,6 +480,14 @@ pub fn teardown(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn only_wsls_own_interop_error_counts_as_interop_unavailable() {
+        assert!(interop_unavailable(b"<3>WSL (27640 - ) ERROR: UtilAcceptVsock:273: accept4 failed 110\r\n"));
+        // negative controls: the tool's own failure, and nothing at all
+        assert!(!interop_unavailable(b"Failed to create the virtual disk: insufficient permission"));
+        assert!(!interop_unavailable(b""));
+    }
 
     #[test]
     fn a_windows_tools_stderr_is_reported_when_stdout_is_empty() {
