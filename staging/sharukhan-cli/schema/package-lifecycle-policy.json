@@ -46,6 +46,7 @@
       { "pattern": "shutdown", "reason": "power-state tool: an argument it misreads could halt the guest the run depends on" },
       { "pattern": "reboot", "reason": "power-state tool: reboots the guest" },
       { "pattern": "halt", "reason": "power-state tool: halts the guest" },
+      { "pattern": "nologin", "reason": "the shell of disabled accounts: every run, whatever its arguments, is a refused login it reports at LOG_CRIT (measured: \"nologin: Attempted login by UNKNOWN (UID: 65534) on UNKNOWN\" in the journal window of shadow, UID 65534 being the probe user)" },
       { "pattern": "mkpasswd", "reason": "expect's mkpasswd generates a password and sets it with passwd for the named or the calling user: any probe would try to change an account's password (measured: `mkpasswd -v` printed a generated password and ran /bin/passwd)" },
       { "pattern": "poweroff", "reason": "power-state tool: powers the guest off" },
       { "pattern": "init", "reason": "PID-1 control; `init <arg>` is a runlevel change request" },
