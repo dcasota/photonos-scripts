@@ -48,6 +48,41 @@ pub fn running(vmrun: &Path) -> Result<Vec<String>, String> {
         .collect())
 }
 
+/// Whether WSL interop to Windows answers right now: one plain `vmrun list`,
+/// no retry. Only WSL's own signature counts as "down"; any answer from
+/// vmrun, even an error, means Windows programs run.
+pub fn interop_alive(vmrun: &Path) -> bool {
+    match Command::new(vmrun).args(["-T", "ws", "list"]).output() {
+        Ok(o) => o.status.success() || !crate::vm::interop_unavailable(&o.stderr),
+        Err(_) => false,
+    }
+}
+
+/// Wait until WSL interop answers again, polling every 2 minutes, for at
+/// most `max`. True when it came back.
+pub fn wait_for_interop(vmrun: &Path, max: std::time::Duration, log: &mut dyn FnMut(&str)) -> bool {
+    let start = std::time::Instant::now();
+    let mut polls = 0u32;
+    while start.elapsed() < max {
+        if interop_alive(vmrun) {
+            log(&format!(
+                "WSL interop answers again after {}s",
+                start.elapsed().as_secs()
+            ));
+            return true;
+        }
+        if polls % 15 == 0 {
+            log(&format!(
+                "WSL interop to Windows does not answer; waiting (polling every 120s, {}s so far)",
+                start.elapsed().as_secs()
+            ));
+        }
+        polls += 1;
+        std::thread::sleep(std::time::Duration::from_secs(120));
+    }
+    false
+}
+
 /// Whether a specific VM is in the inventory - or Err when vmrun could not
 /// say. Callers that are about to move a VM's files must treat Err as "maybe
 /// running", never as "stopped".

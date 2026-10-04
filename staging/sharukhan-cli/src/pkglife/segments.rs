@@ -32,6 +32,26 @@ pub fn unreached(recs: &[PkgRecord]) -> Vec<String> {
     v
 }
 
+/// Packages whose final record says the guest was lost while they were
+/// tested. A host-side outage (WSL and VMware networking stalling together,
+/// measured 2026-10-04: three guests lost within ten minutes) is recorded
+/// against whatever package was in flight; each of these is tested once
+/// more, alone, on a fresh guest, and that verdict stands.
+pub fn guest_lost(recs: &[PkgRecord]) -> Vec<String> {
+    let mut last: std::collections::BTreeMap<&str, &PkgRecord> = Default::default();
+    for r in recs {
+        last.insert(r.package.as_str(), r);
+    }
+    last.into_iter()
+        .filter(|(_, r)| {
+            r.steps
+                .iter()
+                .any(|s| s.name == "guest-state" && s.status == record::FAIL)
+        })
+        .map(|(p, _)| p.to_string())
+        .collect()
+}
+
 /// Whether a segment advanced: fewer packages remain than before it.
 pub fn progressed(before: Option<usize>, after: usize) -> bool {
     match before {
@@ -75,17 +95,29 @@ pub fn run(
     let mut segments = 0;
     let mut left: Vec<String> = Vec::new();
 
-    for seg in 1..=max_segments {
+    let mut seg = 0;
+    let mut interop_waits = 0;
+    while seg < max_segments {
+        seg += 1;
         segments = seg;
         log(&format!(
             "segment {seg}: fresh guest for {id}, {} package(s)",
             remaining.as_ref().map(|r| r.len().to_string()).unwrap_or_else(|| "all".into())
         ));
         let prev = latest(&cfg.results_dir, id);
-        crate::phases::cmd_create_vm(cfg, id, Some(&iso_s), None, true, false)?;
-        if let Err(e) = crate::phases::cmd_install(cfg, id, None, None, false) {
-            let _ = crate::phases::cmd_teardown(cfg, id, true);
-            return Err(format!("segment {seg}: install failed, no package verdicts: {e}"));
+        if let Err(e) = fresh_guest(cfg, id, &iso_s) {
+            // A guest that cannot be created or installed while WSL interop
+            // is down says nothing about the packages: wait for interop and
+            // retry the same segment (bounded), otherwise stop as before.
+            if interop_waits < MAX_INTEROP_WAITS && !crate::vmware::interop_alive(&cfg.vmrun) {
+                interop_waits += 1;
+                log(&format!("segment {seg}: {e}"));
+                if crate::vmware::wait_for_interop(&cfg.vmrun, INTEROP_WAIT, log) {
+                    seg -= 1;
+                    continue;
+                }
+            }
+            return Err(format!("segment {seg}: no guest, no package verdicts: {e}"));
         }
         let mut o = base.clone();
         o.packages = remaining.clone();
@@ -125,7 +157,57 @@ pub fn run(
         before = Some(left.len());
         remaining = Some(left.clone());
     }
+    // Each package recorded as losing the guest is tested once more, alone,
+    // on a fresh guest; its last record - this one - is its verdict.
+    let all = record::read(&merged)?;
+    for p in guest_lost(&all) {
+        log(&format!("retest of {p}, alone on a fresh guest (it was in flight when the guest was lost)"));
+        let mut attempts = 0;
+        let file = loop {
+            attempts += 1;
+            let prev = latest(&cfg.results_dir, id);
+            if let Err(e) = fresh_guest(cfg, id, &iso_s) {
+                if attempts <= MAX_INTEROP_WAITS && !crate::vmware::interop_alive(&cfg.vmrun)
+                    && crate::vmware::wait_for_interop(&cfg.vmrun, INTEROP_WAIT, log)
+                {
+                    continue;
+                }
+                log(&format!("retest of {p}: no guest ({e}); its first record stands"));
+                break None;
+            }
+            let mut o = base.clone();
+            o.packages = Some(vec![p.clone()]);
+            o.resume = false;
+            if let Err(e) = crate::phases::cmd_verify(cfg, id, None, Some(&o), Some(&iso_s)) {
+                log(&format!("retest of {p}: verify reported: {e}"));
+            }
+            let f = latest(&cfg.results_dir, id);
+            let _ = crate::phases::cmd_teardown(cfg, id, true);
+            break f.filter(|f| Some(f) != prev.as_ref());
+        };
+        if let Some(f) = file {
+            for r in record::read(&f)?.iter().filter(|r| r.package == p) {
+                let line = serde_json::to_string(r).map_err(|e| e.to_string())?;
+                writeln!(out, "{line}").map_err(|e| format!("{}: {e}", merged.display()))?;
+                log(&format!("retest of {p}: {}", r.verdict));
+            }
+        }
+    }
     Ok(Outcome { merged, segments, unreached: left })
+}
+
+/// How long a segment waits for WSL interop to come back, and how often.
+const INTEROP_WAIT: std::time::Duration = std::time::Duration::from_secs(12 * 3600);
+const MAX_INTEROP_WAITS: usize = 3;
+
+/// create-vm --recreate and install: a known-good guest, or why not.
+fn fresh_guest(cfg: &Config, id: &str, iso: &str) -> Result<(), String> {
+    crate::phases::cmd_create_vm(cfg, id, Some(iso), None, true, false)?;
+    if let Err(e) = crate::phases::cmd_install(cfg, id, None, None, false) {
+        let _ = crate::phases::cmd_teardown(cfg, id, true);
+        return Err(format!("install failed: {e}"));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -140,6 +222,26 @@ mod tests {
     fn unreached_lists_each_package_once() {
         let r = vec![rec("b", NOT_REACHED), rec("a", "pass"), rec("b", NOT_REACHED), rec("c", NOT_REACHED)];
         assert_eq!(unreached(&r), vec!["b".to_string(), "c".to_string()]);
+    }
+
+    #[test]
+    fn a_package_that_lost_the_guest_is_retested_by_its_last_record_only() {
+        let lost = |p: &str| {
+            let mut r = rec(p, "fail");
+            r.steps.push(record::Step::new("guest-state", record::FAIL, "rpm -qa: exit Some(255)", 0));
+            r
+        };
+        let mut other = rec("b", "fail");
+        other.steps.push(record::Step::new("journal-window", record::FAIL, "x", 0));
+        let recs = vec![
+            lost("a"),
+            other,
+            lost("c"),
+            rec("c", "pass"), // c's retest passed: its last record wins
+            rec("d", "pass"),
+        ];
+        // a lost the guest; b failed for another reason; c was retested; d passed
+        assert_eq!(guest_lost(&recs), vec!["a".to_string()]);
     }
 
     #[test]
