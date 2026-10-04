@@ -29,6 +29,7 @@ fn session<'a>(r: &'a mut Fake, p: &'a Policy) -> Session<'a> {
         cli_disabled: None,
         lost: None,
         declared_conflicts: BTreeSet::new(),
+        probe_uid: None,
     }
 }
 
@@ -663,7 +664,7 @@ fn window_and_session_noise_rules() {
     ))
     .unwrap();
     let pol = Policy::embedded().unwrap();
-    assert_eq!(window_errors(&e, &BTreeSet::new(), &pol, &BTreeSet::new()).len(), 1);
+    assert_eq!(window_errors(&e, &BTreeSet::new(), &pol, &BTreeSet::new(), &ProbeSenders::default()).len(), 1);
     // a probe unit's crash and OOM kill belong to the CLI result, another
     // unit's do not
     let e = parse::journal_json(concat!(
@@ -686,7 +687,7 @@ fn window_and_session_noise_rules() {
     .unwrap();
     let oom = parse::harness_oom_pids(&k, HARNESS_PREFIX);
     assert_eq!(oom, [88633u32].into_iter().collect());
-    let left = window_errors(&e, &oom, &pol, &BTreeSet::new());
+    let left = window_errors(&e, &oom, &pol, &BTreeSet::new(), &ProbeSenders::default());
     assert_eq!(left.len(), 2, "{left:?}");
     assert!(left[0].contains("atftpd") && left[1].contains("(java)"), "{left:?}");
     assert!(session_noise("user@0.service"));
@@ -1478,7 +1479,7 @@ fn reviewed_expected_errors_and_declared_config_units_leave_the_window() {
     ))
     .unwrap();
     let declared: BTreeSet<String> = ["postgresql15.service".to_string()].into_iter().collect();
-    let left = window_errors(&e, &BTreeSet::new(), &p, &declared);
+    let left = window_errors(&e, &BTreeSet::new(), &p, &declared, &ProbeSenders::default());
     // the reviewed words of the reviewed unit go; its other line, and the
     // same words from another unit, stay
     assert_eq!(left.len(), 2, "{left:?}");
@@ -1598,4 +1599,34 @@ fn a_newly_failed_unit_is_said_only_when_the_policy_declares_its_config() {
     let st = run(r#"[{"unit":"needs-conf.service"},{"unit":"other.service"}]"#);
     assert_eq!(st.status, FAIL);
     assert!(st.detail.contains("other.service") && st.detail.contains("as declared"), "{}", st.detail);
+}
+
+#[test]
+fn the_sandbox_runs_as_the_probe_user() {
+    assert!(probe::SANDBOX.contains(&format!("User={}", probe::PROBE_USER).as_str()));
+}
+
+#[test]
+fn an_unattributed_line_is_the_probes_only_with_its_uid_and_a_probed_binary() {
+    let pol = Policy::embedded().unwrap();
+    let line = |unit: &str, uid: u32, exe: &str| {
+        format!(
+            r#"{{"PRIORITY":"2","SYSLOG_IDENTIFIER":"nologin","_SYSTEMD_UNIT":"{unit}","_UID":"{uid}","_EXE":"{exe}","MESSAGE":"Attempted login by UNKNOWN (UID: 65534) on UNKNOWN"}}"#
+        )
+    };
+    let probes = ProbeSenders {
+        uid: Some(65534),
+        exes: ["/usr/sbin/nologin".to_string()].into_iter().collect(),
+    };
+    let left = |j: String, p: &ProbeSenders| {
+        let e = parse::journal_json(&j).unwrap();
+        window_errors(&e, &BTreeSet::new(), &pol, &BTreeSet::new(), p).len()
+    };
+    // the race measured on a guest: no unit, the probe user, the probed binary
+    assert_eq!(left(line("", 65534, "/usr/sbin/nologin"), &probes), 0);
+    // negative controls: each condition alone is not enough
+    assert_eq!(left(line("", 0, "/usr/sbin/nologin"), &probes), 1, "another uid");
+    assert_eq!(left(line("", 65534, "/usr/bin/other"), &probes), 1, "a binary not probed");
+    assert_eq!(left(line("sshd.service", 65534, "/usr/sbin/nologin"), &probes), 1, "a line a unit owns");
+    assert_eq!(left(line("", 65534, "/usr/sbin/nologin"), &ProbeSenders::default()), 1, "no probe uid known");
 }

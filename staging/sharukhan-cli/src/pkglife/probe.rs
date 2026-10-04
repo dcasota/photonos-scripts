@@ -43,12 +43,15 @@ use crate::pkglife::remote::{argv, sq, Remote};
 
 /// The transient unit's sandbox. Each property is one hardening measure; see
 /// systemd.exec(5).
+/// The user every probe runs as (`User=` of [`SANDBOX`]).
+pub const PROBE_USER: &str = "nobody";
+
 pub const SANDBOX: [&str; 36] = [
     // A fixed unprivileged account, not DynamicUser: Photon resolves users
     // from files only (no nss-systemd), and a dynamic uid absent from
     // /etc/passwd made cronie's crontab refuse "your UID isn't in the passwd
     // file" before printing anything (measured on k09).
-    "User=nobody",
+    "User=nobody", // PROBE_USER
     // nobody's home is /dev/null: ansible, podman, tshark and nerdctl failed
     // creating ~/.config or ~/.ansible under it before parsing an option
     // (measured on k13, 2026-10-02). An ordinary user has a writable home.
@@ -1070,6 +1073,29 @@ mod tests {
             assert!(r.reason.starts_with("never executed"), "{}", r.reason);
         }
         assert!(f.log.borrow().is_empty(), "something reached the guest");
+    }
+
+    #[test]
+    fn nologin_is_never_run_but_its_neighbours_are() {
+        // nologin reports every run as a refused login at LOG_CRIT; probed as
+        // the sandbox user it put "Attempted login by UNKNOWN (UID: 65534)"
+        // into shadow's journal window. It is never sent to the guest.
+        let p = Policy::embedded().unwrap();
+        let mut f = Fake::new();
+        let mut seq = 0;
+        let r = probe(&mut f, &p, "/usr/sbin/nologin", "4.13", "sharukhan-probe", &mut seq, false);
+        assert_eq!(r.status, SKIP);
+        assert!(r.reason.contains("never executed (nologin)"), "{}", r.reason);
+        assert!(f.log.borrow().is_empty(), "nologin reached the guest");
+        // negative control: the rule names exactly nologin - login and a
+        // nologin-prefixed script are still probed
+        for exe in ["/usr/bin/login", "/usr/bin/nologin.sh"] {
+            let mut f = Fake::new();
+            f.on("stat -L", elf()).on("'--version'", fake::ok("tool 4.13\n"));
+            let r = probe(&mut f, &p, exe, "4.13", "sharukhan-probe", &mut seq, false);
+            assert!(!r.reason.contains("never executed"), "{exe}: {}", r.reason);
+            assert!(!f.log.borrow().is_empty(), "{exe} was not probed");
+        }
     }
 
     #[test]

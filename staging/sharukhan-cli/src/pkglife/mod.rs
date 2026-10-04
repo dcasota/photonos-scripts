@@ -151,10 +151,12 @@ pub fn window_errors(
     harness_oom: &BTreeSet<u32>,
     policy: &Policy,
     declared: &BTreeSet<String>,
+    probes: &ProbeSenders,
 ) -> Vec<String> {
     entries
         .iter()
         .filter(|e| e.priority <= 3)
+        .filter(|e| !probes.sent(e))
         .filter(|e| policy.expected_error(&e.unit, &e.identifier, &e.message).is_none())
         .filter(|e| !declared.contains(&e.unit))
         .filter(|e| {
@@ -167,6 +169,32 @@ pub fn window_errors(
         })
         .map(|e| clip(&e.line()))
         .collect()
+}
+
+/// Who a CLI probe of the current package is, as journald records a sender:
+/// the probe user's uid and the resolved paths of the binaries probed.
+///
+/// journald attributes a log line to its unit by reading the sender's cgroup,
+/// which is gone when a probe exits within milliseconds; measured on a guest,
+/// 1 of 20 `nologin` probes logged a line with no _SYSTEMD_UNIT, so the
+/// harness-unit filter missed it and the package failed for the probe's own
+/// words. Only such unattributed lines are matched, and only by both the
+/// probe user's uid and a probed binary: a line any unit owns is judged as
+/// ever.
+#[derive(Clone, Debug, Default)]
+pub struct ProbeSenders {
+    pub uid: Option<u32>,
+    pub exes: BTreeSet<String>,
+}
+
+impl ProbeSenders {
+    pub fn sent(&self, e: &JEntry) -> bool {
+        e.unit.is_empty()
+            && self.uid.is_some()
+            && e.uid == self.uid
+            && !e.exe.is_empty()
+            && self.exes.contains(&e.exe)
+    }
 }
 
 /// Units that the harness's own ssh logins create and remove. They come and
@@ -441,6 +469,8 @@ pub struct Session<'a> {
     /// Units named in Conflicts= of the units started for the current
     /// package: stopping them was declared, so restoring them is expected.
     pub declared_conflicts: BTreeSet<String>,
+    /// The probe user's uid on the guest, once asked (`id -u`).
+    pub probe_uid: Option<Option<u32>>,
 }
 
 const PROC_EXES: &str = "for p in /proc/[0-9]*; do e=$(readlink \"$p/exe\" 2>/dev/null) && \
@@ -974,6 +1004,40 @@ impl Session<'_> {
         Flow::Continue
     }
 
+    /// The senders a probe of this package would show as, worked out only
+    /// when the window holds an unattributed err line at all.
+    fn probe_senders(&mut self, entries: &[JEntry], rec: &PkgRecord) -> ProbeSenders {
+        let candidate = entries
+            .iter()
+            .any(|e| e.priority <= 3 && e.unit.is_empty() && e.uid.is_some() && !e.exe.is_empty());
+        if !candidate || rec.clis.is_empty() {
+            return ProbeSenders::default();
+        }
+        let q = self.policy.limits.query_secs;
+        if self.probe_uid.is_none() {
+            let uid = argv(&["id", "-u", "--", probe::PROBE_USER])
+                .ok()
+                .map(|c| self.r.exec(&c, None, q))
+                .and_then(|e| e.stdout.trim().parse::<u32>().ok());
+            self.probe_uid = Some(uid);
+        }
+        let mut exes: BTreeSet<String> = rec.clis.iter().map(|c| c.path.clone()).collect();
+        let input = format!(
+            "{}\n",
+            rec.clis.iter().map(|c| c.path.as_str()).collect::<Vec<_>>().join("\n")
+        );
+        let e = self.r.exec(
+            "while IFS= read -r f; do readlink -f -- \"$f\"; done",
+            Some(input.as_bytes()),
+            q,
+        );
+        exes.extend(e.stdout.lines().map(str::trim).filter(|l| l.starts_with('/')).map(str::to_string));
+        ProbeSenders {
+            uid: self.probe_uid.flatten(),
+            exes,
+        }
+    }
+
     fn journal_window(&mut self, cursor: &str, rec: &mut PkgRecord) {
         let t = Instant::now();
         match units::journal_since(self.r, cursor, None, true, self.policy.limits.query_secs) {
@@ -1002,7 +1066,9 @@ impl Session<'_> {
                     })
                     .map(|u| u.unit.clone())
                     .collect();
-                rec.journal_errors = window_errors(&entries, &oom, self.policy, &declared);
+                let probes = self.probe_senders(&entries, rec);
+                rec.journal_errors =
+                    window_errors(&entries, &oom, self.policy, &declared, &probes);
                 if rec.journal_errors.is_empty() {
                     rec.steps.push(Step::new(
                         "journal-window",
@@ -2317,6 +2383,7 @@ fn run_attached(
         cli_disabled: None,
         lost: None,
         declared_conflicts: BTreeSet::new(),
+        probe_uid: None,
     };
 
     // --- the repository is the media ------------------------------------------

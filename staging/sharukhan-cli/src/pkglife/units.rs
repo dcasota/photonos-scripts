@@ -1309,6 +1309,8 @@ mod tests {
             identifier: String::new(),
             realtime_us: 0,
             coredump_unit: String::new(),
+            uid: None,
+            exe: String::new(),
         }
     }
 

@@ -386,6 +386,10 @@ pub struct JEntry {
     pub realtime_us: u64,
     /// COREDUMP_UNIT: the unit whose process systemd-coredump reports.
     pub coredump_unit: String,
+    /// _UID and _EXE of the sender, which journald records from the
+    /// process itself even when it can no longer tell its unit.
+    pub uid: Option<u32>,
+    pub exe: String,
 }
 
 impl JEntry {
@@ -450,6 +454,8 @@ pub fn journal_json(stdout: &str) -> Result<Vec<JEntry>, String> {
             identifier: s("SYSLOG_IDENTIFIER"),
             realtime_us: s("__REALTIME_TIMESTAMP").parse().unwrap_or(0),
             coredump_unit: s("COREDUMP_UNIT"),
+            uid: s("_UID").parse().ok(),
+            exe: s("_EXE"),
         });
     }
     Ok(out)
