@@ -87,6 +87,20 @@ pub fn create(
         .map_err(|e| format!("{e}\n       (MC_VM_ROOT_WSL must be under /mnt/<drive>/)"))?;
 
     if vm.dir.is_dir() && recreate {
+        // A VM that is still running keeps its VMX open; stashing its files
+        // from under it once left VMware running a VM whose VMX was gone (k02,
+        // 2026-10-04). Stop it first, and refuse when its state is unknown.
+        let vmx_win = winpath::win_path(&vm.dir.join(format!("{}.vmx", vm.name)).to_string_lossy());
+        match vmware::ensure_stopped(&cfg.vmrun, &vmx_win, &vm.name) {
+            Ok(true) => log(&format!("recreate: {} was running; stopped it first", vm.name)),
+            Ok(false) => {}
+            Err(e) => {
+                return Err(format!(
+                    "recreate: refusing to move the files of {}: {e}",
+                    vm.name
+                ))
+            }
+        }
         let stash = stash_contents(&vm.dir)?;
         log(&format!(
             "recreate: stashed {} file(s), path kept stable for VMware",
@@ -378,12 +392,16 @@ pub fn teardown(
     }
 
     // Only ever stop our own VM. Other VMs on this host may be live CI runners.
-    if vmware::is_running(&cfg.vmrun, &name) {
-        r.was_running = true;
-        log(&format!("stopping {name}"));
-        let vmx_win = winpath::win_path(&dir.join(format!("{name}.vmx")).to_string_lossy());
-        vmware::stop_hard(&cfg.vmrun, &vmx_win);
-        std::thread::sleep(std::time::Duration::from_secs(3));
+    // Its files move only once it is proven stopped: an unknown state is not
+    // "stopped".
+    let vmx_win = winpath::win_path(&dir.join(format!("{name}.vmx")).to_string_lossy());
+    match vmware::ensure_stopped(&cfg.vmrun, &vmx_win, &name) {
+        Ok(true) => {
+            r.was_running = true;
+            log(&format!("stopped {name}"));
+        }
+        Ok(false) => {}
+        Err(e) => return Err(format!("teardown: refusing to move the files of {name}: {e}")),
     }
 
     let ts = job::stamp();

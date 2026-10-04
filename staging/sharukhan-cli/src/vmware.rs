@@ -48,6 +48,35 @@ pub fn running(vmrun: &Path) -> Result<Vec<String>, String> {
         .collect())
 }
 
+/// Whether a specific VM is in the inventory - or Err when vmrun could not
+/// say. Callers that are about to move a VM's files must treat Err as "maybe
+/// running", never as "stopped".
+pub fn running_state(vmrun: &Path, vm: &str) -> Result<bool, String> {
+    running(vmrun).map(|v| {
+        v.iter()
+            .any(|l| l.to_lowercase().contains(&format!("{}.vmx", vm.to_lowercase())))
+    })
+}
+
+/// Stop our VM and prove it is gone before anyone moves its files: Ok(true)
+/// when it was running and is now stopped, Ok(false) when it was not running,
+/// Err when its state is unknown or it is still running after the stop.
+pub fn ensure_stopped(vmrun: &Path, vmx_win: &str, vm: &str) -> Result<bool, String> {
+    match running_state(vmrun, vm)? {
+        false => Ok(false),
+        true => {
+            stop_hard(vmrun, vmx_win);
+            for _ in 0..24 {
+                std::thread::sleep(std::time::Duration::from_secs(5));
+                if !running_state(vmrun, vm)? {
+                    return Ok(true);
+                }
+            }
+            Err(format!("{vm} is still running 2 minutes after a hard stop"))
+        }
+    }
+}
+
 /// Whether a specific VM is in the inventory.
 ///
 /// vmrun exits 0 even when a VM did not actually come up - a stale modal in the
@@ -203,5 +232,69 @@ mod tests {
         assert!(!looks_like_ipv4("192.168.225.41.9"));
         assert!(!looks_like_ipv4("mc-k01.vmx"));
         assert!(!looks_like_ipv4(""));
+    }
+}
+
+#[cfg(test)]
+mod stop_tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    /// A vmrun stand-in: `list` prints the VM while the state file exists
+    /// (or fails when told to), `stop` removes the state file.
+    fn fake_vmrun(dir: &std::path::Path, running: bool, list_fails: bool) -> std::path::PathBuf {
+        let state = dir.join("running");
+        if running {
+            std::fs::write(&state, "").unwrap();
+        }
+        let script = dir.join("vmrun");
+        let list = if list_fails {
+            "echo 'Error: unable to connect' >&2; exit 255".to_string()
+        } else {
+            format!(
+                "if [ -e {s} ]; then echo 'Total running VMs: 1'; echo 'C:\\vm\\mc-k02\\mc-k02.vmx'; else echo 'Total running VMs: 0'; fi",
+                s = state.display()
+            )
+        };
+        std::fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\ncase \"$3\" in\n list) {list} ;;\n stop) echo stop >> {d}/stops; rm -f {s} ;;\nesac\n",
+                d = dir.display(),
+                s = state.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        script
+    }
+
+    #[test]
+    fn files_move_only_once_the_vm_is_proven_stopped() {
+        let base = std::env::temp_dir().join(format!("shk-stop-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        for (case, running, fails) in [("off", false, false), ("on", true, false), ("unknown", true, true)] {
+            let d = base.join(case);
+            std::fs::create_dir_all(&d).unwrap();
+            let v = fake_vmrun(&d, running, fails);
+            let r = ensure_stopped(&v, "C:\\vm\\mc-k02\\mc-k02.vmx", "mc-k02");
+            let stops = std::fs::read_to_string(d.join("stops")).unwrap_or_default();
+            match case {
+                "off" => {
+                    assert_eq!(r, Ok(false));
+                    assert!(stops.is_empty());
+                }
+                "on" => {
+                    assert_eq!(r, Ok(true));
+                    assert_eq!(stops.lines().count(), 1);
+                }
+                _ => {
+                    // vmrun could not answer: never "stopped", never stopped blind
+                    assert!(r.is_err(), "{r:?}");
+                    assert!(stops.is_empty());
+                }
+            }
+        }
+        let _ = std::fs::remove_dir_all(&base);
     }
 }
