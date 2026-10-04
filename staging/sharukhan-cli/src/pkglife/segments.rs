@@ -97,6 +97,7 @@ pub fn run(
 
     let mut seg = 0;
     let mut interop_waits = 0;
+    let mut network_retries = 0;
     while seg < max_segments {
         seg += 1;
         segments = seg;
@@ -130,7 +131,24 @@ pub fn run(
         let _ = crate::phases::cmd_teardown(cfg, id, true);
         let file = match file {
             Some(f) if Some(&f) != prev.as_ref() => f,
-            _ => return Err(format!("segment {seg}: verify wrote no new lifecycle file for {id}")),
+            _ => {
+                // verify refused the guest. When the only thing wrong with it
+                // is the bench network being late at first boot (wait-online
+                // failed, every other check - the network ones included -
+                // passed), the guest says nothing about the packages: try a
+                // fresh one, a bounded number of times.
+                if network_retries < MAX_NETWORK_RETRIES {
+                    if let Some(why) = bench_network_only_latest(&cfg.results_dir, id) {
+                        network_retries += 1;
+                        log(&format!(
+                            "segment {seg}: {why}; fresh guest again ({network_retries}/{MAX_NETWORK_RETRIES})"
+                        ));
+                        seg -= 1;
+                        continue;
+                    }
+                }
+                return Err(format!("segment {seg}: verify wrote no new lifecycle file for {id}"));
+            }
         };
         let recs = record::read(&file)?;
         for r in &recs {
@@ -196,6 +214,53 @@ pub fn run(
     Ok(Outcome { merged, segments, unreached: left })
 }
 
+/// How often a segment retries a guest whose only fault is the bench network
+/// at first boot.
+const MAX_NETWORK_RETRIES: usize = 3;
+
+/// Checks that failed in a verify run's checks file.
+pub fn failed_checks(checks: &str) -> Vec<String> {
+    checks
+        .lines()
+        .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+        .filter(|v| v.get("status").and_then(|s| s.as_str()) == Some("fail"))
+        .filter_map(|v| v.get("check").and_then(|c| c.as_str()).map(str::to_string))
+        .collect()
+}
+
+/// Units `systemctl --failed` lists as loaded and failed.
+pub fn failed_unit_names(text: &str) -> Vec<String> {
+    text.lines()
+        .filter_map(|l| {
+            let t: Vec<&str> = l.trim_start_matches(|c: char| c == '\u{25cf}' || c.is_whitespace())
+                .split_whitespace()
+                .collect();
+            (t.len() >= 3 && t[1] == "loaded" && t[2] == "failed").then(|| t[0].to_string())
+        })
+        .collect()
+}
+
+/// The unit that fails when the bench's DHCP answers after its timeout.
+const BENCH_NETWORK_UNIT: &str = "systemd-networkd-wait-online.service";
+
+/// Why a refused guest is only the bench network's fault, or None: the one
+/// failing check is guest.failed_units and the one failed unit is
+/// wait-online.
+pub fn bench_network_only(checks: &str, failed_units: &str) -> Option<String> {
+    let fails = failed_checks(checks);
+    let units = failed_unit_names(failed_units);
+    (fails == ["guest.failed_units"] && units == [BENCH_NETWORK_UNIT]).then(|| {
+        format!("the guest's only fault is {BENCH_NETWORK_UNIT} (no DHCP lease within its timeout at first boot); every other check passed")
+    })
+}
+
+fn bench_network_only_latest(results: &Path, id: &str) -> Option<String> {
+    let dir = results.join(id);
+    let checks = std::fs::read_to_string(dir.join("checks-latest.jsonl")).ok()?;
+    let units = std::fs::read_to_string(dir.join("logs-latest").join("failed-units.txt")).ok()?;
+    bench_network_only(&checks, &units)
+}
+
 /// How long a segment waits for WSL interop to come back, and how often.
 const INTEROP_WAIT: std::time::Duration = std::time::Duration::from_secs(12 * 3600);
 const MAX_INTEROP_WAITS: usize = 3;
@@ -242,6 +307,34 @@ mod tests {
         ];
         // a lost the guest; b failed for another reason; c was retested; d passed
         assert_eq!(guest_lost(&recs), vec!["a".to_string()]);
+    }
+
+    const UNITS_WAIT_ONLINE: &str = "  UNIT                                 LOAD   ACTIVE SUB    DESCRIPTION\n\u{25cf} systemd-networkd-wait-online.service loaded failed failed Wait for Network to be Configured\n\nLegend: LOAD   \u{2192} Reflects whether the unit definition was properly loaded.\n";
+    const CHECKS_UNITS_ONLY: &str = "{\"check\":\"net.v4_addr\",\"status\":\"pass\"}\n{\"check\":\"guest.failed_units\",\"status\":\"fail\"}\n";
+
+    #[test]
+    fn a_late_bench_network_alone_is_retried() {
+        assert!(bench_network_only(CHECKS_UNITS_ONLY, UNITS_WAIT_ONLINE).is_some());
+    }
+
+    #[test]
+    fn any_other_fault_is_not_retried() {
+        // another failed unit next to wait-online
+        let two = format!("{UNITS_WAIT_ONLINE}\u{25cf} sshd.service loaded failed failed OpenSSH\n");
+        assert!(bench_network_only(CHECKS_UNITS_ONLY, &two).is_none());
+        // a different unit alone
+        assert!(bench_network_only(CHECKS_UNITS_ONLY, "\u{25cf} sshd.service loaded failed failed OpenSSH\n").is_none());
+        // another failing check next to failed_units
+        let more = format!("{CHECKS_UNITS_ONLY}{{\"check\":\"net.dns_resolves\",\"status\":\"fail\"}}\n");
+        assert!(bench_network_only(&more, UNITS_WAIT_ONLINE).is_none());
+        // nothing failed at all: not this case either
+        assert!(bench_network_only("{\"check\":\"x\",\"status\":\"pass\"}\n", "").is_none());
+    }
+
+    #[test]
+    fn failed_units_are_read_from_systemctl_output() {
+        assert_eq!(failed_unit_names(UNITS_WAIT_ONLINE), vec![BENCH_NETWORK_UNIT.to_string()]);
+        assert!(failed_unit_names("0 loaded units listed.\n").is_empty());
     }
 
     #[test]
