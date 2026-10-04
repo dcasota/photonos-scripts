@@ -1223,7 +1223,11 @@ pub const VARIANTS: [Variant; 2] = [
             "fix/poi-fips-sshd-algorithms",
             "fix/aide-libgcrypt-versioned-requires",
             "fix-selinux-relabel",
-            "fix/systemd-groups-and-stig-variant",
+            // fix/systemd-subpackage-files-once is stacked on
+            // fix/systemd-groups-and-stig-variant (#22) and listed instead of
+            // it (range rule): systemd 257.13-7 ships each file of
+            // systemd-container and systemd-journal-remote in one package.
+            "fix/systemd-subpackage-files-once",
             "fix/stig-harden-reachable",
             // Upstream-bound only. fix/canister-equivalent-mode used to be
             // listed here; it is a TEST-ONLY change with no destination in
@@ -1249,12 +1253,59 @@ pub const VARIANTS: [Variant; 2] = [
             // one SPECS/linux/linux.spec and linux-esx.spec for every 5.0
             // subrelease (kernel 6.1 up to 90, 6.12 from 91), carrying both
             // canister PRs. Fork-only until these rows pass.
-            "fix/kernel-single-source",
+            // fix/linux-esx-depmod-ghost is stacked on it and listed instead
+            // (range rule): linux-esx 6.12.111-4 ships the files depmod
+            // generates as %ghost.
+            "fix/linux-esx-depmod-ghost",
             // cloud-init 26.2 renders its systemd generator with a variant
             // that is not in the libexecdir list, so the generator looks for
             // ds-identify at /usr/lib and exits 3. Every 26.2 guest reports
             // "status: not started" while 25.1.3 guests report "done".
             "fix/cloud-init-generator-libexecdir",
+            // Package defects the package lifecycle test found on every ISO
+            // (results/reports/pkglife-always-failing-triage.md).
+            "fix/glibc-ldconfig-file-trigger",
+            "fix/rpm-selinux-plugin-only-in-subpackage",
+            "fix/procps-ng-version-and-lang",
+            "fix/gcc-requires-binutils-glibc-devel",
+            "fix/ntpsec-python-config-drift",
+            "fix/rpcbind-statedir-owner",
+            "fix/rdma-core-modules-load-path",
+            "fix/libvirt-runtime-requires",
+            "fix/mariadb-file-split",
+            "fix/python-tools-require-their-modules",
+            "fix/clang-scanbuild-modules",
+            "fix/apparmor-aa-exec-long-options",
+            "fix/cassandra-tools-home",
+            "fix/dwarves-tools",
+            "fix/go-tools-version",
+            "fix/grub2-kbdcomp-version",
+            "fix/jq-version",
+            "fix/kubernetes-pause-version",
+            "fix/libcbor-release-build",
+            "fix/mkinitcpio-version",
+            "fix/net-snmp-mibs-and-perl-tools",
+            "fix/open-vm-tools-alias-import-arguments",
+            "fix/openldap-slappasswd-eof",
+            "fix/openscap-without-oscap-docker",
+            "fix/openvswitch-python-tools",
+            "fix/pmd-ng-clean-shutdown",
+            "fix/scripts-require-their-commands",
+            "fix/walinuxagent-drop-python2-agent",
+            "fix/zookeeper-summary-toolkit",
+            // daemons that fail to stop, or leave units behind on erase
+            "fix/nslcd-shutdown-abort",
+            "fix/pgbouncer-service-notify",
+            "fix/fuse3-main-signal-exit",
+            "fix/lxcfs-fusermount3",
+            "fix/vernemq-stop-status",
+            "fix/synce4l-stop-without-dpll",
+            "fix/linuxptp-phc2sys-clean-stop",
+            "fix/systemd-scriptlets-sysstat-mdadm",
+            "fix/units-stopped-on-erase-cups-nfs-utils",
+            "fix/iptables-alternatives-ghost",
+            "fix/sendmail-alias-database",
+            "fix/wavefront-proxy-stop-status",
         ],
     },
     Variant {
@@ -1278,7 +1329,11 @@ pub const VARIANTS: [Variant; 2] = [
             "fix/poi-2.9-eltorito-theme-modules",
             "fix/aide-libgcrypt-versioned-requires",
             "fix-selinux-relabel",
-            "fix/systemd-groups-and-stig-variant",
+            // fix/systemd-subpackage-files-once is stacked on
+            // fix/systemd-groups-and-stig-variant (#22) and listed instead of
+            // it (range rule): systemd 257.13-7 ships each file of
+            // systemd-container and systemd-journal-remote in one package.
+            "fix/systemd-subpackage-files-once",
             "fix/stig-harden-reachable",
             // Upstream-bound only. fix/canister-equivalent-mode used to be
             // listed here; it is a TEST-ONLY change with no destination in
@@ -1304,12 +1359,59 @@ pub const VARIANTS: [Variant; 2] = [
             // one SPECS/linux/linux.spec and linux-esx.spec for every 5.0
             // subrelease (kernel 6.1 up to 90, 6.12 from 91), carrying both
             // canister PRs. Fork-only until these rows pass.
-            "fix/kernel-single-source",
+            // fix/linux-esx-depmod-ghost is stacked on it and listed instead
+            // (range rule): linux-esx 6.12.111-4 ships the files depmod
+            // generates as %ghost.
+            "fix/linux-esx-depmod-ghost",
             // cloud-init 26.2 renders its systemd generator with a variant
             // that is not in the libexecdir list, so the generator looks for
             // ds-identify at /usr/lib and exits 3. Every 26.2 guest reports
             // "status: not started" while 25.1.3 guests report "done".
             "fix/cloud-init-generator-libexecdir",
+            // Package defects the package lifecycle test found on every ISO
+            // (results/reports/pkglife-always-failing-triage.md).
+            "fix/glibc-ldconfig-file-trigger",
+            "fix/rpm-selinux-plugin-only-in-subpackage",
+            "fix/procps-ng-version-and-lang",
+            "fix/gcc-requires-binutils-glibc-devel",
+            "fix/ntpsec-python-config-drift",
+            "fix/rpcbind-statedir-owner",
+            "fix/rdma-core-modules-load-path",
+            "fix/libvirt-runtime-requires",
+            "fix/mariadb-file-split",
+            "fix/python-tools-require-their-modules",
+            "fix/clang-scanbuild-modules",
+            "fix/apparmor-aa-exec-long-options",
+            "fix/cassandra-tools-home",
+            "fix/dwarves-tools",
+            "fix/go-tools-version",
+            "fix/grub2-kbdcomp-version",
+            "fix/jq-version",
+            "fix/kubernetes-pause-version",
+            "fix/libcbor-release-build",
+            "fix/mkinitcpio-version",
+            "fix/net-snmp-mibs-and-perl-tools",
+            "fix/open-vm-tools-alias-import-arguments",
+            "fix/openldap-slappasswd-eof",
+            "fix/openscap-without-oscap-docker",
+            "fix/openvswitch-python-tools",
+            "fix/pmd-ng-clean-shutdown",
+            "fix/scripts-require-their-commands",
+            "fix/walinuxagent-drop-python2-agent",
+            "fix/zookeeper-summary-toolkit",
+            // daemons that fail to stop, or leave units behind on erase
+            "fix/nslcd-shutdown-abort",
+            "fix/pgbouncer-service-notify",
+            "fix/fuse3-main-signal-exit",
+            "fix/lxcfs-fusermount3",
+            "fix/vernemq-stop-status",
+            "fix/synce4l-stop-without-dpll",
+            "fix/linuxptp-phc2sys-clean-stop",
+            "fix/systemd-scriptlets-sysstat-mdadm",
+            "fix/units-stopped-on-erase-cups-nfs-utils",
+            "fix/iptables-alternatives-ghost",
+            "fix/sendmail-alias-database",
+            "fix/wavefront-proxy-stop-status",
         ],
     },
 ];
