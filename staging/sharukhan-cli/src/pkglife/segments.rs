@@ -243,11 +243,17 @@ pub fn failed_unit_names(text: &str) -> Vec<String> {
 /// The unit that fails when the bench's DHCP answers after its timeout.
 const BENCH_NETWORK_UNIT: &str = "systemd-networkd-wait-online.service";
 
-/// Why a refused guest is only the bench network's fault, or None: the one
-/// failing check is guest.failed_units and the one failed unit is
-/// wait-online.
+/// Why a refused guest is only the bench network's fault, or None:
+/// - the one failing check is guest.failed_units and the one failed unit is
+///   wait-online (DHCP answered after its timeout at first boot), or
+/// - the one failing check is guest.ssh: verify could not reach the guest at
+///   all, so it learnt nothing about it (2026-10-04 22:56Z, k09 and c01 at
+///   once, each with a fresh lease, port 22 timing out for 115 s).
 pub fn bench_network_only(checks: &str, failed_units: &str) -> Option<String> {
     let fails = failed_checks(checks);
+    if fails == ["guest.ssh"] {
+        return Some("the guest's only fault is that ssh never reached it; nothing was learnt about it".into());
+    }
     let units = failed_unit_names(failed_units);
     (fails == ["guest.failed_units"] && units == [BENCH_NETWORK_UNIT]).then(|| {
         format!("the guest's only fault is {BENCH_NETWORK_UNIT} (no DHCP lease within its timeout at first boot); every other check passed")
@@ -257,7 +263,8 @@ pub fn bench_network_only(checks: &str, failed_units: &str) -> Option<String> {
 fn bench_network_only_latest(results: &Path, id: &str) -> Option<String> {
     let dir = results.join(id);
     let checks = std::fs::read_to_string(dir.join("checks-latest.jsonl")).ok()?;
-    let units = std::fs::read_to_string(dir.join("logs-latest").join("failed-units.txt")).ok()?;
+    // an unreachable guest leaves no failed-units harvest
+    let units = std::fs::read_to_string(dir.join("logs-latest").join("failed-units.txt")).unwrap_or_default();
     bench_network_only(&checks, &units)
 }
 
@@ -329,6 +336,14 @@ mod tests {
         assert!(bench_network_only(&more, UNITS_WAIT_ONLINE).is_none());
         // nothing failed at all: not this case either
         assert!(bench_network_only("{\"check\":\"x\",\"status\":\"pass\"}\n", "").is_none());
+    }
+
+    #[test]
+    fn an_unreachable_guest_alone_is_retried_but_not_with_other_faults() {
+        let ssh = "{\"check\":\"guest.ssh\",\"status\":\"fail\"}\n";
+        assert!(bench_network_only(ssh, "").is_some());
+        let more = format!("{ssh}{{\"check\":\"install.booted_from_disk\",\"status\":\"fail\"}}\n");
+        assert!(bench_network_only(&more, "").is_none());
     }
 
     #[test]
