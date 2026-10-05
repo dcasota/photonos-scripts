@@ -436,6 +436,7 @@
       { "pattern": "oslogin_cache_refresh*", "marker": "Failed to get groups, not updating group cache file", "reason": "OS Login needs the GCE metadata server, which a VMware guest has not" },
       { "pattern": "rpm", "marker": "Kernel FIPS must be enabled in order to use Jitterentropy", "reason": "the FIPS provider's jitterentropy source needs a kernel booted with fips=1; the bench rows boot without it" },
       { "pattern": "rpm", "marker": "JENTROPY-ERROR: OSSL_provider_init()", "reason": "the FIPS provider's jitterentropy source needs a kernel booted with fips=1; the bench rows boot without it" },
+      { "pattern": "kernel", "marker": "audit: backlog limit exceeded", "reason": "the full ISOs install audit-rules' audit.STIG.rules: perm_mod rules log every chmod/chown by root (auid=0) and the backlog is -b 640; installing a package with hundreds of files outruns auditd on the bench VM and the kernel drops records (measured on k13: installing podman-docs, 236 files, raised audit_lost from 0 to 2 with \"audit_backlog=641 > audit_backlog_limit=640\"). The audit configuration's throughput, not the package under test" },
       { "pattern": "dev-tpm0.device", "marker": "Timed out waiting for device /dev/tpm0", "reason": "the bench guests have no TPM; tpm2-abrmd.service requires dev-tpm0.device" }
     ],
     "preconditions": [

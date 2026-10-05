@@ -1716,3 +1716,24 @@ fn a_declared_dependency_unit_is_declared_in_the_window_too() {
     assert_eq!(left.len(), 1, "{left:?}");
     assert!(left[0].contains("fatal"));
 }
+
+#[test]
+fn the_kernels_audit_backlog_line_is_the_audit_configurations() {
+    // podman-docs, systemtap (k09) and fail2ban-devel (k13), gate 54
+    let pol = Policy::embedded().unwrap();
+    let e = parse::journal_json(concat!(
+        r#"{"PRIORITY":"3","SYSLOG_IDENTIFIER":"kernel","_TRANSPORT":"kernel","MESSAGE":"audit: backlog limit exceeded"}"#,
+        "\n",
+        r#"{"PRIORITY":"3","SYSLOG_IDENTIFIER":"kernel","_TRANSPORT":"kernel","MESSAGE":"Out of memory: Killed process 4242 (x)"}"#,
+        "\n",
+        r#"{"PRIORITY":"3","SYSLOG_IDENTIFIER":"auditd","_SYSTEMD_UNIT":"auditd.service","MESSAGE":"audit: backlog limit exceeded"}"#,
+        "\n"
+    ))
+    .unwrap();
+    let left = window_errors(&e, &BTreeSet::new(), &pol, &BTreeSet::new(), &BTreeSet::new(), &ProbeSenders::default());
+    // negative controls: another kernel error, and the same words from a
+    // program that is not the kernel, still count
+    assert_eq!(left.len(), 2, "{left:?}");
+    assert!(left.iter().any(|l| l.contains("Out of memory")));
+    assert!(left.iter().any(|l| l.contains("auditd")));
+}
