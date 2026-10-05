@@ -87,10 +87,78 @@ cleanup:
     return hex;
 }
 
-/* libcurl WRITEFUNCTION → fwrite into the temp file. */
+/* ---- download policy (PR_DOWNLOAD_HTTPS_ONLY, PR_MAX_DOWNLOAD_BYTES) ---- */
+
+/* Empty counts as unset (M145). */
+static const char *env_nonempty(const char *name)
+{
+    const char *v = getenv(name);
+    return (v != NULL && v[0] != '\0') ? v : NULL;
+}
+
+int pr_download_policy_from_env(pr_download_policy_t *out)
+{
+    if (out == NULL) return -1;
+    out->https_only = 0;
+    out->max_bytes  = 0;
+    const char *h = env_nonempty("PR_DOWNLOAD_HTTPS_ONLY");
+    if (h != NULL && strcmp(h, "0") != 0) out->https_only = 1;
+    const char *m = env_nonempty("PR_MAX_DOWNLOAD_BYTES");
+    if (m != NULL) {
+        unsigned long long v = 0;
+        for (const char *p = m; *p; p++) {
+            if (*p < '0' || *p > '9') return -1;
+            unsigned long long d = (unsigned long long)(*p - '0');
+            if (v > (~0ULL - d) / 10ULL) return -1; /* overflow */
+            v = v * 10ULL + d;
+        }
+        out->max_bytes = v;
+    }
+    return 0;
+}
+
+int pr_download_status_ok(const pr_download_policy_t *p, long status)
+{
+    if (p != NULL && p->https_only) return status == 200;
+    return status >= 200 && status < 300;
+}
+
+/* Restrict the transfer to `p`: https only (initial request and every
+ * redirect), and a ceiling libcurl enforces on an announced
+ * Content-Length (the write callbacks enforce it on what arrives). */
+static void apply_download_policy(CURL *c, const pr_download_policy_t *p)
+{
+    if (p->https_only) {
+#if LIBCURL_VERSION_NUM >= 0x075500
+        curl_easy_setopt(c, CURLOPT_PROTOCOLS_STR,       "https");
+        curl_easy_setopt(c, CURLOPT_REDIR_PROTOCOLS_STR, "https");
+#else
+        curl_easy_setopt(c, CURLOPT_PROTOCOLS,       (long)CURLPROTO_HTTPS);
+        curl_easy_setopt(c, CURLOPT_REDIR_PROTOCOLS, (long)CURLPROTO_HTTPS);
+#endif
+    }
+    if (p->max_bytes > 0) {
+        curl_easy_setopt(c, CURLOPT_MAXFILESIZE_LARGE, (curl_off_t)p->max_bytes);
+    }
+}
+
+/* A sink that counts what it writes and stops past the ceiling. */
+struct file_sink {
+    FILE               *f;
+    unsigned long long  written;
+    unsigned long long  max_bytes;  /* 0 = none */
+};
+
+/* libcurl WRITEFUNCTION → fwrite into the file, bounded by the ceiling.
+ * Returning less than s*n aborts the transfer (CURLE_WRITE_ERROR). */
 static size_t write_to_file(char *p, size_t s, size_t n, void *u)
 {
-    return fwrite(p, s, n, (FILE *)u);
+    struct file_sink *k = (struct file_sink *)u;
+    size_t bytes = s * n;
+    if (k->max_bytes > 0 && k->written + bytes > k->max_bytes) return 0;
+    size_t w = fwrite(p, 1, bytes, k->f);
+    k->written += w;
+    return w;
 }
 
 /* mkdir -p the parent directory of `path` (best-effort). */
@@ -109,28 +177,37 @@ static void mkdir_parents(const char *path)
 }
 
 /* Download `url` into `dest` (persistent path). Creates parent dirs.
- * Returns 0 on a 2xx response with the file written, -1 otherwise
- * (and removes any partial file). */
+ * Returns 0 on an accepted response (pr_download_status_ok) with the
+ * file written within the policy's ceiling, -1 otherwise (and removes
+ * any partial file). */
 static int download_url_to_file(const char *url, const char *dest)
 {
+    pr_download_policy_t pol;
+    if (pr_download_policy_from_env(&pol) != 0) {
+        fprintf(stderr, "::warning::sha: PR_MAX_DOWNLOAD_BYTES is not a decimal byte "
+                "count; download refused: %s\n", url);
+        return -1;
+    }
     mkdir_parents(dest);
     FILE *f = fopen(dest, "w+b");
     if (!f) return -1;
     CURL *c = curl_easy_init();
     if (!c) { fclose(f); unlink(dest); return -1; }
+    struct file_sink sink = { f, 0, pol.max_bytes };
     curl_easy_setopt(c, CURLOPT_URL,            url);
     curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(c, CURLOPT_TIMEOUT_MS,     120000);
     curl_easy_setopt(c, CURLOPT_WRITEFUNCTION,  write_to_file);
-    curl_easy_setopt(c, CURLOPT_WRITEDATA,      f);
+    curl_easy_setopt(c, CURLOPT_WRITEDATA,      &sink);
     curl_easy_setopt(c, CURLOPT_USERAGENT,      "photonos-package-report/C");
+    apply_download_policy(c, &pol);
     CURLcode rc = curl_easy_perform(c);
     long status = 0;
     curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &status);
     curl_easy_cleanup(c);
-    fflush(f);
+    int flush_failed = (fflush(f) != 0);
     fclose(f);
-    if (rc != CURLE_OK || status < 200 || status >= 300) {
+    if (rc != CURLE_OK || !pr_download_status_ok(&pol, status) || flush_failed) {
         unlink(dest);
         return -1;
     }
@@ -201,6 +278,12 @@ fail:
 char *pr_sha_of_url(pr_sha_alg_t alg, const char *url)
 {
     if (url == NULL || url[0] == '\0') return NULL;
+    pr_download_policy_t pol;
+    if (pr_download_policy_from_env(&pol) != 0) {
+        fprintf(stderr, "::warning::sha: PR_MAX_DOWNLOAD_BYTES is not a decimal byte "
+                "count; download refused: %s\n", url);
+        return NULL;
+    }
 
     /* Download to a /tmp file, then hash it. The PS Get-FileHash
      * accepts a path, so this matches the PS flow. */
@@ -212,21 +295,23 @@ char *pr_sha_of_url(pr_sha_alg_t alg, const char *url)
 
     CURL *c = curl_easy_init();
     if (!c) { fclose(f); unlink(tmpl); return NULL; }
+    struct file_sink sink = { f, 0, pol.max_bytes };
     curl_easy_setopt(c, CURLOPT_URL,            url);
     curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(c, CURLOPT_TIMEOUT_MS,     120000);
     curl_easy_setopt(c, CURLOPT_WRITEFUNCTION,  write_to_file);
-    curl_easy_setopt(c, CURLOPT_WRITEDATA,      f);
+    curl_easy_setopt(c, CURLOPT_WRITEDATA,      &sink);
     curl_easy_setopt(c, CURLOPT_USERAGENT,      "photonos-package-report/C");
+    apply_download_policy(c, &pol);
     CURLcode rc = curl_easy_perform(c);
     long status = 0;
     curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &status);
     curl_easy_cleanup(c);
-    fflush(f);
+    int flush_failed = (fflush(f) != 0);
     fclose(f);
 
     char *hex = NULL;
-    if (rc == CURLE_OK && status >= 200 && status < 300) {
+    if (rc == CURLE_OK && pr_download_status_ok(&pol, status) && !flush_failed) {
         hex = pr_sha_file(alg, tmpl);
     }
     unlink(tmpl);
@@ -235,15 +320,20 @@ char *pr_sha_of_url(pr_sha_alg_t alg, const char *url)
 
 /* ADR-0014 multi-hash: one libcurl GET, two EVP_MD_CTX. */
 struct multi_ctx {
-    EVP_MD_CTX *c256;
-    EVP_MD_CTX *c512;
-    int        err;
+    EVP_MD_CTX         *c256;
+    EVP_MD_CTX         *c512;
+    int                 err;
+    unsigned long long  received;
+    unsigned long long  max_bytes;  /* 0 = none */
 };
 
 static size_t write_to_multi(char *p, size_t s, size_t n, void *u)
 {
     struct multi_ctx *m = (struct multi_ctx *)u;
     size_t bytes = s * n;
+    /* Past the ceiling: abort the transfer (CURLE_WRITE_ERROR). */
+    if (m->max_bytes > 0 && m->received + bytes > m->max_bytes) return 0;
+    m->received += bytes;
     if (m->err) return bytes;
     if (m->c256 && EVP_DigestUpdate(m->c256, p, bytes) != 1) { m->err = 1; }
     if (m->c512 && EVP_DigestUpdate(m->c512, p, bytes) != 1) { m->err = 1; }
@@ -258,8 +348,14 @@ int pr_sha_of_url_multi(const char *url,
     if (sha512_hex) *sha512_hex = NULL;
     if (url == NULL || url[0] == '\0') return -1;
     if (sha256_hex == NULL && sha512_hex == NULL) return -1;
+    pr_download_policy_t pol;
+    if (pr_download_policy_from_env(&pol) != 0) {
+        fprintf(stderr, "::warning::sha: PR_MAX_DOWNLOAD_BYTES is not a decimal byte "
+                "count; download refused: %s\n", url);
+        return -1;
+    }
 
-    struct multi_ctx m = { NULL, NULL, 0 };
+    struct multi_ctx m = { NULL, NULL, 0, 0, pol.max_bytes };
     if (sha256_hex) {
         m.c256 = EVP_MD_CTX_new();
         if (!m.c256) goto err;
@@ -279,12 +375,13 @@ int pr_sha_of_url_multi(const char *url,
     curl_easy_setopt(c, CURLOPT_WRITEFUNCTION,  write_to_multi);
     curl_easy_setopt(c, CURLOPT_WRITEDATA,      &m);
     curl_easy_setopt(c, CURLOPT_USERAGENT,      "photonos-package-report/C");
+    apply_download_policy(c, &pol);
     CURLcode rc = curl_easy_perform(c);
     long status = 0;
     curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &status);
     curl_easy_cleanup(c);
 
-    if (rc != CURLE_OK || status < 200 || status >= 300 || m.err) goto err;
+    if (rc != CURLE_OK || !pr_download_status_ok(&pol, status) || m.err) goto err;
 
     unsigned char digest[EVP_MAX_MD_SIZE];
     unsigned int  digest_len = 0;

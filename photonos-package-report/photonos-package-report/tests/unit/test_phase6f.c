@@ -137,11 +137,76 @@ cleanup:
     pr_task_list_free(&b);
 }
 
+/* --- download policy (PR_DOWNLOAD_HTTPS_ONLY, PR_MAX_DOWNLOAD_BYTES) --- */
+
+static void test_download_policy(void)
+{
+    fprintf(stderr, "[test_download_policy]\n");
+    pr_download_policy_t p;
+
+    /* Unset: the pre-existing behaviour (any 2xx, no ceiling). */
+    unsetenv("PR_DOWNLOAD_HTTPS_ONLY");
+    unsetenv("PR_MAX_DOWNLOAD_BYTES");
+    EXPECT_INT(pr_download_policy_from_env(&p), 0);
+    EXPECT_INT(p.https_only, 0);
+    EXPECT_INT(p.max_bytes == 0, 1);
+    EXPECT_INT(pr_download_status_ok(&p, 200), 1);
+    EXPECT_INT(pr_download_status_ok(&p, 203), 1);
+    EXPECT_INT(pr_download_status_ok(&p, 302), 0);
+    EXPECT_INT(pr_download_status_ok(&p, 404), 0);
+
+    /* Empty values count as unset (M145). */
+    setenv("PR_DOWNLOAD_HTTPS_ONLY", "", 1);
+    setenv("PR_MAX_DOWNLOAD_BYTES", "", 1);
+    EXPECT_INT(pr_download_policy_from_env(&p), 0);
+    EXPECT_INT(p.https_only, 0);
+    EXPECT_INT(p.max_bytes == 0, 1);
+
+    /* "0" keeps https_only off. */
+    setenv("PR_DOWNLOAD_HTTPS_ONLY", "0", 1);
+    EXPECT_INT(pr_download_policy_from_env(&p), 0);
+    EXPECT_INT(p.https_only, 0);
+
+    /* Strict: only an HTTP 200 is accepted. */
+    setenv("PR_DOWNLOAD_HTTPS_ONLY", "1", 1);
+    setenv("PR_MAX_DOWNLOAD_BYTES", "1073741824", 1);
+    EXPECT_INT(pr_download_policy_from_env(&p), 0);
+    EXPECT_INT(p.https_only, 1);
+    EXPECT_INT(p.max_bytes == 1073741824ULL, 1);
+    EXPECT_INT(pr_download_status_ok(&p, 200), 1);
+    EXPECT_INT(pr_download_status_ok(&p, 203), 0);
+    EXPECT_INT(pr_download_status_ok(&p, 206), 0);
+
+    /* A malformed ceiling fails closed, and so does every download: the
+     * helpers return before any transfer is attempted. */
+    const char *bad[] = { "1G", "-1", "12 ", "0x10", "99999999999999999999999", NULL };
+    for (int i = 0; bad[i]; i++) {
+        setenv("PR_MAX_DOWNLOAD_BYTES", bad[i], 1);
+        EXPECT_INT(pr_download_policy_from_env(&p), -1);
+        char *h = pr_sha_of_url(PR_SHA512, "https://example.invalid/x.tar.gz");
+        EXPECT_INT(h == NULL, 1);
+        free(h);
+        char *a = NULL, *b = NULL;
+        EXPECT_INT(pr_sha_of_url_multi("https://example.invalid/x.tar.gz", &a, &b), -1);
+        EXPECT_INT(a == NULL && b == NULL, 1);
+    }
+
+    /* Strict mode refuses a non-https scheme before connecting. */
+    setenv("PR_MAX_DOWNLOAD_BYTES", "0", 1);
+    char *h = pr_sha_of_url(PR_SHA256, "file:///etc/hostname");
+    EXPECT_INT(h == NULL, 1);
+    free(h);
+
+    unsetenv("PR_DOWNLOAD_HTTPS_ONLY");
+    unsetenv("PR_MAX_DOWNLOAD_BYTES");
+}
+
 int main(void)
 {
     test_sha_hex();
     test_sha_file();
     test_diff_report();
+    test_download_policy();
 
     if (failures == 0) {
         fprintf(stderr, "test_phase6f: ALL PASSED\n");
