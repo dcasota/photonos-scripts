@@ -445,6 +445,7 @@
       { "pattern": "ndctl-monitor.service", "marker": "no dimms to monitor, exiting", "reason": "the bench guests have no NVDIMM" },
       { "pattern": "tpm2-abrmd.service", "marker": "Dependency failed for TPM2 Access Broker and Resource Management Daemon", "reason": "the bench guests have no TPM; the unit requires dev-tpm0.device, which times out" },
       { "pattern": "dnsmasq.service", "marker": "failed to create listening socket for port 53: Address already in use", "reason": "the bench guests run systemd-resolved's stub listener on port 53; dnsmasq's default configuration listens there too" },
+      { "pattern": "rdma-ndd.service", "path_absent": "/sys/class/infiniband", "reason": "rdma-ndd keeps the node descriptions of RDMA devices; udev starts it when one appears (Before=rdma-hw.target, StopWhenUnneeded=yes) and the bench guests have none: started by hand it logs \"Failed to open /sys/class/infiniband\" (measured on k13, gate 54)" },
       { "pattern": "ibacm.service", "path_absent": "/sys/class/infiniband", "reason": "ibacm serves RDMA devices and the bench guests have none (/var/log/ibacm.log: \"acm_open_devices: ERROR - no devices\")" }
     ]
   }

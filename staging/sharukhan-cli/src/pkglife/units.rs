@@ -906,12 +906,17 @@ pub fn cycle(ctx: &mut Ctx, unit: &str, deadman: bool) -> Cycled {
     // A reviewed bench precondition (a kernel without the driver the daemon
     // drives) explains a unit whose start failed - only with its evidence:
     // the reviewed words in the unit's own journal of this window, or the
-    // running kernel's own config leaving the reviewed option unset. A unit
-    // that started is judged as usual, whatever the bench lacks.
-    let start_failed = res
-        .steps
-        .iter()
-        .any(|s| s.name == "start" && s.status == FAIL);
+    // running kernel's own config leaving the reviewed option unset. A daemon
+    // that forks before it fails has not started either: dnsmasq on k13 was
+    // active/running when `systemctl start` returned and failed within the
+    // stability window ("failed to create listening socket for port 53"),
+    // where on k09 the start itself failed. A unit that stayed up is judged
+    // as usual, whatever the bench lacks. A daemon that did not come up at
+    // all and still logged its complaint (rdma-ndd: "Failed to open
+    // /sys/class/infiniband", start skipped) is judged the same way.
+    let started = res.steps.iter().any(|s| s.name == "start" && s.status == PASS);
+    let died = res.steps.iter().any(|s| s.name == "stays-up" && s.status == FAIL);
+    let start_failed = res.steps.iter().any(|s| s.status == FAIL) && (!started || died);
     if start_failed && res.outcome != DECLARED_CONFIG {
         let cands = ctx.policy.unit_preconditions(unit);
         let mut met: Option<(String, String)> = None;
@@ -1639,6 +1644,96 @@ mod tests {
         assert!(start.detail.contains("declared"));
         assert_eq!(c.res.status, SKIP);
         assert_eq!(c.res.outcome, "needs configuration (declared)");
+    }
+
+    #[test]
+    fn a_daemon_that_dies_in_the_stability_window_meets_its_precondition_too() {
+        let mut p = pol();
+        p.limits.stability_secs = 0;
+        p.units.preconditions.push(crate::pkglife::policy::UnitPrecondition {
+            pattern: "dnsmasq.service".into(),
+            marker: Some("failed to create listening socket for port 53: Address already in use".into()),
+            kernel_unset: None,
+            path_absent: None,
+            reason: "the bench guests run systemd-resolved's stub listener on port 53".into(),
+        });
+        // k13, gate 54: active/running after start, failed when re-read
+        let script = || {
+            let mut f = Fake::new();
+            f.on("--show-cursor", fake::ok(CURSOR))
+                .once("'show'", fake::ok("LoadState=loaded\nActiveState=inactive\nUnitFileState=disabled\nMainPID=0\n"))
+                .on("'enable'", fake::ok(""))
+                .once("'show'", fake::ok("UnitFileState=enabled\n"))
+                .on("'start'", fake::ok(""))
+                .once("'show'", fake::ok("ActiveState=active\nSubState=running\nMainPID=9\nNRestarts=0\n"))
+                .once("'show'", fake::ok("ActiveState=failed\nSubState=failed\nResult=exit-code\nMainPID=0\nNRestarts=0\n"))
+                .on("'stop'", fake::ok(""))
+                .on("'reset-failed'", fake::ok(""))
+                .once("'show'", fake::ok("ActiveState=failed\nMainPID=0\nResult=exit-code\n"))
+                .once("'show'", fake::ok("UnitFileState=enabled\n"))
+                .on("'disable'", fake::ok(""))
+                .on("'show'", fake::ok("UnitFileState=disabled\n"));
+            f
+        };
+        let run = |journal: &str| {
+            let mut f = script();
+            f.on("journalctl", fake::ok(journal));
+            let mut ctx = Ctx { r: &mut f, policy: &p, nonce: "n9", triggered_by: &BTreeMap::new() };
+            cycle(&mut ctx, "dnsmasq.service", false).res
+        };
+        let quoted = concat!(
+            r#"{"_SYSTEMD_UNIT":"dnsmasq.service","PRIORITY":"2","MESSAGE":"failed to create listening socket for port 53: Address already in use"}"#,
+            "\n",
+            r#"{"_SYSTEMD_UNIT":"dnsmasq.service","PRIORITY":"2","MESSAGE":"FAILED to start up"}"#,
+            "\n"
+        );
+        let r = run(quoted);
+        assert_eq!(r.status, SKIP, "{:?}", r.steps);
+        assert_eq!(r.outcome, UNMET_PRECONDITION);
+        let st = r.steps.iter().find(|s| s.name == "stays-up").unwrap();
+        assert!(st.detail.contains("port 53"), "{}", st.detail);
+        // negative control: the same early death without the reviewed words
+        let r = run(r#"{"_SYSTEMD_UNIT":"dnsmasq.service","PRIORITY":"2","MESSAGE":"FAILED to start up"}"#);
+        assert_eq!(r.status, FAIL, "{:?}", r.steps);
+        assert_ne!(r.outcome, UNMET_PRECONDITION);
+    }
+
+    #[test]
+    fn a_daemon_that_never_came_up_but_complained_meets_its_precondition() {
+        // rdma-ndd on k13 (gate 54): start skipped, yet its own journal holds
+        // "Failed to open /sys/class/infiniband" - the bench has no RDMA device.
+        let mut p = pol();
+        p.limits.stability_secs = 0;
+        p.units.preconditions.push(crate::pkglife::policy::UnitPrecondition {
+            pattern: "rdma-ndd.service".into(),
+            marker: None,
+            kernel_unset: None,
+            path_absent: Some("/sys/class/infiniband".into()),
+            reason: "udev starts rdma-ndd for an RDMA device and the bench has none".into(),
+        });
+        let run = |present: bool| {
+            let mut f = Fake::new();
+            f.on("--show-cursor", fake::ok(CURSOR))
+                .once("'show'", fake::ok("LoadState=loaded\nActiveState=inactive\nUnitFileState=static\nMainPID=0\n"))
+                .on("'start'", fake::ok(""))
+                .on("'stop'", fake::ok(""))
+                .on("'reset-failed'", fake::ok(""))
+                .on("'show'", fake::ok("ActiveState=inactive\nSubState=dead\nResult=success\nConditionResult=no\nMainPID=0\n"))
+                .on("/sys/class/infiniband", fake::ok(if present { "present\n" } else { "absent\n" }))
+                .on(
+                    "journalctl",
+                    fake::ok(r#"{"_SYSTEMD_UNIT":"rdma-ndd.service","PRIORITY":"3","SYSLOG_IDENTIFIER":"rdma-ndd","MESSAGE":"Failed to open /sys/class/infiniband"}"#),
+                );
+            let mut ctx = Ctx { r: &mut f, policy: &p, nonce: "n10", triggered_by: &BTreeMap::new() };
+            cycle(&mut ctx, "rdma-ndd.service", false).res
+        };
+        let r = run(false);
+        assert_eq!(r.outcome, UNMET_PRECONDITION, "{:?}", r.steps);
+        assert!(!r.steps.iter().any(|s| s.status == FAIL), "{:?}", r.steps);
+        // negative control: with the device class present the line is a failure
+        let r = run(true);
+        assert_eq!(r.status, FAIL, "{:?}", r.steps);
+        assert_ne!(r.outcome, UNMET_PRECONDITION);
     }
 
     #[test]
