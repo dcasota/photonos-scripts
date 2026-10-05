@@ -1737,3 +1737,28 @@ fn the_kernels_audit_backlog_line_is_the_audit_configurations() {
     assert!(left.iter().any(|l| l.contains("Out of memory")));
     assert!(left.iter().any(|l| l.contains("auditd")));
 }
+
+#[test]
+fn an_unattributed_line_the_probe_echoed_is_the_probes() {
+    // google-guest-oslogin on k09/k13 (gate 54): google_authorized_principals
+    // logs as "sshd" and echoes "sshd[321449]: ..." on stderr (LOG_PERROR).
+    let pol = Policy::embedded().unwrap();
+    let probes = ProbeSenders::new(
+        Some(65534),
+        ["/usr/bin/google_authorized_principals".to_string()].into_iter().collect(),
+    )
+    .with_output(["", "sshd[321449]: google_authorized_principals: usage: google_authorized_principals [username] [base64-encoded cert]"]);
+    let line = |uid: u32, pid: u32| {
+        format!(
+            r#"{{"PRIORITY":"3","SYSLOG_IDENTIFIER":"sshd","_UID":"{uid}","_PID":"{pid}","MESSAGE":"google_authorized_principals: usage: google_authorized_principals [username] [base64-encoded cert]"}}"#
+        )
+    };
+    let left = |j: String| {
+        let e = parse::journal_json(&j).unwrap();
+        window_errors(&e, &BTreeSet::new(), &pol, &BTreeSet::new(), &BTreeSet::new(), &probes).len()
+    };
+    assert_eq!(left(line(65534, 321449)), 0);
+    // negative controls: another pid, another uid
+    assert_eq!(left(line(65534, 321450)), 1, "another pid");
+    assert_eq!(left(line(0, 321449)), 1, "another uid");
+}

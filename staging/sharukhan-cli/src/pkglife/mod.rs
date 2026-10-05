@@ -230,12 +230,21 @@ pub fn declared_units(
 /// the package that ran as the probe user, logged under a probed name and
 /// exited before journald read it would be excused the same way - but a unit
 /// that dies is judged by its own state, not by this line.
+///
+/// A tool can also log under another identifier (google_authorized_principals
+/// opens syslog as "sshd", google_oslogin_nss_cache as
+/// "oslogin_cache_refresh") and echo each line to stderr with LOG_PERROR,
+/// which the probe recorded as `ident[pid]: message`. A line with no unit and
+/// no _EXE is the probe's when that exact echo - identifier, the sender's
+/// pid and message - is in the output of one of the package's probes.
 #[derive(Clone, Debug, Default)]
 pub struct ProbeSenders {
     pub uid: Option<u32>,
     pub exes: BTreeSet<String>,
     /// The file names of `exes`: what a probe's SYSLOG_IDENTIFIER says.
     pub names: BTreeSet<String>,
+    /// Every line the package's probes printed, trimmed.
+    pub echoed: BTreeSet<String>,
 }
 
 impl ProbeSenders {
@@ -246,7 +255,21 @@ impl ProbeSenders {
             .filter(|n| !n.is_empty())
             .map(str::to_string)
             .collect();
-        ProbeSenders { uid, exes, names }
+        ProbeSenders {
+            uid,
+            exes,
+            names,
+            echoed: BTreeSet::new(),
+        }
+    }
+
+    /// The probes' own output, for the LOG_PERROR echo of a line.
+    pub fn with_output<'a>(mut self, outputs: impl IntoIterator<Item = &'a str>) -> Self {
+        for o in outputs {
+            self.echoed
+                .extend(o.lines().map(str::trim).filter(|l| !l.is_empty()).map(str::to_string));
+        }
+        self
     }
 
     pub fn sent(&self, e: &JEntry) -> bool {
@@ -254,7 +277,15 @@ impl ProbeSenders {
             return false;
         }
         if e.exe.is_empty() {
-            !e.identifier.is_empty() && self.names.contains(&e.identifier)
+            if e.identifier.is_empty() {
+                return false;
+            }
+            let echo = e
+                .pid
+                .map(|pid| format!("{}[{pid}]: {}", e.identifier, e.message.trim()))
+                .map(|l| self.echoed.contains(&l))
+                .unwrap_or(false);
+            self.names.contains(&e.identifier) || echo
         } else {
             self.exes.contains(&e.exe)
         }
@@ -1117,7 +1148,12 @@ impl Session<'_> {
             q,
         );
         exes.extend(e.stdout.lines().map(str::trim).filter(|l| l.starts_with('/')).map(str::to_string));
-        ProbeSenders::new(self.probe_uid.flatten(), exes)
+        ProbeSenders::new(self.probe_uid.flatten(), exes).with_output(
+            rec.clis
+                .iter()
+                .flat_map(|c| c.attempts.iter())
+                .flat_map(|a| [a.stdout.as_str(), a.stderr.as_str()]),
+        )
     }
 
     fn journal_window(&mut self, cursor: &str, rec: &mut PkgRecord) {

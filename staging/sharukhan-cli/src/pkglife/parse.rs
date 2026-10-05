@@ -390,6 +390,8 @@ pub struct JEntry {
     /// process itself even when it can no longer tell its unit.
     pub uid: Option<u32>,
     pub exe: String,
+    /// _PID of the sender (SYSLOG_PID when journald has none).
+    pub pid: Option<u32>,
 }
 
 impl JEntry {
@@ -476,6 +478,7 @@ pub fn journal_json(stdout: &str) -> Result<Vec<JEntry>, String> {
             coredump_unit: s("COREDUMP_UNIT"),
             uid: s("_UID").parse().ok(),
             exe: s("_EXE"),
+            pid: s("_PID").parse().ok().or_else(|| s("SYSLOG_PID").parse().ok()),
         });
     }
     Ok(out)

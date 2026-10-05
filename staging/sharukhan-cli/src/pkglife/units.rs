@@ -1423,6 +1423,7 @@ mod tests {
             coredump_unit: String::new(),
             uid: None,
             exe: String::new(),
+            pid: None,
         }
     }
 
