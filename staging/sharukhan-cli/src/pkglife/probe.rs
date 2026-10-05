@@ -556,6 +556,23 @@ fn reviewed_precondition(
     None
 }
 
+/// The reason `policy` keeps an executable from running at all: the
+/// denylist by name (`cli.never_execute`), then - unless `generic` - a
+/// reviewed `cli.no_version_query` entry for its path. A probe and a re-judged
+/// record both stop here, so a replay gives the verdict a new run would.
+pub fn skipped_by_policy(policy: &Policy, exe: &str, generic: bool) -> Option<String> {
+    let base = exe.rsplit('/').next().unwrap_or(exe);
+    if let Some(rule) = first_match(&policy.cli.never_execute, base) {
+        return Some(format!("never executed ({}): {}", rule.pattern, rule.reason));
+    }
+    if !generic {
+        if let Some(rule) = policy.no_version_query(exe) {
+            return Some(format!("no version query (reviewed): {}", rule.reason));
+        }
+    }
+    None
+}
+
 /// Probe one executable. `seq` makes each transient unit name unique.
 /// `generic` ignores every per-tool policy entry and every derived "ran
 /// without a version" basis: it is how the controls judge a known-bad binary.
@@ -573,17 +590,10 @@ pub fn probe(
         ..Default::default()
     };
     let base = exe.rsplit('/').next().unwrap_or(exe);
-    if let Some(rule) = first_match(&policy.cli.never_execute, base) {
+    if let Some(why) = skipped_by_policy(policy, exe, generic) {
         res.status = SKIP.into();
-        res.reason = format!("never executed ({}): {}", rule.pattern, rule.reason);
+        res.reason = why;
         return res;
-    }
-    if !generic {
-        if let Some(rule) = policy.no_version_query(exe) {
-            res.status = SKIP.into();
-            res.reason = format!("no version query (reviewed): {}", rule.reason);
-            return res;
-        }
     }
 
     // ---- the file, before anything runs ----------------------------------
@@ -778,10 +788,18 @@ pub fn judge_attempts(
 
 /// Re-judge one recorded CLI result under `policy`: the attempts are kept,
 /// each probe's verdict is recomputed (a policy can change the expected
-/// status or the error markers) and so is the conclusion. Results decided
+/// status or the error markers) and so is the conclusion. A tool the policy
+/// now keeps from running is skipped for that reason, as a new run would
+/// skip it; its recorded attempts stay as the evidence. Results decided
 /// before any probe ran (denylist, file inspection) carry no attempts and are
-/// returned unchanged.
+/// otherwise returned unchanged.
 pub fn rejudge(policy: &Policy, c: &CliResult, pkg_version: &str) -> CliResult {
+    if let Some(why) = skipped_by_policy(policy, &c.path, false) {
+        let mut out = c.clone();
+        out.status = SKIP.into();
+        out.reason = why;
+        return out;
+    }
     if c.attempts.is_empty() {
         return c.clone();
     }
@@ -1096,6 +1114,64 @@ mod tests {
             assert!(!r.reason.contains("never executed"), "{exe}: {}", r.reason);
             assert!(!f.log.borrow().is_empty(), "{exe} was not probed");
         }
+    }
+
+    #[test]
+    fn snmp_bridge_mib_is_never_run_but_its_neighbours_are() {
+        // snmp-bridge-mib takes any one argument as the bridge to serve and
+        // runs as an AgentX subagent until killed: on k13 every version probe
+        // ended at the runtime limit ("Failed to connect to the agentx master
+        // agent"). It is never sent to the guest.
+        let p = Policy::embedded().unwrap();
+        let mut f = Fake::new();
+        let mut seq = 0;
+        let r = probe(&mut f, &p, "/usr/bin/snmp-bridge-mib", "5.9.5.2", "sharukhan-probe", &mut seq, false);
+        assert_eq!(r.status, SKIP);
+        assert!(r.reason.contains("never executed (snmp-bridge-mib)"), "{}", r.reason);
+        assert!(r.reason.contains("AgentX"), "{}", r.reason);
+        assert!(f.log.borrow().is_empty(), "snmp-bridge-mib reached the guest");
+        // negative control: the rule names exactly snmp-bridge-mib - the
+        // other net-snmp tools and a lookalike name are still probed
+        for exe in ["/usr/bin/snmpget", "/usr/bin/mib2c", "/usr/bin/snmp-bridge-mib2"] {
+            let mut f = Fake::new();
+            f.on("stat -L", elf()).on("'--version'", fake::ok("NET-SNMP version: 5.9.5.2\n"));
+            let r = probe(&mut f, &p, exe, "5.9.5.2", "sharukhan-probe", &mut seq, false);
+            assert!(!r.reason.contains("never executed"), "{exe}: {}", r.reason);
+            assert!(!f.log.borrow().is_empty(), "{exe} was not probed");
+        }
+    }
+
+    #[test]
+    fn a_rejudged_record_of_a_tool_now_denylisted_is_skipped_with_its_evidence() {
+        // The k13 record of snmp-bridge-mib: every probe hung at the runtime
+        // limit. Replayed under a policy that never executes it, the verdict
+        // is the one a new run gives, and the recorded attempts stay.
+        let p = Policy::embedded().unwrap();
+        let hung = |args: &[&str]| ProbeAttempt {
+            args: args.iter().map(|a| a.to_string()).collect(),
+            code: Some(1),
+            timed_out: true,
+            ms: 10_171,
+            stderr: "Warning: Failed to connect to the agentx master agent ([NIL]):".into(),
+            verdict: "hung: ended at the 10s runtime limit (exit status 1)".into(),
+            ended: "code=killed, status=15/TERM".into(),
+            ..Default::default()
+        };
+        let rec = |path: &str| CliResult {
+            path: path.into(),
+            status: FAIL.into(),
+            reason: "no version probe succeeded".into(),
+            attempts: vec![hung(&["--version"]), hung(&["-V"])],
+        };
+        let r = rejudge(&p, &rec("/usr/bin/snmp-bridge-mib"), "5.9.5.2");
+        assert_eq!(r.status, SKIP, "{}", r.reason);
+        assert!(r.reason.starts_with("never executed (snmp-bridge-mib)"), "{}", r.reason);
+        assert_eq!(r.attempts.len(), 2, "the recorded evidence is kept");
+        // negative control: the same hung record of a tool the policy lets
+        // run is still a failure
+        let r = rejudge(&p, &rec("/usr/bin/snmptrap"), "5.9.5.2");
+        assert_eq!(r.status, FAIL, "{}", r.reason);
+        assert!(r.reason.contains("hung"), "{}", r.reason);
     }
 
     #[test]
