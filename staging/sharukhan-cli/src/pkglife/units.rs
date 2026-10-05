@@ -49,7 +49,7 @@ use std::time::Instant;
 pub const PROPS: &str = "Id,LoadState,ActiveState,SubState,Result,Type,UnitFileState,\
 UnitFilePreset,MainPID,ExecMainCode,ExecMainStatus,ConditionResult,AssertResult,\
 RefuseManualStart,RemainAfterExit,Before,Conflicts,NRestarts,NeedDaemonReload,Triggers,\
-TriggeredBy";
+TriggeredBy,FragmentPath";
 
 pub type Props = BTreeMap<String, String>;
 
@@ -359,6 +359,27 @@ pub fn show(r: &mut dyn Remote, unit: &str, secs: u64) -> Result<Props, String> 
         ));
     }
     parse::systemctl_show(&e.stdout)
+}
+
+/// Whether systemd still knows a unit whose package was removed. A slice is
+/// the exception to LoadState=not-found: systemd synthesizes a slice for any
+/// name it is asked about (measured on a guest: `systemctl show
+/// system-neverexisted.slice` says LoadState=loaded, FragmentPath= empty), so
+/// a removed slice is gone when it has no unit file left and is inactive. An
+/// active slice still holds processes and is not gone.
+pub fn still_known(unit: &str, p: &Props) -> bool {
+    let load = prop(p, "LoadState");
+    if load == "not-found" {
+        return false;
+    }
+    if unit.ends_with(".slice")
+        && load == "loaded"
+        && prop(p, "FragmentPath").is_empty()
+        && prop(p, "ActiveState") == "inactive"
+    {
+        return false;
+    }
+    true
 }
 
 /// [`show`], with TriggeredBy= completed from the package's own triggers.
@@ -1478,6 +1499,20 @@ mod tests {
             [("ntpviz-daily.service".to_string(), "ntpviz-daily.timer".to_string())].into_iter().collect();
         let (st, _) = stays_up(&other).expect("stays-up step");
         assert_eq!(st, FAIL);
+    }
+
+    #[test]
+    fn a_removed_slice_is_gone_although_systemd_synthesizes_it() {
+        let p = |s: &str| parse::systemctl_show(s).unwrap();
+        // cups on k09/k13 (gate 54): system-cups.slice after erase and reload
+        let gone = p("LoadState=loaded\nActiveState=inactive\nFragmentPath=\n");
+        assert!(!still_known("system-cups.slice", &gone));
+        assert!(!still_known("x.service", &p("LoadState=not-found\nActiveState=inactive\n")));
+        // negative controls: a slice that still has a unit file or is still
+        // active, and a service that is still loaded, are still known
+        assert!(still_known("system-cups.slice", &p("LoadState=loaded\nActiveState=inactive\nFragmentPath=/usr/lib/systemd/system/system-cups.slice\n")));
+        assert!(still_known("system-cups.slice", &p("LoadState=loaded\nActiveState=active\nFragmentPath=\n")));
+        assert!(still_known("cups.service", &gone));
     }
 
     #[test]

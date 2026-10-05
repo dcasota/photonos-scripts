@@ -1821,7 +1821,7 @@ impl Session<'_> {
             let mut loaded = Vec::new();
             for u in unit_names {
                 if let Ok(p) = units::show(self.r, u, q) {
-                    if p.get("LoadState").map(String::as_str) != Some("not-found") {
+                    if units::still_known(u, &p) {
                         loaded.push(format!(
                             "{u} LoadState={}",
                             p.get("LoadState").cloned().unwrap_or_default()
@@ -1836,7 +1836,7 @@ impl Session<'_> {
                 loaded.retain(|l| {
                     let u = l.split(' ').next().unwrap_or("");
                     units::show(self.r, u, q)
-                        .map(|p| p.get("LoadState").map(String::as_str) != Some("not-found"))
+                        .map(|p| units::still_known(u, &p))
                         .unwrap_or(true)
                 });
             }
