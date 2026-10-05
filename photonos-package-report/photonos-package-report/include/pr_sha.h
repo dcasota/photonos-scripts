@@ -61,4 +61,36 @@ int   pr_sha_of_url_multi_cached(const char *url,
                                  char **sha512_hex,
                                  const char *cache_file);
 
+/* Download policy for the tarball fetches above (pr_sha_of_url,
+ * pr_sha_of_url_multi and the *_cached download-into-cache path).
+ *
+ * Opt-in hardening, read from the environment on every download, so a
+ * default run (and the PS parity journal) is byte-identical to before:
+ *
+ *   PR_DOWNLOAD_HTTPS_ONLY=1   the initial request AND every redirect
+ *                              may use https only (CURLOPT_PROTOCOLS /
+ *                              CURLOPT_REDIR_PROTOCOLS), and only an
+ *                              HTTP 200 is accepted (default: any 2xx).
+ *   PR_MAX_DOWNLOAD_BYTES=<n>  a decimal byte ceiling: a body that is
+ *                              announced or turns out larger aborts the
+ *                              transfer and the partial file is removed.
+ *                              0 or unset = no ceiling.
+ *
+ * Empty values count as unset (POSIX convention, see M145). A
+ * PR_MAX_DOWNLOAD_BYTES that is not a plain decimal number fails CLOSED:
+ * every download is refused rather than run without the ceiling the
+ * caller asked for. */
+typedef struct {
+    int                https_only;   /* 1 = https only, redirects too, 200 only */
+    unsigned long long max_bytes;    /* 0 = no ceiling */
+} pr_download_policy_t;
+
+/* Read the policy from the environment. Returns 0 on success and -1 when
+ * PR_MAX_DOWNLOAD_BYTES is malformed; the download helpers refuse every
+ * download in that case. */
+int pr_download_policy_from_env(pr_download_policy_t *out);
+
+/* Is `status` an acceptable final HTTP status under `p`? */
+int pr_download_status_ok(const pr_download_policy_t *p, long status);
+
 #endif /* PR_SHA_H */
