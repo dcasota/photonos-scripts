@@ -1221,6 +1221,41 @@ mod tests {
     }
 
     #[test]
+    fn fullcircle_without_a_toolchain_and_cpufreq_bench_rejudge_to_their_reasons() {
+        let p = Policy::embedded().unwrap();
+        let att = |args: &str, code: i32, out: &str, err: &str| ProbeAttempt {
+            args: vec![args.to_string()],
+            code: Some(code),
+            stdout: out.into(),
+            stderr: err.into(),
+            result: if code == 0 { "success".into() } else { "exit-code".into() },
+            ..Default::default()
+        };
+        let rec = |path: &str, a: Vec<ProbeAttempt>| CliResult {
+            path: path.into(),
+            status: FAIL.into(),
+            reason: String::new(),
+            attempts: a,
+        };
+        // k13 (gate 54): exit 0, "v1.24", and the toolchain missing twice
+        let toolchain = "/usr/bin/fullcircle: line 15: readelf: command not found\n/usr/bin/fullcircle: line 33: readelf: command not found\n/usr/bin/fullcircle: line 39: gcc: command not found";
+        let r = rejudge(&p, &rec("/usr/bin/fullcircle", vec![att("--version", 0, "v1.24", toolchain)]), "1.24");
+        assert_eq!(r.status, SKIP, "{}", r.reason);
+        assert!(r.reason.contains("C toolchain"), "{}", r.reason);
+        // negative control: any other defect still fails it
+        let broken = format!("{toolchain}\npfunct: error while loading shared libraries: libdwarves.so.1: cannot open shared object file");
+        let r = rejudge(&p, &rec("/usr/bin/fullcircle", vec![att("--version", 0, "v1.24", &broken)]), "1.24");
+        assert_eq!(r.status, FAIL, "{}", r.reason);
+        // ... and the marker belongs to fullcircle alone
+        let r = rejudge(&p, &rec("/usr/bin/codiff", vec![att("--version", 127, "", "codiff: line 1: gcc: command not found")]), "1.24");
+        assert_eq!(r.status, FAIL, "{}", r.reason);
+
+        let r = rejudge(&p, &rec("/usr/sbin/cpufreq-bench", vec![att("-v", 139, "loading defaults", "error: Cannot create dir /var/log/cpufreq-bench")]), "6.12");
+        assert_eq!(r.status, SKIP, "{}", r.reason);
+        assert!(r.reason.starts_with("never executed (cpufreq-bench)"), "{}", r.reason);
+    }
+
+    #[test]
     fn probes_stop_at_the_first_success_and_record_every_attempt() {
         let p = Policy::embedded().unwrap();
         let mut f = Fake::new();
