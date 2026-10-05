@@ -1689,3 +1689,30 @@ fn an_unattributed_line_of_a_declared_units_program_is_the_units() {
     assert_eq!(left(line("", "sshd"), &names), 1, "another program");
     assert_eq!(left(line("other.service", "sssd"), &names), 1, "a line another unit owns");
 }
+
+#[test]
+fn a_declared_dependency_unit_is_declared_in_the_window_too() {
+    // sssd-dbus on k13 (gate 54): sssd-ifp.service pulled in sssd.service,
+    // which units.requires_config declares; its lines failed the window.
+    let pol = Policy::embedded().unwrap();
+    let e = parse::journal_json(concat!(
+        r#"{"PRIORITY":"3","SYSLOG_IDENTIFIER":"sssd","_SYSTEMD_UNIT":"sssd.service","MESSAGE":"Exiting the SSSD. Could not restart critical service [ad.example.com]."}"#,
+        "\n",
+        r#"{"PRIORITY":"3","SYSLOG_IDENTIFIER":"systemd","_SYSTEMD_UNIT":"init.scope","UNIT":"sssd.service","MESSAGE":"Failed to start System Security Services Daemon."}"#,
+        "\n",
+        r#"{"PRIORITY":"3","SYSLOG_IDENTIFIER":"x","_SYSTEMD_UNIT":"undeclared-xyz.service","MESSAGE":"fatal"}"#,
+        "\n",
+        r#"{"PRIORITY":"6","SYSLOG_IDENTIFIER":"y","_SYSTEMD_UNIT":"keepalived.service","MESSAGE":"info only"}"#,
+        "\n"
+    ))
+    .unwrap();
+    let d = declared_units(&[], &e, &pol);
+    assert!(d.contains("sssd.service"), "{d:?}");
+    // negative controls: an undeclared unit's error, and a declared unit that
+    // logged no error, are not added
+    assert!(!d.contains("undeclared-xyz.service"));
+    assert!(!d.contains("keepalived.service"));
+    let left = window_errors(&e, &BTreeSet::new(), &pol, &d, &BTreeSet::new(), &ProbeSenders::default());
+    assert_eq!(left.len(), 1, "{left:?}");
+    assert!(left[0].contains("fatal"));
+}

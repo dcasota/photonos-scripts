@@ -185,6 +185,32 @@ pub fn window_errors(
         .collect()
 }
 
+/// The units whose err lines in a package's window are the evidence of a
+/// declared skip: the package's units excused as needing configuration or
+/// an unmet bench precondition, and any unit `units.requires_config` declares
+/// that logged an error in the window - a dependency's unit this package's
+/// units pulled in fails as declared here too (sssd-dbus: sssd-ifp.service
+/// starts sssd.service), as the failed-units step already says.
+pub fn declared_units(
+    tested: &[record::UnitResult],
+    entries: &[JEntry],
+    policy: &Policy,
+) -> BTreeSet<String> {
+    let mut declared: BTreeSet<String> = tested
+        .iter()
+        .filter(|u| u.outcome == units::DECLARED_CONFIG || u.outcome == units::UNMET_PRECONDITION)
+        .map(|u| u.unit.clone())
+        .collect();
+    declared.extend(
+        entries
+            .iter()
+            .filter(|e| e.priority <= 3 && !e.unit.is_empty())
+            .filter(|e| policy::first_match(&policy.units.requires_config, &e.unit).is_some())
+            .map(|e| e.unit.clone()),
+    );
+    declared
+}
+
 /// Who a CLI probe of the current package is, as journald records a sender:
 /// the probe user's uid and the resolved paths of the binaries probed.
 ///
@@ -1113,15 +1139,7 @@ impl Session<'_> {
                         }
                     }
                 }
-                let declared: BTreeSet<String> = rec
-                    .units
-                    .iter()
-                    .filter(|u| {
-                        u.outcome == units::DECLARED_CONFIG
-                            || u.outcome == units::UNMET_PRECONDITION
-                    })
-                    .map(|u| u.unit.clone())
-                    .collect();
+                let declared = declared_units(&rec.units, &entries, self.policy);
                 let declared_names = self.program_names(&declared);
                 let probes = self.probe_senders(&entries, rec);
                 rec.journal_errors = window_errors(
