@@ -1604,6 +1604,7 @@ pub fn purge(c: &mut Ctx) -> Result<(), String> {
     purge_shadowing_rpms(c, &stage);
     purge_rebuilt_content(c, &stage);
     purge_leftover_isos(c, &stage);
+    purge_iso_workdirs(c, &stage);
     let n = purge_corrupt_rpms(c, &stage);
     c.say(&format!("  corrupted RPMs removed: {n}"));
     clean_sandboxes(c, &stage);
@@ -2159,6 +2160,117 @@ fn purge_leftover_isos(c: &mut Ctx, stage: &Path) {
             )),
             Err(e) => c.say(&format!("  could not remove leftover {}: {e}", p.display())),
         }
+    }
+}
+
+/// The work directories ISO builds leave in `stage/iso` (`photon-XXXXXXXX`,
+/// about 3.7 GB each): one per finished build is never removed, and 17 of
+/// them took 63 GB of the WSL root during gate 55 (finding
+/// stage-iso-workdirs-leak). Returns those `in_use` does not claim.
+pub fn stale_iso_workdirs(stage: &Path, in_use: &dyn Fn(&str) -> bool) -> Vec<PathBuf> {
+    let Ok(rd) = fs::read_dir(stage.join("iso")) else {
+        return Vec::new();
+    };
+    let mut v: Vec<PathBuf> = rd
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.is_dir() && !p.is_symlink())
+        .filter(|p| {
+            let n = basename(p);
+            n.starts_with("photon-") && n.len() > "photon-".len() && !in_use(&n)
+        })
+        // a build that is just starting may not hold it yet: keep fresh ones
+        .filter(|p| {
+            p.metadata()
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(|t| t.elapsed().ok())
+                .map(|age| age.as_secs() >= 600)
+                .unwrap_or(false)
+        })
+        .collect();
+    v.sort();
+    v
+}
+
+/// Whether a running process uses a work directory, by its unique name: its
+/// cwd, root, an open file, a mapping or a mount. The builder runs in a
+/// container, where the directory is /workdir/<name>, so the name is matched
+/// as a path component rather than the host path.
+pub fn workdir_in_use(name: &str) -> bool {
+    let comp = format!("/{name}");
+    let hit = |t: &str| t.contains(&format!("{comp}/")) || t.ends_with(&comp);
+    let Ok(rd) = fs::read_dir("/proc") else {
+        return true; // cannot tell: keep it
+    };
+    for e in rd.flatten() {
+        let pid = e.file_name();
+        let Some(pid) = pid.to_str().filter(|s| s.chars().all(|c| c.is_ascii_digit())) else {
+            continue;
+        };
+        let base = PathBuf::from("/proc").join(pid);
+        for l in ["cwd", "root"] {
+            if let Ok(t) = fs::read_link(base.join(l)) {
+                if hit(&t.to_string_lossy()) {
+                    return true;
+                }
+            }
+        }
+        if let Ok(fds) = fs::read_dir(base.join("fd")) {
+            for fd in fds.flatten() {
+                if let Ok(t) = fs::read_link(fd.path()) {
+                    if hit(&t.to_string_lossy()) {
+                        return true;
+                    }
+                }
+            }
+        }
+        for f in ["maps", "mountinfo"] {
+            if let Ok(txt) = fs::read_to_string(base.join(f)) {
+                if txt.lines().any(|l| l.split_whitespace().any(hit)) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+fn dir_bytes(d: &Path) -> u64 {
+    let mut total = 0;
+    let mut stack = vec![d.to_path_buf()];
+    while let Some(p) = stack.pop() {
+        let Ok(rd) = fs::read_dir(&p) else { continue };
+        for e in rd.flatten() {
+            let Ok(m) = e.path().symlink_metadata() else { continue };
+            if m.is_dir() {
+                stack.push(e.path());
+            } else {
+                total += m.len();
+            }
+        }
+    }
+    total
+}
+
+fn purge_iso_workdirs(c: &mut Ctx, stage: &Path) {
+    let mut freed = 0u64;
+    let mut n = 0;
+    for d in stale_iso_workdirs(stage, &workdir_in_use) {
+        let bytes = dir_bytes(&d);
+        match fs::remove_dir_all(&d) {
+            Ok(()) => {
+                freed += bytes;
+                n += 1;
+            }
+            Err(e) => c.say(&format!("  could not remove ISO work dir {}: {e}", d.display())),
+        }
+    }
+    if n > 0 {
+        c.say(&format!(
+            "  removed {n} ISO work dir(s) no process uses from stage/iso: {:.1} GB reclaimed",
+            freed as f64 / 1e9
+        ));
     }
 }
 
@@ -3077,6 +3189,35 @@ pub fn execute(spec: &BuildSpec, dry: bool, log: &mut dyn FnMut(&str)) -> Result
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn iso_work_dirs_no_process_uses_are_stale_and_one_in_use_is_kept() {
+        let t = std::env::temp_dir().join(format!("sharukhan-isowork-{}", std::process::id()));
+        let iso = t.join("iso");
+        for d in ["photon-aaaaaaaa", "photon-bbbbbbbb", "photon-inuse01", "other-dir"] {
+            fs::create_dir_all(iso.join(d)).unwrap();
+        }
+        fs::write(iso.join("photon-file"), "x").unwrap(); // a file, not a work dir
+        // fresh directories are kept: a starting build may not hold them yet
+        assert!(stale_iso_workdirs(&t, &|_: &str| false).is_empty());
+        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+        for d in ["photon-aaaaaaaa", "photon-bbbbbbbb", "photon-inuse01"] {
+            fs::File::open(iso.join(d)).unwrap().set_modified(old).unwrap();
+        }
+        let stale = stale_iso_workdirs(&t, &|n: &str| n == "photon-inuse01");
+        let names: Vec<String> = stale.iter().map(|p| basename(p)).collect();
+        assert_eq!(names, vec!["photon-aaaaaaaa", "photon-bbbbbbbb"]);
+        // negative control: a directory a live process has as its cwd is in use
+        let held = iso.join("photon-heldcwd1");
+        fs::create_dir_all(&held).unwrap();
+        let mut child = std::process::Command::new("sleep").arg("30").current_dir(&held).spawn().unwrap();
+        assert!(workdir_in_use("photon-heldcwd1"));
+        child.kill().ok();
+        child.wait().ok();
+        assert!(!workdir_in_use("photon-heldcwd1"), "a released directory is not in use");
+        assert!(!workdir_in_use("photon-neverexisted"));
+        fs::remove_dir_all(&t).unwrap();
+    }
 
     #[test]
     fn only_top_level_isos_of_the_stage_are_leftovers() {
