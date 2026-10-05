@@ -143,10 +143,12 @@ pub struct Units {
     pub preconditions: Vec<UnitPrecondition>,
 }
 
-/// A bench condition a unit cannot start without, proven one of three ways:
+/// A bench condition a unit cannot start without, proven one of four ways:
 /// the exact words of the unit's own journal in the cycle's window, a kernel
 /// option the running kernel's own config (`/boot/config-$(uname -r)`) leaves
-/// unset, or a device path (`/sys/class/infiniband`) that does not exist.
+/// unset, a device path that does not exist, or a device class directory
+/// that is absent or has no entries (`/sys/class/infiniband` exists, empty,
+/// once ib_core is loaded and no RDMA device is there).
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UnitPrecondition {
@@ -157,6 +159,8 @@ pub struct UnitPrecondition {
     pub kernel_unset: Option<String>,
     #[serde(default)]
     pub path_absent: Option<String>,
+    #[serde(default)]
+    pub no_entries: Option<String>,
     pub reason: String,
 }
 
@@ -504,10 +508,11 @@ impl Policy {
             .collect();
         check_rules("units.preconditions", &as_rules)?;
         for (i, c) in self.units.preconditions.iter().enumerate() {
-            match (&c.marker, &c.kernel_unset, &c.path_absent) {
-                (Some(m), None, None) if m.trim().len() >= 10 => {}
-                (None, None, Some(pa)) if plain_path(pa) => {}
-                (None, Some(k), None)
+            match (&c.marker, &c.kernel_unset, &c.path_absent, &c.no_entries) {
+                (Some(m), None, None, None) if m.trim().len() >= 10 => {}
+                (None, None, Some(pa), None) if plain_path(pa) => {}
+                (None, None, None, Some(d)) if plain_path(d) => {}
+                (None, Some(k), None, None)
                     if k.len() > 7
                         && k.starts_with("CONFIG_")
                         && k[7..]
@@ -515,7 +520,7 @@ impl Policy {
                             .all(|ch| ch.is_ascii_uppercase() || ch.is_ascii_digit() || ch == '_') => {}
                 _ => {
                     return Err(format!(
-                        "units.preconditions[{i}] ({}): needs exactly one of marker (the quoted line, at least 10 characters), kernel_unset (a CONFIG_ symbol) or path_absent (an absolute plain path)",
+                        "units.preconditions[{i}] ({}): needs exactly one of marker (the quoted line, at least 10 characters), kernel_unset (a CONFIG_ symbol), path_absent or no_entries (an absolute plain path)",
                         c.pattern
                     ))
                 }

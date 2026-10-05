@@ -944,6 +944,23 @@ pub fn cycle(ctx: &mut Ctx, unit: &str, deadman: bool) -> Cycled {
         }
         if met.is_none() {
             for c in &cands {
+                let Some(d) = &c.no_entries else { continue };
+                if !policy::plain_path(d) {
+                    continue;
+                }
+                let e = ctx.r.exec(
+                    &format!("if [ -n \"$(ls -A {d} 2>/dev/null)\" ]; then echo present; else echo absent; fi"),
+                    None,
+                    lim.query_secs,
+                );
+                if e.ok() && e.stdout.trim() == "absent" {
+                    met = Some((c.reason.clone(), format!("{d} is absent or has no entries")));
+                    break;
+                }
+            }
+        }
+        if met.is_none() {
+            for c in &cands {
                 let Some(pa) = &c.path_absent else { continue };
                 if !policy::plain_path(pa) {
                     continue;
@@ -1655,6 +1672,7 @@ mod tests {
             marker: Some("failed to create listening socket for port 53: Address already in use".into()),
             kernel_unset: None,
             path_absent: None,
+            no_entries: None,
             reason: "the bench guests run systemd-resolved's stub listener on port 53".into(),
         });
         // k13, gate 54: active/running after start, failed when re-read
@@ -1708,7 +1726,9 @@ mod tests {
             pattern: "rdma-ndd.service".into(),
             marker: None,
             kernel_unset: None,
-            path_absent: Some("/sys/class/infiniband".into()),
+            path_absent: None,
+            // absent, or empty once ib_core is loaded: no RDMA device either way
+            no_entries: Some("/sys/class/infiniband".into()),
             reason: "udev starts rdma-ndd for an RDMA device and the bench has none".into(),
         });
         let run = |present: bool| {
@@ -1745,6 +1765,7 @@ mod tests {
             marker: Some("DM multipath kernel driver not loaded".into()),
             kernel_unset: None,
             path_absent: None,
+            no_entries: None,
             reason: "this kernel is built without the multipath target".into(),
         });
         let failed = || {
@@ -1801,6 +1822,8 @@ mod tests {
         for bad in [
             serde_json::json!([{"pattern": "x", "path_absent": "/sys/x; reboot", "reason": "a long enough reason"}]),
             serde_json::json!([{"pattern": "x", "path_absent": "/sys/../etc", "reason": "a long enough reason"}]),
+            serde_json::json!([{"pattern": "x", "no_entries": "/sys/class/x; reboot", "reason": "a long enough reason"}]),
+            serde_json::json!([{"pattern": "x", "no_entries": "/sys/class/x", "path_absent": "/sys/class/x", "reason": "a long enough reason"}]),
             serde_json::json!([{"pattern": "x", "marker": "no driver", "reason": "a long enough reason"}]),
             serde_json::json!([{"pattern": "x", "marker": "a long enough marker", "kernel_unset": "CONFIG_X", "reason": "a long enough reason"}]),
             serde_json::json!([{"pattern": "x", "kernel_unset": "IPMI; rm -rf /", "reason": "a long enough reason"}]),
@@ -1821,6 +1844,7 @@ mod tests {
             marker: None,
             kernel_unset: None,
             path_absent: Some("/sys/class/infiniband".into()),
+            no_entries: None,
             reason: "no RDMA device".into(),
         });
         let run = |answer: &str| {
@@ -1858,6 +1882,7 @@ mod tests {
             marker: None,
             kernel_unset: Some("CONFIG_IPMI_HANDLER".into()),
             path_absent: None,
+            no_entries: None,
             reason: "the kernel is built without IPMI".into(),
         });
         let unset = "6.12.1-esx\n# CONFIG_IPMI_HANDLER is not set\nCONFIG_X=y\n";
