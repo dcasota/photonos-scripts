@@ -664,7 +664,7 @@ fn window_and_session_noise_rules() {
     ))
     .unwrap();
     let pol = Policy::embedded().unwrap();
-    assert_eq!(window_errors(&e, &BTreeSet::new(), &pol, &BTreeSet::new(), &ProbeSenders::default()).len(), 1);
+    assert_eq!(window_errors(&e, &BTreeSet::new(), &pol, &BTreeSet::new(), &BTreeSet::new(), &ProbeSenders::default()).len(), 1);
     // a probe unit's crash and OOM kill belong to the CLI result, another
     // unit's do not
     let e = parse::journal_json(concat!(
@@ -687,7 +687,7 @@ fn window_and_session_noise_rules() {
     .unwrap();
     let oom = parse::harness_oom_pids(&k, HARNESS_PREFIX);
     assert_eq!(oom, [88633u32].into_iter().collect());
-    let left = window_errors(&e, &oom, &pol, &BTreeSet::new(), &ProbeSenders::default());
+    let left = window_errors(&e, &oom, &pol, &BTreeSet::new(), &BTreeSet::new(), &ProbeSenders::default());
     assert_eq!(left.len(), 2, "{left:?}");
     assert!(left[0].contains("atftpd") && left[1].contains("(java)"), "{left:?}");
     assert!(session_noise("user@0.service"));
@@ -1479,7 +1479,7 @@ fn reviewed_expected_errors_and_declared_config_units_leave_the_window() {
     ))
     .unwrap();
     let declared: BTreeSet<String> = ["postgresql15.service".to_string()].into_iter().collect();
-    let left = window_errors(&e, &BTreeSet::new(), &p, &declared, &ProbeSenders::default());
+    let left = window_errors(&e, &BTreeSet::new(), &p, &declared, &BTreeSet::new(), &ProbeSenders::default());
     // the reviewed words of the reviewed unit go; its other line, and the
     // same words from another unit, stay
     assert_eq!(left.len(), 2, "{left:?}");
@@ -1620,7 +1620,7 @@ fn an_unattributed_line_is_the_probes_only_with_its_uid_and_a_probed_binary() {
     );
     let left = |j: String, p: &ProbeSenders| {
         let e = parse::journal_json(&j).unwrap();
-        window_errors(&e, &BTreeSet::new(), &pol, &BTreeSet::new(), p).len()
+        window_errors(&e, &BTreeSet::new(), &pol, &BTreeSet::new(), &BTreeSet::new(), p).len()
     };
     // the race measured on a guest: no unit, the probe user, the probed binary
     assert_eq!(left(line("", 65534, "/usr/sbin/nologin"), &probes), 0);
@@ -1650,7 +1650,7 @@ fn an_unattributed_line_without_exe_is_the_probes_by_its_identifier() {
     );
     let left = |j: String| {
         let e = parse::journal_json(&j).unwrap();
-        window_errors(&e, &BTreeSet::new(), &pol, &BTreeSet::new(), &probes).len()
+        window_errors(&e, &BTreeSet::new(), &pol, &BTreeSet::new(), &BTreeSet::new(), &probes).len()
     };
     assert_eq!(left(line("", 65534, "", "checkproc")), 0, "no unit, no exe, probed name");
     assert_eq!(left(line("", 65534, "", "smrsh")), 0, "no unit, no exe, probed name");
@@ -1660,4 +1660,32 @@ fn an_unattributed_line_without_exe_is_the_probes_by_its_identifier() {
     assert_eq!(left(line("", 0, "", "checkproc")), 1, "another uid");
     assert_eq!(left(line("", 65534, "/usr/bin/other", "checkproc")), 1, "an exe that is not probed wins over the name");
     assert_eq!(left(line("cron.service", 65534, "", "checkproc")), 1, "a line a unit owns");
+}
+
+#[test]
+fn an_unattributed_line_of_a_declared_units_program_is_the_units() {
+    // sssd.service is declared (sssd-common's template needs a real AD
+    // domain); measured on k13: one of its children's "Could not exec
+    // /usr/libexec/sssd/sssd_pac" lines arrived without _SYSTEMD_UNIT.
+    let pol = Policy::embedded().unwrap();
+    let names = parse::exec_start_names(
+        "ExecStart={ path=/usr/sbin/sssd ; argv[]=/usr/sbin/sssd -i ${DEBUG_LOGGER} ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }\n",
+    );
+    assert_eq!(names.iter().collect::<Vec<_>>(), vec!["sssd"]);
+    let declared: BTreeSet<String> = ["sssd.service".to_string()].into_iter().collect();
+    let line = |unit: &str, ident: &str| {
+        format!(
+            r#"{{"PRIORITY":"3","SYSLOG_IDENTIFIER":"{ident}","_SYSTEMD_UNIT":"{unit}","_UID":"0","MESSAGE":"Could not exec /usr/libexec/sssd/sssd_pac --uid 0 --gid 0 --logger=files, reason: No such file or directory"}}"#
+        )
+    };
+    let left = |j: String, names: &BTreeSet<String>| {
+        let e = parse::journal_json(&j).unwrap();
+        window_errors(&e, &BTreeSet::new(), &pol, &declared, names, &ProbeSenders::default()).len()
+    };
+    assert_eq!(left(line("", "sssd"), &names), 0, "unattributed, the declared unit's program");
+    assert_eq!(left(line("sssd.service", "sssd"), &names), 0, "attributed to the declared unit");
+    // negative controls
+    assert_eq!(left(line("", "sssd"), &BTreeSet::new()), 1, "no declared program names");
+    assert_eq!(left(line("", "sshd"), &names), 1, "another program");
+    assert_eq!(left(line("other.service", "sssd"), &names), 1, "a line another unit owns");
 }

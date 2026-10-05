@@ -146,11 +146,20 @@ pub fn judge_verify(lines: &[Verify]) -> (Vec<String>, Vec<String>) {
 /// Also left out: lines a reviewed `units.expected_errors` entry explains,
 /// and the lines of units whose failure a `units.requires_config` entry
 /// declared (`declared`) - that unit's own result carries them as evidence.
+///
+/// `declared_names` are the program names (ExecStart= file names) of the
+/// `declared` units: a line journald could not attribute to a unit, because
+/// the forked process that wrote it was already gone, is the declared unit's
+/// when its SYSLOG_IDENTIFIER is one of them. Measured: sssd.service (sssd-
+/// common, declared: it needs a real AD domain) forks a child per responder;
+/// of 6 "Could not exec /usr/libexec/sssd/sssd_pac" lines in three starts,
+/// one had no _SYSTEMD_UNIT, identifier sssd.
 pub fn window_errors(
     entries: &[JEntry],
     harness_oom: &BTreeSet<u32>,
     policy: &Policy,
     declared: &BTreeSet<String>,
+    declared_names: &BTreeSet<String>,
     probes: &ProbeSenders,
 ) -> Vec<String> {
     entries
@@ -159,6 +168,11 @@ pub fn window_errors(
         .filter(|e| !probes.sent(e))
         .filter(|e| policy.expected_error(&e.unit, &e.identifier, &e.message).is_none())
         .filter(|e| !declared.contains(&e.unit))
+        .filter(|e| {
+            !(e.unit.is_empty()
+                && !e.identifier.is_empty()
+                && declared_names.contains(&e.identifier))
+        })
         .filter(|e| {
             !e.unit.starts_with(HARNESS_PREFIX)
                 && !e.identifier.starts_with(HARNESS_PREFIX)
@@ -1028,6 +1042,24 @@ impl Session<'_> {
         Flow::Continue
     }
 
+    /// The file names of the programs `units` start (their ExecStart=), read
+    /// in one call while the package is still installed.
+    fn program_names(&mut self, units: &BTreeSet<String>) -> BTreeSet<String> {
+        if units.is_empty() {
+            return BTreeSet::new();
+        }
+        let mut v = vec!["systemctl", "show", "-p", "ExecStart", "--"];
+        v.extend(units.iter().map(String::as_str));
+        let Ok(cmd) = argv(&v) else {
+            return BTreeSet::new();
+        };
+        let e = self.r.exec(&cmd, None, self.policy.limits.query_secs);
+        if !e.ok() {
+            return BTreeSet::new();
+        }
+        parse::exec_start_names(&e.stdout)
+    }
+
     /// The senders a probe of this package would show as, worked out only
     /// when the window holds an unattributed err line at all.
     fn probe_senders(&mut self, entries: &[JEntry], rec: &PkgRecord) -> ProbeSenders {
@@ -1090,9 +1122,16 @@ impl Session<'_> {
                     })
                     .map(|u| u.unit.clone())
                     .collect();
+                let declared_names = self.program_names(&declared);
                 let probes = self.probe_senders(&entries, rec);
-                rec.journal_errors =
-                    window_errors(&entries, &oom, self.policy, &declared, &probes);
+                rec.journal_errors = window_errors(
+                    &entries,
+                    &oom,
+                    self.policy,
+                    &declared,
+                    &declared_names,
+                    &probes,
+                );
                 if rec.journal_errors.is_empty() {
                     rec.steps.push(Step::new(
                         "journal-window",

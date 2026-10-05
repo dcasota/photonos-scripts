@@ -420,6 +420,26 @@ fn json_message(v: Option<&serde_json::Value>) -> String {
     }
 }
 
+/// The file names of the programs in `systemctl show -p ExecStart` output:
+/// `ExecStart={ path=/usr/sbin/sssd ; argv[]=/usr/sbin/sssd -i ; ... }`, one
+/// line per command, possibly for several units.
+pub fn exec_start_names(stdout: &str) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    for l in stdout.lines().filter(|l| l.starts_with("ExecStart=")) {
+        for part in l.split(';') {
+            let part = part.trim().trim_start_matches("ExecStart=").trim().trim_start_matches('{').trim();
+            if let Some(path) = part.strip_prefix("path=") {
+                if let Some(name) = path.trim().rsplit('/').next() {
+                    if !name.is_empty() {
+                        out.insert(name.to_string());
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
 pub fn journal_json(stdout: &str) -> Result<Vec<JEntry>, String> {
     let mut out = Vec::new();
     for line in stdout.lines().filter(|l| !l.trim().is_empty()) {
