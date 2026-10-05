@@ -1614,10 +1614,10 @@ fn an_unattributed_line_is_the_probes_only_with_its_uid_and_a_probed_binary() {
             r#"{{"PRIORITY":"2","SYSLOG_IDENTIFIER":"nologin","_SYSTEMD_UNIT":"{unit}","_UID":"{uid}","_EXE":"{exe}","MESSAGE":"Attempted login by UNKNOWN (UID: 65534) on UNKNOWN"}}"#
         )
     };
-    let probes = ProbeSenders {
-        uid: Some(65534),
-        exes: ["/usr/sbin/nologin".to_string()].into_iter().collect(),
-    };
+    let probes = ProbeSenders::new(
+        Some(65534),
+        ["/usr/sbin/nologin".to_string()].into_iter().collect(),
+    );
     let left = |j: String, p: &ProbeSenders| {
         let e = parse::journal_json(&j).unwrap();
         window_errors(&e, &BTreeSet::new(), &pol, &BTreeSet::new(), p).len()
@@ -1629,4 +1629,35 @@ fn an_unattributed_line_is_the_probes_only_with_its_uid_and_a_probed_binary() {
     assert_eq!(left(line("", 65534, "/usr/bin/other"), &probes), 1, "a binary not probed");
     assert_eq!(left(line("sshd.service", 65534, "/usr/sbin/nologin"), &probes), 1, "a line a unit owns");
     assert_eq!(left(line("", 65534, "/usr/sbin/nologin"), &ProbeSenders::default()), 1, "no probe uid known");
+}
+
+#[test]
+fn an_unattributed_line_without_exe_is_the_probes_by_its_identifier() {
+    // Measured on k13: of 80 fast-exiting probes, 4 err lines had neither
+    // _SYSTEMD_UNIT nor _EXE (the sender was gone); _UID and the
+    // SYSLOG_IDENTIFIER were there. The audit, distrib-compat, Linux-PAM and
+    // sendmail runs of gate 54 failed on exactly such lines.
+    let pol = Policy::embedded().unwrap();
+    let line = |unit: &str, uid: u32, exe: &str, ident: &str| {
+        let exe = if exe.is_empty() { String::new() } else { format!(r#","_EXE":"{exe}""#) };
+        format!(
+            r#"{{"PRIORITY":"3","SYSLOG_IDENTIFIER":"{ident}","_SYSTEMD_UNIT":"{unit}","_UID":"{uid}"{exe},"MESSAGE":"checkproc: Usage:"}}"#
+        )
+    };
+    let probes = ProbeSenders::new(
+        Some(65534),
+        ["/usr/sbin/checkproc".to_string(), "/usr/sbin/smrsh".to_string()].into_iter().collect(),
+    );
+    let left = |j: String| {
+        let e = parse::journal_json(&j).unwrap();
+        window_errors(&e, &BTreeSet::new(), &pol, &BTreeSet::new(), &probes).len()
+    };
+    assert_eq!(left(line("", 65534, "", "checkproc")), 0, "no unit, no exe, probed name");
+    assert_eq!(left(line("", 65534, "", "smrsh")), 0, "no unit, no exe, probed name");
+    // negative controls
+    assert_eq!(left(line("", 65534, "", "sendmail")), 1, "a name not probed");
+    assert_eq!(left(line("", 65534, "", "")), 1, "no identifier");
+    assert_eq!(left(line("", 0, "", "checkproc")), 1, "another uid");
+    assert_eq!(left(line("", 65534, "/usr/bin/other", "checkproc")), 1, "an exe that is not probed wins over the name");
+    assert_eq!(left(line("cron.service", 65534, "", "checkproc")), 1, "a line a unit owns");
 }

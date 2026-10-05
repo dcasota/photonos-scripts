@@ -181,19 +181,43 @@ pub fn window_errors(
 /// words. Only such unattributed lines are matched, and only by both the
 /// probe user's uid and a probed binary: a line any unit owns is judged as
 /// ever.
+///
+/// When the sender is already gone, journald cannot read its _EXE either:
+/// of 80 probes of checkproc, smrsh and mkhomedir_helper on a guest, 4 lines
+/// had neither _SYSTEMD_UNIT nor _EXE, and one not even _COMM; _UID and the
+/// SYSLOG_IDENTIFIER the sender wrote were always there. Such a line is the
+/// probe's when its identifier is the name of a probed binary. A daemon of
+/// the package that ran as the probe user, logged under a probed name and
+/// exited before journald read it would be excused the same way - but a unit
+/// that dies is judged by its own state, not by this line.
 #[derive(Clone, Debug, Default)]
 pub struct ProbeSenders {
     pub uid: Option<u32>,
     pub exes: BTreeSet<String>,
+    /// The file names of `exes`: what a probe's SYSLOG_IDENTIFIER says.
+    pub names: BTreeSet<String>,
 }
 
 impl ProbeSenders {
+    pub fn new(uid: Option<u32>, exes: BTreeSet<String>) -> Self {
+        let names = exes
+            .iter()
+            .filter_map(|x| x.rsplit('/').next())
+            .filter(|n| !n.is_empty())
+            .map(str::to_string)
+            .collect();
+        ProbeSenders { uid, exes, names }
+    }
+
     pub fn sent(&self, e: &JEntry) -> bool {
-        e.unit.is_empty()
-            && self.uid.is_some()
-            && e.uid == self.uid
-            && !e.exe.is_empty()
-            && self.exes.contains(&e.exe)
+        if !e.unit.is_empty() || self.uid.is_none() || e.uid != self.uid {
+            return false;
+        }
+        if e.exe.is_empty() {
+            !e.identifier.is_empty() && self.names.contains(&e.identifier)
+        } else {
+            self.exes.contains(&e.exe)
+        }
     }
 }
 
@@ -1007,9 +1031,12 @@ impl Session<'_> {
     /// The senders a probe of this package would show as, worked out only
     /// when the window holds an unattributed err line at all.
     fn probe_senders(&mut self, entries: &[JEntry], rec: &PkgRecord) -> ProbeSenders {
-        let candidate = entries
-            .iter()
-            .any(|e| e.priority <= 3 && e.unit.is_empty() && e.uid.is_some() && !e.exe.is_empty());
+        let candidate = entries.iter().any(|e| {
+            e.priority <= 3
+                && e.unit.is_empty()
+                && e.uid.is_some()
+                && !(e.exe.is_empty() && e.identifier.is_empty())
+        });
         if !candidate || rec.clis.is_empty() {
             return ProbeSenders::default();
         }
@@ -1032,10 +1059,7 @@ impl Session<'_> {
             q,
         );
         exes.extend(e.stdout.lines().map(str::trim).filter(|l| l.starts_with('/')).map(str::to_string));
-        ProbeSenders {
-            uid: self.probe_uid.flatten(),
-            exes,
-        }
+        ProbeSenders::new(self.probe_uid.flatten(), exes)
     }
 
     fn journal_window(&mut self, cursor: &str, rec: &mut PkgRecord) {

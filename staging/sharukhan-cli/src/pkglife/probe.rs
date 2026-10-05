@@ -1175,6 +1175,52 @@ mod tests {
     }
 
     #[test]
+    fn the_gate_54_server_helpers_and_fio2gnuplot_rejudge_to_their_reviewed_reasons() {
+        // Attempts as recorded on k13 (gate 54), replayed under the policy.
+        let p = Policy::embedded().unwrap();
+        let att = |args: &str, code: i32, out: &str, err: &str| ProbeAttempt {
+            args: vec![args.to_string()],
+            code: Some(code),
+            stdout: out.into(),
+            stderr: err.into(),
+            result: if code == 0 { "success".into() } else { "exit-code".into() },
+            ..Default::default()
+        };
+        let rec = |path: &str, a: Vec<ProbeAttempt>| CliResult {
+            path: path.into(),
+            status: FAIL.into(),
+            reason: String::new(),
+            attempts: a,
+        };
+        let safe = |out: &str| {
+            vec![att(
+                "--version",
+                1,
+                out,
+                "/usr/bin/mariadbd-safe-helper: Can't create/write to file '/var/lib/mysql/mc-k13.err' (Errcode: 13 \"Permission denied\")",
+            )]
+        };
+        let r = rejudge(&p, &rec("/usr/bin/mariadbd-safe", safe("261004 17:39:31 mysqld_safe Logging to '/var/lib/mysql/mc-k13.err'.")), "11.8.8");
+        assert_eq!(r.status, SKIP, "{}", r.reason);
+        assert!(r.reason.contains("MariaDB's name for mysqld_safe"), "{}", r.reason);
+        // negative control: without its own words the same exit is a failure
+        let r = rejudge(&p, &rec("/usr/bin/mariadbd-safe", safe("")), "11.8.8");
+        assert_eq!(r.status, FAIL, "{}", r.reason);
+
+        let r = rejudge(&p, &rec("/usr/bin/mysqld_pre_systemd", vec![att("--version", 0, "", "mysqld: Can't create directory '/var/lib/mysql/'")]), "8.4.11");
+        assert_eq!(r.status, SKIP, "{}", r.reason);
+        assert!(r.reason.starts_with("never executed (mysqld_pre_systemd)"), "{}", r.reason);
+
+        let fio = "Error: One of the options passed to the cmdline was not supported\nPlease fix your command line or read the help (-h option)";
+        let r = rejudge(&p, &rec("/usr/bin/fio2gnuplot", vec![att("--version", 2, fio, ""), att("-V", 2, fio, "")]), "3.33");
+        assert_eq!(r.status, SKIP, "{}", r.reason);
+        assert!(r.reason.contains("options passed to the cmdline"), "{}", r.reason);
+        // negative control: an error that is no option rejection still fails
+        let r = rejudge(&p, &rec("/usr/bin/fio2gnuplot", vec![att("--version", 2, "Error: no data files found", "")]), "3.33");
+        assert_eq!(r.status, FAIL, "{}", r.reason);
+    }
+
+    #[test]
     fn probes_stop_at_the_first_success_and_record_every_attempt() {
         let p = Policy::embedded().unwrap();
         let mut f = Fake::new();
