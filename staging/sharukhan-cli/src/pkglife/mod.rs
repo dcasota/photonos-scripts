@@ -1595,6 +1595,12 @@ impl Session<'_> {
                 ms(t),
             ));
         }
+        let trigger_units: Vec<&str> = real
+            .iter()
+            .filter(|u| matches!(u.kind(), "timer" | "socket" | "path"))
+            .map(|u| u.name.as_str())
+            .collect();
+        let triggered_by = units::triggers_of(self.r, &trigger_units, self.policy.limits.query_secs);
         for u in real {
             if let Some(p) = units::plan_static(&u.name, u.alias) {
                 rec.units.push(record::UnitResult {
@@ -1641,6 +1647,7 @@ impl Session<'_> {
                         r: self.r,
                         policy: self.policy,
                         nonce: &nonce,
+                        triggered_by: &triggered_by,
                     };
                     let c = units::cycle(&mut ctx, &u.name, deadman);
                     rec.units.push(c.res);

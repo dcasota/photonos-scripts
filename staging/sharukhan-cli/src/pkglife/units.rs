@@ -338,6 +338,10 @@ pub struct Ctx<'a> {
     pub r: &'a mut dyn Remote,
     pub policy: &'a Policy,
     pub nonce: &'a str,
+    /// What the package's own timer, socket and path units trigger
+    /// ([`triggers_of`]): the TriggeredBy= a service has when its trigger is
+    /// loaded.
+    pub triggered_by: &'a BTreeMap<String, String>,
 }
 
 fn ms(t: Instant) -> u64 {
@@ -355,6 +359,71 @@ pub fn show(r: &mut dyn Remote, unit: &str, secs: u64) -> Result<Props, String> 
         ));
     }
     parse::systemctl_show(&e.stdout)
+}
+
+/// [`show`], with TriggeredBy= completed from the package's own triggers.
+fn show_in(ctx: &mut Ctx, unit: &str, secs: u64) -> Result<Props, String> {
+    let mut p = show(ctx.r, unit, secs)?;
+    if prop(&p, "TriggeredBy").trim().is_empty() {
+        if let Some(t) = ctx.triggered_by.get(unit) {
+            p.insert("TriggeredBy".into(), t.clone());
+        }
+    }
+    Ok(p)
+}
+
+/// The units that `triggers` (the package's timer, socket and path units)
+/// trigger, mapped to the triggers that name each of them. systemd unloads an
+/// inactive trigger nothing references, and the service's TriggeredBy= goes
+/// with it: measured on a guest, ntplogtemp.service shows
+/// TriggeredBy=ntplogtemp.timer only while the timer is active, so a service
+/// tested on its own looked like a daemon that does not stay up. The
+/// triggers' own Triggers= is read instead, in one call that loads them.
+pub fn triggers_of(r: &mut dyn Remote, triggers: &[&str], secs: u64) -> BTreeMap<String, String> {
+    let mut out: BTreeMap<String, String> = BTreeMap::new();
+    if triggers.is_empty() {
+        return out;
+    }
+    let mut v = vec!["systemctl", "show", "-p", "Id,Triggers", "--"];
+    v.extend_from_slice(triggers);
+    let Ok(cmd) = argv(&v) else {
+        return out;
+    };
+    let e = r.exec(&cmd, None, secs);
+    if !e.ok() {
+        return out;
+    }
+    for (trigger, triggered) in parse_triggers(&e.stdout) {
+        for t in triggered {
+            out.entry(t)
+                .and_modify(|w| {
+                    w.push(' ');
+                    w.push_str(&trigger);
+                })
+                .or_insert_with(|| trigger.clone());
+        }
+    }
+    out
+}
+
+/// `systemctl show -p Id,Triggers a b ...`: blocks separated by a blank line.
+pub fn parse_triggers(stdout: &str) -> Vec<(String, Vec<String>)> {
+    let mut out = Vec::new();
+    for block in stdout.split("\n\n") {
+        let mut id = String::new();
+        let mut triggers = Vec::new();
+        for l in block.lines() {
+            if let Some(v) = l.strip_prefix("Id=") {
+                id = v.trim().to_string();
+            } else if let Some(v) = l.strip_prefix("Triggers=") {
+                triggers = v.split_whitespace().map(str::to_string).collect();
+            }
+        }
+        if !id.is_empty() && !triggers.is_empty() {
+            out.push((id, triggers));
+        }
+    }
+    out
 }
 
 pub fn journal_cursor(r: &mut dyn Remote, secs: u64) -> Result<String, String> {
@@ -443,7 +512,7 @@ pub fn cycle(ctx: &mut Ctx, unit: &str, deadman: bool) -> Cycled {
             };
         }
     };
-    let before = match show(ctx.r, unit, lim.query_secs) {
+    let before = match show_in(ctx, unit, lim.query_secs) {
         Ok(p) => p,
         Err(e) => {
             step(&mut res, "show", FAIL, e, t);
@@ -463,7 +532,7 @@ pub fn cycle(ctx: &mut Ctx, unit: &str, deadman: bool) -> Cycled {
     match ufs.as_str() {
         "disabled" => {
             let e = sysctl(ctx, "enable", unit, lim.query_secs);
-            let after = show(ctx.r, unit, lim.query_secs).unwrap_or_default();
+            let after = show_in(ctx, unit, lim.query_secs).unwrap_or_default();
             if e.ok() && prop(&after, "UnitFileState") == "enabled" {
                 we_enabled = true;
                 step(&mut res, "enable", PASS, "disabled -> enabled", t);
@@ -628,7 +697,7 @@ pub fn cycle(ctx: &mut Ctx, unit: &str, deadman: bool) -> Cycled {
     if transport_lost(&e) {
         lost = true;
     }
-    let started = show(ctx.r, unit, lim.query_secs).unwrap_or_default();
+    let started = show_in(ctx, unit, lim.query_secs).unwrap_or_default();
     let verdict = judge_start(&kind, e.code, e.timed_out, &started);
     let window = journal_since(ctx.r, &cursor, Some(unit), false, lim.query_secs);
     let entries = window.as_ref().cloned().unwrap_or_default();
@@ -687,7 +756,7 @@ pub fn cycle(ctx: &mut Ctx, unit: &str, deadman: bool) -> Cycled {
     if up && !lost {
         let t = Instant::now();
         std::thread::sleep(std::time::Duration::from_secs(lim.stability_secs));
-        match show(ctx.r, unit, lim.query_secs) {
+        match show_in(ctx, unit, lim.query_secs) {
             Ok(later) => match judge_stable(&kind, &started, &later) {
                 Ok(()) => step(
                     &mut res,
@@ -712,7 +781,7 @@ pub fn cycle(ctx: &mut Ctx, unit: &str, deadman: bool) -> Cycled {
     // --- stop (always: a failed start can leave a process behind) ---------
     let t = Instant::now();
     let e = sysctl(ctx, "stop", unit, lim.unit_stop_secs);
-    let stopped = show(ctx.r, unit, lim.query_secs).unwrap_or_default();
+    let stopped = show_in(ctx, unit, lim.query_secs).unwrap_or_default();
     match (e.ok(), judge_stop(&stopped)) {
         (true, Ok(())) => step(&mut res, "stop", PASS, "inactive, no main process", t),
         (true, Err(why)) if !up => step(&mut res, "stop", INFO, why, t),
@@ -734,10 +803,10 @@ pub fn cycle(ctx: &mut Ctx, unit: &str, deadman: bool) -> Cycled {
 
     // --- disable -----------------------------------------------------------
     let t = Instant::now();
-    let now = show(ctx.r, unit, lim.query_secs).unwrap_or_default();
+    let now = show_in(ctx, unit, lim.query_secs).unwrap_or_default();
     if prop(&now, "UnitFileState") == "enabled" {
         let e = sysctl(ctx, "disable", unit, lim.query_secs);
-        let after = show(ctx.r, unit, lim.query_secs).unwrap_or_default();
+        let after = show_in(ctx, unit, lim.query_secs).unwrap_or_default();
         if e.ok() && prop(&after, "UnitFileState") == "disabled" {
             step(
                 &mut res,
@@ -1372,6 +1441,63 @@ mod tests {
     }
 
     #[test]
+    fn a_service_ends_cleanly_when_its_unloaded_timer_triggers_it() {
+        // ntplogtemp.service on k09/k13 (gate 54): started on its own, it
+        // logs once and exits 0; systemd had unloaded the inactive
+        // ntplogtemp.timer, so TriggeredBy= was empty and the service was
+        // judged a daemon that does not stay up.
+        let mut p = pol();
+        p.limits.stability_secs = 0;
+        let script = || {
+            let mut f = Fake::new();
+            f.on("--show-cursor", fake::ok(CURSOR))
+                .once("'show'", fake::ok("LoadState=loaded\nActiveState=inactive\nUnitFileState=static\nMainPID=0\nType=simple\n"))
+                .on("'start'", fake::ok(""))
+                .once("'show'", fake::ok("ActiveState=active\nSubState=running\nMainPID=7\nNRestarts=0\nType=simple\n"))
+                .once("'show'", fake::ok("ActiveState=inactive\nSubState=dead\nResult=success\nMainPID=0\nNRestarts=0\nType=simple\n"))
+                .on("'stop'", fake::ok(""))
+                .on("'reset-failed'", fake::ok(""))
+                .on("'show'", fake::ok("ActiveState=inactive\nMainPID=0\nType=simple\n"))
+                .on("journalctl", fake::ok(""));
+            f
+        };
+        let stays_up = |map: &BTreeMap<String, String>| {
+            let mut f = script();
+            let mut ctx = Ctx { r: &mut f, policy: &p, nonce: "t1", triggered_by: map };
+            let c = cycle(&mut ctx, "ntplogtemp.service", false);
+            c.res.steps.iter().find(|s| s.name == "stays-up").map(|s| (s.status.clone(), s.detail.clone()))
+        };
+        let map: BTreeMap<String, String> =
+            [("ntplogtemp.service".to_string(), "ntplogtemp.timer".to_string())].into_iter().collect();
+        let (st, d) = stays_up(&map).expect("stays-up step");
+        assert_eq!(st, PASS, "{d}");
+        // negative controls: no trigger known, or a trigger of another unit
+        let (st, _) = stays_up(&BTreeMap::new()).expect("stays-up step");
+        assert_eq!(st, FAIL);
+        let other: BTreeMap<String, String> =
+            [("ntpviz-daily.service".to_string(), "ntpviz-daily.timer".to_string())].into_iter().collect();
+        let (st, _) = stays_up(&other).expect("stays-up step");
+        assert_eq!(st, FAIL);
+    }
+
+    #[test]
+    fn triggers_are_read_from_each_trigger_block() {
+        let out = "Id=ntplogtemp.timer\nTriggers=ntplogtemp.service\n\nId=cups.socket\nTriggers=cups.service\n\nId=cups.path\nTriggers=cups.service\n\nId=idle.timer\nTriggers=\n";
+        let t = parse_triggers(out);
+        assert_eq!(t.len(), 3, "{t:?}");
+        let mut f = Fake::new();
+        f.on("'Id,Triggers'", fake::ok(out));
+        let m = triggers_of(&mut f, &["ntplogtemp.timer", "cups.socket", "cups.path", "idle.timer"], 5);
+        assert_eq!(m.get("ntplogtemp.service").map(String::as_str), Some("ntplogtemp.timer"));
+        assert_eq!(m.get("cups.service").map(String::as_str), Some("cups.socket cups.path"));
+        assert_eq!(m.len(), 2);
+        // no trigger units: nothing is asked
+        let mut f = Fake::new();
+        assert!(triggers_of(&mut f, &[], 5).is_empty());
+        assert!(f.log.borrow().is_empty());
+    }
+
+    #[test]
     fn a_healthy_daemon_cycles_through_every_step() {
         let mut p = pol();
         p.limits.stability_secs = 0;
@@ -1384,6 +1510,7 @@ mod tests {
             r: &mut f,
             policy: &p,
             nonce: "n1",
+            triggered_by: &BTreeMap::new(),
         };
         let c = cycle(&mut ctx, "chronyd.service", false);
         let names: Vec<(&str, &str)> = c
@@ -1428,6 +1555,7 @@ mod tests {
             r: &mut f,
             policy: &p,
             nonce: "n2",
+            triggered_by: &BTreeMap::new(),
         };
         let c = cycle(&mut ctx, "x.service", false);
         assert_eq!(c.res.status, FAIL);
@@ -1468,6 +1596,7 @@ mod tests {
             r: &mut f,
             policy: &p,
             nonce: "n3",
+            triggered_by: &BTreeMap::new(),
         };
         let c = cycle(&mut ctx, "x.service", false);
         let start = c.res.steps.iter().find(|s| s.name == "start").unwrap();
@@ -1502,6 +1631,7 @@ mod tests {
                 r: f,
                 policy: &p,
                 nonce: "n6",
+                triggered_by: &BTreeMap::new(),
             };
             cycle(&mut ctx, unit, false).res
         };
@@ -1574,6 +1704,7 @@ mod tests {
                 r: &mut f,
                 policy: &p,
                 nonce: "n8",
+                triggered_by: &BTreeMap::new(),
             };
             cycle(&mut ctx, "ibacm.service", false).res
         };
@@ -1613,6 +1744,7 @@ mod tests {
                 r: &mut f,
                 policy: &p,
                 nonce: "n7",
+                triggered_by: &BTreeMap::new(),
             };
             cycle(&mut ctx, "ipmi.service", false).res
         };
@@ -1657,6 +1789,7 @@ mod tests {
             r: &mut f,
             policy: &p,
             nonce: "n4",
+            triggered_by: &BTreeMap::new(),
         };
         let c = cycle(&mut ctx, "netconsole.service", false);
         assert_eq!(c.res.outcome, "skipped (condition)");
@@ -1676,6 +1809,7 @@ mod tests {
             r: &mut f,
             policy: &p,
             nonce: "n5",
+            triggered_by: &BTreeMap::new(),
         };
         let c = cycle(&mut ctx, "nftables.service", true);
         assert_eq!(c.res.status, FAIL);
@@ -1698,6 +1832,7 @@ mod tests {
             r: &mut f,
             policy: &p,
             nonce: "n6",
+            triggered_by: &BTreeMap::new(),
         };
         let c = cycle(&mut ctx, "nftables.service", true);
         assert_eq!(c.res.status, PASS, "{:?}", c.res.steps);
