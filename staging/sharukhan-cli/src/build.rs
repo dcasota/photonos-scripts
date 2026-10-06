@@ -703,6 +703,27 @@ mismatched canister in the stage outranks the pinned one for an unversioned tdnf
             continue;
         }
 
+        // The kernel slot: kernels another build class left in the shared
+        // stage leave it (an equivalent kernel is in the kernel store; any
+        // other is parked), and this class's parked kernels come back,
+        // verified. Before the content check below, so a returned kernel is
+        // judged by it like any other RPM.
+        let slot_stage = cfg.photon_tree.join("stage");
+        let slot_class = crate::kernelslot::class_of(phase).to_string();
+        let slot_fams = crate::kernelslot::kernel_families(
+            &cfg.photon_tree.join("SPECS/linux"),
+            crate::specresolve::tree_subrelease(&cfg.photon_tree),
+        );
+        crate::kernelslot::enter(
+            &slot_stage,
+            &crate::kernelslot::store_root(&cfg.build_root, &cfg.release),
+            &slot_class,
+            &slot_fams,
+            &|_: &str| false,
+            false,
+            &mut |l| log(l.trim()),
+        );
+
         // RPMs at a patched NEVR that were built from other content (a branch
         // amended after a gate built it) are removed so they are rebuilt.
         // The tree is pristine here (runPh5_normal.sh applies the patch
@@ -773,6 +794,9 @@ mismatched canister in the stage outranks the pinned one for an unversioned tdnf
                 build_log.display()
             ));
         }
+        crate::kernelslot::record_unrecorded(&slot_stage, &slot_fams, &slot_class, &mut |l| {
+            log(l.trim())
+        });
     }
 
     // Prove which image build.py was pointed at, not what was asked for.
