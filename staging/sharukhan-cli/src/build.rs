@@ -1222,7 +1222,10 @@ pub const VARIANTS: [Variant; 2] = [
         branches: &[
             "fix/poi-fips-sshd-algorithms",
             "fix/aide-libgcrypt-versioned-requires",
-            "fix-selinux-relabel",
+            // fix/stig-audit-backlog-limit is stacked on fix-selinux-relabel
+            // (#31) and listed instead of it (range rule): PHTN-50-000080 adds
+            // audit_backlog_limit=8192 next to audit=1.
+            "fix/stig-audit-backlog-limit",
             // fix/systemd-subpackage-files-once is stacked on
             // fix/systemd-groups-and-stig-variant (#22) and listed instead of
             // it (range rule): systemd 257.13-7 ships each file of
@@ -1306,6 +1309,10 @@ pub const VARIANTS: [Variant; 2] = [
             "fix/iptables-alternatives-ghost",
             "fix/sendmail-alias-database",
             "fix/wavefront-proxy-stop-status",
+            // rpm -V on the FIPS rows: distro.cnf follows the FIPS provider
+            "fix/openssl-distro-cnf-verify",
+            // audit records lost under audit.STIG.rules' -b 640
+            "fix/audit-stig-backlog",
         ],
     },
     Variant {
@@ -1328,7 +1335,10 @@ pub const VARIANTS: [Variant; 2] = [
             // falls back to the plain text menu.
             "fix/poi-2.9-eltorito-theme-modules",
             "fix/aide-libgcrypt-versioned-requires",
-            "fix-selinux-relabel",
+            // fix/stig-audit-backlog-limit is stacked on fix-selinux-relabel
+            // (#31) and listed instead of it (range rule): PHTN-50-000080 adds
+            // audit_backlog_limit=8192 next to audit=1.
+            "fix/stig-audit-backlog-limit",
             // fix/systemd-subpackage-files-once is stacked on
             // fix/systemd-groups-and-stig-variant (#22) and listed instead of
             // it (range rule): systemd 257.13-7 ships each file of
@@ -1412,6 +1422,10 @@ pub const VARIANTS: [Variant; 2] = [
             "fix/iptables-alternatives-ghost",
             "fix/sendmail-alias-database",
             "fix/wavefront-proxy-stop-status",
+            // rpm -V on the FIPS rows: distro.cnf follows the FIPS provider
+            "fix/openssl-distro-cnf-verify",
+            // audit records lost under audit.STIG.rules' -b 640
+            "fix/audit-stig-backlog",
         ],
     },
 ];
