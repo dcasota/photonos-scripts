@@ -1244,7 +1244,14 @@ pub const VARIANTS: [Variant; 2] = [
     Variant {
         name: "2.8",
         branches: &[
-            "fix/poi-fips-sshd-algorithms",
+            // fix/poi-release-dhcp-leases is stacked on
+            // fix/poi-fips-sshd-algorithms (#28) and listed instead of it
+            // (range rule): it adds 0011, with which the installer environment
+            // releases its DHCP leases before it reboots into the installed
+            // system. Without it a MAC-affine DHCP server keeps the address for
+            // the installer's client identifier until the lease expires, and the
+            // installed system boots without IPv4 (wait-online fails).
+            "fix/poi-release-dhcp-leases",
             "fix/aide-libgcrypt-versioned-requires",
             // fix/stig-audit-backlog-limit is stacked on fix-selinux-relabel
             // (#31) and listed instead of it (range rule): PHTN-50-000080 adds
@@ -1357,7 +1364,11 @@ pub const VARIANTS: [Variant; 2] = [
             // rule): it adds 0010, the png/tga loaders for the BIOS El Torito
             // image, without which BIOS GRUB stops on an image-format error and
             // falls back to the plain text menu.
-            "fix/poi-2.9-eltorito-theme-modules",
+            // fix/poi-2.9-release-dhcp-leases is stacked on
+            // fix/poi-2.9-eltorito-theme-modules (#38) and listed instead of it
+            // (range rule): the same 0011 as the 2.8 variant, so the installer
+            // environment releases its DHCP leases before it reboots.
+            "fix/poi-2.9-release-dhcp-leases",
             "fix/aide-libgcrypt-versioned-requires",
             // fix/stig-audit-backlog-limit is stacked on fix-selinux-relabel
             // (#31) and listed instead of it (range rule): PHTN-50-000080 adds
