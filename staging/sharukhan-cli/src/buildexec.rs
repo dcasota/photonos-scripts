@@ -821,6 +821,33 @@ fn pin_subrelease(c: &mut Ctx, n: u32) -> Result<(), String> {
     Ok(())
 }
 
+/// The rpm macros each canister mode hands linux (and, in phase B,
+/// linux-esx) through pkg-build-options. One definition: the macro file and
+/// the kernel store's key both read it.
+pub(crate) fn pkg_build_macros(mode: CanisterMode, nevr: Option<&str>) -> Result<Vec<String>, String> {
+    Ok(match mode {
+        CanisterMode::Prebuilt => vec![],
+        CanisterMode::Build => vec!["canister_build 1".into()],
+        CanisterMode::Acvp => vec!["acvp_build 1".into()],
+        CanisterMode::Kat => vec!["kat_build 1".into()],
+        CanisterMode::EquivalentA => {
+            let n = nevr.ok_or("equivalent-a without a NEVR")?;
+            vec![
+                "canister_build 1".into(),
+                "canister_stamp_real 1".into(),
+                format!("fips_certified_override {n}"),
+            ]
+        }
+        CanisterMode::EquivalentB => {
+            let n = nevr.ok_or("equivalent-b without a NEVR")?;
+            vec![
+                "canister_equivalent 1".into(),
+                format!("fips_canister_override {n}"),
+            ]
+        }
+    })
+}
+
 /// Canister macros into `pkg-build-options`.
 ///
 /// The path is RELATIVE and resolved by build.py against the common tree;
@@ -845,27 +872,7 @@ fn pkg_build_options(c: &mut Ctx, mode: CanisterMode, nevr: Option<&str>) -> Res
         ));
     }
 
-    let macros: Vec<String> = match mode {
-        CanisterMode::Prebuilt => vec![],
-        CanisterMode::Build => vec!["canister_build 1".into()],
-        CanisterMode::Acvp => vec!["acvp_build 1".into()],
-        CanisterMode::Kat => vec!["kat_build 1".into()],
-        CanisterMode::EquivalentA => {
-            let n = nevr.ok_or("equivalent-a without a NEVR")?;
-            vec![
-                "canister_build 1".into(),
-                "canister_stamp_real 1".into(),
-                format!("fips_certified_override {n}"),
-            ]
-        }
-        CanisterMode::EquivalentB => {
-            let n = nevr.ok_or("equivalent-b without a NEVR")?;
-            vec![
-                "canister_equivalent 1".into(),
-                format!("fips_canister_override {n}"),
-            ]
-        }
-    };
+    let macros = pkg_build_macros(mode, nevr)?;
     let pkgs: &[&str] = if mode == CanisterMode::EquivalentA {
         &["linux"]
     } else {
@@ -1590,11 +1597,17 @@ pub fn purge(c: &mut Ctx) -> Result<(), String> {
             }
         }
         c.say("  would purge stale sandboxes, SRPMs, logs and shadowing RPMs");
+        slot_enter(c, &stage);
         return Ok(());
     }
     c.say(&format!("  stage: {}", stage.display()));
+    // The kernel slot first: kernels of another build class leave the stage
+    // before any purge reasons about what is in it.
+    slot_enter(c, &stage);
     if c.spec.compose_only {
         // Do not purge the kernels - prove they are the ones we want to keep.
+        // They were filed in the store when phase B built them.
+        slot_restore(c, &stage);
         assert_phase_b_kernels(c, &stage)?;
     } else {
         purge_phase_a_kernels(c, &stage);
@@ -1607,6 +1620,11 @@ pub fn purge(c: &mut Ctx) -> Result<(), String> {
     purge_iso_workdirs(c, &stage);
     let n = purge_corrupt_rpms(c, &stage);
     c.say(&format!("  corrupted RPMs removed: {n}"));
+    // Last, against the stage as the build will see it: the toolchain part of
+    // the key is what is left after every purge above.
+    if !c.spec.compose_only {
+        slot_restore(c, &stage);
+    }
     clean_sandboxes(c, &stage);
     for sub in ["SRPMS", "LOGS"] {
         let d = stage.join(sub);
@@ -1631,6 +1649,188 @@ pub fn purge(c: &mut Ctx) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// the kernel slot (see kernelslot.rs)
+// ---------------------------------------------------------------------------
+
+fn slot_store_root(c: &Ctx) -> PathBuf {
+    crate::kernelslot::store_root(&c.spec.base_dir, &c.spec.release)
+}
+
+fn slot_families(c: &Ctx) -> std::collections::BTreeSet<String> {
+    let release = c.spec.tree(Tree::Release);
+    crate::kernelslot::kernel_families(
+        &release.join("SPECS/linux"),
+        build_subrelease(c, &release),
+    )
+}
+
+/// The rule that decides which stage RPMs are the kernels this equivalent
+/// phase produces: the phase-B purge's own (`doomed_before_phase_b`).
+fn slot_build_nevr(c: &mut Ctx) -> Box<dyn Fn(&str) -> bool> {
+    match (c.spec.canister.needs_nevr(), c.spec.canister_nevr.clone()) {
+        (true, Some(nevr)) => {
+            let flavours = kernel_flavour_nevrs(c);
+            Box::new(move |n: &str| crate::build::doomed_before_phase_b(n, &nevr, &flavours))
+        }
+        _ => Box::new(|_: &str| false),
+    }
+}
+
+/// Take every kernel of another build class out of the stage, and return
+/// this class's parked ones.
+fn slot_enter(c: &mut Ctx, stage: &Path) {
+    let class = crate::kernelslot::class_of(c.spec.canister.as_str()).to_string();
+    let fams = slot_families(c);
+    if fams.is_empty() {
+        c.say("  kernel slot: the kernel specs declare no package here; nothing to sort");
+        return;
+    }
+    let root = slot_store_root(c);
+    let at_nevr = slot_build_nevr(c);
+    let dry = c.dry;
+    let mut lines = Vec::new();
+    crate::kernelslot::enter(stage, &root, &class, &fams, &*at_nevr, dry, &mut |l| {
+        lines.push(l.to_string())
+    });
+    for l in lines {
+        c.say(&l);
+    }
+}
+
+/// The inputs this equivalent phase's kernels are built from.
+fn slot_inputs(c: &Ctx, stage: &Path) -> Option<crate::kernelslot::Inputs> {
+    let release = c.spec.tree(Tree::Release);
+    let patches: Vec<(&str, &str)> = c
+        .spec
+        .injections
+        .iter()
+        .filter_map(|i| match i {
+            Injection::Embed(e) => Some((e.as_str(), e.patch())),
+            _ => None,
+        })
+        .collect();
+    let macros =
+        pkg_build_macros(c.spec.canister, c.spec.canister_nevr.as_deref()).ok()?;
+    crate::kernelslot::inputs(
+        &release.join("SPECS/linux"),
+        build_subrelease(c, &release),
+        &patches,
+        c.spec.canister_nevr.as_deref(),
+        c.spec.canister.as_str(),
+        &macros,
+        std::env::consts::ARCH,
+        stage,
+    )
+}
+
+/// Put back the stored output of this equivalent phase when every input is
+/// identical; otherwise say what moved, and let the build make it.
+fn slot_restore(c: &mut Ctx, stage: &Path) {
+    if !c.spec.canister.needs_nevr() || c.dry {
+        return;
+    }
+    let mode = c.spec.canister.as_str();
+    let Some(inp) = slot_inputs(c, stage) else {
+        c.say(&format!(
+            "  kernel store: the {mode} inputs cannot be read (kernel specs or toolchain); no reuse, the build makes them"
+        ));
+        return;
+    };
+    let root = slot_store_root(c);
+    let key = inp.key[..12].to_string();
+    let mut lines = Vec::new();
+    let r = crate::kernelslot::restore(&root, &inp, stage, &mut |l| lines.push(l.to_string()));
+    for l in lines {
+        c.say(&l);
+    }
+    match r {
+        crate::kernelslot::Restore::Reused(rels) => {
+            c.say(&format!(
+                "  kernel store: REUSED {} {mode} RPM(s) under key {key} - kernel spec content, \
+embedded patches, canister version, macros and toolchain identical; every file verified \
+byte-identical by sha256:",
+                rels.len()
+            ));
+            for r in rels {
+                c.say(&format!("    + {r}"));
+            }
+        }
+        crate::kernelslot::Restore::Miss(why) => {
+            c.say(&format!("  kernel store: no {mode} RPMs stored under key {key}; the build makes them, because:"));
+            for w in why {
+                c.say(&format!("    - {w}"));
+            }
+        }
+        crate::kernelslot::Restore::Refused(why) => c.say(&format!(
+            "  kernel store: REFUSED the stored {mode} RPMs under key {key}: {why}. The entry \
+is discarded and the build makes them again"
+        )),
+    }
+}
+
+/// After a successful build: file an equivalent phase's output under the key
+/// its purge computed, and record every kernel left in the stage under the
+/// class that put it there.
+fn slot_after(c: &mut Ctx) {
+    if c.dry {
+        return;
+    }
+    let stage = c.spec.tree(Tree::Release).join("stage");
+    let root = slot_store_root(c);
+    let mode = c.spec.canister;
+    let mut lines = Vec::new();
+    let mut say = |l: &str| lines.push(l.to_string());
+    match (mode, c.spec.canister_nevr.clone()) {
+        (CanisterMode::EquivalentA | CanisterMode::EquivalentB, Some(nevr)) => {
+            let at_nevr = slot_build_nevr(c);
+            let rpms = crate::kernelslot::stage_rpms(&stage);
+            let kernels: Vec<PathBuf> = rpms
+                .iter()
+                .filter(|(_, p)| at_nevr(&basename(p)))
+                .map(|(_, p)| p.clone())
+                .collect();
+            let canister: Vec<PathBuf> = rpms
+                .iter()
+                .map(|(_, p)| p.clone())
+                .filter(|p| {
+                    let n = basename(p);
+                    n.starts_with("linux-fips-canister-") && n.contains(&format!("-{nevr}."))
+                })
+                .collect();
+            // Phase A's deliverable is the canister; its kernels are purged by
+            // phase B and only recorded, so no later build mistakes them for
+            // another class's. Phase B's deliverable is its kernels.
+            let (keep, rest) = if mode == CanisterMode::EquivalentA {
+                (canister, kernels)
+            } else {
+                (kernels, Vec::new())
+            };
+            match crate::kernelslot::store(&root, mode.as_str(), &stage, &keep, &mut say) {
+                Ok(_) => {}
+                Err(e) => say(&format!(
+                    "  kernel store: not stored ({e}); the next {} build makes them again",
+                    mode.as_str()
+                )),
+            }
+            let rels: Vec<String> = rest
+                .iter()
+                .filter_map(|p| p.strip_prefix(stage.join("RPMS")).ok())
+                .map(|p| p.to_string_lossy().into_owned())
+                .collect();
+            crate::kernelslot::record(&stage, &rels, crate::kernelslot::EQUIVALENT, "-", &mut say);
+        }
+        _ => {
+            let fams = slot_families(c);
+            let class = crate::kernelslot::class_of(mode.as_str()).to_string();
+            crate::kernelslot::record_unrecorded(&stage, &fams, &class, &mut say);
+        }
+    }
+    for l in lines {
+        c.say(&l);
+    }
 }
 
 /// Move aside any `linux-fips-canister` RPM in the stage that is not the one
@@ -1950,7 +2150,7 @@ fn resolved_spec(c: &Ctx, release_tree: &Path, spec: &Path) -> Option<String> {
     text
 }
 
-fn spec_families_text(text: &str) -> Option<SpecFamilies> {
+pub(crate) fn spec_families_text(text: &str) -> Option<SpecFamilies> {
     let field = |k: &str| -> Option<String> {
         text.lines()
             .find(|l| l.starts_with(k))
@@ -1995,7 +2195,7 @@ fn spec_families_text(text: &str) -> Option<SpecFamilies> {
 /// Prefix matching cannot do this job: `libcap-` is a prefix of `libcap-libs-`,
 /// so a prefix test either misses subpackages or over-matches neighbours. The
 /// name is everything before the last two `-`-separated fields.
-fn parse_rpm_name(file: &str) -> Option<(String, String, String)> {
+pub(crate) fn parse_rpm_name(file: &str) -> Option<(String, String, String)> {
     let stem = file.strip_suffix(".rpm")?;
     // drop the arch
     let stem = stem.rsplit_once('.').map(|(l, _)| l)?;
@@ -2762,6 +2962,27 @@ pub fn make_and_deliver(c: &mut Ctx) -> Result<PathBuf, String> {
         return Ok(PathBuf::from("(dry-run: no ISO)"));
     }
 
+    // Phase A exists to produce the canister. When the purge restored it
+    // from the kernel store (identical inputs, verified bytes), `make linux`
+    // would only rebuild what is already here. The planner chose phase A
+    // because no canister was in the stage, so one present now is the store's.
+    if c.spec.canister == CanisterMode::EquivalentA {
+        let nevr = c.spec.canister_nevr.clone().unwrap_or_default();
+        let want = format!("linux-fips-canister-{nevr}.");
+        if let Some(p) =
+            crate::build::find_files_rec(&stage.join("RPMS"), "linux-fips-canister-", ".rpm")
+                .into_iter()
+                .find(|p| basename(p).starts_with(&want))
+        {
+            c.say(&format!(
+                "  phase A skipped: linux-fips-canister-{nevr} is already in the stage ({}), \
+restored from the kernel store or left by an earlier phase A",
+                p.display()
+            ));
+            return Ok(p);
+        }
+    }
+
     // Sandboxes a previous run left behind (a failed package's is kept for
     // debugging, mounts and all) are cleaned before the first attempt too,
     // not only between attempts.
@@ -3181,6 +3402,7 @@ pub fn execute(spec: &BuildSpec, dry: bool, log: &mut dyn FnMut(&str)) -> Result
             Stage::Post => {
                 c.say(&format!("  produced {}", produced.display()));
                 post_assert(&mut c)?;
+                slot_after(&mut c);
             }
         }
     }
@@ -4800,6 +5022,118 @@ mod pkgopts_tests {
         }
         for f in spared {
             assert!(rpms.join(f).exists(), "{f} must survive the phase-B purge");
+        }
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// The cascade's glue end to end: phase B files its kernels under the key
+    /// its purge computed, the next phase B with identical inputs gets them
+    /// back byte-identical, a prebuilt build entering the slot never sees
+    /// them, and a phase A whose canister is back skips its make.
+    #[test]
+    fn the_cascade_stores_reuses_and_never_leaks_equivalent_kernels() {
+        let tmp = std::env::temp_dir().join(format!("shk-slot-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let specs = tmp.join("root/5.0/SPECS/linux");
+        let rpms = tmp.join("root/5.0/stage/RPMS/x86_64");
+        fs::create_dir_all(&specs).unwrap();
+        fs::create_dir_all(&rpms).unwrap();
+        fs::write(
+            specs.join("linux.spec"),
+            "Name: linux\nVersion: 6.12.111\nRelease: 4%{?dist}\nBuildRequires: gcc\n\
+%package devel\n%package fips-canister\n",
+        )
+        .unwrap();
+        fs::write(
+            specs.join("linux-esx.spec"),
+            "Name: linux-esx\nVersion: 6.12.111\nRelease: 5%{?dist}\nBuildRequires: gcc\n",
+        )
+        .unwrap();
+        let nevr = "6.12.111-4.ph5";
+        let canister = rpms.join(format!("linux-fips-canister-{nevr}.x86_64.rpm"));
+        fs::write(&canister, "CANISTER").unwrap();
+        fs::write(rpms.join("gcc-12.5.0-2.ph5.x86_64.rpm"), "GCC").unwrap();
+        let kernels = [
+            ("linux-6.12.111-4.ph5.x86_64.rpm", "K"),
+            ("linux-devel-6.12.111-4.ph5.x86_64.rpm", "KD"),
+            ("linux-esx-6.12.111-5.ph5.x86_64.rpm", "E"),
+        ];
+        let base = tmp.join("root").to_string_lossy().to_string();
+        let mk = |mode: &str| {
+            let mut s = BuildSpec::from_args(
+                &base,
+                "common",
+                "5.0",
+                "/out",
+                "minimal-iso",
+                mode,
+                (mode != "prebuilt").then(|| nevr.to_string()),
+            )
+            .unwrap();
+            s.subrelease = Subrelease::Mainline;
+            s.injections = vec![Injection::Embed(Embedded::CanisterEquivalent)];
+            s
+        };
+        let stage = tmp.join("root/5.0/stage");
+        let b = mk("equivalent-b");
+        let mut log: Vec<String> = Vec::new();
+
+        // first phase B: nothing stored, the build makes the kernels
+        {
+            let mut c = Ctx { spec: &b, dry: false, log: &mut |l: &str| log.push(l.to_string()) };
+            slot_enter(&mut c, &stage);
+            slot_restore(&mut c, &stage);
+            for (n, body) in kernels {
+                fs::write(rpms.join(n), body).unwrap();
+            }
+            slot_after(&mut c);
+        }
+        assert!(log.iter().any(|l| l.contains("no equivalent-b RPMs stored")), "{log:?}");
+        assert!(log.iter().any(|l| l.contains("stored 3 equivalent-b RPM(s)")), "{log:?}");
+        assert!(canister.exists(), "the canister is phase B's input, never the slot's");
+
+        // a prebuilt build enters the slot: no equivalent kernel stays
+        let p = mk("prebuilt");
+        {
+            let mut c = Ctx { spec: &p, dry: false, log: &mut |l: &str| log.push(l.to_string()) };
+            slot_enter(&mut c, &stage);
+        }
+        for (n, _) in kernels {
+            assert!(!rpms.join(n).exists(), "{n} leaked into a prebuilt build");
+        }
+
+        // the next phase B, inputs identical: reused, byte for byte
+        log.clear();
+        {
+            let mut c = Ctx { spec: &b, dry: false, log: &mut |l: &str| log.push(l.to_string()) };
+            slot_enter(&mut c, &stage);
+            slot_restore(&mut c, &stage);
+        }
+        assert!(log.iter().any(|l| l.contains("REUSED 3 equivalent-b RPM(s)")), "{log:?}");
+        for (n, body) in kernels {
+            assert_eq!(fs::read_to_string(rpms.join(n)).unwrap(), body);
+        }
+
+        // a toolchain package moved: no reuse, and the log names it
+        for (n, _) in kernels {
+            fs::remove_file(rpms.join(n)).unwrap();
+        }
+        fs::write(rpms.join("gcc-12.5.0-2.ph5.x86_64.rpm"), "GCC rebuilt").unwrap();
+        log.clear();
+        {
+            let mut c = Ctx { spec: &b, dry: false, log: &mut |l: &str| log.push(l.to_string()) };
+            slot_restore(&mut c, &stage);
+        }
+        assert!(log.iter().any(|l| l.contains("the toolchain package gcc changed")), "{log:?}");
+        for (n, _) in kernels {
+            assert!(!rpms.join(n).exists());
+        }
+
+        // phase A with its canister in the stage does not run make
+        let a = mk("equivalent-a");
+        {
+            let mut c = Ctx { spec: &a, dry: false, log: &mut |_: &str| {} };
+            assert_eq!(make_and_deliver(&mut c).unwrap(), canister);
         }
         let _ = fs::remove_dir_all(&tmp);
     }

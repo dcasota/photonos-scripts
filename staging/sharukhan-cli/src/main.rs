@@ -22,6 +22,7 @@ mod install;
 mod job;
 mod kbuild;
 mod kconfig;
+mod kernelslot;
 mod kickstart;
 mod leases;
 mod matrix;
