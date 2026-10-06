@@ -2452,7 +2452,7 @@ pub struct Mirror {
     pub poi_remote_branch: &'static str,
 }
 
-pub const MIRRORS: [Mirror; 4] = [
+pub const MIRRORS: [Mirror; 5] = [
     Mirror {
         spec_patch: "0006-stig-drop-redundant-packages.patch",
         poi_remote_branch: "dcasota/fix/stig-drop-redundant-packages",
@@ -2468,6 +2468,13 @@ pub const MIRRORS: [Mirror; 4] = [
     Mirror {
         spec_patch: "0010-isoBuilder-build-the-BIOS-El-Torito-image-with-the-theme.patch",
         poi_remote_branch: "dcasota/fix/eltorito-theme-image-loaders",
+    },
+    // The same file name in both variants: 0010 is the El Torito patch of the
+    // 2.9 series, so the 2.8 series skips it rather than give one change two
+    // names.
+    Mirror {
+        spec_patch: "0011-generate_initrd-release-the-DHCP-leases-before-reboo.patch",
+        poi_remote_branch: "dcasota/fix/release-dhcp-leases-before-reboot",
     },
 ];
 
