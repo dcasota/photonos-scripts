@@ -1347,6 +1347,8 @@ pub const VARIANTS: [Variant; 2] = [
             // networkd: DHCPDECLINE on IPv4 ACD conflict, drop pending requests
             // when a DHCP/NDisc client stops (systemd#43741 backport)
             "systemd-43741-pending-requests",
+            // docker-init linked statically so `docker run --init` works (#88)
+            "fix/docker-init-static-5.0",
         ],
     },
     Variant {
@@ -1467,6 +1469,8 @@ pub const VARIANTS: [Variant; 2] = [
             // networkd: DHCPDECLINE on IPv4 ACD conflict, drop pending requests
             // when a DHCP/NDisc client stops (systemd#43741 backport)
             "systemd-43741-pending-requests",
+            // docker-init linked statically so `docker run --init` works (#88)
+            "fix/docker-init-static-5.0",
         ],
     },
 ];
