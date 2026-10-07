@@ -37,6 +37,22 @@ pub struct Permutation {
     /// kickstart, so a misspelt key inside `network` is silently ignored and
     /// produces a guest with no address and no error anywhere.
     pub net: NetSpec,
+    /// INSTALL-TIME axis: the VM's firmware, `efi` or `bios`. Rows written
+    /// before this column existed default to `efi`, which is what every VM
+    /// has always been. A `bios` row's kickstart names NO bootmode, so the
+    /// installer's own media default is what gets tested: photon-os-installer
+    /// 2.9 defaulted x86_64 to `efi` and left a BIOS VM with no bootable disk
+    /// (dcasota/photon #90, #91). Not a build-time axis: one ISO serves both.
+    pub firmware: String,
+}
+
+/// The firmware column: `efi`, `bios`, or absent/`-` for the default.
+pub fn parse_firmware(tok: &str) -> Result<String, String> {
+    match tok {
+        "-" | "efi" => Ok("efi".into()),
+        "bios" => Ok("bios".into()),
+        other => Err(format!("unknown firmware '{other}' (efi | bios)")),
+    }
 }
 
 impl Permutation {
@@ -210,6 +226,8 @@ pub fn load(path: &Path) -> Result<Vec<Permutation>, String> {
             // an axis that was never exercised.
             net: NetSpec::from_str(f.get(10).copied().unwrap_or(crate::net::DEFAULT))
                 .map_err(|e| format!("{}: row '{}': {e}", path.display(), f[0]))?,
+            firmware: parse_firmware(f.get(11).copied().unwrap_or("efi"))
+                .map_err(|e| format!("{}: row '{}': {e}", path.display(), f[0]))?,
         });
     }
     if out.is_empty() {
@@ -261,7 +279,40 @@ mod tests {
             expect: "pass".into(),
             canister: canister.into(),
             net: NetSpec::from_str(net).unwrap(),
+            firmware: "efi".into(),
         }
+    }
+
+    /// A row with no firmware column is the EFI VM every row has always been;
+    /// a `bios` token is carried; anything else fails the load naming the row,
+    /// for the same reason a bad net token does. The firmware never reaches
+    /// the ISO cache: the same medium serves both firmwares.
+    #[test]
+    fn the_firmware_column_defaults_to_efi_accepts_bios_and_rejects_typos() {
+        let d = std::env::temp_dir().join(format!("sk-matrix-fw-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        let f = d.join("permutations.tsv");
+        std::fs::write(
+            &f,
+            "k09      full      2.8     no    ext4   ks    none        untested   pass   prebuilt\n\
+             b01      minimal   2.8     no    ext4   ks    none        works      pass   prebuilt    v4-dhcp-untag    bios\n\
+             b02      minimal   latest  no    ext4   ks    none        fails      pass   prebuilt    -                efi\n",
+        )
+        .unwrap();
+        let rows = load(&f).unwrap();
+        assert_eq!(rows[0].firmware, "efi");
+        assert_eq!(rows[1].firmware, "bios");
+        assert_eq!(rows[2].firmware, "efi");
+        assert!(rows[2].net.is_default());
+        assert_eq!(rows[1].iso_key(), "minimal/2.8/prebuilt");
+        std::fs::write(
+            &f,
+            "b99      minimal   2.8     no    ext4   ks    none        works      pass   prebuilt    v4-dhcp-untag    uefi\n",
+        )
+        .unwrap();
+        let e = load(&f).unwrap_err();
+        std::fs::remove_dir_all(&d).ok();
+        assert!(e.contains("b99") && e.contains("uefi"), "{e}");
     }
 
     /// The file is whitespace-aligned despite the .tsv name. Splitting on '\t'

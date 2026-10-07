@@ -266,6 +266,7 @@ pub fn run(
             &p.fs,
             &want,
             &p.net,
+            &p.firmware,
             cfg.kernel.as_ref().map(|k| k.nevr.as_str()),
             &mut c,
         );

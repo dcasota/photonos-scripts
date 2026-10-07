@@ -78,6 +78,7 @@ mod tests {
             // hard-requires four dotted decimal octets. So every carded row is
             // and stays the default token.
             net: crate::net::NetSpec::default(),
+            firmware: "efi".into(),
         }
     }
 

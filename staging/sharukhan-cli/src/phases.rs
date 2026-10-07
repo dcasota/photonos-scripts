@@ -94,6 +94,7 @@ fn build_kickstart(cfg: &Config, p: &Permutation, secrets: Secrets) -> Result<St
         cidr: cfg.net_cidr,
         gateway: &cfg.net_gateway,
         nameserver: &cfg.net_dns,
+        firmware: &p.firmware,
     })
 }
 

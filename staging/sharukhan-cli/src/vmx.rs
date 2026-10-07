@@ -61,6 +61,11 @@ pub struct VmSpec {
     pub serial_win: String,
     pub nic_dev: String,
     pub secure_boot: bool,
+    /// `efi` or `bios`, the row's firmware axis. On BIOS the firmware tries
+    /// the disk before the CD and falls through to the medium only while the
+    /// disk has no boot sector, which is exactly the install-then-reboot
+    /// sequence; the NVRAM stash that EFI needs is harmless there.
+    pub firmware: String,
     pub kickstart: Option<Kickstart>,
 }
 
@@ -96,6 +101,7 @@ impl VmSpec {
             // Secure boot is off across the matrix: no row varies it, and
             // turning it on would test the signing chain rather than the PRs.
             secure_boot: false,
+            firmware: p.firmware.clone(),
             kickstart,
         }
     }
@@ -158,6 +164,7 @@ impl VmSpec {
                 if self.secure_boot { "TRUE" } else { "FALSE" }.to_string(),
             ),
             ("GUESTINFO_KICKSTART", self.guestinfo()),
+            ("FIRMWARE", self.firmware.clone()),
         ]
     }
 }
@@ -228,8 +235,23 @@ mod tests {
             serial_win: "C:\\photon-mc\\vm\\mc-k01\\serial0-mc-k01.log".into(),
             nic_dev: "e1000".into(),
             secure_boot: false,
+            firmware: "efi".into(),
             kickstart: ks,
         }
+    }
+
+    /// The firmware axis reaches the VMX as the one line VMware reads, and the
+    /// default row renders the EFI VM every row has always been.
+    #[test]
+    fn the_firmware_axis_renders_the_firmware_line() {
+        let efi = render_with(EMBEDDED, &spec(None)).unwrap();
+        assert!(efi.contains("firmware = \"efi\""));
+        let mut s = spec(None);
+        s.firmware = "bios".into();
+        let bios = render_with(EMBEDDED, &s).unwrap();
+        assert!(bios.contains("firmware = \"bios\""));
+        assert!(!bios.contains("firmware = \"efi\""));
+        assert!(placeholders(&bios).is_empty());
     }
 
     /// The check the bash made at VM-CREATE time, in a python heredoc: too
@@ -282,6 +304,7 @@ mod tests {
             expect: "pass".into(),
             canister: "prebuilt".into(),
             net: crate::net::NetSpec::from_str(net).unwrap(),
+            firmware: "efi".into(),
         }
     }
 
@@ -377,9 +400,9 @@ mod tests {
         assert!(EMBEDDED.contains("serial0.fileType = \"file\""));
         // Without autoAnswer a modal blocks power-on forever, with no output.
         assert!(EMBEDDED.contains("msg.autoAnswer = \"TRUE\""));
-        // bios.bootOrder is IGNORED on EFI; teardown moving the .nvram aside
-        // is the only boot-source control there is.
-        assert!(EMBEDDED.contains("firmware = \"efi\""));
+        // The firmware is the row's axis; the template must not pin it.
+        assert!(EMBEDDED.contains("firmware = \"@@FIRMWARE@@\""));
+        assert!(!EMBEDDED.contains("firmware = \"efi\""));
         // The comment naming bios.bootOrder must stay; an ASSIGNMENT of it
         // must never appear, because it would read as a boot-source control
         // that does nothing.

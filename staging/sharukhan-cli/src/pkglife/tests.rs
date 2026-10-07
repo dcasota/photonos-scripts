@@ -1001,6 +1001,7 @@ fn world(tag: &str) -> World {
         expect: "pass".into(),
         canister: "prebuilt".into(),
         net: crate::net::NetSpec::from_str(crate::net::DEFAULT).unwrap(),
+        firmware: "efi".into(),
     };
     World { dir, cfg, perm }
 }

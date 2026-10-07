@@ -38,6 +38,13 @@
 #               key inside "network" is silently ignored and yields a guest with
 #               no address and no error anywhere. The harness is the only place
 #               that typo can ever be caught.
+#   firmware    INSTALL-TIME axis: efi | bios   (absent or "-" = efi, the VM every
+#               row before the b-block has always been). A bios row's kickstart
+#               names NO bootmode, so the installer's own media default is what
+#               gets tested: photon-os-installer 2.9 defaulted x86_64 to efi and
+#               left a BIOS VM with no bootable disk (dcasota/photon #90, #91).
+#               Not a build-time axis: the same ISO serves both firmwares, so
+#               the two b-rows cost two installs and no ISO build.
 #   doc         the verdict ISO-PERMUTATION-MATRIX.md records (pre-PR)
 #   expect      what mission control expects WITH all PRs applied
 #
@@ -264,3 +271,6 @@ c03      minimal   2.8     no    ext4   ks    fips        untested   pass    equ
 # difference between installers and nothing else.
 # ===========================================================================
 s03      minimal   latest  no    ext4   ks    fips        untested   pass    prebuilt
+# b-block: legacy-BIOS firmware, kickstart without bootmode (the installer decides)
+b01      minimal   2.8     no    ext4   ks    none        works      pass    prebuilt    v4-dhcp-untag    bios
+b02      minimal   latest  no    ext4   ks    none        fails      pass    prebuilt    v4-dhcp-untag    bios

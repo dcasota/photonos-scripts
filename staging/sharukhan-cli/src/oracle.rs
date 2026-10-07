@@ -727,9 +727,43 @@ pub fn guest(
     fs: &str,
     canister: &CanisterExpect,
     net: &NetSpec,
+    firmware: &str,
     kernel: Option<&str>,
     c: &mut Checks,
 ) {
+    // --- firmware ----------------------------------------------------------
+    // The row's firmware axis took effect in the VM, and on a BIOS row the
+    // kickstart named no bootmode, so the disk the installer left must carry
+    // what a BIOS can execute: a BIOS boot partition and GRUB's i386-pc image.
+    // 2.9's efi default wrote neither (dcasota/photon #90, #91).
+    let fw = g
+        .run("test -d /sys/firmware/efi && echo efi || echo bios")
+        .value_or("unknown");
+    c.expect(
+        "guest.firmware",
+        "-",
+        firmware,
+        &fw,
+        "the guest runs on the firmware the row asks for",
+    );
+    if firmware == "bios" {
+        let types = g.run("lsblk -rno PARTTYPE /dev/sda").value_or("");
+        let bios_boot = types
+            .lines()
+            .any(|l| l.trim().eq_ignore_ascii_case("21686148-6449-6e6f-744e-656564454649"));
+        let core = g
+            .run("test -d /boot/grub2/i386-pc && echo present || echo absent")
+            .value_or("unknown");
+        c.check(
+            "guest.bios_boot",
+            "PR#90",
+            if bios_boot && core == "present" { Status::Pass } else { Status::Fail },
+            "bios-boot-partition=true i386-pc=present",
+            &format!("bios-boot-partition={bios_boot} i386-pc={core}"),
+            "a kickstart without bootmode on BIOS firmware leaves a disk the BIOS can boot",
+        );
+    }
+
     // The running kernel. Under a kernel profile it is the point of the run:
     // uname -r is <Version>-<Release>[-<flavour>], and the profile's pins give
     // linux and linux-esx the same Version-Release. Recorded only otherwise:

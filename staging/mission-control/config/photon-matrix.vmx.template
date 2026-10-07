@@ -34,11 +34,13 @@ sata0:1.fileName = "@@ISO_PATH_WIN@@"
 sata0:1.startConnected = "TRUE"
 
 # --- firmware -------------------------------------------------------------
-# EFI, matching the shipped ISO's grub2/EFI boot path.
+# The row's firmware axis: "efi" (every row before the b-block) or "bios".
 # NOTE: bios.bootOrder is IGNORED on EFI VMs. Boot source is controlled by
 # NVRAM, which is why teardown must move the .nvram aside - otherwise UEFI's
 # removable-media fallback finds the previous ESP and boots the OLD image.
-firmware = "efi"
+# On "bios" the firmware tries the disk first and falls through to the CD
+# only while the disk has no boot sector - the install-then-reboot sequence.
+firmware = "@@FIRMWARE@@"
 uefi.secureBoot.enabled = "@@SECUREBOOT@@"
 
 # --- network --------------------------------------------------------------

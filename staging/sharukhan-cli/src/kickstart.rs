@@ -200,7 +200,11 @@ pub struct Kickstart {
     /// install with FileNotFoundError: '/installer/packages_minimal.json'.
     pub packagelist_file: String,
     pub linux_flavor: String,
-    pub bootmode: String,
+    /// `efi` on an EFI row. ABSENT on a bios row: the installer's media
+    /// default (dualboot when the medium was booted by a BIOS) is the thing
+    /// under test, and naming a bootmode here would hide it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bootmode: Option<String>,
     /// Runs in the installer before installation starts. Streams the
     /// installer's own logs to the serial port the harness captures: that is
     /// the only place a hung install can leave evidence (see [`preinstall`]).
@@ -275,6 +279,8 @@ pub struct Spec<'a> {
     /// both roles.
     pub gateway: &'a str,
     pub nameserver: &'a str,
+    /// The firmware axis, `efi` or `bios` (see [`Kickstart::bootmode`]).
+    pub firmware: &'a str,
 }
 
 /// The legacy schema wants a dotted-quad netmask; everything else wants a
@@ -506,7 +512,7 @@ pub fn build(s: &Spec) -> Result<Kickstart, String> {
         partitions,
         packagelist_file: "packages.json".into(),
         linux_flavor: "linux-esx".into(),
-        bootmode: "efi".into(),
+        bootmode: (s.firmware != "bios").then(|| "efi".to_string()),
         preinstall: preinstall(),
         postinstall,
         public_key: s.public_key.clone().filter(|k| !k.trim().is_empty()),
@@ -564,7 +570,23 @@ mod tests {
             cidr: 24,
             gateway: "192.168.225.2",
             nameserver: "192.168.225.2",
+            firmware: "efi",
         }
+    }
+
+    /// A bios row names no bootmode at all, so the installer's media default
+    /// is what the install exercises; an efi row still carries the explicit
+    /// "efi" every stored kickstart has.
+    #[test]
+    fn a_bios_row_leaves_bootmode_to_the_installer() {
+        let n = dflt();
+        let mut s = spec("none", "no", "ext4", &n);
+        let efi = render(&s).unwrap();
+        assert!(efi.contains("\"bootmode\": \"efi\""));
+        s.firmware = "bios";
+        let bios = render(&s).unwrap();
+        assert!(!bios.contains("bootmode"), "{bios}");
+        assert!(bios.contains("\"linux_flavor\": \"linux-esx\""));
     }
 
     /// THE guard for the 36 rows that existed before this axis did.
