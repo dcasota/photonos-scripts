@@ -2504,10 +2504,31 @@ pub fn parse_ledger(text: &str) -> std::collections::BTreeMap<String, String> {
         .collect()
 }
 
-/// The decision for one patched NEVR: remove its stage RPMs when the ledger
-/// says they were built from other content than the spec directory holds now.
+/// The decision for one patched NEVR: remove its stage RPMs unless the ledger
+/// says they were built from exactly the content the spec directory holds now.
+/// RPMs without a record count as stale: gate 58 found systemd 257.13-6 and
+/// python3-rpm 6.1.0-4 in the stage that an experiment had built from older
+/// spec content, and an unrecorded origin is no evidence of the current one.
 pub fn rebuilt_content_is_stale(recorded: Option<&str>, now: &str, rpms_exist: bool) -> bool {
-    rpms_exist && matches!(recorded, Some(r) if r != now)
+    rpms_exist && recorded != Some(now)
+}
+
+/// The stage RPMs that belong to one patched NEVR: every RPM under
+/// `stage/RPMS` whose package is one of the spec's families at that version
+/// and release. The walk takes every file name: a `%package -n` subpackage
+/// (python3-rpm from rpm.spec) does not start with the spec's Name, so a
+/// prefix walk missed it and the stale RPM stayed.
+pub fn stage_rpms_of(stage: &Path, fams: &SpecFamilies, rel: &str) -> Vec<PathBuf> {
+    crate::build::find_files_rec(&stage.join("RPMS"), "", ".rpm")
+        .into_iter()
+        .filter(|p| {
+            parse_rpm_name(&basename(p)).is_some_and(|(pkg, ver, got)| {
+                fams.families.iter().any(|x| *x == pkg)
+                    && ver == fams.version
+                    && got.split(".ph").next() == Some(rel)
+            })
+        })
+        .collect()
 }
 
 /// Previously built RPMs whose NEVR is unchanged but whose spec content is not.
@@ -2522,9 +2543,9 @@ pub fn rebuilt_content_is_stale(recorded: Option<&str>, now: &str, rpms_exist: b
 /// So the stage keeps a ledger: for every NEVR a patched spec declares, the
 /// hash of its spec directory after patching. When the hash differs from the
 /// recorded one and RPMs of that NEVR exist, they are removed and the build
-/// makes them again. A NEVR seen for the first time with RPMs present is
-/// recorded as built from the current content - the one assumption, made
-/// once, and said.
+/// makes them again. RPMs of a NEVR the ledger does not know are removed as
+/// well, and said: where they came from is unknown, so they are not evidence
+/// that the current content was built.
 fn purge_rebuilt_content(c: &mut Ctx, stage: &Path) {
     let release_tree = c.spec.tree(Tree::Release);
     let specs = patched_specs(c);
@@ -2577,31 +2598,19 @@ pub fn purge_rebuilt_content_at(
             continue;
         };
         let key = format!("{}-{}-{}", fams.name, fams.version, rel);
-        let rpms: Vec<PathBuf> = crate::build::find_files_rec(&stage.join("RPMS"), &fams.name, ".rpm")
-            .into_iter()
-            .filter(|p| {
-                parse_rpm_name(&basename(p)).is_some_and(|(pkg, ver, got)| {
-                    fams.families.iter().any(|x| *x == pkg)
-                        && ver == fams.version
-                        && got.split(".ph").next() == Some(rel.as_str())
-                })
-            })
-            .collect();
+        let rpms = stage_rpms_of(stage, &fams, &rel);
         let recorded = ledger.get(&key).cloned();
         if rebuilt_content_is_stale(recorded.as_deref(), &now, !rpms.is_empty()) {
+            let why = if recorded.is_some() {
+                "built from other content of"
+            } else {
+                "no record of what it was built from, so not from the current"
+            };
             for p in &rpms {
                 if fs::remove_file(p).is_ok() {
-                    say(&format!(
-                        "  removed {}: built from other content of {} at the same NEVR",
-                        basename(p),
-                        spec
-                    ));
+                    say(&format!("  removed {}: {why} {} at the same NEVR", basename(p), spec));
                 }
             }
-        } else if recorded.is_none() && !rpms.is_empty() {
-            say(&format!(
-                "  {key}: RPMs present and no record of their content; recorded as built from the current {spec}"
-            ));
         }
         ledger.insert(key, now);
     }
@@ -3476,10 +3485,12 @@ mod tests {
     fn a_same_nevr_rebuild_is_stale_only_when_the_recorded_content_differs() {
         // recorded other content and RPMs present: rebuild
         assert!(rebuilt_content_is_stale(Some("aaa"), "bbb", true));
-        // negative controls: same content, nothing built, or no record yet
+        // no record and RPMs present: their origin is unknown, rebuild
+        assert!(rebuilt_content_is_stale(None, "bbb", true));
+        // negative controls: same content, or nothing built
         assert!(!rebuilt_content_is_stale(Some("aaa"), "aaa", true));
         assert!(!rebuilt_content_is_stale(Some("aaa"), "bbb", false));
-        assert!(!rebuilt_content_is_stale(None, "bbb", true));
+        assert!(!rebuilt_content_is_stale(None, "bbb", false));
         let l = parse_ledger("mariadb-11.8.8-2\tabc\nbroken line\n\tx\nglibc-2.43-8\tdef\n");
         assert_eq!(l.len(), 2);
         assert_eq!(l.get("mariadb-11.8.8-2").map(String::as_str), Some("abc"));
@@ -4409,6 +4420,41 @@ mod tests {
             );
         }
         let _ = fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn stage_rpms_of_a_nevr_include_dash_n_subpackages_and_nothing_else() {
+        let tmp = std::env::temp_dir().join(format!("shk-nevr-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let x = tmp.join("RPMS/x86_64");
+        fs::create_dir_all(&x).unwrap();
+        for f in [
+            "rpm-6.1.0-4.ph5.x86_64.rpm",
+            "python3-rpm-6.1.0-4.ph5.x86_64.rpm",
+            "rpm-plugin-selinux-6.1.0-4.ph5.x86_64.rpm",
+            "rpm-6.1.0-3.ph5.x86_64.rpm",
+            "rpm-6.0.0-4.ph5.x86_64.rpm",
+            "rpm-sequoia-1.10.0-1.ph5.x86_64.rpm",
+            "python3-rpmfluff-0.6-1.ph5.noarch.rpm",
+        ] {
+            fs::write(x.join(f), b"").unwrap();
+        }
+        let fams = SpecFamilies {
+            name: "rpm".into(),
+            version: "6.1.0".into(),
+            families: vec!["rpm".into(), "rpm-debuginfo".into(), "python3-rpm".into(), "rpm-plugin-selinux".into()],
+        };
+        let mut got: Vec<String> = stage_rpms_of(&tmp, &fams, "4").iter().map(|p| basename(p)).collect();
+        got.sort();
+        assert_eq!(
+            got,
+            vec![
+                "python3-rpm-6.1.0-4.ph5.x86_64.rpm",
+                "rpm-6.1.0-4.ph5.x86_64.rpm",
+                "rpm-plugin-selinux-6.1.0-4.ph5.x86_64.rpm"
+            ]
+        );
+        let _ = fs::remove_dir_all(&tmp);
     }
 
     #[test]
