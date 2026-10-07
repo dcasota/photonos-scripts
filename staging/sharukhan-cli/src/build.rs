@@ -1344,6 +1344,9 @@ pub const VARIANTS: [Variant; 2] = [
             "fix/openssl-distro-cnf-verify",
             // audit records lost under audit.STIG.rules' -b 640
             "fix/audit-stig-backlog",
+            // networkd: DHCPDECLINE on IPv4 ACD conflict, drop pending requests
+            // when a DHCP/NDisc client stops (systemd#43741 backport)
+            "systemd-43741-pending-requests",
         ],
     },
     Variant {
@@ -1461,6 +1464,9 @@ pub const VARIANTS: [Variant; 2] = [
             "fix/openssl-distro-cnf-verify",
             // audit records lost under audit.STIG.rules' -b 640
             "fix/audit-stig-backlog",
+            // networkd: DHCPDECLINE on IPv4 ACD conflict, drop pending requests
+            // when a DHCP/NDisc client stops (systemd#43741 backport)
+            "systemd-43741-pending-requests",
         ],
     },
 ];
