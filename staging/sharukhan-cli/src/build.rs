@@ -2452,7 +2452,7 @@ pub struct Mirror {
     pub poi_remote_branch: &'static str,
 }
 
-pub const MIRRORS: [Mirror; 5] = [
+pub const MIRRORS: [Mirror; 6] = [
     Mirror {
         spec_patch: "0006-stig-drop-redundant-packages.patch",
         poi_remote_branch: "dcasota/fix/stig-drop-redundant-packages",
@@ -2475,6 +2475,13 @@ pub const MIRRORS: [Mirror; 5] = [
     Mirror {
         spec_patch: "0011-generate_initrd-release-the-DHCP-leases-before-reboo.patch",
         poi_remote_branch: "dcasota/fix/release-dhcp-leases-before-reboot",
+    },
+    // Both series, one file name: the ISO installer takes bootmode and live
+    // from the firmware that booted the media (a BIOS VM got an EFI-only
+    // disk from 2.9; neither series ejected the CD after a UI install).
+    Mirror {
+        spec_patch: "0012-isoInstaller-take-bootmode-and-live-from-the-media-that.patch",
+        poi_remote_branch: "dcasota/fix/bootmode-from-firmware",
     },
 ];
 
