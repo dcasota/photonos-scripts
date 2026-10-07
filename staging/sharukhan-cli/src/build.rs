@@ -1261,7 +1261,8 @@ pub const VARIANTS: [Variant; 2] = [
             // fix/systemd-groups-and-stig-variant (#22) and listed instead of
             // it (range rule): systemd 257.13-7 ships each file of
             // systemd-container and systemd-journal-remote in one package.
-            "fix/systemd-subpackage-files-once",
+            // fix/systemd-subpackage-files-once (#79, on #22) is carried by
+            // systemd-43741-pending-requests (#87), stacked on it (range rule).
             "fix/stig-harden-reachable",
             // Upstream-bound only. fix/canister-equivalent-mode used to be
             // listed here; it is a TEST-ONLY change with no destination in
@@ -1383,7 +1384,8 @@ pub const VARIANTS: [Variant; 2] = [
             // fix/systemd-groups-and-stig-variant (#22) and listed instead of
             // it (range rule): systemd 257.13-7 ships each file of
             // systemd-container and systemd-journal-remote in one package.
-            "fix/systemd-subpackage-files-once",
+            // fix/systemd-subpackage-files-once (#79, on #22) is carried by
+            // systemd-43741-pending-requests (#87), stacked on it (range rule).
             "fix/stig-harden-reachable",
             // Upstream-bound only. fix/canister-equivalent-mode used to be
             // listed here; it is a TEST-ONLY change with no destination in
