@@ -2452,7 +2452,7 @@ pub struct Mirror {
     pub poi_remote_branch: &'static str,
 }
 
-pub const MIRRORS: [Mirror; 6] = [
+pub const MIRRORS: [Mirror; 5] = [
     Mirror {
         spec_patch: "0006-stig-drop-redundant-packages.patch",
         poi_remote_branch: "dcasota/fix/stig-drop-redundant-packages",
@@ -2472,16 +2472,13 @@ pub const MIRRORS: [Mirror; 6] = [
     // The same file name in both variants: 0010 is the El Torito patch of the
     // 2.9 series, so the 2.8 series skips it rather than give one change two
     // names.
+    // Both series, one file name: ISO installs take bootmode and live from
+    // the firmware that booted the media, and release the installer's DHCP
+    // leases before the reboot. One patch, because the release is gated on
+    // the live flag the bootmode part sets for interactive installs.
     Mirror {
-        spec_patch: "0011-generate_initrd-release-the-DHCP-leases-before-reboo.patch",
+        spec_patch: "0011-installer-ISO-installs-follow-the-boot-firmware-and-.patch",
         poi_remote_branch: "dcasota/fix/release-dhcp-leases-before-reboot",
-    },
-    // Both series, one file name: the ISO installer takes bootmode and live
-    // from the firmware that booted the media (a BIOS VM got an EFI-only
-    // disk from 2.9; neither series ejected the CD after a UI install).
-    Mirror {
-        spec_patch: "0012-isoInstaller-take-bootmode-and-live-from-the-media-that.patch",
-        poi_remote_branch: "dcasota/fix/bootmode-from-firmware",
     },
 ];
 
