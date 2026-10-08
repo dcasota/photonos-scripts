@@ -497,11 +497,169 @@ static void test_gpgv(void)
     pr_provenance_free(&r);
 
     /* gpgv missing */
-    char f_[41], k_[17];
+    char f_[41], s_[41], k_[17];
     snprintf(p, sizeof p, "%s/zlib-1.3.2.tar.xz.sig", g_dir);
-    EXPECT_INT(pr_prov_gpgv("/nonexistent/gpgv", kr, p, tampered, f_, k_), -2);
+    EXPECT_INT(pr_prov_gpgv("/nonexistent/gpgv", kr, p, tampered, f_, s_, k_), PR_GPGV_NORUN);
+
+    /* A relative keyring path is refused, loudly (gpgv would resolve it in
+     * its private empty homedir and verify nothing). */
+    run(U, path, &f1, "vendor.gpg", &r);
+    EXPECT_STREQ(r.verdict, "unverified");
+    e = find(&r, "signature");
+    EXPECT_INT(e && e->detail && strstr(e->detail, "must be an absolute path") != NULL, 1);
+    pr_provenance_free(&r);
 
     free(fpr); free(sig); free(asc); free(path); free(tampered);
+}
+
+/* One throwaway signer in its own GNUPGHOME `name`: `setup` creates the
+ * key(s); the tarball is signed (with `sign_flags`) into <name>.sig and
+ * the public keys exported into <name>.gpg. 0 on success. */
+static int make_signer(const char *name, const char *setup, const char *sign_flags)
+{
+    char cmd[4096];
+    snprintf(cmd, sizeof cmd,
+        "set -e; export GNUPGHOME=%1$s/%2$s.home; mkdir -m 700 -p $GNUPGHOME; "
+        "G() { gpg -q --batch --pinentry-mode loopback --passphrase '' \"$@\"; }; %3$s; "
+        "G %4$s --detach-sign -o %1$s/%2$s.sig %1$s/zlib-1.3.2.tar.xz 2>/dev/null; "
+        "gpg -q --batch --export > %1$s/%2$s.gpg; "
+        "gpg -q --batch --with-colons --list-keys | awk -F: '/^fpr/{print $10}' > %1$s/%2$s.fprs",
+        g_dir, name, setup, sign_flags);
+    return sh(cmd);
+}
+
+static void read_fprs(const char *name, char primary[41], char second[41])
+{
+    char p[512];
+    snprintf(p, sizeof p, "%s/%s.fprs", g_dir, name);
+    primary[0] = second[0] = '\0';
+    FILE *f = fopen(p, "r");
+    if (!f) return;
+    char line[128];
+    if (fgets(line, sizeof line, f)) { line[strcspn(line, "\r\n")] = '\0'; snprintf(primary, 41, "%.40s", line); }
+    if (fgets(line, sizeof line, f)) { line[strcspn(line, "\r\n")] = '\0'; snprintf(second, 41, "%.40s", line); }
+    fclose(f);
+}
+
+static void verify_signer(const char *name, pr_prov_record_t *r)
+{
+    char p[512], kr[512], url[128];
+    size_t n = 0;
+    snprintf(p, sizeof p, "%s/%s.sig", g_dir, name);
+    char *sig = slurp(p, &n);
+    snprintf(kr, sizeof kr, "%s/%s.gpg", g_dir, name);
+    snprintf(url, sizeof url, "https://zlib.net/zlib-1.3.2.tar.xz.sig");
+    fake_t f = { 0 };
+    route(&f, url, sig ? sig : "", n ? n : 1);
+    char *tar = NULL;
+    if (asprintf(&tar, "%s/zlib-1.3.2.tar.xz", g_dir) < 0) abort();
+    run("https://zlib.net/zlib-1.3.2.tar.xz", tar, &f, kr, r);
+    free(tar);
+    free(sig);
+}
+
+static void test_gpgv_key_states(void)
+{
+    fprintf(stderr, "[test_gpgv_key_states]\n");
+    if (sh("command -v gpg >/dev/null 2>&1 && command -v gpgv >/dev/null 2>&1") != 0) {
+        fprintf(stderr, "  SKIP: gpg/gpgv not installed\n");
+        return;
+    }
+    char *path = write_file("zlib-1.3.2.tar.xz", TARBALL);
+    pr_prov_record_t r;
+    const pr_prov_evidence_t *e;
+    char prim[41], sub[41];
+
+    /* 1. A certify-only primary with a signing SUBKEY: the record names
+     *    the PRIMARY (what a consumer pins) and the subkey separately. */
+    if (make_signer("subkey",
+            "G --quick-gen-key 'Sub <sub@example.invalid>' ed25519 cert never 2>/dev/null; "
+            "P=$(gpg --batch --with-colons --list-keys | awk -F: '/^fpr/{print $10; exit}'); "
+            "G --quick-add-key $P ed25519 sign never 2>/dev/null", "") != 0) {
+        fprintf(stderr, "  SKIP: could not create a subkey signer\n");
+    } else {
+        read_fprs("subkey", prim, sub);
+        EXPECT_INT(prim[0] && sub[0] && strcmp(prim, sub) != 0, 1);
+        verify_signer("subkey", &r);
+        EXPECT_STREQ(r.verdict, "verified");
+        EXPECT_STREQ(r.rung, "signature");
+        e = find(&r, "signature");
+        EXPECT_STREQ(e ? e->fingerprint : NULL, prim);
+        EXPECT_STREQ(e ? e->signing_subkey : NULL, sub);
+        char *j = pr_provenance_json(&r);
+        EXPECT_INT(j && strstr(j, "\"signing_subkey\":\"") != NULL, 1);
+        free(j);
+        pr_provenance_free(&r);
+    }
+
+    /* 2. A good signature by a key revoked afterwards: never verified, and
+     *    the record's verdict is mismatch. */
+    if (make_signer("revoked",
+            "G --quick-gen-key 'Rev <rev@example.invalid>' ed25519 sign never 2>/dev/null", "") != 0) {
+        fprintf(stderr, "  SKIP: could not create a signer to revoke\n");
+    } else {
+        char cmd[2048];
+        /* GnuPG 2.1+ pre-generates a revocation certificate; its armor is
+         * escaped with a leading ':' so it cannot be imported by accident. */
+        snprintf(cmd, sizeof cmd,
+            "set -e; export GNUPGHOME=%1$s/revoked.home; "
+            "for f in $GNUPGHOME/openpgp-revocs.d/*.rev; do sed 's/^:-----/-----/' \"$f\" > %1$s/rev.asc; done; "
+            "gpg -q --batch --import %1$s/rev.asc 2>/dev/null; "
+            "gpg -q --batch --export > %1$s/revoked.gpg", g_dir);
+        if (sh(cmd) != 0) {
+            fprintf(stderr, "  SKIP: could not revoke the key\n");
+        } else {
+            read_fprs("revoked", prim, sub);
+            verify_signer("revoked", &r);
+            EXPECT_STREQ(r.verdict, "mismatch");
+            EXPECT_STREQ(r.rung, "tofu");
+            e = find(&r, "signature");
+            EXPECT_INT(e && e->result == PR_EV_REVOKED, 1);
+            EXPECT_STREQ(e ? e->fingerprint : NULL, prim);
+            char *j = pr_provenance_json(&r);
+            EXPECT_INT(j && strstr(j, "\"result\":\"revoked\"") != NULL, 1);
+            free(j);
+            pr_provenance_free(&r);
+        }
+    }
+
+    /* 3. A key that expired (created and used in 2020, valid one day):
+     *    the signature is good but EXPIRED — never verified, its own result. */
+    if (make_signer("expired",
+            "G --faked-system-time 20200101T000000 --quick-gen-key 'Exp <exp@example.invalid>' "
+            "ed25519 sign 1d 2>/dev/null",
+            "--faked-system-time 20200101T001000") != 0) {
+        fprintf(stderr, "  SKIP: could not create an expired signer\n");
+    } else {
+        verify_signer("expired", &r);
+        EXPECT_STREQ(r.verdict, "unverified");
+        EXPECT_STREQ(r.rung, "tofu");
+        e = find(&r, "signature");
+        EXPECT_INT(e && e->result == PR_EV_EXPIRED, 1);
+        char *j = pr_provenance_json(&r);
+        EXPECT_INT(j && strstr(j, "\"result\":\"expired\"") != NULL, 1);
+        free(j);
+        pr_provenance_free(&r);
+    }
+    free(path);
+}
+
+static void test_fetch_cap(void)
+{
+    fprintf(stderr, "[test_fetch_cap]\n");
+    size_t cap = 0;
+    unsetenv("PR_MAX_DOWNLOAD_BYTES");
+    EXPECT_INT(pr_prov_fetch_cap(1024, &cap), 0);
+    EXPECT_INT(cap, 1024);
+    setenv("PR_MAX_DOWNLOAD_BYTES", "100", 1);
+    EXPECT_INT(pr_prov_fetch_cap(1024, &cap), 0);
+    EXPECT_INT(cap, 100);           /* the ceiling lowers the evidence cap */
+    setenv("PR_MAX_DOWNLOAD_BYTES", "1073741824", 1);
+    EXPECT_INT(pr_prov_fetch_cap(1024, &cap), 0);
+    EXPECT_INT(cap, 1024);          /* ...never raises it */
+    setenv("PR_MAX_DOWNLOAD_BYTES", "1G", 1);
+    EXPECT_INT(pr_prov_fetch_cap(1024, &cap), -1);  /* malformed: refused */
+    unsetenv("PR_MAX_DOWNLOAD_BYTES");
 }
 
 int main(void)
@@ -519,6 +677,8 @@ int main(void)
     test_ladder();
     test_record_json();
     test_gpgv();
+    test_gpgv_key_states();
+    test_fetch_cap();
 
     char rm[256];
     snprintf(rm, sizeof rm, "rm -rf '%s'", g_dir);

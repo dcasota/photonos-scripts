@@ -55,7 +55,22 @@ rungs, strongest first:
   reach the record. `GITHUB_TOKEN`, when set, is sent to `api.github.com`
   only.
 - **gpgv.** It runs via `posix_spawnp` with a private, temporary
-  `--homedir`. It never consults a trust database.
+  `--homedir` and a minimal environment (`PATH`, `LC_ALL=C`), so it never
+  sees `GITHUB_TOKEN` or anything else of the caller's. It never consults a
+  trust database. `PR_PROVENANCE_KEYRING` must be an absolute path; a
+  relative one is refused (gpgv would resolve it in the empty homedir and
+  silently verify nothing).
+- **Which key is named.** The record's `fingerprint` is the **primary**
+  key's (gpgv `VALIDSIG` field 10), which is what a consumer pins; the key
+  that actually signed is `signing_subkey` (field 1). A release signed by a
+  signing subkey therefore matches a pin on the primary.
+- **Key state.** Only `GOODSIG` + `VALIDSIG` + exit 0 is `verified`. A good
+  signature by a **revoked** key (`REVKEYSIG`) is `revoked`, and the record's
+  verdict is `mismatch`. An **expired** signature or key (`EXPSIG`,
+  `EXPKEYSIG`) is `expired`, never verified.
+- **Byte ceiling.** Evidence fetches are additionally bounded by
+  `PR_MAX_DOWNLOAD_BYTES` (`min(own cap, ceiling)`); a malformed value
+  refuses the fetch, exactly as it refuses the tarball download (#324).
 
 ## Parity
 

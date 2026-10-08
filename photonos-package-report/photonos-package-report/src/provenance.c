@@ -416,16 +416,35 @@ static void remove_flat_dir(const char *dir)
     rmdir(dir);
 }
 
-int pr_prov_gpgv(const char *gpgv, const char *keyring, const char *sig_path,
-                 const char *data_path, char fpr[41], char keyid[17])
+/* The `n`th (1-based) space-separated field after a status keyword, copied
+ * into out when it is exactly `len` hex digits. */
+static int status_hex_field(const char *args, int n, size_t len, char *out)
 {
-    if (fpr) fpr[0] = '\0';
+    const char *p = args;
+    for (int i = 1; i < n; i++) {
+        p += strcspn(p, " ");
+        if (*p == '\0') return 0;
+        p++;
+    }
+    size_t fl = strcspn(p, " ");
+    if (fl != len || !is_hex(p, len)) return 0;
+    for (size_t i = 0; i < len; i++) out[i] = (char)toupper((unsigned char)p[i]);
+    out[len] = '\0';
+    return 1;
+}
+
+int pr_prov_gpgv(const char *gpgv, const char *keyring, const char *sig_path,
+                 const char *data_path, char primary[41], char subkey[41],
+                 char keyid[17])
+{
+    if (primary) primary[0] = '\0';
+    if (subkey) subkey[0] = '\0';
     if (keyid) keyid[0] = '\0';
-    if (!keyring || !sig_path) return -1;
+    if (!keyring || !sig_path) return PR_GPGV_NOKEY;
     char home[] = "/tmp/pr_prov_gnupg_XXXXXX";
-    if (!mkdtemp(home)) return -2;
+    if (!mkdtemp(home)) return PR_GPGV_NORUN;
     int pfd[2];
-    if (pipe(pfd) != 0) { remove_flat_dir(home); return -2; }
+    if (pipe(pfd) != 0) { remove_flat_dir(home); return PR_GPGV_NORUN; }
     posix_spawn_file_actions_t fa;
     posix_spawn_file_actions_init(&fa);
     posix_spawn_file_actions_adddup2(&fa, pfd[1], 1);
@@ -445,11 +464,14 @@ int pr_prov_gpgv(const char *gpgv, const char *keyring, const char *sig_path,
     argv[a++] = (char *)sig_path;
     if (data_path) argv[a++] = (char *)data_path;
     argv[a] = NULL;
+    /* A minimal environment: gpgv needs no token, proxy or locale of ours,
+     * and LC_ALL=C keeps the status lines parseable. */
+    char *envp[] = { (char *)"PATH=/usr/local/bin:/usr/bin:/bin", (char *)"LC_ALL=C", NULL };
     pid_t pid;
-    int rc = posix_spawnp(&pid, bin, &fa, NULL, argv, environ);
+    int rc = posix_spawnp(&pid, bin, &fa, NULL, argv, envp);
     posix_spawn_file_actions_destroy(&fa);
     close(pfd[1]);
-    if (rc != 0) { close(pfd[0]); remove_flat_dir(home); return -2; }
+    if (rc != 0) { close(pfd[0]); remove_flat_dir(home); return PR_GPGV_NORUN; }
     char buf[8192];
     size_t used = 0;
     ssize_t n;
@@ -465,32 +487,56 @@ int pr_prov_gpgv(const char *gpgv, const char *keyring, const char *sig_path,
     int status = 0;
     while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {}
     remove_flat_dir(home);
-    if (WIFEXITED(status) && WEXITSTATUS(status) == 127) return -2;
+    if (WIFEXITED(status) && WEXITSTATUS(status) == 127) return PR_GPGV_NORUN;
 
-    int bad = 0, valid = 0;
+    /* gpgv prints exactly one of GOODSIG / EXPSIG / EXPKEYSIG / REVKEYSIG /
+     * BADSIG / ERRSIG per signature; VALIDSIG accompanies the good, expired
+     * and revoked ones:
+     *   VALIDSIG <signing-fpr> <date> <ts> <expire> <ver> <rsvd> <pkalgo>
+     *            <hashalgo> <class> <primary-fpr>                         */
+    int bad = 0, good = 0, revoked = 0, expired = 0, valid = 0;
+    char sk[41] = "", pk[41] = "";
     char *save = NULL;
     for (char *line = strtok_r(buf, "\n", &save); line; line = strtok_r(NULL, "\n", &save)) {
-        if (strncmp(line, "[GNUPG:] VALIDSIG ", 18) == 0) {
-            const char *f = line + 18;
-            size_t fl = strcspn(f, " ");
-            if (fl == 40 && is_hex(f, 40) && fpr) { memcpy(fpr, f, 40); fpr[40] = '\0'; valid = 1; }
-        } else if (strncmp(line, "[GNUPG:] BADSIG ", 16) == 0) {
+        if (strncmp(line, "[GNUPG:] ", 9) != 0) continue;
+        const char *kw = line + 9;
+        const char *args = kw + strcspn(kw, " ");
+        if (*args == ' ') args++;
+        size_t kwl = strcspn(kw, " ");
+#define KW(s) (kwl == sizeof(s) - 1 && strncmp(kw, s, kwl) == 0)
+        if (KW("VALIDSIG")) {
+            valid = status_hex_field(args, 1, 40, sk);
+            /* field 10 is the primary key; absent on very old gpgv, where
+             * the signing key is then the primary */
+            if (!status_hex_field(args, 10, 40, pk)) memcpy(pk, sk, sizeof pk);
+        } else if (KW("GOODSIG")) {
+            good = 1;
+        } else if (KW("REVKEYSIG")) {
+            revoked = 1;
+        } else if (KW("EXPSIG") || KW("EXPKEYSIG")) {
+            expired = 1;
+        } else if (KW("BADSIG")) {
             bad = 1;
-            if (keyid) { const char *k = line + 16; size_t kl = strcspn(k, " ");
-                if (kl == 16) { memcpy(keyid, k, 16); keyid[16] = '\0'; } }
-        } else if (strncmp(line, "[GNUPG:] ERRSIG ", 16) == 0
-                || strncmp(line, "[GNUPG:] NO_PUBKEY ", 19) == 0) {
-            const char *k = line + (line[9] == 'E' ? 16 : 19);
-            size_t kl = strcspn(k, " ");
-            if (keyid && kl == 16 && is_hex(k, 16)) { memcpy(keyid, k, 16); keyid[16] = '\0'; }
+            if (keyid) status_hex_field(args, 1, 16, keyid);
+        } else if (KW("ERRSIG") || KW("NO_PUBKEY")) {
+            if (keyid) status_hex_field(args, 1, 16, keyid);
         }
+#undef KW
     }
-    if (bad) return 0;
-    /* VALIDSIG plus exit 0: gpgv found a good signature by a key in the
-     * keyring (gpgv never consults a trust database). */
-    if (valid && WIFEXITED(status) && WEXITSTATUS(status) == 0) return 1;
-    if (fpr) fpr[0] = '\0';
-    return -1;
+    if (bad) return PR_GPGV_BAD;
+    if (valid) {
+        if (primary) memcpy(primary, pk, 41);
+        if (subkey) memcpy(subkey, sk, 41);
+    }
+    /* Revoked dominates expired dominates good. */
+    if (revoked) return PR_GPGV_REVOKED;
+    if (expired) return PR_GPGV_EXPIRED;
+    /* GOODSIG + VALIDSIG + exit 0: a good signature by a key in the keyring
+     * (gpgv never consults a trust database). */
+    if (good && valid && WIFEXITED(status) && WEXITSTATUS(status) == 0) return PR_GPGV_GOOD;
+    if (primary) primary[0] = '\0';
+    if (subkey) subkey[0] = '\0';
+    return PR_GPGV_NOKEY;
 }
 
 /* ------------------------------------------------------------------ */
@@ -517,12 +563,30 @@ static size_t mem_cb(char *p, size_t s, size_t k, void *u)
     return b;
 }
 
+int pr_prov_fetch_cap(size_t own, size_t *out)
+{
+    pr_download_policy_t pol;
+    if (pr_download_policy_from_env(&pol) != 0) return -1;
+    size_t cap = own;
+    if (pol.max_bytes > 0 && (unsigned long long)cap > pol.max_bytes)
+        cap = (size_t)pol.max_bytes;
+    *out = cap;
+    return 0;
+}
+
 static long curl_fetch(void *ctx, const char *url, const char *accept, size_t max,
                        char **body, size_t *len)
 {
     (void)ctx;
     *body = NULL; *len = 0;
     if (strncmp(url, "https://", 8) != 0) return 0;
+    /* PR_MAX_DOWNLOAD_BYTES bounds every evidence fetch too; a malformed
+     * value refuses the fetch, as it refuses the tarball download (#324). */
+    if (pr_prov_fetch_cap(max, &max) != 0) {
+        fprintf(stderr, "::warning::provenance: PR_MAX_DOWNLOAD_BYTES is not a decimal byte "
+                "count; evidence fetch refused: %s\n", url);
+        return 0;
+    }
     CURL *c = curl_easy_init();
     if (!c) return 0;
     struct mem m = { NULL, 0, 0, max, 0 };
@@ -649,28 +713,49 @@ static int verify_sig(ladder_t *L, pr_prov_record_t *r, const char *sig_url,
     if (out_ev) *out_ev = e;
     if (!L->in->keyring || !L->in->keyring[0]) {
         ev_detail(e, "signature present; no keyring configured (PR_PROVENANCE_KEYRING)%s", NULL);
-        return -1;
+        return PR_GPGV_NOKEY;
+    }
+    if (L->in->keyring[0] != '/') {
+        /* gpgv resolves a bare name against its --homedir, which is a
+         * private empty temporary directory: a relative path would silently
+         * verify nothing. Refuse it loudly instead. */
+        ev_detail(e, "PR_PROVENANCE_KEYRING must be an absolute path; %s was refused",
+                  L->in->keyring);
+        return PR_GPGV_NOKEY;
     }
     char tmp[64];
     if (write_tmp(sig, sig_n, tmp, sizeof tmp) != 0) {
         ev_detail(e, "could not stage the signature%s", NULL);
-        return -1;
+        return PR_GPGV_NOKEY;
     }
-    char fpr[41], keyid[17];
-    int g = pr_prov_gpgv(L->in->gpgv, L->in->keyring, tmp, data_path, fpr, keyid);
+    char fpr[41], sub[41], keyid[17];
+    int g = pr_prov_gpgv(L->in->gpgv, L->in->keyring, tmp, data_path, fpr, sub, keyid);
     unlink(tmp);
     if (!e) return g;
     switch (g) {
-    case 1:
+    case PR_GPGV_GOOD:
         e->result = PR_EV_VERIFIED;
         memcpy(e->fingerprint, fpr, 41);
+        memcpy(e->signing_subkey, sub, 41);
         ev_detail(e, "good signature by a key in the configured keyring%s", NULL);
         break;
-    case 0:
+    case PR_GPGV_REVOKED:
+        e->result = PR_EV_REVOKED;
+        memcpy(e->fingerprint, fpr, 41);
+        memcpy(e->signing_subkey, sub, 41);
+        ev_detail(e, "the signing key %s is REVOKED: not evidence, a stop", fpr);
+        break;
+    case PR_GPGV_EXPIRED:
+        e->result = PR_EV_EXPIRED;
+        memcpy(e->fingerprint, fpr, 41);
+        memcpy(e->signing_subkey, sub, 41);
+        ev_detail(e, "the signature or the signing key %s is EXPIRED: not counted", fpr);
+        break;
+    case PR_GPGV_BAD:
         e->result = PR_EV_MISMATCH;
         ev_detail(e, "BAD signature by key %s", keyid);
         break;
-    case -2:
+    case PR_GPGV_NORUN:
         ev_detail(e, "gpgv could not run%s", NULL);
         break;
     default:
@@ -907,7 +992,8 @@ static void conclude(pr_prov_record_t *r)
 {
     int mismatch = 0, best = 99;
     for (size_t i = 0; i < r->n; i++) {
-        if (r->ev[i].result == PR_EV_MISMATCH) mismatch = 1;
+        /* A revoked signer is as much a stop as a contradiction. */
+        if (r->ev[i].result == PR_EV_MISMATCH || r->ev[i].result == PR_EV_REVOKED) mismatch = 1;
         if (r->ev[i].result != PR_EV_VERIFIED) continue;
         for (int k = 0; rank[k]; k++)
             if (!strcmp(rank[k], r->ev[i].rung) && k < best) best = k;
@@ -1000,7 +1086,14 @@ static void sb_kv(struct sb *s, const char *k, const char *v, int comma)
 
 static const char *res_name(pr_prov_result_t r)
 {
-    return r == PR_EV_VERIFIED ? "verified" : r == PR_EV_MISMATCH ? "mismatch" : "unverifiable";
+    switch (r) {
+    case PR_EV_VERIFIED: return "verified";
+    case PR_EV_MISMATCH: return "mismatch";
+    case PR_EV_REVOKED:  return "revoked";
+    case PR_EV_EXPIRED:  return "expired";
+    case PR_EV_UNVERIFIABLE: break;
+    }
+    return "unverifiable";
 }
 
 char *pr_provenance_json(const pr_prov_record_t *r)
@@ -1032,6 +1125,7 @@ char *pr_provenance_json(const pr_prov_record_t *r)
         sb_kv(&s, "expected", e->expected, 1);
         sb_kv(&s, "actual", e->actual, 1);
         sb_kv(&s, "fingerprint", e->fingerprint, 1);
+        sb_kv(&s, "signing_subkey", e->signing_subkey, 1);
         sb_kv(&s, "detail", e->detail, 0);
         sb_s(&s, "}");
     }
