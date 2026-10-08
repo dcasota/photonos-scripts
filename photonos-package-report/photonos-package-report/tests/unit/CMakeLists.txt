@@ -120,6 +120,7 @@ add_executable(test_phase6
     ${CMAKE_SOURCE_DIR}/src/latest_name.c
     ${CMAKE_SOURCE_DIR}/src/version.c
     ${CMAKE_SOURCE_DIR}/src/url_util.c
+    ${CMAKE_SOURCE_DIR}/src/provenance.c
     ${CMAKE_SOURCE_DIR}/src/sha.c
     ${CMAKE_SOURCE_DIR}/src/jdk.c
     ${CMAKE_SOURCE_DIR}/src/modify_spec.c
@@ -237,3 +238,20 @@ target_link_libraries(test_phase7 PRIVATE pthread)
 target_compile_options(test_phase7 PRIVATE -Wall -Wextra -O0 -g -D_GNU_SOURCE)
 
 add_test(NAME test_phase7 COMMAND test_phase7)
+
+# ----- Provenance sidecar (PR_VERIFY_PROVENANCE; ADR-0017) -------------
+add_executable(test_provenance
+    test_provenance.c
+    ${CMAKE_SOURCE_DIR}/src/provenance.c
+    ${CMAKE_SOURCE_DIR}/src/sha.c
+)
+target_include_directories(test_provenance PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${PCRE2_INCLUDE_DIRS}
+    ${CURL_INCLUDE_DIRS}
+    ${OPENSSL_INCLUDE_DIRS}
+)
+target_link_libraries(test_provenance PRIVATE pthread ${PCRE2_LIBRARIES} ${CURL_LIBRARIES} ${OPENSSL_LIBRARIES})
+target_compile_options(test_provenance PRIVATE -Wall -Wextra -O0 -g -D_GNU_SOURCE ${PCRE2_CFLAGS_OTHER} ${CURL_CFLAGS_OTHER} ${OPENSSL_CFLAGS_OTHER})
+
+add_test(NAME test_provenance COMMAND test_provenance)

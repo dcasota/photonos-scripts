@@ -29,6 +29,7 @@
 #include "pr_rubygems.h"
 #include "pr_state.h"
 #include "pr_sha.h"
+#include "pr_provenance.h"
 #include "pr_scraper.h"
 #include "pr_gnome_cache.h"
 #include "pr_pypi.h"
@@ -2272,6 +2273,9 @@ char *check_urlhealth(pr_task_t                       *task,
                                         state.SHAValue = hex;
                                     }
                                 }
+                                /* PR_VERIFY_PROVENANCE (opt-in, no PS counterpart, never in the .prn). */
+                                pr_provenance_after_download(task->Name, task->Spec,
+                                                             hash_url, cache_file);
                                 free(cache_file);
                                 free(sha_url);
                             }
@@ -2461,6 +2465,9 @@ char *check_urlhealth(pr_task_t                       *task,
                 clone_root, state.UpdateDownloadName);
             char *hex_py = pr_sha_of_url_cached(alg, state.UpdateURL, cache_file_py);
             if (hex_py) { free(state.SHAValue); state.SHAValue = hex_py; }
+            /* PR_VERIFY_PROVENANCE (opt-in, no PS counterpart, never in the .prn). */
+            pr_provenance_after_download(task->Name, task->Spec,
+                                         state.UpdateURL, cache_file_py);
             free(cache_file_py);
         }
     }
@@ -2528,6 +2535,9 @@ char *check_urlhealth(pr_task_t                       *task,
                             clone_root, state.UpdateDownloadName);
                         char *hex = pr_sha_of_url_cached(alg, state.UpdateURL, cache_file);
                         if (hex) { free(state.SHAValue); state.SHAValue = hex; }
+                        /* PR_VERIFY_PROVENANCE (opt-in, no PS counterpart, never in the .prn). */
+                        pr_provenance_after_download(task->Name, task->Spec,
+                                                     state.UpdateURL, cache_file);
                         free(cache_file);
                     }
                 }
@@ -3053,6 +3063,9 @@ char *check_urlhealth(pr_task_t                       *task,
                                     state.SHAValue = hex;
                                 }
                             }
+                            /* PR_VERIFY_PROVENANCE (opt-in, no PS counterpart, never in the .prn). */
+                            pr_provenance_after_download(task->Name, task->Spec,
+                                                         hash_url, cache_file);
                             free(cache_file);
                             free(sha_url);
                         }
@@ -3174,6 +3187,9 @@ char *check_urlhealth(pr_task_t                       *task,
                     clone_root, state.UpdateDownloadName);
                 char *hex_hc = pr_sha_of_url_cached(alg, state.UpdateURL, cache_file_hc);
                 if (hex_hc) { free(state.SHAValue); state.SHAValue = hex_hc; }
+                /* PR_VERIFY_PROVENANCE (opt-in, no PS counterpart, never in the .prn). */
+                pr_provenance_after_download(task->Name, task->Spec,
+                                             state.UpdateURL, cache_file_hc);
                 free(cache_file_hc);
             }
             break;

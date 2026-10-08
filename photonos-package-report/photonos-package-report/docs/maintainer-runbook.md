@@ -656,3 +656,36 @@ follows the same routing and observes the same upstream contents.
 - Decided 2026-05-18.
 - Operator implementation TBD; agent will track residual specs in
   the journal as the VPN comes online.
+
+## 11. Provenance sidecar for downloaded tarballs (`PR_VERIFY_PROVENANCE`, ADR-0017)
+
+Opt-in and off by default. The `.prn` is unchanged either way.
+
+```bash
+PR_SHA_CACHE=1 PR_VERIFY_PROVENANCE=1 \
+PR_PROVENANCE_KEYRING=/path/to/vendor-keyring.gpg \
+  ./build/photonos-package-report ...
+```
+
+Every tarball downloaded into `SOURCES_NEW/<file>` gets
+`SOURCES_NEW/<file>.provenance.json`. The record carries:
+
+- `verdict`: `verified`, `mismatch` or `unverified`;
+- `rung`: the strongest rung that verified, one of `signature`,
+  `vendor_checksum`, `registry_digest`, `corroborated` or `tofu`;
+- one `evidence` row per piece of evidence found, with its URL, result
+  (`verified`, `mismatch` or `unverifiable`), `same_origin` flag, digests
+  and the signing key's fingerprint.
+
+How each input behaves:
+
+- **`PR_PROVENANCE_KEYRING`** is a binary (dearmored) OpenPGP keyring for
+  `gpgv`. Without it, signatures are recorded as `unverifiable` along with
+  the signer's key id.
+- **`PR_PROVENANCE_GPGV`** overrides the `gpgv` binary (default: `gpgv` on
+  `PATH`).
+- **`GITHUB_TOKEN`**, if set, is sent to `api.github.com` only, for the
+  release-asset digest.
+
+Treat a `mismatch` as a stop: the vendor's own evidence, or Fedora's record
+of the same file, disagrees with the bytes you downloaded.
