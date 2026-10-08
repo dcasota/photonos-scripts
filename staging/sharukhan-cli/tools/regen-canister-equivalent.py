@@ -152,13 +152,47 @@ def version_of(path, sub=None):
     sys.exit(f"{path}: no Version:")
 
 
-def release_of(path):
-    """The numeric Release: from a spec, without rpm conditionals or dist tag."""
-    with open(path) as f:
-        for line in f:
-            if line.startswith("Release:"):
-                return int(re.match(r"Release:\s+(\d+)", line).group(1))
-    sys.exit(f"{path}: no Release:")
+def release_of(path, sub):
+    """The numeric Release: subrelease `sub` builds, without rpm conditionals or
+    dist tag. A preamble can carry one Release per subrelease (6.12.111 at 91,
+    6.12.112 from 92), so the first Release: in the file is not necessarily it."""
+    for line in resolved_lines(path, sub):
+        if line.startswith("Release:"):
+            return int(re.match(r"Release:\s+(\d+)", line).group(1))
+    sys.exit(f"{path}: no Release: for subrelease {sub}")
+
+
+def set_release(text, sub, old_rel, new_rel):
+    """Bump the one Release: line subrelease `sub` builds, found by position, so
+    another subrelease's Release: is never touched even when it holds the same
+    number."""
+    lines = text.split("\n")
+    ops = {"==": int.__eq__, "!=": int.__ne__, ">=": int.__ge__,
+           "<=": int.__le__, ">": int.__gt__, "<": int.__lt__}
+    stack = []
+    for i, line in enumerate(lines):
+        s = line.strip()
+        m = SUBREL_IF.match(s)
+        if m:
+            stack.append([ops[m.group(1)](sub, int(m.group(2)))])
+            continue
+        if s.startswith("%if"):
+            stack.append(None)
+            continue
+        if s.startswith("%else") and stack:
+            if stack[-1] is not None:
+                stack[-1][0] = not stack[-1][0]
+            continue
+        if s.startswith("%endif") and stack:
+            stack.pop()
+            continue
+        if line.startswith("Release:") and all(f is None or f[0] for f in stack):
+            m = re.match(r"(Release:\s+)(\d+)(.*)$", line)
+            if int(m.group(2)) != old_rel:
+                sys.exit(f"Release for subrelease {sub} is {m.group(2)}, expected {old_rel}")
+            lines[i] = f"{m.group(1)}{new_rel}{m.group(3)}"
+            return "\n".join(lines)
+    sys.exit(f"no Release: for subrelease {sub}")
 
 
 def insert_changelog(preamble_text, changelog_path, preamble_path, entry):
@@ -172,7 +206,7 @@ def insert_changelog(preamble_text, changelog_path, preamble_path, entry):
     return preamble_text
 
 
-def edit_linux_spec(path, ver, old_rel, new_rel, date, changelog=None):
+def edit_linux_spec(path, ver, old_rel, new_rel, date, sub, changelog=None):
     changelog = changelog or path
     s = open(path).read()
 
@@ -227,7 +261,7 @@ def edit_linux_spec(path, ver, old_rel, new_rel, date, changelog=None):
 
     # 3. Release bump + changelog. A spec change gets both, and the changelog
     #    must stay in descending order or check_spec rejects it.
-    s = s.replace(f"Release:        {old_rel}%", f"Release:        {new_rel}%", 1)
+    s = set_release(s, sub, old_rel, new_rel)
     entry = f"""* {date} Daniel Casota <dcasota@gmail.com> {ver}-{new_rel}
 - Let a build link a canister other than the published one, so a kernel with no
   official canister at its own level can be covered by an equivalent one built
@@ -251,7 +285,7 @@ def edit_linux_spec(path, ver, old_rel, new_rel, date, changelog=None):
     open(path, "w").write(s)
 
 
-def edit_esx_spec(path, ver, old_rel, new_rel, date, changelog=None):
+def edit_esx_spec(path, ver, old_rel, new_rel, date, sub, changelog=None):
     changelog = changelog or path
     s = open(path).read()
 
@@ -287,7 +321,7 @@ def edit_esx_spec(path, ver, old_rel, new_rel, date, changelog=None):
                  "this script expects it.")
     s = s.replace(old_can, new_can, 1)
 
-    s = s.replace(f"Release:        {old_rel}%", f"Release:        {new_rel}%", 1)
+    s = set_release(s, sub, old_rel, new_rel)
     entry = f"""* {date} Daniel Casota <dcasota@gmail.com> {ver}-{new_rel}
 - Accept the same canister_equivalent / fips_canister_override pair as
   linux.spec, so this flavour - the one the ISO actually boots - can link a
@@ -333,13 +367,13 @@ def main():
         sub = subrelease_of(tree)
         linux, lpre, lclog = kernel_files(tree, "linux", sub)
         esx, epre, eclog = kernel_files(tree, "linux-esx", sub)
-        lrel, erel = release_of(lpre), release_of(epre)
+        lrel, erel = release_of(lpre, sub), release_of(epre, sub)
         lver, ever = version_of(linux, sub), version_of(esx, sub)
         print(f"  subrelease {sub}: variant patch leaves linux at {lver}-{lrel}, "
               f"linux-esx at {ever}-{erel}")
 
-        edit_linux_spec(lpre, lver, lrel, lrel + 1, date, lclog)
-        edit_esx_spec(epre, ever, erel, erel + 1, date, eclog)
+        edit_linux_spec(lpre, lver, lrel, lrel + 1, date, sub, lclog)
+        edit_esx_spec(epre, ever, erel, erel + 1, date, sub, eclog)
         print(f"  embedded patch takes linux to -{lrel+1}, linux-esx to -{erel+1}")
 
         # the whole directory: in the single-source layout the edits land in
