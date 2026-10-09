@@ -138,3 +138,19 @@ CREATE VIEW IF NOT EXISTS v_package_lifecycle AS
 SELECT p.perm_id, l.package, l.evr, l.origin, l.classes, l.verdict, l.reason, l.duration_ms,
        p.finished_at AS stamp
 FROM package_lifecycle l JOIN permutation p ON p.id = l.permutation_id;
+
+-- The user's working rules (PRs, changelogs, commits, GitHub, gate, process).
+-- A rule the user overrides is kept and points to its successor.
+CREATE TABLE IF NOT EXISTS rule (
+    id            INTEGER PRIMARY KEY,
+    slug          TEXT NOT NULL UNIQUE,
+    title         TEXT NOT NULL,
+    scope         TEXT NOT NULL,          -- changelog | commit | pr | github | gate | process | security | quality
+    rule          TEXT NOT NULL,          -- the rule itself, as the user set it
+    why           TEXT,                   -- reason given by the user or learned from an incident
+    how_to_apply  TEXT,                   -- concrete procedure
+    source        TEXT NOT NULL,          -- who set it and when
+    recorded_at   TEXT NOT NULL,
+    superseded_by INTEGER REFERENCES rule(id)
+);
+CREATE INDEX IF NOT EXISTS idx_rule_scope ON rule(scope);
