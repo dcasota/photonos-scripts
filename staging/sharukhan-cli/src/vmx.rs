@@ -67,6 +67,12 @@ pub struct VmSpec {
     /// sequence; the NVRAM stash that EFI needs is harmless there.
     pub firmware: String,
     pub kickstart: Option<Kickstart>,
+    /// The console an unattended row needs when its medium's boot menu waits
+    /// for a key ([`crate::console`]); `None` on every other row.
+    pub console: Option<crate::console::Console>,
+    /// What the medium's boot menu does under this firmware, as read from it,
+    /// recorded in the VMX beside the decision it led to.
+    pub boot_menu: String,
 }
 
 impl VmSpec {
@@ -103,6 +109,16 @@ impl VmSpec {
             secure_boot: false,
             firmware: p.firmware.clone(),
             kickstart,
+            console: None,
+            boot_menu: "not read".into(),
+        }
+    }
+
+    /// The console lines, or the comment that explains why there are none.
+    fn console_lines(&self) -> String {
+        match &self.console {
+            Some(c) => format!("# boot menu: {}\n{}", self.boot_menu, c.vmx_lines()),
+            None => format!("# no console: boot menu: {}", self.boot_menu),
         }
     }
 
@@ -165,6 +181,7 @@ impl VmSpec {
             ),
             ("GUESTINFO_KICKSTART", self.guestinfo()),
             ("FIRMWARE", self.firmware.clone()),
+            ("CONSOLE", self.console_lines()),
         ]
     }
 }
@@ -237,7 +254,30 @@ mod tests {
             secure_boot: false,
             firmware: "efi".into(),
             kickstart: ks,
+            console: None,
+            boot_menu: "grub /boot/grub2/grub.cfg boots its default entry after 3.0s (set timeout=3)".into(),
         }
+    }
+
+    /// A row whose menu waits gets the four console lines under the menu's
+    /// description; every other row gets the description alone, so a VMX
+    /// always says what was decided and why.
+    #[test]
+    fn the_console_appears_only_where_the_menu_waits() {
+        let mut s = spec(Some(Kickstart { json: "{}".into() }));
+        let plain = render(&s).unwrap();
+        assert!(plain.contains("# no console: boot menu: grub /boot/grub2/grub.cfg boots"));
+        assert!(!plain.contains("RemoteDisplay.vnc"));
+        s.boot_menu = "syslinux /isolinux/isolinux.cfg waits for a key indefinitely".into();
+        s.console = Some(crate::console::Console {
+            ip: "172.28.64.1".parse().unwrap(),
+            port: 6044,
+            password: "Ab3dEf7h".into(),
+        });
+        let with = render(&s).unwrap();
+        assert!(with.contains("# boot menu: syslinux /isolinux/isolinux.cfg waits"));
+        let c = crate::console::Console::from_vmx(&with).unwrap().unwrap();
+        assert_eq!((c.port, c.password.as_str()), (6044, "Ab3dEf7h"));
     }
 
     /// The firmware axis reaches the VMX as the one line VMware reads, and the

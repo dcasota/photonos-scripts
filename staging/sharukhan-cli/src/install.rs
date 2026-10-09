@@ -34,6 +34,10 @@ pub enum Mode {
 pub struct Facts {
     pub install_result: String,
     pub guest_ip: String,
+    /// What answering the boot menu came to: `autoboot` when the VMX has no
+    /// console because the menu boots on its own, else
+    /// [`crate::console::Outcome::fact`].
+    pub boot_menu: String,
 }
 
 pub const INSTALLED: &str = "installed";
@@ -51,8 +55,8 @@ pub fn write_facts(dir: &Path, f: &Facts) -> Result<(), String> {
     fs::write(
         &p,
         format!(
-            "MC_INSTALL_RESULT={}\nMC_GUEST_IP={}\n",
-            f.install_result, f.guest_ip
+            "MC_INSTALL_RESULT={}\nMC_GUEST_IP={}\nMC_BOOT_MENU={}\n",
+            f.install_result, f.guest_ip, f.boot_menu
         ),
     )
     .map_err(|e| format!("{}: {e}", p.display()))
@@ -65,6 +69,7 @@ pub fn read_facts(dir: &Path) -> Option<Facts> {
         match line.split_once('=') {
             Some(("MC_INSTALL_RESULT", v)) => f.install_result = v.trim().to_string(),
             Some(("MC_GUEST_IP", v)) => f.guest_ip = v.trim().to_string(),
+            Some(("MC_BOOT_MENU", v)) => f.boot_menu = v.trim().to_string(),
             _ => {}
         }
     }
@@ -93,8 +98,9 @@ pub struct Opts {
 ///
 /// Only the operator-driven rows do. The STIG menu is reachable only from the
 /// curses configurator, so a mode=ui row must have a visible console; a
-/// mode=ks row is driven entirely by a kickstart over guestinfo and says of
-/// itself that no console interaction is needed.
+/// mode=ks row is driven entirely by a kickstart over guestinfo and needs no
+/// operator. Where its medium's boot menu waits for a key, the harness answers
+/// it over the VM's VNC console ([`crate::console`]), which works headless.
 ///
 /// This is a policy, not a detail: 27 of the 43 rows are mode=ks, and starting
 /// them with `gui` makes every one of them depend on somebody being logged
@@ -162,11 +168,18 @@ pub fn run(cfg: &Config, vmrow: &Vm, o: &Opts, log: &mut dyn FnMut(&str)) -> Res
         ));
     }
 
+    // Read before power-on: the VMX is the one place the console's password
+    // is kept, and VMware rewrites the file while the VM runs.
+    let console = fs::read_to_string(&vmrow.vmx)
+        .map_err(|e| format!("{}: {e}", vmrow.vmx.display()))
+        .and_then(|t| crate::console::Console::from_vmx(&t))?;
+
     // Truncate: the growth of this file from here is the liveness instrument.
     let _ = fs::write(&vmrow.serial, b"");
 
     // Only an Interactive row needs a console; an Auto row starts headless so
     // it does not depend on somebody being logged into Windows.
+    let powered_on = std::time::Instant::now();
     let (waited, rc) = vmware::start_verified(
         &cfg.vmrun,
         &vmx_win,
@@ -194,15 +207,29 @@ pub fn run(cfg: &Config, vmrow: &Vm, o: &Opts, log: &mut dyn FnMut(&str)) -> Res
     if o.mode == Mode::Interactive {
         log("interactive permutation: the console is up and waiting for the operator");
         log("`sharukhan card --id <id>` prints exactly what to enter");
-    } else {
-        log("kickstart supplied via guestinfo; no console interaction is needed");
     }
+    let boot_menu = match (&console, o.mode) {
+        (Some(c), Mode::Auto) => {
+            log("kickstart supplied via guestinfo; the boot menu waits for a key, answering it");
+            let out = crate::console::leave_menu(c, &vmrow.name, powered_on, log);
+            if let crate::console::Outcome::Stuck(why) = &out {
+                log(&format!("boot menu NOT answered: {why}"));
+            }
+            out.fact()
+        }
+        (_, Mode::Interactive) => "operator".to_string(),
+        (None, Mode::Auto) => {
+            log("kickstart supplied via guestinfo; the boot menu boots on its own");
+            "autoboot".to_string()
+        }
+    };
 
     if o.no_wait {
         log("--no-wait: leaving the VM up for the operator, recording no facts yet");
         return Ok(Facts {
             install_result: "waiting".into(),
             guest_ip: String::new(),
+            boot_menu,
         });
     }
 
@@ -224,6 +251,7 @@ pub fn run(cfg: &Config, vmrow: &Vm, o: &Opts, log: &mut dyn FnMut(&str)) -> Res
     let mut facts = Facts {
         install_result: TIMEOUT.into(),
         guest_ip: String::new(),
+        boot_menu,
     };
     while std::time::Instant::now() < deadline {
         std::thread::sleep(std::time::Duration::from_secs(15));
@@ -392,17 +420,20 @@ mod tests {
             &Facts {
                 install_result: INSTALLED.into(),
                 guest_ip: "192.168.225.43".into(),
+                boot_menu: "left|Enter x1, the screen left the menu 21s after power-on".into(),
             },
         )
         .unwrap();
         let text = fs::read_to_string(facts_path(&d)).unwrap();
         assert_eq!(
             text,
-            "MC_INSTALL_RESULT=installed\nMC_GUEST_IP=192.168.225.43\n"
+            "MC_INSTALL_RESULT=installed\nMC_GUEST_IP=192.168.225.43\n\
+             MC_BOOT_MENU=left|Enter x1, the screen left the menu 21s after power-on\n"
         );
         let f = read_facts(&d).unwrap();
         assert_eq!(f.install_result, "installed");
         assert_eq!(f.guest_ip, "192.168.225.43");
+        assert!(f.boot_menu.starts_with("left|Enter x1"));
         fs::remove_dir_all(&d).ok();
     }
 
@@ -419,6 +450,7 @@ mod tests {
             &Facts {
                 install_result: TIMEOUT.into(),
                 guest_ip: String::new(),
+                boot_menu: "autoboot".into(),
             },
         )
         .unwrap();

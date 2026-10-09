@@ -106,10 +106,19 @@ tools.syncTime = "FALSE"
 # POI's isoInstaller reads guestinfo.kickstart.data (base64) via vmtoolsd,
 # verified present in the installer initrd as /usr/bin/vmtoolsd with
 # open-vm-tools in packages_installer_initrd.json. This is why an autonomous
-# permutation needs NO ISO remaster and no boot-menu typing.
+# permutation needs NO ISO remaster.
 # For mode=ui this line is removed entirely, so the installer finds no
 # kickstart and falls through to the curses configurator.
 @@GUESTINFO_KICKSTART@@
+
+# --- console --------------------------------------------------------------
+# The boot menu has to boot on its own for the kickstart to be reached. A
+# GRUB menu with a timeout does; POI 2.8 media under BIOS do not (syslinux,
+# "timeout 0" from photon-iso-config). The harness reads the medium's menu
+# when it creates the VM, and only where the menu waits for a key does it
+# give the VM a VNC console - bound to the host's WSL-facing address, a port
+# from the row's ordinal, a password of its own - to press Enter on evidence.
+@@CONSOLE@@
 
 # --- trimmed hardware -----------------------------------------------------
 usb.present = "FALSE"

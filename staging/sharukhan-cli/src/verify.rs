@@ -213,6 +213,7 @@ pub fn run(
     // --- install phase ----------------------------------------------------
     let _ = fs::copy(&serial, harvest.join("serial.log"));
     oracle::install(&serial, install_result.as_deref(), &mut c);
+    oracle::boot_menu(facts.as_ref().map(|f| f.boot_menu.as_str()), &mut c);
 
     // --- guest ------------------------------------------------------------
     // Discover the address rather than assuming it: an interactive install may

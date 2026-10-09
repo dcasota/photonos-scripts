@@ -162,7 +162,10 @@ pub fn create(
     };
     let serial_win =
         winpath::win_path_checked(&vm.serial.to_string_lossy()).map_err(|e| e.to_string())?;
-    let spec = vmx::VmSpec::for_permutation(
+    // An unattended row reaches its kickstart only if the boot menu boots on
+    // its own; read whether it does from the medium, under this row's firmware.
+    let unattended = ks.is_some();
+    let mut spec = vmx::VmSpec::for_permutation(
         cfg,
         p,
         vm.mac.clone(),
@@ -172,6 +175,18 @@ pub fn create(
         serial_win,
         ks,
     );
+    let layout = crate::isoboot::read(iso)?;
+    let menu = crate::isoboot::boot_menu(iso, &layout, &p.firmware)?;
+    spec.boot_menu = menu.describe();
+    log(&format!("boot menu ({}): {}", p.firmware, spec.boot_menu));
+    if unattended && menu.waits_forever() {
+        let c = crate::console::Console::for_row(vm.index)?;
+        log(&format!(
+            "the menu waits for a key: console at {}:{} to press Enter on evidence",
+            c.ip, c.port
+        ));
+        spec.console = Some(c);
+    }
     let text = vmx::render(&spec)?;
     fs::write(&vm.vmx, text).map_err(|e| format!("{}: {e}", vm.vmx.display()))?;
 

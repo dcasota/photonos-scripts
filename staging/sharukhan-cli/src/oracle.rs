@@ -663,6 +663,38 @@ pub fn install(serial_path: &Path, install_result: Option<&str>, c: &mut Checks)
     );
 }
 
+/// How the row got past the medium's boot menu ([`crate::console`]).
+///
+/// A menu the harness had to answer and could not is a FAIL in its own name:
+/// without it the row reads as a POI install timeout, which is what b01 was
+/// misread as before the console existed. `None` and an empty fact are facts
+/// files written before this check; they say nothing either way.
+pub fn boot_menu(fact: Option<&str>, c: &mut Checks) {
+    let fact = fact.unwrap_or("");
+    let (kind, detail) = fact.split_once('|').unwrap_or((fact, ""));
+    match kind {
+        "left" => c.check("install.boot_menu", "-", Status::Pass, "left", "left", detail),
+        "stuck" => c.check("install.boot_menu", "-", Status::Fail, "left", "stuck", detail),
+        "autoboot" => c.check(
+            "install.boot_menu",
+            "-",
+            Status::Info,
+            "",
+            "autoboot",
+            "the medium's menu boots its default entry on a timer",
+        ),
+        "operator" => c.check("install.boot_menu", "-", Status::Info, "", "operator", "interactive row"),
+        _ => c.check(
+            "install.boot_menu",
+            "-",
+            Status::Skip,
+            "",
+            "unrecorded",
+            "facts written before the boot-menu check existed",
+        ),
+    }
+}
+
 // ---- C. post-boot, over ssh ---------------------------------------------
 
 /// What SELinux mode the installed system is SUPPOSED to be in.

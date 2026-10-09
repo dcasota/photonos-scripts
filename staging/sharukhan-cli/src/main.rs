@@ -12,6 +12,8 @@ mod buildmode;
 mod canister;
 mod card;
 mod config;
+mod console;
+mod des;
 mod disk;
 mod evidence;
 mod guest;
@@ -46,6 +48,7 @@ mod verify;
 mod vm;
 mod vmware;
 mod vmx;
+mod vnc;
 mod winpath;
 mod wrapper;
 
@@ -842,6 +845,12 @@ fn cmd_iso_boot(iso: Option<&str>, json: bool) -> Result<(), String> {
     println!("efi       {}", img(&l.efi));
     println!("hybrid    {}", if l.hybrid { "MBR/GPT system area present" } else { "none (plain El Torito)" });
     println!("mkisofs   {}", l.mkisofs_boot_args().join(" "));
+    for fw in ["bios", "efi"] {
+        let m = isoboot::boot_menu(std::path::Path::new(iso), &l, fw)
+            .map(|m| m.describe())
+            .unwrap_or_else(|e| format!("unreadable: {e}"));
+        println!("menu {fw:<4} {m}");
+    }
     Ok(())
 }
 

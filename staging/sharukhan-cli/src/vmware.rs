@@ -157,7 +157,8 @@ pub fn start(vmrun: &Path, vmx_win: &str, gui: bool) -> i32 {
     // dialog". There is no dialog; there is no session.
     //
     // A mode=ks row is driven entirely by a kickstart delivered over
-    // guestinfo and says so itself: "no console interaction is needed". It has
+    // guestinfo and needs no operator; a boot menu that waits for a key is
+    // answered over VNC, not the GUI. It has
     // nothing to show anyone, so it starts headless and runs on a host with
     // nobody logged in. A mode=ui row genuinely needs the console - the STIG
     // menu is reachable only from the curses configurator - so it keeps the
