@@ -3306,6 +3306,42 @@ carry no canister-consuming {}",
     Ok(())
 }
 
+/// Move a delivered ISO into the store directory and leave a link under its
+/// cache name, so the cache entry is unchanged for every reader.
+///
+/// The stored name is `<cache dir>__<iso name>`: the six cache directories
+/// produce ISOs with equal names, and the prefix keeps them apart in one
+/// flat store. `iso_for_vmx` resolves the link, so a VM attaches the stored
+/// file by its real Windows path - VMware cannot follow a WSL symlink. An
+/// existing target is never overwritten. A rename that cannot cross
+/// filesystems falls back to copy, size check and removal.
+fn store_iso(dest: &Path, store: &Path) -> Result<PathBuf, String> {
+    let dir = dest
+        .parent()
+        .and_then(|d| d.file_name())
+        .ok_or_else(|| format!("{}: no cache directory", dest.display()))?
+        .to_string_lossy()
+        .to_string();
+    if !store.is_dir() {
+        return Err(format!("{} is not a directory", store.display()));
+    }
+    let target = store.join(format!("{dir}__{}", basename(dest)));
+    if target.exists() {
+        return Err(format!("{} already exists", target.display()));
+    }
+    if fs::rename(dest, &target).is_err() {
+        let size = fs::copy(dest, &target).map_err(|e| format!("copy to {}: {e}", target.display()))?;
+        let want = fs::metadata(dest).map(|m| m.len()).map_err(|e| format!("{}: {e}", dest.display()))?;
+        if size != want {
+            let _ = fs::remove_file(&target);
+            return Err(format!("copied {size} of {want} bytes to {}", target.display()));
+        }
+        fs::remove_file(dest).map_err(|e| format!("{}: {e}", dest.display()))?;
+    }
+    std::os::unix::fs::symlink(&target, dest).map_err(|e| format!("link {}: {e}", dest.display()))?;
+    Ok(target)
+}
+
 /// The three files that make a directory an ISO CACHE ENTRY, not just a
 /// directory with an ISO in it.
 ///
@@ -3321,6 +3357,13 @@ carry no canister-consuming {}",
 fn write_sidecars(c: &mut Ctx, dest: &Path, sum: &str) {
     let Some(dir) = dest.parent() else { return };
     let name = basename(dest);
+
+    if let Some(store) = std::env::var_os("MC_ISO_STORE").filter(|v| !v.is_empty()) {
+        match store_iso(dest, Path::new(&store)) {
+            Ok(target) => c.say(&format!("  stored in {}, linked as {name}", target.display())),
+            Err(e) => c.say(&format!("  [warn] MC_ISO_STORE: {e}; the ISO stays in the cache")),
+        }
+    }
 
     let link = dir.join("photon.iso");
     let _ = fs::remove_file(&link);
@@ -3420,6 +3463,31 @@ pub fn execute(spec: &BuildSpec, dry: bool, log: &mut dyn FnMut(&str)) -> Result
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_stored_iso_moves_and_its_cache_name_links_to_it() {
+        let root = std::env::temp_dir().join(format!("shk-store-{}", std::process::id()));
+        let cache = root.join("cache").join("minimal-poi2.8-prebuilt");
+        let store = root.join("Ph-Builds");
+        fs::create_dir_all(&cache).unwrap();
+        fs::create_dir_all(&store).unwrap();
+        let iso = cache.join("photon-minimal-5.0-abc.x86_64.iso");
+        fs::write(&iso, b"iso bytes").unwrap();
+        let target = store_iso(&iso, &store).unwrap();
+        assert_eq!(target, store.join("minimal-poi2.8-prebuilt__photon-minimal-5.0-abc.x86_64.iso"));
+        assert!(iso.is_symlink());
+        assert_eq!(fs::canonicalize(&iso).unwrap(), fs::canonicalize(&target).unwrap());
+        assert_eq!(fs::read(&iso).unwrap(), b"iso bytes");
+        // a second ISO of the same name is refused, never overwritten
+        let again = cache.join("x.iso");
+        fs::write(&again, b"other").unwrap();
+        fs::write(store.join("minimal-poi2.8-prebuilt__x.iso"), b"kept").unwrap();
+        assert!(store_iso(&again, &store).unwrap_err().contains("already exists"));
+        assert_eq!(fs::read(store.join("minimal-poi2.8-prebuilt__x.iso")).unwrap(), b"kept");
+        assert!(again.is_file() && !again.is_symlink());
+        assert!(store_iso(&again, &root.join("missing")).unwrap_err().contains("is not a directory"));
+        fs::remove_dir_all(&root).ok();
+    }
+
 
     #[test]
     fn iso_work_dirs_no_process_uses_are_stale_and_one_in_use_is_kept() {
