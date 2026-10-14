@@ -335,6 +335,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--variant", default=DEFAULT_VARIANT)
     ap.add_argument("--repo", default=None, help="photon clone whose origin/5.0 is the base (default: $PHOTON_TREE or /root/5.0)")
+    ap.add_argument("--base", default="origin/5.0",
+                    help="the commit the variant patch was made against (default: origin/5.0); the gate's own repo has no remote")
     ap.add_argument("--check", action="store_true")
     ap.add_argument("--date", default=None, help="changelog date, e.g. 'Thu Sep 11 2026'")
     ap.add_argument("--checker", default="/root/common/support/spec-checker/check_spec.py",
@@ -353,7 +355,7 @@ def main():
     tmp = tempfile.mkdtemp(prefix="regen-caneq-")
     tree = os.path.join(tmp, "t")
     try:
-        sh(REPO, "git", "worktree", "add", "-f", "-q", "--detach", tree, "origin/5.0")
+        sh(REPO, "git", "worktree", "add", "-f", "-q", "--detach", tree, a.base)
         sh(tree, "git", "apply", a.variant)
         # Commit the variant state so `git diff` below is the EMBEDDED delta
         # alone. Diffing against origin/5.0 instead would fold the variant
