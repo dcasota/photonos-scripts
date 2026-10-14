@@ -43,6 +43,7 @@ mod serial;
 mod sha512;
 mod sha256;
 mod specdata;
+mod specparity;
 mod specresolve;
 mod verify;
 mod vm;
@@ -108,6 +109,10 @@ PHASES (the same code `run` calls, one step at a time)
                         %changelog version it adds must not be one the target
                         already publishes, dates must descend, and a replay of
                         its commits must not silently drop renamed files
+    spec-parity         does a reworked SPECS tree build what a reference tree builds?
+                        per subrelease x spec x arch x mode: packages, deps,
+                        changelog and every Source/Patch by content (--base,
+                        --new roots; --prep compares the %prep trees too)
     mirrors             are the SPECS copies of POI PR commits still current with the fork?
     wrapper             derive, check and verify build wrappers for any kernel.org
                         release (sharukhan wrapper --help)
@@ -185,6 +190,14 @@ OPTIONS:
                         and passes the byte-identity gate (remaster)
     --target <ref>      branch the PR merges INTO, e.g. vmware/5.0 (branch-check)
     --branch <ref>      the PR branch under test (branch-check)
+    --pkg-dir <d>       SPECS/<d> and SPECS/<NN>/<d> hold the spec (spec-parity); default linux
+    --specs <a,b>       spec file names (spec-parity); default linux.spec,linux-esx.spec
+    --subreleases <l>   e.g. 90,91,92,93 (spec-parity; default)
+    --modes <l>         default,canister_build,acvp_build,kat_build (spec-parity; default)
+    --suffixes <l>      name suffixes the new tree adds on purpose, e.g. 6.1 (spec-parity)
+    --prep              also run %prep at fuzz 0 on both sides and compare the trees (spec-parity)
+    --neutralize <l>    staged .inc name prefixes replaced by a no-op on both sides for
+                        --prep, for host-toolchain checks (spec-parity)
     --severity <level>  filter findings by severity
     --jobs <n>          proposed parallel VM count (status); default is cpus/4
     --job <id>          a job table row id (stop, watch) - NOT --jobs
@@ -255,6 +268,14 @@ struct Args {
     // ---- branch-check ----
     target: Option<String>,
     branch: Option<String>,
+    // ---- spec-parity ----
+    pkg_dir: Option<String>,
+    specs: Option<String>,
+    subreleases: Option<String>,
+    modes: Option<String>,
+    suffixes: Option<String>,
+    neutralize: Option<String>,
+    prep: bool,
     stage: Option<String>,
     no_accel: bool,
     // ---- package lifecycle ----
@@ -363,6 +384,13 @@ fn parse() -> Result<Args, String> {
         sources: None,
         target: None,
         branch: None,
+        pkg_dir: None,
+        specs: None,
+        subreleases: None,
+        modes: None,
+        suffixes: None,
+        neutralize: None,
+        prep: false,
         stage: None,
         no_accel: false,
         log: None,
@@ -442,6 +470,13 @@ fn parse() -> Result<Args, String> {
             "--sources" => out.sources = Some(a.next().ok_or("--sources needs a value")?),
             "--target" => out.target = Some(a.next().ok_or("--target needs a value")?),
             "--branch" => out.branch = Some(a.next().ok_or("--branch needs a value")?),
+            "--pkg-dir" => out.pkg_dir = Some(a.next().ok_or("--pkg-dir needs a value")?),
+            "--specs" => out.specs = Some(a.next().ok_or("--specs needs a value")?),
+            "--subreleases" => out.subreleases = Some(a.next().ok_or("--subreleases needs a value")?),
+            "--modes" => out.modes = Some(a.next().ok_or("--modes needs a value")?),
+            "--suffixes" => out.suffixes = Some(a.next().ok_or("--suffixes needs a value")?),
+            "--neutralize" => out.neutralize = Some(a.next().ok_or("--neutralize needs a value")?),
+            "--prep" => out.prep = true,
             "--stage" => out.stage = Some(a.next().ok_or("--stage needs a value")?),
             "--no-accel" => out.no_accel = true,
             "--package-lifecycle" => out.package_lifecycle = true,
@@ -621,6 +656,7 @@ fn main() -> ExitCode {
         "composer" => cmd_composer(&cfg, args.poi.as_deref().unwrap_or("2.8")),
         "canister" => cmd_canister(&cfg, args.rebase_check),
         "branch-check" => cmd_branch_check(&args),
+        "spec-parity" => cmd_spec_parity(&args),
         "mirrors" => cmd_mirrors(&cfg),
         "ingest" => cmd_ingest(&cfg),
         "stop" => runner::cmd_stop(&cfg, args.job, args.all, args.dry_run),
@@ -1787,6 +1823,40 @@ phase B: relink linux and linux-esx against it"),
 /// target had since published, and a replay that kept 136 files a commit had
 /// renamed away. Both survived the checks of the day because those checks
 /// measured the wrong thing - so this prints WHAT IT MEASURED, never a bare OK.
+fn cmd_spec_parity(args: &Args) -> Result<(), String> {
+    let list = |v: &Option<String>, d: &[&str]| -> Vec<String> {
+        match v {
+            Some(s) => s.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect(),
+            None => d.iter().map(|x| x.to_string()).collect(),
+        }
+    };
+    let base = args.base.as_deref().ok_or("spec-parity needs --base <dir>, the reference tree's root")?;
+    let new = args.new.as_deref().ok_or("spec-parity needs --new <dir>, the reworked tree's root")?;
+    let subreleases = list(&args.subreleases, &["90", "91", "92", "93"])
+        .iter()
+        .map(|s| s.parse::<u32>().map_err(|_| format!("--subreleases: {s} is not a number")))
+        .collect::<Result<Vec<_>, _>>()?;
+    let work = std::path::PathBuf::from(args.out.as_deref().ok_or("spec-parity needs --out <dir> for staging and %prep trees")?);
+    std::fs::create_dir_all(&work).map_err(|e| format!("{}: {e}", work.display()))?;
+    let plan = specparity::Plan {
+        base_root: base.into(),
+        new_root: new.into(),
+        pkg_dir: args.pkg_dir.clone().unwrap_or_else(|| "linux".into()),
+        specs: list(&args.specs, &["linux.spec", "linux-esx.spec"]),
+        subreleases,
+        arches: list(&args.arch, specparity::DEFAULT_ARCHES),
+        modes: list(&args.modes, specparity::DEFAULT_MODES),
+        suffixes: list(&args.suffixes, &[]),
+        work,
+    };
+    println!("spec-parity: base={base} new={new} pkg={} specs={:?}", plan.pkg_dir, plan.specs);
+    let bad = specparity::run(&plan, args.prep, &list(&args.neutralize, &[]))?;
+    if bad > 0 {
+        return Err(format!("{bad} cell(s) differ"));
+    }
+    Ok(())
+}
+
 fn cmd_branch_check(args: &Args) -> Result<(), String> {
     let dir = args
         .photon_tree
